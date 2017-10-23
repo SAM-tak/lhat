@@ -1,0 +1,13 @@
+root = true
+
+[*.lua]
+charset = iso-8859-1
+indent_size = 2
+end_of_line = lf
+indent_style = space
+
+[*.c]
+indent_style = space
+indent_size = 4
+end_of_line = lf
+charset = utf-8
