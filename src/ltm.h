@@ -1,7 +1,7 @@
 /*
 ** $Id: ltm.h,v 2.22 2016/02/26 19:20:15 roberto Exp $
 ** Tag methods
-** See Copyright Notice in lua.h
+** See Copyright Notice in lhat.h
 */
 
 #ifndef ltm_h
@@ -46,29 +46,29 @@ typedef enum {
 
 
 #define gfasttm(g,et,e) ((et) == NULL ? NULL : \
-  ((et)->flags & (1u<<(e))) ? NULL : luaT_gettm(et, e, (g)->tmname[e]))
+  ((et)->flags & (1u<<(e))) ? NULL : lhatT_gettm(et, e, (g)->tmname[e]))
 
 #define fasttm(l,et,e)	gfasttm(G(l), et, e)
 
-#define ttypename(x)	luaT_typenames_[(x) + 1]
+#define ttypename(x)	lhatT_typenames_[(x) + 1]
 
-LUAI_DDEC const char *const luaT_typenames_[LUA_TOTALTAGS];
+LHATI_DDEC const char *const lhatT_typenames_[LHAT_TOTALTAGS];
 
 
-LUAI_FUNC const char *luaT_objtypename (lua_State *L, const TValue *o);
+LHATI_FUNC const char *lhatT_objtypename (lhat_State *L, const TValue *o);
 
-LUAI_FUNC const TValue *luaT_gettm (Table *events, TMS event, TString *ename);
-LUAI_FUNC const TValue *luaT_gettmbyobj (lua_State *L, const TValue *o,
+LHATI_FUNC const TValue *lhatT_gettm (Table *events, TMS event, TString *ename);
+LHATI_FUNC const TValue *lhatT_gettmbyobj (lhat_State *L, const TValue *o,
                                                        TMS event);
-LUAI_FUNC void luaT_init (lua_State *L);
+LHATI_FUNC void lhatT_init (lhat_State *L);
 
-LUAI_FUNC void luaT_callTM (lua_State *L, const TValue *f, const TValue *p1,
+LHATI_FUNC void lhatT_callTM (lhat_State *L, const TValue *f, const TValue *p1,
                             const TValue *p2, TValue *p3, int hasres);
-LUAI_FUNC int luaT_callbinTM (lua_State *L, const TValue *p1, const TValue *p2,
+LHATI_FUNC int lhatT_callbinTM (lhat_State *L, const TValue *p1, const TValue *p2,
                               StkId res, TMS event);
-LUAI_FUNC void luaT_trybinTM (lua_State *L, const TValue *p1, const TValue *p2,
+LHATI_FUNC void lhatT_trybinTM (lhat_State *L, const TValue *p1, const TValue *p2,
                               StkId res, TMS event);
-LUAI_FUNC int luaT_callorderTM (lua_State *L, const TValue *p1,
+LHATI_FUNC int lhatT_callorderTM (lhat_State *L, const TValue *p1,
                                 const TValue *p2, TMS event);
 
 

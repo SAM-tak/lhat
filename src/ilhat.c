@@ -1,10 +1,10 @@
 /*
-** $Id: lua.c,v 1.230 2017/01/12 17:14:26 roberto Exp $
-** Lua stand-alone interpreter
-** See Copyright Notice in lua.h
+** $Id: lhat.c,v 1.230 2017/01/12 17:14:26 roberto Exp $
+** Lhat stand-alone interpreter
+** See Copyright Notice in lhat.h
 */
 
-#define lua_c
+#define ilhat_c
 
 #include "lprefix.h"
 
@@ -14,55 +14,55 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "lua.h"
+#include "lhat.h"
 
 #include "lauxlib.h"
-#include "lualib.h"
+#include "lhatlib.h"
 
 
 
-#if !defined(LUA_PROMPT)
-#define LUA_PROMPT		"> "
-#define LUA_PROMPT2		">> "
+#if !defined(LHAT_PROMPT)
+#define LHAT_PROMPT		"> "
+#define LHAT_PROMPT2		">> "
 #endif
 
-#if !defined(LUA_PROGNAME)
-#define LUA_PROGNAME		"lua"
+#if !defined(LHAT_PROGNAME)
+#define LHAT_PROGNAME		"ilhat"
 #endif
 
-#if !defined(LUA_MAXINPUT)
-#define LUA_MAXINPUT		512
+#if !defined(LHAT_MAXINPUT)
+#define LHAT_MAXINPUT		512
 #endif
 
-#if !defined(LUA_INIT_VAR)
-#define LUA_INIT_VAR		"LUA_INIT"
+#if !defined(LHAT_INIT_VAR)
+#define LHAT_INIT_VAR		"LHAT_INIT"
 #endif
 
-#define LUA_INITVARVERSION	LUA_INIT_VAR LUA_VERSUFFIX
+#define LHAT_INITVARVERSION	LHAT_INIT_VAR LHAT_VERSUFFIX
 
 
 /*
-** lua_stdin_is_tty detects whether the standard input is a 'tty' (that
-** is, whether we're running lua interactively).
+** lhat_stdin_is_tty detects whether the standard input is a 'tty' (that
+** is, whether we're running lhat interactively).
 */
-#if !defined(lua_stdin_is_tty)	/* { */
+#if !defined(lhat_stdin_is_tty)	/* { */
 
-#if defined(LUA_USE_POSIX)	/* { */
+#if defined(LHAT_USE_POSIX)	/* { */
 
 #include <unistd.h>
-#define lua_stdin_is_tty()	isatty(0)
+#define lhat_stdin_is_tty()	isatty(0)
 
-#elif defined(LUA_USE_WINDOWS)	/* }{ */
+#elif defined(LHAT_USE_WINDOWS)	/* }{ */
 
 #include <io.h>
 #include <windows.h>
 
-#define lua_stdin_is_tty()	_isatty(_fileno(stdin))
+#define lhat_stdin_is_tty()	_isatty(_fileno(stdin))
 
 #else				/* }{ */
 
 /* ISO C definition */
-#define lua_stdin_is_tty()	1  /* assume stdin is a tty */
+#define lhat_stdin_is_tty()	1  /* assume stdin is a tty */
 
 #endif				/* } */
 
@@ -70,28 +70,28 @@
 
 
 /*
-** lua_readline defines how to show a prompt and then read a line from
+** lhat_readline defines how to show a prompt and then read a line from
 ** the standard input.
-** lua_saveline defines how to "save" a read line in a "history".
-** lua_freeline defines how to free a line read by lua_readline.
+** lhat_saveline defines how to "save" a read line in a "history".
+** lhat_freeline defines how to free a line read by lhat_readline.
 */
-#if !defined(lua_readline)	/* { */
+#if !defined(lhat_readline)	/* { */
 
-#if defined(LUA_USE_READLINE)	/* { */
+#if defined(LHAT_USE_READLINE)	/* { */
 
 #include <readline/readline.h>
 #include <readline/history.h>
-#define lua_readline(L,b,p)	((void)L, ((b)=readline(p)) != NULL)
-#define lua_saveline(L,line)	((void)L, add_history(line))
-#define lua_freeline(L,b)	((void)L, free(b))
+#define lhat_readline(L,b,p)	((void)L, ((b)=readline(p)) != NULL)
+#define lhat_saveline(L,line)	((void)L, add_history(line))
+#define lhat_freeline(L,b)	((void)L, free(b))
 
 #else				/* }{ */
 
-#define lua_readline(L,b,p) \
+#define lhat_readline(L,b,p) \
         ((void)L, fputs(p, stdout), fflush(stdout),  /* show prompt */ \
-        fgets(b, LUA_MAXINPUT, stdin) != NULL)  /* get line */
-#define lua_saveline(L,line)	{ (void)L; (void)line; }
-#define lua_freeline(L,b)	{ (void)L; (void)b; }
+        fgets(b, LHAT_MAXINPUT, stdin) != NULL)  /* get line */
+#define lhat_saveline(L,line)	{ (void)L; (void)line; }
+#define lhat_freeline(L,b)	{ (void)L; (void)b; }
 
 #endif				/* } */
 
@@ -100,40 +100,40 @@
 
 
 
-static lua_State *globalL = NULL;
+static lhat_State *globalL = NULL;
 
-static const char *progname = LUA_PROGNAME;
+static const char *progname = LHAT_PROGNAME;
 
 
 /*
 ** Hook set by signal function to stop the interpreter.
 */
-static void lstop (lua_State *L, lua_Debug *ar) {
+static void lstop (lhat_State *L, lhat_Debug *ar) {
   (void)ar;  /* unused arg. */
-  lua_sethook(L, NULL, 0, 0);  /* reset hook */
-  luaL_error(L, "interrupted!");
+  lhat_sethook(L, NULL, 0, 0);  /* reset hook */
+  lhatL_error(L, "interrupted!");
 }
 
 
 /*
 ** Function to be called at a C signal. Because a C signal cannot
-** just change a Lua state (as there is no proper synchronization),
+** just change a Lhat state (as there is no proper synchronization),
 ** this function only sets a hook that, when called, will stop the
 ** interpreter.
 */
 static void laction (int i) {
   signal(i, SIG_DFL); /* if another SIGINT happens, terminate process */
-  lua_sethook(globalL, lstop, LUA_MASKCALL | LUA_MASKRET | LUA_MASKCOUNT, 1);
+  lhat_sethook(globalL, lstop, LHAT_MASKCALL | LHAT_MASKRET | LHAT_MASKCOUNT, 1);
 }
 
 
 static void print_usage (const char *badoption) {
-  lua_writestringerror("%s: ", progname);
+  lhat_writestringerror("%s: ", progname);
   if (badoption[1] == 'e' || badoption[1] == 'l')
-    lua_writestringerror("'%s' needs argument\n", badoption);
+    lhat_writestringerror("'%s' needs argument\n", badoption);
   else
-    lua_writestringerror("unrecognized option '%s'\n", badoption);
-  lua_writestringerror(
+    lhat_writestringerror("unrecognized option '%s'\n", badoption);
+  lhat_writestringerror(
   "usage: %s [options] [script [args]]\n"
   "Available options are:\n"
   "  -e stat  execute string 'stat'\n"
@@ -153,21 +153,21 @@ static void print_usage (const char *badoption) {
 ** (if present)
 */
 static void l_message (const char *pname, const char *msg) {
-  if (pname) lua_writestringerror("%s: ", pname);
-  lua_writestringerror("%s\n", msg);
+  if (pname) lhat_writestringerror("%s: ", pname);
+  lhat_writestringerror("%s\n", msg);
 }
 
 
 /*
 ** Check whether 'status' is not OK and, if so, prints the error
 ** message on the top of the stack. It assumes that the error object
-** is a string, as it was either generated by Lua or by 'msghandler'.
+** is a string, as it was either generated by Lhat or by 'msghandler'.
 */
-static int report (lua_State *L, int status) {
-  if (status != LUA_OK) {
-    const char *msg = lua_tostring(L, -1);
+static int report (lhat_State *L, int status) {
+  if (status != LHAT_OK) {
+    const char *msg = lhat_tostring(L, -1);
     l_message(progname, msg);
-    lua_pop(L, 1);  /* remove message */
+    lhat_pop(L, 1);  /* remove message */
   }
   return status;
 }
@@ -176,42 +176,42 @@ static int report (lua_State *L, int status) {
 /*
 ** Message handler used to run all chunks
 */
-static int msghandler (lua_State *L) {
-  const char *msg = lua_tostring(L, 1);
+static int msghandler (lhat_State *L) {
+  const char *msg = lhat_tostring(L, 1);
   if (msg == NULL) {  /* is error object not a string? */
-    if (luaL_callmeta(L, 1, "__tostring") &&  /* does it have a metamethod */
-        lua_type(L, -1) == LUA_TSTRING)  /* that produces a string? */
+    if (lhatL_callmeta(L, 1, "__tostring") &&  /* does it have a metamethod */
+        lhat_type(L, -1) == LHAT_TSTRING)  /* that produces a string? */
       return 1;  /* that is the message */
     else
-      msg = lua_pushfstring(L, "(error object is a %s value)",
-                               luaL_typename(L, 1));
+      msg = lhat_pushfstring(L, "(error object is a %s value)",
+                               lhatL_typename(L, 1));
   }
-  luaL_traceback(L, L, msg, 1);  /* append a standard traceback */
+  lhatL_traceback(L, L, msg, 1);  /* append a standard traceback */
   return 1;  /* return the traceback */
 }
 
 
 /*
-** Interface to 'lua_pcall', which sets appropriate message function
+** Interface to 'lhat_pcall', which sets appropriate message function
 ** and C-signal handler. Used to run all chunks.
 */
-static int docall (lua_State *L, int narg, int nres) {
+static int docall (lhat_State *L, int narg, int nres) {
   int status;
-  int base = lua_gettop(L) - narg;  /* function index */
-  lua_pushcfunction(L, msghandler);  /* push message handler */
-  lua_insert(L, base);  /* put it under function and args */
+  int base = lhat_gettop(L) - narg;  /* function index */
+  lhat_pushcfunction(L, msghandler);  /* push message handler */
+  lhat_insert(L, base);  /* put it under function and args */
   globalL = L;  /* to be available to 'laction' */
   signal(SIGINT, laction);  /* set C-signal handler */
-  status = lua_pcall(L, narg, nres, base);
+  status = lhat_pcall(L, narg, nres, base);
   signal(SIGINT, SIG_DFL); /* reset C-signal handler */
-  lua_remove(L, base);  /* remove message handler from the stack */
+  lhat_remove(L, base);  /* remove message handler from the stack */
   return status;
 }
 
 
 static void print_version (void) {
-  lua_writestring(LUA_COPYRIGHT, strlen(LUA_COPYRIGHT));
-  lua_writeline();
+  lhat_writestring(LHAT_COPYRIGHT, strlen(LHAT_COPYRIGHT));
+  lhat_writeline();
 }
 
 
@@ -223,32 +223,32 @@ static void print_version (void) {
 ** other arguments (before the script name) go to negative indices.
 ** If there is no script name, assume interpreter's name as base.
 */
-static void createargtable (lua_State *L, char **argv, int argc, int script) {
+static void createargtable (lhat_State *L, char **argv, int argc, int script) {
   int i, narg;
   if (script == argc) script = 0;  /* no script name? */
   narg = argc - (script + 1);  /* number of positive indices */
-  lua_createtable(L, narg, script + 1);
+  lhat_createtable(L, narg, script + 1);
   for (i = 0; i < argc; i++) {
-    lua_pushstring(L, argv[i]);
-    lua_rawseti(L, -2, i - script);
+    lhat_pushstring(L, argv[i]);
+    lhat_rawseti(L, -2, i - script);
   }
-  lua_setglobal(L, "arg");
+  lhat_setglobal(L, "arg");
 }
 
 
-static int dochunk (lua_State *L, int status) {
-  if (status == LUA_OK) status = docall(L, 0, 0);
+static int dochunk (lhat_State *L, int status) {
+  if (status == LHAT_OK) status = docall(L, 0, 0);
   return report(L, status);
 }
 
 
-static int dofile (lua_State *L, const char *name) {
-  return dochunk(L, luaL_loadfile(L, name));
+static int dofile (lhat_State *L, const char *name) {
+  return dochunk(L, lhatL_loadfile(L, name));
 }
 
 
-static int dostring (lua_State *L, const char *s, const char *name) {
-  return dochunk(L, luaL_loadbuffer(L, s, strlen(s), name));
+static int dostring (lhat_State *L, const char *s, const char *name) {
+  return dochunk(L, lhatL_loadbuffer(L, s, strlen(s), name));
 }
 
 
@@ -256,13 +256,13 @@ static int dostring (lua_State *L, const char *s, const char *name) {
 ** Calls 'require(name)' and stores the result in a global variable
 ** with the given name.
 */
-static int dolibrary (lua_State *L, const char *name) {
+static int dolibrary (lhat_State *L, const char *name) {
   int status;
-  lua_getglobal(L, "require");
-  lua_pushstring(L, name);
+  lhat_getglobal(L, "require");
+  lhat_pushstring(L, name);
   status = docall(L, 1, 1);  /* call 'require(name)' */
-  if (status == LUA_OK)
-    lua_setglobal(L, name);  /* global[name] = require return */
+  if (status == LHAT_OK)
+    lhat_setglobal(L, name);  /* global[name] = require return */
   return report(L, status);
 }
 
@@ -270,11 +270,11 @@ static int dolibrary (lua_State *L, const char *name) {
 /*
 ** Returns the string to be used as a prompt by the interpreter.
 */
-static const char *get_prompt (lua_State *L, int firstline) {
+static const char *get_prompt (lhat_State *L, int firstline) {
   const char *p;
-  lua_getglobal(L, firstline ? "_PROMPT" : "_PROMPT2");
-  p = lua_tostring(L, -1);
-  if (p == NULL) p = (firstline ? LUA_PROMPT : LUA_PROMPT2);
+  lhat_getglobal(L, firstline ? "_PROMPT" : "_PROMPT2");
+  p = lhat_tostring(L, -1);
+  if (p == NULL) p = (firstline ? LHAT_PROMPT : LHAT_PROMPT2);
   return p;
 }
 
@@ -288,12 +288,12 @@ static const char *get_prompt (lua_State *L, int firstline) {
 ** message at the top of the stack ends with the above mark for
 ** incomplete statements.
 */
-static int incomplete (lua_State *L, int status) {
-  if (status == LUA_ERRSYNTAX) {
+static int incomplete (lhat_State *L, int status) {
+  if (status == LHAT_ERRSYNTAX) {
     size_t lmsg;
-    const char *msg = lua_tolstring(L, -1, &lmsg);
+    const char *msg = lhat_tolstring(L, -1, &lmsg);
     if (lmsg >= marklen && strcmp(msg + lmsg - marklen, EOFMARK) == 0) {
-      lua_pop(L, 1);
+      lhat_pop(L, 1);
       return 1;
     }
   }
@@ -302,25 +302,25 @@ static int incomplete (lua_State *L, int status) {
 
 
 /*
-** Prompt the user, read a line, and push it into the Lua stack.
+** Prompt the user, read a line, and push it into the Lhat stack.
 */
-static int pushline (lua_State *L, int firstline) {
-  char buffer[LUA_MAXINPUT];
+static int pushline (lhat_State *L, int firstline) {
+  char buffer[LHAT_MAXINPUT];
   char *b = buffer;
   size_t l;
   const char *prmt = get_prompt(L, firstline);
-  int readstatus = lua_readline(L, b, prmt);
+  int readstatus = lhat_readline(L, b, prmt);
   if (readstatus == 0)
     return 0;  /* no input (prompt will be popped by caller) */
-  lua_pop(L, 1);  /* remove prompt */
+  lhat_pop(L, 1);  /* remove prompt */
   l = strlen(b);
   if (l > 0 && b[l-1] == '\n')  /* line ends with newline? */
     b[--l] = '\0';  /* remove it */
   if (firstline && b[0] == '=')  /* for compatibility with 5.2, ... */
-    lua_pushfstring(L, "return %s", b + 1);  /* change '=' to 'return' */
+    lhat_pushfstring(L, "return %s", b + 1);  /* change '=' to 'return' */
   else
-    lua_pushlstring(L, b, l);
-  lua_freeline(L, b);
+    lhat_pushlstring(L, b, l);
+  lhat_freeline(L, b);
   return 1;
 }
 
@@ -329,36 +329,36 @@ static int pushline (lua_State *L, int firstline) {
 ** Try to compile line on the stack as 'return <line>;'; on return, stack
 ** has either compiled chunk or original line (if compilation failed).
 */
-static int addreturn (lua_State *L) {
-  const char *line = lua_tostring(L, -1);  /* original line */
-  const char *retline = lua_pushfstring(L, "return %s;", line);
-  int status = luaL_loadbuffer(L, retline, strlen(retline), "=stdin");
-  if (status == LUA_OK) {
-    lua_remove(L, -2);  /* remove modified line */
+static int addreturn (lhat_State *L) {
+  const char *line = lhat_tostring(L, -1);  /* original line */
+  const char *retline = lhat_pushfstring(L, "return %s;", line);
+  int status = lhatL_loadbuffer(L, retline, strlen(retline), "=stdin");
+  if (status == LHAT_OK) {
+    lhat_remove(L, -2);  /* remove modified line */
     if (line[0] != '\0')  /* non empty? */
-      lua_saveline(L, line);  /* keep history */
+      lhat_saveline(L, line);  /* keep history */
   }
   else
-    lua_pop(L, 2);  /* pop result from 'luaL_loadbuffer' and modified line */
+    lhat_pop(L, 2);  /* pop result from 'lhatL_loadbuffer' and modified line */
   return status;
 }
 
 
 /*
-** Read multiple lines until a complete Lua statement
+** Read multiple lines until a complete Lhat statement
 */
-static int multiline (lua_State *L) {
+static int multiline (lhat_State *L) {
   for (;;) {  /* repeat until gets a complete statement */
     size_t len;
-    const char *line = lua_tolstring(L, 1, &len);  /* get what it has */
-    int status = luaL_loadbuffer(L, line, len, "=stdin");  /* try it */
+    const char *line = lhat_tolstring(L, 1, &len);  /* get what it has */
+    int status = lhatL_loadbuffer(L, line, len, "=stdin");  /* try it */
     if (!incomplete(L, status) || !pushline(L, 0)) {
-      lua_saveline(L, line);  /* keep history */
+      lhat_saveline(L, line);  /* keep history */
       return status;  /* cannot or should not try to add continuation line */
     }
-    lua_pushliteral(L, "\n");  /* add newline... */
-    lua_insert(L, -2);  /* ...between the two lines */
-    lua_concat(L, 3);  /* join them */
+    lhat_pushliteral(L, "\n");  /* add newline... */
+    lhat_insert(L, -2);  /* ...between the two lines */
+    lhat_concat(L, 3);  /* join them */
   }
 }
 
@@ -369,51 +369,51 @@ static int multiline (lua_State *L) {
 ** the final status of load/call with the resulting function (if any)
 ** in the top of the stack.
 */
-static int loadline (lua_State *L) {
+static int loadline (lhat_State *L) {
   int status;
-  lua_settop(L, 0);
+  lhat_settop(L, 0);
   if (!pushline(L, 1))
     return -1;  /* no input */
-  if ((status = addreturn(L)) != LUA_OK)  /* 'return ...' did not work? */
+  if ((status = addreturn(L)) != LHAT_OK)  /* 'return ...' did not work? */
     status = multiline(L);  /* try as command, maybe with continuation lines */
-  lua_remove(L, 1);  /* remove line from the stack */
-  lua_assert(lua_gettop(L) == 1);
+  lhat_remove(L, 1);  /* remove line from the stack */
+  lhat_assert(lhat_gettop(L) == 1);
   return status;
 }
 
 
 /*
-** Prints (calling the Lua 'print' function) any values on the stack
+** Prints (calling the Lhat 'print' function) any values on the stack
 */
-static void l_print (lua_State *L) {
-  int n = lua_gettop(L);
+static void l_print (lhat_State *L) {
+  int n = lhat_gettop(L);
   if (n > 0) {  /* any result to be printed? */
-    luaL_checkstack(L, LUA_MINSTACK, "too many results to print");
-    lua_getglobal(L, "print");
-    lua_insert(L, 1);
-    if (lua_pcall(L, n, 0, 0) != LUA_OK)
-      l_message(progname, lua_pushfstring(L, "error calling 'print' (%s)",
-                                             lua_tostring(L, -1)));
+    lhatL_checkstack(L, LHAT_MINSTACK, "too many results to print");
+    lhat_getglobal(L, "print");
+    lhat_insert(L, 1);
+    if (lhat_pcall(L, n, 0, 0) != LHAT_OK)
+      l_message(progname, lhat_pushfstring(L, "error calling 'print' (%s)",
+                                             lhat_tostring(L, -1)));
   }
 }
 
 
 /*
-** Do the REPL: repeatedly read (load) a line, evaluate (call) it, and
+** Do the REPL: repeatedly read (load) a line, evalhatte (call) it, and
 ** print any results.
 */
-static void doREPL (lua_State *L) {
+static void doREPL (lhat_State *L) {
   int status;
   const char *oldprogname = progname;
   progname = NULL;  /* no 'progname' on errors in interactive mode */
   while ((status = loadline(L)) != -1) {
-    if (status == LUA_OK)
-      status = docall(L, 0, LUA_MULTRET);
-    if (status == LUA_OK) l_print(L);
+    if (status == LHAT_OK)
+      status = docall(L, 0, LHAT_MULTRET);
+    if (status == LHAT_OK) l_print(L);
     else report(L, status);
   }
-  lua_settop(L, 0);  /* clear stack */
-  lua_writeline();
+  lhat_settop(L, 0);  /* clear stack */
+  lhat_writeline();
   progname = oldprogname;
 }
 
@@ -421,28 +421,28 @@ static void doREPL (lua_State *L) {
 /*
 ** Push on the stack the contents of table 'arg' from 1 to #arg
 */
-static int pushargs (lua_State *L) {
+static int pushargs (lhat_State *L) {
   int i, n;
-  if (lua_getglobal(L, "arg") != LUA_TTABLE)
-    luaL_error(L, "'arg' is not a table");
-  n = (int)luaL_len(L, -1);
-  luaL_checkstack(L, n + 3, "too many arguments to script");
+  if (lhat_getglobal(L, "arg") != LHAT_TTABLE)
+    lhatL_error(L, "'arg' is not a table");
+  n = (int)lhatL_len(L, -1);
+  lhatL_checkstack(L, n + 3, "too many arguments to script");
   for (i = 1; i <= n; i++)
-    lua_rawgeti(L, -i, i);
-  lua_remove(L, -i);  /* remove table from the stack */
+    lhat_rawgeti(L, -i, i);
+  lhat_remove(L, -i);  /* remove table from the stack */
   return n;
 }
 
 
-static int handle_script (lua_State *L, char **argv) {
+static int handle_script (lhat_State *L, char **argv) {
   int status;
   const char *fname = argv[0];
   if (strcmp(fname, "-") == 0 && strcmp(argv[-1], "--") != 0)
     fname = NULL;  /* stdin */
-  status = luaL_loadfile(L, fname);
-  if (status == LUA_OK) {
+  status = lhatL_loadfile(L, fname);
+  if (status == LHAT_OK) {
     int n = pushargs(L);  /* push arguments to script */
-    status = docall(L, n, LUA_MULTRET);
+    status = docall(L, n, LHAT_MULTRET);
   }
   return report(L, status);
 }
@@ -458,7 +458,7 @@ static int handle_script (lua_State *L, char **argv) {
 
 /*
 ** Traverses all arguments from 'argv', returning a mask with those
-** needed before running any Lua code (or an error code if it finds
+** needed before running any Lhat code (or an error code if it finds
 ** any invalid argument). 'first' returns the first not-handled argument
 ** (either the script name or a bad argument in case of error).
 */
@@ -508,23 +508,23 @@ static int collectargs (char **argv, int *first) {
 
 
 /*
-** Processes options 'e' and 'l', which involve running Lua code.
+** Processes options 'e' and 'l', which involve running Lhat code.
 ** Returns 0 if some code raises an error.
 */
-static int runargs (lua_State *L, char **argv, int n) {
+static int runargs (lhat_State *L, char **argv, int n) {
   int i;
   for (i = 1; i < n; i++) {
     int option = argv[i][1];
-    lua_assert(argv[i][0] == '-');  /* already checked */
+    lhat_assert(argv[i][0] == '-');  /* already checked */
     if (option == 'e' || option == 'l') {
       int status;
       const char *extra = argv[i] + 2;  /* both options need an argument */
       if (*extra == '\0') extra = argv[++i];
-      lua_assert(extra != NULL);
+      lhat_assert(extra != NULL);
       status = (option == 'e')
                ? dostring(L, extra, "=(command line)")
                : dolibrary(L, extra);
-      if (status != LUA_OK) return 0;
+      if (status != LHAT_OK) return 0;
     }
   }
   return 1;
@@ -532,14 +532,14 @@ static int runargs (lua_State *L, char **argv, int n) {
 
 
 
-static int handle_luainit (lua_State *L) {
-  const char *name = "=" LUA_INITVARVERSION;
+static int handle_lhatinit (lhat_State *L) {
+  const char *name = "=" LHAT_INITVARVERSION;
   const char *init = getenv(name + 1);
   if (init == NULL) {
-    name = "=" LUA_INIT_VAR;
+    name = "=" LHAT_INIT_VAR;
     init = getenv(name + 1);  /* try alternative name */
   }
-  if (init == NULL) return LUA_OK;
+  if (init == NULL) return LHAT_OK;
   else if (init[0] == '@')
     return dofile(L, init+1);
   else
@@ -551,12 +551,12 @@ static int handle_luainit (lua_State *L) {
 ** Main body of stand-alone interpreter (to be called in protected mode).
 ** Reads the options and handles them all.
 */
-static int pmain (lua_State *L) {
-  int argc = (int)lua_tointeger(L, 1);
-  char **argv = (char **)lua_touserdata(L, 2);
+static int pmain (lhat_State *L) {
+  int argc = (int)lhat_tointeger(L, 1);
+  char **argv = (char **)lhat_touserdata(L, 2);
   int script;
   int args = collectargs(argv, &script);
-  luaL_checkversion(L);  /* check that interpreter has correct version */
+  lhatL_checkversion(L);  /* check that interpreter has correct version */
   if (argv[0] && argv[0][0]) progname = argv[0];
   if (args == has_error) {  /* bad arg? */
     print_usage(argv[script]);  /* 'script' has index of bad arg. */
@@ -565,48 +565,48 @@ static int pmain (lua_State *L) {
   if (args & has_v)  /* option '-v'? */
     print_version();
   if (args & has_E) {  /* option '-E'? */
-    lua_pushboolean(L, 1);  /* signal for libraries to ignore env. vars. */
-    lua_setfield(L, LUA_REGISTRYINDEX, "LUA_NOENV");
+    lhat_pushboolean(L, 1);  /* signal for libraries to ignore env. vars. */
+    lhat_setfield(L, LHAT_REGISTRYINDEX, "LHAT_NOENV");
   }
-  luaL_openlibs(L);  /* open standard libraries */
+  lhatL_openlibs(L);  /* open standard libraries */
   createargtable(L, argv, argc, script);  /* create table 'arg' */
   if (!(args & has_E)) {  /* no option '-E'? */
-    if (handle_luainit(L) != LUA_OK)  /* run LUA_INIT */
-      return 0;  /* error running LUA_INIT */
+    if (handle_lhatinit(L) != LHAT_OK)  /* run LHAT_INIT */
+      return 0;  /* error running LHAT_INIT */
   }
   if (!runargs(L, argv, script))  /* execute arguments -e and -l */
     return 0;  /* something failed */
   if (script < argc &&  /* execute main script (if there is one) */
-      handle_script(L, argv + script) != LUA_OK)
+      handle_script(L, argv + script) != LHAT_OK)
     return 0;
   if (args & has_i)  /* -i option? */
     doREPL(L);  /* do read-eval-print loop */
   else if (script == argc && !(args & (has_e | has_v))) {  /* no arguments? */
-    if (lua_stdin_is_tty()) {  /* running in interactive mode? */
+    if (lhat_stdin_is_tty()) {  /* running in interactive mode? */
       print_version();
       doREPL(L);  /* do read-eval-print loop */
     }
     else dofile(L, NULL);  /* executes stdin as a file */
   }
-  lua_pushboolean(L, 1);  /* signal no errors */
+  lhat_pushboolean(L, 1);  /* signal no errors */
   return 1;
 }
 
 
 int main (int argc, char **argv) {
   int status, result;
-  lua_State *L = luaL_newstate();  /* create state */
+  lhat_State *L = lhatL_newstate();  /* create state */
   if (L == NULL) {
     l_message(argv[0], "cannot create state: not enough memory");
     return EXIT_FAILURE;
   }
-  lua_pushcfunction(L, &pmain);  /* to call 'pmain' in protected mode */
-  lua_pushinteger(L, argc);  /* 1st argument */
-  lua_pushlightuserdata(L, argv); /* 2nd argument */
-  status = lua_pcall(L, 2, 1, 0);  /* do the call */
-  result = lua_toboolean(L, -1);  /* get result */
+  lhat_pushcfunction(L, &pmain);  /* to call 'pmain' in protected mode */
+  lhat_pushinteger(L, argc);  /* 1st argument */
+  lhat_pushlightuserdata(L, argv); /* 2nd argument */
+  status = lhat_pcall(L, 2, 1, 0);  /* do the call */
+  result = lhat_toboolean(L, -1);  /* get result */
   report(L, status);
-  lua_close(L);
-  return (result && status == LUA_OK) ? EXIT_SUCCESS : EXIT_FAILURE;
+  lhat_close(L);
+  return (result && status == LHAT_OK) ? EXIT_SUCCESS : EXIT_FAILURE;
 }
 

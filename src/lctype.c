@@ -1,22 +1,22 @@
 /*
 ** $Id: lctype.c,v 1.12 2014/11/02 19:19:04 roberto Exp $
-** 'ctype' functions for Lua
-** See Copyright Notice in lua.h
+** 'ctype' functions for Lhat
+** See Copyright Notice in lhat.h
 */
 
 #define lctype_c
-#define LUA_CORE
+#define LHAT_CORE
 
 #include "lprefix.h"
 
 
 #include "lctype.h"
 
-#if !LUA_USE_CTYPE	/* { */
+#if !LHAT_USE_CTYPE	/* { */
 
 #include <limits.h>
 
-LUAI_DDEF const lu_byte luai_ctype_[UCHAR_MAX + 2] = {
+LHATI_DDEF const lu_byte lhati_ctype_[UCHAR_MAX + 2] = {
   0x00,  /* EOZ */
   0x00,  0x00,  0x00,  0x00,  0x00,  0x00,  0x00,  0x00,	/* 0. */
   0x00,  0x08,  0x08,  0x08,  0x08,  0x08,  0x00,  0x00,

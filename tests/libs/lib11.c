@@ -1,9 +1,9 @@
-#include "lua.h"
+#include "lhat.h"
 
 /* function from lib1.c */
-LUAMOD_DEC int lib1_export (lua_State *L);
+LHATMOD_DEC int lib1_export (lhat_State *L);
 
-LUAMOD_API int luaopen_lib11 (lua_State *L) {
+LHATMOD_API int lhatopen_lib11 (lhat_State *L) {
   return lib1_export(L);
 }
 

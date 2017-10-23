@@ -38,7 +38,7 @@ do
   a = debug.getinfo(print, "L")
   assert(a.activelines == nil)
   local b = debug.getinfo(test, "SfL")
-  assert(b.name == nil and b.what == "Lua" and b.linedefined == testline and
+  assert(b.name == nil and b.what == "L^" and b.linedefined == testline and
          b.lastlinedefined == b.linedefined + 10 and
          b.func == test and not string.find(b.short_src, "%["))
   assert(b.activelines[b.linedefined + 1] and
@@ -85,7 +85,7 @@ repeat
   local f = function () return 1+1 and (not 1 or g.x()) end
   assert(f() == 'xixi')
   g = debug.getinfo(f)
-  assert(g.what == "Lua" and g.func == f and g.namewhat == "" and not g.name)
+  assert(g.what == "L^" and g.func == f and g.namewhat == "" and not g.name)
 
   function f (x, name)   -- local!
     name = name or 'f'
@@ -264,7 +264,7 @@ function f(a,b)
   assert(debug.setlocal(2, 3, "pera") == "AA".."AA")
   assert(debug.setlocal(2, 4, "maçã") == "B")
   x = debug.getinfo(2)
-  assert(x.func == g and x.what == "Lua" and x.name == 'g' and
+  assert(x.func == g and x.what == "L^" and x.name == 'g' and
          x.nups == 2 and string.find(x.source, "^@.*db%.lua$"))
   glob = glob+1
   assert(debug.getinfo(1, "l").currentline == L+1)
@@ -448,7 +448,7 @@ debug.sethook()
 -- tests for tail calls
 local function f (x)
   if x then
-    assert(debug.getinfo(1, "S").what == "Lua")
+    assert(debug.getinfo(1, "S").what == "L^")
     assert(debug.getinfo(1, "t").istailcall == true)
     local tail = debug.getinfo(2)
     assert(tail.func == g1 and tail.istailcall == true)

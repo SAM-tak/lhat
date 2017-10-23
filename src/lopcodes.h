@@ -1,7 +1,7 @@
 /*
 ** $Id: lopcodes.h,v 1.149 2016/07/19 17:12:21 roberto Exp $
-** Opcodes for Lua virtual machine
-** See Copyright Notice in lua.h
+** Opcodes for Lhat virtual machine
+** See Copyright Notice in lhat.h
 */
 
 #ifndef lopcodes_h
@@ -54,9 +54,9 @@ enum OpMode {iABC, iABx, iAsBx, iAx};  /* basic instruction format */
 /*
 ** limits for opcode arguments.
 ** we use (signed) int to manipulate most arguments,
-** so they must fit in LUAI_BITSINT-1 bits (-1 for sign)
+** so they must fit in LHATI_BITSINT-1 bits (-1 for sign)
 */
-#if SIZE_Bx < LUAI_BITSINT-1
+#if SIZE_Bx < LHATI_BITSINT-1
 #define MAXARG_Bx        ((1<<SIZE_Bx)-1)
 #define MAXARG_sBx        (MAXARG_Bx>>1)         /* 'sBx' is signed */
 #else
@@ -64,7 +64,7 @@ enum OpMode {iABC, iABx, iAsBx, iAx};  /* basic instruction format */
 #define MAXARG_sBx        MAX_INT
 #endif
 
-#if SIZE_Ax < LUAI_BITSINT-1
+#if SIZE_Ax < LHATI_BITSINT-1
 #define MAXARG_Ax	((1<<SIZE_Ax)-1)
 #else
 #define MAXARG_Ax	MAX_INT
@@ -278,16 +278,16 @@ enum OpArgMask {
   OpArgK   /* argument is a constant or register/constant */
 };
 
-LUAI_DDEC const lu_byte luaP_opmodes[NUM_OPCODES];
+LHATI_DDEC const lu_byte lhatP_opmodes[NUM_OPCODES];
 
-#define getOpMode(m)	(cast(enum OpMode, luaP_opmodes[m] & 3))
-#define getBMode(m)	(cast(enum OpArgMask, (luaP_opmodes[m] >> 4) & 3))
-#define getCMode(m)	(cast(enum OpArgMask, (luaP_opmodes[m] >> 2) & 3))
-#define testAMode(m)	(luaP_opmodes[m] & (1 << 6))
-#define testTMode(m)	(luaP_opmodes[m] & (1 << 7))
+#define getOpMode(m)	(cast(enum OpMode, lhatP_opmodes[m] & 3))
+#define getBMode(m)	(cast(enum OpArgMask, (lhatP_opmodes[m] >> 4) & 3))
+#define getCMode(m)	(cast(enum OpArgMask, (lhatP_opmodes[m] >> 2) & 3))
+#define testAMode(m)	(lhatP_opmodes[m] & (1 << 6))
+#define testTMode(m)	(lhatP_opmodes[m] & (1 << 7))
 
 
-LUAI_DDEC const char *const luaP_opnames[NUM_OPCODES+1];  /* opcode names */
+LHATI_DDEC const char *const lhatP_opnames[NUM_OPCODES+1];  /* opcode names */
 
 
 /* number of list items to accumulate before a SETLIST instruction */

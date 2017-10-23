@@ -1,18 +1,18 @@
 /*
 ** $Id: lundump.c,v 2.44 2015/11/02 16:09:30 roberto Exp $
-** load precompiled Lua chunks
-** See Copyright Notice in lua.h
+** load precompiled Lhat chunks
+** See Copyright Notice in lhat.h
 */
 
 #define lundump_c
-#define LUA_CORE
+#define LHAT_CORE
 
 #include "lprefix.h"
 
 
 #include <string.h>
 
-#include "lua.h"
+#include "lhat.h"
 
 #include "ldebug.h"
 #include "ldo.h"
@@ -24,21 +24,21 @@
 #include "lzio.h"
 
 
-#if !defined(luai_verifycode)
-#define luai_verifycode(L,b,f)  /* empty */
+#if !defined(lhati_verifycode)
+#define lhati_verifycode(L,b,f)  /* empty */
 #endif
 
 
 typedef struct {
-  lua_State *L;
+  lhat_State *L;
   ZIO *Z;
   const char *name;
 } LoadState;
 
 
 static l_noret error(LoadState *S, const char *why) {
-  luaO_pushfstring(S->L, "%s: %s precompiled chunk", S->name, why);
-  luaD_throw(S->L, LUA_ERRSYNTAX);
+  lhatO_pushfstring(S->L, "%s: %s precompiled chunk", S->name, why);
+  lhatD_throw(S->L, LHAT_ERRSYNTAX);
 }
 
 
@@ -49,7 +49,7 @@ static l_noret error(LoadState *S, const char *why) {
 #define LoadVector(S,b,n)	LoadBlock(S,b,(n)*sizeof((b)[0]))
 
 static void LoadBlock (LoadState *S, void *b, size_t size) {
-  if (luaZ_read(S->Z, b, size) != 0)
+  if (lhatZ_read(S->Z, b, size) != 0)
     error(S, "truncated");
 }
 
@@ -71,15 +71,15 @@ static int LoadInt (LoadState *S) {
 }
 
 
-static lua_Number LoadNumber (LoadState *S) {
-  lua_Number x;
+static lhat_Number LoadNumber (LoadState *S) {
+  lhat_Number x;
   LoadVar(S, x);
   return x;
 }
 
 
-static lua_Integer LoadInteger (LoadState *S) {
-  lua_Integer x;
+static lhat_Integer LoadInteger (LoadState *S) {
+  lhat_Integer x;
   LoadVar(S, x);
   return x;
 }
@@ -91,13 +91,13 @@ static TString *LoadString (LoadState *S) {
     LoadVar(S, size);
   if (size == 0)
     return NULL;
-  else if (--size <= LUAI_MAXSHORTLEN) {  /* short string? */
-    char buff[LUAI_MAXSHORTLEN];
+  else if (--size <= LHATI_MAXSHORTLEN) {  /* short string? */
+    char buff[LHATI_MAXSHORTLEN];
     LoadVector(S, buff, size);
-    return luaS_newlstr(S->L, buff, size);
+    return lhatS_newlstr(S->L, buff, size);
   }
   else {  /* long string */
-    TString *ts = luaS_createlngstrobj(S->L, size);
+    TString *ts = lhatS_createlngstrobj(S->L, size);
     LoadVector(S, getstr(ts), size);  /* load directly in final place */
     return ts;
   }
@@ -106,7 +106,7 @@ static TString *LoadString (LoadState *S) {
 
 static void LoadCode (LoadState *S, Proto *f) {
   int n = LoadInt(S);
-  f->code = luaM_newvector(S->L, n, Instruction);
+  f->code = lhatM_newvector(S->L, n, Instruction);
   f->sizecode = n;
   LoadVector(S, f->code, n);
 }
@@ -118,7 +118,7 @@ static void LoadFunction(LoadState *S, Proto *f, TString *psource);
 static void LoadConstants (LoadState *S, Proto *f) {
   int i;
   int n = LoadInt(S);
-  f->k = luaM_newvector(S->L, n, TValue);
+  f->k = lhatM_newvector(S->L, n, TValue);
   f->sizek = n;
   for (i = 0; i < n; i++)
     setnilvalue(&f->k[i]);
@@ -126,24 +126,24 @@ static void LoadConstants (LoadState *S, Proto *f) {
     TValue *o = &f->k[i];
     int t = LoadByte(S);
     switch (t) {
-    case LUA_TNIL:
+    case LHAT_TNIL:
       setnilvalue(o);
       break;
-    case LUA_TBOOLEAN:
+    case LHAT_TBOOLEAN:
       setbvalue(o, LoadByte(S));
       break;
-    case LUA_TNUMFLT:
+    case LHAT_TNUMFLT:
       setfltvalue(o, LoadNumber(S));
       break;
-    case LUA_TNUMINT:
+    case LHAT_TNUMINT:
       setivalue(o, LoadInteger(S));
       break;
-    case LUA_TSHRSTR:
-    case LUA_TLNGSTR:
+    case LHAT_TSHRSTR:
+    case LHAT_TLNGSTR:
       setsvalue2n(S->L, o, LoadString(S));
       break;
     default:
-      lua_assert(0);
+      lhat_assert(0);
     }
   }
 }
@@ -152,12 +152,12 @@ static void LoadConstants (LoadState *S, Proto *f) {
 static void LoadProtos (LoadState *S, Proto *f) {
   int i;
   int n = LoadInt(S);
-  f->p = luaM_newvector(S->L, n, Proto *);
+  f->p = lhatM_newvector(S->L, n, Proto *);
   f->sizep = n;
   for (i = 0; i < n; i++)
     f->p[i] = NULL;
   for (i = 0; i < n; i++) {
-    f->p[i] = luaF_newproto(S->L);
+    f->p[i] = lhatF_newproto(S->L);
     LoadFunction(S, f->p[i], f->source);
   }
 }
@@ -166,7 +166,7 @@ static void LoadProtos (LoadState *S, Proto *f) {
 static void LoadUpvalues (LoadState *S, Proto *f) {
   int i, n;
   n = LoadInt(S);
-  f->upvalues = luaM_newvector(S->L, n, Upvaldesc);
+  f->upvalues = lhatM_newvector(S->L, n, Upvaldesc);
   f->sizeupvalues = n;
   for (i = 0; i < n; i++)
     f->upvalues[i].name = NULL;
@@ -180,11 +180,11 @@ static void LoadUpvalues (LoadState *S, Proto *f) {
 static void LoadDebug (LoadState *S, Proto *f) {
   int i, n;
   n = LoadInt(S);
-  f->lineinfo = luaM_newvector(S->L, n, int);
+  f->lineinfo = lhatM_newvector(S->L, n, int);
   f->sizelineinfo = n;
   LoadVector(S, f->lineinfo, n);
   n = LoadInt(S);
-  f->locvars = luaM_newvector(S->L, n, LocVar);
+  f->locvars = lhatM_newvector(S->L, n, LocVar);
   f->sizelocvars = n;
   for (i = 0; i < n; i++)
     f->locvars[i].varname = NULL;
@@ -217,7 +217,7 @@ static void LoadFunction (LoadState *S, Proto *f, TString *psource) {
 
 
 static void checkliteral (LoadState *S, const char *s, const char *msg) {
-  char buff[sizeof(LUA_SIGNATURE) + sizeof(LUAC_DATA)]; /* larger than both */
+  char buff[sizeof(LHAT_SIGNATURE) + sizeof(LHATC_DATA)]; /* larger than both */
   size_t len = strlen(s);
   LoadVector(S, buff, len);
   if (memcmp(s, buff, len) != 0)
@@ -227,27 +227,27 @@ static void checkliteral (LoadState *S, const char *s, const char *msg) {
 
 static void fchecksize (LoadState *S, size_t size, const char *tname) {
   if (LoadByte(S) != size)
-    error(S, luaO_pushfstring(S->L, "%s size mismatch in", tname));
+    error(S, lhatO_pushfstring(S->L, "%s size mismatch in", tname));
 }
 
 
 #define checksize(S,t)	fchecksize(S,sizeof(t),#t)
 
 static void checkHeader (LoadState *S) {
-  checkliteral(S, LUA_SIGNATURE + 1, "not a");  /* 1st char already checked */
-  if (LoadByte(S) != LUAC_VERSION)
+  checkliteral(S, LHAT_SIGNATURE + 1, "not a");  /* 1st char already checked */
+  if (LoadByte(S) != LHATC_VERSION)
     error(S, "version mismatch in");
-  if (LoadByte(S) != LUAC_FORMAT)
+  if (LoadByte(S) != LHATC_FORMAT)
     error(S, "format mismatch in");
-  checkliteral(S, LUAC_DATA, "corrupted");
+  checkliteral(S, LHATC_DATA, "corrupted");
   checksize(S, int);
   checksize(S, size_t);
   checksize(S, Instruction);
-  checksize(S, lua_Integer);
-  checksize(S, lua_Number);
-  if (LoadInteger(S) != LUAC_INT)
+  checksize(S, lhat_Integer);
+  checksize(S, lhat_Number);
+  if (LoadInteger(S) != LHATC_INT)
     error(S, "endianness mismatch in");
-  if (LoadNumber(S) != LUAC_NUM)
+  if (LoadNumber(S) != LHATC_NUM)
     error(S, "float format mismatch in");
 }
 
@@ -255,25 +255,25 @@ static void checkHeader (LoadState *S) {
 /*
 ** load precompiled chunk
 */
-LClosure *luaU_undump(lua_State *L, ZIO *Z, const char *name) {
+LClosure *lhatU_undump(lhat_State *L, ZIO *Z, const char *name) {
   LoadState S;
   LClosure *cl;
   if (*name == '@' || *name == '=')
     S.name = name + 1;
-  else if (*name == LUA_SIGNATURE[0])
+  else if (*name == LHAT_SIGNATURE[0])
     S.name = "binary string";
   else
     S.name = name;
   S.L = L;
   S.Z = Z;
   checkHeader(&S);
-  cl = luaF_newLclosure(L, LoadByte(&S));
+  cl = lhatF_newLclosure(L, LoadByte(&S));
   setclLvalue(L, L->top, cl);
-  luaD_inctop(L);
-  cl->p = luaF_newproto(L);
+  lhatD_inctop(L);
+  cl->p = lhatF_newproto(L);
   LoadFunction(&S, cl->p, NULL);
-  lua_assert(cl->nupvalues == cl->p->sizeupvalues);
-  luai_verifycode(L, buff, cl->p);
+  lhat_assert(cl->nupvalues == cl->p->sizeupvalues);
+  lhati_verifycode(L, buff, cl->p);
   return cl;
 }
 

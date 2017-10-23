@@ -3,7 +3,7 @@
 -- See Copyright Notice at the end of this file
 
 
-local version = "Lua 5.3"
+local version = "L^ 0.1"
 if _VERSION ~= version then
   io.stderr:write("\nThis test suite is for ", version, ", not for ", _VERSION,
     "\nExiting tests\n")
@@ -110,9 +110,9 @@ else
       "\n    ---- total memory: %s (%.0fK), max use: %s,  blocks: %d\n",
       F(total), count, F(maxmem), numblocks))
     print(format("\t(strings:  %d, tables: %d, functions: %d, "..
-                 "\n\tudata: %d, threads: %d)",
+                 "\n\tuserdata: %d, coroutines: %d)",
                  T.totalmem"string", T.totalmem"table", T.totalmem"function",
-                 T.totalmem"userdata", T.totalmem"thread"))
+                 T.totalmem"userdata", T.totalmem"coroutine"))
   end
 end
 

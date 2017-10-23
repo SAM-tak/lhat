@@ -364,8 +364,8 @@ assert((function (a) return a end)() == nil)
 print("testing binary chunks")
 do
   local header = string.pack("c4BBc6BBBBBj",
-    "\27Lua",                -- signature
-    5*16 + 3,                -- version 5.3
+    "\27\27L^",              -- signature
+    (0<<8) | 1,              -- version 0.1
     0,                       -- format
     "\x19\x93\r\n\x1a\n",    -- data
     string.packsize("i"),    -- sizeof(int)

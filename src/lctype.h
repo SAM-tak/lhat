@@ -1,35 +1,35 @@
 /*
 ** $Id: lctype.h,v 1.12 2011/07/15 12:50:29 roberto Exp $
-** 'ctype' functions for Lua
-** See Copyright Notice in lua.h
+** 'ctype' functions for Lhat
+** See Copyright Notice in lhat.h
 */
 
 #ifndef lctype_h
 #define lctype_h
 
-#include "lua.h"
+#include "lhat.h"
 
 
 /*
 ** WARNING: the functions defined here do not necessarily correspond
 ** to the similar functions in the standard C ctype.h. They are
-** optimized for the specific needs of Lua
+** optimized for the specific needs of Lhat
 */
 
-#if !defined(LUA_USE_CTYPE)
+#if !defined(LHAT_USE_CTYPE)
 
 #if 'A' == 65 && '0' == 48
 /* ASCII case: can use its own tables; faster and fixed */
-#define LUA_USE_CTYPE	0
+#define LHAT_USE_CTYPE	0
 #else
 /* must use standard C ctype */
-#define LUA_USE_CTYPE	1
+#define LHAT_USE_CTYPE	1
 #endif
 
 #endif
 
 
-#if !LUA_USE_CTYPE	/* { */
+#if !LHAT_USE_CTYPE	/* { */
 
 #include <limits.h>
 
@@ -49,10 +49,10 @@
 /*
 ** add 1 to char to allow index -1 (EOZ)
 */
-#define testprop(c,p)	(luai_ctype_[(c)+1] & (p))
+#define testprop(c,p)	(lhati_ctype_[(c)+1] & (p))
 
 /*
-** 'lalpha' (Lua alphabetic) and 'lalnum' (Lua alphanumeric) both include '_'
+** 'lalpha' (Lhat alphabetic) and 'lalnum' (Lhat alphanumeric) both include '_'
 */
 #define lislalpha(c)	testprop(c, MASK(ALPHABIT))
 #define lislalnum(c)	testprop(c, (MASK(ALPHABIT) | MASK(DIGITBIT)))
@@ -68,7 +68,7 @@
 
 
 /* two more entries for 0 and -1 (EOZ) */
-LUAI_DDEC const lu_byte luai_ctype_[UCHAR_MAX + 2];
+LHATI_DDEC const lu_byte lhati_ctype_[UCHAR_MAX + 2];
 
 
 #else			/* }{ */

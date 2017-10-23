@@ -1,7 +1,7 @@
 /*
 ** $Id: lparser.h,v 1.76 2015/12/30 18:16:13 roberto Exp $
-** Lua Parser
-** See Copyright Notice in lua.h
+** Lhat Parser
+** See Copyright Notice in lhat.h
 */
 
 #ifndef lparser_h
@@ -54,8 +54,8 @@ typedef enum {
 typedef struct expdesc {
   expkind k;
   union {
-    lua_Integer ival;    /* for VKINT */
-    lua_Number nval;  /* for VKFLT */
+    lhat_Integer ival;    /* for VKINT */
+    lhat_Number nval;  /* for VKFLT */
     int info;  /* for generic use */
     struct {  /* for indexed variables (VINDEXED) */
       short idx;  /* index (R/K) */
@@ -126,7 +126,7 @@ typedef struct FuncState {
 } FuncState;
 
 
-LUAI_FUNC LClosure *luaY_parser (lua_State *L, ZIO *z, Mbuffer *buff,
+LHATI_FUNC LClosure *lhatY_parser (lhat_State *L, ZIO *z, Mbuffer *buff,
                                  Dyndata *dyd, const char *name, int firstchar);
 
 

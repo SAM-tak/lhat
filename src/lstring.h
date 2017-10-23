@@ -1,7 +1,7 @@
 /*
 ** $Id: lstring.h,v 1.61 2015/11/03 15:36:01 roberto Exp $
-** String table (keep all strings handled by Lua)
-** See Copyright Notice in lua.h
+** String table (keep all strings handled by Lhat)
+** See Copyright Notice in lhat.h
 */
 
 #ifndef lstring_h
@@ -17,33 +17,33 @@
 #define sizeludata(l)	(sizeof(union UUdata) + (l))
 #define sizeudata(u)	sizeludata((u)->len)
 
-#define luaS_newliteral(L, s)	(luaS_newlstr(L, "" s, \
+#define lhatS_newliteral(L, s)	(lhatS_newlstr(L, "" s, \
                                  (sizeof(s)/sizeof(char))-1))
 
 
 /*
 ** test whether a string is a reserved word
 */
-#define isreserved(s)	((s)->tt == LUA_TSHRSTR && (s)->extra > 0)
+#define isreserved(s)	((s)->tt == LHAT_TSHRSTR && (s)->extra > 0)
 
 
 /*
 ** equality for short strings, which are always internalized
 */
-#define eqshrstr(a,b)	check_exp((a)->tt == LUA_TSHRSTR, (a) == (b))
+#define eqshrstr(a,b)	check_exp((a)->tt == LHAT_TSHRSTR, (a) == (b))
 
 
-LUAI_FUNC unsigned int luaS_hash (const char *str, size_t l, unsigned int seed);
-LUAI_FUNC unsigned int luaS_hashlongstr (TString *ts);
-LUAI_FUNC int luaS_eqlngstr (TString *a, TString *b);
-LUAI_FUNC void luaS_resize (lua_State *L, int newsize);
-LUAI_FUNC void luaS_clearcache (global_State *g);
-LUAI_FUNC void luaS_init (lua_State *L);
-LUAI_FUNC void luaS_remove (lua_State *L, TString *ts);
-LUAI_FUNC Udata *luaS_newudata (lua_State *L, size_t s);
-LUAI_FUNC TString *luaS_newlstr (lua_State *L, const char *str, size_t l);
-LUAI_FUNC TString *luaS_new (lua_State *L, const char *str);
-LUAI_FUNC TString *luaS_createlngstrobj (lua_State *L, size_t l);
+LHATI_FUNC unsigned int lhatS_hash (const char *str, size_t l, unsigned int seed);
+LHATI_FUNC unsigned int lhatS_hashlongstr (TString *ts);
+LHATI_FUNC int lhatS_eqlngstr (TString *a, TString *b);
+LHATI_FUNC void lhatS_resize (lhat_State *L, int newsize);
+LHATI_FUNC void lhatS_clearcache (global_State *g);
+LHATI_FUNC void lhatS_init (lhat_State *L);
+LHATI_FUNC void lhatS_remove (lhat_State *L, TString *ts);
+LHATI_FUNC Udata *lhatS_newudata (lhat_State *L, size_t s);
+LHATI_FUNC TString *lhatS_newlstr (lhat_State *L, const char *str, size_t l);
+LHATI_FUNC TString *lhatS_new (lhat_State *L, const char *str);
+LHATI_FUNC TString *lhatS_createlngstrobj (lhat_State *L, size_t l);
 
 
 #endif

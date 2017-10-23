@@ -1,11 +1,11 @@
 /*
 ** $Id: lobject.c,v 2.113 2016/12/22 13:08:50 roberto Exp $
-** Some generic functions over Lua objects
-** See Copyright Notice in lua.h
+** Some generic functions over Lhat objects
+** See Copyright Notice in lhat.h
 */
 
 #define lobject_c
-#define LUA_CORE
+#define LHAT_CORE
 
 #include "lprefix.h"
 
@@ -17,7 +17,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "lua.h"
+#include "lhat.h"
 
 #include "lctype.h"
 #include "ldebug.h"
@@ -30,7 +30,7 @@
 
 
 
-LUAI_DDEF const TValue luaO_nilobject_ = {NILCONSTANT};
+LHATI_DDEF const TValue lhatO_nilobject_ = {NILCONSTANT};
 
 
 /*
@@ -38,7 +38,7 @@ LUAI_DDEF const TValue luaO_nilobject_ = {NILCONSTANT};
 ** (eeeeexxx), where the real value is (1xxx) * 2^(eeeee - 1) if
 ** eeeee != 0 and (xxx) otherwise.
 */
-int luaO_int2fb (unsigned int x) {
+int lhatO_int2fb (unsigned int x) {
   int e = 0;  /* exponent */
   if (x < 8) return x;
   while (x >= (8 << 4)) {  /* coarse steps */
@@ -54,7 +54,7 @@ int luaO_int2fb (unsigned int x) {
 
 
 /* converts back */
-int luaO_fb2int (int x) {
+int lhatO_fb2int (int x) {
   return (x < 8) ? x : ((x & 7) + 8) << ((x >> 3) - 1);
 }
 
@@ -62,7 +62,7 @@ int luaO_fb2int (int x) {
 /*
 ** Computes ceil(log2(x))
 */
-int luaO_ceillog2 (unsigned int x) {
+int lhatO_ceillog2 (unsigned int x) {
   static const lu_byte log_2[256] = {  /* log_2[i] = ceil(log2(i - 1)) */
     0,1,2,2,3,3,3,3,4,4,4,4,4,4,4,4,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,
     6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,
@@ -80,61 +80,61 @@ int luaO_ceillog2 (unsigned int x) {
 }
 
 
-static lua_Integer intarith (lua_State *L, int op, lua_Integer v1,
-                                                   lua_Integer v2) {
+static lhat_Integer intarith (lhat_State *L, int op, lhat_Integer v1,
+                                                   lhat_Integer v2) {
   switch (op) {
-    case LUA_OPADD: return intop(+, v1, v2);
-    case LUA_OPSUB:return intop(-, v1, v2);
-    case LUA_OPMUL:return intop(*, v1, v2);
-    case LUA_OPMOD: return luaV_mod(L, v1, v2);
-    case LUA_OPIDIV: return luaV_div(L, v1, v2);
-    case LUA_OPBAND: return intop(&, v1, v2);
-    case LUA_OPBOR: return intop(|, v1, v2);
-    case LUA_OPBXOR: return intop(^, v1, v2);
-    case LUA_OPSHL: return luaV_shiftl(v1, v2);
-    case LUA_OPSHR: return luaV_shiftl(v1, -v2);
-    case LUA_OPUNM: return intop(-, 0, v1);
-    case LUA_OPBNOT: return intop(^, ~l_castS2U(0), v1);
-    default: lua_assert(0); return 0;
+    case LHAT_OPADD: return intop(+, v1, v2);
+    case LHAT_OPSUB:return intop(-, v1, v2);
+    case LHAT_OPMUL:return intop(*, v1, v2);
+    case LHAT_OPMOD: return lhatV_mod(L, v1, v2);
+    case LHAT_OPIDIV: return lhatV_div(L, v1, v2);
+    case LHAT_OPBAND: return intop(&, v1, v2);
+    case LHAT_OPBOR: return intop(|, v1, v2);
+    case LHAT_OPBXOR: return intop(^, v1, v2);
+    case LHAT_OPSHL: return lhatV_shiftl(v1, v2);
+    case LHAT_OPSHR: return lhatV_shiftl(v1, -v2);
+    case LHAT_OPUNM: return intop(-, 0, v1);
+    case LHAT_OPBNOT: return intop(^, ~l_castS2U(0), v1);
+    default: lhat_assert(0); return 0;
   }
 }
 
 
-static lua_Number numarith (lua_State *L, int op, lua_Number v1,
-                                                  lua_Number v2) {
+static lhat_Number numarith (lhat_State *L, int op, lhat_Number v1,
+                                                  lhat_Number v2) {
   switch (op) {
-    case LUA_OPADD: return luai_numadd(L, v1, v2);
-    case LUA_OPSUB: return luai_numsub(L, v1, v2);
-    case LUA_OPMUL: return luai_nummul(L, v1, v2);
-    case LUA_OPDIV: return luai_numdiv(L, v1, v2);
-    case LUA_OPPOW: return luai_numpow(L, v1, v2);
-    case LUA_OPIDIV: return luai_numidiv(L, v1, v2);
-    case LUA_OPUNM: return luai_numunm(L, v1);
-    case LUA_OPMOD: {
-      lua_Number m;
-      luai_nummod(L, v1, v2, m);
+    case LHAT_OPADD: return lhati_numadd(L, v1, v2);
+    case LHAT_OPSUB: return lhati_numsub(L, v1, v2);
+    case LHAT_OPMUL: return lhati_nummul(L, v1, v2);
+    case LHAT_OPDIV: return lhati_numdiv(L, v1, v2);
+    case LHAT_OPPOW: return lhati_numpow(L, v1, v2);
+    case LHAT_OPIDIV: return lhati_numidiv(L, v1, v2);
+    case LHAT_OPUNM: return lhati_numunm(L, v1);
+    case LHAT_OPMOD: {
+      lhat_Number m;
+      lhati_nummod(L, v1, v2, m);
       return m;
     }
-    default: lua_assert(0); return 0;
+    default: lhat_assert(0); return 0;
   }
 }
 
 
-void luaO_arith (lua_State *L, int op, const TValue *p1, const TValue *p2,
+void lhatO_arith (lhat_State *L, int op, const TValue *p1, const TValue *p2,
                  TValue *res) {
   switch (op) {
-    case LUA_OPBAND: case LUA_OPBOR: case LUA_OPBXOR:
-    case LUA_OPSHL: case LUA_OPSHR:
-    case LUA_OPBNOT: {  /* operate only on integers */
-      lua_Integer i1; lua_Integer i2;
+    case LHAT_OPBAND: case LHAT_OPBOR: case LHAT_OPBXOR:
+    case LHAT_OPSHL: case LHAT_OPSHR:
+    case LHAT_OPBNOT: {  /* operate only on integers */
+      lhat_Integer i1; lhat_Integer i2;
       if (tointeger(p1, &i1) && tointeger(p2, &i2)) {
         setivalue(res, intarith(L, op, i1, i2));
         return;
       }
       else break;  /* go to the end */
     }
-    case LUA_OPDIV: case LUA_OPPOW: {  /* operate only on floats */
-      lua_Number n1; lua_Number n2;
+    case LHAT_OPDIV: case LHAT_OPPOW: {  /* operate only on floats */
+      lhat_Number n1; lhat_Number n2;
       if (tonumber(p1, &n1) && tonumber(p2, &n2)) {
         setfltvalue(res, numarith(L, op, n1, n2));
         return;
@@ -142,7 +142,7 @@ void luaO_arith (lua_State *L, int op, const TValue *p1, const TValue *p2,
       else break;  /* go to the end */
     }
     default: {  /* other operations */
-      lua_Number n1; lua_Number n2;
+      lhat_Number n1; lhat_Number n2;
       if (ttisinteger(p1) && ttisinteger(p2)) {
         setivalue(res, intarith(L, op, ivalue(p1), ivalue(p2)));
         return;
@@ -155,12 +155,12 @@ void luaO_arith (lua_State *L, int op, const TValue *p1, const TValue *p2,
     }
   }
   /* could not perform raw operation; try metamethod */
-  lua_assert(L != NULL);  /* should not fail when folding (compile time) */
-  luaT_trybinTM(L, p1, p2, res, cast(TMS, (op - LUA_OPADD) + TM_ADD));
+  lhat_assert(L != NULL);  /* should not fail when folding (compile time) */
+  lhatT_trybinTM(L, p1, p2, res, cast(TMS, (op - LHAT_OPADD) + TM_ADD));
 }
 
 
-int luaO_hexavalue (int c) {
+int lhatO_hexavalue (int c) {
   if (lisdigit(c)) return c - '0';
   else return (ltolower(c) - 'a') + 10;
 }
@@ -176,11 +176,11 @@ static int isneg (const char **s) {
 
 /*
 ** {==================================================================
-** Lua's implementation for 'lua_strx2number'
+** Lhat's implementation for 'lhat_strx2number'
 ** ===================================================================
 */
 
-#if !defined(lua_strx2number)
+#if !defined(lhat_strx2number)
 
 /* maximum number of significant digits to read (to avoid overflows
    even with single floats) */
@@ -190,9 +190,9 @@ static int isneg (const char **s) {
 ** convert an hexadecimal numeric string to a number, following
 ** C99 specification for 'strtod'
 */
-static lua_Number lua_strx2number (const char *s, char **endptr) {
-  int dot = lua_getlocaledecpoint();
-  lua_Number r = 0.0;  /* result (accumulator) */
+static lhat_Number lhat_strx2number (const char *s, char **endptr) {
+  int dot = lhat_getlocaledecpoint();
+  lhat_Number r = 0.0;  /* result (accumulator) */
   int sigdig = 0;  /* number of significant digits */
   int nosigdig = 0;  /* number of non-significant digits */
   int e = 0;  /* exponent correction */
@@ -212,7 +212,7 @@ static lua_Number lua_strx2number (const char *s, char **endptr) {
       if (sigdig == 0 && *s == '0')  /* non-significant digit (zero)? */
         nosigdig++;
       else if (++sigdig <= MAXSIGDIG)  /* can read it without overflow? */
-          r = (r * cast_num(16.0)) + luaO_hexavalue(*s);
+          r = (r * cast_num(16.0)) + lhatO_hexavalue(*s);
       else e++; /* too many digits; ignore, but still count for exponent */
       if (hasdot) e--;  /* decimal digit? correct exponent */
     }
@@ -248,10 +248,10 @@ static lua_Number lua_strx2number (const char *s, char **endptr) {
 #define L_MAXLENNUM	200
 #endif
 
-static const char *l_str2dloc (const char *s, lua_Number *result, int mode) {
+static const char *l_str2dloc (const char *s, lhat_Number *result, int mode) {
   char *endptr;
-  *result = (mode == 'x') ? lua_strx2number(s, &endptr)  /* try to convert */
-                          : lua_str2number(s, &endptr);
+  *result = (mode == 'x') ? lhat_strx2number(s, &endptr)  /* try to convert */
+                          : lhat_str2number(s, &endptr);
   if (endptr == s) return NULL;  /* nothing recognized? */
   while (lisspace(cast_uchar(*endptr))) endptr++;  /* skip trailing spaces */
   return (*endptr == '\0') ? endptr : NULL;  /* OK if no trailing characters */
@@ -259,7 +259,7 @@ static const char *l_str2dloc (const char *s, lua_Number *result, int mode) {
 
 
 /*
-** Convert string 's' to a Lua number (put in 'result'). Return NULL
+** Convert string 's' to a Lhat number (put in 'result'). Return NULL
 ** on fail or the address of the ending '\0' on success.
 ** 'pmode' points to (and 'mode' contains) special things in the string:
 ** - 'x'/'X' means an hexadecimal numeral
@@ -271,7 +271,7 @@ static const char *l_str2dloc (const char *s, lua_Number *result, int mode) {
 ** to a buffer (because 's' is read-only), changes the dot to the
 ** current locale radix mark, and tries to convert again.
 */
-static const char *l_str2d (const char *s, lua_Number *result) {
+static const char *l_str2d (const char *s, lhat_Number *result) {
   const char *endptr;
   const char *pmode = strpbrk(s, ".xXnN");
   int mode = pmode ? ltolower(cast_uchar(*pmode)) : 0;
@@ -284,7 +284,7 @@ static const char *l_str2d (const char *s, lua_Number *result) {
     if (strlen(s) > L_MAXLENNUM || pdot == NULL)
       return NULL;  /* string too long or no dot; fail */
     strcpy(buff, s);  /* copy string to buffer */
-    buff[pdot - s] = lua_getlocaledecpoint();  /* correct decimal point */
+    buff[pdot - s] = lhat_getlocaledecpoint();  /* correct decimal point */
     endptr = l_str2dloc(buff, result, mode);  /* try again */
     if (endptr != NULL)
       endptr = s + (endptr - buff);  /* make relative to 's' */
@@ -293,11 +293,11 @@ static const char *l_str2d (const char *s, lua_Number *result) {
 }
 
 
-#define MAXBY10		cast(lua_Unsigned, LUA_MAXINTEGER / 10)
-#define MAXLASTD	cast_int(LUA_MAXINTEGER % 10)
+#define MAXBY10		cast(lhat_Unsigned, LHAT_MAXINTEGER / 10)
+#define MAXLASTD	cast_int(LHAT_MAXINTEGER % 10)
 
-static const char *l_str2int (const char *s, lua_Integer *result) {
-  lua_Unsigned a = 0;
+static const char *l_str2int (const char *s, lhat_Integer *result) {
+  lhat_Unsigned a = 0;
   int empty = 1;
   int neg;
   while (lisspace(cast_uchar(*s))) s++;  /* skip initial spaces */
@@ -306,7 +306,7 @@ static const char *l_str2int (const char *s, lua_Integer *result) {
       (s[1] == 'x' || s[1] == 'X')) {  /* hex? */
     s += 2;  /* skip '0x' */
     for (; lisxdigit(cast_uchar(*s)); s++) {
-      a = a * 16 + luaO_hexavalue(*s);
+      a = a * 16 + lhatO_hexavalue(*s);
       empty = 0;
     }
   }
@@ -328,8 +328,8 @@ static const char *l_str2int (const char *s, lua_Integer *result) {
 }
 
 
-size_t luaO_str2num (const char *s, TValue *o) {
-  lua_Integer i; lua_Number n;
+size_t lhatO_str2num (const char *s, TValue *o) {
+  lhat_Integer i; lhat_Number n;
   const char *e;
   if ((e = l_str2int(s, &i)) != NULL) {  /* try as an integer */
     setivalue(o, i);
@@ -343,9 +343,9 @@ size_t luaO_str2num (const char *s, TValue *o) {
 }
 
 
-int luaO_utf8esc (char *buff, unsigned long x) {
+int lhatO_utf8esc (char *buff, unsigned long x) {
   int n = 1;  /* number of bytes put in buffer (backwards) */
-  lua_assert(x <= 0x10FFFF);
+  lhat_assert(x <= 0x10FFFF);
   if (x < 0x80)  /* ascii? */
     buff[UTF8BUFFSZ - 1] = cast(char, x);
   else {  /* need continuation bytes */
@@ -368,36 +368,36 @@ int luaO_utf8esc (char *buff, unsigned long x) {
 /*
 ** Convert a number object to a string
 */
-void luaO_tostring (lua_State *L, StkId obj) {
+void lhatO_tostring (lhat_State *L, StkId obj) {
   char buff[MAXNUMBER2STR];
   size_t len;
-  lua_assert(ttisnumber(obj));
+  lhat_assert(ttisnumber(obj));
   if (ttisinteger(obj))
-    len = lua_integer2str(buff, sizeof(buff), ivalue(obj));
+    len = lhat_integer2str(buff, sizeof(buff), ivalue(obj));
   else {
-    len = lua_number2str(buff, sizeof(buff), fltvalue(obj));
-#if !defined(LUA_COMPAT_FLOATSTRING)
+    len = lhat_number2str(buff, sizeof(buff), fltvalue(obj));
+#if !defined(LHAT_COMPAT_FLOATSTRING)
     if (buff[strspn(buff, "-0123456789")] == '\0') {  /* looks like an int? */
-      buff[len++] = lua_getlocaledecpoint();
+      buff[len++] = lhat_getlocaledecpoint();
       buff[len++] = '0';  /* adds '.0' to result */
     }
 #endif
   }
-  setsvalue2s(L, obj, luaS_newlstr(L, buff, len));
+  setsvalue2s(L, obj, lhatS_newlstr(L, buff, len));
 }
 
 
-static void pushstr (lua_State *L, const char *str, size_t l) {
-  setsvalue2s(L, L->top, luaS_newlstr(L, str, l));
-  luaD_inctop(L);
+static void pushstr (lhat_State *L, const char *str, size_t l) {
+  setsvalue2s(L, L->top, lhatS_newlstr(L, str, l));
+  lhatD_inctop(L);
 }
 
 
 /*
 ** this function handles only '%d', '%c', '%f', '%p', and '%s'
-   conventional formats, plus Lua-specific '%I' and '%U'
+   conventional formats, plus Lhat-specific '%I' and '%U'
 */
-const char *luaO_pushvfstring (lua_State *L, const char *fmt, va_list argp) {
+const char *lhatO_pushvfstring (lhat_State *L, const char *fmt, va_list argp) {
   int n = 0;
   for (;;) {
     const char *e = strchr(fmt, '%');
@@ -415,22 +415,22 @@ const char *luaO_pushvfstring (lua_State *L, const char *fmt, va_list argp) {
         if (lisprint(cast_uchar(buff)))
           pushstr(L, &buff, 1);
         else  /* non-printable character; print its code */
-          luaO_pushfstring(L, "<\\%d>", cast_uchar(buff));
+          lhatO_pushfstring(L, "<\\%d>", cast_uchar(buff));
         break;
       }
       case 'd': {  /* an 'int' */
         setivalue(L->top, va_arg(argp, int));
         goto top2str;
       }
-      case 'I': {  /* a 'lua_Integer' */
-        setivalue(L->top, cast(lua_Integer, va_arg(argp, l_uacInt)));
+      case 'I': {  /* a 'lhat_Integer' */
+        setivalue(L->top, cast(lhat_Integer, va_arg(argp, l_uacInt)));
         goto top2str;
       }
-      case 'f': {  /* a 'lua_Number' */
+      case 'f': {  /* a 'lhat_Number' */
         setfltvalue(L->top, cast_num(va_arg(argp, l_uacNumber)));
       top2str:  /* convert the top element to a string */
-        luaD_inctop(L);
-        luaO_tostring(L, L->top - 1);
+        lhatD_inctop(L);
+        lhatO_tostring(L, L->top - 1);
         break;
       }
       case 'p': {  /* a pointer */
@@ -441,7 +441,7 @@ const char *luaO_pushvfstring (lua_State *L, const char *fmt, va_list argp) {
       }
       case 'U': {  /* an 'int' as a UTF-8 sequence */
         char buff[UTF8BUFFSZ];
-        int l = luaO_utf8esc(buff, cast(long, va_arg(argp, long)));
+        int l = lhatO_utf8esc(buff, cast(long, va_arg(argp, long)));
         pushstr(L, buff + UTF8BUFFSZ - l, l);
         break;
       }
@@ -450,25 +450,25 @@ const char *luaO_pushvfstring (lua_State *L, const char *fmt, va_list argp) {
         break;
       }
       default: {
-        luaG_runerror(L, "invalid option '%%%c' to 'lua_pushfstring'",
+        lhatG_runerror(L, "invalid option '%%%c' to 'lhat_pushfstring'",
                          *(e + 1));
       }
     }
     n += 2;
     fmt = e+2;
   }
-  luaD_checkstack(L, 1);
+  lhatD_checkstack(L, 1);
   pushstr(L, fmt, strlen(fmt));
-  if (n > 0) luaV_concat(L, n + 1);
+  if (n > 0) lhatV_concat(L, n + 1);
   return svalue(L->top - 1);
 }
 
 
-const char *luaO_pushfstring (lua_State *L, const char *fmt, ...) {
+const char *lhatO_pushfstring (lhat_State *L, const char *fmt, ...) {
   const char *msg;
   va_list argp;
   va_start(argp, fmt);
-  msg = luaO_pushvfstring(L, fmt, argp);
+  msg = lhatO_pushvfstring(L, fmt, argp);
   va_end(argp);
   return msg;
 }
@@ -483,7 +483,7 @@ const char *luaO_pushfstring (lua_State *L, const char *fmt, ...) {
 
 #define addstr(a,b,l)	( memcpy(a,b,(l) * sizeof(char)), a += (l) )
 
-void luaO_chunkid (char *out, const char *source, size_t bufflen) {
+void lhatO_chunkid (char *out, const char *source, size_t bufflen) {
   size_t l = strlen(source);
   if (*source == '=') {  /* 'literal' source */
     if (l <= bufflen)  /* small enough? */

@@ -1,7 +1,7 @@
 /*
 ** $Id: lobject.h,v 2.117 2016/08/01 19:51:24 roberto Exp $
-** Type definitions for Lua objects
-** See Copyright Notice in lua.h
+** Type definitions for Lhat objects
+** See Copyright Notice in lhat.h
 */
 
 
@@ -13,50 +13,50 @@
 
 
 #include "llimits.h"
-#include "lua.h"
+#include "lhat.h"
 
 
 /*
 ** Extra tags for non-values
 */
-#define LUA_TPROTO	LUA_NUMTAGS		/* function prototypes */
-#define LUA_TDEADKEY	(LUA_NUMTAGS+1)		/* removed keys in tables */
+#define LHAT_TPROTO	LHAT_NUMTAGS		/* function prototypes */
+#define LHAT_TDEADKEY	(LHAT_NUMTAGS+1)		/* removed keys in tables */
 
 /*
-** number of all possible tags (including LUA_TNONE but excluding DEADKEY)
+** number of all possible tags (including LHAT_TNONE but excluding DEADKEY)
 */
-#define LUA_TOTALTAGS	(LUA_TPROTO + 2)
+#define LHAT_TOTALTAGS	(LHAT_TPROTO + 2)
 
 
 /*
 ** tags for Tagged Values have the following use of bits:
-** bits 0-3: actual tag (a LUA_T* value)
+** bits 0-3: actual tag (a LHAT_T* value)
 ** bits 4-5: variant bits
 ** bit 6: whether value is collectable
 */
 
 
 /*
-** LUA_TFUNCTION variants:
-** 0 - Lua function
+** LHAT_TFUNCTION variants:
+** 0 - Lhat function
 ** 1 - light C function
 ** 2 - regular C function (closure)
 */
 
 /* Variant tags for functions */
-#define LUA_TLCL	(LUA_TFUNCTION | (0 << 4))  /* Lua closure */
-#define LUA_TLCF	(LUA_TFUNCTION | (1 << 4))  /* light C function */
-#define LUA_TCCL	(LUA_TFUNCTION | (2 << 4))  /* C closure */
+#define LHAT_TLCL	(LHAT_TFUNCTION | (0 << 4))  /* Lhat closure */
+#define LHAT_TLCF	(LHAT_TFUNCTION | (1 << 4))  /* light C function */
+#define LHAT_TCCL	(LHAT_TFUNCTION | (2 << 4))  /* C closure */
 
 
 /* Variant tags for strings */
-#define LUA_TSHRSTR	(LUA_TSTRING | (0 << 4))  /* short strings */
-#define LUA_TLNGSTR	(LUA_TSTRING | (1 << 4))  /* long strings */
+#define LHAT_TSHRSTR	(LHAT_TSTRING | (0 << 4))  /* short strings */
+#define LHAT_TLNGSTR	(LHAT_TSTRING | (1 << 4))  /* long strings */
 
 
 /* Variant tags for numbers */
-#define LUA_TNUMFLT	(LUA_TNUMBER | (0 << 4))  /* float numbers */
-#define LUA_TNUMINT	(LUA_TNUMBER | (1 << 4))  /* integer numbers */
+#define LHAT_TNUMFLT	(LHAT_TNUMBER | (0 << 4))  /* float numbers */
+#define LHAT_TNUMINT	(LHAT_TNUMBER | (1 << 4))  /* integer numbers */
 
 
 /* Bit mark for collectable types */
@@ -90,34 +90,34 @@ struct GCObject {
 
 
 /*
-** Tagged Values. This is the basic representation of values in Lua,
+** Tagged Values. This is the basic representation of values in Lhat,
 ** an actual value plus a tag with its type.
 */
 
 /*
-** Union of all Lua values
+** Union of all Lhat values
 */
 typedef union Value {
   GCObject *gc;    /* collectable objects */
   void *p;         /* light userdata */
   int b;           /* booleans */
-  lua_CFunction f; /* light C functions */
-  lua_Integer i;   /* integer numbers */
-  lua_Number n;    /* float numbers */
+  lhat_CFunction f; /* light C functions */
+  lhat_Integer i;   /* integer numbers */
+  lhat_Number n;    /* float numbers */
 } Value;
 
 
 #define TValuefields	Value value_; int tt_
 
 
-typedef struct lua_TValue {
+typedef struct lhat_TValue {
   TValuefields;
 } TValue;
 
 
 
 /* macro defining a nil value */
-#define NILCONSTANT	{NULL}, LUA_TNIL
+#define NILCONSTANT	{NULL}, LHAT_TNIL
 
 
 #define val_(o)		((o)->value_)
@@ -139,24 +139,24 @@ typedef struct lua_TValue {
 /* Macros to test type */
 #define checktag(o,t)		(rttype(o) == (t))
 #define checktype(o,t)		(ttnov(o) == (t))
-#define ttisnumber(o)		checktype((o), LUA_TNUMBER)
-#define ttisfloat(o)		checktag((o), LUA_TNUMFLT)
-#define ttisinteger(o)		checktag((o), LUA_TNUMINT)
-#define ttisnil(o)		checktag((o), LUA_TNIL)
-#define ttisboolean(o)		checktag((o), LUA_TBOOLEAN)
-#define ttislightuserdata(o)	checktag((o), LUA_TLIGHTUSERDATA)
-#define ttisstring(o)		checktype((o), LUA_TSTRING)
-#define ttisshrstring(o)	checktag((o), ctb(LUA_TSHRSTR))
-#define ttislngstring(o)	checktag((o), ctb(LUA_TLNGSTR))
-#define ttistable(o)		checktag((o), ctb(LUA_TTABLE))
-#define ttisfunction(o)		checktype(o, LUA_TFUNCTION)
-#define ttisclosure(o)		((rttype(o) & 0x1F) == LUA_TFUNCTION)
-#define ttisCclosure(o)		checktag((o), ctb(LUA_TCCL))
-#define ttisLclosure(o)		checktag((o), ctb(LUA_TLCL))
-#define ttislcf(o)		checktag((o), LUA_TLCF)
-#define ttisfulluserdata(o)	checktag((o), ctb(LUA_TUSERDATA))
-#define ttisthread(o)		checktag((o), ctb(LUA_TTHREAD))
-#define ttisdeadkey(o)		checktag((o), LUA_TDEADKEY)
+#define ttisnumber(o)		checktype((o), LHAT_TNUMBER)
+#define ttisfloat(o)		checktag((o), LHAT_TNUMFLT)
+#define ttisinteger(o)		checktag((o), LHAT_TNUMINT)
+#define ttisnil(o)		checktag((o), LHAT_TNIL)
+#define ttisboolean(o)		checktag((o), LHAT_TBOOLEAN)
+#define ttislightuserdata(o)	checktag((o), LHAT_TLIGHTUSERDATA)
+#define ttisstring(o)		checktype((o), LHAT_TSTRING)
+#define ttisshrstring(o)	checktag((o), ctb(LHAT_TSHRSTR))
+#define ttislngstring(o)	checktag((o), ctb(LHAT_TLNGSTR))
+#define ttistable(o)		checktag((o), ctb(LHAT_TTABLE))
+#define ttisfunction(o)		checktype(o, LHAT_TFUNCTION)
+#define ttisclosure(o)		((rttype(o) & 0x1F) == LHAT_TFUNCTION)
+#define ttisCclosure(o)		checktag((o), ctb(LHAT_TCCL))
+#define ttisLclosure(o)		checktag((o), ctb(LHAT_TLCL))
+#define ttislcf(o)		checktag((o), LHAT_TLCF)
+#define ttisfulluserdata(o)	checktag((o), ctb(LHAT_TUSERDATA))
+#define ttiscoroutine(o)		checktag((o), ctb(LHAT_TCOROUTINE))
+#define ttisdeadkey(o)		checktag((o), LHAT_TDEADKEY)
 
 
 /* Macros to access values */
@@ -174,7 +174,7 @@ typedef struct lua_TValue {
 #define fvalue(o)	check_exp(ttislcf(o), val_(o).f)
 #define hvalue(o)	check_exp(ttistable(o), gco2t(val_(o).gc))
 #define bvalue(o)	check_exp(ttisboolean(o), val_(o).b)
-#define thvalue(o)	check_exp(ttisthread(o), gco2th(val_(o).gc))
+#define thvalue(o)	check_exp(ttiscoroutine(o), gco2th(val_(o).gc))
 /* a dead value may get the 'gc' field, but cannot access its contents */
 #define deadvalue(o)	check_exp(ttisdeadkey(o), cast(void *, val_(o).gc))
 
@@ -188,7 +188,7 @@ typedef struct lua_TValue {
 #define righttt(obj)		(ttype(obj) == gcvalue(obj)->tt)
 
 #define checkliveness(L,obj) \
-	lua_longassert(!iscollectable(obj) || \
+	lhat_longassert(!iscollectable(obj) || \
 		(righttt(obj) && (L == NULL || !isdead(G(L),gcvalue(obj)))))
 
 
@@ -196,27 +196,27 @@ typedef struct lua_TValue {
 #define settt_(o,t)	((o)->tt_=(t))
 
 #define setfltvalue(obj,x) \
-  { TValue *io=(obj); val_(io).n=(x); settt_(io, LUA_TNUMFLT); }
+  { TValue *io=(obj); val_(io).n=(x); settt_(io, LHAT_TNUMFLT); }
 
 #define chgfltvalue(obj,x) \
-  { TValue *io=(obj); lua_assert(ttisfloat(io)); val_(io).n=(x); }
+  { TValue *io=(obj); lhat_assert(ttisfloat(io)); val_(io).n=(x); }
 
 #define setivalue(obj,x) \
-  { TValue *io=(obj); val_(io).i=(x); settt_(io, LUA_TNUMINT); }
+  { TValue *io=(obj); val_(io).i=(x); settt_(io, LHAT_TNUMINT); }
 
 #define chgivalue(obj,x) \
-  { TValue *io=(obj); lua_assert(ttisinteger(io)); val_(io).i=(x); }
+  { TValue *io=(obj); lhat_assert(ttisinteger(io)); val_(io).i=(x); }
 
-#define setnilvalue(obj) settt_(obj, LUA_TNIL)
+#define setnilvalue(obj) settt_(obj, LHAT_TNIL)
 
 #define setfvalue(obj,x) \
-  { TValue *io=(obj); val_(io).f=(x); settt_(io, LUA_TLCF); }
+  { TValue *io=(obj); val_(io).f=(x); settt_(io, LHAT_TLCF); }
 
 #define setpvalue(obj,x) \
-  { TValue *io=(obj); val_(io).p=(x); settt_(io, LUA_TLIGHTUSERDATA); }
+  { TValue *io=(obj); val_(io).p=(x); settt_(io, LHAT_TLIGHTUSERDATA); }
 
 #define setbvalue(obj,x) \
-  { TValue *io=(obj); val_(io).b=(x); settt_(io, LUA_TBOOLEAN); }
+  { TValue *io=(obj); val_(io).b=(x); settt_(io, LHAT_TBOOLEAN); }
 
 #define setgcovalue(L,obj,x) \
   { TValue *io = (obj); GCObject *i_g=(x); \
@@ -229,30 +229,30 @@ typedef struct lua_TValue {
 
 #define setuvalue(L,obj,x) \
   { TValue *io = (obj); Udata *x_ = (x); \
-    val_(io).gc = obj2gco(x_); settt_(io, ctb(LUA_TUSERDATA)); \
+    val_(io).gc = obj2gco(x_); settt_(io, ctb(LHAT_TUSERDATA)); \
     checkliveness(L,io); }
 
 #define setthvalue(L,obj,x) \
-  { TValue *io = (obj); lua_State *x_ = (x); \
-    val_(io).gc = obj2gco(x_); settt_(io, ctb(LUA_TTHREAD)); \
+  { TValue *io = (obj); lhat_State *x_ = (x); \
+    val_(io).gc = obj2gco(x_); settt_(io, ctb(LHAT_TCOROUTINE)); \
     checkliveness(L,io); }
 
 #define setclLvalue(L,obj,x) \
   { TValue *io = (obj); LClosure *x_ = (x); \
-    val_(io).gc = obj2gco(x_); settt_(io, ctb(LUA_TLCL)); \
+    val_(io).gc = obj2gco(x_); settt_(io, ctb(LHAT_TLCL)); \
     checkliveness(L,io); }
 
 #define setclCvalue(L,obj,x) \
   { TValue *io = (obj); CClosure *x_ = (x); \
-    val_(io).gc = obj2gco(x_); settt_(io, ctb(LUA_TCCL)); \
+    val_(io).gc = obj2gco(x_); settt_(io, ctb(LHAT_TCCL)); \
     checkliveness(L,io); }
 
 #define sethvalue(L,obj,x) \
   { TValue *io = (obj); Table *x_ = (x); \
-    val_(io).gc = obj2gco(x_); settt_(io, ctb(LUA_TTABLE)); \
+    val_(io).gc = obj2gco(x_); settt_(io, ctb(LHAT_TTABLE)); \
     checkliveness(L,io); }
 
-#define setdeadvalue(obj)	settt_(obj, LUA_TDEADKEY)
+#define setdeadvalue(obj)	settt_(obj, LHAT_TDEADKEY)
 
 
 
@@ -329,11 +329,11 @@ typedef union UTString {
   check_exp(sizeof((ts)->extra), cast(char *, (ts)) + sizeof(UTString))
 
 
-/* get the actual string (array of bytes) from a Lua value */
+/* get the actual string (array of bytes) from a Lhat value */
 #define svalue(o)       getstr(tsvalue(o))
 
 /* get string length from 'TString *s' */
-#define tsslen(s)	((s)->tt == LUA_TSHRSTR ? (s)->shrlen : (s)->u.lnglen)
+#define tsslen(s)	((s)->tt == LHAT_TSHRSTR ? (s)->shrlen : (s)->u.lnglen)
 
 /* get string length from 'TValue *o' */
 #define vslen(o)	tsslen(tsvalue(o))
@@ -431,7 +431,7 @@ typedef struct Proto {
 
 
 /*
-** Lua Upvalues
+** Lhat Upvalues
 */
 typedef struct UpVal UpVal;
 
@@ -445,7 +445,7 @@ typedef struct UpVal UpVal;
 
 typedef struct CClosure {
   ClosureHeader;
-  lua_CFunction f;
+  lhat_CFunction f;
   TValue upvalue[1];  /* list of upvalues */
 } CClosure;
 
@@ -522,27 +522,27 @@ typedef struct Table {
 /*
 ** (address of) a fixed nil value
 */
-#define luaO_nilobject		(&luaO_nilobject_)
+#define lhatO_nilobject		(&lhatO_nilobject_)
 
 
-LUAI_DDEC const TValue luaO_nilobject_;
+LHATI_DDEC const TValue lhatO_nilobject_;
 
-/* size of buffer for 'luaO_utf8esc' function */
+/* size of buffer for 'lhatO_utf8esc' function */
 #define UTF8BUFFSZ	8
 
-LUAI_FUNC int luaO_int2fb (unsigned int x);
-LUAI_FUNC int luaO_fb2int (int x);
-LUAI_FUNC int luaO_utf8esc (char *buff, unsigned long x);
-LUAI_FUNC int luaO_ceillog2 (unsigned int x);
-LUAI_FUNC void luaO_arith (lua_State *L, int op, const TValue *p1,
+LHATI_FUNC int lhatO_int2fb (unsigned int x);
+LHATI_FUNC int lhatO_fb2int (int x);
+LHATI_FUNC int lhatO_utf8esc (char *buff, unsigned long x);
+LHATI_FUNC int lhatO_ceillog2 (unsigned int x);
+LHATI_FUNC void lhatO_arith (lhat_State *L, int op, const TValue *p1,
                            const TValue *p2, TValue *res);
-LUAI_FUNC size_t luaO_str2num (const char *s, TValue *o);
-LUAI_FUNC int luaO_hexavalue (int c);
-LUAI_FUNC void luaO_tostring (lua_State *L, StkId obj);
-LUAI_FUNC const char *luaO_pushvfstring (lua_State *L, const char *fmt,
+LHATI_FUNC size_t lhatO_str2num (const char *s, TValue *o);
+LHATI_FUNC int lhatO_hexavalue (int c);
+LHATI_FUNC void lhatO_tostring (lhat_State *L, StkId obj);
+LHATI_FUNC const char *lhatO_pushvfstring (lhat_State *L, const char *fmt,
                                                        va_list argp);
-LUAI_FUNC const char *luaO_pushfstring (lua_State *L, const char *fmt, ...);
-LUAI_FUNC void luaO_chunkid (char *out, const char *source, size_t len);
+LHATI_FUNC const char *lhatO_pushfstring (lhat_State *L, const char *fmt, ...);
+LHATI_FUNC void lhatO_chunkid (char *out, const char *source, size_t len);
 
 
 #endif

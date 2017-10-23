@@ -8,7 +8,7 @@ local debug = require'debug'
 local f
 
 local main, ismain = coroutine.running()
-assert(type(main) == "thread" and ismain)
+assert(type(main) == "coroutine" and ismain)
 assert(not coroutine.resume(main))
 assert(not coroutine.isyieldable())
 assert(not pcall(coroutine.yield))
@@ -46,8 +46,8 @@ function foo (a, ...)
 end
 
 f = coroutine.create(foo)
-assert(type(f) == "thread" and coroutine.status(f) == "suspended")
-assert(string.find(tostring(f), "thread"))
+assert(type(f) == "coroutine" and coroutine.status(f) == "suspended")
+assert(string.find(tostring(f), "coroutine"))
 local s,a,b,c,d
 s,a,b,c,d = coroutine.resume(f, {1,2,3}, {}, {1}, {'a', 'b', 'c'})
 assert(s and a == nil and coroutine.status(f) == "suspended")
@@ -418,12 +418,12 @@ else
 
   print "testing coroutine API"
   
-  -- reusing a thread
+  -- reusing a coroutine
   assert(T.testC([[
-    newthread      # create thread
+    newcoroutine   # create coroutine
     pushvalue 2    # push body
     pushstring 'a a a'  # push argument
-    xmove 0 3 2   # move values to new thread
+    xmove 0 3 2   # move values to new coroutine
     resume -1, 1    # call it first time
     pushstatus
     xmove 3 0 0   # move results back to stack
@@ -456,7 +456,7 @@ else
          c == "ERRRUN" and d == 4)
 
   a, b, c, d = T.testC([[
-    rawgeti R 1    # get main thread
+    rawgeti R 1    # get main state
     pushnum 10;
     pushnum 20;
     resume -3 2;
@@ -467,7 +467,7 @@ else
          c == "ERRRUN" and d == 4)
 
 
-  -- using a main thread as a coroutine
+  -- using a main state as a coroutine
   local state = T.newstate()
   T.loadlib(state)
 
@@ -477,7 +477,7 @@ else
     return 'ok']]))
 
   t = table.pack(T.testC(state, [[
-    rawgeti R 1     # get main thread
+    rawgeti R 1     # get main coroutine
     pushstring 'XX'
     getglobal X    # get function for body
     pushstring AA      # arg
@@ -486,7 +486,7 @@ else
     setglobal T    # top
     setglobal B    # second yielded value
     setglobal A    # fist yielded value
-    rawgeti R 1     # get main thread
+    rawgeti R 1     # get main coroutine
     pushnum 5       # arg (noise)
     resume 1 1      # after coroutine ends, previous stack is back
     pushstatus
@@ -767,7 +767,7 @@ eqtab({x()}, {23, "huu"})
 
 f = T.makeCfunc[[pushstring 'a'; pushnum 102; yield 2; ]]
 
-a, b, c, d = T.testC([[newthread; pushvalue 2; xmove 0 3 1; resume 3 0;
+a, b, c, d = T.testC([[newcoroutine; pushvalue 2; xmove 0 3 1; resume 3 0;
                        pushstatus; xmove 3 0 0;  resume 3 0; pushstatus;
                        return 4; ]], f)
 

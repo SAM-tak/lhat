@@ -75,10 +75,10 @@
     <ClInclude Include="..\..\..\src\ltable.h" />
     <ClInclude Include="..\..\..\src\ltests.h" />
     <ClInclude Include="..\..\..\src\ltm.h" />
-    <ClInclude Include="..\..\..\src\lua.h" />
-    <ClInclude Include="..\..\..\src\lua.hpp" />
-    <ClInclude Include="..\..\..\src\luaconf.h" />
-    <ClInclude Include="..\..\..\src\lualib.h" />
+    <ClInclude Include="..\..\..\src\lhat.h" />
+    <ClInclude Include="..\..\..\src\lhat.hpp" />
+    <ClInclude Include="..\..\..\src\lhatconf.h" />
+    <ClInclude Include="..\..\..\src\lhatlib.h" />
     <ClInclude Include="..\..\..\src\lundump.h" />
     <ClInclude Include="..\..\..\src\lvm.h" />
     <ClInclude Include="..\..\..\src\lzio.h" />
@@ -152,7 +152,7 @@
       <WarningLevel>Level3</WarningLevel>
       <Optimization>Disabled</Optimization>
       <SDLCheck>true</SDLCheck>
-      <PreprocessorDefinitions>LUA_BUILD_AS_DLL;LUA_USER_H="ltests.h";%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>LHAT_USER_H="ltests.h";%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ClCompile>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
@@ -175,7 +175,7 @@
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <SDLCheck>true</SDLCheck>
-      <PreprocessorDefinitions>LUA_BUILD_AS_DLL;LUA_USER_H="ltests.h";%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>LHAT_USER_H="ltests.h";%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ClCompile>
     <Link>
       <EnableCOMDATFolding>true</EnableCOMDATFolding>

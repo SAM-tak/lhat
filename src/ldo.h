@@ -1,7 +1,7 @@
 /*
 ** $Id: ldo.h,v 2.29 2015/12/21 13:02:14 roberto Exp $
-** Stack and Call structure of Lua
-** See Copyright Notice in lua.h
+** Stack and Call structure of Lhat
+** See Copyright Notice in lhat.h
 */
 
 #ifndef ldo_h
@@ -20,12 +20,12 @@
 ** 'condmovestack' is used in heavy tests to force a stack reallocation
 ** at every check.
 */
-#define luaD_checkstackaux(L,n,pre,pos)  \
+#define lhatD_checkstackaux(L,n,pre,pos)  \
 	if (L->stack_last - L->top <= (n)) \
-	  { pre; luaD_growstack(L, n); pos; } else { condmovestack(L,pre,pos); }
+	  { pre; lhatD_growstack(L, n); pos; } else { condmovestack(L,pre,pos); }
 
 /* In general, 'pre'/'pos' are empty (nothing to save) */
-#define luaD_checkstack(L,n)	luaD_checkstackaux(L,n,(void)0,(void)0)
+#define lhatD_checkstack(L,n)	lhatD_checkstackaux(L,n,(void)0,(void)0)
 
 
 
@@ -34,25 +34,25 @@
 
 
 /* type of protected functions, to be ran by 'runprotected' */
-typedef void (*Pfunc) (lua_State *L, void *ud);
+typedef void (*Pfunc) (lhat_State *L, void *ud);
 
-LUAI_FUNC int luaD_protectedparser (lua_State *L, ZIO *z, const char *name,
+LHATI_FUNC int lhatD_protectedparser (lhat_State *L, ZIO *z, const char *name,
                                                   const char *mode);
-LUAI_FUNC void luaD_hook (lua_State *L, int event, int line);
-LUAI_FUNC int luaD_precall (lua_State *L, StkId func, int nresults);
-LUAI_FUNC void luaD_call (lua_State *L, StkId func, int nResults);
-LUAI_FUNC void luaD_callnoyield (lua_State *L, StkId func, int nResults);
-LUAI_FUNC int luaD_pcall (lua_State *L, Pfunc func, void *u,
+LHATI_FUNC void lhatD_hook (lhat_State *L, int event, int line);
+LHATI_FUNC int lhatD_precall (lhat_State *L, StkId func, int nresults);
+LHATI_FUNC void lhatD_call (lhat_State *L, StkId func, int nResults);
+LHATI_FUNC void lhatD_callnoyield (lhat_State *L, StkId func, int nResults);
+LHATI_FUNC int lhatD_pcall (lhat_State *L, Pfunc func, void *u,
                                         ptrdiff_t oldtop, ptrdiff_t ef);
-LUAI_FUNC int luaD_poscall (lua_State *L, CallInfo *ci, StkId firstResult,
+LHATI_FUNC int lhatD_poscall (lhat_State *L, CallInfo *ci, StkId firstResult,
                                           int nres);
-LUAI_FUNC void luaD_reallocstack (lua_State *L, int newsize);
-LUAI_FUNC void luaD_growstack (lua_State *L, int n);
-LUAI_FUNC void luaD_shrinkstack (lua_State *L);
-LUAI_FUNC void luaD_inctop (lua_State *L);
+LHATI_FUNC void lhatD_reallocstack (lhat_State *L, int newsize);
+LHATI_FUNC void lhatD_growstack (lhat_State *L, int n);
+LHATI_FUNC void lhatD_shrinkstack (lhat_State *L);
+LHATI_FUNC void lhatD_inctop (lhat_State *L);
 
-LUAI_FUNC l_noret luaD_throw (lua_State *L, int errcode);
-LUAI_FUNC int luaD_rawrunprotected (lua_State *L, Pfunc f, void *ud);
+LHATI_FUNC l_noret lhatD_throw (lhat_State *L, int errcode);
+LHATI_FUNC int lhatD_rawrunprotected (lhat_State *L, Pfunc f, void *ud);
 
 #endif
 

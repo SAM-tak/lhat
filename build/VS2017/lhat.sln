@@ -11,12 +11,26 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "ilhat", "ilhat\ilhat.vcxpro
 	EndProjectSection
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "lib1", "lib1\lib1.vcxproj", "{483FCE3D-2A15-4A38-A1EC-FB1E573B55A5}"
+	ProjectSection(ProjectDependencies) = postProject
+		{012E8D54-6F4C-4B04-B901-1160B928C51C} = {012E8D54-6F4C-4B04-B901-1160B928C51C}
+	EndProjectSection
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "lib2", "lib2\lib2.vcxproj", "{F6F43332-C4A1-48C4-9D13-E8D49F18F21B}"
+	ProjectSection(ProjectDependencies) = postProject
+		{012E8D54-6F4C-4B04-B901-1160B928C51C} = {012E8D54-6F4C-4B04-B901-1160B928C51C}
+	EndProjectSection
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "lib11", "lib11\lib11.vcxproj", "{59398BCE-BC78-45C2-B673-FB03F752556A}"
+	ProjectSection(ProjectDependencies) = postProject
+		{483FCE3D-2A15-4A38-A1EC-FB1E573B55A5} = {483FCE3D-2A15-4A38-A1EC-FB1E573B55A5}
+		{012E8D54-6F4C-4B04-B901-1160B928C51C} = {012E8D54-6F4C-4B04-B901-1160B928C51C}
+	EndProjectSection
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "lib21", "lib21\lib21.vcxproj", "{902B1098-A823-45DD-A910-AA0A048CC2BA}"
+	ProjectSection(ProjectDependencies) = postProject
+		{F6F43332-C4A1-48C4-9D13-E8D49F18F21B} = {F6F43332-C4A1-48C4-9D13-E8D49F18F21B}
+		{012E8D54-6F4C-4B04-B901-1160B928C51C} = {012E8D54-6F4C-4B04-B901-1160B928C51C}
+	EndProjectSection
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution

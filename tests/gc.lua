@@ -487,7 +487,7 @@ do
   do
     local function f (param) 
       ;(function ()
-        assert(type(f) == 'function' and type(param) == 'thread')
+        assert(type(f) == 'function' and type(param) == 'coroutine')
         param = {param, f}
         setmetatable(param, {__gc = function () collected = true end})
         coroutine.yield(100)
@@ -587,9 +587,9 @@ if T then
   t = T.totalmem("function")
   a = function () end   -- create 1 new closure
   assert(T.totalmem("function") == t + 1)
-  t = T.totalmem("thread")
+  t = T.totalmem("coroutine")
   a = coroutine.create(function () end)   -- create 1 new coroutine
-  assert(T.totalmem("thread") == t + 1)
+  assert(T.totalmem("coroutine") == t + 1)
 end
 
 -- create an object to be collected when state is closed

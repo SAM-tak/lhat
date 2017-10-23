@@ -444,16 +444,16 @@ check3(":1:", T.testC("loadstring 2; return *", "x="))
 check3("%.", T.testC("loadfile 2; return *", "."))
 check3("xxxx", T.testC("loadfile 2; return *", "xxxx"))
 
--- test errors in non protected threads
+-- test errors in non protected coroutines
 function checkerrnopro (code, msg)
-  local th = coroutine.create(function () end)  -- create new thread
+  local th = coroutine.create(function () end)  -- create new coroutine
   local stt, err = pcall(T.testC, th, code)   -- run code there
   assert(not stt and string.find(err, msg))
 end
 
 if not _soft then
   checkerrnopro("pushnum 3; call 0 0", "attempt to call")
-  print"testing stack overflow in unprotected thread"
+  print"testing stack overflow in unprotected coroutine"
   function f () f() end
   checkerrnopro("getglobal 'f'; call 0 0;", "stack overflow")
 end
@@ -990,11 +990,11 @@ b = testamem("state creation", T.newstate)
 T.closestate(b);  -- close new state
 
 
--- testing threads
+-- testing coroutines
 
--- get main thread from registry (at index LUA_RIDX_MAINTHREAD == 1)
+-- get main state from registry (at index LUA_RIDX_MAINSTATE == 1)
 mt = T.testC("rawgeti R 1; return 1")
-assert(type(mt) == "thread" and coroutine.running() == mt)
+assert(type(mt) == "coroutine" and coroutine.running() == mt)
 
 
 
@@ -1009,8 +1009,8 @@ G=0; collectgarbage(); a =collectgarbage("count")
 load(expand(20,"G=G+1"))()
 assert(G==20); collectgarbage();  -- assert(gcinfo() <= a+1)
 
-testamem("thread creation", function ()
-  return T.doonnewstack("x=1") == 0  -- try to create thread
+testamem("coroutine creation", function ()
+  return T.doonnewstack("x=1") == 0  -- try to create coroutine
 end)
 
 

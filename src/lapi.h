@@ -1,7 +1,7 @@
 /*
 ** $Id: lapi.h,v 2.9 2015/03/06 19:49:50 roberto Exp $
-** Auxiliary functions from Lua API
-** See Copyright Notice in lua.h
+** Auxiliary functions from Lhat API
+** See Copyright Notice in lhat.h
 */
 
 #ifndef lapi_h
@@ -15,7 +15,7 @@
 				"stack overflow");}
 
 #define adjustresults(L,nres) \
-    { if ((nres) == LUA_MULTRET && L->ci->top < L->top) L->ci->top = L->top; }
+    { if ((nres) == LHAT_MULTRET && L->ci->top < L->top) L->ci->top = L->top; }
 
 #define api_checknelems(L,n)	api_check(L, (n) < (L->top - L->ci->func), \
 				  "not enough elements in the stack")

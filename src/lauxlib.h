@@ -1,7 +1,7 @@
 /*
 ** $Id: lauxlib.h,v 1.131 2016/12/06 14:54:31 roberto Exp $
-** Auxiliary functions for building Lua libraries
-** See Copyright Notice in lua.h
+** Auxiliary functions for building Lhat libraries
+** See Copyright Notice in lhat.h
 */
 
 
@@ -12,99 +12,99 @@
 #include <stddef.h>
 #include <stdio.h>
 
-#include "lua.h"
+#include "lhat.h"
 
 
 
-/* extra error code for 'luaL_loadfilex' */
-#define LUA_ERRFILE     (LUA_ERRERR+1)
+/* extra error code for 'lhatL_loadfilex' */
+#define LHAT_ERRFILE     (LHAT_ERRERR+1)
 
 
 /* key, in the registry, for table of loaded modules */
-#define LUA_LOADED_TABLE	"_LOADED"
+#define LHAT_LOADED_TABLE	"_LOADED"
 
 
 /* key, in the registry, for table of preloaded loaders */
-#define LUA_PRELOAD_TABLE	"_PRELOAD"
+#define LHAT_PRELOAD_TABLE	"_PRELOAD"
 
 
-typedef struct luaL_Reg {
+typedef struct lhatL_Reg {
   const char *name;
-  lua_CFunction func;
-} luaL_Reg;
+  lhat_CFunction func;
+} lhatL_Reg;
 
 
-#define LUAL_NUMSIZES	(sizeof(lua_Integer)*16 + sizeof(lua_Number))
+#define LHATL_NUMSIZES	(sizeof(lhat_Integer)*16 + sizeof(lhat_Number))
 
-LUALIB_API void (luaL_checkversion_) (lua_State *L, lua_Number ver, size_t sz);
-#define luaL_checkversion(L)  \
-	  luaL_checkversion_(L, LUA_VERSION_NUM, LUAL_NUMSIZES)
+LHATLIB_API void (lhatL_checkversion_) (lhat_State *L, lhat_Number ver, size_t sz);
+#define lhatL_checkversion(L)  \
+	  lhatL_checkversion_(L, LHAT_VERSION_NUM, LHATL_NUMSIZES)
 
-LUALIB_API int (luaL_getmetafield) (lua_State *L, int obj, const char *e);
-LUALIB_API int (luaL_callmeta) (lua_State *L, int obj, const char *e);
-LUALIB_API const char *(luaL_tolstring) (lua_State *L, int idx, size_t *len);
-LUALIB_API int (luaL_argerror) (lua_State *L, int arg, const char *extramsg);
-LUALIB_API const char *(luaL_checklstring) (lua_State *L, int arg,
+LHATLIB_API int (lhatL_getmetafield) (lhat_State *L, int obj, const char *e);
+LHATLIB_API int (lhatL_callmeta) (lhat_State *L, int obj, const char *e);
+LHATLIB_API const char *(lhatL_tolstring) (lhat_State *L, int idx, size_t *len);
+LHATLIB_API int (lhatL_argerror) (lhat_State *L, int arg, const char *extramsg);
+LHATLIB_API const char *(lhatL_checklstring) (lhat_State *L, int arg,
                                                           size_t *l);
-LUALIB_API const char *(luaL_optlstring) (lua_State *L, int arg,
+LHATLIB_API const char *(lhatL_optlstring) (lhat_State *L, int arg,
                                           const char *def, size_t *l);
-LUALIB_API lua_Number (luaL_checknumber) (lua_State *L, int arg);
-LUALIB_API lua_Number (luaL_optnumber) (lua_State *L, int arg, lua_Number def);
+LHATLIB_API lhat_Number (lhatL_checknumber) (lhat_State *L, int arg);
+LHATLIB_API lhat_Number (lhatL_optnumber) (lhat_State *L, int arg, lhat_Number def);
 
-LUALIB_API lua_Integer (luaL_checkinteger) (lua_State *L, int arg);
-LUALIB_API lua_Integer (luaL_optinteger) (lua_State *L, int arg,
-                                          lua_Integer def);
+LHATLIB_API lhat_Integer (lhatL_checkinteger) (lhat_State *L, int arg);
+LHATLIB_API lhat_Integer (lhatL_optinteger) (lhat_State *L, int arg,
+                                          lhat_Integer def);
 
-LUALIB_API void (luaL_checkstack) (lua_State *L, int sz, const char *msg);
-LUALIB_API void (luaL_checktype) (lua_State *L, int arg, int t);
-LUALIB_API void (luaL_checkany) (lua_State *L, int arg);
+LHATLIB_API void (lhatL_checkstack) (lhat_State *L, int sz, const char *msg);
+LHATLIB_API void (lhatL_checktype) (lhat_State *L, int arg, int t);
+LHATLIB_API void (lhatL_checkany) (lhat_State *L, int arg);
 
-LUALIB_API int   (luaL_newmetatable) (lua_State *L, const char *tname);
-LUALIB_API void  (luaL_setmetatable) (lua_State *L, const char *tname);
-LUALIB_API void *(luaL_testudata) (lua_State *L, int ud, const char *tname);
-LUALIB_API void *(luaL_checkudata) (lua_State *L, int ud, const char *tname);
+LHATLIB_API int   (lhatL_newmetatable) (lhat_State *L, const char *tname);
+LHATLIB_API void  (lhatL_setmetatable) (lhat_State *L, const char *tname);
+LHATLIB_API void *(lhatL_testudata) (lhat_State *L, int ud, const char *tname);
+LHATLIB_API void *(lhatL_checkudata) (lhat_State *L, int ud, const char *tname);
 
-LUALIB_API void (luaL_where) (lua_State *L, int lvl);
-LUALIB_API int (luaL_error) (lua_State *L, const char *fmt, ...);
+LHATLIB_API void (lhatL_where) (lhat_State *L, int lvl);
+LHATLIB_API int (lhatL_error) (lhat_State *L, const char *fmt, ...);
 
-LUALIB_API int (luaL_checkoption) (lua_State *L, int arg, const char *def,
+LHATLIB_API int (lhatL_checkoption) (lhat_State *L, int arg, const char *def,
                                    const char *const lst[]);
 
-LUALIB_API int (luaL_fileresult) (lua_State *L, int stat, const char *fname);
-LUALIB_API int (luaL_execresult) (lua_State *L, int stat);
+LHATLIB_API int (lhatL_fileresult) (lhat_State *L, int stat, const char *fname);
+LHATLIB_API int (lhatL_execresult) (lhat_State *L, int stat);
 
 /* predefined references */
-#define LUA_NOREF       (-2)
-#define LUA_REFNIL      (-1)
+#define LHAT_NOREF       (-2)
+#define LHAT_REFNIL      (-1)
 
-LUALIB_API int (luaL_ref) (lua_State *L, int t);
-LUALIB_API void (luaL_unref) (lua_State *L, int t, int ref);
+LHATLIB_API int (lhatL_ref) (lhat_State *L, int t);
+LHATLIB_API void (lhatL_unref) (lhat_State *L, int t, int ref);
 
-LUALIB_API int (luaL_loadfilex) (lua_State *L, const char *filename,
+LHATLIB_API int (lhatL_loadfilex) (lhat_State *L, const char *filename,
                                                const char *mode);
 
-#define luaL_loadfile(L,f)	luaL_loadfilex(L,f,NULL)
+#define lhatL_loadfile(L,f)	lhatL_loadfilex(L,f,NULL)
 
-LUALIB_API int (luaL_loadbufferx) (lua_State *L, const char *buff, size_t sz,
+LHATLIB_API int (lhatL_loadbufferx) (lhat_State *L, const char *buff, size_t sz,
                                    const char *name, const char *mode);
-LUALIB_API int (luaL_loadstring) (lua_State *L, const char *s);
+LHATLIB_API int (lhatL_loadstring) (lhat_State *L, const char *s);
 
-LUALIB_API lua_State *(luaL_newstate) (void);
+LHATLIB_API lhat_State *(lhatL_newstate) (void);
 
-LUALIB_API lua_Integer (luaL_len) (lua_State *L, int idx);
+LHATLIB_API lhat_Integer (lhatL_len) (lhat_State *L, int idx);
 
-LUALIB_API const char *(luaL_gsub) (lua_State *L, const char *s, const char *p,
+LHATLIB_API const char *(lhatL_gsub) (lhat_State *L, const char *s, const char *p,
                                                   const char *r);
 
-LUALIB_API void (luaL_setfuncs) (lua_State *L, const luaL_Reg *l, int nup);
+LHATLIB_API void (lhatL_setfuncs) (lhat_State *L, const lhatL_Reg *l, int nup);
 
-LUALIB_API int (luaL_getsubtable) (lua_State *L, int idx, const char *fname);
+LHATLIB_API int (lhatL_getsubtable) (lhat_State *L, int idx, const char *fname);
 
-LUALIB_API void (luaL_traceback) (lua_State *L, lua_State *L1,
+LHATLIB_API void (lhatL_traceback) (lhat_State *L, lhat_State *L1,
                                   const char *msg, int level);
 
-LUALIB_API void (luaL_requiref) (lua_State *L, const char *modname,
-                                 lua_CFunction openf, int glb);
+LHATLIB_API void (lhatL_requiref) (lhat_State *L, const char *modname,
+                                 lhat_CFunction openf, int glb);
 
 /*
 ** ===============================================================
@@ -113,30 +113,30 @@ LUALIB_API void (luaL_requiref) (lua_State *L, const char *modname,
 */
 
 
-#define luaL_newlibtable(L,l)	\
-  lua_createtable(L, 0, sizeof(l)/sizeof((l)[0]) - 1)
+#define lhatL_newlibtable(L,l)	\
+  lhat_createtable(L, 0, sizeof(l)/sizeof((l)[0]) - 1)
 
-#define luaL_newlib(L,l)  \
-  (luaL_checkversion(L), luaL_newlibtable(L,l), luaL_setfuncs(L,l,0))
+#define lhatL_newlib(L,l)  \
+  (lhatL_checkversion(L), lhatL_newlibtable(L,l), lhatL_setfuncs(L,l,0))
 
-#define luaL_argcheck(L, cond,arg,extramsg)	\
-		((void)((cond) || luaL_argerror(L, (arg), (extramsg))))
-#define luaL_checkstring(L,n)	(luaL_checklstring(L, (n), NULL))
-#define luaL_optstring(L,n,d)	(luaL_optlstring(L, (n), (d), NULL))
+#define lhatL_argcheck(L, cond,arg,extramsg)	\
+		((void)((cond) || lhatL_argerror(L, (arg), (extramsg))))
+#define lhatL_checkstring(L,n)	(lhatL_checklstring(L, (n), NULL))
+#define lhatL_optstring(L,n,d)	(lhatL_optlstring(L, (n), (d), NULL))
 
-#define luaL_typename(L,i)	lua_typename(L, lua_type(L,(i)))
+#define lhatL_typename(L,i)	lhat_typename(L, lhat_type(L,(i)))
 
-#define luaL_dofile(L, fn) \
-	(luaL_loadfile(L, fn) || lua_pcall(L, 0, LUA_MULTRET, 0))
+#define lhatL_dofile(L, fn) \
+	(lhatL_loadfile(L, fn) || lhat_pcall(L, 0, LHAT_MULTRET, 0))
 
-#define luaL_dostring(L, s) \
-	(luaL_loadstring(L, s) || lua_pcall(L, 0, LUA_MULTRET, 0))
+#define lhatL_dostring(L, s) \
+	(lhatL_loadstring(L, s) || lhat_pcall(L, 0, LHAT_MULTRET, 0))
 
-#define luaL_getmetatable(L,n)	(lua_getfield(L, LUA_REGISTRYINDEX, (n)))
+#define lhatL_getmetatable(L,n)	(lhat_getfield(L, LHAT_REGISTRYINDEX, (n)))
 
-#define luaL_opt(L,f,n,d)	(lua_isnoneornil(L,(n)) ? (d) : f(L,(n)))
+#define lhatL_opt(L,f,n,d)	(lhat_isnoneornil(L,(n)) ? (d) : f(L,(n)))
 
-#define luaL_loadbuffer(L,s,sz,n)	luaL_loadbufferx(L,s,sz,n,NULL)
+#define lhatL_loadbuffer(L,s,sz,n)	lhatL_loadbufferx(L,s,sz,n,NULL)
 
 
 /*
@@ -145,31 +145,31 @@ LUALIB_API void (luaL_requiref) (lua_State *L, const char *modname,
 ** =======================================================
 */
 
-typedef struct luaL_Buffer {
+typedef struct lhatL_Buffer {
   char *b;  /* buffer address */
   size_t size;  /* buffer size */
   size_t n;  /* number of characters in buffer */
-  lua_State *L;
-  char initb[LUAL_BUFFERSIZE];  /* initial buffer */
-} luaL_Buffer;
+  lhat_State *L;
+  char initb[LHATL_BUFFERSIZE];  /* initial buffer */
+} lhatL_Buffer;
 
 
-#define luaL_addchar(B,c) \
-  ((void)((B)->n < (B)->size || luaL_prepbuffsize((B), 1)), \
+#define lhatL_addchar(B,c) \
+  ((void)((B)->n < (B)->size || lhatL_prepbuffsize((B), 1)), \
    ((B)->b[(B)->n++] = (c)))
 
-#define luaL_addsize(B,s)	((B)->n += (s))
+#define lhatL_addsize(B,s)	((B)->n += (s))
 
-LUALIB_API void (luaL_buffinit) (lua_State *L, luaL_Buffer *B);
-LUALIB_API char *(luaL_prepbuffsize) (luaL_Buffer *B, size_t sz);
-LUALIB_API void (luaL_addlstring) (luaL_Buffer *B, const char *s, size_t l);
-LUALIB_API void (luaL_addstring) (luaL_Buffer *B, const char *s);
-LUALIB_API void (luaL_addvalue) (luaL_Buffer *B);
-LUALIB_API void (luaL_pushresult) (luaL_Buffer *B);
-LUALIB_API void (luaL_pushresultsize) (luaL_Buffer *B, size_t sz);
-LUALIB_API char *(luaL_buffinitsize) (lua_State *L, luaL_Buffer *B, size_t sz);
+LHATLIB_API void (lhatL_buffinit) (lhat_State *L, lhatL_Buffer *B);
+LHATLIB_API char *(lhatL_prepbuffsize) (lhatL_Buffer *B, size_t sz);
+LHATLIB_API void (lhatL_addlstring) (lhatL_Buffer *B, const char *s, size_t l);
+LHATLIB_API void (lhatL_addstring) (lhatL_Buffer *B, const char *s);
+LHATLIB_API void (lhatL_addvalue) (lhatL_Buffer *B);
+LHATLIB_API void (lhatL_pushresult) (lhatL_Buffer *B);
+LHATLIB_API void (lhatL_pushresultsize) (lhatL_Buffer *B, size_t sz);
+LHATLIB_API char *(lhatL_buffinitsize) (lhat_State *L, lhatL_Buffer *B, size_t sz);
 
-#define luaL_prepbuffer(B)	luaL_prepbuffsize(B, LUAL_BUFFERSIZE)
+#define lhatL_prepbuffer(B)	lhatL_prepbuffsize(B, LHATL_BUFFERSIZE)
 
 /* }====================================================== */
 
@@ -182,32 +182,32 @@ LUALIB_API char *(luaL_buffinitsize) (lua_State *L, luaL_Buffer *B, size_t sz);
 */
 
 /*
-** A file handle is a userdata with metatable 'LUA_FILEHANDLE' and
-** initial structure 'luaL_Stream' (it may contain other fields
+** A file handle is a userdata with metatable 'LHAT_FILEHANDLE' and
+** initial structure 'lhatL_Stream' (it may contain other fields
 ** after that initial structure).
 */
 
-#define LUA_FILEHANDLE          "FILE*"
+#define LHAT_FILEHANDLE          "FILE*"
 
 
-typedef struct luaL_Stream {
+typedef struct lhatL_Stream {
   FILE *f;  /* stream (NULL for incompletely created streams) */
-  lua_CFunction closef;  /* to close stream (NULL for closed streams) */
-} luaL_Stream;
+  lhat_CFunction closef;  /* to close stream (NULL for closed streams) */
+} lhatL_Stream;
 
 /* }====================================================== */
 
 
 
 /* compatibility with old module system */
-#if defined(LUA_COMPAT_MODULE)
+#if defined(LHAT_COMPAT_MODULE)
 
-LUALIB_API void (luaL_pushmodule) (lua_State *L, const char *modname,
+LHATLIB_API void (lhatL_pushmodule) (lhat_State *L, const char *modname,
                                    int sizehint);
-LUALIB_API void (luaL_openlib) (lua_State *L, const char *libname,
-                                const luaL_Reg *l, int nup);
+LHATLIB_API void (lhatL_openlib) (lhat_State *L, const char *libname,
+                                const lhatL_Reg *l, int nup);
 
-#define luaL_register(L,n,l)	(luaL_openlib(L,(n),(l),0))
+#define lhatL_register(L,n,l)	(lhatL_openlib(L,(n),(l),0))
 
 #endif
 
@@ -219,18 +219,18 @@ LUALIB_API void (luaL_openlib) (lua_State *L, const char *libname,
 */
 
 /* print a string */
-#if !defined(lua_writestring)
-#define lua_writestring(s,l)   fwrite((s), sizeof(char), (l), stdout)
+#if !defined(lhat_writestring)
+#define lhat_writestring(s,l)   fwrite((s), sizeof(char), (l), stdout)
 #endif
 
 /* print a newline and flush the output */
-#if !defined(lua_writeline)
-#define lua_writeline()        (lua_writestring("\n", 1), fflush(stdout))
+#if !defined(lhat_writeline)
+#define lhat_writeline()        (lhat_writestring("\n", 1), fflush(stdout))
 #endif
 
 /* print an error message */
-#if !defined(lua_writestringerror)
-#define lua_writestringerror(s,p) \
+#if !defined(lhat_writestringerror)
+#define lhat_writestringerror(s,p) \
         (fprintf(stderr, (s), (p)), fflush(stderr))
 #endif
 
@@ -242,17 +242,17 @@ LUALIB_API void (luaL_openlib) (lua_State *L, const char *libname,
 ** Compatibility with deprecated conversions
 ** =============================================================
 */
-#if defined(LUA_COMPAT_APIINTCASTS)
+#if defined(LHAT_COMPAT_APIINTCASTS)
 
-#define luaL_checkunsigned(L,a)	((lua_Unsigned)luaL_checkinteger(L,a))
-#define luaL_optunsigned(L,a,d)	\
-	((lua_Unsigned)luaL_optinteger(L,a,(lua_Integer)(d)))
+#define lhatL_checkunsigned(L,a)	((lhat_Unsigned)lhatL_checkinteger(L,a))
+#define lhatL_optunsigned(L,a,d)	\
+	((lhat_Unsigned)lhatL_optinteger(L,a,(lhat_Integer)(d)))
 
-#define luaL_checkint(L,n)	((int)luaL_checkinteger(L, (n)))
-#define luaL_optint(L,n,d)	((int)luaL_optinteger(L, (n), (d)))
+#define lhatL_checkint(L,n)	((int)lhatL_checkinteger(L, (n)))
+#define lhatL_optint(L,n,d)	((int)lhatL_optinteger(L, (n), (d)))
 
-#define luaL_checklong(L,n)	((long)luaL_checkinteger(L, (n)))
-#define luaL_optlong(L,n,d)	((long)luaL_optinteger(L, (n), (d)))
+#define lhatL_checklong(L,n)	((long)lhatL_checkinteger(L, (n)))
+#define lhatL_optlong(L,n,d)	((long)lhatL_optinteger(L, (n), (d)))
 
 #endif
 /* }============================================================ */

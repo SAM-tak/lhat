@@ -1,7 +1,7 @@
 /*
 ** $Id: ltable.h,v 2.23 2016/12/22 13:08:50 roberto Exp $
-** Lua tables (hash)
-** See Copyright Notice in lua.h
+** Lhat tables (hash)
+** See Copyright Notice in lhat.h
 */
 
 #ifndef ltable_h
@@ -40,26 +40,26 @@
   (gkey(cast(Node *, cast(char *, (v)) - offsetof(Node, i_val))))
 
 
-LUAI_FUNC const TValue *luaH_getint (Table *t, lua_Integer key);
-LUAI_FUNC void luaH_setint (lua_State *L, Table *t, lua_Integer key,
+LHATI_FUNC const TValue *lhatH_getint (Table *t, lhat_Integer key);
+LHATI_FUNC void lhatH_setint (lhat_State *L, Table *t, lhat_Integer key,
                                                     TValue *value);
-LUAI_FUNC const TValue *luaH_getshortstr (Table *t, TString *key);
-LUAI_FUNC const TValue *luaH_getstr (Table *t, TString *key);
-LUAI_FUNC const TValue *luaH_get (Table *t, const TValue *key);
-LUAI_FUNC TValue *luaH_newkey (lua_State *L, Table *t, const TValue *key);
-LUAI_FUNC TValue *luaH_set (lua_State *L, Table *t, const TValue *key);
-LUAI_FUNC Table *luaH_new (lua_State *L);
-LUAI_FUNC void luaH_resize (lua_State *L, Table *t, unsigned int nasize,
+LHATI_FUNC const TValue *lhatH_getshortstr (Table *t, TString *key);
+LHATI_FUNC const TValue *lhatH_getstr (Table *t, TString *key);
+LHATI_FUNC const TValue *lhatH_get (Table *t, const TValue *key);
+LHATI_FUNC TValue *lhatH_newkey (lhat_State *L, Table *t, const TValue *key);
+LHATI_FUNC TValue *lhatH_set (lhat_State *L, Table *t, const TValue *key);
+LHATI_FUNC Table *lhatH_new (lhat_State *L);
+LHATI_FUNC void lhatH_resize (lhat_State *L, Table *t, unsigned int nasize,
                                                     unsigned int nhsize);
-LUAI_FUNC void luaH_resizearray (lua_State *L, Table *t, unsigned int nasize);
-LUAI_FUNC void luaH_free (lua_State *L, Table *t);
-LUAI_FUNC int luaH_next (lua_State *L, Table *t, StkId key);
-LUAI_FUNC int luaH_getn (Table *t);
+LHATI_FUNC void lhatH_resizearray (lhat_State *L, Table *t, unsigned int nasize);
+LHATI_FUNC void lhatH_free (lhat_State *L, Table *t);
+LHATI_FUNC int lhatH_next (lhat_State *L, Table *t, StkId key);
+LHATI_FUNC int lhatH_getn (Table *t);
 
 
-#if defined(LUA_DEBUG)
-LUAI_FUNC Node *luaH_mainposition (const Table *t, const TValue *key);
-LUAI_FUNC int luaH_isdummy (const Table *t);
+#if defined(LHAT_DEBUG)
+LHATI_FUNC Node *lhatH_mainposition (const Table *t, const TValue *key);
+LHATI_FUNC int lhatH_isdummy (const Table *t);
 #endif
 
 

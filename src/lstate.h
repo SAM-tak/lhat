@@ -1,13 +1,13 @@
 /*
 ** $Id: lstate.h,v 2.133 2016/12/22 13:08:50 roberto Exp $
 ** Global State
-** See Copyright Notice in lua.h
+** See Copyright Notice in lhat.h
 */
 
 #ifndef lstate_h
 #define lstate_h
 
-#include "lua.h"
+#include "lhat.h"
 
 #include "lobject.h"
 #include "ltm.h"
@@ -16,7 +16,7 @@
 
 /*
 
-** Some notes about garbage-collected objects: All objects in Lua must
+** Some notes about garbage-collected objects: All objects in Lhat must
 ** be kept somehow accessible until being freed, so all objects always
 ** belong to one (and only one) of these lists, using field 'next' of
 ** the 'CommonHeader' for the link:
@@ -30,12 +30,12 @@
 */
 
 
-struct lua_longjmp;  /* defined in ldo.c */
+struct lhat_longjmp;  /* defined in ldo.c */
 
 
 /*
-** Atomic type (relative to signals) to better ensure that 'lua_sethook'
-** is thread safe
+** Atomic type (relative to signals) to better ensure that 'lhat_sethook'
+** is coroutine safe
 */
 #if !defined(l_signalT)
 #include <signal.h>
@@ -47,7 +47,7 @@ struct lua_longjmp;  /* defined in ldo.c */
 #define EXTRA_STACK   5
 
 
-#define BASIC_STACK_SIZE        (2*LUA_MINSTACK)
+#define BASIC_STACK_SIZE        (2*LHAT_MINSTACK)
 
 
 /* kinds of Garbage Collection */
@@ -64,7 +64,7 @@ typedef struct stringtable {
 
 /*
 ** Information about a call.
-** When a thread yields, 'func' is adjusted to pretend that the
+** When a coroutine yields, 'func' is adjusted to pretend that the
 ** top function has only the yielded values in its stack; in that
 ** case, the actual 'func' value is saved in field 'extra'.
 ** When a function calls another with a continuation, 'extra' keeps
@@ -76,14 +76,14 @@ typedef struct CallInfo {
   StkId	top;  /* top for this function */
   struct CallInfo *previous, *next;  /* dynamic call link */
   union {
-    struct {  /* only for Lua functions */
+    struct {  /* only for Lhat functions */
       StkId base;  /* base for this function */
       const Instruction *savedpc;
     } l;
     struct {  /* only for C functions */
-      lua_KFunction k;  /* continuation in case of yields */
+      lhat_KFunction k;  /* continuation in case of yields */
       ptrdiff_t old_errfunc;
-      lua_KContext ctx;  /* context info. in case of yields */
+      lhat_KContext ctx;  /* context info. in case of yields */
     } c;
   } u;
   ptrdiff_t extra;
@@ -96,17 +96,17 @@ typedef struct CallInfo {
 ** Bits in CallInfo status
 */
 #define CIST_OAH	(1<<0)	/* original value of 'allowhook' */
-#define CIST_LUA	(1<<1)	/* call is running a Lua function */
+#define CIST_LHAT	(1<<1)	/* call is running a Lhat function */
 #define CIST_HOOKED	(1<<2)	/* call is running a debug hook */
 #define CIST_FRESH	(1<<3)	/* call is running on a fresh invocation
-                                   of luaV_execute */
+                                   of lhatV_execute */
 #define CIST_YPCALL	(1<<4)	/* call is a yieldable protected call */
 #define CIST_TAIL	(1<<5)	/* call was tail called */
 #define CIST_HOOKYIELD	(1<<6)	/* last hook called yielded */
 #define CIST_LEQ	(1<<7)  /* using __lt for __le */
 #define CIST_FIN	(1<<8)  /* call is running a finalizer */
 
-#define isLua(ci)	((ci)->callstatus & CIST_LUA)
+#define isLhat(ci)	((ci)->callstatus & CIST_LHAT)
 
 /* assume that CIST_OAH has offset 0 and that 'v' is strictly 0/1 */
 #define setoah(st,v)	((st) = ((st) & ~CIST_OAH) | (v))
@@ -114,10 +114,10 @@ typedef struct CallInfo {
 
 
 /*
-** 'global state', shared by all threads of this state
+** 'global state', shared by all coroutines of this state
 */
 typedef struct global_State {
-  lua_Alloc frealloc;  /* function to reallocate memory */
+  lhat_Alloc frealloc;  /* function to reallocate memory */
   void *ud;         /* auxiliary data to 'frealloc' */
   l_mem totalbytes;  /* number of bytes currently allocated - GCdebt */
   l_mem GCdebt;  /* bytes allocated not yet compensated by the collector */
@@ -140,24 +140,24 @@ typedef struct global_State {
   GCObject *allweak;  /* list of all-weak tables */
   GCObject *tobefnz;  /* list of userdata to be GC */
   GCObject *fixedgc;  /* list of objects not to be collected */
-  struct lua_State *twups;  /* list of threads with open upvalues */
+  struct lhat_State *twups;  /* list of coroutines with open upvalues */
   unsigned int gcfinnum;  /* number of finalizers to call in each GC step */
   int gcpause;  /* size of pause between successive GCs */
   int gcstepmul;  /* GC 'granularity' */
-  lua_CFunction panic;  /* to be called in unprotected errors */
-  struct lua_State *mainthread;
-  const lua_Number *version;  /* pointer to version number */
+  lhat_CFunction panic;  /* to be called in unprotected errors */
+  struct lhat_State *maincoroutine;
+  const lhat_Number *version;  /* pointer to version number */
   TString *memerrmsg;  /* memory-error message */
   TString *tmname[TM_N];  /* array with tag-method names */
-  struct Table *mt[LUA_NUMTAGS];  /* metatables for basic types */
+  struct Table *mt[LHAT_NUMTAGS];  /* metatables for basic types */
   TString *strcache[STRCACHE_N][STRCACHE_M];  /* cache for strings in API */
 } global_State;
 
 
 /*
-** 'per thread' state
+** 'per coroutine' state
 */
-struct lua_State {
+struct lhat_State {
   CommonHeader;
   unsigned short nci;  /* number of items in 'ci' list */
   lu_byte status;
@@ -169,10 +169,10 @@ struct lua_State {
   StkId stack;  /* stack base */
   UpVal *openupval;  /* list of open upvalues in this stack */
   GCObject *gclist;
-  struct lua_State *twups;  /* list of threads with open upvalues */
-  struct lua_longjmp *errorJmp;  /* current error recover point */
-  CallInfo base_ci;  /* CallInfo for first level (C calling Lua) */
-  volatile lua_Hook hook;
+  struct lhat_State *twups;  /* list of coroutines with open upvalues */
+  struct lhat_longjmp *errorJmp;  /* current error recover point */
+  CallInfo base_ci;  /* CallInfo for first level (C calling Lhat) */
+  volatile lhat_Hook hook;
   ptrdiff_t errfunc;  /* current error handling function (stack index) */
   int stacksize;
   int basehookcount;
@@ -197,7 +197,7 @@ union GCUnion {
   union Closure cl;
   struct Table h;
   struct Proto p;
-  struct lua_State th;  /* thread */
+  struct lhat_State th;  /* coroutine */
 };
 
 
@@ -205,30 +205,30 @@ union GCUnion {
 
 /* macros to convert a GCObject into a specific value */
 #define gco2ts(o)  \
-	check_exp(novariant((o)->tt) == LUA_TSTRING, &((cast_u(o))->ts))
-#define gco2u(o)  check_exp((o)->tt == LUA_TUSERDATA, &((cast_u(o))->u))
-#define gco2lcl(o)  check_exp((o)->tt == LUA_TLCL, &((cast_u(o))->cl.l))
-#define gco2ccl(o)  check_exp((o)->tt == LUA_TCCL, &((cast_u(o))->cl.c))
+	check_exp(novariant((o)->tt) == LHAT_TSTRING, &((cast_u(o))->ts))
+#define gco2u(o)  check_exp((o)->tt == LHAT_TUSERDATA, &((cast_u(o))->u))
+#define gco2lcl(o)  check_exp((o)->tt == LHAT_TLCL, &((cast_u(o))->cl.l))
+#define gco2ccl(o)  check_exp((o)->tt == LHAT_TCCL, &((cast_u(o))->cl.c))
 #define gco2cl(o)  \
-	check_exp(novariant((o)->tt) == LUA_TFUNCTION, &((cast_u(o))->cl))
-#define gco2t(o)  check_exp((o)->tt == LUA_TTABLE, &((cast_u(o))->h))
-#define gco2p(o)  check_exp((o)->tt == LUA_TPROTO, &((cast_u(o))->p))
-#define gco2th(o)  check_exp((o)->tt == LUA_TTHREAD, &((cast_u(o))->th))
+	check_exp(novariant((o)->tt) == LHAT_TFUNCTION, &((cast_u(o))->cl))
+#define gco2t(o)  check_exp((o)->tt == LHAT_TTABLE, &((cast_u(o))->h))
+#define gco2p(o)  check_exp((o)->tt == LHAT_TPROTO, &((cast_u(o))->p))
+#define gco2th(o)  check_exp((o)->tt == LHAT_TCOROUTINE, &((cast_u(o))->th))
 
 
-/* macro to convert a Lua object into a GCObject */
+/* macro to convert a Lhat object into a GCObject */
 #define obj2gco(v) \
-	check_exp(novariant((v)->tt) < LUA_TDEADKEY, (&(cast_u(v)->gc)))
+	check_exp(novariant((v)->tt) < LHAT_TDEADKEY, (&(cast_u(v)->gc)))
 
 
 /* actual number of total bytes allocated */
 #define gettotalbytes(g)	cast(lu_mem, (g)->totalbytes + (g)->GCdebt)
 
-LUAI_FUNC void luaE_setdebt (global_State *g, l_mem debt);
-LUAI_FUNC void luaE_freethread (lua_State *L, lua_State *L1);
-LUAI_FUNC CallInfo *luaE_extendCI (lua_State *L);
-LUAI_FUNC void luaE_freeCI (lua_State *L);
-LUAI_FUNC void luaE_shrinkCI (lua_State *L);
+LHATI_FUNC void lhatE_setdebt (global_State *g, l_mem debt);
+LHATI_FUNC void lhatE_freecoroutine (lhat_State *L, lhat_State *L1);
+LHATI_FUNC CallInfo *lhatE_extendCI (lhat_State *L);
+LHATI_FUNC void lhatE_freeCI (lhat_State *L);
+LHATI_FUNC void lhatE_shrinkCI (lhat_State *L);
 
 
 #endif

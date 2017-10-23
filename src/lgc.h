@@ -1,7 +1,7 @@
 /*
 ** $Id: lgc.h,v 2.91 2015/12/21 13:02:14 roberto Exp $
 ** Garbage Collector
-** See Copyright Notice in lua.h
+** See Copyright Notice in lhat.h
 */
 
 #ifndef lgc_h
@@ -79,7 +79,7 @@
 #define WHITE1BIT	1  /* object is white (type 1) */
 #define BLACKBIT	2  /* object is black */
 #define FINALIZEDBIT	3  /* object has been marked for finalization */
-/* bit 7 is currently used by tests (luaL_checkmemory) */
+/* bit 7 is currently used by tests (lhatL_checkmemory) */
 
 #define WHITEBITS	bit2mask(WHITE0BIT, WHITE1BIT)
 
@@ -98,7 +98,7 @@
 #define changewhite(x)	((x)->marked ^= WHITEBITS)
 #define gray2black(x)	l_setbit((x)->marked, BLACKBIT)
 
-#define luaC_white(g)	cast(lu_byte, (g)->currentwhite & WHITEBITS)
+#define lhatC_white(g)	cast(lu_byte, (g)->currentwhite & WHITEBITS)
 
 
 /*
@@ -107,41 +107,41 @@
 ** 'condchangemem' is used only for heavy tests (forcing a full
 ** GC cycle on every opportunity)
 */
-#define luaC_condGC(L,pre,pos) \
-	{ if (G(L)->GCdebt > 0) { pre; luaC_step(L); pos;}; \
+#define lhatC_condGC(L,pre,pos) \
+	{ if (G(L)->GCdebt > 0) { pre; lhatC_step(L); pos;}; \
 	  condchangemem(L,pre,pos); }
 
 /* more often than not, 'pre'/'pos' are empty */
-#define luaC_checkGC(L)		luaC_condGC(L,(void)0,(void)0)
+#define lhatC_checkGC(L)		lhatC_condGC(L,(void)0,(void)0)
 
 
-#define luaC_barrier(L,p,v) (  \
+#define lhatC_barrier(L,p,v) (  \
 	(iscollectable(v) && isblack(p) && iswhite(gcvalue(v))) ?  \
-	luaC_barrier_(L,obj2gco(p),gcvalue(v)) : cast_void(0))
+	lhatC_barrier_(L,obj2gco(p),gcvalue(v)) : cast_void(0))
 
-#define luaC_barrierback(L,p,v) (  \
+#define lhatC_barrierback(L,p,v) (  \
 	(iscollectable(v) && isblack(p) && iswhite(gcvalue(v))) ? \
-	luaC_barrierback_(L,p) : cast_void(0))
+	lhatC_barrierback_(L,p) : cast_void(0))
 
-#define luaC_objbarrier(L,p,o) (  \
+#define lhatC_objbarrier(L,p,o) (  \
 	(isblack(p) && iswhite(o)) ? \
-	luaC_barrier_(L,obj2gco(p),obj2gco(o)) : cast_void(0))
+	lhatC_barrier_(L,obj2gco(p),obj2gco(o)) : cast_void(0))
 
-#define luaC_upvalbarrier(L,uv) ( \
+#define lhatC_upvalbarrier(L,uv) ( \
 	(iscollectable((uv)->v) && !upisopen(uv)) ? \
-         luaC_upvalbarrier_(L,uv) : cast_void(0))
+         lhatC_upvalbarrier_(L,uv) : cast_void(0))
 
-LUAI_FUNC void luaC_fix (lua_State *L, GCObject *o);
-LUAI_FUNC void luaC_freeallobjects (lua_State *L);
-LUAI_FUNC void luaC_step (lua_State *L);
-LUAI_FUNC void luaC_runtilstate (lua_State *L, int statesmask);
-LUAI_FUNC void luaC_fullgc (lua_State *L, int isemergency);
-LUAI_FUNC GCObject *luaC_newobj (lua_State *L, int tt, size_t sz);
-LUAI_FUNC void luaC_barrier_ (lua_State *L, GCObject *o, GCObject *v);
-LUAI_FUNC void luaC_barrierback_ (lua_State *L, Table *o);
-LUAI_FUNC void luaC_upvalbarrier_ (lua_State *L, UpVal *uv);
-LUAI_FUNC void luaC_checkfinalizer (lua_State *L, GCObject *o, Table *mt);
-LUAI_FUNC void luaC_upvdeccount (lua_State *L, UpVal *uv);
+LHATI_FUNC void lhatC_fix (lhat_State *L, GCObject *o);
+LHATI_FUNC void lhatC_freeallobjects (lhat_State *L);
+LHATI_FUNC void lhatC_step (lhat_State *L);
+LHATI_FUNC void lhatC_runtilstate (lhat_State *L, int statesmask);
+LHATI_FUNC void lhatC_fullgc (lhat_State *L, int isemergency);
+LHATI_FUNC GCObject *lhatC_newobj (lhat_State *L, int tt, size_t sz);
+LHATI_FUNC void lhatC_barrier_ (lhat_State *L, GCObject *o, GCObject *v);
+LHATI_FUNC void lhatC_barrierback_ (lhat_State *L, Table *o);
+LHATI_FUNC void lhatC_upvalbarrier_ (lhat_State *L, UpVal *uv);
+LHATI_FUNC void lhatC_checkfinalizer (lhat_State *L, GCObject *o, Table *mt);
+LHATI_FUNC void lhatC_upvdeccount (lhat_State *L, UpVal *uv);
 
 
 #endif
