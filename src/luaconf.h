@@ -258,7 +258,14 @@
 
 /* more often than not the libs go together with the core */
 #define LUALIB_API	LUA_API
-#define LUAMOD_API	LUALIB_API
+
+#if defined(LUA_BUILD_AS_DLL)	/* { */
+# define LUAMOD_DEC __declspec(dllimport)
+# define LUAMOD_API __declspec(dllexport)
+#else				/* }{ */
+# define LUAMOD_DEC		extern
+# define LUAMOD_API		extern
+#endif				/* } */
 
 
 /*
