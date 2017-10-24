@@ -223,7 +223,8 @@ static unsigned int computesizes(unsigned int nums[], unsigned int *pna)
     unsigned int na = 0;  // number of elements to go to array part
     unsigned int optimal = 0;  // optimal size for array part
     // loop while keys can fill more than half of total size
-    for(int i = 0, twotoi = 1; *pna > twotoi / 2; i++, twotoi *= 2) {
+    int i;
+    for(i = 0, twotoi = 1; *pna > twotoi / 2; i++, twotoi *= 2) {
         if(nums[i] > 0) {
             a += nums[i];
             if(a > twotoi / 2) {  // more than half elements present?

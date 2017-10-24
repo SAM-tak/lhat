@@ -31,32 +31,33 @@ enum {
 
 //
 // LHAT_TFUNCTION variants:
-// 0 - Lhat function
+// 0 - L^ function
 // 1 - light C function
 // 2 - regular C function (closure)
 //
+enum {
+	// Variant tags for functions
+	LHAT_TLCL = (LHAT_TFUNCTION | (0 << 4)),  // L^ closure
+	LHAT_TLCF = (LHAT_TFUNCTION | (1 << 4)),  // light C function
+	LHAT_TCCL = (LHAT_TFUNCTION | (2 << 4)),  // C closure
 
-// Variant tags for functions
-#define LHAT_TLCL	(LHAT_TFUNCTION | (0 << 4))  // Lhat closure
-#define LHAT_TLCF	(LHAT_TFUNCTION | (1 << 4))  // light C function
-#define LHAT_TCCL	(LHAT_TFUNCTION | (2 << 4))  // C closure
+	// Variant tags for strings
+	LHAT_TSHRSTR = (LHAT_TSTRING | (0 << 4)),  // short strings
+	LHAT_TLNGSTR = (LHAT_TSTRING | (1 << 4)),  // long strings
 
+	// Variant tags for numbers
+	LHAT_TNUMFLT = (LHAT_TNUMBER | (0 << 4)),  // float numbers
+	LHAT_TNUMINT = (LHAT_TNUMBER | (1 << 4)),  // integer numbers
 
-// Variant tags for strings
-#define LHAT_TSHRSTR	(LHAT_TSTRING | (0 << 4))  // short strings
-#define LHAT_TLNGSTR	(LHAT_TSTRING | (1 << 4))  // long strings
-
-
-// Variant tags for numbers
-#define LHAT_TNUMFLT	(LHAT_TNUMBER | (0 << 4))  // float numbers
-#define LHAT_TNUMINT	(LHAT_TNUMBER | (1 << 4))  // integer numbers
-
-
-// Bit mark for collectable types
-#define BIT_ISCOLLECTABLE	(1 << 6)
+	// Bit mark for collectable types
+	BIT_ISCOLLECTABLE = (1 << 6)
+};
 
 // mark a tag as collectable
-#define ctb(t)			((t) | BIT_ISCOLLECTABLE)
+inline int ctb(int t)
+{
+	return t | BIT_ISCOLLECTABLE;
+}
 
 
 //
@@ -83,12 +84,12 @@ struct GCObject {
 
 
 //
-// Tagged Values. This is the basic representation of values in Lhat,
+// Tagged Values. This is the basic representation of values in L^,
 // an actual value plus a tag with its type.
 //
 
 //
-// Union of all Lhat values
+// Union of all L^ values
 //
 typedef union Value {
 	GCObject *gc;    // collectable objects
@@ -135,7 +136,7 @@ typedef struct lhat_TValue {
 #define ttisnumber(o)		checktype((o), LHAT_TNUMBER)
 #define ttisfloat(o)		checktag((o), LHAT_TNUMFLT)
 #define ttisinteger(o)		checktag((o), LHAT_TNUMINT)
-#define ttisnil(o)		checktag((o), LHAT_TNIL)
+#define ttisnil(o)			checktag((o), LHAT_TNIL)
 #define ttisboolean(o)		checktag((o), LHAT_TBOOLEAN)
 #define ttislightuserdata(o)	checktag((o), LHAT_TLIGHTUSERDATA)
 #define ttisstring(o)		checktype((o), LHAT_TSTRING)
@@ -322,7 +323,7 @@ typedef union UTString {
   check_exp(sizeof((ts)->extra), cast(char *, (ts)) + sizeof(UTString))
 
 
-// get the actual string (array of bytes) from a Lhat value
+// get the actual string (array of bytes) from a L^ value
 #define svalue(o)       getstr(tsvalue(o))
 
 // get string length from 'TString *s'
@@ -424,7 +425,7 @@ typedef struct Proto {
 
 
 //
-// Lhat Upvalues
+// L^ Upvalues
 //
 typedef struct Upvalue Upvalue;
 
