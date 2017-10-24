@@ -32,11 +32,11 @@
 
 // memory-allocator control variables
 typedef struct Memcontrol {
-	unsigned long numblocks;
-	unsigned long total;
-	unsigned long maxmem;
-	unsigned long memlimit;
-	unsigned long objcount[LHAT_NUMTAGS];
+	size_t numblocks;
+	size_t total;
+	size_t maxmem;
+	size_t memlimit;
+	int objcount[LHAT_NUMTAGS];
 } Memcontrol;
 
 LHAT_API Memcontrol l_memcontrol;

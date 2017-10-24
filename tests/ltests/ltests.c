@@ -129,7 +129,7 @@ void *debug_realloc(void *ud, void *b, size_t oldsize, size_t size)
         mc->memlimit = limit ? strtoul(limit, NULL, 10) : ULONG_MAX;
     }
     if(block == NULL) {
-        type = (oldsize < LHAT_NUMTAGS) ? oldsize : 0;
+        type = (oldsize < LHAT_NUMTAGS) ? cast_int(oldsize) : 0;
         oldsize = 0;
     }
     else {
@@ -225,13 +225,12 @@ static void checkvalref(GlobalState *g, GCObject *f, const TValue *t)
 
 static void checktable(GlobalState *g, Table *h)
 {
-    unsigned int i;
-    Node *n, *limit = gnode(h, sizenode(h));
+    Node *limit = gnode(h, cast(size_t, sizenode(h)));
     GCObject *hgc = obj2gco(h);
     checkobjref(g, hgc, h->metatable);
-    for(i = 0; i < h->sizearray; i++)
+    for(unsigned int i = 0; i < h->sizearray; i++)
         checkvalref(g, hgc, &h->array[i]);
-    for(n = gnode(h, 0); n < limit; n++) {
+    for(Node *n = gnode(h, 0); n < limit; n++) {
         if(!ttisnil(gval(n))) {
             lhat_assert(!ttisnil(gkey(n)));
             checkvalref(g, hgc, gkey(n));
@@ -263,7 +262,7 @@ static void checkproto(GlobalState *g, Proto *f)
 }
 
 
-static void checkCclosure(GlobalState *g, CClosure *cl)
+static void checkCClosure(GlobalState *g, CClosure *cl)
 {
     GCObject *clgc = obj2gco(cl);
     for(int i = 0; i < cl->nupvalues; i++)
@@ -271,7 +270,7 @@ static void checkCclosure(GlobalState *g, CClosure *cl)
 }
 
 
-static void checkLclosure(GlobalState *g, LClosure *cl)
+static void checkLClosure(GlobalState *g, LClosure *cl)
 {
     GCObject *clgc = obj2gco(cl);
     checkobjref(g, clgc, cl->p);
@@ -342,11 +341,11 @@ static void checkobject(GlobalState *g, GCObject *o, int maybedead)
             break;
         }
         case LHAT_TLCL: {
-            checkLclosure(g, gco2lcl(o));
+            checkLClosure(g, gco2lcl(o));
             break;
         }
         case LHAT_TCCL: {
-            checkCclosure(g, gco2ccl(o));
+            checkCClosure(g, gco2ccl(o));
             break;
         }
         case LHAT_TPROTO: {
@@ -682,7 +681,7 @@ static int stacklevel(lhat_State *L)
     unsigned long a = 0;
     lhat_pushinteger(L, (L->top - L->stack));
     lhat_pushinteger(L, (L->stack_last - L->stack));
-    lhat_pushinteger(L, (unsigned long)&a);
+    lhat_pushinteger(L, cast_int(cast(size_t, &a)));
     return 3;
 }
 
@@ -808,7 +807,7 @@ static int pushuserdata(lhat_State *L)
 
 static int udataval(lhat_State *L)
 {
-    lhat_pushinteger(L, cast(long, lhat_touserdata(L, 1)));
+    lhat_pushinteger(L, cast_int(cast(size_t, lhat_touserdata(L, 1))));
     return 1;
 }
 
@@ -1123,14 +1122,14 @@ static int runC(lhat_State *L, lhat_State *L1, const char *pc)
         else if EQ("append")
         {
             int t = getindex;
-            int i = lhat_rawlen(L1, t);
+            int i = cast_int(lhat_rawlen(L1, t));
             lhat_rawseti(L1, t, i + 1);
         }
         else if EQ("arith")
         {
             int op;
             skip(&pc);
-            op = strchr(ops, *pc++) - ops;
+            op = cast_int(strchr(ops, *pc++) - ops);
             lhat_arith(L1, op);
         }
         else if EQ("call")
@@ -1175,7 +1174,7 @@ static int runC(lhat_State *L, lhat_State *L1, const char *pc)
         else if EQ("func2num")
         {
             lhat_CFunction func = lhat_tocfunction(L1, getindex);
-            lhat_pushnumber(L1, cast(size_t, func));
+            lhat_pushnumber(L1, cast_num((size_t)func));
         }
         else if EQ("getfield")
         {
@@ -1456,7 +1455,7 @@ static int runC(lhat_State *L, lhat_State *L1, const char *pc)
         }
         else if EQ("topointer")
         {
-            lhat_pushnumber(L1, cast(size_t, lhat_topointer(L1, getindex)));
+            lhat_pushnumber(L1, cast_num((size_t)lhat_topointer(L1, getindex)));
         }
         else if EQ("tostring")
         {
@@ -1526,7 +1525,7 @@ static int Cfunck(lhat_State *L, int status, lhat_KContext ctx)
     lhat_setglobal(L, "status");
     lhat_pushinteger(L, ctx);
     lhat_setglobal(L, "ctx");
-    return runC(L, L, lhat_tostring(L, ctx));
+    return runC(L, L, lhat_tostring(L, cast_int(ctx)));
 }
 
 
