@@ -85,7 +85,7 @@ static int str_reverse(lhat_State *L)
     size_t l, i;
     lhatL_Buffer b;
     const char *s = lhatL_checklstring(L, 1, &l);
-    char *p = lhatL_buffinitsize(L, &b, l);
+    char *p = lhatL_buffinitsize(&b, l, L);
     for(i = 0; i < l; i++)
         p[i] = s[l - i - 1];
     lhatL_pushresultsize(&b, l);
@@ -96,11 +96,10 @@ static int str_reverse(lhat_State *L)
 static int str_lower(lhat_State *L)
 {
     size_t l;
-    size_t i;
-    lhatL_Buffer b;
     const char *s = lhatL_checklstring(L, 1, &l);
-    char *p = lhatL_buffinitsize(L, &b, l);
-    for(i = 0; i<l; i++)
+    lhatL_Buffer b;
+    char *p = lhatL_buffinitsize(&b, l, L);
+    for(size_t i = 0; i < l; i++)
         p[i] = tolower(uchar(s[i]));
     lhatL_pushresultsize(&b, l);
     return 1;
@@ -110,11 +109,10 @@ static int str_lower(lhat_State *L)
 static int str_upper(lhat_State *L)
 {
     size_t l;
-    size_t i;
-    lhatL_Buffer b;
     const char *s = lhatL_checklstring(L, 1, &l);
-    char *p = lhatL_buffinitsize(L, &b, l);
-    for(i = 0; i<l; i++)
+    lhatL_Buffer b;
+    char *p = lhatL_buffinitsize(&b, l, L);
+    for(size_t i = 0; i < l; i++)
         p[i] = toupper(uchar(s[i]));
     lhatL_pushresultsize(&b, l);
     return 1;
@@ -133,7 +131,7 @@ static int str_rep(lhat_State *L)
     else {
         size_t totallen = (size_t)n * l + (size_t)(n - 1) * lsep;
         lhatL_Buffer b;
-        char *p = lhatL_buffinitsize(L, &b, totallen);
+        char *p = lhatL_buffinitsize(&b, totallen, L);
         while(n-- > 1) {  // first n-1 copies (followed by separator)
             memcpy(p, s, l * sizeof(char)); p += l;
             if(lsep > 0) {  // empty 'memcpy' is not that cheap
@@ -173,7 +171,7 @@ static int str_char(lhat_State *L)
     int n = lhat_gettop(L);  // number of arguments
     int i;
     lhatL_Buffer b;
-    char *p = lhatL_buffinitsize(L, &b, n);
+    char *p = lhatL_buffinitsize(&b, n, L);
     for(i = 1; i <= n; i++) {
         lhat_Integer c = lhatL_checkinteger(L, i);
         lhatL_argcheck(L, uchar(c) == c, i, "value out of range");
@@ -198,7 +196,7 @@ static int str_dump(lhat_State *L)
     int strip = lhat_toboolean(L, 2);
     lhatL_checktype(L, 1, LHAT_TFUNCTION);
     lhat_settop(L, 1);
-    lhatL_buffinit(L, &b);
+    lhatL_buffinit(&b, L);
     if(lhat_dump(L, writer, &b, strip) != 0)
         return lhatL_error(L, "unable to dump given function");
     lhatL_pushresult(&b);
@@ -797,7 +795,7 @@ static int str_gsub(lhat_State *L)
     lhatL_argcheck(L, tr == LHAT_TNUMBER || tr == LHAT_TSTRING ||
         tr == LHAT_TFUNCTION || tr == LHAT_TTABLE, 3,
         "string/function/table expected");
-    lhatL_buffinit(L, &b);
+    lhatL_buffinit(&b, L);
     if(anchor) {
         p++; lp--;  // skip anchor character
     }
@@ -1052,7 +1050,7 @@ static int str_format(lhat_State *L)
     const char *strfrmt = lhatL_checklstring(L, arg, &sfl);
     const char *strfrmt_end = strfrmt + sfl;
     lhatL_Buffer b;
-    lhatL_buffinit(L, &b);
+    lhatL_buffinit(&b, L);
     while(strfrmt < strfrmt_end) {
         if(*strfrmt != L_ESC)
             lhatL_addchar(&b, *strfrmt++);
@@ -1371,7 +1369,7 @@ static int str_pack(lhat_State *L)
     initheader(L, &h);
     lhat_pushnil(L);  // mark to separate arguments from string buffer
     lhatL_Buffer b;
-    lhatL_buffinit(L, &b);
+    lhatL_buffinit(&b, L);
     while(*fmt != '\0') {
         int size, ntoalign;
         KOption opt = getdetails(&h, totalsize, &fmt, &size, &ntoalign);

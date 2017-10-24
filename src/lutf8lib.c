@@ -145,7 +145,7 @@ static int utfchar(lhat_State *L)
     else {
         int i;
         lhatL_Buffer b;
-        lhatL_buffinit(L, &b);
+        lhatL_buffinit(&b, L);
         for(i = 1; i <= n; i++) {
             pushutfchar(L, i);
             lhatL_addvalue(&b);

@@ -421,7 +421,7 @@ static const char *pushnexttemplate(lhat_State *L, const char *path)
 static const char *searchpath(lhat_State *L, const char *name, const char *path, const char *sep, const char *dirsep)
 {
     lhatL_Buffer msg;  // to build error message
-    lhatL_buffinit(L, &msg);
+    lhatL_buffinit(&msg, L);
     if(*sep != '\0')  // non-empty separator?
         name = lhatL_gsub(L, name, sep, dirsep);  // replace it by 'dirsep'
     while((path = pushnexttemplate(L, path)) != NULL) {
@@ -555,7 +555,7 @@ static int searcher_preload(lhat_State *L)
 static void findloader(lhat_State *L, const char *name)
 {
     lhatL_Buffer msg;  // to build error message
-    lhatL_buffinit(L, &msg);
+    lhatL_buffinit(&msg, L);
     // push 'package.searchers' to index 3 in the stack
     if(lhat_getfield(L, lhat_upvalueindex(1), "searchers") != LHAT_TTABLE)
         lhatL_error(L, "'package.searchers' must be a table");

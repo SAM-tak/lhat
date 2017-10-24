@@ -583,7 +583,7 @@ LHATLIB_API void lhatL_addvalue(lhatL_Buffer *B)
 }
 
 
-LHATLIB_API void lhatL_buffinit(lhat_State *L, lhatL_Buffer *B)
+LHATLIB_API void lhatL_buffinit(lhatL_Buffer *B, lhat_State *L)
 {
     B->L = L;
     B->b = B->initb;
@@ -592,9 +592,9 @@ LHATLIB_API void lhatL_buffinit(lhat_State *L, lhatL_Buffer *B)
 }
 
 
-LHATLIB_API char *lhatL_buffinitsize(lhat_State *L, lhatL_Buffer *B, size_t sz)
+LHATLIB_API char *lhatL_buffinitsize(lhatL_Buffer *B, size_t sz, lhat_State *L)
 {
-    lhatL_buffinit(L, B);
+    lhatL_buffinit(B, L);
     return lhatL_prepbuffsize(B, sz);
 }
 
@@ -945,7 +945,7 @@ LHATLIB_API const char *lhatL_gsub(lhat_State *L, const char *s, const char *p, 
     const char *wild;
     size_t l = strlen(p);
     lhatL_Buffer b;
-    lhatL_buffinit(L, &b);
+    lhatL_buffinit(&b, L);
     while((wild = strstr(s, p)) != NULL) {
         lhatL_addlstring(&b, s, wild - s);  // push prefix
         lhatL_addstring(&b, r);  // push replacement in place of pattern

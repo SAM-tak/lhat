@@ -156,7 +156,7 @@ static int tconcat(lhat_State *L)
     lhat_Integer i = lhatL_optinteger(L, 3, 1);
     last = lhatL_optinteger(L, 4, last);
     lhatL_Buffer b;
-    lhatL_buffinit(L, &b);
+    lhatL_buffinit(&b, L);
     for(; i < last; i++) {
         addfield(L, &b, i);
         lhatL_addlstring(&b, sep, lsep);

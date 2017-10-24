@@ -475,7 +475,7 @@ static int read_line(lhat_State *L, FILE *f, int chop)
 {
     lhatL_Buffer b;
     int c = '\0';
-    lhatL_buffinit(L, &b);
+    lhatL_buffinit(&b, L);
     while(c != EOF && c != '\n') {  // repeat until end of line
         char *buff = lhatL_prepbuffer(&b);  // preallocate buffer
         int i = 0;
@@ -496,7 +496,7 @@ static int read_line(lhat_State *L, FILE *f, int chop)
 static void read_all(lhat_State *L, FILE *f)
 {
     lhatL_Buffer b;
-    lhatL_buffinit(L, &b);
+    lhatL_buffinit(&b, L);
     size_t nr;
     do {  // read file in chunks of LHATL_BUFFERSIZE bytes
         char *p = lhatL_prepbuffer(&b);
@@ -510,7 +510,7 @@ static void read_all(lhat_State *L, FILE *f)
 static int read_chars(lhat_State *L, FILE *f, size_t n)
 {
     lhatL_Buffer b;
-    lhatL_buffinit(L, &b);
+    lhatL_buffinit(&b, L);
     char *p = lhatL_prepbuffsize(&b, n);  // prepare buffer to read whole block
     // number of chars actually read
     size_t nr = fread(p, sizeof(char), n, f);  // try to read 'n' chars

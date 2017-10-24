@@ -289,7 +289,7 @@ static int os_date(lhat_State *L)
         char cc[4];  // buffer for individual conversion specifiers
         lhatL_Buffer b;
         cc[0] = '%';
-        lhatL_buffinit(L, &b);
+        lhatL_buffinit(&b, L);
         while(s < se) {
             if(*s != '%')  // not a conversion specifier?
                 lhatL_addchar(&b, *s++);
