@@ -54,7 +54,7 @@ struct Zio {
   const char *p;		// current position in buffer
   lhat_Reader reader;		// reader function
   void *data;			// additional data
-  lhat_State *L;			// Lhat state (for reader)
+  lhat_State *L;			// L^ state (for reader)
 };
 
 

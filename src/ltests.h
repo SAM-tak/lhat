@@ -7,7 +7,7 @@
 
 #include <stdlib.h>
 
-// test Lhat with no compatibility code
+// test L^ with no compatibility code
 #undef LHAT_COMPAT_MATHLIB
 #undef LHAT_COMPAT_IPAIRS
 #undef LHAT_COMPAT_BITLIB
@@ -63,7 +63,7 @@ extern void *l_Trick;
 
 
 //
-// Function to traverse and check all memory used by Lhat
+// Function to traverse and check all memory used by L^
 //
 int lhat_checkmemory (lhat_State *L);
 

@@ -1,6 +1,6 @@
 //
 // $Id: lstring.h,v 1.61 2015/11/03 15:36:01 roberto Exp $
-// String table (keep all strings handled by Lhat)
+// String table (keep all strings handled by L^)
 // See Copyright Notice in lhat.h
 //
 

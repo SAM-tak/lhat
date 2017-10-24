@@ -1,6 +1,6 @@
 //
 // $Id: lundump.h,v 1.45 2015/09/08 15:41:05 roberto Exp $
-// load precompiled Lhat chunks
+// load precompiled L^ chunks
 // See Copyright Notice in lhat.h
 //
 

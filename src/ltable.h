@@ -1,6 +1,6 @@
 //
 // $Id: ltable.h,v 2.23 2016/12/22 13:08:50 roberto Exp $
-// Lhat tables (hash)
+// L^ tables (hash)
 // See Copyright Notice in lhat.h
 //
 

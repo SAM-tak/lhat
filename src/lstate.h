@@ -13,7 +13,7 @@
 
 
 //
-// Some notes about garbage-collected objects: All objects in Lhat must
+// Some notes about garbage-collected objects: All objects in L^ must
 // be kept somehow accessible until being freed, so all objects always
 // belong to one (and only one) of these lists, using field 'next' of
 // the 'CommonHeader' for the link:
@@ -73,7 +73,7 @@ typedef struct CallInfo {
   StkId	top;  // top for this function
   struct CallInfo *previous, *next;  // dynamic call link
   union {
-    struct {  // only for Lhat functions
+    struct {  // only for L^ functions
       StkId base;  // base for this function
       const Instruction *savedpc;
     } l;
@@ -93,7 +93,7 @@ typedef struct CallInfo {
 // Bits in CallInfo status
 //
 #define CIST_OAH	(1<<0)	// original value of 'allowhook'
-#define CIST_LHAT	(1<<1)	// call is running a Lhat function
+#define CIST_LHAT	(1<<1)	// call is running a L^ function
 #define CIST_HOOKED	(1<<2)	// call is running a debug hook
 #define CIST_FRESH	(1<<3)	// call is running on a fresh invocation of lhatV_execute
 #define CIST_YPCALL	(1<<4)	// call is a yieldable protected call
@@ -167,7 +167,7 @@ struct lhat_State {
   GCObject *gclist;
   struct lhat_State *twups;  // list of coroutines with open upvalues
   struct lhat_longjmp *errorJmp;  // current error recover point
-  CallInfo base_ci;  // CallInfo for first level (C calling Lhat)
+  CallInfo base_ci;  // CallInfo for first level (C calling L^)
   volatile lhat_Hook hook;
   ptrdiff_t errfunc;  // current error handling function (stack index)
   int stacksize;
@@ -212,7 +212,7 @@ union GCUnion {
 #define gco2th(o)  check_exp((o)->tt == LHAT_TCOROUTINE, &((cast_u(o))->th))
 
 
-// macro to convert a Lhat object into a GCObject
+// macro to convert a L^ object into a GCObject
 #define obj2gco(v) \
 	check_exp(novariant((v)->tt) < LHAT_TDEADKEY, (&(cast_u(v)->gc)))
 

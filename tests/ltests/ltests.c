@@ -219,8 +219,7 @@ static int testobjref(global_State *g, GCObject *f, GCObject *t)
 
 static void checkvalref(global_State *g, GCObject *f, const TValue *t)
 {
-    lhat_assert(!iscollectable(t) ||
-        (righttt(t) && testobjref(g, f, gcvalue(t))));
+    lhat_assert(!iscollectable(t) || (righttt(t) && testobjref(g, f, gcvalue(t))));
 }
 
 
@@ -248,29 +247,26 @@ static void checktable(global_State *g, Table *h)
 //
 static void checkproto(global_State *g, Proto *f)
 {
-    int i;
     GCObject *fgc = obj2gco(f);
     checkobjref(g, fgc, f->cache);
     checkobjref(g, fgc, f->source);
-    for(i = 0; i<f->sizek; i++) {
+    for(int i = 0; i<f->sizek; i++) {
         if(ttisstring(f->k + i))
             checkobjref(g, fgc, tsvalue(f->k + i));
     }
-    for(i = 0; i<f->sizeupvalues; i++)
+    for(int i = 0; i<f->sizeupvalues; i++)
         checkobjref(g, fgc, f->upvalues[i].name);
-    for(i = 0; i<f->sizep; i++)
+    for(int i = 0; i<f->sizep; i++)
         checkobjref(g, fgc, f->p[i]);
-    for(i = 0; i<f->sizelocvars; i++)
+    for(int i = 0; i<f->sizelocvars; i++)
         checkobjref(g, fgc, f->locvars[i].varname);
 }
-
 
 
 static void checkCclosure(global_State *g, CClosure *cl)
 {
     GCObject *clgc = obj2gco(cl);
-    int i;
-    for(i = 0; i < cl->nupvalues; i++)
+    for(int i = 0; i < cl->nupvalues; i++)
         checkvalref(g, clgc, &cl->upvalues[i]);
 }
 
@@ -278,9 +274,8 @@ static void checkCclosure(global_State *g, CClosure *cl)
 static void checkLclosure(global_State *g, LClosure *cl)
 {
     GCObject *clgc = obj2gco(cl);
-    int i;
     checkobjref(g, clgc, cl->p);
-    for(i = 0; i<cl->nupvalues; i++) {
+    for(int i = 0; i<cl->nupvalues; i++) {
         Upvalue *uv = cl->upvalues[i];
         if(uv) {
             if(!upisopen(uv))  // only closed upvalues matter to invariant
@@ -308,18 +303,15 @@ static int lhat_checkpc(lhat_State *L, CallInfo *ci)
 
 static void checkstack(global_State *g, lhat_State *L1)
 {
-    StkId o;
-    CallInfo *ci;
-    Upvalue *uv;
     lhat_assert(!isdead(g, L1));
-    for(uv = L1->openupval; uv != NULL; uv = uv->u.open.next)
+    for(Upvalue *uv = L1->openupval; uv != NULL; uv = uv->u.open.next)
         lhat_assert(upisopen(uv));  // must be open
-    for(ci = L1->ci; ci != NULL; ci = ci->previous) {
+    for(CallInfo *ci = L1->ci; ci != NULL; ci = ci->previous) {
         lhat_assert(ci->top <= L1->stack_last);
         lhat_assert(lhat_checkpc(L1, ci));
     }
     if(L1->stack) {  // complete coroutine?
-        for(o = L1->stack; o < L1->stack_last + EXTRA_STACK; o++)
+        for(StkId o = L1->stack; o < L1->stack_last + EXTRA_STACK; o++)
             checkliveness(L1, o);  // entire stack must have valid values
     }
     else lhat_assert(L1->stacksize == 0);
@@ -423,8 +415,6 @@ static void checkgray(global_State *g, GCObject *o)
 int lhat_checkmemory(lhat_State *L)
 {
     global_State *g = G(L);
-    GCObject *o;
-    int maybedead;
     if(keepinvariant(g)) {
         lhat_assert(!iswhite(g->maincoroutine));
         lhat_assert(!iswhite(gcvalue(&g->l_registry)));
@@ -435,26 +425,26 @@ int lhat_checkmemory(lhat_State *L)
     lhat_assert(g->sweepgc == NULL || issweepphase(g));
     markgrays(g);
     // check 'fixedgc' list
-    for(o = g->fixedgc; o != NULL; o = o->next) {
+    for(GCObject *o = g->fixedgc; o != NULL; o = o->next) {
         lhat_assert(o->tt == LHAT_TSHRSTR && isgray(o));
     }
     // check 'allgc' list
     checkgray(g, g->allgc);
-    maybedead = (GCSatomic < g->gcstate && g->gcstate <= GCSswpallgc);
-    for(o = g->allgc; o != NULL; o = o->next) {
+    int maybedead = (GCSatomic < g->gcstate && g->gcstate <= GCSswpallgc);
+    for(GCObject *o = g->allgc; o != NULL; o = o->next) {
         checkobject(g, o, maybedead);
         lhat_assert(!tofinalize(o));
     }
     // check 'finobj' list
     checkgray(g, g->finobj);
-    for(o = g->finobj; o != NULL; o = o->next) {
+    for(GCObject *o = g->finobj; o != NULL; o = o->next) {
         checkobject(g, o, 0);
         lhat_assert(tofinalize(o));
         lhat_assert(o->tt == LHAT_TUSERDATA || o->tt == LHAT_TTABLE);
     }
     // check 'tobefnz' list
     checkgray(g, g->tobefnz);
-    for(o = g->tobefnz; o != NULL; o = o->next) {
+    for(GCObject *o = g->tobefnz; o != NULL; o = o->next) {
         checkobject(g, o, 0);
         lhat_assert(tofinalize(o));
         lhat_assert(o->tt == LHAT_TUSERDATA || o->tt == LHAT_TTABLE);
@@ -482,8 +472,7 @@ static char *buildop(Proto *p, int pc, char *buff)
     sprintf(buff, "(%4d) %4d - ", line, pc);
     switch(getOpMode(o)) {
     case iABC:
-        sprintf(buff + strlen(buff), "%-12s%4d %4d %4d", name,
-            GETARG_A(i), GETARG_B(i), GETARG_C(i));
+        sprintf(buff + strlen(buff), "%-12s%4d %4d %4d", name, GETARG_A(i), GETARG_B(i), GETARG_C(i));
         break;
     case iABx:
         sprintf(buff + strlen(buff), "%-12s%4d %4d", name, GETARG_A(i), GETARG_Bx(i));
@@ -521,15 +510,12 @@ void lhatI_printinst(Proto *pt, int pc)
 
 static int listcode(lhat_State *L)
 {
-    int pc;
-    Proto *p;
-    lhatL_argcheck(L, lhat_isfunction(L, 1) && !lhat_iscfunction(L, 1),
-        1, "Lhat function expected");
-    p = getproto(obj_at(L, 1));
+    lhatL_argcheck(L, lhat_isfunction(L, 1) && !lhat_iscfunction(L, 1), 1, "Lhat function expected");
+    Proto *p = getproto(obj_at(L, 1));
     lhat_newtable(L);
     setnameval(L, "maxstack", p->maxstacksize);
     setnameval(L, "numparams", p->numparams);
-    for(pc = 0; pc<p->sizecode; pc++) {
+    for(int pc = 0; pc<p->sizecode; pc++) {
         char buff[100];
         lhat_pushinteger(L, pc + 1);
         lhat_pushstring(L, buildop(p, pc, buff));
@@ -541,13 +527,10 @@ static int listcode(lhat_State *L)
 
 static int listk(lhat_State *L)
 {
-    Proto *p;
-    int i;
-    lhatL_argcheck(L, lhat_isfunction(L, 1) && !lhat_iscfunction(L, 1),
-        1, "Lhat function expected");
-    p = getproto(obj_at(L, 1));
+    lhatL_argcheck(L, lhat_isfunction(L, 1) && !lhat_iscfunction(L, 1), 1, "Lhat function expected");
+    Proto *p = getproto(obj_at(L, 1));
     lhat_createtable(L, p->sizek, 0);
-    for(i = 0; i<p->sizek; i++) {
+    for(int i = 0; i<p->sizek; i++) {
         pushobject(L, p->k + i);
         lhat_rawseti(L, -2, i + 1);
     }
@@ -557,13 +540,11 @@ static int listk(lhat_State *L)
 
 static int listlocals(lhat_State *L)
 {
-    Proto *p;
     int pc = cast_int(lhatL_checkinteger(L, 2)) - 1;
     int i = 0;
+    lhatL_argcheck(L, lhat_isfunction(L, 1) && !lhat_iscfunction(L, 1), 1, "Lhat function expected");
+    Proto *p = getproto(obj_at(L, 1));
     const char *name;
-    lhatL_argcheck(L, lhat_isfunction(L, 1) && !lhat_iscfunction(L, 1),
-        1, "Lhat function expected");
-    p = getproto(obj_at(L, 1));
     while((name = lhatF_getlocalname(p, ++i, pc)) != NULL)
         lhat_pushstring(L, name);
     return i - 1;
@@ -1020,7 +1001,7 @@ static int checkpanic(lhat_State *L)
 //
 // {====================================================================
 // function to test the API with C. It interprets a kind of assembler
-// language with calls to the API, so the test can be driven by Lhat code
+// language with calls to the API, so the test can be driven by L^ code
 // =====================================================================
 //
 

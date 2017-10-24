@@ -1,14 +1,11 @@
 //
-// $Id: ltable.c,v 2.118 2016/11/07 12:38:35 roberto Exp $
-// Lhat tables (hash)
+// L^ tables (hash)
 // See Copyright Notice in lhat.h
 //
 
-#define ltable_c
 #define LHAT_CORE
 
 #include "lprefix.h"
-
 
 //
 // Implementation of tables (aka arrays, objects, or hash tables).
@@ -75,8 +72,8 @@
 #define dummynode		(&dummynode_)
 
 static const Node dummynode_ = {
-  {NILCONSTANT},  // value
-  {{NILCONSTANT, 0}}  // key
+    { NILCONSTANT },  // value
+    { { NILCONSTANT, 0 } }  // key
 };
 
 
@@ -94,18 +91,19 @@ static const Node dummynode_ = {
 // INT_MIN.
 //
 #if !defined(l_hashfloat)
-static int l_hashfloat (lhat_Number n) {
-  int i;
-  lhat_Integer ni;
-  n = l_mathop(frexp)(n, &i) * -cast_num(INT_MIN);
-  if (!lhat_numbertointeger(n, &ni)) {  // is 'n' inf/-inf/NaN?
-    lhat_assert(lhati_numisnan(n) || l_mathop(fabs)(n) == cast_num(HUGE_VAL));
-    return 0;
-  }
-  else {  // normal case
-    unsigned int u = cast(unsigned int, i) + cast(unsigned int, ni);
-    return cast_int(u <= cast(unsigned int, INT_MAX) ? u : ~u);
-  }
+static int l_hashfloat(lhat_Number n)
+{
+    int i;
+    n = l_mathop(frexp)(n, &i) * -cast_num(INT_MIN);
+    lhat_Integer ni;
+    if(!lhat_numbertointeger(n, &ni)) {  // is 'n' inf/-inf/NaN?
+        lhat_assert(lhati_numisnan(n) || l_mathop(fabs)(n) == cast_num(HUGE_VAL));
+        return 0;
+    }
+    else {  // normal case
+        unsigned int u = cast(unsigned int, i) + cast(unsigned int, ni);
+        return cast_int(u <= cast(unsigned int, INT_MAX) ? u : ~u);
+    }
 }
 #endif
 
@@ -114,26 +112,27 @@ static int l_hashfloat (lhat_Number n) {
 // returns the 'main' position of an element in a table (that is, the index
 // of its hash value)
 //
-static Node *mainposition (const Table *t, const TValue *key) {
-  switch (ttype(key)) {
+static Node *mainposition(const Table *t, const TValue *key)
+{
+    switch(ttype(key)) {
     case LHAT_TNUMINT:
-      return hashint(t, ivalue(key));
+        return hashint(t, ivalue(key));
     case LHAT_TNUMFLT:
-      return hashmod(t, l_hashfloat(fltvalue(key)));
+        return hashmod(t, l_hashfloat(fltvalue(key)));
     case LHAT_TSHRSTR:
-      return hashstr(t, tsvalue(key));
+        return hashstr(t, tsvalue(key));
     case LHAT_TLNGSTR:
-      return hashpow2(t, lhatS_hashlongstr(tsvalue(key)));
+        return hashpow2(t, lhatS_hashlongstr(tsvalue(key)));
     case LHAT_TBOOLEAN:
-      return hashboolean(t, bvalue(key));
+        return hashboolean(t, bvalue(key));
     case LHAT_TLIGHTUSERDATA:
-      return hashpointer(t, pvalue(key));
+        return hashpointer(t, pvalue(key));
     case LHAT_TLCF:
-      return hashpointer(t, fvalue(key));
+        return hashpointer(t, fvalue(key));
     default:
-      lhat_assert(!ttisdeadkey(key));
-      return hashpointer(t, gcvalue(key));
-  }
+        lhat_assert(!ttisdeadkey(key));
+        return hashpointer(t, gcvalue(key));
+    }
 }
 
 
@@ -141,13 +140,14 @@ static Node *mainposition (const Table *t, const TValue *key) {
 // returns the index for 'key' if 'key' is an appropriate key to live in
 // the array part of the table, 0 otherwise.
 //
-static unsigned int arrayindex (const TValue *key) {
-  if (ttisinteger(key)) {
-    lhat_Integer k = ivalue(key);
-    if (0 < k && (lhat_Unsigned)k <= MAXASIZE)
-      return cast(unsigned int, k);  // 'key' is an appropriate array index
-  }
-  return 0;  // 'key' did not match some condition
+static unsigned int arrayindex(const TValue *key)
+{
+    if(ttisinteger(key)) {
+        lhat_Integer k = ivalue(key);
+        if(0 < k && (lhat_Unsigned)k <= MAXASIZE)
+            return cast(unsigned int, k);  // 'key' is an appropriate array index
+    }
+    return 0;  // 'key' did not match some condition
 }
 
 
@@ -156,50 +156,50 @@ static unsigned int arrayindex (const TValue *key) {
 // elements in the array part, then elements in the hash part. The
 // beginning of a traversal is signaled by 0.
 //
-static unsigned int findindex (lhat_State *L, Table *t, StkId key) {
-  unsigned int i;
-  if (ttisnil(key)) return 0;  // first iteration
-  i = arrayindex(key);
-  if (i != 0 && i <= t->sizearray)  // is 'key' inside array part?
-    return i;  // yes; that's the index
-  else {
-    int nx;
-    Node *n = mainposition(t, key);
-    for (;;) {  // check whether 'key' is somewhere in the chain
-      // key may be dead already, but it is ok to use it in 'next'
-      if (lhatV_rawequalobj(gkey(n), key) ||
-            (ttisdeadkey(gkey(n)) && iscollectable(key) &&
-             deadvalue(gkey(n)) == gcvalue(key))) {
-        i = cast_int(n - gnode(t, 0));  // key index in hash table
-        // hash elements are numbered after array ones
-        return (i + 1) + t->sizearray;
-      }
-      nx = gnext(n);
-      if (nx == 0)
-        lhatG_runerror(L, "invalid key to 'next'");  // key not found
-      else n += nx;
+static unsigned int findindex(lhat_State *L, Table *t, StkId key)
+{
+    if(ttisnil(key)) return 0;  // first iteration
+    unsigned int i = arrayindex(key);
+    if(i != 0 && i <= t->sizearray)  // is 'key' inside array part?
+        return i;  // yes; that's the index
+    else {
+        Node *n = mainposition(t, key);
+        for(;;) {  // check whether 'key' is somewhere in the chain
+            // key may be dead already, but it is ok to use it in 'next'
+            if(lhatV_rawequalobj(gkey(n), key) ||
+                (ttisdeadkey(gkey(n)) && iscollectable(key) &&
+                    deadvalue(gkey(n)) == gcvalue(key))) {
+                i = cast_int(n - gnode(t, 0));  // key index in hash table
+                                                // hash elements are numbered after array ones
+                return (i + 1) + t->sizearray;
+            }
+            int nx = gnext(n);
+            if(nx == 0)
+                lhatG_runerror(L, "invalid key to 'next'");  // key not found
+            else n += nx;
+        }
     }
-  }
 }
 
 
-int lhatH_next (lhat_State *L, Table *t, StkId key) {
-  unsigned int i = findindex(L, t, key);  // find original element
-  for (; i < t->sizearray; i++) {  // try first array part
-    if (!ttisnil(&t->array[i])) {  // a non-nil value?
-      setivalue(key, i + 1);
-      setobj2s(L, key+1, &t->array[i]);
-      return 1;
+int lhatH_next(lhat_State *L, Table *t, StkId key)
+{
+    unsigned int i = findindex(L, t, key);  // find original element
+    for(; i < t->sizearray; i++) {  // try first array part
+        if(!ttisnil(&t->array[i])) {  // a non-nil value?
+            setivalue(key, i + 1);
+            setobj2s(L, key + 1, &t->array[i]);
+            return 1;
+        }
     }
-  }
-  for (i -= t->sizearray; cast_int(i) < sizenode(t); i++) {  // hash part
-    if (!ttisnil(gval(gnode(t, i)))) {  // a non-nil value?
-      setobj2s(L, key, gkey(gnode(t, i)));
-      setobj2s(L, key+1, gval(gnode(t, i)));
-      return 1;
+    for(i -= t->sizearray; cast_int(i) < sizenode(t); i++) {  // hash part
+        if(!ttisnil(gval(gnode(t, i)))) {  // a non-nil value?
+            setobj2s(L, key, gkey(gnode(t, i)));
+            setobj2s(L, key + 1, gval(gnode(t, i)));
+            return 1;
+        }
     }
-  }
-  return 0;  // no more elements
+    return 0;  // no more elements
 }
 
 
@@ -216,36 +216,37 @@ int lhatH_next (lhat_State *L, Table *t, StkId key) {
 // integer keys in the table and leaves with the number of keys that
 // will go to the array part; return the optimal size.
 //
-static unsigned int computesizes (unsigned int nums[], unsigned int *pna) {
-  int i;
-  unsigned int twotoi;  // 2^i (candidate for optimal size)
-  unsigned int a = 0;  // number of elements smaller than 2^i
-  unsigned int na = 0;  // number of elements to go to array part
-  unsigned int optimal = 0;  // optimal size for array part
-  // loop while keys can fill more than half of total size
-  for (i = 0, twotoi = 1; *pna > twotoi / 2; i++, twotoi *= 2) {
-    if (nums[i] > 0) {
-      a += nums[i];
-      if (a > twotoi/2) {  // more than half elements present?
-        optimal = twotoi;  // optimal size (till now)
-        na = a;  // all elements up to 'optimal' will go to array part
-      }
+static unsigned int computesizes(unsigned int nums[], unsigned int *pna)
+{
+    unsigned int twotoi;  // 2^i (candidate for optimal size)
+    unsigned int a = 0;  // number of elements smaller than 2^i
+    unsigned int na = 0;  // number of elements to go to array part
+    unsigned int optimal = 0;  // optimal size for array part
+    // loop while keys can fill more than half of total size
+    for(int i = 0, twotoi = 1; *pna > twotoi / 2; i++, twotoi *= 2) {
+        if(nums[i] > 0) {
+            a += nums[i];
+            if(a > twotoi / 2) {  // more than half elements present?
+                optimal = twotoi;  // optimal size (till now)
+                na = a;  // all elements up to 'optimal' will go to array part
+            }
+        }
     }
-  }
-  lhat_assert((optimal == 0 || optimal / 2 < na) && na <= optimal);
-  *pna = na;
-  return optimal;
+    lhat_assert((optimal == 0 || optimal / 2 < na) && na <= optimal);
+    *pna = na;
+    return optimal;
 }
 
 
-static int countint (const TValue *key, unsigned int *nums) {
-  unsigned int k = arrayindex(key);
-  if (k != 0) {  // is 'key' an appropriate array index?
-    nums[lhatO_ceillog2(k)]++;  // count as such
-    return 1;
-  }
-  else
-    return 0;
+static int countint(const TValue *key, unsigned int *nums)
+{
+    unsigned int k = arrayindex(key);
+    if(k != 0) {  // is 'key' an appropriate array index?
+        nums[lhatO_ceillog2(k)]++;  // count as such
+        return 1;
+    }
+    else
+        return 0;
 }
 
 
@@ -254,141 +255,143 @@ static int countint (const TValue *key, unsigned int *nums) {
 // number of keys that will go into corresponding slice and return
 // total number of non-nil keys.
 //
-static unsigned int numusearray (const Table *t, unsigned int *nums) {
-  int lg;
-  unsigned int ttlg;  // 2^lg
-  unsigned int ause = 0;  // summation of 'nums'
-  unsigned int i = 1;  // count to traverse all array keys
-  // traverse each slice
-  for (lg = 0, ttlg = 1; lg <= MAXABITS; lg++, ttlg *= 2) {
-    unsigned int lc = 0;  // counter
-    unsigned int lim = ttlg;
-    if (lim > t->sizearray) {
-      lim = t->sizearray;  // adjust upper limit
-      if (i > lim)
-        break;  // no more elements to count
+static unsigned int numusearray(const Table *t, unsigned int *nums)
+{
+    unsigned int ause = 0;  // summation of 'nums'
+    unsigned int i = 1;  // count to traverse all array keys
+    // traverse each slice
+    int lg;
+    unsigned int ttlg;  // 2^lg
+    for(lg = 0, ttlg = 1; lg <= MAXABITS; lg++, ttlg *= 2) {
+        unsigned int lc = 0;  // counter
+        unsigned int lim = ttlg;
+        if(lim > t->sizearray) {
+            lim = t->sizearray;  // adjust upper limit
+            if(i > lim)
+                break;  // no more elements to count
+        }
+        // count elements in range (2^(lg - 1), 2^lg]
+        for(; i <= lim; i++) {
+            if(!ttisnil(&t->array[i - 1]))
+                lc++;
+        }
+        nums[lg] += lc;
+        ause += lc;
     }
-    // count elements in range (2^(lg - 1), 2^lg]
-    for (; i <= lim; i++) {
-      if (!ttisnil(&t->array[i-1]))
-        lc++;
-    }
-    nums[lg] += lc;
-    ause += lc;
-  }
-  return ause;
+    return ause;
 }
 
 
-static int numusehash (const Table *t, unsigned int *nums, unsigned int *pna) {
-  int totaluse = 0;  // total number of elements
-  int ause = 0;  // elements added to 'nums' (can go to array part)
-  int i = sizenode(t);
-  while (i--) {
-    Node *n = &t->node[i];
-    if (!ttisnil(gval(n))) {
-      ause += countint(gkey(n), nums);
-      totaluse++;
+static int numusehash(const Table *t, unsigned int *nums, unsigned int *pna)
+{
+    int totaluse = 0;  // total number of elements
+    int ause = 0;  // elements added to 'nums' (can go to array part)
+    int i = sizenode(t);
+    while(i--) {
+        Node *n = &t->node[i];
+        if(!ttisnil(gval(n))) {
+            ause += countint(gkey(n), nums);
+            totaluse++;
+        }
     }
-  }
-  *pna += ause;
-  return totaluse;
+    *pna += ause;
+    return totaluse;
 }
 
 
-static void setarrayvector (lhat_State *L, Table *t, unsigned int size) {
-  unsigned int i;
-  lhatM_reallocvector(L, t->array, t->sizearray, size, TValue);
-  for (i=t->sizearray; i<size; i++)
-     setnilvalue(&t->array[i]);
-  t->sizearray = size;
+static void setarrayvector(lhat_State *L, Table *t, unsigned int size)
+{
+    unsigned int i;
+    lhatM_reallocvector(L, t->array, t->sizearray, size, TValue);
+    for(i = t->sizearray; i<size; i++)
+        setnilvalue(&t->array[i]);
+    t->sizearray = size;
 }
 
 
-static void setnodevector (lhat_State *L, Table *t, unsigned int size) {
-  if (size == 0) {  // no elements to hash part?
-    t->node = cast(Node *, dummynode);  // use common 'dummynode'
-    t->lsizenode = 0;
-    t->lastfree = NULL;  // signal that it is using dummy node
-  }
-  else {
-    int i;
-    int lsize = lhatO_ceillog2(size);
-    if (lsize > MAXHBITS)
-      lhatG_runerror(L, "table overflow");
-    size = twoto(lsize);
-    t->node = lhatM_newvector(L, size, Node);
-    for (i = 0; i < (int)size; i++) {
-      Node *n = gnode(t, i);
-      gnext(n) = 0;
-      setnilvalue(wgkey(n));
-      setnilvalue(gval(n));
+static void setnodevector(lhat_State *L, Table *t, unsigned int size)
+{
+    if(size == 0) {  // no elements to hash part?
+        t->node = cast(Node *, dummynode);  // use common 'dummynode'
+        t->lsizenode = 0;
+        t->lastfree = NULL;  // signal that it is using dummy node
     }
-    t->lsizenode = cast_byte(lsize);
-    t->lastfree = gnode(t, size);  // all positions are free
-  }
+    else {
+        int i;
+        int lsize = lhatO_ceillog2(size);
+        if(lsize > MAXHBITS)
+            lhatG_runerror(L, "table overflow");
+        size = twoto(lsize);
+        t->node = lhatM_newvector(L, size, Node);
+        for(i = 0; i < (int)size; i++) {
+            Node *n = gnode(t, i);
+            gnext(n) = 0;
+            setnilvalue(wgkey(n));
+            setnilvalue(gval(n));
+        }
+        t->lsizenode = cast_byte(lsize);
+        t->lastfree = gnode(t, size);  // all positions are free
+    }
 }
 
 
-void lhatH_resize (lhat_State *L, Table *t, unsigned int nasize,
-                                          unsigned int nhsize) {
-  unsigned int i;
-  int j;
-  unsigned int oldasize = t->sizearray;
-  int oldhsize = allocsizenode(t);
-  Node *nold = t->node;  // save old hash ...
-  if (nasize > oldasize)  // array part must grow?
-    setarrayvector(L, t, nasize);
-  // create new hash part with appropriate size
-  setnodevector(L, t, nhsize);
-  if (nasize < oldasize) {  // array part must shrink?
-    t->sizearray = nasize;
-    // re-insert elements from vanishing slice
-    for (i=nasize; i<oldasize; i++) {
-      if (!ttisnil(&t->array[i]))
-        lhatH_setint(L, t, i + 1, &t->array[i]);
+void lhatH_resize(lhat_State *L, Table *t, unsigned int nasize, unsigned int nhsize)
+{
+    unsigned int oldasize = t->sizearray;
+    int oldhsize = allocsizenode(t);
+    Node *nold = t->node;  // save old hash ...
+    if(nasize > oldasize)  // array part must grow?
+        setarrayvector(L, t, nasize);
+    // create new hash part with appropriate size
+    setnodevector(L, t, nhsize);
+    if(nasize < oldasize) {  // array part must shrink?
+        t->sizearray = nasize;
+        // re-insert elements from vanishing slice
+        for(unsigned int i = nasize; i<oldasize; i++) {
+            if(!ttisnil(&t->array[i]))
+                lhatH_setint(L, t, i + 1, &t->array[i]);
+        }
+        // shrink array
+        lhatM_reallocvector(L, t->array, oldasize, nasize, TValue);
     }
-    // shrink array
-    lhatM_reallocvector(L, t->array, oldasize, nasize, TValue);
-  }
-  // re-insert elements from hash part
-  for (j = oldhsize - 1; j >= 0; j--) {
-    Node *old = nold + j;
-    if (!ttisnil(gval(old))) {
-      // doesn't need barrier/invalidate cache, as entry was already present in the table
-      setobjt2t(L, lhatH_set(L, t, gkey(old)), gval(old));
+    // re-insert elements from hash part
+    for(int j = oldhsize - 1; j >= 0; j--) {
+        Node *old = nold + j;
+        if(!ttisnil(gval(old))) {
+            // doesn't need barrier/invalidate cache, as entry was already present in the table
+            setobjt2t(L, lhatH_set(L, t, gkey(old)), gval(old));
+        }
     }
-  }
-  if (oldhsize > 0)  // not the dummy node?
-    lhatM_freearray(L, nold, cast(size_t, oldhsize)); // free old hash
+    if(oldhsize > 0)  // not the dummy node?
+        lhatM_freearray(L, nold, cast(size_t, oldhsize)); // free old hash
 }
 
 
-void lhatH_resizearray (lhat_State *L, Table *t, unsigned int nasize) {
-  int nsize = allocsizenode(t);
-  lhatH_resize(L, t, nasize, nsize);
+void lhatH_resizearray(lhat_State *L, Table *t, unsigned int nasize)
+{
+    int nsize = allocsizenode(t);
+    lhatH_resize(L, t, nasize, nsize);
 }
 
 //
 // nums[i] = number of keys 'k' where 2^(i - 1) < k <= 2^i
 //
-static void rehash (lhat_State *L, Table *t, const TValue *ek) {
-  unsigned int asize;  // optimal size for array part
-  unsigned int na;  // number of keys in the array part
-  unsigned int nums[MAXABITS + 1];
-  int i;
-  int totaluse;
-  for (i = 0; i <= MAXABITS; i++) nums[i] = 0;  // reset counts
-  na = numusearray(t, nums);  // count keys in array part
-  totaluse = na;  // all those keys are integer keys
-  totaluse += numusehash(t, nums, &na);  // count keys in hash part
-  // count extra key
-  na += countint(ek, nums);
-  totaluse++;
-  // compute new size for array part
-  asize = computesizes(nums, &na);
-  // resize the table to new computed sizes
-  lhatH_resize(L, t, asize, totaluse - na);
+static void rehash(lhat_State *L, Table *t, const TValue *ek)
+{
+    unsigned int asize;  // optimal size for array part
+    unsigned int na;  // number of keys in the array part
+    unsigned int nums[MAXABITS + 1];
+    int totaluse;
+    for(int i = 0; i <= MAXABITS; i++) nums[i] = 0;  // reset counts
+    na = numusearray(t, nums);  // count keys in array part
+    totaluse = na;  // all those keys are integer keys
+    totaluse += numusehash(t, nums, &na);  // count keys in hash part
+    na += countint(ek, nums); // count extra key
+    totaluse++;
+    // compute new size for array part
+    asize = computesizes(nums, &na);
+    // resize the table to new computed sizes
+    lhatH_resize(L, t, asize, totaluse - na);
 }
 
 
@@ -398,35 +401,38 @@ static void rehash (lhat_State *L, Table *t, const TValue *ek) {
 //
 
 
-Table *lhatH_new (lhat_State *L) {
-  GCObject *o = lhatC_newobj(L, LHAT_TTABLE, sizeof(Table));
-  Table *t = gco2t(o);
-  t->metatable = NULL;
-  t->flags = cast_byte(~0);
-  t->array = NULL;
-  t->sizearray = 0;
-  setnodevector(L, t, 0);
-  return t;
+Table *lhatH_new(lhat_State *L)
+{
+    GCObject *o = lhatC_newobj(L, LHAT_TTABLE, sizeof(Table));
+    Table *t = gco2t(o);
+    t->metatable = NULL;
+    t->flags = cast_byte(~0);
+    t->array = NULL;
+    t->sizearray = 0;
+    setnodevector(L, t, 0);
+    return t;
 }
 
 
-void lhatH_free (lhat_State *L, Table *t) {
-  if (!isdummy(t))
-    lhatM_freearray(L, t->node, cast(size_t, sizenode(t)));
-  lhatM_freearray(L, t->array, t->sizearray);
-  lhatM_free(L, t);
+void lhatH_free(lhat_State *L, Table *t)
+{
+    if(!isdummy(t))
+        lhatM_freearray(L, t->node, cast(size_t, sizenode(t)));
+    lhatM_freearray(L, t->array, t->sizearray);
+    lhatM_free(L, t);
 }
 
 
-static Node *getfreepos (Table *t) {
-  if (!isdummy(t)) {
-    while (t->lastfree > t->node) {
-      t->lastfree--;
-      if (ttisnil(gkey(t->lastfree)))
-        return t->lastfree;
+static Node *getfreepos(Table *t)
+{
+    if(!isdummy(t)) {
+        while(t->lastfree > t->node) {
+            t->lastfree--;
+            if(ttisnil(gkey(t->lastfree)))
+                return t->lastfree;
+        }
     }
-  }
-  return NULL;  // could not find a free place
+    return NULL;  // could not find a free place
 }
 
 
@@ -438,98 +444,101 @@ static Node *getfreepos (Table *t) {
 // put new key in its main position; otherwise (colliding node is in its main
 // position), new key goes to an empty position.
 //
-TValue *lhatH_newkey (lhat_State *L, Table *t, const TValue *key) {
-  Node *mp;
-  TValue aux;
-  if (ttisnil(key)) lhatG_runerror(L, "table index is nil");
-  else if (ttisfloat(key)) {
-    lhat_Integer k;
-    if (lhatV_tointeger(key, &k, 0)) {  // does index fit in an integer?
-      setivalue(&aux, k);
-      key = &aux;  // insert it as an integer
+TValue *lhatH_newkey(lhat_State *L, Table *t, const TValue *key)
+{
+    Node *mp;
+    TValue aux;
+    if(ttisnil(key)) lhatG_runerror(L, "table index is nil");
+    else if(ttisfloat(key)) {
+        lhat_Integer k;
+        if(lhatV_tointeger(key, &k, 0)) {  // does index fit in an integer?
+            setivalue(&aux, k);
+            key = &aux;  // insert it as an integer
+        }
+        else if(lhati_numisnan(fltvalue(key)))
+            lhatG_runerror(L, "table index is NaN");
     }
-    else if (lhati_numisnan(fltvalue(key)))
-      lhatG_runerror(L, "table index is NaN");
-  }
-  mp = mainposition(t, key);
-  if (!ttisnil(gval(mp)) || isdummy(t)) {  // main position is taken?
-    Node *othern;
-    Node *f = getfreepos(t);  // get a free place
-    if (f == NULL) {  // cannot find a free place?
-      rehash(L, t, key);  // grow table
-      // whatever called 'newkey' takes care of TM cache
-      return lhatH_set(L, t, key);  // insert key into grown table
+    mp = mainposition(t, key);
+    if(!ttisnil(gval(mp)) || isdummy(t)) {  // main position is taken?
+        Node *othern;
+        Node *f = getfreepos(t);  // get a free place
+        if(f == NULL) {  // cannot find a free place?
+            rehash(L, t, key);  // grow table
+                                // whatever called 'newkey' takes care of TM cache
+            return lhatH_set(L, t, key);  // insert key into grown table
+        }
+        lhat_assert(!isdummy(t));
+        othern = mainposition(t, gkey(mp));
+        if(othern != mp) {  // is colliding node out of its main position?
+                            // yes; move colliding node into free position
+            while(othern + gnext(othern) != mp)  // find previous
+                othern += gnext(othern);
+            gnext(othern) = cast_int(f - othern);  // rechain to point to 'f'
+            *f = *mp;  // copy colliding node into free pos. (mp->next also goes)
+            if(gnext(mp) != 0) {
+                gnext(f) += cast_int(mp - f);  // correct 'next'
+                gnext(mp) = 0;  // now 'mp' is free
+            }
+            setnilvalue(gval(mp));
+        }
+        else {  // colliding node is in its own main position
+                // new node will go into free position
+            if(gnext(mp) != 0)
+                gnext(f) = cast_int((mp + gnext(mp)) - f);  // chain new position
+            else lhat_assert(gnext(f) == 0);
+            gnext(mp) = cast_int(f - mp);
+            mp = f;
+        }
     }
-    lhat_assert(!isdummy(t));
-    othern = mainposition(t, gkey(mp));
-    if (othern != mp) {  // is colliding node out of its main position?
-      // yes; move colliding node into free position
-      while (othern + gnext(othern) != mp)  // find previous
-        othern += gnext(othern);
-      gnext(othern) = cast_int(f - othern);  // rechain to point to 'f'
-      *f = *mp;  // copy colliding node into free pos. (mp->next also goes)
-      if (gnext(mp) != 0) {
-        gnext(f) += cast_int(mp - f);  // correct 'next'
-        gnext(mp) = 0;  // now 'mp' is free
-      }
-      setnilvalue(gval(mp));
-    }
-    else {  // colliding node is in its own main position
-      // new node will go into free position
-      if (gnext(mp) != 0)
-        gnext(f) = cast_int((mp + gnext(mp)) - f);  // chain new position
-      else lhat_assert(gnext(f) == 0);
-      gnext(mp) = cast_int(f - mp);
-      mp = f;
-    }
-  }
-  setnodekey(L, &mp->i_key, key);
-  lhatC_barrierback(L, t, key);
-  lhat_assert(ttisnil(gval(mp)));
-  return gval(mp);
+    setnodekey(L, &mp->i_key, key);
+    lhatC_barrierback(L, t, key);
+    lhat_assert(ttisnil(gval(mp)));
+    return gval(mp);
 }
 
 
 //
 // search function for integers
 //
-const TValue *lhatH_getint (Table *t, lhat_Integer key) {
-  // (1 <= key && key <= t->sizearray)
-  if (l_castS2U(key) - 1 < t->sizearray)
-    return &t->array[key - 1];
-  else {
-    Node *n = hashint(t, key);
-    for (;;) {  // check whether 'key' is somewhere in the chain
-      if (ttisinteger(gkey(n)) && ivalue(gkey(n)) == key)
-        return gval(n);  // that's it
-      else {
-        int nx = gnext(n);
-        if (nx == 0) break;
-        n += nx;
-      }
+const TValue *lhatH_getint(Table *t, lhat_Integer key)
+{
+    // (1 <= key && key <= t->sizearray)
+    if(l_castS2U(key) - 1 < t->sizearray)
+        return &t->array[key - 1];
+    else {
+        Node *n = hashint(t, key);
+        for(;;) {  // check whether 'key' is somewhere in the chain
+            if(ttisinteger(gkey(n)) && ivalue(gkey(n)) == key)
+                return gval(n);  // that's it
+            else {
+                int nx = gnext(n);
+                if(nx == 0) break;
+                n += nx;
+            }
+        }
+        return lhatO_nilobject;
     }
-    return lhatO_nilobject;
-  }
 }
 
 
 //
 // search function for short strings
 //
-const TValue *lhatH_getshortstr (Table *t, TString *key) {
-  Node *n = hashstr(t, key);
-  lhat_assert(key->tt == LHAT_TSHRSTR);
-  for (;;) {  // check whether 'key' is somewhere in the chain
-    const TValue *k = gkey(n);
-    if (ttisshrstring(k) && eqshrstr(tsvalue(k), key))
-      return gval(n);  // that's it
-    else {
-      int nx = gnext(n);
-      if (nx == 0)
-        return lhatO_nilobject;  // not found
-      n += nx;
+const TValue *lhatH_getshortstr(Table *t, TString *key)
+{
+    Node *n = hashstr(t, key);
+    lhat_assert(key->tt == LHAT_TSHRSTR);
+    for(;;) {  // check whether 'key' is somewhere in the chain
+        const TValue *k = gkey(n);
+        if(ttisshrstring(k) && eqshrstr(tsvalue(k), key))
+            return gval(n);  // that's it
+        else {
+            int nx = gnext(n);
+            if(nx == 0)
+                return lhatO_nilobject;  // not found
+            n += nx;
+        }
     }
-  }
 }
 
 
@@ -537,49 +546,52 @@ const TValue *lhatH_getshortstr (Table *t, TString *key) {
 // "Generic" get version. (Not that generic: not valid for integers,
 // which may be in array part, nor for floats with integral values.)
 //
-static const TValue *getgeneric (Table *t, const TValue *key) {
-  Node *n = mainposition(t, key);
-  for (;;) {  // check whether 'key' is somewhere in the chain
-    if (lhatV_rawequalobj(gkey(n), key))
-      return gval(n);  // that's it
-    else {
-      int nx = gnext(n);
-      if (nx == 0)
-        return lhatO_nilobject;  // not found
-      n += nx;
+static const TValue *getgeneric(Table *t, const TValue *key)
+{
+    Node *n = mainposition(t, key);
+    for(;;) {  // check whether 'key' is somewhere in the chain
+        if(lhatV_rawequalobj(gkey(n), key))
+            return gval(n);  // that's it
+        else {
+            int nx = gnext(n);
+            if(nx == 0)
+                return lhatO_nilobject;  // not found
+            n += nx;
+        }
     }
-  }
 }
 
 
-const TValue *lhatH_getstr (Table *t, TString *key) {
-  if (key->tt == LHAT_TSHRSTR)
-    return lhatH_getshortstr(t, key);
-  else {  // for long strings, use generic case
-    TValue ko;
-    setsvalue(cast(lhat_State *, NULL), &ko, key);
-    return getgeneric(t, &ko);
-  }
+const TValue *lhatH_getstr(Table *t, TString *key)
+{
+    if(key->tt == LHAT_TSHRSTR)
+        return lhatH_getshortstr(t, key);
+    else {  // for long strings, use generic case
+        TValue ko;
+        setsvalue(cast(lhat_State *, NULL), &ko, key);
+        return getgeneric(t, &ko);
+    }
 }
 
 
 //
 // main search function
 //
-const TValue *lhatH_get (Table *t, const TValue *key) {
-  switch (ttype(key)) {
+const TValue *lhatH_get(Table *t, const TValue *key)
+{
+    switch(ttype(key)) {
     case LHAT_TSHRSTR: return lhatH_getshortstr(t, tsvalue(key));
     case LHAT_TNUMINT: return lhatH_getint(t, ivalue(key));
     case LHAT_TNIL: return lhatO_nilobject;
     case LHAT_TNUMFLT: {
-      lhat_Integer k;
-      if (lhatV_tointeger(key, &k, 0)) // index is int?
-        return lhatH_getint(t, k);  // use specialized version
-      // else...
+        lhat_Integer k;
+        if(lhatV_tointeger(key, &k, 0)) // index is int?
+            return lhatH_getint(t, k);  // use specialized version
+                                        // else...
     }  // FALLTHROUGH
     default:
-      return getgeneric(t, key);
-  }
+        return getgeneric(t, key);
+    }
 }
 
 
@@ -587,49 +599,52 @@ const TValue *lhatH_get (Table *t, const TValue *key) {
 // beware: when using this function you probably need to check a GC
 // barrier and invalidate the TM cache.
 //
-TValue *lhatH_set (lhat_State *L, Table *t, const TValue *key) {
-  const TValue *p = lhatH_get(t, key);
-  if (p != lhatO_nilobject)
-    return cast(TValue *, p);
-  else return lhatH_newkey(L, t, key);
+TValue *lhatH_set(lhat_State *L, Table *t, const TValue *key)
+{
+    const TValue *p = lhatH_get(t, key);
+    if(p != lhatO_nilobject)
+        return cast(TValue *, p);
+    else return lhatH_newkey(L, t, key);
 }
 
 
-void lhatH_setint (lhat_State *L, Table *t, lhat_Integer key, TValue *value) {
-  const TValue *p = lhatH_getint(t, key);
-  TValue *cell;
-  if (p != lhatO_nilobject)
-    cell = cast(TValue *, p);
-  else {
-    TValue k;
-    setivalue(&k, key);
-    cell = lhatH_newkey(L, t, &k);
-  }
-  setobj2t(L, cell, value);
-}
-
-
-static int unbound_search (Table *t, unsigned int j) {
-  unsigned int i = j;  // i is zero or a present index
-  j++;
-  // find 'i' and 'j' such that i is present and j is not
-  while (!ttisnil(lhatH_getint(t, j))) {
-    i = j;
-    if (j > cast(unsigned int, MAX_INT)/2) {  // overflow?
-      // table was built with bad purposes: resort to linear search
-      i = 1;
-      while (!ttisnil(lhatH_getint(t, i))) i++;
-      return i - 1;
+void lhatH_setint(lhat_State *L, Table *t, lhat_Integer key, TValue *value)
+{
+    const TValue *p = lhatH_getint(t, key);
+    TValue *cell;
+    if(p != lhatO_nilobject)
+        cell = cast(TValue *, p);
+    else {
+        TValue k;
+        setivalue(&k, key);
+        cell = lhatH_newkey(L, t, &k);
     }
-    j *= 2;
-  }
-  // now do a binary search between them
-  while (j - i > 1) {
-    unsigned int m = (i+j)/2;
-    if (ttisnil(lhatH_getint(t, m))) j = m;
-    else i = m;
-  }
-  return i;
+    setobj2t(L, cell, value);
+}
+
+
+static int unbound_search(Table *t, unsigned int j)
+{
+    unsigned int i = j;  // i is zero or a present index
+    j++;
+    // find 'i' and 'j' such that i is present and j is not
+    while(!ttisnil(lhatH_getint(t, j))) {
+        i = j;
+        if(j > cast(unsigned int, MAX_INT) / 2) {  // overflow?
+                                                   // table was built with bad purposes: resort to linear search
+            i = 1;
+            while(!ttisnil(lhatH_getint(t, i))) i++;
+            return i - 1;
+        }
+        j *= 2;
+    }
+    // now do a binary search between them
+    while(j - i > 1) {
+        unsigned int m = (i + j) / 2;
+        if(ttisnil(lhatH_getint(t, m))) j = m;
+        else i = m;
+    }
+    return i;
 }
 
 
@@ -637,32 +652,34 @@ static int unbound_search (Table *t, unsigned int j) {
 // Try to find a boundary in table 't'. A 'boundary' is an integer index
 // such that t[i] is non-nil and t[i+1] is nil (and 0 if t[1] is nil).
 //
-int lhatH_getn (Table *t) {
-  unsigned int j = t->sizearray;
-  if (j > 0 && ttisnil(&t->array[j - 1])) {
-    // there is a boundary in the array part: (binary) search for it
-    unsigned int i = 0;
-    while (j - i > 1) {
-      unsigned int m = (i+j)/2;
-      if (ttisnil(&t->array[m - 1])) j = m;
-      else i = m;
+int lhatH_getn(Table *t)
+{
+    unsigned int j = t->sizearray;
+    if(j > 0 && ttisnil(&t->array[j - 1])) {
+        // there is a boundary in the array part: (binary) search for it
+        unsigned int i = 0;
+        while(j - i > 1) {
+            unsigned int m = (i + j) / 2;
+            if(ttisnil(&t->array[m - 1])) j = m;
+            else i = m;
+        }
+        return i;
     }
-    return i;
-  }
-  // else must find a boundary in hash part
-  else if (isdummy(t))  // hash part is empty?
-    return j;  // that is easy...
-  else return unbound_search(t, j);
+    // else must find a boundary in hash part
+    else if(isdummy(t))  // hash part is empty?
+        return j;  // that is easy...
+    else return unbound_search(t, j);
 }
 
 
 
 #if defined(LHAT_DEBUG)
 
-Node *lhatH_mainposition (const Table *t, const TValue *key) {
-  return mainposition(t, key);
+Node *lhatH_mainposition(const Table *t, const TValue *key)
+{
+    return mainposition(t, key);
 }
 
-int lhatH_isdummy (const Table *t) { return isdummy(t); }
+int lhatH_isdummy(const Table *t) { return isdummy(t); }
 
 #endif

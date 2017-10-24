@@ -1,6 +1,6 @@
 //
 // $Id: lprefix.h,v 1.2 2014/12/29 16:54:13 roberto Exp $
-// Definitions for Lhat code that must come before any other header file
+// Definitions for L^ code that must come before any other header file
 // See Copyright Notice in lhat.h
 //
 
