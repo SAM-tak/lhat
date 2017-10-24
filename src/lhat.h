@@ -387,20 +387,6 @@ LHAT_API void      lhat_setallocf(lhat_State *L, lhat_Alloc f, void *ud);
 
 
 //
-// {==============================================================
-// compatibility macros for unsigned conversions
-// ===============================================================
-//
-#if defined(LHAT_COMPAT_APIINTCASTS)
-
-#define lhat_pushunsigned(L,n)	lhat_pushinteger(L, (lhat_Integer)(n))
-#define lhat_tounsignedx(L,i,is)	((lhat_Unsigned)lhat_tointegerx(L,i,is))
-#define lhat_tounsigned(L,i)	lhat_tounsignedx(L,(i),NULL)
-
-#endif
-// }==============================================================
-
-//
 // {======================================================================
 // Debug API
 // =======================================================================

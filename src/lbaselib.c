@@ -264,15 +264,11 @@ static int ipairsaux(lhat_State *L)
 //
 static int lhatB_ipairs(lhat_State *L)
 {
-#if defined(LHAT_COMPAT_IPAIRS)
-    return pairsmeta(L, "__ipairs", 1, ipairsaux);
-#else
     lhatL_checkany(L, 1);
     lhat_pushcfunction(L, ipairsaux);  // iteration function
     lhat_pushvalue(L, 1);  // state
     lhat_pushinteger(L, 0);  // initial value
     return 3;
-#endif
 }
 
 
@@ -480,9 +476,6 @@ static const lhatL_Reg base_funcs[] = {
     { "ipairs", lhatB_ipairs },
     { "loadfile", lhatB_loadfile },
     { "load", lhatB_load },
-#if defined(LHAT_COMPAT_LOADSTRING)
-    { "loadstring", lhatB_load },
-#endif
     { "next", lhatB_next },
     { "pairs", lhatB_pairs },
     { "pcall", lhatB_pcall },

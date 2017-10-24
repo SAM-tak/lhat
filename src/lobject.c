@@ -384,12 +384,10 @@ void lhatO_tostring(lhat_State *L, StkId obj)
         len = lhat_integer2str(buff, sizeof(buff), ivalue(obj));
     else {
         len = lhat_number2str(buff, sizeof(buff), fltvalue(obj));
-#if !defined(LHAT_COMPAT_FLOATSTRING)
         if(buff[strspn(buff, "-0123456789")] == '\0') {  // looks like an int?
             buff[len++] = lhat_getlocaledecpoint();
             buff[len++] = '0';  // adds '.0' to result
         }
-#endif
     }
     setsvalue2s(L, obj, lhatS_newlstr(L, buff, len));
 }

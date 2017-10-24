@@ -58,25 +58,6 @@ static void checktab(lhat_State *L, int arg, int what)
 }
 
 
-#if defined(LHAT_COMPAT_MAXN)
-static int maxn(lhat_State *L)
-{
-    lhat_Number max = 0;
-    lhatL_checktype(L, 1, LHAT_TTABLE);
-    lhat_pushnil(L);  // first key
-    while(lhat_next(L, 1)) {
-        lhat_pop(L, 1);  // remove value
-        if(lhat_type(L, -1) == LHAT_TNUMBER) {
-            lhat_Number v = lhat_tonumber(L, -1);
-            if(v > max) max = v;
-        }
-    }
-    lhat_pushnumber(L, max);
-    return 1;
-}
-#endif
-
-
 static int tinsert(lhat_State *L)
 {
     lhat_Integer e = aux_getn(L, 1, TAB_RW) + 1;  // first empty element
@@ -430,9 +411,6 @@ static int sort(lhat_State *L)
 
 static const lhatL_Reg tab_funcs[] = {
     { "concat", tconcat },
-#if defined(LHAT_COMPAT_MAXN)
-    { "maxn", maxn },
-#endif
     { "insert", tinsert },
     { "pack", pack },
     { "unpack", unpack },
@@ -446,10 +424,5 @@ static const lhatL_Reg tab_funcs[] = {
 LHATMOD_API int lhatopen_table(lhat_State *L)
 {
     lhatL_newlib(L, tab_funcs);
-#if defined(LHAT_COMPAT_UNPACK)
-    // _G.unpack = table.unpack
-    lhat_getfield(L, -1, "unpack");
-    lhat_setglobal(L, "unpack");
-#endif
     return 1;
 }

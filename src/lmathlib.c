@@ -316,65 +316,6 @@ static int math_type(lhat_State *L)
 }
 
 
-//
-// {==================================================================
-// Deprecated functions (for compatibility only)
-// ===================================================================
-//
-#if defined(LHAT_COMPAT_MATHLIB)
-
-static int math_cosh(lhat_State *L)
-{
-    lhat_pushnumber(L, l_mathop(cosh)(lhatL_checknumber(L, 1)));
-    return 1;
-}
-
-static int math_sinh(lhat_State *L)
-{
-    lhat_pushnumber(L, l_mathop(sinh)(lhatL_checknumber(L, 1)));
-    return 1;
-}
-
-static int math_tanh(lhat_State *L)
-{
-    lhat_pushnumber(L, l_mathop(tanh)(lhatL_checknumber(L, 1)));
-    return 1;
-}
-
-static int math_pow(lhat_State *L)
-{
-    lhat_Number x = lhatL_checknumber(L, 1);
-    lhat_Number y = lhatL_checknumber(L, 2);
-    lhat_pushnumber(L, l_mathop(pow)(x, y));
-    return 1;
-}
-
-static int math_frexp(lhat_State *L)
-{
-    int e;
-    lhat_pushnumber(L, l_mathop(frexp)(lhatL_checknumber(L, 1), &e));
-    lhat_pushinteger(L, e);
-    return 2;
-}
-
-static int math_ldexp(lhat_State *L)
-{
-    lhat_Number x = lhatL_checknumber(L, 1);
-    int ep = (int)lhatL_checkinteger(L, 2);
-    lhat_pushnumber(L, l_mathop(ldexp)(x, ep));
-    return 1;
-}
-
-static int math_log10(lhat_State *L)
-{
-    lhat_pushnumber(L, l_mathop(log10)(lhatL_checknumber(L, 1)));
-    return 1;
-}
-
-#endif
-// }==================================================================
-
-
 
 static const lhatL_Reg mathlib[] = {
     { "abs",   math_abs },
@@ -400,16 +341,6 @@ static const lhatL_Reg mathlib[] = {
     { "sqrt",  math_sqrt },
     { "tan",   math_tan },
     { "type", math_type },
-#if defined(LHAT_COMPAT_MATHLIB)
-    { "atan2", math_atan },
-    { "cosh",   math_cosh },
-    { "sinh",   math_sinh },
-    { "tanh",   math_tanh },
-    { "pow",   math_pow },
-    { "frexp", math_frexp },
-    { "ldexp", math_ldexp },
-    { "log10", math_log10 },
-#endif
     // placeholders
     { "pi", NULL },
     { "huge", NULL },

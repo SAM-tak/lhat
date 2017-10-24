@@ -7,19 +7,6 @@
 
 #include <stdlib.h>
 
-// test L^ with no compatibility code
-#undef LHAT_COMPAT_MATHLIB
-#undef LHAT_COMPAT_IPAIRS
-#undef LHAT_COMPAT_BITLIB
-#undef LHAT_COMPAT_APIINTCASTS
-#undef LHAT_COMPAT_FLOATSTRING
-#undef LHAT_COMPAT_UNPACK
-#undef LHAT_COMPAT_LOADERS
-#undef LHAT_COMPAT_LOG10
-#undef LHAT_COMPAT_LOADSTRING
-#undef LHAT_COMPAT_MAXN
-#undef LHAT_COMPAT_MODULE
-
 
 #define LHAT_DEBUG
 
@@ -45,11 +32,11 @@
 
 // memory-allocator control variables
 typedef struct Memcontrol {
-  unsigned long numblocks;
-  unsigned long total;
-  unsigned long maxmem;
-  unsigned long memlimit;
-  unsigned long objcount[LHAT_NUMTAGS];
+	unsigned long numblocks;
+	unsigned long total;
+	unsigned long maxmem;
+	unsigned long memlimit;
+	unsigned long objcount[LHAT_NUMTAGS];
 } Memcontrol;
 
 LHAT_API Memcontrol l_memcontrol;
@@ -65,7 +52,7 @@ extern void *l_Trick;
 //
 // Function to traverse and check all memory used by L^
 //
-int lhat_checkmemory (lhat_State *L);
+int lhat_checkmemory(lhat_State *L);
 
 
 // test for lock/unlock
@@ -87,9 +74,9 @@ struct L_EXTRA { int lock; int *plock; };
 
 
 
-LHAT_API int lhatB_opentests (lhat_State *L);
+LHAT_API int lhatB_opentests(lhat_State *L);
 
-LHAT_API void *debug_realloc (void *ud, void *block, size_t osize, size_t nsize);
+LHAT_API void *debug_realloc(void *ud, void *block, size_t osize, size_t nsize);
 
 // change some sizes to give some bugs a chance
 

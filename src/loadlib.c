@@ -613,96 +613,10 @@ static int ll_require(lhat_State *L)
 // 'module' function
 // =======================================================
 //
-#if defined(LHAT_COMPAT_MODULE)
-
-//
-// changes the environment variable of calling function
-//
-static void set_env(lhat_State *L)
-{
-    lhat_Debug ar;
-    if(lhat_getstack(L, 1, &ar) == 0 ||
-        lhat_getinfo(L, "f", &ar) == 0 ||  // get calling function
-        lhat_iscfunction(L, -1))
-        lhatL_error(L, "'module' not called from a L^ function");
-    lhat_pushvalue(L, -2);  // copy new environment table to top
-    lhat_setupvalue(L, -2, 1);
-    lhat_pop(L, 1);  // remove function
-}
-
-
-static void dooptions(lhat_State *L, int n)
-{
-    int i;
-    for(i = 2; i <= n; i++) {
-        if(lhat_isfunction(L, i)) {  // avoid 'calling' extra info.
-            lhat_pushvalue(L, i);  // get option (a function)
-            lhat_pushvalue(L, -2);  // module
-            lhat_call(L, 1, 0);
-        }
-    }
-}
-
-
-static void modinit(lhat_State *L, const char *modname)
-{
-    const char *dot;
-    lhat_pushvalue(L, -1);
-    lhat_setfield(L, -2, "_M");  // module._M = module
-    lhat_pushstring(L, modname);
-    lhat_setfield(L, -2, "_NAME");
-    dot = strrchr(modname, '.');  // look for last dot in module name
-    if(dot == NULL) dot = modname;
-    else dot++;
-    // set _PACKAGE as package name (full module name minus last part)
-    lhat_pushlstring(L, modname, dot - modname);
-    lhat_setfield(L, -2, "_PACKAGE");
-}
-
-
-static int ll_module(lhat_State *L)
-{
-    const char *modname = lhatL_checkstring(L, 1);
-    int lastarg = lhat_gettop(L);  // last parameter
-    lhatL_pushmodule(L, modname, 1);  // get/create module table
-                                      // check whether table already has a _NAME field
-    if(lhat_getfield(L, -1, "_NAME") != LHAT_TNIL)
-        lhat_pop(L, 1);  // table is an initialized module
-    else {  // no; initialize it
-        lhat_pop(L, 1);
-        modinit(L, modname);
-    }
-    lhat_pushvalue(L, -1);
-    set_env(L);
-    dooptions(L, lastarg);
-    return 1;
-}
-
-
-static int ll_seeall(lhat_State *L)
-{
-    lhatL_checktype(L, 1, LHAT_TTABLE);
-    if(!lhat_getmetatable(L, 1)) {
-        lhat_createtable(L, 0, 1); // create new metatable
-        lhat_pushvalue(L, -1);
-        lhat_setmetatable(L, 1);
-    }
-    lhat_pushglobaltable(L);
-    lhat_setfield(L, -2, "__index");  // mt.__index = _G
-    return 0;
-}
-
-#endif
-// }======================================================
-
-
 
 static const lhatL_Reg pk_funcs[] = {
     { "loadlib", ll_loadlib },
     { "searchpath", ll_searchpath },
-#if defined(LHAT_COMPAT_MODULE)
-    { "seeall", ll_seeall },
-#endif
     // placeholders
     { "preload", NULL },
     { "cpath", NULL },
@@ -714,9 +628,6 @@ static const lhatL_Reg pk_funcs[] = {
 
 
 static const lhatL_Reg ll_funcs[] = {
-#if defined(LHAT_COMPAT_MODULE)
-    { "module", ll_module },
-#endif
     { "require", ll_require },
     { NULL, NULL }
 };
@@ -735,10 +646,6 @@ static void createsearcherstable(lhat_State *L)
         lhat_pushcclosure(L, searchers[i], 1);
         lhat_rawseti(L, -2, i + 1);
     }
-#if defined(LHAT_COMPAT_LOADERS)
-    lhat_pushvalue(L, -1);  // make a copy of 'searchers' table
-    lhat_setfield(L, -3, "loaders");  // put it in field 'loaders'
-#endif
     lhat_setfield(L, -2, "searchers");  // put it in field 'searchers'
 }
 

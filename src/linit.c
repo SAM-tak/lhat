@@ -46,9 +46,6 @@ static const lhatL_Reg loadedlibs[] = {
     { LHAT_MATHLIBNAME, lhatopen_math },
     { LHAT_UTF8LIBNAME, lhatopen_utf8 },
     { LHAT_DBLIBNAME, lhatopen_debug },
-#if defined(LHAT_COMPAT_BITLIB)
-    { LHAT_BITLIBNAME, lhatopen_bit32 },
-#endif
     { NULL, NULL }
 };
 

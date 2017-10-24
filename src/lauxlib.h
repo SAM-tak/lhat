@@ -179,14 +179,6 @@ typedef struct lhatL_Stream {
 
 
 
-// compatibility with old module system
-#if defined(LHAT_COMPAT_MODULE)
-LHATLIB_API void (lhatL_pushmodule)(lhat_State *L, const char *modname, int sizehint);
-LHATLIB_API void (lhatL_openlib)(lhat_State *L, const char *libname, const lhatL_Reg *l, int nup);
-#define lhatL_register(L,n,l)	(lhatL_openlib(L,(n),(l),0))
-#endif
-
-
 //
 // {==================================================================
 // "Abstraction Layer" for basic report of messages and errors
@@ -210,28 +202,5 @@ LHATLIB_API void (lhatL_openlib)(lhat_State *L, const char *libname, const lhatL
 #endif
 
 // }==================================================================
-
-
-//
-// {============================================================
-// Compatibility with deprecated conversions
-// =============================================================
-//
-#if defined(LHAT_COMPAT_APIINTCASTS)
-
-#define lhatL_checkunsigned(L,a)	((lhat_Unsigned)lhatL_checkinteger(L,a))
-#define lhatL_optunsigned(L,a,d)	\
-	((lhat_Unsigned)lhatL_optinteger(L,a,(lhat_Integer)(d)))
-
-#define lhatL_checkint(L,n)	((int)lhatL_checkinteger(L, (n)))
-#define lhatL_optint(L,n,d)	((int)lhatL_optinteger(L, (n), (d)))
-
-#define lhatL_checklong(L,n)	((long)lhatL_checkinteger(L, (n)))
-#define lhatL_optlong(L,n,d)	((long)lhatL_optinteger(L, (n), (d)))
-
-#endif
-// }============================================================
-
-
 
 #endif

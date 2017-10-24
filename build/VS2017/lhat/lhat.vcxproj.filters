@@ -24,9 +24,6 @@
     <ClCompile Include="..\..\..\src\lbaselib.c">
       <Filter>ソース ファイル</Filter>
     </ClCompile>
-    <ClCompile Include="..\..\..\src\lbitlib.c">
-      <Filter>ソース ファイル</Filter>
-    </ClCompile>
     <ClCompile Include="..\..\..\src\lcode.c">
       <Filter>ソース ファイル</Filter>
     </ClCompile>

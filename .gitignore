@@ -7,3 +7,5 @@
 *.db-shm
 *.db
 *.opendb
+*.ipdb
+*.iobj
