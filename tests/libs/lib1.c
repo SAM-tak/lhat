@@ -12,7 +12,7 @@ static const struct lhatL_Reg funcs[] = {
 };
 
 
-/* function used by lib11.c */
+// function used by lib11.c
 LHATMOD_API int lib1_export (lhat_State *L) {
   lhat_pushstring(L, "exported");
   return 1;
@@ -36,8 +36,8 @@ LHATMOD_API int anotherfunc (lhat_State *L) {
 
 
 LHATMOD_API int lhatopen_lib1_sub (lhat_State *L) {
-  lhat_setglobal(L, "y");  /* 2nd arg: extra value (file name) */
-  lhat_setglobal(L, "x");  /* 1st arg: module name */
+  lhat_setglobal(L, "y");  // 2nd arg: extra value (file name)
+  lhat_setglobal(L, "x");  // 1st arg: module name
   lhatL_newlib(L, funcs);
   return 1;
 }

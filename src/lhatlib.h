@@ -1,8 +1,8 @@
-/*
-** $Id: lhatlib.h,v 1.45 2017/01/12 17:14:26 roberto Exp $
-** Lhat standard libraries
-** See Copyright Notice in lhat.h
-*/
+//
+// $Id: lhatlib.h,v 1.45 2017/01/12 17:14:26 roberto Exp $
+// Lhat standard libraries
+// See Copyright Notice in lhat.h
+//
 
 
 #ifndef lhatlib_h
@@ -11,7 +11,7 @@
 #include "lhat.h"
 
 
-/* version suffix for environment variable names */
+// version suffix for environment variable names
 #define LHAT_VERSUFFIX          "_" LHAT_VERSION_MAJOR_ "_" LHAT_VERSION_MINOR_
 
 
@@ -48,7 +48,7 @@ LHATMOD_API int (lhatopen_debug) (lhat_State *L);
 LHATMOD_API int (lhatopen_package) (lhat_State *L);
 
 
-/* open all previous libraries */
+// open all previous libraries
 LHATLIB_API void (lhatL_openlibs) (lhat_State *L);
 
 

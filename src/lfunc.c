@@ -1,8 +1,8 @@
-/*
-** $Id: lfunc.c,v 2.45 2014/11/02 19:19:04 roberto Exp $
-** Auxiliary functions to manipulate prototypes and closures
-** See Copyright Notice in lhat.h
-*/
+//
+// $Id: lfunc.c,v 2.45 2014/11/02 19:19:04 roberto Exp $
+// Auxiliary functions to manipulate prototypes and closures
+// See Copyright Notice in lhat.h
+//
 
 #define lfunc_c
 #define LHAT_CORE
@@ -35,45 +35,45 @@ LClosure *lhatF_newLclosure (lhat_State *L, int n) {
   LClosure *c = gco2lcl(o);
   c->p = NULL;
   c->nupvalues = cast_byte(n);
-  while (n--) c->upvals[n] = NULL;
+  while (n--) c->upvalues[n] = NULL;
   return c;
 }
 
-/*
-** fill a closure with new closed upvalues
-*/
+//
+// fill a closure with new closed upvalues
+//
 void lhatF_initupvals (lhat_State *L, LClosure *cl) {
   int i;
   for (i = 0; i < cl->nupvalues; i++) {
-    UpVal *uv = lhatM_new(L, UpVal);
+    Upvalue *uv = lhatM_new(L, Upvalue);
     uv->refcount = 1;
-    uv->v = &uv->u.value;  /* make it closed */
+    uv->v = &uv->u.value;  // make it closed
     setnilvalue(uv->v);
-    cl->upvals[i] = uv;
+    cl->upvalues[i] = uv;
   }
 }
 
 
-UpVal *lhatF_findupval (lhat_State *L, StkId level) {
-  UpVal **pp = &L->openupval;
-  UpVal *p;
-  UpVal *uv;
+Upvalue *lhatF_findupval (lhat_State *L, StkId level) {
+  Upvalue **pp = &L->openupval;
+  Upvalue *p;
+  Upvalue *uv;
   lhat_assert(isintwups(L) || L->openupval == NULL);
   while (*pp != NULL && (p = *pp)->v >= level) {
     lhat_assert(upisopen(p));
-    if (p->v == level)  /* found a corresponding upvalue? */
-      return p;  /* return it */
+    if (p->v == level)  // found a corresponding upvalues?
+      return p;  // return it
     pp = &p->u.open.next;
   }
-  /* not found: create a new upvalue */
-  uv = lhatM_new(L, UpVal);
+  // not found: create a new upvalues
+  uv = lhatM_new(L, Upvalue);
   uv->refcount = 0;
-  uv->u.open.next = *pp;  /* link it to list of open upvalues */
+  uv->u.open.next = *pp;  // link it to list of open upvalues
   uv->u.open.touched = 1;
   *pp = uv;
-  uv->v = level;  /* current value lives in the stack */
-  if (!isintwups(L)) {  /* coroutine not in list of coroutines with upvalues? */
-    L->twups = G(L)->twups;  /* link it to the list */
+  uv->v = level;  // current value lives in the stack
+  if (!isintwups(L)) {  // coroutine not in list of coroutines with upvalues?
+    L->twups = G(L)->twups;  // link it to the list
     G(L)->twups = L;
   }
   return uv;
@@ -81,15 +81,15 @@ UpVal *lhatF_findupval (lhat_State *L, StkId level) {
 
 
 void lhatF_close (lhat_State *L, StkId level) {
-  UpVal *uv;
+  Upvalue *uv;
   while (L->openupval != NULL && (uv = L->openupval)->v >= level) {
     lhat_assert(upisopen(uv));
-    L->openupval = uv->u.open.next;  /* remove from 'open' list */
-    if (uv->refcount == 0)  /* no references? */
-      lhatM_free(L, uv);  /* free upvalue */
+    L->openupval = uv->u.open.next;  // remove from 'open' list
+    if (uv->refcount == 0)  // no references?
+      lhatM_free(L, uv);  // free upvalues
     else {
-      setobj(L, &uv->u.value, uv->v);  /* move value to upvalue slot */
-      uv->v = &uv->u.value;  /* now current value lives here */
+      setobj(L, &uv->u.value, uv->v);  // move value to upvalues slot
+      uv->v = &uv->u.value;  // now current value lives here
       lhatC_upvalbarrier(L, uv);
     }
   }
@@ -133,19 +133,19 @@ void lhatF_freeproto (lhat_State *L, Proto *f) {
 }
 
 
-/*
-** Look for n-th local variable at line 'line' in function 'func'.
-** Returns NULL if not found.
-*/
+//
+// Look for n-th local variable at line 'line' in function 'func'.
+// Returns NULL if not found.
+//
 const char *lhatF_getlocalname (const Proto *f, int local_number, int pc) {
   int i;
   for (i = 0; i<f->sizelocvars && f->locvars[i].startpc <= pc; i++) {
-    if (pc < f->locvars[i].endpc) {  /* is variable active? */
+    if (pc < f->locvars[i].endpc) {  // is variable active?
       local_number--;
       if (local_number == 0)
         return getstr(f->locvars[i].varname);
     }
   }
-  return NULL;  /* not found */
+  return NULL;  // not found
 }
 

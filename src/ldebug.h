@@ -1,8 +1,8 @@
-/*
-** $Id: ldebug.h,v 2.14 2015/05/22 17:45:56 roberto Exp $
-** Auxiliary functions from Debug Interface module
-** See Copyright Notice in lhat.h
-*/
+//
+// $Id: ldebug.h,v 2.14 2015/05/22 17:45:56 roberto Exp $
+// Auxiliary functions from Debug Interface module
+// See Copyright Notice in lhat.h
+//
 
 #ifndef ldebug_h
 #define ldebug_h

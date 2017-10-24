@@ -1,16 +1,13 @@
-/*
-** $Id: ltests.h,v 2.50 2016/07/19 17:13:00 roberto Exp $
-** Internal Header for Debugging of the Lhat Implementation
-** See Copyright Notice in lhat.h
-*/
-
 #ifndef ltests_h
 #define ltests_h
-
+//
+// Internal Header for Debugging of the L^ Implementation
+// See Copyright Notice in lhat.h
+//
 
 #include <stdlib.h>
 
-/* test Lhat with no compatibility code */
+// test Lhat with no compatibility code
 #undef LHAT_COMPAT_MATHLIB
 #undef LHAT_COMPAT_IPAIRS
 #undef LHAT_COMPAT_BITLIB
@@ -27,17 +24,17 @@
 #define LHAT_DEBUG
 
 
-/* turn on assertions */
+// turn on assertions
 #undef NDEBUG
 #include <assert.h>
 #define lhat_assert(c)           assert(c)
 
 
-/* to avoid warnings, and to make sure value is really unused */
+// to avoid warnings, and to make sure value is really unused
 #define UNUSED(x)       (x=0, (void)(x))
 
 
-/* test for sizes in 'l_sprintf' (make sure whole buffer is available) */
+// test for sizes in 'l_sprintf' (make sure whole buffer is available)
 #undef l_sprintf
 #if !defined(LHAT_USE_C89)
 #define l_sprintf(s,sz,f,i)	(memset(s,0xAB,sz), snprintf(s,sz,f,i))
@@ -46,7 +43,7 @@
 #endif
 
 
-/* memory-allocator control variables */
+// memory-allocator control variables
 typedef struct Memcontrol {
   unsigned long numblocks;
   unsigned long total;
@@ -58,20 +55,20 @@ typedef struct Memcontrol {
 LHAT_API Memcontrol l_memcontrol;
 
 
-/*
-** generic variable for debug tricks
-*/
+//
+// generic variable for debug tricks
+//
 extern void *l_Trick;
 
 
 
-/*
-** Function to traverse and check all memory used by Lhat
-*/
+//
+// Function to traverse and check all memory used by Lhat
+//
 int lhat_checkmemory (lhat_State *L);
 
 
-/* test for lock/unlock */
+// test for lock/unlock
 
 struct L_EXTRA { int lock; int *plock; };
 #undef LHAT_EXTRASPACE
@@ -92,20 +89,9 @@ struct L_EXTRA { int lock; int *plock; };
 
 LHAT_API int lhatB_opentests (lhat_State *L);
 
-LHAT_API void *debug_realloc (void *ud, void *block,
-                             size_t osize, size_t nsize);
+LHAT_API void *debug_realloc (void *ud, void *block, size_t osize, size_t nsize);
 
-#if defined(ilhat_c)
-#define lhatL_newstate()		lhat_newstate(debug_realloc, &l_memcontrol)
-#define lhatL_openlibs(L)  \
-  { (lhatL_openlibs)(L); \
-     lhatL_requiref(L, "T", lhatB_opentests, 1); \
-     lhat_pop(L, 1); }
-#endif
-
-
-
-/* change some sizes to give some bugs a chance */
+// change some sizes to give some bugs a chance
 
 #undef LHATL_BUFFERSIZE
 #define LHATL_BUFFERSIZE		23
@@ -113,7 +99,7 @@ LHAT_API void *debug_realloc (void *ud, void *block,
 #define MAXINDEXRK		1
 
 
-/* make stack-overflow tests run faster */
+// make stack-overflow tests run faster
 #undef LHATI_MAXSTACK
 #define LHATI_MAXSTACK   50000
 
@@ -126,4 +112,3 @@ LHAT_API void *debug_realloc (void *ud, void *block,
 #define STRCACHE_M	5
 
 #endif
-

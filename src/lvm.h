@@ -1,37 +1,33 @@
-/*
-** $Id: lvm.h,v 2.41 2016/12/22 13:08:50 roberto Exp $
-** Lhat virtual machine
-** See Copyright Notice in lhat.h
-*/
-
 #ifndef lvm_h
 #define lvm_h
-
+//
+// L^ virtual machine
+// See Copyright Notice in lhat.h
+//
 
 #include "ldo.h"
 #include "lobject.h"
 #include "ltm.h"
 
-
 #if !defined(LHAT_NOCVTN2S)
-#define cvt2str(o)	ttisnumber(o)
+# define cvt2str(o)	ttisnumber(o)
 #else
-#define cvt2str(o)	0	/* no conversion from numbers to strings */
+# define cvt2str(o)	0	// no conversion from numbers to strings
 #endif
 
 
 #if !defined(LHAT_NOCVTS2N)
-#define cvt2num(o)	ttisstring(o)
+# define cvt2num(o)	ttisstring(o)
 #else
-#define cvt2num(o)	0	/* no conversion from strings to numbers */
+# define cvt2num(o)	0	// no conversion from strings to numbers
 #endif
 
 
-/*
-** You can define LHAT_FLOORN2I if you want to convert floats to integers
-** by flooring them (instead of raising an error if they are not
-** integral values)
-*/
+//
+// You can define LHAT_FLOORN2I if you want to convert floats to integers
+// by flooring them (instead of raising an error if they are not
+// integral values)
+//
 #if !defined(LHAT_FLOORN2I)
 #define LHAT_FLOORN2I		0
 #endif
@@ -48,35 +44,35 @@
 #define lhatV_rawequalobj(t1,t2)		lhatV_equalobj(NULL,t1,t2)
 
 
-/*
-** fast track for 'gettable': if 't' is a table and 't[k]' is not nil,
-** return 1 with 'slot' pointing to 't[k]' (final result).  Otherwise,
-** return 0 (meaning it will have to check metamethod) with 'slot'
-** pointing to a nil 't[k]' (if 't' is a table) or NULL (otherwise).
-** 'f' is the raw get function to use.
-*/
+//
+// fast track for 'gettable': if 't' is a table and 't[k]' is not nil,
+// return 1 with 'slot' pointing to 't[k]' (final result).  Otherwise,
+// return 0 (meaning it will have to check metamethod) with 'slot'
+// pointing to a nil 't[k]' (if 't' is a table) or NULL (otherwise).
+// 'f' is the raw get function to use.
+//
 #define lhatV_fastget(L,t,k,slot,f) \
   (!ttistable(t)  \
-   ? (slot = NULL, 0)  /* not a table; 'slot' is NULL and result is 0 */  \
-   : (slot = f(hvalue(t), k),  /* else, do raw access */  \
+   ? (slot = NULL, 0)  /* not a table; 'slot' is NULL and result is 0 */\
+   : (slot = f(hvalue(t), k),  /* else, do raw access */\
       !ttisnil(slot)))  /* result not nil? */
 
-/*
-** standard implementation for 'gettable'
-*/
+//
+// standard implementation for 'gettable'
+//
 #define lhatV_gettable(L,t,k,v) { const TValue *slot; \
   if (lhatV_fastget(L,t,k,slot,lhatH_get)) { setobj2s(L, v, slot); } \
   else lhatV_finishget(L,t,k,v,slot); }
 
 
-/*
-** Fast track for set table. If 't' is a table and 't[k]' is not nil,
-** call GC barrier, do a raw 't[k]=v', and return true; otherwise,
-** return false with 'slot' equal to NULL (if 't' is not a table) or
-** 'nil'. (This is needed by 'lhatV_finishget'.) Note that, if the macro
-** returns true, there is no need to 'invalidateTMcache', because the
-** call is not creating a new entry.
-*/
+//
+// Fast track for set table. If 't' is a table and 't[k]' is not nil,
+// call GC barrier, do a raw 't[k]=v', and return true; otherwise,
+// return false with 'slot' equal to NULL (if 't' is not a table) or
+// 'nil'. (This is needed by 'lhatV_finishget'.) Note that, if the macro
+// returns true, there is no need to 'invalidateTMcache', because the
+// call is not creating a new entry.
+//
 #define lhatV_fastset(L,t,k,slot,f,v) \
   (!ttistable(t) \
    ? (slot = NULL, 0) \

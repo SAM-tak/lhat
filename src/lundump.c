@@ -1,8 +1,8 @@
-/*
-** $Id: lundump.c,v 2.44 2015/11/02 16:09:30 roberto Exp $
-** load precompiled Lhat chunks
-** See Copyright Notice in lhat.h
-*/
+//
+// $Id: lundump.c,v 2.44 2015/11/02 16:09:30 roberto Exp $
+// load precompiled Lhat chunks
+// See Copyright Notice in lhat.h
+//
 
 #define lundump_c
 #define LHAT_CORE
@@ -25,7 +25,7 @@
 
 
 #if !defined(lhati_verifycode)
-#define lhati_verifycode(L,b,f)  /* empty */
+#define lhati_verifycode(L,b,f)  // empty
 #endif
 
 
@@ -42,10 +42,10 @@ static l_noret error(LoadState *S, const char *why) {
 }
 
 
-/*
-** All high-level loads go through LoadVector; you can change it to
-** adapt to the endianness of the input
-*/
+//
+// All high-level loads go through LoadVector; you can change it to
+// adapt to the endianness of the input
+//
 #define LoadVector(S,b,n)	LoadBlock(S,b,(n)*sizeof((b)[0]))
 
 static void LoadBlock (LoadState *S, void *b, size_t size) {
@@ -91,14 +91,14 @@ static TString *LoadString (LoadState *S) {
     LoadVar(S, size);
   if (size == 0)
     return NULL;
-  else if (--size <= LHATI_MAXSHORTLEN) {  /* short string? */
+  else if (--size <= LHATI_MAXSHORTLEN) {  // short string?
     char buff[LHATI_MAXSHORTLEN];
     LoadVector(S, buff, size);
     return lhatS_newlstr(S->L, buff, size);
   }
-  else {  /* long string */
+  else {  // long string
     TString *ts = lhatS_createlngstrobj(S->L, size);
-    LoadVector(S, getstr(ts), size);  /* load directly in final place */
+    LoadVector(S, getstr(ts), size);  // load directly in final place
     return ts;
   }
 }
@@ -201,8 +201,8 @@ static void LoadDebug (LoadState *S, Proto *f) {
 
 static void LoadFunction (LoadState *S, Proto *f, TString *psource) {
   f->source = LoadString(S);
-  if (f->source == NULL)  /* no source in dump? */
-    f->source = psource;  /* reuse parent's source */
+  if (f->source == NULL)  // no source in dump?
+    f->source = psource;  // reuse parent's source
   f->linedefined = LoadInt(S);
   f->lastlinedefined = LoadInt(S);
   f->numparams = LoadByte(S);
@@ -217,7 +217,7 @@ static void LoadFunction (LoadState *S, Proto *f, TString *psource) {
 
 
 static void checkliteral (LoadState *S, const char *s, const char *msg) {
-  char buff[sizeof(LHAT_SIGNATURE) + sizeof(LHATC_DATA)]; /* larger than both */
+  char buff[sizeof(LHAT_SIGNATURE) + sizeof(LHATC_DATA)]; // larger than both
   size_t len = strlen(s);
   LoadVector(S, buff, len);
   if (memcmp(s, buff, len) != 0)
@@ -234,7 +234,7 @@ static void fchecksize (LoadState *S, size_t size, const char *tname) {
 #define checksize(S,t)	fchecksize(S,sizeof(t),#t)
 
 static void checkHeader (LoadState *S) {
-  checkliteral(S, LHAT_SIGNATURE + 1, "not a");  /* 1st char already checked */
+  checkliteral(S, LHAT_SIGNATURE + 1, "not a");  // 1st char already checked
   if (LoadByte(S) != LHATC_VERSION)
     error(S, "version mismatch in");
   if (LoadByte(S) != LHATC_FORMAT)
@@ -252,9 +252,9 @@ static void checkHeader (LoadState *S) {
 }
 
 
-/*
-** load precompiled chunk
-*/
+//
+// load precompiled chunk
+//
 LClosure *lhatU_undump(lhat_State *L, ZIO *Z, const char *name) {
   LoadState S;
   LClosure *cl;

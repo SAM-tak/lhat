@@ -1,8 +1,8 @@
-/*
-** $Id: lmem.c,v 1.91 2015/03/06 19:45:54 roberto Exp $
-** Interface to Memory Manager
-** See Copyright Notice in lhat.h
-*/
+//
+// $Id: lmem.c,v 1.91 2015/03/06 19:45:54 roberto Exp $
+// Interface to Memory Manager
+// See Copyright Notice in lhat.h
+//
 
 #define lmem_c
 #define LHAT_CORE
@@ -23,22 +23,22 @@
 
 
 
-/*
-** About the realloc function:
-** void * frealloc (void *ud, void *ptr, size_t osize, size_t nsize);
-** ('osize' is the old size, 'nsize' is the new size)
-**
-** * frealloc(ud, NULL, x, s) creates a new block of size 's' (no
-** matter 'x').
-**
-** * frealloc(ud, p, x, 0) frees the block 'p'
-** (in this specific case, frealloc must return NULL);
-** particularly, frealloc(ud, NULL, 0, 0) does nothing
-** (which is equivalent to free(NULL) in ISO C)
-**
-** frealloc returns NULL if it cannot create or reallocate the area
-** (any reallocation to an equal or smaller size cannot fail!)
-*/
+//
+// About the realloc function:
+// void * frealloc (void *ud, void *ptr, size_t osize, size_t nsize);
+// ('osize' is the old size, 'nsize' is the new size)
+//
+// * frealloc(ud, NULL, x, s) creates a new block of size 's' (no
+// matter 'x').
+//
+// * frealloc(ud, p, x, 0) frees the block 'p'
+// (in this specific case, frealloc must return NULL);
+// particularly, frealloc(ud, NULL, 0, 0) does nothing
+// (which is equivalent to free(NULL) in ISO C)
+//
+// frealloc returns NULL if it cannot create or reallocate the area
+// (any reallocation to an equal or smaller size cannot fail!)
+//
 
 
 
@@ -49,18 +49,18 @@ void *lhatM_growaux_ (lhat_State *L, void *block, int *size, size_t size_elems,
                      int limit, const char *what) {
   void *newblock;
   int newsize;
-  if (*size >= limit/2) {  /* cannot double it? */
-    if (*size >= limit)  /* cannot grow even a little? */
+  if (*size >= limit/2) {  // cannot double it?
+    if (*size >= limit)  // cannot grow even a little?
       lhatG_runerror(L, "too many %s (limit is %d)", what, limit);
-    newsize = limit;  /* still have at least one free place */
+    newsize = limit;  // still have at least one free place
   }
   else {
     newsize = (*size)*2;
     if (newsize < MINSIZEARRAY)
-      newsize = MINSIZEARRAY;  /* minimum size */
+      newsize = MINSIZEARRAY;  // minimum size
   }
   newblock = lhatM_reallocv(L, block, *size, newsize, size_elems);
-  *size = newsize;  /* update only when everything else is OK */
+  *size = newsize;  // update only when everything else is OK
   return newblock;
 }
 
@@ -71,9 +71,9 @@ l_noret lhatM_toobig (lhat_State *L) {
 
 
 
-/*
-** generic allocation routine.
-*/
+//
+// generic allocation routine.
+//
 void *lhatM_realloc_ (lhat_State *L, void *block, size_t osize, size_t nsize) {
   void *newblock;
   global_State *g = G(L);
@@ -81,14 +81,14 @@ void *lhatM_realloc_ (lhat_State *L, void *block, size_t osize, size_t nsize) {
   lhat_assert((realosize == 0) == (block == NULL));
 #if defined(HARDMEMTESTS)
   if (nsize > realosize && g->gcrunning)
-    lhatC_fullgc(L, 1);  /* force a GC whenever possible */
+    lhatC_fullgc(L, 1);  // force a GC whenever possible
 #endif
   newblock = (*g->frealloc)(g->ud, block, osize, nsize);
   if (newblock == NULL && nsize > 0) {
-    lhat_assert(nsize > realosize);  /* cannot fail when shrinking a block */
-    if (g->version) {  /* is state fully built? */
-      lhatC_fullgc(L, 1);  /* try to free some memory... */
-      newblock = (*g->frealloc)(g->ud, block, osize, nsize);  /* try again */
+    lhat_assert(nsize > realosize);  // cannot fail when shrinking a block
+    if (g->version) {  // is state fully built?
+      lhatC_fullgc(L, 1);  // try to free some memory...
+      newblock = (*g->frealloc)(g->ud, block, osize, nsize);  // try again
     }
     if (newblock == NULL)
       lhatD_throw(L, LHAT_ERRMEM);

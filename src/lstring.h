@@ -1,8 +1,8 @@
-/*
-** $Id: lstring.h,v 1.61 2015/11/03 15:36:01 roberto Exp $
-** String table (keep all strings handled by Lhat)
-** See Copyright Notice in lhat.h
-*/
+//
+// $Id: lstring.h,v 1.61 2015/11/03 15:36:01 roberto Exp $
+// String table (keep all strings handled by Lhat)
+// See Copyright Notice in lhat.h
+//
 
 #ifndef lstring_h
 #define lstring_h
@@ -21,15 +21,15 @@
                                  (sizeof(s)/sizeof(char))-1))
 
 
-/*
-** test whether a string is a reserved word
-*/
+//
+// test whether a string is a reserved word
+//
 #define isreserved(s)	((s)->tt == LHAT_TSHRSTR && (s)->extra > 0)
 
 
-/*
-** equality for short strings, which are always internalized
-*/
+//
+// equality for short strings, which are always internalized
+//
 #define eqshrstr(a,b)	check_exp((a)->tt == LHAT_TSHRSTR, (a) == (b))
 
 

@@ -1,8 +1,8 @@
-/*
-** $Id: lctype.h,v 1.12 2011/07/15 12:50:29 roberto Exp $
-** 'ctype' functions for Lhat
-** See Copyright Notice in lhat.h
-*/
+//
+// $Id: lctype.h,v 1.12 2011/07/15 12:50:29 roberto Exp $
+// 'ctype' functions for Lhat
+// See Copyright Notice in lhat.h
+//
 
 #ifndef lctype_h
 #define lctype_h
@@ -10,26 +10,26 @@
 #include "lhat.h"
 
 
-/*
-** WARNING: the functions defined here do not necessarily correspond
-** to the similar functions in the standard C ctype.h. They are
-** optimized for the specific needs of Lhat
-*/
+//
+// WARNING: the functions defined here do not necessarily correspond
+// to the similar functions in the standard C ctype.h. They are
+// optimized for the specific needs of Lhat
+//
 
 #if !defined(LHAT_USE_CTYPE)
 
 #if 'A' == 65 && '0' == 48
-/* ASCII case: can use its own tables; faster and fixed */
+// ASCII case: can use its own tables; faster and fixed
 #define LHAT_USE_CTYPE	0
 #else
-/* must use standard C ctype */
+// must use standard C ctype
 #define LHAT_USE_CTYPE	1
 #endif
 
 #endif
 
 
-#if !LHAT_USE_CTYPE	/* { */
+#if !LHAT_USE_CTYPE	// {
 
 #include <limits.h>
 
@@ -46,14 +46,14 @@
 #define MASK(B)		(1 << (B))
 
 
-/*
-** add 1 to char to allow index -1 (EOZ)
-*/
+//
+// add 1 to char to allow index -1 (EOZ)
+//
 #define testprop(c,p)	(lhati_ctype_[(c)+1] & (p))
 
-/*
-** 'lalpha' (Lhat alphabetic) and 'lalnum' (Lhat alphanumeric) both include '_'
-*/
+//
+// 'lalpha' (Lhat alphabetic) and 'lalnum' (Lhat alphanumeric) both include '_'
+//
 #define lislalpha(c)	testprop(c, MASK(ALPHABIT))
 #define lislalnum(c)	testprop(c, (MASK(ALPHABIT) | MASK(DIGITBIT)))
 #define lisdigit(c)	testprop(c, MASK(DIGITBIT))
@@ -61,21 +61,21 @@
 #define lisprint(c)	testprop(c, MASK(PRINTBIT))
 #define lisxdigit(c)	testprop(c, MASK(XDIGITBIT))
 
-/*
-** this 'ltolower' only works for alphabetic characters
-*/
+//
+// this 'ltolower' only works for alphabetic characters
+//
 #define ltolower(c)	((c) | ('A' ^ 'a'))
 
 
-/* two more entries for 0 and -1 (EOZ) */
+// two more entries for 0 and -1 (EOZ)
 LHATI_DDEC const lu_byte lhati_ctype_[UCHAR_MAX + 2];
 
 
-#else			/* }{ */
+#else			// }{
 
-/*
-** use standard C ctypes
-*/
+//
+// use standard C ctypes
+//
 
 #include <ctype.h>
 
@@ -89,7 +89,7 @@ LHATI_DDEC const lu_byte lhati_ctype_[UCHAR_MAX + 2];
 
 #define ltolower(c)	(tolower(c))
 
-#endif			/* } */
+#endif			// }
 
 #endif
 

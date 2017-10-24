@@ -1,8 +1,8 @@
-/*
-** $Id: liolib.c,v 2.151 2016/12/20 18:37:00 roberto Exp $
-** Standard I/O (and system) library
-** See Copyright Notice in lhat.h
-*/
+//
+// $Id: liolib.c,v 2.151 2016/12/20 18:37:00 roberto Exp $
+// Standard I/O (and system) library
+// See Copyright Notice in lhat.h
+//
 
 #define liolib_c
 #define LHAT_LIB
@@ -25,62 +25,62 @@
 
 
 
-/*
-** Change this macro to accept other modes for 'fopen' besides
-** the standard ones.
-*/
+//
+// Change this macro to accept other modes for 'fopen' besides
+// the standard ones.
+//
 #if !defined(l_checkmode)
 
-/* accepted extensions to 'mode' in 'fopen' */
+// accepted extensions to 'mode' in 'fopen'
 #if !defined(L_MODEEXT)
 #define L_MODEEXT	"b"
 #endif
 
-/* Check whether 'mode' matches '[rwa]%+?[L_MODEEXT]*' */
+// Check whether 'mode' matches '[rwa]%+?[L_MODEEXT]*'
 static int l_checkmode (const char *mode) {
   return (*mode != '\0' && strchr("rwa", *(mode++)) != NULL &&
-         (*mode != '+' || (++mode, 1)) &&  /* skip if char is '+' */
-         (strspn(mode, L_MODEEXT) == strlen(mode)));  /* check extensions */
+         (*mode != '+' || (++mode, 1)) &&  // skip if char is '+'
+         (strspn(mode, L_MODEEXT) == strlen(mode)));  // check extensions
 }
 
 #endif
 
-/*
-** {======================================================
-** l_popen spawns a new process connected to the current
-** one through the file streams.
-** =======================================================
-*/
+//
+// {======================================================
+// l_popen spawns a new process connected to the current
+// one through the file streams.
+// =======================================================
+//
 
-#if !defined(l_popen)		/* { */
+#if !defined(l_popen)		// {
 
-#if defined(LHAT_USE_POSIX)	/* { */
+#if defined(LHAT_USE_POSIX)	// {
 
 #define l_popen(L,c,m)		(fflush(NULL), popen(c,m))
 #define l_pclose(L,file)	(pclose(file))
 
-#elif defined(LHAT_USE_WINDOWS)	/* }{ */
+#elif defined(LHAT_USE_WINDOWS)	// }{
 
 #define l_popen(L,c,m)		(_popen(c,m))
 #define l_pclose(L,file)	(_pclose(file))
 
-#else				/* }{ */
+#else				// }{
 
-/* ISO C definitions */
+// ISO C definitions
 #define l_popen(L,c,m)  \
 	  ((void)((void)c, m), \
 	  lhatL_error(L, "'popen' not supported"), \
 	  (FILE*)0)
 #define l_pclose(L,file)		((void)L, (void)file, -1)
 
-#endif				/* } */
+#endif				// }
 
-#endif				/* } */
+#endif				// }
 
-/* }====================================================== */
+// }======================================================
 
 
-#if !defined(l_getc)		/* { */
+#if !defined(l_getc)		// {
 
 #if defined(LHAT_USE_POSIX)
 #define l_getc(f)		getc_unlocked(f)
@@ -92,18 +92,18 @@ static int l_checkmode (const char *mode) {
 #define l_unlockfile(f)		((void)0)
 #endif
 
-#endif				/* } */
+#endif				// }
 
 
-/*
-** {======================================================
-** l_fseek: configuration for longer offsets
-** =======================================================
-*/
+//
+// {======================================================
+// l_fseek: configuration for longer offsets
+// =======================================================
+//
 
-#if !defined(l_fseek)		/* { */
+#if !defined(l_fseek)		// {
 
-#if defined(LHAT_USE_POSIX)	/* { */
+#if defined(LHAT_USE_POSIX)	// {
 
 #include <sys/types.h>
 
@@ -112,25 +112,25 @@ static int l_checkmode (const char *mode) {
 #define l_seeknum		off_t
 
 #elif defined(LHAT_USE_WINDOWS) && !defined(_CRTIMP_TYPEINFO) \
-   && defined(_MSC_VER) && (_MSC_VER >= 1400)	/* }{ */
+   && defined(_MSC_VER) && (_MSC_VER >= 1400)	// }{
 
-/* Windows (but not DDK) and Visual C++ 2005 or higher */
+// Windows (but not DDK) and Visual C++ 2005 or higher
 #define l_fseek(f,o,w)		_fseeki64(f,o,w)
 #define l_ftell(f)		_ftelli64(f)
 #define l_seeknum		__int64
 
-#else				/* }{ */
+#else				// }{
 
-/* ISO C definitions */
+// ISO C definitions
 #define l_fseek(f,o,w)		fseek(f,o,w)
 #define l_ftell(f)		ftell(f)
 #define l_seeknum		long
 
-#endif				/* } */
+#endif				// }
 
-#endif				/* } */
+#endif				// }
 
-/* }====================================================== */
+// }======================================================
 
 
 #define IO_PREFIX	"_IO_"
@@ -152,7 +152,7 @@ static int io_type (lhat_State *L) {
   lhatL_checkany(L, 1);
   p = (LStream *)lhatL_testudata(L, 1, LHAT_FILEHANDLE);
   if (p == NULL)
-    lhat_pushnil(L);  /* not a file */
+    lhat_pushnil(L);  // not a file
   else if (isclosed(p))
     lhat_pushliteral(L, "closed file");
   else
@@ -180,36 +180,36 @@ static FILE *tofile (lhat_State *L) {
 }
 
 
-/*
-** When creating file handles, always creates a 'closed' file handle
-** before opening the actual file; so, if there is a memory error, the
-** handle is in a consistent state.
-*/
+//
+// When creating file handles, always creates a 'closed' file handle
+// before opening the actual file; so, if there is a memory error, the
+// handle is in a consistent state.
+//
 static LStream *newprefile (lhat_State *L) {
   LStream *p = (LStream *)lhat_newuserdata(L, sizeof(LStream));
-  p->closef = NULL;  /* mark file handle as 'closed' */
+  p->closef = NULL;  // mark file handle as 'closed'
   lhatL_setmetatable(L, LHAT_FILEHANDLE);
   return p;
 }
 
 
-/*
-** Calls the 'close' function from a file handle. The 'volatile' avoids
-** a bug in some versions of the Clang compiler (e.g., clang 3.0 for
-** 32 bits).
-*/
+//
+// Calls the 'close' function from a file handle. The 'volatile' avoids
+// a bug in some versions of the Clang compiler (e.g., clang 3.0 for
+// 32 bits).
+//
 static int aux_close (lhat_State *L) {
   LStream *p = tolstream(L);
   volatile lhat_CFunction cf = p->closef;
-  p->closef = NULL;  /* mark stream as closed */
-  return (*cf)(L);  /* close it */
+  p->closef = NULL;  // mark stream as closed
+  return (*cf)(L);  // close it
 }
 
 
 static int io_close (lhat_State *L) {
-  if (lhat_isnone(L, 1))  /* no argument? */
-    lhat_getfield(L, LHAT_REGISTRYINDEX, IO_OUTPUT);  /* use standard output */
-  tofile(L);  /* make sure argument is an open stream */
+  if (lhat_isnone(L, 1))  // no argument?
+    lhat_getfield(L, LHAT_REGISTRYINDEX, IO_OUTPUT);  // use standard output
+  tofile(L);  // make sure argument is an open stream
   return aux_close(L);
 }
 
@@ -217,14 +217,14 @@ static int io_close (lhat_State *L) {
 static int f_gc (lhat_State *L) {
   LStream *p = tolstream(L);
   if (!isclosed(p) && p->f != NULL)
-    aux_close(L);  /* ignore closed and incompletely open files */
+    aux_close(L);  // ignore closed and incompletely open files
   return 0;
 }
 
 
-/*
-** function to close regular files
-*/
+//
+// function to close regular files
+//
 static int io_fclose (lhat_State *L) {
   LStream *p = tolstream(L);
   int res = fclose(p->f);
@@ -252,16 +252,16 @@ static int io_open (lhat_State *L) {
   const char *filename = lhatL_checkstring(L, 1);
   const char *mode = lhatL_optstring(L, 2, "r");
   LStream *p = newfile(L);
-  const char *md = mode;  /* to traverse/check mode */
+  const char *md = mode;  // to traverse/check mode
   lhatL_argcheck(L, l_checkmode(md), 2, "invalid mode");
   p->f = fopen(filename, mode);
   return (p->f == NULL) ? lhatL_fileresult(L, 0, filename) : 1;
 }
 
 
-/*
-** function to close 'popen' files
-*/
+//
+// function to close 'popen' files
+//
 static int io_pclose (lhat_State *L) {
   LStream *p = tolstream(L);
   return lhatL_execresult(L, l_pclose(L, p->f));
@@ -301,12 +301,12 @@ static int g_iofile (lhat_State *L, const char *f, const char *mode) {
     if (filename)
       opencheck(L, filename, mode);
     else {
-      tofile(L);  /* check that it's a valid file handle */
+      tofile(L);  // check that it's a valid file handle
       lhat_pushvalue(L, 1);
     }
     lhat_setfield(L, LHAT_REGISTRYINDEX, f);
   }
-  /* return current value */
+  // return current value
   lhat_getfield(L, LHAT_REGISTRYINDEX, f);
   return 1;
 }
@@ -325,24 +325,24 @@ static int io_output (lhat_State *L) {
 static int io_readline (lhat_State *L);
 
 
-/*
-** maximum number of arguments to 'f:lines'/'io.lines' (it + 3 must fit
-** in the limit for upvalues of a closure)
-*/
+//
+// maximum number of arguments to 'f:lines'/'io.lines' (it + 3 must fit
+// in the limit for upvalues of a closure)
+//
 #define MAXARGLINE	250
 
 static void aux_lines (lhat_State *L, int toclose) {
-  int n = lhat_gettop(L) - 1;  /* number of arguments to read */
+  int n = lhat_gettop(L) - 1;  // number of arguments to read
   lhatL_argcheck(L, n <= MAXARGLINE, MAXARGLINE + 2, "too many arguments");
-  lhat_pushinteger(L, n);  /* number of arguments to read */
-  lhat_pushboolean(L, toclose);  /* close/not close file when finished */
-  lhat_rotate(L, 2, 2);  /* move 'n' and 'toclose' to their positions */
+  lhat_pushinteger(L, n);  // number of arguments to read
+  lhat_pushboolean(L, toclose);  // close/not close file when finished
+  lhat_rotate(L, 2, 2);  // move 'n' and 'toclose' to their positions
   lhat_pushcclosure(L, io_readline, 3 + n);
 }
 
 
 static int f_lines (lhat_State *L) {
-  tofile(L);  /* check that it's a valid file handle */
+  tofile(L);  // check that it's a valid file handle
   aux_lines(L, 0);
   return 1;
 }
@@ -350,65 +350,65 @@ static int f_lines (lhat_State *L) {
 
 static int io_lines (lhat_State *L) {
   int toclose;
-  if (lhat_isnone(L, 1)) lhat_pushnil(L);  /* at least one argument */
-  if (lhat_isnil(L, 1)) {  /* no file name? */
-    lhat_getfield(L, LHAT_REGISTRYINDEX, IO_INPUT);  /* get default input */
-    lhat_replace(L, 1);  /* put it at index 1 */
-    tofile(L);  /* check that it's a valid file handle */
-    toclose = 0;  /* do not close it after iteration */
+  if (lhat_isnone(L, 1)) lhat_pushnil(L);  // at least one argument
+  if (lhat_isnil(L, 1)) {  // no file name?
+    lhat_getfield(L, LHAT_REGISTRYINDEX, IO_INPUT);  // get default input
+    lhat_replace(L, 1);  // put it at index 1
+    tofile(L);  // check that it's a valid file handle
+    toclose = 0;  // do not close it after iteration
   }
-  else {  /* open a new file */
+  else {  // open a new file
     const char *filename = lhatL_checkstring(L, 1);
     opencheck(L, filename, "r");
-    lhat_replace(L, 1);  /* put file at index 1 */
-    toclose = 1;  /* close it after iteration */
+    lhat_replace(L, 1);  // put file at index 1
+    toclose = 1;  // close it after iteration
   }
   aux_lines(L, toclose);
   return 1;
 }
 
 
-/*
-** {======================================================
-** READ
-** =======================================================
-*/
+//
+// {======================================================
+// READ
+// =======================================================
+//
 
 
-/* maximum length of a numeral */
+// maximum length of a numeral
 #if !defined (L_MAXLENNUM)
 #define L_MAXLENNUM     200
 #endif
 
 
-/* auxiliary structure used by 'read_number' */
+// auxiliary structure used by 'read_number'
 typedef struct {
-  FILE *f;  /* file being read */
-  int c;  /* current character (look ahead) */
-  int n;  /* number of elements in buffer 'buff' */
-  char buff[L_MAXLENNUM + 1];  /* +1 for ending '\0' */
+  FILE *f;  // file being read
+  int c;  // current character (look ahead)
+  int n;  // number of elements in buffer 'buff'
+  char buff[L_MAXLENNUM + 1];  // +1 for ending '\0'
 } RN;
 
 
-/*
-** Add current char to buffer (if not out of space) and read next one
-*/
+//
+// Add current char to buffer (if not out of space) and read next one
+//
 static int nextc (RN *rn) {
-  if (rn->n >= L_MAXLENNUM) {  /* buffer overflow? */
-    rn->buff[0] = '\0';  /* invalidate result */
-    return 0;  /* fail */
+  if (rn->n >= L_MAXLENNUM) {  // buffer overflow?
+    rn->buff[0] = '\0';  // invalidate result
+    return 0;  // fail
   }
   else {
-    rn->buff[rn->n++] = rn->c;  /* save current char */
-    rn->c = l_getc(rn->f);  /* read next one */
+    rn->buff[rn->n++] = rn->c;  // save current char
+    rn->c = l_getc(rn->f);  // read next one
     return 1;
   }
 }
 
 
-/*
-** Accept current char if it is in 'set' (of size 2)
-*/
+//
+// Accept current char if it is in 'set' (of size 2)
+//
 static int test2 (RN *rn, const char *set) {
   if (rn->c == set[0] || rn->c == set[1])
     return nextc(rn);
@@ -416,9 +416,9 @@ static int test2 (RN *rn, const char *set) {
 }
 
 
-/*
-** Read a sequence of (hex)digits
-*/
+//
+// Read a sequence of (hex)digits
+//
 static int readdigits (RN *rn, int hex) {
   int count = 0;
   while ((hex ? isxdigit(rn->c) : isdigit(rn->c)) && nextc(rn))
@@ -427,48 +427,48 @@ static int readdigits (RN *rn, int hex) {
 }
 
 
-/*
-** Read a number: first reads a valid prefix of a numeral into a buffer.
-** Then it calls 'lhat_stringtonumber' to check whether the format is
-** correct and to convert it to a Lhat number
-*/
+//
+// Read a number: first reads a valid prefix of a numeral into a buffer.
+// Then it calls 'lhat_stringtonumber' to check whether the format is
+// correct and to convert it to a Lhat number
+//
 static int read_number (lhat_State *L, FILE *f) {
   RN rn;
   int count = 0;
   int hex = 0;
   char decp[2];
   rn.f = f; rn.n = 0;
-  decp[0] = lhat_getlocaledecpoint();  /* get decimal point from locale */
-  decp[1] = '.';  /* always accept a dot */
+  decp[0] = lhat_getlocaledecpoint();  // get decimal point from locale
+  decp[1] = '.';  // always accept a dot
   l_lockfile(rn.f);
-  do { rn.c = l_getc(rn.f); } while (isspace(rn.c));  /* skip spaces */
-  test2(&rn, "-+");  /* optional signal */
+  do { rn.c = l_getc(rn.f); } while (isspace(rn.c));  // skip spaces
+  test2(&rn, "-+");  // optional signal
   if (test2(&rn, "00")) {
-    if (test2(&rn, "xX")) hex = 1;  /* numeral is hexadecimal */
-    else count = 1;  /* count initial '0' as a valid digit */
+    if (test2(&rn, "xX")) hex = 1;  // numeral is hexadecimal
+    else count = 1;  // count initial '0' as a valid digit
   }
-  count += readdigits(&rn, hex);  /* integral part */
-  if (test2(&rn, decp))  /* decimal point? */
-    count += readdigits(&rn, hex);  /* fractional part */
-  if (count > 0 && test2(&rn, (hex ? "pP" : "eE"))) {  /* exponent mark? */
-    test2(&rn, "-+");  /* exponent signal */
-    readdigits(&rn, 0);  /* exponent digits */
+  count += readdigits(&rn, hex);  // integral part
+  if (test2(&rn, decp))  // decimal point?
+    count += readdigits(&rn, hex);  // fractional part
+  if (count > 0 && test2(&rn, (hex ? "pP" : "eE"))) {  // exponent mark?
+    test2(&rn, "-+");  // exponent signal
+    readdigits(&rn, 0);  // exponent digits
   }
-  ungetc(rn.c, rn.f);  /* unread look-ahead char */
+  ungetc(rn.c, rn.f);  // unread look-ahead char
   l_unlockfile(rn.f);
-  rn.buff[rn.n] = '\0';  /* finish string */
-  if (lhat_stringtonumber(L, rn.buff))  /* is this a valid number? */
-    return 1;  /* ok */
-  else {  /* invalid format */
-   lhat_pushnil(L);  /* "result" to be removed */
-   return 0;  /* read fails */
+  rn.buff[rn.n] = '\0';  // finish string
+  if (lhat_stringtonumber(L, rn.buff))  // is this a valid number?
+    return 1;  // ok
+  else {  // invalid format
+   lhat_pushnil(L);  // "result" to be removed
+   return 0;  // read fails
   }
 }
 
 
 static int test_eof (lhat_State *L, FILE *f) {
   int c = getc(f);
-  ungetc(c, f);  /* no-op when c == EOF */
+  ungetc(c, f);  // no-op when c == EOF
   lhat_pushliteral(L, "");
   return (c != EOF);
 }
@@ -478,19 +478,19 @@ static int read_line (lhat_State *L, FILE *f, int chop) {
   lhatL_Buffer b;
   int c = '\0';
   lhatL_buffinit(L, &b);
-  while (c != EOF && c != '\n') {  /* repeat until end of line */
-    char *buff = lhatL_prepbuffer(&b);  /* preallocate buffer */
+  while (c != EOF && c != '\n') {  // repeat until end of line
+    char *buff = lhatL_prepbuffer(&b);  // preallocate buffer
     int i = 0;
-    l_lockfile(f);  /* no memory errors can happen inside the lock */
+    l_lockfile(f);  // no memory errors can happen inside the lock
     while (i < LHATL_BUFFERSIZE && (c = l_getc(f)) != EOF && c != '\n')
       buff[i++] = c;
     l_unlockfile(f);
     lhatL_addsize(&b, i);
   }
-  if (!chop && c == '\n')  /* want a newline and have one? */
-    lhatL_addchar(&b, c);  /* add ending newline to result */
-  lhatL_pushresult(&b);  /* close buffer */
-  /* return ok if read something (either a newline or something else) */
+  if (!chop && c == '\n')  // want a newline and have one?
+    lhatL_addchar(&b, c);  // add ending newline to result
+  lhatL_pushresult(&b);  // close buffer
+  // return ok if read something (either a newline or something else)
   return (c == '\n' || lhat_rawlen(L, -1) > 0);
 }
 
@@ -499,25 +499,25 @@ static void read_all (lhat_State *L, FILE *f) {
   size_t nr;
   lhatL_Buffer b;
   lhatL_buffinit(L, &b);
-  do {  /* read file in chunks of LHATL_BUFFERSIZE bytes */
+  do {  // read file in chunks of LHATL_BUFFERSIZE bytes
     char *p = lhatL_prepbuffer(&b);
     nr = fread(p, sizeof(char), LHATL_BUFFERSIZE, f);
     lhatL_addsize(&b, nr);
   } while (nr == LHATL_BUFFERSIZE);
-  lhatL_pushresult(&b);  /* close buffer */
+  lhatL_pushresult(&b);  // close buffer
 }
 
 
 static int read_chars (lhat_State *L, FILE *f, size_t n) {
-  size_t nr;  /* number of chars actually read */
+  size_t nr;  // number of chars actually read
   char *p;
   lhatL_Buffer b;
   lhatL_buffinit(L, &b);
-  p = lhatL_prepbuffsize(&b, n);  /* prepare buffer to read whole block */
-  nr = fread(p, sizeof(char), n, f);  /* try to read 'n' chars */
+  p = lhatL_prepbuffsize(&b, n);  // prepare buffer to read whole block
+  nr = fread(p, sizeof(char), n, f);  // try to read 'n' chars
   lhatL_addsize(&b, nr);
-  lhatL_pushresult(&b);  /* close buffer */
-  return (nr > 0);  /* true iff read something */
+  lhatL_pushresult(&b);  // close buffer
+  return (nr > 0);  // true iff read something
 }
 
 
@@ -526,11 +526,11 @@ static int g_read (lhat_State *L, FILE *f, int first) {
   int success;
   int n;
   clearerr(f);
-  if (nargs == 0) {  /* no arguments? */
+  if (nargs == 0) {  // no arguments?
     success = read_line(L, f, 1);
-    n = first+1;  /* to return 1 result */
+    n = first+1;  // to return 1 result
   }
-  else {  /* ensure stack space for all results and for auxlib's buffer */
+  else {  // ensure stack space for all results and for auxlib's buffer
     lhatL_checkstack(L, nargs+LHAT_MINSTACK, "too many arguments");
     success = 1;
     for (n = first; nargs-- && success; n++) {
@@ -540,20 +540,20 @@ static int g_read (lhat_State *L, FILE *f, int first) {
       }
       else {
         const char *p = lhatL_checkstring(L, n);
-        if (*p == '*') p++;  /* skip optional '*' (for compatibility) */
+        if (*p == '*') p++;  // skip optional '*' (for compatibility)
         switch (*p) {
-          case 'n':  /* number */
+          case 'n':  // number
             success = read_number(L, f);
             break;
-          case 'l':  /* line */
+          case 'l':  // line
             success = read_line(L, f, 1);
             break;
-          case 'L':  /* line with end-of-line */
+          case 'L':  // line with end-of-line
             success = read_line(L, f, 0);
             break;
-          case 'a':  /* file */
-            read_all(L, f);  /* read entire file */
-            success = 1; /* always success */
+          case 'a':  // file
+            read_all(L, f);  // read entire file
+            success = 1; // always success
             break;
           default:
             return lhatL_argerror(L, n, "invalid format");
@@ -564,8 +564,8 @@ static int g_read (lhat_State *L, FILE *f, int first) {
   if (ferror(f))
     return lhatL_fileresult(L, 0, NULL);
   if (!success) {
-    lhat_pop(L, 1);  /* remove last result */
-    lhat_pushnil(L);  /* push nil instead */
+    lhat_pop(L, 1);  // remove last result
+    lhat_pushnil(L);  // push nil instead
   }
   return n - first;
 }
@@ -585,31 +585,31 @@ static int io_readline (lhat_State *L) {
   LStream *p = (LStream *)lhat_touserdata(L, lhat_upvalueindex(1));
   int i;
   int n = (int)lhat_tointeger(L, lhat_upvalueindex(2));
-  if (isclosed(p))  /* file is already closed? */
+  if (isclosed(p))  // file is already closed?
     return lhatL_error(L, "file is already closed");
   lhat_settop(L , 1);
   lhatL_checkstack(L, n, "too many arguments");
-  for (i = 1; i <= n; i++)  /* push arguments to 'g_read' */
+  for (i = 1; i <= n; i++)  // push arguments to 'g_read'
     lhat_pushvalue(L, lhat_upvalueindex(3 + i));
-  n = g_read(L, p->f, 2);  /* 'n' is number of results */
-  lhat_assert(n > 0);  /* should return at least a nil */
-  if (lhat_toboolean(L, -n))  /* read at least one value? */
-    return n;  /* return them */
-  else {  /* first result is nil: EOF or error */
-    if (n > 1) {  /* is there error information? */
-      /* 2nd result is error message */
+  n = g_read(L, p->f, 2);  // 'n' is number of results
+  lhat_assert(n > 0);  // should return at least a nil
+  if (lhat_toboolean(L, -n))  // read at least one value?
+    return n;  // return them
+  else {  // first result is nil: EOF or error
+    if (n > 1) {  // is there error information?
+      // 2nd result is error message
       return lhatL_error(L, "%s", lhat_tostring(L, -n + 1));
     }
-    if (lhat_toboolean(L, lhat_upvalueindex(3))) {  /* generator created file? */
+    if (lhat_toboolean(L, lhat_upvalueindex(3))) {  // generator created file?
       lhat_settop(L, 0);
       lhat_pushvalue(L, lhat_upvalueindex(1));
-      aux_close(L);  /* close it */
+      aux_close(L);  // close it
     }
     return 0;
   }
 }
 
-/* }====================================================== */
+// }======================================================
 
 
 static int g_write (lhat_State *L, FILE *f, int arg) {
@@ -617,7 +617,7 @@ static int g_write (lhat_State *L, FILE *f, int arg) {
   int status = 1;
   for (; nargs--; arg++) {
     if (lhat_type(L, arg) == LHAT_TNUMBER) {
-      /* optimization: could be done exactly as for strings */
+      // optimization: could be done exactly as for strings
       int len = lhat_isinteger(L, arg)
                 ? fprintf(f, LHAT_INTEGER_FMT,
                              (LHATI_UACINT)lhat_tointeger(L, arg))
@@ -631,7 +631,7 @@ static int g_write (lhat_State *L, FILE *f, int arg) {
       status = status && (fwrite(s, sizeof(char), l, f) == l);
     }
   }
-  if (status) return 1;  /* file handle already on stack top */
+  if (status) return 1;  // file handle already on stack top
   else return lhatL_fileresult(L, status, NULL);
 }
 
@@ -643,7 +643,7 @@ static int io_write (lhat_State *L) {
 
 static int f_write (lhat_State *L) {
   FILE *f = tofile(L);
-  lhat_pushvalue(L, 1);  /* push file at the stack top (to be returned) */
+  lhat_pushvalue(L, 1);  // push file at the stack top (to be returned)
   return g_write(L, f, 2);
 }
 
@@ -659,7 +659,7 @@ static int f_seek (lhat_State *L) {
                   "not an integer in proper range");
   op = l_fseek(f, offset, mode[op]);
   if (op)
-    return lhatL_fileresult(L, 0, NULL);  /* error */
+    return lhatL_fileresult(L, 0, NULL);  // error
   else {
     lhat_pushinteger(L, (lhat_Integer)l_ftell(f));
     return 1;
@@ -689,9 +689,9 @@ static int f_flush (lhat_State *L) {
 }
 
 
-/*
-** functions for 'io' library
-*/
+//
+// functions for 'io' library
+//
 static const lhatL_Reg iolib[] = {
   {"close", io_close},
   {"flush", io_flush},
@@ -708,9 +708,9 @@ static const lhatL_Reg iolib[] = {
 };
 
 
-/*
-** methods for file handles
-*/
+//
+// methods for file handles
+//
 static const lhatL_Reg flib[] = {
   {"close", io_close},
   {"flush", f_flush},
@@ -726,20 +726,20 @@ static const lhatL_Reg flib[] = {
 
 
 static void createmeta (lhat_State *L) {
-  lhatL_newmetatable(L, LHAT_FILEHANDLE);  /* create metatable for file handles */
-  lhat_pushvalue(L, -1);  /* push metatable */
-  lhat_setfield(L, -2, "__index");  /* metatable.__index = metatable */
-  lhatL_setfuncs(L, flib, 0);  /* add file methods to new metatable */
-  lhat_pop(L, 1);  /* pop new metatable */
+  lhatL_newmetatable(L, LHAT_FILEHANDLE);  // create metatable for file handles
+  lhat_pushvalue(L, -1);  // push metatable
+  lhat_setfield(L, -2, "__index");  // metatable.__index = metatable
+  lhatL_setfuncs(L, flib, 0);  // add file methods to new metatable
+  lhat_pop(L, 1);  // pop new metatable
 }
 
 
-/*
-** function to (not) close the standard files stdin, stdout, and stderr
-*/
+//
+// function to (not) close the standard files stdin, stdout, and stderr
+//
 static int io_noclose (lhat_State *L) {
   LStream *p = tolstream(L);
-  p->closef = &io_noclose;  /* keep file opened */
+  p->closef = &io_noclose;  // keep file opened
   lhat_pushnil(L);
   lhat_pushliteral(L, "cannot close standard file");
   return 2;
@@ -753,16 +753,16 @@ static void createstdfile (lhat_State *L, FILE *f, const char *k,
   p->closef = &io_noclose;
   if (k != NULL) {
     lhat_pushvalue(L, -1);
-    lhat_setfield(L, LHAT_REGISTRYINDEX, k);  /* add file to registry */
+    lhat_setfield(L, LHAT_REGISTRYINDEX, k);  // add file to registry
   }
-  lhat_setfield(L, -2, fname);  /* add file to module */
+  lhat_setfield(L, -2, fname);  // add file to module
 }
 
 
 LHATMOD_API int lhatopen_io (lhat_State *L) {
-  lhatL_newlib(L, iolib);  /* new module */
+  lhatL_newlib(L, iolib);  // new module
   createmeta(L);
-  /* create (and set) default files */
+  // create (and set) default files
   createstdfile(L, stdin, IO_INPUT, "stdin");
   createstdfile(L, stdout, IO_OUTPUT, "stdout");
   createstdfile(L, stderr, NULL, "stderr");

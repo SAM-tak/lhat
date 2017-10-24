@@ -1,8 +1,8 @@
-/*
-** $Id: lapi.c,v 2.259 2016/02/29 14:27:14 roberto Exp $
-** Lhat API
-** See Copyright Notice in lhat.h
-*/
+//
+// $Id: lapi.c,v 2.259 2016/02/29 14:27:14 roberto Exp $
+// Lhat API
+// See Copyright Notice in lhat.h
+//
 
 #define lapi_c
 #define LHAT_CORE
@@ -30,19 +30,19 @@
 #include "lvm.h"
 
 
-/* value at a non-valid index */
+// value at a non-valid index
 #define NONVALIDVALUE		cast(TValue *, lhatO_nilobject)
 
-/* corresponding test */
+// corresponding test
 #define isvalid(o)	((o) != lhatO_nilobject)
 
-/* test for pseudo index */
+// test for pseudo index
 #define ispseudo(i)		((i) <= LHAT_REGISTRYINDEX)
 
-/* test for upvalue */
+// test for upvalues
 #define isupvalue(i)		((i) < LHAT_REGISTRYINDEX)
 
-/* test for valid but not pseudo index */
+// test for valid but not pseudo index
 #define isstackindex(i, o)	(isvalid(o) && !ispseudo(i))
 
 #define api_checkvalidindex(l,o)  api_check(l, isvalid(o), "invalid index")
@@ -59,29 +59,29 @@ static TValue *index2addr (lhat_State *L, int idx) {
     if (o >= L->top) return NONVALIDVALUE;
     else return o;
   }
-  else if (!ispseudo(idx)) {  /* negative index */
+  else if (!ispseudo(idx)) {  // negative index
     api_check(L, idx != 0 && -idx <= L->top - (ci->func + 1), "invalid index");
     return L->top + idx;
   }
   else if (idx == LHAT_REGISTRYINDEX)
     return &G(L)->l_registry;
-  else {  /* upvalues */
+  else {  // upvalues
     idx = LHAT_REGISTRYINDEX - idx;
     api_check(L, idx <= MAXUPVAL + 1, "upvalue index too large");
-    if (ttislcf(ci->func))  /* light C function? */
-      return NONVALIDVALUE;  /* it has no upvalues */
+    if (ttislcf(ci->func))  // light C function?
+      return NONVALIDVALUE;  // it has no upvalues
     else {
       CClosure *func = clCvalue(ci->func);
-      return (idx <= func->nupvalues) ? &func->upvalue[idx-1] : NONVALIDVALUE;
+      return (idx <= func->nupvalues) ? &func->upvalues[idx-1] : NONVALIDVALUE;
     }
   }
 }
 
 
-/*
-** to be called by 'lhat_checkstack' in protected mode, to grow stack
-** capturing memory errors
-*/
+//
+// to be called by 'lhat_checkstack' in protected mode, to grow stack
+// capturing memory errors
+//
 static void growstack (lhat_State *L, void *ud) {
   int size = *(int *)ud;
   lhatD_growstack(L, size);
@@ -93,17 +93,17 @@ LHAT_API int lhat_checkstack (lhat_State *L, int n) {
   CallInfo *ci = L->ci;
   lhat_lock(L);
   api_check(L, n >= 0, "negative 'n'");
-  if (L->stack_last - L->top > n)  /* stack large enough? */
-    res = 1;  /* yes; check is OK */
-  else {  /* no; need to grow stack */
+  if (L->stack_last - L->top > n)  // stack large enough?
+    res = 1;  // yes; check is OK
+  else {  // no; need to grow stack
     int inuse = cast_int(L->top - L->stack) + EXTRA_STACK;
-    if (inuse > LHATI_MAXSTACK - n)  /* can grow without overflow? */
-      res = 0;  /* no */
-    else  /* try to grow stack */
+    if (inuse > LHATI_MAXSTACK - n)  // can grow without overflow?
+      res = 0;  // no
+    else  // try to grow stack
       res = (lhatD_rawrunprotected(L, &growstack, &n) == LHAT_OK);
   }
   if (res && ci->top < L->top + n)
-    ci->top = L->top + n;  /* adjust frame top */
+    ci->top = L->top + n;  // adjust frame top
   lhat_unlock(L);
   return res;
 }
@@ -119,7 +119,7 @@ LHAT_API void lhat_xmove (lhat_State *from, lhat_State *to, int n) {
   from->top -= n;
   for (i = 0; i < n; i++) {
     setobj2s(to, to->top, from->top + i);
-    to->top++;  /* stack already checked by previous 'api_check' */
+    to->top++;  // stack already checked by previous 'api_check'
   }
   lhat_unlock(to);
 }
@@ -143,14 +143,14 @@ LHAT_API const lhat_Number *lhat_version (lhat_State *L) {
 
 
 
-/*
-** basic stack manipulation
-*/
+//
+// basic stack manipulation
+//
 
 
-/*
-** convert an acceptable stack index into an absolute index
-*/
+//
+// convert an acceptable stack index into an absolute index
+//
 LHAT_API int lhat_absindex (lhat_State *L, int idx) {
   return (idx > 0 || ispseudo(idx))
          ? idx
@@ -174,16 +174,16 @@ LHAT_API void lhat_settop (lhat_State *L, int idx) {
   }
   else {
     api_check(L, -(idx+1) <= (L->top - (func + 1)), "invalid new top");
-    L->top += idx+1;  /* 'subtract' index (index is negative) */
+    L->top += idx+1;  // 'subtract' index (index is negative)
   }
   lhat_unlock(L);
 }
 
 
-/*
-** Reverse the stack segment from 'from' to 'to'
-** (auxiliary to 'lhat_rotate')
-*/
+//
+// Reverse the stack segment from 'from' to 'to'
+// (auxiliary to 'lhat_rotate')
+//
 static void reverse (lhat_State *L, StkId from, StkId to) {
   for (; from < to; from++, to--) {
     TValue temp;
@@ -194,21 +194,21 @@ static void reverse (lhat_State *L, StkId from, StkId to) {
 }
 
 
-/*
-** Let x = AB, where A is a prefix of length 'n'. Then,
-** rotate x n == BA. But BA == (A^r . B^r)^r.
-*/
+//
+// Let x = AB, where A is a prefix of length 'n'. Then,
+// rotate x n == BA. But BA == (A^r . B^r)^r.
+//
 LHAT_API void lhat_rotate (lhat_State *L, int idx, int n) {
   StkId p, t, m;
   lhat_lock(L);
-  t = L->top - 1;  /* end of stack segment being rotated */
-  p = index2addr(L, idx);  /* start of segment */
+  t = L->top - 1;  // end of stack segment being rotated
+  p = index2addr(L, idx);  // start of segment
   api_checkstackindex(L, idx, p);
   api_check(L, (n >= 0 ? n : -n) <= (t - p + 1), "invalid 'n'");
-  m = (n >= 0 ? t - n : p - n - 1);  /* end of prefix */
-  reverse(L, p, m);  /* reverse the prefix with length 'n' */
-  reverse(L, m + 1, t);  /* reverse the suffix */
-  reverse(L, p, t);  /* reverse the entire segment */
+  m = (n >= 0 ? t - n : p - n - 1);  // end of prefix
+  reverse(L, p, m);  // reverse the prefix with length 'n'
+  reverse(L, m + 1, t);  // reverse the suffix
+  reverse(L, p, t);  // reverse the entire segment
   lhat_unlock(L);
 }
 
@@ -220,10 +220,10 @@ LHAT_API void lhat_copy (lhat_State *L, int fromidx, int toidx) {
   to = index2addr(L, toidx);
   api_checkvalidindex(L, to);
   setobj(L, to, fr);
-  if (isupvalue(toidx))  /* function upvalue? */
+  if (isupvalue(toidx))  // function upvalues?
     lhatC_barrier(L, clCvalue(L->ci->func), fr);
-  /* LHAT_REGISTRYINDEX does not need gc barrier
-     (collector revisits it before finishing collection) */
+  // LHAT_REGISTRYINDEX does not need gc barrier
+  // (collector revisits it before finishing collection)
   lhat_unlock(L);
 }
 
@@ -237,9 +237,9 @@ LHAT_API void lhat_pushvalue (lhat_State *L, int idx) {
 
 
 
-/*
-** access functions (stack -> C)
-*/
+//
+// access functions (stack -> C)
+//
 
 
 LHAT_API int lhat_type (lhat_State *L, int idx) {
@@ -296,15 +296,15 @@ LHAT_API int lhat_rawequal (lhat_State *L, int index1, int index2) {
 LHAT_API void lhat_arith (lhat_State *L, int op) {
   lhat_lock(L);
   if (op != LHAT_OPUNM && op != LHAT_OPBNOT)
-    api_checknelems(L, 2);  /* all other operations expect two operands */
-  else {  /* for unary operations, add fake 2nd operand */
+    api_checknelems(L, 2);  // all other operations expect two operands
+  else {  // for unary operations, add fake 2nd operand
     api_checknelems(L, 1);
     setobjs2s(L, L->top, L->top - 1);
     api_incr_top(L);
   }
-  /* first operand at top - 2, second at top - 1; result go to top - 2 */
+  // first operand at top - 2, second at top - 1; result go to top - 2
   lhatO_arith(L, op, L->top - 2, L->top - 1, L->top - 2);
-  L->top--;  /* remove second operand */
+  L->top--;  // remove second operand
   lhat_unlock(L);
 }
 
@@ -312,7 +312,7 @@ LHAT_API void lhat_arith (lhat_State *L, int op) {
 LHAT_API int lhat_compare (lhat_State *L, int index1, int index2, int op) {
   StkId o1, o2;
   int i = 0;
-  lhat_lock(L);  /* may call tag method */
+  lhat_lock(L);  // may call tag method
   o1 = index2addr(L, index1);
   o2 = index2addr(L, index2);
   if (isvalid(o1) && isvalid(o2)) {
@@ -341,7 +341,7 @@ LHAT_API lhat_Number lhat_tonumberx (lhat_State *L, int idx, int *pisnum) {
   const TValue *o = index2addr(L, idx);
   int isnum = tonumber(o, &n);
   if (!isnum)
-    n = 0;  /* call to 'tonumber' may change 'n' even if it fails */
+    n = 0;  // call to 'tonumber' may change 'n' even if it fails
   if (pisnum) *pisnum = isnum;
   return n;
 }
@@ -352,7 +352,7 @@ LHAT_API lhat_Integer lhat_tointegerx (lhat_State *L, int idx, int *pisnum) {
   const TValue *o = index2addr(L, idx);
   int isnum = tointeger(o, &res);
   if (!isnum)
-    res = 0;  /* call to 'tointeger' may change 'n' even if it fails */
+    res = 0;  // call to 'tointeger' may change 'n' even if it fails
   if (pisnum) *pisnum = isnum;
   return res;
 }
@@ -367,14 +367,14 @@ LHAT_API int lhat_toboolean (lhat_State *L, int idx) {
 LHAT_API const char *lhat_tolstring (lhat_State *L, int idx, size_t *len) {
   StkId o = index2addr(L, idx);
   if (!ttisstring(o)) {
-    if (!cvt2str(o)) {  /* not convertible? */
+    if (!cvt2str(o)) {  // not convertible?
       if (len != NULL) *len = 0;
       return NULL;
     }
-    lhat_lock(L);  /* 'lhatO_tostring' may create a new string */
+    lhat_lock(L);  // 'lhatO_tostring' may create a new string
     lhatO_tostring(L, o);
     lhatC_checkGC(L);
-    o = index2addr(L, idx);  /* previous call may reallocate the stack */
+    o = index2addr(L, idx);  // previous call may reallocate the stack
     lhat_unlock(L);
   }
   if (len != NULL)
@@ -400,7 +400,7 @@ LHAT_API lhat_CFunction lhat_tocfunction (lhat_State *L, int idx) {
   if (ttislcf(o)) return fvalue(o);
   else if (ttisCclosure(o))
     return clCvalue(o)->f;
-  else return NULL;  /* not a C function */
+  else return NULL;  // not a C function
 }
 
 
@@ -436,9 +436,9 @@ LHAT_API const void *lhat_topointer (lhat_State *L, int idx) {
 
 
 
-/*
-** push functions (C -> stack)
-*/
+//
+// push functions (C -> stack)
+//
 
 
 LHAT_API void lhat_pushnil (lhat_State *L) {
@@ -465,11 +465,11 @@ LHAT_API void lhat_pushinteger (lhat_State *L, lhat_Integer n) {
 }
 
 
-/*
-** Pushes on the stack a string with given length. Avoid using 's' when
-** 'len' == 0 (as 's' can be NULL in that case), due to later use of
-** 'memcmp' and 'memcpy'.
-*/
+//
+// Pushes on the stack a string with given length. Avoid using 's' when
+// 'len' == 0 (as 's' can be NULL in that case), due to later use of
+// 'memcmp' and 'memcpy'.
+//
 LHAT_API const char *lhat_pushlstring (lhat_State *L, const char *s, size_t len) {
   TString *ts;
   lhat_lock(L);
@@ -490,7 +490,7 @@ LHAT_API const char *lhat_pushstring (lhat_State *L, const char *s) {
     TString *ts;
     ts = lhatS_new(L, s);
     setsvalue2s(L, L->top, ts);
-    s = getstr(ts);  /* internal copy's address */
+    s = getstr(ts);  // internal copy's address
   }
   api_incr_top(L);
   lhatC_checkGC(L);
@@ -536,8 +536,8 @@ LHAT_API void lhat_pushcclosure (lhat_State *L, lhat_CFunction fn, int n) {
     cl->f = fn;
     L->top -= n;
     while (n--) {
-      setobj2n(L, &cl->upvalue[n], L->top + n);
-      /* does not need barrier because closure is white */
+      setobj2n(L, &cl->upvalues[n], L->top + n);
+      // does not need barrier because closure is white
     }
     setclCvalue(L, L->top, cl);
   }
@@ -549,7 +549,7 @@ LHAT_API void lhat_pushcclosure (lhat_State *L, lhat_CFunction fn, int n) {
 
 LHAT_API void lhat_pushboolean (lhat_State *L, int b) {
   lhat_lock(L);
-  setbvalue(L->top, (b != 0));  /* ensure that true is 1 */
+  setbvalue(L->top, (b != 0));  // ensure that true is 1
   api_incr_top(L);
   lhat_unlock(L);
 }
@@ -573,9 +573,9 @@ LHAT_API int lhat_pushcoroutine (lhat_State *L) {
 
 
 
-/*
-** get functions (Lhat -> stack)
-*/
+//
+// get functions (Lhat -> stack)
+//
 
 
 static int auxgetstr (lhat_State *L, const TValue *t, const char *k) {
@@ -726,32 +726,32 @@ LHAT_API int lhat_getuservalue (lhat_State *L, int idx) {
 }
 
 
-/*
-** set functions (stack -> Lhat)
-*/
+//
+// set functions (stack -> Lhat)
+//
 
-/*
-** t[k] = value at the top of the stack (where 'k' is a string)
-*/
+//
+// t[k] = value at the top of the stack (where 'k' is a string)
+//
 static void auxsetstr (lhat_State *L, const TValue *t, const char *k) {
   const TValue *slot;
   TString *str = lhatS_new(L, k);
   api_checknelems(L, 1);
   if (lhatV_fastset(L, t, str, slot, lhatH_getstr, L->top - 1))
-    L->top--;  /* pop value */
+    L->top--;  // pop value
   else {
-    setsvalue2s(L, L->top, str);  /* push 'str' (to make it a TValue) */
+    setsvalue2s(L, L->top, str);  // push 'str' (to make it a TValue)
     api_incr_top(L);
     lhatV_finishset(L, t, L->top - 1, L->top - 2, slot);
-    L->top -= 2;  /* pop value and key */
+    L->top -= 2;  // pop value and key
   }
-  lhat_unlock(L);  /* lock done by caller */
+  lhat_unlock(L);  // lock done by caller
 }
 
 
 LHAT_API void lhat_setglobal (lhat_State *L, const char *name) {
   Table *reg = hvalue(&G(L)->l_registry);
-  lhat_lock(L);  /* unlock done in 'auxsetstr' */
+  lhat_lock(L);  // unlock done in 'auxsetstr'
   auxsetstr(L, lhatH_getint(reg, LHAT_RIDX_GLOBALS), name);
 }
 
@@ -762,13 +762,13 @@ LHAT_API void lhat_settable (lhat_State *L, int idx) {
   api_checknelems(L, 2);
   t = index2addr(L, idx);
   lhatV_settable(L, t, L->top - 2, L->top - 1);
-  L->top -= 2;  /* pop index and value */
+  L->top -= 2;  // pop index and value
   lhat_unlock(L);
 }
 
 
 LHAT_API void lhat_setfield (lhat_State *L, int idx, const char *k) {
-  lhat_lock(L);  /* unlock done in 'auxsetstr' */
+  lhat_lock(L);  // unlock done in 'auxsetstr'
   auxsetstr(L, index2addr(L, idx), k);
 }
 
@@ -780,12 +780,12 @@ LHAT_API void lhat_seti (lhat_State *L, int idx, lhat_Integer n) {
   api_checknelems(L, 1);
   t = index2addr(L, idx);
   if (lhatV_fastset(L, t, n, slot, lhatH_getint, L->top - 1))
-    L->top--;  /* pop value */
+    L->top--;  // pop value
   else {
     setivalue(L->top, n);
     api_incr_top(L);
     lhatV_finishset(L, t, L->top - 1, L->top - 2, slot);
-    L->top -= 2;  /* pop value and key */
+    L->top -= 2;  // pop value and key
   }
   lhat_unlock(L);
 }
@@ -889,9 +889,9 @@ LHAT_API void lhat_setuservalue (lhat_State *L, int idx) {
 }
 
 
-/*
-** 'load' and 'call' functions (run Lhat code)
-*/
+//
+// 'load' and 'call' functions (run Lhat code)
+//
 
 
 #define checkresults(L,na,nr) \
@@ -909,23 +909,23 @@ LHAT_API void lhat_callk (lhat_State *L, int nargs, int nresults,
   api_check(L, L->status == LHAT_OK, "cannot do calls on non-normal coroutine");
   checkresults(L, nargs, nresults);
   func = L->top - (nargs+1);
-  if (k != NULL && L->nny == 0) {  /* need to prepare continuation? */
-    L->ci->u.c.k = k;  /* save continuation */
-    L->ci->u.c.ctx = ctx;  /* save context */
-    lhatD_call(L, func, nresults);  /* do the call */
+  if (k != NULL && L->nny == 0) {  // need to prepare continuation?
+    L->ci->u.c.k = k;  // save continuation
+    L->ci->u.c.ctx = ctx;  // save context
+    lhatD_call(L, func, nresults);  // do the call
   }
-  else  /* no continuation or no yieldable */
-    lhatD_callnoyield(L, func, nresults);  /* just do the call */
+  else  // no continuation or no yieldable
+    lhatD_callnoyield(L, func, nresults);  // just do the call
   adjustresults(L, nresults);
   lhat_unlock(L);
 }
 
 
 
-/*
-** Execute a protected call.
-*/
-struct CallS {  /* data to 'f_call' */
+//
+// Execute a protected call.
+//
+struct CallS {  // data to 'f_call'
   StkId func;
   int nresults;
 };
@@ -956,25 +956,25 @@ LHAT_API int lhat_pcallk (lhat_State *L, int nargs, int nresults, int errfunc,
     api_checkstackindex(L, errfunc, o);
     func = savestack(L, o);
   }
-  c.func = L->top - (nargs+1);  /* function to be called */
-  if (k == NULL || L->nny > 0) {  /* no continuation or no yieldable? */
-    c.nresults = nresults;  /* do a 'conventional' protected call */
+  c.func = L->top - (nargs+1);  // function to be called
+  if (k == NULL || L->nny > 0) {  // no continuation or no yieldable?
+    c.nresults = nresults;  // do a 'conventional' protected call
     status = lhatD_pcall(L, f_call, &c, savestack(L, c.func), func);
   }
-  else {  /* prepare continuation (call is already protected by 'resume') */
+  else {  // prepare continuation (call is already protected by 'resume')
     CallInfo *ci = L->ci;
-    ci->u.c.k = k;  /* save continuation */
-    ci->u.c.ctx = ctx;  /* save context */
-    /* save information for error recovery */
+    ci->u.c.k = k;  // save continuation
+    ci->u.c.ctx = ctx;  // save context
+    // save information for error recovery
     ci->extra = savestack(L, c.func);
     ci->u.c.old_errfunc = L->errfunc;
     L->errfunc = func;
-    setoah(ci->callstatus, L->allowhook);  /* save value of 'allowhook' */
-    ci->callstatus |= CIST_YPCALL;  /* function can do error recovery */
-    lhatD_call(L, c.func, nresults);  /* do the call */
+    setoah(ci->callstatus, L->allowhook);  // save value of 'allowhook'
+    ci->callstatus |= CIST_YPCALL;  // function can do error recovery
+    lhatD_call(L, c.func, nresults);  // do the call
     ci->callstatus &= ~CIST_YPCALL;
     L->errfunc = ci->u.c.old_errfunc;
-    status = LHAT_OK;  /* if it is here, there were no errors */
+    status = LHAT_OK;  // if it is here, there were no errors
   }
   adjustresults(L, nresults);
   lhat_unlock(L);
@@ -990,15 +990,15 @@ LHAT_API int lhat_load (lhat_State *L, lhat_Reader reader, void *data,
   if (!chunkname) chunkname = "?";
   lhatZ_init(L, &z, reader, data);
   status = lhatD_protectedparser(L, &z, chunkname, mode);
-  if (status == LHAT_OK) {  /* no errors? */
-    LClosure *f = clLvalue(L->top - 1);  /* get newly created function */
-    if (f->nupvalues >= 1) {  /* does it have an upvalue? */
-      /* get global table from registry */
+  if (status == LHAT_OK) {  // no errors?
+    LClosure *f = clLvalue(L->top - 1);  // get newly created function
+    if (f->nupvalues >= 1) {  // does it have an upvalues?
+      // get global table from registry
       Table *reg = hvalue(&G(L)->l_registry);
       const TValue *gt = lhatH_getint(reg, LHAT_RIDX_GLOBALS);
-      /* set global table as 1st upvalue of 'f' (may be LHAT_ENV) */
-      setobj(L, f->upvals[0]->v, gt);
-      lhatC_upvalbarrier(L, f->upvals[0]);
+      // set global table as 1st upvalues of 'f' (may be LHAT_ENV)
+      setobj(L, f->upvalues[0]->v, gt);
+      lhatC_upvalbarrier(L, f->upvalues[0]);
     }
   }
   lhat_unlock(L);
@@ -1026,9 +1026,9 @@ LHAT_API int lhat_status (lhat_State *L) {
 }
 
 
-/*
-** Garbage-collection function
-*/
+//
+// Garbage-collection function
+//
 
 LHAT_API int lhat_gc (lhat_State *L, int what, int data) {
   int res = 0;
@@ -1050,7 +1050,7 @@ LHAT_API int lhat_gc (lhat_State *L, int what, int data) {
       break;
     }
     case LHAT_GCCOUNT: {
-      /* GC values are expressed in Kbytes: #bytes/2^10 */
+      // GC values are expressed in Kbytes: #bytes/2^10
       res = cast_int(gettotalbytes(g) >> 10);
       break;
     }
@@ -1059,21 +1059,21 @@ LHAT_API int lhat_gc (lhat_State *L, int what, int data) {
       break;
     }
     case LHAT_GCSTEP: {
-      l_mem debt = 1;  /* =1 to signal that it did an actual step */
+      l_mem debt = 1;  // =1 to signal that it did an actual step
       lu_byte oldrunning = g->gcrunning;
-      g->gcrunning = 1;  /* allow GC to run */
+      g->gcrunning = 1;  // allow GC to run
       if (data == 0) {
-        lhatE_setdebt(g, -GCSTEPSIZE);  /* to do a "small" step */
+        lhatE_setdebt(g, -GCSTEPSIZE);  // to do a "small" step
         lhatC_step(L);
       }
-      else {  /* add 'data' to total debt */
+      else {  // add 'data' to total debt
         debt = cast(l_mem, data) * 1024 + g->GCdebt;
         lhatE_setdebt(g, debt);
         lhatC_checkGC(L);
       }
-      g->gcrunning = oldrunning;  /* restore previous state */
-      if (debt > 0 && g->gcstate == GCSpause)  /* end of cycle? */
-        res = 1;  /* signal it */
+      g->gcrunning = oldrunning;  // restore previous state
+      if (debt > 0 && g->gcstate == GCSpause)  // end of cycle?
+        res = 1;  // signal it
       break;
     }
     case LHAT_GCSETPAUSE: {
@@ -1083,7 +1083,7 @@ LHAT_API int lhat_gc (lhat_State *L, int what, int data) {
     }
     case LHAT_GCSETSTEPMUL: {
       res = g->gcstepmul;
-      if (data < 40) data = 40;  /* avoid ridiculous low values (and 0) */
+      if (data < 40) data = 40;  // avoid ridiculous low values (and 0)
       g->gcstepmul = data;
       break;
     }
@@ -1091,7 +1091,7 @@ LHAT_API int lhat_gc (lhat_State *L, int what, int data) {
       res = g->gcrunning;
       break;
     }
-    default: res = -1;  /* invalid option */
+    default: res = -1;  // invalid option
   }
   lhat_unlock(L);
   return res;
@@ -1099,17 +1099,17 @@ LHAT_API int lhat_gc (lhat_State *L, int what, int data) {
 
 
 
-/*
-** miscellaneous functions
-*/
+//
+// miscellaneous functions
+//
 
 
 LHAT_API int lhat_error (lhat_State *L) {
   lhat_lock(L);
   api_checknelems(L, 1);
   lhatG_errormsg(L);
-  /* code unreachable; will unlock when control actually leaves the kernel */
-  return 0;  /* to avoid warnings */
+  // code unreachable; will unlock when control actually leaves the kernel
+  return 0;  // to avoid warnings
 }
 
 
@@ -1123,8 +1123,8 @@ LHAT_API int lhat_next (lhat_State *L, int idx) {
   if (more) {
     api_incr_top(L);
   }
-  else  /* no more elements */
-    L->top -= 1;  /* remove key */
+  else  // no more elements
+    L->top -= 1;  // remove key
   lhat_unlock(L);
   return more;
 }
@@ -1136,11 +1136,11 @@ LHAT_API void lhat_concat (lhat_State *L, int n) {
   if (n >= 2) {
     lhatV_concat(L, n);
   }
-  else if (n == 0) {  /* push empty string */
+  else if (n == 0) {  // push empty string
     setsvalue2s(L, L->top, lhatS_newlstr(L, "", 0));
     api_incr_top(L);
   }
-  /* else n == 1; nothing to do */
+  // else n == 1; nothing to do
   lhatC_checkGC(L);
   lhat_unlock(L);
 }
@@ -1188,33 +1188,33 @@ LHAT_API void *lhat_newuserdata (lhat_State *L, size_t size) {
 
 
 static const char *aux_upvalue (StkId fi, int n, TValue **val,
-                                CClosure **owner, UpVal **uv) {
+                                CClosure **owner, Upvalue **uv) {
   switch (ttype(fi)) {
-    case LHAT_TCCL: {  /* C closure */
+    case LHAT_TCCL: {  // C closure
       CClosure *f = clCvalue(fi);
       if (!(1 <= n && n <= f->nupvalues)) return NULL;
-      *val = &f->upvalue[n-1];
+      *val = &f->upvalues[n-1];
       if (owner) *owner = f;
       return "";
     }
-    case LHAT_TLCL: {  /* Lhat closure */
+    case LHAT_TLCL: {  // Lhat closure
       LClosure *f = clLvalue(fi);
       TString *name;
       Proto *p = f->p;
       if (!(1 <= n && n <= p->sizeupvalues)) return NULL;
-      *val = f->upvals[n-1]->v;
-      if (uv) *uv = f->upvals[n - 1];
+      *val = f->upvalues[n-1]->v;
+      if (uv) *uv = f->upvalues[n - 1];
       name = p->upvalues[n-1].name;
       return (name == NULL) ? "(*no name)" : getstr(name);
     }
-    default: return NULL;  /* not a closure */
+    default: return NULL;  // not a closure
   }
 }
 
 
 LHAT_API const char *lhat_getupvalue (lhat_State *L, int funcindex, int n) {
   const char *name;
-  TValue *val = NULL;  /* to avoid warnings */
+  TValue *val = NULL;  // to avoid warnings
   lhat_lock(L);
   name = aux_upvalue(index2addr(L, funcindex), n, &val, NULL, NULL);
   if (name) {
@@ -1228,9 +1228,9 @@ LHAT_API const char *lhat_getupvalue (lhat_State *L, int funcindex, int n) {
 
 LHAT_API const char *lhat_setupvalue (lhat_State *L, int funcindex, int n) {
   const char *name;
-  TValue *val = NULL;  /* to avoid warnings */
+  TValue *val = NULL;  // to avoid warnings
   CClosure *owner = NULL;
-  UpVal *uv = NULL;
+  Upvalue *uv = NULL;
   StkId fi;
   lhat_lock(L);
   fi = index2addr(L, funcindex);
@@ -1247,27 +1247,27 @@ LHAT_API const char *lhat_setupvalue (lhat_State *L, int funcindex, int n) {
 }
 
 
-static UpVal **getupvalref (lhat_State *L, int fidx, int n, LClosure **pf) {
+static Upvalue **getupvalref (lhat_State *L, int fidx, int n, LClosure **pf) {
   LClosure *f;
   StkId fi = index2addr(L, fidx);
   api_check(L, ttisLclosure(fi), "Lhat function expected");
   f = clLvalue(fi);
   api_check(L, (1 <= n && n <= f->p->sizeupvalues), "invalid upvalue index");
   if (pf) *pf = f;
-  return &f->upvals[n - 1];  /* get its upvalue pointer */
+  return &f->upvalues[n - 1];  // get its upvalues pointer
 }
 
 
 LHAT_API void *lhat_upvalueid (lhat_State *L, int fidx, int n) {
   StkId fi = index2addr(L, fidx);
   switch (ttype(fi)) {
-    case LHAT_TLCL: {  /* lhat closure */
+    case LHAT_TLCL: {  // lhat closure
       return *getupvalref(L, fidx, n, NULL);
     }
-    case LHAT_TCCL: {  /* C closure */
+    case LHAT_TCCL: {  // C closure
       CClosure *f = clCvalue(fi);
       api_check(L, 1 <= n && n <= f->nupvalues, "invalid upvalue index");
-      return &f->upvalue[n - 1];
+      return &f->upvalues[n - 1];
     }
     default: {
       api_check(L, 0, "closure expected");
@@ -1280,8 +1280,8 @@ LHAT_API void *lhat_upvalueid (lhat_State *L, int fidx, int n) {
 LHAT_API void lhat_upvaluejoin (lhat_State *L, int fidx1, int n1,
                                             int fidx2, int n2) {
   LClosure *f1;
-  UpVal **up1 = getupvalref(L, fidx1, n1, &f1);
-  UpVal **up2 = getupvalref(L, fidx2, n2, NULL);
+  Upvalue **up1 = getupvalref(L, fidx1, n1, &f1);
+  Upvalue **up2 = getupvalref(L, fidx2, n2, NULL);
   lhatC_upvdeccount(L, *up1);
   *up1 = *up2;
   (*up1)->refcount++;

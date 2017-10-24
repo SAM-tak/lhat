@@ -1,8 +1,8 @@
-/*
-** $Id: ldo.h,v 2.29 2015/12/21 13:02:14 roberto Exp $
-** Stack and Call structure of Lhat
-** See Copyright Notice in lhat.h
-*/
+//
+// $Id: ldo.h,v 2.29 2015/12/21 13:02:14 roberto Exp $
+// Stack and Call structure of Lhat
+// See Copyright Notice in lhat.h
+//
 
 #ifndef ldo_h
 #define ldo_h
@@ -13,18 +13,18 @@
 #include "lzio.h"
 
 
-/*
-** Macro to check stack size and grow stack if needed.  Parameters
-** 'pre'/'pos' allow the macro to preserve a pointer into the
-** stack across reallocations, doing the work only when needed.
-** 'condmovestack' is used in heavy tests to force a stack reallocation
-** at every check.
-*/
+//
+// Macro to check stack size and grow stack if needed.  Parameters
+// 'pre'/'pos' allow the macro to preserve a pointer into the
+// stack across reallocations, doing the work only when needed.
+// 'condmovestack' is used in heavy tests to force a stack reallocation
+// at every check.
+//
 #define lhatD_checkstackaux(L,n,pre,pos)  \
 	if (L->stack_last - L->top <= (n)) \
 	  { pre; lhatD_growstack(L, n); pos; } else { condmovestack(L,pre,pos); }
 
-/* In general, 'pre'/'pos' are empty (nothing to save) */
+// In general, 'pre'/'pos' are empty (nothing to save)
 #define lhatD_checkstack(L,n)	lhatD_checkstackaux(L,n,(void)0,(void)0)
 
 
@@ -33,7 +33,7 @@
 #define restorestack(L,n)	((TValue *)((char *)L->stack + (n)))
 
 
-/* type of protected functions, to be ran by 'runprotected' */
+// type of protected functions, to be ran by 'runprotected'
 typedef void (*Pfunc) (lhat_State *L, void *ud);
 
 LHATI_FUNC int lhatD_protectedparser (lhat_State *L, ZIO *z, const char *name,

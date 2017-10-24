@@ -1,8 +1,8 @@
-/*
-** $Id: lapi.h,v 2.9 2015/03/06 19:49:50 roberto Exp $
-** Auxiliary functions from Lhat API
-** See Copyright Notice in lhat.h
-*/
+//
+// $Id: lapi.h,v 2.9 2015/03/06 19:49:50 roberto Exp $
+// Auxiliary functions from Lhat API
+// See Copyright Notice in lhat.h
+//
 
 #ifndef lapi_h
 #define lapi_h

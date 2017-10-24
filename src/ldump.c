@@ -1,8 +1,8 @@
-/*
-** $Id: ldump.c,v 2.37 2015/10/08 15:53:49 roberto Exp $
-** save precompiled Lhat chunks
-** See Copyright Notice in lhat.h
-*/
+//
+// $Id: ldump.c,v 2.37 2015/10/08 15:53:49 roberto Exp $
+// save precompiled Lhat chunks
+// See Copyright Notice in lhat.h
+//
 
 #define ldump_c
 #define LHAT_CORE
@@ -28,10 +28,10 @@ typedef struct {
 } DumpState;
 
 
-/*
-** All high-level dumps go through DumpVector; you can change it to
-** change the endianness of the result
-*/
+//
+// All high-level dumps go through DumpVector; you can change it to
+// change the endianness of the result
+//
 #define DumpVector(v,n,D)	DumpBlock(v,(n)*sizeof((v)[0]),D)
 
 #define DumpLiteral(s,D)	DumpBlock(s, sizeof(s) - sizeof(char), D)
@@ -74,7 +74,7 @@ static void DumpString (const TString *s, DumpState *D) {
   if (s == NULL)
     DumpByte(0, D);
   else {
-    size_t size = tsslen(s) + 1;  /* include trailing '\0' */
+    size_t size = tsslen(s) + 1;  // include trailing '\0'
     const char *str = getstr(s);
     if (size < 0xFF)
       DumpByte(cast_int(size), D);
@@ -82,7 +82,7 @@ static void DumpString (const TString *s, DumpState *D) {
       DumpByte(0xFF, D);
       DumpVar(size, D);
     }
-    DumpVector(str, size - 1, D);  /* no need to save '\0' */
+    DumpVector(str, size - 1, D);  // no need to save '\0'
   }
 }
 
@@ -165,7 +165,7 @@ static void DumpDebug (const Proto *f, DumpState *D) {
 
 static void DumpFunction (const Proto *f, TString *psource, DumpState *D) {
   if (D->strip || f->source == psource)
-    DumpString(NULL, D);  /* no debug info or same source as its parent */
+    DumpString(NULL, D);  // no debug info or same source as its parent
   else
     DumpString(f->source, D);
   DumpInt(f->linedefined, D);
@@ -196,9 +196,9 @@ static void DumpHeader (DumpState *D) {
 }
 
 
-/*
-** dump Lhat function as precompiled chunk
-*/
+//
+// dump Lhat function as precompiled chunk
+//
 int lhatU_dump(lhat_State *L, const Proto *f, lhat_Writer w, void *data,
               int strip) {
   DumpState D;

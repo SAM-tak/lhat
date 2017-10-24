@@ -1,8 +1,8 @@
-/*
-** $Id: lgc.c,v 2.215 2016/12/22 13:08:50 roberto Exp $
-** Garbage Collector
-** See Copyright Notice in lhat.h
-*/
+//
+// $Id: lgc.c,v 2.215 2016/12/22 13:08:50 roberto Exp $
+// Garbage Collector
+// See Copyright Notice in lhat.h
+//
 
 #define lgc_c
 #define LHAT_CORE
@@ -26,43 +26,43 @@
 #include "ltm.h"
 
 
-/*
-** internal state for collector while inside the atomic phase. The
-** collector should never be in this state while running regular code.
-*/
+//
+// internal state for collector while inside the atomic phase. The
+// collector should never be in this state while running regular code.
+//
 #define GCSinsideatomic		(GCSpause + 1)
 
-/*
-** cost of sweeping one element (the size of a small object divided
-** by some adjust for the sweep speed)
-*/
+//
+// cost of sweeping one element (the size of a small object divided
+// by some adjust for the sweep speed)
+//
 #define GCSWEEPCOST	((sizeof(TString) + 4) / 4)
 
-/* maximum number of elements to sweep in each single step */
+// maximum number of elements to sweep in each single step
 #define GCSWEEPMAX	(cast_int((GCSTEPSIZE / GCSWEEPCOST) / 4))
 
-/* cost of calling one finalizer */
+// cost of calling one finalizer
 #define GCFINALIZECOST	GCSWEEPCOST
 
 
-/*
-** macro to adjust 'stepmul': 'stepmul' is actually used like
-** 'stepmul / STEPMULADJ' (value chosen by tests)
-*/
+//
+// macro to adjust 'stepmul': 'stepmul' is actually used like
+// 'stepmul / STEPMULADJ' (value chosen by tests)
+//
 #define STEPMULADJ		200
 
 
-/*
-** macro to adjust 'pause': 'pause' is actually used like
-** 'pause / PAUSEADJ' (value chosen by tests)
-*/
+//
+// macro to adjust 'pause': 'pause' is actually used like
+// 'pause / PAUSEADJ' (value chosen by tests)
+//
 #define PAUSEADJ		100
 
 
-/*
-** 'makewhite' erases all color bits then sets only the current white
-** bit
-*/
+//
+// 'makewhite' erases all color bits then sets only the current white
+// bit
+//
 #define maskcolors	(~(bitmask(BLACKBIT) | WHITEBITS))
 #define makewhite(g,x)	\
  (x->marked = cast_byte((x->marked & maskcolors) | lhatC_white(g)))
@@ -85,107 +85,107 @@
 
 #define markobject(g,t)	{ if (iswhite(t)) reallymarkobject(g, obj2gco(t)); }
 
-/*
-** mark an object that can be NULL (either because it is really optional,
-** or it was stripped as debug info, or inside an uncompleted structure)
-*/
+//
+// mark an object that can be NULL (either because it is really optional,
+// or it was stripped as debug info, or inside an uncompleted structure)
+//
 #define markobjectN(g,t)	{ if (t) markobject(g,t); }
 
 static void reallymarkobject (global_State *g, GCObject *o);
 
 
-/*
-** {======================================================
-** Generic functions
-** =======================================================
-*/
+//
+// {======================================================
+// Generic functions
+// =======================================================
+//
 
 
-/*
-** one after last element in a hash array
-*/
+//
+// one after last element in a hash array
+//
 #define gnodelast(h)	gnode(h, cast(size_t, sizenode(h)))
 
 
-/*
-** link collectable object 'o' into list pointed by 'p'
-*/
+//
+// link collectable object 'o' into list pointed by 'p'
+//
 #define linkgclist(o,p)	((o)->gclist = (p), (p) = obj2gco(o))
 
 
-/*
-** If key is not marked, mark its entry as dead. This allows key to be
-** collected, but keeps its entry in the table.  A dead node is needed
-** when Lhat looks up for a key (it may be part of a chain) and when
-** traversing a weak table (key might be removed from the table during
-** traversal). Other places never manipulate dead keys, because its
-** associated nil value is enough to signal that the entry is logically
-** empty.
-*/
+//
+// If key is not marked, mark its entry as dead. This allows key to be
+// collected, but keeps its entry in the table.  A dead node is needed
+// when Lhat looks up for a key (it may be part of a chain) and when
+// traversing a weak table (key might be removed from the table during
+// traversal). Other places never manipulate dead keys, because its
+// associated nil value is enough to signal that the entry is logically
+// empty.
+//
 static void removeentry (Node *n) {
   lhat_assert(ttisnil(gval(n)));
   if (valiswhite(gkey(n)))
-    setdeadvalue(wgkey(n));  /* unused and unmarked key; remove it */
+    setdeadvalue(wgkey(n));  // unused and unmarked key; remove it
 }
 
 
-/*
-** tells whether a key or value can be cleared from a weak
-** table. Non-collectable objects are never removed from weak
-** tables. Strings behave as 'values', so are never removed too. for
-** other objects: if really collected, cannot keep them; for objects
-** being finalized, keep them in keys, but not in values
-*/
+//
+// tells whether a key or value can be cleared from a weak
+// table. Non-collectable objects are never removed from weak
+// tables. Strings behave as 'values', so are never removed too. for
+// other objects: if really collected, cannot keep them; for objects
+// being finalized, keep them in keys, but not in values
+//
 static int iscleared (global_State *g, const TValue *o) {
   if (!iscollectable(o)) return 0;
   else if (ttisstring(o)) {
-    markobject(g, tsvalue(o));  /* strings are 'values', so are never weak */
+    markobject(g, tsvalue(o));  // strings are 'values', so are never weak
     return 0;
   }
   else return iswhite(gcvalue(o));
 }
 
 
-/*
-** barrier that moves collector forward, that is, mark the white object
-** being pointed by a black object. (If in sweep phase, clear the black
-** object to white [sweep it] to avoid other barrier calls for this
-** same object.)
-*/
+//
+// barrier that moves collector forward, that is, mark the white object
+// being pointed by a black object. (If in sweep phase, clear the black
+// object to white [sweep it] to avoid other barrier calls for this
+// same object.)
+//
 void lhatC_barrier_ (lhat_State *L, GCObject *o, GCObject *v) {
   global_State *g = G(L);
   lhat_assert(isblack(o) && iswhite(v) && !isdead(g, v) && !isdead(g, o));
-  if (keepinvariant(g))  /* must keep invariant? */
-    reallymarkobject(g, v);  /* restore invariant */
-  else {  /* sweep phase */
+  if (keepinvariant(g))  // must keep invariant?
+    reallymarkobject(g, v);  // restore invariant
+  else {  // sweep phase
     lhat_assert(issweepphase(g));
-    makewhite(g, o);  /* mark main obj. as white to avoid other barriers */
+    makewhite(g, o);  // mark main obj. as white to avoid other barriers
   }
 }
 
 
-/*
-** barrier that moves collector backward, that is, mark the black object
-** pointing to a white object as gray again.
-*/
+//
+// barrier that moves collector backward, that is, mark the black object
+// pointing to a white object as gray again.
+//
 void lhatC_barrierback_ (lhat_State *L, Table *t) {
   global_State *g = G(L);
   lhat_assert(isblack(t) && !isdead(g, t));
-  black2gray(t);  /* make table gray (again) */
+  black2gray(t);  // make table gray (again)
   linkgclist(t, g->grayagain);
 }
 
 
-/*
-** barrier for assignments to closed upvalues. Because upvalues are
-** shared among closures, it is impossible to know the color of all
-** closures pointing to it. So, we assume that the object being assigned
-** must be marked.
-*/
-void lhatC_upvalbarrier_ (lhat_State *L, UpVal *uv) {
+//
+// barrier for assignments to closed upvalues. Because upvalues are
+// shared among closures, it is impossible to know the color of all
+// closures pointing to it. So, we assume that the object being assigned
+// must be marked.
+//
+void lhatC_upvalbarrier_ (lhat_State *L, Upvalue *uv) {
   global_State *g = G(L);
   GCObject *o = gcvalue(uv->v);
-  lhat_assert(!upisopen(uv));  /* ensured by macro lhatC_upvalbarrier */
+  lhat_assert(!upisopen(uv));  // ensured by macro lhatC_upvalbarrier
   if (keepinvariant(g))
     markobject(g, o);
 }
@@ -193,18 +193,18 @@ void lhatC_upvalbarrier_ (lhat_State *L, UpVal *uv) {
 
 void lhatC_fix (lhat_State *L, GCObject *o) {
   global_State *g = G(L);
-  lhat_assert(g->allgc == o);  /* object must be 1st in 'allgc' list! */
-  white2gray(o);  /* they will be gray forever */
-  g->allgc = o->next;  /* remove object from 'allgc' list */
-  o->next = g->fixedgc;  /* link it to 'fixedgc' list */
+  lhat_assert(g->allgc == o);  // object must be 1st in 'allgc' list!
+  white2gray(o);  // they will be gray forever
+  g->allgc = o->next;  // remove object from 'allgc' list
+  o->next = g->fixedgc;  // link it to 'fixedgc' list
   g->fixedgc = o;
 }
 
 
-/*
-** create a new collectable object (with given type and size) and link
-** it to 'allgc' list.
-*/
+//
+// create a new collectable object (with given type and size) and link
+// it to 'allgc' list.
+//
 GCObject *lhatC_newobj (lhat_State *L, int tt, size_t sz) {
   global_State *g = G(L);
   GCObject *o = cast(GCObject *, lhatM_newobject(L, novariant(tt), sz));
@@ -215,23 +215,23 @@ GCObject *lhatC_newobj (lhat_State *L, int tt, size_t sz) {
   return o;
 }
 
-/* }====================================================== */
+// }======================================================
 
 
 
-/*
-** {======================================================
-** Mark functions
-** =======================================================
-*/
+//
+// {======================================================
+// Mark functions
+// =======================================================
+//
 
 
-/*
-** mark an object. Userdata, strings, and closed upvalues are visited
-** and turned black here. Other objects are marked gray and added
-** to appropriate list to be visited (and turned black) later. (Open
-** upvalues are already linked in 'headuv' list.)
-*/
+//
+// mark an object. Userdata, strings, and closed upvalues are visited
+// and turned black here. Other objects are marked gray and added
+// to appropriate list to be visited (and turned black) later. (Open
+// upvalues are already linked in 'headuv' list.)
+//
 static void reallymarkobject (global_State *g, GCObject *o) {
  reentry:
   white2gray(o);
@@ -248,11 +248,11 @@ static void reallymarkobject (global_State *g, GCObject *o) {
     }
     case LHAT_TUSERDATA: {
       TValue uvalue;
-      markobjectN(g, gco2u(o)->metatable);  /* mark its metatable */
+      markobjectN(g, gco2u(o)->metatable);  // mark its metatable
       gray2black(o);
       g->GCmemtrav += sizeudata(gco2u(o));
       getuservalue(g->maincoroutine, gco2u(o), &uvalue);
-      if (valiswhite(&uvalue)) {  /* markvalue(g, &uvalue); */
+      if (valiswhite(&uvalue)) {  // markvalue(g, &uvalue);
         o = gcvalue(&uvalue);
         goto reentry;
       }
@@ -283,9 +283,9 @@ static void reallymarkobject (global_State *g, GCObject *o) {
 }
 
 
-/*
-** mark metamethods for basic types
-*/
+//
+// mark metamethods for basic types
+//
 static void markmt (global_State *g) {
   int i;
   for (i=0; i < LHAT_NUMTAGS; i++)
@@ -293,9 +293,9 @@ static void markmt (global_State *g) {
 }
 
 
-/*
-** mark all objects in list of being-finalized
-*/
+//
+// mark all objects in list of being-finalized
+//
 static void markbeingfnz (global_State *g) {
   GCObject *o;
   for (o = g->tobefnz; o != NULL; o = o->next)
@@ -303,26 +303,26 @@ static void markbeingfnz (global_State *g) {
 }
 
 
-/*
-** Mark all values stored in marked open upvalues from non-marked coroutines.
-** (Values from marked coroutines were already marked when traversing the
-** coroutine.) Remove from the list coroutines that no longer have upvalues and
-** not-marked coroutines.
-*/
+//
+// Mark all values stored in marked open upvalues from non-marked coroutines.
+// (Values from marked coroutines were already marked when traversing the
+// coroutine.) Remove from the list coroutines that no longer have upvalues and
+// not-marked coroutines.
+//
 static void remarkupvals (global_State *g) {
   lhat_State *coroutine;
   lhat_State **p = &g->twups;
   while ((coroutine = *p) != NULL) {
-    lhat_assert(!isblack(coroutine));  /* coroutines are never black */
+    lhat_assert(!isblack(coroutine));  // coroutines are never black
     if (isgray(coroutine) && coroutine->openupval != NULL)
-      p = &coroutine->twups;  /* keep marked coroutine with upvalues in the list */
-    else {  /* coroutine is not marked or without upvalues */
-      UpVal *uv;
-      *p = coroutine->twups;  /* remove coroutine from the list */
-      coroutine->twups = coroutine;  /* mark that it is out of list */
+      p = &coroutine->twups;  // keep marked coroutine with upvalues in the list
+    else {  // coroutine is not marked or without upvalues
+      Upvalue *uv;
+      *p = coroutine->twups;  // remove coroutine from the list
+      coroutine->twups = coroutine;  // mark that it is out of list
       for (uv = coroutine->openupval; uv != NULL; uv = uv->u.open.next) {
         if (uv->u.open.touched) {
-          markvalue(g, uv->v);  /* remark upvalue's value */
+          markvalue(g, uv->v);  // remark upvalues's value
           uv->u.open.touched = 0;
         }
       }
@@ -331,101 +331,101 @@ static void remarkupvals (global_State *g) {
 }
 
 
-/*
-** mark root set and reset all gray lists, to start a new collection
-*/
+//
+// mark root set and reset all gray lists, to start a new collection
+//
 static void restartcollection (global_State *g) {
   g->gray = g->grayagain = NULL;
   g->weak = g->allweak = g->ephemeron = NULL;
   markobject(g, g->maincoroutine);
   markvalue(g, &g->l_registry);
   markmt(g);
-  markbeingfnz(g);  /* mark any finalizing object left from previous cycle */
+  markbeingfnz(g);  // mark any finalizing object left from previous cycle
 }
 
-/* }====================================================== */
+// }======================================================
 
 
-/*
-** {======================================================
-** Traverse functions
-** =======================================================
-*/
+//
+// {======================================================
+// Traverse functions
+// =======================================================
+//
 
-/*
-** Traverse a table with weak values and link it to proper list. During
-** propagate phase, keep it in 'grayagain' list, to be revisited in the
-** atomic phase. In the atomic phase, if table has any white value,
-** put it in 'weak' list, to be cleared.
-*/
+//
+// Traverse a table with weak values and link it to proper list. During
+// propagate phase, keep it in 'grayagain' list, to be revisited in the
+// atomic phase. In the atomic phase, if table has any white value,
+// put it in 'weak' list, to be cleared.
+//
 static void traverseweakvalue (global_State *g, Table *h) {
   Node *n, *limit = gnodelast(h);
-  /* if there is array part, assume it may have white values (it is not
-     worth traversing it now just to check) */
+  // if there is array part, assume it may have white values (it is not
+  // worth traversing it now just to check)
   int hasclears = (h->sizearray > 0);
-  for (n = gnode(h, 0); n < limit; n++) {  /* traverse hash part */
+  for (n = gnode(h, 0); n < limit; n++) {  // traverse hash part
     checkdeadkey(n);
-    if (ttisnil(gval(n)))  /* entry is empty? */
-      removeentry(n);  /* remove it */
+    if (ttisnil(gval(n)))  // entry is empty?
+      removeentry(n);  // remove it
     else {
       lhat_assert(!ttisnil(gkey(n)));
-      markvalue(g, gkey(n));  /* mark key */
-      if (!hasclears && iscleared(g, gval(n)))  /* is there a white value? */
-        hasclears = 1;  /* table will have to be cleared */
+      markvalue(g, gkey(n));  // mark key
+      if (!hasclears && iscleared(g, gval(n)))  // is there a white value?
+        hasclears = 1;  // table will have to be cleared
     }
   }
   if (g->gcstate == GCSpropagate)
-    linkgclist(h, g->grayagain);  /* must retraverse it in atomic phase */
+    linkgclist(h, g->grayagain);  // must retraverse it in atomic phase
   else if (hasclears)
-    linkgclist(h, g->weak);  /* has to be cleared later */
+    linkgclist(h, g->weak);  // has to be cleared later
 }
 
 
-/*
-** Traverse an ephemeron table and link it to proper list. Returns true
-** iff any object was marked during this traversal (which implies that
-** convergence has to continue). During propagation phase, keep table
-** in 'grayagain' list, to be visited again in the atomic phase. In
-** the atomic phase, if table has any white->white entry, it has to
-** be revisited during ephemeron convergence (as that key may turn
-** black). Otherwise, if it has any white key, table has to be cleared
-** (in the atomic phase).
-*/
+//
+// Traverse an ephemeron table and link it to proper list. Returns true
+// iff any object was marked during this traversal (which implies that
+// convergence has to continue). During propagation phase, keep table
+// in 'grayagain' list, to be visited again in the atomic phase. In
+// the atomic phase, if table has any white->white entry, it has to
+// be revisited during ephemeron convergence (as that key may turn
+// black). Otherwise, if it has any white key, table has to be cleared
+// (in the atomic phase).
+//
 static int traverseephemeron (global_State *g, Table *h) {
-  int marked = 0;  /* true if an object is marked in this traversal */
-  int hasclears = 0;  /* true if table has white keys */
-  int hasww = 0;  /* true if table has entry "white-key -> white-value" */
+  int marked = 0;  // true if an object is marked in this traversal
+  int hasclears = 0;  // true if table has white keys
+  int hasww = 0;  // true if table has entry "white-key -> white-value"
   Node *n, *limit = gnodelast(h);
   unsigned int i;
-  /* traverse array part */
+  // traverse array part
   for (i = 0; i < h->sizearray; i++) {
     if (valiswhite(&h->array[i])) {
       marked = 1;
       reallymarkobject(g, gcvalue(&h->array[i]));
     }
   }
-  /* traverse hash part */
+  // traverse hash part
   for (n = gnode(h, 0); n < limit; n++) {
     checkdeadkey(n);
-    if (ttisnil(gval(n)))  /* entry is empty? */
-      removeentry(n);  /* remove it */
-    else if (iscleared(g, gkey(n))) {  /* key is not marked (yet)? */
-      hasclears = 1;  /* table must be cleared */
-      if (valiswhite(gval(n)))  /* value not marked yet? */
-        hasww = 1;  /* white-white entry */
+    if (ttisnil(gval(n)))  // entry is empty?
+      removeentry(n);  // remove it
+    else if (iscleared(g, gkey(n))) {  // key is not marked (yet)?
+      hasclears = 1;  // table must be cleared
+      if (valiswhite(gval(n)))  // value not marked yet?
+        hasww = 1;  // white-white entry
     }
-    else if (valiswhite(gval(n))) {  /* value not marked yet? */
+    else if (valiswhite(gval(n))) {  // value not marked yet?
       marked = 1;
-      reallymarkobject(g, gcvalue(gval(n)));  /* mark it now */
+      reallymarkobject(g, gcvalue(gval(n)));  // mark it now
     }
   }
-  /* link table into proper list */
+  // link table into proper list
   if (g->gcstate == GCSpropagate)
-    linkgclist(h, g->grayagain);  /* must retraverse it in atomic phase */
-  else if (hasww)  /* table has white->white entries? */
-    linkgclist(h, g->ephemeron);  /* have to propagate again */
-  else if (hasclears)  /* table has white keys? */
-    linkgclist(h, g->allweak);  /* may have to clean white keys */
+    linkgclist(h, g->grayagain);  // must retraverse it in atomic phase
+  else if (hasww)  // table has white->white entries?
+    linkgclist(h, g->ephemeron);  // have to propagate again
+  else if (hasclears)  // table has white keys?
+    linkgclist(h, g->allweak);  // may have to clean white keys
   return marked;
 }
 
@@ -433,16 +433,16 @@ static int traverseephemeron (global_State *g, Table *h) {
 static void traversestrongtable (global_State *g, Table *h) {
   Node *n, *limit = gnodelast(h);
   unsigned int i;
-  for (i = 0; i < h->sizearray; i++)  /* traverse array part */
+  for (i = 0; i < h->sizearray; i++)  // traverse array part
     markvalue(g, &h->array[i]);
-  for (n = gnode(h, 0); n < limit; n++) {  /* traverse hash part */
+  for (n = gnode(h, 0); n < limit; n++) {  // traverse hash part
     checkdeadkey(n);
-    if (ttisnil(gval(n)))  /* entry is empty? */
-      removeentry(n);  /* remove it */
+    if (ttisnil(gval(n)))  // entry is empty?
+      removeentry(n);  // remove it
     else {
       lhat_assert(!ttisnil(gkey(n)));
-      markvalue(g, gkey(n));  /* mark key */
-      markvalue(g, gval(n));  /* mark value */
+      markvalue(g, gkey(n));  // mark key
+      markvalue(g, gval(n));  // mark value
     }
   }
 }
@@ -452,42 +452,42 @@ static lu_mem traversetable (global_State *g, Table *h) {
   const char *weakkey, *weakvalue;
   const TValue *mode = gfasttm(g, h->metatable, TM_MODE);
   markobjectN(g, h->metatable);
-  if (mode && ttisstring(mode) &&  /* is there a weak mode? */
+  if (mode && ttisstring(mode) &&  // is there a weak mode?
       ((weakkey = strchr(svalue(mode), 'k')),
        (weakvalue = strchr(svalue(mode), 'v')),
-       (weakkey || weakvalue))) {  /* is really weak? */
-    black2gray(h);  /* keep table gray */
-    if (!weakkey)  /* strong keys? */
+       (weakkey || weakvalue))) {  // is really weak?
+    black2gray(h);  // keep table gray
+    if (!weakkey)  // strong keys?
       traverseweakvalue(g, h);
-    else if (!weakvalue)  /* strong values? */
+    else if (!weakvalue)  // strong values?
       traverseephemeron(g, h);
-    else  /* all weak */
-      linkgclist(h, g->allweak);  /* nothing to traverse now */
+    else  // all weak
+      linkgclist(h, g->allweak);  // nothing to traverse now
   }
-  else  /* not weak */
+  else  // not weak
     traversestrongtable(g, h);
   return sizeof(Table) + sizeof(TValue) * h->sizearray +
                          sizeof(Node) * cast(size_t, allocsizenode(h));
 }
 
 
-/*
-** Traverse a prototype. (While a prototype is being build, its
-** arrays can be larger than needed; the extra slots are filled with
-** NULL, so the use of 'markobjectN')
-*/
+//
+// Traverse a prototype. (While a prototype is being build, its
+// arrays can be larger than needed; the extra slots are filled with
+// NULL, so the use of 'markobjectN')
+//
 static int traverseproto (global_State *g, Proto *f) {
   int i;
   if (f->cache && iswhite(f->cache))
-    f->cache = NULL;  /* allow cache to be collected */
+    f->cache = NULL;  // allow cache to be collected
   markobjectN(g, f->source);
-  for (i = 0; i < f->sizek; i++)  /* mark literals */
+  for (i = 0; i < f->sizek; i++)  // mark literals
     markvalue(g, &f->k[i]);
-  for (i = 0; i < f->sizeupvalues; i++)  /* mark upvalue names */
+  for (i = 0; i < f->sizeupvalues; i++)  // mark upvalues names
     markobjectN(g, f->upvalues[i].name);
-  for (i = 0; i < f->sizep; i++)  /* mark nested protos */
+  for (i = 0; i < f->sizep; i++)  // mark nested protos
     markobjectN(g, f->p[i]);
-  for (i = 0; i < f->sizelocvars; i++)  /* mark local-variable names */
+  for (i = 0; i < f->sizelocvars; i++)  // mark local-variable names
     markobjectN(g, f->locvars[i].varname);
   return sizeof(Proto) + sizeof(Instruction) * f->sizecode +
                          sizeof(Proto *) * f->sizep +
@@ -500,25 +500,25 @@ static int traverseproto (global_State *g, Proto *f) {
 
 static lu_mem traverseCclosure (global_State *g, CClosure *cl) {
   int i;
-  for (i = 0; i < cl->nupvalues; i++)  /* mark its upvalues */
-    markvalue(g, &cl->upvalue[i]);
+  for (i = 0; i < cl->nupvalues; i++)  // mark its upvalues
+    markvalue(g, &cl->upvalues[i]);
   return sizeCclosure(cl->nupvalues);
 }
 
-/*
-** open upvalues point to values in a coroutine, so those values should
-** be marked when the coroutine is traversed except in the atomic phase
-** (because then the value cannot be changed by the coroutine and the
-** coroutine may not be traversed again)
-*/
+//
+// open upvalues point to values in a coroutine, so those values should
+// be marked when the coroutine is traversed except in the atomic phase
+// (because then the value cannot be changed by the coroutine and the
+// coroutine may not be traversed again)
+//
 static lu_mem traverseLclosure (global_State *g, LClosure *cl) {
   int i;
-  markobjectN(g, cl->p);  /* mark its prototype */
-  for (i = 0; i < cl->nupvalues; i++) {  /* mark its upvalues */
-    UpVal *uv = cl->upvals[i];
+  markobjectN(g, cl->p);  // mark its prototype
+  for (i = 0; i < cl->nupvalues; i++) {  // mark its upvalues
+    Upvalue *uv = cl->upvalues[i];
     if (uv != NULL) {
       if (upisopen(uv) && g->gcstate != GCSinsideatomic)
-        uv->u.open.touched = 1;  /* can be marked in 'remarkupvals' */
+        uv->u.open.touched = 1;  // can be marked in 'remarkupvals'
       else
         markvalue(g, uv->v);
     }
@@ -530,32 +530,32 @@ static lu_mem traverseLclosure (global_State *g, LClosure *cl) {
 static lu_mem traversecoroutine (global_State *g, lhat_State *th) {
   StkId o = th->stack;
   if (o == NULL)
-    return 1;  /* stack not completely built yet */
+    return 1;  // stack not completely built yet
   lhat_assert(g->gcstate == GCSinsideatomic ||
              th->openupval == NULL || isintwups(th));
-  for (; o < th->top; o++)  /* mark live elements in the stack */
+  for (; o < th->top; o++)  // mark live elements in the stack
     markvalue(g, o);
-  if (g->gcstate == GCSinsideatomic) {  /* final traversal? */
-    StkId lim = th->stack + th->stacksize;  /* real end of stack */
-    for (; o < lim; o++)  /* clear not-marked stack slice */
+  if (g->gcstate == GCSinsideatomic) {  // final traversal?
+    StkId lim = th->stack + th->stacksize;  // real end of stack
+    for (; o < lim; o++)  // clear not-marked stack slice
       setnilvalue(o);
-    /* 'remarkupvals' may have removed coroutine from 'twups' list */
+    // 'remarkupvals' may have removed coroutine from 'twups' list
     if (!isintwups(th) && th->openupval != NULL) {
-      th->twups = g->twups;  /* link it back to the list */
+      th->twups = g->twups;  // link it back to the list
       g->twups = th;
     }
   }
   else if (g->gckind != KGC_EMERGENCY)
-    lhatD_shrinkstack(th); /* do not change stack in emergency cycle */
+    lhatD_shrinkstack(th); // do not change stack in emergency cycle
   return (sizeof(lhat_State) + sizeof(TValue) * th->stacksize +
           sizeof(CallInfo) * th->nci);
 }
 
 
-/*
-** traverse one gray object, turning it to black (except for coroutines,
-** which are always gray).
-*/
+//
+// traverse one gray object, turning it to black (except for coroutines,
+// which are always gray).
+//
 static void propagatemark (global_State *g) {
   lu_mem size;
   GCObject *o = g->gray;
@@ -564,33 +564,33 @@ static void propagatemark (global_State *g) {
   switch (o->tt) {
     case LHAT_TTABLE: {
       Table *h = gco2t(o);
-      g->gray = h->gclist;  /* remove from 'gray' list */
+      g->gray = h->gclist;  // remove from 'gray' list
       size = traversetable(g, h);
       break;
     }
     case LHAT_TLCL: {
       LClosure *cl = gco2lcl(o);
-      g->gray = cl->gclist;  /* remove from 'gray' list */
+      g->gray = cl->gclist;  // remove from 'gray' list
       size = traverseLclosure(g, cl);
       break;
     }
     case LHAT_TCCL: {
       CClosure *cl = gco2ccl(o);
-      g->gray = cl->gclist;  /* remove from 'gray' list */
+      g->gray = cl->gclist;  // remove from 'gray' list
       size = traverseCclosure(g, cl);
       break;
     }
     case LHAT_TCOROUTINE: {
       lhat_State *th = gco2th(o);
-      g->gray = th->gclist;  /* remove from 'gray' list */
-      linkgclist(th, g->grayagain);  /* insert into 'grayagain' list */
+      g->gray = th->gclist;  // remove from 'gray' list
+      linkgclist(th, g->grayagain);  // insert into 'grayagain' list
       black2gray(o);
       size = traversecoroutine(g, th);
       break;
     }
     case LHAT_TPROTO: {
       Proto *p = gco2p(o);
-      g->gray = p->gclist;  /* remove from 'gray' list */
+      g->gray = p->gclist;  // remove from 'gray' list
       size = traverseproto(g, p);
       break;
     }
@@ -609,51 +609,51 @@ static void convergeephemerons (global_State *g) {
   int changed;
   do {
     GCObject *w;
-    GCObject *next = g->ephemeron;  /* get ephemeron list */
-    g->ephemeron = NULL;  /* tables may return to this list when traversed */
+    GCObject *next = g->ephemeron;  // get ephemeron list
+    g->ephemeron = NULL;  // tables may return to this list when traversed
     changed = 0;
     while ((w = next) != NULL) {
       next = gco2t(w)->gclist;
-      if (traverseephemeron(g, gco2t(w))) {  /* traverse marked some value? */
-        propagateall(g);  /* propagate changes */
-        changed = 1;  /* will have to revisit all ephemeron tables */
+      if (traverseephemeron(g, gco2t(w))) {  // traverse marked some value?
+        propagateall(g);  // propagate changes
+        changed = 1;  // will have to revisit all ephemeron tables
       }
     }
   } while (changed);
 }
 
-/* }====================================================== */
+// }======================================================
 
 
-/*
-** {======================================================
-** Sweep Functions
-** =======================================================
-*/
+//
+// {======================================================
+// Sweep Functions
+// =======================================================
+//
 
 
-/*
-** clear entries with unmarked keys from all weaktables in list 'l' up
-** to element 'f'
-*/
+//
+// clear entries with unmarked keys from all weaktables in list 'l' up
+// to element 'f'
+//
 static void clearkeys (global_State *g, GCObject *l, GCObject *f) {
   for (; l != f; l = gco2t(l)->gclist) {
     Table *h = gco2t(l);
     Node *n, *limit = gnodelast(h);
     for (n = gnode(h, 0); n < limit; n++) {
       if (!ttisnil(gval(n)) && (iscleared(g, gkey(n)))) {
-        setnilvalue(gval(n));  /* remove value ... */
-        removeentry(n);  /* and remove entry from table */
+        setnilvalue(gval(n));  // remove value ...
+        removeentry(n);  // and remove entry from table
       }
     }
   }
 }
 
 
-/*
-** clear entries with unmarked values from all weaktables in list 'l' up
-** to element 'f'
-*/
+//
+// clear entries with unmarked values from all weaktables in list 'l' up
+// to element 'f'
+//
 static void clearvalues (global_State *g, GCObject *l, GCObject *f) {
   for (; l != f; l = gco2t(l)->gclist) {
     Table *h = gco2t(l);
@@ -661,20 +661,20 @@ static void clearvalues (global_State *g, GCObject *l, GCObject *f) {
     unsigned int i;
     for (i = 0; i < h->sizearray; i++) {
       TValue *o = &h->array[i];
-      if (iscleared(g, o))  /* value was collected? */
-        setnilvalue(o);  /* remove value */
+      if (iscleared(g, o))  // value was collected?
+        setnilvalue(o);  // remove value
     }
     for (n = gnode(h, 0); n < limit; n++) {
       if (!ttisnil(gval(n)) && iscleared(g, gval(n))) {
-        setnilvalue(gval(n));  /* remove value ... */
-        removeentry(n);  /* and remove entry from table */
+        setnilvalue(gval(n));  // remove value ...
+        removeentry(n);  // and remove entry from table
       }
     }
   }
 }
 
 
-void lhatC_upvdeccount (lhat_State *L, UpVal *uv) {
+void lhatC_upvdeccount (lhat_State *L, Upvalue *uv) {
   lhat_assert(uv->refcount > 0);
   uv->refcount--;
   if (uv->refcount == 0 && !upisopen(uv))
@@ -685,7 +685,7 @@ void lhatC_upvdeccount (lhat_State *L, UpVal *uv) {
 static void freeLclosure (lhat_State *L, LClosure *cl) {
   int i;
   for (i = 0; i < cl->nupvalues; i++) {
-    UpVal *uv = cl->upvals[i];
+    Upvalue *uv = cl->upvalues[i];
     if (uv)
       lhatC_upvdeccount(L, uv);
   }
@@ -708,7 +708,7 @@ static void freeobj (lhat_State *L, GCObject *o) {
     case LHAT_TCOROUTINE: lhatE_freecoroutine(L, gco2th(o)); break;
     case LHAT_TUSERDATA: lhatM_freemem(L, o, sizeudata(gco2u(o))); break;
     case LHAT_TSHRSTR:
-      lhatS_remove(L, gco2ts(o));  /* remove it from hash table */
+      lhatS_remove(L, gco2ts(o));  // remove it from hash table
       lhatM_freemem(L, o, sizelstring(gco2ts(o)->shrlen));
       break;
     case LHAT_TLNGSTR: {
@@ -724,36 +724,36 @@ static void freeobj (lhat_State *L, GCObject *o) {
 static GCObject **sweeplist (lhat_State *L, GCObject **p, lu_mem count);
 
 
-/*
-** sweep at most 'count' elements from a list of GCObjects erasing dead
-** objects, where a dead object is one marked with the old (non current)
-** white; change all non-dead objects back to white, preparing for next
-** collection cycle. Return where to continue the traversal or NULL if
-** list is finished.
-*/
+//
+// sweep at most 'count' elements from a list of GCObjects erasing dead
+// objects, where a dead object is one marked with the old (non current)
+// white; change all non-dead objects back to white, preparing for next
+// collection cycle. Return where to continue the traversal or NULL if
+// list is finished.
+//
 static GCObject **sweeplist (lhat_State *L, GCObject **p, lu_mem count) {
   global_State *g = G(L);
   int ow = otherwhite(g);
-  int white = lhatC_white(g);  /* current white */
+  int white = lhatC_white(g);  // current white
   while (*p != NULL && count-- > 0) {
     GCObject *curr = *p;
     int marked = curr->marked;
-    if (isdeadm(ow, marked)) {  /* is 'curr' dead? */
-      *p = curr->next;  /* remove 'curr' from list */
-      freeobj(L, curr);  /* erase 'curr' */
+    if (isdeadm(ow, marked)) {  // is 'curr' dead?
+      *p = curr->next;  // remove 'curr' from list
+      freeobj(L, curr);  // erase 'curr'
     }
-    else {  /* change mark to 'white' */
+    else {  // change mark to 'white'
       curr->marked = cast_byte((marked & maskcolors) | white);
-      p = &curr->next;  /* go to next element */
+      p = &curr->next;  // go to next element
     }
   }
   return (*p == NULL) ? NULL : p;
 }
 
 
-/*
-** sweep a list until a live object (or end of list)
-*/
+//
+// sweep a list until a live object (or end of list)
+//
 static GCObject **sweeptolive (lhat_State *L, GCObject **p) {
   GCObject **old = p;
   do {
@@ -762,37 +762,37 @@ static GCObject **sweeptolive (lhat_State *L, GCObject **p) {
   return p;
 }
 
-/* }====================================================== */
+// }======================================================
 
 
-/*
-** {======================================================
-** Finalization
-** =======================================================
-*/
+//
+// {======================================================
+// Finalization
+// =======================================================
+//
 
-/*
-** If possible, shrink string table
-*/
+//
+// If possible, shrink string table
+//
 static void checkSizes (lhat_State *L, global_State *g) {
   if (g->gckind != KGC_EMERGENCY) {
     l_mem olddebt = g->GCdebt;
-    if (g->strt.nuse < g->strt.size / 4)  /* string table too big? */
-      lhatS_resize(L, g->strt.size / 2);  /* shrink it a little */
-    g->GCestimate += g->GCdebt - olddebt;  /* update estimate */
+    if (g->strt.nuse < g->strt.size / 4)  // string table too big?
+      lhatS_resize(L, g->strt.size / 2);  // shrink it a little
+    g->GCestimate += g->GCdebt - olddebt;  // update estimate
   }
 }
 
 
 static GCObject *udata2finalize (global_State *g) {
-  GCObject *o = g->tobefnz;  /* get first element */
+  GCObject *o = g->tobefnz;  // get first element
   lhat_assert(tofinalize(o));
-  g->tobefnz = o->next;  /* remove it from 'tobefnz' list */
-  o->next = g->allgc;  /* return it to 'allgc' list */
+  g->tobefnz = o->next;  // remove it from 'tobefnz' list
+  o->next = g->allgc;  // return it to 'allgc' list
   g->allgc = o;
-  resetbit(o->marked, FINALIZEDBIT);  /* object is "normal" again */
+  resetbit(o->marked, FINALIZEDBIT);  // object is "normal" again
   if (issweepphase(g))
-    makewhite(g, o);  /* "sweep" object */
+    makewhite(g, o);  // "sweep" object
   return o;
 }
 
@@ -809,52 +809,52 @@ static void GCTM (lhat_State *L, int propagateerrors) {
   TValue v;
   setgcovalue(L, &v, udata2finalize(g));
   tm = lhatT_gettmbyobj(L, &v, TM_GC);
-  if (tm != NULL && ttisfunction(tm)) {  /* is there a finalizer? */
+  if (tm != NULL && ttisfunction(tm)) {  // is there a finalizer?
     int status;
     lu_byte oldah = L->allowhook;
     int running  = g->gcrunning;
-    L->allowhook = 0;  /* stop debug hooks during GC metamethod */
-    g->gcrunning = 0;  /* avoid GC steps */
-    setobj2s(L, L->top, tm);  /* push finalizer... */
-    setobj2s(L, L->top + 1, &v);  /* ... and its argument */
-    L->top += 2;  /* and (next line) call the finalizer */
-    L->ci->callstatus |= CIST_FIN;  /* will run a finalizer */
+    L->allowhook = 0;  // stop debug hooks during GC metamethod
+    g->gcrunning = 0;  // avoid GC steps
+    setobj2s(L, L->top, tm);  // push finalizer...
+    setobj2s(L, L->top + 1, &v);  // ... and its argument
+    L->top += 2;  // and (next line) call the finalizer
+    L->ci->callstatus |= CIST_FIN;  // will run a finalizer
     status = lhatD_pcall(L, dothecall, NULL, savestack(L, L->top - 2), 0);
-    L->ci->callstatus &= ~CIST_FIN;  /* not running a finalizer anymore */
-    L->allowhook = oldah;  /* restore hooks */
-    g->gcrunning = running;  /* restore state */
-    if (status != LHAT_OK && propagateerrors) {  /* error while running __gc? */
-      if (status == LHAT_ERRRUN) {  /* is there an error object? */
+    L->ci->callstatus &= ~CIST_FIN;  // not running a finalizer anymore
+    L->allowhook = oldah;  // restore hooks
+    g->gcrunning = running;  // restore state
+    if (status != LHAT_OK && propagateerrors) {  // error while running __gc?
+      if (status == LHAT_ERRRUN) {  // is there an error object?
         const char *msg = (ttisstring(L->top - 1))
                             ? svalue(L->top - 1)
                             : "no message";
         lhatO_pushfstring(L, "error in __gc metamethod (%s)", msg);
-        status = LHAT_ERRGCMM;  /* error in __gc metamethod */
+        status = LHAT_ERRGCMM;  // error in __gc metamethod
       }
-      lhatD_throw(L, status);  /* re-throw error */
+      lhatD_throw(L, status);  // re-throw error
     }
   }
 }
 
 
-/*
-** call a few (up to 'g->gcfinnum') finalizers
-*/
+//
+// call a few (up to 'g->gcfinnum') finalizers
+//
 static int runafewfinalizers (lhat_State *L) {
   global_State *g = G(L);
   unsigned int i;
   lhat_assert(!g->tobefnz || g->gcfinnum > 0);
   for (i = 0; g->tobefnz && i < g->gcfinnum; i++)
-    GCTM(L, 1);  /* call one finalizer */
-  g->gcfinnum = (!g->tobefnz) ? 0  /* nothing more to finalize? */
-                    : g->gcfinnum * 2;  /* else call a few more next time */
+    GCTM(L, 1);  // call one finalizer
+  g->gcfinnum = (!g->tobefnz) ? 0  // nothing more to finalize?
+                    : g->gcfinnum * 2;  // else call a few more next time
   return i;
 }
 
 
-/*
-** call all pending finalizers
-*/
+//
+// call all pending finalizers
+//
 static void callallpendingfinalizers (lhat_State *L) {
   global_State *g = G(L);
   while (g->tobefnz)
@@ -862,9 +862,9 @@ static void callallpendingfinalizers (lhat_State *L) {
 }
 
 
-/*
-** find last 'next' field in list 'p' list (to add elements in its end)
-*/
+//
+// find last 'next' field in list 'p' list (to add elements in its end)
+//
 static GCObject **findlast (GCObject **p) {
   while (*p != NULL)
     p = &(*p)->next;
@@ -872,21 +872,21 @@ static GCObject **findlast (GCObject **p) {
 }
 
 
-/*
-** move all unreachable objects (or 'all' objects) that need
-** finalization from list 'finobj' to list 'tobefnz' (to be finalized)
-*/
+//
+// move all unreachable objects (or 'all' objects) that need
+// finalization from list 'finobj' to list 'tobefnz' (to be finalized)
+//
 static void separatetobefnz (global_State *g, int all) {
   GCObject *curr;
   GCObject **p = &g->finobj;
   GCObject **lastnext = findlast(&g->tobefnz);
-  while ((curr = *p) != NULL) {  /* traverse all finalizable objects */
+  while ((curr = *p) != NULL) {  // traverse all finalizable objects
     lhat_assert(tofinalize(curr));
-    if (!(iswhite(curr) || all))  /* not being collected? */
-      p = &curr->next;  /* don't bother with it */
+    if (!(iswhite(curr) || all))  // not being collected?
+      p = &curr->next;  // don't bother with it
     else {
-      *p = curr->next;  /* remove 'curr' from 'finobj' list */
-      curr->next = *lastnext;  /* link at the end of 'tobefnz' list */
+      *p = curr->next;  // remove 'curr' from 'finobj' list
+      curr->next = *lastnext;  // link at the end of 'tobefnz' list
       *lastnext = curr;
       lastnext = &curr->next;
     }
@@ -894,67 +894,67 @@ static void separatetobefnz (global_State *g, int all) {
 }
 
 
-/*
-** if object 'o' has a finalizer, remove it from 'allgc' list (must
-** search the list to find it) and link it in 'finobj' list.
-*/
+//
+// if object 'o' has a finalizer, remove it from 'allgc' list (must
+// search the list to find it) and link it in 'finobj' list.
+//
 void lhatC_checkfinalizer (lhat_State *L, GCObject *o, Table *mt) {
   global_State *g = G(L);
-  if (tofinalize(o) ||                 /* obj. is already marked... */
-      gfasttm(g, mt, TM_GC) == NULL)   /* or has no finalizer? */
-    return;  /* nothing to be done */
-  else {  /* move 'o' to 'finobj' list */
+  if (tofinalize(o) ||                 // obj. is already marked...
+      gfasttm(g, mt, TM_GC) == NULL)   // or has no finalizer?
+    return;  // nothing to be done
+  else {  // move 'o' to 'finobj' list
     GCObject **p;
     if (issweepphase(g)) {
-      makewhite(g, o);  /* "sweep" object 'o' */
-      if (g->sweepgc == &o->next)  /* should not remove 'sweepgc' object */
-        g->sweepgc = sweeptolive(L, g->sweepgc);  /* change 'sweepgc' */
+      makewhite(g, o);  // "sweep" object 'o'
+      if (g->sweepgc == &o->next)  // should not remove 'sweepgc' object
+        g->sweepgc = sweeptolive(L, g->sweepgc);  // change 'sweepgc'
     }
-    /* search for pointer pointing to 'o' */
+    // search for pointer pointing to 'o'
     for (p = &g->allgc; *p != o; p = &(*p)->next) { /* empty */ }
-    *p = o->next;  /* remove 'o' from 'allgc' list */
-    o->next = g->finobj;  /* link it in 'finobj' list */
+    *p = o->next;  // remove 'o' from 'allgc' list
+    o->next = g->finobj;  // link it in 'finobj' list
     g->finobj = o;
-    l_setbit(o->marked, FINALIZEDBIT);  /* mark it as such */
+    l_setbit(o->marked, FINALIZEDBIT);  // mark it as such
   }
 }
 
-/* }====================================================== */
+// }======================================================
 
 
 
-/*
-** {======================================================
-** GC control
-** =======================================================
-*/
+//
+// {======================================================
+// GC control
+// =======================================================
+//
 
 
-/*
-** Set a reasonable "time" to wait before starting a new GC cycle; cycle
-** will start when memory use hits threshold. (Division by 'estimate'
-** should be OK: it cannot be zero (because Lhat cannot even start with
-** less than PAUSEADJ bytes).
-*/
+//
+// Set a reasonable "time" to wait before starting a new GC cycle; cycle
+// will start when memory use hits threshold. (Division by 'estimate'
+// should be OK: it cannot be zero (because Lhat cannot even start with
+// less than PAUSEADJ bytes).
+//
 static void setpause (global_State *g) {
   l_mem threshold, debt;
-  l_mem estimate = g->GCestimate / PAUSEADJ;  /* adjust 'estimate' */
+  l_mem estimate = g->GCestimate / PAUSEADJ;  // adjust 'estimate'
   lhat_assert(estimate > 0);
-  threshold = (g->gcpause < MAX_LMEM / estimate)  /* overflow? */
-            ? estimate * g->gcpause  /* no overflow */
-            : MAX_LMEM;  /* overflow; truncate to maximum */
+  threshold = (g->gcpause < MAX_LMEM / estimate)  // overflow?
+            ? estimate * g->gcpause  // no overflow
+            : MAX_LMEM;  // overflow; truncate to maximum
   debt = gettotalbytes(g) - threshold;
   lhatE_setdebt(g, debt);
 }
 
 
-/*
-** Enter first sweep phase.
-** The call to 'sweeplist' tries to make pointer point to an object
-** inside the list (instead of to the header), so that the real sweep do
-** not need to skip objects created between "now" and the start of the
-** real sweep.
-*/
+//
+// Enter first sweep phase.
+// The call to 'sweeplist' tries to make pointer point to an object
+// inside the list (instead of to the header), so that the real sweep do
+// not need to skip objects created between "now" and the start of the
+// real sweep.
+//
 static void entersweep (lhat_State *L) {
   global_State *g = G(L);
   g->gcstate = GCSswpallgc;
@@ -965,15 +965,15 @@ static void entersweep (lhat_State *L) {
 
 void lhatC_freeallobjects (lhat_State *L) {
   global_State *g = G(L);
-  separatetobefnz(g, 1);  /* separate all objects with finalizers */
+  separatetobefnz(g, 1);  // separate all objects with finalizers
   lhat_assert(g->finobj == NULL);
   callallpendingfinalizers(L);
   lhat_assert(g->tobefnz == NULL);
-  g->currentwhite = WHITEBITS; /* this "white" makes all objects look dead */
+  g->currentwhite = WHITEBITS; // this "white" makes all objects look dead
   g->gckind = KGC_NORMAL;
   sweepwholelist(L, &g->finobj);
   sweepwholelist(L, &g->allgc);
-  sweepwholelist(L, &g->fixedgc);  /* collect fixed objects */
+  sweepwholelist(L, &g->fixedgc);  // collect fixed objects
   lhat_assert(g->strt.nuse == 0);
 }
 
@@ -982,46 +982,46 @@ static l_mem atomic (lhat_State *L) {
   global_State *g = G(L);
   l_mem work;
   GCObject *origweak, *origall;
-  GCObject *grayagain = g->grayagain;  /* save original list */
+  GCObject *grayagain = g->grayagain;  // save original list
   lhat_assert(g->ephemeron == NULL && g->weak == NULL);
   lhat_assert(!iswhite(g->maincoroutine));
   g->gcstate = GCSinsideatomic;
-  g->GCmemtrav = 0;  /* start counting work */
-  markobject(g, L);  /* mark running coroutine */
-  /* registry and global metatables may be changed by API */
+  g->GCmemtrav = 0;  // start counting work
+  markobject(g, L);  // mark running coroutine
+  // registry and global metatables may be changed by API
   markvalue(g, &g->l_registry);
-  markmt(g);  /* mark global metatables */
-  /* remark occasional upvalues of (maybe) dead coroutines */
+  markmt(g);  // mark global metatables
+  // remark occasional upvalues of (maybe) dead coroutines
   remarkupvals(g);
-  propagateall(g);  /* propagate changes */
-  work = g->GCmemtrav;  /* stop counting (do not recount 'grayagain') */
+  propagateall(g);  // propagate changes
+  work = g->GCmemtrav;  // stop counting (do not recount 'grayagain')
   g->gray = grayagain;
-  propagateall(g);  /* traverse 'grayagain' list */
-  g->GCmemtrav = 0;  /* restart counting */
+  propagateall(g);  // traverse 'grayagain' list
+  g->GCmemtrav = 0;  // restart counting
   convergeephemerons(g);
-  /* at this point, all strongly accessible objects are marked. */
-  /* Clear values from weak tables, before checking finalizers */
+  // at this point, all strongly accessible objects are marked.
+  // Clear values from weak tables, before checking finalizers
   clearvalues(g, g->weak, NULL);
   clearvalues(g, g->allweak, NULL);
   origweak = g->weak; origall = g->allweak;
-  work += g->GCmemtrav;  /* stop counting (objects being finalized) */
-  separatetobefnz(g, 0);  /* separate objects to be finalized */
-  g->gcfinnum = 1;  /* there may be objects to be finalized */
-  markbeingfnz(g);  /* mark objects that will be finalized */
-  propagateall(g);  /* remark, to propagate 'resurrection' */
-  g->GCmemtrav = 0;  /* restart counting */
+  work += g->GCmemtrav;  // stop counting (objects being finalized)
+  separatetobefnz(g, 0);  // separate objects to be finalized
+  g->gcfinnum = 1;  // there may be objects to be finalized
+  markbeingfnz(g);  // mark objects that will be finalized
+  propagateall(g);  // remark, to propagate 'resurrection'
+  g->GCmemtrav = 0;  // restart counting
   convergeephemerons(g);
-  /* at this point, all resurrected objects are marked. */
-  /* remove dead objects from weak tables */
-  clearkeys(g, g->ephemeron, NULL);  /* clear keys from all ephemeron tables */
-  clearkeys(g, g->allweak, NULL);  /* clear keys from all 'allweak' tables */
-  /* clear values from resurrected weak tables */
+  // at this point, all resurrected objects are marked.
+  // remove dead objects from weak tables
+  clearkeys(g, g->ephemeron, NULL);  // clear keys from all ephemeron tables
+  clearkeys(g, g->allweak, NULL);  // clear keys from all 'allweak' tables
+  // clear values from resurrected weak tables
   clearvalues(g, g->weak, origweak);
   clearvalues(g, g->allweak, origall);
   lhatS_clearcache(g);
-  g->currentwhite = cast_byte(otherwhite(g));  /* flip current white */
-  work += g->GCmemtrav;  /* complete counting */
-  return work;  /* estimate of memory marked by 'atomic' */
+  g->currentwhite = cast_byte(otherwhite(g));  // flip current white
+  work += g->GCmemtrav;  // complete counting
+  return work;  // estimate of memory marked by 'atomic'
 }
 
 
@@ -1030,11 +1030,11 @@ static lu_mem sweepstep (lhat_State *L, global_State *g,
   if (g->sweepgc) {
     l_mem olddebt = g->GCdebt;
     g->sweepgc = sweeplist(L, g->sweepgc, GCSWEEPMAX);
-    g->GCestimate += g->GCdebt - olddebt;  /* update estimate */
-    if (g->sweepgc)  /* is there still something to sweep? */
+    g->GCestimate += g->GCdebt - olddebt;  // update estimate
+    if (g->sweepgc)  // is there still something to sweep?
       return (GCSWEEPMAX * GCSWEEPCOST);
   }
-  /* else enter next state */
+  // else enter next state
   g->gcstate = nextstate;
   g->sweepgc = nextlist;
   return 0;
@@ -1054,40 +1054,40 @@ static lu_mem singlestep (lhat_State *L) {
       g->GCmemtrav = 0;
       lhat_assert(g->gray);
       propagatemark(g);
-       if (g->gray == NULL)  /* no more gray objects? */
-        g->gcstate = GCSatomic;  /* finish propagate phase */
-      return g->GCmemtrav;  /* memory traversed in this step */
+       if (g->gray == NULL)  // no more gray objects?
+        g->gcstate = GCSatomic;  // finish propagate phase
+      return g->GCmemtrav;  // memory traversed in this step
     }
     case GCSatomic: {
       lu_mem work;
-      propagateall(g);  /* make sure gray list is empty */
-      work = atomic(L);  /* work is what was traversed by 'atomic' */
+      propagateall(g);  // make sure gray list is empty
+      work = atomic(L);  // work is what was traversed by 'atomic'
       entersweep(L);
-      g->GCestimate = gettotalbytes(g);  /* first estimate */;
+      g->GCestimate = gettotalbytes(g);  // first estimate;
       return work;
     }
-    case GCSswpallgc: {  /* sweep "regular" objects */
+    case GCSswpallgc: {  // sweep "regular" objects
       return sweepstep(L, g, GCSswpfinobj, &g->finobj);
     }
-    case GCSswpfinobj: {  /* sweep objects with finalizers */
+    case GCSswpfinobj: {  // sweep objects with finalizers
       return sweepstep(L, g, GCSswptobefnz, &g->tobefnz);
     }
-    case GCSswptobefnz: {  /* sweep objects to be finalized */
+    case GCSswptobefnz: {  // sweep objects to be finalized
       return sweepstep(L, g, GCSswpend, NULL);
     }
-    case GCSswpend: {  /* finish sweeps */
-      makewhite(g, g->maincoroutine);  /* sweep main coroutine */
+    case GCSswpend: {  // finish sweeps
+      makewhite(g, g->maincoroutine);  // sweep main coroutine
       checkSizes(L, g);
       g->gcstate = GCScallfin;
       return 0;
     }
-    case GCScallfin: {  /* call remaining finalizers */
+    case GCScallfin: {  // call remaining finalizers
       if (g->tobefnz && g->gckind != KGC_EMERGENCY) {
         int n = runafewfinalizers(L);
         return (n * GCFINALIZECOST);
       }
-      else {  /* emergency mode or no more finalizers */
-        g->gcstate = GCSpause;  /* finish collection */
+      else {  // emergency mode or no more finalizers
+        g->gcstate = GCSpause;  // finish collection
         return 0;
       }
     }
@@ -1096,10 +1096,10 @@ static lu_mem singlestep (lhat_State *L) {
 }
 
 
-/*
-** advances the garbage collector until it reaches a state allowed
-** by 'statemask'
-*/
+//
+// advances the garbage collector until it reaches a state allowed
+// by 'statemask'
+//
 void lhatC_runtilstate (lhat_State *L, int statesmask) {
   global_State *g = G(L);
   while (!testbit(statesmask, g->gcstate))
@@ -1107,14 +1107,14 @@ void lhatC_runtilstate (lhat_State *L, int statesmask) {
 }
 
 
-/*
-** get GC debt and convert it from Kb to 'work units' (avoid zero debt
-** and overflows)
-*/
+//
+// get GC debt and convert it from Kb to 'work units' (avoid zero debt
+// and overflows)
+//
 static l_mem getdebt (global_State *g) {
   l_mem debt = g->GCdebt;
   int stepmul = g->gcstepmul;
-  if (debt <= 0) return 0;  /* minimal debt */
+  if (debt <= 0) return 0;  // minimal debt
   else {
     debt = (debt / STEPMULADJ) + 1;
     debt = (debt < MAX_LMEM / stepmul) ? debt * stepmul : MAX_LMEM;
@@ -1122,57 +1122,57 @@ static l_mem getdebt (global_State *g) {
   }
 }
 
-/*
-** performs a basic GC step when collector is running
-*/
+//
+// performs a basic GC step when collector is running
+//
 void lhatC_step (lhat_State *L) {
   global_State *g = G(L);
-  l_mem debt = getdebt(g);  /* GC deficit (be paid now) */
-  if (!g->gcrunning) {  /* not running? */
-    lhatE_setdebt(g, -GCSTEPSIZE * 10);  /* avoid being called too often */
+  l_mem debt = getdebt(g);  // GC deficit (be paid now)
+  if (!g->gcrunning) {  // not running?
+    lhatE_setdebt(g, -GCSTEPSIZE * 10);  // avoid being called too often
     return;
   }
-  do {  /* repeat until pause or enough "credit" (negative debt) */
-    lu_mem work = singlestep(L);  /* perform one single step */
+  do {  // repeat until pause or enough "credit" (negative debt)
+    lu_mem work = singlestep(L);  // perform one single step
     debt -= work;
   } while (debt > -GCSTEPSIZE && g->gcstate != GCSpause);
   if (g->gcstate == GCSpause)
-    setpause(g);  /* pause until next cycle */
+    setpause(g);  // pause until next cycle
   else {
-    debt = (debt / g->gcstepmul) * STEPMULADJ;  /* convert 'work units' to Kb */
+    debt = (debt / g->gcstepmul) * STEPMULADJ;  // convert 'work units' to Kb
     lhatE_setdebt(g, debt);
     runafewfinalizers(L);
   }
 }
 
 
-/*
-** Performs a full GC cycle; if 'isemergency', set a flag to avoid
-** some operations which could change the interpreter state in some
-** unexpected ways (running finalizers and shrinking some structures).
-** Before running the collection, check 'keepinvariant'; if it is true,
-** there may be some objects marked as black, so the collector has
-** to sweep all objects to turn them back to white (as white has not
-** changed, nothing will be collected).
-*/
+//
+// Performs a full GC cycle; if 'isemergency', set a flag to avoid
+// some operations which could change the interpreter state in some
+// unexpected ways (running finalizers and shrinking some structures).
+// Before running the collection, check 'keepinvariant'; if it is true,
+// there may be some objects marked as black, so the collector has
+// to sweep all objects to turn them back to white (as white has not
+// changed, nothing will be collected).
+//
 void lhatC_fullgc (lhat_State *L, int isemergency) {
   global_State *g = G(L);
   lhat_assert(g->gckind == KGC_NORMAL);
-  if (isemergency) g->gckind = KGC_EMERGENCY;  /* set flag */
-  if (keepinvariant(g)) {  /* black objects? */
-    entersweep(L); /* sweep everything to turn them back to white */
+  if (isemergency) g->gckind = KGC_EMERGENCY;  // set flag
+  if (keepinvariant(g)) {  // black objects?
+    entersweep(L); // sweep everything to turn them back to white
   }
-  /* finish any pending sweep phase to start a new cycle */
+  // finish any pending sweep phase to start a new cycle
   lhatC_runtilstate(L, bitmask(GCSpause));
-  lhatC_runtilstate(L, ~bitmask(GCSpause));  /* start new collection */
-  lhatC_runtilstate(L, bitmask(GCScallfin));  /* run up to finalizers */
-  /* estimate must be correct after a full GC cycle */
+  lhatC_runtilstate(L, ~bitmask(GCSpause));  // start new collection
+  lhatC_runtilstate(L, bitmask(GCScallfin));  // run up to finalizers
+  // estimate must be correct after a full GC cycle
   lhat_assert(g->GCestimate == gettotalbytes(g));
-  lhatC_runtilstate(L, bitmask(GCSpause));  /* finish collection */
+  lhatC_runtilstate(L, bitmask(GCSpause));  // finish collection
   g->gckind = KGC_NORMAL;
   setpause(g);
 }
 
-/* }====================================================== */
+// }======================================================
 
 

@@ -1,8 +1,8 @@
-/*
-** $Id: llex.c,v 2.96 2016/05/02 14:02:12 roberto Exp $
-** Lexical Analyzer
-** See Copyright Notice in lhat.h
-*/
+//
+// $Id: llex.c,v 2.96 2016/05/02 14:02:12 roberto Exp $
+// Lexical Analyzer
+// See Copyright Notice in lhat.h
+//
 
 #define llex_c
 #define LHAT_CORE
@@ -36,7 +36,7 @@
 #define currIsNewline(ls)	(ls->current == '\n' || ls->current == '\r')
 
 
-/* ORDER RESERVED */
+// ORDER RESERVED
 static const char *const lhatX_tokens [] = {
     "and", "break", "do", "else", "elseif",
     "end", "false", "for", "function", "goto", "if",
@@ -69,26 +69,26 @@ static void save (LexState *ls, int c) {
 
 void lhatX_init (lhat_State *L) {
   int i;
-  TString *e = lhatS_newliteral(L, LHAT_ENV);  /* create env name */
-  lhatC_fix(L, obj2gco(e));  /* never collect this name */
+  TString *e = lhatS_newliteral(L, LHAT_ENV);  // create env name
+  lhatC_fix(L, obj2gco(e));  // never collect this name
   for (i=0; i<NUM_RESERVED; i++) {
     TString *ts = lhatS_new(L, lhatX_tokens[i]);
-    lhatC_fix(L, obj2gco(ts));  /* reserved words are never collected */
-    ts->extra = cast_byte(i+1);  /* reserved word */
+    lhatC_fix(L, obj2gco(ts));  // reserved words are never collected
+    ts->extra = cast_byte(i+1);  // reserved word
   }
 }
 
 
 const char *lhatX_token2str (LexState *ls, int token) {
-  if (token < FIRST_RESERVED) {  /* single-byte symbols? */
+  if (token < FIRST_RESERVED) {  // single-byte symbols?
     lhat_assert(token == cast_uchar(token));
     return lhatO_pushfstring(ls->L, "'%c'", token);
   }
   else {
     const char *s = lhatX_tokens[token - FIRST_RESERVED];
-    if (token < TK_EOS)  /* fixed format (symbols and reserved words)? */
+    if (token < TK_EOS)  // fixed format (symbols and reserved words)?
       return lhatO_pushfstring(ls->L, "'%s'", s);
-    else  /* names, strings, and numerals */
+    else  // names, strings, and numerals
       return s;
   }
 }
@@ -119,41 +119,41 @@ l_noret lhatX_syntaxerror (LexState *ls, const char *msg) {
 }
 
 
-/*
-** creates a new string and anchors it in scanner's table so that
-** it will not be collected until the end of the compilation
-** (by that time it should be anchored somewhere)
-*/
+//
+// creates a new string and anchors it in scanner's table so that
+// it will not be collected until the end of the compilation
+// (by that time it should be anchored somewhere)
+//
 TString *lhatX_newstring (LexState *ls, const char *str, size_t l) {
   lhat_State *L = ls->L;
-  TValue *o;  /* entry for 'str' */
-  TString *ts = lhatS_newlstr(L, str, l);  /* create new string */
-  setsvalue2s(L, L->top++, ts);  /* temporarily anchor it in stack */
+  TValue *o;  // entry for 'str'
+  TString *ts = lhatS_newlstr(L, str, l);  // create new string
+  setsvalue2s(L, L->top++, ts);  // temporarily anchor it in stack
   o = lhatH_set(L, ls->h, L->top - 1);
-  if (ttisnil(o)) {  /* not in use yet? */
-    /* boolean value does not need GC barrier;
-       table has no metatable, so it does not need to invalidate cache */
-    setbvalue(o, 1);  /* t[string] = true */
+  if (ttisnil(o)) {  // not in use yet?
+    // boolean value does not need GC barrier;
+    // table has no metatable, so it does not need to invalidate cache
+    setbvalue(o, 1);  // t[string] = true
     lhatC_checkGC(L);
   }
-  else {  /* string already present */
-    ts = tsvalue(keyfromval(o));  /* re-use value previously stored */
+  else {  // string already present
+    ts = tsvalue(keyfromval(o));  // re-use value previously stored
   }
-  L->top--;  /* remove string from stack */
+  L->top--;  // remove string from stack
   return ts;
 }
 
 
-/*
-** increment line number and skips newline sequence (any of
-** \n, \r, \n\r, or \r\n)
-*/
+//
+// increment line number and skips newline sequence (any of
+// \n, \r, \n\r, or \r\n)
+//
 static void inclinenumber (LexState *ls) {
   int old = ls->current;
   lhat_assert(currIsNewline(ls));
-  next(ls);  /* skip '\n' or '\r' */
+  next(ls);  // skip '\n' or '\r'
   if (currIsNewline(ls) && ls->current != old)
-    next(ls);  /* skip '\n\r' or '\r\n' */
+    next(ls);  // skip '\n\r' or '\r\n'
   if (++ls->linenumber >= MAX_INT)
     lexerror(ls, "chunk has too many lines", 0);
 }
@@ -164,23 +164,23 @@ void lhatX_setinput (lhat_State *L, LexState *ls, ZIO *z, TString *source,
   ls->t.token = 0;
   ls->L = L;
   ls->current = firstchar;
-  ls->lookahead.token = TK_EOS;  /* no look-ahead token */
+  ls->lookahead.token = TK_EOS;  // no look-ahead token
   ls->z = z;
   ls->fs = NULL;
   ls->linenumber = 1;
   ls->lastline = 1;
   ls->source = source;
-  ls->envn = lhatS_newliteral(L, LHAT_ENV);  /* get env name */
-  lhatZ_resizebuffer(ls->L, ls->buff, LHAT_MINBUFFER);  /* initialize buffer */
+  ls->envn = lhatS_newliteral(L, LHAT_ENV);  // get env name
+  lhatZ_resizebuffer(ls->L, ls->buff, LHAT_MINBUFFER);  // initialize buffer
 }
 
 
 
-/*
-** =======================================================
-** LEXICAL ANALYZER
-** =======================================================
-*/
+//
+// =======================================================
+// LEXICAL ANALYZER
+// =======================================================
+//
 
 
 static int check_next1 (LexState *ls, int c) {
@@ -192,10 +192,10 @@ static int check_next1 (LexState *ls, int c) {
 }
 
 
-/*
-** Check whether current char is in set 'set' (with two chars) and
-** saves it
-*/
+//
+// Check whether current char is in set 'set' (with two chars) and
+// saves it
+//
 static int check_next2 (LexState *ls, const char *set) {
   lhat_assert(set[2] == '\0');
   if (ls->current == set[0] || ls->current == set[1]) {
@@ -206,22 +206,22 @@ static int check_next2 (LexState *ls, const char *set) {
 }
 
 
-/* LHAT_NUMBER */
-/*
-** this function is quite liberal in what it accepts, as 'lhatO_str2num'
-** will reject ill-formed numerals.
-*/
+// LHAT_NUMBER
+//
+// this function is quite liberal in what it accepts, as 'lhatO_str2num'
+// will reject ill-formed numerals.
+//
 static int read_numeral (LexState *ls, SemInfo *seminfo) {
   TValue obj;
   const char *expo = "Ee";
   int first = ls->current;
   lhat_assert(lisdigit(ls->current));
   save_and_next(ls);
-  if (first == '0' && check_next2(ls, "xX"))  /* hexadecimal? */
+  if (first == '0' && check_next2(ls, "xX"))  // hexadecimal?
     expo = "Pp";
   for (;;) {
-    if (check_next2(ls, expo))  /* exponent part? */
-      check_next2(ls, "-+");  /* optional exponent sign */
+    if (check_next2(ls, expo))  // exponent part?
+      check_next2(ls, "-+");  // optional exponent sign
     if (lisxdigit(ls->current))
       save_and_next(ls);
     else if (ls->current == '.')
@@ -229,7 +229,7 @@ static int read_numeral (LexState *ls, SemInfo *seminfo) {
     else break;
   }
   save(ls, '\0');
-  if (lhatO_str2num(lhatZ_buffer(ls->buff), &obj) == 0)  /* format error? */
+  if (lhatO_str2num(lhatZ_buffer(ls->buff), &obj) == 0)  // format error?
     lexerror(ls, "malformed number", TK_FLT);
   if (ttisinteger(&obj)) {
     seminfo->i = ivalue(&obj);
@@ -243,11 +243,11 @@ static int read_numeral (LexState *ls, SemInfo *seminfo) {
 }
 
 
-/*
-** skip a sequence '[=*[' or ']=*]'; if sequence is well formed, return
-** its number of '='s; otherwise, return a negative number (-1 iff there
-** are no '='s after initial bracket)
-*/
+//
+// skip a sequence '[=*[' or ']=*]'; if sequence is well formed, return
+// its number of '='s; otherwise, return a negative number (-1 iff there
+// are no '='s after initial bracket)
+//
 static int skip_sep (LexState *ls) {
   int count = 0;
   int s = ls->current;
@@ -262,22 +262,22 @@ static int skip_sep (LexState *ls) {
 
 
 static void read_long_string (LexState *ls, SemInfo *seminfo, int sep) {
-  int line = ls->linenumber;  /* initial line (for error message) */
-  save_and_next(ls);  /* skip 2nd '[' */
-  if (currIsNewline(ls))  /* string starts with a newline? */
-    inclinenumber(ls);  /* skip it */
+  int line = ls->linenumber;  // initial line (for error message)
+  save_and_next(ls);  // skip 2nd '['
+  if (currIsNewline(ls))  // string starts with a newline?
+    inclinenumber(ls);  // skip it
   for (;;) {
     switch (ls->current) {
-      case EOZ: {  /* error */
+      case EOZ: {  // error
         const char *what = (seminfo ? "string" : "comment");
         const char *msg = lhatO_pushfstring(ls->L,
                      "unfinished long %s (starting at line %d)", what, line);
         lexerror(ls, msg, TK_EOS);
-        break;  /* to avoid warnings */
+        break;  // to avoid warnings
       }
       case ']': {
         if (skip_sep(ls) == sep) {
-          save_and_next(ls);  /* skip 2nd ']' */
+          save_and_next(ls);  // skip 2nd ']'
           goto endloop;
         }
         break;
@@ -285,7 +285,7 @@ static void read_long_string (LexState *ls, SemInfo *seminfo, int sep) {
       case '\n': case '\r': {
         save(ls, '\n');
         inclinenumber(ls);
-        if (!seminfo) lhatZ_resetbuffer(ls->buff);  /* avoid wasting space */
+        if (!seminfo) lhatZ_resetbuffer(ls->buff);  // avoid wasting space
         break;
       }
       default: {
@@ -303,7 +303,7 @@ static void read_long_string (LexState *ls, SemInfo *seminfo, int sep) {
 static void esccheck (LexState *ls, int c, const char *msg) {
   if (!c) {
     if (ls->current != EOZ)
-      save_and_next(ls);  /* add current to buffer for error message */
+      save_and_next(ls);  // add current to buffer for error message
     lexerror(ls, msg, TK_STRING);
   }
 }
@@ -319,25 +319,25 @@ static int gethexa (LexState *ls) {
 static int readhexaesc (LexState *ls) {
   int r = gethexa(ls);
   r = (r << 4) + gethexa(ls);
-  lhatZ_buffremove(ls->buff, 2);  /* remove saved chars from buffer */
+  lhatZ_buffremove(ls->buff, 2);  // remove saved chars from buffer
   return r;
 }
 
 
 static unsigned long readutf8esc (LexState *ls) {
   unsigned long r;
-  int i = 4;  /* chars to be removed: '\', 'u', '{', and first digit */
-  save_and_next(ls);  /* skip 'u' */
+  int i = 4;  // chars to be removed: '\', 'u', '{', and first digit
+  save_and_next(ls);  // skip 'u'
   esccheck(ls, ls->current == '{', "missing '{'");
-  r = gethexa(ls);  /* must have at least one digit */
+  r = gethexa(ls);  // must have at least one digit
   while ((save_and_next(ls), lisxdigit(ls->current))) {
     i++;
     r = (r << 4) + lhatO_hexavalue(ls->current);
     esccheck(ls, r <= 0x10FFFF, "UTF-8 value too large");
   }
   esccheck(ls, ls->current == '}', "missing '}'");
-  next(ls);  /* skip '}' */
-  lhatZ_buffremove(ls->buff, i);  /* remove saved chars from buffer */
+  next(ls);  // skip '}'
+  lhatZ_buffremove(ls->buff, i);  // remove saved chars from buffer
   return r;
 }
 
@@ -345,38 +345,38 @@ static unsigned long readutf8esc (LexState *ls) {
 static void utf8esc (LexState *ls) {
   char buff[UTF8BUFFSZ];
   int n = lhatO_utf8esc(buff, readutf8esc(ls));
-  for (; n > 0; n--)  /* add 'buff' to string */
+  for (; n > 0; n--)  // add 'buff' to string
     save(ls, buff[UTF8BUFFSZ - n]);
 }
 
 
 static int readdecesc (LexState *ls) {
   int i;
-  int r = 0;  /* result accumulator */
-  for (i = 0; i < 3 && lisdigit(ls->current); i++) {  /* read up to 3 digits */
+  int r = 0;  // result accumulator
+  for (i = 0; i < 3 && lisdigit(ls->current); i++) {  // read up to 3 digits
     r = 10*r + ls->current - '0';
     save_and_next(ls);
   }
   esccheck(ls, r <= UCHAR_MAX, "decimal escape too large");
-  lhatZ_buffremove(ls->buff, i);  /* remove read digits from buffer */
+  lhatZ_buffremove(ls->buff, i);  // remove read digits from buffer
   return r;
 }
 
 
 static void read_string (LexState *ls, int del, SemInfo *seminfo) {
-  save_and_next(ls);  /* keep delimiter (for error messages) */
+  save_and_next(ls);  // keep delimiter (for error messages)
   while (ls->current != del) {
     switch (ls->current) {
       case EOZ:
         lexerror(ls, "unfinished string", TK_EOS);
-        break;  /* to avoid warnings */
+        break;  // to avoid warnings
       case '\n':
       case '\r':
         lexerror(ls, "unfinished string", TK_STRING);
-        break;  /* to avoid warnings */
-      case '\\': {  /* escape sequences */
-        int c;  /* final character to be saved */
-        save_and_next(ls);  /* keep '\\' for error messages */
+        break;  // to avoid warnings
+      case '\\': {  // escape sequences
+        int c;  // final character to be saved
+        save_and_next(ls);  // keep '\\' for error messages
         switch (ls->current) {
           case 'a': c = '\a'; goto read_save;
           case 'b': c = '\b'; goto read_save;
@@ -391,10 +391,10 @@ static void read_string (LexState *ls, int del, SemInfo *seminfo) {
             inclinenumber(ls); c = '\n'; goto only_save;
           case '\\': case '\"': case '\'':
             c = ls->current; goto read_save;
-          case EOZ: goto no_save;  /* will raise an error next loop */
-          case 'z': {  /* zap following span of spaces */
-            lhatZ_buffremove(ls->buff, 1);  /* remove '\\' */
-            next(ls);  /* skip the 'z' */
+          case EOZ: goto no_save;  // will raise an error next loop
+          case 'z': {  // zap following span of spaces
+            lhatZ_buffremove(ls->buff, 1);  // remove '\\'
+            next(ls);  // skip the 'z'
             while (lisspace(ls->current)) {
               if (currIsNewline(ls)) inclinenumber(ls);
               else next(ls);
@@ -403,24 +403,24 @@ static void read_string (LexState *ls, int del, SemInfo *seminfo) {
           }
           default: {
             esccheck(ls, lisdigit(ls->current), "invalid escape sequence");
-            c = readdecesc(ls);  /* digital escape '\ddd' */
+            c = readdecesc(ls);  // digital escape '\ddd'
             goto only_save;
           }
         }
        read_save:
          next(ls);
-         /* go through */
+         // go through
        only_save:
-         lhatZ_buffremove(ls->buff, 1);  /* remove '\\' */
+         lhatZ_buffremove(ls->buff, 1);  // remove '\\'
          save(ls, c);
-         /* go through */
+         // go through
        no_save: break;
       }
       default:
         save_and_next(ls);
     }
   }
-  save_and_next(ls);  /* skip delimiter */
+  save_and_next(ls);  // skip delimiter
   seminfo->ts = lhatX_newstring(ls, lhatZ_buffer(ls->buff) + 1,
                                    lhatZ_bufflen(ls->buff) - 2);
 }
@@ -430,40 +430,40 @@ static int llex (LexState *ls, SemInfo *seminfo) {
   lhatZ_resetbuffer(ls->buff);
   for (;;) {
     switch (ls->current) {
-      case '\n': case '\r': {  /* line breaks */
+      case '\n': case '\r': {  // line breaks
         inclinenumber(ls);
         break;
       }
-      case ' ': case '\f': case '\t': case '\v': {  /* spaces */
+      case ' ': case '\f': case '\t': case '\v': {  // spaces
         next(ls);
         break;
       }
-      case '-': {  /* '-' or '--' (comment) */
+      case '-': {  // '-' or '--' (comment)
         next(ls);
         if (ls->current != '-') return '-';
-        /* else is a comment */
+        // else is a comment
         next(ls);
-        if (ls->current == '[') {  /* long comment? */
+        if (ls->current == '[') {  // long comment?
           int sep = skip_sep(ls);
-          lhatZ_resetbuffer(ls->buff);  /* 'skip_sep' may dirty the buffer */
+          lhatZ_resetbuffer(ls->buff);  // 'skip_sep' may dirty the buffer
           if (sep >= 0) {
-            read_long_string(ls, NULL, sep);  /* skip long comment */
-            lhatZ_resetbuffer(ls->buff);  /* previous call may dirty the buff. */
+            read_long_string(ls, NULL, sep);  // skip long comment
+            lhatZ_resetbuffer(ls->buff);  // previous call may dirty the buff.
             break;
           }
         }
-        /* else short comment */
+        // else short comment
         while (!currIsNewline(ls) && ls->current != EOZ)
-          next(ls);  /* skip until end of line (or end of file) */
+          next(ls);  // skip until end of line (or end of file)
         break;
       }
-      case '[': {  /* long string or simply '[' */
+      case '[': {  // long string or simply '['
         int sep = skip_sep(ls);
         if (sep >= 0) {
           read_long_string(ls, seminfo, sep);
           return TK_STRING;
         }
-        else if (sep != -1)  /* '[=...' missing second bracket */
+        else if (sep != -1)  // '[=...' missing second bracket
           lexerror(ls, "invalid long string delimiter", TK_STRING);
         return '[';
       }
@@ -499,16 +499,16 @@ static int llex (LexState *ls, SemInfo *seminfo) {
         if (check_next1(ls, ':')) return TK_DBCOLON;
         else return ':';
       }
-      case '"': case '\'': {  /* short literal strings */
+      case '"': case '\'': {  // short literal strings
         read_string(ls, ls->current, seminfo);
         return TK_STRING;
       }
-      case '.': {  /* '.', '..', '...', or number */
+      case '.': {  // '.', '..', '...', or number
         save_and_next(ls);
         if (check_next1(ls, '.')) {
           if (check_next1(ls, '.'))
-            return TK_DOTS;   /* '...' */
-          else return TK_CONCAT;   /* '..' */
+            return TK_DOTS;   // '...'
+          else return TK_CONCAT;   // '..'
         }
         else if (!lisdigit(ls->current)) return '.';
         else return read_numeral(ls, seminfo);
@@ -521,7 +521,7 @@ static int llex (LexState *ls, SemInfo *seminfo) {
         return TK_EOS;
       }
       default: {
-        if (lislalpha(ls->current)) {  /* identifier or reserved word? */
+        if (lislalpha(ls->current)) {  // identifier or reserved word?
           TString *ts;
           do {
             save_and_next(ls);
@@ -529,13 +529,13 @@ static int llex (LexState *ls, SemInfo *seminfo) {
           ts = lhatX_newstring(ls, lhatZ_buffer(ls->buff),
                                   lhatZ_bufflen(ls->buff));
           seminfo->ts = ts;
-          if (isreserved(ts))  /* reserved word? */
+          if (isreserved(ts))  // reserved word?
             return ts->extra - 1 + FIRST_RESERVED;
           else {
             return TK_NAME;
           }
         }
-        else {  /* single-char tokens (+ - / ...) */
+        else {  // single-char tokens (+ - / ...)
           int c = ls->current;
           next(ls);
           return c;
@@ -548,12 +548,12 @@ static int llex (LexState *ls, SemInfo *seminfo) {
 
 void lhatX_next (LexState *ls) {
   ls->lastline = ls->linenumber;
-  if (ls->lookahead.token != TK_EOS) {  /* is there a look-ahead token? */
-    ls->t = ls->lookahead;  /* use this one */
-    ls->lookahead.token = TK_EOS;  /* and discharge it */
+  if (ls->lookahead.token != TK_EOS) {  // is there a look-ahead token?
+    ls->t = ls->lookahead;  // use this one
+    ls->lookahead.token = TK_EOS;  // and discharge it
   }
   else
-    ls->t.token = llex(ls, &ls->t.seminfo);  /* read next token */
+    ls->t.token = llex(ls, &ls->t.seminfo);  // read next token
 }
 
 

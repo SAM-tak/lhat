@@ -1,8 +1,8 @@
-/*
-** $Id: lmem.h,v 1.43 2014/12/19 17:26:14 roberto Exp $
-** Interface to Memory Manager
-** See Copyright Notice in lhat.h
-*/
+//
+// $Id: lmem.h,v 1.43 2014/12/19 17:26:14 roberto Exp $
+// Interface to Memory Manager
+// See Copyright Notice in lhat.h
+//
 
 #ifndef lmem_h
 #define lmem_h
@@ -14,27 +14,27 @@
 #include "lhat.h"
 
 
-/*
-** This macro reallocs a vector 'b' from 'on' to 'n' elements, where
-** each element has size 'e'. In case of arithmetic overflow of the
-** product 'n'*'e', it raises an error (calling 'lhatM_toobig'). Because
-** 'e' is always constant, it avoids the runtime division MAX_SIZET/(e).
-**
-** (The macro is somewhat complex to avoid warnings:  The 'sizeof'
-** comparison avoids a runtime comparison when overflow cannot occur.
-** The compiler should be able to optimize the real test by itself, but
-** when it does it, it may give a warning about "comparison is always
-** false due to limited range of data type"; the +1 tricks the compiler,
-** avoiding this warning but also this optimization.)
-*/
+//
+// This macro reallocs a vector 'b' from 'on' to 'n' elements, where
+// each element has size 'e'. In case of arithmetic overflow of the
+// product 'n'*'e', it raises an error (calling 'lhatM_toobig'). Because
+// 'e' is always constant, it avoids the runtime division MAX_SIZET/(e).
+//
+// (The macro is somewhat complex to avoid warnings:  The 'sizeof'
+// comparison avoids a runtime comparison when overflow cannot occur.
+// The compiler should be able to optimize the real test by itself, but
+// when it does it, it may give a warning about "comparison is always
+// false due to limited range of data type"; the +1 tricks the compiler,
+// avoiding this warning but also this optimization.)
+//
 #define lhatM_reallocv(L,b,on,n,e) \
   (((sizeof(n) >= sizeof(size_t) && cast(size_t, (n)) + 1 > MAX_SIZET/(e)) \
       ? lhatM_toobig(L) : cast_void(0)) , \
    lhatM_realloc_(L, (b), (on)*(e), (n)*(e)))
 
-/*
-** Arrays of chars do not need any test
-*/
+//
+// Arrays of chars do not need any test
+//
 #define lhatM_reallocvchar(L,b,on,n)  \
     cast(char *, lhatM_realloc_(L, (b), (on)*sizeof(char), (n)*sizeof(char)))
 
@@ -58,7 +58,7 @@
 
 LHATI_FUNC l_noret lhatM_toobig (lhat_State *L);
 
-/* not to be called directly */
+// not to be called directly
 LHATI_FUNC void *lhatM_realloc_ (lhat_State *L, void *block, size_t oldsize,
                                                           size_t size);
 LHATI_FUNC void *lhatM_growaux_ (lhat_State *L, void *block, int *size,

@@ -1,27 +1,23 @@
-/*
-** $Id: ltm.h,v 2.22 2016/02/26 19:20:15 roberto Exp $
-** Tag methods
-** See Copyright Notice in lhat.h
-*/
-
 #ifndef ltm_h
 #define ltm_h
-
+//
+// meta methods
+// See Copyright Notice in lhat.h
+//
 
 #include "lobject.h"
 
-
-/*
-* WARNING: if you change the order of this enumeration,
-* grep "ORDER TM" and "ORDER OP"
-*/
+//
+// WARNING: if you change the order of this enumeration,
+// grep "ORDER TM" and "ORDER OP"
+//
 typedef enum {
   TM_INDEX,
   TM_NEWINDEX,
   TM_GC,
   TM_MODE,
   TM_LEN,
-  TM_EQ,  /* last tag method with fast access */
+  TM_EQ,  // last tag method with fast access
   TM_ADD,
   TM_SUB,
   TM_MUL,
@@ -40,7 +36,7 @@ typedef enum {
   TM_LE,
   TM_CONCAT,
   TM_CALL,
-  TM_N		/* number of elements in the enum */
+  TM_N		// number of elements in the enum
 } TMS;
 
 

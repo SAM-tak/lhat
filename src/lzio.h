@@ -1,19 +1,16 @@
-/*
-** $Id: lzio.h,v 1.31 2015/09/08 15:41:05 roberto Exp $
-** Buffered streams
-** See Copyright Notice in lhat.h
-*/
-
-
 #ifndef lzio_h
 #define lzio_h
+//
+// Buffered streams
+// See Copyright Notice in lhat.h
+//
 
 #include "lhat.h"
 
 #include "lmem.h"
 
 
-#define EOZ	(-1)			/* end of stream */
+#define EOZ	(-1)			// end of stream
 
 typedef struct Zio ZIO;
 
@@ -46,18 +43,18 @@ typedef struct Mbuffer {
 
 LHATI_FUNC void lhatZ_init (lhat_State *L, ZIO *z, lhat_Reader reader,
                                         void *data);
-LHATI_FUNC size_t lhatZ_read (ZIO* z, void *b, size_t n);	/* read next n bytes */
+LHATI_FUNC size_t lhatZ_read (ZIO* z, void *b, size_t n);	// read next n bytes
 
 
 
-/* --------- Private Part ------------------ */
+// --------- Private Part ------------------
 
 struct Zio {
-  size_t n;			/* bytes still unread */
-  const char *p;		/* current position in buffer */
-  lhat_Reader reader;		/* reader function */
-  void *data;			/* additional data */
-  lhat_State *L;			/* Lhat state (for reader) */
+  size_t n;			// bytes still unread
+  const char *p;		// current position in buffer
+  lhat_Reader reader;		// reader function
+  void *data;			// additional data
+  lhat_State *L;			// Lhat state (for reader)
 };
 
 
