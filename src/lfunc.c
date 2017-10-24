@@ -1,14 +1,11 @@
 //
-// $Id: lfunc.c,v 2.45 2014/11/02 19:19:04 roberto Exp $
 // Auxiliary functions to manipulate prototypes and closures
 // See Copyright Notice in lhat.h
 //
 
-#define lfunc_c
 #define LHAT_CORE
 
 #include "lprefix.h"
-
 
 #include <stddef.h>
 
@@ -22,114 +19,120 @@
 
 
 
-CClosure *lhatF_newCclosure (lhat_State *L, int n) {
-  GCObject *o = lhatC_newobj(L, LHAT_TCCL, sizeCclosure(n));
-  CClosure *c = gco2ccl(o);
-  c->nupvalues = cast_byte(n);
-  return c;
+CClosure *lhatF_newCclosure(lhat_State *L, int n)
+{
+    GCObject *o = lhatC_newobj(L, LHAT_TCCL, sizeCclosure(n));
+    CClosure *c = gco2ccl(o);
+    c->nupvalues = cast_byte(n);
+    return c;
 }
 
 
-LClosure *lhatF_newLclosure (lhat_State *L, int n) {
-  GCObject *o = lhatC_newobj(L, LHAT_TLCL, sizeLclosure(n));
-  LClosure *c = gco2lcl(o);
-  c->p = NULL;
-  c->nupvalues = cast_byte(n);
-  while (n--) c->upvalues[n] = NULL;
-  return c;
+LClosure *lhatF_newLclosure(lhat_State *L, int n)
+{
+    GCObject *o = lhatC_newobj(L, LHAT_TLCL, sizeLclosure(n));
+    LClosure *c = gco2lcl(o);
+    c->p = NULL;
+    c->nupvalues = cast_byte(n);
+    while(n--) c->upvalues[n] = NULL;
+    return c;
 }
 
 //
 // fill a closure with new closed upvalues
 //
-void lhatF_initupvals (lhat_State *L, LClosure *cl) {
-  int i;
-  for (i = 0; i < cl->nupvalues; i++) {
-    Upvalue *uv = lhatM_new(L, Upvalue);
-    uv->refcount = 1;
-    uv->v = &uv->u.value;  // make it closed
-    setnilvalue(uv->v);
-    cl->upvalues[i] = uv;
-  }
-}
-
-
-Upvalue *lhatF_findupval (lhat_State *L, StkId level) {
-  Upvalue **pp = &L->openupval;
-  Upvalue *p;
-  Upvalue *uv;
-  lhat_assert(isintwups(L) || L->openupval == NULL);
-  while (*pp != NULL && (p = *pp)->v >= level) {
-    lhat_assert(upisopen(p));
-    if (p->v == level)  // found a corresponding upvalues?
-      return p;  // return it
-    pp = &p->u.open.next;
-  }
-  // not found: create a new upvalues
-  uv = lhatM_new(L, Upvalue);
-  uv->refcount = 0;
-  uv->u.open.next = *pp;  // link it to list of open upvalues
-  uv->u.open.touched = 1;
-  *pp = uv;
-  uv->v = level;  // current value lives in the stack
-  if (!isintwups(L)) {  // coroutine not in list of coroutines with upvalues?
-    L->twups = G(L)->twups;  // link it to the list
-    G(L)->twups = L;
-  }
-  return uv;
-}
-
-
-void lhatF_close (lhat_State *L, StkId level) {
-  Upvalue *uv;
-  while (L->openupval != NULL && (uv = L->openupval)->v >= level) {
-    lhat_assert(upisopen(uv));
-    L->openupval = uv->u.open.next;  // remove from 'open' list
-    if (uv->refcount == 0)  // no references?
-      lhatM_free(L, uv);  // free upvalues
-    else {
-      setobj(L, &uv->u.value, uv->v);  // move value to upvalues slot
-      uv->v = &uv->u.value;  // now current value lives here
-      lhatC_upvalbarrier(L, uv);
+void lhatF_initupvals(lhat_State *L, LClosure *cl)
+{
+    for(int i = 0; i < cl->nupvalues; i++) {
+        Upvalue *uv = lhatM_new(L, Upvalue);
+        uv->refcount = 1;
+        uv->v = &uv->u.value;  // make it closed
+        setnilvalue(uv->v);
+        cl->upvalues[i] = uv;
     }
-  }
 }
 
 
-Proto *lhatF_newproto (lhat_State *L) {
-  GCObject *o = lhatC_newobj(L, LHAT_TPROTO, sizeof(Proto));
-  Proto *f = gco2p(o);
-  f->k = NULL;
-  f->sizek = 0;
-  f->p = NULL;
-  f->sizep = 0;
-  f->code = NULL;
-  f->cache = NULL;
-  f->sizecode = 0;
-  f->lineinfo = NULL;
-  f->sizelineinfo = 0;
-  f->upvalues = NULL;
-  f->sizeupvalues = 0;
-  f->numparams = 0;
-  f->is_vararg = 0;
-  f->maxstacksize = 0;
-  f->locvars = NULL;
-  f->sizelocvars = 0;
-  f->linedefined = 0;
-  f->lastlinedefined = 0;
-  f->source = NULL;
-  return f;
+Upvalue *lhatF_findupval(lhat_State *L, StkId level)
+{
+    Upvalue **pp = &L->openupval;
+    Upvalue *p;
+    Upvalue *uv;
+    lhat_assert(isintwups(L) || L->openupval == NULL);
+    while(*pp != NULL && (p = *pp)->v >= level) {
+        lhat_assert(upisopen(p));
+        if(p->v == level)  // found a corresponding upvalues?
+            return p;  // return it
+        pp = &p->u.open.next;
+    }
+    // not found: create a new upvalues
+    uv = lhatM_new(L, Upvalue);
+    uv->refcount = 0;
+    uv->u.open.next = *pp;  // link it to list of open upvalues
+    uv->u.open.touched = 1;
+    *pp = uv;
+    uv->v = level;  // current value lives in the stack
+    if(!isintwups(L)) {  // coroutine not in list of coroutines with upvalues?
+        L->twups = G(L)->twups;  // link it to the list
+        G(L)->twups = L;
+    }
+    return uv;
 }
 
 
-void lhatF_freeproto (lhat_State *L, Proto *f) {
-  lhatM_freearray(L, f->code, f->sizecode);
-  lhatM_freearray(L, f->p, f->sizep);
-  lhatM_freearray(L, f->k, f->sizek);
-  lhatM_freearray(L, f->lineinfo, f->sizelineinfo);
-  lhatM_freearray(L, f->locvars, f->sizelocvars);
-  lhatM_freearray(L, f->upvalues, f->sizeupvalues);
-  lhatM_free(L, f);
+void lhatF_close(lhat_State *L, StkId level)
+{
+    Upvalue *uv;
+    while(L->openupval != NULL && (uv = L->openupval)->v >= level) {
+        lhat_assert(upisopen(uv));
+        L->openupval = uv->u.open.next;  // remove from 'open' list
+        if(uv->refcount == 0)  // no references?
+            lhatM_free(L, uv);  // free upvalues
+        else {
+            setobj(L, &uv->u.value, uv->v);  // move value to upvalues slot
+            uv->v = &uv->u.value;  // now current value lives here
+            lhatC_upvalbarrier(L, uv);
+        }
+    }
+}
+
+
+Proto *lhatF_newproto(lhat_State *L)
+{
+    GCObject *o = lhatC_newobj(L, LHAT_TPROTO, sizeof(Proto));
+    Proto *f = gco2p(o);
+    f->k = NULL;
+    f->sizek = 0;
+    f->p = NULL;
+    f->sizep = 0;
+    f->code = NULL;
+    f->cache = NULL;
+    f->sizecode = 0;
+    f->lineinfo = NULL;
+    f->sizelineinfo = 0;
+    f->upvalues = NULL;
+    f->sizeupvalues = 0;
+    f->numparams = 0;
+    f->is_vararg = 0;
+    f->maxstacksize = 0;
+    f->locvars = NULL;
+    f->sizelocvars = 0;
+    f->linedefined = 0;
+    f->lastlinedefined = 0;
+    f->source = NULL;
+    return f;
+}
+
+
+void lhatF_freeproto(lhat_State *L, Proto *f)
+{
+    lhatM_freearray(L, f->code, f->sizecode);
+    lhatM_freearray(L, f->p, f->sizep);
+    lhatM_freearray(L, f->k, f->sizek);
+    lhatM_freearray(L, f->lineinfo, f->sizelineinfo);
+    lhatM_freearray(L, f->locvars, f->sizelocvars);
+    lhatM_freearray(L, f->upvalues, f->sizeupvalues);
+    lhatM_free(L, f);
 }
 
 
@@ -137,15 +140,14 @@ void lhatF_freeproto (lhat_State *L, Proto *f) {
 // Look for n-th local variable at line 'line' in function 'func'.
 // Returns NULL if not found.
 //
-const char *lhatF_getlocalname (const Proto *f, int local_number, int pc) {
-  int i;
-  for (i = 0; i<f->sizelocvars && f->locvars[i].startpc <= pc; i++) {
-    if (pc < f->locvars[i].endpc) {  // is variable active?
-      local_number--;
-      if (local_number == 0)
-        return getstr(f->locvars[i].varname);
+const char *lhatF_getlocalname(const Proto *f, int local_number, int pc)
+{
+    for(int i = 0; i<f->sizelocvars && f->locvars[i].startpc <= pc; i++) {
+        if(pc < f->locvars[i].endpc) {  // is variable active?
+            local_number--;
+            if(local_number == 0)
+                return getstr(f->locvars[i].varname);
+        }
     }
-  }
-  return NULL;  // not found
+    return NULL;  // not found
 }
-

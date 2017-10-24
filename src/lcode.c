@@ -1,14 +1,10 @@
 //
-// $Id: lcode.c,v 2.112 2016/12/22 13:08:50 roberto Exp $
-// Code generator for Lhat
+// Code generator for L^
 // See Copyright Notice in lhat.h
 //
-
-#define lcode_c
 #define LHAT_CORE
 
 #include "lprefix.h"
-
 
 #include <math.h>
 #include <stdlib.h>
@@ -29,7 +25,7 @@
 #include "lvm.h"
 
 
-// Maximum number of registers in a Lhat function (must fit in 8 bits)
+// Maximum number of registers in a L^ function (must fit in 8 bits)
 #define MAXREGS		255
 
 
@@ -98,7 +94,7 @@ static int getjump (FuncState *fs, int pc) {
 
 //
 // Fix jump instruction at position 'pc' to jump to 'dest'.
-// (Jump addresses are relative in Lhat)
+// (Jump addresses are relative in L^)
 //
 static void fixjump (FuncState *fs, int pc, int dest) {
   Instruction *jmp = &fs->f->code[pc];

@@ -1,12 +1,9 @@
+#ifndef lgc_h
+#define lgc_h
 //
-// $Id: lgc.h,v 2.91 2015/12/21 13:02:14 roberto Exp $
 // Garbage Collector
 // See Copyright Notice in lhat.h
 //
-
-#ifndef lgc_h
-#define lgc_h
-
 
 #include "lobject.h"
 #include "lstate.h"
@@ -131,17 +128,17 @@
 	(iscollectable((uv)->v) && !upisopen(uv)) ? \
          lhatC_upvalbarrier_(L,uv) : cast_void(0))
 
-LHATI_FUNC void lhatC_fix (lhat_State *L, GCObject *o);
-LHATI_FUNC void lhatC_freeallobjects (lhat_State *L);
-LHATI_FUNC void lhatC_step (lhat_State *L);
-LHATI_FUNC void lhatC_runtilstate (lhat_State *L, int statesmask);
-LHATI_FUNC void lhatC_fullgc (lhat_State *L, int isemergency);
-LHATI_FUNC GCObject *lhatC_newobj (lhat_State *L, int tt, size_t sz);
-LHATI_FUNC void lhatC_barrier_ (lhat_State *L, GCObject *o, GCObject *v);
-LHATI_FUNC void lhatC_barrierback_ (lhat_State *L, Table *o);
-LHATI_FUNC void lhatC_upvalbarrier_ (lhat_State *L, Upvalue *uv);
-LHATI_FUNC void lhatC_checkfinalizer (lhat_State *L, GCObject *o, Table *mt);
-LHATI_FUNC void lhatC_upvdeccount (lhat_State *L, Upvalue *uv);
+LHATI_FUNC void lhatC_fix(lhat_State *L, GCObject *o);
+LHATI_FUNC void lhatC_freeallobjects(lhat_State *L);
+LHATI_FUNC void lhatC_step(lhat_State *L);
+LHATI_FUNC void lhatC_runtilstate(lhat_State *L, int statesmask);
+LHATI_FUNC void lhatC_fullgc(lhat_State *L, int isemergency);
+LHATI_FUNC GCObject *lhatC_newobj(lhat_State *L, int tt, size_t sz);
+LHATI_FUNC void lhatC_barrier_(lhat_State *L, GCObject *o, GCObject *v);
+LHATI_FUNC void lhatC_barrierback_(lhat_State *L, Table *o);
+LHATI_FUNC void lhatC_upvalbarrier_(lhat_State *L, Upvalue *uv);
+LHATI_FUNC void lhatC_checkfinalizer(lhat_State *L, GCObject *o, Table *mt);
+LHATI_FUNC void lhatC_upvdeccount(lhat_State *L, Upvalue *uv);
 
 
 #endif

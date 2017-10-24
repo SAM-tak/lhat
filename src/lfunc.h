@@ -23,14 +23,14 @@ inline size_t sizeLclosure(int n)
 
 
 //
-// maximum number of upvalues in a closure (both C and Lhat). (Value
+// maximum number of upvalues in a closure (both C and L^). (Value
 // must fit in a VM register.)
 //
 #define MAXUPVAL	255
 
 
 //
-// Upvalues for Lhat closures
+// Upvalues for L^ closures
 //
 struct Upvalue {
 	TValue *v;  // points to stack or to its own value

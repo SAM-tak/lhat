@@ -17,16 +17,16 @@
 
 //
 // {====================================================================
-// System Configuration: macros to adapt (if needed) Lhat to some
+// System Configuration: macros to adapt (if needed) L^ to some
 // particular platform, for instance compiling it with 32-bit numbers or
 // restricting it to C89.
 // =====================================================================
 //
 
 //
-////@@ LHAT_32BITS enables Lhat with 32-bit integers and 32-bit floats. You
+////@@ LHAT_32BITS enables L^ with 32-bit integers and 32-bit floats. You
 // can also define LHAT_32BITS in the make file, but changing here you
-// ensure that all software connected to Lhat will be compiled with the
+// ensure that all software connected to L^ will be compiled with the
 // same configuration.
 //
 // #define LHAT_32BITS
@@ -34,14 +34,14 @@
 
 //
 ////@@ LHAT_USE_C89 controls the use of non-ISO-C89 features.
-// Define it if you want Lhat to avoid the use of a few C99 features
+// Define it if you want L^ to avoid the use of a few C99 features
 // or Windows-specific features on Windows.
 //
 // #define LHAT_USE_C89
 
 
 //
-// By default, Lhat on Windows use (some) specific Windows features
+// By default, L^ on Windows use (some) specific Windows features
 //
 #if !defined(LHAT_USE_C89) && defined(_WIN32) && !defined(_WIN32_WCE)
 #define LHAT_USE_WINDOWS  // enable goodies for regular Windows
@@ -70,7 +70,7 @@
 
 
 //
-////@@ LHAT_C89_NUMBERS ensures that Lhat uses the largest types available for
+////@@ LHAT_C89_NUMBERS ensures that L^ uses the largest types available for
 // C89 ('long' and 'double'); Windows always has '__int64', so it does
 // not need to use this case.
 //
@@ -93,9 +93,9 @@
 
 
 //
-////@@ LHAT_INT_TYPE defines the type for Lhat integers.
-////@@ LHAT_FLOAT_TYPE defines the type for Lhat floats.
-// Lhat should work fine with any mix of these options (if supported
+////@@ LHAT_INT_TYPE defines the type for L^ integers.
+////@@ LHAT_FLOAT_TYPE defines the type for L^ floats.
+// L^ should work fine with any mix of these options (if supported
 // by your C compiler). The usual configurations are 64-bit integers
 // and 'double' (the default), 32-bit integers and 'float' (for
 // restricted platforms), and 'long'/'double' (for C compilers not
@@ -134,7 +134,7 @@
 
 
 //
-// default configuration for 64-bit Lhat ('long long' and 'double')
+// default configuration for 64-bit L^ ('long long' and 'double')
 //
 #if !defined(LHAT_INT_TYPE)
 #define LHAT_INT_TYPE	LHAT_INT_LONGLONG
@@ -168,9 +168,9 @@
 
 
 //
-//@@ LHAT_PATH_DEFAULT is the default path that Lhat uses to look for
-// Lhat libraries.
-//@@ LHAT_CPATH_DEFAULT is the default path that Lhat uses to look for
+//@@ LHAT_PATH_DEFAULT is the default path that L^ uses to look for
+// L^ libraries.
+//@@ LHAT_CPATH_DEFAULT is the default path that L^ uses to look for
 // C libraries.
 // CHANGE them if your machine has a non-conventional directory
 // hierarchy or if you want to install your libraries in
@@ -212,7 +212,7 @@
 //
 //@@ LHAT_DIRSEP is the directory separator (for submodules).
 // CHANGE it if your machine does not use "/" as the directory separator
-// and is not Windows. (On Windows Lhat automatically uses "\".)
+// and is not Windows. (On Windows L^ automatically uses "\".)
 //
 #if defined(_WIN32)
 #define LHAT_DIRSEP	"\\"
@@ -268,7 +268,7 @@
 // definitions and LHATI_DDEC for declarations).
 // CHANGE them if you need to mark them in some special way. Elf/gcc
 // (versions 3.2 and later) mark them as "hidden" to optimize access
-// when Lhat is compiled as a shared library. Not all elf targets support
+// when L^ is compiled as a shared library. Not all elf targets support
 // this attribute. Unfortunately, gcc does not offer a way to check
 // whether the target offers that support, and those without support
 // give a warning about it. To avoid these warnings, change to the
@@ -293,8 +293,8 @@
 //
 
 //
-//@@ LHAT_COMPAT_5_2 controls other macros for compatibility with Lhat 5.2.
-//@@ LHAT_COMPAT_5_1 controls other macros for compatibility with Lhat 5.1.
+//@@ LHAT_COMPAT_5_2 controls other macros for compatibility with L^ 5.2.
+//@@ LHAT_COMPAT_5_1 controls other macros for compatibility with L^ 5.1.
 // You can define it to get all options, or change specific options
 // to fit your specific needs.
 //
@@ -393,7 +393,7 @@
 
 
 //
-//@@ LHAT_COMPAT_FLOATSTRING makes Lhat format integral floats without a
+//@@ LHAT_COMPAT_FLOATSTRING makes L^ format integral floats without a
 //@@ a float mark ('.0').
 // This macro is not on by default even in compatibility mode,
 // because this is not really an incompatibility.
@@ -413,7 +413,7 @@
 //
 
 //
-//@@ LHAT_NUMBER is the floating-point type used by Lhat.
+//@@ LHAT_NUMBER is the floating-point type used by L^.
 //@@ LHATI_UACNUMBER is the result of a 'default argument promotion'
 //@@ over a floating number.
 //@@ l_mathlim(x) corrects limit name 'x' to the proper float type
@@ -505,7 +505,7 @@
 
 
 //
-//@@ LHAT_INTEGER is the integer type used by Lhat.
+//@@ LHAT_INTEGER is the integer type used by L^.
 //
 //@@ LHAT_UNSIGNED is the unsigned version of LHAT_INTEGER.
 //
@@ -598,7 +598,7 @@
 
 //
 //@@ l_sprintf is equivalent to 'snprintf' or 'sprintf' in C89.
-// (All uses in Lhat have only one format item.)
+// (All uses in L^ have only one format item.)
 //
 #if !defined(LHAT_USE_C89)
 # define l_sprintf(s,sz,f,i)	snprintf(s,sz,f,i)
@@ -610,7 +610,7 @@
 //
 //@@ lhat_strx2number converts an hexadecimal numeric string to a number.
 // In C99, 'strtod' does that conversion. Otherwise, you can
-// leave 'lhat_strx2number' undefined and Lhat will provide its own
+// leave 'lhat_strx2number' undefined and L^ will provide its own
 // implementation.
 //
 #if !defined(LHAT_USE_C89)
@@ -621,7 +621,7 @@
 //
 //@@ lhat_number2strx converts a float to an hexadecimal numeric string.
 // In C99, 'sprintf' (with format specifiers '%a'/'%A') does that.
-// Otherwise, you can leave 'lhat_number2strx' undefined and Lhat will
+// Otherwise, you can leave 'lhat_number2strx' undefined and L^ will
 // provide its own implementation.
 //
 #if !defined(LHAT_USE_C89)
@@ -646,7 +646,7 @@
 
 //
 //@@ LHAT_KCONTEXT is the type of the context ('ctx') for continuation
-// functions.  It must be a numerical type; Lhat will use 'intptr_t' if
+// functions.  It must be a numerical type; L^ will use 'intptr_t' if
 // available, otherwise it will use 'ptrdiff_t' (the nearest thing to
 // 'intptr_t' in C89)
 //
@@ -704,15 +704,15 @@
 //
 // {==================================================================
 // Macros that affect the API and must be stable (that is, must be the
-// same when you compile Lhat and when you compile code that links to
-// Lhat). You probably do not want/need to change them.
+// same when you compile L^ and when you compile code that links to
+// L^). You probably do not want/need to change them.
 // =====================================================================
 //
 
 //
-//@@ LHATI_MAXSTACK limits the size of the Lhat stack.
+//@@ LHATI_MAXSTACK limits the size of the L^ stack.
 // CHANGE it if you need a different limit. This limit is arbitrary;
-// its only purpose is to stop Lhat from consuming unlimited stack
+// its only purpose is to stop L^ from consuming unlimited stack
 // space (and to reserve some numbers for pseudo-indices).
 //
 #if LHATI_BITSINT >= 32
@@ -724,7 +724,7 @@
 
 //
 //@@ LHAT_EXTRASPACE defines the size of a raw memory area associated with
-// a Lhat state with very fast access.
+// a L^ state with very fast access.
 // CHANGE it if you need a different size.
 //
 #define LHAT_EXTRASPACE		(sizeof(void *))
@@ -756,7 +756,7 @@
 
 //
 //@@ LHAT_QL describes how error messages quote program elements.
-// Lhat does not use these macros anymore; they are here for
+// L^ does not use these macros anymore; they are here for
 // compatibility only.
 //
 #define LHAT_QL(x)	"'" x "'"

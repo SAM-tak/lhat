@@ -27,20 +27,20 @@
 
 
 #if !defined(LHAT_PROMPT)
-#define LHAT_PROMPT		"> "
-#define LHAT_PROMPT2		">> "
+# define LHAT_PROMPT    "> "
+# define LHAT_PROMPT2   ">> "
 #endif
 
 #if !defined(LHAT_PROGNAME)
-#define LHAT_PROGNAME		"ilhat"
+# define LHAT_PROGNAME  "ilhat"
 #endif
 
 #if !defined(LHAT_MAXINPUT)
-#define LHAT_MAXINPUT		512
+# define LHAT_MAXINPUT  512
 #endif
 
 #if !defined(LHAT_INIT_VAR)
-#define LHAT_INIT_VAR		"LHAT_INIT"
+# define LHAT_INIT_VAR		"LHAT_INIT"
 #endif
 
 #define LHAT_INITVARVERSION	LHAT_INIT_VAR LHAT_VERSUFFIX
@@ -50,28 +50,19 @@
 // lhat_stdin_is_tty detects whether the standard input is a 'tty' (that
 // is, whether we're running lhat interactively).
 //
-#if !defined(lhat_stdin_is_tty)	// {
-
-#if defined(LHAT_USE_POSIX)	// {
-
-#include <unistd.h>
-#define lhat_stdin_is_tty()	isatty(0)
-
-#elif defined(LHAT_USE_WINDOWS)	// }{
-
-#include <io.h>
-#include <windows.h>
-
-#define lhat_stdin_is_tty()	_isatty(_fileno(stdin))
-
-#else				// }{
-
+#if !defined(lhat_stdin_is_tty)
+# if defined(LHAT_USE_POSIX)
+#  include <unistd.h>
+#  define lhat_stdin_is_tty()	isatty(0)
+# elif defined(LHAT_USE_WINDOWS)
+#  include <io.h>
+#  include <windows.h>
+#  define lhat_stdin_is_tty()	_isatty(_fileno(stdin))
+# else
 // ISO C definition
-#define lhat_stdin_is_tty()	1  // assume stdin is a tty
-
-#endif				// }
-
-#endif				// }
+#  define lhat_stdin_is_tty()	1  // assume stdin is a tty
+# endif
+#endif
 
 
 //
@@ -80,30 +71,21 @@
 // lhat_saveline defines how to "save" a read line in a "history".
 // lhat_freeline defines how to free a line read by lhat_readline.
 //
-#if !defined(lhat_readline)	// {
-
-#if defined(LHAT_USE_READLINE)	// {
-
-#include <readline/readline.h>
-#include <readline/history.h>
-#define lhat_readline(L,b,p)	((void)L, ((b)=readline(p)) != NULL)
-#define lhat_saveline(L,line)	((void)L, add_history(line))
-#define lhat_freeline(L,b)	((void)L, free(b))
-
-#else				// }{
-
-#define lhat_readline(L,b,p) \
+#if !defined(lhat_readline)
+# if defined(LHAT_USE_READLINE)
+#  include <readline/readline.h>
+#  include <readline/history.h>
+#  define lhat_readline(L,b,p)	((void)L, ((b)=readline(p)) != NULL)
+#  define lhat_saveline(L,line)	((void)L, add_history(line))
+#  define lhat_freeline(L,b)	((void)L, free(b))
+# else
+#  define lhat_readline(L,b,p) \
         ((void)L, fputs(p, stdout), fflush(stdout),  /* show prompt */\
         fgets(b, LHAT_MAXINPUT, stdin) != NULL)  // get line
-#define lhat_saveline(L,line)	{ (void)L; (void)line; }
-#define lhat_freeline(L,b)	{ (void)L; (void)b; }
-
-#endif				// }
-
-#endif				// }
-
-
-
+#  define lhat_saveline(L,line)	{ (void)L; (void)line; }
+#  define lhat_freeline(L,b)	{ (void)L; (void)b; }
+# endif
+#endif
 
 static lhat_State *globalL = NULL;
 
@@ -113,43 +95,46 @@ static const char *progname = LHAT_PROGNAME;
 //
 // Hook set by signal function to stop the interpreter.
 //
-static void lstop (lhat_State *L, lhat_Debug *ar) {
-  (void)ar;  // unused arg.
-  lhat_sethook(L, NULL, 0, 0);  // reset hook
-  lhatL_error(L, "interrupted!");
+static void lstop(lhat_State *L, lhat_Debug *ar)
+{
+    (void)ar;  // unused arg.
+    lhat_sethook(L, NULL, 0, 0);  // reset hook
+    lhatL_error(L, "interrupted!");
 }
 
 
 //
 // Function to be called at a C signal. Because a C signal cannot
-// just change a Lhat state (as there is no proper synchronization),
+// just change a L^ state (as there is no proper synchronization),
 // this function only sets a hook that, when called, will stop the
 // interpreter.
 //
-static void laction (int i) {
-  signal(i, SIG_DFL); // if another SIGINT happens, terminate process
-  lhat_sethook(globalL, lstop, LHAT_MASKCALL | LHAT_MASKRET | LHAT_MASKCOUNT, 1);
+static void laction(int i)
+{
+    signal(i, SIG_DFL); // if another SIGINT happens, terminate process
+    lhat_sethook(globalL, lstop, LHAT_MASKCALL | LHAT_MASKRET | LHAT_MASKCOUNT, 1);
 }
 
 
-static void print_usage (const char *badoption) {
-  lhat_writestringerror("%s: ", progname);
-  if (badoption[1] == 'e' || badoption[1] == 'l')
-    lhat_writestringerror("'%s' needs argument\n", badoption);
-  else
-    lhat_writestringerror("unrecognized option '%s'\n", badoption);
-  lhat_writestringerror(
-  "usage: %s [options] [script [args]]\n"
-  "Available options are:\n"
-  "  -e stat  execute string 'stat'\n"
-  "  -i       enter interactive mode after executing 'script'\n"
-  "  -l name  require library 'name'\n"
-  "  -v       show version information\n"
-  "  -E       ignore environment variables\n"
-  "  --       stop handling options\n"
-  "  -        stop handling options and execute stdin\n"
-  ,
-  progname);
+static void print_usage(const char *badoption)
+{
+    lhat_writestringerror("%s: ", progname);
+    if(badoption[1] == 'e' || badoption[1] == 'l')
+        lhat_writestringerror("'%s' needs argument\n", badoption);
+    else
+        lhat_writestringerror("unrecognized option '%s'\n", badoption);
+    lhat_writestringerror(
+        "usage: %s [options] [script [args]]\n"
+        "Available options are:\n"
+        "  -e stat  execute string 'stat'\n"
+        "  -i       enter interactive mode after executing 'script'\n"
+        "  -l name  require library 'name'\n"
+        "  -v       show version information\n"
+        "  -E       ignore environment variables\n"
+        "  --       stop handling options\n"
+        "  -        stop handling options and execute stdin\n"
+        ,
+        progname);
 }
 
 
@@ -157,42 +142,45 @@ static void print_usage (const char *badoption) {
 // Prints an error message, adding the program name in front of it
 // (if present)
 //
-static void l_message (const char *pname, const char *msg) {
-  if (pname) lhat_writestringerror("%s: ", pname);
-  lhat_writestringerror("%s\n", msg);
+static void l_message(const char *pname, const char *msg)
+{
+    if(pname) lhat_writestringerror("%s: ", pname);
+    lhat_writestringerror("%s\n", msg);
 }
 
 
 //
 // Check whether 'status' is not OK and, if so, prints the error
 // message on the top of the stack. It assumes that the error object
-// is a string, as it was either generated by Lhat or by 'msghandler'.
+// is a string, as it was either generated by L^ or by 'msghandler'.
 //
-static int report (lhat_State *L, int status) {
-  if (status != LHAT_OK) {
-    const char *msg = lhat_tostring(L, -1);
-    l_message(progname, msg);
-    lhat_pop(L, 1);  // remove message
-  }
-  return status;
+static int report(lhat_State *L, int status)
+{
+    if(status != LHAT_OK) {
+        const char *msg = lhat_tostring(L, -1);
+        l_message(progname, msg);
+        lhat_pop(L, 1);  // remove message
+    }
+    return status;
 }
 
 
 //
 // Message handler used to run all chunks
 //
-static int msghandler (lhat_State *L) {
-  const char *msg = lhat_tostring(L, 1);
-  if (msg == NULL) {  // is error object not a string?
-    if (lhatL_callmeta(L, 1, "__tostring") &&  // does it have a metamethod
-        lhat_type(L, -1) == LHAT_TSTRING)  // that produces a string?
-      return 1;  // that is the message
-    else
-      msg = lhat_pushfstring(L, "(error object is a %s value)",
-                               lhatL_typename(L, 1));
-  }
-  lhatL_traceback(L, L, msg, 1);  // append a standard traceback
-  return 1;  // return the traceback
+static int msghandler(lhat_State *L)
+{
+    const char *msg = lhat_tostring(L, 1);
+    if(msg == NULL) {  // is error object not a string?
+        if(lhatL_callmeta(L, 1, "__tostring") &&  // does it have a metamethod
+            lhat_type(L, -1) == LHAT_TSTRING)  // that produces a string?
+            return 1;  // that is the message
+        else
+            msg = lhat_pushfstring(L, "(error object is a %s value)",
+                lhatL_typename(L, 1));
+    }
+    lhatL_traceback(L, L, msg, 1);  // append a standard traceback
+    return 1;  // return the traceback
 }
 
 
@@ -200,23 +188,25 @@ static int msghandler (lhat_State *L) {
 // Interface to 'lhat_pcall', which sets appropriate message function
 // and C-signal handler. Used to run all chunks.
 //
-static int docall (lhat_State *L, int narg, int nres) {
-  int status;
-  int base = lhat_gettop(L) - narg;  // function index
-  lhat_pushcfunction(L, msghandler);  // push message handler
-  lhat_insert(L, base);  // put it under function and args
-  globalL = L;  // to be available to 'laction'
-  signal(SIGINT, laction);  // set C-signal handler
-  status = lhat_pcall(L, narg, nres, base);
-  signal(SIGINT, SIG_DFL); // reset C-signal handler
-  lhat_remove(L, base);  // remove message handler from the stack
-  return status;
+static int docall(lhat_State *L, int narg, int nres)
+{
+    int status;
+    int base = lhat_gettop(L) - narg;  // function index
+    lhat_pushcfunction(L, msghandler);  // push message handler
+    lhat_insert(L, base);  // put it under function and args
+    globalL = L;  // to be available to 'laction'
+    signal(SIGINT, laction);  // set C-signal handler
+    status = lhat_pcall(L, narg, nres, base);
+    signal(SIGINT, SIG_DFL); // reset C-signal handler
+    lhat_remove(L, base);  // remove message handler from the stack
+    return status;
 }
 
 
-static void print_version (void) {
-  lhat_writestring(LHAT_COPYRIGHT, strlen(LHAT_COPYRIGHT));
-  lhat_writeline();
+static void print_version(void)
+{
+    lhat_writestring(LHAT_COPYRIGHT, strlen(LHAT_COPYRIGHT));
+    lhat_writeline();
 }
 
 
@@ -228,32 +218,36 @@ static void print_version (void) {
 // other arguments (before the script name) go to negative indices.
 // If there is no script name, assume interpreter's name as base.
 //
-static void createargtable (lhat_State *L, char **argv, int argc, int script) {
-  int i, narg;
-  if (script == argc) script = 0;  // no script name?
-  narg = argc - (script + 1);  // number of positive indices
-  lhat_createtable(L, narg, script + 1);
-  for (i = 0; i < argc; i++) {
-    lhat_pushstring(L, argv[i]);
-    lhat_rawseti(L, -2, i - script);
-  }
-  lhat_setglobal(L, "arg");
+static void createargtable(lhat_State *L, char **argv, int argc, int script)
+{
+    int i, narg;
+    if(script == argc) script = 0;  // no script name?
+    narg = argc - (script + 1);  // number of positive indices
+    lhat_createtable(L, narg, script + 1);
+    for(i = 0; i < argc; i++) {
+        lhat_pushstring(L, argv[i]);
+        lhat_rawseti(L, -2, i - script);
+    }
+    lhat_setglobal(L, "arg");
 }
 
 
-static int dochunk (lhat_State *L, int status) {
-  if (status == LHAT_OK) status = docall(L, 0, 0);
-  return report(L, status);
+static int dochunk(lhat_State *L, int status)
+{
+    if(status == LHAT_OK) status = docall(L, 0, 0);
+    return report(L, status);
 }
 
 
-static int dofile (lhat_State *L, const char *name) {
-  return dochunk(L, lhatL_loadfile(L, name));
+static int dofile(lhat_State *L, const char *name)
+{
+    return dochunk(L, lhatL_loadfile(L, name));
 }
 
 
-static int dostring (lhat_State *L, const char *s, const char *name) {
-  return dochunk(L, lhatL_loadbuffer(L, s, strlen(s), name));
+static int dostring(lhat_State *L, const char *s, const char *name)
+{
+    return dochunk(L, lhatL_loadbuffer(L, s, strlen(s), name));
 }
 
 
@@ -261,26 +255,28 @@ static int dostring (lhat_State *L, const char *s, const char *name) {
 // Calls 'require(name)' and stores the result in a global variable
 // with the given name.
 //
-static int dolibrary (lhat_State *L, const char *name) {
-  int status;
-  lhat_getglobal(L, "require");
-  lhat_pushstring(L, name);
-  status = docall(L, 1, 1);  // call 'require(name)'
-  if (status == LHAT_OK)
-    lhat_setglobal(L, name);  // global[name] = require return
-  return report(L, status);
+static int dolibrary(lhat_State *L, const char *name)
+{
+    int status;
+    lhat_getglobal(L, "require");
+    lhat_pushstring(L, name);
+    status = docall(L, 1, 1);  // call 'require(name)'
+    if(status == LHAT_OK)
+        lhat_setglobal(L, name);  // global[name] = require return
+    return report(L, status);
 }
 
 
 //
 // Returns the string to be used as a prompt by the interpreter.
 //
-static const char *get_prompt (lhat_State *L, int firstline) {
-  const char *p;
-  lhat_getglobal(L, firstline ? "_PROMPT" : "_PROMPT2");
-  p = lhat_tostring(L, -1);
-  if (p == NULL) p = (firstline ? LHAT_PROMPT : LHAT_PROMPT2);
-  return p;
+static const char *get_prompt(lhat_State *L, int firstline)
+{
+    const char *p;
+    lhat_getglobal(L, firstline ? "_PROMPT" : "_PROMPT2");
+    p = lhat_tostring(L, -1);
+    if(p == NULL) p = (firstline ? LHAT_PROMPT : LHAT_PROMPT2);
+    return p;
 }
 
 // mark in error messages for incomplete statements
@@ -293,40 +289,42 @@ static const char *get_prompt (lhat_State *L, int firstline) {
 // message at the top of the stack ends with the above mark for
 // incomplete statements.
 //
-static int incomplete (lhat_State *L, int status) {
-  if (status == LHAT_ERRSYNTAX) {
-    size_t lmsg;
-    const char *msg = lhat_tolstring(L, -1, &lmsg);
-    if (lmsg >= marklen && strcmp(msg + lmsg - marklen, EOFMARK) == 0) {
-      lhat_pop(L, 1);
-      return 1;
+static int incomplete(lhat_State *L, int status)
+{
+    if(status == LHAT_ERRSYNTAX) {
+        size_t lmsg;
+        const char *msg = lhat_tolstring(L, -1, &lmsg);
+        if(lmsg >= marklen && strcmp(msg + lmsg - marklen, EOFMARK) == 0) {
+            lhat_pop(L, 1);
+            return 1;
+        }
     }
-  }
-  return 0;  // else...
+    return 0;  // else...
 }
 
 
 //
-// Prompt the user, read a line, and push it into the Lhat stack.
+// Prompt the user, read a line, and push it into the L^ stack.
 //
-static int pushline (lhat_State *L, int firstline) {
-  char buffer[LHAT_MAXINPUT];
-  char *b = buffer;
-  size_t l;
-  const char *prmt = get_prompt(L, firstline);
-  int readstatus = lhat_readline(L, b, prmt);
-  if (readstatus == 0)
-    return 0;  // no input (prompt will be popped by caller)
-  lhat_pop(L, 1);  // remove prompt
-  l = strlen(b);
-  if (l > 0 && b[l-1] == '\n')  // line ends with newline?
-    b[--l] = '\0';  // remove it
-  if (firstline && b[0] == '=')  // for compatibility with 5.2, ...
-    lhat_pushfstring(L, "return %s", b + 1);  // change '=' to 'return'
-  else
-    lhat_pushlstring(L, b, l);
-  lhat_freeline(L, b);
-  return 1;
+static int pushline(lhat_State *L, int firstline)
+{
+    char buffer[LHAT_MAXINPUT];
+    char *b = buffer;
+    size_t l;
+    const char *prmt = get_prompt(L, firstline);
+    int readstatus = lhat_readline(L, b, prmt);
+    if(readstatus == 0)
+        return 0;  // no input (prompt will be popped by caller)
+    lhat_pop(L, 1);  // remove prompt
+    l = strlen(b);
+    if(l > 0 && b[l - 1] == '\n')  // line ends with newline?
+        b[--l] = '\0';  // remove it
+    if(firstline && b[0] == '=')  // for compatibility with 5.2, ...
+        lhat_pushfstring(L, "return %s", b + 1);  // change '=' to 'return'
+    else
+        lhat_pushlstring(L, b, l);
+    lhat_freeline(L, b);
+    return 1;
 }
 
 
@@ -334,37 +332,39 @@ static int pushline (lhat_State *L, int firstline) {
 // Try to compile line on the stack as 'return <line>;'; on return, stack
 // has either compiled chunk or original line (if compilation failed).
 //
-static int addreturn (lhat_State *L) {
-  const char *line = lhat_tostring(L, -1);  // original line
-  const char *retline = lhat_pushfstring(L, "return %s;", line);
-  int status = lhatL_loadbuffer(L, retline, strlen(retline), "=stdin");
-  if (status == LHAT_OK) {
-    lhat_remove(L, -2);  // remove modified line
-    if (line[0] != '\0')  // non empty?
-      lhat_saveline(L, line);  // keep history
-  }
-  else
-    lhat_pop(L, 2);  // pop result from 'lhatL_loadbuffer' and modified line
-  return status;
+static int addreturn(lhat_State *L)
+{
+    const char *line = lhat_tostring(L, -1);  // original line
+    const char *retline = lhat_pushfstring(L, "return %s;", line);
+    int status = lhatL_loadbuffer(L, retline, strlen(retline), "=stdin");
+    if(status == LHAT_OK) {
+        lhat_remove(L, -2);  // remove modified line
+        if(line[0] != '\0')  // non empty?
+            lhat_saveline(L, line);  // keep history
+    }
+    else
+        lhat_pop(L, 2);  // pop result from 'lhatL_loadbuffer' and modified line
+    return status;
 }
 
 
 //
-// Read multiple lines until a complete Lhat statement
+// Read multiple lines until a complete L^ statement
 //
-static int multiline (lhat_State *L) {
-  for (;;) {  // repeat until gets a complete statement
-    size_t len;
-    const char *line = lhat_tolstring(L, 1, &len);  // get what it has
-    int status = lhatL_loadbuffer(L, line, len, "=stdin");  // try it
-    if (!incomplete(L, status) || !pushline(L, 0)) {
-      lhat_saveline(L, line);  // keep history
-      return status;  // cannot or should not try to add continuation line
+static int multiline(lhat_State *L)
+{
+    for(;;) {  // repeat until gets a complete statement
+        size_t len;
+        const char *line = lhat_tolstring(L, 1, &len);  // get what it has
+        int status = lhatL_loadbuffer(L, line, len, "=stdin");  // try it
+        if(!incomplete(L, status) || !pushline(L, 0)) {
+            lhat_saveline(L, line);  // keep history
+            return status;  // cannot or should not try to add continuation line
+        }
+        lhat_pushliteral(L, "\n");  // add newline...
+        lhat_insert(L, -2);  // ...between the two lines
+        lhat_concat(L, 3);  // join them
     }
-    lhat_pushliteral(L, "\n");  // add newline...
-    lhat_insert(L, -2);  // ...between the two lines
-    lhat_concat(L, 3);  // join them
-  }
 }
 
 
@@ -374,32 +374,34 @@ static int multiline (lhat_State *L) {
 // the final status of load/call with the resulting function (if any)
 // in the top of the stack.
 //
-static int loadline (lhat_State *L) {
-  int status;
-  lhat_settop(L, 0);
-  if (!pushline(L, 1))
-    return -1;  // no input
-  if ((status = addreturn(L)) != LHAT_OK)  // 'return ...' did not work?
-    status = multiline(L);  // try as command, maybe with continuation lines
-  lhat_remove(L, 1);  // remove line from the stack
-  lhat_assert(lhat_gettop(L) == 1);
-  return status;
+static int loadline(lhat_State *L)
+{
+    int status;
+    lhat_settop(L, 0);
+    if(!pushline(L, 1))
+        return -1;  // no input
+    if((status = addreturn(L)) != LHAT_OK)  // 'return ...' did not work?
+        status = multiline(L);  // try as command, maybe with continuation lines
+    lhat_remove(L, 1);  // remove line from the stack
+    lhat_assert(lhat_gettop(L) == 1);
+    return status;
 }
 
 
 //
-// Prints (calling the Lhat 'print' function) any values on the stack
+// Prints (calling the L^ 'print' function) any values on the stack
 //
-static void l_print (lhat_State *L) {
-  int n = lhat_gettop(L);
-  if (n > 0) {  // any result to be printed?
-    lhatL_checkstack(L, LHAT_MINSTACK, "too many results to print");
-    lhat_getglobal(L, "print");
-    lhat_insert(L, 1);
-    if (lhat_pcall(L, n, 0, 0) != LHAT_OK)
-      l_message(progname, lhat_pushfstring(L, "error calling 'print' (%s)",
-                                             lhat_tostring(L, -1)));
-  }
+static void l_print(lhat_State *L)
+{
+    int n = lhat_gettop(L);
+    if(n > 0) {  // any result to be printed?
+        lhatL_checkstack(L, LHAT_MINSTACK, "too many results to print");
+        lhat_getglobal(L, "print");
+        lhat_insert(L, 1);
+        if(lhat_pcall(L, n, 0, 0) != LHAT_OK)
+            l_message(progname, lhat_pushfstring(L, "error calling 'print' (%s)",
+                lhat_tostring(L, -1)));
+    }
 }
 
 
@@ -407,49 +409,52 @@ static void l_print (lhat_State *L) {
 // Do the REPL: repeatedly read (load) a line, evalhatte (call) it, and
 // print any results.
 //
-static void doREPL (lhat_State *L) {
-  int status;
-  const char *oldprogname = progname;
-  progname = NULL;  // no 'progname' on errors in interactive mode
-  while ((status = loadline(L)) != -1) {
-    if (status == LHAT_OK)
-      status = docall(L, 0, LHAT_MULTRET);
-    if (status == LHAT_OK) l_print(L);
-    else report(L, status);
-  }
-  lhat_settop(L, 0);  // clear stack
-  lhat_writeline();
-  progname = oldprogname;
+static void doREPL(lhat_State *L)
+{
+    int status;
+    const char *oldprogname = progname;
+    progname = NULL;  // no 'progname' on errors in interactive mode
+    while((status = loadline(L)) != -1) {
+        if(status == LHAT_OK)
+            status = docall(L, 0, LHAT_MULTRET);
+        if(status == LHAT_OK) l_print(L);
+        else report(L, status);
+    }
+    lhat_settop(L, 0);  // clear stack
+    lhat_writeline();
+    progname = oldprogname;
 }
 
 
 //
 // Push on the stack the contents of table 'arg' from 1 to #arg
 //
-static int pushargs (lhat_State *L) {
-  int i, n;
-  if (lhat_getglobal(L, "arg") != LHAT_TTABLE)
-    lhatL_error(L, "'arg' is not a table");
-  n = (int)lhatL_len(L, -1);
-  lhatL_checkstack(L, n + 3, "too many arguments to script");
-  for (i = 1; i <= n; i++)
-    lhat_rawgeti(L, -i, i);
-  lhat_remove(L, -i);  // remove table from the stack
-  return n;
+static int pushargs(lhat_State *L)
+{
+    int i, n;
+    if(lhat_getglobal(L, "arg") != LHAT_TTABLE)
+        lhatL_error(L, "'arg' is not a table");
+    n = (int)lhatL_len(L, -1);
+    lhatL_checkstack(L, n + 3, "too many arguments to script");
+    for(i = 1; i <= n; i++)
+        lhat_rawgeti(L, -i, i);
+    lhat_remove(L, -i);  // remove table from the stack
+    return n;
 }
 
 
-static int handle_script (lhat_State *L, char **argv) {
-  int status;
-  const char *fname = argv[0];
-  if (strcmp(fname, "-") == 0 && strcmp(argv[-1], "--") != 0)
-    fname = NULL;  // stdin
-  status = lhatL_loadfile(L, fname);
-  if (status == LHAT_OK) {
-    int n = pushargs(L);  // push arguments to script
-    status = docall(L, n, LHAT_MULTRET);
-  }
-  return report(L, status);
+static int handle_script(lhat_State *L, char **argv)
+{
+    int status;
+    const char *fname = argv[0];
+    if(strcmp(fname, "-") == 0 && strcmp(argv[-1], "--") != 0)
+        fname = NULL;  // stdin
+    status = lhatL_loadfile(L, fname);
+    if(status == LHAT_OK) {
+        int n = pushargs(L);  // push arguments to script
+        status = docall(L, n, LHAT_MULTRET);
+    }
+    return report(L, status);
 }
 
 
@@ -463,92 +468,95 @@ static int handle_script (lhat_State *L, char **argv) {
 
 //
 // Traverses all arguments from 'argv', returning a mask with those
-// needed before running any Lhat code (or an error code if it finds
+// needed before running any L^ code (or an error code if it finds
 // any invalid argument). 'first' returns the first not-handled argument
 // (either the script name or a bad argument in case of error).
 //
-static int collectargs (char **argv, int *first) {
-  int args = 0;
-  int i;
-  for (i = 1; argv[i] != NULL; i++) {
-    *first = i;
-    if (argv[i][0] != '-')  // not an option?
-        return args;  // stop handling options
-    switch (argv[i][1]) {  // else check option
-      case '-':  // '--'
-        if (argv[i][2] != '\0')  // extra characters after '--'?
-          return has_error;  // invalid option
-        *first = i + 1;
-        return args;
-      case '\0':  // '-'
-        return args;  // script "name" is '-'
-      case 'E':
-        if (argv[i][2] != '\0')  // extra characters after 1st?
-          return has_error;  // invalid option
-        args |= has_E;
-        break;
-      case 'i':
-        args |= has_i;  // (-i implies -v)// FALLTHROUGH
-      case 'v':
-        if (argv[i][2] != '\0')  // extra characters after 1st?
-          return has_error;  // invalid option
-        args |= has_v;
-        break;
-      case 'e':
-        args |= has_e;  // FALLTHROUGH
-      case 'l':  // both options need an argument
-        if (argv[i][2] == '\0') {  // no concatenated argument?
-          i++;  // try next 'argv'
-          if (argv[i] == NULL || argv[i][0] == '-')
-            return has_error;  // no next argument or it is another option
+static int collectargs(char **argv, int *first)
+{
+    int args = 0;
+    int i;
+    for(i = 1; argv[i] != NULL; i++) {
+        *first = i;
+        if(argv[i][0] != '-')  // not an option?
+            return args;  // stop handling options
+        switch(argv[i][1]) {  // else check option
+        case '-':  // '--'
+            if(argv[i][2] != '\0')  // extra characters after '--'?
+                return has_error;  // invalid option
+            *first = i + 1;
+            return args;
+        case '\0':  // '-'
+            return args;  // script "name" is '-'
+        case 'E':
+            if(argv[i][2] != '\0')  // extra characters after 1st?
+                return has_error;  // invalid option
+            args |= has_E;
+            break;
+        case 'i':
+            args |= has_i;  // (-i implies -v)// FALLTHROUGH
+        case 'v':
+            if(argv[i][2] != '\0')  // extra characters after 1st?
+                return has_error;  // invalid option
+            args |= has_v;
+            break;
+        case 'e':
+            args |= has_e;  // FALLTHROUGH
+        case 'l':  // both options need an argument
+            if(argv[i][2] == '\0') {  // no concatenated argument?
+                i++;  // try next 'argv'
+                if(argv[i] == NULL || argv[i][0] == '-')
+                    return has_error;  // no next argument or it is another option
+            }
+            break;
+        default:  // invalid option
+            return has_error;
         }
-        break;
-      default:  // invalid option
-        return has_error;
     }
-  }
-  *first = i;  // no script name
-  return args;
+    *first = i;  // no script name
+    return args;
 }
 
 
 //
-// Processes options 'e' and 'l', which involve running Lhat code.
+// Processes options 'e' and 'l', which involve running L^ code.
 // Returns 0 if some code raises an error.
 //
-static int runargs (lhat_State *L, char **argv, int n) {
-  int i;
-  for (i = 1; i < n; i++) {
-    int option = argv[i][1];
-    lhat_assert(argv[i][0] == '-');  // already checked
-    if (option == 'e' || option == 'l') {
-      int status;
-      const char *extra = argv[i] + 2;  // both options need an argument
-      if (*extra == '\0') extra = argv[++i];
-      lhat_assert(extra != NULL);
-      status = (option == 'e')
-               ? dostring(L, extra, "=(command line)")
-               : dolibrary(L, extra);
-      if (status != LHAT_OK) return 0;
+static int runargs(lhat_State *L, char **argv, int n)
+{
+    int i;
+    for(i = 1; i < n; i++) {
+        int option = argv[i][1];
+        lhat_assert(argv[i][0] == '-');  // already checked
+        if(option == 'e' || option == 'l') {
+            int status;
+            const char *extra = argv[i] + 2;  // both options need an argument
+            if(*extra == '\0') extra = argv[++i];
+            lhat_assert(extra != NULL);
+            status = (option == 'e')
+                ? dostring(L, extra, "=(command line)")
+                : dolibrary(L, extra);
+            if(status != LHAT_OK) return 0;
+        }
     }
-  }
-  return 1;
+    return 1;
 }
 
 
 
-static int handle_lhatinit (lhat_State *L) {
-  const char *name = "=" LHAT_INITVARVERSION;
-  const char *init = getenv(name + 1);
-  if (init == NULL) {
-    name = "=" LHAT_INIT_VAR;
-    init = getenv(name + 1);  // try alternative name
-  }
-  if (init == NULL) return LHAT_OK;
-  else if (init[0] == '@')
-    return dofile(L, init+1);
-  else
-    return dostring(L, init, name);
+static int handle_lhatinit(lhat_State *L)
+{
+    const char *name = "=" LHAT_INITVARVERSION;
+    const char *init = getenv(name + 1);
+    if(init == NULL) {
+        name = "=" LHAT_INIT_VAR;
+        init = getenv(name + 1);  // try alternative name
+    }
+    if(init == NULL) return LHAT_OK;
+    else if(init[0] == '@')
+        return dofile(L, init + 1);
+    else
+        return dostring(L, init, name);
 }
 
 
@@ -556,62 +564,63 @@ static int handle_lhatinit (lhat_State *L) {
 // Main body of stand-alone interpreter (to be called in protected mode).
 // Reads the options and handles them all.
 //
-static int pmain (lhat_State *L) {
-  int argc = (int)lhat_tointeger(L, 1);
-  char **argv = (char **)lhat_touserdata(L, 2);
-  int script;
-  int args = collectargs(argv, &script);
-  lhatL_checkversion(L);  // check that interpreter has correct version
-  if (argv[0] && argv[0][0]) progname = argv[0];
-  if (args == has_error) {  // bad arg?
-    print_usage(argv[script]);  // 'script' has index of bad arg.
-    return 0;
-  }
-  if (args & has_v)  // option '-v'?
-    print_version();
-  if (args & has_E) {  // option '-E'?
-    lhat_pushboolean(L, 1);  // signal for libraries to ignore env. vars.
-    lhat_setfield(L, LHAT_REGISTRYINDEX, "LHAT_NOENV");
-  }
-  lhatL_openlibs(L);  // open standard libraries
-  createargtable(L, argv, argc, script);  // create table 'arg'
-  if (!(args & has_E)) {  // no option '-E'?
-    if (handle_lhatinit(L) != LHAT_OK)  // run LHAT_INIT
-      return 0;  // error running LHAT_INIT
-  }
-  if (!runargs(L, argv, script))  // execute arguments -e and -l
-    return 0;  // something failed
-  if (script < argc &&  // execute main script (if there is one)
-      handle_script(L, argv + script) != LHAT_OK)
-    return 0;
-  if (args & has_i)  // -i option?
-    doREPL(L);  // do read-eval-print loop
-  else if (script == argc && !(args & (has_e | has_v))) {  // no arguments?
-    if (lhat_stdin_is_tty()) {  // running in interactive mode?
-      print_version();
-      doREPL(L);  // do read-eval-print loop
+static int pmain(lhat_State *L)
+{
+    int argc = (int)lhat_tointeger(L, 1);
+    char **argv = (char **)lhat_touserdata(L, 2);
+    int script;
+    int args = collectargs(argv, &script);
+    lhatL_checkversion(L);  // check that interpreter has correct version
+    if(argv[0] && argv[0][0]) progname = argv[0];
+    if(args == has_error) {  // bad arg?
+        print_usage(argv[script]);  // 'script' has index of bad arg.
+        return 0;
     }
-    else dofile(L, NULL);  // executes stdin as a file
-  }
-  lhat_pushboolean(L, 1);  // signal no errors
-  return 1;
+    if(args & has_v)  // option '-v'?
+        print_version();
+    if(args & has_E) {  // option '-E'?
+        lhat_pushboolean(L, 1);  // signal for libraries to ignore env. vars.
+        lhat_setfield(L, LHAT_REGISTRYINDEX, "LHAT_NOENV");
+    }
+    lhatL_openlibs(L);  // open standard libraries
+    createargtable(L, argv, argc, script);  // create table 'arg'
+    if(!(args & has_E)) {  // no option '-E'?
+        if(handle_lhatinit(L) != LHAT_OK)  // run LHAT_INIT
+            return 0;  // error running LHAT_INIT
+    }
+    if(!runargs(L, argv, script))  // execute arguments -e and -l
+        return 0;  // something failed
+    if(script < argc &&  // execute main script (if there is one)
+        handle_script(L, argv + script) != LHAT_OK)
+        return 0;
+    if(args & has_i)  // -i option?
+        doREPL(L);  // do read-eval-print loop
+    else if(script == argc && !(args & (has_e | has_v))) {  // no arguments?
+        if(lhat_stdin_is_tty()) {  // running in interactive mode?
+            print_version();
+            doREPL(L);  // do read-eval-print loop
+        }
+        else dofile(L, NULL);  // executes stdin as a file
+    }
+    lhat_pushboolean(L, 1);  // signal no errors
+    return 1;
 }
 
 
-int main (int argc, char **argv) {
-  int status, result;
-  lhat_State *L = lhatL_newstate();  // create state
-  if (L == NULL) {
-    l_message(argv[0], "cannot create state: not enough memory");
-    return EXIT_FAILURE;
-  }
-  lhat_pushcfunction(L, &pmain);  // to call 'pmain' in protected mode
-  lhat_pushinteger(L, argc);  // 1st argument
-  lhat_pushlightuserdata(L, argv); // 2nd argument
-  status = lhat_pcall(L, 2, 1, 0);  // do the call
-  result = lhat_toboolean(L, -1);  // get result
-  report(L, status);
-  lhat_close(L);
-  return (result && status == LHAT_OK) ? EXIT_SUCCESS : EXIT_FAILURE;
+int main(int argc, char **argv)
+{
+    int status, result;
+    lhat_State *L = lhatL_newstate();  // create state
+    if(L == NULL) {
+        l_message(argv[0], "cannot create state: not enough memory");
+        return EXIT_FAILURE;
+    }
+    lhat_pushcfunction(L, &pmain);  // to call 'pmain' in protected mode
+    lhat_pushinteger(L, argc);  // 1st argument
+    lhat_pushlightuserdata(L, argv); // 2nd argument
+    status = lhat_pcall(L, 2, 1, 0);  // do the call
+    result = lhat_toboolean(L, -1);  // get result
+    report(L, status);
+    lhat_close(L);
+    return (result && status == LHAT_OK) ? EXIT_SUCCESS : EXIT_FAILURE;
 }
-

@@ -1,14 +1,11 @@
 //
-// $Id: lbitlib.c,v 1.30 2015/11/11 19:08:09 roberto Exp $
 // Standard library for bitwise operations
 // See Copyright Notice in lhat.h
 //
 
-#define lbitlib_c
 #define LHAT_LIB
 
 #include "lprefix.h"
-
 
 #include "lhat.h"
 

@@ -1,17 +1,13 @@
-//
-// $Id: ldo.h,v 2.29 2015/12/21 13:02:14 roberto Exp $
-// Stack and Call structure of Lhat
-// See Copyright Notice in lhat.h
-//
-
 #ifndef ldo_h
 #define ldo_h
-
+//
+// Stack and Call structure of L^
+// See Copyright Notice in lhat.h
+//
 
 #include "lobject.h"
 #include "lstate.h"
 #include "lzio.h"
-
 
 //
 // Macro to check stack size and grow stack if needed.  Parameters
@@ -34,25 +30,21 @@
 
 
 // type of protected functions, to be ran by 'runprotected'
-typedef void (*Pfunc) (lhat_State *L, void *ud);
+typedef void(*Pfunc) (lhat_State *L, void *ud);
 
-LHATI_FUNC int lhatD_protectedparser (lhat_State *L, ZIO *z, const char *name,
-                                                  const char *mode);
-LHATI_FUNC void lhatD_hook (lhat_State *L, int event, int line);
-LHATI_FUNC int lhatD_precall (lhat_State *L, StkId func, int nresults);
-LHATI_FUNC void lhatD_call (lhat_State *L, StkId func, int nResults);
-LHATI_FUNC void lhatD_callnoyield (lhat_State *L, StkId func, int nResults);
-LHATI_FUNC int lhatD_pcall (lhat_State *L, Pfunc func, void *u,
-                                        ptrdiff_t oldtop, ptrdiff_t ef);
-LHATI_FUNC int lhatD_poscall (lhat_State *L, CallInfo *ci, StkId firstResult,
-                                          int nres);
-LHATI_FUNC void lhatD_reallocstack (lhat_State *L, int newsize);
-LHATI_FUNC void lhatD_growstack (lhat_State *L, int n);
-LHATI_FUNC void lhatD_shrinkstack (lhat_State *L);
-LHATI_FUNC void lhatD_inctop (lhat_State *L);
+LHATI_FUNC int lhatD_protectedparser(lhat_State *L, ZIO *z, const char *name, const char *mode);
+LHATI_FUNC void lhatD_hook(lhat_State *L, int event, int line);
+LHATI_FUNC int lhatD_precall(lhat_State *L, StkId func, int nresults);
+LHATI_FUNC void lhatD_call(lhat_State *L, StkId func, int nResults);
+LHATI_FUNC void lhatD_callnoyield(lhat_State *L, StkId func, int nResults);
+LHATI_FUNC int lhatD_pcall(lhat_State *L, Pfunc func, void *u, ptrdiff_t oldtop, ptrdiff_t ef);
+LHATI_FUNC int lhatD_poscall(lhat_State *L, CallInfo *ci, StkId firstResult, int nres);
+LHATI_FUNC void lhatD_reallocstack(lhat_State *L, int newsize);
+LHATI_FUNC void lhatD_growstack(lhat_State *L, int n);
+LHATI_FUNC void lhatD_shrinkstack(lhat_State *L);
+LHATI_FUNC void lhatD_inctop(lhat_State *L);
 
-LHATI_FUNC l_noret lhatD_throw (lhat_State *L, int errcode);
-LHATI_FUNC int lhatD_rawrunprotected (lhat_State *L, Pfunc f, void *ud);
+LHATI_FUNC l_noret lhatD_throw(lhat_State *L, int errcode);
+LHATI_FUNC int lhatD_rawrunprotected(lhat_State *L, Pfunc f, void *ud);
 
 #endif
-

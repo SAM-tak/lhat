@@ -85,7 +85,7 @@ enum {
 };
 
 
-// minimum Lhat stack available to a C function
+// minimum L^ stack available to a C function
 enum {
 	LHAT_MINSTACK = 20
 };
@@ -99,7 +99,7 @@ enum {
 };
 
 
-// type of numbers in Lhat
+// type of numbers in L^
 typedef LHAT_NUMBER lhat_Number;
 
 
@@ -114,7 +114,7 @@ typedef LHAT_KCONTEXT lhat_KContext;
 
 
 //
-// Type for C functions registered with Lhat
+// Type for C functions registered with L^
 //
 typedef int (*lhat_CFunction)(lhat_State *L);
 
@@ -125,7 +125,7 @@ typedef int (*lhat_KFunction)(lhat_State *L, int status, lhat_KContext ctx);
 
 
 //
-// Type for functions that read/write blocks when loading/dumping Lhat chunks
+// Type for functions that read/write blocks when loading/dumping L^ chunks
 //
 typedef const char *(*lhat_Reader)(lhat_State *L, void *ud, size_t *sz);
 
@@ -264,7 +264,7 @@ LHAT_API int  (lhat_getuservalue)(lhat_State *L, int idx);
 
 
 //
-// set functions (stack -> Lhat)
+// set functions (stack -> L^)
 //
 LHAT_API void  (lhat_setglobal)(lhat_State *L, const char *name);
 LHAT_API void  (lhat_settable)(lhat_State *L, int idx);
@@ -278,7 +278,7 @@ LHAT_API void  (lhat_setuservalue)(lhat_State *L, int idx);
 
 
 //
-// 'load' and 'call' functions (load and run Lhat code)
+// 'load' and 'call' functions (load and run L^ code)
 //
 LHAT_API void  (lhat_callk)(lhat_State *L, int nargs, int nresults,
 	lhat_KContext ctx, lhat_KFunction k);

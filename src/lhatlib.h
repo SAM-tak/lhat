@@ -1,6 +1,6 @@
 //
 // $Id: lhatlib.h,v 1.45 2017/01/12 17:14:26 roberto Exp $
-// Lhat standard libraries
+// L^ standard libraries
 // See Copyright Notice in lhat.h
 //
 
