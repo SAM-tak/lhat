@@ -41,7 +41,7 @@
 #define MINSIZEARRAY	4
 
 
-void *lhatM_growaux_(lhat_State *L, void *block, int *size, size_t size_elems, int limit, const char *what)
+void *lhatM_growaux_(lhat_State *L, void *block, int *size, int size_elems, int limit, const char *what)
 {
     int newsize;
     if(*size >= limit / 2) {  // cannot double it?

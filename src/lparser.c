@@ -55,7 +55,7 @@ typedef struct BlockCnt {
 // prototypes for recursive non-terminal functions
 //
 static void statement(LexState *ls);
-static void expr(LexState *ls, expdesc *v);
+static void expr(LexState *ls, ExpDesc *v);
 
 
 // semantic error
@@ -142,7 +142,7 @@ static TString *str_checkname(LexState *ls)
 }
 
 
-static void init_exp(expdesc *e, expkind k, int i)
+static void init_exp(ExpDesc *e, ExpKind k, int i)
 {
     e->f = e->t = NO_JUMP;
     e->k = k;
@@ -150,13 +150,13 @@ static void init_exp(expdesc *e, expkind k, int i)
 }
 
 
-static void codestring(LexState *ls, expdesc *e, TString *s)
+static void codestring(LexState *ls, ExpDesc *e, TString *s)
 {
     init_exp(e, VK, lhatK_stringK(ls->fs, s));
 }
 
 
-static void checkname(LexState *ls, expdesc *e)
+static void checkname(LexState *ls, ExpDesc *e)
 {
     codestring(ls, e, str_checkname(ls));
 }
@@ -232,13 +232,12 @@ static int searchupvalue(FuncState *fs, TString *name)
 }
 
 
-static int newupvalue(FuncState *fs, TString *name, expdesc *v)
+static int newupvalue(FuncState *fs, TString *name, ExpDesc *v)
 {
     Proto *f = fs->f;
     int oldsize = f->sizeupvalues;
     checklimit(fs, fs->nups + 1, MAXUPVAL, "upvalues");
-    lhatM_growvector(fs->ls->L, f->upvalues, fs->nups, f->sizeupvalues,
-        UpvalueDesc, MAXUPVAL, "upvalues");
+    lhatM_growvector(fs->ls->L, f->upvalues, fs->nups, f->sizeupvalues, UpvalueDesc, MAXUPVAL, "upvalues");
     while(oldsize < f->sizeupvalues)
         f->upvalues[oldsize++].name = NULL;
     f->upvalues[fs->nups].instack = (v->k == VLOCAL);
@@ -276,7 +275,7 @@ static void markupval(FuncState *fs, int level)
 //  Find variable with given name 'n'. If it is an upvalues, add this
 //  upvalues into all intermediate functions.
 //
-static void singlevaraux(FuncState *fs, TString *n, expdesc *var, int base)
+static void singlevaraux(FuncState *fs, TString *n, ExpDesc *var, int base)
 {
     if(fs == NULL)  // no more levels?
         init_exp(var, VVOID, 0);  // default is global
@@ -302,13 +301,13 @@ static void singlevaraux(FuncState *fs, TString *n, expdesc *var, int base)
 }
 
 
-static void singlevar(LexState *ls, expdesc *var)
+static void singlevar(LexState *ls, ExpDesc *var)
 {
     TString *varname = str_checkname(ls);
     FuncState *fs = ls->fs;
     singlevaraux(fs, varname, var, 1);
     if(var->k == VVOID) {  // global name?
-        expdesc key;
+        ExpDesc key;
         singlevaraux(fs, ls->envn, var, 1);  // get environment variable
         lhat_assert(var->k != VVOID);  // this one must exist
         codestring(ls, &key, varname);  // key is variable name
@@ -317,7 +316,7 @@ static void singlevar(LexState *ls, expdesc *var)
 }
 
 
-static void adjust_assign(LexState *ls, int nvars, int nexps, expdesc *e)
+static void adjust_assign(LexState *ls, int nvars, int nexps, ExpDesc *e)
 {
     FuncState *fs = ls->fs;
     int extra = nvars - nexps;
@@ -536,7 +535,7 @@ static Proto *addprototype(LexState *ls)
 // so that, if it invokes the GC, the GC knows which registers
 // are in use at that time.
 //
-static void codeclosure(LexState *ls, expdesc *v)
+static void codeclosure(LexState *ls, ExpDesc *v)
 {
     FuncState *fs = ls->fs->prev;
     init_exp(v, VRELOCABLE, lhatK_codeABx(fs, OP_CLOSURE, 0, fs->np - 1));
@@ -628,11 +627,11 @@ static void statlist(LexState *ls)
 }
 
 
-static void fieldsel(LexState *ls, expdesc *v)
+static void fieldsel(LexState *ls, ExpDesc *v)
 {
     // fieldsel -> ['.' | ':'] NAME
     FuncState *fs = ls->fs;
-    expdesc key;
+    ExpDesc key;
     lhatK_exp2anyregup(fs, v);
     lhatX_next(ls);  // skip the dot or colon
     checkname(ls, &key);
@@ -640,7 +639,7 @@ static void fieldsel(LexState *ls, expdesc *v)
 }
 
 
-static void yindex(LexState *ls, expdesc *v)
+static void yindex(LexState *ls, ExpDesc *v)
 {
     // index -> '[' expr ']'
     lhatX_next(ls);  // skip the '['
@@ -658,8 +657,8 @@ static void yindex(LexState *ls, expdesc *v)
 
 
 struct ConsControl {
-    expdesc v;  // last list item read
-    expdesc *t;  // table descriptor
+    ExpDesc v;  // last list item read
+    ExpDesc *t;  // table descriptor
     int nh;  // total number of 'record' elements
     int na;  // total number of array elements
     int tostore;  // number of array elements pending to be stored
@@ -671,7 +670,7 @@ static void recfield(LexState *ls, struct ConsControl *cc)
     // recfield -> (NAME | '['exp1']') = exp1
     FuncState *fs = ls->fs;
     int reg = ls->fs->freereg;
-    expdesc key, val;
+    ExpDesc key, val;
     int rkkey;
     if(ls->t.token == TK_NAME) {
         checklimit(fs, cc->nh, MAX_INT, "items in a constructor");
@@ -748,7 +747,7 @@ static void field(LexState *ls, struct ConsControl *cc)
 }
 
 
-static void constructor(LexState *ls, expdesc *t)
+static void constructor(LexState *ls, ExpDesc *t)
 {
     // constructor -> '{' [ field { sep field } [sep] ] '}'
     // sep -> ',' | ';'
@@ -808,7 +807,7 @@ static void parlist(LexState *ls)
 }
 
 
-static void body(LexState *ls, expdesc *e, int ismethod, int line)
+static void body(LexState *ls, ExpDesc *e, int ismethod, int line)
 {
     // body ->  '(' parlist ')' block END
     FuncState new_fs;
@@ -831,7 +830,7 @@ static void body(LexState *ls, expdesc *e, int ismethod, int line)
 }
 
 
-static int explist(LexState *ls, expdesc *v)
+static int explist(LexState *ls, ExpDesc *v)
 {
     // explist -> expr { ',' expr }
     int n = 1;  // at least one expression
@@ -845,10 +844,10 @@ static int explist(LexState *ls, expdesc *v)
 }
 
 
-static void funcargs(LexState *ls, expdesc *f, int line)
+static void funcargs(LexState *ls, ExpDesc *f, int line)
 {
     FuncState *fs = ls->fs;
-    expdesc args;
+    ExpDesc args;
     int base, nparams;
     switch(ls->t.token) {
     case '(': {  // funcargs -> '(' [ explist ] ')'
@@ -900,7 +899,7 @@ static void funcargs(LexState *ls, expdesc *f, int line)
 //
 
 
-static void primaryexp(LexState *ls, expdesc *v)
+static void primaryexp(LexState *ls, ExpDesc *v)
 {
     // primaryexp -> NAME | '(' expr ')'
     switch(ls->t.token) {
@@ -922,7 +921,7 @@ static void primaryexp(LexState *ls, expdesc *v)
 }
 
 
-static void suffixedexp(LexState *ls, expdesc *v)
+static void suffixedexp(LexState *ls, ExpDesc *v)
 {
     // suffixedexp -> primaryexp { '.' NAME | '[' exp ']' | ':' NAME funcargs | funcargs }
     FuncState *fs = ls->fs;
@@ -935,14 +934,14 @@ static void suffixedexp(LexState *ls, expdesc *v)
             break;
         }
         case '[': {  // '[' exp1 ']'
-            expdesc key;
+            ExpDesc key;
             lhatK_exp2anyregup(fs, v);
             yindex(ls, &key);
             lhatK_indexed(fs, v, &key);
             break;
         }
         case ':': {  // ':' NAME funcargs
-            expdesc key;
+            ExpDesc key;
             lhatX_next(ls);
             checkname(ls, &key);
             lhatK_self(fs, v, &key);
@@ -960,7 +959,7 @@ static void suffixedexp(LexState *ls, expdesc *v)
 }
 
 
-static void simpleexp(LexState *ls, expdesc *v)
+static void simpleexp(LexState *ls, ExpDesc *v)
 {
     // simpleexp -> FLT | INT | STRING | NIL | TRUE | FALSE | ... |
     //              constructor | FUNCTION body | suffixedexp
@@ -1079,7 +1078,7 @@ static const struct {
 // subexpr -> (simpleexp | unop subexpr) { binop subexpr }
 // where 'binop' is any binary operator with a priority higher than 'limit'
 //
-static BinOpr subexpr(LexState *ls, expdesc *v, int limit)
+static BinOpr subexpr(LexState *ls, ExpDesc *v, int limit)
 {
     enterlevel(ls);
     UnOpr uop = getunopr(ls->t.token);
@@ -1093,7 +1092,7 @@ static BinOpr subexpr(LexState *ls, expdesc *v, int limit)
     // expand while operators have priorities higher than 'limit'
     BinOpr op = getbinopr(ls->t.token);
     while(op != OPR_NOBINOPR && priority[op].left > limit) {
-        expdesc v2;
+        ExpDesc v2;
         BinOpr nextop;
         int line = ls->linenumber;
         lhatX_next(ls);
@@ -1108,7 +1107,7 @@ static BinOpr subexpr(LexState *ls, expdesc *v, int limit)
 }
 
 
-static void expr(LexState *ls, expdesc *v)
+static void expr(LexState *ls, ExpDesc *v)
 {
     subexpr(ls, v, 0);
 }
@@ -1141,7 +1140,7 @@ static void block(LexState *ls)
 //
 struct LHS_assign {
     struct LHS_assign *prev;
-    expdesc v;  // variable (global, local, upvalues, or indexed)
+    ExpDesc v;  // variable (global, local, upvalues, or indexed)
 };
 
 
@@ -1151,7 +1150,7 @@ struct LHS_assign {
 // table. If so, save original upvalues/local value in a safe place and
 // use this safe copy in the previous assignment.
 //
-static void check_conflict(LexState *ls, struct LHS_assign *lh, expdesc *v)
+static void check_conflict(LexState *ls, struct LHS_assign *lh, ExpDesc *v)
 {
     FuncState *fs = ls->fs;
     int extra = fs->freereg;  // eventual position to save local variable
@@ -1182,7 +1181,7 @@ static void check_conflict(LexState *ls, struct LHS_assign *lh, expdesc *v)
 
 static void assignment(LexState *ls, struct LHS_assign *lh, int nvars)
 {
-    expdesc e;
+    ExpDesc e;
     check_condition(ls, vkisvar(lh->v.k), "syntax error");
     if(testnext(ls, ',')) {  // assignment -> ',' suffixedexp assignment
         struct LHS_assign nv;
@@ -1214,7 +1213,7 @@ static void assignment(LexState *ls, struct LHS_assign *lh, int nvars)
 static int cond(LexState *ls)
 {
     // cond -> exp
-    expdesc v;
+    ExpDesc v;
     expr(ls, &v);  // read condition
     if(v.k == VNIL) v.k = VFALSE;  // 'falses' are all equal here
     lhatK_goiftrue(ls->fs, &v);
@@ -1320,7 +1319,7 @@ static void repeatstat(LexState *ls, int line)
 
 static int exp1(LexState *ls)
 {
-    expdesc e;
+    ExpDesc e;
     int reg;
     expr(ls, &e);
     lhatK_exp2nextreg(ls->fs, &e);
@@ -1384,7 +1383,7 @@ static void forlist(LexState *ls, TString *indexname)
 {
     // forlist -> NAME {,NAME} IN explist forbody
     FuncState *fs = ls->fs;
-    expdesc e;
+    ExpDesc e;
     int nvars = 4;  // gen, state, control, plus at least one declared var
     int line;
     int base = fs->freereg;
@@ -1430,7 +1429,7 @@ static void test_then_block(LexState *ls, int *escapelist)
     // test_then_block -> [IF | ELSEIF] cond THEN block
     BlockCnt bl;
     FuncState *fs = ls->fs;
-    expdesc v;
+    ExpDesc v;
     int jf;  // instruction to skip 'then' code (if condition is false)
     lhatX_next(ls);  // skip IF or ELSEIF
     expr(ls, &v);  // read condition
@@ -1477,7 +1476,7 @@ static void ifstat(LexState *ls, int line)
 
 static void localfunc(LexState *ls)
 {
-    expdesc b;
+    ExpDesc b;
     FuncState *fs = ls->fs;
     new_localvar(ls, str_checkname(ls));  // new local variable
     adjustlocalvars(ls, 1);  // enter its scope
@@ -1492,7 +1491,7 @@ static void localstat(LexState *ls)
     // stat -> LOCAL NAME {',' NAME} ['=' explist]
     int nvars = 0;
     int nexps;
-    expdesc e;
+    ExpDesc e;
     do {
         new_localvar(ls, str_checkname(ls));
         nvars++;
@@ -1508,7 +1507,7 @@ static void localstat(LexState *ls)
 }
 
 
-static int funcname(LexState *ls, expdesc *v)
+static int funcname(LexState *ls, ExpDesc *v)
 {
     // funcname -> NAME {fieldsel} [':' NAME]
     int ismethod = 0;
@@ -1526,7 +1525,7 @@ static int funcname(LexState *ls, expdesc *v)
 static void funcstat(LexState *ls, int line)
 {
     // funcstat -> FUNCTION funcname body
-    expdesc v, b;
+    ExpDesc v, b;
     lhatX_next(ls);  // skip FUNCTION
     int ismethod = funcname(ls, &v);
     body(ls, &b, ismethod, line);
@@ -1556,7 +1555,7 @@ static void retstat(LexState *ls)
 {
     // stat -> RETURN [explist] [';']
     FuncState *fs = ls->fs;
-    expdesc e;
+    ExpDesc e;
     int first, nret;  // registers with returned values
     if(block_follow(ls, 1) || ls->t.token == ';')
         first = nret = 0;  // return no values
@@ -1665,7 +1664,7 @@ static void mainfunc(LexState *ls, FuncState *fs)
     BlockCnt bl;
     open_func(ls, fs, &bl);
     fs->f->is_vararg = 1;  // main function is always declared vararg
-    expdesc v;
+    ExpDesc v;
     init_exp(&v, VLOCAL, 0);  // create and...
     newupvalue(fs, ls->envn, &v);  // ...set environment upvalues
     lhatX_next(ls);  // read first token

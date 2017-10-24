@@ -619,8 +619,7 @@ static LClosure *getcached(Proto *p, Upvalue **encup, StkId base)
     if(c != NULL) {  // is there a cached closure?
         int nup = p->sizeupvalues;
         UpvalueDesc *uv = p->upvalues;
-        int i;
-        for(i = 0; i < nup; i++) {  // check whether it has right upvalues
+        for(int i = 0; i < nup; i++) {  // check whether it has right upvalues
             TValue *v = uv[i].instack ? base + uv[i].idx : encup[uv[i].idx]->v;
             if(c->upvalues[i]->v != v)
                 return NULL;  // wrong upvalues; cannot reuse closure
@@ -640,11 +639,10 @@ static void pushclosure(lhat_State *L, Proto *p, Upvalue **encup, StkId base, St
 {
     int nup = p->sizeupvalues;
     UpvalueDesc *uv = p->upvalues;
-    int i;
     LClosure *ncl = lhatF_newLclosure(L, nup);
     ncl->p = p;
     setclLvalue(L, ra, ncl);  // anchor new closure in stack
-    for(i = 0; i < nup; i++) {  // fill in its upvalues
+    for(int i = 0; i < nup; i++) {  // fill in its upvalues
         if(uv[i].instack)  // upvalues refers to local variable?
             ncl->upvalues[i] = lhatF_findupval(L, base + uv[i].idx);
         else  // get upvalues from enclosing function

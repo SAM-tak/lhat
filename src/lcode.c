@@ -36,7 +36,7 @@
 // If expression is a numeric constant, fills 'v' with its value
 // and returns 1. Otherwise, returns 0.
 //
-static int tonumeral(const expdesc *e, TValue *v)
+static int tonumeral(const ExpDesc *e, TValue *v)
 {
     if(hasjumps(e))
         return 0;  // not a numeral
@@ -307,8 +307,7 @@ static int lhatK_code(FuncState *fs, Instruction i)
     Proto *f = fs->f;
     dischargejpc(fs);  // 'pc' will change
                        // put new instruction in code array
-    lhatM_growvector(fs->ls->L, f->code, fs->pc, f->sizecode, Instruction,
-        MAX_INT, "opcodes");
+    lhatM_growvector(fs->ls->L, f->code, fs->pc, f->sizecode, Instruction, MAX_INT, "opcodes");
     f->code[fs->pc] = i;
     // save corresponding line information
     lhatM_growvector(fs->ls->L, f->lineinfo, fs->pc, f->sizelineinfo, int,
@@ -413,7 +412,7 @@ static void freereg(FuncState *fs, int reg)
 //
 // Free register used by expression 'e' (if any)
 //
-static void freeexp(FuncState *fs, expdesc *e)
+static void freeexp(FuncState *fs, ExpDesc *e)
 {
     if(e->k == VNONRELOC)
         freereg(fs, e->u.info);
@@ -424,7 +423,7 @@ static void freeexp(FuncState *fs, expdesc *e)
 // Free registers used by expressions 'e1' and 'e2' (if any) in proper
 // order.
 //
-static void freeexps(FuncState *fs, expdesc *e1, expdesc *e2)
+static void freeexps(FuncState *fs, ExpDesc *e1, ExpDesc *e2)
 {
     int r1 = (e1->k == VNONRELOC) ? e1->u.info : -1;
     int r2 = (e2->k == VNONRELOC) ? e2->u.info : -1;
@@ -539,7 +538,7 @@ static int nilK(FuncState *fs)
 // Either 'e' is a multi-ret expression (function call or vararg)
 // or 'nresults' is LHAT_MULTRET (as any expression can satisfy that).
 //
-void lhatK_setreturns(FuncState *fs, expdesc *e, int nresults)
+void lhatK_setreturns(FuncState *fs, ExpDesc *e, int nresults)
 {
     if(e->k == VCALL) {  // expression is an open function call?
         SETARG_C(getinstruction(fs, e), nresults + 1);
@@ -564,7 +563,7 @@ void lhatK_setreturns(FuncState *fs, expdesc *e, int nresults)
 // (Calls are created returning one result, so that does not need
 // to be fixed.)
 //
-void lhatK_setoneret(FuncState *fs, expdesc *e)
+void lhatK_setoneret(FuncState *fs, ExpDesc *e)
 {
     if(e->k == VCALL) {  // expression is an open function call?
                          // already returns 1 value
@@ -582,7 +581,7 @@ void lhatK_setoneret(FuncState *fs, expdesc *e)
 //
 // Ensure that expression 'e' is not a variable.
 //
-void lhatK_dischargevars(FuncState *fs, expdesc *e)
+void lhatK_dischargevars(FuncState *fs, ExpDesc *e)
 {
     switch(e->k) {
     case VLOCAL: {  // already in a register
@@ -622,7 +621,7 @@ void lhatK_dischargevars(FuncState *fs, expdesc *e)
 // Ensures expression value is in register 'reg' (and therefore
 // 'e' will become a non-relocatable expression).
 //
-static void discharge2reg(FuncState *fs, expdesc *e, int reg)
+static void discharge2reg(FuncState *fs, ExpDesc *e, int reg)
 {
     lhatK_dischargevars(fs, e);
     switch(e->k) {
@@ -668,7 +667,7 @@ static void discharge2reg(FuncState *fs, expdesc *e, int reg)
 //
 // Ensures expression value is in any register.
 //
-static void discharge2anyreg(FuncState *fs, expdesc *e)
+static void discharge2anyreg(FuncState *fs, ExpDesc *e)
 {
     if(e->k != VNONRELOC) {  // no fixed register yet?
         lhatK_reserveregs(fs, 1);  // get a register
@@ -705,7 +704,7 @@ static int need_value(FuncState *fs, int list)
 // its final position or to "load" instructions (for those tests
 // that do not produce values).
 //
-static void exp2reg(FuncState *fs, expdesc *e, int reg)
+static void exp2reg(FuncState *fs, ExpDesc *e, int reg)
 {
     discharge2reg(fs, e, reg);
     if(e->k == VJMP)  // expression itself is a test?
@@ -734,7 +733,7 @@ static void exp2reg(FuncState *fs, expdesc *e, int reg)
 // Ensures final expression result (including results from its jump
 // lists) is in next available register.
 //
-void lhatK_exp2nextreg(FuncState *fs, expdesc *e)
+void lhatK_exp2nextreg(FuncState *fs, ExpDesc *e)
 {
     lhatK_dischargevars(fs, e);
     freeexp(fs, e);
@@ -747,7 +746,7 @@ void lhatK_exp2nextreg(FuncState *fs, expdesc *e)
 // Ensures final expression result (including results from its jump
 // lists) is in some (any) register and return that register.
 //
-int lhatK_exp2anyreg(FuncState *fs, expdesc *e)
+int lhatK_exp2anyreg(FuncState *fs, ExpDesc *e)
 {
     lhatK_dischargevars(fs, e);
     if(e->k == VNONRELOC) {  // expression already has a register?
@@ -767,7 +766,7 @@ int lhatK_exp2anyreg(FuncState *fs, expdesc *e)
 // Ensures final expression result is either in a register or in an
 // upvalues.
 //
-void lhatK_exp2anyregup(FuncState *fs, expdesc *e)
+void lhatK_exp2anyregup(FuncState *fs, ExpDesc *e)
 {
     if(e->k != VUPVAL || hasjumps(e))
         lhatK_exp2anyreg(fs, e);
@@ -778,7 +777,7 @@ void lhatK_exp2anyregup(FuncState *fs, expdesc *e)
 // Ensures final expression result is either in a register or it is
 // a constant.
 //
-void lhatK_exp2val(FuncState *fs, expdesc *e)
+void lhatK_exp2val(FuncState *fs, ExpDesc *e)
 {
     if(hasjumps(e))
         lhatK_exp2anyreg(fs, e);
@@ -793,7 +792,7 @@ void lhatK_exp2val(FuncState *fs, expdesc *e)
 // in the range of R/K indices).
 // Returns R/K index.
 //
-int lhatK_exp2RK(FuncState *fs, expdesc *e)
+int lhatK_exp2RK(FuncState *fs, ExpDesc *e)
 {
     lhatK_exp2val(fs, e);
     switch(e->k) {  // move constants to 'k'
@@ -818,7 +817,7 @@ int lhatK_exp2RK(FuncState *fs, expdesc *e)
 //
 // Generate code to store result of expression 'ex' into variable 'var'.
 //
-void lhatK_storevar(FuncState *fs, expdesc *var, expdesc *ex)
+void lhatK_storevar(FuncState *fs, ExpDesc *var, ExpDesc *ex)
 {
     switch(var->k) {
     case VLOCAL: {
@@ -846,7 +845,7 @@ void lhatK_storevar(FuncState *fs, expdesc *var, expdesc *ex)
 //
 // Emit SELF instruction (convert expression 'e' into 'e:key(e,').
 //
-void lhatK_self(FuncState *fs, expdesc *e, expdesc *key)
+void lhatK_self(FuncState *fs, ExpDesc *e, ExpDesc *key)
 {
     int ereg;
     lhatK_exp2anyreg(fs, e);
@@ -863,7 +862,7 @@ void lhatK_self(FuncState *fs, expdesc *e, expdesc *key)
 //
 // Negate condition 'e' (where 'e' is a comparison).
 //
-static void negatecondition(FuncState *fs, expdesc *e)
+static void negatecondition(FuncState *fs, ExpDesc *e)
 {
     Instruction *pc = getjumpcontrol(fs, e->u.info);
     lhat_assert(testTMode(GET_OPCODE(*pc)) && GET_OPCODE(*pc) != OP_TESTSET &&
@@ -878,7 +877,7 @@ static void negatecondition(FuncState *fs, expdesc *e)
 // Optimize when 'e' is 'not' something, inverting the condition
 // and removing the 'not'.
 //
-static int jumponcond(FuncState *fs, expdesc *e, int cond)
+static int jumponcond(FuncState *fs, ExpDesc *e, int cond)
 {
     if(e->k == VRELOCABLE) {
         Instruction ie = getinstruction(fs, e);
@@ -897,7 +896,7 @@ static int jumponcond(FuncState *fs, expdesc *e, int cond)
 //
 // Emit code to go through if 'e' is true, jump otherwise.
 //
-void lhatK_goiftrue(FuncState *fs, expdesc *e)
+void lhatK_goiftrue(FuncState *fs, ExpDesc *e)
 {
     int pc;  // pc of new jump
     lhatK_dischargevars(fs, e);
@@ -925,7 +924,7 @@ void lhatK_goiftrue(FuncState *fs, expdesc *e)
 //
 // Emit code to go through if 'e' is false, jump otherwise.
 //
-void lhatK_goiffalse(FuncState *fs, expdesc *e)
+void lhatK_goiffalse(FuncState *fs, ExpDesc *e)
 {
     int pc;  // pc of new jump
     lhatK_dischargevars(fs, e);
@@ -952,7 +951,7 @@ void lhatK_goiffalse(FuncState *fs, expdesc *e)
 //
 // Code 'not e', doing constant folding.
 //
-static void codenot(FuncState *fs, expdesc *e)
+static void codenot(FuncState *fs, ExpDesc *e)
 {
     lhatK_dischargevars(fs, e);
     switch(e->k) {
@@ -989,7 +988,7 @@ static void codenot(FuncState *fs, expdesc *e)
 // Create expression 't[k]'. 't' must have its final result already in a
 // register or upvalues.
 //
-void lhatK_indexed(FuncState *fs, expdesc *t, expdesc *k)
+void lhatK_indexed(FuncState *fs, ExpDesc *t, ExpDesc *k)
 {
     lhat_assert(!hasjumps(t) && (vkisinreg(t->k) || t->k == VUPVAL));
     t->u.ind.t = t->u.info;  // register or upvalues index
@@ -1023,7 +1022,7 @@ static int validop(int op, TValue *v1, TValue *v2)
 // Try to "constant-fold" an operation; return 1 iff successful.
 // (In this case, 'e1' has the final result.)
 //
-static int constfolding(FuncState *fs, int op, expdesc *e1, const expdesc *e2)
+static int constfolding(FuncState *fs, int op, ExpDesc *e1, const ExpDesc *e2)
 {
     TValue v1, v2, res;
     if(!tonumeral(e1, &v1) || !tonumeral(e2, &v2) || !validop(op, &v1, &v2))
@@ -1049,7 +1048,7 @@ static int constfolding(FuncState *fs, int op, expdesc *e1, const expdesc *e2)
 // (everything but 'not').
 // Expression to produce final result will be encoded in 'e'.
 //
-static void codeunexpval(FuncState *fs, OpCode op, expdesc *e, int line)
+static void codeunexpval(FuncState *fs, OpCode op, ExpDesc *e, int line)
 {
     int r = lhatK_exp2anyreg(fs, e);  // opcodes operate only on registers
     freeexp(fs, e);
@@ -1068,7 +1067,7 @@ static void codeunexpval(FuncState *fs, OpCode op, expdesc *e, int line)
 // in "stack order" (that is, first on 'e2', which may have more
 // recent registers to be released).
 //
-static void codebinexpval(FuncState *fs, OpCode op, expdesc *e1, expdesc *e2, int line)
+static void codebinexpval(FuncState *fs, OpCode op, ExpDesc *e1, ExpDesc *e2, int line)
 {
     int rk2 = lhatK_exp2RK(fs, e2);  // both operands are "RK"
     int rk1 = lhatK_exp2RK(fs, e1);
@@ -1083,7 +1082,7 @@ static void codebinexpval(FuncState *fs, OpCode op, expdesc *e1, expdesc *e2, in
 // Emit code for comparisons.
 // 'e1' was already put in R/K form by 'lhatK_infix'.
 //
-static void codecomp(FuncState *fs, BinOpr opr, expdesc *e1, expdesc *e2)
+static void codecomp(FuncState *fs, BinOpr opr, ExpDesc *e1, ExpDesc *e2)
 {
     int rk1 = (e1->k == VK) ? RKASK(e1->u.info)
         : check_exp(e1->k == VNONRELOC, e1->u.info);
@@ -1113,9 +1112,9 @@ static void codecomp(FuncState *fs, BinOpr opr, expdesc *e1, expdesc *e2)
 //
 // Aplly prefix operation 'op' to expression 'e'.
 //
-void lhatK_prefix(FuncState *fs, UnOpr op, expdesc *e, int line)
+void lhatK_prefix(FuncState *fs, UnOpr op, ExpDesc *e, int line)
 {
-    static const expdesc ef = { VKINT,{ 0 }, NO_JUMP, NO_JUMP };
+    static const ExpDesc ef = { VKINT,{ 0 }, NO_JUMP, NO_JUMP };
     switch(op) {
     case OPR_MINUS: case OPR_BNOT:  // use 'ef' as fake 2nd operand
         if(constfolding(fs, op + LHAT_OPUNM, e, &ef))
@@ -1134,7 +1133,7 @@ void lhatK_prefix(FuncState *fs, UnOpr op, expdesc *e, int line)
 // Process 1st operand 'v' of binary operation 'op' before reading
 // 2nd operand.
 //
-void lhatK_infix(FuncState *fs, BinOpr op, expdesc *v)
+void lhatK_infix(FuncState *fs, BinOpr op, ExpDesc *v)
 {
     switch(op) {
     case OPR_AND: {
@@ -1172,7 +1171,7 @@ void lhatK_infix(FuncState *fs, BinOpr op, expdesc *v)
 // concatenation is right associative), merge second CONCAT into first
 // one.
 //
-void lhatK_posfix(FuncState *fs, BinOpr op, expdesc *e1, expdesc *e2, int line)
+void lhatK_posfix(FuncState *fs, BinOpr op, ExpDesc *e1, ExpDesc *e2, int line)
 {
     switch(op) {
     case OPR_AND: {

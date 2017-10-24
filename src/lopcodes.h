@@ -273,11 +273,11 @@ enum OpArgMask {
 
 LHATI_DDEC const lu_byte lhatP_opmodes[NUM_OPCODES];
 
-#define getOpMode(m)	(cast(enum OpMode, lhatP_opmodes[m] & 3))
-#define getBMode(m)	(cast(enum OpArgMask, (lhatP_opmodes[m] >> 4) & 3))
-#define getCMode(m)	(cast(enum OpArgMask, (lhatP_opmodes[m] >> 2) & 3))
-#define testAMode(m)	(lhatP_opmodes[m] & (1 << 6))
-#define testTMode(m)	(lhatP_opmodes[m] & (1 << 7))
+#define getOpMode(m) (cast(enum OpMode, lhatP_opmodes[m] & 3))
+#define getBMode(m)  (cast(enum OpArgMask, (lhatP_opmodes[m] >> 4) & 3))
+#define getCMode(m)  (cast(enum OpArgMask, (lhatP_opmodes[m] >> 2) & 3))
+#define testAMode(m) (lhatP_opmodes[m] & (1 << 6))
+#define testTMode(m) (lhatP_opmodes[m] & (1 << 7))
 
 // opcode names
 LHATI_DDEC const char *const lhatP_opnames[NUM_OPCODES + 1];

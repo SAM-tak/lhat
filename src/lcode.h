@@ -38,7 +38,7 @@ typedef enum BinOpr {
 typedef enum UnOpr { OPR_MINUS, OPR_BNOT, OPR_NOT, OPR_LEN, OPR_NOUNOPR } UnOpr;
 
 
-// get (pointer to) instruction of given 'expdesc'
+// get (pointer to) instruction of given 'ExpDesc'
 #define getinstruction(fs,e)	((fs)->f->code[(e)->u.info])
 
 #define lhatK_codeAsBx(fs,o,A,sBx)	lhatK_codeABx(fs,o,A,(sBx)+MAXARG_sBx)
@@ -56,19 +56,19 @@ LHATI_FUNC void lhatK_reserveregs(FuncState *fs, int n);
 LHATI_FUNC void lhatK_checkstack(FuncState *fs, int n);
 LHATI_FUNC int lhatK_stringK(FuncState *fs, TString *s);
 LHATI_FUNC int lhatK_intK(FuncState *fs, lhat_Integer n);
-LHATI_FUNC void lhatK_dischargevars(FuncState *fs, expdesc *e);
-LHATI_FUNC int lhatK_exp2anyreg(FuncState *fs, expdesc *e);
-LHATI_FUNC void lhatK_exp2anyregup(FuncState *fs, expdesc *e);
-LHATI_FUNC void lhatK_exp2nextreg(FuncState *fs, expdesc *e);
-LHATI_FUNC void lhatK_exp2val(FuncState *fs, expdesc *e);
-LHATI_FUNC int lhatK_exp2RK(FuncState *fs, expdesc *e);
-LHATI_FUNC void lhatK_self(FuncState *fs, expdesc *e, expdesc *key);
-LHATI_FUNC void lhatK_indexed(FuncState *fs, expdesc *t, expdesc *k);
-LHATI_FUNC void lhatK_goiftrue(FuncState *fs, expdesc *e);
-LHATI_FUNC void lhatK_goiffalse(FuncState *fs, expdesc *e);
-LHATI_FUNC void lhatK_storevar(FuncState *fs, expdesc *var, expdesc *e);
-LHATI_FUNC void lhatK_setreturns(FuncState *fs, expdesc *e, int nresults);
-LHATI_FUNC void lhatK_setoneret(FuncState *fs, expdesc *e);
+LHATI_FUNC void lhatK_dischargevars(FuncState *fs, ExpDesc *e);
+LHATI_FUNC int lhatK_exp2anyreg(FuncState *fs, ExpDesc *e);
+LHATI_FUNC void lhatK_exp2anyregup(FuncState *fs, ExpDesc *e);
+LHATI_FUNC void lhatK_exp2nextreg(FuncState *fs, ExpDesc *e);
+LHATI_FUNC void lhatK_exp2val(FuncState *fs, ExpDesc *e);
+LHATI_FUNC int lhatK_exp2RK(FuncState *fs, ExpDesc *e);
+LHATI_FUNC void lhatK_self(FuncState *fs, ExpDesc *e, ExpDesc *key);
+LHATI_FUNC void lhatK_indexed(FuncState *fs, ExpDesc *t, ExpDesc *k);
+LHATI_FUNC void lhatK_goiftrue(FuncState *fs, ExpDesc *e);
+LHATI_FUNC void lhatK_goiffalse(FuncState *fs, ExpDesc *e);
+LHATI_FUNC void lhatK_storevar(FuncState *fs, ExpDesc *var, ExpDesc *e);
+LHATI_FUNC void lhatK_setreturns(FuncState *fs, ExpDesc *e, int nresults);
+LHATI_FUNC void lhatK_setoneret(FuncState *fs, ExpDesc *e);
 LHATI_FUNC int lhatK_jump(FuncState *fs);
 LHATI_FUNC void lhatK_ret(FuncState *fs, int first, int nret);
 LHATI_FUNC void lhatK_patchlist(FuncState *fs, int list, int target);
@@ -76,9 +76,9 @@ LHATI_FUNC void lhatK_patchtohere(FuncState *fs, int list);
 LHATI_FUNC void lhatK_patchclose(FuncState *fs, int list, int level);
 LHATI_FUNC void lhatK_concat(FuncState *fs, int *l1, int l2);
 LHATI_FUNC int lhatK_getlabel(FuncState *fs);
-LHATI_FUNC void lhatK_prefix(FuncState *fs, UnOpr op, expdesc *v, int line);
-LHATI_FUNC void lhatK_infix(FuncState *fs, BinOpr op, expdesc *v);
-LHATI_FUNC void lhatK_posfix(FuncState *fs, BinOpr op, expdesc *v1, expdesc *v2, int line);
+LHATI_FUNC void lhatK_prefix(FuncState *fs, UnOpr op, ExpDesc *v, int line);
+LHATI_FUNC void lhatK_infix(FuncState *fs, BinOpr op, ExpDesc *v);
+LHATI_FUNC void lhatK_posfix(FuncState *fs, BinOpr op, ExpDesc *v1, ExpDesc *v2, int line);
 LHATI_FUNC void lhatK_setlist(FuncState *fs, int base, int nelems, int tostore);
 
 #endif
