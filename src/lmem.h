@@ -1,12 +1,9 @@
+#ifndef lmem_h
+#define lmem_h
 //
-// $Id: lmem.h,v 1.43 2014/12/19 17:26:14 roberto Exp $
 // Interface to Memory Manager
 // See Copyright Notice in lhat.h
 //
-
-#ifndef lmem_h
-#define lmem_h
-
 
 #include <stddef.h>
 
@@ -56,14 +53,10 @@
 #define lhatM_reallocvector(L, v,oldn,n,t) \
    ((v)=cast(t *, lhatM_reallocv(L, v, oldn, n, sizeof(t))))
 
-LHATI_FUNC l_noret lhatM_toobig (lhat_State *L);
+LHATI_FUNC l_noret lhatM_toobig(lhat_State *L);
 
 // not to be called directly
-LHATI_FUNC void *lhatM_realloc_ (lhat_State *L, void *block, size_t oldsize,
-                                                          size_t size);
-LHATI_FUNC void *lhatM_growaux_ (lhat_State *L, void *block, int *size,
-                               size_t size_elem, int limit,
-                               const char *what);
+LHATI_FUNC void *lhatM_realloc_(lhat_State *L, void *block, size_t oldsize, size_t size);
+LHATI_FUNC void *lhatM_growaux_(lhat_State *L, void *block, int *size, size_t size_elem, int limit, const char *what);
 
 #endif
-
