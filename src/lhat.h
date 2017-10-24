@@ -116,12 +116,12 @@ typedef LHAT_KCONTEXT lhat_KContext;
 //
 // Type for C functions registered with L^
 //
-typedef int (*lhat_CFunction)(lhat_State *L);
+typedef int(*lhat_CFunction)(lhat_State *L);
 
 //
 // Type for continuation functions
 //
-typedef int (*lhat_KFunction)(lhat_State *L, int status, lhat_KContext ctx);
+typedef int(*lhat_KFunction)(lhat_State *L, int status, lhat_KContext ctx);
 
 
 //
@@ -129,7 +129,7 @@ typedef int (*lhat_KFunction)(lhat_State *L, int status, lhat_KContext ctx);
 //
 typedef const char *(*lhat_Reader)(lhat_State *L, void *ud, size_t *sz);
 
-typedef int (*lhat_Writer)(lhat_State *L, const void *p, size_t sz, void *ud);
+typedef int(*lhat_Writer)(lhat_State *L, const void *p, size_t sz, void *ud);
 
 
 //
@@ -151,11 +151,10 @@ typedef void *(*lhat_Alloc)(void *ud, void *ptr, size_t osize, size_t nsize);
 // state manipulation
 //
 LHAT_API lhat_State *lhat_newstate(lhat_Alloc f, void *ud);
-LHAT_API void       lhat_close(lhat_State *L);
 LHAT_API lhat_State *lhat_newcoroutine(lhat_State *L);
+LHAT_API void lhat_delete(lhat_State *L);
 
 LHAT_API lhat_CFunction lhat_atpanic(lhat_State *L, lhat_CFunction panicf);
-
 
 LHAT_API const lhat_Number *lhat_version(lhat_State *L);
 
@@ -163,28 +162,28 @@ LHAT_API const lhat_Number *lhat_version(lhat_State *L);
 //
 // basic stack manipulation
 //
-LHAT_API int   (lhat_absindex)(lhat_State *L, int idx);
-LHAT_API int   (lhat_gettop)(lhat_State *L);
-LHAT_API void  (lhat_settop)(lhat_State *L, int idx);
-LHAT_API void  (lhat_pushvalue)(lhat_State *L, int idx);
-LHAT_API void  (lhat_rotate)(lhat_State *L, int idx, int n);
-LHAT_API void  (lhat_copy)(lhat_State *L, int fromidx, int toidx);
-LHAT_API int   (lhat_checkstack)(lhat_State *L, int n);
+LHAT_API int lhat_absindex(lhat_State *L, int idx);
+LHAT_API int lhat_gettop(lhat_State *L);
+LHAT_API void lhat_settop(lhat_State *L, int idx);
+LHAT_API void lhat_pushvalue(lhat_State *L, int idx);
+LHAT_API void lhat_rotate(lhat_State *L, int idx, int n);
+LHAT_API void lhat_copy(lhat_State *L, int fromidx, int toidx);
+LHAT_API int  lhat_checkstack(lhat_State *L, int n);
 
-LHAT_API void  (lhat_xmove)(lhat_State *from, lhat_State *to, int n);
+LHAT_API void lhat_xmove(lhat_State *from, lhat_State *to, int n);
 
 
 //
 // access functions (stack -> C)
 //
 
-LHAT_API int             (lhat_isnumber)(lhat_State *L, int idx);
-LHAT_API int             (lhat_isstring)(lhat_State *L, int idx);
-LHAT_API int             (lhat_iscfunction)(lhat_State *L, int idx);
-LHAT_API int             (lhat_isinteger)(lhat_State *L, int idx);
-LHAT_API int             (lhat_isuserdata)(lhat_State *L, int idx);
-LHAT_API int             (lhat_type)(lhat_State *L, int idx);
-LHAT_API const char     *(lhat_typename)(lhat_State *L, int tp);
+LHAT_API int lhat_isnumber(lhat_State *L, int idx);
+LHAT_API int lhat_isstring(lhat_State *L, int idx);
+LHAT_API int lhat_iscfunction(lhat_State *L, int idx);
+LHAT_API int lhat_isinteger(lhat_State *L, int idx);
+LHAT_API int lhat_isuserdata(lhat_State *L, int idx);
+LHAT_API int lhat_type(lhat_State *L, int idx);
+LHAT_API const char *lhat_typename(lhat_State *L, int tp);
 
 LHAT_API lhat_Number      lhat_tonumberx(lhat_State *L, int idx, int *isnum);
 LHAT_API lhat_Integer     lhat_tointegerx(lhat_State *L, int idx, int *isnum);
@@ -217,7 +216,7 @@ enum {
 	LHAT_OPBNOT, // 13
 };
 
-LHAT_API void  (lhat_arith)(lhat_State *L, int op);
+LHAT_API void lhat_arith(lhat_State *L, int op);
 
 enum {
 	LHAT_OPEQ, // 0
@@ -225,84 +224,86 @@ enum {
 	LHAT_OPLE, // 2
 };
 
-LHAT_API int   (lhat_rawequal)(lhat_State *L, int idx1, int idx2);
-LHAT_API int   (lhat_compare)(lhat_State *L, int idx1, int idx2, int op);
+LHAT_API int lhat_rawequal(lhat_State *L, int idx1, int idx2);
+LHAT_API int lhat_compare(lhat_State *L, int idx1, int idx2, int op);
 
 
 //
 // push functions (C -> stack)
 //
-LHAT_API void        (lhat_pushnil)(lhat_State *L);
-LHAT_API void        (lhat_pushnumber)(lhat_State *L, lhat_Number n);
-LHAT_API void        (lhat_pushinteger)(lhat_State *L, lhat_Integer n);
-LHAT_API const char *(lhat_pushlstring)(lhat_State *L, const char *s, size_t len);
-LHAT_API const char *(lhat_pushstring)(lhat_State *L, const char *s);
-LHAT_API const char *(lhat_pushvfstring)(lhat_State *L, const char *fmt,
-	va_list argp);
-LHAT_API const char *(lhat_pushfstring)(lhat_State *L, const char *fmt, ...);
-LHAT_API void  (lhat_pushcclosure)(lhat_State *L, lhat_CFunction fn, int n);
-LHAT_API void  (lhat_pushboolean)(lhat_State *L, int b);
-LHAT_API void  (lhat_pushlightuserdata)(lhat_State *L, void *p);
-LHAT_API int   (lhat_pushcoroutine)(lhat_State *L);
+LHAT_API void lhat_pushnil(lhat_State *L);
+LHAT_API void lhat_pushnumber(lhat_State *L, lhat_Number n);
+LHAT_API void lhat_pushinteger(lhat_State *L, lhat_Integer n);
+LHAT_API const char *lhat_pushlstring(lhat_State *L, const char *s, size_t len);
+LHAT_API const char *lhat_pushstring(lhat_State *L, const char *s);
+LHAT_API const char *lhat_pushvfstring(lhat_State *L, const char *fmt, va_list argp);
+LHAT_API const char *lhat_pushfstring(lhat_State *L, const char *fmt, ...);
+LHAT_API void lhat_pushcclosure(lhat_State *L, lhat_CFunction fn, int n);
+LHAT_API void lhat_pushboolean(lhat_State *L, int b);
+LHAT_API void lhat_pushlightuserdata(lhat_State *L, void *p);
+LHAT_API int lhat_pushcoroutine(lhat_State *L);
 
 
 //
 // get functions (Lhat -> stack)
 //
-LHAT_API int (lhat_getglobal)(lhat_State *L, const char *name);
-LHAT_API int (lhat_gettable)(lhat_State *L, int idx);
-LHAT_API int (lhat_getfield)(lhat_State *L, int idx, const char *k);
-LHAT_API int (lhat_geti)(lhat_State *L, int idx, lhat_Integer n);
-LHAT_API int (lhat_rawget)(lhat_State *L, int idx);
-LHAT_API int (lhat_rawgeti)(lhat_State *L, int idx, lhat_Integer n);
-LHAT_API int (lhat_rawgetp)(lhat_State *L, int idx, const void *p);
+LHAT_API int lhat_getglobal(lhat_State *L, const char *name);
+LHAT_API int lhat_gettable(lhat_State *L, int idx);
+LHAT_API int lhat_getfield(lhat_State *L, int idx, const char *k);
+LHAT_API int lhat_geti(lhat_State *L, int idx, lhat_Integer n);
+LHAT_API int lhat_rawget(lhat_State *L, int idx);
+LHAT_API int lhat_rawgeti(lhat_State *L, int idx, lhat_Integer n);
+LHAT_API int lhat_rawgetp(lhat_State *L, int idx, const void *p);
 
-LHAT_API void  (lhat_createtable)(lhat_State *L, int narr, int nrec);
-LHAT_API void *(lhat_newuserdata)(lhat_State *L, size_t sz);
-LHAT_API int   (lhat_getmetatable)(lhat_State *L, int objindex);
-LHAT_API int  (lhat_getuservalue)(lhat_State *L, int idx);
+LHAT_API void lhat_createtable(lhat_State *L, int narr, int nrec);
+LHAT_API void *lhat_newuserdata(lhat_State *L, size_t sz);
+LHAT_API int lhat_getmetatable(lhat_State *L, int objindex);
+LHAT_API int lhat_getuservalue(lhat_State *L, int idx);
 
 
 //
 // set functions (stack -> L^)
 //
-LHAT_API void  (lhat_setglobal)(lhat_State *L, const char *name);
-LHAT_API void  (lhat_settable)(lhat_State *L, int idx);
-LHAT_API void  (lhat_setfield)(lhat_State *L, int idx, const char *k);
-LHAT_API void  (lhat_seti)(lhat_State *L, int idx, lhat_Integer n);
-LHAT_API void  (lhat_rawset)(lhat_State *L, int idx);
-LHAT_API void  (lhat_rawseti)(lhat_State *L, int idx, lhat_Integer n);
-LHAT_API void  (lhat_rawsetp)(lhat_State *L, int idx, const void *p);
-LHAT_API int   (lhat_setmetatable)(lhat_State *L, int objindex);
-LHAT_API void  (lhat_setuservalue)(lhat_State *L, int idx);
+LHAT_API void lhat_setglobal(lhat_State *L, const char *name);
+LHAT_API void lhat_settable(lhat_State *L, int idx);
+LHAT_API void lhat_setfield(lhat_State *L, int idx, const char *k);
+LHAT_API void lhat_seti(lhat_State *L, int idx, lhat_Integer n);
+LHAT_API void lhat_rawset(lhat_State *L, int idx);
+LHAT_API void lhat_rawseti(lhat_State *L, int idx, lhat_Integer n);
+LHAT_API void lhat_rawsetp(lhat_State *L, int idx, const void *p);
+LHAT_API int  lhat_setmetatable(lhat_State *L, int objindex);
+LHAT_API void lhat_setuservalue(lhat_State *L, int idx);
 
 
 //
 // 'load' and 'call' functions (load and run L^ code)
 //
-LHAT_API void  (lhat_callk)(lhat_State *L, int nargs, int nresults,
-	lhat_KContext ctx, lhat_KFunction k);
-#define lhat_call(L,n,r)		lhat_callk(L, (n), (r), 0, NULL)
-
-LHAT_API int   (lhat_pcallk)(lhat_State *L, int nargs, int nresults, int errfunc,
-	lhat_KContext ctx, lhat_KFunction k);
-#define lhat_pcall(L,n,r,f)	lhat_pcallk(L, (n), (r), (f), 0, NULL)
-
-LHAT_API int   (lhat_load)(lhat_State *L, lhat_Reader reader, void *dt,
-	const char *chunkname, const char *mode);
-
-LHAT_API int (lhat_dump)(lhat_State *L, lhat_Writer writer, void *data, int strip);
+LHAT_API void lhat_callk(lhat_State *L, int nargs, int nresults, lhat_KContext ctx, lhat_KFunction k);
+inline void lhat_call(lhat_State *L, int nargs, int nresults)
+{
+	lhat_callk(L, nargs, nresults, 0, NULL);
+}
+LHAT_API int lhat_pcallk(lhat_State *L, int nargs, int nresults, int errfunc, lhat_KContext ctx, lhat_KFunction k);
+inline int lhat_pcall(lhat_State *L, int nargs, int nresults, int errfunc)
+{
+	return lhat_pcallk(L, nargs, nresults, errfunc, 0, NULL);
+}
+LHAT_API int lhat_load(lhat_State *L, lhat_Reader reader, void *dt, const char *chunkname, const char *mode);
+LHAT_API int lhat_dump(lhat_State *L, lhat_Writer writer, void *data, int strip);
 
 
 //
 // coroutine functions
 //
-LHAT_API int  (lhat_yieldk)(lhat_State *L, int nresults, lhat_KContext ctx, lhat_KFunction k);
-LHAT_API int  (lhat_resume)(lhat_State *L, lhat_State *from, int narg);
-LHAT_API int  (lhat_status)(lhat_State *L);
-LHAT_API int (lhat_isyieldable)(lhat_State *L);
+LHAT_API int lhat_yieldk(lhat_State *L, int nresults, lhat_KContext ctx, lhat_KFunction k);
+LHAT_API int lhat_resume(lhat_State *L, lhat_State *from, int narg);
+LHAT_API int lhat_status(lhat_State *L);
+LHAT_API int lhat_isyieldable(lhat_State *L);
 
-#define lhat_yield(L,n)		lhat_yieldk(L, (n), 0, NULL)
+inline int lhat_yield(lhat_State *L, int nresults)
+{
+	return lhat_yieldk(L, nresults, 0, NULL);
+}
 
 
 //
@@ -327,17 +328,17 @@ LHAT_API int lhat_gc(lhat_State *L, int what, int data);
 // miscellaneous functions
 //
 
-LHAT_API int   (lhat_error)(lhat_State *L);
+LHAT_API int lhat_error(lhat_State *L);
 
-LHAT_API int   (lhat_next)(lhat_State *L, int idx);
+LHAT_API int lhat_next(lhat_State *L, int idx);
 
-LHAT_API void  (lhat_concat)(lhat_State *L, int n);
-LHAT_API void  (lhat_len)(lhat_State *L, int idx);
+LHAT_API void lhat_concat(lhat_State *L, int n);
+LHAT_API void lhat_len(lhat_State *L, int idx);
 
-LHAT_API size_t   lhat_stringtonumber(lhat_State *L, const char *s);
+LHAT_API size_t lhat_stringtonumber(lhat_State *L, const char *s);
 
 LHAT_API lhat_Alloc lhat_getallocf(lhat_State *L, void **ud);
-LHAT_API void      lhat_setallocf(lhat_State *L, lhat_Alloc f, void *ud);
+LHAT_API void lhat_setallocf(lhat_State *L, lhat_Alloc f, void *ud);
 
 
 
@@ -409,11 +410,11 @@ enum {
 };
 
 // activation record
-typedef struct lhat_Debug lhat_Debug;  
+typedef struct lhat_Debug lhat_Debug;
 
 
 // Functions to be called by the debugger in specific events
-typedef void (*lhat_Hook)(lhat_State *L, lhat_Debug *ar);
+typedef void(*lhat_Hook)(lhat_State *L, lhat_Debug *ar);
 
 
 LHAT_API int lhat_getstack(lhat_State *L, int level, lhat_Debug *ar);
@@ -446,7 +447,7 @@ struct lhat_Debug {
 	char isvararg;        // (u)
 	char istailcall;	// (t)
 	char short_src[LHAT_IDSIZE]; // (S)
-	// private part
+								 // private part
 	struct CallInfo *i_ci;  // active function
 };
 

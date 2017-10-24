@@ -70,7 +70,7 @@ unsigned int lhatS_hashlongstr(TString *ts)
 //
 void lhatS_resize(lhat_State *L, int newsize)
 {
-    stringtable *tb = &G(L)->strt;
+    StringTable *tb = &G(L)->strt;
     if(newsize > tb->size) {  // grow table if needed
         lhatM_reallocvector(L, tb->hash, tb->size, newsize, TString *);
         for(int i = tb->size; i < newsize; i++)
@@ -100,7 +100,7 @@ void lhatS_resize(lhat_State *L, int newsize)
 // Clear API string cache. (Entries cannot be empty, so fill them with
 // a non-collectable string.)
 //
-void lhatS_clearcache(global_State *g)
+void lhatS_clearcache(GlobalState *g)
 {
     for(int i = 0; i < STRCACHE_N; i++) {
         for(int j = 0; j < STRCACHE_M; j++) {
@@ -116,7 +116,7 @@ void lhatS_clearcache(global_State *g)
 //
 void lhatS_init(lhat_State *L)
 {
-    global_State *g = G(L);
+    GlobalState *g = G(L);
     lhatS_resize(L, MINSTRTABSIZE);  // initial size of string table
     // pre-create memory-error message
     g->memerrmsg = lhatS_newliteral(L, MEMERRMSG);
@@ -154,7 +154,7 @@ TString *lhatS_createlngstrobj(lhat_State *L, size_t l)
 
 void lhatS_remove(lhat_State *L, TString *ts)
 {
-    stringtable *tb = &G(L)->strt;
+    StringTable *tb = &G(L)->strt;
     TString **p = &tb->hash[lmod(ts->hash, tb->size)];
     while(*p != ts)  // find previous element
         p = &(*p)->u.hnext;
@@ -168,7 +168,7 @@ void lhatS_remove(lhat_State *L, TString *ts)
 //
 static TString *internshrstr(lhat_State *L, const char *str, size_t l)
 {
-    global_State *g = G(L);
+    GlobalState *g = G(L);
     unsigned int h = lhatS_hash(str, l, g->seed);
     TString **list = &g->strt.hash[lmod(h, g->strt.size)];
     lhat_assert(str != NULL);  // otherwise 'memcmp'/'memcpy' are undefined

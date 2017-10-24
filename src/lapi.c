@@ -1099,7 +1099,7 @@ LHAT_API int lhat_status(lhat_State *L)
 LHAT_API int lhat_gc(lhat_State *L, int what, int data)
 {
     int res = 0;
-    global_State *g;
+    GlobalState *g;
     lhat_lock(L);
     g = G(L);
     switch(what) {

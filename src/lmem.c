@@ -72,7 +72,7 @@ l_noret lhatM_toobig(lhat_State *L)
 //
 void *lhatM_realloc_(lhat_State *L, void *block, size_t osize, size_t nsize)
 {
-    global_State *g = G(L);
+    GlobalState *g = G(L);
     size_t realosize = (block) ? osize : 0;
     lhat_assert((realosize == 0) == (block == NULL));
 #if defined(HARDMEMTESTS)

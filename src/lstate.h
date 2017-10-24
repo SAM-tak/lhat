@@ -27,7 +27,7 @@
 
 
 // defined in ldo.c
-struct lhat_longjmp;
+struct lhat_LongJmp;
 
 
 //
@@ -39,24 +39,23 @@ struct lhat_longjmp;
 #define l_signalT	sig_atomic_t
 #endif
 
+enum {
+	// extra stack space to handle TM calls and some other extras
+	EXTRA_STACK = 5,
 
-// extra stack space to handle TM calls and some other extras
-#define EXTRA_STACK   5
+	BASIC_STACK_SIZE = (2*LHAT_MINSTACK),
+
+	// kinds of Garbage Collection
+	KGC_NORMAL = 0,
+	KGC_EMERGENCY = 1,	// gc was forced by an allocation failure
+};
 
 
-#define BASIC_STACK_SIZE        (2*LHAT_MINSTACK)
-
-
-// kinds of Garbage Collection
-#define KGC_NORMAL	0
-#define KGC_EMERGENCY	1	// gc was forced by an allocation failure
-
-
-typedef struct stringtable {
+typedef struct StringTable {
 	TString **hash;
 	int nuse;  // number of elements
 	int size;
-} stringtable;
+} StringTable;
 
 
 //
@@ -70,7 +69,7 @@ typedef struct stringtable {
 //
 typedef struct CallInfo {
 	StkId func;  // function index in the stack
-	StkId	top;  // top for this function
+	StkId top;  // top for this function
 	struct CallInfo *previous, *next;  // dynamic call link
 	union {
 		struct {  // only for L^ functions
@@ -92,15 +91,17 @@ typedef struct CallInfo {
 //
 // Bits in CallInfo status
 //
-#define CIST_OAH	(1<<0)	// original value of 'allowhook'
-#define CIST_LHAT	(1<<1)	// call is running a L^ function
-#define CIST_HOOKED	(1<<2)	// call is running a debug hook
-#define CIST_FRESH	(1<<3)	// call is running on a fresh invocation of lhatV_execute
-#define CIST_YPCALL	(1<<4)	// call is a yieldable protected call
-#define CIST_TAIL	(1<<5)	// call was tail called
-#define CIST_HOOKYIELD	(1<<6)	// last hook called yielded
-#define CIST_LEQ	(1<<7)  // using __lt for __le
-#define CIST_FIN	(1<<8)  // call is running a finalizer
+enum {
+	CIST_OAH       = (1<<0), // original value of 'allowhook'
+	CIST_LHAT      = (1<<1), // call is running a L^ function
+	CIST_HOOKED    = (1<<2), // call is running a debug hook
+	CIST_FRESH     = (1<<3), // call is running on a fresh invocation of lhatV_execute
+	CIST_YPCALL    = (1<<4), // call is a yieldable protected call
+	CIST_TAIL      = (1<<5), // call was tail called
+	CIST_HOOKYIELD = (1<<6), // last hook called yielded
+	CIST_LEQ       = (1<<7), // using __lt for __le
+	CIST_FIN       = (1<<8), // call is running a finalizer
+};
 
 #define isLhat(ci)	((ci)->callstatus & CIST_LHAT)
 
@@ -112,14 +113,14 @@ typedef struct CallInfo {
 //
 // 'global state', shared by all coroutines of this state
 //
-typedef struct global_State {
+typedef struct GlobalState {
 	lhat_Alloc frealloc;  // function to reallocate memory
 	void *ud;         // auxiliary data to 'frealloc'
 	l_mem totalbytes;  // number of bytes currently allocated - GCdebt
 	l_mem GCdebt;  // bytes allocated not yet compensated by the collector
 	lu_mem GCmemtrav;  // memory traversed by the GC
 	lu_mem GCestimate;  // an estimate of the non-garbage memory in use
-	stringtable strt;  // hash table for strings
+	StringTable strt;  // hash table for strings
 	TValue l_registry;
 	unsigned int seed;  // randomized seed for hashes
 	lu_byte currentwhite;
@@ -136,7 +137,7 @@ typedef struct global_State {
 	GCObject *allweak;  // list of all-weak tables
 	GCObject *tobefnz;  // list of userdata to be GC
 	GCObject *fixedgc;  // list of objects not to be collected
-	struct lhat_State *twups;  // list of coroutines with open upvalues
+	struct lhat_State *cowups;  // list of coroutines with open upvalues
 	unsigned int gcfinnum;  // number of finalizers to call in each GC step
 	int gcpause;  // size of pause between successive GCs
 	int gcstepmul;  // GC 'granularity'
@@ -147,7 +148,7 @@ typedef struct global_State {
 	TString *tmname[MM_N];  // array with tag-method names
 	struct Table *mt[LHAT_NUMTAGS];  // metatables for basic types
 	TString *strcache[STRCACHE_N][STRCACHE_M];  // cache for strings in API
-} global_State;
+} GlobalState;
 
 
 //
@@ -158,15 +159,15 @@ struct lhat_State {
 	unsigned short nci;  // number of items in 'ci' list
 	lu_byte status;
 	StkId top;  // first free slot in the stack
-	global_State *l_G;
+	GlobalState *l_G;
 	CallInfo *ci;  // call info for current function
 	const Instruction *oldpc;  // last pc traced
 	StkId stack_last;  // last free slot in the stack
 	StkId stack;  // stack base
 	Upvalue *openupval;  // list of open upvalues in this stack
 	GCObject *gclist;
-	struct lhat_State *twups;  // list of coroutines with open upvalues
-	struct lhat_longjmp *errorJmp;  // current error recover point
+	struct lhat_State *cowups;  // list of coroutines with open upvalues
+	struct lhat_LongJmp *errorJmp;  // current error recover point
 	CallInfo base_ci;  // CallInfo for first level (C calling L^)
 	volatile lhat_Hook hook;
 	ptrdiff_t errfunc;  // current error handling function (stack index)
@@ -220,7 +221,7 @@ union GCUnion {
 // actual number of total bytes allocated
 #define gettotalbytes(g)	cast(lu_mem, (g)->totalbytes + (g)->GCdebt)
 
-LHATI_FUNC void lhatE_setdebt(global_State *g, l_mem debt);
+LHATI_FUNC void lhatE_setdebt(GlobalState *g, l_mem debt);
 LHATI_FUNC void lhatE_freecoroutine(lhat_State *L, lhat_State *L1);
 LHATI_FUNC CallInfo *lhatE_extendCI(lhat_State *L);
 LHATI_FUNC void lhatE_freeCI(lhat_State *L);

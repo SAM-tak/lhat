@@ -59,7 +59,7 @@ typedef struct LX {
 //
 typedef struct LG {
     LX l;
-    global_State g;
+    GlobalState g;
 } LG;
 
 
@@ -93,7 +93,7 @@ static unsigned int makeseed(lhat_State *L)
 // set GCdebt to a new value keeping the value (totalbytes + GCdebt)
 // invariant (and avoiding underflows in 'totalbytes')
 //
-void lhatE_setdebt(global_State *g, l_mem debt)
+void lhatE_setdebt(GlobalState *g, l_mem debt)
 {
     l_mem tb = gettotalbytes(g);
     lhat_assert(tb > 0);
@@ -184,7 +184,7 @@ static void freestack(lhat_State *L)
 //
 // Create registry table and its predefined values
 //
-static void init_registry(lhat_State *L, global_State *g)
+static void init_registry(lhat_State *L, GlobalState *g)
 {
     // create registry
     Table *registry = lhatH_new(L);
@@ -206,7 +206,7 @@ static void init_registry(lhat_State *L, global_State *g)
 //
 static void f_lhatopen(lhat_State *L, void *ud)
 {
-    global_State *g = G(L);
+    GlobalState *g = G(L);
     UNUSED(ud);
     stack_init(L, L);  // init stack
     init_registry(L, g);
@@ -223,14 +223,14 @@ static void f_lhatopen(lhat_State *L, void *ud)
 // preinitialize a coroutine with consistent values without allocating
 // any memory (to avoid errors)
 //
-static void preinit_coroutine(lhat_State *L, global_State *g)
+static void preinit_coroutine(lhat_State *L, GlobalState *g)
 {
     G(L) = g;
     L->stack = NULL;
     L->ci = NULL;
     L->nci = 0;
     L->stacksize = 0;
-    L->twups = L;  // coroutine has no upvalues
+    L->cowups = L;  // coroutine has no upvalues
     L->errorJmp = NULL;
     L->nCcalls = 0;
     L->hook = NULL;
@@ -247,7 +247,7 @@ static void preinit_coroutine(lhat_State *L, global_State *g)
 
 static void close_state(lhat_State *L)
 {
-    global_State *g = G(L);
+    GlobalState *g = G(L);
     lhatF_close(L, L->stack);  // close all upvalues for this coroutine
     lhatC_freeallobjects(L);  // collect all objects
     if(g->version)  // closing a fully built state?
@@ -261,7 +261,7 @@ static void close_state(lhat_State *L)
 
 LHAT_API lhat_State *lhat_newcoroutine(lhat_State *L)
 {
-    global_State *g = G(L);
+    GlobalState *g = G(L);
     lhat_lock(L);
     lhatC_checkGC(L);
     // create new coroutine
@@ -304,7 +304,7 @@ LHAT_API lhat_State *lhat_newstate(lhat_Alloc f, void *ud)
     LG *l = cast(LG *, (*f)(ud, NULL, LHAT_TCOROUTINE, sizeof(LG)));
     if(l == NULL) return NULL;
     lhat_State *L = &l->l.l;
-    global_State *g = &l->g;
+    GlobalState *g = &l->g;
     L->next = NULL;
     L->tt = LHAT_TCOROUTINE;
     g->currentwhite = bitmask(WHITE0BIT);
@@ -327,7 +327,7 @@ LHAT_API lhat_State *lhat_newstate(lhat_Alloc f, void *ud)
     g->sweepgc = NULL;
     g->gray = g->grayagain = NULL;
     g->weak = g->ephemeron = g->allweak = NULL;
-    g->twups = NULL;
+    g->cowups = NULL;
     g->totalbytes = sizeof(LG);
     g->GCdebt = 0;
     g->gcfinnum = 0;
@@ -343,7 +343,7 @@ LHAT_API lhat_State *lhat_newstate(lhat_Alloc f, void *ud)
 }
 
 
-LHAT_API void lhat_close(lhat_State *L)
+LHAT_API void lhat_delete(lhat_State *L)
 {
     L = G(L)->maincoroutine;  // only the main coroutine can be closed
     lhat_lock(L);

@@ -183,7 +183,7 @@ void *debug_realloc(void *ud, void *b, size_t oldsize, size_t size)
 //
 
 
-static int testobjref1(global_State *g, GCObject *f, GCObject *t)
+static int testobjref1(GlobalState *g, GCObject *f, GCObject *t)
 {
     if(isdead(g, t)) return 0;
     if(!issweepphase(g))
@@ -192,7 +192,7 @@ static int testobjref1(global_State *g, GCObject *f, GCObject *t)
 }
 
 
-static void printobj(global_State *g, GCObject *o)
+static void printobj(GlobalState *g, GCObject *o)
 {
     printf("||%s(%p)-%c(%02X)||",
         ttypename(novariant(o->tt)), (void *)o,
@@ -200,7 +200,7 @@ static void printobj(global_State *g, GCObject *o)
 }
 
 
-static int testobjref(global_State *g, GCObject *f, GCObject *t)
+static int testobjref(GlobalState *g, GCObject *f, GCObject *t)
 {
     int r1 = testobjref1(g, f, t);
     if(!r1) {
@@ -217,13 +217,13 @@ static int testobjref(global_State *g, GCObject *f, GCObject *t)
 	{ if (t) lhat_longassert(testobjref(g,f,obj2gco(t))); }
 
 
-static void checkvalref(global_State *g, GCObject *f, const TValue *t)
+static void checkvalref(GlobalState *g, GCObject *f, const TValue *t)
 {
     lhat_assert(!iscollectable(t) || (righttt(t) && testobjref(g, f, gcvalue(t))));
 }
 
 
-static void checktable(global_State *g, Table *h)
+static void checktable(GlobalState *g, Table *h)
 {
     unsigned int i;
     Node *n, *limit = gnode(h, sizenode(h));
@@ -245,7 +245,7 @@ static void checktable(global_State *g, Table *h)
 // All marks are conditional because a GC may happen while the
 // prototype is still being created
 //
-static void checkproto(global_State *g, Proto *f)
+static void checkproto(GlobalState *g, Proto *f)
 {
     GCObject *fgc = obj2gco(f);
     checkobjref(g, fgc, f->cache);
@@ -263,7 +263,7 @@ static void checkproto(global_State *g, Proto *f)
 }
 
 
-static void checkCclosure(global_State *g, CClosure *cl)
+static void checkCclosure(GlobalState *g, CClosure *cl)
 {
     GCObject *clgc = obj2gco(cl);
     for(int i = 0; i < cl->nupvalues; i++)
@@ -271,7 +271,7 @@ static void checkCclosure(global_State *g, CClosure *cl)
 }
 
 
-static void checkLclosure(global_State *g, LClosure *cl)
+static void checkLclosure(GlobalState *g, LClosure *cl)
 {
     GCObject *clgc = obj2gco(cl);
     checkobjref(g, clgc, cl->p);
@@ -301,7 +301,7 @@ static int lhat_checkpc(lhat_State *L, CallInfo *ci)
 }
 
 
-static void checkstack(global_State *g, lhat_State *L1)
+static void checkstack(GlobalState *g, lhat_State *L1)
 {
     lhat_assert(!isdead(g, L1));
     for(Upvalue *uv = L1->openupval; uv != NULL; uv = uv->u.open.next)
@@ -318,7 +318,7 @@ static void checkstack(global_State *g, lhat_State *L1)
 }
 
 
-static void checkobject(global_State *g, GCObject *o, int maybedead)
+static void checkobject(GlobalState *g, GCObject *o, int maybedead)
 {
     if(isdead(g, o))
         lhat_assert(maybedead);
@@ -366,7 +366,7 @@ static void checkobject(global_State *g, GCObject *o, int maybedead)
 
 #define TESTGRAYBIT		7
 
-static void checkgraylist(global_State *g, GCObject *o)
+static void checkgraylist(GlobalState *g, GCObject *o)
 {
     ((void)g);  // better to keep it available if we need to print an object
     while(o) {
@@ -389,7 +389,7 @@ static void checkgraylist(global_State *g, GCObject *o)
 // mark all objects in gray lists with the TESTGRAYBIT, so that
 // 'checkmemory' can check that all gray objects are in a gray list
 //
-static void markgrays(global_State *g)
+static void markgrays(GlobalState *g)
 {
     if(!keepinvariant(g)) return;
     checkgraylist(g, g->gray);
@@ -400,7 +400,7 @@ static void markgrays(global_State *g)
 }
 
 
-static void checkgray(global_State *g, GCObject *o)
+static void checkgray(GlobalState *g, GCObject *o)
 {
     for(; o != NULL; o = o->next) {
         if(isgray(o)) {
@@ -414,7 +414,7 @@ static void checkgray(global_State *g, GCObject *o)
 
 int lhat_checkmemory(lhat_State *L)
 {
-    global_State *g = G(L);
+    GlobalState *g = G(L);
     if(keepinvariant(g)) {
         lhat_assert(!iswhite(g->maincoroutine));
         lhat_assert(!iswhite(gcvalue(&g->l_registry)));
@@ -647,7 +647,7 @@ static int gc_state(lhat_State *L)
         return 1;
     }
     else {
-        global_State *g = G(L);
+        GlobalState *g = G(L);
         lhat_lock(L);
         if(option < g->gcstate) {  // must cross 'pause'?
             lhatC_runtilstate(L, bitmask(GCSpause));  // run until pause
@@ -723,7 +723,7 @@ static int table_query(lhat_State *L)
 
 static int string_query(lhat_State *L)
 {
-    stringtable *tb = &G(L)->strt;
+    StringTable *tb = &G(L)->strt;
     int s = cast_int(lhatL_optinteger(L, 1, 0)) - 1;
     if(s == -1) {
         lhat_pushinteger(L, tb->size);
@@ -903,7 +903,7 @@ static int loadlib(lhat_State *L)
 static int closestate(lhat_State *L)
 {
     lhat_State *L1 = getstate(L);
-    lhat_close(L1);
+    lhat_delete(L1);
     return 0;
 }
 
@@ -992,7 +992,7 @@ static int checkpanic(lhat_State *L)
             // move error message to original state
         lhat_pushstring(L, lhat_tostring(L1, -1));
     }
-    lhat_close(L1);
+    lhat_delete(L1);
     return 1;
 }
 

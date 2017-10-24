@@ -18,8 +18,8 @@ inline size_t sizeLclosure(int n)
 }
 
 
-// test whether coroutine is in 'twups' list
-#define isintwups(L)	(L->twups != L)
+// test whether coroutine is in 'cowups' list
+#define isincowups(L)	(L->cowups != L)
 
 
 //

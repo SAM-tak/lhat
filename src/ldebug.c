@@ -109,10 +109,10 @@ LHAT_API int lhat_gethookcount(lhat_State *L)
 
 LHAT_API int lhat_getstack(lhat_State *L, int level, lhat_Debug *ar)
 {
-    int status;
-    CallInfo *ci;
     if(level < 0) return 0;  // invalid (negative) level
     lhat_lock(L);
+    int status;
+    CallInfo *ci;
     for(ci = L->ci; level > 0 && ci != &L->base_ci; ci = ci->previous)
         level--;
     if(level == 0 && ci != &L->base_ci) {  // level found?

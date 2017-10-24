@@ -37,7 +37,7 @@ LHATI_FUNC unsigned int lhatS_hash (const char *str, size_t l, unsigned int seed
 LHATI_FUNC unsigned int lhatS_hashlongstr (TString *ts);
 LHATI_FUNC int lhatS_eqlngstr (TString *a, TString *b);
 LHATI_FUNC void lhatS_resize (lhat_State *L, int newsize);
-LHATI_FUNC void lhatS_clearcache (global_State *g);
+LHATI_FUNC void lhatS_clearcache (GlobalState *g);
 LHATI_FUNC void lhatS_init (lhat_State *L);
 LHATI_FUNC void lhatS_remove (lhat_State *L, TString *ts);
 LHATI_FUNC UserData *lhatS_newudata (lhat_State *L, size_t s);

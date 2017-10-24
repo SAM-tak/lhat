@@ -70,8 +70,8 @@
 
 
 // chain list of long jump buffers
-struct lhat_longjmp {
-    struct lhat_longjmp *previous;
+struct lhat_LongJmp {
+    struct lhat_LongJmp *previous;
     lhati_jmpbuf b;
     volatile int status;  // error code
 };
@@ -103,7 +103,7 @@ l_noret lhatD_throw(lhat_State *L, int errcode)
         LHATI_THROW(L, L->errorJmp);  // jump to it
     }
     else {  // coroutine has no error handler
-        global_State *g = G(L);
+        GlobalState *g = G(L);
         L->status = cast_byte(errcode);  // mark it as dead
         if(g->maincoroutine->errorJmp) {  // main coroutine has a handler?
             setobjs2s(L, g->maincoroutine->top++, L->top - 1);  // copy error obj.
@@ -126,7 +126,7 @@ l_noret lhatD_throw(lhat_State *L, int errcode)
 int lhatD_rawrunprotected(lhat_State *L, Pfunc f, void *ud)
 {
     unsigned short oldnCcalls = L->nCcalls;
-    struct lhat_longjmp lj;
+    struct lhat_LongJmp lj;
     lj.status = LHAT_OK;
     lj.previous = L->errorJmp;  // chain new error handler
     L->errorJmp = &lj;

@@ -58,7 +58,7 @@ Upvalue *lhatF_findupval(lhat_State *L, StkId level)
     Upvalue **pp = &L->openupval;
     Upvalue *p;
     Upvalue *uv;
-    lhat_assert(isintwups(L) || L->openupval == NULL);
+    lhat_assert(isincowups(L) || L->openupval == NULL);
     while(*pp != NULL && (p = *pp)->v >= level) {
         lhat_assert(upisopen(p));
         if(p->v == level)  // found a corresponding upvalues?
@@ -72,9 +72,9 @@ Upvalue *lhatF_findupval(lhat_State *L, StkId level)
     uv->u.open.touched = 1;
     *pp = uv;
     uv->v = level;  // current value lives in the stack
-    if(!isintwups(L)) {  // coroutine not in list of coroutines with upvalues?
-        L->twups = G(L)->twups;  // link it to the list
-        G(L)->twups = L;
+    if(!isincowups(L)) {  // coroutine not in list of coroutines with upvalues?
+        L->cowups = G(L)->cowups;  // link it to the list
+        G(L)->cowups = L;
     }
     return uv;
 }

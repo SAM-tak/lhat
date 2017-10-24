@@ -621,6 +621,6 @@ int main(int argc, char **argv)
     status = lhat_pcall(L, 2, 1, 0);  // do the call
     result = lhat_toboolean(L, -1);  // get result
     report(L, status);
-    lhat_close(L);
+    lhat_delete(L);
     return (result && status == LHAT_OK) ? EXIT_SUCCESS : EXIT_FAILURE;
 }

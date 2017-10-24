@@ -364,7 +364,7 @@ static int os_exit(lhat_State *L)
     else
         status = (int)lhatL_optinteger(L, 1, EXIT_SUCCESS);
     if(lhat_toboolean(L, 2))
-        lhat_close(L);
+        lhat_delete(L);
     if(L) exit(status);  // 'if' to avoid warnings for unreachable 'return'
     return 0;
 }

@@ -8,14 +8,20 @@
 #include "llimits.h"
 #include "lstate.h"
 
-#define api_incr_top(L)   {L->top++; api_check(L, L->top <= L->ci->top, \
-				"stack overflow");}
+inline void api_incr_top(lhat_State *L)
+{
+	L->top++;
+	api_check(L, L->top <= L->ci->top, "stack overflow");
+}
 
-#define adjustresults(L,nres) \
-    { if ((nres) == LHAT_MULTRET && L->ci->top < L->top) L->ci->top = L->top; }
+inline void adjustresults(lhat_State *L, int nres)
+{
+	if(nres == LHAT_MULTRET && L->ci->top < L->top) L->ci->top = L->top;
+}
 
-#define api_checknelems(L,n)	api_check(L, (n) < (L->top - L->ci->func), \
-				  "not enough elements in the stack")
-
+inline void api_checknelems(lhat_State *L, int n)
+{
+	api_check(L, n < (L->top - L->ci->func), "not enough elements in the stack");
+}
 
 #endif
