@@ -7,26 +7,24 @@
 
 #include "lobject.h"
 
-inline size_t sizeCclosure(int n)
+inline size_t sizeOfCClosure(int n)
 {
 	return cast(int, sizeof(CClosure)) + cast(int, sizeof(TValue)*n);
 }
 
-inline size_t sizeLclosure(int n)
+inline size_t sizeOfLClosure(int n)
 {
 	return cast(int, sizeof(LClosure)) + cast(int, sizeof(TValue *)*n);
 }
-
-
-// test whether coroutine is in 'cowups' list
-#define isincowups(L)	(L->cowups != L)
 
 
 //
 // maximum number of upvalues in a closure (both C and L^). (Value
 // must fit in a VM register.)
 //
-#define MAXUPVAL	255
+enum {
+	MAXUPVAL = 255,
+};
 
 
 //
@@ -44,7 +42,10 @@ struct Upvalue {
 	} u;
 };
 
-#define upisopen(up)	((up)->v != &(up)->u.value)
+inline bool upisopen(Upvalue *up)
+{
+	return up->v != &up->u.value;
+}
 
 LHATI_FUNC Proto *lhatF_newproto(lhat_State *L);
 LHATI_FUNC CClosure *lhatF_newCclosure(lhat_State *L, int nelems);

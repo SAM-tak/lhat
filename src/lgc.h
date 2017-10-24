@@ -26,22 +26,23 @@
 // how much to allocate before next GC step
 #if !defined(GCSTEPSIZE)
 // ~100 small strings
-#define GCSTEPSIZE	(cast_int(100 * sizeof(TString)))
+# define GCSTEPSIZE	(cast_int(100 * sizeof(TString)))
 #endif
 
 
 //
 // Possible states of the Garbage Collector
 //
-#define GCSpropagate	0
-#define GCSatomic	1
-#define GCSswpallgc	2
-#define GCSswpfinobj	3
-#define GCSswptobefnz	4
-#define GCSswpend	5
-#define GCScallfin	6
-#define GCSpause	7
-
+enum {
+	GCSpropagate  = 0,
+	GCSatomic     = 1,
+	GCSswpallgc   = 2,
+	GCSswpfinobj  = 3,
+	GCSswptobefnz = 4,
+	GCSswpend     = 5,
+	GCScallfin    = 6,
+	GCSpause      = 7,
+};
 
 #define issweepphase(g)  \
 	(GCSswpallgc <= (g)->gcstate && (g)->gcstate <= GCSswpend)

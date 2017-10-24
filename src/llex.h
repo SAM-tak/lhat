@@ -8,8 +8,6 @@
 #include "lobject.h"
 #include "lzbuf.h"
 
-#define FIRST_RESERVED	257
-
 #if !defined(LHAT_ENV)
 # define LHAT_ENV		"_ENV"
 #endif
@@ -19,6 +17,7 @@
 // grep "ORDER RESERVED"
 //
 enum RESERVED {
+	FIRST_RESERVED = 257,
 	// terminal symbols denoted by reserved words
 	TK_AND = FIRST_RESERVED, TK_BREAK,
 	TK_DO, TK_ELSE, TK_ELSEIF, TK_END, TK_FALSE, TK_FOR, TK_FUNCTION,

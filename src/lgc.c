@@ -512,7 +512,7 @@ static lu_mem traverseCclosure(GlobalState *g, CClosure *cl)
     int i;
     for(i = 0; i < cl->nupvalues; i++)  // mark its upvalues
         markvalue(g, &cl->upvalues[i]);
-    return sizeCclosure(cl->nupvalues);
+    return sizeOfCClosure(cl->nupvalues);
 }
 
 //
@@ -533,7 +533,7 @@ static lu_mem traverseLclosure(GlobalState *g, LClosure *cl)
                 markvalue(g, uv->v);
         }
     }
-    return sizeLclosure(cl->nupvalues);
+    return sizeOfLClosure(cl->nupvalues);
 }
 
 
@@ -705,7 +705,7 @@ static void freeLclosure(lhat_State *L, LClosure *cl)
         if(uv)
             lhatC_upvdeccount(L, uv);
     }
-    lhatM_freemem(L, cl, sizeLclosure(cl->nupvalues));
+    lhatM_freemem(L, cl, sizeOfLClosure(cl->nupvalues));
 }
 
 
@@ -718,7 +718,7 @@ static void freeobj(lhat_State *L, GCObject *o)
         break;
     }
     case LHAT_TCCL: {
-        lhatM_freemem(L, o, sizeCclosure(gco2ccl(o)->nupvalues));
+        lhatM_freemem(L, o, sizeOfCClosure(gco2ccl(o)->nupvalues));
         break;
     }
     case LHAT_TTABLE: lhatH_free(L, gco2t(o)); break;

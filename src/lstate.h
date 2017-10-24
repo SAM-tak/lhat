@@ -219,7 +219,16 @@ union GCUnion {
 
 
 // actual number of total bytes allocated
-#define gettotalbytes(g)	cast(lu_mem, (g)->totalbytes + (g)->GCdebt)
+inline lu_mem gettotalbytes(GlobalState *g)
+{
+	return cast(lu_mem, g->totalbytes + g->GCdebt);
+}
+
+// test whether coroutine is in 'cowups' list
+inline bool isincowups(lhat_State *L)
+{
+	return L->cowups != L;
+}
 
 LHATI_FUNC void lhatE_setdebt(GlobalState *g, l_mem debt);
 LHATI_FUNC void lhatE_freecoroutine(lhat_State *L, lhat_State *L1);

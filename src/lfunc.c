@@ -21,7 +21,7 @@
 
 CClosure *lhatF_newCclosure(lhat_State *L, int n)
 {
-    GCObject *o = lhatC_newobj(L, LHAT_TCCL, sizeCclosure(n));
+    GCObject *o = lhatC_newobj(L, LHAT_TCCL, sizeOfCClosure(n));
     CClosure *c = gco2ccl(o);
     c->nupvalues = cast_byte(n);
     return c;
@@ -30,7 +30,7 @@ CClosure *lhatF_newCclosure(lhat_State *L, int n)
 
 LClosure *lhatF_newLclosure(lhat_State *L, int n)
 {
-    GCObject *o = lhatC_newobj(L, LHAT_TLCL, sizeLclosure(n));
+    GCObject *o = lhatC_newobj(L, LHAT_TLCL, sizeOfLClosure(n));
     LClosure *c = gco2lcl(o);
     c->p = NULL;
     c->nupvalues = cast_byte(n);

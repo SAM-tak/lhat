@@ -111,11 +111,11 @@ typedef LHATI_UACINT l_uacInt;
 // type casts (a macro highlights casts in the code)
 #define cast(t, exp)	((t)(exp))
 
-#define cast_void(i)	cast(void, (i))
-#define cast_byte(i)	cast(lu_byte, (i))
-#define cast_num(i)	cast(lhat_Number, (i))
-#define cast_int(i)	cast(int, (i))
-#define cast_uchar(i)	cast(unsigned char, (i))
+#define cast_void(i)   cast(void, (i))
+#define cast_byte(i)   cast(lu_byte, (i))
+#define cast_num(i)    cast(lhat_Number, (i))
+#define cast_int(i)    cast(int, (i))
+#define cast_uchar(i)  cast(unsigned char, (i))
 
 
 // cast a signed lhat_Integer to lhat_Unsigned
@@ -137,11 +137,11 @@ typedef LHATI_UACINT l_uacInt;
 // non-return type
 //
 #if defined(__GNUC__)
-#define l_noret		void __attribute__((noreturn))
+# define l_noret		void __attribute__((noreturn))
 #elif defined(_MSC_VER) && _MSC_VER >= 1200
-#define l_noret		void __declspec(noreturn)
+# define l_noret		void __declspec(noreturn)
 #else
-#define l_noret		void
+# define l_noret		void
 #endif
 
 
@@ -278,8 +278,7 @@ typedef unsigned long Instruction;
 // negative result, which is equivalent to the test below.
 //
 #if !defined(lhati_nummod)
-#define lhati_nummod(L,a,b,m)  \
-  { (m) = l_mathop(fmod)(a,b); if ((m)*(b) < 0) (m) += (b); }
+#define lhati_nummod(L,a,b,m) { (m) = l_mathop(fmod)(a,b); if ((m)*(b) < 0) (m) += (b); }
 #endif
 
 // exponentiation
@@ -298,9 +297,6 @@ typedef unsigned long Instruction;
 #define lhati_numle(a,b)         ((a)<=(b))
 #define lhati_numisnan(a)        (!lhati_numeq((a), (a)))
 #endif
-
-
-
 
 
 //

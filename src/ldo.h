@@ -30,7 +30,7 @@
 
 
 // type of protected functions, to be ran by 'runprotected'
-typedef void(*Pfunc) (lhat_State *L, void *ud);
+typedef void(*Pfunc)(lhat_State *L, void *ud);
 
 LHATI_FUNC int lhatD_protectedparser(lhat_State *L, ZBuf *z, const char *name, const char *mode);
 LHATI_FUNC void lhatD_hook(lhat_State *L, int event, int line);

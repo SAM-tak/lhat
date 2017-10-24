@@ -26,38 +26,55 @@
 
 #if !LHAT_USE_CTYPE
 # include <limits.h>
+# include <stdbool.h>
 # include "llimits.h"
 
-# define ALPHABIT	0
-# define DIGITBIT	1
-# define PRINTBIT	2
-# define SPACEBIT	3
-# define XDIGITBIT	4
+enum {
+	L_ALPHABIT  = 0,
+	L_DIGITBIT  = 1,
+	L_PRINTBIT  = 2,
+	L_SPACEBIT  = 3,
+	L_XDIGITBIT = 4,
+};
 
-# define MASK(B)	(1 << (B))
-
-//
-// add 1 to char to allow index -1 (EOZ)
-//
-# define testprop(c,p)	(lhati_ctype_[(c)+1] & (p))
+// two more entries for 0 and -1 (EOZ)
+LHATI_DDEC const lu_byte lhati_ctype_[UCHAR_MAX + 2];
 
 //
 // 'lalpha' (Lhat alphabetic) and 'lalnum' (Lhat alphanumeric) both include '_'
 //
-# define lislalpha(c)	testprop(c, MASK(ALPHABIT))
-# define lislalnum(c)	testprop(c, (MASK(ALPHABIT) | MASK(DIGITBIT)))
-# define lisdigit(c)	testprop(c, MASK(DIGITBIT))
-# define lisspace(c)	testprop(c, MASK(SPACEBIT))
-# define lisprint(c)	testprop(c, MASK(PRINTBIT))
-# define lisxdigit(c)	testprop(c, MASK(XDIGITBIT))
+inline bool lislalpha(int c)
+{
+	return lhati_ctype_[c + 1] & (1 << L_ALPHABIT);
+}
+inline bool lislalnum(int c)
+{
+	return lhati_ctype_[c + 1] & ((1 << L_ALPHABIT) | (1 << L_DIGITBIT));
+}
+inline bool lisdigit(int c)
+{
+	return lhati_ctype_[c + 1] & (1 << L_DIGITBIT);
+}
+inline bool lisspace(int c)
+{
+	return lhati_ctype_[c + 1] & (1 << L_SPACEBIT);
+}
+inline bool lisprint(int c)
+{
+	return lhati_ctype_[c + 1] & (1 << L_PRINTBIT);
+}
+inline bool lisxdigit(int c)
+{
+	return lhati_ctype_[c + 1] & (1 << L_XDIGITBIT);
+}
 
 //
 // this 'ltolower' only works for alphabetic characters
 //
-# define ltolower(c)	((c) | ('A' ^ 'a'))
-
-// two more entries for 0 and -1 (EOZ)
-LHATI_DDEC const lu_byte lhati_ctype_[UCHAR_MAX + 2];
+inline int ltolower(int c)
+{
+	return (c | ('A' ^ 'a'));
+}
 
 #else
 //
@@ -76,5 +93,4 @@ LHATI_DDEC const lu_byte lhati_ctype_[UCHAR_MAX + 2];
 
 #endif
 
-#endif
-
+#endif // !lctype_h
