@@ -10,6 +10,7 @@
 
 #include <limits.h>
 #include <stddef.h>
+#include <stdbool.h>
 
 
 #include "lhat.h"
