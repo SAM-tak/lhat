@@ -222,7 +222,7 @@ typedef struct lhat_TValue {
     checkliveness(L,io); }
 
 #define setuvalue(L,obj,x) \
-  { TValue *io = (obj); Udata *x_ = (x); \
+  { TValue *io = (obj); UserData *x_ = (x); \
     val_(io).gc = obj2gco(x_); settt_(io, ctb(LHAT_TUSERDATA)); \
     checkliveness(L,io); }
 
@@ -335,41 +335,41 @@ typedef union UTString {
 
 //
 // Header for userdata; memory area follows the end of this structure
-// (aligned according to 'UUdata'; see next).
+// (aligned according to 'UUserData'; see next).
 //
-typedef struct Udata {
+typedef struct UserData {
 	CommonHeader;
 	lu_byte ttuv_;  // user value's tag
 	struct Table *metatable;
 	size_t len;  // number of bytes
 	union Value user_;  // user value
-} Udata;
+} UserData;
 
 
 //
 // Ensures that address after this type is always fully aligned.
 //
-typedef union UUdata {
+typedef union UUserData {
 	L_Umaxalign dummy;  // ensures maximum alignment for 'local' udata
-	Udata uv;
-} UUdata;
+	UserData uv;
+} UUserData;
 
 
 //
-//  Get the address of memory block inside 'Udata'.
-// (Access to 'ttuv_' ensures that value is really a 'Udata'.)
+//  Get the address of memory block inside 'UserData'.
+// (Access to 'ttuv_' ensures that value is really a 'UserData'.)
 //
 #define getudatamem(u)  \
-  check_exp(sizeof((u)->ttuv_), (cast(char*, (u)) + sizeof(UUdata)))
+  check_exp(sizeof((u)->ttuv_), (cast(char*, (u)) + sizeof(UUserData)))
 
 #define setuservalue(L,u,o) \
-	{ const TValue *io=(o); Udata *iu = (u); \
+	{ const TValue *io=(o); UserData *iu = (u); \
 	  iu->user_ = io->value_; iu->ttuv_ = rttype(io); \
 	  checkliveness(L,io); }
 
 
 #define getuservalue(L,u,o) \
-	{ TValue *io=(o); const Udata *iu = (u); \
+	{ TValue *io=(o); const UserData *iu = (u); \
 	  io->value_ = iu->user_; settt_(io, iu->ttuv_); \
 	  checkliveness(L,io); }
 
@@ -377,22 +377,22 @@ typedef union UUdata {
 //
 // Description of an upvalues for function prototypes
 //
-typedef struct Upvaldesc {
+typedef struct UpvalueDesc {
 	TString *name;  // upvalues name (for debug information)
 	lu_byte instack;  // whether it is in stack (register)
 	lu_byte idx;  // index of upvalues (in stack or in outer function's list)
-} Upvaldesc;
+} UpvalueDesc;
 
 
 //
 // Description of a local variable for function prototypes
 // (used for debug information)
 //
-typedef struct LocVar {
+typedef struct LocalVar {
 	TString *varname;
 	int startpc;  // first point where variable is active
 	int endpc;    // first point where variable is dead
-} LocVar;
+} LocalVar;
 
 
 //
@@ -415,8 +415,8 @@ typedef struct Proto {
 	Instruction *code;  // opcodes
 	struct Proto **p;  // functions defined inside the function
 	int *lineinfo;  // map from opcodes to source lines (debug information)
-	LocVar *locvars;  // information about local variables (debug information)
-	Upvaldesc *upvalues;  // upvalues information
+	LocalVar *locvars;  // information about local variables (debug information)
+	UpvalueDesc *upvalues;  // upvalues information
 	struct LClosure *cache;  // last-created closure with this prototype
 	TString  *source;  // used for debug information
 	GCObject *gclist;

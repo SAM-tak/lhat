@@ -25,10 +25,10 @@
 #include "lstate.h"
 #include "lstring.h"
 #include "ltable.h"
-#include "ltm.h"
-#include "lundump.h"
+#include "lmetamethods.h"
+#include "lchunk.h"
 #include "lvm.h"
-#include "lzio.h"
+#include "lzbuf.h"
 
 
 
@@ -88,10 +88,9 @@ static void seterrorobj(lhat_State *L, int errcode, StkId oldtop)
         setsvalue2s(L, oldtop, lhatS_newliteral(L, "error in error handling"));
         break;
     }
-    default: {
+    default:
         setobjs2s(L, oldtop, L->top - 1);  // error message on current top
         break;
-    }
     }
     L->top = oldtop + 1;
 }
@@ -202,9 +201,8 @@ void lhatD_growstack(lhat_State *L, int n)
 
 static int stackinuse(lhat_State *L)
 {
-    CallInfo *ci;
     StkId lim = L->top;
-    for(ci = L->ci; ci != NULL; ci = ci->previous) {
+    for(CallInfo *ci = L->ci; ci != NULL; ci = ci->previous) {
         if(lim < ci->top) lim = ci->top;
     }
     lhat_assert(lim <= L->stack_last);
@@ -227,8 +225,8 @@ void lhatD_shrinkstack(lhat_State *L)
     if(inuse <= (LHATI_MAXSTACK - EXTRA_STACK) &&
         goodsize < L->stacksize)
         lhatD_reallocstack(L, goodsize);
-    else  // don't change stack
-        condmovestack(L, {}, {});  // (change only for debugging)
+    else // don't change stack
+        condmovestack(L, {}, {}); // (change only for debugging)
 }
 
 
@@ -310,17 +308,17 @@ static StkId adjust_varargs(lhat_State *L, Proto *p, int actual)
 // it in stack below original 'func' so that 'lhatD_precall' can call
 // it. Raise an error if __call metafield is not a function.
 //
-static void tryfuncTM(lhat_State *L, StkId func)
+static void tryfuncMM(lhat_State *L, StkId func)
 {
-    const TValue *tm = lhatT_gettmbyobj(L, func, TM_CALL);
+    const TValue *mm = lhatT_getMMByObj(L, func, MM_CALL);
     StkId p;
-    if(!ttisfunction(tm))
+    if(!ttisfunction(mm))
         lhatG_typeerror(L, func, "call");
     // Open a hole inside the stack at 'func'
     for(p = L->top; p > func; p--)
         setobjs2s(L, p, p - 1);
     L->top++;  // slot ensured by caller
-    setobj2s(L, func, tm);  // tag method is the new function to be called
+    setobj2s(L, func, mm);  // tag method is the new function to be called
 }
 
 
@@ -463,7 +461,7 @@ int lhatD_precall(lhat_State *L, StkId func, int nresults)
     }
     default: // not a function
         checkstackp(L, 1, func);  // ensure space for metamethod
-        tryfuncTM(L, func);  // try to get '__call' metamethod
+        tryfuncMM(L, func);  // try to get '__call' metamethod
         return lhatD_precall(L, func, nresults);  // now it must be a function
     }
 }
@@ -754,7 +752,7 @@ int lhatD_pcall(lhat_State *L, Pfunc func, void *u, ptrdiff_t old_top, ptrdiff_t
 // Execute a protected parser.
 //
 struct SParser {  // data to 'f_parser'
-    ZIO *z;
+    ZBuf *z;
     Mbuffer buff;  // dynamic structure used by the scanner
     Dyndata dyd;  // dynamic structures used by the parser
     const char *mode;
@@ -790,7 +788,7 @@ static void f_parser(lhat_State *L, void *ud)
 }
 
 
-int lhatD_protectedparser(lhat_State *L, ZIO *z, const char *name, const char *mode)
+int lhatD_protectedparser(lhat_State *L, ZBuf *z, const char *name, const char *mode)
 {
     struct SParser p;
     int status;

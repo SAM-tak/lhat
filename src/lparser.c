@@ -167,7 +167,7 @@ static int registerlocalvar(LexState *ls, TString *varname)
     FuncState *fs = ls->fs;
     Proto *f = fs->f;
     int oldsize = f->sizelocvars;
-    lhatM_growvector(ls->L, f->locvars, fs->nlocvars, f->sizelocvars, LocVar, SHRT_MAX, "local variables");
+    lhatM_growvector(ls->L, f->locvars, fs->nlocvars, f->sizelocvars, LocalVar, SHRT_MAX, "local variables");
     while(oldsize < f->sizelocvars)
         f->locvars[oldsize++].varname = NULL;
     f->locvars[fs->nlocvars].varname = varname;
@@ -196,7 +196,7 @@ static void new_localvarliteral_(LexState *ls, const char *name, size_t sz)
 	new_localvarliteral_(ls, "" v, (sizeof(v)/sizeof(char))-1)
 
 
-static LocVar *getlocvar(FuncState *fs, int i)
+static LocalVar *getlocvar(FuncState *fs, int i)
 {
     int idx = fs->ls->dyd->actvar.arr[fs->firstlocal + i].idx;
     lhat_assert(idx < fs->nlocvars);
@@ -224,7 +224,7 @@ static void removevars(FuncState *fs, int tolevel)
 
 static int searchupvalue(FuncState *fs, TString *name)
 {
-    Upvaldesc *up = fs->f->upvalues;
+    UpvalueDesc *up = fs->f->upvalues;
     for(int i = 0; i < fs->nups; i++) {
         if(eqstr(up[i].name, name)) return i;
     }
@@ -238,7 +238,7 @@ static int newupvalue(FuncState *fs, TString *name, expdesc *v)
     int oldsize = f->sizeupvalues;
     checklimit(fs, fs->nups + 1, MAXUPVAL, "upvalues");
     lhatM_growvector(fs->ls->L, f->upvalues, fs->nups, f->sizeupvalues,
-        Upvaldesc, MAXUPVAL, "upvalues");
+        UpvalueDesc, MAXUPVAL, "upvalues");
     while(oldsize < f->sizeupvalues)
         f->upvalues[oldsize++].name = NULL;
     f->upvalues[fs->nups].instack = (v->k == VLOCAL);
@@ -582,9 +582,9 @@ static void close_func(LexState *ls)
     f->sizek = fs->nk;
     lhatM_reallocvector(L, f->p, f->sizep, fs->np, Proto *);
     f->sizep = fs->np;
-    lhatM_reallocvector(L, f->locvars, f->sizelocvars, fs->nlocvars, LocVar);
+    lhatM_reallocvector(L, f->locvars, f->sizelocvars, fs->nlocvars, LocalVar);
     f->sizelocvars = fs->nlocvars;
-    lhatM_reallocvector(L, f->upvalues, f->sizeupvalues, fs->nups, Upvaldesc);
+    lhatM_reallocvector(L, f->upvalues, f->sizeupvalues, fs->nups, UpvalueDesc);
     f->sizeupvalues = fs->nups;
     lhat_assert(fs->bl == NULL);
     ls->fs = fs->prev;
@@ -1675,7 +1675,7 @@ static void mainfunc(LexState *ls, FuncState *fs)
 }
 
 
-LClosure *lhatY_parser(lhat_State *L, ZIO *z, Mbuffer *buff, Dyndata *dyd, const char *name, int firstchar)
+LClosure *lhatY_parser(lhat_State *L, ZBuf *z, Mbuffer *buff, Dyndata *dyd, const char *name, int firstchar)
 {
     LexState lexstate;
     FuncState funcstate;

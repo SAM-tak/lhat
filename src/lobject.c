@@ -155,7 +155,7 @@ void lhatO_arith(lhat_State *L, int op, const TValue *p1, const TValue *p2, TVal
     }
     // could not perform raw operation; try metamethod
     lhat_assert(L != NULL);  // should not fail when folding (compile time)
-    lhatT_trybinTM(L, p1, p2, res, cast(TMS, (op - LHAT_OPADD) + TM_ADD));
+    lhatT_tryBinMM(L, p1, p2, res, cast(MetaMethod, (op - LHAT_OPADD) + MM_ADD));
 }
 
 

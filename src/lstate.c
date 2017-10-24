@@ -22,7 +22,7 @@
 #include "lstate.h"
 #include "lstring.h"
 #include "ltable.h"
-#include "ltm.h"
+#include "lmetamethods.h"
 
 
 #if !defined(LHATI_GCPAUSE)

@@ -7,7 +7,7 @@
 
 #include "lobject.h"
 #include "lstate.h"
-#include "lzio.h"
+#include "lzbuf.h"
 
 //
 // Macro to check stack size and grow stack if needed.  Parameters
@@ -32,7 +32,7 @@
 // type of protected functions, to be ran by 'runprotected'
 typedef void(*Pfunc) (lhat_State *L, void *ud);
 
-LHATI_FUNC int lhatD_protectedparser(lhat_State *L, ZIO *z, const char *name, const char *mode);
+LHATI_FUNC int lhatD_protectedparser(lhat_State *L, ZBuf *z, const char *name, const char *mode);
 LHATI_FUNC void lhatD_hook(lhat_State *L, int event, int line);
 LHATI_FUNC int lhatD_precall(lhat_State *L, StkId func, int nresults);
 LHATI_FUNC void lhatD_call(lhat_State *L, StkId func, int nResults);

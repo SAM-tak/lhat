@@ -1,14 +1,11 @@
+#ifndef ltable_h
+#define ltable_h
 //
-// $Id: ltable.h,v 2.23 2016/12/22 13:08:50 roberto Exp $
 // L^ tables (hash)
 // See Copyright Notice in lhat.h
 //
 
-#ifndef ltable_h
-#define ltable_h
-
 #include "lobject.h"
-
 
 #define gnode(t,i)	(&(t)->node[i])
 #define gval(n)		(&(n)->i_val)
@@ -40,27 +37,24 @@
   (gkey(cast(Node *, cast(char *, (v)) - offsetof(Node, i_val))))
 
 
-LHATI_FUNC const TValue *lhatH_getint (Table *t, lhat_Integer key);
-LHATI_FUNC void lhatH_setint (lhat_State *L, Table *t, lhat_Integer key,
-                                                    TValue *value);
-LHATI_FUNC const TValue *lhatH_getshortstr (Table *t, TString *key);
-LHATI_FUNC const TValue *lhatH_getstr (Table *t, TString *key);
-LHATI_FUNC const TValue *lhatH_get (Table *t, const TValue *key);
-LHATI_FUNC TValue *lhatH_newkey (lhat_State *L, Table *t, const TValue *key);
-LHATI_FUNC TValue *lhatH_set (lhat_State *L, Table *t, const TValue *key);
-LHATI_FUNC Table *lhatH_new (lhat_State *L);
-LHATI_FUNC void lhatH_resize (lhat_State *L, Table *t, unsigned int nasize,
-                                                    unsigned int nhsize);
-LHATI_FUNC void lhatH_resizearray (lhat_State *L, Table *t, unsigned int nasize);
-LHATI_FUNC void lhatH_free (lhat_State *L, Table *t);
-LHATI_FUNC int lhatH_next (lhat_State *L, Table *t, StkId key);
-LHATI_FUNC int lhatH_getn (Table *t);
+LHATI_FUNC const TValue *lhatH_getint(Table *t, lhat_Integer key);
+LHATI_FUNC void lhatH_setint(lhat_State *L, Table *t, lhat_Integer key, TValue *value);
+LHATI_FUNC const TValue *lhatH_getshortstr(Table *t, TString *key);
+LHATI_FUNC const TValue *lhatH_getstr(Table *t, TString *key);
+LHATI_FUNC const TValue *lhatH_get(Table *t, const TValue *key);
+LHATI_FUNC TValue *lhatH_newkey(lhat_State *L, Table *t, const TValue *key);
+LHATI_FUNC TValue *lhatH_set(lhat_State *L, Table *t, const TValue *key);
+LHATI_FUNC Table *lhatH_new(lhat_State *L);
+LHATI_FUNC void lhatH_resize(lhat_State *L, Table *t, unsigned int nasize, unsigned int nhsize);
+LHATI_FUNC void lhatH_resizearray(lhat_State *L, Table *t, unsigned int nasize);
+LHATI_FUNC void lhatH_free(lhat_State *L, Table *t);
+LHATI_FUNC int lhatH_next(lhat_State *L, Table *t, StkId key);
+LHATI_FUNC int lhatH_getn(Table *t);
 
 
 #if defined(LHAT_DEBUG)
-LHATI_FUNC Node *lhatH_mainposition (const Table *t, const TValue *key);
-LHATI_FUNC int lhatH_isdummy (const Table *t);
+LHATI_FUNC Node *lhatH_mainposition(const Table *t, const TValue *key);
+LHATI_FUNC int lhatH_isdummy(const Table *t);
 #endif
-
 
 #endif

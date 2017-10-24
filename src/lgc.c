@@ -20,7 +20,7 @@
 #include "lstate.h"
 #include "lstring.h"
 #include "ltable.h"
-#include "ltm.h"
+#include "lmetamethods.h"
 
 
 //
@@ -459,7 +459,7 @@ static void traversestrongtable(global_State *g, Table *h)
 static lu_mem traversetable(global_State *g, Table *h)
 {
     const char *weakkey, *weakvalue;
-    const TValue *mode = gfasttm(g, h->metatable, TM_MODE);
+    const TValue *mode = gfastmm(g, h->metatable, MM_MODE);
     markobjectN(g, h->metatable);
     if(mode && ttisstring(mode) &&  // is there a weak mode?
         ((weakkey = strchr(svalue(mode), 'k')),
@@ -502,8 +502,8 @@ static int traverseproto(global_State *g, Proto *f)
         sizeof(Proto *) * f->sizep +
         sizeof(TValue) * f->sizek +
         sizeof(int) * f->sizelineinfo +
-        sizeof(LocVar) * f->sizelocvars +
-        sizeof(Upvaldesc) * f->sizeupvalues;
+        sizeof(LocalVar) * f->sizelocvars +
+        sizeof(UpvalueDesc) * f->sizeupvalues;
 }
 
 
@@ -831,7 +831,7 @@ static void GCTM(lhat_State *L, int propagateerrors)
     const TValue *tm;
     TValue v;
     setgcovalue(L, &v, udata2finalize(g));
-    tm = lhatT_gettmbyobj(L, &v, TM_GC);
+    tm = lhatT_getMMByObj(L, &v, MM_GC);
     if(tm != NULL && ttisfunction(tm)) {  // is there a finalizer?
         int status;
         lu_byte oldah = L->allowhook;
@@ -929,7 +929,7 @@ void lhatC_checkfinalizer(lhat_State *L, GCObject *o, Table *mt)
 {
     global_State *g = G(L);
     if(tofinalize(o) ||                 // obj. is already marked...
-        gfasttm(g, mt, TM_GC) == NULL)   // or has no finalizer?
+        gfastmm(g, mt, MM_GC) == NULL)   // or has no finalizer?
         return;  // nothing to be done
     else {  // move 'o' to 'finobj' list
         GCObject **p;

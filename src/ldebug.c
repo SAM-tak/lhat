@@ -24,7 +24,7 @@
 #include "lstate.h"
 #include "lstring.h"
 #include "ltable.h"
-#include "ltm.h"
+#include "lmetamethods.h"
 #include "lvm.h"
 
 #define noLhatClosure(f)		((f) == NULL || (f)->c.tt == LHAT_TCCL)
@@ -501,7 +501,7 @@ static const char *getobjname(Proto *p, int lastpc, int reg, const char **name)
 //
 static const char *funcnamefromcode(lhat_State *L, CallInfo *ci, const char **name)
 {
-    TMS tm = (TMS)0;  // (initial value avoids warnings)
+    MetaMethod tm = (MetaMethod)0;  // (initial value avoids warnings)
     Proto *p = ci_func(ci)->p;  // calling function
     int pc = currentpc(ci);  // calling instruction index
     Instruction i = p->code[pc];  // calling instruction
@@ -519,25 +519,25 @@ static const char *funcnamefromcode(lhat_State *L, CallInfo *ci, const char **na
     }
                       // other instructions can do calls through metamethods
     case OP_SELF: case OP_GETTABUP: case OP_GETTABLE:
-        tm = TM_INDEX;
+        tm = MM_INDEX;
         break;
     case OP_SETTABUP: case OP_SETTABLE:
-        tm = TM_NEWINDEX;
+        tm = MM_NEWINDEX;
         break;
     case OP_ADD: case OP_SUB: case OP_MUL: case OP_MOD:
     case OP_POW: case OP_DIV: case OP_IDIV: case OP_BAND:
     case OP_BOR: case OP_BXOR: case OP_SHL: case OP_SHR: {
         int offset = cast_int(GET_OPCODE(i)) - cast_int(OP_ADD);  // ORDER OP
-        tm = cast(TMS, offset + cast_int(TM_ADD));  // ORDER TM
+        tm = cast(MetaMethod, offset + cast_int(MM_ADD));  // ORDER MM
         break;
     }
-    case OP_UNM: tm = TM_UNM; break;
-    case OP_BNOT: tm = TM_BNOT; break;
-    case OP_LEN: tm = TM_LEN; break;
-    case OP_CONCAT: tm = TM_CONCAT; break;
-    case OP_EQ: tm = TM_EQ; break;
-    case OP_LT: tm = TM_LT; break;
-    case OP_LE: tm = TM_LE; break;
+    case OP_UNM: tm = MM_UNM; break;
+    case OP_BNOT: tm = MM_BNOT; break;
+    case OP_LEN: tm = MM_LEN; break;
+    case OP_CONCAT: tm = MM_CONCAT; break;
+    case OP_EQ: tm = MM_EQ; break;
+    case OP_LT: tm = MM_LT; break;
+    case OP_LE: tm = MM_LE; break;
     default:
         return NULL;  // cannot find a reasonable name
     }

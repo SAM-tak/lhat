@@ -7,7 +7,7 @@
 
 #include "ldo.h"
 #include "lobject.h"
-#include "ltm.h"
+#include "lmetamethods.h"
 
 #if !defined(LHAT_NOCVTN2S)
 # define cvt2str(o)	ttisnumber(o)
@@ -89,21 +89,19 @@
 
 
 
-LHATI_FUNC int lhatV_equalobj (lhat_State *L, const TValue *t1, const TValue *t2);
-LHATI_FUNC int lhatV_lessthan (lhat_State *L, const TValue *l, const TValue *r);
-LHATI_FUNC int lhatV_lessequal (lhat_State *L, const TValue *l, const TValue *r);
-LHATI_FUNC int lhatV_tonumber_ (const TValue *obj, lhat_Number *n);
-LHATI_FUNC int lhatV_tointeger (const TValue *obj, lhat_Integer *p, int mode);
-LHATI_FUNC void lhatV_finishget (lhat_State *L, const TValue *t, TValue *key,
-                               StkId val, const TValue *slot);
-LHATI_FUNC void lhatV_finishset (lhat_State *L, const TValue *t, TValue *key,
-                               StkId val, const TValue *slot);
-LHATI_FUNC void lhatV_finishOp (lhat_State *L);
-LHATI_FUNC void lhatV_execute (lhat_State *L);
-LHATI_FUNC void lhatV_concat (lhat_State *L, int total);
-LHATI_FUNC lhat_Integer lhatV_div (lhat_State *L, lhat_Integer x, lhat_Integer y);
-LHATI_FUNC lhat_Integer lhatV_mod (lhat_State *L, lhat_Integer x, lhat_Integer y);
-LHATI_FUNC lhat_Integer lhatV_shiftl (lhat_Integer x, lhat_Integer y);
-LHATI_FUNC void lhatV_objlen (lhat_State *L, StkId ra, const TValue *rb);
+LHATI_FUNC int lhatV_equalobj(lhat_State *L, const TValue *t1, const TValue *t2);
+LHATI_FUNC int lhatV_lessthan(lhat_State *L, const TValue *l, const TValue *r);
+LHATI_FUNC int lhatV_lessequal(lhat_State *L, const TValue *l, const TValue *r);
+LHATI_FUNC int lhatV_tonumber_(const TValue *obj, lhat_Number *n);
+LHATI_FUNC int lhatV_tointeger(const TValue *obj, lhat_Integer *p, int mode);
+LHATI_FUNC void lhatV_finishget(lhat_State *L, const TValue *t, TValue *key, StkId val, const TValue *slot);
+LHATI_FUNC void lhatV_finishset(lhat_State *L, const TValue *t, TValue *key, StkId val, const TValue *slot);
+LHATI_FUNC void lhatV_finishOp(lhat_State *L);
+LHATI_FUNC void lhatV_execute(lhat_State *L);
+LHATI_FUNC void lhatV_concat(lhat_State *L, int total);
+LHATI_FUNC lhat_Integer lhatV_div(lhat_State *L, lhat_Integer x, lhat_Integer y);
+LHATI_FUNC lhat_Integer lhatV_mod(lhat_State *L, lhat_Integer x, lhat_Integer y);
+LHATI_FUNC lhat_Integer lhatV_shiftl(lhat_Integer x, lhat_Integer y);
+LHATI_FUNC void lhatV_objlen(lhat_State *L, StkId ra, const TValue *rb);
 
 #endif

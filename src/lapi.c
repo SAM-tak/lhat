@@ -22,8 +22,8 @@
 #include "lstate.h"
 #include "lstring.h"
 #include "ltable.h"
-#include "ltm.h"
-#include "lundump.h"
+#include "lmetamethods.h"
+#include "lchunk.h"
 #include "lvm.h"
 
 
@@ -63,7 +63,7 @@ static TValue *index2addr(lhat_State *L, int idx)
     }
     else if(idx == LHAT_REGISTRYINDEX)
         return &G(L)->l_registry;
-    else {  // upvalues
+    else { // upvalues
         idx = LHAT_REGISTRYINDEX - idx;
         api_check(L, idx <= MAXUPVAL + 1, "upvalue index too large");
         if(ttislcf(ci->func))  // light C function?
@@ -111,14 +111,13 @@ LHAT_API int lhat_checkstack(lhat_State *L, int n)
 
 LHAT_API void lhat_xmove(lhat_State *from, lhat_State *to, int n)
 {
-    int i;
     if(from == to) return;
     lhat_lock(to);
     api_checknelems(from, n);
     api_check(from, G(from) == G(to), "moving among independent states");
     api_check(from, to->ci->top - to->top >= n, "stack overflow");
     from->top -= n;
-    for(i = 0; i < n; i++) {
+    for(int i = 0; i < n; i++) {
         setobj2s(to, to->top, from->top + i);
         to->top++;  // stack already checked by previous 'api_check'
     }
@@ -1049,7 +1048,7 @@ LHAT_API int lhat_pcallk(lhat_State *L, int nargs, int nresults, int errfunc,
 LHAT_API int lhat_load(lhat_State *L, lhat_Reader reader, void *data,
     const char *chunkname, const char *mode)
 {
-    ZIO z;
+    ZBuf z;
     int status;
     lhat_lock(L);
     if(!chunkname) chunkname = "?";
@@ -1250,7 +1249,7 @@ LHAT_API void lhat_setallocf(lhat_State *L, lhat_Alloc f, void *ud)
 
 LHAT_API void *lhat_newuserdata(lhat_State *L, size_t size)
 {
-    Udata *u;
+    UserData *u;
     lhat_lock(L);
     u = lhatS_newudata(L, size);
     setuvalue(L, L->top, u);

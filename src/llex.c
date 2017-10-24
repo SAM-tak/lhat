@@ -22,7 +22,7 @@
 #include "lstate.h"
 #include "lstring.h"
 #include "ltable.h"
-#include "lzio.h"
+#include "lzbuf.h"
 
 #define next(ls) (ls->current = zgetc(ls->z))
 
@@ -158,7 +158,7 @@ static void inclinenumber(LexState *ls)
 }
 
 
-void lhatX_setinput(lhat_State *L, LexState *ls, ZIO *z, TString *source, int firstchar)
+void lhatX_setinput(lhat_State *L, LexState *ls, ZBuf *z, TString *source, int firstchar)
 {
     ls->t.token = 0;
     ls->L = L;

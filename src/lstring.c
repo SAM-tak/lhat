@@ -235,12 +235,12 @@ TString *lhatS_new(lhat_State *L, const char *str)
 }
 
 
-Udata *lhatS_newudata(lhat_State *L, size_t s)
+UserData *lhatS_newudata(lhat_State *L, size_t s)
 {
-    if(s > MAX_SIZE - sizeof(Udata))
+    if(s > MAX_SIZE - sizeof(UserData))
         lhatM_toobig(L);
     GCObject *o = lhatC_newobj(L, LHAT_TUSERDATA, sizeludata(s));
-    Udata *u = gco2u(o);
+    UserData *u = gco2u(o);
     u->len = s;
     u->metatable = NULL;
     setuservalue(L, u, lhatO_nilobject);

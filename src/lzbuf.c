@@ -14,10 +14,10 @@
 #include "llimits.h"
 #include "lmem.h"
 #include "lstate.h"
-#include "lzio.h"
+#include "lzbuf.h"
 
 
-int lhatZ_fill(ZIO *z)
+int lhatZ_fill(ZBuf *z)
 {
     size_t size;
     lhat_State *L = z->L;
@@ -33,7 +33,7 @@ int lhatZ_fill(ZIO *z)
 }
 
 
-void lhatZ_init(lhat_State *L, ZIO *z, lhat_Reader reader, void *data)
+void lhatZ_init(lhat_State *L, ZBuf *z, lhat_Reader reader, void *data)
 {
     z->L = L;
     z->reader = reader;
@@ -44,7 +44,7 @@ void lhatZ_init(lhat_State *L, ZIO *z, lhat_Reader reader, void *data)
 
 
 // --------------------------------------------------------------- read ---
-size_t lhatZ_read(ZIO *z, void *b, size_t n)
+size_t lhatZ_read(ZBuf *z, void *b, size_t n)
 {
     while(n) {
         size_t m;

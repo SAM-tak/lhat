@@ -1,16 +1,13 @@
+#ifndef lchunk_h
+#define lchunk_h
 //
-// $Id: lundump.h,v 1.45 2015/09/08 15:41:05 roberto Exp $
 // load precompiled L^ chunks
 // See Copyright Notice in lhat.h
 //
 
-#ifndef lundump_h
-#define lundump_h
-
 #include "llimits.h"
 #include "lobject.h"
-#include "lzio.h"
-
+#include "lzbuf.h"
 
 // data to catch conversion errors
 #define LHATC_DATA	"\x19\x93\r\n\x1a\n"
@@ -22,10 +19,9 @@
 #define LHATC_FORMAT	0	// this is the official format
 
 // load one chunk; from lundump.c
-LHATI_FUNC LClosure* lhatU_undump (lhat_State* L, ZIO* Z, const char* name);
+LHATI_FUNC LClosure *lhatU_undump(lhat_State *L, ZBuf* Z, const char *name);
 
 // dump one chunk; from ldump.c
-LHATI_FUNC int lhatU_dump (lhat_State* L, const Proto* f, lhat_Writer w,
-                         void* data, int strip);
+LHATI_FUNC int lhatU_dump(lhat_State *L, const Proto *f, lhat_Writer w, void *data, int strip);
 
-#endif
+#endif // !lchunk_h

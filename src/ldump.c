@@ -13,7 +13,7 @@
 
 #include "lobject.h"
 #include "lstate.h"
-#include "lundump.h"
+#include "lchunk.h"
 
 
 typedef struct {

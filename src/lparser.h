@@ -7,7 +7,7 @@
 
 #include "llimits.h"
 #include "lobject.h"
-#include "lzio.h"
+#include "lzbuf.h"
 
 //
 // Expression and variable descriptor.
@@ -121,6 +121,6 @@ typedef struct FuncState {
 } FuncState;
 
 
-LHATI_FUNC LClosure *lhatY_parser (lhat_State *L, ZIO *z, Mbuffer *buff, Dyndata *dyd, const char *name, int firstchar);
+LHATI_FUNC LClosure *lhatY_parser (lhat_State *L, ZBuf *z, Mbuffer *buff, Dyndata *dyd, const char *name, int firstchar);
 
 #endif

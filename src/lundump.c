@@ -17,8 +17,8 @@
 #include "lmem.h"
 #include "lobject.h"
 #include "lstring.h"
-#include "lundump.h"
-#include "lzio.h"
+#include "lchunk.h"
+#include "lzbuf.h"
 
 
 #if !defined(lhati_verifycode)
@@ -28,7 +28,7 @@
 
 typedef struct {
     lhat_State *L;
-    ZIO *Z;
+    ZBuf *Z;
     const char *name;
 } LoadState;
 
@@ -171,7 +171,7 @@ static void LoadProtos(LoadState *S, Proto *f)
 static void LoadUpvalues(LoadState *S, Proto *f)
 {
     int n = LoadInt(S);
-    f->upvalues = lhatM_newvector(S->L, n, Upvaldesc);
+    f->upvalues = lhatM_newvector(S->L, n, UpvalueDesc);
     f->sizeupvalues = n;
     for(int i = 0; i < n; i++)
         f->upvalues[i].name = NULL;
@@ -189,7 +189,7 @@ static void LoadDebug(LoadState *S, Proto *f)
     f->sizelineinfo = n;
     LoadVector(S, f->lineinfo, n);
     n = LoadInt(S);
-    f->locvars = lhatM_newvector(S->L, n, LocVar);
+    f->locvars = lhatM_newvector(S->L, n, LocalVar);
     f->sizelocvars = n;
     for(int i = 0; i < n; i++)
         f->locvars[i].varname = NULL;
@@ -264,7 +264,7 @@ static void checkHeader(LoadState *S)
 //
 // load precompiled chunk
 //
-LClosure *lhatU_undump(lhat_State *L, ZIO *Z, const char *name)
+LClosure *lhatU_undump(lhat_State *L, ZBuf *Z, const char *name)
 {
     LoadState S;
     LClosure *cl;

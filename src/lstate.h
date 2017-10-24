@@ -8,8 +8,8 @@
 #include "lhat.h"
 
 #include "lobject.h"
-#include "ltm.h"
-#include "lzio.h"
+#include "lmetamethods.h"
+#include "lzbuf.h"
 
 
 //
@@ -27,7 +27,7 @@
 
 
 // defined in ldo.c
-struct lhat_longjmp;  
+struct lhat_longjmp;
 
 
 //
@@ -53,9 +53,9 @@ struct lhat_longjmp;
 
 
 typedef struct stringtable {
-  TString **hash;
-  int nuse;  // number of elements
-  int size;
+	TString **hash;
+	int nuse;  // number of elements
+	int size;
 } stringtable;
 
 
@@ -69,23 +69,23 @@ typedef struct stringtable {
 // function can be called with the correct top.
 //
 typedef struct CallInfo {
-  StkId func;  // function index in the stack
-  StkId	top;  // top for this function
-  struct CallInfo *previous, *next;  // dynamic call link
-  union {
-    struct {  // only for L^ functions
-      StkId base;  // base for this function
-      const Instruction *savedpc;
-    } l;
-    struct {  // only for C functions
-      lhat_KFunction k;  // continuation in case of yields
-      ptrdiff_t old_errfunc;
-      lhat_KContext ctx;  // context info. in case of yields
-    } c;
-  } u;
-  ptrdiff_t extra;
-  short nresults;  // expected number of results from this function
-  unsigned short callstatus;
+	StkId func;  // function index in the stack
+	StkId	top;  // top for this function
+	struct CallInfo *previous, *next;  // dynamic call link
+	union {
+		struct {  // only for L^ functions
+			StkId base;  // base for this function
+			const Instruction *savedpc;
+		} l;
+		struct {  // only for C functions
+			lhat_KFunction k;  // continuation in case of yields
+			ptrdiff_t old_errfunc;
+			lhat_KContext ctx;  // context info. in case of yields
+		} c;
+	} u;
+	ptrdiff_t extra;
+	short nresults;  // expected number of results from this function
+	unsigned short callstatus;
 } CallInfo;
 
 
@@ -113,40 +113,40 @@ typedef struct CallInfo {
 // 'global state', shared by all coroutines of this state
 //
 typedef struct global_State {
-  lhat_Alloc frealloc;  // function to reallocate memory
-  void *ud;         // auxiliary data to 'frealloc'
-  l_mem totalbytes;  // number of bytes currently allocated - GCdebt
-  l_mem GCdebt;  // bytes allocated not yet compensated by the collector
-  lu_mem GCmemtrav;  // memory traversed by the GC
-  lu_mem GCestimate;  // an estimate of the non-garbage memory in use
-  stringtable strt;  // hash table for strings
-  TValue l_registry;
-  unsigned int seed;  // randomized seed for hashes
-  lu_byte currentwhite;
-  lu_byte gcstate;  // state of garbage collector
-  lu_byte gckind;  // kind of GC running
-  lu_byte gcrunning;  // true if GC is running
-  GCObject *allgc;  // list of all collectable objects
-  GCObject **sweepgc;  // current position of sweep in list
-  GCObject *finobj;  // list of collectable objects with finalizers
-  GCObject *gray;  // list of gray objects
-  GCObject *grayagain;  // list of objects to be traversed atomically
-  GCObject *weak;  // list of tables with weak values
-  GCObject *ephemeron;  // list of ephemeron tables (weak keys)
-  GCObject *allweak;  // list of all-weak tables
-  GCObject *tobefnz;  // list of userdata to be GC
-  GCObject *fixedgc;  // list of objects not to be collected
-  struct lhat_State *twups;  // list of coroutines with open upvalues
-  unsigned int gcfinnum;  // number of finalizers to call in each GC step
-  int gcpause;  // size of pause between successive GCs
-  int gcstepmul;  // GC 'granularity'
-  lhat_CFunction panic;  // to be called in unprotected errors
-  struct lhat_State *maincoroutine;
-  const lhat_Number *version;  // pointer to version number
-  TString *memerrmsg;  // memory-error message
-  TString *tmname[TM_N];  // array with tag-method names
-  struct Table *mt[LHAT_NUMTAGS];  // metatables for basic types
-  TString *strcache[STRCACHE_N][STRCACHE_M];  // cache for strings in API
+	lhat_Alloc frealloc;  // function to reallocate memory
+	void *ud;         // auxiliary data to 'frealloc'
+	l_mem totalbytes;  // number of bytes currently allocated - GCdebt
+	l_mem GCdebt;  // bytes allocated not yet compensated by the collector
+	lu_mem GCmemtrav;  // memory traversed by the GC
+	lu_mem GCestimate;  // an estimate of the non-garbage memory in use
+	stringtable strt;  // hash table for strings
+	TValue l_registry;
+	unsigned int seed;  // randomized seed for hashes
+	lu_byte currentwhite;
+	lu_byte gcstate;  // state of garbage collector
+	lu_byte gckind;  // kind of GC running
+	lu_byte gcrunning;  // true if GC is running
+	GCObject *allgc;  // list of all collectable objects
+	GCObject **sweepgc;  // current position of sweep in list
+	GCObject *finobj;  // list of collectable objects with finalizers
+	GCObject *gray;  // list of gray objects
+	GCObject *grayagain;  // list of objects to be traversed atomically
+	GCObject *weak;  // list of tables with weak values
+	GCObject *ephemeron;  // list of ephemeron tables (weak keys)
+	GCObject *allweak;  // list of all-weak tables
+	GCObject *tobefnz;  // list of userdata to be GC
+	GCObject *fixedgc;  // list of objects not to be collected
+	struct lhat_State *twups;  // list of coroutines with open upvalues
+	unsigned int gcfinnum;  // number of finalizers to call in each GC step
+	int gcpause;  // size of pause between successive GCs
+	int gcstepmul;  // GC 'granularity'
+	lhat_CFunction panic;  // to be called in unprotected errors
+	struct lhat_State *maincoroutine;
+	const lhat_Number *version;  // pointer to version number
+	TString *memerrmsg;  // memory-error message
+	TString *tmname[MM_N];  // array with tag-method names
+	struct Table *mt[LHAT_NUMTAGS];  // metatables for basic types
+	TString *strcache[STRCACHE_N][STRCACHE_M];  // cache for strings in API
 } global_State;
 
 
@@ -154,29 +154,29 @@ typedef struct global_State {
 // 'per coroutine' state
 //
 struct lhat_State {
-  CommonHeader;
-  unsigned short nci;  // number of items in 'ci' list
-  lu_byte status;
-  StkId top;  // first free slot in the stack
-  global_State *l_G;
-  CallInfo *ci;  // call info for current function
-  const Instruction *oldpc;  // last pc traced
-  StkId stack_last;  // last free slot in the stack
-  StkId stack;  // stack base
-  Upvalue *openupval;  // list of open upvalues in this stack
-  GCObject *gclist;
-  struct lhat_State *twups;  // list of coroutines with open upvalues
-  struct lhat_longjmp *errorJmp;  // current error recover point
-  CallInfo base_ci;  // CallInfo for first level (C calling L^)
-  volatile lhat_Hook hook;
-  ptrdiff_t errfunc;  // current error handling function (stack index)
-  int stacksize;
-  int basehookcount;
-  int hookcount;
-  unsigned short nny;  // number of non-yieldable calls in stack
-  unsigned short nCcalls;  // number of nested C calls
-  l_signalT hookmask;
-  lu_byte allowhook;
+	CommonHeader;
+	unsigned short nci;  // number of items in 'ci' list
+	lu_byte status;
+	StkId top;  // first free slot in the stack
+	global_State *l_G;
+	CallInfo *ci;  // call info for current function
+	const Instruction *oldpc;  // last pc traced
+	StkId stack_last;  // last free slot in the stack
+	StkId stack;  // stack base
+	Upvalue *openupval;  // list of open upvalues in this stack
+	GCObject *gclist;
+	struct lhat_State *twups;  // list of coroutines with open upvalues
+	struct lhat_longjmp *errorJmp;  // current error recover point
+	CallInfo base_ci;  // CallInfo for first level (C calling L^)
+	volatile lhat_Hook hook;
+	ptrdiff_t errfunc;  // current error handling function (stack index)
+	int stacksize;
+	int basehookcount;
+	int hookcount;
+	unsigned short nny;  // number of non-yieldable calls in stack
+	unsigned short nCcalls;  // number of nested C calls
+	l_signalT hookmask;
+	lu_byte allowhook;
 };
 
 
@@ -187,13 +187,13 @@ struct lhat_State {
 // Union of all collectable objects (only for conversions)
 //
 union GCUnion {
-  GCObject gc;  // common header
-  struct TString ts;
-  struct Udata u;
-  union Closure cl;
-  struct Table h;
-  struct Proto p;
-  struct lhat_State th;  // coroutine
+	GCObject gc;  // common header
+	struct TString ts;
+	struct UserData u;
+	union Closure cl;
+	struct Table h;
+	struct Proto p;
+	struct lhat_State th;  // coroutine
 };
 
 
@@ -220,10 +220,10 @@ union GCUnion {
 // actual number of total bytes allocated
 #define gettotalbytes(g)	cast(lu_mem, (g)->totalbytes + (g)->GCdebt)
 
-LHATI_FUNC void lhatE_setdebt (global_State *g, l_mem debt);
-LHATI_FUNC void lhatE_freecoroutine (lhat_State *L, lhat_State *L1);
-LHATI_FUNC CallInfo *lhatE_extendCI (lhat_State *L);
-LHATI_FUNC void lhatE_freeCI (lhat_State *L);
-LHATI_FUNC void lhatE_shrinkCI (lhat_State *L);
+LHATI_FUNC void lhatE_setdebt(global_State *g, l_mem debt);
+LHATI_FUNC void lhatE_freecoroutine(lhat_State *L, lhat_State *L1);
+LHATI_FUNC CallInfo *lhatE_extendCI(lhat_State *L);
+LHATI_FUNC void lhatE_freeCI(lhat_State *L);
+LHATI_FUNC void lhatE_shrinkCI(lhat_State *L);
 
 #endif

@@ -14,7 +14,7 @@
 
 #define sizelstring(l)  (sizeof(union UTString) + ((l) + 1) * sizeof(char))
 
-#define sizeludata(l)	(sizeof(union UUdata) + (l))
+#define sizeludata(l)	(sizeof(union UUserData) + (l))
 #define sizeudata(u)	sizeludata((u)->len)
 
 #define lhatS_newliteral(L, s)	(lhatS_newlstr(L, "" s, \
@@ -40,7 +40,7 @@ LHATI_FUNC void lhatS_resize (lhat_State *L, int newsize);
 LHATI_FUNC void lhatS_clearcache (global_State *g);
 LHATI_FUNC void lhatS_init (lhat_State *L);
 LHATI_FUNC void lhatS_remove (lhat_State *L, TString *ts);
-LHATI_FUNC Udata *lhatS_newudata (lhat_State *L, size_t s);
+LHATI_FUNC UserData *lhatS_newudata (lhat_State *L, size_t s);
 LHATI_FUNC TString *lhatS_newlstr (lhat_State *L, const char *str, size_t l);
 LHATI_FUNC TString *lhatS_new (lhat_State *L, const char *str);
 LHATI_FUNC TString *lhatS_createlngstrobj (lhat_State *L, size_t l);

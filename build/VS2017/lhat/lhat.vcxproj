@@ -47,11 +47,11 @@
     <ClCompile Include="..\..\..\src\lstrlib.c" />
     <ClCompile Include="..\..\..\src\ltable.c" />
     <ClCompile Include="..\..\..\src\ltablib.c" />
-    <ClCompile Include="..\..\..\src\ltm.c" />
+    <ClCompile Include="..\..\..\src\lmetamethods.c" />
     <ClCompile Include="..\..\..\src\lundump.c" />
     <ClCompile Include="..\..\..\src\lutf8lib.c" />
     <ClCompile Include="..\..\..\src\lvm.c" />
-    <ClCompile Include="..\..\..\src\lzio.c" />
+    <ClCompile Include="..\..\..\src\lzbuf.c" />
     <ClCompile Include="..\..\..\tests\ltests\ltests.c" />
   </ItemGroup>
   <ItemGroup>
@@ -74,14 +74,14 @@
     <ClInclude Include="..\..\..\src\lstring.h" />
     <ClInclude Include="..\..\..\src\ltable.h" />
     <ClInclude Include="..\..\..\src\ltests.h" />
-    <ClInclude Include="..\..\..\src\ltm.h" />
+    <ClInclude Include="..\..\..\src\lmetamethods.h" />
     <ClInclude Include="..\..\..\src\lhat.h" />
     <ClInclude Include="..\..\..\src\lhat.hpp" />
     <ClInclude Include="..\..\..\src\lhatconf.h" />
     <ClInclude Include="..\..\..\src\lhatlib.h" />
-    <ClInclude Include="..\..\..\src\lundump.h" />
+    <ClInclude Include="..\..\..\src\lchunk.h" />
     <ClInclude Include="..\..\..\src\lvm.h" />
-    <ClInclude Include="..\..\..\src\lzio.h" />
+    <ClInclude Include="..\..\..\src\lzbuf.h" />
   </ItemGroup>
   <PropertyGroup Label="Globals">
     <VCProjectVersion>15.0</VCProjectVersion>
@@ -175,7 +175,7 @@
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <SDLCheck>true</SDLCheck>
-      <PreprocessorDefinitions>LHAT_USER_H="ltests.h";%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ClCompile>
     <Link>
       <EnableCOMDATFolding>true</EnableCOMDATFolding>

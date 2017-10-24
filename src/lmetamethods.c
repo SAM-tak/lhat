@@ -17,7 +17,7 @@
 #include "lstate.h"
 #include "lstring.h"
 #include "ltable.h"
-#include "ltm.h"
+#include "lmetamethods.h"
 #include "lvm.h"
 
 
@@ -33,7 +33,7 @@ LHATI_DDEF const char *const lhatT_typenames_[LHAT_TOTALTAGS] = {
 
 void lhatT_init(lhat_State *L)
 {
-    static const char *const lhatT_eventname[] = {  // ORDER TM
+    static const char *const lhatT_eventname[] = {  // ORDER MM
         "__index", "__newindex",
         "__gc", "__mode", "__len", "__eq",
         "__add", "__sub", "__mul", "__mod", "__pow",
@@ -42,7 +42,7 @@ void lhatT_init(lhat_State *L)
         "__unm", "__bnot", "__lt", "__le",
         "__concat", "__call"
     };
-    for(int i = 0; i<TM_N; i++) {
+    for(int i = 0; i<MM_N; i++) {
         G(L)->tmname[i] = lhatS_new(L, lhatT_eventname[i]);
         lhatC_fix(L, obj2gco(G(L)->tmname[i]));  // never collect these names
     }
@@ -50,13 +50,13 @@ void lhatT_init(lhat_State *L)
 
 
 //
-// function to be used with macro "fasttm": optimized for absence of
+// function to be used with macro "fastmm": optimized for absence of
 // tag methods
 //
-const TValue *lhatT_gettm(Table *events, TMS event, TString *ename)
+const TValue *lhatT_getMM(Table *events, MetaMethod event, TString *ename)
 {
     const TValue *tm = lhatH_getshortstr(events, ename);
-    lhat_assert(event <= TM_EQ);
+    lhat_assert(event <= MM_EQ);
     if(ttisnil(tm)) {  // no tag method?
         events->flags |= cast_byte(1u << event);  // cache this fact
         return NULL;
@@ -65,7 +65,7 @@ const TValue *lhatT_gettm(Table *events, TMS event, TString *ename)
 }
 
 
-const TValue *lhatT_gettmbyobj(lhat_State *L, const TValue *o, TMS event)
+const TValue *lhatT_getMMByObj(lhat_State *L, const TValue *o, MetaMethod event)
 {
     Table *mt;
     switch(ttnov(o)) {
@@ -99,7 +99,7 @@ const char *lhatT_objtypename(lhat_State *L, const TValue *o)
 }
 
 
-void lhatT_callTM(lhat_State *L, const TValue *f, const TValue *p1, const TValue *p2, TValue *p3, int hasres)
+void lhatT_callMM(lhat_State *L, const TValue *f, const TValue *p1, const TValue *p2, TValue *p3, int hasres)
 {
     ptrdiff_t result = savestack(L, p3);
     StkId func = L->top;
@@ -121,26 +121,26 @@ void lhatT_callTM(lhat_State *L, const TValue *f, const TValue *p1, const TValue
 }
 
 
-int lhatT_callbinTM(lhat_State *L, const TValue *p1, const TValue *p2, StkId res, TMS event)
+int lhatT_callBinMM(lhat_State *L, const TValue *p1, const TValue *p2, StkId res, MetaMethod event)
 {
-    const TValue *tm = lhatT_gettmbyobj(L, p1, event);  // try first operand
+    const TValue *tm = lhatT_getMMByObj(L, p1, event);  // try first operand
     if(ttisnil(tm))
-        tm = lhatT_gettmbyobj(L, p2, event);  // try second operand
+        tm = lhatT_getMMByObj(L, p2, event);  // try second operand
     if(ttisnil(tm)) return 0;
-    lhatT_callTM(L, tm, p1, p2, res, 1);
+    lhatT_callMM(L, tm, p1, p2, res, 1);
     return 1;
 }
 
 
-void lhatT_trybinTM(lhat_State *L, const TValue *p1, const TValue *p2, StkId res, TMS event)
+void lhatT_tryBinMM(lhat_State *L, const TValue *p1, const TValue *p2, StkId res, MetaMethod event)
 {
-    if(!lhatT_callbinTM(L, p1, p2, res, event)) {
+    if(!lhatT_callBinMM(L, p1, p2, res, event)) {
         switch(event) {
-        case TM_CONCAT:
+        case MM_CONCAT:
             lhatG_concaterror(L, p1, p2);
             // call never returns, but to avoid warnings:// FALLTHROUGH
-        case TM_BAND: case TM_BOR: case TM_BXOR:
-        case TM_SHL: case TM_SHR: case TM_BNOT: {
+        case MM_BAND: case MM_BOR: case MM_BXOR:
+        case MM_SHL: case MM_SHR: case MM_BNOT: {
             lhat_Number dummy;
             if(tonumber(p1, &dummy) && tonumber(p2, &dummy))
                 lhatG_tointerror(L, p1, p2);
@@ -155,9 +155,9 @@ void lhatT_trybinTM(lhat_State *L, const TValue *p1, const TValue *p2, StkId res
 }
 
 
-int lhatT_callorderTM(lhat_State *L, const TValue *p1, const TValue *p2, TMS event)
+int lhatT_callOrderMM(lhat_State *L, const TValue *p1, const TValue *p2, MetaMethod event)
 {
-    if(!lhatT_callbinTM(L, p1, p2, L->top, event))
+    if(!lhatT_callBinMM(L, p1, p2, L->top, event))
         return -1;  // no metamethod
     else
         return !l_isfalse(L->top);

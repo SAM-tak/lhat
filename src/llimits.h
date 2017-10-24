@@ -66,11 +66,11 @@ typedef unsigned char lu_byte;
 typedef LHATI_USER_ALIGNMENT_T L_Umaxalign;
 #else
 typedef union {
-  lhat_Number n;
-  double u;
-  void *s;
-  lhat_Integer i;
-  long l;
+	lhat_Number n;
+	double u;
+	void *s;
+	lhat_Integer i;
+	long l;
 } L_Umaxalign;
 #endif
 

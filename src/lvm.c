@@ -25,7 +25,7 @@
 #include "lstate.h"
 #include "lstring.h"
 #include "ltable.h"
-#include "ltm.h"
+#include "lmetamethods.h"
 #include "lvm.h"
 
 
@@ -157,14 +157,14 @@ void lhatV_finishget(lhat_State *L, const TValue *t, TValue *key, StkId val, con
     for(int loop = 0; loop < MAXTAGLOOP; loop++) { // counter to avoid infinite loops
         if(slot == NULL) {  // 't' is not a table?
             lhat_assert(!ttistable(t));
-            tm = lhatT_gettmbyobj(L, t, TM_INDEX);
+            tm = lhatT_getMMByObj(L, t, MM_INDEX);
             if(ttisnil(tm))
                 lhatG_typeerror(L, t, "index");  // no metamethod
                                                  // else will try the metamethod
         }
         else {  // 't' is a table
             lhat_assert(ttisnil(slot));
-            tm = fasttm(L, hvalue(t)->metatable, TM_INDEX);  // table's metamethod
+            tm = fastmm(L, hvalue(t)->metatable, MM_INDEX);  // table's metamethod
             if(tm == NULL) {  // no metamethod?
                 setnilvalue(val);  // result is nil
                 return;
@@ -172,7 +172,7 @@ void lhatV_finishget(lhat_State *L, const TValue *t, TValue *key, StkId val, con
             // else will try the metamethod
         }
         if(ttisfunction(tm)) {  // is metamethod a function?
-            lhatT_callTM(L, tm, t, key, val, 1);  // call it
+            lhatT_callMM(L, tm, t, key, val, 1);  // call it
             return;
         }
         t = tm;  // else try to access 'tm[key]'
@@ -200,7 +200,7 @@ void lhatV_finishset(lhat_State *L, const TValue *t, TValue *key, StkId val, con
         if(slot != NULL) {  // is 't' a table?
             Table *h = hvalue(t);  // save 't' table
             lhat_assert(ttisnil(slot));  // old value must be nil
-            tm = fasttm(L, h->metatable, TM_NEWINDEX);  // get metamethod
+            tm = fastmm(L, h->metatable, MM_NEWINDEX);  // get metamethod
             if(tm == NULL) {  // no metamethod?
                 if(slot == lhatO_nilobject)  // no previous entry?
                     slot = lhatH_newkey(L, h, key);  // create one
@@ -213,12 +213,12 @@ void lhatV_finishset(lhat_State *L, const TValue *t, TValue *key, StkId val, con
             // else will try the metamethod
         }
         else {  // not a table; check metamethod
-            if(ttisnil(tm = lhatT_gettmbyobj(L, t, TM_NEWINDEX)))
+            if(ttisnil(tm = lhatT_getMMByObj(L, t, MM_NEWINDEX)))
                 lhatG_typeerror(L, t, "index");
         }
         // try the metamethod
         if(ttisfunction(tm)) {
-            lhatT_callTM(L, tm, t, key, val, 0);
+            lhatT_callMM(L, tm, t, key, val, 0);
             return;
         }
         t = tm;  // else repeat assignment over 'tm'
@@ -365,7 +365,7 @@ int lhatV_lessthan(lhat_State *L, const TValue *l, const TValue *r)
         return LTnum(l, r);
     else if(ttisstring(l) && ttisstring(r))  // both are strings?
         return l_strcmp(tsvalue(l), tsvalue(r)) < 0;
-    else if((res = lhatT_callorderTM(L, l, r, TM_LT)) < 0)  // no metamethod?
+    else if((res = lhatT_callOrderMM(L, l, r, MM_LT)) < 0)  // no metamethod?
         lhatG_ordererror(L, l, r);  // error
     return res;
 }
@@ -386,11 +386,11 @@ int lhatV_lessequal(lhat_State *L, const TValue *l, const TValue *r)
         return LEnum(l, r);
     else if(ttisstring(l) && ttisstring(r))  // both are strings?
         return l_strcmp(tsvalue(l), tsvalue(r)) <= 0;
-    else if((res = lhatT_callorderTM(L, l, r, TM_LE)) >= 0)  // try 'le'
+    else if((res = lhatT_callOrderMM(L, l, r, MM_LE)) >= 0)  // try 'le'
         return res;
     else {  // try 'lt':
         L->ci->callstatus |= CIST_LEQ;  // mark it is doing 'lt' for 'le'
-        res = lhatT_callorderTM(L, r, l, TM_LT);
+        res = lhatT_callOrderMM(L, r, l, MM_LT);
         L->ci->callstatus ^= CIST_LEQ;  // clear mark
         if(res < 0)
             lhatG_ordererror(L, l, r);
@@ -427,17 +427,17 @@ int lhatV_equalobj(lhat_State *L, const TValue *t1, const TValue *t2)
     case LHAT_TUSERDATA: {
         if(uvalue(t1) == uvalue(t2)) return 1;
         else if(L == NULL) return 0;
-        tm = fasttm(L, uvalue(t1)->metatable, TM_EQ);
+        tm = fastmm(L, uvalue(t1)->metatable, MM_EQ);
         if(tm == NULL)
-            tm = fasttm(L, uvalue(t2)->metatable, TM_EQ);
+            tm = fastmm(L, uvalue(t2)->metatable, MM_EQ);
         break;  // will try TM
     }
     case LHAT_TTABLE: {
         if(hvalue(t1) == hvalue(t2)) return 1;
         else if(L == NULL) return 0;
-        tm = fasttm(L, hvalue(t1)->metatable, TM_EQ);
+        tm = fastmm(L, hvalue(t1)->metatable, MM_EQ);
         if(tm == NULL)
-            tm = fasttm(L, hvalue(t2)->metatable, TM_EQ);
+            tm = fastmm(L, hvalue(t2)->metatable, MM_EQ);
         break;  // will try TM
     }
     default:
@@ -445,7 +445,7 @@ int lhatV_equalobj(lhat_State *L, const TValue *t1, const TValue *t2)
     }
     if(tm == NULL)  // no TM?
         return 0;  // objects are different
-    lhatT_callTM(L, tm, t1, t2, L->top, 1);  // call TM
+    lhatT_callMM(L, tm, t1, t2, L->top, 1);  // call TM
     return !l_isfalse(L->top);
 }
 
@@ -479,7 +479,7 @@ void lhatV_concat(lhat_State *L, int total)
         StkId top = L->top;
         int n = 2;  // number of elements handled in this pass (at least 2)
         if(!(ttisstring(top - 2) || cvt2str(top - 2)) || !tostring(L, top - 1))
-            lhatT_trybinTM(L, top - 2, top - 1, top - 2, TM_CONCAT);
+            lhatT_tryBinMM(L, top - 2, top - 1, top - 2, MM_CONCAT);
         else if(isemptystr(top - 1))  // second operand is empty?
             cast_void(tostring(L, top - 2));  // result is first operand
         else if(isemptystr(top - 2)) {  // first operand is an empty string?
@@ -522,7 +522,7 @@ void lhatV_objlen(lhat_State *L, StkId ra, const TValue *rb)
     switch(ttype(rb)) {
     case LHAT_TTABLE: {
         Table *h = hvalue(rb);
-        tm = fasttm(L, h->metatable, TM_LEN);
+        tm = fastmm(L, h->metatable, MM_LEN);
         if(tm) break;  // metamethod? break switch to call it
         setivalue(ra, lhatH_getn(h));  // else primitive len
         return;
@@ -536,13 +536,13 @@ void lhatV_objlen(lhat_State *L, StkId ra, const TValue *rb)
         return;
     }
     default: {  // try metamethod
-        tm = lhatT_gettmbyobj(L, rb, TM_LEN);
+        tm = lhatT_getMMByObj(L, rb, MM_LEN);
         if(ttisnil(tm))  // no metamethod?
             lhatG_typeerror(L, rb, "get length of");
         break;
     }
     }
-    lhatT_callTM(L, tm, rb, rb, ra, 1);
+    lhatT_callMM(L, tm, rb, rb, ra, 1);
 }
 
 
@@ -618,7 +618,7 @@ static LClosure *getcached(Proto *p, Upvalue **encup, StkId base)
     LClosure *c = p->cache;
     if(c != NULL) {  // is there a cached closure?
         int nup = p->sizeupvalues;
-        Upvaldesc *uv = p->upvalues;
+        UpvalueDesc *uv = p->upvalues;
         int i;
         for(i = 0; i < nup; i++) {  // check whether it has right upvalues
             TValue *v = uv[i].instack ? base + uv[i].idx : encup[uv[i].idx]->v;
@@ -639,7 +639,7 @@ static LClosure *getcached(Proto *p, Upvalue **encup, StkId base)
 static void pushclosure(lhat_State *L, Proto *p, Upvalue **encup, StkId base, StkId ra)
 {
     int nup = p->sizeupvalues;
-    Upvaldesc *uv = p->upvalues;
+    UpvalueDesc *uv = p->upvalues;
     int i;
     LClosure *ncl = lhatF_newLclosure(L, nup);
     ncl->p = p;
@@ -689,7 +689,7 @@ void lhatV_finishOp(lhat_State *L)
         break;
     }
     case OP_CONCAT: {
-        StkId top = L->top - 1;  // top when 'lhatT_trybinTM' was called
+        StkId top = L->top - 1;  // top when 'lhatT_tryBinMM' was called
         int b = GETARG_B(inst);      // first element to concatenate
         int total = cast_int(top - 1 - (base + b));  // yet to concatenate
         setobj2s(L, top - 2, top);  // put TM result in proper position
@@ -760,21 +760,6 @@ void lhatV_finishOp(lhat_State *L)
            lhati_coroutineyield(L); }
 
 
-// fetch an instruction and prepare its execution
-#define vmfetch()	{ \
-  i = *(ci->u.l.savedpc++); \
-  if (L->hookmask & (LHAT_MASKLINE | LHAT_MASKCOUNT)) \
-    Protect(lhatG_traceexec(L)); \
-  ra = RA(i); /* WARNING: any stack reallocation invalidates 'ra' */\
-  lhat_assert(base == ci->u.l.base); \
-  lhat_assert(base <= L->top && L->top < L->stack + L->stacksize); \
-}
-
-#define vmdispatch(o)	switch(o)
-#define vmcase(l)	case l:
-#define vmbreak		break
-
-
 //
 // copy of 'lhatV_gettable', but protecting the call to potential
 // metamethod (which can reallocate the stack)
@@ -794,583 +779,541 @@ void lhatV_finishOp(lhat_State *L)
 void lhatV_execute(lhat_State *L)
 {
     CallInfo *ci = L->ci;
-    LClosure *cl;
-    TValue *k;
-    StkId base;
     ci->callstatus |= CIST_FRESH;  // fresh invocation of 'lhatV_execute"
 newframe:  // reentry point when frame changes (call/return)
     lhat_assert(ci == L->ci);
-    cl = clLvalue(ci->func);  // local reference to function's closure
-    k = cl->p->k;  // local reference to function's constant table
-    base = ci->u.l.base;  // local copy of function's base
-                          // main loop of interpreter
+    LClosure *cl = clLvalue(ci->func);  // local reference to function's closure
+    TValue *k = cl->p->k;  // local reference to function's constant table
+    StkId base = ci->u.l.base;  // local copy of function's base
+    // main loop of interpreter
     for(;;) {
-        Instruction i;
-        StkId ra;
-        vmfetch();
-        vmdispatch(GET_OPCODE(i))
-        {
-            vmcase(OP_MOVE)
-            {
-                setobjs2s(L, ra, RB(i));
-                vmbreak;
+        // fetch an instruction and prepare its execution
+        Instruction i = *(ci->u.l.savedpc++);
+        if(L->hookmask & (LHAT_MASKLINE | LHAT_MASKCOUNT))
+            Protect(lhatG_traceexec(L));
+        StkId ra = RA(i); // WARNING: any stack reallocation invalidates 'ra'
+        lhat_assert(base == ci->u.l.base);
+        lhat_assert(base <= L->top && L->top < L->stack + L->stacksize);
+        switch(GET_OPCODE(i)) {
+        case OP_MOVE: {
+            setobjs2s(L, ra, RB(i));
+            break;
+        }
+        case OP_LOADK: {
+            TValue *rb = k + GETARG_Bx(i);
+            setobj2s(L, ra, rb);
+            break;
+        }
+        case OP_LOADKX: {
+            TValue *rb;
+            lhat_assert(GET_OPCODE(*ci->u.l.savedpc) == OP_EXTRAARG);
+            rb = k + GETARG_Ax(*ci->u.l.savedpc++);
+            setobj2s(L, ra, rb);
+            break;
+        }
+        case OP_LOADBOOL: {
+            setbvalue(ra, GETARG_B(i));
+            if(GETARG_C(i)) ci->u.l.savedpc++;  // skip next instruction (if C)
+            break;
+        }
+        case OP_LOADNIL: {
+            int b = GETARG_B(i);
+            do {
+                setnilvalue(ra++);
+            } while(b--);
+            break;
+        }
+        case OP_GETUPVAL: {
+            int b = GETARG_B(i);
+            setobj2s(L, ra, cl->upvalues[b]->v);
+            break;
+        }
+        case OP_GETTABUP: {
+            TValue *upval = cl->upvalues[GETARG_B(i)]->v;
+            TValue *rc = RKC(i);
+            gettableProtected(L, upval, rc, ra);
+            break;
+        }
+        case OP_GETTABLE: {
+            StkId rb = RB(i);
+            TValue *rc = RKC(i);
+            gettableProtected(L, rb, rc, ra);
+            break;
+        }
+        case OP_SETTABUP: {
+            TValue *upval = cl->upvalues[GETARG_A(i)]->v;
+            TValue *rb = RKB(i);
+            TValue *rc = RKC(i);
+            settableProtected(L, upval, rb, rc);
+            break;
+        }
+        case OP_SETUPVAL: {
+            Upvalue *uv = cl->upvalues[GETARG_B(i)];
+            setobj(L, uv->v, ra);
+            lhatC_upvalbarrier(L, uv);
+            break;
+        }
+        case OP_SETTABLE: {
+            TValue *rb = RKB(i);
+            TValue *rc = RKC(i);
+            settableProtected(L, ra, rb, rc);
+            break;
+        }
+        case OP_NEWTABLE: {
+            int b = GETARG_B(i);
+            int c = GETARG_C(i);
+            Table *t = lhatH_new(L);
+            sethvalue(L, ra, t);
+            if(b != 0 || c != 0)
+                lhatH_resize(L, t, lhatO_fb2int(b), lhatO_fb2int(c));
+            checkGC(L, ra + 1);
+            break;
+        }
+        case OP_SELF: {
+            const TValue *aux;
+            StkId rb = RB(i);
+            TValue *rc = RKC(i);
+            TString *key = tsvalue(rc);  // key must be a string
+            setobjs2s(L, ra + 1, rb);
+            if(lhatV_fastget(L, rb, key, aux, lhatH_getstr)) {
+                setobj2s(L, ra, aux);
             }
-            vmcase(OP_LOADK)
-            {
-                TValue *rb = k + GETARG_Bx(i);
-                setobj2s(L, ra, rb);
-                vmbreak;
+            else Protect(lhatV_finishget(L, rb, rc, ra, aux));
+            break;
+        }
+        case OP_ADD: {
+            TValue *rb = RKB(i);
+            TValue *rc = RKC(i);
+            lhat_Number nb; lhat_Number nc;
+            if(ttisinteger(rb) && ttisinteger(rc)) {
+                lhat_Integer ib = ivalue(rb); lhat_Integer ic = ivalue(rc);
+                setivalue(ra, intop(+, ib, ic));
             }
-            vmcase(OP_LOADKX)
-            {
-                TValue *rb;
-                lhat_assert(GET_OPCODE(*ci->u.l.savedpc) == OP_EXTRAARG);
-                rb = k + GETARG_Ax(*ci->u.l.savedpc++);
-                setobj2s(L, ra, rb);
-                vmbreak;
+            else if(tonumber(rb, &nb) && tonumber(rc, &nc)) {
+                setfltvalue(ra, lhati_numadd(L, nb, nc));
             }
-            vmcase(OP_LOADBOOL)
-            {
-                setbvalue(ra, GETARG_B(i));
-                if(GETARG_C(i)) ci->u.l.savedpc++;  // skip next instruction (if C)
-                vmbreak;
+            else { Protect(lhatT_tryBinMM(L, rb, rc, ra, MM_ADD)); }
+            break;
+        }
+        case OP_SUB: {
+            TValue *rb = RKB(i);
+            TValue *rc = RKC(i);
+            lhat_Number nb; lhat_Number nc;
+            if(ttisinteger(rb) && ttisinteger(rc)) {
+                lhat_Integer ib = ivalue(rb); lhat_Integer ic = ivalue(rc);
+                setivalue(ra, intop(-, ib, ic));
             }
-            vmcase(OP_LOADNIL)
-            {
-                int b = GETARG_B(i);
-                do {
-                    setnilvalue(ra++);
-                } while(b--);
-                vmbreak;
+            else if(tonumber(rb, &nb) && tonumber(rc, &nc)) {
+                setfltvalue(ra, lhati_numsub(L, nb, nc));
             }
-            vmcase(OP_GETUPVAL)
-            {
-                int b = GETARG_B(i);
-                setobj2s(L, ra, cl->upvalues[b]->v);
-                vmbreak;
+            else { Protect(lhatT_tryBinMM(L, rb, rc, ra, MM_SUB)); }
+            break;
+        }
+        case OP_MUL: {
+            TValue *rb = RKB(i);
+            TValue *rc = RKC(i);
+            lhat_Number nb; lhat_Number nc;
+            if(ttisinteger(rb) && ttisinteger(rc)) {
+                lhat_Integer ib = ivalue(rb); lhat_Integer ic = ivalue(rc);
+                setivalue(ra, intop(*, ib, ic));
             }
-            vmcase(OP_GETTABUP)
-            {
-                TValue *upval = cl->upvalues[GETARG_B(i)]->v;
-                TValue *rc = RKC(i);
-                gettableProtected(L, upval, rc, ra);
-                vmbreak;
+            else if(tonumber(rb, &nb) && tonumber(rc, &nc)) {
+                setfltvalue(ra, lhati_nummul(L, nb, nc));
             }
-            vmcase(OP_GETTABLE)
-            {
-                StkId rb = RB(i);
-                TValue *rc = RKC(i);
-                gettableProtected(L, rb, rc, ra);
-                vmbreak;
+            else { Protect(lhatT_tryBinMM(L, rb, rc, ra, MM_MUL)); }
+            break;
+        }
+        case OP_DIV: {
+            // float division (always with floats)
+            TValue *rb = RKB(i);
+            TValue *rc = RKC(i);
+            lhat_Number nb; lhat_Number nc;
+            if(tonumber(rb, &nb) && tonumber(rc, &nc)) {
+                setfltvalue(ra, lhati_numdiv(L, nb, nc));
             }
-            vmcase(OP_SETTABUP)
-            {
-                TValue *upval = cl->upvalues[GETARG_A(i)]->v;
-                TValue *rb = RKB(i);
-                TValue *rc = RKC(i);
-                settableProtected(L, upval, rb, rc);
-                vmbreak;
+            else { Protect(lhatT_tryBinMM(L, rb, rc, ra, MM_DIV)); }
+            break;
+        }
+        case OP_BAND: {
+            TValue *rb = RKB(i);
+            TValue *rc = RKC(i);
+            lhat_Integer ib; lhat_Integer ic;
+            if(tointeger(rb, &ib) && tointeger(rc, &ic)) {
+                setivalue(ra, intop(&, ib, ic));
             }
-            vmcase(OP_SETUPVAL)
-            {
-                Upvalue *uv = cl->upvalues[GETARG_B(i)];
-                setobj(L, uv->v, ra);
-                lhatC_upvalbarrier(L, uv);
-                vmbreak;
+            else { Protect(lhatT_tryBinMM(L, rb, rc, ra, MM_BAND)); }
+            break;
+        }
+        case OP_BOR: {
+            TValue *rb = RKB(i);
+            TValue *rc = RKC(i);
+            lhat_Integer ib; lhat_Integer ic;
+            if(tointeger(rb, &ib) && tointeger(rc, &ic)) {
+                setivalue(ra, intop(| , ib, ic));
             }
-            vmcase(OP_SETTABLE)
-            {
-                TValue *rb = RKB(i);
-                TValue *rc = RKC(i);
-                settableProtected(L, ra, rb, rc);
-                vmbreak;
+            else { Protect(lhatT_tryBinMM(L, rb, rc, ra, MM_BOR)); }
+            break;
+        }
+        case OP_BXOR: {
+            TValue *rb = RKB(i);
+            TValue *rc = RKC(i);
+            lhat_Integer ib; lhat_Integer ic;
+            if(tointeger(rb, &ib) && tointeger(rc, &ic)) {
+                setivalue(ra, intop(^, ib, ic));
             }
-            vmcase(OP_NEWTABLE)
-            {
-                int b = GETARG_B(i);
-                int c = GETARG_C(i);
-                Table *t = lhatH_new(L);
-                sethvalue(L, ra, t);
-                if(b != 0 || c != 0)
-                    lhatH_resize(L, t, lhatO_fb2int(b), lhatO_fb2int(c));
-                checkGC(L, ra + 1);
-                vmbreak;
+            else { Protect(lhatT_tryBinMM(L, rb, rc, ra, MM_BXOR)); }
+            break;
+        }
+        case OP_SHL: {
+            TValue *rb = RKB(i);
+            TValue *rc = RKC(i);
+            lhat_Integer ib; lhat_Integer ic;
+            if(tointeger(rb, &ib) && tointeger(rc, &ic)) {
+                setivalue(ra, lhatV_shiftl(ib, ic));
             }
-            vmcase(OP_SELF)
-            {
-                const TValue *aux;
-                StkId rb = RB(i);
-                TValue *rc = RKC(i);
-                TString *key = tsvalue(rc);  // key must be a string
-                setobjs2s(L, ra + 1, rb);
-                if(lhatV_fastget(L, rb, key, aux, lhatH_getstr)) {
-                    setobj2s(L, ra, aux);
-                }
-                else Protect(lhatV_finishget(L, rb, rc, ra, aux));
-                vmbreak;
+            else { Protect(lhatT_tryBinMM(L, rb, rc, ra, MM_SHL)); }
+            break;
+        }
+        case OP_SHR: {
+            TValue *rb = RKB(i);
+            TValue *rc = RKC(i);
+            lhat_Integer ib; lhat_Integer ic;
+            if(tointeger(rb, &ib) && tointeger(rc, &ic)) {
+                setivalue(ra, lhatV_shiftl(ib, -ic));
             }
-            vmcase(OP_ADD)
-            {
-                TValue *rb = RKB(i);
-                TValue *rc = RKC(i);
-                lhat_Number nb; lhat_Number nc;
-                if(ttisinteger(rb) && ttisinteger(rc)) {
-                    lhat_Integer ib = ivalue(rb); lhat_Integer ic = ivalue(rc);
-                    setivalue(ra, intop(+, ib, ic));
-                }
-                else if(tonumber(rb, &nb) && tonumber(rc, &nc)) {
-                    setfltvalue(ra, lhati_numadd(L, nb, nc));
-                }
-                else { Protect(lhatT_trybinTM(L, rb, rc, ra, TM_ADD)); }
-                vmbreak;
+            else { Protect(lhatT_tryBinMM(L, rb, rc, ra, MM_SHR)); }
+            break;
+        }
+        case OP_MOD: {
+            TValue *rb = RKB(i);
+            TValue *rc = RKC(i);
+            lhat_Number nb; lhat_Number nc;
+            if(ttisinteger(rb) && ttisinteger(rc)) {
+                lhat_Integer ib = ivalue(rb); lhat_Integer ic = ivalue(rc);
+                setivalue(ra, lhatV_mod(L, ib, ic));
             }
-            vmcase(OP_SUB)
-            {
-                TValue *rb = RKB(i);
-                TValue *rc = RKC(i);
-                lhat_Number nb; lhat_Number nc;
-                if(ttisinteger(rb) && ttisinteger(rc)) {
-                    lhat_Integer ib = ivalue(rb); lhat_Integer ic = ivalue(rc);
-                    setivalue(ra, intop(-, ib, ic));
-                }
-                else if(tonumber(rb, &nb) && tonumber(rc, &nc)) {
-                    setfltvalue(ra, lhati_numsub(L, nb, nc));
-                }
-                else { Protect(lhatT_trybinTM(L, rb, rc, ra, TM_SUB)); }
-                vmbreak;
+            else if(tonumber(rb, &nb) && tonumber(rc, &nc)) {
+                lhat_Number m;
+                lhati_nummod(L, nb, nc, m);
+                setfltvalue(ra, m);
             }
-            vmcase(OP_MUL)
-            {
-                TValue *rb = RKB(i);
-                TValue *rc = RKC(i);
-                lhat_Number nb; lhat_Number nc;
-                if(ttisinteger(rb) && ttisinteger(rc)) {
-                    lhat_Integer ib = ivalue(rb); lhat_Integer ic = ivalue(rc);
-                    setivalue(ra, intop(*, ib, ic));
-                }
-                else if(tonumber(rb, &nb) && tonumber(rc, &nc)) {
-                    setfltvalue(ra, lhati_nummul(L, nb, nc));
-                }
-                else { Protect(lhatT_trybinTM(L, rb, rc, ra, TM_MUL)); }
-                vmbreak;
+            else { Protect(lhatT_tryBinMM(L, rb, rc, ra, MM_MOD)); }
+            break;
+        }
+        case OP_IDIV: {
+            // floor division
+            TValue *rb = RKB(i);
+            TValue *rc = RKC(i);
+            lhat_Number nb; lhat_Number nc;
+            if(ttisinteger(rb) && ttisinteger(rc)) {
+                lhat_Integer ib = ivalue(rb); lhat_Integer ic = ivalue(rc);
+                setivalue(ra, lhatV_div(L, ib, ic));
             }
-            vmcase(OP_DIV)
-            {  // float division (always with floats)
-                TValue *rb = RKB(i);
-                TValue *rc = RKC(i);
-                lhat_Number nb; lhat_Number nc;
-                if(tonumber(rb, &nb) && tonumber(rc, &nc)) {
-                    setfltvalue(ra, lhati_numdiv(L, nb, nc));
-                }
-                else { Protect(lhatT_trybinTM(L, rb, rc, ra, TM_DIV)); }
-                vmbreak;
+            else if(tonumber(rb, &nb) && tonumber(rc, &nc)) {
+                setfltvalue(ra, lhati_numidiv(L, nb, nc));
             }
-            vmcase(OP_BAND)
-            {
-                TValue *rb = RKB(i);
-                TValue *rc = RKC(i);
-                lhat_Integer ib; lhat_Integer ic;
-                if(tointeger(rb, &ib) && tointeger(rc, &ic)) {
-                    setivalue(ra, intop(&, ib, ic));
-                }
-                else { Protect(lhatT_trybinTM(L, rb, rc, ra, TM_BAND)); }
-                vmbreak;
+            else { Protect(lhatT_tryBinMM(L, rb, rc, ra, MM_IDIV)); }
+            break;
+        }
+        case OP_POW: {
+            TValue *rb = RKB(i);
+            TValue *rc = RKC(i);
+            lhat_Number nb; lhat_Number nc;
+            if(tonumber(rb, &nb) && tonumber(rc, &nc)) {
+                setfltvalue(ra, lhati_numpow(L, nb, nc));
             }
-            vmcase(OP_BOR)
-            {
-                TValue *rb = RKB(i);
-                TValue *rc = RKC(i);
-                lhat_Integer ib; lhat_Integer ic;
-                if(tointeger(rb, &ib) && tointeger(rc, &ic)) {
-                    setivalue(ra, intop(| , ib, ic));
-                }
-                else { Protect(lhatT_trybinTM(L, rb, rc, ra, TM_BOR)); }
-                vmbreak;
+            else { Protect(lhatT_tryBinMM(L, rb, rc, ra, MM_POW)); }
+            break;
+        }
+        case OP_UNM: {
+            TValue *rb = RB(i);
+            lhat_Number nb;
+            if(ttisinteger(rb)) {
+                lhat_Integer ib = ivalue(rb);
+                setivalue(ra, intop(-, 0, ib));
             }
-            vmcase(OP_BXOR)
-            {
-                TValue *rb = RKB(i);
-                TValue *rc = RKC(i);
-                lhat_Integer ib; lhat_Integer ic;
-                if(tointeger(rb, &ib) && tointeger(rc, &ic)) {
-                    setivalue(ra, intop(^, ib, ic));
-                }
-                else { Protect(lhatT_trybinTM(L, rb, rc, ra, TM_BXOR)); }
-                vmbreak;
+            else if(tonumber(rb, &nb)) {
+                setfltvalue(ra, lhati_numunm(L, nb));
             }
-            vmcase(OP_SHL)
-            {
-                TValue *rb = RKB(i);
-                TValue *rc = RKC(i);
-                lhat_Integer ib; lhat_Integer ic;
-                if(tointeger(rb, &ib) && tointeger(rc, &ic)) {
-                    setivalue(ra, lhatV_shiftl(ib, ic));
-                }
-                else { Protect(lhatT_trybinTM(L, rb, rc, ra, TM_SHL)); }
-                vmbreak;
+            else {
+                Protect(lhatT_tryBinMM(L, rb, rb, ra, MM_UNM));
             }
-            vmcase(OP_SHR)
-            {
-                TValue *rb = RKB(i);
-                TValue *rc = RKC(i);
-                lhat_Integer ib; lhat_Integer ic;
-                if(tointeger(rb, &ib) && tointeger(rc, &ic)) {
-                    setivalue(ra, lhatV_shiftl(ib, -ic));
-                }
-                else { Protect(lhatT_trybinTM(L, rb, rc, ra, TM_SHR)); }
-                vmbreak;
+            break;
+        }
+        case OP_BNOT: {
+            TValue *rb = RB(i);
+            lhat_Integer ib;
+            if(tointeger(rb, &ib)) {
+                setivalue(ra, intop(^, ~l_castS2U(0), ib));
             }
-            vmcase(OP_MOD)
-            {
-                TValue *rb = RKB(i);
-                TValue *rc = RKC(i);
-                lhat_Number nb; lhat_Number nc;
-                if(ttisinteger(rb) && ttisinteger(rc)) {
-                    lhat_Integer ib = ivalue(rb); lhat_Integer ic = ivalue(rc);
-                    setivalue(ra, lhatV_mod(L, ib, ic));
-                }
-                else if(tonumber(rb, &nb) && tonumber(rc, &nc)) {
-                    lhat_Number m;
-                    lhati_nummod(L, nb, nc, m);
-                    setfltvalue(ra, m);
-                }
-                else { Protect(lhatT_trybinTM(L, rb, rc, ra, TM_MOD)); }
-                vmbreak;
+            else {
+                Protect(lhatT_tryBinMM(L, rb, rb, ra, MM_BNOT));
             }
-            vmcase(OP_IDIV)
-            {  // floor division
-                TValue *rb = RKB(i);
-                TValue *rc = RKC(i);
-                lhat_Number nb; lhat_Number nc;
-                if(ttisinteger(rb) && ttisinteger(rc)) {
-                    lhat_Integer ib = ivalue(rb); lhat_Integer ic = ivalue(rc);
-                    setivalue(ra, lhatV_div(L, ib, ic));
-                }
-                else if(tonumber(rb, &nb) && tonumber(rc, &nc)) {
-                    setfltvalue(ra, lhati_numidiv(L, nb, nc));
-                }
-                else { Protect(lhatT_trybinTM(L, rb, rc, ra, TM_IDIV)); }
-                vmbreak;
-            }
-            vmcase(OP_POW)
-            {
-                TValue *rb = RKB(i);
-                TValue *rc = RKC(i);
-                lhat_Number nb; lhat_Number nc;
-                if(tonumber(rb, &nb) && tonumber(rc, &nc)) {
-                    setfltvalue(ra, lhati_numpow(L, nb, nc));
-                }
-                else { Protect(lhatT_trybinTM(L, rb, rc, ra, TM_POW)); }
-                vmbreak;
-            }
-            vmcase(OP_UNM)
-            {
-                TValue *rb = RB(i);
-                lhat_Number nb;
-                if(ttisinteger(rb)) {
-                    lhat_Integer ib = ivalue(rb);
-                    setivalue(ra, intop(-, 0, ib));
-                }
-                else if(tonumber(rb, &nb)) {
-                    setfltvalue(ra, lhati_numunm(L, nb));
-                }
-                else {
-                    Protect(lhatT_trybinTM(L, rb, rb, ra, TM_UNM));
-                }
-                vmbreak;
-            }
-            vmcase(OP_BNOT)
-            {
-                TValue *rb = RB(i);
-                lhat_Integer ib;
-                if(tointeger(rb, &ib)) {
-                    setivalue(ra, intop(^, ~l_castS2U(0), ib));
-                }
-                else {
-                    Protect(lhatT_trybinTM(L, rb, rb, ra, TM_BNOT));
-                }
-                vmbreak;
-            }
-            vmcase(OP_NOT)
-            {
-                TValue *rb = RB(i);
-                int res = l_isfalse(rb);  // next assignment may change this value
-                setbvalue(ra, res);
-                vmbreak;
-            }
-            vmcase(OP_LEN)
-            {
-                Protect(lhatV_objlen(L, ra, RB(i)));
-                vmbreak;
-            }
-            vmcase(OP_CONCAT)
-            {
-                int b = GETARG_B(i);
-                int c = GETARG_C(i);
-                StkId rb;
-                L->top = base + c + 1;  // mark the end of concat operands
-                Protect(lhatV_concat(L, c - b + 1));
-                ra = RA(i);  // 'lhatV_concat' may invoke TMs and move the stack
-                rb = base + b;
+            break;
+        }
+        case OP_NOT: {
+            TValue *rb = RB(i);
+            int res = l_isfalse(rb);  // next assignment may change this value
+            setbvalue(ra, res);
+            break;
+        }
+        case OP_LEN: {
+            Protect(lhatV_objlen(L, ra, RB(i)));
+            break;
+        }
+        case OP_CONCAT: {
+            int b = GETARG_B(i);
+            int c = GETARG_C(i);
+            StkId rb;
+            L->top = base + c + 1;  // mark the end of concat operands
+            Protect(lhatV_concat(L, c - b + 1));
+            ra = RA(i);  // 'lhatV_concat' may invoke TMs and move the stack
+            rb = base + b;
+            setobjs2s(L, ra, rb);
+            checkGC(L, (ra >= rb ? ra + 1 : rb));
+            L->top = ci->top;  // restore top
+            break;
+        }
+        case OP_JMP: {
+            dojump(ci, i, 0);
+            break;
+        }
+        case OP_EQ: {
+            TValue *rb = RKB(i);
+            TValue *rc = RKC(i);
+            Protect(
+                if(lhatV_equalobj(L, rb, rc) != GETARG_A(i))
+                    ci->u.l.savedpc++;
+                else
+                    donextjump(ci);
+            )
+                break;
+        }
+        case OP_LT: {
+            Protect(
+                if(lhatV_lessthan(L, RKB(i), RKC(i)) != GETARG_A(i))
+                    ci->u.l.savedpc++;
+                else
+                    donextjump(ci);
+            )
+                break;
+        }
+        case OP_LE: {
+            Protect(
+                if(lhatV_lessequal(L, RKB(i), RKC(i)) != GETARG_A(i))
+                    ci->u.l.savedpc++;
+                else
+                    donextjump(ci);
+            )
+                break;
+        }
+        case OP_TEST: {
+            if(GETARG_C(i) ? l_isfalse(ra) : !l_isfalse(ra))
+                ci->u.l.savedpc++;
+            else
+                donextjump(ci);
+            break;
+        }
+        case OP_TESTSET: {
+            TValue *rb = RB(i);
+            if(GETARG_C(i) ? l_isfalse(rb) : !l_isfalse(rb))
+                ci->u.l.savedpc++;
+            else {
                 setobjs2s(L, ra, rb);
-                checkGC(L, (ra >= rb ? ra + 1 : rb));
-                L->top = ci->top;  // restore top
-                vmbreak;
+                donextjump(ci);
             }
-            vmcase(OP_JMP)
-            {
-                dojump(ci, i, 0);
-                vmbreak;
+            break;
+        }
+        case OP_CALL: {
+            int b = GETARG_B(i);
+            int nresults = GETARG_C(i) - 1;
+            if(b != 0) L->top = ra + b;  // else previous instruction set top
+            if(lhatD_precall(L, ra, nresults)) {  // C function?
+                if(nresults >= 0)
+                    L->top = ci->top;  // adjust results
+                Protect((void)0);  // update 'base'
             }
-            vmcase(OP_EQ)
-            {
-                TValue *rb = RKB(i);
-                TValue *rc = RKC(i);
-                Protect(
-                    if(lhatV_equalobj(L, rb, rc) != GETARG_A(i))
-                        ci->u.l.savedpc++;
-                    else
-                        donextjump(ci);
-                )
-                    vmbreak;
+            else {  // L^ function
+                ci = L->ci;
+                goto newframe;  // restart lhatV_execute over new L^ function
             }
-            vmcase(OP_LT)
-            {
-                Protect(
-                    if(lhatV_lessthan(L, RKB(i), RKC(i)) != GETARG_A(i))
-                        ci->u.l.savedpc++;
-                    else
-                        donextjump(ci);
-                )
-                    vmbreak;
+            break;
+        }
+        case OP_TAILCALL: {
+            int b = GETARG_B(i);
+            if(b != 0) L->top = ra + b;  // else previous instruction set top
+            lhat_assert(GETARG_C(i) - 1 == LHAT_MULTRET);
+            if(lhatD_precall(L, ra, LHAT_MULTRET)) {  // C function?
+                Protect((void)0);  // update 'base'
             }
-            vmcase(OP_LE)
-            {
-                Protect(
-                    if(lhatV_lessequal(L, RKB(i), RKC(i)) != GETARG_A(i))
-                        ci->u.l.savedpc++;
-                    else
-                        donextjump(ci);
-                )
-                    vmbreak;
+            else {
+                // tail call: put called frame (n) in place of caller one (o)
+                CallInfo *nci = L->ci;  // called frame
+                CallInfo *oci = nci->previous;  // caller frame
+                StkId nfunc = nci->func;  // called function
+                StkId ofunc = oci->func;  // caller function
+                                          // last stack slot filled by 'precall'
+                StkId lim = nci->u.l.base + getproto(nfunc)->numparams;
+                int aux;
+                // close all upvalues from previous call
+                if(cl->p->sizep > 0) lhatF_close(L, oci->u.l.base);
+                // move new frame into old one
+                for(aux = 0; nfunc + aux < lim; aux++)
+                    setobjs2s(L, ofunc + aux, nfunc + aux);
+                oci->u.l.base = ofunc + (nci->u.l.base - nfunc);  // correct base
+                oci->top = L->top = ofunc + (L->top - nfunc);  // correct top
+                oci->u.l.savedpc = nci->u.l.savedpc;
+                oci->callstatus |= CIST_TAIL;  // function was tail called
+                ci = L->ci = oci;  // remove new frame
+                lhat_assert(L->top == oci->u.l.base + getproto(ofunc)->maxstacksize);
+                goto newframe;  // restart lhatV_execute over new L^ function
             }
-            vmcase(OP_TEST)
-            {
-                if(GETARG_C(i) ? l_isfalse(ra) : !l_isfalse(ra))
-                    ci->u.l.savedpc++;
-                else
-                    donextjump(ci);
-                vmbreak;
+            break;
+        }
+        case OP_RETURN: {
+            int b = GETARG_B(i);
+            if(cl->p->sizep > 0) lhatF_close(L, base);
+            b = lhatD_poscall(L, ci, ra, (b != 0 ? b - 1 : cast_int(L->top - ra)));
+            if(ci->callstatus & CIST_FRESH)  // local 'ci' still from callee
+                return;  // external invocation: return
+            else {  // invocation via reentry: continue execution
+                ci = L->ci;
+                if(b) L->top = ci->top;
+                lhat_assert(isLhat(ci));
+                lhat_assert(GET_OPCODE(*((ci)->u.l.savedpc - 1)) == OP_CALL);
+                goto newframe;  // restart lhatV_execute over new L^ function
             }
-            vmcase(OP_TESTSET)
-            {
-                TValue *rb = RB(i);
-                if(GETARG_C(i) ? l_isfalse(rb) : !l_isfalse(rb))
-                    ci->u.l.savedpc++;
-                else {
-                    setobjs2s(L, ra, rb);
-                    donextjump(ci);
-                }
-                vmbreak;
-            }
-            vmcase(OP_CALL)
-            {
-                int b = GETARG_B(i);
-                int nresults = GETARG_C(i) - 1;
-                if(b != 0) L->top = ra + b;  // else previous instruction set top
-                if(lhatD_precall(L, ra, nresults)) {  // C function?
-                    if(nresults >= 0)
-                        L->top = ci->top;  // adjust results
-                    Protect((void)0);  // update 'base'
-                }
-                else {  // L^ function
-                    ci = L->ci;
-                    goto newframe;  // restart lhatV_execute over new L^ function
-                }
-                vmbreak;
-            }
-            vmcase(OP_TAILCALL)
-            {
-                int b = GETARG_B(i);
-                if(b != 0) L->top = ra + b;  // else previous instruction set top
-                lhat_assert(GETARG_C(i) - 1 == LHAT_MULTRET);
-                if(lhatD_precall(L, ra, LHAT_MULTRET)) {  // C function?
-                    Protect((void)0);  // update 'base'
-                }
-                else {
-                    // tail call: put called frame (n) in place of caller one (o)
-                    CallInfo *nci = L->ci;  // called frame
-                    CallInfo *oci = nci->previous;  // caller frame
-                    StkId nfunc = nci->func;  // called function
-                    StkId ofunc = oci->func;  // caller function
-                                              // last stack slot filled by 'precall'
-                    StkId lim = nci->u.l.base + getproto(nfunc)->numparams;
-                    int aux;
-                    // close all upvalues from previous call
-                    if(cl->p->sizep > 0) lhatF_close(L, oci->u.l.base);
-                    // move new frame into old one
-                    for(aux = 0; nfunc + aux < lim; aux++)
-                        setobjs2s(L, ofunc + aux, nfunc + aux);
-                    oci->u.l.base = ofunc + (nci->u.l.base - nfunc);  // correct base
-                    oci->top = L->top = ofunc + (L->top - nfunc);  // correct top
-                    oci->u.l.savedpc = nci->u.l.savedpc;
-                    oci->callstatus |= CIST_TAIL;  // function was tail called
-                    ci = L->ci = oci;  // remove new frame
-                    lhat_assert(L->top == oci->u.l.base + getproto(ofunc)->maxstacksize);
-                    goto newframe;  // restart lhatV_execute over new L^ function
-                }
-                vmbreak;
-            }
-            vmcase(OP_RETURN)
-            {
-                int b = GETARG_B(i);
-                if(cl->p->sizep > 0) lhatF_close(L, base);
-                b = lhatD_poscall(L, ci, ra, (b != 0 ? b - 1 : cast_int(L->top - ra)));
-                if(ci->callstatus & CIST_FRESH)  // local 'ci' still from callee
-                    return;  // external invocation: return
-                else {  // invocation via reentry: continue execution
-                    ci = L->ci;
-                    if(b) L->top = ci->top;
-                    lhat_assert(isLhat(ci));
-                    lhat_assert(GET_OPCODE(*((ci)->u.l.savedpc - 1)) == OP_CALL);
-                    goto newframe;  // restart lhatV_execute over new L^ function
-                }
-            }
-            vmcase(OP_FORLOOP)
-            {
-                if(ttisinteger(ra)) {  // integer loop?
-                    lhat_Integer step = ivalue(ra + 2);
-                    lhat_Integer idx = intop(+, ivalue(ra), step); // increment index
-                    lhat_Integer limit = ivalue(ra + 1);
-                    if((0 < step) ? (idx <= limit) : (limit <= idx)) {
-                        ci->u.l.savedpc += GETARG_sBx(i);  // jump back
-                        chgivalue(ra, idx);  // update internal index...
-                        setivalue(ra + 3, idx);  // ...and external index
-                    }
-                }
-                else {  // floating loop
-                    lhat_Number step = fltvalue(ra + 2);
-                    lhat_Number idx = lhati_numadd(L, fltvalue(ra), step); // inc. index
-                    lhat_Number limit = fltvalue(ra + 1);
-                    if(lhati_numlt(0, step) ? lhati_numle(idx, limit)
-                        : lhati_numle(limit, idx)) {
-                        ci->u.l.savedpc += GETARG_sBx(i);  // jump back
-                        chgfltvalue(ra, idx);  // update internal index...
-                        setfltvalue(ra + 3, idx);  // ...and external index
-                    }
-                }
-                vmbreak;
-            }
-            vmcase(OP_FORPREP)
-            {
-                TValue *init = ra;
-                TValue *plimit = ra + 1;
-                TValue *pstep = ra + 2;
-                lhat_Integer ilimit;
-                int stopnow;
-                if(ttisinteger(init) && ttisinteger(pstep) &&
-                    forlimit(plimit, &ilimit, ivalue(pstep), &stopnow)) {
-                    // all values are integer
-                    lhat_Integer initv = (stopnow ? 0 : ivalue(init));
-                    setivalue(plimit, ilimit);
-                    setivalue(init, intop(-, initv, ivalue(pstep)));
-                }
-                else {  // try making all values floats
-                    lhat_Number ninit; lhat_Number nlimit; lhat_Number nstep;
-                    if(!tonumber(plimit, &nlimit))
-                        lhatG_runerror(L, "'for' limit must be a number");
-                    setfltvalue(plimit, nlimit);
-                    if(!tonumber(pstep, &nstep))
-                        lhatG_runerror(L, "'for' step must be a number");
-                    setfltvalue(pstep, nstep);
-                    if(!tonumber(init, &ninit))
-                        lhatG_runerror(L, "'for' initial value must be a number");
-                    setfltvalue(init, lhati_numsub(L, ninit, nstep));
-                }
-                ci->u.l.savedpc += GETARG_sBx(i);
-                vmbreak;
-            }
-            vmcase(OP_TFORCALL)
-            {
-                StkId cb = ra + 3;  // call base
-                setobjs2s(L, cb + 2, ra + 2);
-                setobjs2s(L, cb + 1, ra + 1);
-                setobjs2s(L, cb, ra);
-                L->top = cb + 3;  // func. + 2 args (state and index)
-                Protect(lhatD_call(L, cb, GETARG_C(i)));
-                L->top = ci->top;
-                i = *(ci->u.l.savedpc++);  // go to next instruction
-                ra = RA(i);
-                lhat_assert(GET_OPCODE(i) == OP_TFORLOOP);
-                goto l_tforloop;
-            }
-            vmcase(OP_TFORLOOP)
-            {
-            l_tforloop:
-                if(!ttisnil(ra + 1)) {  // continue loop?
-                    setobjs2s(L, ra, ra + 1);  // save control variable
+        }
+        case OP_FORLOOP: {
+            if(ttisinteger(ra)) {  // integer loop?
+                lhat_Integer step = ivalue(ra + 2);
+                lhat_Integer idx = intop(+, ivalue(ra), step); // increment index
+                lhat_Integer limit = ivalue(ra + 1);
+                if((0 < step) ? (idx <= limit) : (limit <= idx)) {
                     ci->u.l.savedpc += GETARG_sBx(i);  // jump back
+                    chgivalue(ra, idx);  // update internal index...
+                    setivalue(ra + 3, idx);  // ...and external index
                 }
-                vmbreak;
             }
-            vmcase(OP_SETLIST)
-            {
-                int n = GETARG_B(i);
-                int c = GETARG_C(i);
-                unsigned int last;
-                Table *h;
-                if(n == 0) n = cast_int(L->top - ra) - 1;
-                if(c == 0) {
-                    lhat_assert(GET_OPCODE(*ci->u.l.savedpc) == OP_EXTRAARG);
-                    c = GETARG_Ax(*ci->u.l.savedpc++);
+            else {  // floating loop
+                lhat_Number step = fltvalue(ra + 2);
+                lhat_Number idx = lhati_numadd(L, fltvalue(ra), step); // inc. index
+                lhat_Number limit = fltvalue(ra + 1);
+                if(lhati_numlt(0, step) ? lhati_numle(idx, limit)
+                    : lhati_numle(limit, idx)) {
+                    ci->u.l.savedpc += GETARG_sBx(i);  // jump back
+                    chgfltvalue(ra, idx);  // update internal index...
+                    setfltvalue(ra + 3, idx);  // ...and external index
                 }
-                h = hvalue(ra);
-                last = ((c - 1)*LFIELDS_PER_FLUSH) + n;
-                if(last > h->sizearray)  // needs more space?
-                    lhatH_resizearray(L, h, last);  // preallocate it at once
-                for(; n > 0; n--) {
-                    TValue *val = ra + n;
-                    lhatH_setint(L, h, last--, val);
-                    lhatC_barrierback(L, h, val);
-                }
-                L->top = ci->top;  // correct top (in case of previous open call)
-                vmbreak;
             }
-            vmcase(OP_CLOSURE)
-            {
-                Proto *p = cl->p->p[GETARG_Bx(i)];
-                LClosure *ncl = getcached(p, cl->upvalues, base);  // cached closure
-                if(ncl == NULL)  // no match?
-                    pushclosure(L, p, cl->upvalues, base, ra);  // create a new one
-                else
-                    setclLvalue(L, ra, ncl);  // push cashed closure
-                checkGC(L, ra + 1);
-                vmbreak;
+            break;
+        }
+        case OP_FORPREP: {
+            TValue *init = ra;
+            TValue *plimit = ra + 1;
+            TValue *pstep = ra + 2;
+            lhat_Integer ilimit;
+            int stopnow;
+            if(ttisinteger(init) && ttisinteger(pstep) &&
+                forlimit(plimit, &ilimit, ivalue(pstep), &stopnow)) {
+                // all values are integer
+                lhat_Integer initv = (stopnow ? 0 : ivalue(init));
+                setivalue(plimit, ilimit);
+                setivalue(init, intop(-, initv, ivalue(pstep)));
             }
-            vmcase(OP_VARARG)
-            {
-                int b = GETARG_B(i) - 1;  // required results
-                int j;
-                int n = cast_int(base - ci->func) - cl->p->numparams - 1;
-                if(n < 0)  // less arguments than parameters?
-                    n = 0;  // no vararg arguments
-                if(b < 0) {  // B == 0?
-                    b = n;  // get all var. arguments
-                    Protect(lhatD_checkstack(L, n));
-                    ra = RA(i);  // previous call may change the stack
-                    L->top = ra + n;
-                }
-                for(j = 0; j < b && j < n; j++)
-                    setobjs2s(L, ra + j, base - n + j);
-                for(; j < b; j++)  // complete required results with nil
-                    setnilvalue(ra + j);
-                vmbreak;
+            else {  // try making all values floats
+                lhat_Number ninit; lhat_Number nlimit; lhat_Number nstep;
+                if(!tonumber(plimit, &nlimit))
+                    lhatG_runerror(L, "'for' limit must be a number");
+                setfltvalue(plimit, nlimit);
+                if(!tonumber(pstep, &nstep))
+                    lhatG_runerror(L, "'for' step must be a number");
+                setfltvalue(pstep, nstep);
+                if(!tonumber(init, &ninit))
+                    lhatG_runerror(L, "'for' initial value must be a number");
+                setfltvalue(init, lhati_numsub(L, ninit, nstep));
             }
-            vmcase(OP_EXTRAARG)
-            {
-                lhat_assert(0);
-                vmbreak;
+            ci->u.l.savedpc += GETARG_sBx(i);
+            break;
+        }
+        case OP_TFORCALL: {
+            StkId cb = ra + 3;  // call base
+            setobjs2s(L, cb + 2, ra + 2);
+            setobjs2s(L, cb + 1, ra + 1);
+            setobjs2s(L, cb, ra);
+            L->top = cb + 3;  // func. + 2 args (state and index)
+            Protect(lhatD_call(L, cb, GETARG_C(i)));
+            L->top = ci->top;
+            i = *(ci->u.l.savedpc++);  // go to next instruction
+            ra = RA(i);
+            lhat_assert(GET_OPCODE(i) == OP_TFORLOOP);
+            goto l_tforloop;
+        }
+        case OP_TFORLOOP:
+        {
+        l_tforloop:
+            if(!ttisnil(ra + 1)) {  // continue loop?
+                setobjs2s(L, ra, ra + 1);  // save control variable
+                ci->u.l.savedpc += GETARG_sBx(i);  // jump back
             }
+            break;
+        }
+        case OP_SETLIST:
+        {
+            int n = GETARG_B(i);
+            int c = GETARG_C(i);
+            unsigned int last;
+            Table *h;
+            if(n == 0) n = cast_int(L->top - ra) - 1;
+            if(c == 0) {
+                lhat_assert(GET_OPCODE(*ci->u.l.savedpc) == OP_EXTRAARG);
+                c = GETARG_Ax(*ci->u.l.savedpc++);
+            }
+            h = hvalue(ra);
+            last = ((c - 1)*LFIELDS_PER_FLUSH) + n;
+            if(last > h->sizearray)  // needs more space?
+                lhatH_resizearray(L, h, last);  // preallocate it at once
+            for(; n > 0; n--) {
+                TValue *val = ra + n;
+                lhatH_setint(L, h, last--, val);
+                lhatC_barrierback(L, h, val);
+            }
+            L->top = ci->top;  // correct top (in case of previous open call)
+            break;
+        }
+        case OP_CLOSURE:
+        {
+            Proto *p = cl->p->p[GETARG_Bx(i)];
+            LClosure *ncl = getcached(p, cl->upvalues, base);  // cached closure
+            if(ncl == NULL)  // no match?
+                pushclosure(L, p, cl->upvalues, base, ra);  // create a new one
+            else
+                setclLvalue(L, ra, ncl);  // push cashed closure
+            checkGC(L, ra + 1);
+            break;
+        }
+        case OP_VARARG:
+        {
+            int b = GETARG_B(i) - 1;  // required results
+            int j;
+            int n = cast_int(base - ci->func) - cl->p->numparams - 1;
+            if(n < 0)  // less arguments than parameters?
+                n = 0;  // no vararg arguments
+            if(b < 0) {  // B == 0?
+                b = n;  // get all var. arguments
+                Protect(lhatD_checkstack(L, n));
+                ra = RA(i);  // previous call may change the stack
+                L->top = ra + n;
+            }
+            for(j = 0; j < b && j < n; j++)
+                setobjs2s(L, ra + j, base - n + j);
+            for(; j < b; j++)  // complete required results with nil
+                setnilvalue(ra + j);
+            break;
+        }
+        case OP_EXTRAARG:
+            lhat_assert(0);
+            break;
         }
     }
 }

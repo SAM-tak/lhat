@@ -6,7 +6,7 @@
 //
 
 #include "lobject.h"
-#include "lzio.h"
+#include "lzbuf.h"
 
 #define FIRST_RESERVED	257
 
@@ -54,7 +54,7 @@ typedef struct LexState {
 	Token lookahead;  // look ahead token
 	struct FuncState *fs;  // current function (parser)
 	struct lhat_State *L;
-	ZIO *z;  // input stream
+	ZBuf *z;  // input stream
 	Mbuffer *buff;  // buffer for tokens
 	Table *h;  // to avoid collection/reuse strings
 	struct Dyndata *dyd;  // dynamic structures used by the parser
@@ -63,7 +63,7 @@ typedef struct LexState {
 } LexState;
 
 LHATI_FUNC void lhatX_init(lhat_State *L);
-LHATI_FUNC void lhatX_setinput(lhat_State *L, LexState *ls, ZIO *z, TString *source, int firstchar);
+LHATI_FUNC void lhatX_setinput(lhat_State *L, LexState *ls, ZBuf *z, TString *source, int firstchar);
 LHATI_FUNC TString *lhatX_newstring(LexState *ls, const char *str, size_t l);
 LHATI_FUNC void lhatX_next(LexState *ls);
 LHATI_FUNC int lhatX_lookahead(LexState *ls);
