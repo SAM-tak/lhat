@@ -23,7 +23,7 @@
 // In general, 'pre'/'pos' are empty (nothing to save)
 #define lhatD_checkstack(L,n)	lhatD_checkstackaux(L,n,(void)0,(void)0)
 
-inline TValue *restorestack(lhat_State *L, int n)
+inline TValue *restorestack(lhat_State *L, ptrdiff_t n)
 {
 	return (TValue *)((char *)L->stack + n);
 }

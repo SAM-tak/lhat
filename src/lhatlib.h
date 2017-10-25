@@ -44,4 +44,8 @@ LHATMOD_API int lhatopen_package(lhat_State *L);
 // open all previous libraries
 LHATLIB_API void lhatL_openlibs(lhat_State *L);
 
+#if !defined(lhat_assert)
+# define lhat_assert(x)	((void)0)
+#endif
+
 #endif
