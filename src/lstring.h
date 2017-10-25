@@ -1,11 +1,9 @@
+#ifndef lstring_h
+#define lstring_h
 //
-// $Id: lstring.h,v 1.61 2015/11/03 15:36:01 roberto Exp $
 // String table (keep all strings handled by L^)
 // See Copyright Notice in lhat.h
 //
-
-#ifndef lstring_h
-#define lstring_h
 
 #include "lgc.h"
 #include "lobject.h"
@@ -17,15 +15,16 @@
 #define sizeludata(l)	(sizeof(union UUserData) + (l))
 #define sizeudata(u)	sizeludata((u)->len)
 
-#define lhatS_newliteral(L, s)	(lhatS_newlstr(L, "" s, \
-                                 (sizeof(s)/sizeof(char))-1))
+#define lhatS_newliteral(L, s)	(lhatS_newlstr(L, "" s, (sizeof(s)/sizeof(char))-1))
 
 
 //
 // test whether a string is a reserved word
 //
-#define isreserved(s)	((s)->tt == LHAT_TSHRSTR && (s)->extra > 0)
-
+inline bool isreserved(const TString *s)
+{
+	return s->tt == LHAT_TSHRSTR && s->extra > 0;
+}
 
 //
 // equality for short strings, which are always internalized
@@ -45,5 +44,4 @@ LHATI_FUNC TString *lhatS_newlstr (lhat_State *L, const char *str, size_t l);
 LHATI_FUNC TString *lhatS_new (lhat_State *L, const char *str);
 LHATI_FUNC TString *lhatS_createlngstrobj (lhat_State *L, size_t l);
 
-
-#endif
+#endif // !lstring_h

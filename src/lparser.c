@@ -23,6 +23,7 @@
 #include "lstate.h"
 #include "lstring.h"
 #include "ltable.h"
+#include "lmbuf.h"
 
 
 
@@ -1674,7 +1675,7 @@ static void mainfunc(LexState *ls, FuncState *fs)
 }
 
 
-LClosure *lhatY_parser(lhat_State *L, ZBuf *z, Mbuffer *buff, Dyndata *dyd, const char *name, int firstchar)
+LClosure *lhatY_parser(lhat_State *L, ZBuf *z, MBuffer *buff, Dyndata *dyd, const char *name, int firstchar)
 {
     LexState lexstate;
     FuncState funcstate;

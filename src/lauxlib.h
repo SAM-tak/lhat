@@ -1,5 +1,5 @@
-#ifndef lauxlib_h
-#define lauxlib_h
+#ifndef lhat_lauxlib_h
+#define lhat_lauxlib_h
 //
 // Auxiliary functions for building L^ libraries
 // See Copyright Notice in lhat.h
@@ -139,13 +139,13 @@ inline int lhatL_dostring(lhat_State *L, const char *s)
 
 
 #define lhatL_newlibtable(L,l)	\
-  lhat_createtable(L, 0, sizeof(l)/sizeof((l)[0]) - 1)
+	lhat_createtable(L, 0, sizeof(l)/sizeof((l)[0]) - 1)
 
 #define lhatL_newlib(L,l)  \
-  (lhatL_checkversion(L), lhatL_newlibtable(L,l), lhatL_setfuncs(L,l,0))
+	(lhatL_checkversion(L), lhatL_newlibtable(L,l), lhatL_setfuncs(L,l,0))
 
 #define lhatL_argcheck(L, cond,arg,extramsg)	\
-		((void)((cond) || lhatL_argerror(L, (arg), (extramsg))))
+	((void)((cond) || lhatL_argerror(L, (arg), (extramsg))))
 
 #define lhatL_opt(L,f,n,d)	(lhat_isnoneornil(L,(n)) ? (d) : f(L,(n)))
 
@@ -164,11 +164,6 @@ typedef struct lhatL_Buffer {
 	char initb[LHATL_BUFFERSIZE];  // initial buffer
 } lhatL_Buffer;
 
-
-#define lhatL_addchar(B,c)  ((void)((B)->n < (B)->size || lhatL_prepbuffsize((B), 1)), ((B)->b[(B)->n++] = (c)))
-
-#define lhatL_addsize(B,s)	((B)->n += (s))
-
 LHATLIB_API void lhatL_buffinit(lhatL_Buffer *B, lhat_State *L);
 LHATLIB_API char *lhatL_prepbuffsize(lhatL_Buffer *B, size_t sz);
 LHATLIB_API void lhatL_addlstring(lhatL_Buffer *B, const char *s, size_t l);
@@ -177,6 +172,17 @@ LHATLIB_API void lhatL_addvalue(lhatL_Buffer *B);
 LHATLIB_API void lhatL_pushresult(lhatL_Buffer *B);
 LHATLIB_API void lhatL_pushresultsize(lhatL_Buffer *B, size_t sz);
 LHATLIB_API char *lhatL_buffinitsize(lhatL_Buffer *B, size_t sz, lhat_State *L);
+
+inline void lhatL_addchar(lhatL_Buffer *B, char c)
+{
+	if(B->n >= B->size) lhatL_prepbuffsize(B, 1);
+	B->b[B->n++] = c;
+}
+
+inline void lhatL_addsize(lhatL_Buffer *B, size_t s)
+{
+	B->n += s;
+}
 
 inline char *lhatL_prepbuffer(lhatL_Buffer *B)
 {
@@ -219,19 +225,30 @@ typedef struct lhatL_Stream {
 
 // print a string
 #if !defined(lhat_writestring)
-#define lhat_writestring(s,l)   fwrite((s), sizeof(char), (l), stdout)
+inline size_t lhat_writestring(void const *s, size_t l)
+{
+	return fwrite(s, sizeof(char), l, stdout);
+}
 #endif
 
 // print a newline and flush the output
 #if !defined(lhat_writeline)
-#define lhat_writeline()        (lhat_writestring("\n", 1), fflush(stdout))
+inline int lhat_writeline()
+{
+	lhat_writestring("\n", 1);
+	return fflush(stdout);
+}
 #endif
 
 // print an error message
 #if !defined(lhat_writestringerror)
-#define lhat_writestringerror(s,p) (fprintf(stderr, (s), (p)), fflush(stderr))
+inline int lhat_writestringerror(char * const s, const char * const p)
+{
+	fprintf(stderr, s, p);
+	return fflush(stderr);
+}
 #endif
 
 // }==================================================================
 
-#endif
+#endif // !lhat_lauxlib_h

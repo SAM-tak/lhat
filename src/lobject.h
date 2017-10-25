@@ -156,8 +156,7 @@ typedef struct lhat_TValue {
 // Macros to access values
 #define ivalue(o)	check_exp(ttisinteger(o), val_(o).i)
 #define fltvalue(o)	check_exp(ttisfloat(o), val_(o).n)
-#define nvalue(o)	check_exp(ttisnumber(o), \
-	(ttisinteger(o) ? cast_num(ivalue(o)) : fltvalue(o)))
+#define nvalue(o)	check_exp(ttisnumber(o), (ttisinteger(o) ? cast_num(ivalue(o)) : fltvalue(o)))
 #define gcvalue(o)	check_exp(iscollectable(o), val_(o).gc)
 #define pvalue(o)	check_exp(ttislightuserdata(o), val_(o).p)
 #define tsvalue(o)	check_exp(ttisstring(o), gco2ts(val_(o).gc))
@@ -174,9 +173,7 @@ typedef struct lhat_TValue {
 
 #define l_isfalse(o)	(ttisnil(o) || (ttisboolean(o) && bvalue(o) == 0))
 
-
 #define iscollectable(o)	(rttype(o) & BIT_ISCOLLECTABLE)
-
 
 // Macros for internal tests
 #define righttt(obj)		(ttype(obj) == gcvalue(obj)->tt)
@@ -319,12 +316,10 @@ typedef union UTString {
 // Get the actual string (array of bytes) from a 'TString'.
 // (Access to 'extra' ensures that value is really a 'TString'.)
 //
-#define getstr(ts)  \
-  check_exp(sizeof((ts)->extra), cast(char *, (ts)) + sizeof(UTString))
-
+#define getstr(ts) check_exp(sizeof((ts)->extra), cast(char *, (ts)) + sizeof(UTString))
 
 // get the actual string (array of bytes) from a L^ value
-#define svalue(o)       getstr(tsvalue(o))
+#define svalue(o)   getstr(tsvalue(o))
 
 // get string length from 'TString *s'
 #define tsslen(s)	((s)->tt == LHAT_TSHRSTR ? (s)->shrlen : (s)->u.lnglen)
@@ -519,7 +514,9 @@ typedef struct Table {
 LHATI_DDEC const TValue lhatO_nilobject_;
 
 // size of buffer for 'lhatO_utf8esc' function
-#define UTF8BUFFSZ	8
+enum {
+	UTF8BUFFSZ = 8
+};
 
 LHATI_FUNC int lhatO_int2fb(unsigned int x);
 LHATI_FUNC int lhatO_fb2int(int x);

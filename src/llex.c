@@ -23,6 +23,7 @@
 #include "lstring.h"
 #include "ltable.h"
 #include "lzbuf.h"
+#include "lmbuf.h"
 
 #define next(ls) (ls->current = zgetc(ls->z))
 
@@ -48,15 +49,15 @@ static l_noret lexerror(LexState *ls, const char *msg, int token);
 
 static void save(LexState *ls, int c)
 {
-    Mbuffer *b = ls->buff;
-    if(lhatZ_bufflen(b) + 1 > lhatZ_sizebuffer(b)) {
+    MBuffer *b = ls->buff;
+    if(lhatM_bufflen(b) + 1 > lhatM_sizebuffer(b)) {
         size_t newsize;
-        if(lhatZ_sizebuffer(b) >= MAX_SIZE / 2)
+        if(lhatM_sizebuffer(b) >= MAX_SIZE / 2)
             lexerror(ls, "lexical element too long", 0);
-        newsize = lhatZ_sizebuffer(b) * 2;
-        lhatZ_resizebuffer(ls->L, b, newsize);
+        newsize = lhatM_sizebuffer(b) * 2;
+        lhatM_resizebuffer(b, newsize, ls->L);
     }
-    b->buffer[lhatZ_bufflen(b)++] = cast(char, c);
+    b->buffer[b->n++] = cast(char, c);
 }
 
 
@@ -94,7 +95,7 @@ static const char *txtToken(LexState *ls, int token)
     case TK_NAME: case TK_STRING:
     case TK_FLT: case TK_INT:
         save(ls, '\0');
-        return lhatO_pushfstring(ls->L, "'%s'", lhatZ_buffer(ls->buff));
+        return lhatO_pushfstring(ls->L, "'%s'", lhatM_buffer(ls->buff));
     default:
         return lhatX_token2str(ls, token);
     }
@@ -170,7 +171,7 @@ void lhatX_setinput(lhat_State *L, LexState *ls, ZBuf *z, TString *source, int f
     ls->lastline = 1;
     ls->source = source;
     ls->envn = lhatS_newliteral(L, LHAT_ENV);  // get env name
-    lhatZ_resizebuffer(ls->L, ls->buff, LHAT_MINBUFFER);  // initialize buffer
+    lhatM_resizebuffer(ls->buff, LHAT_MINBUFFER, ls->L);  // initialize buffer
 }
 
 
@@ -231,7 +232,7 @@ static int read_numeral(LexState *ls, SemInfo *seminfo)
         else break;
     }
     save(ls, '\0');
-    if(lhatO_str2num(lhatZ_buffer(ls->buff), &obj) == 0)  // format error?
+    if(lhatO_str2num(lhatM_buffer(ls->buff), &obj) == 0)  // format error?
         lexerror(ls, "malformed number", TK_FLT);
     if(ttisinteger(&obj)) {
         seminfo->i = ivalue(&obj);
@@ -289,7 +290,7 @@ static void read_long_string(LexState *ls, SemInfo *seminfo, int sep)
         case '\n': case '\r': {
             save(ls, '\n');
             inclinenumber(ls);
-            if(!seminfo) lhatZ_resetbuffer(ls->buff);  // avoid wasting space
+            if(!seminfo) lhatM_resetbuffer(ls->buff);  // avoid wasting space
             break;
         }
         default: {
@@ -299,8 +300,8 @@ static void read_long_string(LexState *ls, SemInfo *seminfo, int sep)
         }
     } endloop:
     if(seminfo)
-        seminfo->ts = lhatX_newstring(ls, lhatZ_buffer(ls->buff) + (2 + sep),
-            lhatZ_bufflen(ls->buff) - 2 * (2 + sep));
+        seminfo->ts = lhatX_newstring(ls, lhatM_buffer(ls->buff) + (2 + sep),
+            lhatM_bufflen(ls->buff) - 2 * (2 + sep));
 }
 
 
@@ -326,7 +327,7 @@ static int readhexaesc(LexState *ls)
 {
     int r = gethexa(ls);
     r = (r << 4) + gethexa(ls);
-    lhatZ_buffremove(ls->buff, 2);  // remove saved chars from buffer
+    lhatM_buffremove(ls->buff, 2);  // remove saved chars from buffer
     return r;
 }
 
@@ -344,7 +345,7 @@ static unsigned long readutf8esc(LexState *ls)
     }
     esccheck(ls, ls->current == '}', "missing '}'");
     next(ls);  // skip '}'
-    lhatZ_buffremove(ls->buff, i);  // remove saved chars from buffer
+    lhatM_buffremove(ls->buff, i);  // remove saved chars from buffer
     return r;
 }
 
@@ -365,7 +366,7 @@ static int readdecesc(LexState *ls)
         save_and_next(ls);
     }
     esccheck(ls, r <= UCHAR_MAX, "decimal escape too large");
-    lhatZ_buffremove(ls->buff, i);  // remove read digits from buffer
+    lhatM_buffremove(ls->buff, i);  // remove read digits from buffer
     return r;
 }
 
@@ -401,7 +402,7 @@ static void read_string(LexState *ls, int del, SemInfo *seminfo)
                 c = ls->current; goto read_save;
             case EOZ: goto no_save;  // will raise an error next loop
             case 'z': {  // zap following span of spaces
-                lhatZ_buffremove(ls->buff, 1);  // remove '\\'
+                lhatM_buffremove(ls->buff, 1);  // remove '\\'
                 next(ls);  // skip the 'z'
                 while(lisspace(ls->current)) {
                     if(currIsNewline(ls)) inclinenumber(ls);
@@ -419,7 +420,7 @@ static void read_string(LexState *ls, int del, SemInfo *seminfo)
             next(ls);
             // go through
         only_save:
-            lhatZ_buffremove(ls->buff, 1);  // remove '\\'
+            lhatM_buffremove(ls->buff, 1);  // remove '\\'
             save(ls, c);
             // go through
         no_save: break;
@@ -429,13 +430,13 @@ static void read_string(LexState *ls, int del, SemInfo *seminfo)
         }
     }
     save_and_next(ls);  // skip delimiter
-    seminfo->ts = lhatX_newstring(ls, lhatZ_buffer(ls->buff) + 1, lhatZ_bufflen(ls->buff) - 2);
+    seminfo->ts = lhatX_newstring(ls, lhatM_buffer(ls->buff) + 1, lhatM_bufflen(ls->buff) - 2);
 }
 
 
 static int llex(LexState *ls, SemInfo *seminfo)
 {
-    lhatZ_resetbuffer(ls->buff);
+    lhatM_resetbuffer(ls->buff);
     for(;;) {
         switch(ls->current) {
         case '\n': case '\r': {  // line breaks
@@ -453,10 +454,10 @@ static int llex(LexState *ls, SemInfo *seminfo)
             next(ls);
             if(ls->current == '[') {  // long comment?
                 int sep = skip_sep(ls);
-                lhatZ_resetbuffer(ls->buff);  // 'skip_sep' may dirty the buffer
+                lhatM_resetbuffer(ls->buff);  // 'skip_sep' may dirty the buffer
                 if(sep >= 0) {
                     read_long_string(ls, NULL, sep);  // skip long comment
-                    lhatZ_resetbuffer(ls->buff);  // previous call may dirty the buff.
+                    lhatM_resetbuffer(ls->buff);  // previous call may dirty the buff.
                     break;
                 }
             }
@@ -534,8 +535,8 @@ static int llex(LexState *ls, SemInfo *seminfo)
                 do {
                     save_and_next(ls);
                 } while(lislalnum(ls->current));
-                ts = lhatX_newstring(ls, lhatZ_buffer(ls->buff),
-                    lhatZ_bufflen(ls->buff));
+                ts = lhatX_newstring(ls, lhatM_buffer(ls->buff),
+                    lhatM_bufflen(ls->buff));
                 seminfo->ts = ts;
                 if(isreserved(ts))  // reserved word?
                     return ts->extra - 1 + FIRST_RESERVED;

@@ -7,9 +7,15 @@
 
 #include "lstate.h"
 
-#define pcRel(pc, p)	(cast(int, (pc) - (p)->code) - 1)
+inline int pcRel(const Instruction *pc, Proto *p)
+{
+	return cast(int, pc - p->code) - 1;
+}
 
-#define getfuncline(f,pc)	(((f)->lineinfo) ? (f)->lineinfo[pc] : -1)
+inline int getfuncline(Proto *f, int pc)
+{
+	return f->lineinfo ? f->lineinfo[pc] : -1;
+}
 
 inline void resethookcount(lhat_State *L)
 {

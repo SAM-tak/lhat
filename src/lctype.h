@@ -81,16 +81,34 @@ inline int ltolower(int c)
 // use standard C ctypes
 //
 # include <ctype.h>
-
-# define lislalpha(c)	(isalpha(c) || (c) == '_')
-# define lislalnum(c)	(isalnum(c) || (c) == '_')
-# define lisdigit(c)	(isdigit(c))
-# define lisspace(c)	(isspace(c))
-# define lisprint(c)	(isprint(c))
-# define lisxdigit(c)	(isxdigit(c))
-
-# define ltolower(c)	(tolower(c))
-
+inline bool lislalpha(int c)
+{
+	return isalpha(c) || (c) == '_';
+}
+inline bool lislalnum(int c)
+{
+	return isalnum(c) || (c) == '_';
+}
+inline bool lisdigit(int c)
+{
+	return isdigit(c);
+}
+inline bool lisspace(int c)
+{
+	return isspace(c);
+}
+inline bool lisprint(int c)
+{
+	return isprint(c);
+}
+inline bool lisxdigit(int c)
+{
+	return isxdigit(c);
+}
+inline bool ltolower(int c)
+{
+	return tolower(c);
+}
 #endif
 
 #endif // !lctype_h

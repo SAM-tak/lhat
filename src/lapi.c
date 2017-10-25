@@ -924,10 +924,9 @@ LHAT_API int lhat_setmetatable(lhat_State *L, int objindex)
         }
         break;
     }
-    default: {
+    default:
         G(L)->mt[ttnov(obj)] = mt;
         break;
-    }
     }
     L->top--;
     lhat_unlock(L);
@@ -959,8 +958,7 @@ LHAT_API void lhat_setuservalue(lhat_State *L, int idx)
 	"results from function overflow current stack size")
 
 
-LHAT_API void lhat_callk(lhat_State *L, int nargs, int nresults,
-    lhat_KContext ctx, lhat_KFunction k)
+LHAT_API void lhat_callk(lhat_State *L, int nargs, int nresults, lhat_KContext ctx, lhat_KFunction k)
 {
     StkId func;
     lhat_lock(L);
@@ -999,9 +997,7 @@ static void f_call(lhat_State *L, void *ud)
 }
 
 
-
-LHAT_API int lhat_pcallk(lhat_State *L, int nargs, int nresults, int errfunc,
-    lhat_KContext ctx, lhat_KFunction k)
+LHAT_API int lhat_pcallk(lhat_State *L, int nargs, int nresults, int errfunc, lhat_KContext ctx, lhat_KFunction k)
 {
     struct CallS c;
     int status;

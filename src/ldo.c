@@ -28,7 +28,7 @@
 #include "lmetamethods.h"
 #include "lchunk.h"
 #include "lvm.h"
-#include "lzbuf.h"
+#include "lmbuf.h"
 
 
 
@@ -753,7 +753,7 @@ int lhatD_pcall(lhat_State *L, Pfunc func, void *u, ptrdiff_t old_top, ptrdiff_t
 //
 struct SParser {  // data to 'f_parser'
     ZBuf *z;
-    Mbuffer buff;  // dynamic structure used by the scanner
+    MBuffer buff;  // dynamic structure used by the scanner
     Dyndata dyd;  // dynamic structures used by the parser
     const char *mode;
     const char *name;
@@ -797,9 +797,9 @@ int lhatD_protectedparser(lhat_State *L, ZBuf *z, const char *name, const char *
     p.dyd.actvar.arr = NULL; p.dyd.actvar.size = 0;
     p.dyd.gt.arr = NULL; p.dyd.gt.size = 0;
     p.dyd.label.arr = NULL; p.dyd.label.size = 0;
-    lhatZ_initbuffer(L, &p.buff);
+    lhatM_initbuffer(&p.buff);
     status = lhatD_pcall(L, f_parser, &p, savestack(L, L->top), L->errfunc);
-    lhatZ_freebuffer(L, &p.buff);
+    lhatM_freebuffer(&p.buff, L);
     lhatM_freearray(L, p.dyd.actvar.arr, p.dyd.actvar.size);
     lhatM_freearray(L, p.dyd.gt.arr, p.dyd.gt.size);
     lhatM_freearray(L, p.dyd.label.arr, p.dyd.label.size);

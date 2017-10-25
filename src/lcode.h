@@ -15,7 +15,9 @@
 // Marks the end of a patch list. It is an invalid value both as an absolute
 // address, and as a list link (would link an element to itself).
 //
-#define NO_JUMP (-1)
+enum {
+	NO_JUMP = -1
+};
 
 
 //
@@ -37,15 +39,8 @@ typedef enum BinOpr {
 
 typedef enum UnOpr { OPR_MINUS, OPR_BNOT, OPR_NOT, OPR_LEN, OPR_NOUNOPR } UnOpr;
 
-
 // get (pointer to) instruction of given 'ExpDesc'
 #define getinstruction(fs,e)	((fs)->f->code[(e)->u.info])
-
-#define lhatK_codeAsBx(fs,o,A,sBx)	lhatK_codeABx(fs,o,A,(sBx)+MAXARG_sBx)
-
-#define lhatK_setmultret(fs,e)	lhatK_setreturns(fs, e, LHAT_MULTRET)
-
-#define lhatK_jumpto(fs,t)	lhatK_patchlist(fs, lhatK_jump(fs), t)
 
 LHATI_FUNC int lhatK_codeABx(FuncState *fs, OpCode o, int A, unsigned int Bx);
 LHATI_FUNC int lhatK_codeABC(FuncState *fs, OpCode o, int A, int B, int C);
@@ -80,5 +75,20 @@ LHATI_FUNC void lhatK_prefix(FuncState *fs, UnOpr op, ExpDesc *v, int line);
 LHATI_FUNC void lhatK_infix(FuncState *fs, BinOpr op, ExpDesc *v);
 LHATI_FUNC void lhatK_posfix(FuncState *fs, BinOpr op, ExpDesc *v1, ExpDesc *v2, int line);
 LHATI_FUNC void lhatK_setlist(FuncState *fs, int base, int nelems, int tostore);
+
+inline int lhatK_codeAsBx(FuncState *fs, OpCode o, int A, unsigned int sBx)
+{
+	return lhatK_codeABx(fs, o, A, sBx + MAXARG_sBx);
+}
+
+inline void lhatK_setmultret(FuncState *fs, ExpDesc *e)
+{
+	lhatK_setreturns(fs, e, LHAT_MULTRET);
+}
+
+inline void lhatK_jumpto(FuncState *fs, int t)
+{
+	lhatK_patchlist(fs, lhatK_jump(fs), t);
+}
 
 #endif

@@ -1,5 +1,5 @@
-#ifndef lgc_h
-#define lgc_h
+#ifndef lhat_lgc_h
+#define lhat_lgc_h
 //
 // Garbage Collector
 // See Copyright Notice in lhat.h
@@ -26,7 +26,9 @@
 // how much to allocate before next GC step
 #if !defined(GCSTEPSIZE)
 // ~100 small strings
-# define GCSTEPSIZE	(cast_int(100 * sizeof(TString)))
+enum {
+	GCSTEPSIZE = 100 * sizeof(TString)
+};
 #endif
 
 
@@ -44,8 +46,10 @@ enum {
 	GCSpause      = 7,
 };
 
-#define issweepphase(g)  \
-	(GCSswpallgc <= (g)->gcstate && (g)->gcstate <= GCSswpend)
+inline bool issweepphase(GlobalState *g)
+{
+	return (GCSswpallgc <= g->gcstate && g->gcstate <= GCSswpend);
+}
 
 
 //
@@ -56,47 +60,54 @@ enum {
 // all objects are white again.
 //
 
-#define keepinvariant(g)	((g)->gcstate <= GCSatomic)
+inline bool keepinvariant(GlobalState *g)
+{
+	return g->gcstate <= GCSatomic;
+}
 
 
 //
 // some useful bit tricks
 //
-#define resetbits(x,m)		((x) &= cast(lu_byte, ~(m)))
-#define setbits(x,m)		((x) |= (m))
-#define testbits(x,m)		((x) & (m))
-#define bitmask(b)		(1<<(b))
-#define bit2mask(b1,b2)		(bitmask(b1) | bitmask(b2))
-#define l_setbit(x,b)		setbits(x, bitmask(b))
-#define resetbit(x,b)		resetbits(x, bitmask(b))
-#define testbit(x,b)		testbits(x, bitmask(b))
+#define resetbits(x,m)  ((x) &= cast(lu_byte, ~(m)))
+#define setbits(x,m)    ((x) |= (m))
+#define testbits(x,m)   ((x) & (m))
+#define bitmask(b)      (1<<(b))
+#define bit2mask(b1,b2) (bitmask(b1) | bitmask(b2))
+#define l_setbit(x,b)   setbits(x, bitmask(b))
+#define resetbit(x,b)   resetbits(x, bitmask(b))
+#define testbit(x,b)    testbits(x, bitmask(b))
 
 
 // Layout for bit use in 'marked' field:
-#define WHITE0BIT	0  // object is white (type 0)
-#define WHITE1BIT	1  // object is white (type 1)
-#define BLACKBIT	2  // object is black
-#define FINALIZEDBIT	3  // object has been marked for finalization
-// bit 7 is currently used by tests (lhatL_checkmemory)
-
-#define WHITEBITS	bit2mask(WHITE0BIT, WHITE1BIT)
+enum {
+	WHITE0BIT    = 0,  // object is white (type 0)
+	WHITE1BIT    = 1,  // object is white (type 1)
+	BLACKBIT     = 2,  // object is black
+	FINALIZEDBIT = 3,  // object has been marked for finalization
+	// bit 7 is currently used by tests (lhatL_checkmemory)
+	WHITEBITS = bit2mask(WHITE0BIT, WHITE1BIT)
+};
 
 
 #define iswhite(x)      testbits((x)->marked, WHITEBITS)
 #define isblack(x)      testbit((x)->marked, BLACKBIT)
 // neither white nor black
-#define isgray(x) (!testbits((x)->marked, WHITEBITS | bitmask(BLACKBIT)))
+#define isgray(x)       (!testbits((x)->marked, WHITEBITS | bitmask(BLACKBIT)))
 
 #define tofinalize(x)	testbit((x)->marked, FINALIZEDBIT)
 
 #define otherwhite(g)	((g)->currentwhite ^ WHITEBITS)
 #define isdeadm(ow,m)	(!(((m) ^ WHITEBITS) & (ow)))
-#define isdead(g,v)	isdeadm(otherwhite(g), (v)->marked)
+#define isdead(g,v)     isdeadm(otherwhite(g), (v)->marked)
 
 #define changewhite(x)	((x)->marked ^= WHITEBITS)
 #define gray2black(x)	l_setbit((x)->marked, BLACKBIT)
 
-#define lhatC_white(g)	cast(lu_byte, (g)->currentwhite & WHITEBITS)
+inline lu_byte lhatC_white(GlobalState *g)
+{
+	return cast(lu_byte, g->currentwhite & WHITEBITS);
+}
 
 
 //
@@ -108,10 +119,6 @@ enum {
 #define lhatC_condGC(L,pre,pos) \
 	{ if (G(L)->GCdebt > 0) { pre; lhatC_step(L); pos;}; \
 	  condchangemem(L,pre,pos); }
-
-// more often than not, 'pre'/'pos' are empty
-#define lhatC_checkGC(L)		lhatC_condGC(L,(void)0,(void)0)
-
 
 #define lhatC_barrier(L,p,v) (  \
 	(iscollectable(v) && isblack(p) && iswhite(gcvalue(v))) ?  \
@@ -141,5 +148,10 @@ LHATI_FUNC void lhatC_upvalbarrier_(lhat_State *L, Upvalue *uv);
 LHATI_FUNC void lhatC_checkfinalizer(lhat_State *L, GCObject *o, Table *mt);
 LHATI_FUNC void lhatC_upvdeccount(lhat_State *L, Upvalue *uv);
 
+// more often than not, 'pre'/'pos' are empty
+inline void lhatC_checkGC(lhat_State *L)
+{
+	lhatC_condGC(L, (void)0, (void)0);
+}
 
-#endif
+#endif // !lhat_lgc_h

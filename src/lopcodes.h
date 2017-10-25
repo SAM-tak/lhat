@@ -28,49 +28,48 @@ unsigned argument.
 // basic instruction format
 enum OpMode { iABC, iABx, iAsBx, iAx };
 
-//
-// size and position of opcode arguments.
-//
-#define SIZE_C		9
-#define SIZE_B		9
-#define SIZE_Bx		(SIZE_C + SIZE_B)
-#define SIZE_A		8
-#define SIZE_Ax		(SIZE_C + SIZE_B + SIZE_A)
+enum {
+	//
+	// size and position of opcode arguments.
+	//
+	SIZE_C  = 9,
+	SIZE_B  = 9,
+	SIZE_Bx = (SIZE_C + SIZE_B),
+	SIZE_A  = 8,
+	SIZE_Ax = (SIZE_C + SIZE_B + SIZE_A),
 
-#define SIZE_OP		6
+	SIZE_OP = 6,
 
-#define POS_OP		0
-#define POS_A		(POS_OP + SIZE_OP)
-#define POS_C		(POS_A + SIZE_A)
-#define POS_B		(POS_C + SIZE_C)
-#define POS_Bx		POS_C
-#define POS_Ax		POS_A
+	POS_OP  = 0,
+	POS_A   = (POS_OP + SIZE_OP),
+	POS_C   = (POS_A + SIZE_A),
+	POS_B   = (POS_C + SIZE_C),
+	POS_Bx  = POS_C,
+	POS_Ax  = POS_A,
 
-
-//
-// limits for opcode arguments.
-// we use (signed) int to manipulate most arguments,
-// so they must fit in LHATI_BITSINT-1 bits (-1 for sign)
-//
+	//
+	// limits for opcode arguments.
+	// we use (signed) int to manipulate most arguments,
+	// so they must fit in LHATI_BITSINT-1 bits (-1 for sign)
+	//
 #if SIZE_Bx < LHATI_BITSINT-1
-#define MAXARG_Bx        ((1<<SIZE_Bx)-1)
-#define MAXARG_sBx        (MAXARG_Bx>>1)         // 'sBx' is signed
+	MAXARG_Bx  = ((1<<SIZE_Bx)-1),
+	MAXARG_sBx = (MAXARG_Bx>>1),      // 'sBx' is signed
 #else
-#define MAXARG_Bx        MAX_INT
-#define MAXARG_sBx        MAX_INT
+	MAXARG_Bx  = MAX_INT,
+	MAXARG_sBx = MAX_INT,
 #endif
 
 #if SIZE_Ax < LHATI_BITSINT-1
-#define MAXARG_Ax	((1<<SIZE_Ax)-1)
+	MAXARG_Ax  = ((1<<SIZE_Ax)-1),
 #else
-#define MAXARG_Ax	MAX_INT
+	MAXARG_Ax  = MAX_INT,
 #endif
 
-
-#define MAXARG_A        ((1<<SIZE_A)-1)
-#define MAXARG_B        ((1<<SIZE_B)-1)
-#define MAXARG_C        ((1<<SIZE_C)-1)
-
+	MAXARG_A   = ((1<<SIZE_A)-1),
+	MAXARG_B   = ((1<<SIZE_B)-1),
+	MAXARG_C   = ((1<<SIZE_C)-1),
+};
 
 // creates a mask with 'n' 1 bits at position 'p'
 #define MASK1(n,p)	((~((~(Instruction)0)<<(n)))<<(p))
@@ -142,11 +141,12 @@ enum OpMode { iABC, iABx, iAsBx, iAx };
 // code a constant index as a RK value
 #define RKASK(x)	((x) | BITRK)
 
-
 //
 // invalid register that fits in 8 bits
 //
-#define NO_REG		MAXARG_A
+enum {
+	NO_REG = MAXARG_A
+};
 
 
 //
@@ -284,6 +284,8 @@ LHATI_DDEC const char *const lhatP_opnames[NUM_OPCODES + 1];
 
 
 // number of list items to accumulate before a SETLIST instruction
-#define LFIELDS_PER_FLUSH	50
+enum {
+	LFIELDS_PER_FLUSH = 50
+};
 
 #endif

@@ -120,7 +120,6 @@ typedef struct FuncState {
 	lu_byte freereg;  // first free register
 } FuncState;
 
-
-LHATI_FUNC LClosure *lhatY_parser(lhat_State *L, ZBuf *z, Mbuffer *buff, Dyndata *dyd, const char *name, int firstchar);
+LHATI_FUNC LClosure *lhatY_parser(lhat_State *L, ZBuf *z, struct MBuffer *buff, Dyndata *dyd, const char *name, int firstchar);
 
 #endif

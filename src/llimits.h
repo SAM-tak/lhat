@@ -40,14 +40,11 @@ typedef unsigned char lu_byte;
 #define MAX_SIZET	((size_t)(~(size_t)0))
 
 // maximum size visible for Lhat (must be representable in a lhat_Integer
-#define MAX_SIZE	(sizeof(size_t) < sizeof(lhat_Integer) ? MAX_SIZET \
-                          : (size_t)(LHAT_MAXINTEGER))
-
+#define MAX_SIZE	(sizeof(size_t) < sizeof(lhat_Integer) ? MAX_SIZET : (size_t)(LHAT_MAXINTEGER))
 
 #define MAX_LUMEM	((lu_mem)(~(lu_mem)0))
 
 #define MAX_LMEM	((l_mem)(MAX_LUMEM >> 1))
-
 
 #define MAX_INT		INT_MAX  // maximum value of an int
 
@@ -83,13 +80,13 @@ typedef LHATI_UACINT l_uacInt;
 
 // internal assertions for in-house debugging
 #if defined(lhat_assert)
-#define check_exp(c,e)		(lhat_assert(c), (e))
+# define check_exp(c,e)		(lhat_assert(c), (e))
 // to avoid problems with conditions too long
-#define lhat_longassert(c)	((c) ? (void)0 : lhat_assert(0))
+# define lhat_longassert(c)	((c) ? (void)0 : lhat_assert(0))
 #else
-#define lhat_assert(c)		((void)0)
-#define check_exp(c,e)		(e)
-#define lhat_longassert(c)	((void)0)
+# define lhat_assert(c)		((void)0)
+# define check_exp(c,e)		(e)
+# define lhat_longassert(c)	((void)0)
 #endif
 
 //

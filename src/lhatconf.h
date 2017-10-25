@@ -18,8 +18,7 @@
 //
 // {====================================================================
 // System Configuration: macros to adapt (if needed) L^ to some
-// particular platform, for instance compiling it with 32-bit numbers or
-// restricting it to C89.
+// particular platform, for instance compiling it with 32-bit numbers
 // =====================================================================
 //
 
@@ -31,19 +30,10 @@
 //
 // #define LHAT_32BITS
 
-
-//
-////@@ LHAT_USE_C89 controls the use of non-ISO-C89 features.
-// Define it if you want L^ to avoid the use of a few C99 features
-// or Windows-specific features on Windows.
-//
-// #define LHAT_USE_C89
-
-
 //
 // By default, L^ on Windows use (some) specific Windows features
 //
-#if !defined(LHAT_USE_C89) && defined(_WIN32) && !defined(_WIN32_WCE)
+#if defined(_WIN32) && !defined(_WIN32_WCE)
 #define LHAT_USE_WINDOWS  // enable goodies for regular Windows
 #endif
 
@@ -51,7 +41,6 @@
 #if defined(LHAT_USE_WINDOWS)
 #define LHAT_DL_DLL	// enable support for DLL
 #define LHAT_BUILD_AS_DLL
-//#define LHAT_USE_C89	// broadly, Windows is C89
 #endif
 
 
@@ -67,17 +56,6 @@
 #define LHAT_USE_DLOPEN		// MacOS does not need -ldl
 #define LHAT_USE_READLINE	// needs an extra library: -lreadline
 #endif
-
-
-//
-////@@ LHAT_C89_NUMBERS ensures that L^ uses the largest types available for
-// C89 ('long' and 'double'); Windows always has '__int64', so it does
-// not need to use this case.
-//
-#if defined(LHAT_USE_C89) && !defined(LHAT_USE_WINDOWS)
-#define LHAT_C89_NUMBERS
-#endif
-
 
 
 //
@@ -112,25 +90,17 @@
 #define LHAT_FLOAT_DOUBLE	2
 #define LHAT_FLOAT_LONGDOUBLE	3
 
-#if defined(LHAT_32BITS)		// {
+#if defined(LHAT_32BITS)
 //
 // 32-bit integers and 'float'
 //
-#if LHATI_BITSINT >= 32  // use 'int' if big enough
-#define LHAT_INT_TYPE	LHAT_INT_INT
-#else  // otherwise use 'long'
-#define LHAT_INT_TYPE	LHAT_INT_LONG
-#endif
+# if LHATI_BITSINT >= 32  // use 'int' if big enough
+#  define LHAT_INT_TYPE	LHAT_INT_INT
+# else  // otherwise use 'long'
+#  define LHAT_INT_TYPE	LHAT_INT_LONG
+# endif
 #define LHAT_FLOAT_TYPE	LHAT_FLOAT_FLOAT
-
-#elif defined(LHAT_C89_NUMBERS)	// }{
-//
-// largest types available for C89 ('long' and 'double')
-//
-#define LHAT_INT_TYPE	LHAT_INT_LONG
-#define LHAT_FLOAT_TYPE	LHAT_FLOAT_DOUBLE
-
-#endif				// }
+#endif
 
 
 //
@@ -481,11 +451,7 @@
 //@@ l_sprintf is equivalent to 'snprintf' or 'sprintf' in C89.
 // (All uses in L^ have only one format item.)
 //
-#if !defined(LHAT_USE_C89)
-# define l_sprintf(s,sz,f,i)	snprintf(s,sz,f,i)
-#else
-# define l_sprintf(s,sz,f,i)	((void)(sz), sprintf(s,f,i))
-#endif
+#define l_sprintf(s,sz,f,i)	snprintf(s,sz,f,i)
 
 
 //
@@ -494,9 +460,7 @@
 // leave 'lhat_strx2number' undefined and L^ will provide its own
 // implementation.
 //
-#if !defined(LHAT_USE_C89)
-# define lhat_strx2number(s,p)		lhat_str2number(s,p)
-#endif
+#define lhat_strx2number(s,p) lhat_str2number(s,p)
 
 
 //
@@ -505,10 +469,7 @@
 // Otherwise, you can leave 'lhat_number2strx' undefined and L^ will
 // provide its own implementation.
 //
-#if !defined(LHAT_USE_C89)
-#define lhat_number2strx(L,b,sz,f,n)  \
-	((void)L, l_sprintf(b,sz,f,(LHATI_UACNUMBER)(n)))
-#endif
+#define lhat_number2strx(L,b,sz,f,n)  ((void)L, l_sprintf(b,sz,f,(LHATI_UACNUMBER)(n)))
 
 
 //
@@ -517,7 +478,7 @@
 // availability of these variants. ('math.h' is already included in
 // all files that use these macros.)
 //
-#if defined(LHAT_USE_C89) || (defined(HUGE_VAL) && !defined(HUGE_VALF))
+#if (defined(HUGE_VAL) && !defined(HUGE_VALF))
 #undef l_mathop  // variants not available
 #undef lhat_str2number
 #define l_mathop(op)		(lhat_Number)op  // no variant
@@ -528,12 +489,11 @@
 //
 //@@ LHAT_KCONTEXT is the type of the context ('ctx') for continuation
 // functions.  It must be a numerical type; L^ will use 'intptr_t' if
-// available, otherwise it will use 'ptrdiff_t' (the nearest thing to
-// 'intptr_t' in C89)
+// available, otherwise it will use 'ptrdiff_t'.
 //
 #define LHAT_KCONTEXT	ptrdiff_t
 
-#if !defined(LHAT_USE_C89) && defined(__STDC_VERSION__) &&  __STDC_VERSION__ >= 199901L
+#if defined(__STDC_VERSION__) &&  __STDC_VERSION__ >= 199901L
 # include <stdint.h>
 # if defined(INTPTR_MAX)  // even in C99 this type is optional
 #  undef LHAT_KCONTEXT

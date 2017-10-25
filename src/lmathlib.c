@@ -197,10 +197,9 @@ static int math_log(lhat_State *L)
         res = l_mathop(log)(x);
     else {
         lhat_Number base = lhatL_checknumber(L, 2);
-#if !defined(LHAT_USE_C89)
         if(base == l_mathop(2.0))
-            res = l_mathop(log2)(x); else
-#endif
+            res = l_mathop(log2)(x);
+        else
             if(base == l_mathop(10.0))
                 res = l_mathop(log10)(x);
             else

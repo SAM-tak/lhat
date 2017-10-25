@@ -31,9 +31,6 @@ LHATMOD_API int lhatopen_string(lhat_State *L);
 #define LHAT_UTF8LIBNAME	"utf8"
 LHATMOD_API int lhatopen_utf8(lhat_State *L);
 
-#define LHAT_BITLIBNAME	"bit32"
-LHATMOD_API int lhatopen_bit32(lhat_State *L);
-
 #define LHAT_MATHLIBNAME	"math"
 LHATMOD_API int lhatopen_math(lhat_State *L);
 
@@ -46,9 +43,5 @@ LHATMOD_API int lhatopen_package(lhat_State *L);
 
 // open all previous libraries
 LHATLIB_API void lhatL_openlibs(lhat_State *L);
-
-#if !defined(lhat_assert)
-# define lhat_assert(x)	((void)0)
-#endif
 
 #endif

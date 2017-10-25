@@ -1,5 +1,5 @@
-#ifndef ldo_h
-#define ldo_h
+#ifndef lhat_ldo_h
+#define lhat_ldo_h
 //
 // Stack and Call structure of L^
 // See Copyright Notice in lhat.h
@@ -23,11 +23,15 @@
 // In general, 'pre'/'pos' are empty (nothing to save)
 #define lhatD_checkstack(L,n)	lhatD_checkstackaux(L,n,(void)0,(void)0)
 
+inline TValue *restorestack(lhat_State *L, int n)
+{
+	return (TValue *)((char *)L->stack + n);
+}
 
-
-#define savestack(L,p)		((char *)(p) - (char *)L->stack)
-#define restorestack(L,n)	((TValue *)((char *)L->stack + (n)))
-
+inline ptrdiff_t savestack(lhat_State *L, StkId p)
+{
+	return ((char *)p-(char *)L->stack);
+}
 
 // type of protected functions, to be ran by 'runprotected'
 typedef void(*Pfunc)(lhat_State *L, void *ud);
@@ -47,4 +51,4 @@ LHATI_FUNC void lhatD_inctop(lhat_State *L);
 LHATI_FUNC l_noret lhatD_throw(lhat_State *L, int errcode);
 LHATI_FUNC int lhatD_rawrunprotected(lhat_State *L, Pfunc f, void *ud);
 
-#endif
+#endif // !lhat_ldo_h

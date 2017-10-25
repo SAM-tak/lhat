@@ -26,8 +26,6 @@
 // ===================================================================
 //
 #if !defined(LHAT_STRFTIMEOPTIONS)
-// options for ANSI C 89 (only 1-char options)
-# define L_STRFTIMEC89		"aAbBcdHIjmMpSUwWxXyYZ%"
 // options for ISO C 99 and POSIX
 # define L_STRFTIMEC99 "aAbBcCdDeFgGhHIjmMnprRStTuUVwWxXyYzZ%" \
     "||" "EcECExEXEyEY" "OdOeOHOIOmOMOSOuOUOVOwOWOy"  // two-char options
@@ -36,8 +34,6 @@
     "||" "#c#x#d#H#I#j#m#M#S#U#w#W#y#Y"  // two-char options
 # if defined(LHAT_USE_WINDOWS)
 #  define LHAT_STRFTIMEOPTIONS	L_STRFTIMEWIN
-# elif defined(LHAT_USE_C89)
-#  define LHAT_STRFTIMEOPTIONS	L_STRFTIMEC89
 # else  // C99 specification
 #  define LHAT_STRFTIMEOPTIONS	L_STRFTIMEC99
 # endif

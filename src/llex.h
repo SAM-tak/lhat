@@ -54,7 +54,7 @@ typedef struct LexState {
 	struct FuncState *fs;  // current function (parser)
 	struct lhat_State *L;
 	ZBuf *z;  // input stream
-	Mbuffer *buff;  // buffer for tokens
+	struct MBuffer *buff;  // buffer for tokens
 	Table *h;  // to avoid collection/reuse strings
 	struct Dyndata *dyd;  // dynamic structures used by the parser
 	TString *source;  // current source name
