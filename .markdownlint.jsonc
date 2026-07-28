@@ -1,0 +1,39 @@
+{
+  // RunningRazor markdownlint baseline
+  // AGENT.md / Skill / README などの運用を崩さない範囲で、過度な厳格化は避ける。
+
+  "default": true,
+
+  // 見出しの前後空行
+  "MD022": true,
+
+  // 見出しの重複
+  "MD024": false,
+
+  // 箇条書きのインデント幅
+  "MD007": {
+    "indent": 2
+  },
+
+  // 順序付きリストは 1. 連番スタイルを許容
+  "MD029": {
+    "style": "one_or_ordered"
+  },
+
+  // 日本語ドキュメントでは行長制限がノイズになりやすいため無効化
+  "MD013": false,
+
+  // インラインの``で空白始まりを許可
+  "MD038": false,
+
+  // 強調記法はアスタリスクを推奨
+  "MD049": {
+    "style": "asterisk"
+  },
+  "MD050": {
+    "style": "asterisk"
+  },
+
+  // 最終行改行は必須
+  "MD047": true
+}

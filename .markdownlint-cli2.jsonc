@@ -1,0 +1,9 @@
+{
+  // markdownlint-cli2 / vscode-markdownlint (engine) 用の公式設定
+  // .markdownlintignore は markdownlint-cli 向けであり、cli2 では未サポート。
+
+  "ignores": [
+    ".vs/**",
+    "build/**"
+  ]
+}

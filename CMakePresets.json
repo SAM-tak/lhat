@@ -1,0 +1,64 @@
+{
+  "version": 6,
+  "cmakeMinimumRequired": { "major": 3, "minor": 25, "patch": 0 },
+  "configurePresets": [
+    {
+      "name": "base",
+      "hidden": true,
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "installDir": "${sourceDir}/install/${presetName}",
+      "cacheVariables": {
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
+      }
+    },
+    {
+      "name": "ninja-base",
+      "hidden": true,
+      "inherits": "base",
+      "generator": "Ninja"
+    },
+    {
+      "name": "debug",
+      "displayName": "Debug (Ninja)",
+      "inherits": "ninja-base",
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Debug" }
+    },
+    {
+      "name": "release",
+      "displayName": "Release (Ninja)",
+      "inherits": "ninja-base",
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Release" }
+    },
+    {
+      "name": "vs",
+      "displayName": "Visual Studio (multi-config)",
+      "inherits": "base",
+      "generator": "Visual Studio 18 2026",
+      "architecture": "x64"
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "debug",
+      "displayName": "Debug (Ninja)",
+      "configurePreset": "debug"
+    },
+    {
+      "name": "release",
+      "displayName": "Release (Ninja)",
+      "configurePreset": "release"
+    },
+    {
+      "name": "vs-debug",
+      "displayName": "Debug (Visual Studio)",
+      "configurePreset": "vs",
+      "configuration": "Debug"
+    },
+    {
+      "name": "vs-release",
+      "displayName": "Release (Visual Studio)",
+      "configurePreset": "vs",
+      "configuration": "Release"
+    }
+  ]
+}
