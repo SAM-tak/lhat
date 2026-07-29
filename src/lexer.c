@@ -104,9 +104,8 @@ static bool is_unicode_space(uint32_t cp)
 }
 
 // Code points that must never be swallowed into an identifier because they
-// are, or look like, operators. U+2264 and U+2265 are the other common
-// spellings of the comparison operators; the specification lists only U+2266
-// and U+2267, so these two are rejected rather than silently absorbed.
+// are operators. Both the U+2264 / U+2265 and the U+2266 / U+2267 spellings
+// of the comparison operators are accepted (Q10).
 static bool is_reserved_symbol(uint32_t cp)
 {
     return cp == 0x2260u || cp == 0x2264u || cp == 0x2265u ||
@@ -760,6 +759,8 @@ typedef struct {
 // Ordered longest first so that a linear scan implements maximal munch.
 static const OperatorEntry operator_table[] = {
     { "\xE2\x89\xA0", 3, LHAT_OP_NE },  // U+2260 NOT EQUAL TO
+    { "\xE2\x89\xA4", 3, LHAT_OP_LE },  // U+2264 LESS-THAN OR EQUAL TO
+    { "\xE2\x89\xA5", 3, LHAT_OP_GE },  // U+2265 GREATER-THAN OR EQUAL TO
     { "\xE2\x89\xA6", 3, LHAT_OP_LE },  // U+2266 LESS-THAN OVER EQUAL TO
     { "\xE2\x89\xA7", 3, LHAT_OP_GE },  // U+2267 GREATER-THAN OVER EQUAL TO
 

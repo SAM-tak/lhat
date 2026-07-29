@@ -426,6 +426,24 @@ static void test_operators(void)
     LHAT_CHECK_EQ_INT(s.lexer.diagnostic_count, 0);
     scan_dispose(&s);
 
+    // Q10: U+2264 and U+2265 are accepted alongside U+2266 and U+2267.
+    LHAT_TEST("both unicode spellings of <= and >=");
+    scan_text(&s, "a \xE2\x89\xA4 b \xE2\x89\xA5 c");
+    LHAT_CHECK(is_op(&s.tokens[1], LHAT_OP_LE), "U+2264 must mean <=");
+    LHAT_CHECK(is_op(&s.tokens[3], LHAT_OP_GE), "U+2265 must mean >=");
+    LHAT_CHECK_EQ_INT(s.lexer.diagnostic_count, 0);
+    scan_dispose(&s);
+
+    // They must never be absorbed into an identifier, which would turn
+    // "a \xE2\x89\xA4 b" into the two identifiers "a" and "\xE2\x89\xA4b".
+    LHAT_TEST("comparison symbols never join an identifier");
+    scan_text(&s, "a\xE2\x89\xA4""b");
+    LHAT_CHECK_EQ_INT(token_count(&s), 3);
+    LHAT_CHECK_EQ_INT(s.tokens[0].kind, LHAT_TOKEN_IDENT);
+    LHAT_CHECK(is_op(&s.tokens[1], LHAT_OP_LE), "expected <=");
+    LHAT_CHECK_EQ_INT(s.tokens[2].kind, LHAT_TOKEN_IDENT);
+    scan_dispose(&s);
+
     // Section 7.1: '=' compares, it does not assign, and '==' does not exist.
     LHAT_TEST("= is a single comparison operator");
     scan_text(&s, "a = b");
