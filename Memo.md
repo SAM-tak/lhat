@@ -263,7 +263,7 @@ for until next 文
 for^i := 1 until^i >= 10 next^i.inc() {
 }
 
-for if 分
+for if 文
 for^i := 1, j : int = 2 if^i + j < 10 {
 }
 do^{
