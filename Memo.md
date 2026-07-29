@@ -179,7 +179,7 @@ or^:
 if式
 if^expr:expr elseif^expr:expr elsif^expr:expr elif^expr:expr ei^expr:expr else^/*or el^*/expr;
 
-推奨は if^expr: or^expr: or^: ;
+推奨は if^expr: el^expr: el^: ;
 
 後置if式は設けない。入れ子にしにくいから
 
@@ -191,7 +191,7 @@ when^0:
     stats
 when^1 to^3:
     stats
-other^: // : は省略だが必須にするか？
+other^: // : は省略可能だが必須にするか？
     stats
 }
 
