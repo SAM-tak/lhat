@@ -7,7 +7,7 @@
 | 文書 | 内容 | 状態 |
 | --- | --- | --- |
 | [01-lexical-structure.md](01-lexical-structure.md) | 字句構造（トークンの定義、字句的曖昧性の解決） | 未決事項なし。実装完了 |
-| [02-syntax.md](02-syntax.md) | 構文（入力形式、コマンドモード、REPL 統合、条件分岐、文の構成、繰り返しの節） | S5・S7 が未決 |
+| [02-syntax.md](02-syntax.md) | 構文（入力形式、コマンドモード、REPL 統合、条件分岐、文の構成、繰り返しの節） | S5 のみ未決 |
 | [03-compilation-pipeline.md](03-compilation-pipeline.md) | 処理の構成（段階構成、実行時の値表現、型検査の厳格度） | 仮想機械の設計が未着手 |
 
 ## Memo.md との関係
