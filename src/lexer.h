@@ -23,6 +23,8 @@ typedef enum {
     LHAT_ERR_MALFORMED_EXPONENT,         // 4.5: 'e' not followed by digits
     LHAT_ERR_INTEGER_OVERFLOW,
     LHAT_ERR_UNTERMINATED_STRING,        // 5.5
+    LHAT_ERR_UNTERMINATED_NAME_LITERAL,  // 3.4: backtick not closed on the line
+    LHAT_ERR_EMPTY_NAME_LITERAL,         // 3.4: `` names nothing
     LHAT_ERR_UNKNOWN_ESCAPE,             // 5.1
     LHAT_ERR_MALFORMED_ESCAPE,           // \xHH or \u{...} with bad digits
     LHAT_ERR_UNTERMINATED_BLOCK_COMMENT, // 6.2

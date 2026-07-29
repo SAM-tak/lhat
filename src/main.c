@@ -38,6 +38,7 @@ static void print_token(const LhatLexer *lexer, const LhatToken *token)
                    (int)length, bytes != NULL ? bytes : "");
             break;
         }
+        case LHAT_TOKEN_NAME_LITERAL:
         case LHAT_TOKEN_INTERP_TEXT:
         case LHAT_TOKEN_INTERP_FORMAT: {
             size_t length = 0;

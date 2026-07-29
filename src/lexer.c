@@ -396,6 +396,54 @@ static LhatToken scan_identifier(LhatLexer *lexer, Mark start)
     return finish(lexer, start, LHAT_TOKEN_IDENT);
 }
 
+// Section 3.4. `a name` is a name written out in full, spaces and symbols
+// included. A doubled backtick stands for one backtick, following the same
+// convention as the raw string in 5.2.
+//
+// Newlines are not allowed inside: an identifier never spans lines, and
+// stopping at the end of the line keeps an unclosed delimiter from consuming
+// the rest of the file the way an unterminated string can (5.5).
+static LhatToken scan_name_literal(LhatLexer *lexer, Mark start)
+{
+    advance(lexer);  // opening backtick
+
+    size_t value_offset = lexer->strings_length;
+
+    for (;;) {
+        if (at_end(lexer) || current_byte(lexer) == '\n') {
+            report_at(lexer, LHAT_ERR_UNTERMINATED_NAME_LITERAL,
+                      (uint32_t)start.offset, start.line, start.column);
+            return finish(lexer, start, LHAT_TOKEN_ERROR);
+        }
+
+        char c = current_byte(lexer);
+        if (c == '`') {
+            if (byte_at(lexer, 1) == '`') {
+                string_push_byte(lexer, '`');
+                advance_n(lexer, 2);
+                continue;
+            }
+            advance(lexer);
+            break;
+        }
+
+        string_push_byte(lexer, c);
+        advance(lexer);
+    }
+
+    LhatToken token = finish(lexer, start, LHAT_TOKEN_NAME_LITERAL);
+    token.v.string.kind = LHAT_STRING_RAW;
+    token.v.string.offset = (uint32_t)value_offset;
+    token.v.string.length = (uint32_t)(lexer->strings_length - value_offset);
+
+    if (token.v.string.length == 0) {
+        report_at(lexer, LHAT_ERR_EMPTY_NAME_LITERAL, (uint32_t)start.offset,
+                  start.line, start.column);
+        token.kind = LHAT_TOKEN_ERROR;
+    }
+    return token;
+}
+
 // ---------------------------------------------------------------------------
 // Numbers (sections 4, 10.1, 10.2, 10.3)
 // ---------------------------------------------------------------------------
@@ -1010,6 +1058,8 @@ LhatToken lhat_lexer_next(LhatLexer *lexer)
                     : scan_escaped_string(lexer, start);
     } else if (c == '\'') {
         token = scan_raw_string(lexer, start);
+    } else if (c == '`') {
+        token = scan_name_literal(lexer, start);
     } else if (c == '$') {
         token = scan_dollar(lexer, start);
     } else if (is_decimal_digit(c)) {
@@ -1060,6 +1110,7 @@ const char *lhat_lexer_string(const LhatLexer *lexer, const LhatToken *token,
                               size_t *length)
 {
     if (token->kind != LHAT_TOKEN_STRING &&
+        token->kind != LHAT_TOKEN_NAME_LITERAL &&
         token->kind != LHAT_TOKEN_INTERP_TEXT &&
         token->kind != LHAT_TOKEN_INTERP_FORMAT) {
         *length = 0;
@@ -1092,6 +1143,10 @@ const char *lhat_error_message(LhatErrorCode code)
             return "integer literal is out of range";
         case LHAT_ERR_UNTERMINATED_STRING:
             return "unterminated string literal";
+        case LHAT_ERR_UNTERMINATED_NAME_LITERAL:
+            return "name literal is not closed before the end of the line";
+        case LHAT_ERR_EMPTY_NAME_LITERAL:
+            return "name literal is empty";
         case LHAT_ERR_UNKNOWN_ESCAPE:
             return "unknown escape sequence";
         case LHAT_ERR_MALFORMED_ESCAPE:

@@ -15,6 +15,14 @@ typedef enum {
     LHAT_TOKEN_EOF,
     LHAT_TOKEN_IDENT,
     LHAT_TOKEN_HAT_IDENT,    // identifier followed by one or more '^'
+
+    // Section 3.4. A backtick delimited name denotes one that either cannot be
+    // written as a bare identifier, or is meant as a value rather than as a
+    // reference. Deliberately a separate kind from LHAT_TOKEN_IDENT: were it
+    // the same, `a` and a would be indistinguishable and the second use would
+    // be impossible to express.
+    LHAT_TOKEN_NAME_LITERAL,
+
     LHAT_TOKEN_INT,
     LHAT_TOKEN_FLOAT,
     LHAT_TOKEN_STRING,

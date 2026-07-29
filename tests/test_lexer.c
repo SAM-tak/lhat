@@ -120,6 +120,97 @@ static void test_identifiers(void)
     scan_dispose(&s);
 }
 
+// Section 3.4.
+static void test_name_literals(void)
+{
+    Scan s;
+    size_t length = 0;
+    const char *bytes = NULL;
+
+    // The point of the form: a name may hold characters the bare identifier
+    // rules exclude, such as the trailing '?' dropped in 3.2.
+    LHAT_TEST("a name may contain a question mark");
+    scan_text(&s, "`foo?`");
+    LHAT_CHECK_EQ_INT(token_count(&s), 1);
+    LHAT_CHECK_EQ_INT(s.tokens[0].kind, LHAT_TOKEN_NAME_LITERAL);
+    bytes = lhat_lexer_string(&s.lexer, &s.tokens[0], &length);
+    LHAT_CHECK_EQ_STR(bytes, length, "foo?");
+    LHAT_CHECK_EQ_INT(s.lexer.diagnostic_count, 0);
+    scan_dispose(&s);
+
+    LHAT_TEST("a name may contain spaces and symbols");
+    scan_text(&s, "`is empty? (yes/no)`");
+    bytes = lhat_lexer_string(&s.lexer, &s.tokens[0], &length);
+    LHAT_CHECK_EQ_STR(bytes, length, "is empty? (yes/no)");
+    scan_dispose(&s);
+
+    // Nothing inside is interpreted, so a name may hold what would otherwise
+    // be operators, comment markers or a hat suffix.
+    LHAT_TEST("the contents are not interpreted");
+    scan_text(&s, "`if^ # 1..2`");
+    LHAT_CHECK_EQ_INT(token_count(&s), 1);
+    bytes = lhat_lexer_string(&s.lexer, &s.tokens[0], &length);
+    LHAT_CHECK_EQ_STR(bytes, length, "if^ # 1..2");
+    scan_dispose(&s);
+
+    LHAT_TEST("a name may be written in japanese");
+    scan_text(&s, "`\xE7\xA9\xBA\xE3\x81\x8B?`");  // 空か?
+    bytes = lhat_lexer_string(&s.lexer, &s.tokens[0], &length);
+    LHAT_CHECK_EQ_STR(bytes, length, "\xE7\xA9\xBA\xE3\x81\x8B?");
+    scan_dispose(&s);
+
+    // Distinct from LHAT_TOKEN_IDENT on purpose: `a` must not collapse into
+    // the same token as a, or a name could not be used as a value.
+    LHAT_TEST("a name literal is not an ordinary identifier");
+    scan_text(&s, "a `a`");
+    LHAT_CHECK_EQ_INT(s.tokens[0].kind, LHAT_TOKEN_IDENT);
+    LHAT_CHECK_EQ_INT(s.tokens[1].kind, LHAT_TOKEN_NAME_LITERAL);
+    scan_dispose(&s);
+
+    LHAT_TEST("the delimiter is not part of the name");
+    scan_text(&s, "`ab`");
+    bytes = lhat_lexer_string(&s.lexer, &s.tokens[0], &length);
+    LHAT_CHECK_EQ_STR(bytes, length, "ab");
+    LHAT_CHECK_EQ_INT(token_length(&s, 0), 4);  // the token still spans the ticks
+    scan_dispose(&s);
+
+    LHAT_TEST("a doubled backtick stands for one backtick");
+    scan_text(&s, "`a``b`");
+    LHAT_CHECK_EQ_INT(token_count(&s), 1);
+    bytes = lhat_lexer_string(&s.lexer, &s.tokens[0], &length);
+    LHAT_CHECK_EQ_STR(bytes, length, "a`b");
+    scan_dispose(&s);
+
+    LHAT_TEST("a name literal terminates an identifier");
+    scan_text(&s, "x`y`");
+    LHAT_CHECK_EQ_INT(token_count(&s), 2);
+    LHAT_CHECK_EQ_INT(s.tokens[0].kind, LHAT_TOKEN_IDENT);
+    LHAT_CHECK_EQ_INT(s.tokens[1].kind, LHAT_TOKEN_NAME_LITERAL);
+    scan_dispose(&s);
+
+    LHAT_TEST("a name literal works as a table key");
+    scan_text(&s, "foo[`a b`]");
+    LHAT_CHECK_EQ_INT(token_count(&s), 4);
+    LHAT_CHECK_EQ_INT(s.tokens[2].kind, LHAT_TOKEN_NAME_LITERAL);
+    scan_dispose(&s);
+
+    // Unlike a string, it stops at the end of the line so a missing delimiter
+    // cannot swallow the rest of the file.
+    LHAT_TEST("an unclosed name literal stops at the line end");
+    scan_text(&s, "`oops\nnext");
+    LHAT_CHECK_EQ_INT(s.tokens[0].kind, LHAT_TOKEN_ERROR);
+    LHAT_CHECK_EQ_INT(s.lexer.diagnostics[0].code,
+                      LHAT_ERR_UNTERMINATED_NAME_LITERAL);
+    LHAT_CHECK_EQ_INT(s.tokens[1].kind, LHAT_TOKEN_IDENT);
+    scan_dispose(&s);
+
+    LHAT_TEST("an empty name literal is rejected");
+    scan_text(&s, "``");
+    LHAT_CHECK_EQ_INT(s.tokens[0].kind, LHAT_TOKEN_ERROR);
+    LHAT_CHECK_EQ_INT(s.lexer.diagnostics[0].code, LHAT_ERR_EMPTY_NAME_LITERAL);
+    scan_dispose(&s);
+}
+
 static void test_numbers(void)
 {
     Scan s;
@@ -677,6 +768,7 @@ static void test_realistic_snippet(void)
 int main(void)
 {
     test_identifiers();
+    test_name_literals();
     test_numbers();
     test_lexical_hazards();
     test_strings();
