@@ -603,10 +603,10 @@ static void test_operators(void)
     Scan s;
 
     LHAT_TEST("maximal munch on multi-character operators");
-    scan_text(&s, ":= :: -> ** // .. ?. ?( ?[ != =/ <= >=");
+    scan_text(&s, ":= :: << ** // .. ?. ?( ?[ != =/ <= >=");
     LHAT_CHECK(is_op(&s.tokens[0], LHAT_OP_DEFINE), "expected :=");
     LHAT_CHECK(is_op(&s.tokens[1], LHAT_OP_COLONCOLON), "expected ::");
-    LHAT_CHECK(is_op(&s.tokens[2], LHAT_OP_ARROW), "expected ->");
+    LHAT_CHECK(is_op(&s.tokens[2], LHAT_OP_REASSIGN), "expected <<");
     LHAT_CHECK(is_op(&s.tokens[3], LHAT_OP_POW), "expected **");
     LHAT_CHECK(is_op(&s.tokens[4], LHAT_OP_FLOORDIV), "expected //");
     LHAT_CHECK(is_op(&s.tokens[5], LHAT_OP_CONCAT), "expected ..");
@@ -617,6 +617,29 @@ static void test_operators(void)
     LHAT_CHECK(is_op(&s.tokens[10], LHAT_OP_NE), "expected =/");
     LHAT_CHECK(is_op(&s.tokens[11], LHAT_OP_LE), "expected <=");
     LHAT_CHECK(is_op(&s.tokens[12], LHAT_OP_GE), "expected >=");
+    scan_dispose(&s);
+
+    // '<<' must win over '<', and must not be confused with '<='.
+    LHAT_TEST("<< is distinct from < and <=");
+    scan_text(&s, "a << b a < b a <= b");
+    LHAT_CHECK(is_op(&s.tokens[1], LHAT_OP_REASSIGN), "expected <<");
+    LHAT_CHECK(is_op(&s.tokens[4], LHAT_OP_LT), "expected <");
+    LHAT_CHECK(is_op(&s.tokens[7], LHAT_OP_LE), "expected <=");
+    scan_dispose(&s);
+
+    // Unlike the '<-' the memo considered, '<<' does not collide with a
+    // comparison against a negative number.
+    LHAT_TEST("a<-2 stays a comparison alongside <<");
+    scan_text(&s, "a<-2 b << -2");
+    LHAT_CHECK(is_op(&s.tokens[1], LHAT_OP_LT), "expected <");
+    LHAT_CHECK(is_op(&s.tokens[2], LHAT_OP_SUB), "expected -");
+    LHAT_CHECK(is_op(&s.tokens[5], LHAT_OP_REASSIGN), "expected <<");
+    scan_dispose(&s);
+
+    // Withdrawn, but still scanned so the parser can explain the change.
+    LHAT_TEST("-> is still recognised as one token");
+    scan_text(&s, "i + 1 -> i");
+    LHAT_CHECK(is_op(&s.tokens[3], LHAT_OP_ARROW), "expected ->");
     scan_dispose(&s);
 
     // Section 7.7: the '>>' in Memo.md is a prompt, not syntax, so it is not
@@ -671,9 +694,9 @@ static void test_operators(void)
     LHAT_CHECK_EQ_INT(s.tokens[3].kind, LHAT_TOKEN_INT);
     scan_dispose(&s);
 
-    LHAT_TEST("postfix reassignment");
-    scan_text(&s, "i + 1 -> i");
-    LHAT_CHECK(is_op(&s.tokens[3], LHAT_OP_ARROW), "expected ->");
+    LHAT_TEST("reassignment");
+    scan_text(&s, "i << i + 1");
+    LHAT_CHECK(is_op(&s.tokens[1], LHAT_OP_REASSIGN), "expected <<");
     scan_dispose(&s);
 
     LHAT_TEST("a lone question mark is an error");
@@ -752,7 +775,7 @@ static void test_realistic_snippet(void)
               "$Counter := {\n"
               "    value := 0,\n"
               "    bump := p^step :: number^ {\n"
-              "        value + step -> value\n"
+              "        value << value + step\n"
               "        value\n"
               "    }\n"
               "}\n"

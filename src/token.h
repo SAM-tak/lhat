@@ -60,8 +60,15 @@ typedef enum {
     LHAT_OP_COLON,
 
     LHAT_OP_DEFINE,      // :=
-    LHAT_OP_ARROW,       // ->   postfix reassignment (Q2)
+    LHAT_OP_REASSIGN,    // <<   target << value (Q2)
     LHAT_OP_COLONCOLON,  // ::   return type (Q9)
+
+    // Not part of the language. Q2 originally made '->' the postfix
+    // reassignment operator and later replaced it with '<<'. The token is
+    // still recognised so the parser can say what happened, rather than
+    // leaving the reader with an error about a stray '-' and '>'.
+    LHAT_OP_ARROW,       // ->
+
 
     LHAT_OP_EQ,          // =    comparison, not assignment
     LHAT_OP_NE,          // ≠ != =/
