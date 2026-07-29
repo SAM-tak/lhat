@@ -7,7 +7,8 @@
 | 文書 | 内容 | 状態 |
 | --- | --- | --- |
 | [01-lexical-structure.md](01-lexical-structure.md) | 字句構造（トークンの定義、字句的曖昧性の解決） | 未決事項なし。実装完了 |
-| [02-syntax.md](02-syntax.md) | 構文（入力形式、コマンドモード、REPL 統合） | 入力形式のみ確定。文法本体は未着手 |
+| [02-syntax.md](02-syntax.md) | 構文（入力形式、コマンドモード、REPL 統合、条件分岐、文の構成） | S4・S5 が未着手 |
+| [03-compilation-pipeline.md](03-compilation-pipeline.md) | 処理の構成（段階構成、実行時の値表現、型検査の厳格度） | 仮想機械の設計が未着手 |
 
 ## Memo.md との関係
 
@@ -37,6 +38,7 @@ Memo.md は次の3層で構成されている。本ディレクトリの文書�
 
 - `01-lexical-structure.md` — `Q1`, `Q2`, …
 - `02-syntax.md` — `S1`, `S2`, …
+- `03-compilation-pipeline.md` — `P1`, `P2`, …
 
 いったん起票した番号は、決定後も欠番にせず決定内容を記録して残す。
 後から「なぜそう決めたか」を追えるようにするため。
