@@ -337,13 +337,133 @@ static void test_strings(void)
     LHAT_CHECK_EQ_INT(s.lexer.diagnostics[0].code, LHAT_ERR_UNTERMINATED_STRING);
     scan_dispose(&s);
 
-    // Section 5.4 is not implemented yet and must say so rather than
-    // mis-scanning the input.
-    LHAT_TEST("interpolation reports that it is unsupported");
-    scan_text(&s, "$\"hi {name}\"");
+}
+
+// Section 5.4. The hole contents are scanned by the ordinary rules, so the
+// checks below are mostly about the boundaries between the two modes.
+static void test_interpolation(void)
+{
+    Scan s;
+    size_t length = 0;
+    const char *bytes = NULL;
+
+    LHAT_TEST("text, hole, text");
+    scan_text(&s, "$\"hi {name}!\"");
+    LHAT_CHECK_EQ_INT(token_count(&s), 7);
+    LHAT_CHECK_EQ_INT(s.tokens[0].kind, LHAT_TOKEN_INTERP_BEGIN);
+    LHAT_CHECK_EQ_INT(s.tokens[1].kind, LHAT_TOKEN_INTERP_TEXT);
+    bytes = lhat_lexer_string(&s.lexer, &s.tokens[1], &length);
+    LHAT_CHECK_EQ_STR(bytes, length, "hi ");
+    LHAT_CHECK_EQ_INT(s.tokens[2].kind, LHAT_TOKEN_INTERP_EXPR_BEGIN);
+    LHAT_CHECK_EQ_INT(s.tokens[3].kind, LHAT_TOKEN_IDENT);
+    LHAT_CHECK_EQ_INT(s.tokens[4].kind, LHAT_TOKEN_INTERP_EXPR_END);
+    LHAT_CHECK_EQ_INT(s.tokens[5].kind, LHAT_TOKEN_INTERP_TEXT);
+    bytes = lhat_lexer_string(&s.lexer, &s.tokens[5], &length);
+    LHAT_CHECK_EQ_STR(bytes, length, "!");
+    LHAT_CHECK_EQ_INT(s.tokens[6].kind, LHAT_TOKEN_INTERP_END);
+    LHAT_CHECK_EQ_INT(s.lexer.diagnostic_count, 0);
+    scan_dispose(&s);
+
+    LHAT_TEST("an empty text segment is not emitted");
+    scan_text(&s, "$\"{a}{b}\"");
+    LHAT_CHECK_EQ_INT(token_count(&s), 8);
+    LHAT_CHECK_EQ_INT(s.tokens[1].kind, LHAT_TOKEN_INTERP_EXPR_BEGIN);
+    scan_dispose(&s);
+
+    // Q4: the format specifier follows a ':' and is raw text.
+    LHAT_TEST("format specifier");
+    scan_text(&s, "$\"{bar:2.4}\"");
+    LHAT_CHECK_EQ_INT(token_count(&s), 6);
+    LHAT_CHECK_EQ_INT(s.tokens[2].kind, LHAT_TOKEN_IDENT);
+    LHAT_CHECK_EQ_INT(s.tokens[3].kind, LHAT_TOKEN_INTERP_FORMAT);
+    bytes = lhat_lexer_string(&s.lexer, &s.tokens[3], &length);
+    LHAT_CHECK_EQ_STR(bytes, length, "2.4");
+    LHAT_CHECK_EQ_INT(s.tokens[4].kind, LHAT_TOKEN_INTERP_EXPR_END);
+    scan_dispose(&s);
+
+    // The hole is real code, not text to be re-scanned later.
+    LHAT_TEST("a hole contains ordinary tokens");
+    scan_text(&s, "$\"{ a + f(1) }\"");
+    LHAT_CHECK_EQ_INT(s.lexer.diagnostic_count, 0);
+    LHAT_CHECK_EQ_INT(s.tokens[2].kind, LHAT_TOKEN_IDENT);
+    LHAT_CHECK(is_op(&s.tokens[3], LHAT_OP_ADD), "expected +");
+    LHAT_CHECK(is_op(&s.tokens[5], LHAT_OP_LPAREN), "expected (");
+    scan_dispose(&s);
+
+    // The brace of a table literal must not close the hole.
+    LHAT_TEST("braces inside a hole are counted");
+    scan_text(&s, "$\"{ {a := 1} }\"");
+    LHAT_CHECK_EQ_INT(s.lexer.diagnostic_count, 0);
+    {
+        size_t ends = 0;
+        for (size_t i = 0; i < s.count; i++) {
+            if (s.tokens[i].kind == LHAT_TOKEN_INTERP_EXPR_END) {
+                ends++;
+            }
+        }
+        LHAT_CHECK_EQ_INT(ends, 1);
+        LHAT_CHECK_EQ_INT(s.tokens[s.count - 2].kind, LHAT_TOKEN_INTERP_END);
+    }
+    scan_dispose(&s);
+
+    // A string inside a hole is scanned by the normal string rules.
+    LHAT_TEST("a string literal inside a hole");
+    scan_text(&s, "$\"{ f(\"x\") }\"");
+    LHAT_CHECK_EQ_INT(s.lexer.diagnostic_count, 0);
+    LHAT_CHECK_EQ_INT(s.tokens[4].kind, LHAT_TOKEN_STRING);
+    scan_dispose(&s);
+
+    LHAT_TEST("nested interpolation");
+    scan_text(&s, "$\"a{ $\"b{c}\" }d\"");
+    LHAT_CHECK_EQ_INT(s.lexer.diagnostic_count, 0);
+    {
+        size_t begins = 0;
+        size_t ends = 0;
+        for (size_t i = 0; i < s.count; i++) {
+            if (s.tokens[i].kind == LHAT_TOKEN_INTERP_BEGIN) {
+                begins++;
+            }
+            if (s.tokens[i].kind == LHAT_TOKEN_INTERP_END) {
+                ends++;
+            }
+        }
+        LHAT_CHECK_EQ_INT(begins, 2);
+        LHAT_CHECK_EQ_INT(ends, 2);
+    }
+    scan_dispose(&s);
+
+    LHAT_TEST("doubled braces stand for a single brace");
+    scan_text(&s, "$\"{{x}}\"");
+    LHAT_CHECK_EQ_INT(token_count(&s), 3);
+    bytes = lhat_lexer_string(&s.lexer, &s.tokens[1], &length);
+    LHAT_CHECK_EQ_STR(bytes, length, "{x}");
+    scan_dispose(&s);
+
+    LHAT_TEST("escapes still work in the text segments");
+    scan_text(&s, "$\"a\\nb\"");
+    bytes = lhat_lexer_string(&s.lexer, &s.tokens[1], &length);
+    LHAT_CHECK_EQ_STR(bytes, length, "a\nb");
+    scan_dispose(&s);
+
+    LHAT_TEST("an unterminated interpolated string is reported");
+    scan_text(&s, "$\"oops");
+    LHAT_CHECK(s.lexer.diagnostic_count > 0, "expected a diagnostic");
+    LHAT_CHECK_EQ_INT(s.lexer.diagnostics[0].code, LHAT_ERR_UNTERMINATED_STRING);
+    scan_dispose(&s);
+
+    // Memo.md L71: interpolation requires double quotes.
+    LHAT_TEST("$'...' is rejected with a specific message");
+    scan_text(&s, "$'no'");
     LHAT_CHECK_EQ_INT(s.tokens[0].kind, LHAT_TOKEN_ERROR);
     LHAT_CHECK_EQ_INT(s.lexer.diagnostics[0].code,
-                      LHAT_ERR_INTERPOLATION_UNSUPPORTED);
+                      LHAT_ERR_INTERPOLATION_NEEDS_QUOTES);
+    scan_dispose(&s);
+
+    // Section 10.6: '$' followed by a name is still a scope specifier.
+    LHAT_TEST("a scope specifier is unaffected");
+    scan_text(&s, "$name");
+    LHAT_CHECK_EQ_INT(s.tokens[0].kind, LHAT_TOKEN_SCOPE);
+    LHAT_CHECK_EQ_INT(s.lexer.diagnostic_count, 0);
     scan_dispose(&s);
 }
 
@@ -560,6 +680,7 @@ int main(void)
     test_numbers();
     test_lexical_hazards();
     test_strings();
+    test_interpolation();
     test_comments();
     test_operators();
     test_scope_specifiers();

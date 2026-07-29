@@ -703,15 +703,118 @@ static LhatToken scan_line_string(LhatLexer *lexer, Mark start)
 // Scope specifiers (section 8) and interpolation (section 5.4)
 // ---------------------------------------------------------------------------
 
+// Section 5.4. Scans the literal run between two holes. Never skips trivia:
+// whitespace inside a string is content.
+static LhatToken scan_interpolation_segment(LhatLexer *lexer)
+{
+    Mark start = mark(lexer);
+
+    if (current_byte(lexer) == '{' && byte_at(lexer, 1) != '{') {
+        advance(lexer);
+        if (lexer->interp_depth >= LHAT_INTERP_MAX_DEPTH) {
+            report(lexer, LHAT_ERR_INTERPOLATION_TOO_DEEP);
+            return finish(lexer, start, LHAT_TOKEN_ERROR);
+        }
+        lexer->interp[lexer->interp_depth].in_hole = true;
+        lexer->interp[lexer->interp_depth].brace_depth = 0;
+        lexer->interp_depth++;
+        return finish(lexer, start, LHAT_TOKEN_INTERP_EXPR_BEGIN);
+    }
+
+    if (current_byte(lexer) == '"') {
+        advance(lexer);
+        lexer->interp_depth--;  // pop the string frame
+        return finish(lexer, start, LHAT_TOKEN_INTERP_END);
+    }
+
+    size_t value_offset = lexer->strings_length;
+
+    while (!at_end(lexer)) {
+        char c = current_byte(lexer);
+
+        // '{{' and '}}' stand for a single brace. A lone '}' is literal text:
+        // no hole is open in this mode, so there is nothing it could close.
+        if (c == '{') {
+            if (byte_at(lexer, 1) != '{') {
+                break;
+            }
+            string_push_byte(lexer, '{');
+            advance_n(lexer, 2);
+            continue;
+        }
+        if (c == '}') {
+            string_push_byte(lexer, '}');
+            advance_n(lexer, byte_at(lexer, 1) == '}' ? 2 : 1);
+            continue;
+        }
+        if (c == '"') {
+            break;
+        }
+        if (c == '\\') {
+            scan_escape(lexer);
+            continue;
+        }
+        string_push_byte(lexer, c);
+        advance(lexer);
+    }
+
+    if (at_end(lexer)) {
+        report_at(lexer, LHAT_ERR_UNTERMINATED_STRING, (uint32_t)start.offset,
+                  start.line, start.column);
+        lexer->interp_depth--;
+        return finish(lexer, start, LHAT_TOKEN_ERROR);
+    }
+
+    LhatToken token = finish(lexer, start, LHAT_TOKEN_INTERP_TEXT);
+    token.v.string.kind = LHAT_STRING_ESCAPED;
+    token.v.string.offset = (uint32_t)value_offset;
+    token.v.string.length = (uint32_t)(lexer->strings_length - value_offset);
+    return token;
+}
+
+// Section 5.4. Everything from the ':' up to the closing '}' is taken as raw
+// text; a format specifier is not an expression.
+static LhatToken scan_interpolation_format(LhatLexer *lexer)
+{
+    Mark start = mark(lexer);
+    advance(lexer);  // ':'
+
+    size_t value_offset = lexer->strings_length;
+    while (!at_end(lexer) && current_byte(lexer) != '}') {
+        string_push_byte(lexer, current_byte(lexer));
+        advance(lexer);
+    }
+
+    LhatToken token = finish(lexer, start, LHAT_TOKEN_INTERP_FORMAT);
+    token.v.string.kind = LHAT_STRING_RAW;
+    token.v.string.offset = (uint32_t)value_offset;
+    token.v.string.length = (uint32_t)(lexer->strings_length - value_offset);
+    return token;
+}
+
 static LhatToken scan_dollar(LhatLexer *lexer, Mark start)
 {
     char next = byte_at(lexer, 1);
 
     // Section 10.6: one byte of lookahead decides between an interpolated
     // string and a scope specifier.
-    if (next == '"' || next == '\'') {
-        report(lexer, LHAT_ERR_INTERPOLATION_UNSUPPORTED);
-        advance(lexer);  // consume only the '$' so the string still scans
+    if (next == '"') {
+        advance_n(lexer, 2);
+        if (lexer->interp_depth >= LHAT_INTERP_MAX_DEPTH) {
+            report(lexer, LHAT_ERR_INTERPOLATION_TOO_DEEP);
+            return finish(lexer, start, LHAT_TOKEN_ERROR);
+        }
+        lexer->interp[lexer->interp_depth].in_hole = false;
+        lexer->interp[lexer->interp_depth].brace_depth = 0;
+        lexer->interp_depth++;
+        return finish(lexer, start, LHAT_TOKEN_INTERP_BEGIN);
+    }
+
+    // Memo.md L71 notes that interpolation requires double quotes, so $'...'
+    // is not a thing. Saying so beats letting it fail as a scope specifier.
+    if (next == '\'') {
+        report(lexer, LHAT_ERR_INTERPOLATION_NEEDS_QUOTES);
+        advance(lexer);
         return finish(lexer, start, LHAT_TOKEN_ERROR);
     }
 
@@ -840,9 +943,47 @@ void lhat_lexer_dispose(LhatLexer *lexer)
     lexer->diagnostic_count = lexer->diagnostic_capacity = 0;
 }
 
+static bool inside_interpolated_text(const LhatLexer *lexer)
+{
+    return lexer->interp_depth > 0 && !lexer->interp[lexer->interp_depth - 1].in_hole;
+}
+
+static bool inside_interpolation_hole(const LhatLexer *lexer)
+{
+    return lexer->interp_depth > 0 && lexer->interp[lexer->interp_depth - 1].in_hole;
+}
+
 LhatToken lhat_lexer_next(LhatLexer *lexer)
 {
+    // Checked before skipping trivia: inside a string, whitespace is content.
+    if (inside_interpolated_text(lexer)) {
+        LhatToken token = scan_interpolation_segment(lexer);
+        lexer->pending_newline = false;
+        lexer->after_dot = false;
+        return token;
+    }
+
     skip_trivia(lexer);
+
+    if (inside_interpolation_hole(lexer) &&
+        lexer->interp[lexer->interp_depth - 1].brace_depth == 0) {
+        Mark hole = mark(lexer);
+        if (current_byte(lexer) == '}') {
+            advance(lexer);
+            lexer->interp_depth--;
+            lexer->pending_newline = false;
+            lexer->after_dot = false;
+            return finish(lexer, hole, LHAT_TOKEN_INTERP_EXPR_END);
+        }
+        // A single ':' ends the expression and begins the format specifier.
+        // '::' is a return type marker and is left to the normal path.
+        if (current_byte(lexer) == ':' && byte_at(lexer, 1) != ':') {
+            LhatToken token = scan_interpolation_format(lexer);
+            lexer->pending_newline = false;
+            lexer->after_dot = false;
+            return token;
+        }
+    }
 
     Mark start = mark(lexer);
 
@@ -898,6 +1039,17 @@ LhatToken lhat_lexer_next(LhatLexer *lexer)
         }
     }
 
+    // Track braces opened inside a hole so that a table literal's '}' is not
+    // taken for the end of the hole.
+    if (inside_interpolation_hole(lexer) && token.kind == LHAT_TOKEN_OP) {
+        uint32_t *depth = &lexer->interp[lexer->interp_depth - 1].brace_depth;
+        if (token.v.op == LHAT_OP_LBRACE) {
+            (*depth)++;
+        } else if (token.v.op == LHAT_OP_RBRACE && *depth > 0) {
+            (*depth)--;
+        }
+    }
+
     lexer->pending_newline = false;
     lexer->after_dot = token.kind == LHAT_TOKEN_OP &&
                        (token.v.op == LHAT_OP_DOT || token.v.op == LHAT_OP_NIL_DOT);
@@ -907,7 +1059,9 @@ LhatToken lhat_lexer_next(LhatLexer *lexer)
 const char *lhat_lexer_string(const LhatLexer *lexer, const LhatToken *token,
                               size_t *length)
 {
-    if (token->kind != LHAT_TOKEN_STRING) {
+    if (token->kind != LHAT_TOKEN_STRING &&
+        token->kind != LHAT_TOKEN_INTERP_TEXT &&
+        token->kind != LHAT_TOKEN_INTERP_FORMAT) {
         *length = 0;
         return NULL;
     }
@@ -946,8 +1100,10 @@ const char *lhat_error_message(LhatErrorCode code)
             return "unterminated block comment";
         case LHAT_ERR_SCOPE_WITHOUT_NAME:
             return "scope specifier must be followed directly by a name";
-        case LHAT_ERR_INTERPOLATION_UNSUPPORTED:
-            return "string interpolation is not implemented yet";
+        case LHAT_ERR_INTERPOLATION_NEEDS_QUOTES:
+            return "string interpolation requires double quotes: $\"...\"";
+        case LHAT_ERR_INTERPOLATION_TOO_DEEP:
+            return "interpolated strings are nested too deeply";
     }
     return "unknown error";
 }

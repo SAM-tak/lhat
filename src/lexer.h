@@ -1,8 +1,6 @@
 // L^ (lhat) -- lexical analyser.
 //
-// Implements sections 1 through 10 of DesignDocuments/01-lexical-structure.md,
-// except string interpolation (section 5.4), which is reported as
-// LHAT_ERR_INTERPOLATION_UNSUPPORTED for now.
+// Implements sections 1 through 10 of DesignDocuments/01-lexical-structure.md.
 //
 // The lexer deliberately has no keyword table. A '^'-suffixed identifier is
 // always returned as LHAT_TOKEN_HAT_IDENT and the parser decides whether it
@@ -29,8 +27,14 @@ typedef enum {
     LHAT_ERR_MALFORMED_ESCAPE,           // \xHH or \u{...} with bad digits
     LHAT_ERR_UNTERMINATED_BLOCK_COMMENT, // 6.2
     LHAT_ERR_SCOPE_WITHOUT_NAME,         // 8: '$' must be glued to a name
-    LHAT_ERR_INTERPOLATION_UNSUPPORTED   // 5.4, not implemented yet
+    LHAT_ERR_INTERPOLATION_NEEDS_QUOTES, // 5.4: $'...' does not interpolate
+    LHAT_ERR_INTERPOLATION_TOO_DEEP      // 5.4: nesting limit reached
 } LhatErrorCode;
+
+// Nesting limit for interpolated strings. A hole may contain another
+// interpolated string, which may contain another hole, and so on; anything
+// approaching this depth is pathological rather than intentional.
+#define LHAT_INTERP_MAX_DEPTH 32
 
 typedef struct {
     LhatErrorCode code;
@@ -49,6 +53,15 @@ typedef struct {
     bool pending_newline;  // a newline was crossed since the last token
     bool after_dot;        // 10.1: digits after '.' scan as an integer only
 
+    // Interpolation mode stack (section 5.4). Frames alternate between a
+    // string segment and a hole; brace_depth counts the '{' opened inside a
+    // hole so that a table literal's '}' is not mistaken for the hole's end.
+    struct {
+        bool in_hole;
+        uint32_t brace_depth;
+    } interp[LHAT_INTERP_MAX_DEPTH];
+    size_t interp_depth;
+
     char *strings;         // decoded string literal bytes
     size_t strings_length;
     size_t strings_capacity;
@@ -66,9 +79,10 @@ void lhat_lexer_dispose(LhatLexer *lexer);
 // offending code point so that scanning can continue.
 LhatToken lhat_lexer_next(LhatLexer *lexer);
 
-// Decoded bytes of a LHAT_TOKEN_STRING. The pointer stays valid until the
-// lexer is disposed, but may be invalidated by further calls to
-// lhat_lexer_next(), so copy it if it must outlive the scan.
+// Decoded bytes of a LHAT_TOKEN_STRING, LHAT_TOKEN_INTERP_TEXT or
+// LHAT_TOKEN_INTERP_FORMAT. The pointer stays valid until the lexer is
+// disposed, but may be invalidated by further calls to lhat_lexer_next(), so
+// copy it if it must outlive the scan.
 const char *lhat_lexer_string(const LhatLexer *lexer, const LhatToken *token,
                               size_t *length);
 

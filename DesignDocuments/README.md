@@ -6,7 +6,7 @@
 
 | 文書 | 内容 | 状態 |
 | --- | --- | --- |
-| [01-lexical-structure.md](01-lexical-structure.md) | 字句構造（トークンの定義、字句的曖昧性の解決） | Q10 のみ未決。実装済み |
+| [01-lexical-structure.md](01-lexical-structure.md) | 字句構造（トークンの定義、字句的曖昧性の解決） | 未決事項なし。実装完了 |
 | [02-syntax.md](02-syntax.md) | 構文（入力形式、コマンドモード、REPL 統合） | 入力形式のみ確定。文法本体は未着手 |
 
 ## Memo.md との関係

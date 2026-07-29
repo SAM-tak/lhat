@@ -13,6 +13,14 @@ const char *lhat_token_kind_name(LhatTokenKind kind)
         case LHAT_TOKEN_STRING:      return "string";
         case LHAT_TOKEN_SCOPE:       return "scope";
         case LHAT_TOKEN_OP:          return "op";
+
+        case LHAT_TOKEN_INTERP_BEGIN:      return "interp-begin";
+        case LHAT_TOKEN_INTERP_TEXT:       return "interp-text";
+        case LHAT_TOKEN_INTERP_EXPR_BEGIN: return "interp-expr-begin";
+        case LHAT_TOKEN_INTERP_FORMAT:     return "interp-format";
+        case LHAT_TOKEN_INTERP_EXPR_END:   return "interp-expr-end";
+        case LHAT_TOKEN_INTERP_END:        return "interp-end";
+
         case LHAT_TOKEN_ERROR:       return "error";
     }
     return "?";

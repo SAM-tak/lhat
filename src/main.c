@@ -38,6 +38,13 @@ static void print_token(const LhatLexer *lexer, const LhatToken *token)
                    (int)length, bytes != NULL ? bytes : "");
             break;
         }
+        case LHAT_TOKEN_INTERP_TEXT:
+        case LHAT_TOKEN_INTERP_FORMAT: {
+            size_t length = 0;
+            const char *bytes = lhat_lexer_string(lexer, token, &length);
+            printf(" \"%.*s\"", (int)length, bytes != NULL ? bytes : "");
+            break;
+        }
         case LHAT_TOKEN_SCOPE:
             printf(" %s (depth=%u)", lhat_scope_kind_name(token->v.scope.kind),
                    token->v.scope.depth);

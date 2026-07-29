@@ -20,6 +20,21 @@ typedef enum {
     LHAT_TOKEN_STRING,
     LHAT_TOKEN_SCOPE,        // '$', '$$', '$^^^'
     LHAT_TOKEN_OP,
+
+    // Section 5.4. An interpolated string is delivered as a sequence rather
+    // than a single token, so the expressions inside the holes are scanned by
+    // the ordinary rules instead of by a second, duplicated scanner:
+    //
+    //   BEGIN ( TEXT | EXPR_BEGIN <tokens> [FORMAT] EXPR_END )* END
+    //
+    // TEXT is emitted only when the segment is non-empty.
+    LHAT_TOKEN_INTERP_BEGIN,       // $"
+    LHAT_TOKEN_INTERP_TEXT,        // a literal run between holes
+    LHAT_TOKEN_INTERP_EXPR_BEGIN,  // {
+    LHAT_TOKEN_INTERP_FORMAT,      // the raw text after ':'
+    LHAT_TOKEN_INTERP_EXPR_END,    // }
+    LHAT_TOKEN_INTERP_END,         // closing "
+
     LHAT_TOKEN_ERROR
 } LhatTokenKind;
 
@@ -107,6 +122,7 @@ typedef struct {
 
         double real;
 
+        // Also used by LHAT_TOKEN_INTERP_TEXT and LHAT_TOKEN_INTERP_FORMAT.
         struct {
             LhatStringKind kind;
             // Offsets into the lexer's decoded string storage, not into the
