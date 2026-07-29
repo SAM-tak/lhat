@@ -53,6 +53,24 @@ cmake --build --preset debug
 ./build/debug/lhat
 ```
 
+## Tests
+
+The suite is built by default and runs through CTest:
+
+```powershell
+ctest --test-dir build/debug --output-on-failure
+```
+
+Pass `-DLHAT_BUILD_TESTS=OFF` at configure time to skip it.
+
+## Running
+
+There is no virtual machine yet, so the driver only dumps the token stream:
+
+```powershell
+.\build\debug\lhat.exe path\to\file.lhat
+```
+
 ## Presets
 
 | Configure preset | Generator            | Build presets            | Binary directory |
@@ -76,8 +94,14 @@ completion and diagnostics.
 CMakeLists.txt        Build definition
 CMakePresets.json     Configure / build presets
 src/                  Implementation
+  source.[ch]           Source loading and newline normalisation
+  token.[ch]            Token definitions
+  lexer.[ch]            Lexical analyser
+  main.c                Command line driver
+tests/                Test suite (CTest)
+DesignDocuments/      Language design specifications
 scripts/devshell.ps1  Loads the MSVC x64 environment (Windows, Ninja only)
-Memo.md               Language design notes
+Memo.md               Language design notes (brainstorming, not a spec)
 ```
 
 ## License
