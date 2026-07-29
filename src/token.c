@@ -7,7 +7,7 @@ const char *lhat_token_kind_name(LhatTokenKind kind)
     switch (kind) {
         case LHAT_TOKEN_EOF:         return "eof";
         case LHAT_TOKEN_IDENT:       return "ident";
-        case LHAT_TOKEN_CARET_IDENT: return "caret-ident";
+        case LHAT_TOKEN_HAT_IDENT:   return "hat-ident";
         case LHAT_TOKEN_INT:         return "int";
         case LHAT_TOKEN_FLOAT:       return "float";
         case LHAT_TOKEN_STRING:      return "string";

@@ -5,7 +5,7 @@
 // LHAT_ERR_INTERPOLATION_UNSUPPORTED for now.
 //
 // The lexer deliberately has no keyword table. A '^'-suffixed identifier is
-// always returned as LHAT_TOKEN_CARET_IDENT and the parser decides whether it
+// always returned as LHAT_TOKEN_HAT_IDENT and the parser decides whether it
 // is a keyword, a type name or a meta property (section 2.1).
 
 #ifndef LHAT_LEXER_H
@@ -18,7 +18,7 @@ typedef enum {
     LHAT_ERR_NONE,
     LHAT_ERR_UNEXPECTED_CHARACTER,
     LHAT_ERR_INVALID_UTF8,
-    LHAT_ERR_BARE_CARET,                 // 2.5
+    LHAT_ERR_BARE_HAT,                   // 2.5
     LHAT_ERR_LONE_QUESTION_MARK,         // 3.2: '?' only forms ?. ?( ?[
     LHAT_ERR_IDENT_AFTER_NUMBER,         // 10.3 (Q7): '1to^3'
     LHAT_ERR_MALFORMED_NUMBER,           // '0x' with no digits, stray '_'

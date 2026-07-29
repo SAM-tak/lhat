@@ -82,26 +82,26 @@ static void test_identifiers(void)
 
     // Section 2.1: the lexer has no keyword table, so if^ and if are simply an
     // identifier with and without the suffix.
-    LHAT_TEST("caret suffix marks a caret identifier");
+    LHAT_TEST("hat suffix marks a hat identifier");
     scan_text(&s, "if if^");
     LHAT_CHECK_EQ_INT(s.tokens[0].kind, LHAT_TOKEN_IDENT);
-    LHAT_CHECK_EQ_INT(s.tokens[1].kind, LHAT_TOKEN_CARET_IDENT);
-    LHAT_CHECK_EQ_INT(s.tokens[1].v.carets, 1);
+    LHAT_CHECK_EQ_INT(s.tokens[1].kind, LHAT_TOKEN_HAT_IDENT);
+    LHAT_CHECK_EQ_INT(s.tokens[1].v.hats, 1);
     scan_dispose(&s);
 
     // Section 2.3.
-    LHAT_TEST("repeated carets are counted");
+    LHAT_TEST("repeated hats are counted");
     scan_text(&s, "super^^^");
-    LHAT_CHECK_EQ_INT(s.tokens[0].kind, LHAT_TOKEN_CARET_IDENT);
-    LHAT_CHECK_EQ_INT(s.tokens[0].v.carets, 3);
+    LHAT_CHECK_EQ_INT(s.tokens[0].kind, LHAT_TOKEN_HAT_IDENT);
+    LHAT_CHECK_EQ_INT(s.tokens[0].v.hats, 3);
     scan_dispose(&s);
 
-    // Section 2.4: no whitespace may separate the identifier from the caret.
-    LHAT_TEST("a detached caret is an error");
+    // Section 2.4: no whitespace may separate the identifier from the hat.
+    LHAT_TEST("a detached hat is an error");
     scan_text(&s, "if ^");
     LHAT_CHECK_EQ_INT(s.tokens[0].kind, LHAT_TOKEN_IDENT);
     LHAT_CHECK_EQ_INT(s.tokens[1].kind, LHAT_TOKEN_ERROR);
-    LHAT_CHECK_EQ_INT(s.lexer.diagnostics[0].code, LHAT_ERR_BARE_CARET);
+    LHAT_CHECK_EQ_INT(s.lexer.diagnostics[0].code, LHAT_ERR_BARE_HAT);
     scan_dispose(&s);
 
     LHAT_TEST("non-ascii identifiers are accepted");
@@ -210,8 +210,8 @@ static void test_lexical_hazards(void)
     LHAT_CHECK_EQ_INT(s.lexer.diagnostic_count, 0);
     LHAT_CHECK_EQ_INT(token_count(&s), 3);
     LHAT_CHECK_EQ_INT(s.tokens[0].kind, LHAT_TOKEN_INT);
-    LHAT_CHECK_EQ_INT(s.tokens[1].kind, LHAT_TOKEN_CARET_IDENT);
-    LHAT_CHECK_EQ_INT(s.tokens[1].v.carets, 1);
+    LHAT_CHECK_EQ_INT(s.tokens[1].kind, LHAT_TOKEN_HAT_IDENT);
+    LHAT_CHECK_EQ_INT(s.tokens[1].v.hats, 1);
     LHAT_CHECK_EQ_INT(s.tokens[2].kind, LHAT_TOKEN_INT);
     scan_dispose(&s);
 

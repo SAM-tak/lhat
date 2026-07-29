@@ -20,9 +20,9 @@ static void print_token(const LhatLexer *lexer, const LhatToken *token)
             printf(" %.*s", (int)token->length,
                    lexer->source->text + token->offset);
             break;
-        case LHAT_TOKEN_CARET_IDENT:
-            printf(" %.*s (carets=%u)", (int)token->length,
-                   lexer->source->text + token->offset, token->v.carets);
+        case LHAT_TOKEN_HAT_IDENT:
+            printf(" %.*s (hats=%u)", (int)token->length,
+                   lexer->source->text + token->offset, token->v.hats);
             break;
         case LHAT_TOKEN_INT:
             printf(" %llu (base %u)", (unsigned long long)token->v.integer.value,

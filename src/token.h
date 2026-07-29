@@ -14,7 +14,7 @@
 typedef enum {
     LHAT_TOKEN_EOF,
     LHAT_TOKEN_IDENT,
-    LHAT_TOKEN_CARET_IDENT,  // identifier followed by one or more '^'
+    LHAT_TOKEN_HAT_IDENT,    // identifier followed by one or more '^'
     LHAT_TOKEN_INT,
     LHAT_TOKEN_FLOAT,
     LHAT_TOKEN_STRING,
@@ -23,7 +23,7 @@ typedef enum {
     LHAT_TOKEN_ERROR
 } LhatTokenKind;
 
-// Section 7.1. The lexer never classifies a caret identifier as a keyword;
+// Section 7.1. The lexer never classifies a hat identifier as a keyword;
 // that is the parser's job (section 2.1).
 typedef enum {
     LHAT_OP_LPAREN,
@@ -99,7 +99,7 @@ typedef struct {
     union {
         LhatOpKind op;
 
-        uint32_t carets;  // LHAT_TOKEN_CARET_IDENT: number of trailing '^'
+        uint32_t hats;  // LHAT_TOKEN_HAT_IDENT: number of trailing '^'
 
         struct {
             uint64_t value;

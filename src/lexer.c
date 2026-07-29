@@ -381,17 +381,17 @@ static LhatToken scan_identifier(LhatLexer *lexer, Mark start)
         advance_n(lexer, (size_t)width);
     }
 
-    // Section 2.3: a run of '^' glued to the identifier turns it into a caret
+    // Section 2.3: a run of '^' glued to the identifier turns it into a hat
     // identifier, and the count is retained (super^^^).
-    uint32_t carets = 0;
+    uint32_t hats = 0;
     while (current_byte(lexer) == '^') {
-        carets++;
+        hats++;
         advance(lexer);
     }
 
-    if (carets > 0) {
-        LhatToken token = finish(lexer, start, LHAT_TOKEN_CARET_IDENT);
-        token.v.carets = carets;
+    if (hats > 0) {
+        LhatToken token = finish(lexer, start, LHAT_TOKEN_HAT_IDENT);
+        token.v.hats = hats;
         return token;
     }
     return finish(lexer, start, LHAT_TOKEN_IDENT);
@@ -877,7 +877,7 @@ LhatToken lhat_lexer_next(LhatLexer *lexer)
         token = scan_identifier(lexer, start);
     } else if (c == '^') {
         // Section 2.5: '^' only ever follows an identifier.
-        report(lexer, LHAT_ERR_BARE_CARET);
+        report(lexer, LHAT_ERR_BARE_HAT);
         advance(lexer);
         token = finish(lexer, start, LHAT_TOKEN_ERROR);
     } else {
@@ -924,7 +924,7 @@ const char *lhat_error_message(LhatErrorCode code)
             return "unexpected character";
         case LHAT_ERR_INVALID_UTF8:
             return "invalid UTF-8 sequence";
-        case LHAT_ERR_BARE_CARET:
+        case LHAT_ERR_BARE_HAT:
             return "'^' must directly follow an identifier";
         case LHAT_ERR_LONE_QUESTION_MARK:
             return "'?' is only valid as part of '?.', '?(' or '?['";
