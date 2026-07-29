@@ -64,7 +64,6 @@ typedef enum {
     LHAT_OP_NIL_INDEX,   // ?[
 
     LHAT_OP_AT,          // @
-    LHAT_OP_COMMAND,     // >>
 
     LHAT_OP_COUNT
 } LhatOpKind;

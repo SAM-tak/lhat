@@ -770,7 +770,6 @@ static const OperatorEntry operator_table[] = {
     { "=/", 2, LHAT_OP_NE },
     { "<=", 2, LHAT_OP_LE },
     { ">=", 2, LHAT_OP_GE },
-    { ">>", 2, LHAT_OP_COMMAND },
     { "**", 2, LHAT_OP_POW },
     { "//", 2, LHAT_OP_FLOORDIV },
     { "..", 2, LHAT_OP_CONCAT },

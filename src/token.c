@@ -53,7 +53,6 @@ const char *lhat_op_name(LhatOpKind op)
         case LHAT_OP_NIL_CALL:   return "?(";
         case LHAT_OP_NIL_INDEX:  return "?[";
         case LHAT_OP_AT:         return "@";
-        case LHAT_OP_COMMAND:    return ">>";
         case LHAT_OP_COUNT:      break;
     }
     return "?";

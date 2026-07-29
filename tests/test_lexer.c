@@ -392,21 +392,29 @@ static void test_operators(void)
     Scan s;
 
     LHAT_TEST("maximal munch on multi-character operators");
-    scan_text(&s, ":= :: -> ** // .. >> ?. ?( ?[ != =/ <= >=");
+    scan_text(&s, ":= :: -> ** // .. ?. ?( ?[ != =/ <= >=");
     LHAT_CHECK(is_op(&s.tokens[0], LHAT_OP_DEFINE), "expected :=");
     LHAT_CHECK(is_op(&s.tokens[1], LHAT_OP_COLONCOLON), "expected ::");
     LHAT_CHECK(is_op(&s.tokens[2], LHAT_OP_ARROW), "expected ->");
     LHAT_CHECK(is_op(&s.tokens[3], LHAT_OP_POW), "expected **");
     LHAT_CHECK(is_op(&s.tokens[4], LHAT_OP_FLOORDIV), "expected //");
     LHAT_CHECK(is_op(&s.tokens[5], LHAT_OP_CONCAT), "expected ..");
-    LHAT_CHECK(is_op(&s.tokens[6], LHAT_OP_COMMAND), "expected >>");
-    LHAT_CHECK(is_op(&s.tokens[7], LHAT_OP_NIL_DOT), "expected ?.");
-    LHAT_CHECK(is_op(&s.tokens[8], LHAT_OP_NIL_CALL), "expected ?(");
-    LHAT_CHECK(is_op(&s.tokens[9], LHAT_OP_NIL_INDEX), "expected ?[");
-    LHAT_CHECK(is_op(&s.tokens[10], LHAT_OP_NE), "expected !=");
-    LHAT_CHECK(is_op(&s.tokens[11], LHAT_OP_NE), "expected =/");
-    LHAT_CHECK(is_op(&s.tokens[12], LHAT_OP_LE), "expected <=");
-    LHAT_CHECK(is_op(&s.tokens[13], LHAT_OP_GE), "expected >=");
+    LHAT_CHECK(is_op(&s.tokens[6], LHAT_OP_NIL_DOT), "expected ?.");
+    LHAT_CHECK(is_op(&s.tokens[7], LHAT_OP_NIL_CALL), "expected ?(");
+    LHAT_CHECK(is_op(&s.tokens[8], LHAT_OP_NIL_INDEX), "expected ?[");
+    LHAT_CHECK(is_op(&s.tokens[9], LHAT_OP_NE), "expected !=");
+    LHAT_CHECK(is_op(&s.tokens[10], LHAT_OP_NE), "expected =/");
+    LHAT_CHECK(is_op(&s.tokens[11], LHAT_OP_LE), "expected <=");
+    LHAT_CHECK(is_op(&s.tokens[12], LHAT_OP_GE), "expected >=");
+    scan_dispose(&s);
+
+    // Section 7.7: the '>>' in Memo.md is a prompt, not syntax, so it is not
+    // an operator and scans as two separate '>' tokens.
+    LHAT_TEST(">> is not an operator");
+    scan_text(&s, "a >> b");
+    LHAT_CHECK_EQ_INT(token_count(&s), 4);
+    LHAT_CHECK(is_op(&s.tokens[1], LHAT_OP_GT), "expected >");
+    LHAT_CHECK(is_op(&s.tokens[2], LHAT_OP_GT), "expected >");
     scan_dispose(&s);
 
     // Section 7.2: the preferred spellings are multi-byte UTF-8.
@@ -521,7 +529,7 @@ static void test_realistic_snippet(void)
               "}\n"
               "c := $Counter\n"
               "if^ c.value \xE2\x89\xA6 10 {\n"
-              "    >> print 'done'\n"
+              "    print('done')\n"
               "}\n");
     LHAT_CHECK_EQ_INT(s.lexer.diagnostic_count, 0);
     LHAT_CHECK(token_count(&s) > 30, "expected a decent number of tokens");
