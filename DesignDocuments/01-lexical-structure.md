@@ -69,7 +69,7 @@ Memo.md 全体を通じて、`^` は算術（べき乗）にも論理（XOR）�
 - 制御構文: `if^` `else^` `elseif^` `elsif^` `elif^` `ei^` `el^` `or^` `for^` `when^`
   `other^` `to^` `from^` `step^` `in^` `while^` `until^` `next^` `repeat^` `do^`
   `break^` `return^` `yield^` `defer^` `with^`
-- 定義子: `f^` `p^` `op^` `def^` `self^` `new^` `enum^` `id^`
+- 定義子: `f^` `p^` `op^` `def^` `self^` `new^` `enum^` `let^`
 - 型・修飾: `number^` `string^` `int^` `mutable^` `nil^` `true^` `false^` `as^` `is^`
 - メタプロパティ: `.class^` `.super^` `.keys^` `.values^` `this^` `it^`
 - テーブル制御: `width^` `autowidth^`
