@@ -91,6 +91,7 @@ typedef enum {
 
     LHAT_OP_DOT,
     LHAT_OP_CONCAT,      // ..
+    LHAT_OP_ELLIPSIS,    // ...  variadic argument marker
     LHAT_OP_NIL_DOT,     // ?.
     LHAT_OP_NIL_CALL,    // ?(
     LHAT_OP_NIL_INDEX,   // ?[

@@ -279,6 +279,15 @@ static void test_lexical_hazards(void)
     LHAT_CHECK_EQ_INT(s.tokens[4].kind, LHAT_TOKEN_INT);
     scan_dispose(&s);
 
+    // Section 13.7: '...' must beat '..' at maximal munch, or a variadic
+    // marker would scan as a concatenation followed by a dot.
+    LHAT_TEST("13.7 ... beats ..");
+    scan_text(&s, "ns:number^... a..b");
+    LHAT_CHECK(is_op(&s.tokens[3], LHAT_OP_ELLIPSIS), "expected ...");
+    LHAT_CHECK(is_op(&s.tokens[5], LHAT_OP_CONCAT), "expected ..");
+    LHAT_CHECK_EQ_INT(s.lexer.diagnostic_count, 0);
+    scan_dispose(&s);
+
     // Section 10.2. A naive scanner reads "1." as a float.
     LHAT_TEST("10.2 1..2 is integer concat integer");
     scan_text(&s, "1..2");

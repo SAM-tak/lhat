@@ -909,6 +909,8 @@ typedef struct {
 
 // Ordered longest first so that a linear scan implements maximal munch.
 static const OperatorEntry operator_table[] = {
+    { "...", 3, LHAT_OP_ELLIPSIS },     // must precede ".." (13.7)
+
     { "\xE2\x89\xA0", 3, LHAT_OP_NE },  // U+2260 NOT EQUAL TO
     { "\xE2\x89\xA4", 3, LHAT_OP_LE },  // U+2264 LESS-THAN OR EQUAL TO
     { "\xE2\x89\xA5", 3, LHAT_OP_GE },  // U+2265 GREATER-THAN OR EQUAL TO
