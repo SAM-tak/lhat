@@ -948,6 +948,7 @@ static const OperatorEntry operator_table[] = {
     { "/", 1, LHAT_OP_DIV },
     { "%", 1, LHAT_OP_MOD },
     { "!", 1, LHAT_OP_NOT },
+    { "|", 1, LHAT_OP_UNION },
     { ".", 1, LHAT_OP_DOT },
     { "@", 1, LHAT_OP_AT },
 };

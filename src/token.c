@@ -57,6 +57,7 @@ const char *lhat_op_name(LhatOpKind op)
         case LHAT_OP_MOD:        return "%";
         case LHAT_OP_POW:        return "**";
         case LHAT_OP_NOT:        return "!";
+        case LHAT_OP_UNION:      return "|";
         case LHAT_OP_DOT:        return ".";
         case LHAT_OP_CONCAT:     return "..";
         case LHAT_OP_NIL_DOT:    return "?.";

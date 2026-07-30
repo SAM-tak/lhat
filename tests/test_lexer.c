@@ -699,6 +699,19 @@ static void test_operators(void)
     LHAT_CHECK(is_op(&s.tokens[1], LHAT_OP_REASSIGN), "expected <<");
     scan_dispose(&s);
 
+    // '|' is the type union operator. The lexer knows nothing of type
+    // contexts and simply emits the token; the parser decides.
+    LHAT_TEST("type union");
+    scan_text(&s, "k as^number^|nil^");
+    LHAT_CHECK_EQ_INT(token_count(&s), 5);
+    LHAT_CHECK_EQ_INT(s.tokens[0].kind, LHAT_TOKEN_IDENT);
+    LHAT_CHECK_EQ_INT(s.tokens[1].kind, LHAT_TOKEN_HAT_IDENT);
+    LHAT_CHECK_EQ_INT(s.tokens[2].kind, LHAT_TOKEN_HAT_IDENT);
+    LHAT_CHECK(is_op(&s.tokens[3], LHAT_OP_UNION), "expected |");
+    LHAT_CHECK_EQ_INT(s.tokens[4].kind, LHAT_TOKEN_HAT_IDENT);
+    LHAT_CHECK_EQ_INT(s.lexer.diagnostic_count, 0);
+    scan_dispose(&s);
+
     LHAT_TEST("a lone question mark is an error");
     scan_text(&s, "a ? b");
     LHAT_CHECK_EQ_INT(s.tokens[1].kind, LHAT_TOKEN_ERROR);

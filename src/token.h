@@ -87,6 +87,8 @@ typedef enum {
 
     LHAT_OP_NOT,         // !    prefix logical negation (Q3)
 
+    LHAT_OP_UNION,       // |    type union, valid only in a type context
+
     LHAT_OP_DOT,
     LHAT_OP_CONCAT,      // ..
     LHAT_OP_NIL_DOT,     // ?.
