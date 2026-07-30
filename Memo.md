@@ -370,7 +370,7 @@ foo.selfcall()
 foo.dispose()
 with^foo=Foo()
 with^bar=Boo() // error : bar doesn't have dispose.
-{^
+{
      ...
 }
 ```

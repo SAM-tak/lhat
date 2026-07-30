@@ -1,6 +1,6 @@
-# lhat
+# The Programming Language L^
 
-`L^` (lhat) — a new glue programming language experiment.
+`L^` (elhat) — a new glue programming language experiment.
 
 A bytecode-interpreted language in the spirit of Lua, written in C11 and built
 with CMake.
