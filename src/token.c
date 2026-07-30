@@ -57,7 +57,11 @@ const char *lhat_op_name(LhatOpKind op)
         case LHAT_OP_MOD:        return "%";
         case LHAT_OP_POW:        return "**";
         case LHAT_OP_NOT:        return "!";
+        case LHAT_OP_AND:        return "and^";
+        case LHAT_OP_OR:         return "or^";
+        case LHAT_OP_IS:         return "is^";
         case LHAT_OP_UNION:      return "|";
+        case LHAT_OP_INTERSECT:  return "&";
         case LHAT_OP_DOT:        return ".";
         case LHAT_OP_CONCAT:     return "..";
         case LHAT_OP_ELLIPSIS:   return "...";

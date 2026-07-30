@@ -30,6 +30,8 @@ add_library(lhat_core STATIC
     src/source.c
     src/token.c
     src/lexer.c
+    src/ast.c
+    src/parser.c
 )
 
 target_include_directories(lhat_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)

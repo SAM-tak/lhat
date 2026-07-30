@@ -14,3 +14,4 @@ endfunction()
 
 lhat_add_test(test_source)
 lhat_add_test(test_lexer)
+lhat_add_test(test_parser)

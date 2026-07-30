@@ -88,7 +88,17 @@ typedef enum {
 
     LHAT_OP_NOT,         // !    prefix logical negation (Q3)
 
+    // These are operators (01 の 7.1) but reach the parser as hat
+    // identifiers, since the lexer keeps no keyword table (01 の 2.1). They
+    // never appear in the operator table and are listed here so a syntax
+    // tree can name them alongside the rest.
+    LHAT_OP_AND,         // and^
+    LHAT_OP_OR,          // or^
+    LHAT_OP_IS,          // is^
+
+
     LHAT_OP_UNION,       // |    type union, valid only in a type context
+    LHAT_OP_INTERSECT,   // &    type intersection (14.5)
 
     LHAT_OP_DOT,
     LHAT_OP_CONCAT,      // ..
