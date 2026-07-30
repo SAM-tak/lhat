@@ -61,13 +61,14 @@ typedef enum {
 
     LHAT_OP_DEFINE,      // :=
     LHAT_OP_REASSIGN,    // <<   target << value (Q2)
-    LHAT_OP_COLONCOLON,  // ::   return type (Q9)
+    LHAT_OP_ARROW,       // ->   separates arguments from return value (Q9)
 
-    // Not part of the language. Q2 originally made '->' the postfix
-    // reassignment operator and later replaced it with '<<'. The token is
-    // still recognised so the parser can say what happened, rather than
-    // leaving the reader with an error about a stray '-' and '>'.
-    LHAT_OP_ARROW,       // ->
+    // Neither of these is part of the language; both are recognised so the
+    // parser can say what replaced them instead of reporting a stray
+    // character. Q2 first made '->' postfix reassignment before settling on
+    // '<<', and Q9 first used '::' as the return separator before moving to
+    // '->', which reads better among the many uses of ':'.
+    LHAT_OP_COLONCOLON,  // ::
 
 
     LHAT_OP_EQ,          // =    comparison, not assignment

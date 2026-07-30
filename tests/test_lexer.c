@@ -613,9 +613,9 @@ static void test_operators(void)
     Scan s;
 
     LHAT_TEST("maximal munch on multi-character operators");
-    scan_text(&s, ":= :: << ** // .. ?. ?( ?[ != =/ <= >=");
+    scan_text(&s, ":= -> << ** // .. ?. ?( ?[ != =/ <= >=");
     LHAT_CHECK(is_op(&s.tokens[0], LHAT_OP_DEFINE), "expected :=");
-    LHAT_CHECK(is_op(&s.tokens[1], LHAT_OP_COLONCOLON), "expected ::");
+    LHAT_CHECK(is_op(&s.tokens[1], LHAT_OP_ARROW), "expected ->");
     LHAT_CHECK(is_op(&s.tokens[2], LHAT_OP_REASSIGN), "expected <<");
     LHAT_CHECK(is_op(&s.tokens[3], LHAT_OP_POW), "expected **");
     LHAT_CHECK(is_op(&s.tokens[4], LHAT_OP_FLOORDIV), "expected //");
@@ -646,10 +646,15 @@ static void test_operators(void)
     LHAT_CHECK(is_op(&s.tokens[5], LHAT_OP_REASSIGN), "expected <<");
     scan_dispose(&s);
 
+    LHAT_TEST("-> separates arguments from the return value");
+    scan_text(&s, "f^number^ -> string^;");
+    LHAT_CHECK(is_op(&s.tokens[2], LHAT_OP_ARROW), "expected ->");
+    scan_dispose(&s);
+
     // Withdrawn, but still scanned so the parser can explain the change.
-    LHAT_TEST("-> is still recognised as one token");
-    scan_text(&s, "i + 1 -> i");
-    LHAT_CHECK(is_op(&s.tokens[3], LHAT_OP_ARROW), "expected ->");
+    LHAT_TEST(":: is still recognised as one token");
+    scan_text(&s, "f^number^ :: string^;");
+    LHAT_CHECK(is_op(&s.tokens[2], LHAT_OP_COLONCOLON), "expected ::");
     scan_dispose(&s);
 
     // Section 7.7: the '>>' in Memo.md is a prompt, not syntax, so it is not
@@ -797,7 +802,7 @@ static void test_realistic_snippet(void)
               "# a small sample\n"
               "$Counter := {\n"
               "    value := 0,\n"
-              "    bump := p^step :: number^ {\n"
+              "    bump := p^step -> number^ {\n"
               "        value << value + step\n"
               "        value\n"
               "    }\n"

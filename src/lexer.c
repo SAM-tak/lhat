@@ -918,9 +918,9 @@ static const OperatorEntry operator_table[] = {
     { "\xE2\x89\xA7", 3, LHAT_OP_GE },  // U+2267 GREATER-THAN OVER EQUAL TO
 
     { ":=", 2, LHAT_OP_DEFINE },
-    { "::", 2, LHAT_OP_COLONCOLON },
     { "<<", 2, LHAT_OP_REASSIGN },
-    { "->", 2, LHAT_OP_ARROW },  // withdrawn; kept for diagnostics
+    { "->", 2, LHAT_OP_ARROW },
+    { "::", 2, LHAT_OP_COLONCOLON },  // withdrawn; kept for diagnostics
     { "!=", 2, LHAT_OP_NE },
     { "=/", 2, LHAT_OP_NE },
     { "<=", 2, LHAT_OP_LE },
