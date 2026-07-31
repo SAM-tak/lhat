@@ -9,6 +9,7 @@
 
 #include "ast.h"
 #include "lexer.h"
+#include "check.h"
 #include "parser.h"
 #include "source.h"
 #include "token.h"
@@ -319,7 +320,7 @@ static int dump_tokens(const LhatSource *source)
     return status;
 }
 
-static int dump_tree(const LhatSource *source)
+static int dump_tree(const LhatSource *source, bool typed)
 {
     LhatLexer lexer;
     lhat_lexer_init(&lexer, source);
@@ -327,7 +328,9 @@ static int dump_tree(const LhatSource *source)
     LhatParseResult result;
     lhat_parse(&lexer, &result);
 
-    print_node(&lexer, result.root, 0);
+    if (!typed) {
+        print_node(&lexer, result.root, 0);
+    }
 
     int status = report_lexical(&lexer, source);
     for (size_t i = 0; i < result.diagnostic_count; i++) {
@@ -341,6 +344,23 @@ static int dump_tree(const LhatSource *source)
                         "complete\n", source->name);
     }
 
+    // 03 の 1.1: the third stage. Running it on a tree the parser could not
+    // build would report the same problem twice in different words.
+    if (typed && status == EXIT_SUCCESS) {
+        LhatCheckResult checked;
+        lhat_check(result.root, source, true, &checked);
+        for (size_t i = 0; i < checked.diagnostic_count; i++) {
+            const LhatCheckDiagnostic *d = &checked.diagnostics[i];
+            fprintf(stderr, "%s:%u:%u: error: %s\n", source->name, d->line,
+                    d->column, lhat_check_error_message(d->code));
+            status = EXIT_FAILURE;
+        }
+        if (checked.diagnostic_count == 0) {
+            printf("%s: no type errors\n", source->name);
+        }
+        lhat_check_result_dispose(&checked);
+    }
+
     lhat_parse_result_dispose(&result);
     lhat_lexer_dispose(&lexer);
     return status;
@@ -350,10 +370,13 @@ int main(int argc, char **argv)
 {
     const char *path = NULL;
     bool tokens_only = false;
+    bool check_only = false;
 
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "--tokens") == 0) {
             tokens_only = true;
+        } else if (strcmp(argv[i], "--check") == 0) {
+            check_only = true;
         } else {
             path = argv[i];
         }
@@ -364,6 +387,7 @@ int main(int argc, char **argv)
         printf("usage: lhat [--tokens] <file>\n");
         printf("  default    print the syntax tree\n");
         printf("  --tokens   print the token stream instead\n");
+        printf("  --check    type check and report, without the tree\n");
         return EXIT_SUCCESS;
     }
 
@@ -375,7 +399,8 @@ int main(int argc, char **argv)
         return EXIT_FAILURE;
     }
 
-    int status = tokens_only ? dump_tokens(&source) : dump_tree(&source);
+    int status = tokens_only ? dump_tokens(&source)
+                             : dump_tree(&source, check_only);
     lhat_source_dispose(&source);
     return status;
 }
