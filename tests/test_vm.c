@@ -748,6 +748,37 @@ static void test_for(void)
     CHECK_INTEGER(&r, 963);
     run_dispose(&r);
 
+    // 16.4: the bound says how far the loop goes, so it is read before the
+    // loop starts and cannot move while it runs.
+    LHAT_TEST("the bound is read once");
+    run_text(&r,
+             "let^ n = 3\n"
+             "let^ x = 0\n"
+             "for^ i := 1 to^ n { n := 100 x := x + 1 }\n"
+             "return^ x\n");
+    CHECK_INTEGER(&r, 3);
+    run_dispose(&r);
+
+    LHAT_TEST("and downto^ reads its bound once too");
+    run_text(&r,
+             "let^ n = 1\n"
+             "let^ x = 0\n"
+             "for^ i := 3 downto^ n { n := -100 x := x + 1 }\n"
+             "return^ x\n");
+    CHECK_INTEGER(&r, 3);
+    run_dispose(&r);
+
+    // step^ is the amount each advance moves by rather than a limit fixed
+    // before the loop, so it is read every time round.
+    LHAT_TEST("step^ is read every time round");
+    run_text(&r,
+             "let^ s = 1\n"
+             "let^ n = 0\n"
+             "for^ i := 1 to^ 9 step^ s { n := n + 1 s := 3 }\n"
+             "return^ n\n");
+    CHECK_INTEGER(&r, 3);  // i is 1, 4, 7. Reading s once would give nine
+    run_dispose(&r);
+
     LHAT_TEST("10 to^ 1 step^ 2 is empty rather than confusing");
     run_text(&r,
              "let^ x = 0\n"

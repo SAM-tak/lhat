@@ -765,23 +765,21 @@ static const Local *numeric_focus(Compiler *c, const LhatNode *focus)
 }
 
 // 16.4: to^ and downto^ are sugar over the conditional form, and this is that
-// expansion --  'i ≦ B' one way round and 'i ≧ B' the other. The bound is
-// compiled here rather than before the loop because the expansion re-evaluates
-// it, as writing while^ i ≦ B by hand would.
+// expansion -- 'i ≦ B' one way round and 'i ≧ B' the other. The bound was read
+// once before the loop (16.4), so the test only compares.
 static void compile_numeric_test(Compiler *c, const LhatNode *node,
-                                 const Local *focus, uint8_t into)
+                                 const Local *focus, uint8_t bound,
+                                 uint8_t into)
 {
-    uint8_t mark = c->next_register;
-    uint8_t bound = reserve(c);
-    compile_expression(c, node->v.loop.bound, bound);
     emit(c, lhat_encode_abc(node->v.loop.kind == LHAT_FOR_TO ? LHAT_BC_LE
                                                              : LHAT_BC_GE,
                             into, focus->reg, bound));
-    c->next_register = mark;
 }
 
 // 16.4: the sign belongs to to^ and downto^, so step^ is a positive amount
-// and the expansion adds it one way or subtracts it the other.
+// and the expansion adds it one way or subtracts it the other. Unlike the
+// bound, this is read every time round: the amount to advance by is part of
+// each step, not a limit fixed before the loop starts.
 static void compile_numeric_advance(Compiler *c, const LhatNode *node,
                                     const Local *focus)
 {
@@ -865,17 +863,23 @@ static void compile_loop(Compiler *c, const LhatNode *node)
     compile_in_scope(c, focus);
     size_t focus_locals = c->local_count - local_mark;
 
+    // 16.4: the bound of to^/downto^ is read once, before the loop. It says
+    // how far the loop goes, and re-reading it would let that move while the
+    // loop is running.
     const Local *numeric = NULL;
+    uint8_t numeric_bound = 0;
     if (kind == LHAT_FOR_TO || kind == LHAT_FOR_DOWNTO) {
         numeric = numeric_focus(c, focus);
         if (numeric == NULL) {
             fail(c, LHAT_COMPILE_UNSUPPORTED);
             return;
         }
+        numeric_bound = reserve(c);
+        compile_expression(c, bound, numeric_bound);
     }
 
-    // repeat^ n counts to a limit read once. 'n 回' says how many times, so
-    // re-reading it would let the count change under the loop.
+    // repeat^ n counts to a limit read once, for the same reason: 'n 回' says
+    // how many times, so it cannot change under the loop.
     uint8_t counter = 0;
     uint8_t limit = 0;
     if (!is_for && node->v.repeat.kind == LHAT_REPEAT_COUNT) {
@@ -920,7 +924,7 @@ static void compile_loop(Compiler *c, const LhatNode *node)
     if (kind == LHAT_FOR_TO || kind == LHAT_FOR_DOWNTO) {
         uint8_t mark = c->next_register;
         uint8_t test = reserve(c);
-        compile_numeric_test(c, node, numeric, test);
+        compile_numeric_test(c, node, numeric, numeric_bound, test);
         leaving = emit_jump(c, LHAT_BC_JUMP_FALSE, test);
         c->next_register = mark;
     } else if (!is_for && node->v.repeat.kind == LHAT_REPEAT_COUNT) {
