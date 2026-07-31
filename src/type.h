@@ -81,6 +81,10 @@ struct LhatType {
             LhatType *result;
             LhatType *variadic;
             bool is_function;  // f^ rather than p^ (15 章)
+            // 14.4: a first parameter of self^ marks an instance method, and
+            // 'x.m()' passes x there without writing it. The receiver is not
+            // in `params`, so an ordinary call needs no special case.
+            bool takes_self;
         } func;
 
         struct {

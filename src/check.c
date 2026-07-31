@@ -248,11 +248,31 @@ static LhatType *resolve_table_type(Checker *c, const LhatNode *node)
     return table;
 }
 
+// 14.4: in a type the receiver is written as the first parameter, 'p^self^;'.
+// 13.4 keeps names out of a type, so it arrives as a parameter whose type is
+// the word self^ rather than as a named one.
+static bool is_self_marker(const Checker *c, const LhatNode *param)
+{
+    const LhatNode *written = param->v.param.name != NULL ? param->v.param.name
+                                                          : param->v.param.type;
+    const char *name = NULL;
+    size_t length = 0;
+    return written != NULL && !param->v.param.variadic &&
+           (written->kind == LHAT_NODE_HAT_IDENT ||
+            written->kind == LHAT_NODE_TYPE_NAME) &&
+           node_name(c, written, &name, &length) &&
+           name_is(name, length, "self");
+}
+
 static LhatType *resolve_func_type(Checker *c, const LhatNode *node)
 {
     LhatType *func = lhat_type_func(&c->result->types, node->v.func.is_function);
     for (const LhatNode *param = node->v.func.params; param != NULL;
          param = param->next) {
+        if (param == node->v.func.params && is_self_marker(c, param)) {
+            func->v.func.takes_self = true;
+            continue;
+        }
         if (param->v.param.variadic) {
             func->v.func.variadic = param->v.param.type != NULL
                                         ? resolve_type(c, param->v.param.type)
@@ -792,6 +812,16 @@ static LhatType *infer_call(Checker *c, const LhatNode *node)
         declared++;
     }
 
+    // 14.4: 'x.m()' hands x to the receiver without writing it, while a
+    // method taken as a value is called with the receiver spelled out. The
+    // receiver is kept out of `params`, so only the second form adjusts.
+    size_t skip = 0;
+    if (callee->v.func.takes_self &&
+        node->v.access.target->kind != LHAT_NODE_MEMBER) {
+        declared++;
+        skip = 1;
+    }
+
     // 13.7: a trailing '...' takes any number beyond the declared ones.
     if (given < declared || (given > declared && callee->v.func.variadic == NULL)) {
         report(c, node, LHAT_CHECK_ERR_ARITY);
@@ -800,6 +830,10 @@ static LhatType *infer_call(Checker *c, const LhatNode *node)
     for (const LhatNode *arg = node->v.access.argument; arg != NULL;
          arg = arg->next) {
         LhatType *actual = infer(c, arg);
+        if (skip > 0) {
+            skip--;  // the receiver, whose type the call site already knows
+            continue;
+        }
         LhatType *wanted = param != NULL ? param->type : callee->v.func.variadic;
         if (wanted != NULL) {
             expect(c, arg, actual, wanted, LHAT_CHECK_ERR_MISMATCH);
@@ -879,6 +913,13 @@ static LhatType *infer_func(Checker *c, const LhatNode *node)
 
     for (const LhatNode *param = node->v.func.params; param != NULL;
          param = param->next) {
+        // 14.4: the receiver is not an ordinary parameter. Leaving it unbound
+        // lets the self^ that infer_def put in scope show through, which is
+        // what the body is actually talking about.
+        if (param == node->v.func.params && is_self_marker(c, param)) {
+            func->v.func.takes_self = true;
+            continue;
+        }
         LhatType *type = param->v.param.type != NULL
                              ? resolve_type(c, param->v.param.type)
                              : simple(c, LHAT_TYPE_UNKNOWN);
@@ -936,6 +977,93 @@ static LhatType *infer_func(Checker *c, const LhatNode *node)
     return func;
 }
 
+// 14 章. A definition produces two structures, and 14.7 is what ties them:
+// an instance can reach the definition's members, so its type contains them
+// as well as the fields the template declares.
+//
+//   definition : the members, plus a new^ if none was written (14.11)
+//   instance   : those members, plus the template's fields
+//
+// 14.9 keeps the name out of it. Both are ordinary structures, so 11.3's
+// structural identity applies unchanged and nothing here has to be interned.
+static LhatType *infer_def(Checker *c, const LhatNode *node)
+{
+    LhatType *definition = lhat_type_table(&c->result->types);
+    LhatType *instance = lhat_type_table(&c->result->types);
+
+    const LhatNode *template = NULL;
+    for (const LhatNode *entry = node->v.list.items; entry != NULL;
+         entry = entry->next) {
+        if (entry->v.entry.key == NULL) {
+            template = entry->v.entry.value;
+        }
+    }
+
+    // The fields first, so a method body sees them through self^.
+    if (template != NULL) {
+        for (const LhatNode *field = template->v.list.items; field != NULL;
+             field = field->next) {
+            const char *name = NULL;
+            size_t length = 0;
+            if (!node_name(c, field->v.entry.key, &name, &length)) {
+                continue;
+            }
+            // 14.11: an initializer, evaluated at each construction. Its type
+            // is what the field holds.
+            lhat_type_add_member(&c->result->types, instance, name, length,
+                                 infer(c, field->v.entry.value));
+        }
+    }
+
+    // 14.4: self^ reaches the instance, class^ the definition. Bound before
+    // the members are walked so a body may use either.
+    Scope members;
+    members.bindings = NULL;
+    members.tail = NULL;
+    members.parent = c->scope;
+    Binding *receiver = scope_add(&members, "self", 4, instance, node->offset);
+    Binding *owner = scope_add(&members, "class", 5, definition, node->offset);
+    if (receiver != NULL) {
+        receiver->reached = true;
+    }
+    if (owner != NULL) {
+        owner->reached = true;
+    }
+
+    Scope *outer = c->scope;
+    c->scope = &members;
+
+    bool has_new = false;
+    for (const LhatNode *entry = node->v.list.items; entry != NULL;
+         entry = entry->next) {
+        const char *name = NULL;
+        size_t length = 0;
+        if (entry->v.entry.key == NULL ||
+            !node_name(c, entry->v.entry.key, &name, &length)) {
+            continue;
+        }
+        LhatType *type = infer(c, entry->v.entry.value);
+        lhat_type_add_member(&c->result->types, definition, name, length, type);
+        lhat_type_add_member(&c->result->types, instance, name, length, type);
+        if (name_is(name, length, "new")) {
+            has_new = true;
+        }
+    }
+
+    c->scope = outer;
+    scope_dispose(&members);
+
+    // 14.11: without one written, a definition still offers a new^ taking no
+    // arguments, since the template already fixes every field's value.
+    if (!has_new) {
+        LhatType *constructor = lhat_type_func(&c->result->types, true);
+        constructor->v.func.result = instance;
+        lhat_type_add_member(&c->result->types, definition, "new", 3,
+                             constructor);
+    }
+    return definition;
+}
+
 static LhatType *infer(Checker *c, const LhatNode *node)
 {
     if (node == NULL) {
@@ -962,6 +1090,22 @@ static LhatType *infer(Checker *c, const LhatNode *node)
 
         case LHAT_NODE_TABLE:
             return infer_table(c, node);
+
+        case LHAT_NODE_DEF:
+            return infer_def(c, node);
+
+        case LHAT_NODE_SELF_TABLE: {
+            // 14.11: in the body of a def^ this declares the fields, and
+            // inside new^ it builds one. Either way it names the instance,
+            // which is what self^ is bound to.
+            for (const LhatNode *field = node->v.list.items; field != NULL;
+                 field = field->next) {
+                infer(c, field->v.entry.value);
+            }
+            Binding *receiver = scope_find(c->scope, "self", 4);
+            return receiver != NULL ? receiver->type
+                                    : simple(c, LHAT_TYPE_UNKNOWN);
+        }
 
         case LHAT_NODE_UNARY: {
             LhatType *operand = infer(c, node->v.unary.operand);
@@ -1173,6 +1317,38 @@ static void check_reassign(Checker *c, const LhatNode *node)
     }
 }
 
+// 12.5 with 12.7: what with^ asks of a value is that it has a dispose() and
+// that the dispose() returns nothing. The second half is not decoration --
+// 12.7 made it so that cleanup cannot fail, and a dispose() with a result
+// would have somewhere to report a failure from.
+//
+// Checked by hand rather than against a written structure, because the
+// implicit self^ of 14.4 means the parameter list of the member and of a call
+// to it do not have the same length.
+static void check_disposable(Checker *c, const LhatNode *at, LhatType *type)
+{
+    if (type == NULL || type->kind == LHAT_TYPE_UNKNOWN ||
+        type->kind == LHAT_TYPE_ANY) {
+        return;
+    }
+
+    const LhatTypeMember *members =
+        type->kind == LHAT_TYPE_TABLE ? type->v.table.members : NULL;
+    for (const LhatTypeMember *m = members; m != NULL; m = m->next) {
+        if (m->name_length != 7 || memcmp(m->name, "dispose", 7) != 0) {
+            continue;
+        }
+        if (m->type == NULL || m->type->kind == LHAT_TYPE_UNKNOWN) {
+            return;
+        }
+        if (m->type->kind != LHAT_TYPE_FUNC || m->type->v.func.result != NULL) {
+            report(c, at, LHAT_CHECK_ERR_NOT_DISPOSABLE);
+        }
+        return;
+    }
+    report(c, at, LHAT_CHECK_ERR_NOT_DISPOSABLE);
+}
+
 // 04 の 2.2: the declaration creates the set and its kinds as types.
 static void check_errordef(Checker *c, const LhatNode *node)
 {
@@ -1378,6 +1554,13 @@ static void check_statement(Checker *c, const LhatNode *node)
                 check_statement(c, node->v.repeat.body);
             } else {
                 check_statements(c, node->v.list.items);
+                // 12.5: the binding is what has to be disposable, so the
+                // report belongs on it rather than inside the block.
+                for (const LhatNode *b = node->v.list.items; b != NULL;
+                     b = b->next) {
+                    check_disposable(c, b->v.binding.values,
+                                     infer(c, b->v.binding.targets));
+                }
                 check_statement(c, node->v.list.extra);
             }
 
@@ -1469,6 +1652,8 @@ const char *lhat_check_error_message(LhatCheckErrorCode code)
             return "the left of ?? cannot be nil^";
         case LHAT_CHECK_ERR_TRY_OUTSIDE:
             return "try^ would return an error this subroutine cannot return";
+        case LHAT_CHECK_ERR_NOT_DISPOSABLE:
+            return "with^ needs a value with a dispose() that returns nothing";
         case LHAT_CHECK_ERR_RECURSION_NEEDS_TYPE:
             return "a subroutine that calls itself needs its result type written";
     }

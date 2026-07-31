@@ -239,6 +239,11 @@ static bool conforms_func(const LhatType *value, const LhatType *target)
     if (value->v.func.is_function != target->v.func.is_function) {
         return false;
     }
+    // 14.4: an instance method and a plain subroutine are called differently,
+    // so one cannot stand where the other is written.
+    if (value->v.func.takes_self != target->v.func.takes_self) {
+        return false;
+    }
 
     const LhatTypeList *a = value->v.func.params;
     const LhatTypeList *b = target->v.func.params;

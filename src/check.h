@@ -39,7 +39,8 @@ typedef enum {
     LHAT_CHECK_ERR_CANNOT_FAIL,         // 04 の 4.1: catch^ on what cannot fail
     LHAT_CHECK_ERR_CANNOT_BE_NIL,       // 11.7, the same for '??'
     LHAT_CHECK_ERR_TRY_OUTSIDE,         // 04 の 5.3
-    LHAT_CHECK_ERR_RECURSION_NEEDS_TYPE // 03 の 3.4
+    LHAT_CHECK_ERR_RECURSION_NEEDS_TYPE,// 03 の 3.4
+    LHAT_CHECK_ERR_NOT_DISPOSABLE       // 12.5: with^ needs a dispose()
 } LhatCheckErrorCode;
 
 typedef struct {

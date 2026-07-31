@@ -533,6 +533,146 @@ static void test_narrowing(void)
     unit_dispose(&u);
 }
 
+// 14 章 and 12.5.
+static void test_definitions(void)
+{
+    Unit u;
+
+    // 14.7: an instance reaches the definition's members, so its type holds
+    // both those and the template's fields.
+    LHAT_TEST("an instance has the fields and the members");
+    check_text(&u,
+               "let^ C = def^{\n"
+               "    self^{ value := 0, label := \"\" },\n"
+               "    show := p^self^ { },\n"
+               "}\n"
+               "let^ c = C.new^()\n"
+               "let^ n : number^ = c.value\n"
+               "let^ s : string^ = c.label\n"
+               "c.show()\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // 14.11: a definition without one still offers a new^ taking nothing.
+    LHAT_TEST("new^ exists without being written");
+    check_text(&u, "let^ C = def^{ self^{ v := 1 } }\nlet^ c = C.new^()\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("a field the definition does not declare is reported");
+    check_text(&u,
+               "let^ C = def^{ self^{ v := 1 } }\n"
+               "let^ c = C.new^()\n"
+               "let^ x = c.missing\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_NO_MEMBER);
+    unit_dispose(&u);
+
+    // 14.4: self^ reaches the instance from inside a method.
+    LHAT_TEST("self^ reaches the fields");
+    check_text(&u,
+               "let^ C = def^{\n"
+               "    self^{ v := 0 },\n"
+               "    bump := p^self^, step:number^ {\n"
+               "        self^.v := self^.v + step\n"
+               "    },\n"
+               "}\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("class^ reaches the definition's members");
+    check_text(&u,
+               "let^ print = p^ x:any^ { }\n"
+               "let^ C = def^{\n"
+               "    self^{ v := 0 },\n"
+               "    origin := 7,\n"
+               "    show := p^ { print(class^.origin) },\n"
+               "}\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // 14.4: the receiver is not written at the call, so it is not counted.
+    LHAT_TEST("a method call does not pass the receiver");
+    check_text(&u,
+               "let^ C = def^{\n"
+               "    self^{ v := 0 },\n"
+               "    bump := p^self^, step:number^ { },\n"
+               "}\n"
+               "let^ c = C.new^()\n"
+               "c.bump(1)\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("a method call still checks its arguments");
+    check_text(&u,
+               "let^ C = def^{\n"
+               "    self^{ v := 0 },\n"
+               "    bump := p^self^, step:number^ { },\n"
+               "}\n"
+               "let^ c = C.new^()\n"
+               "c.bump(\"text\")\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
+    unit_dispose(&u);
+
+    LHAT_TEST("a method call with too few arguments is reported");
+    check_text(&u,
+               "let^ C = def^{\n"
+               "    self^{ v := 0 },\n"
+               "    bump := p^self^, step:number^ { },\n"
+               "}\n"
+               "let^ c = C.new^()\n"
+               "c.bump()\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_ARITY);
+    unit_dispose(&u);
+
+    // 12.5 with 12.7: with^ wants a dispose(), and one that returns nothing,
+    // because 12.7 made cleanup unable to fail.
+    LHAT_TEST("with^ accepts a value that has dispose()");
+    check_text(&u,
+               "let^ C = def^{ self^{ v := 1 }, dispose := p^self^ { } }\n"
+               "with^ c := C.new^() { }\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("with^ refuses a value without one");
+    check_text(&u,
+               "let^ C = def^{ self^{ v := 1 } }\n"
+               "with^ c := C.new^() { }\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_NOT_DISPOSABLE);
+    unit_dispose(&u);
+
+    LHAT_TEST("with^ refuses a dispose() that returns something");
+    check_text(&u,
+               "let^ C = def^{\n"
+               "    self^{ v := 1 },\n"
+               "    dispose := f^self^ -> number^ { return^ 0 },\n"
+               "}\n"
+               "with^ c := C.new^() { }\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_NOT_DISPOSABLE);
+    unit_dispose(&u);
+
+    // 14.10: the structural form is what 12.5 is really asking for, so it
+    // has to resolve on its own.
+    LHAT_TEST("the structural form of a disposable resolves");
+    check_text(&u,
+               "let^ C = def^{ self^{ v := 1 }, dispose := p^self^ { } }\n"
+               "let^ c = C.new^()\n"
+               "let^ d : t^{ dispose : p^self^; } = c\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // 14.9: the name is a label, so two definitions of the same shape are one
+    // type and nothing has to be shared for that to hold.
+    LHAT_TEST("identity stays structural");
+    check_text(&u,
+               "let^ A = def^{ self^{ v := 0 } }\n"
+               "let^ B = def^{ self^{ v := 0 } }\n"
+               "let^ take = p^ x:t^{ v : number^ } { }\n"
+               "take(A.new^())\n"
+               "take(B.new^())\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+}
+
 int main(void)
 {
     test_names();
@@ -541,5 +681,6 @@ int main(void)
     test_errors();
     test_annotations();
     test_narrowing();
+    test_definitions();
     return lhat_test_report("test_check");
 }
