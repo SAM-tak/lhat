@@ -35,6 +35,8 @@ add_library(lhat_core STATIC
     src/type.c
     src/check.c
     src/program.c
+    src/code.c
+    src/vm.c
     src/value.c
 )
 
