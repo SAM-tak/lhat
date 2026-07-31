@@ -931,6 +931,7 @@ static const OperatorEntry operator_table[] = {
     { "?.", 2, LHAT_OP_NIL_DOT },
     { "?(", 2, LHAT_OP_NIL_CALL },
     { "?[", 2, LHAT_OP_NIL_INDEX },
+    { "??", 2, LHAT_OP_NIL_ELSE },
 
     { "(", 1, LHAT_OP_LPAREN },
     { ")", 1, LHAT_OP_RPAREN },

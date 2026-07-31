@@ -613,7 +613,7 @@ static void test_operators(void)
     Scan s;
 
     LHAT_TEST("maximal munch on multi-character operators");
-    scan_text(&s, ":= -> << ** // .. ?. ?( ?[ != =/ <= >=");
+    scan_text(&s, ":= -> << ** // .. ?. ?( ?[ != =/ <= >= ??");
     LHAT_CHECK(is_op(&s.tokens[0], LHAT_OP_DEFINE), "expected :=");
     LHAT_CHECK(is_op(&s.tokens[1], LHAT_OP_ARROW), "expected ->");
     LHAT_CHECK(is_op(&s.tokens[2], LHAT_OP_REASSIGN), "expected <<");
@@ -627,6 +627,17 @@ static void test_operators(void)
     LHAT_CHECK(is_op(&s.tokens[10], LHAT_OP_NE), "expected =/");
     LHAT_CHECK(is_op(&s.tokens[11], LHAT_OP_LE), "expected <=");
     LHAT_CHECK(is_op(&s.tokens[12], LHAT_OP_GE), "expected >=");
+    LHAT_CHECK(is_op(&s.tokens[13], LHAT_OP_NIL_ELSE), "expected ??");
+    scan_dispose(&s);
+
+    // 02 の 11.7. The one member of the '?' family that is not a postfix
+    // access, so it has to stay distinct from '?.' and from a bare '?'.
+    LHAT_TEST("?? is distinct from the nil-propagating accesses");
+    scan_text(&s, "t[k] ?? 0 a?.b ?? c");
+    LHAT_CHECK(is_op(&s.tokens[4], LHAT_OP_NIL_ELSE), "expected ??");
+    LHAT_CHECK(is_op(&s.tokens[7], LHAT_OP_NIL_DOT), "expected ?.");
+    LHAT_CHECK(is_op(&s.tokens[9], LHAT_OP_NIL_ELSE), "expected ??");
+    LHAT_CHECK_EQ_INT(s.lexer.diagnostic_count, 0);
     scan_dispose(&s);
 
     // '<<' must win over '<', and must not be confused with '<='.

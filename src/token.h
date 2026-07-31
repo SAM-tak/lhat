@@ -106,6 +106,7 @@ typedef enum {
     LHAT_OP_NIL_DOT,     // ?.
     LHAT_OP_NIL_CALL,    // ?(
     LHAT_OP_NIL_INDEX,   // ?[
+    LHAT_OP_NIL_ELSE,    // ??   value to use when the left side is nil^ (11.7)
 
     LHAT_OP_AT,          // @
 
