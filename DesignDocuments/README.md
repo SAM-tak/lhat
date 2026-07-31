@@ -10,7 +10,7 @@
 | [02-syntax.md](02-syntax.md) | 構文（入力形式、コマンドモード、REPL 統合、条件分岐、文の構成、繰り返し、`finally^`、演算子、`with^`、型の文法、オブジェクトモデル、サブルーチン、パターンマッチ） | 未決事項なし |
 | [03-compilation-pipeline.md](03-compilation-pipeline.md) | 処理の構成（段階構成、実行時の値表現、型検査の厳格度、推論の範囲） | P3・P4（REPL）が未決。仮想機械の設計が未着手 |
 | [04-errors.md](04-errors.md) | 誤りの表現と伝播（`errordef^`、`catch^`、`try^`、網羅性、取りこぼしの検出） | 未決事項なし |
-| [05-modules.md](05-modules.md) | 名前空間とモジュール（`module^`、`public^`、`require^`、型の札） | M1〜M4 が未決 |
+| [05-modules.md](05-modules.md) | 名前空間とモジュール（`module^`、`public^`、`require^`、型の札、初期束縛） | M2〜M4 が未決 |
 
 ## Memo.md との関係
 
