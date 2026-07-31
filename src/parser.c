@@ -1350,6 +1350,36 @@ static bool starts_expression(const LhatToken *token)
     }
 }
 
+// 2.3: whether this token could carry on the expression that came before it.
+// The same classification 01 の 10.9 uses, which is why the command form
+// needs no notion of its own -- 'x - 1' stays a subtraction because '-' can
+// continue, while 'print "done"' is a call because a string cannot.
+static bool continues_expression(const Parser *p, const LhatToken *token)
+{
+    switch (token->kind) {
+        case LHAT_TOKEN_OP:
+            switch (token->v.op) {
+                // Anything that could not start a fresh expression on its own
+                // is a continuation. '!' and '-' differ: '!' is prefix only
+                // (Q3), '-' can be either, and 2.3 gives '-' to subtraction.
+                case LHAT_OP_NOT:
+                case LHAT_OP_LBRACE:
+                    return false;
+                default:
+                    return true;
+            }
+        case LHAT_TOKEN_HAT_IDENT:
+            // The binary ones (11.6). Everything else with a hat starts
+            // something and so may be an argument.
+            return token_is_hat(p, token, "and") || token_is_hat(p, token, "or") ||
+                   token_is_hat(p, token, "is") || token_is_hat(p, token, "as") ||
+                   token_is_hat(p, token, "catch") ||
+                   token_is_hat(p, token, "to");
+        default:
+            return false;
+    }
+}
+
 // 8.3: the forms a statement may begin with. Anything else appearing after a
 // finished statement is a continuation that does not belong there.
 static bool can_begin_statement(const Parser *p)
@@ -2311,24 +2341,23 @@ static LhatNode *parse_statement(Parser *p)
 // Public interface
 // ---------------------------------------------------------------------------
 
-void lhat_parse(LhatLexer *lexer, LhatParseResult *result)
+static void parser_begin(Parser *p, LhatLexer *lexer, LhatParseResult *result)
 {
     memset(result, 0, sizeof *result);
     lhat_arena_init(&result->arena);
 
-    Parser parser;
-    parser.lexer = lexer;
-    parser.result = result;
-    parser.panicking = false;
-    parser.saw_yield = false;
-    parser.current = lhat_lexer_next(lexer);
-    parser.ahead = lhat_lexer_next(lexer);
+    p->lexer = lexer;
+    p->result = result;
+    p->panicking = false;
+    p->saw_yield = false;
+    p->current = lhat_lexer_next(lexer);
+    p->ahead = lhat_lexer_next(lexer);
+}
 
-    LhatToken origin = parser.current;
-    result->root = parse_block_body(&parser, &origin);
-
-    if (!at_eof(&parser)) {
-        report(&parser, &parser.current, LHAT_PARSE_ERR_UNEXPECTED);
+static void parser_finish(Parser *p, LhatLexer *lexer, LhatParseResult *result)
+{
+    if (!at_eof(p)) {
+        report(p, &p->current, LHAT_PARSE_ERR_UNEXPECTED);
     }
 
     // A lexical error means the token stream was already wrong, and two of
@@ -2340,6 +2369,76 @@ void lhat_parse(LhatLexer *lexer, LhatParseResult *result)
             result->incomplete = true;
         }
     }
+}
+
+void lhat_parse(LhatLexer *lexer, LhatParseResult *result)
+{
+    Parser parser;
+    parser_begin(&parser, lexer, result);
+
+    LhatToken origin = parser.current;
+    result->root = parse_block_body(&parser, &origin);
+
+    parser_finish(&parser, lexer, result);
+}
+
+// 2.3: the command form applies when the input opens with a name and the
+// token after it could not carry an expression on. That second half is what
+// keeps arithmetic working at a prompt -- 'x - 1' is a subtraction, not a
+// call of x.
+bool lhat_parse_is_command(const LhatLexer *lexer)
+{
+    LhatLexer probe = *lexer;
+    LhatToken first = lhat_lexer_next(&probe);
+    if (first.kind != LHAT_TOKEN_IDENT) {
+        return false;
+    }
+
+    Parser p;
+    p.lexer = &probe;
+    LhatToken second = lhat_lexer_next(&probe);
+    return !continues_expression(&p, &second);
+}
+
+void lhat_parse_command(LhatLexer *lexer, LhatParseResult *result)
+{
+    // 3.2: the command form is tried first and the normal form is what the
+    // input falls back to, so a host can hand every line to one entry point.
+    if (!lhat_parse_is_command(lexer)) {
+        lhat_parse(lexer, result);
+        return;
+    }
+
+    Parser parser;
+    parser_begin(&parser, lexer, result);
+
+    LhatToken origin = parser.current;
+    LhatNode *callee = simple_node(&parser);
+
+    // 2.4: a call parenthesis binds tighter than juxtaposition, so 'foo(1)'
+    // reaches the same tree in both forms rather than becoming foo applied to
+    // a parenthesised list.
+    LhatNode *arguments = NULL;
+    LhatNode *tail = NULL;
+    while (!at_eof(&parser)) {
+        uint32_t before = parser.current.offset;
+        lhat_node_append(&arguments, &tail, parse_expression(&parser));
+        if (parser.current.offset == before) {
+            break;
+        }
+    }
+
+    LhatNode *call = access_node(&parser, LHAT_NODE_CALL, &origin, callee,
+                                 arguments, false);
+    LhatNode *statement = make(&parser, LHAT_NODE_CALL_STMT, &origin);
+    LhatNode *block = make(&parser, LHAT_NODE_BLOCK, &origin);
+    if (statement != NULL && block != NULL) {
+        statement->v.jump.value = call;
+        block->v.list.items = statement;
+    }
+    result->root = block;
+
+    parser_finish(&parser, lexer, result);
 }
 
 void lhat_parse_result_dispose(LhatParseResult *result)

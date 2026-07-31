@@ -1495,9 +1495,120 @@ static void test_realistic(void)
     parse_dispose(&p);
 }
 
+// 2 章 and 4 章.
+static void command_text(Parse *p, const char *text)
+{
+    lhat_source_init_from_string(&p->source, "<test>", text, strlen(text));
+    lhat_lexer_init(&p->lexer, &p->source);
+    lhat_parse_command(&p->lexer, &p->result);
+}
+
+static bool is_command(const char *text)
+{
+    LhatSource source;
+    LhatLexer lexer;
+    lhat_source_init_from_string(&source, "<test>", text, strlen(text));
+    lhat_lexer_init(&lexer, &source);
+    bool answer = lhat_parse_is_command(&lexer);
+    lhat_lexer_dispose(&lexer);
+    lhat_source_dispose(&source);
+    return answer;
+}
+
+static void test_command_form(void)
+{
+    Parse p;
+
+    // 2.3's table. What decides it is whether the token after the name could
+    // carry an expression on, which is 01 の 10.9's classification reused.
+    LHAT_TEST("2.3 decides by what follows the name");
+    LHAT_CHECK(is_command("print \"done\""), "a string cannot continue");
+    LHAT_CHECK(is_command("ls"), "nothing follows");
+    LHAT_CHECK(is_command("foo 1 2 3"), "an integer cannot continue");
+    LHAT_CHECK(is_command("foo {a := 1}"), "'{' opens a table literal");
+    LHAT_CHECK(is_command("foo !x"), "'!' is prefix only");
+    LHAT_CHECK(!is_command("x - 1"), "'-' can be binary");
+    LHAT_CHECK(!is_command("x.y"), "'.' continues");
+    LHAT_CHECK(!is_command("x := 1"), "':=' continues");
+    LHAT_CHECK(!is_command("foo(1)"), "'(' continues");
+    LHAT_CHECK(!is_command("let^ x = 1"), "a hat identifier is not a name");
+
+    LHAT_TEST("juxtaposed arguments become a call");
+    command_text(&p, "foo 1 2 3");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    {
+        const LhatNode *s = first_statement(&p);
+        LHAT_CHECK_EQ_INT(s->kind, LHAT_NODE_CALL_STMT);
+        LHAT_CHECK_EQ_INT(s->v.jump.value->kind, LHAT_NODE_CALL);
+        LHAT_CHECK_EQ_INT(
+            lhat_node_list_length(s->v.jump.value->v.access.argument), 3);
+    }
+    parse_dispose(&p);
+
+    LHAT_TEST("a bare name is a call with no arguments");
+    command_text(&p, "ls");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    LHAT_CHECK(first_statement(&p)->v.jump.value->v.access.argument == NULL,
+               "no arguments");
+    parse_dispose(&p);
+
+    // An argument is a whole expression, so an operator inside one does not
+    // split it.
+    LHAT_TEST("an operator inside an argument keeps it whole");
+    command_text(&p, "foo 1 + 2");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    LHAT_CHECK_EQ_INT(
+        lhat_node_list_length(
+            first_statement(&p)->v.jump.value->v.access.argument), 1);
+    parse_dispose(&p);
+
+    // 2.3: this is the case the condition exists for.
+    LHAT_TEST("arithmetic at a prompt stays arithmetic");
+    command_text(&p, "let^ x = 1\nx - 1\n");
+    LHAT_CHECK(p.result.diagnostic_count > 0, "a bare expression is no statement");
+    parse_dispose(&p);
+
+    // 2.4: the call parenthesis binds tighter, so both forms agree.
+    LHAT_TEST("a parenthesised call reaches the same tree");
+    command_text(&p, "foo(1, 2)");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    {
+        const LhatNode *s = first_statement(&p);
+        LHAT_CHECK_EQ_INT(s->kind, LHAT_NODE_CALL_STMT);
+        LHAT_CHECK_EQ_INT(
+            lhat_node_list_length(s->v.jump.value->v.access.argument), 2);
+    }
+    parse_dispose(&p);
+
+    // 3.2: a fragment that is not the command form falls through, so a host
+    // can hand every line to one entry point.
+    LHAT_TEST("a non-command fragment is parsed normally");
+    command_text(&p, "let^ x = 1");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    LHAT_CHECK_EQ_INT(first_statement(&p)->kind, LHAT_NODE_DEFINE);
+    parse_dispose(&p);
+
+    // 3.1: an unfinished fragment is not an error, and the command entry
+    // point has to say so too.
+    LHAT_TEST("an unfinished fragment is reported as incomplete");
+    command_text(&p, "let^ t = {");
+    LHAT_CHECK(p.result.incomplete, "expected incomplete");
+    parse_dispose(&p);
+
+    // 2.1: the normal form still refuses juxtaposition, since a source file
+    // gives no place for the argument list to end.
+    LHAT_TEST("the normal form still refuses juxtaposition");
+    parse_text(&p, "foo 1 2 3");
+    LHAT_CHECK(p.result.diagnostic_count > 0, "expected a diagnostic");
+    LHAT_CHECK_EQ_INT(p.result.diagnostics[0].code,
+                      LHAT_PARSE_ERR_JUXTAPOSITION);
+    parse_dispose(&p);
+}
+
 int main(void)
 {
     test_statements();
+    test_command_form();
     test_precedence();
     test_comparison_chain();
     test_postfix();

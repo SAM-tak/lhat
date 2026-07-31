@@ -320,13 +320,17 @@ static int dump_tokens(const LhatSource *source)
     return status;
 }
 
-static int dump_tree(const LhatSource *source, bool typed)
+static int dump_tree(const LhatSource *source, bool typed, bool command)
 {
     LhatLexer lexer;
     lhat_lexer_init(&lexer, source);
 
     LhatParseResult result;
-    lhat_parse(&lexer, &result);
+    if (command) {
+        lhat_parse_command(&lexer, &result);
+    } else {
+        lhat_parse(&lexer, &result);
+    }
 
     if (!typed) {
         print_node(&lexer, result.root, 0);
@@ -371,12 +375,15 @@ int main(int argc, char **argv)
     const char *path = NULL;
     bool tokens_only = false;
     bool check_only = false;
+    bool command_form = false;
 
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "--tokens") == 0) {
             tokens_only = true;
         } else if (strcmp(argv[i], "--check") == 0) {
             check_only = true;
+        } else if (strcmp(argv[i], "--command") == 0) {
+            command_form = true;
         } else {
             path = argv[i];
         }
@@ -388,6 +395,7 @@ int main(int argc, char **argv)
         printf("  default    print the syntax tree\n");
         printf("  --tokens   print the token stream instead\n");
         printf("  --check    type check and report, without the tree\n");
+        printf("  --command  read the input as the command form (2 章)\n");
         return EXIT_SUCCESS;
     }
 
@@ -400,7 +408,7 @@ int main(int argc, char **argv)
     }
 
     int status = tokens_only ? dump_tokens(&source)
-                             : dump_tree(&source, check_only);
+                             : dump_tree(&source, check_only, command_form);
     lhat_source_dispose(&source);
     return status;
 }

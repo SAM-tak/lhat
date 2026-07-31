@@ -5,8 +5,8 @@
 // returns every '^'-suffixed word as one token kind and leaves the meaning
 // to this stage (01 の 2.1).
 //
-// Not covered yet: the command form of a call (2 章). Everything else the
-// design documents have settled parses.
+// Everything the design documents have settled parses, in both forms of
+// 1 章.
 
 #ifndef LHAT_PARSER_H
 #define LHAT_PARSER_H
@@ -69,9 +69,22 @@ typedef struct {
     bool incomplete;
 } LhatParseResult;
 
-// Parses a whole compilation unit. The lexer must outlive the result, since
-// string and name nodes point into its decoded storage.
+// Parses a whole compilation unit in the normal form of 1.1. The lexer must
+// outlive the result, since string and name nodes point into its decoded
+// storage.
 void lhat_parse(LhatLexer *lexer, LhatParseResult *result);
+
+// 4 章: the entry points a host needs to build the loop of 3.2. The runtime
+// holds no mode of its own -- which one to call is the host's decision, made
+// per fragment.
+
+// Whether this fragment satisfies 2.3 and would be read as a juxtaposed
+// call. Reads the fragment without consuming it, so a host may ask first.
+bool lhat_parse_is_command(const LhatLexer *lexer);
+
+// Parses a fragment as the command form of 2 章, falling back to the normal
+// form when 2.3 is not satisfied, as 3.2 has it.
+void lhat_parse_command(LhatLexer *lexer, LhatParseResult *result);
 
 void lhat_parse_result_dispose(LhatParseResult *result);
 
