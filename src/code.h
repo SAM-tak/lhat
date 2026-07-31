@@ -70,6 +70,13 @@ typedef enum {
     LHAT_BC_ISKIND,     // A B C R[A] = R[B] is an error of the kind in R[C]
     LHAT_BC_ISNIL,      // A B   R[A] = R[B] is nil^   (02 の 11.7)
 
+    // 02 の 14 章. A definition is a table of shared members; an instance is
+    // a table that reads them through a link fixed when it was made (14.2).
+    LHAT_BC_NEWINSTANCE,  // A B   R[A] = an instance of the definition R[B]
+    LHAT_BC_CALLMETHOD,   // A B   R[A] = R[A](R[A+1] .. R[A+B]), where R[A+1]
+                          //       is the receiver and is passed only when the
+                          //       callee takes self^ (14.4)
+
     // 5.5: the frame holds the cleanups it has not run, and every exit drains
     // them. One instruction pushes, one drains, one ends a cleanup body -- so
     // a finally^ and a with^ are the same thing to the machine.
@@ -151,6 +158,8 @@ typedef struct LhatProto {
 
     uint8_t parameters;
     bool is_function;  // f^ rather than p^ (02 の 15 章)
+    bool takes_self;   // 02 の 14.4: the first parameter is written self^,
+                       // which is what makes it an instance method
 
     struct LhatProto **protos;
     size_t proto_count;

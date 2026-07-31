@@ -206,6 +206,8 @@ const char *lhat_opcode_name(LhatOpcode op)
         case LHAT_BC_ISERROR:     return "iserror";
         case LHAT_BC_ISKIND:      return "iskind";
         case LHAT_BC_ISNIL:       return "isnil";
+        case LHAT_BC_NEWINSTANCE: return "newinstance";
+        case LHAT_BC_CALLMETHOD:  return "callmethod";
         case LHAT_BC_PUSHCLEANUP: return "pushcleanup";
         case LHAT_BC_POPCLEANUP:  return "popcleanup";
         case LHAT_BC_ENDCLEANUP:  return "endcleanup";
@@ -238,6 +240,7 @@ void lhat_chunk_print(const LhatChunk *chunk, size_t index, char *out,
             snprintf(out, size, "%-10s r%u p%u", name, lhat_a(i), lhat_bx(i));
             break;
         case LHAT_BC_CALL:
+        case LHAT_BC_CALLMETHOD:
             snprintf(out, size, "%-10s r%u (%u args)", name, lhat_a(i),
                      lhat_b(i));
             break;
@@ -274,6 +277,7 @@ void lhat_chunk_print(const LhatChunk *chunk, size_t index, char *out,
         case LHAT_BC_NEWERROR:
         case LHAT_BC_ISERROR:
         case LHAT_BC_ISNIL:
+        case LHAT_BC_NEWINSTANCE:
             snprintf(out, size, "%-10s r%u r%u", name, lhat_a(i), lhat_b(i));
             break;
         default:

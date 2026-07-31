@@ -340,21 +340,30 @@ static void drain_into_array(LhatTable *table)
 
 LhatValue lhat_table_get(const LhatTable *table, LhatValue key)
 {
-    if (table == NULL || !usable_key(key)) {
+    if (!usable_key(key)) {
         return lhat_nil();
     }
     key = normalise_key(key);
 
-    size_t index;
-    if (array_index(table, key, &index)) {
-        return table->array[index];
+    // 14.7: an instance's own fields first, then the members its definition
+    // holds. 14.2 fixes the chain when the instance is made, so this walk is
+    // the one Lua's __index performs -- but written into the structure rather
+    // than left to a hook that can be swapped (14.1).
+    for (; table != NULL; table = table->definition) {
+        size_t index;
+        if (array_index(table, key, &index)) {
+            return table->array[index];
+        }
+        if (table->entry_capacity == 0) {
+            continue;
+        }
+        LhatTableEntry *entry =
+            probe(table->entries, table->entry_capacity, key, hash_key(key));
+        if (!lhat_is_nil(entry->key)) {
+            return entry->value;
+        }
     }
-    if (table->entry_capacity == 0) {
-        return lhat_nil();
-    }
-    LhatTableEntry *entry =
-        probe(table->entries, table->entry_capacity, key, hash_key(key));
-    return lhat_is_nil(entry->key) ? lhat_nil() : entry->value;
+    return lhat_nil();
 }
 
 bool lhat_table_set(LhatTable *table, LhatValue key, LhatValue value,

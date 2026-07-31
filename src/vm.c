@@ -29,6 +29,17 @@ typedef struct {
     uint8_t reg;  // 5.2: a name is a slot in the frame like anything else
 } Local;
 
+// 02 の 14.2: the chain of delegation is settled when the definition is
+// written, and 14.2 says the checker can decide the parts of any expression.
+// So the compiler resolves composition rather than the machine: what a def^
+// composes onto is a def^ it can already see.
+#define LHAT_MAX_DEF_CHAIN 8
+
+typedef struct DefChain {
+    const LhatNode *parts[LHAT_MAX_DEF_CHAIN];  // base first, derived last
+    size_t count;
+} DefChain;
+
 // One subroutine being compiled. The chain of parents is what a name search
 // walks when it is not found here, which is how 5.4 decides what to capture.
 typedef struct Compiler {
@@ -63,7 +74,23 @@ typedef struct Compiler {
     struct ErrorDecl *errors;
     size_t error_count;
     size_t error_capacity;
+
+    // The def^ bound to each name, so that '..' and a self^{ … } inside new^
+    // can be resolved without running anything (14.2).
+    struct DefDecl *defs;
+    size_t def_count;
+    size_t def_capacity;
+
+    // The definition being compiled, which is what a self^{ … } inside its
+    // new^ builds and what class^ names.
+    const DefChain *building;
 } Compiler;
+
+typedef struct DefDecl {
+    const char *name;
+    size_t length;
+    DefChain chain;
+} DefDecl;
 
 typedef struct ErrorDecl {
     const char *name;
@@ -212,6 +239,9 @@ static void compile_expression(Compiler *c, const LhatNode *node, uint8_t into);
 static void compile_statement(Compiler *c, const LhatNode *node);
 static void compile_statements(Compiler *c, const LhatNode *statements);
 static void compile_block(Compiler *c, const LhatNode *block);
+static const LhatNode *define_target_name(const LhatNode *target);
+static bool def_chain_of(Compiler *c, const LhatNode *node, DefChain *out);
+static void compile_def(Compiler *c, const LhatNode *node, uint8_t into);
 
 // The outermost compiler. The kind objects and the registry of declarations
 // live there so that a nested body sees the same ones the unit made.
@@ -640,6 +670,361 @@ static void compile_is(Compiler *c, const LhatNode *node, uint8_t into)
     c->next_register = mark;
 }
 
+// ---------------------------------------------------------------------------
+// 02 の 14 章: the object model
+// ---------------------------------------------------------------------------
+
+// Reads a name into a register, wherever it is held. Returns false when there
+// is no such name anywhere.
+static bool resolve_name(Compiler *c, const char *name, size_t length,
+                         uint8_t into)
+{
+    const Local *local = find_local(c, name, length);
+    if (local != NULL) {
+        emit(c, lhat_encode_abc(LHAT_BC_MOVE, into, local->reg, 0));
+        return true;
+    }
+    size_t upvalue = find_upvalue(c, name, length);
+    if (upvalue == SIZE_MAX) {
+        return false;
+    }
+    emit(c, lhat_encode_abc(LHAT_BC_GETUPVAL, into, (uint8_t)upvalue, 0));
+    return true;
+}
+
+static void compile_default_new(Compiler *c, const LhatNode *node,
+                                uint8_t definition);
+
+static const DefDecl *find_def_decl(Compiler *c, const char *name,
+                                    size_t length)
+{
+    const Compiler *root = root_of(c);
+    for (size_t i = 0; i < root->def_count; i++) {
+        const DefDecl *decl = &root->defs[i];
+        if (decl->length == length && memcmp(decl->name, name, length) == 0) {
+            return decl;
+        }
+    }
+    return NULL;
+}
+
+// The chain an expression stands for: a def^ literal is one link, and a
+// composition is whatever the left names followed by the right. 14.2 makes
+// this decidable without running anything, which is the point of fixing the
+// chain at the definition.
+static bool def_chain_of(Compiler *c, const LhatNode *node, DefChain *out)
+{
+    if (node == NULL) {
+        return false;
+    }
+    if (node->kind == LHAT_NODE_DEF) {
+        if (out->count >= LHAT_MAX_DEF_CHAIN) {
+            return false;
+        }
+        out->parts[out->count++] = node;
+        return true;
+    }
+    // 14.5: composition is '..', and the order matters -- the right side is
+    // what may override.
+    if (node->kind == LHAT_NODE_BINARY && node->v.binary.op == LHAT_OP_CONCAT) {
+        return def_chain_of(c, node->v.binary.left, out) &&
+               def_chain_of(c, node->v.binary.right, out);
+    }
+
+    const char *name = NULL;
+    size_t length = 0;
+    if (!node_name(c, node, &name, &length)) {
+        return false;
+    }
+    const DefDecl *decl = find_def_decl(c, name, length);
+    if (decl == NULL) {
+        return false;
+    }
+    for (size_t i = 0; i < decl->chain.count; i++) {
+        if (out->count >= LHAT_MAX_DEF_CHAIN) {
+            return false;
+        }
+        out->parts[out->count++] = decl->chain.parts[i];
+    }
+    return true;
+}
+
+// 14.9 keeps the name out of the definition, so it is picked up from the
+// let^ that binds it. That is enough for 14.2's chain to be followed.
+static void declare_defs(Compiler *c, const LhatNode *statements)
+{
+    for (const LhatNode *s = statements; s != NULL; s = s->next) {
+        if (s->kind != LHAT_NODE_DEFINE) {
+            continue;
+        }
+        const LhatNode *target = s->v.binding.targets;
+        const LhatNode *value = s->v.binding.values;
+        if (target == NULL || target->next != NULL || value == NULL) {
+            continue;
+        }
+
+        DefChain chain;
+        chain.count = 0;
+        if (!def_chain_of(c, value, &chain)) {
+            continue;
+        }
+        const char *name = NULL;
+        size_t length = 0;
+        if (!node_name(c, define_target_name(target), &name, &length)) {
+            continue;
+        }
+
+        Compiler *root = root_of(c);
+        if (root->def_count == root->def_capacity) {
+            size_t grown = root->def_capacity ? root->def_capacity * 2 : 4;
+            DefDecl *bigger =
+                (DefDecl *)realloc(root->defs, grown * sizeof *bigger);
+            if (bigger == NULL) {
+                fail(c, LHAT_COMPILE_TOO_COMPLEX);
+                return;
+            }
+            root->defs = bigger;
+            root->def_capacity = grown;
+        }
+        DefDecl *decl = &root->defs[root->def_count++];
+        decl->name = name;
+        decl->length = length;
+        decl->chain = chain;
+    }
+}
+
+// The template of one def^, or NULL. 14.13 allows one per definition, and it
+// is the entry with no key.
+static const LhatNode *template_of(const LhatNode *def)
+{
+    for (const LhatNode *entry = def->v.list.items; entry != NULL;
+         entry = entry->next) {
+        if (entry->v.entry.key == NULL) {
+            return entry->v.entry.value;
+        }
+    }
+    return NULL;
+}
+
+static bool entry_named(Compiler *c, const LhatNode *entries, const char *name,
+                        size_t length)
+{
+    for (const LhatNode *entry = entries; entry != NULL; entry = entry->next) {
+        const char *written = NULL;
+        size_t written_length = 0;
+        if (entry->v.entry.key != NULL &&
+            node_name(c, entry->v.entry.key, &written, &written_length) &&
+            written_length == length &&
+            memcmp(written, name, length) == 0) {
+            return true;
+        }
+    }
+    return false;
+}
+
+// 14.11: self^{ … } inside new^ makes the instance. The fields it names are
+// filled from what it wrote; the rest come from the template's initialisers,
+// which 14.11 makes expressions evaluated at each construction rather than
+// values stored anywhere -- so they are compiled here, at the construction.
+//
+// 14.11 also settles what an initialiser can see: not self^, which does not
+// exist yet, but class^, which does.
+static void compile_self_table(Compiler *c, const LhatNode *node, uint8_t into)
+{
+    const DefChain *chain = NULL;
+    for (Compiler *at = c; at != NULL; at = at->parent) {
+        if (at->building != NULL) {
+            chain = at->building;
+            break;
+        }
+    }
+    if (chain == NULL) {
+        fail(c, LHAT_COMPILE_UNSUPPORTED);
+        return;
+    }
+
+    uint8_t mark = c->next_register;
+    uint8_t definition = reserve(c);
+    if (!resolve_name(c, "class", 5, definition)) {
+        fail(c, LHAT_COMPILE_UNDEFINED);
+        return;
+    }
+    emit(c, lhat_encode_abc(LHAT_BC_NEWINSTANCE, into, definition, 0));
+    c->next_register = mark;
+
+    for (const LhatNode *entry = node->v.list.items; entry != NULL;
+         entry = entry->next) {
+        const char *name = NULL;
+        size_t length = 0;
+        if (entry->v.entry.key == NULL ||
+            !node_name(c, entry->v.entry.key, &name, &length)) {
+            fail(c, LHAT_COMPILE_UNSUPPORTED);
+            return;
+        }
+        uint8_t at = c->next_register;
+        uint8_t key = reserve(c);
+        uint8_t value = reserve(c);
+        load_string_bytes(c, key, name, length);
+        compile_expression(c, entry->v.entry.value, value);
+        emit(c, lhat_encode_abc(LHAT_BC_SETINDEX, into, key, value));
+        c->next_register = at;
+    }
+
+    // 14.11: in the order they were written, base first, and a field new^
+    // named is not initialised twice -- producing a value to be overwritten
+    // is not something an initialiser should be made to do.
+    for (size_t i = 0; i < chain->count; i++) {
+        const LhatNode *fields = template_of(chain->parts[i]);
+        if (fields == NULL) {
+            continue;
+        }
+        for (const LhatNode *field = fields->v.list.items; field != NULL;
+             field = field->next) {
+            const char *name = NULL;
+            size_t length = 0;
+            if (field->v.entry.key == NULL ||
+                !node_name(c, field->v.entry.key, &name, &length)) {
+                fail(c, LHAT_COMPILE_UNSUPPORTED);
+                return;
+            }
+            if (entry_named(c, node->v.list.items, name, length)) {
+                continue;
+            }
+            uint8_t at = c->next_register;
+            uint8_t key = reserve(c);
+            uint8_t value = reserve(c);
+            load_string_bytes(c, key, name, length);
+            compile_expression(c, field->v.entry.value, value);
+            emit(c, lhat_encode_abc(LHAT_BC_SETINDEX, into, key, value));
+            c->next_register = at;
+        }
+    }
+}
+
+// 14.1 and 14.3: a definition is a table of the members every instance
+// shares. The template is not among them -- it belongs to the instances, and
+// 14.11 keeps it in the compiler as initialisers rather than as any value.
+//
+// The chain is flattened here, which is what 14.2 permits by settling
+// delegation at the definition: a later part's member simply overwrites an
+// earlier one's, which is what override^ (14.12) means.
+static void compile_def(Compiler *c, const LhatNode *node, uint8_t into)
+{
+    DefChain chain;
+    chain.count = 0;
+    if (!def_chain_of(c, node, &chain)) {
+        fail(c, LHAT_COMPILE_UNSUPPORTED);
+        return;
+    }
+
+    emit(c, lhat_encode_abc(LHAT_BC_NEWTABLE, into, 0, 0));
+
+    // class^ names the definition (14.4), and binding it as an ordinary local
+    // is what lets a method or an initialiser reach it -- through the capture
+    // of 5.4, with nothing special added.
+    size_t local_mark = c->local_count;
+    if (c->local_count >= LHAT_MAX_LOCALS) {
+        fail(c, LHAT_COMPILE_TOO_COMPLEX);
+        return;
+    }
+    Local *local = &c->locals[c->local_count++];
+    local->name = "class";
+    local->length = 5;
+    local->reg = into;
+
+    const DefChain *enclosing = c->building;
+    c->building = &chain;
+
+    bool has_new = false;
+    for (size_t i = 0; i < chain.count; i++) {
+        for (const LhatNode *entry = chain.parts[i]->v.list.items;
+             entry != NULL; entry = entry->next) {
+            if (entry->v.entry.key == NULL) {
+                continue;  // the template; 14.11 handles it at construction
+            }
+            if (entry->v.entry.modifier == LHAT_DEF_OVERLOAD) {
+                // 14.12: overload^ keeps both under one name, which needs a
+                // choice made from the argument types. Not yet.
+                fail(c, LHAT_COMPILE_UNSUPPORTED);
+                break;
+            }
+            const char *name = NULL;
+            size_t length = 0;
+            if (!node_name(c, entry->v.entry.key, &name, &length)) {
+                fail(c, LHAT_COMPILE_UNSUPPORTED);
+                break;
+            }
+            if (name_is(name, length, "new")) {
+                has_new = true;
+            }
+            uint8_t at = c->next_register;
+            uint8_t key = reserve(c);
+            uint8_t value = reserve(c);
+            load_string_bytes(c, key, name, length);
+            compile_expression(c, entry->v.entry.value, value);
+            emit(c, lhat_encode_abc(LHAT_BC_SETINDEX, into, key, value));
+            c->next_register = at;
+        }
+    }
+
+    // 14.11: without a new^ of its own, a definition gets one that takes no
+    // arguments and returns what the template says. Written out it is
+    // 'new^ := f^ { return^ self^{ } }', so that is what is compiled.
+    if (!has_new && *c->status == LHAT_COMPILE_OK) {
+        compile_default_new(c, node, into);
+    }
+
+    c->building = enclosing;
+    c->local_count = local_mark;
+}
+
+// The new^ of 14.11 that a definition gets when it declares none: a function
+// of no arguments answering what the template says. It is compiled as a body
+// of its own so that it is an ordinary member, callable like any other.
+static void compile_default_new(Compiler *c, const LhatNode *node,
+                                uint8_t definition)
+{
+    LhatProto *proto = lhat_proto_new();
+    if (proto == NULL) {
+        fail(c, LHAT_COMPILE_TOO_COMPLEX);
+        return;
+    }
+    proto->is_function = true;
+
+    size_t index = lhat_proto_add(c->proto, proto);
+    if (index == SIZE_MAX) {
+        lhat_proto_free(proto);
+        fail(c, LHAT_COMPILE_TOO_COMPLEX);
+        return;
+    }
+
+    Compiler inner;
+    memset(&inner, 0, sizeof inner);
+    inner.parent = c;
+    inner.lexer = c->lexer;
+    inner.proto = proto;
+    inner.status = c->status;
+
+    uint8_t slot = reserve(&inner);
+    // An empty self^{ … }: everything comes from the template.
+    LhatNode empty;
+    memset(&empty, 0, sizeof empty);
+    empty.kind = LHAT_NODE_SELF_TABLE;
+    empty.offset = node->offset;
+    empty.line = node->line;
+    empty.column = node->column;
+    compile_self_table(&inner, &empty, slot);
+    emit(&inner, lhat_encode_abc(LHAT_BC_RETURN, slot, 0, 0));
+
+    uint8_t mark = c->next_register;
+    uint8_t key = reserve(c);
+    uint8_t value = reserve(c);
+    load_string_bytes(c, key, "new", 3);
+    emit(c, lhat_encode_abx(LHAT_BC_CLOSURE, value, (uint16_t)index));
+    emit(c, lhat_encode_abc(LHAT_BC_SETINDEX, definition, key, value));
+    c->next_register = mark;
+}
+
 // 02 の 14 章: a table literal makes a table and fills it in. A keyed entry
 // names its key; a positional one takes the next integer, counting from 1 as
 // 16.4 の 'for^ i := 1 to^ n' does.
@@ -682,7 +1067,27 @@ static void compile_call(Compiler *c, const LhatNode *node, uint8_t into)
 {
     uint8_t mark = c->next_register;
     uint8_t callee = reserve(c);
-    compile_expression(c, node->v.access.target, callee);
+
+    // 14.4: 'x.m()' hands x to a method as its self^, and 'm(x)' on the same
+    // member does the same by hand. So the receiver is put in place here and
+    // the machine passes it or skips it depending on what the callee takes.
+    const LhatNode *target = node->v.access.target;
+    bool method = target != NULL && target->kind == LHAT_NODE_MEMBER;
+    if (method) {
+        uint8_t receiver = reserve(c);
+        compile_expression(c, target->v.access.target, receiver);
+        uint8_t key = c->next_register;
+        if (key >= LHAT_MAX_REGISTERS) {
+            fail(c, LHAT_COMPILE_TOO_COMPLEX);
+            return;
+        }
+        (void)reserve(c);
+        compile_key(c, target, key);
+        emit(c, lhat_encode_abc(LHAT_BC_GETINDEX, callee, receiver, key));
+        c->next_register = (uint8_t)(receiver + 1);
+    } else {
+        compile_expression(c, target, callee);
+    }
 
     size_t count = 0;
     for (const LhatNode *arg = node->v.access.argument; arg != NULL;
@@ -696,7 +1101,8 @@ static void compile_call(Compiler *c, const LhatNode *node, uint8_t into)
         return;
     }
 
-    emit(c, lhat_encode_abc(LHAT_BC_CALL, callee, (uint8_t)count, 0));
+    emit(c, lhat_encode_abc(method ? LHAT_BC_CALLMETHOD : LHAT_BC_CALL, callee,
+                            (uint8_t)count, 0));
     if (into != callee) {
         emit(c, lhat_encode_abc(LHAT_BC_MOVE, into, callee, 0));
     }
@@ -737,6 +1143,11 @@ static void compile_subroutine(Compiler *c, const LhatNode *node, uint8_t into)
             !node_name(&inner, param->v.param.name, &name, &length)) {
             fail(c, LHAT_COMPILE_UNSUPPORTED);
             return;
+        }
+        // 14.4: a first parameter written self^ is what marks a method. No
+        // modifier says so; the shape of the signature does.
+        if (param == node->v.func.params && name_is(name, length, "self")) {
+            proto->takes_self = true;
         }
         if (inner.local_count >= LHAT_MAX_LOCALS) {
             fail(c, LHAT_COMPILE_TOO_COMPLEX);
@@ -803,6 +1214,17 @@ static void compile_binary(Compiler *c, const LhatNode *node, uint8_t into)
         return;
     }
 
+    // 14.5: '..' composes two definitions, and 14.2 lets the compiler settle
+    // which ones. Anything else spelled '..' is not composition.
+    if (op == LHAT_OP_CONCAT) {
+        DefChain chain;
+        chain.count = 0;
+        if (def_chain_of(c, node, &chain)) {
+            compile_def(c, node, into);
+            return;
+        }
+    }
+
     // 11.6: and^ and or^ decide without evaluating the right side when the
     // left has settled it, so they are branches rather than instructions.
     if (op == LHAT_OP_AND || op == LHAT_OP_OR) {
@@ -866,6 +1288,17 @@ static void compile_expression(Compiler *c, const LhatNode *node, uint8_t into)
 
         case LHAT_NODE_ERROR_NEW:
             compile_error_new(c, node, into);
+            return;
+
+        case LHAT_NODE_DEF:
+            compile_def(c, node, into);
+            return;
+
+        // 14.13: the two readings of self^{ … } are told apart by where it
+        // stands. Reaching it as an expression means the one inside new^;
+        // compile_def takes the template before anything gets here.
+        case LHAT_NODE_SELF_TABLE:
+            compile_self_table(c, node, into);
             return;
 
         case LHAT_NODE_TRY:
@@ -1125,6 +1558,7 @@ static void compile_statements(Compiler *c, const LhatNode *statements)
 
     declare_errors(c, statements);
     declare_names(c, statements);
+    declare_defs(c, statements);
     for (const LhatNode *s = statements; s != NULL; s = s->next) {
         compile_statement(c, s);
     }
@@ -1771,6 +2205,7 @@ LhatCompileStatus lhat_compile(const LhatNode *unit, const LhatLexer *lexer,
         free((void *)c.errors[i].kinds);
     }
     free(c.errors);
+    free(c.defs);
 
     if (status != LHAT_COMPILE_OK) {
         lhat_proto_free(proto);
@@ -2273,7 +2708,25 @@ LhatRunResult lhat_run(const LhatProto *proto)
                 registers[a] = lhat_bool(lhat_is_nil(registers[b]));
                 break;
 
-            case LHAT_BC_CALL: {
+            // 14.3 and 14.7: the instance holds its own fields and reads the
+            // shared members through this link. 14.2 fixes it here and gives
+            // no way to change it afterwards.
+            case LHAT_BC_NEWINSTANCE: {
+                if (!lhat_is_object_kind(registers[b], LHAT_OBJECT_TABLE)) {
+                    return finish(m, LHAT_RUN_TYPE_ERROR, lhat_nil(), at);
+                }
+                LhatTable *instance = lhat_table_new(&m->objects);
+                if (instance == NULL) {
+                    return finish(m, LHAT_RUN_OUT_OF_MEMORY, lhat_nil(), at);
+                }
+                instance->definition =
+                    (const LhatTable *)lhat_as_object(registers[b]);
+                registers[a] = lhat_object((LhatObject *)instance);
+                break;
+            }
+
+            case LHAT_BC_CALL:
+            case LHAT_BC_CALLMETHOD: {
                 if (!lhat_is_object_kind(registers[a], LHAT_OBJECT_SUBROUTINE)) {
                     return finish(m, LHAT_RUN_NOT_CALLABLE, lhat_nil(), at);
                 }
@@ -2282,7 +2735,21 @@ LhatRunResult lhat_run(const LhatProto *proto)
                 if (callee->proto == NULL) {
                     return finish(m, LHAT_RUN_NOT_CALLABLE, lhat_nil(), at);
                 }
-                if (b != callee->proto->parameters) {
+
+                // 14.4: the receiver sits between the callee and the
+                // arguments, and whether it is passed depends on the callee.
+                // A member that takes no self^ is a static one (14.4), so the
+                // frame simply starts after the receiver.
+                size_t given = b;
+                size_t skip = 1;
+                if (op == LHAT_BC_CALLMETHOD) {
+                    if (callee->proto->takes_self) {
+                        given = (size_t)b + 1;
+                    } else {
+                        skip = 2;
+                    }
+                }
+                if (given != callee->proto->parameters) {
                     return finish(m, LHAT_RUN_ARITY, lhat_nil(), at);
                 }
                 if (m->frame_count >= LHAT_MAX_FRAMES) {
@@ -2291,7 +2758,7 @@ LhatRunResult lhat_run(const LhatProto *proto)
 
                 // 5.3: the arguments already sit just above the callee, so
                 // the new frame starts there and needs no shuffling.
-                LhatValue *next_base = &registers[a] + 1;
+                LhatValue *next_base = &registers[a] + skip;
                 if (next_base + LHAT_MAX_REGISTERS >=
                     m->stack + LHAT_STACK_SLOTS) {
                     return finish(m, LHAT_RUN_STACK_OVERFLOW, lhat_nil(), at);

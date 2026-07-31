@@ -1506,6 +1506,239 @@ static void test_cleanups(void)
     run_dispose(&r);
 }
 
+// 02 の 14 章: def^ is the one mechanism for a user-defined type.
+static void test_definitions(void)
+{
+    Run r;
+
+    // 14.11: without a new^ of its own, a definition gets one taking no
+    // arguments that answers what the template says.
+    LHAT_TEST("the default new^ builds an instance from the template");
+    run_text(&r,
+             "let^ Foo = def^{ self^{ a := 1, b := 2 } }\n"
+             "let^ f = Foo.new^()\n"
+             "return^ f.a * 10 + f.b\n");
+    CHECK_INTEGER(&r, 12);
+    run_dispose(&r);
+
+    // 14.3: a method belongs to the definition and is shared; a field belongs
+    // to the instance and is copied.
+    LHAT_TEST("two instances have their own fields");
+    run_text(&r,
+             "let^ Foo = def^{ self^{ n := 0 } }\n"
+             "let^ a = Foo.new^()\n"
+             "let^ b = Foo.new^()\n"
+             "a.n := 5\n"
+             "return^ b.n\n");
+    CHECK_INTEGER(&r, 0);
+    run_dispose(&r);
+
+    // 14.11: an initialiser is an expression evaluated at each construction,
+    // so a mutable initial value is not shared. Python's mutable default
+    // argument has no counterpart here.
+    LHAT_TEST("a mutable initial value is not shared between instances");
+    run_text(&r,
+             "let^ Foo = def^{ self^{ items := { } } }\n"
+             "let^ a = Foo.new^()\n"
+             "let^ b = Foo.new^()\n"
+             "a.items[1] := 9\n"
+             "return^ b.items[1] ?? 0\n");
+    CHECK_INTEGER(&r, 0);
+    run_dispose(&r);
+
+    // 14.4: the shape of the signature says it is a method. No modifier does.
+    LHAT_TEST("a method gets the receiver as its self^");
+    run_text(&r,
+             "let^ Foo = def^{\n"
+             "  self^{ n := 7 },\n"
+             "  get := f^self^ { return^ self^.n },\n"
+             "}\n"
+             "return^ Foo.new^().get()\n");
+    CHECK_INTEGER(&r, 7);
+    run_dispose(&r);
+
+    LHAT_TEST("a method takes arguments after the receiver");
+    run_text(&r,
+             "let^ Foo = def^{\n"
+             "  self^{ n := 1 },\n"
+             "  add := f^self^, x { return^ self^.n + x },\n"
+             "}\n"
+             "return^ Foo.new^().add(4)\n");
+    CHECK_INTEGER(&r, 5);
+    run_dispose(&r);
+
+    LHAT_TEST("a method may change the instance");
+    run_text(&r,
+             "let^ Foo = def^{\n"
+             "  self^{ n := 0 },\n"
+             "  bump := p^self^ { self^.n := self^.n + 1 },\n"
+             "}\n"
+             "let^ f = Foo.new^()\n"
+             "f.bump()\n"
+             "f.bump()\n"
+             "return^ f.n\n");
+    CHECK_INTEGER(&r, 2);
+    run_dispose(&r);
+
+    // 14.4: taking the method out and passing the receiver by hand is the
+    // same call written differently.
+    LHAT_TEST("a method taken out is called with the receiver by hand");
+    run_text(&r,
+             "let^ Foo = def^{\n"
+             "  self^{ n := 3 },\n"
+             "  get := f^self^ { return^ self^.n },\n"
+             "}\n"
+             "let^ f = Foo.new^()\n"
+             "let^ g = f.get\n"
+             "return^ g(f)\n");
+    CHECK_INTEGER(&r, 3);
+    run_dispose(&r);
+
+    // 14.4: a member with no self^ is a static one, so the receiver is not
+    // passed to it.
+    LHAT_TEST("a member without self^ is static");
+    run_text(&r,
+             "let^ Foo = def^{ self^{ }, make := f^x { return^ x * 2 } }\n"
+             "return^ Foo.make(21)\n");
+    CHECK_INTEGER(&r, 42);
+    run_dispose(&r);
+
+    // 14.7: an instance sees the definition's members too.
+    LHAT_TEST("an instance reaches a static member");
+    run_text(&r,
+             "let^ Foo = def^{ self^{ }, tag := f^ { return^ 9 } }\n"
+             "return^ Foo.new^().tag()\n");
+    CHECK_INTEGER(&r, 9);
+    run_dispose(&r);
+
+    // 14.11: new^ may fill some fields and leave the rest to the template.
+    LHAT_TEST("new^ fills what it names and the template the rest");
+    run_text(&r,
+             "let^ Foo = def^{\n"
+             "  self^{ a := 1, b := 2 },\n"
+             "  new^ := f^v { return^ self^{ a := v } },\n"
+             "}\n"
+             "let^ f = Foo.new^(8)\n"
+             "return^ f.a * 10 + f.b\n");
+    CHECK_INTEGER(&r, 82);
+    run_dispose(&r);
+
+    // 14.11: producing a value only to overwrite it is not something an
+    // initialiser should be made to do.
+    LHAT_TEST("the initialiser of a field new^ named is not evaluated");
+    run_text(&r,
+             "let^ log = { n := 0 }\n"
+             "let^ side = f^ { log.n := log.n + 1 return^ 0 }\n"
+             "let^ Foo = def^{\n"
+             "  self^{ a := side() },\n"
+             "  new^ := f^ { return^ self^{ a := 5 } },\n"
+             "}\n"
+             "let^ f = Foo.new^()\n"
+             "return^ log.n\n");
+    CHECK_INTEGER(&r, 0);
+    run_dispose(&r);
+
+    // 14.11: an initialiser cannot see self^, which does not exist yet, but
+    // can see class^, which does.
+    LHAT_TEST("an initialiser sees class^");
+    run_text(&r,
+             "let^ Foo = def^{\n"
+             "  self^{ a := class^.base() },\n"
+             "  base := f^ { return^ 6 },\n"
+             "}\n"
+             "return^ Foo.new^().a\n");
+    CHECK_INTEGER(&r, 6);
+    run_dispose(&r);
+
+    LHAT_TEST("a method sees class^ too");
+    run_text(&r,
+             "let^ Foo = def^{\n"
+             "  self^{ },\n"
+             "  base := f^ { return^ 4 },\n"
+             "  get := f^self^ { return^ class^.base() },\n"
+             "}\n"
+             "return^ Foo.new^().get()\n");
+    CHECK_INTEGER(&r, 4);
+    run_dispose(&r);
+
+    // 14.5: composition is '..' and the order matters.
+    LHAT_TEST("composition brings the base's members along");
+    run_text(&r,
+             "let^ Foo = def^{ self^{ a := 1 }, one := f^ { return^ 1 } }\n"
+             "let^ Bar = Foo .. def^{ self^{ b := 2 }, two := f^ { return^ 2 } }\n"
+             "let^ x = Bar.new^()\n"
+             "return^ x.a * 1000 + x.b * 100 + x.one() * 10 + x.two()\n");
+    CHECK_INTEGER(&r, 1212);
+    run_dispose(&r);
+
+    // 14.12: override^ replaces, and the later part is what wins.
+    LHAT_TEST("override^ replaces the member it names");
+    run_text(&r,
+             "let^ Foo = def^{ self^{ }, tag := f^ { return^ 1 } }\n"
+             "let^ Bar = Foo .. def^{\n"
+             "  self^{ },\n"
+             "  override^\n"
+             "  tag := f^ { return^ 2 },\n"
+             "}\n"
+             "return^ Bar.new^().tag()\n");
+    CHECK_INTEGER(&r, 2);
+    run_dispose(&r);
+
+    LHAT_TEST("and the base keeps its own");
+    run_text(&r,
+             "let^ Foo = def^{ self^{ }, tag := f^ { return^ 1 } }\n"
+             "let^ Bar = Foo .. def^{\n"
+             "  self^{ },\n"
+             "  override^\n"
+             "  tag := f^ { return^ 2 },\n"
+             "}\n"
+             "return^ Foo.new^().tag()\n");
+    CHECK_INTEGER(&r, 1);
+    run_dispose(&r);
+
+    // 14.2: the chain is settled at the definition, so an instance made
+    // before a later definition is unaffected by it.
+    LHAT_TEST("two definitions of the same shape stay separate");
+    run_text(&r,
+             "let^ Foo = def^{ self^{ n := 1 } }\n"
+             "let^ Bar = def^{ self^{ n := 2 } }\n"
+             "return^ Foo.new^().n * 10 + Bar.new^().n\n");
+    CHECK_INTEGER(&r, 12);
+    run_dispose(&r);
+
+    LHAT_TEST("a composed definition's new^ fills the base's fields too");
+    run_text(&r,
+             "let^ Foo = def^{ self^{ a := 1, b := 2 } }\n"
+             "let^ Bar = Foo .. def^{\n"
+             "  self^{ c := 3 },\n"
+             "  new^ := f^v { return^ self^{ b := v } },\n"
+             "}\n"
+             "let^ x = Bar.new^(9)\n"
+             "return^ x.a * 100 + x.b * 10 + x.c\n");
+    CHECK_INTEGER(&r, 193);
+    run_dispose(&r);
+
+    // 14.12: overload^ keeps two under one name, which wants a choice made
+    // from the argument types.
+    LHAT_TEST("overload^ does not compile yet");
+    run_text(&r,
+             "let^ Foo = def^{ self^{ }, m := f^ { return^ 1 } }\n"
+             "let^ Bar = Foo .. def^{\n"
+             "  self^{ },\n"
+             "  overload^\n"
+             "  m := f^x { return^ x },\n"
+             "}\n"
+             "return^ 0\n");
+    LHAT_CHECK_EQ_INT(r.compiled, LHAT_COMPILE_UNSUPPORTED);
+    run_dispose(&r);
+
+    // 14.13: self^{ … } outside a definition has no fields to name.
+    LHAT_TEST("self^{ } outside a definition does not compile");
+    run_text(&r, "let^ x = self^{ a := 1 }\nreturn^ x\n");
+    LHAT_CHECK_EQ_INT(r.compiled, LHAT_COMPILE_UNSUPPORTED);
+    run_dispose(&r);
+}
+
 int main(void)
 {
     test_encoding();
@@ -1522,5 +1755,6 @@ int main(void)
     test_errors();
     test_catch_and_try();
     test_cleanups();
+    test_definitions();
     return lhat_test_report("test_vm");
 }

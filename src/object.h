@@ -50,6 +50,15 @@ typedef struct LhatTable {
     LhatTableEntry *entries;  // capacity is a power of two, or zero
     size_t entry_count;       // live entries, tombstones not counted
     size_t entry_capacity;
+
+    // 02 の 14.3: the members a definition holds are shared, and the fields
+    // its template declares are copied. An instance holds its own fields here
+    // and reads the shared ones from `definition`.
+    //
+    // 14.2 fixes this at the definition, so it is set when the instance is
+    // made and never afterwards. That is what separates it from Lua's
+    // metatable, which 14.1 refuses.
+    const struct LhatTable *definition;
 } LhatTable;
 
 // 04 の 2.4: what a kind is, is where it was declared. Two errordef^ bodies
@@ -117,6 +126,9 @@ uint32_t lhat_string_hash(const char *text, size_t length);
 
 // 04 の 11.3: a table is a mapping, so there is no such thing as out of
 // range. A key that is not there answers nil^.
+//
+// 02 の 14.7: an instance sees its definition's members too, so what is not
+// among the instance's own fields is looked for there.
 LhatValue lhat_table_get(const LhatTable *table, LhatValue key);
 
 // Storing nil^ removes the key, which is what keeps "absent" and "nil^" the
