@@ -301,16 +301,16 @@ f.class^.samenamemethod() // これは完全合法
 #### 型明示
 
 ```lhat
-k := p^x, y, z {^return^z, x, y} as^p^number,number,number:number,number,number;
-k as^p^number,number,number:; // 返り値なし
-k as^p^:number,number,number; // 引数なし
-k as^p^:; // 引数なし返り値なし（nil）
-// :省略できない方が間違えなくていいと思う
-k as^number^or^nil^ // nilable
+k := p^x:number^, y:number^, z:number^ {^return^z, x, y}
+k := p^x, y, z {^return^z, x, y} as^p^number^,number^,number^->number^,number^,number^;
+k :p^number,number,number; // 返り値なし
+k :p^->number,number,number; // 引数なし
+k :p^; // 引数なし返り値なし（nil）
+k :number^|nil^ // nilable
 
 elseif^expr: などのせいで:を後置型指定に使いずらいのでas^に。
 
-f^a:number^, b:number^=2::number^,string^ {}
+f^a:number^, b:number^=2->number^,string^ {}
 返り値型は ->  :: で指定
 
 f:=f^a:number^,b:number^=2->number^,string^{ a+b, "aa" }
@@ -346,15 +346,15 @@ from^ = f^range:$range.next, range, nil;
 ```lhat
 // 単一継承のみ。「中間状態にいちいち名前を付けなくて良い」という性質で多重継承ぽくもできる、というやり方
 // 実体型・抽象型・プロトコル定義・オブジェクトテンプレート・アスペクト、全部をdefテーブル一個で済ます
-$Foo := def^Name of Defination { //def^直後の{は{^でなくても良い(テーブルなので)
-    self^={
+$Foo := aspect..protocol..prototype..def^{
+    self^{
         ...
         prop1 = true^
         prop2 = false^
         // インスタンスプロトタイプ
     },
     staticmethod = p^:;
-}..aspect..protocol..prototype // 連結演算子を使うので継承する基本クラスは後ろに書く
+}
 // defnameof^foo -> "Name of Defination"になる。前後の空白はトリムされる
 // defnameof^foo.super^ -> "Name of aspect"
 // defnameof^foo.super^^ -> "Name of protocol"
@@ -364,12 +364,12 @@ $Foo := def^Name of Defination { //def^直後の{は{^でなくても良い(テ�
 // プロトタイプベース・ダックタイピングで行くのだから、継承はいらない。
 // 静的な型検査もダックタイピングでいく
 
-foo=Foo()
+foo=Foo.new^()
 foo.selfcall()
 ...
 foo.dispose()
-with^foo=Foo()
-with^bar=Boo() // error : bar doesn't have dispose.
+with^foo:=Foo.new^()
+with^bar:=Boo.new^() // error : bar doesn't have dispose.
 {
      ...
 }
