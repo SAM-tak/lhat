@@ -39,6 +39,7 @@ typedef enum {
     LHAT_PARSE_ERR_FIELD_NEEDS_NAME,          // 14.6: every field is named
     LHAT_PARSE_ERR_DUPLICATE_TEMPLATE,        // 14.6: one self^{ ... } per def^
     LHAT_PARSE_ERR_MODIFIER_ON_TEMPLATE,      // 14.12 marks members, not fields
+    LHAT_PARSE_ERR_FIELD_NEEDS_TYPE,          // 04 の 2.2: a type or a default
     LHAT_PARSE_ERR_ERRORDEF_NEEDS_NAME,       // 04 の 2.4: the name is the identity
     LHAT_PARSE_ERR_ERROR_NEEDS_KIND,          // 04 の 2.5
     LHAT_PARSE_ERR_WITHDRAWN_SHIFT,           // 8.6: '<<' replaced by ':='

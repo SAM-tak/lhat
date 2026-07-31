@@ -7,9 +7,9 @@
 | 文書 | 内容 | 状態 |
 | --- | --- | --- |
 | [01-lexical-structure.md](01-lexical-structure.md) | 字句構造（トークンの定義、字句的曖昧性の解決） | 未決事項なし。実装完了 |
-| [02-syntax.md](02-syntax.md) | 構文（入力形式、コマンドモード、REPL 統合、条件分岐、文の構成、繰り返し、`finally^`、演算子、`with^`、型の文法、オブジェクトモデル、サブルーチン、パターンマッチ） | 未決事項なし |
+| [02-syntax.md](02-syntax.md) | 構文（入力形式、コマンドモード、REPL 統合、条件分岐、文の構成、繰り返し、`finally^`、演算子、`with^`、型の文法、オブジェクトモデル、サブルーチン、パターンマッチ） | S20（名前空間）が未決 |
 | [03-compilation-pipeline.md](03-compilation-pipeline.md) | 処理の構成（段階構成、実行時の値表現、型検査の厳格度、推論の範囲） | P3・P4（REPL）が未決。仮想機械の設計が未着手 |
-| [04-errors.md](04-errors.md) | 誤りの表現と伝播（`errordef^`、`catch^`、`try^`、網羅性、取りこぼしの検出） | E5〜E7 が未決 |
+| [04-errors.md](04-errors.md) | 誤りの表現と伝播（`errordef^`、`catch^`、`try^`、網羅性、取りこぼしの検出） | 未決事項なし |
 
 ## Memo.md との関係
 

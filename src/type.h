@@ -50,6 +50,11 @@ typedef struct LhatTypeMember {
     const char *name;
     size_t name_length;
     LhatType *type;
+    // 04 の 2.2: a field declared with a default need not be written at the
+    // construction. Whether it has one is not part of the type -- two kinds
+    // differing only there are still the same shape -- so nothing in the
+    // relations reads this.
+    bool optional;
     struct LhatTypeMember *next;
 } LhatTypeMember;
 

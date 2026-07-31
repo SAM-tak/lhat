@@ -307,6 +307,45 @@ static void test_errors(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
+    // 04 の 2.2: a field may carry a default, written with ':=' as 14.6's
+    // template already writes a named field with an initial value.
+    LHAT_TEST("a default stands in for the type");
+    check_text(&u,
+               "errordef^ ParseError { Syntax { line := 0 } }\n"
+               "let^ e = error^ParseError.Syntax{ }\n"
+               "let^ n : number^ = e.line\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("a field may carry both a type and a default");
+    check_text(&u,
+               "errordef^ ParseError { Syntax { line : number^ := 0 } }\n"
+               "let^ e = error^ParseError.Syntax{ }\n"
+               "let^ n : number^ = e.line\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("a default has to fit the declared type");
+    check_text(&u,
+               "errordef^ ParseError { Syntax { line : number^ := \"text\" } }\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
+    unit_dispose(&u);
+
+    // 04 の 2.5: without a default there is nothing to fall back to.
+    LHAT_TEST("a field with no default has to be written");
+    check_text(&u,
+               "errordef^ ParseError { Syntax { line : number^ } }\n"
+               "let^ e = error^ParseError.Syntax{ }\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISSING_FIELD);
+    unit_dispose(&u);
+
+    LHAT_TEST("a default may still be overridden at the construction");
+    check_text(&u,
+               "errordef^ ParseError { Syntax { line := 0 } }\n"
+               "let^ e = error^ParseError.Syntax{ line := 3 }\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
     // 04 の 6.1: a declared field is reached through the kind.
     LHAT_TEST("a kind's declared field is visible");
     check_text(&u,

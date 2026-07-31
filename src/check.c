@@ -1514,6 +1514,29 @@ static LhatType *infer(Checker *c, const LhatNode *node)
                     report(c, entry, LHAT_CHECK_ERR_NO_MEMBER);
                 }
             }
+
+            // 04 の 2.5: a field without a default has to be written, since
+            // there is nothing for it to fall back to.
+            if (kind != NULL && kind->kind == LHAT_TYPE_ERROR_KIND) {
+                for (const LhatTypeMember *m = kind->v.error.fields; m != NULL;
+                     m = m->next) {
+                    if (m->optional) {
+                        continue;
+                    }
+                    bool given = false;
+                    for (const LhatNode *entry = node->v.named.members;
+                         entry != NULL && !given; entry = entry->next) {
+                        const char *name = NULL;
+                        size_t length = 0;
+                        given = node_name(c, entry->v.entry.key, &name, &length) &&
+                                length == m->name_length &&
+                                memcmp(name, m->name, length) == 0;
+                    }
+                    if (!given) {
+                        report(c, node, LHAT_CHECK_ERR_MISSING_FIELD);
+                    }
+                }
+            }
             return kind;
         }
 
@@ -1652,10 +1675,23 @@ static void check_errordef(Checker *c, const LhatNode *node)
              field = field->next) {
             const char *field_name = NULL;
             size_t field_length = 0;
-            if (node_name(c, field->v.entry.key, &field_name, &field_length)) {
-                lhat_type_add_member(&c->result->types, type, field_name,
-                                     field_length,
-                                     resolve_type(c, field->v.entry.value));
+            if (!node_name(c, field->v.param.name, &field_name, &field_length)) {
+                continue;
+            }
+
+            // 04 の 2.2: a default may stand in for the type, and its own
+            // type is then the field's, exactly as 14.11 reads a template.
+            LhatType *declared = resolve_type(c, field->v.param.type);
+            LhatType *fallback = infer(c, field->v.param.fallback);
+            if (declared != NULL && fallback != NULL) {
+                expect(c, field->v.param.fallback, fallback, declared,
+                       LHAT_CHECK_ERR_MISMATCH);
+            }
+            LhatTypeMember *member = lhat_type_add_member(
+                &c->result->types, type, field_name, field_length,
+                declared != NULL ? declared : fallback);
+            if (member != NULL) {
+                member->optional = field->v.param.fallback != NULL;
             }
         }
     }
@@ -1930,6 +1966,8 @@ const char *lhat_check_error_message(LhatCheckErrorCode code)
             return "the left of ?? cannot be nil^";
         case LHAT_CHECK_ERR_TRY_OUTSIDE:
             return "try^ would return an error this subroutine cannot return";
+        case LHAT_CHECK_ERR_MISSING_FIELD:
+            return "this field has no default, so it has to be written";
         case LHAT_CHECK_ERR_INCOMPARABLE:
             return "these can never be equal, so the comparison is fixed already";
         case LHAT_CHECK_ERR_MEMBER_EXISTS:

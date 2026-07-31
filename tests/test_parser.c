@@ -1253,10 +1253,35 @@ static void test_errors(void)
         const LhatNode *syntax = d->v.named.members;
         LHAT_CHECK_EQ_INT(syntax->kind, LHAT_NODE_ERROR_KIND);
         LHAT_CHECK_EQ_INT(lhat_node_list_length(syntax->v.named.members), 2);
-        // The fields reuse the shape of t^{ ... }.
-        LHAT_CHECK_EQ_INT(syntax->v.named.members->kind, LHAT_NODE_MEMBER_DECL);
+        // 04 の 2.2: a field may carry a type, a default or both, so it takes
+        // the shape that already holds all three rather than t^{ ... }'s.
+        LHAT_CHECK_EQ_INT(syntax->v.named.members->kind, LHAT_NODE_PARAM);
+        LHAT_CHECK(syntax->v.named.members->v.param.type != NULL, "typed");
         LHAT_CHECK(syntax->next->v.named.members == NULL, "Eof has no fields");
     }
+    parse_dispose(&p);
+
+    // 04 の 2.2: the default is written with ':=', matching 14.6's template.
+    LHAT_TEST("a field may carry a default");
+    parse_text(&p,
+               "errordef^ ParseError {\n"
+               "    Syntax { line := 0, column : number^ := 0 },\n"
+               "}");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    {
+        const LhatNode *field = first_statement(&p)->v.named.members->v.named.members;
+        LHAT_CHECK(field->v.param.type == NULL, "the type may be left out");
+        LHAT_CHECK(field->v.param.fallback != NULL, "the default is there");
+        LHAT_CHECK(field->next->v.param.type != NULL, "or written alongside");
+        LHAT_CHECK(field->next->v.param.fallback != NULL, "with a default too");
+    }
+    parse_dispose(&p);
+
+    LHAT_TEST("a field needs a type or a default");
+    parse_text(&p, "errordef^ ParseError { Syntax { line } }");
+    LHAT_CHECK(p.result.diagnostic_count > 0, "expected a diagnostic");
+    LHAT_CHECK_EQ_INT(p.result.diagnostics[0].code,
+                      LHAT_PARSE_ERR_FIELD_NEEDS_TYPE);
     parse_dispose(&p);
 
     // 04 の 2.4: the name is the identity, so there is no anonymous form.

@@ -33,6 +33,7 @@ static LhatNode *parse_clause_body(Parser *p, const LhatToken *at, bool in_loop)
 static LhatNode *access_node(Parser *p, LhatNodeKind kind, const LhatToken *at,
                              LhatNode *target, LhatNode *argument, bool nil_safe);
 static LhatNode *simple_node(Parser *p);
+static LhatNode *parse_error_fields(Parser *p);
 static LhatNode *parse_for(Parser *p);
 static LhatNode *parse_binding(Parser *p, LhatNodeKind kind,
                                const LhatToken *at, LhatNode *targets);
@@ -2068,6 +2069,49 @@ static LhatNode *parse_repeat(Parser *p)
     return node;
 }
 
+// 04 の 2.2. A field of an error kind, which may carry a type, a default, or
+// both. The default is written with ':=' because 14.6's template already
+// writes a named field with an initial value that way, and 8.6 keeps '=' to
+// the two positions where no expression could stand.
+//
+// PARAM rather than MEMBER_DECL, since it is the shape that already holds a
+// name, a type and a value together.
+static LhatNode *parse_error_fields(Parser *p)
+{
+    LhatNode *head = NULL;
+    LhatNode *tail = NULL;
+
+    while (!at_eof(p) && !check_op(p, LHAT_OP_RBRACE)) {
+        if (p->current.kind != LHAT_TOKEN_IDENT &&
+            p->current.kind != LHAT_TOKEN_NAME_LITERAL) {
+            report(p, &p->current, LHAT_PARSE_ERR_EXPECTED_NAME);
+            break;
+        }
+
+        LhatNode *field = make(p, LHAT_NODE_PARAM, &p->current);
+        if (field == NULL) {
+            break;
+        }
+        field->v.param.name = simple_node(p);
+
+        if (match_op(p, LHAT_OP_COLON)) {
+            field->v.param.type = parse_type(p);
+        }
+        if (match_op(p, LHAT_OP_DEFINE)) {
+            field->v.param.fallback = parse_expression(p);
+        }
+        if (field->v.param.type == NULL && field->v.param.fallback == NULL) {
+            report(p, &p->current, LHAT_PARSE_ERR_FIELD_NEEDS_TYPE);
+        }
+
+        lhat_node_append(&head, &tail, field);
+        if (!match_op(p, LHAT_OP_COMMA)) {
+            break;
+        }
+    }
+    return head;
+}
+
 // 04 の 2.2. A declaration rather than an expression, because 2.4 makes the
 // name the identity: a name that is only a label can be taken from a binding
 // the way def^ does (14.9), but one the type is made of belongs in the
@@ -2110,9 +2154,10 @@ static LhatNode *parse_errordef(Parser *p)
         kind->v.named.name = simple_node(p);
 
         // A kind may declare fields, which narrowing then makes visible
-        // (04 の 6.1). They are written like the members of t^{ ... }.
+        // (04 の 6.1). Unlike the members of t^{ ... } they may carry a
+        // default, so they are read here rather than shared with the type.
         if (match_op(p, LHAT_OP_LBRACE)) {
-            kind->v.named.members = parse_member_decls(p);
+            kind->v.named.members = parse_error_fields(p);
             expect_op(p, LHAT_OP_RBRACE);
         }
 
@@ -2505,6 +2550,8 @@ const char *lhat_parse_error_message(LhatParseErrorCode code)
             return "a def^ declares its fields once; write one self^{ ... }";
         case LHAT_PARSE_ERR_MODIFIER_ON_TEMPLATE:
             return "override^ and overload^ mark a member, not the fields";
+        case LHAT_PARSE_ERR_FIELD_NEEDS_TYPE:
+            return "a field needs a type, a default, or both";
         case LHAT_PARSE_ERR_ERRORDEF_NEEDS_NAME:
             return "errordef^ needs a name; an error kind has no anonymous form";
         case LHAT_PARSE_ERR_ERROR_NEEDS_KIND:
