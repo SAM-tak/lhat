@@ -63,6 +63,13 @@ typedef enum {
     LHAT_BC_GETINDEX,   // A B C R[A] = R[B][R[C]]
     LHAT_BC_SETINDEX,   // A B C R[A][R[B]] = R[C]
 
+    // 04. An error carries its kind and a table of fields, and the tests are
+    // instructions because 5.1 keeps the machine independent of the checker.
+    LHAT_BC_NEWERROR,   // A B   R[A] = an error of the kind in R[B]
+    LHAT_BC_ISERROR,    // A B   R[A] = R[B] is an error of any kind
+    LHAT_BC_ISKIND,     // A B C R[A] = R[B] is an error of the kind in R[C]
+    LHAT_BC_ISNIL,      // A B   R[A] = R[B] is nil^   (02 の 11.7)
+
     LHAT_BC_RETURN,     // A     return R[A]
     LHAT_BC_RETURN_NIL,
 

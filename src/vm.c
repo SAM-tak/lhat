@@ -49,7 +49,24 @@ typedef struct Compiler {
     uint8_t next_register;
 
     LoopContext *loop;  // the innermost loop being compiled, NULL outside one
+
+    // 04 の 2.4: a kind is the place it was declared, so the compiler keeps
+    // one object per kind and hands the same one to every use. They live on
+    // the outermost proto: a nested body making its own copy would give the
+    // same declaration two identities.
+    struct ErrorDecl *errors;
+    size_t error_count;
+    size_t error_capacity;
 } Compiler;
+
+typedef struct ErrorDecl {
+    const char *name;
+    size_t length;
+    const LhatNode *node;         // the errordef^, for the field defaults
+    const LhatErrorKind *group;   // stands for the whole declaration
+    const LhatErrorKind **kinds;  // one per kind, in declaration order
+    size_t kind_count;
+} ErrorDecl;
 
 static void fail(Compiler *c, LhatCompileStatus status)
 {
@@ -65,7 +82,10 @@ static bool node_name(const Compiler *c, const LhatNode *node,
     if (node == NULL) {
         return false;
     }
-    if (node->kind == LHAT_NODE_IDENT || node->kind == LHAT_NODE_HAT_IDENT) {
+    // TYPE_NAME carries a name the same way: 13.11's is^ writes a type on the
+    // right, and 04 の 14.4 lets that be a qualified error kind.
+    if (node->kind == LHAT_NODE_IDENT || node->kind == LHAT_NODE_HAT_IDENT ||
+        node->kind == LHAT_NODE_TYPE_NAME) {
         *text = c->lexer->source->text + node->v.name.offset;
         *length = node->v.name.length >= node->v.name.hats
                       ? node->v.name.length - node->v.name.hats
@@ -186,6 +206,181 @@ static void compile_expression(Compiler *c, const LhatNode *node, uint8_t into);
 static void compile_statement(Compiler *c, const LhatNode *node);
 static void compile_statements(Compiler *c, const LhatNode *statements);
 
+// The outermost compiler. The kind objects and the registry of declarations
+// live there so that a nested body sees the same ones the unit made.
+static Compiler *root_of(Compiler *c)
+{
+    while (c->parent != NULL) {
+        c = c->parent;
+    }
+    return c;
+}
+
+static const ErrorDecl *find_error_decl(Compiler *c, const char *name,
+                                        size_t length)
+{
+    const Compiler *root = root_of(c);
+    for (size_t i = 0; i < root->error_count; i++) {
+        const ErrorDecl *decl = &root->errors[i];
+        if (decl->length == length && memcmp(decl->name, name, length) == 0) {
+            return decl;
+        }
+    }
+    return NULL;
+}
+
+// 04 の 2.3: a declaration makes one type per kind and one for their union.
+// This makes an object for each, on the root chunk, and remembers the node so
+// that a construction can find the field defaults 2.2 gives it.
+static void declare_error(Compiler *c, const LhatNode *node)
+{
+    const char *name = NULL;
+    size_t length = 0;
+    if (!node_name(c, node->v.named.name, &name, &length)) {
+        fail(c, LHAT_COMPILE_UNSUPPORTED);
+        return;
+    }
+    if (find_error_decl(c, name, length) != NULL) {
+        return;  // already registered; 8.7's pre-pass may reach it twice
+    }
+
+    Compiler *root = root_of(c);
+    LhatChunk *chunk = &root->proto->chunk;
+
+    if (root->error_count == root->error_capacity) {
+        size_t grown = root->error_capacity ? root->error_capacity * 2 : 4;
+        ErrorDecl *bigger =
+            (ErrorDecl *)realloc(root->errors, grown * sizeof *bigger);
+        if (bigger == NULL) {
+            fail(c, LHAT_COMPILE_TOO_COMPLEX);
+            return;
+        }
+        root->errors = bigger;
+        root->error_capacity = grown;
+    }
+
+    size_t kind_count = 0;
+    for (const LhatNode *k = node->v.named.members; k != NULL; k = k->next) {
+        kind_count++;
+    }
+
+    LhatString *group_name = lhat_string_new(&chunk->objects, name, length);
+    const LhatErrorKind **kinds =
+        (const LhatErrorKind **)calloc(kind_count ? kind_count : 1,
+                                       sizeof *kinds);
+    LhatErrorKind *group =
+        lhat_error_kind_new(&chunk->objects, NULL, group_name);
+    if (group_name == NULL || group == NULL || kinds == NULL) {
+        free(kinds);
+        fail(c, LHAT_COMPILE_TOO_COMPLEX);
+        return;
+    }
+
+    size_t index = 0;
+    for (const LhatNode *k = node->v.named.members; k != NULL;
+         k = k->next, index++) {
+        const char *kind_name = NULL;
+        size_t kind_length = 0;
+        if (!node_name(c, k->v.named.name, &kind_name, &kind_length)) {
+            free(kinds);
+            fail(c, LHAT_COMPILE_UNSUPPORTED);
+            return;
+        }
+        // "IOError.NotFound" -- what typeof^ answers (2.3).
+        char qualified[256];
+        size_t total = length + 1 + kind_length;
+        if (total >= sizeof qualified) {
+            free(kinds);
+            fail(c, LHAT_COMPILE_TOO_COMPLEX);
+            return;
+        }
+        memcpy(qualified, name, length);
+        qualified[length] = '.';
+        memcpy(qualified + length + 1, kind_name, kind_length);
+
+        LhatString *text = lhat_string_new(&chunk->objects, qualified, total);
+        LhatErrorKind *kind =
+            text != NULL ? lhat_error_kind_new(&chunk->objects, group, text)
+                         : NULL;
+        if (kind == NULL) {
+            free(kinds);
+            fail(c, LHAT_COMPILE_TOO_COMPLEX);
+            return;
+        }
+        kinds[index] = kind;
+    }
+
+    ErrorDecl *decl = &root->errors[root->error_count++];
+    decl->name = name;
+    decl->length = length;
+    decl->node = node;
+    decl->group = group;
+    decl->kinds = kinds;
+    decl->kind_count = kind_count;
+}
+
+// 8.7's rule read for types: an errordef^ is visible across the scope it is
+// written in, so the declarations are collected before anything is compiled.
+static void declare_errors(Compiler *c, const LhatNode *statements)
+{
+    for (const LhatNode *s = statements; s != NULL; s = s->next) {
+        if (s->kind == LHAT_NODE_ERRORDEF) {
+            declare_error(c, s);
+        }
+    }
+}
+
+// Resolves the 'IOError' or 'IOError.NotFound' a use writes. `kind_node` comes
+// back as the ERROR_KIND declaring the fields, or NULL when the whole
+// declaration was named.
+static const LhatErrorKind *resolve_kind(Compiler *c, const LhatNode *path,
+                                         const LhatNode **kind_node)
+{
+    *kind_node = NULL;
+    if (path == NULL) {
+        return NULL;
+    }
+
+    const LhatNode *group_node = path;
+    const LhatNode *member = NULL;
+    if (path->kind == LHAT_NODE_MEMBER) {
+        group_node = path->v.access.target;
+        member = path->v.access.argument;
+    }
+
+    const char *name = NULL;
+    size_t length = 0;
+    if (!node_name(c, group_node, &name, &length)) {
+        return NULL;
+    }
+    const ErrorDecl *decl = find_error_decl(c, name, length);
+    if (decl == NULL) {
+        return NULL;
+    }
+    if (member == NULL) {
+        return decl->group;
+    }
+
+    const char *wanted = NULL;
+    size_t wanted_length = 0;
+    if (!node_name(c, member, &wanted, &wanted_length)) {
+        return NULL;
+    }
+    size_t index = 0;
+    for (const LhatNode *k = decl->node->v.named.members; k != NULL;
+         k = k->next, index++) {
+        const char *kind_name = NULL;
+        size_t kind_length = 0;
+        if (node_name(c, k->v.named.name, &kind_name, &kind_length) &&
+            kind_length == wanted_length &&
+            memcmp(kind_name, wanted, wanted_length) == 0) {
+            *kind_node = k;
+            return decl->kinds[index];
+        }
+    }
+    return NULL;
+}
+
 static void load_string_bytes(Compiler *c, uint8_t into, const char *text,
                               size_t length)
 {
@@ -242,6 +437,200 @@ static void compile_key(Compiler *c, const LhatNode *node, uint8_t into)
             compile_expression(c, key, into);
             return;
     }
+}
+
+// Loads a kind object, which lives on the root chunk but is named from a
+// constant of whichever chunk is being compiled.
+static void load_kind(Compiler *c, uint8_t into, const LhatErrorKind *kind)
+{
+    size_t k = lhat_chunk_constant(&c->proto->chunk,
+                                   lhat_object((LhatObject *)(void *)kind));
+    if (k == SIZE_MAX) {
+        fail(c, LHAT_COMPILE_TOO_COMPLEX);
+        return;
+    }
+    emit(c, lhat_encode_abx(LHAT_BC_LOADK, into, (uint16_t)k));
+}
+
+// Whether the construction named this field.
+static bool error_field_given(Compiler *c, const LhatNode *node,
+                              const char *name, size_t length)
+{
+    for (const LhatNode *entry = node->v.named.members; entry != NULL;
+         entry = entry->next) {
+        const char *written = NULL;
+        size_t written_length = 0;
+        if (entry->v.entry.key != NULL &&
+            node_name(c, entry->v.entry.key, &written, &written_length) &&
+            written_length == length &&
+            memcmp(written, name, length) == 0) {
+            return true;
+        }
+    }
+    return false;
+}
+
+// 04 の 2.5: error^Kind{ … }. Every field without a default has to be given;
+// one with a default may be left out, and 2.2 makes that default an
+// expression evaluated at each construction -- so it is compiled here, at the
+// construction, rather than stored anywhere.
+static void compile_error_new(Compiler *c, const LhatNode *node, uint8_t into)
+{
+    const LhatNode *kind_node = NULL;
+    const LhatErrorKind *kind = resolve_kind(c, node->v.named.name, &kind_node);
+    if (kind == NULL || kind_node == NULL) {
+        // Naming the declaration rather than one of its kinds leaves nothing
+        // to construct: 2.3 makes it the union, not a type of its own.
+        fail(c, LHAT_COMPILE_UNDEFINED);
+        return;
+    }
+
+    uint8_t mark = c->next_register;
+    uint8_t holder = reserve(c);
+    load_kind(c, holder, kind);
+    emit(c, lhat_encode_abc(LHAT_BC_NEWERROR, into, holder, 0));
+    c->next_register = mark;
+
+    for (const LhatNode *entry = node->v.named.members; entry != NULL;
+         entry = entry->next) {
+        const char *name = NULL;
+        size_t length = 0;
+        if (entry->v.entry.key == NULL ||
+            !node_name(c, entry->v.entry.key, &name, &length)) {
+            fail(c, LHAT_COMPILE_UNSUPPORTED);
+            return;
+        }
+        uint8_t at = c->next_register;
+        uint8_t key = reserve(c);
+        uint8_t value = reserve(c);
+        load_string_bytes(c, key, name, length);
+        compile_expression(c, entry->v.entry.value, value);
+        emit(c, lhat_encode_abc(LHAT_BC_SETINDEX, into, key, value));
+        c->next_register = at;
+    }
+
+    // The declared fields the construction left out. 2.2 makes a default an
+    // expression evaluated at each construction rather than a stored value,
+    // which is why it is compiled here and not once at the declaration.
+    for (const LhatNode *field = kind_node->v.named.members; field != NULL;
+         field = field->next) {
+        const LhatNode *fallback = field->v.param.fallback;
+        if (fallback == NULL) {
+            continue;  // no default; 2.5 required the construction to give it
+        }
+        const char *name = NULL;
+        size_t length = 0;
+        if (!node_name(c, field->v.param.name, &name, &length)) {
+            fail(c, LHAT_COMPILE_UNSUPPORTED);
+            return;
+        }
+        if (error_field_given(c, node, name, length)) {
+            continue;
+        }
+        uint8_t at = c->next_register;
+        uint8_t key = reserve(c);
+        uint8_t value = reserve(c);
+        load_string_bytes(c, key, name, length);
+        compile_expression(c, fallback, value);
+        emit(c, lhat_encode_abc(LHAT_BC_SETINDEX, into, key, value));
+        c->next_register = at;
+    }
+
+    // 2.3 gives every kind message and cause without either being declared.
+    // cause defaults to nil^, which 11.3 already spells as the key not being
+    // there, so only message needs writing.
+    if (!error_field_given(c, node, "message", 7)) {
+        uint8_t at = c->next_register;
+        uint8_t key = reserve(c);
+        uint8_t value = reserve(c);
+        load_string_bytes(c, key, "message", 7);
+        load_string_bytes(c, value, "", 0);
+        emit(c, lhat_encode_abc(LHAT_BC_SETINDEX, into, key, value));
+        c->next_register = at;
+    }
+}
+
+// 04 の 5.1: try^ hands the caller the error and keeps going otherwise. 5.6
+// wants no unwinding for it, and none is needed -- returning is all it does.
+static void compile_try(Compiler *c, const LhatNode *node, uint8_t into)
+{
+    compile_expression(c, node->v.jump.value, into);
+
+    uint8_t mark = c->next_register;
+    uint8_t test = reserve(c);
+    emit(c, lhat_encode_abc(LHAT_BC_ISERROR, test, into, 0));
+    size_t past = emit_jump(c, LHAT_BC_JUMP_FALSE, test);
+    c->next_register = mark;
+
+    emit(c, lhat_encode_abc(LHAT_BC_RETURN, into, 0, 0));
+    lhat_chunk_patch_here(&c->proto->chunk, past);
+}
+
+// 04 の 4 章: catch^ replaces the value on the spot, and 4.2 names the error
+// it^ inside the right side -- the same word 02 の 16.2 uses for a focus.
+static void compile_catch(Compiler *c, const LhatNode *node, uint8_t into)
+{
+    compile_expression(c, node->v.binary.left, into);
+
+    size_t local_mark = c->local_count;
+    uint8_t register_mark = c->next_register;
+
+    // it^ needs a place of its own: the right side writes its answer into
+    // `into`, which is where the error still is.
+    uint8_t caught = reserve(c);
+    emit(c, lhat_encode_abc(LHAT_BC_MOVE, caught, into, 0));
+
+    uint8_t test = reserve(c);
+    emit(c, lhat_encode_abc(LHAT_BC_ISERROR, test, caught, 0));
+    size_t past = emit_jump(c, LHAT_BC_JUMP_FALSE, test);
+
+    if (c->local_count < LHAT_MAX_LOCALS) {
+        Local *local = &c->locals[c->local_count++];
+        local->name = "it";
+        local->length = 2;
+        local->reg = caught;
+    }
+    compile_expression(c, node->v.binary.right, into);
+
+    lhat_chunk_patch_here(&c->proto->chunk, past);
+    c->local_count = local_mark;
+    c->next_register = register_mark;
+}
+
+// 02 の 11.7: '??' is the same shape as catch^, asking about nil^ instead.
+static void compile_nil_else(Compiler *c, const LhatNode *node, uint8_t into)
+{
+    compile_expression(c, node->v.binary.left, into);
+
+    uint8_t mark = c->next_register;
+    uint8_t test = reserve(c);
+    emit(c, lhat_encode_abc(LHAT_BC_ISNIL, test, into, 0));
+    size_t to_default = emit_jump(c, LHAT_BC_JUMP_FALSE, test);
+    c->next_register = mark;
+
+    compile_expression(c, node->v.binary.right, into);
+    lhat_chunk_patch_here(&c->proto->chunk, to_default);
+}
+
+// 04 の 6.1: is^ against an error kind. 02 の 13.11 makes is^ a conformance
+// test in general, which the checker performs; the machine only needs the one
+// case the checker cannot settle on its own, which is which kind an error is.
+static void compile_is(Compiler *c, const LhatNode *node, uint8_t into)
+{
+    const LhatNode *unused = NULL;
+    const LhatErrorKind *kind = resolve_kind(c, node->v.binary.right, &unused);
+    if (kind == NULL) {
+        fail(c, LHAT_COMPILE_UNSUPPORTED);
+        return;
+    }
+
+    uint8_t mark = c->next_register;
+    uint8_t value = reserve(c);
+    uint8_t holder = reserve(c);
+    compile_expression(c, node->v.binary.left, value);
+    load_kind(c, holder, kind);
+    emit(c, lhat_encode_abc(LHAT_BC_ISKIND, into, value, holder));
+    c->next_register = mark;
 }
 
 // 02 の 14 章: a table literal makes a table and fills it in. A keyed entry
@@ -390,6 +779,22 @@ static void compile_binary(Compiler *c, const LhatNode *node, uint8_t into)
 {
     LhatOpKind op = node->v.binary.op;
 
+    // These three read the left side and then decide whether to bother with
+    // the right, so like and^ and or^ they are branches rather than one
+    // instruction.
+    if (op == LHAT_OP_CATCH) {
+        compile_catch(c, node, into);
+        return;
+    }
+    if (op == LHAT_OP_NIL_ELSE) {
+        compile_nil_else(c, node, into);
+        return;
+    }
+    if (op == LHAT_OP_IS) {
+        compile_is(c, node, into);
+        return;
+    }
+
     // 11.6: and^ and or^ decide without evaluating the right side when the
     // left has settled it, so they are branches rather than instructions.
     if (op == LHAT_OP_AND || op == LHAT_OP_OR) {
@@ -449,6 +854,14 @@ static void compile_expression(Compiler *c, const LhatNode *node, uint8_t into)
 
         case LHAT_NODE_TABLE:
             compile_table(c, node, into);
+            return;
+
+        case LHAT_NODE_ERROR_NEW:
+            compile_error_new(c, node, into);
+            return;
+
+        case LHAT_NODE_TRY:
+            compile_try(c, node, into);
             return;
 
         // 04 の 11.3: 't.foo' is resolved statically and 't[k]' is not, but
@@ -702,6 +1115,7 @@ static void compile_statements(Compiler *c, const LhatNode *statements)
     size_t local_mark = c->local_count;
     uint8_t register_mark = c->next_register;
 
+    declare_errors(c, statements);
     declare_names(c, statements);
     for (const LhatNode *s = statements; s != NULL; s = s->next) {
         compile_statement(c, s);
@@ -1114,6 +1528,21 @@ static void compile_statement(Compiler *c, const LhatNode *node)
             return;
         }
 
+        case LHAT_NODE_TRY: {
+            // 04 の 5.1: written as a statement when the value is not wanted.
+            // The error still leaves, which is the point of writing it.
+            uint8_t mark = c->next_register;
+            uint8_t slot = reserve(c);
+            compile_try(c, node, slot);
+            c->next_register = mark;
+            return;
+        }
+
+        case LHAT_NODE_ERRORDEF:
+            // 04 の 2.2: a declaration. declare_errors made its kinds before
+            // anything was compiled, and there is nothing to run.
+            return;
+
         case LHAT_NODE_MODULE:
             return;  // 05 の 3 章: a name for the unit, nothing to run
 
@@ -1147,6 +1576,13 @@ LhatCompileStatus lhat_compile(const LhatNode *unit, const LhatLexer *lexer,
     // The unit is a scope like any other, so 8.7 applies to it too.
     compile_statements(&c, unit->v.list.items);
     emit(&c, lhat_encode_abc(LHAT_BC_RETURN_NIL, 0, 0, 0));
+
+    // The registry was the compiler's; the kind objects it points at belong
+    // to the chunk and stay.
+    for (size_t i = 0; i < c.error_count; i++) {
+        free((void *)c.errors[i].kinds);
+    }
+    free(c.errors);
 
     if (status != LHAT_COMPILE_OK) {
         lhat_proto_free(proto);
@@ -1306,6 +1742,20 @@ typedef struct {
     LhatObject *objects;
     LhatUpvalue *open;  // 5.4, innermost first
 } Machine;
+
+// What an index reads from. 04 の 2.3 gives every error message and cause
+// without declaring them, so an error answers a member the same way a table
+// does -- from the table its fields live in.
+static LhatTable *table_of(LhatValue value)
+{
+    if (lhat_is_object_kind(value, LHAT_OBJECT_TABLE)) {
+        return (LhatTable *)lhat_as_object(value);
+    }
+    if (lhat_is_object_kind(value, LHAT_OBJECT_ERROR)) {
+        return ((LhatError *)lhat_as_object(value))->fields;
+    }
+    return NULL;
+}
 
 static void *allocate(Machine *m, size_t size, LhatObjectKind kind)
 {
@@ -1556,21 +2006,22 @@ LhatRunResult lhat_run(const LhatProto *proto)
 
             // 04 の 11.3: a key that is not there answers nil^, so the only
             // way this fails is being asked of something that is not a table.
+            // An error answers from its fields: 2.3 gives every kind message
+            // and cause, and they are reached the same way as a member.
             case LHAT_BC_GETINDEX: {
-                if (!lhat_is_object_kind(registers[b], LHAT_OBJECT_TABLE)) {
+                const LhatTable *table = table_of(registers[b]);
+                if (table == NULL) {
                     return finish(m, LHAT_RUN_TYPE_ERROR, lhat_nil(), at);
                 }
-                const LhatTable *table =
-                    (const LhatTable *)lhat_as_object(registers[b]);
                 registers[a] = lhat_table_get(table, registers[cc]);
                 break;
             }
 
             case LHAT_BC_SETINDEX: {
-                if (!lhat_is_object_kind(registers[a], LHAT_OBJECT_TABLE)) {
+                LhatTable *table = table_of(registers[a]);
+                if (table == NULL) {
                     return finish(m, LHAT_RUN_TYPE_ERROR, lhat_nil(), at);
                 }
-                LhatTable *table = (LhatTable *)lhat_as_object(registers[a]);
                 bool refused = false;
                 if (!lhat_table_set(table, registers[b], registers[cc],
                                     &refused)) {
@@ -1583,6 +2034,42 @@ LhatRunResult lhat_run(const LhatProto *proto)
                 }
                 break;
             }
+
+            case LHAT_BC_NEWERROR: {
+                if (!lhat_is_object_kind(registers[b], LHAT_OBJECT_ERROR_KIND)) {
+                    return finish(m, LHAT_RUN_TYPE_ERROR, lhat_nil(), at);
+                }
+                const LhatErrorKind *kind =
+                    (const LhatErrorKind *)lhat_as_object(registers[b]);
+                LhatError *error = lhat_error_new(&m->objects, kind);
+                if (error == NULL) {
+                    return finish(m, LHAT_RUN_OUT_OF_MEMORY, lhat_nil(), at);
+                }
+                registers[a] = lhat_object((LhatObject *)error);
+                break;
+            }
+
+            // 04 の 2.6: an error satisfies no type but an error's, so asking
+            // whether a value is one is a question about the value alone.
+            case LHAT_BC_ISERROR:
+                registers[a] =
+                    lhat_bool(lhat_is_object_kind(registers[b],
+                                                  LHAT_OBJECT_ERROR));
+                break;
+
+            case LHAT_BC_ISKIND: {
+                if (!lhat_is_object_kind(registers[cc], LHAT_OBJECT_ERROR_KIND)) {
+                    return finish(m, LHAT_RUN_TYPE_ERROR, lhat_nil(), at);
+                }
+                const LhatErrorKind *kind =
+                    (const LhatErrorKind *)lhat_as_object(registers[cc]);
+                registers[a] = lhat_bool(lhat_error_is_kind(registers[b], kind));
+                break;
+            }
+
+            case LHAT_BC_ISNIL:
+                registers[a] = lhat_bool(lhat_is_nil(registers[b]));
+                break;
 
             case LHAT_BC_CALL: {
                 if (!lhat_is_object_kind(registers[a], LHAT_OBJECT_SUBROUTINE)) {

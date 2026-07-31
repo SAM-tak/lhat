@@ -35,6 +35,8 @@ typedef enum {
     LHAT_OBJECT_SUBROUTINE,  // f^ and p^ (02 の 15 章)
     LHAT_OBJECT_COROUTINE,   // 02 の 13.9
     LHAT_OBJECT_ERROR,       // 04 の 2.3
+    LHAT_OBJECT_ERROR_KIND,  // 04 の 2.4: the declaration a kind belongs to,
+                             // which is what its identity is
     LHAT_OBJECT_UPVALUE      // 5.4: never a value, only reached through a
                              // closure -- but allocated and collected alike
 } LhatObjectKind;

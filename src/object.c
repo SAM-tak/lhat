@@ -55,6 +55,50 @@ LhatTable *lhat_table_new(LhatObject **owner)
     return (LhatTable *)allocate(owner, sizeof(LhatTable), LHAT_OBJECT_TABLE);
 }
 
+LhatErrorKind *lhat_error_kind_new(LhatObject **owner,
+                                   const LhatErrorKind *group,
+                                   const LhatString *name)
+{
+    LhatErrorKind *kind = (LhatErrorKind *)allocate(owner, sizeof(LhatErrorKind),
+                                                    LHAT_OBJECT_ERROR_KIND);
+    if (kind == NULL) {
+        return NULL;
+    }
+    kind->group = group;
+    kind->name = name;
+    return kind;
+}
+
+LhatError *lhat_error_new(LhatObject **owner, const LhatErrorKind *kind)
+{
+    LhatTable *fields = lhat_table_new(owner);
+    if (fields == NULL) {
+        return NULL;
+    }
+    LhatError *error =
+        (LhatError *)allocate(owner, sizeof(LhatError), LHAT_OBJECT_ERROR);
+    if (error == NULL) {
+        return NULL;
+    }
+    error->kind = kind;
+    error->fields = fields;
+    return error;
+}
+
+bool lhat_error_is_kind(LhatValue value, const LhatErrorKind *kind)
+{
+    if (!lhat_is_object_kind(value, LHAT_OBJECT_ERROR) || kind == NULL) {
+        return false;
+    }
+    const LhatErrorKind *held = ((const LhatError *)lhat_as_object(value))->kind;
+    if (held == NULL) {
+        return false;
+    }
+    // 2.3: a declaration is the union of its kinds, so naming it asks whether
+    // the error is any of them.
+    return kind->group == NULL ? held->group == kind : held == kind;
+}
+
 void lhat_object_free(LhatObject *object)
 {
     if (object == NULL) {

@@ -52,6 +52,25 @@ typedef struct LhatTable {
     size_t entry_capacity;
 } LhatTable;
 
+// 04 の 2.4: what a kind is, is where it was declared. Two errordef^ bodies
+// may spell NotFound identically and still be different kinds, so identity is
+// this object rather than anything about its shape. One of these is made per
+// kind and one per declaration; `group` is what tells them apart.
+typedef struct LhatErrorKind {
+    LhatObject header;
+    const struct LhatErrorKind *group;  // NULL when this object is the group
+    const LhatString *name;             // "IOError" or "IOError.NotFound"
+} LhatErrorKind;
+
+// 04 の 2.3: a kind, plus the fields the construction gave it. message and
+// cause live in the same table as the declared fields; nothing separates
+// them, because 2.3 gives every kind both without declaring either.
+typedef struct LhatError {
+    LhatObject header;
+    const LhatErrorKind *kind;
+    LhatTable *fields;
+} LhatError;
+
 // ---------------------------------------------------------------------------
 // Making and freeing
 // ---------------------------------------------------------------------------
@@ -59,6 +78,20 @@ typedef struct LhatTable {
 // Both link the new object into *owner. Return NULL when out of memory.
 LhatString *lhat_string_new(LhatObject **owner, const char *text, size_t length);
 LhatTable *lhat_table_new(LhatObject **owner);
+
+// `group` is NULL to make the object standing for a whole errordef^, and the
+// group's object to make one of its kinds.
+LhatErrorKind *lhat_error_kind_new(LhatObject **owner,
+                                   const LhatErrorKind *group,
+                                   const LhatString *name);
+
+// Makes the error and the table its fields live in.
+LhatError *lhat_error_new(LhatObject **owner, const LhatErrorKind *kind);
+
+// 04 の 2.6 and 6.1: whether `value` is an error of `kind`. A kind object
+// standing for a whole errordef^ answers yes for any of its kinds, since 2.3
+// makes the declaration the union of them.
+bool lhat_error_is_kind(LhatValue value, const LhatErrorKind *kind);
 
 // Frees one object and whatever it owns, but not what it refers to.
 void lhat_object_free(LhatObject *object);

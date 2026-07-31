@@ -202,6 +202,10 @@ const char *lhat_opcode_name(LhatOpcode op)
         case LHAT_BC_NEWTABLE:    return "newtable";
         case LHAT_BC_GETINDEX:    return "getindex";
         case LHAT_BC_SETINDEX:    return "setindex";
+        case LHAT_BC_NEWERROR:    return "newerror";
+        case LHAT_BC_ISERROR:     return "iserror";
+        case LHAT_BC_ISKIND:      return "iskind";
+        case LHAT_BC_ISNIL:       return "isnil";
         case LHAT_BC_JUMP:        return "jump";
         case LHAT_BC_JUMP_FALSE:  return "jumpfalse";
         case LHAT_BC_RETURN:      return "return";
@@ -259,6 +263,9 @@ void lhat_chunk_print(const LhatChunk *chunk, size_t index, char *out,
         case LHAT_BC_MOVE:
         case LHAT_BC_NEG:
         case LHAT_BC_NOT:
+        case LHAT_BC_NEWERROR:
+        case LHAT_BC_ISERROR:
+        case LHAT_BC_ISNIL:
             snprintf(out, size, "%-10s r%u r%u", name, lhat_a(i), lhat_b(i));
             break;
         default:
