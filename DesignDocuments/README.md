@@ -9,8 +9,7 @@
 | [01-lexical-structure.md](01-lexical-structure.md) | 字句構造（トークンの定義、字句的曖昧性の解決） | 未決事項なし。実装完了 |
 | [02-syntax.md](02-syntax.md) | 構文（入力形式、コマンドモード、REPL 統合、条件分岐、文の構成、繰り返し、`finally^`、演算子、`with^`、型の文法、オブジェクトモデル、サブルーチン） | S14・S16・S19 が未決 |
 | [03-compilation-pipeline.md](03-compilation-pipeline.md) | 処理の構成（段階構成、実行時の値表現、型検査の厳格度、推論の範囲） | 仮想機械の設計が未着手 |
-| [04-errors.md](04-errors.md) | 誤りの表現と伝播（`error^`、`catch^`、`try^`、取りこぼしの検出） | E2〜E4 が未決 |
-| [05-enums.md](05-enums.md) | 列挙体（構造的型付けの例外、`enum^` 宣言、`error^` の `kind`） | N1〜N4 が未決 |
+| [04-errors.md](04-errors.md) | 誤りの表現と伝播（`errordef^`、`catch^`、`try^`、網羅性、取りこぼしの検出） | E3〜E6 が未決 |
 
 ## Memo.md との関係
 
@@ -42,7 +41,6 @@ Memo.md は次の3層で構成されている。本ディレクトリの文書�
 - `02-syntax.md` — `S1`, `S2`, …
 - `03-compilation-pipeline.md` — `P1`, `P2`, …
 - `04-errors.md` — `E1`, `E2`, …
-- `05-enums.md` — `N1`, `N2`, …
 
 いったん起票した番号は、決定後も欠番にせず決定内容を記録して残す。
 後から「なぜそう決めたか」を追えるようにするため。
