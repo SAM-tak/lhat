@@ -79,7 +79,9 @@ Memo.md 全体を通じて、`^` は算術（べき乗）にも論理（XOR）�
 
 上は **Memo.md の語彙の分類** であって、言語の語彙一覧ではない。
 その後に決まった `finally^`（02 の 10 章）、`override^` `overload^`（02 の 14.12）、
-`errordef^` `try^` `catch^`（[04-errors.md](04-errors.md)）も同じ字句形をとる。
+`errordef^` `try^` `catch^`（[04-errors.md](04-errors.md)）、
+`let^`（02 の 8.6）、
+`module^` `public^` `require^`（[05-modules.md](05-modules.md)）も同じ字句形をとる。
 `enum^` は撤回された（04 の 12.3）。
 
 **語が増減しても字句解析器は変わらない。** それが 2.1 の決定の効果である。
