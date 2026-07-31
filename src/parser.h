@@ -41,6 +41,9 @@ typedef enum {
     LHAT_PARSE_ERR_MODIFIER_ON_TEMPLATE,      // 14.12 marks members, not fields
     LHAT_PARSE_ERR_ERRORDEF_NEEDS_NAME,       // 04 の 2.4: the name is the identity
     LHAT_PARSE_ERR_ERROR_NEEDS_KIND,          // 04 の 2.5
+    LHAT_PARSE_ERR_WITHDRAWN_SHIFT,           // 8.6: '<<' replaced by ':='
+    LHAT_PARSE_ERR_LET_NEEDS_VALUE,           // 8.7: no declaration without one
+    LHAT_PARSE_ERR_EQUALS_IS_COMPARISON,      // 8.6: 'x = 1' as a statement
     LHAT_PARSE_ERR_LEXICAL                    // the lexer already reported one
 } LhatParseErrorCode;
 

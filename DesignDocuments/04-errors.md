@@ -153,7 +153,7 @@ return^ error^ParseError.Syntax{
 値として組み立ててから返してもよい。
 
 ```lhat
-e := error^IOError.Denied{ message := "permission denied" }
+let^ e = error^IOError.Denied{ message := "permission denied" }
 return^ e
 ```
 
@@ -220,14 +220,14 @@ Zig の `!T` にあたる略記は **設けない**。`file^|IOError` と書く�
 ### 4.1 形
 
 ```lhat
-n := parse(s) catch^ 0
+let^ n = parse(s) catch^ 0
 ```
 
 左の式が誤りを返したとき、**全体の値は右の式の値になる**。
 誤りでなければ、全体の値は左の値から誤りを除いた型になる。
 
 ```lhat
-n := parse(s) catch^ 0        # n : number^
+let^ n = parse(s) catch^ 0        # n : number^
 ```
 
 `catch^` は二項演算子であり、右辺は式である。文の並びは書けない。
@@ -240,8 +240,8 @@ n := parse(s) catch^ 0        # n : number^
 右辺からは、捕まえた誤りを `it^` で参照できる。
 
 ```lhat
-n := parse(s) catch^ fallbackFor(it^)
-n := parse(s) catch^ if^ it^ is^ ParseError.Eof: 0 el^: -1 ;
+let^ n = parse(s) catch^ fallbackFor(it^)
+let^ n = parse(s) catch^ if^ it^ is^ ParseError.Eof: 0 el^: -1 ;
 ```
 
 02 の 16.2 が `it^` を「焦点の既定の名前」と定めた。
@@ -256,7 +256,7 @@ n := parse(s) catch^ if^ it^ is^ ParseError.Eof: 0 el^: -1 ;
 02 の 11.6 の表に加える。
 
 ```lhat
-total := base + parse(s) catch^ 0
+let^ total = base + parse(s) catch^ 0
 #               ~~~~~~~~~~~~~~~~ ここが catch^ の範囲
 ```
 
@@ -289,7 +289,7 @@ Go の `_` にあたるものが不要なのは 8.2 による。
 ### 5.1 形
 
 ```lhat
-h := try^ open(p)
+let^ h = try^ open(p)
 ```
 
 左の式が誤りを返したとき、**その誤りをそのまま今の手続きの返り値として返す**。
@@ -311,7 +311,7 @@ f^ read(p:string^) -> string^|IOError {
 
 ```lhat
 f^ read(p:string^) -> string^|IOError {
-    h := try^ open(p)
+    let^ h = try^ open(p)
     return^ try^ h.readAll()
     finally^: h.dispose()
 }
@@ -350,11 +350,11 @@ try^ save(x)
 
 ```lhat
 f^ read(p:string^) -> string^|IOError {
-    h := try^ open(p)          # open が返すのは IOError のいずれか。含まれる
+    let^ h = try^ open(p)      # open が返すのは IOError のいずれか。含まれる
 }
 
 f^ read(p:string^) -> string^|IOError.NotFound {
-    h := try^ open(p)          # 誤り。IOError.Denied を返せない
+    let^ h = try^ open(p)      # 誤り。IOError.Denied を返せない
 }
 ```
 
@@ -383,7 +383,7 @@ try^ が返そうとする IOError.Denied は、この手続きの返り値に�
 その場合は合併のまま受けて絞り込む。
 
 ```lhat
-r := parse(s)
+let^ r = parse(s)
 if^ r is^ ParseError.Syntax {
     report(r.line, r.column)      # 絞り込まれているのでフィールドが見える
     return^ r
@@ -420,7 +420,7 @@ if^ r is^ ParseError.Syntax {
 ```lhat
 f^ open(p:string^) -> file^|IOError;
 
-r := open(p)                        # r : file^|IOError.NotFound|IOError.Denied
+let^ r = open(p)                        # r : file^|IOError.NotFound|IOError.Denied
 
 if^ r is^ IOError.NotFound {
     create(p)
@@ -458,8 +458,8 @@ S14 の3つ目、「値を受け取り損ねたことをどう検出するか」
 **型検査がそのまま検出になる。**
 
 ```lhat
-n := parse(s)      # n : number^|ParseError.Syntax|ParseError.Eof
-m := n + 1         # 誤り。number^ の位置に誤りを含む合併がある
+let^ n = parse(s)      # n : number^|ParseError.Syntax|ParseError.Eof
+let^ m = n + 1         # 誤り。number^ の位置に誤りを含む合併がある
 ```
 
 Rust の `#[must_use]` にあたる仕組みは要らない。
@@ -504,7 +504,7 @@ finally^: flush() catch^ nil^
 下位の誤りを包んで返す場合、`cause` に元の誤りを入れる。
 
 ```lhat
-r := parse(s)
+let^ r = parse(s)
 if^ r is^ ParseError {
     return^ error^ConfigError.Invalid{
         message := "config could not be read",
@@ -516,7 +516,7 @@ if^ r is^ ParseError {
 `cause` は `error^|nil^` なので、辿る側は `?.` で書ける（01 の 7.1）。
 
 ```lhat
-depth := e.cause?.cause?.message
+let^ depth = e.cause?.cause?.message
 ```
 
 連鎖は **包む側が明示的に入れたときだけ** できる。自動では付かない。
@@ -565,8 +565,8 @@ a % b        # number^|ArithError.DivideByZero
 すべての除算が合併を返すと、**普通の算術が書けなくなる**。
 
 ```lhat
-mean := total / count            # 汚染されない
-half := (a + b) / 2              # 汚染されない
+let^ mean = total / count            # 汚染されない
+let^ half = (a + b) / 2              # 汚染されない
 ```
 
 `/` が失敗しないため、日常の算術は合併に触れない。
@@ -588,7 +588,7 @@ half := (a + b) / 2              # 汚染されない
 ```lhat
 t.foo        # T。静的に解決する
 t[k]         # T|nil^
-v := t[k] ?? 0     # 欠落したときの既定値は ?? で書く（02 の 11.7）
+let^ v = t[k] ?? 0     # 欠落したときの既定値は ?? で書く（02 の 11.7）
 ```
 
 #### 欠落は失敗ではない

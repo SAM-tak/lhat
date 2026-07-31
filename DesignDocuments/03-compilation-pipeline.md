@@ -135,19 +135,19 @@ Memo.md L7 の「静的**自動**型付け」は型推論を意味する。
 明示しなければ、本体の `return^` から推論する。
 
 ```lhat
-foo := f^{ return^0 }
+let^ foo = f^{ return^0 }
 ```
 
 これは次のように書いたのと同じ意味になる。
 
 ```lhat
-foo := f^ :: number^ { return^0 }
+let^ foo = f^ :: number^ { return^0 }
 ```
 
 `return^` が複数あれば、それらの合併になる。
 
 ```lhat
-bar := p^x:number^ {
+let^ bar = p^x:number^ {
     if^ x > 0 { return^nil^ }
     return^foo()
 }
@@ -160,7 +160,7 @@ bar := p^x:number^ {
 自身を呼ぶ関数の返り値型は、自身に依存するため素朴な推論では決まらない。
 
 ```lhat
-f := f^{ … return^ f() … }
+let^ f = f^{ … return^ f() … }
 ```
 
 **再帰する関数・手続きは返り値型を明示する** こととする。

@@ -74,14 +74,28 @@ static void test_statements(void)
 {
     Parse p;
 
+    // 8.6: let^ is what creates a name; := on its own reassigns.
     LHAT_TEST("definition");
-    parse_text(&p, "x := 1");
+    parse_text(&p, "let^ x = 1");
     LHAT_CHECK_EQ_INT(error_count(&p), 0);
     LHAT_CHECK_EQ_INT(first_statement(&p)->kind, LHAT_NODE_DEFINE);
     parse_dispose(&p);
 
+    LHAT_TEST("let^ also accepts the longer spelling");
+    parse_text(&p, "let^ x := 1");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    LHAT_CHECK_EQ_INT(first_statement(&p)->kind, LHAT_NODE_DEFINE);
+    parse_dispose(&p);
+
+    LHAT_TEST("let^ with a type annotation");
+    parse_text(&p, "let^ x : number^ = 1");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    LHAT_CHECK_EQ_INT(first_statement(&p)->v.binding.targets->kind,
+                      LHAT_NODE_PARAM);
+    parse_dispose(&p);
+
     LHAT_TEST("multiple definition binds pairwise");
-    parse_text(&p, "a, b := 1, 2");
+    parse_text(&p, "let^ a, b = 1, 2");
     LHAT_CHECK_EQ_INT(error_count(&p), 0);
     {
         const LhatNode *s = first_statement(&p);
@@ -91,22 +105,23 @@ static void test_statements(void)
     }
     parse_dispose(&p);
 
-    // 7.3 (Q2): reassignment puts the target first.
+    // 7.3 (Q2) and 8.6: reassignment puts the target first and is written
+    // with :=, since let^ took over making names.
     LHAT_TEST("reassignment");
-    parse_text(&p, "i << i + 1");
+    parse_text(&p, "i := i + 1");
     LHAT_CHECK_EQ_INT(error_count(&p), 0);
     LHAT_CHECK_EQ_INT(first_statement(&p)->kind, LHAT_NODE_REASSIGN);
     parse_dispose(&p);
 
     LHAT_TEST("swap is a multiple reassignment");
-    parse_text(&p, "a, b << b, a");
+    parse_text(&p, "a, b := b, a");
     LHAT_CHECK_EQ_INT(error_count(&p), 0);
     LHAT_CHECK_EQ_INT(first_statement(&p)->kind, LHAT_NODE_REASSIGN);
     parse_dispose(&p);
 
     // 13.10: the marker sits on the value, not on the binding.
     LHAT_TEST("destructuring binding");
-    parse_text(&p, "q, r := unpack^ divmod(7, 2)");
+    parse_text(&p, "let^ q, r = unpack^ divmod(7, 2)");
     LHAT_CHECK_EQ_INT(error_count(&p), 0);
     {
         const LhatNode *s = first_statement(&p);
@@ -118,7 +133,7 @@ static void test_statements(void)
 
     // Putting the marker on the value is what makes this work at all.
     LHAT_TEST("destructuring reassignment");
-    parse_text(&p, "q, r << unpack^ divmod(7, 2)");
+    parse_text(&p, "q, r := unpack^ divmod(7, 2)");
     LHAT_CHECK_EQ_INT(error_count(&p), 0);
     {
         const LhatNode *s = first_statement(&p);
@@ -150,7 +165,7 @@ static void test_statements(void)
 
     // The target list is the ordinary one, so a type may be written on it.
     LHAT_TEST("typed destructuring targets");
-    parse_text(&p, "q:number^, r:number^ := unpack^ f()");
+    parse_text(&p, "let^ q:number^, r:number^ = unpack^ f()");
     LHAT_CHECK_EQ_INT(error_count(&p), 0);
     {
         const LhatNode *target = first_statement(&p)->v.binding.targets;
@@ -160,7 +175,7 @@ static void test_statements(void)
     parse_dispose(&p);
 
     LHAT_TEST("a single definition may carry a type");
-    parse_text(&p, "x:number^ := 1");
+    parse_text(&p, "let^ x:number^ = 1");
     LHAT_CHECK_EQ_INT(error_count(&p), 0);
     LHAT_CHECK_EQ_INT(first_statement(&p)->v.binding.targets->kind,
                       LHAT_NODE_PARAM);
@@ -186,6 +201,61 @@ static void test_statements(void)
     LHAT_CHECK(p.result.diagnostic_count > 0, "expected a diagnostic");
     LHAT_CHECK_EQ_INT(p.result.diagnostics[0].code,
                       LHAT_PARSE_ERR_JUXTAPOSITION);
+    parse_dispose(&p);
+
+    // 8.6: the accident this replaced. Without let^, ':=' inside a nested
+    // scope reassigns rather than quietly shadowing.
+    LHAT_TEST("':=' in a nested scope reassigns");
+    parse_text(&p, "let^ i = 0\nif^ foo() { i := 1 }");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    {
+        const LhatNode *inner =
+            first_statement(&p)->next->v.list.items->v.clause.body->v.list.items;
+        LHAT_CHECK_EQ_INT(inner->kind, LHAT_NODE_REASSIGN);
+    }
+    parse_dispose(&p);
+
+    LHAT_TEST("shadowing has to be written out");
+    parse_text(&p, "let^ i = 0\nif^ foo() { let^ i = 1 }");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    {
+        const LhatNode *inner =
+            first_statement(&p)->next->v.list.items->v.clause.body->v.list.items;
+        LHAT_CHECK_EQ_INT(inner->kind, LHAT_NODE_DEFINE);
+    }
+    parse_dispose(&p);
+
+    // 8.7: mutual recursion is handled by scope-wide visibility, so a
+    // declaration without a value has no job to do.
+    LHAT_TEST("let^ needs a value");
+    parse_text(&p, "let^ x : number^");
+    LHAT_CHECK(p.result.diagnostic_count > 0, "expected a diagnostic");
+    LHAT_CHECK_EQ_INT(p.result.diagnostics[0].code,
+                      LHAT_PARSE_ERR_LET_NEEDS_VALUE);
+    parse_dispose(&p);
+
+    // 8.6: '=' compares, so this reaches the statement level as an
+    // expression. The C habit is common enough for its own message.
+    LHAT_TEST("'x = 1' names both intentions");
+    parse_text(&p, "x = 1");
+    LHAT_CHECK(p.result.diagnostic_count > 0, "expected a diagnostic");
+    LHAT_CHECK_EQ_INT(p.result.diagnostics[0].code,
+                      LHAT_PARSE_ERR_EQUALS_IS_COMPARISON);
+    parse_dispose(&p);
+
+    LHAT_TEST("'<<' reports what replaced it");
+    parse_text(&p, "counter << 1");
+    LHAT_CHECK(p.result.diagnostic_count > 0, "expected a diagnostic");
+    LHAT_CHECK_EQ_INT(p.result.diagnostics[0].code,
+                      LHAT_PARSE_ERR_WITHDRAWN_SHIFT);
+    parse_dispose(&p);
+
+    // 8.6: the enclosing construct is the introducer, so ':=' still defines
+    // inside for^, with^ and a brace list.
+    LHAT_TEST("an introducer keeps ':=' a definition");
+    parse_text(&p, "for^ k := 1 to^ 3 { print(k) }");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    LHAT_CHECK_EQ_INT(first_statement(&p)->v.loop.focus->kind, LHAT_NODE_DEFINE);
     parse_dispose(&p);
 
     // Q2: the postfix form was withdrawn, and the parser says so.
@@ -695,7 +765,7 @@ static void test_loops(void)
     parse_dispose(&p);
 
     LHAT_TEST("conditional iteration with next^");
-    parse_text(&p, "for^ i := 1 while^ i < 10 next^ i << i + 1 { }");
+    parse_text(&p, "for^ i := 1 while^ i < 10 next^ i := i + 1 { }");
     LHAT_CHECK_EQ_INT(error_count(&p), 0);
     {
         const LhatNode *s = first_statement(&p);
@@ -765,7 +835,7 @@ static void test_repeat(void)
     parse_dispose(&p);
 
     LHAT_TEST("while and until");
-    parse_text(&p, "repeat^ while^ c { c << foo() }");
+    parse_text(&p, "repeat^ while^ c { c := foo() }");
     LHAT_CHECK_EQ_INT(error_count(&p), 0);
     LHAT_CHECK_EQ_INT(first_statement(&p)->v.repeat.kind, LHAT_REPEAT_WHILE);
     parse_dispose(&p);
@@ -777,7 +847,7 @@ static void test_repeat(void)
 
     // 16.5: an update clause belongs with the focus that for^ declares.
     LHAT_TEST("repeat^ takes no next^");
-    parse_text(&p, "repeat^ while^ c next^ i << i + 1 { }");
+    parse_text(&p, "repeat^ while^ c next^ i := i + 1 { }");
     LHAT_CHECK(p.result.diagnostic_count > 0, "expected a diagnostic");
     LHAT_CHECK_EQ_INT(p.result.diagnostics[0].code,
                       LHAT_PARSE_ERR_REPEAT_TAKES_NO_NEXT);
@@ -794,7 +864,7 @@ static void test_loop_clauses(void)
                "for^ i := 1 to^ 10 {\n"
                "    prolog^: total := 0\n"
                "    first^: log('start')\n"
-               "    main^: total << total + i\n"
+               "    main^: total := total + i\n"
                "    last^: log(i)\n"
                "    epilog^: log('end')\n"
                "    finally^: cleanup()\n"
@@ -1245,7 +1315,7 @@ static void test_recovery(void)
     Parse p;
 
     LHAT_TEST("parsing continues after an error");
-    parse_text(&p, "x := 1\na + b\ny := 2");
+    parse_text(&p, "let^ x = 1\na + b\nlet^ y = 2");
     LHAT_CHECK(p.result.diagnostic_count > 0, "expected a diagnostic");
     {
         // The first and last statements should still be recognised.
@@ -1276,7 +1346,7 @@ static void test_realistic(void)
                "$Counter := {\n"
                "    value := 0,\n"
                "    bump := p^step:number^ -> number^ {\n"
-               "        value << value + step\n"
+               "        value := value + step\n"
                "        return^ value\n"
                "    },\n"
                "}\n"

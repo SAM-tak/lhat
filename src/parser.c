@@ -33,6 +33,9 @@ static LhatNode *parse_clause_body(Parser *p, const LhatToken *at, bool in_loop)
 static LhatNode *access_node(Parser *p, LhatNodeKind kind, const LhatToken *at,
                              LhatNode *target, LhatNode *argument, bool nil_safe);
 static LhatNode *simple_node(Parser *p);
+static LhatNode *parse_binding(Parser *p, LhatNodeKind kind,
+                               const LhatToken *at, LhatNode *targets);
+static bool is_binary_op(const LhatNode *node, LhatOpKind op);
 
 // ---------------------------------------------------------------------------
 // Token access
@@ -1529,6 +1532,104 @@ static LhatNode *parse_value(Parser *p)
     return node;
 }
 
+// The value list of a binding, plus the arity checks the two forms share.
+static LhatNode *parse_binding(Parser *p, LhatNodeKind kind,
+                               const LhatToken *at, LhatNode *targets)
+{
+    LhatNode *values = NULL;
+    LhatNode *values_tail = NULL;
+    lhat_node_append(&values, &values_tail, parse_value(p));
+    while (match_op(p, LHAT_OP_COMMA)) {
+        lhat_node_append(&values, &values_tail, parse_value(p));
+    }
+
+    LhatNode *node = make(p, kind, at);
+    if (node == NULL) {
+        return NULL;
+    }
+    node->v.binding.targets = targets;
+    node->v.binding.values = values;
+
+    size_t target_count = lhat_node_list_length(targets);
+    size_t source_count = lhat_node_list_length(values);
+
+    bool unpacking = false;
+    for (LhatNode *value = values; value != NULL; value = value->next) {
+        if (value->kind == LHAT_NODE_UNPACK) {
+            unpacking = true;
+        }
+    }
+
+    if (unpacking) {
+        // 13.10: the marked value has to be the only one, since it is spread
+        // across every target.
+        if (source_count != 1) {
+            report(p, at, LHAT_PARSE_ERR_UNPACK_NOT_ALONE);
+        }
+    } else if (target_count != source_count) {
+        report(p, at,
+               source_count == 1 ? LHAT_PARSE_ERR_DESTRUCTURE_NEEDS_UNPACK
+                                 : LHAT_PARSE_ERR_BINDING_ARITY);
+    }
+    return node;
+}
+
+// 8.6. let^ is what creates a name; without it ':=' reassigns. Making the
+// dangerous spelling the longer one is the whole point -- writing ':=' where
+// a definition was meant used to shadow silently, which is the accident Go
+// is known for.
+//
+// 8.6 also allows '=' here, and only here, because no expression can follow
+// 'let^ name': the same reason 13.4 already writes a default with '='.
+// What let^ binds is a name, never an arbitrary expression, so this does not
+// go through parse_target: reading the target as an expression would swallow
+// the '=' as a comparison before the binding ever saw it.
+static LhatNode *parse_let_target(Parser *p)
+{
+    LhatToken start = p->current;
+    if (p->current.kind != LHAT_TOKEN_IDENT &&
+        p->current.kind != LHAT_TOKEN_NAME_LITERAL &&
+        p->current.kind != LHAT_TOKEN_SCOPE) {
+        return error_node(p, LHAT_PARSE_ERR_EXPECTED_NAME);
+    }
+
+    LhatNode *name = parse_primary(p);
+    if (!check_op(p, LHAT_OP_COLON)) {
+        return name;
+    }
+
+    advance(p);
+    LhatNode *target = make(p, LHAT_NODE_PARAM, &start);
+    if (target == NULL) {
+        return name;
+    }
+    target->v.param.name = name;
+    target->v.param.type = parse_type(p);
+    return target;
+}
+
+static LhatNode *parse_let(Parser *p)
+{
+    LhatToken start = p->current;
+    advance(p);  // let^
+
+    LhatNode *targets = NULL;
+    LhatNode *tail = NULL;
+    lhat_node_append(&targets, &tail, parse_let_target(p));
+    while (match_op(p, LHAT_OP_COMMA)) {
+        lhat_node_append(&targets, &tail, parse_let_target(p));
+    }
+
+    LhatToken at = p->current;
+    if (!match_op(p, LHAT_OP_EQ) && !match_op(p, LHAT_OP_DEFINE)) {
+        // 8.7: a declaration without a value is not a form. Mutual recursion
+        // is handled by the whole scope seeing the name, so nothing needs one.
+        report(p, &p->current, LHAT_PARSE_ERR_LET_NEEDS_VALUE);
+        return make(p, LHAT_NODE_ERROR, &start);
+    }
+    return parse_binding(p, LHAT_NODE_DEFINE, &at, targets);
+}
+
 static LhatNode *parse_if_body(Parser *p, LhatToken start, LhatNode *condition)
 {
     LhatNode *node = make(p, LHAT_NODE_IF_STMT, &start);
@@ -1849,6 +1950,11 @@ static LhatNode *parse_jump(Parser *p, LhatNodeKind kind)
 // one without changing that a call is being made -- they only say what to do
 // with a failure -- so 'try^ save(x)' and 'save(x) catch^ nil^' are
 // statements too. '??' is included on the same footing as catch^ (11.7).
+static bool is_binary_op(const LhatNode *node, LhatOpKind op)
+{
+    return node->kind == LHAT_NODE_BINARY && node->v.binary.op == op;
+}
+
 static bool is_call_statement(const LhatNode *node)
 {
     while (node != NULL) {
@@ -1905,6 +2011,9 @@ static LhatNode *parse_statement(Parser *p)
         if (check_hat(p, "errordef")) {
             return parse_errordef(p);
         }
+        if (check_hat(p, "let")) {
+            return parse_let(p);
+        }
     }
 
     // 13.10: unpack^ belongs to the value of a binding and nowhere else.
@@ -1915,7 +2024,8 @@ static LhatNode *parse_statement(Parser *p)
         return make(p, LHAT_NODE_ERROR, &start);
     }
 
-    // Otherwise a definition, a reassignment or a call.
+    // Otherwise a reassignment or a call. A definition needs let^ (8.6), so
+    // nothing here can create a name.
     LhatNode *head = NULL;
     LhatNode *tail = NULL;
     lhat_node_append(&head, &tail, parse_target(p));
@@ -1923,48 +2033,16 @@ static LhatNode *parse_statement(Parser *p)
         lhat_node_append(&head, &tail, parse_target(p));
     }
 
+    // 8.6: '<<' was withdrawn once ':=' became the reassignment. It is still
+    // lexed so the parser can say what replaced it.
+    if (check_op(p, LHAT_OP_REASSIGN)) {
+        report(p, &p->current, LHAT_PARSE_ERR_WITHDRAWN_SHIFT);
+    }
+
     if (check_op(p, LHAT_OP_DEFINE) || check_op(p, LHAT_OP_REASSIGN)) {
-        bool defining = check_op(p, LHAT_OP_DEFINE);
         LhatToken at = p->current;
         advance(p);
-
-        LhatNode *values = NULL;
-        LhatNode *values_tail = NULL;
-        lhat_node_append(&values, &values_tail, parse_value(p));
-        while (match_op(p, LHAT_OP_COMMA)) {
-            lhat_node_append(&values, &values_tail, parse_value(p));
-        }
-
-        LhatNode *node = make(p, defining ? LHAT_NODE_DEFINE : LHAT_NODE_REASSIGN,
-                              &at);
-        if (node == NULL) {
-            return NULL;
-        }
-        node->v.binding.targets = head;
-        node->v.binding.values = values;
-
-        size_t targets = lhat_node_list_length(head);
-        size_t sources = lhat_node_list_length(values);
-
-        bool unpacking = false;
-        for (LhatNode *value = values; value != NULL; value = value->next) {
-            if (value->kind == LHAT_NODE_UNPACK) {
-                unpacking = true;
-            }
-        }
-
-        if (unpacking) {
-            // 13.10: the marked value has to be the only one, since it is
-            // spread across every target.
-            if (sources != 1) {
-                report(p, &at, LHAT_PARSE_ERR_UNPACK_NOT_ALONE);
-            }
-        } else if (targets != sources) {
-            report(p, &at,
-                   sources == 1 ? LHAT_PARSE_ERR_DESTRUCTURE_NEEDS_UNPACK
-                                : LHAT_PARSE_ERR_BINDING_ARITY);
-        }
-        return node;
+        return parse_binding(p, LHAT_NODE_REASSIGN, &at, head);
     }
 
     // The withdrawn postfix reassignment of Q2.
@@ -1996,6 +2074,15 @@ static LhatNode *parse_statement(Parser *p)
     if (head != NULL && head->kind == LHAT_NODE_ERROR) {
         return head;
     }
+
+    // 8.6: 'x = 1' is a comparison, so it lands here as a bare expression.
+    // The C habit is common enough to deserve its own message rather than a
+    // generic one, since the writer meant one of two different things.
+    if (head != NULL && head->next == NULL && is_binary_op(head, LHAT_OP_EQ)) {
+        report(p, &start, LHAT_PARSE_ERR_EQUALS_IS_COMPARISON);
+        return make(p, LHAT_NODE_ERROR, &start);
+    }
+
     report(p, &start, LHAT_PARSE_ERR_BARE_EXPRESSION);
     return make(p, LHAT_NODE_ERROR, &start);
 }
@@ -2103,6 +2190,13 @@ const char *lhat_parse_error_message(LhatParseErrorCode code)
             return "errordef^ needs a name; an error kind has no anonymous form";
         case LHAT_PARSE_ERR_ERROR_NEEDS_KIND:
             return "write the kind, as in error^IOError.NotFound{ ... }";
+        case LHAT_PARSE_ERR_WITHDRAWN_SHIFT:
+            return "'<<' was withdrawn; reassignment is written 'x := 1'";
+        case LHAT_PARSE_ERR_LET_NEEDS_VALUE:
+            return "let^ needs a value; write 'let^ x = 0'";
+        case LHAT_PARSE_ERR_EQUALS_IS_COMPARISON:
+            return "'=' compares; write 'x := 1' to reassign or 'let^ x = 1' "
+                   "to make a new name";
         case LHAT_PARSE_ERR_LEXICAL:
             return "the input could not be tokenised";
     }
