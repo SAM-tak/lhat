@@ -6,6 +6,7 @@
 // rule of 8.7, the result inference of 03 の 3.4, and the way catch^, ?? and
 // try^ each drop one arm of a union.
 
+#include <stdio.h>
 #include <string.h>
 
 #include "check.h"
@@ -673,6 +674,143 @@ static void test_definitions(void)
     unit_dispose(&u);
 }
 
+// 14.5 and 14.12.
+static void test_composition(void)
+{
+    Unit u;
+
+    static const char *const base =
+        "let^ Foo = def^{\n"
+        "    self^{ a := 0 },\n"
+        "    foo := p^self^, x:string^ { },\n"
+        "    bar := p^self^ { },\n"
+        "}\n";
+
+    // 14.5: the derived definition carries both sides, and 14.7 means an
+    // instance of it reaches the base's fields as well as its own.
+    LHAT_TEST("composition carries the base's fields and members");
+    {
+        char text[1024];
+        snprintf(text, sizeof text, "%s%s", base,
+                 "let^ Bar = Foo .. def^{ self^{ b := 0 }, extra := p^self^ { } }\n"
+                 "let^ o = Bar.new^()\n"
+                 "let^ x : number^ = o.a\n"
+                 "let^ y : number^ = o.b\n"
+                 "o.bar()\n"
+                 "o.extra()\n");
+        check_text(&u, text);
+    }
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // 14.12: without a marker, a name the base already uses is a mistake.
+    LHAT_TEST("a same-named member needs a marker");
+    {
+        char text[1024];
+        snprintf(text, sizeof text, "%s%s", base,
+                 "let^ Bar = Foo .. def^{ self^{}, foo := p^self^ { } }\n");
+        check_text(&u, text);
+    }
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MEMBER_EXISTS);
+    unit_dispose(&u);
+
+    // 14.12: arguments may widen, which is what makes the replacement usable
+    // wherever the original was.
+    LHAT_TEST("override^ may widen its arguments");
+    {
+        char text[1024];
+        snprintf(text, sizeof text, "%s%s", base,
+                 "let^ Bar = Foo .. def^{\n"
+                 "    self^{},\n"
+                 "    override^ foo := p^self^, x:string^|number^ { },\n"
+                 "}\n");
+        check_text(&u, text);
+    }
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("override^ may not narrow them");
+    {
+        char text[1024];
+        snprintf(text, sizeof text, "%s%s", base,
+                 "let^ Bar = Foo .. def^{\n"
+                 "    self^{},\n"
+                 "    override^ foo := p^self^, x:number^ { },\n"
+                 "}\n");
+        check_text(&u, text);
+    }
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_NOT_SUBSTITUTABLE);
+    unit_dispose(&u);
+
+    // 14.12: overloading is only allowed where no call could fit both.
+    LHAT_TEST("overload^ needs a signature that stays apart");
+    {
+        char text[1024];
+        snprintf(text, sizeof text, "%s%s", base,
+                 "let^ Bar = Foo .. def^{\n"
+                 "    self^{},\n"
+                 "    overload^ bar := p^self^, n:number^ { },\n"
+                 "}\n");
+        check_text(&u, text);
+    }
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("an overlapping overload^ is reported");
+    {
+        char text[1024];
+        snprintf(text, sizeof text, "%s%s", base,
+                 "let^ Bar = Foo .. def^{\n"
+                 "    self^{},\n"
+                 "    overload^ foo := p^self^, y:string^ { },\n"
+                 "}\n");
+        check_text(&u, text);
+    }
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_OVERLOAD_OVERLAPS);
+    unit_dispose(&u);
+
+    LHAT_TEST("a marker with nothing under it is reported");
+    {
+        char text[1024];
+        snprintf(text, sizeof text, "%s%s", base,
+                 "let^ Bar = Foo .. def^{ self^{}, override^ nope := p^self^ { } }\n");
+        check_text(&u, text);
+    }
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_NOTHING_TO_OVERRIDE);
+    unit_dispose(&u);
+
+    // 14.12: an overloaded member is callable both ways, which is what '&'
+    // means, so the intersection is what the member ends up being.
+    LHAT_TEST("an overloaded member accepts either signature");
+    {
+        char text[1024];
+        snprintf(text, sizeof text, "%s%s", base,
+                 "let^ Bar = Foo .. def^{\n"
+                 "    self^{},\n"
+                 "    overload^ bar := p^self^, n:number^ { },\n"
+                 "}\n"
+                 "let^ o = Bar.new^()\n"
+                 "o.bar()\n"
+                 "o.bar(1)\n");
+        check_text(&u, text);
+    }
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // 14.5 composes to make something new, so a constructor inherited from
+    // the base still has to build the derived instance.
+    LHAT_TEST("new^ builds the derived instance");
+    {
+        char text[1024];
+        snprintf(text, sizeof text, "%s%s", base,
+                 "let^ Bar = Foo .. def^{ self^{ b := \"\" } }\n"
+                 "let^ s : string^ = Bar.new^().b\n");
+        check_text(&u, text);
+    }
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+}
+
 int main(void)
 {
     test_names();
@@ -682,5 +820,6 @@ int main(void)
     test_annotations();
     test_narrowing();
     test_definitions();
+    test_composition();
     return lhat_test_report("test_check");
 }

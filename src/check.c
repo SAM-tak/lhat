@@ -198,6 +198,7 @@ static LhatType *simple(Checker *c, LhatTypeKind kind)
 static LhatType *resolve_type(Checker *c, const LhatNode *node);
 static LhatType *infer(Checker *c, const LhatNode *node);
 static void check_statement(Checker *c, const LhatNode *node);
+static LhatType *infer_def(Checker *c, const LhatNode *node, LhatType *base);
 static LhatType *only(Checker *c, LhatType *type, LhatType *wanted);
 static LhatType *without(Checker *c, LhatType *type, LhatType *unwanted);
 
@@ -724,6 +725,14 @@ static LhatType *infer_binary(Checker *c, const LhatNode *node)
 
     LhatType *left = infer(c, node->v.binary.left);
 
+    // 14.5: composition is written with '..' because the order matters. The
+    // right side is not a value here -- it is a definition read against what
+    // the left already provides, which is what 14.12 needs to see.
+    if (op == LHAT_OP_CONCAT && node->v.binary.right != NULL &&
+        node->v.binary.right->kind == LHAT_NODE_DEF) {
+        return infer_def(c, node->v.binary.right, left);
+    }
+
     // 13.11: is^ takes a type on the right, so the right side is not a value.
     if (op == LHAT_OP_IS) {
         resolve_type(c, node->v.binary.right);
@@ -784,6 +793,49 @@ static LhatType *infer_binary(Checker *c, const LhatNode *node)
     }
 }
 
+// Whether a signature would take these arguments, asked without reporting.
+// 14.12 forbids overlapping signatures precisely so that at most one arm of
+// an overloaded member can answer yes, which makes resolution a search rather
+// than a ranking.
+static bool signature_accepts(const LhatType *func, LhatType *const *args,
+                              size_t count, bool through_member)
+{
+    if (func == NULL || func->kind != LHAT_TYPE_FUNC) {
+        return false;
+    }
+
+    size_t declared = 0;
+    for (const LhatTypeList *p = func->v.func.params; p != NULL; p = p->next) {
+        declared++;
+    }
+    if (func->v.func.takes_self && !through_member) {
+        declared++;  // written out at the call (14.4)
+    }
+    if (count < declared ||
+        (count > declared && func->v.func.variadic == NULL)) {
+        return false;
+    }
+
+    size_t skip = (func->v.func.takes_self && !through_member) ? 1 : 0;
+    const LhatTypeList *param = func->v.func.params;
+    for (size_t i = 0; i < count; i++) {
+        if (skip > 0) {
+            skip--;
+            continue;
+        }
+        LhatType *wanted = param != NULL ? param->type : func->v.func.variadic;
+        if (wanted != NULL && !lhat_type_conforms(args[i], wanted)) {
+            return false;
+        }
+        if (param != NULL) {
+            param = param->next;
+        }
+    }
+    return true;
+}
+
+#define LHAT_CHECK_MAX_TRACKED_ARGS 16
+
 static LhatType *infer_call(Checker *c, const LhatNode *node)
 {
     LhatType *callee = infer(c, node->v.access.target);
@@ -801,6 +853,36 @@ static LhatType *infer_call(Checker *c, const LhatNode *node)
         }
         return simple(c, LHAT_TYPE_UNKNOWN);
     }
+
+    // 14.12: an overloaded member is the intersection of its signatures, so
+    // calling one means finding the arm that fits. Arguments are inferred
+    // once here, since inferring them again would report twice.
+    if (callee->kind == LHAT_TYPE_INTERSECT) {
+        LhatType *args[LHAT_CHECK_MAX_TRACKED_ARGS];
+        size_t tracked = 0;
+        for (const LhatNode *arg = node->v.access.argument; arg != NULL;
+             arg = arg->next) {
+            LhatType *type = infer(c, arg);
+            if (tracked < LHAT_CHECK_MAX_TRACKED_ARGS) {
+                args[tracked++] = type;
+            }
+        }
+        if (tracked < given) {
+            return simple(c, LHAT_TYPE_UNKNOWN);  // more than worth tracking
+        }
+
+        bool through_member =
+            node->v.access.target->kind == LHAT_NODE_MEMBER;
+        for (const LhatTypeList *arm = callee->v.composite.arms; arm != NULL;
+             arm = arm->next) {
+            if (signature_accepts(arm->type, args, tracked, through_member)) {
+                return arm->type->v.func.result;
+            }
+        }
+        report(c, node, LHAT_CHECK_ERR_MISMATCH);
+        return simple(c, LHAT_TYPE_UNKNOWN);
+    }
+
     if (callee->kind != LHAT_TYPE_FUNC) {
         report(c, node, LHAT_CHECK_ERR_NOT_CALLABLE);
         return simple(c, LHAT_TYPE_UNKNOWN);
@@ -986,10 +1068,160 @@ static LhatType *infer_func(Checker *c, const LhatNode *node)
 //
 // 14.9 keeps the name out of it. Both are ordinary structures, so 11.3's
 // structural identity applies unchanged and nothing here has to be interned.
-static LhatType *infer_def(Checker *c, const LhatNode *node)
+static const LhatTypeMember *find_member(const LhatType *table,
+                                         const char *name, size_t length)
+{
+    if (table == NULL || table->kind != LHAT_TYPE_TABLE) {
+        return NULL;
+    }
+    for (const LhatTypeMember *m = table->v.table.members; m != NULL;
+         m = m->next) {
+        if (m->name_length == length && memcmp(m->name, name, length) == 0) {
+            return m;
+        }
+    }
+    return NULL;
+}
+
+// 14.11 makes new^ return an instance, so a definition's own structure is
+// where its instance type can be found again. Composition needs it, to carry
+// the base's fields into the derived instance.
+static LhatType *instance_of(const LhatType *definition)
+{
+    const LhatTypeMember *constructor = find_member(definition, "new", 3);
+    if (constructor == NULL || constructor->type == NULL ||
+        constructor->type->kind != LHAT_TYPE_FUNC) {
+        return NULL;
+    }
+    return constructor->type->v.func.result;
+}
+
+// Overwrites rather than appending, so a member the base already had ends up
+// replaced by 14.12's override^ instead of shadowed by position.
+static void set_member(Checker *c, LhatType *table, const char *name,
+                       size_t length, LhatType *type)
+{
+    for (LhatTypeMember *m = table->v.table.members; m != NULL; m = m->next) {
+        if (m->name_length == length && memcmp(m->name, name, length) == 0) {
+            m->type = type;
+            return;
+        }
+    }
+    lhat_type_add_member(&c->result->types, table, name, length, type);
+}
+
+static void copy_members(Checker *c, LhatType *into, const LhatType *from)
+{
+    if (from == NULL || from->kind != LHAT_TYPE_TABLE) {
+        return;
+    }
+    for (const LhatTypeMember *m = from->v.table.members; m != NULL;
+         m = m->next) {
+        lhat_type_add_member(&c->result->types, into, m->name, m->name_length,
+                             m->type);
+    }
+}
+
+// 14.12's overlap test, applied to two signatures: is there an argument count
+// admissible by both at which no position is separate? A separate position is
+// enough to keep them apart, since a call has to satisfy every one.
+//
+// 13.4 keeps defaults out of a type, so a signature admits one count, or a
+// range once it has a '...'. Checking the smallest count they share settles
+// it: beyond that at least one side is variadic, and its element type does
+// not change with position.
+static bool signatures_overlap(const LhatType *a, const LhatType *b)
+{
+    if (a == NULL || b == NULL || a->kind != LHAT_TYPE_FUNC ||
+        b->kind != LHAT_TYPE_FUNC) {
+        return true;  // nothing here can tell them apart
+    }
+
+    size_t count_a = 0;
+    size_t count_b = 0;
+    for (const LhatTypeList *p = a->v.func.params; p != NULL; p = p->next) {
+        count_a++;
+    }
+    for (const LhatTypeList *p = b->v.func.params; p != NULL; p = p->next) {
+        count_b++;
+    }
+
+    size_t shared = count_a > count_b ? count_a : count_b;
+    if ((shared > count_a && a->v.func.variadic == NULL) ||
+        (shared > count_b && b->v.func.variadic == NULL)) {
+        return false;
+    }
+
+    const LhatTypeList *pa = a->v.func.params;
+    const LhatTypeList *pb = b->v.func.params;
+    for (size_t i = 0; i < shared; i++) {
+        LhatType *ta = pa != NULL ? pa->type : a->v.func.variadic;
+        LhatType *tb = pb != NULL ? pb->type : b->v.func.variadic;
+        if (lhat_type_disjoint(ta, tb)) {
+            return false;
+        }
+        if (pa != NULL) {
+            pa = pa->next;
+        }
+        if (pb != NULL) {
+            pb = pb->next;
+        }
+    }
+    return true;
+}
+
+// 14.12. A member of a name the base already uses is an error unless it says
+// which of the two things it means, and each says something checkable.
+static LhatType *check_same_name(Checker *c, const LhatNode *entry,
+                                 const LhatTypeMember *inherited,
+                                 LhatType *replacement)
+{
+    LhatDefModifier modifier = entry->v.entry.modifier;
+
+    if (inherited == NULL) {
+        if (modifier != LHAT_DEF_PLAIN) {
+            report(c, entry, LHAT_CHECK_ERR_NOTHING_TO_OVERRIDE);
+        }
+        return replacement;
+    }
+
+    switch (modifier) {
+        case LHAT_DEF_PLAIN:
+            report(c, entry, LHAT_CHECK_ERR_MEMBER_EXISTS);
+            return replacement;
+
+        case LHAT_DEF_OVERRIDE:
+            // The replacement has to be usable where the original was, which
+            // is ordinary conformance: arguments wider, result narrower. The
+            // receiver is not in the parameter list (14.4), so 14.12's
+            // exemption of self^ from variance needs nothing of its own.
+            if (!lhat_type_conforms(replacement, inherited->type)) {
+                report(c, entry, LHAT_CHECK_ERR_NOT_SUBSTITUTABLE);
+            }
+            return replacement;
+
+        case LHAT_DEF_OVERLOAD:
+            if (signatures_overlap(replacement, inherited->type)) {
+                report(c, entry, LHAT_CHECK_ERR_OVERLOAD_OVERLAPS);
+                return replacement;
+            }
+            // 14.12: an overloaded member is callable both ways, which is
+            // what '&' means (14.5).
+            return lhat_type_intersect(&c->result->types, inherited->type,
+                                       replacement);
+    }
+    return replacement;
+}
+
+static LhatType *infer_def(Checker *c, const LhatNode *node, LhatType *base)
 {
     LhatType *definition = lhat_type_table(&c->result->types);
     LhatType *instance = lhat_type_table(&c->result->types);
+
+    // 14.5: composition is ordered, and the derived side is written against
+    // what the base already provides.
+    copy_members(c, definition, base);
+    copy_members(c, instance, instance_of(base));
 
     const LhatNode *template = NULL;
     for (const LhatNode *entry = node->v.list.items; entry != NULL;
@@ -1010,8 +1242,8 @@ static LhatType *infer_def(Checker *c, const LhatNode *node)
             }
             // 14.11: an initializer, evaluated at each construction. Its type
             // is what the field holds.
-            lhat_type_add_member(&c->result->types, instance, name, length,
-                                 infer(c, field->v.entry.value));
+            set_member(c, instance, name, length,
+                       infer(c, field->v.entry.value));
         }
     }
 
@@ -1043,8 +1275,9 @@ static LhatType *infer_def(Checker *c, const LhatNode *node)
             continue;
         }
         LhatType *type = infer(c, entry->v.entry.value);
-        lhat_type_add_member(&c->result->types, definition, name, length, type);
-        lhat_type_add_member(&c->result->types, instance, name, length, type);
+        type = check_same_name(c, entry, find_member(base, name, length), type);
+        set_member(c, definition, name, length, type);
+        set_member(c, instance, name, length, type);
         if (name_is(name, length, "new")) {
             has_new = true;
         }
@@ -1055,11 +1288,23 @@ static LhatType *infer_def(Checker *c, const LhatNode *node)
 
     // 14.11: without one written, a definition still offers a new^ taking no
     // arguments, since the template already fixes every field's value.
+    //
+    // An inherited one keeps its parameters but has to build the derived
+    // instance, so it is rebuilt rather than copied: 14.5 composes to make
+    // something new, and a constructor returning the base would defeat that.
     if (!has_new) {
+        const LhatTypeMember *inherited = find_member(base, "new", 3);
         LhatType *constructor = lhat_type_func(&c->result->types, true);
+        if (inherited != NULL && inherited->type != NULL &&
+            inherited->type->kind == LHAT_TYPE_FUNC) {
+            for (const LhatTypeList *p = inherited->type->v.func.params;
+                 p != NULL; p = p->next) {
+                lhat_type_add_param(&c->result->types, constructor, p->type);
+            }
+            constructor->v.func.variadic = inherited->type->v.func.variadic;
+        }
         constructor->v.func.result = instance;
-        lhat_type_add_member(&c->result->types, definition, "new", 3,
-                             constructor);
+        set_member(c, definition, "new", 3, constructor);
     }
     return definition;
 }
@@ -1092,7 +1337,7 @@ static LhatType *infer(Checker *c, const LhatNode *node)
             return infer_table(c, node);
 
         case LHAT_NODE_DEF:
-            return infer_def(c, node);
+            return infer_def(c, node, NULL);
 
         case LHAT_NODE_SELF_TABLE: {
             // 14.11: in the body of a def^ this declares the fields, and
@@ -1652,6 +1897,14 @@ const char *lhat_check_error_message(LhatCheckErrorCode code)
             return "the left of ?? cannot be nil^";
         case LHAT_CHECK_ERR_TRY_OUTSIDE:
             return "try^ would return an error this subroutine cannot return";
+        case LHAT_CHECK_ERR_MEMBER_EXISTS:
+            return "this name is already a member; write override^ or overload^";
+        case LHAT_CHECK_ERR_NOTHING_TO_OVERRIDE:
+            return "there is no member of this name to override^ or overload^";
+        case LHAT_CHECK_ERR_NOT_SUBSTITUTABLE:
+            return "override^ has to be usable where the original was";
+        case LHAT_CHECK_ERR_OVERLOAD_OVERLAPS:
+            return "overload^ overlaps an existing signature";
         case LHAT_CHECK_ERR_NOT_DISPOSABLE:
             return "with^ needs a value with a dispose() that returns nothing";
         case LHAT_CHECK_ERR_RECURSION_NEEDS_TYPE:

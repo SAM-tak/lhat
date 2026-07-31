@@ -40,7 +40,12 @@ typedef enum {
     LHAT_CHECK_ERR_CANNOT_BE_NIL,       // 11.7, the same for '??'
     LHAT_CHECK_ERR_TRY_OUTSIDE,         // 04 の 5.3
     LHAT_CHECK_ERR_RECURSION_NEEDS_TYPE,// 03 の 3.4
-    LHAT_CHECK_ERR_NOT_DISPOSABLE       // 12.5: with^ needs a dispose()
+    LHAT_CHECK_ERR_NOT_DISPOSABLE,      // 12.5: with^ needs a dispose()
+
+    LHAT_CHECK_ERR_MEMBER_EXISTS,       // 14.12: same name, no marker
+    LHAT_CHECK_ERR_NOTHING_TO_OVERRIDE, // a marker with nothing under it
+    LHAT_CHECK_ERR_NOT_SUBSTITUTABLE,   // 14.12: override^ has to fit
+    LHAT_CHECK_ERR_OVERLOAD_OVERLAPS    // 14.12: signatures must stay apart
 } LhatCheckErrorCode;
 
 typedef struct {
