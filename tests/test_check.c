@@ -697,6 +697,42 @@ static void test_definitions(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
+    // 05 の 2.2: one environment for names, which is what 14.9 needs -- it
+    // says a definition takes its name from its binding, so that name has to
+    // be reachable where a type is written.
+    LHAT_TEST("a definition's name works as a type");
+    check_text(&u,
+               "let^ Foo = def^{ self^{ v := 1 } }\n"
+               "let^ x : Foo = Foo.new^()\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // 14.7: writing the name asks for the whole structure, and that is what
+    // an instance carries -- so as a type the name means an instance.
+    LHAT_TEST("as a type the name means an instance");
+    check_text(&u,
+               "let^ Foo = def^{ self^{ v := 1 } }\n"
+               "let^ x : Foo = Foo.new^()\n"
+               "let^ n : number^ = x.v\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("the definition itself is not an instance");
+    check_text(&u,
+               "let^ Foo = def^{ self^{ v := 1 } }\n"
+               "let^ x : Foo = Foo\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
+    unit_dispose(&u);
+
+    // 05 の 2.2: an errordef^ name lives in the same place, so a value of the
+    // same name collides rather than shadowing quietly.
+    LHAT_TEST("a type and a value of one name collide");
+    check_text(&u,
+               "errordef^ E { A }\n"
+               "let^ E = 1\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_REDEFINED);
+    unit_dispose(&u);
+
     // 14.9: the name is a label, so two definitions of the same shape are one
     // type and nothing has to be shared for that to hold.
     LHAT_TEST("identity stays structural");

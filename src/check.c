@@ -38,7 +38,7 @@ typedef struct {
     bool strict;
 
     Scope *scope;
-    Scope *type_scope;  // errordef^ sets and their kinds
+    // 05 の 2.2: one environment. A name means a value, a type, or both.
 
     // Innermost first. A branch pushes and pops around its body, so the list
     // is a stack rather than something scopes own.
@@ -206,6 +206,7 @@ static LhatType *infer(Checker *c, const LhatNode *node);
 static void check_statement(Checker *c, const LhatNode *node);
 static void check_statements(Checker *c, const LhatNode *statements);
 static LhatType *infer_def(Checker *c, const LhatNode *node, LhatType *base);
+static LhatType *instance_of(const LhatType *definition);
 static LhatType *only(Checker *c, LhatType *type, LhatType *wanted);
 static LhatType *without(Checker *c, LhatType *type, LhatType *unwanted);
 
@@ -342,12 +343,22 @@ static LhatType *resolve_type(Checker *c, const LhatNode *node)
             if (builtin != NULL) {
                 return builtin;
             }
-            Binding *declared = scope_find(c->type_scope, name, length);
-            if (declared != NULL) {
-                return declared->type;
+            // 05 の 2.2: one environment. A name written as a type is looked
+            // up in the same place a value is, which is what 14.9 needs --
+            // it says a definition takes its name from its binding, and a
+            // binding lives here.
+            Binding *declared = scope_find(c->scope, name, length);
+            if (declared == NULL) {
+                report(c, node, LHAT_CHECK_ERR_UNKNOWN_TYPE);
+                return simple(c, LHAT_TYPE_UNKNOWN);
             }
-            report(c, node, LHAT_CHECK_ERR_UNKNOWN_TYPE);
-            return simple(c, LHAT_TYPE_UNKNOWN);
+
+            // 05 の 2.2 with 14.7: as a value a definition is the definition;
+            // as a type it is an instance of it, since 14.7 makes writing the
+            // name ask for the whole structure and that is what an instance
+            // carries.
+            LhatType *instance = instance_of(declared->type);
+            return instance != NULL ? instance : declared->type;
         }
 
         case LHAT_NODE_MEMBER:
@@ -1660,7 +1671,7 @@ static void check_errordef(Checker *c, const LhatNode *node)
     }
 
     LhatType *set = lhat_type_error_set(&c->result->types, name, length);
-    scope_add(c->type_scope, name, length, set, node->offset);
+    scope_add(c->scope, name, length, set, node->offset)->reached = true;
 
     for (const LhatNode *kind = node->v.named.members; kind != NULL;
          kind = kind->next) {
@@ -1907,23 +1918,16 @@ void lhat_check(const LhatNode *unit, const LhatSource *source, bool strict,
     scope.tail = NULL;
     scope.parent = NULL;
 
-    Scope types;
-    types.bindings = NULL;
-    types.tail = NULL;
-    types.parent = NULL;
-
     Checker checker;
     memset(&checker, 0, sizeof checker);
     checker.source = source;
     checker.result = result;
     checker.strict = strict;
     checker.scope = &scope;
-    checker.type_scope = &types;
 
     check_statements(&checker, unit->v.list.items);
 
     scope_dispose(&scope);
-    scope_dispose(&types);
 }
 
 void lhat_check_result_dispose(LhatCheckResult *result)
