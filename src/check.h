@@ -45,7 +45,8 @@ typedef enum {
     LHAT_CHECK_ERR_MEMBER_EXISTS,       // 14.12: same name, no marker
     LHAT_CHECK_ERR_NOTHING_TO_OVERRIDE, // a marker with nothing under it
     LHAT_CHECK_ERR_NOT_SUBSTITUTABLE,   // 14.12: override^ has to fit
-    LHAT_CHECK_ERR_OVERLOAD_OVERLAPS    // 14.12: signatures must stay apart
+    LHAT_CHECK_ERR_OVERLOAD_OVERLAPS,   // 14.12: signatures must stay apart
+    LHAT_CHECK_ERR_INCOMPARABLE         // no value inhabits both sides
 } LhatCheckErrorCode;
 
 typedef struct {

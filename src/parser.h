@@ -5,8 +5,8 @@
 // returns every '^'-suffixed word as one token kind and leaves the meaning
 // to this stage (01 の 2.1).
 //
-// Not covered yet: pattern matching (S19) and the command form of a call
-// (2 章). Everything else that the design documents have settled parses.
+// Not covered yet: the command form of a call (2 章). Everything else the
+// design documents have settled parses.
 
 #ifndef LHAT_PARSER_H
 #define LHAT_PARSER_H

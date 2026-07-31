@@ -152,7 +152,7 @@ static void print_node(const LhatLexer *lexer, const LhatNode *node, int depth)
             break;
         case LHAT_NODE_FOR: {
             static const char *const kinds[] = {
-                "to^", "downto^", "in^", "while^", "until^", "if^"
+                "to^", "downto^", "in^", "while^", "until^", "if^", "when^"
             };
             printf(" %s", kinds[node->v.loop.kind]);
             break;

@@ -781,11 +781,18 @@ static void test_loops(void)
     LHAT_CHECK_EQ_INT(first_statement(&p)->v.loop.kind, LHAT_FOR_UNTIL);
     parse_dispose(&p);
 
-    // 16.2: the focus need not be named.
-    LHAT_TEST("an unnamed focus");
+    // 16.2: the focus need not be named, and it^ is what names it. It is
+    // bound like any other focus rather than left as a bare expression, so
+    // 16.1's reading of for^ holds for every form.
+    LHAT_TEST("an unnamed focus is bound to it^");
     parse_text(&p, "for^ 1 to^ 10 { print(it^) }");
     LHAT_CHECK_EQ_INT(error_count(&p), 0);
-    LHAT_CHECK_EQ_INT(first_statement(&p)->v.loop.focus->kind, LHAT_NODE_INT);
+    {
+        const LhatNode *focus = first_statement(&p)->v.loop.focus;
+        LHAT_CHECK_EQ_INT(focus->kind, LHAT_NODE_DEFINE);
+        LHAT_CHECK_EQ_INT(focus->v.binding.targets->kind, LHAT_NODE_FOCUS);
+        LHAT_CHECK_EQ_INT(focus->v.binding.values->kind, LHAT_NODE_INT);
+    }
     parse_dispose(&p);
 
     // 16.3: this form does not iterate at all.
@@ -802,6 +809,132 @@ static void test_loops(void)
     parse_dispose(&p);
 
     LHAT_TEST("for^ needs a driving clause");
+    parse_text(&p, "for^ i := 1 { }");
+    LHAT_CHECK(p.result.diagnostic_count > 0, "expected a diagnostic");
+    LHAT_CHECK_EQ_INT(p.result.diagnostics[0].code,
+                      LHAT_PARSE_ERR_FOR_NEEDS_CLAUSE);
+    parse_dispose(&p);
+}
+
+// 17 章.
+static void test_patterns(void)
+{
+    Parse p;
+
+    // 17.9: the clauses become an if-chain, so the expansion is the tree
+    // itself rather than something a later stage performs.
+    LHAT_TEST("when^ clauses become an if-chain");
+    parse_text(&p, "for^ x { when^ 0: a() other^: b() }");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    {
+        const LhatNode *s = first_statement(&p);
+        LHAT_CHECK_EQ_INT(s->v.loop.kind, LHAT_FOR_WHEN);
+        LHAT_CHECK_EQ_INT(s->v.loop.body->kind, LHAT_NODE_IF_STMT);
+        const LhatNode *clauses = s->v.loop.body->v.list.items;
+        LHAT_CHECK_EQ_INT(lhat_node_list_length(clauses), 2);
+        // when^ V: lowers to a comparison against the subject.
+        LHAT_CHECK(is_binary(clauses->v.clause.condition, LHAT_OP_EQ),
+                   "expected the subject compared to the value");
+        // 17.5: the default carries no condition.
+        LHAT_CHECK(clauses->next->v.clause.condition == NULL, "other^ is bare");
+    }
+    parse_dispose(&p);
+
+    // 17.2: the subject is a focus like any other, so it is bound once.
+    LHAT_TEST("the subject is bound");
+    parse_text(&p, "for^ parse(s) { when^ 0: a() }");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    {
+        const LhatNode *focus = first_statement(&p)->v.loop.focus;
+        LHAT_CHECK_EQ_INT(focus->kind, LHAT_NODE_DEFINE);
+        LHAT_CHECK_EQ_INT(focus->v.binding.targets->kind, LHAT_NODE_FOCUS);
+    }
+    parse_dispose(&p);
+
+    LHAT_TEST("the subject may be named");
+    parse_text(&p, "for^ r := parse(s) { when^ 0: a() }");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    LHAT_CHECK_EQ_INT(
+        first_statement(&p)->v.loop.focus->v.binding.targets->kind,
+        LHAT_NODE_IDENT);
+    parse_dispose(&p);
+
+    // 17.3: both ends are included, so the range is a pair of comparisons.
+    LHAT_TEST("a range pattern becomes two comparisons");
+    parse_text(&p, "for^ x { when^ 1 to^ 3: a() }");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    {
+        const LhatNode *condition =
+            first_statement(&p)->v.loop.body->v.list.items->v.clause.condition;
+        LHAT_CHECK(is_binary(condition, LHAT_OP_AND), "expected and^");
+        LHAT_CHECK(is_binary(condition->v.binary.left, LHAT_OP_GE), "≧ low");
+        LHAT_CHECK(is_binary(condition->v.binary.right, LHAT_OP_LE), "≦ high");
+    }
+    parse_dispose(&p);
+
+    // 17.4: a type pattern says so with is^, since a bare name could be
+    // either a value or a type.
+    LHAT_TEST("a type pattern keeps is^");
+    parse_text(&p, "for^ x { when^ is^ number^: a() }");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    {
+        const LhatNode *condition =
+            first_statement(&p)->v.loop.body->v.list.items->v.clause.condition;
+        LHAT_CHECK(is_binary(condition, LHAT_OP_IS), "expected is^");
+        LHAT_CHECK_EQ_INT(condition->v.binary.right->kind, LHAT_NODE_TYPE_NAME);
+    }
+    parse_dispose(&p);
+
+    LHAT_TEST("several patterns on one when^ are an or^");
+    parse_text(&p, "for^ x { when^ 1, 2, 3: a() }");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    {
+        const LhatNode *condition =
+            first_statement(&p)->v.loop.body->v.list.items->v.clause.condition;
+        LHAT_CHECK(is_binary(condition, LHAT_OP_OR), "expected or^");
+    }
+    parse_dispose(&p);
+
+    // 17.5: el^ and else^ mean the same as other^.
+    LHAT_TEST("the default may be spelled el^ or else^");
+    parse_text(&p, "for^ x { when^ 0: a() el^: b() }");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    parse_dispose(&p);
+
+    LHAT_TEST("the ':' after a pattern is required");
+    parse_text(&p, "for^ x { when^ 0 a() }");
+    LHAT_CHECK(p.result.diagnostic_count > 0, "expected a diagnostic");
+    parse_dispose(&p);
+
+    // 17.6: only the ':' after the subject opens, so one ';' closes it.
+    LHAT_TEST("the expression form is closed by one ';'");
+    parse_text(&p, "let^ r = for^ x: when^ 0: 1 when^ 1 to^ 3: 2 other^: 3 ;");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    {
+        const LhatNode *value = first_value(&p);
+        LHAT_CHECK_EQ_INT(value->kind, LHAT_NODE_FOR);
+        LHAT_CHECK_EQ_INT(value->v.loop.kind, LHAT_FOR_WHEN);
+        LHAT_CHECK_EQ_INT(value->v.loop.body->kind, LHAT_NODE_IF_EXPR);
+        LHAT_CHECK_EQ_INT(
+            lhat_node_list_length(value->v.loop.body->v.list.items), 3);
+    }
+    parse_dispose(&p);
+
+    // The ':' of the expression form has the shape of 16.3's annotation, and
+    // what follows is what tells them apart.
+    LHAT_TEST("a typed focus is still a typed focus");
+    parse_text(&p, "for^ i:number^ := 1 to^ 3 { print(i) }");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    {
+        const LhatNode *target =
+            first_statement(&p)->v.loop.focus->v.binding.targets;
+        LHAT_CHECK_EQ_INT(target->kind, LHAT_NODE_PARAM);
+        LHAT_CHECK(target->v.param.type != NULL, "the annotation survives");
+    }
+    parse_dispose(&p);
+
+    // A brace with no when^ dispatches on nothing and iterates over nothing.
+    LHAT_TEST("a match with no clauses is the missing clause of 16.3");
     parse_text(&p, "for^ i := 1 { }");
     LHAT_CHECK(p.result.diagnostic_count > 0, "expected a diagnostic");
     LHAT_CHECK_EQ_INT(p.result.diagnostics[0].code,
@@ -1373,6 +1506,7 @@ int main(void)
     test_conditionals();
     test_types();
     test_loops();
+    test_patterns();
     test_repeat();
     test_loop_clauses();
     test_definitions();

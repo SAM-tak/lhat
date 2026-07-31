@@ -117,6 +117,12 @@ static bool node_name(const Checker *c, const LhatNode *node,
             return true;
         case LHAT_NODE_SCOPE:
             return node_name(c, node->v.scope.name, text, length);
+        case LHAT_NODE_FOCUS:
+            // 16.2: the focus with no name written is called it^, and the
+            // source need not contain the word for that to be its name.
+            *text = "it";
+            *length = 2;
+            return true;
         default:
             return false;
     }
@@ -198,6 +204,7 @@ static LhatType *simple(Checker *c, LhatTypeKind kind)
 static LhatType *resolve_type(Checker *c, const LhatNode *node);
 static LhatType *infer(Checker *c, const LhatNode *node);
 static void check_statement(Checker *c, const LhatNode *node);
+static void check_statements(Checker *c, const LhatNode *statements);
 static LhatType *infer_def(Checker *c, const LhatNode *node, LhatType *base);
 static LhatType *only(Checker *c, LhatType *type, LhatType *wanted);
 static LhatType *without(Checker *c, LhatType *type, LhatType *unwanted);
@@ -776,6 +783,13 @@ static LhatType *infer_binary(Checker *c, const LhatNode *node)
         case LHAT_OP_GT:
         case LHAT_OP_LE:
         case LHAT_OP_GE:
+            // 14.12's disjointness says whether any value inhabits both. If
+            // none does the answer is fixed before the program runs, which is
+            // a mistake rather than a comparison. Which types are ordered is
+            // left alone -- this only refuses the pairs that can never meet.
+            if (lhat_type_disjoint(left, right)) {
+                report(c, node, LHAT_CHECK_ERR_INCOMPARABLE);
+            }
             return simple(c, LHAT_TYPE_BOOL);
 
         case LHAT_OP_CONCAT:
@@ -1327,7 +1341,8 @@ static LhatType *infer(Checker *c, const LhatNode *node)
 
         case LHAT_NODE_IDENT:
         case LHAT_NODE_HAT_IDENT:
-        case LHAT_NODE_SCOPE: {
+        case LHAT_NODE_SCOPE:
+        case LHAT_NODE_FOCUS: {
             // 13.11: a branch may know more about this path than the binding.
             LhatType *narrowed = narrowed_type(c, node);
             return narrowed != NULL ? narrowed : infer_name(c, node);
@@ -1441,6 +1456,24 @@ static LhatType *infer(Checker *c, const LhatNode *node)
                 narrow_from(c, condition, false);
             }
             pop_narrowings(c, outer);
+            return result;
+        }
+
+        case LHAT_NODE_FOR: {
+            // 17.2: the expression form of a match. The subject is a binding
+            // like any other focus, so it needs the scope 16.1 implies, and
+            // the body is already the if-chain of 17.9.
+            Scope scope;
+            scope.bindings = NULL;
+            scope.tail = NULL;
+            scope.parent = c->scope;
+
+            Scope *outer = c->scope;
+            c->scope = &scope;
+            check_statements(c, node->v.loop.focus);
+            LhatType *result = infer(c, node->v.loop.body);
+            c->scope = outer;
+            scope_dispose(&scope);
             return result;
         }
 
@@ -1897,6 +1930,8 @@ const char *lhat_check_error_message(LhatCheckErrorCode code)
             return "the left of ?? cannot be nil^";
         case LHAT_CHECK_ERR_TRY_OUTSIDE:
             return "try^ would return an error this subroutine cannot return";
+        case LHAT_CHECK_ERR_INCOMPARABLE:
+            return "these can never be equal, so the comparison is fixed already";
         case LHAT_CHECK_ERR_MEMBER_EXISTS:
             return "this name is already a member; write override^ or overload^";
         case LHAT_CHECK_ERR_NOTHING_TO_OVERRIDE:

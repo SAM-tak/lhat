@@ -33,6 +33,7 @@ static LhatNode *parse_clause_body(Parser *p, const LhatToken *at, bool in_loop)
 static LhatNode *access_node(Parser *p, LhatNodeKind kind, const LhatToken *at,
                              LhatNode *target, LhatNode *argument, bool nil_safe);
 static LhatNode *simple_node(Parser *p);
+static LhatNode *parse_for(Parser *p);
 static LhatNode *parse_binding(Parser *p, LhatNodeKind kind,
                                const LhatToken *at, LhatNode *targets);
 static bool is_binary_op(const LhatNode *node, LhatOpKind op);
@@ -903,6 +904,11 @@ static LhatNode *parse_primary(Parser *p)
                 advance(p);
                 return parse_if_expression(p, t);
             }
+            // 17.2: the expression form of a match. parse_for sorts out which
+            // form it is, since both start the same way.
+            if (check_hat(p, "for")) {
+                return parse_for(p);
+            }
             if (check_hat(p, "def")) {
                 return parse_def(p);
             }
@@ -1681,6 +1687,19 @@ static LhatNode *parse_if_statement(Parser *p, LhatToken start)
 
 // 16.3. The focus is a list of bindings, of destructuring targets, or one
 // expression when it is unnamed and reached through it^ (16.2).
+// True when the parser stands where a type annotation could begin but the
+// ':' really opens the clauses of 17.2.
+static bool opens_when_clauses(const Parser *p)
+{
+    if (!check_op(p, LHAT_OP_COLON) || p->ahead.kind != LHAT_TOKEN_HAT_IDENT) {
+        return false;
+    }
+    return token_is_hat(p, &p->ahead, "when") ||
+           token_is_hat(p, &p->ahead, "other") ||
+           token_is_hat(p, &p->ahead, "el") ||
+           token_is_hat(p, &p->ahead, "else");
+}
+
 static LhatNode *parse_for_focus(Parser *p)
 {
     LhatNode *head = NULL;
@@ -1688,7 +1707,21 @@ static LhatNode *parse_for_focus(Parser *p)
 
     for (;;) {
         LhatToken at = p->current;
-        LhatNode *target = parse_target(p);
+
+        // 17.2's expression form puts a ':' straight after the subject, which
+        // is the shape of the type annotation of 16.3. What follows the ':'
+        // tells them apart, and one token of lookahead is enough.
+        LhatNode *target = parse_expression(p);
+        if (check_op(p, LHAT_OP_COLON) && !opens_when_clauses(p)) {
+            advance(p);
+            LhatNode *annotated = make(p, LHAT_NODE_PARAM, &at);
+            if (annotated == NULL) {
+                break;
+            }
+            annotated->v.param.name = target;
+            annotated->v.param.type = parse_type(p);
+            target = annotated;
+        }
 
         if (check_op(p, LHAT_OP_DEFINE)) {
             advance(p);
@@ -1699,6 +1732,19 @@ static LhatNode *parse_for_focus(Parser *p)
             binding->v.binding.targets = target;
             binding->v.binding.values = parse_expression(p);
             target = binding;
+        } else if (head == NULL && !check_op(p, LHAT_OP_COMMA)) {
+            // 16.2: a focus with no name written is still a focus, and it^ is
+            // what names it. Binding it here rather than leaving a bare
+            // expression means every form of for^ introduces a name, which is
+            // what 16.1 says for^ is for.
+            LhatNode *binding = make(p, LHAT_NODE_DEFINE, &at);
+            LhatNode *name = make(p, LHAT_NODE_FOCUS, &at);
+            if (binding == NULL || name == NULL) {
+                break;
+            }
+            binding->v.binding.targets = name;
+            binding->v.binding.values = target;
+            target = binding;
         }
 
         lhat_node_append(&head, &tail, target);
@@ -1707,6 +1753,157 @@ static LhatNode *parse_for_focus(Parser *p)
         }
     }
     return head;
+}
+
+// 17.9: a pattern becomes the condition of an if-clause, which is what makes
+// narrowing and exhaustiveness apply without anything new. The subject is
+// referred to by the name for^ gave it, copied so each condition holds its
+// own node.
+static LhatNode *subject_reference(Parser *p, const LhatNode *focus,
+                                   const LhatToken *at)
+{
+    const LhatNode *name = focus;
+    if (name != NULL && name->kind == LHAT_NODE_DEFINE) {
+        name = name->v.binding.targets;
+    }
+    if (name != NULL && name->kind == LHAT_NODE_PARAM) {
+        name = name->v.param.name;
+    }
+    if (name == NULL) {
+        return NULL;
+    }
+
+    LhatNode *copy = make(p, name->kind, at);
+    if (copy != NULL && name->kind != LHAT_NODE_FOCUS) {
+        copy->v = name->v;
+        copy->next = NULL;
+    }
+    return copy;
+}
+
+static LhatNode *binary_node(Parser *p, const LhatToken *at, LhatOpKind op,
+                             LhatNode *left, LhatNode *right)
+{
+    LhatNode *node = make(p, LHAT_NODE_BINARY, at);
+    if (node == NULL) {
+        return left;
+    }
+    node->v.binary.op = op;
+    node->v.binary.left = left;
+    node->v.binary.right = right;
+    return node;
+}
+
+// One pattern of 17.3, lowered against the subject.
+static LhatNode *parse_pattern(Parser *p, const LhatNode *focus)
+{
+    LhatToken at = p->current;
+
+    // 17.4: a type has to say so, since a bare name cannot be told from a
+    // value. is^ already means exactly this question (13.11).
+    if (match_hat(p, "is")) {
+        return binary_node(p, &at, LHAT_OP_IS, subject_reference(p, focus, &at),
+                           parse_type(p));
+    }
+
+    LhatNode *low = parse_expression(p);
+    if (!check_hat(p, "to")) {
+        return binary_node(p, &at, LHAT_OP_EQ, subject_reference(p, focus, &at),
+                           low);
+    }
+
+    // 17.3: both ends are included, as in 16.4.
+    advance(p);
+    LhatNode *high = parse_expression(p);
+    return binary_node(
+        p, &at, LHAT_OP_AND,
+        binary_node(p, &at, LHAT_OP_GE, subject_reference(p, focus, &at), low),
+        binary_node(p, &at, LHAT_OP_LE, subject_reference(p, focus, &at), high));
+}
+
+// 17.3: several patterns on one when^ mean any of them, which is an or^.
+static LhatNode *parse_patterns(Parser *p, const LhatNode *focus)
+{
+    LhatToken at = p->current;
+    LhatNode *condition = parse_pattern(p, focus);
+    while (match_op(p, LHAT_OP_COMMA)) {
+        condition = binary_node(p, &at, LHAT_OP_OR, condition,
+                                parse_pattern(p, focus));
+    }
+    return condition;
+}
+
+static bool is_when_marker(const Parser *p)
+{
+    return check_hat(p, "when") || check_hat(p, "other") || is_else_marker(p);
+}
+
+// 17.2. The clauses become an if-chain, so 17.9's expansion is the tree
+// itself rather than something a later stage has to perform.
+//
+// 17.6: only the ':' after the subject opens, exactly as only the if^ of an
+// if expression does, so the expression form is closed by one ';'.
+static LhatNode *parse_when_clauses(Parser *p, const LhatToken *start,
+                                    const LhatNode *focus, bool as_expression)
+{
+    LhatNode *node = make(p, as_expression ? LHAT_NODE_IF_EXPR
+                                           : LHAT_NODE_IF_STMT, start);
+    if (node == NULL) {
+        return NULL;
+    }
+
+    LhatNode *head = NULL;
+    LhatNode *tail = NULL;
+
+    while (is_when_marker(p)) {
+        LhatToken at = p->current;
+        bool defaulting = !check_hat(p, "when");
+        advance(p);
+
+        LhatNode *clause = make(p, LHAT_NODE_IF_CLAUSE, &at);
+        if (clause == NULL) {
+            break;
+        }
+        if (!defaulting) {
+            clause->v.clause.condition = parse_patterns(p, focus);
+        }
+
+        // 17.5: the ':' is not optional. Memo.md L195 had left that open.
+        expect_op(p, LHAT_OP_COLON);
+
+        if (as_expression) {
+            clause->v.clause.body = parse_expression(p);
+        } else {
+            LhatNode *block = make(p, LHAT_NODE_BLOCK, &at);
+            if (block == NULL) {
+                break;
+            }
+            LhatNode *statements = NULL;
+            LhatNode *statements_tail = NULL;
+            while (!at_eof(p) && !check_op(p, LHAT_OP_RBRACE) &&
+                   !is_when_marker(p)) {
+                uint32_t before = p->current.offset;
+                lhat_node_append(&statements, &statements_tail,
+                                 parse_statement(p));
+                if (p->panicking) {
+                    synchronize(p);
+                }
+                if (p->current.offset == before && !at_eof(p)) {
+                    advance(p);
+                }
+            }
+            block->v.list.items = statements;
+            clause->v.clause.body = block;
+        }
+
+        lhat_node_append(&head, &tail, clause);
+        if (defaulting) {
+            break;  // 17.5: the default is the last thing there can be
+        }
+    }
+
+    node->v.list.items = head;
+    return node;
 }
 
 // next^ takes one or more statements, separated by commas (Memo.md L532).
@@ -1774,6 +1971,29 @@ static LhatNode *parse_for(Parser *p)
         node->v.loop.kind = LHAT_FOR_IF;
         node->v.loop.bound = parse_expression(p);
         node->v.loop.body = parse_if_body(p, at, node->v.loop.bound);
+        return node;
+    } else if (check_op(p, LHAT_OP_LBRACE) || check_op(p, LHAT_OP_COLON)) {
+        // 17 章: no driving clause at all, so what follows dispatches on the
+        // subject rather than iterating over it.
+        node->v.loop.kind = LHAT_FOR_WHEN;
+        bool as_expression = check_op(p, LHAT_OP_COLON);
+        LhatToken at = p->current;
+        advance(p);
+
+        node->v.loop.body =
+            parse_when_clauses(p, &at, node->v.loop.focus, as_expression);
+
+        // A brace with no when^ inside dispatches on nothing and iterates
+        // over nothing, so it is the missing clause of 16.3 rather than an
+        // empty match.
+        if (node->v.loop.body != NULL &&
+            node->v.loop.body->v.list.items == NULL) {
+            report(p, &at, LHAT_PARSE_ERR_FOR_NEEDS_CLAUSE);
+        }
+
+        // 17.6: one ';' closes the expression form, since only the ':' after
+        // the subject opened anything.
+        expect_op(p, as_expression ? LHAT_OP_SEMICOLON : LHAT_OP_RBRACE);
         return node;
     } else {
         report(p, &p->current, LHAT_PARSE_ERR_FOR_NEEDS_CLAUSE);

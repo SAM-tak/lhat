@@ -25,6 +25,9 @@ typedef enum {
     LHAT_NODE_NAME,          // `a name`
     LHAT_NODE_IDENT,
     LHAT_NODE_HAT_IDENT,     // used as a value: true^, nil^, self^ ...
+    // 16.2: the focus for^ introduced when no name was written. Carries no
+    // span, since 'it^' need not appear in the source for it to be there.
+    LHAT_NODE_FOCUS,
     LHAT_NODE_SCOPE,         // $x, $$x, $^x  (01 の 8 章)
     LHAT_NODE_INTERP,        // $"..." -- list of INTERP_TEXT / INTERP_HOLE
     LHAT_NODE_INTERP_TEXT,
@@ -87,7 +90,8 @@ typedef enum {
     LHAT_FOR_IN,      // in^ iterable
     LHAT_FOR_WHILE,   // while^ cond [next^ stmt]
     LHAT_FOR_UNTIL,   // until^ cond [next^ stmt]
-    LHAT_FOR_IF       // if^ cond -- not a loop at all (16.3)
+    LHAT_FOR_IF,      // if^ cond -- not a loop at all (16.3)
+    LHAT_FOR_WHEN     // when^ patterns -- not a loop either (17 章)
 } LhatForKind;
 
 // 16.5: repeat^ carries no focus.

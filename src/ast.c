@@ -88,6 +88,7 @@ const char *lhat_node_kind_name(LhatNodeKind kind)
         case LHAT_NODE_NAME:           return "name";
         case LHAT_NODE_IDENT:          return "ident";
         case LHAT_NODE_HAT_IDENT:      return "hat-ident";
+        case LHAT_NODE_FOCUS:          return "focus (it^)";
         case LHAT_NODE_SCOPE:          return "scope";
         case LHAT_NODE_INTERP:         return "interp";
         case LHAT_NODE_INTERP_TEXT:    return "interp-text";
