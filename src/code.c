@@ -206,6 +206,9 @@ const char *lhat_opcode_name(LhatOpcode op)
         case LHAT_BC_ISERROR:     return "iserror";
         case LHAT_BC_ISKIND:      return "iskind";
         case LHAT_BC_ISNIL:       return "isnil";
+        case LHAT_BC_PUSHCLEANUP: return "pushcleanup";
+        case LHAT_BC_POPCLEANUP:  return "popcleanup";
+        case LHAT_BC_ENDCLEANUP:  return "endcleanup";
         case LHAT_BC_JUMP:        return "jump";
         case LHAT_BC_JUMP_FALSE:  return "jumpfalse";
         case LHAT_BC_RETURN:      return "return";
@@ -253,11 +256,16 @@ void lhat_chunk_print(const LhatChunk *chunk, size_t index, char *out,
         case LHAT_BC_LOADNIL:
         case LHAT_BC_CLOSE:
         case LHAT_BC_NEWTABLE:
+        case LHAT_BC_POPCLEANUP:
         case LHAT_BC_RETURN:
             snprintf(out, size, "%-10s r%u", name, lhat_a(i));
             break;
         case LHAT_BC_RETURN_NIL:
+        case LHAT_BC_ENDCLEANUP:
             snprintf(out, size, "%s", name);
+            break;
+        case LHAT_BC_PUSHCLEANUP:
+            snprintf(out, size, "%-10s -> %u", name, lhat_bx(i));
             break;
         case LHAT_BC_LOADBOOL:
         case LHAT_BC_MOVE:

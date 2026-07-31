@@ -70,6 +70,13 @@ typedef enum {
     LHAT_BC_ISKIND,     // A B C R[A] = R[B] is an error of the kind in R[C]
     LHAT_BC_ISNIL,      // A B   R[A] = R[B] is nil^   (02 の 11.7)
 
+    // 5.5: the frame holds the cleanups it has not run, and every exit drains
+    // them. One instruction pushes, one drains, one ends a cleanup body -- so
+    // a finally^ and a with^ are the same thing to the machine.
+    LHAT_BC_PUSHCLEANUP,  // Bx  remember the body at Bx (an instruction index)
+    LHAT_BC_POPCLEANUP,   // A   run the cleanups above depth A, innermost first
+    LHAT_BC_ENDCLEANUP,   //     the end of a cleanup body
+
     LHAT_BC_RETURN,     // A     return R[A]
     LHAT_BC_RETURN_NIL,
 

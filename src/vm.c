@@ -16,6 +16,7 @@ typedef struct LoopContext {
     struct LoopContext *enclosing;
     size_t jumps[LHAT_MAX_BREAKS];
     size_t count;
+    size_t cleanup_depth;  // what a break^ has to drain back down to
 } LoopContext;
 
 // ---------------------------------------------------------------------------
@@ -49,6 +50,11 @@ typedef struct Compiler {
     uint8_t next_register;
 
     LoopContext *loop;  // the innermost loop being compiled, NULL outside one
+
+    // 5.5: how many cleanups are pending here. The compiler tracks it so that
+    // an exit knows how far to drain; the machine holds the cleanups.
+    size_t cleanup_depth;
+    bool in_cleanup;  // 02 の 10.5: no return^ inside a finally^
 
     // 04 の 2.4: a kind is the place it was declared, so the compiler keeps
     // one object per kind and hands the same one to every use. They live on
@@ -205,6 +211,7 @@ static size_t find_upvalue(Compiler *c, const char *name, size_t length)
 static void compile_expression(Compiler *c, const LhatNode *node, uint8_t into);
 static void compile_statement(Compiler *c, const LhatNode *node);
 static void compile_statements(Compiler *c, const LhatNode *statements);
+static void compile_block(Compiler *c, const LhatNode *block);
 
 // The outermost compiler. The kind objects and the registry of declarations
 // live there so that a nested body sees the same ones the unit made.
@@ -743,8 +750,9 @@ static void compile_subroutine(Compiler *c, const LhatNode *node, uint8_t into)
         proto->parameters++;
     }
 
-    const LhatNode *body = node->v.func.body;
-    compile_statements(&inner, body != NULL ? body->v.list.items : NULL);
+    // 02 の 10.1: a p^ body is a block that may carry a finally^, which is
+    // where resources are handled and so where it is most wanted.
+    compile_block(&inner, node->v.func.body);
     if (lhat_chunk_emit(&proto->chunk,
                         lhat_encode_abc(LHAT_BC_RETURN_NIL, 0, 0, 0)) ==
         SIZE_MAX) {
@@ -1132,6 +1140,43 @@ static void compile_statements(Compiler *c, const LhatNode *statements)
     c->next_register = register_mark;
 }
 
+// 5.5: a cleanup is a stretch of code the frame remembers and runs on the way
+// out. The body is emitted after the block it belongs to, so the instruction
+// naming it is written first and filled in once the body has an address.
+static size_t emit_cleanup_push(Compiler *c)
+{
+    size_t at = lhat_chunk_emit(&c->proto->chunk,
+                                lhat_encode_abx(LHAT_BC_PUSHCLEANUP, 0, 0));
+    if (at == SIZE_MAX) {
+        fail(c, LHAT_COMPILE_TOO_COMPLEX);
+    }
+    c->cleanup_depth++;
+    return at;
+}
+
+// Unlike a jump, this names an instruction outright rather than a distance,
+// since the frame keeps it and runs it from wherever it happens to be.
+static void patch_cleanup_here(Compiler *c, size_t at)
+{
+    LhatChunk *chunk = &c->proto->chunk;
+    if (at == SIZE_MAX || at >= chunk->count) {
+        return;
+    }
+    if (chunk->count > 0xFFFF) {
+        fail(c, LHAT_COMPILE_TOO_COMPLEX);
+        return;
+    }
+    chunk->code[at] = lhat_encode_abx(LHAT_BC_PUSHCLEANUP, 0,
+                                      (uint16_t)chunk->count);
+}
+
+static void emit_cleanup_drain(Compiler *c, size_t down_to)
+{
+    if (c->cleanup_depth > down_to) {
+        emit(c, lhat_encode_abc(LHAT_BC_POPCLEANUP, (uint8_t)down_to, 0, 0));
+    }
+}
+
 // The statements go into the scope that is already open, so the names they
 // make outlive them. 9.7 needs this: first^ runs inside the loop but declares
 // outside it, in the same storage prolog^ uses.
@@ -1201,6 +1246,109 @@ static void compile_numeric_advance(Compiler *c, const LhatNode *node,
                             focus->reg, focus->reg, step));
 }
 
+// 02 の 10.1: finally^ belongs to blocks in general, not to loops. A block
+// that has one remembers it on the way in and runs it on every way out --
+// which 10.2 wants and 5.5 says is the frame's job rather than the compiler's.
+static void compile_block(Compiler *c, const LhatNode *block)
+{
+    if (block == NULL) {
+        return;
+    }
+    const LhatNode *cleanup = clause_of(block, LHAT_CLAUSE_FINALLY);
+    if (cleanup == NULL) {
+        compile_statements(c, block->v.list.items);
+        return;
+    }
+
+    size_t entry = c->cleanup_depth;
+    size_t push = emit_cleanup_push(c);
+
+    compile_statements(c, block->v.list.items);
+
+    emit_cleanup_drain(c, entry);
+    c->cleanup_depth = entry;
+    size_t over = emit_jump(c, LHAT_BC_JUMP, 0);
+
+    patch_cleanup_here(c, push);
+    bool enclosing = c->in_cleanup;
+    c->in_cleanup = true;
+    compile_statements(c, cleanup);
+    c->in_cleanup = enclosing;
+    emit(c, lhat_encode_abc(LHAT_BC_ENDCLEANUP, 0, 0, 0));
+
+    lhat_chunk_patch_here(&c->proto->chunk, over);
+}
+
+// 02 の 12 章: with^ names a resource and the block's end disposes of it.
+// 12.3 gives dispose() the same strength as finally^, so it is the same
+// mechanism -- the cleanup body is just a call written by the compiler.
+//
+// 12.2 wants the disposals in reverse order of definition, which the drain
+// gives for nothing: the cleanups are a stack.
+//
+// 12.4 wants finally^ before dispose(). That falls out too, since the block's
+// own finally^ is pushed after these and so is drained first.
+static void compile_with(Compiler *c, const LhatNode *node)
+{
+    size_t local_mark = c->local_count;
+    uint8_t register_mark = c->next_register;
+    size_t entry = c->cleanup_depth;
+
+    size_t pushes[LHAT_MAX_LOCALS];
+    uint8_t held[LHAT_MAX_LOCALS];
+    size_t count = 0;
+
+    declare_names(c, node->v.list.items);
+    for (const LhatNode *binding = node->v.list.items; binding != NULL;
+         binding = binding->next) {
+        compile_statement(c, binding);
+
+        const char *name = NULL;
+        size_t length = 0;
+        const Local *local = NULL;
+        if (node_name(c, define_target_name(binding->v.binding.targets), &name,
+                      &length)) {
+            local = find_local(c, name, length);
+        }
+        if (local == NULL || count >= LHAT_MAX_LOCALS) {
+            fail(c, LHAT_COMPILE_UNSUPPORTED);
+            return;
+        }
+        held[count] = local->reg;
+        pushes[count] = emit_cleanup_push(c);
+        count++;
+    }
+
+    compile_block(c, node->v.list.extra);
+
+    emit_cleanup_drain(c, entry);
+    c->cleanup_depth = entry;
+    size_t over = emit_jump(c, LHAT_BC_JUMP, 0);
+
+    // One body per binding: read dispose, call it, and hand control back.
+    // 12.7 makes dispose() unable to fail and 12.5 makes its absence a matter
+    // for the checker, so nothing here has to cope with either.
+    for (size_t i = 0; i < count; i++) {
+        patch_cleanup_here(c, pushes[i]);
+        uint8_t mark = c->next_register;
+        uint8_t callee = reserve(c);
+        uint8_t key = reserve(c);
+        load_string_bytes(c, key, "dispose", 7);
+        emit(c, lhat_encode_abc(LHAT_BC_GETINDEX, callee, held[i], key));
+        emit(c, lhat_encode_abc(LHAT_BC_CALL, callee, 0, 0));
+        c->next_register = mark;
+        emit(c, lhat_encode_abc(LHAT_BC_ENDCLEANUP, 0, 0, 0));
+    }
+
+    lhat_chunk_patch_here(&c->proto->chunk, over);
+
+    if (c->local_count > local_mark) {
+        emit(c, lhat_encode_abc(LHAT_BC_CLOSE, register_mark, 0, 0));
+    }
+    c->local_count = local_mark;
+    c->next_register = register_mark;
+}
+
 // 16.3's if^ clause, which 16.1 explains is not a loop: the focus is
 // introduced, used once, and goes. Written out it is the do^ block of 16.3.
 static void compile_for_if(Compiler *c, const LhatNode *node)
@@ -1254,10 +1402,7 @@ static void compile_loop(Compiler *c, const LhatNode *node)
     const LhatNode *first = clause_of(body, LHAT_CLAUSE_FIRST);
     const LhatNode *last = clause_of(body, LHAT_CLAUSE_LAST);
     const LhatNode *epilog = clause_of(body, LHAT_CLAUSE_EPILOG);
-    if (clause_of(body, LHAT_CLAUSE_FINALLY) != NULL) {
-        fail(c, LHAT_COMPILE_UNSUPPORTED);  // 5.5: the frame queue comes later
-        return;
-    }
+    const LhatNode *cleanup = clause_of(body, LHAT_CLAUSE_FINALLY);
 
     // 16.7 and 9.4: the focus and the names of prolog^ and first^ last for
     // the whole loop, so they are made in a scope outside it.
@@ -1301,6 +1446,15 @@ static void compile_loop(Compiler *c, const LhatNode *node)
         load_constant(c, counter, lhat_integer(0));
     }
 
+    // 9.2 puts finally^ last of all, and 10.2 makes it run on every way out.
+    // Remembering it here covers the ways out that 9.8 keeps apart from a
+    // normal end: a return^ or a try^ from inside the body.
+    size_t cleanup_entry = c->cleanup_depth;
+    size_t cleanup_push = SIZE_MAX;
+    if (cleanup != NULL) {
+        cleanup_push = emit_cleanup_push(c);
+    }
+
     declare_names(c, prolog);
     declare_names(c, first);
     compile_in_scope(c, prolog);
@@ -1328,6 +1482,7 @@ static void compile_loop(Compiler *c, const LhatNode *node)
     LoopContext context;
     context.enclosing = c->loop;
     context.count = 0;
+    context.cleanup_depth = c->cleanup_depth;
     c->loop = &context;
 
     size_t top = c->proto->chunk.count;
@@ -1419,6 +1574,23 @@ static void compile_loop(Compiler *c, const LhatNode *node)
     }
     compile_in_scope(c, epilog);
 
+    // 9.2 and 10.9: epilog^ is the last of the loop's own clauses, and
+    // finally^ comes after it whichever way the loop ended.
+    if (cleanup != NULL) {
+        emit_cleanup_drain(c, cleanup_entry);
+        c->cleanup_depth = cleanup_entry;
+        size_t over = emit_jump(c, LHAT_BC_JUMP, 0);
+
+        patch_cleanup_here(c, cleanup_push);
+        bool enclosing = c->in_cleanup;
+        c->in_cleanup = true;
+        compile_statements(c, cleanup);
+        c->in_cleanup = enclosing;
+        emit(c, lhat_encode_abc(LHAT_BC_ENDCLEANUP, 0, 0, 0));
+
+        lhat_chunk_patch_here(&c->proto->chunk, over);
+    }
+
     if (c->local_count > local_mark) {
         emit(c, lhat_encode_abc(LHAT_BC_CLOSE, register_mark, 0, 0));
     }
@@ -1442,10 +1614,22 @@ static void compile_statement(Compiler *c, const LhatNode *node)
             return;
 
         case LHAT_NODE_BLOCK:
-            compile_statements(c, node->v.list.items);
+            compile_block(c, node);
+            return;
+
+        case LHAT_NODE_WITH:
+            compile_with(c, node);
             return;
 
         case LHAT_NODE_RETURN: {
+            // 02 の 10.5: a finally^ cannot replace the answer, so it cannot
+            // return one. Java allows it and it is a known trap; C# refuses.
+            if (c->in_cleanup) {
+                fail(c, LHAT_COMPILE_UNSUPPORTED);
+                return;
+            }
+            // The frame drains what it has pending on the way out (5.5), so
+            // nothing has to be emitted here for the blocks being left.
             if (node->v.jump.value == NULL) {
                 emit(c, lhat_encode_abc(LHAT_BC_RETURN_NIL, 0, 0, 0));
                 return;
@@ -1524,6 +1708,10 @@ static void compile_statement(Compiler *c, const LhatNode *node)
                 fail(c, LHAT_COMPILE_UNSUPPORTED);
                 return;
             }
+            // 9.8: break^ is a normal end for the loop, so the blocks between
+            // here and it are left the ordinary way -- their cleanups run
+            // before the jump rather than being carried out of the frame.
+            emit_cleanup_drain(c, c->loop->cleanup_depth);
             c->loop->jumps[c->loop->count++] = emit_jump(c, LHAT_BC_JUMP, 0);
             return;
         }
@@ -1725,11 +1913,25 @@ static bool ordering(LhatOpcode op, LhatValue left, LhatValue right,
 #define LHAT_STACK_SLOTS 8192
 #define LHAT_MAX_FRAMES 200
 
+#define LHAT_MAX_CLEANUPS 32
+
 typedef struct {
     const LhatClosure *closure;
     size_t pc;
     LhatValue *base;   // 5.2: the frame's registers start here
     uint8_t result;    // where in the caller's frame the answer goes
+
+    // 5.5: the cleanups this frame has entered and not yet run, innermost
+    // last. A finally^ and a with^ are both just a stretch of code to run.
+    size_t cleanups[LHAT_MAX_CLEANUPS];
+    size_t cleanup_count;
+
+    // Draining state. `target` is the depth to stop at; `resume` is where to
+    // carry on afterwards, unless the drain is a return^ carrying `answer`.
+    size_t drain_target;
+    size_t resume;
+    LhatValue answer;
+    bool returning;
 } Frame;
 
 typedef struct {
@@ -2101,6 +2303,8 @@ LhatRunResult lhat_run(const LhatProto *proto)
                 called->pc = 0;
                 called->base = next_base;
                 called->result = a;
+                called->cleanup_count = 0;  // 5.5: pending cleanups are per frame
+                called->returning = false;
 
                 frame = called;
                 registers = frame->base;
@@ -2109,30 +2313,67 @@ LhatRunResult lhat_run(const LhatProto *proto)
                 break;
             }
 
-            case LHAT_BC_RETURN:
-            case LHAT_BC_RETURN_NIL: {
-                LhatValue value = op == LHAT_BC_RETURN ? registers[a]
-                                                       : lhat_nil();
-                // 5.4: whatever still points into this frame takes its value
-                // with it, since the slots are about to be reused.
-                close_upvalues(m, frame->base);
-                m->frame_count--;
-
-                if (m->frame_count == 0) {
-                    return finish(m, LHAT_RUN_OK, value, at);
+            case LHAT_BC_PUSHCLEANUP:
+                if (frame->cleanup_count >= LHAT_MAX_CLEANUPS) {
+                    return finish(m, LHAT_RUN_STACK_OVERFLOW, lhat_nil(), at);
                 }
-
-                uint8_t into = frame->result;
-                frame = &m->frames[m->frame_count - 1];
-                registers = frame->base;
-                chunk = &frame->closure->proto->chunk;
-                pc = frame->pc;
-                registers[into] = value;
+                frame->cleanups[frame->cleanup_count++] = lhat_bx(instruction);
                 break;
-            }
+
+            // 10.2 and 12.3: leaving the block runs what it entered. The two
+            // cases differ only in where control goes afterwards.
+            case LHAT_BC_POPCLEANUP:
+                frame->drain_target = a;
+                frame->resume = pc;
+                frame->returning = false;
+                goto drain;
+
+            case LHAT_BC_ENDCLEANUP:
+                goto drain;
+
+            // 10.4: leaving the procedure leaves every block inside it, so
+            // the drain runs everything still pending before the frame goes.
+            case LHAT_BC_RETURN:
+            case LHAT_BC_RETURN_NIL:
+                frame->drain_target = 0;
+                frame->returning = true;
+                frame->answer = op == LHAT_BC_RETURN ? registers[a] : lhat_nil();
+                goto drain;
 
             case LHAT_BC_COUNT:
                 return finish(m, LHAT_RUN_TYPE_ERROR, lhat_nil(), at);
+        }
+        continue;
+
+    drain:
+        // Innermost first, one at a time: each body ends with ENDCLEANUP,
+        // which comes back here for the next.
+        if (frame->cleanup_count > frame->drain_target) {
+            pc = frame->cleanups[--frame->cleanup_count];
+            continue;
+        }
+        if (!frame->returning) {
+            pc = frame->resume;
+            continue;
+        }
+
+        // 5.4: whatever still points into this frame takes its value with it,
+        // since the slots are about to be reused.
+        {
+            LhatValue value = frame->answer;
+            close_upvalues(m, frame->base);
+            m->frame_count--;
+
+            if (m->frame_count == 0) {
+                return finish(m, LHAT_RUN_OK, value, at);
+            }
+
+            uint8_t into = frame->result;
+            frame = &m->frames[m->frame_count - 1];
+            registers = frame->base;
+            chunk = &frame->closure->proto->chunk;
+            pc = frame->pc;
+            registers[into] = value;
         }
     }
 

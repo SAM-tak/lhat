@@ -1264,6 +1264,248 @@ static void test_catch_and_try(void)
     run_dispose(&r);
 }
 
+// 02 の 10 章 and 12 章: the cleanups, which 5.5 makes one mechanism.
+static void test_cleanups(void)
+{
+    Run r;
+
+    LHAT_TEST("finally^ runs when the block ends");
+    run_text(&r,
+             "let^ log = { n := 0 }\n"
+             "do^{\n"
+             "  log.n := 1\n"
+             "finally^:\n"
+             "  log.n := log.n + 10\n"
+             "}\n"
+             "return^ log.n\n");
+    CHECK_INTEGER(&r, 11);
+    run_dispose(&r);
+
+    // 10.2: however the block is left.
+    LHAT_TEST("finally^ runs when return^ leaves through it");
+    run_text(&r,
+             "let^ log = { n := 0 }\n"
+             "let^ go = p^ {\n"
+             "  do^{\n"
+             "    return^ 1\n"
+             "  finally^:\n"
+             "    log.n := 7\n"
+             "  }\n"
+             "}\n"
+             "go()\n"
+             "return^ log.n\n");
+    CHECK_INTEGER(&r, 7);
+    run_dispose(&r);
+
+    LHAT_TEST("and when break^ leaves through it");
+    run_text(&r,
+             "let^ log = { n := 0 }\n"
+             "repeat^ 5 {\n"
+             "  do^{\n"
+             "    log.n := log.n + 1\n"
+             "    break^\n"
+             "  finally^:\n"
+             "    log.n := log.n + 10\n"
+             "  }\n"
+             "}\n"
+             "return^ log.n\n");
+    CHECK_INTEGER(&r, 11);
+    run_dispose(&r);
+
+    // 04 の 5.2: try^ leaves the way return^ does, so finally^ still runs.
+    LHAT_TEST("and when try^ hands an error to the caller");
+    run_text(&r,
+             "errordef^ E { Bad }\n"
+             "let^ log = { n := 0 }\n"
+             "let^ fail = f^ { return^ error^E.Bad{ } }\n"
+             "let^ go = p^ {\n"
+             "  do^{\n"
+             "    let^ v = try^ fail()\n"
+             "  finally^:\n"
+             "    log.n := 3\n"
+             "  }\n"
+             "  return^ 0\n"
+             "}\n"
+             "go()\n"
+             "return^ log.n\n");
+    CHECK_INTEGER(&r, 3);
+    run_dispose(&r);
+
+    // 10.1: a p^ body is a block like any other.
+    LHAT_TEST("a procedure body may carry a finally^");
+    run_text(&r,
+             "let^ log = { n := 0 }\n"
+             "let^ go = p^ {\n"
+             "  return^ 1\n"
+             "finally^:\n"
+             "  log.n := 5\n"
+             "}\n"
+             "go()\n"
+             "return^ log.n\n");
+    CHECK_INTEGER(&r, 5);
+    run_dispose(&r);
+
+    // 10.4: innermost first, which is the order the frame drains in.
+    LHAT_TEST("nested finally^ run from the inside out");
+    run_text(&r,
+             "let^ log = { s := 0 }\n"
+             "let^ go = p^ {\n"
+             "  do^{\n"
+             "    do^{\n"
+             "      return^ 1\n"
+             "    finally^:\n"
+             "      log.s := log.s * 10 + 1\n"
+             "    }\n"
+             "  finally^:\n"
+             "    log.s := log.s * 10 + 2\n"
+             "  }\n"
+             "}\n"
+             "go()\n"
+             "return^ log.s\n");
+    CHECK_INTEGER(&r, 12);
+    run_dispose(&r);
+
+    LHAT_TEST("a finally^ that was already run is not run again");
+    run_text(&r,
+             "let^ log = { n := 0 }\n"
+             "let^ go = p^ {\n"
+             "  do^{\n"
+             "    log.n := log.n + 1\n"
+             "  finally^:\n"
+             "    log.n := log.n + 10\n"
+             "  }\n"
+             "  return^ 0\n"
+             "}\n"
+             "go()\n"
+             "return^ log.n\n");
+    CHECK_INTEGER(&r, 11);
+    run_dispose(&r);
+
+    // 10.5: Java lets a finally return and silently replace the answer. C#
+    // refuses; so does this.
+    LHAT_TEST("return^ inside a finally^ does not compile");
+    run_text(&r, "do^{\n  let^ x = 1\nfinally^:\n  return^ 2\n}\n");
+    LHAT_CHECK_EQ_INT(r.compiled, LHAT_COMPILE_UNSUPPORTED);
+    run_dispose(&r);
+
+    // 9.2 and 10.9: finally^ comes after the loop's own clauses.
+    LHAT_TEST("a loop's finally^ runs after its epilog^");
+    run_text(&r,
+             "let^ log = { s := 0 }\n"
+             "repeat^ 1 {\n"
+             "  main^:\n"
+             "    log.s := log.s * 10 + 1\n"
+             "  epilog^:\n"
+             "    log.s := log.s * 10 + 2\n"
+             "  finally^:\n"
+             "    log.s := log.s * 10 + 3\n"
+             "}\n"
+             "return^ log.s\n");
+    CHECK_INTEGER(&r, 123);
+    run_dispose(&r);
+
+    // 9.8: a return^ out of a loop runs neither epilog^ nor last^, but 10.2
+    // still runs the finally^.
+    LHAT_TEST("a return^ out of a loop runs the finally^ and nothing else");
+    run_text(&r,
+             "let^ log = { s := 0 }\n"
+             "let^ go = p^ {\n"
+             "  repeat^ 3 {\n"
+             "    main^:\n"
+             "      return^ 1\n"
+             "    epilog^:\n"
+             "      log.s := log.s * 10 + 2\n"
+             "    finally^:\n"
+             "      log.s := log.s * 10 + 3\n"
+             "  }\n"
+             "}\n"
+             "go()\n"
+             "return^ log.s\n");
+    CHECK_INTEGER(&r, 3);
+    run_dispose(&r);
+
+    // 12.2: dispose() at the end of the block.
+    LHAT_TEST("with^ disposes at the end of the block");
+    run_text(&r,
+             "let^ log = { n := 0 }\n"
+             "let^ open = f^ { return^ { dispose := p^ { log.n := 1 } } }\n"
+             "with^ h := open()\n"
+             "{\n"
+             "  log.n := 0\n"
+             "}\n"
+             "return^ log.n\n");
+    CHECK_INTEGER(&r, 1);
+    run_dispose(&r);
+
+    // 12.2: the reverse of the order they were defined in, so a resource that
+    // depends on an earlier one goes first.
+    LHAT_TEST("several with^ dispose in reverse order");
+    run_text(&r,
+             "let^ log = { s := 0 }\n"
+             "let^ res = f^n { return^ { dispose := p^ { log.s := log.s * 10 + n } } }\n"
+             "with^ a := res(1)\n"
+             "with^ b := res(2)\n"
+             "{\n"
+             "  log.s := 0\n"
+             "}\n"
+             "return^ log.s\n");
+    CHECK_INTEGER(&r, 21);
+    run_dispose(&r);
+
+    // 12.3: dispose() has the same strength as finally^.
+    LHAT_TEST("with^ disposes when return^ leaves through it");
+    run_text(&r,
+             "let^ log = { n := 0 }\n"
+             "let^ open = f^ { return^ { dispose := p^ { log.n := 4 } } }\n"
+             "let^ go = p^ {\n"
+             "  with^ h := open()\n"
+             "  {\n"
+             "    return^ 1\n"
+             "  }\n"
+             "}\n"
+             "go()\n"
+             "return^ log.n\n");
+    CHECK_INTEGER(&r, 4);
+    run_dispose(&r);
+
+    // 12.4: finally^ first, dispose() after, because with^ wraps the block
+    // from outside and finally^ is its last clause from inside.
+    LHAT_TEST("finally^ runs before the dispose that surrounds it");
+    run_text(&r,
+             "let^ log = { s := 0 }\n"
+             "let^ open = f^ { return^ { dispose := p^ { log.s := log.s * 10 + 2 } } }\n"
+             "with^ h := open()\n"
+             "{\n"
+             "  log.s := 0\n"
+             "finally^:\n"
+             "  log.s := log.s * 10 + 1\n"
+             "}\n"
+             "return^ log.s\n");
+    CHECK_INTEGER(&r, 12);
+    run_dispose(&r);
+
+    LHAT_TEST("the resource is in scope inside the block and not after it");
+    run_text(&r,
+             "let^ open = f^ { return^ { dispose := p^ { }, n := 6 } }\n"
+             "let^ seen = 0\n"
+             "with^ h := open()\n"
+             "{\n"
+             "  seen := h.n\n"
+             "}\n"
+             "return^ seen\n");
+    CHECK_INTEGER(&r, 6);
+    run_dispose(&r);
+
+    run_text(&r,
+             "let^ open = f^ { return^ { dispose := p^ { } } }\n"
+             "with^ h := open()\n"
+             "{\n"
+             "}\n"
+             "return^ h\n");
+    LHAT_CHECK_EQ_INT(r.compiled, LHAT_COMPILE_UNDEFINED);
+    run_dispose(&r);
+}
+
 int main(void)
 {
     test_encoding();
@@ -1279,5 +1521,6 @@ int main(void)
     test_loop_clauses();
     test_errors();
     test_catch_and_try();
+    test_cleanups();
     return lhat_test_report("test_vm");
 }
