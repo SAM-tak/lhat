@@ -34,6 +34,7 @@ add_library(lhat_core STATIC
     src/parser.c
     src/type.c
     src/check.c
+    src/value.c
 )
 
 target_include_directories(lhat_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)

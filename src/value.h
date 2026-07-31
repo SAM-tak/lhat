@@ -1,0 +1,153 @@
+// L^ (lhat) -- the runtime representation of a value.
+//
+// Section numbers refer to DesignDocuments/03-compilation-pipeline.md unless
+// prefixed with "02".
+//
+// 2.1: a value carries its own type. 2.2 makes that a tagged union rather
+// than NaN boxing, so a 64-bit integer fits without being put on the heap.
+//
+// **Nothing outside this header touches the representation.** 2.2 keeps NaN
+// boxing available as a later swap, and that only stays true while the rest
+// of the runtime goes through the constructors and accessors below.
+
+#ifndef LHAT_VALUE_H
+#define LHAT_VALUE_H
+
+#include <stdbool.h>
+#include <stddef.h>
+#include <stdint.h>
+
+// 2.2. Integer and real are separate tags but one type: 02 の 14.8 makes
+// number^ a single type whose representation may differ at run time.
+typedef enum {
+    LHAT_VALUE_NIL,
+    LHAT_VALUE_BOOL,
+    LHAT_VALUE_INTEGER,
+    LHAT_VALUE_REAL,
+    LHAT_VALUE_OBJECT
+} LhatValueTag;
+
+// What a heap value is. Kept on the object rather than in the tag so that a
+// value stays one word plus a tag whatever gets added here.
+typedef enum {
+    LHAT_OBJECT_STRING,
+    LHAT_OBJECT_TABLE,       // 02 の 10.7: the one data structure
+    LHAT_OBJECT_SUBROUTINE,  // f^ and p^ (02 の 15 章)
+    LHAT_OBJECT_COROUTINE,   // 02 の 13.9
+    LHAT_OBJECT_ERROR        // 04 の 2.3
+} LhatObjectKind;
+
+typedef struct LhatObject {
+    LhatObjectKind kind;
+    struct LhatObject *next;  // every object, for the collector to walk
+} LhatObject;
+
+typedef struct {
+    union {
+        bool boolean;
+        int64_t integer;
+        double real;
+        LhatObject *object;
+    } as;
+    LhatValueTag tag;
+} LhatValue;
+
+// ---------------------------------------------------------------------------
+// Construction
+// ---------------------------------------------------------------------------
+
+static inline LhatValue lhat_nil(void)
+{
+    LhatValue v;
+    v.tag = LHAT_VALUE_NIL;
+    v.as.integer = 0;
+    return v;
+}
+
+static inline LhatValue lhat_bool(bool b)
+{
+    LhatValue v;
+    v.tag = LHAT_VALUE_BOOL;
+    v.as.boolean = b;
+    return v;
+}
+
+static inline LhatValue lhat_integer(int64_t i)
+{
+    LhatValue v;
+    v.tag = LHAT_VALUE_INTEGER;
+    v.as.integer = i;
+    return v;
+}
+
+static inline LhatValue lhat_real(double d)
+{
+    LhatValue v;
+    v.tag = LHAT_VALUE_REAL;
+    v.as.real = d;
+    return v;
+}
+
+static inline LhatValue lhat_object(LhatObject *o)
+{
+    LhatValue v;
+    v.tag = LHAT_VALUE_OBJECT;
+    v.as.object = o;
+    return v;
+}
+
+// ---------------------------------------------------------------------------
+// Questions
+// ---------------------------------------------------------------------------
+
+static inline bool lhat_is_nil(LhatValue v)     { return v.tag == LHAT_VALUE_NIL; }
+static inline bool lhat_is_bool(LhatValue v)    { return v.tag == LHAT_VALUE_BOOL; }
+static inline bool lhat_is_integer(LhatValue v) { return v.tag == LHAT_VALUE_INTEGER; }
+static inline bool lhat_is_real(LhatValue v)    { return v.tag == LHAT_VALUE_REAL; }
+static inline bool lhat_is_object(LhatValue v)  { return v.tag == LHAT_VALUE_OBJECT; }
+
+// 02 の 14.8: one type, two representations. Code asking "is this a number^"
+// has to accept either, and asking which representation is a separate
+// question with its own predicate above.
+static inline bool lhat_is_number(LhatValue v)
+{
+    return v.tag == LHAT_VALUE_INTEGER || v.tag == LHAT_VALUE_REAL;
+}
+
+static inline bool lhat_is_object_kind(LhatValue v, LhatObjectKind kind)
+{
+    return v.tag == LHAT_VALUE_OBJECT && v.as.object != NULL &&
+           v.as.object->kind == kind;
+}
+
+// ---------------------------------------------------------------------------
+// Extraction. Each is only valid when the matching question answered yes.
+// ---------------------------------------------------------------------------
+
+static inline bool lhat_as_bool(LhatValue v)       { return v.as.boolean; }
+static inline int64_t lhat_as_integer(LhatValue v) { return v.as.integer; }
+static inline double lhat_as_real(LhatValue v)     { return v.as.real; }
+static inline LhatObject *lhat_as_object(LhatValue v) { return v.as.object; }
+
+// The numeric value whichever representation it has. Reading an integer as a
+// double loses exactness past 2^53, so this is for the places that genuinely
+// want one number, not a shortcut around the two predicates.
+static inline double lhat_number_as_real(LhatValue v)
+{
+    return v.tag == LHAT_VALUE_INTEGER ? (double)v.as.integer : v.as.real;
+}
+
+// ---------------------------------------------------------------------------
+// Comparison
+// ---------------------------------------------------------------------------
+
+// Equality as '=' means it (02 の 11.6). Two numbers compare as numbers even
+// when their representations differ, since 14.8 makes them one type; an
+// object compares by identity until the collector and the string table give
+// a better answer.
+bool lhat_value_equal(LhatValue a, LhatValue b);
+
+const char *lhat_value_tag_name(LhatValueTag tag);
+const char *lhat_object_kind_name(LhatObjectKind kind);
+
+#endif  // LHAT_VALUE_H
