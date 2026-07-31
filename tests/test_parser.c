@@ -868,6 +868,168 @@ static void test_loop_clauses(void)
 }
 
 // 02 の 3.1: a REPL has to tell these two apart.
+// 14 章.
+static void test_definitions(void)
+{
+    Parse p;
+
+    LHAT_TEST("a definition with a template and methods");
+    parse_text(&p,
+               "FooBar := def^{\n"
+               "    self^{\n"
+               "        value1 := 0,\n"
+               "        value2 := '',\n"
+               "    },\n"
+               "    methodA := p^self^ { print(self^.value1) },\n"
+               "    staticProperty := 'x',\n"
+               "}");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    {
+        const LhatNode *def = first_value(&p);
+        LHAT_CHECK_EQ_INT(def->kind, LHAT_NODE_DEF);
+        LHAT_CHECK_EQ_INT(lhat_node_list_length(def->v.list.items), 3);
+
+        // 14.3: the template is the entry without a key.
+        const LhatNode *tmpl = def->v.list.items;
+        LHAT_CHECK(tmpl->v.entry.key == NULL, "the template has no key");
+        LHAT_CHECK_EQ_INT(tmpl->v.entry.value->kind, LHAT_NODE_SELF_TABLE);
+        LHAT_CHECK_EQ_INT(
+            lhat_node_list_length(tmpl->v.entry.value->v.list.items), 2);
+
+        // 14.4: nothing marks a method; the first parameter does.
+        const LhatNode *method = tmpl->next;
+        LHAT_CHECK(method->v.entry.key != NULL, "a member is named");
+        LHAT_CHECK_EQ_INT(method->v.entry.value->kind, LHAT_NODE_FUNC);
+        LHAT_CHECK(method->v.entry.value->v.func.params != NULL,
+                   "self^ is a parameter");
+    }
+    parse_dispose(&p);
+
+    // 14.9: def^ is an expression, which is what makes 14.5 read as an
+    // ordinary use of '..'.
+    LHAT_TEST("composition is a concatenation");
+    parse_text(&p, "FooBar2 := FooBar .. def^{ self^{ value3 := {} } }");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    {
+        const LhatNode *value = first_value(&p);
+        LHAT_CHECK(is_binary(value, LHAT_OP_CONCAT), "composed with '..'");
+        LHAT_CHECK_EQ_INT(value->v.binary.left->kind, LHAT_NODE_IDENT);
+        LHAT_CHECK_EQ_INT(value->v.binary.right->kind, LHAT_NODE_DEF);
+    }
+    parse_dispose(&p);
+
+    LHAT_TEST("override^ and overload^ mark the member that follows");
+    parse_text(&p,
+               "Bar := Foo .. def^{\n"
+               "    override^\n"
+               "    foo := p^ { print('b') },\n"
+               "    overload^ foo := p^x:string^ { print(x) },\n"
+               "    plain := 1,\n"
+               "}");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    {
+        const LhatNode *def = first_value(&p)->v.binary.right;
+        const LhatNode *entry = def->v.list.items;
+        LHAT_CHECK_EQ_INT(entry->v.entry.modifier, LHAT_DEF_OVERRIDE);
+        LHAT_CHECK_EQ_INT(entry->next->v.entry.modifier, LHAT_DEF_OVERLOAD);
+        LHAT_CHECK_EQ_INT(entry->next->next->v.entry.modifier, LHAT_DEF_PLAIN);
+    }
+    parse_dispose(&p);
+
+    // 14.11: the same spelling builds an instance inside new^.
+    LHAT_TEST("self^{ ... } inside new^");
+    parse_text(&p,
+               "FooBar := def^{\n"
+               "    self^{ value1 := 0, value2 := '' },\n"
+               "    new^ := f^v1:number^, v2:string^ {\n"
+               "        return^ self^{ value1 := v1 }\n"
+               "    },\n"
+               "}");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    {
+        const LhatNode *entry = first_value(&p)->v.list.items->next;
+        const LhatNode *body = entry->v.entry.value->v.func.body;
+        const LhatNode *ret = body->v.list.items;
+        LHAT_CHECK_EQ_INT(ret->kind, LHAT_NODE_RETURN);
+        LHAT_CHECK_EQ_INT(ret->v.jump.value->kind, LHAT_NODE_SELF_TABLE);
+    }
+    parse_dispose(&p);
+
+    // 14.4: self^ on its own stays a value. Only a '{' after it makes 14.6.
+    LHAT_TEST("bare self^ is still a value");
+    parse_text(&p, "x := self^.value1");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    {
+        const LhatNode *value = first_value(&p);
+        LHAT_CHECK_EQ_INT(value->kind, LHAT_NODE_MEMBER);
+        LHAT_CHECK_EQ_INT(value->v.access.target->kind, LHAT_NODE_HAT_IDENT);
+    }
+    parse_dispose(&p);
+
+    // 14.4: a method's parameter list is followed by the body's brace, which
+    // must not be read as a template.
+    LHAT_TEST("p^self^ { ... } is a parameter and a body");
+    parse_text(&p, "m := p^self^ { print(1) }");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    {
+        const LhatNode *func = first_value(&p);
+        LHAT_CHECK_EQ_INT(func->kind, LHAT_NODE_FUNC);
+        LHAT_CHECK_EQ_INT(lhat_node_list_length(func->v.func.params), 1);
+        LHAT_CHECK(func->v.func.body != NULL, "the brace opened the body");
+    }
+    parse_dispose(&p);
+
+    LHAT_TEST("class^ is an ordinary value");
+    parse_text(&p, "s := p^ { print(class^.staticProperty) }");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    parse_dispose(&p);
+
+    LHAT_TEST("a field of the template needs a name");
+    parse_text(&p, "F := def^{ self^{ 1, 2 } }");
+    LHAT_CHECK(p.result.diagnostic_count > 0, "expected a diagnostic");
+    LHAT_CHECK_EQ_INT(p.result.diagnostics[0].code,
+                      LHAT_PARSE_ERR_FIELD_NEEDS_NAME);
+    parse_dispose(&p);
+
+    LHAT_TEST("one template per definition");
+    parse_text(&p, "F := def^{ self^{ a := 1 }, self^{ b := 2 } }");
+    LHAT_CHECK(p.result.diagnostic_count > 0, "expected a diagnostic");
+    LHAT_CHECK_EQ_INT(p.result.diagnostics[0].code,
+                      LHAT_PARSE_ERR_DUPLICATE_TEMPLATE);
+    parse_dispose(&p);
+
+    LHAT_TEST("override^ cannot mark the template");
+    parse_text(&p, "F := def^{ override^ self^{ a := 1 } }");
+    LHAT_CHECK(p.result.diagnostic_count > 0, "expected a diagnostic");
+    LHAT_CHECK_EQ_INT(p.result.diagnostics[0].code,
+                      LHAT_PARSE_ERR_MODIFIER_ON_TEMPLATE);
+    parse_dispose(&p);
+
+    LHAT_TEST("a member needs ':='");
+    parse_text(&p, "F := def^{ foo }");
+    LHAT_CHECK(p.result.diagnostic_count > 0, "expected a diagnostic");
+    parse_dispose(&p);
+
+    // 14.10: the structural form is a type, written with ':' rather than ':='.
+    LHAT_TEST("the structural form of a definition");
+    parse_text(&p, "d := x as^ t^{ dispose : p^self^; }");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    {
+        const LhatNode *type = first_value(&p)->v.ascription.type;
+        LHAT_CHECK_EQ_INT(type->kind, LHAT_NODE_TYPE_TABLE);
+        LHAT_CHECK_EQ_INT(lhat_node_list_length(type->v.list.items), 1);
+    }
+    parse_dispose(&p);
+
+    // 14.5: '&' composes the type, '..' composes the definition.
+    LHAT_TEST("an intersection of a name and a structure");
+    parse_text(&p, "d := x as^ Foo & t^{ dispose : p^self^; }");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    LHAT_CHECK_EQ_INT(first_value(&p)->v.ascription.type->kind,
+                      LHAT_NODE_TYPE_INTERSECT);
+    parse_dispose(&p);
+}
+
 static void test_incomplete(void)
 {
     Parse p;
@@ -959,6 +1121,7 @@ int main(void)
     test_loops();
     test_repeat();
     test_loop_clauses();
+    test_definitions();
     test_incomplete();
     test_recovery();
     test_realistic();

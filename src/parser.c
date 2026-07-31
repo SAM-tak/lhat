@@ -493,17 +493,12 @@ static LhatNode *parse_interpolation(Parser *p)
     return node;
 }
 
-// 10.7: a bare '{ ... }' is a table literal.
-static LhatNode *parse_table(Parser *p)
+// Entries of a braced list, shared by the table literal and by the field
+// template of 14.6. A table may hold positional values; a template names
+// every field, so `require_key` reports the difference here rather than
+// leaving a nameless field for a later stage to puzzle over.
+static LhatNode *parse_brace_entries(Parser *p, bool require_key)
 {
-    LhatToken start = p->current;
-    advance(p);  // {
-
-    LhatNode *node = make(p, LHAT_NODE_TABLE, &start);
-    if (node == NULL) {
-        return NULL;
-    }
-
     LhatNode *head = NULL;
     LhatNode *tail = NULL;
 
@@ -521,8 +516,112 @@ static LhatNode *parse_table(Parser *p)
         if (keyed) {
             entry->v.entry.key = simple_node(p);
             advance(p);  // :=
+        } else if (require_key) {
+            report(p, &p->current, LHAT_PARSE_ERR_FIELD_NEEDS_NAME);
         }
         entry->v.entry.value = parse_expression(p);
+
+        lhat_node_append(&head, &tail, entry);
+
+        if (!match_op(p, LHAT_OP_COMMA)) {
+            break;
+        }
+    }
+    return head;
+}
+
+// 10.7: a bare '{ ... }' is a table literal.
+static LhatNode *parse_table(Parser *p)
+{
+    LhatToken start = p->current;
+    advance(p);  // {
+
+    LhatNode *node = make(p, LHAT_NODE_TABLE, &start);
+    if (node == NULL) {
+        return NULL;
+    }
+    node->v.list.items = parse_brace_entries(p, false);
+    expect_op(p, LHAT_OP_RBRACE);
+    return node;
+}
+
+// 14.6 and 14.11: one spelling, two readings decided by where it stands. In
+// the body of a def^ it declares the fields an instance gets; inside new^ it
+// fills them in. Both name the fields of an instance, so the parser keeps
+// them as one node and lets the position speak.
+static LhatNode *parse_self_table(Parser *p)
+{
+    LhatToken start = p->current;
+    advance(p);  // self^
+
+    LhatNode *node = make(p, LHAT_NODE_SELF_TABLE, &start);
+    if (node == NULL) {
+        return NULL;
+    }
+    advance(p);  // {
+    node->v.list.items = parse_brace_entries(p, true);
+    expect_op(p, LHAT_OP_RBRACE);
+    return node;
+}
+
+// 14 章. def^ stays an expression (14.9), so the name of a definition comes
+// from whatever it is bound to and composition reads as an ordinary '..'.
+static LhatNode *parse_def(Parser *p)
+{
+    LhatToken start = p->current;
+    advance(p);  // def^
+
+    LhatNode *node = make(p, LHAT_NODE_DEF, &start);
+    if (node == NULL) {
+        return NULL;
+    }
+    if (!expect_op(p, LHAT_OP_LBRACE)) {
+        return node;
+    }
+
+    LhatNode *head = NULL;
+    LhatNode *tail = NULL;
+    bool seen_template = false;
+
+    while (!at_eof(p) && !check_op(p, LHAT_OP_RBRACE)) {
+        LhatToken at = p->current;
+        LhatDefModifier modifier = LHAT_DEF_PLAIN;
+
+        // 14.12. The marker leads the member it applies to.
+        if (match_hat(p, "override")) {
+            modifier = LHAT_DEF_OVERRIDE;
+        } else if (match_hat(p, "overload")) {
+            modifier = LHAT_DEF_OVERLOAD;
+        }
+
+        LhatNode *entry = make(p, LHAT_NODE_TABLE_ENTRY, &at);
+        if (entry == NULL) {
+            break;
+        }
+        entry->v.entry.modifier = modifier;
+
+        if (check_hat(p, "self") && is_op(&p->ahead, LHAT_OP_LBRACE)) {
+            // 14.3: the template is the one entry that is not a member, so it
+            // carries no key and no marker of 14.12 can apply to it.
+            if (modifier != LHAT_DEF_PLAIN) {
+                report(p, &at, LHAT_PARSE_ERR_MODIFIER_ON_TEMPLATE);
+            }
+            if (seen_template) {
+                report(p, &p->current, LHAT_PARSE_ERR_DUPLICATE_TEMPLATE);
+            }
+            seen_template = true;
+            entry->v.entry.value = parse_self_table(p);
+        } else if (p->current.kind == LHAT_TOKEN_IDENT ||
+                   p->current.kind == LHAT_TOKEN_NAME_LITERAL ||
+                   p->current.kind == LHAT_TOKEN_HAT_IDENT) {
+            entry->v.entry.key = simple_node(p);
+            if (expect_op(p, LHAT_OP_DEFINE)) {
+                entry->v.entry.value = parse_expression(p);
+            }
+        } else {
+            report(p, &p->current, LHAT_PARSE_ERR_EXPECTED_MEMBER);
+            break;
+        }
 
         lhat_node_append(&head, &tail, entry);
 
@@ -726,6 +825,16 @@ static LhatNode *parse_primary(Parser *p)
             if (check_hat(p, "if")) {
                 advance(p);
                 return parse_if_expression(p, t);
+            }
+            if (check_hat(p, "def")) {
+                return parse_def(p);
+            }
+            // 'self^' on its own is an ordinary value, as in self^.value1, so
+            // only a '{' immediately after it makes the form of 14.6. The
+            // parameter list of 14.4 never reaches here: it takes the name
+            // directly, and its '{' opens the body.
+            if (check_hat(p, "self") && is_op(&p->ahead, LHAT_OP_LBRACE)) {
+                return parse_self_table(p);
             }
             return simple_node(p);
 
@@ -1766,6 +1875,14 @@ const char *lhat_parse_error_message(LhatParseErrorCode code)
             return "next^ belongs to for^; repeat^ declares no focus to advance";
         case LHAT_PARSE_ERR_WITHDRAWN_FROM:
             return "from^ was withdrawn; write 'for^ i := 1 to^ 10'";
+        case LHAT_PARSE_ERR_EXPECTED_MEMBER:
+            return "a def^ holds 'name := value' members and one self^{ ... }";
+        case LHAT_PARSE_ERR_FIELD_NEEDS_NAME:
+            return "every field of self^{ ... } needs a name and a value";
+        case LHAT_PARSE_ERR_DUPLICATE_TEMPLATE:
+            return "a def^ declares its fields once; write one self^{ ... }";
+        case LHAT_PARSE_ERR_MODIFIER_ON_TEMPLATE:
+            return "override^ and overload^ mark a member, not the fields";
         case LHAT_PARSE_ERR_LEXICAL:
             return "the input could not be tokenised";
     }

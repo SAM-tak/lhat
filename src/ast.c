@@ -94,6 +94,8 @@ const char *lhat_node_kind_name(LhatNodeKind kind)
         case LHAT_NODE_INTERP_HOLE:    return "interp-hole";
         case LHAT_NODE_TABLE:          return "table";
         case LHAT_NODE_TABLE_ENTRY:    return "table-entry";
+        case LHAT_NODE_DEF:            return "def";
+        case LHAT_NODE_SELF_TABLE:     return "self-table";
         case LHAT_NODE_UNARY:          return "unary";
         case LHAT_NODE_BINARY:         return "binary";
         case LHAT_NODE_COMPARE_CHAIN:  return "compare-chain";

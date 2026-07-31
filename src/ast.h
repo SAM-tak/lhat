@@ -31,6 +31,8 @@ typedef enum {
     LHAT_NODE_INTERP_HOLE,   // expression plus an optional format string
     LHAT_NODE_TABLE,         // { ... }
     LHAT_NODE_TABLE_ENTRY,   // key := value, or a positional value
+    LHAT_NODE_DEF,           // def^{ ... }                  (14 章)
+    LHAT_NODE_SELF_TABLE,    // self^{ ... }                 (14.6, 14.11)
     LHAT_NODE_UNARY,
     LHAT_NODE_BINARY,
     LHAT_NODE_COMPARE_CHAIN, // a < b < c  (11.5 の (5))
@@ -91,6 +93,14 @@ typedef enum {
     LHAT_REPEAT_WHILE,
     LHAT_REPEAT_UNTIL
 } LhatRepeatKind;
+
+// 14.12. Marks a member that replaces or extends an inherited one; without
+// a marker, a member of the same name is an error.
+typedef enum {
+    LHAT_DEF_PLAIN,
+    LHAT_DEF_OVERRIDE,
+    LHAT_DEF_OVERLOAD
+} LhatDefModifier;
 
 // 9.2, in the order they must be written.
 typedef enum {
@@ -191,10 +201,12 @@ struct LhatNode {
             bool variadic;
         } param;
 
-        // TABLE_ENTRY / MEMBER_DECL.
+        // TABLE_ENTRY / MEMBER_DECL. Inside a def^ the key is NULL when the
+        // entry is the self^{ ... } template, whose value carries it.
         struct {
-            LhatNode *key;    // NULL for a positional table entry
+            LhatNode *key;    // NULL for a positional entry or the template
             LhatNode *value;
+            LhatDefModifier modifier;  // 14.12, def^ entries only
         } entry;
 
         // DEFINE / REASSIGN take a list of targets and a list of values;

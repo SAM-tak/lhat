@@ -5,8 +5,8 @@
 // returns every '^'-suffixed word as one token kind and leaves the meaning
 // to this stage (01 の 2.1).
 //
-// Not covered yet: loop headers (for^, repeat^, while^) and their clauses
-// (9 章), def^ (14 章), and the command form of a call (2 章).
+// Not covered yet: pattern matching (S19) and the command form of a call
+// (2 章).
 
 #ifndef LHAT_PARSER_H
 #define LHAT_PARSER_H
@@ -35,6 +35,10 @@ typedef enum {
     LHAT_PARSE_ERR_FOR_NEEDS_CLAUSE,          // 16.3: for^ needs a driving clause
     LHAT_PARSE_ERR_REPEAT_TAKES_NO_NEXT,      // 16.5
     LHAT_PARSE_ERR_WITHDRAWN_FROM,            // 16.3: from^ replaced by ':='
+    LHAT_PARSE_ERR_EXPECTED_MEMBER,           // 14 章: def^ holds members
+    LHAT_PARSE_ERR_FIELD_NEEDS_NAME,          // 14.6: every field is named
+    LHAT_PARSE_ERR_DUPLICATE_TEMPLATE,        // 14.6: one self^{ ... } per def^
+    LHAT_PARSE_ERR_MODIFIER_ON_TEMPLATE,      // 14.12 marks members, not fields
     LHAT_PARSE_ERR_LEXICAL                    // the lexer already reported one
 } LhatParseErrorCode;
 

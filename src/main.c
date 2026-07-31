@@ -142,6 +142,13 @@ static void print_node(const LhatLexer *lexer, const LhatNode *node, int depth)
                 printf(" variadic");
             }
             break;
+        case LHAT_NODE_TABLE_ENTRY:
+            if (node->v.entry.modifier == LHAT_DEF_OVERRIDE) {
+                printf(" override^");
+            } else if (node->v.entry.modifier == LHAT_DEF_OVERLOAD) {
+                printf(" overload^");
+            }
+            break;
         case LHAT_NODE_FOR: {
             static const char *const kinds[] = {
                 "to^", "downto^", "in^", "while^", "until^", "if^"
@@ -244,6 +251,8 @@ static void print_node(const LhatLexer *lexer, const LhatNode *node, int depth)
             print_list(lexer, "clauses", node->v.list.extra, depth + 1);
             break;
         case LHAT_NODE_TABLE:
+        case LHAT_NODE_DEF:
+        case LHAT_NODE_SELF_TABLE:
         case LHAT_NODE_IF_STMT:
         case LHAT_NODE_IF_EXPR:
         case LHAT_NODE_INTERP:
