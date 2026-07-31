@@ -95,6 +95,7 @@ typedef enum {
     LHAT_OP_AND,         // and^
     LHAT_OP_OR,          // or^
     LHAT_OP_IS,          // is^
+    LHAT_OP_CATCH,       // catch^  (04 の 4 章)
 
 
     LHAT_OP_UNION,       // |    type union, valid only in a type context

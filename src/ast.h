@@ -33,6 +33,8 @@ typedef enum {
     LHAT_NODE_TABLE_ENTRY,   // key := value, or a positional value
     LHAT_NODE_DEF,           // def^{ ... }                  (14 章)
     LHAT_NODE_SELF_TABLE,    // self^{ ... }                 (14.6, 14.11)
+    LHAT_NODE_ERROR_NEW,     // error^Kind{ ... }            (04 の 2.5)
+    LHAT_NODE_TRY,           // try^ expr                    (04 の 5 章)
     LHAT_NODE_UNARY,
     LHAT_NODE_BINARY,
     LHAT_NODE_COMPARE_CHAIN, // a < b < c  (11.5 の (5))
@@ -57,6 +59,8 @@ typedef enum {
     LHAT_NODE_FOR,           // for^ ...                    (16 章)
     LHAT_NODE_REPEAT,        // repeat^ ...                 (16.5)
     LHAT_NODE_LOOP_CLAUSE,   // prolog^: first^: last^: ... (9 章)
+    LHAT_NODE_ERRORDEF,      // errordef^ Name { ... }      (04 の 2.2)
+    LHAT_NODE_ERROR_KIND,    // one kind inside an errordef^
 
     // ---- pieces ----
     LHAT_NODE_IF_CLAUSE,     // condition (may be absent) plus a body
@@ -249,6 +253,15 @@ struct LhatNode {
             LhatClauseKind kind;
             LhatNode *body;
         } loop_clause;
+
+        // ERRORDEF / ERROR_KIND / ERROR_NEW (04 の 2.2, 2.5). A name and the
+        // list it introduces: kinds for a declaration, MEMBER_DECL fields for
+        // a kind -- the same shape t^{ ... } already uses -- and TABLE_ENTRY
+        // values for a construction. ERROR_NEW's name is a qualified path.
+        struct {
+            LhatNode *name;
+            LhatNode *members;  // NULL when a kind declares no fields
+        } named;
 
         // IF_CLAUSE. `condition` is NULL for the final else.
         struct {

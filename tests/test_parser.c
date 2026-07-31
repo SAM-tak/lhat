@@ -1030,6 +1030,190 @@ static void test_definitions(void)
     parse_dispose(&p);
 }
 
+// 04-errors.md.
+static void test_errors(void)
+{
+    Parse p;
+
+    LHAT_TEST("errordef^ declares kinds, with and without fields");
+    parse_text(&p,
+               "errordef^ ParseError {\n"
+               "    Syntax { line : number^, column : number^ },\n"
+               "    Eof,\n"
+               "}");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    {
+        const LhatNode *d = first_statement(&p);
+        LHAT_CHECK_EQ_INT(d->kind, LHAT_NODE_ERRORDEF);
+        LHAT_CHECK_EQ_INT(lhat_node_list_length(d->v.named.members), 2);
+
+        const LhatNode *syntax = d->v.named.members;
+        LHAT_CHECK_EQ_INT(syntax->kind, LHAT_NODE_ERROR_KIND);
+        LHAT_CHECK_EQ_INT(lhat_node_list_length(syntax->v.named.members), 2);
+        // The fields reuse the shape of t^{ ... }.
+        LHAT_CHECK_EQ_INT(syntax->v.named.members->kind, LHAT_NODE_MEMBER_DECL);
+        LHAT_CHECK(syntax->next->v.named.members == NULL, "Eof has no fields");
+    }
+    parse_dispose(&p);
+
+    // 04 の 2.4: the name is the identity, so there is no anonymous form.
+    LHAT_TEST("errordef^ needs a name");
+    parse_text(&p, "errordef^ { A, B }");
+    LHAT_CHECK(p.result.diagnostic_count > 0, "expected a diagnostic");
+    LHAT_CHECK_EQ_INT(p.result.diagnostics[0].code,
+                      LHAT_PARSE_ERR_ERRORDEF_NEEDS_NAME);
+    parse_dispose(&p);
+
+    LHAT_TEST("error^Kind{ ... } names the kind in the syntax");
+    parse_text(&p,
+               "e := error^ParseError.Syntax{ message := 'bad', line := 3 }");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    {
+        const LhatNode *e = first_value(&p);
+        LHAT_CHECK_EQ_INT(e->kind, LHAT_NODE_ERROR_NEW);
+        LHAT_CHECK_EQ_INT(e->v.named.name->kind, LHAT_NODE_MEMBER);
+        LHAT_CHECK_EQ_INT(lhat_node_list_length(e->v.named.members), 2);
+    }
+    parse_dispose(&p);
+
+    // 04 の 2.5: without the kind there is nothing to construct.
+    LHAT_TEST("error^ without a kind is rejected");
+    parse_text(&p, "e := error^{ message := 'x' }");
+    LHAT_CHECK(p.result.diagnostic_count > 0, "expected a diagnostic");
+    LHAT_CHECK_EQ_INT(p.result.diagnostics[0].code,
+                      LHAT_PARSE_ERR_ERROR_NEEDS_KIND);
+    parse_dispose(&p);
+
+    // 04 の 4.3: the fallback replaces the value of the operation that
+    // failed, not of the arithmetic around it.
+    LHAT_TEST("catch^ binds tighter than the binary operators");
+    parse_text(&p, "total := base + parse(s) catch^ 0");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    {
+        const LhatNode *value = first_value(&p);
+        LHAT_CHECK(is_binary(value, LHAT_OP_ADD), "the sum is outermost");
+        LHAT_CHECK(is_binary(value->v.binary.right, LHAT_OP_CATCH),
+                   "catch^ is inside the sum");
+    }
+    parse_dispose(&p);
+
+    LHAT_TEST("the right side of catch^ stops at the unary level");
+    parse_text(&p, "n := f() catch^ 0 + 1");
+    {
+        const LhatNode *value = first_value(&p);
+        LHAT_CHECK(is_binary(value, LHAT_OP_ADD), "the sum is outermost");
+        LHAT_CHECK(is_binary(value->v.binary.left, LHAT_OP_CATCH),
+                   "the fallback is just 0");
+    }
+    parse_dispose(&p);
+
+    // 11.7: one level, so they chain left to right.
+    LHAT_TEST("?? sits beside catch^ and chains with it");
+    parse_text(&p, "w := f() catch^ nil^ ?? 0");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    {
+        const LhatNode *value = first_value(&p);
+        LHAT_CHECK(is_binary(value, LHAT_OP_NIL_ELSE), "?? is outermost");
+        LHAT_CHECK(is_binary(value->v.binary.left, LHAT_OP_CATCH),
+                   "catch^ came first");
+    }
+    parse_dispose(&p);
+
+    LHAT_TEST("?? defaults around the index, not the sum");
+    parse_text(&p, "v := base + t[k] ?? 0");
+    {
+        const LhatNode *value = first_value(&p);
+        LHAT_CHECK(is_binary(value, LHAT_OP_ADD), "the sum is outermost");
+        LHAT_CHECK(is_binary(value->v.binary.right, LHAT_OP_NIL_ELSE),
+                   "?? is inside the sum");
+    }
+    parse_dispose(&p);
+
+    // 04 の 5.1: try^ is unary, so it unwraps the call rather than the sum.
+    LHAT_TEST("try^ sits at the unary level");
+    parse_text(&p, "n := try^ f() + 1");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    {
+        const LhatNode *value = first_value(&p);
+        LHAT_CHECK(is_binary(value, LHAT_OP_ADD), "the sum is outermost");
+        LHAT_CHECK_EQ_INT(value->v.binary.left->kind, LHAT_NODE_TRY);
+    }
+    parse_dispose(&p);
+
+    // 8.2 with 04 の 5.1 and 4.4: a call is still a call when it is wrapped.
+    LHAT_TEST("try^ and catch^ around a call stand alone as statements");
+    parse_text(&p, "try^ save(x)\nsave(y) catch^ nil^\n");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    {
+        const LhatNode *first = first_statement(&p);
+        LHAT_CHECK_EQ_INT(first->kind, LHAT_NODE_CALL_STMT);
+        LHAT_CHECK_EQ_INT(first->v.jump.value->kind, LHAT_NODE_TRY);
+        LHAT_CHECK_EQ_INT(first->next->kind, LHAT_NODE_CALL_STMT);
+        LHAT_CHECK(is_binary(first->next->v.jump.value, LHAT_OP_CATCH),
+                   "the catch^ form too");
+    }
+    parse_dispose(&p);
+
+    // 8.2 still holds: a fallback around something that is not a call is not
+    // a statement, since nothing happens.
+    LHAT_TEST("a bare fallback is not a statement");
+    parse_text(&p, "t[k] ?? 0");
+    LHAT_CHECK(p.result.diagnostic_count > 0, "expected a diagnostic");
+    LHAT_CHECK_EQ_INT(p.result.diagnostics[0].code,
+                      LHAT_PARSE_ERR_BARE_EXPRESSION);
+    parse_dispose(&p);
+
+    // 13.11: is^ asks about a type, so a type is what it reads on the right.
+    LHAT_TEST("is^ takes a type on the right");
+    parse_text(&p, "b := x is^ number^");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    {
+        const LhatNode *value = first_value(&p);
+        LHAT_CHECK(is_binary(value, LHAT_OP_IS), "expected is^");
+        LHAT_CHECK_EQ_INT(value->v.binary.right->kind, LHAT_NODE_TYPE_NAME);
+    }
+    parse_dispose(&p);
+
+    LHAT_TEST("is^ accepts a structure on the right");
+    parse_text(&p, "b := x is^ t^{a : number^}");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    LHAT_CHECK_EQ_INT(first_value(&p)->v.binary.right->kind,
+                      LHAT_NODE_TYPE_TABLE);
+    parse_dispose(&p);
+
+    // 04 の 14.4: an error kind is reached through the declaration that
+    // introduced it, so a type may be a qualified name.
+    LHAT_TEST("a type may be a qualified name");
+    parse_text(&p,
+               "if^ e is^ ParseError.Syntax {\n"
+               "    report(e.line)\n"
+               "    elseif^ e is^ IOError:\n"
+               "        log(e)\n"
+               "}");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    {
+        const LhatNode *clause = first_statement(&p)->v.list.items;
+        LHAT_CHECK_EQ_INT(lhat_node_list_length(clause), 2);
+        const LhatNode *type = clause->v.clause.condition->v.binary.right;
+        LHAT_CHECK_EQ_INT(type->kind, LHAT_NODE_MEMBER);
+        LHAT_CHECK_EQ_INT(type->v.access.target->kind, LHAT_NODE_TYPE_NAME);
+    }
+    parse_dispose(&p);
+
+    LHAT_TEST("a signature may return a union with an error set");
+    parse_text(&p,
+               "read := f^ p:string^ -> string^|IOError.NotFound {\n"
+               "    return^ try^ open(p)\n"
+               "}");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    {
+        const LhatNode *returns = first_value(&p)->v.func.return_type;
+        LHAT_CHECK_EQ_INT(returns->kind, LHAT_NODE_TYPE_UNION);
+        LHAT_CHECK_EQ_INT(returns->v.binary.right->kind, LHAT_NODE_MEMBER);
+    }
+    parse_dispose(&p);
+}
+
 static void test_incomplete(void)
 {
     Parse p;
@@ -1122,6 +1306,7 @@ int main(void)
     test_repeat();
     test_loop_clauses();
     test_definitions();
+    test_errors();
     test_incomplete();
     test_recovery();
     test_realistic();

@@ -297,9 +297,23 @@ h := try^ open(p)
 
 ```lhat
 f^ read(p:string^) -> string^|IOError {
+    with^ h := try^ open(p) {
+        return^ try^ h.readAll()
+    }
+}
+```
+
+`with^`（02 の 12 章）と組み合わさる。`try^` が誤りを返して抜けた場合も
+`h.dispose()` は呼ばれる。5.2 のとおり `return^` と同じ側の脱出だからである。
+
+`finally^` を直接書く場合は、02 の 9.2 が定める順序に従い **最後に置く**。
+`finally^:` より後ろに書いた文はその節の本体になる。
+
+```lhat
+f^ read(p:string^) -> string^|IOError {
     h := try^ open(p)
-    finally^: h.dispose()
     return^ try^ h.readAll()
+    finally^: h.dispose()
 }
 ```
 

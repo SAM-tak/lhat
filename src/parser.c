@@ -30,6 +30,9 @@ static LhatNode *parse_type(Parser *p);
 static LhatNode *parse_statement(Parser *p);
 static LhatNode *parse_block_body(Parser *p, const LhatToken *at);
 static LhatNode *parse_clause_body(Parser *p, const LhatToken *at, bool in_loop);
+static LhatNode *access_node(Parser *p, LhatNodeKind kind, const LhatToken *at,
+                             LhatNode *target, LhatNode *argument, bool nil_safe);
+static LhatNode *simple_node(Parser *p);
 
 // ---------------------------------------------------------------------------
 // Token access
@@ -246,20 +249,13 @@ static LhatNode *parse_type_coroutine(Parser *p)
     return node;
 }
 
-static LhatNode *parse_type_table(Parser *p)
+// 'name : type, ...' up to the closing brace. Shared by t^{ ... } and by the
+// fields a kind declares (04 の 2.2), which is the same shape.
+static LhatNode *parse_member_decls(Parser *p)
 {
-    LhatToken start = p->current;
-    advance(p);  // t^ or table^
-
-    LhatNode *node = make(p, LHAT_NODE_TYPE_TABLE, &start);
-    if (node == NULL) {
-        return NULL;
-    }
-
-    expect_op(p, LHAT_OP_LBRACE);
-
     LhatNode *head = NULL;
     LhatNode *tail = NULL;
+
     while (!at_eof(p) && !check_op(p, LHAT_OP_RBRACE)) {
         LhatNode *member = make(p, LHAT_NODE_MEMBER_DECL, &p->current);
         if (member == NULL) {
@@ -303,8 +299,21 @@ static LhatNode *parse_type_table(Parser *p)
             break;
         }
     }
+    return head;
+}
 
-    node->v.list.items = head;
+static LhatNode *parse_type_table(Parser *p)
+{
+    LhatToken start = p->current;
+    advance(p);  // t^ or table^
+
+    LhatNode *node = make(p, LHAT_NODE_TYPE_TABLE, &start);
+    if (node == NULL) {
+        return NULL;
+    }
+
+    expect_op(p, LHAT_OP_LBRACE);
+    node->v.list.items = parse_member_decls(p);
     expect_op(p, LHAT_OP_RBRACE);
     return node;
 }
@@ -341,6 +350,19 @@ static LhatNode *parse_type_primary(Parser *p)
                                     : 0;
         }
         advance(p);
+
+        // 04 の 14.4: an error kind is named through the declaration that
+        // introduced it, so a type may be a qualified name.
+        while (check_op(p, LHAT_OP_DOT)) {
+            LhatToken at = p->current;
+            advance(p);
+            if (p->current.kind != LHAT_TOKEN_IDENT) {
+                report(p, &p->current, LHAT_PARSE_ERR_EXPECTED_NAME);
+                break;
+            }
+            node = access_node(p, LHAT_NODE_MEMBER, &at, node,
+                               simple_node(p), false);
+        }
         return node;
     }
 
@@ -564,6 +586,58 @@ static LhatNode *parse_self_table(Parser *p)
     return node;
 }
 
+// A dotted path, as in IOError.NotFound. Kept as MEMBER nodes so it reads
+// like any other qualified name in the tree.
+static LhatNode *parse_qualified_name(Parser *p)
+{
+    if (p->current.kind != LHAT_TOKEN_IDENT &&
+        p->current.kind != LHAT_TOKEN_NAME_LITERAL) {
+        return error_node(p, LHAT_PARSE_ERR_EXPECTED_NAME);
+    }
+
+    LhatNode *node = simple_node(p);
+    while (check_op(p, LHAT_OP_DOT)) {
+        LhatToken at = p->current;
+        advance(p);
+        if (p->current.kind != LHAT_TOKEN_IDENT &&
+            p->current.kind != LHAT_TOKEN_NAME_LITERAL) {
+            report(p, &p->current, LHAT_PARSE_ERR_EXPECTED_NAME);
+            break;
+        }
+        node = access_node(p, LHAT_NODE_MEMBER, &at, node, simple_node(p), false);
+    }
+    return node;
+}
+
+// 04 の 2.5. The kind is written into the construction rather than left to a
+// member, since 2.3 makes the kind the type. The leading error^ is what lets
+// this be recognised without knowing any types: a qualified name followed by
+// '{' would otherwise read as a name and a table literal (10.7).
+static LhatNode *parse_error_new(Parser *p)
+{
+    LhatToken start = p->current;
+    advance(p);  // error^
+
+    LhatNode *node = make(p, LHAT_NODE_ERROR_NEW, &start);
+    if (node == NULL) {
+        return NULL;
+    }
+
+    if (check_op(p, LHAT_OP_LBRACE)) {
+        // 2.2 requires a kind, and 2.5 puts it in the syntax, so an error^
+        // with nothing in front of the brace has lost it rather than defaulted.
+        report(p, &p->current, LHAT_PARSE_ERR_ERROR_NEEDS_KIND);
+    } else {
+        node->v.named.name = parse_qualified_name(p);
+    }
+
+    if (expect_op(p, LHAT_OP_LBRACE)) {
+        node->v.named.members = parse_brace_entries(p, true);
+        expect_op(p, LHAT_OP_RBRACE);
+    }
+    return node;
+}
+
 // 14 章. def^ stays an expression (14.9), so the name of a definition comes
 // from whatever it is bound to and composition reads as an ordinary '..'.
 static LhatNode *parse_def(Parser *p)
@@ -732,7 +806,7 @@ static bool is_statement_keyword(const Parser *p)
 {
     static const char *const words[] = {
         "if", "do", "let", "with", "return", "break", "yield",
-        "for", "repeat", "while", "until", "when", "other",
+        "for", "repeat", "while", "until", "when", "other", "errordef",
         "prolog", "prologue", "first", "main", "last", "epilog", "epilogue",
         "finally"
     };
@@ -835,6 +909,14 @@ static LhatNode *parse_primary(Parser *p)
             // directly, and its '{' opens the body.
             if (check_hat(p, "self") && is_op(&p->ahead, LHAT_OP_LBRACE)) {
                 return parse_self_table(p);
+            }
+            // 04 の 14.5: 'error^' followed by a name constructs; on its own
+            // it is the supertype, which only a type position may ask for.
+            if (check_hat(p, "error") &&
+                (p->ahead.kind == LHAT_TOKEN_IDENT ||
+                 p->ahead.kind == LHAT_TOKEN_NAME_LITERAL ||
+                 is_op(&p->ahead, LHAT_OP_LBRACE))) {
+                return parse_error_new(p);
             }
             return simple_node(p);
 
@@ -968,6 +1050,19 @@ static LhatNode *parse_power(Parser *p)
 
 static LhatNode *parse_unary(Parser *p)
 {
+    // 04 の 5 章: try^ sits at the unary level, so 'try^ f() + 1' adds to the
+    // unwrapped value rather than trying to unwrap the sum.
+    if (check_hat(p, "try")) {
+        LhatToken at = p->current;
+        advance(p);
+        LhatNode *node = make(p, LHAT_NODE_TRY, &at);
+        if (node == NULL) {
+            return NULL;
+        }
+        node->v.jump.value = parse_unary(p);
+        return node;
+    }
+
     if (check_op(p, LHAT_OP_NOT) || check_op(p, LHAT_OP_SUB)) {
         LhatToken at = p->current;
         advance(p);
@@ -982,9 +1077,38 @@ static LhatNode *parse_unary(Parser *p)
     return parse_power(p);
 }
 
-static LhatNode *parse_ascription(Parser *p)
+// 04 の 4 章 and 11.7. Both drop one arm of a union and put a value in its
+// place; only the arm differs, so they share a level, a shape and a side of
+// the tree. Binding tighter than the binary operators is what makes
+// 'base + t[k] ?? 0' default around t[k] rather than around the sum.
+static LhatNode *parse_fallback(Parser *p)
 {
     LhatNode *left = parse_unary(p);
+
+    for (;;) {
+        bool catching = check_hat(p, "catch");
+        if (!catching && !check_op(p, LHAT_OP_NIL_ELSE)) {
+            break;
+        }
+
+        LhatToken at = p->current;
+        advance(p);
+
+        LhatNode *node = make(p, LHAT_NODE_BINARY, &at);
+        if (node == NULL) {
+            return left;
+        }
+        node->v.binary.op = catching ? LHAT_OP_CATCH : LHAT_OP_NIL_ELSE;
+        node->v.binary.left = left;
+        node->v.binary.right = parse_unary(p);
+        left = node;
+    }
+    return left;
+}
+
+static LhatNode *parse_ascription(Parser *p)
+{
+    LhatNode *left = parse_fallback(p);
     while (check_hat(p, "as")) {
         LhatToken at = p->current;
         advance(p);
@@ -1127,7 +1251,11 @@ static LhatNode *parse_comparison(Parser *p)
         marker->v.unary.op = op;
         lhat_node_append(&operators, &operator_tail, marker);
 
-        lhat_node_append(&operands, &operand_tail, parse_binary(p, PREC_CONCAT));
+        // 13.11: is^ asks whether the left side may stand where the right
+        // side is written, so what it takes on the right is a type.
+        lhat_node_append(&operands, &operand_tail,
+                         op == LHAT_OP_IS ? parse_type(p)
+                                          : parse_binary(p, PREC_CONCAT));
         links++;
     }
 
@@ -1589,6 +1717,66 @@ static LhatNode *parse_repeat(Parser *p)
     return node;
 }
 
+// 04 の 2.2. A declaration rather than an expression, because 2.4 makes the
+// name the identity: a name that is only a label can be taken from a binding
+// the way def^ does (14.9), but one the type is made of belongs in the
+// declaration. So there is no way to write an anonymous one.
+static LhatNode *parse_errordef(Parser *p)
+{
+    LhatToken start = p->current;
+    advance(p);  // errordef^
+
+    LhatNode *node = make(p, LHAT_NODE_ERRORDEF, &start);
+    if (node == NULL) {
+        return NULL;
+    }
+
+    if (p->current.kind == LHAT_TOKEN_IDENT ||
+        p->current.kind == LHAT_TOKEN_NAME_LITERAL) {
+        node->v.named.name = simple_node(p);
+    } else {
+        report(p, &p->current, LHAT_PARSE_ERR_ERRORDEF_NEEDS_NAME);
+    }
+
+    if (!expect_op(p, LHAT_OP_LBRACE)) {
+        return node;
+    }
+
+    LhatNode *head = NULL;
+    LhatNode *tail = NULL;
+
+    while (!at_eof(p) && !check_op(p, LHAT_OP_RBRACE)) {
+        LhatNode *kind = make(p, LHAT_NODE_ERROR_KIND, &p->current);
+        if (kind == NULL) {
+            break;
+        }
+
+        if (p->current.kind != LHAT_TOKEN_IDENT &&
+            p->current.kind != LHAT_TOKEN_NAME_LITERAL) {
+            report(p, &p->current, LHAT_PARSE_ERR_EXPECTED_NAME);
+            break;
+        }
+        kind->v.named.name = simple_node(p);
+
+        // A kind may declare fields, which narrowing then makes visible
+        // (04 の 6.1). They are written like the members of t^{ ... }.
+        if (match_op(p, LHAT_OP_LBRACE)) {
+            kind->v.named.members = parse_member_decls(p);
+            expect_op(p, LHAT_OP_RBRACE);
+        }
+
+        lhat_node_append(&head, &tail, kind);
+
+        if (!match_op(p, LHAT_OP_COMMA)) {
+            break;
+        }
+    }
+
+    node->v.named.members = head;
+    expect_op(p, LHAT_OP_RBRACE);
+    return node;
+}
+
 static LhatNode *parse_with(Parser *p)
 {
     LhatToken start = p->current;
@@ -1657,6 +1845,31 @@ static LhatNode *parse_jump(Parser *p, LhatNodeKind kind)
     return node;
 }
 
+// 8.2 lets a call stand alone. try^ (04 の 5.1) and catch^ (04 の 4.4) wrap
+// one without changing that a call is being made -- they only say what to do
+// with a failure -- so 'try^ save(x)' and 'save(x) catch^ nil^' are
+// statements too. '??' is included on the same footing as catch^ (11.7).
+static bool is_call_statement(const LhatNode *node)
+{
+    while (node != NULL) {
+        if (node->kind == LHAT_NODE_CALL) {
+            return true;
+        }
+        if (node->kind == LHAT_NODE_TRY) {
+            node = node->v.jump.value;
+            continue;
+        }
+        if (node->kind == LHAT_NODE_BINARY &&
+            (node->v.binary.op == LHAT_OP_CATCH ||
+             node->v.binary.op == LHAT_OP_NIL_ELSE)) {
+            node = node->v.binary.left;
+            continue;
+        }
+        return false;
+    }
+    return false;
+}
+
 static LhatNode *parse_statement(Parser *p)
 {
     LhatToken start = p->current;
@@ -1688,6 +1901,9 @@ static LhatNode *parse_statement(Parser *p)
         if (check_hat(p, "if")) {
             advance(p);
             return parse_if_statement(p, start);
+        }
+        if (check_hat(p, "errordef")) {
+            return parse_errordef(p);
         }
     }
 
@@ -1768,7 +1984,7 @@ static LhatNode *parse_statement(Parser *p)
     }
 
     // 8.2: only a call may stand alone as a statement.
-    if (head != NULL && head->next == NULL && head->kind == LHAT_NODE_CALL) {
+    if (head != NULL && head->next == NULL && is_call_statement(head)) {
         LhatNode *node = make(p, LHAT_NODE_CALL_STMT, &start);
         if (node == NULL) {
             return NULL;
@@ -1883,6 +2099,10 @@ const char *lhat_parse_error_message(LhatParseErrorCode code)
             return "a def^ declares its fields once; write one self^{ ... }";
         case LHAT_PARSE_ERR_MODIFIER_ON_TEMPLATE:
             return "override^ and overload^ mark a member, not the fields";
+        case LHAT_PARSE_ERR_ERRORDEF_NEEDS_NAME:
+            return "errordef^ needs a name; an error kind has no anonymous form";
+        case LHAT_PARSE_ERR_ERROR_NEEDS_KIND:
+            return "write the kind, as in error^IOError.NotFound{ ... }";
         case LHAT_PARSE_ERR_LEXICAL:
             return "the input could not be tokenised";
     }
