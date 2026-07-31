@@ -8,6 +8,7 @@
 #include <string.h>
 
 #include "code.h"
+#include "object.h"
 #include "lexer.h"
 #include "parser.h"
 #include "source.h"
@@ -37,6 +38,7 @@ static void run_text(Run *r, const char *text)
 
 static void run_dispose(Run *r)
 {
+    lhat_run_result_dispose(&r->ran);
     lhat_proto_free(r->proto);
     lhat_parse_result_dispose(&r->parsed);
     lhat_lexer_dispose(&r->lexer);
@@ -458,6 +460,170 @@ static void test_closures(void)
     run_dispose(&r);
 }
 
+#define CHECK_STRING(r, expected)                                             \
+    do {                                                                      \
+        LHAT_CHECK_EQ_INT((r)->compiled, LHAT_COMPILE_OK);                    \
+        LHAT_CHECK_EQ_INT((r)->ran.status, LHAT_RUN_OK);                      \
+        LHAT_CHECK(lhat_is_object_kind((r)->ran.value, LHAT_OBJECT_STRING),   \
+                   "expected a string");                                      \
+        if (lhat_is_object_kind((r)->ran.value, LHAT_OBJECT_STRING)) {        \
+            const LhatString *s =                                             \
+                (const LhatString *)lhat_as_object((r)->ran.value);           \
+            LHAT_CHECK(strcmp(s->text, (expected)) == 0, (expected));         \
+        }                                                                     \
+    } while (0)
+
+static void test_strings(void)
+{
+    Run r;
+
+    LHAT_TEST("a string literal is a value");
+    run_text(&r, "return^ \"hello\"\n");
+    CHECK_STRING(&r, "hello");
+    run_dispose(&r);
+
+    // 01 の 5 章: the escapes are resolved before the compiler sees them.
+    LHAT_TEST("the escapes are already resolved");
+    run_text(&r, "return^ \"a\\tb\"\n");
+    CHECK_STRING(&r, "a\tb");
+    run_dispose(&r);
+
+    // 02 の 11.6: a string is what it says.
+    LHAT_TEST("two strings spelling the same thing are equal");
+    run_text(&r, "return^ \"foo\" = \"foo\"\n");
+    CHECK_BOOL(&r, true);
+    run_dispose(&r);
+
+    LHAT_TEST("and different ones are not");
+    run_text(&r, "return^ \"foo\" = \"bar\"\n");
+    CHECK_BOOL(&r, false);
+    run_dispose(&r);
+
+    LHAT_TEST("arithmetic on a string is refused at run time");
+    run_text(&r, "return^ \"a\" + 1\n");
+    LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_TYPE_ERROR);
+    run_dispose(&r);
+}
+
+// 02 の 14 章: the one data structure.
+static void test_tables(void)
+{
+    Run r;
+
+    LHAT_TEST("an empty table is a table");
+    run_text(&r, "let^ t = { }\nreturn^ t\n");
+    LHAT_CHECK_EQ_INT(r.compiled, LHAT_COMPILE_OK);
+    LHAT_CHECK(lhat_is_object_kind(r.ran.value, LHAT_OBJECT_TABLE), "a table");
+    run_dispose(&r);
+
+    LHAT_TEST("a named member reads back");
+    run_text(&r, "let^ t = { a := 1, b := 2 }\nreturn^ t.b\n");
+    CHECK_INTEGER(&r, 2);
+    run_dispose(&r);
+
+    // 04 の 11.3: t.foo and t[k] differ in what the checker knows, not in
+    // where the machine looks.
+    LHAT_TEST("the two spellings reach one place");
+    run_text(&r, "let^ t = { a := 1 }\nreturn^ t[\"a\"]\n");
+    CHECK_INTEGER(&r, 1);
+    run_dispose(&r);
+
+    LHAT_TEST("a positional entry counts from one");
+    run_text(&r, "let^ t = { 10, 20, 30 }\nreturn^ t.1 + t.3\n");
+    CHECK_INTEGER(&r, 40);
+    run_dispose(&r);
+
+    LHAT_TEST("keyed and positional entries mix");
+    run_text(&r, "let^ t = { 10, a := 1, 20 }\nreturn^ t.2 + t.a\n");
+    CHECK_INTEGER(&r, 21);
+    run_dispose(&r);
+
+    LHAT_TEST("a value may be any expression");
+    run_text(&r, "let^ n = 3\nlet^ t = { a := n * 2 }\nreturn^ t.a\n");
+    CHECK_INTEGER(&r, 6);
+    run_dispose(&r);
+
+    LHAT_TEST("tables nest");
+    run_text(&r, "let^ t = { a := { b := 5 } }\nreturn^ t.a.b\n");
+    CHECK_INTEGER(&r, 5);
+    run_dispose(&r);
+
+    // 11.3: a table is a mapping, so there is no out of range -- only a key
+    // that is there and one that is not.
+    LHAT_TEST("a missing key answers nil^ rather than failing");
+    run_text(&r, "let^ t = { }\nreturn^ t[\"nowhere\"]\n");
+    LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_OK);
+    LHAT_CHECK(lhat_is_nil(r.ran.value), "nil^");
+    run_dispose(&r);
+
+    LHAT_TEST("a member is a place that ':=' reaches");
+    run_text(&r, "let^ t = { a := 1 }\nt.a := 9\nreturn^ t.a\n");
+    CHECK_INTEGER(&r, 9);
+    run_dispose(&r);
+
+    LHAT_TEST("':=' may make a member that was not there");
+    run_text(&r, "let^ t = { }\nt.a := 7\nreturn^ t.a\n");
+    CHECK_INTEGER(&r, 7);
+    run_dispose(&r);
+
+    LHAT_TEST("an index is a place too");
+    run_text(&r, "let^ t = { }\nlet^ k = \"key\"\nt[k] := 4\nreturn^ t[\"key\"]\n");
+    CHECK_INTEGER(&r, 4);
+    run_dispose(&r);
+
+    LHAT_TEST("storing nil^ removes the key");
+    run_text(&r, "let^ t = { a := 1 }\nt.a := nil^\nreturn^ t[\"a\"]\n");
+    LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_OK);
+    LHAT_CHECK(lhat_is_nil(r.ran.value), "nil^");
+    run_dispose(&r);
+
+    LHAT_TEST("nil^ cannot be a key");
+    run_text(&r, "let^ t = { }\nlet^ k = nil^\nt[k] := 1\nreturn^ t\n");
+    LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_BAD_KEY);
+    run_dispose(&r);
+
+    LHAT_TEST("indexing something that is not a table is refused");
+    run_text(&r, "let^ n = 1\nreturn^ n[\"a\"]\n");
+    LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_TYPE_ERROR);
+    run_dispose(&r);
+
+    // 14.2 makes a table's identity what it is, so two literals of the same
+    // shape are two tables.
+    LHAT_TEST("a table is equal only to itself");
+    run_text(&r, "let^ a = { x := 1 }\nlet^ b = { x := 1 }\nreturn^ a = b\n");
+    CHECK_BOOL(&r, false);
+    run_dispose(&r);
+
+    LHAT_TEST("and a name for one is the same one");
+    run_text(&r, "let^ a = { x := 1 }\nlet^ b = a\nreturn^ a = b\n");
+    CHECK_BOOL(&r, true);
+    run_dispose(&r);
+
+    // A table is a reference, so the two names reach one table (Memo.md の
+    // 「シンボルはすべて参照」).
+    LHAT_TEST("a table is shared rather than copied");
+    run_text(&r, "let^ a = { x := 1 }\nlet^ b = a\nb.x := 5\nreturn^ a.x\n");
+    CHECK_INTEGER(&r, 5);
+    run_dispose(&r);
+
+    LHAT_TEST("a table passes into a subroutine as itself");
+    run_text(&r,
+             "let^ bump = p^t { t.n := t.n + 1 }\n"
+             "let^ t = { n := 0 }\n"
+             "bump(t)\n"
+             "bump(t)\n"
+             "return^ t.n\n");
+    CHECK_INTEGER(&r, 2);
+    run_dispose(&r);
+
+    LHAT_TEST("a subroutine may be a member");
+    run_text(&r,
+             "let^ t = { twice := f^n { return^ n * 2 } }\n"
+             "return^ t.twice(4)\n");
+    CHECK_INTEGER(&r, 8);
+    run_dispose(&r);
+}
+
 int main(void)
 {
     test_encoding();
@@ -466,5 +632,7 @@ int main(void)
     test_control();
     test_calls();
     test_closures();
+    test_strings();
+    test_tables();
     return lhat_test_report("test_vm");
 }

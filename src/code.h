@@ -57,6 +57,12 @@ typedef enum {
     LHAT_BC_SETUPVAL,   // A B   *upvalue[B] = R[A]
     LHAT_BC_CLOSE,      // A     the places at R[A] and above stop being shared
 
+    // 02 の 14 章: the one data structure. 04 の 11.3 makes a missing key
+    // nil^ rather than a failure, so GETINDEX cannot fail on that account.
+    LHAT_BC_NEWTABLE,   // A     R[A] = { }
+    LHAT_BC_GETINDEX,   // A B C R[A] = R[B][R[C]]
+    LHAT_BC_SETINDEX,   // A B C R[A][R[B]] = R[C]
+
     LHAT_BC_RETURN,     // A     return R[A]
     LHAT_BC_RETURN_NIL,
 
@@ -108,6 +114,10 @@ typedef struct {
     size_t constant_count;
     size_t constant_capacity;
 
+    // The strings the constants name. A constant lives as long as the chunk,
+    // so the chunk owns them rather than the machine that runs it.
+    LhatObject *objects;
+
     uint8_t registers;
 } LhatChunk;
 
@@ -155,6 +165,11 @@ size_t lhat_chunk_emit(LhatChunk *chunk, LhatInstruction instruction);
 // Adds a constant, reusing an equal one rather than storing it twice.
 // Returns the index, or SIZE_MAX when the pool is full or out of memory.
 size_t lhat_chunk_constant(LhatChunk *chunk, LhatValue value);
+
+// The same for a string literal: the bytes are copied into a string the chunk
+// owns. Two literals spelling the same thing share one constant, which is
+// what makes t.foo and t["foo"] one key.
+size_t lhat_chunk_string(LhatChunk *chunk, const char *text, size_t length);
 
 // Rewrites the Bx of the jump at `at` so that it lands on the instruction
 // after the last one emitted. Used for a branch whose target is not known

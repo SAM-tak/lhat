@@ -2,6 +2,8 @@
 
 #include "value.h"
 
+#include "object.h"
+
 bool lhat_value_equal(LhatValue a, LhatValue b)
 {
     // 02 の 14.8: number^ is one type, so 1 and 1.0 are the same number even
@@ -38,6 +40,16 @@ bool lhat_value_equal(LhatValue a, LhatValue b)
         case LHAT_VALUE_BOOL:
             return a.as.boolean == b.as.boolean;
         case LHAT_VALUE_OBJECT:
+            // A string is what it says, so two of them are equal when they
+            // spell the same bytes. Everything else is equal only to itself:
+            // 14.2 makes a table's identity what it is, and comparing two of
+            // them member by member would follow a cycle for ever.
+            if (a.as.object != NULL && b.as.object != NULL &&
+                a.as.object->kind == LHAT_OBJECT_STRING &&
+                b.as.object->kind == LHAT_OBJECT_STRING) {
+                return lhat_string_equal((const LhatString *)a.as.object,
+                                         (const LhatString *)b.as.object);
+            }
             return a.as.object == b.as.object;
         default:
             return false;  // the numeric tags are handled above

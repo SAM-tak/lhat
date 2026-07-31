@@ -38,6 +38,7 @@ add_library(lhat_core STATIC
     src/code.c
     src/vm.c
     src/value.c
+    src/object.c
 )
 
 target_include_directories(lhat_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)

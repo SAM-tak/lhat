@@ -1,0 +1,98 @@
+// L^ (lhat) -- the heap values: strings and tables.
+//
+// Section numbers refer to DesignDocuments/03-compilation-pipeline.md unless
+// prefixed.
+//
+// 02 の 14 章 makes the table the one data structure, so this file carries
+// most of what a program manipulates. value.h holds the representation of a
+// value; this holds what an object actually is.
+//
+// Every object is linked into an owner's list when it is made, and the owner
+// frees the whole list at once. Two owners exist: a chunk, which holds the
+// strings its constants name, and the machine, which holds what a program
+// makes while it runs. A collector replaces the second.
+
+#ifndef LHAT_OBJECT_H
+#define LHAT_OBJECT_H
+
+#include <stdbool.h>
+#include <stddef.h>
+#include <stdint.h>
+
+#include "value.h"
+
+// The bytes are copied in and kept NUL-terminated, so a string can be handed
+// to a C interface without another copy. `length` is the byte count and does
+// not count the terminator -- 01 の 5 章 makes a string a byte sequence, not
+// a sequence of code points.
+typedef struct LhatString {
+    LhatObject header;
+    size_t length;
+    uint32_t hash;
+    char text[];
+} LhatString;
+
+typedef struct {
+    LhatValue key;
+    LhatValue value;
+} LhatTableEntry;
+
+// 02 の 14 章: one data structure, so it has to serve as both a sequence and
+// a mapping. The dense part holds the keys 1..array_count and the rest go in
+// an open-addressed hash part, which is the split 03 の 1.2 kept from Lua.
+typedef struct LhatTable {
+    LhatObject header;
+
+    LhatValue *array;  // array[i] is the value at key i+1
+    size_t array_count;
+    size_t array_capacity;
+
+    LhatTableEntry *entries;  // capacity is a power of two, or zero
+    size_t entry_count;       // live entries, tombstones not counted
+    size_t entry_capacity;
+} LhatTable;
+
+// ---------------------------------------------------------------------------
+// Making and freeing
+// ---------------------------------------------------------------------------
+
+// Both link the new object into *owner. Return NULL when out of memory.
+LhatString *lhat_string_new(LhatObject **owner, const char *text, size_t length);
+LhatTable *lhat_table_new(LhatObject **owner);
+
+// Frees one object and whatever it owns, but not what it refers to.
+void lhat_object_free(LhatObject *object);
+
+// Frees the whole list and empties it.
+void lhat_object_free_all(LhatObject **owner);
+
+// ---------------------------------------------------------------------------
+// Strings
+// ---------------------------------------------------------------------------
+
+// 02 の 11.6: '=' on two strings asks whether they say the same thing. Which
+// makes a table key work by what it spells rather than which copy it is, so
+// t.foo and t["foo"] reach the same place even when they were compiled into
+// separate constants.
+bool lhat_string_equal(const LhatString *a, const LhatString *b);
+
+uint32_t lhat_string_hash(const char *text, size_t length);
+
+// ---------------------------------------------------------------------------
+// Tables
+// ---------------------------------------------------------------------------
+
+// 04 の 11.3: a table is a mapping, so there is no such thing as out of
+// range. A key that is not there answers nil^.
+LhatValue lhat_table_get(const LhatTable *table, LhatValue key);
+
+// Storing nil^ removes the key, which is what keeps "absent" and "nil^" the
+// one answer 11.3 describes. Returns false only when out of memory; a key
+// that cannot be a key (nil^, or a NaN) is refused with `refused` set.
+bool lhat_table_set(LhatTable *table, LhatValue key, LhatValue value,
+                    bool *refused);
+
+// How many keys 1, 2, 3 ... the table holds without a gap.
+size_t lhat_table_length(const LhatTable *table);
+
+#endif  // LHAT_OBJECT_H

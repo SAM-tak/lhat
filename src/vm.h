@@ -17,6 +17,7 @@
 #include "ast.h"
 #include "code.h"
 #include "lexer.h"
+#include "object.h"
 #include "value.h"
 
 typedef enum {
@@ -41,16 +42,24 @@ typedef enum {
     LHAT_RUN_NOT_CALLABLE,    // called something that is not a subroutine
     LHAT_RUN_ARITY,           // 5.3: the wrong number of arguments
     LHAT_RUN_STACK_OVERFLOW,  // the frames went too deep
-    LHAT_RUN_OUT_OF_MEMORY
+    LHAT_RUN_OUT_OF_MEMORY,
+    LHAT_RUN_BAD_KEY          // 04 の 11.3: nil^ means "not there", so it
+                              // cannot also be a key
 } LhatRunStatus;
 
 typedef struct {
     LhatRunStatus status;
     LhatValue value;   // what the unit returned, or nil^
     size_t at;         // the instruction that failed, when one did
+
+    // What the run allocated. The answer may point into it, so the caller
+    // owns it and frees it with lhat_run_result_dispose().
+    LhatObject *objects;
 } LhatRunResult;
 
 LhatRunResult lhat_run(const LhatProto *proto);
+
+void lhat_run_result_dispose(LhatRunResult *result);
 
 const char *lhat_run_status_message(LhatRunStatus status);
 

@@ -174,6 +174,100 @@ static void compile_expression(Compiler *c, const LhatNode *node, uint8_t into);
 static void compile_statement(Compiler *c, const LhatNode *node);
 static void compile_statements(Compiler *c, const LhatNode *statements);
 
+static void load_string_bytes(Compiler *c, uint8_t into, const char *text,
+                              size_t length)
+{
+    size_t k = lhat_chunk_string(&c->proto->chunk, text, length);
+    if (k == SIZE_MAX) {
+        fail(c, LHAT_COMPILE_TOO_COMPLEX);
+        return;
+    }
+    emit(c, lhat_encode_abx(LHAT_BC_LOADK, into, (uint16_t)k));
+}
+
+// STRING and NAME both hold a span of the lexer's decoded bytes, so the
+// escapes of 01 の 5 章 are already resolved by the time the compiler sees
+// them.
+static void load_string(Compiler *c, uint8_t into, const LhatNode *node)
+{
+    load_string_bytes(c, into, c->lexer->strings + node->v.string.offset,
+                      node->v.string.length);
+}
+
+// The key of a member access or an index. 01 の 10.1 makes digits after a '.'
+// an integer key, and a name after it a string key, so the two forms differ
+// only in how the key was written.
+static void compile_key(Compiler *c, const LhatNode *node, uint8_t into)
+{
+    const LhatNode *key = node->v.access.argument;
+    if (node->kind == LHAT_NODE_INDEX) {
+        compile_expression(c, key, into);
+        return;
+    }
+    if (key == NULL) {
+        fail(c, LHAT_COMPILE_UNSUPPORTED);
+        return;
+    }
+    switch (key->kind) {
+        case LHAT_NODE_IDENT:
+        case LHAT_NODE_HAT_IDENT: {
+            const char *name = NULL;
+            size_t length = 0;
+            if (!node_name(c, key, &name, &length)) {
+                fail(c, LHAT_COMPILE_UNSUPPORTED);
+                return;
+            }
+            load_string_bytes(c, into, name, length);
+            return;
+        }
+        case LHAT_NODE_NAME:
+            load_string(c, into, key);
+            return;
+        case LHAT_NODE_INT:
+            load_constant(c, into, lhat_integer((int64_t)key->v.integer.value));
+            return;
+        default:
+            compile_expression(c, key, into);
+            return;
+    }
+}
+
+// 02 の 14 章: a table literal makes a table and fills it in. A keyed entry
+// names its key; a positional one takes the next integer, counting from 1 as
+// 16.4 の 'for^ i := 1 to^ n' does.
+static void compile_table(Compiler *c, const LhatNode *node, uint8_t into)
+{
+    emit(c, lhat_encode_abc(LHAT_BC_NEWTABLE, into, 0, 0));
+
+    int64_t position = 0;
+    for (const LhatNode *entry = node->v.list.items; entry != NULL;
+         entry = entry->next) {
+        uint8_t mark = c->next_register;
+        uint8_t key = reserve(c);
+        uint8_t value = reserve(c);
+
+        if (entry->v.entry.key != NULL) {
+            const LhatNode *named = entry->v.entry.key;
+            const char *name = NULL;
+            size_t length = 0;
+            if (named->kind == LHAT_NODE_NAME) {
+                load_string(c, key, named);
+            } else if (node_name(c, named, &name, &length)) {
+                load_string_bytes(c, key, name, length);
+            } else {
+                fail(c, LHAT_COMPILE_UNSUPPORTED);
+                return;
+            }
+        } else {
+            load_constant(c, key, lhat_integer(++position));
+        }
+
+        compile_expression(c, entry->v.entry.value, value);
+        emit(c, lhat_encode_abc(LHAT_BC_SETINDEX, into, key, value));
+        c->next_register = mark;
+    }
+}
+
 // 5.3: the callee sits in a register and its arguments follow it, so the
 // machine can hand the callee's frame a contiguous run.
 static void compile_call(Compiler *c, const LhatNode *node, uint8_t into)
@@ -335,6 +429,30 @@ static void compile_expression(Compiler *c, const LhatNode *node, uint8_t into)
         case LHAT_NODE_FLOAT:
             load_constant(c, into, lhat_real(node->v.real));
             return;
+
+        case LHAT_NODE_STRING:
+        case LHAT_NODE_NAME:
+            load_string(c, into, node);
+            return;
+
+        case LHAT_NODE_TABLE:
+            compile_table(c, node, into);
+            return;
+
+        // 04 の 11.3: 't.foo' is resolved statically and 't[k]' is not, but
+        // the machine performs one lookup either way. 5.1 keeps the checker's
+        // knowledge out of the instruction set until specialisation.
+        case LHAT_NODE_MEMBER:
+        case LHAT_NODE_INDEX: {
+            uint8_t mark = c->next_register;
+            uint8_t target = reserve(c);
+            uint8_t key = reserve(c);
+            compile_expression(c, node->v.access.target, target);
+            compile_key(c, node, key);
+            emit(c, lhat_encode_abc(LHAT_BC_GETINDEX, into, target, key));
+            c->next_register = mark;
+            return;
+        }
 
         case LHAT_NODE_IDENT:
         case LHAT_NODE_FOCUS: {
@@ -515,6 +633,27 @@ static void compile_reassign(Compiler *c, const LhatNode *node)
     const LhatNode *value = node->v.binding.values;
     for (const LhatNode *target = node->v.binding.targets; target != NULL;
          target = target->next) {
+        // A member or an index is a place too, and the only kind that is not
+        // a name. It never reaches the upvalue path below: what it reassigns
+        // belongs to the table, not to a frame.
+        if (target->kind == LHAT_NODE_MEMBER ||
+            target->kind == LHAT_NODE_INDEX) {
+            if (value == NULL) {
+                continue;
+            }
+            uint8_t mark = c->next_register;
+            uint8_t into = reserve(c);
+            uint8_t key = reserve(c);
+            uint8_t slot = reserve(c);
+            compile_expression(c, target->v.access.target, into);
+            compile_key(c, target, key);
+            compile_expression(c, value, slot);
+            emit(c, lhat_encode_abc(LHAT_BC_SETINDEX, into, key, slot));
+            c->next_register = mark;
+            value = value->next;
+            continue;
+        }
+
         const char *name = NULL;
         size_t length = 0;
         if (!node_name(c, target, &name, &length)) {
@@ -847,21 +986,6 @@ static void *allocate(Machine *m, size_t size, LhatObjectKind kind)
     return object;
 }
 
-static void release(Machine *m)
-{
-    LhatObject *object = m->objects;
-    while (object != NULL) {
-        LhatObject *next = object->next;
-        if (object->kind == LHAT_OBJECT_SUBROUTINE) {
-            free(((LhatClosure *)object)->upvalues);
-        }
-        free(object);
-        object = next;
-    }
-    m->objects = NULL;
-    m->open = NULL;
-}
-
 // 5.4: one place per slot, so two closures capturing the same name share it.
 static LhatUpvalue *capture(Machine *m, LhatValue *slot)
 {
@@ -901,12 +1025,24 @@ static void close_upvalues(Machine *m, const LhatValue *above)
 static LhatRunResult finish(Machine *m, LhatRunStatus status, LhatValue value,
                             size_t at)
 {
-    release(m);
+    // The answer may be a table or a string, so what the run allocated cannot
+    // be freed here -- the value would point at it. Ownership passes to the
+    // caller instead. A collector replaces this by freeing everything the
+    // answer does not reach.
     LhatRunResult result;
     result.status = status;
     result.value = value;
     result.at = at;
+    result.objects = m->objects;
+    m->objects = NULL;
+    m->open = NULL;
     return result;
+}
+
+void lhat_run_result_dispose(LhatRunResult *result)
+{
+    lhat_object_free_all(&result->objects);
+    result->value = lhat_nil();
 }
 
 LhatRunResult lhat_run(const LhatProto *proto)
@@ -1076,6 +1212,45 @@ LhatRunResult lhat_run(const LhatProto *proto)
                 close_upvalues(m, &registers[a]);
                 break;
 
+            case LHAT_BC_NEWTABLE: {
+                LhatTable *table = lhat_table_new(&m->objects);
+                if (table == NULL) {
+                    return finish(m, LHAT_RUN_OUT_OF_MEMORY, lhat_nil(), at);
+                }
+                registers[a] = lhat_object((LhatObject *)table);
+                break;
+            }
+
+            // 04 の 11.3: a key that is not there answers nil^, so the only
+            // way this fails is being asked of something that is not a table.
+            case LHAT_BC_GETINDEX: {
+                if (!lhat_is_object_kind(registers[b], LHAT_OBJECT_TABLE)) {
+                    return finish(m, LHAT_RUN_TYPE_ERROR, lhat_nil(), at);
+                }
+                const LhatTable *table =
+                    (const LhatTable *)lhat_as_object(registers[b]);
+                registers[a] = lhat_table_get(table, registers[cc]);
+                break;
+            }
+
+            case LHAT_BC_SETINDEX: {
+                if (!lhat_is_object_kind(registers[a], LHAT_OBJECT_TABLE)) {
+                    return finish(m, LHAT_RUN_TYPE_ERROR, lhat_nil(), at);
+                }
+                LhatTable *table = (LhatTable *)lhat_as_object(registers[a]);
+                bool refused = false;
+                if (!lhat_table_set(table, registers[b], registers[cc],
+                                    &refused)) {
+                    return finish(m, LHAT_RUN_OUT_OF_MEMORY, lhat_nil(), at);
+                }
+                // nil^ is how 11.3 spells "not there", so it cannot also be
+                // a key. Neither can a NaN, which is not equal to itself.
+                if (refused) {
+                    return finish(m, LHAT_RUN_BAD_KEY, lhat_nil(), at);
+                }
+                break;
+            }
+
             case LHAT_BC_CALL: {
                 if (!lhat_is_object_kind(registers[a], LHAT_OBJECT_SUBROUTINE)) {
                     return finish(m, LHAT_RUN_NOT_CALLABLE, lhat_nil(), at);
@@ -1154,6 +1329,7 @@ const char *lhat_run_status_message(LhatRunStatus status)
         case LHAT_RUN_ARITY:           return "the wrong number of arguments";
         case LHAT_RUN_STACK_OVERFLOW:  return "the calls went too deep";
         case LHAT_RUN_OUT_OF_MEMORY:   return "out of memory";
+        case LHAT_RUN_BAD_KEY:         return "this cannot be a key";
     }
     return "unknown";
 }

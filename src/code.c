@@ -2,6 +2,8 @@
 
 #include "code.h"
 
+#include "object.h"
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -85,6 +87,7 @@ void lhat_chunk_dispose(LhatChunk *chunk)
 {
     free(chunk->code);
     free(chunk->constants);
+    lhat_object_free_all(&chunk->objects);
     memset(chunk, 0, sizeof *chunk);
 }
 
@@ -132,6 +135,30 @@ size_t lhat_chunk_constant(LhatChunk *chunk, LhatValue value)
     return chunk->constant_count++;
 }
 
+size_t lhat_chunk_string(LhatChunk *chunk, const char *text, size_t length)
+{
+    // Looked for before it is made, so a literal written twice does not put
+    // two strings on the chunk. lhat_chunk_constant would find the duplicate
+    // anyway, but only after allocating the one it would then abandon.
+    for (size_t i = 0; i < chunk->constant_count; i++) {
+        LhatValue held = chunk->constants[i];
+        if (!lhat_is_object_kind(held, LHAT_OBJECT_STRING)) {
+            continue;
+        }
+        const LhatString *string = (const LhatString *)lhat_as_object(held);
+        if (string->length == length &&
+            memcmp(string->text, text, length) == 0) {
+            return i;
+        }
+    }
+
+    LhatString *string = lhat_string_new(&chunk->objects, text, length);
+    if (string == NULL) {
+        return SIZE_MAX;
+    }
+    return lhat_chunk_constant(chunk, lhat_object((LhatObject *)string));
+}
+
 void lhat_chunk_patch_here(LhatChunk *chunk, size_t at)
 {
     if (at >= chunk->count) {
@@ -172,6 +199,9 @@ const char *lhat_opcode_name(LhatOpcode op)
         case LHAT_BC_GETUPVAL:    return "getupval";
         case LHAT_BC_SETUPVAL:    return "setupval";
         case LHAT_BC_CLOSE:       return "close";
+        case LHAT_BC_NEWTABLE:    return "newtable";
+        case LHAT_BC_GETINDEX:    return "getindex";
+        case LHAT_BC_SETINDEX:    return "setindex";
         case LHAT_BC_JUMP:        return "jump";
         case LHAT_BC_JUMP_FALSE:  return "jumpfalse";
         case LHAT_BC_RETURN:      return "return";
@@ -218,6 +248,7 @@ void lhat_chunk_print(const LhatChunk *chunk, size_t index, char *out,
             break;
         case LHAT_BC_LOADNIL:
         case LHAT_BC_CLOSE:
+        case LHAT_BC_NEWTABLE:
         case LHAT_BC_RETURN:
             snprintf(out, size, "%-10s r%u", name, lhat_a(i));
             break;
