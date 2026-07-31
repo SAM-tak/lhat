@@ -37,6 +37,8 @@ typedef enum {
     LHAT_OBJECT_ERROR,       // 04 の 2.3
     LHAT_OBJECT_ERROR_KIND,  // 04 の 2.4: the declaration a kind belongs to,
                              // which is what its identity is
+    LHAT_OBJECT_NATIVE,      // an operation the runtime provides, bound to
+                             // whatever it was reached through
     LHAT_OBJECT_UPVALUE      // 5.4: never a value, only reached through a
                              // closure -- but allocated and collected alike
 } LhatObjectKind;

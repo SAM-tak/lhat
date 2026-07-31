@@ -1082,6 +1082,21 @@ static LhatNode *parse_unary(Parser *p)
         return node;
     }
 
+    // 02 の 15.4: yield^ is an expression, since its value is what the resume
+    // sent. It takes everything to its right, so 'yield^ a + 1' sends the sum
+    // -- there is nothing for a tighter reading to do with the remainder.
+    if (check_hat(p, "yield")) {
+        LhatToken at = p->current;
+        p->saw_yield = true;  // 15.2: this is what makes the body yieldable
+        advance(p);
+        LhatNode *node = make(p, LHAT_NODE_YIELD, &at);
+        if (node == NULL) {
+            return NULL;
+        }
+        node->v.jump.value = parse_expression(p);
+        return node;
+    }
+
     // 04 の 5 章: try^ sits at the unary level, so 'try^ f() + 1' adds to the
     // unwrapped value rather than trying to unwrap the sum.
     if (check_hat(p, "try")) {

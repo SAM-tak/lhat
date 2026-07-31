@@ -1739,6 +1739,233 @@ static void test_definitions(void)
     run_dispose(&r);
 }
 
+// 02 の 15 章 and 5.11: a coroutine is one suspended frame, which is all
+// 15.5 leaves room for.
+static void test_coroutines(void)
+{
+    Run r;
+
+    // 15.5: the call answers a coroutine and the body has not started.
+    LHAT_TEST("calling a yieldable procedure runs nothing");
+    run_text(&r,
+             "let^ log = { n := 0 }\n"
+             "let^ gen = p^ { log.n := 1 yield^ 0 }\n"
+             "let^ c = gen()\n"
+             "return^ log.n\n");
+    CHECK_INTEGER(&r, 0);
+    run_dispose(&r);
+
+    LHAT_TEST("resuming runs the body up to the yield^");
+    run_text(&r,
+             "let^ gen = p^ { yield^ 7 }\n"
+             "let^ c = gen()\n"
+             "return^ c.resume()\n");
+    CHECK_INTEGER(&r, 7);
+    run_dispose(&r);
+
+    LHAT_TEST("each resume carries on from where it stopped");
+    run_text(&r,
+             "let^ gen = p^ { yield^ 1 yield^ 2 yield^ 3 }\n"
+             "let^ c = gen()\n"
+             "let^ a = c.resume()\n"
+             "let^ b = c.resume()\n"
+             "return^ a * 10 + b\n");
+    CHECK_INTEGER(&r, 12);
+    run_dispose(&r);
+
+    LHAT_TEST("the arguments of the call reach the body");
+    run_text(&r,
+             "let^ gen = p^n { yield^ n * 2 }\n"
+             "let^ c = gen(21)\n"
+             "return^ c.resume()\n");
+    CHECK_INTEGER(&r, 42);
+    run_dispose(&r);
+
+    // 15.4: bidirectional. Without this there is no await^ to build (15.4).
+    LHAT_TEST("yield^ answers what the resume sent");
+    run_text(&r,
+             "let^ gen = p^ {\n"
+             "  let^ got = yield^ 0\n"
+             "  yield^ got + 1\n"
+             "}\n"
+             "let^ c = gen()\n"
+             "c.resume()\n"
+             "return^ c.resume(41)\n");
+    CHECK_INTEGER(&r, 42);
+    run_dispose(&r);
+
+    LHAT_TEST("the body keeps its own names between resumes");
+    run_text(&r,
+             "let^ counter = p^ {\n"
+             "  let^ n = 0\n"
+             "  repeat^ {\n"
+             "    n := n + 1\n"
+             "    yield^ n\n"
+             "  }\n"
+             "}\n"
+             "let^ c = counter()\n"
+             "c.resume()\n"
+             "c.resume()\n"
+             "return^ c.resume()\n");
+    CHECK_INTEGER(&r, 3);
+    run_dispose(&r);
+
+    LHAT_TEST("the last resume answers what the body returned");
+    run_text(&r,
+             "let^ gen = p^ { yield^ 1 return^ 9 }\n"
+             "let^ c = gen()\n"
+             "c.resume()\n"
+             "return^ c.resume()\n");
+    CHECK_INTEGER(&r, 9);
+    run_dispose(&r);
+
+    LHAT_TEST("resuming one that has finished is a fault");
+    run_text(&r,
+             "let^ gen = p^ { yield^ 1 }\n"
+             "let^ c = gen()\n"
+             "c.resume()\n"
+             "c.resume()\n"
+             "c.resume()\n"
+             "return^ 0\n");
+    LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_DEAD_COROUTINE);
+    run_dispose(&r);
+
+    LHAT_TEST("two coroutines from one procedure are separate");
+    run_text(&r,
+             "let^ counter = p^ {\n"
+             "  let^ n = 0\n"
+             "  repeat^ { n := n + 1 yield^ n }\n"
+             "}\n"
+             "let^ a = counter()\n"
+             "let^ b = counter()\n"
+             "a.resume()\n"
+             "a.resume()\n"
+             "return^ b.resume()\n");
+    CHECK_INTEGER(&r, 1);
+    run_dispose(&r);
+
+    // 15.5 again: the caller of a yieldable procedure need not be yieldable,
+    // so nothing has to be marked on the way up.
+    LHAT_TEST("an ordinary procedure may drive a coroutine");
+    run_text(&r,
+             "let^ gen = p^ { yield^ 1 yield^ 2 }\n"
+             "let^ sum = p^ {\n"
+             "  let^ c = gen()\n"
+             "  return^ c.resume() + c.resume()\n"
+             "}\n"
+             "return^ sum()\n");
+    CHECK_INTEGER(&r, 3);
+    run_dispose(&r);
+
+    // 02 の 10.7: a coroutine dropped while suspended still runs what is
+    // pending, and 12.6 says dispose() is how that is asked for.
+    LHAT_TEST("disposing runs the finally^ the body was inside");
+    run_text(&r,
+             "let^ log = { n := 0 }\n"
+             "let^ gen = p^ {\n"
+             "  do^{\n"
+             "    yield^ 1\n"
+             "  finally^:\n"
+             "    log.n := 5\n"
+             "  }\n"
+             "}\n"
+             "let^ c = gen()\n"
+             "c.resume()\n"
+             "c.dispose()\n"
+             "return^ log.n\n");
+    CHECK_INTEGER(&r, 5);
+    run_dispose(&r);
+
+    // 10.7: the same finally^ is never run twice.
+    LHAT_TEST("a finally^ already run is not run again at disposal");
+    run_text(&r,
+             "let^ log = { n := 0 }\n"
+             "let^ gen = p^ {\n"
+             "  do^{\n"
+             "    yield^ 1\n"
+             "  finally^:\n"
+             "    log.n := log.n + 1\n"
+             "  }\n"
+             "  yield^ 2\n"
+             "}\n"
+             "let^ c = gen()\n"
+             "c.resume()\n"
+             "c.resume()\n"
+             "c.dispose()\n"
+             "return^ log.n\n");
+    CHECK_INTEGER(&r, 1);
+    run_dispose(&r);
+
+    LHAT_TEST("disposing one that never started has nothing to run");
+    run_text(&r,
+             "let^ log = { n := 0 }\n"
+             "let^ gen = p^ {\n"
+             "  do^{\n"
+             "    yield^ 1\n"
+             "  finally^:\n"
+             "    log.n := 5\n"
+             "  }\n"
+             "}\n"
+             "let^ c = gen()\n"
+             "c.dispose()\n"
+             "return^ log.n\n");
+    CHECK_INTEGER(&r, 0);
+    run_dispose(&r);
+
+    LHAT_TEST("a disposed coroutine cannot be resumed");
+    run_text(&r,
+             "let^ gen = p^ { yield^ 1 yield^ 2 }\n"
+             "let^ c = gen()\n"
+             "c.resume()\n"
+             "c.dispose()\n"
+             "c.resume()\n"
+             "return^ 0\n");
+    LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_DEAD_COROUTINE);
+    run_dispose(&r);
+
+    // 12.6: dispose() is what with^ calls, so a coroutine goes into a with^
+    // like any other resource.
+    LHAT_TEST("with^ disposes a coroutine at the end of the block");
+    run_text(&r,
+             "let^ log = { n := 0 }\n"
+             "let^ gen = p^ {\n"
+             "  do^{\n"
+             "    yield^ 1\n"
+             "  finally^:\n"
+             "    log.n := 3\n"
+             "  }\n"
+             "}\n"
+             "with^ c := gen()\n"
+             "{\n"
+             "  c.resume()\n"
+             "}\n"
+             "return^ log.n\n");
+    CHECK_INTEGER(&r, 3);
+    run_dispose(&r);
+
+    // 10.7: there is nothing waiting to resume a coroutine being disposed.
+    LHAT_TEST("yield^ during disposal is a fault");
+    run_text(&r,
+             "let^ gen = p^ {\n"
+             "  do^{\n"
+             "    yield^ 1\n"
+             "  finally^:\n"
+             "    yield^ 2\n"
+             "  }\n"
+             "}\n"
+             "let^ c = gen()\n"
+             "c.resume()\n"
+             "c.dispose()\n"
+             "return^ 0\n");
+    LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_YIELD_OUTSIDE);
+    run_dispose(&r);
+
+    LHAT_TEST("yield^ outside a coroutine is a fault");
+    run_text(&r, "yield^ 1\nreturn^ 0\n");
+    LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_YIELD_OUTSIDE);
+    run_dispose(&r);
+}
+
 int main(void)
 {
     test_encoding();
@@ -1756,5 +1983,6 @@ int main(void)
     test_catch_and_try();
     test_cleanups();
     test_definitions();
+    test_coroutines();
     return lhat_test_report("test_vm");
 }

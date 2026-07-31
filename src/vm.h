@@ -43,8 +43,11 @@ typedef enum {
     LHAT_RUN_ARITY,           // 5.3: the wrong number of arguments
     LHAT_RUN_STACK_OVERFLOW,  // the frames went too deep
     LHAT_RUN_OUT_OF_MEMORY,
-    LHAT_RUN_BAD_KEY          // 04 の 11.3: nil^ means "not there", so it
+    LHAT_RUN_BAD_KEY,         // 04 の 11.3: nil^ means "not there", so it
                               // cannot also be a key
+    LHAT_RUN_DEAD_COROUTINE,  // resumed one that has finished
+    LHAT_RUN_YIELD_OUTSIDE    // 02 の 15.2 and 10.7: yield^ where nothing is
+                              // waiting to be resumed
 } LhatRunStatus;
 
 typedef struct {

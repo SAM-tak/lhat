@@ -80,6 +80,46 @@ typedef struct LhatError {
     LhatTable *fields;
 } LhatError;
 
+// 5.11: one suspended frame, which is all 02 の 15.5 leaves room for -- a
+// yield^ is always written in the body of the procedure it suspends, so there
+// is never more than one frame to keep.
+typedef enum {
+    LHAT_COROUTINE_FRESH,      // never resumed; the body has not started
+    LHAT_COROUTINE_SUSPENDED,  // stopped at a yield^
+    LHAT_COROUTINE_RUNNING,
+    LHAT_COROUTINE_DONE
+} LhatCoroutineState;
+
+#define LHAT_COROUTINE_CLEANUPS 32
+
+typedef struct LhatCoroutine {
+    LhatObject header;
+    const LhatClosure *closure;
+    LhatCoroutineState state;
+
+    LhatValue *registers;  // the saved frame, as wide as the body needs
+    size_t register_count;
+    size_t pc;
+    uint8_t sent_into;     // the register a resume's value arrives in
+
+    // 02 の 10.7: what a discarded coroutine still has to run.
+    size_t cleanups[LHAT_COROUTINE_CLEANUPS];
+    size_t cleanup_count;
+} LhatCoroutine;
+
+// An operation the runtime provides rather than the program. 02 の 12.6 and
+// 15.6 give a coroutine two of them; the rest of the standard library is M2.
+typedef enum {
+    LHAT_NATIVE_RESUME,
+    LHAT_NATIVE_DISPOSE
+} LhatNativeKind;
+
+typedef struct LhatNative {
+    LhatObject header;
+    LhatNativeKind kind;
+    LhatValue bound;  // what it was reached through
+} LhatNative;
+
 // ---------------------------------------------------------------------------
 // Making and freeing
 // ---------------------------------------------------------------------------
@@ -96,6 +136,14 @@ LhatErrorKind *lhat_error_kind_new(LhatObject **owner,
 
 // Makes the error and the table its fields live in.
 LhatError *lhat_error_new(LhatObject **owner, const LhatErrorKind *kind);
+
+// `registers` is how wide the body's frame is, which 5.2 fixes at compile
+// time -- so a coroutine's storage is known when it is made.
+LhatCoroutine *lhat_coroutine_new(LhatObject **owner, const LhatClosure *closure,
+                                  size_t registers);
+
+LhatNative *lhat_native_new(LhatObject **owner, LhatNativeKind kind,
+                            LhatValue bound);
 
 // 04 の 2.6 and 6.1: whether `value` is an error of `kind`. A kind object
 // standing for a whole errordef^ answers yes for any of its kinds, since 2.3

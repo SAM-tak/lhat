@@ -84,6 +84,10 @@ typedef enum {
     LHAT_BC_POPCLEANUP,   // A   run the cleanups above depth A, innermost first
     LHAT_BC_ENDCLEANUP,   //     the end of a cleanup body
 
+    // 02 の 15.4: bidirectional. The value goes out and the one the resume
+    // supplies comes back into the same register.
+    LHAT_BC_YIELD,      // A     yield R[A]; R[A] = what the resume sent
+
     LHAT_BC_RETURN,     // A     return R[A]
     LHAT_BC_RETURN_NIL,
 
@@ -158,6 +162,8 @@ typedef struct LhatProto {
 
     uint8_t parameters;
     bool is_function;  // f^ rather than p^ (02 の 15 章)
+    bool yields;       // 02 の 15.2: the body contains yield^, so calling it
+                       // answers a coroutine rather than running it (15.5)
     bool takes_self;   // 02 の 14.4: the first parameter is written self^,
                        // which is what makes it an instance method
 

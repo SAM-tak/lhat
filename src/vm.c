@@ -1119,6 +1119,7 @@ static void compile_subroutine(Compiler *c, const LhatNode *node, uint8_t into)
         return;
     }
     proto->is_function = node->v.func.is_function;
+    proto->yields = node->v.func.yields;
 
     size_t index = lhat_proto_add(c->proto, proto);
     if (index == SIZE_MAX) {
@@ -1303,6 +1304,17 @@ static void compile_expression(Compiler *c, const LhatNode *node, uint8_t into)
 
         case LHAT_NODE_TRY:
             compile_try(c, node, into);
+            return;
+
+        // 02 の 15.4: an expression, not a statement -- what it answers is
+        // what the resume sent, so one register carries both directions.
+        case LHAT_NODE_YIELD:
+            if (node->v.jump.value == NULL) {
+                emit(c, lhat_encode_abc(LHAT_BC_LOADNIL, into, 0, 0));
+            } else {
+                compile_expression(c, node->v.jump.value, into);
+            }
+            emit(c, lhat_encode_abc(LHAT_BC_YIELD, into, 0, 0));
             return;
 
         // 04 の 11.3: 't.foo' is resolved statically and 't[k]' is not, but
@@ -2107,11 +2119,15 @@ static void compile_statement(Compiler *c, const LhatNode *node)
             return;
         }
 
-        case LHAT_NODE_CALL_STMT: {
+        case LHAT_NODE_CALL_STMT:
+        case LHAT_NODE_YIELD: {
             // 02 の 8.2: a call may stand alone, and its value is discarded.
+            // A yield^ written for its effect alone is the same shape.
             uint8_t mark = c->next_register;
             uint8_t slot = reserve(c);
-            compile_expression(c, node->v.jump.value, slot);
+            compile_expression(c, node->kind == LHAT_NODE_YIELD ? node
+                                                                : node->v.jump.value,
+                               slot);
             c->next_register = mark;
             return;
         }
@@ -2367,6 +2383,11 @@ typedef struct {
     size_t resume;
     LhatValue answer;
     bool returning;
+
+    // 5.11: the coroutine this frame belongs to, when it is one. NULL for an
+    // ordinary call.
+    LhatCoroutine *coroutine;
+    bool disposing;  // 02 の 10.7: no yield^ while the cleanups are running
 } Frame;
 
 typedef struct {
@@ -2392,6 +2413,25 @@ static LhatTable *table_of(LhatValue value)
         return ((LhatError *)lhat_as_object(value))->fields;
     }
     return NULL;
+}
+
+// The two operations 02 の 12.6 and 15.6 give a coroutine. The rest of the
+// standard library is M2 and will not go through here.
+static bool native_named(LhatValue key, LhatNativeKind *out)
+{
+    if (!lhat_is_object_kind(key, LHAT_OBJECT_STRING)) {
+        return false;
+    }
+    const LhatString *name = (const LhatString *)lhat_as_object(key);
+    if (name->length == 6 && memcmp(name->text, "resume", 6) == 0) {
+        *out = LHAT_NATIVE_RESUME;
+        return true;
+    }
+    if (name->length == 7 && memcmp(name->text, "dispose", 7) == 0) {
+        *out = LHAT_NATIVE_DISPOSE;
+        return true;
+    }
+    return false;
 }
 
 static void *allocate(Machine *m, size_t size, LhatObjectKind kind)
@@ -2646,6 +2686,21 @@ LhatRunResult lhat_run(const LhatProto *proto)
             // An error answers from its fields: 2.3 gives every kind message
             // and cause, and they are reached the same way as a member.
             case LHAT_BC_GETINDEX: {
+                // 02 の 12.6 and 15.6: a coroutine answers the two operations
+                // the runtime provides, bound to the coroutine they came from.
+                if (lhat_is_object_kind(registers[b], LHAT_OBJECT_COROUTINE)) {
+                    LhatNativeKind which;
+                    if (!native_named(registers[cc], &which)) {
+                        return finish(m, LHAT_RUN_TYPE_ERROR, lhat_nil(), at);
+                    }
+                    LhatNative *native =
+                        lhat_native_new(&m->objects, which, registers[b]);
+                    if (native == NULL) {
+                        return finish(m, LHAT_RUN_OUT_OF_MEMORY, lhat_nil(), at);
+                    }
+                    registers[a] = lhat_object((LhatObject *)native);
+                    break;
+                }
                 const LhatTable *table = table_of(registers[b]);
                 if (table == NULL) {
                     return finish(m, LHAT_RUN_TYPE_ERROR, lhat_nil(), at);
@@ -2727,6 +2782,88 @@ LhatRunResult lhat_run(const LhatProto *proto)
 
             case LHAT_BC_CALL:
             case LHAT_BC_CALLMETHOD: {
+                // 02 の 12.6 and 15.6: resume and dispose are the runtime's,
+                // not the program's, so they are performed rather than called.
+                if (lhat_is_object_kind(registers[a], LHAT_OBJECT_NATIVE)) {
+                    const LhatNative *native =
+                        (const LhatNative *)lhat_as_object(registers[a]);
+                    size_t first = a + (op == LHAT_BC_CALLMETHOD ? 2 : 1);
+                    LhatValue sent = b > 0 ? registers[first] : lhat_nil();
+                    if (!lhat_is_object_kind(native->bound,
+                                             LHAT_OBJECT_COROUTINE)) {
+                        return finish(m, LHAT_RUN_NOT_CALLABLE, lhat_nil(), at);
+                    }
+                    LhatCoroutine *co =
+                        (LhatCoroutine *)lhat_as_object(native->bound);
+
+                    // 02 の 10.7: disposal runs what is still pending and
+                    // never runs the same cleanup twice, so a coroutine that
+                    // has finished simply has nothing left to do.
+                    bool dispose = native->kind == LHAT_NATIVE_DISPOSE;
+                    if (co->state == LHAT_COROUTINE_DONE ||
+                        (dispose && co->state == LHAT_COROUTINE_FRESH)) {
+                        if (dispose) {
+                            co->state = LHAT_COROUTINE_DONE;
+                            registers[a] = lhat_nil();
+                            break;
+                        }
+                        return finish(m, LHAT_RUN_DEAD_COROUTINE, lhat_nil(), at);
+                    }
+                    if (co->state == LHAT_COROUTINE_RUNNING) {
+                        return finish(m, LHAT_RUN_DEAD_COROUTINE, lhat_nil(), at);
+                    }
+                    if (m->frame_count >= LHAT_MAX_FRAMES) {
+                        return finish(m, LHAT_RUN_STACK_OVERFLOW, lhat_nil(), at);
+                    }
+
+                    LhatValue *next_base = &registers[a] + 1;
+                    if (next_base + LHAT_MAX_REGISTERS >=
+                        m->stack + LHAT_STACK_SLOTS) {
+                        return finish(m, LHAT_RUN_STACK_OVERFLOW, lhat_nil(), at);
+                    }
+
+                    // 5.11: one frame, put back where it left off.
+                    for (size_t i = 0; i < co->register_count; i++) {
+                        next_base[i] = co->registers[i];
+                    }
+                    frame->pc = pc;
+                    Frame *called = &m->frames[m->frame_count++];
+                    called->closure = co->closure;
+                    called->pc = co->pc;
+                    called->base = next_base;
+                    called->result = a;
+                    called->coroutine = co;
+                    called->disposing = dispose;
+                    called->returning = false;
+                    called->cleanup_count = co->cleanup_count;
+                    for (size_t i = 0; i < co->cleanup_count; i++) {
+                        called->cleanups[i] = co->cleanups[i];
+                    }
+
+                    bool resuming = co->state == LHAT_COROUTINE_SUSPENDED;
+                    co->state = LHAT_COROUTINE_RUNNING;
+
+                    frame = called;
+                    registers = frame->base;
+                    chunk = &co->closure->proto->chunk;
+                    pc = frame->pc;
+
+                    if (resuming) {
+                        // 15.4: the value the resume sent arrives where the
+                        // yield^ put the one it sent out.
+                        registers[co->sent_into] = sent;
+                    }
+                    if (dispose) {
+                        // 10.7: what is pending runs, innermost first, and
+                        // then the coroutine is finished.
+                        frame->drain_target = 0;
+                        frame->returning = true;
+                        frame->answer = lhat_nil();
+                        goto drain;
+                    }
+                    break;
+                }
+
                 if (!lhat_is_object_kind(registers[a], LHAT_OBJECT_SUBROUTINE)) {
                     return finish(m, LHAT_RUN_NOT_CALLABLE, lhat_nil(), at);
                 }
@@ -2752,6 +2889,25 @@ LhatRunResult lhat_run(const LhatProto *proto)
                 if (given != callee->proto->parameters) {
                     return finish(m, LHAT_RUN_ARITY, lhat_nil(), at);
                 }
+
+                // 02 の 15.5: calling a yieldable procedure does not suspend
+                // the caller. It answers a coroutine, and the body has not
+                // started -- which is why the colouring of async/await never
+                // arises here.
+                if (callee->proto->yields) {
+                    LhatCoroutine *co =
+                        lhat_coroutine_new(&m->objects, callee,
+                                           callee->proto->chunk.registers);
+                    if (co == NULL) {
+                        return finish(m, LHAT_RUN_OUT_OF_MEMORY, lhat_nil(), at);
+                    }
+                    for (size_t i = 0; i < given; i++) {
+                        co->registers[i] = registers[a + skip + i];
+                    }
+                    registers[a] = lhat_object((LhatObject *)co);
+                    break;
+                }
+
                 if (m->frame_count >= LHAT_MAX_FRAMES) {
                     return finish(m, LHAT_RUN_STACK_OVERFLOW, lhat_nil(), at);
                 }
@@ -2772,6 +2928,8 @@ LhatRunResult lhat_run(const LhatProto *proto)
                 called->result = a;
                 called->cleanup_count = 0;  // 5.5: pending cleanups are per frame
                 called->returning = false;
+                called->coroutine = NULL;
+                called->disposing = false;
 
                 frame = called;
                 registers = frame->base;
@@ -2807,6 +2965,41 @@ LhatRunResult lhat_run(const LhatProto *proto)
                 frame->answer = op == LHAT_BC_RETURN ? registers[a] : lhat_nil();
                 goto drain;
 
+            // 02 の 15.4: the frame stops here and the value goes out. 5.11
+            // keeps the one frame rather than a stack, which 15.5 is what
+            // makes possible -- a yield^ is always in the body it suspends.
+            case LHAT_BC_YIELD: {
+                LhatCoroutine *co = frame->coroutine;
+                // 10.7: nothing is waiting for a yield^ during disposal.
+                if (co == NULL || frame->disposing) {
+                    return finish(m, LHAT_RUN_YIELD_OUTSIDE, lhat_nil(), at);
+                }
+                LhatValue value = registers[a];
+
+                for (size_t i = 0; i < co->register_count; i++) {
+                    co->registers[i] = registers[i];
+                }
+                co->pc = pc;
+                co->sent_into = a;
+                co->state = LHAT_COROUTINE_SUSPENDED;
+                if (frame->cleanup_count > LHAT_COROUTINE_CLEANUPS) {
+                    return finish(m, LHAT_RUN_STACK_OVERFLOW, lhat_nil(), at);
+                }
+                co->cleanup_count = frame->cleanup_count;
+                for (size_t i = 0; i < frame->cleanup_count; i++) {
+                    co->cleanups[i] = frame->cleanups[i];
+                }
+
+                uint8_t into = frame->result;
+                m->frame_count--;
+                frame = &m->frames[m->frame_count - 1];
+                registers = frame->base;
+                chunk = &frame->closure->proto->chunk;
+                pc = frame->pc;
+                registers[into] = value;
+                break;
+            }
+
             case LHAT_BC_COUNT:
                 return finish(m, LHAT_RUN_TYPE_ERROR, lhat_nil(), at);
         }
@@ -2828,6 +3021,12 @@ LhatRunResult lhat_run(const LhatProto *proto)
         // since the slots are about to be reused.
         {
             LhatValue value = frame->answer;
+            // 5.11: the body is over, so the coroutine has nothing left to
+            // resume and its cleanups have all run.
+            if (frame->coroutine != NULL) {
+                frame->coroutine->state = LHAT_COROUTINE_DONE;
+                frame->coroutine->cleanup_count = 0;
+            }
             close_upvalues(m, frame->base);
             m->frame_count--;
 
@@ -2858,6 +3057,8 @@ const char *lhat_run_status_message(LhatRunStatus status)
         case LHAT_RUN_STACK_OVERFLOW:  return "the calls went too deep";
         case LHAT_RUN_OUT_OF_MEMORY:   return "out of memory";
         case LHAT_RUN_BAD_KEY:         return "this cannot be a key";
+        case LHAT_RUN_DEAD_COROUTINE:  return "this coroutine has finished";
+        case LHAT_RUN_YIELD_OUTSIDE:   return "nothing is waiting for this yield^";
     }
     return "unknown";
 }

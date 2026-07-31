@@ -85,6 +85,42 @@ LhatError *lhat_error_new(LhatObject **owner, const LhatErrorKind *kind)
     return error;
 }
 
+LhatCoroutine *lhat_coroutine_new(LhatObject **owner, const LhatClosure *closure,
+                                  size_t registers)
+{
+    LhatCoroutine *coroutine =
+        (LhatCoroutine *)allocate(owner, sizeof(LhatCoroutine),
+                                  LHAT_OBJECT_COROUTINE);
+    if (coroutine == NULL) {
+        return NULL;
+    }
+    coroutine->registers =
+        (LhatValue *)calloc(registers ? registers : 1, sizeof *coroutine->registers);
+    if (coroutine->registers == NULL) {
+        return NULL;
+    }
+    for (size_t i = 0; i < registers; i++) {
+        coroutine->registers[i] = lhat_nil();
+    }
+    coroutine->closure = closure;
+    coroutine->state = LHAT_COROUTINE_FRESH;
+    coroutine->register_count = registers;
+    return coroutine;
+}
+
+LhatNative *lhat_native_new(LhatObject **owner, LhatNativeKind kind,
+                            LhatValue bound)
+{
+    LhatNative *native =
+        (LhatNative *)allocate(owner, sizeof(LhatNative), LHAT_OBJECT_NATIVE);
+    if (native == NULL) {
+        return NULL;
+    }
+    native->kind = kind;
+    native->bound = bound;
+    return native;
+}
+
 bool lhat_error_is_kind(LhatValue value, const LhatErrorKind *kind)
 {
     if (!lhat_is_object_kind(value, LHAT_OBJECT_ERROR) || kind == NULL) {
@@ -113,6 +149,9 @@ void lhat_object_free(LhatObject *object)
         }
         case LHAT_OBJECT_SUBROUTINE:
             free(((LhatClosure *)object)->upvalues);
+            break;
+        case LHAT_OBJECT_COROUTINE:
+            free(((LhatCoroutine *)object)->registers);
             break;
         default:
             break;
