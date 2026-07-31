@@ -194,7 +194,6 @@ static void print_node(const LhatLexer *lexer, const LhatNode *node, int depth)
             print_node(lexer, node->v.entry.value, depth + 1);
             break;
         case LHAT_NODE_DEFINE:
-        case LHAT_NODE_LET:
         case LHAT_NODE_REASSIGN:
             print_list(lexer, "targets", node->v.binding.targets, depth + 1);
             print_list(lexer, "values", node->v.binding.values, depth + 1);
@@ -211,6 +210,7 @@ static void print_node(const LhatLexer *lexer, const LhatNode *node, int depth)
         case LHAT_NODE_BREAK:
         case LHAT_NODE_YIELD:
         case LHAT_NODE_CALL_STMT:
+        case LHAT_NODE_UNPACK:
             print_node(lexer, node->v.jump.value, depth + 1);
             break;
         case LHAT_NODE_TYPE_CORO:

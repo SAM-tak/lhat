@@ -1169,42 +1169,44 @@ static LhatNode *parse_braced_block(Parser *p)
     return block;
 }
 
-// 13.10: 'let^ a, b := expr' takes one value apart.
-static LhatNode *parse_let(Parser *p)
+// A target may carry a type, as an ordinary definition may (Memo.md L36).
+// Reassignment targets must not, since the variable already exists.
+static LhatNode *parse_target(Parser *p)
 {
+    LhatToken start = p->current;
+    LhatNode *value = parse_expression(p);
+
+    if (!check_op(p, LHAT_OP_COLON)) {
+        return value;
+    }
+
+    advance(p);
+    LhatNode *target = make(p, LHAT_NODE_PARAM, &start);
+    if (target == NULL) {
+        return value;
+    }
+    target->v.param.name = value;
+    target->v.param.type = parse_type(p);
+    return target;
+}
+
+// 13.10: 'unpack^ expr' marks the value that is taken apart. Putting the
+// marker on the value rather than on the binding is what lets a
+// reassignment destructure too.
+static LhatNode *parse_value(Parser *p)
+{
+    if (!check_hat(p, "unpack")) {
+        return parse_expression(p);
+    }
+
     LhatToken start = p->current;
     advance(p);
 
-    LhatNode *node = make(p, LHAT_NODE_LET, &start);
+    LhatNode *node = make(p, LHAT_NODE_UNPACK, &start);
     if (node == NULL) {
         return NULL;
     }
-
-    LhatNode *head = NULL;
-    LhatNode *tail = NULL;
-    for (;;) {
-        LhatNode *target = make(p, LHAT_NODE_PARAM, &p->current);
-        if (target == NULL) {
-            break;
-        }
-        target->v.param.name = simple_node(p);
-        if (target->v.param.name == NULL) {
-            report(p, &p->current, LHAT_PARSE_ERR_EXPECTED_NAME);
-            break;
-        }
-        if (match_op(p, LHAT_OP_COLON)) {
-            target->v.param.type = parse_type(p);
-        }
-        lhat_node_append(&head, &tail, target);
-        if (!match_op(p, LHAT_OP_COMMA)) {
-            break;
-        }
-    }
-
-    node->v.binding.targets = head;
-    if (expect_op(p, LHAT_OP_DEFINE)) {
-        node->v.binding.values = parse_expression(p);
-    }
+    node->v.jump.value = parse_expression(p);
     return node;
 }
 
@@ -1331,9 +1333,6 @@ static LhatNode *parse_statement(Parser *p)
             advance(p);
             return parse_braced_block(p);
         }
-        if (check_hat(p, "let")) {
-            return parse_let(p);
-        }
         if (check_hat(p, "with")) {
             return parse_with(p);
         }
@@ -1353,12 +1352,20 @@ static LhatNode *parse_statement(Parser *p)
         }
     }
 
+    // 13.10: unpack^ belongs to the value of a binding and nowhere else.
+    if (check_hat(p, "unpack")) {
+        report(p, &p->current, LHAT_PARSE_ERR_UNPACK_MISPLACED);
+        advance(p);
+        parse_expression(p);
+        return make(p, LHAT_NODE_ERROR, &start);
+    }
+
     // Otherwise a definition, a reassignment or a call.
     LhatNode *head = NULL;
     LhatNode *tail = NULL;
-    lhat_node_append(&head, &tail, parse_expression(p));
+    lhat_node_append(&head, &tail, parse_target(p));
     while (match_op(p, LHAT_OP_COMMA)) {
-        lhat_node_append(&head, &tail, parse_expression(p));
+        lhat_node_append(&head, &tail, parse_target(p));
     }
 
     if (check_op(p, LHAT_OP_DEFINE) || check_op(p, LHAT_OP_REASSIGN)) {
@@ -1368,9 +1375,9 @@ static LhatNode *parse_statement(Parser *p)
 
         LhatNode *values = NULL;
         LhatNode *values_tail = NULL;
-        lhat_node_append(&values, &values_tail, parse_expression(p));
+        lhat_node_append(&values, &values_tail, parse_value(p));
         while (match_op(p, LHAT_OP_COMMA)) {
-            lhat_node_append(&values, &values_tail, parse_expression(p));
+            lhat_node_append(&values, &values_tail, parse_value(p));
         }
 
         LhatNode *node = make(p, defining ? LHAT_NODE_DEFINE : LHAT_NODE_REASSIGN,
@@ -1381,13 +1388,25 @@ static LhatNode *parse_statement(Parser *p)
         node->v.binding.targets = head;
         node->v.binding.values = values;
 
-        // 13.10: one value against several targets is destructuring, which
-        // has to say let^.
         size_t targets = lhat_node_list_length(head);
         size_t sources = lhat_node_list_length(values);
-        if (targets != sources) {
+
+        bool unpacking = false;
+        for (LhatNode *value = values; value != NULL; value = value->next) {
+            if (value->kind == LHAT_NODE_UNPACK) {
+                unpacking = true;
+            }
+        }
+
+        if (unpacking) {
+            // 13.10: the marked value has to be the only one, since it is
+            // spread across every target.
+            if (sources != 1) {
+                report(p, &at, LHAT_PARSE_ERR_UNPACK_NOT_ALONE);
+            }
+        } else if (targets != sources) {
             report(p, &at,
-                   sources == 1 ? LHAT_PARSE_ERR_DESTRUCTURE_NEEDS_LET
+                   sources == 1 ? LHAT_PARSE_ERR_DESTRUCTURE_NEEDS_UNPACK
                                 : LHAT_PARSE_ERR_BINDING_ARITY);
         }
         return node;
@@ -1495,10 +1514,14 @@ const char *lhat_parse_error_message(LhatParseErrorCode code)
             return "postfix reassignment was withdrawn; write 'target << value'";
         case LHAT_PARSE_ERR_WITHDRAWN_COLONCOLON:
             return "'::' was withdrawn; write '->' before the return type";
-        case LHAT_PARSE_ERR_DESTRUCTURE_NEEDS_LET:
-            return "taking one value apart needs 'let^'";
+        case LHAT_PARSE_ERR_DESTRUCTURE_NEEDS_UNPACK:
+            return "taking one value apart needs 'unpack^' before it";
         case LHAT_PARSE_ERR_BINDING_ARITY:
             return "the number of targets and values does not match";
+        case LHAT_PARSE_ERR_UNPACK_NOT_ALONE:
+            return "'unpack^' must be the only value of the binding";
+        case LHAT_PARSE_ERR_UNPACK_MISPLACED:
+            return "'unpack^' is only valid as the value of ':=' or '<<'";
         case LHAT_PARSE_ERR_LEXICAL:
             return "the input could not be tokenised";
     }

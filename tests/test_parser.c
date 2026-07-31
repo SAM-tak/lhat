@@ -59,7 +59,6 @@ static const LhatNode *first_value(const Parse *p)
     }
     switch (statement->kind) {
         case LHAT_NODE_DEFINE:
-        case LHAT_NODE_LET:
         case LHAT_NODE_REASSIGN:
             return statement->v.binding.values;
         case LHAT_NODE_CALL_STMT:
@@ -105,29 +104,66 @@ static void test_statements(void)
     LHAT_CHECK_EQ_INT(first_statement(&p)->kind, LHAT_NODE_REASSIGN);
     parse_dispose(&p);
 
-    // 13.10: taking one value apart needs let^.
+    // 13.10: the marker sits on the value, not on the binding.
     LHAT_TEST("destructuring binding");
-    parse_text(&p, "let^ q, r := divmod(7, 2)");
+    parse_text(&p, "q, r := unpack^ divmod(7, 2)");
     LHAT_CHECK_EQ_INT(error_count(&p), 0);
     {
         const LhatNode *s = first_statement(&p);
-        LHAT_CHECK_EQ_INT(s->kind, LHAT_NODE_LET);
+        LHAT_CHECK_EQ_INT(s->kind, LHAT_NODE_DEFINE);
         LHAT_CHECK_EQ_INT(lhat_node_list_length(s->v.binding.targets), 2);
+        LHAT_CHECK_EQ_INT(s->v.binding.values->kind, LHAT_NODE_UNPACK);
     }
     parse_dispose(&p);
 
-    LHAT_TEST("destructuring without let^ is rejected");
+    // Putting the marker on the value is what makes this work at all.
+    LHAT_TEST("destructuring reassignment");
+    parse_text(&p, "q, r << unpack^ divmod(7, 2)");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    {
+        const LhatNode *s = first_statement(&p);
+        LHAT_CHECK_EQ_INT(s->kind, LHAT_NODE_REASSIGN);
+        LHAT_CHECK_EQ_INT(s->v.binding.values->kind, LHAT_NODE_UNPACK);
+    }
+    parse_dispose(&p);
+
+    LHAT_TEST("destructuring without unpack^ is rejected");
     parse_text(&p, "q, r := divmod(7, 2)");
     LHAT_CHECK(p.result.diagnostic_count > 0, "expected a diagnostic");
     LHAT_CHECK_EQ_INT(p.result.diagnostics[0].code,
-                      LHAT_PARSE_ERR_DESTRUCTURE_NEEDS_LET);
+                      LHAT_PARSE_ERR_DESTRUCTURE_NEEDS_UNPACK);
     parse_dispose(&p);
 
+    LHAT_TEST("unpack^ must be the only value");
+    parse_text(&p, "a, b := unpack^ f(), 3");
+    LHAT_CHECK(p.result.diagnostic_count > 0, "expected a diagnostic");
+    LHAT_CHECK_EQ_INT(p.result.diagnostics[0].code,
+                      LHAT_PARSE_ERR_UNPACK_NOT_ALONE);
+    parse_dispose(&p);
+
+    LHAT_TEST("unpack^ outside a binding is rejected");
+    parse_text(&p, "unpack^ f()");
+    LHAT_CHECK(p.result.diagnostic_count > 0, "expected a diagnostic");
+    LHAT_CHECK_EQ_INT(p.result.diagnostics[0].code,
+                      LHAT_PARSE_ERR_UNPACK_MISPLACED);
+    parse_dispose(&p);
+
+    // The target list is the ordinary one, so a type may be written on it.
     LHAT_TEST("typed destructuring targets");
-    parse_text(&p, "let^ q:number^, r:number^ := f()");
+    parse_text(&p, "q:number^, r:number^ := unpack^ f()");
     LHAT_CHECK_EQ_INT(error_count(&p), 0);
-    LHAT_CHECK(first_statement(&p)->v.binding.targets->v.param.type != NULL,
-               "the first target should carry a type");
+    {
+        const LhatNode *target = first_statement(&p)->v.binding.targets;
+        LHAT_CHECK_EQ_INT(target->kind, LHAT_NODE_PARAM);
+        LHAT_CHECK(target->v.param.type != NULL, "the target should carry a type");
+    }
+    parse_dispose(&p);
+
+    LHAT_TEST("a single definition may carry a type");
+    parse_text(&p, "x:number^ := 1");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    LHAT_CHECK_EQ_INT(first_statement(&p)->v.binding.targets->kind,
+                      LHAT_NODE_PARAM);
     parse_dispose(&p);
 
     LHAT_TEST("call statement");
@@ -682,7 +718,7 @@ static void test_realistic(void)
                "if^ c.value \xE2\x89\xA6 10 {\n"
                "    print('done')\n"
                "}\n"
-               "let^ q, r := divmod(7, 2)\n"
+               "q, r := unpack^ divmod(7, 2)\n"
                "msg := $\"q = {q}, r = {r}\"\n");
     LHAT_CHECK_EQ_INT(error_count(&p), 0);
     LHAT_CHECK(lhat_node_list_length(first_statement(&p)) >= 5,

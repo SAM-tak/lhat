@@ -38,12 +38,12 @@ typedef enum {
     LHAT_NODE_INDEX,         // a[i]  a?[i]
     LHAT_NODE_CALL,          // f(x)  f?(x)
     LHAT_NODE_AS,            // expr as^ Type
+    LHAT_NODE_UNPACK,        // unpack^ expr          (13.10)
     LHAT_NODE_FUNC,          // f^... { ... } / p^... { ... }
     LHAT_NODE_IF_EXPR,       // if^c: e el^c: e el^: e ;
 
     // ---- statements ----
     LHAT_NODE_DEFINE,        // a, b := x, y
-    LHAT_NODE_LET,           // let^ a, b := expr      (13.10)
     LHAT_NODE_REASSIGN,      // a, b << x, y
     LHAT_NODE_CALL_STMT,
     LHAT_NODE_BLOCK,         // do^{ ... } and any braced body

@@ -25,8 +25,10 @@ typedef enum {
     LHAT_PARSE_ERR_JUXTAPOSITION,          // 2.1: 'foo 1 2 3' outside command mode
     LHAT_PARSE_ERR_WITHDRAWN_ARROW,        // '->' as postfix reassignment (Q2)
     LHAT_PARSE_ERR_WITHDRAWN_COLONCOLON,   // '::' as the return separator (Q9)
-    LHAT_PARSE_ERR_DESTRUCTURE_NEEDS_LET,  // 13.10
-    LHAT_PARSE_ERR_BINDING_ARITY,          // targets and values disagree
+    LHAT_PARSE_ERR_DESTRUCTURE_NEEDS_UNPACK,  // 13.10
+    LHAT_PARSE_ERR_BINDING_ARITY,             // targets and values disagree
+    LHAT_PARSE_ERR_UNPACK_NOT_ALONE,          // 13.10: unpack^ must be the only value
+    LHAT_PARSE_ERR_UNPACK_MISPLACED,          // unpack^ outside a binding
     LHAT_PARSE_ERR_LEXICAL                 // the lexer already reported one
 } LhatParseErrorCode;
 

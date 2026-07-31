@@ -101,10 +101,10 @@ const char *lhat_node_kind_name(LhatNodeKind kind)
         case LHAT_NODE_INDEX:          return "index";
         case LHAT_NODE_CALL:           return "call";
         case LHAT_NODE_AS:             return "as";
+        case LHAT_NODE_UNPACK:         return "unpack";
         case LHAT_NODE_FUNC:           return "func";
         case LHAT_NODE_IF_EXPR:        return "if-expr";
         case LHAT_NODE_DEFINE:         return "define";
-        case LHAT_NODE_LET:            return "let";
         case LHAT_NODE_REASSIGN:       return "reassign";
         case LHAT_NODE_CALL_STMT:      return "call-stmt";
         case LHAT_NODE_BLOCK:          return "block";
