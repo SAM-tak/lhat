@@ -1960,6 +1960,81 @@ static void test_coroutines(void)
     LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_YIELD_OUTSIDE);
     run_dispose(&r);
 
+    // 02 の 15.8: what a plain call does not do, yieldall^ does. The inner
+    // one's yields reach the outer one's resumer.
+    LHAT_TEST("yieldall^ forwards the inner one's yields");
+    run_text(&r,
+             "let^ a = p^ { yield^ 1 yield^ 2 }\n"
+             "let^ b = p^ { yieldall^ a() yield^ 3 }\n"
+             "let^ c = b()\n"
+             "let^ x = c.resume()\n"
+             "let^ y = c.resume()\n"
+             "let^ z = c.resume()\n"
+             "return^ x * 100 + y * 10 + z\n");
+    CHECK_INTEGER(&r, 123);
+    run_dispose(&r);
+
+    // 15.8: the value of the delegation is the inner one's return value, the
+    // shape PEP 380 gave a generator's return.
+    LHAT_TEST("the value of yieldall^ is the inner return");
+    run_text(&r,
+             "let^ a = p^ { yield^ 1 return^ 9 }\n"
+             "let^ b = p^ { let^ r = yieldall^ a() yield^ r }\n"
+             "let^ c = b()\n"
+             "c.resume()\n"
+             "return^ c.resume()\n");
+    CHECK_INTEGER(&r, 9);
+    run_dispose(&r);
+
+    // 15.4 through a delegation: what the resume sends reaches the inner one.
+    LHAT_TEST("what the resume sends reaches the inner coroutine");
+    run_text(&r,
+             "let^ a = p^ {\n"
+             "  let^ got = yield^ 0\n"
+             "  return^ got + 1\n"
+             "}\n"
+             "let^ b = p^ { let^ r = yieldall^ a() yield^ r }\n"
+             "let^ c = b()\n"
+             "c.resume()\n"
+             "return^ c.resume(41)\n");
+    CHECK_INTEGER(&r, 42);
+    run_dispose(&r);
+
+    LHAT_TEST("delegations nest");
+    run_text(&r,
+             "let^ a = p^ { yield^ 1 }\n"
+             "let^ b = p^ { yieldall^ a() yield^ 2 }\n"
+             "let^ d = p^ { yieldall^ b() yield^ 3 }\n"
+             "let^ c = d()\n"
+             "let^ x = c.resume()\n"
+             "let^ y = c.resume()\n"
+             "let^ z = c.resume()\n"
+             "return^ x * 100 + y * 10 + z\n");
+    CHECK_INTEGER(&r, 123);
+    run_dispose(&r);
+
+    LHAT_TEST("a body that only delegates is still yieldable");
+    run_text(&r,
+             "let^ a = p^ { yield^ 5 }\n"
+             "let^ b = p^ { yieldall^ a() }\n"
+             "let^ c = b()\n"
+             "return^ c.resume()\n");
+    CHECK_INTEGER(&r, 5);
+    run_dispose(&r);
+
+    // 15.8 の 15.5: the plain call is what does nothing, which is the whole
+    // reason the delegation had to be written.
+    LHAT_TEST("a plain call still only makes a coroutine");
+    run_text(&r,
+             "let^ log = { n := 0 }\n"
+             "let^ a = p^ { log.n := 1 yield^ 0 }\n"
+             "let^ b = p^ { a() yield^ 9 }\n"
+             "let^ c = b()\n"
+             "c.resume()\n"
+             "return^ log.n\n");
+    CHECK_INTEGER(&r, 0);
+    run_dispose(&r);
+
     LHAT_TEST("yield^ outside a coroutine is a fault");
     run_text(&r, "yield^ 1\nreturn^ 0\n");
     LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_YIELD_OUTSIDE);

@@ -48,7 +48,10 @@ typedef enum {
     LHAT_CHECK_ERR_OVERLOAD_OVERLAPS,   // 14.12: signatures must stay apart
     LHAT_CHECK_ERR_INCOMPARABLE,        // no value inhabits both sides
     LHAT_CHECK_ERR_MISSING_FIELD,       // 04 の 2.5: no default to fall back to
-    LHAT_CHECK_ERR_REQUIRE_FAILED       // 05 の 6 章: the unit could not be had
+    LHAT_CHECK_ERR_REQUIRE_FAILED,      // 05 の 6 章: the unit could not be had
+    LHAT_CHECK_ERR_COROUTINE_DROPPED,   // 15.8: a call that makes a coroutine
+                                        // and does nothing with it
+    LHAT_CHECK_ERR_NOT_COROUTINE        // 15.8: yieldall^ needs one
 } LhatCheckErrorCode;
 
 typedef struct {

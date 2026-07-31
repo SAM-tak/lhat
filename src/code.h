@@ -88,6 +88,10 @@ typedef enum {
     // supplies comes back into the same register.
     LHAT_BC_YIELD,      // A     yield R[A]; R[A] = what the resume sent
 
+    // 02 の 15.8: delegation, which compiles to the loop 5.7 writes out.
+    LHAT_BC_RESUME,     // A B   R[A] = resume the coroutine R[B], sending R[A]
+    LHAT_BC_ISDONE,     // A B   R[A] = the coroutine R[B] has finished
+
     LHAT_BC_RETURN,     // A     return R[A]
     LHAT_BC_RETURN_NIL,
 

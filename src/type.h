@@ -90,6 +90,9 @@ struct LhatType {
             // 'x.m()' passes x there without writing it. The receiver is not
             // in `params`, so an ordinary call needs no special case.
             bool takes_self;
+            // 15.2: the body contains yield^ or yieldall^, so calling it answers
+            // a coroutine rather than running anything (15.5)
+            bool yields;
         } func;
 
         struct {

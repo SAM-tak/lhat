@@ -1306,6 +1306,41 @@ static void compile_expression(Compiler *c, const LhatNode *node, uint8_t into)
             compile_try(c, node, into);
             return;
 
+        // 02 の 15.8: delegation is the outer one driving the inner one. 03
+        // の 5.7 writes the expansion out; the chain of coroutines is
+        // registers rather than anything the machine holds.
+        case LHAT_NODE_YIELD_ALL: {
+            uint8_t mark = c->next_register;
+            uint8_t co = reserve(c);
+            uint8_t sent = reserve(c);
+            uint8_t test = reserve(c);
+            compile_expression(c, node->v.jump.value, co);
+            emit(c, lhat_encode_abc(LHAT_BC_LOADNIL, sent, 0, 0));
+
+            size_t top = c->proto->chunk.count;
+            emit(c, lhat_encode_abc(LHAT_BC_RESUME, sent, co, 0));
+            emit(c, lhat_encode_abc(LHAT_BC_ISDONE, test, co, 0));
+            size_t keep = emit_jump(c, LHAT_BC_JUMP_FALSE, test);
+            size_t done = emit_jump(c, LHAT_BC_JUMP, 0);
+
+            lhat_chunk_patch_here(&c->proto->chunk, keep);
+            // What the inner one yielded goes straight out, and what the
+            // resume sends comes back to be passed in next time round.
+            emit(c, lhat_encode_abc(LHAT_BC_YIELD, sent, 0, 0));
+            size_t back = emit_jump(c, LHAT_BC_JUMP, 0);
+            if (back != SIZE_MAX) {
+                int32_t offset = (int32_t)top - (int32_t)back - 1;
+                c->proto->chunk.code[back] =
+                    lhat_encode_jump(LHAT_BC_JUMP, 0, offset);
+            }
+
+            lhat_chunk_patch_here(&c->proto->chunk, done);
+            // 15.8: the value of the whole thing is the inner return value.
+            emit(c, lhat_encode_abc(LHAT_BC_MOVE, into, sent, 0));
+            c->next_register = mark;
+            return;
+        }
+
         // 02 の 15.4: an expression, not a statement -- what it answers is
         // what the resume sent, so one register carries both directions.
         case LHAT_NODE_YIELD:
@@ -2120,13 +2155,15 @@ static void compile_statement(Compiler *c, const LhatNode *node)
         }
 
         case LHAT_NODE_CALL_STMT:
+        case LHAT_NODE_YIELD_ALL:
         case LHAT_NODE_YIELD: {
             // 02 の 8.2: a call may stand alone, and its value is discarded.
             // A yield^ written for its effect alone is the same shape.
             uint8_t mark = c->next_register;
             uint8_t slot = reserve(c);
-            compile_expression(c, node->kind == LHAT_NODE_YIELD ? node
-                                                                : node->v.jump.value,
+            compile_expression(c, node->kind == LHAT_NODE_CALL_STMT
+                                      ? node->v.jump.value
+                                      : node,
                                slot);
             c->next_register = mark;
             return;
@@ -2997,6 +3034,68 @@ LhatRunResult lhat_run(const LhatProto *proto)
                 chunk = &frame->closure->proto->chunk;
                 pc = frame->pc;
                 registers[into] = value;
+                break;
+            }
+
+            // 02 の 15.8: the delegation loop asks whether the inner one is
+            // finished, since 13.9 makes what a resume answers the union of
+            // its yield type and its return type.
+            case LHAT_BC_ISDONE: {
+                if (!lhat_is_object_kind(registers[b], LHAT_OBJECT_COROUTINE)) {
+                    return finish(m, LHAT_RUN_TYPE_ERROR, lhat_nil(), at);
+                }
+                const LhatCoroutine *co =
+                    (const LhatCoroutine *)lhat_as_object(registers[b]);
+                registers[a] = lhat_bool(co->state == LHAT_COROUTINE_DONE);
+                break;
+            }
+
+            case LHAT_BC_RESUME: {
+                if (!lhat_is_object_kind(registers[b], LHAT_OBJECT_COROUTINE)) {
+                    return finish(m, LHAT_RUN_TYPE_ERROR, lhat_nil(), at);
+                }
+                LhatCoroutine *co =
+                    (LhatCoroutine *)lhat_as_object(registers[b]);
+                if (co->state == LHAT_COROUTINE_DONE ||
+                    co->state == LHAT_COROUTINE_RUNNING) {
+                    return finish(m, LHAT_RUN_DEAD_COROUTINE, lhat_nil(), at);
+                }
+                if (m->frame_count >= LHAT_MAX_FRAMES) {
+                    return finish(m, LHAT_RUN_STACK_OVERFLOW, lhat_nil(), at);
+                }
+                LhatValue *next_base = &registers[a] + 1;
+                if (next_base + LHAT_MAX_REGISTERS >=
+                    m->stack + LHAT_STACK_SLOTS) {
+                    return finish(m, LHAT_RUN_STACK_OVERFLOW, lhat_nil(), at);
+                }
+
+                LhatValue sent = registers[a];
+                bool resuming = co->state == LHAT_COROUTINE_SUSPENDED;
+                for (size_t i = 0; i < co->register_count; i++) {
+                    next_base[i] = co->registers[i];
+                }
+                frame->pc = pc;
+                Frame *called = &m->frames[m->frame_count++];
+                called->closure = co->closure;
+                called->pc = co->pc;
+                called->base = next_base;
+                called->result = a;
+                called->coroutine = co;
+                called->disposing = false;
+                called->returning = false;
+                called->cleanup_count = co->cleanup_count;
+                for (size_t i = 0; i < co->cleanup_count; i++) {
+                    called->cleanups[i] = co->cleanups[i];
+                }
+                co->state = LHAT_COROUTINE_RUNNING;
+
+                frame = called;
+                registers = frame->base;
+                chunk = &co->closure->proto->chunk;
+                pc = frame->pc;
+                if (resuming) {
+                    registers[co->sent_into] = sent;
+                }
                 break;
             }
 

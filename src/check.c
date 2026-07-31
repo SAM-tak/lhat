@@ -977,6 +977,17 @@ static LhatType *infer_call(Checker *c, const LhatNode *node)
             param = param->next;
         }
     }
+
+    // 15.5: calling a yieldable procedure answers a coroutine rather than
+    // running it. 13.9 gives that three types; the middle one is what the
+    // body yields, which is not inferred yet.
+    if (callee->v.func.yields) {
+        return lhat_type_coro(c->result->types, simple(c, LHAT_TYPE_UNKNOWN),
+                              simple(c, LHAT_TYPE_UNKNOWN),
+                              callee->v.func.result != NULL
+                                  ? callee->v.func.result
+                                  : simple(c, LHAT_TYPE_NIL));
+    }
     return callee->v.func.result;
 }
 
@@ -1040,6 +1051,8 @@ static LhatType *infer_table(Checker *c, const LhatNode *node)
 static LhatType *infer_func(Checker *c, const LhatNode *node)
 {
     LhatType *func = lhat_type_func(c->result->types, node->v.func.is_function);
+    // 15.2: whether the body suspends is read off the body, not written.
+    func->v.func.yields = node->v.func.yields;
 
     Scope body;
     body.bindings = NULL;
@@ -1450,6 +1463,21 @@ static LhatType *infer(Checker *c, const LhatNode *node)
 
         case LHAT_NODE_FUNC:
             return infer_func(c, node);
+
+        // 15.8: the value is the inner coroutine's return value, and the
+        // right side has to be a coroutine -- there is nothing else to
+        // delegate to.
+        case LHAT_NODE_YIELD_ALL: {
+            LhatType *inner = infer(c, node->v.jump.value);
+            if (inner == NULL || inner->kind == LHAT_TYPE_UNKNOWN) {
+                return simple(c, LHAT_TYPE_UNKNOWN);
+            }
+            if (inner->kind != LHAT_TYPE_CORO) {
+                report(c, node, LHAT_CHECK_ERR_NOT_COROUTINE);
+                return simple(c, LHAT_TYPE_UNKNOWN);
+            }
+            return inner->v.coroutine.result;
+        }
 
         case LHAT_NODE_TRY: {
             // 04 の 5.3: the errors this lets through have to be ones the
@@ -1867,9 +1895,16 @@ static void check_statement(Checker *c, const LhatNode *node)
             check_reassign(c, node);
             break;
 
-        case LHAT_NODE_CALL_STMT:
-            infer(c, node->v.jump.value);
+        case LHAT_NODE_CALL_STMT: {
+            LhatType *value = infer(c, node->v.jump.value);
+            // 15.8: 15.5 makes such a call run no part of the body, so the
+            // statement provably has no effect. 04 の 8.1 の form: the type
+            // is the detection, with no must-use machinery added.
+            if (value != NULL && value->kind == LHAT_TYPE_CORO) {
+                report(c, node, LHAT_CHECK_ERR_COROUTINE_DROPPED);
+            }
             break;
+        }
 
         case LHAT_NODE_BLOCK:
             check_block(c, node);
@@ -1930,7 +1965,8 @@ static void check_statement(Checker *c, const LhatNode *node)
         }
 
         case LHAT_NODE_YIELD:
-            infer(c, node->v.jump.value);
+        case LHAT_NODE_YIELD_ALL:
+            infer(c, node);
             break;
 
         case LHAT_NODE_ERRORDEF:
@@ -2078,6 +2114,11 @@ const char *lhat_check_error_message(LhatCheckErrorCode code)
             return "try^ would return an error this subroutine cannot return";
         case LHAT_CHECK_ERR_REQUIRE_FAILED:
             return "this unit could not be required";
+        case LHAT_CHECK_ERR_NOT_COROUTINE:
+            return "yieldall^ delegates to a coroutine, and this is not one";
+        case LHAT_CHECK_ERR_COROUTINE_DROPPED:
+            return "this call makes a coroutine and runs none of the body; "
+                   "write yieldall^ to delegate, or let^ to keep it";
         case LHAT_CHECK_ERR_MISSING_FIELD:
             return "this field has no default, so it has to be written";
         case LHAT_CHECK_ERR_INCOMPARABLE:

@@ -1082,6 +1082,21 @@ static LhatNode *parse_unary(Parser *p)
         return node;
     }
 
+    // 02 の 15.8: delegation. A word of its own rather than a reading of
+    // yield^, since the two have different types -- yield^ answers what the
+    // resume sent, this answers the inner coroutine's return value.
+    if (check_hat(p, "yieldall")) {
+        LhatToken at = p->current;
+        p->saw_yield = true;  // 15.2: delegating is suspending
+        advance(p);
+        LhatNode *node = make(p, LHAT_NODE_YIELD_ALL, &at);
+        if (node == NULL) {
+            return NULL;
+        }
+        node->v.jump.value = parse_unary(p);
+        return node;
+    }
+
     // 02 の 15.4: yield^ is an expression, since its value is what the resume
     // sent. It takes everything to its right, so 'yield^ a + 1' sends the sum
     // -- there is nothing for a tighter reading to do with the remainder.
@@ -2324,8 +2339,12 @@ static LhatNode *parse_jump(Parser *p, LhatNodeKind kind)
 
 // 8.2 lets a call stand alone. try^ (04 の 5.1) and catch^ (04 の 4.4) wrap
 // one without changing that a call is being made -- they only say what to do
-// with a failure -- so 'try^ save(x)' and 'save(x) catch^ nil^' are
-// statements too. '??' is included on the same footing as catch^ (11.7).
+// with a failure -- so `try^ save(x)` and `save(x) catch^ nil^` are
+// statements too. `??` is included on the same footing as catch^ (11.7).
+//
+// 15.8: yieldall^ stands alone as well. Its value may be wanted or not, and
+// what it does -- running the inner coroutine to its end -- happens either
+// way. A plain call of a yieldable procedure is what does nothing.
 static bool is_binary_op(const LhatNode *node, LhatOpKind op)
 {
     return node->kind == LHAT_NODE_BINARY && node->v.binary.op == op;
@@ -2335,6 +2354,9 @@ static bool is_call_statement(const LhatNode *node)
 {
     while (node != NULL) {
         if (node->kind == LHAT_NODE_CALL) {
+            return true;
+        }
+        if (node->kind == LHAT_NODE_YIELD_ALL) {
             return true;
         }
         if (node->kind == LHAT_NODE_TRY) {

@@ -1133,6 +1133,75 @@ static void test_modules(void)
     check_against_dispose(&u, &lib);
 }
 
+// 02 の 15.5 and 15.8: what a call of a yieldable procedure answers, and the
+// mistake the answer makes catchable.
+static void test_coroutines(void)
+{
+    Unit u;
+
+    LHAT_TEST("a call of a yieldable procedure answers a coroutine");
+    check_text(&u,
+               "let^ gen = p^ { yield^ 1 }\n"
+               "let^ c = gen()\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // 15.8: 15.5 makes such a call run no part of the body, so the statement
+    // has no effect at all. C#'s IEnumerator allows this silently.
+    LHAT_TEST("dropping the coroutine is reported");
+    check_text(&u,
+               "let^ gen = p^ { yield^ 1 }\n"
+               "gen()\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_COROUTINE_DROPPED);
+    unit_dispose(&u);
+
+    LHAT_TEST("delegating to it is not");
+    check_text(&u,
+               "let^ gen = p^ { yield^ 1 }\n"
+               "let^ outer = p^ { yieldall^ gen() }\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("binding it is not either");
+    check_text(&u,
+               "let^ gen = p^ { yield^ 1 }\n"
+               "let^ c = gen()\n"
+               "let^ d = c\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // A procedure that does not yield is unaffected: its effect has already
+    // happened when the call returns.
+    LHAT_TEST("an ordinary call still stands alone");
+    check_text(&u,
+               "let^ go = p^ { let^ x = 1 }\n"
+               "go()\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("yieldall^ needs a coroutine");
+    check_text(&u,
+               "let^ plain = f^ -> number^ { return^ 1 }\n"
+               "let^ outer = p^ { yieldall^ plain() }\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_NOT_COROUTINE);
+    unit_dispose(&u);
+
+    // 15.8: the value of a delegation is the inner one's return value.
+    LHAT_TEST("the value of yieldall^ is the inner return type");
+    check_text(&u,
+               "let^ gen = p^ -> number^ { yield^ 1 return^ 2 }\n"
+               "let^ outer = p^ { let^ n : number^ = yieldall^ gen() }\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("and it is not the type it yields");
+    check_text(&u,
+               "let^ gen = p^ -> number^ { yield^ 1 return^ 2 }\n"
+               "let^ outer = p^ { let^ s : string^ = yieldall^ gen() }\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
+    unit_dispose(&u);
+}
+
 int main(void)
 {
     test_names();
@@ -1145,5 +1214,6 @@ int main(void)
     test_composition();
     test_patterns();
     test_modules();
+    test_coroutines();
     return lhat_test_report("test_check");
 }
