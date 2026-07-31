@@ -768,15 +768,13 @@ static void test_for(void)
     CHECK_INTEGER(&r, 3);
     run_dispose(&r);
 
-    // step^ is the amount each advance moves by rather than a limit fixed
-    // before the loop, so it is read every time round.
-    LHAT_TEST("step^ is read every time round");
+    LHAT_TEST("and step^ is read once as well");
     run_text(&r,
              "let^ s = 1\n"
              "let^ n = 0\n"
              "for^ i := 1 to^ 9 step^ s { n := n + 1 s := 3 }\n"
              "return^ n\n");
-    CHECK_INTEGER(&r, 3);  // i is 1, 4, 7. Reading s once would give nine
+    CHECK_INTEGER(&r, 9);  // reading s each time round would give three
     run_dispose(&r);
 
     LHAT_TEST("10 to^ 1 step^ 2 is empty rather than confusing");

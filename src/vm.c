@@ -777,23 +777,14 @@ static void compile_numeric_test(Compiler *c, const LhatNode *node,
 }
 
 // 16.4: the sign belongs to to^ and downto^, so step^ is a positive amount
-// and the expansion adds it one way or subtracts it the other. Unlike the
-// bound, this is read every time round: the amount to advance by is part of
-// each step, not a limit fixed before the loop starts.
+// and the expansion adds it one way or subtracts it the other. Like the
+// bound, it was read once before the loop.
 static void compile_numeric_advance(Compiler *c, const LhatNode *node,
-                                    const Local *focus)
+                                    const Local *focus, uint8_t step)
 {
-    uint8_t mark = c->next_register;
-    uint8_t step = reserve(c);
-    if (node->v.loop.step != NULL) {
-        compile_expression(c, node->v.loop.step, step);
-    } else {
-        load_constant(c, step, lhat_integer(1));
-    }
     emit(c, lhat_encode_abc(node->v.loop.kind == LHAT_FOR_TO ? LHAT_BC_ADD
                                                              : LHAT_BC_SUB,
                             focus->reg, focus->reg, step));
-    c->next_register = mark;
 }
 
 // 16.3's if^ clause, which 16.1 explains is not a loop: the focus is
@@ -863,11 +854,12 @@ static void compile_loop(Compiler *c, const LhatNode *node)
     compile_in_scope(c, focus);
     size_t focus_locals = c->local_count - local_mark;
 
-    // 16.4: the bound of to^/downto^ is read once, before the loop. It says
-    // how far the loop goes, and re-reading it would let that move while the
-    // loop is running.
+    // 16.4: the bound and the step^ of to^/downto^ are both read once, before
+    // the loop. Together they say how far the loop goes and in what
+    // increments, and re-reading either would let that move while it runs.
     const Local *numeric = NULL;
     uint8_t numeric_bound = 0;
+    uint8_t numeric_step = 0;
     if (kind == LHAT_FOR_TO || kind == LHAT_FOR_DOWNTO) {
         numeric = numeric_focus(c, focus);
         if (numeric == NULL) {
@@ -876,6 +868,12 @@ static void compile_loop(Compiler *c, const LhatNode *node)
         }
         numeric_bound = reserve(c);
         compile_expression(c, bound, numeric_bound);
+        numeric_step = reserve(c);
+        if (node->v.loop.step != NULL) {
+            compile_expression(c, node->v.loop.step, numeric_step);
+        } else {
+            load_constant(c, numeric_step, lhat_integer(1));
+        }
     }
 
     // repeat^ n counts to a limit read once, for the same reason: 'n 回' says
@@ -970,7 +968,7 @@ static void compile_loop(Compiler *c, const LhatNode *node)
     if (advance != NULL) {
         compile_in_scope(c, advance);
     } else if (numeric != NULL) {
-        compile_numeric_advance(c, node, numeric);
+        compile_numeric_advance(c, node, numeric, numeric_step);
     } else if (!is_for && node->v.repeat.kind == LHAT_REPEAT_COUNT) {
         uint8_t mark = c->next_register;
         uint8_t one = reserve(c);
