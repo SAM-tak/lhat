@@ -18,7 +18,7 @@ typedef struct {
     LhatSource source;
     LhatLexer lexer;
     LhatParseResult parsed;
-    LhatChunk chunk;
+    LhatProto *proto;
     LhatCompileStatus compiled;
     LhatRunResult ran;
 } Run;
@@ -28,17 +28,16 @@ static void run_text(Run *r, const char *text)
     lhat_source_init_from_string(&r->source, "<test>", text, strlen(text));
     lhat_lexer_init(&r->lexer, &r->source);
     lhat_parse(&r->lexer, &r->parsed);
-    lhat_chunk_init(&r->chunk);
-    r->compiled = lhat_compile(r->parsed.root, &r->lexer, &r->chunk);
+    r->compiled = lhat_compile(r->parsed.root, &r->lexer, &r->proto);
     memset(&r->ran, 0, sizeof r->ran);
     if (r->compiled == LHAT_COMPILE_OK) {
-        r->ran = lhat_run(&r->chunk);
+        r->ran = lhat_run(r->proto);
     }
 }
 
 static void run_dispose(Run *r)
 {
-    lhat_chunk_dispose(&r->chunk);
+    lhat_proto_free(r->proto);
     lhat_parse_result_dispose(&r->parsed);
     lhat_lexer_dispose(&r->lexer);
     lhat_source_dispose(&r->source);
@@ -294,11 +293,178 @@ static void test_control(void)
     run_dispose(&r);
 }
 
+// 5.3: the callee and its arguments are contiguous, and exactly one value
+// comes back -- 02 の 13.8 having removed multiple returns is why nothing has
+// to be reconciled here.
+static void test_calls(void)
+{
+    Run r;
+
+    LHAT_TEST("a subroutine is called and answers");
+    run_text(&r, "let^ twice = f^n { return^ n * 2 }\nreturn^ twice(21)\n");
+    CHECK_INTEGER(&r, 42);
+    run_dispose(&r);
+
+    LHAT_TEST("arguments arrive in order");
+    run_text(&r,
+             "let^ less = f^a, b { return^ a - b }\n"
+             "return^ less(10, 3)\n");
+    CHECK_INTEGER(&r, 7);
+    run_dispose(&r);
+
+    LHAT_TEST("a call is an expression like any other");
+    run_text(&r,
+             "let^ one = f^ { return^ 1 }\n"
+             "return^ one() + one() * 3\n");
+    CHECK_INTEGER(&r, 4);
+    run_dispose(&r);
+
+    // 02 の 8.7: a name is visible across its whole scope, so a body may call
+    // itself without anything declared ahead of it.
+    LHAT_TEST("a subroutine reaches its own name");
+    run_text(&r,
+             "let^ fact = f^n {\n"
+             "  if^ n <= 1 { return^ 1 }\n"
+             "  return^ n * fact(n - 1)\n"
+             "}\n"
+             "return^ fact(5)\n");
+    CHECK_INTEGER(&r, 120);
+    run_dispose(&r);
+
+    LHAT_TEST("a p^ with no return^ answers nil^");
+    run_text(&r, "let^ nothing = p^ { }\nreturn^ nothing()\n");
+    LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_OK);
+    LHAT_CHECK(lhat_is_nil(r.ran.value), "nil^");
+    run_dispose(&r);
+
+    LHAT_TEST("calling something that is not a subroutine is a fault");
+    run_text(&r, "let^ x = 1\nreturn^ x()\n");
+    LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_NOT_CALLABLE);
+    run_dispose(&r);
+
+    LHAT_TEST("the wrong number of arguments is a fault");
+    run_text(&r, "let^ f = f^a, b { return^ a }\nreturn^ f(1)\n");
+    LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_ARITY);
+    run_dispose(&r);
+
+    // Nothing bounds the recursion, so the frames run out. 5.3 wants that
+    // reported rather than reached by walking off the array.
+    LHAT_TEST("frames that go too deep are reported, not walked off");
+    run_text(&r, "let^ f = f^ { return^ f() }\nreturn^ f()\n");
+    LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_STACK_OVERFLOW);
+    run_dispose(&r);
+}
+
+// 5.4: a capture is a place, not a copy. 02 の 8.6 is what forces it -- ':='
+// inside a nested body reassigns the outer binding, and a copy would lose the
+// change.
+static void test_closures(void)
+{
+    Run r;
+
+    LHAT_TEST("a body reads a name from around it");
+    run_text(&r,
+             "let^ base = 10\n"
+             "let^ add = f^n { return^ base + n }\n"
+             "return^ add(5)\n");
+    CHECK_INTEGER(&r, 15);
+    run_dispose(&r);
+
+    LHAT_TEST("a ':=' inside a body reaches the outer binding");
+    run_text(&r,
+             "let^ count = 0\n"
+             "let^ bump = p^ { count := count + 1 }\n"
+             "bump()\n"
+             "bump()\n"
+             "return^ count\n");
+    CHECK_INTEGER(&r, 2);
+    run_dispose(&r);
+
+    LHAT_TEST("two bodies capturing one name share it");
+    run_text(&r,
+             "let^ n = 1\n"
+             "let^ set = p^ { n := 9 }\n"
+             "let^ get = f^ { return^ n }\n"
+             "set()\n"
+             "return^ get()\n");
+    CHECK_INTEGER(&r, 9);
+    run_dispose(&r);
+
+    // The place outlives the frame it started in, which is what closing an
+    // upvalue is for.
+    LHAT_TEST("a captured place outlives the frame that held it");
+    run_text(&r,
+             "let^ counter = f^ {\n"
+             "  let^ n = 0\n"
+             "  return^ p^ { n := n + 1 return^ n }\n"
+             "}\n"
+             "let^ next = counter()\n"
+             "next()\n"
+             "next()\n"
+             "return^ next()\n");
+    CHECK_INTEGER(&r, 3);
+    run_dispose(&r);
+
+    LHAT_TEST("two closures from one body get separate places");
+    run_text(&r,
+             "let^ counter = f^ {\n"
+             "  let^ n = 0\n"
+             "  return^ p^ { n := n + 1 return^ n }\n"
+             "}\n"
+             "let^ a = counter()\n"
+             "let^ b = counter()\n"
+             "a()\n"
+             "a()\n"
+             "return^ b()\n");
+    CHECK_INTEGER(&r, 1);
+    run_dispose(&r);
+
+    // 5.4's second case: the name is not in the immediate parent either, so
+    // each level on the way down has to carry it.
+    LHAT_TEST("a name is carried down through more than one level");
+    run_text(&r,
+             "let^ outer = f^ {\n"
+             "  let^ n = 7\n"
+             "  return^ f^ { return^ f^ { return^ n }() }\n"
+             "}\n"
+             "return^ outer()()\n");
+    CHECK_INTEGER(&r, 7);
+    run_dispose(&r);
+
+    // A block's slots go back to the pool at its end, so a closure that
+    // outlives the block has to have stopped sharing them by then. Without
+    // that it would read whatever the block after it put there.
+    LHAT_TEST("a place captured in a block survives the block");
+    run_text(&r,
+             "let^ get = f^ { return^ 0 }\n"
+             "do^{\n"
+             "  let^ n = 5\n"
+             "  get := f^ { return^ n }\n"
+             "}\n"
+             "do^{\n"
+             "  let^ other = 99\n"
+             "  other := other\n"
+             "}\n"
+             "return^ get()\n");
+    CHECK_INTEGER(&r, 5);
+    run_dispose(&r);
+
+    LHAT_TEST("a parameter is captured like anything else");
+    run_text(&r,
+             "let^ adder = f^by { return^ f^n { return^ n + by } }\n"
+             "let^ add3 = adder(3)\n"
+             "return^ add3(4)\n");
+    CHECK_INTEGER(&r, 7);
+    run_dispose(&r);
+}
+
 int main(void)
 {
     test_encoding();
     test_arithmetic();
     test_names();
     test_control();
+    test_calls();
+    test_closures();
     return lhat_test_report("test_vm");
 }

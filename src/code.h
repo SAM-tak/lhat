@@ -49,6 +49,14 @@ typedef enum {
     LHAT_BC_JUMP,       // Bx    signed, relative to the next instruction
     LHAT_BC_JUMP_FALSE, // A Bx  jump when R[A] is false
 
+    // 5.3: arguments sit above the callee in the caller's frame, and exactly
+    // one value comes back -- 02 の 13.8 left nothing to reconcile.
+    LHAT_BC_CLOSURE,    // A Bx  R[A] = closure of protos[Bx]
+    LHAT_BC_CALL,       // A B   R[A] = R[A](R[A+1] .. R[A+B])
+    LHAT_BC_GETUPVAL,   // A B   R[A] = *upvalue[B]
+    LHAT_BC_SETUPVAL,   // A B   *upvalue[B] = R[A]
+    LHAT_BC_CLOSE,      // A     the places at R[A] and above stop being shared
+
     LHAT_BC_RETURN,     // A     return R[A]
     LHAT_BC_RETURN_NIL,
 
@@ -102,6 +110,40 @@ typedef struct {
 
     uint8_t registers;
 } LhatChunk;
+
+// 5.4: how a closure gets each of the places it shares. Either a register of
+// the frame making it, or one of that frame's own upvalues -- the second is
+// what carries a name down through more than one level of nesting.
+typedef struct {
+    bool from_parent_register;
+    uint8_t index;
+} LhatUpvalueDesc;
+
+// One compiled subroutine: its own code, the bodies written inside it, and
+// what it captures. 02 の 14.9 keeps the name out of this; a proto is the
+// shape of a body, not a named thing.
+typedef struct LhatProto {
+    LhatChunk chunk;
+
+    uint8_t parameters;
+    bool is_function;  // f^ rather than p^ (02 の 15 章)
+
+    struct LhatProto **protos;
+    size_t proto_count;
+    size_t proto_capacity;
+
+    LhatUpvalueDesc *upvalues;
+    size_t upvalue_count;
+    size_t upvalue_capacity;
+} LhatProto;
+
+LhatProto *lhat_proto_new(void);
+void lhat_proto_free(LhatProto *proto);
+
+// Returns the index of the nested body, or SIZE_MAX when out of memory.
+size_t lhat_proto_add(LhatProto *parent, LhatProto *child);
+size_t lhat_proto_add_upvalue(LhatProto *proto, bool from_parent_register,
+                              uint8_t index);
 
 void lhat_chunk_init(LhatChunk *chunk);
 void lhat_chunk_dispose(LhatChunk *chunk);

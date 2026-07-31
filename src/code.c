@@ -6,6 +6,76 @@
 #include <stdlib.h>
 #include <string.h>
 
+LhatProto *lhat_proto_new(void)
+{
+    LhatProto *proto = (LhatProto *)calloc(1, sizeof *proto);
+    return proto;
+}
+
+void lhat_proto_free(LhatProto *proto)
+{
+    if (proto == NULL) {
+        return;
+    }
+    for (size_t i = 0; i < proto->proto_count; i++) {
+        lhat_proto_free(proto->protos[i]);
+    }
+    free(proto->protos);
+    free(proto->upvalues);
+    lhat_chunk_dispose(&proto->chunk);
+    free(proto);
+}
+
+size_t lhat_proto_add(LhatProto *parent, LhatProto *child)
+{
+    if (parent->proto_count == parent->proto_capacity) {
+        size_t grown = parent->proto_capacity ? parent->proto_capacity * 2 : 4;
+        LhatProto **bigger =
+            (LhatProto **)realloc(parent->protos, grown * sizeof *bigger);
+        if (bigger == NULL) {
+            return SIZE_MAX;
+        }
+        parent->protos = bigger;
+        parent->proto_capacity = grown;
+    }
+    if (parent->proto_count > 0xFFFF) {
+        return SIZE_MAX;
+    }
+    parent->protos[parent->proto_count] = child;
+    return parent->proto_count++;
+}
+
+size_t lhat_proto_add_upvalue(LhatProto *proto, bool from_parent_register,
+                              uint8_t index)
+{
+    // Reused rather than appended: a name read twice is one shared place, not
+    // two, which is what 5.4 means by sharing the location.
+    for (size_t i = 0; i < proto->upvalue_count; i++) {
+        if (proto->upvalues[i].from_parent_register == from_parent_register &&
+            proto->upvalues[i].index == index) {
+            return i;
+        }
+    }
+
+    if (proto->upvalue_count == proto->upvalue_capacity) {
+        size_t grown = proto->upvalue_capacity ? proto->upvalue_capacity * 2 : 4;
+        LhatUpvalueDesc *bigger =
+            (LhatUpvalueDesc *)realloc(proto->upvalues, grown * sizeof *bigger);
+        if (bigger == NULL) {
+            return SIZE_MAX;
+        }
+        proto->upvalues = bigger;
+        proto->upvalue_capacity = grown;
+    }
+    if (proto->upvalue_count > 0xFF) {
+        return SIZE_MAX;
+    }
+    proto->upvalues[proto->upvalue_count].from_parent_register =
+        from_parent_register;
+    proto->upvalues[proto->upvalue_count].index = index;
+    return proto->upvalue_count++;
+}
+
 void lhat_chunk_init(LhatChunk *chunk)
 {
     memset(chunk, 0, sizeof *chunk);
@@ -97,6 +167,11 @@ const char *lhat_opcode_name(LhatOpcode op)
         case LHAT_BC_LE:          return "le";
         case LHAT_BC_GT:          return "gt";
         case LHAT_BC_GE:          return "ge";
+        case LHAT_BC_CLOSURE:     return "closure";
+        case LHAT_BC_CALL:        return "call";
+        case LHAT_BC_GETUPVAL:    return "getupval";
+        case LHAT_BC_SETUPVAL:    return "setupval";
+        case LHAT_BC_CLOSE:       return "close";
         case LHAT_BC_JUMP:        return "jump";
         case LHAT_BC_JUMP_FALSE:  return "jumpfalse";
         case LHAT_BC_RETURN:      return "return";
@@ -122,6 +197,17 @@ void lhat_chunk_print(const LhatChunk *chunk, size_t index, char *out,
         case LHAT_BC_LOADK:
             snprintf(out, size, "%-10s r%u k%u", name, lhat_a(i), lhat_bx(i));
             break;
+        case LHAT_BC_CLOSURE:
+            snprintf(out, size, "%-10s r%u p%u", name, lhat_a(i), lhat_bx(i));
+            break;
+        case LHAT_BC_CALL:
+            snprintf(out, size, "%-10s r%u (%u args)", name, lhat_a(i),
+                     lhat_b(i));
+            break;
+        case LHAT_BC_GETUPVAL:
+        case LHAT_BC_SETUPVAL:
+            snprintf(out, size, "%-10s r%u u%u", name, lhat_a(i), lhat_b(i));
+            break;
         case LHAT_BC_JUMP:
             snprintf(out, size, "%-10s -> %zu", name,
                      index + 1 + (size_t)lhat_jump_offset(i));
@@ -131,6 +217,7 @@ void lhat_chunk_print(const LhatChunk *chunk, size_t index, char *out,
                      index + 1 + (size_t)lhat_jump_offset(i));
             break;
         case LHAT_BC_LOADNIL:
+        case LHAT_BC_CLOSE:
         case LHAT_BC_RETURN:
             snprintf(out, size, "%-10s r%u", name, lhat_a(i));
             break;

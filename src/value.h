@@ -34,13 +34,16 @@ typedef enum {
     LHAT_OBJECT_TABLE,       // 02 の 10.7: the one data structure
     LHAT_OBJECT_SUBROUTINE,  // f^ and p^ (02 の 15 章)
     LHAT_OBJECT_COROUTINE,   // 02 の 13.9
-    LHAT_OBJECT_ERROR        // 04 の 2.3
+    LHAT_OBJECT_ERROR,       // 04 の 2.3
+    LHAT_OBJECT_UPVALUE      // 5.4: never a value, only reached through a
+                             // closure -- but allocated and collected alike
 } LhatObjectKind;
 
 typedef struct LhatObject {
     LhatObjectKind kind;
     struct LhatObject *next;  // every object, for the collector to walk
 } LhatObject;
+
 
 typedef struct {
     union {
@@ -51,6 +54,27 @@ typedef struct {
     } as;
     LhatValueTag tag;
 } LhatValue;
+
+// 5.4: a place shared between a frame and the closures made inside it. While
+// the frame lives, `location` points into it; once the frame goes, the value
+// is carried into `closed` and `location` is aimed there. 02 の 8.6 is what
+// requires the sharing -- a ':=' inside a nested subroutine has to reach the
+// outer binding, which a copy would not.
+typedef struct LhatUpvalue {
+    LhatObject header;
+    LhatValue *location;
+    LhatValue closed;
+    struct LhatUpvalue *next_open;  // the machine's open list, innermost first
+} LhatUpvalue;
+
+// A compiled body together with the places it captured. The proto is shared
+// between every closure made from it; only the upvalues differ.
+typedef struct LhatClosure {
+    LhatObject header;
+    const struct LhatProto *proto;
+    LhatUpvalue **upvalues;
+    size_t upvalue_count;
+} LhatClosure;
 
 // ---------------------------------------------------------------------------
 // Construction

@@ -64,6 +64,7 @@ const char *lhat_object_kind_name(LhatObjectKind kind)
         case LHAT_OBJECT_SUBROUTINE: return "subroutine";
         case LHAT_OBJECT_COROUTINE:  return "coroutine";
         case LHAT_OBJECT_ERROR:      return "error^";
+        case LHAT_OBJECT_UPVALUE:    return "upvalue";
     }
     return "?";
 }
