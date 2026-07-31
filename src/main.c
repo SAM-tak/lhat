@@ -11,6 +11,7 @@
 #include "lexer.h"
 #include "check.h"
 #include "parser.h"
+#include "program.h"
 #include "source.h"
 #include "token.h"
 
@@ -331,6 +332,56 @@ static int dump_tokens(const LhatSource *source)
     return status;
 }
 
+// 03 の 1.1's third stage, over the unit graph of 05 の 6.2: a unit cannot be
+// checked before the units it requires, so the whole graph is walked rather
+// than the one file named on the command line.
+static int check_program(const char *path)
+{
+    LhatProgram program;
+    lhat_program_init(&program, true);
+
+    const LhatUnit *root = lhat_program_check(&program, path);
+
+    for (size_t i = 0; i < program.diagnostic_count; i++) {
+        const LhatProgramDiagnostic *d = &program.diagnostics[i];
+        fprintf(stderr, "%s: error: %s\n", d->path,
+                lhat_program_error_message(d->code));
+    }
+
+    size_t units = 0;
+    for (const LhatUnit *unit = program.units; unit != NULL;
+         unit = unit->next) {
+        units++;
+        if (!unit->loaded) {
+            continue;
+        }
+        for (size_t i = 0; i < unit->lexer.diagnostic_count; i++) {
+            const LhatDiagnostic *d = &unit->lexer.diagnostics[i];
+            fprintf(stderr, "%s:%u:%u: error: %s\n", unit->path, d->line,
+                    d->column, lhat_error_message(d->code));
+        }
+        for (size_t i = 0; i < unit->parsed.diagnostic_count; i++) {
+            const LhatParseDiagnostic *d = &unit->parsed.diagnostics[i];
+            fprintf(stderr, "%s:%u:%u: error: %s\n", unit->path, d->line,
+                    d->column, lhat_parse_error_message(d->code));
+        }
+        for (size_t i = 0; i < unit->checked.diagnostic_count; i++) {
+            const LhatCheckDiagnostic *d = &unit->checked.diagnostics[i];
+            fprintf(stderr, "%s:%u:%u: error: %s\n", unit->path, d->line,
+                    d->column, lhat_check_error_message(d->code));
+        }
+    }
+
+    bool failed = root == NULL || lhat_program_has_errors(&program);
+    if (!failed) {
+        printf("%s: no type errors (%zu unit%s)\n", path, units,
+               units == 1 ? "" : "s");
+    }
+
+    lhat_program_dispose(&program);
+    return failed ? EXIT_FAILURE : EXIT_SUCCESS;
+}
+
 static int dump_tree(const LhatSource *source, bool typed, bool command)
 {
     LhatLexer lexer;
@@ -357,23 +408,6 @@ static int dump_tree(const LhatSource *source, bool typed, bool command)
     if (result.incomplete) {
         fprintf(stderr, "%s: note: the input ended before the construct was "
                         "complete\n", source->name);
-    }
-
-    // 03 の 1.1: the third stage. Running it on a tree the parser could not
-    // build would report the same problem twice in different words.
-    if (typed && status == EXIT_SUCCESS) {
-        LhatCheckResult checked;
-        lhat_check(result.root, &lexer, true, &checked);
-        for (size_t i = 0; i < checked.diagnostic_count; i++) {
-            const LhatCheckDiagnostic *d = &checked.diagnostics[i];
-            fprintf(stderr, "%s:%u:%u: error: %s\n", source->name, d->line,
-                    d->column, lhat_check_error_message(d->code));
-            status = EXIT_FAILURE;
-        }
-        if (checked.diagnostic_count == 0) {
-            printf("%s: no type errors\n", source->name);
-        }
-        lhat_check_result_dispose(&checked);
     }
 
     lhat_parse_result_dispose(&result);
@@ -410,6 +444,12 @@ int main(int argc, char **argv)
         return EXIT_SUCCESS;
     }
 
+    // Checking is a question about a program, not about a file: 05 の 6.2
+    // puts the units a file requires ahead of it.
+    if (check_only) {
+        return check_program(path);
+    }
+
     LhatSource source;
     char *error = NULL;
     if (!lhat_source_init_from_file(&source, path, &error)) {
@@ -419,7 +459,7 @@ int main(int argc, char **argv)
     }
 
     int status = tokens_only ? dump_tokens(&source)
-                             : dump_tree(&source, check_only, command_form);
+                             : dump_tree(&source, false, command_form);
     lhat_source_dispose(&source);
     return status;
 }
