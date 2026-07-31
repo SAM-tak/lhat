@@ -67,9 +67,9 @@ Memo.md 全体を通じて、`^` は算術（べき乗）にも論理（XOR）�
 `^` が付く語の実例を Memo.md から分類すると、以下のすべてが同じ字句形をとる。
 
 - 制御構文: `if^` `else^` `elseif^` `elsif^` `elif^` `ei^` `el^` `or^` `for^` `when^`
-  `other^` `to^` `from^` `step^` `in^` `while^` `until^` `next^` `repeat^` `do^`
+  `other^` `to^` `downto^` `step^` `in^` `while^` `until^` `next^` `repeat^` `do^`
   `break^` `return^` `yield^` `defer^` `with^`
-- 定義子: `f^` `p^` `op^` `def^` `self^` `new^` `enum^` `let^`
+- 定義子: `f^` `p^` `op^` `def^` `self^` `new^` `enum^` `unpack^`
 - 型・修飾: `number^` `string^` `int^` `mutable^` `nil^` `true^` `false^` `as^` `is^`
 - メタプロパティ: `.class^` `.super^` `.keys^` `.values^` `this^` `it^`
 - テーブル制御: `width^` `autowidth^`
