@@ -358,6 +358,181 @@ static void test_annotations(void)
     unit_dispose(&u);
 }
 
+// 13.11, and 04 の 7 章 which rests entirely on it.
+static void test_narrowing(void)
+{
+    Unit u;
+
+    LHAT_TEST("the true branch keeps only the arms that fit");
+    check_text(&u,
+               "let^ f = f^ -> number^|string^ { return^ 0 }\n"
+               "let^ r = f()\n"
+               "if^ r is^ number^ { let^ n : number^ = r }\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("the false branch keeps the rest");
+    check_text(&u,
+               "let^ f = f^ -> number^|string^ { return^ 0 }\n"
+               "let^ r = f()\n"
+               "if^ r is^ number^ {\n"
+               "    else^:\n"
+               "        let^ s : string^ = r\n"
+               "}\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("narrowing does not reach past what was tested");
+    check_text(&u,
+               "let^ f = f^ -> number^|string^ { return^ 0 }\n"
+               "let^ r = f()\n"
+               "if^ r is^ number^ { let^ s : string^ = r }\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
+    unit_dispose(&u);
+
+    // 04 の 6.1: narrowing to a kind is what makes its declared field visible.
+    LHAT_TEST("a narrowed error kind shows its fields");
+    check_text(&u,
+               "errordef^ ParseError { Syntax { line : number^ }, Eof }\n"
+               "let^ parse = f^ -> number^|ParseError { return^ 0 }\n"
+               "let^ r = parse()\n"
+               "if^ r is^ ParseError.Syntax { let^ n : number^ = r.line }\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("the field is not visible without narrowing");
+    check_text(&u,
+               "errordef^ ParseError { Syntax { line : number^ }, Eof }\n"
+               "let^ parse = f^ -> number^|ParseError { return^ 0 }\n"
+               "let^ r = parse()\n"
+               "let^ n = r.line\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_NO_MEMBER);
+    unit_dispose(&u);
+
+    // 04 の 6.1 is written in the early-return style, so a branch that never
+    // falls through has to leave its narrowing behind.
+    LHAT_TEST("an exiting branch narrows what follows it");
+    check_text(&u,
+               "errordef^ ParseError { Syntax { line : number^ }, Eof }\n"
+               "let^ parse = f^ -> number^|ParseError { return^ 0 }\n"
+               "let^ use = f^ -> number^ {\n"
+               "    let^ r = parse()\n"
+               "    if^ r is^ ParseError.Syntax { return^ 0 }\n"
+               "    if^ r is^ ParseError.Eof { return^ 0 }\n"
+               "    return^ r + 1\n"
+               "}\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("a branch that falls through leaves nothing behind");
+    check_text(&u,
+               "let^ f = f^ -> number^|string^ { return^ 0 }\n"
+               "let^ g = f^ -> number^ {\n"
+               "    let^ r = f()\n"
+               "    if^ r is^ string^ { }\n"
+               "    return^ r + 1\n"
+               "}\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_NOT_NUMBER);
+    unit_dispose(&u);
+
+    // 04 の 7 章: handling every kind is ordinary narrowing, so the success
+    // type is what is left in the last clause.
+    LHAT_TEST("an exhausted union leaves the success type");
+    check_text(&u,
+               "errordef^ IOError { NotFound, Denied }\n"
+               "let^ open = f^ -> number^|IOError { return^ 0 }\n"
+               "let^ use = f^ -> number^ {\n"
+               "    let^ r = open()\n"
+               "    if^ r is^ IOError.NotFound {\n"
+               "        return^ 0\n"
+               "        elseif^ r is^ IOError.Denied:\n"
+               "            return^ 0\n"
+               "        else^:\n"
+               "            return^ r\n"
+               "    }\n"
+               "    return^ 0\n"
+               "}\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("a union not exhausted still carries its errors");
+    check_text(&u,
+               "errordef^ IOError { NotFound, Denied }\n"
+               "let^ open = f^ -> number^|IOError { return^ 0 }\n"
+               "let^ use = f^ -> number^ {\n"
+               "    let^ r = open()\n"
+               "    if^ r is^ IOError.NotFound {\n"
+               "        return^ 0\n"
+               "        else^:\n"
+               "            return^ r\n"
+               "    }\n"
+               "    return^ 0\n"
+               "}\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
+    unit_dispose(&u);
+
+    LHAT_TEST("'!' turns the branches around");
+    check_text(&u,
+               "let^ f = f^ -> number^|string^ { return^ 0 }\n"
+               "let^ r = f()\n"
+               "if^ !(r is^ number^) { let^ s : string^ = r }\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // 13.11: and^ tells us both held; or^ says nothing when it is true.
+    LHAT_TEST("and^ narrows both sides");
+    check_text(&u,
+               "let^ f = f^ -> number^|string^ { return^ 0 }\n"
+               "let^ g = f^ -> number^|string^ { return^ 0 }\n"
+               "let^ a = f()\n"
+               "let^ b = g()\n"
+               "if^ a is^ number^ and^ b is^ number^ {\n"
+               "    let^ n : number^ = a + b\n"
+               "}\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // 13.11: only a name or a dot path from one, since a call may give a
+    // different value the second time.
+    LHAT_TEST("a call is not narrowed");
+    check_text(&u,
+               "let^ f = f^ -> number^|string^ { return^ 0 }\n"
+               "let^ g = f^ -> number^ {\n"
+               "    if^ f() is^ number^ { return^ f() + 1 }\n"
+               "    return^ 0\n"
+               "}\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_NOT_NUMBER);
+    unit_dispose(&u);
+
+    LHAT_TEST("a dot path is narrowed");
+    check_text(&u,
+               "let^ f = f^ -> number^|string^ { return^ 0 }\n"
+               "let^ t = { a := f() }\n"
+               "if^ t.a is^ number^ { let^ n : number^ = t.a }\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // 13.11: reassigning ends it, since the claim was about what was examined.
+    LHAT_TEST("a reassignment ends the narrowing");
+    check_text(&u,
+               "let^ f = f^ -> number^|string^ { return^ 0 }\n"
+               "let^ r = f()\n"
+               "if^ r is^ number^ {\n"
+               "    r := f()\n"
+               "    let^ n : number^ = r\n"
+               "}\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
+    unit_dispose(&u);
+
+    LHAT_TEST("narrowing works in the if expression too");
+    check_text(&u,
+               "let^ f = f^ -> number^|string^ { return^ 0 }\n"
+               "let^ r = f()\n"
+               "let^ n : number^ = if^ r is^ number^: r el^: 0 ;\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+}
+
 int main(void)
 {
     test_names();
@@ -365,5 +540,6 @@ int main(void)
     test_results();
     test_errors();
     test_annotations();
+    test_narrowing();
     return lhat_test_report("test_check");
 }

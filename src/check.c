@@ -22,6 +22,16 @@ typedef struct Scope {
     struct Scope *parent;
 } Scope;
 
+// 13.11. What a branch knows about a value that the binding does not: inside
+// 'if^ r is^ T', r is only the arms of its union that conform to T. Held as
+// the path it was written with rather than as a binding, since 13.11 admits
+// a dot path as well as a plain name.
+typedef struct Narrowing {
+    const LhatNode *path;
+    LhatType *type;
+    struct Narrowing *next;
+} Narrowing;
+
 typedef struct {
     const LhatSource *source;
     LhatCheckResult *result;
@@ -29,6 +39,10 @@ typedef struct {
 
     Scope *scope;
     Scope *type_scope;  // errordef^ sets and their kinds
+
+    // Innermost first. A branch pushes and pops around its body, so the list
+    // is a stack rather than something scopes own.
+    Narrowing *narrowings;
 
     // 8.7: inside a subroutine body nothing runs where it is written, so the
     // ordering rule does not apply. A counter rather than a flag, since
@@ -184,6 +198,8 @@ static LhatType *simple(Checker *c, LhatTypeKind kind)
 static LhatType *resolve_type(Checker *c, const LhatNode *node);
 static LhatType *infer(Checker *c, const LhatNode *node);
 static void check_statement(Checker *c, const LhatNode *node);
+static LhatType *only(Checker *c, LhatType *type, LhatType *wanted);
+static LhatType *without(Checker *c, LhatType *type, LhatType *unwanted);
 
 // 14.8: one number type over integers and reals. The rest are the plain
 // builtin spellings.
@@ -341,47 +357,277 @@ static LhatType *resolve_type(Checker *c, const LhatNode *node)
 // Narrowing helpers (04 の 4.1, 11.7)
 // ---------------------------------------------------------------------------
 
-// Drops the arms of a union that conform to `unwanted`. This is what catch^
-// and '??' do to their left side, and 13.11's narrowing is the same
-// operation with a different filter.
-static LhatType *without(Checker *c, LhatType *type, const LhatType *unwanted)
+// 04 の 2.3: a set stands for the union of its kinds, so a test against one
+// kind has something to take apart. Without this, narrowing a value typed as
+// IOError by IOError.NotFound would find nothing to remove.
+static LhatType *expand_set(Checker *c, LhatType *type)
 {
-    if (type == NULL || type->kind != LHAT_TYPE_UNION) {
-        return (type != NULL && lhat_type_conforms(type, unwanted)) ? NULL : type;
+    if (type == NULL || type->kind != LHAT_TYPE_ERROR_SET) {
+        return type;
     }
-
-    LhatType *kept = NULL;
-    for (const LhatTypeList *arm = type->v.composite.arms; arm != NULL;
-         arm = arm->next) {
-        if (!lhat_type_conforms(arm->type, unwanted)) {
-            kept = lhat_type_union(&c->result->types, kept, arm->type);
-        }
+    LhatType *expanded = NULL;
+    for (const LhatTypeList *k = type->v.error.kinds; k != NULL; k = k->next) {
+        expanded = lhat_type_union(&c->result->types, expanded, k->type);
     }
-    return kept;
+    return expanded != NULL ? expanded : type;
 }
 
-// The other half: the arms that do conform. 04 の 5.3 needs it to name the
-// errors a try^ would let past.
-static LhatType *only(Checker *c, LhatType *type, const LhatType *wanted)
+// The part of `type` that could still be `wanted`. This is the true side of
+// 13.11's narrowing, and 04 の 5.3 uses it to name the errors a try^ lets
+// past.
+//
+// An arm wider than the test narrows down to the test: a value typed as the
+// whole set, once known to be one kind, is that kind.
+static LhatType *only(Checker *c, LhatType *type, LhatType *wanted)
 {
-    if (type == NULL || type->kind != LHAT_TYPE_UNION) {
-        return (type != NULL && lhat_type_conforms(type, wanted)) ? type : NULL;
+    if (type == NULL) {
+        return NULL;
     }
-
-    LhatType *kept = NULL;
-    for (const LhatTypeList *arm = type->v.composite.arms; arm != NULL;
-         arm = arm->next) {
-        if (lhat_type_conforms(arm->type, wanted)) {
-            kept = lhat_type_union(&c->result->types, kept, arm->type);
+    if (type->kind == LHAT_TYPE_UNION) {
+        LhatType *kept = NULL;
+        for (const LhatTypeList *arm = type->v.composite.arms; arm != NULL;
+             arm = arm->next) {
+            kept = lhat_type_union(&c->result->types, kept,
+                                   only(c, arm->type, wanted));
         }
+        return kept;
     }
-    return kept;
+    if (lhat_type_conforms(type, wanted)) {
+        return type;
+    }
+    if (lhat_type_conforms(wanted, type)) {
+        return wanted;
+    }
+    return NULL;
+}
+
+// The complement: what remains once everything that could be `unwanted` is
+// gone. The false side of 13.11, and what catch^ and ?? do to their left.
+static LhatType *without(Checker *c, LhatType *type, LhatType *unwanted)
+{
+    if (type == NULL) {
+        return NULL;
+    }
+    if (type->kind == LHAT_TYPE_UNION) {
+        LhatType *kept = NULL;
+        for (const LhatTypeList *arm = type->v.composite.arms; arm != NULL;
+             arm = arm->next) {
+            kept = lhat_type_union(&c->result->types, kept,
+                                   without(c, arm->type, unwanted));
+        }
+        return kept;
+    }
+    if (lhat_type_conforms(type, unwanted)) {
+        return NULL;
+    }
+    if (lhat_type_disjoint(type, unwanted)) {
+        return type;
+    }
+    // Overlapping but wider. A set can be taken apart; anything else stays
+    // whole, since narrowing may only ever remove what it can name.
+    if (type->kind == LHAT_TYPE_ERROR_SET) {
+        return without(c, expand_set(c, type), unwanted);
+    }
+    return type;
 }
 
 static bool can_be(const LhatType *type, const LhatType *wanted)
 {
     return type == NULL || type->kind == LHAT_TYPE_UNKNOWN ||
            !lhat_type_disjoint(type, wanted);
+}
+
+// ---------------------------------------------------------------------------
+// Narrowing (13.11)
+// ---------------------------------------------------------------------------
+
+// 13.11 limits narrowing to a name and to a dot path from one. A call or an
+// index is excluded because there is no guarantee the second evaluation
+// yields the same value, and a narrowing that cannot be relied on afterwards
+// is worse than none.
+static bool narrowable(const LhatNode *node)
+{
+    if (node == NULL) {
+        return false;
+    }
+    switch (node->kind) {
+        case LHAT_NODE_IDENT:
+        case LHAT_NODE_HAT_IDENT:
+        case LHAT_NODE_SCOPE:
+            return true;
+        case LHAT_NODE_MEMBER:
+            return !node->v.access.nil_safe && narrowable(node->v.access.target);
+        default:
+            return false;
+    }
+}
+
+static bool same_name(const Checker *c, const LhatNode *a, const LhatNode *b)
+{
+    const char *na = NULL;
+    const char *nb = NULL;
+    size_t la = 0;
+    size_t lb = 0;
+    return node_name(c, a, &na, &la) && node_name(c, b, &nb, &lb) &&
+           la == lb && memcmp(na, nb, la) == 0;
+}
+
+static bool same_path(const Checker *c, const LhatNode *a, const LhatNode *b)
+{
+    if (a == NULL || b == NULL || a->kind != b->kind) {
+        return false;
+    }
+    if (a->kind == LHAT_NODE_MEMBER) {
+        return same_path(c, a->v.access.target, b->v.access.target) &&
+               same_name(c, a->v.access.argument, b->v.access.argument);
+    }
+    return same_name(c, a, b);
+}
+
+// The name a path starts from, which is what a reassignment invalidates.
+static const LhatNode *path_root(const LhatNode *node)
+{
+    while (node != NULL && node->kind == LHAT_NODE_MEMBER) {
+        node = node->v.access.target;
+    }
+    return node;
+}
+
+static LhatType *narrowed_type(Checker *c, const LhatNode *path)
+{
+    for (const Narrowing *n = c->narrowings; n != NULL; n = n->next) {
+        if (same_path(c, n->path, path)) {
+            return n->type;
+        }
+    }
+    return NULL;
+}
+
+static void push_narrowing(Checker *c, const LhatNode *path, LhatType *type)
+{
+    if (type == NULL) {
+        return;  // nothing survives; leave the wider type rather than none
+    }
+    Narrowing *n = (Narrowing *)calloc(1, sizeof *n);
+    if (n == NULL) {
+        return;
+    }
+    n->path = path;
+    n->type = type;
+    n->next = c->narrowings;
+    c->narrowings = n;
+}
+
+static void pop_narrowings(Checker *c, Narrowing *mark)
+{
+    while (c->narrowings != mark) {
+        Narrowing *next = c->narrowings->next;
+        free(c->narrowings);
+        c->narrowings = next;
+    }
+}
+
+// 13.11: reassigning ends it, since the claim was about the value that was
+// examined. A let^ in the branch does the same by introducing a new name.
+//
+// Emptied rather than unlinked: a branch remembers where its narrowings begin
+// so it can pop them, and removing a node from under that mark would leave it
+// pointing at freed memory. An emptied entry reports nothing, which sends the
+// caller back to the binding -- the answer wanted here anyway.
+static void drop_narrowings_for(Checker *c, const LhatNode *target)
+{
+    const LhatNode *root = path_root(target);
+    for (Narrowing *n = c->narrowings; n != NULL; n = n->next) {
+        if (same_name(c, path_root(n->path), root)) {
+            n->type = NULL;
+        }
+    }
+}
+
+// Whether control cannot reach the end of this statement. 04 の 6.1 is
+// written in the early-return style -- handle the error, leave, and carry on
+// below knowing it did not happen -- so the narrowing a branch established
+// has to outlive a branch that never falls through.
+static bool always_exits(const LhatNode *node)
+{
+    if (node == NULL) {
+        return false;
+    }
+    switch (node->kind) {
+        case LHAT_NODE_RETURN:
+        case LHAT_NODE_BREAK:
+            return true;
+
+        case LHAT_NODE_BLOCK:
+            for (const LhatNode *s = node->v.list.items; s != NULL;
+                 s = s->next) {
+                if (always_exits(s)) {
+                    return true;
+                }
+            }
+            return false;
+
+        case LHAT_NODE_IF_STMT: {
+            bool has_else = false;
+            for (const LhatNode *clause = node->v.list.items; clause != NULL;
+                 clause = clause->next) {
+                if (!always_exits(clause->v.clause.body)) {
+                    return false;
+                }
+                if (clause->v.clause.condition == NULL) {
+                    has_else = true;
+                }
+            }
+            return has_else;
+        }
+
+        default:
+            return false;
+    }
+}
+
+// The narrowings a condition implies when it holds, or when it does not.
+//
+// 13.11: and^ tells us both sides held when it is true, or^ tells us both
+// failed when it is false, and neither says anything in the other direction
+// -- one of the two could have decided it alone.
+static void narrow_from(Checker *c, const LhatNode *condition, bool truth)
+{
+    if (condition == NULL) {
+        return;
+    }
+
+    if (condition->kind == LHAT_NODE_UNARY &&
+        condition->v.unary.op == LHAT_OP_NOT) {
+        narrow_from(c, condition->v.unary.operand, !truth);
+        return;
+    }
+
+    if (condition->kind != LHAT_NODE_BINARY) {
+        return;
+    }
+
+    LhatOpKind op = condition->v.binary.op;
+    if ((op == LHAT_OP_AND && truth) || (op == LHAT_OP_OR && !truth)) {
+        narrow_from(c, condition->v.binary.left, truth);
+        narrow_from(c, condition->v.binary.right, truth);
+        return;
+    }
+
+    if (op != LHAT_OP_IS) {
+        return;
+    }
+
+    const LhatNode *path = condition->v.binary.left;
+    if (!narrowable(path)) {
+        return;
+    }
+
+    LhatType *current = infer(c, path);
+    LhatType *tested = resolve_type(c, condition->v.binary.right);
+    push_narrowing(c, path,
+                   truth ? only(c, current, tested)
+                         : without(c, current, tested));
 }
 
 // ---------------------------------------------------------------------------
@@ -708,8 +954,11 @@ static LhatType *infer(Checker *c, const LhatNode *node)
 
         case LHAT_NODE_IDENT:
         case LHAT_NODE_HAT_IDENT:
-        case LHAT_NODE_SCOPE:
-            return infer_name(c, node);
+        case LHAT_NODE_SCOPE: {
+            // 13.11: a branch may know more about this path than the binding.
+            LhatType *narrowed = narrowed_type(c, node);
+            return narrowed != NULL ? narrowed : infer_name(c, node);
+        }
 
         case LHAT_NODE_TABLE:
             return infer_table(c, node);
@@ -739,8 +988,10 @@ static LhatType *infer(Checker *c, const LhatNode *node)
         case LHAT_NODE_CALL:
             return infer_call(c, node);
 
-        case LHAT_NODE_MEMBER:
-            return infer_member(c, node);
+        case LHAT_NODE_MEMBER: {
+            LhatType *narrowed = narrowed_type(c, node);
+            return narrowed != NULL ? narrowed : infer_member(c, node);
+        }
 
         case LHAT_NODE_INDEX:
             // 04 の 11.3: a dynamic key may be absent, and absence is not a
@@ -776,17 +1027,31 @@ static LhatType *infer(Checker *c, const LhatNode *node)
         }
 
         case LHAT_NODE_IF_EXPR: {
+            // The same shape as the statement form: each clause sees what the
+            // earlier conditions ruled out, which is what makes a chain over
+            // a union exhaustive (04 の 7 章).
+            Narrowing *outer = c->narrowings;
             LhatType *result = NULL;
             for (const LhatNode *clause = node->v.list.items; clause != NULL;
                  clause = clause->next) {
-                if (clause->v.clause.condition != NULL) {
-                    expect(c, clause->v.clause.condition,
-                           infer(c, clause->v.clause.condition),
-                           simple(c, LHAT_TYPE_BOOL), LHAT_CHECK_ERR_NOT_BOOL);
+                const LhatNode *condition = clause->v.clause.condition;
+                if (condition == NULL) {
+                    result = lhat_type_union(&c->result->types, result,
+                                             infer(c, clause->v.clause.body));
+                    continue;
                 }
+                expect(c, condition, infer(c, condition),
+                       simple(c, LHAT_TYPE_BOOL), LHAT_CHECK_ERR_NOT_BOOL);
+
+                Narrowing *before = c->narrowings;
+                narrow_from(c, condition, true);
                 result = lhat_type_union(&c->result->types, result,
                                          infer(c, clause->v.clause.body));
+                pop_narrowings(c, before);
+
+                narrow_from(c, condition, false);
             }
+            pop_narrowings(c, outer);
             return result;
         }
 
@@ -883,6 +1148,9 @@ static void check_define(Checker *c, const LhatNode *node)
                 b->type = annotated != NULL ? annotated : actual;
                 b->reached = true;
             }
+            // A new name of the same spelling makes any narrowing of the old
+            // one stale, since the path now reaches something else.
+            drop_narrowings_for(c, target_name_node(target));
         }
         if (value != NULL) {
             value = value->next;
@@ -900,6 +1168,8 @@ static void check_reassign(Checker *c, const LhatNode *node)
             expect(c, value, infer(c, value), wanted, LHAT_CHECK_ERR_MISMATCH);
             value = value->next;
         }
+        // 13.11: what a branch established about this path no longer holds.
+        drop_narrowings_for(c, target_name_node(target));
     }
 }
 
@@ -970,9 +1240,14 @@ static void collect_bindings(Checker *c, const LhatNode *statements)
 static void check_statements(Checker *c, const LhatNode *statements)
 {
     collect_bindings(c, statements);
+
+    // A narrowing an if-statement leaves behind holds for the rest of this
+    // list and no further, so the list is what bounds its life.
+    Narrowing *mark = c->narrowings;
     for (const LhatNode *s = statements; s != NULL; s = s->next) {
         check_statement(c, s);
     }
+    pop_narrowings(c, mark);
 }
 
 static void check_block(Checker *c, const LhatNode *node)
@@ -1018,17 +1293,46 @@ static void check_statement(Checker *c, const LhatNode *node)
             check_block(c, node);
             break;
 
-        case LHAT_NODE_IF_STMT:
+        case LHAT_NODE_IF_STMT: {
+            // 13.11. A clause's body sees what its own condition established;
+            // every later clause, and the final else, see what the earlier
+            // conditions ruled out. Handling every arm of a union that way is
+            // all 04 の 7 章 needs for exhaustiveness.
+            Narrowing *outer = c->narrowings;
+            bool has_else = false;
+            bool every_branch_exits = true;
+
             for (const LhatNode *clause = node->v.list.items; clause != NULL;
                  clause = clause->next) {
-                if (clause->v.clause.condition != NULL) {
-                    expect(c, clause->v.clause.condition,
-                           infer(c, clause->v.clause.condition),
-                           simple(c, LHAT_TYPE_BOOL), LHAT_CHECK_ERR_NOT_BOOL);
+                const LhatNode *condition = clause->v.clause.condition;
+                if (condition == NULL) {
+                    has_else = true;
+                    check_statement(c, clause->v.clause.body);
+                    continue;
                 }
+                expect(c, condition, infer(c, condition),
+                       simple(c, LHAT_TYPE_BOOL), LHAT_CHECK_ERR_NOT_BOOL);
+
+                Narrowing *before = c->narrowings;
+                narrow_from(c, condition, true);
                 check_statement(c, clause->v.clause.body);
+                pop_narrowings(c, before);
+
+                if (!always_exits(clause->v.clause.body)) {
+                    every_branch_exits = false;
+                }
+                narrow_from(c, condition, false);
+            }
+
+            // Reaching the statement after this one means no branch was taken
+            // -- but only when every branch that was taken left, and there was
+            // no else to fall out of. Otherwise what holds below is a join of
+            // several paths, which is not attempted here.
+            if (has_else || !every_branch_exits) {
+                pop_narrowings(c, outer);
             }
             break;
+        }
 
         case LHAT_NODE_RETURN: {
             LhatType *value = infer(c, node->v.jump.value);
