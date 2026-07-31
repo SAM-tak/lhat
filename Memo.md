@@ -48,8 +48,8 @@ set^i i+1   うーん
 空のブロックは書けない
 do^{} とする
 テーブルリテラルなのかブロックなのかはキーワードの有り無しでわかる
-あるいはfor^init, init, ... {}
-forの場合はスコープ終了でdisposeが呼ばれる。他言語で言うusing
+あるいはwith^init with^init ... {}
+with^の場合はスコープ終了でdisposeが呼ばれる。他言語で言うusing
 
 f^  関数。関数しか呼べない。代入はローカル変数に対してしか許されない。デバッグ用にログ出力などの脱法関数は用意する。
 　illigable^修飾された手続きを呼べる、とか？
@@ -256,7 +256,7 @@ for^v in^table.values^ {
 }
 
 for while next 文
-for^i := 1 while^i < 10 next^i -> i + 1 { // Cのfor(;;)と同じように使える
+for^i := 1 while^i < 10 next^i << i + 1 { // Cのfor(;;)と同じように使える
 }
 
 for until next 文
