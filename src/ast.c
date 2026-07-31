@@ -113,6 +113,9 @@ const char *lhat_node_kind_name(LhatNodeKind kind)
         case LHAT_NODE_BREAK:          return "break";
         case LHAT_NODE_YIELD:          return "yield";
         case LHAT_NODE_WITH:           return "with";
+        case LHAT_NODE_FOR:            return "for";
+        case LHAT_NODE_REPEAT:         return "repeat";
+        case LHAT_NODE_LOOP_CLAUSE:    return "loop-clause";
         case LHAT_NODE_IF_CLAUSE:      return "if-clause";
         case LHAT_NODE_PARAM:          return "param";
         case LHAT_NODE_MEMBER_DECL:    return "member-decl";

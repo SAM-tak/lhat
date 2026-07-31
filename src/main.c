@@ -142,6 +142,27 @@ static void print_node(const LhatLexer *lexer, const LhatNode *node, int depth)
                 printf(" variadic");
             }
             break;
+        case LHAT_NODE_FOR: {
+            static const char *const kinds[] = {
+                "to^", "downto^", "in^", "while^", "until^", "if^"
+            };
+            printf(" %s", kinds[node->v.loop.kind]);
+            break;
+        }
+        case LHAT_NODE_REPEAT: {
+            static const char *const kinds[] = {
+                "forever", "count", "while^", "until^"
+            };
+            printf(" %s", kinds[node->v.repeat.kind]);
+            break;
+        }
+        case LHAT_NODE_LOOP_CLAUSE: {
+            static const char *const kinds[] = {
+                "prolog^", "first^", "main^", "last^", "epilog^", "finally^"
+            };
+            printf(" %s", kinds[node->v.loop_clause.kind]);
+            break;
+        }
         default:
             break;
     }
@@ -219,12 +240,29 @@ static void print_node(const LhatLexer *lexer, const LhatNode *node, int depth)
             print_node(lexer, node->v.coroutine.result, depth + 1);
             break;
         case LHAT_NODE_BLOCK:
+            print_list(lexer, "items", node->v.list.items, depth + 1);
+            print_list(lexer, "clauses", node->v.list.extra, depth + 1);
+            break;
         case LHAT_NODE_TABLE:
         case LHAT_NODE_IF_STMT:
         case LHAT_NODE_IF_EXPR:
         case LHAT_NODE_INTERP:
         case LHAT_NODE_TYPE_TABLE:
             print_list(lexer, "items", node->v.list.items, depth + 1);
+            break;
+        case LHAT_NODE_FOR:
+            print_list(lexer, "focus", node->v.loop.focus, depth + 1);
+            print_node(lexer, node->v.loop.bound, depth + 1);
+            print_node(lexer, node->v.loop.step, depth + 1);
+            print_list(lexer, "next", node->v.loop.advance, depth + 1);
+            print_node(lexer, node->v.loop.body, depth + 1);
+            break;
+        case LHAT_NODE_REPEAT:
+            print_node(lexer, node->v.repeat.bound, depth + 1);
+            print_node(lexer, node->v.repeat.body, depth + 1);
+            break;
+        case LHAT_NODE_LOOP_CLAUSE:
+            print_list(lexer, "body", node->v.loop_clause.body, depth + 1);
             break;
         case LHAT_NODE_WITH:
             print_list(lexer, "bindings", node->v.list.items, depth + 1);

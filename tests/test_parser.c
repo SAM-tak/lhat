@@ -647,6 +647,226 @@ static void test_types(void)
     parse_dispose(&p);
 }
 
+// 16 章. for^ names the focused value; iterating is one thing that may be
+// done with it, not the meaning of the word.
+static void test_loops(void)
+{
+    Parse p;
+
+    LHAT_TEST("numeric iteration");
+    parse_text(&p, "for^ i := 1 to^ 10 { print(i) }");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    {
+        const LhatNode *s = first_statement(&p);
+        LHAT_CHECK_EQ_INT(s->kind, LHAT_NODE_FOR);
+        LHAT_CHECK_EQ_INT(s->v.loop.kind, LHAT_FOR_TO);
+        LHAT_CHECK_EQ_INT(lhat_node_list_length(s->v.loop.focus), 1);
+        LHAT_CHECK_EQ_INT(s->v.loop.focus->kind, LHAT_NODE_DEFINE);
+        LHAT_CHECK(s->v.loop.step == NULL, "no step given");
+    }
+    parse_dispose(&p);
+
+    LHAT_TEST("step and downto");
+    parse_text(&p, "for^ i := 10 downto^ 1 step^ 2 { }");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    {
+        const LhatNode *s = first_statement(&p);
+        LHAT_CHECK_EQ_INT(s->v.loop.kind, LHAT_FOR_DOWNTO);
+        LHAT_CHECK(s->v.loop.step != NULL, "expected a step");
+    }
+    parse_dispose(&p);
+
+    // 16.3: from^ was withdrawn, and the parser says what replaced it.
+    LHAT_TEST("from^ reports what replaced it");
+    parse_text(&p, "for^ i from^ 1 to^ 10 { }");
+    LHAT_CHECK(p.result.diagnostic_count > 0, "expected a diagnostic");
+    LHAT_CHECK_EQ_INT(p.result.diagnostics[0].code,
+                      LHAT_PARSE_ERR_WITHDRAWN_FROM);
+    parse_dispose(&p);
+
+    LHAT_TEST("iteration through an iterator");
+    parse_text(&p, "for^ k, v in^ t { print(k) }");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    {
+        const LhatNode *s = first_statement(&p);
+        LHAT_CHECK_EQ_INT(s->v.loop.kind, LHAT_FOR_IN);
+        LHAT_CHECK_EQ_INT(lhat_node_list_length(s->v.loop.focus), 2);
+    }
+    parse_dispose(&p);
+
+    LHAT_TEST("conditional iteration with next^");
+    parse_text(&p, "for^ i := 1 while^ i < 10 next^ i << i + 1 { }");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    {
+        const LhatNode *s = first_statement(&p);
+        LHAT_CHECK_EQ_INT(s->v.loop.kind, LHAT_FOR_WHILE);
+        LHAT_CHECK(s->v.loop.advance != NULL, "expected a next^ statement");
+        LHAT_CHECK_EQ_INT(s->v.loop.advance->kind, LHAT_NODE_REASSIGN);
+    }
+    parse_dispose(&p);
+
+    LHAT_TEST("until^ is the negated form");
+    parse_text(&p, "for^ i := 1 until^ i \xE2\x89\xA7 10 next^ i.inc() { }");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    LHAT_CHECK_EQ_INT(first_statement(&p)->v.loop.kind, LHAT_FOR_UNTIL);
+    parse_dispose(&p);
+
+    // 16.2: the focus need not be named.
+    LHAT_TEST("an unnamed focus");
+    parse_text(&p, "for^ 1 to^ 10 { print(it^) }");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    LHAT_CHECK_EQ_INT(first_statement(&p)->v.loop.focus->kind, LHAT_NODE_INT);
+    parse_dispose(&p);
+
+    // 16.3: this form does not iterate at all.
+    LHAT_TEST("for^ ... if^ ... scopes definitions to a condition");
+    parse_text(&p, "for^ i := 1, j := 2 if^ i + j < 10 { print(i) else^: print(j) }");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    {
+        const LhatNode *s = first_statement(&p);
+        LHAT_CHECK_EQ_INT(s->v.loop.kind, LHAT_FOR_IF);
+        LHAT_CHECK_EQ_INT(lhat_node_list_length(s->v.loop.focus), 2);
+        LHAT_CHECK_EQ_INT(s->v.loop.body->kind, LHAT_NODE_IF_STMT);
+        LHAT_CHECK_EQ_INT(lhat_node_list_length(s->v.loop.body->v.list.items), 2);
+    }
+    parse_dispose(&p);
+
+    LHAT_TEST("for^ needs a driving clause");
+    parse_text(&p, "for^ i := 1 { }");
+    LHAT_CHECK(p.result.diagnostic_count > 0, "expected a diagnostic");
+    LHAT_CHECK_EQ_INT(p.result.diagnostics[0].code,
+                      LHAT_PARSE_ERR_FOR_NEEDS_CLAUSE);
+    parse_dispose(&p);
+}
+
+// 16.5: the loop with no focus.
+static void test_repeat(void)
+{
+    Parse p;
+
+    LHAT_TEST("a count");
+    parse_text(&p, "repeat^ 3 { print(1) }");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    {
+        const LhatNode *s = first_statement(&p);
+        LHAT_CHECK_EQ_INT(s->kind, LHAT_NODE_REPEAT);
+        LHAT_CHECK_EQ_INT(s->v.repeat.kind, LHAT_REPEAT_COUNT);
+    }
+    parse_dispose(&p);
+
+    LHAT_TEST("forever");
+    parse_text(&p, "repeat^ { break^ }");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    {
+        const LhatNode *s = first_statement(&p);
+        LHAT_CHECK_EQ_INT(s->v.repeat.kind, LHAT_REPEAT_FOREVER);
+        LHAT_CHECK(s->v.repeat.bound == NULL, "no bound");
+    }
+    parse_dispose(&p);
+
+    LHAT_TEST("while and until");
+    parse_text(&p, "repeat^ while^ c { c << foo() }");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    LHAT_CHECK_EQ_INT(first_statement(&p)->v.repeat.kind, LHAT_REPEAT_WHILE);
+    parse_dispose(&p);
+
+    parse_text(&p, "repeat^ until^ done { }");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    LHAT_CHECK_EQ_INT(first_statement(&p)->v.repeat.kind, LHAT_REPEAT_UNTIL);
+    parse_dispose(&p);
+
+    // 16.5: an update clause belongs with the focus that for^ declares.
+    LHAT_TEST("repeat^ takes no next^");
+    parse_text(&p, "repeat^ while^ c next^ i << i + 1 { }");
+    LHAT_CHECK(p.result.diagnostic_count > 0, "expected a diagnostic");
+    LHAT_CHECK_EQ_INT(p.result.diagnostics[0].code,
+                      LHAT_PARSE_ERR_REPEAT_TAKES_NO_NEXT);
+    parse_dispose(&p);
+}
+
+// 9 章.
+static void test_loop_clauses(void)
+{
+    Parse p;
+
+    LHAT_TEST("all clauses in order");
+    parse_text(&p,
+               "for^ i := 1 to^ 10 {\n"
+               "    prolog^: total := 0\n"
+               "    first^: log('start')\n"
+               "    main^: total << total + i\n"
+               "    last^: log(i)\n"
+               "    epilog^: log('end')\n"
+               "    finally^: cleanup()\n"
+               "}");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    {
+        const LhatNode *body = first_statement(&p)->v.loop.body;
+        // main^ goes into items; the other five are clauses.
+        LHAT_CHECK_EQ_INT(lhat_node_list_length(body->v.list.items), 1);
+        LHAT_CHECK_EQ_INT(lhat_node_list_length(body->v.list.extra), 5);
+        LHAT_CHECK_EQ_INT(body->v.list.extra->v.loop_clause.kind,
+                          LHAT_CLAUSE_PROLOG);
+    }
+    parse_dispose(&p);
+
+    LHAT_TEST("a body with no clause markers");
+    parse_text(&p, "for^ i := 1 to^ 10 { print(i) }");
+    {
+        const LhatNode *body = first_statement(&p)->v.loop.body;
+        LHAT_CHECK_EQ_INT(lhat_node_list_length(body->v.list.items), 1);
+        LHAT_CHECK(body->v.list.extra == NULL, "no clauses");
+    }
+    parse_dispose(&p);
+
+    // 9.3: last^ and epilog^ are trailing markers, so the statements before
+    // them are unambiguously the body.
+    LHAT_TEST("trailing clauses need no main^");
+    parse_text(&p, "for^ i := 1 to^ 10 { print(i) last^: log(i) }");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    parse_dispose(&p);
+
+    LHAT_TEST("prolog^ after unlabelled statements needs main^");
+    parse_text(&p, "for^ i := 1 to^ 10 { print(i) prolog^: total := 0 }");
+    LHAT_CHECK(p.result.diagnostic_count > 0, "expected a diagnostic");
+    LHAT_CHECK_EQ_INT(p.result.diagnostics[0].code,
+                      LHAT_PARSE_ERR_MAIN_REQUIRED);
+    parse_dispose(&p);
+
+    // 9.2: the order is fixed.
+    LHAT_TEST("clauses out of order are rejected");
+    parse_text(&p, "for^ i := 1 to^ 10 { epilog^: a() prolog^: b() }");
+    LHAT_CHECK(p.result.diagnostic_count > 0, "expected a diagnostic");
+    LHAT_CHECK_EQ_INT(p.result.diagnostics[0].code,
+                      LHAT_PARSE_ERR_CLAUSE_ORDER);
+    parse_dispose(&p);
+
+    // 10.1: finally^ belongs to blocks in general.
+    LHAT_TEST("finally^ on a do^ block");
+    parse_text(&p, "do^{ work() finally^: cleanup() }");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    {
+        const LhatNode *s = first_statement(&p);
+        LHAT_CHECK_EQ_INT(lhat_node_list_length(s->v.list.extra), 1);
+        LHAT_CHECK_EQ_INT(s->v.list.extra->v.loop_clause.kind,
+                          LHAT_CLAUSE_FINALLY);
+    }
+    parse_dispose(&p);
+
+    LHAT_TEST("finally^ in a procedure body");
+    parse_text(&p, "g := p^ { work() finally^: cleanup() }");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    parse_dispose(&p);
+
+    // 16.3: the loop clauses describe an iteration, so they need one.
+    LHAT_TEST("loop clauses outside a loop are rejected");
+    parse_text(&p, "do^{ work() epilog^: cleanup() }");
+    LHAT_CHECK(p.result.diagnostic_count > 0, "expected a diagnostic");
+    LHAT_CHECK_EQ_INT(p.result.diagnostics[0].code,
+                      LHAT_PARSE_ERR_CLAUSE_NOT_IN_LOOP);
+    parse_dispose(&p);
+}
+
 // 02 の 3.1: a REPL has to tell these two apart.
 static void test_incomplete(void)
 {
@@ -736,6 +956,9 @@ int main(void)
     test_functions();
     test_conditionals();
     test_types();
+    test_loops();
+    test_repeat();
+    test_loop_clauses();
     test_incomplete();
     test_recovery();
     test_realistic();

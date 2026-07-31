@@ -29,7 +29,13 @@ typedef enum {
     LHAT_PARSE_ERR_BINDING_ARITY,             // targets and values disagree
     LHAT_PARSE_ERR_UNPACK_NOT_ALONE,          // 13.10: unpack^ must be the only value
     LHAT_PARSE_ERR_UNPACK_MISPLACED,          // unpack^ outside a binding
-    LHAT_PARSE_ERR_LEXICAL                 // the lexer already reported one
+    LHAT_PARSE_ERR_CLAUSE_ORDER,              // 9.2: clauses have a fixed order
+    LHAT_PARSE_ERR_MAIN_REQUIRED,             // 9.3
+    LHAT_PARSE_ERR_CLAUSE_NOT_IN_LOOP,        // 9 章 clauses outside a loop
+    LHAT_PARSE_ERR_FOR_NEEDS_CLAUSE,          // 16.3: for^ needs a driving clause
+    LHAT_PARSE_ERR_REPEAT_TAKES_NO_NEXT,      // 16.5
+    LHAT_PARSE_ERR_WITHDRAWN_FROM,            // 16.3: from^ replaced by ':='
+    LHAT_PARSE_ERR_LEXICAL                    // the lexer already reported one
 } LhatParseErrorCode;
 
 typedef struct {

@@ -52,6 +52,9 @@ typedef enum {
     LHAT_NODE_BREAK,
     LHAT_NODE_YIELD,
     LHAT_NODE_WITH,          // with^ x := e  ... { ... }   (12 章)
+    LHAT_NODE_FOR,           // for^ ...                    (16 章)
+    LHAT_NODE_REPEAT,        // repeat^ ...                 (16.5)
+    LHAT_NODE_LOOP_CLAUSE,   // prolog^: first^: last^: ... (9 章)
 
     // ---- pieces ----
     LHAT_NODE_IF_CLAUSE,     // condition (may be absent) plus a body
@@ -70,6 +73,34 @@ typedef enum {
 
     LHAT_NODE_KIND_COUNT
 } LhatNodeKind;
+
+// 16.1: what the clause after the focus does with it.
+typedef enum {
+    LHAT_FOR_TO,      // to^ limit [step^ n]
+    LHAT_FOR_DOWNTO,  // downto^ limit [step^ n]
+    LHAT_FOR_IN,      // in^ iterable
+    LHAT_FOR_WHILE,   // while^ cond [next^ stmt]
+    LHAT_FOR_UNTIL,   // until^ cond [next^ stmt]
+    LHAT_FOR_IF       // if^ cond -- not a loop at all (16.3)
+} LhatForKind;
+
+// 16.5: repeat^ carries no focus.
+typedef enum {
+    LHAT_REPEAT_FOREVER,
+    LHAT_REPEAT_COUNT,
+    LHAT_REPEAT_WHILE,
+    LHAT_REPEAT_UNTIL
+} LhatRepeatKind;
+
+// 9.2, in the order they must be written.
+typedef enum {
+    LHAT_CLAUSE_PROLOG = 0,
+    LHAT_CLAUSE_FIRST = 1,
+    LHAT_CLAUSE_MAIN = 2,
+    LHAT_CLAUSE_LAST = 3,
+    LHAT_CLAUSE_EPILOG = 4,
+    LHAT_CLAUSE_FINALLY = 5
+} LhatClauseKind;
 
 typedef struct LhatNode LhatNode;
 
@@ -175,10 +206,37 @@ struct LhatNode {
 
         // Statement or expression lists: BLOCK, TABLE, IF_STMT, IF_EXPR,
         // INTERP, CALL argument lists, WITH bindings.
+        //
+        // For BLOCK, `items` holds the unlabelled statements, which are the
+        // main clause, and `extra` holds the other clauses of 9 章 as a list
+        // of LHAT_NODE_LOOP_CLAUSE. A block with no clause markers keeps
+        // `extra` empty, so the common case is unchanged.
         struct {
             LhatNode *items;
-            LhatNode *extra;  // WITH: body. IF_*: nothing.
+            LhatNode *extra;  // WITH: body. BLOCK: clause list.
         } list;
+
+        // 16.3. `focus` is a list: bindings, destructuring targets, or one
+        // expression when the focus is unnamed and reached through it^.
+        struct {
+            LhatForKind kind;
+            LhatNode *focus;
+            LhatNode *bound;    // limit, iterable or condition
+            LhatNode *step;     // step^, absent for every kind but to^/downto^
+            LhatNode *advance;  // next^ statements
+            LhatNode *body;
+        } loop;
+
+        struct {
+            LhatRepeatKind kind;
+            LhatNode *bound;  // count or condition, absent when forever
+            LhatNode *body;
+        } repeat;
+
+        struct {
+            LhatClauseKind kind;
+            LhatNode *body;
+        } loop_clause;
 
         // IF_CLAUSE. `condition` is NULL for the final else.
         struct {

@@ -29,6 +29,7 @@ static LhatNode *parse_expression(Parser *p);
 static LhatNode *parse_type(Parser *p);
 static LhatNode *parse_statement(Parser *p);
 static LhatNode *parse_block_body(Parser *p, const LhatToken *at);
+static LhatNode *parse_clause_body(Parser *p, const LhatToken *at, bool in_loop);
 
 // ---------------------------------------------------------------------------
 // Token access
@@ -606,7 +607,7 @@ static LhatNode *parse_function(Parser *p, bool is_function)
 
     LhatToken brace = p->current;
     if (expect_op(p, LHAT_OP_LBRACE)) {
-        node->v.func.body = parse_block_body(p, &brace);
+        node->v.func.body = parse_clause_body(p, &brace, false);
         expect_op(p, LHAT_OP_RBRACE);
     }
 
@@ -1122,19 +1123,40 @@ static bool can_begin_statement(const Parser *p)
     }
 }
 
-static LhatNode *parse_block_body(Parser *p, const LhatToken *at)
+// 9.2: the clause markers, in the order they must appear. Returns -1 when
+// the current token is not one of them.
+static int clause_index(const Parser *p)
 {
-    LhatNode *block = make(p, LHAT_NODE_BLOCK, at);
-    if (block == NULL) {
-        return NULL;
+    if (check_hat(p, "prolog") || check_hat(p, "prologue")) {
+        return LHAT_CLAUSE_PROLOG;
     }
+    if (check_hat(p, "first")) {
+        return LHAT_CLAUSE_FIRST;
+    }
+    if (check_hat(p, "main")) {
+        return LHAT_CLAUSE_MAIN;
+    }
+    if (check_hat(p, "last")) {
+        return LHAT_CLAUSE_LAST;
+    }
+    if (check_hat(p, "epilog") || check_hat(p, "epilogue")) {
+        return LHAT_CLAUSE_EPILOG;
+    }
+    if (check_hat(p, "finally")) {
+        return LHAT_CLAUSE_FINALLY;
+    }
+    return -1;
+}
 
+static LhatNode *parse_statement_list(Parser *p)
+{
     LhatNode *head = NULL;
     LhatNode *tail = NULL;
 
-    // Stops at an else marker as well as at '}', because 5.2 puts the clauses
-    // of an if statement inside the braces rather than after them.
-    while (!at_eof(p) && !check_op(p, LHAT_OP_RBRACE) && !is_else_marker(p)) {
+    // Stops at an else marker and at a clause marker as well as at '}',
+    // because 5.2 and 9.2 both put those inside the braces.
+    while (!at_eof(p) && !check_op(p, LHAT_OP_RBRACE) && !is_else_marker(p) &&
+           clause_index(p) < 0) {
         uint32_t before = p->current.offset;
 
         LhatNode *statement = parse_statement(p);
@@ -1153,18 +1175,78 @@ static LhatNode *parse_block_body(Parser *p, const LhatToken *at)
             advance(p);
         }
     }
+    return head;
+}
 
-    block->v.list.items = head;
+static LhatNode *parse_block_body(Parser *p, const LhatToken *at)
+{
+    LhatNode *block = make(p, LHAT_NODE_BLOCK, at);
+    if (block == NULL) {
+        return NULL;
+    }
+    block->v.list.items = parse_statement_list(p);
     return block;
 }
 
-static LhatNode *parse_braced_block(Parser *p)
+// A body that may carry the clauses of 9 章. Outside a loop only finally^ is
+// allowed (10.1), since the others describe how an iteration proceeds.
+static LhatNode *parse_clause_body(Parser *p, const LhatToken *at, bool in_loop)
+{
+    LhatNode *block = make(p, LHAT_NODE_BLOCK, at);
+    if (block == NULL) {
+        return NULL;
+    }
+
+    block->v.list.items = parse_statement_list(p);
+    bool unlabelled = block->v.list.items != NULL;
+
+    LhatNode *head = NULL;
+    LhatNode *tail = NULL;
+    int previous = -1;
+
+    for (int index; (index = clause_index(p)) >= 0;) {
+        LhatToken at_clause = p->current;
+
+        if (!in_loop && index != LHAT_CLAUSE_FINALLY) {
+            report(p, &at_clause, LHAT_PARSE_ERR_CLAUSE_NOT_IN_LOOP);
+        } else if (index <= previous) {
+            report(p, &at_clause, LHAT_PARSE_ERR_CLAUSE_ORDER);
+        } else if (unlabelled && index <= LHAT_CLAUSE_MAIN) {
+            // 9.3: prolog^ and first^ lead, so statements written before them
+            // would be swallowed; main^ must be named to keep them apart.
+            report(p, &at_clause, LHAT_PARSE_ERR_MAIN_REQUIRED);
+        }
+        previous = index;
+
+        advance(p);
+        expect_op(p, LHAT_OP_COLON);
+
+        LhatNode *statements = parse_statement_list(p);
+        if (index == LHAT_CLAUSE_MAIN) {
+            block->v.list.items = statements;
+            continue;
+        }
+
+        LhatNode *clause = make(p, LHAT_NODE_LOOP_CLAUSE, &at_clause);
+        if (clause == NULL) {
+            break;
+        }
+        clause->v.loop_clause.kind = (LhatClauseKind)index;
+        clause->v.loop_clause.body = statements;
+        lhat_node_append(&head, &tail, clause);
+    }
+
+    block->v.list.extra = head;
+    return block;
+}
+
+static LhatNode *parse_braced_block(Parser *p, bool in_loop)
 {
     LhatToken brace = p->current;
     if (!expect_op(p, LHAT_OP_LBRACE)) {
         return NULL;
     }
-    LhatNode *block = parse_block_body(p, &brace);
+    LhatNode *block = parse_clause_body(p, &brace, in_loop);
     expect_op(p, LHAT_OP_RBRACE);
     return block;
 }
@@ -1210,14 +1292,12 @@ static LhatNode *parse_value(Parser *p)
     return node;
 }
 
-static LhatNode *parse_if_statement(Parser *p, LhatToken start)
+static LhatNode *parse_if_body(Parser *p, LhatToken start, LhatNode *condition)
 {
     LhatNode *node = make(p, LHAT_NODE_IF_STMT, &start);
     if (node == NULL) {
         return NULL;
     }
-
-    LhatNode *condition = parse_expression(p);
 
     LhatToken brace = p->current;
     if (!expect_op(p, LHAT_OP_LBRACE)) {
@@ -1256,6 +1336,150 @@ static LhatNode *parse_if_statement(Parser *p, LhatToken start)
     return node;
 }
 
+static LhatNode *parse_if_statement(Parser *p, LhatToken start)
+{
+    return parse_if_body(p, start, parse_expression(p));
+}
+
+// 16.3. The focus is a list of bindings, of destructuring targets, or one
+// expression when it is unnamed and reached through it^ (16.2).
+static LhatNode *parse_for_focus(Parser *p)
+{
+    LhatNode *head = NULL;
+    LhatNode *tail = NULL;
+
+    for (;;) {
+        LhatToken at = p->current;
+        LhatNode *target = parse_target(p);
+
+        if (check_op(p, LHAT_OP_DEFINE)) {
+            advance(p);
+            LhatNode *binding = make(p, LHAT_NODE_DEFINE, &at);
+            if (binding == NULL) {
+                break;
+            }
+            binding->v.binding.targets = target;
+            binding->v.binding.values = parse_expression(p);
+            target = binding;
+        }
+
+        lhat_node_append(&head, &tail, target);
+        if (!match_op(p, LHAT_OP_COMMA)) {
+            break;
+        }
+    }
+    return head;
+}
+
+// next^ takes one or more statements, separated by commas (Memo.md L532).
+static LhatNode *parse_advance(Parser *p)
+{
+    LhatNode *head = NULL;
+    LhatNode *tail = NULL;
+
+    do {
+        lhat_node_append(&head, &tail, parse_statement(p));
+    } while (match_op(p, LHAT_OP_COMMA));
+
+    return head;
+}
+
+static LhatNode *parse_for(Parser *p)
+{
+    LhatToken start = p->current;
+    advance(p);
+
+    LhatNode *node = make(p, LHAT_NODE_FOR, &start);
+    if (node == NULL) {
+        return NULL;
+    }
+
+    node->v.loop.focus = parse_for_focus(p);
+
+    // 16.3: from^ was replaced by ':=' so that every binding with an initial
+    // value is written the same way. The initial value is read and discarded
+    // so that the rest of the header still parses.
+    if (check_hat(p, "from")) {
+        report(p, &p->current, LHAT_PARSE_ERR_WITHDRAWN_FROM);
+        advance(p);
+        parse_expression(p);
+    }
+
+    bool is_loop = true;
+    if (match_hat(p, "to")) {
+        node->v.loop.kind = LHAT_FOR_TO;
+        node->v.loop.bound = parse_expression(p);
+        if (match_hat(p, "step")) {
+            node->v.loop.step = parse_expression(p);
+        }
+    } else if (match_hat(p, "downto")) {
+        node->v.loop.kind = LHAT_FOR_DOWNTO;
+        node->v.loop.bound = parse_expression(p);
+        if (match_hat(p, "step")) {
+            node->v.loop.step = parse_expression(p);
+        }
+    } else if (match_hat(p, "in")) {
+        node->v.loop.kind = LHAT_FOR_IN;
+        node->v.loop.bound = parse_expression(p);
+    } else if (check_hat(p, "while") || check_hat(p, "until")) {
+        node->v.loop.kind = check_hat(p, "while") ? LHAT_FOR_WHILE : LHAT_FOR_UNTIL;
+        advance(p);
+        node->v.loop.bound = parse_expression(p);
+        if (match_hat(p, "next")) {
+            node->v.loop.advance = parse_advance(p);
+        }
+    } else if (check_hat(p, "if")) {
+        // 16.3: this one does not iterate. It scopes the definitions to a
+        // condition without another level of nesting.
+        LhatToken at = p->current;
+        advance(p);
+        node->v.loop.kind = LHAT_FOR_IF;
+        node->v.loop.bound = parse_expression(p);
+        node->v.loop.body = parse_if_body(p, at, node->v.loop.bound);
+        return node;
+    } else {
+        report(p, &p->current, LHAT_PARSE_ERR_FOR_NEEDS_CLAUSE);
+        return node;
+    }
+
+    node->v.loop.body = parse_braced_block(p, is_loop);
+    return node;
+}
+
+// 16.5: repeat^ introduces no focus, and takes no next^.
+static LhatNode *parse_repeat(Parser *p)
+{
+    LhatToken start = p->current;
+    advance(p);
+
+    LhatNode *node = make(p, LHAT_NODE_REPEAT, &start);
+    if (node == NULL) {
+        return NULL;
+    }
+
+    if (match_hat(p, "while")) {
+        node->v.repeat.kind = LHAT_REPEAT_WHILE;
+        node->v.repeat.bound = parse_expression(p);
+    } else if (match_hat(p, "until")) {
+        node->v.repeat.kind = LHAT_REPEAT_UNTIL;
+        node->v.repeat.bound = parse_expression(p);
+    } else if (check_op(p, LHAT_OP_LBRACE)) {
+        node->v.repeat.kind = LHAT_REPEAT_FOREVER;
+    } else {
+        node->v.repeat.kind = LHAT_REPEAT_COUNT;
+        node->v.repeat.bound = parse_expression(p);
+    }
+
+    if (check_hat(p, "next")) {
+        report(p, &p->current, LHAT_PARSE_ERR_REPEAT_TAKES_NO_NEXT);
+        advance(p);
+        parse_advance(p);
+    }
+
+    node->v.repeat.body = parse_braced_block(p, true);
+    return node;
+}
+
 static LhatNode *parse_with(Parser *p)
 {
     LhatToken start = p->current;
@@ -1288,7 +1512,7 @@ static LhatNode *parse_with(Parser *p)
     }
 
     node->v.list.items = head;
-    node->v.list.extra = parse_braced_block(p);
+    node->v.list.extra = parse_braced_block(p, false);
     return node;
 }
 
@@ -1331,10 +1555,16 @@ static LhatNode *parse_statement(Parser *p)
     if (start.kind == LHAT_TOKEN_HAT_IDENT) {
         if (check_hat(p, "do")) {
             advance(p);
-            return parse_braced_block(p);
+            return parse_braced_block(p, false);
         }
         if (check_hat(p, "with")) {
             return parse_with(p);
+        }
+        if (check_hat(p, "for")) {
+            return parse_for(p);
+        }
+        if (check_hat(p, "repeat")) {
+            return parse_repeat(p);
         }
         if (check_hat(p, "return")) {
             return parse_jump(p, LHAT_NODE_RETURN);
@@ -1522,6 +1752,20 @@ const char *lhat_parse_error_message(LhatParseErrorCode code)
             return "'unpack^' must be the only value of the binding";
         case LHAT_PARSE_ERR_UNPACK_MISPLACED:
             return "'unpack^' is only valid as the value of ':=' or '<<'";
+        case LHAT_PARSE_ERR_CLAUSE_ORDER:
+            return "loop clauses run prolog^, first^, main^, last^, epilog^, "
+                   "finally^ and must be written in that order";
+        case LHAT_PARSE_ERR_MAIN_REQUIRED:
+            return "statements before prolog^ or first^ need 'main^:' to say "
+                   "they are the body";
+        case LHAT_PARSE_ERR_CLAUSE_NOT_IN_LOOP:
+            return "only finally^ may appear outside a loop";
+        case LHAT_PARSE_ERR_FOR_NEEDS_CLAUSE:
+            return "for^ needs one of to^, downto^, in^, while^, until^ or if^";
+        case LHAT_PARSE_ERR_REPEAT_TAKES_NO_NEXT:
+            return "next^ belongs to for^; repeat^ declares no focus to advance";
+        case LHAT_PARSE_ERR_WITHDRAWN_FROM:
+            return "from^ was withdrawn; write 'for^ i := 1 to^ 10'";
         case LHAT_PARSE_ERR_LEXICAL:
             return "the input could not be tokenised";
     }
