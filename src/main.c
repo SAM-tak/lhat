@@ -150,6 +150,16 @@ static void print_node(const LhatLexer *lexer, const LhatNode *node, int depth)
                 printf(" overload^");
             }
             break;
+        case LHAT_NODE_DEFINE:
+            if (node->v.binding.exported) {
+                printf(" public^");
+            }
+            break;
+        case LHAT_NODE_ERRORDEF:
+            if (node->v.named.exported) {
+                printf(" public^");
+            }
+            break;
         case LHAT_NODE_FOR: {
             static const char *const kinds[] = {
                 "to^", "downto^", "in^", "while^", "until^", "if^", "when^"
@@ -240,6 +250,7 @@ static void print_node(const LhatLexer *lexer, const LhatNode *node, int depth)
         case LHAT_NODE_YIELD:
         case LHAT_NODE_CALL_STMT:
         case LHAT_NODE_UNPACK:
+        case LHAT_NODE_REQUIRE:
         case LHAT_NODE_TRY:
             print_node(lexer, node->v.jump.value, depth + 1);
             break;
@@ -252,7 +263,7 @@ static void print_node(const LhatLexer *lexer, const LhatNode *node, int depth)
             print_list(lexer, "items", node->v.list.items, depth + 1);
             print_list(lexer, "clauses", node->v.list.extra, depth + 1);
             break;
-        case LHAT_NODE_ERRORDEF:
+        case LHAT_NODE_MODULE:
         case LHAT_NODE_ERROR_KIND:
         case LHAT_NODE_ERROR_NEW:
             print_node(lexer, node->v.named.name, depth + 1);

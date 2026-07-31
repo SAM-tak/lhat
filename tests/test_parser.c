@@ -1630,10 +1630,94 @@ static void test_command_form(void)
     parse_dispose(&p);
 }
 
+// 05-modules.md.
+static void test_modules(void)
+{
+    Parse p;
+
+    // 05 の 3 章: a name for the unit, independent of where its file sits.
+    LHAT_TEST("module^ names the unit");
+    parse_text(&p, "module^ namespace1.module1\nlet^ x = 1\n");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    {
+        const LhatNode *s = first_statement(&p);
+        LHAT_CHECK_EQ_INT(s->kind, LHAT_NODE_MODULE);
+        LHAT_CHECK_EQ_INT(s->v.named.name->kind, LHAT_NODE_MEMBER);
+    }
+    parse_dispose(&p);
+
+    LHAT_TEST("module^ goes first");
+    parse_text(&p, "let^ x = 1\nmodule^ m\n");
+    LHAT_CHECK(p.result.diagnostic_count > 0, "expected a diagnostic");
+    LHAT_CHECK_EQ_INT(p.result.diagnostics[0].code,
+                      LHAT_PARSE_ERR_MODULE_MISPLACED);
+    parse_dispose(&p);
+
+    LHAT_TEST("module^ appears once");
+    parse_text(&p, "module^ a\nmodule^ b\n");
+    LHAT_CHECK(p.result.diagnostic_count > 0, "expected a diagnostic");
+    LHAT_CHECK_EQ_INT(p.result.diagnostics[0].code,
+                      LHAT_PARSE_ERR_MODULE_MISPLACED);
+    parse_dispose(&p);
+
+    // 05 の 4 章: a mark on the declaration, not a list at the end of the
+    // file, so the exports are known from the text alone.
+    LHAT_TEST("public^ marks the declaration");
+    parse_text(&p,
+               "public^ let^ x = 1\n"
+               "let^ y = 2\n"
+               "public^ errordef^ E { A }\n");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    {
+        const LhatNode *s = first_statement(&p);
+        LHAT_CHECK(s->v.binding.exported, "x is public");
+        LHAT_CHECK(!s->next->v.binding.exported, "y is not");
+        LHAT_CHECK(s->next->next->v.named.exported, "E is public");
+    }
+    parse_dispose(&p);
+
+    LHAT_TEST("public^ needs something with a name");
+    parse_text(&p, "public^ print(1)");
+    LHAT_CHECK(p.result.diagnostic_count > 0, "expected a diagnostic");
+    LHAT_CHECK_EQ_INT(p.result.diagnostics[0].code,
+                      LHAT_PARSE_ERR_PUBLIC_NEEDS_DECLARATION);
+    parse_dispose(&p);
+
+    LHAT_TEST("require^ takes a path");
+    parse_text(&p, "let^ io = require^ \"system/io.lh\"");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    {
+        const LhatNode *value = first_value(&p);
+        LHAT_CHECK_EQ_INT(value->kind, LHAT_NODE_REQUIRE);
+        LHAT_CHECK_EQ_INT(value->v.jump.value->kind, LHAT_NODE_STRING);
+    }
+    parse_dispose(&p);
+
+    // 05 の 5.2: the checker follows this, so the path cannot be computed.
+    LHAT_TEST("require^ refuses a computed path");
+    parse_text(&p, "let^ p = \"x\"\nlet^ m = require^ p\n");
+    LHAT_CHECK(p.result.diagnostic_count > 0, "expected a diagnostic");
+    LHAT_CHECK_EQ_INT(p.result.diagnostics[0].code,
+                      LHAT_PARSE_ERR_REQUIRE_NEEDS_LITERAL);
+    parse_dispose(&p);
+
+    // 05 の 5.4: it binds one name, chosen here, so reaching in is ordinary
+    // member access.
+    LHAT_TEST("what require^ yields is reached into normally");
+    parse_text(&p,
+               "let^ io = require^ \"system/io.lh\"\n"
+               "let^ open = io.File.open\n");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    LHAT_CHECK_EQ_INT(first_statement(&p)->next->v.binding.values->kind,
+                      LHAT_NODE_MEMBER);
+    parse_dispose(&p);
+}
+
 int main(void)
 {
     test_statements();
     test_command_form();
+    test_modules();
     test_precedence();
     test_comparison_chain();
     test_postfix();

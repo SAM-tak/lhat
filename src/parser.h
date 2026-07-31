@@ -45,6 +45,9 @@ typedef enum {
     LHAT_PARSE_ERR_WITHDRAWN_SHIFT,           // 8.6: '<<' replaced by ':='
     LHAT_PARSE_ERR_LET_NEEDS_VALUE,           // 8.7: no declaration without one
     LHAT_PARSE_ERR_EQUALS_IS_COMPARISON,      // 8.6: 'x = 1' as a statement
+    LHAT_PARSE_ERR_MODULE_MISPLACED,          // 05 の 3 章: one, and first
+    LHAT_PARSE_ERR_PUBLIC_NEEDS_DECLARATION,  // 05 の 4 章
+    LHAT_PARSE_ERR_REQUIRE_NEEDS_LITERAL,     // 05 の 5.2
     LHAT_PARSE_ERR_LEXICAL                    // the lexer already reported one
 } LhatParseErrorCode;
 

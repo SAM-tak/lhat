@@ -34,6 +34,8 @@ static LhatNode *access_node(Parser *p, LhatNodeKind kind, const LhatToken *at,
                              LhatNode *target, LhatNode *argument, bool nil_safe);
 static LhatNode *simple_node(Parser *p);
 static LhatNode *parse_error_fields(Parser *p);
+static LhatNode *parse_module(Parser *p);
+static LhatNode *parse_public(Parser *p);
 static LhatNode *parse_for(Parser *p);
 static LhatNode *parse_binding(Parser *p, LhatNodeKind kind,
                                const LhatToken *at, LhatNode *targets);
@@ -1060,6 +1062,26 @@ static LhatNode *parse_power(Parser *p)
 
 static LhatNode *parse_unary(Parser *p)
 {
+    // 05 の 5 章. Unary like try^, so '(require^ "m").f' needs the brackets
+    // that say what is being reached into.
+    if (check_hat(p, "require")) {
+        LhatToken at = p->current;
+        advance(p);
+
+        LhatNode *node = make(p, LHAT_NODE_REQUIRE, &at);
+        if (node == NULL) {
+            return NULL;
+        }
+        // 05 の 5.2: the checker follows this, so the path has to be settled
+        // by the time it looks. A computed one is a different mechanism (M3).
+        if (p->current.kind != LHAT_TOKEN_STRING) {
+            report(p, &p->current, LHAT_PARSE_ERR_REQUIRE_NEEDS_LITERAL);
+            return node;
+        }
+        node->v.jump.value = simple_node(p);
+        return node;
+    }
+
     // 04 の 5 章: try^ sits at the unary level, so 'try^ f() + 1' adds to the
     // unwrapped value rather than trying to unwrap the sum.
     if (check_hat(p, "try")) {
@@ -1609,6 +1631,50 @@ static LhatNode *parse_binding(Parser *p, LhatNodeKind kind,
                                  : LHAT_PARSE_ERR_BINDING_ARITY);
     }
     return node;
+}
+
+// 05 の 3 章. Names the unit, independently of where its file sits, so that
+// moving a file does not change the label a type shows (7.1).
+static LhatNode *parse_module(Parser *p)
+{
+    LhatToken start = p->current;
+    advance(p);  // module^
+
+    LhatNode *node = make(p, LHAT_NODE_MODULE, &start);
+    if (node == NULL) {
+        return NULL;
+    }
+    node->v.named.name = parse_qualified_name(p);
+    return node;
+}
+
+// 05 の 4 章. A mark on the declaration rather than a list at the end of the
+// file, which is what lets the exports be known from the text alone -- 6 章
+// needs that, since the checker follows an import without running anything.
+static LhatNode *parse_public(Parser *p)
+{
+    LhatToken start = p->current;
+    advance(p);  // public^
+
+    LhatNode *declaration = parse_statement(p);
+    if (declaration == NULL) {
+        return NULL;
+    }
+
+    switch (declaration->kind) {
+        case LHAT_NODE_DEFINE:
+            declaration->v.binding.exported = true;
+            break;
+        case LHAT_NODE_ERRORDEF:
+            declaration->v.named.exported = true;
+            break;
+        default:
+            // 4 章 puts it on a declaration. Anything else has no name to
+            // publish.
+            report(p, &start, LHAT_PARSE_ERR_PUBLIC_NEEDS_DECLARATION);
+            break;
+    }
+    return declaration;
 }
 
 // 8.6. let^ is what creates a name; without it ':=' reassigns. Making the
@@ -2309,6 +2375,12 @@ static LhatNode *parse_statement(Parser *p)
         if (check_hat(p, "let")) {
             return parse_let(p);
         }
+        if (check_hat(p, "module")) {
+            return parse_module(p);
+        }
+        if (check_hat(p, "public")) {
+            return parse_public(p);
+        }
     }
 
     // 13.10: unpack^ belongs to the value of a binding and nowhere else.
@@ -2423,6 +2495,26 @@ void lhat_parse(LhatLexer *lexer, LhatParseResult *result)
 
     LhatToken origin = parser.current;
     result->root = parse_block_body(&parser, &origin);
+
+    // 05 の 3 章: at most one, and at the top. Checked here rather than while
+    // parsing, because "the first statement of the unit" is a fact about the
+    // finished list rather than about the parser's position.
+    if (result->root != NULL) {
+        bool first = true;
+        for (LhatNode *s = result->root->v.list.items; s != NULL; s = s->next) {
+            if (s->kind == LHAT_NODE_MODULE && !first) {
+                LhatToken at;
+                memset(&at, 0, sizeof at);
+                at.kind = LHAT_TOKEN_HAT_IDENT;
+                at.offset = s->offset;
+                at.line = s->line;
+                at.column = s->column;
+                parser.panicking = false;
+                report(&parser, &at, LHAT_PARSE_ERR_MODULE_MISPLACED);
+            }
+            first = false;
+        }
+    }
 
     parser_finish(&parser, lexer, result);
 }
@@ -2550,6 +2642,12 @@ const char *lhat_parse_error_message(LhatParseErrorCode code)
             return "a def^ declares its fields once; write one self^{ ... }";
         case LHAT_PARSE_ERR_MODIFIER_ON_TEMPLATE:
             return "override^ and overload^ mark a member, not the fields";
+        case LHAT_PARSE_ERR_MODULE_MISPLACED:
+            return "module^ goes first, and only once in a file";
+        case LHAT_PARSE_ERR_PUBLIC_NEEDS_DECLARATION:
+            return "public^ marks a let^ or an errordef^";
+        case LHAT_PARSE_ERR_REQUIRE_NEEDS_LITERAL:
+            return "require^ takes a written path, since the checker follows it";
         case LHAT_PARSE_ERR_FIELD_NEEDS_TYPE:
             return "a field needs a type, a default, or both";
         case LHAT_PARSE_ERR_ERRORDEF_NEEDS_NAME:

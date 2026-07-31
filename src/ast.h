@@ -38,6 +38,7 @@ typedef enum {
     LHAT_NODE_SELF_TABLE,    // self^{ ... }                 (14.6, 14.11)
     LHAT_NODE_ERROR_NEW,     // error^Kind{ ... }            (04 の 2.5)
     LHAT_NODE_TRY,           // try^ expr                    (04 の 5 章)
+    LHAT_NODE_REQUIRE,       // require^ "path"              (05 の 5 章)
     LHAT_NODE_UNARY,
     LHAT_NODE_BINARY,
     LHAT_NODE_COMPARE_CHAIN, // a < b < c  (11.5 の (5))
@@ -64,6 +65,7 @@ typedef enum {
     LHAT_NODE_LOOP_CLAUSE,   // prolog^: first^: last^: ... (9 章)
     LHAT_NODE_ERRORDEF,      // errordef^ Name { ... }      (04 の 2.2)
     LHAT_NODE_ERROR_KIND,    // one kind inside an errordef^
+    LHAT_NODE_MODULE,        // module^ a.b.c               (05 の 3 章)
 
     // ---- pieces ----
     LHAT_NODE_IF_CLAUSE,     // condition (may be absent) plus a body
@@ -222,6 +224,7 @@ struct LhatNode {
         struct {
             LhatNode *targets;
             LhatNode *values;
+            bool exported;  // 05 の 4 章: written public^
         } binding;
 
         // Statement or expression lists: BLOCK, TABLE, IF_STMT, IF_EXPR,
@@ -265,6 +268,7 @@ struct LhatNode {
         struct {
             LhatNode *name;
             LhatNode *members;  // NULL when a kind declares no fields
+            bool exported;      // 05 の 4 章: written public^
         } named;
 
         // IF_CLAUSE. `condition` is NULL for the final else.
