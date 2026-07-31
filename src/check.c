@@ -33,9 +33,15 @@ typedef struct Narrowing {
 } Narrowing;
 
 typedef struct {
-    const LhatSource *source;
+    // The tree points into both the source text and the lexer's decoded
+    // string storage, so the lexer is what has to outlive the result.
+    const LhatLexer *lexer;
     LhatCheckResult *result;
     bool strict;
+
+    // 05 の 6.1: how an import is answered. Absent when a unit is checked on
+    // its own, in which case a require^ cannot be followed.
+    LhatRequire require;
 
     Scope *scope;
     // 05 の 2.2: one environment. A name means a value, a type, or both.
@@ -110,7 +116,7 @@ static bool node_name(const Checker *c, const LhatNode *node,
         case LHAT_NODE_IDENT:
         case LHAT_NODE_HAT_IDENT:
         case LHAT_NODE_TYPE_NAME:
-            *text = c->source->text + node->v.name.offset;
+            *text = c->lexer->source->text + node->v.name.offset;
             *length = node->v.name.length >= node->v.name.hats
                           ? node->v.name.length - node->v.name.hats
                           : node->v.name.length;
@@ -198,15 +204,18 @@ static void scope_dispose(Scope *scope)
 
 static LhatType *simple(Checker *c, LhatTypeKind kind)
 {
-    return lhat_type_simple(&c->result->types, kind);
+    return lhat_type_simple(c->result->types, kind);
 }
 
 static LhatType *resolve_type(Checker *c, const LhatNode *node);
 static LhatType *infer(Checker *c, const LhatNode *node);
 static void check_statement(Checker *c, const LhatNode *node);
+static LhatType *collect_exports(Checker *c, const LhatNode *statements);
 static void check_statements(Checker *c, const LhatNode *statements);
 static LhatType *infer_def(Checker *c, const LhatNode *node, LhatType *base);
 static LhatType *instance_of(const LhatType *definition);
+static const LhatTypeMember *find_member(const LhatType *table, const char *name,
+                                         size_t length);
 static LhatType *only(Checker *c, LhatType *type, LhatType *wanted);
 static LhatType *without(Checker *c, LhatType *type, LhatType *unwanted);
 
@@ -237,21 +246,21 @@ static LhatType *builtin_type(Checker *c, const char *name, size_t length)
     // it asks for nothing in particular -- the top of tables, which 13.7
     // notes is not the top of every value.
     if (name_is(name, length, "t") || name_is(name, length, "table")) {
-        return lhat_type_table(&c->result->types);
+        return lhat_type_table(c->result->types);
     }
     return NULL;
 }
 
 static LhatType *resolve_table_type(Checker *c, const LhatNode *node)
 {
-    LhatType *table = lhat_type_table(&c->result->types);
+    LhatType *table = lhat_type_table(c->result->types);
     for (const LhatNode *m = node->v.list.items; m != NULL; m = m->next) {
         const char *name = NULL;
         size_t length = 0;
         if (!node_name(c, m->v.entry.key, &name, &length)) {
             continue;
         }
-        lhat_type_add_member(&c->result->types, table, name, length,
+        lhat_type_add_member(c->result->types, table, name, length,
                              resolve_type(c, m->v.entry.value));
     }
     return table;
@@ -275,7 +284,7 @@ static bool is_self_marker(const Checker *c, const LhatNode *param)
 
 static LhatType *resolve_func_type(Checker *c, const LhatNode *node)
 {
-    LhatType *func = lhat_type_func(&c->result->types, node->v.func.is_function);
+    LhatType *func = lhat_type_func(c->result->types, node->v.func.is_function);
     for (const LhatNode *param = node->v.func.params; param != NULL;
          param = param->next) {
         if (param == node->v.func.params && is_self_marker(c, param)) {
@@ -288,7 +297,7 @@ static LhatType *resolve_func_type(Checker *c, const LhatNode *node)
                                         : simple(c, LHAT_TYPE_ANY);
             continue;
         }
-        lhat_type_add_param(&c->result->types, func,
+        lhat_type_add_param(c->result->types, func,
                             param->v.param.type != NULL
                                 ? resolve_type(c, param->v.param.type)
                                 : simple(c, LHAT_TYPE_UNKNOWN));
@@ -301,23 +310,47 @@ static LhatType *resolve_func_type(Checker *c, const LhatNode *node)
 
 // 04 の 14.4: a kind is reached through the declaration that introduced it,
 // so a type may be a qualified name.
+// 05 の 2.2 with 14.7: a name that holds a definition means, as a type, an
+// instance of it -- writing the name asks for the whole structure, and that
+// is what an instance carries.
+static LhatType *as_written_type(LhatType *bound)
+{
+    LhatType *instance = instance_of(bound);
+    return instance != NULL ? instance : bound;
+}
+
 static LhatType *resolve_qualified_type(Checker *c, const LhatNode *node)
 {
     LhatType *outer = resolve_type(c, node->v.access.target);
     const char *name = NULL;
     size_t length = 0;
-    if (outer == NULL || outer->kind != LHAT_TYPE_ERROR_SET ||
-        !node_name(c, node->v.access.argument, &name, &length)) {
+    if (outer == NULL || !node_name(c, node->v.access.argument, &name, &length)) {
         report(c, node, LHAT_CHECK_ERR_UNKNOWN_TYPE);
         return simple(c, LHAT_TYPE_UNKNOWN);
     }
 
-    for (const LhatTypeList *k = outer->v.error.kinds; k != NULL; k = k->next) {
-        if (k->type->v.error.name_length == length &&
-            memcmp(k->type->v.error.name, name, length) == 0) {
-            return k->type;
+    if (outer->kind == LHAT_TYPE_ERROR_SET) {
+        for (const LhatTypeList *k = outer->v.error.kinds; k != NULL;
+             k = k->next) {
+            if (k->type->v.error.name_length == length &&
+                memcmp(k->type->v.error.name, name, length) == 0) {
+                return k->type;
+            }
+        }
+        report(c, node, LHAT_CHECK_ERR_UNKNOWN_TYPE);
+        return simple(c, LHAT_TYPE_UNKNOWN);
+    }
+
+    // 05 の 6.1: what require^ yields is a structure, so reaching a type out
+    // of it is the same member access a value uses. 04 の 14.4 already made a
+    // qualified name writable as a type; this is that form over a unit.
+    if (outer->kind == LHAT_TYPE_TABLE) {
+        const LhatTypeMember *member = find_member(outer, name, length);
+        if (member != NULL) {
+            return as_written_type(member->type);
         }
     }
+
     report(c, node, LHAT_CHECK_ERR_UNKNOWN_TYPE);
     return simple(c, LHAT_TYPE_UNKNOWN);
 }
@@ -353,12 +386,7 @@ static LhatType *resolve_type(Checker *c, const LhatNode *node)
                 return simple(c, LHAT_TYPE_UNKNOWN);
             }
 
-            // 05 の 2.2 with 14.7: as a value a definition is the definition;
-            // as a type it is an instance of it, since 14.7 makes writing the
-            // name ask for the whole structure and that is what an instance
-            // carries.
-            LhatType *instance = instance_of(declared->type);
-            return instance != NULL ? instance : declared->type;
+            return as_written_type(declared->type);
         }
 
         case LHAT_NODE_MEMBER:
@@ -371,17 +399,17 @@ static LhatType *resolve_type(Checker *c, const LhatNode *node)
             return resolve_func_type(c, node);
 
         case LHAT_NODE_TYPE_UNION:
-            return lhat_type_union(&c->result->types,
+            return lhat_type_union(c->result->types,
                                    resolve_type(c, node->v.binary.left),
                                    resolve_type(c, node->v.binary.right));
 
         case LHAT_NODE_TYPE_INTERSECT:
-            return lhat_type_intersect(&c->result->types,
+            return lhat_type_intersect(c->result->types,
                                        resolve_type(c, node->v.binary.left),
                                        resolve_type(c, node->v.binary.right));
 
         case LHAT_NODE_TYPE_CORO:
-            return lhat_type_coro(&c->result->types,
+            return lhat_type_coro(c->result->types,
                                   resolve_type(c, node->v.coroutine.receive),
                                   resolve_type(c, node->v.coroutine.produce),
                                   resolve_type(c, node->v.coroutine.result));
@@ -406,7 +434,7 @@ static LhatType *expand_set(Checker *c, LhatType *type)
     }
     LhatType *expanded = NULL;
     for (const LhatTypeList *k = type->v.error.kinds; k != NULL; k = k->next) {
-        expanded = lhat_type_union(&c->result->types, expanded, k->type);
+        expanded = lhat_type_union(c->result->types, expanded, k->type);
     }
     return expanded != NULL ? expanded : type;
 }
@@ -426,7 +454,7 @@ static LhatType *only(Checker *c, LhatType *type, LhatType *wanted)
         LhatType *kept = NULL;
         for (const LhatTypeList *arm = type->v.composite.arms; arm != NULL;
              arm = arm->next) {
-            kept = lhat_type_union(&c->result->types, kept,
+            kept = lhat_type_union(c->result->types, kept,
                                    only(c, arm->type, wanted));
         }
         return kept;
@@ -451,7 +479,7 @@ static LhatType *without(Checker *c, LhatType *type, LhatType *unwanted)
         LhatType *kept = NULL;
         for (const LhatTypeList *arm = type->v.composite.arms; arm != NULL;
              arm = arm->next) {
-            kept = lhat_type_union(&c->result->types, kept,
+            kept = lhat_type_union(c->result->types, kept,
                                    without(c, arm->type, unwanted));
         }
         return kept;
@@ -737,7 +765,7 @@ static LhatType *infer_binary(Checker *c, const LhatNode *node)
             report(c, node, op == LHAT_OP_CATCH ? LHAT_CHECK_ERR_CANNOT_FAIL
                                                 : LHAT_CHECK_ERR_CANNOT_BE_NIL);
         }
-        return lhat_type_union(&c->result->types, without(c, left, unwanted),
+        return lhat_type_union(c->result->types, without(c, left, unwanted),
                                right);
     }
 
@@ -974,7 +1002,7 @@ static LhatType *infer_member(Checker *c, const LhatNode *node)
             return simple(c, LHAT_TYPE_STRING);
         }
         if (name_is(name, length, "cause")) {
-            return lhat_type_union(&c->result->types, simple(c, LHAT_TYPE_ERROR),
+            return lhat_type_union(c->result->types, simple(c, LHAT_TYPE_ERROR),
                                    simple(c, LHAT_TYPE_NIL));
         }
         members = target->v.error.fields;
@@ -994,14 +1022,14 @@ static LhatType *infer_member(Checker *c, const LhatNode *node)
 
 static LhatType *infer_table(Checker *c, const LhatNode *node)
 {
-    LhatType *table = lhat_type_table(&c->result->types);
+    LhatType *table = lhat_type_table(c->result->types);
     for (const LhatNode *entry = node->v.list.items; entry != NULL;
          entry = entry->next) {
         LhatType *value = infer(c, entry->v.entry.value);
         const char *name = NULL;
         size_t length = 0;
         if (node_name(c, entry->v.entry.key, &name, &length)) {
-            lhat_type_add_member(&c->result->types, table, name, length, value);
+            lhat_type_add_member(c->result->types, table, name, length, value);
         }
     }
     return table;
@@ -1011,7 +1039,7 @@ static LhatType *infer_table(Checker *c, const LhatNode *node)
 // and a subroutine that calls itself has to write it.
 static LhatType *infer_func(Checker *c, const LhatNode *node)
 {
-    LhatType *func = lhat_type_func(&c->result->types, node->v.func.is_function);
+    LhatType *func = lhat_type_func(c->result->types, node->v.func.is_function);
 
     Scope body;
     body.bindings = NULL;
@@ -1035,7 +1063,7 @@ static LhatType *infer_func(Checker *c, const LhatNode *node)
                 param->v.param.type != NULL ? type : simple(c, LHAT_TYPE_ANY);
             continue;
         }
-        lhat_type_add_param(&c->result->types, func, type);
+        lhat_type_add_param(c->result->types, func, type);
 
         const char *name = NULL;
         size_t length = 0;
@@ -1132,7 +1160,7 @@ static void set_member(Checker *c, LhatType *table, const char *name,
             return;
         }
     }
-    lhat_type_add_member(&c->result->types, table, name, length, type);
+    lhat_type_add_member(c->result->types, table, name, length, type);
 }
 
 static void copy_members(Checker *c, LhatType *into, const LhatType *from)
@@ -1142,7 +1170,7 @@ static void copy_members(Checker *c, LhatType *into, const LhatType *from)
     }
     for (const LhatTypeMember *m = from->v.table.members; m != NULL;
          m = m->next) {
-        lhat_type_add_member(&c->result->types, into, m->name, m->name_length,
+        lhat_type_add_member(c->result->types, into, m->name, m->name_length,
                              m->type);
     }
 }
@@ -1232,7 +1260,7 @@ static LhatType *check_same_name(Checker *c, const LhatNode *entry,
             }
             // 14.12: an overloaded member is callable both ways, which is
             // what '&' means (14.5).
-            return lhat_type_intersect(&c->result->types, inherited->type,
+            return lhat_type_intersect(c->result->types, inherited->type,
                                        replacement);
     }
     return replacement;
@@ -1240,8 +1268,8 @@ static LhatType *check_same_name(Checker *c, const LhatNode *entry,
 
 static LhatType *infer_def(Checker *c, const LhatNode *node, LhatType *base)
 {
-    LhatType *definition = lhat_type_table(&c->result->types);
-    LhatType *instance = lhat_type_table(&c->result->types);
+    LhatType *definition = lhat_type_table(c->result->types);
+    LhatType *instance = lhat_type_table(c->result->types);
 
     // 14.5: composition is ordered, and the derived side is written against
     // what the base already provides.
@@ -1319,12 +1347,12 @@ static LhatType *infer_def(Checker *c, const LhatNode *node, LhatType *base)
     // something new, and a constructor returning the base would defeat that.
     if (!has_new) {
         const LhatTypeMember *inherited = find_member(base, "new", 3);
-        LhatType *constructor = lhat_type_func(&c->result->types, true);
+        LhatType *constructor = lhat_type_func(c->result->types, true);
         if (inherited != NULL && inherited->type != NULL &&
             inherited->type->kind == LHAT_TYPE_FUNC) {
             for (const LhatTypeList *p = inherited->type->v.func.params;
                  p != NULL; p = p->next) {
-                lhat_type_add_param(&c->result->types, constructor, p->type);
+                lhat_type_add_param(c->result->types, constructor, p->type);
             }
             constructor->v.func.variadic = inherited->type->v.func.variadic;
         }
@@ -1451,7 +1479,7 @@ static LhatType *infer(Checker *c, const LhatNode *node)
                  clause = clause->next) {
                 const LhatNode *condition = clause->v.clause.condition;
                 if (condition == NULL) {
-                    result = lhat_type_union(&c->result->types, result,
+                    result = lhat_type_union(c->result->types, result,
                                              infer(c, clause->v.clause.body));
                     continue;
                 }
@@ -1460,7 +1488,7 @@ static LhatType *infer(Checker *c, const LhatNode *node)
 
                 Narrowing *before = c->narrowings;
                 narrow_from(c, condition, true);
-                result = lhat_type_union(&c->result->types, result,
+                result = lhat_type_union(c->result->types, result,
                                          infer(c, clause->v.clause.body));
                 pop_narrowings(c, before);
 
@@ -1486,6 +1514,24 @@ static LhatType *infer(Checker *c, const LhatNode *node)
             c->scope = outer;
             scope_dispose(&scope);
             return result;
+        }
+
+        case LHAT_NODE_REQUIRE: {
+            // 05 の 6.1: the checker follows this. 5.2 already had the parser
+            // insist the path be written out, so there is text here to hand
+            // the resolver rather than an expression to evaluate.
+            const LhatNode *path = node->v.jump.value;
+            if (path == NULL || c->require.resolve == NULL) {
+                return simple(c, LHAT_TYPE_UNKNOWN);
+            }
+            LhatType *exports = c->require.resolve(
+                c->require.context, c->lexer->strings + path->v.string.offset,
+                path->v.string.length);
+            if (exports == NULL) {
+                report(c, node, LHAT_CHECK_ERR_REQUIRE_FAILED);
+                return simple(c, LHAT_TYPE_UNKNOWN);
+            }
+            return exports;
         }
 
         case LHAT_NODE_ERROR_NEW: {
@@ -1670,7 +1716,7 @@ static void check_errordef(Checker *c, const LhatNode *node)
         return;
     }
 
-    LhatType *set = lhat_type_error_set(&c->result->types, name, length);
+    LhatType *set = lhat_type_error_set(c->result->types, name, length);
     scope_add(c->scope, name, length, set, node->offset)->reached = true;
 
     for (const LhatNode *kind = node->v.named.members; kind != NULL;
@@ -1680,7 +1726,7 @@ static void check_errordef(Checker *c, const LhatNode *node)
         if (!node_name(c, kind->v.named.name, &kind_name, &kind_length)) {
             continue;
         }
-        LhatType *type = lhat_type_error_kind(&c->result->types, set, kind_name,
+        LhatType *type = lhat_type_error_kind(c->result->types, set, kind_name,
                                               kind_length);
         for (const LhatNode *field = kind->v.named.members; field != NULL;
              field = field->next) {
@@ -1699,7 +1745,7 @@ static void check_errordef(Checker *c, const LhatNode *node)
                        LHAT_CHECK_ERR_MISMATCH);
             }
             LhatTypeMember *member = lhat_type_add_member(
-                &c->result->types, type, field_name, field_length,
+                c->result->types, type, field_name, field_length,
                 declared != NULL ? declared : fallback);
             if (member != NULL) {
                 member->optional = field->v.param.fallback != NULL;
@@ -1736,6 +1782,41 @@ static void collect_bindings(Checker *c, const LhatNode *statements)
                       target_name_node(target)->offset);
         }
     }
+}
+
+// 05 の 4 章: the exports are the names marked public^, read from the
+// declarations rather than from a value the unit returns. That is what lets
+// 6 章 follow an import without running anything.
+static LhatType *collect_exports(Checker *c, const LhatNode *statements)
+{
+    LhatType *table = NULL;
+    for (const LhatNode *s = statements; s != NULL; s = s->next) {
+        const LhatNode *named = NULL;
+        if (s->kind == LHAT_NODE_DEFINE && s->v.binding.exported) {
+            named = s->v.binding.targets;
+        } else if (s->kind == LHAT_NODE_ERRORDEF && s->v.named.exported) {
+            named = s->v.named.name;
+        } else {
+            continue;
+        }
+
+        for (; named != NULL; named = named->next) {
+            const char *name = NULL;
+            size_t length = 0;
+            if (!node_name(c, target_name_node(named), &name, &length)) {
+                continue;
+            }
+            Binding *b = scope_find_local(c->scope, name, length);
+            if (b == NULL) {
+                continue;
+            }
+            if (table == NULL) {
+                table = lhat_type_table(c->result->types);
+            }
+            lhat_type_add_member(c->result->types, table, name, length, b->type);
+        }
+    }
+    return table;
 }
 
 static void check_statements(Checker *c, const LhatNode *statements)
@@ -1843,7 +1924,7 @@ static void check_statement(Checker *c, const LhatNode *node)
             } else {
                 // 03 の 3.4: several return^ make a union.
                 c->inferred_result =
-                    lhat_type_union(&c->result->types, c->inferred_result, value);
+                    lhat_type_union(c->result->types, c->inferred_result, value);
             }
             break;
         }
@@ -1903,13 +1984,19 @@ static void check_statement(Checker *c, const LhatNode *node)
 // Entry point
 // ---------------------------------------------------------------------------
 
-void lhat_check(const LhatNode *unit, const LhatSource *source, bool strict,
-                LhatCheckResult *result)
+void lhat_check_unit(const LhatNode *unit, const LhatLexer *lexer, bool strict,
+                     LhatTypeArena *arena, const LhatRequire *require,
+                     LhatCheckResult *result)
 {
     memset(result, 0, sizeof *result);
-    lhat_type_arena_init(&result->types);
+    if (arena != NULL) {
+        result->types = arena;
+    } else {
+        lhat_type_arena_init(&result->owned);
+        result->types = &result->owned;
+    }
 
-    if (unit == NULL || source == NULL) {
+    if (unit == NULL || lexer == NULL) {
         return;
     }
 
@@ -1920,14 +2007,28 @@ void lhat_check(const LhatNode *unit, const LhatSource *source, bool strict,
 
     Checker checker;
     memset(&checker, 0, sizeof checker);
-    checker.source = source;
+    checker.lexer = lexer;
     checker.result = result;
     checker.strict = strict;
     checker.scope = &scope;
+    if (require != NULL) {
+        checker.require = *require;
+    }
 
     check_statements(&checker, unit->v.list.items);
 
+    // 05 の 4 章: gathered once the whole unit has been checked, so a public^
+    // name written late is not missed. 8.7 already makes every name visible
+    // throughout the scope, so this only reads what is there.
+    result->exports = collect_exports(&checker, unit->v.list.items);
+
     scope_dispose(&scope);
+}
+
+void lhat_check(const LhatNode *unit, const LhatLexer *lexer, bool strict,
+                LhatCheckResult *result)
+{
+    lhat_check_unit(unit, lexer, strict, NULL, NULL, result);
 }
 
 void lhat_check_result_dispose(LhatCheckResult *result)
@@ -1936,7 +2037,12 @@ void lhat_check_result_dispose(LhatCheckResult *result)
     result->diagnostics = NULL;
     result->diagnostic_count = 0;
     result->diagnostic_capacity = 0;
-    lhat_type_arena_dispose(&result->types);
+    // Only the arena this result made for itself; a shared one belongs to
+    // whoever passed it in.
+    if (result->types == &result->owned) {
+        lhat_type_arena_dispose(&result->owned);
+    }
+    result->types = NULL;
 }
 
 const char *lhat_check_error_message(LhatCheckErrorCode code)
@@ -1970,6 +2076,8 @@ const char *lhat_check_error_message(LhatCheckErrorCode code)
             return "the left of ?? cannot be nil^";
         case LHAT_CHECK_ERR_TRY_OUTSIDE:
             return "try^ would return an error this subroutine cannot return";
+        case LHAT_CHECK_ERR_REQUIRE_FAILED:
+            return "this unit could not be required";
         case LHAT_CHECK_ERR_MISSING_FIELD:
             return "this field has no default, so it has to be written";
         case LHAT_CHECK_ERR_INCOMPARABLE:

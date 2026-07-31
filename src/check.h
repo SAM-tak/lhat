@@ -18,7 +18,7 @@
 #include <stdint.h>
 
 #include "ast.h"
-#include "source.h"
+#include "lexer.h"
 #include "type.h"
 
 typedef enum {
@@ -47,7 +47,8 @@ typedef enum {
     LHAT_CHECK_ERR_NOT_SUBSTITUTABLE,   // 14.12: override^ has to fit
     LHAT_CHECK_ERR_OVERLOAD_OVERLAPS,   // 14.12: signatures must stay apart
     LHAT_CHECK_ERR_INCOMPARABLE,        // no value inhabits both sides
-    LHAT_CHECK_ERR_MISSING_FIELD        // 04 の 2.5: no default to fall back to
+    LHAT_CHECK_ERR_MISSING_FIELD,       // 04 の 2.5: no default to fall back to
+    LHAT_CHECK_ERR_REQUIRE_FAILED       // 05 の 6 章: the unit could not be had
 } LhatCheckErrorCode;
 
 typedef struct {
@@ -57,22 +58,49 @@ typedef struct {
     uint32_t column;
 } LhatCheckDiagnostic;
 
+// 05 の 6 章: a unit's exports are types that the units requiring it hold on
+// to, so the arena has to outlive any one result. The caller may pass its own
+// and share it across a whole program; without one, the result keeps its own.
 typedef struct {
-    LhatTypeArena types;
+    LhatTypeArena *types;
+    LhatTypeArena owned;
 
     LhatCheckDiagnostic *diagnostics;
     size_t diagnostic_count;
     size_t diagnostic_capacity;
+
+    // 05 の 4 章: the structure of what this unit publishes, or NULL when it
+    // publishes nothing. What a require^ of it yields.
+    LhatType *exports;
 } LhatCheckResult;
+
+// 05 の 5 章. Asked for the unit at `path`, relative to whatever the resolver
+// considers the requiring unit. Returns its export structure, or NULL when it
+// could not be had -- a missing file or a cycle (6.3), which the resolver
+// reports in its own terms.
+typedef LhatType *(*LhatRequireResolver)(void *context, const char *path,
+                                         size_t length);
+
+typedef struct {
+    LhatRequireResolver resolve;
+    void *context;
+} LhatRequire;
 
 // 03 の 3.1. `strict` is a setting of the compilation unit, not a dialect:
 // 3.2 keeps the source text identical either way, and 3.5 limits what
 // relaxed defers to places where inference could not decide.
 //
-// `source` has to be the text the tree was parsed from, since names are held
-// as spans into it.
-void lhat_check(const LhatNode *unit, const LhatSource *source, bool strict,
+// `lexer` has to be the one the tree was parsed from: names are spans into
+// its source and strings are spans into its decoded storage.
+void lhat_check(const LhatNode *unit, const LhatLexer *lexer, bool strict,
                 LhatCheckResult *result);
+
+// The same, for a unit that is part of a program. `arena` is shared so the
+// types this unit publishes stay valid in the units that require it, and
+// `require` is how those imports are answered. Either may be NULL.
+void lhat_check_unit(const LhatNode *unit, const LhatLexer *lexer,
+                     bool strict, LhatTypeArena *arena,
+                     const LhatRequire *require, LhatCheckResult *result);
 
 void lhat_check_result_dispose(LhatCheckResult *result);
 

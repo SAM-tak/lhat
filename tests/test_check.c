@@ -27,7 +27,7 @@ static void check_text(Unit *u, const char *text)
     lhat_source_init_from_string(&u->source, "<test>", text, strlen(text));
     lhat_lexer_init(&u->lexer, &u->source);
     lhat_parse(&u->lexer, &u->parsed);
-    lhat_check(u->parsed.root, &u->source, true, &u->checked);
+    lhat_check(u->parsed.root, &u->lexer, true, &u->checked);
 }
 
 static void unit_dispose(Unit *u)
@@ -127,6 +127,7 @@ static void test_expressions(void)
 
     LHAT_TEST("arithmetic needs numbers");
     check_text(&u, "let^ s = \"a\"\nlet^ n = s + 1\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_NOT_NUMBER);
     unit_dispose(&u);
 
     LHAT_TEST("a comparison is a bool");
@@ -471,6 +472,7 @@ static void test_narrowing(void)
                "    if^ r is^ string^ { }\n"
                "    return^ r + 1\n"
                "}\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_NOT_NUMBER);
     unit_dispose(&u);
 
     // 04 の 7 章: handling every kind is ordinary narrowing, so the success
@@ -539,6 +541,7 @@ static void test_narrowing(void)
                "    if^ f() is^ number^ { return^ f() + 1 }\n"
                "    return^ 0\n"
                "}\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_NOT_NUMBER);
     unit_dispose(&u);
 
     LHAT_TEST("a dot path is narrowed");
@@ -995,6 +998,141 @@ static void test_patterns(void)
     unit_dispose(&u);
 }
 
+// 05-modules.md. A unit is checked against a resolver that answers imports;
+// here one unit stands in for the file system, which is enough to pin what
+// the checker does with the answer.
+typedef struct {
+    Unit provider;
+    const char *expected_path;
+    bool asked;
+} Library;
+
+static LhatType *library_resolve(void *context, const char *path, size_t length)
+{
+    Library *lib = (Library *)context;
+    lib->asked = true;
+    if (strlen(lib->expected_path) != length ||
+        memcmp(lib->expected_path, path, length) != 0) {
+        return NULL;  // 6.3 reports a unit that could not be had
+    }
+    return lib->provider.checked.exports;
+}
+
+static void check_against(Unit *u, Library *lib, const char *provider,
+                          const char *text)
+{
+    // The provider is checked first and into the same arena, since 6 章 has
+    // the units requiring it hold on to the types it publishes.
+    lhat_source_init_from_string(&lib->provider.source, "<lib>", provider,
+                                 strlen(provider));
+    lhat_lexer_init(&lib->provider.lexer, &lib->provider.source);
+    lhat_parse(&lib->provider.lexer, &lib->provider.parsed);
+    lhat_check(lib->provider.parsed.root, &lib->provider.lexer, true,
+               &lib->provider.checked);
+
+    LhatRequire require;
+    require.resolve = library_resolve;
+    require.context = lib;
+
+    lhat_source_init_from_string(&u->source, "<test>", text, strlen(text));
+    lhat_lexer_init(&u->lexer, &u->source);
+    lhat_parse(&u->lexer, &u->parsed);
+    lhat_check_unit(u->parsed.root, &u->lexer, true,
+                    lib->provider.checked.types, &require, &u->checked);
+}
+
+static void check_against_dispose(Unit *u, Library *lib)
+{
+    unit_dispose(u);
+    unit_dispose(&lib->provider);
+}
+
+static void test_modules(void)
+{
+    Unit u;
+    Library lib;
+
+    static const char *const provider =
+        "module^ ns.geometry\n"
+        "public^ let^ Point = def^{ self^{ x := 0, y := 0 } }\n"
+        "public^ errordef^ Bad { Degenerate }\n"
+        "let^ secret = 1\n"
+        "public^ let^ dist = f^ a:number^, b:number^ -> number^ { return^ a }\n";
+
+    // 05 の 4 章: what a unit publishes is read from its declarations, so a
+    // require^ of it yields exactly the public^ names.
+    LHAT_TEST("public^ names cross and private ones do not");
+    memset(&lib, 0, sizeof lib);
+    lib.expected_path = "lib/geometry.lh";
+    check_against(&u, &lib, provider,
+                  "let^ g = require^ \"lib/geometry.lh\"\n"
+                  "let^ d : number^ = g.dist(1, 2)\n");
+    LHAT_CHECK(lib.asked, "the resolver was asked");
+    CHECK_CLEAN(&u);
+    check_against_dispose(&u, &lib);
+
+    LHAT_TEST("a name without public^ does not cross");
+    memset(&lib, 0, sizeof lib);
+    lib.expected_path = "lib/geometry.lh";
+    check_against(&u, &lib, provider,
+                  "let^ g = require^ \"lib/geometry.lh\"\n"
+                  "let^ s = g.secret\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_NO_MEMBER);
+    check_against_dispose(&u, &lib);
+
+    // 05 の 6.1: a qualified name works as a type because 04 の 14.4 already
+    // made one writable, so the form built for error kinds carries over.
+    LHAT_TEST("a required definition is writable as a type");
+    memset(&lib, 0, sizeof lib);
+    lib.expected_path = "lib/geometry.lh";
+    check_against(&u, &lib, provider,
+                  "let^ g = require^ \"lib/geometry.lh\"\n"
+                  "let^ p : g.Point = g.Point.new^()\n"
+                  "let^ n : number^ = p.x\n");
+    CHECK_CLEAN(&u);
+    check_against_dispose(&u, &lib);
+
+    LHAT_TEST("a required error kind is writable as a type");
+    memset(&lib, 0, sizeof lib);
+    lib.expected_path = "lib/geometry.lh";
+    check_against(&u, &lib, provider,
+                  "let^ g = require^ \"lib/geometry.lh\"\n"
+                  "let^ e : g.Bad = error^g.Bad.Degenerate{ }\n");
+    CHECK_CLEAN(&u);
+    check_against_dispose(&u, &lib);
+
+    // 05 の 6.1: the arguments of a required procedure are checked like any
+    // other, which is the point of following the import at all.
+    LHAT_TEST("a required procedure checks its arguments");
+    memset(&lib, 0, sizeof lib);
+    lib.expected_path = "lib/geometry.lh";
+    check_against(&u, &lib, provider,
+                  "let^ g = require^ \"lib/geometry.lh\"\n"
+                  "let^ d = g.dist(1, \"text\")\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
+    check_against_dispose(&u, &lib);
+
+    // 6.3: a unit that could not be had is reported where it was required.
+    LHAT_TEST("a unit that cannot be had is reported");
+    memset(&lib, 0, sizeof lib);
+    lib.expected_path = "lib/geometry.lh";
+    check_against(&u, &lib, provider,
+                  "let^ g = require^ \"nowhere.lh\"\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_REQUIRE_FAILED);
+    check_against_dispose(&u, &lib);
+
+    // 05 の 5.4: require^ binds one name and the importer picks it, so two
+    // units of the same shape sit side by side without colliding.
+    LHAT_TEST("the importer chooses the name");
+    memset(&lib, 0, sizeof lib);
+    lib.expected_path = "lib/geometry.lh";
+    check_against(&u, &lib, provider,
+                  "let^ theirs = require^ \"lib/geometry.lh\"\n"
+                  "let^ d : number^ = theirs.dist(1, 2)\n");
+    CHECK_CLEAN(&u);
+    check_against_dispose(&u, &lib);
+}
+
 int main(void)
 {
     test_names();
@@ -1006,5 +1144,6 @@ int main(void)
     test_definitions();
     test_composition();
     test_patterns();
+    test_modules();
     return lhat_test_report("test_check");
 }

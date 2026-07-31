@@ -363,7 +363,7 @@ static int dump_tree(const LhatSource *source, bool typed, bool command)
     // build would report the same problem twice in different words.
     if (typed && status == EXIT_SUCCESS) {
         LhatCheckResult checked;
-        lhat_check(result.root, source, true, &checked);
+        lhat_check(result.root, &lexer, true, &checked);
         for (size_t i = 0; i < checked.diagnostic_count; i++) {
             const LhatCheckDiagnostic *d = &checked.diagnostics[i];
             fprintf(stderr, "%s:%u:%u: error: %s\n", source->name, d->line,
