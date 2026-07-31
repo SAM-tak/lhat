@@ -624,6 +624,369 @@ static void test_tables(void)
     run_dispose(&r);
 }
 
+// 16.5: repeat^ is the one that carries no focus.
+static void test_repeat(void)
+{
+    Run r;
+
+    LHAT_TEST("repeat^ n runs n times");
+    run_text(&r, "let^ x = 0\nrepeat^ 5 { x := x + 1 }\nreturn^ x\n");
+    CHECK_INTEGER(&r, 5);
+    run_dispose(&r);
+
+    LHAT_TEST("repeat^ 0 runs none");
+    run_text(&r, "let^ x = 0\nrepeat^ 0 { x := x + 1 }\nreturn^ x\n");
+    CHECK_INTEGER(&r, 0);
+    run_dispose(&r);
+
+    // The count says how many times, so changing it inside cannot move the
+    // finishing line.
+    LHAT_TEST("the count is read once");
+    run_text(&r,
+             "let^ n = 3\n"
+             "let^ x = 0\n"
+             "repeat^ n { n := 100 x := x + 1 }\n"
+             "return^ x\n");
+    CHECK_INTEGER(&r, 3);
+    run_dispose(&r);
+
+    LHAT_TEST("repeat^ while^ tests before the body");
+    run_text(&r,
+             "let^ i = 0\n"
+             "repeat^ while^ i < 4 { i := i + 1 }\n"
+             "return^ i\n");
+    CHECK_INTEGER(&r, 4);
+    run_dispose(&r);
+
+    LHAT_TEST("a condition that is false at the start runs nothing");
+    run_text(&r,
+             "let^ x = 0\n"
+             "repeat^ while^ false^ { x := 1 }\n"
+             "return^ x\n");
+    CHECK_INTEGER(&r, 0);
+    run_dispose(&r);
+
+    // 16.5: until^ is while^ negated, tested in the same place.
+    LHAT_TEST("repeat^ until^ is while^ negated");
+    run_text(&r,
+             "let^ i = 0\n"
+             "repeat^ until^ i ≧ 4 { i := i + 1 }\n"
+             "return^ i\n");
+    CHECK_INTEGER(&r, 4);
+    run_dispose(&r);
+
+    LHAT_TEST("repeat^ on its own needs break^ to end");
+    run_text(&r,
+             "let^ i = 0\n"
+             "repeat^ { i := i + 1 if^ i = 3 { break^ } }\n"
+             "return^ i\n");
+    CHECK_INTEGER(&r, 3);
+    run_dispose(&r);
+
+    LHAT_TEST("break^ leaves only the loop it is in");
+    run_text(&r,
+             "let^ n = 0\n"
+             "repeat^ 3 {\n"
+             "  repeat^ 3 { n := n + 1 break^ }\n"
+             "}\n"
+             "return^ n\n");
+    CHECK_INTEGER(&r, 3);
+    run_dispose(&r);
+
+    LHAT_TEST("break^ outside a loop does not compile");
+    run_text(&r, "break^\n");
+    LHAT_CHECK_EQ_INT(r.compiled, LHAT_COMPILE_UNSUPPORTED);
+    run_dispose(&r);
+}
+
+// 16.1: for^ is where the value being looked at is defined. Whether it
+// repeats is up to the clause that follows.
+static void test_for(void)
+{
+    Run r;
+
+    LHAT_TEST("to^ counts up and includes the limit");
+    run_text(&r,
+             "let^ total = 0\n"
+             "for^ i := 1 to^ 4 { total := total + i }\n"
+             "return^ total\n");
+    CHECK_INTEGER(&r, 10);
+    run_dispose(&r);
+
+    // 16.4: the direction is not inferred, so this is empty rather than
+    // counting down.
+    LHAT_TEST("a limit below the start runs none");
+    run_text(&r,
+             "let^ x = 0\n"
+             "for^ i := 1 to^ 0 { x := x + 1 }\n"
+             "return^ x\n");
+    CHECK_INTEGER(&r, 0);
+    run_dispose(&r);
+
+    LHAT_TEST("downto^ counts down");
+    run_text(&r,
+             "let^ seen = 0\n"
+             "for^ i := 3 downto^ 1 { seen := seen * 10 + i }\n"
+             "return^ seen\n");
+    CHECK_INTEGER(&r, 321);
+    run_dispose(&r);
+
+    // 16.4: step^ is a positive amount either way; the sign belongs to the
+    // clause.
+    LHAT_TEST("step^ is a positive amount for both directions");
+    run_text(&r,
+             "let^ up = 0\n"
+             "for^ i := 1 to^ 9 step^ 3 { up := up * 10 + i }\n"
+             "return^ up\n");
+    CHECK_INTEGER(&r, 147);
+    run_dispose(&r);
+
+    run_text(&r,
+             "let^ down = 0\n"
+             "for^ i := 9 downto^ 1 step^ 3 { down := down * 10 + i }\n"
+             "return^ down\n");
+    CHECK_INTEGER(&r, 963);
+    run_dispose(&r);
+
+    LHAT_TEST("10 to^ 1 step^ 2 is empty rather than confusing");
+    run_text(&r,
+             "let^ x = 0\n"
+             "for^ i := 10 to^ 1 step^ 2 { x := x + 1 }\n"
+             "return^ x\n");
+    CHECK_INTEGER(&r, 0);
+    run_dispose(&r);
+
+    // 16.2: a focus with no name written is still a focus.
+    LHAT_TEST("an unnamed focus is reached through it^");
+    run_text(&r,
+             "let^ total = 0\n"
+             "for^ 1 to^ 4 { total := total + it^ }\n"
+             "return^ total\n");
+    CHECK_INTEGER(&r, 10);
+    run_dispose(&r);
+
+    LHAT_TEST("while^ tests before the body and next^ runs after it");
+    run_text(&r,
+             "let^ total = 0\n"
+             "for^ i := 1 while^ i ≦ 4 next^ i := i + 1 { total := total + i }\n"
+             "return^ total\n");
+    CHECK_INTEGER(&r, 10);
+    run_dispose(&r);
+
+    LHAT_TEST("until^ is the same the other way round");
+    run_text(&r,
+             "let^ total = 0\n"
+             "for^ i := 1 until^ i > 4 next^ i := i + 1 { total := total + i }\n"
+             "return^ total\n");
+    CHECK_INTEGER(&r, 10);
+    run_dispose(&r);
+
+    LHAT_TEST("the focus is gone after the loop");
+    run_text(&r, "for^ i := 1 to^ 2 { }\nreturn^ i\n");
+    LHAT_CHECK_EQ_INT(r.compiled, LHAT_COMPILE_UNDEFINED);
+    run_dispose(&r);
+
+    LHAT_TEST("loops nest");
+    run_text(&r,
+             "let^ n = 0\n"
+             "for^ i := 1 to^ 3 {\n"
+             "  for^ j := 1 to^ 4 { n := n + 1 }\n"
+             "}\n"
+             "return^ n\n");
+    CHECK_INTEGER(&r, 12);
+    run_dispose(&r);
+
+    // 16.3 and 16.1: this one does not repeat. It is the do^ block written
+    // without the extra nesting.
+    LHAT_TEST("if^ uses the focus once and does not repeat");
+    run_text(&r,
+             "let^ x = 0\n"
+             "for^ i := 1, j := 2 if^ i + j < 10 { x := i + j }\n"
+             "return^ x\n");
+    CHECK_INTEGER(&r, 3);
+    run_dispose(&r);
+
+    LHAT_TEST("and its focus does not escape either");
+    run_text(&r, "for^ i := 1 if^ i > 0 { }\nreturn^ i\n");
+    LHAT_CHECK_EQ_INT(r.compiled, LHAT_COMPILE_UNDEFINED);
+    run_dispose(&r);
+
+    // 14 章 の table with 16: what a loop is mostly for.
+    LHAT_TEST("a loop fills a table");
+    run_text(&r,
+             "let^ t = { }\n"
+             "for^ i := 1 to^ 4 { t[i] := i * i }\n"
+             "return^ t.3\n");
+    CHECK_INTEGER(&r, 9);
+    run_dispose(&r);
+}
+
+// 9 章: the five clauses, and 9.8's three strengths of exit.
+static void test_loop_clauses(void)
+{
+    Run r;
+
+    // 9.4: what prolog^ declares lives as long as the loop, without leaking
+    // out of it.
+    LHAT_TEST("prolog^ runs once and its names last the whole loop");
+    run_text(&r,
+             "let^ out = 0\n"
+             "repeat^ 4 {\n"
+             "  prolog^:\n"
+             "    let^ total = 0\n"
+             "  main^:\n"
+             "    total := total + 1\n"
+             "  epilog^:\n"
+             "    out := total\n"
+             "}\n"
+             "return^ out\n");
+    CHECK_INTEGER(&r, 4);
+    run_dispose(&r);
+
+    // 9.1: prolog^ runs whether the condition ever holds or not.
+    LHAT_TEST("prolog^ and epilog^ run even when the body does not");
+    run_text(&r,
+             "let^ seen = 0\n"
+             "repeat^ 0 {\n"
+             "  prolog^:\n"
+             "    seen := seen + 1\n"
+             "  main^:\n"
+             "    seen := seen + 100\n"
+             "  epilog^:\n"
+             "    seen := seen + 10\n"
+             "}\n"
+             "return^ seen\n");
+    CHECK_INTEGER(&r, 11);
+    run_dispose(&r);
+
+    LHAT_TEST("first^ runs at the head of the first iteration only");
+    run_text(&r,
+             "let^ n = 0\n"
+             "repeat^ 3 {\n"
+             "  first^:\n"
+             "    n := n + 100\n"
+             "  main^:\n"
+             "    n := n + 1\n"
+             "}\n"
+             "return^ n\n");
+    CHECK_INTEGER(&r, 103);
+    run_dispose(&r);
+
+    // 9.1: first^ and last^ do not run when the condition never holds.
+    LHAT_TEST("first^ and last^ stay away when nothing ran");
+    run_text(&r,
+             "let^ n = 0\n"
+             "repeat^ 0 {\n"
+             "  first^:\n"
+             "    n := n + 1\n"
+             "  main^:\n"
+             "    n := n + 1\n"
+             "  last^:\n"
+             "    n := n + 1\n"
+             "}\n"
+             "return^ n\n");
+    CHECK_INTEGER(&r, 0);
+    run_dispose(&r);
+
+    // 9.7: the whole reason last^ keeps a copy. Naively it would see 5.
+    LHAT_TEST("last^ sees the value the condition last accepted");
+    run_text(&r,
+             "let^ seen = 0\n"
+             "for^ i := 1 to^ 4 {\n"
+             "  last^:\n"
+             "    seen := i\n"
+             "}\n"
+             "return^ seen\n");
+    CHECK_INTEGER(&r, 4);
+    run_dispose(&r);
+
+    // 9.8: break^ is a normal end, so last^ and epilog^ both run, and the
+    // copy taken at the head of the iteration is the right one.
+    LHAT_TEST("break^ leaves last^ looking at the current iteration");
+    run_text(&r,
+             "let^ seen = 0\n"
+             "for^ i := 1 to^ 10 {\n"
+             "  main^:\n"
+             "    if^ i = 5 { break^ }\n"
+             "  last^:\n"
+             "    seen := i\n"
+             "}\n"
+             "return^ seen\n");
+    CHECK_INTEGER(&r, 5);
+    run_dispose(&r);
+
+    LHAT_TEST("break^ runs epilog^ too");
+    run_text(&r,
+             "let^ n = 0\n"
+             "repeat^ 10 {\n"
+             "  main^:\n"
+             "    break^\n"
+             "  epilog^:\n"
+             "    n := 7\n"
+             "}\n"
+             "return^ n\n");
+    CHECK_INTEGER(&r, 7);
+    run_dispose(&r);
+
+    // 9.8: return^ is not a normal end for the loop, so neither runs.
+    LHAT_TEST("return^ runs neither last^ nor epilog^");
+    run_text(&r,
+             "let^ out = { n := 0 }\n"
+             "let^ go = f^ {\n"
+             "  repeat^ 3 {\n"
+             "    main^:\n"
+             "      return^ 1\n"
+             "    last^:\n"
+             "      out.n := out.n + 10\n"
+             "    epilog^:\n"
+             "      out.n := out.n + 100\n"
+             "  }\n"
+             "  return^ 0\n"
+             "}\n"
+             "go()\n"
+             "return^ out.n\n");
+    CHECK_INTEGER(&r, 0);
+    run_dispose(&r);
+
+    // 9.4: a name made in main^ lives one iteration, so the next one starts
+    // over rather than seeing the last.
+    LHAT_TEST("what main^ declares lasts one iteration");
+    run_text(&r,
+             "let^ out = 0\n"
+             "repeat^ 3 {\n"
+             "  let^ each = 0\n"
+             "  each := each + 1\n"
+             "  out := each\n"
+             "}\n"
+             "return^ out\n");
+    CHECK_INTEGER(&r, 1);
+    run_dispose(&r);
+
+    LHAT_TEST("the clauses of a loop do not leak out of it");
+    run_text(&r,
+             "repeat^ 1 {\n"
+             "  prolog^:\n"
+             "    let^ total = 0\n"
+             "  main^:\n"
+             "    total := 1\n"
+             "}\n"
+             "return^ total\n");
+    LHAT_CHECK_EQ_INT(r.compiled, LHAT_COMPILE_UNDEFINED);
+    run_dispose(&r);
+
+    // 5.4 with 9.4: the focus is one place per loop, not per iteration, so a
+    // closure made inside sees where it ended up.
+    LHAT_TEST("a closure made in a loop captures the place, not the moment");
+    run_text(&r,
+             "let^ get = f^ { return^ 0 }\n"
+             "for^ i := 1 to^ 3 {\n"
+             "  get := f^ { return^ i }\n"
+             "}\n"
+             "return^ get()\n");
+    CHECK_INTEGER(&r, 4);
+    run_dispose(&r);
+}
+
 int main(void)
 {
     test_encoding();
@@ -634,5 +997,8 @@ int main(void)
     test_closures();
     test_strings();
     test_tables();
+    test_repeat();
+    test_for();
+    test_loop_clauses();
     return lhat_test_report("test_vm");
 }

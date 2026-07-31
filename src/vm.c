@@ -7,6 +7,16 @@
 
 #define LHAT_MAX_REGISTERS 250
 #define LHAT_MAX_LOCALS 200
+#define LHAT_MAX_BREAKS 64
+
+// 9.8: break^ is a normal end for the loop it leaves, so its jump lands where
+// last^ and epilog^ are, not past them. The chain is what a break^ written
+// inside a nested block still finds.
+typedef struct LoopContext {
+    struct LoopContext *enclosing;
+    size_t jumps[LHAT_MAX_BREAKS];
+    size_t count;
+} LoopContext;
 
 // ---------------------------------------------------------------------------
 // Compiler
@@ -37,6 +47,8 @@ typedef struct Compiler {
     // Slots below this hold live names; everything above is scratch for the
     // expression being compiled, released as soon as it is consumed.
     uint8_t next_register;
+
+    LoopContext *loop;  // the innermost loop being compiled, NULL outside one
 } Compiler;
 
 static void fail(Compiler *c, LhatCompileStatus status)
@@ -455,12 +467,30 @@ static void compile_expression(Compiler *c, const LhatNode *node, uint8_t into)
         }
 
         case LHAT_NODE_IDENT:
-        case LHAT_NODE_FOCUS: {
+        case LHAT_NODE_FOCUS:
+        case LHAT_NODE_HAT_IDENT: {
             const char *name = NULL;
             size_t length = 0;
             if (!node_name(c, node, &name, &length)) {
                 fail(c, LHAT_COMPILE_UNSUPPORTED);
                 return;
+            }
+            // 01 の 2.2: three hat identifiers are values in themselves.
+            // Everything else with a hat is a name like any other -- 16.2's
+            // it^ is a name the for^ made, so it is looked up rather than
+            // recognised.
+            if (node->kind == LHAT_NODE_HAT_IDENT) {
+                if (name_is(name, length, "true") ||
+                    name_is(name, length, "false")) {
+                    emit(c, lhat_encode_abc(LHAT_BC_LOADBOOL, into,
+                                            name_is(name, length, "true") ? 1 : 0,
+                                            0));
+                    return;
+                }
+                if (name_is(name, length, "nil")) {
+                    emit(c, lhat_encode_abc(LHAT_BC_LOADNIL, into, 0, 0));
+                    return;
+                }
             }
             const Local *local = find_local(c, name, length);
             if (local != NULL) {
@@ -473,27 +503,6 @@ static void compile_expression(Compiler *c, const LhatNode *node, uint8_t into)
                 return;
             }
             emit(c, lhat_encode_abc(LHAT_BC_GETUPVAL, into, (uint8_t)upvalue, 0));
-            return;
-        }
-
-        case LHAT_NODE_HAT_IDENT: {
-            // 01 の 2.2: a few hat identifiers are values.
-            const char *name = NULL;
-            size_t length = 0;
-            if (!node_name(c, node, &name, &length)) {
-                fail(c, LHAT_COMPILE_UNSUPPORTED);
-                return;
-            }
-            if (name_is(name, length, "true") || name_is(name, length, "false")) {
-                emit(c, lhat_encode_abc(LHAT_BC_LOADBOOL, into,
-                                        name_is(name, length, "true") ? 1 : 0, 0));
-                return;
-            }
-            if (name_is(name, length, "nil")) {
-                emit(c, lhat_encode_abc(LHAT_BC_LOADNIL, into, 0, 0));
-                return;
-            }
-            fail(c, LHAT_COMPILE_UNSUPPORTED);
             return;
         }
 
@@ -709,6 +718,298 @@ static void compile_statements(Compiler *c, const LhatNode *statements)
     c->next_register = register_mark;
 }
 
+// The statements go into the scope that is already open, so the names they
+// make outlive them. 9.7 needs this: first^ runs inside the loop but declares
+// outside it, in the same storage prolog^ uses.
+static void compile_in_scope(Compiler *c, const LhatNode *statements)
+{
+    for (const LhatNode *s = statements; s != NULL; s = s->next) {
+        compile_statement(c, s);
+    }
+}
+
+// 9 章: the clauses of a loop body other than main^, which the parser leaves
+// in `items` whether or not it was written with a heading.
+static const LhatNode *clause_of(const LhatNode *body, LhatClauseKind kind)
+{
+    if (body == NULL) {
+        return NULL;
+    }
+    for (const LhatNode *clause = body->v.list.extra; clause != NULL;
+         clause = clause->next) {
+        if (clause->v.loop_clause.kind == kind) {
+            return clause->v.loop_clause.body;
+        }
+    }
+    return NULL;
+}
+
+// The one name a numeric focus binds. 16.3's to^/downto^ advance the focus
+// themselves, so they need a single name to advance, unlike the other forms.
+static const Local *numeric_focus(Compiler *c, const LhatNode *focus)
+{
+    if (focus == NULL || focus->next != NULL ||
+        focus->kind != LHAT_NODE_DEFINE) {
+        return NULL;
+    }
+    const LhatNode *target = focus->v.binding.targets;
+    if (target == NULL || target->next != NULL) {
+        return NULL;
+    }
+    const char *name = NULL;
+    size_t length = 0;
+    if (!node_name(c, define_target_name(target), &name, &length)) {
+        return NULL;
+    }
+    return find_local(c, name, length);
+}
+
+// 16.4: to^ and downto^ are sugar over the conditional form, and this is that
+// expansion --  'i ≦ B' one way round and 'i ≧ B' the other. The bound is
+// compiled here rather than before the loop because the expansion re-evaluates
+// it, as writing while^ i ≦ B by hand would.
+static void compile_numeric_test(Compiler *c, const LhatNode *node,
+                                 const Local *focus, uint8_t into)
+{
+    uint8_t mark = c->next_register;
+    uint8_t bound = reserve(c);
+    compile_expression(c, node->v.loop.bound, bound);
+    emit(c, lhat_encode_abc(node->v.loop.kind == LHAT_FOR_TO ? LHAT_BC_LE
+                                                             : LHAT_BC_GE,
+                            into, focus->reg, bound));
+    c->next_register = mark;
+}
+
+// 16.4: the sign belongs to to^ and downto^, so step^ is a positive amount
+// and the expansion adds it one way or subtracts it the other.
+static void compile_numeric_advance(Compiler *c, const LhatNode *node,
+                                    const Local *focus)
+{
+    uint8_t mark = c->next_register;
+    uint8_t step = reserve(c);
+    if (node->v.loop.step != NULL) {
+        compile_expression(c, node->v.loop.step, step);
+    } else {
+        load_constant(c, step, lhat_integer(1));
+    }
+    emit(c, lhat_encode_abc(node->v.loop.kind == LHAT_FOR_TO ? LHAT_BC_ADD
+                                                             : LHAT_BC_SUB,
+                            focus->reg, focus->reg, step));
+    c->next_register = mark;
+}
+
+// 16.3's if^ clause, which 16.1 explains is not a loop: the focus is
+// introduced, used once, and goes. Written out it is the do^ block of 16.3.
+static void compile_for_if(Compiler *c, const LhatNode *node)
+{
+    size_t local_mark = c->local_count;
+    uint8_t register_mark = c->next_register;
+
+    declare_names(c, node->v.loop.focus);
+    compile_in_scope(c, node->v.loop.focus);
+    compile_statement(c, node->v.loop.body);
+
+    if (c->local_count > local_mark) {
+        emit(c, lhat_encode_abc(LHAT_BC_CLOSE, register_mark, 0, 0));
+    }
+    c->local_count = local_mark;
+    c->next_register = register_mark;
+}
+
+// Both for^ and repeat^ compile to the same shape; what differs is the focus
+// and how the condition and the advance are written.
+//
+//     <focus>                     16.7: it lives across the whole loop
+//     <prolog^>                   9.1: runs whether the condition holds or not
+//   top:
+//     <condition> false -> end
+//     <save the focus>            9.7: at the head, so break^ sees this one
+//     <first^> once
+//     <main^>                     9.4: a new scope each time round
+//     <advance>
+//     jump top
+//   end:                          9.8: where break^ lands
+//     <last^> if the loop ever ran
+//     <epilog^>
+static void compile_loop(Compiler *c, const LhatNode *node)
+{
+    bool is_for = node->kind == LHAT_NODE_FOR;
+    const LhatNode *body = is_for ? node->v.loop.body : node->v.repeat.body;
+    const LhatNode *bound = is_for ? node->v.loop.bound : node->v.repeat.bound;
+    const LhatNode *advance = is_for ? node->v.loop.advance : NULL;
+    const LhatNode *focus = is_for ? node->v.loop.focus : NULL;
+
+    int kind = is_for ? (int)node->v.loop.kind : -1;
+    if (is_for && (kind == LHAT_FOR_IN || kind == LHAT_FOR_WHEN)) {
+        // in^ takes an iterator, which 13.9 makes a coroutine (P5), and when^
+        // is the pattern match of 17 章. Neither has a machine yet.
+        fail(c, LHAT_COMPILE_UNSUPPORTED);
+        return;
+    }
+
+    const LhatNode *prolog = clause_of(body, LHAT_CLAUSE_PROLOG);
+    const LhatNode *first = clause_of(body, LHAT_CLAUSE_FIRST);
+    const LhatNode *last = clause_of(body, LHAT_CLAUSE_LAST);
+    const LhatNode *epilog = clause_of(body, LHAT_CLAUSE_EPILOG);
+    if (clause_of(body, LHAT_CLAUSE_FINALLY) != NULL) {
+        fail(c, LHAT_COMPILE_UNSUPPORTED);  // 5.5: the frame queue comes later
+        return;
+    }
+
+    // 16.7 and 9.4: the focus and the names of prolog^ and first^ last for
+    // the whole loop, so they are made in a scope outside it.
+    size_t local_mark = c->local_count;
+    uint8_t register_mark = c->next_register;
+
+    declare_names(c, focus);
+    compile_in_scope(c, focus);
+    size_t focus_locals = c->local_count - local_mark;
+
+    const Local *numeric = NULL;
+    if (kind == LHAT_FOR_TO || kind == LHAT_FOR_DOWNTO) {
+        numeric = numeric_focus(c, focus);
+        if (numeric == NULL) {
+            fail(c, LHAT_COMPILE_UNSUPPORTED);
+            return;
+        }
+    }
+
+    // repeat^ n counts to a limit read once. 'n 回' says how many times, so
+    // re-reading it would let the count change under the loop.
+    uint8_t counter = 0;
+    uint8_t limit = 0;
+    if (!is_for && node->v.repeat.kind == LHAT_REPEAT_COUNT) {
+        limit = reserve(c);
+        compile_expression(c, bound, limit);
+        counter = reserve(c);
+        load_constant(c, counter, lhat_integer(0));
+    }
+
+    declare_names(c, prolog);
+    declare_names(c, first);
+    compile_in_scope(c, prolog);
+
+    // 9.7: one bool answers both "has first^ run" and "did the loop ever run",
+    // and only a loop that asks for it pays for it.
+    bool need_entered = first != NULL || last != NULL;
+    uint8_t entered = 0;
+    if (need_entered) {
+        entered = reserve(c);
+        emit(c, lhat_encode_abc(LHAT_BC_LOADBOOL, entered, 0, 0));
+    }
+
+    // 9.7: last^ has to see the value the condition last accepted, not the one
+    // that ended the loop, so each iteration keeps a copy of the focus.
+    uint8_t saved = 0;
+    size_t saved_count = last != NULL ? focus_locals : 0;
+    if (saved_count > 0) {
+        saved = c->next_register;
+        for (size_t i = 0; i < saved_count; i++) {
+            (void)reserve(c);
+        }
+    }
+
+    LoopContext context;
+    context.enclosing = c->loop;
+    context.count = 0;
+    c->loop = &context;
+
+    size_t top = c->proto->chunk.count;
+    size_t leaving = SIZE_MAX;
+
+    if (kind == LHAT_FOR_TO || kind == LHAT_FOR_DOWNTO) {
+        uint8_t mark = c->next_register;
+        uint8_t test = reserve(c);
+        compile_numeric_test(c, node, numeric, test);
+        leaving = emit_jump(c, LHAT_BC_JUMP_FALSE, test);
+        c->next_register = mark;
+    } else if (!is_for && node->v.repeat.kind == LHAT_REPEAT_COUNT) {
+        uint8_t mark = c->next_register;
+        uint8_t test = reserve(c);
+        emit(c, lhat_encode_abc(LHAT_BC_LT, test, counter, limit));
+        leaving = emit_jump(c, LHAT_BC_JUMP_FALSE, test);
+        c->next_register = mark;
+    } else if (bound != NULL) {
+        // 16.5: until^ is while^ negated, and the negation is all there is
+        // to it -- the test happens at the same place either way.
+        bool negated = is_for ? kind == LHAT_FOR_UNTIL
+                              : node->v.repeat.kind == LHAT_REPEAT_UNTIL;
+        uint8_t mark = c->next_register;
+        uint8_t test = reserve(c);
+        compile_expression(c, bound, test);
+        if (negated) {
+            emit(c, lhat_encode_abc(LHAT_BC_NOT, test, test, 0));
+        }
+        leaving = emit_jump(c, LHAT_BC_JUMP_FALSE, test);
+        c->next_register = mark;
+    }
+
+    for (size_t i = 0; i < saved_count; i++) {
+        emit(c, lhat_encode_abc(LHAT_BC_MOVE, (uint8_t)(saved + i),
+                                c->locals[local_mark + i].reg, 0));
+    }
+
+    if (first != NULL) {
+        size_t to_first = emit_jump(c, LHAT_BC_JUMP_FALSE, entered);
+        size_t past_first = emit_jump(c, LHAT_BC_JUMP, 0);
+        lhat_chunk_patch_here(&c->proto->chunk, to_first);
+        compile_in_scope(c, first);
+        lhat_chunk_patch_here(&c->proto->chunk, past_first);
+    }
+    if (need_entered) {
+        emit(c, lhat_encode_abc(LHAT_BC_LOADBOOL, entered, 1, 0));
+    }
+
+    // 9.4: what main^ declares lives one iteration, so it gets its own scope.
+    compile_statements(c, body != NULL ? body->v.list.items : NULL);
+
+    if (advance != NULL) {
+        compile_in_scope(c, advance);
+    } else if (numeric != NULL) {
+        compile_numeric_advance(c, node, numeric);
+    } else if (!is_for && node->v.repeat.kind == LHAT_REPEAT_COUNT) {
+        uint8_t mark = c->next_register;
+        uint8_t one = reserve(c);
+        load_constant(c, one, lhat_integer(1));
+        emit(c, lhat_encode_abc(LHAT_BC_ADD, counter, counter, one));
+        c->next_register = mark;
+    }
+
+    // Backwards, so lhat_chunk_patch_here -- which only ever aims at the end
+    // of what has been emitted -- cannot write it.
+    size_t back = emit_jump(c, LHAT_BC_JUMP, 0);
+    if (back != SIZE_MAX) {
+        int32_t offset = (int32_t)top - (int32_t)back - 1;
+        c->proto->chunk.code[back] = lhat_encode_jump(LHAT_BC_JUMP, 0, offset);
+    }
+
+    if (leaving != SIZE_MAX) {
+        lhat_chunk_patch_here(&c->proto->chunk, leaving);
+    }
+    for (size_t i = 0; i < context.count; i++) {
+        lhat_chunk_patch_here(&c->proto->chunk, context.jumps[i]);
+    }
+    c->loop = context.enclosing;
+
+    if (last != NULL) {
+        size_t skip = emit_jump(c, LHAT_BC_JUMP_FALSE, entered);
+        for (size_t i = 0; i < saved_count; i++) {
+            emit(c, lhat_encode_abc(LHAT_BC_MOVE,
+                                    c->locals[local_mark + i].reg,
+                                    (uint8_t)(saved + i), 0));
+        }
+        compile_in_scope(c, last);
+        lhat_chunk_patch_here(&c->proto->chunk, skip);
+    }
+    compile_in_scope(c, epilog);
+
+    if (c->local_count > local_mark) {
+        emit(c, lhat_encode_abc(LHAT_BC_CLOSE, register_mark, 0, 0));
+    }
+    c->local_count = local_mark;
+    c->next_register = register_mark;
+}
+
 static void compile_statement(Compiler *c, const LhatNode *node)
 {
     if (node == NULL || *c->status != LHAT_COMPILE_OK) {
@@ -778,6 +1079,36 @@ static void compile_statement(Compiler *c, const LhatNode *node)
             uint8_t slot = reserve(c);
             compile_expression(c, node->v.jump.value, slot);
             c->next_register = mark;
+            return;
+        }
+
+        case LHAT_NODE_FOR:
+            // 16.1: for^ introduces a value; whether it repeats is up to the
+            // clause after it, and if^ is the clause that does not.
+            if (node->v.loop.kind == LHAT_FOR_IF) {
+                compile_for_if(c, node);
+            } else {
+                compile_loop(c, node);
+            }
+            return;
+
+        case LHAT_NODE_REPEAT:
+            compile_loop(c, node);
+            return;
+
+        case LHAT_NODE_BREAK: {
+            if (c->loop == NULL) {
+                fail(c, LHAT_COMPILE_UNSUPPORTED);
+                return;
+            }
+            // 9.8 marks the multi-level form still a proposal, so the level
+            // is refused rather than guessed at.
+            if (node->v.jump.value != NULL ||
+                c->loop->count >= LHAT_MAX_BREAKS) {
+                fail(c, LHAT_COMPILE_UNSUPPORTED);
+                return;
+            }
+            c->loop->jumps[c->loop->count++] = emit_jump(c, LHAT_BC_JUMP, 0);
             return;
         }
 
