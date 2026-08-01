@@ -296,7 +296,8 @@ static void test_functions(void)
         proc->v.func.result = simple(&t, LHAT_TYPE_NUMBER);
         LhatType *fn = lhat_type_func(&t.arena, true);
         LhatType *cont = lhat_type_coro(&t.arena, simple(&t, LHAT_TYPE_NUMBER),
-                                        simple(&t, LHAT_TYPE_STRING));
+                                        simple(&t, LHAT_TYPE_STRING),
+                                        simple(&t, LHAT_TYPE_NIL));
 
         LHAT_CHECK(lhat_type_conforms(proc, any_proc), "a p^ is below p^");
         LHAT_CHECK(lhat_type_conforms(fn, any_proc), "an f^ is below p^ too");

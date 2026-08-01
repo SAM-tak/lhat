@@ -259,9 +259,10 @@ static LhatNode *parse_type_function(Parser *p, bool is_function)
     return node;
 }
 
-// 13.9 as 15.11 revised it: 'c^ 受け取る型 -> 出す型;'. What used to be a third
-// slot is now an arm of what the call answers, so the shape is the one f^ and
-// p^ already had.
+// 13.9 as 15.12 settled it: 'c^R -> Y -> T;', read as "send R, get Y, get T
+// at the end". 15.11 had folded the last away; 15.12 records why none of the
+// three recovers from the others. The chained arrow is what answered 15.11's
+// actual complaint, which was the braces rather than the count.
 static LhatNode *parse_type_coroutine(Parser *p)
 {
     LhatToken start = p->current;
@@ -276,13 +277,16 @@ static LhatNode *parse_type_coroutine(Parser *p)
         return node;
     }
 
-    // 13.2 in the same spirit: a continuation that is sent nothing writes
-    // nothing where the received type goes.
+    // 13.2 in the same spirit: what is never sent, never put out or never
+    // returned is written by leaving the slot off.
     if (starts_type(p)) {
         node->v.coroutine.receive = parse_type(p);
     }
     if (match_op(p, LHAT_OP_ARROW)) {
         node->v.coroutine.produce = parse_type(p);
+        if (match_op(p, LHAT_OP_ARROW)) {
+            node->v.coroutine.result = parse_type(p);
+        }
     }
     expect_op(p, LHAT_OP_SEMICOLON);
     return node;

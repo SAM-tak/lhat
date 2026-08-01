@@ -30,7 +30,7 @@ typedef enum {
 
     LHAT_TYPE_TABLE,       // t^{ ... }: at least these members (14.10)
     LHAT_TYPE_FUNC,        // f^ and p^ (15 章)
-    LHAT_TYPE_CORO,        // c^{ ... } (13.9)
+    LHAT_TYPE_CORO,        // c^R -> Y -> T; (13.9)
 
     LHAT_TYPE_ERROR,       // error^ (04 の 2.3): the supertype of every kind
     LHAT_TYPE_ERROR_SET,   // what one errordef^ declares (04 の 2.2)
@@ -98,11 +98,13 @@ struct LhatType {
             bool top;
         } func;
 
-        // 13.9 as 15.11 revised it: 'c^ 受け取る型 -> 出す型;'. What used to be
-        // a third slot became an arm of what the call answers.
+        // 13.9 as 15.12 settled it: 'c^R -> Y -> T;'. `result` is what the
+        // body returns, which a resume answers once the body is over -- 15.12
+        // records why it cannot be recovered from the other two.
         struct {
             LhatType *receive;
             LhatType *produce;
+            LhatType *result;
             bool top;  // 13.12, as above
         } coroutine;
 
@@ -147,7 +149,7 @@ LhatType *lhat_type_simple(LhatTypeArena *arena, LhatTypeKind kind);
 LhatType *lhat_type_table(LhatTypeArena *arena);
 LhatType *lhat_type_func(LhatTypeArena *arena, bool is_function);
 LhatType *lhat_type_coro(LhatTypeArena *arena, LhatType *receive,
-                         LhatType *produce);
+                         LhatType *produce, LhatType *result);
 
 // 13.12: the top of a kind, which every type of that kind is below. `f^` is
 // itself below `p^`, a function being a procedure under stricter rules.

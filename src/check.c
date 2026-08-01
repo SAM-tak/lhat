@@ -442,6 +442,9 @@ static LhatType *resolve_type(Checker *c, const LhatNode *node)
                     : simple(c, LHAT_TYPE_NIL),
                 node->v.coroutine.produce != NULL
                     ? resolve_type(c, node->v.coroutine.produce)
+                    : simple(c, LHAT_TYPE_NIL),
+                node->v.coroutine.result != NULL
+                    ? resolve_type(c, node->v.coroutine.result)
                     : simple(c, LHAT_TYPE_NIL));
 
         default:
@@ -1120,15 +1123,14 @@ static LhatType *infer_member(Checker *c, const LhatNode *node)
             // "one, or none" 13.4 could not write no longer arises.
             //
             // What it answers is the same union the call answered: this
-            // continuation again, or the return value. The return arm is not
-            // on the continuation type -- 13.9 spells only what a resume
-            // sends and what a result holds -- so it is left unknown^ here.
+            // continuation again, or the return value. 15.12 keeps the return
+            // type on the continuation for exactly this -- the call site is
+            // long gone by the time a continuation is resumed.
             LhatType *signature = lhat_type_func(c->result->types, false);
             lhat_type_add_param(c->result->types, signature,
                                 target->v.coroutine.receive);
-            signature->v.func.result =
-                lhat_type_union(c->result->types, target,
-                                simple(c, LHAT_TYPE_UNKNOWN));
+            signature->v.func.result = lhat_type_union(
+                c->result->types, target, target->v.coroutine.result);
             return signature;
         }
         if (name_is(name, length, "dispose")) {
@@ -1275,8 +1277,14 @@ static LhatType *infer_func(Checker *c, const LhatNode *node)
         // all: there the writer never asked for a value, and the signature
         // has a form for it. nil^ joins in only when some other exit does
         // produce one.
+        //
+        // 15.11: for a yieldable body the yield^ is such an exit, and whether
+        // the body can reach its end without passing one is a flow question
+        // this does not answer. So nil^ joins, and the caller narrows -- which
+        // is what 15.11 wanted of a call that may suspend.
         if (falls_through &&
-            (c->inferred_result != NULL || c->recursive_return)) {
+            (c->inferred_result != NULL || c->recursive_return ||
+             node->v.func.yields)) {
             c->inferred_result = lhat_type_union(c->result->types,
                                                  c->inferred_result,
                                                  simple(c, LHAT_TYPE_NIL));
@@ -1297,15 +1305,23 @@ static LhatType *infer_func(Checker *c, const LhatNode *node)
     // body suspends, is not describing this body.
     if (node->v.func.yields) {
         if (declared == NULL) {
+            // 15.12: the return type appears twice over -- as an arm, for a
+            // body that finished without suspending, and inside the
+            // continuation, for the resume that finishes it later. Not a
+            // duplication: the second is needed once the call site is gone.
+            LhatType *returned = func->v.func.result != NULL
+                                     ? func->v.func.result
+                                     : simple(c, LHAT_TYPE_NIL);
             func->v.func.result = lhat_type_union(
-                c->result->types, func->v.func.result,
+                c->result->types, returned,
                 lhat_type_coro(c->result->types,
                                c->yield_receive != NULL
                                    ? c->yield_receive
                                    : simple(c, LHAT_TYPE_UNKNOWN),
                                c->yield_produce != NULL
                                    ? c->yield_produce
-                                   : simple(c, LHAT_TYPE_NIL)));
+                                   : simple(c, LHAT_TYPE_NIL),
+                               returned));
         } else if (written_arm == NULL) {
             report(c, node, LHAT_CHECK_ERR_RESULT_LACKS_CONTINUATION);
         }

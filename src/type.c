@@ -100,12 +100,13 @@ LhatType *lhat_type_func(LhatTypeArena *arena, bool is_function)
 }
 
 LhatType *lhat_type_coro(LhatTypeArena *arena, LhatType *receive,
-                         LhatType *produce)
+                         LhatType *produce, LhatType *result)
 {
     LhatType *type = new_type(arena, LHAT_TYPE_CORO);
     if (type != NULL) {
         type->v.coroutine.receive = receive;
         type->v.coroutine.produce = produce;
+        type->v.coroutine.result = result;
     }
     return type;
 }
@@ -417,11 +418,13 @@ bool lhat_type_conforms(const LhatType *value, const LhatType *target)
                 return false;
             }
             // 13.9. What a continuation receives is an input, so it varies the
-            // other way round from what it produces.
+            // other way round from what it produces and returns.
             return lhat_type_conforms(target->v.coroutine.receive,
                                       value->v.coroutine.receive) &&
                    lhat_type_conforms(value->v.coroutine.produce,
-                                      target->v.coroutine.produce);
+                                      target->v.coroutine.produce) &&
+                   lhat_type_conforms(value->v.coroutine.result,
+                                      target->v.coroutine.result);
 
         default:
             return true;  // the primitives, matched by kind above

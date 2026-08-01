@@ -76,7 +76,7 @@ typedef enum {
     // ---- types (13 章) ----
     LHAT_NODE_TYPE_NAME,     // number^, FooBar
     LHAT_NODE_TYPE_FUNC,     // f^A, B -> C;  and bare f^ / p^ (13.12)
-    LHAT_NODE_TYPE_CORO,     // c^R -> Y;     and bare c^ (13.12)
+    LHAT_NODE_TYPE_CORO,     // c^R -> Y -> T; and bare c^ (13.12)
     LHAT_NODE_TYPE_TABLE,    // t^{ member : type }
     LHAT_NODE_TYPE_UNION,    // A | B
     LHAT_NODE_TYPE_INTERSECT,// A & B
@@ -290,10 +290,12 @@ struct LhatNode {
             LhatNode *value;
         } jump;
 
-        // TYPE_CORO: the two types of 13.9, as 15.11 revised it.
+        // TYPE_CORO: the three types of 13.9. 15.12 records why none of them
+        // recovers from the others.
         struct {
             LhatNode *receive;
             LhatNode *produce;
+            LhatNode *result;
             bool top;     // 13.12: written bare
         } coroutine;
     } v;

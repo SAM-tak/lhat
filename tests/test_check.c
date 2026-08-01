@@ -1345,6 +1345,19 @@ static void test_coroutines(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
+    // 15.11: the answer is a union, so the caller cannot reach the members
+    // without narrowing first. That is the point of the shape -- 04 の 2.1
+    // gave errors the same one, and 04 の 8.1's "the type is the detection"
+    // applies unchanged. Whether a body can reach its end without passing a
+    // yield^ is a flow question, so nil^ is in the union either way.
+    LHAT_TEST("the answer has to be narrowed before it can be used");
+    check_text(&u,
+               "let^ gen = p^ { yield^ 1 }\n"
+               "let^ c = gen()\n"
+               "let^ v = c.result\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_NO_MEMBER);
+    unit_dispose(&u);
+
     // 05 の 8.5: a continuation carries these without anything being imported.
     // 15.11 puts result beside them, and fixes a resume at one value -- the
     // body has already reached a yield^ by the time there is one to resume.
@@ -1352,9 +1365,11 @@ static void test_coroutines(void)
     check_text(&u,
                "let^ gen = p^ { yield^ 1 }\n"
                "let^ c = gen()\n"
-               "let^ v = c.result\n"
-               "let^ w = c.resume(0)\n"
-               "c.dispose()\n");
+               "if^ c is^ c^ {\n"
+               "  let^ v = c.result\n"
+               "  let^ w = c.resume(0)\n"
+               "  c.dispose()\n"
+               "}\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
@@ -1362,7 +1377,7 @@ static void test_coroutines(void)
     check_text(&u,
                "let^ gen = p^ { yield^ 1 }\n"
                "let^ c = gen()\n"
-               "let^ v = c.nowhere\n");
+               "if^ c is^ c^ { let^ v = c.nowhere }\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_NO_MEMBER);
     unit_dispose(&u);
 
@@ -1372,7 +1387,7 @@ static void test_coroutines(void)
     check_text(&u,
                "let^ gen = p^ { yield^ 1 }\n"
                "let^ c = gen()\n"
-               "let^ n : number^ = c.result\n");
+               "if^ c is^ c^ { let^ n : number^ = c.result }\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
@@ -1380,8 +1395,23 @@ static void test_coroutines(void)
     check_text(&u,
                "let^ gen = p^ { yield^ 1 }\n"
                "let^ c = gen()\n"
-               "let^ s : string^ = c.result\n");
+               "if^ c is^ c^ { let^ s : string^ = c.result }\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
+    unit_dispose(&u);
+
+    // 15.12: what a resume answers is this continuation again or the return
+    // value, and the return arm rides on the continuation -- the call site is
+    // long gone by the time one is resumed.
+    LHAT_TEST("a resume answers the continuation or the return value");
+    check_text(&u,
+               "let^ gen = p^ { yield^ 1 return^ \"a\" }\n"
+               "let^ c = gen()\n"
+               "if^ c is^ c^ {\n"
+               "  let^ r = c.resume(0)\n"
+               "  if^ r is^ string^ { let^ s : string^ = r }\n"
+               "  if^ r is^ c^ { let^ n : number^ = r.result }\n"
+               "}\n");
+    CHECK_CLEAN(&u);
     unit_dispose(&u);
 
     // 15.5: the arguments belong to the call, which binds the parameters --
@@ -1433,12 +1463,21 @@ static void test_coroutines(void)
     unit_dispose(&u);
 
     // 13.12: the word on its own is the top of its kind, so `c^` is what
-    // stands for every continuation.
+    // stands for every continuation -- and what 13.11 narrows a call's answer
+    // against, which is why the union has to be narrowed first.
     LHAT_TEST("the top of the kind takes any continuation");
     check_text(&u,
                "let^ gen = p^ { yield^ 1 }\n"
-               "let^ c : c^ = gen()\n");
+               "let^ c = gen()\n"
+               "if^ c is^ c^ { let^ any : c^ = c }\n");
     CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("and the union is not below it");
+    check_text(&u,
+               "let^ gen = p^ { yield^ 1 }\n"
+               "let^ c : c^ = gen()\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
     LHAT_TEST("an f^ stands where a p^ is written");
