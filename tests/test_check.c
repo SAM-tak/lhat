@@ -1477,6 +1477,31 @@ static void test_coroutines(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
+    // 15.6改: the return type is what the last resume receives, so a body
+    // that reaches its end without one puts nil^ there -- that is the value
+    // the machine really hands back, not 03's "returns nothing" leaking in.
+    LHAT_TEST("a body with no return^ answers nil^ at the end");
+    check_text(&u,
+               "let^ p = p^ { yield^ 1 }\n"
+               "let^ v : number^|nil^ = p().start()\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("so the yield type alone does not cover it");
+    check_text(&u,
+               "let^ p = p^ { yield^ 1 }\n"
+               "let^ v : number^ = p().start()\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
+    unit_dispose(&u);
+
+    // And where every exit produces one, nothing spurious joins the union.
+    LHAT_TEST("a body that always returns a value brings no nil^");
+    check_text(&u,
+               "let^ p = p^ { yield^ 1 return^ 9 }\n"
+               "let^ v : number^ = p().start()\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
     LHAT_TEST("yieldall^ needs a coroutine");
     check_text(&u,
                "let^ plain = f^ -> number^ { return^ 1 }\n"

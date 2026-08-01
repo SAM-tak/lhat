@@ -2165,6 +2165,20 @@ static void test_coroutines(void)
     CHECK_INTEGER(&r, 9);
     run_dispose(&r);
 
+    // 15.6改: and nil^ when the body has no return^ to answer with. That is
+    // a value the resume really receives, not a stand-in for 03's "returns
+    // nothing" -- 15.5 keeps the two apart by never letting the second one
+    // reach a caller.
+    LHAT_TEST("and nil^ when the body reached its end without one");
+    run_text(&r,
+             "let^ gen = p^ { yield^ 1 }\n"
+             "let^ c = gen()\n"
+             "c.start()\n"
+             "return^ c.resume(nil^)\n");
+    LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_OK);
+    LHAT_CHECK(lhat_is_nil(r.ran.value), "nil^");
+    run_dispose(&r);
+
     LHAT_TEST("resuming one that has finished is a fault");
     run_text(&r,
              "let^ gen = p^ { yield^ 1 }\n"
