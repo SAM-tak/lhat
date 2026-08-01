@@ -1441,27 +1441,27 @@ static void compile_expression(Compiler *c, const LhatNode *node, uint8_t into)
             compile_try(c, node, into);
             return;
 
-        // 02 の 15.8: delegation is the outer one driving the inner one. 03
-        // の 5.7 writes the expansion out; the chain of coroutines is
-        // registers rather than anything the machine holds.
+        // 02 の 15.8 and 15.11: delegation drops the continuation arm from
+        // what the inner call answered. The loop runs while that arm is the
+        // one there, and what is left when it is not is the value.
         case LHAT_NODE_YIELD_ALL: {
             uint8_t mark = c->next_register;
-            uint8_t co = reserve(c);
-            uint8_t sent = reserve(c);
+            uint8_t step = reserve(c);
+            uint8_t out = reserve(c);
             uint8_t test = reserve(c);
-            compile_expression(c, node->v.jump.value, co);
-            emit(c, lhat_encode_abc(LHAT_BC_LOADNIL, sent, 0, 0));
+            // 15.11: the call has already run the body, so the first thing to
+            // pass out is there before the loop is entered.
+            compile_expression(c, node->v.jump.value, step);
 
             size_t top = c->proto->chunk.count;
-            emit(c, lhat_encode_abc(LHAT_BC_RESUME, sent, co, 0));
-            emit(c, lhat_encode_abc(LHAT_BC_ISDONE, test, co, 0));
-            size_t keep = emit_jump(c, LHAT_BC_JUMP_FALSE, test);
-            size_t done = emit_jump(c, LHAT_BC_JUMP, 0);
+            emit(c, lhat_encode_abc(LHAT_BC_ISCONT, test, step, 0));
+            size_t done = emit_jump(c, LHAT_BC_JUMP_FALSE, test);
 
-            lhat_chunk_patch_here(&c->proto->chunk, keep);
-            // What the inner one yielded goes straight out, and what the
-            // resume sends comes back to be passed in next time round.
-            emit(c, lhat_encode_abc(LHAT_BC_YIELD, sent, 0, 0));
+            // What the inner one put out goes straight out again, and what
+            // the resume sends comes back to be passed in next time round.
+            emit(c, lhat_encode_abc(LHAT_BC_RESULT, out, step, 0));
+            emit(c, lhat_encode_abc(LHAT_BC_YIELD, out, 0, 0));
+            emit(c, lhat_encode_abc(LHAT_BC_RESUME, step, step, out));
             size_t back = emit_jump(c, LHAT_BC_JUMP, 0);
             if (back != SIZE_MAX) {
                 int32_t offset = (int32_t)top - (int32_t)back - 1;
@@ -1470,8 +1470,8 @@ static void compile_expression(Compiler *c, const LhatNode *node, uint8_t into)
             }
 
             lhat_chunk_patch_here(&c->proto->chunk, done);
-            // 15.8: the value of the whole thing is the inner return value.
-            emit(c, lhat_encode_abc(LHAT_BC_MOVE, into, sent, 0));
+            // 15.8: what is left once the continuation arm is gone.
+            emit(c, lhat_encode_abc(LHAT_BC_MOVE, into, step, 0));
             c->next_register = mark;
             return;
         }
@@ -2207,16 +2207,14 @@ static void compile_loop(Compiler *c, const LhatNode *node)
         leaving = emit_jump(c, LHAT_BC_JUMP_FALSE, test);
         c->next_register = mark;
     } else if (kind == LHAT_FOR_IN) {
-        // 13.9: what a resume answers is the union of what the coroutine
-        // yields and what it returns, so "is it finished" is the question
-        // that tells the two apart.
+        // 15.11: what a call answers is the union of a continuation and the
+        // return value, so the loop runs exactly while the continuation arm is
+        // the one there. 13.11's narrowing is the test.
         uint8_t mark = c->next_register;
         uint8_t test = reserve(c);
-        emit(c, lhat_encode_abc(LHAT_BC_LOADNIL, taken, 0, 0));
-        emit(c, lhat_encode_abc(LHAT_BC_RESUME, taken, walk, 0));
-        emit(c, lhat_encode_abc(LHAT_BC_ISDONE, test, walk, 0));
-        emit(c, lhat_encode_abc(LHAT_BC_NOT, test, test, 0));
+        emit(c, lhat_encode_abc(LHAT_BC_ISCONT, test, walk, 0));
         leaving = emit_jump(c, LHAT_BC_JUMP_FALSE, test);
+        emit(c, lhat_encode_abc(LHAT_BC_RESULT, taken, walk, 0));
         c->next_register = mark;
         bind_targets(c, focus, local_mark, focus_locals, taken);
     } else if (!is_for && node->v.repeat.kind == LHAT_REPEAT_COUNT) {
@@ -2263,6 +2261,18 @@ static void compile_loop(Compiler *c, const LhatNode *node)
         compile_in_scope(c, advance);
     } else if (numeric != NULL) {
         compile_numeric_advance(c, node, numeric, numeric_step);
+    } else if (kind == LHAT_FOR_IN) {
+        // 15.11: the walk was handed over already standing on a value, so it
+        // moves on at the end of the turn rather than the start. A resume
+        // takes over the registers above the one it answers into, so it
+        // answers into a slot above everything the loop still holds.
+        uint8_t mark = c->next_register;
+        uint8_t sent = reserve(c);
+        uint8_t scratch = reserve(c);
+        emit(c, lhat_encode_abc(LHAT_BC_LOADNIL, sent, 0, 0));
+        emit(c, lhat_encode_abc(LHAT_BC_RESUME, scratch, walk, sent));
+        emit(c, lhat_encode_abc(LHAT_BC_MOVE, walk, scratch, 0));
+        c->next_register = mark;
     } else if (!is_for && node->v.repeat.kind == LHAT_REPEAT_COUNT) {
         uint8_t mark = c->next_register;
         uint8_t one = reserve(c);
@@ -2702,7 +2712,41 @@ static LhatTable *table_of(LhatValue value)
     return NULL;
 }
 
-// The two operations 02 の 12.6 and 15.6 give a coroutine. The rest of the
+// 02 の 16.3 and 15.11: moving a table walk on by one. The pair goes onto the
+// walk as its `result`, so a walk is read exactly like a suspended body --
+// 13.8 makes it a table, there being no multiple values to yield.
+typedef enum { WALK_STEPPED, WALK_END, WALK_NO_MEMORY } WalkStep;
+
+static WalkStep step_walk(Machine *m, LhatCoroutine *co)
+{
+    LhatValue key, value;
+    if (!lhat_table_walk(co, &key, &value)) {
+        return WALK_END;
+    }
+    LhatTable *pair = lhat_table_new(&m->objects);
+    bool refused = false;
+    if (pair == NULL ||
+        !lhat_table_set(pair, lhat_integer(1), key, &refused) ||
+        !lhat_table_set(pair, lhat_integer(2), value, &refused)) {
+        return WALK_NO_MEMORY;
+    }
+    co->result = lhat_object((LhatObject *)pair);
+    co->state = LHAT_COROUTINE_SUSPENDED;
+    return WALK_STEPPED;
+}
+
+// 02 の 15.11: a continuation's third member, which unlike the other two is a
+// value rather than something to call.
+static bool named_result(LhatValue key)
+{
+    if (!lhat_is_object_kind(key, LHAT_OBJECT_STRING)) {
+        return false;
+    }
+    const LhatString *name = (const LhatString *)lhat_as_object(key);
+    return name->length == 6 && memcmp(name->text, "result", 6) == 0;
+}
+
+// The two operations 02 の 12.6 and 15.11 give a continuation. The rest of the
 // standard library is M2 and will not go through here.
 static bool native_named(LhatValue key, LhatNativeKind *out)
 {
@@ -2951,6 +2995,13 @@ LhatRunResult lhat_run(const LhatProto *proto)
     const LhatChunk *chunk = &proto->chunk;
     size_t pc = 0;
 
+    // 15.11: `c.resume(v)` and the resume the compiled loops emit are the same
+    // operation, so both set these and jump to one place.
+    LhatCoroutine *resume_co = NULL;
+    LhatValue resume_sent = lhat_nil();
+    uint8_t resume_into = 0;
+    bool resume_dispose = false;
+
     while (pc < chunk->count) {
         // Between instructions, where every live value is in a register, a
         // frame or the open list. Inside one there is a half-built object the
@@ -3144,6 +3195,15 @@ LhatRunResult lhat_run(const LhatProto *proto)
                 // 02 の 12.6 and 15.6: a coroutine answers the operations the
                 // runtime provides, bound to what they came through.
                 if (lhat_is_object_kind(registers[b], LHAT_OBJECT_COROUTINE)) {
+                    // 15.11: `.result` is what the yield^ that made this
+                    // continuation put out. It is a value, not an operation,
+                    // which is what lets a suspension be read without being
+                    // driven.
+                    if (named_result(registers[cc])) {
+                        registers[a] = ((const LhatCoroutine *)
+                                            lhat_as_object(registers[b]))->result;
+                        break;
+                    }
                     LhatNativeKind which;
                     if (!native_named(registers[cc], &which)) {
                         return finish(m, LHAT_RUN_TYPE_ERROR, lhat_nil(), at);
@@ -3310,6 +3370,20 @@ LhatRunResult lhat_run(const LhatProto *proto)
                             return finish(m, LHAT_RUN_OUT_OF_MEMORY, lhat_nil(),
                                           at);
                         }
+                        // 15.11: a call answers a suspension already standing
+                        // on a value, so the walk does too. An empty table has
+                        // none, and answers what a body that never yields
+                        // would -- not a continuation at all.
+                        WalkStep step = step_walk(m, walk);
+                        if (step == WALK_NO_MEMORY) {
+                            return finish(m, LHAT_RUN_OUT_OF_MEMORY, lhat_nil(),
+                                          at);
+                        }
+                        if (step == WALK_END) {
+                            walk->state = LHAT_COROUTINE_DONE;
+                            registers[a] = lhat_nil();
+                            break;
+                        }
                         registers[a] = lhat_object((LhatObject *)walk);
                         break;
                     }
@@ -3318,75 +3392,11 @@ LhatRunResult lhat_run(const LhatProto *proto)
                                              LHAT_OBJECT_COROUTINE)) {
                         return finish(m, LHAT_RUN_NOT_CALLABLE, lhat_nil(), at);
                     }
-                    LhatCoroutine *co =
-                        (LhatCoroutine *)lhat_as_object(native->bound);
-
-                    // 02 の 10.7: disposal runs what is still pending and
-                    // never runs the same cleanup twice, so a coroutine that
-                    // has finished simply has nothing left to do.
-                    bool dispose = native->kind == LHAT_NATIVE_DISPOSE;
-                    if (co->state == LHAT_COROUTINE_DONE ||
-                        (dispose && co->state == LHAT_COROUTINE_FRESH)) {
-                        if (dispose) {
-                            co->state = LHAT_COROUTINE_DONE;
-                            registers[a] = lhat_nil();
-                            break;
-                        }
-                        return finish(m, LHAT_RUN_DEAD_COROUTINE, lhat_nil(), at);
-                    }
-                    if (co->state == LHAT_COROUTINE_RUNNING) {
-                        return finish(m, LHAT_RUN_DEAD_COROUTINE, lhat_nil(), at);
-                    }
-                    if (m->frame_count >= LHAT_MAX_FRAMES) {
-                        return finish(m, LHAT_RUN_STACK_OVERFLOW, lhat_nil(), at);
-                    }
-
-                    LhatValue *next_base = &registers[a] + 1;
-                    if (next_base + LHAT_MAX_REGISTERS >=
-                        m->stack + LHAT_STACK_SLOTS) {
-                        return finish(m, LHAT_RUN_STACK_OVERFLOW, lhat_nil(), at);
-                    }
-
-                    // 5.11: one frame, put back where it left off.
-                    for (size_t i = 0; i < co->register_count; i++) {
-                        next_base[i] = co->registers[i];
-                    }
-                    frame->pc = pc;
-                    Frame *called = &m->frames[m->frame_count++];
-                    called->closure = co->closure;
-                    called->pc = co->pc;
-                    called->base = next_base;
-                    called->result = a;
-                    called->coroutine = co;
-                    called->disposing = dispose;
-                    called->returning = false;
-                    called->cleanup_count = co->cleanup_count;
-                    for (size_t i = 0; i < co->cleanup_count; i++) {
-                        called->cleanups[i] = co->cleanups[i];
-                    }
-
-                    bool resuming = co->state == LHAT_COROUTINE_SUSPENDED;
-                    co->state = LHAT_COROUTINE_RUNNING;
-
-                    frame = called;
-                    registers = frame->base;
-                    chunk = &co->closure->proto->chunk;
-                    pc = frame->pc;
-
-                    if (resuming) {
-                        // 15.4: the value the resume sent arrives where the
-                        // yield^ put the one it sent out.
-                        registers[co->sent_into] = sent;
-                    }
-                    if (dispose) {
-                        // 10.7: what is pending runs, innermost first, and
-                        // then the coroutine is finished.
-                        frame->drain_target = 0;
-                        frame->returning = true;
-                        frame->answer = lhat_nil();
-                        goto drain;
-                    }
-                    break;
+                    resume_co = (LhatCoroutine *)lhat_as_object(native->bound);
+                    resume_into = a;
+                    resume_sent = sent;
+                    resume_dispose = native->kind == LHAT_NATIVE_DISPOSE;
+                    goto do_resume;
                 }
 
                 // 14.12: at most one candidate fits, so this is a search and
@@ -3436,22 +3446,18 @@ LhatRunResult lhat_run(const LhatProto *proto)
                     return finish(m, LHAT_RUN_ARITY, lhat_nil(), at);
                 }
 
-                // 02 の 15.5: calling a yieldable procedure does not suspend
-                // the caller. It answers a coroutine, and the body has not
-                // started -- which is why the colouring of async/await never
-                // arises here.
+                // 02 の 15.11: a yieldable call runs the body, the same as any
+                // other. What differs is what answers it: the first yield^
+                // hands back this continuation instead of returning. Made
+                // before the frame is pushed, since it is what the frame
+                // suspends into.
+                LhatCoroutine *made = NULL;
                 if (callee->proto->yields) {
-                    LhatCoroutine *co =
-                        lhat_coroutine_new(&m->objects, callee,
-                                           callee->proto->chunk.registers);
-                    if (co == NULL) {
+                    made = lhat_coroutine_new(&m->objects, callee,
+                                              callee->proto->chunk.registers);
+                    if (made == NULL) {
                         return finish(m, LHAT_RUN_OUT_OF_MEMORY, lhat_nil(), at);
                     }
-                    for (size_t i = 0; i < given; i++) {
-                        co->registers[i] = registers[a + skip + i];
-                    }
-                    registers[a] = lhat_object((LhatObject *)co);
-                    break;
                 }
 
                 if (m->frame_count >= LHAT_MAX_FRAMES) {
@@ -3474,7 +3480,7 @@ LhatRunResult lhat_run(const LhatProto *proto)
                 called->result = a;
                 called->cleanup_count = 0;  // 5.5: pending cleanups are per frame
                 called->returning = false;
-                called->coroutine = NULL;
+                called->coroutine = made;
                 called->disposing = false;
 
                 frame = called;
@@ -3511,16 +3517,18 @@ LhatRunResult lhat_run(const LhatProto *proto)
                 frame->answer = op == LHAT_BC_RETURN ? registers[a] : lhat_nil();
                 goto drain;
 
-            // 02 の 15.4: the frame stops here and the value goes out. 5.11
-            // keeps the one frame rather than a stack, which 15.5 is what
-            // makes possible -- a yield^ is always in the body it suspends.
+            // 02 の 15.11: the frame stops here, and what answers the call --
+            // or the resume that got this far -- is the continuation. The
+            // value goes out on it, as `result`. 5.11 keeps the one frame
+            // rather than a stack, which 15.5 is what makes possible: a
+            // yield^ is always in the body it suspends.
             case LHAT_BC_YIELD: {
                 LhatCoroutine *co = frame->coroutine;
                 // 10.7: nothing is waiting for a yield^ during disposal.
                 if (co == NULL || frame->disposing) {
                     return finish(m, LHAT_RUN_YIELD_OUTSIDE, lhat_nil(), at);
                 }
-                LhatValue value = registers[a];
+                co->result = registers[a];
 
                 for (size_t i = 0; i < co->register_count; i++) {
                     co->registers[i] = registers[i];
@@ -3542,20 +3550,26 @@ LhatRunResult lhat_run(const LhatProto *proto)
                 registers = frame->base;
                 chunk = &frame->closure->proto->chunk;
                 pc = frame->pc;
-                registers[into] = value;
+                registers[into] = lhat_object((LhatObject *)co);
                 break;
             }
 
-            // 02 の 15.8: the delegation loop asks whether the inner one is
-            // finished, since 13.9 makes what a resume answers the union of
-            // its yield type and its return type.
-            case LHAT_BC_ISDONE: {
+            // 02 の 15.11: what a resume answers is the continuation again
+            // while the body is still suspended, and the returned value once
+            // it is over. This is the narrowing that tells the two apart, and
+            // it is 13.11's is^ rather than a question about state.
+            case LHAT_BC_ISCONT:
+                registers[a] =
+                    lhat_bool(lhat_is_object_kind(registers[b],
+                                                  LHAT_OBJECT_COROUTINE));
+                break;
+
+            case LHAT_BC_RESULT: {
                 if (!lhat_is_object_kind(registers[b], LHAT_OBJECT_COROUTINE)) {
                     return finish(m, LHAT_RUN_TYPE_ERROR, lhat_nil(), at);
                 }
-                const LhatCoroutine *co =
-                    (const LhatCoroutine *)lhat_as_object(registers[b]);
-                registers[a] = lhat_bool(co->state == LHAT_COROUTINE_DONE);
+                registers[a] =
+                    ((const LhatCoroutine *)lhat_as_object(registers[b]))->result;
                 break;
             }
 
@@ -3563,77 +3577,102 @@ LhatRunResult lhat_run(const LhatProto *proto)
                 if (!lhat_is_object_kind(registers[b], LHAT_OBJECT_COROUTINE)) {
                     return finish(m, LHAT_RUN_TYPE_ERROR, lhat_nil(), at);
                 }
-                LhatCoroutine *co =
-                    (LhatCoroutine *)lhat_as_object(registers[b]);
-                if (co->state == LHAT_COROUTINE_DONE ||
-                    co->state == LHAT_COROUTINE_RUNNING) {
-                    return finish(m, LHAT_RUN_DEAD_COROUTINE, lhat_nil(), at);
-                }
-
-                // 16.3: a table's walk has no body to enter. Resuming it
-                // reads the next pair, which 13.8 makes a table since there
-                // are no multiple values to yield.
-                if (co->source == LHAT_COROUTINE_TABLE) {
-                    LhatValue key, value;
-                    if (!lhat_table_walk(co, &key, &value)) {
-                        co->state = LHAT_COROUTINE_DONE;
-                        registers[a] = lhat_nil();
-                        break;
-                    }
-                    LhatTable *pair = lhat_table_new(&m->objects);
-                    bool refused = false;
-                    if (pair == NULL ||
-                        !lhat_table_set(pair, lhat_integer(1), key, &refused) ||
-                        !lhat_table_set(pair, lhat_integer(2), value, &refused)) {
-                        return finish(m, LHAT_RUN_OUT_OF_MEMORY, lhat_nil(), at);
-                    }
-                    co->state = LHAT_COROUTINE_SUSPENDED;
-                    registers[a] = lhat_object((LhatObject *)pair);
-                    break;
-                }
-                if (m->frame_count >= LHAT_MAX_FRAMES) {
-                    return finish(m, LHAT_RUN_STACK_OVERFLOW, lhat_nil(), at);
-                }
-                LhatValue *next_base = &registers[a] + 1;
-                if (next_base + LHAT_MAX_REGISTERS >=
-                    m->stack + LHAT_STACK_SLOTS) {
-                    return finish(m, LHAT_RUN_STACK_OVERFLOW, lhat_nil(), at);
-                }
-
-                LhatValue sent = registers[a];
-                bool resuming = co->state == LHAT_COROUTINE_SUSPENDED;
-                for (size_t i = 0; i < co->register_count; i++) {
-                    next_base[i] = co->registers[i];
-                }
-                frame->pc = pc;
-                Frame *called = &m->frames[m->frame_count++];
-                called->closure = co->closure;
-                called->pc = co->pc;
-                called->base = next_base;
-                called->result = a;
-                called->coroutine = co;
-                called->disposing = false;
-                called->returning = false;
-                called->cleanup_count = co->cleanup_count;
-                for (size_t i = 0; i < co->cleanup_count; i++) {
-                    called->cleanups[i] = co->cleanups[i];
-                }
-                co->state = LHAT_COROUTINE_RUNNING;
-
-                frame = called;
-                registers = frame->base;
-                chunk = &co->closure->proto->chunk;
-                pc = frame->pc;
-                if (resuming) {
-                    registers[co->sent_into] = sent;
-                }
-                break;
+                resume_co = (LhatCoroutine *)lhat_as_object(registers[b]);
+                resume_into = a;
+                resume_sent = registers[cc];
+                resume_dispose = false;
+                goto do_resume;
             }
 
             case LHAT_BC_COUNT:
                 return finish(m, LHAT_RUN_TYPE_ERROR, lhat_nil(), at);
         }
         continue;
+
+    do_resume:
+        // 15.11: `c.resume(v)`, `c.dispose()` and the resume the delegation
+        // and in^ loops emit all arrive here. Disposal differs only in going
+        // straight to the drain instead of running any more of the body.
+        {
+            LhatCoroutine *co = resume_co;
+            if (co->state == LHAT_COROUTINE_DONE) {
+                // 10.7: disposal never runs the same cleanup twice, so a body
+                // that is over simply has nothing left to do.
+                if (resume_dispose) {
+                    registers[resume_into] = lhat_nil();
+                    continue;
+                }
+                return finish(m, LHAT_RUN_DEAD_COROUTINE, lhat_nil(), at);
+            }
+            if (co->state == LHAT_COROUTINE_RUNNING) {
+                return finish(m, LHAT_RUN_DEAD_COROUTINE, lhat_nil(), at);
+            }
+
+            // 16.3: a table's walk has no body to enter. Resuming it reads the
+            // next pair, which 13.8 makes a table since there are no multiple
+            // values to yield. 15.11 puts that pair on the walk rather than
+            // answering with it, so a walk reads like any other continuation.
+            if (co->source == LHAT_COROUTINE_TABLE) {
+                WalkStep step = resume_dispose ? WALK_END : step_walk(m, co);
+                if (step == WALK_NO_MEMORY) {
+                    return finish(m, LHAT_RUN_OUT_OF_MEMORY, lhat_nil(), at);
+                }
+                if (step == WALK_END) {
+                    co->state = LHAT_COROUTINE_DONE;
+                    registers[resume_into] = lhat_nil();
+                    continue;
+                }
+                registers[resume_into] = lhat_object((LhatObject *)co);
+                continue;
+            }
+
+            if (m->frame_count >= LHAT_MAX_FRAMES) {
+                return finish(m, LHAT_RUN_STACK_OVERFLOW, lhat_nil(), at);
+            }
+            LhatValue *next_base = &registers[resume_into] + 1;
+            if (next_base + LHAT_MAX_REGISTERS >= m->stack + LHAT_STACK_SLOTS) {
+                return finish(m, LHAT_RUN_STACK_OVERFLOW, lhat_nil(), at);
+            }
+
+            // 5.11: one frame, put back where it left off.
+            for (size_t i = 0; i < co->register_count; i++) {
+                next_base[i] = co->registers[i];
+            }
+            frame->pc = pc;
+            Frame *called = &m->frames[m->frame_count++];
+            called->closure = co->closure;
+            called->pc = co->pc;
+            called->base = next_base;
+            called->result = resume_into;
+            called->coroutine = co;
+            called->disposing = resume_dispose;
+            called->returning = false;
+            called->cleanup_count = co->cleanup_count;
+            for (size_t i = 0; i < co->cleanup_count; i++) {
+                called->cleanups[i] = co->cleanups[i];
+            }
+            co->state = LHAT_COROUTINE_RUNNING;
+
+            frame = called;
+            registers = frame->base;
+            chunk = &co->closure->proto->chunk;
+            pc = frame->pc;
+
+            // 15.4: the value the resume sent arrives where the yield^ put the
+            // one it sent out. 15.11 removes the exception that used to be
+            // here -- there is no state before the first yield^ any more.
+            registers[co->sent_into] = resume_sent;
+
+            if (resume_dispose) {
+                // 10.7: what is pending runs, innermost first, and then the
+                // continuation is finished.
+                frame->drain_target = 0;
+                frame->returning = true;
+                frame->answer = lhat_nil();
+                goto drain;
+            }
+            continue;
+        }
 
     drain:
         // Innermost first, one at a time: each body ends with ENDCLEANUP,

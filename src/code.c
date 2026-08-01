@@ -219,7 +219,8 @@ const char *lhat_opcode_name(LhatOpcode op)
         case LHAT_BC_JUMP_FALSE:  return "jumpfalse";
         case LHAT_BC_YIELD:       return "yield";
         case LHAT_BC_RESUME:      return "resume";
-        case LHAT_BC_ISDONE:      return "isdone";
+        case LHAT_BC_ISCONT:      return "iscont";
+        case LHAT_BC_RESULT:      return "result";
         case LHAT_BC_RETURN:      return "return";
         case LHAT_BC_RETURN_NIL:  return "returnnil";
         case LHAT_BC_COUNT:       break;
@@ -287,8 +288,8 @@ void lhat_chunk_print(const LhatChunk *chunk, size_t index, char *out,
         case LHAT_BC_ISERROR:
         case LHAT_BC_ISNIL:
         case LHAT_BC_NEWINSTANCE:
-        case LHAT_BC_RESUME:
-        case LHAT_BC_ISDONE:
+        case LHAT_BC_ISCONT:
+        case LHAT_BC_RESULT:
             snprintf(out, size, "%-10s r%u r%u", name, lhat_a(i), lhat_b(i));
             break;
         default:

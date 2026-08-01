@@ -91,11 +91,15 @@ typedef struct LhatError {
     LhatTable *fields;
 } LhatError;
 
-// 5.11: one suspended frame, which is all 02 の 15.5 leaves room for -- a
-// yield^ is always written in the body of the procedure it suspends, so there
-// is never more than one frame to keep.
+// 02 の 15.11: a continuation. Calling a yieldable procedure runs the body,
+// and the yield^ it reaches answers the call with one of these -- so there is
+// no state before the body has started.
+//
+// 5.11: one suspended frame is all 02 の 15.5 leaves room for, since a yield^
+// is always written in the body of the procedure it suspends. One body is one
+// continuation, which is why a resume answers this same object again rather
+// than a second one standing for the same frame.
 typedef enum {
-    LHAT_COROUTINE_FRESH,      // never resumed; the body has not started
     LHAT_COROUTINE_SUSPENDED,  // stopped at a yield^
     LHAT_COROUTINE_RUNNING,
     LHAT_COROUTINE_DONE
@@ -123,6 +127,11 @@ typedef struct LhatCoroutine {
     const LhatTable *walking;
     size_t at_array;
     size_t at_entry;
+
+    // 02 の 15.11: what the yield^ that made this continuation put out. The
+    // caller reads it as `.result`, which is what makes a suspension usable
+    // without resuming it.
+    LhatValue result;
 
     LhatValue *registers;  // the saved frame, as wide as the body needs
     size_t register_count;

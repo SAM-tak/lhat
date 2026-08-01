@@ -938,7 +938,7 @@ static void test_for(void)
     CHECK_INTEGER(&r, 6);
     run_dispose(&r);
 
-    LHAT_TEST("a coroutine answers iterate with itself");
+    LHAT_TEST("a continuation answers iterate with itself");
     run_text(&r,
              "let^ gen = p^ { yield^ 4 yield^ 5 }\n"
              "let^ c = gen()\n"
@@ -946,6 +946,25 @@ static void test_for(void)
              "for^ v in^ c { total := total + v }\n"
              "return^ total\n");
     CHECK_INTEGER(&r, 9);
+    run_dispose(&r);
+
+    // 15.11 moves the resume to the end of the turn, since the walk arrives
+    // already standing on a value. What the clauses hold has to survive it --
+    // a resume takes over the registers above the one it answers into.
+    LHAT_TEST("in^ keeps what the loop's clauses hold across a turn");
+    run_text(&r,
+             "let^ gen = p^ { yield^ 1 yield^ 2 yield^ 3 }\n"
+             "let^ log = { s := 0 }\n"
+             "for^ v in^ gen() {\n"
+             "  first^:\n"
+             "    log.s := log.s * 10 + 7\n"
+             "  main^:\n"
+             "    log.s := log.s * 10 + v\n"
+             "  last^:\n"
+             "    log.s := log.s * 10 + v\n"
+             "}\n"
+             "return^ log.s\n");
+    CHECK_INTEGER(&r, 71233);  // first^, 1 2 3, then last^ sees the 3
     run_dispose(&r);
 
     // Anything with an iterate answers, which is what makes the rule a
@@ -1998,25 +2017,26 @@ static void test_definitions(void)
     run_dispose(&r);
 }
 
-// 02 の 15 章 and 5.11: a coroutine is one suspended frame, which is all
+// 02 の 15 章 and 5.11: a continuation is one suspended frame, which is all
 // 15.5 leaves room for.
 static void test_coroutines(void)
 {
     Run r;
 
-    // 15.5: the call answers a coroutine and the body has not started.
-    LHAT_TEST("calling a yieldable procedure runs nothing");
+    // 15.11: the call runs the body. What differs from an ordinary call is
+    // only what answers it -- the yield^ reached, not a return^.
+    LHAT_TEST("calling a yieldable procedure runs the body");
     run_text(&r,
              "let^ log = { n := 0 }\n"
              "let^ gen = p^ { log.n := 1 yield^ 0 }\n"
              "let^ c = gen()\n"
              "return^ log.n\n");
-    CHECK_INTEGER(&r, 0);
+    CHECK_INTEGER(&r, 1);
     run_dispose(&r);
 
-    // 15.5: not "up to the first yield^" -- the body starts at its top when
-    // the first resume comes, so each side of a yield^ runs on its own turn.
-    LHAT_TEST("the body starts at its top, not after the first yield^");
+    // 15.11: the body runs up to the first yield^ and no further, so each
+    // side of a yield^ still runs on its own turn.
+    LHAT_TEST("the body stops at the first yield^");
     run_text(&r,
              "let^ log = { s := 0 }\n"
              "let^ p = p^ {\n"
@@ -2026,18 +2046,18 @@ static void test_coroutines(void)
              "}\n"
              "let^ c = p()\n"
              "let^ made = log.s\n"
-             "c.resume()\n"
-             "let^ first = log.s\n"
-             "c.resume()\n"
-             "return^ made * 10000 + first * 100 + log.s\n");
-    CHECK_INTEGER(&r, 112);  // nothing, then 1, then 12
+             "c.resume(0)\n"
+             "return^ made * 100 + log.s\n");
+    CHECK_INTEGER(&r, 112);  // 1 at the call, then 12
     run_dispose(&r);
 
-    LHAT_TEST("resuming runs the body up to the yield^");
+    // 15.11: what the yield^ put out is on the continuation, as `result`. A
+    // suspension can be read without being driven, which is what lets a
+    // consumer decide whether to go on.
+    LHAT_TEST("the continuation carries what the yield^ put out");
     run_text(&r,
              "let^ gen = p^ { yield^ 7 }\n"
-             "let^ c = gen()\n"
-             "return^ c.resume()\n");
+             "return^ gen().result\n");
     CHECK_INTEGER(&r, 7);
     run_dispose(&r);
 
@@ -2045,21 +2065,35 @@ static void test_coroutines(void)
     run_text(&r,
              "let^ gen = p^ { yield^ 1 yield^ 2 yield^ 3 }\n"
              "let^ c = gen()\n"
-             "let^ a = c.resume()\n"
-             "let^ b = c.resume()\n"
+             "let^ a = c.result\n"
+             "let^ b = c.resume(0).result\n"
              "return^ a * 10 + b\n");
     CHECK_INTEGER(&r, 12);
     run_dispose(&r);
 
+    // 5.11: one body is one frame, so it is one continuation. A resume
+    // answers that same one again rather than a second standing for it.
+    LHAT_TEST("a resume answers the same continuation");
+    run_text(&r,
+             "let^ gen = p^ { yield^ 1 yield^ 2 }\n"
+             "let^ c = gen()\n"
+             "let^ d = c.resume(0)\n"
+             "return^ c.result * 10 + d.result\n");
+    CHECK_INTEGER(&r, 22);
+    run_dispose(&r);
+
+    // 15.11: the arguments are the call's, and the call is what runs, so they
+    // arrive before anything needs them. This is what plan B could not do.
     LHAT_TEST("the arguments of the call reach the body");
     run_text(&r,
              "let^ gen = p^n { yield^ n * 2 }\n"
-             "let^ c = gen(21)\n"
-             "return^ c.resume()\n");
+             "return^ gen(21).result\n");
     CHECK_INTEGER(&r, 42);
     run_dispose(&r);
 
-    // 15.4: bidirectional. Without this there is no await^ to build (15.4).
+    // 15.4: bidirectional. Without this there is no await^ to build. Under
+    // 15.11 every resume sends a value, since the body has already reached a
+    // yield^ by the time there is a continuation to resume.
     LHAT_TEST("yield^ answers what the resume sent");
     run_text(&r,
              "let^ gen = p^ {\n"
@@ -2067,8 +2101,7 @@ static void test_coroutines(void)
              "  yield^ got + 1\n"
              "}\n"
              "let^ c = gen()\n"
-             "c.resume()\n"
-             "return^ c.resume(41)\n");
+             "return^ c.resume(41).result\n");
     CHECK_INTEGER(&r, 42);
     run_dispose(&r);
 
@@ -2082,18 +2115,19 @@ static void test_coroutines(void)
              "  }\n"
              "}\n"
              "let^ c = counter()\n"
-             "c.resume()\n"
-             "c.resume()\n"
-             "return^ c.resume()\n");
+             "c.resume(0)\n"
+             "c.resume(0)\n"
+             "return^ c.result\n");
     CHECK_INTEGER(&r, 3);
     run_dispose(&r);
 
+    // 15.11: the return value is the other arm of what a resume answers, and
+    // it is a plain value -- not a continuation.
     LHAT_TEST("the last resume answers what the body returned");
     run_text(&r,
              "let^ gen = p^ { yield^ 1 return^ 9 }\n"
              "let^ c = gen()\n"
-             "c.resume()\n"
-             "return^ c.resume()\n");
+             "return^ c.resume(0)\n");
     CHECK_INTEGER(&r, 9);
     run_dispose(&r);
 
@@ -2101,14 +2135,13 @@ static void test_coroutines(void)
     run_text(&r,
              "let^ gen = p^ { yield^ 1 }\n"
              "let^ c = gen()\n"
-             "c.resume()\n"
-             "c.resume()\n"
-             "c.resume()\n"
+             "c.resume(0)\n"
+             "c.resume(0)\n"
              "return^ 0\n");
     LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_DEAD_COROUTINE);
     run_dispose(&r);
 
-    LHAT_TEST("two coroutines from one procedure are separate");
+    LHAT_TEST("two continuations from one procedure are separate");
     run_text(&r,
              "let^ counter = p^ {\n"
              "  let^ n = 0\n"
@@ -2116,27 +2149,29 @@ static void test_coroutines(void)
              "}\n"
              "let^ a = counter()\n"
              "let^ b = counter()\n"
-             "a.resume()\n"
-             "a.resume()\n"
-             "return^ b.resume()\n");
+             "a.resume(0)\n"
+             "a.resume(0)\n"
+             "return^ b.result\n");
     CHECK_INTEGER(&r, 1);
     run_dispose(&r);
 
     // 15.5 again: the caller of a yieldable procedure need not be yieldable,
     // so nothing has to be marked on the way up.
-    LHAT_TEST("an ordinary procedure may drive a coroutine");
+    LHAT_TEST("an ordinary procedure may drive a continuation");
     run_text(&r,
              "let^ gen = p^ { yield^ 1 yield^ 2 }\n"
              "let^ sum = p^ {\n"
              "  let^ c = gen()\n"
-             "  return^ c.resume() + c.resume()\n"
+             "  return^ c.result + c.resume(0).result\n"
              "}\n"
              "return^ sum()\n");
     CHECK_INTEGER(&r, 3);
     run_dispose(&r);
 
-    // 02 の 10.7: a coroutine dropped while suspended still runs what is
-    // pending, and 12.6 says dispose() is how that is asked for.
+    // 02 の 10.7: a continuation dropped while suspended still runs what is
+    // pending, and 12.6 says dispose() is how that is asked for. 15.11 takes
+    // away the case that used to need excluding here -- one that never
+    // started -- since there is no such state any longer.
     LHAT_TEST("disposing runs the finally^ the body was inside");
     run_text(&r,
              "let^ log = { n := 0 }\n"
@@ -2148,7 +2183,6 @@ static void test_coroutines(void)
              "  }\n"
              "}\n"
              "let^ c = gen()\n"
-             "c.resume()\n"
              "c.dispose()\n"
              "return^ log.n\n");
     CHECK_INTEGER(&r, 5);
@@ -2167,43 +2201,25 @@ static void test_coroutines(void)
              "  yield^ 2\n"
              "}\n"
              "let^ c = gen()\n"
-             "c.resume()\n"
-             "c.resume()\n"
+             "c.resume(0)\n"
              "c.dispose()\n"
              "return^ log.n\n");
     CHECK_INTEGER(&r, 1);
     run_dispose(&r);
 
-    LHAT_TEST("disposing one that never started has nothing to run");
-    run_text(&r,
-             "let^ log = { n := 0 }\n"
-             "let^ gen = p^ {\n"
-             "  do^{\n"
-             "    yield^ 1\n"
-             "  finally^:\n"
-             "    log.n := 5\n"
-             "  }\n"
-             "}\n"
-             "let^ c = gen()\n"
-             "c.dispose()\n"
-             "return^ log.n\n");
-    CHECK_INTEGER(&r, 0);
-    run_dispose(&r);
-
-    LHAT_TEST("a disposed coroutine cannot be resumed");
+    LHAT_TEST("a disposed continuation cannot be resumed");
     run_text(&r,
              "let^ gen = p^ { yield^ 1 yield^ 2 }\n"
              "let^ c = gen()\n"
-             "c.resume()\n"
              "c.dispose()\n"
-             "c.resume()\n"
+             "c.resume(0)\n"
              "return^ 0\n");
     LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_DEAD_COROUTINE);
     run_dispose(&r);
 
-    // 12.6: dispose() is what with^ calls, so a coroutine goes into a with^
-    // like any other resource.
-    LHAT_TEST("with^ disposes a coroutine at the end of the block");
+    // 12.6: dispose() is what with^ calls, so a continuation goes into a
+    // with^ like any other resource.
+    LHAT_TEST("with^ disposes a continuation at the end of the block");
     run_text(&r,
              "let^ log = { n := 0 }\n"
              "let^ gen = p^ {\n"
@@ -2215,13 +2231,13 @@ static void test_coroutines(void)
              "}\n"
              "with^ c := gen()\n"
              "{\n"
-             "  c.resume()\n"
+             "  let^ seen = c.result\n"
              "}\n"
              "return^ log.n\n");
     CHECK_INTEGER(&r, 3);
     run_dispose(&r);
 
-    // 10.7: there is nothing waiting to resume a coroutine being disposed.
+    // 10.7: there is nothing waiting to resume a continuation being disposed.
     LHAT_TEST("yield^ during disposal is a fault");
     run_text(&r,
              "let^ gen = p^ {\n"
@@ -2232,40 +2248,39 @@ static void test_coroutines(void)
              "  }\n"
              "}\n"
              "let^ c = gen()\n"
-             "c.resume()\n"
              "c.dispose()\n"
              "return^ 0\n");
     LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_YIELD_OUTSIDE);
     run_dispose(&r);
 
-    // 02 の 15.8: what a plain call does not do, yieldall^ does. The inner
-    // one's yields reach the outer one's resumer.
+    // 02 の 15.8: delegation makes the inner one's suspensions the outer
+    // one's, which is what a plain call does not do.
     LHAT_TEST("yieldall^ forwards the inner one's yields");
     run_text(&r,
              "let^ a = p^ { yield^ 1 yield^ 2 }\n"
              "let^ b = p^ { yieldall^ a() yield^ 3 }\n"
              "let^ c = b()\n"
-             "let^ x = c.resume()\n"
-             "let^ y = c.resume()\n"
-             "let^ z = c.resume()\n"
+             "let^ x = c.result\n"
+             "let^ y = c.resume(0).result\n"
+             "let^ z = c.resume(0).result\n"
              "return^ x * 100 + y * 10 + z\n");
     CHECK_INTEGER(&r, 123);
     run_dispose(&r);
 
-    // 15.8: the value of the delegation is the inner one's return value, the
-    // shape PEP 380 gave a generator's return.
+    // 15.8 and 15.11: the value is what is left once the continuation arm is
+    // dropped, which for a body that returns is its return value -- the shape
+    // PEP 380 gave a generator's return.
     LHAT_TEST("the value of yieldall^ is the inner return");
     run_text(&r,
              "let^ a = p^ { yield^ 1 return^ 9 }\n"
              "let^ b = p^ { let^ r = yieldall^ a() yield^ r }\n"
              "let^ c = b()\n"
-             "c.resume()\n"
-             "return^ c.resume()\n");
+             "return^ c.resume(0).result\n");
     CHECK_INTEGER(&r, 9);
     run_dispose(&r);
 
     // 15.4 through a delegation: what the resume sends reaches the inner one.
-    LHAT_TEST("what the resume sends reaches the inner coroutine");
+    LHAT_TEST("what the resume sends reaches the inner continuation");
     run_text(&r,
              "let^ a = p^ {\n"
              "  let^ got = yield^ 0\n"
@@ -2273,8 +2288,7 @@ static void test_coroutines(void)
              "}\n"
              "let^ b = p^ { let^ r = yieldall^ a() yield^ r }\n"
              "let^ c = b()\n"
-             "c.resume()\n"
-             "return^ c.resume(41)\n");
+             "return^ c.resume(41).result\n");
     CHECK_INTEGER(&r, 42);
     run_dispose(&r);
 
@@ -2284,9 +2298,9 @@ static void test_coroutines(void)
              "let^ b = p^ { yieldall^ a() yield^ 2 }\n"
              "let^ d = p^ { yieldall^ b() yield^ 3 }\n"
              "let^ c = d()\n"
-             "let^ x = c.resume()\n"
-             "let^ y = c.resume()\n"
-             "let^ z = c.resume()\n"
+             "let^ x = c.result\n"
+             "let^ y = c.resume(0).result\n"
+             "let^ z = c.resume(0).result\n"
              "return^ x * 100 + y * 10 + z\n");
     CHECK_INTEGER(&r, 123);
     run_dispose(&r);
@@ -2295,25 +2309,37 @@ static void test_coroutines(void)
     run_text(&r,
              "let^ a = p^ { yield^ 5 }\n"
              "let^ b = p^ { yieldall^ a() }\n"
-             "let^ c = b()\n"
-             "return^ c.resume()\n");
+             "return^ b().result\n");
     CHECK_INTEGER(&r, 5);
     run_dispose(&r);
 
-    // 15.8 の 15.5: the plain call is what does nothing, which is the whole
-    // reason the delegation had to be written.
-    LHAT_TEST("a plain call still only makes a coroutine");
+    // 15.11: a plain call runs the body. What it does not do is pass the
+    // inner one's suspensions on -- that is the whole of what yieldall^ adds,
+    // and 15.8's rule against discarding the answer is what catches leaving
+    // it out.
+    LHAT_TEST("a plain call runs the body but does not delegate");
     run_text(&r,
              "let^ log = { n := 0 }\n"
              "let^ a = p^ { log.n := 1 yield^ 0 }\n"
              "let^ b = p^ { a() yield^ 9 }\n"
              "let^ c = b()\n"
-             "c.resume()\n"
-             "return^ log.n\n");
-    CHECK_INTEGER(&r, 0);
+             "return^ log.n * 10 + c.result\n");
+    CHECK_INTEGER(&r, 19);
     run_dispose(&r);
 
-    LHAT_TEST("yield^ outside a coroutine is a fault");
+    // 15.9: yield^ is not overloaded, so this hands the inner continuation to
+    // the consumer instead of delegating to it. One suspension, not however
+    // many the inner one has -- and the consumer decides when to drive it.
+    LHAT_TEST("yield^ of a yieldable call passes the continuation out");
+    run_text(&r,
+             "let^ a = p^ { yield^ 5 }\n"
+             "let^ b = p^ { yield^ a() }\n"
+             "let^ c = b()\n"
+             "return^ c.result.result\n");
+    CHECK_INTEGER(&r, 5);
+    run_dispose(&r);
+
+    LHAT_TEST("yield^ outside a yieldable procedure is a fault");
     run_text(&r, "yield^ 1\nreturn^ 0\n");
     LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_YIELD_OUTSIDE);
     run_dispose(&r);
@@ -2486,9 +2512,9 @@ static void test_collection(void)
     CHECK_INTEGER(&r, 42);
     run_dispose(&r);
 
-    // A suspended coroutine holds its registers, and they are roots through
+    // A suspended continuation holds its registers, and they are roots through
     // it rather than through any frame.
-    LHAT_TEST("a suspended coroutine keeps what its registers hold");
+    LHAT_TEST("a suspended continuation keeps what its registers hold");
     run_text(&r,
              "let^ gen = p^ {\n"
              "  let^ mine = { n := 7 }\n"
@@ -2496,9 +2522,8 @@ static void test_collection(void)
              "  yield^ mine.n\n"
              "}\n"
              "let^ c = gen()\n"
-             "c.resume()\n"
              "repeat^ 2000 { let^ waste = { a := 1 } }\n"
-             "return^ c.resume()\n");
+             "return^ c.resume(0).result\n");
     CHECK_INTEGER(&r, 7);
     run_dispose(&r);
 

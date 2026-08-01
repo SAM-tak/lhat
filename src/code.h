@@ -88,13 +88,18 @@ typedef enum {
     LHAT_BC_POPCLEANUP,   // A   run the cleanups above depth A, innermost first
     LHAT_BC_ENDCLEANUP,   //     the end of a cleanup body
 
-    // 02 の 15.4: bidirectional. The value goes out and the one the resume
-    // supplies comes back into the same register.
+    // 02 の 15.4 and 15.11: bidirectional, and what the call it suspends
+    // answers is the continuation. The value goes out through the
+    // continuation's `result`, and the one the resume supplies comes back into
+    // the same register.
     LHAT_BC_YIELD,      // A     yield R[A]; R[A] = what the resume sent
 
-    // 02 の 15.8: delegation, which compiles to the loop 5.7 writes out.
-    LHAT_BC_RESUME,     // A B   R[A] = resume the coroutine R[B], sending R[A]
-    LHAT_BC_ISDONE,     // A B   R[A] = the coroutine R[B] has finished
+    // 02 の 15.11: driving a continuation. What a resume answers is the
+    // continuation again while the body is still suspended, and the returned
+    // value once it is over -- so ISCONT is the narrowing 13.11 asks for.
+    LHAT_BC_RESUME,     // A B C R[A] = resume the continuation R[B], sending R[C]
+    LHAT_BC_ISCONT,     // A B   R[A] = R[B] is a continuation
+    LHAT_BC_RESULT,     // A B   R[A] = the continuation R[B]'s result
 
     LHAT_BC_RETURN,     // A     return R[A]
     LHAT_BC_RETURN_NIL,

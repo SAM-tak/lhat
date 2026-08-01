@@ -122,7 +122,10 @@ LhatCoroutine *lhat_coroutine_new(LhatHeap *heap, const LhatClosure *closure,
         coroutine->registers[i] = lhat_nil();
     }
     coroutine->closure = closure;
-    coroutine->state = LHAT_COROUTINE_FRESH;
+    // 15.11: the body is about to run, and this only becomes a continuation
+    // the program can see once a yield^ has suspended it.
+    coroutine->state = LHAT_COROUTINE_RUNNING;
+    coroutine->result = lhat_nil();
     coroutine->register_count = registers;
     return coroutine;
 }
@@ -135,7 +138,11 @@ LhatCoroutine *lhat_table_iterator(LhatHeap *heap, const LhatTable *table)
     if (walk == NULL) {
         return NULL;
     }
-    walk->state = LHAT_COROUTINE_FRESH;
+    // 15.11: a walk is handed over already standing on its first pair, the
+    // same as a body that has reached its first yield^. The caller fills
+    // `result` in, since making the pair needs the heap.
+    walk->state = LHAT_COROUTINE_SUSPENDED;
+    walk->result = lhat_nil();
     walk->source = LHAT_COROUTINE_TABLE;
     walk->walking = table;
     return walk;
@@ -418,7 +425,8 @@ bool lhat_gc_children(LhatGray *gray, LhatObject *object)
                     return false;
                 }
             }
-            return reach(gray, (LhatObject *)(void *)co->closure) &&
+            return lhat_gc_reach(gray, co->result) &&
+                   reach(gray, (LhatObject *)(void *)co->closure) &&
                    reach(gray, (LhatObject *)(void *)co->walking);
         }
 
