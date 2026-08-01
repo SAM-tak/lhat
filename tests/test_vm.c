@@ -2381,6 +2381,108 @@ static void test_coroutines(void)
     LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_ARITY);
     run_dispose(&r);
 
+    // 15.6改: the two questions, which is how a consumer picks an operation
+    // rather than finding out by faulting.
+    LHAT_TEST("a fresh coroutine has neither started nor finished");
+    run_text(&r,
+             "let^ gen = p^ { yield^ 1 }\n"
+             "let^ c = gen()\n"
+             "return^ c.started() or^ c.done()\n");
+    CHECK_BOOL(&r, false);
+    run_dispose(&r);
+
+    LHAT_TEST("a suspended one has started and has not finished");
+    run_text(&r,
+             "let^ gen = p^ { yield^ 1 yield^ 2 }\n"
+             "let^ c = gen()\n"
+             "c.start()\n"
+             "return^ c.started() and^ !c.done()\n");
+    CHECK_BOOL(&r, true);
+    run_dispose(&r);
+
+    LHAT_TEST("a finished one answers both");
+    run_text(&r,
+             "let^ gen = p^ { yield^ 1 }\n"
+             "let^ c = gen()\n"
+             "c.start()\n"
+             "c.resume(nil^)\n"
+             "return^ c.started() and^ c.done()\n");
+    CHECK_BOOL(&r, true);
+    run_dispose(&r);
+
+    // The reason both exist: what a resume answers is Y|Ret (13.9), and a
+    // body that yields nil^ and ends without a value answers nil^ either
+    // way. Nothing in the value says which one it was.
+    LHAT_TEST("done() tells the end from a yield^ of the same value");
+    run_text(&r,
+             "let^ gen = p^ { yield^ }\n"
+             "let^ c = gen()\n"
+             "let^ log = { s := 0 }\n"
+             "c.start()\n"
+             "if^ c.done() { log.s := log.s + 1 }\n"
+             "c.resume(nil^)\n"
+             "if^ c.done() { log.s := log.s + 10 }\n"
+             "return^ log.s\n");
+    CHECK_INTEGER(&r, 10);  // suspended, then finished
+    run_dispose(&r);
+
+    // 10.7: disposal ends the coroutine without the body reaching its end.
+    LHAT_TEST("disposal finishes it too");
+    run_text(&r,
+             "let^ gen = p^ { yield^ 1 yield^ 2 }\n"
+             "let^ c = gen()\n"
+             "c.start()\n"
+             "c.dispose()\n"
+             "return^ c.done()\n");
+    CHECK_BOOL(&r, true);
+    run_dispose(&r);
+
+    // Neither runs the body, so neither is refused on a coroutine that every
+    // other operation would fault on.
+    LHAT_TEST("both still answer after the coroutine is dead");
+    run_text(&r,
+             "let^ gen = p^ { yield^ 1 }\n"
+             "let^ c = gen()\n"
+             "c.start()\n"
+             "c.resume(nil^)\n"
+             "return^ c.done() and^ c.started()\n");
+    CHECK_BOOL(&r, true);
+    run_dispose(&r);
+
+    LHAT_TEST("done() takes no arguments");
+    run_text(&r,
+             "let^ gen = p^ { yield^ 1 }\n"
+             "let^ c = gen()\n"
+             "c.done(1)\n"
+             "return^ 0\n");
+    LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_ARITY);
+    run_dispose(&r);
+
+    LHAT_TEST("started() takes no arguments");
+    run_text(&r,
+             "let^ gen = p^ { yield^ 1 }\n"
+             "let^ c = gen()\n"
+             "c.started(1)\n"
+             "return^ 0\n");
+    LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_ARITY);
+    run_dispose(&r);
+
+    // The pair is enough to drive a coroutine that was handed over rather
+    // than made here -- which done() alone could not do, since a fresh one
+    // and a suspended one both answer false.
+    LHAT_TEST("the two together drive one of unknown state");
+    run_text(&r,
+             "let^ gen = p^ { yield^ 1 yield^ 2 yield^ 3 }\n"
+             "let^ drain = p^ c {\n"
+             "  let^ n = 0\n"
+             "  if^ !c.started() { c.start() n := n + 1 }\n"
+             "  repeat^ while^ !c.done() { c.resume(nil^) n := n + 1 }\n"
+             "  return^ n\n"
+             "}\n"
+             "return^ drain(gen())\n");
+    CHECK_INTEGER(&r, 4);  // three yields, then the end
+    run_dispose(&r);
+
     // yieldall^ drives a freshly made coroutine on its own, with no start()
     // written anywhere -- 15.8's whole point is that the delegation handles
     // this by itself.

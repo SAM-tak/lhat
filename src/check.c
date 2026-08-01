@@ -1103,6 +1103,23 @@ static LhatType *infer_member(Checker *c, const LhatNode *node)
             signature->v.func.result = target;  // 16.3: itself
             return signature;
         }
+        // 15.6改: what a resume answers is a union of Y and the result, and
+        // nothing keeps those two apart -- a body that yields nil^ and one
+        // that has ended answer the same value. So the state is asked for
+        // rather than read out of the value.
+        if (name_is(name, length, "done")) {
+            LhatType *signature = lhat_type_func(c->result->types, false);
+            signature->v.func.result = simple(c, LHAT_TYPE_BOOL);
+            return signature;
+        }
+        // done() alone leaves a fresh coroutine and a suspended one looking
+        // alike, so a consumer handed one it did not make could not tell
+        // which of start() and resume() this is.
+        if (name_is(name, length, "started")) {
+            LhatType *signature = lhat_type_func(c->result->types, false);
+            signature->v.func.result = simple(c, LHAT_TYPE_BOOL);
+            return signature;
+        }
         report(c, node, LHAT_CHECK_ERR_NO_MEMBER);
         return simple(c, LHAT_TYPE_UNKNOWN);
     } else {

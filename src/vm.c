@@ -2702,7 +2702,7 @@ static LhatTable *table_of(LhatValue value)
     return NULL;
 }
 
-// The two operations 02 の 12.6 and 15.6 give a coroutine. The rest of the
+// The operations 02 の 12.6 and 15.6 give a coroutine. The rest of the
 // standard library is M2 and will not go through here.
 static bool native_named(LhatValue key, LhatNativeKind *out)
 {
@@ -2726,6 +2726,14 @@ static bool native_named(LhatValue key, LhatNativeKind *out)
         *out = LHAT_NATIVE_ITERATE;
         return true;
     }
+    if (name->length == 4 && memcmp(name->text, "done", 4) == 0) {
+        *out = LHAT_NATIVE_DONE;
+        return true;
+    }
+    if (name->length == 7 && memcmp(name->text, "started", 7) == 0) {
+        *out = LHAT_NATIVE_STARTED;
+        return true;
+    }
     return false;
 }
 
@@ -2739,7 +2747,7 @@ static bool builtin_member(LhatValue on, LhatValue key, LhatNativeKind *out)
         return false;
     }
     if (lhat_is_object_kind(on, LHAT_OBJECT_COROUTINE)) {
-        return true;  // start, resume, dispose and iterate all apply
+        return true;  // every one of them applies to a coroutine
     }
     return *out == LHAT_NATIVE_ITERATE &&
            (lhat_is_object_kind(on, LHAT_OBJECT_TABLE) ||
@@ -3324,6 +3332,22 @@ LhatRunResult lhat_run(const LhatProto *proto)
                     }
                     LhatCoroutine *co =
                         (LhatCoroutine *)lhat_as_object(native->bound);
+
+                    // 15.6改: the two questions, answered before any of the
+                    // guards below. Neither runs the body, so both hold on a
+                    // finished coroutine, where everything else faults, and
+                    // on a fresh one, where resume does.
+                    if (native->kind == LHAT_NATIVE_DONE ||
+                        native->kind == LHAT_NATIVE_STARTED) {
+                        if (b != 0) {
+                            return finish(m, LHAT_RUN_ARITY, lhat_nil(), at);
+                        }
+                        registers[a] = lhat_bool(
+                            native->kind == LHAT_NATIVE_DONE
+                                ? co->state == LHAT_COROUTINE_DONE
+                                : co->state != LHAT_COROUTINE_FRESH);
+                        break;
+                    }
 
                     // 15.2改: the machine holds this itself rather than
                     // trusting the checker to have (vm.h's opening comment).

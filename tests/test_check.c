@@ -1354,6 +1354,37 @@ static void test_coroutines(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
+    // 15.6改: and the two questions, which answer bool^ whatever the three
+    // types of 13.9 turn out to be.
+    LHAT_TEST("a coroutine carries done and started");
+    check_text(&u,
+               "let^ gen = p^ { yield^ 1 }\n"
+               "let^ c = gen()\n"
+               "let^ d : bool^ = c.done()\n"
+               "let^ s : bool^ = c.started()\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // The case that made them necessary: Y is nil^ and the body ends without
+    // a value, so the union a resume answers is nil^ alone and carries no
+    // sign of which of the two happened.
+    LHAT_TEST("they answer even where the resume union says nothing");
+    check_text(&u,
+               "let^ gen = p^ { yield^ }\n"
+               "let^ c = gen()\n"
+               "let^ v : nil^ = c.start()\n"
+               "let^ d : bool^ = c.done()\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("neither takes an argument");
+    check_text(&u,
+               "let^ gen = p^ { yield^ 1 }\n"
+               "let^ c = gen()\n"
+               "c.done(1)\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_ARITY);
+    unit_dispose(&u);
+
     LHAT_TEST("and nothing else");
     check_text(&u,
                "let^ gen = p^ { yield^ 1 }\n"

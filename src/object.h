@@ -181,12 +181,16 @@ typedef struct LhatOverload {
 } LhatOverload;
 
 // An operation the runtime provides rather than the program. 02 の 12.6 and
-// 15.6 give a coroutine three of them; the rest of the standard library is M2.
+// 15.6 give a coroutine these; the rest of the standard library is M2.
 typedef enum {
     LHAT_NATIVE_START,    // 15.2改: runs a fresh coroutine from the top
     LHAT_NATIVE_RESUME,
     LHAT_NATIVE_DISPOSE,
-    LHAT_NATIVE_ITERATE   // 02 の 16.3: answers the coroutine `in^` walks
+    LHAT_NATIVE_ITERATE,  // 02 の 16.3: answers the coroutine `in^` walks
+    // 15.6改: the two questions asked before choosing an operation. Neither
+    // runs the body, so both answer whatever state the coroutine is in.
+    LHAT_NATIVE_DONE,     // the body has run to its end
+    LHAT_NATIVE_STARTED   // start() has already run, so resume() is the way on
 } LhatNativeKind;
 
 typedef struct LhatNative {
