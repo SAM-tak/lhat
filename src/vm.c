@@ -1185,6 +1185,7 @@ static bool binary_opcode(LhatOpKind op, LhatOpcode *out)
         case LHAT_OP_FLOORDIV: *out = LHAT_BC_IDIV; return true;
         case LHAT_OP_MOD:      *out = LHAT_BC_MOD;  return true;
         case LHAT_OP_POW:      *out = LHAT_BC_POW;  return true;
+        case LHAT_OP_CONCAT:   *out = LHAT_BC_CONCAT; return true;
         case LHAT_OP_EQ:       *out = LHAT_BC_EQ;   return true;
         case LHAT_OP_NE:       *out = LHAT_BC_NE;   return true;
         case LHAT_OP_LT:       *out = LHAT_BC_LT;   return true;
@@ -2715,6 +2716,27 @@ LhatRunResult lhat_run(const LhatProto *proto)
             case LHAT_BC_SETUPVAL:
                 *frame->closure->upvalues[b]->location = registers[a];
                 break;
+
+            // 02 の 11.2: '..' is concatenation in general, and strings are
+            // the case that is settled. 11.3 leaves the rest to the
+            // operator's own definition, which needs op^.
+            case LHAT_BC_CONCAT: {
+                if (!lhat_is_object_kind(registers[b], LHAT_OBJECT_STRING) ||
+                    !lhat_is_object_kind(registers[cc], LHAT_OBJECT_STRING)) {
+                    return finish(m, LHAT_RUN_TYPE_ERROR, lhat_nil(), at);
+                }
+                const LhatString *left =
+                    (const LhatString *)lhat_as_object(registers[b]);
+                const LhatString *right =
+                    (const LhatString *)lhat_as_object(registers[cc]);
+                LhatString *joined =
+                    lhat_string_concat(&m->objects, left, right);
+                if (joined == NULL) {
+                    return finish(m, LHAT_RUN_OUT_OF_MEMORY, lhat_nil(), at);
+                }
+                registers[a] = lhat_object((LhatObject *)joined);
+                break;
+            }
 
             case LHAT_BC_CLOSE:
                 close_upvalues(m, &registers[a]);

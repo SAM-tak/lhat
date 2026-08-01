@@ -186,6 +186,7 @@ const char *lhat_opcode_name(LhatOpcode op)
         case LHAT_BC_IDIV:        return "idiv";
         case LHAT_BC_MOD:         return "mod";
         case LHAT_BC_POW:         return "pow";
+        case LHAT_BC_CONCAT:      return "concat";
         case LHAT_BC_NEG:         return "neg";
         case LHAT_BC_NOT:         return "not";
         case LHAT_BC_EQ:          return "eq";

@@ -535,6 +535,43 @@ static void test_strings(void)
     CHECK_BOOL(&r, false);
     run_dispose(&r);
 
+    // 02 の 11.2: '..' is concatenation in general; strings are the case
+    // that is settled, and 14.5's composition of definitions is the other.
+    LHAT_TEST("'..' joins two strings");
+    run_text(&r, "return^ \"ab\" .. \"cd\"\n");
+    CHECK_STRING(&r, "abcd");
+    run_dispose(&r);
+
+    LHAT_TEST("and joins a run of them right to left");
+    run_text(&r, "return^ \"a\" .. \"b\" .. \"c\"\n");
+    CHECK_STRING(&r, "abc");
+    run_dispose(&r);
+
+    LHAT_TEST("an empty string joins to nothing");
+    run_text(&r, "return^ \"\" .. \"x\" .. \"\"\n");
+    CHECK_STRING(&r, "x");
+    run_dispose(&r);
+
+    LHAT_TEST("the result is a string like any other");
+    run_text(&r, "return^ (\"a\" .. \"b\") = \"ab\"\n");
+    CHECK_BOOL(&r, true);
+    run_dispose(&r);
+
+    LHAT_TEST("neither operand is changed");
+    run_text(&r,
+             "let^ a = \"one\"\n"
+             "let^ b = a .. \"two\"\n"
+             "return^ a\n");
+    CHECK_STRING(&r, "one");
+    run_dispose(&r);
+
+    // 11.3 leaves the rest to the operator's own definition, which needs
+    // op^. 5.1 has the instruction refuse what it cannot do.
+    LHAT_TEST("joining a number to a string is refused at run time");
+    run_text(&r, "return^ \"a\" .. 1\n");
+    LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_TYPE_ERROR);
+    run_dispose(&r);
+
     LHAT_TEST("arithmetic on a string is refused at run time");
     run_text(&r, "return^ \"a\" + 1\n");
     LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_TYPE_ERROR);

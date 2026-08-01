@@ -50,6 +50,24 @@ LhatString *lhat_string_new(LhatObject **owner, const char *text, size_t length)
     return string;
 }
 
+LhatString *lhat_string_concat(LhatObject **owner, const LhatString *left,
+                               const LhatString *right)
+{
+    size_t length = left->length + right->length;
+    LhatString *joined =
+        (LhatString *)allocate(owner, sizeof *joined + length + 1,
+                               LHAT_OBJECT_STRING);
+    if (joined == NULL) {
+        return NULL;
+    }
+    memcpy(joined->text, left->text, left->length);
+    memcpy(joined->text + left->length, right->text, right->length);
+    joined->text[length] = '\0';
+    joined->length = length;
+    joined->hash = lhat_string_hash(joined->text, length);
+    return joined;
+}
+
 LhatTable *lhat_table_new(LhatObject **owner)
 {
     return (LhatTable *)allocate(owner, sizeof(LhatTable), LHAT_OBJECT_TABLE);

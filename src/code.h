@@ -36,6 +36,7 @@ typedef enum {
     LHAT_BC_IDIV,       // 04 の 11.2: fails on zero
     LHAT_BC_MOD,        // the same
     LHAT_BC_POW,
+    LHAT_BC_CONCAT,     // A B C R[A] = R[B] .. R[C]  (02 の 11.2)
     LHAT_BC_NEG,        // A B   R[A] = -R[B]
     LHAT_BC_NOT,        // A B   R[A] = !R[B]
 

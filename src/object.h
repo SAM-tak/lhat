@@ -168,6 +168,11 @@ bool lhat_string_equal(const LhatString *a, const LhatString *b);
 
 uint32_t lhat_string_hash(const char *text, size_t length);
 
+// 02 の 11.2: '..' on two strings. The bytes are copied into a new string;
+// neither operand is touched.
+LhatString *lhat_string_concat(LhatObject **owner, const LhatString *left,
+                               const LhatString *right);
+
 // ---------------------------------------------------------------------------
 // Tables
 // ---------------------------------------------------------------------------
