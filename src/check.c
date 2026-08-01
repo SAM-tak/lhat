@@ -1036,6 +1036,37 @@ static LhatType *infer_member(Checker *c, const LhatNode *node)
                                    simple(c, LHAT_TYPE_NIL));
         }
         members = target->v.error.fields;
+    } else if (target->kind == LHAT_TYPE_CORO) {
+        // 05 の 8.5: a coroutine carries these without importing anything.
+        // 02 の 12.6 spells dispose(), 15.6 puts resume beside it, and 16.3
+        // makes iterate what `in^` asks for.
+        if (name_is(name, length, "resume")) {
+            // 13.9: what a resume answers is the union of what the coroutine
+            // yields and what it returns -- telling the two apart is what the
+            // consumer does.
+            LhatType *answer =
+                lhat_type_union(c->result->types, target->v.coroutine.produce,
+                                target->v.coroutine.result);
+            // The first resume sends nothing, since the body has not reached
+            // a yield^ yet. 13.4 keeps defaults out of a type, so there is no
+            // way to write "one, or none"; the value is left variadic and the
+            // count is not pinned.
+            LhatType *signature = lhat_type_func(c->result->types, false);
+            signature->v.func.variadic = target->v.coroutine.receive;
+            signature->v.func.result = answer;
+            return signature;
+        }
+        if (name_is(name, length, "dispose")) {
+            // 12.7: it answers nothing, which is what 12.5 checks for.
+            return lhat_type_func(c->result->types, false);
+        }
+        if (name_is(name, length, "iterate")) {
+            LhatType *signature = lhat_type_func(c->result->types, false);
+            signature->v.func.result = target;  // 16.3: itself
+            return signature;
+        }
+        report(c, node, LHAT_CHECK_ERR_NO_MEMBER);
+        return simple(c, LHAT_TYPE_UNKNOWN);
     } else {
         report(c, node, LHAT_CHECK_ERR_NO_MEMBER);
         return simple(c, LHAT_TYPE_UNKNOWN);

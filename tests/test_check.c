@@ -1343,6 +1343,52 @@ static void test_coroutines(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
+    // 05 の 8.5: a coroutine carries these without anything being imported.
+    LHAT_TEST("a coroutine carries resume, dispose and iterate");
+    check_text(&u,
+               "let^ gen = p^ { yield^ 1 }\n"
+               "let^ c = gen()\n"
+               "let^ v = c.resume()\n"
+               "c.dispose()\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("and nothing else");
+    check_text(&u,
+               "let^ gen = p^ { yield^ 1 }\n"
+               "let^ c = gen()\n"
+               "let^ v = c.nowhere\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_NO_MEMBER);
+    unit_dispose(&u);
+
+    // 15.5: the arguments belong to the call, which binds the parameters.
+    // 15.4's resume carries the one value a yield^ answers with, which 13.9
+    // types as the coroutine's receive type -- a different thing.
+    LHAT_TEST("the arguments belong to the call");
+    check_text(&u,
+               "let^ p = p^ x:number^, y:string^ { let^ a = yield^ 10 return^ \"a\" }\n"
+               "let^ c = p(1, \"b\")\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("and the call still checks them");
+    check_text(&u,
+               "let^ p = p^ x:number^, y:string^ { yield^ 10 }\n"
+               "let^ c = p(1)\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_ARITY);
+    unit_dispose(&u);
+
+    // 13.9: what a resume answers is the union of the yield type and the
+    // return type, which the consumer tells apart. The return half reaches
+    // through; the yield half is not inferred yet (02 の 15.8).
+    LHAT_TEST("what a resume answers includes the return type");
+    check_text(&u,
+               "let^ p = p^ -> string^ { yield^ 10 return^ \"a\" }\n"
+               "let^ c = p()\n"
+               "let^ s : string^ = c.resume()\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
     LHAT_TEST("yieldall^ needs a coroutine");
     check_text(&u,
                "let^ plain = f^ -> number^ { return^ 1 }\n"
