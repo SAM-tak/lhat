@@ -110,7 +110,8 @@ static void test_dependencies(void)
         program_with(&program, &disk, bad, 2);
         const LhatUnit *main_unit = lhat_program_check(&program, "main.lh");
         LHAT_CHECK(main_unit != NULL, "the unit loaded");
-        LHAT_CHECK(main_unit->checked.diagnostic_count > 0, "reported");
+        LHAT_CHECK(main_unit != NULL && main_unit->checked.diagnostic_count > 0,
+                   "reported");
     }
     lhat_program_dispose(&program);
 
@@ -205,7 +206,7 @@ static void test_loading(void)
         LHAT_CHECK(main_unit != NULL, "the main unit loaded");
         LHAT_CHECK(has_program_error(&program, LHAT_PROGRAM_ERR_CANNOT_READ),
                    "the missing unit is named");
-        LHAT_CHECK(main_unit->checked.diagnostic_count > 0,
+        LHAT_CHECK(main_unit != NULL && main_unit->checked.diagnostic_count > 0,
                    "and the require^ is marked");
     }
     lhat_program_dispose(&program);

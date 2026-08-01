@@ -1429,7 +1429,8 @@ static void test_catch_and_try(void)
     run_dispose(&r);
 
     // 02 の 11.7: '??' is the same shape, asking about nil^.
-    LHAT_TEST("'??' supplies a value for a missing key");
+    // The escape keeps "??'" from being read as a trigraph for '^'.
+    LHAT_TEST("'?\?' supplies a value for a missing key");
     run_text(&r, "let^ t = { }\nreturn^ t[\"nowhere\"] ?? 5\n");
     CHECK_INTEGER(&r, 5);
     run_dispose(&r);
@@ -1441,7 +1442,7 @@ static void test_catch_and_try(void)
 
     // 11.7 asks about nil^ and nothing else, so false^ is a value that is
     // there rather than one that is missing.
-    LHAT_TEST("'??' asks about nil^, not about being false");
+    LHAT_TEST("'?\?' asks about nil^, not about being false");
     run_text(&r, "let^ t = { a := false^ }\nreturn^ t[\"a\"] ?? true^\n");
     CHECK_BOOL(&r, false);
     run_dispose(&r);

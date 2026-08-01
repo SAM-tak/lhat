@@ -18,6 +18,13 @@ static const char *lhat_test_current = "";
         lhat_test_current = (name);         \
     } while (0)
 
+// Records a failure and carries on, so that one run reports everything that
+// is wrong rather than stopping at the first.
+//
+// The cost is that a check cannot guard what follows it. A pointer this has
+// just found to be NULL is still NULL on the next line, so anything reading
+// through it has to say so itself -- otherwise a failure becomes a crash and
+// the report is never printed.
 #define LHAT_CHECK(condition, ...)                                        \
     do {                                                                  \
         lhat_test_checks++;                                               \
