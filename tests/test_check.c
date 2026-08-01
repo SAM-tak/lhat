@@ -1573,6 +1573,122 @@ static void test_coroutines(void)
     unit_dispose(&u);
 }
 
+// 02 の 16.3. The focus of an in^ loop is bound from what the walk yields,
+// which is the one place a for^ header defines names rather than reading
+// them. Until this, they were read -- and found nothing.
+static void test_walking(void)
+{
+    Unit u;
+
+    LHAT_TEST("the focus of an in^ loop is in scope inside the body");
+    check_text(&u,
+               "let^ gen = p^ { yield^ 1 }\n"
+               "for^ x in^ gen() { let^ n = x }\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("and carries what the coroutine yields");
+    check_text(&u,
+               "let^ gen = p^ { yield^ 1 }\n"
+               "for^ x in^ gen() { let^ n : number^ = x }\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("so the wrong type is caught in the body");
+    check_text(&u,
+               "let^ gen = p^ { yield^ 1 }\n"
+               "for^ x in^ gen() { let^ s : string^ = x }\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
+    unit_dispose(&u);
+
+    // 16.7: the focus belongs to the loop, which is a scope of its own.
+    LHAT_TEST("and it does not outlive the loop");
+    check_text(&u,
+               "let^ gen = p^ { yield^ 1 }\n"
+               "for^ x in^ gen() { }\n"
+               "let^ n = x\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_UNDEFINED);
+    unit_dispose(&u);
+
+    // 16.3: the annotation form of the focus.
+    LHAT_TEST("a written focus type is what the name gets");
+    check_text(&u,
+               "let^ gen = p^ { yield^ 1 }\n"
+               "for^ x:number^ in^ gen() { let^ n = x }\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("and it has to admit what the walk yields");
+    check_text(&u,
+               "let^ gen = p^ { yield^ 1 }\n"
+               "for^ x:string^ in^ gen() { let^ n = x }\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
+    unit_dispose(&u);
+
+    // 16.3: a coroutine answers iterate() with itself, so one held in a name
+    // walks without being called again.
+    LHAT_TEST("a coroutine walks as itself");
+    check_text(&u,
+               "let^ gen = p^ { yield^ 1 }\n"
+               "let^ c = gen()\n"
+               "for^ x in^ c { let^ n : number^ = x }\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // 13.8 has no tuples, so a table's built-in walk yields the pair as a
+    // table -- not the values the table holds.
+    LHAT_TEST("a table walks as pairs");
+    check_text(&u,
+               "let^ t = { 1, 2 }\n"
+               "for^ pair in^ t { let^ n : number^ = pair }\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
+    unit_dispose(&u);
+
+    // 13.10: several names take the value apart by position. A table type
+    // says nothing about its dense part, so a position says nothing either
+    // -- but the names are still bound, which is the whole point.
+    LHAT_TEST("several names are bound even where their types are not known");
+    check_text(&u,
+               "let^ t = { 1, 2 }\n"
+               "for^ k, v in^ t { let^ n = v }\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("a written iterate is what the walk comes from");
+    check_text(&u,
+               "let^ t = { iterate := f^ { return^ p^ { yield^ 9 }() } }\n"
+               "for^ v in^ t { let^ s : string^ = v }\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
+    unit_dispose(&u);
+
+    LHAT_TEST("and a definition may answer with one");
+    check_text(&u,
+               "let^ Range = def^{\n"
+               "  self^{ upto := 0 },\n"
+               "  new^ := f^ n { return^ self^{ upto := n } },\n"
+               "  iterate := f^self^ {\n"
+               "    return^ p^ { yield^ 1 }()\n"
+               "  },\n"
+               "}\n"
+               "for^ v in^ Range.new^(4) { let^ n : number^ = v }\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // 16.3: what in^ walks has to answer with a coroutine, the same demand
+    // 15.8 makes of yieldall^.
+    LHAT_TEST("walking something with no iterate is reported");
+    check_text(&u, "for^ x in^ 5 { let^ n = x }\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_NOT_COROUTINE);
+    unit_dispose(&u);
+
+    LHAT_TEST("and so is an iterate that answers something else");
+    check_text(&u,
+               "let^ t = { iterate := f^ -> number^ { return^ 1 } }\n"
+               "for^ x in^ t { let^ n = x }\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_NOT_COROUTINE);
+    unit_dispose(&u);
+}
+
 int main(void)
 {
     test_names();
@@ -1586,5 +1702,6 @@ int main(void)
     test_patterns();
     test_modules();
     test_coroutines();
+    test_walking();
     return lhat_test_report("test_check");
 }

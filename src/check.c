@@ -1949,6 +1949,126 @@ static void check_reassign(Checker *c, const LhatNode *node)
     }
 }
 
+// 16.3: with in^ the focus is what each turn binds, not a value to evaluate.
+// A lone one is wrapped as `it^ := name` by the parser (16.2), which puts the
+// name on the value side -- the same unwrapping the compiler's target_of
+// does. What comes back may still carry the annotation of 16.3.
+static const LhatNode *focus_element(const LhatNode *element)
+{
+    if (element->kind != LHAT_NODE_DEFINE) {
+        return element;
+    }
+    if (element->v.binding.targets != NULL &&
+        element->v.binding.targets->kind == LHAT_NODE_FOCUS) {
+        return element->v.binding.values;
+    }
+    return element->v.binding.targets;
+}
+
+// The member of that name a structure declares, or NULL.
+static const LhatTypeMember *member_named(const LhatType *type,
+                                          const char *name, size_t length)
+{
+    const LhatTypeMember *members = NULL;
+    if (type->kind == LHAT_TYPE_TABLE) {
+        members = type->v.table.members;
+    } else if (type->kind == LHAT_TYPE_ERROR_KIND) {
+        members = type->v.error.fields;
+    }
+    for (; members != NULL; members = members->next) {
+        if (members->name_length == length &&
+            memcmp(members->name, name, length) == 0) {
+            return members;
+        }
+    }
+    return NULL;
+}
+
+// 16.3: `in^ e` walks e.iterate(). A coroutine answers with itself, a table
+// with a walk over its keys, and anything else by having a member of that
+// name -- the same three infer_member answers for, read off the type here
+// because the loop has no member access written in it to infer.
+static LhatType *walk_produce(Checker *c, const LhatNode *at, LhatType *over)
+{
+    if (over == NULL || over->kind == LHAT_TYPE_UNKNOWN ||
+        over->kind == LHAT_TYPE_ANY) {
+        return simple(c, LHAT_TYPE_UNKNOWN);
+    }
+    if (over->kind == LHAT_TYPE_CORO) {
+        return over->v.coroutine.produce;
+    }
+
+    const LhatTypeMember *written = member_named(over, "iterate", 7);
+    if (written != NULL) {
+        // 16.3 lets a written iterate win, so this comes before the built-in.
+        LhatType *answer = written->type;
+        if (answer == NULL || answer->kind == LHAT_TYPE_UNKNOWN) {
+            return simple(c, LHAT_TYPE_UNKNOWN);
+        }
+        if (answer->kind != LHAT_TYPE_FUNC || answer->v.func.result == NULL ||
+            answer->v.func.result->kind != LHAT_TYPE_CORO) {
+            report(c, at, LHAT_CHECK_ERR_NOT_COROUTINE);
+            return simple(c, LHAT_TYPE_UNKNOWN);
+        }
+        return answer->v.func.result->v.coroutine.produce;
+    }
+
+    // The built-in walk of a table, whose pairs 13.8 makes tables.
+    if (over->kind == LHAT_TYPE_TABLE || over->kind == LHAT_TYPE_ERROR_KIND) {
+        return lhat_type_table(c->result->types);
+    }
+
+    report(c, at, LHAT_CHECK_ERR_NOT_COROUTINE);
+    return simple(c, LHAT_TYPE_UNKNOWN);
+}
+
+// 16.3: the focus of an in^ loop is bound, not evaluated, so it is checked
+// here rather than by check_statements -- which would read the names as uses
+// and find nothing in scope.
+static void check_focus_in(Checker *c, const LhatNode *node)
+{
+    LhatType *produced =
+        walk_produce(c, node->v.loop.bound, infer(c, node->v.loop.bound));
+
+    size_t count = 0;
+    for (const LhatNode *e = node->v.loop.focus; e != NULL; e = e->next) {
+        count++;
+    }
+
+    for (const LhatNode *e = node->v.loop.focus; e != NULL; e = e->next) {
+        const LhatNode *element = focus_element(e);
+        if (element == NULL) {
+            continue;
+        }
+        LhatType *annotated = element->kind == LHAT_NODE_PARAM
+                                  ? resolve_type(c, element->v.param.type)
+                                  : NULL;
+
+        // 13.10 and 16.3: one name takes what was yielded whole, several take
+        // it apart by position. A table type carries no types for its dense
+        // part, so a position says nothing about what comes out of it.
+        LhatType *type = count == 1 ? produced : simple(c, LHAT_TYPE_UNKNOWN);
+        if (annotated != NULL) {
+            if (count == 1) {
+                expect(c, element, produced, annotated,
+                       LHAT_CHECK_ERR_MISMATCH);
+            }
+            type = annotated;
+        }
+
+        const char *name = NULL;
+        size_t length = 0;
+        if (!node_name(c, target_name_node(element), &name, &length)) {
+            continue;
+        }
+        Binding *b = scope_add(c->scope, name, length, type,
+                               target_name_node(element)->offset);
+        if (b != NULL) {
+            b->reached = true;  // 8.7: a turn of the loop has bound it
+        }
+    }
+}
+
 // 12.5 with 12.7: what with^ asks of a value is that it has a dispose() and
 // that the dispose() returns nothing. The second half is not decoration --
 // 12.7 made it so that cleanup cannot fail, and a dispose() with a result
@@ -2261,8 +2381,14 @@ static void check_statement(Checker *c, const LhatNode *node)
             c->scope = &scope;
 
             if (node->kind == LHAT_NODE_FOR) {
-                check_statements(c, node->v.loop.focus);
-                infer(c, node->v.loop.bound);
+                // 16.3: in^ binds its focus each turn from what the walk
+                // yields, so the names are defined here rather than read.
+                if (node->v.loop.kind == LHAT_FOR_IN) {
+                    check_focus_in(c, node);
+                } else {
+                    check_statements(c, node->v.loop.focus);
+                    infer(c, node->v.loop.bound);
+                }
                 infer(c, node->v.loop.step);
                 check_statements(c, node->v.loop.advance);
                 check_statement(c, node->v.loop.body);
@@ -2390,7 +2516,7 @@ const char *lhat_check_error_message(LhatCheckErrorCode code)
         case LHAT_CHECK_ERR_REQUIRE_FAILED:
             return "this unit could not be required";
         case LHAT_CHECK_ERR_NOT_COROUTINE:
-            return "yieldall^ delegates to a coroutine, and this is not one";
+            return "this has no coroutine to walk or delegate to";
         case LHAT_CHECK_ERR_YIELD_NEEDS_ANNOTATION:
             return "a yield^ that is bound needs a written type there";
         case LHAT_CHECK_ERR_YIELD_TYPE_MISMATCH:
