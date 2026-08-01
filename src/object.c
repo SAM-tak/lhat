@@ -178,6 +178,127 @@ LhatNative *lhat_native_new(LhatObject **owner, LhatNativeKind kind,
     return native;
 }
 
+LhatRuntimeType *lhat_type_rt_new(LhatObject **owner, LhatRuntimeTypeKind kind)
+{
+    LhatRuntimeType *type =
+        (LhatRuntimeType *)allocate(owner, sizeof(LhatRuntimeType),
+                                    LHAT_OBJECT_TYPE);
+    if (type != NULL) {
+        type->kind = kind;
+    }
+    return type;
+}
+
+bool lhat_type_rt_add_part(LhatRuntimeType *type, LhatRuntimeType *part)
+{
+    LhatRuntimeType **grown =
+        (LhatRuntimeType **)realloc(type->parts,
+                                    (type->part_count + 1) * sizeof *grown);
+    if (grown == NULL) {
+        return false;
+    }
+    type->parts = grown;
+    type->parts[type->part_count++] = part;
+    return true;
+}
+
+bool lhat_type_rt_add_member(LhatRuntimeType *type, const LhatString *name,
+                             LhatRuntimeType *member)
+{
+    void *grown = realloc(type->members,
+                          (type->member_count + 1) * sizeof *type->members);
+    if (grown == NULL) {
+        return false;
+    }
+    type->members = grown;
+    type->members[type->member_count].name = name;
+    type->members[type->member_count].type = member;
+    type->member_count++;
+    return true;
+}
+
+bool lhat_value_satisfies(LhatValue value, const LhatRuntimeType *type)
+{
+    if (type == NULL) {
+        return true;  // nothing was written, so nothing is asked
+    }
+    switch (type->kind) {
+        case LHAT_TYPE_RT_ANY:
+            return true;
+        case LHAT_TYPE_RT_NIL:
+            return lhat_is_nil(value);
+        case LHAT_TYPE_RT_BOOL:
+            return lhat_is_bool(value);
+        case LHAT_TYPE_RT_NUMBER:
+            // 14.8: one type, so either representation answers yes.
+            return lhat_is_number(value);
+        case LHAT_TYPE_RT_STRING:
+            return lhat_is_object_kind(value, LHAT_OBJECT_STRING);
+        case LHAT_TYPE_RT_TABLE:
+            return lhat_is_object_kind(value, LHAT_OBJECT_TABLE);
+        case LHAT_TYPE_RT_SUBROUTINE:
+            return lhat_is_object_kind(value, LHAT_OBJECT_SUBROUTINE);
+        case LHAT_TYPE_RT_COROUTINE:
+            return lhat_is_object_kind(value, LHAT_OBJECT_COROUTINE);
+        case LHAT_TYPE_RT_ERROR:
+            return lhat_is_object_kind(value, LHAT_OBJECT_ERROR);
+        case LHAT_TYPE_RT_ERROR_KIND:
+            return lhat_error_is_kind(value, type->error_kind);
+        case LHAT_TYPE_RT_UNION:
+            for (size_t i = 0; i < type->part_count; i++) {
+                if (lhat_value_satisfies(value, type->parts[i])) {
+                    return true;
+                }
+            }
+            return false;
+        case LHAT_TYPE_RT_STRUCTURE: {
+            // 14.10: at least these members, which is what makes the judgement
+            // structural rather than a question about where it came from.
+            const LhatTable *table = NULL;
+            if (lhat_is_object_kind(value, LHAT_OBJECT_TABLE)) {
+                table = (const LhatTable *)lhat_as_object(value);
+            } else if (lhat_is_object_kind(value, LHAT_OBJECT_ERROR)) {
+                table = ((const LhatError *)lhat_as_object(value))->fields;
+            } else {
+                return false;
+            }
+            for (size_t i = 0; i < type->member_count; i++) {
+                LhatValue held = lhat_table_get(
+                    table, lhat_object((LhatObject *)(void *)
+                                       type->members[i].name));
+                if (lhat_is_nil(held) ||
+                    !lhat_value_satisfies(held, type->members[i].type)) {
+                    return false;
+                }
+            }
+            return true;
+        }
+    }
+    return false;
+}
+
+LhatOverload *lhat_overload_new(LhatObject **owner)
+{
+    return (LhatOverload *)allocate(owner, sizeof(LhatOverload),
+                                    LHAT_OBJECT_OVERLOAD);
+}
+
+bool lhat_overload_add(LhatOverload *overload, LhatValue candidate)
+{
+    if (overload->count == overload->capacity) {
+        size_t grown = overload->capacity ? overload->capacity * 2 : 4;
+        LhatValue *bigger =
+            (LhatValue *)realloc(overload->candidates, grown * sizeof *bigger);
+        if (bigger == NULL) {
+            return false;
+        }
+        overload->candidates = bigger;
+        overload->capacity = grown;
+    }
+    overload->candidates[overload->count++] = candidate;
+    return true;
+}
+
 bool lhat_error_is_kind(LhatValue value, const LhatErrorKind *kind)
 {
     if (!lhat_is_object_kind(value, LHAT_OBJECT_ERROR) || kind == NULL) {
@@ -209,6 +330,13 @@ void lhat_object_free(LhatObject *object)
             break;
         case LHAT_OBJECT_COROUTINE:
             free(((LhatCoroutine *)object)->registers);
+            break;
+        case LHAT_OBJECT_TYPE:
+            free(((LhatRuntimeType *)object)->parts);
+            free(((LhatRuntimeType *)object)->members);
+            break;
+        case LHAT_OBJECT_OVERLOAD:
+            free(((LhatOverload *)object)->candidates);
             break;
         default:
             break;

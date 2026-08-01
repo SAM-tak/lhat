@@ -39,6 +39,9 @@ typedef enum {
                              // which is what its identity is
     LHAT_OBJECT_NATIVE,      // an operation the runtime provides, bound to
                              // whatever it was reached through
+    LHAT_OBJECT_TYPE,        // 02 の 14.12: a written type, kept so that a
+                             // value can be tested against it while running
+    LHAT_OBJECT_OVERLOAD,    // 02 の 14.12: the signatures one name carries
     LHAT_OBJECT_UPVALUE      // 5.4: never a value, only reached through a
                              // closure -- but allocated and collected alike
 } LhatObjectKind;

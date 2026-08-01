@@ -123,6 +123,52 @@ typedef struct LhatCoroutine {
     size_t cleanup_count;
 } LhatCoroutine;
 
+// 03 の 2.1 keeps a type tag on every value, which is what lets a written
+// type be asked about one while the program runs. Three decided features want
+// that: 02 の 13.11's is^, 03 の 3.3's relaxed checks, and 02 の 14.12's
+// overloading. The descriptor is built by the compiler and owned by the chunk.
+typedef enum {
+    LHAT_TYPE_RT_ANY,        // 13.7, and an unannotated parameter
+    LHAT_TYPE_RT_NIL,
+    LHAT_TYPE_RT_BOOL,
+    LHAT_TYPE_RT_NUMBER,     // 14.8: one type, two representations
+    LHAT_TYPE_RT_STRING,
+    LHAT_TYPE_RT_TABLE,
+    LHAT_TYPE_RT_SUBROUTINE,
+    LHAT_TYPE_RT_COROUTINE,
+    LHAT_TYPE_RT_ERROR,      // 04 の 2.3: any kind
+    LHAT_TYPE_RT_ERROR_KIND, // one kind, or one declaration's union of them
+    LHAT_TYPE_RT_UNION,      // 13.5
+    LHAT_TYPE_RT_STRUCTURE   // 14.10: at least these members
+} LhatRuntimeTypeKind;
+
+typedef struct LhatRuntimeType {
+    LhatObject header;
+    LhatRuntimeTypeKind kind;
+
+    const LhatErrorKind *error_kind;  // ERROR_KIND
+
+    struct LhatRuntimeType **parts;   // UNION
+    size_t part_count;
+
+    // STRUCTURE. A member with no type asks only that the name is there.
+    struct {
+        const LhatString *name;
+        struct LhatRuntimeType *type;
+    } *members;
+    size_t member_count;
+} LhatRuntimeType;
+
+// 02 の 14.12: one name, several signatures. 14.12 forbids them overlapping,
+// so at most one fits a call and the search stops at the first that does --
+// no ranking, no ambiguity, no order to define.
+typedef struct LhatOverload {
+    LhatObject header;
+    LhatValue *candidates;
+    size_t count;
+    size_t capacity;
+} LhatOverload;
+
 // An operation the runtime provides rather than the program. 02 の 12.6 and
 // 15.6 give a coroutine two of them; the rest of the standard library is M2.
 typedef enum {
@@ -169,6 +215,20 @@ bool lhat_table_walk(LhatCoroutine *walk, LhatValue *key, LhatValue *value);
 
 LhatNative *lhat_native_new(LhatObject **owner, LhatNativeKind kind,
                             LhatValue bound);
+
+LhatRuntimeType *lhat_type_rt_new(LhatObject **owner, LhatRuntimeTypeKind kind);
+
+// Both return false only when out of memory.
+bool lhat_type_rt_add_part(LhatRuntimeType *type, LhatRuntimeType *part);
+bool lhat_type_rt_add_member(LhatRuntimeType *type, const LhatString *name,
+                             LhatRuntimeType *member);
+
+// 13.11: whether the value may stand where the type is written. A NULL type
+// asks nothing, which is what an unannotated parameter means.
+bool lhat_value_satisfies(LhatValue value, const LhatRuntimeType *type);
+
+LhatOverload *lhat_overload_new(LhatObject **owner);
+bool lhat_overload_add(LhatOverload *overload, LhatValue candidate);
 
 // 04 の 2.6 and 6.1: whether `value` is an error of `kind`. A kind object
 // standing for a whole errordef^ answers yes for any of its kinds, since 2.3

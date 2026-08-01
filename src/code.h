@@ -18,6 +18,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "object.h"
 #include "value.h"
 
 typedef uint32_t LhatInstruction;
@@ -64,6 +65,7 @@ typedef enum {
     LHAT_BC_NEWTABLE,   // A     R[A] = { }
     LHAT_BC_GETINDEX,   // A B C R[A] = R[B][R[C]]
     LHAT_BC_SETINDEX,   // A B C R[A][R[B]] = R[C]
+    LHAT_BC_ADDOVERLOAD,// A B C R[A][R[B]] gains R[C] as another way to call it
 
     // 04. An error carries its kind and a table of fields, and the tests are
     // instructions because 5.1 keeps the machine independent of the checker.
@@ -180,6 +182,11 @@ typedef struct LhatProto {
     LhatUpvalueDesc *upvalues;
     size_t upvalue_count;
     size_t upvalue_capacity;
+
+    // 02 の 14.12: what each parameter was declared to take, kept so that an
+    // overloaded call can find the candidate that fits. NULL where nothing
+    // was written, which asks nothing.
+    struct LhatRuntimeType **parameter_types;
 } LhatProto;
 
 LhatProto *lhat_proto_new(void);

@@ -672,6 +672,112 @@ static void compile_is(Compiler *c, const LhatNode *node, uint8_t into)
     c->next_register = mark;
 }
 
+// 02 の 14.12: what a parameter was written to take, in the form the machine
+// can ask a value about. 03 の 2.1's tags are what make the question
+// answerable at all; 13.11's is^ and 3.3's relaxed checks want the same
+// descriptor.
+//
+// Anything not covered answers `any^`, which asks nothing -- a conservative
+// direction, since the checker has already refused what is statically wrong.
+static LhatRuntimeType *lower_type(Compiler *c, const LhatNode *node)
+{
+    Compiler *root = root_of(c);
+    LhatObject **owner = &root->proto->chunk.objects;
+
+    if (node == NULL) {
+        return NULL;
+    }
+
+    switch (node->kind) {
+        case LHAT_NODE_TYPE_UNION: {
+            LhatRuntimeType *type = lhat_type_rt_new(owner, LHAT_TYPE_RT_UNION);
+            if (type == NULL) {
+                return NULL;
+            }
+            for (const LhatNode *part = node->v.list.items; part != NULL;
+                 part = part->next) {
+                if (!lhat_type_rt_add_part(type, lower_type(c, part))) {
+                    return NULL;
+                }
+            }
+            return type;
+        }
+
+        case LHAT_NODE_TYPE_TABLE: {
+            // 14.10: the structure asks for at least these members.
+            LhatRuntimeType *type =
+                lhat_type_rt_new(owner, LHAT_TYPE_RT_STRUCTURE);
+            if (type == NULL) {
+                return NULL;
+            }
+            for (const LhatNode *member = node->v.list.items; member != NULL;
+                 member = member->next) {
+                const char *name = NULL;
+                size_t length = 0;
+                if (!node_name(c, member->v.entry.key, &name, &length)) {
+                    continue;
+                }
+                LhatString *text = lhat_string_new(owner, name, length);
+                if (text == NULL ||
+                    !lhat_type_rt_add_member(type, text,
+                                             lower_type(c, member->v.entry.value))) {
+                    return NULL;
+                }
+            }
+            return type;
+        }
+
+        case LHAT_NODE_MEMBER:
+        case LHAT_NODE_TYPE_NAME: {
+            // 04 の 2.4: a kind is the object its declaration made, so a
+            // qualified name resolves to that rather than to any structure.
+            const LhatNode *unused = NULL;
+            const LhatErrorKind *kind = resolve_kind(c, node, &unused);
+            if (kind != NULL) {
+                LhatRuntimeType *type =
+                    lhat_type_rt_new(owner, LHAT_TYPE_RT_ERROR_KIND);
+                if (type != NULL) {
+                    type->error_kind = kind;
+                }
+                return type;
+            }
+
+            const char *name = NULL;
+            size_t length = 0;
+            if (!node_name(c, node, &name, &length)) {
+                return NULL;
+            }
+            LhatRuntimeTypeKind simple = LHAT_TYPE_RT_ANY;
+            if (name_is(name, length, "number")) {
+                simple = LHAT_TYPE_RT_NUMBER;
+            } else if (name_is(name, length, "string")) {
+                simple = LHAT_TYPE_RT_STRING;
+            } else if (name_is(name, length, "bool")) {
+                simple = LHAT_TYPE_RT_BOOL;
+            } else if (name_is(name, length, "nil")) {
+                simple = LHAT_TYPE_RT_NIL;
+            } else if (name_is(name, length, "table")) {
+                simple = LHAT_TYPE_RT_TABLE;
+            } else if (name_is(name, length, "error")) {
+                simple = LHAT_TYPE_RT_ERROR;
+            } else if (name_is(name, length, "any")) {
+                return NULL;  // asks nothing
+            } else {
+                return NULL;  // a definition's name; 14.9 keeps it structural
+            }
+            return lhat_type_rt_new(owner, simple);
+        }
+
+        case LHAT_NODE_TYPE_FUNC:
+            return lhat_type_rt_new(owner, LHAT_TYPE_RT_SUBROUTINE);
+        case LHAT_NODE_TYPE_CORO:
+            return lhat_type_rt_new(owner, LHAT_TYPE_RT_COROUTINE);
+
+        default:
+            return NULL;
+    }
+}
+
 // ---------------------------------------------------------------------------
 // 02 の 14 章: the object model
 // ---------------------------------------------------------------------------
@@ -944,12 +1050,6 @@ static void compile_def(Compiler *c, const LhatNode *node, uint8_t into)
             if (entry->v.entry.key == NULL) {
                 continue;  // the template; 14.11 handles it at construction
             }
-            if (entry->v.entry.modifier == LHAT_DEF_OVERLOAD) {
-                // 14.12: overload^ keeps both under one name, which needs a
-                // choice made from the argument types. Not yet.
-                fail(c, LHAT_COMPILE_UNSUPPORTED);
-                break;
-            }
             const char *name = NULL;
             size_t length = 0;
             if (!node_name(c, entry->v.entry.key, &name, &length)) {
@@ -964,7 +1064,14 @@ static void compile_def(Compiler *c, const LhatNode *node, uint8_t into)
             uint8_t value = reserve(c);
             load_string_bytes(c, key, name, length);
             compile_expression(c, entry->v.entry.value, value);
-            emit(c, lhat_encode_abc(LHAT_BC_SETINDEX, into, key, value));
+            // 14.12: overload^ keeps what was there and adds a way to call
+            // it, so the two go under one name together. Which one a call
+            // means is settled when it runs, since 14.12's ban on overlapping
+            // signatures leaves at most one that fits.
+            emit(c, lhat_encode_abc(entry->v.entry.modifier == LHAT_DEF_OVERLOAD
+                                        ? LHAT_BC_ADDOVERLOAD
+                                        : LHAT_BC_SETINDEX,
+                                    into, key, value));
             c->next_register = at;
         }
     }
@@ -1161,6 +1268,19 @@ static void compile_subroutine(Compiler *c, const LhatNode *node, uint8_t into)
         local->name = name;
         local->length = length;
         local->reg = slot;
+
+        // 14.12: the search that resolves an overloaded call asks each
+        // candidate what it takes, so each body carries that with it.
+        struct LhatRuntimeType **types =
+            (struct LhatRuntimeType **)realloc(proto->parameter_types,
+                                               ((size_t)proto->parameters + 1) *
+                                                   sizeof *types);
+        if (types == NULL) {
+            fail(c, LHAT_COMPILE_TOO_COMPLEX);
+            return;
+        }
+        proto->parameter_types = types;
+        types[proto->parameters] = lower_type(c, param->v.param.type);
         proto->parameters++;
     }
 
@@ -2617,6 +2737,47 @@ static bool builtin_member(LhatValue on, LhatValue key, LhatNativeKind *out)
             lhat_is_object_kind(on, LHAT_OBJECT_ERROR));
 }
 
+// 02 の 14.12: whether this candidate takes what the call is handing over.
+// The receiver is not asked about -- 14.12 keeps self^ out of the judgement
+// for the same reason it keeps it out of override^'s.
+static bool fits_call(LhatValue candidate, const LhatValue *at, uint8_t given,
+                      bool method, size_t *skip)
+{
+    if (!lhat_is_object_kind(candidate, LHAT_OBJECT_SUBROUTINE)) {
+        return false;
+    }
+    const LhatProto *proto =
+        ((const LhatClosure *)lhat_as_object(candidate))->proto;
+    if (proto == NULL) {
+        return false;
+    }
+
+    size_t passed = given;
+    size_t first = 1;
+    size_t declared = 0;
+    if (method) {
+        if (proto->takes_self) {
+            passed = (size_t)given + 1;
+            declared = 1;  // self^ is the first parameter and is not asked about
+        } else {
+            first = 2;
+        }
+    }
+    if (passed != proto->parameters) {
+        return false;
+    }
+
+    for (size_t i = declared; i < proto->parameters; i++) {
+        const struct LhatRuntimeType *wanted =
+            proto->parameter_types != NULL ? proto->parameter_types[i] : NULL;
+        if (!lhat_value_satisfies(at[first + i - declared], wanted)) {
+            return false;
+        }
+    }
+    *skip = method && !proto->takes_self ? 2 : 1;
+    return true;
+}
+
 static void *allocate(Machine *m, size_t size, LhatObjectKind kind)
 {
     LhatObject *object = (LhatObject *)calloc(1, size);
@@ -2951,6 +3112,39 @@ LhatRunResult lhat_run(const LhatProto *proto)
                 break;
             }
 
+            // 14.12: the name keeps what it had and gains another way to be
+            // called. What was there may already be a group, or the first of
+            // two, or nothing when the base did not define it.
+            case LHAT_BC_ADDOVERLOAD: {
+                LhatTable *table = table_of(registers[a]);
+                if (table == NULL) {
+                    return finish(m, LHAT_RUN_TYPE_ERROR, lhat_nil(), at);
+                }
+                LhatValue held = lhat_table_get(table, registers[b]);
+                LhatOverload *group = NULL;
+                if (lhat_is_object_kind(held, LHAT_OBJECT_OVERLOAD)) {
+                    group = (LhatOverload *)lhat_as_object(held);
+                } else {
+                    group = lhat_overload_new(&m->objects);
+                    if (group == NULL) {
+                        return finish(m, LHAT_RUN_OUT_OF_MEMORY, lhat_nil(), at);
+                    }
+                    if (!lhat_is_nil(held) && !lhat_overload_add(group, held)) {
+                        return finish(m, LHAT_RUN_OUT_OF_MEMORY, lhat_nil(), at);
+                    }
+                    bool refused = false;
+                    if (!lhat_table_set(table, registers[b],
+                                        lhat_object((LhatObject *)group),
+                                        &refused)) {
+                        return finish(m, LHAT_RUN_OUT_OF_MEMORY, lhat_nil(), at);
+                    }
+                }
+                if (!lhat_overload_add(group, registers[cc])) {
+                    return finish(m, LHAT_RUN_OUT_OF_MEMORY, lhat_nil(), at);
+                }
+                break;
+            }
+
             case LHAT_BC_NEWERROR: {
                 if (!lhat_is_object_kind(registers[b], LHAT_OBJECT_ERROR_KIND)) {
                     return finish(m, LHAT_RUN_TYPE_ERROR, lhat_nil(), at);
@@ -3110,6 +3304,27 @@ LhatRunResult lhat_run(const LhatProto *proto)
                         goto drain;
                     }
                     break;
+                }
+
+                // 14.12: at most one candidate fits, so this is a search and
+                // not a choice -- no ranking, no ambiguity to report. It ends
+                // at the first that takes what it was given.
+                if (lhat_is_object_kind(registers[a], LHAT_OBJECT_OVERLOAD)) {
+                    const LhatOverload *group =
+                        (const LhatOverload *)lhat_as_object(registers[a]);
+                    size_t skip = op == LHAT_BC_CALLMETHOD ? 2 : 1;
+                    LhatValue chosen = lhat_nil();
+                    for (size_t i = 0; i < group->count; i++) {
+                        if (fits_call(group->candidates[i], &registers[a], b,
+                                      op == LHAT_BC_CALLMETHOD, &skip)) {
+                            chosen = group->candidates[i];
+                            break;
+                        }
+                    }
+                    if (lhat_is_nil(chosen)) {
+                        return finish(m, LHAT_RUN_NO_CANDIDATE, lhat_nil(), at);
+                    }
+                    registers[a] = chosen;
                 }
 
                 if (!lhat_is_object_kind(registers[a], LHAT_OBJECT_SUBROUTINE)) {
@@ -3391,6 +3606,7 @@ const char *lhat_run_status_message(LhatRunStatus status)
         case LHAT_RUN_BAD_KEY:         return "this cannot be a key";
         case LHAT_RUN_DEAD_COROUTINE:  return "this coroutine has finished";
         case LHAT_RUN_YIELD_OUTSIDE:   return "nothing is waiting for this yield^";
+        case LHAT_RUN_NO_CANDIDATE:    return "no way of calling this member takes these arguments";
     }
     return "unknown";
 }

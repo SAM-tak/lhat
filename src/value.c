@@ -78,6 +78,8 @@ const char *lhat_object_kind_name(LhatObjectKind kind)
         case LHAT_OBJECT_ERROR:      return "error^";
         case LHAT_OBJECT_ERROR_KIND: return "error^ kind";
         case LHAT_OBJECT_NATIVE:     return "a runtime operation";
+        case LHAT_OBJECT_TYPE:       return "a type";
+        case LHAT_OBJECT_OVERLOAD:   return "an overloaded member";
         case LHAT_OBJECT_UPVALUE:    return "upvalue";
     }
     return "?";

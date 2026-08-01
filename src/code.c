@@ -24,6 +24,7 @@ void lhat_proto_free(LhatProto *proto)
     }
     free(proto->protos);
     free(proto->upvalues);
+    free(proto->parameter_types);
     lhat_chunk_dispose(&proto->chunk);
     free(proto);
 }
@@ -204,6 +205,7 @@ const char *lhat_opcode_name(LhatOpcode op)
         case LHAT_BC_NEWTABLE:    return "newtable";
         case LHAT_BC_GETINDEX:    return "getindex";
         case LHAT_BC_SETINDEX:    return "setindex";
+        case LHAT_BC_ADDOVERLOAD: return "addoverload";
         case LHAT_BC_NEWERROR:    return "newerror";
         case LHAT_BC_ISERROR:     return "iserror";
         case LHAT_BC_ISKIND:      return "iskind";

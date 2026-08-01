@@ -1901,18 +1901,93 @@ static void test_definitions(void)
     CHECK_INTEGER(&r, 193);
     run_dispose(&r);
 
-    // 14.12: overload^ keeps two under one name, which wants a choice made
-    // from the argument types.
-    LHAT_TEST("overload^ does not compile yet");
+    // 14.12: overload^ adds a way to call without losing the one that was
+    // there, and 14.12's ban on overlapping signatures means the call finds
+    // at most one candidate -- a search rather than a choice.
+    LHAT_TEST("overload^ keeps the way that was already there");
     run_text(&r,
              "let^ Foo = def^{ self^{ }, m := f^ { return^ 1 } }\n"
              "let^ Bar = Foo .. def^{\n"
              "  self^{ },\n"
              "  overload^\n"
-             "  m := f^x { return^ x },\n"
+             "  m := f^ x:string^ { return^ 2 },\n"
              "}\n"
-             "return^ 0\n");
-    LHAT_CHECK_EQ_INT(r.compiled, LHAT_COMPILE_UNSUPPORTED);
+             "return^ Bar.new^().m()\n");
+    CHECK_INTEGER(&r, 1);
+    run_dispose(&r);
+
+    LHAT_TEST("and answers the added one when that is what fits");
+    run_text(&r,
+             "let^ Foo = def^{ self^{ }, m := f^ { return^ 1 } }\n"
+             "let^ Bar = Foo .. def^{\n"
+             "  self^{ },\n"
+             "  overload^\n"
+             "  m := f^ x:string^ { return^ 2 },\n"
+             "}\n"
+             "return^ Bar.new^().m(\"s\")\n");
+    CHECK_INTEGER(&r, 2);
+    run_dispose(&r);
+
+    // The candidates may differ in the type rather than the count, which is
+    // the case a count alone could not tell apart.
+    LHAT_TEST("candidates of one arity are told apart by type");
+    run_text(&r,
+             "let^ Show = def^{\n"
+             "  self^{ },\n"
+             "  show := f^ x:string^ { return^ 1 },\n"
+             "  overload^\n"
+             "  show := f^ x:number^ { return^ 2 },\n"
+             "}\n"
+             "let^ s = Show.new^()\n"
+             "return^ s.show(\"t\") * 10 + s.show(7)\n");
+    CHECK_INTEGER(&r, 12);
+    run_dispose(&r);
+
+    // 14.10: the judgement is structural, so a candidate taking a shape is
+    // asked whether the value has those members.
+    LHAT_TEST("a structural parameter is judged by its members");
+    run_text(&r,
+             "let^ Draw = def^{\n"
+             "  self^{ },\n"
+             "  draw := f^ s:t^{ radius : number^ } { return^ 1 },\n"
+             "  overload^\n"
+             "  draw := f^ s:t^{ width : number^, height : number^ } { return^ 2 },\n"
+             "}\n"
+             "let^ d = Draw.new^()\n"
+             "return^ d.draw({ radius := 1 }) * 10 + d.draw({ width := 1, height := 2 })\n");
+    CHECK_INTEGER(&r, 12);
+    run_dispose(&r);
+
+    LHAT_TEST("no candidate taking these arguments is a fault");
+    run_text(&r,
+             "let^ Show = def^{\n"
+             "  self^{ },\n"
+             "  show := f^ x:string^ { return^ 1 },\n"
+             "  overload^\n"
+             "  show := f^ x:number^ { return^ 2 },\n"
+             "}\n"
+             "return^ Show.new^().show(true^)\n");
+    LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_NO_CANDIDATE);
+    run_dispose(&r);
+
+    // 14.8: number^ is one type, so either representation answers to it.
+    LHAT_TEST("either representation of a number answers to number^");
+    run_text(&r,
+             "let^ Show = def^{\n"
+             "  self^{ },\n"
+             "  show := f^ x:string^ { return^ 1 },\n"
+             "  overload^\n"
+             "  show := f^ x:number^ { return^ 2 },\n"
+             "}\n"
+             "return^ Show.new^().show(0.5)\n");
+    CHECK_INTEGER(&r, 2);
+    run_dispose(&r);
+
+    LHAT_TEST("an ordinary member is untouched by any of this");
+    run_text(&r,
+             "let^ Foo = def^{ self^{ }, m := f^ x { return^ x + 1 } }\n"
+             "return^ Foo.new^().m(1)\n");
+    CHECK_INTEGER(&r, 2);
     run_dispose(&r);
 
     // 14.13: self^{ … } outside a definition has no fields to name.

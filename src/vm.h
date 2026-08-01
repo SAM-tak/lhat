@@ -46,8 +46,10 @@ typedef enum {
     LHAT_RUN_BAD_KEY,         // 04 の 11.3: nil^ means "not there", so it
                               // cannot also be a key
     LHAT_RUN_DEAD_COROUTINE,  // resumed one that has finished
-    LHAT_RUN_YIELD_OUTSIDE    // 02 の 15.2 and 10.7: yield^ where nothing is
+    LHAT_RUN_YIELD_OUTSIDE,   // 02 の 15.2 and 10.7: yield^ where nothing is
                               // waiting to be resumed
+    LHAT_RUN_NO_CANDIDATE     // 02 の 14.12: no signature of an overloaded
+                              // member takes what the call handed over
 } LhatRunStatus;
 
 typedef struct {
