@@ -60,6 +60,9 @@ typedef struct {
     LhatType *declared_result;
     LhatType *inferred_result;
     bool saw_self_call;
+    // 03 の 3.4: a return^ whose value goes through the subroutine itself.
+    // Its type is the one being worked out, so it is left out of the union.
+    bool recursive_return;
 
     // The name the subroutine currently being checked is being bound to, so
     // that a call to it inside its own body can be spotted (03 の 3.4).
@@ -1098,21 +1101,41 @@ static LhatType *infer_func(Checker *c, const LhatNode *node)
     LhatType *outer_declared = c->declared_result;
     LhatType *outer_inferred = c->inferred_result;
     bool outer_self_call = c->saw_self_call;
+    bool outer_recursive = c->recursive_return;
 
     c->scope = &body;
     c->declared_result = declared;
     c->inferred_result = NULL;
     c->saw_self_call = false;
+    c->recursive_return = false;
     c->deferred++;
 
     check_statement(c, node->v.func.body);
 
     if (declared == NULL) {
-        if (c->saw_self_call) {
-            report(c, node, LHAT_CHECK_ERR_RECURSION_NEEDS_TYPE);
-        } else {
-            func->v.func.result = c->inferred_result;
+        // 03 の 3.4: the result is what the exits that do not go through the
+        // subroutine itself agree on. Reaching the end of the body is one of
+        // those exits, and 04 の 11.3 already spells "no value" nil^.
+        //
+        // 02 の 13.2 keeps that apart from a body that returns nothing at
+        // all: there the writer never asked for a value, and the signature
+        // has a form for it. nil^ joins in only when some other exit does
+        // produce one.
+        bool falls_through = !always_exits(node->v.func.body);
+        if (falls_through &&
+            (c->inferred_result != NULL || c->recursive_return)) {
+            c->inferred_result = lhat_type_union(c->result->types,
+                                                 c->inferred_result,
+                                                 simple(c, LHAT_TYPE_NIL));
         }
+
+        // Every way out goes through the subroutine itself, so no call of it
+        // ever produces a value. 02 の 12.8 and 03 の 5.6 leave no other way
+        // out -- no exceptions, no unwinding -- so this is decidable here.
+        if (c->recursive_return && c->inferred_result == NULL) {
+            report(c, node, LHAT_CHECK_ERR_NEVER_RETURNS);
+        }
+        func->v.func.result = c->inferred_result;
     }
 
     c->deferred--;
@@ -1120,6 +1143,7 @@ static LhatType *infer_func(Checker *c, const LhatNode *node)
     c->declared_result = outer_declared;
     c->inferred_result = outer_inferred;
     c->saw_self_call = outer_self_call;
+    c->recursive_return = outer_recursive;
 
     scope_dispose(&body);
     return func;
@@ -1952,10 +1976,20 @@ static void check_statement(Checker *c, const LhatNode *node)
         }
 
         case LHAT_NODE_RETURN: {
+            // 03 の 3.4: a return^ that reaches the subroutine itself says
+            // nothing about the result -- its type is the one being worked
+            // out. The others determine it between them.
+            bool enclosing_self_call = c->saw_self_call;
+            c->saw_self_call = false;
             LhatType *value = infer(c, node->v.jump.value);
+            bool recursive = c->saw_self_call;
+            c->saw_self_call = enclosing_self_call || recursive;
+
             if (c->declared_result != NULL) {
                 expect(c, node, value, c->declared_result,
                        LHAT_CHECK_ERR_MISMATCH);
+            } else if (recursive) {
+                c->recursive_return = true;
             } else {
                 // 03 の 3.4: several return^ make a union.
                 c->inferred_result =
@@ -2133,8 +2167,9 @@ const char *lhat_check_error_message(LhatCheckErrorCode code)
             return "overload^ overlaps an existing signature";
         case LHAT_CHECK_ERR_NOT_DISPOSABLE:
             return "with^ needs a value with a dispose() that returns nothing";
-        case LHAT_CHECK_ERR_RECURSION_NEEDS_TYPE:
-            return "a subroutine that calls itself needs its result type written";
+        case LHAT_CHECK_ERR_NEVER_RETURNS:
+            return "every way out of this body calls it again, so it never "
+                   "produces a value";
     }
     return "unknown error";
 }

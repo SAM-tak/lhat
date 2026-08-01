@@ -219,10 +219,74 @@ static void test_results(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
-    // 3.4: the answer would depend on itself, so it has to be written.
-    LHAT_TEST("a self-calling subroutine needs its result written");
+    // 3.4: the exits that do not go through the subroutine itself settle the
+    // result between them, so recursion needs nothing written.
+    LHAT_TEST("recursion is inferred from the exits that are not recursive");
+    check_text(&u,
+               "let^ fact = f^ n:number^ {\n"
+               "    if^ n <= 1 { return^ 1 }\n"
+               "    return^ n * fact(n - 1)\n"
+               "}\n"
+               "let^ n : number^ = fact(5)\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("and the recursive exit does not widen it");
+    check_text(&u,
+               "let^ fact = f^ n:number^ {\n"
+               "    if^ n <= 1 { return^ 1 }\n"
+               "    return^ fact(n - 1)\n"
+               "}\n"
+               "let^ s : string^ = fact(5)\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
+    unit_dispose(&u);
+
+    // 12.8 and 03 の 5.6 leave no other way out, so a body every exit of
+    // which calls itself can never produce a value.
+    LHAT_TEST("a body whose every exit is recursive is reported");
     check_text(&u, "let^ f = f^ n:number^ { return^ f(n) }\n");
-    CHECK_REPORTS(&u, LHAT_CHECK_ERR_RECURSION_NEEDS_TYPE);
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_NEVER_RETURNS);
+    unit_dispose(&u);
+
+    LHAT_TEST("falling out of the body is an exit, so this one is not that");
+    check_text(&u,
+               "let^ f = p^ n:number^ {\n"
+               "    if^ n > 0 { return^ f(n - 1) }\n"
+               "}\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // 13.2 keeps "returns nothing" apart from "returns nil^". A body that
+    // returns a value on one path and falls out on another does produce a
+    // value, so the missing one is nil^ (04 の 11.3).
+    LHAT_TEST("falling out of the body puts nil^ in the result");
+    check_text(&u,
+               "let^ f = p^ b:bool^ { if^ b { return^ 1 } }\n"
+               "let^ n : number^ = f(true^)\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
+    unit_dispose(&u);
+
+    LHAT_TEST("and the union is what the caller has to handle");
+    check_text(&u,
+               "let^ f = p^ b:bool^ { if^ b { return^ 1 } }\n"
+               "let^ n : number^ = f(true^) ?? 0\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // A body with no return^ at all asked for no value. 13.2 has a form for
+    // it, and nil^ is not it.
+    LHAT_TEST("a body that returns nothing stays returning nothing");
+    check_text(&u,
+               "let^ log = p^ n:number^ { let^ x = n }\n"
+               "log(1)\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("every path returning means no nil^ joins in");
+    check_text(&u,
+               "let^ f = p^ b:bool^ { if^ b { return^ 1 else^: return^ 2 } }\n"
+               "let^ n : number^ = f(true^)\n");
+    CHECK_CLEAN(&u);
     unit_dispose(&u);
 
     LHAT_TEST("with the result written, recursion is fine");
