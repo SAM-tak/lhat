@@ -44,6 +44,7 @@ typedef enum {
     LHAT_CHECK_ERR_FUNCTION_FALLS_OUT,  // 13.2: an f^ that can reach its end
     LHAT_CHECK_ERR_FALLS_OUT_OF_RESULT, // the value-less exit does not fit the
                                         // result that was written
+    LHAT_CHECK_ERR_THIS_OUTSIDE,        // 15.10: this^ where no body is running
     LHAT_CHECK_ERR_NOT_DISPOSABLE,      // 12.5: with^ needs a dispose()
 
     LHAT_CHECK_ERR_MEMBER_EXISTS,       // 14.12: same name, no marker

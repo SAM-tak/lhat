@@ -64,6 +64,10 @@ typedef struct {
     // Its type is the one being worked out, so it is left out of the union.
     bool recursive_return;
 
+    // 02 の 15.10: the type of the subroutine whose body is being checked,
+    // which is what this^ names. NULL outside any body.
+    LhatType *this_type;
+
     // The name the subroutine currently being checked is being bound to, so
     // that a call to it inside its own body can be spotted (03 の 3.4).
     const char *defining_name;
@@ -728,6 +732,18 @@ static LhatType *infer_name(Checker *c, const LhatNode *node)
         if (name_is(name, length, "nil")) {
             return simple(c, LHAT_TYPE_NIL);
         }
+        // 15.10: this^ names the subroutine running, which is what lets a
+        // body with no name recurse. Only the hatted spelling means it, so
+        // an ordinary name `this` is untouched.
+        if (name_is(name, length, "this")) {
+            if (c->this_type == NULL) {
+                report(c, node, LHAT_CHECK_ERR_THIS_OUTSIDE);
+                return simple(c, LHAT_TYPE_UNKNOWN);
+            }
+            // 03 の 3.4 counts it the same way a call by name is counted.
+            c->saw_self_call = true;
+            return c->this_type;
+        }
     }
 
     // 03 の 3.4: a subroutine calling itself cannot have its result inferred,
@@ -1102,12 +1118,14 @@ static LhatType *infer_func(Checker *c, const LhatNode *node)
     LhatType *outer_inferred = c->inferred_result;
     bool outer_self_call = c->saw_self_call;
     bool outer_recursive = c->recursive_return;
+    LhatType *outer_this = c->this_type;
 
     c->scope = &body;
     c->declared_result = declared;
     c->inferred_result = NULL;
     c->saw_self_call = false;
     c->recursive_return = false;
+    c->this_type = func;
     c->deferred++;
 
     check_statement(c, node->v.func.body);
@@ -1159,6 +1177,7 @@ static LhatType *infer_func(Checker *c, const LhatNode *node)
     c->inferred_result = outer_inferred;
     c->saw_self_call = outer_self_call;
     c->recursive_return = outer_recursive;
+    c->this_type = outer_this;
 
     scope_dispose(&body);
     return func;
@@ -2188,6 +2207,8 @@ const char *lhat_check_error_message(LhatCheckErrorCode code)
         case LHAT_CHECK_ERR_FALLS_OUT_OF_RESULT:
             return "this body can reach its end without a value, which the "
                    "result type it was given does not admit";
+        case LHAT_CHECK_ERR_THIS_OUTSIDE:
+            return "this^ names the subroutine running, and none is here";
         case LHAT_CHECK_ERR_NEVER_RETURNS:
             return "every way out of this body calls it again, so it never "
                    "produces a value";

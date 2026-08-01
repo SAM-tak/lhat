@@ -330,6 +330,40 @@ static void test_results(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
+    // 15.10: this^ is a self-call like a call by name, so 3.4 counts it the
+    // same way and a body with no name can recurse.
+    LHAT_TEST("this^ recursion is inferred the same way");
+    check_text(&u,
+               "let^ fact = f^ n:number^ {\n"
+               "    if^ n <= 1 { return^ 1 }\n"
+               "    return^ n * this^(n - 1)\n"
+               "}\n"
+               "let^ n : number^ = fact(5)\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("and a body whose every exit is this^ is reported");
+    check_text(&u, "let^ f = f^ n:number^ { return^ this^(n) }\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_NEVER_RETURNS);
+    unit_dispose(&u);
+
+    // 15.10: this^ has the signature of the body it is in, so the arguments
+    // are checked -- which a call by name cannot do while the name is still
+    // being bound.
+    LHAT_TEST("this^ checks its arguments");
+    check_text(&u,
+               "let^ f = f^ n:number^ {\n"
+               "    if^ n <= 1 { return^ 1 }\n"
+               "    return^ this^(\"text\")\n"
+               "}\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
+    unit_dispose(&u);
+
+    LHAT_TEST("this^ outside any body is reported");
+    check_text(&u, "let^ x = this^\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_THIS_OUTSIDE);
+    unit_dispose(&u);
+
     LHAT_TEST("with the result written, recursion is fine");
     check_text(&u, "let^ f = f^ n:number^ -> number^ { return^ f(n) }\n");
     CHECK_CLEAN(&u);

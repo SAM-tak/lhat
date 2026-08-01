@@ -199,6 +199,7 @@ const char *lhat_opcode_name(LhatOpcode op)
         case LHAT_BC_GETUPVAL:    return "getupval";
         case LHAT_BC_SETUPVAL:    return "setupval";
         case LHAT_BC_CLOSE:       return "close";
+        case LHAT_BC_THIS:        return "this";
         case LHAT_BC_NEWTABLE:    return "newtable";
         case LHAT_BC_GETINDEX:    return "getindex";
         case LHAT_BC_SETINDEX:    return "setindex";
@@ -261,6 +262,7 @@ void lhat_chunk_print(const LhatChunk *chunk, size_t index, char *out,
             break;
         case LHAT_BC_LOADNIL:
         case LHAT_BC_CLOSE:
+        case LHAT_BC_THIS:
         case LHAT_BC_NEWTABLE:
         case LHAT_BC_POPCLEANUP:
         case LHAT_BC_YIELD:

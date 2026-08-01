@@ -333,6 +333,42 @@ static void test_calls(void)
     CHECK_INTEGER(&r, 120);
     run_dispose(&r);
 
+    // 02 の 15.10: a body with no name still has one way to reach itself.
+    LHAT_TEST("this^ reaches the subroutine running");
+    run_text(&r,
+             "let^ fact = f^n {\n"
+             "  if^ n <= 1 { return^ 1 }\n"
+             "  return^ n * this^(n - 1)\n"
+             "}\n"
+             "return^ fact(5)\n");
+    CHECK_INTEGER(&r, 120);
+    run_dispose(&r);
+
+    LHAT_TEST("and it works where there is no name to use");
+    run_text(&r,
+             "let^ apply = f^ g, n { return^ g(n) }\n"
+             "return^ apply(f^n { if^ n <= 1 { return^ 1 } "
+             "return^ n + this^(n - 1) }, 4)\n");
+    CHECK_INTEGER(&r, 10);
+    run_dispose(&r);
+
+    // The innermost one, so an inner body does not reach the outer one.
+    LHAT_TEST("this^ is the innermost subroutine");
+    run_text(&r,
+             "let^ outer = f^ {\n"
+             "  let^ inner = f^n { if^ n <= 0 { return^ 0 } "
+             "return^ 1 + this^(n - 1) }\n"
+             "  return^ inner(3)\n"
+             "}\n"
+             "return^ outer()\n");
+    CHECK_INTEGER(&r, 3);
+    run_dispose(&r);
+
+    LHAT_TEST("this^ outside any subroutine does not compile");
+    run_text(&r, "return^ this^\n");
+    LHAT_CHECK_EQ_INT(r.compiled, LHAT_COMPILE_UNDEFINED);
+    run_dispose(&r);
+
     LHAT_TEST("a p^ with no return^ answers nil^");
     run_text(&r, "let^ nothing = p^ { }\nreturn^ nothing()\n");
     LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_OK);

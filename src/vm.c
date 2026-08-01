@@ -1392,6 +1392,17 @@ static void compile_expression(Compiler *c, const LhatNode *node, uint8_t into)
                     emit(c, lhat_encode_abc(LHAT_BC_LOADNIL, into, 0, 0));
                     return;
                 }
+                // 15.10: the subroutine running, which is how a body with no
+                // name recurses. Only the hatted spelling means it, so an
+                // ordinary name `this` stays an ordinary name.
+                if (name_is(name, length, "this")) {
+                    if (c->parent == NULL) {
+                        fail(c, LHAT_COMPILE_UNDEFINED);
+                        return;
+                    }
+                    emit(c, lhat_encode_abc(LHAT_BC_THIS, into, 0, 0));
+                    return;
+                }
             }
             const Local *local = find_local(c, name, length);
             if (local != NULL) {
@@ -2707,6 +2718,13 @@ LhatRunResult lhat_run(const LhatProto *proto)
 
             case LHAT_BC_CLOSE:
                 close_upvalues(m, &registers[a]);
+                break;
+
+            // 02 の 15.10: the frame already holds it, so naming it costs a
+            // move rather than a capture.
+            case LHAT_BC_THIS:
+                registers[a] =
+                    lhat_object((LhatObject *)(void *)frame->closure);
                 break;
 
             case LHAT_BC_NEWTABLE: {
