@@ -4026,12 +4026,17 @@ for^ r := parse(s) {
 ```lhat
 for^ n {
     when^ is^ number^:
-        if^ n > 0 { positive() }
-        el^: { negative() }
+        if^ n > 0 {
+            positive()
+            else^:
+                negative()
+        }
     other^:
         fail()
 }
 ```
+
+節が括弧の内側に来るのは 5.2 のとおりであり、文の側で短縮形を使わないのも同じ節による。
 
 ### 17.9 展開 — `if^` の連鎖への糖衣［確定・重要］
 

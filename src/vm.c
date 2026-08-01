@@ -240,6 +240,8 @@ static void compile_statement(Compiler *c, const LhatNode *node);
 static void compile_statements(Compiler *c, const LhatNode *statements);
 static void compile_block(Compiler *c, const LhatNode *block);
 static const LhatNode *define_target_name(const LhatNode *target);
+static void compile_for_once(Compiler *c, const LhatNode *node, uint8_t into,
+                             bool as_expression);
 static bool def_chain_of(Compiler *c, const LhatNode *node, DefChain *out);
 static void compile_def(Compiler *c, const LhatNode *node, uint8_t into);
 
@@ -1296,6 +1298,18 @@ static void compile_expression(Compiler *c, const LhatNode *node, uint8_t into)
             compile_def(c, node, into);
             return;
 
+        // 17.2: the expression form of a match. 16.1 makes for^ the place a
+        // focus is defined whichever form follows it, so this is the one that
+        // answers a value rather than running statements.
+        case LHAT_NODE_FOR:
+            if (node->v.loop.kind != LHAT_FOR_IF &&
+                node->v.loop.kind != LHAT_FOR_WHEN) {
+                fail(c, LHAT_COMPILE_UNSUPPORTED);
+                return;
+            }
+            compile_for_once(c, node, into, true);
+            return;
+
         // 14.13: the two readings of self^{ … } are told apart by where it
         // stands. Reaching it as an expression means the one inside new^;
         // compile_def takes the template before anything gets here.
@@ -1900,16 +1914,26 @@ static void bind_targets(Compiler *c, const LhatNode *focus, size_t local_mark,
     (void)focus;
 }
 
-// 16.3's if^ clause, which 16.1 explains is not a loop: the focus is
-// introduced, used once, and goes. Written out it is the do^ block of 16.3.
-static void compile_for_if(Compiler *c, const LhatNode *node)
+// The two forms of for^ that 16.1 says do not repeat: the if^ clause of 16.3
+// and the pattern match of 17 章. Both introduce the focus, use it once, and
+// let it go -- the do^ block 16.3 writes them out as.
+//
+// 17.9 makes a match sugar over an if-chain, and the parser has already
+// written that chain, so there is nothing here to tell the two apart. Only
+// the subject's binding is left, which is 17.2's "evaluated once and named".
+static void compile_for_once(Compiler *c, const LhatNode *node, uint8_t into,
+                             bool as_expression)
 {
     size_t local_mark = c->local_count;
     uint8_t register_mark = c->next_register;
 
     declare_names(c, node->v.loop.focus);
     compile_in_scope(c, node->v.loop.focus);
-    compile_statement(c, node->v.loop.body);
+    if (as_expression) {
+        compile_expression(c, node->v.loop.body, into);
+    } else {
+        compile_statement(c, node->v.loop.body);
+    }
 
     if (c->local_count > local_mark) {
         emit(c, lhat_encode_abc(LHAT_BC_CLOSE, register_mark, 0, 0));
@@ -1942,11 +1966,6 @@ static void compile_loop(Compiler *c, const LhatNode *node)
     const LhatNode *focus = is_for ? node->v.loop.focus : NULL;
 
     int kind = is_for ? (int)node->v.loop.kind : -1;
-    if (is_for && kind == LHAT_FOR_WHEN) {
-        fail(c, LHAT_COMPILE_UNSUPPORTED);  // 17 章's pattern match
-        return;
-    }
-
     const LhatNode *prolog = clause_of(body, LHAT_CLAUSE_PROLOG);
     const LhatNode *first = clause_of(body, LHAT_CLAUSE_FIRST);
     const LhatNode *last = clause_of(body, LHAT_CLAUSE_LAST);
@@ -2277,8 +2296,9 @@ static void compile_statement(Compiler *c, const LhatNode *node)
         case LHAT_NODE_FOR:
             // 16.1: for^ introduces a value; whether it repeats is up to the
             // clause after it, and if^ is the clause that does not.
-            if (node->v.loop.kind == LHAT_FOR_IF) {
-                compile_for_if(c, node);
+            if (node->v.loop.kind == LHAT_FOR_IF ||
+                node->v.loop.kind == LHAT_FOR_WHEN) {
+                compile_for_once(c, node, 0, false);
             } else {
                 compile_loop(c, node);
             }

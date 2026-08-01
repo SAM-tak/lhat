@@ -2224,6 +2224,130 @@ static void test_coroutines(void)
     run_dispose(&r);
 }
 
+// 02 の 17 章. 17.9 makes a match sugar over an if-chain, so what is worth
+// pinning is that the chain comes out right -- not the instructions.
+static void test_patterns(void)
+{
+    Run r;
+
+    LHAT_TEST("a value pattern picks its arm");
+    run_text(&r,
+             "let^ n = 2\n"
+             "let^ x = 0\n"
+             "for^ n { when^ 1: x := 10 when^ 2: x := 20 other^: x := 30 }\n"
+             "return^ x\n");
+    CHECK_INTEGER(&r, 20);
+    run_dispose(&r);
+
+    LHAT_TEST("other^ takes what is left");
+    run_text(&r,
+             "let^ n = 9\n"
+             "let^ x = 0\n"
+             "for^ n { when^ 1: x := 10 other^: x := 30 }\n"
+             "return^ x\n");
+    CHECK_INTEGER(&r, 30);
+    run_dispose(&r);
+
+    // 17.3: to^ includes both ends, as 16.4 has it.
+    LHAT_TEST("a range pattern includes both ends");
+    run_text(&r,
+             "let^ seen = 0\n"
+             "for^ i := 1 to^ 5 {\n"
+             "  for^ i { when^ 2 to^ 4: seen := seen + 1 other^: }\n"
+             "}\n"
+             "return^ seen\n");
+    CHECK_INTEGER(&r, 3);
+    run_dispose(&r);
+
+    // 17.3: several on one arm, which 17.9 makes an or^.
+    LHAT_TEST("patterns separated by commas share an arm");
+    run_text(&r,
+             "let^ hits = 0\n"
+             "for^ i := 1 to^ 6 {\n"
+             "  for^ i { when^ 2, 3, 5: hits := hits + 1 other^: }\n"
+             "}\n"
+             "return^ hits\n");
+    CHECK_INTEGER(&r, 3);
+    run_dispose(&r);
+
+    // 17.2: the subject is evaluated once, which is the point of for^ being
+    // where a focus is defined (16.1).
+    LHAT_TEST("the subject is evaluated once");
+    run_text(&r,
+             "let^ calls = { n := 0 }\n"
+             "let^ get = f^ { calls.n := calls.n + 1 return^ 2 }\n"
+             "for^ get() { when^ 1: when^ 2: when^ 3: other^: }\n"
+             "return^ calls.n\n");
+    CHECK_INTEGER(&r, 1);
+    run_dispose(&r);
+
+    // 16.2 and 17.2: unnamed, the subject is it^; named, it is the name.
+    LHAT_TEST("the subject is reached through it^");
+    run_text(&r,
+             "let^ x = 0\n"
+             "for^ 7 { when^ 7: x := it^ other^: }\n"
+             "return^ x\n");
+    CHECK_INTEGER(&r, 7);
+    run_dispose(&r);
+
+    LHAT_TEST("and through a name when one is written");
+    run_text(&r,
+             "let^ x = 0\n"
+             "for^ n := 7 { when^ 7: x := n other^: }\n"
+             "return^ x\n");
+    CHECK_INTEGER(&r, 7);
+    run_dispose(&r);
+
+    LHAT_TEST("the subject is gone after the match");
+    run_text(&r, "for^ n := 1 { when^ 1: other^: }\nreturn^ n\n");
+    LHAT_CHECK_EQ_INT(r.compiled, LHAT_COMPILE_UNDEFINED);
+    run_dispose(&r);
+
+    // 17.4: a type pattern writes is^, since a bare name could be either.
+    LHAT_TEST("a type pattern uses is^");
+    run_text(&r,
+             "errordef^ E { A, B }\n"
+             "let^ x = 0\n"
+             "for^ error^E.B{ } {\n"
+             "  when^ is^ E.A: x := 1\n"
+             "  when^ is^ E.B: x := 2\n"
+             "  other^: x := 3\n"
+             "}\n"
+             "return^ x\n");
+    CHECK_INTEGER(&r, 2);
+    run_dispose(&r);
+
+    // 17.2 の 式形. 17.6: only the ':' of for^ opens, and ';' closes it all.
+    LHAT_TEST("the expression form answers a value");
+    run_text(&r,
+             "let^ n = 2\n"
+             "let^ r = for^ n: when^ 1: 10 when^ 2: 20 other^: 30 ;\n"
+             "return^ r\n");
+    CHECK_INTEGER(&r, 20);
+    run_dispose(&r);
+
+    LHAT_TEST("and reaches its subject the same way");
+    run_text(&r,
+             "let^ r = for^ 3: when^ 1 to^ 2: 0 other^: it^ * 100 ;\n"
+             "return^ r\n");
+    CHECK_INTEGER(&r, 300);
+    run_dispose(&r);
+
+    // 17.8: no guards. The arm's body is where a further test goes.
+    LHAT_TEST("a further test goes inside the arm");
+    run_text(&r,
+             "let^ x = 0\n"
+             "for^ n := 5 {\n"
+             "  when^ 1 to^ 9:\n"
+             "    if^ n > 3 { x := 1 else^: x := 2 }\n"
+             "  other^:\n"
+             "    x := 3\n"
+             "}\n"
+             "return^ x\n");
+    CHECK_INTEGER(&r, 1);
+    run_dispose(&r);
+}
+
 int main(void)
 {
     test_encoding();
@@ -2242,5 +2366,6 @@ int main(void)
     test_cleanups();
     test_definitions();
     test_coroutines();
+    test_patterns();
     return lhat_test_report("test_vm");
 }
