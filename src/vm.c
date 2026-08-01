@@ -682,7 +682,7 @@ static void compile_is(Compiler *c, const LhatNode *node, uint8_t into)
 static LhatRuntimeType *lower_type(Compiler *c, const LhatNode *node)
 {
     Compiler *root = root_of(c);
-    LhatObject **owner = &root->proto->chunk.objects;
+    LhatHeap *owner = &root->proto->chunk.objects;
 
     if (node == NULL) {
         return NULL;
@@ -2677,10 +2677,15 @@ typedef struct {
     Frame frames[LHAT_MAX_FRAMES];
     size_t frame_count;
 
-    // Everything allocated while running, so it can all be released at the
-    // end. A collector replaces this; until then a program frees on exit.
-    LhatObject *objects;
+    // Everything allocated while running. What the answer cannot reach is
+    // freed as the program runs; the rest passes to the caller at the end.
+    LhatHeap objects;
     LhatUpvalue *open;  // 5.4, innermost first
+
+    LhatGray gray;
+    size_t collected;
+    size_t threshold;   // how many live objects before the next collection
+    const LhatProto *entry;
 } Machine;
 
 // What an index reads from. 04 の 2.3 gives every error message and cause
@@ -2785,9 +2790,65 @@ static void *allocate(Machine *m, size_t size, LhatObjectKind kind)
         return NULL;
     }
     object->kind = kind;
-    object->next = m->objects;
-    m->objects = object;
+    object->next = m->objects.objects;
+    m->objects.objects = object;
+    m->objects.count++;
     return object;
+}
+
+// The roots: everything the program can still reach. Collection happens
+// between instructions, so every live value is in a register, a frame or the
+// open list -- there is no half-built object to miss.
+static bool mark_roots(Machine *m)
+{
+    for (size_t i = 0; i < m->frame_count; i++) {
+        Frame *frame = &m->frames[i];
+        if (!lhat_gc_reach(&m->gray,
+                           lhat_object((LhatObject *)(void *)frame->closure)) ||
+            !lhat_gc_reach(&m->gray,
+                           lhat_object((LhatObject *)frame->coroutine)) ||
+            !lhat_gc_reach(&m->gray, frame->answer)) {
+            return false;
+        }
+        // 5.2 fixed the frame's width at compile time, and the scratch above
+        // the names is inside it, so this covers the values a half-finished
+        // expression is holding.
+        const LhatProto *proto = frame->closure->proto;
+        size_t width = proto != NULL ? proto->chunk.registers : 0;
+        for (size_t r = 0; r < width; r++) {
+            if (!lhat_gc_reach(&m->gray, frame->base[r])) {
+                return false;
+            }
+        }
+    }
+    for (LhatUpvalue *open = m->open; open != NULL; open = open->next_open) {
+        if (!lhat_gc_reach(&m->gray, lhat_object((LhatObject *)open))) {
+            return false;
+        }
+    }
+    return true;
+}
+
+// 03 の 1.2 keeps Lua's incremental collector as something to borrow later.
+// This is the working form 5.1's order asks for first.
+static void collect(Machine *m)
+{
+    if (!mark_roots(m)) {
+        m->threshold = SIZE_MAX;  // out of memory; stop trying to collect
+        return;
+    }
+    while (m->gray.count > 0) {
+        LhatObject *object = m->gray.items[--m->gray.count];
+        if (!lhat_gc_children(&m->gray, object)) {
+            m->threshold = SIZE_MAX;
+            return;
+        }
+    }
+    m->collected += lhat_gc_sweep(&m->objects);
+
+    // What survived is the new baseline, so a program holding a lot does not
+    // collect on every allocation.
+    m->threshold = m->objects.count * 2 + 64;
 }
 
 // 5.4: one place per slot, so two closures capturing the same name share it.
@@ -2837,15 +2898,22 @@ static LhatRunResult finish(Machine *m, LhatRunStatus status, LhatValue value,
     result.status = status;
     result.value = value;
     result.at = at;
-    result.objects = m->objects;
-    m->objects = NULL;
+    result.collected = m->collected;
+    result.live = 0;
+    result.live = m->objects.count;
+    result.objects = m->objects.objects;
+    m->objects.objects = NULL;
+    m->objects.count = 0;
     m->open = NULL;
+    lhat_gray_dispose(&m->gray);
     return result;
 }
 
 void lhat_run_result_dispose(LhatRunResult *result)
 {
-    lhat_object_free_all(&result->objects);
+    LhatHeap heap = { result->objects, 0 };
+    lhat_object_free_all(&heap);
+    result->objects = NULL;
     result->value = lhat_nil();
 }
 
@@ -2858,6 +2926,8 @@ LhatRunResult lhat_run(const LhatProto *proto)
     for (size_t i = 0; i < LHAT_STACK_SLOTS; i++) {
         m->stack[i] = lhat_nil();
     }
+    m->threshold = 256;
+    m->entry = proto;
 
     LhatClosure *entry =
         (LhatClosure *)allocate(m, sizeof *entry, LHAT_OBJECT_SUBROUTINE);
@@ -2871,12 +2941,25 @@ LhatRunResult lhat_run(const LhatProto *proto)
     frame->pc = 0;
     frame->base = m->stack;
     frame->result = 0;
+    frame->cleanup_count = 0;
+    frame->returning = false;
+    frame->coroutine = NULL;
+    frame->disposing = false;
+    frame->answer = lhat_nil();
 
     LhatValue *registers = frame->base;
     const LhatChunk *chunk = &proto->chunk;
     size_t pc = 0;
 
     while (pc < chunk->count) {
+        // Between instructions, where every live value is in a register, a
+        // frame or the open list. Inside one there is a half-built object the
+        // roots do not name yet.
+        if (m->objects.count >= m->threshold) {
+            frame->pc = pc;
+            collect(m);
+        }
+
         LhatInstruction instruction = chunk->code[pc];
         size_t at = pc++;
 

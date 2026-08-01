@@ -10,15 +10,16 @@
 // Making and freeing
 // ---------------------------------------------------------------------------
 
-static void *allocate(LhatObject **owner, size_t size, LhatObjectKind kind)
+static void *allocate(LhatHeap *heap, size_t size, LhatObjectKind kind)
 {
     LhatObject *object = (LhatObject *)calloc(1, size);
     if (object == NULL) {
         return NULL;
     }
     object->kind = kind;
-    object->next = *owner;
-    *owner = object;
+    object->next = heap->objects;
+    heap->objects = object;
+    heap->count++;
     return object;
 }
 
@@ -33,10 +34,10 @@ uint32_t lhat_string_hash(const char *text, size_t length)
     return hash;
 }
 
-LhatString *lhat_string_new(LhatObject **owner, const char *text, size_t length)
+LhatString *lhat_string_new(LhatHeap *heap, const char *text, size_t length)
 {
     LhatString *string =
-        (LhatString *)allocate(owner, sizeof *string + length + 1,
+        (LhatString *)allocate(heap, sizeof *string + length + 1,
                                LHAT_OBJECT_STRING);
     if (string == NULL) {
         return NULL;
@@ -50,12 +51,12 @@ LhatString *lhat_string_new(LhatObject **owner, const char *text, size_t length)
     return string;
 }
 
-LhatString *lhat_string_concat(LhatObject **owner, const LhatString *left,
+LhatString *lhat_string_concat(LhatHeap *heap, const LhatString *left,
                                const LhatString *right)
 {
     size_t length = left->length + right->length;
     LhatString *joined =
-        (LhatString *)allocate(owner, sizeof *joined + length + 1,
+        (LhatString *)allocate(heap, sizeof *joined + length + 1,
                                LHAT_OBJECT_STRING);
     if (joined == NULL) {
         return NULL;
@@ -68,16 +69,16 @@ LhatString *lhat_string_concat(LhatObject **owner, const LhatString *left,
     return joined;
 }
 
-LhatTable *lhat_table_new(LhatObject **owner)
+LhatTable *lhat_table_new(LhatHeap *heap)
 {
-    return (LhatTable *)allocate(owner, sizeof(LhatTable), LHAT_OBJECT_TABLE);
+    return (LhatTable *)allocate(heap, sizeof(LhatTable), LHAT_OBJECT_TABLE);
 }
 
-LhatErrorKind *lhat_error_kind_new(LhatObject **owner,
+LhatErrorKind *lhat_error_kind_new(LhatHeap *heap,
                                    const LhatErrorKind *group,
                                    const LhatString *name)
 {
-    LhatErrorKind *kind = (LhatErrorKind *)allocate(owner, sizeof(LhatErrorKind),
+    LhatErrorKind *kind = (LhatErrorKind *)allocate(heap, sizeof(LhatErrorKind),
                                                     LHAT_OBJECT_ERROR_KIND);
     if (kind == NULL) {
         return NULL;
@@ -87,14 +88,14 @@ LhatErrorKind *lhat_error_kind_new(LhatObject **owner,
     return kind;
 }
 
-LhatError *lhat_error_new(LhatObject **owner, const LhatErrorKind *kind)
+LhatError *lhat_error_new(LhatHeap *heap, const LhatErrorKind *kind)
 {
-    LhatTable *fields = lhat_table_new(owner);
+    LhatTable *fields = lhat_table_new(heap);
     if (fields == NULL) {
         return NULL;
     }
     LhatError *error =
-        (LhatError *)allocate(owner, sizeof(LhatError), LHAT_OBJECT_ERROR);
+        (LhatError *)allocate(heap, sizeof(LhatError), LHAT_OBJECT_ERROR);
     if (error == NULL) {
         return NULL;
     }
@@ -103,11 +104,11 @@ LhatError *lhat_error_new(LhatObject **owner, const LhatErrorKind *kind)
     return error;
 }
 
-LhatCoroutine *lhat_coroutine_new(LhatObject **owner, const LhatClosure *closure,
+LhatCoroutine *lhat_coroutine_new(LhatHeap *heap, const LhatClosure *closure,
                                   size_t registers)
 {
     LhatCoroutine *coroutine =
-        (LhatCoroutine *)allocate(owner, sizeof(LhatCoroutine),
+        (LhatCoroutine *)allocate(heap, sizeof(LhatCoroutine),
                                   LHAT_OBJECT_COROUTINE);
     if (coroutine == NULL) {
         return NULL;
@@ -126,10 +127,10 @@ LhatCoroutine *lhat_coroutine_new(LhatObject **owner, const LhatClosure *closure
     return coroutine;
 }
 
-LhatCoroutine *lhat_table_iterator(LhatObject **owner, const LhatTable *table)
+LhatCoroutine *lhat_table_iterator(LhatHeap *heap, const LhatTable *table)
 {
     LhatCoroutine *walk =
-        (LhatCoroutine *)allocate(owner, sizeof(LhatCoroutine),
+        (LhatCoroutine *)allocate(heap, sizeof(LhatCoroutine),
                                   LHAT_OBJECT_COROUTINE);
     if (walk == NULL) {
         return NULL;
@@ -165,11 +166,11 @@ bool lhat_table_walk(LhatCoroutine *walk, LhatValue *key, LhatValue *value)
     return false;
 }
 
-LhatNative *lhat_native_new(LhatObject **owner, LhatNativeKind kind,
+LhatNative *lhat_native_new(LhatHeap *heap, LhatNativeKind kind,
                             LhatValue bound)
 {
     LhatNative *native =
-        (LhatNative *)allocate(owner, sizeof(LhatNative), LHAT_OBJECT_NATIVE);
+        (LhatNative *)allocate(heap, sizeof(LhatNative), LHAT_OBJECT_NATIVE);
     if (native == NULL) {
         return NULL;
     }
@@ -178,10 +179,10 @@ LhatNative *lhat_native_new(LhatObject **owner, LhatNativeKind kind,
     return native;
 }
 
-LhatRuntimeType *lhat_type_rt_new(LhatObject **owner, LhatRuntimeTypeKind kind)
+LhatRuntimeType *lhat_type_rt_new(LhatHeap *heap, LhatRuntimeTypeKind kind)
 {
     LhatRuntimeType *type =
-        (LhatRuntimeType *)allocate(owner, sizeof(LhatRuntimeType),
+        (LhatRuntimeType *)allocate(heap, sizeof(LhatRuntimeType),
                                     LHAT_OBJECT_TYPE);
     if (type != NULL) {
         type->kind = kind;
@@ -277,9 +278,9 @@ bool lhat_value_satisfies(LhatValue value, const LhatRuntimeType *type)
     return false;
 }
 
-LhatOverload *lhat_overload_new(LhatObject **owner)
+LhatOverload *lhat_overload_new(LhatHeap *heap)
 {
-    return (LhatOverload *)allocate(owner, sizeof(LhatOverload),
+    return (LhatOverload *)allocate(heap, sizeof(LhatOverload),
                                     LHAT_OBJECT_OVERLOAD);
 }
 
@@ -313,6 +314,165 @@ bool lhat_error_is_kind(LhatValue value, const LhatErrorKind *kind)
     return kind->group == NULL ? held->group == kind : held == kind;
 }
 
+// ---------------------------------------------------------------------------
+// Collection
+// ---------------------------------------------------------------------------
+
+void lhat_gray_dispose(LhatGray *gray)
+{
+    free(gray->items);
+    gray->items = NULL;
+    gray->count = 0;
+    gray->capacity = 0;
+}
+
+static bool gray_push(LhatGray *gray, LhatObject *object)
+{
+    if (gray->count == gray->capacity) {
+        size_t grown = gray->capacity ? gray->capacity * 2 : 64;
+        LhatObject **bigger =
+            (LhatObject **)realloc(gray->items, grown * sizeof *bigger);
+        if (bigger == NULL) {
+            return false;
+        }
+        gray->items = bigger;
+        gray->capacity = grown;
+    }
+    gray->items[gray->count++] = object;
+    return true;
+}
+
+static bool reach(LhatGray *gray, LhatObject *object)
+{
+    if (object == NULL || object->marked) {
+        return true;
+    }
+    object->marked = true;
+    return gray_push(gray, object);
+}
+
+bool lhat_gc_reach(LhatGray *gray, LhatValue value)
+{
+    return !lhat_is_object(value) || reach(gray, lhat_as_object(value));
+}
+
+bool lhat_gc_children(LhatGray *gray, LhatObject *object)
+{
+    switch (object->kind) {
+        case LHAT_OBJECT_STRING:
+            return true;
+
+        case LHAT_OBJECT_TABLE: {
+            const LhatTable *table = (const LhatTable *)object;
+            for (size_t i = 0; i < table->array_count; i++) {
+                if (!lhat_gc_reach(gray, table->array[i])) {
+                    return false;
+                }
+            }
+            for (size_t i = 0; i < table->entry_capacity; i++) {
+                if (!lhat_gc_reach(gray, table->entries[i].key) ||
+                    !lhat_gc_reach(gray, table->entries[i].value)) {
+                    return false;
+                }
+            }
+            // 14.2 fixes this when the instance is made, so it is a plain
+            // reference like any other.
+            return reach(gray, (LhatObject *)(void *)table->definition);
+        }
+
+        case LHAT_OBJECT_ERROR: {
+            const LhatError *error = (const LhatError *)object;
+            return reach(gray, (LhatObject *)(void *)error->kind) &&
+                   reach(gray, (LhatObject *)error->fields);
+        }
+
+        case LHAT_OBJECT_ERROR_KIND: {
+            const LhatErrorKind *kind = (const LhatErrorKind *)object;
+            return reach(gray, (LhatObject *)(void *)kind->group) &&
+                   reach(gray, (LhatObject *)(void *)kind->name);
+        }
+
+        case LHAT_OBJECT_SUBROUTINE: {
+            const LhatClosure *closure = (const LhatClosure *)object;
+            for (size_t i = 0; i < closure->upvalue_count; i++) {
+                if (!reach(gray, (LhatObject *)closure->upvalues[i])) {
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        case LHAT_OBJECT_UPVALUE: {
+            // 5.4: while it is open the place is a stack slot, and the stack
+            // is a root of its own. Closed, the value is here.
+            const LhatUpvalue *upvalue = (const LhatUpvalue *)object;
+            return lhat_gc_reach(gray, upvalue->closed) &&
+                   (upvalue->location == NULL ||
+                    lhat_gc_reach(gray, *upvalue->location));
+        }
+
+        case LHAT_OBJECT_COROUTINE: {
+            const LhatCoroutine *co = (const LhatCoroutine *)object;
+            for (size_t i = 0; i < co->register_count; i++) {
+                if (!lhat_gc_reach(gray, co->registers[i])) {
+                    return false;
+                }
+            }
+            return reach(gray, (LhatObject *)(void *)co->closure) &&
+                   reach(gray, (LhatObject *)(void *)co->walking);
+        }
+
+        case LHAT_OBJECT_NATIVE:
+            return lhat_gc_reach(gray, ((const LhatNative *)object)->bound);
+
+        case LHAT_OBJECT_TYPE: {
+            const LhatRuntimeType *type = (const LhatRuntimeType *)object;
+            for (size_t i = 0; i < type->part_count; i++) {
+                if (!reach(gray, (LhatObject *)type->parts[i])) {
+                    return false;
+                }
+            }
+            for (size_t i = 0; i < type->member_count; i++) {
+                if (!reach(gray, (LhatObject *)(void *)type->members[i].name) ||
+                    !reach(gray, (LhatObject *)type->members[i].type)) {
+                    return false;
+                }
+            }
+            return reach(gray, (LhatObject *)(void *)type->error_kind);
+        }
+
+        case LHAT_OBJECT_OVERLOAD: {
+            const LhatOverload *overload = (const LhatOverload *)object;
+            for (size_t i = 0; i < overload->count; i++) {
+                if (!lhat_gc_reach(gray, overload->candidates[i])) {
+                    return false;
+                }
+            }
+            return true;
+        }
+    }
+    return true;
+}
+
+size_t lhat_gc_sweep(LhatHeap *heap)
+{
+    size_t freed = 0;
+    LhatObject **link = &heap->objects;
+    while (*link != NULL) {
+        LhatObject *object = *link;
+        if (object->marked) {
+            object->marked = false;  // ready for the next collection
+            link = &object->next;
+            continue;
+        }
+        *link = object->next;
+        lhat_object_free(object);
+        heap->count--;
+        freed++;
+    }
+    return freed;
+}
+
 void lhat_object_free(LhatObject *object)
 {
     if (object == NULL) {
@@ -344,15 +504,16 @@ void lhat_object_free(LhatObject *object)
     free(object);
 }
 
-void lhat_object_free_all(LhatObject **owner)
+void lhat_object_free_all(LhatHeap *heap)
 {
-    LhatObject *object = *owner;
+    LhatObject *object = heap->objects;
     while (object != NULL) {
         LhatObject *next = object->next;
         lhat_object_free(object);
         object = next;
     }
-    *owner = NULL;
+    heap->objects = NULL;
+    heap->count = 0;
 }
 
 // ---------------------------------------------------------------------------

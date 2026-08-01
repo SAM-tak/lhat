@@ -21,6 +21,17 @@
 
 #include "value.h"
 
+// Who an object belongs to. Two exist: a chunk, holding what its constants
+// name, and the machine, holding what a program makes while it runs. Only the
+// second is collected.
+//
+// The count is kept here rather than at the call sites so that every
+// allocation is seen -- the collector decides when to run from it.
+typedef struct {
+    LhatObject *objects;
+    size_t count;
+} LhatHeap;
+
 // The bytes are copied in and kept NUL-terminated, so a string can be handed
 // to a C interface without another copy. `length` is the byte count and does
 // not count the terminator -- 01 の 5 章 makes a string a byte sequence, not
@@ -187,36 +198,36 @@ typedef struct LhatNative {
 // Making and freeing
 // ---------------------------------------------------------------------------
 
-// Both link the new object into *owner. Return NULL when out of memory.
-LhatString *lhat_string_new(LhatObject **owner, const char *text, size_t length);
-LhatTable *lhat_table_new(LhatObject **owner);
+// Both link the new object into the heap. Return NULL when out of memory.
+LhatString *lhat_string_new(LhatHeap *heap, const char *text, size_t length);
+LhatTable *lhat_table_new(LhatHeap *heap);
 
 // `group` is NULL to make the object standing for a whole errordef^, and the
 // group's object to make one of its kinds.
-LhatErrorKind *lhat_error_kind_new(LhatObject **owner,
+LhatErrorKind *lhat_error_kind_new(LhatHeap *heap,
                                    const LhatErrorKind *group,
                                    const LhatString *name);
 
 // Makes the error and the table its fields live in.
-LhatError *lhat_error_new(LhatObject **owner, const LhatErrorKind *kind);
+LhatError *lhat_error_new(LhatHeap *heap, const LhatErrorKind *kind);
 
 // `registers` is how wide the body's frame is, which 5.2 fixes at compile
 // time -- so a coroutine's storage is known when it is made.
-LhatCoroutine *lhat_coroutine_new(LhatObject **owner, const LhatClosure *closure,
+LhatCoroutine *lhat_coroutine_new(LhatHeap *heap, const LhatClosure *closure,
                                   size_t registers);
 
 // 02 の 16.3: the coroutine a table answers with. It has no body; resuming it
 // reads the next key and value.
-LhatCoroutine *lhat_table_iterator(LhatObject **owner, const LhatTable *table);
+LhatCoroutine *lhat_table_iterator(LhatHeap *heap, const LhatTable *table);
 
 // Reads the next pair of a table walk, advancing it. Answers false when the
 // walk is over.
 bool lhat_table_walk(LhatCoroutine *walk, LhatValue *key, LhatValue *value);
 
-LhatNative *lhat_native_new(LhatObject **owner, LhatNativeKind kind,
+LhatNative *lhat_native_new(LhatHeap *heap, LhatNativeKind kind,
                             LhatValue bound);
 
-LhatRuntimeType *lhat_type_rt_new(LhatObject **owner, LhatRuntimeTypeKind kind);
+LhatRuntimeType *lhat_type_rt_new(LhatHeap *heap, LhatRuntimeTypeKind kind);
 
 // Both return false only when out of memory.
 bool lhat_type_rt_add_part(LhatRuntimeType *type, LhatRuntimeType *part);
@@ -227,7 +238,7 @@ bool lhat_type_rt_add_member(LhatRuntimeType *type, const LhatString *name,
 // asks nothing, which is what an unannotated parameter means.
 bool lhat_value_satisfies(LhatValue value, const LhatRuntimeType *type);
 
-LhatOverload *lhat_overload_new(LhatObject **owner);
+LhatOverload *lhat_overload_new(LhatHeap *heap);
 bool lhat_overload_add(LhatOverload *overload, LhatValue candidate);
 
 // 04 の 2.6 and 6.1: whether `value` is an error of `kind`. A kind object
@@ -235,11 +246,42 @@ bool lhat_overload_add(LhatOverload *overload, LhatValue candidate);
 // makes the declaration the union of them.
 bool lhat_error_is_kind(LhatValue value, const LhatErrorKind *kind);
 
+// ---------------------------------------------------------------------------
+// Collection
+// ---------------------------------------------------------------------------
+//
+// A mark and sweep that does not move anything, so nothing outside has to be
+// told where a value went. 03 の 1.2 keeps Lua's incremental collector as
+// something to borrow later; this is the working form it would replace.
+//
+// Marking uses an explicit list rather than recursion, so a deep structure
+// cannot run the C stack out.
+
+typedef struct {
+    LhatObject **items;
+    size_t count;
+    size_t capacity;
+} LhatGray;
+
+void lhat_gray_dispose(LhatGray *gray);
+
+// Marks the value if it is an unmarked object, and remembers it so that what
+// it refers to is reached too. Returns false only when out of memory.
+bool lhat_gc_reach(LhatGray *gray, LhatValue value);
+
+// Marks everything the object refers to. Objects a chunk owns are reached
+// like any other; the sweep simply never visits that list.
+bool lhat_gc_children(LhatGray *gray, LhatObject *object);
+
+// Frees what is not marked, and unmarks what is. Returns how many objects
+// were freed.
+size_t lhat_gc_sweep(LhatHeap *heap);
+
 // Frees one object and whatever it owns, but not what it refers to.
 void lhat_object_free(LhatObject *object);
 
 // Frees the whole list and empties it.
-void lhat_object_free_all(LhatObject **owner);
+void lhat_object_free_all(LhatHeap *heap);
 
 // ---------------------------------------------------------------------------
 // Strings
@@ -255,7 +297,7 @@ uint32_t lhat_string_hash(const char *text, size_t length);
 
 // 02 の 11.2: '..' on two strings. The bytes are copied into a new string;
 // neither operand is touched.
-LhatString *lhat_string_concat(LhatObject **owner, const LhatString *left,
+LhatString *lhat_string_concat(LhatHeap *heap, const LhatString *left,
                                const LhatString *right);
 
 // ---------------------------------------------------------------------------

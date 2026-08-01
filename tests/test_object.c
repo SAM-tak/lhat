@@ -10,7 +10,7 @@
 #include "object.h"
 #include "testutil.h"
 
-static LhatValue string_value(LhatObject **owner, const char *text)
+static LhatValue string_value(LhatHeap *owner, const char *text)
 {
     LhatString *string = lhat_string_new(owner, text, strlen(text));
     return lhat_object((LhatObject *)string);
@@ -18,7 +18,7 @@ static LhatValue string_value(LhatObject **owner, const char *text)
 
 static void test_strings(void)
 {
-    LhatObject *owner = NULL;
+    LhatHeap owner = { NULL, 0 };
 
     LHAT_TEST("a string keeps its bytes and a terminator");
     {
@@ -64,14 +64,14 @@ static void test_strings(void)
     }
 
     lhat_object_free_all(&owner);
-    LHAT_CHECK(owner == NULL, "the owner is emptied");
+    LHAT_CHECK(owner.objects == NULL, "the owner is emptied");
 }
 
 // 04 の 11.3: a table is a mapping. There is no such thing as out of range,
 // and a key that is not there answers nil^.
 static void test_table_basics(void)
 {
-    LhatObject *owner = NULL;
+    LhatHeap owner = { NULL, 0 };
     LhatTable *t = lhat_table_new(&owner);
     bool refused = false;
 
@@ -139,7 +139,7 @@ static void test_table_basics(void)
 
 static void test_table_growth(void)
 {
-    LhatObject *owner = NULL;
+    LhatHeap owner = { NULL, 0 };
     bool refused = false;
 
     // Enough to force the hash part to grow several times.

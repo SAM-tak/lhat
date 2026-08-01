@@ -2423,6 +2423,104 @@ static void test_patterns(void)
     run_dispose(&r);
 }
 
+// 03 の 1.2 keeps Lua's incremental collector as something to borrow later.
+// What is pinned here is that the working form reclaims what a program lets
+// go of and keeps what it does not.
+static void test_collection(void)
+{
+    Run r;
+
+    // Every turn makes a table and drops it. Without a collector these all
+    // pile up until the run ends.
+    LHAT_TEST("what the program lets go of is reclaimed");
+    run_text(&r,
+             "let^ n = 0\n"
+             "repeat^ 2000 { let^ t = { a := 1, b := 2 } n := n + 1 }\n"
+             "return^ n\n");
+    CHECK_INTEGER(&r, 2000);
+    LHAT_CHECK(r.ran.collected > 1000, "the collector ran and freed");
+    LHAT_CHECK(r.ran.live < 500, "little is left at the end");
+    run_dispose(&r);
+
+    // The same loop, holding on to every table. Nothing may be freed.
+    LHAT_TEST("what the program holds is kept");
+    run_text(&r,
+             "let^ kept = { }\n"
+             "for^ i := 1 to^ 2000 { kept[i] := { a := i } }\n"
+             "return^ kept[1500].a\n");
+    CHECK_INTEGER(&r, 1500);
+    LHAT_CHECK(r.ran.live > 2000, "every table held is still there");
+    run_dispose(&r);
+
+    // 5.4: a closure keeps the place it captured, so what that place holds
+    // has to survive the collection too.
+    LHAT_TEST("a captured place keeps its value alive");
+    run_text(&r,
+             "let^ get = f^ { return^ 0 }\n"
+             "do^{\n"
+             "  let^ held = { n := 42 }\n"
+             "  get := f^ { return^ held.n }\n"
+             "}\n"
+             "repeat^ 2000 { let^ waste = { a := 1 } }\n"
+             "return^ get()\n");
+    CHECK_INTEGER(&r, 42);
+    run_dispose(&r);
+
+    // A suspended coroutine holds its registers, and they are roots through
+    // it rather than through any frame.
+    LHAT_TEST("a suspended coroutine keeps what its registers hold");
+    run_text(&r,
+             "let^ gen = p^ {\n"
+             "  let^ mine = { n := 7 }\n"
+             "  yield^ 0\n"
+             "  yield^ mine.n\n"
+             "}\n"
+             "let^ c = gen()\n"
+             "c.resume()\n"
+             "repeat^ 2000 { let^ waste = { a := 1 } }\n"
+             "return^ c.resume()\n");
+    CHECK_INTEGER(&r, 7);
+    run_dispose(&r);
+
+    // A string the answer points at has to outlive every collection between
+    // it being made and the run ending.
+    LHAT_TEST("the answer survives");
+    run_text(&r,
+             "let^ s = \"kept\"\n"
+             "repeat^ 2000 { let^ waste = { a := 1 } }\n"
+             "return^ s .. \"!\"\n");
+    CHECK_STRING(&r, "kept!");
+    run_dispose(&r);
+
+    // A cycle is unreachable but points at itself, so reference counting
+    // would keep it. Marking from the roots does not.
+    LHAT_TEST("a cycle the program dropped is reclaimed");
+    run_text(&r,
+             "let^ n = 0\n"
+             "repeat^ 2000 {\n"
+             "  let^ a = { }\n"
+             "  let^ b = { }\n"
+             "  a.other := b\n"
+             "  b.other := a\n"
+             "  n := n + 1\n"
+             "}\n"
+             "return^ n\n");
+    CHECK_INTEGER(&r, 2000);
+    LHAT_CHECK(r.ran.live < 500, "the cycles went");
+    run_dispose(&r);
+
+    // 14.2's link from an instance to its definition is a reference like any
+    // other, and the definition outlives the instances.
+    LHAT_TEST("a definition outlives the instances that read it");
+    run_text(&r,
+             "let^ Foo = def^{ self^{ n := 0 }, get := f^self^ { return^ self^.n } }\n"
+             "let^ last = Foo.new^()\n"
+             "repeat^ 2000 { let^ f = Foo.new^() }\n"
+             "return^ last.get()\n");
+    CHECK_INTEGER(&r, 0);
+    run_dispose(&r);
+}
+
 int main(void)
 {
     test_encoding();
@@ -2442,5 +2540,6 @@ int main(void)
     test_definitions();
     test_coroutines();
     test_patterns();
+    test_collection();
     return lhat_test_report("test_vm");
 }

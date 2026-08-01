@@ -60,6 +60,12 @@ typedef struct {
     // What the run allocated. The answer may point into it, so the caller
     // owns it and frees it with lhat_run_result_dispose().
     LhatObject *objects;
+
+    // How many objects the collector freed while the program ran, and how
+    // many were still live at the end. Kept so that a test can see the
+    // collector working -- nothing in the language reads them.
+    size_t collected;
+    size_t live;
 } LhatRunResult;
 
 LhatRunResult lhat_run(const LhatProto *proto);

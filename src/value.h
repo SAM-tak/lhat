@@ -48,6 +48,7 @@ typedef enum {
 
 typedef struct LhatObject {
     LhatObjectKind kind;
+    bool marked;              // reached in the collection now running
     struct LhatObject *next;  // every object, for the collector to walk
 } LhatObject;
 
