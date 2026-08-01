@@ -72,6 +72,26 @@ typedef struct {
     // that a call to it inside its own body can be spotted (03 の 3.4).
     const char *defining_name;
     size_t defining_length;
+
+    // 15.2: what the yield^/yieldall^ sites seen so far in this body agree
+    // on. infer_func saves and resets these around a nested body the same
+    // way it does declared_result/inferred_result, so a nested p^{...} does
+    // not pollute the enclosing one.
+    LhatType *coroutine_produce;  // Y
+    LhatType *coroutine_receive;  // R
+
+    // How the yield^ infer() is about to see is being used. check_define
+    // sets BOUND with the let^ target's annotation just around inferring
+    // that one value; check_statement sets DISCARD around a bare yield^
+    // statement. Left at NONE everywhere else, including inside whatever
+    // infer() recurses into to produce a yield^'s own value -- that value is
+    // never itself the direct target of a binding.
+    enum YieldContext {
+        YIELD_CTX_NONE,
+        YIELD_CTX_DISCARD,
+        YIELD_CTX_BOUND
+    } yield_context;
+    LhatType *yield_bound_type;  // YIELD_CTX_BOUND only; NULL means "no annotation"
 } Checker;
 
 // ---------------------------------------------------------------------------
@@ -998,11 +1018,19 @@ static LhatType *infer_call(Checker *c, const LhatNode *node)
     }
 
     // 15.5: calling a yieldable procedure answers a coroutine rather than
-    // running it. 13.9 gives that three types; the middle one is what the
-    // body yields, which is not inferred yet.
+    // running it. 13.9 gives that three types; the middle two come from
+    // whatever infer_func found its yield^/yieldall^ sites agreeing on
+    // (15.2改). A body with no yield^ at all -- only yieldall^ that never
+    // ran, or none reached -- leaves them NULL, which nil^ fills the same
+    // way an unwritten result does.
     if (callee->v.func.yields) {
-        return lhat_type_coro(c->result->types, simple(c, LHAT_TYPE_UNKNOWN),
-                              simple(c, LHAT_TYPE_UNKNOWN),
+        return lhat_type_coro(c->result->types,
+                              callee->v.func.yield_receive != NULL
+                                  ? callee->v.func.yield_receive
+                                  : simple(c, LHAT_TYPE_NIL),
+                              callee->v.func.yield_produce != NULL
+                                  ? callee->v.func.yield_produce
+                                  : simple(c, LHAT_TYPE_NIL),
                               callee->v.func.result != NULL
                                   ? callee->v.func.result
                                   : simple(c, LHAT_TYPE_NIL));
@@ -1040,19 +1068,29 @@ static LhatType *infer_member(Checker *c, const LhatNode *node)
         // 05 の 8.5: a coroutine carries these without importing anything.
         // 02 の 12.6 spells dispose(), 15.6 puts resume beside it, and 16.3
         // makes iterate what `in^` asks for.
+        if (name_is(name, length, "start")) {
+            // 15.2改: runs the body from the top, for a coroutine that has
+            // never been resumed. Takes nothing, since nothing has been
+            // yield^ed yet to send a value to. Answers the same union a
+            // resume does.
+            LhatType *signature = lhat_type_func(c->result->types, false);
+            signature->v.func.result =
+                lhat_type_union(c->result->types, target->v.coroutine.produce,
+                                target->v.coroutine.result);
+            return signature;
+        }
         if (name_is(name, length, "resume")) {
             // 13.9: what a resume answers is the union of what the coroutine
             // yields and what it returns -- telling the two apart is what the
-            // consumer does.
+            // consumer does. 15.2改: R is now one fixed type, so resume takes
+            // exactly one argument of it -- start() is what a fresh coroutine
+            // is resumed with instead of a sentinel "no argument" call.
             LhatType *answer =
                 lhat_type_union(c->result->types, target->v.coroutine.produce,
                                 target->v.coroutine.result);
-            // The first resume sends nothing, since the body has not reached
-            // a yield^ yet. 13.4 keeps defaults out of a type, so there is no
-            // way to write "one, or none"; the value is left variadic and the
-            // count is not pinned.
             LhatType *signature = lhat_type_func(c->result->types, false);
-            signature->v.func.variadic = target->v.coroutine.receive;
+            lhat_type_add_param(c->result->types, signature,
+                                target->v.coroutine.receive);
             signature->v.func.result = answer;
             return signature;
         }
@@ -1094,6 +1132,26 @@ static LhatType *infer_table(Checker *c, const LhatNode *node)
         }
     }
     return table;
+}
+
+// 15.2: folds one more yield^/yieldall^ site into the body's running Y or R.
+// The first site fixes it; every later one has to agree, or the body is
+// mixing yields the way 13.9 no longer allows.
+static void unify_yield(Checker *c, const LhatNode *at, LhatType **slot,
+                        LhatType *candidate)
+{
+    if (candidate == NULL || candidate->kind == LHAT_TYPE_UNKNOWN) {
+        // 13.11: UNKNOWN carries no information, so there is nothing here to
+        // agree or disagree with.
+        return;
+    }
+    if (*slot == NULL) {
+        *slot = candidate;
+        return;
+    }
+    if (!lhat_type_equal(*slot, candidate)) {
+        report(c, at, LHAT_CHECK_ERR_YIELD_TYPE_MISMATCH);
+    }
 }
 
 // 03 の 3.4: the result type is inferred from return^ unless it is written,
@@ -1150,6 +1208,10 @@ static LhatType *infer_func(Checker *c, const LhatNode *node)
     bool outer_self_call = c->saw_self_call;
     bool outer_recursive = c->recursive_return;
     LhatType *outer_this = c->this_type;
+    LhatType *outer_coroutine_produce = c->coroutine_produce;
+    LhatType *outer_coroutine_receive = c->coroutine_receive;
+    enum YieldContext outer_yield_context = c->yield_context;
+    LhatType *outer_yield_bound_type = c->yield_bound_type;
 
     c->scope = &body;
     c->declared_result = declared;
@@ -1158,8 +1220,19 @@ static LhatType *infer_func(Checker *c, const LhatNode *node)
     c->recursive_return = false;
     c->this_type = func;
     c->deferred++;
+    // 15.2: a nested p^{...} starts collecting its own Y/R from scratch, so
+    // its yield^ sites never unify with the ones out here.
+    c->coroutine_produce = NULL;
+    c->coroutine_receive = NULL;
+    c->yield_context = YIELD_CTX_NONE;
+    c->yield_bound_type = NULL;
 
     check_statement(c, node->v.func.body);
+
+    if (node->v.func.yields) {
+        func->v.func.yield_produce = c->coroutine_produce;
+        func->v.func.yield_receive = c->coroutine_receive;
+    }
 
     // Reaching the end of the body is an exit, and one that produces no
     // value. What that means depends on what the subroutine promised.
@@ -1209,6 +1282,10 @@ static LhatType *infer_func(Checker *c, const LhatNode *node)
     c->saw_self_call = outer_self_call;
     c->recursive_return = outer_recursive;
     c->this_type = outer_this;
+    c->coroutine_produce = outer_coroutine_produce;
+    c->coroutine_receive = outer_coroutine_receive;
+    c->yield_context = outer_yield_context;
+    c->yield_bound_type = outer_yield_bound_type;
 
     scope_dispose(&body);
     return func;
@@ -1553,9 +1630,41 @@ static LhatType *infer(Checker *c, const LhatNode *node)
         case LHAT_NODE_FUNC:
             return infer_func(c, node);
 
+        // 15.2改: what a yield^ answers (R) has to be fixed by whatever binds
+        // it directly, since the value it carries out (Y) is only half of
+        // what the expression is. check_define and the bare-statement case
+        // in check_statement are the only two places that set yield_context
+        // to anything other than NONE, and only for the yield^ they
+        // themselves are looking at -- infer() clears it immediately below
+        // so it can never leak into node->v.jump.value.
+        case LHAT_NODE_YIELD: {
+            enum YieldContext ctx = c->yield_context;
+            LhatType *bound = c->yield_bound_type;
+            c->yield_context = YIELD_CTX_NONE;
+            c->yield_bound_type = NULL;
+
+            LhatType *produced = infer(c, node->v.jump.value);
+            unify_yield(c, node, &c->coroutine_produce, produced);
+
+            if (ctx == YIELD_CTX_DISCARD) {
+                // Nothing receives this one, so it says nothing about R.
+                return simple(c, LHAT_TYPE_UNKNOWN);
+            }
+            if (ctx == YIELD_CTX_BOUND && bound != NULL) {
+                unify_yield(c, node, &c->coroutine_receive, bound);
+                return bound;
+            }
+            // Either bound with no annotation to read R off of, or reached
+            // some other way (buried inside a larger expression) where there
+            // is nowhere to write one.
+            report(c, node, LHAT_CHECK_ERR_YIELD_NEEDS_ANNOTATION);
+            return simple(c, LHAT_TYPE_UNKNOWN);
+        }
+
         // 15.8: the value is the inner coroutine's return value, and the
         // right side has to be a coroutine -- there is nothing else to
-        // delegate to.
+        // delegate to. 15.2改: whatever it yields passes through as this
+        // body's own Y/R, same as a yield^ written directly here would.
         case LHAT_NODE_YIELD_ALL: {
             LhatType *inner = infer(c, node->v.jump.value);
             if (inner == NULL || inner->kind == LHAT_TYPE_UNKNOWN) {
@@ -1565,6 +1674,8 @@ static LhatType *infer(Checker *c, const LhatNode *node)
                 report(c, node, LHAT_CHECK_ERR_NOT_COROUTINE);
                 return simple(c, LHAT_TYPE_UNKNOWN);
             }
+            unify_yield(c, node, &c->coroutine_produce, inner->v.coroutine.produce);
+            unify_yield(c, node, &c->coroutine_receive, inner->v.coroutine.receive);
             return inner->v.coroutine.result;
         }
 
@@ -1748,8 +1859,20 @@ static void check_define(Checker *c, const LhatNode *node)
         node_name(c, target_name_node(target), &c->defining_name,
                   &c->defining_length);
 
+        // 15.2改: a let^ that binds a yield^ directly is where R gets fixed --
+        // it is the only place a yield^'s own annotation can be written. The
+        // context is only good for the one infer() call it is set around.
+        enum YieldContext outer_yctx = c->yield_context;
+        LhatType *outer_ybound = c->yield_bound_type;
+        c->yield_context = (value != NULL && value->kind == LHAT_NODE_YIELD)
+                                ? YIELD_CTX_BOUND : YIELD_CTX_NONE;
+        c->yield_bound_type = annotated;
+
         LhatType *actual = value != NULL ? infer(c, value)
                                          : simple(c, LHAT_TYPE_UNKNOWN);
+
+        c->yield_context = outer_yctx;
+        c->yield_bound_type = outer_ybound;
 
         c->defining_name = outer_name;
         c->defining_length = outer_length;
@@ -2073,7 +2196,16 @@ static void check_statement(Checker *c, const LhatNode *node)
             break;
         }
 
-        case LHAT_NODE_YIELD:
+        case LHAT_NODE_YIELD: {
+            // 15.2改: nobody receives this one, so R is not being fixed here
+            // -- only Y, from whatever infer() finds inside it.
+            enum YieldContext outer_yctx = c->yield_context;
+            c->yield_context = YIELD_CTX_DISCARD;
+            infer(c, node);
+            c->yield_context = outer_yctx;
+            break;
+        }
+
         case LHAT_NODE_YIELD_ALL:
             infer(c, node);
             break;
@@ -2225,6 +2357,11 @@ const char *lhat_check_error_message(LhatCheckErrorCode code)
             return "this unit could not be required";
         case LHAT_CHECK_ERR_NOT_COROUTINE:
             return "yieldall^ delegates to a coroutine, and this is not one";
+        case LHAT_CHECK_ERR_YIELD_NEEDS_ANNOTATION:
+            return "a yield^ that is bound needs a written type there";
+        case LHAT_CHECK_ERR_YIELD_TYPE_MISMATCH:
+            return "every yield^ in one body has to agree on what it sends "
+                   "and what it answers";
         case LHAT_CHECK_ERR_COROUTINE_DROPPED:
             return "this call makes a coroutine and runs none of the body; "
                    "write yieldall^ to delegate, or let^ to keep it";

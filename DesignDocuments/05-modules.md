@@ -371,7 +371,7 @@ let^ print = require^ "system/debug.lh".print
 
 ### 8.5 コルーチンの操作は言語に属する［確定］
 
-> **コルーチンの `resume` と `dispose` は取り込まずに使える。
+> **コルーチンの `start`、`resume`、`dispose` は取り込まずに使える。
 > 標準ライブラリの一部ではない。**
 
 8.1 の「何も見えない」に対する例外ではない。

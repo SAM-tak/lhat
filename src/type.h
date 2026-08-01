@@ -93,6 +93,10 @@ struct LhatType {
             // 15.2: the body contains yield^ or yieldall^, so calling it answers
             // a coroutine rather than running anything (15.5)
             bool yields;
+            // 15.2: what the body's yield^/yieldall^ sites agree on. Both NULL
+            // until inferred; meaningless unless `yields` is true.
+            LhatType *yield_produce;
+            LhatType *yield_receive;
         } func;
 
         struct {

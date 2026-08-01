@@ -2710,6 +2710,10 @@ static bool native_named(LhatValue key, LhatNativeKind *out)
         return false;
     }
     const LhatString *name = (const LhatString *)lhat_as_object(key);
+    if (name->length == 5 && memcmp(name->text, "start", 5) == 0) {
+        *out = LHAT_NATIVE_START;
+        return true;
+    }
     if (name->length == 6 && memcmp(name->text, "resume", 6) == 0) {
         *out = LHAT_NATIVE_RESUME;
         return true;
@@ -2735,7 +2739,7 @@ static bool builtin_member(LhatValue on, LhatValue key, LhatNativeKind *out)
         return false;
     }
     if (lhat_is_object_kind(on, LHAT_OBJECT_COROUTINE)) {
-        return true;  // resume, dispose and iterate all apply
+        return true;  // start, resume, dispose and iterate all apply
     }
     return *out == LHAT_NATIVE_ITERATE &&
            (lhat_is_object_kind(on, LHAT_OBJECT_TABLE) ||
@@ -3321,6 +3325,32 @@ LhatRunResult lhat_run(const LhatProto *proto)
                     LhatCoroutine *co =
                         (LhatCoroutine *)lhat_as_object(native->bound);
 
+                    // 15.2改: the machine holds this itself rather than
+                    // trusting the checker to have (vm.h's opening comment).
+                    // R is one fixed type now, so resume takes exactly one
+                    // argument; start takes none, since nothing has been
+                    // yield^ed yet to send a value to.
+                    if (native->kind == LHAT_NATIVE_START && b != 0) {
+                        return finish(m, LHAT_RUN_ARITY, lhat_nil(), at);
+                    }
+                    if (native->kind == LHAT_NATIVE_RESUME && b != 1) {
+                        return finish(m, LHAT_RUN_ARITY, lhat_nil(), at);
+                    }
+
+                    // 15.2改: start and resume now split what the first
+                    // resume used to do silently -- each has to be called on
+                    // the state that makes it meaningful.
+                    if (native->kind == LHAT_NATIVE_START &&
+                        co->state != LHAT_COROUTINE_FRESH) {
+                        return finish(m, LHAT_RUN_COROUTINE_ALREADY_STARTED,
+                                      lhat_nil(), at);
+                    }
+                    if (native->kind == LHAT_NATIVE_RESUME &&
+                        co->state == LHAT_COROUTINE_FRESH) {
+                        return finish(m, LHAT_RUN_COROUTINE_NOT_STARTED,
+                                      lhat_nil(), at);
+                    }
+
                     // 02 の 10.7: disposal runs what is still pending and
                     // never runs the same cleanup twice, so a coroutine that
                     // has finished simply has nothing left to do.
@@ -3690,6 +3720,8 @@ const char *lhat_run_status_message(LhatRunStatus status)
         case LHAT_RUN_DEAD_COROUTINE:  return "this coroutine has finished";
         case LHAT_RUN_YIELD_OUTSIDE:   return "nothing is waiting for this yield^";
         case LHAT_RUN_NO_CANDIDATE:    return "no way of calling this member takes these arguments";
+        case LHAT_RUN_COROUTINE_NOT_STARTED:     return "resume needs start() first";
+        case LHAT_RUN_COROUTINE_ALREADY_STARTED: return "start() only works before the first resume";
     }
     return "unknown";
 }

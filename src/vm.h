@@ -48,8 +48,12 @@ typedef enum {
     LHAT_RUN_DEAD_COROUTINE,  // resumed one that has finished
     LHAT_RUN_YIELD_OUTSIDE,   // 02 の 15.2 and 10.7: yield^ where nothing is
                               // waiting to be resumed
-    LHAT_RUN_NO_CANDIDATE     // 02 の 14.12: no signature of an overloaded
+    LHAT_RUN_NO_CANDIDATE,    // 02 の 14.12: no signature of an overloaded
                               // member takes what the call handed over
+    LHAT_RUN_COROUTINE_NOT_STARTED,     // 15.2改: resumed one that has never
+                                         // been started
+    LHAT_RUN_COROUTINE_ALREADY_STARTED  // 15.2改: started one that already
+                                         // has been
 } LhatRunStatus;
 
 typedef struct {

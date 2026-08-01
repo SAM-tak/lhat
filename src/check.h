@@ -56,7 +56,13 @@ typedef enum {
     LHAT_CHECK_ERR_REQUIRE_FAILED,      // 05 の 6 章: the unit could not be had
     LHAT_CHECK_ERR_COROUTINE_DROPPED,   // 15.8: a call that makes a coroutine
                                         // and does nothing with it
-    LHAT_CHECK_ERR_NOT_COROUTINE        // 15.8: yieldall^ needs one
+    LHAT_CHECK_ERR_NOT_COROUTINE,       // 15.8: yieldall^ needs one
+
+    LHAT_CHECK_ERR_YIELD_NEEDS_ANNOTATION, // 15.2: a yield^ that is bound
+                                            // (directly, by a let^) needs a
+                                            // written type there to fix R
+    LHAT_CHECK_ERR_YIELD_TYPE_MISMATCH     // 15.2: two yield^/yieldall^ sites
+                                            // in one body disagree on Y or R
 } LhatCheckErrorCode;
 
 typedef struct {

@@ -1344,11 +1344,12 @@ static void test_coroutines(void)
     unit_dispose(&u);
 
     // 05 の 8.5: a coroutine carries these without anything being imported.
-    LHAT_TEST("a coroutine carries resume, dispose and iterate");
+    LHAT_TEST("a coroutine carries start, resume, dispose and iterate");
     check_text(&u,
                "let^ gen = p^ { yield^ 1 }\n"
                "let^ c = gen()\n"
-               "let^ v = c.resume()\n"
+               "let^ v = c.start()\n"
+               "let^ w = c.resume(nil^)\n"
                "c.dispose()\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
@@ -1366,7 +1367,7 @@ static void test_coroutines(void)
     // types as the coroutine's receive type -- a different thing.
     LHAT_TEST("the arguments belong to the call");
     check_text(&u,
-               "let^ p = p^ x:number^, y:string^ { let^ a = yield^ 10 return^ \"a\" }\n"
+               "let^ p = p^ x:number^, y:string^ { let^ a:number^ = yield^ 10 return^ \"a\" }\n"
                "let^ c = p(1, \"b\")\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
@@ -1379,13 +1380,13 @@ static void test_coroutines(void)
     unit_dispose(&u);
 
     // 13.9: what a resume answers is the union of the yield type and the
-    // return type, which the consumer tells apart. The return half reaches
-    // through; the yield half is not inferred yet (02 の 15.8).
-    LHAT_TEST("what a resume answers includes the return type");
+    // return type, which the consumer tells apart. 15.2改: both are now
+    // inferred from the body's yield^/return^ sites.
+    LHAT_TEST("what a resume answers includes both the yield and the return type");
     check_text(&u,
-               "let^ p = p^ -> string^ { yield^ 10 return^ \"a\" }\n"
+               "let^ p = p^ -> string^ { let^ a:number^ = yield^ 10 return^ \"a\" }\n"
                "let^ c = p()\n"
-               "let^ s : string^ = c.resume()\n");
+               "let^ s : number^|string^ = c.resume(1)\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
@@ -1409,6 +1410,100 @@ static void test_coroutines(void)
                "let^ gen = p^ -> number^ { yield^ 1 return^ 2 }\n"
                "let^ outer = p^ { let^ s : string^ = yieldall^ gen() }\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
+    unit_dispose(&u);
+
+    // 15.2改: start() takes nothing and answers the same union resume does --
+    // it is what runs a fresh coroutine from the top.
+    LHAT_TEST("start() answers the same union as resume()");
+    check_text(&u,
+               "let^ p = p^ -> string^ { let^ a:number^ = yield^ 10 return^ \"a\" }\n"
+               "let^ c = p()\n"
+               "let^ s : number^|string^ = c.start()\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("start() takes no arguments");
+    check_text(&u,
+               "let^ gen = p^ { yield^ 1 }\n"
+               "let^ c = gen()\n"
+               "c.start(1)\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_ARITY);
+    unit_dispose(&u);
+
+    // 15.2改: R is one fixed type now, so resume takes exactly one argument.
+    LHAT_TEST("resume needs exactly one argument, not zero");
+    check_text(&u,
+               "let^ gen = p^ { yield^ 1 }\n"
+               "let^ c = gen()\n"
+               "c.resume()\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_ARITY);
+    unit_dispose(&u);
+
+    LHAT_TEST("resume needs exactly one argument, not two");
+    check_text(&u,
+               "let^ gen = p^ { yield^ 1 }\n"
+               "let^ c = gen()\n"
+               "c.resume(1, 2)\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_ARITY);
+    unit_dispose(&u);
+
+    // 13.9改: every yield^ in a body has to agree on what it sends (Y) and
+    // what it answers (R) -- no more folding differing yields into a union.
+    LHAT_TEST("two bare yield^ that agree on Y stay clean");
+    check_text(&u,
+               "let^ p = p^ { yield^ 1 yield^ 2 }\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("two bare yield^ that disagree on Y are reported");
+    check_text(&u,
+               "let^ p = p^ { yield^ 1 yield^ \"a\" }\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_YIELD_TYPE_MISMATCH);
+    unit_dispose(&u);
+
+    LHAT_TEST("two bound yield^ that disagree on R are reported");
+    check_text(&u,
+               "let^ p = p^ {\n"
+               "    let^ a:number^ = yield^ 1\n"
+               "    let^ b:string^ = yield^ 2\n"
+               "}\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_YIELD_TYPE_MISMATCH);
+    unit_dispose(&u);
+
+    // 15.2改: a yield^ that a let^ binds directly is the only place R can be
+    // written, so leaving the annotation off is reported rather than left
+    // to infer to UNKNOWN.
+    LHAT_TEST("a bound yield^ needs a written type");
+    check_text(&u,
+               "let^ p = p^ { let^ a = yield^ 1 }\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_YIELD_NEEDS_ANNOTATION);
+    unit_dispose(&u);
+
+    LHAT_TEST("a reassigned yield^ has nowhere to write the annotation");
+    check_text(&u,
+               "let^ p = p^ {\n"
+               "    let^ a:number^ = 0\n"
+               "    a := yield^ 1\n"
+               "}\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_YIELD_NEEDS_ANNOTATION);
+    unit_dispose(&u);
+
+    LHAT_TEST("a yield^ buried in an expression has nowhere to write it either");
+    check_text(&u,
+               "let^ p = p^ -> number^ { return^ 1 + yield^ 1 }\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_YIELD_NEEDS_ANNOTATION);
+    unit_dispose(&u);
+
+    // 15.8: yieldall^ passes the inner coroutine's Y/R through as this
+    // body's own, exactly as if a yield^ had been written here directly.
+    LHAT_TEST("yieldall^ can disagree with this body's own yield^ on R");
+    check_text(&u,
+               "let^ inner = p^ { let^ a:number^ = yield^ 1 }\n"
+               "let^ outer = p^ {\n"
+               "    let^ b:string^ = yield^ \"x\"\n"
+               "    yieldall^ inner()\n"
+               "}\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_YIELD_TYPE_MISMATCH);
     unit_dispose(&u);
 }
 
