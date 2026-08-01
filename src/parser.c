@@ -316,6 +316,19 @@ static LhatNode *parse_type_table(Parser *p)
     LhatToken start = p->current;
     advance(p);  // t^ or table^
 
+    // 14.10: bare, with no members listed, t^ asks for nothing in particular
+    // -- the top of tables. That is an ordinary type name, so it is written
+    // as one and 13.7's judgement reads it without a case of its own.
+    if (!check_op(p, LHAT_OP_LBRACE)) {
+        LhatNode *node = make(p, LHAT_NODE_TYPE_NAME, &start);
+        if (node != NULL) {
+            node->v.name.offset = start.offset;
+            node->v.name.length = start.length;
+            node->v.name.hats = start.v.hats;
+        }
+        return node;
+    }
+
     LhatNode *node = make(p, LHAT_NODE_TYPE_TABLE, &start);
     if (node == NULL) {
         return NULL;

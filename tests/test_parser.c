@@ -735,6 +735,39 @@ static void test_types(void)
     }
     parse_dispose(&p);
 
+    // 14.10: bare, with nothing listed, t^ is the top of tables -- an
+    // ordinary type name rather than a structure with no members.
+    LHAT_TEST("bare table type");
+    parse_text(&p, "x := y as^ t^");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    LHAT_CHECK_EQ_INT(first_value(&p)->v.ascription.type->kind,
+                      LHAT_NODE_TYPE_NAME);
+    parse_dispose(&p);
+
+    LHAT_TEST("and table^ is the same word");
+    parse_text(&p, "x := y as^ table^");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    LHAT_CHECK_EQ_INT(first_value(&p)->v.ascription.type->kind,
+                      LHAT_NODE_TYPE_NAME);
+    parse_dispose(&p);
+
+    LHAT_TEST("a bare one takes part in a union like any other name");
+    parse_text(&p, "x := y as^ table^|nil^");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    {
+        const LhatNode *t = first_value(&p)->v.ascription.type;
+        LHAT_CHECK_EQ_INT(t->kind, LHAT_NODE_TYPE_UNION);
+        LHAT_CHECK_EQ_INT(t->v.binary.left->kind, LHAT_NODE_TYPE_NAME);
+    }
+    parse_dispose(&p);
+
+    LHAT_TEST("and a listed one is still a structure");
+    parse_text(&p, "x := y as^ t^{}");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    LHAT_CHECK_EQ_INT(first_value(&p)->v.ascription.type->kind,
+                      LHAT_NODE_TYPE_TABLE);
+    parse_dispose(&p);
+
     // 13.9: three types, uniform across suspension points.
     LHAT_TEST("coroutine type");
     parse_text(&p, "x := y as^ c^{ number^, string^, nil^ }");

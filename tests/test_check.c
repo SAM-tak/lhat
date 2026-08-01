@@ -543,6 +543,27 @@ static void test_annotations(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
+    // 14.10: bare, with nothing listed, it asks for nothing in particular --
+    // the top of tables, which 13.7 notes is not the top of every value.
+    LHAT_TEST("a bare table type takes any table");
+    check_text(&u,
+               "let^ x : table^ = { a := 1 }\n"
+               "let^ y : t^ = { 1, 2 }\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("and nothing that is not one");
+    check_text(&u, "let^ x : table^ = 5\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
+    unit_dispose(&u);
+
+    LHAT_TEST("a bare one joins a union like any other type");
+    check_text(&u,
+               "let^ x : table^|nil^ = { a := 1 }\n"
+               "let^ y : nil^|t^ = nil^\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
     LHAT_TEST("a union annotation accepts either arm");
     check_text(&u,
                "let^ x : number^|string^ = 1\n"
