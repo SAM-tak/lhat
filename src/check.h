@@ -54,9 +54,12 @@ typedef enum {
     LHAT_CHECK_ERR_INCOMPARABLE,        // no value inhabits both sides
     LHAT_CHECK_ERR_MISSING_FIELD,       // 04 の 2.5: no default to fall back to
     LHAT_CHECK_ERR_REQUIRE_FAILED,      // 05 の 6 章: the unit could not be had
-    LHAT_CHECK_ERR_COROUTINE_DROPPED,   // 15.8: a call that makes a coroutine
-                                        // and does nothing with it
-    LHAT_CHECK_ERR_NOT_COROUTINE        // 15.8: yieldall^ needs one
+    LHAT_CHECK_ERR_COROUTINE_DROPPED,   // 15.8: a call whose answer has a
+                                        // continuation arm, thrown away
+    LHAT_CHECK_ERR_NOT_COROUTINE,       // 15.8: yieldall^ needs one
+    LHAT_CHECK_ERR_YIELD_NOT_UNIFORM,   // 13.9: one body, one continuation type
+    LHAT_CHECK_ERR_RESULT_LACKS_CONTINUATION  // 15.11: the body suspends, so
+                                        // the written result has to say so
 } LhatCheckErrorCode;
 
 typedef struct {

@@ -90,15 +90,20 @@ struct LhatType {
             // 'x.m()' passes x there without writing it. The receiver is not
             // in `params`, so an ordinary call needs no special case.
             bool takes_self;
-            // 15.2: the body contains yield^ or yieldall^, so calling it answers
-            // a coroutine rather than running anything (15.5)
+            // 15.2: the body contains yield^ or yieldall^, so what the call
+            // answers has a continuation arm (15.11)
             bool yields;
+            // 13.12: written with nothing after it, so it stands for the whole
+            // kind. Nothing else in here is read when this is set.
+            bool top;
         } func;
 
+        // 13.9 as 15.11 revised it: 'c^ 受け取る型 -> 出す型;'. What used to be
+        // a third slot became an arm of what the call answers.
         struct {
             LhatType *receive;
             LhatType *produce;
-            LhatType *result;
+            bool top;  // 13.12, as above
         } coroutine;
 
         // ERROR_SET and ERROR_KIND. A kind points back at the set that
@@ -142,7 +147,12 @@ LhatType *lhat_type_simple(LhatTypeArena *arena, LhatTypeKind kind);
 LhatType *lhat_type_table(LhatTypeArena *arena);
 LhatType *lhat_type_func(LhatTypeArena *arena, bool is_function);
 LhatType *lhat_type_coro(LhatTypeArena *arena, LhatType *receive,
-                         LhatType *produce, LhatType *result);
+                         LhatType *produce);
+
+// 13.12: the top of a kind, which every type of that kind is below. `f^` is
+// itself below `p^`, a function being a procedure under stricter rules.
+LhatType *lhat_type_kind_top(LhatTypeArena *arena, LhatTypeKind kind,
+                             bool is_function);
 
 // 04 の 2.2. The set is created first; each kind then points at it, which is
 // what makes two identically written declarations different types.

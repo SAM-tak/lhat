@@ -258,7 +258,6 @@ static void print_node(const LhatLexer *lexer, const LhatNode *node, int depth)
         case LHAT_NODE_TYPE_CORO:
             print_node(lexer, node->v.coroutine.receive, depth + 1);
             print_node(lexer, node->v.coroutine.produce, depth + 1);
-            print_node(lexer, node->v.coroutine.result, depth + 1);
             break;
         case LHAT_NODE_BLOCK:
             print_list(lexer, "items", node->v.list.items, depth + 1);

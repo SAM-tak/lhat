@@ -100,13 +100,28 @@ LhatType *lhat_type_func(LhatTypeArena *arena, bool is_function)
 }
 
 LhatType *lhat_type_coro(LhatTypeArena *arena, LhatType *receive,
-                         LhatType *produce, LhatType *result)
+                         LhatType *produce)
 {
     LhatType *type = new_type(arena, LHAT_TYPE_CORO);
     if (type != NULL) {
         type->v.coroutine.receive = receive;
         type->v.coroutine.produce = produce;
-        type->v.coroutine.result = result;
+    }
+    return type;
+}
+
+LhatType *lhat_type_kind_top(LhatTypeArena *arena, LhatTypeKind kind,
+                             bool is_function)
+{
+    LhatType *type = new_type(arena, kind);
+    if (type == NULL) {
+        return NULL;
+    }
+    if (kind == LHAT_TYPE_CORO) {
+        type->v.coroutine.top = true;
+    } else {
+        type->v.func.top = true;
+        type->v.func.is_function = is_function;
     }
     return type;
 }
@@ -234,9 +249,20 @@ static bool is_error_type(const LhatType *type)
 
 static bool conforms_func(const LhatType *value, const LhatType *target)
 {
+    // 13.12: the top of the kind takes anything of that kind, and `f^` is
+    // itself below `p^` -- a function is a procedure held to stricter rules,
+    // so it stands wherever one is written.
+    if (target->v.func.top) {
+        return !target->v.func.is_function || value->v.func.is_function;
+    }
+    if (value->v.func.top) {
+        return false;  // the top says nothing about how it may be called
+    }
+
     // 14.12 already states the rule for override^, and it is the ordinary one
     // for functions: arguments may be wider, results may be narrower.
-    if (value->v.func.is_function != target->v.func.is_function) {
+    if (value->v.func.is_function != target->v.func.is_function &&
+        target->v.func.is_function) {
         return false;
     }
     // 14.4: an instance method and a plain subroutine are called differently,
@@ -383,14 +409,19 @@ bool lhat_type_conforms(const LhatType *value, const LhatType *target)
             return conforms_func(value, target);
 
         case LHAT_TYPE_CORO:
-            // 13.9. What the coroutine receives is an input, so it varies the
-            // other way round from what it produces and returns.
+            // 13.12, as for the other two kinds.
+            if (target->v.coroutine.top) {
+                return true;
+            }
+            if (value->v.coroutine.top) {
+                return false;
+            }
+            // 13.9. What a continuation receives is an input, so it varies the
+            // other way round from what it produces.
             return lhat_type_conforms(target->v.coroutine.receive,
                                       value->v.coroutine.receive) &&
                    lhat_type_conforms(value->v.coroutine.produce,
-                                      target->v.coroutine.produce) &&
-                   lhat_type_conforms(value->v.coroutine.result,
-                                      target->v.coroutine.result);
+                                      target->v.coroutine.produce);
 
         default:
             return true;  // the primitives, matched by kind above
@@ -591,7 +622,7 @@ const char *lhat_type_kind_name(LhatTypeKind kind)
         case LHAT_TYPE_STRING:      return "string^";
         case LHAT_TYPE_TABLE:       return "t^{...}";
         case LHAT_TYPE_FUNC:        return "f^";
-        case LHAT_TYPE_CORO:        return "c^{...}";
+        case LHAT_TYPE_CORO:        return "c^";
         case LHAT_TYPE_ERROR:       return "error^";
         case LHAT_TYPE_ERROR_SET:   return "error set";
         case LHAT_TYPE_ERROR_KIND:  return "error kind";

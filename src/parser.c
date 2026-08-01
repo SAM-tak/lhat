@@ -213,6 +213,23 @@ static LhatNode *parse_type_params(Parser *p)
     return head;
 }
 
+// 13.12: `f^`, `p^` and `c^` with nothing after them are the top of their
+// kind. 13.3 makes the ';' mandatory in a signature, so `p^;` and `p^` are
+// different types and neither reading is in doubt -- which is what tells the
+// two apart here.
+static bool starts_type(Parser *p)
+{
+    return p->current.kind == LHAT_TOKEN_IDENT ||
+           p->current.kind == LHAT_TOKEN_HAT_IDENT ||
+           check_op(p, LHAT_OP_LPAREN) || check_op(p, LHAT_OP_ELLIPSIS);
+}
+
+static bool at_kind_top(Parser *p)
+{
+    return !starts_type(p) && !check_op(p, LHAT_OP_ARROW) &&
+           !check_op(p, LHAT_OP_SEMICOLON) && !check_op(p, LHAT_OP_COLONCOLON);
+}
+
 static LhatNode *parse_type_function(Parser *p, bool is_function)
 {
     LhatToken start = p->current;
@@ -223,6 +240,10 @@ static LhatNode *parse_type_function(Parser *p, bool is_function)
         return NULL;
     }
     node->v.func.is_function = is_function;
+    if (at_kind_top(p)) {
+        node->v.func.top = true;
+        return node;
+    }
     node->v.func.params = parse_type_params(p);
 
     if (check_op(p, LHAT_OP_COLONCOLON)) {
@@ -238,6 +259,9 @@ static LhatNode *parse_type_function(Parser *p, bool is_function)
     return node;
 }
 
+// 13.9 as 15.11 revised it: 'c^ 受け取る型 -> 出す型;'. What used to be a third
+// slot is now an arm of what the call answers, so the shape is the one f^ and
+// p^ already had.
 static LhatNode *parse_type_coroutine(Parser *p)
 {
     LhatToken start = p->current;
@@ -247,14 +271,20 @@ static LhatNode *parse_type_coroutine(Parser *p)
     if (node == NULL) {
         return NULL;
     }
+    if (at_kind_top(p)) {
+        node->v.coroutine.top = true;
+        return node;
+    }
 
-    expect_op(p, LHAT_OP_LBRACE);
-    node->v.coroutine.receive = parse_type(p);
-    expect_op(p, LHAT_OP_COMMA);
-    node->v.coroutine.produce = parse_type(p);
-    expect_op(p, LHAT_OP_COMMA);
-    node->v.coroutine.result = parse_type(p);
-    expect_op(p, LHAT_OP_RBRACE);
+    // 13.2 in the same spirit: a continuation that is sent nothing writes
+    // nothing where the received type goes.
+    if (starts_type(p)) {
+        node->v.coroutine.receive = parse_type(p);
+    }
+    if (match_op(p, LHAT_OP_ARROW)) {
+        node->v.coroutine.produce = parse_type(p);
+    }
+    expect_op(p, LHAT_OP_SEMICOLON);
     return node;
 }
 

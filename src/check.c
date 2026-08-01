@@ -64,6 +64,15 @@ typedef struct {
     // Its type is the one being worked out, so it is left out of the union.
     bool recursive_return;
 
+    // 02 の 13.9 as 15.11 revised it: what the yield^ of the body being
+    // checked put out and receive. 13.9 makes those uniform across one body,
+    // so there is one of each rather than a union to collect -- a yield^ that
+    // does not agree is an error where it stands. Seeded from a written
+    // signature's continuation arm, which is the only way `receive` is ever
+    // pinned; inferred from the yields otherwise.
+    LhatType *yield_produce;
+    LhatType *yield_receive;
+
     // 02 の 15.10: the type of the subroutine whose body is being checked,
     // which is what this^ names. NULL outside any body.
     LhatType *this_type;
@@ -291,6 +300,11 @@ static bool is_self_marker(const Checker *c, const LhatNode *param)
 
 static LhatType *resolve_func_type(Checker *c, const LhatNode *node)
 {
+    // 13.12: bare, so it stands for the whole kind rather than a signature.
+    if (node->v.func.top) {
+        return lhat_type_kind_top(c->result->types, LHAT_TYPE_FUNC,
+                                  node->v.func.is_function);
+    }
     LhatType *func = lhat_type_func(c->result->types, node->v.func.is_function);
     for (const LhatNode *param = node->v.func.params; param != NULL;
          param = param->next) {
@@ -416,10 +430,19 @@ static LhatType *resolve_type(Checker *c, const LhatNode *node)
                                        resolve_type(c, node->v.binary.right));
 
         case LHAT_NODE_TYPE_CORO:
-            return lhat_type_coro(c->result->types,
-                                  resolve_type(c, node->v.coroutine.receive),
-                                  resolve_type(c, node->v.coroutine.produce),
-                                  resolve_type(c, node->v.coroutine.result));
+            // 13.12: bare, so it stands for every continuation.
+            if (node->v.coroutine.top) {
+                return lhat_type_kind_top(c->result->types, LHAT_TYPE_CORO,
+                                          false);
+            }
+            return lhat_type_coro(
+                c->result->types,
+                node->v.coroutine.receive != NULL
+                    ? resolve_type(c, node->v.coroutine.receive)
+                    : simple(c, LHAT_TYPE_NIL),
+                node->v.coroutine.produce != NULL
+                    ? resolve_type(c, node->v.coroutine.produce)
+                    : simple(c, LHAT_TYPE_NIL));
 
         default:
             report(c, node, LHAT_CHECK_ERR_UNKNOWN_TYPE);
@@ -503,6 +526,60 @@ static LhatType *without(Checker *c, LhatType *type, LhatType *unwanted)
         return without(c, expand_set(c, type), unwanted);
     }
     return type;
+}
+
+// 13.12: `c^` bare, which every continuation type is below. What `without`
+// needs to drop the continuation arm, and what `is^ c^` asks.
+static LhatType *any_continuation(Checker *c)
+{
+    return lhat_type_kind_top(c->result->types, LHAT_TYPE_CORO, false);
+}
+
+// 15.11: a call answers a union with a continuation arm in it. This is that
+// arm, or NULL when there is none -- which is how "does this suspend" is
+// asked of a type rather than of a body.
+static LhatType *continuation_arm(LhatType *type)
+{
+    if (type == NULL) {
+        return NULL;
+    }
+    if (type->kind == LHAT_TYPE_CORO) {
+        return type;
+    }
+    if (type->kind != LHAT_TYPE_UNION) {
+        return NULL;
+    }
+    for (const LhatTypeList *arm = type->v.composite.arms; arm != NULL;
+         arm = arm->next) {
+        LhatType *found = continuation_arm(arm->type);
+        if (found != NULL) {
+            return found;
+        }
+    }
+    return NULL;
+}
+
+// 13.9: one body, one continuation type. The first yield^ or yieldall^ sets
+// it and the rest are held to it. unknown^ carries no claim, so it neither
+// sets nor conflicts.
+static void unify_yield(Checker *c, const LhatNode *node, LhatType *produce,
+                        LhatType *receive)
+{
+    LhatType **slots[2] = { &c->yield_produce, &c->yield_receive };
+    LhatType *given[2] = { produce, receive };
+    for (size_t i = 0; i < 2; i++) {
+        if (given[i] == NULL || given[i]->kind == LHAT_TYPE_UNKNOWN) {
+            continue;
+        }
+        if (*slots[i] == NULL || (*slots[i])->kind == LHAT_TYPE_UNKNOWN) {
+            *slots[i] = given[i];
+            continue;
+        }
+        if (!lhat_type_equal(*slots[i], given[i])) {
+            report(c, node, LHAT_CHECK_ERR_YIELD_NOT_UNIFORM);
+            return;
+        }
+    }
 }
 
 static bool can_be(const LhatType *type, const LhatType *wanted)
@@ -997,16 +1074,9 @@ static LhatType *infer_call(Checker *c, const LhatNode *node)
         }
     }
 
-    // 15.5: calling a yieldable procedure answers a coroutine rather than
-    // running it. 13.9 gives that three types; the middle one is what the
-    // body yields, which is not inferred yet.
-    if (callee->v.func.yields) {
-        return lhat_type_coro(c->result->types, simple(c, LHAT_TYPE_UNKNOWN),
-                              simple(c, LHAT_TYPE_UNKNOWN),
-                              callee->v.func.result != NULL
-                                  ? callee->v.func.result
-                                  : simple(c, LHAT_TYPE_NIL));
-    }
+    // 15.11: a yieldable call needs nothing special here. What it answers is
+    // the union its result already is, continuation arm and all, which is why
+    // "may this suspend" is a question about the type rather than the body.
     return callee->v.func.result;
 }
 
@@ -1037,23 +1107,28 @@ static LhatType *infer_member(Checker *c, const LhatNode *node)
         }
         members = target->v.error.fields;
     } else if (target->kind == LHAT_TYPE_CORO) {
-        // 05 の 8.5: a coroutine carries these without importing anything.
-        // 02 の 12.6 spells dispose(), 15.6 puts resume beside it, and 16.3
-        // makes iterate what `in^` asks for.
+        // 05 の 8.5: a continuation carries these without importing anything.
+        // 02 の 12.6 spells dispose(), 15.11 puts result and resume beside it,
+        // and 16.3 makes iterate what `in^` asks for.
+        if (name_is(name, length, "result")) {
+            // 15.11: what the yield^ that made this continuation put out.
+            return target->v.coroutine.produce;
+        }
         if (name_is(name, length, "resume")) {
-            // 13.9: what a resume answers is the union of what the coroutine
-            // yields and what it returns -- telling the two apart is what the
-            // consumer does.
-            LhatType *answer =
-                lhat_type_union(c->result->types, target->v.coroutine.produce,
-                                target->v.coroutine.result);
-            // The first resume sends nothing, since the body has not reached
-            // a yield^ yet. 13.4 keeps defaults out of a type, so there is no
-            // way to write "one, or none"; the value is left variadic and the
-            // count is not pinned.
+            // 15.11: exactly one value is sent. The body has already reached a
+            // yield^ by the time there is a continuation to resume, so the
+            // "one, or none" 13.4 could not write no longer arises.
+            //
+            // What it answers is the same union the call answered: this
+            // continuation again, or the return value. The return arm is not
+            // on the continuation type -- 13.9 spells only what a resume
+            // sends and what a result holds -- so it is left unknown^ here.
             LhatType *signature = lhat_type_func(c->result->types, false);
-            signature->v.func.variadic = target->v.coroutine.receive;
-            signature->v.func.result = answer;
+            lhat_type_add_param(c->result->types, signature,
+                                target->v.coroutine.receive);
+            signature->v.func.result =
+                lhat_type_union(c->result->types, target,
+                                simple(c, LHAT_TYPE_UNKNOWN));
             return signature;
         }
         if (name_is(name, length, "dispose")) {
@@ -1150,6 +1225,8 @@ static LhatType *infer_func(Checker *c, const LhatNode *node)
     bool outer_self_call = c->saw_self_call;
     bool outer_recursive = c->recursive_return;
     LhatType *outer_this = c->this_type;
+    LhatType *outer_produce = c->yield_produce;
+    LhatType *outer_receive = c->yield_receive;
 
     c->scope = &body;
     c->declared_result = declared;
@@ -1158,6 +1235,18 @@ static LhatType *infer_func(Checker *c, const LhatNode *node)
     c->recursive_return = false;
     c->this_type = func;
     c->deferred++;
+
+    // 15.11: what a call answers is a union with the continuation among its
+    // arms, so a written result is where a body's continuation type is
+    // pinned. That is the only place `receive` can come from -- nothing in
+    // the body says what a resume will send.
+    LhatType *written_arm = continuation_arm(declared);
+    c->yield_produce = NULL;
+    c->yield_receive = NULL;
+    if (written_arm != NULL) {
+        c->yield_produce = written_arm->v.coroutine.produce;
+        c->yield_receive = written_arm->v.coroutine.receive;
+    }
 
     check_statement(c, node->v.func.body);
 
@@ -1202,6 +1291,26 @@ static LhatType *infer_func(Checker *c, const LhatNode *node)
         func->v.func.result = c->inferred_result;
     }
 
+    // 15.11: the continuation is one of the arms of what a call answers, so
+    // it joins the result rather than sitting anywhere of its own. A written
+    // result already has it -- and a written result that does not, while the
+    // body suspends, is not describing this body.
+    if (node->v.func.yields) {
+        if (declared == NULL) {
+            func->v.func.result = lhat_type_union(
+                c->result->types, func->v.func.result,
+                lhat_type_coro(c->result->types,
+                               c->yield_receive != NULL
+                                   ? c->yield_receive
+                                   : simple(c, LHAT_TYPE_UNKNOWN),
+                               c->yield_produce != NULL
+                                   ? c->yield_produce
+                                   : simple(c, LHAT_TYPE_NIL)));
+        } else if (written_arm == NULL) {
+            report(c, node, LHAT_CHECK_ERR_RESULT_LACKS_CONTINUATION);
+        }
+    }
+
     c->deferred--;
     c->scope = outer_scope;
     c->declared_result = outer_declared;
@@ -1209,6 +1318,8 @@ static LhatType *infer_func(Checker *c, const LhatNode *node)
     c->saw_self_call = outer_self_call;
     c->recursive_return = outer_recursive;
     c->this_type = outer_this;
+    c->yield_produce = outer_produce;
+    c->yield_receive = outer_receive;
 
     scope_dispose(&body);
     return func;
@@ -1553,19 +1664,35 @@ static LhatType *infer(Checker *c, const LhatNode *node)
         case LHAT_NODE_FUNC:
             return infer_func(c, node);
 
-        // 15.8: the value is the inner coroutine's return value, and the
-        // right side has to be a coroutine -- there is nothing else to
-        // delegate to.
+        // 15.8 with 15.11: delegation drops the continuation arm from what
+        // the inner call answered, the same shape catch^ and ?? have. What is
+        // left is the value.
         case LHAT_NODE_YIELD_ALL: {
             LhatType *inner = infer(c, node->v.jump.value);
             if (inner == NULL || inner->kind == LHAT_TYPE_UNKNOWN) {
                 return simple(c, LHAT_TYPE_UNKNOWN);
             }
-            if (inner->kind != LHAT_TYPE_CORO) {
+            LhatType *arm = continuation_arm(inner);
+            if (arm == NULL) {
                 report(c, node, LHAT_CHECK_ERR_NOT_COROUTINE);
                 return simple(c, LHAT_TYPE_UNKNOWN);
             }
-            return inner->v.coroutine.result;
+            // 15.8: the inner one's suspensions become the outer one's, so
+            // the two continuation types are one type (13.9).
+            unify_yield(c, node, arm->v.coroutine.produce,
+                        arm->v.coroutine.receive);
+            return without(c, inner, any_continuation(c));
+        }
+
+        // 15.4: an expression. What it answers is what the resume sends,
+        // which 13.9 makes one type for the whole body.
+        case LHAT_NODE_YIELD: {
+            LhatType *out = node->v.jump.value != NULL
+                                ? infer(c, node->v.jump.value)
+                                : simple(c, LHAT_TYPE_NIL);
+            unify_yield(c, node, out, NULL);
+            return c->yield_receive != NULL ? c->yield_receive
+                                            : simple(c, LHAT_TYPE_UNKNOWN);
         }
 
         case LHAT_NODE_TRY: {
@@ -1986,10 +2113,12 @@ static void check_statement(Checker *c, const LhatNode *node)
 
         case LHAT_NODE_CALL_STMT: {
             LhatType *value = infer(c, node->v.jump.value);
-            // 15.8: 15.5 makes such a call run no part of the body, so the
-            // statement provably has no effect. 04 の 8.1 の form: the type
-            // is the detection, with no must-use machinery added.
-            if (value != NULL && value->kind == LHAT_TYPE_CORO) {
+            // 15.8 with 15.11: the body did run, so the reason is no longer
+            // that the statement has no effect -- it is that a body stopped
+            // partway is being thrown away with its finally^ still pending.
+            // 04 の 8.1 の form: the type is the detection, with no must-use
+            // machinery added.
+            if (continuation_arm(value) != NULL) {
                 report(c, node, LHAT_CHECK_ERR_COROUTINE_DROPPED);
             }
             break;
@@ -2224,10 +2353,18 @@ const char *lhat_check_error_message(LhatCheckErrorCode code)
         case LHAT_CHECK_ERR_REQUIRE_FAILED:
             return "this unit could not be required";
         case LHAT_CHECK_ERR_NOT_COROUTINE:
-            return "yieldall^ delegates to a coroutine, and this is not one";
+            return "yieldall^ delegates to a continuation, and this answer "
+                   "has no continuation among its arms";
         case LHAT_CHECK_ERR_COROUTINE_DROPPED:
-            return "this call makes a coroutine and runs none of the body; "
+            return "this call may answer a continuation, and dropping one "
+                   "leaves a body stopped partway with its finally^ pending; "
                    "write yieldall^ to delegate, or let^ to keep it";
+        case LHAT_CHECK_ERR_YIELD_NOT_UNIFORM:
+            return "every yield^ in one body has the same two types, and "
+                   "this one does not agree with the others";
+        case LHAT_CHECK_ERR_RESULT_LACKS_CONTINUATION:
+            return "this body suspends, so what a call answers has a "
+                   "continuation among its arms; the written result has none";
         case LHAT_CHECK_ERR_MISSING_FIELD:
             return "this field has no default, so it has to be written";
         case LHAT_CHECK_ERR_INCOMPARABLE:

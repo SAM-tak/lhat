@@ -735,16 +735,50 @@ static void test_types(void)
     }
     parse_dispose(&p);
 
-    // 13.9: three types, uniform across suspension points.
-    LHAT_TEST("coroutine type");
-    parse_text(&p, "x := y as^ c^{ number^, string^, nil^ }");
+    // 13.9 as 15.11 revised it: 'c^ 受け取る型 -> 出す型;', the shape f^ and
+    // p^ already had. What used to be a third slot became an arm of what a
+    // call answers.
+    LHAT_TEST("continuation type");
+    parse_text(&p, "x := y as^ c^number^ -> string^;");
     LHAT_CHECK_EQ_INT(error_count(&p), 0);
     {
         const LhatNode *t = first_value(&p)->v.ascription.type;
         LHAT_CHECK_EQ_INT(t->kind, LHAT_NODE_TYPE_CORO);
         LHAT_CHECK(t->v.coroutine.receive != NULL, "receive type");
         LHAT_CHECK(t->v.coroutine.produce != NULL, "produce type");
-        LHAT_CHECK(t->v.coroutine.result != NULL, "result type");
+        LHAT_CHECK(!t->v.coroutine.top, "not the kind top");
+    }
+    parse_dispose(&p);
+
+    // 13.12: written bare, so it stands for the whole kind. 13.3 makes the
+    // ';' mandatory in a signature, which is what tells 'p^;' from 'p^'.
+    LHAT_TEST("the top of each kind is the word on its own");
+    parse_text(&p, "x := y as^ c^");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    {
+        const LhatNode *t = first_value(&p)->v.ascription.type;
+        LHAT_CHECK_EQ_INT(t->kind, LHAT_NODE_TYPE_CORO);
+        LHAT_CHECK(t->v.coroutine.top, "the kind top");
+    }
+    parse_dispose(&p);
+
+    parse_text(&p, "x := y as^ p^");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    {
+        const LhatNode *t = first_value(&p)->v.ascription.type;
+        LHAT_CHECK_EQ_INT(t->kind, LHAT_NODE_TYPE_FUNC);
+        LHAT_CHECK(t->v.func.top, "the kind top");
+        LHAT_CHECK(!t->v.func.is_function, "p^ rather than f^");
+    }
+    parse_dispose(&p);
+
+    LHAT_TEST("with the ';' it is a signature taking and answering nothing");
+    parse_text(&p, "x := y as^ p^;");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    {
+        const LhatNode *t = first_value(&p)->v.ascription.type;
+        LHAT_CHECK_EQ_INT(t->kind, LHAT_NODE_TYPE_FUNC);
+        LHAT_CHECK(!t->v.func.top, "not the kind top");
     }
     parse_dispose(&p);
 

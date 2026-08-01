@@ -1297,22 +1297,24 @@ static void test_modules(void)
     check_against_dispose(&u, &lib);
 }
 
-// 02 の 15.5 and 15.8: what a call of a yieldable procedure answers, and the
+// 02 の 15.11 and 15.8: what a call of a yieldable procedure answers, and the
 // mistake the answer makes catchable.
 static void test_coroutines(void)
 {
     Unit u;
 
-    LHAT_TEST("a call of a yieldable procedure answers a coroutine");
+    LHAT_TEST("a call of a yieldable procedure may answer a continuation");
     check_text(&u,
                "let^ gen = p^ { yield^ 1 }\n"
                "let^ c = gen()\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // 15.8: 15.5 makes such a call run no part of the body, so the statement
-    // has no effect at all. C#'s IEnumerator allows this silently.
-    LHAT_TEST("dropping the coroutine is reported");
+    // 15.8 with 15.11: the body did run, so what is wrong is not that the
+    // statement had no effect -- it is that a body stopped partway is being
+    // dropped with its finally^ still pending. C#'s IEnumerator allows the
+    // same mistake silently.
+    LHAT_TEST("dropping the continuation is reported");
     check_text(&u,
                "let^ gen = p^ { yield^ 1 }\n"
                "gen()\n");
@@ -1343,12 +1345,15 @@ static void test_coroutines(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // 05 の 8.5: a coroutine carries these without anything being imported.
-    LHAT_TEST("a coroutine carries resume, dispose and iterate");
+    // 05 の 8.5: a continuation carries these without anything being imported.
+    // 15.11 puts result beside them, and fixes a resume at one value -- the
+    // body has already reached a yield^ by the time there is one to resume.
+    LHAT_TEST("a continuation carries result, resume and dispose");
     check_text(&u,
                "let^ gen = p^ { yield^ 1 }\n"
                "let^ c = gen()\n"
-               "let^ v = c.resume()\n"
+               "let^ v = c.result\n"
+               "let^ w = c.resume(0)\n"
                "c.dispose()\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
@@ -1361,9 +1366,27 @@ static void test_coroutines(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_NO_MEMBER);
     unit_dispose(&u);
 
-    // 15.5: the arguments belong to the call, which binds the parameters.
-    // 15.4's resume carries the one value a yield^ answers with, which 13.9
-    // types as the coroutine's receive type -- a different thing.
+    // 15.11: `result` is what the yield^ that made this continuation put out,
+    // which 13.9 makes one type for the whole body.
+    LHAT_TEST("result has the type the body yields");
+    check_text(&u,
+               "let^ gen = p^ { yield^ 1 }\n"
+               "let^ c = gen()\n"
+               "let^ n : number^ = c.result\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("and not another");
+    check_text(&u,
+               "let^ gen = p^ { yield^ 1 }\n"
+               "let^ c = gen()\n"
+               "let^ s : string^ = c.result\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
+    unit_dispose(&u);
+
+    // 15.5: the arguments belong to the call, which binds the parameters --
+    // and under 15.11 the call is what runs, so they arrive before anything
+    // needs them.
     LHAT_TEST("the arguments belong to the call");
     check_text(&u,
                "let^ p = p^ x:number^, y:string^ { let^ a = yield^ 10 return^ \"a\" }\n"
@@ -1378,36 +1401,79 @@ static void test_coroutines(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_ARITY);
     unit_dispose(&u);
 
-    // 13.9: what a resume answers is the union of the yield type and the
-    // return type, which the consumer tells apart. The return half reaches
-    // through; the yield half is not inferred yet (02 の 15.8).
-    LHAT_TEST("what a resume answers includes the return type");
-    check_text(&u,
-               "let^ p = p^ -> string^ { yield^ 10 return^ \"a\" }\n"
-               "let^ c = p()\n"
-               "let^ s : string^ = c.resume()\n");
+    // 13.9: one body, one continuation type. Mixing two forms is caught where
+    // the second one stands, which is what makes 13.9's uniformity a rule
+    // rather than an approximation.
+    LHAT_TEST("every yield^ in one body has the same type");
+    check_text(&u, "let^ gen = p^ { yield^ 1 yield^ 2 }\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    LHAT_TEST("yieldall^ needs a coroutine");
+    LHAT_TEST("and mixing two is reported");
+    check_text(&u, "let^ gen = p^ { yield^ 1 yield^ \"a\" }\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_YIELD_NOT_UNIFORM);
+    unit_dispose(&u);
+
+    // 15.11: what a call answers is the union, continuation arm and all, so a
+    // written result is where the continuation type is pinned -- and the only
+    // place the received type can come from.
+    LHAT_TEST("a written result carries the continuation arm");
+    check_text(&u,
+               "let^ p = p^ -> c^number^ -> number^; | string^ {\n"
+               "  let^ got : number^ = yield^ 10\n"
+               "  return^ \"a\"\n"
+               "}\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("a written result that lacks it is reported");
+    check_text(&u,
+               "let^ p = p^ -> string^ { yield^ 10 return^ \"a\" }\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_RESULT_LACKS_CONTINUATION);
+    unit_dispose(&u);
+
+    // 13.12: the word on its own is the top of its kind, so `c^` is what
+    // stands for every continuation.
+    LHAT_TEST("the top of the kind takes any continuation");
+    check_text(&u,
+               "let^ gen = p^ { yield^ 1 }\n"
+               "let^ c : c^ = gen()\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("an f^ stands where a p^ is written");
+    check_text(&u,
+               "let^ go = f^ -> number^ { return^ 1 }\n"
+               "let^ any : p^ = go\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("yieldall^ needs a continuation among the arms");
     check_text(&u,
                "let^ plain = f^ -> number^ { return^ 1 }\n"
                "let^ outer = p^ { yieldall^ plain() }\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_NOT_COROUTINE);
     unit_dispose(&u);
 
-    // 15.8: the value of a delegation is the inner one's return value.
-    LHAT_TEST("the value of yieldall^ is the inner return type");
+    // 15.8 with 15.11: the value is what is left once the continuation arm is
+    // dropped -- the same shape catch^ and ?? have.
+    LHAT_TEST("the value of yieldall^ is what is left");
     check_text(&u,
-               "let^ gen = p^ -> number^ { yield^ 1 return^ 2 }\n"
+               "let^ gen = p^ -> c^nil^ -> number^; | number^ {\n"
+               "  yield^ 1\n"
+               "  return^ 2\n"
+               "}\n"
                "let^ outer = p^ { let^ n : number^ = yieldall^ gen() }\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
     LHAT_TEST("and it is not the type it yields");
     check_text(&u,
-               "let^ gen = p^ -> number^ { yield^ 1 return^ 2 }\n"
-               "let^ outer = p^ { let^ s : string^ = yieldall^ gen() }\n");
+               "let^ gen = p^ -> c^nil^ -> number^; | string^ {\n"
+               "  yield^ 1\n"
+               "  return^ \"a\"\n"
+               "}\n"
+               "let^ outer = p^ { let^ n : number^ = yieldall^ gen() }\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 }

@@ -273,12 +273,37 @@ static void test_functions(void)
         LHAT_CHECK(!lhat_type_conforms(narrow, wide), "the other way does not");
     }
 
-    // 15 章: f^ and p^ are different kinds of subroutine, not two spellings.
-    LHAT_TEST("f^ and p^ do not substitute for each other");
+    // 13.12: an f^ is a p^ held to stricter rules, so it stands wherever a
+    // p^ is written. The other way round is what 15 章 rules out.
+    LHAT_TEST("f^ substitutes for p^ and not the other way");
     {
         LhatType *fn = lhat_type_func(&t.arena, true);
         LhatType *proc = lhat_type_func(&t.arena, false);
-        LHAT_CHECK(!lhat_type_conforms(fn, proc), "f^ is not p^");
+        LHAT_CHECK(lhat_type_conforms(fn, proc), "f^ is a p^");
+        LHAT_CHECK(!lhat_type_conforms(proc, fn), "a p^ is not an f^");
+    }
+
+    // 13.12: the word on its own is the top of its kind, which every type of
+    // that kind is below.
+    LHAT_TEST("the top of a kind takes everything of that kind");
+    {
+        LhatType *any_proc =
+            lhat_type_kind_top(&t.arena, LHAT_TYPE_FUNC, false);
+        LhatType *any_func = lhat_type_kind_top(&t.arena, LHAT_TYPE_FUNC, true);
+        LhatType *any_cont = lhat_type_kind_top(&t.arena, LHAT_TYPE_CORO, false);
+
+        LhatType *proc = lhat_type_func(&t.arena, false);
+        proc->v.func.result = simple(&t, LHAT_TYPE_NUMBER);
+        LhatType *fn = lhat_type_func(&t.arena, true);
+        LhatType *cont = lhat_type_coro(&t.arena, simple(&t, LHAT_TYPE_NUMBER),
+                                        simple(&t, LHAT_TYPE_STRING));
+
+        LHAT_CHECK(lhat_type_conforms(proc, any_proc), "a p^ is below p^");
+        LHAT_CHECK(lhat_type_conforms(fn, any_proc), "an f^ is below p^ too");
+        LHAT_CHECK(!lhat_type_conforms(proc, any_func), "a p^ is not below f^");
+        LHAT_CHECK(lhat_type_conforms(cont, any_cont), "a c^…; is below c^");
+        LHAT_CHECK(!lhat_type_conforms(any_proc, proc),
+                   "the top says nothing about how it may be called");
     }
 
     // 13.2: returning nothing is not the same as returning something.
