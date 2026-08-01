@@ -97,6 +97,12 @@ struct LhatType {
             // until inferred; meaningless unless `yields` is true.
             LhatType *yield_produce;
             LhatType *yield_receive;
+            // 03 の 3.4: the body has a way out that produces no value -- it
+            // reaches its end, or a bare return^ takes it there. False means
+            // every way out carries a value, or there is no way out at all.
+            // 13.9 reads it to tell a coroutine that ends without one from
+            // one that cannot end.
+            bool ends_without_value;
         } func;
 
         struct {

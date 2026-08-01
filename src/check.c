@@ -63,6 +63,10 @@ typedef struct {
     // 03 の 3.4: a return^ whose value goes through the subroutine itself.
     // Its type is the one being worked out, so it is left out of the union.
     bool recursive_return;
+    // 03 の 3.4 counts every exit. A bare return^ is one that produces no
+    // value, exactly like reaching the end of the body -- and it leaves the
+    // same nil^ behind at run time.
+    bool valueless_return;
 
     // 02 の 15.10: the type of the subroutine whose body is being checked,
     // which is what this^ names. NULL outside any body.
@@ -638,6 +642,65 @@ static void drop_narrowings_for(Checker *c, const LhatNode *target)
     }
 }
 
+// 02 の 9.8: break^ leaves the innermost loop. The multi-level form is still
+// a proposal and the compiler refuses it, so a break^ found here belongs to
+// the loop this is the body of -- unless another loop stands between them,
+// which takes its own. Answers whether this loop has a way out written in it.
+static bool breaks_out(const LhatNode *node)
+{
+    for (; node != NULL; node = node->next) {
+        switch (node->kind) {
+            case LHAT_NODE_BREAK:
+                return true;
+
+            case LHAT_NODE_BLOCK:
+                if (breaks_out(node->v.list.items)) {
+                    return true;
+                }
+                // 9 章: the clauses of a loop body are statements of it too.
+                for (const LhatNode *clause = node->v.list.extra;
+                     clause != NULL; clause = clause->next) {
+                    if (breaks_out(clause->v.loop_clause.body)) {
+                        return true;
+                    }
+                }
+                break;
+
+            case LHAT_NODE_IF_STMT:
+                for (const LhatNode *clause = node->v.list.items;
+                     clause != NULL; clause = clause->next) {
+                    if (breaks_out(clause->v.clause.body)) {
+                        return true;
+                    }
+                }
+                break;
+
+            case LHAT_NODE_WITH:
+                if (breaks_out(node->v.list.extra)) {
+                    return true;
+                }
+                break;
+
+            case LHAT_NODE_FOR:
+                // 16.3 and 17 章: the if^ and when^ forms do not iterate, so
+                // a break^ inside one still leaves the loop out here. Every
+                // other form is a loop and takes its own.
+                if ((node->v.loop.kind == LHAT_FOR_IF ||
+                     node->v.loop.kind == LHAT_FOR_WHEN) &&
+                    breaks_out(node->v.loop.body)) {
+                    return true;
+                }
+                break;
+
+            // A repeat^ is a loop, and a nested body has its own loops. What
+            // a break^ in either one leaves is not this loop.
+            default:
+                break;
+        }
+    }
+    return false;
+}
+
 // Whether control cannot reach the end of this statement. 04 の 6.1 is
 // written in the early-return style -- handle the error, leave, and carry on
 // below knowing it did not happen -- so the narrowing a branch established
@@ -674,6 +737,15 @@ static bool always_exits(const LhatNode *node)
             }
             return has_else;
         }
+
+        // 16.5: a repeat^ with no bound runs until something leaves it. With
+        // no break^ of its own, nothing after it is ever reached, so it ends
+        // the statements around it the way a return^ does. 03 の 3.4 counts
+        // exits to infer a result, and this is one that produces no value
+        // and never happens -- which keeps it out of the result entirely.
+        case LHAT_NODE_REPEAT:
+            return node->v.repeat.kind == LHAT_REPEAT_FOREVER &&
+                   !breaks_out(node->v.repeat.body);
 
         default:
             return false;
@@ -1024,6 +1096,16 @@ static LhatType *infer_call(Checker *c, const LhatNode *node)
     // ran, or none reached -- leaves them NULL, which nil^ fills the same
     // way an unwritten result does.
     if (callee->v.func.yields) {
+        // 13.9改: the third type is what the last resume receives. A body
+        // with no value-returning return^ hands nil^ back when it ends --
+        // but a body that cannot end has no last resume at all, and putting
+        // nil^ there would make every consumer narrow away something that
+        // never arrives. NULL is how that is spelled, the same way it is for
+        // a subroutine that answers nothing.
+        LhatType *ends_with = callee->v.func.result;
+        if (ends_with == NULL && callee->v.func.ends_without_value) {
+            ends_with = simple(c, LHAT_TYPE_NIL);
+        }
         return lhat_type_coro(c->result->types,
                               callee->v.func.yield_receive != NULL
                                   ? callee->v.func.yield_receive
@@ -1031,9 +1113,7 @@ static LhatType *infer_call(Checker *c, const LhatNode *node)
                               callee->v.func.yield_produce != NULL
                                   ? callee->v.func.yield_produce
                                   : simple(c, LHAT_TYPE_NIL),
-                              callee->v.func.result != NULL
-                                  ? callee->v.func.result
-                                  : simple(c, LHAT_TYPE_NIL));
+                              ends_with);
     }
     return callee->v.func.result;
 }
@@ -1072,7 +1152,9 @@ static LhatType *infer_member(Checker *c, const LhatNode *node)
             // 15.2改: runs the body from the top, for a coroutine that has
             // never been resumed. Takes nothing, since nothing has been
             // yield^ed yet to send a value to. Answers the same union a
-            // resume does.
+            // resume does -- which is the yield type alone when the third
+            // type is absent, since a coroutine that cannot end never
+            // answers with one (13.9改).
             LhatType *signature = lhat_type_func(c->result->types, false);
             signature->v.func.result =
                 lhat_type_union(c->result->types, target->v.coroutine.produce,
@@ -1081,10 +1163,11 @@ static LhatType *infer_member(Checker *c, const LhatNode *node)
         }
         if (name_is(name, length, "resume")) {
             // 13.9: what a resume answers is the union of what the coroutine
-            // yields and what it returns -- telling the two apart is what the
-            // consumer does. 15.2改: R is now one fixed type, so resume takes
-            // exactly one argument of it -- start() is what a fresh coroutine
-            // is resumed with instead of a sentinel "no argument" call.
+            // yields and what it returns -- telling the two apart is what
+            // done() does (15.6改). 15.2改: R is now one fixed type, so resume
+            // takes exactly one argument of it -- start() is what a fresh
+            // coroutine is resumed with instead of a sentinel "no argument"
+            // call. An absent third type leaves the yield type alone.
             LhatType *answer =
                 lhat_type_union(c->result->types, target->v.coroutine.produce,
                                 target->v.coroutine.result);
@@ -1241,6 +1324,7 @@ static LhatType *infer_func(Checker *c, const LhatNode *node)
     LhatType *outer_inferred = c->inferred_result;
     bool outer_self_call = c->saw_self_call;
     bool outer_recursive = c->recursive_return;
+    bool outer_valueless = c->valueless_return;
     LhatType *outer_this = c->this_type;
     LhatType *outer_coroutine_produce = c->coroutine_produce;
     LhatType *outer_coroutine_receive = c->coroutine_receive;
@@ -1252,6 +1336,7 @@ static LhatType *infer_func(Checker *c, const LhatNode *node)
     c->inferred_result = NULL;
     c->saw_self_call = false;
     c->recursive_return = false;
+    c->valueless_return = false;
     c->this_type = func;
     c->deferred++;
     // 15.2: a nested p^{...} starts collecting its own Y/R from scratch, so
@@ -1268,16 +1353,20 @@ static LhatType *infer_func(Checker *c, const LhatNode *node)
         func->v.func.yield_receive = c->coroutine_receive;
     }
 
-    // Reaching the end of the body is an exit, and one that produces no
-    // value. What that means depends on what the subroutine promised.
+    // Reaching the end of the body is an exit that produces no value, and a
+    // bare return^ is the same exit written down. Both hand nil^ back at run
+    // time, so 03 の 3.4 counts them together. What that means depends on
+    // what the subroutine promised.
     bool falls_through = !always_exits(node->v.func.body);
+    bool leaves_without_value = falls_through || c->valueless_return;
+    func->v.func.ends_without_value = leaves_without_value;
 
     // 02 の 13.2: a function always has a result -- Memo.md L152 is where
-    // that comes from. So an f^ that can reach its end has a path with
-    // nothing to answer with, and no result type would make it right.
-    if (falls_through && node->v.func.is_function) {
+    // that comes from. So an f^ with a path that answers nothing has one
+    // with nothing to answer with, and no result type would make it right.
+    if (leaves_without_value && node->v.func.is_function) {
         report(c, node, LHAT_CHECK_ERR_FUNCTION_FALLS_OUT);
-    } else if (falls_through && declared != NULL &&
+    } else if (leaves_without_value && declared != NULL &&
                !lhat_type_conforms(simple(c, LHAT_TYPE_NIL), declared)) {
         // A p^ may leave without a value, but then its result has to admit
         // one. 04 の 11.3 spells that nil^.
@@ -1286,14 +1375,14 @@ static LhatType *infer_func(Checker *c, const LhatNode *node)
 
     if (declared == NULL) {
         // 03 の 3.4: the result is what the exits that do not go through the
-        // subroutine itself agree on. Reaching the end of the body is one of
+        // subroutine itself agree on. Leaving without a value is one of
         // those exits, and 04 の 11.3 already spells "no value" nil^.
         //
         // 02 の 13.2 keeps that apart from a body that returns nothing at
         // all: there the writer never asked for a value, and the signature
         // has a form for it. nil^ joins in only when some other exit does
         // produce one.
-        if (falls_through &&
+        if (leaves_without_value &&
             (c->inferred_result != NULL || c->recursive_return)) {
             c->inferred_result = lhat_type_union(c->result->types,
                                                  c->inferred_result,
@@ -1315,6 +1404,7 @@ static LhatType *infer_func(Checker *c, const LhatNode *node)
     c->inferred_result = outer_inferred;
     c->saw_self_call = outer_self_call;
     c->recursive_return = outer_recursive;
+    c->valueless_return = outer_valueless;
     c->this_type = outer_this;
     c->coroutine_produce = outer_coroutine_produce;
     c->coroutine_receive = outer_coroutine_receive;
@@ -2321,6 +2411,14 @@ static void check_statement(Checker *c, const LhatNode *node)
             // 03 の 3.4: a return^ that reaches the subroutine itself says
             // nothing about the result -- its type is the one being worked
             // out. The others determine it between them.
+            // 03 の 3.4: a bare return^ leaves without a value. That is the
+            // same kind of exit as reaching the end of the body, and infer_func
+            // treats the two together -- so nothing more is decided here.
+            if (node->v.jump.value == NULL) {
+                c->valueless_return = true;
+                break;
+            }
+
             bool enclosing_self_call = c->saw_self_call;
             c->saw_self_call = false;
             LhatType *value = infer(c, node->v.jump.value);
@@ -2540,11 +2638,11 @@ const char *lhat_check_error_message(LhatCheckErrorCode code)
         case LHAT_CHECK_ERR_NOT_DISPOSABLE:
             return "with^ needs a value with a dispose() that returns nothing";
         case LHAT_CHECK_ERR_FUNCTION_FALLS_OUT:
-            return "a function answers on every path; this one can reach its "
-                   "end without a return^";
+            return "a function answers on every path; this one has a path "
+                   "that leaves without a value";
         case LHAT_CHECK_ERR_FALLS_OUT_OF_RESULT:
-            return "this body can reach its end without a value, which the "
-                   "result type it was given does not admit";
+            return "this body has a path that leaves without a value, which "
+                   "the result type it was given does not admit";
         case LHAT_CHECK_ERR_THIS_OUTSIDE:
             return "this^ names the subroutine running, and none is here";
         case LHAT_CHECK_ERR_NEVER_RETURNS:

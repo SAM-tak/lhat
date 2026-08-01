@@ -756,6 +756,16 @@ static void test_repeat(void)
     CHECK_INTEGER(&r, 3);
     run_dispose(&r);
 
+    // Or a return^, which leaves the body and the loop with it. The checker
+    // reads this as a body whose end is unreachable (03 の 3.4), so what it
+    // blesses has to run.
+    LHAT_TEST("a return^ leaves an endless repeat^ too");
+    run_text(&r,
+             "let^ f = f^ -> number^ { repeat^ { return^ 7 } }\n"
+             "return^ f()\n");
+    CHECK_INTEGER(&r, 7);
+    run_dispose(&r);
+
     LHAT_TEST("break^ leaves only the loop it is in");
     run_text(&r,
              "let^ n = 0\n"

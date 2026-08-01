@@ -339,6 +339,108 @@ static void test_results(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
+    // 03 の 3.4 counts every exit, and a bare return^ is one that produces
+    // no value -- the same exit reaching the end of the body is, and it
+    // leaves the same nil^ behind at run time.
+    LHAT_TEST("a bare return^ is an exit that produces no value");
+    check_text(&u,
+               "let^ f = p^ b:bool^ { if^ b { return^ 1 } return^ }\n"
+               "let^ v : number^ = f(true^)\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
+    unit_dispose(&u);
+
+    LHAT_TEST("so nil^ joins the result beside the value the other exit makes");
+    check_text(&u,
+               "let^ f = p^ b:bool^ { if^ b { return^ 1 } return^ }\n"
+               "let^ v : number^|nil^ = f(true^)\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("an f^ may not take that exit either");
+    check_text(&u, "let^ f = f^ -> number^ { return^ }\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_FUNCTION_FALLS_OUT);
+    unit_dispose(&u);
+
+    LHAT_TEST("and a written result has to admit it");
+    check_text(&u, "let^ f = p^ -> number^ { return^ }\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_FALLS_OUT_OF_RESULT);
+    unit_dispose(&u);
+
+    // 16.5: a repeat^ with no bound and no break^ of its own never ends, so
+    // the end of the body is not somewhere control can arrive.
+    LHAT_TEST("an endless repeat^ is not a way to the end of a body");
+    check_text(&u, "let^ f = f^ -> number^ { repeat^ { } }\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("nor when every turn of it returns");
+    check_text(&u, "let^ f = f^ -> number^ { repeat^ { return^ 1 } }\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("and a p^ with a written result is not made to admit nil^");
+    check_text(&u, "let^ g = p^ -> number^ { repeat^ { yield^ 1 } }\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // 9.8: break^ leaves the loop, so the end is reachable again.
+    LHAT_TEST("a break^ puts the end of the body back within reach");
+    check_text(&u, "let^ f = f^ -> number^ { repeat^ { break^ } }\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_FUNCTION_FALLS_OUT);
+    unit_dispose(&u);
+
+    LHAT_TEST("wherever the break^ is written inside the loop");
+    check_text(&u,
+               "let^ f = f^ -> number^ { repeat^ { if^ true^ { break^ } } }\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_FUNCTION_FALLS_OUT);
+    unit_dispose(&u);
+
+    // A break^ of an inner loop leaves that one, not this one.
+    LHAT_TEST("but a nested loop keeps its own break^");
+    check_text(&u,
+               "let^ f = f^ -> number^ { repeat^ { repeat^ { break^ } } }\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // 16.3: the if^ form of for^ does not iterate, so a break^ in it is the
+    // outer loop's.
+    LHAT_TEST("and the if^ form of for^ is not a loop to break out of");
+    check_text(&u,
+               "let^ f = f^ -> number^ {\n"
+               "    repeat^ { for^ x := 1 if^ true^ { break^ } }\n"
+               "}\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_FUNCTION_FALLS_OUT);
+    unit_dispose(&u);
+
+    // 17 章: nor is the when^ form.
+    LHAT_TEST("nor is the when^ form");
+    check_text(&u,
+               "let^ f = f^ -> number^ {\n"
+               "    repeat^ { for^ 1 { when^ 1: break^ other^: } }\n"
+               "}\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_FUNCTION_FALLS_OUT);
+    unit_dispose(&u);
+
+    // Only the endless form. The others can run out on their own.
+    LHAT_TEST("a bounded repeat^ still reaches the end of the body");
+    check_text(&u, "let^ f = f^ -> number^ { repeat^ 3 { } }\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_FUNCTION_FALLS_OUT);
+    unit_dispose(&u);
+
+    LHAT_TEST("and so does a conditional one");
+    check_text(&u, "let^ f = f^ -> number^ { repeat^ while^ true^ { } }\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_FUNCTION_FALLS_OUT);
+    unit_dispose(&u);
+
+    // 13.11: a branch that ends in an endless loop is a branch that leaves.
+    LHAT_TEST("a branch ending in one covers its path");
+    check_text(&u,
+               "let^ f = f^ -> number^ {\n"
+               "    if^ true^ { repeat^ { } el^: return^ 1 }\n"
+               "}\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
     // A body with no return^ at all asked for no value. 13.2 has a form for
     // it, and nil^ is not it.
     LHAT_TEST("a body that returns nothing stays returning nothing");
@@ -1499,6 +1601,48 @@ static void test_coroutines(void)
     check_text(&u,
                "let^ p = p^ { yield^ 1 return^ 9 }\n"
                "let^ v : number^ = p().start()\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // 13.9改: nor does one that cannot end at all. 16.5's endless repeat^ has
+    // no last resume, so there is no value for the third type to be the type
+    // of -- and a nil^ there would make every consumer narrow away something
+    // that never arrives.
+    LHAT_TEST("a coroutine that cannot end answers only what it yields");
+    check_text(&u,
+               "let^ p = p^ { repeat^ { yield^ 1 } }\n"
+               "let^ v : number^ = p().start()\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("and its walk binds a focus with no nil^ in it either");
+    check_text(&u,
+               "let^ p = p^ { repeat^ { yield^ 1 } }\n"
+               "for^ x in^ p() { let^ n : number^ = x }\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // A bare return^ ends it, so nil^ is back -- the resume that takes that
+    // exit really receives one.
+    LHAT_TEST("but a bare return^ is an end, and brings nil^ with it");
+    check_text(&u,
+               "let^ p = p^ { yield^ 1 return^ }\n"
+               "let^ v : number^ = p().start()\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
+    unit_dispose(&u);
+
+    LHAT_TEST("and so does a break^ that lets the loop finish");
+    check_text(&u,
+               "let^ p = p^ { repeat^ { yield^ 1 break^ } }\n"
+               "let^ v : number^ = p().start()\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
+    unit_dispose(&u);
+
+    // done() is what tells the two apart, and it is there either way.
+    LHAT_TEST("done() is carried whether or not the body can end");
+    check_text(&u,
+               "let^ p = p^ { repeat^ { yield^ 1 } }\n"
+               "let^ d : bool^ = p().done()\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
