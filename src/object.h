@@ -92,10 +92,26 @@ typedef enum {
 
 #define LHAT_COROUTINE_CLEANUPS 32
 
+// 02 の 16.3: what `in^` walks is a coroutine, and a table answers with one
+// of its own. That one has no body to run -- resuming it reads the next pair
+// -- so the machine tells the two apart here rather than inventing a second
+// kind of iterator.
+typedef enum {
+    LHAT_COROUTINE_BODY,   // a yieldable p^ (15.5)
+    LHAT_COROUTINE_TABLE   // walking a table's keys, built in
+} LhatCoroutineSource;
+
 typedef struct LhatCoroutine {
     LhatObject header;
     const LhatClosure *closure;
     LhatCoroutineState state;
+    LhatCoroutineSource source;
+
+    // LHAT_COROUTINE_TABLE only: where the walk has reached. The dense part
+    // comes first in index order, then the rest.
+    const LhatTable *walking;
+    size_t at_array;
+    size_t at_entry;
 
     LhatValue *registers;  // the saved frame, as wide as the body needs
     size_t register_count;
@@ -111,7 +127,8 @@ typedef struct LhatCoroutine {
 // 15.6 give a coroutine two of them; the rest of the standard library is M2.
 typedef enum {
     LHAT_NATIVE_RESUME,
-    LHAT_NATIVE_DISPOSE
+    LHAT_NATIVE_DISPOSE,
+    LHAT_NATIVE_ITERATE   // 02 の 16.3: answers the coroutine `in^` walks
 } LhatNativeKind;
 
 typedef struct LhatNative {
@@ -141,6 +158,14 @@ LhatError *lhat_error_new(LhatObject **owner, const LhatErrorKind *kind);
 // time -- so a coroutine's storage is known when it is made.
 LhatCoroutine *lhat_coroutine_new(LhatObject **owner, const LhatClosure *closure,
                                   size_t registers);
+
+// 02 の 16.3: the coroutine a table answers with. It has no body; resuming it
+// reads the next key and value.
+LhatCoroutine *lhat_table_iterator(LhatObject **owner, const LhatTable *table);
+
+// Reads the next pair of a table walk, advancing it. Answers false when the
+// walk is over.
+bool lhat_table_walk(LhatCoroutine *walk, LhatValue *key, LhatValue *value);
 
 LhatNative *lhat_native_new(LhatObject **owner, LhatNativeKind kind,
                             LhatValue bound);

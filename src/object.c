@@ -126,6 +126,45 @@ LhatCoroutine *lhat_coroutine_new(LhatObject **owner, const LhatClosure *closure
     return coroutine;
 }
 
+LhatCoroutine *lhat_table_iterator(LhatObject **owner, const LhatTable *table)
+{
+    LhatCoroutine *walk =
+        (LhatCoroutine *)allocate(owner, sizeof(LhatCoroutine),
+                                  LHAT_OBJECT_COROUTINE);
+    if (walk == NULL) {
+        return NULL;
+    }
+    walk->state = LHAT_COROUTINE_FRESH;
+    walk->source = LHAT_COROUTINE_TABLE;
+    walk->walking = table;
+    return walk;
+}
+
+bool lhat_table_walk(LhatCoroutine *walk, LhatValue *key, LhatValue *value)
+{
+    const LhatTable *table = walk->walking;
+    if (table == NULL) {
+        return false;
+    }
+    // The dense part first, in index order: 14 章 makes a table both a
+    // sequence and a mapping, and the sequence half has an order worth
+    // keeping. What order the rest comes in is not promised.
+    if (walk->at_array < table->array_count) {
+        *key = lhat_integer((int64_t)walk->at_array + 1);
+        *value = table->array[walk->at_array++];
+        return true;
+    }
+    while (walk->at_entry < table->entry_capacity) {
+        const LhatTableEntry *entry = &table->entries[walk->at_entry++];
+        if (!lhat_is_nil(entry->key)) {
+            *key = entry->key;
+            *value = entry->value;
+            return true;
+        }
+    }
+    return false;
+}
+
 LhatNative *lhat_native_new(LhatObject **owner, LhatNativeKind kind,
                             LhatValue bound)
 {

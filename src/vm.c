@@ -1842,6 +1842,64 @@ static void compile_with(Compiler *c, const LhatNode *node)
     c->next_register = register_mark;
 }
 
+// The name one element of an in^ focus binds. 16.2's wrapping of a lone
+// unnamed focus reads it as a value, which is right for to^ but not here --
+// with in^ the focus is what each turn binds. The wrapping is undone.
+static const LhatNode *target_of(const LhatNode *element)
+{
+    if (element->kind == LHAT_NODE_DEFINE &&
+        element->v.binding.targets != NULL &&
+        element->v.binding.targets->kind == LHAT_NODE_FOCUS) {
+        return element->v.binding.values;
+    }
+    return define_target_name(element);
+}
+
+static void declare_targets(Compiler *c, const LhatNode *focus)
+{
+    for (const LhatNode *element = focus; element != NULL;
+         element = element->next) {
+        const char *name = NULL;
+        size_t length = 0;
+        if (!node_name(c, target_of(element), &name, &length)) {
+            fail(c, LHAT_COMPILE_UNSUPPORTED);
+            return;
+        }
+        if (c->local_count >= LHAT_MAX_LOCALS) {
+            fail(c, LHAT_COMPILE_TOO_COMPLEX);
+            return;
+        }
+        uint8_t slot = reserve(c);
+        emit(c, lhat_encode_abc(LHAT_BC_LOADNIL, slot, 0, 0));
+        Local *local = &c->locals[c->local_count++];
+        local->name = name;
+        local->length = length;
+        local->reg = slot;
+    }
+}
+
+// 13.10: one name takes the value whole, and several take it apart by
+// position. `in^` is the marker that says which, so no unpack^ is written
+// (16.3). 13.8 makes what an iterator yields a table when it is a group.
+static void bind_targets(Compiler *c, const LhatNode *focus, size_t local_mark,
+                         size_t count, uint8_t from)
+{
+    if (count == 1) {
+        emit(c, lhat_encode_abc(LHAT_BC_MOVE, c->locals[local_mark].reg, from,
+                                0));
+        return;
+    }
+    for (size_t i = 0; i < count; i++) {
+        uint8_t mark = c->next_register;
+        uint8_t key = reserve(c);
+        load_constant(c, key, lhat_integer((int64_t)i + 1));
+        emit(c, lhat_encode_abc(LHAT_BC_GETINDEX,
+                                c->locals[local_mark + i].reg, from, key));
+        c->next_register = mark;
+    }
+    (void)focus;
+}
+
 // 16.3's if^ clause, which 16.1 explains is not a loop: the focus is
 // introduced, used once, and goes. Written out it is the do^ block of 16.3.
 static void compile_for_if(Compiler *c, const LhatNode *node)
@@ -1884,10 +1942,8 @@ static void compile_loop(Compiler *c, const LhatNode *node)
     const LhatNode *focus = is_for ? node->v.loop.focus : NULL;
 
     int kind = is_for ? (int)node->v.loop.kind : -1;
-    if (is_for && (kind == LHAT_FOR_IN || kind == LHAT_FOR_WHEN)) {
-        // in^ takes an iterator, which 13.9 makes a coroutine (P5), and when^
-        // is the pattern match of 17 章. Neither has a machine yet.
-        fail(c, LHAT_COMPILE_UNSUPPORTED);
+    if (is_for && kind == LHAT_FOR_WHEN) {
+        fail(c, LHAT_COMPILE_UNSUPPORTED);  // 17 章's pattern match
         return;
     }
 
@@ -1902,9 +1958,33 @@ static void compile_loop(Compiler *c, const LhatNode *node)
     size_t local_mark = c->local_count;
     uint8_t register_mark = c->next_register;
 
-    declare_names(c, focus);
-    compile_in_scope(c, focus);
+    // 16.3: with in^ the focus is what each turn binds, not a value to
+    // evaluate. Everything else evaluates its focus here and once.
+    if (kind == LHAT_FOR_IN) {
+        declare_targets(c, focus);
+    } else {
+        declare_names(c, focus);
+        compile_in_scope(c, focus);
+    }
     size_t focus_locals = c->local_count - local_mark;
+
+    // 16.3: `in^ e` asks e for the coroutine to walk -- e.iterate(). A table
+    // and a coroutine answer it themselves; anything else answers by having
+    // a member of that name, which 11.3's structural judgement already knows
+    // how to ask for.
+    uint8_t walk = 0;
+    uint8_t taken = 0;
+    if (kind == LHAT_FOR_IN) {
+        walk = reserve(c);
+        uint8_t receiver = reserve(c);
+        uint8_t key = reserve(c);
+        compile_expression(c, bound, receiver);
+        load_string_bytes(c, key, "iterate", 7);
+        emit(c, lhat_encode_abc(LHAT_BC_GETINDEX, walk, receiver, key));
+        emit(c, lhat_encode_abc(LHAT_BC_CALLMETHOD, walk, 0, 0));
+        c->next_register = (uint8_t)(walk + 1);
+        taken = reserve(c);
+    }
 
     // 16.4: the bound and the step^ of to^/downto^ are both read once, before
     // the loop. Together they say how far the loop goes and in what
@@ -1987,6 +2067,19 @@ static void compile_loop(Compiler *c, const LhatNode *node)
         compile_numeric_test(c, node, numeric, numeric_bound, test);
         leaving = emit_jump(c, LHAT_BC_JUMP_FALSE, test);
         c->next_register = mark;
+    } else if (kind == LHAT_FOR_IN) {
+        // 13.9: what a resume answers is the union of what the coroutine
+        // yields and what it returns, so "is it finished" is the question
+        // that tells the two apart.
+        uint8_t mark = c->next_register;
+        uint8_t test = reserve(c);
+        emit(c, lhat_encode_abc(LHAT_BC_LOADNIL, taken, 0, 0));
+        emit(c, lhat_encode_abc(LHAT_BC_RESUME, taken, walk, 0));
+        emit(c, lhat_encode_abc(LHAT_BC_ISDONE, test, walk, 0));
+        emit(c, lhat_encode_abc(LHAT_BC_NOT, test, test, 0));
+        leaving = emit_jump(c, LHAT_BC_JUMP_FALSE, test);
+        c->next_register = mark;
+        bind_targets(c, focus, local_mark, focus_locals, taken);
     } else if (!is_for && node->v.repeat.kind == LHAT_REPEAT_COUNT) {
         uint8_t mark = c->next_register;
         uint8_t test = reserve(c);
@@ -2480,7 +2573,28 @@ static bool native_named(LhatValue key, LhatNativeKind *out)
         *out = LHAT_NATIVE_DISPOSE;
         return true;
     }
+    if (name->length == 7 && memcmp(name->text, "iterate", 7) == 0) {
+        *out = LHAT_NATIVE_ITERATE;
+        return true;
+    }
     return false;
+}
+
+// 02 の 16.3: `in^ e` asks e for the coroutine to walk. A table answers with
+// one over its keys and a coroutine answers with itself, and both are built
+// in -- the same footing 12.6 gives dispose(). A member of that name written
+// by hand wins, since lhat_table_get is asked first.
+static bool builtin_member(LhatValue on, LhatValue key, LhatNativeKind *out)
+{
+    if (!native_named(key, out)) {
+        return false;
+    }
+    if (lhat_is_object_kind(on, LHAT_OBJECT_COROUTINE)) {
+        return true;  // resume, dispose and iterate all apply
+    }
+    return *out == LHAT_NATIVE_ITERATE &&
+           (lhat_is_object_kind(on, LHAT_OBJECT_TABLE) ||
+            lhat_is_object_kind(on, LHAT_OBJECT_ERROR));
 }
 
 static void *allocate(Machine *m, size_t size, LhatObjectKind kind)
@@ -2763,8 +2877,8 @@ LhatRunResult lhat_run(const LhatProto *proto)
             // An error answers from its fields: 2.3 gives every kind message
             // and cause, and they are reached the same way as a member.
             case LHAT_BC_GETINDEX: {
-                // 02 の 12.6 and 15.6: a coroutine answers the two operations
-                // the runtime provides, bound to the coroutine they came from.
+                // 02 の 12.6 and 15.6: a coroutine answers the operations the
+                // runtime provides, bound to what they came through.
                 if (lhat_is_object_kind(registers[b], LHAT_OBJECT_COROUTINE)) {
                     LhatNativeKind which;
                     if (!native_named(registers[cc], &which)) {
@@ -2783,6 +2897,19 @@ LhatRunResult lhat_run(const LhatProto *proto)
                     return finish(m, LHAT_RUN_TYPE_ERROR, lhat_nil(), at);
                 }
                 registers[a] = lhat_table_get(table, registers[cc]);
+
+                // 16.3: a table has an iterate of its own, but only where
+                // nothing was written under that name.
+                LhatNativeKind which;
+                if (lhat_is_nil(registers[a]) &&
+                    builtin_member(registers[b], registers[cc], &which)) {
+                    LhatNative *native =
+                        lhat_native_new(&m->objects, which, registers[b]);
+                    if (native == NULL) {
+                        return finish(m, LHAT_RUN_OUT_OF_MEMORY, lhat_nil(), at);
+                    }
+                    registers[a] = lhat_object((LhatObject *)native);
+                }
                 break;
             }
 
@@ -2866,6 +2993,30 @@ LhatRunResult lhat_run(const LhatProto *proto)
                         (const LhatNative *)lhat_as_object(registers[a]);
                     size_t first = a + (op == LHAT_BC_CALLMETHOD ? 2 : 1);
                     LhatValue sent = b > 0 ? registers[first] : lhat_nil();
+
+                    // 16.3: what `in^` walks. A table answers with a walk of
+                    // its keys; a coroutine is already one.
+                    if (native->kind == LHAT_NATIVE_ITERATE) {
+                        if (lhat_is_object_kind(native->bound,
+                                                LHAT_OBJECT_COROUTINE)) {
+                            registers[a] = native->bound;
+                            break;
+                        }
+                        const LhatTable *over = table_of(native->bound);
+                        if (over == NULL) {
+                            return finish(m, LHAT_RUN_NOT_CALLABLE, lhat_nil(),
+                                          at);
+                        }
+                        LhatCoroutine *walk =
+                            lhat_table_iterator(&m->objects, over);
+                        if (walk == NULL) {
+                            return finish(m, LHAT_RUN_OUT_OF_MEMORY, lhat_nil(),
+                                          at);
+                        }
+                        registers[a] = lhat_object((LhatObject *)walk);
+                        break;
+                    }
+
                     if (!lhat_is_object_kind(native->bound,
                                              LHAT_OBJECT_COROUTINE)) {
                         return finish(m, LHAT_RUN_NOT_CALLABLE, lhat_nil(), at);
@@ -3099,6 +3250,28 @@ LhatRunResult lhat_run(const LhatProto *proto)
                 if (co->state == LHAT_COROUTINE_DONE ||
                     co->state == LHAT_COROUTINE_RUNNING) {
                     return finish(m, LHAT_RUN_DEAD_COROUTINE, lhat_nil(), at);
+                }
+
+                // 16.3: a table's walk has no body to enter. Resuming it
+                // reads the next pair, which 13.8 makes a table since there
+                // are no multiple values to yield.
+                if (co->source == LHAT_COROUTINE_TABLE) {
+                    LhatValue key, value;
+                    if (!lhat_table_walk(co, &key, &value)) {
+                        co->state = LHAT_COROUTINE_DONE;
+                        registers[a] = lhat_nil();
+                        break;
+                    }
+                    LhatTable *pair = lhat_table_new(&m->objects);
+                    bool refused = false;
+                    if (pair == NULL ||
+                        !lhat_table_set(pair, lhat_integer(1), key, &refused) ||
+                        !lhat_table_set(pair, lhat_integer(2), value, &refused)) {
+                        return finish(m, LHAT_RUN_OUT_OF_MEMORY, lhat_nil(), at);
+                    }
+                    co->state = LHAT_COROUTINE_SUSPENDED;
+                    registers[a] = lhat_object((LhatObject *)pair);
+                    break;
                 }
                 if (m->frame_count >= LHAT_MAX_FRAMES) {
                     return finish(m, LHAT_RUN_STACK_OVERFLOW, lhat_nil(), at);

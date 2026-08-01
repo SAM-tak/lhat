@@ -898,6 +898,116 @@ static void test_for(void)
     CHECK_INTEGER(&r, 12);
     run_dispose(&r);
 
+    // 16.3: `in^ e` asks e for the coroutine to walk. A table answers with
+    // one over its keys, so the dense part comes back in index order.
+    LHAT_TEST("in^ walks a table's dense part in order");
+    run_text(&r,
+             "let^ t = { 10, 20, 30 }\n"
+             "let^ seen = 0\n"
+             "for^ k, v in^ t { seen := seen * 100 + k * 10 + v // 10 }\n"
+             "return^ seen\n");
+    CHECK_INTEGER(&r, 112233);
+    run_dispose(&r);
+
+    LHAT_TEST("and reaches the keyed part too");
+    run_text(&r,
+             "let^ t = { a := 5, b := 7 }\n"
+             "let^ total = 0\n"
+             "for^ k, v in^ t { total := total + v }\n"
+             "return^ total\n");
+    CHECK_INTEGER(&r, 12);
+    run_dispose(&r);
+
+    LHAT_TEST("an empty table walks no turns");
+    run_text(&r,
+             "let^ t = { }\n"
+             "let^ n = 0\n"
+             "for^ k, v in^ t { n := n + 1 }\n"
+             "return^ n\n");
+    CHECK_INTEGER(&r, 0);
+    run_dispose(&r);
+
+    // 13.10: one name takes the value whole, several take it apart by
+    // position. in^ is the marker, so no unpack^ is written.
+    LHAT_TEST("one name takes what was yielded whole");
+    run_text(&r,
+             "let^ gen = p^ { yield^ 1 yield^ 2 yield^ 3 }\n"
+             "let^ total = 0\n"
+             "for^ v in^ gen() { total := total + v }\n"
+             "return^ total\n");
+    CHECK_INTEGER(&r, 6);
+    run_dispose(&r);
+
+    LHAT_TEST("a coroutine answers iterate with itself");
+    run_text(&r,
+             "let^ gen = p^ { yield^ 4 yield^ 5 }\n"
+             "let^ c = gen()\n"
+             "let^ total = 0\n"
+             "for^ v in^ c { total := total + v }\n"
+             "return^ total\n");
+    CHECK_INTEGER(&r, 9);
+    run_dispose(&r);
+
+    // Anything with an iterate answers, which is what makes the rule a
+    // convention rather than a special case for tables.
+    LHAT_TEST("a definition answers by writing iterate");
+    run_text(&r,
+             "let^ Range = def^{\n"
+             "  self^{ upto := 0 },\n"
+             "  new^ := f^ n { return^ self^{ upto := n } },\n"
+             "  iterate := f^self^ {\n"
+             "    let^ limit = self^.upto\n"
+             "    return^ p^ { for^ i := 1 to^ limit { yield^ i } }()\n"
+             "  },\n"
+             "}\n"
+             "let^ total = 0\n"
+             "for^ v in^ Range.new^(4) { total := total + v }\n"
+             "return^ total\n");
+    CHECK_INTEGER(&r, 10);
+    run_dispose(&r);
+
+    LHAT_TEST("a written iterate wins over the built-in one");
+    run_text(&r,
+             "let^ t = { 1, 2, 3, iterate := f^ { return^ p^ { yield^ 9 }() } }\n"
+             "let^ total = 0\n"
+             "for^ v in^ t { total := total + v }\n"
+             "return^ total\n");
+    CHECK_INTEGER(&r, 9);
+    run_dispose(&r);
+
+    LHAT_TEST("break^ leaves a walk like any other loop");
+    run_text(&r,
+             "let^ t = { 1, 2, 3, 4 }\n"
+             "let^ n = 0\n"
+             "for^ k, v in^ t { n := n + 1 if^ n = 2 { break^ } }\n"
+             "return^ n\n");
+    CHECK_INTEGER(&r, 2);
+    run_dispose(&r);
+
+    LHAT_TEST("the clauses of 9 章 apply to a walk too");
+    run_text(&r,
+             "let^ t = { 1, 2, 3 }\n"
+             "let^ log = { s := 0 }\n"
+             "for^ k, v in^ t {\n"
+             "  main^:\n"
+             "    log.s := log.s + v\n"
+             "  epilog^:\n"
+             "    log.s := log.s * 10\n"
+             "}\n"
+             "return^ log.s\n");
+    CHECK_INTEGER(&r, 60);
+    run_dispose(&r);
+
+    LHAT_TEST("the focus is gone after the walk");
+    run_text(&r, "let^ t = { 1 }\nfor^ k, v in^ t { }\nreturn^ v\n");
+    LHAT_CHECK_EQ_INT(r.compiled, LHAT_COMPILE_UNDEFINED);
+    run_dispose(&r);
+
+    LHAT_TEST("walking something with no iterate is refused at run time");
+    run_text(&r, "let^ n = 1\nfor^ v in^ n { }\nreturn^ 0\n");
+    LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_TYPE_ERROR);
+    run_dispose(&r);
+
     // 16.3 and 16.1: this one does not repeat. It is the do^ block written
     // without the extra nesting.
     LHAT_TEST("if^ uses the focus once and does not repeat");
