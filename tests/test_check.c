@@ -1393,6 +1393,41 @@ static void test_coroutines(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_NO_MEMBER);
     unit_dispose(&u);
 
+    // 16.3: a table answers iterate() with a walk over its keys, without
+    // anything being written. The machine has always read it that way; the
+    // type of it was missing here.
+    LHAT_TEST("a table carries the built-in iterate");
+    check_text(&u,
+               "let^ t = { 1, 2 }\n"
+               "let^ w = t.iterate()\n"
+               "let^ d : bool^ = w.done()\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // 13.8 has no tuples, so what a walk yields is a table of the pair.
+    LHAT_TEST("and the walk yields a table");
+    check_text(&u,
+               "let^ t = { 1, 2 }\n"
+               "let^ pair : t^{} |nil^ = t.iterate().start()\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("and it is not the values the table holds");
+    check_text(&u,
+               "let^ t = { 1, 2 }\n"
+               "let^ pair : number^|nil^ = t.iterate().start()\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
+    unit_dispose(&u);
+
+    // 16.3 lets a written iterate win, which is why the built-in is only
+    // reached once the search for a written member has failed.
+    LHAT_TEST("a written iterate wins over the built-in one");
+    check_text(&u,
+               "let^ t = { iterate := f^ { return^ p^ { yield^ 9 }() } }\n"
+               "let^ v : number^|nil^ = t.iterate().start()\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
     // 15.5: the arguments belong to the call, which binds the parameters.
     // 15.4's resume carries the one value a yield^ answers with, which 13.9
     // types as the coroutine's receive type -- a different thing.

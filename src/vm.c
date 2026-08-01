@@ -2921,6 +2921,37 @@ static LhatRunResult finish(Machine *m, LhatRunStatus status, LhatValue value,
     return result;
 }
 
+// 02 の 16.3: a table's walk has no body to enter, so one step is the whole
+// of resuming it. Both the opcode the loops emit and the start()/resume() a
+// program writes by hand take this step -- 16.3 puts a table's iterate() on
+// the same footing as any other coroutine, so what the two do has to agree.
+typedef enum {
+    WALK_TOOK,      // a pair came out; the walk is suspended again
+    WALK_ENDED,     // nothing left, so the walk is finished
+    WALK_NO_MEMORY
+} WalkStep;
+
+static WalkStep step_table_walk(Machine *m, LhatCoroutine *co, LhatValue *out)
+{
+    LhatValue key, value;
+    if (!lhat_table_walk(co, &key, &value)) {
+        co->state = LHAT_COROUTINE_DONE;
+        *out = lhat_nil();
+        return WALK_ENDED;
+    }
+    // 13.8 has no tuples, so the pair a walk yields is a table.
+    LhatTable *pair = lhat_table_new(&m->objects);
+    bool refused = false;
+    if (pair == NULL ||
+        !lhat_table_set(pair, lhat_integer(1), key, &refused) ||
+        !lhat_table_set(pair, lhat_integer(2), value, &refused)) {
+        return WALK_NO_MEMORY;
+    }
+    co->state = LHAT_COROUTINE_SUSPENDED;
+    *out = lhat_object((LhatObject *)pair);
+    return WALK_TOOK;
+}
+
 void lhat_run_result_dispose(LhatRunResult *result)
 {
     LhatHeap heap = { result->objects, 0 };
@@ -3391,6 +3422,26 @@ LhatRunResult lhat_run(const LhatProto *proto)
                     if (co->state == LHAT_COROUTINE_RUNNING) {
                         return finish(m, LHAT_RUN_DEAD_COROUTINE, lhat_nil(), at);
                     }
+
+                    // 16.3: a walk of a table has no body, so nothing below
+                    // applies to it -- no frame to enter and nothing pending
+                    // to drain. The guards above leave start() on a fresh
+                    // walk and resume() on a suspended one, and one step is
+                    // the whole of either.
+                    if (co->source == LHAT_COROUTINE_TABLE) {
+                        if (dispose) {
+                            co->state = LHAT_COROUTINE_DONE;
+                            registers[a] = lhat_nil();
+                            break;
+                        }
+                        if (step_table_walk(m, co, &registers[a]) ==
+                            WALK_NO_MEMORY) {
+                            return finish(m, LHAT_RUN_OUT_OF_MEMORY,
+                                          lhat_nil(), at);
+                        }
+                        break;
+                    }
+
                     if (m->frame_count >= LHAT_MAX_FRAMES) {
                         return finish(m, LHAT_RUN_STACK_OVERFLOW, lhat_nil(), at);
                     }
@@ -3624,25 +3675,13 @@ LhatRunResult lhat_run(const LhatProto *proto)
                     return finish(m, LHAT_RUN_DEAD_COROUTINE, lhat_nil(), at);
                 }
 
-                // 16.3: a table's walk has no body to enter. Resuming it
-                // reads the next pair, which 13.8 makes a table since there
-                // are no multiple values to yield.
+                // 16.3: a table's walk has no body to enter, so resuming it
+                // is one step and nothing more.
                 if (co->source == LHAT_COROUTINE_TABLE) {
-                    LhatValue key, value;
-                    if (!lhat_table_walk(co, &key, &value)) {
-                        co->state = LHAT_COROUTINE_DONE;
-                        registers[a] = lhat_nil();
-                        break;
-                    }
-                    LhatTable *pair = lhat_table_new(&m->objects);
-                    bool refused = false;
-                    if (pair == NULL ||
-                        !lhat_table_set(pair, lhat_integer(1), key, &refused) ||
-                        !lhat_table_set(pair, lhat_integer(2), value, &refused)) {
+                    if (step_table_walk(m, co, &registers[a]) ==
+                        WALK_NO_MEMORY) {
                         return finish(m, LHAT_RUN_OUT_OF_MEMORY, lhat_nil(), at);
                     }
-                    co->state = LHAT_COROUTINE_SUSPENDED;
-                    registers[a] = lhat_object((LhatObject *)pair);
                     break;
                 }
                 if (m->frame_count >= LHAT_MAX_FRAMES) {

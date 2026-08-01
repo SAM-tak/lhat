@@ -1132,6 +1132,23 @@ static LhatType *infer_member(Checker *c, const LhatNode *node)
             return m->type;
         }
     }
+
+    // 16.3: `in^ e` asks e for the coroutine to walk, and a table answers
+    // with one over its keys without anything being written. This comes
+    // after the search, not before it, because 16.3 lets a written iterate
+    // win -- the same order the machine reads it in.
+    if (name_is(name, length, "iterate")) {
+        // 13.8 has no tuples, so a pair is a table. The walk sends nothing
+        // in and ends without a value, which 04 の 11.3 spells nil^.
+        LhatType *walk = lhat_type_coro(c->result->types,
+                                        simple(c, LHAT_TYPE_NIL),
+                                        lhat_type_table(c->result->types),
+                                        simple(c, LHAT_TYPE_NIL));
+        LhatType *signature = lhat_type_func(c->result->types, false);
+        signature->v.func.result = walk;
+        return signature;
+    }
+
     report(c, node, LHAT_CHECK_ERR_NO_MEMBER);
     return simple(c, LHAT_TYPE_UNKNOWN);
 }

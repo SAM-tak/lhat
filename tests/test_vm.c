@@ -975,6 +975,74 @@ static void test_for(void)
     CHECK_INTEGER(&r, 9);
     run_dispose(&r);
 
+    // 16.3 puts a table's iterate() on the same footing as any other
+    // coroutine, so what it answers has to be drivable by hand and not only
+    // by the loop -- which emits BC_RESUME rather than going through the
+    // members. Before this, start() built a frame out of a walk that has no
+    // closure and the machine read through a null pointer.
+    LHAT_TEST("a walk taken by hand starts like any other coroutine");
+    run_text(&r,
+             "let^ t = { 10, 20 }\n"
+             "let^ w = t.iterate()\n"
+             "let^ pair = w.start()\n"
+             "return^ pair[1] * 100 + pair[2]\n");
+    CHECK_INTEGER(&r, 110);  // key 1, value 10
+    run_dispose(&r);
+
+    LHAT_TEST("and resumes to the pairs after it");
+    run_text(&r,
+             "let^ t = { 10, 20 }\n"
+             "let^ w = t.iterate()\n"
+             "w.start()\n"
+             "let^ pair = w.resume(nil^)\n"
+             "return^ pair[1] * 100 + pair[2]\n");
+    CHECK_INTEGER(&r, 220);  // key 2, value 20
+    run_dispose(&r);
+
+    LHAT_TEST("and finishes when the table runs out");
+    run_text(&r,
+             "let^ t = { 10 }\n"
+             "let^ w = t.iterate()\n"
+             "w.start()\n"
+             "let^ last = w.resume(nil^)\n"
+             "let^ n = last ?? 0\n"
+             "if^ w.done() { n := n + 1 }\n"
+             "return^ n\n");
+    CHECK_INTEGER(&r, 1);  // nil^, and done
+    run_dispose(&r);
+
+    // 15.2改 applies to a walk unchanged: nothing about having no body makes
+    // the first resume mean something on its own.
+    LHAT_TEST("resuming a walk that has not started is a fault");
+    run_text(&r,
+             "let^ t = { 10 }\n"
+             "let^ w = t.iterate()\n"
+             "w.resume(nil^)\n"
+             "return^ 0\n");
+    LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_COROUTINE_NOT_STARTED);
+    run_dispose(&r);
+
+    LHAT_TEST("starting a walk twice is a fault");
+    run_text(&r,
+             "let^ t = { 10, 20 }\n"
+             "let^ w = t.iterate()\n"
+             "w.start()\n"
+             "w.start()\n"
+             "return^ 0\n");
+    LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_COROUTINE_ALREADY_STARTED);
+    run_dispose(&r);
+
+    // 10.7: a walk has nothing pending, so disposal is only the state.
+    LHAT_TEST("a walk in progress can be disposed");
+    run_text(&r,
+             "let^ t = { 10, 20, 30 }\n"
+             "let^ w = t.iterate()\n"
+             "w.start()\n"
+             "w.dispose()\n"
+             "return^ w.done()\n");
+    CHECK_BOOL(&r, true);
+    run_dispose(&r);
+
     LHAT_TEST("break^ leaves a walk like any other loop");
     run_text(&r,
              "let^ t = { 1, 2, 3, 4 }\n"
