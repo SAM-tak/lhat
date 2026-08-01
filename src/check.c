@@ -1112,6 +1112,22 @@ static LhatType *infer_func(Checker *c, const LhatNode *node)
 
     check_statement(c, node->v.func.body);
 
+    // Reaching the end of the body is an exit, and one that produces no
+    // value. What that means depends on what the subroutine promised.
+    bool falls_through = !always_exits(node->v.func.body);
+
+    // 02 の 13.2: a function always has a result -- Memo.md L152 is where
+    // that comes from. So an f^ that can reach its end has a path with
+    // nothing to answer with, and no result type would make it right.
+    if (falls_through && node->v.func.is_function) {
+        report(c, node, LHAT_CHECK_ERR_FUNCTION_FALLS_OUT);
+    } else if (falls_through && declared != NULL &&
+               !lhat_type_conforms(simple(c, LHAT_TYPE_NIL), declared)) {
+        // A p^ may leave without a value, but then its result has to admit
+        // one. 04 の 11.3 spells that nil^.
+        report(c, node, LHAT_CHECK_ERR_FALLS_OUT_OF_RESULT);
+    }
+
     if (declared == NULL) {
         // 03 の 3.4: the result is what the exits that do not go through the
         // subroutine itself agree on. Reaching the end of the body is one of
@@ -1121,7 +1137,6 @@ static LhatType *infer_func(Checker *c, const LhatNode *node)
         // all: there the writer never asked for a value, and the signature
         // has a form for it. nil^ joins in only when some other exit does
         // produce one.
-        bool falls_through = !always_exits(node->v.func.body);
         if (falls_through &&
             (c->inferred_result != NULL || c->recursive_return)) {
             c->inferred_result = lhat_type_union(c->result->types,
@@ -2167,6 +2182,12 @@ const char *lhat_check_error_message(LhatCheckErrorCode code)
             return "overload^ overlaps an existing signature";
         case LHAT_CHECK_ERR_NOT_DISPOSABLE:
             return "with^ needs a value with a dispose() that returns nothing";
+        case LHAT_CHECK_ERR_FUNCTION_FALLS_OUT:
+            return "a function answers on every path; this one can reach its "
+                   "end without a return^";
+        case LHAT_CHECK_ERR_FALLS_OUT_OF_RESULT:
+            return "this body can reach its end without a value, which the "
+                   "result type it was given does not admit";
         case LHAT_CHECK_ERR_NEVER_RETURNS:
             return "every way out of this body calls it again, so it never "
                    "produces a value";

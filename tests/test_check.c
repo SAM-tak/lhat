@@ -273,6 +273,47 @@ static void test_results(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
+    // 13.2: a function answers on every path, so an f^ that can reach its
+    // end has one with nothing to answer with. No result type fixes that.
+    LHAT_TEST("a function that can reach its end is reported");
+    check_text(&u, "let^ f = f^ b:bool^ { if^ b { return^ true^ } }\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_FUNCTION_FALLS_OUT);
+    unit_dispose(&u);
+
+    LHAT_TEST("and writing the result does not excuse it");
+    check_text(&u,
+               "let^ f = f^ b:bool^ -> bool^|nil^ { if^ b { return^ true^ } }\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_FUNCTION_FALLS_OUT);
+    unit_dispose(&u);
+
+    LHAT_TEST("covering every path is what it takes");
+    check_text(&u,
+               "let^ f = f^ b:bool^ {\n"
+               "    if^ b { return^ true^ }\n"
+               "    return^ false^\n"
+               "}\n"
+               "let^ x : bool^ = f(true^)\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("an empty function body is reported too");
+    check_text(&u, "let^ f = f^ { }\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_FUNCTION_FALLS_OUT);
+    unit_dispose(&u);
+
+    // The same exit under a p^ that wrote a result which does not admit it.
+    LHAT_TEST("a written result has to admit the value-less exit");
+    check_text(&u,
+               "let^ f = p^ b:bool^ -> number^ { if^ b { return^ 1 } }\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_FALLS_OUT_OF_RESULT);
+    unit_dispose(&u);
+
+    LHAT_TEST("and admitting it is enough");
+    check_text(&u,
+               "let^ f = p^ b:bool^ -> number^|nil^ { if^ b { return^ 1 } }\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
     // A body with no return^ at all asked for no value. 13.2 has a form for
     // it, and nil^ is not it.
     LHAT_TEST("a body that returns nothing stays returning nothing");
