@@ -88,7 +88,7 @@ void lhat_chunk_dispose(LhatChunk *chunk)
 {
     free(chunk->code);
     free(chunk->constants);
-    lhat_object_free_all(&chunk->objects);
+    lhat_object_free_all(&chunk->heap);
     memset(chunk, 0, sizeof *chunk);
 }
 
@@ -153,7 +153,7 @@ size_t lhat_chunk_string(LhatChunk *chunk, const char *text, size_t length)
         }
     }
 
-    LhatString *string = lhat_string_new(&chunk->objects, text, length);
+    LhatString *string = lhat_string_new(&chunk->heap, text, length);
     if (string == NULL) {
         return SIZE_MAX;
     }

@@ -149,7 +149,7 @@ typedef struct {
 
     // The strings the constants name. A constant lives as long as the chunk,
     // so the chunk owns them rather than the machine that runs it.
-    LhatHeap objects;
+    LhatHeap heap;
 
     uint8_t registers;
 } LhatChunk;

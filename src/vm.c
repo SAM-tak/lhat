@@ -303,12 +303,12 @@ static void declare_error(Compiler *c, const LhatNode *node)
         kind_count++;
     }
 
-    LhatString *group_name = lhat_string_new(&chunk->objects, name, length);
+    LhatString *group_name = lhat_string_new(&chunk->heap, name, length);
     const LhatErrorKind **kinds =
         (const LhatErrorKind **)calloc(kind_count ? kind_count : 1,
                                        sizeof *kinds);
     LhatErrorKind *group =
-        lhat_error_kind_new(&chunk->objects, NULL, group_name);
+        lhat_error_kind_new(&chunk->heap, NULL, group_name);
     if (group_name == NULL || group == NULL || kinds == NULL) {
         free(kinds);
         fail(c, LHAT_COMPILE_TOO_COMPLEX);
@@ -337,9 +337,9 @@ static void declare_error(Compiler *c, const LhatNode *node)
         qualified[length] = '.';
         memcpy(qualified + length + 1, kind_name, kind_length);
 
-        LhatString *text = lhat_string_new(&chunk->objects, qualified, total);
+        LhatString *text = lhat_string_new(&chunk->heap, qualified, total);
         LhatErrorKind *kind =
-            text != NULL ? lhat_error_kind_new(&chunk->objects, group, text)
+            text != NULL ? lhat_error_kind_new(&chunk->heap, group, text)
                          : NULL;
         if (kind == NULL) {
             free(kinds);
@@ -682,7 +682,7 @@ static void compile_is(Compiler *c, const LhatNode *node, uint8_t into)
 static LhatRuntimeType *lower_type(Compiler *c, const LhatNode *node)
 {
     Compiler *root = root_of(c);
-    LhatHeap *owner = &root->proto->chunk.objects;
+    LhatHeap *owner = &root->proto->chunk.heap;
 
     if (node == NULL) {
         return NULL;
