@@ -241,6 +241,31 @@ static void test_results(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
+    // 3.4: a recursive exit is dropped only when its type is the one being
+    // worked out. Here the call sits inside something whose answer does not
+    // depend on it, so the arm it contributes has to be kept.
+    LHAT_TEST("a recursive call inside a larger expression still counts");
+    check_text(&u,
+               "let^ tag = f^ v:any^ -> string^ { return^ \"t\" }\n"
+               "let^ f = f^ x:number^ {\n"
+               "    if^ x > 1 { return^ tag(f(x - 1)) }\n"
+               "    return^ 1\n"
+               "}\n"
+               "let^ v : number^|string^ = f(3)\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("and the union really is both arms");
+    check_text(&u,
+               "let^ tag = f^ v:any^ -> string^ { return^ \"t\" }\n"
+               "let^ f = f^ x:number^ {\n"
+               "    if^ x > 1 { return^ tag(f(x - 1)) }\n"
+               "    return^ 1\n"
+               "}\n"
+               "let^ v : number^ = f(3)\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
+    unit_dispose(&u);
+
     // 12.8 and 03 の 5.6 leave no other way out, so a body every exit of
     // which calls itself can never produce a value.
     LHAT_TEST("a body whose every exit is recursive is reported");

@@ -2022,13 +2022,23 @@ static void check_statement(Checker *c, const LhatNode *node)
             if (c->declared_result != NULL) {
                 expect(c, node, value, c->declared_result,
                        LHAT_CHECK_ERR_MISMATCH);
-            } else if (recursive) {
-                c->recursive_return = true;
-            } else {
-                // 03 の 3.4: several return^ make a union.
-                c->inferred_result =
-                    lhat_type_union(c->result->types, c->inferred_result, value);
+                break;
             }
+
+            if (recursive) {
+                c->recursive_return = true;
+            }
+            // 03 の 3.4: a recursive exit says nothing only when its type is
+            // the one being worked out. Once the call sits inside a larger
+            // expression the answer may not depend on it at all --
+            // 'return^ "a" .. f(n).to_s()' is string^ whatever f answers --
+            // and dropping it would lose that.
+            if (recursive && (value == NULL || value->kind == LHAT_TYPE_UNKNOWN)) {
+                break;
+            }
+            // 03 の 3.4: several return^ make a union.
+            c->inferred_result =
+                lhat_type_union(c->result->types, c->inferred_result, value);
             break;
         }
 
