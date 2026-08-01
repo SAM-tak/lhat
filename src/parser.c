@@ -40,6 +40,8 @@ static LhatNode *parse_for(Parser *p);
 static LhatNode *parse_binding(Parser *p, LhatNodeKind kind,
                                const LhatToken *at, LhatNode *targets);
 static bool is_binary_op(const LhatNode *node, LhatOpKind op);
+static bool starts_expression(const LhatToken *token);
+static bool is_statement_keyword(const Parser *p);
 
 // ---------------------------------------------------------------------------
 // Token access
@@ -1108,7 +1110,11 @@ static LhatNode *parse_unary(Parser *p)
         if (node == NULL) {
             return NULL;
         }
-        node->v.jump.value = parse_expression(p);
+        // 01 の 10.9 again: what it sends has to be on its own line.
+        if (!p->current.preceded_by_newline && starts_expression(&p->current) &&
+            !is_statement_keyword(p)) {
+            node->v.jump.value = parse_expression(p);
+        }
         return node;
     }
 
@@ -2326,10 +2332,16 @@ static LhatNode *parse_jump(Parser *p, LhatNodeKind kind)
 
     // With no statement terminator, a word that begins a statement must not
     // be mistaken for the operand of the one before it.
+    //
+    // 01 の 10.9 settles the case a keyword cannot: the operand has to be on
+    // the same line. Without that, a bare `yield^` or `return^` swallows
+    // whatever statement comes next, since an ordinary name begins an
+    // expression just as well as it begins a statement.
     bool operand_follows =
-        (starts_expression(&p->current) && !is_statement_keyword(p)) ||
-        check_op(p, LHAT_OP_LPAREN) || check_op(p, LHAT_OP_SUB) ||
-        check_op(p, LHAT_OP_NOT) || check_op(p, LHAT_OP_LBRACE);
+        !p->current.preceded_by_newline &&
+        ((starts_expression(&p->current) && !is_statement_keyword(p)) ||
+         check_op(p, LHAT_OP_LPAREN) || check_op(p, LHAT_OP_SUB) ||
+         check_op(p, LHAT_OP_NOT) || check_op(p, LHAT_OP_LBRACE));
 
     if (operand_follows) {
         node->v.jump.value = parse_expression(p);

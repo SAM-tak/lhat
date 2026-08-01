@@ -287,6 +287,46 @@ static void test_statements(void)
     }
     parse_dispose(&p);
 
+    // 01 の 10.9: the operand has to be on the same line, the same rule that
+    // keeps a '(' at the start of a line from continuing the line above. An
+    // ordinary name begins a statement just as well as an expression, so
+    // nothing else could tell these apart.
+    LHAT_TEST("a jump does not swallow the statement below it");
+    parse_text(&p, "do^{ yield^\nx := 1 }");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    {
+        const LhatNode *body = first_statement(&p)->v.list.items;
+        LHAT_CHECK_EQ_INT(body->kind, LHAT_NODE_YIELD);
+        LHAT_CHECK(body->v.jump.value == NULL, "yield^ sent nothing");
+        LHAT_CHECK(body->next != NULL, "the assignment is its own statement");
+        if (body->next != NULL) {
+            LHAT_CHECK_EQ_INT(body->next->kind, LHAT_NODE_REASSIGN);
+        }
+    }
+    parse_dispose(&p);
+
+    LHAT_TEST("and return^ does not either");
+    parse_text(&p, "do^{ return^\nx := 1 }");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    {
+        const LhatNode *body = first_statement(&p)->v.list.items;
+        LHAT_CHECK_EQ_INT(body->kind, LHAT_NODE_RETURN);
+        LHAT_CHECK(body->v.jump.value == NULL, "return^ answered nothing");
+        LHAT_CHECK(body->next != NULL, "the assignment is its own statement");
+    }
+    parse_dispose(&p);
+
+    LHAT_TEST("an operand on the same line is still taken");
+    parse_text(&p, "do^{ return^ x\ny := 1 }");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    {
+        const LhatNode *body = first_statement(&p)->v.list.items;
+        LHAT_CHECK_EQ_INT(body->kind, LHAT_NODE_RETURN);
+        LHAT_CHECK(body->v.jump.value != NULL, "return^ answered x");
+        LHAT_CHECK(body->next != NULL, "and y := 1 stayed separate");
+    }
+    parse_dispose(&p);
+
     // 12.1: with^ takes local definitions and one block.
     LHAT_TEST("with^");
     parse_text(&p, "with^ r := open(\"d\")\nwith^ w := create(\"o\")\n{ copy(r, w) }");

@@ -2014,6 +2014,25 @@ static void test_coroutines(void)
     CHECK_INTEGER(&r, 0);
     run_dispose(&r);
 
+    // 15.5: not "up to the first yield^" -- the body starts at its top when
+    // the first resume comes, so each side of a yield^ runs on its own turn.
+    LHAT_TEST("the body starts at its top, not after the first yield^");
+    run_text(&r,
+             "let^ log = { s := 0 }\n"
+             "let^ p = p^ {\n"
+             "  log.s := log.s * 10 + 1\n"
+             "  yield^\n"
+             "  log.s := log.s * 10 + 2\n"
+             "}\n"
+             "let^ c = p()\n"
+             "let^ made = log.s\n"
+             "c.resume()\n"
+             "let^ first = log.s\n"
+             "c.resume()\n"
+             "return^ made * 10000 + first * 100 + log.s\n");
+    CHECK_INTEGER(&r, 112);  // nothing, then 1, then 12
+    run_dispose(&r);
+
     LHAT_TEST("resuming runs the body up to the yield^");
     run_text(&r,
              "let^ gen = p^ { yield^ 7 }\n"
