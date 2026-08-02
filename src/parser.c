@@ -2568,6 +2568,23 @@ static LhatNode *parse_statement(Parser *p)
         if (check_hat(p, "break")) {
             return parse_jump(p, LHAT_NODE_BREAK);
         }
+        // 05 の 5.4改: a require^ standing alone binds the unit under the
+        // path it declared, rather than under a name the reader picks. It is
+        // a statement of its own so that 8.2 keeps holding -- a bare
+        // expression is still not a statement.
+        if (check_hat(p, "require")) {
+            LhatToken at = p->current;
+            LhatNode *inner = parse_unary(p);
+            if (inner == NULL || inner->kind != LHAT_NODE_REQUIRE) {
+                return inner;
+            }
+            LhatNode *node = make(p, LHAT_NODE_REQUIRE_STMT, &at);
+            if (node == NULL) {
+                return NULL;
+            }
+            node->v.jump.value = inner->v.jump.value;
+            return node;
+        }
         if (check_hat(p, "yield") || check_hat(p, "_yield")) {
             bool phantom = check_hat(p, "_yield");  // 15.11
             p->saw_yield = true;

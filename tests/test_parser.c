@@ -673,6 +673,20 @@ static void test_functions(void)
                "the outer procedure does not yield");
     parse_dispose(&p);
 
+    // 05 の 5.4改: a require^ standing alone is a statement of its own, so
+    // 8.2's "a bare expression is not a statement" is untouched.
+    LHAT_TEST("a require^ on its own is a statement");
+    parse_text(&p, "require^ \"lib/m.lh\"");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    LHAT_CHECK_EQ_INT(first_statement(&p)->kind, LHAT_NODE_REQUIRE_STMT);
+    parse_dispose(&p);
+
+    LHAT_TEST("and one with a let^ is still an expression");
+    parse_text(&p, "let^ m = require^ \"lib/m.lh\"");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    LHAT_CHECK_EQ_INT(first_value(&p)->kind, LHAT_NODE_REQUIRE);
+    parse_dispose(&p);
+
     // 8.8: a let^ target may name a member. The path is the same node an
     // expression uses, so nothing new is read here.
     LHAT_TEST("a let^ target may be a path");

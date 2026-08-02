@@ -39,6 +39,7 @@ typedef enum {
     LHAT_NODE_ERROR_NEW,     // error^Kind{ ... }            (04 の 2.5)
     LHAT_NODE_TRY,           // try^ expr                    (04 の 5 章)
     LHAT_NODE_REQUIRE,       // require^ "path"              (05 の 5 章)
+    LHAT_NODE_REQUIRE_STMT,  // require^ "path" on its own   (05 の 5.4改)
     LHAT_NODE_UNARY,
     LHAT_NODE_BINARY,
     LHAT_NODE_COMPARE_CHAIN, // a < b < c  (11.5 の (5))

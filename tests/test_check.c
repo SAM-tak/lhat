@@ -1348,13 +1348,18 @@ typedef struct {
     bool asked;
 } Library;
 
-static LhatType *library_resolve(void *context, const char *path, size_t length)
+static LhatType *library_resolve(void *context, const char *path, size_t length,
+                                 const char **module_name)
 {
     Library *lib = (Library *)context;
     lib->asked = true;
     if (strlen(lib->expected_path) != length ||
         memcmp(lib->expected_path, path, length) != 0) {
         return NULL;  // 6.3 reports a unit that could not be had
+    }
+    // 05 の 3 章: what the provider declared, which 5.4改 binds it under.
+    if (module_name != NULL) {
+        *module_name = lib->provider.checked.module_name;
     }
     return lib->provider.checked.exports;
 }
@@ -1410,6 +1415,70 @@ static void test_modules(void)
                   "let^ d : number^ = g.dist(1, 2)\n");
     LHAT_CHECK(lib.asked, "the resolver was asked");
     CHECK_CLEAN(&u);
+    check_against_dispose(&u, &lib);
+
+    // 05 の 3.1改: the path module^ declared is kept, which is what 5.4改
+    // reads to decide where the short form binds.
+    LHAT_TEST("the path module^ declared is recorded");
+    memset(&lib, 0, sizeof lib);
+    lib.expected_path = "lib/geometry.lh";
+    check_against(&u, &lib, provider, "let^ g = require^ \"lib/geometry.lh\"\n");
+    LHAT_CHECK(lib.provider.checked.module_name != NULL,
+               "the provider declared a path");
+    if (lib.provider.checked.module_name != NULL) {
+        LHAT_CHECK(strcmp(lib.provider.checked.module_name, "ns.geometry") == 0,
+                   "the path is written out with its dots");
+    }
+    check_against_dispose(&u, &lib);
+
+    LHAT_TEST("and a unit that declares none records nothing");
+    memset(&lib, 0, sizeof lib);
+    lib.expected_path = "lib/plain.lh";
+    check_against(&u, &lib, "public^ let^ thing = 1\n",
+                  "let^ g = require^ \"lib/plain.lh\"\n");
+    LHAT_CHECK(lib.provider.checked.module_name == NULL, "3.2 allows none");
+    check_against_dispose(&u, &lib);
+
+    // 05 の 5.4改: without a let^ the unit goes under the path it declared.
+    // 8.8 makes the tables on the way, so only the root is a new name.
+    LHAT_TEST("the short form binds under the declared path");
+    memset(&lib, 0, sizeof lib);
+    lib.expected_path = "lib/geometry.lh";
+    check_against(&u, &lib,
+                  provider,
+                  "require^ \"lib/geometry.lh\"\n"
+                  "let^ d : number^ = ns.geometry.dist(1, 2)\n");
+    CHECK_CLEAN(&u);
+    check_against_dispose(&u, &lib);
+
+    LHAT_TEST("and a private name still does not cross");
+    memset(&lib, 0, sizeof lib);
+    lib.expected_path = "lib/geometry.lh";
+    check_against(&u, &lib, provider,
+                  "require^ \"lib/geometry.lh\"\n"
+                  "let^ s = ns.geometry.secret\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_NO_MEMBER);
+    check_against_dispose(&u, &lib);
+
+    // 8.7 on the last segment: two units may not claim one path, and one
+    // written twice is the same clash.
+    LHAT_TEST("and claiming one path twice is a redefinition");
+    memset(&lib, 0, sizeof lib);
+    lib.expected_path = "lib/geometry.lh";
+    check_against(&u, &lib, provider,
+                  "require^ \"lib/geometry.lh\"\n"
+                  "require^ \"lib/geometry.lh\"\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_REDEFINED);
+    check_against_dispose(&u, &lib);
+
+    // 3.2 lets a unit declare no path, and then there is nothing to bind it
+    // under.
+    LHAT_TEST("and a unit with no module^ cannot be bound this way");
+    memset(&lib, 0, sizeof lib);
+    lib.expected_path = "lib/plain.lh";
+    check_against(&u, &lib, "public^ let^ thing = 1\n",
+                  "require^ \"lib/plain.lh\"\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MODULE_UNNAMED);
     check_against_dispose(&u, &lib);
 
     LHAT_TEST("a name without public^ does not cross");

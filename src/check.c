@@ -2231,9 +2231,10 @@ static LhatType *infer(Checker *c, const LhatNode *node)
             if (path == NULL || c->require.resolve == NULL) {
                 return simple(c, LHAT_TYPE_UNKNOWN);
             }
+            const char *module_name = NULL;
             LhatType *exports = c->require.resolve(
                 c->require.context, c->lexer->strings + path->v.string.offset,
-                path->v.string.length);
+                path->v.string.length, &module_name);
             if (exports == NULL) {
                 report(c, node, LHAT_CHECK_ERR_REQUIRE_FAILED);
                 return simple(c, LHAT_TYPE_UNKNOWN);
@@ -2567,6 +2568,97 @@ static void check_define(Checker *c, const LhatNode *node)
     }
 }
 
+// 05 の 5.4改: a require^ standing alone binds the unit under the path 3 章
+// had it declare, rather than under a name the reader picks. The segments
+// come from that text, and 8.8's rules then hold one for one: a table is
+// made where the path does not reach one, and the last segment is a name
+// being introduced.
+static void check_require_stmt(Checker *c, const LhatNode *node)
+{
+    const LhatNode *path = node->v.jump.value;
+    if (path == NULL || c->require.resolve == NULL) {
+        return;
+    }
+
+    const char *module_name = NULL;
+    LhatType *exports = c->require.resolve(
+        c->require.context, c->lexer->strings + path->v.string.offset,
+        path->v.string.length, &module_name);
+    if (exports == NULL) {
+        report(c, node, LHAT_CHECK_ERR_REQUIRE_FAILED);
+        return;
+    }
+    // 3.2 lets a unit declare no path. Then there is nothing to bind it
+    // under, and the reader has to pick a name with let^ instead.
+    if (module_name == NULL || *module_name == '\0') {
+        report(c, node, LHAT_CHECK_ERR_MODULE_UNNAMED);
+        return;
+    }
+
+    const char *segment = module_name;
+    size_t length = strcspn(segment, ".");
+
+    // One segment binds the unit to that name directly; there is no table on
+    // the way to make, and 8.7 refuses a name this scope already holds.
+    if (segment[length] == '\0') {
+        if (scope_find_local(c->scope, segment, length) != NULL) {
+            report(c, node, LHAT_CHECK_ERR_REDEFINED);
+            return;
+        }
+        Binding *only =
+            scope_add(c->scope, segment, length, exports, node->offset);
+        if (only != NULL) {
+            only->reached = true;
+        }
+        return;
+    }
+
+    // The root of a longer path. 8.8 reaches an enclosing binding rather than
+    // shadowing it, which is what lets two units of one namespace meet. The
+    // name points into the required unit's result, and 6 章 keeps that alive
+    // as long as the program is.
+    Binding *root = scope_find(c->scope, segment, length);
+    if (root == NULL) {
+        root = scope_add(c->scope, segment, length,
+                         lhat_type_table(c->result->types), node->offset);
+        if (root == NULL) {
+            return;
+        }
+        root->reached = true;
+    } else if (root->type == NULL || root->type->kind == LHAT_TYPE_UNKNOWN) {
+        root->type = lhat_type_table(c->result->types);
+    }
+
+    LhatType *owner = holds_members(c, node, root->type);
+    while (owner != NULL && segment[length] == '.') {
+        segment += length + 1;
+        length = strcspn(segment, ".");
+
+        const LhatTypeMember *found = member_named(owner, segment, length);
+        if (segment[length] == '\0') {
+            // 8.7 on the last segment: two units may not claim one path.
+            if (found != NULL) {
+                report(c, node, LHAT_CHECK_ERR_REDEFINED);
+                return;
+            }
+            lhat_type_add_member(c->result->types, owner, segment, length,
+                                 exports);
+            return;
+        }
+        if (found != NULL) {
+            owner = holds_members(c, node, found->type);
+            continue;
+        }
+        LhatType *made = lhat_type_table(c->result->types);
+        if (made == NULL || lhat_type_add_member(c->result->types, owner,
+                                                 segment, length,
+                                                 made) == NULL) {
+            return;
+        }
+        owner = made;
+    }
+}
+
 static void check_reassign(Checker *c, const LhatNode *node)
 {
     const LhatNode *value = node->v.binding.values;
@@ -2849,6 +2941,59 @@ static void collect_bindings(Checker *c, const LhatNode *statements)
     }
 }
 
+// 05 の 3 章: 'module^ a.b.c' is the same MEMBER chain a path target is, so
+// writing it out is one walk. Appends to `out` when there is room, and
+// answers how much room the whole path wants either way.
+static size_t write_module_path(const Checker *c, const LhatNode *node,
+                                char *out, size_t room, size_t used)
+{
+    if (node->kind == LHAT_NODE_MEMBER) {
+        used = write_module_path(c, node->v.access.target, out, room, used);
+        if (used < room) {
+            out[used] = '.';
+        }
+        used++;
+        node = node->v.access.argument;
+    }
+
+    const char *name = NULL;
+    size_t length = 0;
+    if (!node_name(c, node, &name, &length)) {
+        return used;
+    }
+    for (size_t i = 0; i < length; i++) {
+        if (used + i < room) {
+            out[used + i] = name[i];
+        }
+    }
+    return used + length;
+}
+
+// The path the unit declared, or NULL when it declared none (3.2). The
+// parser has already put module^ first and refused a second one.
+static char *read_module_name(const Checker *c, const LhatNode *statements)
+{
+    const LhatNode *declaration = NULL;
+    for (const LhatNode *s = statements; s != NULL; s = s->next) {
+        if (s->kind == LHAT_NODE_MODULE) {
+            declaration = s;
+            break;
+        }
+    }
+    if (declaration == NULL || declaration->v.named.name == NULL) {
+        return NULL;
+    }
+
+    size_t needed = write_module_path(c, declaration->v.named.name, NULL, 0, 0);
+    char *text = (char *)malloc(needed + 1);
+    if (text == NULL) {
+        return NULL;
+    }
+    write_module_path(c, declaration->v.named.name, text, needed, 0);
+    text[needed] = '\0';
+    return text;
+}
+
 // 05 の 4 章: the exports are the names marked public^, read from the
 // declarations rather than from a value the unit returns. That is what lets
 // 6 章 follow an import without running anything.
@@ -2926,6 +3071,10 @@ static void check_statement(Checker *c, const LhatNode *node)
     switch (node->kind) {
         case LHAT_NODE_DEFINE:
             check_define(c, node);
+            break;
+
+        case LHAT_NODE_REQUIRE_STMT:
+            check_require_stmt(c, node);
             break;
 
         case LHAT_NODE_REASSIGN:
@@ -3145,6 +3294,10 @@ void lhat_check_unit(const LhatNode *unit, const LhatLexer *lexer, bool strict,
         checker.require = *require;
     }
 
+    // 05 の 3 章: read before the statements, so a diagnostic about the path
+    // does not wait behind the body.
+    result->module_name = read_module_name(&checker, unit->v.list.items);
+
     check_statements(&checker, unit->v.list.items);
 
     // 05 の 4 章: gathered once the whole unit has been checked, so a public^
@@ -3312,6 +3465,8 @@ void lhat_check_result_dispose(LhatCheckResult *result)
     result->diagnostics = NULL;
     result->diagnostic_count = 0;
     result->diagnostic_capacity = 0;
+    free(result->module_name);
+    result->module_name = NULL;
     // Only the arena this result made for itself; a shared one belongs to
     // whoever passed it in.
     if (result->types == &result->owned) {
@@ -3366,6 +3521,9 @@ const char *lhat_check_error_message(LhatCheckErrorCode code)
         case LHAT_CHECK_ERR_PATH_IS_DEFINITION:
             return "a def^ says what its instances carry, so a member cannot "
                    "be added to one here";
+        case LHAT_CHECK_ERR_MODULE_UNNAMED:
+            return "this unit declares no module^, so there is no path to "
+                   "bind it under; write 'let^ name = require^ ...' instead";
         case LHAT_CHECK_ERR_COROUTINE_DROPPED:
             return "this call makes a coroutine and runs none of the body; "
                    "write yieldall^ to delegate, or let^ to keep it";

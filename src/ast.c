@@ -103,6 +103,7 @@ const char *lhat_node_kind_name(LhatNodeKind kind)
         case LHAT_NODE_ERROR_KIND:     return "error-kind";
         case LHAT_NODE_MODULE:         return "module";
         case LHAT_NODE_REQUIRE:        return "require";
+        case LHAT_NODE_REQUIRE_STMT:   return "require-stmt";
         case LHAT_NODE_UNARY:          return "unary";
         case LHAT_NODE_BINARY:         return "binary";
         case LHAT_NODE_COMPARE_CHAIN:  return "compare-chain";

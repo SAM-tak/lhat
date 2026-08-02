@@ -80,9 +80,12 @@ typedef enum {
     LHAT_CHECK_ERR_PATH_NOT_TABLE,      // 8.8: everything before the last
                                         // segment holds the one after it, so
                                         // it has to be a table
-    LHAT_CHECK_ERR_PATH_IS_DEFINITION   // 8.8: 14 章 fixes what an instance
+    LHAT_CHECK_ERR_PATH_IS_DEFINITION,  // 8.8: 14 章 fixes what an instance
                                         // of a def^ carries, so a member
                                         // cannot be added to one
+    LHAT_CHECK_ERR_MODULE_UNNAMED       // 05 の 5.4改: the short form binds a
+                                        // unit under the path it declared,
+                                        // and this one declared none (3.2)
 } LhatCheckErrorCode;
 
 typedef struct {
@@ -106,14 +109,24 @@ typedef struct {
     // 05 の 4 章: the structure of what this unit publishes, or NULL when it
     // publishes nothing. What a require^ of it yields.
     LhatType *exports;
+
+    // 05 の 3 章: the path module^ declared, written out with its dots and
+    // owned by the result. NULL when the unit declared none, which 3.2
+    // allows. 5.4改 needs it to say what the short form of require^ binds.
+    char *module_name;
 } LhatCheckResult;
 
 // 05 の 5 章. Asked for the unit at `path`, relative to whatever the resolver
 // considers the requiring unit. Returns its export structure, or NULL when it
 // could not be had -- a missing file or a cycle (6.3), which the resolver
 // reports in its own terms.
+//
+// `module_name` is filled with the path 3 章 had that unit declare, or left
+// NULL when it declared none (3.2). 5.4改 binds the short form under it, so
+// the text has to outlive the call -- the unit owns it.
 typedef LhatType *(*LhatRequireResolver)(void *context, const char *path,
-                                         size_t length);
+                                         size_t length,
+                                         const char **module_name);
 
 typedef struct {
     LhatRequireResolver resolve;
