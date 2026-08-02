@@ -1,16 +1,20 @@
 // L^ (lhat) -- how a unit's text is read.
 //
-// The file system, which is what a host without an opinion wants. A host that
-// reads units out of an archive, or out of memory it built itself, copies
-// this file and changes lhat_load_file -- or, for one program rather than all
-// of them, calls lhat_program_set_loader.
+// The file system, for a host that wants one. **A program is not given this
+// unless it is handed over**: lhat_program_init takes the loader, and nothing
+// embedded reaches a file system without having been told to.
+//
+// A host reading units from an archive, or out of memory it built itself,
+// writes its own of this shape and hands that over instead.
 
 #include "port.h"
 
 #include <stdio.h>
 
-char *lhat_load_file(const char *path, size_t *length)
+char *lhat_load_file(void *context, const char *path, size_t *length)
 {
+    (void)context;
+
     FILE *file = fopen(path, "rb");
     if (file == NULL) {
         return NULL;

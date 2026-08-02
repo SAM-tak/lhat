@@ -90,10 +90,15 @@ typedef struct {
     size_t host_entry_capacity;
 } LhatProgram;
 
-// Without a loader, units are read from the file system.
-void lhat_program_init(LhatProgram *program, bool strict);
-void lhat_program_set_loader(LhatProgram *program, LhatProgramLoader load,
-                             void *context);
+// 05 の 8.9: the loader is handed over rather than defaulted to, so nothing
+// embedded reaches a file system without having been told to. `load` may be
+// NULL, and then no unit can be read -- which is what a host wants when the
+// only units are ones it hands over itself.
+//
+// port.h's lhat_load_file is written in this shape, for a host that does want
+// the file system.
+void lhat_program_init(LhatProgram *program, bool strict,
+                       LhatProgramLoader load, void *context);
 void lhat_program_dispose(LhatProgram *program);
 
 // Checks the unit at `path` and, first, everything it requires. `path` is

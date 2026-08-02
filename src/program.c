@@ -129,15 +129,6 @@ static void report(LhatProgram *program, LhatProgramErrorCode code,
 // Units
 // ---------------------------------------------------------------------------
 
-// 05 の 8.9: the default goes through the seam, so a host replacing
-// lhat_load_file changes every program at once. A program that wants its own
-// says so with lhat_program_set_loader instead.
-static char *read_file(void *context, const char *path, size_t *length)
-{
-    (void)context;
-    return lhat_load_file(path, length);
-}
-
 static char *duplicate(const char *text)
 {
     size_t length = strlen(text) + 1;
@@ -218,8 +209,13 @@ static LhatUnit *check_path(LhatProgram *program, char *path)
     unit->next = program->units;
     program->units = unit;
 
+    // 05 の 8.9: no loader is not an error of the program's -- it is a host
+    // that never handed one over, and then nothing can be read.
     size_t length = 0;
-    char *text = program->load(program->loader_context, unit->path, &length);
+    char *text = program->load != NULL
+                     ? program->load(program->loader_context, unit->path,
+                                     &length)
+                     : NULL;
     if (text == NULL) {
         report(program, LHAT_PROGRAM_ERR_CANNOT_READ, unit->path);
         unit->state = LHAT_UNIT_FAILED;
@@ -585,17 +581,12 @@ bool lhat_program_install(const LhatProgram *program, LhatMachine *machine)
     return true;
 }
 
-void lhat_program_init(LhatProgram *program, bool strict)
+void lhat_program_init(LhatProgram *program, bool strict,
+                       LhatProgramLoader load, void *context)
 {
     memset(program, 0, sizeof *program);
     lhat_type_arena_init(&program->types);
     program->strict = strict;
-    program->load = read_file;
-}
-
-void lhat_program_set_loader(LhatProgram *program, LhatProgramLoader load,
-                             void *context)
-{
     program->load = load;
     program->loader_context = context;
 }

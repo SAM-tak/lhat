@@ -24,6 +24,8 @@
 
 #include <stddef.h>
 
+#include <stdbool.h>
+
 // ---------------------------------------------------------------------------
 // Memory
 // ---------------------------------------------------------------------------
@@ -38,6 +40,25 @@ void *lhat_calloc(size_t count, size_t size);
 void *lhat_realloc(void *pointer, size_t size);
 void lhat_free(void *pointer);
 
+// The other seam, for a build the linker one cannot reach. What the default
+// port does is call through a table these four set; replace the port instead
+// and there is no table and no indirection.
+typedef struct {
+    void *(*alloc)(void *context, size_t size);
+    void *(*calloc)(void *context, size_t count, size_t size);
+    void *(*realloc)(void *context, void *pointer, size_t size);
+    void (*free)(void *context, void *pointer);
+    void *context;
+} LhatAllocator;
+
+// Answers false, and changes nothing, when memory has already been taken --
+// the one failure a registration has that a linker seam does not, made
+// checkable rather than left to go wrong quietly. Pass NULL to go back to the
+// C library, which is only useful before anything has been allocated too.
+//
+// Not thread safe, and not meant to be: this belongs at the top of main.
+bool lhat_set_allocator(const LhatAllocator *allocator);
+
 // ---------------------------------------------------------------------------
 // Reading a unit
 // ---------------------------------------------------------------------------
@@ -46,10 +67,10 @@ void lhat_free(void *pointer);
 // caller frees the result with lhat_free. Normalising newlines and the BOM
 // belongs to the source (01 の 1 章) and is not done here.
 //
-// A program may also be given a loader of its own with
-// lhat_program_set_loader, which is the per-program seam; this is the one the
-// default loader goes through, and the one a host replaces to change every
-// program at once.
-char *lhat_load_file(const char *path, size_t *length);
+// Written in the shape of an LhatProgramLoader so that a host reading units
+// from files hands it to lhat_program_init as it is. **The language has no
+// default here**: a program is given its loader or it reads nothing, so
+// nothing embedded touches a file system without having been told to.
+char *lhat_load_file(void *context, const char *path, size_t *length);
 
 #endif  // LHAT_PORT_H

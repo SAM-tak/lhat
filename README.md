@@ -106,10 +106,14 @@ scripts/devshell.ps1  Loads the MSVC x64 environment (Windows, Ninja only)
 Memo.md               Language design notes (brainstorming, not a spec)
 ```
 
-`lhatport` is where memory comes from and how a unit's text is read. A host
-that wants its own copies those files, changes them, and leaves the library
-out of the link — the core resolves `lhat_alloc` and friends against whatever
-is there. See [src/port.h](src/port.h) and 05 の 8.9.
+`lhatport` is where memory comes from and how a unit's text is read. A static
+host with its own copies those files, changes them, and leaves the library out
+of the link — the core resolves `lhat_alloc` and friends against whatever is
+there, with no indirection and nothing to register. A shared build cannot use
+that seam, so the default also takes an allocator through
+`lhat_set_allocator`. The loader is never defaulted to: `lhat_program_init`
+takes one, so nothing embedded reaches a file system unless it was told to.
+See [src/port.h](src/port.h) and 05 の 8.9.
 
 ## License
 

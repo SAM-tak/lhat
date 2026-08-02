@@ -12,6 +12,7 @@
 #include "lexer.h"
 #include "check.h"
 #include "parser.h"
+#include "port.h"
 #include "program.h"
 #include "source.h"
 #include "token.h"
@@ -350,7 +351,7 @@ static int dump_tokens(const LhatSource *source)
 static int check_program(const char *path, bool run)
 {
     LhatProgram program;
-    lhat_program_init(&program, true);
+    lhat_program_init(&program, true, lhat_load_file, NULL);
 
     const LhatUnit *root = lhat_program_check(&program, path);
 

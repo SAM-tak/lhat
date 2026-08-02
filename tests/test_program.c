@@ -8,6 +8,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "port.h"
 #include "program.h"
 #include "testutil.h"
 #include "value.h"
@@ -49,8 +50,7 @@ static void program_with(LhatProgram *program, Disk *disk, const File *files,
     disk->files = files;
     disk->count = count;
     disk->reads = 0;
-    lhat_program_init(program, true);
-    lhat_program_set_loader(program, disk_load, disk);
+    lhat_program_init(program, true, disk_load, disk);
 }
 
 static bool has_program_error(const LhatProgram *program,
@@ -823,8 +823,80 @@ static void test_host_data_release(void)
     LHAT_CHECK_EQ_INT(freed, 1);
 }
 
+// 05 の 8.9: the seam a shared build has to use, and the order it has that a
+// linker seam does not.
+static long registered_allocations;
+
+static void *counting_alloc(void *context, size_t size)
+{
+    (void)context;
+    registered_allocations++;
+    return malloc(size);
+}
+
+static void *counting_calloc(void *context, size_t count, size_t size)
+{
+    (void)context;
+    registered_allocations++;
+    return calloc(count, size);
+}
+
+static void *counting_realloc(void *context, void *pointer, size_t size)
+{
+    (void)context;
+    if (pointer == NULL) {
+        registered_allocations++;
+    }
+    return realloc(pointer, size);
+}
+
+static void counting_free(void *context, void *pointer)
+{
+    (void)context;
+    free(pointer);
+}
+
+static void test_port(void)
+{
+    LhatProgram program;
+
+    // A program is given its loader or it reads nothing: 8.9 keeps an
+    // embedded language off a file system it was not pointed at.
+    LHAT_TEST("a program with no loader reads nothing");
+    {
+        lhat_program_init(&program, true, NULL, NULL);
+        LHAT_CHECK(lhat_program_check(&program, "main.lh") == NULL,
+                   "nothing was read");
+        LHAT_CHECK(has_program_error(&program, LHAT_PROGRAM_ERR_CANNOT_READ),
+                   "and it was reported rather than passing quietly");
+    }
+    lhat_program_dispose(&program);
+
+    // The registration is refused once anything has been taken, since what is
+    // already held would then go back to a different free.
+    LHAT_TEST("an allocator registered after the first allocation is refused");
+    {
+        LhatAllocator mine = {counting_alloc, counting_calloc, counting_realloc,
+                              counting_free, NULL};
+        // The program above took memory for its unit and its diagnostic, so
+        // the refusal here is about the order and not about being second.
+        LHAT_CHECK(!lhat_set_allocator(&mine), "refused");
+        LHAT_CHECK_EQ_INT(registered_allocations, 0);
+    }
+
+    LHAT_TEST("and one missing a function is refused whenever it comes");
+    {
+        LhatAllocator partial = {counting_alloc, NULL, counting_realloc,
+                                 counting_free, NULL};
+        LHAT_CHECK(!lhat_set_allocator(&partial), "all four or none");
+    }
+}
+
 int main(void)
 {
+    // 8.9: before anything is taken, so the refusal above is about the order
+    // rather than about this test running second.
+    test_port();
     test_dependencies();
     test_loading();
     test_cycles();
