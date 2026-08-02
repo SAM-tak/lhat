@@ -35,7 +35,8 @@ static LhatNode *parse_expression(Parser *p);
 static LhatNode *parse_type(Parser *p);
 static LhatNode *parse_statement(Parser *p);
 static LhatNode *parse_block_body(Parser *p, const LhatToken *at);
-static LhatNode *parse_clause_body(Parser *p, const LhatToken *at, bool in_loop);
+static LhatNode *parse_clause_body(Parser *p, const LhatToken *at, bool in_loop,
+                                   bool walks);
 static LhatNode *access_node(Parser *p, LhatNodeKind kind, const LhatToken *at,
                              LhatNode *target, LhatNode *argument, bool nil_safe);
 static LhatNode *simple_node(Parser *p);
@@ -877,7 +878,9 @@ static LhatNode *parse_function(Parser *p, bool is_function)
 
     LhatToken brace = p->current;
     if (expect_op(p, LHAT_OP_LBRACE)) {
-        node->v.func.body = parse_clause_body(p, &brace, false);
+        // A subroutine body is not a loop, so 9.10's walk-only rules do not
+        // apply to it either.
+        node->v.func.body = parse_clause_body(p, &brace, false, false);
         expect_op(p, LHAT_OP_RBRACE);
     }
 
@@ -902,7 +905,7 @@ static bool is_else_marker(const Parser *p)
 static bool is_statement_keyword(const Parser *p)
 {
     static const char *const words[] = {
-        "if", "do", "let", "with", "return", "break", "yield",
+        "if", "do", "let", "with", "return", "break", "yield", "_yield",
         "for", "repeat", "while", "until", "when", "other", "errordef",
         "prolog", "prologue", "pre", "premain", "first", "main", "last",
         "epilog", "epilogue", "finally"
@@ -1190,7 +1193,12 @@ static LhatNode *parse_unary(Parser *p)
     // 02 の 15.4: yield^ is an expression, since its value is what the resume
     // sent. It takes everything to its right, so 'yield^ a + 1' sends the sum
     // -- there is nothing for a tighter reading to do with the remainder.
-    if (check_hat(p, "yield")) {
+    //
+    // 15.11: '_yield^' is written the same way and says the same thing about
+    // the three types. It is the same node with a flag rather than one of
+    // its own, so that no part of the checker can tell the two apart.
+    bool phantom_yield = check_hat(p, "_yield");
+    if (phantom_yield || check_hat(p, "yield")) {
         LhatToken at = p->current;
         p->saw_yield = true;  // 15.2: this is what makes the body yieldable
         advance(p);
@@ -1198,6 +1206,7 @@ static LhatNode *parse_unary(Parser *p)
         if (node == NULL) {
             return NULL;
         }
+        node->v.jump.phantom = phantom_yield;
         // 01 の 10.9 again: what it sends has to be on its own line.
         if (!p->current.preceded_by_newline && starts_expression(&p->current) &&
             !is_statement_keyword(p)) {
@@ -2542,9 +2551,14 @@ static LhatNode *parse_statement(Parser *p)
         if (check_hat(p, "break")) {
             return parse_jump(p, LHAT_NODE_BREAK);
         }
-        if (check_hat(p, "yield")) {
+        if (check_hat(p, "yield") || check_hat(p, "_yield")) {
+            bool phantom = check_hat(p, "_yield");  // 15.11
             p->saw_yield = true;
-            return parse_jump(p, LHAT_NODE_YIELD);
+            LhatNode *node = parse_jump(p, LHAT_NODE_YIELD);
+            if (node != NULL) {
+                node->v.jump.phantom = phantom;
+            }
+            return node;
         }
         if (check_hat(p, "if")) {
             advance(p);

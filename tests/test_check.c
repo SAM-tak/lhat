@@ -1570,6 +1570,48 @@ static void test_coroutines(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_NO_MEMBER);
     unit_dispose(&u);
 
+    // 15.11: a body that must be a coroutine but has nothing to suspend for.
+    // _yield^ says the same thing about the three types as a yield^ does, so
+    // the two are the same type -- which is the whole point of it, since
+    // 13.9's三つ has to match what the consumer was written against.
+    LHAT_TEST("_yield^ gives the same coroutine type a yield^ does");
+    check_text(&u,
+               "let^ real = p^ -> number^ {\n"
+               "  let^ got : string^ = yield^ 1\n"
+               "  return^ 9\n"
+               "}\n"
+               "let^ fake = p^ -> number^ {\n"
+               "  let^ got : string^ = _yield^ 1\n"
+               "  return^ 9\n"
+               "}\n"
+               "let^ a : c^{string^, number^, number^} = real()\n"
+               "let^ b : c^{string^, number^, number^} = fake()\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("and a body with only _yield^ is still a coroutine");
+    check_text(&u,
+               "let^ fake = p^ { _yield^ 1 }\n"
+               "let^ c : c^{nil^, number^, nil^} = fake()\n"
+               "let^ d : bool^ = c.done()\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // Same node, same rule: 15.8 does not care which of the two made it.
+    LHAT_TEST("and dropping what it answers is reported the same way");
+    check_text(&u,
+               "let^ fake = p^ { _yield^ 1 }\n"
+               "fake()\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_COROUTINE_DROPPED);
+    unit_dispose(&u);
+
+    LHAT_TEST("and the wrong type is caught the same way");
+    check_text(&u,
+               "let^ fake = p^ { let^ got : string^ = _yield^ 1 }\n"
+               "let^ c : c^{number^, number^, nil^} = fake()\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
+    unit_dispose(&u);
+
     // 16.3: a table answers iterate() with a walk over its keys, without
     // anything being written. The machine has always read it that way; the
     // type of it was missing here.

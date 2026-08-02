@@ -2559,6 +2559,64 @@ static void test_coroutines(void)
     LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_DEAD_COROUTINE);
     run_dispose(&r);
 
+    // 15.11: _yield^ makes the body a coroutine's without suspending it, so
+    // start() runs the whole thing and finishes.
+    LHAT_TEST("_yield^ does not suspend");
+    run_text(&r,
+             "let^ log = { s := 0 }\n"
+             "let^ fake = p^ -> number^ {\n"
+             "  log.s := 1\n"
+             "  _yield^ 7\n"
+             "  log.s := 2\n"
+             "  return^ 9\n"
+             "}\n"
+             "let^ c = fake()\n"
+             "let^ made = log.s\n"
+             "let^ ended = c.start()\n"
+             "return^ made * 1000 + log.s * 100 + ended\n");
+    CHECK_INTEGER(&r, 209);  // nothing ran until start(), then all of it
+    run_dispose(&r);
+
+    LHAT_TEST("and the coroutine it answers is finished after start()");
+    run_text(&r,
+             "let^ fake = p^ { _yield^ 1 }\n"
+             "let^ c = fake()\n"
+             "let^ before = c.done()\n"
+             "c.start()\n"
+             "if^ before { return^ 0 }\n"
+             "if^ c.done() { return^ 1 }\n"
+             "return^ 2\n");
+    CHECK_INTEGER(&r, 1);
+    run_dispose(&r);
+
+    // What it would have sent is still worked out -- only the suspending is
+    // dropped, so an expression written there still does what it does.
+    LHAT_TEST("what it would have sent is still evaluated");
+    run_text(&r,
+             "let^ log = { n := 0 }\n"
+             "let^ bump = f^ -> number^ { log.n := log.n + 1  return^ log.n }\n"
+             "let^ fake = p^ { _yield^ bump() }\n"
+             "let^ c = fake()\n"
+             "c.start()\n"
+             "return^ log.n\n");
+    CHECK_INTEGER(&r, 1);
+    run_dispose(&r);
+
+    // Nobody resumes it, so nothing comes back. The declared type says
+    // otherwise, and 03 の 5.1's checks are what catches the writer whose
+    // "this never runs" turned out to be wrong.
+    LHAT_TEST("but nothing comes back from it");
+    run_text(&r,
+             "let^ fake = p^ -> string^ {\n"
+             "  let^ got : string^ = _yield^ 1\n"
+             "  return^ got .. \"!\"\n"
+             "}\n"
+             "let^ c = fake()\n"
+             "c.start()\n"
+             "return^ 0\n");
+    LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_TYPE_ERROR);
+    run_dispose(&r);
+
     LHAT_TEST("two coroutines from one procedure are separate");
     run_text(&r,
              "let^ counter = p^ {\n"

@@ -1493,6 +1493,13 @@ static void compile_expression(Compiler *c, const LhatNode *node, uint8_t into)
             } else {
                 compile_expression(c, node->v.jump.value, into);
             }
+            // 15.11: '_yield^' still works out what it would have sent, since
+            // that expression may do something. What it does not do is
+            // suspend -- and with nobody resuming it, nothing comes back.
+            if (node->v.jump.phantom) {
+                emit(c, lhat_encode_abc(LHAT_BC_LOADNIL, into, 0, 0));
+                return;
+            }
             emit(c, lhat_encode_abc(LHAT_BC_YIELD, into, 0, 0));
             return;
 

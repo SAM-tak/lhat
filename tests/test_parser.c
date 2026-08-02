@@ -672,6 +672,37 @@ static void test_functions(void)
     LHAT_CHECK(!first_value(&p)->v.func.yields,
                "the outer procedure does not yield");
     parse_dispose(&p);
+
+    // 15.11: _yield^ is the same node with a flag, so nothing downstream can
+    // tell the two apart until the code is written out.
+    LHAT_TEST("_yield^ makes a body yieldable too");
+    parse_text(&p, "g := p^ { _yield^ 1 }");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    LHAT_CHECK(first_value(&p)->v.func.yields, "the procedure should yield");
+    {
+        const LhatNode *body = first_value(&p)->v.func.body->v.list.items;
+        LHAT_CHECK_EQ_INT(body->kind, LHAT_NODE_YIELD);
+        LHAT_CHECK(body->v.jump.phantom, "the yield is marked phantom");
+    }
+    parse_dispose(&p);
+
+    LHAT_TEST("and it is written the same way where a yield^ takes a value");
+    parse_text(&p, "g := p^ { let^ a : string^ = _yield^ 1 }");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    LHAT_CHECK(first_value(&p)->v.func.yields, "the procedure should yield");
+    {
+        const LhatNode *body = first_value(&p)->v.func.body->v.list.items;
+        const LhatNode *sent = body->v.binding.values;
+        LHAT_CHECK_EQ_INT(sent->kind, LHAT_NODE_YIELD);
+        LHAT_CHECK(sent->v.jump.phantom, "the yield is marked phantom");
+    }
+    parse_dispose(&p);
+
+    LHAT_TEST("a plain yield^ is not phantom");
+    parse_text(&p, "g := p^ { yield^ 1 }");
+    LHAT_CHECK(!first_value(&p)->v.func.body->v.list.items->v.jump.phantom,
+               "a yield^ suspends");
+    parse_dispose(&p);
 }
 
 static void test_conditionals(void)

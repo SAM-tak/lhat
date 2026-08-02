@@ -299,6 +299,9 @@ struct LhatNode {
         // RETURN / YIELD carry an optional value; BREAK carries a level.
         struct {
             LhatNode *value;
+            // YIELD only. 15.11: written '_yield^', which types exactly as a
+            // yield^ does and makes the body yieldable, but never suspends.
+            bool phantom;
         } jump;
 
         // TYPE_CORO: the three types of 13.9.

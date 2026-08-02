@@ -154,6 +154,11 @@ static void print_node(const LhatLexer *lexer, const LhatNode *node, int depth)
                 printf(" overload^");
             }
             break;
+        case LHAT_NODE_YIELD:
+            if (node->v.jump.phantom) {
+                printf(" phantom");  // 15.11
+            }
+            break;
         case LHAT_NODE_DEFINE:
             if (node->v.binding.exported) {
                 printf(" public^");
