@@ -22,7 +22,7 @@ let^factorial = f^n:number^{
     return^n * this^(n - 1)
   }
 }
-debug.print(factorial(10)
+debug.print(factorial(10))
 ```
 
 ## Requirements
