@@ -1834,14 +1834,58 @@ static void test_walking(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
-    // 13.10: several names take the value apart by position. A table type
-    // says nothing about its dense part, so a position says nothing either
-    // -- but the names are still bound, which is the whole point.
-    LHAT_TEST("several names are bound even where their types are not known");
+    // 13.10: several names take the value apart by position, and 14 章 makes
+    // position 1 the key and position 2 the value of the pair.
+    LHAT_TEST("several names take the pair apart by position");
     check_text(&u,
-               "let^ t = { 1, 2 }\n"
-               "for^ k, v in^ t { let^ n = v }\n");
+               "let^ t = { 10, 20 }\n"
+               "for^ k, v in^ t { let^ n : number^ = v }\n");
     CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("so the wrong type is caught for a position too");
+    check_text(&u,
+               "let^ t = { 10, 20 }\n"
+               "for^ k, v in^ t { let^ s : string^ = v }\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
+    unit_dispose(&u);
+
+    // 14 章: a table is a sequence and a mapping at once, so what a key can
+    // be depends on which halves the table has.
+    LHAT_TEST("the key of a walk over the dense part is a number^");
+    check_text(&u,
+               "let^ t = { 10, 20 }\n"
+               "for^ k, v in^ t { let^ n : number^ = k }\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("and of one over written members a string^");
+    check_text(&u,
+               "let^ t = { a := \"x\" }\n"
+               "for^ k, v in^ t { let^ s : string^ = k }\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("a table with both halves yields either");
+    check_text(&u,
+               "let^ t = { 10, a := \"x\" }\n"
+               "for^ k, v in^ t { let^ x : number^|string^ = v }\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("and neither half alone covers it");
+    check_text(&u,
+               "let^ t = { 10, a := \"x\" }\n"
+               "for^ k, v in^ t { let^ n : number^ = v }\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
+    unit_dispose(&u);
+
+    // 16.3: a written focus type is checked against the position it takes.
+    LHAT_TEST("a focus annotation is checked against its position");
+    check_text(&u,
+               "let^ t = { 10, 20 }\n"
+               "for^ k, v:string^ in^ t { let^ n = v }\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
     LHAT_TEST("a written iterate is what the walk comes from");
@@ -1879,6 +1923,122 @@ static void test_walking(void)
     unit_dispose(&u);
 }
 
+// 02 の 14 章 makes a table a sequence as well as a mapping. The keyed half
+// was described by name from the start; the sequence half was dropped on the
+// floor, so nothing downstream of it -- t[1], unpack^, a walk's pair -- had
+// anything to read.
+static void test_positions(void)
+{
+    Unit u;
+
+    LHAT_TEST("a positional entry carries its type");
+    check_text(&u,
+               "let^ t = { 10, 20 }\n"
+               "let^ n : number^ = t[1]\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("so the wrong type at a position is caught");
+    check_text(&u,
+               "let^ t = { 10, 20 }\n"
+               "let^ s : string^ = t[1]\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
+    unit_dispose(&u);
+
+    LHAT_TEST("and each position keeps its own");
+    check_text(&u,
+               "let^ t = { 10, \"a\" }\n"
+               "let^ s : string^ = t[2]\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // The machine numbers the dense part in written order, skipping the
+    // entries that carry a key -- so the types have to be counted the same.
+    LHAT_TEST("a keyed entry takes no position from the ones after it");
+    check_text(&u,
+               "let^ t = { 10, a := \"x\", 20 }\n"
+               "let^ n : number^ = t[2]\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // 14.10 lets a table carry more than its type lists, so a position it
+    // says nothing about is unknown rather than absent.
+    LHAT_TEST("a position the type does not mention says nothing");
+    check_text(&u,
+               "let^ t = { 10 }\n"
+               "let^ s : string^ = t[9]\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("a written key reaches the member of that name");
+    check_text(&u,
+               "let^ t = { a := 1 }\n"
+               "let^ s : string^ = t[\"a\"]\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
+    unit_dispose(&u);
+
+    // 13.10: unpack^ takes one value apart by position. The mark is on the
+    // right, which is what tells this from a multiple definition.
+    LHAT_TEST("unpack^ gives each name the position it takes");
+    check_text(&u,
+               "let^ q, r = unpack^ { 1, \"a\" }\n"
+               "let^ n : number^ = q\n"
+               "let^ s : string^ = r\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("and the positions are not interchangeable");
+    check_text(&u,
+               "let^ q, r = unpack^ { 1, \"a\" }\n"
+               "let^ s : string^ = q\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
+    unit_dispose(&u);
+
+    LHAT_TEST("an annotation on a destructured name is checked");
+    check_text(&u, "let^ q:string^, r:string^ = unpack^ { 1, \"a\" }\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
+    unit_dispose(&u);
+
+    LHAT_TEST("and one that agrees is not");
+    check_text(&u, "let^ q:number^, r:string^ = unpack^ { 1, \"a\" }\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // 8.6: the same form reassigning names that already exist.
+    LHAT_TEST("a destructuring reassignment is checked the same way");
+    check_text(&u,
+               "let^ q = 0\n"
+               "let^ r = \"\"\n"
+               "q, r := unpack^ { 1, \"a\" }\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("and a position that does not fit the name is reported");
+    check_text(&u,
+               "let^ q = \"\"\n"
+               "let^ r = \"\"\n"
+               "q, r := unpack^ { 1, \"a\" }\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
+    unit_dispose(&u);
+
+    // Without the mark the right side is one value per target (13.10), and
+    // that path is untouched.
+    LHAT_TEST("a multiple definition still pairs the two sides off");
+    check_text(&u,
+               "let^ a, b = 1, \"x\"\n"
+               "let^ n : number^ = a\n"
+               "let^ s : string^ = b\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("and still catches a pair that does not fit");
+    check_text(&u,
+               "let^ a, b = 1, \"x\"\n"
+               "let^ s : string^ = a\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
+    unit_dispose(&u);
+}
+
 int main(void)
 {
     test_names();
@@ -1893,5 +2053,6 @@ int main(void)
     test_modules();
     test_coroutines();
     test_walking();
+    test_positions();
     return lhat_test_report("test_check");
 }

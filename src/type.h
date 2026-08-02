@@ -167,6 +167,18 @@ LhatTypeMember *lhat_type_add_member(LhatTypeArena *arena, LhatType *owner,
                                      const char *name, size_t name_length,
                                      LhatType *type);
 
+// 02 § 14 makes a table a sequence as well as a mapping, and the sequence
+// half is described by members whose names are the indices. 01 § 6 spells
+// a member name as an identifier, so digits are a name the program can never
+// write -- these can only ever collide with each other.
+LhatTypeMember *lhat_type_add_index_member(LhatTypeArena *arena,
+                                           LhatType *owner, size_t index,
+                                           LhatType *type);
+
+// The member standing for a one-based position, or NULL when the table says
+// nothing about it.
+const LhatTypeMember *lhat_type_member_at(const LhatType *table, size_t index);
+
 // Appends to a parameter list or to a set's kinds.
 bool lhat_type_add_param(LhatTypeArena *arena, LhatType *func, LhatType *param);
 

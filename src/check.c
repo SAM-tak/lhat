@@ -1118,6 +1118,43 @@ static LhatType *infer_call(Checker *c, const LhatNode *node)
     return callee->v.func.result;
 }
 
+// 02 § 16.3: what the built-in walk of a table yields. 13.8 has no tuples,
+// so the pair is a table -- position 1 the key, position 2 the value. Both
+// come from what the table holds: 14 章 makes it a sequence and a mapping at
+// once, so a walk of one that is both hands over keys of either kind.
+static LhatType *table_walk_pair(Checker *c, const LhatType *over)
+{
+    LhatType *pair = lhat_type_table(c->result->types);
+    if (over == NULL || over->kind != LHAT_TYPE_TABLE) {
+        return pair;
+    }
+
+    LhatType *keys = NULL;
+    LhatType *values = NULL;
+    for (const LhatTypeMember *m = over->v.table.members; m != NULL;
+         m = m->next) {
+        // The sequence half is described by members whose names are digits,
+        // which 01 の 6 章 keeps a program from writing.
+        bool positional = m->name_length > 0;
+        for (size_t i = 0; positional && i < m->name_length; i++) {
+            positional = m->name[i] >= '0' && m->name[i] <= '9';
+        }
+        keys = lhat_type_union(
+            c->result->types, keys,
+            simple(c, positional ? LHAT_TYPE_NUMBER : LHAT_TYPE_STRING));
+        values = lhat_type_union(c->result->types, values, m->type);
+    }
+
+    // 14.10 lets a table carry more than its type lists, so what is written
+    // down only ever adds to what a walk may hand over -- it never bounds it.
+    // With nothing listed there is nothing to say.
+    if (keys != NULL) {
+        lhat_type_add_index_member(c->result->types, pair, 1, keys);
+        lhat_type_add_index_member(c->result->types, pair, 2, values);
+    }
+    return pair;
+}
+
 static LhatType *infer_member(Checker *c, const LhatNode *node)
 {
     LhatType *target = infer(c, node->v.access.target);
@@ -1225,7 +1262,7 @@ static LhatType *infer_member(Checker *c, const LhatNode *node)
         // in and ends without a value, which 04 の 11.3 spells nil^.
         LhatType *walk = lhat_type_coro(c->result->types,
                                         simple(c, LHAT_TYPE_NIL),
-                                        lhat_type_table(c->result->types),
+                                        table_walk_pair(c, target),
                                         simple(c, LHAT_TYPE_NIL));
         LhatType *signature = lhat_type_func(c->result->types, false);
         signature->v.func.result = walk;
@@ -1239,6 +1276,10 @@ static LhatType *infer_member(Checker *c, const LhatNode *node)
 static LhatType *infer_table(Checker *c, const LhatNode *node)
 {
     LhatType *table = lhat_type_table(c->result->types);
+    // 02 §14 makes a table a sequence as well as a mapping. The keyed
+    // half is described by name; the sequence half by position, counted the
+    // way the machine lays it out -- one-based, in the order written.
+    size_t position = 0;
     for (const LhatNode *entry = node->v.list.items; entry != NULL;
          entry = entry->next) {
         LhatType *value = infer(c, entry->v.entry.value);
@@ -1246,6 +1287,11 @@ static LhatType *infer_table(Checker *c, const LhatNode *node)
         size_t length = 0;
         if (node_name(c, entry->v.entry.key, &name, &length)) {
             lhat_type_add_member(c->result->types, table, name, length, value);
+            continue;
+        }
+        if (entry->v.entry.key == NULL) {
+            lhat_type_add_index_member(c->result->types, table, ++position,
+                                       value);
         }
     }
     return table;
@@ -1739,13 +1785,34 @@ static LhatType *infer(Checker *c, const LhatNode *node)
             return narrowed != NULL ? narrowed : infer_member(c, node);
         }
 
-        case LHAT_NODE_INDEX:
-            // 04 の 11.3: a dynamic key may be absent, and absence is not a
-            // failure. The element type needs an array type, which 13 章 does
-            // not have yet.
-            infer(c, node->v.access.target);
+        case LHAT_NODE_INDEX: {
+            LhatType *over = infer(c, node->v.access.target);
             infer(c, node->v.access.argument);
+            // A key written out names one position or one member, so the
+            // table says what is there. 04 の 11.3: a key that is not there
+            // answers nil^ -- but a written one that the type does not
+            // mention says nothing, since 14.10 lets a table carry more than
+            // it declares.
+            const LhatNode *key = node->v.access.argument;
+            if (over != NULL && over->kind == LHAT_TYPE_TABLE && key != NULL &&
+                key->next == NULL) {
+                const LhatTypeMember *found = NULL;
+                if (key->kind == LHAT_NODE_INT) {
+                    found = lhat_type_member_at(over,
+                                                (size_t)key->v.integer.value);
+                } else if (key->kind == LHAT_NODE_STRING) {
+                    found = find_member(over,
+                                        c->lexer->strings + key->v.string.offset,
+                                        key->v.string.length);
+                }
+                if (found != NULL) {
+                    return found->type;
+                }
+            }
+            // 04 §11.3: a dynamic key may be absent, and absence is not a
+            // failure, so nothing narrower than this is safe here.
             return simple(c, LHAT_TYPE_UNKNOWN);
+        }
 
         case LHAT_NODE_AS:
             infer(c, node->v.ascription.value);
@@ -1967,11 +2034,38 @@ static const LhatNode *target_name_node(const LhatNode *target)
     return target->kind == LHAT_NODE_PARAM ? target->v.param.name : target;
 }
 
+// 13.10: unpack^ marks one value being taken apart rather than one value per
+// target -- which is what tells a destructuring bind from a multiple one, and
+// why the mark is on the right. Answers what is being taken apart, or NULL
+// when this is an ordinary bind.
+static LhatType *unpacked_source(Checker *c, const LhatNode *values)
+{
+    if (values == NULL || values->next != NULL ||
+        values->kind != LHAT_NODE_UNPACK) {
+        return NULL;
+    }
+    LhatType *source = infer(c, values->v.jump.value);
+    return source != NULL ? source : simple(c, LHAT_TYPE_UNKNOWN);
+}
+
+// The type at a position of what unpack^ is taking apart. 14.10 lets a table
+// carry more than its type lists, so a position it says nothing about is
+// unknown rather than absent.
+static LhatType *unpacked_at(Checker *c, LhatType *source, size_t position)
+{
+    const LhatTypeMember *at = lhat_type_member_at(source, position);
+    return at != NULL ? at->type : simple(c, LHAT_TYPE_UNKNOWN);
+}
+
 static void check_define(Checker *c, const LhatNode *node)
 {
     const LhatNode *value = node->v.binding.values;
+    LhatType *unpacked = unpacked_source(c, value);
+    size_t position = 0;
+
     for (const LhatNode *target = node->v.binding.targets; target != NULL;
          target = target->next) {
+        position++;
         LhatType *annotated = target->kind == LHAT_NODE_PARAM
                                   ? resolve_type(c, target->v.param.type)
                                   : NULL;
@@ -1992,8 +2086,13 @@ static void check_define(Checker *c, const LhatNode *node)
                                 ? YIELD_CTX_BOUND : YIELD_CTX_NONE;
         c->yield_bound_type = annotated;
 
-        LhatType *actual = value != NULL ? infer(c, value)
-                                         : simple(c, LHAT_TYPE_UNKNOWN);
+        LhatType *actual;
+        if (unpacked != NULL) {
+            actual = unpacked_at(c, unpacked, position);
+        } else {
+            actual = value != NULL ? infer(c, value)
+                                   : simple(c, LHAT_TYPE_UNKNOWN);
+        }
 
         c->yield_context = outer_yctx;
         c->yield_bound_type = outer_ybound;
@@ -2018,7 +2117,7 @@ static void check_define(Checker *c, const LhatNode *node)
             // one stale, since the path now reaches something else.
             drop_narrowings_for(c, target_name_node(target));
         }
-        if (value != NULL) {
+        if (unpacked == NULL && value != NULL) {
             value = value->next;
         }
     }
@@ -2027,10 +2126,17 @@ static void check_define(Checker *c, const LhatNode *node)
 static void check_reassign(Checker *c, const LhatNode *node)
 {
     const LhatNode *value = node->v.binding.values;
+    LhatType *unpacked = unpacked_source(c, value);
+    size_t position = 0;
+
     for (const LhatNode *target = node->v.binding.targets; target != NULL;
          target = target->next) {
+        position++;
         LhatType *wanted = infer(c, target_name_node(target));
-        if (value != NULL) {
+        if (unpacked != NULL) {
+            expect(c, node, unpacked_at(c, unpacked, position), wanted,
+                   LHAT_CHECK_ERR_MISMATCH);
+        } else if (value != NULL) {
             expect(c, value, infer(c, value), wanted, LHAT_CHECK_ERR_MISMATCH);
             value = value->next;
         }
@@ -2105,7 +2211,7 @@ static LhatType *walk_produce(Checker *c, const LhatNode *at, LhatType *over)
 
     // The built-in walk of a table, whose pairs 13.8 makes tables.
     if (over->kind == LHAT_TYPE_TABLE || over->kind == LHAT_TYPE_ERROR_KIND) {
-        return lhat_type_table(c->result->types);
+        return table_walk_pair(c, over);
     }
 
     report(c, at, LHAT_CHECK_ERR_NOT_COROUTINE);
@@ -2125,7 +2231,9 @@ static void check_focus_in(Checker *c, const LhatNode *node)
         count++;
     }
 
+    size_t position = 0;
     for (const LhatNode *e = node->v.loop.focus; e != NULL; e = e->next) {
+        position++;
         const LhatNode *element = focus_element(e);
         if (element == NULL) {
             continue;
@@ -2135,14 +2243,16 @@ static void check_focus_in(Checker *c, const LhatNode *node)
                                   : NULL;
 
         // 13.10 and 16.3: one name takes what was yielded whole, several take
-        // it apart by position. A table type carries no types for its dense
-        // part, so a position says nothing about what comes out of it.
-        LhatType *type = count == 1 ? produced : simple(c, LHAT_TYPE_UNKNOWN);
+        // it apart by position.
+        LhatType *taken = produced;
+        if (count > 1) {
+            const LhatTypeMember *at = lhat_type_member_at(produced, position);
+            taken = at != NULL ? at->type : simple(c, LHAT_TYPE_UNKNOWN);
+        }
+
+        LhatType *type = taken;
         if (annotated != NULL) {
-            if (count == 1) {
-                expect(c, element, produced, annotated,
-                       LHAT_CHECK_ERR_MISMATCH);
-            }
+            expect(c, element, taken, annotated, LHAT_CHECK_ERR_MISMATCH);
             type = annotated;
         }
 

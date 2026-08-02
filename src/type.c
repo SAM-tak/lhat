@@ -173,6 +173,63 @@ LhatTypeMember *lhat_type_add_member(LhatTypeArena *arena, LhatType *owner,
     return member;
 }
 
+// The digits of a one-based index, written into the arena so the member can
+// borrow them the way an ordinary one borrows the source text.
+static size_t index_digits(size_t index, char *out, size_t capacity)
+{
+    size_t length = 0;
+    size_t rest = index;
+    do {
+        length++;
+        rest /= 10;
+    } while (rest > 0);
+    if (length > capacity) {
+        return 0;
+    }
+    rest = index;
+    for (size_t i = length; i > 0; i--) {
+        out[i - 1] = (char)('0' + (rest % 10));
+        rest /= 10;
+    }
+    return length;
+}
+
+LhatTypeMember *lhat_type_add_index_member(LhatTypeArena *arena,
+                                           LhatType *owner, size_t index,
+                                           LhatType *type)
+{
+    char digits[24];
+    size_t length = index_digits(index, digits, sizeof digits);
+    if (length == 0) {
+        return NULL;
+    }
+    char *name = (char *)arena_alloc(arena, length);
+    if (name == NULL) {
+        return NULL;
+    }
+    memcpy(name, digits, length);
+    return lhat_type_add_member(arena, owner, name, length, type);
+}
+
+const LhatTypeMember *lhat_type_member_at(const LhatType *table, size_t index)
+{
+    if (table == NULL || table->kind != LHAT_TYPE_TABLE) {
+        return NULL;
+    }
+    char digits[24];
+    size_t length = index_digits(index, digits, sizeof digits);
+    if (length == 0) {
+        return NULL;
+    }
+    for (const LhatTypeMember *m = table->v.table.members; m != NULL;
+         m = m->next) {
+        if (m->name_length == length && memcmp(m->name, digits, length) == 0) {
+            return m;
+        }
+    }
+    return NULL;
+}
+
 bool lhat_type_add_param(LhatTypeArena *arena, LhatType *func, LhatType *param)
 {
     if (func == NULL) {
