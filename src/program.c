@@ -6,6 +6,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "vm.h"  // 05 の 5.3: the units are compiled here too, not only checked
+
 // ---------------------------------------------------------------------------
 // Paths
 // ---------------------------------------------------------------------------
@@ -271,9 +273,86 @@ static LhatUnit *check_path(LhatProgram *program, char *path)
     return unit;
 }
 
+// 05 の 5 章: the compile-time twin of resolve_require. The unit is already
+// there -- checking put it there -- so this only has to say where it sits.
+static size_t resolve_unit(void *context, const char *path, size_t length,
+                           const char **module_name)
+{
+    Resolution *r = (Resolution *)context;
+    char *resolved = resolve_against(r->requiring->path, path, length);
+    if (resolved == NULL) {
+        return LHAT_NO_UNIT;
+    }
+    LhatUnit *unit = find_unit(r->program, resolved);
+    free(resolved);
+    if (unit == NULL) {
+        return LHAT_NO_UNIT;
+    }
+    if (module_name != NULL) {
+        *module_name = unit->checked.module_name;
+    }
+    return unit->index;
+}
+
 // ---------------------------------------------------------------------------
 // Public interface
 // ---------------------------------------------------------------------------
+
+const LhatModule *lhat_program_compile(LhatProgram *program, size_t *count)
+{
+    if (count != NULL) {
+        *count = program->module_count;
+    }
+    if (program->modules != NULL) {
+        return program->modules;
+    }
+
+    size_t total = 0;
+    for (LhatUnit *u = program->units; u != NULL; u = u->next) {
+        u->index = total++;
+    }
+    if (total == 0) {
+        return NULL;
+    }
+
+    LhatModule *modules = (LhatModule *)calloc(total, sizeof *modules);
+    if (modules == NULL) {
+        return NULL;
+    }
+
+    for (LhatUnit *u = program->units; u != NULL; u = u->next) {
+        if (!u->loaded || u->state != LHAT_UNIT_DONE) {
+            continue;  // a unit that failed to check has nothing to compile
+        }
+        Resolution resolution;
+        resolution.program = program;
+        resolution.requiring = u;
+
+        LhatUnits units;
+        units.resolve = resolve_unit;
+        units.context = &resolution;
+        units.module_name = u->checked.module_name;
+
+        LhatProto *proto = NULL;
+        if (lhat_compile_module(u->parsed.root, &u->lexer, &units, &proto) !=
+            LHAT_COMPILE_OK) {
+            lhat_modules_free(modules, total);
+            free(modules);
+            return NULL;
+        }
+        modules[u->index].proto = proto;
+        if (u->checked.module_name != NULL) {
+            modules[u->index].module_name = duplicate(u->checked.module_name);
+        }
+    }
+
+    program->modules = modules;
+    program->module_count = total;
+    if (count != NULL) {
+        *count = total;
+    }
+    return modules;
+}
 
 void lhat_program_init(LhatProgram *program, bool strict)
 {
@@ -292,6 +371,11 @@ void lhat_program_set_loader(LhatProgram *program, LhatProgramLoader load,
 
 void lhat_program_dispose(LhatProgram *program)
 {
+    lhat_modules_free(program->modules, program->module_count);
+    free(program->modules);
+    program->modules = NULL;
+    program->module_count = 0;
+
     LhatUnit *unit = program->units;
     while (unit != NULL) {
         LhatUnit *next = unit->next;

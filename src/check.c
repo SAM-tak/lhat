@@ -254,6 +254,8 @@ static LhatType *simple(Checker *c, LhatTypeKind kind)
 static LhatType *resolve_type(Checker *c, const LhatNode *node);
 static LhatType *infer(Checker *c, const LhatNode *node);
 static LhatType *environment_type(Checker *c);  // 05 の 8.6
+static void register_module_type(Checker *c, const char *module_name,
+                                 LhatType *exports);  // 05 の 5.3
 static void check_statement(Checker *c, const LhatNode *node);
 static LhatType *collect_exports(Checker *c, const LhatNode *statements);
 static void check_statements(Checker *c, const LhatNode *statements);
@@ -2239,6 +2241,9 @@ static LhatType *infer(Checker *c, const LhatNode *node)
                 report(c, node, LHAT_CHECK_ERR_REQUIRE_FAILED);
                 return simple(c, LHAT_TYPE_UNKNOWN);
             }
+            // 5.3: running the unit is what registers it, and this is where
+            // it runs -- so L^.modules can be said to hold it from here on.
+            register_module_type(c, module_name, exports);
             return exports;
         }
 
@@ -2568,6 +2573,54 @@ static void check_define(Checker *c, const LhatNode *node)
     }
 }
 
+// 05 の 5.3: a require^ runs the unit, and a unit that named itself registers
+// under that name. So the type of L^.modules can say so -- what makes this
+// honest rather than a guess is that the registration is in the unit's own
+// prologue, not something a caller may skip.
+//
+// Idempotent: 5.3 loads once, so meeting the same unit again adds nothing
+// and is not the clash 8.7 makes of two let^ writing one place.
+static void register_module_type(Checker *c, const char *module_name,
+                                 LhatType *exports)
+{
+    LhatType *env = environment_type(c);
+    if (env == NULL || module_name == NULL || *module_name == '\0') {
+        return;
+    }
+    const LhatTypeMember *modules = member_named(env, "modules", 7);
+    if (modules == NULL || modules->type->kind != LHAT_TYPE_TABLE) {
+        return;
+    }
+
+    LhatType *owner = modules->type;
+    for (const char *segment = module_name;;) {
+        size_t length = strcspn(segment, ".");
+        const LhatTypeMember *found = member_named(owner, segment, length);
+        if (segment[length] == '\0') {
+            if (found == NULL) {
+                lhat_type_add_member(c->result->types, owner, segment, length,
+                                     exports);
+            }
+            return;
+        }
+        if (found != NULL) {
+            if (found->type->kind != LHAT_TYPE_TABLE) {
+                return;
+            }
+            owner = found->type;
+        } else {
+            LhatType *made = lhat_type_table(c->result->types);
+            if (made == NULL ||
+                lhat_type_add_member(c->result->types, owner, segment, length,
+                                     made) == NULL) {
+                return;
+            }
+            owner = made;
+        }
+        segment += length + 1;
+    }
+}
+
 // 05 の 5.4改: a require^ standing alone binds the unit under the path 3 章
 // had it declare, rather than under a name the reader picks. The segments
 // come from that text, and 8.8's rules then hold one for one: a table is
@@ -2594,6 +2647,7 @@ static void check_require_stmt(Checker *c, const LhatNode *node)
         report(c, node, LHAT_CHECK_ERR_MODULE_UNNAMED);
         return;
     }
+    register_module_type(c, module_name, exports);
 
     const char *segment = module_name;
     size_t length = strcspn(segment, ".");

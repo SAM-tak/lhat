@@ -88,6 +88,10 @@ typedef struct Compiler {
     // The definition being compiled, which is what a self^{ … } inside its
     // new^ builds and what class^ names.
     const DefChain *building;
+
+    // 05 の 5 章: where a require^ inside this unit leads. NULL when the unit
+    // is being compiled on its own, and then a require^ has nowhere to go.
+    const LhatUnits *units;
 } Compiler;
 
 typedef struct DefDecl {
@@ -248,6 +252,8 @@ static void compile_for_once(Compiler *c, const LhatNode *node, uint8_t into,
                              bool as_expression);
 static bool def_chain_of(Compiler *c, const LhatNode *node, DefChain *out);
 static void compile_def(Compiler *c, const LhatNode *node, uint8_t into);
+static const char *required_module_name(Compiler *c, const LhatNode *node);
+static void compile_bind_path(Compiler *c, const char *path, uint8_t value);
 
 // The outermost compiler. The kind objects and the registry of declarations
 // live there so that a nested body sees the same ones the unit made.
@@ -1453,6 +1459,30 @@ static void compile_expression(Compiler *c, const LhatNode *node, uint8_t into)
         // 02 の 15.8: delegation is the outer one driving the inner one. 03
         // の 5.7 writes the expansion out; the chain of coroutines is
         // registers rather than anything the machine holds.
+        // 05 の 5 章: a unit is a body, so requiring it is making a closure
+        // of it and calling that. 5.3's "once" is the guard the unit itself
+        // begins with, which is why nothing is remembered here.
+        case LHAT_NODE_REQUIRE:
+        case LHAT_NODE_REQUIRE_STMT: {
+            const LhatNode *path = node->v.jump.value;
+            if (c->units == NULL || c->units->resolve == NULL || path == NULL) {
+                fail(c, LHAT_COMPILE_UNSUPPORTED);
+                return;
+            }
+            size_t which = c->units->resolve(
+                c->units->context, c->lexer->strings + path->v.string.offset,
+                path->v.string.length, NULL);
+            // Bx is 16 bits, so a program of more units than that cannot be
+            // written down -- the same ceiling 5.2 puts on constants.
+            if (which == LHAT_NO_UNIT || which > UINT16_MAX) {
+                fail(c, LHAT_COMPILE_UNSUPPORTED);
+                return;
+            }
+            emit(c, lhat_encode_abx(LHAT_BC_UNIT, into, (uint16_t)which));
+            emit(c, lhat_encode_abc(LHAT_BC_CALL, into, 0, 0));
+            return;
+        }
+
         case LHAT_NODE_YIELD_ALL: {
             uint8_t mark = c->next_register;
             uint8_t co = reserve(c);
@@ -1737,6 +1767,29 @@ static void compile_path_prefix(Compiler *c, const LhatNode *node, uint8_t into)
 static void declare_names(Compiler *c, const LhatNode *statements)
 {
     for (const LhatNode *s = statements; s != NULL; s = s->next) {
+        // 05 の 5.4改: the short form makes one name too -- the root of the
+        // path the unit declared. The rest of the path is members of it.
+        if (s->kind == LHAT_NODE_REQUIRE_STMT) {
+            const char *module_name = required_module_name(c, s);
+            if (module_name == NULL) {
+                continue;  // reported when the statement is compiled
+            }
+            size_t root = strcspn(module_name, ".");
+            if (find_local(c, module_name, root) != NULL) {
+                continue;
+            }
+            if (c->local_count >= LHAT_MAX_LOCALS) {
+                fail(c, LHAT_COMPILE_TOO_COMPLEX);
+                return;
+            }
+            uint8_t slot = reserve(c);
+            emit(c, lhat_encode_abc(LHAT_BC_LOADNIL, slot, 0, 0));
+            Local *local = &c->locals[c->local_count++];
+            local->name = module_name;
+            local->length = root;
+            local->reg = slot;
+            continue;
+        }
         if (s->kind != LHAT_NODE_DEFINE) {
             continue;
         }
@@ -2593,6 +2646,22 @@ static void compile_statement(Compiler *c, const LhatNode *node)
             return;
         }
 
+        // 05 の 5.4改: bring the unit in, then put it where the path it
+        // declared says. 8.8 makes the tables on the way, here as there.
+        case LHAT_NODE_REQUIRE_STMT: {
+            const char *module_name = required_module_name(c, node);
+            if (module_name == NULL) {
+                fail(c, LHAT_COMPILE_UNSUPPORTED);
+                return;
+            }
+            uint8_t mark = c->next_register;
+            uint8_t slot = reserve(c);
+            compile_expression(c, node, slot);
+            compile_bind_path(c, module_name, slot);
+            c->next_register = mark;
+            return;
+        }
+
         case LHAT_NODE_CALL_STMT:
         case LHAT_NODE_YIELD_ALL:
         case LHAT_NODE_YIELD: {
@@ -2696,9 +2765,192 @@ void lhat_compile_session_dispose(LhatCompileSession *session)
     free(session);
 }
 
+// 05 の 5.4改: the path a require^ standing alone brings a unit in under, or
+// NULL when there is no such unit or it declared none.
+static const char *required_module_name(Compiler *c, const LhatNode *node)
+{
+    const LhatNode *path = node->v.jump.value;
+    if (c->units == NULL || c->units->resolve == NULL || path == NULL) {
+        return NULL;
+    }
+    const char *module_name = NULL;
+    size_t which = c->units->resolve(
+        c->units->context, c->lexer->strings + path->v.string.offset,
+        path->v.string.length, &module_name);
+    return which == LHAT_NO_UNIT ? NULL : module_name;
+}
+
+// Puts `value` where a dotted path says, making the tables on the way. 02 の
+// 8.8 is the written form of this; here the path is a string rather than a
+// tree, since it came from what the required unit declared.
+static void compile_bind_path(Compiler *c, const char *path, uint8_t value)
+{
+    size_t length = strcspn(path, ".");
+    const Local *root = find_local(c, path, length);
+    if (root == NULL) {
+        fail(c, LHAT_COMPILE_UNDEFINED);
+        return;
+    }
+    // One segment names the place itself, so there is nothing to reach into.
+    if (path[length] == '\0') {
+        emit(c, lhat_encode_abc(LHAT_BC_MOVE, root->reg, value, 0));
+        return;
+    }
+
+    uint8_t mark = c->next_register;
+    uint8_t owner = reserve(c);
+    uint8_t key = reserve(c);
+    ensure_table(c, root->reg);
+    emit(c, lhat_encode_abc(LHAT_BC_MOVE, owner, root->reg, 0));
+
+    const char *segment = path + length + 1;
+    length = strcspn(segment, ".");
+    while (segment[length] == '.') {
+        uint8_t next = reserve(c);
+        load_string_bytes(c, key, segment, length);
+        emit(c, lhat_encode_abc(LHAT_BC_GETINDEX, next, owner, key));
+        ensure_table(c, next);
+        emit(c, lhat_encode_abc(LHAT_BC_SETINDEX, owner, key, next));
+        emit(c, lhat_encode_abc(LHAT_BC_MOVE, owner, next, 0));
+        c->next_register = next;
+        segment += length + 1;
+        length = strcspn(segment, ".");
+    }
+
+    load_string_bytes(c, key, segment, length);
+    emit(c, lhat_encode_abc(LHAT_BC_SETINDEX, owner, key, value));
+    c->next_register = mark;
+}
+
+// 05 の 5.3: a unit answers what an earlier require^ of it registered, and
+// runs its body only when there is nothing there. 04 の 11.3 spells "not
+// there" nil^, so a walk of the path with a nil test at each step is the
+// whole of it -- the guard the desugaring in 8.6 writes as an if^.
+static void compile_module_guard(Compiler *c, const char *path)
+{
+    uint8_t mark = c->next_register;
+    uint8_t into = reserve(c);
+    uint8_t test = reserve(c);
+    uint8_t key = reserve(c);
+
+    emit(c, lhat_encode_abc(LHAT_BC_ENV, into, 0, 0));
+    load_string_bytes(c, key, "modules", 7);
+    emit(c, lhat_encode_abc(LHAT_BC_GETINDEX, into, into, key));
+
+    // Every miss lands on the body, which is emitted after this.
+    size_t misses[LHAT_MAX_LOCALS];
+    size_t miss_count = 0;
+
+    for (const char *segment = path;; ) {
+        size_t length = strcspn(segment, ".");
+        // Reading through what is not a table would fault (5.1), so each
+        // step is guarded rather than only the last.
+        emit(c, lhat_encode_abc(LHAT_BC_ISNIL, test, into, 0));
+        emit(c, lhat_encode_abc(LHAT_BC_NOT, test, test, 0));
+        if (miss_count < LHAT_MAX_LOCALS) {
+            misses[miss_count++] = emit_jump(c, LHAT_BC_JUMP_FALSE, test);
+        }
+        load_string_bytes(c, key, segment, length);
+        emit(c, lhat_encode_abc(LHAT_BC_GETINDEX, into, into, key));
+        if (segment[length] != '.') {
+            break;
+        }
+        segment += length + 1;
+    }
+
+    // Something there is what an earlier require^ registered, and is the
+    // answer without the body running again.
+    emit(c, lhat_encode_abc(LHAT_BC_ISNIL, test, into, 0));
+    emit(c, lhat_encode_abc(LHAT_BC_NOT, test, test, 0));
+    if (miss_count < LHAT_MAX_LOCALS) {
+        misses[miss_count++] = emit_jump(c, LHAT_BC_JUMP_FALSE, test);
+    }
+    emit(c, lhat_encode_abc(LHAT_BC_RETURN, into, 0, 0));
+
+    for (size_t i = 0; i < miss_count; i++) {
+        lhat_chunk_patch_here(&c->proto->chunk, misses[i]);
+    }
+    c->next_register = mark;
+}
+
+// 05 の 4 章: what the unit publishes. check.c's collect_exports reads the
+// same public^ marks off the same tree to build the type, so the two are one
+// rule read twice rather than two lists to keep level.
+static void compile_exports(Compiler *c, const LhatNode *statements,
+                            uint8_t into)
+{
+    emit(c, lhat_encode_abc(LHAT_BC_NEWTABLE, into, 0, 0));
+
+    uint8_t mark = c->next_register;
+    uint8_t key = reserve(c);
+    for (const LhatNode *s = statements; s != NULL; s = s->next) {
+        const LhatNode *named = NULL;
+        if (s->kind == LHAT_NODE_DEFINE && s->v.binding.exported) {
+            named = s->v.binding.targets;
+        } else if (s->kind == LHAT_NODE_ERRORDEF && s->v.named.exported) {
+            named = s->v.named.name;
+        } else {
+            continue;
+        }
+        for (; named != NULL; named = named->next) {
+            const char *name = NULL;
+            size_t length = 0;
+            if (!node_name(c, define_target_name(named), &name, &length)) {
+                continue;
+            }
+            const Local *local = find_local(c, name, length);
+            if (local == NULL) {
+                continue;
+            }
+            load_string_bytes(c, key, name, length);
+            emit(c, lhat_encode_abc(LHAT_BC_SETINDEX, into, key, local->reg));
+        }
+    }
+    c->next_register = mark;
+}
+
+// The other half of the guard: what the body worked out goes into the
+// registry under the declared path, and is the unit's answer. 02 の 8.8's
+// rule for the tables on the way holds here too, which is why this reads
+// like the code that form compiles to.
+static void compile_module_register(Compiler *c, const LhatNode *statements,
+                                    const char *path)
+{
+    uint8_t mark = c->next_register;
+    uint8_t exports = reserve(c);
+    uint8_t owner = reserve(c);
+    uint8_t key = reserve(c);
+
+    compile_exports(c, statements, exports);
+
+    emit(c, lhat_encode_abc(LHAT_BC_ENV, owner, 0, 0));
+    load_string_bytes(c, key, "modules", 7);
+    emit(c, lhat_encode_abc(LHAT_BC_GETINDEX, owner, owner, key));
+
+    const char *segment = path;
+    size_t length = strcspn(segment, ".");
+    while (segment[length] == '.') {
+        uint8_t next = reserve(c);
+        load_string_bytes(c, key, segment, length);
+        emit(c, lhat_encode_abc(LHAT_BC_GETINDEX, next, owner, key));
+        ensure_table(c, next);
+        emit(c, lhat_encode_abc(LHAT_BC_SETINDEX, owner, key, next));
+        emit(c, lhat_encode_abc(LHAT_BC_MOVE, owner, next, 0));
+        c->next_register = next;
+        segment += length + 1;
+        length = strcspn(segment, ".");
+    }
+
+    load_string_bytes(c, key, segment, length);
+    emit(c, lhat_encode_abc(LHAT_BC_SETINDEX, owner, key, exports));
+    emit(c, lhat_encode_abc(LHAT_BC_RETURN, exports, 0, 0));
+    c->next_register = mark;
+}
+
 static LhatCompileStatus compile_unit(LhatCompileSession *session,
                                       const LhatNode *unit,
-                                      const LhatLexer *lexer, LhatProto **out)
+                                      const LhatLexer *lexer,
+                                      const LhatUnits *units, LhatProto **out)
 {
     *out = NULL;
     if (unit == NULL || lexer == NULL) {
@@ -2735,10 +2987,29 @@ static LhatCompileStatus compile_unit(LhatCompileSession *session,
         }
     }
 
+    c.units = units;
+    const char *module_name = units != NULL ? units->module_name : NULL;
+
+    // 05 の 5.3: what an earlier require^ registered is the answer, and the
+    // body below runs only when there is none.
+    if (module_name != NULL) {
+        compile_module_guard(&c, module_name);
+    }
+
     // The unit is a scope like any other, so 8.7 applies to it too -- unless
     // it is one input of a session, where the top level outlives the input.
     if (session != NULL) {
         compile_session_statements(&c, unit->v.list.items);
+    } else if (module_name != NULL) {
+        // The scope ends with the unit, so nothing is handed back to the
+        // pool -- 05 の 4 章 reads the exports off the slots the body left.
+        declare_errors(&c, unit->v.list.items);
+        declare_names(&c, unit->v.list.items);
+        declare_defs(&c, unit->v.list.items);
+        for (const LhatNode *s = unit->v.list.items; s != NULL; s = s->next) {
+            compile_statement(&c, s);
+        }
+        compile_module_register(&c, unit->v.list.items, module_name);
     } else {
         compile_statements(&c, unit->v.list.items);
     }
@@ -2801,14 +3072,21 @@ static LhatCompileStatus compile_unit(LhatCompileSession *session,
 LhatCompileStatus lhat_compile(const LhatNode *unit, const LhatLexer *lexer,
                                LhatProto **out)
 {
-    return compile_unit(NULL, unit, lexer, out);
+    return compile_unit(NULL, unit, lexer, NULL, out);
+}
+
+LhatCompileStatus lhat_compile_module(const LhatNode *unit,
+                                      const LhatLexer *lexer,
+                                      const LhatUnits *units, LhatProto **out)
+{
+    return compile_unit(NULL, unit, lexer, units, out);
 }
 
 LhatCompileStatus lhat_compile_next(LhatCompileSession *session,
                                     const LhatNode *unit,
                                     const LhatLexer *lexer, LhatProto **out)
 {
-    return compile_unit(session, unit, lexer, out);
+    return compile_unit(session, unit, lexer, NULL, out);
 }
 
 const char *lhat_compile_status_message(LhatCompileStatus status)
@@ -3004,6 +3282,11 @@ struct LhatMachine {
     // 05 の 8.6: what L^ answers. The one table nothing has to import, so it
     // is made with the machine and rooted by it rather than by any frame.
     LhatTable *environment;
+
+    // 05 の 5.3: the units a require^ can reach, in the order the program
+    // compiled them. Borrowed -- the program owns them and outlives the run.
+    const LhatModule *modules;
+    size_t module_count;
 };
 
 typedef struct LhatMachine Machine;
@@ -3328,6 +3611,16 @@ LhatMachine *lhat_machine_new(void)
     return m;
 }
 
+void lhat_machine_set_modules(LhatMachine *machine, const LhatModule *modules,
+                              size_t count)
+{
+    if (machine == NULL) {
+        return;
+    }
+    machine->modules = modules;
+    machine->module_count = count;
+}
+
 void lhat_machine_dispose(LhatMachine *machine)
 {
     if (machine == NULL) {
@@ -3566,6 +3859,26 @@ LhatRunResult lhat_run(LhatMachine *m, const LhatProto *proto)
             case LHAT_BC_ENV:
                 registers[a] = lhat_object((LhatObject *)m->environment);
                 break;
+
+            // 05 の 5.3: a unit is a body like any other, so requiring it is
+            // making a closure of it and calling that. What makes it load
+            // once is the guard the unit itself begins with, not this.
+            case LHAT_BC_UNIT: {
+                size_t which = lhat_bx(instruction);
+                if (which >= m->module_count) {
+                    return finish(m, LHAT_RUN_NO_SUCH_UNIT, lhat_nil(), at);
+                }
+                LhatClosure *closure = (LhatClosure *)allocate(
+                    m, sizeof *closure, LHAT_OBJECT_SUBROUTINE);
+                if (closure == NULL) {
+                    return finish(m, LHAT_RUN_OUT_OF_MEMORY, lhat_nil(), at);
+                }
+                closure->proto = m->modules[which].proto;
+                closure->upvalues = NULL;
+                closure->upvalue_count = 0;
+                registers[a] = lhat_object((LhatObject *)closure);
+                break;
+            }
 
             case LHAT_BC_NEWTABLE: {
                 LhatTable *table = lhat_table_new(&m->objects);
@@ -4275,6 +4588,8 @@ const char *lhat_run_status_message(LhatRunStatus status)
         case LHAT_RUN_OUT_OF_MEMORY:   return "out of memory";
         case LHAT_RUN_BAD_KEY:         return "this cannot be a key";
         case LHAT_RUN_DEAD_COROUTINE:  return "this coroutine has finished";
+        case LHAT_RUN_NO_SUCH_UNIT:
+            return "this machine was not given the unit this require^ asks for";
         case LHAT_RUN_YIELD_OUTSIDE:   return "nothing is waiting for this yield^";
         case LHAT_RUN_NO_CANDIDATE:    return "no way of calling this member takes these arguments";
         case LHAT_RUN_COROUTINE_NOT_STARTED:     return "resume needs start() first";

@@ -60,6 +60,9 @@ typedef enum {
     LHAT_BC_CLOSE,      // A     the places at R[A] and above stop being shared
     LHAT_BC_THIS,       // A     R[A] = the subroutine running (02 の 15.10)
     LHAT_BC_ENV,        // A     R[A] = L^, the machine's own table (05 の 8.6)
+    LHAT_BC_UNIT,       // A Bx  R[A] = a closure of the unit Bx (05 の 5.3).
+                        //       Calling it answers what that unit publishes,
+                        //       running its body only the first time.
 
     // 02 の 14 章: the one data structure. 04 の 11.3 makes a missing key
     // nil^ rather than a failure, so GETINDEX cannot fail on that account.
@@ -197,6 +200,18 @@ typedef struct LhatProto {
 
 LhatProto *lhat_proto_new(void);
 void lhat_proto_free(LhatProto *proto);
+
+// 05 の 5.3: one unit, compiled. The path 3 章 had it declare is kept beside
+// the body, since that is where the unit registers itself and what a
+// diagnostic names it by. NULL when the unit declared none (3.2), and then
+// nothing registers it -- 5.4改 already refused the short form for it.
+typedef struct {
+    LhatProto *proto;
+    char *module_name;  // owned
+} LhatModule;
+
+// Frees the protos and the names. The array itself belongs to the caller.
+void lhat_modules_free(LhatModule *modules, size_t count);
 
 // Returns the index of the nested body, or SIZE_MAX when out of memory.
 size_t lhat_proto_add(LhatProto *parent, LhatProto *child);

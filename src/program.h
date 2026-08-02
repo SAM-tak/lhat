@@ -15,6 +15,7 @@
 #include <stddef.h>
 
 #include "check.h"
+#include "code.h"  // 05 の 5.3: a unit compiles to one of these
 #include "lexer.h"
 #include "parser.h"
 #include "source.h"
@@ -46,6 +47,11 @@ typedef struct LhatUnit {
     LhatCheckResult checked;
 
     LhatUnitState state;
+
+    // 05 の 5.3: where this unit sits in what lhat_program_compile built, so
+    // a require^ of it names it by number. Only meaningful after that ran.
+    size_t index;
+
     struct LhatUnit *next;
 } LhatUnit;
 
@@ -68,6 +74,10 @@ typedef struct {
     LhatProgramDiagnostic *diagnostics;
     size_t diagnostic_count;
     size_t diagnostic_capacity;
+
+    // 05 の 5.3: what lhat_program_compile built, owned here.
+    LhatModule *modules;
+    size_t module_count;
 } LhatProgram;
 
 // Without a loader, units are read from the file system.
@@ -80,6 +90,14 @@ void lhat_program_dispose(LhatProgram *program);
 // taken as written; a require^ inside a unit is relative to that unit (5.1).
 // Returns NULL when the unit itself could not be read.
 const LhatUnit *lhat_program_check(LhatProgram *program, const char *path);
+
+// 05 の 5.3: compiles every unit checked so far and answers the array a
+// machine is given with lhat_machine_set_modules. The program owns it; a
+// second call answers the same one. NULL when a unit would not compile.
+//
+// The unit to run is the one lhat_program_check returned: its `index` says
+// which proto of the array is it.
+const LhatModule *lhat_program_compile(LhatProgram *program, size_t *count);
 
 // True when any unit, or the program itself, reported something.
 bool lhat_program_has_errors(const LhatProgram *program);

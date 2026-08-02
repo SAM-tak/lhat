@@ -10,6 +10,8 @@
 
 #include "program.h"
 #include "testutil.h"
+#include "value.h"
+#include "vm.h"
 
 typedef struct {
     const char *path;
@@ -285,10 +287,105 @@ static void test_cycles(void)
     lhat_program_dispose(&program);
 }
 
+// 05 の 5.3: the units compile too, and the machine is given the lot so a
+// require^ inside one can reach another. What is pinned here is that the
+// unit runs once however many times it is required, and that both requirers
+// see the very thing it made.
+static void test_running(void)
+{
+    LhatProgram program;
+    Disk disk;
+
+    static const File files[] = {
+        {"side.lh",
+         "module^ ns.side\n"
+         "public^ let^ marks = { n := 0 }\n"
+         "marks.n := marks.n + 1\n"},
+        {"mid.lh",
+         "module^ ns.mid\n"
+         "require^ \"side.lh\"\n"
+         "public^ let^ seen = ns.side.marks\n"},
+        {"main.lh",
+         "require^ \"side.lh\"\n"
+         "require^ \"mid.lh\"\n"
+         "return^ ns.side.marks.n * 10 + ns.mid.seen.n\n"},
+    };
+
+    LHAT_TEST("a required unit runs once and both requirers see the one it made");
+    {
+        program_with(&program, &disk, files, 3);
+        const LhatUnit *root = lhat_program_check(&program, "main.lh");
+        LHAT_CHECK(root != NULL && !lhat_program_has_errors(&program),
+                   "the program checked");
+        size_t count = 0;
+        const LhatModule *modules = lhat_program_compile(&program, &count);
+        LHAT_CHECK(modules != NULL, "every unit compiled");
+        if (modules != NULL && root != NULL) {
+            LhatMachine *machine = lhat_machine_new();
+            lhat_machine_set_modules(machine, modules, count);
+            LhatRunResult ran = lhat_run(machine, modules[root->index].proto);
+            LHAT_CHECK_EQ_INT(ran.status, LHAT_RUN_OK);
+            // 1 for the side effect, and the same table read through both.
+            LHAT_CHECK_EQ_INT(lhat_as_integer(ran.value), 11);
+            lhat_machine_dispose(machine);
+        }
+    }
+    lhat_program_dispose(&program);
+
+    // 8.6: the registry is where the guard looks, so what ran is in it.
+    LHAT_TEST("and L^.modules holds what was registered");
+    {
+        static const File reading[] = {
+            {"one.lh",
+             "module^ ns.one\n"
+             "public^ let^ v = 7\n"},
+            {"main.lh",
+             "require^ \"one.lh\"\n"
+             "return^ L^.modules.ns.one.v\n"},
+        };
+        program_with(&program, &disk, reading, 2);
+        const LhatUnit *root = lhat_program_check(&program, "main.lh");
+        LHAT_CHECK(root != NULL && !lhat_program_has_errors(&program),
+                   "the program checked");
+        size_t count = 0;
+        const LhatModule *modules = lhat_program_compile(&program, &count);
+        if (modules != NULL && root != NULL) {
+            LhatMachine *machine = lhat_machine_new();
+            lhat_machine_set_modules(machine, modules, count);
+            LhatRunResult ran = lhat_run(machine, modules[root->index].proto);
+            LHAT_CHECK_EQ_INT(ran.status, LHAT_RUN_OK);
+            LHAT_CHECK_EQ_INT(lhat_as_integer(ran.value), 7);
+            lhat_machine_dispose(machine);
+        }
+    }
+    lhat_program_dispose(&program);
+
+    // A machine that was never given the units cannot answer a require^.
+    LHAT_TEST("and a machine without the units refuses");
+    {
+        static const File pair[] = {
+            {"one.lh", "module^ ns.one\npublic^ let^ v = 1\n"},
+            {"main.lh", "require^ \"one.lh\"\nreturn^ ns.one.v\n"},
+        };
+        program_with(&program, &disk, pair, 2);
+        const LhatUnit *root = lhat_program_check(&program, "main.lh");
+        size_t count = 0;
+        const LhatModule *modules = lhat_program_compile(&program, &count);
+        if (modules != NULL && root != NULL) {
+            LhatMachine *machine = lhat_machine_new();
+            LhatRunResult ran = lhat_run(machine, modules[root->index].proto);
+            LHAT_CHECK_EQ_INT(ran.status, LHAT_RUN_NO_SUCH_UNIT);
+            lhat_machine_dispose(machine);
+        }
+    }
+    lhat_program_dispose(&program);
+}
+
 int main(void)
 {
     test_dependencies();
     test_loading();
     test_cycles();
+    test_running();
     return lhat_test_report("test_program");
 }

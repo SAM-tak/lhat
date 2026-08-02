@@ -29,6 +29,17 @@ void lhat_proto_free(LhatProto *proto)
     free(proto);
 }
 
+void lhat_modules_free(LhatModule *modules, size_t count)
+{
+    if (modules == NULL) {
+        return;
+    }
+    for (size_t i = 0; i < count; i++) {
+        lhat_proto_free(modules[i].proto);
+        free(modules[i].module_name);
+    }
+}
+
 size_t lhat_proto_add(LhatProto *parent, LhatProto *child)
 {
     if (parent->proto_count == parent->proto_capacity) {
@@ -203,6 +214,7 @@ const char *lhat_opcode_name(LhatOpcode op)
         case LHAT_BC_CLOSE:       return "close";
         case LHAT_BC_THIS:        return "this";
         case LHAT_BC_ENV:         return "env";
+        case LHAT_BC_UNIT:        return "unit";
         case LHAT_BC_NEWTABLE:    return "newtable";
         case LHAT_BC_GETINDEX:    return "getindex";
         case LHAT_BC_SETINDEX:    return "setindex";
@@ -243,6 +255,9 @@ void lhat_chunk_print(const LhatChunk *chunk, size_t index, char *out,
     switch (op) {
         case LHAT_BC_LOADK:
             snprintf(out, size, "%-10s r%u k%u", name, lhat_a(i), lhat_bx(i));
+            break;
+        case LHAT_BC_UNIT:
+            snprintf(out, size, "%-10s r%u u%u", name, lhat_a(i), lhat_bx(i));
             break;
         case LHAT_BC_CLOSURE:
             snprintf(out, size, "%-10s r%u p%u", name, lhat_a(i), lhat_bx(i));

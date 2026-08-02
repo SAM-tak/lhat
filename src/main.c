@@ -345,7 +345,7 @@ static int dump_tokens(const LhatSource *source)
 // 03 の 1.1's third stage, over the unit graph of 05 の 6.2: a unit cannot be
 // checked before the units it requires, so the whole graph is walked rather
 // than the one file named on the command line.
-static int check_program(const char *path)
+static int check_program(const char *path, bool run)
 {
     LhatProgram program;
     lhat_program_init(&program, true);
@@ -383,9 +383,38 @@ static int check_program(const char *path)
     }
 
     bool failed = root == NULL || lhat_program_has_errors(&program);
-    if (!failed) {
+    if (!failed && !run) {
         printf("%s: no type errors (%zu unit%s)\n", path, units,
                units == 1 ? "" : "s");
+    }
+
+    // 05 の 5.3: every unit compiles, and the machine is given the lot so a
+    // require^ inside one can reach another.
+    if (!failed && run) {
+        size_t count = 0;
+        const LhatModule *modules = lhat_program_compile(&program, &count);
+        LhatMachine *machine = modules != NULL ? lhat_machine_new() : NULL;
+        if (machine == NULL) {
+            fprintf(stderr, "%s: error: the program did not compile\n", path);
+            failed = true;
+        } else {
+            lhat_machine_set_modules(machine, modules, count);
+            LhatRunResult ran = lhat_run(machine, modules[root->index].proto);
+            if (ran.status != LHAT_RUN_OK) {
+                fprintf(stderr, "%s: error: %s\n", path,
+                        lhat_run_status_message(ran.status));
+                failed = true;
+            } else if (!lhat_is_nil(ran.value)) {
+                size_t needed = lhat_value_write(ran.value, NULL, 0);
+                char *text = (char *)malloc(needed + 1);
+                if (text != NULL) {
+                    lhat_value_write(ran.value, text, needed + 1);
+                    printf("%s\n", text);
+                    free(text);
+                }
+            }
+            lhat_machine_dispose(machine);
+        }
     }
 
     lhat_program_dispose(&program);
@@ -602,6 +631,7 @@ int main(int argc, char **argv)
     const char *path = NULL;
     bool tokens_only = false;
     bool check_only = false;
+    bool run_program = false;
     bool command_form = false;
 
     for (int i = 1; i < argc; i++) {
@@ -609,6 +639,8 @@ int main(int argc, char **argv)
             tokens_only = true;
         } else if (strcmp(argv[i], "--check") == 0) {
             check_only = true;
+        } else if (strcmp(argv[i], "--run") == 0) {
+            run_program = true;
         } else if (strcmp(argv[i], "--command") == 0) {
             command_form = true;
         } else {
@@ -617,7 +649,8 @@ int main(int argc, char **argv)
     }
 
     // 03 の 4 章: with nothing to read, read from the prompt.
-    if (path == NULL && !tokens_only && !check_only && !command_form) {
+    if (path == NULL && !tokens_only && !check_only && !run_program &&
+        !command_form) {
         return repl();
     }
 
@@ -634,8 +667,8 @@ int main(int argc, char **argv)
 
     // Checking is a question about a program, not about a file: 05 の 6.2
     // puts the units a file requires ahead of it.
-    if (check_only) {
-        return check_program(path);
+    if (check_only || run_program) {
+        return check_program(path, run_program);
     }
 
     LhatSource source;

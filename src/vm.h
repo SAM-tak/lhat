@@ -27,11 +27,40 @@ typedef enum {
     LHAT_COMPILE_UNDEFINED      // a name with no binding
 } LhatCompileStatus;
 
+// 05 の 5 章. The compile-time twin of check.h's LhatRequireResolver: asked
+// for the unit at `path`, it answers where that unit sits in what the machine
+// will be given, or LHAT_NO_UNIT when there is none. The checker has already
+// refused a path that cannot be had, so a miss here means the caller compiled
+// without the program that resolved it.
+#define LHAT_NO_UNIT SIZE_MAX
+
+// `module_name` is filled with the path 3 章 had that unit declare, the way
+// check.h's resolver fills it -- 5.4改's short form needs it to know where
+// the unit it brought in goes.
+typedef size_t (*LhatUnitResolver)(void *context, const char *path,
+                                   size_t length, const char **module_name);
+
+typedef struct {
+    LhatUnitResolver resolve;
+    void *context;
+    // 05 の 3 章: the path this unit declared, or NULL when it declared none
+    // (3.2). A unit that has one registers itself under it and answers what
+    // an earlier require^ registered, which is how 5.3 loads it once.
+    const char *module_name;
+} LhatUnits;
+
 // Compiles one unit into a proto, which owns the bodies written inside it.
 // The lexer has to be the one the tree came from, since names and strings are
 // spans into it. The caller frees the proto with lhat_proto_free().
 LhatCompileStatus lhat_compile(const LhatNode *unit, const LhatLexer *lexer,
                                LhatProto **out);
+
+// The same, as one unit of a program: `units` says where a require^ inside it
+// leads, and what path this unit registers itself under. Passing NULL is
+// lhat_compile.
+LhatCompileStatus lhat_compile_module(const LhatNode *unit,
+                                      const LhatLexer *lexer,
+                                      const LhatUnits *units, LhatProto **out);
 
 // 03 の 4.3: a REPL compiles many inputs into one running machine, so the
 // top-level names of one input have to still be there for the next. The
@@ -70,8 +99,10 @@ typedef enum {
                               // member takes what the call handed over
     LHAT_RUN_COROUTINE_NOT_STARTED,     // 15.2改: resumed one that has never
                                          // been started
-    LHAT_RUN_COROUTINE_ALREADY_STARTED  // 15.2改: started one that already
+    LHAT_RUN_COROUTINE_ALREADY_STARTED, // 15.2改: started one that already
                                          // has been
+    LHAT_RUN_NO_SUCH_UNIT     // 05 の 5.3: a require^ reached for a unit the
+                              // machine was not given
 } LhatRunStatus;
 
 typedef struct {
@@ -101,6 +132,11 @@ LhatMachine *lhat_machine_new(void);
 // came out of a run on it points into that, so nothing read from a result
 // outlives this call.
 void lhat_machine_dispose(LhatMachine *machine);
+
+// 05 の 5.3: the units a require^ in what runs next may reach. The caller
+// keeps them -- a program owns its units and outlives the runs of them.
+void lhat_machine_set_modules(LhatMachine *machine, const LhatModule *modules,
+                              size_t count);
 
 // Runs `proto` on `machine`. What the run allocates belongs to the machine,
 // so the answer is good until the machine is disposed or run again -- there
