@@ -80,6 +80,11 @@ typedef struct {
     // input is one of a session. NULL for a file, where nothing answers.
     const LhatNode *answering;
 
+    // 05 の 8.6: the type L^ answers. One per check, since 8.8 lets a path
+    // add to it and every mention has to see the same table. A session hands
+    // its own in, so what one input registers is there for the next.
+    LhatType *environment;
+
     // The name the subroutine currently being checked is being bound to, so
     // that a call to it inside its own body can be spotted (03 の 3.4).
     const char *defining_name;
@@ -248,6 +253,7 @@ static LhatType *simple(Checker *c, LhatTypeKind kind)
 
 static LhatType *resolve_type(Checker *c, const LhatNode *node);
 static LhatType *infer(Checker *c, const LhatNode *node);
+static LhatType *environment_type(Checker *c);  // 05 の 8.6
 static void check_statement(Checker *c, const LhatNode *node);
 static LhatType *collect_exports(Checker *c, const LhatNode *statements);
 static void check_statements(Checker *c, const LhatNode *statements);
@@ -1023,6 +1029,11 @@ static LhatType *infer_name(Checker *c, const LhatNode *node)
             // 03 の 3.4 counts it the same way a call by name is counted.
             c->saw_self_call = true;
             return c->this_type;
+        }
+        // 05 の 8.6: the machine's own table, there without being imported.
+        if (name_is(name, length, "L")) {
+            LhatType *env = environment_type(c);
+            return env != NULL ? env : simple(c, LHAT_TYPE_UNKNOWN);
         }
     }
 
@@ -2330,6 +2341,39 @@ static bool target_is_path(const LhatNode *target)
 static const LhatTypeMember *member_named(const LhatType *type,
                                           const char *name, size_t length);
 
+// 05 の 8.6: L^ names the machine's own table. Only the hatted spelling means
+// it, so an ordinary name `L` is untouched.
+static bool is_environment(const Checker *c, const LhatNode *node)
+{
+    const char *name = NULL;
+    size_t length = 0;
+    return node->kind == LHAT_NODE_HAT_IDENT &&
+           node_name(c, node, &name, &length) && name_is(name, length, "L");
+}
+
+// What L^ carries. vm.c's build_environment makes the values; the two lists
+// have to say the same thing.
+static LhatType *environment_type(Checker *c)
+{
+    if (c->environment != NULL) {
+        return c->environment;
+    }
+    LhatType *env = lhat_type_table(c->result->types);
+    LhatType *modules = lhat_type_table(c->result->types);
+    // 12.7's shape: a p^ taking nothing and answering nothing. Running the
+    // collector is an effect, so it is not an f^.
+    LhatType *collect_now = lhat_type_func(c->result->types, false);
+    if (env == NULL || modules == NULL || collect_now == NULL) {
+        return NULL;
+    }
+    // 05 の 5.3: the registry a unit is loaded into once, grown by 8.8.
+    lhat_type_add_member(c->result->types, env, "modules", 7, modules);
+    lhat_type_add_member(c->result->types, env, "collectgarbage", 14,
+                         collect_now);
+    c->environment = env;
+    return env;
+}
+
 // 8.8: everything before the last segment holds the one written after it, so
 // it has to be a table. 14 章 fixes what an instance of a def^ carries, which
 // is the one kind of table a member cannot be added to.
@@ -2357,6 +2401,10 @@ static LhatType *path_table(Checker *c, const LhatNode *node)
     size_t length = 0;
 
     if (node->kind != LHAT_NODE_MEMBER) {
+        // 05 の 8.6: L^ is a place too, and the one no scope holds.
+        if (is_environment(c, node)) {
+            return holds_members(c, node, environment_type(c));
+        }
         // The root is a name a scope holds. 8.8 reaches an enclosing binding
         // rather than shadowing it: 'let^ a.b = 1' says where b goes and
         // nothing new about a, so a is only made when there is none.
@@ -2365,7 +2413,10 @@ static LhatType *path_table(Checker *c, const LhatNode *node)
         }
         Binding *b = scope_find(c->scope, name, length);
         if (b == NULL) {
-            return NULL;  // collect_bindings puts it there before the walk
+            // collect_bindings puts an ordinary root there before the walk,
+            // so what reaches here is a hat identifier that is not L^.
+            report(c, node, LHAT_CHECK_ERR_UNDEFINED);
+            return NULL;
         }
         if (b->type == NULL || b->type->kind == LHAT_TYPE_UNKNOWN) {
             b->type = lhat_type_table(c->result->types);
@@ -2764,7 +2815,11 @@ static void collect_bindings(Checker *c, const LhatNode *statements)
             // enclosing table is the point, so this must not shadow one.
             if (target_is_path(target)) {
                 const LhatNode *root = target_root(target);
-                if (node_name(c, root, &name, &length) &&
+                // A hat identifier is not a name a scope can hold. L^ is a
+                // place of its own (05 の 8.6); anything else is refused when
+                // the path is walked.
+                if (root->kind != LHAT_NODE_HAT_IDENT &&
+                    node_name(c, root, &name, &length) &&
                     scope_find(c->scope, name, length) == NULL) {
                     scope_add(c->scope, name, length,
                               simple(c, LHAT_TYPE_UNKNOWN), root->offset);
@@ -3114,6 +3169,10 @@ struct LhatCheckSession {
     } *names;
     size_t count;
     size_t capacity;
+
+    // 05 の 8.6: made on the first input that mentions L^ and kept, so a
+    // module one input registers is still there in the next.
+    LhatType *environment;
 };
 
 LhatCheckSession *lhat_check_session_new(void)
@@ -3198,6 +3257,9 @@ void lhat_check_next(LhatCheckSession *session, const LhatNode *unit,
     checker.result = result;
     checker.strict = strict;
     checker.scope = &scope;
+    // 05 の 8.6: one L^ for the whole session, so what an input registers in
+    // it is still there in the next.
+    checker.environment = session->environment;
 
     // 03 の 4.3: the last statement is what the input answers with, when it
     // is an expression. What that changes here is 15.8's reasoning about a
@@ -3233,6 +3295,7 @@ void lhat_check_next(LhatCheckSession *session, const LhatNode *unit,
     for (Binding *b = scope.bindings; b != NULL; b = b->next) {
         session_keep(session, b->name, b->name_length, b->type);
     }
+    session->environment = checker.environment;
 
     scope_dispose(&scope);
 }

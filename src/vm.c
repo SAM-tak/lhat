@@ -1554,6 +1554,12 @@ static void compile_expression(Compiler *c, const LhatNode *node, uint8_t into)
                     emit(c, lhat_encode_abc(LHAT_BC_THIS, into, 0, 0));
                     return;
                 }
+                // 05 の 8.6: the machine's own table, reachable from anywhere
+                // without being imported.
+                if (name_is(name, length, "L")) {
+                    emit(c, lhat_encode_abc(LHAT_BC_ENV, into, 0, 0));
+                    return;
+                }
             }
             const Local *local = find_local(c, name, length);
             if (local != NULL) {
@@ -1654,6 +1660,14 @@ static const LhatNode *define_target_root(const LhatNode *target)
     return node;
 }
 
+// 05 の 8.6: L^ names the machine's own table. Only the hatted spelling means
+// it, so an ordinary name `L` is untouched.
+static bool is_environment(const LhatNode *node, const char *name,
+                           size_t length)
+{
+    return node->kind == LHAT_NODE_HAT_IDENT && name_is(name, length, "L");
+}
+
 // Makes a table in a place that holds nothing yet, and leaves alone one that
 // does. 8.8 has two paths through one table meet rather than replace each
 // other, and 11.3 spells "nothing there" nil^ -- so this is the whole test.
@@ -1679,6 +1693,11 @@ static void compile_path_prefix(Compiler *c, const LhatNode *node, uint8_t into)
         size_t length = 0;
         if (!node_name(c, node, &name, &length)) {
             fail(c, LHAT_COMPILE_UNSUPPORTED);
+            return;
+        }
+        // 05 の 8.6: L^ is a place too, and the one nothing has to hold.
+        if (is_environment(node, name, length)) {
+            emit(c, lhat_encode_abc(LHAT_BC_ENV, into, 0, 0));
             return;
         }
         const Local *local = find_local(c, name, length);
@@ -1730,11 +1749,13 @@ static void declare_names(Compiler *c, const LhatNode *statements)
             // is its root -- and only when nothing already holds that.
             // Reaching an enclosing table is the point of the form.
             if (define_target_is_path(target)) {
-                if (!node_name(c, define_target_root(target), &name, &length)) {
+                const LhatNode *root = define_target_root(target);
+                if (!node_name(c, root, &name, &length)) {
                     fail(c, LHAT_COMPILE_UNSUPPORTED);
                     return;
                 }
-                if (find_local(c, name, length) != NULL ||
+                if (is_environment(root, name, length) ||
+                    find_local(c, name, length) != NULL ||
                     find_upvalue(c, name, length) != SIZE_MAX) {
                     continue;
                 }
@@ -2979,6 +3000,10 @@ struct LhatMachine {
     LhatGray gray;
     size_t collected;
     size_t threshold;   // how many live objects before the next collection
+
+    // 05 の 8.6: what L^ answers. The one table nothing has to import, so it
+    // is made with the machine and rooted by it rather than by any frame.
+    LhatTable *environment;
 };
 
 typedef struct LhatMachine Machine;
@@ -3110,6 +3135,11 @@ static void *allocate(Machine *m, size_t size, LhatObjectKind kind)
 // open list -- there is no half-built object to miss.
 static bool mark_roots(Machine *m)
 {
+    // 05 の 8.6: L^ is reachable from anywhere without being held anywhere,
+    // so the machine is what keeps it and what it carries alive.
+    if (!lhat_gc_reach(&m->gray, lhat_object((LhatObject *)m->environment))) {
+        return false;
+    }
     for (size_t i = 0; i < m->frame_count; i++) {
         Frame *frame = &m->frames[i];
         if (!lhat_gc_reach(&m->gray,
@@ -3247,6 +3277,38 @@ static WalkStep step_table_walk(Machine *m, LhatCoroutine *co, LhatValue *out)
     return WALK_TOOK;
 }
 
+// 05 の 8.6: L^ is the one name that is there without being imported, so what
+// it answers is made with the machine. A member is added here and its type in
+// check.c's environment_type -- the two lists have to say the same thing.
+static bool set_member(Machine *m, LhatTable *table, const char *name,
+                       LhatValue value)
+{
+    LhatString *key = lhat_string_new(&m->objects, name, strlen(name));
+    if (key == NULL) {
+        return false;
+    }
+    bool refused = false;
+    return lhat_table_set(table, lhat_object((LhatObject *)key), value,
+                          &refused) && !refused;
+}
+
+static bool build_environment(Machine *m)
+{
+    m->environment = lhat_table_new(&m->objects);
+    LhatTable *modules = lhat_table_new(&m->objects);
+    // 05 の 5.3: the registry a unit is loaded into once. Empty until
+    // something is loaded, and grown the way 8.8 grows any table.
+    LhatNative *collect_now =
+        lhat_native_new(&m->objects, LHAT_NATIVE_COLLECTGARBAGE, lhat_nil());
+    if (m->environment == NULL || modules == NULL || collect_now == NULL) {
+        return false;
+    }
+    return set_member(m, m->environment, "modules",
+                      lhat_object((LhatObject *)modules)) &&
+           set_member(m, m->environment, "collectgarbage",
+                      lhat_object((LhatObject *)collect_now));
+}
+
 LhatMachine *lhat_machine_new(void)
 {
     // A whole stack and a frame array, so the heap is where it belongs --
@@ -3259,6 +3321,10 @@ LhatMachine *lhat_machine_new(void)
         return NULL;
     }
     m->threshold = 256;
+    if (!build_environment(m)) {
+        lhat_machine_dispose(m);
+        return NULL;
+    }
     return m;
 }
 
@@ -3496,6 +3562,11 @@ LhatRunResult lhat_run(LhatMachine *m, const LhatProto *proto)
                     lhat_object((LhatObject *)(void *)frame->closure);
                 break;
 
+            // 05 の 8.6: one table per machine, so naming it is a move too.
+            case LHAT_BC_ENV:
+                registers[a] = lhat_object((LhatObject *)m->environment);
+                break;
+
             case LHAT_BC_NEWTABLE: {
                 LhatTable *table = lhat_table_new(&m->objects);
                 if (table == NULL) {
@@ -3659,6 +3730,17 @@ LhatRunResult lhat_run(LhatMachine *m, const LhatProto *proto)
                         (const LhatNative *)lhat_as_object(registers[a]);
                     size_t first = a + (op == LHAT_BC_CALLMETHOD ? 2 : 1);
                     LhatValue sent = b > 0 ? registers[first] : lhat_nil();
+
+                    // 05 の 8.6: the one thing a program cannot arrange for
+                    // itself. It takes nothing and answers nothing.
+                    if (native->kind == LHAT_NATIVE_COLLECTGARBAGE) {
+                        if (b != 0) {
+                            return finish(m, LHAT_RUN_ARITY, lhat_nil(), at);
+                        }
+                        collect(m);
+                        registers[a] = lhat_nil();
+                        break;
+                    }
 
                     // 16.3: what `in^` walks. A table answers with a walk of
                     // its keys; a coroutine is already one.

@@ -1570,6 +1570,49 @@ static void test_coroutines(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_NO_MEMBER);
     unit_dispose(&u);
 
+    // 05 の 8.6: L^ is there without being imported, and is not a name -- so
+    // 8.1's "nothing is visible" is untouched.
+    LHAT_TEST("L^ carries the collector and the registry");
+    check_text(&u,
+               "L^.collectgarbage()\n"
+               "let^ m = L^.modules\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("and nothing else");
+    check_text(&u, "let^ x = L^.nowhere\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_NO_MEMBER);
+    unit_dispose(&u);
+
+    LHAT_TEST("and collectgarbage takes no argument");
+    check_text(&u, "L^.collectgarbage(1)\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_ARITY);
+    unit_dispose(&u);
+
+    // 8.6: the registry a unit is loaded into once, grown the way 8.8 grows
+    // any table.
+    LHAT_TEST("and L^ may be the root of a path");
+    check_text(&u,
+               "let^ L^.modules.ns1.mod1 = { greet := 1 }\n"
+               "let^ L^.modules.ns1.mod2 = { x := 2 }\n"
+               "let^ n : number^ = L^.modules.ns1.mod1.greet\n"
+               "let^ k : number^ = L^.modules.ns1.mod2.x\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("and the same path twice is a redefinition");
+    check_text(&u,
+               "let^ L^.modules.ns1.mod1 = { }\n"
+               "let^ L^.modules.ns1.mod1 = { }\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_REDEFINED);
+    unit_dispose(&u);
+
+    // Only that one spelling is a place; the rest name nothing.
+    LHAT_TEST("but another hat identifier is not a root");
+    check_text(&u, "let^ true^.x = 1\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_UNDEFINED);
+    unit_dispose(&u);
+
     // 8.8: let^ introduces a member, the way ':=' reassigns one. The tables on
     // the way are made where the path does not reach one yet.
     LHAT_TEST("let^ introduces a member along a path");

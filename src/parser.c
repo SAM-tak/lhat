@@ -1854,7 +1854,13 @@ static LhatNode *parse_public(Parser *p)
 static LhatNode *parse_let_target(Parser *p)
 {
     LhatToken start = p->current;
-    if (p->current.kind != LHAT_TOKEN_IDENT &&
+    // 05 の 8.6: L^ is a place a path may start from, and the only hat
+    // identifier that is. The '.' is what tells it from 'let^ true^ = 1',
+    // which names nothing; the checker refuses any other spelling.
+    bool hatted_root = p->current.kind == LHAT_TOKEN_HAT_IDENT &&
+                       p->ahead.kind == LHAT_TOKEN_OP &&
+                       p->ahead.v.op == LHAT_OP_DOT;
+    if (!hatted_root && p->current.kind != LHAT_TOKEN_IDENT &&
         p->current.kind != LHAT_TOKEN_NAME_LITERAL &&
         p->current.kind != LHAT_TOKEN_SCOPE) {
         return error_node(p, LHAT_PARSE_ERR_EXPECTED_NAME);

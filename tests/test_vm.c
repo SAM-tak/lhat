@@ -2559,6 +2559,45 @@ static void test_coroutines(void)
     LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_DEAD_COROUTINE);
     run_dispose(&r);
 
+    // 05 の 8.6: one table per machine, made with it and rooted by it.
+    LHAT_TEST("L^ answers the machine's own table");
+    run_text(&r,
+             "let^ L^.modules.ns1.mod1 = { greet := 7 }\n"
+             "let^ L^.modules.ns1.mod2 = { x := 2 }\n"
+             "return^ L^.modules.ns1.mod1.greet * 10 + L^.modules.ns1.mod2.x\n");
+    CHECK_INTEGER(&r, 72);
+    run_dispose(&r);
+
+    // 8.6: what the registry holds is reachable from the machine, so a
+    // collection run by hand does not take it.
+    LHAT_TEST("and what it holds survives a collection");
+    run_text(&r,
+             "let^ L^.modules.ns1.mod1 = { greet := 7 }\n"
+             "L^.collectgarbage()\n"
+             "return^ L^.modules.ns1.mod1.greet\n");
+    CHECK_INTEGER(&r, 7);
+    run_dispose(&r);
+
+    LHAT_TEST("and two machines do not share one");
+    {
+        Run one;
+        compile_text(&one, "let^ L^.modules.a = { n := 1 }\nreturn^ 0\n");
+        LhatMachine *first = lhat_machine_new();
+        LhatMachine *second = lhat_machine_new();
+        lhat_run(first, one.proto);
+        Run two;
+        compile_text(&two, "return^ L^.modules.a.n\n");
+        LhatRunResult missing = lhat_run(second, two.proto);
+        // 04 の 11.3 makes a key that is not there nil^, and reading through
+        // it is where the machine says so.
+        LHAT_CHECK_EQ_INT(missing.status, LHAT_RUN_TYPE_ERROR);
+        LHAT_CHECK_EQ_INT(lhat_as_integer(lhat_run(first, two.proto).value), 1);
+        lhat_machine_dispose(first);
+        lhat_machine_dispose(second);
+        compiled_dispose(&one);
+        compiled_dispose(&two);
+    }
+
     // 8.8: the tables on the way are made where the path does not reach one
     // yet, and left alone where it does.
     LHAT_TEST("let^ along a path makes the tables it needs");

@@ -59,6 +59,7 @@ typedef enum {
     LHAT_BC_SETUPVAL,   // A B   *upvalue[B] = R[A]
     LHAT_BC_CLOSE,      // A     the places at R[A] and above stop being shared
     LHAT_BC_THIS,       // A     R[A] = the subroutine running (02 の 15.10)
+    LHAT_BC_ENV,        // A     R[A] = L^, the machine's own table (05 の 8.6)
 
     // 02 の 14 章: the one data structure. 04 の 11.3 makes a missing key
     // nil^ rather than a failure, so GETINDEX cannot fail on that account.

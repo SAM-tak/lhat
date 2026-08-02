@@ -190,7 +190,10 @@ typedef enum {
     // 15.6改: the two questions asked before choosing an operation. Neither
     // runs the body, so both answer whatever state the coroutine is in.
     LHAT_NATIVE_DONE,     // the body has run to its end
-    LHAT_NATIVE_STARTED   // start() has already run, so resume() is the way on
+    LHAT_NATIVE_STARTED,  // start() has already run, so resume() is the way on
+    // 05 の 8.6: what L^ carries. Reaching the collector by hand is the one
+    // thing a program cannot arrange for itself.
+    LHAT_NATIVE_COLLECTGARBAGE
 } LhatNativeKind;
 
 typedef struct LhatNative {
