@@ -227,6 +227,9 @@ struct LhatNode {
             LhatNode *key;    // NULL for a positional entry or the template
             LhatNode *value;
             LhatDefModifier modifier;  // 14.12, def^ entries only
+            // 14.6改: the key was written '[ ... ]', so it is an expression
+            // rather than the name it would otherwise be read as.
+            bool computed;
         } entry;
 
         // DEFINE / REASSIGN take a list of targets and a list of values;

@@ -52,6 +52,8 @@ typedef enum {
     LHAT_CHECK_ERR_NOT_SUBSTITUTABLE,   // 14.12: override^ has to fit
     LHAT_CHECK_ERR_OVERLOAD_OVERLAPS,   // 14.12: signatures must stay apart
     LHAT_CHECK_ERR_INCOMPARABLE,        // no value inhabits both sides
+    LHAT_CHECK_ERR_BAD_KEY,             // 04 の 11.3: nil^ spells absence, so
+                                        // it cannot also be a key
     LHAT_CHECK_ERR_IS_ALWAYS_TRUE,      // 13.7: any^ holds of every value, so
                                         // asking it of one asks nothing
     LHAT_CHECK_ERR_MISSING_FIELD,       // 04 の 2.5: no default to fall back to

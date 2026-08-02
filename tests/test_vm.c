@@ -748,6 +748,56 @@ static void test_repeat(void)
     CHECK_INTEGER(&r, 4);
     run_dispose(&r);
 
+    // 14.6改: '[ ... ] :=' builds an entry under a key that is not a name.
+    LHAT_TEST("a computed key lands where it says");
+    run_text(&r, "let^ t = { [0] := 7 }\nreturn^ t[0]\n");
+    CHECK_INTEGER(&r, 7);
+    run_dispose(&r);
+
+    LHAT_TEST("and the key is an ordinary expression");
+    run_text(&r,
+             "let^ k = 3\n"
+             "let^ t = { [k + 1] := 5 }\n"
+             "return^ t[4]\n");
+    CHECK_INTEGER(&r, 5);
+    run_dispose(&r);
+
+    // 14 章 follows Lua here: t.a and t["a"] are one key.
+    LHAT_TEST("a string key and a name are the same entry");
+    run_text(&r, "let^ t = { [\"a\"] := 1 }\nreturn^ t.a\n");
+    CHECK_INTEGER(&r, 1);
+    run_dispose(&r);
+
+    LHAT_TEST("and it reads back the other way round");
+    run_text(&r, "let^ t = { a := 2 }\nreturn^ t[\"a\"]\n");
+    CHECK_INTEGER(&r, 2);
+    run_dispose(&r);
+
+    // A keyed entry takes no place in the sequence, so the positional ones
+    // carry on counting past it.
+    LHAT_TEST("a keyed entry takes no position from the sequence");
+    run_text(&r,
+             "let^ t = { 10, [\"k\"] := 20, 30 }\n"
+             "return^ t[2]\n");
+    CHECK_INTEGER(&r, 30);
+    run_dispose(&r);
+
+    LHAT_TEST("and is still reachable by its key");
+    run_text(&r,
+             "let^ t = { 10, [\"k\"] := 20, 30 }\n"
+             "return^ t[\"k\"]\n");
+    CHECK_INTEGER(&r, 20);
+    run_dispose(&r);
+
+    // 04 の 11.3: what the checker cannot see coming, the machine refuses.
+    LHAT_TEST("a key that turns out to be nil^ is a fault");
+    run_text(&r,
+             "let^ x : number^|nil^ = nil^\n"
+             "let^ t = { [x] := 1 }\n"
+             "return^ 0\n");
+    LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_BAD_KEY);
+    run_dispose(&r);
+
     LHAT_TEST("repeat^ on its own needs break^ to end");
     run_text(&r,
              "let^ i = 0\n"

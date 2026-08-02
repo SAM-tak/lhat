@@ -1329,6 +1329,34 @@ static LhatType *infer_table(Checker *c, const LhatNode *node)
          entry = entry->next) {
         LhatType *value = require_value(c, entry->v.entry.value,
                                         infer(c, entry->v.entry.value));
+
+        // 14.6改: a computed key is an expression, checked like any other.
+        // What it names is only known when it is written out -- an integer
+        // reaches the sequence half, a string the keyed one, and anything
+        // else lands somewhere 14.10 lets the type stay quiet about.
+        if (entry->v.entry.computed) {
+            const LhatNode *key = entry->v.entry.key;
+            LhatType *asked = require_value(c, key, infer(c, key));
+            // 04 の 11.3: nil^ is how "not there" is spelled, so it cannot
+            // also be a key. The machine reports one that turns out to be
+            // nil^; a key that can only ever be one is decided here. A NaN
+            // is the other refusal, and stays the machine's -- nothing in
+            // 14.8's one number type tells them apart.
+            if (asked != NULL && asked->kind != LHAT_TYPE_UNKNOWN &&
+                lhat_type_conforms(asked, simple(c, LHAT_TYPE_NIL))) {
+                report(c, key, LHAT_CHECK_ERR_BAD_KEY);
+            }
+            if (key != NULL && key->kind == LHAT_NODE_INT) {
+                lhat_type_add_index_member(c->result->types, table,
+                                           (size_t)key->v.integer.value, value);
+            } else if (key != NULL && key->kind == LHAT_NODE_STRING) {
+                lhat_type_add_member(c->result->types, table,
+                                     c->lexer->strings + key->v.string.offset,
+                                     key->v.string.length, value);
+            }
+            continue;
+        }
+
         const char *name = NULL;
         size_t length = 0;
         if (node_name(c, entry->v.entry.key, &name, &length)) {
@@ -2819,6 +2847,8 @@ const char *lhat_check_error_message(LhatCheckErrorCode code)
             return "this field has no default, so it has to be written";
         case LHAT_CHECK_ERR_INCOMPARABLE:
             return "these can never be equal, so the comparison is fixed already";
+        case LHAT_CHECK_ERR_BAD_KEY:
+            return "nil^ is how a table spells 'not there', so it cannot be a key";
         case LHAT_CHECK_ERR_IS_ALWAYS_TRUE:
             return "any^ holds of every value, so this asks nothing";
         case LHAT_CHECK_ERR_MEMBER_EXISTS:

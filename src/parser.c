@@ -576,7 +576,23 @@ static LhatNode *parse_brace_entries(Parser *p, bool require_key)
                       p->current.kind == LHAT_TOKEN_HAT_IDENT) &&
                      is_op(&p->ahead, LHAT_OP_DEFINE);
 
-        if (keyed) {
+        // 14.6改: '[ ... ] :=' gives the key as an expression, for the keys
+        // 01 の 6 章 leaves unwritable as names. Nothing else can begin with
+        // '[' here -- it does not start an expression -- so no lookahead is
+        // needed to tell this from a positional entry.
+        if (check_op(p, LHAT_OP_LBRACKET)) {
+            LhatToken at_bracket = p->current;
+            advance(p);
+            entry->v.entry.key = parse_expression(p);
+            entry->v.entry.computed = true;
+            expect_op(p, LHAT_OP_RBRACKET);
+            expect_op(p, LHAT_OP_DEFINE);
+            // 14.6: a field template names every field, so a computed key is
+            // not one of them.
+            if (require_key) {
+                report(p, &at_bracket, LHAT_PARSE_ERR_FIELD_NEEDS_NAME);
+            }
+        } else if (keyed) {
             entry->v.entry.key = simple_node(p);
             advance(p);  // :=
         } else if (require_key) {

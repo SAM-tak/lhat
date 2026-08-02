@@ -1148,7 +1148,12 @@ static void compile_table(Compiler *c, const LhatNode *node, uint8_t into)
         uint8_t key = reserve(c);
         uint8_t value = reserve(c);
 
-        if (entry->v.entry.key != NULL) {
+        if (entry->v.entry.computed) {
+            // 14.6改: the key is an expression, evaluated here like any
+            // other. 04 の 11.3 keeps nil^ and a NaN out of a key, which the
+            // machine reports when it lands.
+            compile_expression(c, entry->v.entry.key, key);
+        } else if (entry->v.entry.key != NULL) {
             const LhatNode *named = entry->v.entry.key;
             const char *name = NULL;
             size_t length = 0;

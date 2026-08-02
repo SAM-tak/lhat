@@ -2013,6 +2013,61 @@ static void test_positions(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
+    // 14.6改: '[ ... ] :=' writes a key that 01 の 6 章 leaves unwritable as
+    // a name. A literal one still tells the type what it named.
+    LHAT_TEST("an integer key reaches the sequence half");
+    check_text(&u,
+               "let^ t = { [0] := 7 }\n"
+               "let^ s : string^ = t[0]\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
+    unit_dispose(&u);
+
+    // Lua's rule, which 14 章 follows: t.a and t["a"] are one key.
+    LHAT_TEST("and a string key is the member of that name");
+    check_text(&u,
+               "let^ t = { [\"a\"] := 7 }\n"
+               "let^ s : string^ = t.a\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
+    unit_dispose(&u);
+
+    // 14.10 lets a table carry more than its type lists, so a key only known
+    // when it runs leaves the type saying nothing about it.
+    LHAT_TEST("a computed key leaves the type quiet");
+    check_text(&u,
+               "let^ k = 3\n"
+               "let^ t = { [k] := 7 }\n"
+               "let^ s : string^ = t[3]\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("but the key itself is checked");
+    check_text(&u, "let^ t = { [nowhere] := 7 }\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_UNDEFINED);
+    unit_dispose(&u);
+
+    // 04 の 11.3: nil^ spells absence, so it cannot also be a key. A key that
+    // can only ever be one is decided here rather than left to the machine.
+    LHAT_TEST("a key that can only be nil^ is reported");
+    check_text(&u, "let^ t = { [nil^] := 7 }\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_BAD_KEY);
+    unit_dispose(&u);
+
+    LHAT_TEST("while one that merely might be is left to run time");
+    check_text(&u,
+               "let^ x : number^|nil^ = 1\n"
+               "let^ t = { [x] := 7 }\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // A keyed entry takes no place in the sequence, exactly as a named one
+    // does not.
+    LHAT_TEST("a computed key takes no position");
+    check_text(&u,
+               "let^ t = { 10, [\"k\"] := 20, 30 }\n"
+               "let^ s : string^ = t[2]\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
+    unit_dispose(&u);
+
     // 14.10改: the sequence half can be written down as well as inferred --
     // types listed with no name in front of them, in order.
     LHAT_TEST("a written type may list its positions");
