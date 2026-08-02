@@ -310,6 +310,9 @@ typedef struct LhatHostEntry {
     void *context;
     uint8_t parameters;
     bool takes_self;
+    // 05 の 8.8: the tag values of this type carry. Kept on the entry so that
+    // it lives as long as the program and points at the entry's own strings.
+    LhatHostDataTag *tag;
 } LhatHostEntry;
 
 // The table type a dotted path names inside `owner`, made where the path does
@@ -411,16 +414,17 @@ static bool keep_entry(LhatProgram *program, const char *module,
     return true;
 }
 
-bool lhat_register_type(LhatProgram *program, const char *module,
-                        const char *name)
+const LhatHostDataTag *lhat_register_hostdata_type(LhatProgram *program,
+                                                   const char *module,
+                                                   const char *name)
 {
     LhatType *root = hosted_root(program);
     if (root == NULL) {
-        return false;
+        return NULL;
     }
     LhatType *table = hosted_table(program, root, module);
     if (table == NULL || hosted_member(table, name) != NULL) {
-        return false;  // 8.7: one name, one thing
+        return NULL;  // 8.7: one name, one thing
     }
 
     // 05 の 7.3's shape: what makes it its own type is the declaration, not
@@ -428,12 +432,32 @@ bool lhat_register_type(LhatProgram *program, const char *module,
     // mark keeps a member from being added to it afterwards.
     LhatType *made = lhat_type_table(&program->types);
     if (made == NULL) {
-        return false;
+        return NULL;
     }
     made->v.table.from_definition = true;
-    return lhat_type_add_member(&program->types, table, name, strlen(name),
-                                made) != NULL &&
-           keep_entry(program, module, NULL, name, NULL, NULL, NULL);
+    made->v.table.nominal = true;
+    if (lhat_type_add_member(&program->types, table, name, strlen(name),
+                             made) == NULL ||
+        !keep_entry(program, module, NULL, name, NULL, NULL, NULL)) {
+        return NULL;
+    }
+
+    // 8.8: the tag is identity and nothing else, so it is made here where
+    // there is exactly one per registration.
+    LhatHostEntry *entry = &program->host_entries[program->host_entry_count - 1];
+    entry->tag = (LhatHostDataTag *)calloc(1, sizeof *entry->tag);
+    if (entry->tag == NULL) {
+        return NULL;
+    }
+    entry->tag->module = entry->module;
+    entry->tag->name = entry->name;
+    return entry->tag;
+}
+
+bool lhat_register_type(LhatProgram *program, const char *module,
+                        const char *name)
+{
+    return lhat_register_hostdata_type(program, module, name) != NULL;
 }
 
 static bool register_into(LhatProgram *program, LhatType *owner,
@@ -590,6 +614,7 @@ void lhat_program_dispose(LhatProgram *program)
         free(program->host_entries[i].module);
         free(program->host_entries[i].type);
         free(program->host_entries[i].name);
+        free(program->host_entries[i].tag);
     }
     free(program->host_entries);
     program->host_entries = NULL;

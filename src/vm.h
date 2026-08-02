@@ -153,6 +153,20 @@ bool lhat_machine_register(LhatMachine *machine, const char *module,
                            const char *type, const char *name,
                            LhatValue value);
 
+// 05 の 8.8: a value standing for something the host made. `pointer` is the
+// host's and nothing here reads it; `tag` is what a later call checks before
+// reading it as the type it expects, and comes from lhat_register_hostdata_type.
+//
+// Members written against the type answer through the value, so it is the
+// registered type that has to have been installed first.
+bool lhat_machine_make_hostdata(LhatMachine *machine, const LhatHostDataTag *tag,
+                            void *pointer, LhatValue *out);
+
+// The pointer back, or NULL when the value is not one of these or was made
+// with a different tag. 7.3 makes the tags distinct per declaration, so this
+// is what stops a Texture reaching the C that expects a Sound.
+void *lhat_hostdata_pointer(LhatValue value, const LhatHostDataTag *tag);
+
 // Runs `proto` on `machine`. What the run allocates belongs to the machine,
 // so the answer is good until the machine is disposed or run again -- there
 // is nothing in the result to free.

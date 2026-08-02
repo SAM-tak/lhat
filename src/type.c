@@ -429,6 +429,13 @@ bool lhat_type_conforms(const LhatType *value, const LhatType *target)
 
     switch (target->kind) {
         case LHAT_TYPE_TABLE:
+            // 05 の 8.8: a host type is the one thing 11.3 does not judge by
+            // shape. Asked for one, only that one will do -- there is nothing
+            // to compare structurally, and being wrong means a pointer read
+            // as something it is not.
+            if (target->v.table.nominal) {
+                return value == target;
+            }
             // 14.10: at least the listed members. Extra members are fine,
             // which is what lets a value with many members satisfy a small
             // structure at all.

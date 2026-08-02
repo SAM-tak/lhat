@@ -195,6 +195,20 @@ LhatHost *lhat_host_new(LhatHeap *heap, LhatHostFn call, void *context,
     return host;
 }
 
+LhatHostData *lhat_hostdata_new(LhatHeap *heap, const LhatHostDataTag *tag,
+                                void *pointer, LhatTable *members)
+{
+    LhatHostData *data =
+        (LhatHostData *)allocate(heap, sizeof(LhatHostData), LHAT_OBJECT_HOSTDATA);
+    if (data == NULL) {
+        return NULL;
+    }
+    data->tag = tag;
+    data->pointer = pointer;
+    data->members = members;
+    return data;
+}
+
 LhatRuntimeType *lhat_type_rt_new(LhatHeap *heap, LhatRuntimeTypeKind kind)
 {
     LhatRuntimeType *type =
@@ -445,6 +459,12 @@ bool lhat_gc_children(LhatGray *gray, LhatObject *object)
         // into it. What is reachable from here is the receiver alone.
         case LHAT_OBJECT_HOST:
             return lhat_gc_reach(gray, ((const LhatHost *)object)->bound);
+
+        // 05 の 8.8: the same for the pointer. The members are the registered
+        // type's table, which the registry holds anyway -- reached here so
+        // that a value handed to L^ keeps what answers its calls.
+        case LHAT_OBJECT_HOSTDATA:
+            return reach(gray, (LhatObject *)((const LhatHostData *)object)->members);
 
         case LHAT_OBJECT_TYPE: {
             const LhatRuntimeType *type = (const LhatRuntimeType *)object;

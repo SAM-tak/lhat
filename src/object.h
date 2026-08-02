@@ -223,6 +223,25 @@ typedef struct LhatHost {
     bool takes_self;
 } LhatHost;
 
+// 05 の 8.8: what tells one registered type from another while running.
+// Compared by identity alone -- 7.3's rule made into an object, and the one
+// thing standing between a Texture and the C code that expects a Sound. The
+// names are for diagnostics and belong to the program.
+typedef struct LhatHostDataTag {
+    const char *module;
+    const char *name;
+} LhatHostDataTag;
+
+// Something the host made. The pointer is the host's and the collector never
+// looks into it; what is reachable from here is the table of members the
+// registered type carries, which is where 't.width()' lands.
+typedef struct LhatHostData {
+    LhatObject header;
+    const LhatHostDataTag *tag;
+    void *pointer;
+    LhatTable *members;
+} LhatHostData;
+
 // ---------------------------------------------------------------------------
 // Making and freeing
 // ---------------------------------------------------------------------------
@@ -258,6 +277,9 @@ LhatNative *lhat_native_new(LhatHeap *heap, LhatNativeKind kind,
 
 LhatHost *lhat_host_new(LhatHeap *heap, LhatHostFn call, void *context,
                         uint8_t parameters, bool takes_self);
+
+LhatHostData *lhat_hostdata_new(LhatHeap *heap, const LhatHostDataTag *tag,
+                                void *pointer, LhatTable *members);
 
 LhatRuntimeType *lhat_type_rt_new(LhatHeap *heap, LhatRuntimeTypeKind kind);
 

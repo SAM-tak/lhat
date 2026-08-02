@@ -541,6 +541,173 @@ static void test_hosting(void)
     lhat_program_dispose(&program);
 }
 
+// 05 の 8.8: something the host made, reached through a pointer L^ holds and
+// never looks into.
+typedef struct {
+    int value;
+    int live;  // shared, so the test can see a dispose^ happen
+} Held;
+
+static const LhatHostDataTag *held_tag;
+static const LhatHostDataTag *other_tag;
+static int wrong_type_reached;
+
+static LhatValue held_make(LhatMachine *machine, void *context,
+                           const LhatValue *arguments, size_t count)
+{
+    (void)arguments;
+    (void)count;
+    Held *held = (Held *)context;
+    held->live = 1;
+    LhatValue out = lhat_nil();
+    return lhat_machine_make_hostdata(machine, held_tag, held, &out) ? out
+                                                                 : lhat_nil();
+}
+
+static LhatValue held_read(LhatMachine *machine, void *context,
+                           const LhatValue *arguments, size_t count)
+{
+    (void)machine;
+    (void)context;
+    (void)count;
+    Held *self = (Held *)lhat_hostdata_pointer(arguments[0], held_tag);
+    if (self == NULL) {
+        wrong_type_reached++;
+        return lhat_nil();
+    }
+    return lhat_integer(self->value);
+}
+
+static LhatValue held_dispose(LhatMachine *machine, void *context,
+                              const LhatValue *arguments, size_t count)
+{
+    (void)machine;
+    (void)context;
+    (void)count;
+    Held *self = (Held *)lhat_hostdata_pointer(arguments[0], held_tag);
+    if (self != NULL) {
+        self->live = 0;
+    }
+    return lhat_nil();
+}
+
+static LhatValue other_make(LhatMachine *machine, void *context,
+                            const LhatValue *arguments, size_t count)
+{
+    (void)context;
+    (void)arguments;
+    (void)count;
+    LhatValue out = lhat_nil();
+    return lhat_machine_make_hostdata(machine, other_tag, NULL, &out) ? out
+                                                                  : lhat_nil();
+}
+
+static void test_host_data(void)
+{
+    LhatProgram program;
+    Disk disk;
+    Held held = {42, 0};
+
+    LHAT_TEST("a host value carries a pointer and answers its own members");
+    {
+        static const File files[] = {
+            {"main.lh",
+             "import^ store\n"
+             "let^ h = store.make()\n"
+             "let^ v : number^ = h.read()\n"
+             "h.dispose()\n"
+             "return^ v\n"},
+        };
+        program_with(&program, &disk, files, 1);
+        held_tag = lhat_register_hostdata_type(&program, "store", "Held");
+        LHAT_CHECK(held_tag != NULL, "the type registered");
+        lhat_register_member(&program, "store", "Held", "read",
+                             "f^self^ -> number^;", held_read, NULL);
+        // 12.5 reads dispose^ off the type like any other, so registering one
+        // is what makes the value the host's to take back.
+        lhat_register_member(&program, "store", "Held", "dispose", "p^self^;",
+                             held_dispose, NULL);
+        lhat_register_func(&program, "store", "make", "f^ -> store.Held;",
+                           held_make, &held);
+
+        const LhatUnit *root = lhat_program_check(&program, "main.lh");
+        LHAT_CHECK(root != NULL && root->checked.diagnostic_count == 0,
+                   "the program checked");
+        size_t count = 0;
+        const LhatModule *modules = lhat_program_compile(&program, &count);
+        if (modules != NULL && root != NULL) {
+            LhatMachine *machine = lhat_machine_new();
+            lhat_machine_set_modules(machine, modules, count);
+            lhat_program_install(&program, machine);
+            LhatRunResult ran = lhat_run(machine, modules[root->index].proto);
+            LHAT_CHECK_EQ_INT(ran.status, LHAT_RUN_OK);
+            LHAT_CHECK_EQ_INT(lhat_as_integer(ran.value), 42);
+            LHAT_CHECK_EQ_INT(held.live, 0);  // the dispose^ ran
+            lhat_machine_dispose(machine);
+        }
+    }
+    lhat_program_dispose(&program);
+
+    // 7.3: identity is the declaration. Two host types of the same shape are
+    // still two types, and the tag is what says so where a pointer would
+    // otherwise be read as the wrong thing.
+    LHAT_TEST("and a value of another type does not reach its C");
+    {
+        static const File files[] = {
+            {"main.lh",
+             "import^ store\n"
+             "let^ o = store.makeOther()\n"
+             "let^ v = o.read()\n"
+             "return^ 0\n"},
+        };
+        program_with(&program, &disk, files, 1);
+        wrong_type_reached = 0;
+        held_tag = lhat_register_hostdata_type(&program, "store", "Held");
+        other_tag = lhat_register_hostdata_type(&program, "store", "Other");
+        LHAT_CHECK(held_tag != other_tag, "the tags are distinct");
+        // The same C function on both, which is what makes the tag the only
+        // thing standing between them.
+        lhat_register_member(&program, "store", "Other", "read",
+                             "f^self^ -> number^;", held_read, NULL);
+        lhat_register_func(&program, "store", "makeOther", "f^ -> store.Other;",
+                           other_make, NULL);
+
+        const LhatUnit *root = lhat_program_check(&program, "main.lh");
+        size_t count = 0;
+        const LhatModule *modules = lhat_program_compile(&program, &count);
+        if (modules != NULL && root != NULL) {
+            LhatMachine *machine = lhat_machine_new();
+            lhat_machine_set_modules(machine, modules, count);
+            lhat_program_install(&program, machine);
+            LhatRunResult ran = lhat_run(machine, modules[root->index].proto);
+            LHAT_CHECK_EQ_INT(ran.status, LHAT_RUN_OK);
+            LHAT_CHECK_EQ_INT(wrong_type_reached, 1);
+            lhat_machine_dispose(machine);
+        }
+    }
+    lhat_program_dispose(&program);
+
+    // 11.3 stays structural for everything else, but not here: a host type is
+    // nominal, so one cannot be written where the other is wanted.
+    LHAT_TEST("and the checker keeps the two apart as well");
+    {
+        static const File files[] = {
+            {"main.lh",
+             "import^ store\n"
+             "let^ h : store.Held = store.makeOther()\n"},
+        };
+        program_with(&program, &disk, files, 1);
+        held_tag = lhat_register_hostdata_type(&program, "store", "Held");
+        other_tag = lhat_register_hostdata_type(&program, "store", "Other");
+        lhat_register_func(&program, "store", "makeOther", "f^ -> store.Other;",
+                           other_make, NULL);
+        const LhatUnit *root = lhat_program_check(&program, "main.lh");
+        LHAT_CHECK(has_check_error(root, LHAT_CHECK_ERR_MISMATCH),
+                   "an Other is not a Held");
+    }
+    lhat_program_dispose(&program);
+}
+
 int main(void)
 {
     test_dependencies();
@@ -548,5 +715,6 @@ int main(void)
     test_cycles();
     test_running();
     test_hosting();
+    test_host_data();
     return lhat_test_report("test_program");
 }

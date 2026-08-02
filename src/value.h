@@ -44,9 +44,12 @@ typedef enum {
     LHAT_OBJECT_OVERLOAD,    // 02 の 14.12: the signatures one name carries
     LHAT_OBJECT_UPVALUE,     // 5.4: never a value, only reached through a
                              // closure -- but allocated and collected alike
-    LHAT_OBJECT_HOST         // 05 の 8.7: a subroutine the host wrote in C.
+    LHAT_OBJECT_HOST,        // 05 の 8.7: a subroutine the host wrote in C.
                              // 04 の 12.8 makes an error a value, so it
                              // answers one rather than unwinding
+    LHAT_OBJECT_HOSTDATA     // 05 の 8.8: something the host made and holds,
+                             // reached through a pointer the collector does
+                             // not look into
 } LhatObjectKind;
 
 typedef struct LhatObject {

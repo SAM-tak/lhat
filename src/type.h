@@ -96,6 +96,12 @@ struct LhatType {
             // records what made the structure and takes no part in
             // conformance -- 11.3 keeps identity structural.
             bool from_definition;
+            // 05 の 8.8: identity is the declaration, not the shape. The one
+            // place 11.3 gives way, and 7.3's reason is weaker than this
+            // one: an opaque host type has no shape to compare, so structure
+            // would make every one of them the same type and hand a pointer
+            // to the C that expects another.
+            bool nominal;
         } table;
 
         // 13.1. `result` is NULL when nothing is returned (13.2), and

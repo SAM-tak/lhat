@@ -3404,6 +3404,18 @@ static LhatTable *table_of(LhatValue value)
     return NULL;
 }
 
+// The same question for a read. 05 の 8.8: what a host value carries is the
+// registered type's table, so 't.width()' finds the member there -- but the
+// table belongs to the type and not to the value, so a write must not reach
+// it. That is why this is separate from table_of rather than part of it.
+static const LhatTable *readable_table(LhatValue value)
+{
+    if (lhat_is_object_kind(value, LHAT_OBJECT_HOSTDATA)) {
+        return ((const LhatHostData *)lhat_as_object(value))->members;
+    }
+    return table_of(value);
+}
+
 // The operations 02 の 12.6 and 15.6 give a coroutine. The rest of the
 // standard library is M2 and will not go through here.
 static bool native_named(LhatValue key, LhatNativeKind *out)
@@ -3777,6 +3789,48 @@ static LhatTable *reach_table(Machine *m, LhatTable *owner, const char *path)
     }
 }
 
+bool lhat_machine_make_hostdata(LhatMachine *machine, const LhatHostDataTag *tag,
+                            void *pointer, LhatValue *out)
+{
+    if (machine == NULL || tag == NULL) {
+        return false;
+    }
+    // The members live where the registration put them, which is under the
+    // type's own name in L^.modules -- so what answers a call on this value
+    // is the same table every other value of the type answers through.
+    LhatString *modules_key = lhat_string_new(&machine->objects, "modules", 7);
+    if (modules_key == NULL) {
+        return false;
+    }
+    LhatTable *registry = table_of(lhat_table_get(
+        machine->environment, lhat_object((LhatObject *)modules_key)));
+    if (registry == NULL) {
+        return false;
+    }
+    LhatTable *module = reach_table(machine, registry, tag->module);
+    LhatTable *members =
+        module != NULL ? reach_table(machine, module, tag->name) : NULL;
+    if (members == NULL) {
+        return false;
+    }
+
+    LhatHostData *data = lhat_hostdata_new(&machine->objects, tag, pointer, members);
+    if (data == NULL) {
+        return false;
+    }
+    *out = lhat_object((LhatObject *)data);
+    return true;
+}
+
+void *lhat_hostdata_pointer(LhatValue value, const LhatHostDataTag *tag)
+{
+    if (!lhat_is_object_kind(value, LHAT_OBJECT_HOSTDATA)) {
+        return NULL;
+    }
+    const LhatHostData *data = (const LhatHostData *)lhat_as_object(value);
+    return data->tag == tag ? data->pointer : NULL;
+}
+
 bool lhat_machine_register(LhatMachine *machine, const char *module,
                            const char *type, const char *name, LhatValue value)
 {
@@ -4098,7 +4152,7 @@ LhatRunResult lhat_run(LhatMachine *m, const LhatProto *proto)
                     registers[a] = lhat_object((LhatObject *)native);
                     break;
                 }
-                const LhatTable *table = table_of(registers[b]);
+                const LhatTable *table = readable_table(registers[b]);
                 if (table == NULL) {
                     return finish(m, LHAT_RUN_TYPE_ERROR, lhat_nil(), at);
                 }
@@ -4232,17 +4286,20 @@ LhatRunResult lhat_run(LhatMachine *m, const LhatProto *proto)
                 // one -- there is no unwinding to arrange.
                 if (lhat_is_object_kind(registers[a], LHAT_OBJECT_HOST)) {
                     LhatHost *host = (LhatHost *)lhat_as_object(registers[a]);
+                    // 13.4 keeps self^ out of the parameter list, so what the
+                    // call wrote is compared against the list and the
+                    // receiver is handed over besides it.
+                    if (b != host->parameters) {
+                        return finish(m, LHAT_RUN_ARITY, lhat_nil(), at);
+                    }
                     size_t first = a + (op == LHAT_BC_CALLMETHOD ? 2 : 1);
                     size_t given = b;
                     const LhatValue *arguments = &registers[first];
-                    // 14.4: the receiver is an argument of a method, and sits
-                    // just below the ones the call wrote.
+                    // 14.4: the receiver comes first, and sits just below the
+                    // arguments the call wrote.
                     if (host->takes_self && op == LHAT_BC_CALLMETHOD) {
                         arguments = &registers[a + 1];
                         given = b + 1;
-                    }
-                    if (given != host->parameters) {
-                        return finish(m, LHAT_RUN_ARITY, lhat_nil(), at);
                     }
                     registers[a] = host->call(m, host->context, arguments,
                                               given);

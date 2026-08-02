@@ -128,6 +128,18 @@ const LhatModule *lhat_program_compile(LhatProgram *program, size_t *count);
 bool lhat_register_type(LhatProgram *program, const char *module,
                         const char *name);
 
+// 05 の 8.8: the same, and answers the tag a value of it carries. Registering
+// a `dispose` member on it is what makes it the host's to hand over and L^'s
+// to give back -- 02 の 12.5 reads that off the type the way it does for
+// anything else. Without one the host keeps the lifetime and L^ holds a
+// pointer it never frees.
+//
+// NULL when the name is taken or there is no memory. The tag belongs to the
+// program and lives as long as it does.
+const LhatHostDataTag *lhat_register_hostdata_type(LhatProgram *program,
+                                                   const char *module,
+                                                   const char *name);
+
 // A member of a type registered earlier. `signature` describes it; a p^ or f^
 // whose first parameter is written self^ is an instance method (14.4).
 bool lhat_register_member(LhatProgram *program, const char *module,
