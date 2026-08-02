@@ -892,7 +892,15 @@ static LhatType *infer_binary(Checker *c, const LhatNode *node)
 
     // 13.11: is^ takes a type on the right, so the right side is not a value.
     if (op == LHAT_OP_IS) {
-        resolve_type(c, node->v.binary.right);
+        LhatType *asked = resolve_type(c, node->v.binary.right);
+        // 13.7: any^ is the top of every value, so this holds of whatever is
+        // on the left and the question is empty. 13.11 refuses to read the
+        // left's inferred type against the right -- that would narrow the
+        // escape hatch 13.7 exists to provide -- but this one is decided by
+        // the right side alone, whatever the left turns out to be.
+        if (asked != NULL && asked->kind == LHAT_TYPE_ANY) {
+            report(c, node, LHAT_CHECK_ERR_IS_ALWAYS_TRUE);
+        }
         return simple(c, LHAT_TYPE_BOOL);
     }
 
@@ -2766,6 +2774,8 @@ const char *lhat_check_error_message(LhatCheckErrorCode code)
             return "this field has no default, so it has to be written";
         case LHAT_CHECK_ERR_INCOMPARABLE:
             return "these can never be equal, so the comparison is fixed already";
+        case LHAT_CHECK_ERR_IS_ALWAYS_TRUE:
+            return "any^ holds of every value, so this asks nothing";
         case LHAT_CHECK_ERR_MEMBER_EXISTS:
             return "this name is already a member; write override^ or overload^";
         case LHAT_CHECK_ERR_NOTHING_TO_OVERRIDE:

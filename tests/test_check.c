@@ -683,6 +683,42 @@ static void test_annotations(void)
     check_text(&u, "let^ x = 1\nlet^ b : bool^ = x is^ number^\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
+
+    // 13.7: any^ holds of every value, so the question is empty whatever is
+    // on the left. 13.11 decides this from the right side alone -- it never
+    // reads the left's inferred type against the right.
+    LHAT_TEST("asking is^ any^ asks nothing and is reported");
+    check_text(&u, "let^ x : number^ = 1\nlet^ b = x is^ any^\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_IS_ALWAYS_TRUE);
+    unit_dispose(&u);
+
+    LHAT_TEST("whatever the left happens to be");
+    check_text(&u, "let^ x : any^ = 1\nlet^ b = x is^ any^\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_IS_ALWAYS_TRUE);
+    unit_dispose(&u);
+
+    // 13.5 collapses a union with any^ to any^, so the written form does not
+    // let it through.
+    LHAT_TEST("and however the any^ is spelled");
+    check_text(&u, "let^ x : number^ = 1\nlet^ b = x is^ any^|nil^\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_IS_ALWAYS_TRUE);
+    unit_dispose(&u);
+
+    // 13.11: an answer the left's inferred type fixes is not refused. is^ is
+    // there to be asked at run time, and the checker narrowing that from what
+    // it thinks it knows is what 13.7 introduced any^ to avoid.
+    LHAT_TEST("but an answer fixed by the left is left alone");
+    check_text(&u,
+               "let^ x : number^ = 1\n"
+               "let^ a = x is^ string^\n"
+               "let^ b = x is^ number^\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("which is what makes any^ usable at all");
+    check_text(&u, "let^ f = p^ x:any^ { let^ b = x is^ string^ }\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
 }
 
 // 13.11, and 04 の 7 章 which rests entirely on it.
