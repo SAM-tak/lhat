@@ -8,16 +8,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "ast.h"
-#include "lexer.h"
-#include "check.h"
-#include "parser.h"
-#include "port.h"
-#include "program.h"
-#include "source.h"
-#include "token.h"
-#include "value.h"
-#include "vm.h"
+#include "lhat.h"
 
 static void print_token(const LhatLexer *lexer, const LhatToken *token)
 {
@@ -659,12 +650,13 @@ int main(int argc, char **argv)
 
     if (path == NULL) {
         printf("L^ (lhat) %s\n", LHAT_VERSION);
-        printf("usage: lhat [--tokens] <file>\n");
+        printf("usage: lhat [option] <file>\n");
         printf("  no file    read from a prompt (03 の 4 章)\n");
+        printf("  --run      check the whole program and run it (05 の 5.3)\n");
+        printf("  --check    type check and report, without running\n");
         printf("  default    print the syntax tree\n");
         printf("  --tokens   print the token stream instead\n");
-        printf("  --check    type check and report, without the tree\n");
-        printf("  --command  read the input as the command form (2 章)\n");
+        printf("  --command  read the input as the command form (02 の 2 章)\n");
         return EXIT_SUCCESS;
     }
 

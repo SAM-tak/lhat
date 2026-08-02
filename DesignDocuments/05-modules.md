@@ -878,10 +878,15 @@ lhat_program_init(&program, true, NULL, NULL);            // 何も読まない
 #### ビルドの構成
 
 ```text
-src/    言語そのもの        → lhat.lib / lhat.dll
-port/   継ぎ目の既定実装    → lhatport.lib / lhatport.dll
-cli/    コマンドライン      → lhat.exe
+include/lhat.h  ホストが名指す唯一のヘッダ
+src/            言語そのもの        → lhat.lib / lhat.dll
+port/           継ぎ目の既定実装    → lhatport.lib / lhatport.dll
+cli/            コマンドライン      → lhat.exe
 ```
+
+**ホストのインクルードパスに載るのは `include/` だけ**とする。
+`src/` には `source.h` `value.h` `token.h` のような一般的すぎる名前があり、
+他人のインクルードパスに置くものではない。`include/lhat.h` がそこへ届く。
 
 名前は組み込み C の慣例に倣った。FreeRTOS・lwIP・mbedTLS がいずれも
 **環境ごとに差し替える層を「port 層」と呼ぶ**。`host` は 8.7 で

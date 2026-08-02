@@ -1,11 +1,18 @@
 # Each test file becomes one executable and one ctest entry. The executables
 # link against lhat directly rather than driving the lhat binary, so unit
 # level checks stay possible as the language grows.
+#
+# They name the internal headers rather than include/lhat.h, since what they
+# check is inside: a lexer, an arena, a type. So src/ is on their path, which
+# is the one place outside the library itself that it is.
 
 function(lhat_add_test name)
     add_executable(${name} ${name}.c)
     target_link_libraries(${name} PRIVATE lhat)
-    target_include_directories(${name} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+    target_include_directories(${name} PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}
+        ${CMAKE_SOURCE_DIR}/src
+    )
     if(NOT MSVC)
         target_link_libraries(${name} PRIVATE m)
     endif()

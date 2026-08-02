@@ -3,7 +3,13 @@
 `L^` (elhat) — a new glue programming language experiment.
 
 A bytecode-interpreted language in the spirit of Lua, written in C11 and built
-with CMake.
+with CMake — with a static type checker between the parser and the code
+generator, so a mistake is usually a diagnostic rather than a fault at run
+time.
+
+Meant to be embedded. The language builds as a library that reaches its
+surroundings through a handful of functions a host can replace, and a host
+registers what it provides by writing the type out in C.
 
 ## Requirements
 
@@ -65,11 +71,73 @@ Pass `-DLHAT_BUILD_TESTS=OFF` at configure time to skip it.
 
 ## Running
 
-There is no virtual machine yet, so the driver only dumps the token stream:
+With no file, the driver is a prompt. An expression on its own is answered,
+and a construct that has not finished reads on:
+
+```text
+> 2 + 3
+5
+> let^ greet = f^ n:string^ -> string^ { return^ "hi " .. n }
+> greet("there")
+"hi there"
+> let^ add = f^ a:number^, b:number^ -> number^ {
+.     return^ a + b
+. }
+> add(2, 3)
+5
+```
+
+With a file, `--run` checks the whole program — the unit and everything it
+requires — and runs it:
 
 ```powershell
-.\build\debug\lhat.exe path\to\file.lhat
+.\build\debug\lhat.exe --run path\to\file.lhat
 ```
+
+| Option      | What it does                                         |
+| ----------- | ---------------------------------------------------- |
+| *(no file)* | Read from a prompt                                   |
+| `--run`     | Check the program and run it                         |
+| `--check`   | Type check and report, without running               |
+| *(default)* | Print the syntax tree                                |
+| `--tokens`  | Print the token stream instead                       |
+| `--command` | Read the input as the command form (`foo 1 2` calls) |
+
+## Embedding
+
+The language is `lhat.lib`; `lhatport.lib` is only where memory comes from and
+how a unit's text is read. A host puts `include/` on its path and names one
+header:
+
+```c
+#include "lhat.h"
+```
+
+`src/` holds names like `source.h` and `value.h` — too ordinary to put on
+somebody else's include path, so nothing there is named by a host.
+
+A host checks, compiles, gives the units to a machine, and runs one:
+
+```c
+LhatProgram program;
+lhat_program_init(&program, true, lhat_load_file, NULL);
+
+lhat_register_func(&program, "system.io", "print", "p^string^;", print_fn, NULL);
+
+const LhatUnit *root = lhat_program_check(&program, "main.lh");
+size_t count = 0;
+const LhatModule *modules = lhat_program_compile(&program, &count);
+
+LhatMachine *machine = lhat_machine_new();
+lhat_machine_set_modules(machine, modules, count);
+lhat_program_install(&program, machine);
+LhatRunResult ran = lhat_run(machine, modules[root->index].proto);
+```
+
+What a host registers is written as a type in L^'s own grammar, so the checker
+knows it before anything runs, and a script reaches it with `import^ system.io`.
+Arguments arrive as an array — the count and the types are settled at check
+time — and an error comes back as a value, so there is no unwinding to arrange.
 
 ## Presets
 
@@ -93,27 +161,68 @@ completion and diagnostics.
 ```text
 CMakeLists.txt        Build definition
 CMakePresets.json     Configure / build presets
-src/                  The language                       -> lhat.lib
-  source.[ch]           Source loading and newline normalisation
+
+include/lhat.h        The only header a host names
+
+src/                  The language                        -> lhat.lib
+  source.[ch]           Reading a unit; newline and BOM normalisation
   token.[ch]            Token definitions
   lexer.[ch]            Lexical analyser
-  port.h                What the core asks of its surroundings
-port/                 Default memory and file access     -> lhatport.lib
-cli/main.c            Command line driver                -> lhat.exe
+  ast.[ch]              Syntax tree nodes and their arena
+  parser.[ch]           Parser
+  type.[ch]             Types: construction and conformance
+  check.[ch]            Type checker
+  program.[ch]          The unit graph, and what a host registers
+  code.[ch]             Bytecode, chunks and compiled units
+  vm.[ch]               Code generation and the machine
+  value.[ch]            Runtime values
+  object.[ch]           Heap values and the collector
+  port.h                What the language asks of its surroundings
+
+port/                 Default memory and file access      -> lhatport.lib
+  alloc.c               malloc, and the registration a DLL needs
+  loader.c              Reading a unit from a file
+
+cli/main.c            Command line driver and prompt      -> lhat.exe
 tests/                Test suite (CTest)
 DesignDocuments/      Language design specifications
 scripts/devshell.ps1  Loads the MSVC x64 environment (Windows, Ninja only)
 Memo.md               Language design notes (brainstorming, not a spec)
 ```
 
-`lhatport` is where memory comes from and how a unit's text is read. A static
-host with its own copies those files, changes them, and leaves the library out
-of the link — the core resolves `lhat_alloc` and friends against whatever is
-there, with no indirection and nothing to register. A shared build cannot use
-that seam, so the default also takes an allocator through
-`lhat_set_allocator`. The loader is never defaulted to: `lhat_program_init`
-takes one, so nothing embedded reaches a file system unless it was told to.
-See [src/port.h](src/port.h) and 05 の 8.9.
+The pipeline runs left to right: `source` → `lexer` → `parser` → `check` →
+`vm`, with `program` walking the unit graph so that a unit is checked after
+everything it requires.
+
+### Replacing the port
+
+`lhatport` is only where memory comes from and how a unit's text is read.
+
+A static host with its own copies `port/alloc.c`, changes the four functions,
+and leaves the library out of the link — the core resolves `lhat_alloc` and
+friends against whatever is there, with no indirection and nothing to register.
+
+A shared build cannot use that seam, since a DLL is linked before the host
+sees it, so the default also takes an allocator through `lhat_set_allocator`.
+It must be called before anything has been allocated, and says so by answering
+false if it was not.
+
+The loader is never defaulted to: `lhat_program_init` takes one, and `NULL`
+means no unit can be read — so nothing embedded reaches a file system unless
+it was told to. See [src/port.h](src/port.h) and 05 の 8.9.
+
+## Design documents
+
+The specifications are the authoritative description of the language; the
+source cites them by section number throughout. They are written in Japanese.
+
+| Document | Covers |
+| --- | --- |
+| [01-lexical-structure.md](DesignDocuments/01-lexical-structure.md) | Characters, tokens, literals, scope specifiers |
+| [02-syntax.md](DesignDocuments/02-syntax.md) | Statements, operators, types, the object model, subroutines and coroutines |
+| [03-compilation-pipeline.md](DesignDocuments/03-compilation-pipeline.md) | The four stages, value representation, bytecode, the prompt |
+| [04-errors.md](DesignDocuments/04-errors.md) | Errors as values, `try^`, `catch^`, exhaustiveness |
+| [05-modules.md](DesignDocuments/05-modules.md) | Units, `require^`, `import^`, `L^`, and what a host provides |
 
 ## License
 

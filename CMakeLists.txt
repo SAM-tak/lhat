@@ -42,7 +42,13 @@ add_library(lhat
     src/object.c
 )
 
-target_include_directories(lhat PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
+# A host gets include/ and nothing else. src/ holds names like source.h and
+# value.h, which are too ordinary to put on someone else's include path --
+# include/lhat.h reaches them and is the only header a host names.
+target_include_directories(lhat
+    PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include
+    PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src
+)
 target_compile_definitions(lhat PUBLIC LHAT_VERSION="${PROJECT_VERSION}")
 
 # ---- What the language asks of its surroundings ---------------------------
@@ -55,7 +61,11 @@ add_library(lhatport
     port/loader.c
 )
 
-target_include_directories(lhatport PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
+target_include_directories(lhatport PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
+
+# So that a replacement of these files, written against include/lhat.h alone,
+# compiles the same way ours does.
+target_include_directories(lhatport PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
 
 # The default is what anyone linking the language gets unless they say
 # otherwise. PUBLIC so it carries through to whatever links lhat.
@@ -74,7 +84,12 @@ install(TARGETS lhat lhatport
     LIBRARY DESTINATION lib
     RUNTIME DESTINATION bin
 )
-install(DIRECTORY src/ DESTINATION include/lhat FILES_MATCHING PATTERN "*.h")
+
+# lhat.h reaches the rest by a path relative to itself, so the two directories
+# are installed keeping the shape they have here. A host still names only
+# <prefix>/include/lhat.h and puts only <prefix>/include on its path.
+install(FILES include/lhat.h DESTINATION include)
+install(DIRECTORY src/ DESTINATION src FILES_MATCHING PATTERN "*.h")
 
 # ---- Tests ----------------------------------------------------------------
 if(LHAT_BUILD_TESTS)
