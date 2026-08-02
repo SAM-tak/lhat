@@ -495,7 +495,27 @@ bool lhat_gc_children(LhatGray *gray, LhatObject *object)
     return true;
 }
 
-size_t lhat_gc_sweep(LhatHeap *heap)
+bool lhat_hostdata_release(LhatObject *object, struct LhatMachine *machine)
+{
+    if (object == NULL || object->kind != LHAT_OBJECT_HOSTDATA) {
+        return false;
+    }
+    LhatHostData *data = (LhatHostData *)object;
+    if (data->released || data->tag == NULL || data->tag->release == NULL) {
+        return false;
+    }
+    // Marked before the call, so a release that somehow arrives here twice
+    // gives the pointer back once (02 の 10.7).
+    data->released = true;
+
+    // The value is still whole, so the release reads its pointer out of it
+    // the way any other member of the type would.
+    LhatValue self = lhat_object(object);
+    data->tag->release(machine, data->tag->release_context, &self, 1);
+    return true;
+}
+
+size_t lhat_gc_sweep(LhatHeap *heap, struct LhatMachine *machine)
 {
     size_t freed = 0;
     LhatObject **link = &heap->objects;
@@ -507,6 +527,9 @@ size_t lhat_gc_sweep(LhatHeap *heap)
             continue;
         }
         *link = object->next;
+        // 05 の 8.8: what the host made is the host's to free, and this is
+        // 10.7's last resort for one nothing disposed of by hand.
+        lhat_hostdata_release(object, machine);
         lhat_object_free(object);
         heap->count--;
         freed++;

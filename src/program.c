@@ -491,8 +491,28 @@ bool lhat_register_member(LhatProgram *program, const char *module,
     if (found == NULL || found->type->kind != LHAT_TYPE_TABLE) {
         return false;  // no such type registered under that module
     }
-    return register_into(program, found->type, module, type, name, signature,
-                         call, context);
+    if (!register_into(program, found->type, module, type, name, signature,
+                       call, context)) {
+        return false;
+    }
+
+    // 05 の 8.8: 02 の 12.5 reads a lifetime off whether the type carries a
+    // dispose^, so registering one is what makes the value the host's to
+    // take back. The tag carries it, since that is what a value still has
+    // when a collection reaches it.
+    if (strcmp(name, "dispose") == 0) {
+        for (size_t i = 0; i < program->host_entry_count; i++) {
+            LhatHostEntry *entry = &program->host_entries[i];
+            if (entry->tag != NULL && entry->type == NULL &&
+                strcmp(entry->module, module) == 0 &&
+                strcmp(entry->name, type) == 0) {
+                entry->tag->release = call;
+                entry->tag->release_context = context;
+                break;
+            }
+        }
+    }
+    return true;
 }
 
 bool lhat_register_func(LhatProgram *program, const char *module,

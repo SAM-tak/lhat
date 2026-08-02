@@ -230,6 +230,12 @@ typedef struct LhatHost {
 typedef struct LhatHostDataTag {
     const char *module;
     const char *name;
+    // 05 の 8.8: what the type registered as dispose^, or NULL when it
+    // registered none and the host keeps the lifetime. Kept here rather than
+    // on each value because it belongs to the type, and because the tag
+    // outlives every machine that ever made one.
+    LhatHostFn release;
+    void *release_context;
 } LhatHostDataTag;
 
 // Something the host made. The pointer is the host's and the collector never
@@ -240,6 +246,8 @@ typedef struct LhatHostData {
     const LhatHostDataTag *tag;
     void *pointer;
     LhatTable *members;
+    // 02 の 10.7: what has already been given back is not given back again.
+    bool released;
 } LhatHostData;
 
 // ---------------------------------------------------------------------------
@@ -327,9 +335,20 @@ bool lhat_gc_reach(LhatGray *gray, LhatValue value);
 // like any other; the sweep simply never visits that list.
 bool lhat_gc_children(LhatGray *gray, LhatObject *object);
 
+// 05 の 8.8: hands a host value's pointer back to whoever registered its
+// type, and answers whether it did. Does nothing for a type that registered
+// no dispose^ (the host keeps the lifetime there) and nothing for one given
+// back already -- 02 の 10.7's rule, which is the same rule.
+//
+// The release runs while the object is still whole, so it may read the
+// pointer out of it. It must not reach into the L^ API: this is called from
+// the middle of a collection, where the heap is half swept.
+bool lhat_hostdata_release(LhatObject *object, struct LhatMachine *machine);
+
 // Frees what is not marked, and unmarks what is. Returns how many objects
-// were freed.
-size_t lhat_gc_sweep(LhatHeap *heap);
+// were freed. `machine` is what a host value's dispose^ is handed; NULL where
+// the heap cannot hold one, as a chunk's cannot.
+size_t lhat_gc_sweep(LhatHeap *heap, struct LhatMachine *machine);
 
 // Frees one object and whatever it owns, but not what it refers to.
 void lhat_object_free(LhatObject *object);

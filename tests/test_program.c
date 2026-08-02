@@ -708,6 +708,121 @@ static void test_host_data(void)
     lhat_program_dispose(&program);
 }
 
+// 05 の 8.8 with 02 の 10.7: what the host made goes back whether or not the
+// program said so, and goes back once.
+static int cells_live;
+static int cells_freed;
+static const LhatHostDataTag *cell_tag;
+
+static LhatValue cell_make(LhatMachine *machine, void *context,
+                           const LhatValue *arguments, size_t count)
+{
+    (void)context;
+    (void)arguments;
+    (void)count;
+    int *cell = (int *)malloc(sizeof *cell);
+    if (cell == NULL) {
+        return lhat_nil();
+    }
+    *cell = 1;
+    cells_live++;
+    LhatValue out = lhat_nil();
+    if (!lhat_machine_make_hostdata(machine, cell_tag, cell, &out)) {
+        free(cell);
+        cells_live--;
+        return lhat_nil();
+    }
+    return out;
+}
+
+static LhatValue cell_release(LhatMachine *machine, void *context,
+                              const LhatValue *arguments, size_t count)
+{
+    (void)machine;
+    (void)context;
+    (void)count;
+    int *cell = (int *)lhat_hostdata_pointer(arguments[0], cell_tag);
+    if (cell != NULL) {
+        free(cell);
+        cells_live--;
+        cells_freed++;
+    }
+    return lhat_nil();
+}
+
+// Runs one program against a store of cells and reports what was left.
+static void with_cells(const char *text, int *live_after_run, int *freed_total)
+{
+    LhatProgram program;
+    Disk disk;
+    const File files[] = {{"main.lh", text}};
+
+    cells_live = 0;
+    cells_freed = 0;
+    program_with(&program, &disk, files, 1);
+    cell_tag = lhat_register_hostdata_type(&program, "store", "Cell");
+    // 12.5: registering this is what makes the value the host's to take back.
+    lhat_register_member(&program, "store", "Cell", "dispose", "p^self^;",
+                         cell_release, NULL);
+    lhat_register_func(&program, "store", "make", "f^ -> store.Cell;",
+                       cell_make, NULL);
+
+    const LhatUnit *root = lhat_program_check(&program, "main.lh");
+    size_t count = 0;
+    const LhatModule *modules = lhat_program_compile(&program, &count);
+    if (modules != NULL && root != NULL) {
+        LhatMachine *machine = lhat_machine_new();
+        lhat_machine_set_modules(machine, modules, count);
+        lhat_program_install(&program, machine);
+        lhat_run(machine, modules[root->index].proto);
+        *live_after_run = cells_live;
+        lhat_machine_dispose(machine);
+    }
+    *freed_total = cells_freed;
+    lhat_program_dispose(&program);
+}
+
+static void test_host_data_release(void)
+{
+    int live = -1;
+    int freed = -1;
+
+    LHAT_TEST("a dispose^ written by hand gives the pointer back");
+    with_cells("import^ store\nlet^ c = store.make()\nc.dispose()\nreturn^ 0\n",
+               &live, &freed);
+    LHAT_CHECK_EQ_INT(live, 0);
+    // 10.7: and the machine going does not give it back a second time.
+    LHAT_CHECK_EQ_INT(freed, 1);
+
+    LHAT_TEST("and one nobody disposed of goes back when the machine does");
+    with_cells("import^ store\nlet^ c = store.make()\nreturn^ 0\n", &live,
+               &freed);
+    LHAT_CHECK_EQ_INT(live, 1);   // still the host's while the machine lives
+    LHAT_CHECK_EQ_INT(freed, 1);  // and given back when it went
+
+    // 10.7's last resort: what became unreachable is collected, and the
+    // pointer goes back then rather than at the end.
+    LHAT_TEST("and one that became unreachable goes back at the collection");
+    with_cells("import^ store\n"
+               "let^ drop = p^ { let^ c = store.make() }\n"
+               "drop()\n"
+               "L^.collectgarbage()\n"
+               "return^ 0\n",
+               &live, &freed);
+    LHAT_CHECK_EQ_INT(live, 0);
+    LHAT_CHECK_EQ_INT(freed, 1);
+
+    LHAT_TEST("and one disposed of then collected goes back once");
+    with_cells("import^ store\n"
+               "let^ drop = p^ { let^ c = store.make()  c.dispose() }\n"
+               "drop()\n"
+               "L^.collectgarbage()\n"
+               "return^ 0\n",
+               &live, &freed);
+    LHAT_CHECK_EQ_INT(live, 0);
+    LHAT_CHECK_EQ_INT(freed, 1);
+}
+
 int main(void)
 {
     test_dependencies();
@@ -716,5 +831,6 @@ int main(void)
     test_running();
     test_hosting();
     test_host_data();
+    test_host_data_release();
     return lhat_test_report("test_program");
 }

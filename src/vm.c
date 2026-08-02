@@ -3577,7 +3577,7 @@ static void collect(Machine *m)
             return;
         }
     }
-    m->collected += lhat_gc_sweep(&m->objects);
+    m->collected += lhat_gc_sweep(&m->objects, m);
 
     // What survived is the new baseline, so a program holding a lot does not
     // collect on every allocation.
@@ -3868,6 +3868,13 @@ void lhat_machine_dispose(LhatMachine *machine)
 {
     if (machine == NULL) {
         return;
+    }
+    // 05 の 8.8: what the host made goes back before anything is freed, so a
+    // release may still read the value it is given. Reachability is not asked
+    // -- the machine is going, so everything on it is.
+    for (LhatObject *object = machine->objects.objects; object != NULL;
+         object = object->next) {
+        lhat_hostdata_release(object, machine);
     }
     lhat_object_free_all(&machine->objects);
     lhat_gray_dispose(&machine->gray);
@@ -4300,6 +4307,19 @@ LhatRunResult lhat_run(LhatMachine *m, const LhatProto *proto)
                     if (host->takes_self && op == LHAT_BC_CALLMETHOD) {
                         arguments = &registers[a + 1];
                         given = b + 1;
+                    }
+                    // 05 の 8.8: a dispose^ written by hand is the same
+                    // giving-back the collection would do, so it is marked
+                    // here and 10.7 keeps the sweep from doing it again.
+                    if (host->takes_self && given > 0 &&
+                        lhat_is_object_kind(arguments[0],
+                                            LHAT_OBJECT_HOSTDATA)) {
+                        LhatHostData *data =
+                            (LhatHostData *)lhat_as_object(arguments[0]);
+                        if (data->tag != NULL &&
+                            data->tag->release == host->call) {
+                            data->released = true;
+                        }
                     }
                     registers[a] = host->call(m, host->context, arguments,
                                               given);

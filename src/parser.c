@@ -1561,7 +1561,11 @@ static bool can_begin_statement(const Parser *p)
         case LHAT_TOKEN_SCOPE:
             return true;
         case LHAT_TOKEN_HAT_IDENT:
-            return is_statement_keyword(p);
+            // 05 の 8.6 and 02 の 15.10: two hat identifiers name values
+            // rather than syntax, so a call through one is a statement the
+            // way a call through any name is (8.3).
+            return is_statement_keyword(p) || check_hat(p, "L") ||
+                   check_hat(p, "this");
         case LHAT_TOKEN_OP:
             // 01 の 10.9: a '(' on a fresh line opens a statement.
             return p->current.v.op == LHAT_OP_LPAREN;
