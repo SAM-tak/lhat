@@ -1,7 +1,8 @@
 // L^ (lhat) -- command line driver.
 //
-// There is no virtual machine yet, so the driver stops after parsing and
-// prints either the token stream or the syntax tree.
+// With a file it stops after parsing or checking and prints what it found.
+// With nothing to read it is the prompt of 03 の 4 章, where a machine and a
+// session of each stage answer one input after another.
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -14,6 +15,8 @@
 #include "program.h"
 #include "source.h"
 #include "token.h"
+#include "value.h"
+#include "vm.h"
 
 static void print_token(const LhatLexer *lexer, const LhatToken *token)
 {
@@ -416,6 +419,134 @@ static int dump_tree(const LhatSource *source, bool typed, bool command)
     return status;
 }
 
+// 03 の 4 章: one machine and one session of each stage, answering many
+// inputs. 4.3 keeps the names of one input for the next; 02 の 8.2 makes a
+// bare expression a statement here and nowhere else.
+static int repl(void)
+{
+    LhatMachine *machine = lhat_machine_new();
+    LhatCheckSession *checks = lhat_check_session_new();
+    LhatCompileSession *compiles = lhat_compile_session_new();
+    if (machine == NULL || checks == NULL || compiles == NULL) {
+        fprintf(stderr, "lhat: out of memory\n");
+        return EXIT_FAILURE;
+    }
+
+    printf("L^ (lhat) %s\n", LHAT_VERSION);
+    printf("an expression on its own is answered; ctrl-d or an empty line "
+           "ends\n");
+
+    // Every input's pieces have to outlive the run -- a proto is what the
+    // machine runs, and names point into the lexer's source. The session
+    // keeps them all until it ends.
+    size_t held = 0;
+    size_t capacity = 0;
+    struct Held {
+        LhatSource source;
+        LhatLexer lexer;
+        LhatParseResult parsed;
+        LhatProto *proto;
+    } *kept = NULL;
+
+    char line[4096];
+    for (;;) {
+        printf("> ");
+        fflush(stdout);
+        if (fgets(line, sizeof line, stdin) == NULL) {
+            printf("\n");
+            break;
+        }
+        if (line[0] == '\n' || line[0] == '\r') {
+            break;
+        }
+
+        if (held == capacity) {
+            size_t grown = capacity ? capacity * 2 : 16;
+            void *bigger = realloc(kept, grown * sizeof *kept);
+            if (bigger == NULL) {
+                fprintf(stderr, "lhat: out of memory\n");
+                break;
+            }
+            kept = bigger;
+            capacity = grown;
+        }
+        struct Held *in = &kept[held];
+
+        lhat_source_init_from_string(&in->source, "<stdin>", line, strlen(line));
+        lhat_lexer_init(&in->lexer, &in->source);
+        lhat_parse_interactive(&in->lexer, &in->parsed);
+        in->proto = NULL;
+
+        bool refused = in->lexer.diagnostic_count > 0;
+        for (size_t i = 0; i < in->parsed.diagnostic_count; i++) {
+            const LhatParseDiagnostic *d = &in->parsed.diagnostics[i];
+            fprintf(stderr, "%u:%u: error: %s\n", d->line, d->column,
+                    lhat_parse_error_message(d->code));
+            refused = true;
+        }
+
+        LhatCheckResult checked;
+        if (!refused) {
+            lhat_check_next(checks, in->parsed.root, &in->lexer, true, &checked);
+            for (size_t i = 0; i < checked.diagnostic_count; i++) {
+                const LhatCheckDiagnostic *d = &checked.diagnostics[i];
+                fprintf(stderr, "%u:%u: error: %s\n", d->line, d->column,
+                        lhat_check_error_message(d->code));
+                refused = true;
+            }
+            lhat_check_result_dispose(&checked);
+        }
+
+        if (!refused) {
+            LhatCompileStatus status = lhat_compile_next(
+                compiles, in->parsed.root, &in->lexer, &in->proto);
+            if (status != LHAT_COMPILE_OK) {
+                fprintf(stderr, "error: %s\n",
+                        lhat_compile_status_message(status));
+                refused = true;
+            }
+        }
+
+        if (refused) {
+            // 4.3: a refused input added nothing to either session, so
+            // dropping its pieces here leaves the session as it was.
+            lhat_proto_free(in->proto);
+            lhat_parse_result_dispose(&in->parsed);
+            lhat_lexer_dispose(&in->lexer);
+            lhat_source_dispose(&in->source);
+            continue;
+        }
+
+        LhatRunResult ran = lhat_run(machine, in->proto);
+        held++;
+        if (ran.status != LHAT_RUN_OK) {
+            fprintf(stderr, "error: %s\n", lhat_run_status_message(ran.status));
+            continue;
+        }
+        if (!lhat_is_nil(ran.value)) {
+            size_t needed = lhat_value_write(ran.value, NULL, 0);
+            char *text = (char *)malloc(needed + 1);
+            if (text != NULL) {
+                lhat_value_write(ran.value, text, needed + 1);
+                printf("%s\n", text);
+                free(text);
+            }
+        }
+    }
+
+    for (size_t i = 0; i < held; i++) {
+        lhat_proto_free(kept[i].proto);
+        lhat_parse_result_dispose(&kept[i].parsed);
+        lhat_lexer_dispose(&kept[i].lexer);
+        lhat_source_dispose(&kept[i].source);
+    }
+    free(kept);
+    lhat_compile_session_dispose(compiles);
+    lhat_check_session_dispose(checks);
+    lhat_machine_dispose(machine);
+    return EXIT_SUCCESS;
+}
+
 int main(int argc, char **argv)
 {
     const char *path = NULL;
@@ -435,9 +566,15 @@ int main(int argc, char **argv)
         }
     }
 
+    // 03 の 4 章: with nothing to read, read from the prompt.
+    if (path == NULL && !tokens_only && !check_only && !command_form) {
+        return repl();
+    }
+
     if (path == NULL) {
         printf("L^ (lhat) %s\n", LHAT_VERSION);
         printf("usage: lhat [--tokens] <file>\n");
+        printf("  no file    read from a prompt (03 の 4 章)\n");
         printf("  default    print the syntax tree\n");
         printf("  --tokens   print the token stream instead\n");
         printf("  --check    type check and report, without the tree\n");

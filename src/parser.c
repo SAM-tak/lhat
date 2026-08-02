@@ -12,6 +12,12 @@ typedef struct {
     LhatParseResult *result;
     bool panicking;   // suppress the cascade after a reported error
     bool saw_yield;   // 15.2: set while parsing a body that contains yield^
+
+    // 02 の 8.2: a bare expression is a statement at the top level of
+    // interactive input and nowhere else. `depth` counts the statement lists
+    // being parsed, so the unit's own is 1 and anything nested is more.
+    bool interactive;
+    size_t depth;
 } Parser;
 
 // Levels of 11.6, weakest first. A larger value binds tighter.
@@ -1574,6 +1580,7 @@ static LhatNode *parse_statement_list(Parser *p)
 {
     LhatNode *head = NULL;
     LhatNode *tail = NULL;
+    p->depth++;
 
     // Stops at an else marker and at a clause marker as well as at '}',
     // because 5.2 and 9.2 both put those inside the braces.
@@ -1597,6 +1604,7 @@ static LhatNode *parse_statement_list(Parser *p)
             advance(p);
         }
     }
+    p->depth--;
     return head;
 }
 
@@ -2615,6 +2623,21 @@ static LhatNode *parse_statement(Parser *p)
         return head;
     }
 
+    // 8.2: at the top level of interactive input a bare expression is a
+    // statement -- being unable to work out 2 + 3 at a prompt is not an
+    // option. It is read as `return^ expr`, so 8.3's rule for what a return^
+    // does needs no companion: the value of the input is the value of the
+    // expression, and nothing after it runs.
+    if (p->interactive && p->depth == 1 && head != NULL &&
+        head->next == NULL) {
+        LhatNode *node = make(p, LHAT_NODE_RETURN, &start);
+        if (node == NULL) {
+            return NULL;
+        }
+        node->v.jump.value = head;
+        return node;
+    }
+
     // 8.6: 'x = 1' is a comparison, so it lands here as a bare expression.
     // The C habit is common enough to deserve its own message rather than a
     // generic one, since the writer meant one of two different things.
@@ -2640,6 +2663,8 @@ static void parser_begin(Parser *p, LhatLexer *lexer, LhatParseResult *result)
     p->result = result;
     p->panicking = false;
     p->saw_yield = false;
+    p->interactive = false;
+    p->depth = 0;
     p->current = lhat_lexer_next(lexer);
     p->ahead = lhat_lexer_next(lexer);
 }
@@ -2661,10 +2686,12 @@ static void parser_finish(Parser *p, LhatLexer *lexer, LhatParseResult *result)
     }
 }
 
-void lhat_parse(LhatLexer *lexer, LhatParseResult *result)
+static void parse_unit(LhatLexer *lexer, LhatParseResult *result,
+                       bool interactive)
 {
     Parser parser;
     parser_begin(&parser, lexer, result);
+    parser.interactive = interactive;
 
     LhatToken origin = parser.current;
     result->root = parse_block_body(&parser, &origin);
@@ -2690,6 +2717,16 @@ void lhat_parse(LhatLexer *lexer, LhatParseResult *result)
     }
 
     parser_finish(&parser, lexer, result);
+}
+
+void lhat_parse(LhatLexer *lexer, LhatParseResult *result)
+{
+    parse_unit(lexer, result, false);
+}
+
+void lhat_parse_interactive(LhatLexer *lexer, LhatParseResult *result)
+{
+    parse_unit(lexer, result, true);
 }
 
 // 2.3: the command form applies when the input opens with a name and the

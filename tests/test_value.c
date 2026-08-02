@@ -8,6 +8,7 @@
 #include <math.h>
 #include <string.h>
 
+#include "object.h"
 #include "testutil.h"
 #include "value.h"
 
@@ -140,11 +141,114 @@ static void test_shape(void)
     }
 }
 
+// 03 の 4 章: a prompt answers with a value, so one has to be writable down.
+static void wrote(LhatValue value, const char *expected)
+{
+    char buffer[256];
+    size_t needed = lhat_value_write(value, buffer, sizeof buffer);
+    LHAT_CHECK_EQ_INT(needed, strlen(expected));
+    LHAT_CHECK(strcmp(buffer, expected) == 0, expected);
+}
+
+static void test_writing(void)
+{
+    LhatHeap heap = { NULL, 0 };
+
+    LHAT_TEST("the values that are not objects");
+    wrote(lhat_nil(), "nil^");
+    wrote(lhat_bool(true), "true^");
+    wrote(lhat_bool(false), "false^");
+    wrote(lhat_integer(42), "42");
+    wrote(lhat_integer(-7), "-7");
+    wrote(lhat_real(1.5), "1.5");
+
+    // 14.8 makes one number type of two representations, so a real that
+    // happens to be whole still says which one it is.
+    LHAT_TEST("a whole real still reads as one");
+    wrote(lhat_real(4.0), "4.0");
+
+    // Quoted, so that 1 and "1" read differently at a prompt.
+    LHAT_TEST("a string is quoted, and its escapes written back");
+    {
+        LhatString *plain = lhat_string_new(&heap, "plain", 5);
+        wrote(lhat_object((LhatObject *)plain), "\"plain\"");
+        LhatString *tricky = lhat_string_new(&heap, "a\"b\\c\nd", 7);
+        wrote(lhat_object((LhatObject *)tricky), "\"a\\\"b\\\\c\\nd\"");
+    }
+
+    // 14 章: the sequence half in order, then the keyed half. 14.14 makes a
+    // key that spells a name the same key the name form reaches, so it is
+    // written back the shorter way.
+    LHAT_TEST("a table writes its sequence half in order");
+    {
+        LhatTable *t = lhat_table_new(&heap);
+        bool refused = false;
+        lhat_table_set(t, lhat_integer(1), lhat_integer(10), &refused);
+        lhat_table_set(t, lhat_integer(2), lhat_integer(20), &refused);
+        wrote(lhat_object((LhatObject *)t), "{ 10, 20 }");
+    }
+
+    LHAT_TEST("and an empty one says so");
+    {
+        LhatTable *t = lhat_table_new(&heap);
+        wrote(lhat_object((LhatObject *)t), "{}");
+    }
+
+    LHAT_TEST("a key that spells a name is written as one");
+    {
+        LhatTable *t = lhat_table_new(&heap);
+        LhatString *key = lhat_string_new(&heap, "a", 1);
+        bool refused = false;
+        lhat_table_set(t, lhat_object((LhatObject *)key), lhat_integer(1),
+                       &refused);
+        wrote(lhat_object((LhatObject *)t), "{ a := 1 }");
+    }
+
+    LHAT_TEST("and one that does not is bracketed");
+    {
+        LhatTable *t = lhat_table_new(&heap);
+        LhatString *key = lhat_string_new(&heap, "a b", 3);
+        bool refused = false;
+        lhat_table_set(t, lhat_object((LhatObject *)key), lhat_integer(1),
+                       &refused);
+        wrote(lhat_object((LhatObject *)t), "{ [\"a b\"] := 1 }");
+    }
+
+    // A table may hold itself, which nothing forbids. The depth is what
+    // stops the walk.
+    LHAT_TEST("a table holding itself is cut off rather than followed");
+    {
+        LhatTable *t = lhat_table_new(&heap);
+        bool refused = false;
+        lhat_table_set(t, lhat_integer(1),
+                       lhat_object((LhatObject *)t), &refused);
+        char buffer[256];
+        size_t needed = lhat_value_write(lhat_object((LhatObject *)t), buffer,
+                                         sizeof buffer);
+        LHAT_CHECK(needed < sizeof buffer, "the walk ended");
+        LHAT_CHECK(strstr(buffer, "…") != NULL, "and said where");
+    }
+
+    // snprintf's contract: ask with no room and be told how much is wanted.
+    LHAT_TEST("asking with no room still answers how much there is");
+    {
+        LHAT_CHECK_EQ_INT(lhat_value_write(lhat_integer(12345), NULL, 0), 5);
+        char small[4];
+        size_t needed = lhat_value_write(lhat_integer(12345), small,
+                                         sizeof small);
+        LHAT_CHECK_EQ_INT(needed, 5);
+        LHAT_CHECK_EQ_INT(strlen(small), 3);  // and what fits is terminated
+    }
+
+    lhat_object_free_all(&heap);
+}
+
 int main(void)
 {
     test_tags();
     test_integer_width();
     test_equality();
     test_shape();
+    test_writing();
     return lhat_test_report("test_value");
 }

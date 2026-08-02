@@ -27,6 +27,14 @@ static void parse_text(Parse *p, const char *text)
     lhat_parse(&p->lexer, &p->result);
 }
 
+// 02 の 8.2: one input of an interactive session.
+static void parse_interactive_text(Parse *p, const char *text)
+{
+    lhat_source_init_from_string(&p->source, "<test>", text, strlen(text));
+    lhat_lexer_init(&p->lexer, &p->source);
+    lhat_parse_interactive(&p->lexer, &p->result);
+}
+
 static void parse_dispose(Parse *p)
 {
     lhat_parse_result_dispose(&p->result);
@@ -193,6 +201,44 @@ static void test_statements(void)
     LHAT_CHECK(p.result.diagnostic_count > 0, "expected a diagnostic");
     LHAT_CHECK_EQ_INT(p.result.diagnostics[0].code,
                       LHAT_PARSE_ERR_BARE_EXPRESSION);
+    parse_dispose(&p);
+
+    // 8.2: except at the top level of interactive input, where working out
+    // 2 + 3 has to be possible. It is read as a return^, so the value of the
+    // input is the value of the expression.
+    LHAT_TEST("but at an interactive top level it is one");
+    parse_interactive_text(&p, "a + b");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    LHAT_CHECK_EQ_INT(first_statement(&p)->kind, LHAT_NODE_RETURN);
+    parse_dispose(&p);
+
+    LHAT_TEST("and a name on its own is one too");
+    parse_interactive_text(&p, "x");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    LHAT_CHECK_EQ_INT(first_statement(&p)->kind, LHAT_NODE_RETURN);
+    parse_dispose(&p);
+
+    // 8.2 says the top level and nowhere else, so a block keeps the rule.
+    LHAT_TEST("inside a block it is not, even interactively");
+    parse_interactive_text(&p, "do^{ a + b }");
+    LHAT_CHECK(p.result.diagnostic_count > 0, "expected a diagnostic");
+    LHAT_CHECK_EQ_INT(p.result.diagnostics[0].code,
+                      LHAT_PARSE_ERR_BARE_EXPRESSION);
+    parse_dispose(&p);
+
+    LHAT_TEST("nor inside a body");
+    parse_interactive_text(&p, "let^ f = p^ { a + b }");
+    LHAT_CHECK(p.result.diagnostic_count > 0, "expected a diagnostic");
+    LHAT_CHECK_EQ_INT(p.result.diagnostics[0].code,
+                      LHAT_PARSE_ERR_BARE_EXPRESSION);
+    parse_dispose(&p);
+
+    // 8.6's warning about '=' is for a file, where the line can only be a
+    // mistake. At a prompt it is a comparison being worked out, which has to
+    // stay possible.
+    LHAT_TEST("and '=' is a comparison to work out, not a mistake");
+    parse_interactive_text(&p, "x = 1");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
     parse_dispose(&p);
 
     // 2.1: juxtaposition is only a call in command mode.

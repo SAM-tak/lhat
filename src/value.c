@@ -2,6 +2,11 @@
 
 #include "value.h"
 
+#include <stdarg.h>
+#include <stdio.h>
+#include <string.h>
+
+#include "code.h"
 #include "object.h"
 
 bool lhat_value_equal(LhatValue a, LhatValue b)
@@ -83,4 +88,222 @@ const char *lhat_object_kind_name(LhatObjectKind kind)
         case LHAT_OBJECT_UPVALUE:    return "upvalue";
     }
     return "?";
+}
+
+// ---------------------------------------------------------------------------
+// Writing a value down (03 の 4 章)
+// ---------------------------------------------------------------------------
+
+// 14 章 makes a table both a sequence and a mapping, and one holding itself
+// is nothing the type system forbids. A depth of its own is what stops the
+// walk; nothing here has to know whether it went round.
+#define LHAT_WRITE_MAX_DEPTH 6
+
+// snprintf into a moving cursor. `used` is how long the whole text is, which
+// grows past `capacity` once the buffer is full -- the caller asks again with
+// a bigger one, the way snprintf means it to.
+typedef struct {
+    char *out;
+    size_t capacity;
+    size_t used;
+} Writer;
+
+static void put(Writer *w, const char *text, size_t length)
+{
+    for (size_t i = 0; i < length; i++) {
+        if (w->out != NULL && w->used + 1 < w->capacity) {
+            w->out[w->used] = text[i];
+        }
+        w->used++;
+    }
+}
+
+static void put_text(Writer *w, const char *text)
+{
+    put(w, text, strlen(text));
+}
+
+static void put_number(Writer *w, const char *format, ...)
+{
+    char buffer[64];
+    va_list args;
+    va_start(args, format);
+    int written = vsnprintf(buffer, sizeof buffer, format, args);
+    va_end(args);
+    if (written > 0) {
+        put(w, buffer, (size_t)written);
+    }
+}
+
+// 01 の 5 章 spells these in a string literal, so writing one back out spells
+// them the same way.
+static void put_quoted(Writer *w, const LhatString *string)
+{
+    put_text(w, "\"");
+    for (size_t i = 0; i < string->length; i++) {
+        char c = string->text[i];
+        switch (c) {
+            case '"':  put_text(w, "\\\""); break;
+            case '\\': put_text(w, "\\\\"); break;
+            case '\n': put_text(w, "\\n"); break;
+            case '\t': put_text(w, "\\t"); break;
+            case '\r': put_text(w, "\\r"); break;
+            default:   put(w, &c, 1); break;
+        }
+    }
+    put_text(w, "\"");
+}
+
+static void write_value(Writer *w, LhatValue value, size_t depth);
+
+// 14.14: a key written as a name is the same key written as a string, so one
+// that spells an identifier is written back in the shorter form.
+static bool spells_a_name(const LhatString *string)
+{
+    if (string->length == 0) {
+        return false;
+    }
+    for (size_t i = 0; i < string->length; i++) {
+        char c = string->text[i];
+        bool letter = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+                      c == '_';
+        bool digit = c >= '0' && c <= '9';
+        if (!letter && !(digit && i > 0)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+static void write_table(Writer *w, const LhatTable *table, size_t depth)
+{
+    put_text(w, "{");
+    bool first = true;
+
+    // 14 章: the sequence half in index order, then the rest. 16.3 promises
+    // that order for a walk, and there is no reason to write one differently.
+    for (size_t i = 0; i < table->array_count; i++) {
+        put_text(w, first ? " " : ", ");
+        first = false;
+        write_value(w, table->array[i], depth + 1);
+    }
+    for (size_t i = 0; i < table->entry_capacity; i++) {
+        LhatValue key = table->entries[i].key;
+        if (lhat_is_nil(key)) {
+            continue;
+        }
+        put_text(w, first ? " " : ", ");
+        first = false;
+        if (lhat_is_object_kind(key, LHAT_OBJECT_STRING) &&
+            spells_a_name((const LhatString *)lhat_as_object(key))) {
+            const LhatString *name = (const LhatString *)lhat_as_object(key);
+            put(w, name->text, name->length);
+        } else {
+            put_text(w, "[");
+            write_value(w, key, depth + 1);
+            put_text(w, "]");
+        }
+        put_text(w, " := ");
+        write_value(w, table->entries[i].value, depth + 1);
+    }
+
+    put_text(w, first ? "}" : " }");
+}
+
+static void write_value(Writer *w, LhatValue value, size_t depth)
+{
+    switch (value.tag) {
+        case LHAT_VALUE_NIL:
+            put_text(w, "nil^");
+            return;
+        case LHAT_VALUE_BOOL:
+            put_text(w, value.as.boolean ? "true^" : "false^");
+            return;
+        case LHAT_VALUE_INTEGER:
+            put_number(w, "%lld", (long long)value.as.integer);
+            return;
+        case LHAT_VALUE_REAL:
+            // 14.8 makes one number type of two representations, so a real
+            // that happens to be whole still says which one it is.
+            put_number(w, "%g", value.as.real);
+            if (value.as.real == (double)(long long)value.as.real) {
+                put_text(w, ".0");
+            }
+            return;
+        case LHAT_VALUE_OBJECT:
+            break;
+    }
+
+    const LhatObject *object = value.as.object;
+    if (object == NULL) {
+        put_text(w, "nil^");
+        return;
+    }
+
+    switch (object->kind) {
+        case LHAT_OBJECT_STRING:
+            put_quoted(w, (const LhatString *)object);
+            return;
+        case LHAT_OBJECT_TABLE:
+            if (depth >= LHAT_WRITE_MAX_DEPTH) {
+                put_text(w, "{ … }");
+                return;
+            }
+            write_table(w, (const LhatTable *)object, depth);
+            return;
+        case LHAT_OBJECT_SUBROUTINE: {
+            const LhatClosure *closure = (const LhatClosure *)object;
+            put_text(w, closure->proto != NULL && closure->proto->is_function
+                            ? "f^" : "p^");
+            return;
+        }
+        case LHAT_OBJECT_COROUTINE:
+            put_text(w, "c^");
+            return;
+        case LHAT_OBJECT_ERROR: {
+            // 04 の 2.3: a kind plus the fields the construction gave it.
+            const LhatError *error = (const LhatError *)object;
+            put_text(w, "error^");
+            if (error->kind != NULL && error->kind->name != NULL) {
+                put(w, error->kind->name->text, error->kind->name->length);
+            }
+            if (error->fields != NULL) {
+                if (depth >= LHAT_WRITE_MAX_DEPTH) {
+                    put_text(w, "{ … }");
+                } else {
+                    write_table(w, error->fields, depth);
+                }
+            }
+            return;
+        }
+        case LHAT_OBJECT_ERROR_KIND: {
+            const LhatErrorKind *kind = (const LhatErrorKind *)object;
+            put_text(w, "error^");
+            if (kind->name != NULL) {
+                put(w, kind->name->text, kind->name->length);
+            }
+            return;
+        }
+        default:
+            // 05 の 8.5's natives, 14.12's overload groups and 13.11's runtime
+            // types are reached through something else and never stand alone
+            // as an answer, so naming the kind is as much as is wanted.
+            put_text(w, "<");
+            put_text(w, lhat_object_kind_name(object->kind));
+            put_text(w, ">");
+            return;
+    }
+}
+
+size_t lhat_value_write(LhatValue value, char *out, size_t capacity)
+{
+    Writer w;
+    w.out = out;
+    w.capacity = capacity;
+    w.used = 0;
+    write_value(&w, value, 0);
+    if (out != NULL && capacity > 0) {
+        out[w.used < capacity ? w.used : capacity - 1] = '\0';
+    }
+    return w.used;
 }

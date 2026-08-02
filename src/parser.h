@@ -87,6 +87,16 @@ typedef struct {
 // storage.
 void lhat_parse(LhatLexer *lexer, LhatParseResult *result);
 
+// The same, for one input of an interactive session. 02 の 8.2 accepts a bare
+// expression as a statement at the top level of interactive input and nowhere
+// else: being unable to work out 2 + 3 at a prompt is not an option, and a
+// file keeps the rule that only a call stands alone.
+//
+// Such an expression is read as `return^ expr`, so the value of the input is
+// its value and nothing written after it runs -- which is what 8.3 already
+// says a return^ does.
+void lhat_parse_interactive(LhatLexer *lexer, LhatParseResult *result);
+
 // 4 章: the entry points a host needs to build the loop of 3.2. The runtime
 // holds no mode of its own -- which one to call is the host's decision, made
 // per fragment.

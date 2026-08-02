@@ -180,6 +180,18 @@ static inline double lhat_number_as_real(LhatValue v)
 bool lhat_value_equal(LhatValue a, LhatValue b);
 
 const char *lhat_value_tag_name(LhatValueTag tag);
+
+// 03 の 4 章: a prompt answers with a value, so something has to write one
+// down. Writes `value` into `out` and answers how long the whole text is --
+// snprintf's contract, so a caller may ask with a capacity of zero first.
+// `out` may be NULL when `capacity` is zero. Always terminates the buffer
+// when there is room for it.
+//
+// A string is written quoted, so that 1 and "1" read differently at a prompt.
+// A table is written the way 14 章 has one written: its sequence half in
+// order, then its keyed half. Nesting stops at a depth of its own, which is
+// what keeps a table holding itself from being followed for ever.
+size_t lhat_value_write(LhatValue value, char *out, size_t capacity);
 const char *lhat_object_kind_name(LhatObjectKind kind);
 
 #endif  // LHAT_VALUE_H
