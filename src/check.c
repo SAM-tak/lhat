@@ -5,6 +5,11 @@
 #include <stdlib.h>
 #include <string.h>
 
+// 05 の 8.7: a host writes a type out as text, so the checker reads the type
+// grammar of 13 章 back through the parser it came from.
+#include "parser.h"
+#include "source.h"
+
 // A name bound in a scope. `offset` is where its let^ stands, which 8.7 needs
 // to tell a use before the definition from one after it.
 typedef struct Binding {
@@ -256,6 +261,7 @@ static LhatType *infer(Checker *c, const LhatNode *node);
 static LhatType *environment_type(Checker *c);  // 05 の 8.6
 static void register_module_type(Checker *c, const char *module_name,
                                  LhatType *exports);  // 05 の 5.3
+static LhatType *hosted_module(Checker *c, const LhatNode *path);  // 8.7
 static void check_statement(Checker *c, const LhatNode *node);
 static LhatType *collect_exports(Checker *c, const LhatNode *statements);
 static void check_statements(Checker *c, const LhatNode *statements);
@@ -2247,6 +2253,16 @@ static LhatType *infer(Checker *c, const LhatNode *node)
             return exports;
         }
 
+        // 05 の 8.7: names a module the host registered, rather than a file.
+        case LHAT_NODE_IMPORT: {
+            LhatType *module = hosted_module(c, node->v.jump.value);
+            if (module == NULL) {
+                report(c, node, LHAT_CHECK_ERR_NOT_HOSTED);
+                return simple(c, LHAT_TYPE_UNKNOWN);
+            }
+            return module;
+        }
+
         case LHAT_NODE_ERROR_NEW: {
             // 04 の 2.5: the kind is written into the construction, and 2.3
             // makes it the type of the result.
@@ -2619,6 +2635,108 @@ static void register_module_type(Checker *c, const char *module_name,
         }
         segment += length + 1;
     }
+}
+
+// 05 の 8.7: what import^ names, or NULL when the host registered nothing
+// under that path. Only the host registry is searched -- what a require^
+// brought in is reachable through require^ and through nothing else, which
+// is what stops the answer depending on the order units are checked in.
+static LhatType *hosted_module(Checker *c, const LhatNode *path)
+{
+    LhatType *owner = c->require.hosted;
+    if (owner == NULL || path == NULL) {
+        return NULL;
+    }
+    // 'a.b.c' is the MEMBER chain of a path target, so the walk is the same
+    // one, from the root outwards.
+    if (path->kind == LHAT_NODE_MEMBER) {
+        owner = hosted_module(c, path->v.access.target);
+        if (owner == NULL) {
+            return NULL;
+        }
+        path = path->v.access.argument;
+    }
+
+    const char *name = NULL;
+    size_t length = 0;
+    if (!node_name(c, path, &name, &length)) {
+        return NULL;
+    }
+    const LhatTypeMember *found = member_named(owner, name, length);
+    return found != NULL ? found->type : NULL;
+}
+
+// The last segment of a written path, which is the name an import^ standing
+// alone binds -- the rest are the tables it sits in.
+static void check_import(Checker *c, const LhatNode *node, bool binds)
+{
+    const LhatNode *path = node->v.jump.value;
+    LhatType *module = hosted_module(c, path);
+    if (module == NULL) {
+        // 5.4改 already binds what a unit declared; saying so here is what
+        // keeps 'no such module' from being read as 'the host forgot it'.
+        report(c, node, c->require.resolve != NULL
+                            ? LHAT_CHECK_ERR_NOT_HOSTED
+                            : LHAT_CHECK_ERR_NOT_HOSTED);
+        return;
+    }
+    if (!binds) {
+        return;
+    }
+
+    // The path is the same MEMBER chain 8.8 walks, so binding it is that walk
+    // with the module put at the end.
+    const char *name = NULL;
+    size_t length = 0;
+    if (path->kind != LHAT_NODE_MEMBER) {
+        if (!node_name(c, path, &name, &length)) {
+            return;
+        }
+        if (scope_find_local(c->scope, name, length) != NULL) {
+            report(c, node, LHAT_CHECK_ERR_REDEFINED);
+            return;
+        }
+        Binding *only = scope_add(c->scope, name, length, module, node->offset);
+        if (only != NULL) {
+            only->reached = true;
+        }
+        return;
+    }
+
+    // The root is a name of this scope. 8.8 reaches an enclosing one rather
+    // than shadowing it, so two imports of one namespace meet; only when
+    // nothing holds it is a new one made.
+    const LhatNode *root_node = path;
+    while (root_node->kind == LHAT_NODE_MEMBER) {
+        root_node = root_node->v.access.target;
+    }
+    if (!node_name(c, root_node, &name, &length)) {
+        return;
+    }
+    Binding *root = scope_find(c->scope, name, length);
+    if (root == NULL) {
+        root = scope_add(c->scope, name, length,
+                         lhat_type_table(c->result->types), node->offset);
+        if (root == NULL) {
+            return;
+        }
+        root->reached = true;
+    } else if (root->type == NULL || root->type->kind == LHAT_TYPE_UNKNOWN) {
+        root->type = lhat_type_table(c->result->types);
+    }
+
+    LhatType *owner = path_table(c, path->v.access.target);
+    if (owner == NULL) {
+        return;
+    }
+    if (!node_name(c, path->v.access.argument, &name, &length)) {
+        return;
+    }
+    if (member_named(owner, name, length) != NULL) {
+        report(c, node, LHAT_CHECK_ERR_REDEFINED);
+        return;
+    }
+    lhat_type_add_member(c->result->types, owner, name, length, module);
 }
 
 // 05 の 5.4改: a require^ standing alone binds the unit under the path 3 章
@@ -3131,6 +3249,10 @@ static void check_statement(Checker *c, const LhatNode *node)
             check_require_stmt(c, node);
             break;
 
+        case LHAT_NODE_IMPORT_STMT:
+            check_import(c, node, true);  // 05 の 8.7
+            break;
+
         case LHAT_NODE_REASSIGN:
             check_reassign(c, node);
             break;
@@ -3513,6 +3635,71 @@ void lhat_check(const LhatNode *unit, const LhatLexer *lexer, bool strict,
     lhat_check_unit(unit, lexer, strict, NULL, NULL, result);
 }
 
+// 05 の 8.7: from written text to a type, with no unit around it. The
+// checker needs a scope for the names a type may mention, so `named`'s
+// members are seeded into one -- which is how a registration names a type an
+// earlier one made, and why nothing else is reachable from here.
+LhatType *lhat_type_of_text(const char *text, size_t length,
+                            LhatTypeArena *arena, LhatType *named)
+{
+    LhatSource source;
+    if (!lhat_source_init_from_string(&source, "<signature>", text, length)) {
+        return NULL;
+    }
+
+    LhatLexer lexer;
+    lhat_lexer_init(&lexer, &source);
+
+    LhatParseResult parsed;
+    lhat_parse_type_only(&lexer, &parsed);
+
+    LhatType *type = NULL;
+    if (parsed.diagnostic_count == 0 && lexer.diagnostic_count == 0 &&
+        parsed.root != NULL) {
+        LhatCheckResult result;
+        memset(&result, 0, sizeof result);
+        result.types = arena;
+
+        Scope scope;
+        scope.bindings = NULL;
+        scope.tail = NULL;
+        scope.parent = NULL;
+
+        Checker checker;
+        memset(&checker, 0, sizeof checker);
+        checker.lexer = &lexer;
+        checker.result = &result;
+        checker.strict = true;
+        checker.scope = &scope;
+
+        if (named != NULL && named->kind == LHAT_TYPE_TABLE) {
+            for (const LhatTypeMember *m = named->v.table.members; m != NULL;
+                 m = m->next) {
+                Binding *b = scope_add(&scope, m->name, m->name_length,
+                                       m->type, 0);
+                if (b != NULL) {
+                    b->reached = true;
+                }
+            }
+        }
+
+        type = resolve_type(&checker, parsed.root);
+        // A name the scope does not hold resolves to UNKNOWN rather than to
+        // nothing, and a signature that says nothing is not one.
+        if (type != NULL &&
+            (type->kind == LHAT_TYPE_UNKNOWN || result.diagnostic_count > 0)) {
+            type = NULL;
+        }
+        lhat_check_result_dispose(&result);
+        scope_dispose(&scope);
+    }
+
+    lhat_parse_result_dispose(&parsed);
+    lhat_lexer_dispose(&lexer);
+    lhat_source_dispose(&source);
+    return type;
+}
+
 void lhat_check_result_dispose(LhatCheckResult *result)
 {
     free(result->diagnostics);
@@ -3578,6 +3765,10 @@ const char *lhat_check_error_message(LhatCheckErrorCode code)
         case LHAT_CHECK_ERR_MODULE_UNNAMED:
             return "this unit declares no module^, so there is no path to "
                    "bind it under; write 'let^ name = require^ ...' instead";
+        case LHAT_CHECK_ERR_NOT_HOSTED:
+            return "import^ reaches what the host registered, and no module "
+                   "of this name is there; a unit read from a file comes in "
+                   "with require^ \"path\"";
         case LHAT_CHECK_ERR_COROUTINE_DROPPED:
             return "this call makes a coroutine and runs none of the body; "
                    "write yieldall^ to delegate, or let^ to keep it";

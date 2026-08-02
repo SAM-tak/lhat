@@ -255,6 +255,9 @@ static void compile_def(Compiler *c, const LhatNode *node, uint8_t into);
 static const char *required_module_name(Compiler *c, const LhatNode *node);
 static void compile_bind_path(Compiler *c, const char *path, uint8_t value);
 
+static void compile_import_path(Compiler *c, const LhatNode *path, uint8_t into,
+                                uint8_t key);
+
 // The outermost compiler. The kind objects and the registry of declarations
 // live there so that a nested body sees the same ones the unit made.
 static Compiler *root_of(Compiler *c)
@@ -1462,6 +1465,20 @@ static void compile_expression(Compiler *c, const LhatNode *node, uint8_t into)
         // 05 の 5 章: a unit is a body, so requiring it is making a closure
         // of it and calling that. 5.3's "once" is the guard the unit itself
         // begins with, which is why nothing is remembered here.
+        // 05 の 8.7: what the host registered is already in L^.modules by the
+        // time anything runs, so reaching it is a walk and no more.
+        case LHAT_NODE_IMPORT:
+        case LHAT_NODE_IMPORT_STMT: {
+            uint8_t mark = c->next_register;
+            uint8_t key = reserve(c);
+            emit(c, lhat_encode_abc(LHAT_BC_ENV, into, 0, 0));
+            load_string_bytes(c, key, "modules", 7);
+            emit(c, lhat_encode_abc(LHAT_BC_GETINDEX, into, into, key));
+            compile_import_path(c, node->v.jump.value, into, key);
+            c->next_register = mark;
+            return;
+        }
+
         case LHAT_NODE_REQUIRE:
         case LHAT_NODE_REQUIRE_STMT: {
             const LhatNode *path = node->v.jump.value;
@@ -1769,8 +1786,37 @@ static void declare_names(Compiler *c, const LhatNode *statements)
     for (const LhatNode *s = statements; s != NULL; s = s->next) {
         // 05 の 5.4改: the short form makes one name too -- the root of the
         // path the unit declared. The rest of the path is members of it.
-        if (s->kind == LHAT_NODE_REQUIRE_STMT) {
-            const char *module_name = required_module_name(c, s);
+        if (s->kind == LHAT_NODE_REQUIRE_STMT ||
+            s->kind == LHAT_NODE_IMPORT_STMT) {
+            const char *module_name = NULL;
+            if (s->kind == LHAT_NODE_IMPORT_STMT) {
+                // 05 の 8.7: the path is written here, so the root is read
+                // off the tree rather than off the unit that was required.
+                const LhatNode *root_node = s->v.jump.value;
+                while (root_node != NULL &&
+                       root_node->kind == LHAT_NODE_MEMBER) {
+                    root_node = root_node->v.access.target;
+                }
+                size_t length = 0;
+                if (!node_name(c, root_node, &module_name, &length)) {
+                    continue;
+                }
+                if (find_local(c, module_name, length) != NULL) {
+                    continue;
+                }
+                if (c->local_count >= LHAT_MAX_LOCALS) {
+                    fail(c, LHAT_COMPILE_TOO_COMPLEX);
+                    return;
+                }
+                uint8_t slot = reserve(c);
+                emit(c, lhat_encode_abc(LHAT_BC_LOADNIL, slot, 0, 0));
+                Local *local = &c->locals[c->local_count++];
+                local->name = module_name;
+                local->length = length;
+                local->reg = slot;
+                continue;
+            }
+            module_name = required_module_name(c, s);
             if (module_name == NULL) {
                 continue;  // reported when the statement is compiled
             }
@@ -2646,6 +2692,35 @@ static void compile_statement(Compiler *c, const LhatNode *node)
             return;
         }
 
+        // 05 の 8.7: the same shape, with the path written rather than read
+        // off the unit -- so 8.8's own walk does the binding.
+        case LHAT_NODE_IMPORT_STMT: {
+            const LhatNode *path = node->v.jump.value;
+            uint8_t mark = c->next_register;
+            uint8_t slot = reserve(c);
+            compile_expression(c, node, slot);
+            if (path != NULL && path->kind == LHAT_NODE_MEMBER) {
+                uint8_t owner = reserve(c);
+                uint8_t key = reserve(c);
+                compile_path_prefix(c, path->v.access.target, owner);
+                compile_key(c, path, key);
+                emit(c, lhat_encode_abc(LHAT_BC_SETINDEX, owner, key, slot));
+            } else {
+                const char *name = NULL;
+                size_t length = 0;
+                const Local *local =
+                    node_name(c, path, &name, &length)
+                        ? find_local(c, name, length) : NULL;
+                if (local == NULL) {
+                    fail(c, LHAT_COMPILE_UNDEFINED);
+                    return;
+                }
+                emit(c, lhat_encode_abc(LHAT_BC_MOVE, local->reg, slot, 0));
+            }
+            c->next_register = mark;
+            return;
+        }
+
         // 05 の 5.4改: bring the unit in, then put it where the path it
         // declared says. 8.8 makes the tables on the way, here as there.
         case LHAT_NODE_REQUIRE_STMT: {
@@ -2763,6 +2838,30 @@ void lhat_compile_session_dispose(LhatCompileSession *session)
         free(session->names[i].name);
     }
     free(session);
+}
+
+// 05 の 8.7: reads a written path off L^.modules, from the root outwards.
+// `into` already holds the table the first segment is looked up in.
+static void compile_import_path(Compiler *c, const LhatNode *path, uint8_t into,
+                                uint8_t key)
+{
+    if (path == NULL) {
+        fail(c, LHAT_COMPILE_UNSUPPORTED);
+        return;
+    }
+    if (path->kind == LHAT_NODE_MEMBER) {
+        compile_import_path(c, path->v.access.target, into, key);
+        compile_key(c, path, key);
+    } else {
+        const char *name = NULL;
+        size_t length = 0;
+        if (!node_name(c, path, &name, &length)) {
+            fail(c, LHAT_COMPILE_UNSUPPORTED);
+            return;
+        }
+        load_string_bytes(c, key, name, length);
+    }
+    emit(c, lhat_encode_abc(LHAT_BC_GETINDEX, into, into, key));
 }
 
 // 05 の 5.4改: the path a require^ standing alone brings a unit in under, or
@@ -3621,6 +3720,96 @@ void lhat_machine_set_modules(LhatMachine *machine, const LhatModule *modules,
     machine->module_count = count;
 }
 
+bool lhat_machine_make_table(LhatMachine *machine, LhatValue *out)
+{
+    LhatTable *table = lhat_table_new(&machine->objects);
+    if (table == NULL) {
+        return false;
+    }
+    *out = lhat_object((LhatObject *)table);
+    return true;
+}
+
+bool lhat_machine_make_host(LhatMachine *machine, LhatHostFn call,
+                            void *context, uint8_t parameters, bool takes_self,
+                            LhatValue *out)
+{
+    LhatHost *host = lhat_host_new(&machine->objects, call, context, parameters,
+                                   takes_self);
+    if (host == NULL) {
+        return false;
+    }
+    *out = lhat_object((LhatObject *)host);
+    return true;
+}
+
+// 05 の 8.7: the same walk the unit prologue compiles to, done in C because
+// nothing is being compiled here. 02 の 8.8's rule holds: a table is made
+// where the path does not reach one, and what is there is left alone.
+static LhatTable *reach_table(Machine *m, LhatTable *owner, const char *path)
+{
+    for (const char *segment = path;;) {
+        size_t length = strcspn(segment, ".");
+        LhatString *key = lhat_string_new(&m->objects, segment, length);
+        if (key == NULL) {
+            return NULL;
+        }
+        LhatValue found = lhat_table_get(owner, lhat_object((LhatObject *)key));
+        LhatTable *next = table_of(found);
+        if (next == NULL) {
+            if (!lhat_is_nil(found)) {
+                return NULL;  // something that is not a table is there
+            }
+            next = lhat_table_new(&m->objects);
+            bool refused = false;
+            if (next == NULL ||
+                !lhat_table_set(owner, lhat_object((LhatObject *)key),
+                                lhat_object((LhatObject *)next), &refused) ||
+                refused) {
+                return NULL;
+            }
+        }
+        owner = next;
+        if (segment[length] == '\0') {
+            return owner;
+        }
+        segment += length + 1;
+    }
+}
+
+bool lhat_machine_register(LhatMachine *machine, const char *module,
+                           const char *type, const char *name, LhatValue value)
+{
+    if (machine == NULL || machine->environment == NULL) {
+        return false;
+    }
+    LhatString *modules_key = lhat_string_new(&machine->objects, "modules", 7);
+    if (modules_key == NULL) {
+        return false;
+    }
+    LhatTable *owner = table_of(lhat_table_get(
+        machine->environment, lhat_object((LhatObject *)modules_key)));
+    if (owner == NULL) {
+        return false;
+    }
+
+    owner = reach_table(machine, owner, module);
+    if (owner != NULL && type != NULL) {
+        owner = reach_table(machine, owner, type);
+    }
+    if (owner == NULL) {
+        return false;
+    }
+
+    LhatString *key = lhat_string_new(&machine->objects, name, strlen(name));
+    if (key == NULL) {
+        return false;
+    }
+    bool refused = false;
+    return lhat_table_set(owner, lhat_object((LhatObject *)key), value,
+                          &refused) && !refused;
+}
+
 void lhat_machine_dispose(LhatMachine *machine)
 {
     if (machine == NULL) {
@@ -4036,6 +4225,30 @@ LhatRunResult lhat_run(LhatMachine *m, const LhatProto *proto)
 
             case LHAT_BC_CALL:
             case LHAT_BC_CALLMETHOD: {
+                // 05 の 8.7: the host wrote this one in C. 13.1 settled how
+                // many arguments there are before anything ran, so they are
+                // handed over as they lie rather than pushed one by one.
+                // 04 の 12.8 makes an error a value, so what comes back is
+                // one -- there is no unwinding to arrange.
+                if (lhat_is_object_kind(registers[a], LHAT_OBJECT_HOST)) {
+                    LhatHost *host = (LhatHost *)lhat_as_object(registers[a]);
+                    size_t first = a + (op == LHAT_BC_CALLMETHOD ? 2 : 1);
+                    size_t given = b;
+                    const LhatValue *arguments = &registers[first];
+                    // 14.4: the receiver is an argument of a method, and sits
+                    // just below the ones the call wrote.
+                    if (host->takes_self && op == LHAT_BC_CALLMETHOD) {
+                        arguments = &registers[a + 1];
+                        given = b + 1;
+                    }
+                    if (given != host->parameters) {
+                        return finish(m, LHAT_RUN_ARITY, lhat_nil(), at);
+                    }
+                    registers[a] = host->call(m, host->context, arguments,
+                                              given);
+                    break;
+                }
+
                 // 02 の 12.6 and 15.6: resume and dispose are the runtime's,
                 // not the program's, so they are performed rather than called.
                 if (lhat_is_object_kind(registers[a], LHAT_OBJECT_NATIVE)) {

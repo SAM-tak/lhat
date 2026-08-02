@@ -109,6 +109,11 @@ bool lhat_parse_is_command(const LhatLexer *lexer);
 // form when 2.3 is not satisfied, as 3.2 has it.
 void lhat_parse_command(LhatLexer *lexer, LhatParseResult *result);
 
+// 13 章's type grammar on its own, for text that is a type and nothing else:
+// 14.10's printed signatures and 05 の 8.7's host registrations. `root` is
+// the type node, and anything left over is reported.
+void lhat_parse_type_only(LhatLexer *lexer, LhatParseResult *result);
+
 void lhat_parse_result_dispose(LhatParseResult *result);
 
 const char *lhat_parse_error_message(LhatParseErrorCode code);

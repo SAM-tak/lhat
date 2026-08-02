@@ -1175,6 +1175,21 @@ static LhatNode *parse_unary(Parser *p)
         return node;
     }
 
+    // 05 の 8.7: import^ names a module rather than a file, so its operand is
+    // the path 3 章 spells rather than a string. Only what the host
+    // registered answers to it -- see 8.7 for why not what require^ brought.
+    if (check_hat(p, "import")) {
+        LhatToken at = p->current;
+        advance(p);
+
+        LhatNode *node = make(p, LHAT_NODE_IMPORT, &at);
+        if (node == NULL) {
+            return NULL;
+        }
+        node->v.jump.value = parse_qualified_name(p);
+        return node;
+    }
+
     // 02 の 15.8: delegation. A word of its own rather than a reading of
     // yield^, since the two have different types -- yield^ answers what the
     // resume sent, this answers the inner coroutine's return value.
@@ -2572,13 +2587,17 @@ static LhatNode *parse_statement(Parser *p)
         // path it declared, rather than under a name the reader picks. It is
         // a statement of its own so that 8.2 keeps holding -- a bare
         // expression is still not a statement.
-        if (check_hat(p, "require")) {
+        if (check_hat(p, "require") || check_hat(p, "import")) {
+            bool importing = check_hat(p, "import");  // 05 の 8.7
             LhatToken at = p->current;
             LhatNode *inner = parse_unary(p);
-            if (inner == NULL || inner->kind != LHAT_NODE_REQUIRE) {
+            LhatNodeKind wanted =
+                importing ? LHAT_NODE_IMPORT : LHAT_NODE_REQUIRE;
+            if (inner == NULL || inner->kind != wanted) {
                 return inner;
             }
-            LhatNode *node = make(p, LHAT_NODE_REQUIRE_STMT, &at);
+            LhatNode *node = make(p, importing ? LHAT_NODE_IMPORT_STMT
+                                               : LHAT_NODE_REQUIRE_STMT, &at);
             if (node == NULL) {
                 return NULL;
             }
@@ -2776,6 +2795,22 @@ void lhat_parse(LhatLexer *lexer, LhatParseResult *result)
 void lhat_parse_interactive(LhatLexer *lexer, LhatParseResult *result)
 {
     parse_unit(lexer, result, true);
+}
+
+// 14.10 asks that a signature print in a form that parses back as a type
+// annotation, and 05 の 8.7 has a host write one as text. Both need the type
+// grammar of 13 章 reachable on its own, which is all this is.
+void lhat_parse_type_only(LhatLexer *lexer, LhatParseResult *result)
+{
+    Parser parser;
+    parser_begin(&parser, lexer, result);
+    result->root = parse_type(&parser);
+
+    // Anything after the type is not part of it, and quietly ignoring it
+    // would let a typo through as a shorter type than was meant.
+    if (parser.current.kind != LHAT_TOKEN_EOF) {
+        report(&parser, &parser.current, LHAT_PARSE_ERR_EXPECTED_TOKEN);
+    }
 }
 
 // 2.3: the command form applies when the input opens with a name and the

@@ -381,11 +381,172 @@ static void test_running(void)
     lhat_program_dispose(&program);
 }
 
+// 05 の 8.7: what the host registers, and how import^ reaches it.
+static LhatValue host_add(LhatMachine *machine, void *context,
+                          const LhatValue *arguments, size_t count)
+{
+    (void)machine;
+    int *calls = (int *)context;
+    if (calls != NULL) {
+        (*calls)++;
+    }
+    if (count != 2 || !lhat_is_integer(arguments[0]) ||
+        !lhat_is_integer(arguments[1])) {
+        return lhat_nil();
+    }
+    return lhat_integer(lhat_as_integer(arguments[0]) +
+                        lhat_as_integer(arguments[1]));
+}
+
+static bool has_check_error(const LhatUnit *unit, LhatCheckErrorCode code)
+{
+    if (unit == NULL) {
+        return false;
+    }
+    for (size_t i = 0; i < unit->checked.diagnostic_count; i++) {
+        if (unit->checked.diagnostics[i].code == code) {
+            return true;
+        }
+    }
+    return false;
+}
+
+static void test_hosting(void)
+{
+    LhatProgram program;
+    Disk disk;
+    int calls = 0;
+
+    LHAT_TEST("a host subroutine is registered, imported and called");
+    {
+        static const File files[] = {
+            {"main.lh",
+             "import^ system.gfx\n"
+             "return^ system.gfx.add(2, 3)\n"},
+        };
+        program_with(&program, &disk, files, 1);
+        LHAT_CHECK(lhat_register_func(&program, "system.gfx", "add",
+                                      "f^number^, number^ -> number^;",
+                                      host_add, &calls),
+                   "the registration took");
+        const LhatUnit *root = lhat_program_check(&program, "main.lh");
+        LHAT_CHECK(root != NULL && !lhat_program_has_errors(&program) &&
+                       root->checked.diagnostic_count == 0,
+                   "the program checked");
+        size_t count = 0;
+        const LhatModule *modules = lhat_program_compile(&program, &count);
+        if (modules != NULL && root != NULL) {
+            LhatMachine *machine = lhat_machine_new();
+            lhat_machine_set_modules(machine, modules, count);
+            LHAT_CHECK(lhat_program_install(&program, machine),
+                       "what was registered went into L^.modules");
+            LhatRunResult ran = lhat_run(machine, modules[root->index].proto);
+            LHAT_CHECK_EQ_INT(ran.status, LHAT_RUN_OK);
+            LHAT_CHECK_EQ_INT(lhat_as_integer(ran.value), 5);
+            LHAT_CHECK_EQ_INT(calls, 1);
+            lhat_machine_dispose(machine);
+        }
+    }
+    lhat_program_dispose(&program);
+
+    LHAT_TEST("and the expression form binds it under a name of its own");
+    {
+        static const File files[] = {
+            {"main.lh",
+             "let^ g = import^ system.gfx\n"
+             "return^ g.add(20, 22)\n"},
+        };
+        program_with(&program, &disk, files, 1);
+        lhat_register_func(&program, "system.gfx", "add",
+                           "f^number^, number^ -> number^;", host_add, NULL);
+        const LhatUnit *root = lhat_program_check(&program, "main.lh");
+        size_t count = 0;
+        const LhatModule *modules = lhat_program_compile(&program, &count);
+        if (modules != NULL && root != NULL) {
+            LhatMachine *machine = lhat_machine_new();
+            lhat_machine_set_modules(machine, modules, count);
+            lhat_program_install(&program, machine);
+            LhatRunResult ran = lhat_run(machine, modules[root->index].proto);
+            LHAT_CHECK_EQ_INT(ran.status, LHAT_RUN_OK);
+            LHAT_CHECK_EQ_INT(lhat_as_integer(ran.value), 42);
+            lhat_machine_dispose(machine);
+        }
+    }
+    lhat_program_dispose(&program);
+
+    // The signature is what the checker reads, so a call that does not fit it
+    // is refused before anything runs.
+    LHAT_TEST("and the signature is checked at the call");
+    {
+        static const File files[] = {
+            {"main.lh",
+             "import^ system.gfx\n"
+             "return^ system.gfx.add(\"two\", 3)\n"},
+        };
+        program_with(&program, &disk, files, 1);
+        lhat_register_func(&program, "system.gfx", "add",
+                           "f^number^, number^ -> number^;", host_add, NULL);
+        const LhatUnit *root = lhat_program_check(&program, "main.lh");
+        LHAT_CHECK(has_check_error(root, LHAT_CHECK_ERR_MISMATCH),
+                   "a string where number^ was written is refused");
+    }
+    lhat_program_dispose(&program);
+
+    // 8.7: import^ reaches the host registry and nothing else. A unit read
+    // from a file comes in with require^, whatever L^.modules holds -- which
+    // is what keeps the answer free of the order units are checked in.
+    LHAT_TEST("but import^ does not reach a unit read from a file");
+    {
+        static const File files[] = {
+            {"one.lh", "module^ ns.one\npublic^ let^ v = 1\n"},
+            {"main.lh",
+             "require^ \"one.lh\"\n"
+             "import^ ns.one\n"},
+        };
+        program_with(&program, &disk, files, 2);
+        const LhatUnit *root = lhat_program_check(&program, "main.lh");
+        LHAT_CHECK(has_check_error(root, LHAT_CHECK_ERR_NOT_HOSTED),
+                   "even after a require^ put it in L^.modules");
+    }
+    lhat_program_dispose(&program);
+
+    LHAT_TEST("nor one the host never registered");
+    {
+        static const File files[] = {{"main.lh", "import^ nowhere.at.all\n"}};
+        program_with(&program, &disk, files, 1);
+        const LhatUnit *root = lhat_program_check(&program, "main.lh");
+        LHAT_CHECK(has_check_error(root, LHAT_CHECK_ERR_NOT_HOSTED),
+                   "there is nothing of that name");
+    }
+    lhat_program_dispose(&program);
+
+    // 8.7: a signature may name a type registered before it, which is what
+    // lets a pair that name each other be registered as two bare types first.
+    LHAT_TEST("a signature may name a type registered earlier");
+    {
+        program_with(&program, &disk, NULL, 0);
+        LHAT_CHECK(lhat_register_type(&program, "system.gfx", "Texture"),
+                   "the type took");
+        LHAT_CHECK(lhat_register_func(&program, "system.gfx", "load",
+                                      "f^string^ -> system.gfx.Texture;",
+                                      host_add, NULL),
+                   "and a signature naming it took");
+        LHAT_CHECK(!lhat_register_func(&program, "system.gfx", "later",
+                                       "f^ -> system.gfx.Missing;", host_add,
+                                       NULL),
+                   "but one naming what is not there does not");
+        LHAT_CHECK(!lhat_register_type(&program, "system.gfx", "Texture"),
+                   "and one name holds one thing");
+    }
+    lhat_program_dispose(&program);
+}
+
 int main(void)
 {
     test_dependencies();
     test_loading();
     test_cycles();
     test_running();
+    test_hosting();
     return lhat_test_report("test_program");
 }

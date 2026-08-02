@@ -83,9 +83,11 @@ typedef enum {
     LHAT_CHECK_ERR_PATH_IS_DEFINITION,  // 8.8: 14 章 fixes what an instance
                                         // of a def^ carries, so a member
                                         // cannot be added to one
-    LHAT_CHECK_ERR_MODULE_UNNAMED       // 05 の 5.4改: the short form binds a
+    LHAT_CHECK_ERR_MODULE_UNNAMED,      // 05 の 5.4改: the short form binds a
                                         // unit under the path it declared,
                                         // and this one declared none (3.2)
+    LHAT_CHECK_ERR_NOT_HOSTED           // 05 の 8.7: import^ reaches what the
+                                        // host registered, and nothing here
 } LhatCheckErrorCode;
 
 typedef struct {
@@ -94,6 +96,17 @@ typedef struct {
     uint32_t line;
     uint32_t column;
 } LhatCheckDiagnostic;
+
+// 05 の 8.7: a host registers what it provides by writing the type out, so
+// there has to be a way from written text to a type without a unit around
+// it. `named` stands for the names a type may mention -- a table type whose
+// members are what the host has registered so far, so that one registration
+// can name what an earlier one made. NULL admits only the builtins.
+//
+// Answers NULL when the text is not a type, or names something `named` does
+// not hold. The type belongs to `arena`.
+LhatType *lhat_type_of_text(const char *text, size_t length,
+                            LhatTypeArena *arena, LhatType *named);
 
 // 05 の 6 章: a unit's exports are types that the units requiring it hold on
 // to, so the arena has to outlive any one result. The caller may pass its own
@@ -131,6 +144,10 @@ typedef LhatType *(*LhatRequireResolver)(void *context, const char *path,
 typedef struct {
     LhatRequireResolver resolve;
     void *context;
+    // 05 の 8.7: what the host registered, as one nested table type keyed by
+    // module path. import^ resolves against this alone, so its answer does
+    // not depend on the order units happen to be checked in.
+    LhatType *hosted;
 } LhatRequire;
 
 // 03 の 3.1. `strict` is a setting of the compilation unit, not a dialect:

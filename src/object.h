@@ -202,6 +202,27 @@ typedef struct LhatNative {
     LhatValue bound;  // what it was reached through
 } LhatNative;
 
+// 05 の 8.7: a subroutine the host wrote in C. The arguments are handed over
+// as an array rather than pushed one at a time -- 13.1 settles how many
+// there are and what they are before anything runs, so the counting a
+// dynamic language does at the boundary has nothing to do here.
+//
+// 04 の 12.8 makes an error a value, so this answers one. There is no
+// unwinding to arrange and nothing to catch.
+struct LhatMachine;
+
+typedef LhatValue (*LhatHostFn)(struct LhatMachine *machine, void *context,
+                                const LhatValue *arguments, size_t count);
+
+typedef struct LhatHost {
+    LhatObject header;
+    LhatHostFn call;
+    void *context;   // what the registration handed over; the host owns it
+    LhatValue bound;  // 14.4: the receiver, when reached as a member
+    uint8_t parameters;
+    bool takes_self;
+} LhatHost;
+
 // ---------------------------------------------------------------------------
 // Making and freeing
 // ---------------------------------------------------------------------------
@@ -234,6 +255,9 @@ bool lhat_table_walk(LhatCoroutine *walk, LhatValue *key, LhatValue *value);
 
 LhatNative *lhat_native_new(LhatHeap *heap, LhatNativeKind kind,
                             LhatValue bound);
+
+LhatHost *lhat_host_new(LhatHeap *heap, LhatHostFn call, void *context,
+                        uint8_t parameters, bool takes_self);
 
 LhatRuntimeType *lhat_type_rt_new(LhatHeap *heap, LhatRuntimeTypeKind kind);
 

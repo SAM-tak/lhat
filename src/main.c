@@ -262,6 +262,8 @@ static void print_node(const LhatLexer *lexer, const LhatNode *node, int depth)
         case LHAT_NODE_UNPACK:
         case LHAT_NODE_REQUIRE:
         case LHAT_NODE_REQUIRE_STMT:
+        case LHAT_NODE_IMPORT:
+        case LHAT_NODE_IMPORT_STMT:
         case LHAT_NODE_TRY:
             print_node(lexer, node->v.jump.value, depth + 1);
             break;

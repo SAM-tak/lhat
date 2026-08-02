@@ -262,6 +262,7 @@ static LhatUnit *check_path(LhatProgram *program, char *path)
     LhatRequire require;
     require.resolve = resolve_require;
     require.context = &resolution;
+    require.hosted = program->hosted;  // 05 の 8.7
 
     // The recursion is what puts the graph in dependency order (6.2): the
     // required unit finishes before this one's checking gets past the
@@ -292,6 +293,191 @@ static size_t resolve_unit(void *context, const char *path, size_t length,
         *module_name = unit->checked.module_name;
     }
     return unit->index;
+}
+
+// ---------------------------------------------------------------------------
+// 05 の 8.7: what the host provides
+// ---------------------------------------------------------------------------
+
+// One thing the host registered, kept so that lhat_program_install can build
+// the values once a machine exists. The type side is in `program->hosted`
+// already, since the checker needs it before anything runs.
+typedef struct LhatHostEntry {
+    char *module;   // owned; the dotted path
+    char *type;     // owned; NULL when the entry belongs to the module itself
+    char *name;     // owned
+    LhatHostFn call;  // NULL for a type, which carries no value of its own
+    void *context;
+    uint8_t parameters;
+    bool takes_self;
+} LhatHostEntry;
+
+// The table type a dotted path names inside `owner`, made where the path does
+// not reach one. The same walk 02 の 8.8 does, over text.
+static LhatType *hosted_table(LhatProgram *program, LhatType *owner,
+                              const char *path)
+{
+    for (const char *segment = path;;) {
+        size_t length = strcspn(segment, ".");
+        LhatType *next = NULL;
+        for (const LhatTypeMember *m = owner->v.table.members; m != NULL;
+             m = m->next) {
+            if (m->name_length == length &&
+                memcmp(m->name, segment, length) == 0) {
+                next = m->type;
+                break;
+            }
+        }
+        if (next == NULL) {
+            next = lhat_type_table(&program->types);
+            if (next == NULL ||
+                lhat_type_add_member(&program->types, owner, segment, length,
+                                     next) == NULL) {
+                return NULL;
+            }
+        }
+        if (next->kind != LHAT_TYPE_TABLE) {
+            return NULL;  // something that is not a module is already there
+        }
+        owner = next;
+        if (segment[length] == '\0') {
+            return owner;
+        }
+        segment += length + 1;
+    }
+}
+
+static LhatType *hosted_root(LhatProgram *program)
+{
+    if (program->hosted == NULL) {
+        program->hosted = lhat_type_table(&program->types);
+    }
+    return program->hosted;
+}
+
+static const LhatTypeMember *hosted_member(const LhatType *table,
+                                           const char *name)
+{
+    if (table == NULL || table->kind != LHAT_TYPE_TABLE) {
+        return NULL;
+    }
+    size_t length = strlen(name);
+    for (const LhatTypeMember *m = table->v.table.members; m != NULL;
+         m = m->next) {
+        if (m->name_length == length && memcmp(m->name, name, length) == 0) {
+            return m;
+        }
+    }
+    return NULL;
+}
+
+static bool keep_entry(LhatProgram *program, const char *module,
+                       const char *type, const char *name, LhatHostFn call,
+                       void *context, const LhatType *signature)
+{
+    if (program->host_entry_count == program->host_entry_capacity) {
+        size_t grown =
+            program->host_entry_capacity ? program->host_entry_capacity * 2 : 8;
+        LhatHostEntry *bigger = (LhatHostEntry *)realloc(
+            program->host_entries, grown * sizeof *bigger);
+        if (bigger == NULL) {
+            return false;
+        }
+        program->host_entries = bigger;
+        program->host_entry_capacity = grown;
+    }
+
+    LhatHostEntry *entry = &program->host_entries[program->host_entry_count];
+    memset(entry, 0, sizeof *entry);
+    entry->module = duplicate(module);
+    entry->name = duplicate(name);
+    entry->type = type != NULL ? duplicate(type) : NULL;
+    entry->call = call;
+    entry->context = context;
+    if (signature != NULL && signature->kind == LHAT_TYPE_FUNC) {
+        size_t count = 0;
+        for (const LhatTypeList *p = signature->v.func.params; p != NULL;
+             p = p->next) {
+            count++;
+        }
+        entry->parameters = (uint8_t)count;
+        entry->takes_self = signature->v.func.takes_self;
+    }
+    if (entry->module == NULL || entry->name == NULL ||
+        (type != NULL && entry->type == NULL)) {
+        return false;
+    }
+    program->host_entry_count++;
+    return true;
+}
+
+bool lhat_register_type(LhatProgram *program, const char *module,
+                        const char *name)
+{
+    LhatType *root = hosted_root(program);
+    if (root == NULL) {
+        return false;
+    }
+    LhatType *table = hosted_table(program, root, module);
+    if (table == NULL || hosted_member(table, name) != NULL) {
+        return false;  // 8.7: one name, one thing
+    }
+
+    // 05 の 7.3's shape: what makes it its own type is the declaration, not
+    // the members, so two host types that look alike stay apart. 02 の 8.8's
+    // mark keeps a member from being added to it afterwards.
+    LhatType *made = lhat_type_table(&program->types);
+    if (made == NULL) {
+        return false;
+    }
+    made->v.table.from_definition = true;
+    return lhat_type_add_member(&program->types, table, name, strlen(name),
+                                made) != NULL &&
+           keep_entry(program, module, NULL, name, NULL, NULL, NULL);
+}
+
+static bool register_into(LhatProgram *program, LhatType *owner,
+                          const char *module, const char *type,
+                          const char *name, const char *signature,
+                          LhatHostFn call, void *context)
+{
+    if (owner == NULL || call == NULL || hosted_member(owner, name) != NULL) {
+        return false;
+    }
+    // 8.7: a signature may name the builtins and whatever was registered
+    // before it. Nothing a require^ brings in -- that would put the answer
+    // back at the mercy of the order units are checked in.
+    LhatType *written = lhat_type_of_text(signature, strlen(signature),
+                                          &program->types, program->hosted);
+    if (written == NULL) {
+        return false;
+    }
+    return lhat_type_add_member(&program->types, owner, name, strlen(name),
+                                written) != NULL &&
+           keep_entry(program, module, type, name, call, context, written);
+}
+
+bool lhat_register_member(LhatProgram *program, const char *module,
+                          const char *type, const char *name,
+                          const char *signature, LhatHostFn call,
+                          void *context)
+{
+    LhatType *table = hosted_table(program, hosted_root(program), module);
+    const LhatTypeMember *found = hosted_member(table, type);
+    if (found == NULL || found->type->kind != LHAT_TYPE_TABLE) {
+        return false;  // no such type registered under that module
+    }
+    return register_into(program, found->type, module, type, name, signature,
+                         call, context);
+}
+
+bool lhat_register_func(LhatProgram *program, const char *module,
+                        const char *name, const char *signature,
+                        LhatHostFn call, void *context)
+{
+    return register_into(program, hosted_table(program, hosted_root(program),
+                                               module),
+                         module, NULL, name, signature, call, context);
 }
 
 // ---------------------------------------------------------------------------
@@ -354,6 +540,30 @@ const LhatModule *lhat_program_compile(LhatProgram *program, size_t *count)
     return modules;
 }
 
+bool lhat_program_install(const LhatProgram *program, LhatMachine *machine)
+{
+    for (size_t i = 0; i < program->host_entry_count; i++) {
+        const LhatHostEntry *e = &program->host_entries[i];
+        // A type registers as an empty table under its module; its members
+        // are entries of their own and land in it as they come.
+        LhatValue value = lhat_nil();
+        if (e->call == NULL) {
+            if (!lhat_machine_make_table(machine, &value)) {
+                return false;
+            }
+        } else if (!lhat_machine_make_host(machine, e->call, e->context,
+                                           e->parameters, e->takes_self,
+                                           &value)) {
+            return false;
+        }
+        if (!lhat_machine_register(machine, e->module, e->type, e->name,
+                                   value)) {
+            return false;
+        }
+    }
+    return true;
+}
+
 void lhat_program_init(LhatProgram *program, bool strict)
 {
     memset(program, 0, sizeof *program);
@@ -375,6 +585,16 @@ void lhat_program_dispose(LhatProgram *program)
     free(program->modules);
     program->modules = NULL;
     program->module_count = 0;
+
+    for (size_t i = 0; i < program->host_entry_count; i++) {
+        free(program->host_entries[i].module);
+        free(program->host_entries[i].type);
+        free(program->host_entries[i].name);
+    }
+    free(program->host_entries);
+    program->host_entries = NULL;
+    program->host_entry_count = 0;
+    program->host_entry_capacity = 0;
 
     LhatUnit *unit = program->units;
     while (unit != NULL) {

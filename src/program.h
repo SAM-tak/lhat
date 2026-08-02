@@ -17,6 +17,7 @@
 #include "check.h"
 #include "code.h"  // 05 の 5.3: a unit compiles to one of these
 #include "lexer.h"
+#include "object.h"  // 05 の 8.7: LhatHostFn
 #include "parser.h"
 #include "source.h"
 #include "type.h"
@@ -78,6 +79,15 @@ typedef struct {
     // 05 の 5.3: what lhat_program_compile built, owned here.
     LhatModule *modules;
     size_t module_count;
+
+    // 05 の 8.7: what the host registered, as one nested table type keyed by
+    // module path -- the same shape L^.modules has, since that is where it
+    // ends up. import^ resolves against this and against nothing else, which
+    // is what keeps its answer independent of the order units are checked in.
+    LhatType *hosted;
+    struct LhatHostEntry *host_entries;
+    size_t host_entry_count;
+    size_t host_entry_capacity;
 } LhatProgram;
 
 // Without a loader, units are read from the file system.
@@ -98,6 +108,42 @@ const LhatUnit *lhat_program_check(LhatProgram *program, const char *path);
 // The unit to run is the one lhat_program_check returned: its `index` says
 // which proto of the array is it.
 const LhatModule *lhat_program_compile(LhatProgram *program, size_t *count);
+
+// ---------------------------------------------------------------------------
+// 05 の 8.7: what the host provides
+// ---------------------------------------------------------------------------
+//
+// All of these belong before lhat_program_check: the checker has to know what
+// a signature says, and import^ has to know what is there. Registering after
+// checking is too late and answers false.
+//
+// A module is made by the first registration under its path. A signature is
+// written in the type grammar of 13 章 and may name the builtins and any type
+// registered before it -- so a pair that name each other is registered as two
+// bare types first, then given their members.
+
+// An opaque type of its own. 05 の 7.3's rule holds for it: identity is the
+// declaration, not the shape, so two host types with the same members are
+// still different types and a pointer cannot be handed to the wrong C code.
+bool lhat_register_type(LhatProgram *program, const char *module,
+                        const char *name);
+
+// A member of a type registered earlier. `signature` describes it; a p^ or f^
+// whose first parameter is written self^ is an instance method (14.4).
+bool lhat_register_member(LhatProgram *program, const char *module,
+                          const char *type, const char *name,
+                          const char *signature, LhatHostFn call,
+                          void *context);
+
+// A subroutine of the module itself.
+bool lhat_register_func(LhatProgram *program, const char *module,
+                        const char *name, const char *signature,
+                        LhatHostFn call, void *context);
+
+// Puts what was registered into the machine's L^.modules, so that an import^
+// finds it. Belongs after lhat_machine_set_modules and before the run.
+typedef struct LhatMachine LhatMachine;
+bool lhat_program_install(const LhatProgram *program, LhatMachine *machine);
 
 // True when any unit, or the program itself, reported something.
 bool lhat_program_has_errors(const LhatProgram *program);

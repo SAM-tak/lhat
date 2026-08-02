@@ -138,6 +138,21 @@ void lhat_machine_dispose(LhatMachine *machine);
 void lhat_machine_set_modules(LhatMachine *machine, const LhatModule *modules,
                               size_t count);
 
+// 05 の 8.7: the three steps a host registration takes at run time. Kept here
+// rather than in program.c because only this file may touch the heap -- the
+// values belong to the machine and the collector has to see them.
+bool lhat_machine_make_table(LhatMachine *machine, LhatValue *out);
+bool lhat_machine_make_host(LhatMachine *machine, LhatHostFn call,
+                            void *context, uint8_t parameters, bool takes_self,
+                            LhatValue *out);
+
+// Puts `value` at L^.modules.<module>[.<type>].<name>, making the tables on
+// the way the way 02 の 8.8 does. `type` is NULL for a member of the module
+// itself.
+bool lhat_machine_register(LhatMachine *machine, const char *module,
+                           const char *type, const char *name,
+                           LhatValue value);
+
 // Runs `proto` on `machine`. What the run allocates belongs to the machine,
 // so the answer is good until the machine is disposed or run again -- there
 // is nothing in the result to free.

@@ -179,6 +179,22 @@ LhatNative *lhat_native_new(LhatHeap *heap, LhatNativeKind kind,
     return native;
 }
 
+LhatHost *lhat_host_new(LhatHeap *heap, LhatHostFn call, void *context,
+                        uint8_t parameters, bool takes_self)
+{
+    LhatHost *host =
+        (LhatHost *)allocate(heap, sizeof(LhatHost), LHAT_OBJECT_HOST);
+    if (host == NULL) {
+        return NULL;
+    }
+    host->call = call;
+    host->context = context;
+    host->bound = lhat_nil();
+    host->parameters = parameters;
+    host->takes_self = takes_self;
+    return host;
+}
+
 LhatRuntimeType *lhat_type_rt_new(LhatHeap *heap, LhatRuntimeTypeKind kind)
 {
     LhatRuntimeType *type =
@@ -424,6 +440,11 @@ bool lhat_gc_children(LhatGray *gray, LhatObject *object)
 
         case LHAT_OBJECT_NATIVE:
             return lhat_gc_reach(gray, ((const LhatNative *)object)->bound);
+
+        // 05 の 8.7: `context` is the host's, and the collector cannot see
+        // into it. What is reachable from here is the receiver alone.
+        case LHAT_OBJECT_HOST:
+            return lhat_gc_reach(gray, ((const LhatHost *)object)->bound);
 
         case LHAT_OBJECT_TYPE: {
             const LhatRuntimeType *type = (const LhatRuntimeType *)object;
