@@ -2625,12 +2625,13 @@ static LhatNode *parse_statement(Parser *p)
 
     // 8.2: at the top level of interactive input a bare expression is a
     // statement -- being unable to work out 2 + 3 at a prompt is not an
-    // option. It is read as `return^ expr`, so 8.3's rule for what a return^
-    // does needs no companion: the value of the input is the value of the
-    // expression, and nothing after it runs.
+    // option. It becomes the same expression statement a call does, and
+    // 03 の 4.3 makes the last one of an input the value the input answers
+    // with. Reading it as a return^ instead would stop what follows and would
+    // refuse a call of a procedure that answers nothing.
     if (p->interactive && p->depth == 1 && head != NULL &&
         head->next == NULL) {
-        LhatNode *node = make(p, LHAT_NODE_RETURN, &start);
+        LhatNode *node = make(p, LHAT_NODE_CALL_STMT, &start);
         if (node == NULL) {
             return NULL;
         }

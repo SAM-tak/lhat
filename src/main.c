@@ -433,8 +433,9 @@ static int repl(void)
     }
 
     printf("L^ (lhat) %s\n", LHAT_VERSION);
-    printf("an expression on its own is answered; ctrl-d or an empty line "
-           "ends\n");
+    printf("an expression on its own is answered; an unfinished construct "
+           "reads on\n");
+    printf("ctrl-d or an empty line ends\n");
 
     // Every input's pieces have to outlive the run -- a proto is what the
     // machine runs, and names point into the lexer's source. The session
@@ -449,16 +450,43 @@ static int repl(void)
     } *kept = NULL;
 
     char line[4096];
+    char *input = NULL;
+    size_t input_length = 0;
+    bool carrying = false;  // the input so far stopped early (02 の 3.1)
+
     for (;;) {
-        printf("> ");
+        printf(carrying ? ". " : "> ");
         fflush(stdout);
         if (fgets(line, sizeof line, stdin) == NULL) {
             printf("\n");
             break;
         }
         if (line[0] == '\n' || line[0] == '\r') {
+            if (!carrying) {
+                break;
+            }
+            // A construct being carried has no end in sight, so this is the
+            // way out of one the reader will never finish.
+            fprintf(stderr, "note: the unfinished input was dropped\n");
+            free(input);
+            input = NULL;
+            input_length = 0;
+            carrying = false;
+            continue;
+        }
+
+        // 02 の 3.1 tells input that stopped early from input that is wrong,
+        // so a construct spanning lines is read by asking for more rather
+        // than by counting brackets here.
+        size_t added = strlen(line);
+        char *joined = (char *)realloc(input, input_length + added + 1);
+        if (joined == NULL) {
+            fprintf(stderr, "lhat: out of memory\n");
             break;
         }
+        input = joined;
+        memcpy(input + input_length, line, added + 1);
+        input_length += added;
 
         if (held == capacity) {
             size_t grown = capacity ? capacity * 2 : 16;
@@ -472,10 +500,25 @@ static int repl(void)
         }
         struct Held *in = &kept[held];
 
-        lhat_source_init_from_string(&in->source, "<stdin>", line, strlen(line));
+        lhat_source_init_from_string(&in->source, "<stdin>", input,
+                                     input_length);
         lhat_lexer_init(&in->lexer, &in->source);
         lhat_parse_interactive(&in->lexer, &in->parsed);
         in->proto = NULL;
+
+        // 3.1: input that merely stopped early is not wrong yet, so its
+        // diagnostics say nothing about what the reader will type next.
+        if (in->parsed.incomplete) {
+            lhat_parse_result_dispose(&in->parsed);
+            lhat_lexer_dispose(&in->lexer);
+            lhat_source_dispose(&in->source);
+            carrying = true;
+            continue;
+        }
+        free(input);
+        input = NULL;
+        input_length = 0;
+        carrying = false;
 
         bool refused = in->lexer.diagnostic_count > 0;
         for (size_t i = 0; i < in->parsed.diagnostic_count; i++) {
@@ -534,6 +577,7 @@ static int repl(void)
         }
     }
 
+    free(input);
     for (size_t i = 0; i < held; i++) {
         lhat_proto_free(kept[i].proto);
         lhat_parse_result_dispose(&kept[i].parsed);

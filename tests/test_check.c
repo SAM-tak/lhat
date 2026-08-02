@@ -39,6 +39,15 @@ static void check_next_text(Unit *u, LhatCheckSession *s, const char *text)
     lhat_check_next(s, u->parsed.root, &u->lexer, true, &u->checked);
 }
 
+// The same again, read the way a prompt reads it (02 の 8.2).
+static void check_asked_text(Unit *u, LhatCheckSession *s, const char *text)
+{
+    lhat_source_init_from_string(&u->source, "<test>", text, strlen(text));
+    lhat_lexer_init(&u->lexer, &u->source);
+    lhat_parse_interactive(&u->lexer, &u->parsed);
+    lhat_check_next(s, u->parsed.root, &u->lexer, true, &u->checked);
+}
+
 static void unit_dispose(Unit *u)
 {
     lhat_check_result_dispose(&u->checked);
@@ -2697,6 +2706,32 @@ static void test_session(void)
         unit_dispose(&u);
         check_next_text(&u, s, "let^ t : string^ = x\n");
         CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
+        unit_dispose(&u);
+        lhat_check_session_dispose(s);
+    }
+
+    // 15.8 refuses a call that makes a coroutine and does nothing with it,
+    // because the statement provably has no effect. 03 の 4.3 makes the last
+    // statement of an input the answer, and showing the answer is an effect.
+    LHAT_TEST("the statement an input answers with may make a coroutine");
+    {
+        LhatCheckSession *s = lhat_check_session_new();
+        check_asked_text(&u, s, "let^ count = p^ { yield^ 1 }\n");
+        CHECK_CLEAN(&u);
+        unit_dispose(&u);
+        check_asked_text(&u, s, "count()\n");
+        CHECK_CLEAN(&u);
+        unit_dispose(&u);
+        lhat_check_session_dispose(s);
+    }
+
+    LHAT_TEST("but one before the last still drops it");
+    {
+        LhatCheckSession *s = lhat_check_session_new();
+        check_asked_text(&u, s, "let^ count = p^ { yield^ 1 }\n");
+        unit_dispose(&u);
+        check_asked_text(&u, s, "count()\nlet^ k = 1\n");
+        CHECK_REPORTS(&u, LHAT_CHECK_ERR_COROUTINE_DROPPED);
         unit_dispose(&u);
         lhat_check_session_dispose(s);
     }

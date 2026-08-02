@@ -204,18 +204,18 @@ static void test_statements(void)
     parse_dispose(&p);
 
     // 8.2: except at the top level of interactive input, where working out
-    // 2 + 3 has to be possible. It is read as a return^, so the value of the
-    // input is the value of the expression.
+    // 2 + 3 has to be possible. It becomes the same expression statement a
+    // call is, which 03 の 4.3 makes the value of the input when it is last.
     LHAT_TEST("but at an interactive top level it is one");
     parse_interactive_text(&p, "a + b");
     LHAT_CHECK_EQ_INT(error_count(&p), 0);
-    LHAT_CHECK_EQ_INT(first_statement(&p)->kind, LHAT_NODE_RETURN);
+    LHAT_CHECK_EQ_INT(first_statement(&p)->kind, LHAT_NODE_CALL_STMT);
     parse_dispose(&p);
 
     LHAT_TEST("and a name on its own is one too");
     parse_interactive_text(&p, "x");
     LHAT_CHECK_EQ_INT(error_count(&p), 0);
-    LHAT_CHECK_EQ_INT(first_statement(&p)->kind, LHAT_NODE_RETURN);
+    LHAT_CHECK_EQ_INT(first_statement(&p)->kind, LHAT_NODE_CALL_STMT);
     parse_dispose(&p);
 
     // 8.2 says the top level and nowhere else, so a block keeps the rule.

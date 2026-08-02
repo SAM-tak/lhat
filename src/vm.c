@@ -1797,7 +1797,24 @@ static void compile_session_statements(Compiler *c, const LhatNode *statements)
     declare_names(c, statements);
     c->session_top = false;
     declare_defs(c, statements);
+
+    // 03 の 4.3: an input answers with the value of its last statement, when
+    // that statement is an expression. 02 の 8.2 makes a call one and gives
+    // an interactive top level the bare ones too, so this is what a prompt
+    // has to show -- and doing it here rather than with a return^ keeps a
+    // call of a procedure that answers nothing from being refused.
+    const LhatNode *last = NULL;
     for (const LhatNode *s = statements; s != NULL; s = s->next) {
+        last = s;
+    }
+
+    for (const LhatNode *s = statements; s != NULL; s = s->next) {
+        if (s == last && s->kind == LHAT_NODE_CALL_STMT) {
+            uint8_t into = reserve(c);
+            compile_expression(c, s->v.jump.value, into);
+            emit(c, lhat_encode_abc(LHAT_BC_RETURN, into, 0, 0));
+            return;
+        }
         compile_statement(c, s);
     }
 }

@@ -49,6 +49,18 @@ static void compile_next_text(Run *r, LhatCompileSession *s, const char *text)
     memset(&r->ran, 0, sizeof r->ran);
 }
 
+// The same again, read the way a prompt reads it (02 の 8.2), so a bare
+// expression is a statement and the last one is the answer (03 の 4.3).
+static void compile_asked_text(Run *r, LhatCompileSession *s, const char *text)
+{
+    lhat_source_init_from_string(&r->source, "<test>", text, strlen(text));
+    lhat_lexer_init(&r->lexer, &r->source);
+    lhat_parse_interactive(&r->lexer, &r->parsed);
+    r->compiled = lhat_compile_next(s, r->parsed.root, &r->lexer, &r->proto);
+    r->machine = NULL;
+    memset(&r->ran, 0, sizeof r->ran);
+}
+
 static void compiled_dispose(Run *r)
 {
     lhat_proto_free(r->proto);
@@ -3287,6 +3299,53 @@ static void test_machine(void)
         lhat_compile_session_dispose(s);
         compiled_dispose(&one);
         compiled_dispose(&two);
+    }
+
+    // 03 の 4.3: an input answers with the value of its last statement, when
+    // that statement is an expression -- so a prompt shows a call's result
+    // without a return^ written by hand.
+    LHAT_TEST("an input answers with its last expression");
+    {
+        LhatMachine *m = lhat_machine_new();
+        LhatCompileSession *s = lhat_compile_session_new();
+        Run one, two, three, four;
+        compile_asked_text(&one, s, "2 + 3\n");
+        compile_asked_text(
+            &two, s,
+            "let^ twice = f^ n:number^ -> number^ { return^ n * 2 }\n");
+        compile_asked_text(&three, s, "twice(21)\n");
+        // Only the last one answers; the statements before it still run.
+        compile_asked_text(&four, s, "let^ k = 7\nk + 1\n");
+        LHAT_CHECK_EQ_INT(lhat_as_integer(lhat_run(m, one.proto).value), 5);
+        LhatRunResult made = lhat_run(m, two.proto);
+        LHAT_CHECK(lhat_is_nil(made.value), "a let^ answers with nothing");
+        LHAT_CHECK_EQ_INT(lhat_as_integer(lhat_run(m, three.proto).value), 42);
+        LHAT_CHECK_EQ_INT(lhat_as_integer(lhat_run(m, four.proto).value), 8);
+        lhat_machine_dispose(m);
+        lhat_compile_session_dispose(s);
+        compiled_dispose(&one);
+        compiled_dispose(&two);
+        compiled_dispose(&three);
+        compiled_dispose(&four);
+    }
+
+    // The value is the answer, not a return^ -- a call answering nothing is
+    // still a statement, and what follows it still runs.
+    LHAT_TEST("and a call answering nothing does not stop the input");
+    {
+        LhatMachine *m = lhat_machine_new();
+        LhatCompileSession *s = lhat_compile_session_new();
+        Run one;
+        compile_asked_text(&one, s,
+                           "let^ n = 0\n"
+                           "let^ bump = p^ { n := n + 1 }\n"
+                           "bump()\n"
+                           "bump()\n"
+                           "n\n");
+        LHAT_CHECK_EQ_INT(lhat_as_integer(lhat_run(m, one.proto).value), 2);
+        lhat_machine_dispose(m);
+        lhat_compile_session_dispose(s);
+        compiled_dispose(&one);
     }
 
     // 5.4: an upvalue is a shared place only while the frame holding it

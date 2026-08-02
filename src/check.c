@@ -76,6 +76,10 @@ typedef struct {
     // which is what this^ names. NULL outside any body.
     LhatType *this_type;
 
+    // 03 の 4.3: the statement whose value the input answers with, when the
+    // input is one of a session. NULL for a file, where nothing answers.
+    const LhatNode *answering;
+
     // The name the subroutine currently being checked is being bound to, so
     // that a call to it inside its own body can be spotted (03 の 3.4).
     const char *defining_name;
@@ -2752,7 +2756,12 @@ static void check_statement(Checker *c, const LhatNode *node)
             // 15.8: 15.5 makes such a call run no part of the body, so the
             // statement provably has no effect. 04 の 8.1 の form: the type
             // is the detection, with no must-use machinery added.
-            if (value != NULL && value->kind == LHAT_TYPE_CORO) {
+            //
+            // 03 の 4.3: unless it is the statement the input answers with.
+            // There the value is shown, which is an effect -- the reasoning
+            // above is what stops applying, not the rule.
+            if (value != NULL && value->kind == LHAT_TYPE_CORO &&
+                node != c->answering) {
                 report(c, node, LHAT_CHECK_ERR_COROUTINE_DROPPED);
             }
             break;
@@ -3063,6 +3072,19 @@ void lhat_check_next(LhatCheckSession *session, const LhatNode *unit,
     checker.result = result;
     checker.strict = strict;
     checker.scope = &scope;
+
+    // 03 の 4.3: the last statement is what the input answers with, when it
+    // is an expression. What that changes here is 15.8's reasoning about a
+    // call whose value goes nowhere.
+    if (unit->v.list.items != NULL) {
+        const LhatNode *last = unit->v.list.items;
+        while (last->next != NULL) {
+            last = last->next;
+        }
+        if (last->kind == LHAT_NODE_CALL_STMT) {
+            checker.answering = last;
+        }
+    }
 
     // What earlier inputs bound is settled already -- 8.7's "used before
     // defined" is about the statements of this input.
