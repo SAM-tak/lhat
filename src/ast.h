@@ -113,15 +113,24 @@ typedef enum {
     LHAT_DEF_OVERLOAD
 } LhatDefModifier;
 
-// 9.2, in the order they must be written.
+// 9.2, in the order they must be written -- which is also the order they run
+// in. 9.10's pre^ is the one that runs before the condition is tested, so it
+// stands between prolog^ and first^.
 typedef enum {
     LHAT_CLAUSE_PROLOG = 0,
-    LHAT_CLAUSE_FIRST = 1,
-    LHAT_CLAUSE_MAIN = 2,
-    LHAT_CLAUSE_LAST = 3,
-    LHAT_CLAUSE_EPILOG = 4,
-    LHAT_CLAUSE_FINALLY = 5
+    LHAT_CLAUSE_PRE = 1,
+    LHAT_CLAUSE_FIRST = 2,
+    LHAT_CLAUSE_MAIN = 3,
+    LHAT_CLAUSE_LAST = 4,
+    LHAT_CLAUSE_EPILOG = 5,
+    LHAT_CLAUSE_FINALLY = 6
 } LhatClauseKind;
+
+// 9.3改: the clauses that are the loop's body. At least one has to be there,
+// and an unheaded statement list is an implicit main^.
+#define LHAT_CLAUSE_IS_BODY(k)                                                \
+    ((k) == LHAT_CLAUSE_PRE || (k) == LHAT_CLAUSE_FIRST ||                    \
+     (k) == LHAT_CLAUSE_MAIN || (k) == LHAT_CLAUSE_LAST)
 
 typedef struct LhatNode LhatNode;
 

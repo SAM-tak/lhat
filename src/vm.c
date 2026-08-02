@@ -2087,6 +2087,7 @@ static void compile_loop(Compiler *c, const LhatNode *node)
 
     int kind = is_for ? (int)node->v.loop.kind : -1;
     const LhatNode *prolog = clause_of(body, LHAT_CLAUSE_PROLOG);
+    const LhatNode *pre = clause_of(body, LHAT_CLAUSE_PRE);
     const LhatNode *first = clause_of(body, LHAT_CLAUSE_FIRST);
     const LhatNode *last = clause_of(body, LHAT_CLAUSE_LAST);
     const LhatNode *epilog = clause_of(body, LHAT_CLAUSE_EPILOG);
@@ -2199,6 +2200,12 @@ static void compile_loop(Compiler *c, const LhatNode *node)
 
     size_t top = c->proto->chunk.count;
     size_t leaving = SIZE_MAX;
+
+    // 9.10: pre^ runs at the head of every turn, before the condition is
+    // tested -- so it runs at least once however the condition comes out,
+    // which is the shape C spells do ... while. It does not mark the loop
+    // entered: 9.1 keeps first^ and last^ for turns the condition accepted.
+    compile_in_scope(c, pre);
 
     if (kind == LHAT_FOR_TO || kind == LHAT_FOR_DOWNTO) {
         uint8_t mark = c->next_register;

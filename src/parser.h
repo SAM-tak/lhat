@@ -31,6 +31,10 @@ typedef enum {
     LHAT_PARSE_ERR_UNPACK_MISPLACED,          // unpack^ outside a binding
     LHAT_PARSE_ERR_CLAUSE_ORDER,              // 9.2: clauses have a fixed order
     LHAT_PARSE_ERR_MAIN_REQUIRED,             // 9.3
+    LHAT_PARSE_ERR_NO_BODY_CLAUSE,            // 9.3改: none of first^, pre^,
+                                              // main^ or last^ was written
+    LHAT_PARSE_ERR_PRE_IN_WALK,               // 9.10: pre^ runs before the
+                                              // walk has bound anything
     LHAT_PARSE_ERR_CLAUSE_NOT_IN_LOOP,        // 9 章 clauses outside a loop
     LHAT_PARSE_ERR_FOR_NEEDS_CLAUSE,          // 16.3: for^ needs a driving clause
     LHAT_PARSE_ERR_REPEAT_TAKES_NO_NEXT,      // 16.5

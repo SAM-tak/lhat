@@ -1117,6 +1117,69 @@ static void test_loop_clauses(void)
                       LHAT_PARSE_ERR_CLAUSE_ORDER);
     parse_dispose(&p);
 
+    // 9.3改: once the braces are carved into clauses, one of them has to be
+    // the body. Statements written after prolog^ join it instead, which is
+    // the shape this catches.
+    LHAT_TEST("a loop carved into clauses needs a body among them");
+    parse_text(&p, "for^ i := 1 to^ 10 { prolog^: total := 0 total := total + i }");
+    LHAT_CHECK(p.result.diagnostic_count > 0, "expected a diagnostic");
+    LHAT_CHECK_EQ_INT(p.result.diagnostics[0].code,
+                      LHAT_PARSE_ERR_NO_BODY_CLAUSE);
+    parse_dispose(&p);
+
+    LHAT_TEST("and a prolog^ on its own is not one");
+    parse_text(&p, "for^ i := 1 to^ 10 { prolog^: total := 0 }");
+    LHAT_CHECK(p.result.diagnostic_count > 0, "expected a diagnostic");
+    LHAT_CHECK_EQ_INT(p.result.diagnostics[0].code,
+                      LHAT_PARSE_ERR_NO_BODY_CLAUSE);
+    parse_dispose(&p);
+
+    LHAT_TEST("but last^ is a body clause and settles it");
+    parse_text(&p, "for^ i := 1 to^ 10 { prolog^: total := 0 last^: log(i) }");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    parse_dispose(&p);
+
+    // Braces with no clause heading are an implicit main^, empty ones too.
+    LHAT_TEST("and braces with no clause at all are the body");
+    parse_text(&p, "for^ i := 1 to^ 10 { }");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    parse_dispose(&p);
+
+    // 9.10: pre^ runs before the condition, so it sits between prolog^ and
+    // first^ -- which is where it has to be written.
+    LHAT_TEST("pre^ takes its place between prolog^ and first^");
+    parse_text(&p,
+               "for^ i := 1 to^ 10 { prolog^: a() pre^: b() first^: c() "
+               "main^: d() }");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    parse_dispose(&p);
+
+    LHAT_TEST("premain^ is the same clause");
+    parse_text(&p, "for^ i := 1 to^ 10 { premain^: b() }");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    {
+        const LhatNode *body = first_statement(&p)->v.loop.body;
+        LHAT_CHECK_EQ_INT(body->v.list.extra->v.loop_clause.kind,
+                          LHAT_CLAUSE_PRE);
+    }
+    parse_dispose(&p);
+
+    LHAT_TEST("pre^ after main^ is out of order");
+    parse_text(&p, "for^ i := 1 to^ 10 { main^: a() pre^: b() }");
+    LHAT_CHECK(p.result.diagnostic_count > 0, "expected a diagnostic");
+    LHAT_CHECK_EQ_INT(p.result.diagnostics[0].code,
+                      LHAT_PARSE_ERR_CLAUSE_ORDER);
+    parse_dispose(&p);
+
+    // 9.10: a walk binds its focus after the coroutine answers, so a clause
+    // running before that would read the turn before.
+    LHAT_TEST("pre^ is refused in a walk");
+    parse_text(&p, "for^ k, v in^ t { pre^: a() main^: b() }");
+    LHAT_CHECK(p.result.diagnostic_count > 0, "expected a diagnostic");
+    LHAT_CHECK_EQ_INT(p.result.diagnostics[0].code,
+                      LHAT_PARSE_ERR_PRE_IN_WALK);
+    parse_dispose(&p);
+
     // 10.1: finally^ belongs to blocks in general.
     LHAT_TEST("finally^ on a do^ block");
     parse_text(&p, "do^{ work() finally^: cleanup() }");

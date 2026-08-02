@@ -829,8 +829,8 @@ static bool is_statement_keyword(const Parser *p)
     static const char *const words[] = {
         "if", "do", "let", "with", "return", "break", "yield",
         "for", "repeat", "while", "until", "when", "other", "errordef",
-        "prolog", "prologue", "first", "main", "last", "epilog", "epilogue",
-        "finally"
+        "prolog", "prologue", "pre", "premain", "first", "main", "last",
+        "epilog", "epilogue", "finally"
     };
     for (size_t i = 0; i < sizeof words / sizeof words[0]; i++) {
         if (check_hat(p, words[i])) {
@@ -1478,6 +1478,11 @@ static int clause_index(const Parser *p)
     if (check_hat(p, "prolog") || check_hat(p, "prologue")) {
         return LHAT_CLAUSE_PROLOG;
     }
+    // 9.10: pre^ runs before the condition is tested, which is what gives a
+    // loop the shape C spells do ... while. premain^ is the same word (9.6).
+    if (check_hat(p, "pre") || check_hat(p, "premain")) {
+        return LHAT_CLAUSE_PRE;
+    }
     if (check_hat(p, "first")) {
         return LHAT_CLAUSE_FIRST;
     }
@@ -1538,7 +1543,9 @@ static LhatNode *parse_block_body(Parser *p, const LhatToken *at)
 
 // A body that may carry the clauses of 9 章. Outside a loop only finally^ is
 // allowed (10.1), since the others describe how an iteration proceeds.
-static LhatNode *parse_clause_body(Parser *p, const LhatToken *at, bool in_loop)
+// `walks` marks a for^ ... in^, which 9.10 keeps pre^ out of.
+static LhatNode *parse_clause_body(Parser *p, const LhatToken *at, bool in_loop,
+                                   bool walks)
 {
     LhatNode *block = make(p, LHAT_NODE_BLOCK, at);
     if (block == NULL) {
@@ -1551,6 +1558,9 @@ static LhatNode *parse_clause_body(Parser *p, const LhatToken *at, bool in_loop)
     LhatNode *head = NULL;
     LhatNode *tail = NULL;
     int previous = -1;
+    // 9.3改: an unheaded statement list is an implicit main^, so it counts.
+    bool has_body = unlabelled;
+    bool saw_clause = false;
 
     for (int index; (index = clause_index(p)) >= 0;) {
         LhatToken at_clause = p->current;
@@ -1560,9 +1570,17 @@ static LhatNode *parse_clause_body(Parser *p, const LhatToken *at, bool in_loop)
         } else if (index <= previous) {
             report(p, &at_clause, LHAT_PARSE_ERR_CLAUSE_ORDER);
         } else if (unlabelled && index <= LHAT_CLAUSE_MAIN) {
-            // 9.3: prolog^ and first^ lead, so statements written before them
-            // would be swallowed; main^ must be named to keep them apart.
+            // 9.3: prolog^, pre^ and first^ lead, so statements written before
+            // them would be swallowed; main^ must be named to keep them apart.
             report(p, &at_clause, LHAT_PARSE_ERR_MAIN_REQUIRED);
+        } else if (walks && index == LHAT_CLAUSE_PRE) {
+            // 9.10: what a walk binds is bound after the coroutine answers,
+            // so a clause running before that would read the turn before.
+            report(p, &at_clause, LHAT_PARSE_ERR_PRE_IN_WALK);
+        }
+        saw_clause = true;
+        if (LHAT_CLAUSE_IS_BODY(index)) {
+            has_body = true;
         }
         previous = index;
 
@@ -1584,17 +1602,28 @@ static LhatNode *parse_clause_body(Parser *p, const LhatToken *at, bool in_loop)
         lhat_node_append(&head, &tail, clause);
     }
 
+    // 9.3改: first^, pre^, main^ and last^ are the body. Once the braces are
+    // carved into clauses, one of them has to be it -- otherwise the loop
+    // iterates over nothing, which is what a prolog^ followed by unheaded
+    // statements silently becomes, since those statements join the prolog^.
+    //
+    // Braces with no clause heading at all are an implicit main^ and need no
+    // saying so, empty ones included.
+    if (in_loop && saw_clause && !has_body) {
+        report(p, at, LHAT_PARSE_ERR_NO_BODY_CLAUSE);
+    }
+
     block->v.list.extra = head;
     return block;
 }
 
-static LhatNode *parse_braced_block(Parser *p, bool in_loop)
+static LhatNode *parse_braced_block(Parser *p, bool in_loop, bool walks)
 {
     LhatToken brace = p->current;
     if (!expect_op(p, LHAT_OP_LBRACE)) {
         return NULL;
     }
-    LhatNode *block = parse_clause_body(p, &brace, in_loop);
+    LhatNode *block = parse_clause_body(p, &brace, in_loop, walks);
     expect_op(p, LHAT_OP_RBRACE);
     return block;
 }
@@ -2146,7 +2175,8 @@ static LhatNode *parse_for(Parser *p)
         return node;
     }
 
-    node->v.loop.body = parse_braced_block(p, is_loop);
+    node->v.loop.body =
+        parse_braced_block(p, is_loop, node->v.loop.kind == LHAT_FOR_IN);
     return node;
 }
 
@@ -2180,7 +2210,7 @@ static LhatNode *parse_repeat(Parser *p)
         parse_advance(p);
     }
 
-    node->v.repeat.body = parse_braced_block(p, true);
+    node->v.repeat.body = parse_braced_block(p, true, false);
     return node;
 }
 
@@ -2320,7 +2350,7 @@ static LhatNode *parse_with(Parser *p)
     }
 
     node->v.list.items = head;
-    node->v.list.extra = parse_braced_block(p, false);
+    node->v.list.extra = parse_braced_block(p, false, false);
     return node;
 }
 
@@ -2406,7 +2436,7 @@ static LhatNode *parse_statement(Parser *p)
     if (start.kind == LHAT_TOKEN_HAT_IDENT) {
         if (check_hat(p, "do")) {
             advance(p);
-            return parse_braced_block(p, false);
+            return parse_braced_block(p, false, false);
         }
         if (check_hat(p, "with")) {
             return parse_with(p);
@@ -2683,11 +2713,17 @@ const char *lhat_parse_error_message(LhatParseErrorCode code)
         case LHAT_PARSE_ERR_UNPACK_MISPLACED:
             return "'unpack^' is only valid as the value of ':=' or '<<'";
         case LHAT_PARSE_ERR_CLAUSE_ORDER:
-            return "loop clauses run prolog^, first^, main^, last^, epilog^, "
-                   "finally^ and must be written in that order";
+            return "loop clauses run prolog^, pre^, first^, main^, last^, "
+                   "epilog^, finally^ and must be written in that order";
         case LHAT_PARSE_ERR_MAIN_REQUIRED:
-            return "statements before prolog^ or first^ need 'main^:' to say "
-                   "they are the body";
+            return "statements before prolog^, pre^ or first^ need 'main^:' "
+                   "to say they are the body";
+        case LHAT_PARSE_ERR_NO_BODY_CLAUSE:
+            return "a loop needs a body: one of first^, pre^, main^ or last^, "
+                   "or statements with no clause heading at all";
+        case LHAT_PARSE_ERR_PRE_IN_WALK:
+            return "pre^ runs before the walk answers, so there is nothing "
+                   "bound for it to read; use main^";
         case LHAT_PARSE_ERR_CLAUSE_NOT_IN_LOOP:
             return "only finally^ may appear outside a loop";
         case LHAT_PARSE_ERR_FOR_NEEDS_CLAUSE:

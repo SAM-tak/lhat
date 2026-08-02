@@ -1149,6 +1149,109 @@ static void test_loop_clauses(void)
     CHECK_INTEGER(&r, 11);
     run_dispose(&r);
 
+    // 9.10: pre^ runs at the head of every turn, before the condition is
+    // tested -- so the body runs once however the condition comes out. This
+    // is the shape C spells do ... while.
+    LHAT_TEST("pre^ runs even when the condition never holds");
+    run_text(&r,
+             "let^ n = 0\n"
+             "repeat^ while^ false^ {\n"
+             "  pre^:\n"
+             "    n := n + 1\n"
+             "}\n"
+             "return^ n\n");
+    CHECK_INTEGER(&r, 1);
+    run_dispose(&r);
+
+    LHAT_TEST("where main^ under the same condition never does");
+    run_text(&r,
+             "let^ n = 0\n"
+             "repeat^ while^ false^ {\n"
+             "  main^:\n"
+             "    n := n + 1\n"
+             "}\n"
+             "return^ n\n");
+    CHECK_INTEGER(&r, 0);
+    run_dispose(&r);
+
+    // With both, the test sits between them: pre^ takes one more turn than
+    // main^, since the turn whose test failed still ran its pre^.
+    LHAT_TEST("pre^ and main^ straddle the condition");
+    run_text(&r,
+             "let^ n = 0\n"
+             "let^ i = 0\n"
+             "repeat^ while^ i < 3 {\n"
+             "  pre^:\n"
+             "    n := n + 10\n"
+             "    i := i + 1\n"
+             "  main^:\n"
+             "    n := n + 1\n"
+             "}\n"
+             "return^ n\n");
+    CHECK_INTEGER(&r, 32);  // three pre^, two main^
+    run_dispose(&r);
+
+    LHAT_TEST("premain^ is the same clause");
+    run_text(&r,
+             "let^ n = 0\n"
+             "repeat^ while^ false^ {\n"
+             "  premain^:\n"
+             "    n := n + 7\n"
+             "}\n"
+             "return^ n\n");
+    CHECK_INTEGER(&r, 7);
+    run_dispose(&r);
+
+    // 9.1 is unchanged: first^ and last^ belong to the turns the condition
+    // accepted, and pre^ does not make one of those.
+    LHAT_TEST("a turn that only ran pre^ is not one first^ or last^ counts");
+    run_text(&r,
+             "let^ n = 0\n"
+             "repeat^ while^ false^ {\n"
+             "  pre^:\n"
+             "    n := n + 1\n"
+             "  first^:\n"
+             "    n := n + 100\n"
+             "  last^:\n"
+             "    n := n + 1000\n"
+             "}\n"
+             "return^ n\n");
+    CHECK_INTEGER(&r, 1);
+    run_dispose(&r);
+
+    // 9.8: break^ leaves from inside pre^ like from anywhere else.
+    LHAT_TEST("break^ leaves a loop from inside pre^");
+    run_text(&r,
+             "let^ n = 0\n"
+             "repeat^ {\n"
+             "  pre^:\n"
+             "    n := n + 1\n"
+             "    if^ n = 3 { break^ }\n"
+             "}\n"
+             "return^ n\n");
+    CHECK_INTEGER(&r, 3);
+    run_dispose(&r);
+
+    // The declaration goes in prolog^, which is what makes reading before the
+    // test writable at all -- 9.4 gives prolog^ names the whole loop.
+    LHAT_TEST("prolog^ and pre^ together are the loop-and-a-half");
+    run_text(&r,
+             "let^ out = 0\n"
+             "let^ i = 0\n"
+             "repeat^ while^ i < 3 {\n"
+             "  prolog^:\n"
+             "    let^ seen = 0\n"
+             "  pre^:\n"
+             "    i := i + 1\n"
+             "  main^:\n"
+             "    seen := seen + i\n"
+             "  epilog^:\n"
+             "    out := seen\n"
+             "}\n"
+             "return^ out\n");
+    CHECK_INTEGER(&r, 3);  // 1 + 2; the turn that read 3 failed the test
+    run_dispose(&r);
+
     LHAT_TEST("first^ runs at the head of the first iteration only");
     run_text(&r,
              "let^ n = 0\n"

@@ -177,7 +177,8 @@ static void print_node(const LhatLexer *lexer, const LhatNode *node, int depth)
         }
         case LHAT_NODE_LOOP_CLAUSE: {
             static const char *const kinds[] = {
-                "prolog^", "first^", "main^", "last^", "epilog^", "finally^"
+                "prolog^", "pre^", "first^", "main^", "last^", "epilog^",
+                "finally^"
             };
             printf(" %s", kinds[node->v.loop_clause.kind]);
             break;
