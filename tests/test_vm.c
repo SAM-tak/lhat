@@ -735,6 +735,28 @@ static void test_tables(void)
     CHECK_INTEGER(&r, 5);
     run_dispose(&r);
 
+    // 14.14改: an entry introduces a member, which 8.6 spells '='. What that
+    // costs is that a comparison standing on its own has to say so.
+    LHAT_TEST("an entry written with '=' is a member, not a comparison");
+    run_text(&r,
+             "let^ a = 1\n"
+             "let^ t = { a = 0, b = 2 }\n"
+             "return^ t.a * 10 + t.b\n");
+    CHECK_INTEGER(&r, 2);  // t.a is 0, not the comparison's false^
+    run_dispose(&r);
+
+    LHAT_TEST("and one in brackets is the comparison");
+    run_text(&r,
+             "let^ a = 1\n"
+             "let^ t = { (a = 1), (a = 2) }\n"
+             "if^ t[1] {\n"
+             "  if^ t[2] { return^ 0 }\n"
+             "  return^ 1\n"
+             "}\n"
+             "return^ 2\n");
+    CHECK_INTEGER(&r, 1);  // true^ then false^
+    run_dispose(&r);
+
     // 11.3: a table is a mapping, so there is no out of range -- only a key
     // that is there and one that is not.
     LHAT_TEST("a missing key answers nil^ rather than failing");

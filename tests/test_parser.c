@@ -593,6 +593,57 @@ static void test_literals(void)
                       LHAT_NODE_NAME);
     parse_dispose(&p);
 
+    // 14.14改: an entry introduces a member, and 8.6 spells introducing '='.
+    // ':=' is the older spelling and still reads.
+    LHAT_TEST("an entry is written with '='");
+    parse_text(&p, "t := { a = 1, b = 2, 3 }");
+    {
+        const LhatNode *e = first_value(&p);
+        LHAT_CHECK_EQ_INT(error_count(&p), 0);
+        LHAT_CHECK_EQ_INT(lhat_node_list_length(e->v.list.items), 3);
+        LHAT_CHECK(e->v.list.items->v.entry.key != NULL, "first entry is keyed");
+        LHAT_CHECK(e->v.list.items->next->v.entry.key != NULL,
+                   "second entry is keyed");
+        LHAT_CHECK(e->v.list.items->next->next->v.entry.key == NULL,
+                   "third entry is positional");
+    }
+    parse_dispose(&p);
+
+    LHAT_TEST("and the two spellings mix");
+    parse_text(&p, "t := { a = 1, b := 2 }");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    LHAT_CHECK(first_value(&p)->v.list.items->next->v.entry.key != NULL,
+               "':=' is still a key");
+    parse_dispose(&p);
+
+    // What '=' costs: a comparison standing as a positional entry has to say
+    // so. '(' does not begin a name, so it never reaches the test.
+    LHAT_TEST("but a comparison written in brackets stays one");
+    parse_text(&p, "t := { (a = 1), (b = 2) }");
+    {
+        const LhatNode *e = first_value(&p);
+        LHAT_CHECK_EQ_INT(error_count(&p), 0);
+        LHAT_CHECK_EQ_INT(lhat_node_list_length(e->v.list.items), 2);
+        LHAT_CHECK(e->v.list.items->v.entry.key == NULL, "positional");
+        LHAT_CHECK(is_binary(e->v.list.items->v.entry.value, LHAT_OP_EQ),
+                   "and it is the comparison");
+    }
+    parse_dispose(&p);
+
+    LHAT_TEST("a computed key takes '=' too");
+    parse_text(&p, "t := { [k + 1] = 9 }");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    LHAT_CHECK(first_value(&p)->v.list.items->v.entry.computed,
+               "the key is an expression");
+    parse_dispose(&p);
+
+    // 14.6: the field template is the same brace syntax, and declaring a
+    // field is introducing one.
+    LHAT_TEST("and so does a field of self^");
+    parse_text(&p, "P := def^{ self^{ w = 5 } }");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    parse_dispose(&p);
+
     // 5.4: the holes hold ordinary expressions.
     LHAT_TEST("string interpolation");
     parse_text(&p, "s := $\"hi {name}! {n:2.4}\"");

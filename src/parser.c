@@ -580,12 +580,20 @@ static LhatNode *parse_brace_entries(Parser *p, bool require_key)
             break;
         }
 
+        // 14.6改: an entry names a member that was not there, and 8.6 spells
+        // that '='. ':=' is the older spelling and still reads.
+        //
+        // What '=' costs here is that 'a = 0' can no longer be a comparison
+        // standing as a positional entry. Wrapping it says so -- '(' does not
+        // begin a name, so the brackets take it out of this test entirely --
+        // and wanting a list of comparisons is rarer than wanting members.
         bool keyed = (p->current.kind == LHAT_TOKEN_IDENT ||
                       p->current.kind == LHAT_TOKEN_NAME_LITERAL ||
                       p->current.kind == LHAT_TOKEN_HAT_IDENT) &&
-                     is_op(&p->ahead, LHAT_OP_DEFINE);
+                     (is_op(&p->ahead, LHAT_OP_DEFINE) ||
+                      is_op(&p->ahead, LHAT_OP_EQ));
 
-        // 14.6改: '[ ... ] :=' gives the key as an expression, for the keys
+        // 14.6改: '[ ... ] =' gives the key as an expression, for the keys
         // 01 の 6 章 leaves unwritable as names. Nothing else can begin with
         // '[' here -- it does not start an expression -- so no lookahead is
         // needed to tell this from a positional entry.
@@ -595,7 +603,9 @@ static LhatNode *parse_brace_entries(Parser *p, bool require_key)
             entry->v.entry.key = parse_expression(p);
             entry->v.entry.computed = true;
             expect_op(p, LHAT_OP_RBRACKET);
-            expect_op(p, LHAT_OP_DEFINE);
+            if (!match_op(p, LHAT_OP_EQ) && !match_op(p, LHAT_OP_DEFINE)) {
+                report(p, &p->current, LHAT_PARSE_ERR_EXPECTED_TOKEN);
+            }
             // 14.6: a field template names every field, so a computed key is
             // not one of them.
             if (require_key) {
@@ -603,7 +613,7 @@ static LhatNode *parse_brace_entries(Parser *p, bool require_key)
             }
         } else if (keyed) {
             entry->v.entry.key = simple_node(p);
-            advance(p);  // :=
+            advance(p);  // '=' or ':='
         } else if (require_key) {
             report(p, &p->current, LHAT_PARSE_ERR_FIELD_NEEDS_NAME);
         }
