@@ -1865,6 +1865,9 @@ static LhatType *infer_def(Checker *c, const LhatNode *node, LhatType *base)
     // op^.. one of them carries. 14.7 gives both structures the same members,
     // so this is what tells the definition from an instance of it.
     definition->v.table.is_definition = true;
+    // 8.8: and both sides are closed to a member being added afterwards.
+    definition->v.table.from_definition = true;
+    instance->v.table.from_definition = true;
 
     // 14.5: composition is ordered, and the derived side is written against
     // what the base already provides.
@@ -2308,6 +2311,111 @@ static const LhatNode *target_name_node(const LhatNode *target)
     return target->kind == LHAT_NODE_PARAM ? target->v.param.name : target;
 }
 
+// 8.8: 'let^ a.b.c = v' introduces c inside a table reached through a and b.
+// The root is the name a scope holds; the rest are members.
+static const LhatNode *target_root(const LhatNode *target)
+{
+    const LhatNode *node = target_name_node(target);
+    while (node->kind == LHAT_NODE_MEMBER) {
+        node = node->v.access.target;
+    }
+    return node;
+}
+
+static bool target_is_path(const LhatNode *target)
+{
+    return target_name_node(target)->kind == LHAT_NODE_MEMBER;
+}
+
+static const LhatTypeMember *member_named(const LhatType *type,
+                                          const char *name, size_t length);
+
+// 8.8: everything before the last segment holds the one written after it, so
+// it has to be a table. 14 章 fixes what an instance of a def^ carries, which
+// is the one kind of table a member cannot be added to.
+static LhatType *holds_members(Checker *c, const LhatNode *at, LhatType *type)
+{
+    if (type == NULL || type->kind == LHAT_TYPE_UNKNOWN) {
+        return NULL;  // already reported, or nothing known to report against
+    }
+    if (type->kind != LHAT_TYPE_TABLE) {
+        report(c, at, LHAT_CHECK_ERR_PATH_NOT_TABLE);
+        return NULL;
+    }
+    if (type->v.table.from_definition) {
+        report(c, at, LHAT_CHECK_ERR_PATH_IS_DEFINITION);
+        return NULL;
+    }
+    return type;
+}
+
+// The table a segment of a path names, made where it is not there yet.
+// Answers NULL when the path cannot be followed, having reported why.
+static LhatType *path_table(Checker *c, const LhatNode *node)
+{
+    const char *name = NULL;
+    size_t length = 0;
+
+    if (node->kind != LHAT_NODE_MEMBER) {
+        // The root is a name a scope holds. 8.8 reaches an enclosing binding
+        // rather than shadowing it: 'let^ a.b = 1' says where b goes and
+        // nothing new about a, so a is only made when there is none.
+        if (!node_name(c, node, &name, &length)) {
+            return NULL;
+        }
+        Binding *b = scope_find(c->scope, name, length);
+        if (b == NULL) {
+            return NULL;  // collect_bindings puts it there before the walk
+        }
+        if (b->type == NULL || b->type->kind == LHAT_TYPE_UNKNOWN) {
+            b->type = lhat_type_table(c->result->types);
+        }
+        b->reached = true;
+        return holds_members(c, node, b->type);
+    }
+
+    LhatType *owner = path_table(c, node->v.access.target);
+    if (owner == NULL || !node_name(c, node->v.access.argument, &name, &length)) {
+        return NULL;
+    }
+
+    const LhatTypeMember *found = member_named(owner, name, length);
+    if (found != NULL) {
+        return holds_members(c, node, found->type);
+    }
+
+    // Nothing there yet, so the path says there is a table here now.
+    LhatType *made = lhat_type_table(c->result->types);
+    if (made == NULL || lhat_type_add_member(c->result->types, owner, name,
+                                             length, made) == NULL) {
+        return NULL;
+    }
+    return made;
+}
+
+// The last segment is the name being introduced, so 8.7 refuses one that is
+// already there -- writing let^ twice for one place is a redefinition here
+// exactly as it is for a name of its own.
+static void define_path(Checker *c, const LhatNode *target, LhatType *type)
+{
+    const LhatNode *last = target_name_node(target);
+    LhatType *owner = path_table(c, last->v.access.target);
+    if (owner == NULL) {
+        return;
+    }
+
+    const char *name = NULL;
+    size_t length = 0;
+    if (!node_name(c, last->v.access.argument, &name, &length)) {
+        return;
+    }
+    if (member_named(owner, name, length) != NULL) {
+        report(c, last, LHAT_CHECK_ERR_REDEFINED);
+        return;
+    }
+    lhat_type_add_member(c->result->types, owner, name, length, type);
+}
+
 // 13.10: unpack^ marks one value being taken apart rather than one value per
 // target -- which is what tells a destructuring bind from a multiple one, and
 // why the mark is on the right. Answers what is being taken apart, or NULL
@@ -2387,7 +2495,11 @@ static void check_define(Checker *c, const LhatNode *node)
 
         const char *name = NULL;
         size_t length = 0;
-        if (node_name(c, target_name_node(target), &name, &length)) {
+        if (target_is_path(target)) {
+            // 8.8: the place is a member of a table the path reaches, not a
+            // name of this scope.
+            define_path(c, target, annotated != NULL ? annotated : actual);
+        } else if (node_name(c, target_name_node(target), &name, &length)) {
             Binding *b = scope_find_local(c->scope, name, length);
             if (b != NULL) {
                 // Collected before the walk, so this is where its let^ runs.
@@ -2646,6 +2758,20 @@ static void collect_bindings(Checker *c, const LhatNode *statements)
              target = target->next) {
             const char *name = NULL;
             size_t length = 0;
+
+            // 8.8: a path introduces a member, not a name of this scope. Its
+            // root is only made when nothing anywhere holds it -- reaching an
+            // enclosing table is the point, so this must not shadow one.
+            if (target_is_path(target)) {
+                const LhatNode *root = target_root(target);
+                if (node_name(c, root, &name, &length) &&
+                    scope_find(c->scope, name, length) == NULL) {
+                    scope_add(c->scope, name, length,
+                              simple(c, LHAT_TYPE_UNKNOWN), root->offset);
+                }
+                continue;
+            }
+
             if (!node_name(c, target_name_node(target), &name, &length)) {
                 continue;
             }
@@ -3171,6 +3297,12 @@ const char *lhat_check_error_message(LhatCheckErrorCode code)
         case LHAT_CHECK_ERR_YIELD_TYPE_MISMATCH:
             return "every yield^ in one body has to agree on what it sends "
                    "and what it answers";
+        case LHAT_CHECK_ERR_PATH_NOT_TABLE:
+            return "this holds the name written after it, so it has to be a "
+                   "table";
+        case LHAT_CHECK_ERR_PATH_IS_DEFINITION:
+            return "a def^ says what its instances carry, so a member cannot "
+                   "be added to one here";
         case LHAT_CHECK_ERR_COROUTINE_DROPPED:
             return "this call makes a coroutine and runs none of the body; "
                    "write yieldall^ to delegate, or let^ to keep it";

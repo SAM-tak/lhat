@@ -1861,6 +1861,17 @@ static LhatNode *parse_let_target(Parser *p)
     }
 
     LhatNode *name = parse_primary(p);
+
+    // 8.8: a target may name a member rather than a place of its own. Only
+    // the plain '.' form -- '?.' asks whether something is there, which is
+    // not a question a name being introduced can answer.
+    while (check_op(p, LHAT_OP_DOT)) {
+        LhatToken at = p->current;
+        advance(p);
+        name = access_node(p, LHAT_NODE_MEMBER, &at, name, simple_node(p),
+                           false);
+    }
+
     if (!check_op(p, LHAT_OP_COLON)) {
         return name;
     }

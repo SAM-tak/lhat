@@ -1570,6 +1570,81 @@ static void test_coroutines(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_NO_MEMBER);
     unit_dispose(&u);
 
+    // 8.8: let^ introduces a member, the way ':=' reassigns one. The tables on
+    // the way are made where the path does not reach one yet.
+    LHAT_TEST("let^ introduces a member along a path");
+    check_text(&u,
+               "let^ a.b.c = 1\n"
+               "let^ n : number^ = a.b.c\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("and two paths through one table meet");
+    check_text(&u,
+               "let^ a.b.c = 1\n"
+               "let^ a.b.d = 2\n"
+               "let^ a.z = 3\n"
+               "let^ n : number^ = a.b.c + a.b.d + a.z\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("and an existing table gains the member");
+    check_text(&u,
+               "let^ t = { p := 1 }\n"
+               "let^ t.q = 2\n"
+               "let^ n : number^ = t.p + t.q\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // The last segment is the name being introduced, so 8.7 holds for it.
+    LHAT_TEST("but writing the last segment twice is a redefinition");
+    check_text(&u,
+               "let^ a.b = 1\n"
+               "let^ a.b = 2\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_REDEFINED);
+    unit_dispose(&u);
+
+    LHAT_TEST("and a segment on the way has to be a table");
+    check_text(&u,
+               "let^ a = 1\n"
+               "let^ a.b = 2\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_PATH_NOT_TABLE);
+    unit_dispose(&u);
+
+    // 14 章 fixes what an instance of a def^ carries, which is the one kind
+    // of table this cannot add to.
+    LHAT_TEST("and a def^ instance takes no new member");
+    check_text(&u,
+               "let^ P = def^{ self^{ x := 0 } }\n"
+               "let^ p = P.new^()\n"
+               "let^ p.y = 1\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_PATH_IS_DEFINITION);
+    unit_dispose(&u);
+
+    LHAT_TEST("nor does the definition itself");
+    check_text(&u,
+               "let^ P = def^{ self^{ x := 0 } }\n"
+               "let^ P.y = 1\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_PATH_IS_DEFINITION);
+    unit_dispose(&u);
+
+    // The root says where the member goes and nothing about itself, so an
+    // enclosing binding is reached rather than shadowed.
+    LHAT_TEST("and the root is not shadowed");
+    check_text(&u,
+               "let^ outer = { }\n"
+               "let^ add = p^ { let^ outer.k = 7 }\n"
+               "add()\n"
+               "let^ n : number^ = outer.k\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("and an annotation on the last segment is checked");
+    check_text(&u,
+               "let^ a.b : string^ = 1\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
+    unit_dispose(&u);
+
     // 15.11: a body that must be a coroutine but has nothing to suspend for.
     // _yield^ says the same thing about the three types as a yield^ does, so
     // the two are the same type -- which is the whole point of it, since

@@ -91,6 +91,11 @@ struct LhatType {
             // is composition and never a call. Identity is still structural
             // (11.3): this says what made the structure, not what it is.
             bool is_definition;
+            // 8.8: what a def^ says its instances carry is fixed (14 章), so
+            // a member cannot be added to one. Like `is_definition` this
+            // records what made the structure and takes no part in
+            // conformance -- 11.3 keeps identity structural.
+            bool from_definition;
         } table;
 
         // 13.1. `result` is NULL when nothing is returned (13.2), and

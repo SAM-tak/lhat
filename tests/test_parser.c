@@ -673,6 +673,30 @@ static void test_functions(void)
                "the outer procedure does not yield");
     parse_dispose(&p);
 
+    // 8.8: a let^ target may name a member. The path is the same node an
+    // expression uses, so nothing new is read here.
+    LHAT_TEST("a let^ target may be a path");
+    parse_text(&p, "let^ a.b.c = 1");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    {
+        const LhatNode *target = first_statement(&p)->v.binding.targets;
+        LHAT_CHECK_EQ_INT(target->kind, LHAT_NODE_MEMBER);
+        LHAT_CHECK_EQ_INT(target->v.access.target->kind, LHAT_NODE_MEMBER);
+        LHAT_CHECK_EQ_INT(target->v.access.target->v.access.target->kind,
+                          LHAT_NODE_IDENT);
+    }
+    parse_dispose(&p);
+
+    LHAT_TEST("and it may still be annotated");
+    parse_text(&p, "let^ a.b : number^ = 1");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    {
+        const LhatNode *target = first_statement(&p)->v.binding.targets;
+        LHAT_CHECK_EQ_INT(target->kind, LHAT_NODE_PARAM);
+        LHAT_CHECK_EQ_INT(target->v.param.name->kind, LHAT_NODE_MEMBER);
+    }
+    parse_dispose(&p);
+
     // 15.11: _yield^ is the same node with a flag, so nothing downstream can
     // tell the two apart until the code is written out.
     LHAT_TEST("_yield^ makes a body yieldable too");

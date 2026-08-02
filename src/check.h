@@ -74,8 +74,15 @@ typedef enum {
     LHAT_CHECK_ERR_YIELD_NEEDS_ANNOTATION, // 15.2: a yield^ that is bound
                                             // (directly, by a let^) needs a
                                             // written type there to fix R
-    LHAT_CHECK_ERR_YIELD_TYPE_MISMATCH     // 15.2: two yield^/yieldall^ sites
+    LHAT_CHECK_ERR_YIELD_TYPE_MISMATCH,    // 15.2: two yield^/yieldall^ sites
                                             // in one body disagree on Y or R
+
+    LHAT_CHECK_ERR_PATH_NOT_TABLE,      // 8.8: everything before the last
+                                        // segment holds the one after it, so
+                                        // it has to be a table
+    LHAT_CHECK_ERR_PATH_IS_DEFINITION   // 8.8: 14 章 fixes what an instance
+                                        // of a def^ carries, so a member
+                                        // cannot be added to one
 } LhatCheckErrorCode;
 
 typedef struct {

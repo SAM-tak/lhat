@@ -1638,6 +1638,79 @@ static const LhatNode *define_target_name(const LhatNode *target)
     return target->kind == LHAT_NODE_PARAM ? target->v.param.name : target;
 }
 
+// 8.8: 'let^ a.b.c = v' puts c into a table reached through a and b. Only the
+// root is a name of a scope; the rest are members.
+static bool define_target_is_path(const LhatNode *target)
+{
+    return define_target_name(target)->kind == LHAT_NODE_MEMBER;
+}
+
+static const LhatNode *define_target_root(const LhatNode *target)
+{
+    const LhatNode *node = define_target_name(target);
+    while (node->kind == LHAT_NODE_MEMBER) {
+        node = node->v.access.target;
+    }
+    return node;
+}
+
+// Makes a table in a place that holds nothing yet, and leaves alone one that
+// does. 8.8 has two paths through one table meet rather than replace each
+// other, and 11.3 spells "nothing there" nil^ -- so this is the whole test.
+static void ensure_table(Compiler *c, uint8_t slot)
+{
+    uint8_t mark = c->next_register;
+    uint8_t test = reserve(c);
+    emit(c, lhat_encode_abc(LHAT_BC_ISNIL, test, slot, 0));
+    size_t there = emit_jump(c, LHAT_BC_JUMP_FALSE, test);
+    emit(c, lhat_encode_abc(LHAT_BC_NEWTABLE, slot, 0, 0));
+    lhat_chunk_patch_here(&c->proto->chunk, there);
+    c->next_register = mark;
+}
+
+// Puts the table a path segment names into `into`, making the ones the path
+// does not reach yet. The checker has already refused a segment that cannot
+// hold a member (8.8), so what is found here is a table or nothing.
+static void compile_path_prefix(Compiler *c, const LhatNode *node, uint8_t into)
+{
+    if (node->kind != LHAT_NODE_MEMBER) {
+        // The root: a slot of this frame, or a place an enclosing one holds.
+        const char *name = NULL;
+        size_t length = 0;
+        if (!node_name(c, node, &name, &length)) {
+            fail(c, LHAT_COMPILE_UNSUPPORTED);
+            return;
+        }
+        const Local *local = find_local(c, name, length);
+        if (local != NULL) {
+            ensure_table(c, local->reg);
+            emit(c, lhat_encode_abc(LHAT_BC_MOVE, into, local->reg, 0));
+            return;
+        }
+        size_t upvalue = find_upvalue(c, name, length);
+        if (upvalue == SIZE_MAX) {
+            fail(c, LHAT_COMPILE_UNDEFINED);
+            return;
+        }
+        emit(c, lhat_encode_abc(LHAT_BC_GETUPVAL, into, (uint8_t)upvalue, 0));
+        ensure_table(c, into);
+        emit(c, lhat_encode_abc(LHAT_BC_SETUPVAL, into, (uint8_t)upvalue, 0));
+        return;
+    }
+
+    uint8_t mark = c->next_register;
+    uint8_t owner = reserve(c);
+    uint8_t key = reserve(c);
+    compile_path_prefix(c, node->v.access.target, owner);
+    compile_key(c, node, key);
+    emit(c, lhat_encode_abc(LHAT_BC_GETINDEX, into, owner, key));
+    ensure_table(c, into);
+    // Writing back what was already there costs one instruction and saves a
+    // branch; a let^ is not a place worth the second jump.
+    emit(c, lhat_encode_abc(LHAT_BC_SETINDEX, owner, key, into));
+    c->next_register = mark;
+}
+
 // 8.7: a let^ name is visible across the whole scope, written before its own
 // definition or after it. So every slot in a block is made before anything is
 // compiled into it -- which is what lets a body call itself, and two bodies
@@ -1652,10 +1725,25 @@ static void declare_names(Compiler *c, const LhatNode *statements)
              target = target->next) {
             const char *name = NULL;
             size_t length = 0;
-            if (!node_name(c, define_target_name(target), &name, &length)) {
+
+            // 8.8: a path introduces a member, so the only name it can make
+            // is its root -- and only when nothing already holds that.
+            // Reaching an enclosing table is the point of the form.
+            if (define_target_is_path(target)) {
+                if (!node_name(c, define_target_root(target), &name, &length)) {
+                    fail(c, LHAT_COMPILE_UNSUPPORTED);
+                    return;
+                }
+                if (find_local(c, name, length) != NULL ||
+                    find_upvalue(c, name, length) != SIZE_MAX) {
+                    continue;
+                }
+            } else if (!node_name(c, define_target_name(target), &name,
+                                  &length)) {
                 fail(c, LHAT_COMPILE_UNSUPPORTED);
                 return;
             }
+
             // 03 の 4.3: at the top level of a session, a name written again
             // is the same place written again. Reusing the slot is what keeps
             // a prompt from running out of registers, and it leaves what is
@@ -1690,6 +1778,26 @@ static void compile_define(Compiler *c, const LhatNode *node)
     const LhatNode *value = node->v.binding.values;
     for (const LhatNode *target = node->v.binding.targets; target != NULL;
          target = target->next) {
+        // 8.8: the place is a member of a table the path reaches. Everything
+        // before the last segment is made where it is not there yet.
+        if (define_target_is_path(target)) {
+            if (value == NULL) {
+                continue;
+            }
+            const LhatNode *last = define_target_name(target);
+            uint8_t mark = c->next_register;
+            uint8_t owner = reserve(c);
+            uint8_t key = reserve(c);
+            uint8_t slot = reserve(c);
+            compile_path_prefix(c, last->v.access.target, owner);
+            compile_key(c, last, key);
+            compile_expression(c, value, slot);
+            emit(c, lhat_encode_abc(LHAT_BC_SETINDEX, owner, key, slot));
+            c->next_register = mark;
+            value = value->next;
+            continue;
+        }
+
         const char *name = NULL;
         size_t length = 0;
         if (!node_name(c, define_target_name(target), &name, &length)) {

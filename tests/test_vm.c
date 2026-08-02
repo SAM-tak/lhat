@@ -2559,6 +2559,43 @@ static void test_coroutines(void)
     LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_DEAD_COROUTINE);
     run_dispose(&r);
 
+    // 8.8: the tables on the way are made where the path does not reach one
+    // yet, and left alone where it does.
+    LHAT_TEST("let^ along a path makes the tables it needs");
+    run_text(&r,
+             "let^ a.b.c = 1\n"
+             "return^ a.b.c\n");
+    CHECK_INTEGER(&r, 1);
+    run_dispose(&r);
+
+    LHAT_TEST("and a second path through one table does not replace it");
+    run_text(&r,
+             "let^ a.b.c = 1\n"
+             "let^ a.b.d = 2\n"
+             "let^ a.z = 3\n"
+             "return^ a.b.c * 100 + a.b.d * 10 + a.z\n");
+    CHECK_INTEGER(&r, 123);
+    run_dispose(&r);
+
+    LHAT_TEST("and a table already there keeps what it had");
+    run_text(&r,
+             "let^ t = { p := 4 }\n"
+             "let^ t.q = 5\n"
+             "return^ t.p * 10 + t.q\n");
+    CHECK_INTEGER(&r, 45);
+    run_dispose(&r);
+
+    // 5.4: the root is reached, not shadowed, so a body writing one reaches
+    // the place the enclosing frame holds.
+    LHAT_TEST("and a nested body reaches the root it does not own");
+    run_text(&r,
+             "let^ outer = { }\n"
+             "let^ add = p^ { let^ outer.k = 7 }\n"
+             "add()\n"
+             "return^ outer.k\n");
+    CHECK_INTEGER(&r, 7);
+    run_dispose(&r);
+
     // 15.11: _yield^ makes the body a coroutine's without suspending it, so
     // start() runs the whole thing and finishes.
     LHAT_TEST("_yield^ does not suspend");
