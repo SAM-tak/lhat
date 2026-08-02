@@ -535,6 +535,20 @@ static bool can_be(const LhatType *type, const LhatType *wanted)
            !lhat_type_disjoint(type, wanted);
 }
 
+// 13.2: nothing inhabits "no value", so it cannot stand where one is wanted.
+// The positions that want a value ask here, rather than infer_call reporting
+// it -- 8.2 makes a call on its own a statement, and that is exactly where a
+// subroutine with no result belongs. Answers unknown once it has reported, so
+// the one mistake does not cascade.
+static LhatType *require_value(Checker *c, const LhatNode *at, LhatType *type)
+{
+    if (type != NULL && type->kind == LHAT_TYPE_NONE) {
+        report(c, at, LHAT_CHECK_ERR_MISMATCH);
+        return simple(c, LHAT_TYPE_UNKNOWN);
+    }
+    return type;
+}
+
 // ---------------------------------------------------------------------------
 // Narrowing (13.11)
 // ---------------------------------------------------------------------------
@@ -953,7 +967,11 @@ static LhatType *infer_binary(Checker *c, const LhatNode *node)
         case LHAT_OP_CONCAT:
             // 11.3 leaves this to the operator's own definition, which needs
             // op^ and is not implemented. Strings are the case that is
-            // certain; anything else is left undecided rather than refused.
+            // certain; anything else is left undecided rather than refused --
+            // but "no value" is refused whatever the operator turns out to
+            // want, since there is nothing there to hand it.
+            require_value(c, node->v.binary.left, left);
+            require_value(c, node->v.binary.right, right);
             if (lhat_type_conforms(left, simple(c, LHAT_TYPE_STRING)) &&
                 lhat_type_conforms(right, simple(c, LHAT_TYPE_STRING))) {
                 return simple(c, LHAT_TYPE_STRING);
@@ -1300,7 +1318,8 @@ static LhatType *infer_table(Checker *c, const LhatNode *node)
     size_t position = 0;
     for (const LhatNode *entry = node->v.list.items; entry != NULL;
          entry = entry->next) {
-        LhatType *value = infer(c, entry->v.entry.value);
+        LhatType *value = require_value(c, entry->v.entry.value,
+                                        infer(c, entry->v.entry.value));
         const char *name = NULL;
         size_t length = 0;
         if (node_name(c, entry->v.entry.key, &name, &length)) {
@@ -1742,7 +1761,20 @@ static LhatType *infer(Checker *c, const LhatNode *node)
 
         case LHAT_NODE_STRING:
         case LHAT_NODE_NAME:
+            return simple(c, LHAT_TYPE_STRING);
+
         case LHAT_NODE_INTERP:
+            // 01 の 5.4: a hole holds an ordinary expression, and lands in a
+            // string whatever it turns out to be -- which is why the answer
+            // here says nothing about it. What goes wrong inside one is still
+            // wrong, so each is checked on its own.
+            for (const LhatNode *part = node->v.list.items; part != NULL;
+                 part = part->next) {
+                if (part->kind == LHAT_NODE_INTERP_HOLE) {
+                    require_value(c, part->v.hole.value,
+                                  infer(c, part->v.hole.value));
+                }
+            }
             return simple(c, LHAT_TYPE_STRING);
 
         case LHAT_NODE_IDENT:
@@ -1805,7 +1837,8 @@ static LhatType *infer(Checker *c, const LhatNode *node)
 
         case LHAT_NODE_INDEX: {
             LhatType *over = infer(c, node->v.access.target);
-            infer(c, node->v.access.argument);
+            require_value(c, node->v.access.argument,
+                          infer(c, node->v.access.argument));
             // A key written out names one position or one member, so the
             // table says what is there. 04 の 11.3: a key that is not there
             // answers nil^ -- but a written one that the type does not
@@ -1833,7 +1866,8 @@ static LhatType *infer(Checker *c, const LhatNode *node)
         }
 
         case LHAT_NODE_AS:
-            infer(c, node->v.ascription.value);
+            require_value(c, node->v.ascription.value,
+                          infer(c, node->v.ascription.value));
             return resolve_type(c, node->v.ascription.type);
 
         case LHAT_NODE_FUNC:
@@ -1852,7 +1886,8 @@ static LhatType *infer(Checker *c, const LhatNode *node)
             c->yield_context = YIELD_CTX_NONE;
             c->yield_bound_type = NULL;
 
-            LhatType *produced = infer(c, node->v.jump.value);
+            LhatType *produced = require_value(c, node,
+                                               infer(c, node->v.jump.value));
             unify_yield(c, node, &c->coroutine_produce, produced);
 
             if (ctx == YIELD_CTX_DISCARD) {
@@ -2039,7 +2074,7 @@ static LhatType *infer(Checker *c, const LhatNode *node)
         }
 
         case LHAT_NODE_UNPACK:
-            infer(c, node->v.jump.value);
+            require_value(c, node->v.jump.value, infer(c, node->v.jump.value));
             return simple(c, LHAT_TYPE_UNKNOWN);
 
         default:
@@ -2066,7 +2101,8 @@ static LhatType *unpacked_source(Checker *c, const LhatNode *values)
         values->kind != LHAT_NODE_UNPACK) {
         return NULL;
     }
-    LhatType *source = infer(c, values->v.jump.value);
+    LhatType *source = require_value(c, values->v.jump.value,
+                                     infer(c, values->v.jump.value));
     return source != NULL ? source : simple(c, LHAT_TYPE_UNKNOWN);
 }
 

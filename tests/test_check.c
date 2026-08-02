@@ -2189,6 +2189,81 @@ static void test_no_value(void)
                "let^ o = p^ { let^ v = yieldall^ g() }\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
+
+    // Every position that wants a value says so. A statement is the one that
+    // does not (8.2), and it is checked above.
+    LHAT_TEST("a table entry wants a value");
+    check_text(&u,
+               "let^ log = p^ m:string^ { let^ y = m }\n"
+               "let^ t = { a := log(\"x\") }\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
+    unit_dispose(&u);
+
+    LHAT_TEST("and so does a positional one");
+    check_text(&u,
+               "let^ log = p^ m:string^ { let^ y = m }\n"
+               "let^ t = { log(\"x\") }\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
+    unit_dispose(&u);
+
+    LHAT_TEST("an index key wants one");
+    check_text(&u,
+               "let^ log = p^ m:string^ { let^ y = m }\n"
+               "let^ t = { 1 }\n"
+               "let^ v = t[log(\"x\")]\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
+    unit_dispose(&u);
+
+    LHAT_TEST("as^ wants one to ascribe");
+    check_text(&u,
+               "let^ log = p^ m:string^ { let^ y = m }\n"
+               "let^ v = log(\"x\") as^ number^\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
+    unit_dispose(&u);
+
+    LHAT_TEST("unpack^ wants one to take apart");
+    check_text(&u,
+               "let^ log = p^ m:string^ { let^ y = m }\n"
+               "let^ q, r = unpack^ log(\"x\")\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
+    unit_dispose(&u);
+
+    // 11.3 leaves what '..' means to op^, but it cannot mean anything at all
+    // when handed nothing.
+    LHAT_TEST("'..' wants one on either side");
+    check_text(&u,
+               "let^ log = p^ m:string^ { let^ y = m }\n"
+               "let^ v = log(\"x\") .. \"a\"\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
+    unit_dispose(&u);
+
+    LHAT_TEST("a yield^ wants one to send out");
+    check_text(&u,
+               "let^ log = p^ m:string^ { let^ y = m }\n"
+               "let^ g = p^ { yield^ log(\"x\") }\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
+    unit_dispose(&u);
+
+    // 01 の 5.4: a hole is an ordinary expression, and was not being checked
+    // at all -- not for this and not for anything else.
+    LHAT_TEST("an interpolation hole wants one");
+    check_text(&u,
+               "let^ log = p^ m:string^ { let^ y = m }\n"
+               "let^ s = $\"v={log(\"x\")}\"\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
+    unit_dispose(&u);
+
+    LHAT_TEST("and is checked like any other expression");
+    check_text(&u, "let^ s = $\"v={nowhere}\"\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_UNDEFINED);
+    unit_dispose(&u);
+
+    LHAT_TEST("while a sound one stays sound");
+    check_text(&u,
+               "let^ n = 1\n"
+               "let^ s = $\"v={n} and {n + 1}\"\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
 }
 
 int main(void)
