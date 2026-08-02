@@ -11,6 +11,20 @@ Meant to be embedded. The language builds as a library that reaches its
 surroundings through a handful of functions a host can replace, and a host
 registers what it provides by writing the type out in C.
 
+Sample:
+```lhat
+import^debug
+
+let^factorial = f^n:number^{
+  if^n < 2 {
+    return^1
+  else^:
+    return^n * this^(n - 1)
+  }
+}
+debug.print(factorial(10)
+```
+
 ## Requirements
 
 - CMake 3.25 or later
@@ -77,7 +91,7 @@ and a construct that has not finished reads on:
 ```text
 > 2 + 3
 5
-> let^ greet = f^n:string^ { return^"hi " .. n }
+> let^ greet = f^n { return^"hi " .. n }
 > greet("there")
 "hi there"
 > let^add = f^a, b {
