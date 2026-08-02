@@ -558,6 +558,26 @@ static LhatType *require_value(Checker *c, const LhatNode *at, LhatType *type)
     return type;
 }
 
+// 11.3: whether a value may stand beside '..', judged structurally. 11.4
+// leaves the general answer to op^, which does not exist yet, so what can be
+// said now is which types already carry one.
+//
+//   string^   — 11.2's first example
+//   a table   — 14.5 composes two definitions with '..', and a definition is
+//               a structure. Which structures actually compose is settled by
+//               the compiler, which resolves names as well as def^ literals;
+//               narrowing it here would refuse what it accepts, so a table is
+//               taken at its word until op^ can be asked properly.
+//
+// A gap in inference says nothing, and 13.7's any^ is every value at once:
+// 03 の 3.5 turns both into checks the machine makes rather than reports.
+static bool responds_to_concat(Checker *c, const LhatType *type)
+{
+    return type == NULL || type->kind == LHAT_TYPE_UNKNOWN ||
+           type->kind == LHAT_TYPE_ANY || type->kind == LHAT_TYPE_TABLE ||
+           lhat_type_conforms(type, simple(c, LHAT_TYPE_STRING));
+}
+
 // ---------------------------------------------------------------------------
 // Narrowing (13.11)
 // ---------------------------------------------------------------------------
@@ -973,19 +993,27 @@ static LhatType *infer_binary(Checker *c, const LhatNode *node)
             }
             return simple(c, LHAT_TYPE_BOOL);
 
-        case LHAT_OP_CONCAT:
-            // 11.3 leaves this to the operator's own definition, which needs
-            // op^ and is not implemented. Strings are the case that is
-            // certain; anything else is left undecided rather than refused --
-            // but "no value" is refused whatever the operator turns out to
-            // want, since there is nothing there to hand it.
-            require_value(c, node->v.binary.left, left);
-            require_value(c, node->v.binary.right, right);
-            if (lhat_type_conforms(left, simple(c, LHAT_TYPE_STRING)) &&
-                lhat_type_conforms(right, simple(c, LHAT_TYPE_STRING))) {
-                return simple(c, LHAT_TYPE_STRING);
+        case LHAT_OP_CONCAT: {
+            // 11.2: '..' is concatenation in general, not string
+            // concatenation -- what may stand beside it is whatever responds
+            // to it, and 11.3 settles that here rather than at run time.
+            // 14.5's composition has already been taken above, by the shape
+            // of the right side. Until op^ arrives (11.4) a string is the
+            // only answer built in.
+            left = require_value(c, node->v.binary.left, left);
+            right = require_value(c, node->v.binary.right, right);
+            bool joins = true;
+            if (!responds_to_concat(c, left)) {
+                report(c, node->v.binary.left, LHAT_CHECK_ERR_NO_CONCAT);
+                joins = false;
             }
-            return simple(c, LHAT_TYPE_UNKNOWN);
+            if (!responds_to_concat(c, right)) {
+                report(c, node->v.binary.right, LHAT_CHECK_ERR_NO_CONCAT);
+                joins = false;
+            }
+            return joins ? simple(c, LHAT_TYPE_STRING)
+                         : simple(c, LHAT_TYPE_UNKNOWN);
+        }
 
         default:
             return simple(c, LHAT_TYPE_UNKNOWN);
@@ -2849,6 +2877,8 @@ const char *lhat_check_error_message(LhatCheckErrorCode code)
             return "these can never be equal, so the comparison is fixed already";
         case LHAT_CHECK_ERR_BAD_KEY:
             return "nil^ is how a table spells 'not there', so it cannot be a key";
+        case LHAT_CHECK_ERR_NO_CONCAT:
+            return "'..' joins values that answer it, and this one does not";
         case LHAT_CHECK_ERR_IS_ALWAYS_TRUE:
             return "any^ holds of every value, so this asks nothing";
         case LHAT_CHECK_ERR_MEMBER_EXISTS:

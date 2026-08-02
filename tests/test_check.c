@@ -2356,6 +2356,60 @@ static void test_no_value(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
+    // 11.2: '..' joins what answers it, and 11.3 settles that here. The
+    // machine already refused these; the checker had been silent.
+    LHAT_TEST("a number does not answer '..'");
+    check_text(&u, "let^ v = 1 .. \"b\"\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_NO_CONCAT);
+    unit_dispose(&u);
+
+    LHAT_TEST("on either side of it");
+    check_text(&u, "let^ v = \"a\" .. 1\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_NO_CONCAT);
+    unit_dispose(&u);
+
+    LHAT_TEST("nor does a bool^ or a nil^");
+    check_text(&u, "let^ v = true^ .. \"a\"\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_NO_CONCAT);
+    unit_dispose(&u);
+
+    // Every arm has to answer, since the value may be any of them.
+    LHAT_TEST("and a union answers only when all of it does");
+    check_text(&u,
+               "let^ x : string^|nil^ = \"a\"\n"
+               "let^ v = x .. \"b\"\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_NO_CONCAT);
+    unit_dispose(&u);
+
+    LHAT_TEST("a string answers, which is 11.2's first example");
+    check_text(&u, "let^ v : string^ = \"a\" .. \"b\" .. \"c\"\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // 14.5 composes definitions with '..', and the compiler resolves names as
+    // well as def^ literals -- so a structure is taken at its word here.
+    LHAT_TEST("and so does a definition, named or written out");
+    check_text(&u,
+               "let^ Foo = def^{ self^{} }\n"
+               "let^ Baz = def^{ self^{} }\n"
+               "let^ A = Foo .. Baz\n"
+               "let^ B = Foo .. def^{ self^{} }\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // 03 の 3.5 turns what is not known into the machine's business.
+    LHAT_TEST("a gap in inference says nothing either way");
+    check_text(&u, "let^ f = f^ x -> string^ { return^ x .. \"b\" }\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("and 13.7's any^ is every value at once");
+    check_text(&u,
+               "let^ x : any^ = \"a\"\n"
+               "let^ v = x .. \"b\"\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
     LHAT_TEST("a yield^ wants one to send out");
     check_text(&u,
                "let^ log = p^ m:string^ { let^ y = m }\n"
