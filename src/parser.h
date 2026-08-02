@@ -38,6 +38,9 @@ typedef enum {
     LHAT_PARSE_ERR_CLAUSE_NOT_IN_LOOP,        // 9 章 clauses outside a loop
     LHAT_PARSE_ERR_FOR_NEEDS_CLAUSE,          // 16.3: for^ needs a driving clause
     LHAT_PARSE_ERR_REPEAT_TAKES_NO_NEXT,      // 16.5
+    LHAT_PARSE_ERR_NEXT_NOT_HERE,             // 16.3: next^ updates a while^
+                                              // or until^; the other forms
+                                              // advance their own focus
     LHAT_PARSE_ERR_WITHDRAWN_FROM,            // 16.3: from^ replaced by ':='
     LHAT_PARSE_ERR_EXPECTED_MEMBER,           // 14 章: def^ holds members
     LHAT_PARSE_ERR_FIELD_NEEDS_NAME,          // 14.6: every field is named

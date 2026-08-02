@@ -2175,6 +2175,18 @@ static LhatNode *parse_for(Parser *p)
         return node;
     }
 
+    // 16.3: next^ is the update of a conditional loop, and only that. 16.4
+    // makes to^ and downto^ sugar for a while^ that already carries one, and
+    // 16.3 has a walk advanced by the coroutine it is stepping -- so in every
+    // other form there is no focus for next^ to move. Consumed either way, so
+    // that the body still parses and this is the only diagnostic.
+    if (is_loop && node->v.loop.kind != LHAT_FOR_WHILE &&
+        node->v.loop.kind != LHAT_FOR_UNTIL && check_hat(p, "next")) {
+        report(p, &p->current, LHAT_PARSE_ERR_NEXT_NOT_HERE);
+        advance(p);
+        parse_advance(p);
+    }
+
     node->v.loop.body =
         parse_braced_block(p, is_loop, node->v.loop.kind == LHAT_FOR_IN);
     return node;
@@ -2730,6 +2742,9 @@ const char *lhat_parse_error_message(LhatParseErrorCode code)
             return "for^ needs one of to^, downto^, in^, while^, until^ or if^";
         case LHAT_PARSE_ERR_REPEAT_TAKES_NO_NEXT:
             return "next^ belongs to for^; repeat^ declares no focus to advance";
+        case LHAT_PARSE_ERR_NEXT_NOT_HERE:
+            return "next^ updates the focus of a while^ or until^ loop; this "
+                   "form advances its own";
         case LHAT_PARSE_ERR_WITHDRAWN_FROM:
             return "from^ was withdrawn; write 'for^ i := 1 to^ 10'";
         case LHAT_PARSE_ERR_EXPECTED_MEMBER:

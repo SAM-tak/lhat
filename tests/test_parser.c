@@ -1180,6 +1180,36 @@ static void test_loop_clauses(void)
                       LHAT_PARSE_ERR_PRE_IN_WALK);
     parse_dispose(&p);
 
+    // 16.3: next^ updates the focus of a conditional loop. A walk is advanced
+    // by the coroutine it steps, so there is nothing there for it to move.
+    LHAT_TEST("a walk takes no next^");
+    parse_text(&p, "for^ k, v in^ t next^ i := i + 1 { main^: a() }");
+    LHAT_CHECK(p.result.diagnostic_count > 0, "expected a diagnostic");
+    LHAT_CHECK_EQ_INT(p.result.diagnostics[0].code,
+                      LHAT_PARSE_ERR_NEXT_NOT_HERE);
+    parse_dispose(&p);
+
+    // 16.4 makes to^ and downto^ sugar for a while^ that already carries a
+    // next^ of its own, so writing another is the same mistake.
+    LHAT_TEST("nor does to^");
+    parse_text(&p, "for^ i := 1 to^ 10 next^ i := i + 1 { main^: a() }");
+    LHAT_CHECK(p.result.diagnostic_count > 0, "expected a diagnostic");
+    LHAT_CHECK_EQ_INT(p.result.diagnostics[0].code,
+                      LHAT_PARSE_ERR_NEXT_NOT_HERE);
+    parse_dispose(&p);
+
+    LHAT_TEST("nor downto^");
+    parse_text(&p, "for^ i := 10 downto^ 1 next^ i := i - 1 { main^: a() }");
+    LHAT_CHECK(p.result.diagnostic_count > 0, "expected a diagnostic");
+    LHAT_CHECK_EQ_INT(p.result.diagnostics[0].code,
+                      LHAT_PARSE_ERR_NEXT_NOT_HERE);
+    parse_dispose(&p);
+
+    LHAT_TEST("but while^ and until^ are what it is for");
+    parse_text(&p, "for^ i := 1 while^ i < 3 next^ i := i + 1 { main^: a() }");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    parse_dispose(&p);
+
     // 10.1: finally^ belongs to blocks in general.
     LHAT_TEST("finally^ on a do^ block");
     parse_text(&p, "do^{ work() finally^: cleanup() }");
