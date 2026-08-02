@@ -77,10 +77,10 @@ and a construct that has not finished reads on:
 ```text
 > 2 + 3
 5
-> let^ greet = f^ n:string^ -> string^ { return^ "hi " .. n }
+> let^ greet = f^ n:string^ { return^ "hi " .. n }
 > greet("there")
 "hi there"
-> let^ add = f^ a:number^, b:number^ -> number^ {
+> let^ add = f^ a, b {
 .     return^ a + b
 . }
 > add(2, 3)
