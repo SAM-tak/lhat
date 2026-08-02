@@ -168,6 +168,11 @@ typedef struct {
 typedef struct LhatProto {
     LhatChunk chunk;
 
+    // 03 の 4.3: how many registers already hold values when this unit
+    // starts. Zero everywhere but the second and later inputs of a REPL,
+    // where the top-level names of the earlier ones are still in them.
+    uint8_t reserved;
+
     uint8_t parameters;
     bool is_function;  // f^ rather than p^ (02 の 15 章)
     bool yields;       // 02 の 15.2: the body contains yield^, so calling it

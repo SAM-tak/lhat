@@ -30,6 +30,15 @@ static void check_text(Unit *u, const char *text)
     lhat_check(u->parsed.root, &u->lexer, true, &u->checked);
 }
 
+// The same, as the next input of a session (03 の 4.3).
+static void check_next_text(Unit *u, LhatCheckSession *s, const char *text)
+{
+    lhat_source_init_from_string(&u->source, "<test>", text, strlen(text));
+    lhat_lexer_init(&u->lexer, &u->source);
+    lhat_parse(&u->lexer, &u->parsed);
+    lhat_check_next(s, u->parsed.root, &u->lexer, true, &u->checked);
+}
+
 static void unit_dispose(Unit *u)
 {
     lhat_check_result_dispose(&u->checked);
@@ -2663,6 +2672,111 @@ static void test_no_value(void)
     unit_dispose(&u);
 }
 
+// 03 の 4.3: a REPL checks many inputs as one running program, so a name one
+// input bound keeps its type in the next.
+static void test_session(void)
+{
+    Unit u;
+
+    LHAT_TEST("a name keeps its type into the next input");
+    {
+        LhatCheckSession *s = lhat_check_session_new();
+        check_next_text(&u, s, "let^ x : number^ = 40\n");
+        CHECK_CLEAN(&u);
+        unit_dispose(&u);
+        check_next_text(&u, s, "let^ n : number^ = x\n");
+        CHECK_CLEAN(&u);
+        unit_dispose(&u);
+        lhat_check_session_dispose(s);
+    }
+
+    LHAT_TEST("and the wrong type is caught across inputs");
+    {
+        LhatCheckSession *s = lhat_check_session_new();
+        check_next_text(&u, s, "let^ x : number^ = 40\n");
+        unit_dispose(&u);
+        check_next_text(&u, s, "let^ t : string^ = x\n");
+        CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
+        unit_dispose(&u);
+        lhat_check_session_dispose(s);
+    }
+
+    LHAT_TEST("a name never bound is still not in scope");
+    {
+        LhatCheckSession *s = lhat_check_session_new();
+        check_next_text(&u, s, "let^ x : number^ = 1\n");
+        unit_dispose(&u);
+        check_next_text(&u, s, "let^ n : number^ = nowhere\n");
+        CHECK_REPORTS(&u, LHAT_CHECK_ERR_UNDEFINED);
+        unit_dispose(&u);
+        lhat_check_session_dispose(s);
+    }
+
+    // 03 の 4.3: at the top level of a session a name written again is the
+    // same place written again, not the clash 8.7 makes of two let^ in one
+    // scope. A prompt is for writing a line again.
+    LHAT_TEST("a name written again is a redefinition, not a clash");
+    {
+        LhatCheckSession *s = lhat_check_session_new();
+        check_next_text(&u, s, "let^ x : number^ = 1\n");
+        unit_dispose(&u);
+        check_next_text(&u, s, "let^ x : string^ = \"now\"\n");
+        CHECK_CLEAN(&u);
+        unit_dispose(&u);
+        lhat_check_session_dispose(s);
+    }
+
+    LHAT_TEST("and the newer type is the one it has");
+    {
+        LhatCheckSession *s = lhat_check_session_new();
+        check_next_text(&u, s, "let^ x : number^ = 1\n");
+        unit_dispose(&u);
+        check_next_text(&u, s, "let^ x : string^ = \"now\"\n");
+        unit_dispose(&u);
+        check_next_text(&u, s, "let^ n : number^ = x\n");
+        CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
+        unit_dispose(&u);
+        lhat_check_session_dispose(s);
+    }
+
+    // 8.7 still holds within one input.
+    LHAT_TEST("but twice in one input is still a clash");
+    {
+        LhatCheckSession *s = lhat_check_session_new();
+        check_next_text(&u, s, "let^ x = 1\nlet^ x = 2\n");
+        CHECK_REPORTS(&u, LHAT_CHECK_ERR_REDEFINED);
+        unit_dispose(&u);
+        lhat_check_session_dispose(s);
+    }
+
+    // Including when the first of the two came from an earlier input: the
+    // mark saying "bound elsewhere" is spent by the first let^ that writes
+    // the name again.
+    LHAT_TEST("and so is one redefinition too many in a single input");
+    {
+        LhatCheckSession *s = lhat_check_session_new();
+        check_next_text(&u, s, "let^ x = 1\n");
+        unit_dispose(&u);
+        check_next_text(&u, s, "let^ x = 2\nlet^ x = 3\n");
+        CHECK_REPORTS(&u, LHAT_CHECK_ERR_REDEFINED);
+        unit_dispose(&u);
+        lhat_check_session_dispose(s);
+    }
+
+    // 8.7 keeps a name visible before its let^ runs, so a redefinition may
+    // read what the name already holds.
+    LHAT_TEST("a redefinition may read what is already there");
+    {
+        LhatCheckSession *s = lhat_check_session_new();
+        check_next_text(&u, s, "let^ x : number^ = 1\n");
+        unit_dispose(&u);
+        check_next_text(&u, s, "let^ x = x + 10\n");
+        CHECK_CLEAN(&u);
+        unit_dispose(&u);
+        lhat_check_session_dispose(s);
+    }
+}
+
 int main(void)
 {
     test_names();
@@ -2679,5 +2793,6 @@ int main(void)
     test_walking();
     test_positions();
     test_no_value();
+    test_session();
     return lhat_test_report("test_check");
 }

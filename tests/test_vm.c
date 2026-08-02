@@ -38,6 +38,17 @@ static void compile_text(Run *r, const char *text)
     memset(&r->ran, 0, sizeof r->ran);
 }
 
+// The same, as the next input of a session (03 の 4.3).
+static void compile_next_text(Run *r, LhatCompileSession *s, const char *text)
+{
+    lhat_source_init_from_string(&r->source, "<test>", text, strlen(text));
+    lhat_lexer_init(&r->lexer, &r->source);
+    lhat_parse(&r->lexer, &r->parsed);
+    r->compiled = lhat_compile_next(s, r->parsed.root, &r->lexer, &r->proto);
+    r->machine = NULL;
+    memset(&r->ran, 0, sizeof r->ran);
+}
+
 static void compiled_dispose(Run *r)
 {
     lhat_proto_free(r->proto);
@@ -3186,6 +3197,148 @@ static void test_machine(void)
         lhat_machine_dispose(one);
         lhat_machine_dispose(two);
         compiled_dispose(&text);
+    }
+
+    // 03 の 4.3: the top-level names of one input are still there for the
+    // next, which is what a session is for.
+    LHAT_TEST("a session carries top-level names between inputs");
+    {
+        LhatMachine *m = lhat_machine_new();
+        LhatCompileSession *s = lhat_compile_session_new();
+        Run one, two, three;
+        compile_next_text(&one, s, "let^ x = 40\nreturn^ x\n");
+        compile_next_text(&two, s, "let^ y = 2\nreturn^ x + y\n");
+        compile_next_text(&three, s, "x := x + y\nreturn^ x\n");
+        LHAT_CHECK_EQ_INT(lhat_as_integer(lhat_run(m, one.proto).value), 40);
+        LHAT_CHECK_EQ_INT(lhat_as_integer(lhat_run(m, two.proto).value), 42);
+        LHAT_CHECK_EQ_INT(lhat_as_integer(lhat_run(m, three.proto).value), 42);
+        lhat_machine_dispose(m);
+        lhat_compile_session_dispose(s);
+        compiled_dispose(&one);
+        compiled_dispose(&two);
+        compiled_dispose(&three);
+    }
+
+    LHAT_TEST("and a subroutine one input made is callable in the next");
+    {
+        LhatMachine *m = lhat_machine_new();
+        LhatCompileSession *s = lhat_compile_session_new();
+        Run one, two;
+        compile_next_text(
+            &one, s,
+            "let^ greet = f^ n:string^ -> string^ { return^ \"hi \" .. n }\n");
+        compile_next_text(&two, s, "return^ greet(\"there\")\n");
+        lhat_run(m, one.proto);
+        LhatRunResult r = lhat_run(m, two.proto);
+        LHAT_CHECK_EQ_INT(r.status, LHAT_RUN_OK);
+        LHAT_CHECK(lhat_is_object_kind(r.value, LHAT_OBJECT_STRING),
+                   "the subroutine survived");
+        lhat_machine_dispose(m);
+        lhat_compile_session_dispose(s);
+        compiled_dispose(&one);
+        compiled_dispose(&two);
+    }
+
+    // 03 の 4.3: a name written again keeps the slot it had, so a prompt does
+    // not run out of registers however many times a line is rewritten.
+    LHAT_TEST("a name written again keeps its slot");
+    {
+        LhatMachine *m = lhat_machine_new();
+        LhatCompileSession *s = lhat_compile_session_new();
+        Run turns[300];
+        size_t taken = 0;
+        bool all_compiled = true;
+        for (size_t i = 0; i < 300; i++) {
+            char text[64];
+            snprintf(text, sizeof text, "let^ x = %zu\nreturn^ x\n", i);
+            compile_next_text(&turns[taken], s, text);
+            if (turns[taken].compiled != LHAT_COMPILE_OK) {
+                all_compiled = false;
+                compiled_dispose(&turns[taken]);
+                break;
+            }
+            taken++;
+        }
+        LHAT_CHECK(all_compiled, "300 rewrites of one name compiled");
+        if (taken > 0) {
+            LHAT_CHECK_EQ_INT(
+                lhat_as_integer(lhat_run(m, turns[taken - 1].proto).value),
+                (int64_t)(taken - 1));
+        }
+        for (size_t i = 0; i < taken; i++) {
+            compiled_dispose(&turns[i]);
+        }
+        lhat_machine_dispose(m);
+        lhat_compile_session_dispose(s);
+    }
+
+    // 8.7 keeps a name visible before its let^ runs, and the slot still holds
+    // what the last input put there.
+    LHAT_TEST("and a redefinition reads what is already in it");
+    {
+        LhatMachine *m = lhat_machine_new();
+        LhatCompileSession *s = lhat_compile_session_new();
+        Run one, two;
+        compile_next_text(&one, s, "let^ x = 1\n");
+        compile_next_text(&two, s, "let^ x = x + 10\nreturn^ x\n");
+        lhat_run(m, one.proto);
+        LHAT_CHECK_EQ_INT(lhat_as_integer(lhat_run(m, two.proto).value), 11);
+        lhat_machine_dispose(m);
+        lhat_compile_session_dispose(s);
+        compiled_dispose(&one);
+        compiled_dispose(&two);
+    }
+
+    // 5.4: an upvalue is a shared place only while the frame holding it
+    // lives. The frame is the input, so a closure made in one input carries
+    // what it captured away with it -- a later input writing that name over
+    // does not reach into what the closure took.
+    LHAT_TEST("a closure keeps what it captured when its input ended");
+    {
+        LhatMachine *m = lhat_machine_new();
+        LhatCompileSession *s = lhat_compile_session_new();
+        Run one, two, three, four;
+        compile_next_text(&one, s, "let^ x = 1\n");
+        compile_next_text(&two, s,
+                          "let^ show = f^ -> number^ { return^ x }\n");
+        compile_next_text(&three, s, "let^ x = 2\nreturn^ x\n");
+        compile_next_text(&four, s, "return^ show()\n");
+        lhat_run(m, one.proto);
+        lhat_run(m, two.proto);
+        LHAT_CHECK_EQ_INT(lhat_as_integer(lhat_run(m, three.proto).value), 2);
+        LHAT_CHECK_EQ_INT(lhat_as_integer(lhat_run(m, four.proto).value), 1);
+        lhat_machine_dispose(m);
+        lhat_compile_session_dispose(s);
+        compiled_dispose(&one);
+        compiled_dispose(&two);
+        compiled_dispose(&three);
+        compiled_dispose(&four);
+    }
+
+    // Which is what keeps a redefinition to another type from making an
+    // earlier closure's result type a lie.
+    LHAT_TEST("so redefining to another type does not reach it");
+    {
+        LhatMachine *m = lhat_machine_new();
+        LhatCompileSession *s = lhat_compile_session_new();
+        Run one, two, three, four;
+        compile_next_text(&one, s, "let^ x = 1\n");
+        compile_next_text(&two, s,
+                          "let^ show = f^ -> number^ { return^ x }\n");
+        compile_next_text(&three, s, "let^ x = \"now\"\n");
+        compile_next_text(&four, s, "return^ show() + 1\n");
+        lhat_run(m, one.proto);
+        lhat_run(m, two.proto);
+        lhat_run(m, three.proto);
+        LhatRunResult r = lhat_run(m, four.proto);
+        LHAT_CHECK_EQ_INT(r.status, LHAT_RUN_OK);
+        LHAT_CHECK_EQ_INT(lhat_as_integer(r.value), 2);
+        lhat_machine_dispose(m);
+        lhat_compile_session_dispose(s);
+        compiled_dispose(&one);
+        compiled_dispose(&two);
+        compiled_dispose(&three);
+        compiled_dispose(&four);
     }
 
     // One proto, several runs: 5.2 and 5.4 make the registers and the frames

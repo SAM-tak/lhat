@@ -13,6 +13,10 @@ typedef struct Binding {
     LhatType *type;
     uint32_t offset;
     bool reached;  // its let^ has been walked past
+    // 03 の 4.3: bound by an earlier input of a session. Writing the name
+    // again is a redefinition rather than the clash 8.7 makes of two let^ in
+    // one scope -- it is the same place, written again.
+    bool from_session;
     struct Binding *next;
 } Binding;
 
@@ -2641,8 +2645,17 @@ static void collect_bindings(Checker *c, const LhatNode *statements)
             if (!node_name(c, target_name_node(target), &name, &length)) {
                 continue;
             }
-            if (scope_find_local(c->scope, name, length) != NULL) {
-                report(c, target_name_node(target), LHAT_CHECK_ERR_REDEFINED);
+            Binding *already = scope_find_local(c->scope, name, length);
+            if (already != NULL) {
+                // 03 の 4.3: a name an earlier input of a session bound is
+                // written again here, which is the same place written again.
+                // Clearing the mark leaves 8.7 in force for a second let^
+                // within this input.
+                if (!already->from_session) {
+                    report(c, target_name_node(target),
+                           LHAT_CHECK_ERR_REDEFINED);
+                }
+                already->from_session = false;
                 continue;
             }
             scope_add(c->scope, name, length, simple(c, LHAT_TYPE_UNKNOWN),
@@ -2948,6 +2961,130 @@ void lhat_check_unit(const LhatNode *unit, const LhatLexer *lexer, bool strict,
     // name written late is not missed. 8.7 already makes every name visible
     // throughout the scope, so this only reads what is there.
     result->exports = collect_exports(&checker, unit->v.list.items);
+
+    scope_dispose(&scope);
+}
+
+// 03 の 4.3: the names the inputs so far have bound, with their types. The
+// names are copies -- a Binding points into the source it was read from, and
+// that source goes when its input does. The arena is the session's so the
+// types outlive any one input, the same way 05 の 6 章 shares one across a
+// program's units.
+struct LhatCheckSession {
+    LhatTypeArena types;
+    struct {
+        char *name;
+        size_t length;
+        LhatType *type;
+    } *names;
+    size_t count;
+    size_t capacity;
+};
+
+LhatCheckSession *lhat_check_session_new(void)
+{
+    LhatCheckSession *session =
+        (LhatCheckSession *)calloc(1, sizeof *session);
+    if (session != NULL) {
+        lhat_type_arena_init(&session->types);
+    }
+    return session;
+}
+
+void lhat_check_session_dispose(LhatCheckSession *session)
+{
+    if (session == NULL) {
+        return;
+    }
+    for (size_t i = 0; i < session->count; i++) {
+        free(session->names[i].name);
+    }
+    free(session->names);
+    lhat_type_arena_dispose(&session->types);
+    free(session);
+}
+
+// Keeps what an input bound, replacing what an earlier one bound under the
+// same name -- 8.7 makes a second let^ a new name, and at the top level of a
+// REPL that is what a writer means by it.
+static void session_keep(LhatCheckSession *session, const char *name,
+                         size_t length, LhatType *type)
+{
+    for (size_t i = 0; i < session->count; i++) {
+        if (session->names[i].length == length &&
+            memcmp(session->names[i].name, name, length) == 0) {
+            session->names[i].type = type;
+            return;
+        }
+    }
+    if (session->count == session->capacity) {
+        size_t grown = session->capacity ? session->capacity * 2 : 16;
+        void *bigger = realloc(session->names, grown * sizeof *session->names);
+        if (bigger == NULL) {
+            return;
+        }
+        session->names = bigger;
+        session->capacity = grown;
+    }
+    char *kept = (char *)malloc(length + 1);
+    if (kept == NULL) {
+        return;
+    }
+    memcpy(kept, name, length);
+    kept[length] = '\0';
+    session->names[session->count].name = kept;
+    session->names[session->count].length = length;
+    session->names[session->count].type = type;
+    session->count++;
+}
+
+void lhat_check_next(LhatCheckSession *session, const LhatNode *unit,
+                     const LhatLexer *lexer, bool strict,
+                     LhatCheckResult *result)
+{
+    memset(result, 0, sizeof *result);
+    result->types = &session->types;
+
+    if (unit == NULL || lexer == NULL) {
+        return;
+    }
+
+    // 03 の 4.3: one scope across the whole session. A name written again is
+    // the same place written again, so the top level of a prompt keeps the
+    // slot it had rather than taking another.
+    Scope scope;
+    scope.bindings = NULL;
+    scope.tail = NULL;
+    scope.parent = NULL;
+
+    Checker checker;
+    memset(&checker, 0, sizeof checker);
+    checker.lexer = lexer;
+    checker.result = result;
+    checker.strict = strict;
+    checker.scope = &scope;
+
+    // What earlier inputs bound is settled already -- 8.7's "used before
+    // defined" is about the statements of this input.
+    for (size_t i = 0; i < session->count; i++) {
+        Binding *b = scope_add(&scope, session->names[i].name,
+                               session->names[i].length,
+                               session->names[i].type, 0);
+        if (b != NULL) {
+            b->reached = true;
+            b->from_session = true;
+        }
+    }
+
+    check_statements(&checker, unit->v.list.items);
+    result->exports = collect_exports(&checker, unit->v.list.items);
+
+    // What this input bound joins the session, replacing what an earlier one
+    // bound under the same name. The types are in the session's arena
+    // already, so only the names are copied.
+    for (Binding *b = scope.bindings; b != NULL; b = b->next) {
+        session_keep(session, b->name, b->name_length, b->type);
+    }
 
     scope_dispose(&scope);
 }

@@ -33,6 +33,24 @@ typedef enum {
 LhatCompileStatus lhat_compile(const LhatNode *unit, const LhatLexer *lexer,
                                LhatProto **out);
 
+// 03 の 4.3: a REPL compiles many inputs into one running machine, so the
+// top-level names of one input have to still be there for the next. The
+// session carries them -- their slots, and the names themselves, copied,
+// since each input's lexer goes when the input does.
+typedef struct LhatCompileSession LhatCompileSession;
+
+LhatCompileSession *lhat_compile_session_new(void);
+void lhat_compile_session_dispose(LhatCompileSession *session);
+
+// Compiles `unit` as the next input of `session`. The top-level names already
+// in it are in scope, and the ones this input declares stay for the next.
+//
+// The proto answers where the machine has to leave the stack alone, so a run
+// of it belongs to the machine the earlier inputs ran on and no other.
+LhatCompileStatus lhat_compile_next(LhatCompileSession *session,
+                                    const LhatNode *unit,
+                                    const LhatLexer *lexer, LhatProto **out);
+
 const char *lhat_compile_status_message(LhatCompileStatus status);
 
 typedef enum {

@@ -62,6 +62,10 @@ typedef struct Compiler {
 
     LoopContext *loop;  // the innermost loop being compiled, NULL outside one
 
+    // 03 の 4.3: the statements being declared are the top level of a
+    // session's input, where a name written again keeps the slot it had.
+    bool session_top;
+
     // 5.5: how many cleanups are pending here. The compiler tracks it so that
     // an exit knows how far to drain; the machine holds the cleanups.
     size_t cleanup_depth;
@@ -1645,6 +1649,14 @@ static void declare_names(Compiler *c, const LhatNode *statements)
                 fail(c, LHAT_COMPILE_UNSUPPORTED);
                 return;
             }
+            // 03 の 4.3: at the top level of a session, a name written again
+            // is the same place written again. Reusing the slot is what keeps
+            // a prompt from running out of registers, and it leaves what is
+            // there readable -- 'let^ x = x + 1' means the x that is there.
+            if (c->session_top && find_local(c, name, length) != NULL) {
+                continue;
+            }
+
             if (c->local_count >= LHAT_MAX_LOCALS) {
                 fail(c, LHAT_COMPILE_TOO_COMPLEX);
                 return;
@@ -1770,6 +1782,24 @@ static void compile_statements(Compiler *c, const LhatNode *statements)
 
     c->local_count = local_mark;
     c->next_register = register_mark;
+}
+
+// 03 の 4.3: the top level of a session is not a block that ends. Its names
+// keep their slots for the next input, so nothing is rolled back and no
+// CLOSE is written -- 5.4's shared places go on being shared, which is what
+// lets a closure made in one input see a later one reassign what it captured.
+static void compile_session_statements(Compiler *c, const LhatNode *statements)
+{
+    declare_errors(c, statements);
+    // Only this list is the session's top level; the blocks inside it are
+    // blocks like any other.
+    c->session_top = true;
+    declare_names(c, statements);
+    c->session_top = false;
+    declare_defs(c, statements);
+    for (const LhatNode *s = statements; s != NULL; s = s->next) {
+        compile_statement(c, s);
+    }
 }
 
 // 5.5: a cleanup is a stretch of code the frame remembers and runs on the way
@@ -2484,8 +2514,38 @@ static void compile_statement(Compiler *c, const LhatNode *node)
     }
 }
 
-LhatCompileStatus lhat_compile(const LhatNode *unit, const LhatLexer *lexer,
-                               LhatProto **out)
+// 03 の 4.3: the top-level names of the inputs already compiled, with the
+// slots they were given. The names are copies -- the lexer each one was read
+// from goes when that input does, and a Local points into source text.
+struct LhatCompileSession {
+    struct {
+        char *name;
+        size_t length;
+        uint8_t reg;
+    } names[LHAT_MAX_LOCALS];
+    size_t count;
+    uint8_t next_register;
+};
+
+LhatCompileSession *lhat_compile_session_new(void)
+{
+    return (LhatCompileSession *)calloc(1, sizeof(LhatCompileSession));
+}
+
+void lhat_compile_session_dispose(LhatCompileSession *session)
+{
+    if (session == NULL) {
+        return;
+    }
+    for (size_t i = 0; i < session->count; i++) {
+        free(session->names[i].name);
+    }
+    free(session);
+}
+
+static LhatCompileStatus compile_unit(LhatCompileSession *session,
+                                      const LhatNode *unit,
+                                      const LhatLexer *lexer, LhatProto **out)
 {
     *out = NULL;
     if (unit == NULL || lexer == NULL) {
@@ -2505,8 +2565,30 @@ LhatCompileStatus lhat_compile(const LhatNode *unit, const LhatLexer *lexer,
     c.proto = proto;
     c.status = &status;
 
-    // The unit is a scope like any other, so 8.7 applies to it too.
-    compile_statements(&c, unit->v.list.items);
+    // 03 の 4.3: what earlier inputs left is already in scope and already in
+    // registers, so this one names it where it stands and numbers its own
+    // from above.
+    if (session != NULL) {
+        for (size_t i = 0; i < session->count; i++) {
+            c.locals[c.local_count].name = session->names[i].name;
+            c.locals[c.local_count].length = session->names[i].length;
+            c.locals[c.local_count].reg = session->names[i].reg;
+            c.local_count++;
+        }
+        c.next_register = session->next_register;
+        proto->reserved = session->next_register;
+        if (proto->chunk.registers < session->next_register) {
+            proto->chunk.registers = session->next_register;
+        }
+    }
+
+    // The unit is a scope like any other, so 8.7 applies to it too -- unless
+    // it is one input of a session, where the top level outlives the input.
+    if (session != NULL) {
+        compile_session_statements(&c, unit->v.list.items);
+    } else {
+        compile_statements(&c, unit->v.list.items);
+    }
     emit(&c, lhat_encode_abc(LHAT_BC_RETURN_NIL, 0, 0, 0));
 
     // The registry was the compiler's; the kind objects it points at belong
@@ -2521,8 +2603,59 @@ LhatCompileStatus lhat_compile(const LhatNode *unit, const LhatLexer *lexer,
         lhat_proto_free(proto);
         return status;
     }
+
+    // What this input declared joins the session, copied out of the source it
+    // was read from. 03 の 4.3: a name written again shadows rather than
+    // redefines, so the newer slot takes the name and the older one keeps
+    // whatever it holds -- a closure that captured it goes on reading it.
+    if (session != NULL) {
+        for (size_t i = session->count; i < c.local_count; i++) {
+            size_t at = session->count;
+            for (size_t seen = 0; seen < session->count; seen++) {
+                if (session->names[seen].length == c.locals[i].length &&
+                    memcmp(session->names[seen].name, c.locals[i].name,
+                           c.locals[i].length) == 0) {
+                    at = seen;
+                    break;
+                }
+            }
+            if (at == session->count) {
+                if (session->count >= LHAT_MAX_LOCALS) {
+                    break;
+                }
+                char *kept = (char *)malloc(c.locals[i].length + 1);
+                if (kept == NULL) {
+                    lhat_proto_free(proto);
+                    return LHAT_COMPILE_TOO_COMPLEX;
+                }
+                memcpy(kept, c.locals[i].name, c.locals[i].length);
+                kept[c.locals[i].length] = '\0';
+                session->names[at].name = kept;
+                session->names[at].length = c.locals[i].length;
+                session->count++;
+            }
+            session->names[at].reg = c.locals[i].reg;
+        }
+        session->next_register = c.next_register > session->next_register
+                                     ? c.next_register
+                                     : session->next_register;
+    }
+
     *out = proto;
     return status;
+}
+
+LhatCompileStatus lhat_compile(const LhatNode *unit, const LhatLexer *lexer,
+                               LhatProto **out)
+{
+    return compile_unit(NULL, unit, lexer, out);
+}
+
+LhatCompileStatus lhat_compile_next(LhatCompileSession *session,
+                                    const LhatNode *unit,
+                                    const LhatLexer *lexer, LhatProto **out)
+{
+    return compile_unit(session, unit, lexer, out);
 }
 
 const char *lhat_compile_status_message(LhatCompileStatus status)
@@ -2986,12 +3119,12 @@ LhatMachine *lhat_machine_new(void)
 {
     // A whole stack and a frame array, so the heap is where it belongs --
     // a static one could serve only one caller and never nest.
+    // calloc rather than malloc, and nothing more: 03 の 2.2 numbers
+    // LHAT_VALUE_NIL first and gives it a zero payload, so zeroed memory is
+    // already a stack full of nil^.
     Machine *m = (Machine *)calloc(1, sizeof *m);
     if (m == NULL) {
         return NULL;
-    }
-    for (size_t i = 0; i < LHAT_STACK_SLOTS; i++) {
-        m->stack[i] = lhat_nil();
     }
     m->threshold = 256;
     return m;
@@ -3011,9 +3144,13 @@ LhatRunResult lhat_run(LhatMachine *m, const LhatProto *proto)
 {
     // 5.4 and 5.2: the frames and the registers belong to the run, so each
     // starts with neither. What the heap holds is the machine's and stays.
+    //
+    // 03 の 4.3: except the registers the unit says are already spoken for.
+    // A REPL's second input finds the top-level names of the first there,
+    // and clearing them would be clearing the session.
     m->frame_count = 0;
     m->open = NULL;
-    for (size_t i = 0; i < LHAT_STACK_SLOTS; i++) {
+    for (size_t i = proto->reserved; i < LHAT_STACK_SLOTS; i++) {
         m->stack[i] = lhat_nil();
     }
 

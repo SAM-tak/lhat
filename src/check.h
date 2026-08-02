@@ -131,6 +131,26 @@ void lhat_check_unit(const LhatNode *unit, const LhatLexer *lexer,
 
 void lhat_check_result_dispose(LhatCheckResult *result);
 
+// 03 の 4.3: a REPL checks many inputs as one running program, so a name one
+// input bound has to still have its type in the next. The session carries
+// them, along with the arena their types live in -- the types outlive any one
+// input, and so must the names, which are copied out of the source each was
+// read from.
+typedef struct LhatCheckSession LhatCheckSession;
+
+LhatCheckSession *lhat_check_session_new(void);
+
+// Frees the session, the names it copied and every type in its arena. Nothing
+// read out of a result checked in it stays valid.
+void lhat_check_session_dispose(LhatCheckSession *session);
+
+// Checks `unit` as the next input of `session`. The names already bound in it
+// are in scope, and the ones this input binds stay for the next. The result
+// borrows the session's arena, so it has none of its own to dispose.
+void lhat_check_next(LhatCheckSession *session, const LhatNode *unit,
+                     const LhatLexer *lexer, bool strict,
+                     LhatCheckResult *result);
+
 const char *lhat_check_error_message(LhatCheckErrorCode code);
 
 #endif  // LHAT_CHECK_H
