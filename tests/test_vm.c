@@ -21,28 +21,48 @@ typedef struct {
     LhatParseResult parsed;
     LhatProto *proto;
     LhatCompileStatus compiled;
+    // 03 の 4.3: the machine owns what the program allocates, so the answer
+    // is only good while it is. One test, one machine.
+    LhatMachine *machine;
     LhatRunResult ran;
 } Run;
 
-static void run_text(Run *r, const char *text)
+// Everything up to the run, for a test driving a machine of its own.
+static void compile_text(Run *r, const char *text)
 {
     lhat_source_init_from_string(&r->source, "<test>", text, strlen(text));
     lhat_lexer_init(&r->lexer, &r->source);
     lhat_parse(&r->lexer, &r->parsed);
     r->compiled = lhat_compile(r->parsed.root, &r->lexer, &r->proto);
+    r->machine = NULL;
     memset(&r->ran, 0, sizeof r->ran);
-    if (r->compiled == LHAT_COMPILE_OK) {
-        r->ran = lhat_run(r->proto);
+}
+
+static void compiled_dispose(Run *r)
+{
+    lhat_proto_free(r->proto);
+    lhat_parse_result_dispose(&r->parsed);
+    lhat_lexer_dispose(&r->lexer);
+    lhat_source_dispose(&r->source);
+}
+
+static void run_text(Run *r, const char *text)
+{
+    compile_text(r, text);
+    if (r->compiled != LHAT_COMPILE_OK) {
+        return;
+    }
+    r->machine = lhat_machine_new();
+    if (r->machine != NULL) {
+        r->ran = lhat_run(r->machine, r->proto);
     }
 }
 
 static void run_dispose(Run *r)
 {
-    lhat_run_result_dispose(&r->ran);
-    lhat_proto_free(r->proto);
-    lhat_parse_result_dispose(&r->parsed);
-    lhat_lexer_dispose(&r->lexer);
-    lhat_source_dispose(&r->source);
+    lhat_machine_dispose(r->machine);
+    r->machine = NULL;
+    compiled_dispose(r);
 }
 
 // The value a unit's return^ produced, asserted as an exact integer.
@@ -3126,6 +3146,64 @@ static void test_collection(void)
     run_dispose(&r);
 }
 
+// 03 の 4 章: a REPL is one machine answering many inputs, so the machine has
+// to be an object a caller keeps rather than something a run owns.
+static void test_machine(void)
+{
+    LHAT_TEST("a machine answers more than one input");
+    {
+        LhatMachine *m = lhat_machine_new();
+        LHAT_CHECK(m != NULL, "a machine");
+        Run first, second;
+        compile_text(&first, "return^ 6 * 7\n");
+        compile_text(&second, "return^ \"and\" .. \" again\"\n");
+        LhatRunResult a = lhat_run(m, first.proto);
+        LhatRunResult b = lhat_run(m, second.proto);
+        LHAT_CHECK_EQ_INT(a.status, LHAT_RUN_OK);
+        LHAT_CHECK_EQ_INT(lhat_as_integer(a.value), 42);
+        LHAT_CHECK_EQ_INT(b.status, LHAT_RUN_OK);
+        LHAT_CHECK(lhat_is_object_kind(b.value, LHAT_OBJECT_STRING),
+                   "a string came back");
+        // What each run allocated is still on the machine when the next one
+        // starts, which is what a REPL needs of it.
+        LHAT_CHECK(b.live >= a.live, "the heap carried over");
+        lhat_machine_dispose(m);
+        compiled_dispose(&first);
+        compiled_dispose(&second);
+    }
+
+    // The static one could serve only one caller and never nest.
+    LHAT_TEST("and two machines stand side by side");
+    {
+        LhatMachine *one = lhat_machine_new();
+        LhatMachine *two = lhat_machine_new();
+        Run text;
+        compile_text(&text, "return^ 5\n");
+        LhatRunResult a = lhat_run(one, text.proto);
+        LhatRunResult b = lhat_run(two, text.proto);
+        LHAT_CHECK_EQ_INT(lhat_as_integer(a.value), 5);
+        LHAT_CHECK_EQ_INT(lhat_as_integer(b.value), 5);
+        lhat_machine_dispose(one);
+        lhat_machine_dispose(two);
+        compiled_dispose(&text);
+    }
+
+    // One proto, several runs: 5.2 and 5.4 make the registers and the frames
+    // the run's, so nothing of one is left over in the next.
+    LHAT_TEST("and one proto may be run again");
+    {
+        LhatMachine *m = lhat_machine_new();
+        Run text;
+        compile_text(&text, "let^ n = 0\nn := n + 1\nreturn^ n\n");
+        LhatRunResult a = lhat_run(m, text.proto);
+        LhatRunResult b = lhat_run(m, text.proto);
+        LHAT_CHECK_EQ_INT(lhat_as_integer(a.value), 1);
+        LHAT_CHECK_EQ_INT(lhat_as_integer(b.value), 1);
+        lhat_machine_dispose(m);
+        compiled_dispose(&text);
+    }
+}
+
 int main(void)
 {
     test_encoding();
@@ -3146,5 +3224,6 @@ int main(void)
     test_coroutines();
     test_patterns();
     test_collection();
+    test_machine();
     return lhat_test_report("test_vm");
 }

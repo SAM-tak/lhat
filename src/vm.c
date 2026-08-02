@@ -2701,7 +2701,7 @@ typedef struct {
     bool disposing;  // 02 の 10.7: no yield^ while the cleanups are running
 } Frame;
 
-typedef struct {
+struct LhatMachine {
     LhatValue stack[LHAT_STACK_SLOTS];
     Frame frames[LHAT_MAX_FRAMES];
     size_t frame_count;
@@ -2714,8 +2714,9 @@ typedef struct {
     LhatGray gray;
     size_t collected;
     size_t threshold;   // how many live objects before the next collection
-    const LhatProto *entry;
-} Machine;
+};
+
+typedef struct LhatMachine Machine;
 
 // What an index reads from. 04 の 2.3 gives every error message and cause
 // without declaring them, so an error answers a member the same way a table
@@ -2933,20 +2934,18 @@ static void close_upvalues(Machine *m, const LhatValue *above)
 static LhatRunResult finish(Machine *m, LhatRunStatus status, LhatValue value,
                             size_t at)
 {
-    // The answer may be a table or a string, so what the run allocated cannot
-    // be freed here -- the value would point at it. Ownership passes to the
-    // caller instead. A collector replaces this by freeing everything the
-    // answer does not reach.
+    // 03 の 4.3: what the program allocated belongs to the machine, not to
+    // the run -- the answer may be a table or a string, and a REPL's next
+    // input has to be able to reach it. So a result owns nothing and the
+    // answer is good for as long as the machine is.
     LhatRunResult result;
     result.status = status;
     result.value = value;
     result.at = at;
     result.collected = m->collected;
-    result.live = 0;
     result.live = m->objects.count;
-    result.objects = m->objects.objects;
-    m->objects.objects = NULL;
-    m->objects.count = 0;
+
+    // 5.4: an upvalue points into the stack, and the frames are about to go.
     m->open = NULL;
     lhat_gray_dispose(&m->gray);
     return result;
@@ -2983,25 +2982,40 @@ static WalkStep step_table_walk(Machine *m, LhatCoroutine *co, LhatValue *out)
     return WALK_TOOK;
 }
 
-void lhat_run_result_dispose(LhatRunResult *result)
+LhatMachine *lhat_machine_new(void)
 {
-    LhatHeap heap = { result->objects, 0 };
-    lhat_object_free_all(&heap);
-    result->objects = NULL;
-    result->value = lhat_nil();
-}
-
-LhatRunResult lhat_run(const LhatProto *proto)
-{
-    static Machine machine;  // large enough that the stack is the wrong place
-    memset(&machine, 0, sizeof machine);
-    Machine *m = &machine;
-
+    // A whole stack and a frame array, so the heap is where it belongs --
+    // a static one could serve only one caller and never nest.
+    Machine *m = (Machine *)calloc(1, sizeof *m);
+    if (m == NULL) {
+        return NULL;
+    }
     for (size_t i = 0; i < LHAT_STACK_SLOTS; i++) {
         m->stack[i] = lhat_nil();
     }
     m->threshold = 256;
-    m->entry = proto;
+    return m;
+}
+
+void lhat_machine_dispose(LhatMachine *machine)
+{
+    if (machine == NULL) {
+        return;
+    }
+    lhat_object_free_all(&machine->objects);
+    lhat_gray_dispose(&machine->gray);
+    free(machine);
+}
+
+LhatRunResult lhat_run(LhatMachine *m, const LhatProto *proto)
+{
+    // 5.4 and 5.2: the frames and the registers belong to the run, so each
+    // starts with neither. What the heap holds is the machine's and stays.
+    m->frame_count = 0;
+    m->open = NULL;
+    for (size_t i = 0; i < LHAT_STACK_SLOTS; i++) {
+        m->stack[i] = lhat_nil();
+    }
 
     LhatClosure *entry =
         (LhatClosure *)allocate(m, sizeof *entry, LHAT_OBJECT_SUBROUTINE);

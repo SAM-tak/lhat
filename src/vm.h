@@ -61,10 +61,6 @@ typedef struct {
     LhatValue value;   // what the unit returned, or nil^
     size_t at;         // the instruction that failed, when one did
 
-    // What the run allocated. The answer may point into it, so the caller
-    // owns it and frees it with lhat_run_result_dispose().
-    LhatObject *objects;
-
     // How many objects the collector freed while the program ran, and how
     // many were still live at the end. Kept so that a test can see the
     // collector working -- nothing in the language reads them.
@@ -72,9 +68,26 @@ typedef struct {
     size_t live;
 } LhatRunResult;
 
-LhatRunResult lhat_run(const LhatProto *proto);
+// 03 の 4 章: a REPL is one machine answering many inputs, so the machine is
+// the caller's rather than any one run's. It holds the stack, the frames and
+// everything a program allocates, which is what lets a value one input made
+// still be there for the next.
+//
+// It is large -- a whole stack and a frame array -- so it comes from the heap
+// and a caller keeps the handle rather than the object.
+typedef struct LhatMachine LhatMachine;
 
-void lhat_run_result_dispose(LhatRunResult *result);
+LhatMachine *lhat_machine_new(void);
+
+// Frees the machine and everything still allocated on it. Any LhatValue that
+// came out of a run on it points into that, so nothing read from a result
+// outlives this call.
+void lhat_machine_dispose(LhatMachine *machine);
+
+// Runs `proto` on `machine`. What the run allocates belongs to the machine,
+// so the answer is good until the machine is disposed or run again -- there
+// is nothing in the result to free.
+LhatRunResult lhat_run(LhatMachine *machine, const LhatProto *proto);
 
 const char *lhat_run_status_message(LhatRunStatus status);
 
