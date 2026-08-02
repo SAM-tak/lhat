@@ -576,6 +576,60 @@ static const char *operator_name(LhatOpKind op, size_t *length)
     }
 }
 
+// 11.8: whether this member name is an operator. The eight spellings above
+// are the ones op^ writes, and 01 の 6 章 keeps a program from writing any of
+// them as an ordinary name -- so a member of one of these names got there
+// through op^ and nowhere else.
+static bool is_operator_name(const char *name, size_t length)
+{
+    static const LhatOpKind written[] = {
+        LHAT_OP_CONCAT, LHAT_OP_ADD, LHAT_OP_SUB,      LHAT_OP_MUL,
+        LHAT_OP_DIV,    LHAT_OP_MOD, LHAT_OP_FLOORDIV, LHAT_OP_POW,
+    };
+    for (size_t i = 0; i < sizeof written / sizeof written[0]; i++) {
+        size_t spelt = 0;
+        const char *text = operator_name(written[i], &spelt);
+        if (text != NULL && spelt == length &&
+            memcmp(text, name, length) == 0) {
+            return true;
+        }
+    }
+    return false;
+}
+
+// 11.8: an operator is an f^ that takes self^ and one argument. 11.1 makes it
+// a function -- a p^ could carry side effects into an operator -- and 14.4
+// puts the left operand in self^, which leaves the right one as the single
+// parameter. Nothing later checks this: the call site reads the signature and
+// believes it, and the machine hands over a receiver and one argument
+// whatever the body declared.
+static void check_operator_shape(Checker *c, const LhatNode *at,
+                                 const LhatType *type)
+{
+    if (type == NULL || type->kind == LHAT_TYPE_UNKNOWN) {
+        return;
+    }
+    if (type->kind == LHAT_TYPE_INTERSECT) {
+        // 14.12: an overloaded one is every arm at once, and each has to be
+        // an operator on its own.
+        for (const LhatTypeList *arm = type->v.composite.arms; arm != NULL;
+             arm = arm->next) {
+            check_operator_shape(c, at, arm->type);
+        }
+        return;
+    }
+    size_t params = 0;
+    for (const LhatTypeList *p =
+             type->kind == LHAT_TYPE_FUNC ? type->v.func.params : NULL;
+         p != NULL; p = p->next) {
+        params++;
+    }
+    if (type->kind != LHAT_TYPE_FUNC || !type->v.func.is_function ||
+        !type->v.func.takes_self || params != 1) {
+        report(c, at, LHAT_CHECK_ERR_BAD_OPERATOR);
+    }
+}
+
 // 11.8: what a built-in type answers. The checker knows these rather than any
 // L^ writing them out, the way 15.6 gives a coroutine start(). 14.4 puts the
 // left operand in self^, so the right one is the only parameter.
@@ -1867,6 +1921,9 @@ static LhatType *infer_def(Checker *c, const LhatNode *node, LhatType *base)
         // copied from the base above and has been accumulating since.
         type = check_same_name(c, entry, find_member(definition, name, length),
                                type);
+        if (is_operator_name(name, length)) {
+            check_operator_shape(c, entry, type);
+        }
         set_member(c, definition, name, length, type);
         set_member(c, instance, name, length, type);
         if (name_is(name, length, "new")) {
@@ -2967,6 +3024,9 @@ const char *lhat_check_error_message(LhatCheckErrorCode code)
         case LHAT_CHECK_ERR_NO_OPERATOR:
             return "an operator is answered by what stands to its left, and "
                    "this does not answer this one";
+        case LHAT_CHECK_ERR_BAD_OPERATOR:
+            return "an op^ is an f^ taking self^ and one argument; the left "
+                   "operand is the self^ and the right one the argument";
         case LHAT_CHECK_ERR_IS_ALWAYS_TRUE:
             return "any^ holds of every value, so this asks nothing";
         case LHAT_CHECK_ERR_MEMBER_EXISTS:

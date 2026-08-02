@@ -2257,6 +2257,58 @@ static void test_definitions(void)
     CHECK_INTEGER(&r, 79);
     run_dispose(&r);
 
+    // 14.5 and 14.12 reach an operator the way they reach any other member.
+    LHAT_TEST("a composition carries an operator in");
+    run_text(&r,
+             "let^ B = def^{ self^{ t := \"b\" },\n"
+             "  op^.. := f^self^, o:string^ -> string^ { return^ self^.t .. o } }\n"
+             "let^ D = B .. def^{ self^{} }\n"
+             "return^ D.new^() .. \"x\"\n");
+    CHECK_STRING(&r, "bx");
+    run_dispose(&r);
+
+    LHAT_TEST("and an override^ of one replaces it");
+    run_text(&r,
+             "let^ B = def^{ self^{},\n"
+             "  op^.. := f^self^, o:string^ -> string^ { return^ \"base\" } }\n"
+             "let^ D = B .. def^{ self^{},\n"
+             "  override^ op^.. := f^self^, o:string^ -> string^ {\n"
+             "    return^ \"derived\" } }\n"
+             "return^ D.new^() .. \"x\"\n");
+    CHECK_STRING(&r, "derived");
+    run_dispose(&r);
+
+    LHAT_TEST("while an overload^ of one adds to it");
+    run_text(&r,
+             "let^ B = def^{ self^{},\n"
+             "  op^.. := f^self^, o:string^ -> string^ { return^ \"s\" } }\n"
+             "let^ D = B .. def^{ self^{},\n"
+             "  overload^ op^.. := f^self^, o:number^ -> string^ {\n"
+             "    return^ \"n\" } }\n"
+             "let^ d = D.new^()\n"
+             "return^ (d .. \"x\") .. (d .. 7)\n");
+    CHECK_STRING(&r, "sn");
+    run_dispose(&r);
+
+    // 11.3 judges structurally, so a '..' put on a plain table by 14.14's
+    // computed key answers exactly as a written op^ does.
+    LHAT_TEST("a '..' reached by a computed key answers as well");
+    run_text(&r,
+             "let^ t = { [\"..\"] := f^self^, o:string^ -> string^ {\n"
+             "  return^ o } }\n"
+             "return^ t .. \"x\"\n");
+    CHECK_STRING(&r, "x");
+    run_dispose(&r);
+
+    LHAT_TEST("and an operator may answer with a structure");
+    run_text(&r,
+             "let^ V = def^{ self^{ n := 3 },\n"
+             "  op^+ := f^self^, o:number^ -> t^{ n : number^ } {\n"
+             "    return^ self^ } }\n"
+             "return^ (V.new^() + 1).n\n");
+    CHECK_INTEGER(&r, 3);
+    run_dispose(&r);
+
     // 11.8 makes an operator a member, so 14.12's overload^ reaches it too --
     // and 14.4 makes the left operand the receiver, which is the shape the
     // search has to ask in.

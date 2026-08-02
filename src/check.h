@@ -59,6 +59,8 @@ typedef enum {
     LHAT_CHECK_ERR_NO_OPERATOR,         // 11.3: an operator is answered by
                                         // the left operand, and this one
                                         // carries no answer for it
+    LHAT_CHECK_ERR_BAD_OPERATOR,        // 11.8: an op^ is an f^ taking self^
+                                        // and one argument, and this is not
     LHAT_CHECK_ERR_IS_ALWAYS_TRUE,      // 13.7: any^ holds of every value, so
                                         // asking it of one asks nothing
     LHAT_CHECK_ERR_MISSING_FIELD,       // 04 の 2.5: no default to fall back to

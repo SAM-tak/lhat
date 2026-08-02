@@ -2481,6 +2481,99 @@ static void test_no_value(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_NO_OPERATOR);
     unit_dispose(&u);
 
+    // 11.8: an op^ is an f^ taking self^ and one argument. Nothing later
+    // checks it -- the call site reads the signature and believes it, and the
+    // machine hands over a receiver and one argument whatever was declared --
+    // so a shape that is not an operator has to be refused here.
+    LHAT_TEST("an op^ without a self^ is not an operator");
+    check_text(&u,
+               "let^ V = def^{ self^{},\n"
+               "  op^.. := f^ o:string^ -> string^ { return^ o } }\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_BAD_OPERATOR);
+    unit_dispose(&u);
+
+    // 11.1: an operator is a function, so a p^ could carry side effects into
+    // one.
+    LHAT_TEST("nor is a p^");
+    check_text(&u,
+               "let^ V = def^{ self^{}, op^.. := p^self^, o:string^ { } }\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_BAD_OPERATOR);
+    unit_dispose(&u);
+
+    LHAT_TEST("nor anything that is not a subroutine");
+    check_text(&u, "let^ V = def^{ self^{}, op^.. := 5 }\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_BAD_OPERATOR);
+    unit_dispose(&u);
+
+    // 14.4 leaves exactly one parameter beside the self^: the right operand.
+    LHAT_TEST("and it takes the right operand, no more and no less");
+    check_text(&u,
+               "let^ V = def^{ self^{},\n"
+               "  op^.. := f^self^ -> string^ { return^ \"z\" } }\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_BAD_OPERATOR);
+    unit_dispose(&u);
+
+    LHAT_TEST("two arguments is not an operator either");
+    check_text(&u,
+               "let^ V = def^{ self^{},\n"
+               "  op^.. := f^self^, a:string^, b:string^ -> string^ { return^ a } }\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_BAD_OPERATOR);
+    unit_dispose(&u);
+
+    // 14.12: an overloaded operator is every arm at once, so each has to be
+    // an operator on its own.
+    LHAT_TEST("every arm of an overloaded operator is checked");
+    check_text(&u,
+               "let^ V = def^{ self^{},\n"
+               "  op^.. := f^self^, o:string^ -> string^ { return^ o },\n"
+               "  overload^ op^.. := f^self^ -> string^ { return^ \"z\" },\n"
+               "}\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_BAD_OPERATOR);
+    unit_dispose(&u);
+
+    // 14.5: what a composition brings in keeps working, and 14.12's markers
+    // reach an operator like any other member.
+    LHAT_TEST("a composition carries an operator in");
+    check_text(&u,
+               "let^ B = def^{ self^{},\n"
+               "  op^.. := f^self^, o:string^ -> string^ { return^ o } }\n"
+               "let^ D = B .. def^{ self^{} }\n"
+               "let^ s : string^ = D.new^() .. \"x\"\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("override^ may widen what an operator takes");
+    check_text(&u,
+               "let^ B = def^{ self^{},\n"
+               "  op^.. := f^self^, o:string^ -> string^ { return^ o } }\n"
+               "let^ D = B .. def^{ self^{},\n"
+               "  override^ op^.. := f^self^, o:string^|number^ -> string^ {\n"
+               "    return^ \"d\" } }\n"
+               "let^ s : string^ = D.new^() .. 1\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("and not narrow it");
+    check_text(&u,
+               "let^ B = def^{ self^{},\n"
+               "  op^.. := f^self^, o:string^|number^ -> string^ {\n"
+               "    return^ \"b\" } }\n"
+               "let^ D = B .. def^{ self^{},\n"
+               "  override^ op^.. := f^self^, o:string^ -> string^ {\n"
+               "    return^ \"d\" } }\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_NOT_SUBSTITUTABLE);
+    unit_dispose(&u);
+
+    // 11.3 判定 is structural, so a '..' member put there by 14.14's computed
+    // key answers exactly as a written op^ does.
+    LHAT_TEST("a '..' reached by a computed key answers too");
+    check_text(&u,
+               "let^ t = { [\"..\"] := f^self^, o:string^ -> string^ {\n"
+               "  return^ o } }\n"
+               "let^ s : string^ = t .. \"x\"\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
     // 11.8: an operator is a member, so 14.12's overload^ is what lets one
     // type answer several right-hand types.
     LHAT_TEST("overload^ gives one operator several right-hand types");
