@@ -2559,6 +2559,28 @@ static void test_coroutines(void)
     LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_DEAD_COROUTINE);
     run_dispose(&r);
 
+    // 8.8 の S23: the checker walks a body whether or not it runs, so a let^
+    // on a path that is never taken puts a member in the type that the table
+    // does not have. Written down as a test because the hole is known and
+    // left open -- 03 の 5.1's checks are what catches it, at the use.
+    LHAT_TEST("a path let^ that never runs leaves the member absent");
+    run_text(&r,
+             "let^ t = { }\n"
+             "let^ never = p^ { let^ t.b = 1 }\n"
+             "return^ t.b + 1\n");
+    LHAT_CHECK_EQ_INT(r.compiled, LHAT_COMPILE_OK);
+    LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_TYPE_ERROR);
+    run_dispose(&r);
+
+    LHAT_TEST("and running it is what puts the member there");
+    run_text(&r,
+             "let^ t = { }\n"
+             "let^ fill = p^ { let^ t.b = 1 }\n"
+             "fill()\n"
+             "return^ t.b + 1\n");
+    CHECK_INTEGER(&r, 2);
+    run_dispose(&r);
+
     // 05 の 8.6: one table per machine, made with it and rooted by it.
     LHAT_TEST("L^ answers the machine's own table");
     run_text(&r,
