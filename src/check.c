@@ -1115,6 +1115,16 @@ static LhatType *infer_call(Checker *c, const LhatNode *node)
                                   : simple(c, LHAT_TYPE_NIL),
                               ends_with);
     }
+    // 13.2: a signature with no result answers no value. That is not a gap in
+    // inference, so it is not spelled with a NULL -- 03 の 3.4 kept it apart
+    // from nil^, and this is where that stays observable.
+    //
+    // 15.10: except when the body being checked is calling itself. Its result
+    // is still being worked out, and 03 の 3.4 reads the NULL to mean exactly
+    // that -- so a self-call has to keep handing the NULL back.
+    if (callee->v.func.result == NULL && callee != c->this_type) {
+        return simple(c, LHAT_TYPE_NONE);
+    }
     return callee->v.func.result;
 }
 
@@ -1867,7 +1877,11 @@ static LhatType *infer(Checker *c, const LhatNode *node)
             }
             unify_yield(c, node, &c->coroutine_produce, inner->v.coroutine.produce);
             unify_yield(c, node, &c->coroutine_receive, inner->v.coroutine.receive);
-            return inner->v.coroutine.result;
+            // 13.9改: a coroutine that cannot end has no return type, so a
+            // delegation to one never produces a value either.
+            return inner->v.coroutine.result != NULL
+                       ? inner->v.coroutine.result
+                       : simple(c, LHAT_TYPE_NONE);
         }
 
         case LHAT_NODE_TRY: {
@@ -2102,6 +2116,12 @@ static void check_define(Checker *c, const LhatNode *node)
 
         if (annotated != NULL && value != NULL) {
             expect(c, value, actual, annotated, LHAT_CHECK_ERR_MISMATCH);
+        } else if (value != NULL && actual != NULL &&
+                   actual->kind == LHAT_TYPE_NONE) {
+            // 13.2: a name binds a value, and a call of a signature with no
+            // result does not make one. With an annotation written the
+            // expect above has already said so.
+            report(c, value, LHAT_CHECK_ERR_MISMATCH);
         }
 
         const char *name = NULL;
@@ -2550,6 +2570,15 @@ static void check_statement(Checker *c, const LhatNode *node)
             // 'return^ "a" .. f(n).to_s()' is string^ whatever f answers --
             // and dropping it would lose that.
             if (recursive && (value == NULL || value->kind == LHAT_TYPE_UNKNOWN)) {
+                break;
+            }
+            // 13.2: a return^ with an expression carries a value, and a call
+            // of a signature with no result does not make one. Reported here
+            // rather than let into the union, where it would reach every
+            // caller as a type nothing inhabits. A written result has already
+            // caught it above.
+            if (value != NULL && value->kind == LHAT_TYPE_NONE) {
+                report(c, node, LHAT_CHECK_ERR_MISMATCH);
                 break;
             }
             // 03 の 3.4: several return^ make a union.

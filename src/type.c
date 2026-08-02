@@ -349,6 +349,13 @@ bool lhat_type_conforms(const LhatType *value, const LhatType *target)
         return true;
     }
 
+    // 13.2: nothing inhabits "no value", so it fits nowhere a value is wanted
+    // -- not even any^, which is the top of every *value* (13.7). And nothing
+    // fits where no value is wanted either.
+    if (value->kind == LHAT_TYPE_NONE || target->kind == LHAT_TYPE_NONE) {
+        return value->kind == target->kind;
+    }
+
     // 13.7: any^ is the top of every value, not just of tables.
     if (target->kind == LHAT_TYPE_ANY) {
         return true;
@@ -473,6 +480,13 @@ bool lhat_type_disjoint(const LhatType *a, const LhatType *b)
     if (a->kind == LHAT_TYPE_UNKNOWN || b->kind == LHAT_TYPE_UNKNOWN ||
         a->kind == LHAT_TYPE_ANY || b->kind == LHAT_TYPE_ANY) {
         return false;
+    }
+
+    // 13.2: nothing inhabits "no value", so nothing inhabits it and something
+    // else either. This is what makes 11.7's `??` and 04 の 4.1's catch^
+    // report on a call that produces nothing.
+    if (a->kind == LHAT_TYPE_NONE || b->kind == LHAT_TYPE_NONE) {
+        return true;
     }
 
     // A union is separate from something only when all of it is.
@@ -641,6 +655,7 @@ const char *lhat_type_kind_name(LhatTypeKind kind)
 {
     switch (kind) {
         case LHAT_TYPE_UNKNOWN:     return "unknown";
+        case LHAT_TYPE_NONE:        return "no value";
         case LHAT_TYPE_ANY:         return "any^";
         case LHAT_TYPE_NIL:         return "nil^";
         case LHAT_TYPE_BOOL:        return "bool^";

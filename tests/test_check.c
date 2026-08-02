@@ -2039,6 +2039,122 @@ static void test_positions(void)
     unit_dispose(&u);
 }
 
+// 02 の 13.2 gives a signature a form for "no result", and 03 の 3.4 keeps
+// that apart from nil^ on the grounds that otherwise 11.7's `??` would apply
+// to a meaningless expression. That reasoning only holds if calling such a
+// subroutine produces something no value fits -- which it did not: the result
+// was a NULL, and a NULL is how "not inferred" is spelled, so every use of it
+// was waved through.
+static void test_no_value(void)
+{
+    Unit u;
+
+    // The case 03 names outright.
+    LHAT_TEST("?? cannot apply to a call that produces nothing");
+    check_text(&u,
+               "let^ log = p^ m:string^ { let^ y = m }\n"
+               "let^ v = log(\"a\") ?? 0\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_CANNOT_BE_NIL);
+    unit_dispose(&u);
+
+    // 04 の 4.1 puts catch^ on the same footing.
+    LHAT_TEST("nor can catch^");
+    check_text(&u,
+               "let^ log = p^ m:string^ { let^ y = m }\n"
+               "let^ v = log(\"a\") catch^ 0\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_CANNOT_FAIL);
+    unit_dispose(&u);
+
+    LHAT_TEST("a name cannot be bound to it");
+    check_text(&u,
+               "let^ log = p^ m:string^ { let^ y = m }\n"
+               "let^ v = log(\"a\")\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
+    unit_dispose(&u);
+
+    LHAT_TEST("nor reassigned to one");
+    check_text(&u,
+               "let^ log = p^ m:string^ { let^ y = m }\n"
+               "let^ v = 1\n"
+               "v := log(\"a\")\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
+    unit_dispose(&u);
+
+    LHAT_TEST("an annotation does not admit it either");
+    check_text(&u,
+               "let^ log = p^ m:string^ { let^ y = m }\n"
+               "let^ v : number^ = log(\"a\")\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
+    unit_dispose(&u);
+
+    LHAT_TEST("and neither does an argument");
+    check_text(&u,
+               "let^ log = p^ m:string^ { let^ y = m }\n"
+               "let^ v = log(log(\"a\"))\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
+    unit_dispose(&u);
+
+    LHAT_TEST("arithmetic needs a number, which this is not");
+    check_text(&u,
+               "let^ log = p^ m:string^ { let^ y = m }\n"
+               "let^ v = log(\"a\") + 1\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_NOT_NUMBER);
+    unit_dispose(&u);
+
+    LHAT_TEST("and a condition a bool^");
+    check_text(&u,
+               "let^ log = p^ m:string^ { let^ y = m }\n"
+               "if^ log(\"a\") { }\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_NOT_BOOL);
+    unit_dispose(&u);
+
+    // Reported where it is written rather than let into the result, where it
+    // would reach every caller as a type nothing inhabits.
+    LHAT_TEST("a return^ cannot carry it");
+    check_text(&u,
+               "let^ log = p^ m:string^ { let^ y = m }\n"
+               "let^ f = p^ { return^ log(\"a\") }\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
+    unit_dispose(&u);
+
+    LHAT_TEST("with a written result saying so too");
+    check_text(&u,
+               "let^ log = p^ m:string^ { let^ y = m }\n"
+               "let^ f = p^ -> number^ { return^ log(\"a\") }\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
+    unit_dispose(&u);
+
+    // 8.2: a call is the one expression that stands alone as a statement, and
+    // that is where a subroutine with no result belongs.
+    LHAT_TEST("but calling it as a statement is the point of it");
+    check_text(&u,
+               "let^ log = p^ m:string^ { let^ y = m }\n"
+               "log(\"a\")\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // 03 の 3.4 reads a NULL result as "still being worked out", so a body
+    // calling itself has to keep getting one.
+    LHAT_TEST("and a self-call is still a result being inferred");
+    check_text(&u,
+               "let^ fact = f^ n:number^ {\n"
+               "    if^ n <= 1 { return^ 1 }\n"
+               "    return^ n * this^(n - 1)\n"
+               "}\n"
+               "let^ n : number^ = fact(5)\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // 13.9改: a coroutine that cannot end never produces a return value, so
+    // delegating to one produces nothing either.
+    LHAT_TEST("delegating to a coroutine that cannot end produces nothing");
+    check_text(&u,
+               "let^ g = p^ { repeat^ { yield^ 1 } }\n"
+               "let^ o = p^ { let^ v = yieldall^ g() }\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
+    unit_dispose(&u);
+}
+
 int main(void)
 {
     test_names();
@@ -2054,5 +2170,6 @@ int main(void)
     test_coroutines();
     test_walking();
     test_positions();
+    test_no_value();
     return lhat_test_report("test_check");
 }

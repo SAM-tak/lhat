@@ -109,6 +109,25 @@ static void test_primitives(void)
                    "unknown rules nothing out");
     }
 
+    // 13.2: "no value" is the other half of that pair -- nothing is known
+    // there, versus nothing is there. It has to behave the opposite way, or
+    // 03 の 3.4's refusal to spell it nil^ would not be observable.
+    LHAT_TEST("no value fits nowhere and nothing fits it");
+    {
+        LhatType *none = simple(&t, LHAT_TYPE_NONE);
+        LHAT_CHECK(!lhat_type_conforms(none, simple(&t, LHAT_TYPE_NUMBER)),
+                   "no value does not fit a value");
+        LHAT_CHECK(!lhat_type_conforms(none, simple(&t, LHAT_TYPE_NIL)),
+                   "and nil^ is a value like any other");
+        LHAT_CHECK(!lhat_type_conforms(none, simple(&t, LHAT_TYPE_ANY)),
+                   "13.7: any^ is the top of every value, and this is none");
+        LHAT_CHECK(!lhat_type_conforms(simple(&t, LHAT_TYPE_NUMBER), none),
+                   "nothing fits where no value is wanted");
+        LHAT_CHECK(lhat_type_conforms(none, none), "except itself");
+        LHAT_CHECK(lhat_type_disjoint(none, simple(&t, LHAT_TYPE_NIL)),
+                   "nothing inhabits it and nil^ both");
+    }
+
     types_dispose(&t);
 }
 

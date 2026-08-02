@@ -22,6 +22,13 @@ typedef enum {
     // 3.5 also lands here: under relaxed these become runtime checks.
     LHAT_TYPE_UNKNOWN,
 
+    // 13.2: what an expression that produces no value has. A p^ whose
+    // signature has no result answers this, which is a different thing from
+    // UNKNOWN -- there is nothing here, rather than nothing known. Nothing
+    // inhabits it, so it fits nowhere a value is wanted. 03 の 3.4 keeps it
+    // out of nil^, and this is what keeps that distinction observable.
+    LHAT_TYPE_NONE,
+
     LHAT_TYPE_ANY,         // any^ (13.7)
     LHAT_TYPE_NIL,
     LHAT_TYPE_BOOL,
