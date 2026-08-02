@@ -271,6 +271,25 @@ static LhatNode *parse_member_decls(Parser *p)
             break;
         }
 
+        // 14.10改: a member is written 'name : type'. Anything else in the
+        // list is a type on its own, and takes the next position -- 14 章
+        // makes a table a sequence as well as a mapping, and the sequence
+        // half is described by writing its types in order. One token of
+        // lookahead separates them: only a name followed by ':' is a member.
+        bool named = (p->current.kind == LHAT_TOKEN_IDENT ||
+                      p->current.kind == LHAT_TOKEN_NAME_LITERAL ||
+                      p->current.kind == LHAT_TOKEN_HAT_IDENT) &&
+                     is_op(&p->ahead, LHAT_OP_COLON);
+        if (!named) {
+            member->v.entry.key = NULL;
+            member->v.entry.value = parse_type(p);
+            lhat_node_append(&head, &tail, member);
+            if (!match_op(p, LHAT_OP_COMMA)) {
+                break;
+            }
+            continue;
+        }
+
         if (p->current.kind == LHAT_TOKEN_IDENT ||
             p->current.kind == LHAT_TOKEN_NAME_LITERAL ||
             p->current.kind == LHAT_TOKEN_HAT_IDENT) {

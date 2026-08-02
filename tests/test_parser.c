@@ -768,6 +768,36 @@ static void test_types(void)
                       LHAT_NODE_TYPE_TABLE);
     parse_dispose(&p);
 
+    // 14.10改: an entry with no 'name :' in front of it is the type of the
+    // next position. One token of lookahead tells the two apart.
+    LHAT_TEST("types listed on their own are positions");
+    parse_text(&p, "x := y as^ t^{ number^, string^ }");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    {
+        const LhatNode *t = first_value(&p)->v.ascription.type;
+        LHAT_CHECK_EQ_INT(t->kind, LHAT_NODE_TYPE_TABLE);
+        LHAT_CHECK_EQ_INT(lhat_node_list_length(t->v.list.items), 2);
+        LHAT_CHECK(t->v.list.items->v.entry.key == NULL, "no name on a position");
+    }
+    parse_dispose(&p);
+
+    LHAT_TEST("and a name with a ':' is still a member");
+    parse_text(&p, "x := y as^ t^{ a : number^ }");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    LHAT_CHECK(first_value(&p)->v.ascription.type->v.list.items->v.entry.key
+                   != NULL,
+               "a member keeps its name");
+    parse_dispose(&p);
+
+    LHAT_TEST("and the two mix");
+    parse_text(&p, "x := y as^ t^{ number^, a : string^, t^{} }");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    LHAT_CHECK_EQ_INT(
+        lhat_node_list_length(
+            first_value(&p)->v.ascription.type->v.list.items),
+        3);
+    parse_dispose(&p);
+
     // 13.9: three types, uniform across suspension points.
     LHAT_TEST("coroutine type");
     parse_text(&p, "x := y as^ c^{ number^, string^, nil^ }");

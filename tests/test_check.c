@@ -2013,6 +2013,70 @@ static void test_positions(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
+    // 14.10改: the sequence half can be written down as well as inferred --
+    // types listed with no name in front of them, in order.
+    LHAT_TEST("a written type may list its positions");
+    check_text(&u, "let^ t : t^{ number^, string^ } = { 1, \"a\" }\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("and each one is checked");
+    check_text(&u, "let^ t : t^{ number^, string^ } = { 1, 2 }\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
+    unit_dispose(&u);
+
+    LHAT_TEST("a position the value does not fill is missing");
+    check_text(&u, "let^ t : t^{ number^, string^ } = { 1 }\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
+    unit_dispose(&u);
+
+    // 14.10 asks for at least what is listed, positions included.
+    LHAT_TEST("but more positions than were asked for are fine");
+    check_text(&u, "let^ t : t^{ number^ } = { 1, \"a\" }\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("names and positions mix in one type");
+    check_text(&u,
+               "let^ t : t^{ number^, a : string^ } = { 1, a := \"x\" }\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // A named entry takes no place in the sequence, in the type as in the
+    // literal -- so the count does not depend on where it was written.
+    LHAT_TEST("and a named one takes no position, wherever it stands");
+    check_text(&u,
+               "let^ t : t^{ a : string^, number^ } = { 1, a := \"x\" }\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // What it is for: the positions reach unpack^ and an index from an
+    // annotation, not only from a literal the checker watched being built.
+    LHAT_TEST("a written position reaches unpack^");
+    check_text(&u,
+               "let^ f = f^ -> t^{ number^, string^ } { return^ { 1, \"a\" } }\n"
+               "let^ q, r = unpack^ f()\n"
+               "let^ n : number^ = q\n"
+               "let^ s : string^ = r\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("and is not interchangeable there either");
+    check_text(&u,
+               "let^ f = f^ -> t^{ number^, string^ } { return^ { 1, \"a\" } }\n"
+               "let^ q, r = unpack^ f()\n"
+               "let^ s : string^ = q\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
+    unit_dispose(&u);
+
+    LHAT_TEST("and an index reaches it too");
+    check_text(&u,
+               "let^ f = p^ x : t^{ number^, string^ } {\n"
+               "    let^ s : string^ = x[1]\n"
+               "}\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
+    unit_dispose(&u);
+
     // 13.10: unpack^ takes one value apart by position. The mark is on the
     // right, which is what tells this from a multiple definition.
     LHAT_TEST("unpack^ gives each name the position it takes");

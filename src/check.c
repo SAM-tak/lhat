@@ -285,9 +285,18 @@ static LhatType *builtin_type(Checker *c, const char *name, size_t length)
 static LhatType *resolve_table_type(Checker *c, const LhatNode *node)
 {
     LhatType *table = lhat_type_table(c->result->types);
+    // 14.10改: an entry with no name is the type of the next position. They
+    // are counted the way a literal counts its own -- from one, in written
+    // order, with the named ones taking no place in the sequence.
+    size_t position = 0;
     for (const LhatNode *m = node->v.list.items; m != NULL; m = m->next) {
         const char *name = NULL;
         size_t length = 0;
+        if (m->v.entry.key == NULL) {
+            lhat_type_add_index_member(c->result->types, table, ++position,
+                                       resolve_type(c, m->v.entry.value));
+            continue;
+        }
         if (!node_name(c, m->v.entry.key, &name, &length)) {
             continue;
         }
