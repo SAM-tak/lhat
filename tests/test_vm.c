@@ -565,6 +565,43 @@ static void test_strings(void)
     CHECK_STRING(&r, "one");
     run_dispose(&r);
 
+    // 11.1: an operator is a function, and 11.3 asks the left operand for
+    // it. A string answers built in; anything else answers with a member,
+    // which 14.4 hands the left operand as self^.
+    LHAT_TEST("a definition answers '..' with its own op^");
+    run_text(&r,
+             "let^ Vec = def^{\n"
+             "  self^{ tag := \"v\" },\n"
+             "  op^.. := f^self^, other:string^ -> string^ {\n"
+             "    return^ self^.tag .. other\n"
+             "  },\n"
+             "}\n"
+             "let^ v = Vec.new^()\n"
+             "return^ v .. \"!\"\n");
+    CHECK_STRING(&r, "v!");
+    run_dispose(&r);
+
+    LHAT_TEST("and what it answers is an ordinary value");
+    run_text(&r,
+             "let^ Vec = def^{\n"
+             "  self^{ tag := \"v\" },\n"
+             "  op^.. := f^self^, other:string^ -> string^ {\n"
+             "    return^ self^.tag .. other\n"
+             "  },\n"
+             "}\n"
+             "let^ v = Vec.new^()\n"
+             "return^ (v .. \"!\") .. \"?\"\n");
+    CHECK_STRING(&r, "v!?");
+    run_dispose(&r);
+
+    LHAT_TEST("a structure with no '..' cannot answer");
+    run_text(&r,
+             "let^ t = { a := 1 }\n"
+             "let^ u = { b := 2 }\n"
+             "return^ t .. u\n");
+    LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_TYPE_ERROR);
+    run_dispose(&r);
+
     // 11.3 leaves the rest to the operator's own definition, which needs
     // op^. 5.1 has the instruction refuse what it cannot do.
     LHAT_TEST("joining a number to a string is refused at run time");

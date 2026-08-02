@@ -558,24 +558,42 @@ static LhatType *require_value(Checker *c, const LhatNode *at, LhatType *type)
     return type;
 }
 
-// 11.3: whether a value may stand beside '..', judged structurally. 11.4
-// leaves the general answer to op^, which does not exist yet, so what can be
-// said now is which types already carry one.
+// 11.1: an operator is a function, and 11.3 asks structurally whether a type
+// carries it. The name is the operator itself -- 01 の 6 章 spells a member
+// name as an identifier, so '..' is one no program can write by hand and
+// nothing of the writer's can collide with it.
 //
-//   string^   — 11.2's first example
-//   a table   — 14.5 composes two definitions with '..', and a definition is
-//               a structure. Which structures actually compose is settled by
-//               the compiler, which resolves names as well as def^ literals;
-//               narrowing it here would refuse what it accepts, so a table is
-//               taken at its word until op^ can be asked properly.
-//
-// A gap in inference says nothing, and 13.7's any^ is every value at once:
-// 03 の 3.5 turns both into checks the machine makes rather than reports.
-static bool responds_to_concat(Checker *c, const LhatType *type)
+// A built-in type carries its operators the way 15.6 gives a coroutine
+// start(): the checker knows them, rather than any L^ writing them out.
+static LhatType *operator_member(Checker *c, const LhatType *type,
+                                 const char *name, size_t length)
+{
+    if (type == NULL) {
+        return NULL;
+    }
+    if (type->kind == LHAT_TYPE_STRING && name_is(name, length, "..")) {
+        // 11.2: joining two strings answers a string. 14.4 puts the left
+        // operand in self^, so the right one is the only parameter.
+        LhatType *signature = lhat_type_func(c->result->types, true);
+        signature->v.func.takes_self = true;
+        lhat_type_add_param(c->result->types, signature,
+                            simple(c, LHAT_TYPE_STRING));
+        signature->v.func.result = simple(c, LHAT_TYPE_STRING);
+        return signature;
+    }
+    if (type->kind == LHAT_TYPE_TABLE) {
+        const LhatTypeMember *m = find_member(type, name, length);
+        return m != NULL ? m->type : NULL;
+    }
+    return NULL;
+}
+
+// 03 の 3.5: a gap in inference, and 13.7's any^ which is every value at
+// once, are both left to the machine rather than reported here.
+static bool operator_undecided(const LhatType *type)
 {
     return type == NULL || type->kind == LHAT_TYPE_UNKNOWN ||
-           type->kind == LHAT_TYPE_ANY || type->kind == LHAT_TYPE_TABLE ||
-           lhat_type_conforms(type, simple(c, LHAT_TYPE_STRING));
+           type->kind == LHAT_TYPE_ANY;
 }
 
 // ---------------------------------------------------------------------------
@@ -994,25 +1012,44 @@ static LhatType *infer_binary(Checker *c, const LhatNode *node)
             return simple(c, LHAT_TYPE_BOOL);
 
         case LHAT_OP_CONCAT: {
-            // 11.2: '..' is concatenation in general, not string
-            // concatenation -- what may stand beside it is whatever responds
-            // to it, and 11.3 settles that here rather than at run time.
-            // 14.5's composition has already been taken above, by the shape
-            // of the right side. Until op^ arrives (11.4) a string is the
-            // only answer built in.
+            // 11.2: '..' is concatenation in general. 11.3 asks the left
+            // operand for it -- 14.4 makes that the receiver -- and the right
+            // one is the argument, which is what lets one type answer several
+            // right-hand types through 14.12's overload^.
             left = require_value(c, node->v.binary.left, left);
             right = require_value(c, node->v.binary.right, right);
-            bool joins = true;
-            if (!responds_to_concat(c, left)) {
+
+            // 14.5: between two definitions '..' composes, and never calls an
+            // op^.. either of them carries. The literal form was taken above;
+            // this is the one written with names.
+            if (left != NULL && left->kind == LHAT_TYPE_TABLE &&
+                left->v.table.is_definition && right != NULL &&
+                right->kind == LHAT_TYPE_TABLE &&
+                right->v.table.is_definition) {
+                return right;
+            }
+
+            if (operator_undecided(left)) {
+                return simple(c, LHAT_TYPE_UNKNOWN);
+            }
+            LhatType *joiner = operator_member(c, left, "..", 2);
+            if (joiner == NULL) {
                 report(c, node->v.binary.left, LHAT_CHECK_ERR_NO_CONCAT);
-                joins = false;
+                return simple(c, LHAT_TYPE_UNKNOWN);
             }
-            if (!responds_to_concat(c, right)) {
-                report(c, node->v.binary.right, LHAT_CHECK_ERR_NO_CONCAT);
-                joins = false;
+            if (joiner->kind != LHAT_TYPE_FUNC) {
+                return simple(c, LHAT_TYPE_UNKNOWN);
             }
-            return joins ? simple(c, LHAT_TYPE_STRING)
-                         : simple(c, LHAT_TYPE_UNKNOWN);
+            // 11.1 makes an operator a function, so what may stand on the
+            // right is what its parameter admits.
+            LhatType *wanted = joiner->v.func.params != NULL
+                                   ? joiner->v.func.params->type
+                                   : NULL;
+            if (wanted != NULL && !operator_undecided(right)) {
+                expect(c, node->v.binary.right, right, wanted,
+                       LHAT_CHECK_ERR_NO_CONCAT);
+            }
+            return joiner->v.func.result;
         }
 
         default:
@@ -1721,6 +1758,10 @@ static LhatType *infer_def(Checker *c, const LhatNode *node, LhatType *base)
 {
     LhatType *definition = lhat_type_table(c->result->types);
     LhatType *instance = lhat_type_table(c->result->types);
+    // 14.5: '..' between two definitions is composition, never a call of an
+    // op^.. one of them carries. 14.7 gives both structures the same members,
+    // so this is what tells the definition from an instance of it.
+    definition->v.table.is_definition = true;
 
     // 14.5: composition is ordered, and the derived side is written against
     // what the base already provides.
@@ -1779,7 +1820,12 @@ static LhatType *infer_def(Checker *c, const LhatNode *node, LhatType *base)
             continue;
         }
         LhatType *type = infer(c, entry->v.entry.value);
-        type = check_same_name(c, entry, find_member(base, name, length), type);
+        // 14.12: two members of one name in a single def^ need a marker too,
+        // so what is already there has to include this def^'s earlier entries
+        // and not only what the base brought. `definition` is both -- it was
+        // copied from the base above and has been accumulating since.
+        type = check_same_name(c, entry, find_member(definition, name, length),
+                               type);
         set_member(c, definition, name, length, type);
         set_member(c, instance, name, length, type);
         if (name_is(name, length, "new")) {

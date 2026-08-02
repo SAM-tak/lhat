@@ -43,6 +43,8 @@ typedef enum {
                                               // advance their own focus
     LHAT_PARSE_ERR_WITHDRAWN_FROM,            // 16.3: from^ replaced by ':='
     LHAT_PARSE_ERR_EXPECTED_MEMBER,           // 14 章: def^ holds members
+    LHAT_PARSE_ERR_OPERATOR_NOT_DEFINABLE,    // 11.4: only '..' has an op^
+                                              // definition so far
     LHAT_PARSE_ERR_FIELD_NEEDS_NAME,          // 14.6: every field is named
     LHAT_PARSE_ERR_DUPLICATE_TEMPLATE,        // 14.6: one self^{ ... } per def^
     LHAT_PARSE_ERR_MODIFIER_ON_TEMPLATE,      // 14.12 marks members, not fields

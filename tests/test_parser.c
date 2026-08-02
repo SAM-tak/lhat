@@ -1175,6 +1175,26 @@ static void test_loop_clauses(void)
     LHAT_CHECK_EQ_INT(error_count(&p), 0);
     parse_dispose(&p);
 
+    // 11.1: a definition carries an operator as a member whose name is the
+    // operator itself.
+    LHAT_TEST("op^.. is a member of a definition");
+    parse_text(&p,
+               "V := def^{ self^{}, op^.. := f^self^, o:string^ -> string^ { "
+               "return^ o } }");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    parse_dispose(&p);
+
+    // 11.4 leaves the other operators for later, and a member nothing
+    // consults is worse than a refusal.
+    LHAT_TEST("and no other operator has one yet");
+    parse_text(&p,
+               "V := def^{ self^{}, op^+ := f^self^, o:number^ -> number^ { "
+               "return^ o } }");
+    LHAT_CHECK(p.result.diagnostic_count > 0, "expected a diagnostic");
+    LHAT_CHECK_EQ_INT(p.result.diagnostics[0].code,
+                      LHAT_PARSE_ERR_OPERATOR_NOT_DEFINABLE);
+    parse_dispose(&p);
+
     // 9.10: pre^ runs before the condition, so it sits between prolog^ and
     // first^ -- which is where it has to be written.
     LHAT_TEST("pre^ takes its place between prolog^ and first^");

@@ -2386,15 +2386,107 @@ static void test_no_value(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // 14.5 composes definitions with '..', and the compiler resolves names as
-    // well as def^ literals -- so a structure is taken at its word here.
-    LHAT_TEST("and so does a definition, named or written out");
+    // 14.5: between two definitions '..' composes, and never calls an op^..
+    // either of them carries. 14.7 gives a definition and an instance the
+    // same members, so what tells them apart is what made them.
+    LHAT_TEST("and between two definitions it composes");
     check_text(&u,
                "let^ Foo = def^{ self^{} }\n"
                "let^ Baz = def^{ self^{} }\n"
                "let^ A = Foo .. Baz\n"
                "let^ B = Foo .. def^{ self^{} }\n");
     CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // 11.1: an operator is a function, carried by the type as a member whose
+    // name is the operator. 01 の 6 章 keeps that name unwritable by hand.
+    LHAT_TEST("an instance answers with the op^ its definition wrote");
+    check_text(&u,
+               "let^ Vec = def^{\n"
+               "  self^{ x := 0 },\n"
+               "  op^.. := f^self^, other:string^ -> string^ { return^ other },\n"
+               "}\n"
+               "let^ v = Vec.new^()\n"
+               "let^ s : string^ = v .. \"a\"\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("and the operator's result is what the join answers");
+    check_text(&u,
+               "let^ Vec = def^{\n"
+               "  self^{ x := 0 },\n"
+               "  op^.. := f^self^, other:string^ -> string^ { return^ other },\n"
+               "}\n"
+               "let^ v = Vec.new^()\n"
+               "let^ n : number^ = v .. \"a\"\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
+    unit_dispose(&u);
+
+    // 11.1 again: the right operand is the operator's argument, so what may
+    // stand there is what its parameter admits.
+    LHAT_TEST("and its parameter is what may stand on the right");
+    check_text(&u,
+               "let^ Vec = def^{\n"
+               "  self^{ x := 0 },\n"
+               "  op^.. := f^self^, other:string^ -> string^ { return^ other },\n"
+               "}\n"
+               "let^ v = Vec.new^()\n"
+               "let^ s = v .. 1\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_NO_CONCAT);
+    unit_dispose(&u);
+
+    LHAT_TEST("a structure with no op^ does not answer at all");
+    check_text(&u,
+               "let^ t = { a := 1 }\n"
+               "let^ v = t .. t\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_NO_CONCAT);
+    unit_dispose(&u);
+
+    // 11.8: an operator is a member, so 14.12's overload^ is what lets one
+    // type answer several right-hand types.
+    LHAT_TEST("overload^ gives one operator several right-hand types");
+    check_text(&u,
+               "let^ Vec = def^{\n"
+               "  self^{},\n"
+               "  op^.. := f^self^, o:string^ -> string^ { return^ o },\n"
+               "  overload^ op^.. := f^self^, o:number^ -> number^ { return^ o },\n"
+               "}\n"
+               "let^ v = Vec.new^()\n"
+               "let^ s : string^ = v .. \"a\"\n"
+               "let^ n : number^ = v .. 1\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // 14.12 asks for a marker on two members of one name whether they came
+    // from a base or from the same def^. Only the base had been looked at.
+    LHAT_TEST("two members of one name in one def^ need the marker too");
+    check_text(&u,
+               "let^ V = def^{\n"
+               "  self^{},\n"
+               "  show := p^self^, x:string^ { },\n"
+               "  overload^ show := p^self^, x:number^ { },\n"
+               "}\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("and without one it is still the ordinary mistake");
+    check_text(&u,
+               "let^ V = def^{\n"
+               "  self^{},\n"
+               "  show := p^self^, x:string^ { },\n"
+               "  show := p^self^, x:number^ { },\n"
+               "}\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MEMBER_EXISTS);
+    unit_dispose(&u);
+
+    LHAT_TEST("with the overlap rule applying inside one def^ as well");
+    check_text(&u,
+               "let^ V = def^{\n"
+               "  self^{},\n"
+               "  show := p^self^, x:string^ { },\n"
+               "  overload^ show := p^self^, x:string^ { },\n"
+               "}\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_OVERLOAD_OVERLAPS);
     unit_dispose(&u);
 
     // 03 の 3.5 turns what is not known into the machine's business.

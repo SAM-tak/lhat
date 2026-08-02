@@ -84,6 +84,13 @@ struct LhatType {
     union {
         struct {
             LhatTypeMember *members;
+            // 14.1: def^ is the only way to make one, and 14.5 composes two
+            // of them with '..'. A definition and an instance of it carry the
+            // same members (14.7), so nothing in the shape tells them apart
+            // -- which 11.2's operator has to, since '..' between definitions
+            // is composition and never a call. Identity is still structural
+            // (11.3): this says what made the structure, not what it is.
+            bool is_definition;
         } table;
 
         // 13.1. `result` is NULL when nothing is returned (13.2), and

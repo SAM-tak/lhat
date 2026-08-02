@@ -3154,20 +3154,78 @@ LhatRunResult lhat_run(const LhatProto *proto)
             // the case that is settled. 11.3 leaves the rest to the
             // operator's own definition, which needs op^.
             case LHAT_BC_CONCAT: {
-                if (!lhat_is_object_kind(registers[b], LHAT_OBJECT_STRING) ||
-                    !lhat_is_object_kind(registers[cc], LHAT_OBJECT_STRING)) {
+                if (lhat_is_object_kind(registers[b], LHAT_OBJECT_STRING) &&
+                    lhat_is_object_kind(registers[cc], LHAT_OBJECT_STRING)) {
+                    const LhatString *left =
+                        (const LhatString *)lhat_as_object(registers[b]);
+                    const LhatString *right =
+                        (const LhatString *)lhat_as_object(registers[cc]);
+                    LhatString *joined =
+                        lhat_string_concat(&m->objects, left, right);
+                    if (joined == NULL) {
+                        return finish(m, LHAT_RUN_OUT_OF_MEMORY, lhat_nil(), at);
+                    }
+                    registers[a] = lhat_object((LhatObject *)joined);
+                    break;
+                }
+
+                // 02 の 11.1: an operator is a function, and 11.3 asks the
+                // left operand for it. A string answers above, built in; here
+                // the answer is a member named '..', which 01 の 6 章 keeps a
+                // program from writing by hand.
+                const LhatTable *carrier = table_of(registers[b]);
+                LhatValue joiner = lhat_nil();
+                if (carrier != NULL) {
+                    LhatString *name =
+                        lhat_string_new(&m->objects, "..", 2);
+                    if (name == NULL) {
+                        return finish(m, LHAT_RUN_OUT_OF_MEMORY, lhat_nil(), at);
+                    }
+                    joiner = lhat_table_get(carrier,
+                                            lhat_object((LhatObject *)name));
+                }
+                if (!lhat_is_object_kind(joiner, LHAT_OBJECT_SUBROUTINE)) {
                     return finish(m, LHAT_RUN_TYPE_ERROR, lhat_nil(), at);
                 }
-                const LhatString *left =
-                    (const LhatString *)lhat_as_object(registers[b]);
-                const LhatString *right =
-                    (const LhatString *)lhat_as_object(registers[cc]);
-                LhatString *joined =
-                    lhat_string_concat(&m->objects, left, right);
-                if (joined == NULL) {
-                    return finish(m, LHAT_RUN_OUT_OF_MEMORY, lhat_nil(), at);
+                const LhatClosure *op =
+                    (const LhatClosure *)lhat_as_object(joiner);
+                if (op->proto == NULL || op->proto->yields) {
+                    // 15.3: an operator is an f^, so it cannot suspend.
+                    return finish(m, LHAT_RUN_TYPE_ERROR, lhat_nil(), at);
                 }
-                registers[a] = lhat_object((LhatObject *)joined);
+                if (m->frame_count >= LHAT_MAX_FRAMES) {
+                    return finish(m, LHAT_RUN_STACK_OVERFLOW, lhat_nil(), at);
+                }
+
+                // 5.3 wants the arguments in a contiguous run, and b and cc
+                // need not be one. 14.4 puts the left operand in self^, so it
+                // leads: the frame is laid out just past where the answer
+                // goes, the way a native call lays one out.
+                LhatValue *next_base = &registers[a] + 1;
+                if (next_base + LHAT_MAX_REGISTERS >=
+                    m->stack + LHAT_STACK_SLOTS) {
+                    return finish(m, LHAT_RUN_STACK_OVERFLOW, lhat_nil(), at);
+                }
+                LhatValue receiver = registers[b];
+                LhatValue argument = registers[cc];
+                next_base[0] = receiver;
+                next_base[1] = argument;
+
+                frame->pc = pc;
+                Frame *joined_frame = &m->frames[m->frame_count++];
+                joined_frame->closure = op;
+                joined_frame->pc = 0;
+                joined_frame->base = next_base;
+                joined_frame->result = a;
+                joined_frame->cleanup_count = 0;
+                joined_frame->returning = false;
+                joined_frame->coroutine = NULL;
+                joined_frame->disposing = false;
+
+                frame = joined_frame;
+                registers = frame->base;
+                chunk = &op->proto->chunk;
+                pc = 0;
                 break;
             }
 

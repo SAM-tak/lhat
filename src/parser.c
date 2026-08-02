@@ -742,6 +742,31 @@ static LhatNode *parse_def(Parser *p)
             }
             seen_template = true;
             entry->v.entry.value = parse_self_table(p);
+        } else if (check_hat(p, "op")) {
+            // 11.1: an operator is a function, and a definition carries it as
+            // an ordinary member. The name is the operator itself, which
+            // 01 の 6 章 keeps a program from writing by hand -- so nothing
+            // of the writer's can collide with it.
+            advance(p);
+            LhatToken symbol = p->current;
+            if (symbol.kind != LHAT_TOKEN_OP ||
+                symbol.v.op != LHAT_OP_CONCAT) {
+                // 11.4 leaves the other operators for later, and a member
+                // nothing consults is worse than a refusal.
+                report(p, &symbol, LHAT_PARSE_ERR_OPERATOR_NOT_DEFINABLE);
+                break;
+            }
+            LhatNode *name = make(p, LHAT_NODE_IDENT, &symbol);
+            if (name != NULL) {
+                name->v.name.offset = symbol.offset;
+                name->v.name.length = symbol.length;
+                name->v.name.hats = 0;
+            }
+            entry->v.entry.key = name;
+            advance(p);
+            if (expect_op(p, LHAT_OP_DEFINE)) {
+                entry->v.entry.value = parse_expression(p);
+            }
         } else if (p->current.kind == LHAT_TOKEN_IDENT ||
                    p->current.kind == LHAT_TOKEN_NAME_LITERAL ||
                    p->current.kind == LHAT_TOKEN_HAT_IDENT) {
@@ -2782,6 +2807,8 @@ const char *lhat_parse_error_message(LhatParseErrorCode code)
                    "form advances its own";
         case LHAT_PARSE_ERR_WITHDRAWN_FROM:
             return "from^ was withdrawn; write 'for^ i := 1 to^ 10'";
+        case LHAT_PARSE_ERR_OPERATOR_NOT_DEFINABLE:
+            return "only '..' can be given an op^ definition so far";
         case LHAT_PARSE_ERR_EXPECTED_MEMBER:
             return "a def^ holds 'name := value' members and one self^{ ... }";
         case LHAT_PARSE_ERR_FIELD_NEEDS_NAME:
