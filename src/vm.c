@@ -2802,11 +2802,13 @@ static bool fits_call(LhatValue candidate, const LhatValue *at, uint8_t given,
     size_t first = 1;
     size_t declared = 0;
     if (method) {
+        // 5.3 lays a method call out as callee, receiver, then arguments, so
+        // what was given starts at 2 either way. 14.4's self^ is the first
+        // parameter and is not asked about -- the receiver is what it is.
+        first = 2;
         if (proto->takes_self) {
             passed = (size_t)given + 1;
-            declared = 1;  // self^ is the first parameter and is not asked about
-        } else {
-            first = 2;
+            declared = 1;
         }
     }
     if (passed != proto->parameters) {
@@ -3784,6 +3786,32 @@ LhatRunResult lhat_run(const LhatProto *proto)
                 return finish(m, LHAT_RUN_OUT_OF_MEMORY, lhat_nil(), at);
             }
             found = lhat_table_get(carrier, lhat_object((LhatObject *)key));
+        }
+        // 14.12: a type may answer one operator for several right-hand types,
+        // and then the member is a group. The search is the same one a call
+        // makes -- at most one candidate fits, so it ends at the first.
+        if (lhat_is_object_kind(found, LHAT_OBJECT_OVERLOAD)) {
+            const LhatOverload *group =
+                (const LhatOverload *)lhat_as_object(found);
+            // 14.4 makes an operator a method: the left operand is the
+            // receiver and the right one the single argument, which is the
+            // layout 5.3 gives a method call -- callee, receiver, arguments.
+            LhatValue shaped[3];
+            shaped[0] = found;
+            shaped[1] = registers[b];
+            shaped[2] = registers[cc];
+            LhatValue picked = lhat_nil();
+            for (size_t i = 0; i < group->count; i++) {
+                size_t skip = 1;
+                if (fits_call(group->candidates[i], shaped, 1, true, &skip)) {
+                    picked = group->candidates[i];
+                    break;
+                }
+            }
+            if (lhat_is_nil(picked)) {
+                return finish(m, LHAT_RUN_NO_CANDIDATE, lhat_nil(), at);
+            }
+            found = picked;
         }
         if (!lhat_is_object_kind(found, LHAT_OBJECT_SUBROUTINE)) {
             return finish(m, LHAT_RUN_TYPE_ERROR, lhat_nil(), at);

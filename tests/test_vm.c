@@ -2231,6 +2231,46 @@ static void test_definitions(void)
     CHECK_INTEGER(&r, 2);
     run_dispose(&r);
 
+    // 14.4: a candidate that takes self^ is reached as a method, so what was
+    // given starts past the receiver. The search had been comparing the
+    // receiver against the first parameter instead, and no candidate taking
+    // self^ ever fitted.
+    LHAT_TEST("a candidate taking self^ is found");
+    run_text(&r,
+             "let^ V = def^{ self^{},\n"
+             "  m := f^self^, o:number^ -> number^ { return^ o },\n"
+             "  overload^ m := f^self^, o:string^ -> number^ { return^ 9 },\n"
+             "}\n"
+             "let^ v = V.new^()\n"
+             "return^ v.m(7) * 10 + v.m(\"x\")\n");
+    CHECK_INTEGER(&r, 79);
+    run_dispose(&r);
+
+    LHAT_TEST("across a composition as well");
+    run_text(&r,
+             "let^ Foo = def^{ self^{},\n"
+             "  m := f^self^, o:number^ -> number^ { return^ o } }\n"
+             "let^ Bar = Foo .. def^{ self^{},\n"
+             "  overload^ m := f^self^, o:string^ -> number^ { return^ 9 } }\n"
+             "let^ v = Bar.new^()\n"
+             "return^ v.m(7) * 10 + v.m(\"x\")\n");
+    CHECK_INTEGER(&r, 79);
+    run_dispose(&r);
+
+    // 11.8 makes an operator a member, so 14.12's overload^ reaches it too --
+    // and 14.4 makes the left operand the receiver, which is the shape the
+    // search has to ask in.
+    LHAT_TEST("an operator may be overloaded like any member");
+    run_text(&r,
+             "let^ V = def^{ self^{},\n"
+             "  op^.. := f^self^, o:string^ -> number^ { return^ 1 },\n"
+             "  overload^ op^.. := f^self^, o:number^ -> number^ { return^ 2 },\n"
+             "}\n"
+             "let^ v = V.new^()\n"
+             "return^ (v .. \"s\") * 10 + (v .. 7)\n");
+    CHECK_INTEGER(&r, 12);
+    run_dispose(&r);
+
     // The candidates may differ in the type rather than the count, which is
     // the case a count alone could not tell apart.
     LHAT_TEST("candidates of one arity are told apart by type");
