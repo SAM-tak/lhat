@@ -2540,6 +2540,23 @@ const char *lhat_compile_status_message(LhatCompileStatus status)
 // Machine
 // ---------------------------------------------------------------------------
 
+// 02 の 11.8: an operator is a member whose name is the operator itself.
+// NULL for the instructions that are not one.
+static const char *operator_name(LhatOpcode op, size_t *length)
+{
+    switch (op) {
+        case LHAT_BC_CONCAT: *length = 2; return "..";
+        case LHAT_BC_ADD:    *length = 1; return "+";
+        case LHAT_BC_SUB:    *length = 1; return "-";
+        case LHAT_BC_MUL:    *length = 1; return "*";
+        case LHAT_BC_DIV:    *length = 1; return "/";
+        case LHAT_BC_IDIV:   *length = 2; return "//";
+        case LHAT_BC_MOD:    *length = 1; return "%";
+        case LHAT_BC_POW:    *length = 2; return "**";
+        default:             *length = 0; return NULL;
+    }
+}
+
 // 5.1: the generic form checks. 02 の 14.8 makes number^ one type with two
 // representations, so an operation stays in integers when both sides are and
 // widens only when one of them is real.
@@ -3046,12 +3063,18 @@ LhatRunResult lhat_run(const LhatProto *proto)
             case LHAT_BC_POW: {
                 LhatValue out;
                 LhatRunStatus status = LHAT_RUN_OK;
-                if (!arithmetic(op, registers[b], registers[cc], &out,
-                                &status)) {
+                if (arithmetic(op, registers[b], registers[cc], &out,
+                               &status)) {
+                    registers[a] = out;
+                    break;
+                }
+                // 02 の 11.3: numbers answer built in; anything else answers
+                // with the member 11.8 names, or not at all.
+                if (status != LHAT_RUN_TYPE_ERROR ||
+                    table_of(registers[b]) == NULL) {
                     return finish(m, status, lhat_nil(), at);
                 }
-                registers[a] = out;
-                break;
+                goto call_operator;
             }
 
             case LHAT_BC_NEG: {
@@ -3169,64 +3192,12 @@ LhatRunResult lhat_run(const LhatProto *proto)
                     break;
                 }
 
-                // 02 の 11.1: an operator is a function, and 11.3 asks the
-                // left operand for it. A string answers above, built in; here
-                // the answer is a member named '..', which 01 の 6 章 keeps a
-                // program from writing by hand.
-                const LhatTable *carrier = table_of(registers[b]);
-                LhatValue joiner = lhat_nil();
-                if (carrier != NULL) {
-                    LhatString *name =
-                        lhat_string_new(&m->objects, "..", 2);
-                    if (name == NULL) {
-                        return finish(m, LHAT_RUN_OUT_OF_MEMORY, lhat_nil(), at);
-                    }
-                    joiner = lhat_table_get(carrier,
-                                            lhat_object((LhatObject *)name));
-                }
-                if (!lhat_is_object_kind(joiner, LHAT_OBJECT_SUBROUTINE)) {
+                // 02 の 11.3: a string answers above, built in. Anything else
+                // answers with the member 11.8 names, or not at all.
+                if (table_of(registers[b]) == NULL) {
                     return finish(m, LHAT_RUN_TYPE_ERROR, lhat_nil(), at);
                 }
-                const LhatClosure *op =
-                    (const LhatClosure *)lhat_as_object(joiner);
-                if (op->proto == NULL || op->proto->yields) {
-                    // 15.3: an operator is an f^, so it cannot suspend.
-                    return finish(m, LHAT_RUN_TYPE_ERROR, lhat_nil(), at);
-                }
-                if (m->frame_count >= LHAT_MAX_FRAMES) {
-                    return finish(m, LHAT_RUN_STACK_OVERFLOW, lhat_nil(), at);
-                }
-
-                // 5.3 wants the arguments in a contiguous run, and b and cc
-                // need not be one. 14.4 puts the left operand in self^, so it
-                // leads: the frame is laid out just past where the answer
-                // goes, the way a native call lays one out.
-                LhatValue *next_base = &registers[a] + 1;
-                if (next_base + LHAT_MAX_REGISTERS >=
-                    m->stack + LHAT_STACK_SLOTS) {
-                    return finish(m, LHAT_RUN_STACK_OVERFLOW, lhat_nil(), at);
-                }
-                LhatValue receiver = registers[b];
-                LhatValue argument = registers[cc];
-                next_base[0] = receiver;
-                next_base[1] = argument;
-
-                frame->pc = pc;
-                Frame *joined_frame = &m->frames[m->frame_count++];
-                joined_frame->closure = op;
-                joined_frame->pc = 0;
-                joined_frame->base = next_base;
-                joined_frame->result = a;
-                joined_frame->cleanup_count = 0;
-                joined_frame->returning = false;
-                joined_frame->coroutine = NULL;
-                joined_frame->disposing = false;
-
-                frame = joined_frame;
-                registers = frame->base;
-                chunk = &op->proto->chunk;
-                pc = 0;
-                break;
+                goto call_operator;
             }
 
             case LHAT_BC_CLOSE:
@@ -3797,6 +3768,66 @@ LhatRunResult lhat_run(const LhatProto *proto)
                 return finish(m, LHAT_RUN_TYPE_ERROR, lhat_nil(), at);
         }
         continue;
+
+    // 02 の 11.1: an operator is a function the left operand carries, named
+    // by 11.8 after the operator itself. The instructions above take their
+    // own types directly and come here for everything else, which is why the
+    // built-in cases pay nothing for this.
+    call_operator: {
+        size_t length = 0;
+        const char *name = operator_name(op, &length);
+        const LhatTable *carrier = table_of(registers[b]);
+        LhatValue found = lhat_nil();
+        if (name != NULL && carrier != NULL) {
+            LhatString *key = lhat_string_new(&m->objects, name, length);
+            if (key == NULL) {
+                return finish(m, LHAT_RUN_OUT_OF_MEMORY, lhat_nil(), at);
+            }
+            found = lhat_table_get(carrier, lhat_object((LhatObject *)key));
+        }
+        if (!lhat_is_object_kind(found, LHAT_OBJECT_SUBROUTINE)) {
+            return finish(m, LHAT_RUN_TYPE_ERROR, lhat_nil(), at);
+        }
+        const LhatClosure *carried =
+            (const LhatClosure *)lhat_as_object(found);
+        // 15.3: an operator is an f^, so it cannot suspend.
+        if (carried->proto == NULL || carried->proto->yields) {
+            return finish(m, LHAT_RUN_TYPE_ERROR, lhat_nil(), at);
+        }
+        if (m->frame_count >= LHAT_MAX_FRAMES) {
+            return finish(m, LHAT_RUN_STACK_OVERFLOW, lhat_nil(), at);
+        }
+
+        // 5.3 wants the arguments in a contiguous run, and b and cc need not
+        // be one. 14.4 puts the left operand in self^, so it leads: the frame
+        // is laid out just past where the answer goes, the way a native call
+        // lays one out.
+        LhatValue *next_base = &registers[a] + 1;
+        if (next_base + LHAT_MAX_REGISTERS >= m->stack + LHAT_STACK_SLOTS) {
+            return finish(m, LHAT_RUN_STACK_OVERFLOW, lhat_nil(), at);
+        }
+        LhatValue receiver = registers[b];
+        LhatValue argument = registers[cc];
+        next_base[0] = receiver;
+        next_base[1] = argument;
+
+        frame->pc = pc;
+        Frame *entered = &m->frames[m->frame_count++];
+        entered->closure = carried;
+        entered->pc = 0;
+        entered->base = next_base;
+        entered->result = a;
+        entered->cleanup_count = 0;
+        entered->returning = false;
+        entered->coroutine = NULL;
+        entered->disposing = false;
+
+        frame = entered;
+        registers = frame->base;
+        chunk = &carried->proto->chunk;
+        pc = 0;
+        continue;
+    }
 
     drain:
         // Innermost first, one at a time: each body ends with ENDCLEANUP,

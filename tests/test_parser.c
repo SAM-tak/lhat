@@ -1184,15 +1184,24 @@ static void test_loop_clauses(void)
     LHAT_CHECK_EQ_INT(error_count(&p), 0);
     parse_dispose(&p);
 
-    // 11.4 leaves the other operators for later, and a member nothing
-    // consults is worse than a refusal.
-    LHAT_TEST("and no other operator has one yet");
+    LHAT_TEST("and the arithmetic operators take one too");
     parse_text(&p,
                "V := def^{ self^{}, op^+ := f^self^, o:number^ -> number^ { "
                "return^ o } }");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    parse_dispose(&p);
+
+    // 11.8: and^, or^ and '!' are the language's own logic, and 11.5's
+    // comparisons decide by disjointness rather than by asking a type.
+    LHAT_TEST("but a comparison is not one to define");
+    parse_text(&p,
+               "V := def^{ self^{}, op^< := f^self^, o:number^ -> bool^ { "
+               "return^ true^ } }");
     LHAT_CHECK(p.result.diagnostic_count > 0, "expected a diagnostic");
-    LHAT_CHECK_EQ_INT(p.result.diagnostics[0].code,
-                      LHAT_PARSE_ERR_OPERATOR_NOT_DEFINABLE);
+    if (p.result.diagnostic_count > 0) {
+        LHAT_CHECK_EQ_INT(p.result.diagnostics[0].code,
+                          LHAT_PARSE_ERR_OPERATOR_NOT_DEFINABLE);
+    }
     parse_dispose(&p);
 
     // 9.10: pre^ runs before the condition, so it sits between prolog^ and

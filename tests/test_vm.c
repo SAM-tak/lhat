@@ -594,6 +594,40 @@ static void test_strings(void)
     CHECK_STRING(&r, "v!?");
     run_dispose(&r);
 
+    // 11.4改: the arithmetic operators ask the same question '..' does.
+    LHAT_TEST("a definition answers arithmetic with its own op^");
+    run_text(&r,
+             "let^ Vec = def^{\n"
+             "  self^{ n := 10 },\n"
+             "  op^+ := f^self^, o:number^ -> number^ { return^ self^.n + o },\n"
+             "  op^* := f^self^, o:number^ -> number^ { return^ self^.n * o },\n"
+             "}\n"
+             "let^ v = Vec.new^()\n"
+             "return^ (v + 5) * 100 + (v * 3)\n");
+    CHECK_INTEGER(&r, 1530);  // 15, then 30
+    run_dispose(&r);
+
+    // 14.8's number^ carries all seven built in, so ordinary arithmetic keeps
+    // the instructions it had and pays nothing for the lookup.
+    LHAT_TEST("numbers keep their own instructions");
+    run_text(&r, "return^ 1 + 2 * 3 - 4\n");
+    CHECK_INTEGER(&r, 3);
+    run_dispose(&r);
+
+    LHAT_TEST("a structure with no op^ for it is refused");
+    run_text(&r,
+             "let^ t = { a := 1 }\n"
+             "return^ t + 1\n");
+    LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_TYPE_ERROR);
+    run_dispose(&r);
+
+    // 04 の 11.2 keeps a zero divisor a fault of its own, ahead of any
+    // question about who answers the operator.
+    LHAT_TEST("and a zero divisor is still its own fault");
+    run_text(&r, "return^ 1 // 0\n");
+    LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_DIVIDE_BY_ZERO);
+    run_dispose(&r);
+
     LHAT_TEST("a structure with no '..' cannot answer");
     run_text(&r,
              "let^ t = { a := 1 }\n"

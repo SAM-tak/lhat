@@ -558,34 +558,65 @@ static LhatType *require_value(Checker *c, const LhatNode *at, LhatType *type)
     return type;
 }
 
+// 11.8: an operator is a member whose name is the operator itself. NULL for
+// the ones no op^ may define -- 11.8 keeps and^, or^ and '!' built in, and
+// 11.5's comparisons decide by 14.12's disjointness rather than by asking.
+static const char *operator_name(LhatOpKind op, size_t *length)
+{
+    switch (op) {
+        case LHAT_OP_CONCAT:   *length = 2; return "..";
+        case LHAT_OP_ADD:      *length = 1; return "+";
+        case LHAT_OP_SUB:      *length = 1; return "-";
+        case LHAT_OP_MUL:      *length = 1; return "*";
+        case LHAT_OP_DIV:      *length = 1; return "/";
+        case LHAT_OP_FLOORDIV: *length = 2; return "//";
+        case LHAT_OP_MOD:      *length = 1; return "%";
+        case LHAT_OP_POW:      *length = 2; return "**";
+        default:               *length = 0; return NULL;
+    }
+}
+
+// 11.8: what a built-in type answers. The checker knows these rather than any
+// L^ writing them out, the way 15.6 gives a coroutine start(). 14.4 puts the
+// left operand in self^, so the right one is the only parameter.
+static LhatType *builtin_operator(Checker *c, LhatTypeKind carrier,
+                                  const char *name, size_t length)
+{
+    LhatTypeKind takes;
+    if (carrier == LHAT_TYPE_STRING && name_is(name, length, "..")) {
+        takes = LHAT_TYPE_STRING;  // 11.2: joining two strings answers one
+    } else if (carrier == LHAT_TYPE_NUMBER && length > 0 && name[0] != '.') {
+        // 14.8 makes number^ one type, and every arithmetic operator on it
+        // takes and answers one. '..' is the only name reaching here that
+        // starts with a dot, and joining numbers is not arithmetic (11.2).
+        takes = LHAT_TYPE_NUMBER;
+    } else {
+        // 11.8: bool^ carries none. and^, or^ and '!' are the built-in
+        // logic and nothing writes over them.
+        return NULL;
+    }
+    LhatType *signature = lhat_type_func(c->result->types, true);
+    signature->v.func.takes_self = true;
+    lhat_type_add_param(c->result->types, signature, simple(c, takes));
+    signature->v.func.result = simple(c, takes);
+    return signature;
+}
+
 // 11.1: an operator is a function, and 11.3 asks structurally whether a type
-// carries it. The name is the operator itself -- 01 の 6 章 spells a member
-// name as an identifier, so '..' is one no program can write by hand and
-// nothing of the writer's can collide with it.
-//
-// A built-in type carries its operators the way 15.6 gives a coroutine
-// start(): the checker knows them, rather than any L^ writing them out.
+// carries it. 01 の 6 章 spells a member name as an identifier, so an
+// operator is a name no program can write by hand and nothing of the
+// writer's can collide with it.
 static LhatType *operator_member(Checker *c, const LhatType *type,
                                  const char *name, size_t length)
 {
-    if (type == NULL) {
+    if (type == NULL || name == NULL) {
         return NULL;
-    }
-    if (type->kind == LHAT_TYPE_STRING && name_is(name, length, "..")) {
-        // 11.2: joining two strings answers a string. 14.4 puts the left
-        // operand in self^, so the right one is the only parameter.
-        LhatType *signature = lhat_type_func(c->result->types, true);
-        signature->v.func.takes_self = true;
-        lhat_type_add_param(c->result->types, signature,
-                            simple(c, LHAT_TYPE_STRING));
-        signature->v.func.result = simple(c, LHAT_TYPE_STRING);
-        return signature;
     }
     if (type->kind == LHAT_TYPE_TABLE) {
         const LhatTypeMember *m = find_member(type, name, length);
         return m != NULL ? m->type : NULL;
     }
-    return NULL;
+    return builtin_operator(c, type->kind, name, length);
 }
 
 // 03 の 3.5: a gap in inference, and 13.7's any^ which is every value at
@@ -869,6 +900,40 @@ static void expect(Checker *c, const LhatNode *at, LhatType *value,
     }
 }
 
+// 11.3改: the one shape every operator is judged with. The left operand is
+// asked for the member 11.8 names, 11.1 makes that a function, 14.4 puts the
+// left operand in its self^ -- so the right operand is its argument and the
+// expression is worth what it answers.
+//
+// NULL means nothing was decided: the operand types said too little (03 の
+// 3.5), or the answer was already reported. The caller says what to fall back
+// on, since that differs by operator.
+static LhatType *infer_operator(Checker *c, const LhatNode *node, LhatOpKind op,
+                                LhatType *left, LhatType *right)
+{
+    size_t length = 0;
+    const char *name = operator_name(op, &length);
+    if (name == NULL || operator_undecided(left)) {
+        return NULL;
+    }
+
+    LhatType *carrier = operator_member(c, left, name, length);
+    if (carrier == NULL) {
+        report(c, node->v.binary.left, LHAT_CHECK_ERR_NO_OPERATOR);
+        return NULL;
+    }
+    if (carrier->kind != LHAT_TYPE_FUNC) {
+        return NULL;
+    }
+    LhatType *wanted =
+        carrier->v.func.params != NULL ? carrier->v.func.params->type : NULL;
+    if (wanted != NULL && !operator_undecided(right)) {
+        expect(c, node->v.binary.right, right, wanted,
+               LHAT_CHECK_ERR_NO_OPERATOR);
+    }
+    return carrier->v.func.result;
+}
+
 static LhatType *infer_name(Checker *c, const LhatNode *node)
 {
     const char *name = NULL;
@@ -975,16 +1040,11 @@ static LhatType *infer_binary(Checker *c, const LhatNode *node)
         case LHAT_OP_FLOORDIV:
         case LHAT_OP_MOD:
         case LHAT_OP_POW: {
-            LhatType *number = simple(c, LHAT_TYPE_NUMBER);
-            expect(c, node->v.binary.left, left, number,
-                   LHAT_CHECK_ERR_NOT_NUMBER);
-            expect(c, node->v.binary.right, right, number,
-                   LHAT_CHECK_ERR_NOT_NUMBER);
-            // 04 の 11.2: only // and % can fail, and / never does.
-            if (op == LHAT_OP_FLOORDIV || op == LHAT_OP_MOD) {
-                return number;
-            }
-            return number;
+            // 11.4改: arithmetic asks 11.3's question the way '..' does, so a
+            // written op^ answers it. 14.8's number^ carries all seven built
+            // in, which leaves ordinary arithmetic exactly as it was.
+            LhatType *answer = infer_operator(c, node, op, left, right);
+            return answer != NULL ? answer : simple(c, LHAT_TYPE_NUMBER);
         }
 
         case LHAT_OP_AND:
@@ -1029,27 +1089,8 @@ static LhatType *infer_binary(Checker *c, const LhatNode *node)
                 return right;
             }
 
-            if (operator_undecided(left)) {
-                return simple(c, LHAT_TYPE_UNKNOWN);
-            }
-            LhatType *joiner = operator_member(c, left, "..", 2);
-            if (joiner == NULL) {
-                report(c, node->v.binary.left, LHAT_CHECK_ERR_NO_CONCAT);
-                return simple(c, LHAT_TYPE_UNKNOWN);
-            }
-            if (joiner->kind != LHAT_TYPE_FUNC) {
-                return simple(c, LHAT_TYPE_UNKNOWN);
-            }
-            // 11.1 makes an operator a function, so what may stand on the
-            // right is what its parameter admits.
-            LhatType *wanted = joiner->v.func.params != NULL
-                                   ? joiner->v.func.params->type
-                                   : NULL;
-            if (wanted != NULL && !operator_undecided(right)) {
-                expect(c, node->v.binary.right, right, wanted,
-                       LHAT_CHECK_ERR_NO_CONCAT);
-            }
-            return joiner->v.func.result;
+            LhatType *joined = infer_operator(c, node, op, left, right);
+            return joined != NULL ? joined : simple(c, LHAT_TYPE_UNKNOWN);
         }
 
         default:
@@ -2923,8 +2964,9 @@ const char *lhat_check_error_message(LhatCheckErrorCode code)
             return "these can never be equal, so the comparison is fixed already";
         case LHAT_CHECK_ERR_BAD_KEY:
             return "nil^ is how a table spells 'not there', so it cannot be a key";
-        case LHAT_CHECK_ERR_NO_CONCAT:
-            return "'..' joins values that answer it, and this one does not";
+        case LHAT_CHECK_ERR_NO_OPERATOR:
+            return "an operator is answered by what stands to its left, and "
+                   "this does not answer this one";
         case LHAT_CHECK_ERR_IS_ALWAYS_TRUE:
             return "any^ holds of every value, so this asks nothing";
         case LHAT_CHECK_ERR_MEMBER_EXISTS:

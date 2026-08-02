@@ -30,7 +30,9 @@ typedef enum {
     LHAT_CHECK_ERR_UNKNOWN_TYPE,        // an annotation names nothing
 
     LHAT_CHECK_ERR_MISMATCH,            // 13.11: the value does not fit
-    LHAT_CHECK_ERR_NOT_NUMBER,          // arithmetic on something else
+    LHAT_CHECK_ERR_NOT_NUMBER,          // unary '-' on something else. The
+                                        // binary arithmetic goes through
+                                        // 11.3's question instead (11.8)
     LHAT_CHECK_ERR_NOT_BOOL,            // a condition, and^ / or^ / '!'
     LHAT_CHECK_ERR_NOT_CALLABLE,
     LHAT_CHECK_ERR_ARITY,               // too few or too many arguments
@@ -54,8 +56,9 @@ typedef enum {
     LHAT_CHECK_ERR_INCOMPARABLE,        // no value inhabits both sides
     LHAT_CHECK_ERR_BAD_KEY,             // 04 の 11.3: nil^ spells absence, so
                                         // it cannot also be a key
-    LHAT_CHECK_ERR_NO_CONCAT,           // 11.2: '..' joins what responds to
-                                        // it, and this does not
+    LHAT_CHECK_ERR_NO_OPERATOR,         // 11.3: an operator is answered by
+                                        // the left operand, and this one
+                                        // carries no answer for it
     LHAT_CHECK_ERR_IS_ALWAYS_TRUE,      // 13.7: any^ holds of every value, so
                                         // asking it of one asks nothing
     LHAT_CHECK_ERR_MISSING_FIELD,       // 04 の 2.5: no default to fall back to

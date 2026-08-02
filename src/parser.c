@@ -749,10 +749,19 @@ static LhatNode *parse_def(Parser *p)
             // of the writer's can collide with it.
             advance(p);
             LhatToken symbol = p->current;
-            if (symbol.kind != LHAT_TOKEN_OP ||
-                symbol.v.op != LHAT_OP_CONCAT) {
-                // 11.4 leaves the other operators for later, and a member
-                // nothing consults is worse than a refusal.
+            // 11.8: '..' and the arithmetic of 11.4. and^, or^ and '!' stay
+            // built in, and 11.5's comparisons decide by disjointness rather
+            // than by asking a type -- neither takes an op^.
+            bool definable = symbol.kind == LHAT_TOKEN_OP &&
+                             (symbol.v.op == LHAT_OP_CONCAT ||
+                              symbol.v.op == LHAT_OP_ADD ||
+                              symbol.v.op == LHAT_OP_SUB ||
+                              symbol.v.op == LHAT_OP_MUL ||
+                              symbol.v.op == LHAT_OP_DIV ||
+                              symbol.v.op == LHAT_OP_FLOORDIV ||
+                              symbol.v.op == LHAT_OP_MOD ||
+                              symbol.v.op == LHAT_OP_POW);
+            if (!definable) {
                 report(p, &symbol, LHAT_PARSE_ERR_OPERATOR_NOT_DEFINABLE);
                 break;
             }
@@ -2808,7 +2817,8 @@ const char *lhat_parse_error_message(LhatParseErrorCode code)
         case LHAT_PARSE_ERR_WITHDRAWN_FROM:
             return "from^ was withdrawn; write 'for^ i := 1 to^ 10'";
         case LHAT_PARSE_ERR_OPERATOR_NOT_DEFINABLE:
-            return "only '..' can be given an op^ definition so far";
+            return "op^ defines '..' and the arithmetic operators; and^, or^, "
+                   "'!' and the comparisons are the language's own";
         case LHAT_PARSE_ERR_EXPECTED_MEMBER:
             return "a def^ holds 'name := value' members and one self^{ ... }";
         case LHAT_PARSE_ERR_FIELD_NEEDS_NAME:

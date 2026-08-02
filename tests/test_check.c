@@ -127,7 +127,7 @@ static void test_expressions(void)
 
     LHAT_TEST("arithmetic needs numbers");
     check_text(&u, "let^ s = \"a\"\nlet^ n = s + 1\n");
-    CHECK_REPORTS(&u, LHAT_CHECK_ERR_NOT_NUMBER);
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_NO_OPERATOR);
     unit_dispose(&u);
 
     LHAT_TEST("a comparison is a bool");
@@ -795,7 +795,7 @@ static void test_narrowing(void)
                "    if^ r is^ string^ { }\n"
                "    return^ r + 1\n"
                "}\n");
-    CHECK_REPORTS(&u, LHAT_CHECK_ERR_NOT_NUMBER);
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_NO_OPERATOR);
     unit_dispose(&u);
 
     // 04 の 7 章: handling every kind is ordinary narrowing, so the success
@@ -864,7 +864,7 @@ static void test_narrowing(void)
                "    if^ f() is^ number^ { return^ f() + 1 }\n"
                "    return^ 0\n"
                "}\n");
-    CHECK_REPORTS(&u, LHAT_CHECK_ERR_NOT_NUMBER);
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_NO_OPERATOR);
     unit_dispose(&u);
 
     LHAT_TEST("a dot path is narrowed");
@@ -2253,7 +2253,7 @@ static void test_no_value(void)
     check_text(&u,
                "let^ log = p^ m:string^ { let^ y = m }\n"
                "let^ v = log(\"a\") + 1\n");
-    CHECK_REPORTS(&u, LHAT_CHECK_ERR_NOT_NUMBER);
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_NO_OPERATOR);
     unit_dispose(&u);
 
     LHAT_TEST("and a condition a bool^");
@@ -2360,17 +2360,17 @@ static void test_no_value(void)
     // machine already refused these; the checker had been silent.
     LHAT_TEST("a number does not answer '..'");
     check_text(&u, "let^ v = 1 .. \"b\"\n");
-    CHECK_REPORTS(&u, LHAT_CHECK_ERR_NO_CONCAT);
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_NO_OPERATOR);
     unit_dispose(&u);
 
     LHAT_TEST("on either side of it");
     check_text(&u, "let^ v = \"a\" .. 1\n");
-    CHECK_REPORTS(&u, LHAT_CHECK_ERR_NO_CONCAT);
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_NO_OPERATOR);
     unit_dispose(&u);
 
     LHAT_TEST("nor does a bool^ or a nil^");
     check_text(&u, "let^ v = true^ .. \"a\"\n");
-    CHECK_REPORTS(&u, LHAT_CHECK_ERR_NO_CONCAT);
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_NO_OPERATOR);
     unit_dispose(&u);
 
     // Every arm has to answer, since the value may be any of them.
@@ -2378,7 +2378,7 @@ static void test_no_value(void)
     check_text(&u,
                "let^ x : string^|nil^ = \"a\"\n"
                "let^ v = x .. \"b\"\n");
-    CHECK_REPORTS(&u, LHAT_CHECK_ERR_NO_CONCAT);
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_NO_OPERATOR);
     unit_dispose(&u);
 
     LHAT_TEST("a string answers, which is 11.2's first example");
@@ -2432,14 +2432,53 @@ static void test_no_value(void)
                "}\n"
                "let^ v = Vec.new^()\n"
                "let^ s = v .. 1\n");
-    CHECK_REPORTS(&u, LHAT_CHECK_ERR_NO_CONCAT);
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_NO_OPERATOR);
     unit_dispose(&u);
 
     LHAT_TEST("a structure with no op^ does not answer at all");
     check_text(&u,
                "let^ t = { a := 1 }\n"
                "let^ v = t .. t\n");
-    CHECK_REPORTS(&u, LHAT_CHECK_ERR_NO_CONCAT);
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_NO_OPERATOR);
+    unit_dispose(&u);
+
+    // 11.4改: the arithmetic operators ask the same question, so a written
+    // op^ answers them too.
+    LHAT_TEST("a definition answers arithmetic with its own op^");
+    check_text(&u,
+               "let^ Vec = def^{\n"
+               "  self^{ n := 0 },\n"
+               "  op^+ := f^self^, o:number^ -> string^ { return^ \"x\" },\n"
+               "}\n"
+               "let^ v = Vec.new^()\n"
+               "let^ s : string^ = v + 1\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("with its parameter deciding the right side");
+    check_text(&u,
+               "let^ Vec = def^{\n"
+               "  self^{ n := 0 },\n"
+               "  op^+ := f^self^, o:number^ -> number^ { return^ o },\n"
+               "}\n"
+               "let^ v = Vec.new^()\n"
+               "let^ n = v + \"a\"\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_NO_OPERATOR);
+    unit_dispose(&u);
+
+    // 14.8 keeps number^ answering all seven, so ordinary arithmetic is
+    // exactly what it was.
+    LHAT_TEST("and a number still answers all of them itself");
+    check_text(&u,
+               "let^ n : number^ = 1 + 2 - 3 * 4 / 5\n"
+               "let^ m : number^ = 7 // 2 + 7 % 2 + 2 ** 3\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // 11.8: bool^ carries none, and and^/or^/'!' are the language's own.
+    LHAT_TEST("a bool^ answers no operator");
+    check_text(&u, "let^ v = true^ + 1\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_NO_OPERATOR);
     unit_dispose(&u);
 
     // 11.8: an operator is a member, so 14.12's overload^ is what lets one
