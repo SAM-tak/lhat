@@ -5,6 +5,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "port.h"
+
 #define LHAT_MAX_REGISTERS 250
 #define LHAT_MAX_LOCALS 200
 #define LHAT_MAX_BREAKS 64
@@ -302,7 +304,7 @@ static void declare_error(Compiler *c, const LhatNode *node)
     if (root->error_count == root->error_capacity) {
         size_t grown = root->error_capacity ? root->error_capacity * 2 : 4;
         ErrorDecl *bigger =
-            (ErrorDecl *)realloc(root->errors, grown * sizeof *bigger);
+            (ErrorDecl *)lhat_realloc(root->errors, grown * sizeof *bigger);
         if (bigger == NULL) {
             fail(c, LHAT_COMPILE_TOO_COMPLEX);
             return;
@@ -318,12 +320,12 @@ static void declare_error(Compiler *c, const LhatNode *node)
 
     LhatString *group_name = lhat_string_new(&chunk->heap, name, length);
     const LhatErrorKind **kinds =
-        (const LhatErrorKind **)calloc(kind_count ? kind_count : 1,
+        (const LhatErrorKind **)lhat_calloc(kind_count ? kind_count : 1,
                                        sizeof *kinds);
     LhatErrorKind *group =
         lhat_error_kind_new(&chunk->heap, NULL, group_name);
     if (group_name == NULL || group == NULL || kinds == NULL) {
-        free(kinds);
+        lhat_free(kinds);
         fail(c, LHAT_COMPILE_TOO_COMPLEX);
         return;
     }
@@ -334,7 +336,7 @@ static void declare_error(Compiler *c, const LhatNode *node)
         const char *kind_name = NULL;
         size_t kind_length = 0;
         if (!node_name(c, k->v.named.name, &kind_name, &kind_length)) {
-            free(kinds);
+            lhat_free(kinds);
             fail(c, LHAT_COMPILE_UNSUPPORTED);
             return;
         }
@@ -342,7 +344,7 @@ static void declare_error(Compiler *c, const LhatNode *node)
         char qualified[256];
         size_t total = length + 1 + kind_length;
         if (total >= sizeof qualified) {
-            free(kinds);
+            lhat_free(kinds);
             fail(c, LHAT_COMPILE_TOO_COMPLEX);
             return;
         }
@@ -355,7 +357,7 @@ static void declare_error(Compiler *c, const LhatNode *node)
             text != NULL ? lhat_error_kind_new(&chunk->heap, group, text)
                          : NULL;
         if (kind == NULL) {
-            free(kinds);
+            lhat_free(kinds);
             fail(c, LHAT_COMPILE_TOO_COMPLEX);
             return;
         }
@@ -899,7 +901,7 @@ static void declare_defs(Compiler *c, const LhatNode *statements)
         if (root->def_count == root->def_capacity) {
             size_t grown = root->def_capacity ? root->def_capacity * 2 : 4;
             DefDecl *bigger =
-                (DefDecl *)realloc(root->defs, grown * sizeof *bigger);
+                (DefDecl *)lhat_realloc(root->defs, grown * sizeof *bigger);
             if (bigger == NULL) {
                 fail(c, LHAT_COMPILE_TOO_COMPLEX);
                 return;
@@ -1290,7 +1292,7 @@ static void compile_subroutine(Compiler *c, const LhatNode *node, uint8_t into)
         // 14.12: the search that resolves an overloaded call asks each
         // candidate what it takes, so each body carries that with it.
         struct LhatRuntimeType **types =
-            (struct LhatRuntimeType **)realloc(proto->parameter_types,
+            (struct LhatRuntimeType **)lhat_realloc(proto->parameter_types,
                                                ((size_t)proto->parameters + 1) *
                                                    sizeof *types);
         if (types == NULL) {
@@ -2826,7 +2828,7 @@ struct LhatCompileSession {
 
 LhatCompileSession *lhat_compile_session_new(void)
 {
-    return (LhatCompileSession *)calloc(1, sizeof(LhatCompileSession));
+    return (LhatCompileSession *)lhat_calloc(1, sizeof(LhatCompileSession));
 }
 
 void lhat_compile_session_dispose(LhatCompileSession *session)
@@ -2835,9 +2837,9 @@ void lhat_compile_session_dispose(LhatCompileSession *session)
         return;
     }
     for (size_t i = 0; i < session->count; i++) {
-        free(session->names[i].name);
+        lhat_free(session->names[i].name);
     }
-    free(session);
+    lhat_free(session);
 }
 
 // 05 の 8.7: reads a written path off L^.modules, from the root outwards.
@@ -3117,10 +3119,10 @@ static LhatCompileStatus compile_unit(LhatCompileSession *session,
     // The registry was the compiler's; the kind objects it points at belong
     // to the chunk and stay.
     for (size_t i = 0; i < c.error_count; i++) {
-        free((void *)c.errors[i].kinds);
+        lhat_free((void *)c.errors[i].kinds);
     }
-    free(c.errors);
-    free(c.defs);
+    lhat_free(c.errors);
+    lhat_free(c.defs);
 
     if (status != LHAT_COMPILE_OK) {
         lhat_proto_free(proto);
@@ -3146,7 +3148,7 @@ static LhatCompileStatus compile_unit(LhatCompileSession *session,
                 if (session->count >= LHAT_MAX_LOCALS) {
                     break;
                 }
-                char *kept = (char *)malloc(c.locals[i].length + 1);
+                char *kept = (char *)lhat_alloc(c.locals[i].length + 1);
                 if (kept == NULL) {
                     lhat_proto_free(proto);
                     return LHAT_COMPILE_TOO_COMPLEX;
@@ -3513,7 +3515,7 @@ static bool fits_call(LhatValue candidate, const LhatValue *at, uint8_t given,
 
 static void *allocate(Machine *m, size_t size, LhatObjectKind kind)
 {
-    LhatObject *object = (LhatObject *)calloc(1, size);
+    LhatObject *object = (LhatObject *)lhat_calloc(1, size);
     if (object == NULL) {
         return NULL;
     }
@@ -3710,7 +3712,7 @@ LhatMachine *lhat_machine_new(void)
     // calloc rather than malloc, and nothing more: 03 の 2.2 numbers
     // LHAT_VALUE_NIL first and gives it a zero payload, so zeroed memory is
     // already a stack full of nil^.
-    Machine *m = (Machine *)calloc(1, sizeof *m);
+    Machine *m = (Machine *)lhat_calloc(1, sizeof *m);
     if (m == NULL) {
         return NULL;
     }
@@ -3878,7 +3880,7 @@ void lhat_machine_dispose(LhatMachine *machine)
     }
     lhat_object_free_all(&machine->objects);
     lhat_gray_dispose(&machine->gray);
-    free(machine);
+    lhat_free(machine);
 }
 
 LhatRunResult lhat_run(LhatMachine *m, const LhatProto *proto)
@@ -4037,7 +4039,7 @@ LhatRunResult lhat_run(LhatMachine *m, const LhatProto *proto)
                 closure->proto = nested;
                 closure->upvalue_count = nested->upvalue_count;
                 if (nested->upvalue_count > 0) {
-                    closure->upvalues = (LhatUpvalue **)calloc(
+                    closure->upvalues = (LhatUpvalue **)lhat_calloc(
                         nested->upvalue_count, sizeof *closure->upvalues);
                     if (closure->upvalues == NULL) {
                         return finish(m, LHAT_RUN_OUT_OF_MEMORY, lhat_nil(), at);

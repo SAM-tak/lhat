@@ -6,6 +6,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "port.h"
+
 #define LHAT_CP_INVALID 0xFFFFFFFFu
 
 // Longest numeric literal we are willing to parse. Anything beyond this is
@@ -218,7 +220,7 @@ static void report_at(LhatLexer *lexer, LhatErrorCode code, uint32_t offset,
     if (lexer->diagnostic_count == lexer->diagnostic_capacity) {
         size_t grown = lexer->diagnostic_capacity ? lexer->diagnostic_capacity * 2 : 8;
         LhatDiagnostic *bigger =
-            (LhatDiagnostic *)realloc(lexer->diagnostics, grown * sizeof *bigger);
+            (LhatDiagnostic *)lhat_realloc(lexer->diagnostics, grown * sizeof *bigger);
         if (bigger == NULL) {
             return;  // drop the diagnostic rather than fail the scan
         }
@@ -247,7 +249,7 @@ static bool string_reserve(LhatLexer *lexer, size_t extra)
     while (grown < lexer->strings_length + extra) {
         grown *= 2;
     }
-    char *bigger = (char *)realloc(lexer->strings, grown);
+    char *bigger = (char *)lhat_realloc(lexer->strings, grown);
     if (bigger == NULL) {
         return false;
     }
@@ -989,8 +991,8 @@ void lhat_lexer_init(LhatLexer *lexer, const LhatSource *source)
 
 void lhat_lexer_dispose(LhatLexer *lexer)
 {
-    free(lexer->strings);
-    free(lexer->diagnostics);
+    lhat_free(lexer->strings);
+    lhat_free(lexer->diagnostics);
     lexer->strings = NULL;
     lexer->diagnostics = NULL;
     lexer->strings_length = lexer->strings_capacity = 0;

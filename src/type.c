@@ -5,6 +5,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "port.h"
+
 #define LHAT_TYPE_BLOCK_BYTES 8192
 
 // MSVC does not provide max_align_t in C mode, so the arena carries its own
@@ -33,7 +35,7 @@ void lhat_type_arena_dispose(LhatTypeArena *arena)
     LhatTypeArenaBlock *block = arena->blocks;
     while (block != NULL) {
         LhatTypeArenaBlock *next = block->next;
-        free(block);
+        lhat_free(block);
         block = next;
     }
     arena->blocks = NULL;
@@ -50,7 +52,7 @@ static void *arena_alloc(LhatTypeArena *arena, size_t size)
 
     if (arena->blocks == NULL ||
         arena->blocks->used + aligned > LHAT_TYPE_BLOCK_BYTES) {
-        LhatTypeArenaBlock *block = (LhatTypeArenaBlock *)malloc(sizeof *block);
+        LhatTypeArenaBlock *block = (LhatTypeArenaBlock *)lhat_alloc(sizeof *block);
         if (block == NULL) {
             return NULL;
         }

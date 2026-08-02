@@ -5,6 +5,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "port.h"
+
 // 05 の 8.7: a host writes a type out as text, so the checker reads the type
 // grammar of 13 章 back through the parser it came from.
 #include "parser.h"
@@ -129,7 +131,7 @@ static void report(Checker *c, const LhatNode *at, LhatCheckErrorCode code)
     LhatCheckResult *r = c->result;
     if (r->diagnostic_count == r->diagnostic_capacity) {
         size_t grown = r->diagnostic_capacity ? r->diagnostic_capacity * 2 : 8;
-        LhatCheckDiagnostic *bigger = (LhatCheckDiagnostic *)realloc(
+        LhatCheckDiagnostic *bigger = (LhatCheckDiagnostic *)lhat_realloc(
             r->diagnostics, grown * sizeof *bigger);
         if (bigger == NULL) {
             return;
@@ -217,7 +219,7 @@ static Binding *scope_find(Scope *scope, const char *name, size_t length)
 static Binding *scope_add(Scope *scope, const char *name, size_t length,
                           LhatType *type, uint32_t offset)
 {
-    Binding *b = (Binding *)calloc(1, sizeof *b);
+    Binding *b = (Binding *)lhat_calloc(1, sizeof *b);
     if (b == NULL) {
         return NULL;
     }
@@ -240,7 +242,7 @@ static void scope_dispose(Scope *scope)
     Binding *b = scope->bindings;
     while (b != NULL) {
         Binding *next = b->next;
-        free(b);
+        lhat_free(b);
         b = next;
     }
     scope->bindings = NULL;
@@ -774,7 +776,7 @@ static void push_narrowing(Checker *c, const LhatNode *path, LhatType *type)
     if (type == NULL) {
         return;  // nothing survives; leave the wider type rather than none
     }
-    Narrowing *n = (Narrowing *)calloc(1, sizeof *n);
+    Narrowing *n = (Narrowing *)lhat_calloc(1, sizeof *n);
     if (n == NULL) {
         return;
     }
@@ -788,7 +790,7 @@ static void pop_narrowings(Checker *c, Narrowing *mark)
 {
     while (c->narrowings != mark) {
         Narrowing *next = c->narrowings->next;
-        free(c->narrowings);
+        lhat_free(c->narrowings);
         c->narrowings = next;
     }
 }
@@ -3157,7 +3159,7 @@ static char *read_module_name(const Checker *c, const LhatNode *statements)
     }
 
     size_t needed = write_module_path(c, declaration->v.named.name, NULL, 0, 0);
-    char *text = (char *)malloc(needed + 1);
+    char *text = (char *)lhat_alloc(needed + 1);
     if (text == NULL) {
         return NULL;
     }
@@ -3507,7 +3509,7 @@ struct LhatCheckSession {
 LhatCheckSession *lhat_check_session_new(void)
 {
     LhatCheckSession *session =
-        (LhatCheckSession *)calloc(1, sizeof *session);
+        (LhatCheckSession *)lhat_calloc(1, sizeof *session);
     if (session != NULL) {
         lhat_type_arena_init(&session->types);
     }
@@ -3520,11 +3522,11 @@ void lhat_check_session_dispose(LhatCheckSession *session)
         return;
     }
     for (size_t i = 0; i < session->count; i++) {
-        free(session->names[i].name);
+        lhat_free(session->names[i].name);
     }
-    free(session->names);
+    lhat_free(session->names);
     lhat_type_arena_dispose(&session->types);
-    free(session);
+    lhat_free(session);
 }
 
 // Keeps what an input bound, replacing what an earlier one bound under the
@@ -3542,14 +3544,14 @@ static void session_keep(LhatCheckSession *session, const char *name,
     }
     if (session->count == session->capacity) {
         size_t grown = session->capacity ? session->capacity * 2 : 16;
-        void *bigger = realloc(session->names, grown * sizeof *session->names);
+        void *bigger = lhat_realloc(session->names, grown * sizeof *session->names);
         if (bigger == NULL) {
             return;
         }
         session->names = bigger;
         session->capacity = grown;
     }
-    char *kept = (char *)malloc(length + 1);
+    char *kept = (char *)lhat_alloc(length + 1);
     if (kept == NULL) {
         return;
     }
@@ -3702,11 +3704,11 @@ LhatType *lhat_type_of_text(const char *text, size_t length,
 
 void lhat_check_result_dispose(LhatCheckResult *result)
 {
-    free(result->diagnostics);
+    lhat_free(result->diagnostics);
     result->diagnostics = NULL;
     result->diagnostic_count = 0;
     result->diagnostic_capacity = 0;
-    free(result->module_name);
+    lhat_free(result->module_name);
     result->module_name = NULL;
     // Only the arena this result made for itself; a shared one belongs to
     // whoever passed it in.

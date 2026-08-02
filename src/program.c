@@ -2,9 +2,10 @@
 
 #include "program.h"
 
-#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+#include "port.h"
 
 #include "vm.h"  // 05 の 5.3: the units are compiled here too, not only checked
 
@@ -19,16 +20,16 @@
 static char *normalise_path(const char *path)
 {
     size_t length = strlen(path);
-    char *out = (char *)malloc(length + 1);
+    char *out = (char *)lhat_alloc(length + 1);
     if (out == NULL) {
         return NULL;
     }
 
     // Segment starts within `out`, so that '..' can rewind to the previous
     // one rather than being resolved textually against the whole string.
-    size_t *starts = (size_t *)malloc((length + 2) * sizeof *starts);
+    size_t *starts = (size_t *)lhat_alloc((length + 2) * sizeof *starts);
     if (starts == NULL) {
-        free(out);
+        lhat_free(out);
         return NULL;
     }
 
@@ -66,7 +67,7 @@ static char *normalise_path(const char *path)
     }
 
     out[written] = '\0';
-    free(starts);
+    lhat_free(starts);
     return out;
 }
 
@@ -81,7 +82,7 @@ static char *resolve_against(const char *base, const char *relative,
         }
     }
 
-    char *joined = (char *)malloc(base_length + relative_length + 1);
+    char *joined = (char *)lhat_alloc(base_length + relative_length + 1);
     if (joined == NULL) {
         return NULL;
     }
@@ -90,7 +91,7 @@ static char *resolve_against(const char *base, const char *relative,
     joined[base_length + relative_length] = '\0';
 
     char *resolved = normalise_path(joined);
-    free(joined);
+    lhat_free(joined);
     return resolved;
 }
 
@@ -106,7 +107,7 @@ static void report(LhatProgram *program, LhatProgramErrorCode code,
     if (program->diagnostic_count == program->diagnostic_capacity) {
         size_t grown =
             program->diagnostic_capacity ? program->diagnostic_capacity * 2 : 4;
-        LhatProgramDiagnostic *bigger = (LhatProgramDiagnostic *)realloc(
+        LhatProgramDiagnostic *bigger = (LhatProgramDiagnostic *)lhat_realloc(
             program->diagnostics, grown * sizeof *bigger);
         if (bigger == NULL) {
             return;
@@ -128,43 +129,19 @@ static void report(LhatProgram *program, LhatProgramErrorCode code,
 // Units
 // ---------------------------------------------------------------------------
 
-// The raw bytes. Normalising the newlines and the BOM belongs to the source
-// (01 の 1 章), which every loader's result goes through.
+// 05 の 8.9: the default goes through the seam, so a host replacing
+// lhat_load_file changes every program at once. A program that wants its own
+// says so with lhat_program_set_loader instead.
 static char *read_file(void *context, const char *path, size_t *length)
 {
     (void)context;
-
-    FILE *file = fopen(path, "rb");
-    if (file == NULL) {
-        return NULL;
-    }
-    if (fseek(file, 0, SEEK_END) != 0) {
-        fclose(file);
-        return NULL;
-    }
-    long size = ftell(file);
-    if (size < 0 || fseek(file, 0, SEEK_SET) != 0) {
-        fclose(file);
-        return NULL;
-    }
-
-    char *buffer = (char *)malloc((size_t)size + 1);
-    if (buffer == NULL) {
-        fclose(file);
-        return NULL;
-    }
-    size_t read = fread(buffer, 1, (size_t)size, file);
-    fclose(file);
-
-    buffer[read] = '\0';
-    *length = read;
-    return buffer;
+    return lhat_load_file(path, length);
 }
 
 static char *duplicate(const char *text)
 {
     size_t length = strlen(text) + 1;
-    char *copy = (char *)malloc(length);
+    char *copy = (char *)lhat_alloc(length);
     if (copy != NULL) {
         memcpy(copy, text, length);
     }
@@ -223,17 +200,17 @@ static LhatUnit *check_path(LhatProgram *program, char *path)
         // has a cycle. Reported here, where both ends are known.
         if (existing->state == LHAT_UNIT_CHECKING) {
             report(program, LHAT_PROGRAM_ERR_CYCLE, path);
-            free(path);
+            lhat_free(path);
             return NULL;
         }
         // 5.3: loaded once. A second require^ gets the same unit.
-        free(path);
+        lhat_free(path);
         return existing;
     }
 
-    LhatUnit *unit = (LhatUnit *)calloc(1, sizeof *unit);
+    LhatUnit *unit = (LhatUnit *)lhat_calloc(1, sizeof *unit);
     if (unit == NULL) {
-        free(path);
+        lhat_free(path);
         return NULL;
     }
     unit->path = path;
@@ -250,7 +227,7 @@ static LhatUnit *check_path(LhatProgram *program, char *path)
     }
 
     lhat_source_init_from_string(&unit->source, unit->path, text, length);
-    free(text);
+    lhat_free(text);
     lhat_lexer_init(&unit->lexer, &unit->source);
     lhat_parse(&unit->lexer, &unit->parsed);
     unit->loaded = true;
@@ -285,7 +262,7 @@ static size_t resolve_unit(void *context, const char *path, size_t length,
         return LHAT_NO_UNIT;
     }
     LhatUnit *unit = find_unit(r->program, resolved);
-    free(resolved);
+    lhat_free(resolved);
     if (unit == NULL) {
         return LHAT_NO_UNIT;
     }
@@ -381,7 +358,7 @@ static bool keep_entry(LhatProgram *program, const char *module,
     if (program->host_entry_count == program->host_entry_capacity) {
         size_t grown =
             program->host_entry_capacity ? program->host_entry_capacity * 2 : 8;
-        LhatHostEntry *bigger = (LhatHostEntry *)realloc(
+        LhatHostEntry *bigger = (LhatHostEntry *)lhat_realloc(
             program->host_entries, grown * sizeof *bigger);
         if (bigger == NULL) {
             return false;
@@ -445,7 +422,7 @@ const LhatHostDataTag *lhat_register_hostdata_type(LhatProgram *program,
     // 8.8: the tag is identity and nothing else, so it is made here where
     // there is exactly one per registration.
     LhatHostEntry *entry = &program->host_entries[program->host_entry_count - 1];
-    entry->tag = (LhatHostDataTag *)calloc(1, sizeof *entry->tag);
+    entry->tag = (LhatHostDataTag *)lhat_calloc(1, sizeof *entry->tag);
     if (entry->tag == NULL) {
         return NULL;
     }
@@ -545,7 +522,7 @@ const LhatModule *lhat_program_compile(LhatProgram *program, size_t *count)
         return NULL;
     }
 
-    LhatModule *modules = (LhatModule *)calloc(total, sizeof *modules);
+    LhatModule *modules = (LhatModule *)lhat_calloc(total, sizeof *modules);
     if (modules == NULL) {
         return NULL;
     }
@@ -567,7 +544,7 @@ const LhatModule *lhat_program_compile(LhatProgram *program, size_t *count)
         if (lhat_compile_module(u->parsed.root, &u->lexer, &units, &proto) !=
             LHAT_COMPILE_OK) {
             lhat_modules_free(modules, total);
-            free(modules);
+            lhat_free(modules);
             return NULL;
         }
         modules[u->index].proto = proto;
@@ -626,17 +603,17 @@ void lhat_program_set_loader(LhatProgram *program, LhatProgramLoader load,
 void lhat_program_dispose(LhatProgram *program)
 {
     lhat_modules_free(program->modules, program->module_count);
-    free(program->modules);
+    lhat_free(program->modules);
     program->modules = NULL;
     program->module_count = 0;
 
     for (size_t i = 0; i < program->host_entry_count; i++) {
-        free(program->host_entries[i].module);
-        free(program->host_entries[i].type);
-        free(program->host_entries[i].name);
-        free(program->host_entries[i].tag);
+        lhat_free(program->host_entries[i].module);
+        lhat_free(program->host_entries[i].type);
+        lhat_free(program->host_entries[i].name);
+        lhat_free(program->host_entries[i].tag);
     }
-    free(program->host_entries);
+    lhat_free(program->host_entries);
     program->host_entries = NULL;
     program->host_entry_count = 0;
     program->host_entry_capacity = 0;
@@ -650,16 +627,16 @@ void lhat_program_dispose(LhatProgram *program)
             lhat_lexer_dispose(&unit->lexer);
             lhat_source_dispose(&unit->source);
         }
-        free(unit->path);
-        free(unit);
+        lhat_free(unit->path);
+        lhat_free(unit);
         unit = next;
     }
     program->units = NULL;
 
     for (size_t i = 0; i < program->diagnostic_count; i++) {
-        free(program->diagnostics[i].path);
+        lhat_free(program->diagnostics[i].path);
     }
-    free(program->diagnostics);
+    lhat_free(program->diagnostics);
     program->diagnostics = NULL;
     program->diagnostic_count = 0;
     program->diagnostic_capacity = 0;

@@ -8,9 +8,11 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "port.h"
+
 LhatProto *lhat_proto_new(void)
 {
-    LhatProto *proto = (LhatProto *)calloc(1, sizeof *proto);
+    LhatProto *proto = (LhatProto *)lhat_calloc(1, sizeof *proto);
     return proto;
 }
 
@@ -22,11 +24,11 @@ void lhat_proto_free(LhatProto *proto)
     for (size_t i = 0; i < proto->proto_count; i++) {
         lhat_proto_free(proto->protos[i]);
     }
-    free(proto->protos);
-    free(proto->upvalues);
-    free(proto->parameter_types);
+    lhat_free(proto->protos);
+    lhat_free(proto->upvalues);
+    lhat_free(proto->parameter_types);
     lhat_chunk_dispose(&proto->chunk);
-    free(proto);
+    lhat_free(proto);
 }
 
 void lhat_modules_free(LhatModule *modules, size_t count)
@@ -36,7 +38,7 @@ void lhat_modules_free(LhatModule *modules, size_t count)
     }
     for (size_t i = 0; i < count; i++) {
         lhat_proto_free(modules[i].proto);
-        free(modules[i].module_name);
+        lhat_free(modules[i].module_name);
     }
 }
 
@@ -45,7 +47,7 @@ size_t lhat_proto_add(LhatProto *parent, LhatProto *child)
     if (parent->proto_count == parent->proto_capacity) {
         size_t grown = parent->proto_capacity ? parent->proto_capacity * 2 : 4;
         LhatProto **bigger =
-            (LhatProto **)realloc(parent->protos, grown * sizeof *bigger);
+            (LhatProto **)lhat_realloc(parent->protos, grown * sizeof *bigger);
         if (bigger == NULL) {
             return SIZE_MAX;
         }
@@ -74,7 +76,7 @@ size_t lhat_proto_add_upvalue(LhatProto *proto, bool from_parent_register,
     if (proto->upvalue_count == proto->upvalue_capacity) {
         size_t grown = proto->upvalue_capacity ? proto->upvalue_capacity * 2 : 4;
         LhatUpvalueDesc *bigger =
-            (LhatUpvalueDesc *)realloc(proto->upvalues, grown * sizeof *bigger);
+            (LhatUpvalueDesc *)lhat_realloc(proto->upvalues, grown * sizeof *bigger);
         if (bigger == NULL) {
             return SIZE_MAX;
         }
@@ -97,8 +99,8 @@ void lhat_chunk_init(LhatChunk *chunk)
 
 void lhat_chunk_dispose(LhatChunk *chunk)
 {
-    free(chunk->code);
-    free(chunk->constants);
+    lhat_free(chunk->code);
+    lhat_free(chunk->constants);
     lhat_object_free_all(&chunk->heap);
     memset(chunk, 0, sizeof *chunk);
 }
@@ -108,7 +110,7 @@ size_t lhat_chunk_emit(LhatChunk *chunk, LhatInstruction instruction)
     if (chunk->count == chunk->capacity) {
         size_t grown = chunk->capacity ? chunk->capacity * 2 : 16;
         LhatInstruction *bigger =
-            (LhatInstruction *)realloc(chunk->code, grown * sizeof *bigger);
+            (LhatInstruction *)lhat_realloc(chunk->code, grown * sizeof *bigger);
         if (bigger == NULL) {
             return SIZE_MAX;
         }
@@ -133,7 +135,7 @@ size_t lhat_chunk_constant(LhatChunk *chunk, LhatValue value)
     if (chunk->constant_count == chunk->constant_capacity) {
         size_t grown = chunk->constant_capacity ? chunk->constant_capacity * 2 : 8;
         LhatValue *bigger =
-            (LhatValue *)realloc(chunk->constants, grown * sizeof *bigger);
+            (LhatValue *)lhat_realloc(chunk->constants, grown * sizeof *bigger);
         if (bigger == NULL) {
             return SIZE_MAX;
         }

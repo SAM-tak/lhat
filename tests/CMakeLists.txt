@@ -1,10 +1,10 @@
 # Each test file becomes one executable and one ctest entry. The executables
-# link against lhat_core directly rather than driving the lhat binary, so unit
+# link against lhat directly rather than driving the lhat binary, so unit
 # level checks stay possible as the language grows.
 
 function(lhat_add_test name)
     add_executable(${name} ${name}.c)
-    target_link_libraries(${name} PRIVATE lhat_core)
+    target_link_libraries(${name} PRIVATE lhat)
     target_include_directories(${name} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
     if(NOT MSVC)
         target_link_libraries(${name} PRIVATE m)

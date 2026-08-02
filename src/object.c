@@ -6,13 +6,15 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "port.h"
+
 // ---------------------------------------------------------------------------
 // Making and freeing
 // ---------------------------------------------------------------------------
 
 static void *allocate(LhatHeap *heap, size_t size, LhatObjectKind kind)
 {
-    LhatObject *object = (LhatObject *)calloc(1, size);
+    LhatObject *object = (LhatObject *)lhat_calloc(1, size);
     if (object == NULL) {
         return NULL;
     }
@@ -114,7 +116,7 @@ LhatCoroutine *lhat_coroutine_new(LhatHeap *heap, const LhatClosure *closure,
         return NULL;
     }
     coroutine->registers =
-        (LhatValue *)calloc(registers ? registers : 1, sizeof *coroutine->registers);
+        (LhatValue *)lhat_calloc(registers ? registers : 1, sizeof *coroutine->registers);
     if (coroutine->registers == NULL) {
         return NULL;
     }
@@ -223,7 +225,7 @@ LhatRuntimeType *lhat_type_rt_new(LhatHeap *heap, LhatRuntimeTypeKind kind)
 bool lhat_type_rt_add_part(LhatRuntimeType *type, LhatRuntimeType *part)
 {
     LhatRuntimeType **grown =
-        (LhatRuntimeType **)realloc(type->parts,
+        (LhatRuntimeType **)lhat_realloc(type->parts,
                                     (type->part_count + 1) * sizeof *grown);
     if (grown == NULL) {
         return false;
@@ -236,7 +238,7 @@ bool lhat_type_rt_add_part(LhatRuntimeType *type, LhatRuntimeType *part)
 bool lhat_type_rt_add_member(LhatRuntimeType *type, const LhatString *name,
                              LhatRuntimeType *member)
 {
-    void *grown = realloc(type->members,
+    void *grown = lhat_realloc(type->members,
                           (type->member_count + 1) * sizeof *type->members);
     if (grown == NULL) {
         return false;
@@ -319,7 +321,7 @@ bool lhat_overload_add(LhatOverload *overload, LhatValue candidate)
     if (overload->count == overload->capacity) {
         size_t grown = overload->capacity ? overload->capacity * 2 : 4;
         LhatValue *bigger =
-            (LhatValue *)realloc(overload->candidates, grown * sizeof *bigger);
+            (LhatValue *)lhat_realloc(overload->candidates, grown * sizeof *bigger);
         if (bigger == NULL) {
             return false;
         }
@@ -350,7 +352,7 @@ bool lhat_error_is_kind(LhatValue value, const LhatErrorKind *kind)
 
 void lhat_gray_dispose(LhatGray *gray)
 {
-    free(gray->items);
+    lhat_free(gray->items);
     gray->items = NULL;
     gray->count = 0;
     gray->capacity = 0;
@@ -361,7 +363,7 @@ static bool gray_push(LhatGray *gray, LhatObject *object)
     if (gray->count == gray->capacity) {
         size_t grown = gray->capacity ? gray->capacity * 2 : 64;
         LhatObject **bigger =
-            (LhatObject **)realloc(gray->items, grown * sizeof *bigger);
+            (LhatObject **)lhat_realloc(gray->items, grown * sizeof *bigger);
         if (bigger == NULL) {
             return false;
         }
@@ -545,27 +547,27 @@ void lhat_object_free(LhatObject *object)
     switch (object->kind) {
         case LHAT_OBJECT_TABLE: {
             LhatTable *table = (LhatTable *)object;
-            free(table->array);
-            free(table->entries);
+            lhat_free(table->array);
+            lhat_free(table->entries);
             break;
         }
         case LHAT_OBJECT_SUBROUTINE:
-            free(((LhatClosure *)object)->upvalues);
+            lhat_free(((LhatClosure *)object)->upvalues);
             break;
         case LHAT_OBJECT_COROUTINE:
-            free(((LhatCoroutine *)object)->registers);
+            lhat_free(((LhatCoroutine *)object)->registers);
             break;
         case LHAT_OBJECT_TYPE:
-            free(((LhatRuntimeType *)object)->parts);
-            free(((LhatRuntimeType *)object)->members);
+            lhat_free(((LhatRuntimeType *)object)->parts);
+            lhat_free(((LhatRuntimeType *)object)->members);
             break;
         case LHAT_OBJECT_OVERLOAD:
-            free(((LhatOverload *)object)->candidates);
+            lhat_free(((LhatOverload *)object)->candidates);
             break;
         default:
             break;
     }
-    free(object);
+    lhat_free(object);
 }
 
 void lhat_object_free_all(LhatHeap *heap)
@@ -703,7 +705,7 @@ static bool grow_entries(LhatTable *table)
 {
     size_t capacity = table->entry_capacity ? table->entry_capacity * 2 : 8;
     LhatTableEntry *entries =
-        (LhatTableEntry *)calloc(capacity, sizeof *entries);
+        (LhatTableEntry *)lhat_calloc(capacity, sizeof *entries);
     if (entries == NULL) {
         return false;
     }
@@ -725,7 +727,7 @@ static bool grow_entries(LhatTable *table)
         moved++;
     }
 
-    free(table->entries);
+    lhat_free(table->entries);
     table->entries = entries;
     table->entry_capacity = capacity;
     table->entry_count = moved;
@@ -752,7 +754,7 @@ static bool array_index(const LhatTable *table, LhatValue key, size_t *index)
 static bool grow_array(LhatTable *table)
 {
     size_t capacity = table->array_capacity ? table->array_capacity * 2 : 8;
-    LhatValue *array = (LhatValue *)realloc(table->array, capacity * sizeof *array);
+    LhatValue *array = (LhatValue *)lhat_realloc(table->array, capacity * sizeof *array);
     if (array == NULL) {
         return false;
     }

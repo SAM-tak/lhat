@@ -6,10 +6,12 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "port.h"
+
 static char *duplicate(const char *s)
 {
     size_t n = strlen(s) + 1;
-    char *copy = (char *)malloc(n);
+    char *copy = (char *)lhat_alloc(n);
     if (copy != NULL) {
         memcpy(copy, s, n);
     }
@@ -19,7 +21,7 @@ static char *duplicate(const char *s)
 static char *format_error(const char *prefix, const char *detail)
 {
     size_t n = strlen(prefix) + strlen(detail) + 3;
-    char *msg = (char *)malloc(n);
+    char *msg = (char *)lhat_alloc(n);
     if (msg != NULL) {
         snprintf(msg, n, "%s: %s", prefix, detail);
     }
@@ -66,9 +68,9 @@ bool lhat_source_init_from_string(LhatSource *src, const char *name,
         return false;
     }
 
-    src->text = (char *)malloc(length + 1);
+    src->text = (char *)lhat_alloc(length + 1);
     if (src->text == NULL) {
-        free(src->name);
+        lhat_free(src->name);
         src->name = NULL;
         return false;
     }
@@ -99,7 +101,7 @@ bool lhat_source_init_from_file(LhatSource *src, const char *path, char **error)
     // which is not portable for every stream.
     size_t capacity = 8192;
     size_t length = 0;
-    char *buffer = (char *)malloc(capacity);
+    char *buffer = (char *)lhat_alloc(capacity);
     if (buffer == NULL) {
         fclose(fp);
         if (error != NULL) {
@@ -111,9 +113,9 @@ bool lhat_source_init_from_file(LhatSource *src, const char *path, char **error)
     for (;;) {
         if (length == capacity) {
             size_t grown = capacity * 2;
-            char *bigger = (char *)realloc(buffer, grown);
+            char *bigger = (char *)lhat_realloc(buffer, grown);
             if (bigger == NULL) {
-                free(buffer);
+                lhat_free(buffer);
                 fclose(fp);
                 if (error != NULL) {
                     *error = duplicate("out of memory");
@@ -135,7 +137,7 @@ bool lhat_source_init_from_file(LhatSource *src, const char *path, char **error)
     fclose(fp);
 
     if (failed) {
-        free(buffer);
+        lhat_free(buffer);
         if (error != NULL) {
             *error = format_error("cannot read", path);
         }
@@ -143,7 +145,7 @@ bool lhat_source_init_from_file(LhatSource *src, const char *path, char **error)
     }
 
     bool ok = lhat_source_init_from_string(src, path, buffer, length);
-    free(buffer);
+    lhat_free(buffer);
 
     if (!ok && error != NULL) {
         *error = duplicate("out of memory");
@@ -153,8 +155,8 @@ bool lhat_source_init_from_file(LhatSource *src, const char *path, char **error)
 
 void lhat_source_dispose(LhatSource *src)
 {
-    free(src->name);
-    free(src->text);
+    lhat_free(src->name);
+    lhat_free(src->text);
     src->name = NULL;
     src->text = NULL;
     src->length = 0;

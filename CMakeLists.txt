@@ -7,6 +7,7 @@ project(lhat
 )
 
 option(LHAT_BUILD_TESTS "Build the L^ test suite" ON)
+option(LHAT_BUILD_CLI "Build the lhat command line driver" ON)
 
 # ---- Language level -------------------------------------------------------
 set(CMAKE_C_STANDARD 11)
@@ -23,10 +24,10 @@ else()
     add_compile_options(-Wall -Wextra -Wpedantic)
 endif()
 
-# ---- Core library ---------------------------------------------------------
-# The language is meant to be embeddable, so everything except the command
-# line driver lives in a library that the tests can link against directly.
-add_library(lhat_core STATIC
+# ---- The language ---------------------------------------------------------
+# Everything but the driver, so a host embeds this and nothing else. It calls
+# out to lhatport for memory and for reading a unit -- see src/port.h.
+add_library(lhat
     src/source.c
     src/token.c
     src/lexer.c
@@ -41,14 +42,39 @@ add_library(lhat_core STATIC
     src/object.c
 )
 
-target_include_directories(lhat_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
-target_compile_definitions(lhat_core PUBLIC LHAT_VERSION="${PROJECT_VERSION}")
+target_include_directories(lhat PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
+target_compile_definitions(lhat PUBLIC LHAT_VERSION="${PROJECT_VERSION}")
+
+# ---- What the language asks of its surroundings ---------------------------
+# 05 の 8.9: the seam is the linker. A host with its own allocator, or its own
+# way of reading a unit, copies these files, changes them, and leaves this
+# target out of its link -- there is nothing to register and nothing to
+# install before the first allocation.
+add_library(lhatport
+    port/alloc.c
+    port/loader.c
+)
+
+target_include_directories(lhatport PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
+
+# The default is what anyone linking the language gets unless they say
+# otherwise. PUBLIC so it carries through to whatever links lhat.
+target_link_libraries(lhat PUBLIC lhatport)
 
 # ---- Driver ---------------------------------------------------------------
-add_executable(lhat src/main.c)
-target_link_libraries(lhat PRIVATE lhat_core)
+if(LHAT_BUILD_CLI)
+    add_executable(lhat_cli cli/main.c)
+    set_target_properties(lhat_cli PROPERTIES OUTPUT_NAME lhat)
+    target_link_libraries(lhat_cli PRIVATE lhat)
+    install(TARGETS lhat_cli RUNTIME DESTINATION bin)
+endif()
 
-install(TARGETS lhat RUNTIME DESTINATION bin)
+install(TARGETS lhat lhatport
+    ARCHIVE DESTINATION lib
+    LIBRARY DESTINATION lib
+    RUNTIME DESTINATION bin
+)
+install(DIRECTORY src/ DESTINATION include/lhat FILES_MATCHING PATTERN "*.h")
 
 # ---- Tests ----------------------------------------------------------------
 if(LHAT_BUILD_TESTS)

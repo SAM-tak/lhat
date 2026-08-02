@@ -5,6 +5,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "port.h"
+
 typedef struct {
     LhatLexer *lexer;
     LhatToken current;
@@ -132,7 +134,7 @@ static void report(Parser *p, const LhatToken *at, LhatParseErrorCode code)
     if (r->diagnostic_count == r->diagnostic_capacity) {
         size_t grown = r->diagnostic_capacity ? r->diagnostic_capacity * 2 : 8;
         LhatParseDiagnostic *bigger =
-            (LhatParseDiagnostic *)realloc(r->diagnostics, grown * sizeof *bigger);
+            (LhatParseDiagnostic *)lhat_realloc(r->diagnostics, grown * sizeof *bigger);
         if (bigger == NULL) {
             return;
         }
@@ -2879,7 +2881,7 @@ void lhat_parse_command(LhatLexer *lexer, LhatParseResult *result)
 void lhat_parse_result_dispose(LhatParseResult *result)
 {
     lhat_arena_dispose(&result->arena);
-    free(result->diagnostics);
+    lhat_free(result->diagnostics);
     result->diagnostics = NULL;
     result->diagnostic_count = 0;
     result->diagnostic_capacity = 0;

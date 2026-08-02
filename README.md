@@ -93,16 +93,23 @@ completion and diagnostics.
 ```text
 CMakeLists.txt        Build definition
 CMakePresets.json     Configure / build presets
-src/                  Implementation
+src/                  The language                       -> lhat.lib
   source.[ch]           Source loading and newline normalisation
   token.[ch]            Token definitions
   lexer.[ch]            Lexical analyser
-  main.c                Command line driver
+  port.h                What the core asks of its surroundings
+port/                 Default memory and file access     -> lhatport.lib
+cli/main.c            Command line driver                -> lhat.exe
 tests/                Test suite (CTest)
 DesignDocuments/      Language design specifications
 scripts/devshell.ps1  Loads the MSVC x64 environment (Windows, Ninja only)
 Memo.md               Language design notes (brainstorming, not a spec)
 ```
+
+`lhatport` is where memory comes from and how a unit's text is read. A host
+that wants its own copies those files, changes them, and leaves the library
+out of the link — the core resolves `lhat_alloc` and friends against whatever
+is there. See [src/port.h](src/port.h) and 05 の 8.9.
 
 ## License
 

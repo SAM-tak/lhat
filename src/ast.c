@@ -5,6 +5,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "port.h"
+
 #define LHAT_ARENA_BLOCK_NODES 256
 
 struct LhatArenaBlock {
@@ -24,7 +26,7 @@ void lhat_arena_dispose(LhatAstArena *arena)
     LhatArenaBlock *block = arena->blocks;
     while (block != NULL) {
         LhatArenaBlock *next = block->next;
-        free(block);
+        lhat_free(block);
         block = next;
     }
     arena->blocks = NULL;
@@ -35,7 +37,7 @@ LhatNode *lhat_node_new(LhatAstArena *arena, LhatNodeKind kind,
                         const LhatToken *at)
 {
     if (arena->blocks == NULL || arena->blocks->used == LHAT_ARENA_BLOCK_NODES) {
-        LhatArenaBlock *block = (LhatArenaBlock *)malloc(sizeof *block);
+        LhatArenaBlock *block = (LhatArenaBlock *)lhat_alloc(sizeof *block);
         if (block == NULL) {
             return NULL;
         }
