@@ -288,6 +288,8 @@ static void check_statement(Checker *c, const LhatNode *node);
 static LhatType *collect_exports(Checker *c, const LhatNode *statements);
 static void check_statements(Checker *c, const LhatNode *statements);
 static LhatType *infer_def(Checker *c, const LhatNode *node, LhatType *base);
+static LhatType *compose_definitions(Checker *c, const LhatNode *node,
+                                     LhatType *left, LhatType *right);
 static LhatType *instance_of(const LhatType *definition);
 static const LhatTypeMember *find_member(const LhatType *table, const char *name,
                                          size_t length);
@@ -1189,7 +1191,7 @@ static LhatType *infer_binary(Checker *c, const LhatNode *node)
                 left->v.table.is_definition && right != NULL &&
                 right->kind == LHAT_TYPE_TABLE &&
                 right->v.table.is_definition) {
-                return right;
+                return compose_definitions(c, node, left, right);
             }
 
             LhatType *joined = infer_operator(c, node, op, left, right);
@@ -1952,6 +1954,89 @@ static LhatType *check_same_name(Checker *c, const LhatNode *entry,
                                        replacement);
     }
     return replacement;
+}
+
+// 14.5: composition where the right side is a name rather than a def^ literal.
+// The literal form is infer_def, which reads the entries and so can see
+// 14.12's markers. A name carries only its type, and the markers that made it
+// went with its own base -- nothing in it was written against this left side.
+//
+// So a name shared between the two is the plain collision 14.12 refuses, and
+// there is no marker to lift it. It is reported at the '..', which is where
+// the writer brought them together.
+//
+// The compiler flattens the same chain through the def^ registry (14.2), so
+// what this builds has to agree with that: every member of both sides.
+static LhatType *compose_definitions(Checker *c, const LhatNode *node,
+                                     LhatType *left, LhatType *right)
+{
+    LhatType *definition = lhat_type_table(c->result->types);
+    LhatType *instance = lhat_type_table(c->result->types);
+    definition->v.table.is_definition = true;
+    definition->v.table.from_definition = true;
+    instance->v.table.from_definition = true;
+
+    const LhatType *left_instance = instance_of(left);
+    const LhatType *right_instance = instance_of(right);
+
+    // new^ is on both sides whether or not either wrote one (14.11), so it
+    // would collide every time. It is rebuilt at the end instead.
+    for (const LhatTypeMember *m = left->v.table.members; m != NULL;
+         m = m->next) {
+        if (name_is(m->name, m->name_length, "new")) {
+            continue;
+        }
+        set_member(c, definition, m->name, m->name_length, m->type);
+    }
+    if (left_instance != NULL) {
+        for (const LhatTypeMember *m = left_instance->v.table.members;
+             m != NULL; m = m->next) {
+            set_member(c, instance, m->name, m->name_length, m->type);
+        }
+    }
+
+    for (const LhatTypeMember *m = right->v.table.members; m != NULL;
+         m = m->next) {
+        if (name_is(m->name, m->name_length, "new")) {
+            continue;
+        }
+        if (find_member(definition, m->name, m->name_length) != NULL) {
+            report(c, node, LHAT_CHECK_ERR_COMPOSE_COLLIDES);
+        }
+        set_member(c, definition, m->name, m->name_length, m->type);
+    }
+    if (right_instance != NULL) {
+        for (const LhatTypeMember *m = right_instance->v.table.members;
+             m != NULL; m = m->next) {
+            // A method sits in both tables (14.7), so the definition side has
+            // reported it already. Only a field of the template is new here.
+            if (find_member(definition, m->name, m->name_length) == NULL &&
+                find_member(instance, m->name, m->name_length) != NULL) {
+                report(c, node, LHAT_CHECK_ERR_COMPOSE_COLLIDES);
+            }
+            set_member(c, instance, m->name, m->name_length, m->type);
+        }
+    }
+
+    // 14.5 composes to make something new, so the constructor has to build
+    // the composed instance. The parameters come from the right, which is the
+    // more derived of the two.
+    LhatType *constructor = lhat_type_func(c->result->types, true);
+    const LhatTypeMember *inherited = find_member(right, "new", 3);
+    if (inherited == NULL) {
+        inherited = find_member(left, "new", 3);
+    }
+    if (inherited != NULL && inherited->type != NULL &&
+        inherited->type->kind == LHAT_TYPE_FUNC) {
+        for (const LhatTypeList *p = inherited->type->v.func.params; p != NULL;
+             p = p->next) {
+            lhat_type_add_param(c->result->types, constructor, p->type);
+        }
+        constructor->v.func.variadic = inherited->type->v.func.variadic;
+    }
+    constructor->v.func.result = instance;
+    set_member(c, definition, "new", 3, constructor);
+    return definition;
 }
 
 static LhatType *infer_def(Checker *c, const LhatNode *node, LhatType *base)
@@ -3867,6 +3952,9 @@ const char *lhat_check_error_message(LhatCheckErrorCode code)
             return "any^ holds of every value, so this asks nothing";
         case LHAT_CHECK_ERR_MEMBER_EXISTS:
             return "this name is already a member; write override^ or overload^";
+        case LHAT_CHECK_ERR_COMPOSE_COLLIDES:
+            return "both definitions carry a member of this name, and a "
+                   "marker can only be written inside a def^";
         case LHAT_CHECK_ERR_NOTHING_TO_OVERRIDE:
             return "there is no member of this name to override^ or overload^";
         case LHAT_CHECK_ERR_NOT_SUBSTITUTABLE:

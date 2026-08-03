@@ -50,6 +50,7 @@ typedef enum {
     LHAT_CHECK_ERR_NOT_DISPOSABLE,      // 12.5: with^ needs a dispose()
 
     LHAT_CHECK_ERR_MEMBER_EXISTS,       // 14.12: same name, no marker
+    LHAT_CHECK_ERR_COMPOSE_COLLIDES,    // 14.5: and no marker can be written
     LHAT_CHECK_ERR_NOTHING_TO_OVERRIDE, // a marker with nothing under it
     LHAT_CHECK_ERR_NOT_SUBSTITUTABLE,   // 14.12: override^ has to fit
     LHAT_CHECK_ERR_OVERLOAD_OVERLAPS,   // 14.12: signatures must stay apart

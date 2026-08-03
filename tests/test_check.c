@@ -1349,6 +1349,88 @@ static void test_composition(void)
     }
     CHECK_CLEAN(&u);
     unit_dispose(&u);
+
+    // 14.5: the right side of '..' may be a name rather than a def^ literal.
+    // The compiler flattens that chain through its own registry (14.2), so
+    // the type has to carry both sides -- it used to answer with the right
+    // one alone and lose everything the left brought.
+    static const char *const parts =
+        "let^ A = def^{ self^{ x := 0 }, a := f^ -> number^ { return^ 1 } }\n"
+        "let^ B = def^{ self^{ y := \"s\" }, b := f^ -> number^ { return^ 2 } }\n";
+
+    LHAT_TEST("composition by name carries both sides");
+    {
+        char text[1024];
+        snprintf(text, sizeof text, "%s%s", parts,
+                 "let^ D = A .. B\n"
+                 "let^ p : number^ = D.a()\n"
+                 "let^ q : number^ = D.b()\n");
+        check_text(&u, text);
+    }
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("and an instance of it holds both templates");
+    {
+        char text[1024];
+        snprintf(text, sizeof text, "%s%s", parts,
+                 "let^ D = A .. B\n"
+                 "let^ o = D.new^()\n"
+                 "let^ p : number^ = o.x\n"
+                 "let^ q : string^ = o.y\n");
+        check_text(&u, text);
+    }
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // A chain mixing both forms is what 14.2 lets the compiler settle, so the
+    // checker has to reach the same answer.
+    LHAT_TEST("a chain of names ending in a literal carries all of them");
+    {
+        char text[1024];
+        snprintf(text, sizeof text, "%s%s", parts,
+                 "let^ D = A .. B .. def^{ self^{ z := true^ },\n"
+                 "                         c := f^ -> number^ { return^ 3 } }\n"
+                 "let^ o = D.new^()\n"
+                 "let^ p : number^ = o.x\n"
+                 "let^ q : string^ = o.y\n"
+                 "let^ r : bool^ = o.z\n"
+                 "let^ s : number^ = o.c()\n");
+        check_text(&u, text);
+    }
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // 14.12 refuses a name that is already there. Neither side of a
+    // composition by name was written against the other, so no marker could
+    // have been put on it, and the '..' is where the two were brought
+    // together.
+    LHAT_TEST("a member both sides carry is reported at the '..'");
+    check_text(&u,
+               "let^ A = def^{ self^{}, m := f^ -> number^ { return^ 1 } }\n"
+               "let^ B = def^{ self^{}, m := f^ -> number^ { return^ 2 } }\n"
+               "let^ D = A .. B\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_COMPOSE_COLLIDES);
+    unit_dispose(&u);
+
+    LHAT_TEST("a field both templates carry is reported too");
+    check_text(&u,
+               "let^ A = def^{ self^{ v := 0 } }\n"
+               "let^ B = def^{ self^{ v := \"x\" } }\n"
+               "let^ D = A .. B\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_COMPOSE_COLLIDES);
+    unit_dispose(&u);
+
+    // 14.11 gives every definition a new^ whether or not one was written, so
+    // the two always carry that name. It is rebuilt rather than collided.
+    LHAT_TEST("the synthesised new^ is not a collision");
+    {
+        char text[1024];
+        snprintf(text, sizeof text, "%s%s", parts, "let^ D = A .. B\n");
+        check_text(&u, text);
+    }
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
 }
 
 // 17 章. Nothing here is checked by machinery of its own -- 17.9 lowers a
