@@ -1857,6 +1857,64 @@ static bool signatures_overlap(const LhatType *a, const LhatType *b)
 
 // 14.12. A member of a name the base already uses is an error unless it says
 // which of the two things it means, and each says something checkable.
+// 14.12: an override^ replaces the one candidate its signature overlaps.
+// What a name carries is a single signature or an intersection of them
+// (14.12改), so this walks the arms, checks substitutability against the one
+// that overlaps, and answers the intersection with that arm swapped out.
+//
+// Refuses two overlaps -- 14.12 says which one was meant is then undecidable
+// -- and none, since there was nothing at that name to replace.
+static LhatType *override_one(Checker *c, const LhatNode *entry,
+                              LhatType *inherited, LhatType *replacement)
+{
+    if (inherited == NULL || inherited->kind != LHAT_TYPE_INTERSECT) {
+        // One candidate, so it is the one: ordinary conformance, arguments
+        // wider and result narrower. The receiver is not in the parameter
+        // list (14.4), so 14.12's exemption of self^ needs nothing of its own.
+        if (!lhat_type_conforms(replacement, inherited)) {
+            report(c, entry, LHAT_CHECK_ERR_NOT_SUBSTITUTABLE);
+        }
+        return replacement;
+    }
+
+    LhatType *overlapped = NULL;
+    size_t overlaps = 0;
+    for (const LhatTypeList *arm = inherited->v.composite.arms; arm != NULL;
+         arm = arm->next) {
+        if (signatures_overlap(replacement, arm->type)) {
+            overlapped = arm->type;
+            overlaps++;
+        }
+    }
+
+    if (overlaps == 0) {
+        report(c, entry, LHAT_CHECK_ERR_NOTHING_TO_OVERRIDE);
+        return replacement;
+    }
+    if (overlaps > 1) {
+        // 14.12: widening the arguments may reach two of them, and then
+        // which is being replaced is not decidable. Reported as the overlap
+        // it is, since that is what the writer has to take apart.
+        report(c, entry, LHAT_CHECK_ERR_OVERLOAD_OVERLAPS);
+        return replacement;
+    }
+    if (!lhat_type_conforms(replacement, overlapped)) {
+        report(c, entry, LHAT_CHECK_ERR_NOT_SUBSTITUTABLE);
+        return replacement;
+    }
+
+    // The others are untouched, so the name goes on carrying them.
+    LhatType *rebuilt = NULL;
+    for (const LhatTypeList *arm = inherited->v.composite.arms; arm != NULL;
+         arm = arm->next) {
+        LhatType *part = arm->type == overlapped ? replacement : arm->type;
+        rebuilt = rebuilt == NULL
+                      ? part
+                      : lhat_type_intersect(c->result->types, rebuilt, part);
+    }
+    return rebuilt != NULL ? rebuilt : replacement;
+}
+
 static LhatType *check_same_name(Checker *c, const LhatNode *entry,
                                  const LhatTypeMember *inherited,
                                  LhatType *replacement)
@@ -1876,14 +1934,12 @@ static LhatType *check_same_name(Checker *c, const LhatNode *entry,
             return replacement;
 
         case LHAT_DEF_OVERRIDE:
-            // The replacement has to be usable where the original was, which
-            // is ordinary conformance: arguments wider, result narrower. The
-            // receiver is not in the parameter list (14.4), so 14.12's
-            // exemption of self^ from variance needs nothing of its own.
-            if (!lhat_type_conforms(replacement, inherited->type)) {
-                report(c, entry, LHAT_CHECK_ERR_NOT_SUBSTITUTABLE);
-            }
-            return replacement;
+            // 14.12: what is replaced is the one existing candidate the new
+            // signature overlaps. A name that was overloaded carries several,
+            // and comparing against all of them at once would refuse every
+            // replacement -- no one signature is usable where an intersection
+            // of them was.
+            return override_one(c, entry, inherited->type, replacement);
 
         case LHAT_DEF_OVERLOAD:
             if (signatures_overlap(replacement, inherited->type)) {

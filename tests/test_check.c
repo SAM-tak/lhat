@@ -1214,6 +1214,88 @@ static void test_composition(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
+    // 14.12: once a name is overloaded it carries an intersection, and an
+    // override^ replaces the one arm it overlaps. Comparing the replacement
+    // against the whole intersection would refuse it, since no single
+    // signature is usable where all of them were.
+    LHAT_TEST("override^ replaces the one overloaded arm it overlaps");
+    {
+        char text[1024];
+        snprintf(text, sizeof text, "%s%s", base,
+                 "let^ Bar = Foo .. def^{\n"
+                 "    self^{},\n"
+                 "    overload^ bar := p^self^, n:number^ { },\n"
+                 "}\n"
+                 "let^ Baz = Bar .. def^{\n"
+                 "    self^{},\n"
+                 "    override^ bar := p^self^, n:number^ { },\n"
+                 "}\n");
+        check_text(&u, text);
+    }
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // The arms that were not overridden are untouched, so the name goes on
+    // being callable every way it was before.
+    LHAT_TEST("the arms an override^ left alone stay callable");
+    {
+        char text[1024];
+        snprintf(text, sizeof text, "%s%s", base,
+                 "let^ Bar = Foo .. def^{\n"
+                 "    self^{},\n"
+                 "    overload^ bar := p^self^, n:number^ { },\n"
+                 "}\n"
+                 "let^ Baz = Bar .. def^{\n"
+                 "    self^{},\n"
+                 "    override^ bar := p^self^, n:number^ { },\n"
+                 "}\n"
+                 "let^ o = Baz.new^()\n"
+                 "o.bar()\n"
+                 "o.bar(1)\n");
+        check_text(&u, text);
+    }
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // 14.12: override^ may widen its arguments, and a widening can reach two
+    // of the arms at once. Which one was meant is then not decidable.
+    LHAT_TEST("an override^ over two overloaded arms is reported");
+    {
+        char text[1024];
+        snprintf(text, sizeof text, "%s%s", base,
+                 "let^ Bar = Foo .. def^{\n"
+                 "    self^{},\n"
+                 "    overload^ bar := p^self^, n:number^ { },\n"
+                 "}\n"
+                 "let^ Baz = Bar .. def^{\n"
+                 "    self^{},\n"
+                 "    override^ bar := p^self^, ...:number^ { },\n"
+                 "}\n");
+        check_text(&u, text);
+    }
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_OVERLOAD_OVERLAPS);
+    unit_dispose(&u);
+
+    // Overlapping is what picks the arm, so a signature that overlaps none of
+    // them has nothing to replace -- the same as a marker over a name that
+    // was never there.
+    LHAT_TEST("an override^ that overlaps no arm is reported");
+    {
+        char text[1024];
+        snprintf(text, sizeof text, "%s%s", base,
+                 "let^ Bar = Foo .. def^{\n"
+                 "    self^{},\n"
+                 "    overload^ bar := p^self^, n:number^ { },\n"
+                 "}\n"
+                 "let^ Baz = Bar .. def^{\n"
+                 "    self^{},\n"
+                 "    override^ bar := p^self^, a:number^, b:number^ { },\n"
+                 "}\n");
+        check_text(&u, text);
+    }
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_NOTHING_TO_OVERRIDE);
+    unit_dispose(&u);
+
     // 14.5 composes to make something new, so a constructor inherited from
     // the base still has to build the derived instance.
     LHAT_TEST("new^ builds the derived instance");
