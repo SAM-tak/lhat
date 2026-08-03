@@ -3405,9 +3405,62 @@ static const char *operator_name(LhatOpcode op, size_t *length)
     }
 }
 
+// 02 の 14.8改: the three that can leave the integers. Answers false when the
+// result does not fit, and then the caller redoes it in reals.
+//
+// Computed through the unsigned type: signed overflow is undefined in C11, so
+// the wrapped value a check would have to look at cannot be obtained by
+// letting it wrap. Unsigned wraps by definition, and converting back is
+// implementation-defined rather than undefined -- every target this runs on
+// is two's complement, which C23 now requires outright.
+static bool add_exact(int64_t x, int64_t y, int64_t *out)
+{
+    uint64_t wrapped = (uint64_t)x + (uint64_t)y;
+    int64_t sum = (int64_t)wrapped;
+    // Overflow is exactly the case where both operands share a sign and the
+    // result does not.
+    if (((x ^ sum) & (y ^ sum)) < 0) {
+        return false;
+    }
+    *out = sum;
+    return true;
+}
+
+static bool subtract_exact(int64_t x, int64_t y, int64_t *out)
+{
+    uint64_t wrapped = (uint64_t)x - (uint64_t)y;
+    int64_t difference = (int64_t)wrapped;
+    if (((x ^ y) & (x ^ difference)) < 0) {
+        return false;
+    }
+    *out = difference;
+    return true;
+}
+
+static bool multiply_exact(int64_t x, int64_t y, int64_t *out)
+{
+    if (x == 0 || y == 0) {
+        *out = 0;
+        return true;
+    }
+    uint64_t wrapped = (uint64_t)x * (uint64_t)y;
+    int64_t product = (int64_t)wrapped;
+    // Dividing back is the check that needs no wider type. The extra guard is
+    // INT64_MIN / -1, which is the one division that overflows.
+    if (x == -1 && y == INT64_MIN) {
+        return false;
+    }
+    if (product / x != y) {
+        return false;
+    }
+    *out = product;
+    return true;
+}
+
 // 5.1: the generic form checks. 02 の 14.8 makes number^ one type with two
 // representations, so an operation stays in integers when both sides are and
-// widens only when one of them is real.
+// widens when one of them is real -- or when the integers no longer hold the
+// answer (14.8改).
 static bool arithmetic(LhatOpcode op, LhatValue left, LhatValue right,
                        LhatValue *out, LhatRunStatus *status)
 {
@@ -3421,21 +3474,30 @@ static bool arithmetic(LhatOpcode op, LhatValue left, LhatValue right,
     double b = lhat_number_as_real(right);
 
     switch (op) {
-        case LHAT_BC_ADD:
-            *out = exact ? lhat_integer(lhat_as_integer(left) +
-                                        lhat_as_integer(right))
-                         : lhat_real(a + b);
+        case LHAT_BC_ADD: {
+            int64_t whole = 0;
+            *out = exact && add_exact(lhat_as_integer(left),
+                                      lhat_as_integer(right), &whole)
+                       ? lhat_integer(whole)
+                       : lhat_real(a + b);
             return true;
-        case LHAT_BC_SUB:
-            *out = exact ? lhat_integer(lhat_as_integer(left) -
-                                        lhat_as_integer(right))
-                         : lhat_real(a - b);
+        }
+        case LHAT_BC_SUB: {
+            int64_t whole = 0;
+            *out = exact && subtract_exact(lhat_as_integer(left),
+                                           lhat_as_integer(right), &whole)
+                       ? lhat_integer(whole)
+                       : lhat_real(a - b);
             return true;
-        case LHAT_BC_MUL:
-            *out = exact ? lhat_integer(lhat_as_integer(left) *
-                                        lhat_as_integer(right))
-                         : lhat_real(a * b);
+        }
+        case LHAT_BC_MUL: {
+            int64_t whole = 0;
+            *out = exact && multiply_exact(lhat_as_integer(left),
+                                           lhat_as_integer(right), &whole)
+                       ? lhat_integer(whole)
+                       : lhat_real(a * b);
             return true;
+        }
         case LHAT_BC_DIV:
             // 04 の 11.2: real division, so a zero divisor gives inf rather
             // than failing. That is what keeps ordinary arithmetic out of the
@@ -4160,9 +4222,15 @@ LhatRunResult lhat_run(LhatMachine *m, const LhatProto *proto)
                 if (!lhat_is_number(registers[b])) {
                     return finish(m, LHAT_RUN_TYPE_ERROR, lhat_nil(), at);
                 }
-                registers[a] = lhat_is_integer(registers[b])
-                                   ? lhat_integer(-lhat_as_integer(registers[b]))
-                                   : lhat_real(-lhat_as_real(registers[b]));
+                // 14.8改: INT64_MIN is the one integer whose negation is not
+                // an integer, so it widens like any other overflow.
+                int64_t negated = 0;
+                registers[a] =
+                    lhat_is_integer(registers[b]) &&
+                            subtract_exact(0, lhat_as_integer(registers[b]),
+                                           &negated)
+                        ? lhat_integer(negated)
+                        : lhat_real(-lhat_number_as_real(registers[b]));
                 break;
             }
 

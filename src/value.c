@@ -135,6 +135,31 @@ static void put_number(Writer *w, const char *format, ...)
     }
 }
 
+// 02 の 14.8: a real is written so that it cannot be read back as an integer.
+// '%g' already gives a '.' or an exponent to everything but a small whole
+// number, and inf and nan are words -- so what needs the '.0' is a spelling
+// made of digits and a sign alone.
+static void put_real(Writer *w, double real)
+{
+    char buffer[64];
+    int written = snprintf(buffer, sizeof buffer, "%g", real);
+    if (written <= 0) {
+        return;
+    }
+    bool whole = true;
+    for (int i = 0; i < written; i++) {
+        char c = buffer[i];
+        if (!((c >= '0' && c <= '9') || c == '-' || c == '+')) {
+            whole = false;
+            break;
+        }
+    }
+    put(w, buffer, (size_t)written);
+    if (whole) {
+        put_text(w, ".0");
+    }
+}
+
 // 01 の 5 章 spells these in a string literal, so writing one back out spells
 // them the same way.
 static void put_quoted(Writer *w, const LhatString *string)
@@ -225,10 +250,13 @@ static void write_value(Writer *w, LhatValue value, size_t depth)
         case LHAT_VALUE_REAL:
             // 14.8 makes one number type of two representations, so a real
             // that happens to be whole still says which one it is.
-            put_number(w, "%g", value.as.real);
-            if (value.as.real == (double)(long long)value.as.real) {
-                put_text(w, ".0");
-            }
+            //
+            // Read off the spelling rather than the value: what has to be
+            // told apart is '3' from '3.0', and a real too large to be an
+            // integer is already spelled with an exponent. Asking the value
+            // instead would mean casting it to an integer to compare, which
+            // is undefined for exactly the ones that do not fit.
+            put_real(w, value.as.real);
             return;
         case LHAT_VALUE_OBJECT:
             break;

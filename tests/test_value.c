@@ -166,6 +166,24 @@ static void test_writing(void)
     // happens to be whole still says which one it is.
     LHAT_TEST("a whole real still reads as one");
     wrote(lhat_real(4.0), "4.0");
+    wrote(lhat_real(-4.0), "-4.0");
+
+    // What settles it is the spelling, not the value. One written with an
+    // exponent already cannot be read back as an integer, and one too large
+    // to be an integer cannot be asked whether it is one -- the cast that
+    // would ask is undefined for exactly those.
+    LHAT_TEST("and one written with an exponent takes nothing further");
+    wrote(lhat_real(9223372036854775808.0), "9.22337e+18");
+    wrote(lhat_real(-9223372036854775808.0), "-9.22337e+18");
+
+    LHAT_TEST("inf is a word, so it takes nothing either");
+    {
+        // Built rather than written, since a literal division by zero is one
+        // the compiler refuses to fold.
+        volatile double zero = 0.0;
+        wrote(lhat_real(1.0 / zero), "inf");
+        wrote(lhat_real(-1.0 / zero), "-inf");
+    }
 
     // Quoted, so that 1 and "1" read differently at a prompt.
     LHAT_TEST("a string is quoted, and its escapes written back");

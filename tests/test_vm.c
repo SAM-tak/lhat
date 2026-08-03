@@ -176,6 +176,47 @@ static void test_arithmetic(void)
     CHECK_REAL(&r, 1.5);
     run_dispose(&r);
 
+    // 14.8改: the integers hold the answer or they do not, and when they do
+    // not the operation widens the same way a real operand widens it. 04 の
+    // 11.2 rules out failing here -- every '+' would return a union.
+    LHAT_TEST("an integer sum too large to hold widens");
+    run_text(&r, "return^ 9223372036854775807 + 1\n");
+    CHECK_REAL(&r, 9223372036854775808.0);
+    run_dispose(&r);
+
+    LHAT_TEST("and so does a difference");
+    run_text(&r, "return^ -9223372036854775807 - 2\n");
+    CHECK_REAL(&r, -9223372036854775809.0);
+    run_dispose(&r);
+
+    LHAT_TEST("and a product");
+    run_text(&r, "return^ 4294967296 * 4294967296\n");
+    CHECK_REAL(&r, 18446744073709551616.0);
+    run_dispose(&r);
+
+    // The one integer whose negation is not an integer.
+    LHAT_TEST("and the negation that does not fit");
+    run_text(&r, "return^ -(-9223372036854775807 - 1)\n");
+    CHECK_REAL(&r, 9223372036854775808.0);
+    run_dispose(&r);
+
+    // What fits is untouched -- 20! is the largest that does.
+    LHAT_TEST("what the integers do hold stays exact");
+    run_text(&r,
+             "let^ f = f^ n:number^ -> number^ {\n"
+             "  if^ n < 2 { return^ 1 }\n"
+             "  return^ n * this^(n - 1)\n"
+             "}\n"
+             "return^ f(20)\n");
+    CHECK_INTEGER(&r, 2432902008176640000);
+    run_dispose(&r);
+
+    // A zero operand cannot overflow, and the check must not send it wide.
+    LHAT_TEST("a zero product stays an integer");
+    run_text(&r, "return^ 0 * 9223372036854775807\n");
+    CHECK_INTEGER(&r, 0);
+    run_dispose(&r);
+
     // 04 の 11.2: '/' is real division, which is what keeps ordinary
     // arithmetic out of the unions.
     LHAT_TEST("'/' is real division");

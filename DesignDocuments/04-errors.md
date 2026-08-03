@@ -592,6 +592,9 @@ let^ depth = e.cause?.cause?.message
 
 Lua 5.3 が同じ区別を持つ。`1/0` は `inf`、`1//0` は誤りである。
 
+桁溢れは誤りにしない。02 の 14.8改 が実数へ広げると定めている。
+本節の理由がそのまま効く — 誤りにすれば `+` `-` `*` のすべてが合併を返す。
+
 ```lhat
 errordef^ ArithError {          # 標準ライブラリ
     DivideByZero,
