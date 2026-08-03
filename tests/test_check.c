@@ -1227,11 +1227,37 @@ static void test_composition(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_OVERLOAD_OVERLAPS);
     unit_dispose(&u);
 
-    LHAT_TEST("a marker with nothing under it is reported");
+    // 14.15改: an override^ over nothing is not a mistake -- it says the
+    // composition has to bring what it replaces. What it costs is that the
+    // definition can no longer be instantiated on its own.
+    LHAT_TEST("a marker with nothing under it waits for a composition");
     {
         char text[1024];
         snprintf(text, sizeof text, "%s%s", base,
                  "let^ Bar = Foo .. def^{ self^{}, override^ nope := p^self^ { } }\n");
+        check_text(&u, text);
+    }
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("and stands in the way of new^ until one comes");
+    {
+        char text[1024];
+        snprintf(text, sizeof text, "%s%s", base,
+                 "let^ Bar = Foo .. def^{ self^{}, override^ nope := p^self^ { } }\n"
+                 "let^ o = Bar.new^()\n");
+        check_text(&u, text);
+    }
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_STILL_ABSTRACT);
+    unit_dispose(&u);
+
+    // 14.12: overload^ has no such reading. Adding a way to call something
+    // that is not there says nothing.
+    LHAT_TEST("overload^ over nothing is still reported");
+    {
+        char text[1024];
+        snprintf(text, sizeof text, "%s%s", base,
+                 "let^ Bar = Foo .. def^{ self^{}, overload^ nope := p^self^ { } }\n");
         check_text(&u, text);
     }
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_NOTHING_TO_OVERRIDE);
@@ -1556,6 +1582,57 @@ static void test_composition(void)
                "let^ D = Need .. Give\n"
                "let^ r : number^ = D.new^().m()\n");
     CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // 14.15改: with the two together, a mixin written against no base at all
+    // can replace a member and call what it replaced. abstract^ says what the
+    // host must hold, the pending override^ says what it must provide.
+    LHAT_TEST("a mixin written against no base composes onto one");
+    check_text(&u,
+               "let^ Base = def^{ self^{ n := 0 },\n"
+               "  run := p^self^ { self^.n := self^.n + 1 } }\n"
+               "let^ Logged = def^{ self^{ abstract^ n : number^ },\n"
+               "  override^ run := p^self^ { self^.n := self^.n + 10\n"
+               "                             super^() } }\n"
+               "let^ App = Base .. Logged\n"
+               "let^ o = App.new^()\n"
+               "o.run()\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("and two of them stack");
+    check_text(&u,
+               "let^ Base = def^{ self^{ n := 0 },\n"
+               "  run := p^self^ { self^.n := self^.n + 1 } }\n"
+               "let^ A = def^{ self^{ abstract^ n : number^ },\n"
+               "  override^ run := p^self^ { super^() } }\n"
+               "let^ B = def^{ self^{ abstract^ n : number^ },\n"
+               "  override^ run := p^self^ { super^() } }\n"
+               "let^ App = Base .. A .. B\n"
+               "let^ o = App.new^()\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // Stacking two settles neither -- the chain still wants something under
+    // them both, so new^ stays out of reach.
+    LHAT_TEST("but stacking two does not settle either");
+    check_text(&u,
+               "let^ A = def^{ self^{}, override^ run := p^self^ { super^() } }\n"
+               "let^ B = def^{ self^{}, override^ run := p^self^ { super^() } }\n"
+               "let^ X = A .. B\n"
+               "let^ o = X.new^()\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_STILL_ABSTRACT);
+    unit_dispose(&u);
+
+    // 14.12's check is the one the def^ would have had. It runs where the
+    // two finally meet instead.
+    LHAT_TEST("substitutability is checked where the two meet");
+    check_text(&u,
+               "let^ Base = def^{ self^{}, run := f^ -> number^ { return^ 1 } }\n"
+               "let^ Bad = def^{ self^{},\n"
+               "  override^ run := f^ -> string^ { return^ \"x\" } }\n"
+               "let^ App = Base .. Bad\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_NOT_SUBSTITUTABLE);
     unit_dispose(&u);
 
     // 14.11 gives every definition a new^ whether or not one was written, so

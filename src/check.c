@@ -1657,6 +1657,42 @@ static void unify_yield(Checker *c, const LhatNode *at, LhatType **slot,
 
 // 03 の 3.4: the result type is inferred from return^ unless it is written,
 // and a subroutine that calls itself has to write it.
+// 14.15改: the shape a subroutine literal declares, read off its annotations
+// alone. What super^ stands for inside a pending override^ has to be known
+// before the body is walked, and the body is what infer_func would walk.
+//
+// Answers NULL for anything that is not a subroutine literal, and leaves the
+// result NULL when none was written -- 13.2 makes an f^ declare one, so what
+// is missing here belongs to a p^, which answers with nothing anyway.
+static LhatType *declared_signature(Checker *c, const LhatNode *node)
+{
+    if (node == NULL || node->kind != LHAT_NODE_FUNC) {
+        return NULL;
+    }
+    LhatType *func = lhat_type_func(c->result->types, node->v.func.is_function);
+    func->v.func.yields = node->v.func.yields;
+    for (const LhatNode *param = node->v.func.params; param != NULL;
+         param = param->next) {
+        if (param == node->v.func.params && is_self_marker(c, param)) {
+            func->v.func.takes_self = true;
+            continue;
+        }
+        LhatType *type = param->v.param.type != NULL
+                             ? resolve_type(c, param->v.param.type)
+                             : simple(c, LHAT_TYPE_UNKNOWN);
+        if (param->v.param.variadic) {
+            func->v.func.variadic =
+                param->v.param.type != NULL ? type : simple(c, LHAT_TYPE_ANY);
+            continue;
+        }
+        lhat_type_add_param(c->result->types, func, type);
+    }
+    if (node->v.func.return_type != NULL) {
+        func->v.func.result = resolve_type(c, node->v.func.return_type);
+    }
+    return func;
+}
+
 static LhatType *infer_func(Checker *c, const LhatNode *node)
 {
     LhatType *func = lhat_type_func(c->result->types, node->v.func.is_function);
@@ -1842,13 +1878,15 @@ static LhatType *instance_of(const LhatType *definition)
 // 14.15: `abstract` travels with the type, so writing over a declaration with
 // a real one is what fills the hole -- and writing a declaration over a
 // declaration leaves it open.
-static void set_member_as(Checker *c, LhatType *table, const char *name,
-                          size_t length, LhatType *type, bool abstract)
+static void set_member_marked(Checker *c, LhatType *table, const char *name,
+                              size_t length, LhatType *type, bool abstract,
+                              bool pending)
 {
     for (LhatTypeMember *m = table->v.table.members; m != NULL; m = m->next) {
         if (m->name_length == length && memcmp(m->name, name, length) == 0) {
             m->type = type;
             m->abstract = abstract;
+            m->pending = pending;
             return;
         }
     }
@@ -1856,18 +1894,26 @@ static void set_member_as(Checker *c, LhatType *table, const char *name,
                                                  length, type);
     if (added != NULL) {
         added->abstract = abstract;
+        added->pending = pending;
     }
+}
+
+static void set_member_as(Checker *c, LhatType *table, const char *name,
+                          size_t length, LhatType *type, bool abstract)
+{
+    set_member_marked(c, table, name, length, type, abstract, false);
 }
 
 static void set_member(Checker *c, LhatType *table, const char *name,
                        size_t length, LhatType *type)
 {
-    set_member_as(c, table, name, length, type, false);
+    set_member_marked(c, table, name, length, type, false, false);
 }
 
-// 14.15: whether anything the definition declares is still only declared.
-// 14.11's new^ is what this stands in the way of -- an instance would carry
-// a name with nothing under it.
+// 14.15: whether the definition is still waiting on a composition. 14.11's
+// new^ is what this stands in the way of -- an abstract^ would leave a name
+// with nothing under it, and 14.15改's pending override^ would leave a super^
+// pointing at nothing.
 static const LhatTypeMember *unimplemented_member(const LhatType *definition)
 {
     if (definition == NULL || definition->kind != LHAT_TYPE_TABLE) {
@@ -1875,7 +1921,7 @@ static const LhatTypeMember *unimplemented_member(const LhatType *definition)
     }
     for (const LhatTypeMember *m = definition->v.table.members; m != NULL;
          m = m->next) {
-        if (m->abstract) {
+        if (m->abstract || m->pending) {
             return m;
         }
     }
@@ -1885,7 +1931,7 @@ static const LhatTypeMember *unimplemented_member(const LhatType *definition)
     }
     for (const LhatTypeMember *m = instance->v.table.members; m != NULL;
          m = m->next) {
-        if (m->abstract) {
+        if (m->abstract || m->pending) {
             return m;
         }
     }
@@ -1900,8 +1946,9 @@ static void copy_members(Checker *c, LhatType *into, const LhatType *from)
     for (const LhatTypeMember *m = from->v.table.members; m != NULL;
          m = m->next) {
         // 14.15: a hole in the base is a hole in what is composed onto it
-        // until something fills it.
-        set_member_as(c, into, m->name, m->name_length, m->type, m->abstract);
+        // until something fills it, and 14.15改's wait carries over too.
+        set_member_marked(c, into, m->name, m->name_length, m->type,
+                          m->abstract, m->pending);
     }
 }
 
@@ -2020,7 +2067,13 @@ static LhatType *check_same_name(Checker *c, const LhatNode *entry,
     LhatDefModifier modifier = entry->v.entry.modifier;
 
     if (inherited == NULL) {
-        if (modifier != LHAT_DEF_PLAIN) {
+        // 14.15改: an override^ with nothing yet under the name is a mixin
+        // written against a base it has not met. It is not an error -- it
+        // says what the composition has to bring, and the member stays
+        // pending until something does. 14.11's new^ is what it stands in
+        // the way of; overload^ has no such reading, since adding a way to
+        // call something that is not there says nothing.
+        if (modifier == LHAT_DEF_OVERLOAD) {
             report(c, entry, LHAT_CHECK_ERR_NOTHING_TO_OVERRIDE);
         }
         return replacement;
@@ -2094,14 +2147,14 @@ static LhatType *compose_definitions(Checker *c, const LhatNode *node,
         if (name_is(m->name, m->name_length, "new")) {
             continue;
         }
-        set_member_as(c, definition, m->name, m->name_length, m->type,
-                      m->abstract);
+        set_member_marked(c, definition, m->name, m->name_length, m->type,
+                          m->abstract, m->pending);
     }
     if (left_instance != NULL) {
         for (const LhatTypeMember *m = left_instance->v.table.members;
              m != NULL; m = m->next) {
-            set_member_as(c, instance, m->name, m->name_length, m->type,
-                          m->abstract);
+            set_member_marked(c, instance, m->name, m->name_length, m->type,
+                              m->abstract, m->pending);
         }
     }
 
@@ -2119,11 +2172,24 @@ static LhatType *compose_definitions(Checker *c, const LhatNode *node,
             if (m->abstract) {
                 continue;  // what is already there is the better answer
             }
+        } else if (held != NULL && m->pending) {
+            // 14.15改: this is what the pending override^ was waiting for.
+            // 14.12's check is the one it would have had at the def^, run
+            // here instead because here is where the two finally meet.
+            if (!lhat_type_conforms(m->type, held->type)) {
+                report(c, node, LHAT_CHECK_ERR_NOT_SUBSTITUTABLE);
+            }
+            // Unless what it landed on is waiting too -- stacking two mixins
+            // settles neither, and the chain still wants something under
+            // them both.
+            set_member_marked(c, definition, m->name, m->name_length, m->type,
+                              false, held->pending);
+            continue;
         } else if (held != NULL) {
             report(c, node, LHAT_CHECK_ERR_COMPOSE_COLLIDES);
         }
-        set_member_as(c, definition, m->name, m->name_length, m->type,
-                      m->abstract);
+        set_member_marked(c, definition, m->name, m->name_length, m->type,
+                          m->abstract, m->pending);
     }
     if (right_instance != NULL) {
         for (const LhatTypeMember *m = right_instance->v.table.members;
@@ -2134,6 +2200,12 @@ static LhatType *compose_definitions(Checker *c, const LhatNode *node,
                 if (m->abstract) {
                     continue;
                 }
+            } else if (held != NULL && m->pending) {
+                // The definition side settled it, and reported anything
+                // there was to report (14.7 puts a method in both).
+                set_member_marked(c, instance, m->name, m->name_length,
+                                  m->type, false, held->pending);
+                continue;
             } else if (held != NULL &&
                        find_member(definition, m->name, m->name_length) ==
                            NULL) {
@@ -2141,8 +2213,8 @@ static LhatType *compose_definitions(Checker *c, const LhatNode *node,
                 // reported it already. Only a field is new here.
                 report(c, node, LHAT_CHECK_ERR_COMPOSE_COLLIDES);
             }
-            set_member_as(c, instance, m->name, m->name_length, m->type,
-                          m->abstract);
+            set_member_marked(c, instance, m->name, m->name_length, m->type,
+                              m->abstract, m->pending);
         }
     }
 
@@ -2263,10 +2335,16 @@ static LhatType *infer_def(Checker *c, const LhatNode *node, LhatType *base)
         // intersection when 14.12's overload^ put several there, since the
         // write replaces the member as a whole.
         LhatType *outer_super = c->super_type;
-        if (entry->v.entry.modifier == LHAT_DEF_OVERRIDE && hidden != NULL) {
-            c->super_type = hidden->type;
-        } else {
-            c->super_type = NULL;
+        c->super_type = NULL;
+        if (entry->v.entry.modifier == LHAT_DEF_OVERRIDE) {
+            // 14.15改: with nothing under the name yet, the shape super^ will
+            // have is the one written here. 14.12 has the replacement usable
+            // where the original was -- arguments wider, result narrower --
+            // so what is written is admissible wherever the original is, and
+            // taking it for super^ cannot promise more than the base gives.
+            c->super_type = hidden != NULL
+                                ? hidden->type
+                                : declared_signature(c, entry->v.entry.value);
         }
         LhatType *type = infer(c, entry->v.entry.value);
         c->super_type = outer_super;
@@ -2278,8 +2356,14 @@ static LhatType *infer_def(Checker *c, const LhatNode *node, LhatType *base)
         if (is_operator_name(name, length)) {
             check_operator_shape(c, entry, type);
         }
-        set_member(c, definition, name, length, type);
-        set_member(c, instance, name, length, type);
+        // 14.15改: an override^ that found nothing waits for a composition to
+        // bring what it replaces. Until then super^ inside it points at
+        // nothing, so 14.11's new^ has to stay out of reach. Landing on
+        // another one that is waiting settles neither.
+        bool pending = entry->v.entry.modifier == LHAT_DEF_OVERRIDE &&
+                       (hidden == NULL || hidden->pending);
+        set_member_marked(c, definition, name, length, type, false, pending);
+        set_member_marked(c, instance, name, length, type, false, pending);
         if (name_is(name, length, "new")) {
             has_new = true;
         }
@@ -4117,8 +4201,9 @@ const char *lhat_check_error_message(LhatCheckErrorCode code)
             return "something in the chain already provides this member, so "
                    "there is nothing for an abstract^ to ask for";
         case LHAT_CHECK_ERR_STILL_ABSTRACT:
-            return "this definition declares a member that nothing has "
-                   "provided, so there is no instance of it to make";
+            return "this definition is still waiting on a composition -- a "
+                   "member is declared with nothing providing it, or an "
+                   "override^ has met nothing to replace";
         case LHAT_CHECK_ERR_COMPOSE_COLLIDES:
             return "both definitions carry a member of this name, and a "
                    "marker can only be written inside a def^";

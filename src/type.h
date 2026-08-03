@@ -67,6 +67,10 @@ typedef struct LhatTypeMember {
     // change -- so the relations do not read this. 14.11's new^ does: a
     // definition still holding one cannot be instantiated.
     bool abstract;
+    // 02 の 14.15改: written with an override^ that has not met what it
+    // replaces yet, so the member is here but super^ inside it points at
+    // nothing. Composing onto something that provides the name settles it.
+    bool pending;
     struct LhatTypeMember *next;
 } LhatTypeMember;
 

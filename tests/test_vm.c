@@ -2413,6 +2413,39 @@ static void test_definitions(void)
     CHECK_INTEGER(&r, 11);
     run_dispose(&r);
 
+    // 14.15改: a mixin written against no base, composed onto one. What its
+    // super^ reaches is settled by 14.2's chain the same as any other.
+    LHAT_TEST("a mixin written against no base reaches the base it gets");
+    run_text(&r,
+             "let^ Base = def^{ self^{ n := 0 },\n"
+             "  run := p^self^ { self^.n := self^.n + 1 } }\n"
+             "let^ Logged = def^{ self^{ abstract^ n : number^ },\n"
+             "  override^ run := p^self^ { self^.n := self^.n + 10\n"
+             "                             super^() } }\n"
+             "let^ App = Base .. Logged\n"
+             "let^ o = App.new^()\n"
+             "o.run()\n"
+             "return^ o.n\n");
+    CHECK_INTEGER(&r, 11);
+    run_dispose(&r);
+
+    LHAT_TEST("and two of them stack in the order they are written");
+    run_text(&r,
+             "let^ Base = def^{ self^{ n := 0 },\n"
+             "  run := p^self^ { self^.n := self^.n + 1 } }\n"
+             "let^ A = def^{ self^{ abstract^ n : number^ },\n"
+             "  override^ run := p^self^ { self^.n := self^.n + 10\n"
+             "                             super^() } }\n"
+             "let^ B = def^{ self^{ abstract^ n : number^ },\n"
+             "  override^ run := p^self^ { self^.n := self^.n + 100\n"
+             "                             super^() } }\n"
+             "let^ App = Base .. A .. B\n"
+             "let^ o = App.new^()\n"
+             "o.run()\n"
+             "return^ o.n\n");
+    CHECK_INTEGER(&r, 111);
+    run_dispose(&r);
+
     // 14.2: the chain is settled at the definition, so an instance made
     // before a later definition is unaffected by it.
     LHAT_TEST("two definitions of the same shape stay separate");
