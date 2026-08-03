@@ -2311,13 +2311,21 @@ static LhatNode *parse_for(Parser *p)
         advance(p);
         node->v.loop.kind = LHAT_FOR_IF;
         node->v.loop.bound = parse_expression(p);
-        node->v.loop.body = parse_if_body(p, at, node->v.loop.bound);
+        // 5.2改: '{' opens the statement form and ':' the expression one,
+        // here as anywhere. The focus still does not leave -- only the value
+        // built from it does, which is what an expression is.
+        node->v.loop.is_expression = check_op(p, LHAT_OP_COLON);
+        node->v.loop.body =
+            node->v.loop.is_expression
+                ? parse_if_expression_from(p, at, node->v.loop.bound)
+                : parse_if_body(p, at, node->v.loop.bound);
         return node;
     } else if (check_op(p, LHAT_OP_LBRACE) || check_op(p, LHAT_OP_COLON)) {
         // 17 章: no driving clause at all, so what follows dispatches on the
         // subject rather than iterating over it.
         node->v.loop.kind = LHAT_FOR_WHEN;
         bool as_expression = check_op(p, LHAT_OP_COLON);
+        node->v.loop.is_expression = as_expression;
         LhatToken at = p->current;
         advance(p);
 
@@ -2619,8 +2627,16 @@ static LhatNode *parse_statement(Parser *p)
         if (check_hat(p, "with")) {
             return parse_with(p);
         }
+        // 16.1: which form a for^ is shows only after its driving clause, so
+        // it is parsed and then asked. One written with ':' answers a value,
+        // and 8.2 decides whether a value may stand here.
         if (check_hat(p, "for")) {
-            return parse_for(p);
+            LhatNode *node = parse_for(p);
+            if (node != NULL && node->kind == LHAT_NODE_FOR &&
+                node->v.loop.is_expression) {
+                return expression_as_statement(p, start, node);
+            }
+            return node;
         }
         if (check_hat(p, "repeat")) {
             return parse_repeat(p);

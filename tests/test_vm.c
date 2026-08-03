@@ -1287,6 +1287,24 @@ static void test_for(void)
     LHAT_CHECK_EQ_INT(r.compiled, LHAT_COMPILE_UNDEFINED);
     run_dispose(&r);
 
+    // 5.2改: '{' opens the statement form and ':' the expression one, here as
+    // anywhere -- 16.1 has for^ take the form its clause does.
+    LHAT_TEST("and it answers a value when written with ':'");
+    run_text(&r,
+             "let^ x = for^ i := 1, j := 2 if^ i + j < 10: i + j el^: 0 ;\n"
+             "return^ x\n");
+    CHECK_INTEGER(&r, 3);
+    run_dispose(&r);
+
+    // 16.7 is not against it: the name still does not leave, only the value
+    // built from it, which is what an expression is.
+    LHAT_TEST("and the focus still does not escape");
+    run_text(&r,
+             "let^ x = for^ i := 1 if^ i > 0: i el^: 0 ;\n"
+             "return^ i\n");
+    LHAT_CHECK_EQ_INT(r.compiled, LHAT_COMPILE_UNDEFINED);
+    run_dispose(&r);
+
     // 14 章 の table with 16: what a loop is mostly for.
     LHAT_TEST("a loop fills a table");
     run_text(&r,

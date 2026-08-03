@@ -238,17 +238,39 @@ static void test_statements(void)
     LHAT_CHECK_EQ_INT(first_statement(&p)->kind, LHAT_NODE_IF_STMT);
     parse_dispose(&p);
 
-    // 16.3: the if^ of a for^ is the statement form and only that. What the
-    // for^ introduces lives inside its body (16.7), so a form that carried a
-    // value out of it would be at odds with what it is for.
-    LHAT_TEST("the if^ of a for^ has no expression form");
-    parse_interactive_text(&p, "for^ n := 5 if^ n > 1: n;");
-    LHAT_CHECK(p.result.diagnostic_count > 0, "expected a diagnostic");
+    // 16.1: a for^ takes whichever form its clause does, so the if^ of one
+    // has both. 16.7 is not against it -- the focus still does not leave;
+    // only the value built from it does, which is what an expression is.
+    LHAT_TEST("the if^ of a for^ has an expression form too");
+    parse_interactive_text(&p, "for^ n := 5 if^ n > 1: n el^: 0 ;");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    {
+        const LhatNode *s = first_statement(&p);
+        LHAT_CHECK_EQ_INT(s->kind, LHAT_NODE_CALL_STMT);
+        LHAT_CHECK_EQ_INT(s->v.jump.value->kind, LHAT_NODE_FOR);
+        LHAT_CHECK(s->v.jump.value->v.loop.is_expression, "written with ':'");
+    }
     parse_dispose(&p);
 
     LHAT_TEST("and its statement form is unaffected");
     parse_interactive_text(&p, "for^ n := 5 if^ n > 1 { x := n }");
     LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    LHAT_CHECK_EQ_INT(first_statement(&p)->kind, LHAT_NODE_FOR);
+    parse_dispose(&p);
+
+    // 17.2's match had the same gap: its expression form parsed but could
+    // not stand at a statement, so 8.2 never saw it.
+    LHAT_TEST("and a match written as an expression stands there too");
+    parse_interactive_text(&p, "for^ 2: when^ 1: \"x\" other^: \"y\" ;");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    LHAT_CHECK_EQ_INT(first_statement(&p)->kind, LHAT_NODE_CALL_STMT);
+    parse_dispose(&p);
+
+    LHAT_TEST("but in a file neither does");
+    parse_text(&p, "for^ n := 5 if^ n > 1: n el^: 0 ;");
+    LHAT_CHECK(p.result.diagnostic_count > 0, "expected a diagnostic");
+    LHAT_CHECK_EQ_INT(p.result.diagnostics[0].code,
+                      LHAT_PARSE_ERR_BARE_EXPRESSION);
     parse_dispose(&p);
 
     // In a file 8.2 holds as it always did: the writer meant braces.

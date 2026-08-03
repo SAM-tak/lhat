@@ -264,6 +264,10 @@ struct LhatNode {
             LhatNode *step;     // step^, absent for every kind but to^/downto^
             LhatNode *advance;  // next^ statements
             LhatNode *body;
+            // 5.2改 and 17.2: written in the form opened by ':' rather than
+            // by '{', so it answers a value. Only if^ and the when^ clauses
+            // have that form; the driving clauses iterate and answer nothing.
+            bool is_expression;
         } loop;
 
         struct {
