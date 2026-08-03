@@ -71,6 +71,11 @@ typedef struct LhatTypeMember {
     // replaces yet, so the member is here but super^ inside it points at
     // nothing. Composing onto something that provides the name settles it.
     bool pending;
+    // 02 の 14.5改: two sides of a composition both carry it, and neither was
+    // written against the other. The name reaches no one answer, so it is not
+    // reachable through the composed type -- what each side wrote is still
+    // reachable through that side.
+    bool ambiguous;
     struct LhatTypeMember *next;
 } LhatTypeMember;
 

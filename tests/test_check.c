@@ -1427,24 +1427,76 @@ static void test_composition(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // 14.12 refuses a name that is already there. Neither side of a
-    // composition by name was written against the other, so no marker could
-    // have been put on it, and the '..' is where the two were brought
-    // together.
-    LHAT_TEST("a member both sides carry is reported at the '..'");
+    // 14.5改: neither side of a composition by name was written against the
+    // other, so neither is the answer under a name they share. The
+    // composition stands -- what it costs is that the name is no longer
+    // reachable through it.
+    LHAT_TEST("a member both sides carry does not stop the composition");
     check_text(&u,
                "let^ A = def^{ self^{}, m := f^ -> number^ { return^ 1 } }\n"
                "let^ B = def^{ self^{}, m := f^ -> number^ { return^ 2 } }\n"
                "let^ D = A .. B\n");
-    CHECK_REPORTS(&u, LHAT_CHECK_ERR_COMPOSE_COLLIDES);
+    CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    LHAT_TEST("a field both templates carry is reported too");
+    LHAT_TEST("and reading it through the composition is reported");
+    check_text(&u,
+               "let^ A = def^{ self^{}, m := f^ -> number^ { return^ 1 } }\n"
+               "let^ B = def^{ self^{}, m := f^ -> number^ { return^ 2 } }\n"
+               "let^ D = A .. B\n"
+               "let^ r : number^ = D.new^().m()\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_AMBIGUOUS_MEMBER);
+    unit_dispose(&u);
+
+    // 14.4 is the way out, and it wanted nothing added: a method taken from
+    // the side that wrote it applies to whatever fits it structurally.
+    LHAT_TEST("but naming the side reaches either one");
+    check_text(&u,
+               "let^ A = def^{ self^{}, m := f^self^ -> number^ { return^ 1 } }\n"
+               "let^ B = def^{ self^{}, m := f^self^ -> number^ { return^ 2 } }\n"
+               "let^ D = A .. B\n"
+               "let^ fromA = A.m\n"
+               "let^ fromB = B.m\n"
+               "let^ o = D.new^()\n"
+               "let^ x : number^ = fromA(o)\n"
+               "let^ y : number^ = fromB(o)\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("and the names only one side carries are untouched");
+    check_text(&u,
+               "let^ A = def^{ self^{}, m := f^ -> number^ { return^ 1 },\n"
+               "  only := f^ -> number^ { return^ 9 } }\n"
+               "let^ B = def^{ self^{}, m := f^ -> number^ { return^ 2 } }\n"
+               "let^ D = A .. B\n"
+               "let^ r : number^ = D.new^().only()\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // 14.5改: a field is the one that stays an error at the '..'. A method is
+    // shared, so either side's is still reachable through it; a field is
+    // per-instance and the flattened table holds one, so there is no
+    // qualified form to fall back to.
+    LHAT_TEST("a field both templates carry is still reported at the '..'");
     check_text(&u,
                "let^ A = def^{ self^{ v := 0 } }\n"
                "let^ B = def^{ self^{ v := \"x\" } }\n"
                "let^ D = A .. B\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_COMPOSE_COLLIDES);
+    unit_dispose(&u);
+
+    // 14.15 is the way to write a mixin that does not own the field it uses,
+    // and two of them compose without ever colliding.
+    LHAT_TEST("and two mixins that declare rather than own do not collide");
+    check_text(&u,
+               "let^ A = def^{ self^{ abstract^ v : number^ },\n"
+               "  a := f^self^ -> number^ { return^ self^.v } }\n"
+               "let^ B = def^{ self^{ abstract^ v : number^ },\n"
+               "  b := f^self^ -> number^ { return^ self^.v } }\n"
+               "let^ Host = def^{ self^{ v := 3 } }\n"
+               "let^ D = Host .. A .. B\n"
+               "let^ r : number^ = D.new^().a()\n");
+    CHECK_CLEAN(&u);
     unit_dispose(&u);
 
     // 14.12改: super^ names what an override^ is writing over, so it is a

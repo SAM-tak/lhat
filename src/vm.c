@@ -971,6 +971,40 @@ static bool entry_named(Compiler *c, const LhatNode *entries, const char *name,
     return false;
 }
 
+// 14.5改: whether two parts of the chain both write this name with no marker
+// between them. The checker calls that ambiguous and refuses to read it
+// through the composition, so nothing is written under it -- a table holding
+// the last writer would be one the checker says is not there.
+//
+// Only a member is ever ambiguous. A field collision stays an error, since
+// there is no per-part storage to fall back to.
+static bool ambiguous_member(Compiler *c, const DefChain *chain,
+                             const char *name, size_t length)
+{
+    size_t plain = 0;
+    for (size_t i = 0; i < chain->count; i++) {
+        const LhatLexer *enclosing = c->lexer;
+        c->lexer = chain->lexers[i];
+        for (const LhatNode *entry = chain->parts[i]->v.list.items;
+             entry != NULL; entry = entry->next) {
+            const char *written = NULL;
+            size_t written_length = 0;
+            if (entry->v.entry.key == NULL || entry->v.entry.declared ||
+                entry->v.entry.modifier != LHAT_DEF_PLAIN) {
+                continue;
+            }
+            if (node_name(c, entry->v.entry.key, &written, &written_length) &&
+                written_length == length &&
+                memcmp(written, name, length) == 0) {
+                plain++;
+                break;  // one part writing it twice is 14.12's own error
+            }
+        }
+        c->lexer = enclosing;
+    }
+    return plain > 1;
+}
+
 // 14.11: self^{ … } inside new^ makes the instance. The fields it names are
 // filled from what it wrote; the rest come from the template's initialisers,
 // which 14.11 makes expressions evaluated at each construction rather than
@@ -1123,6 +1157,11 @@ static void compile_def(Compiler *c, const LhatNode *node, uint8_t into)
             }
             if (name_is(name, length, "new")) {
                 has_new = true;
+            }
+            // 14.5改: nothing goes under a name the checker will not read.
+            if (entry->v.entry.modifier == LHAT_DEF_PLAIN &&
+                ambiguous_member(c, &chain, name, length)) {
+                continue;
             }
             uint8_t at = c->next_register;
             size_t entry_mark = c->local_count;

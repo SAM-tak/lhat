@@ -52,6 +52,8 @@ typedef enum {
 
     LHAT_CHECK_ERR_MEMBER_EXISTS,       // 14.12: same name, no marker
     LHAT_CHECK_ERR_COMPOSE_COLLIDES,    // 14.5: and no marker can be written
+    LHAT_CHECK_ERR_AMBIGUOUS_MEMBER,    // 14.5改: both sides carry it, so the
+                                        // composition reaches no one answer
     LHAT_CHECK_ERR_STILL_ABSTRACT,      // 14.15: new^ on a definition with a
                                         // member nothing has provided yet
     LHAT_CHECK_ERR_ALREADY_PROVIDED,    // 14.15: abstract^ over a member that

@@ -2446,6 +2446,23 @@ static void test_definitions(void)
     CHECK_INTEGER(&r, 111);
     run_dispose(&r);
 
+    // 14.5改: nothing is written under a name both sides carry, since the
+    // checker will not read it through the composition -- but the method each
+    // side wrote is still a value, and 14.4 applies it to whatever fits.
+    LHAT_TEST("either side of an ambiguous name is still reachable");
+    run_text(&r,
+             "let^ A = def^{ self^{},\n"
+             "  m := f^self^ -> number^ { return^ 1 },\n"
+             "  only := f^ -> number^ { return^ 9 } }\n"
+             "let^ B = def^{ self^{}, m := f^self^ -> number^ { return^ 2 } }\n"
+             "let^ D = A .. B\n"
+             "let^ fromA = A.m\n"
+             "let^ fromB = B.m\n"
+             "let^ o = D.new^()\n"
+             "return^ fromA(o) * 100 + fromB(o) * 10 + D.new^().only()\n");
+    CHECK_INTEGER(&r, 129);
+    run_dispose(&r);
+
     // 14.2: the chain is settled at the definition, so an instance made
     // before a later definition is unaffected by it.
     LHAT_TEST("two definitions of the same shape stay separate");

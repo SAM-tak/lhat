@@ -1558,6 +1558,14 @@ static LhatType *infer_member(Checker *c, const LhatNode *node)
 
     for (const LhatTypeMember *m = members; m != NULL; m = m->next) {
         if (m->name_length == length && memcmp(m->name, name, length) == 0) {
+            // 14.5改: carried by both sides of a composition, so reading it
+            // here would be picking one of two for the writer. 14.4's
+            // 'let^ f = A.m' is how the side is named.
+            if (m->ambiguous) {
+                report_named(c, node, LHAT_CHECK_ERR_AMBIGUOUS_MEMBER, name,
+                             length);
+                return simple(c, LHAT_TYPE_UNKNOWN);
+            }
             return m->type;
         }
     }
@@ -1910,6 +1918,19 @@ static void set_member(Checker *c, LhatType *table, const char *name,
     set_member_marked(c, table, name, length, type, false, false);
 }
 
+// 14.5改: the name is carried by both sides of a composition and reaches no
+// one answer through it. Marked rather than dropped, so an access can say
+// what went wrong rather than that the name is not there.
+static void mark_ambiguous(LhatType *table, const char *name, size_t length)
+{
+    for (LhatTypeMember *m = table->v.table.members; m != NULL; m = m->next) {
+        if (m->name_length == length && memcmp(m->name, name, length) == 0) {
+            m->ambiguous = true;
+            return;
+        }
+    }
+}
+
 // 14.15: whether the definition is still waiting on a composition. 14.11's
 // new^ is what this stands in the way of -- an abstract^ would leave a name
 // with nothing under it, and 14.15改's pending override^ would leave a super^
@@ -2186,7 +2207,12 @@ static LhatType *compose_definitions(Checker *c, const LhatNode *node,
                               false, held->pending);
             continue;
         } else if (held != NULL) {
-            report(c, node, LHAT_CHECK_ERR_COMPOSE_COLLIDES);
+            // 14.5改: neither side was written against the other, so neither
+            // is the answer. The name stops being reachable through the
+            // composition; what each side wrote is still reachable through
+            // that side, which 14.4 already spells 'let^ f = A.m'.
+            mark_ambiguous(definition, m->name, m->name_length);
+            continue;
         }
         set_member_marked(c, definition, m->name, m->name_length, m->type,
                           m->abstract, m->pending);
@@ -2206,12 +2232,23 @@ static LhatType *compose_definitions(Checker *c, const LhatNode *node,
                 set_member_marked(c, instance, m->name, m->name_length,
                                   m->type, false, held->pending);
                 continue;
-            } else if (held != NULL &&
-                       find_member(definition, m->name, m->name_length) ==
-                           NULL) {
-                // A method sits in both tables (14.7), so the definition side
-                // reported it already. Only a field is new here.
-                report(c, node, LHAT_CHECK_ERR_COMPOSE_COLLIDES);
+            } else if (held != NULL) {
+                // A method sits in both tables (14.7), and the definition
+                // side settled it -- mirror that here.
+                const LhatTypeMember *shared =
+                    find_member(definition, m->name, m->name_length);
+                if (shared != NULL && shared->ambiguous) {
+                    mark_ambiguous(instance, m->name, m->name_length);
+                    continue;
+                }
+                if (shared == NULL) {
+                    // 14.5改: a field is the one that stays an error. A method
+                    // is shared, so 14.4 can still reach either side's; a
+                    // field is per-instance and the flattened table holds one,
+                    // so dropping it would leave both sides' methods reading
+                    // nothing. There is no qualified form to fall back to.
+                    report(c, node, LHAT_CHECK_ERR_COMPOSE_COLLIDES);
+                }
             }
             set_member_marked(c, instance, m->name, m->name_length, m->type,
                               m->abstract, m->pending);
@@ -4204,6 +4241,9 @@ const char *lhat_check_error_message(LhatCheckErrorCode code)
             return "this definition is still waiting on a composition -- a "
                    "member is declared with nothing providing it, or an "
                    "override^ has met nothing to replace";
+        case LHAT_CHECK_ERR_AMBIGUOUS_MEMBER:
+            return "both sides of the composition carry this name, so it "
+                   "reaches no one answer; name the side you mean";
         case LHAT_CHECK_ERR_COMPOSE_COLLIDES:
             return "both definitions carry a member of this name, and a "
                    "marker can only be written inside a def^";
