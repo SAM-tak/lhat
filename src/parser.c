@@ -1678,7 +1678,7 @@ static bool can_begin_statement(const Parser *p)
             // call on the line above.
             return is_statement_keyword(p) || check_hat(p, "L") ||
                    check_hat(p, "this") || check_hat(p, "self") ||
-                   check_hat(p, "it");
+                   check_hat(p, "it") || check_hat(p, "super");
         case LHAT_TOKEN_OP:
             // 01 の 10.9: a '(' on a fresh line opens a statement.
             return p->current.v.op == LHAT_OP_LPAREN;

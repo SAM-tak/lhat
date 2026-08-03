@@ -303,6 +303,13 @@ bool lhat_value_satisfies(LhatValue value, const LhatRuntimeType *type);
 LhatOverload *lhat_overload_new(LhatHeap *heap);
 bool lhat_overload_add(LhatOverload *overload, LhatValue candidate);
 
+// 02 の 14.12: a new group holding `candidate` first and then what `existing`
+// held -- an override^ has to be reached before the arm it replaces, and the
+// old group has to stay as it was for 14.12改's super^.
+LhatOverload *lhat_overload_with_first(LhatHeap *heap,
+                                       const LhatOverload *existing,
+                                       LhatValue candidate);
+
 // 04 の 2.6 and 6.1: whether `value` is an error of `kind`. A kind object
 // standing for a whole errordef^ answers yes for any of its kinds, since 2.3
 // makes the declaration the union of them.

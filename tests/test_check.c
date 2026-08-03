@@ -1421,6 +1421,51 @@ static void test_composition(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_COMPOSE_COLLIDES);
     unit_dispose(&u);
 
+    // 14.12改: super^ names what an override^ is writing over, so it is a
+    // name only there. Nothing else in a def^ hid anything.
+    LHAT_TEST("super^ is a name inside an override^");
+    check_text(&u,
+               "let^ A = def^{ self^{}, m := f^ -> number^ { return^ 1 } }\n"
+               "let^ D = A .. def^{ self^{},\n"
+               "  override^ m := f^ -> number^ { return^ super^() + 1 } }\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("and not in a member with no marker");
+    check_text(&u,
+               "let^ A = def^{ self^{}, m := f^ -> number^ { return^ super^() } }\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_SUPER_OUTSIDE);
+    unit_dispose(&u);
+
+    LHAT_TEST("and not outside a def^ at all");
+    check_text(&u, "let^ x = super^\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_SUPER_OUTSIDE);
+    unit_dispose(&u);
+
+    // 14.4: super^(…) is the bound form, so the receiver is not written; taken
+    // as a value it is spelled out, the way a method taken from under the dot
+    // is.
+    LHAT_TEST("super^ called directly takes the receiver on its own");
+    check_text(&u,
+               "let^ A = def^{ self^{ n := 0 },\n"
+               "  get := f^self^ -> number^ { return^ self^.n } }\n"
+               "let^ D = A .. def^{ self^{},\n"
+               "  override^ get := f^self^ -> number^ { return^ super^() } }\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("and wants it written once taken as a value");
+    check_text(&u,
+               "let^ A = def^{ self^{ n := 0 },\n"
+               "  get := f^self^ -> number^ { return^ self^.n } }\n"
+               "let^ D = A .. def^{ self^{},\n"
+               "  override^ get := f^self^ -> number^ {\n"
+               "    let^ old = super^\n"
+               "    return^ old(self^)\n"
+               "  } }\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
     // 14.11 gives every definition a new^ whether or not one was written, so
     // the two always carry that name. It is rebuilt rather than collided.
     LHAT_TEST("the synthesised new^ is not a collision");

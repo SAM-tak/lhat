@@ -332,6 +332,32 @@ bool lhat_overload_add(LhatOverload *overload, LhatValue candidate)
     return true;
 }
 
+// 02 の 14.12: an override^ over an overloaded name replaces the one arm its
+// signature overlaps. Which arm that is was settled by the checker, and the
+// values here carry no signature to settle it again -- but they do not have
+// to. The replacement is usable wherever that arm was and overlaps no other,
+// so putting it first is enough: every call the arm would have taken now
+// stops here, and the calls the other arms take never reach it.
+//
+// A fresh group rather than a write into the old one, because 14.12改 hands
+// the old one to super^ -- prepending in place would make super^ reach the
+// replacement and call itself.
+LhatOverload *lhat_overload_with_first(LhatHeap *heap,
+                                       const LhatOverload *existing,
+                                       LhatValue candidate)
+{
+    LhatOverload *made = lhat_overload_new(heap);
+    if (made == NULL || !lhat_overload_add(made, candidate)) {
+        return NULL;
+    }
+    for (size_t i = 0; existing != NULL && i < existing->count; i++) {
+        if (!lhat_overload_add(made, existing->candidates[i])) {
+            return NULL;
+        }
+    }
+    return made;
+}
+
 bool lhat_error_is_kind(LhatValue value, const LhatErrorKind *kind)
 {
     if (!lhat_is_object_kind(value, LHAT_OBJECT_ERROR) || kind == NULL) {

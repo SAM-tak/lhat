@@ -84,6 +84,10 @@ typedef struct {
     // which is what this^ names. NULL outside any body.
     LhatType *this_type;
 
+    // 02 の 14.12改: what an override^ is writing over, which is what super^
+    // names. NULL anywhere else, so 14.12's marker is what makes it a name.
+    LhatType *super_type;
+
     // 03 の 4.3: the statement whose value the input answers with, when the
     // input is one of a session. NULL for a file, where nothing answers.
     const LhatNode *answering;
@@ -209,6 +213,17 @@ static bool name_is(const char *text, size_t length, const char *literal)
 {
     size_t n = strlen(literal);
     return length == n && memcmp(text, literal, n) == 0;
+}
+
+// 14.12改: whether this is super^ written out. Only the hatted spelling means
+// it, so an ordinary name `super` is untouched.
+static bool is_super_name(Checker *c, const LhatNode *node)
+{
+    const char *name = NULL;
+    size_t length = 0;
+    return node != NULL && node->kind == LHAT_NODE_HAT_IDENT &&
+           node_name(c, node, &name, &length) &&
+           name_is(name, length, "super");
 }
 
 // ---------------------------------------------------------------------------
@@ -1062,6 +1077,17 @@ static LhatType *infer_name(Checker *c, const LhatNode *node)
             c->saw_self_call = true;
             return c->this_type;
         }
+        // 14.12改: super^ is the member an override^ is replacing. Named on
+        // its own it is an ordinary value, so 14.4 applies and the receiver
+        // is written out; called directly it is the bound form, which
+        // infer_call takes.
+        if (name_is(name, length, "super")) {
+            if (c->super_type == NULL) {
+                report(c, node, LHAT_CHECK_ERR_SUPER_OUTSIDE);
+                return simple(c, LHAT_TYPE_UNKNOWN);
+            }
+            return c->super_type;
+        }
         // 05 の 8.6: the machine's own table, there without being imported.
         if (name_is(name, length, "L")) {
             LhatType *env = environment_type(c);
@@ -1299,6 +1325,7 @@ static LhatType *infer_call(Checker *c, const LhatNode *node)
     }
 
     const LhatTypeList *param = callee->v.func.params;
+
     size_t declared = 0;
     for (const LhatTypeList *p = param; p != NULL; p = p->next) {
         declared++;
@@ -1307,9 +1334,15 @@ static LhatType *infer_call(Checker *c, const LhatNode *node)
     // 14.4: 'x.m()' hands x to the receiver without writing it, while a
     // method taken as a value is called with the receiver spelled out. The
     // receiver is kept out of `params`, so only the second form adjusts.
+    //
+    // 14.12改: 'super^(…)' is the first of the two. What it replaces is a
+    // member of the same definition, so the receiver it wants is the one the
+    // body already has -- writing it would be noise, and every use of super^
+    // would carry it.
     size_t skip = 0;
     if (callee->v.func.takes_self &&
-        node->v.access.target->kind != LHAT_NODE_MEMBER) {
+        node->v.access.target->kind != LHAT_NODE_MEMBER &&
+        !is_super_name(c, node->v.access.target)) {
         declared++;
         skip = 1;
     }
@@ -2107,13 +2140,24 @@ static LhatType *infer_def(Checker *c, const LhatNode *node, LhatType *base)
             !node_name(c, entry->v.entry.key, &name, &length)) {
             continue;
         }
+        // 14.12改: super^ is a name only inside an override^, and what it
+        // names is everything that was under this name -- the whole
+        // intersection when 14.12's overload^ put several there, since the
+        // write replaces the member as a whole.
+        const LhatTypeMember *hidden = find_member(definition, name, length);
+        LhatType *outer_super = c->super_type;
+        if (entry->v.entry.modifier == LHAT_DEF_OVERRIDE && hidden != NULL) {
+            c->super_type = hidden->type;
+        } else {
+            c->super_type = NULL;
+        }
         LhatType *type = infer(c, entry->v.entry.value);
+        c->super_type = outer_super;
         // 14.12: two members of one name in a single def^ need a marker too,
         // so what is already there has to include this def^'s earlier entries
         // and not only what the base brought. `definition` is both -- it was
         // copied from the base above and has been accumulating since.
-        type = check_same_name(c, entry, find_member(definition, name, length),
-                               type);
+        type = check_same_name(c, entry, hidden, type);
         if (is_operator_name(name, length)) {
             check_operator_shape(c, entry, type);
         }
@@ -3969,6 +4013,9 @@ const char *lhat_check_error_message(LhatCheckErrorCode code)
         case LHAT_CHECK_ERR_FALLS_OUT_OF_RESULT:
             return "this body has a path that leaves without a value, which "
                    "the result type it was given does not admit";
+        case LHAT_CHECK_ERR_SUPER_OUTSIDE:
+            return "super^ is the member an override^ replaces, so it is a "
+                   "name only inside one";
         case LHAT_CHECK_ERR_THIS_OUTSIDE:
             return "this^ names the subroutine running, and none is here";
         case LHAT_CHECK_ERR_NEVER_RETURNS:

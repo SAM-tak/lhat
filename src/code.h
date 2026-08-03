@@ -70,6 +70,7 @@ typedef enum {
     LHAT_BC_GETINDEX,   // A B C R[A] = R[B][R[C]]
     LHAT_BC_SETINDEX,   // A B C R[A][R[B]] = R[C]
     LHAT_BC_ADDOVERLOAD,// A B C R[A][R[B]] gains R[C] as another way to call it
+    LHAT_BC_OVERRIDEINDEX, // A B C R[A][R[B]] := R[C], ahead of any overload
 
     // 04. An error carries its kind and a table of fields, and the tests are
     // instructions because 5.1 keeps the machine independent of the checker.

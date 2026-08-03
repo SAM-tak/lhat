@@ -2304,6 +2304,83 @@ static void test_definitions(void)
     CHECK_INTEGER(&r, 1);
     run_dispose(&r);
 
+    // 14.12改: super^ is what the override^ wrote over. The parts are walked
+    // in order, so it is read out of the table before the write.
+    LHAT_TEST("super^ reaches the definition an override^ replaced");
+    run_text(&r,
+             "let^ Foo = def^{ self^{ }, tag := f^ { return^ 1 } }\n"
+             "let^ Bar = Foo .. def^{\n"
+             "  self^{ },\n"
+             "  override^ tag := f^ { return^ super^() + 100 },\n"
+             "}\n"
+             "return^ Bar.new^().tag()\n");
+    CHECK_INTEGER(&r, 101);
+    run_dispose(&r);
+
+    // Each link sees the one before it, since each is written over what the
+    // parts up to that point had built.
+    LHAT_TEST("and each link of a chain reaches its own");
+    run_text(&r,
+             "let^ A = def^{ self^{ }, m := f^ { return^ 1 } }\n"
+             "let^ B = A .. def^{ self^{ },\n"
+             "  override^ m := f^ { return^ super^() + 10 } }\n"
+             "let^ C = B .. def^{ self^{ },\n"
+             "  override^ m := f^ { return^ super^() + 100 } }\n"
+             "return^ C.new^().m()\n");
+    CHECK_INTEGER(&r, 111);
+    run_dispose(&r);
+
+    // 14.4: the receiver of super^(…) is the one the body already holds, so
+    // it is not written. This one reads a field through it.
+    LHAT_TEST("super^ takes the receiver without it being written");
+    run_text(&r,
+             "let^ Foo = def^{ self^{ n := 3 },\n"
+             "  get := f^self^ -> number^ { return^ self^.n } }\n"
+             "let^ Bar = Foo .. def^{ self^{ },\n"
+             "  override^ get := f^self^ -> number^ { return^ super^() * 10 } }\n"
+             "return^ Bar.new^().get()\n");
+    CHECK_INTEGER(&r, 30);
+    run_dispose(&r);
+
+    // 14.4 again: named on its own it is a value like any other, and then
+    // the receiver is spelled out.
+    LHAT_TEST("and spelled out once super^ is taken as a value");
+    run_text(&r,
+             "let^ Foo = def^{ self^{ n := 3 },\n"
+             "  get := f^self^ -> number^ { return^ self^.n } }\n"
+             "let^ Bar = Foo .. def^{ self^{ },\n"
+             "  override^ get := f^self^ -> number^ {\n"
+             "    let^ old = super^\n"
+             "    return^ old(self^) + 1\n"
+             "  } }\n"
+             "return^ Bar.new^().get()\n");
+    CHECK_INTEGER(&r, 4);
+    run_dispose(&r);
+
+    // 14.12: an override^ over an overloaded name replaces the one arm it
+    // overlaps, so a plain write would take the whole group with it.
+    LHAT_TEST("override^ over an overload^ keeps the other arms");
+    run_text(&r,
+             "let^ A = def^{ self^{ }, m := f^ { return^ 1 } }\n"
+             "let^ B = A .. def^{ self^{ },\n"
+             "  overload^ m := f^ x:number^ { return^ x } }\n"
+             "let^ C = B .. def^{ self^{ },\n"
+             "  override^ m := f^ { return^ super^() + 100 } }\n"
+             "return^ C.new^().m(7)\n");
+    CHECK_INTEGER(&r, 7);
+    run_dispose(&r);
+
+    LHAT_TEST("and super^ there is the arm that was replaced");
+    run_text(&r,
+             "let^ A = def^{ self^{ }, m := f^ { return^ 1 } }\n"
+             "let^ B = A .. def^{ self^{ },\n"
+             "  overload^ m := f^ x:number^ { return^ x } }\n"
+             "let^ C = B .. def^{ self^{ },\n"
+             "  override^ m := f^ { return^ super^() + 100 } }\n"
+             "return^ C.new^().m()\n");
+    CHECK_INTEGER(&r, 101);
+    run_dispose(&r);
+
     // 14.2: the chain is settled at the definition, so an instance made
     // before a later definition is unaffected by it.
     LHAT_TEST("two definitions of the same shape stay separate");

@@ -829,6 +829,16 @@ static bool resolve_name(Compiler *c, const char *name, size_t length,
     return true;
 }
 
+// 02 の 14.12改: whether this is super^ written out. Only the hatted spelling
+// means it, so an ordinary name `super` is untouched.
+static bool is_super_ident(Compiler *c, const LhatNode *node)
+{
+    const char *name = NULL;
+    size_t length = 0;
+    return node != NULL && node->kind == LHAT_NODE_HAT_IDENT &&
+           node_name(c, node, &name, &length) && name_is(name, length, "super");
+}
+
 static void compile_default_new(Compiler *c, const LhatNode *node,
                                 uint8_t definition);
 
@@ -1100,18 +1110,48 @@ static void compile_def(Compiler *c, const LhatNode *node, uint8_t into)
                 has_new = true;
             }
             uint8_t at = c->next_register;
+            size_t entry_mark = c->local_count;
             uint8_t key = reserve(c);
             uint8_t value = reserve(c);
             load_string_bytes(c, key, name, length);
+
+            // 14.12改: super^ is what this entry is about to write over. The
+            // parts are walked in order, so the table holds the earlier one
+            // right now -- reading it here is reading it before the write.
+            //
+            // It is an ordinary local, so a body reaches it through the
+            // capture of 5.4 the way it reaches class^. Bound before the
+            // value is compiled, since that is when the capture is made.
+            if (entry->v.entry.modifier == LHAT_DEF_OVERRIDE &&
+                c->local_count < LHAT_MAX_LOCALS) {
+                uint8_t hidden = reserve(c);
+                emit(c, lhat_encode_abc(LHAT_BC_GETINDEX, hidden, into, key));
+                Local *previous = &c->locals[c->local_count++];
+                previous->name = "super";
+                previous->length = 5;
+                previous->reg = hidden;
+            }
+
             compile_expression(c, entry->v.entry.value, value);
             // 14.12: overload^ keeps what was there and adds a way to call
             // it, so the two go under one name together. Which one a call
             // means is settled when it runs, since 14.12's ban on overlapping
             // signatures leaves at most one that fits.
-            emit(c, lhat_encode_abc(entry->v.entry.modifier == LHAT_DEF_OVERLOAD
-                                        ? LHAT_BC_ADDOVERLOAD
-                                        : LHAT_BC_SETINDEX,
-                                    into, key, value));
+            LhatOpcode write = LHAT_BC_SETINDEX;
+            if (entry->v.entry.modifier == LHAT_DEF_OVERLOAD) {
+                write = LHAT_BC_ADDOVERLOAD;
+            } else if (entry->v.entry.modifier == LHAT_DEF_OVERRIDE) {
+                // 14.12: and an override^ over an overloaded name takes the
+                // one arm it overlaps rather than the group.
+                write = LHAT_BC_OVERRIDEINDEX;
+            }
+            emit(c, lhat_encode_abc(write, into, key, value));
+            // The slot goes back to the pool for the next entry, so a body
+            // that captured it has to stop sharing it first.
+            if (c->local_count > entry_mark) {
+                emit(c, lhat_encode_abc(LHAT_BC_CLOSE, at, 0, 0));
+                c->local_count = entry_mark;
+            }
             c->next_register = at;
         }
         c->lexer = enclosing_lexer;
@@ -1228,6 +1268,11 @@ static void compile_call(Compiler *c, const LhatNode *node, uint8_t into)
     // the machine passes it or skips it depending on what the callee takes.
     const LhatNode *target = node->v.access.target;
     bool method = target != NULL && target->kind == LHAT_NODE_MEMBER;
+    // 14.12改: super^(…) is the bound form too. What it replaces is a member
+    // of this same definition, so the receiver is the self^ the body already
+    // holds -- laid out here the way a method call lays it out, and the
+    // machine skips it when the hidden member turns out to take none.
+    bool super_call = !method && is_super_ident(c, target);
     if (method) {
         uint8_t receiver = reserve(c);
         compile_expression(c, target->v.access.target, receiver);
@@ -1240,9 +1285,19 @@ static void compile_call(Compiler *c, const LhatNode *node, uint8_t into)
         compile_key(c, target, key);
         emit(c, lhat_encode_abc(LHAT_BC_GETINDEX, callee, receiver, key));
         c->next_register = (uint8_t)(receiver + 1);
+    } else if (super_call) {
+        compile_expression(c, target, callee);
+        uint8_t receiver = reserve(c);
+        if (!resolve_name(c, "self", 4, receiver)) {
+            // A static member has no self^ to hand over, and 14.4 says its
+            // replacement takes none either. The plain call form is right.
+            c->next_register = (uint8_t)(callee + 1);
+            super_call = false;
+        }
     } else {
         compile_expression(c, target, callee);
     }
+    method = method || super_call;
 
     size_t count = 0;
     for (const LhatNode *arg = node->v.access.argument; arg != NULL;
@@ -4257,6 +4312,7 @@ LhatRunResult lhat_run(LhatMachine *m, const LhatProto *proto)
             }
 
             case LHAT_BC_SETINDEX: {
+            set_index:;
                 LhatTable *table = table_of(registers[a]);
                 if (table == NULL) {
                     return finish(m, LHAT_RUN_TYPE_ERROR, lhat_nil(), at);
@@ -4305,6 +4361,36 @@ LhatRunResult lhat_run(LhatMachine *m, const LhatProto *proto)
                     return finish(m, LHAT_RUN_OUT_OF_MEMORY, lhat_nil(), at);
                 }
                 break;
+            }
+
+            // 14.12: an override^ replaces the one arm it overlaps, and the
+            // arms an overload^ put there are otherwise untouched. A plain
+            // write would take the whole group with them.
+            case LHAT_BC_OVERRIDEINDEX: {
+                LhatTable *table = table_of(registers[a]);
+                if (table == NULL) {
+                    return finish(m, LHAT_RUN_TYPE_ERROR, lhat_nil(), at);
+                }
+                LhatValue held = lhat_table_get(table, registers[b]);
+                if (lhat_is_object_kind(held, LHAT_OBJECT_OVERLOAD)) {
+                    const LhatOverload *group =
+                        (const LhatOverload *)lhat_as_object(held);
+                    LhatOverload *made = lhat_overload_with_first(
+                        &m->objects, group, registers[cc]);
+                    if (made == NULL) {
+                        return finish(m, LHAT_RUN_OUT_OF_MEMORY, lhat_nil(),
+                                      at);
+                    }
+                    bool refused = false;
+                    if (!lhat_table_set(table, registers[b],
+                                        lhat_object((LhatObject *)made),
+                                        &refused)) {
+                        return finish(m, LHAT_RUN_OUT_OF_MEMORY, lhat_nil(),
+                                      at);
+                    }
+                    break;
+                }
+                goto set_index;
             }
 
             case LHAT_BC_NEWERROR: {
