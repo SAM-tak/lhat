@@ -357,6 +357,45 @@ static void test_calls(void)
     CHECK_INTEGER(&r, 7);
     run_dispose(&r);
 
+    // 02 の 15.12: a function whose body is one expression answers with it,
+    // with no return^ written. The parser turns it into one, so nothing here
+    // or in the checker had to change.
+    LHAT_TEST("a function whose body is one expression answers with it");
+    run_text(&r,
+             "let^ square = f^ n:number^ -> number^ { n * n }\n"
+             "return^ square(7)\n");
+    CHECK_INTEGER(&r, 49);
+    run_dispose(&r);
+
+    LHAT_TEST("and the expression may be one of 5.1");
+    run_text(&r,
+             "let^ sign = f^ n:number^ -> number^ { if^ n < 0: 0 el^: 1 ; }\n"
+             "return^ sign(0 - 3) * 10 + sign(3)\n");
+    CHECK_INTEGER(&r, 1);
+    run_dispose(&r);
+
+    // A call too. Whether it answers anything is the checker's question, and
+    // 13.2 already refused a f^ whose body was one call -- so this only makes
+    // a refused body work.
+    LHAT_TEST("and a call that is the whole body is the answer");
+    run_text(&r,
+             "let^ inner = f^ -> number^ { return^ 42 }\n"
+             "let^ wrap = f^ -> number^ { inner() }\n"
+             "return^ wrap()\n");
+    CHECK_INTEGER(&r, 42);
+    run_dispose(&r);
+
+    // 8.2 again: beside another statement it is a call standing alone, which
+    // always meant "run this and drop what it answers".
+    LHAT_TEST("but beside another statement it drops what it answers");
+    run_text(&r,
+             "let^ log = { n := 0 }\n"
+             "let^ bump = f^ -> number^ { log.n := log.n + 1  return^ 9 }\n"
+             "let^ wrap = f^ -> number^ { bump()  return^ log.n }\n"
+             "return^ wrap()\n");
+    CHECK_INTEGER(&r, 1);
+    run_dispose(&r);
+
     LHAT_TEST("a call is an expression like any other");
     run_text(&r,
              "let^ one = f^ { return^ 1 }\n"

@@ -20,6 +20,12 @@ typedef struct {
     // being parsed, so the unit's own is 1 and anything nested is more.
     bool interactive;
     size_t depth;
+
+    // 15.12: the depth of the statement list a subroutine body owns, where a
+    // bare expression is read and the last one becomes the answer. Zero
+    // outside any body -- 8.2's rule holds everywhere else, nested blocks of
+    // the body included.
+    size_t bare_depth;
 } Parser;
 
 // Levels of 11.6, weakest first. A larger value binds tighter.
@@ -862,6 +868,55 @@ static LhatNode *parse_params(Parser *p)
     return head;
 }
 
+// 15.12: a function whose body is one expression answers with it, without a
+// return^ written. Whether the body is one statement shows only once the list
+// has ended, so a bare expression is read as an expression statement while
+// parsing and sorted out here.
+//
+// The narrow form on purpose. Anywhere it does not reach, 8.2 holds as it
+// did, and a call standing alone is untouched -- it was already a statement
+// and already meant "run this and drop what it answers". So nothing that
+// compiles today changes what it does.
+static void answer_with_body(Parser *p, LhatNode *body)
+{
+    if (body == NULL || body->kind != LHAT_NODE_BLOCK) {
+        return;
+    }
+
+    LhatNode *only = body->v.list.items;
+    if (only != NULL && only->next == NULL) {
+        // Whatever it computed is what the function answers with -- a call
+        // included. Telling a call that answers a value from one that does
+        // not is the checker's to do, and it does: 13.2 already refuses a f^
+        // whose body is one call, so this can only make a refused body work.
+        // Where the call answers nothing, 'return^ foo()' is refused in its
+        // turn, and says so better than falling out did.
+        if (only->kind == LHAT_NODE_CALL_STMT) {
+            only->kind = LHAT_NODE_RETURN;
+        }
+        return;
+    }
+
+    // More than one statement, so 8.2 holds and a bare expression was never
+    // allowed here. A call standing alone still is.
+    for (LhatNode *s = body->v.list.items; s != NULL; s = s->next) {
+        if (s->kind != LHAT_NODE_CALL_STMT ||
+            is_call_statement(s->v.jump.value)) {
+            continue;
+        }
+        LhatToken at;
+        memset(&at, 0, sizeof at);
+        // Anything but EOF: 3.1 reads that as input that stopped early, and
+        // this input did not.
+        at.kind = LHAT_TOKEN_IDENT;
+        at.offset = s->offset;
+        at.line = s->line;
+        at.column = s->column;
+        p->panicking = false;
+        report(p, &at, LHAT_PARSE_ERR_BARE_EXPRESSION);
+    }
+}
+
 static LhatNode *parse_function(Parser *p, bool is_function)
 {
     LhatToken start = p->current;
@@ -891,9 +946,20 @@ static LhatNode *parse_function(Parser *p, bool is_function)
 
     LhatToken brace = p->current;
     if (expect_op(p, LHAT_OP_LBRACE)) {
+        // 15.12: only a function, and only in this list -- not in a block
+        // nested inside it. 13.2 makes a f^ that falls out an error already,
+        // so this can only make a refused body work and never change one.
+        size_t enclosing_bare = p->bare_depth;
+        p->bare_depth = is_function ? p->depth + 1 : 0;
+
         // A subroutine body is not a loop, so 9.10's walk-only rules do not
         // apply to it either.
         node->v.func.body = parse_clause_body(p, &brace, false, false);
+
+        p->bare_depth = enclosing_bare;
+        if (is_function) {
+            answer_with_body(p, node->v.func.body);
+        }
         expect_op(p, LHAT_OP_RBRACE);
     }
 
@@ -2003,18 +2069,29 @@ static LhatNode *parse_if_statement(Parser *p, LhatToken start)
     return parse_if_body(p, start, parse_expression(p));
 }
 
+// Where a bare expression is read at all: the top of interactive input (8.2,
+// where 03 の 4.3 makes it the answer) and the body of a function (15.12,
+// where answer_with_body makes it the return^). Not in a block nested inside
+// either -- 8.1's reason holds there, and `bare_depth` is the list itself
+// rather than anything below it.
+static bool may_stand_alone(const Parser *p)
+{
+    return (p->interactive && p->depth == 1) ||
+           (p->bare_depth != 0 && p->depth == p->bare_depth);
+}
+
 // 8.2: an expression that has arrived where a statement belongs. A call may
-// stand alone anywhere; anything else may only at the top of interactive
-// input, where 03 の 4.3 makes it the value the input answers with. Reading
-// it as a return^ instead would stop what follows and would refuse a call of
-// a procedure that answers nothing.
+// stand alone anywhere; anything else only where the above says so. Reading
+// it as a return^ here instead would stop what follows and would refuse a
+// call of a procedure that answers nothing -- 15.12 turns the one that is
+// the whole of a function's body into one, once the body has ended.
 static LhatNode *expression_as_statement(Parser *p, LhatToken start,
                                          LhatNode *value)
 {
     if (value != NULL && value->kind == LHAT_NODE_ERROR) {
         return value;
     }
-    if (is_call_statement(value) || (p->interactive && p->depth == 1)) {
+    if (is_call_statement(value) || may_stand_alone(p)) {
         LhatNode *node = make(p, LHAT_NODE_CALL_STMT, &start);
         if (node == NULL) {
             return NULL;
@@ -2764,11 +2841,10 @@ static LhatNode *parse_statement(Parser *p)
         return head;
     }
 
-    // 8.2: at the top level of interactive input a bare expression is a
-    // statement -- being unable to work out 2 + 3 at a prompt is not an
-    // option.
-    if (p->interactive && p->depth == 1 && head != NULL &&
-        head->next == NULL) {
+    // 8.2: at the top level of interactive input, and 15.12 in the body of a
+    // function. Being unable to work out 2 + 3 at a prompt is not an option,
+    // and a function whose body is one expression answers with it.
+    if (head != NULL && head->next == NULL && may_stand_alone(p)) {
         return expression_as_statement(p, start, head);
     }
 

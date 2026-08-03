@@ -281,6 +281,63 @@ static void test_statements(void)
                       LHAT_PARSE_ERR_BARE_EXPRESSION);
     parse_dispose(&p);
 
+    // 15.12: a function whose body is one expression answers with it. Read as
+    // an expression statement while parsing, since whether the body is one
+    // statement shows only once it has ended, and turned into a return^ then.
+    LHAT_TEST("a function whose body is one expression answers with it");
+    parse_text(&p, "g := f^ -> number^ { 1 + 2 }");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    {
+        const LhatNode *body = first_value(&p)->v.func.body->v.list.items;
+        LHAT_CHECK_EQ_INT(body->kind, LHAT_NODE_RETURN);
+        LHAT_CHECK(is_binary(body->v.jump.value, LHAT_OP_ADD), "the expression");
+    }
+    parse_dispose(&p);
+
+    // Narrow on purpose: everywhere it does not reach, 8.2 holds as it did.
+    LHAT_TEST("but not when the body is more than one statement");
+    parse_text(&p, "g := f^ -> number^ { let^ x = 1  x + 1 }");
+    LHAT_CHECK(p.result.diagnostic_count > 0, "expected a diagnostic");
+    LHAT_CHECK_EQ_INT(p.result.diagnostics[0].code,
+                      LHAT_PARSE_ERR_BARE_EXPRESSION);
+    parse_dispose(&p);
+
+    LHAT_TEST("nor for a p^, which may answer nothing");
+    parse_text(&p, "g := p^ -> number^ { 1 + 2 }");
+    LHAT_CHECK(p.result.diagnostic_count > 0, "expected a diagnostic");
+    parse_dispose(&p);
+
+    LHAT_TEST("nor in a block nested inside the body");
+    parse_text(&p, "g := f^ -> number^ { do^{ 1 + 2 } }");
+    LHAT_CHECK(p.result.diagnostic_count > 0, "expected a diagnostic");
+    parse_dispose(&p);
+
+    // A call is the answer too when it is the whole body. Whether it answers
+    // anything is the checker's question, and 13.2 already refused a f^ whose
+    // body was one call -- so this can only make a refused body work.
+    LHAT_TEST("and a call that is the whole body is the answer");
+    parse_text(&p, "g := f^ -> number^ { foo() }");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    LHAT_CHECK_EQ_INT(first_value(&p)->v.func.body->v.list.items->kind,
+                      LHAT_NODE_RETURN);
+    parse_dispose(&p);
+
+    // With another statement beside it, it is a call standing alone again:
+    // that was always a statement and always meant "run this and drop it".
+    LHAT_TEST("but with a statement beside it, it is a call statement");
+    parse_text(&p, "g := f^ -> number^ { foo()  return^ 1 }");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    LHAT_CHECK_EQ_INT(first_value(&p)->v.func.body->v.list.items->kind,
+                      LHAT_NODE_CALL_STMT);
+    parse_dispose(&p);
+
+    LHAT_TEST("and a p^ body of one call still drops what it answers");
+    parse_text(&p, "g := p^ { foo() }");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    LHAT_CHECK_EQ_INT(first_value(&p)->v.func.body->v.list.items->kind,
+                      LHAT_NODE_CALL_STMT);
+    parse_dispose(&p);
+
     // 8.2 says the top level and nowhere else, so a block keeps the rule.
     LHAT_TEST("inside a block it is not, even interactively");
     parse_interactive_text(&p, "do^{ a + b }");
