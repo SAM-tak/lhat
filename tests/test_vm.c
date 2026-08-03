@@ -3587,6 +3587,84 @@ static void test_machine(void)
     // lives. The frame is the input, so a closure made in one input carries
     // what it captured away with it -- a later input writing that name over
     // does not reach into what the closure took.
+    // 02 の 14.2 and 04 の 2.4: what a def^ composes onto and what an
+    // errordef^ declared are worked out while compiling and never reach the
+    // machine, so an input that needs them needs what an earlier one found.
+    LHAT_TEST("a def^ from an earlier input can be composed onto");
+    {
+        LhatMachine *m = lhat_machine_new();
+        LhatCompileSession *s = lhat_compile_session_new();
+        Run one, two, three;
+        compile_next_text(&one, s, "let^ A = def^{ self^{ x = 1 } }\n");
+        compile_next_text(&two, s,
+                          "let^ B = A .. def^{ bar := f^self^ -> number^ "
+                          "{ return^ 2 } }\n");
+        compile_next_text(&three, s,
+                          "let^ b = B.new^()\n"
+                          "return^ b.x * 10 + b.bar()\n");
+        LHAT_CHECK_EQ_INT(one.compiled, LHAT_COMPILE_OK);
+        LHAT_CHECK_EQ_INT(two.compiled, LHAT_COMPILE_OK);
+        LHAT_CHECK_EQ_INT(three.compiled, LHAT_COMPILE_OK);
+        lhat_run(m, one.proto);
+        lhat_run(m, two.proto);
+        // 12 is the field from the first input and the method from the
+        // second: a node read through the wrong input's lexer would name a
+        // different field and answer nil^.
+        LHAT_CHECK_EQ_INT(lhat_as_integer(lhat_run(m, three.proto).value), 12);
+        lhat_machine_dispose(m);
+        lhat_compile_session_dispose(s);
+        compiled_dispose(&one);
+        compiled_dispose(&two);
+        compiled_dispose(&three);
+    }
+
+    LHAT_TEST("and an errordef^ from an earlier input is still declared");
+    {
+        LhatMachine *m = lhat_machine_new();
+        LhatCompileSession *s = lhat_compile_session_new();
+        Run one, two;
+        compile_next_text(&one, s, "errordef^ E { Bad, Worse }\n");
+        compile_next_text(&two, s,
+                          "let^ e = error^ E.Worse { }\n"
+                          "if^ e is^ E.Worse { return^ 1 }\n"
+                          "return^ 0\n");
+        LHAT_CHECK_EQ_INT(one.compiled, LHAT_COMPILE_OK);
+        LHAT_CHECK_EQ_INT(two.compiled, LHAT_COMPILE_OK);
+        lhat_run(m, one.proto);
+        // The second kind, so a lookup reading the declaration through this
+        // input's lexer would not find it by name at all.
+        LHAT_CHECK_EQ_INT(lhat_as_integer(lhat_run(m, two.proto).value), 1);
+        lhat_machine_dispose(m);
+        lhat_compile_session_dispose(s);
+        compiled_dispose(&one);
+        compiled_dispose(&two);
+    }
+
+    LHAT_TEST("and an overload^ added in a later input is callable");
+    {
+        LhatMachine *m = lhat_machine_new();
+        LhatCompileSession *s = lhat_compile_session_new();
+        Run one, two, three;
+        compile_next_text(&one, s,
+                          "let^ Foo = def^{ self^{}, "
+                          "foo := f^self^ -> number^ { return^ 1 } }\n");
+        compile_next_text(&two, s,
+                          "let^ Bar = Foo .. def^{ overload^ "
+                          "foo := f^self^, s:string^ -> number^ "
+                          "{ return^ 2 } }\n");
+        compile_next_text(&three, s,
+                          "let^ b = Bar.new^()\n"
+                          "return^ b.foo() * 10 + b.foo(\"x\")\n");
+        lhat_run(m, one.proto);
+        lhat_run(m, two.proto);
+        LHAT_CHECK_EQ_INT(lhat_as_integer(lhat_run(m, three.proto).value), 12);
+        lhat_machine_dispose(m);
+        lhat_compile_session_dispose(s);
+        compiled_dispose(&one);
+        compiled_dispose(&two);
+        compiled_dispose(&three);
+    }
+
     LHAT_TEST("a closure keeps what it captured when its input ended");
     {
         LhatMachine *m = lhat_machine_new();

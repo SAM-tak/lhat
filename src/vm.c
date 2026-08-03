@@ -39,6 +39,11 @@ typedef struct {
 
 typedef struct DefChain {
     const LhatNode *parts[LHAT_MAX_DEF_CHAIN];  // base first, derived last
+    // 03 の 4.3: a node carries an offset into the text it was read from, so
+    // reading one through another input's lexer answers a different word.
+    // A chain may cross inputs -- 'A .. def^{ … }' where A came from an
+    // earlier one -- so the lexer belongs to the part and not to the chain.
+    const LhatLexer *lexers[LHAT_MAX_DEF_CHAIN];
     size_t count;
 } DefChain;
 
@@ -106,6 +111,9 @@ typedef struct ErrorDecl {
     const char *name;
     size_t length;
     const LhatNode *node;         // the errordef^, for the field defaults
+    // 03 の 4.3: read the node through the lexer it came from. An earlier
+    // input of a session is still where its offsets mean something.
+    const LhatLexer *lexer;
     const LhatErrorKind *group;   // stands for the whole declaration
     const LhatErrorKind **kinds;  // one per kind, in declaration order
     size_t kind_count;
@@ -368,6 +376,7 @@ static void declare_error(Compiler *c, const LhatNode *node)
     decl->name = name;
     decl->length = length;
     decl->node = node;
+    decl->lexer = c->lexer;
     decl->group = group;
     decl->kinds = kinds;
     decl->kind_count = kind_count;
@@ -420,12 +429,17 @@ static const LhatErrorKind *resolve_kind(Compiler *c, const LhatNode *path,
     if (!node_name(c, member, &wanted, &wanted_length)) {
         return NULL;
     }
+    // The declaration may be an earlier input's, and its offsets index that
+    // input's text rather than this one's.
+    Compiler reading = *c;
+    reading.lexer = decl->lexer;
+
     size_t index = 0;
     for (const LhatNode *k = decl->node->v.named.members; k != NULL;
          k = k->next, index++) {
         const char *kind_name = NULL;
         size_t kind_length = 0;
-        if (node_name(c, k->v.named.name, &kind_name, &kind_length) &&
+        if (node_name(&reading, k->v.named.name, &kind_name, &kind_length) &&
             kind_length == wanted_length &&
             memcmp(kind_name, wanted, wanted_length) == 0) {
             *kind_node = k;
@@ -844,6 +858,7 @@ static bool def_chain_of(Compiler *c, const LhatNode *node, DefChain *out)
         if (out->count >= LHAT_MAX_DEF_CHAIN) {
             return false;
         }
+        out->lexers[out->count] = c->lexer;
         out->parts[out->count++] = node;
         return true;
     }
@@ -867,6 +882,7 @@ static bool def_chain_of(Compiler *c, const LhatNode *node, DefChain *out)
         if (out->count >= LHAT_MAX_DEF_CHAIN) {
             return false;
         }
+        out->lexers[out->count] = decl->chain.lexers[i];
         out->parts[out->count++] = decl->chain.parts[i];
     }
     return true;
@@ -1001,6 +1017,10 @@ static void compile_self_table(Compiler *c, const LhatNode *node, uint8_t into)
         if (fields == NULL) {
             continue;
         }
+        // The part may have been read from an earlier input, and its offsets
+        // mean nothing against this one's text.
+        const LhatLexer *enclosing_lexer = c->lexer;
+        c->lexer = chain->lexers[i];
         for (const LhatNode *field = fields->v.list.items; field != NULL;
              field = field->next) {
             const char *name = NULL;
@@ -1021,6 +1041,7 @@ static void compile_self_table(Compiler *c, const LhatNode *node, uint8_t into)
             emit(c, lhat_encode_abc(LHAT_BC_SETINDEX, into, key, value));
             c->next_register = at;
         }
+        c->lexer = enclosing_lexer;
     }
 }
 
@@ -1060,6 +1081,10 @@ static void compile_def(Compiler *c, const LhatNode *node, uint8_t into)
 
     bool has_new = false;
     for (size_t i = 0; i < chain.count; i++) {
+        // 03 の 4.3: a part read from an earlier input carries offsets into
+        // that input's text, so the lexer travels with it.
+        const LhatLexer *enclosing_lexer = c->lexer;
+        c->lexer = chain.lexers[i];
         for (const LhatNode *entry = chain.parts[i]->v.list.items;
              entry != NULL; entry = entry->next) {
             if (entry->v.entry.key == NULL) {
@@ -1089,6 +1114,7 @@ static void compile_def(Compiler *c, const LhatNode *node, uint8_t into)
                                     into, key, value));
             c->next_register = at;
         }
+        c->lexer = enclosing_lexer;
     }
 
     // 14.11: without a new^ of its own, a definition gets one that takes no
@@ -2824,6 +2850,22 @@ struct LhatCompileSession {
     } names[LHAT_MAX_LOCALS];
     size_t count;
     uint8_t next_register;
+
+    // 14.2 and 04 の 2.4: what a def^ composes onto and what an errordef^
+    // declared are worked out while compiling and never reach the machine, so
+    // an input that needs them needs what an earlier one found.
+    //
+    // Both point into the input that made them -- a DefChain at its syntax
+    // tree, an ErrorDecl at the kind objects on its proto -- so a session's
+    // inputs have to outlive it. The tree was already needed for that reason;
+    // this only makes the requirement reach further back.
+    struct DefDecl *defs;
+    size_t def_count;
+    size_t def_capacity;
+
+    struct ErrorDecl *errors;
+    size_t error_count;
+    size_t error_capacity;
 };
 
 LhatCompileSession *lhat_compile_session_new(void)
@@ -2839,6 +2881,12 @@ void lhat_compile_session_dispose(LhatCompileSession *session)
     for (size_t i = 0; i < session->count; i++) {
         lhat_free(session->names[i].name);
     }
+    // The kind objects belong to the protos; only the lists of them are ours.
+    for (size_t i = 0; i < session->error_count; i++) {
+        lhat_free((void *)session->errors[i].kinds);
+    }
+    lhat_free(session->errors);
+    lhat_free(session->defs);
     lhat_free(session);
 }
 
@@ -3086,6 +3134,22 @@ static LhatCompileStatus compile_unit(LhatCompileSession *session,
         if (proto->chunk.registers < session->next_register) {
             proto->chunk.registers = session->next_register;
         }
+
+        // 14.2 and 04 の 2.4: taken over rather than copied. What the entries
+        // point at belongs to the input that made it, which the session keeps
+        // -- so the session hands the arrays across and this input grows them.
+        c.defs = session->defs;
+        c.def_count = session->def_count;
+        c.def_capacity = session->def_capacity;
+        c.errors = session->errors;
+        c.error_count = session->error_count;
+        c.error_capacity = session->error_capacity;
+        session->defs = NULL;
+        session->def_count = 0;
+        session->def_capacity = 0;
+        session->errors = NULL;
+        session->error_count = 0;
+        session->error_capacity = 0;
     }
 
     c.units = units;
@@ -3116,13 +3180,23 @@ static LhatCompileStatus compile_unit(LhatCompileSession *session,
     }
     emit(&c, lhat_encode_abc(LHAT_BC_RETURN_NIL, 0, 0, 0));
 
-    // The registry was the compiler's; the kind objects it points at belong
-    // to the chunk and stay.
-    for (size_t i = 0; i < c.error_count; i++) {
-        lhat_free((void *)c.errors[i].kinds);
+    // A session hands the registries back so the next input has them; without
+    // one they were the compiler's, and the kind objects they point at belong
+    // to the chunk and stay either way.
+    if (session != NULL && status == LHAT_COMPILE_OK) {
+        session->defs = c.defs;
+        session->def_count = c.def_count;
+        session->def_capacity = c.def_capacity;
+        session->errors = c.errors;
+        session->error_count = c.error_count;
+        session->error_capacity = c.error_capacity;
+    } else {
+        for (size_t i = 0; i < c.error_count; i++) {
+            lhat_free((void *)c.errors[i].kinds);
+        }
+        lhat_free(c.errors);
+        lhat_free(c.defs);
     }
-    lhat_free(c.errors);
-    lhat_free(c.defs);
 
     if (status != LHAT_COMPILE_OK) {
         lhat_proto_free(proto);
