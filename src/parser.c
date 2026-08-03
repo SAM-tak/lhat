@@ -609,6 +609,30 @@ static LhatNode *parse_brace_entries(Parser *p, bool require_key)
             break;
         }
 
+        // 14.15: a field the composition has to provide, written with its
+        // type. Only a template has one -- a table literal makes a value,
+        // and there is nothing there for a declaration to wait for.
+        if (require_key && check_hat(p, "abstract")) {
+            LhatToken at_marker = p->current;
+            advance(p);
+            entry->v.entry.declared = true;
+            if (p->current.kind != LHAT_TOKEN_IDENT &&
+                p->current.kind != LHAT_TOKEN_NAME_LITERAL &&
+                p->current.kind != LHAT_TOKEN_HAT_IDENT) {
+                report(p, &at_marker, LHAT_PARSE_ERR_FIELD_NEEDS_NAME);
+                break;
+            }
+            entry->v.entry.key = simple_node(p);
+            if (expect_op(p, LHAT_OP_COLON)) {
+                entry->v.entry.value = parse_type(p);
+            }
+            lhat_node_append(&head, &tail, entry);
+            if (!match_op(p, LHAT_OP_COMMA)) {
+                break;
+            }
+            continue;
+        }
+
         // 14.6改: an entry names a member that was not there, and 8.6 spells
         // that '='. ':=' is the older spelling and still reads.
         //
@@ -771,6 +795,10 @@ static LhatNode *parse_def(Parser *p)
             modifier = LHAT_DEF_OVERRIDE;
         } else if (match_hat(p, "overload")) {
             modifier = LHAT_DEF_OVERLOAD;
+        } else if (match_hat(p, "abstract")) {
+            // 14.15: a third marker in the same place, since what it says is
+            // about the member as a whole the way the other two are.
+            modifier = LHAT_DEF_ABSTRACT;
         }
 
         LhatNode *entry = make(p, LHAT_NODE_TABLE_ENTRY, &at);
@@ -828,7 +856,15 @@ static LhatNode *parse_def(Parser *p)
                    p->current.kind == LHAT_TOKEN_NAME_LITERAL ||
                    p->current.kind == LHAT_TOKEN_HAT_IDENT) {
             entry->v.entry.key = simple_node(p);
-            if (expect_op(p, LHAT_OP_DEFINE)) {
+            // 14.15: an abstract^ member is written with its type, since
+            // there is no value to read it from. 14.10 spells a member's
+            // type the same way, so the two agree.
+            if (modifier == LHAT_DEF_ABSTRACT) {
+                entry->v.entry.declared = true;
+                if (expect_op(p, LHAT_OP_COLON)) {
+                    entry->v.entry.value = parse_type(p);
+                }
+            } else if (expect_op(p, LHAT_OP_DEFINE)) {
                 entry->v.entry.value = parse_expression(p);
             }
         } else {

@@ -1005,6 +1005,11 @@ static void compile_self_table(Compiler *c, const LhatNode *node, uint8_t into)
          entry = entry->next) {
         const char *name = NULL;
         size_t length = 0;
+        // 14.15: a field left for the composition to fill has no initializer
+        // to run. Whichever part provides it writes one here instead.
+        if (entry->v.entry.declared) {
+            continue;
+        }
         if (entry->v.entry.key == NULL ||
             !node_name(c, entry->v.entry.key, &name, &length)) {
             fail(c, LHAT_COMPILE_UNSUPPORTED);
@@ -1035,6 +1040,11 @@ static void compile_self_table(Compiler *c, const LhatNode *node, uint8_t into)
              field = field->next) {
             const char *name = NULL;
             size_t length = 0;
+            // 14.15: nothing to initialise, and a later part of the chain
+            // carries the one that does.
+            if (field->v.entry.declared) {
+                continue;
+            }
             if (field->v.entry.key == NULL ||
                 !node_name(c, field->v.entry.key, &name, &length)) {
                 fail(c, LHAT_COMPILE_UNSUPPORTED);
@@ -1099,6 +1109,11 @@ static void compile_def(Compiler *c, const LhatNode *node, uint8_t into)
              entry != NULL; entry = entry->next) {
             if (entry->v.entry.key == NULL) {
                 continue;  // the template; 14.11 handles it at construction
+            }
+            // 14.15: a declaration carries a type and no value, so there is
+            // nothing to write. What fills it comes from a later part.
+            if (entry->v.entry.declared) {
+                continue;
             }
             const char *name = NULL;
             size_t length = 0;

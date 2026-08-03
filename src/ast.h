@@ -113,7 +113,8 @@ typedef enum {
 typedef enum {
     LHAT_DEF_PLAIN,
     LHAT_DEF_OVERRIDE,
-    LHAT_DEF_OVERLOAD
+    LHAT_DEF_OVERLOAD,
+    LHAT_DEF_ABSTRACT  // 14.15: declared, and left for a composition to give
 } LhatDefModifier;
 
 // 9.2, in the order they must be written -- which is also the order they run
@@ -233,6 +234,11 @@ struct LhatNode {
             // 14.6改: the key was written '[ ... ]', so it is an expression
             // rather than the name it would otherwise be read as.
             bool computed;
+            // 14.15: written 'abstract^ name : type', so `value` is a type
+            // and the definition provides nothing under the name. What is
+            // composed onto it has to. Set on a template field too, where
+            // 14.12's modifier has no place.
+            bool declared;
         } entry;
 
         // DEFINE / REASSIGN take a list of targets and a list of values;

@@ -1466,6 +1466,98 @@ static void test_composition(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
+    // 14.15: abstract^ declares a member and leaves it for the composition,
+    // which is what lets a mixin call something it does not itself provide.
+    LHAT_TEST("abstract^ is filled in by a composition");
+    check_text(&u,
+               "let^ Counting = def^{\n"
+               "    self^{ count := 0 },\n"
+               "    abstract^ step : f^ -> number^;,\n"
+               "    bump := p^self^ { self^.count := self^.count + class^.step() },\n"
+               "}\n"
+               "let^ Fast = Counting .. def^{\n"
+               "    self^{},\n"
+               "    step := f^ -> number^ { return^ 10 },\n"
+               "}\n"
+               "let^ o = Fast.new^()\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // 14.11: an instance carries a value under every name, so one still only
+    // declared has nothing to make.
+    LHAT_TEST("and a definition still holding one cannot be instantiated");
+    check_text(&u,
+               "let^ Counting = def^{ self^{}, abstract^ step : f^ -> number^; }\n"
+               "let^ o = Counting.new^()\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_STILL_ABSTRACT);
+    unit_dispose(&u);
+
+    // A declaration is not a definition of the member, so filling it in is
+    // not 14.12's collision and wants no marker.
+    LHAT_TEST("filling an abstract^ in needs no marker");
+    check_text(&u,
+               "let^ A = def^{ self^{}, abstract^ m : f^ -> number^; }\n"
+               "let^ B = A .. def^{ self^{},\n"
+               "  m := f^ -> number^ { return^ 1 } }\n"
+               "let^ o = B.new^()\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("and refuses one, since nothing was replaced");
+    check_text(&u,
+               "let^ A = def^{ self^{}, abstract^ m : f^ -> number^; }\n"
+               "let^ B = A .. def^{ self^{},\n"
+               "  override^ m := f^ -> number^ { return^ 1 } }\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_NOTHING_TO_OVERRIDE);
+    unit_dispose(&u);
+
+    // What the declaration does ask is that the value fit the type it wrote.
+    LHAT_TEST("what fills an abstract^ has to fit the type it declared");
+    check_text(&u,
+               "let^ A = def^{ self^{}, abstract^ m : f^ -> number^; }\n"
+               "let^ B = A .. def^{ self^{},\n"
+               "  m := f^ -> string^ { return^ \"x\" } }\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
+    unit_dispose(&u);
+
+    LHAT_TEST("declaring what is already provided is reported");
+    check_text(&u,
+               "let^ A = def^{ self^{}, m := f^ -> number^ { return^ 1 } }\n"
+               "let^ B = A .. def^{ self^{}, abstract^ m : f^ -> number^; }\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_ALREADY_PROVIDED);
+    unit_dispose(&u);
+
+    // 14.6: the template takes one too, which is what lets a mixin reach a
+    // field through self^ without owning it.
+    LHAT_TEST("a template field may be abstract^ as well");
+    check_text(&u,
+               "let^ Greet = def^{\n"
+               "    self^{ abstract^ n : number^ },\n"
+               "    hello := f^self^ -> number^ { return^ self^.n + 1 },\n"
+               "}\n"
+               "let^ Thing = Greet .. def^{ self^{ n := 10 } }\n"
+               "let^ r : number^ = Thing.new^().hello()\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("and one left unfilled stops the construction too");
+    check_text(&u,
+               "let^ Greet = def^{ self^{ abstract^ n : number^ } }\n"
+               "let^ o = Greet.new^()\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_STILL_ABSTRACT);
+    unit_dispose(&u);
+
+    // 14.5: the two sides of a composition by name pair up the same way --
+    // one declaring what the other provides is the point, not a collision.
+    LHAT_TEST("a declaration and a definition compose by name");
+    check_text(&u,
+               "let^ Need = def^{ self^{}, abstract^ m : f^ -> number^; }\n"
+               "let^ Give = def^{ self^{}, m := f^ -> number^ { return^ 7 } }\n"
+               "let^ D = Need .. Give\n"
+               "let^ r : number^ = D.new^().m()\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
     // 14.11 gives every definition a new^ whether or not one was written, so
     // the two always carry that name. It is rebuilt rather than collided.
     LHAT_TEST("the synthesised new^ is not a collision");

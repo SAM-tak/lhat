@@ -306,6 +306,7 @@ static LhatType *infer_def(Checker *c, const LhatNode *node, LhatType *base);
 static LhatType *compose_definitions(Checker *c, const LhatNode *node,
                                      LhatType *left, LhatType *right);
 static LhatType *instance_of(const LhatType *definition);
+static const LhatTypeMember *unimplemented_member(const LhatType *definition);
 static const LhatTypeMember *find_member(const LhatType *table, const char *name,
                                          size_t length);
 static LhatType *only(Checker *c, LhatType *type, LhatType *wanted);
@@ -1324,6 +1325,25 @@ static LhatType *infer_call(Checker *c, const LhatNode *node)
         return simple(c, LHAT_TYPE_UNKNOWN);
     }
 
+    // 14.15: an instance carries a value under every name its definition
+    // holds, so one still only declared has nothing to make. Reported where
+    // the construction is written, which is what the writer has to change.
+    if (node->v.access.target != NULL &&
+        node->v.access.target->kind == LHAT_NODE_MEMBER) {
+        const char *called = NULL;
+        size_t called_length = 0;
+        if (node_name(c, node->v.access.target->v.access.argument, &called,
+                      &called_length) &&
+            name_is(called, called_length, "new")) {
+            LhatType *owner = infer(c, node->v.access.target->v.access.target);
+            const LhatTypeMember *hole = unimplemented_member(owner);
+            if (hole != NULL) {
+                report_named(c, node, LHAT_CHECK_ERR_STILL_ABSTRACT, hole->name,
+                             hole->name_length);
+            }
+        }
+    }
+
     const LhatTypeList *param = callee->v.func.params;
 
     size_t declared = 0;
@@ -1818,16 +1838,58 @@ static LhatType *instance_of(const LhatType *definition)
 
 // Overwrites rather than appending, so a member the base already had ends up
 // replaced by 14.12's override^ instead of shadowed by position.
-static void set_member(Checker *c, LhatType *table, const char *name,
-                       size_t length, LhatType *type)
+//
+// 14.15: `abstract` travels with the type, so writing over a declaration with
+// a real one is what fills the hole -- and writing a declaration over a
+// declaration leaves it open.
+static void set_member_as(Checker *c, LhatType *table, const char *name,
+                          size_t length, LhatType *type, bool abstract)
 {
     for (LhatTypeMember *m = table->v.table.members; m != NULL; m = m->next) {
         if (m->name_length == length && memcmp(m->name, name, length) == 0) {
             m->type = type;
+            m->abstract = abstract;
             return;
         }
     }
-    lhat_type_add_member(c->result->types, table, name, length, type);
+    LhatTypeMember *added = lhat_type_add_member(c->result->types, table, name,
+                                                 length, type);
+    if (added != NULL) {
+        added->abstract = abstract;
+    }
+}
+
+static void set_member(Checker *c, LhatType *table, const char *name,
+                       size_t length, LhatType *type)
+{
+    set_member_as(c, table, name, length, type, false);
+}
+
+// 14.15: whether anything the definition declares is still only declared.
+// 14.11's new^ is what this stands in the way of -- an instance would carry
+// a name with nothing under it.
+static const LhatTypeMember *unimplemented_member(const LhatType *definition)
+{
+    if (definition == NULL || definition->kind != LHAT_TYPE_TABLE) {
+        return NULL;
+    }
+    for (const LhatTypeMember *m = definition->v.table.members; m != NULL;
+         m = m->next) {
+        if (m->abstract) {
+            return m;
+        }
+    }
+    const LhatType *instance = instance_of(definition);
+    if (instance == NULL || instance->kind != LHAT_TYPE_TABLE) {
+        return NULL;
+    }
+    for (const LhatTypeMember *m = instance->v.table.members; m != NULL;
+         m = m->next) {
+        if (m->abstract) {
+            return m;
+        }
+    }
+    return NULL;
 }
 
 static void copy_members(Checker *c, LhatType *into, const LhatType *from)
@@ -1837,8 +1899,9 @@ static void copy_members(Checker *c, LhatType *into, const LhatType *from)
     }
     for (const LhatTypeMember *m = from->v.table.members; m != NULL;
          m = m->next) {
-        lhat_type_add_member(c->result->types, into, m->name, m->name_length,
-                             m->type);
+        // 14.15: a hole in the base is a hole in what is composed onto it
+        // until something fills it.
+        set_member_as(c, into, m->name, m->name_length, m->type, m->abstract);
     }
 }
 
@@ -1963,6 +2026,18 @@ static LhatType *check_same_name(Checker *c, const LhatNode *entry,
         return replacement;
     }
 
+    // 14.15: a declaration is not a definition of the member, so filling it
+    // in is not the collision 14.12 is about -- no marker is wanted. What the
+    // declaration does ask is that the value fit the type it wrote.
+    if (inherited->abstract) {
+        if (modifier != LHAT_DEF_PLAIN) {
+            report(c, entry, LHAT_CHECK_ERR_NOTHING_TO_OVERRIDE);
+        } else if (!lhat_type_conforms(replacement, inherited->type)) {
+            report(c, entry, LHAT_CHECK_ERR_MISMATCH);
+        }
+        return replacement;
+    }
+
     switch (modifier) {
         case LHAT_DEF_PLAIN:
             report(c, entry, LHAT_CHECK_ERR_MEMBER_EXISTS);
@@ -2019,12 +2094,14 @@ static LhatType *compose_definitions(Checker *c, const LhatNode *node,
         if (name_is(m->name, m->name_length, "new")) {
             continue;
         }
-        set_member(c, definition, m->name, m->name_length, m->type);
+        set_member_as(c, definition, m->name, m->name_length, m->type,
+                      m->abstract);
     }
     if (left_instance != NULL) {
         for (const LhatTypeMember *m = left_instance->v.table.members;
              m != NULL; m = m->next) {
-            set_member(c, instance, m->name, m->name_length, m->type);
+            set_member_as(c, instance, m->name, m->name_length, m->type,
+                          m->abstract);
         }
     }
 
@@ -2033,21 +2110,39 @@ static LhatType *compose_definitions(Checker *c, const LhatNode *node,
         if (name_is(m->name, m->name_length, "new")) {
             continue;
         }
-        if (find_member(definition, m->name, m->name_length) != NULL) {
+        // 14.15: one side declaring what the other provides is the pairing
+        // the declaration exists for, and neither order is a collision. What
+        // is provided wins; the hole stays open only while both leave it so.
+        const LhatTypeMember *held =
+            find_member(definition, m->name, m->name_length);
+        if (held != NULL && (held->abstract || m->abstract)) {
+            if (m->abstract) {
+                continue;  // what is already there is the better answer
+            }
+        } else if (held != NULL) {
             report(c, node, LHAT_CHECK_ERR_COMPOSE_COLLIDES);
         }
-        set_member(c, definition, m->name, m->name_length, m->type);
+        set_member_as(c, definition, m->name, m->name_length, m->type,
+                      m->abstract);
     }
     if (right_instance != NULL) {
         for (const LhatTypeMember *m = right_instance->v.table.members;
              m != NULL; m = m->next) {
-            // A method sits in both tables (14.7), so the definition side has
-            // reported it already. Only a field of the template is new here.
-            if (find_member(definition, m->name, m->name_length) == NULL &&
-                find_member(instance, m->name, m->name_length) != NULL) {
+            const LhatTypeMember *held =
+                find_member(instance, m->name, m->name_length);
+            if (held != NULL && (held->abstract || m->abstract)) {
+                if (m->abstract) {
+                    continue;
+                }
+            } else if (held != NULL &&
+                       find_member(definition, m->name, m->name_length) ==
+                           NULL) {
+                // A method sits in both tables (14.7), so the definition side
+                // reported it already. Only a field is new here.
                 report(c, node, LHAT_CHECK_ERR_COMPOSE_COLLIDES);
             }
-            set_member(c, instance, m->name, m->name_length, m->type);
+            set_member_as(c, instance, m->name, m->name_length, m->type,
+                          m->abstract);
         }
     }
 
@@ -2106,6 +2201,13 @@ static LhatType *infer_def(Checker *c, const LhatNode *node, LhatType *base)
             if (!node_name(c, field->v.entry.key, &name, &length)) {
                 continue;
             }
+            // 14.15: a field the composition has to provide carries its type
+            // and no value. 14.11 would otherwise want an initializer here.
+            if (field->v.entry.declared) {
+                set_member_as(c, instance, name, length,
+                              resolve_type(c, field->v.entry.value), true);
+                continue;
+            }
             // 14.11: an initializer, evaluated at each construction. Its type
             // is what the field holds.
             set_member(c, instance, name, length,
@@ -2140,11 +2242,26 @@ static LhatType *infer_def(Checker *c, const LhatNode *node, LhatType *base)
             !node_name(c, entry->v.entry.key, &name, &length)) {
             continue;
         }
+        const LhatTypeMember *hidden = find_member(definition, name, length);
+
+        // 14.15: a declaration carries a type and no value, and says the
+        // composition has to provide the member. It is not a definition of
+        // it, so 14.12 has nothing to check here.
+        if (entry->v.entry.declared) {
+            LhatType *declared = resolve_type(c, entry->v.entry.value);
+            if (hidden != NULL && !hidden->abstract) {
+                // Already provided, so the declaration asks for nothing.
+                report(c, entry, LHAT_CHECK_ERR_ALREADY_PROVIDED);
+            }
+            set_member_as(c, definition, name, length, declared, true);
+            set_member_as(c, instance, name, length, declared, true);
+            continue;
+        }
+
         // 14.12改: super^ is a name only inside an override^, and what it
         // names is everything that was under this name -- the whole
         // intersection when 14.12's overload^ put several there, since the
         // write replaces the member as a whole.
-        const LhatTypeMember *hidden = find_member(definition, name, length);
         LhatType *outer_super = c->super_type;
         if (entry->v.entry.modifier == LHAT_DEF_OVERRIDE && hidden != NULL) {
             c->super_type = hidden->type;
@@ -3996,6 +4113,12 @@ const char *lhat_check_error_message(LhatCheckErrorCode code)
             return "any^ holds of every value, so this asks nothing";
         case LHAT_CHECK_ERR_MEMBER_EXISTS:
             return "this name is already a member; write override^ or overload^";
+        case LHAT_CHECK_ERR_ALREADY_PROVIDED:
+            return "something in the chain already provides this member, so "
+                   "there is nothing for an abstract^ to ask for";
+        case LHAT_CHECK_ERR_STILL_ABSTRACT:
+            return "this definition declares a member that nothing has "
+                   "provided, so there is no instance of it to make";
         case LHAT_CHECK_ERR_COMPOSE_COLLIDES:
             return "both definitions carry a member of this name, and a "
                    "marker can only be written inside a def^";

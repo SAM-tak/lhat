@@ -2381,6 +2381,38 @@ static void test_definitions(void)
     CHECK_INTEGER(&r, 101);
     run_dispose(&r);
 
+    // 14.15: a declaration puts nothing in the table, and what a composition
+    // provides goes under the same name. The mixin's own body reaches it.
+    LHAT_TEST("what fills an abstract^ is what the mixin calls");
+    run_text(&r,
+             "let^ Counting = def^{\n"
+             "  self^{ count := 0 },\n"
+             "  abstract^ step : f^ -> number^;,\n"
+             "  bump := p^self^ { self^.count := self^.count + class^.step() },\n"
+             "}\n"
+             "let^ Fast = Counting .. def^{\n"
+             "  self^{},\n"
+             "  step := f^ -> number^ { return^ 10 },\n"
+             "}\n"
+             "let^ o = Fast.new^()\n"
+             "o.bump()\n"
+             "return^ o.count\n");
+    CHECK_INTEGER(&r, 10);
+    run_dispose(&r);
+
+    // 14.6: a declared field has no initialiser to run, so the one that fills
+    // it is the only one the construction sees.
+    LHAT_TEST("an abstract^ field is initialised by what fills it");
+    run_text(&r,
+             "let^ Greet = def^{\n"
+             "  self^{ abstract^ n : number^ },\n"
+             "  hello := f^self^ -> number^ { return^ self^.n + 1 },\n"
+             "}\n"
+             "let^ Thing = Greet .. def^{ self^{ n := 10 } }\n"
+             "return^ Thing.new^().hello()\n");
+    CHECK_INTEGER(&r, 11);
+    run_dispose(&r);
+
     // 14.2: the chain is settled at the definition, so an instance made
     // before a later definition is unaffected by it.
     LHAT_TEST("two definitions of the same shape stay separate");

@@ -52,6 +52,10 @@ typedef enum {
 
     LHAT_CHECK_ERR_MEMBER_EXISTS,       // 14.12: same name, no marker
     LHAT_CHECK_ERR_COMPOSE_COLLIDES,    // 14.5: and no marker can be written
+    LHAT_CHECK_ERR_STILL_ABSTRACT,      // 14.15: new^ on a definition with a
+                                        // member nothing has provided yet
+    LHAT_CHECK_ERR_ALREADY_PROVIDED,    // 14.15: abstract^ over a member that
+                                        // something in the chain provides
     LHAT_CHECK_ERR_NOTHING_TO_OVERRIDE, // a marker with nothing under it
     LHAT_CHECK_ERR_NOT_SUBSTITUTABLE,   // 14.12: override^ has to fit
     LHAT_CHECK_ERR_OVERLOAD_OVERLAPS,   // 14.12: signatures must stay apart

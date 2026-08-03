@@ -62,6 +62,11 @@ typedef struct LhatTypeMember {
     // differing only there are still the same shape -- so nothing in the
     // relations reads this.
     bool optional;
+    // 02 の 14.15: declared by an abstract^ and not yet provided. The shape
+    // is the same either way -- what a caller may ask of the member does not
+    // change -- so the relations do not read this. 14.11's new^ does: a
+    // definition still holding one cannot be instantiated.
+    bool abstract;
     struct LhatTypeMember *next;
 } LhatTypeMember;
 
