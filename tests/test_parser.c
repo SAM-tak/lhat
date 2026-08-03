@@ -218,6 +218,34 @@ static void test_statements(void)
     LHAT_CHECK_EQ_INT(first_statement(&p)->kind, LHAT_NODE_CALL_STMT);
     parse_dispose(&p);
 
+    // 5.1: '{' opens the statement form of if^ and ':' the expression one,
+    // which shows only after the condition. So the expression form reaches a
+    // statement position and answers to 8.2 there like any other expression,
+    // rather than being refused for wanting a brace.
+    LHAT_TEST("the expression form of if^ stands where a statement does");
+    parse_interactive_text(&p, "if^ true^: 1 el^: 2;");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    {
+        const LhatNode *s = first_statement(&p);
+        LHAT_CHECK_EQ_INT(s->kind, LHAT_NODE_CALL_STMT);
+        LHAT_CHECK_EQ_INT(s->v.jump.value->kind, LHAT_NODE_IF_EXPR);
+    }
+    parse_dispose(&p);
+
+    LHAT_TEST("and the statement form is still the statement form");
+    parse_interactive_text(&p, "if^ true^ { x := 1 }");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    LHAT_CHECK_EQ_INT(first_statement(&p)->kind, LHAT_NODE_IF_STMT);
+    parse_dispose(&p);
+
+    // In a file 8.2 holds as it always did: the writer meant braces.
+    LHAT_TEST("but in a file the expression form is not a statement");
+    parse_text(&p, "if^ true^: 1 el^: 2;");
+    LHAT_CHECK(p.result.diagnostic_count > 0, "expected a diagnostic");
+    LHAT_CHECK_EQ_INT(p.result.diagnostics[0].code,
+                      LHAT_PARSE_ERR_BARE_EXPRESSION);
+    parse_dispose(&p);
+
     // 8.2 says the top level and nowhere else, so a block keeps the rule.
     LHAT_TEST("inside a block it is not, even interactively");
     parse_interactive_text(&p, "do^{ a + b }");

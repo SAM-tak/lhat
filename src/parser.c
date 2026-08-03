@@ -49,6 +49,7 @@ static LhatNode *parse_for(Parser *p);
 static LhatNode *parse_binding(Parser *p, LhatNodeKind kind,
                                const LhatToken *at, LhatNode *targets);
 static bool is_binary_op(const LhatNode *node, LhatOpKind op);
+static bool is_call_statement(const LhatNode *node);  // 8.2
 static bool starts_expression(const LhatToken *token);
 static bool is_statement_keyword(const Parser *p);
 
@@ -930,7 +931,10 @@ static bool is_statement_keyword(const Parser *p)
     return is_else_marker(p);
 }
 
-static LhatNode *parse_if_expression(Parser *p, LhatToken start)
+// 5.1: the condition is already read by the time the ':' says which form
+// this is, so the two callers hand it in rather than reading it again.
+static LhatNode *parse_if_expression_from(Parser *p, LhatToken start,
+                                          LhatNode *condition)
 {
     LhatNode *node = make(p, LHAT_NODE_IF_EXPR, &start);
     if (node == NULL) {
@@ -944,7 +948,7 @@ static LhatNode *parse_if_expression(Parser *p, LhatToken start)
     if (first == NULL) {
         return node;
     }
-    first->v.clause.condition = parse_expression(p);
+    first->v.clause.condition = condition;
     expect_op(p, LHAT_OP_COLON);
     first->v.clause.body = parse_expression(p);
     lhat_node_append(&head, &tail, first);
@@ -968,6 +972,11 @@ static LhatNode *parse_if_expression(Parser *p, LhatToken start)
     expect_op(p, LHAT_OP_SEMICOLON);
     node->v.list.items = head;
     return node;
+}
+
+static LhatNode *parse_if_expression(Parser *p, LhatToken start)
+{
+    return parse_if_expression_from(p, start, parse_expression(p));
 }
 
 static LhatNode *parse_primary(Parser *p)
@@ -1994,6 +2003,29 @@ static LhatNode *parse_if_statement(Parser *p, LhatToken start)
     return parse_if_body(p, start, parse_expression(p));
 }
 
+// 8.2: an expression that has arrived where a statement belongs. A call may
+// stand alone anywhere; anything else may only at the top of interactive
+// input, where 03 の 4.3 makes it the value the input answers with. Reading
+// it as a return^ instead would stop what follows and would refuse a call of
+// a procedure that answers nothing.
+static LhatNode *expression_as_statement(Parser *p, LhatToken start,
+                                         LhatNode *value)
+{
+    if (value != NULL && value->kind == LHAT_NODE_ERROR) {
+        return value;
+    }
+    if (is_call_statement(value) || (p->interactive && p->depth == 1)) {
+        LhatNode *node = make(p, LHAT_NODE_CALL_STMT, &start);
+        if (node == NULL) {
+            return NULL;
+        }
+        node->v.jump.value = value;
+        return node;
+    }
+    report(p, &start, LHAT_PARSE_ERR_BARE_EXPRESSION);
+    return make(p, LHAT_NODE_ERROR, &start);
+}
+
 // 16.3. The focus is a list of bindings, of destructuring targets, or one
 // expression when it is unnamed and reached through it^ (16.2).
 // True when the parser stands where a type annotation could begin but the
@@ -2629,9 +2661,19 @@ static LhatNode *parse_statement(Parser *p)
             }
             return node;
         }
+        // 5.1: '{' opens the statement form and ':' the expression one, and
+        // which it is shows only once the condition has been read. So the
+        // condition is read here and the token after it decides -- an
+        // expression standing at a statement then answers to 8.2 like any
+        // other, rather than being refused for wanting a brace.
         if (check_hat(p, "if")) {
             advance(p);
-            return parse_if_statement(p, start);
+            LhatNode *condition = parse_expression(p);
+            if (check_op(p, LHAT_OP_COLON)) {
+                return expression_as_statement(
+                    p, start, parse_if_expression_from(p, start, condition));
+            }
+            return parse_if_body(p, start, condition);
         }
         if (check_hat(p, "errordef")) {
             return parse_errordef(p);
@@ -2708,18 +2750,10 @@ static LhatNode *parse_statement(Parser *p)
 
     // 8.2: at the top level of interactive input a bare expression is a
     // statement -- being unable to work out 2 + 3 at a prompt is not an
-    // option. It becomes the same expression statement a call does, and
-    // 03 の 4.3 makes the last one of an input the value the input answers
-    // with. Reading it as a return^ instead would stop what follows and would
-    // refuse a call of a procedure that answers nothing.
+    // option.
     if (p->interactive && p->depth == 1 && head != NULL &&
         head->next == NULL) {
-        LhatNode *node = make(p, LHAT_NODE_CALL_STMT, &start);
-        if (node == NULL) {
-            return NULL;
-        }
-        node->v.jump.value = head;
-        return node;
+        return expression_as_statement(p, start, head);
     }
 
     // 8.6: 'x = 1' is a comparison, so it lands here as a bare expression.
