@@ -1006,6 +1006,47 @@ static void test_definitions(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_ARITY);
     unit_dispose(&u);
 
+    // 14.4: taking the method out from under the dot is what spells the
+    // receiver out, and then it is counted like any other argument.
+    LHAT_TEST("a method taken as a value is passed the receiver");
+    check_text(&u,
+               "let^ C = def^{\n"
+               "    self^{ v := 0 },\n"
+               "    bump := p^self^, step:number^ { },\n"
+               "}\n"
+               "let^ c = C.new^()\n"
+               "let^ bump = C.bump\n"
+               "bump(c, 1)\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // 14.4: the form is what decides, and a parenthesis does not change it.
+    // JavaScript reads '(obj.m)()' the same way.
+    LHAT_TEST("parentheses do not take the receiver off");
+    check_text(&u,
+               "let^ C = def^{\n"
+               "    self^{ v := 0 },\n"
+               "    bump := p^self^, step:number^ { },\n"
+               "}\n"
+               "let^ c = C.new^()\n"
+               "(C.bump)(c, 1)\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_ARITY);
+    unit_dispose(&u);
+
+    // The other side of the dot is unaffected -- there the parenthesis holds
+    // the receiver, and what is called is still a member access.
+    LHAT_TEST("a parenthesised receiver is still a method call");
+    check_text(&u,
+               "let^ C = def^{\n"
+               "    self^{ v := 0 },\n"
+               "    bump := p^self^, step:number^ { },\n"
+               "}\n"
+               "let^ x = C.new^()\n"
+               "let^ y = C.new^()\n"
+               "(if^ true^: x el^: y;).bump(1)\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
     // 12.5 with 12.7: with^ wants a dispose(), and one that returns nothing,
     // because 12.7 made cleanup unable to fail.
     LHAT_TEST("with^ accepts a value that has dispose()");
