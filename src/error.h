@@ -34,7 +34,12 @@ typedef struct {
 
     // Where. `line` and `column` are one-based and are what the stage
     // recorded; `offset` indexes the source text and is what the line is
-    // found by. A `length` of zero marks one place rather than a span.
+    // found by. `length` is in bytes, and zero marks one character rather
+    // than a span.
+    //
+    // The column shown is a count of characters, since that is what an editor
+    // is told to go to. Where the mark is *put* is a count of terminal cells,
+    // which is not the same number -- see 03 の 1.3.
     uint32_t offset;
     uint32_t line;
     uint32_t column;

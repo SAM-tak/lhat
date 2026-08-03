@@ -12,11 +12,13 @@ surroundings through a handful of functions a host can replace, and a host
 registers what it provides by writing the type out in C.
 
 Sample:
+
 ```lhat
 import^debug
+let^print=debug.print
 
 let^factorial = f^n:number^{ if^ n < 2: 1 else^: n * this^(n - 1); }
-debug.print(factorial(10))
+print(factorial(10))
 ```
 
 ## Requirements

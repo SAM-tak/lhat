@@ -233,24 +233,40 @@ static void test_window(void)
         lhat_source_dispose(&source);
     }
 
-    // A character of more than one byte still takes one column, so the mark
-    // lands under it rather than into the middle of it.
-    LHAT_TEST("and a multi-byte character counts as one column");
+    // The mark is placed by what a terminal draws, so a full-width character
+    // moves it by two and a multi-byte one is not read as its bytes. UAX #11:
+    // 日本 is four cells, two characters and six bytes -- three numbers that
+    // all differ, so getting the mark right means using the correct one.
+    LHAT_TEST("and a full-width character is two cells wide");
     {
         static const char *const text = "let^ x = \"\xe6\x97\xa5\xe6\x9c\xac\" + 1";
         LhatSource source;
         lhat_source_init_from_string(&source, "m", text, strlen(text));
 
-        // 'let^ x = "' is ten columns, then the two characters of 日本, the
-        // closing quote and a blank -- so '+' sits in the fourteenth,
-        // counting from zero. It is the eighteenth byte: four more, which is
-        // what the mark would be wrong by if bytes were counted.
         const char *plus = strchr(text, '+');
-        LHAT_CHECK_EQ_INT((int)(plus - text), 18);  // bytes, not columns
+        LHAT_CHECK_EQ_INT((int)(plus - text), 18);  // bytes
+
+        // 'let^ x = "' is ten cells, 日本 four, then the quote and a blank.
         LhatReport report = at("m", (uint32_t)(plus - text), 1, 15, 0);
         char *out = rendered(&report, &source, NULL, true);
         if (out != NULL) {
-            LHAT_CHECK_EQ_INT(mark_column(out), 14);
+            LHAT_CHECK_EQ_INT(mark_column(out), 16);
+            free(out);
+        }
+        lhat_source_dispose(&source);
+    }
+
+    // A span of full-width text is covered rather than half covered.
+    LHAT_TEST("and a span of them is marked for its width in cells");
+    {
+        static const char *const text = "\xe6\x97\xa5\xe6\x9c\xac + 1";
+        LhatSource source;
+        lhat_source_init_from_string(&source, "m", text, strlen(text));
+
+        LhatReport report = at("m", 0, 1, 1, 6);  // the six bytes of 日本
+        char *out = rendered(&report, &source, NULL, true);
+        if (out != NULL) {
+            LHAT_CHECK(strstr(out, "\n~~~~\n") != NULL, "four cells, not two");
             free(out);
         }
         lhat_source_dispose(&source);
