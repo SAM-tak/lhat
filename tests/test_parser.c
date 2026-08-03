@@ -238,6 +238,19 @@ static void test_statements(void)
     LHAT_CHECK_EQ_INT(first_statement(&p)->kind, LHAT_NODE_IF_STMT);
     parse_dispose(&p);
 
+    // 16.3: the if^ of a for^ is the statement form and only that. What the
+    // for^ introduces lives inside its body (16.7), so a form that carried a
+    // value out of it would be at odds with what it is for.
+    LHAT_TEST("the if^ of a for^ has no expression form");
+    parse_interactive_text(&p, "for^ n := 5 if^ n > 1: n;");
+    LHAT_CHECK(p.result.diagnostic_count > 0, "expected a diagnostic");
+    parse_dispose(&p);
+
+    LHAT_TEST("and its statement form is unaffected");
+    parse_interactive_text(&p, "for^ n := 5 if^ n > 1 { x := n }");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    parse_dispose(&p);
+
     // In a file 8.2 holds as it always did: the writer meant braces.
     LHAT_TEST("but in a file the expression form is not a statement");
     parse_text(&p, "if^ true^: 1 el^: 2;");
