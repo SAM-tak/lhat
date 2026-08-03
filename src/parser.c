@@ -1055,6 +1055,15 @@ static bool is_statement_keyword(const Parser *p)
     return is_else_marker(p);
 }
 
+// Whether what stands here ends the if^ expression rather than continuing a
+// clause. 6 章 closes it with ';', and an input that stopped early closes it
+// by running out -- 3.1 reads on from there rather than reporting.
+static bool closes_if_expression(const Parser *p)
+{
+    return at_eof(p) || check_op(p, LHAT_OP_SEMICOLON) ||
+           check_op(p, LHAT_OP_RBRACE) || check_op(p, LHAT_OP_RPAREN);
+}
+
 // 5.1: the condition is already read by the time the ':' says which form
 // this is, so the two callers hand it in rather than reading it again.
 static LhatNode *parse_if_expression_from(Parser *p, LhatToken start,
@@ -1086,6 +1095,22 @@ static LhatNode *parse_if_expression_from(Parser *p, LhatToken start,
         }
         if (!check_op(p, LHAT_OP_COLON)) {
             clause->v.clause.condition = parse_expression(p);
+        }
+        // 5.1: 'el^' takes a condition or nothing, and which one it was is
+        // known only once the ':' turns up. When what turns up instead is the
+        // ';' that closes the construct (6 章), there was no condition -- what
+        // was read is the value, and the ':' the writer left out belongs
+        // right after the marker.
+        //
+        // Reported there rather than at the ';', which is where the parser
+        // noticed but not where the writer has to look. Taking the expression
+        // as the value also keeps the rest of the construct readable.
+        if (!check_op(p, LHAT_OP_COLON) && closes_if_expression(p)) {
+            report(p, &at, LHAT_PARSE_ERR_ELSE_NEEDS_COLON);
+            clause->v.clause.body = clause->v.clause.condition;
+            clause->v.clause.condition = NULL;
+            lhat_node_append(&head, &tail, clause);
+            break;
         }
         expect_op(p, LHAT_OP_COLON);
         clause->v.clause.body = parse_expression(p);
@@ -3158,6 +3183,9 @@ const char *lhat_parse_error_message(LhatParseErrorCode code)
             return "public^ marks a let^ or an errordef^";
         case LHAT_PARSE_ERR_REQUIRE_NEEDS_LITERAL:
             return "require^ takes a written path, since the checker follows it";
+        case LHAT_PARSE_ERR_ELSE_NEEDS_COLON:
+            return "this needs a ':' after it; what follows was read as the "
+                   "condition of a further test, and no ':' came";
         case LHAT_PARSE_ERR_FIELD_NEEDS_TYPE:
             return "a field needs a type, a default, or both";
         case LHAT_PARSE_ERR_ERRORDEF_NEEDS_NAME:

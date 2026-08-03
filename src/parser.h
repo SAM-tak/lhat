@@ -57,6 +57,9 @@ typedef enum {
     LHAT_PARSE_ERR_MODULE_MISPLACED,          // 05 の 3 章: one, and first
     LHAT_PARSE_ERR_PUBLIC_NEEDS_DECLARATION,  // 05 の 4 章
     LHAT_PARSE_ERR_REQUIRE_NEEDS_LITERAL,     // 05 の 5.2
+    LHAT_PARSE_ERR_ELSE_NEEDS_COLON,          // 5.1: 'el^ v' where the value
+                                              // was read as an else-if
+                                              // condition and nothing follows
     LHAT_PARSE_ERR_LEXICAL                    // the lexer already reported one
 } LhatParseErrorCode;
 

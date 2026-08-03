@@ -282,6 +282,62 @@ static void test_statements(void)
                       LHAT_PARSE_ERR_BARE_EXPRESSION);
     parse_dispose(&p);
 
+    // 5.1: 'el^' takes a condition or nothing, so the value that follows one
+    // written without its ':' is read as a condition and the ':' is missed
+    // only at the ';'. That is where the parser noticed, not where the writer
+    // has to look -- the marker is.
+    LHAT_TEST("a missing ':' after el^ is reported at the marker");
+    parse_text(&p, "let^ a = if^ 1 < 2: 1 el^ 2 ;");
+    {
+        LHAT_CHECK_EQ_INT(error_count(&p), 1);
+        LHAT_CHECK(p.result.diagnostic_count > 0, "expected a diagnostic");
+        if (p.result.diagnostic_count > 0) {
+            const LhatParseDiagnostic *d = &p.result.diagnostics[0];
+            LHAT_CHECK_EQ_INT(d->code, LHAT_PARSE_ERR_ELSE_NEEDS_COLON);
+            // 'el^' is at column 23 of the one line.
+            LHAT_CHECK_EQ_INT((int)d->column, 23);
+        }
+    }
+    parse_dispose(&p);
+
+    // What was read is taken as the value, so the rest of the construct is
+    // still readable and one mistake makes one diagnostic.
+    LHAT_TEST("and the expression read is taken as the value");
+    parse_text(&p, "let^ a = if^ 1 < 2: 1 el^ 2 ;");
+    {
+        const LhatNode *value = first_statement(&p)->v.binding.values;
+        const LhatNode *clauses = value->v.list.items;
+        LHAT_CHECK(clauses != NULL && clauses->next != NULL,
+                   "expected two clauses");
+        if (clauses != NULL && clauses->next != NULL) {
+            const LhatNode *otherwise = clauses->next;
+            LHAT_CHECK(otherwise->v.clause.condition == NULL,
+                       "the else clause should carry no condition");
+            LHAT_CHECK(otherwise->v.clause.body != NULL,
+                       "the else clause should carry the value");
+        }
+    }
+    parse_dispose(&p);
+
+    // Only when nothing follows. A value after it means the clause really was
+    // a further test, and then the ':' belongs after its condition.
+    LHAT_TEST("but a further test still reports where the ':' goes");
+    parse_text(&p, "let^ a = if^ 1 < 2: 1 el^ 3 < 4 2 el^: 3 ;");
+    {
+        LHAT_CHECK(p.result.diagnostic_count > 0, "expected a diagnostic");
+        if (p.result.diagnostic_count > 0) {
+            LHAT_CHECK(p.result.diagnostics[0].code !=
+                           LHAT_PARSE_ERR_ELSE_NEEDS_COLON,
+                       "this one is not the missing-marker case");
+        }
+    }
+    parse_dispose(&p);
+
+    LHAT_TEST("and a well-formed chain is untouched");
+    parse_text(&p, "let^ a = if^ 1 < 2: 1 el^ 3 < 4: 2 el^: 3 ;");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    parse_dispose(&p);
+
     // Every expect_op knows the token it wanted, and the diagnostic carries
     // it -- "a different token" says nothing a reader can act on.
     LHAT_TEST("a diagnostic names the token it wanted");
