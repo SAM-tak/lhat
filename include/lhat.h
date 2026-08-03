@@ -27,6 +27,9 @@
 #ifndef LHAT_H
 #define LHAT_H
 
+// One shape for what every stage reports (03 の 1.1).
+#include "../src/error.h"
+
 // What the language asks of its surroundings: where memory comes from, and
 // how a unit's text is read (05 の 8.9).
 #include "../src/port.h"

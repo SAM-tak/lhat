@@ -15,13 +15,7 @@ Sample:
 ```lhat
 import^debug
 
-let^factorial = f^n:number^{
-  if^n < 2 {
-    return^1
-  else^:
-    return^n * this^(n - 1)
-  }
-}
+let^factorial = f^n:number^{ if^ n < 2: 1 else^: n * this^(n - 1); }
 debug.print(factorial(10))
 ```
 
@@ -91,7 +85,7 @@ and a construct that has not finished reads on:
 ```text
 > 2 + 3
 5
-> let^ greet = f^n { return^"hi " .. n }
+> let^ greet = f^n { "hi " .. n }
 > greet("there")
 "hi there"
 > let^add = f^a, b {
@@ -180,6 +174,7 @@ include/lhat.h        The only header a host names
 
 src/                  The language                        -> lhat.lib
   source.[ch]           Reading a unit; newline and BOM normalisation
+  error.[ch]            One shape for what every stage reports
   token.[ch]            Token definitions
   lexer.[ch]            Lexical analyser
   ast.[ch]              Syntax tree nodes and their arena

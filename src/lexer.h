@@ -88,6 +88,6 @@ LhatToken lhat_lexer_next(LhatLexer *lexer);
 const char *lhat_lexer_string(const LhatLexer *lexer, const LhatToken *token,
                               size_t *length);
 
-const char *lhat_error_message(LhatErrorCode code);
+const char *lhat_lexer_error_message(LhatErrorCode code);
 
 #endif  // LHAT_LEXER_H

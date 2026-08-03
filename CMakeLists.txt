@@ -29,6 +29,7 @@ endif()
 # out to lhatport for memory and for reading a unit -- see src/port.h.
 add_library(lhat
     src/source.c
+    src/error.c
     src/token.c
     src/lexer.c
     src/ast.c

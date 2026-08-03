@@ -306,13 +306,53 @@ static void print_node(const LhatLexer *lexer, const LhatNode *node, int depth)
     }
 }
 
+// Whether a diagnostic is shown with the line it happened on. The rich form
+// wants the source, so it is off wherever this driver has none to hand.
+static bool rich_reports = true;
+
+// error.h fills a buffer rather than a stream, so the driver decides where it
+// goes -- 05 の 8.9 keeps the language away from stdio.
+static void say(const LhatReport *report, const LhatSource *source,
+                const char *name)
+{
+    char room[1024];
+    size_t needed = lhat_report_write(report, source, name, rich_reports, room,
+                                      sizeof room);
+    if (needed < sizeof room) {
+        fprintf(stderr, "%s\n", room);
+        return;
+    }
+    char *bigger = (char *)malloc(needed + 1);
+    if (bigger == NULL) {
+        fprintf(stderr, "%s\n", room);  // truncated, but better than silence
+        return;
+    }
+    lhat_report_write(report, source, name, rich_reports, bigger, needed + 1);
+    fprintf(stderr, "%s\n", bigger);
+    free(bigger);
+}
+
+static void say_error(const LhatSource *source, const char *name,
+                      uint32_t offset, uint32_t line, uint32_t column,
+                      const char *message)
+{
+    LhatReport report;
+    report.kind = LHAT_REPORT_ERROR;
+    report.message = message;
+    report.offset = offset;
+    report.line = line;
+    report.column = column;
+    report.length = 0;
+    say(&report, source, name);
+}
+
 static int report_lexical(const LhatLexer *lexer, const LhatSource *source)
 {
     int status = EXIT_SUCCESS;
     for (size_t i = 0; i < lexer->diagnostic_count; i++) {
         const LhatDiagnostic *d = &lexer->diagnostics[i];
-        fprintf(stderr, "%s:%u:%u: error: %s\n", source->name, d->line, d->column,
-                lhat_error_message(d->code));
+        say_error(source, NULL, d->offset, d->line, d->column,
+                  lhat_lexer_error_message(d->code));
         status = EXIT_FAILURE;
     }
     return status;
@@ -359,20 +399,22 @@ static int check_program(const char *path, bool run)
         if (!unit->loaded) {
             continue;
         }
+        // 03 の 1.1's three stages, each with its own codes and one shape to
+        // show them in.
         for (size_t i = 0; i < unit->lexer.diagnostic_count; i++) {
             const LhatDiagnostic *d = &unit->lexer.diagnostics[i];
-            fprintf(stderr, "%s:%u:%u: error: %s\n", unit->path, d->line,
-                    d->column, lhat_error_message(d->code));
+            say_error(&unit->source, unit->path, d->offset, d->line, d->column,
+                      lhat_lexer_error_message(d->code));
         }
         for (size_t i = 0; i < unit->parsed.diagnostic_count; i++) {
             const LhatParseDiagnostic *d = &unit->parsed.diagnostics[i];
-            fprintf(stderr, "%s:%u:%u: error: %s\n", unit->path, d->line,
-                    d->column, lhat_parse_error_message(d->code));
+            say_error(&unit->source, unit->path, d->offset, d->line, d->column,
+                      lhat_parse_error_message(d->code));
         }
         for (size_t i = 0; i < unit->checked.diagnostic_count; i++) {
             const LhatCheckDiagnostic *d = &unit->checked.diagnostics[i];
-            fprintf(stderr, "%s:%u:%u: error: %s\n", unit->path, d->line,
-                    d->column, lhat_check_error_message(d->code));
+            say_error(&unit->source, unit->path, d->offset, d->line, d->column,
+                      lhat_check_error_message(d->code));
         }
     }
 
@@ -434,8 +476,8 @@ static int dump_tree(const LhatSource *source, bool typed, bool command)
     int status = report_lexical(&lexer, source);
     for (size_t i = 0; i < result.diagnostic_count; i++) {
         const LhatParseDiagnostic *d = &result.diagnostics[i];
-        fprintf(stderr, "%s:%u:%u: error: %s\n", source->name, d->line, d->column,
-                lhat_parse_error_message(d->code));
+        say_error(source, NULL, d->offset, d->line, d->column,
+                  lhat_parse_error_message(d->code));
         status = EXIT_FAILURE;
     }
     if (result.incomplete) {
@@ -550,10 +592,15 @@ static int repl(void)
         carrying = false;
 
         bool refused = in->lexer.diagnostic_count > 0;
+        for (size_t i = 0; i < in->lexer.diagnostic_count; i++) {
+            const LhatDiagnostic *d = &in->lexer.diagnostics[i];
+            say_error(&in->source, "stdin", d->offset, d->line, d->column,
+                      lhat_lexer_error_message(d->code));
+        }
         for (size_t i = 0; i < in->parsed.diagnostic_count; i++) {
             const LhatParseDiagnostic *d = &in->parsed.diagnostics[i];
-            fprintf(stderr, "%u:%u: error: %s\n", d->line, d->column,
-                    lhat_parse_error_message(d->code));
+            say_error(&in->source, "stdin", d->offset, d->line, d->column,
+                      lhat_parse_error_message(d->code));
             refused = true;
         }
 
@@ -562,8 +609,8 @@ static int repl(void)
             lhat_check_next(checks, in->parsed.root, &in->lexer, true, &checked);
             for (size_t i = 0; i < checked.diagnostic_count; i++) {
                 const LhatCheckDiagnostic *d = &checked.diagnostics[i];
-                fprintf(stderr, "%u:%u: error: %s\n", d->line, d->column,
-                        lhat_check_error_message(d->code));
+                say_error(&in->source, "stdin", d->offset, d->line, d->column,
+                          lhat_check_error_message(d->code));
                 refused = true;
             }
             lhat_check_result_dispose(&checked);

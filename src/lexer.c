@@ -1128,7 +1128,7 @@ const char *lhat_lexer_string(const LhatLexer *lexer, const LhatToken *token,
     return lexer->strings + token->v.string.offset;
 }
 
-const char *lhat_error_message(LhatErrorCode code)
+const char *lhat_lexer_error_message(LhatErrorCode code)
 {
     switch (code) {
         case LHAT_ERR_NONE:
