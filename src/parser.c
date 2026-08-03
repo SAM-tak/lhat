@@ -1670,11 +1670,15 @@ static bool can_begin_statement(const Parser *p)
         case LHAT_TOKEN_SCOPE:
             return true;
         case LHAT_TOKEN_HAT_IDENT:
-            // 05 の 8.6 and 02 の 15.10: two hat identifiers name values
-            // rather than syntax, so a call through one is a statement the
-            // way a call through any name is (8.3).
+            // Some hat identifiers name a value rather than syntax -- the
+            // machine (05 の 8.6), a coroutine's own handle (15.10), the
+            // receiver (14.4) and the focus (16.2). A statement can start
+            // with any of them, the way one can start with any other name
+            // (8.3), so 2.1 must not read them as a further argument to the
+            // call on the line above.
             return is_statement_keyword(p) || check_hat(p, "L") ||
-                   check_hat(p, "this");
+                   check_hat(p, "this") || check_hat(p, "self") ||
+                   check_hat(p, "it");
         case LHAT_TOKEN_OP:
             // 01 の 10.9: a '(' on a fresh line opens a statement.
             return p->current.v.op == LHAT_OP_LPAREN;

@@ -451,6 +451,30 @@ static void test_statements(void)
                       LHAT_PARSE_ERR_JUXTAPOSITION);
     parse_dispose(&p);
 
+    // 2.1 decides what follows a call by asking whether it could begin a
+    // statement. A hat identifier that names a value can, so it must not be
+    // swallowed as one more argument to the line above.
+    LHAT_TEST("self^ begins a statement after a call");
+    parse_text(&p, "let^ T = def^{ self^{ n := 0 }, a := p^self^ { },\n"
+                   "  s := p^self^ { self^.a()\nself^.n := 1 } }");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    parse_dispose(&p);
+
+    LHAT_TEST("it^ begins a statement after a call");
+    parse_text(&p, "for^ 1 to^ 3 { foo()\nit^.bar() }");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    parse_dispose(&p);
+
+    LHAT_TEST("L^ begins a statement after a call");
+    parse_text(&p, "foo()\nL^.collectgarbage()");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    parse_dispose(&p);
+
+    LHAT_TEST("this^ begins a statement after a call");
+    parse_text(&p, "let^ f = p^ { foo()\nthis^() }");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    parse_dispose(&p);
+
     // 8.6: the accident this replaced. Without let^, ':=' inside a nested
     // scope reassigns rather than quietly shadowing.
     LHAT_TEST("':=' in a nested scope reassigns");
