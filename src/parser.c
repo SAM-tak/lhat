@@ -2,6 +2,7 @@
 
 #include "parser.h"
 
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -154,6 +155,23 @@ static void report(Parser *p, const LhatToken *at, LhatParseErrorCode code)
     d->offset = at->offset;
     d->line = at->line;
     d->column = at->column;
+    d->has_expected = false;
+    d->expected = LHAT_OP_LPAREN;  // read only when has_expected says so
+}
+
+// The same, naming the token that was wanted. Every expect_op knows it, and
+// saying which turns "a different token" into something a reader can act on.
+static void report_expected(Parser *p, const LhatToken *at, LhatOpKind op)
+{
+    bool was_panicking = p->panicking;
+    report(p, at, LHAT_PARSE_ERR_EXPECTED_TOKEN);
+    if (was_panicking || p->result->diagnostic_count == 0) {
+        return;  // report kept quiet, so there is nothing to say it on
+    }
+    LhatParseDiagnostic *d =
+        &p->result->diagnostics[p->result->diagnostic_count - 1];
+    d->has_expected = true;
+    d->expected = op;
 }
 
 static LhatNode *make(Parser *p, LhatNodeKind kind, const LhatToken *at)
@@ -172,7 +190,7 @@ static bool expect_op(Parser *p, LhatOpKind op)
     if (match_op(p, op)) {
         return true;
     }
-    report(p, &p->current, LHAT_PARSE_ERR_EXPECTED_TOKEN);
+    report_expected(p, &p->current, op);
     return false;
 }
 
@@ -555,7 +573,8 @@ static LhatNode *parse_interpolation(Parser *p)
             if (p->current.kind == LHAT_TOKEN_INTERP_EXPR_END) {
                 advance(p);
             } else {
-                report(p, &p->current, LHAT_PARSE_ERR_EXPECTED_TOKEN);
+                // 5.4: what closes a hole, spelled as the brace it is.
+                report_expected(p, &p->current, LHAT_OP_RBRACE);
             }
             lhat_node_append(&head, &tail, hole);
             continue;
@@ -611,7 +630,7 @@ static LhatNode *parse_brace_entries(Parser *p, bool require_key)
             entry->v.entry.computed = true;
             expect_op(p, LHAT_OP_RBRACKET);
             if (!match_op(p, LHAT_OP_EQ) && !match_op(p, LHAT_OP_DEFINE)) {
-                report(p, &p->current, LHAT_PARSE_ERR_EXPECTED_TOKEN);
+                report_expected(p, &p->current, LHAT_OP_EQ);
             }
             // 14.6: a field template names every field, so a computed key is
             // not one of them.
@@ -3113,4 +3132,30 @@ const char *lhat_parse_error_message(LhatParseErrorCode code)
             return "the input could not be tokenised";
     }
     return "unknown error";
+}
+
+size_t lhat_parse_message_write(const LhatParseDiagnostic *diagnostic,
+                                char *out, size_t capacity)
+{
+    const char *plain = diagnostic != NULL
+                            ? lhat_parse_error_message(diagnostic->code)
+                            : "unknown error";
+
+    // Only where the diagnostic knows something its code does not.
+    int written;
+    if (diagnostic != NULL && diagnostic->has_expected) {
+        written = snprintf(out, out != NULL ? capacity : 0,
+                           "a '%s' was expected here",
+                           lhat_op_name(diagnostic->expected));
+    } else {
+        written = snprintf(out, out != NULL ? capacity : 0, "%s", plain);
+    }
+
+    if (written < 0) {
+        if (out != NULL && capacity > 0) {
+            out[0] = '\0';
+        }
+        return 0;
+    }
+    return (size_t)written;
 }

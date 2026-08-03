@@ -332,6 +332,34 @@ static void say(const LhatReport *report, const LhatSource *source,
     free(bigger);
 }
 
+// The parser's message can name the token it wanted, which no literal can
+// carry, so it is written into a buffer first and the report borrows that.
+static void say_parse_error(const LhatSource *source, const char *name,
+                            const LhatParseDiagnostic *d)
+{
+    char message[256];
+    size_t needed = lhat_parse_message_write(d, message, sizeof message);
+    char *text = message;
+    char *bigger = NULL;
+    if (needed >= sizeof message) {
+        bigger = (char *)malloc(needed + 1);
+        if (bigger != NULL) {
+            lhat_parse_message_write(d, bigger, needed + 1);
+            text = bigger;
+        }
+    }
+
+    LhatReport report;
+    report.kind = LHAT_REPORT_ERROR;
+    report.message = text;
+    report.offset = d->offset;
+    report.line = d->line;
+    report.column = d->column;
+    report.length = 0;
+    say(&report, source, name);
+    free(bigger);
+}
+
 static void say_error(const LhatSource *source, const char *name,
                       uint32_t offset, uint32_t line, uint32_t column,
                       const char *message)
@@ -408,8 +436,7 @@ static int check_program(const char *path, bool run)
         }
         for (size_t i = 0; i < unit->parsed.diagnostic_count; i++) {
             const LhatParseDiagnostic *d = &unit->parsed.diagnostics[i];
-            say_error(&unit->source, unit->path, d->offset, d->line, d->column,
-                      lhat_parse_error_message(d->code));
+            say_parse_error(&unit->source, unit->path, d);
         }
         for (size_t i = 0; i < unit->checked.diagnostic_count; i++) {
             const LhatCheckDiagnostic *d = &unit->checked.diagnostics[i];
@@ -476,8 +503,7 @@ static int dump_tree(const LhatSource *source, bool typed, bool command)
     int status = report_lexical(&lexer, source);
     for (size_t i = 0; i < result.diagnostic_count; i++) {
         const LhatParseDiagnostic *d = &result.diagnostics[i];
-        say_error(source, NULL, d->offset, d->line, d->column,
-                  lhat_parse_error_message(d->code));
+        say_parse_error(source, NULL, d);
         status = EXIT_FAILURE;
     }
     if (result.incomplete) {
@@ -599,8 +625,7 @@ static int repl(void)
         }
         for (size_t i = 0; i < in->parsed.diagnostic_count; i++) {
             const LhatParseDiagnostic *d = &in->parsed.diagnostics[i];
-            say_error(&in->source, "stdin", d->offset, d->line, d->column,
-                      lhat_parse_error_message(d->code));
+            say_parse_error(&in->source, "stdin", d);
             refused = true;
         }
 

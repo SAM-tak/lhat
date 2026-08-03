@@ -6,6 +6,7 @@
 // precedence, comparison chaining, the call parenthesis rule, and the
 // statement forms that are deliberately not accepted.
 
+#include <stdlib.h>
 #include <string.h>
 
 #include "ast.h"
@@ -279,6 +280,62 @@ static void test_statements(void)
     LHAT_CHECK(p.result.diagnostic_count > 0, "expected a diagnostic");
     LHAT_CHECK_EQ_INT(p.result.diagnostics[0].code,
                       LHAT_PARSE_ERR_BARE_EXPRESSION);
+    parse_dispose(&p);
+
+    // Every expect_op knows the token it wanted, and the diagnostic carries
+    // it -- "a different token" says nothing a reader can act on.
+    LHAT_TEST("a diagnostic names the token it wanted");
+    parse_text(&p, "g := f^ { if^ 1: 2 el^: 3 }");
+    {
+        LHAT_CHECK(p.result.diagnostic_count > 0, "expected a diagnostic");
+        if (p.result.diagnostic_count > 0) {
+            const LhatParseDiagnostic *d = &p.result.diagnostics[0];
+            LHAT_CHECK_EQ_INT(d->code, LHAT_PARSE_ERR_EXPECTED_TOKEN);
+            LHAT_CHECK(d->has_expected, "and says what it was");
+            LHAT_CHECK_EQ_INT(d->expected, LHAT_OP_SEMICOLON);
+
+            char message[64];
+            size_t needed =
+                lhat_parse_message_write(d, message, sizeof message);
+            LHAT_CHECK(needed < sizeof message, "it fits");
+            LHAT_CHECK(strcmp(message, "a ';' was expected here") == 0,
+                       "and the message names it");
+        }
+    }
+    parse_dispose(&p);
+
+    // A code that knows nothing besides itself answers what it always did.
+    LHAT_TEST("and one that names nothing keeps its own message");
+    parse_text(&p, "1 + 2");
+    {
+        LHAT_CHECK(p.result.diagnostic_count > 0, "expected a diagnostic");
+        if (p.result.diagnostic_count > 0) {
+            const LhatParseDiagnostic *d = &p.result.diagnostics[0];
+            LHAT_CHECK(!d->has_expected, "nothing to name");
+
+            char message[128];
+            lhat_parse_message_write(d, message, sizeof message);
+            LHAT_CHECK(strcmp(message, lhat_parse_error_message(d->code)) == 0,
+                       "the code's own message");
+        }
+    }
+    parse_dispose(&p);
+
+    // Measuring and filling have to agree, or a caller sizing a buffer from
+    // the first call gets a truncated second one.
+    LHAT_TEST("and measuring agrees with filling");
+    parse_text(&p, "g := f^ { if^ 1: 2 el^: 3 }");
+    if (p.result.diagnostic_count > 0) {
+        const LhatParseDiagnostic *d = &p.result.diagnostics[0];
+        size_t needed = lhat_parse_message_write(d, NULL, 0);
+        char *room = (char *)malloc(needed + 1);
+        if (room != NULL) {
+            LHAT_CHECK_EQ_INT(lhat_parse_message_write(d, room, needed + 1),
+                              needed);
+            LHAT_CHECK_EQ_INT(strlen(room), needed);
+            free(room);
+        }
+    }
     parse_dispose(&p);
 
     // 15.12: a function whose body is one expression answers with it. Read as

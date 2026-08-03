@@ -65,6 +65,13 @@ typedef struct {
     uint32_t offset;
     uint32_t line;
     uint32_t column;
+
+    // What was wanted, for the codes that know. Every call of expect_op names
+    // a token, and saying which turns "a different token" into something a
+    // reader can act on. `has_expected` is false for the codes that name
+    // nothing -- reading `expected` then is reading a zero.
+    bool has_expected;
+    LhatOpKind expected;
 } LhatParseDiagnostic;
 
 typedef struct {
@@ -117,5 +124,17 @@ void lhat_parse_type_only(LhatLexer *lexer, LhatParseResult *result);
 void lhat_parse_result_dispose(LhatParseResult *result);
 
 const char *lhat_parse_error_message(LhatParseErrorCode code);
+
+// The message for one diagnostic, which for some of them says more than the
+// code alone can -- "a ';' was expected here" rather than "expected a
+// different token here". Everything the code knows on its own is what
+// lhat_parse_error_message answers, so this only differs where the diagnostic
+// carries something besides its code.
+//
+// Follows lhat_report_write: answers how many bytes it wants, not counting
+// the terminating NUL, and fills up to `capacity` including it. So measuring
+// is a call with (NULL, 0).
+size_t lhat_parse_message_write(const LhatParseDiagnostic *diagnostic,
+                                char *out, size_t capacity);
 
 #endif  // LHAT_PARSER_H
