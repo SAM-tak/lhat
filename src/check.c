@@ -2,6 +2,7 @@
 
 #include "check.h"
 
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -145,6 +146,25 @@ static void report(Checker *c, const LhatNode *at, LhatCheckErrorCode code)
     d->offset = at->offset;
     d->line = at->line;
     d->column = at->column;
+    d->name = NULL;
+    d->name_length = 0;
+}
+
+// The same, about a name. The text is borrowed from the source, which 6 章
+// keeps alive as long as the result -- a copy per diagnostic would be paid
+// for by every program, and almost none of them read one.
+static void report_named(Checker *c, const LhatNode *at,
+                         LhatCheckErrorCode code, const char *name,
+                         size_t length)
+{
+    size_t before = c->result->diagnostic_count;
+    report(c, at, code);
+    if (c->result->diagnostic_count == before || name == NULL) {
+        return;  // report kept quiet, so there is nothing to say it on
+    }
+    LhatCheckDiagnostic *d = &c->result->diagnostics[before];
+    d->name = name;
+    d->name_length = (uint32_t)length;
 }
 
 // ---------------------------------------------------------------------------
@@ -1057,7 +1077,7 @@ static LhatType *infer_name(Checker *c, const LhatNode *node)
 
     Binding *b = scope_find(c->scope, name, length);
     if (b == NULL) {
-        report(c, node, LHAT_CHECK_ERR_UNDEFINED);
+        report_named(c, node, LHAT_CHECK_ERR_UNDEFINED, name, length);
         return simple(c, LHAT_TYPE_UNKNOWN);
     }
 
@@ -1474,10 +1494,10 @@ static LhatType *infer_member(Checker *c, const LhatNode *node)
             signature->v.func.result = simple(c, LHAT_TYPE_BOOL);
             return signature;
         }
-        report(c, node, LHAT_CHECK_ERR_NO_MEMBER);
+        report_named(c, node, LHAT_CHECK_ERR_NO_MEMBER, name, length);
         return simple(c, LHAT_TYPE_UNKNOWN);
     } else {
-        report(c, node, LHAT_CHECK_ERR_NO_MEMBER);
+        report_named(c, node, LHAT_CHECK_ERR_NO_MEMBER, name, length);
         return simple(c, LHAT_TYPE_UNKNOWN);
     }
 
@@ -1503,7 +1523,7 @@ static LhatType *infer_member(Checker *c, const LhatNode *node)
         return signature;
     }
 
-    report(c, node, LHAT_CHECK_ERR_NO_MEMBER);
+    report_named(c, node, LHAT_CHECK_ERR_NO_MEMBER, name, length);
     return simple(c, LHAT_TYPE_UNKNOWN);
 }
 
@@ -2299,7 +2319,8 @@ static LhatType *infer(Checker *c, const LhatNode *node)
                     }
                 }
                 if (!found) {
-                    report(c, entry, LHAT_CHECK_ERR_NO_MEMBER);
+                    report_named(c, entry, LHAT_CHECK_ERR_NO_MEMBER, name,
+                                 length);
                 }
             }
 
@@ -2439,7 +2460,7 @@ static LhatType *path_table(Checker *c, const LhatNode *node)
         if (b == NULL) {
             // collect_bindings puts an ordinary root there before the walk,
             // so what reaches here is a hat identifier that is not L^.
-            report(c, node, LHAT_CHECK_ERR_UNDEFINED);
+            report_named(c, node, LHAT_CHECK_ERR_UNDEFINED, name, length);
             return NULL;
         }
         if (b->type == NULL || b->type->kind == LHAT_TYPE_UNKNOWN) {
@@ -2485,7 +2506,7 @@ static void define_path(Checker *c, const LhatNode *target, LhatType *type)
         return;
     }
     if (member_named(owner, name, length) != NULL) {
-        report(c, last, LHAT_CHECK_ERR_REDEFINED);
+        report_named(c, last, LHAT_CHECK_ERR_REDEFINED, name, length);
         return;
     }
     lhat_type_add_member(c->result->types, owner, name, length, type);
@@ -2695,7 +2716,7 @@ static void check_import(Checker *c, const LhatNode *node, bool binds)
             return;
         }
         if (scope_find_local(c->scope, name, length) != NULL) {
-            report(c, node, LHAT_CHECK_ERR_REDEFINED);
+            report_named(c, node, LHAT_CHECK_ERR_REDEFINED, name, length);
             return;
         }
         Binding *only = scope_add(c->scope, name, length, module, node->offset);
@@ -2735,7 +2756,7 @@ static void check_import(Checker *c, const LhatNode *node, bool binds)
         return;
     }
     if (member_named(owner, name, length) != NULL) {
-        report(c, node, LHAT_CHECK_ERR_REDEFINED);
+        report_named(c, node, LHAT_CHECK_ERR_REDEFINED, name, length);
         return;
     }
     lhat_type_add_member(c->result->types, owner, name, length, module);
@@ -2776,7 +2797,7 @@ static void check_require_stmt(Checker *c, const LhatNode *node)
     // the way to make, and 8.7 refuses a name this scope already holds.
     if (segment[length] == '\0') {
         if (scope_find_local(c->scope, segment, length) != NULL) {
-            report(c, node, LHAT_CHECK_ERR_REDEFINED);
+            report_named(c, node, LHAT_CHECK_ERR_REDEFINED, segment, length);
             return;
         }
         Binding *only =
@@ -2812,7 +2833,7 @@ static void check_require_stmt(Checker *c, const LhatNode *node)
         if (segment[length] == '\0') {
             // 8.7 on the last segment: two units may not claim one path.
             if (found != NULL) {
-                report(c, node, LHAT_CHECK_ERR_REDEFINED);
+                report_named(c, node, LHAT_CHECK_ERR_REDEFINED, segment, length);
                 return;
             }
             lhat_type_add_member(c->result->types, owner, segment, length,
@@ -3103,8 +3124,8 @@ static void collect_bindings(Checker *c, const LhatNode *statements)
                 // Clearing the mark leaves 8.7 in force for a second let^
                 // within this input.
                 if (!already->from_session) {
-                    report(c, target_name_node(target),
-                           LHAT_CHECK_ERR_REDEFINED);
+                    report_named(c, target_name_node(target),
+                                 LHAT_CHECK_ERR_REDEFINED, name, length);
                 }
                 already->from_session = false;
                 continue;
@@ -3811,4 +3832,29 @@ const char *lhat_check_error_message(LhatCheckErrorCode code)
                    "produces a value";
     }
     return "unknown error";
+}
+
+size_t lhat_check_message_write(const LhatCheckDiagnostic *diagnostic,
+                                char *out, size_t capacity)
+{
+    const char *plain = diagnostic != NULL
+                            ? lhat_check_error_message(diagnostic->code)
+                            : "unknown error";
+
+    // Only where the diagnostic knows something its code does not.
+    int written;
+    if (diagnostic != NULL && diagnostic->name != NULL) {
+        written = snprintf(out, out != NULL ? capacity : 0, "%s: %.*s", plain,
+                           (int)diagnostic->name_length, diagnostic->name);
+    } else {
+        written = snprintf(out, out != NULL ? capacity : 0, "%s", plain);
+    }
+
+    if (written < 0) {
+        if (out != NULL && capacity > 0) {
+            out[0] = '\0';
+        }
+        return 0;
+    }
+    return (size_t)written;
 }

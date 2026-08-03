@@ -355,7 +355,34 @@ static void say_parse_error(const LhatSource *source, const char *name,
     report.offset = d->offset;
     report.line = d->line;
     report.column = d->column;
-    report.length = 0;
+    report.length = d->length;
+    say(&report, source, name);
+    free(bigger);
+}
+
+// The same for the checker, whose codes about a name can say which.
+static void say_check_error(const LhatSource *source, const char *name,
+                            const LhatCheckDiagnostic *d)
+{
+    char message[256];
+    size_t needed = lhat_check_message_write(d, message, sizeof message);
+    char *text = message;
+    char *bigger = NULL;
+    if (needed >= sizeof message) {
+        bigger = (char *)malloc(needed + 1);
+        if (bigger != NULL) {
+            lhat_check_message_write(d, bigger, needed + 1);
+            text = bigger;
+        }
+    }
+
+    LhatReport report;
+    report.kind = LHAT_REPORT_ERROR;
+    report.message = text;
+    report.offset = d->offset;
+    report.line = d->line;
+    report.column = d->column;
+    report.length = d->name_length;
     say(&report, source, name);
     free(bigger);
 }
@@ -440,8 +467,7 @@ static int check_program(const char *path, bool run)
         }
         for (size_t i = 0; i < unit->checked.diagnostic_count; i++) {
             const LhatCheckDiagnostic *d = &unit->checked.diagnostics[i];
-            say_error(&unit->source, unit->path, d->offset, d->line, d->column,
-                      lhat_check_error_message(d->code));
+            say_check_error(&unit->source, unit->path, d);
         }
     }
 
@@ -634,8 +660,7 @@ static int repl(void)
             lhat_check_next(checks, in->parsed.root, &in->lexer, true, &checked);
             for (size_t i = 0; i < checked.diagnostic_count; i++) {
                 const LhatCheckDiagnostic *d = &checked.diagnostics[i];
-                say_error(&in->source, "stdin", d->offset, d->line, d->column,
-                          lhat_check_error_message(d->code));
+                say_check_error(&in->source, "stdin", d);
                 refused = true;
             }
             lhat_check_result_dispose(&checked);

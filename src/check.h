@@ -95,6 +95,13 @@ typedef struct {
     uint32_t offset;
     uint32_t line;
     uint32_t column;
+
+    // The name the diagnostic is about, for the codes that are about one --
+    // "no such name in scope" is worth more when it says which. Borrowed from
+    // the source the unit was read from, which outlives the result, and NULL
+    // for the codes that name nothing.
+    const char *name;
+    uint32_t name_length;
 } LhatCheckDiagnostic;
 
 // 05 の 8.7: a host registers what it provides by writing the type out, so
@@ -189,5 +196,15 @@ void lhat_check_next(LhatCheckSession *session, const LhatNode *unit,
                      LhatCheckResult *result);
 
 const char *lhat_check_error_message(LhatCheckErrorCode code);
+
+// The message for one diagnostic, which for the codes that are about a name
+// says which -- "no such name in scope: nowhere". Everything a code knows on
+// its own is what lhat_check_error_message answers, so this only differs
+// where the diagnostic carries something besides its code.
+//
+// Follows lhat_report_write: answers how many bytes it wants, not counting
+// the terminating NUL, and fills up to `capacity` including it.
+size_t lhat_check_message_write(const LhatCheckDiagnostic *diagnostic,
+                                char *out, size_t capacity);
 
 #endif  // LHAT_CHECK_H

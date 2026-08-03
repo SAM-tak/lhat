@@ -7,6 +7,7 @@
 // try^ each drop one arm of a union.
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "check.h"
@@ -3041,6 +3042,82 @@ static void test_session(void)
     }
 }
 
+// 03 の 1.3: a code that is about a name says which. The codes stay as they
+// are and the diagnostic carries what they cannot.
+static void test_named_diagnostics(void)
+{
+    Unit u;
+
+    LHAT_TEST("a name that is not in scope is named");
+    check_text(&u, "let^ x = nowhere\n");
+    {
+        LHAT_CHECK(u.checked.diagnostic_count > 0, "expected a diagnostic");
+        if (u.checked.diagnostic_count > 0) {
+            const LhatCheckDiagnostic *d = &u.checked.diagnostics[0];
+            LHAT_CHECK_EQ_INT(d->code, LHAT_CHECK_ERR_UNDEFINED);
+            LHAT_CHECK(d->name != NULL, "and it says which");
+            LHAT_CHECK_EQ_INT(d->name_length, 7);
+
+            char message[128];
+            size_t needed = lhat_check_message_write(d, message, sizeof message);
+            LHAT_CHECK(needed < sizeof message, "it fits");
+            LHAT_CHECK(strcmp(message, "no such name in scope: nowhere") == 0,
+                       "the message names it");
+        }
+    }
+    unit_dispose(&u);
+
+    LHAT_TEST("and a member that is not there is too");
+    check_text(&u, "let^ t = { p = 1 }\nlet^ v = t.missing\n");
+    if (u.checked.diagnostic_count > 0) {
+        const LhatCheckDiagnostic *d = &u.checked.diagnostics[0];
+        LHAT_CHECK_EQ_INT(d->code, LHAT_CHECK_ERR_NO_MEMBER);
+        char message[128];
+        lhat_check_message_write(d, message, sizeof message);
+        LHAT_CHECK(strcmp(message,
+                          "this value has no such member: missing") == 0,
+                   "the member is named");
+    }
+    unit_dispose(&u);
+
+    LHAT_TEST("and so is one defined twice");
+    check_text(&u, "let^ dup = 1\nlet^ dup = 2\n");
+    if (u.checked.diagnostic_count > 0) {
+        const LhatCheckDiagnostic *d = &u.checked.diagnostics[0];
+        LHAT_CHECK_EQ_INT(d->code, LHAT_CHECK_ERR_REDEFINED);
+        LHAT_CHECK(d->name != NULL && d->name_length == 3, "dup");
+    }
+    unit_dispose(&u);
+
+    // The name is borrowed from the source, so it has to still say the same
+    // thing once the diagnostic has been carried around a little.
+    LHAT_TEST("and the borrowed text is the name itself");
+    check_text(&u, "let^ x = elsewhere\n");
+    if (u.checked.diagnostic_count > 0) {
+        const LhatCheckDiagnostic *d = &u.checked.diagnostics[0];
+        LHAT_CHECK(d->name != NULL, "there is one");
+        if (d->name != NULL) {
+            LHAT_CHECK(strncmp(d->name, "elsewhere", d->name_length) == 0,
+                       "and it points at the word in the source");
+        }
+    }
+    unit_dispose(&u);
+
+    // A code that knows nothing besides itself answers what it always did.
+    LHAT_TEST("but one that names nothing keeps its own message");
+    check_text(&u, "let^ x : string^ = 1\n");
+    if (u.checked.diagnostic_count > 0) {
+        const LhatCheckDiagnostic *d = &u.checked.diagnostics[0];
+        LHAT_CHECK(d->name == NULL, "nothing to name");
+        char message[128];
+        lhat_check_message_write(d, message, sizeof message);
+        LHAT_CHECK(strcmp(message, lhat_check_error_message(d->code)) == 0,
+                   "the code's own message");
+    }
+    unit_dispose(&u);
+}
+
+
 int main(void)
 {
     test_names();
@@ -3058,5 +3135,6 @@ int main(void)
     test_positions();
     test_no_value();
     test_session();
+    test_named_diagnostics();
     return lhat_test_report("test_check");
 }

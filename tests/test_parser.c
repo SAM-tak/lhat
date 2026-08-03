@@ -294,12 +294,37 @@ static void test_statements(void)
             LHAT_CHECK(d->has_expected, "and says what it was");
             LHAT_CHECK_EQ_INT(d->expected, LHAT_OP_SEMICOLON);
 
-            char message[64];
+            // The token that was there instead is recorded for every
+            // diagnostic, since it is at hand wherever one is made.
+            LHAT_CHECK_EQ_INT(d->found, LHAT_TOKEN_OP);
+            LHAT_CHECK_EQ_INT(d->found_op, LHAT_OP_RBRACE);
+            LHAT_CHECK_EQ_INT(d->length, 1);
+
+            char message[128];
             size_t needed =
                 lhat_parse_message_write(d, message, sizeof message);
             LHAT_CHECK(needed < sizeof message, "it fits");
-            LHAT_CHECK(strcmp(message, "a ';' was expected here") == 0,
-                       "and the message names it");
+            LHAT_CHECK(strcmp(message,
+                              "a ';' was expected here, and this is '}'") == 0,
+                       "and the message names both");
+        }
+    }
+    parse_dispose(&p);
+
+    // A code about the token it met names that token, without any site
+    // having to hand it over: report already had it.
+    LHAT_TEST("and a code about a token names the one it met");
+    parse_text(&p, "let^ 1 = 2");
+    {
+        LHAT_CHECK(p.result.diagnostic_count > 0, "expected a diagnostic");
+        if (p.result.diagnostic_count > 0) {
+            const LhatParseDiagnostic *d = &p.result.diagnostics[0];
+            LHAT_CHECK_EQ_INT(d->code, LHAT_PARSE_ERR_EXPECTED_NAME);
+            char message[128];
+            lhat_parse_message_write(d, message, sizeof message);
+            LHAT_CHECK(strcmp(message, "expected a name, and this is a number")
+                           == 0,
+                       "it says what was there");
         }
     }
     parse_dispose(&p);

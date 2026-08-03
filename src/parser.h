@@ -72,6 +72,14 @@ typedef struct {
     // nothing -- reading `expected` then is reading a zero.
     bool has_expected;
     LhatOpKind expected;
+
+    // What was there instead. Recorded for every diagnostic, since the token
+    // is at hand wherever one is made, and mentioned by the codes that are
+    // about a token. `length` is its width, so a mark can cover the whole of
+    // it rather than its first character.
+    LhatTokenKind found;
+    LhatOpKind found_op;  // meaningful when `found` is LHAT_TOKEN_OP
+    uint32_t length;
 } LhatParseDiagnostic;
 
 typedef struct {

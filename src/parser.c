@@ -157,6 +157,9 @@ static void report(Parser *p, const LhatToken *at, LhatParseErrorCode code)
     d->column = at->column;
     d->has_expected = false;
     d->expected = LHAT_OP_LPAREN;  // read only when has_expected says so
+    d->found = at->kind;
+    d->found_op = at->kind == LHAT_TOKEN_OP ? at->v.op : LHAT_OP_LPAREN;
+    d->length = at->length;
 }
 
 // The same, naming the token that was wanted. Every expect_op knows it, and
@@ -3134,6 +3137,39 @@ const char *lhat_parse_error_message(LhatParseErrorCode code)
     return "unknown error";
 }
 
+// What the token that was there is called, for a message to name it by. An
+// operator is worth quoting; anything else is a kind, since its spelling is
+// already under the mark.
+static const char *found_spelling(const LhatParseDiagnostic *d)
+{
+    switch (d->found) {
+        case LHAT_TOKEN_EOF:          return "the end of the input";
+        case LHAT_TOKEN_IDENT:        return "a name";
+        case LHAT_TOKEN_HAT_IDENT:    return "a word of the language";
+        case LHAT_TOKEN_NAME_LITERAL: return "a quoted name";
+        case LHAT_TOKEN_INT:
+        case LHAT_TOKEN_FLOAT:        return "a number";
+        case LHAT_TOKEN_STRING:       return "a string";
+        case LHAT_TOKEN_SCOPE:        return "a scope specifier";
+        case LHAT_TOKEN_OP:           break;
+        default:                      return "something else";
+    }
+    // Quoted, since an operator is short enough to read inside a sentence.
+    static char quoted[16];
+    snprintf(quoted, sizeof quoted, "'%s'", lhat_op_name(d->found_op));
+    return quoted;
+}
+
+// The codes that are about the token they met, rather than about something
+// larger the token happened to be inside.
+static bool names_a_token(LhatParseErrorCode code)
+{
+    return code == LHAT_PARSE_ERR_UNEXPECTED ||
+           code == LHAT_PARSE_ERR_EXPECTED_EXPRESSION ||
+           code == LHAT_PARSE_ERR_EXPECTED_TYPE ||
+           code == LHAT_PARSE_ERR_EXPECTED_NAME;
+}
+
 size_t lhat_parse_message_write(const LhatParseDiagnostic *diagnostic,
                                 char *out, size_t capacity)
 {
@@ -3145,8 +3181,12 @@ size_t lhat_parse_message_write(const LhatParseDiagnostic *diagnostic,
     int written;
     if (diagnostic != NULL && diagnostic->has_expected) {
         written = snprintf(out, out != NULL ? capacity : 0,
-                           "a '%s' was expected here",
-                           lhat_op_name(diagnostic->expected));
+                           "a '%s' was expected here, and this is %s",
+                           lhat_op_name(diagnostic->expected),
+                           found_spelling(diagnostic));
+    } else if (diagnostic != NULL && names_a_token(diagnostic->code)) {
+        written = snprintf(out, out != NULL ? capacity : 0, "%s, and this is %s",
+                           plain, found_spelling(diagnostic));
     } else {
         written = snprintf(out, out != NULL ? capacity : 0, "%s", plain);
     }
