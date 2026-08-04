@@ -85,7 +85,6 @@ const char *lhat_compile_status_message(LhatCompileStatus status);
 typedef enum {
     LHAT_RUN_OK,
     LHAT_RUN_TYPE_ERROR,      // 5.1: an instruction was given the wrong thing
-    LHAT_RUN_DIVIDE_BY_ZERO,  // 04 の 11.2: only // and % can reach this
     LHAT_RUN_NOT_CALLABLE,    // called something that is not a subroutine
     LHAT_RUN_ARITY,           // 5.3: the wrong number of arguments
     LHAT_RUN_STACK_OVERFLOW,  // the frames went too deep

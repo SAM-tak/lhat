@@ -2,6 +2,7 @@
 
 #include "vm.h"
 
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -3794,11 +3795,11 @@ static bool arithmetic(LhatOpcode op, LhatValue left, LhatValue right,
             return true;
         case LHAT_BC_IDIV:
         case LHAT_BC_MOD: {
-            if (b == 0) {
-                *status = LHAT_RUN_DIVIDE_BY_ZERO;
-                return false;
-            }
-            if (exact) {
+            // 04 の 11.2改: a zero divisor no longer fails -- like an
+            // overflow (14.8改), it widens to real arithmetic instead,
+            // which already answers inf/nan for this the same way '/'
+            // does, so ordinary arithmetic stays out of a union either way.
+            if (exact && b != 0) {
                 int64_t x = lhat_as_integer(left);
                 int64_t y = lhat_as_integer(right);
                 int64_t quotient = x / y;
@@ -3813,11 +3814,11 @@ static bool arithmetic(LhatOpcode op, LhatValue left, LhatValue right,
                                           : lhat_integer(remainder);
                 return true;
             }
-            double quotient = a / b;
-            double floored = quotient - (quotient < 0 ? 1.0 : 0.0);
-            double truncated = (double)(int64_t)quotient;
-            floored = quotient < 0 && truncated != quotient ? truncated - 1
-                                                            : truncated;
+            // floor() rather than a hand-rolled truncate-and-adjust: the
+            // quotient can be inf or nan here (b == 0), and casting either
+            // to int64_t, which the hand-rolled form used to do, is
+            // undefined.
+            double floored = floor(a / b);
             *out = op == LHAT_BC_IDIV ? lhat_real(floored)
                                       : lhat_real(a - floored * b);
             return true;
@@ -5807,7 +5808,6 @@ const char *lhat_run_status_message(LhatRunStatus status)
     switch (status) {
         case LHAT_RUN_OK:              return "ran";
         case LHAT_RUN_TYPE_ERROR:      return "an instruction was given the wrong type";
-        case LHAT_RUN_DIVIDE_BY_ZERO:  return "// and % cannot divide by zero";
         case LHAT_RUN_NOT_CALLABLE:    return "this is not a subroutine";
         case LHAT_RUN_ARITY:           return "the wrong number of arguments";
         case LHAT_RUN_STACK_OVERFLOW:  return "the calls went too deep";

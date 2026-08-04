@@ -5,6 +5,7 @@
 // answer rather than the instructions chosen to reach it -- 5.1 expects those
 // to be replaced by specialised ones later.
 
+#include <math.h>
 #include <string.h>
 
 #include "code.h"
@@ -245,14 +246,21 @@ static void test_arithmetic(void)
     LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_OK);
     run_dispose(&r);
 
-    LHAT_TEST("'//' by zero fails");
+    // 04 の 11.2改: like an overflow (14.8改), a zero divisor widens to
+    // real arithmetic instead of failing -- '//' and '%' answer inf/nan
+    // the same way '/' already does.
+    LHAT_TEST("'//' by zero widens to real and answers inf");
     run_text(&r, "return^ 1 // 0\n");
-    LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_DIVIDE_BY_ZERO);
+    LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_OK);
+    LHAT_CHECK(lhat_is_real(r.ran.value), "expected a real");
+    LHAT_CHECK(isinf(lhat_as_real(r.ran.value)), "expected inf");
     run_dispose(&r);
 
-    LHAT_TEST("'%' by zero fails");
+    LHAT_TEST("'%' by zero widens to real and answers nan");
     run_text(&r, "return^ 1 % 0\n");
-    LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_DIVIDE_BY_ZERO);
+    LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_OK);
+    LHAT_CHECK(lhat_is_real(r.ran.value), "expected a real");
+    LHAT_CHECK(isnan(lhat_as_real(r.ran.value)), "expected nan");
     run_dispose(&r);
 
     // 02 の 11.5 の (2): '**' binds tighter than a unary minus.
@@ -742,13 +750,6 @@ static void test_strings(void)
              "let^ t = { a := 1 }\n"
              "return^ t + 1\n");
     LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_TYPE_ERROR);
-    run_dispose(&r);
-
-    // 04 の 11.2 keeps a zero divisor a fault of its own, ahead of any
-    // question about who answers the operator.
-    LHAT_TEST("and a zero divisor is still its own fault");
-    run_text(&r, "return^ 1 // 0\n");
-    LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_DIVIDE_BY_ZERO);
     run_dispose(&r);
 
     LHAT_TEST("a structure with no '..' cannot answer");
