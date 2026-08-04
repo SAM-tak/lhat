@@ -2718,10 +2718,14 @@ static LhatType *infer(Checker *c, const LhatNode *node)
         // still an error -- but what the operand's own type turns out to be
         // plays no part in typeof^'s own type, which is the uniform TypeInfo
         // carrier regardless. The descriptive payload is filled in at run
-        // time (03 の 4.2), by reflect_type reading the actual value.
-        case LHAT_NODE_TYPEOF:
-            infer(c, node->v.jump.value);
+        // time by reflect_type reading the actual value, unless 03 の 5.11a's
+        // narrow exception applies -- kept here on the node itself for
+        // compile_expression to read back.
+        case LHAT_NODE_TYPEOF: {
+            LhatType *operand = infer(c, node->v.jump.value);
+            ((LhatNode *)node)->checked_type = operand;
             return typeinfo_type(c);
+        }
 
         case LHAT_NODE_IF_EXPR: {
             // The same shape as the statement form: each clause sees what the

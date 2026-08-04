@@ -933,6 +933,76 @@ static LhatRuntimeType *rt_from_checked(LhatHeap *heap, const LhatType *type)
     return NULL;
 }
 
+// 03 の 5.11a: whether a checker type is gap-free enough to answer typeof^
+// statically. UNKNOWN/ANY are both "nothing useful here", one from inference
+// not deciding and one from a written any^ that means the same for this
+// purpose -- either way the actual value is likely to say more than the
+// static answer would, so this asks for the runtime walk instead.
+//
+// ERROR_KIND/ERROR_SET are excluded on their own grounds: the checker's type
+// only carries a name, and there is no runtime LhatErrorKind object to find
+// from that alone here, while reflect_type already answers precisely and
+// cheaply (an error's kind is a pointer read, not a walk) -- so there is
+// nothing this shortcut would save. CORO is excluded the same way S28
+// leaves it: neither path reconstructs R/Y/T yet, so there is no fidelity
+// to protect and no cost to save either.
+static bool type_is_concrete(const LhatType *type)
+{
+    if (type == NULL) {
+        return true;  // e.g. a func's absent result -- nothing hidden here
+    }
+    switch (type->kind) {
+        case LHAT_TYPE_UNKNOWN:
+        case LHAT_TYPE_ANY:
+        case LHAT_TYPE_ERROR_KIND:
+        case LHAT_TYPE_ERROR_SET:
+        case LHAT_TYPE_CORO:
+            return false;
+
+        case LHAT_TYPE_NONE:
+        case LHAT_TYPE_NIL:
+        case LHAT_TYPE_BOOL:
+        case LHAT_TYPE_NUMBER:
+        case LHAT_TYPE_STRING:
+        case LHAT_TYPE_ERROR:
+            return true;
+
+        case LHAT_TYPE_TABLE:
+            for (const LhatTypeMember *m = type->v.table.members; m != NULL;
+                 m = m->next) {
+                if (!type_is_concrete(m->type)) {
+                    return false;
+                }
+            }
+            return type->v.table.variadic == NULL ||
+                   type_is_concrete(type->v.table.variadic);
+
+        case LHAT_TYPE_FUNC:
+            for (LhatTypeList *p = type->v.func.params; p != NULL;
+                 p = p->next) {
+                if (!type_is_concrete(p->type)) {
+                    return false;
+                }
+            }
+            if (type->v.func.variadic != NULL &&
+                !type_is_concrete(type->v.func.variadic)) {
+                return false;
+            }
+            return type_is_concrete(type->v.func.result);
+
+        case LHAT_TYPE_UNION:
+        case LHAT_TYPE_INTERSECT:
+            for (LhatTypeList *a = type->v.composite.arms; a != NULL;
+                 a = a->next) {
+                if (!type_is_concrete(a->type)) {
+                    return false;
+                }
+            }
+            return true;
+    }
+    return false;
+}
+
 // ---------------------------------------------------------------------------
 // 02 の 14 章: the object model
 // ---------------------------------------------------------------------------
@@ -1756,10 +1826,28 @@ static void compile_expression(Compiler *c, const LhatNode *node, uint8_t into)
 
         // 02 の 14.16: reflect_type reads the value once it is in a
         // register, so the operand is compiled the ordinary way first.
+        //
+        // 03 の 5.11a: when the checker settled the operand's type without a
+        // gap, that answer is compiled in as a constant instead -- the
+        // operand still runs, for whatever it does along the way, but
+        // reflect_type's walk of the result is skipped since the checker
+        // already has a precise, cheaper answer for it.
         case LHAT_NODE_TYPEOF: {
             uint8_t mark = c->next_register;
             uint8_t value = reserve(c);
             compile_expression(c, node->v.jump.value, value);
+            if (node->checked_type != NULL &&
+                type_is_concrete((const LhatType *)node->checked_type)) {
+                LhatRuntimeType *rt = rt_from_checked(
+                    &c->proto->chunk.heap, (const LhatType *)node->checked_type);
+                c->next_register = mark;
+                if (rt == NULL) {
+                    fail(c, LHAT_COMPILE_TOO_COMPLEX);
+                    return;
+                }
+                load_constant(c, into, lhat_object((LhatObject *)rt));
+                return;
+            }
             emit(c, lhat_encode_abc(LHAT_BC_TYPEOF, into, value, 0));
             c->next_register = mark;
             return;
