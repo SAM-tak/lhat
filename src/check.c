@@ -1911,6 +1911,10 @@ static LhatType *infer_func(Checker *c, const LhatNode *node)
     c->yield_bound_type = outer_yield_bound_type;
 
     scope_dispose(&body);
+    // The compiler reads this back instead of re-deriving the signature from
+    // written annotations alone, so a result left to inference (no return^
+    // type written) still reaches typeof^ and overload dispatch precisely.
+    ((LhatNode *)node)->checked_type = func;
     return func;
 }
 

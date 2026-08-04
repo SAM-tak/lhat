@@ -150,6 +150,13 @@ struct LhatNode {
 
     LhatNode *next;  // next sibling when this node sits in a list
 
+    // FUNC only: the whole signature infer_func (check.c) built for this
+    // literal, an LhatType* from the checker's arena. void* here rather than
+    // LhatType* so this parse-stage header need not depend on the check
+    // stage's; compile_subroutine (vm.c) is the reader, and casts it back.
+    // NULL until checking runs, and unset entirely when it never does.
+    void *checked_type;
+
     union {
         struct {
             uint64_t value;

@@ -7,6 +7,7 @@
 #include <string.h>
 
 #include "port.h"
+#include "type.h"
 
 // 9.8: break^ is a normal end for the loop it leaves, so its jump lands where
 // last^ and epilog^ are, not past them. The chain is what a break^ written
@@ -798,6 +799,140 @@ static LhatRuntimeType *lower_type(Compiler *c, const LhatNode *node)
     }
 }
 
+// Converts one of the checker's own LhatType objects into the shape
+// lower_type builds from a written annotation. Used only where nothing was
+// written at all -- lower_type already has nothing to read there, so this is
+// a fallback onto what infer_func (check.c) settled instead, not a second
+// opinion on what was written.
+static LhatRuntimeType *rt_from_checked(LhatHeap *heap, const LhatType *type)
+{
+    if (type == NULL) {
+        return NULL;
+    }
+    switch (type->kind) {
+        case LHAT_TYPE_UNKNOWN:
+        case LHAT_TYPE_ANY:
+        case LHAT_TYPE_NONE:
+            return NULL;  // asks nothing, same as nothing written (13.7)
+
+        case LHAT_TYPE_NIL:
+            return lhat_type_rt_new(heap, LHAT_TYPE_RT_NIL);
+        case LHAT_TYPE_BOOL:
+            return lhat_type_rt_new(heap, LHAT_TYPE_RT_BOOL);
+        case LHAT_TYPE_NUMBER:
+            return lhat_type_rt_new(heap, LHAT_TYPE_RT_NUMBER);
+        case LHAT_TYPE_STRING:
+            return lhat_type_rt_new(heap, LHAT_TYPE_RT_STRING);
+
+        case LHAT_TYPE_TABLE: {
+            LhatRuntimeType *rt = lhat_type_rt_new(heap, LHAT_TYPE_RT_STRUCTURE);
+            if (rt == NULL) {
+                return NULL;
+            }
+            // 14.10改: the sequence half first, in position order, the way a
+            // written t^{ ... } and reflect_table_members both put it.
+            size_t sequence = 0;
+            for (;;) {
+                const LhatTypeMember *m =
+                    lhat_type_member_at(type, sequence + 1);
+                if (m == NULL) {
+                    break;
+                }
+                if (!lhat_type_rt_add_part(rt, rt_from_checked(heap, m->type))) {
+                    return NULL;
+                }
+                sequence++;
+            }
+            for (const LhatTypeMember *m = type->v.table.members; m != NULL;
+                 m = m->next) {
+                bool positional = false;
+                for (size_t i = 0; i < sequence; i++) {
+                    if (lhat_type_member_at(type, i + 1) == m) {
+                        positional = true;
+                        break;
+                    }
+                }
+                if (positional) {
+                    continue;
+                }
+                LhatString *name = lhat_string_new(heap, m->name, m->name_length);
+                if (name == NULL ||
+                    !lhat_type_rt_add_member(rt, name, rt_from_checked(heap, m->type))) {
+                    return NULL;
+                }
+            }
+            if (type->v.table.variadic != NULL) {
+                rt->variadic = rt_from_checked(heap, type->v.table.variadic);
+            }
+            lhat_type_rt_sort_members(rt);
+            return rt;
+        }
+
+        case LHAT_TYPE_FUNC: {
+            LhatRuntimeType *rt = lhat_type_rt_new(heap, LHAT_TYPE_RT_SUBROUTINE);
+            if (rt == NULL) {
+                return NULL;
+            }
+            rt->is_function = type->v.func.is_function;
+            rt->takes_self = type->v.func.takes_self;
+            for (LhatTypeList *p = type->v.func.params; p != NULL; p = p->next) {
+                if (!lhat_type_rt_add_part(rt, rt_from_checked(heap, p->type))) {
+                    return NULL;
+                }
+            }
+            if (type->v.func.variadic != NULL) {
+                rt->variadic = rt_from_checked(heap, type->v.func.variadic);
+            }
+            rt->result = rt_from_checked(heap, type->v.func.result);
+            return rt;
+        }
+
+        // S28: the coroutine kind is still bare either way -- lower_type
+        // does not read a written c^{ ... }'s parts yet, so a checked one
+        // does not get ahead of it here.
+        case LHAT_TYPE_CORO:
+            return lhat_type_rt_new(heap, LHAT_TYPE_RT_COROUTINE);
+
+        case LHAT_TYPE_ERROR:
+            return lhat_type_rt_new(heap, LHAT_TYPE_RT_ERROR);
+        // 04 の 2.3 makes ERROR the supertype of every kind; nothing here
+        // reaches the runtime LhatErrorKind object a checker-side name would
+        // need to name a precise one, so this is the sound coarser answer.
+        case LHAT_TYPE_ERROR_SET:
+        case LHAT_TYPE_ERROR_KIND:
+            return lhat_type_rt_new(heap, LHAT_TYPE_RT_ERROR);
+
+        case LHAT_TYPE_UNION: {
+            LhatRuntimeType *rt = lhat_type_rt_new(heap, LHAT_TYPE_RT_UNION);
+            if (rt == NULL) {
+                return NULL;
+            }
+            for (LhatTypeList *a = type->v.composite.arms; a != NULL;
+                 a = a->next) {
+                if (!lhat_type_rt_add_part(rt, rt_from_checked(heap, a->type))) {
+                    return NULL;
+                }
+            }
+            return rt;
+        }
+
+        case LHAT_TYPE_INTERSECT: {
+            LhatRuntimeType *rt = lhat_type_rt_new(heap, LHAT_TYPE_RT_INTERSECT);
+            if (rt == NULL) {
+                return NULL;
+            }
+            for (LhatTypeList *a = type->v.composite.arms; a != NULL;
+                 a = a->next) {
+                if (!lhat_type_rt_add_part(rt, rt_from_checked(heap, a->type))) {
+                    return NULL;
+                }
+            }
+            return rt;
+        }
+    }
+    return NULL;
+}
+
 // ---------------------------------------------------------------------------
 // 02 の 14 章: the object model
 // ---------------------------------------------------------------------------
@@ -1450,6 +1585,17 @@ static void compile_subroutine(Compiler *c, const LhatNode *node, uint8_t into)
     // reconstruct the signature without touching the checker's types (03 の
     // 4.2 -- what runs cannot depend on whether checking did).
     proto->result_type = lower_type(c, node->v.func.return_type);
+    if (node->v.func.return_type == NULL && node->checked_type != NULL) {
+        // Nothing was written, so lower_type had nothing to read -- but
+        // infer_func (check.c) already settled what the body actually
+        // answers (03 の 3.4). Reaching for that only when checking ran
+        // keeps compiling without it unaffected (test_vm.c does this on
+        // purpose), and an explicitly written any^ above still wins since
+        // this only fires when return_type itself is absent.
+        const LhatType *checked = (const LhatType *)node->checked_type;
+        proto->result_type = rt_from_checked(&root_of(c)->proto->chunk.heap,
+                                             checked->v.func.result);
+    }
 
     // 02 の 10.1: a p^ body is a block that may carry a finally^, which is
     // where resources are handled and so where it is most wanted.
