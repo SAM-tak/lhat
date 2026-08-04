@@ -791,8 +791,20 @@ static LhatRuntimeType *lower_type(Compiler *c, const LhatNode *node)
 
         case LHAT_NODE_TYPE_FUNC:
             return lhat_type_rt_new(owner, LHAT_TYPE_RT_SUBROUTINE);
-        case LHAT_NODE_TYPE_CORO:
-            return lhat_type_rt_new(owner, LHAT_TYPE_RT_COROUTINE);
+        // 13.9: a written c^{ receive, produce, result } names its three
+        // slots the same way a table literal names members -- read each
+        // rather than leaving the bare tag S28 used to stop at.
+        case LHAT_NODE_TYPE_CORO: {
+            LhatRuntimeType *type =
+                lhat_type_rt_new(owner, LHAT_TYPE_RT_COROUTINE);
+            if (type == NULL) {
+                return NULL;
+            }
+            type->receive = lower_type(c, node->v.coroutine.receive);
+            type->produce = lower_type(c, node->v.coroutine.produce);
+            type->result = lower_type(c, node->v.coroutine.result);
+            return type;
+        }
 
         default:
             return NULL;
@@ -887,11 +899,16 @@ static LhatRuntimeType *rt_from_checked(LhatHeap *heap, const LhatType *type)
             return rt;
         }
 
-        // S28: the coroutine kind is still bare either way -- lower_type
-        // does not read a written c^{ ... }'s parts yet, so a checked one
-        // does not get ahead of it here.
-        case LHAT_TYPE_CORO:
-            return lhat_type_rt_new(heap, LHAT_TYPE_RT_COROUTINE);
+        case LHAT_TYPE_CORO: {
+            LhatRuntimeType *rt = lhat_type_rt_new(heap, LHAT_TYPE_RT_COROUTINE);
+            if (rt == NULL) {
+                return NULL;
+            }
+            rt->receive = rt_from_checked(heap, type->v.coroutine.receive);
+            rt->produce = rt_from_checked(heap, type->v.coroutine.produce);
+            rt->result = rt_from_checked(heap, type->v.coroutine.result);
+            return rt;
+        }
 
         case LHAT_TYPE_ERROR:
             return lhat_type_rt_new(heap, LHAT_TYPE_RT_ERROR);
@@ -943,9 +960,7 @@ static LhatRuntimeType *rt_from_checked(LhatHeap *heap, const LhatType *type)
 // only carries a name, and there is no runtime LhatErrorKind object to find
 // from that alone here, while reflect_type already answers precisely and
 // cheaply (an error's kind is a pointer read, not a walk) -- so there is
-// nothing this shortcut would save. CORO is excluded the same way S28
-// leaves it: neither path reconstructs R/Y/T yet, so there is no fidelity
-// to protect and no cost to save either.
+// nothing this shortcut would save.
 static bool type_is_concrete(const LhatType *type)
 {
     if (type == NULL) {
@@ -956,7 +971,6 @@ static bool type_is_concrete(const LhatType *type)
         case LHAT_TYPE_ANY:
         case LHAT_TYPE_ERROR_KIND:
         case LHAT_TYPE_ERROR_SET:
-        case LHAT_TYPE_CORO:
             return false;
 
         case LHAT_TYPE_NONE:
@@ -999,6 +1013,11 @@ static bool type_is_concrete(const LhatType *type)
                 }
             }
             return true;
+
+        case LHAT_TYPE_CORO:
+            return type_is_concrete(type->v.coroutine.receive) &&
+                   type_is_concrete(type->v.coroutine.produce) &&
+                   type_is_concrete(type->v.coroutine.result);
     }
     return false;
 }
@@ -1665,6 +1684,15 @@ static void compile_subroutine(Compiler *c, const LhatNode *node, uint8_t into)
         const LhatType *checked = (const LhatType *)node->checked_type;
         proto->result_type = rt_from_checked(&root_of(c)->proto->chunk.heap,
                                              checked->v.func.result);
+    }
+
+    // 15.2, 13.9 (S28): Y and R have no written form at all -- 03 の 5.11a's
+    // checked_type is the only place either can come from, written or not.
+    if (node->v.func.yields && node->checked_type != NULL) {
+        const LhatType *checked = (const LhatType *)node->checked_type;
+        LhatHeap *owner = &root_of(c)->proto->chunk.heap;
+        proto->yield_produce_type = rt_from_checked(owner, checked->v.func.yield_produce);
+        proto->yield_receive_type = rt_from_checked(owner, checked->v.func.yield_receive);
     }
 
     // 02 の 10.1: a p^ body is a block that may carry a finally^, which is
@@ -4039,7 +4067,22 @@ static LhatRuntimeType *reflect_type(LhatHeap *heap, LhatValue value,
         return lhat_type_rt_new(heap, LHAT_TYPE_RT_STRING);
     }
     if (lhat_is_object_kind(value, LHAT_OBJECT_COROUTINE)) {
-        return lhat_type_rt_new(heap, LHAT_TYPE_RT_COROUTINE);
+        // 13.9, S28: R and Y have no written form, so wherever they are
+        // known at all it is through 03 の 5.11a's checked_type, already
+        // converted onto the originating proto by compile_subroutine.
+        // Reused directly (not copied) the same way the SUBROUTINE branch
+        // below already reuses proto->result_type -- the chunk that owns
+        // it outlives every machine that ever reflects one of its values.
+        const LhatCoroutine *coroutine = (const LhatCoroutine *)lhat_as_object(value);
+        const LhatProto *proto =
+            coroutine->closure != NULL ? coroutine->closure->proto : NULL;
+        LhatRuntimeType *type = lhat_type_rt_new(heap, LHAT_TYPE_RT_COROUTINE);
+        if (type != NULL && proto != NULL) {
+            type->receive = proto->yield_receive_type;
+            type->produce = proto->yield_produce_type;
+            type->result = proto->result_type;
+        }
+        return type;
     }
     // 04 の 2.4: an error's identity is the declaration, so what typeof^
     // answers with is the kind object itself -- 05 の 7 の 7.4's IOError.NotFound.

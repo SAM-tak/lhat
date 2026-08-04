@@ -181,6 +181,11 @@ typedef struct LhatRuntimeType {
     bool is_function;                 // f^ rather than p^ (15 章)
     bool takes_self;                  // 14.4: the first parameter is self^
 
+    // COROUTINE only (13.9). `result` above doubles as the third slot (T);
+    // these are the other two. NULL/any^ wherever nothing built them (S28).
+    struct LhatRuntimeType *receive;  // R
+    struct LhatRuntimeType *produce;  // Y
+
     // 13.7's unbounded tail, one type throughout. STRUCTURE: the sequence
     // half beyond `parts`. SUBROUTINE: the element type of the last
     // parameter, kept apart from `parts` the way LhatType.v.func.variadic is

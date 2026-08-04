@@ -207,6 +207,13 @@ typedef struct LhatProto {
     // its absence here belongs to a p^.
     struct LhatRuntimeType *result_type;
 
+    // 15.2, 13.9 (S28). What a yielding body's yield^ sites agreed on --
+    // there is no written form for either, so these come only from 03 の
+    // 5.11a's checked_type when checking ran; NULL otherwise (yields is
+    // false, or the checker never settled one).
+    struct LhatRuntimeType *yield_produce_type;  // Y
+    struct LhatRuntimeType *yield_receive_type;  // R
+
     // 13.7: the last parameter collects the rest into a table rather than
     // taking one argument for itself. Its element type is
     // parameter_types[parameters - 1] -- the same array, since a variadic

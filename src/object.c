@@ -405,11 +405,19 @@ static void write_runtime_type(TypeWriter *w, const LhatRuntimeType *type)
                 type_put_text(w, "error^");
             }
             return;
-        // 15 章's coroutine carries R, Y and T, none of which reflect_type
-        // reconstructs yet (S-something) -- any^ for each is honest about
-        // what is not known rather than a guess.
+        // 13.9's three slots. NULL still prints any^ (S28's residual: a
+        // coroutine value or a yielding subroutine reflected before this
+        // was wired up carries none of the three) -- not a guess, the same
+        // "nothing written asks for the top type" convention as everywhere
+        // else in this function.
         case LHAT_TYPE_RT_COROUTINE:
-            type_put_text(w, "c^{any^, any^, any^}");
+            type_put_text(w, "c^{");
+            write_runtime_type(w, type->receive);
+            type_put_text(w, ", ");
+            write_runtime_type(w, type->produce);
+            type_put_text(w, ", ");
+            write_runtime_type(w, type->result);
+            type_put_text(w, "}");
             return;
         case LHAT_TYPE_RT_UNION:
             for (size_t i = 0; i < type->part_count; i++) {
@@ -521,8 +529,13 @@ bool lhat_runtime_type_equal(const LhatRuntimeType *a, const LhatRuntimeType *b)
         case LHAT_TYPE_RT_STRING:
         case LHAT_TYPE_RT_TABLE:
         case LHAT_TYPE_RT_ERROR:
-        case LHAT_TYPE_RT_COROUTINE:
             return true;
+        // 13.9's three slots now carry real answers (S28), so two coroutine
+        // types are equal only when R, Y and T line up -- not just by kind.
+        case LHAT_TYPE_RT_COROUTINE:
+            return lhat_runtime_type_equal(a->receive, b->receive) &&
+                   lhat_runtime_type_equal(a->produce, b->produce) &&
+                   lhat_runtime_type_equal(a->result, b->result);
         case LHAT_TYPE_RT_ERROR_KIND:
             // 04 の 2.4: identity is the declaration.
             return a->error_kind == b->error_kind;

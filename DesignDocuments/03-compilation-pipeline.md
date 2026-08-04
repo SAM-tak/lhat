@@ -1413,11 +1413,20 @@ Lua の `__index` と同じ探索になるが、
   「厳格度によって」実行時の意味が変わらないことで、
   「検査が走ったかどうか」で変わらないことまでは言っていない —
   (2) がその境目を保証する: 検査を経ない `typeof^` は今までどおりの答えを返す
-- コルーチンの `R,Y,T`（S28、02 の 14.16）はまだこれで埋まらない。
-  `func->v.func.result`（T）は `checked_type` から読めるようになったが、
-  `yield_produce`/`yield_receive`（Y,R）を反射に乗せるには、
-  書かれた型に対応する記法が今のところなく（別の設計判断が要る）、
-  ここでは手を付けていない
+- コルーチンの `R,Y,T`（S28、02 の 14.16）も同じ経路で埋まった。
+  `func->v.func.result`（T）は既に `checked_type` から読めていたので、
+  `yield_produce`/`yield_receive`（Y,R）にも同じものを2つ足しただけである
+  — `LhatProto` に `yield_produce_type`/`yield_receive_type` を追加し、
+  `compile_subroutine` が yields のとき `checked_type` からこれも埋める。
+  書かれた型に対応する記法が無いのは変わらないので、これらは常に
+  `checked_type` からしか来ない（(1) の「書かれていれば触らない」が
+  最初から当てはまらない）。答え自体は `p^` 自身の型ではなく、
+  それを **呼んで得たコルーチンの値** の型（15.5, 13.9）に乗る —
+  `LhatRuntimeType` の COROUTINE 種にも `receive`/`produce` を足し、
+  `reflect_type` がコロウチン値を反射するとき
+  `coroutine->closure->proto` からこの2つと `result_type` を読む。
+  同じ機会に、書かれた `c^{ ... }` 注釈の中身を `lower_type` が
+  読んでいなかった側（S28のもう半分）も直した
 
 #### 5.11b `typeof^` は静的な答えを優先する［確定・意味変更］
 
