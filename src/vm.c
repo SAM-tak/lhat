@@ -3665,12 +3665,61 @@ static const LhatTable *readable_table(LhatValue value)
     return table_of(value);
 }
 
+// 02 の 14.16: a table can be made to reference itself (8.8's path
+// introduction accepts a written annotation wider than the value being
+// stored, so 'let^ a.next : t^{} = b' need not narrow to what b already is --
+// measured: two tables, or two def^ instances through a field defaulted to
+// '{}', can each end up holding the other). Walking such a value recurses
+// forever, so the walk remembers which tables are on the current path and
+// answers the unstructured top of tables (13.7's table^) for one it is
+// already inside of, rather than reflect_type's own stack going with it.
+typedef struct {
+    const LhatTable **tables;
+    size_t count;
+    size_t capacity;
+} Visited;
+
+static bool visited_contains(const Visited *seen, const LhatTable *table)
+{
+    for (size_t i = 0; i < seen->count; i++) {
+        if (seen->tables[i] == table) {
+            return true;
+        }
+    }
+    return false;
+}
+
+// Pushes unconditionally; the caller has already checked visited_contains.
+// Returns false only on allocation failure, in which case nothing was pushed.
+static bool visited_push(Visited *seen, const LhatTable *table)
+{
+    if (seen->count == seen->capacity) {
+        size_t grown = seen->capacity ? seen->capacity * 2 : 8;
+        const LhatTable **bigger = (const LhatTable **)lhat_realloc(
+            (void *)seen->tables, grown * sizeof *bigger);
+        if (bigger == NULL) {
+            return false;
+        }
+        seen->tables = bigger;
+        seen->capacity = grown;
+    }
+    seen->tables[seen->count++] = table;
+    return true;
+}
+
+// A stack: what is popped is always what the matching push added last.
+static void visited_pop(Visited *seen)
+{
+    seen->count--;
+}
+
 // 02 の 14.16: typeof^'s reflection over an actual value, as opposed to
 // lower_type's reflection over a written annotation. 03 の 4.2 rules out
 // answering from what the checker inferred -- that would make typeof^'s
 // answer depend on whether checking ran -- so this walks the value itself,
 // which exists identically either way.
-static LhatRuntimeType *reflect_type(LhatHeap *heap, LhatValue value);
+static LhatRuntimeType *reflect_type(LhatHeap *heap, LhatValue value,
+                                     Visited *seen);
 
 // 14.7: a definition's methods and an instance's fields are both flattened at
 // compile time (14.2, 14.11) onto separate tables, so reflecting the whole
@@ -3681,10 +3730,10 @@ static LhatRuntimeType *reflect_type(LhatHeap *heap, LhatValue value);
 // parameters do -- 14.10改 writes a positional member as a bare type, with no
 // name, and STRUCTURE otherwise has no use for `parts`.
 static bool reflect_table_members(LhatHeap *heap, const LhatTable *table,
-                                  LhatRuntimeType *into)
+                                  LhatRuntimeType *into, Visited *seen)
 {
     for (size_t i = 0; i < table->array_count; i++) {
-        LhatRuntimeType *member = reflect_type(heap, table->array[i]);
+        LhatRuntimeType *member = reflect_type(heap, table->array[i], seen);
         if (member == NULL || !lhat_type_rt_add_part(into, member)) {
             return false;
         }
@@ -3701,7 +3750,7 @@ static bool reflect_table_members(LhatHeap *heap, const LhatTable *table,
         LhatString *name =
             lhat_string_new(heap, original->text, original->length);
         LhatRuntimeType *member =
-            reflect_type(heap, table->entries[i].value);
+            reflect_type(heap, table->entries[i].value, seen);
         if (name == NULL || member == NULL ||
             !lhat_type_rt_add_member(into, name, member)) {
             return false;
@@ -3710,7 +3759,8 @@ static bool reflect_table_members(LhatHeap *heap, const LhatTable *table,
     return true;
 }
 
-static LhatRuntimeType *reflect_type(LhatHeap *heap, LhatValue value)
+static LhatRuntimeType *reflect_type(LhatHeap *heap, LhatValue value,
+                                     Visited *seen)
 {
     if (lhat_is_nil(value)) {
         return lhat_type_rt_new(heap, LHAT_TYPE_RT_NIL);
@@ -3749,7 +3799,8 @@ static LhatRuntimeType *reflect_type(LhatHeap *heap, LhatValue value)
             return NULL;
         }
         for (size_t i = 0; i < overload->count; i++) {
-            LhatRuntimeType *arm = reflect_type(heap, overload->candidates[i]);
+            LhatRuntimeType *arm =
+                reflect_type(heap, overload->candidates[i], seen);
             if (arm == NULL || !lhat_type_rt_add_part(type, arm)) {
                 return NULL;
             }
@@ -3786,13 +3837,30 @@ static LhatRuntimeType *reflect_type(LhatHeap *heap, LhatValue value)
     }
     if (lhat_is_object_kind(value, LHAT_OBJECT_TABLE)) {
         const LhatTable *table = (const LhatTable *)lhat_as_object(value);
-        LhatRuntimeType *type =
-            lhat_type_rt_new(heap, LHAT_TYPE_RT_STRUCTURE);
-        if (type == NULL || !reflect_table_members(heap, table, type)) {
+        // 02 の 14.16: this table is already being walked further up the same
+        // path, so the shape it would add here is exactly what is missing --
+        // answering 13.7's unstructured top of tables is what stops the walk
+        // rather than reflect_type's own call stack doing it.
+        if (visited_contains(seen, table)) {
+            return lhat_type_rt_new(heap, LHAT_TYPE_RT_TABLE);
+        }
+        if (!visited_push(seen, table)) {
             return NULL;
         }
-        if (table->definition != NULL &&
-            !reflect_table_members(heap, table->definition, type)) {
+        LhatRuntimeType *type =
+            lhat_type_rt_new(heap, LHAT_TYPE_RT_STRUCTURE);
+        bool ok = type != NULL && reflect_table_members(heap, table, type, seen);
+        if (ok && table->definition != NULL &&
+            !visited_contains(seen, table->definition)) {
+            if (visited_push(seen, table->definition)) {
+                ok = reflect_table_members(heap, table->definition, type, seen);
+                visited_pop(seen);
+            } else {
+                ok = false;
+            }
+        }
+        visited_pop(seen);
+        if (!ok) {
             return NULL;
         }
         // A hash table's own order is not writer-chosen and not stable across
@@ -4388,7 +4456,10 @@ LhatRunResult lhat_run(LhatMachine *m, const LhatProto *proto)
             }
 
             case LHAT_BC_TYPEOF: {
-                LhatRuntimeType *type = reflect_type(&m->objects, registers[b]);
+                Visited seen = {0};
+                LhatRuntimeType *type =
+                    reflect_type(&m->objects, registers[b], &seen);
+                lhat_free((void *)seen.tables);
                 if (type == NULL) {
                     return finish(m, LHAT_RUN_OUT_OF_MEMORY, lhat_nil(), at);
                 }

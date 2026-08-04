@@ -2839,6 +2839,44 @@ static void test_typeof(void)
              "return^ typeof^(Bar.new^()).signature\n");
     CHECK_STRING(&r, "t^{ foo : p^; & p^string^;, new : f^; }");
     run_dispose(&r);
+
+    // 02 の 14.16: 8.8 lets a written annotation widen what a path introduces
+    // past the value's own type ('let^ a.next : t^{} = b' does not narrow to
+    // b), which is enough to make two tables hold each other. Measured to
+    // crash with a stack overflow before the walk tracked its own path.
+    LHAT_TEST("a cycle between two tables does not recurse forever");
+    run_text(&r,
+             "let^ a = { }\n"
+             "let^ b = { }\n"
+             "let^ a.next : t^{} = b\n"
+             "let^ b.next : t^{} = a\n"
+             "return^ typeof^(a).signature\n");
+    CHECK_STRING(&r, "t^{ next : t^{ next : table^ } }");
+    run_dispose(&r);
+
+    // The same through two def^ instances -- 'next := { }' defaults the
+    // field to the unstructured top of tables (13.7), which anything at all
+    // conforms to, including another instance of the same definition.
+    LHAT_TEST("and between two instances of the same definition");
+    run_text(&r,
+             "let^ Node = def^{ self^{ next := { } } }\n"
+             "let^ a = Node.new^()\n"
+             "let^ b = Node.new^()\n"
+             "a.next := b\n"
+             "b.next := a\n"
+             "return^ typeof^(a).signature\n");
+    CHECK_STRING(&r, "t^{ new : f^;, next : t^{ new : f^;, next : table^ } }");
+    run_dispose(&r);
+
+    // A value reached twice without a cycle -- shared, not circular -- is not
+    // cut short. Only revisiting something still on the current path is.
+    LHAT_TEST("a value reached two ways (no cycle) is not cut short");
+    run_text(&r,
+             "let^ shared = { v := 1 }\n"
+             "let^ t = { a := shared, b := shared }\n"
+             "return^ typeof^(t).signature\n");
+    CHECK_STRING(&r, "t^{ a : t^{ v : number^ }, b : t^{ v : number^ } }");
+    run_dispose(&r);
 }
 
 // 02 の 15 章 and 5.11: a coroutine is one suspended frame, which is all
