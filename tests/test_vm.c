@@ -2714,6 +2714,133 @@ static void test_definitions(void)
     run_dispose(&r);
 }
 
+// 02 の 14.12改: typeof^ reflects the value itself rather than anything the
+// checker inferred (03 の 4.2), so this is testing reflect_type's walk of the
+// actual runtime object graph.
+static void test_typeof(void)
+{
+    Run r;
+
+    LHAT_TEST("a number's signature");
+    run_text(&r, "return^ typeof^(5).signature\n");
+    CHECK_STRING(&r, "number^");
+    run_dispose(&r);
+
+    LHAT_TEST("and a real's is the same -- 14.8 is one type");
+    run_text(&r, "return^ typeof^(5.5).signature\n");
+    CHECK_STRING(&r, "number^");
+    run_dispose(&r);
+
+    LHAT_TEST("a string's signature");
+    run_text(&r, "return^ typeof^(\"x\").signature\n");
+    CHECK_STRING(&r, "string^");
+    run_dispose(&r);
+
+    LHAT_TEST("a bool's signature");
+    run_text(&r, "return^ typeof^(true^).signature\n");
+    CHECK_STRING(&r, "bool^");
+    run_dispose(&r);
+
+    LHAT_TEST("nil^'s signature");
+    run_text(&r, "return^ typeof^(nil^).signature\n");
+    CHECK_STRING(&r, "nil^");
+    run_dispose(&r);
+
+    // 14.7: an instance's members are split between it (fields, set at
+    // construction, 14.11) and its definition (methods, shared, 14.2) --
+    // reflect_type walks both and folds them into one structure.
+    LHAT_TEST("an instance's signature carries fields and methods");
+    run_text(&r,
+             "let^ Point = def^{ self^{ x := 0, y := 0 },\n"
+             "  sum := f^self^ -> number^ { return^ self^.x + self^.y } }\n"
+             "return^ typeof^(Point.new^()).signature\n");
+    CHECK_STRING(&r, "t^{ new : f^;, sum : f^ -> number^;, x : number^, "
+                     "y : number^ }");
+    run_dispose(&r);
+
+    // 14.4: self^ is the receiver, not a parameter of the signature.
+    LHAT_TEST("a function's signature carries its parameters and result");
+    run_text(&r,
+             "let^ f = f^ x:number^, y:string^ -> bool^ { return^ true^ }\n"
+             "return^ typeof^(f).signature\n");
+    CHECK_STRING(&r, "f^number^, string^ -> bool^;");
+    run_dispose(&r);
+
+    LHAT_TEST("and a procedure with no result says nothing after it");
+    run_text(&r, "let^ p = p^ x:number^ { }\nreturn^ typeof^(p).signature\n");
+    CHECK_STRING(&r, "p^number^;");
+    run_dispose(&r);
+
+    // 04 の 2.4: identity is the declaration, so typeof^ answers with the
+    // kind's own qualified name -- the example 04-errors.md 136 gives.
+    LHAT_TEST("an error's signature is its qualified kind name");
+    run_text(&r,
+             "errordef^ IOError { NotFound }\n"
+             "let^ e = error^IOError.NotFound{ }\n"
+             "return^ typeof^(e).signature\n");
+    CHECK_STRING(&r, "IOError.NotFound");
+    run_dispose(&r);
+
+    // 14.10改: the sequence half is written as bare types, in order, with no
+    // names -- not as members keyed by their position.
+    LHAT_TEST("a table literal's positional part has no names");
+    run_text(&r, "return^ typeof^({1, \"x\"}).signature\n");
+    CHECK_STRING(&r, "t^{ number^, string^ }");
+    run_dispose(&r);
+
+    // 02 の 2811: typeof^(x) = typeof^(y) is 11.3's structural identity, not
+    // the identity of the two LhatRuntimeType objects reflect_type built --
+    // two separate calls never share one.
+    LHAT_TEST("typeof^(x) = typeof^(y) compares structurally");
+    run_text(&r, "return^ typeof^(5) = typeof^(6)\n");
+    CHECK_BOOL(&r, true);
+    run_dispose(&r);
+
+    LHAT_TEST("and answers false across different shapes");
+    run_text(&r, "return^ typeof^(5) = typeof^(\"x\")\n");
+    CHECK_BOOL(&r, false);
+    run_dispose(&r);
+
+    // 14.9: a name never takes part in identity -- two independently written
+    // definitions of the same shape are the same type.
+    LHAT_TEST("two unrelated definitions of the same shape are equal");
+    run_text(&r,
+             "let^ A = def^{ self^{ n := 0 } }\n"
+             "let^ B = def^{ self^{ n := 5 } }\n"
+             "return^ typeof^(A.new^()) = typeof^(B.new^())\n");
+    CHECK_BOOL(&r, true);
+    run_dispose(&r);
+
+    LHAT_TEST("and unequal once the shapes differ");
+    run_text(&r,
+             "let^ A = def^{ self^{ n := 0 } }\n"
+             "let^ B = def^{ self^{ n := 0, extra := 1 } }\n"
+             "return^ typeof^(A.new^()) = typeof^(B.new^())\n");
+    CHECK_BOOL(&r, false);
+    run_dispose(&r);
+
+    // 14.10's round trip: what typeof^(x).signature answers with has to be
+    // usable as a type annotation.
+    LHAT_TEST("the signature parses back as an annotation");
+    run_text(&r,
+             "let^ Point = def^{ self^{ x := 0, y := 0 } }\n"
+             "let^ p : t^{ x : number^, y : number^ } = Point.new^()\n"
+             "return^ p.x + p.y\n");
+    CHECK_INTEGER(&r, 0);
+    run_dispose(&r);
+
+    // 14.5, 14.12: a multi-dispatched member is callable every way its arms
+    // list, which is what '&' means -- matching 14.12's own example.
+    LHAT_TEST("an overload^ed member's signature is an intersection");
+    run_text(&r,
+             "let^ Foo = def^{ self^{}, foo := p^ { } }\n"
+             "let^ Bar = Foo .. def^{ self^{},\n"
+             "  overload^ foo := p^ x:string^ { } }\n"
+             "return^ typeof^(Bar.new^()).signature\n");
+    CHECK_STRING(&r, "t^{ foo : p^; & p^string^;, new : f^; }");
+    run_dispose(&r);
+}
+
 // 02 の 15 章 and 5.11: a coroutine is one suspended frame, which is all
 // 15.5 leaves room for.
 static void test_coroutines(void)
@@ -3946,6 +4073,7 @@ int main(void)
     test_catch_and_try();
     test_cleanups();
     test_definitions();
+    test_typeof();
     test_coroutines();
     test_patterns();
     test_collection();

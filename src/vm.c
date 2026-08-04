@@ -2,6 +2,7 @@
 
 #include "vm.h"
 
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -1429,6 +1430,11 @@ static void compile_subroutine(Compiler *c, const LhatNode *node, uint8_t into)
         proto->parameters++;
     }
 
+    // 02 の 14.16: kept the same way parameter_types is, for typeof^ to
+    // reconstruct the signature without touching the checker's types (03 の
+    // 4.2 -- what runs cannot depend on whether checking did).
+    proto->result_type = lower_type(c, node->v.func.return_type);
+
     // 02 の 10.1: a p^ body is a block that may carry a finally^, which is
     // where resources are handled and so where it is most wanted.
     compile_block(&inner, node->v.func.body);
@@ -1585,6 +1591,17 @@ static void compile_expression(Compiler *c, const LhatNode *node, uint8_t into)
         case LHAT_NODE_TRY:
             compile_try(c, node, into);
             return;
+
+        // 02 の 14.16: reflect_type reads the value once it is in a
+        // register, so the operand is compiled the ordinary way first.
+        case LHAT_NODE_TYPEOF: {
+            uint8_t mark = c->next_register;
+            uint8_t value = reserve(c);
+            compile_expression(c, node->v.jump.value, value);
+            emit(c, lhat_encode_abc(LHAT_BC_TYPEOF, into, value, 0));
+            c->next_register = mark;
+            return;
+        }
 
         // 02 の 15.8: delegation is the outer one driving the inner one. 03
         // の 5.7 writes the expansion out; the chain of coroutines is
@@ -3648,6 +3665,147 @@ static const LhatTable *readable_table(LhatValue value)
     return table_of(value);
 }
 
+// 02 の 14.16: typeof^'s reflection over an actual value, as opposed to
+// lower_type's reflection over a written annotation. 03 の 4.2 rules out
+// answering from what the checker inferred -- that would make typeof^'s
+// answer depend on whether checking ran -- so this walks the value itself,
+// which exists identically either way.
+static LhatRuntimeType *reflect_type(LhatHeap *heap, LhatValue value);
+
+// 14.7: a definition's methods and an instance's fields are both flattened at
+// compile time (14.2, 14.11) onto separate tables, so reflecting the whole
+// shape a definition promises means walking one table here for the fields and
+// again for the methods, and folding the two together.
+//
+// The sequence half (14 章) goes into `parts`, in order, the way a signature's
+// parameters do -- 14.10改 writes a positional member as a bare type, with no
+// name, and STRUCTURE otherwise has no use for `parts`.
+static bool reflect_table_members(LhatHeap *heap, const LhatTable *table,
+                                  LhatRuntimeType *into)
+{
+    for (size_t i = 0; i < table->array_count; i++) {
+        LhatRuntimeType *member = reflect_type(heap, table->array[i]);
+        if (member == NULL || !lhat_type_rt_add_part(into, member)) {
+            return false;
+        }
+    }
+    for (size_t i = 0; i < table->entry_capacity; i++) {
+        LhatValue key = table->entries[i].key;
+        // 14.6改: every name a def^ or a table literal writes is a string
+        // key (14.14) -- anything else is a computed key (14.6改), which has
+        // no name to give a member.
+        if (!lhat_is_object_kind(key, LHAT_OBJECT_STRING)) {
+            continue;
+        }
+        const LhatString *original = (const LhatString *)lhat_as_object(key);
+        LhatString *name =
+            lhat_string_new(heap, original->text, original->length);
+        LhatRuntimeType *member =
+            reflect_type(heap, table->entries[i].value);
+        if (name == NULL || member == NULL ||
+            !lhat_type_rt_add_member(into, name, member)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+static LhatRuntimeType *reflect_type(LhatHeap *heap, LhatValue value)
+{
+    if (lhat_is_nil(value)) {
+        return lhat_type_rt_new(heap, LHAT_TYPE_RT_NIL);
+    }
+    if (lhat_is_bool(value)) {
+        return lhat_type_rt_new(heap, LHAT_TYPE_RT_BOOL);
+    }
+    if (lhat_is_number(value)) {
+        return lhat_type_rt_new(heap, LHAT_TYPE_RT_NUMBER);
+    }
+    if (lhat_is_object_kind(value, LHAT_OBJECT_STRING)) {
+        return lhat_type_rt_new(heap, LHAT_TYPE_RT_STRING);
+    }
+    if (lhat_is_object_kind(value, LHAT_OBJECT_COROUTINE)) {
+        return lhat_type_rt_new(heap, LHAT_TYPE_RT_COROUTINE);
+    }
+    // 04 の 2.4: an error's identity is the declaration, so what typeof^
+    // answers with is the kind object itself -- 05 の 7 の 7.4's IOError.NotFound.
+    if (lhat_is_object_kind(value, LHAT_OBJECT_ERROR)) {
+        const LhatError *error = (const LhatError *)lhat_as_object(value);
+        LhatRuntimeType *type =
+            lhat_type_rt_new(heap, LHAT_TYPE_RT_ERROR_KIND);
+        if (type != NULL) {
+            type->error_kind = error->kind;
+        }
+        return type;
+    }
+    // 14.5, 14.12: a multi-dispatched member is callable every way its arms
+    // list, which is what '&' means -- 14.12 prints one the same way.
+    if (lhat_is_object_kind(value, LHAT_OBJECT_OVERLOAD)) {
+        const LhatOverload *overload =
+            (const LhatOverload *)lhat_as_object(value);
+        LhatRuntimeType *type =
+            lhat_type_rt_new(heap, LHAT_TYPE_RT_INTERSECT);
+        if (type == NULL) {
+            return NULL;
+        }
+        for (size_t i = 0; i < overload->count; i++) {
+            LhatRuntimeType *arm = reflect_type(heap, overload->candidates[i]);
+            if (arm == NULL || !lhat_type_rt_add_part(type, arm)) {
+                return NULL;
+            }
+        }
+        return type;
+    }
+    if (lhat_is_object_kind(value, LHAT_OBJECT_SUBROUTINE)) {
+        const LhatClosure *closure = (const LhatClosure *)lhat_as_object(value);
+        const LhatProto *proto = closure->proto;
+        LhatRuntimeType *type =
+            lhat_type_rt_new(heap, LHAT_TYPE_RT_SUBROUTINE);
+        if (type == NULL) {
+            return NULL;
+        }
+        type->is_function = proto->is_function;
+        type->takes_self = proto->takes_self;
+        // 14.4: self^ is not a parameter of the signature -- it is the
+        // receiver, written out only where 14.4 already says so.
+        for (uint8_t i = proto->takes_self ? 1 : 0; i < proto->parameters;
+             i++) {
+            LhatRuntimeType *param = proto->parameter_types != NULL
+                                         ? proto->parameter_types[i]
+                                         : NULL;
+            if (param == NULL) {
+                // 13.7: nothing written asks for the top type, not nothing.
+                param = lhat_type_rt_new(heap, LHAT_TYPE_RT_ANY);
+            }
+            if (param == NULL || !lhat_type_rt_add_part(type, param)) {
+                return NULL;
+            }
+        }
+        type->result = proto->result_type;
+        return type;
+    }
+    if (lhat_is_object_kind(value, LHAT_OBJECT_TABLE)) {
+        const LhatTable *table = (const LhatTable *)lhat_as_object(value);
+        LhatRuntimeType *type =
+            lhat_type_rt_new(heap, LHAT_TYPE_RT_STRUCTURE);
+        if (type == NULL || !reflect_table_members(heap, table, type)) {
+            return NULL;
+        }
+        if (table->definition != NULL &&
+            !reflect_table_members(heap, table->definition, type)) {
+            return NULL;
+        }
+        // A hash table's own order is not writer-chosen and not stable across
+        // rehashes, so the named half is put in a canonical order here --
+        // once, rather than at every printing or comparison.
+        lhat_type_rt_sort_members(type);
+        return type;
+    }
+    // Host data, an overloaded member, a type-info value itself, … -- none of
+    // these has a signature worth reconstructing yet.
+    return lhat_type_rt_new(heap, LHAT_TYPE_RT_ANY);
+}
+
 // The operations 02 の 12.6 and 15.6 give a coroutine. The rest of the
 // standard library is M2 and will not go through here.
 static bool native_named(LhatValue key, LhatNativeKind *out)
@@ -4229,6 +4387,15 @@ LhatRunResult lhat_run(LhatMachine *m, const LhatProto *proto)
                 break;
             }
 
+            case LHAT_BC_TYPEOF: {
+                LhatRuntimeType *type = reflect_type(&m->objects, registers[b]);
+                if (type == NULL) {
+                    return finish(m, LHAT_RUN_OUT_OF_MEMORY, lhat_nil(), at);
+                }
+                registers[a] = lhat_object((LhatObject *)type);
+                break;
+            }
+
             case LHAT_BC_EQ:
                 registers[a] = lhat_bool(
                     lhat_value_equal(registers[b], registers[cc]));
@@ -4395,6 +4562,38 @@ LhatRunResult lhat_run(LhatMachine *m, const LhatProto *proto)
                         return finish(m, LHAT_RUN_OUT_OF_MEMORY, lhat_nil(), at);
                     }
                     registers[a] = lhat_object((LhatObject *)native);
+                    break;
+                }
+                // 02 の 14.16: a type-info value carries exactly one member.
+                // It is not a table, so the ordinary lookup below never sees
+                // it -- this is what makes '.signature' answer something.
+                if (lhat_is_object_kind(registers[b], LHAT_OBJECT_TYPE)) {
+                    if (!lhat_is_object_kind(registers[cc], LHAT_OBJECT_STRING)) {
+                        return finish(m, LHAT_RUN_TYPE_ERROR, lhat_nil(), at);
+                    }
+                    const LhatString *key =
+                        (const LhatString *)lhat_as_object(registers[cc]);
+                    if (key->length != 9 ||
+                        memcmp(key->text, "signature", 9) != 0) {
+                        return finish(m, LHAT_RUN_TYPE_ERROR, lhat_nil(), at);
+                    }
+                    const LhatRuntimeType *type =
+                        (const LhatRuntimeType *)lhat_as_object(registers[b]);
+                    size_t needed = lhat_runtime_type_write(type, NULL, 0);
+                    char *text = (char *)lhat_alloc(needed + 1);
+                    if (text == NULL) {
+                        return finish(m, LHAT_RUN_OUT_OF_MEMORY, lhat_nil(),
+                                      at);
+                    }
+                    lhat_runtime_type_write(type, text, needed + 1);
+                    LhatString *written =
+                        lhat_string_new(&m->objects, text, needed);
+                    lhat_free(text);
+                    if (written == NULL) {
+                        return finish(m, LHAT_RUN_OUT_OF_MEMORY, lhat_nil(),
+                                      at);
+                    }
+                    registers[a] = lhat_object((LhatObject *)written);
                     break;
                 }
                 const LhatTable *table = readable_table(registers[b]);

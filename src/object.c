@@ -284,6 +284,15 @@ bool lhat_value_satisfies(LhatValue value, const LhatRuntimeType *type)
                 }
             }
             return false;
+        // 14.5, 14.12: an overload^ed member has to fit every arm at once --
+        // it is one value callable every way the intersection lists.
+        case LHAT_TYPE_RT_INTERSECT:
+            for (size_t i = 0; i < type->part_count; i++) {
+                if (!lhat_value_satisfies(value, type->parts[i])) {
+                    return false;
+                }
+            }
+            return true;
         case LHAT_TYPE_RT_STRUCTURE: {
             // 14.10: at least these members, which is what makes the judgement
             // structural rather than a question about where it came from.
@@ -306,6 +315,278 @@ bool lhat_value_satisfies(LhatValue value, const LhatRuntimeType *type)
             }
             return true;
         }
+    }
+    return false;
+}
+
+static int compare_members(const void *a, const void *b)
+{
+    const LhatString *left = ((const LhatRuntimeTypeMember *)a)->name;
+    const LhatString *right = ((const LhatRuntimeTypeMember *)b)->name;
+    size_t shorter = left->length < right->length ? left->length : right->length;
+    int cmp = memcmp(left->text, right->text, shorter);
+    if (cmp != 0) {
+        return cmp;
+    }
+    return left->length < right->length ? -1
+                                        : (left->length > right->length ? 1 : 0);
+}
+
+void lhat_type_rt_sort_members(LhatRuntimeType *type)
+{
+    qsort(type->members, type->member_count, sizeof *type->members,
+         compare_members);
+}
+
+// ---------------------------------------------------------------------------
+// Printing a runtime type down (02 の 14.10, 14.16)
+// ---------------------------------------------------------------------------
+
+// Mirrors value.c's Writer -- each file that writes text down keeps its own
+// copy of the idiom rather than sharing one across a header.
+typedef struct {
+    char *out;
+    size_t capacity;
+    size_t used;
+} TypeWriter;
+
+static void type_put(TypeWriter *w, const char *text, size_t length)
+{
+    for (size_t i = 0; i < length; i++) {
+        if (w->out != NULL && w->used + 1 < w->capacity) {
+            w->out[w->used] = text[i];
+        }
+        w->used++;
+    }
+}
+
+static void type_put_text(TypeWriter *w, const char *text)
+{
+    type_put(w, text, strlen(text));
+}
+
+static void write_runtime_type(TypeWriter *w, const LhatRuntimeType *type)
+{
+    if (type == NULL) {
+        // 13.7: nothing written asks for the top type, not nothing.
+        type_put_text(w, "any^");
+        return;
+    }
+    switch (type->kind) {
+        case LHAT_TYPE_RT_ANY:
+            type_put_text(w, "any^");
+            return;
+        case LHAT_TYPE_RT_NIL:
+            type_put_text(w, "nil^");
+            return;
+        case LHAT_TYPE_RT_BOOL:
+            type_put_text(w, "bool^");
+            return;
+        case LHAT_TYPE_RT_NUMBER:
+            type_put_text(w, "number^");
+            return;
+        case LHAT_TYPE_RT_STRING:
+            type_put_text(w, "string^");
+            return;
+        case LHAT_TYPE_RT_TABLE:
+            type_put_text(w, "table^");
+            return;
+        case LHAT_TYPE_RT_ERROR:
+            type_put_text(w, "error^");
+            return;
+        // 04 の 2.4: identity is the declaration, and the declaration's own
+        // name is already qualified (05 の 7.3) -- the same text that names
+        // it in an is^ or an annotation.
+        case LHAT_TYPE_RT_ERROR_KIND:
+            if (type->error_kind != NULL && type->error_kind->name != NULL) {
+                type_put(w, type->error_kind->name->text,
+                        type->error_kind->name->length);
+            } else {
+                type_put_text(w, "error^");
+            }
+            return;
+        // 15 章's coroutine carries R, Y and T, none of which reflect_type
+        // reconstructs yet (S-something) -- any^ for each is honest about
+        // what is not known rather than a guess.
+        case LHAT_TYPE_RT_COROUTINE:
+            type_put_text(w, "c^{any^, any^, any^}");
+            return;
+        case LHAT_TYPE_RT_UNION:
+            for (size_t i = 0; i < type->part_count; i++) {
+                if (i > 0) {
+                    type_put_text(w, "|");
+                }
+                write_runtime_type(w, type->parts[i]);
+            }
+            return;
+        // 14.5: '&' is intersection, the same symbol 14.12's overload^ shows
+        // a multi-dispatched member's type with.
+        case LHAT_TYPE_RT_INTERSECT:
+            for (size_t i = 0; i < type->part_count; i++) {
+                if (i > 0) {
+                    type_put_text(w, " & ");
+                }
+                write_runtime_type(w, type->parts[i]);
+            }
+            return;
+        case LHAT_TYPE_RT_SUBROUTINE:
+            type_put_text(w, type->is_function ? "f^" : "p^");
+            for (size_t i = 0; i < type->part_count; i++) {
+                if (i > 0) {
+                    type_put_text(w, ", ");
+                }
+                write_runtime_type(w, type->parts[i]);
+            }
+            if (type->result != NULL) {
+                type_put_text(w, " -> ");
+                write_runtime_type(w, type->result);
+            }
+            type_put_text(w, ";");
+            return;
+        case LHAT_TYPE_RT_STRUCTURE:
+            type_put_text(w, "t^{");
+            {
+                bool first = true;
+                // 14 章: the sequence half first, in order, the way a value
+                // written down puts it (value.c's write_table) -- then the
+                // named half, sorted into a canonical order already (this is
+                // read-only from here).
+                for (size_t i = 0; i < type->part_count; i++) {
+                    type_put_text(w, first ? " " : ", ");
+                    first = false;
+                    write_runtime_type(w, type->parts[i]);
+                }
+                for (size_t i = 0; i < type->member_count; i++) {
+                    type_put_text(w, first ? " " : ", ");
+                    first = false;
+                    type_put(w, type->members[i].name->text,
+                            type->members[i].name->length);
+                    type_put_text(w, " : ");
+                    write_runtime_type(w, type->members[i].type);
+                }
+                type_put_text(w, first ? "}" : " }");
+            }
+            return;
+    }
+}
+
+size_t lhat_runtime_type_write(const LhatRuntimeType *type, char *out,
+                               size_t capacity)
+{
+    TypeWriter w;
+    w.out = out;
+    w.capacity = capacity;
+    w.used = 0;
+    write_runtime_type(&w, type);
+    if (out != NULL && capacity > 0) {
+        out[w.used < capacity ? w.used : capacity - 1] = '\0';
+    }
+    return w.used;
+}
+
+// ---------------------------------------------------------------------------
+// Comparing two runtime types (02 の 2811, 11.3, 14.9)
+// ---------------------------------------------------------------------------
+
+bool lhat_runtime_type_equal(const LhatRuntimeType *a, const LhatRuntimeType *b)
+{
+    if (a == b) {
+        return true;
+    }
+    if (a == NULL || b == NULL) {
+        // NULL is "nothing written", which 13.7 makes any^ -- the same
+        // question lhat_value_satisfies answers by treating NULL as ANY.
+        LhatRuntimeType blank;
+        memset(&blank, 0, sizeof blank);
+        blank.kind = LHAT_TYPE_RT_ANY;
+        return lhat_runtime_type_equal(a == NULL ? &blank : a,
+                                       b == NULL ? &blank : b);
+    }
+    if (a->kind != b->kind) {
+        return false;
+    }
+    switch (a->kind) {
+        case LHAT_TYPE_RT_ANY:
+        case LHAT_TYPE_RT_NIL:
+        case LHAT_TYPE_RT_BOOL:
+        case LHAT_TYPE_RT_NUMBER:
+        case LHAT_TYPE_RT_STRING:
+        case LHAT_TYPE_RT_TABLE:
+        case LHAT_TYPE_RT_ERROR:
+        case LHAT_TYPE_RT_COROUTINE:
+            return true;
+        case LHAT_TYPE_RT_ERROR_KIND:
+            // 04 の 2.4: identity is the declaration.
+            return a->error_kind == b->error_kind;
+        // 11.3's structural identity for a union or an intersection asks the
+        // same of both sides without caring about the order the arms were
+        // written in.
+        case LHAT_TYPE_RT_UNION:
+        case LHAT_TYPE_RT_INTERSECT: {
+            // Each of one side has to be matched by some arm of the other,
+            // both ways, and each arm of the other used at most once (so
+            // A|A is not equal to A|B).
+            if (a->part_count != b->part_count) {
+                return false;
+            }
+            bool *matched = (bool *)lhat_calloc(b->part_count, sizeof *matched);
+            if (matched == NULL) {
+                return false;
+            }
+            bool equal = true;
+            for (size_t i = 0; equal && i < a->part_count; i++) {
+                bool found = false;
+                for (size_t j = 0; j < b->part_count; j++) {
+                    if (matched[j]) {
+                        continue;
+                    }
+                    if (lhat_runtime_type_equal(a->parts[i], b->parts[j])) {
+                        matched[j] = true;
+                        found = true;
+                        break;
+                    }
+                }
+                equal = found;
+            }
+            lhat_free(matched);
+            return equal;
+        }
+        case LHAT_TYPE_RT_SUBROUTINE:
+            if (a->is_function != b->is_function ||
+                a->takes_self != b->takes_self ||
+                a->part_count != b->part_count) {
+                return false;
+            }
+            for (size_t i = 0; i < a->part_count; i++) {
+                if (!lhat_runtime_type_equal(a->parts[i], b->parts[i])) {
+                    return false;
+                }
+            }
+            return lhat_runtime_type_equal(a->result, b->result);
+        case LHAT_TYPE_RT_STRUCTURE:
+            // Both sides were sorted once when reflect_type built them
+            // (lhat_type_rt_sort_members), so the same shape lines up
+            // member-by-member without a search.
+            if (a->part_count != b->part_count ||
+                a->member_count != b->member_count) {
+                return false;
+            }
+            for (size_t i = 0; i < a->part_count; i++) {
+                if (!lhat_runtime_type_equal(a->parts[i], b->parts[i])) {
+                    return false;
+                }
+            }
+            for (size_t i = 0; i < a->member_count; i++) {
+                const LhatString *an = a->members[i].name;
+                const LhatString *bn = b->members[i].name;
+                if (an->length != bn->length ||
+                    memcmp(an->text, bn->text, an->length) != 0 ||
+                    !lhat_runtime_type_equal(a->members[i].type,
+                                             b->members[i].type)) {
+                    return false;
+                }
+            }
+            return true;
     }
     return false;
 }
@@ -506,6 +787,9 @@ bool lhat_gc_children(LhatGray *gray, LhatObject *object)
                     !reach(gray, (LhatObject *)type->members[i].type)) {
                     return false;
                 }
+            }
+            if (!reach(gray, (LhatObject *)type->result)) {
+                return false;
             }
             return reach(gray, (LhatObject *)(void *)type->error_kind);
         }

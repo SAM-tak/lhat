@@ -149,8 +149,17 @@ typedef enum {
     LHAT_TYPE_RT_ERROR,      // 04 の 2.3: any kind
     LHAT_TYPE_RT_ERROR_KIND, // one kind, or one declaration's union of them
     LHAT_TYPE_RT_UNION,      // 13.5
+    LHAT_TYPE_RT_INTERSECT,  // 14.5, 14.12: an overload^ed member's arms
     LHAT_TYPE_RT_STRUCTURE   // 14.10: at least these members
 } LhatRuntimeTypeKind;
+
+// STRUCTURE's named half. Given its own tag rather than left anonymous inside
+// LhatRuntimeType, so a comparator (qsort, for 14.16's canonical order) has
+// a type to take a pointer to.
+typedef struct LhatRuntimeTypeMember {
+    const LhatString *name;
+    struct LhatRuntimeType *type;
+} LhatRuntimeTypeMember;
 
 typedef struct LhatRuntimeType {
     LhatObject header;
@@ -158,14 +167,22 @@ typedef struct LhatRuntimeType {
 
     const LhatErrorKind *error_kind;  // ERROR_KIND
 
-    struct LhatRuntimeType **parts;   // UNION
+    // UNION: the arms. SUBROUTINE: the parameter types, in order -- a
+    // signature's parameters are a list the same way a union's arms are, and
+    // the two kinds never mix, so reusing the field costs nothing.
+    struct LhatRuntimeType **parts;
     size_t part_count;
 
+    // SUBROUTINE only. 02 の 14.16's typeof^ is what first needed a
+    // signature reconstructed in full; is^'s narrowing never asked for more
+    // than "is this a subroutine" (LHAT_TYPE_RT_SUBROUTINE above), so these
+    // are NULL/false wherever nothing built them.
+    struct LhatRuntimeType *result;   // NULL when nothing is returned (13.2)
+    bool is_function;                 // f^ rather than p^ (15 章)
+    bool takes_self;                  // 14.4: the first parameter is self^
+
     // STRUCTURE. A member with no type asks only that the name is there.
-    struct {
-        const LhatString *name;
-        struct LhatRuntimeType *type;
-    } *members;
+    LhatRuntimeTypeMember *members;
     size_t member_count;
 } LhatRuntimeType;
 
@@ -294,6 +311,25 @@ LhatRuntimeType *lhat_type_rt_new(LhatHeap *heap, LhatRuntimeTypeKind kind);
 bool lhat_type_rt_add_part(LhatRuntimeType *type, LhatRuntimeType *part);
 bool lhat_type_rt_add_member(LhatRuntimeType *type, const LhatString *name,
                              LhatRuntimeType *member);
+
+// 02 の 14.16: a table's own order is not writer-chosen and not stable
+// across a rehash, so typeof^'s reflection puts the named members in a
+// canonical (alphabetical) order once, here -- rather than leaving
+// lhat_runtime_type_write's text or lhat_runtime_type_equal's comparison to
+// depend on the hash table's internal layout.
+void lhat_type_rt_sort_members(LhatRuntimeType *type);
+
+// The printer for a runtime type, in 14.10's raw structural form -- what
+// typeof^(x).signature answers with. Measured with (NULL, 0) first, filled
+// once the caller has a buffer that size, the way lhat_report_write is.
+size_t lhat_runtime_type_write(const LhatRuntimeType *type, char *out,
+                               size_t capacity);
+
+// 02 の 2811: typeof^(x) = typeof^(y) compares structurally (11.3, 14.9), not
+// by the identity of the two LhatRuntimeType objects -- two calls to
+// reflect_type build separate objects even for the same shape.
+bool lhat_runtime_type_equal(const LhatRuntimeType *a,
+                             const LhatRuntimeType *b);
 
 // 13.11: whether the value may stand where the type is written. A NULL type
 // asks nothing, which is what an unannotated parameter means.

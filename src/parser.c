@@ -1179,6 +1179,23 @@ static LhatNode *parse_primary(Parser *p)
             if (check_hat(p, "def")) {
                 return parse_def(p);
             }
+            // 02 の 14.16: always parenthesized, and always exactly one
+            // operand -- a primary in its own right rather than a prefix
+            // operator with a precedence of its own.
+            if (check_hat(p, "typeof")) {
+                LhatToken at = p->current;
+                advance(p);
+                LhatNode *node = make(p, LHAT_NODE_TYPEOF, &at);
+                if (node == NULL) {
+                    return NULL;
+                }
+                if (!expect_op(p, LHAT_OP_LPAREN)) {
+                    return node;
+                }
+                node->v.jump.value = parse_expression(p);
+                expect_op(p, LHAT_OP_RPAREN);
+                return node;
+            }
             // 'self^' on its own is an ordinary value, as in self^.value1, so
             // only a '{' immediately after it makes the form of 14.6. The
             // parameter list of 14.4 never reaches here: it takes the name

@@ -1699,6 +1699,51 @@ static void test_composition(void)
     unit_dispose(&u);
 }
 
+// 02 の 14.12改: typeof^'s own static type is a fixed nominal carrier
+// (TypeInfo) regardless of the operand -- the descriptive payload is a
+// runtime concern (03 の 4.2), so the checker's job is only to give
+// '.signature' somewhere to resolve and to still check the operand.
+static void test_typeof(void)
+{
+    Unit u;
+
+    LHAT_TEST("typeof^(x).signature is a string^");
+    check_text(&u, "let^ s : string^ = typeof^(5).signature\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("an unknown member is refused");
+    check_text(&u, "let^ x = typeof^(5).bogus\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_NO_MEMBER);
+    unit_dispose(&u);
+
+    LHAT_TEST("the operand is still checked");
+    check_text(&u, "let^ x = typeof^(nowhere)\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_UNDEFINED);
+    unit_dispose(&u);
+
+    // 02 の 2811: typeof^(x) = typeof^(y) has to type-check at all, which
+    // needs both sides to resolve to the very same TypeInfo type.
+    LHAT_TEST("two typeof^ results compare with '='");
+    check_text(&u, "let^ b : bool^ = typeof^(5) = typeof^(\"x\")\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // Session-scoped the way L^'s environment is (05 の 8.6), so a typeof^
+    // bound in one input is still the same nominal type in the next.
+    LHAT_TEST("the TypeInfo type is the same across a session's inputs");
+    {
+        LhatCheckSession *s = lhat_check_session_new();
+        check_next_text(&u, s, "let^ t = typeof^(5)\n");
+        CHECK_CLEAN(&u);
+        unit_dispose(&u);
+        check_next_text(&u, s, "let^ b : bool^ = t = typeof^(\"x\")\n");
+        CHECK_CLEAN(&u);
+        unit_dispose(&u);
+        lhat_check_session_dispose(s);
+    }
+}
+
 // 17 章. Nothing here is checked by machinery of its own -- 17.9 lowers a
 // pattern to a condition, so what runs is 13.11's narrowing.
 static void test_patterns(void)
@@ -3599,6 +3644,7 @@ int main(void)
     test_narrowing();
     test_definitions();
     test_composition();
+    test_typeof();
     test_patterns();
     test_modules();
     test_coroutines();

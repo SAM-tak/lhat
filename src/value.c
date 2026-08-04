@@ -55,6 +55,17 @@ bool lhat_value_equal(LhatValue a, LhatValue b)
                 return lhat_string_equal((const LhatString *)a.as.object,
                                          (const LhatString *)b.as.object);
             }
+            // 02 の 2811: typeof^(x) = typeof^(y) compares structurally
+            // (11.3, 14.9) -- two calls to typeof^ build separate objects
+            // even for the same shape, so pointer identity would say no to
+            // the very comparison 2811 exists for.
+            if (a.as.object != NULL && b.as.object != NULL &&
+                a.as.object->kind == LHAT_OBJECT_TYPE &&
+                b.as.object->kind == LHAT_OBJECT_TYPE) {
+                return lhat_runtime_type_equal(
+                    (const LhatRuntimeType *)a.as.object,
+                    (const LhatRuntimeType *)b.as.object);
+            }
             return a.as.object == b.as.object;
         default:
             return false;  // the numeric tags are handled above

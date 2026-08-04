@@ -98,6 +98,13 @@ typedef struct {
     // its own in, so what one input registers is there for the next.
     LhatType *environment;
 
+    // 02 の 14.16: what every typeof^(...) answers with. Nominal (8.8's
+    // reason applies the same way: what it carries is fixed and comparing two
+    // by shape would say nothing), so every mention has to be the very same
+    // object -- kept here and handed forward by a session the way
+    // `environment` is.
+    LhatType *typeinfo_type;
+
     // The name the subroutine currently being checked is being bound to, so
     // that a call to it inside its own body can be spotted (03 の 3.4).
     const char *defining_name;
@@ -297,6 +304,7 @@ static LhatType *simple(Checker *c, LhatTypeKind kind)
 static LhatType *resolve_type(Checker *c, const LhatNode *node);
 static LhatType *infer(Checker *c, const LhatNode *node);
 static LhatType *environment_type(Checker *c);  // 05 の 8.6
+static LhatType *typeinfo_type(Checker *c);     // 14.16
 static void register_module_type(Checker *c, const char *module_name,
                                  LhatType *exports);  // 05 の 5.3
 static LhatType *hosted_module(Checker *c, const LhatNode *path);  // 8.7
@@ -2628,6 +2636,15 @@ static LhatType *infer(Checker *c, const LhatNode *node)
             return without(c, value, error);
         }
 
+        // 02 の 14.16: the operand is still checked -- an error inside it is
+        // still an error -- but what the operand's own type turns out to be
+        // plays no part in typeof^'s own type, which is the uniform TypeInfo
+        // carrier regardless. The descriptive payload is filled in at run
+        // time (03 の 4.2), by reflect_type reading the actual value.
+        case LHAT_NODE_TYPEOF:
+            infer(c, node->v.jump.value);
+            return typeinfo_type(c);
+
         case LHAT_NODE_IF_EXPR: {
             // The same shape as the statement form: each clause sees what the
             // earlier conditions ruled out, which is what makes a chain over
@@ -2839,6 +2856,26 @@ static LhatType *environment_type(Checker *c)
                          collect_now);
     c->environment = env;
     return env;
+}
+
+// 02 の 14.16: the one nominal type every typeof^(...) has, whatever the
+// operand's own type is -- the descriptive payload is a runtime concern
+// (reflect_type, in vm.c), resolved at the call and not something a second
+// checker pass could see (03 の 4.2).
+static LhatType *typeinfo_type(Checker *c)
+{
+    if (c->typeinfo_type != NULL) {
+        return c->typeinfo_type;
+    }
+    LhatType *info = lhat_type_table(c->result->types);
+    if (info == NULL) {
+        return NULL;
+    }
+    info->v.table.nominal = true;
+    lhat_type_add_member(c->result->types, info, "signature", 9,
+                         simple(c, LHAT_TYPE_STRING));
+    c->typeinfo_type = info;
+    return info;
 }
 
 // 8.8: everything before the last segment holds the one written after it, so
@@ -3947,6 +3984,11 @@ struct LhatCheckSession {
     // 05 の 8.6: made on the first input that mentions L^ and kept, so a
     // module one input registers is still there in the next.
     LhatType *environment;
+
+    // 02 の 14.16: made on the first input that mentions typeof^ and kept,
+    // the same way -- so a typeof^ result bound in one input is still the
+    // same nominal type when a later input names it in a comparison.
+    LhatType *typeinfo_type;
 };
 
 LhatCheckSession *lhat_check_session_new(void)
@@ -4034,6 +4076,7 @@ void lhat_check_next(LhatCheckSession *session, const LhatNode *unit,
     // 05 の 8.6: one L^ for the whole session, so what an input registers in
     // it is still there in the next.
     checker.environment = session->environment;
+    checker.typeinfo_type = session->typeinfo_type;
 
     // 03 の 4.3: the last statement is what the input answers with, when it
     // is an expression. What that changes here is 15.8's reasoning about a
@@ -4070,6 +4113,7 @@ void lhat_check_next(LhatCheckSession *session, const LhatNode *unit,
         session_keep(session, b->name, b->name_length, b->type);
     }
     session->environment = checker.environment;
+    session->typeinfo_type = checker.typeinfo_type;
 
     scope_dispose(&scope);
 }

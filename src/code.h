@@ -40,6 +40,7 @@ typedef enum {
     LHAT_BC_CONCAT,     // A B C R[A] = R[B] .. R[C]  (02 の 11.2)
     LHAT_BC_NEG,        // A B   R[A] = -R[B]
     LHAT_BC_NOT,        // A B   R[A] = !R[B]
+    LHAT_BC_TYPEOF,     // A B   R[A] = typeof^(R[B])  (02 の 14.16)
 
     LHAT_BC_EQ,         // A B C R[A] = R[B] = R[C]
     LHAT_BC_NE,
@@ -197,6 +198,11 @@ typedef struct LhatProto {
     // overloaded call can find the candidate that fits. NULL where nothing
     // was written, which asks nothing.
     struct LhatRuntimeType **parameter_types;
+
+    // 02 の 14.16: what typeof^ reconstructs a subroutine value's signature
+    // from. NULL when nothing was written -- 13.2 makes an f^ declare one, so
+    // its absence here belongs to a p^.
+    struct LhatRuntimeType *result_type;
 } LhatProto;
 
 LhatProto *lhat_proto_new(void);

@@ -2386,11 +2386,48 @@ static void test_modules(void)
     parse_dispose(&p);
 }
 
+// 02 の 14.12改: always parenthesized, always exactly one operand -- a
+// primary rather than a prefix operator.
+static void test_typeof(void)
+{
+    Parse p;
+
+    LHAT_TEST("typeof^(expr) parses as one node");
+    parse_text(&p, "let^ t = typeof^(5)\n");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    LHAT_CHECK_EQ_INT(first_value(&p)->kind, LHAT_NODE_TYPEOF);
+    parse_dispose(&p);
+
+    LHAT_TEST("what it names is the operand alone");
+    parse_text(&p, "let^ t = typeof^(5)\n");
+    LHAT_CHECK_EQ_INT(first_value(&p)->v.jump.value->kind, LHAT_NODE_INT);
+    parse_dispose(&p);
+
+    LHAT_TEST("the parentheses are not optional");
+    parse_text(&p, "let^ t = typeof^ 5\n");
+    LHAT_CHECK(p.result.diagnostic_count > 0, "expected a diagnostic");
+    parse_dispose(&p);
+
+    LHAT_TEST("nor is an operand");
+    parse_text(&p, "let^ t = typeof^()\n");
+    LHAT_CHECK(p.result.diagnostic_count > 0, "expected a diagnostic");
+    parse_dispose(&p);
+
+    // 14.4: a method reached the ordinary way, exactly as any other member.
+    LHAT_TEST("'.signature' reads as a member access");
+    parse_text(&p, "let^ s = typeof^(5).signature\n");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    LHAT_CHECK_EQ_INT(first_value(&p)->kind, LHAT_NODE_MEMBER);
+    LHAT_CHECK_EQ_INT(first_value(&p)->v.access.target->kind, LHAT_NODE_TYPEOF);
+    parse_dispose(&p);
+}
+
 int main(void)
 {
     test_statements();
     test_command_form();
     test_modules();
+    test_typeof();
     test_precedence();
     test_comparison_chain();
     test_postfix();

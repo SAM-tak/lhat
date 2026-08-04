@@ -38,6 +38,7 @@ typedef enum {
     LHAT_NODE_SELF_TABLE,    // self^{ ... }                 (14.6, 14.11)
     LHAT_NODE_ERROR_NEW,     // error^Kind{ ... }            (04 の 2.5)
     LHAT_NODE_TRY,           // try^ expr                    (04 の 5 章)
+    LHAT_NODE_TYPEOF,        // typeof^(expr)                (14.16)
     LHAT_NODE_REQUIRE,       // require^ "path"              (05 の 5 章)
     LHAT_NODE_REQUIRE_STMT,  // require^ "path" on its own   (05 の 5.4改)
     LHAT_NODE_IMPORT,        // import^ a.b.c                (05 の 8.7)
