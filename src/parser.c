@@ -309,6 +309,22 @@ static LhatNode *parse_member_decls(Parser *p)
             break;
         }
 
+        // 13.7, 14.10改: the sequence half may end in a variadic tail, the
+        // same '...' a parameter list ends in -- unbounded, one type for
+        // every position beyond the fixed ones.
+        if (check_op(p, LHAT_OP_ELLIPSIS)) {
+            advance(p);
+            member->v.entry.variadic = true;
+            if (match_op(p, LHAT_OP_COLON)) {
+                member->v.entry.value = parse_type(p);
+            }
+            lhat_node_append(&head, &tail, member);
+            if (!match_op(p, LHAT_OP_COMMA)) {
+                break;
+            }
+            continue;
+        }
+
         // 14.10改: a member is written 'name : type'. Anything else in the
         // list is a type on its own, and takes the next position -- 14 章
         // makes a table a sequence as well as a mapping, and the sequence
@@ -1261,7 +1277,33 @@ static LhatNode *parse_arguments(Parser *p)
     LhatNode *tail = NULL;
 
     while (!at_eof(p) && !check_op(p, LHAT_OP_RPAREN)) {
-        lhat_node_append(&head, &tail, parse_expression(p));
+        LhatNode *argument;
+        // 13.7: '...' bare, written as an argument, forwards the collected
+        // tail into this call rather than naming it as a value in its own
+        // right -- there is no other reading a table has here, since a
+        // variadic slot never takes one table as a single element.
+        if (check_op(p, LHAT_OP_ELLIPSIS)) {
+            LhatToken at = p->current;
+            LhatNode *collected = make(p, LHAT_NODE_HAT_IDENT, &at);
+            if (collected != NULL) {
+                collected->v.name.offset = at.offset;
+                collected->v.name.length = at.length;
+            }
+            advance(p);
+            LhatNode *spread = make(p, LHAT_NODE_SPREAD, &at);
+            if (spread != NULL) {
+                spread->v.jump.value = collected;
+            }
+            argument = spread;
+            lhat_node_append(&head, &tail, argument);
+            // 13.7: nothing can follow the whole tail it forwards.
+            if (check_op(p, LHAT_OP_COMMA)) {
+                report(p, &p->current, LHAT_PARSE_ERR_SPREAD_NOT_LAST);
+            }
+            break;
+        }
+        argument = parse_expression(p);
+        lhat_node_append(&head, &tail, argument);
         if (!match_op(p, LHAT_OP_COMMA)) {
             break;
         }
@@ -3204,6 +3246,9 @@ const char *lhat_parse_error_message(LhatParseErrorCode code)
         case LHAT_PARSE_ERR_ELSE_NEEDS_COLON:
             return "this needs a ':' after it; what follows was read as the "
                    "condition of a further test, and no ':' came";
+        case LHAT_PARSE_ERR_SPREAD_NOT_LAST:
+            return "'...' forwards the whole collected tail, so nothing can "
+                   "follow it here";
         case LHAT_PARSE_ERR_FIELD_NEEDS_TYPE:
             return "a field needs a type, a default, or both";
         case LHAT_PARSE_ERR_ERRORDEF_NEEDS_NAME:

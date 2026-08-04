@@ -60,6 +60,9 @@ typedef enum {
     LHAT_PARSE_ERR_ELSE_NEEDS_COLON,          // 5.1: 'el^ v' where the value
                                               // was read as an else-if
                                               // condition and nothing follows
+    LHAT_PARSE_ERR_SPREAD_NOT_LAST,           // 13.7: '...' forwards the
+                                              // whole tail, so nothing can
+                                              // follow it in a call
     LHAT_PARSE_ERR_LEXICAL                    // the lexer already reported one
 } LhatParseErrorCode;
 

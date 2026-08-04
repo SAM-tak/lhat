@@ -2879,6 +2879,112 @@ static void test_typeof(void)
     run_dispose(&r);
 }
 
+// 02 の 13.7: the variadic collector, made to actually compile and run.
+// compile_subroutine used to refuse any variadic parameter outright.
+static void test_variadic(void)
+{
+    Run r;
+
+    LHAT_TEST("a variadic sum over what was actually passed");
+    run_text(&r,
+             "let^ sum = f^ ...:number^ -> number^ {\n"
+             "  let^ total = 0\n"
+             "  for^ i, x in^ ... { total := total + x }\n"
+             "  return^ total\n"
+             "}\n"
+             "return^ sum(1, 2, 3, 4)\n");
+    CHECK_INTEGER(&r, 10);
+    run_dispose(&r);
+
+    LHAT_TEST("zero variadic arguments collects an empty table");
+    run_text(&r,
+             "let^ sum = f^ ...:number^ -> number^ {\n"
+             "  let^ total = 0\n"
+             "  for^ i, x in^ ... { total := total + x }\n"
+             "  return^ total\n"
+             "}\n"
+             "return^ sum()\n");
+    CHECK_INTEGER(&r, 0);
+    run_dispose(&r);
+
+    LHAT_TEST("fixed parameters lead the variadic tail");
+    run_text(&r,
+             "let^ f = f^ label:string^, ...:number^ -> number^ {\n"
+             "  let^ total = 0\n"
+             "  for^ i, x in^ ... { total := total + x }\n"
+             "  return^ total\n"
+             "}\n"
+             "return^ f(\"x\", 10, 20)\n");
+    CHECK_INTEGER(&r, 30);
+    run_dispose(&r);
+
+    // 13.7's own arity: at least the fixed count, checked at run time when
+    // nothing statically caught it -- run_text compiles straight past the
+    // checker, so this is the runtime path answering on its own.
+    LHAT_TEST("fewer than the fixed count fails at run time");
+    run_text(&r,
+             "let^ f = f^ a:number^, b:number^, ...:number^ -> number^ {\n"
+             "  return^ a + b\n"
+             "}\n"
+             "return^ f(1)\n");
+    LHAT_CHECK_EQ_INT(r.compiled, LHAT_COMPILE_OK);
+    LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_ARITY);
+    run_dispose(&r);
+
+    // 13.7: 'expr...' forwards the collected tail into another call.
+    LHAT_TEST("'...' forwards into another variadic call");
+    run_text(&r,
+             "let^ sum = f^ ...:number^ -> number^ {\n"
+             "  let^ total = 0\n"
+             "  for^ i, x in^ ... { total := total + x }\n"
+             "  return^ total\n"
+             "}\n"
+             "let^ logged = f^ ...:number^ -> number^ { return^ sum(...) }\n"
+             "return^ logged(1, 2, 3, 4, 5)\n");
+    CHECK_INTEGER(&r, 15);
+    run_dispose(&r);
+
+    LHAT_TEST("a fixed argument may lead the forwarded spread");
+    run_text(&r,
+             "let^ sum3 = f^ base:number^, ...:number^ -> number^ {\n"
+             "  let^ total = base\n"
+             "  for^ i, x in^ ... { total := total + x }\n"
+             "  return^ total\n"
+             "}\n"
+             "let^ wrap = f^ ...:number^ -> number^ {\n"
+             "  return^ sum3(100, ...)\n"
+             "}\n"
+             "return^ wrap(1, 2, 3)\n");
+    CHECK_INTEGER(&r, 106);
+    run_dispose(&r);
+
+    // 02 の 14.16: typeof^ reconstructs the signature, including the tail.
+    LHAT_TEST("typeof^ reflects a variadic signature");
+    run_text(&r,
+             "let^ sum = f^ ...:number^ -> number^ { return^ 0 }\n"
+             "return^ typeof^(sum).signature\n");
+    CHECK_STRING(&r, "f^...:number^ -> number^;");
+    run_dispose(&r);
+
+    LHAT_TEST("fixed and variadic together in the signature");
+    run_text(&r,
+             "let^ f = f^ label:string^, ...:number^ -> number^ {\n"
+             "  return^ 0\n"
+             "}\n"
+             "return^ typeof^(f).signature\n");
+    CHECK_STRING(&r, "f^string^, ...:number^ -> number^;");
+    run_dispose(&r);
+
+    // 14.10's round trip: the printed signature has to parse back.
+    LHAT_TEST("the variadic signature parses back as an annotation");
+    run_text(&r,
+             "let^ sum = f^ ...:number^ -> number^ { return^ 0 }\n"
+             "let^ typed : f^...:number^ -> number^; = sum\n"
+             "return^ typed(1, 2, 3)\n");
+    CHECK_INTEGER(&r, 0);
+    run_dispose(&r);
+}
+
 // 02 の 15 章 and 5.11: a coroutine is one suspended frame, which is all
 // 15.5 leaves room for.
 static void test_coroutines(void)
@@ -4112,6 +4218,7 @@ int main(void)
     test_cleanups();
     test_definitions();
     test_typeof();
+    test_variadic();
     test_coroutines();
     test_patterns();
     test_collection();

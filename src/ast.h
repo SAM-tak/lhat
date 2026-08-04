@@ -39,6 +39,7 @@ typedef enum {
     LHAT_NODE_ERROR_NEW,     // error^Kind{ ... }            (04 の 2.5)
     LHAT_NODE_TRY,           // try^ expr                    (04 の 5 章)
     LHAT_NODE_TYPEOF,        // typeof^(expr)                (14.16)
+    LHAT_NODE_SPREAD,        // expr...  as the last call argument (13.7)
     LHAT_NODE_REQUIRE,       // require^ "path"              (05 の 5 章)
     LHAT_NODE_REQUIRE_STMT,  // require^ "path" on its own   (05 の 5.4改)
     LHAT_NODE_IMPORT,        // import^ a.b.c                (05 の 8.7)
@@ -240,6 +241,10 @@ struct LhatNode {
             // composed onto it has to. Set on a template field too, where
             // 14.12's modifier has no place.
             bool declared;
+            // 13.7, 14.10改: MEMBER_DECL only. Written '...:type' in a
+            // t^{ ... }, the way a parameter list writes a variadic one --
+            // `value` is the element type, `key` is unused.
+            bool variadic;
         } entry;
 
         // DEFINE / REASSIGN take a list of targets and a list of values;

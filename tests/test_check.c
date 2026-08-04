@@ -1744,6 +1744,108 @@ static void test_typeof(void)
     }
 }
 
+// 02 の 13.7: the variadic collector. '...' inside the body names it, typed
+// as 14.10改's unbounded tail -- a table whose sequence half is one element
+// type repeated, nothing fixed.
+static void test_variadic(void)
+{
+    Unit u;
+
+    LHAT_TEST("'...' inside the body is a table of the element type");
+    check_text(&u,
+               "let^ f = f^ ...:number^ -> number^ {\n"
+               "  let^ t : t^{ ...:number^ } = ...\n"
+               "  return^ 0\n"
+               "}\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // 13.8 has no tuples, so a single name over an in^ walk takes the whole
+    // pair (14 章), the same as walking any other table -- 13.7 does not
+    // special-case this.
+    LHAT_TEST("for^ i, x in^ ... gives x the element type");
+    check_text(&u,
+               "let^ f = f^ ...:number^ -> number^ {\n"
+               "  let^ total = 0\n"
+               "  for^ i, x in^ ... {\n"
+               "    let^ n : number^ = x\n"
+               "    let^ p : number^ = i\n"
+               "    total := total + x\n"
+               "  }\n"
+               "  return^ total\n"
+               "}\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // 04 の 11.3: a dynamic key may be out of range, and this one really can
+    // be -- the count is unbounded, unlike a table with listed members.
+    LHAT_TEST("a dynamic index into ... may be nil^");
+    check_text(&u,
+               "let^ f = f^ ...:number^ -> number^ {\n"
+               "  let^ i = 1\n"
+               "  let^ v : number^|nil^ = ...[i]\n"
+               "  return^ 0\n"
+               "}\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // 13.7: at least the fixed count, any number beyond it.
+    LHAT_TEST("fewer than the fixed count is refused");
+    check_text(&u,
+               "let^ f = f^ a:number^, b:number^, ...:number^ -> number^ {\n"
+               "  return^ a + b\n"
+               "}\n"
+               "f(1)\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_ARITY);
+    unit_dispose(&u);
+
+    LHAT_TEST("exactly the fixed count, with none variadic, is fine");
+    check_text(&u,
+               "let^ f = f^ a:number^, b:number^, ...:number^ -> number^ {\n"
+               "  return^ a + b\n"
+               "}\n"
+               "f(1, 2)\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("and a mismatched variadic argument is still caught");
+    check_text(&u,
+               "let^ f = f^ ...:number^ -> number^ { return^ 0 }\n"
+               "f(1, \"x\")\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
+    unit_dispose(&u);
+
+    // 13.7: 'expr...' spreads a collected table back into a variadic tail.
+    LHAT_TEST("'...' forwards into another variadic call");
+    check_text(&u,
+               "let^ inner = f^ ...:number^ -> number^ { return^ 0 }\n"
+               "let^ outer = f^ ...:number^ -> number^ {\n"
+               "  return^ inner(...)\n"
+               "}\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("forwarding into a non-variadic callee is refused");
+    check_text(&u,
+               "let^ inner = f^ -> number^ { return^ 0 }\n"
+               "let^ outer = f^ ...:number^ -> number^ {\n"
+               "  return^ inner(...)\n"
+               "}\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_NOT_VARIADIC);
+    unit_dispose(&u);
+
+    LHAT_TEST("fixed arguments may lead a forwarded spread");
+    check_text(&u,
+               "let^ inner = f^ base:number^, ...:number^ -> number^ {\n"
+               "  return^ base\n"
+               "}\n"
+               "let^ outer = f^ ...:number^ -> number^ {\n"
+               "  return^ inner(100, ...)\n"
+               "}\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+}
+
 // 17 章. Nothing here is checked by machinery of its own -- 17.9 lowers a
 // pattern to a condition, so what runs is 13.11's narrowing.
 static void test_patterns(void)
@@ -3645,6 +3747,7 @@ int main(void)
     test_definitions();
     test_composition();
     test_typeof();
+    test_variadic();
     test_patterns();
     test_modules();
     test_coroutines();

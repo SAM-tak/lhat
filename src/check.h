@@ -36,6 +36,9 @@ typedef enum {
     LHAT_CHECK_ERR_NOT_BOOL,            // a condition, and^ / or^ / '!'
     LHAT_CHECK_ERR_NOT_CALLABLE,
     LHAT_CHECK_ERR_ARITY,               // too few or too many arguments
+    LHAT_CHECK_ERR_NOT_VARIADIC,        // 13.7: 'expr...' spreads into a
+                                        // variadic tail, and this callee has
+                                        // none
     LHAT_CHECK_ERR_NO_MEMBER,           // 14.10: the structure lacks it
 
     LHAT_CHECK_ERR_CANNOT_FAIL,         // 04 の 4.1: catch^ on what cannot fail

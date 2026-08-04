@@ -437,6 +437,14 @@ static void write_runtime_type(TypeWriter *w, const LhatRuntimeType *type)
                 }
                 write_runtime_type(w, type->parts[i]);
             }
+            // 13.7: the same spelling a parameter list ends in.
+            if (type->variadic != NULL) {
+                if (type->part_count > 0) {
+                    type_put_text(w, ", ");
+                }
+                type_put_text(w, "...:");
+                write_runtime_type(w, type->variadic);
+            }
             if (type->result != NULL) {
                 type_put_text(w, " -> ");
                 write_runtime_type(w, type->result);
@@ -561,6 +569,16 @@ bool lhat_runtime_type_equal(const LhatRuntimeType *a, const LhatRuntimeType *b)
                 if (!lhat_runtime_type_equal(a->parts[i], b->parts[i])) {
                     return false;
                 }
+            }
+            // Whether there is a tail at all is part of the shape -- unlike
+            // NULL elsewhere (13.7 makes an absent one any^), one side
+            // having no tail is not the same as a tail of any^.
+            if ((a->variadic == NULL) != (b->variadic == NULL)) {
+                return false;
+            }
+            if (a->variadic != NULL &&
+                !lhat_runtime_type_equal(a->variadic, b->variadic)) {
+                return false;
             }
             return lhat_runtime_type_equal(a->result, b->result);
         case LHAT_TYPE_RT_STRUCTURE:
@@ -788,7 +806,8 @@ bool lhat_gc_children(LhatGray *gray, LhatObject *object)
                     return false;
                 }
             }
-            if (!reach(gray, (LhatObject *)type->result)) {
+            if (!reach(gray, (LhatObject *)type->result) ||
+                !reach(gray, (LhatObject *)type->variadic)) {
                 return false;
             }
             return reach(gray, (LhatObject *)(void *)type->error_kind);

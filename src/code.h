@@ -55,7 +55,10 @@ typedef enum {
     // 5.3: arguments sit above the callee in the caller's frame, and exactly
     // one value comes back -- 02 の 13.8 left nothing to reconcile.
     LHAT_BC_CLOSURE,    // A Bx  R[A] = closure of protos[Bx]
-    LHAT_BC_CALL,       // A B   R[A] = R[A](R[A+1] .. R[A+B])
+    LHAT_BC_CALL,       // A B C R[A] = R[A](R[A+1] .. R[A+B]). C != 0: 13.7's
+                        //       'expr...' -- R[A+B] is a table whose
+                        //       positions are unpacked as further arguments,
+                        //       in place of being the last argument itself
     LHAT_BC_GETUPVAL,   // A B   R[A] = *upvalue[B]
     LHAT_BC_SETUPVAL,   // A B   *upvalue[B] = R[A]
     LHAT_BC_CLOSE,      // A     the places at R[A] and above stop being shared
@@ -83,9 +86,9 @@ typedef enum {
     // 02 の 14 章. A definition is a table of shared members; an instance is
     // a table that reads them through a link fixed when it was made (14.2).
     LHAT_BC_NEWINSTANCE,  // A B   R[A] = an instance of the definition R[B]
-    LHAT_BC_CALLMETHOD,   // A B   R[A] = R[A](R[A+1] .. R[A+B]), where R[A+1]
+    LHAT_BC_CALLMETHOD,   // A B C R[A] = R[A](R[A+1] .. R[A+B]), where R[A+1]
                           //       is the receiver and is passed only when the
-                          //       callee takes self^ (14.4)
+                          //       callee takes self^ (14.4). C as LHAT_BC_CALL.
 
     // 5.5: the frame holds the cleanups it has not run, and every exit drains
     // them. One instruction pushes, one drains, one ends a cleanup body -- so
@@ -203,6 +206,13 @@ typedef struct LhatProto {
     // from. NULL when nothing was written -- 13.2 makes an f^ declare one, so
     // its absence here belongs to a p^.
     struct LhatRuntimeType *result_type;
+
+    // 13.7: the last parameter collects the rest into a table rather than
+    // taking one argument for itself. Its element type is
+    // parameter_types[parameters - 1] -- the same array, since a variadic
+    // parameter is still one slot the calling convention reserves, only what
+    // a call site owes it differs (13.7's ">=" rather than "==").
+    bool has_variadic;
 } LhatProto;
 
 LhatProto *lhat_proto_new(void);

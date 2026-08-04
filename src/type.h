@@ -116,6 +116,11 @@ struct LhatType {
             // would make every one of them the same type and hand a pointer
             // to the C that expects another.
             bool nominal;
+            // 13.7's variadic collector as a table type, and 14.10改's
+            // 't^{ ...:T }': the sequence half is unbounded, every position
+            // of it T. NULL everywhere else -- mirrors func.variadic below,
+            // which is the same idea for a parameter list instead of members.
+            LhatType *variadic;
         } table;
 
         // 13.1. `result` is NULL when nothing is returned (13.2), and

@@ -849,6 +849,33 @@ static void test_postfix(void)
         LHAT_CHECK_EQ_INT(e->v.access.target->kind, LHAT_NODE_CALL);
     }
     parse_dispose(&p);
+
+    // 13.7: '...' bare, as a call argument, forwards the collected tail.
+    LHAT_TEST("'...' alone in an argument list is a spread");
+    parse_text(&p, "x := sum(...)");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    {
+        const LhatNode *call = first_value(&p);
+        LHAT_CHECK_EQ_INT(call->v.access.argument->kind, LHAT_NODE_SPREAD);
+    }
+    parse_dispose(&p);
+
+    LHAT_TEST("and it may follow fixed arguments");
+    parse_text(&p, "x := sum(1, 2, ...)");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    {
+        const LhatNode *first = first_value(&p)->v.access.argument;
+        LHAT_CHECK_EQ_INT(lhat_node_list_length(first), 3);
+        LHAT_CHECK_EQ_INT(first->next->next->kind, LHAT_NODE_SPREAD);
+    }
+    parse_dispose(&p);
+
+    LHAT_TEST("but nothing may follow it");
+    parse_text(&p, "x := sum(..., 1)");
+    LHAT_CHECK(p.result.diagnostic_count > 0, "expected a diagnostic");
+    LHAT_CHECK_EQ_INT(p.result.diagnostics[0].code,
+                      LHAT_PARSE_ERR_SPREAD_NOT_LAST);
+    parse_dispose(&p);
 }
 
 static void test_literals(void)
@@ -1244,6 +1271,35 @@ static void test_types(void)
         lhat_node_list_length(
             first_value(&p)->v.ascription.type->v.list.items),
         3);
+    parse_dispose(&p);
+
+    // 13.7, 14.10改: the sequence half may end in a variadic tail, the same
+    // marker a parameter list ends in.
+    LHAT_TEST("a table type's tail may be variadic");
+    parse_text(&p, "x := y as^ t^{ ...:number^ }");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    {
+        const LhatNode *t = first_value(&p)->v.ascription.type;
+        LHAT_CHECK(t->v.list.items->v.entry.variadic, "marked variadic");
+        LHAT_CHECK(t->v.list.items->v.entry.value != NULL, "has an element type");
+    }
+    parse_dispose(&p);
+
+    LHAT_TEST("and an untyped one is still accepted");
+    parse_text(&p, "x := y as^ t^{ ... }");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    LHAT_CHECK(
+        first_value(&p)->v.ascription.type->v.list.items->v.entry.variadic,
+        "marked variadic with no written type");
+    parse_dispose(&p);
+
+    LHAT_TEST("and it may follow fixed positions");
+    parse_text(&p, "x := y as^ t^{ number^, ...:string^ }");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    LHAT_CHECK_EQ_INT(
+        lhat_node_list_length(
+            first_value(&p)->v.ascription.type->v.list.items),
+        2);
     parse_dispose(&p);
 
     // 13.9: three types, uniform across suspension points.

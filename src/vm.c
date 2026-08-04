@@ -1345,10 +1345,18 @@ static void compile_call(Compiler *c, const LhatNode *node, uint8_t into)
     method = method || super_call;
 
     size_t count = 0;
+    bool spread = false;
     for (const LhatNode *arg = node->v.access.argument; arg != NULL;
          arg = arg->next) {
         uint8_t slot = reserve(c);
-        compile_expression(c, arg, slot);
+        // 13.7: the table itself goes in the slot; C tells the machine the
+        // last one is not an ordinary argument but something to unpack.
+        if (arg->kind == LHAT_NODE_SPREAD) {
+            compile_expression(c, arg->v.jump.value, slot);
+            spread = true;
+        } else {
+            compile_expression(c, arg, slot);
+        }
         count++;
     }
     if (count > 0xFF) {
@@ -1357,7 +1365,7 @@ static void compile_call(Compiler *c, const LhatNode *node, uint8_t into)
     }
 
     emit(c, lhat_encode_abc(method ? LHAT_BC_CALLMETHOD : LHAT_BC_CALL, callee,
-                            (uint8_t)count, 0));
+                            (uint8_t)count, spread ? 1 : 0));
     if (into != callee) {
         emit(c, lhat_encode_abc(LHAT_BC_MOVE, into, callee, 0));
     }
@@ -1395,8 +1403,14 @@ static void compile_subroutine(Compiler *c, const LhatNode *node, uint8_t into)
          param = param->next) {
         const char *name = NULL;
         size_t length = 0;
-        if (param->v.param.variadic ||
-            !node_name(&inner, param->v.param.name, &name, &length)) {
+        // 13.7: '...' takes the name slot instead of a written name, and
+        // what it names in the body is the collector CALL/CALLMETHOD builds
+        // -- so it is still one local, the way any other parameter is.
+        if (param->v.param.variadic) {
+            name = "...";
+            length = 3;
+            proto->has_variadic = true;
+        } else if (!node_name(&inner, param->v.param.name, &name, &length)) {
             fail(c, LHAT_COMPILE_UNSUPPORTED);
             return;
         }
@@ -1416,7 +1430,9 @@ static void compile_subroutine(Compiler *c, const LhatNode *node, uint8_t into)
         local->reg = slot;
 
         // 14.12: the search that resolves an overloaded call asks each
-        // candidate what it takes, so each body carries that with it.
+        // candidate what it takes, so each body carries that with it. For
+        // '...' this is the element type, not the collector's own type --
+        // fits_call reads it that way once has_variadic says to.
         struct LhatRuntimeType **types =
             (struct LhatRuntimeType **)lhat_realloc(proto->parameter_types,
                                                ((size_t)proto->parameters + 1) *
@@ -3653,6 +3669,20 @@ static LhatTable *table_of(LhatValue value)
     return NULL;
 }
 
+// 13.7: the i-th effective argument of a call, whether it sits in an
+// ordinary register or is a position of the table a spread ('expr...')
+// unpacked -- the two are not contiguous in memory, so nothing beyond this
+// reads registers directly once a spread is in play.
+static LhatValue call_arg(const LhatValue *registers, uint8_t a, size_t skip,
+                          const LhatTable *spread, size_t before_spread,
+                          size_t i)
+{
+    if (spread != NULL && i >= before_spread) {
+        return spread->array[i - before_spread];
+    }
+    return registers[a + skip + i];
+}
+
 // The same question for a read. 05 の 8.8: what a host value carries is the
 // registered type's table, so 't.width()' finds the member there -- but the
 // table belongs to the type and not to the value, so a write must not reach
@@ -3817,10 +3847,14 @@ static LhatRuntimeType *reflect_type(LhatHeap *heap, LhatValue value,
         }
         type->is_function = proto->is_function;
         type->takes_self = proto->takes_self;
+        // 13.7: the last slot collects rather than taking one argument for
+        // itself, so it is kept apart from `parts` here the same way
+        // v.func.variadic is kept apart from a checked type's own params.
+        uint8_t fixed_end = proto->has_variadic ? proto->parameters - 1
+                                                : proto->parameters;
         // 14.4: self^ is not a parameter of the signature -- it is the
         // receiver, written out only where 14.4 already says so.
-        for (uint8_t i = proto->takes_self ? 1 : 0; i < proto->parameters;
-             i++) {
+        for (uint8_t i = proto->takes_self ? 1 : 0; i < fixed_end; i++) {
             LhatRuntimeType *param = proto->parameter_types != NULL
                                          ? proto->parameter_types[i]
                                          : NULL;
@@ -3829,6 +3863,18 @@ static LhatRuntimeType *reflect_type(LhatHeap *heap, LhatValue value,
                 param = lhat_type_rt_new(heap, LHAT_TYPE_RT_ANY);
             }
             if (param == NULL || !lhat_type_rt_add_part(type, param)) {
+                return NULL;
+            }
+        }
+        if (proto->has_variadic) {
+            LhatRuntimeType *element =
+                proto->parameter_types != NULL
+                    ? proto->parameter_types[fixed_end]
+                    : NULL;
+            type->variadic = element != NULL
+                                 ? element
+                                 : lhat_type_rt_new(heap, LHAT_TYPE_RT_ANY);
+            if (type->variadic == NULL) {
                 return NULL;
             }
         }
@@ -5087,8 +5133,59 @@ LhatRunResult lhat_run(LhatMachine *m, const LhatProto *proto)
                         skip = 2;
                     }
                 }
-                if (given != callee->proto->parameters) {
+                // 13.7: 'expr...' put a table in the last slot instead of an
+                // ordinary argument; its positions are unpacked in place of
+                // it, which is why what a call owes is read through
+                // call_arg() from here on rather than off registers directly.
+                const LhatTable *spread_table = NULL;
+                size_t before_spread = given;
+                if (cc != 0) {
+                    if (given == 0) {
+                        return finish(m, LHAT_RUN_TYPE_ERROR, lhat_nil(), at);
+                    }
+                    spread_table =
+                        table_of(registers[a + skip + given - 1]);
+                    if (spread_table == NULL) {
+                        return finish(m, LHAT_RUN_TYPE_ERROR, lhat_nil(), at);
+                    }
+                    before_spread = given - 1;
+                    given = before_spread + spread_table->array_count;
+                }
+                // 13.7: the last slot of a variadic callee collects the rest
+                // into a table rather than taking one argument for itself, so
+                // a call owes at least the fixed count and not exactly the
+                // slot count.
+                size_t declared_slots = callee->proto->parameters;
+                size_t required = callee->proto->has_variadic
+                                      ? declared_slots - 1
+                                      : declared_slots;
+                if (callee->proto->has_variadic ? given < required
+                                                : given != declared_slots) {
                     return finish(m, LHAT_RUN_ARITY, lhat_nil(), at);
+                }
+                // Built before either path below places it, since both read
+                // the same arguments the same way.
+                LhatValue collected_variadic = lhat_nil();
+                if (callee->proto->has_variadic) {
+                    LhatTable *collected = lhat_table_new(&m->objects);
+                    if (collected == NULL) {
+                        return finish(m, LHAT_RUN_OUT_OF_MEMORY, lhat_nil(),
+                                      at);
+                    }
+                    for (size_t i = required; i < given; i++) {
+                        bool refused = false;
+                        LhatValue value = call_arg(registers, a, skip,
+                                                   spread_table, before_spread,
+                                                   i);
+                        if (!lhat_table_set(
+                                collected,
+                                lhat_integer((int64_t)(i - required + 1)),
+                                value, &refused)) {
+                            return finish(m, LHAT_RUN_OUT_OF_MEMORY,
+                                          lhat_nil(), at);
+                        }
+                    }
+                    collected_variadic = lhat_object((LhatObject *)collected);
                 }
 
                 // 02 の 15.5: calling a yieldable procedure does not suspend
@@ -5102,8 +5199,14 @@ LhatRunResult lhat_run(LhatMachine *m, const LhatProto *proto)
                     if (co == NULL) {
                         return finish(m, LHAT_RUN_OUT_OF_MEMORY, lhat_nil(), at);
                     }
-                    for (size_t i = 0; i < given; i++) {
-                        co->registers[i] = registers[a + skip + i];
+                    size_t fixed = callee->proto->has_variadic ? required : given;
+                    for (size_t i = 0; i < fixed; i++) {
+                        co->registers[i] = call_arg(registers, a, skip,
+                                                    spread_table, before_spread,
+                                                    i);
+                    }
+                    if (callee->proto->has_variadic) {
+                        co->registers[required] = collected_variadic;
                     }
                     registers[a] = lhat_object((LhatObject *)co);
                     break;
@@ -5114,11 +5217,25 @@ LhatRunResult lhat_run(LhatMachine *m, const LhatProto *proto)
                 }
 
                 // 5.3: the arguments already sit just above the callee, so
-                // the new frame starts there and needs no shuffling.
+                // the new frame starts there and needs no shuffling -- unless
+                // a spread broke the contiguity, or 13.7's collector has to
+                // overwrite the slot after the fixed ones with the table just
+                // built.
                 LhatValue *next_base = &registers[a] + skip;
                 if (next_base + LHAT_MAX_REGISTERS >=
                     m->stack + LHAT_STACK_SLOTS) {
                     return finish(m, LHAT_RUN_STACK_OVERFLOW, lhat_nil(), at);
+                }
+                if (spread_table != NULL) {
+                    size_t fixed = callee->proto->has_variadic ? required
+                                                               : given;
+                    for (size_t i = 0; i < fixed; i++) {
+                        next_base[i] = call_arg(registers, a, skip,
+                                               spread_table, before_spread, i);
+                    }
+                }
+                if (callee->proto->has_variadic) {
+                    next_base[required] = collected_variadic;
                 }
 
                 frame->pc = pc;

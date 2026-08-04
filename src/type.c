@@ -449,6 +449,29 @@ bool lhat_type_conforms(const LhatType *value, const LhatType *target)
                     return false;
                 }
             }
+            // 13.7, 14.10改: an unbounded tail, checked by walking the
+            // positions after the named ones the way 14.10改 counts them --
+            // from 1, since a variadic type here is not written mixed with
+            // fixed positions in practice. Stops at the first position
+            // value does not have; 13.7 asks for zero or more, not a count.
+            if (target->v.table.variadic != NULL) {
+                for (size_t i = 1;; i++) {
+                    char digits[24];
+                    size_t length = index_digits(i, digits, sizeof digits);
+                    LhatTypeMember probe;
+                    probe.name = digits;
+                    probe.name_length = length;
+                    const LhatTypeMember *have =
+                        find_member(value->v.table.members, &probe);
+                    if (have == NULL) {
+                        break;
+                    }
+                    if (!lhat_type_conforms(have->type,
+                                            target->v.table.variadic)) {
+                        return false;
+                    }
+                }
+            }
             return true;
 
         case LHAT_TYPE_FUNC:

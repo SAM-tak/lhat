@@ -181,6 +181,13 @@ typedef struct LhatRuntimeType {
     bool is_function;                 // f^ rather than p^ (15 章)
     bool takes_self;                  // 14.4: the first parameter is self^
 
+    // 13.7's unbounded tail, one type throughout. STRUCTURE: the sequence
+    // half beyond `parts`. SUBROUTINE: the element type of the last
+    // parameter, kept apart from `parts` the way LhatType.v.func.variadic is
+    // kept apart from `params` -- a call owes at least `part_count`, not
+    // exactly it. NULL wherever nothing is variadic.
+    struct LhatRuntimeType *variadic;
+
     // STRUCTURE. A member with no type asks only that the name is there.
     LhatRuntimeTypeMember *members;
     size_t member_count;

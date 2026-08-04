@@ -363,6 +363,14 @@ static LhatType *resolve_table_type(Checker *c, const LhatNode *node)
     for (const LhatNode *m = node->v.list.items; m != NULL; m = m->next) {
         const char *name = NULL;
         size_t length = 0;
+        // 13.7, 14.10改: the unbounded tail. 'value' is NULL for an untyped
+        // '...', which 13.7 makes any^.
+        if (m->v.entry.variadic) {
+            table->v.table.variadic = m->v.entry.value != NULL
+                                          ? resolve_type(c, m->v.entry.value)
+                                          : simple(c, LHAT_TYPE_ANY);
+            continue;
+        }
         if (m->v.entry.key == NULL) {
             lhat_type_add_index_member(c->result->types, table, ++position,
                                        resolve_type(c, m->v.entry.value));
@@ -1374,13 +1382,50 @@ static LhatType *infer_call(Checker *c, const LhatNode *node)
         skip = 1;
     }
 
+    // 13.7: 'expr...' as the last argument spreads a collected table back
+    // into the variadic tail. It stands for zero or more of the callee's
+    // own, so what came before it has to be exactly the fixed arguments --
+    // 'declared' does not count the variadic one (v.func.variadic is kept
+    // apart from `params`, the same way self^ is).
+    const LhatNode *last_arg = node->v.access.argument;
+    while (last_arg != NULL && last_arg->next != NULL) {
+        last_arg = last_arg->next;
+    }
+    bool has_spread = last_arg != NULL && last_arg->kind == LHAT_NODE_SPREAD;
+    if (has_spread) {
+        given--;  // the spread node itself is not one fixed argument
+    }
+
     // 13.7: a trailing '...' takes any number beyond the declared ones.
-    if (given < declared || (given > declared && callee->v.func.variadic == NULL)) {
+    if (has_spread) {
+        if (callee->v.func.variadic == NULL) {
+            report(c, last_arg, LHAT_CHECK_ERR_NOT_VARIADIC);
+        }
+        if (given != declared) {
+            report(c, node, LHAT_CHECK_ERR_ARITY);
+        }
+    } else if (given < declared ||
+              (given > declared && callee->v.func.variadic == NULL)) {
         report(c, node, LHAT_CHECK_ERR_ARITY);
     }
 
     for (const LhatNode *arg = node->v.access.argument; arg != NULL;
          arg = arg->next) {
+        // 13.7: checked against the element type directly, rather than
+        // through the ordinary per-argument loop below -- there is no
+        // parameter position for it to line up with.
+        if (arg->kind == LHAT_NODE_SPREAD) {
+            LhatType *spread = infer(c, arg->v.jump.value);
+            if (callee->v.func.variadic != NULL && spread != NULL &&
+                spread->kind == LHAT_TYPE_TABLE &&
+                spread->v.table.variadic != NULL) {
+                expect(c, arg, spread->v.table.variadic,
+                      callee->v.func.variadic, LHAT_CHECK_ERR_MISMATCH);
+            } else if (callee->v.func.variadic != NULL) {
+                report(c, arg, LHAT_CHECK_ERR_NOT_VARIADIC);
+            }
+            break;
+        }
         LhatType *actual = infer(c, arg);
         if (skip > 0) {
             skip--;  // the receiver, whose type the call site already knows
@@ -1459,6 +1504,14 @@ static LhatType *table_walk_pair(Checker *c, const LhatType *over)
             c->result->types, keys,
             simple(c, positional ? LHAT_TYPE_NUMBER : LHAT_TYPE_STRING));
         values = lhat_type_union(c->result->types, values, m->type);
+    }
+    // 13.7: an unbounded tail is walked as more positions beyond any listed,
+    // every one of the same element type.
+    if (over->v.table.variadic != NULL) {
+        keys = lhat_type_union(c->result->types, keys,
+                               simple(c, LHAT_TYPE_NUMBER));
+        values =
+            lhat_type_union(c->result->types, values, over->v.table.variadic);
     }
 
     // 14.10 lets a table carry more than its type lists, so what is written
@@ -1732,8 +1785,19 @@ static LhatType *infer_func(Checker *c, const LhatNode *node)
                              ? resolve_type(c, param->v.param.type)
                              : simple(c, LHAT_TYPE_UNKNOWN);
         if (param->v.param.variadic) {
-            func->v.func.variadic =
+            LhatType *element =
                 param->v.param.type != NULL ? type : simple(c, LHAT_TYPE_ANY);
+            func->v.func.variadic = element;
+            // 13.7: '...' inside the body names what was collected. 14.10改's
+            // form for that is a table whose sequence is unbounded, one
+            // element type throughout -- the same shape a written
+            // 't^{ ...:T }' names, since both describe the same thing.
+            LhatType *collected = lhat_type_table(c->result->types);
+            collected->v.table.variadic = element;
+            Binding *b = scope_add(&body, "...", 3, collected, param->offset);
+            if (b != NULL) {
+                b->reached = true;
+            }
             continue;
         }
         lhat_type_add_param(c->result->types, func, type);
@@ -2550,6 +2614,16 @@ static LhatType *infer(Checker *c, const LhatNode *node)
                 if (found != NULL) {
                     return found->type;
                 }
+            }
+            // 13.7: every position of an unbounded tail is the one element
+            // type, so a key that did not resolve to one specific position
+            // above still has an answer -- unlike an ordinary table's
+            // members, which need not share one type to union with nil^.
+            if (over != NULL && over->kind == LHAT_TYPE_TABLE &&
+                over->v.table.variadic != NULL) {
+                return lhat_type_union(c->result->types,
+                                       over->v.table.variadic,
+                                       simple(c, LHAT_TYPE_NIL));
             }
             // 04 §11.3: a dynamic key may be absent, and absence is not a
             // failure, so nothing narrower than this is safe here.
@@ -4228,6 +4302,9 @@ const char *lhat_check_error_message(LhatCheckErrorCode code)
             return "this is not a function or a procedure";
         case LHAT_CHECK_ERR_ARITY:
             return "the wrong number of arguments";
+        case LHAT_CHECK_ERR_NOT_VARIADIC:
+            return "'...' spreads into a variadic tail, and this callee "
+                   "takes none";
         case LHAT_CHECK_ERR_NO_MEMBER:
             return "this value has no such member";
         case LHAT_CHECK_ERR_CANNOT_FAIL:
