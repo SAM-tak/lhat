@@ -76,6 +76,13 @@ typedef struct LhatTypeMember {
     // reachable through the composed type -- what each side wrote is still
     // reachable through that side.
     bool ambiguous;
+    // 02 の 8.8 (S23): introduced by a let^ path the checker walked without
+    // knowing whether it runs before whatever reads the member -- inside a
+    // subroutine body that may never be called, or a branch/loop that may
+    // not run. The relations do not read this (conformance is unaffected);
+    // 03 の 5.11b does, to avoid answering typeof^ with a member the value
+    // may not actually carry yet.
+    bool unconfirmed;
     struct LhatTypeMember *next;
 } LhatTypeMember;
 

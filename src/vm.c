@@ -984,7 +984,10 @@ static bool type_is_concrete(const LhatType *type)
         case LHAT_TYPE_TABLE:
             for (const LhatTypeMember *m = type->v.table.members; m != NULL;
                  m = m->next) {
-                if (!type_is_concrete(m->type)) {
+                // S23: a member the checker added without knowing whether
+                // its let^ path actually ran is not something to answer
+                // typeof^ with as fact -- the real value may not have it.
+                if (m->unconfirmed || !type_is_concrete(m->type)) {
                     return false;
                 }
             }

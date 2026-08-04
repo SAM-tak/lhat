@@ -68,6 +68,13 @@ typedef struct {
     // bodies nest.
     size_t deferred;
 
+    // S23: inside an if^ clause, a for^ body or a repeat^ body, nothing
+    // guarantees this specific piece of code runs at all before some later
+    // point reads what it wrote -- unlike `deferred` above, this still runs
+    // immediately if it runs, so 8.7's own rule does not read this one.
+    // A counter, the same way and for the same reason as `deferred`.
+    size_t conditional;
+
     // The result type of the subroutine being checked, for 04 の 5.3 and for
     // collecting return^ when 03 の 3.4 has to infer one.
     LhatType *declared_result;
@@ -3050,7 +3057,14 @@ static void define_path(Checker *c, const LhatNode *target, LhatType *type)
         report_named(c, last, LHAT_CHECK_ERR_REDEFINED, name, length);
         return;
     }
-    lhat_type_add_member(c->result->types, owner, name, length, type);
+    LhatTypeMember *added =
+        lhat_type_add_member(c->result->types, owner, name, length, type);
+    // S23: nothing here confirms this path actually runs before whatever
+    // reads the member later -- inside a deferred body it may never run at
+    // all, and inside a branch or loop it may not run this time.
+    if (added != NULL && (c->deferred > 0 || c->conditional > 0)) {
+        added->unconfirmed = true;
+    }
 }
 
 // 13.10: unpack^ marks one value being taken apart rather than one value per
@@ -3855,7 +3869,12 @@ static void check_statement(Checker *c, const LhatNode *node)
                 const LhatNode *condition = clause->v.clause.condition;
                 if (condition == NULL) {
                     has_else = true;
+                    // S23: still only reached when every earlier condition
+                    // failed, so a let^ path written here is exactly as
+                    // uncertain as one inside an ordinary clause.
+                    c->conditional++;
                     check_statement(c, clause->v.clause.body);
+                    c->conditional--;
                     continue;
                 }
                 expect(c, condition, infer(c, condition),
@@ -3863,7 +3882,9 @@ static void check_statement(Checker *c, const LhatNode *node)
 
                 Narrowing *before = c->narrowings;
                 narrow_from(c, condition, true);
+                c->conditional++;
                 check_statement(c, clause->v.clause.body);
+                c->conditional--;
                 pop_narrowings(c, before);
 
                 if (!always_exits(clause->v.clause.body)) {
@@ -3973,10 +3994,15 @@ static void check_statement(Checker *c, const LhatNode *node)
                 }
                 infer(c, node->v.loop.step);
                 check_statements(c, node->v.loop.advance);
+                // S23: a loop body may run zero times.
+                c->conditional++;
                 check_statement(c, node->v.loop.body);
+                c->conditional--;
             } else if (node->kind == LHAT_NODE_REPEAT) {
                 infer(c, node->v.repeat.bound);
+                c->conditional++;
                 check_statement(c, node->v.repeat.body);
+                c->conditional--;
             } else {
                 check_statements(c, node->v.list.items);
                 // 12.5: the binding is what has to be disposable, so the
