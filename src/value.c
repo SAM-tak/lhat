@@ -94,11 +94,6 @@ const char *lhat_object_kind_name(LhatObjectKind kind)
 // Writing a value down (03 の 4 章)
 // ---------------------------------------------------------------------------
 
-// 14 章 makes a table both a sequence and a mapping, and one holding itself
-// is nothing the type system forbids. A depth of its own is what stops the
-// walk; nothing here has to know whether it went round.
-#define LHAT_WRITE_MAX_DEPTH 6
-
 // snprintf into a moving cursor. `used` is how long the whole text is, which
 // grows past `capacity` once the buffer is full -- the caller asks again with
 // a bigger one, the way snprintf means it to.

@@ -20,6 +20,7 @@
 #include <stdint.h>
 
 #include "value.h"
+#include "lhatconfig.h"
 
 // Who an object belongs to. Two exist: a chunk, holding what its constants
 // name, and the machine, holding what a program makes while it runs. Only the
@@ -100,8 +101,6 @@ typedef enum {
     LHAT_COROUTINE_RUNNING,
     LHAT_COROUTINE_DONE
 } LhatCoroutineState;
-
-#define LHAT_COROUTINE_CLEANUPS 32
 
 // 02 の 16.3: what `in^` walks is a coroutine, and a table answers with one
 // of its own. That one has no body to run -- resuming it reads the next pair

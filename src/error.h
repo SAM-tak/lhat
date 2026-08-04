@@ -65,10 +65,6 @@ typedef struct {
 //     ...n < 2: 1 else^: n * this^(n - 1) }...
 //                                        ~
 //
-// A terminal that wraps a long line puts the mark under the wrong place,
-// which says less than showing part of the line does.
-#define LHAT_REPORT_MAX_COLUMNS 96
-//
 // `source` may be NULL, and then the rich form falls back to the plain one --
 // there is nothing to quote. `name` overrides the source's own, for a caller
 // that knows the unit by a path the source does not carry; NULL keeps it.

@@ -7,10 +7,6 @@
 
 #include "port.h"
 
-#define LHAT_MAX_REGISTERS 250
-#define LHAT_MAX_LOCALS 200
-#define LHAT_MAX_BREAKS 64
-
 // 9.8: break^ is a normal end for the loop it leaves, so its jump lands where
 // last^ and epilog^ are, not past them. The chain is what a break^ written
 // inside a nested block still finds.
@@ -30,12 +26,6 @@ typedef struct {
     size_t length;
     uint8_t reg;  // 5.2: a name is a slot in the frame like anything else
 } Local;
-
-// 02 の 14.2: the chain of delegation is settled when the definition is
-// written, and 14.2 says the checker can decide the parts of any expression.
-// So the compiler resolves composition rather than the machine: what a def^
-// composes onto is a def^ it can already see.
-#define LHAT_MAX_DEF_CHAIN 8
 
 typedef struct DefChain {
     const LhatNode *parts[LHAT_MAX_DEF_CHAIN];  // base first, derived last
@@ -3581,11 +3571,6 @@ static bool ordering(LhatOpcode op, LhatValue left, LhatValue right,
             return false;
     }
 }
-
-#define LHAT_STACK_SLOTS 8192
-#define LHAT_MAX_FRAMES 200
-
-#define LHAT_MAX_CLEANUPS 32
 
 typedef struct {
     const LhatClosure *closure;

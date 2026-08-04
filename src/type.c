@@ -6,8 +6,7 @@
 #include <string.h>
 
 #include "port.h"
-
-#define LHAT_TYPE_BLOCK_BYTES 8192
+#include "lhatconfig.h"
 
 // MSVC does not provide max_align_t in C mode, so the arena carries its own
 // worst-case alignment rather than depending on it.

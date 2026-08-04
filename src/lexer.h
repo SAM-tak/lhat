@@ -9,6 +9,7 @@
 #ifndef LHAT_LEXER_H
 #define LHAT_LEXER_H
 
+#include "lhatconfig.h"
 #include "source.h"
 #include "token.h"
 
@@ -33,11 +34,6 @@ typedef enum {
     LHAT_ERR_INTERPOLATION_TOO_DEEP      // 5.4: nesting limit reached
 } LhatErrorCode;
 
-// Nesting limit for interpolated strings. A hole may contain another
-// interpolated string, which may contain another hole, and so on; anything
-// approaching this depth is pathological rather than intentional.
-#define LHAT_INTERP_MAX_DEPTH 32
-
 typedef struct {
     LhatErrorCode code;
     uint32_t offset;
@@ -61,7 +57,7 @@ typedef struct {
     struct {
         bool in_hole;
         uint32_t brace_depth;
-    } interp[LHAT_INTERP_MAX_DEPTH];
+    } interp[LHAT_LEXER_INTERP_MAX_DEPTH];
     size_t interp_depth;
 
     char *strings;         // decoded string literal bytes

@@ -17,7 +17,7 @@ Sample:
 import^debug
 let^print=debug.print
 
-let^factorial = f^n:number^{ if^ n < 2: 1 else^: n * this^(n - 1); }
+let^factorial = f^n:number^{ if^ n < 2: 1 el^: n * this^(n - 1); }
 print(factorial(10))
 ```
 

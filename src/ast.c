@@ -5,9 +5,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "lhatconfig.h"
 #include "port.h"
-
-#define LHAT_ARENA_BLOCK_NODES 256
 
 struct LhatArenaBlock {
     LhatArenaBlock *next;

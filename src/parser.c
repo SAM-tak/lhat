@@ -7,6 +7,7 @@
 #include <string.h>
 
 #include "port.h"
+#include "lhatconfig.h"
 
 typedef struct {
     LhatLexer *lexer;

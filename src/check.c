@@ -6,6 +6,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "lhatconfig.h"
 #include "port.h"
 
 // 05 の 8.7: a host writes a type out as text, so the checker reads the type
@@ -1270,8 +1271,6 @@ static bool signature_accepts(const LhatType *func, LhatType *const *args,
     }
     return true;
 }
-
-#define LHAT_CHECK_MAX_TRACKED_ARGS 16
 
 static LhatType *infer_call(Checker *c, const LhatNode *node)
 {

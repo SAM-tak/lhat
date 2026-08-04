@@ -1,5 +1,6 @@
 // L^ (lhat) -- writing a diagnostic down.
 
+#include "lhatconfig.h"
 #include "error.h"
 
 #include <stdio.h>
@@ -167,9 +168,6 @@ static size_t byte_after_cells(const char *line, size_t length, size_t cells)
     return at;
 }
 
-#define LHAT_REPORT_ELISION "..."
-#define LHAT_REPORT_ELISION_COLUMNS 3
-
 // A run of blanks as wide as the text before the mark. Tabs are kept when the
 // line is shown whole, so a line indented with them lines up whatever the
 // terminal makes a tab -- both this and the line above expand the same way.
@@ -268,9 +266,6 @@ size_t lhat_report_write(const LhatReport *report, const LhatSource *source,
         }
         put(&w, "\n", 1);
 
-        // '~' rather than '^': a hat is a letter here (01 の 2.2), and a mark
-        // made of one would read as part of the line above it. A span is
-        // marked for its whole width, so a reader sees how much is meant.
         if (cut_left) {
             for (int i = 0; i < LHAT_REPORT_ELISION_COLUMNS; i++) {
                 put(&w, " ", 1);
