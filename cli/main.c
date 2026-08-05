@@ -479,10 +479,10 @@ static int dump_tokens(const LhatSource *source)
 // 03 の 1.1's third stage, over the unit graph of 05 の 6.2: a unit cannot be
 // checked before the units it requires, so the whole graph is walked rather
 // than the one file named on the command line.
-static int check_program(const char *path, bool run)
+static int check_program(const char *path, bool run, bool strict)
 {
     LhatProgram program;
-    lhat_program_init(&program, true, lhat_load_file, NULL);
+    lhat_program_init(&program, strict, lhat_load_file, NULL);
 
     const LhatUnit *root = lhat_program_check(&program, path);
 
@@ -589,7 +589,7 @@ static int dump_tree(const LhatSource *source, bool typed, bool command)
 // 03 の 4 章: one machine and one session of each stage, answering many
 // inputs. 4.3 keeps the names of one input for the next; 02 の 8.2 makes a
 // bare expression a statement here and nowhere else.
-static int repl(void)
+static int repl(bool strict)
 {
     LhatMachine *machine = lhat_machine_new();
     LhatCheckSession *checks = lhat_check_session_new();
@@ -701,7 +701,8 @@ static int repl(void)
 
         LhatCheckResult checked;
         if (!refused) {
-            lhat_check_next(checks, in->parsed.root, &in->lexer, true, &checked);
+            lhat_check_next(checks, in->parsed.root, &in->lexer, strict,
+                            &checked);
             for (size_t i = 0; i < checked.diagnostic_count; i++) {
                 const LhatCheckDiagnostic *d = &checked.diagnostics[i];
                 say_check_error(&in->source, "stdin", d);
@@ -768,6 +769,10 @@ int main(int argc, char **argv)
     bool check_only = false;
     bool run_program = false;
     bool command_form = false;
+    // 03 の 3.1: a file defaults to strict, the prompt to relaxed. Writing
+    // the other one out overrides whichever default the mode below picks.
+    enum { STRICTNESS_DEFAULT, STRICTNESS_STRICT, STRICTNESS_RELAXED }
+        strictness = STRICTNESS_DEFAULT;
 
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "--tokens") == 0) {
@@ -778,6 +783,10 @@ int main(int argc, char **argv)
             run_program = true;
         } else if (strcmp(argv[i], "--command") == 0) {
             command_form = true;
+        } else if (strcmp(argv[i], "--strict") == 0) {
+            strictness = STRICTNESS_STRICT;
+        } else if (strcmp(argv[i], "--relaxed") == 0) {
+            strictness = STRICTNESS_RELAXED;
         } else {
             path = argv[i];
         }
@@ -786,7 +795,7 @@ int main(int argc, char **argv)
     // 03 の 4 章: with nothing to read, read from the prompt.
     if (path == NULL && !tokens_only && !check_only && !run_program &&
         !command_form) {
-        return repl();
+        return repl(strictness == STRICTNESS_STRICT);
     }
 
     if (path == NULL) {
@@ -798,13 +807,18 @@ int main(int argc, char **argv)
         printf("  default    print the syntax tree\n");
         printf("  --tokens   print the token stream instead\n");
         printf("  --command  read the input as the command form (02 の 2 章)\n");
+        printf("  --strict   report a type error at compile time"
+                            " (03 の 3.1; default for a file)\n");
+        printf("  --relaxed  leave an undecided type to a runtime check"
+                            " (03 の 3.1; default for the prompt)\n");
         return EXIT_SUCCESS;
     }
 
     // Checking is a question about a program, not about a file: 05 の 6.2
     // puts the units a file requires ahead of it.
     if (check_only || run_program) {
-        return check_program(path, run_program);
+        return check_program(path, run_program,
+                             strictness != STRICTNESS_RELAXED);
     }
 
     LhatSource source;

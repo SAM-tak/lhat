@@ -330,13 +330,15 @@ REPL の既定は relaxed、ソースファイルの既定は strict とする�
 - ファイルを relaxed でコンパイルできる（試作時に有用）
 - REPL で strict を有効にできる（ファイルへ貼る前の確認に有用）
 
-> **実装の現状（未実装）**: `lhat_check_unit`/`lhat_check_next` はどちらも
-> 呼び出し側が渡す `strict` 引数をそのまま `Checker.strict` に落とすだけで、
-> CLI（`cli/main.c`）は REPL・ファイル実行のどちらでも `strict = true` 固定で
-> 呼んでいる。したがって「REPL の既定は relaxed」はまだ実現しておらず、
-> relaxed への切り替え自体（3.5 の動的検査の挿入を含む）も未着手のまま。
-> 3.5 に書いた strict 側の報告（pending^ が具体的な型を要求する場面まで
-> 生き残った場合の報告）だけが実装されている。
+> **実装の現状**: `lhat_check_unit`/`lhat_check_next`/`lhat_program_init` は
+> どれも呼び出し側が渡す `strict` 引数をそのまま `Checker.strict` に落とす
+> 作りで、CLI（`cli/main.c`）がこの節どおりの既定と切り替えを持つ——
+> ファイル実行（`--check`/`--run`）は既定 strict、プロンプトは既定 relaxed。
+> `--strict`/`--relaxed` を書けばどちらのモードでも既定を上書きできる。
+> ただし relaxed 側は 3.5 の動的検査の挿入（推論が決まらなかった箇所に
+> 実行時チェックを挿す部分）が未着手で、今のところ strict と同じ
+> `lhat_type_conforms` の寛容さに乗っているだけ。strict 側は次の範囲が
+> 実装済み。
 
 #### strict 側で実装した範囲［実装済み］
 
