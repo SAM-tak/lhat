@@ -292,6 +292,61 @@ static void test_names(void)
     run_dispose(&r);
 
     // 8.6's whole point: the inner statement reaches the outer name.
+    // 7.4改: 'target op= value' means 'target := target op value'.
+    LHAT_TEST("every compound assignment operator");
+    run_text(&r, "let^ x = 10\nx += 5\nreturn^ x\n");
+    CHECK_INTEGER(&r, 15);
+    run_dispose(&r);
+
+    run_text(&r, "let^ x = 10\nx -= 3\nreturn^ x\n");
+    CHECK_INTEGER(&r, 7);
+    run_dispose(&r);
+
+    run_text(&r, "let^ x = 10\nx *= 3\nreturn^ x\n");
+    CHECK_INTEGER(&r, 30);
+    run_dispose(&r);
+
+    run_text(&r, "let^ x = 10\nx /= 4\nreturn^ x\n");
+    CHECK_REAL(&r, 2.5);
+    run_dispose(&r);
+
+    run_text(&r, "let^ x = 10\nx %= 3\nreturn^ x\n");
+    CHECK_INTEGER(&r, 1);
+    run_dispose(&r);
+
+    run_text(&r, "let^ x = 10\nx //= 3\nreturn^ x\n");
+    CHECK_INTEGER(&r, 3);
+    run_dispose(&r);
+
+    run_text(&r, "let^ x = 2\nx **= 5\nreturn^ x\n");
+    CHECK_REAL(&r, 32.0);
+    run_dispose(&r);
+
+    run_text(&r, "let^ x = \"ab\"\nx ..= \"cd\"\nreturn^ x = \"abcd\"\n");
+    CHECK_BOOL(&r, true);
+    run_dispose(&r);
+
+    // 7.4改's whole reason to exist: the target is read once, not twice.
+    // A path target proves it, since only there does re-evaluating the
+    // target run something with a side effect.
+    LHAT_TEST("a path target is evaluated once, not twice");
+    run_text(&r,
+             "let^ t = { 100, 200 }\n"
+             "let^ calls = 0\n"
+             "let^ idx = p^ { calls := calls + 1\nreturn^ 1 }\n"
+             "t[idx()] += 5\n"
+             "return^ t.1 = 105 and^ calls = 1\n");
+    CHECK_BOOL(&r, true);
+    run_dispose(&r);
+
+    LHAT_TEST("and the same holds for a member target");
+    run_text(&r,
+             "let^ t = { x := 10 }\n"
+             "t.x += 7\n"
+             "return^ t.x\n");
+    CHECK_INTEGER(&r, 17);
+    run_dispose(&r);
+
     LHAT_TEST("':=' inside a block reaches out");
     run_text(&r, "let^ x = 1\ndo^{ x := 9 }\nreturn^ x\n");
     CHECK_INTEGER(&r, 9);

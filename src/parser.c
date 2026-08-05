@@ -2018,6 +2018,24 @@ static LhatNode *parse_value(Parser *p)
     return node;
 }
 
+// 7.4改: 'target op= value' names the plain operator it stands for. Not an
+// operator table lookup, since a compound token never reaches parse_binary --
+// is_comparison/binary_info never see one, so this is the only place asking.
+static bool compound_assign_op(LhatOpKind token_op, LhatOpKind *base_op)
+{
+    switch (token_op) {
+        case LHAT_OP_ADD_ASSIGN:      *base_op = LHAT_OP_ADD;      return true;
+        case LHAT_OP_SUB_ASSIGN:      *base_op = LHAT_OP_SUB;      return true;
+        case LHAT_OP_MUL_ASSIGN:      *base_op = LHAT_OP_MUL;      return true;
+        case LHAT_OP_DIV_ASSIGN:      *base_op = LHAT_OP_DIV;      return true;
+        case LHAT_OP_FLOORDIV_ASSIGN: *base_op = LHAT_OP_FLOORDIV; return true;
+        case LHAT_OP_MOD_ASSIGN:      *base_op = LHAT_OP_MOD;      return true;
+        case LHAT_OP_POW_ASSIGN:      *base_op = LHAT_OP_POW;      return true;
+        case LHAT_OP_CONCAT_ASSIGN:   *base_op = LHAT_OP_CONCAT;   return true;
+        default: return false;
+    }
+}
+
 // The value list of a binding, plus the arity checks the two forms share.
 static LhatNode *parse_binding(Parser *p, LhatNodeKind kind,
                                const LhatToken *at, LhatNode *targets)
@@ -3085,6 +3103,39 @@ static LhatNode *parse_statement(Parser *p)
         return parse_binding(p, LHAT_NODE_REASSIGN, &at, head);
     }
 
+    // 7.4改: 'target op= value' is 'target := target op value' with target
+    // read once. A single target is all that reads once means, so more than
+    // one is refused rather than guessed at.
+    LhatOpKind compound_base;
+    if (p->current.kind == LHAT_TOKEN_OP &&
+        compound_assign_op(p->current.v.op, &compound_base)) {
+        LhatToken at = p->current;
+        advance(p);
+        if (head == NULL || head->next != NULL) {
+            report(p, &at, LHAT_PARSE_ERR_COMPOUND_ASSIGN_ONE_TARGET);
+        }
+        LhatNode *rhs = parse_expression(p);
+        LhatNode *node = make(p, LHAT_NODE_REASSIGN, &at);
+        if (node == NULL) {
+            return NULL;
+        }
+        node->v.binding.targets = head;
+        // The value read is 'target op rhs' -- built around the very same
+        // target node the compiler already reads for its address, so
+        // checking it costs nothing (infer has no side effect) and compiling
+        // it costs a register read, never owner/key evaluated again (below).
+        LhatNode *binary = make(p, LHAT_NODE_BINARY, &at);
+        if (binary != NULL) {
+            binary->v.binary.op = compound_base;
+            binary->v.binary.left = head;
+            binary->v.binary.right = rhs;
+        }
+        node->v.binding.values = binary != NULL ? binary : rhs;
+        node->v.binding.has_compound_op = true;
+        node->v.binding.compound_op = compound_base;
+        return node;
+    }
+
     // The withdrawn postfix reassignment of Q2.
     if (check_op(p, LHAT_OP_ARROW)) {
         report(p, &p->current, LHAT_PARSE_ERR_WITHDRAWN_ARROW);
@@ -3326,6 +3377,9 @@ const char *lhat_parse_error_message(LhatParseErrorCode code)
             return "taking one value apart needs 'unpack^' before it";
         case LHAT_PARSE_ERR_BINDING_ARITY:
             return "the number of targets and values does not match";
+        case LHAT_PARSE_ERR_COMPOUND_ASSIGN_ONE_TARGET:
+            return "compound assignment ('+=' and the like) takes exactly "
+                   "one target";
         case LHAT_PARSE_ERR_UNPACK_NOT_ALONE:
             return "'unpack^' must be the only value of the binding";
         case LHAT_PARSE_ERR_UNPACK_MISPLACED:

@@ -2409,11 +2409,34 @@ static void compile_reassign(Compiler *c, const LhatNode *node)
             uint8_t mark = c->next_register;
             uint8_t into = reserve(c);
             uint8_t key = reserve(c);
-            uint8_t slot = reserve(c);
             compile_expression(c, target->v.access.target, into);
             compile_key(c, target, key);
-            compile_expression(c, value, slot);
-            emit(c, lhat_encode_abc(LHAT_BC_SETINDEX, into, key, slot));
+
+            // 7.4改: owner and key were just evaluated once, above. A
+            // compound assignment reads the current value back out through
+            // them rather than compiling the target a second time, which
+            // would run owner/key again and defeat the point of writing
+            // 'target op= value' over 'target := target op value'.
+            if (node->v.binding.has_compound_op &&
+                value->kind == LHAT_NODE_BINARY) {
+                LhatOpcode opcode;
+                if (!binary_opcode(value->v.binary.op, &opcode)) {
+                    fail(c, LHAT_COMPILE_UNSUPPORTED);
+                    c->next_register = mark;
+                    return;
+                }
+                uint8_t current = reserve(c);
+                emit(c, lhat_encode_abc(LHAT_BC_GETINDEX, current, into, key));
+                uint8_t rhs = reserve(c);
+                compile_expression(c, value->v.binary.right, rhs);
+                uint8_t result = reserve(c);
+                emit(c, lhat_encode_abc(opcode, result, current, rhs));
+                emit(c, lhat_encode_abc(LHAT_BC_SETINDEX, into, key, result));
+            } else {
+                uint8_t slot = reserve(c);
+                compile_expression(c, value, slot);
+                emit(c, lhat_encode_abc(LHAT_BC_SETINDEX, into, key, slot));
+            }
             c->next_register = mark;
             value = value->next;
             continue;

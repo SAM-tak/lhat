@@ -267,6 +267,14 @@ struct LhatNode {
             // whose last segment already exists it makes this a reassignment
             // instead of the redefinition error 8.7 would otherwise report.
             bool via_reassign_op;
+            // 7.4改. REASSIGN only, and only from 'target op= value': the
+            // plain operator the compound spelling stands for (e.g. '+=' ->
+            // LHAT_OP_ADD). `values` holds just the right-hand side, not the
+            // expanded 'target op value' -- target is evaluated once, and
+            // where that matters (a path target) is a checker/compiler
+            // concern, not a parse-time expansion.
+            bool has_compound_op;
+            LhatOpKind compound_op;
         } binding;
 
         // Statement or expression lists: BLOCK, TABLE, IF_STMT, IF_EXPR,

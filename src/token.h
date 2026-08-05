@@ -63,6 +63,18 @@ typedef enum {
     LHAT_OP_REASSIGN,    // <<   target << value (Q2)
     LHAT_OP_ARROW,       // ->   separates arguments from return value (Q9)
 
+    // 7.4改: compound assignment. 'target op= value' means 'target :=
+    // target op value', with target evaluated once. Each names the plain
+    // operator it stands for; the parser reads the pair apart.
+    LHAT_OP_ADD_ASSIGN,      // +=
+    LHAT_OP_SUB_ASSIGN,      // -=
+    LHAT_OP_MUL_ASSIGN,      // *=
+    LHAT_OP_DIV_ASSIGN,      // /=
+    LHAT_OP_FLOORDIV_ASSIGN, // //=
+    LHAT_OP_MOD_ASSIGN,      // %=
+    LHAT_OP_POW_ASSIGN,      // **=
+    LHAT_OP_CONCAT_ASSIGN,   // ..=
+
     // Neither of these is part of the language; both are recognised so the
     // parser can say what replaced them instead of reporting a stray
     // character. Q2 first made '->' postfix reassignment before settling on

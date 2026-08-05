@@ -135,6 +135,56 @@ static void test_statements(void)
     LHAT_CHECK_EQ_INT(first_statement(&p)->kind, LHAT_NODE_REASSIGN);
     parse_dispose(&p);
 
+    // 7.4改: 'a += b' is a reassignment whose value is 'a + b', built around
+    // the same target node -- read once for its type/current value, never
+    // an expression compiled twice.
+    LHAT_TEST("compound assignment reads as a reassignment of a + b");
+    parse_text(&p, "a += b");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    {
+        const LhatNode *s = first_statement(&p);
+        LHAT_CHECK_EQ_INT(s->kind, LHAT_NODE_REASSIGN);
+        LHAT_CHECK(s->v.binding.has_compound_op, "expected has_compound_op");
+        LHAT_CHECK_EQ_INT(s->v.binding.compound_op, LHAT_OP_ADD);
+        const LhatNode *value = s->v.binding.values;
+        LHAT_CHECK_EQ_INT(value->kind, LHAT_NODE_BINARY);
+        LHAT_CHECK_EQ_INT(value->v.binary.op, LHAT_OP_ADD);
+        LHAT_CHECK(value->v.binary.left == s->v.binding.targets,
+                   "expected the value's left to be the very target node");
+    }
+    parse_dispose(&p);
+
+    LHAT_TEST("every compound spelling maps to its plain operator");
+    {
+        static const struct {
+            const char *text;
+            LhatOpKind op;
+        } cases[] = {
+            { "a += b", LHAT_OP_ADD },
+            { "a -= b", LHAT_OP_SUB },
+            { "a *= b", LHAT_OP_MUL },
+            { "a /= b", LHAT_OP_DIV },
+            { "a %= b", LHAT_OP_MOD },
+            { "a //= b", LHAT_OP_FLOORDIV },
+            { "a **= b", LHAT_OP_POW },
+            { "a ..= b", LHAT_OP_CONCAT },
+        };
+        for (size_t i = 0; i < sizeof cases / sizeof cases[0]; i++) {
+            parse_text(&p, cases[i].text);
+            LHAT_CHECK_EQ_INT(error_count(&p), 0);
+            LHAT_CHECK_EQ_INT(first_statement(&p)->v.binding.compound_op,
+                              cases[i].op);
+            parse_dispose(&p);
+        }
+    }
+
+    LHAT_TEST("compound assignment refuses more than one target");
+    parse_text(&p, "a, b += 1");
+    LHAT_CHECK(error_count(&p) > 0, "expected a diagnostic");
+    LHAT_CHECK_EQ_INT(p.result.diagnostics[0].code,
+                      LHAT_PARSE_ERR_COMPOUND_ASSIGN_ONE_TARGET);
+    parse_dispose(&p);
+
     // 13.10: the marker sits on the value, not on the binding.
     LHAT_TEST("destructuring binding");
     parse_text(&p, "let^ q, r = unpack^ divmod(7, 2)");

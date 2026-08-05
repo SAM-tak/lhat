@@ -63,6 +63,8 @@ typedef enum {
     LHAT_PARSE_ERR_SPREAD_NOT_LAST,           // 13.7: '...' forwards the
                                               // whole tail, so nothing can
                                               // follow it in a call
+    LHAT_PARSE_ERR_COMPOUND_ASSIGN_ONE_TARGET, // 7.4改: 'a, b += 1' has no
+                                              // one target to read once
     LHAT_PARSE_ERR_LEXICAL                    // the lexer already reported one
 } LhatParseErrorCode;
 

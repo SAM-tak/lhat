@@ -43,6 +43,14 @@ const char *lhat_op_name(LhatOpKind op)
         case LHAT_OP_REASSIGN:   return "<<";
         case LHAT_OP_COLONCOLON: return "::";
         case LHAT_OP_ARROW:      return "->";
+        case LHAT_OP_ADD_ASSIGN:      return "+=";
+        case LHAT_OP_SUB_ASSIGN:      return "-=";
+        case LHAT_OP_MUL_ASSIGN:      return "*=";
+        case LHAT_OP_DIV_ASSIGN:      return "/=";
+        case LHAT_OP_FLOORDIV_ASSIGN: return "//=";
+        case LHAT_OP_MOD_ASSIGN:      return "%=";
+        case LHAT_OP_POW_ASSIGN:      return "**=";
+        case LHAT_OP_CONCAT_ASSIGN:   return "..=";
         case LHAT_OP_EQ:         return "=";
         case LHAT_OP_NE:         return "!=";
         case LHAT_OP_LE:         return "<=";

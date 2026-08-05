@@ -630,6 +630,21 @@ static void test_operators(void)
     LHAT_CHECK(is_op(&s.tokens[13], LHAT_OP_NIL_ELSE), "expected ??");
     scan_dispose(&s);
 
+    // 7.4改: each compound spelling has to precede its plain operator, or
+    // maximal munch would take the shorter one and leave a stray '='.
+    LHAT_TEST("compound assignment operators");
+    scan_text(&s, "+= -= *= /= %= //= **= ..=");
+    LHAT_CHECK(is_op(&s.tokens[0], LHAT_OP_ADD_ASSIGN), "expected +=");
+    LHAT_CHECK(is_op(&s.tokens[1], LHAT_OP_SUB_ASSIGN), "expected -=");
+    LHAT_CHECK(is_op(&s.tokens[2], LHAT_OP_MUL_ASSIGN), "expected *=");
+    LHAT_CHECK(is_op(&s.tokens[3], LHAT_OP_DIV_ASSIGN), "expected /=");
+    LHAT_CHECK(is_op(&s.tokens[4], LHAT_OP_MOD_ASSIGN), "expected %%=");
+    LHAT_CHECK(is_op(&s.tokens[5], LHAT_OP_FLOORDIV_ASSIGN), "expected //=");
+    LHAT_CHECK(is_op(&s.tokens[6], LHAT_OP_POW_ASSIGN), "expected **=");
+    LHAT_CHECK(is_op(&s.tokens[7], LHAT_OP_CONCAT_ASSIGN), "expected ..=");
+    LHAT_CHECK_EQ_INT(token_count(&s), 8);
+    scan_dispose(&s);
+
     // 02 の 11.7. The one member of the '?' family that is not a postfix
     // access, so it has to stay distinct from '?.' and from a bare '?'.
     LHAT_TEST("?? is distinct from the nil-propagating accesses");

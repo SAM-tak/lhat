@@ -909,6 +909,12 @@ typedef struct {
 static const OperatorEntry operator_table[] = {
     { "...", 3, LHAT_OP_ELLIPSIS },     // must precede ".." (13.7)
 
+    // 7.4改: compound assignment. Each must precede its own plain operator
+    // below (e.g. "//=" before "//"), or the '=' would be left stray.
+    { "//=", 3, LHAT_OP_FLOORDIV_ASSIGN },
+    { "**=", 3, LHAT_OP_POW_ASSIGN },
+    { "..=", 3, LHAT_OP_CONCAT_ASSIGN },
+
     { "\xE2\x89\xA0", 3, LHAT_OP_NE },  // U+2260 NOT EQUAL TO
     { "\xE2\x89\xA4", 3, LHAT_OP_LE },  // U+2264 LESS-THAN OR EQUAL TO
     { "\xE2\x89\xA5", 3, LHAT_OP_GE },  // U+2265 GREATER-THAN OR EQUAL TO
@@ -926,6 +932,11 @@ static const OperatorEntry operator_table[] = {
     { "**", 2, LHAT_OP_POW },
     { "//", 2, LHAT_OP_FLOORDIV },
     { "..", 2, LHAT_OP_CONCAT },
+    { "+=", 2, LHAT_OP_ADD_ASSIGN },
+    { "-=", 2, LHAT_OP_SUB_ASSIGN },
+    { "*=", 2, LHAT_OP_MUL_ASSIGN },
+    { "/=", 2, LHAT_OP_DIV_ASSIGN },
+    { "%=", 2, LHAT_OP_MOD_ASSIGN },
     { "?.", 2, LHAT_OP_NIL_DOT },
     { "?(", 2, LHAT_OP_NIL_CALL },
     { "?[", 2, LHAT_OP_NIL_INDEX },

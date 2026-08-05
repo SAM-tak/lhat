@@ -169,6 +169,19 @@ static void test_expressions(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
+    // 7.4改: 'x += 1' checks the same way 'x := x + 1' would -- the operator
+    // it stands for has to accept the right side, and the result has to fit
+    // the name.
+    LHAT_TEST("compound assignment checks like the operator it stands for");
+    check_text(&u, "let^ x : number^ = 1\nx += 1\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("and refuses what the operator would refuse");
+    check_text(&u, "let^ s = \"hi\"\ns += 1\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_NO_OPERATOR);
+    unit_dispose(&u);
+
     LHAT_TEST("a call checks its arguments and arity");
     check_text(&u,
                "let^ f = f^ n:number^ -> number^ { return^ n }\n"
