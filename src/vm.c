@@ -7,6 +7,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "lhatconfig.h"
 #include "port.h"
 #include "type.h"
 
@@ -54,7 +55,7 @@ typedef struct Compiler {
     struct {
         const char *name;
         size_t length;
-    } upvalue_names[256];
+    } upvalue_names[LHAT_MAX_UPVALUES];
 
     // Slots below this hold live names; everything above is scratch for the
     // expression being compiled, released as soon as it is consumed.
@@ -348,7 +349,7 @@ static void declare_error(Compiler *c, const LhatNode *node)
             return;
         }
         // "IOError.NotFound" -- what typeof^ answers (2.3).
-        char qualified[256];
+        char qualified[LHAT_QUALIFIED_NAME_BUFFER];
         size_t total = length + 1 + kind_length;
         if (total >= sizeof qualified) {
             lhat_free(kinds);
@@ -4418,8 +4419,9 @@ static void collect(Machine *m)
     m->collected += lhat_gc_sweep(&m->objects, m);
 
     // What survived is the new baseline, so a program holding a lot does not
-    // collect on every allocation.
-    m->threshold = m->objects.count * 2 + 64;
+    // collect on every allocation. The floor keeps a nearly-empty heap from
+    // triggering the next collection almost immediately.
+    m->threshold = m->objects.count * LHAT_GC_GROWTH_FACTOR + LHAT_GC_MIN_THRESHOLD;
 }
 
 // 5.4: one place per slot, so two closures capturing the same name share it.
@@ -4564,7 +4566,7 @@ LhatMachine *lhat_machine_new(void)
     if (m == NULL) {
         return NULL;
     }
-    m->threshold = 256;
+    m->threshold = LHAT_GC_INITIAL_THRESHOLD;
     if (!build_environment(m)) {
         lhat_machine_dispose(m);
         return NULL;

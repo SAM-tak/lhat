@@ -57,7 +57,7 @@ typedef struct {
     struct {
         bool in_hole;
         uint32_t brace_depth;
-    } interp[LHAT_LEXER_INTERP_MAX_DEPTH];
+    } interp[LHAT_INTERP_MAX_DEPTH];
     size_t interp_depth;
 
     char *strings;         // decoded string literal bytes

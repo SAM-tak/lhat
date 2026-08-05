@@ -559,14 +559,14 @@ static LhatToken scan_number(LhatLexer *lexer, Mark start)
     }
 
     size_t length = lexer->pos - start.offset;
-    if (malformed || length >= LHAT_LEXER_NUMBER_BUFFER) {
+    if (malformed || length >= LHAT_NUMBER_BUFFER) {
         report_at(lexer, LHAT_ERR_MALFORMED_NUMBER, (uint32_t)start.offset,
                   start.line, start.column);
         return finish(lexer, start, LHAT_TOKEN_ERROR);
     }
 
     // Strip the '_' separators before handing the text to the C library.
-    char buffer[LHAT_LEXER_NUMBER_BUFFER];
+    char buffer[LHAT_NUMBER_BUFFER];
     size_t out = 0;
     size_t from = start.offset;
     if (base != 10) {
@@ -757,8 +757,7 @@ static LhatToken scan_interpolation_segment(LhatLexer *lexer)
 
     if (current_byte(lexer) == '{' && byte_at(lexer, 1) != '{') {
         advance(lexer);
-        if (lexer->interp_depth >= LHAT_LEXER_INTERP_MAX_DEPTH)
-        {
+        if (lexer->interp_depth >= LHAT_INTERP_MAX_DEPTH) {
             report(lexer, LHAT_ERR_INTERPOLATION_TOO_DEEP);
             return finish(lexer, start, LHAT_TOKEN_ERROR);
         }
@@ -847,7 +846,7 @@ static LhatToken scan_dollar(LhatLexer *lexer, Mark start)
     // string and a scope specifier.
     if (next == '"') {
         advance_n(lexer, 2);
-        if (lexer->interp_depth >= LHAT_LEXER_INTERP_MAX_DEPTH) {
+        if (lexer->interp_depth >= LHAT_INTERP_MAX_DEPTH) {
             report(lexer, LHAT_ERR_INTERPOLATION_TOO_DEEP);
             return finish(lexer, start, LHAT_TOKEN_ERROR);
         }
