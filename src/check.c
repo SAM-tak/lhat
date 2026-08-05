@@ -945,6 +945,7 @@ static bool always_exits(const LhatNode *node)
     switch (node->kind) {
         case LHAT_NODE_RETURN:
         case LHAT_NODE_BREAK:
+        case LHAT_NODE_PANIC:
             return true;
 
         case LHAT_NODE_BLOCK:
@@ -3952,6 +3953,14 @@ static void check_statement(Checker *c, const LhatNode *node)
                 lhat_type_union(c->result->types, c->inferred_result, value);
             break;
         }
+
+        // 04 の 11.6改: panic^ answers no value of its own (always_exits
+        // already treats it as a way out, same as return^/break^), so the
+        // operand is only checked for its own sake -- any type at all is
+        // fine, the same way typeof^'s operand asks nothing of its type.
+        case LHAT_NODE_PANIC:
+            infer(c, node->v.jump.value);
+            break;
 
         case LHAT_NODE_YIELD: {
             // 15.2改: nobody receives this one, so R is not being fixed here

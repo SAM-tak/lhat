@@ -387,6 +387,26 @@ static void say_check_error(const LhatSource *source, const char *name,
     free(bigger);
 }
 
+// 04 の 11.6改: what the program wrote in panic^ EXPR, as text -- a plain
+// string prints as its own text (a message reads oddly in quotes), anything
+// else falls back to lhat_value_write's general form.
+static void say_panic_value(LhatValue value)
+{
+    if (lhat_is_object_kind(value, LHAT_OBJECT_STRING)) {
+        const LhatString *text = (const LhatString *)lhat_as_object(value);
+        fprintf(stderr, "%.*s", (int)text->length, text->text);
+        return;
+    }
+    size_t needed = lhat_value_write(value, NULL, 0);
+    char *room = (char *)malloc(needed + 1);
+    if (room == NULL) {
+        return;
+    }
+    lhat_value_write(value, room, needed + 1);
+    fprintf(stderr, "%s", room);
+    free(room);
+}
+
 // 04 の 11 章: a runtime fault names the line it happened on and, when it was
 // one, the operator -- both from LhatRunResult, not the richer source-offset
 // diagnostics the checker/parser give (those need a source and a token; a
@@ -399,6 +419,11 @@ static void say_run_error(const char *path, LhatRunResult ran)
     fprintf(stderr, "error: ");
     if (ran.line > 0) {
         fprintf(stderr, "line %u: ", ran.line);
+    }
+    if (ran.status == LHAT_RUN_PANIC) {
+        say_panic_value(ran.value);
+        fprintf(stderr, "\n");
+        return;
     }
     fprintf(stderr, "%s", lhat_run_status_message(ran.status));
     if (ran.op_name != NULL) {

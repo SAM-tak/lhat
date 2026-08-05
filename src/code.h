@@ -108,6 +108,8 @@ typedef enum {
     LHAT_BC_RETURN,     // A     return R[A]
     LHAT_BC_RETURN_NIL,
 
+    LHAT_BC_PANIC,      // A     panic^ R[A]  (04 の 11.6改)
+
     LHAT_BC_COUNT
 } LhatOpcode;
 

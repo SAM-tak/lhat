@@ -1059,7 +1059,7 @@ static bool is_else_marker(const Parser *p)
 static bool is_statement_keyword(const Parser *p)
 {
     static const char *const words[] = {
-        "if", "do", "let", "with", "return", "break", "yield", "_yield",
+        "if", "do", "let", "with", "return", "break", "panic", "yield", "_yield",
         "for", "repeat", "while", "until", "when", "other", "errordef",
         "prolog", "prologue", "pre", "premain", "first", "main", "last",
         "epilog", "epilogue", "finally"
@@ -2802,6 +2802,20 @@ static LhatNode *parse_jump(Parser *p, LhatNodeKind kind)
     return node;
 }
 
+// 04 の 11.6改: unlike return^/break^/yield^, the value is not optional --
+// panic^ answers no value of its own, so a bare panic^ would say nothing.
+static LhatNode *parse_panic(Parser *p)
+{
+    LhatToken start = p->current;
+    advance(p);
+    LhatNode *node = make(p, LHAT_NODE_PANIC, &start);
+    if (node == NULL) {
+        return NULL;
+    }
+    node->v.jump.value = parse_expression(p);
+    return node;
+}
+
 // 8.2 lets a call stand alone. try^ (04 の 5.1) and catch^ (04 の 4.4) wrap
 // one without changing that a call is being made -- they only say what to do
 // with a failure -- so `try^ save(x)` and `save(x) catch^ nil^` are
@@ -2870,6 +2884,9 @@ static LhatNode *parse_statement(Parser *p)
         }
         if (check_hat(p, "break")) {
             return parse_jump(p, LHAT_NODE_BREAK);
+        }
+        if (check_hat(p, "panic")) {
+            return parse_panic(p);
         }
         // 05 の 5.4改: a require^ standing alone binds the unit under the
         // path it declared, rather than under a name the reader picks. It is

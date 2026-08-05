@@ -100,8 +100,10 @@ typedef enum {
                                          // been started
     LHAT_RUN_COROUTINE_ALREADY_STARTED, // 15.2改: started one that already
                                          // has been
-    LHAT_RUN_NO_SUCH_UNIT     // 05 の 5.3: a require^ reached for a unit the
+    LHAT_RUN_NO_SUCH_UNIT,    // 05 の 5.3: a require^ reached for a unit the
                               // machine was not given
+    LHAT_RUN_PANIC            // 04 の 11.6改: panic^, written by the program
+                              // itself -- `value` is what it panicked with
 } LhatRunStatus;
 
 typedef struct {

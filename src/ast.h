@@ -63,6 +63,7 @@ typedef enum {
     LHAT_NODE_IF_STMT,
     LHAT_NODE_RETURN,
     LHAT_NODE_BREAK,
+    LHAT_NODE_PANIC,         // panic^ expr              (04 の 11.6改)
     LHAT_NODE_YIELD,
     LHAT_NODE_YIELD_ALL,     // yieldall^ expr           (15.8)
     LHAT_NODE_WITH,          // with^ x := e  ... { ... }   (12 章)
@@ -322,7 +323,8 @@ struct LhatNode {
             LhatNode *format;
         } hole;
 
-        // RETURN / YIELD carry an optional value; BREAK carries a level.
+        // RETURN / YIELD carry an optional value; BREAK carries a level;
+        // PANIC's value is required (`phantom` unused).
         struct {
             LhatNode *value;
             // YIELD only. 15.11: written '_yield^', which types exactly as a

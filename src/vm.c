@@ -3096,6 +3096,18 @@ static void compile_statement(Compiler *c, const LhatNode *node)
             return;
         }
 
+        // 04 の 11.6改: unlike return^, this does not answer anything a
+        // finally^ could be seen as replacing, so 02 の 10.5's restriction
+        // does not apply here.
+        case LHAT_NODE_PANIC: {
+            uint8_t mark = c->next_register;
+            uint8_t slot = reserve(c);
+            compile_expression(c, node->v.jump.value, slot);
+            emit(c, lhat_encode_abc(LHAT_BC_PANIC, slot, 0, 0));
+            c->next_register = mark;
+            return;
+        }
+
         case LHAT_NODE_IF_STMT: {
             size_t leaving[LHAT_MAX_LOCALS];
             size_t leaving_count = 0;
@@ -5586,6 +5598,13 @@ LhatRunResult lhat_run(LhatMachine *m, const LhatProto *proto)
                 frame->answer = op == LHAT_BC_RETURN ? registers[a] : lhat_nil();
                 goto drain;
 
+            // 04 の 11.6改: unlike a fault the machine itself raises, the
+            // value is the program's own -- carried through to the host
+            // exactly as lhat_run always has, rather than discarded like
+            // every other finish() here discards its nil^.
+            case LHAT_BC_PANIC:
+                return finish(m, chunk, LHAT_RUN_PANIC, registers[a], at);
+
             // 02 の 15.4: the frame stops here and the value goes out. 5.11
             // keeps the one frame rather than a stack, which 15.5 is what
             // makes possible -- a yield^ is always in the body it suspends.
@@ -5842,6 +5861,10 @@ const char *lhat_run_status_message(LhatRunStatus status)
         case LHAT_RUN_NO_CANDIDATE:    return "no way of calling this member takes these arguments";
         case LHAT_RUN_COROUTINE_NOT_STARTED:     return "resume needs start() first";
         case LHAT_RUN_COROUTINE_ALREADY_STARTED: return "start() only works before the first resume";
+        // 04 の 11.6改: a placeholder for a caller that only wants this
+        // status's own name -- the actual message is what the program
+        // panicked with, in LhatRunResult.value, which this cannot see.
+        case LHAT_RUN_PANIC:                     return "panic^";
     }
     return "unknown";
 }
