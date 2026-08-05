@@ -367,6 +367,15 @@ bool lhat_type_conforms(const LhatType *value, const LhatType *target)
     if (value->kind == LHAT_TYPE_UNION) {
         for (const LhatTypeList *arm = value->v.composite.arms; arm != NULL;
              arm = arm->next) {
+            // 03 の 7 章、P6: an arm left unknown^ here is not the gap the
+            // leniency above forgives -- it is typically a mutually
+            // recursive call whose own inference had not run yet, so this
+            // union was never actually checked against anything. Letting it
+            // through the way a bare unknown^ passes everything would hide
+            // the very mismatch this function exists to catch.
+            if (arm->type != NULL && arm->type->kind == LHAT_TYPE_UNKNOWN) {
+                return false;
+            }
             if (!lhat_type_conforms(arm->type, target)) {
                 return false;
             }
@@ -494,6 +503,16 @@ bool lhat_type_conforms(const LhatType *value, const LhatType *target)
 
 bool lhat_type_equal(const LhatType *a, const LhatType *b)
 {
+    // 03 の 7 章、P6: lhat_type_conforms treats unknown^ as fitting anywhere
+    // -- a gap in inference, not a claim about sameness. Two-way conforms
+    // would call unknown^ "equal" to whatever it is compared against, which
+    // is what let append_arms (build_composite) mistake an unknown^ arm for
+    // a duplicate of an arm already in a union and drop it silently.
+    bool a_unknown = a != NULL && a->kind == LHAT_TYPE_UNKNOWN;
+    bool b_unknown = b != NULL && b->kind == LHAT_TYPE_UNKNOWN;
+    if (a_unknown != b_unknown) {
+        return false;
+    }
     return lhat_type_conforms(a, b) && lhat_type_conforms(b, a);
 }
 

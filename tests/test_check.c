@@ -134,6 +134,44 @@ static void test_names(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
+    // 03 の 7 章、P6: neither half is annotated, so each infers its result
+    // from its own body alone. 'a' is checked first, and its call to the
+    // not-yet-checked 'b' is unknown^ -- so 'a' infers bool^|unknown^, not
+    // plain bool^. Only that leftover unknown^ arm is what makes the
+    // mismatch below fire; before the fix, append_arms mistook it for a
+    // duplicate of the bool^ arm already there and silently dropped it,
+    // leaving 'a' looking like a clean bool^ when it was not one.
+    LHAT_TEST("mutual recursion still needs its own annotation to be checked");
+    check_text(&u,
+               "let^ a = f^ n:number^ {\n"
+               "  if^ n <= 0 { return^ true^ }\n"
+               "  return^ b(n - 1)\n"
+               "}\n"
+               "let^ b = f^ n:number^ {\n"
+               "  if^ n <= 0 { return^ 999 }\n"
+               "  return^ a(n - 1)\n"
+               "}\n"
+               "let^ x : bool^ = a(4)\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
+    unit_dispose(&u);
+
+    // The same pair, both sides telling the truth about what they return --
+    // 'b' really is number^|bool^, and saying so is what makes 'a' check.
+    LHAT_TEST("and a correct annotation on both sides checks cleanly");
+    check_text(&u,
+               "let^ a = f^ n:number^ -> bool^ {\n"
+               "  if^ n <= 0 { return^ true^ }\n"
+               "  return^ b(n - 1)\n"
+               "}\n"
+               "let^ b = f^ n:number^ -> number^|bool^ {\n"
+               "  if^ n <= 0 { return^ 999 }\n"
+               "  return^ a(n - 1)\n"
+               "}\n"
+               "let^ x : bool^ = a(4)\n"
+               "let^ y : number^|bool^ = b(4)\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
     LHAT_TEST("a parameter is in scope in the body");
     check_text(&u, "let^ f = f^ n:number^ -> number^ { return^ n + 1 }\n");
     CHECK_CLEAN(&u);

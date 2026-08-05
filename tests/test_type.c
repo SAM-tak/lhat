@@ -217,6 +217,44 @@ static void test_composites(void)
         LHAT_CHECK_EQ_INT(once->kind, LHAT_TYPE_NUMBER);
     }
 
+    // 03 の 7 章、P6: unknown^ is not "equal to" number^ just because both
+    // conform to each other under the gap-forgiving rule above -- if it
+    // were, append_arms would mistake an unknown^ arm for a duplicate of an
+    // arm already present and silently drop it, and a mutually recursive
+    // call's union would lose the very unknown^ arm that should have kept
+    // it from being waved through as something more specific.
+    LHAT_TEST("unknown^ does not collapse into an unrelated arm");
+    {
+        LhatType *number = simple(&t, LHAT_TYPE_NUMBER);
+        LhatType *unknown = simple(&t, LHAT_TYPE_UNKNOWN);
+        LHAT_CHECK(!lhat_type_equal(number, unknown),
+                   "number^ and unknown^ are not the same type");
+        LhatType *mixed = lhat_type_union(&t.arena, number, unknown);
+        LHAT_CHECK_EQ_INT(mixed->kind, LHAT_TYPE_UNION);
+        size_t arms = 0;
+        for (const LhatTypeList *arm = mixed->v.composite.arms; arm != NULL;
+             arm = arm->next) {
+            arms++;
+        }
+        LHAT_CHECK_EQ_INT(arms, 2);
+    }
+
+    // A union that picked up an unknown^ arm was never actually checked
+    // against anything -- letting it through the way a bare unknown^ passes
+    // everything would hide a real mismatch (a mutually recursive call
+    // whose type had not been inferred yet). any^ still admits it, since
+    // 13.7 makes any^ the top of every value regardless of how unresolved
+    // it is -- that check runs before a union's arms are ever looked at.
+    LHAT_TEST("a union with an unknown^ arm fits nothing but any^");
+    {
+        LhatType *mixed = lhat_type_union(&t.arena, simple(&t, LHAT_TYPE_BOOL),
+                                          simple(&t, LHAT_TYPE_UNKNOWN));
+        LHAT_CHECK(!lhat_type_conforms(mixed, simple(&t, LHAT_TYPE_BOOL)),
+                   "not even the arm it does share with the target");
+        LHAT_CHECK(lhat_type_conforms(mixed, simple(&t, LHAT_TYPE_ANY)),
+                   "any^ is decided before a union's arms are examined");
+    }
+
     // 13.7: any^ admits everything, so a union with it is it.
     LHAT_TEST("a union with any^ is any^");
     {
