@@ -32,6 +32,10 @@ typedef enum {
 typedef enum {
     LHAT_OBJECT_STRING,
     LHAT_OBJECT_TABLE,       // 02 の 10.7: the one data structure
+    LHAT_OBJECT_NUMBER,      // number^ boxed onto the heap (object.c's
+                             // lhat_number_box/lhat_number_unbox) -- not
+                             // otherwise produced; LhatValue's own
+                             // INTEGER/REAL tags remain the ordinary form
     LHAT_OBJECT_SUBROUTINE,  // f^ and p^ (02 の 15 章)
     LHAT_OBJECT_COROUTINE,   // 02 の 13.9
     LHAT_OBJECT_ERROR,       // 04 の 2.3

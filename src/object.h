@@ -73,6 +73,18 @@ typedef struct LhatTable {
     const struct LhatTable *definition;
 } LhatTable;
 
+// number^ boxed onto the heap. `value` is always LHAT_VALUE_INTEGER or
+// LHAT_VALUE_REAL -- lhat_number_box guarantees that on the way in, and
+// lhat_number_unbox reads it back out on that assumption. Holding a whole
+// LhatValue rather than redefining its union avoids duplicating value.h's
+// representation for no reason; every existing accessor (lhat_is_integer,
+// lhat_as_integer, lhat_number_as_real, ...) already works on what
+// lhat_number_unbox hands back.
+typedef struct LhatNumberObject {
+    LhatObject header;
+    LhatValue value;
+} LhatNumberObject;
+
 // 04 の 2.4: what a kind is, is where it was declared. Two errordef^ bodies
 // may spell NotFound identically and still be different kinds, so identity is
 // this object rather than anything about its shape. One of these is made per
@@ -285,6 +297,16 @@ typedef struct LhatHostData {
 // Both link the new object into the heap. Return NULL when out of memory.
 LhatString *lhat_string_new(LhatHeap *heap, const char *text, size_t length);
 LhatTable *lhat_table_new(LhatHeap *heap);
+
+// value (lhat_is_number(value) must hold) boxed onto the heap. Fails only on
+// OOM, in which case it answers false and leaves *out untouched. On success
+// *out is LHAT_VALUE_OBJECT / LHAT_OBJECT_NUMBER.
+bool lhat_number_box(LhatHeap *heap, LhatValue value, LhatValue *out);
+
+// The plain number^ value lhat_number_box made. boxed must satisfy
+// lhat_is_object_kind(boxed, LHAT_OBJECT_NUMBER). Touches no heap, so this
+// cannot fail.
+LhatValue lhat_number_unbox(LhatValue boxed);
 
 // `group` is NULL to make the object standing for a whole errordef^, and the
 // group's object to make one of its kinds.

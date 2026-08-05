@@ -116,6 +116,7 @@ const char *lhat_object_kind_name(LhatObjectKind kind)
     switch (kind) {
         case LHAT_OBJECT_STRING:     return "string^";
         case LHAT_OBJECT_TABLE:      return "table^";
+        case LHAT_OBJECT_NUMBER:     return "number^ (boxed)";
         case LHAT_OBJECT_SUBROUTINE: return "subroutine";
         case LHAT_OBJECT_COROUTINE:  return "coroutine";
         case LHAT_OBJECT_ERROR:      return "error^";
@@ -304,6 +305,11 @@ static void write_value(Writer *w, LhatValue value, size_t depth)
     switch (object->kind) {
         case LHAT_OBJECT_STRING:
             put_quoted(w, (const LhatString *)object);
+            return;
+        // Boxing does not add a representation of its own -- it writes
+        // exactly as the plain number^ it holds does.
+        case LHAT_OBJECT_NUMBER:
+            write_value(w, lhat_number_unbox(value), depth);
             return;
         case LHAT_OBJECT_TABLE:
             if (depth >= LHAT_WRITE_MAX_DEPTH) {

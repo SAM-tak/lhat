@@ -67,6 +67,101 @@ static void test_strings(void)
     LHAT_CHECK(owner.objects == NULL, "the owner is emptied");
 }
 
+// number^ boxed onto the heap (object.c's lhat_number_box/lhat_number_unbox).
+// Nothing produces one yet -- this is the basis a future mutate-on-reassign
+// design would build on -- so what is pinned here is only the box/unbox
+// round trip and the collector's handling of it.
+static void test_numbers(void)
+{
+    LhatHeap owner = { NULL, 0 };
+
+    LHAT_TEST("boxing an integer and reading it back");
+    {
+        LhatValue boxed;
+        LHAT_CHECK(lhat_number_box(&owner, lhat_integer(42), &boxed),
+                   "boxing succeeded");
+        LhatValue plain = lhat_number_unbox(boxed);
+        LHAT_CHECK(lhat_is_integer(plain), "still an integer");
+        LHAT_CHECK_EQ_INT(lhat_as_integer(plain), 42);
+    }
+
+    LHAT_TEST("boxing a real and reading it back");
+    {
+        LhatValue boxed;
+        LHAT_CHECK(lhat_number_box(&owner, lhat_real(3.5), &boxed),
+                   "boxing succeeded");
+        LhatValue plain = lhat_number_unbox(boxed);
+        LHAT_CHECK(lhat_is_real(plain), "still a real");
+        LHAT_CHECK(lhat_as_real(plain) == 3.5, "same value");
+    }
+
+    // A boxed value is not itself a number^ -- lhat_is_number and friends
+    // read LhatValue's own INTEGER/REAL tags, which a boxed value does not
+    // carry (it is LHAT_VALUE_OBJECT). Unboxing is what recovers one.
+    LHAT_TEST("a boxed value does not answer to lhat_is_number");
+    {
+        LhatValue boxed;
+        LHAT_CHECK(lhat_number_box(&owner, lhat_integer(1), &boxed),
+                   "boxing succeeded");
+        LHAT_CHECK(lhat_is_object_kind(boxed, LHAT_OBJECT_NUMBER),
+                   "it is the boxed kind");
+        LHAT_CHECK(!lhat_is_number(boxed), "but not a plain number^");
+    }
+
+    LHAT_TEST("a boxed value writes the same as the plain one");
+    {
+        LhatValue boxed_int, boxed_real;
+        LHAT_CHECK(lhat_number_box(&owner, lhat_integer(7), &boxed_int),
+                   "boxing succeeded");
+        LHAT_CHECK(lhat_number_box(&owner, lhat_real(2.0), &boxed_real),
+                   "boxing succeeded");
+        char buffer[64];
+        lhat_value_write(boxed_int, buffer, sizeof buffer);
+        LHAT_CHECK(strcmp(buffer, "7") == 0, "writes like a plain integer");
+        lhat_value_write(boxed_real, buffer, sizeof buffer);
+        LHAT_CHECK(strcmp(buffer, "2.0") == 0, "writes like a plain real");
+    }
+
+    LHAT_TEST("the kind has a name");
+    {
+        const char *name = lhat_object_kind_name(LHAT_OBJECT_NUMBER);
+        LHAT_CHECK(name != NULL && name[0] != '\0' && strcmp(name, "?") != 0,
+                   "a real name, not the fallback");
+    }
+
+    // Runs the same reach/children/sweep cycle vm.c's collect() does, by
+    // hand, to pin that a boxed number survives being reached and that an
+    // unreached object next to it is still swept.
+    LHAT_TEST("the collector reaches a boxed number and sweeps around it");
+    {
+        LhatHeap heap = { NULL, 0 };
+        LhatValue kept;
+        LHAT_CHECK(lhat_number_box(&heap, lhat_integer(99), &kept),
+                   "boxing succeeded");
+        LhatValue dropped = string_value(&heap, "unreachable");
+        LHAT_CHECK_EQ_INT(heap.count, 2);
+
+        LhatGray gray = { NULL, 0, 0 };
+        LHAT_CHECK(lhat_gc_reach(&gray, kept), "reaching the root");
+        while (gray.count > 0) {
+            LhatObject *object = gray.items[--gray.count];
+            LHAT_CHECK(lhat_gc_children(&gray, object), "walking its children");
+        }
+        (void)dropped;
+
+        size_t freed = lhat_gc_sweep(&heap, NULL);
+        LHAT_CHECK_EQ_INT(freed, 1);
+        LHAT_CHECK_EQ_INT(heap.count, 1);
+        LHAT_CHECK(lhat_as_integer(lhat_number_unbox(kept)) == 99,
+                   "the survivor still holds its value");
+
+        lhat_gray_dispose(&gray);
+        lhat_object_free_all(&heap);
+    }
+
+    lhat_object_free_all(&owner);
+}
+
 // 04 の 11.3: a table is a mapping. There is no such thing as out of range,
 // and a key that is not there answers nil^.
 static void test_table_basics(void)
@@ -228,6 +323,7 @@ static void test_table_growth(void)
 int main(void)
 {
     test_strings();
+    test_numbers();
     test_table_basics();
     test_table_growth();
     return lhat_test_report("test_object");

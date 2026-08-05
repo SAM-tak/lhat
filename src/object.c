@@ -76,6 +76,24 @@ LhatTable *lhat_table_new(LhatHeap *heap)
     return (LhatTable *)allocate(heap, sizeof(LhatTable), LHAT_OBJECT_TABLE);
 }
 
+bool lhat_number_box(LhatHeap *heap, LhatValue value, LhatValue *out)
+{
+    LhatNumberObject *boxed =
+        (LhatNumberObject *)allocate(heap, sizeof(LhatNumberObject),
+                                     LHAT_OBJECT_NUMBER);
+    if (boxed == NULL) {
+        return false;
+    }
+    boxed->value = value;
+    *out = lhat_object((LhatObject *)boxed);
+    return true;
+}
+
+LhatValue lhat_number_unbox(LhatValue boxed)
+{
+    return ((const LhatNumberObject *)lhat_as_object(boxed))->value;
+}
+
 LhatErrorKind *lhat_error_kind_new(LhatHeap *heap,
                                    const LhatErrorKind *group,
                                    const LhatString *name)
@@ -730,6 +748,11 @@ bool lhat_gc_children(LhatGray *gray, LhatObject *object)
 {
     switch (object->kind) {
         case LHAT_OBJECT_STRING:
+            return true;
+
+        // `value` is always INTEGER or REAL (lhat_number_box's guarantee),
+        // so there is nothing here for the collector to follow.
+        case LHAT_OBJECT_NUMBER:
             return true;
 
         case LHAT_OBJECT_TABLE: {
