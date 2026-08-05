@@ -44,21 +44,22 @@ a.1.1   Cで言う所のa\[0\]\[0\]
 a[1, 1] これも等価
 
 =は比較 ==はない
-値比較でなくインスタンスが同じかを比較したい場合は is^ 演算子
+値比較でなくインスタンスが同じかを比較したい場合は isa^ 演算子
 ≠ ≦ ≧ も演算子として許可する、というかこちらを推奨する != =/ <= >= も許可する が、フォーマッタが書き換える
 ~~定義は:=~~
 定義は let^
 let^id : type = value
 : とセットで使われたときに比較ではない扱い
-再代入は<-
-->はいいけど<-は a<-2とか負数との比較のとき困るか… 再代入は後置式にするか i + 1 -> i
+~~再代入は<-~~
+~~->はいいけど<-は a<-2とか負数との比較のとき困るか… 再代入は後置式にするか i + 1 -> i~~
+再代入は:=
 別に i -> i + 1 でもいいような
 存在したら代入、そうでないなら新規定義、は :->
 ↑ほんとに需要あるか？
 i.set^(i+1)   うーん
 set^i i+1   うーん
-++ += などの演算子はなし
-代わりに数値オブジェクトはメンバメソッド(手続き)としてinc() dec() add(a) sub(a) を持つ
+~~++ += などの演算子はなし~~
+~~代わりに数値オブジェクトはメンバメソッド(手続き)としてinc() dec() add(a) sub(a) を持つ~~
 
 空のブロックは書けない
 do^{} とする
@@ -118,7 +119,7 @@ f(1 + 2 + @(a(3)), @1 + 3) // うーん
 以下と同値
 
 ```lhat
-temp := a(3)
+let^temp = a(3)
 f(1 + 2 + temp, temp + 3)
 ```
 
@@ -272,19 +273,19 @@ for^v in^table.values^ {
 }
 
 for while next 文
-for^i := 1 while^i < 10 next^i << i + 1 { // Cのfor(;;)と同じように使える
+for^let^i = 1 while^i < 10 next^i := i + 1 { // Cのfor(;;)と同じように使える
 }
 
 for until next 文
-for^i := 1 until^i >= 10 next^i.inc() {
+for^let^i = 1 until^i >= 10 next^i.inc() {
 }
 
 for if 文
-for^i := 1, j : int = 2 if^i + j < 10 {
+for^let^i = 1, j : int = 2 if^i + j < 10 {
 }
 do^{
-    i := 1
-    j : int = 2
+    let^i = 1
+    let^j : int = 2
     if^i + j < 10 {}
 } と等価
 
@@ -292,7 +293,7 @@ do^{
 
 ```lhat
 // "クラス"定義
-$Foo:={
+let^$Foo = def^{
     // インスタンス定義
     new^...{
         member:=f^a:=....1 b:=....?2or^nil { a + b }
@@ -304,7 +305,7 @@ $Foo:={
     samenamemethod:=p^{ classmethod() }
 }
 
-Foo := $Foo
+let^Foo = $Foo
 f = Foo.new(2 , 3)
 f.member()
 Foo.classmethod()
@@ -317,8 +318,8 @@ f.class^.samenamemethod() // これは完全合法
 #### 型明示
 
 ```lhat
-k := p^x:number^, y:number^, z:number^ {^return^z, x, y}
-k := p^x, y, z {^return^z, x, y} as^p^number^,number^,number^->number^,number^,number^;
+let^k = p^x:number^, y:number^, z:number^ {^return^z, x, y}
+let^k = p^x, y, z {^return^z, x, y} as^p^number^,number^,number^->number^,number^,number^;
 k :p^number,number,number; // 返り値なし
 k :p^->number,number,number; // 引数なし
 k :p^; // 引数なし返り値なし（nil）
@@ -329,7 +330,7 @@ elseif^expr: などのせいで:を後置型指定に使いずらいのでas^に
 f^a:number^, b:number^=2->number^,string^ {}
 返り値型は ->  :: で指定
 
-f:=f^a:number^,b:number^=2->number^,string^{ a+b, "aa" }
+let^f=f^a:number^,b:number^=2->number^,string^{ a+b, "aa" }
 f.type // f^a:number^, b:number^=2->number^
 >> print f.parameters.length // 2
 >> print f.parameters[0].type // number^
@@ -362,7 +363,7 @@ from^ = f^range:$range.next, range, nil;
 ```lhat
 // 単一継承のみ。「中間状態にいちいち名前を付けなくて良い」という性質で多重継承ぽくもできる、というやり方
 // 実体型・抽象型・プロトコル定義・オブジェクトテンプレート・アスペクト、全部をdefテーブル一個で済ます
-$Foo := aspect..protocol..prototype..def^{
+let^$Foo = aspect..protocol..prototype..def^{
     self^{
         ...
         prop1 = true^
