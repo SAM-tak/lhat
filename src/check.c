@@ -2642,10 +2642,22 @@ static LhatType *infer(Checker *c, const LhatNode *node)
             return simple(c, LHAT_TYPE_UNKNOWN);
         }
 
-        case LHAT_NODE_AS:
-            require_value(c, node->v.ascription.value,
-                          infer(c, node->v.ascription.value));
-            return resolve_type(c, node->v.ascription.type);
+        // 11.6, S27: sound rather than a bare relabelling -- 14.12's
+        // disjointness rules out what could never succeed at compile time
+        // (a mistake, the same reasoning EQ/NE/... already use just above),
+        // and compile_expression checks what disjointness cannot rule out
+        // against the actual value at run time, panicking if it does not
+        // hold. Either way the expression's own type becomes what was
+        // written, since that is what a fitting value goes on to satisfy.
+        case LHAT_NODE_AS: {
+            LhatType *actual = require_value(
+                c, node->v.ascription.value, infer(c, node->v.ascription.value));
+            LhatType *wanted = resolve_type(c, node->v.ascription.type);
+            if (lhat_type_disjoint(actual, wanted)) {
+                report(c, node, LHAT_CHECK_ERR_AS_IMPOSSIBLE);
+            }
+            return wanted;
+        }
 
         case LHAT_NODE_FUNC:
             return infer_func(c, node);
@@ -4403,6 +4415,8 @@ const char *lhat_check_error_message(LhatCheckErrorCode code)
             return "this field has no default, so it has to be written";
         case LHAT_CHECK_ERR_INCOMPARABLE:
             return "these can never be equal, so the comparison is fixed already";
+        case LHAT_CHECK_ERR_AS_IMPOSSIBLE:
+            return "nothing is both of these, so this as^ could never succeed";
         case LHAT_CHECK_ERR_BAD_KEY:
             return "nil^ is how a table spells 'not there', so it cannot be a key";
         case LHAT_CHECK_ERR_NO_OPERATOR:

@@ -1892,6 +1892,28 @@ static void compile_expression(Compiler *c, const LhatNode *node, uint8_t into)
             return;
         }
 
+        // 11.6, S27: the operand lands in `into` and stays there -- as^
+        // narrows the type the checker tracks, not the value, so there is
+        // nothing to write back once the check passes. lower_type reads
+        // the written type the same way an overload^ed parameter's does
+        // (14.12), and lhat_value_satisfies (the same relation fits_call
+        // already trusts) is the check LHAT_BC_ASCAST makes at run time.
+        case LHAT_NODE_AS: {
+            compile_expression(c, node->v.ascription.value, into);
+            LhatRuntimeType *wanted = lower_type(c, node->v.ascription.type);
+            if (wanted == NULL) {
+                // 13.7: nothing written, or any^ -- asks nothing, so there
+                // is nothing for LHAT_BC_ASCAST to check.
+                return;
+            }
+            uint8_t mark = c->next_register;
+            uint8_t type_slot = reserve(c);
+            load_constant(c, type_slot, lhat_object((LhatObject *)wanted));
+            emit(c, lhat_encode_abc(LHAT_BC_ASCAST, into, type_slot, 0));
+            c->next_register = mark;
+            return;
+        }
+
         // 02 の 15.8: delegation is the outer one driving the inner one. 03
         // の 5.7 writes the expansion out; the chain of coroutines is
         // registers rather than anything the machine holds.
@@ -3698,8 +3720,12 @@ const char *lhat_compile_status_message(LhatCompileStatus status)
 // Machine
 // ---------------------------------------------------------------------------
 
-// 02 の 11.8: an operator is a member whose name is the operator itself.
-// NULL for the instructions that are not one.
+// 02 の 11.8: an operator is a member whose name is the operator itself, and
+// this is the spelling call_operator looks a candidate up by. Also reused by
+// finish() to name a panicking instruction (04 の 11.6) for a host, which is
+// where LHAT_BC_ASCAST answers too even though 11.6's as^ is not one of
+// 11.8's overloadable operators and never reaches call_operator itself.
+// NULL for every other instruction.
 static const char *operator_name(LhatOpcode op, size_t *length)
 {
     switch (op) {
@@ -3711,6 +3737,7 @@ static const char *operator_name(LhatOpcode op, size_t *length)
         case LHAT_BC_IDIV:   *length = 2; return "//";
         case LHAT_BC_MOD:    *length = 1; return "%";
         case LHAT_BC_POW:    *length = 2; return "**";
+        case LHAT_BC_ASCAST: *length = 3; return "as^";
         default:             *length = 0; return NULL;
     }
 }
@@ -5604,6 +5631,20 @@ LhatRunResult lhat_run(LhatMachine *m, const LhatProto *proto)
             // every other finish() here discards its nil^.
             case LHAT_BC_PANIC:
                 return finish(m, chunk, LHAT_RUN_PANIC, registers[a], at);
+
+            // 11.6, S27: 14.12's own runtime check (fits_call already
+            // trusts it for overload^ resolution), just asked once instead
+            // of per candidate. Compile-time disjointness (check.c) already
+            // ruled out what could never hold; this is what it could not
+            // rule out, checked against the actual value.
+            case LHAT_BC_ASCAST: {
+                const LhatRuntimeType *wanted =
+                    (const LhatRuntimeType *)lhat_as_object(registers[b]);
+                if (!lhat_value_satisfies(registers[a], wanted)) {
+                    return finish(m, chunk, LHAT_RUN_TYPE_ERROR, lhat_nil(), at);
+                }
+                break;
+            }
 
             // 02 の 15.4: the frame stops here and the value goes out. 5.11
             // keeps the one frame rather than a stack, which 15.5 is what
