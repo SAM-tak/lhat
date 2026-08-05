@@ -63,6 +63,11 @@ typedef enum {
     LHAT_BC_GETUPVAL,   // A B   R[A] = *upvalue[B]
     LHAT_BC_SETUPVAL,   // A B   *upvalue[B] = R[A]
     LHAT_BC_CLOSE,      // A     the places at R[A] and above stop being shared
+    LHAT_BC_CLOSEONE,   // A     the place at R[A] alone stops being shared.
+                        //       03 の 4.3: a session's top level reuses one
+                        //       slot for every let^ of a name, so severing
+                        //       that binding must not reach the names above
+                        //       it, which are other bindings still live
     LHAT_BC_THIS,       // A     R[A] = the subroutine running (02 の 15.10)
     LHAT_BC_ENV,        // A     R[A] = L^, the machine's own table (05 の 8.6)
     LHAT_BC_UNIT,       // A Bx  R[A] = a closure of the unit Bx (05 の 5.3).
@@ -191,6 +196,12 @@ typedef struct LhatProto {
     // starts. Zero everywhere but the second and later inputs of a REPL,
     // where the top-level names of the earlier ones are still in them.
     uint8_t reserved;
+
+    // And how many it leaves behind for the inputs after it. Those slots
+    // outlive the run, so 5.4's shared places pointing into them must not be
+    // closed when the frame goes -- see the drain in vm.c. Zero outside a
+    // session, where the frame really does take its whole width with it.
+    uint8_t kept;
 
     uint8_t parameters;
     bool is_function;  // f^ rather than p^ (02 の 15 章)

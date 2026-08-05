@@ -72,6 +72,13 @@ typedef struct Compiler {
     // session's input, where a name written again keeps the slot it had.
     bool session_top;
 
+    // 03 の 4.3: how many of `locals` were seeded from the session rather
+    // than declared by this input. A let^ over one of those is a name from
+    // an earlier input written again, which reuses the slot (declare_names)
+    // -- so 5.4's sharing of it has to be severed there, or a closure an
+    // earlier input made would see the new binding. Zero outside a session.
+    size_t session_locals;
+
     // 5.5: how many cleanups are pending here. The compiler tracks it so that
     // an exit knows how far to drain; the machine holds the cleanups.
     size_t cleanup_depth;
@@ -2388,6 +2395,17 @@ static void compile_define(Compiler *c, const LhatNode *node)
             fail(c, LHAT_COMPILE_UNDEFINED);
             return;
         }
+        // 03 の 4.3: a name an earlier input bound, written again. The slot
+        // is reused (declare_names, so a prompt does not run out of them),
+        // which makes this the one let^ that would otherwise be seen by a
+        // closure that captured the earlier binding -- and 5.4's sharing is
+        // for one binding, not for whatever later takes its place. Severing
+        // it here is what keeps a redefinition to another type from making
+        // an earlier closure's result type a lie; ':=' writes the same
+        // binding and so goes on sharing it.
+        if ((size_t)(local - c->locals) < c->session_locals) {
+            emit(c, lhat_encode_abc(LHAT_BC_CLOSEONE, local->reg, 0, 0));
+        }
         if (value != NULL) {
             compile_expression(c, value, local->reg);
             value = value->next;
@@ -3601,6 +3619,7 @@ static LhatCompileStatus compile_unit(LhatCompileSession *session,
             c.locals[c.local_count].reg = session->names[i].reg;
             c.local_count++;
         }
+        c.session_locals = c.local_count;
         c.next_register = session->next_register;
         proto->reserved = session->next_register;
         if (proto->chunk.registers < session->next_register) {
@@ -3710,6 +3729,9 @@ static LhatCompileStatus compile_unit(LhatCompileSession *session,
         session->next_register = c.next_register > session->next_register
                                      ? c.next_register
                                      : session->next_register;
+        // What the next input will find already filled is exactly what this
+        // one has to leave sharable when its frame goes.
+        proto->kept = session->next_register;
     }
 
     *out = proto;
@@ -4485,6 +4507,26 @@ static void close_upvalues(Machine *m, const LhatValue *above)
     }
 }
 
+// The same for one place rather than a frame's worth. 03 の 4.3: a session's
+// top level puts every let^ of a name back in the one slot, so severing that
+// binding's sharing must leave the names above it -- other bindings, still
+// live -- shared as they were.
+static void close_one_upvalue(Machine *m, const LhatValue *slot)
+{
+    LhatUpvalue **link = &m->open;
+    while (*link != NULL) {
+        LhatUpvalue *upvalue = *link;
+        if (upvalue->location != slot) {
+            link = &upvalue->next_open;
+            continue;
+        }
+        upvalue->closed = *upvalue->location;
+        upvalue->location = &upvalue->closed;
+        *link = upvalue->next_open;
+        upvalue->next_open = NULL;
+    }
+}
+
 static LhatRunResult finish(Machine *m, const LhatChunk *chunk,
                             LhatRunStatus status, LhatValue value, size_t at)
 {
@@ -4511,8 +4553,13 @@ static LhatRunResult finish(Machine *m, const LhatChunk *chunk,
     result.collected = m->collected;
     result.live = m->objects.count;
 
-    // 5.4: an upvalue points into the stack, and the frames are about to go.
-    m->open = NULL;
+    // 5.4: an upvalue points into the stack, and the frames are about to go
+    // -- but the list is not emptied here. 03 の 4.3: a session's top-level
+    // slots outlive the run, and what points into them has to stay listed as
+    // open, or the next input could neither find it to close (a let^ writing
+    // that name again) nor find it to share (a second closure over the same
+    // name). What the run above left pointing into slots that do not survive
+    // is closed by the next lhat_run, before it clears them.
     lhat_gray_dispose(&m->gray);
     return result;
 }
@@ -4768,8 +4815,13 @@ LhatRunResult lhat_run(LhatMachine *m, const LhatProto *proto)
     // 03 の 4.3: except the registers the unit says are already spoken for.
     // A REPL's second input finds the top-level names of the first there,
     // and clearing them would be clearing the session.
+    // 5.4: what an earlier run left sharing a slot this one is about to
+    // clear takes its value away first. The slots below `reserved` are the
+    // session's and survive, so what points into them stays open and shared
+    // -- that is what lets a closure an earlier input made go on naming the
+    // very place a later one reads and writes.
     m->frame_count = 0;
-    m->open = NULL;
+    close_upvalues(m, m->stack + proto->reserved);
     for (size_t i = proto->reserved; i < LHAT_STACK_SLOTS; i++) {
         m->stack[i] = lhat_nil();
     }
@@ -4996,6 +5048,10 @@ LhatRunResult lhat_run(LhatMachine *m, const LhatProto *proto)
 
             case LHAT_BC_CLOSE:
                 close_upvalues(m, &registers[a]);
+                break;
+
+            case LHAT_BC_CLOSEONE:
+                close_one_upvalue(m, &registers[a]);
                 break;
 
             // 02 の 15.10: the frame already holds it, so naming it costs a
@@ -5902,7 +5958,15 @@ LhatRunResult lhat_run(LhatMachine *m, const LhatProto *proto)
                 frame->coroutine->state = LHAT_COROUTINE_DONE;
                 frame->coroutine->cleanup_count = 0;
             }
-            close_upvalues(m, frame->base);
+            // 03 の 4.3: a session's top-level slots outlive the input, so
+            // what points into them goes on sharing them. Closing those here
+            // would undo the CLOSE compile_session_statements deliberately
+            // does not write, and a later input's ':=' through a closure
+            // would land in a private copy instead of the slot the next
+            // input reads. `kept` is zero everywhere else, which leaves an
+            // ordinary frame closed whole the way it always was.
+            const LhatProto *ran = frame->closure->proto;
+            close_upvalues(m, frame->base + (ran != NULL ? ran->kept : 0));
             m->frame_count--;
 
             if (m->frame_count == 0) {

@@ -4155,10 +4155,6 @@ static void test_machine(void)
         compiled_dispose(&one);
     }
 
-    // 5.4: an upvalue is a shared place only while the frame holding it
-    // lives. The frame is the input, so a closure made in one input carries
-    // what it captured away with it -- a later input writing that name over
-    // does not reach into what the closure took.
     // 02 の 14.2 and 04 の 2.4: what a def^ composes onto and what an
     // errordef^ declared are worked out while compiling and never reach the
     // machine, so an input that needs them needs what an earlier one found.
@@ -4237,6 +4233,62 @@ static void test_machine(void)
         compiled_dispose(&three);
     }
 
+    // 03 の 4.3 with 5.4: the session's top level goes on holding its slots
+    // between inputs, so a place a closure captured in one input is the very
+    // place a later one reads and writes. Which is what makes a prompt agree
+    // with a file: the same three lines in one unit answer 2 as well.
+    LHAT_TEST("a ':=' inside a closure reaches a later input");
+    {
+        LhatMachine *m = lhat_machine_new();
+        LhatCompileSession *s = lhat_compile_session_new();
+        Run one, two, three, four;
+        compile_next_text(&one, s, "let^ a = 1\n");
+        compile_next_text(&two, s,
+                          "let^ f = f^ -> number^ { a := 2 return^ 1 }\n");
+        compile_next_text(&three, s, "return^ f()\n");
+        compile_next_text(&four, s, "return^ a\n");
+        lhat_run(m, one.proto);
+        lhat_run(m, two.proto);
+        LHAT_CHECK_EQ_INT(lhat_as_integer(lhat_run(m, three.proto).value), 1);
+        LHAT_CHECK_EQ_INT(lhat_as_integer(lhat_run(m, four.proto).value), 2);
+        lhat_machine_dispose(m);
+        lhat_compile_session_dispose(s);
+        compiled_dispose(&one);
+        compiled_dispose(&two);
+        compiled_dispose(&three);
+        compiled_dispose(&four);
+    }
+
+    // Severing one name's sharing is severing that name's, not the slot's
+    // neighbours' -- every let^ of a name at a session's top level goes back
+    // in the one slot, so a CLOSE over the whole frame would take the
+    // bindings above it with it.
+    LHAT_TEST("and writing another name over does not sever it");
+    {
+        LhatMachine *m = lhat_machine_new();
+        LhatCompileSession *s = lhat_compile_session_new();
+        Run one, two, three, four;
+        compile_next_text(&one, s, "let^ a = 1\nlet^ b = 2\n");
+        compile_next_text(&two, s,
+                          "let^ g = f^ -> number^ { b := 9 return^ 0 }\n");
+        compile_next_text(&three, s, "let^ a = 5\nreturn^ g()\n");
+        compile_next_text(&four, s, "return^ b\n");
+        lhat_run(m, one.proto);
+        lhat_run(m, two.proto);
+        lhat_run(m, three.proto);
+        LHAT_CHECK_EQ_INT(lhat_as_integer(lhat_run(m, four.proto).value), 9);
+        lhat_machine_dispose(m);
+        lhat_compile_session_dispose(s);
+        compiled_dispose(&one);
+        compiled_dispose(&two);
+        compiled_dispose(&three);
+        compiled_dispose(&four);
+    }
+
+    // 5.4's sharing is of one binding, not of the slot it happens to sit in.
+    // A let^ writing the name again is a new binding -- it reuses the slot,
+    // so what captured the earlier one has to stop sharing it there. That is
+    // the difference from the ':=' above, which writes the same binding.
     LHAT_TEST("a closure keeps what it captured when its input ended");
     {
         LhatMachine *m = lhat_machine_new();

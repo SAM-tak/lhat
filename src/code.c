@@ -228,6 +228,7 @@ const char *lhat_opcode_name(LhatOpcode op)
         case LHAT_BC_GETUPVAL:    return "getupval";
         case LHAT_BC_SETUPVAL:    return "setupval";
         case LHAT_BC_CLOSE:       return "close";
+        case LHAT_BC_CLOSEONE:    return "closeone";
         case LHAT_BC_THIS:        return "this";
         case LHAT_BC_ENV:         return "env";
         case LHAT_BC_UNIT:        return "unit";
@@ -297,6 +298,7 @@ void lhat_chunk_print(const LhatChunk *chunk, size_t index, char *out,
             break;
         case LHAT_BC_LOADNIL:
         case LHAT_BC_CLOSE:
+        case LHAT_BC_CLOSEONE:
         case LHAT_BC_THIS:
         case LHAT_BC_ENV:
         case LHAT_BC_NEWTABLE:
