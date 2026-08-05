@@ -74,7 +74,7 @@ typedef enum {
                                         // carries no answer for it
     LHAT_CHECK_ERR_BAD_OPERATOR,        // 11.8: an op^ is an f^ taking self^
                                         // and one argument, and this is not
-    LHAT_CHECK_ERR_IS_ALWAYS_TRUE,      // 13.7: any^ holds of every value, so
+    LHAT_CHECK_ERR_ISA_ALWAYS_TRUE,     // 13.7: any^ holds of every value, so
                                         // asking it of one asks nothing
     LHAT_CHECK_ERR_MISSING_FIELD,       // 04 の 2.5: no default to fall back to
     LHAT_CHECK_ERR_REQUIRE_FAILED,      // 05 の 6 章: the unit could not be had

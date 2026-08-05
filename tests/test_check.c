@@ -697,45 +697,57 @@ static void test_annotations(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
-    // 13.11: is^ reads a type, so an unknown one is reported there too.
-    LHAT_TEST("is^ resolves its right side as a type");
-    check_text(&u, "let^ x = 1\nlet^ b : bool^ = x is^ number^\n");
+    // 11.6改: is^ is a comparison like '=', so the same disjointness check
+    // applies and it answers bool^ either way.
+    LHAT_TEST("is^ answers bool^");
+    check_text(&u, "let^ x : bool^ = 1 is^ 2\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("is^ on types that can never meet is reported");
+    check_text(&u, "return^ 1 is^ \"text\"\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_INCOMPARABLE);
+    unit_dispose(&u);
+
+    // 13.11: isa^ reads a type, so an unknown one is reported there too.
+    LHAT_TEST("isa^ resolves its right side as a type");
+    check_text(&u, "let^ x = 1\nlet^ b : bool^ = x isa^ number^\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
     // 13.7: any^ holds of every value, so the question is empty whatever is
     // on the left. 13.11 decides this from the right side alone -- it never
     // reads the left's inferred type against the right.
-    LHAT_TEST("asking is^ any^ asks nothing and is reported");
-    check_text(&u, "let^ x : number^ = 1\nlet^ b = x is^ any^\n");
-    CHECK_REPORTS(&u, LHAT_CHECK_ERR_IS_ALWAYS_TRUE);
+    LHAT_TEST("asking isa^ any^ asks nothing and is reported");
+    check_text(&u, "let^ x : number^ = 1\nlet^ b = x isa^ any^\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_ISA_ALWAYS_TRUE);
     unit_dispose(&u);
 
     LHAT_TEST("whatever the left happens to be");
-    check_text(&u, "let^ x : any^ = 1\nlet^ b = x is^ any^\n");
-    CHECK_REPORTS(&u, LHAT_CHECK_ERR_IS_ALWAYS_TRUE);
+    check_text(&u, "let^ x : any^ = 1\nlet^ b = x isa^ any^\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_ISA_ALWAYS_TRUE);
     unit_dispose(&u);
 
     // 13.5 collapses a union with any^ to any^, so the written form does not
     // let it through.
     LHAT_TEST("and however the any^ is spelled");
-    check_text(&u, "let^ x : number^ = 1\nlet^ b = x is^ any^|nil^\n");
-    CHECK_REPORTS(&u, LHAT_CHECK_ERR_IS_ALWAYS_TRUE);
+    check_text(&u, "let^ x : number^ = 1\nlet^ b = x isa^ any^|nil^\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_ISA_ALWAYS_TRUE);
     unit_dispose(&u);
 
-    // 13.11: an answer the left's inferred type fixes is not refused. is^ is
+    // 13.11: an answer the left's inferred type fixes is not refused. isa^ is
     // there to be asked at run time, and the checker narrowing that from what
     // it thinks it knows is what 13.7 introduced any^ to avoid.
     LHAT_TEST("but an answer fixed by the left is left alone");
     check_text(&u,
                "let^ x : number^ = 1\n"
-               "let^ a = x is^ string^\n"
-               "let^ b = x is^ number^\n");
+               "let^ a = x isa^ string^\n"
+               "let^ b = x isa^ number^\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
     LHAT_TEST("which is what makes any^ usable at all");
-    check_text(&u, "let^ f = p^ x:any^ { let^ b = x is^ string^ }\n");
+    check_text(&u, "let^ f = p^ x:any^ { let^ b = x isa^ string^ }\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 }
@@ -749,7 +761,7 @@ static void test_narrowing(void)
     check_text(&u,
                "let^ f = f^ -> number^|string^ { return^ 0 }\n"
                "let^ r = f()\n"
-               "if^ r is^ number^ { let^ n : number^ = r }\n");
+               "if^ r isa^ number^ { let^ n : number^ = r }\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
@@ -757,7 +769,7 @@ static void test_narrowing(void)
     check_text(&u,
                "let^ f = f^ -> number^|string^ { return^ 0 }\n"
                "let^ r = f()\n"
-               "if^ r is^ number^ {\n"
+               "if^ r isa^ number^ {\n"
                "    else^:\n"
                "        let^ s : string^ = r\n"
                "}\n");
@@ -768,7 +780,7 @@ static void test_narrowing(void)
     check_text(&u,
                "let^ f = f^ -> number^|string^ { return^ 0 }\n"
                "let^ r = f()\n"
-               "if^ r is^ number^ { let^ s : string^ = r }\n");
+               "if^ r isa^ number^ { let^ s : string^ = r }\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
@@ -778,7 +790,7 @@ static void test_narrowing(void)
                "errordef^ ParseError { Syntax { line : number^ }, Eof }\n"
                "let^ parse = f^ -> number^|ParseError { return^ 0 }\n"
                "let^ r = parse()\n"
-               "if^ r is^ ParseError.Syntax { let^ n : number^ = r.line }\n");
+               "if^ r isa^ ParseError.Syntax { let^ n : number^ = r.line }\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
@@ -799,8 +811,8 @@ static void test_narrowing(void)
                "let^ parse = f^ -> number^|ParseError { return^ 0 }\n"
                "let^ use = f^ -> number^ {\n"
                "    let^ r = parse()\n"
-               "    if^ r is^ ParseError.Syntax { return^ 0 }\n"
-               "    if^ r is^ ParseError.Eof { return^ 0 }\n"
+               "    if^ r isa^ ParseError.Syntax { return^ 0 }\n"
+               "    if^ r isa^ ParseError.Eof { return^ 0 }\n"
                "    return^ r + 1\n"
                "}\n");
     CHECK_CLEAN(&u);
@@ -811,7 +823,7 @@ static void test_narrowing(void)
                "let^ f = f^ -> number^|string^ { return^ 0 }\n"
                "let^ g = f^ -> number^ {\n"
                "    let^ r = f()\n"
-               "    if^ r is^ string^ { }\n"
+               "    if^ r isa^ string^ { }\n"
                "    return^ r + 1\n"
                "}\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_NO_OPERATOR);
@@ -825,9 +837,9 @@ static void test_narrowing(void)
                "let^ open = f^ -> number^|IOError { return^ 0 }\n"
                "let^ use = f^ -> number^ {\n"
                "    let^ r = open()\n"
-               "    if^ r is^ IOError.NotFound {\n"
+               "    if^ r isa^ IOError.NotFound {\n"
                "        return^ 0\n"
-               "        elseif^ r is^ IOError.Denied:\n"
+               "        elseif^ r isa^ IOError.Denied:\n"
                "            return^ 0\n"
                "        else^:\n"
                "            return^ r\n"
@@ -843,7 +855,7 @@ static void test_narrowing(void)
                "let^ open = f^ -> number^|IOError { return^ 0 }\n"
                "let^ use = f^ -> number^ {\n"
                "    let^ r = open()\n"
-               "    if^ r is^ IOError.NotFound {\n"
+               "    if^ r isa^ IOError.NotFound {\n"
                "        return^ 0\n"
                "        else^:\n"
                "            return^ r\n"
@@ -857,7 +869,7 @@ static void test_narrowing(void)
     check_text(&u,
                "let^ f = f^ -> number^|string^ { return^ 0 }\n"
                "let^ r = f()\n"
-               "if^ !(r is^ number^) { let^ s : string^ = r }\n");
+               "if^ !(r isa^ number^) { let^ s : string^ = r }\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
@@ -868,7 +880,7 @@ static void test_narrowing(void)
                "let^ g = f^ -> number^|string^ { return^ 0 }\n"
                "let^ a = f()\n"
                "let^ b = g()\n"
-               "if^ a is^ number^ and^ b is^ number^ {\n"
+               "if^ a isa^ number^ and^ b isa^ number^ {\n"
                "    let^ n : number^ = a + b\n"
                "}\n");
     CHECK_CLEAN(&u);
@@ -880,7 +892,7 @@ static void test_narrowing(void)
     check_text(&u,
                "let^ f = f^ -> number^|string^ { return^ 0 }\n"
                "let^ g = f^ -> number^ {\n"
-               "    if^ f() is^ number^ { return^ f() + 1 }\n"
+               "    if^ f() isa^ number^ { return^ f() + 1 }\n"
                "    return^ 0\n"
                "}\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_NO_OPERATOR);
@@ -890,7 +902,7 @@ static void test_narrowing(void)
     check_text(&u,
                "let^ f = f^ -> number^|string^ { return^ 0 }\n"
                "let^ t = { a := f() }\n"
-               "if^ t.a is^ number^ { let^ n : number^ = t.a }\n");
+               "if^ t.a isa^ number^ { let^ n : number^ = t.a }\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
@@ -899,7 +911,7 @@ static void test_narrowing(void)
     check_text(&u,
                "let^ f = f^ -> number^|string^ { return^ 0 }\n"
                "let^ r = f()\n"
-               "if^ r is^ number^ {\n"
+               "if^ r isa^ number^ {\n"
                "    r := f()\n"
                "    let^ n : number^ = r\n"
                "}\n");
@@ -910,7 +922,7 @@ static void test_narrowing(void)
     check_text(&u,
                "let^ f = f^ -> number^|string^ { return^ 0 }\n"
                "let^ r = f()\n"
-               "let^ n : number^ = if^ r is^ number^: r el^: 0 ;\n");
+               "let^ n : number^ = if^ r isa^ number^: r el^: 0 ;\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 }
@@ -1880,7 +1892,7 @@ static void test_patterns(void)
                "errordef^ ParseError { Syntax { line : number^ }, Eof }\n"
                "let^ parse = f^ -> number^|ParseError { return^ 0 }\n"
                "for^ let^ r := parse() {\n"
-               "    when^ is^ ParseError.Syntax:\n"
+               "    when^ isa^ ParseError.Syntax:\n"
                "        let^ n : number^ = r.line\n"
                "    other^:\n"
                "}\n");
@@ -1892,7 +1904,7 @@ static void test_patterns(void)
                "errordef^ ParseError { Syntax { line : number^ }, Eof }\n"
                "let^ parse = f^ -> number^|ParseError { return^ 0 }\n"
                "for^ let^ r := parse() {\n"
-               "    when^ is^ ParseError.Eof:\n"
+               "    when^ isa^ ParseError.Eof:\n"
                "        let^ n = r.line\n"
                "    other^:\n"
                "}\n");
@@ -1907,8 +1919,8 @@ static void test_patterns(void)
                "let^ open = f^ -> number^|IOError { return^ 0 }\n"
                "let^ use = f^ -> number^ {\n"
                "    for^ let^ r := open() {\n"
-               "        when^ is^ IOError.NotFound: return^ 0\n"
-               "        when^ is^ IOError.Denied: return^ 0\n"
+               "        when^ isa^ IOError.NotFound: return^ 0\n"
+               "        when^ isa^ IOError.Denied: return^ 0\n"
                "        other^: return^ r\n"
                "    }\n"
                "    return^ 0\n"
@@ -1922,7 +1934,7 @@ static void test_patterns(void)
                "let^ open = f^ -> number^|IOError { return^ 0 }\n"
                "let^ use = f^ -> number^ {\n"
                "    for^ let^ r := open() {\n"
-               "        when^ is^ IOError.NotFound: return^ 0\n"
+               "        when^ isa^ IOError.NotFound: return^ 0\n"
                "        other^: return^ r\n"
                "    }\n"
                "    return^ 0\n"

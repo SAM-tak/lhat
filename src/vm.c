@@ -679,10 +679,10 @@ static void compile_nil_else(Compiler *c, const LhatNode *node, uint8_t into)
     lhat_chunk_patch_here(&c->proto->chunk, to_default);
 }
 
-// 04 の 6.1: is^ against an error kind. 02 の 13.11 makes is^ a conformance
+// 04 の 6.1: isa^ against an error kind. 02 の 13.11 makes isa^ a conformance
 // test in general, which the checker performs; the machine only needs the one
 // case the checker cannot settle on its own, which is which kind an error is.
-static void compile_is(Compiler *c, const LhatNode *node, uint8_t into)
+static void compile_isa(Compiler *c, const LhatNode *node, uint8_t into)
 {
     const LhatNode *unused = NULL;
     const LhatErrorKind *kind = resolve_kind(c, node->v.binary.right, &unused);
@@ -1730,6 +1730,7 @@ static bool binary_opcode(LhatOpKind op, LhatOpcode *out)
         case LHAT_OP_POW:      *out = LHAT_BC_POW;  return true;
         case LHAT_OP_CONCAT:   *out = LHAT_BC_CONCAT; return true;
         case LHAT_OP_EQ:       *out = LHAT_BC_EQ;   return true;
+        case LHAT_OP_IS:       *out = LHAT_BC_SAME; return true;
         case LHAT_OP_NE:       *out = LHAT_BC_NE;   return true;
         case LHAT_OP_LT:       *out = LHAT_BC_LT;   return true;
         case LHAT_OP_GT:       *out = LHAT_BC_GT;   return true;
@@ -1754,8 +1755,8 @@ static void compile_binary(Compiler *c, const LhatNode *node, uint8_t into)
         compile_nil_else(c, node, into);
         return;
     }
-    if (op == LHAT_OP_IS) {
-        compile_is(c, node, into);
+    if (op == LHAT_OP_ISA) {
+        compile_isa(c, node, into);
         return;
     }
 
@@ -4862,6 +4863,10 @@ LhatRunResult lhat_run(LhatMachine *m, const LhatProto *proto)
             case LHAT_BC_EQ:
                 registers[a] = lhat_bool(
                     lhat_value_equal(registers[b], registers[cc]));
+                break;
+            case LHAT_BC_SAME:
+                registers[a] = lhat_bool(
+                    lhat_value_same(registers[b], registers[cc]));
                 break;
             case LHAT_BC_NE:
                 registers[a] = lhat_bool(

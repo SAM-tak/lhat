@@ -185,6 +185,13 @@ static inline double lhat_number_as_real(LhatValue v)
 // a better answer.
 bool lhat_value_equal(LhatValue a, LhatValue b);
 
+// Identity as 'is^' means it (02 の 11.6改). Unlike lhat_value_equal, a
+// string is never special-cased into a content comparison and a type object
+// is never special-cased into a structural one -- every object answers only
+// to itself, on purpose, so this stays the same once '=' moves to a real
+// value comparison for tables and strings.
+bool lhat_value_same(LhatValue a, LhatValue b);
+
 const char *lhat_value_tag_name(LhatValueTag tag);
 
 // 03 の 4 章: a prompt answers with a value, so something has to write one

@@ -673,6 +673,23 @@ static void test_strings(void)
     CHECK_BOOL(&r, false);
     run_dispose(&r);
 
+    // 11.6改: is^ asks whether the two are the same object, not whether
+    // they spell the same thing -- unlike '=', a string built at runtime is
+    // never the same instance as one built separately even when it reads
+    // the same.
+    LHAT_TEST("is^ asks identity rather than spelling, even for strings");
+    run_text(&r,
+             "let^ a = \"f\" .. \"oo\"\n"
+             "let^ b = \"f\" .. \"oo\"\n"
+             "return^ a is^ b\n");
+    CHECK_BOOL(&r, false);
+    run_dispose(&r);
+
+    LHAT_TEST("but a name for the same string is the same instance");
+    run_text(&r, "let^ a = \"f\" .. \"oo\"\nlet^ b = a\nreturn^ a is^ b\n");
+    CHECK_BOOL(&r, true);
+    run_dispose(&r);
+
     // 02 の 11.2: '..' is concatenation in general; strings are the case
     // that is settled, and 14.5's composition of definitions is the other.
     LHAT_TEST("'..' joins two strings");
@@ -893,6 +910,19 @@ static void test_tables(void)
 
     LHAT_TEST("and a name for one is the same one");
     run_text(&r, "let^ a = { x := 1 }\nlet^ b = a\nreturn^ a = b\n");
+    CHECK_BOOL(&r, true);
+    run_dispose(&r);
+
+    // 11.6改: '=' and 'is^' agree here since 14.2 already makes a table's
+    // '=' an identity comparison -- 'is^' means to keep meaning that once
+    // '=' moves to comparing a table's contents instead (03 の 7 章、P7).
+    LHAT_TEST("'is^' agrees with '=' on tables for now");
+    run_text(&r, "let^ a = { x := 1 }\nlet^ b = { x := 1 }\nreturn^ a is^ b\n");
+    CHECK_BOOL(&r, false);
+    run_dispose(&r);
+
+    LHAT_TEST("and a name for one is the same instance under 'is^' too");
+    run_text(&r, "let^ a = { x := 1 }\nlet^ b = a\nreturn^ a is^ b\n");
     CHECK_BOOL(&r, true);
     run_dispose(&r);
 
@@ -1738,7 +1768,7 @@ static void test_errors(void)
              "errordef^ IOError { NotFound }\n"
              "errordef^ UserError { NotFound }\n"
              "let^ e = error^IOError.NotFound{ }\n"
-             "return^ e is^ UserError.NotFound\n");
+             "return^ e isa^ UserError.NotFound\n");
     CHECK_BOOL(&r, false);
     run_dispose(&r);
 
@@ -1747,7 +1777,7 @@ static void test_errors(void)
              "errordef^ IOError { NotFound }\n"
              "errordef^ UserError { NotFound }\n"
              "let^ e = error^IOError.NotFound{ }\n"
-             "return^ e is^ IOError.NotFound\n");
+             "return^ e isa^ IOError.NotFound\n");
     CHECK_BOOL(&r, true);
     run_dispose(&r);
 
@@ -1756,7 +1786,7 @@ static void test_errors(void)
     run_text(&r,
              "errordef^ IOError { NotFound, Denied }\n"
              "let^ e = error^IOError.Denied{ }\n"
-             "return^ e is^ IOError\n");
+             "return^ e isa^ IOError\n");
     CHECK_BOOL(&r, true);
     run_dispose(&r);
 
@@ -1764,14 +1794,14 @@ static void test_errors(void)
     run_text(&r,
              "errordef^ IOError { NotFound, Denied }\n"
              "let^ e = error^IOError.Denied{ }\n"
-             "return^ e is^ IOError.NotFound\n");
+             "return^ e isa^ IOError.NotFound\n");
     CHECK_BOOL(&r, false);
     run_dispose(&r);
 
     LHAT_TEST("something that is not an error is not a kind either");
     run_text(&r,
              "errordef^ IOError { NotFound }\n"
-             "return^ 1 is^ IOError\n");
+             "return^ 1 isa^ IOError\n");
     CHECK_BOOL(&r, false);
     run_dispose(&r);
 
@@ -1824,7 +1854,7 @@ static void test_catch_and_try(void)
     run_text(&r,
              "errordef^ E { A, B }\n"
              "let^ fail = f^ { return^ error^E.B{ } }\n"
-             "return^ fail() catch^ if^ it^ is^ E.A: 1 el^: 2 ;\n");
+             "return^ fail() catch^ if^ it^ isa^ E.A: 1 el^: 2 ;\n");
     CHECK_INTEGER(&r, 2);
     run_dispose(&r);
 
@@ -3748,14 +3778,14 @@ static void test_patterns(void)
     CHECK_INTEGER(&r, 100);
     run_dispose(&r);
 
-    // 17.4: a type pattern writes is^, since a bare name could be either.
-    LHAT_TEST("a type pattern uses is^");
+    // 17.4: a type pattern writes isa^, since a bare name could be either.
+    LHAT_TEST("a type pattern uses isa^");
     run_text(&r,
              "errordef^ E { A, B }\n"
              "let^ x = 0\n"
              "for^ error^E.B{ } {\n"
-             "  when^ is^ E.A: x := 1\n"
-             "  when^ is^ E.B: x := 2\n"
+             "  when^ isa^ E.A: x := 1\n"
+             "  when^ isa^ E.B: x := 2\n"
              "  other^: x := 3\n"
              "}\n"
              "return^ x\n");
@@ -4113,7 +4143,7 @@ static void test_machine(void)
         compile_next_text(&one, s, "errordef^ E { Bad, Worse }\n");
         compile_next_text(&two, s,
                           "let^ e = error^ E.Worse { }\n"
-                          "if^ e is^ E.Worse { return^ 1 }\n"
+                          "if^ e isa^ E.Worse { return^ 1 }\n"
                           "return^ 0\n");
         LHAT_CHECK_EQ_INT(one.compiled, LHAT_COMPILE_OK);
         LHAT_CHECK_EQ_INT(two.compiled, LHAT_COMPILE_OK);

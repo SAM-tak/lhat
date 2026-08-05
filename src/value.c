@@ -72,6 +72,33 @@ bool lhat_value_equal(LhatValue a, LhatValue b)
     }
 }
 
+bool lhat_value_same(LhatValue a, LhatValue b)
+{
+    // A number has no instance apart from its value, so identity and
+    // equality coincide for it -- the same trip through 14.8's one type
+    // lhat_value_equal already makes.
+    if (lhat_is_number(a) && lhat_is_number(b)) {
+        return lhat_value_equal(a, b);
+    }
+
+    if (a.tag != b.tag) {
+        return false;
+    }
+
+    switch (a.tag) {
+        case LHAT_VALUE_NIL:
+            return true;
+        case LHAT_VALUE_BOOL:
+            return a.as.boolean == b.as.boolean;
+        case LHAT_VALUE_OBJECT:
+            // 'is^' asks whether the two are the same object and nothing
+            // else -- no exception for a string's bytes or a type's shape.
+            return a.as.object == b.as.object;
+        default:
+            return false;  // the numeric tags are handled above
+    }
+}
+
 const char *lhat_value_tag_name(LhatValueTag tag)
 {
     switch (tag) {

@@ -43,6 +43,7 @@ typedef enum {
     LHAT_BC_TYPEOF,     // A B   R[A] = typeof^(R[B])  (02 の 14.16)
 
     LHAT_BC_EQ,         // A B C R[A] = R[B] = R[C]
+    LHAT_BC_SAME,       // A B C R[A] = R[B] and R[C] are the same instance
     LHAT_BC_NE,
     LHAT_BC_LT,
     LHAT_BC_LE,

@@ -284,7 +284,7 @@ let^ n = parse(s) catch^ 0        # n : number^
 
 ```lhat
 let^ n = parse(s) catch^ fallbackFor(it^)
-let^ n = parse(s) catch^ if^ it^ is^ ParseError.Eof: 0 el^: -1 ;
+let^ n = parse(s) catch^ if^ it^ isa^ ParseError.Eof: 0 el^: -1 ;
 ```
 
 02 の 16.2 が `it^` を「焦点の既定の名前」と定めた。
@@ -417,7 +417,7 @@ try^ が返そうとする IOError.Denied は、この手続きの返り値に�
 
 ---
 
-## 6. `is^` による判別と絞り込み［確定］
+## 6. `isa^` による判別と絞り込み［確定］
 
 ### 6.1 形
 
@@ -427,14 +427,14 @@ try^ が返そうとする IOError.Denied は、この手続きの返り値に�
 
 ```lhat
 let^ r = parse(s)
-if^ r is^ ParseError.Syntax {
+if^ r isa^ ParseError.Syntax {
     report(r.line, r.column)      # 絞り込まれているのでフィールドが見える
     return^ r
 }
 # ここでは r : number^|ParseError.Eof
 ```
 
-`is^` の意味と絞り込みの規則は 02 の 13.11 で定めた。
+`isa^` の意味と絞り込みの規則は 02 の 13.11 で定めた。
 右辺には型を書き、`T` と書かれた位置に左辺を置けるかを問う。
 
 **種別が型であること（2.3）と、種別が互いに素であること（2.6）から、
@@ -449,7 +449,7 @@ if^ r is^ ParseError.Syntax {
 | --- | --- |
 | 代替値で続ける | `expr catch^ v` |
 | 呼び出し元へ返す | `try^ expr` |
-| それ以外 | 合併のまま受けて `is^` で絞り込む |
+| それ以外 | 合併のまま受けて `isa^` で絞り込む |
 
 ---
 
@@ -465,9 +465,9 @@ f^ open(p:string^) -> file^|IOError;
 
 let^ r = open(p)                        # r : file^|IOError.NotFound|IOError.Denied
 
-if^ r is^ IOError.NotFound {
+if^ r isa^ IOError.NotFound {
     create(p)
-    elseif^ r is^ IOError.Denied:
+    elseif^ r isa^ IOError.Denied:
         fallback()
     else^:
         use(r)
@@ -548,7 +548,7 @@ finally^: flush() catch^ nil^
 
 ```lhat
 let^ r = parse(s)
-if^ r is^ ParseError {
+if^ r isa^ ParseError {
     return^ error^ConfigError.Invalid{
         message := "config could not be read",
         cause := r,
@@ -566,7 +566,7 @@ let^ depth = e.cause?.cause?.message
 自動で付けると、どこまで遡れるかが呼び出しの深さに依存し、実行時にしか分からなくなる。
 
 `cause` の型が `error^` である以上、辿った先の種別は上位型までしか分からない。
-必要なら `is^` で絞り込む。
+必要なら `isa^` で絞り込む。
 
 ---
 
@@ -656,7 +656,7 @@ L^ は構造的型付けを採るため **`t.foo` が静的に解決する**。
 ### 11.4 `nil^` の参照［確定］
 
 strict では **静的に防がれる**。`x : T|nil^` に対する `x.foo` は型の誤りであり、
-`is^` で絞り込む（02 の 13.11）か `?.` を書くしかない。
+`isa^` で絞り込む（02 の 13.11）か `?.` を書くしかない。
 
 **検査されたコードには、この実行時検査が残らない。**
 
@@ -798,7 +798,7 @@ Memo.md L126–L134 のテーブルの採番糖衣は、着想として Memo.md 
 - ~~**E2 — 誤りの一覧を静的に知る手段**~~ → 決定済み。署名に合併で書く（3.1, 7 章）
 
 - ~~**E3 — 合併の絞り込み規則**~~ → 決定済み。
-  `is^` は適合を問う演算子であり、`if^` の条件に書くと分岐の中で型が狭まる。
+  `isa^` は適合を問う演算子であり、`if^` の条件に書くと分岐の中で型が狭まる。
   02 の 13.11 で定めた。完全一致の演算子は設けない。
 
 - ~~**E4 — 実行時の異常と誤りの区別**~~ → 決定済み。11 章。

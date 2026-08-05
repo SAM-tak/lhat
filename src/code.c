@@ -217,6 +217,7 @@ const char *lhat_opcode_name(LhatOpcode op)
         case LHAT_BC_NEG:         return "neg";
         case LHAT_BC_NOT:         return "not";
         case LHAT_BC_EQ:          return "eq";
+        case LHAT_BC_SAME:        return "same";
         case LHAT_BC_NE:          return "ne";
         case LHAT_BC_LT:          return "lt";
         case LHAT_BC_LE:          return "le";

@@ -1013,7 +1013,7 @@ static void narrow_from(Checker *c, const LhatNode *condition, bool truth)
         return;
     }
 
-    if (op != LHAT_OP_IS) {
+    if (op != LHAT_OP_ISA) {
         return;
     }
 
@@ -1173,8 +1173,11 @@ static LhatType *infer_binary(Checker *c, const LhatNode *node)
         return infer_def(c, node->v.binary.right, left);
     }
 
-    // 13.11: is^ takes a type on the right, so the right side is not a value.
-    if (op == LHAT_OP_IS) {
+    // 13.11: isa^ takes a type on the right, so the right side is not a
+    // value. 11.6改 moved the type-fit question here from is^, which now
+    // asks identity and reads an ordinary value on both sides (below, with
+    // the rest of the comparisons).
+    if (op == LHAT_OP_ISA) {
         LhatType *asked = resolve_type(c, node->v.binary.right);
         // 13.7: any^ is the top of every value, so this holds of whatever is
         // on the left and the question is empty. 13.11 refuses to read the
@@ -1182,7 +1185,7 @@ static LhatType *infer_binary(Checker *c, const LhatNode *node)
         // escape hatch 13.7 exists to provide -- but this one is decided by
         // the right side alone, whatever the left turns out to be.
         if (asked != NULL && asked->kind == LHAT_TYPE_ANY) {
-            report(c, node, LHAT_CHECK_ERR_IS_ALWAYS_TRUE);
+            report(c, node, LHAT_CHECK_ERR_ISA_ALWAYS_TRUE);
         }
         return simple(c, LHAT_TYPE_BOOL);
     }
@@ -1214,6 +1217,7 @@ static LhatType *infer_binary(Checker *c, const LhatNode *node)
         }
 
         case LHAT_OP_EQ:
+        case LHAT_OP_IS:
         case LHAT_OP_NE:
         case LHAT_OP_LT:
         case LHAT_OP_GT:
@@ -4428,7 +4432,7 @@ const char *lhat_check_error_message(LhatCheckErrorCode code)
         case LHAT_CHECK_ERR_BAD_OPERATOR:
             return "an op^ is an f^ taking self^ and one argument; the left "
                    "operand is the self^ and the right one the argument";
-        case LHAT_CHECK_ERR_IS_ALWAYS_TRUE:
+        case LHAT_CHECK_ERR_ISA_ALWAYS_TRUE:
             return "any^ holds of every value, so this asks nothing";
         case LHAT_CHECK_ERR_MEMBER_EXISTS:
             return "this name is already a member; write override^ or overload^";

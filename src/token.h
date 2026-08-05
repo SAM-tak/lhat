@@ -94,7 +94,8 @@ typedef enum {
     // tree can name them alongside the rest.
     LHAT_OP_AND,         // and^
     LHAT_OP_OR,          // or^
-    LHAT_OP_IS,          // is^
+    LHAT_OP_IS,          // is^   identity: the same instance, not just equal
+    LHAT_OP_ISA,         // isa^  fits: the left may stand where the type is
     LHAT_OP_CATCH,       // catch^  (04 の 4 章)
 
 

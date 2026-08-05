@@ -1581,6 +1581,15 @@ static bool binary_info(const Parser *p, LhatOpKind *op, int *precedence,
 
 static bool is_comparison(const Parser *p, LhatOpKind *op)
 {
+    // 11.6改: 'is^' asks identity now; 'isa^' took over the type-fit
+    // question is^ used to ask. Checking 'isa' first would not matter
+    // either way -- the lexer already reads 'isa' as one identifier, never
+    // 'is' followed by a stray 'a' -- but it reads the same order the two
+    // words are introduced in (13.11 の後の 11.6改).
+    if (check_hat(p, "isa")) {
+        *op = LHAT_OP_ISA;
+        return true;
+    }
     if (check_hat(p, "is")) {
         *op = LHAT_OP_IS;
         return true;
@@ -1661,11 +1670,12 @@ static LhatNode *parse_comparison(Parser *p)
         marker->v.unary.op = op;
         lhat_node_append(&operators, &operator_tail, marker);
 
-        // 13.11: is^ asks whether the left side may stand where the right
-        // side is written, so what it takes on the right is a type.
+        // 13.11: isa^ asks whether the left side may stand where the right
+        // side is written, so what it takes on the right is a type. is^
+        // asks identity, an ordinary value on both sides.
         lhat_node_append(&operands, &operand_tail,
-                         op == LHAT_OP_IS ? parse_type(p)
-                                          : parse_binary(p, PREC_CONCAT));
+                         op == LHAT_OP_ISA ? parse_type(p)
+                                           : parse_binary(p, PREC_CONCAT));
         links++;
     }
 
@@ -2462,9 +2472,9 @@ static LhatNode *parse_pattern(Parser *p, const LhatNode *focus)
     LhatToken at = p->current;
 
     // 17.4: a type has to say so, since a bare name cannot be told from a
-    // value. is^ already means exactly this question (13.11).
-    if (match_hat(p, "is")) {
-        return binary_node(p, &at, LHAT_OP_IS, subject_reference(p, focus, &at),
+    // value. isa^ already means exactly this question (13.11).
+    if (match_hat(p, "isa")) {
+        return binary_node(p, &at, LHAT_OP_ISA, subject_reference(p, focus, &at),
                            parse_type(p));
     }
 
