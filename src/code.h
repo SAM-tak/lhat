@@ -149,6 +149,11 @@ static inline int32_t lhat_jump_offset(LhatInstruction i)
 // registers a frame needs. 5.2 fixes the frame size at compile time.
 typedef struct {
     LhatInstruction *code;
+    // 04 の 11 章: the source line each instruction came from, one entry per
+    // instruction (parallel to `code`, same count/capacity). A runtime
+    // fault names where it happened; strictness (03 の 4.2) never depends
+    // on this, so it costs nothing but the memory.
+    uint32_t *lines;
     size_t count;
     size_t capacity;
 
@@ -246,8 +251,10 @@ void lhat_chunk_init(LhatChunk *chunk);
 void lhat_chunk_dispose(LhatChunk *chunk);
 
 // Returns the index of the instruction, so a jump written later can be
-// patched by the caller that recorded it.
-size_t lhat_chunk_emit(LhatChunk *chunk, LhatInstruction instruction);
+// patched by the caller that recorded it. `line` is the source line the
+// instruction came from, 0 when there is none to give.
+size_t lhat_chunk_emit(LhatChunk *chunk, LhatInstruction instruction,
+                       uint32_t line);
 
 // Adds a constant, reusing an equal one rather than storing it twice.
 // Returns the index, or SIZE_MAX when the pool is full or out of memory.

@@ -100,24 +100,37 @@ void lhat_chunk_init(LhatChunk *chunk)
 void lhat_chunk_dispose(LhatChunk *chunk)
 {
     lhat_free(chunk->code);
+    lhat_free(chunk->lines);
     lhat_free(chunk->constants);
     lhat_object_free_all(&chunk->heap);
     memset(chunk, 0, sizeof *chunk);
 }
 
-size_t lhat_chunk_emit(LhatChunk *chunk, LhatInstruction instruction)
+size_t lhat_chunk_emit(LhatChunk *chunk, LhatInstruction instruction,
+                       uint32_t line)
 {
     if (chunk->count == chunk->capacity) {
         size_t grown = chunk->capacity ? chunk->capacity * 2 : 16;
+        // realloc invalidates the old pointer as soon as it succeeds, so
+        // `chunk->code` is updated right away rather than held back until
+        // both arrays are known to have grown -- a lines-only failure below
+        // then just leaves `capacity` behind, which the next call retries.
         LhatInstruction *bigger =
             (LhatInstruction *)lhat_realloc(chunk->code, grown * sizeof *bigger);
         if (bigger == NULL) {
             return SIZE_MAX;
         }
         chunk->code = bigger;
+        uint32_t *bigger_lines =
+            (uint32_t *)lhat_realloc(chunk->lines, grown * sizeof *bigger_lines);
+        if (bigger_lines == NULL) {
+            return SIZE_MAX;
+        }
+        chunk->lines = bigger_lines;
         chunk->capacity = grown;
     }
     chunk->code[chunk->count] = instruction;
+    chunk->lines[chunk->count] = line;
     return chunk->count++;
 }
 

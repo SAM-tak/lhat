@@ -60,6 +60,11 @@ typedef struct Compiler {
     // expression being compiled, released as soon as it is consumed.
     uint8_t next_register;
 
+    // 04 の 11 章: the line of whatever node compile_statement/
+    // compile_expression is currently under, so emit() has something to
+    // give lhat_chunk_emit without every one of its callers passing it.
+    uint32_t line;
+
     LoopContext *loop;  // the innermost loop being compiled, NULL outside one
 
     // 03 の 4.3: the statements being declared are the top level of a
@@ -165,14 +170,15 @@ static uint8_t reserve(Compiler *c)
 
 static void emit(Compiler *c, LhatInstruction instruction)
 {
-    if (lhat_chunk_emit(&c->proto->chunk, instruction) == SIZE_MAX) {
+    if (lhat_chunk_emit(&c->proto->chunk, instruction, c->line) == SIZE_MAX) {
         fail(c, LHAT_COMPILE_TOO_COMPLEX);
     }
 }
 
 static size_t emit_jump(Compiler *c, LhatOpcode op, uint8_t a)
 {
-    size_t at = lhat_chunk_emit(&c->proto->chunk, lhat_encode_jump(op, a, 0));
+    size_t at = lhat_chunk_emit(&c->proto->chunk, lhat_encode_jump(op, a, 0),
+                                c->line);
     if (at == SIZE_MAX) {
         fail(c, LHAT_COMPILE_TOO_COMPLEX);
     }
@@ -1703,8 +1709,8 @@ static void compile_subroutine(Compiler *c, const LhatNode *node, uint8_t into)
     // where resources are handled and so where it is most wanted.
     compile_block(&inner, node->v.func.body);
     if (lhat_chunk_emit(&proto->chunk,
-                        lhat_encode_abc(LHAT_BC_RETURN_NIL, 0, 0, 0)) ==
-        SIZE_MAX) {
+                        lhat_encode_abc(LHAT_BC_RETURN_NIL, 0, 0, 0),
+                        inner.line) == SIZE_MAX) {
         fail(c, LHAT_COMPILE_TOO_COMPLEX);
     }
 
@@ -1806,6 +1812,7 @@ static void compile_expression(Compiler *c, const LhatNode *node, uint8_t into)
     if (node == NULL || *c->status != LHAT_COMPILE_OK) {
         return;
     }
+    c->line = node->line;
 
     switch (node->kind) {
         case LHAT_NODE_INT:
@@ -2486,7 +2493,8 @@ static void compile_session_statements(Compiler *c, const LhatNode *statements)
 static size_t emit_cleanup_push(Compiler *c)
 {
     size_t at = lhat_chunk_emit(&c->proto->chunk,
-                                lhat_encode_abx(LHAT_BC_PUSHCLEANUP, 0, 0));
+                                lhat_encode_abx(LHAT_BC_PUSHCLEANUP, 0, 0),
+                                c->line);
     if (at == SIZE_MAX) {
         fail(c, LHAT_COMPILE_TOO_COMPLEX);
     }
@@ -3048,6 +3056,7 @@ static void compile_statement(Compiler *c, const LhatNode *node)
     if (node == NULL || *c->status != LHAT_COMPILE_OK) {
         return;
     }
+    c->line = node->line;
 
     switch (node->kind) {
         case LHAT_NODE_DEFINE:
@@ -4405,8 +4414,8 @@ static void close_upvalues(Machine *m, const LhatValue *above)
     }
 }
 
-static LhatRunResult finish(Machine *m, LhatRunStatus status, LhatValue value,
-                            size_t at)
+static LhatRunResult finish(Machine *m, const LhatChunk *chunk,
+                            LhatRunStatus status, LhatValue value, size_t at)
 {
     // 03 の 4.3: what the program allocated belongs to the machine, not to
     // the run -- the answer may be a table or a string, and a REPL's next
@@ -4416,6 +4425,18 @@ static LhatRunResult finish(Machine *m, LhatRunStatus status, LhatValue value,
     result.status = status;
     result.value = value;
     result.at = at;
+    // 04 の 11 章: named from the chunk's own line table (03 の 5.11a-style
+    // parallel array) and 02 の 11.8's operator names -- both silently
+    // answer nothing usable when `at` is out of range, which only happens
+    // for the one fault raised before the first instruction runs.
+    result.line = at < chunk->count ? chunk->lines[at] : 0;
+    result.op_name =
+        at < chunk->count ? operator_name(lhat_op(chunk->code[at]),
+                                          &result.op_name_length)
+                          : NULL;
+    if (result.op_name == NULL) {
+        result.op_name_length = 0;
+    }
     result.collected = m->collected;
     result.live = m->objects.count;
 
@@ -4668,6 +4689,8 @@ void lhat_machine_dispose(LhatMachine *machine)
 
 LhatRunResult lhat_run(LhatMachine *m, const LhatProto *proto)
 {
+    const LhatChunk *chunk = &proto->chunk;
+
     // 5.4 and 5.2: the frames and the registers belong to the run, so each
     // starts with neither. What the heap holds is the machine's and stays.
     //
@@ -4683,7 +4706,7 @@ LhatRunResult lhat_run(LhatMachine *m, const LhatProto *proto)
     LhatClosure *entry =
         (LhatClosure *)allocate(m, sizeof *entry, LHAT_OBJECT_SUBROUTINE);
     if (entry == NULL) {
-        return finish(m, LHAT_RUN_OUT_OF_MEMORY, lhat_nil(), 0);
+        return finish(m, chunk, LHAT_RUN_OUT_OF_MEMORY, lhat_nil(), 0);
     }
     entry->proto = proto;
 
@@ -4699,7 +4722,6 @@ LhatRunResult lhat_run(LhatMachine *m, const LhatProto *proto)
     frame->answer = lhat_nil();
 
     LhatValue *registers = frame->base;
-    const LhatChunk *chunk = &proto->chunk;
     size_t pc = 0;
 
     while (pc < chunk->count) {
@@ -4751,14 +4773,14 @@ LhatRunResult lhat_run(LhatMachine *m, const LhatProto *proto)
                 // with the member 11.8 names, or not at all.
                 if (status != LHAT_RUN_TYPE_ERROR ||
                     table_of(registers[b]) == NULL) {
-                    return finish(m, status, lhat_nil(), at);
+                    return finish(m, chunk, status, lhat_nil(), at);
                 }
                 goto call_operator;
             }
 
             case LHAT_BC_NEG: {
                 if (!lhat_is_number(registers[b])) {
-                    return finish(m, LHAT_RUN_TYPE_ERROR, lhat_nil(), at);
+                    return finish(m, chunk, LHAT_RUN_TYPE_ERROR, lhat_nil(), at);
                 }
                 // 14.8改: INT64_MIN is the one integer whose negation is not
                 // an integer, so it widens like any other overflow.
@@ -4776,7 +4798,7 @@ LhatRunResult lhat_run(LhatMachine *m, const LhatProto *proto)
                 // 02 の 8.6's condition rule: only a bool is a truth value,
                 // so this refuses anything else rather than inventing one.
                 if (!lhat_is_bool(registers[b])) {
-                    return finish(m, LHAT_RUN_TYPE_ERROR, lhat_nil(), at);
+                    return finish(m, chunk, LHAT_RUN_TYPE_ERROR, lhat_nil(), at);
                 }
                 registers[a] = lhat_bool(!lhat_as_bool(registers[b]));
                 break;
@@ -4788,7 +4810,7 @@ LhatRunResult lhat_run(LhatMachine *m, const LhatProto *proto)
                     reflect_type(&m->objects, registers[b], &seen);
                 lhat_free((void *)seen.tables);
                 if (type == NULL) {
-                    return finish(m, LHAT_RUN_OUT_OF_MEMORY, lhat_nil(), at);
+                    return finish(m, chunk, LHAT_RUN_OUT_OF_MEMORY, lhat_nil(), at);
                 }
                 registers[a] = lhat_object((LhatObject *)type);
                 break;
@@ -4810,7 +4832,7 @@ LhatRunResult lhat_run(LhatMachine *m, const LhatProto *proto)
                 bool out = false;
                 LhatRunStatus status = LHAT_RUN_OK;
                 if (!ordering(op, registers[b], registers[cc], &out, &status)) {
-                    return finish(m, status, lhat_nil(), at);
+                    return finish(m, chunk, status, lhat_nil(), at);
                 }
                 registers[a] = lhat_bool(out);
                 break;
@@ -4822,7 +4844,7 @@ LhatRunResult lhat_run(LhatMachine *m, const LhatProto *proto)
 
             case LHAT_BC_JUMP_FALSE:
                 if (!lhat_is_bool(registers[a])) {
-                    return finish(m, LHAT_RUN_TYPE_ERROR, lhat_nil(), at);
+                    return finish(m, chunk, LHAT_RUN_TYPE_ERROR, lhat_nil(), at);
                 }
                 if (!lhat_as_bool(registers[a])) {
                     pc = (size_t)((int64_t)pc + lhat_jump_offset(instruction));
@@ -4835,7 +4857,7 @@ LhatRunResult lhat_run(LhatMachine *m, const LhatProto *proto)
                 LhatClosure *closure = (LhatClosure *)allocate(
                     m, sizeof *closure, LHAT_OBJECT_SUBROUTINE);
                 if (closure == NULL) {
-                    return finish(m, LHAT_RUN_OUT_OF_MEMORY, lhat_nil(), at);
+                    return finish(m, chunk, LHAT_RUN_OUT_OF_MEMORY, lhat_nil(), at);
                 }
                 closure->proto = nested;
                 closure->upvalue_count = nested->upvalue_count;
@@ -4843,7 +4865,7 @@ LhatRunResult lhat_run(LhatMachine *m, const LhatProto *proto)
                     closure->upvalues = (LhatUpvalue **)lhat_calloc(
                         nested->upvalue_count, sizeof *closure->upvalues);
                     if (closure->upvalues == NULL) {
-                        return finish(m, LHAT_RUN_OUT_OF_MEMORY, lhat_nil(), at);
+                        return finish(m, chunk, LHAT_RUN_OUT_OF_MEMORY, lhat_nil(), at);
                     }
                 }
                 // 5.4: a register of this frame, or one of its own upvalues
@@ -4855,7 +4877,7 @@ LhatRunResult lhat_run(LhatMachine *m, const LhatProto *proto)
                             ? capture(m, &registers[desc->index])
                             : frame->closure->upvalues[desc->index];
                     if (closure->upvalues[i] == NULL) {
-                        return finish(m, LHAT_RUN_OUT_OF_MEMORY, lhat_nil(), at);
+                        return finish(m, chunk, LHAT_RUN_OUT_OF_MEMORY, lhat_nil(), at);
                     }
                 }
                 registers[a] = lhat_object((LhatObject *)closure);
@@ -4883,7 +4905,7 @@ LhatRunResult lhat_run(LhatMachine *m, const LhatProto *proto)
                     LhatString *joined =
                         lhat_string_concat(&m->objects, left, right);
                     if (joined == NULL) {
-                        return finish(m, LHAT_RUN_OUT_OF_MEMORY, lhat_nil(), at);
+                        return finish(m, chunk, LHAT_RUN_OUT_OF_MEMORY, lhat_nil(), at);
                     }
                     registers[a] = lhat_object((LhatObject *)joined);
                     break;
@@ -4892,7 +4914,7 @@ LhatRunResult lhat_run(LhatMachine *m, const LhatProto *proto)
                 // 02 の 11.3: a string answers above, built in. Anything else
                 // answers with the member 11.8 names, or not at all.
                 if (table_of(registers[b]) == NULL) {
-                    return finish(m, LHAT_RUN_TYPE_ERROR, lhat_nil(), at);
+                    return finish(m, chunk, LHAT_RUN_TYPE_ERROR, lhat_nil(), at);
                 }
                 goto call_operator;
             }
@@ -4919,12 +4941,12 @@ LhatRunResult lhat_run(LhatMachine *m, const LhatProto *proto)
             case LHAT_BC_UNIT: {
                 size_t which = lhat_bx(instruction);
                 if (which >= m->module_count) {
-                    return finish(m, LHAT_RUN_NO_SUCH_UNIT, lhat_nil(), at);
+                    return finish(m, chunk, LHAT_RUN_NO_SUCH_UNIT, lhat_nil(), at);
                 }
                 LhatClosure *closure = (LhatClosure *)allocate(
                     m, sizeof *closure, LHAT_OBJECT_SUBROUTINE);
                 if (closure == NULL) {
-                    return finish(m, LHAT_RUN_OUT_OF_MEMORY, lhat_nil(), at);
+                    return finish(m, chunk, LHAT_RUN_OUT_OF_MEMORY, lhat_nil(), at);
                 }
                 closure->proto = m->modules[which].proto;
                 closure->upvalues = NULL;
@@ -4936,7 +4958,7 @@ LhatRunResult lhat_run(LhatMachine *m, const LhatProto *proto)
             case LHAT_BC_NEWTABLE: {
                 LhatTable *table = lhat_table_new(&m->objects);
                 if (table == NULL) {
-                    return finish(m, LHAT_RUN_OUT_OF_MEMORY, lhat_nil(), at);
+                    return finish(m, chunk, LHAT_RUN_OUT_OF_MEMORY, lhat_nil(), at);
                 }
                 registers[a] = lhat_object((LhatObject *)table);
                 break;
@@ -4952,12 +4974,12 @@ LhatRunResult lhat_run(LhatMachine *m, const LhatProto *proto)
                 if (lhat_is_object_kind(registers[b], LHAT_OBJECT_COROUTINE)) {
                     LhatNativeKind which;
                     if (!native_named(registers[cc], &which)) {
-                        return finish(m, LHAT_RUN_TYPE_ERROR, lhat_nil(), at);
+                        return finish(m, chunk, LHAT_RUN_TYPE_ERROR, lhat_nil(), at);
                     }
                     LhatNative *native =
                         lhat_native_new(&m->objects, which, registers[b]);
                     if (native == NULL) {
-                        return finish(m, LHAT_RUN_OUT_OF_MEMORY, lhat_nil(), at);
+                        return finish(m, chunk, LHAT_RUN_OUT_OF_MEMORY, lhat_nil(), at);
                     }
                     registers[a] = lhat_object((LhatObject *)native);
                     break;
@@ -4967,20 +4989,20 @@ LhatRunResult lhat_run(LhatMachine *m, const LhatProto *proto)
                 // it -- this is what makes '.signature' answer something.
                 if (lhat_is_object_kind(registers[b], LHAT_OBJECT_TYPE)) {
                     if (!lhat_is_object_kind(registers[cc], LHAT_OBJECT_STRING)) {
-                        return finish(m, LHAT_RUN_TYPE_ERROR, lhat_nil(), at);
+                        return finish(m, chunk, LHAT_RUN_TYPE_ERROR, lhat_nil(), at);
                     }
                     const LhatString *key =
                         (const LhatString *)lhat_as_object(registers[cc]);
                     if (key->length != 9 ||
                         memcmp(key->text, "signature", 9) != 0) {
-                        return finish(m, LHAT_RUN_TYPE_ERROR, lhat_nil(), at);
+                        return finish(m, chunk, LHAT_RUN_TYPE_ERROR, lhat_nil(), at);
                     }
                     const LhatRuntimeType *type =
                         (const LhatRuntimeType *)lhat_as_object(registers[b]);
                     size_t needed = lhat_runtime_type_write(type, NULL, 0);
                     char *text = (char *)lhat_alloc(needed + 1);
                     if (text == NULL) {
-                        return finish(m, LHAT_RUN_OUT_OF_MEMORY, lhat_nil(),
+                        return finish(m, chunk, LHAT_RUN_OUT_OF_MEMORY, lhat_nil(),
                                       at);
                     }
                     lhat_runtime_type_write(type, text, needed + 1);
@@ -4988,7 +5010,7 @@ LhatRunResult lhat_run(LhatMachine *m, const LhatProto *proto)
                         lhat_string_new(&m->objects, text, needed);
                     lhat_free(text);
                     if (written == NULL) {
-                        return finish(m, LHAT_RUN_OUT_OF_MEMORY, lhat_nil(),
+                        return finish(m, chunk, LHAT_RUN_OUT_OF_MEMORY, lhat_nil(),
                                       at);
                     }
                     registers[a] = lhat_object((LhatObject *)written);
@@ -4996,7 +5018,7 @@ LhatRunResult lhat_run(LhatMachine *m, const LhatProto *proto)
                 }
                 const LhatTable *table = readable_table(registers[b]);
                 if (table == NULL) {
-                    return finish(m, LHAT_RUN_TYPE_ERROR, lhat_nil(), at);
+                    return finish(m, chunk, LHAT_RUN_TYPE_ERROR, lhat_nil(), at);
                 }
                 registers[a] = lhat_table_get(table, registers[cc]);
 
@@ -5008,7 +5030,7 @@ LhatRunResult lhat_run(LhatMachine *m, const LhatProto *proto)
                     LhatNative *native =
                         lhat_native_new(&m->objects, which, registers[b]);
                     if (native == NULL) {
-                        return finish(m, LHAT_RUN_OUT_OF_MEMORY, lhat_nil(), at);
+                        return finish(m, chunk, LHAT_RUN_OUT_OF_MEMORY, lhat_nil(), at);
                     }
                     registers[a] = lhat_object((LhatObject *)native);
                 }
@@ -5019,17 +5041,17 @@ LhatRunResult lhat_run(LhatMachine *m, const LhatProto *proto)
             set_index:;
                 LhatTable *table = table_of(registers[a]);
                 if (table == NULL) {
-                    return finish(m, LHAT_RUN_TYPE_ERROR, lhat_nil(), at);
+                    return finish(m, chunk, LHAT_RUN_TYPE_ERROR, lhat_nil(), at);
                 }
                 bool refused = false;
                 if (!lhat_table_set(table, registers[b], registers[cc],
                                     &refused)) {
-                    return finish(m, LHAT_RUN_OUT_OF_MEMORY, lhat_nil(), at);
+                    return finish(m, chunk, LHAT_RUN_OUT_OF_MEMORY, lhat_nil(), at);
                 }
                 // nil^ is how 11.3 spells "not there", so it cannot also be
                 // a key. Neither can a NaN, which is not equal to itself.
                 if (refused) {
-                    return finish(m, LHAT_RUN_BAD_KEY, lhat_nil(), at);
+                    return finish(m, chunk, LHAT_RUN_BAD_KEY, lhat_nil(), at);
                 }
                 break;
             }
@@ -5040,7 +5062,7 @@ LhatRunResult lhat_run(LhatMachine *m, const LhatProto *proto)
             case LHAT_BC_ADDOVERLOAD: {
                 LhatTable *table = table_of(registers[a]);
                 if (table == NULL) {
-                    return finish(m, LHAT_RUN_TYPE_ERROR, lhat_nil(), at);
+                    return finish(m, chunk, LHAT_RUN_TYPE_ERROR, lhat_nil(), at);
                 }
                 LhatValue held = lhat_table_get(table, registers[b]);
                 LhatOverload *group = NULL;
@@ -5049,20 +5071,20 @@ LhatRunResult lhat_run(LhatMachine *m, const LhatProto *proto)
                 } else {
                     group = lhat_overload_new(&m->objects);
                     if (group == NULL) {
-                        return finish(m, LHAT_RUN_OUT_OF_MEMORY, lhat_nil(), at);
+                        return finish(m, chunk, LHAT_RUN_OUT_OF_MEMORY, lhat_nil(), at);
                     }
                     if (!lhat_is_nil(held) && !lhat_overload_add(group, held)) {
-                        return finish(m, LHAT_RUN_OUT_OF_MEMORY, lhat_nil(), at);
+                        return finish(m, chunk, LHAT_RUN_OUT_OF_MEMORY, lhat_nil(), at);
                     }
                     bool refused = false;
                     if (!lhat_table_set(table, registers[b],
                                         lhat_object((LhatObject *)group),
                                         &refused)) {
-                        return finish(m, LHAT_RUN_OUT_OF_MEMORY, lhat_nil(), at);
+                        return finish(m, chunk, LHAT_RUN_OUT_OF_MEMORY, lhat_nil(), at);
                     }
                 }
                 if (!lhat_overload_add(group, registers[cc])) {
-                    return finish(m, LHAT_RUN_OUT_OF_MEMORY, lhat_nil(), at);
+                    return finish(m, chunk, LHAT_RUN_OUT_OF_MEMORY, lhat_nil(), at);
                 }
                 break;
             }
@@ -5073,7 +5095,7 @@ LhatRunResult lhat_run(LhatMachine *m, const LhatProto *proto)
             case LHAT_BC_OVERRIDEINDEX: {
                 LhatTable *table = table_of(registers[a]);
                 if (table == NULL) {
-                    return finish(m, LHAT_RUN_TYPE_ERROR, lhat_nil(), at);
+                    return finish(m, chunk, LHAT_RUN_TYPE_ERROR, lhat_nil(), at);
                 }
                 LhatValue held = lhat_table_get(table, registers[b]);
                 if (lhat_is_object_kind(held, LHAT_OBJECT_OVERLOAD)) {
@@ -5082,14 +5104,14 @@ LhatRunResult lhat_run(LhatMachine *m, const LhatProto *proto)
                     LhatOverload *made = lhat_overload_with_first(
                         &m->objects, group, registers[cc]);
                     if (made == NULL) {
-                        return finish(m, LHAT_RUN_OUT_OF_MEMORY, lhat_nil(),
+                        return finish(m, chunk, LHAT_RUN_OUT_OF_MEMORY, lhat_nil(),
                                       at);
                     }
                     bool refused = false;
                     if (!lhat_table_set(table, registers[b],
                                         lhat_object((LhatObject *)made),
                                         &refused)) {
-                        return finish(m, LHAT_RUN_OUT_OF_MEMORY, lhat_nil(),
+                        return finish(m, chunk, LHAT_RUN_OUT_OF_MEMORY, lhat_nil(),
                                       at);
                     }
                     break;
@@ -5099,13 +5121,13 @@ LhatRunResult lhat_run(LhatMachine *m, const LhatProto *proto)
 
             case LHAT_BC_NEWERROR: {
                 if (!lhat_is_object_kind(registers[b], LHAT_OBJECT_ERROR_KIND)) {
-                    return finish(m, LHAT_RUN_TYPE_ERROR, lhat_nil(), at);
+                    return finish(m, chunk, LHAT_RUN_TYPE_ERROR, lhat_nil(), at);
                 }
                 const LhatErrorKind *kind =
                     (const LhatErrorKind *)lhat_as_object(registers[b]);
                 LhatError *error = lhat_error_new(&m->objects, kind);
                 if (error == NULL) {
-                    return finish(m, LHAT_RUN_OUT_OF_MEMORY, lhat_nil(), at);
+                    return finish(m, chunk, LHAT_RUN_OUT_OF_MEMORY, lhat_nil(), at);
                 }
                 registers[a] = lhat_object((LhatObject *)error);
                 break;
@@ -5121,7 +5143,7 @@ LhatRunResult lhat_run(LhatMachine *m, const LhatProto *proto)
 
             case LHAT_BC_ISKIND: {
                 if (!lhat_is_object_kind(registers[cc], LHAT_OBJECT_ERROR_KIND)) {
-                    return finish(m, LHAT_RUN_TYPE_ERROR, lhat_nil(), at);
+                    return finish(m, chunk, LHAT_RUN_TYPE_ERROR, lhat_nil(), at);
                 }
                 const LhatErrorKind *kind =
                     (const LhatErrorKind *)lhat_as_object(registers[cc]);
@@ -5138,11 +5160,11 @@ LhatRunResult lhat_run(LhatMachine *m, const LhatProto *proto)
             // no way to change it afterwards.
             case LHAT_BC_NEWINSTANCE: {
                 if (!lhat_is_object_kind(registers[b], LHAT_OBJECT_TABLE)) {
-                    return finish(m, LHAT_RUN_TYPE_ERROR, lhat_nil(), at);
+                    return finish(m, chunk, LHAT_RUN_TYPE_ERROR, lhat_nil(), at);
                 }
                 LhatTable *instance = lhat_table_new(&m->objects);
                 if (instance == NULL) {
-                    return finish(m, LHAT_RUN_OUT_OF_MEMORY, lhat_nil(), at);
+                    return finish(m, chunk, LHAT_RUN_OUT_OF_MEMORY, lhat_nil(), at);
                 }
                 instance->definition =
                     (const LhatTable *)lhat_as_object(registers[b]);
@@ -5163,7 +5185,7 @@ LhatRunResult lhat_run(LhatMachine *m, const LhatProto *proto)
                     // call wrote is compared against the list and the
                     // receiver is handed over besides it.
                     if (b != host->parameters) {
-                        return finish(m, LHAT_RUN_ARITY, lhat_nil(), at);
+                        return finish(m, chunk, LHAT_RUN_ARITY, lhat_nil(), at);
                     }
                     size_t first = a + (op == LHAT_BC_CALLMETHOD ? 2 : 1);
                     size_t given = b;
@@ -5204,7 +5226,7 @@ LhatRunResult lhat_run(LhatMachine *m, const LhatProto *proto)
                     // itself. It takes nothing and answers nothing.
                     if (native->kind == LHAT_NATIVE_COLLECTGARBAGE) {
                         if (b != 0) {
-                            return finish(m, LHAT_RUN_ARITY, lhat_nil(), at);
+                            return finish(m, chunk, LHAT_RUN_ARITY, lhat_nil(), at);
                         }
                         collect(m);
                         registers[a] = lhat_nil();
@@ -5221,13 +5243,13 @@ LhatRunResult lhat_run(LhatMachine *m, const LhatProto *proto)
                         }
                         const LhatTable *over = table_of(native->bound);
                         if (over == NULL) {
-                            return finish(m, LHAT_RUN_NOT_CALLABLE, lhat_nil(),
+                            return finish(m, chunk, LHAT_RUN_NOT_CALLABLE, lhat_nil(),
                                           at);
                         }
                         LhatCoroutine *walk =
                             lhat_table_iterator(&m->objects, over);
                         if (walk == NULL) {
-                            return finish(m, LHAT_RUN_OUT_OF_MEMORY, lhat_nil(),
+                            return finish(m, chunk, LHAT_RUN_OUT_OF_MEMORY, lhat_nil(),
                                           at);
                         }
                         registers[a] = lhat_object((LhatObject *)walk);
@@ -5236,7 +5258,7 @@ LhatRunResult lhat_run(LhatMachine *m, const LhatProto *proto)
 
                     if (!lhat_is_object_kind(native->bound,
                                              LHAT_OBJECT_COROUTINE)) {
-                        return finish(m, LHAT_RUN_NOT_CALLABLE, lhat_nil(), at);
+                        return finish(m, chunk, LHAT_RUN_NOT_CALLABLE, lhat_nil(), at);
                     }
                     LhatCoroutine *co =
                         (LhatCoroutine *)lhat_as_object(native->bound);
@@ -5248,7 +5270,7 @@ LhatRunResult lhat_run(LhatMachine *m, const LhatProto *proto)
                     if (native->kind == LHAT_NATIVE_DONE ||
                         native->kind == LHAT_NATIVE_STARTED) {
                         if (b != 0) {
-                            return finish(m, LHAT_RUN_ARITY, lhat_nil(), at);
+                            return finish(m, chunk, LHAT_RUN_ARITY, lhat_nil(), at);
                         }
                         registers[a] = lhat_bool(
                             native->kind == LHAT_NATIVE_DONE
@@ -5263,10 +5285,10 @@ LhatRunResult lhat_run(LhatMachine *m, const LhatProto *proto)
                     // argument; start takes none, since nothing has been
                     // yield^ed yet to send a value to.
                     if (native->kind == LHAT_NATIVE_START && b != 0) {
-                        return finish(m, LHAT_RUN_ARITY, lhat_nil(), at);
+                        return finish(m, chunk, LHAT_RUN_ARITY, lhat_nil(), at);
                     }
                     if (native->kind == LHAT_NATIVE_RESUME && b != 1) {
-                        return finish(m, LHAT_RUN_ARITY, lhat_nil(), at);
+                        return finish(m, chunk, LHAT_RUN_ARITY, lhat_nil(), at);
                     }
 
                     // 15.2改: start and resume now split what the first
@@ -5274,12 +5296,12 @@ LhatRunResult lhat_run(LhatMachine *m, const LhatProto *proto)
                     // the state that makes it meaningful.
                     if (native->kind == LHAT_NATIVE_START &&
                         co->state != LHAT_COROUTINE_FRESH) {
-                        return finish(m, LHAT_RUN_COROUTINE_ALREADY_STARTED,
+                        return finish(m, chunk, LHAT_RUN_COROUTINE_ALREADY_STARTED,
                                       lhat_nil(), at);
                     }
                     if (native->kind == LHAT_NATIVE_RESUME &&
                         co->state == LHAT_COROUTINE_FRESH) {
-                        return finish(m, LHAT_RUN_COROUTINE_NOT_STARTED,
+                        return finish(m, chunk, LHAT_RUN_COROUTINE_NOT_STARTED,
                                       lhat_nil(), at);
                     }
 
@@ -5294,10 +5316,10 @@ LhatRunResult lhat_run(LhatMachine *m, const LhatProto *proto)
                             registers[a] = lhat_nil();
                             break;
                         }
-                        return finish(m, LHAT_RUN_DEAD_COROUTINE, lhat_nil(), at);
+                        return finish(m, chunk, LHAT_RUN_DEAD_COROUTINE, lhat_nil(), at);
                     }
                     if (co->state == LHAT_COROUTINE_RUNNING) {
-                        return finish(m, LHAT_RUN_DEAD_COROUTINE, lhat_nil(), at);
+                        return finish(m, chunk, LHAT_RUN_DEAD_COROUTINE, lhat_nil(), at);
                     }
 
                     // 16.3: a walk of a table has no body, so nothing below
@@ -5313,20 +5335,20 @@ LhatRunResult lhat_run(LhatMachine *m, const LhatProto *proto)
                         }
                         if (step_table_walk(m, co, &registers[a]) ==
                             WALK_NO_MEMORY) {
-                            return finish(m, LHAT_RUN_OUT_OF_MEMORY,
+                            return finish(m, chunk, LHAT_RUN_OUT_OF_MEMORY,
                                           lhat_nil(), at);
                         }
                         break;
                     }
 
                     if (m->frame_count >= LHAT_MAX_FRAMES) {
-                        return finish(m, LHAT_RUN_STACK_OVERFLOW, lhat_nil(), at);
+                        return finish(m, chunk, LHAT_RUN_STACK_OVERFLOW, lhat_nil(), at);
                     }
 
                     LhatValue *next_base = &registers[a] + 1;
                     if (next_base + LHAT_MAX_REGISTERS >=
                         m->stack + LHAT_STACK_SLOTS) {
-                        return finish(m, LHAT_RUN_STACK_OVERFLOW, lhat_nil(), at);
+                        return finish(m, chunk, LHAT_RUN_STACK_OVERFLOW, lhat_nil(), at);
                     }
 
                     // 5.11: one frame, put back where it left off.
@@ -5387,18 +5409,18 @@ LhatRunResult lhat_run(LhatMachine *m, const LhatProto *proto)
                         }
                     }
                     if (lhat_is_nil(chosen)) {
-                        return finish(m, LHAT_RUN_NO_CANDIDATE, lhat_nil(), at);
+                        return finish(m, chunk, LHAT_RUN_NO_CANDIDATE, lhat_nil(), at);
                     }
                     registers[a] = chosen;
                 }
 
                 if (!lhat_is_object_kind(registers[a], LHAT_OBJECT_SUBROUTINE)) {
-                    return finish(m, LHAT_RUN_NOT_CALLABLE, lhat_nil(), at);
+                    return finish(m, chunk, LHAT_RUN_NOT_CALLABLE, lhat_nil(), at);
                 }
                 const LhatClosure *callee =
                     (const LhatClosure *)lhat_as_object(registers[a]);
                 if (callee->proto == NULL) {
-                    return finish(m, LHAT_RUN_NOT_CALLABLE, lhat_nil(), at);
+                    return finish(m, chunk, LHAT_RUN_NOT_CALLABLE, lhat_nil(), at);
                 }
 
                 // 14.4: the receiver sits between the callee and the
@@ -5422,12 +5444,12 @@ LhatRunResult lhat_run(LhatMachine *m, const LhatProto *proto)
                 size_t before_spread = given;
                 if (cc != 0) {
                     if (given == 0) {
-                        return finish(m, LHAT_RUN_TYPE_ERROR, lhat_nil(), at);
+                        return finish(m, chunk, LHAT_RUN_TYPE_ERROR, lhat_nil(), at);
                     }
                     spread_table =
                         table_of(registers[a + skip + given - 1]);
                     if (spread_table == NULL) {
-                        return finish(m, LHAT_RUN_TYPE_ERROR, lhat_nil(), at);
+                        return finish(m, chunk, LHAT_RUN_TYPE_ERROR, lhat_nil(), at);
                     }
                     before_spread = given - 1;
                     given = before_spread + spread_table->array_count;
@@ -5442,7 +5464,7 @@ LhatRunResult lhat_run(LhatMachine *m, const LhatProto *proto)
                                       : declared_slots;
                 if (callee->proto->has_variadic ? given < required
                                                 : given != declared_slots) {
-                    return finish(m, LHAT_RUN_ARITY, lhat_nil(), at);
+                    return finish(m, chunk, LHAT_RUN_ARITY, lhat_nil(), at);
                 }
                 // Built before either path below places it, since both read
                 // the same arguments the same way.
@@ -5450,7 +5472,7 @@ LhatRunResult lhat_run(LhatMachine *m, const LhatProto *proto)
                 if (callee->proto->has_variadic) {
                     LhatTable *collected = lhat_table_new(&m->objects);
                     if (collected == NULL) {
-                        return finish(m, LHAT_RUN_OUT_OF_MEMORY, lhat_nil(),
+                        return finish(m, chunk, LHAT_RUN_OUT_OF_MEMORY, lhat_nil(),
                                       at);
                     }
                     for (size_t i = required; i < given; i++) {
@@ -5462,7 +5484,7 @@ LhatRunResult lhat_run(LhatMachine *m, const LhatProto *proto)
                                 collected,
                                 lhat_integer((int64_t)(i - required + 1)),
                                 value, &refused)) {
-                            return finish(m, LHAT_RUN_OUT_OF_MEMORY,
+                            return finish(m, chunk, LHAT_RUN_OUT_OF_MEMORY,
                                           lhat_nil(), at);
                         }
                     }
@@ -5478,7 +5500,7 @@ LhatRunResult lhat_run(LhatMachine *m, const LhatProto *proto)
                         lhat_coroutine_new(&m->objects, callee,
                                            callee->proto->chunk.registers);
                     if (co == NULL) {
-                        return finish(m, LHAT_RUN_OUT_OF_MEMORY, lhat_nil(), at);
+                        return finish(m, chunk, LHAT_RUN_OUT_OF_MEMORY, lhat_nil(), at);
                     }
                     size_t fixed = callee->proto->has_variadic ? required : given;
                     for (size_t i = 0; i < fixed; i++) {
@@ -5494,7 +5516,7 @@ LhatRunResult lhat_run(LhatMachine *m, const LhatProto *proto)
                 }
 
                 if (m->frame_count >= LHAT_MAX_FRAMES) {
-                    return finish(m, LHAT_RUN_STACK_OVERFLOW, lhat_nil(), at);
+                    return finish(m, chunk, LHAT_RUN_STACK_OVERFLOW, lhat_nil(), at);
                 }
 
                 // 5.3: the arguments already sit just above the callee, so
@@ -5505,7 +5527,7 @@ LhatRunResult lhat_run(LhatMachine *m, const LhatProto *proto)
                 LhatValue *next_base = &registers[a] + skip;
                 if (next_base + LHAT_MAX_REGISTERS >=
                     m->stack + LHAT_STACK_SLOTS) {
-                    return finish(m, LHAT_RUN_STACK_OVERFLOW, lhat_nil(), at);
+                    return finish(m, chunk, LHAT_RUN_STACK_OVERFLOW, lhat_nil(), at);
                 }
                 if (spread_table != NULL) {
                     size_t fixed = callee->proto->has_variadic ? required
@@ -5539,7 +5561,7 @@ LhatRunResult lhat_run(LhatMachine *m, const LhatProto *proto)
 
             case LHAT_BC_PUSHCLEANUP:
                 if (frame->cleanup_count >= LHAT_MAX_CLEANUPS) {
-                    return finish(m, LHAT_RUN_STACK_OVERFLOW, lhat_nil(), at);
+                    return finish(m, chunk, LHAT_RUN_STACK_OVERFLOW, lhat_nil(), at);
                 }
                 frame->cleanups[frame->cleanup_count++] = lhat_bx(instruction);
                 break;
@@ -5571,7 +5593,7 @@ LhatRunResult lhat_run(LhatMachine *m, const LhatProto *proto)
                 LhatCoroutine *co = frame->coroutine;
                 // 10.7: nothing is waiting for a yield^ during disposal.
                 if (co == NULL || frame->disposing) {
-                    return finish(m, LHAT_RUN_YIELD_OUTSIDE, lhat_nil(), at);
+                    return finish(m, chunk, LHAT_RUN_YIELD_OUTSIDE, lhat_nil(), at);
                 }
                 LhatValue value = registers[a];
 
@@ -5582,7 +5604,7 @@ LhatRunResult lhat_run(LhatMachine *m, const LhatProto *proto)
                 co->sent_into = a;
                 co->state = LHAT_COROUTINE_SUSPENDED;
                 if (frame->cleanup_count > LHAT_COROUTINE_CLEANUPS) {
-                    return finish(m, LHAT_RUN_STACK_OVERFLOW, lhat_nil(), at);
+                    return finish(m, chunk, LHAT_RUN_STACK_OVERFLOW, lhat_nil(), at);
                 }
                 co->cleanup_count = frame->cleanup_count;
                 for (size_t i = 0; i < frame->cleanup_count; i++) {
@@ -5604,7 +5626,7 @@ LhatRunResult lhat_run(LhatMachine *m, const LhatProto *proto)
             // its yield type and its return type.
             case LHAT_BC_ISDONE: {
                 if (!lhat_is_object_kind(registers[b], LHAT_OBJECT_COROUTINE)) {
-                    return finish(m, LHAT_RUN_TYPE_ERROR, lhat_nil(), at);
+                    return finish(m, chunk, LHAT_RUN_TYPE_ERROR, lhat_nil(), at);
                 }
                 const LhatCoroutine *co =
                     (const LhatCoroutine *)lhat_as_object(registers[b]);
@@ -5614,13 +5636,13 @@ LhatRunResult lhat_run(LhatMachine *m, const LhatProto *proto)
 
             case LHAT_BC_RESUME: {
                 if (!lhat_is_object_kind(registers[b], LHAT_OBJECT_COROUTINE)) {
-                    return finish(m, LHAT_RUN_TYPE_ERROR, lhat_nil(), at);
+                    return finish(m, chunk, LHAT_RUN_TYPE_ERROR, lhat_nil(), at);
                 }
                 LhatCoroutine *co =
                     (LhatCoroutine *)lhat_as_object(registers[b]);
                 if (co->state == LHAT_COROUTINE_DONE ||
                     co->state == LHAT_COROUTINE_RUNNING) {
-                    return finish(m, LHAT_RUN_DEAD_COROUTINE, lhat_nil(), at);
+                    return finish(m, chunk, LHAT_RUN_DEAD_COROUTINE, lhat_nil(), at);
                 }
 
                 // 16.3: a table's walk has no body to enter, so resuming it
@@ -5628,17 +5650,17 @@ LhatRunResult lhat_run(LhatMachine *m, const LhatProto *proto)
                 if (co->source == LHAT_COROUTINE_TABLE) {
                     if (step_table_walk(m, co, &registers[a]) ==
                         WALK_NO_MEMORY) {
-                        return finish(m, LHAT_RUN_OUT_OF_MEMORY, lhat_nil(), at);
+                        return finish(m, chunk, LHAT_RUN_OUT_OF_MEMORY, lhat_nil(), at);
                     }
                     break;
                 }
                 if (m->frame_count >= LHAT_MAX_FRAMES) {
-                    return finish(m, LHAT_RUN_STACK_OVERFLOW, lhat_nil(), at);
+                    return finish(m, chunk, LHAT_RUN_STACK_OVERFLOW, lhat_nil(), at);
                 }
                 LhatValue *next_base = &registers[a] + 1;
                 if (next_base + LHAT_MAX_REGISTERS >=
                     m->stack + LHAT_STACK_SLOTS) {
-                    return finish(m, LHAT_RUN_STACK_OVERFLOW, lhat_nil(), at);
+                    return finish(m, chunk, LHAT_RUN_STACK_OVERFLOW, lhat_nil(), at);
                 }
 
                 LhatValue sent = registers[a];
@@ -5672,7 +5694,7 @@ LhatRunResult lhat_run(LhatMachine *m, const LhatProto *proto)
             }
 
             case LHAT_BC_COUNT:
-                return finish(m, LHAT_RUN_TYPE_ERROR, lhat_nil(), at);
+                return finish(m, chunk, LHAT_RUN_TYPE_ERROR, lhat_nil(), at);
         }
         continue;
 
@@ -5688,7 +5710,7 @@ LhatRunResult lhat_run(LhatMachine *m, const LhatProto *proto)
         if (name != NULL && carrier != NULL) {
             LhatString *key = lhat_string_new(&m->objects, name, length);
             if (key == NULL) {
-                return finish(m, LHAT_RUN_OUT_OF_MEMORY, lhat_nil(), at);
+                return finish(m, chunk, LHAT_RUN_OUT_OF_MEMORY, lhat_nil(), at);
             }
             found = lhat_table_get(carrier, lhat_object((LhatObject *)key));
         }
@@ -5714,21 +5736,21 @@ LhatRunResult lhat_run(LhatMachine *m, const LhatProto *proto)
                 }
             }
             if (lhat_is_nil(picked)) {
-                return finish(m, LHAT_RUN_NO_CANDIDATE, lhat_nil(), at);
+                return finish(m, chunk, LHAT_RUN_NO_CANDIDATE, lhat_nil(), at);
             }
             found = picked;
         }
         if (!lhat_is_object_kind(found, LHAT_OBJECT_SUBROUTINE)) {
-            return finish(m, LHAT_RUN_TYPE_ERROR, lhat_nil(), at);
+            return finish(m, chunk, LHAT_RUN_TYPE_ERROR, lhat_nil(), at);
         }
         const LhatClosure *carried =
             (const LhatClosure *)lhat_as_object(found);
         // 15.3: an operator is an f^, so it cannot suspend.
         if (carried->proto == NULL || carried->proto->yields) {
-            return finish(m, LHAT_RUN_TYPE_ERROR, lhat_nil(), at);
+            return finish(m, chunk, LHAT_RUN_TYPE_ERROR, lhat_nil(), at);
         }
         if (m->frame_count >= LHAT_MAX_FRAMES) {
-            return finish(m, LHAT_RUN_STACK_OVERFLOW, lhat_nil(), at);
+            return finish(m, chunk, LHAT_RUN_STACK_OVERFLOW, lhat_nil(), at);
         }
 
         // 5.3 wants the arguments in a contiguous run, and b and cc need not
@@ -5737,7 +5759,7 @@ LhatRunResult lhat_run(LhatMachine *m, const LhatProto *proto)
         // lays one out.
         LhatValue *next_base = &registers[a] + 1;
         if (next_base + LHAT_MAX_REGISTERS >= m->stack + LHAT_STACK_SLOTS) {
-            return finish(m, LHAT_RUN_STACK_OVERFLOW, lhat_nil(), at);
+            return finish(m, chunk, LHAT_RUN_STACK_OVERFLOW, lhat_nil(), at);
         }
         LhatValue receiver = registers[b];
         LhatValue argument = registers[cc];
@@ -5788,7 +5810,7 @@ LhatRunResult lhat_run(LhatMachine *m, const LhatProto *proto)
             m->frame_count--;
 
             if (m->frame_count == 0) {
-                return finish(m, LHAT_RUN_OK, value, at);
+                return finish(m, chunk, LHAT_RUN_OK, value, at);
             }
 
             uint8_t into = frame->result;
@@ -5800,7 +5822,7 @@ LhatRunResult lhat_run(LhatMachine *m, const LhatProto *proto)
         }
     }
 
-    return finish(m, LHAT_RUN_OK, lhat_nil(), chunk->count);
+    return finish(m, chunk, LHAT_RUN_OK, lhat_nil(), chunk->count);
 }
 
 const char *lhat_run_status_message(LhatRunStatus status)

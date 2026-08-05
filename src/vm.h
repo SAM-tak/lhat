@@ -108,6 +108,13 @@ typedef struct {
     LhatRunStatus status;
     LhatValue value;   // what the unit returned, or nil^
     size_t at;         // the instruction that failed, when one did
+    // 04 の 11 章: where `at` came from, for a host to report -- 0 when
+    // status is LHAT_RUN_OK, since nothing failed to name a line for.
+    uint32_t line;
+    // 02 の 11.8: the operator `at` was, when it was one -- NULL for a
+    // fault that is not about an operator (a bad call, a full stack, ...).
+    const char *op_name;
+    size_t op_name_length;
 
     // How many objects the collector freed while the program ran, and how
     // many were still live at the end. Kept so that a test can see the

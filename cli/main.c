@@ -387,6 +387,26 @@ static void say_check_error(const LhatSource *source, const char *name,
     free(bigger);
 }
 
+// 04 の 11 章: a runtime fault names the line it happened on and, when it was
+// one, the operator -- both from LhatRunResult, not the richer source-offset
+// diagnostics the checker/parser give (those need a source and a token; a
+// fault only ever has a line).
+static void say_run_error(const char *path, LhatRunResult ran)
+{
+    if (path != NULL) {
+        fprintf(stderr, "%s: ", path);
+    }
+    fprintf(stderr, "error: ");
+    if (ran.line > 0) {
+        fprintf(stderr, "line %u: ", ran.line);
+    }
+    fprintf(stderr, "%s", lhat_run_status_message(ran.status));
+    if (ran.op_name != NULL) {
+        fprintf(stderr, " (%.*s)", (int)ran.op_name_length, ran.op_name);
+    }
+    fprintf(stderr, "\n");
+}
+
 static void say_error(const LhatSource *source, const char *name,
                       uint32_t offset, uint32_t line, uint32_t column,
                       const char *message)
@@ -490,8 +510,7 @@ static int check_program(const char *path, bool run)
             lhat_machine_set_modules(machine, modules, count);
             LhatRunResult ran = lhat_run(machine, modules[root->index].proto);
             if (ran.status != LHAT_RUN_OK) {
-                fprintf(stderr, "%s: error: %s\n", path,
-                        lhat_run_status_message(ran.status));
+                say_run_error(path, ran);
                 failed = true;
             } else if (!lhat_is_nil(ran.value)) {
                 size_t needed = lhat_value_write(ran.value, NULL, 0);
@@ -689,7 +708,7 @@ static int repl(void)
         LhatRunResult ran = lhat_run(machine, in->proto);
         held++;
         if (ran.status != LHAT_RUN_OK) {
-            fprintf(stderr, "error: %s\n", lhat_run_status_message(ran.status));
+            say_run_error(NULL, ran);
             continue;
         }
         if (!lhat_is_nil(ran.value)) {
