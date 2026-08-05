@@ -261,6 +261,12 @@ struct LhatNode {
             LhatNode *targets;
             LhatNode *values;
             bool exported;  // 05 の 4 章: written public^
+            // 8.8改. DEFINE only, and only from let^: written ':=' rather
+            // than '='. For a plain name this changes nothing (8.6 already
+            // makes the two spellings the same there); for a path target
+            // whose last segment already exists it makes this a reassignment
+            // instead of the redefinition error 8.7 would otherwise report.
+            bool via_reassign_op;
         } binding;
 
         // Statement or expression lists: BLOCK, TABLE, IF_STMT, IF_EXPR,

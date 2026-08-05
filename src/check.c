@@ -3041,7 +3041,16 @@ static LhatType *path_table(Checker *c, const LhatNode *node)
 // The last segment is the name being introduced, so 8.7 refuses one that is
 // already there -- writing let^ twice for one place is a redefinition here
 // exactly as it is for a name of its own.
-static void define_path(Checker *c, const LhatNode *target, LhatType *type)
+//
+// 8.8改: unless `upsert` says otherwise (only let^'s ':=' spelling asks for
+// this -- 8.6's table still makes '=' mean plain definition). Then a path
+// that already answers to something is reassigned instead: the same check
+// check_reassign makes for a bare 'path := value', just reached through a
+// let^'s syntax instead. The type is not touched either way in that branch,
+// so nothing here needs S23's `unconfirmed` marking -- that only matters
+// where a member is being added.
+static void define_path(Checker *c, const LhatNode *target, LhatType *type,
+                        bool upsert)
 {
     const LhatNode *last = target_name_node(target);
     LhatType *owner = path_table(c, last->v.access.target);
@@ -3054,8 +3063,13 @@ static void define_path(Checker *c, const LhatNode *target, LhatType *type)
     if (!node_name(c, last->v.access.argument, &name, &length)) {
         return;
     }
-    if (member_named(owner, name, length) != NULL) {
-        report_named(c, last, LHAT_CHECK_ERR_REDEFINED, name, length);
+    const LhatTypeMember *found = member_named(owner, name, length);
+    if (found != NULL) {
+        if (!upsert) {
+            report_named(c, last, LHAT_CHECK_ERR_REDEFINED, name, length);
+            return;
+        }
+        expect(c, target, type, found->type, LHAT_CHECK_ERR_MISMATCH);
         return;
     }
     LhatTypeMember *added =
@@ -3149,8 +3163,12 @@ static void check_define(Checker *c, const LhatNode *node)
         size_t length = 0;
         if (target_is_path(target)) {
             // 8.8: the place is a member of a table the path reaches, not a
-            // name of this scope.
-            define_path(c, target, annotated != NULL ? annotated : actual);
+            // name of this scope. 8.8改: let^'s ':=' spelling asks to
+            // reassign rather than fail when the path already answers to
+            // something (node->v.binding.via_reassign_op is only ever set
+            // by parse_let -- for^/with^ still always define).
+            define_path(c, target, annotated != NULL ? annotated : actual,
+                       node->v.binding.via_reassign_op);
         } else if (node_name(c, target_name_node(target), &name, &length)) {
             Binding *b = scope_find_local(c->scope, name, length);
             if (b != NULL) {

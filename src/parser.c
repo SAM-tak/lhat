@@ -2158,13 +2158,20 @@ static LhatNode *parse_let(Parser *p)
     }
 
     LhatToken at = p->current;
-    if (!match_op(p, LHAT_OP_EQ) && !match_op(p, LHAT_OP_DEFINE)) {
+    // 8.8改: which of the two was written matters for a path target, so it
+    // is recorded rather than just accepted like 8.6 treats it for a name.
+    bool via_reassign_op = match_op(p, LHAT_OP_DEFINE);
+    if (!via_reassign_op && !match_op(p, LHAT_OP_EQ)) {
         // 8.7: a declaration without a value is not a form. Mutual recursion
         // is handled by the whole scope seeing the name, so nothing needs one.
         report(p, &p->current, LHAT_PARSE_ERR_LET_NEEDS_VALUE);
         return make(p, LHAT_NODE_ERROR, &start);
     }
-    return parse_binding(p, LHAT_NODE_DEFINE, &at, targets);
+    LhatNode *node = parse_binding(p, LHAT_NODE_DEFINE, &at, targets);
+    if (node != NULL) {
+        node->v.binding.via_reassign_op = via_reassign_op;
+    }
+    return node;
 }
 
 static LhatNode *parse_if_body(Parser *p, LhatToken start, LhatNode *condition)
