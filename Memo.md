@@ -384,8 +384,8 @@ foo=Foo.new^()
 foo.selfcall()
 ...
 foo.dispose()
-with^foo:=Foo.new^()
-with^bar:=Boo.new^() // error : bar doesn't have dispose.
+with^foo=Foo.new^()
+with^bar=Boo.new^() // error : bar doesn't have dispose.
 {
      ...
 }
