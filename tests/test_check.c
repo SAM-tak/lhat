@@ -2754,6 +2754,102 @@ static void test_coroutines(void)
     unit_dispose(&u);
 }
 
+// 02 の 15.1: f^ may call only f^, never p^ -- a p^ may run side effects an
+// f^ is not allowed to.
+static void test_purity(void)
+{
+    Unit u;
+
+    LHAT_TEST("an f^ may not call a p^");
+    check_text(&u,
+               "let^ log = p^ x:any^ { }\n"
+               "let^ f = f^ { log(1) }\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_FUNCTION_CALLS_PROCEDURE);
+    unit_dispose(&u);
+
+    LHAT_TEST("a p^ may call another p^");
+    check_text(&u,
+               "let^ log = p^ x:any^ { }\n"
+               "let^ g = p^ { log(1) }\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("top level may call a p^");
+    check_text(&u,
+               "let^ log = p^ x:any^ { }\n"
+               "log(1)\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("an f^ may call another f^");
+    check_text(&u,
+               "let^ inc = f^ n:number^ -> number^ { return^ n + 1 }\n"
+               "let^ f = f^ n:number^ -> number^ { return^ inc(n) }\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // 15.5: calling a yieldable p^ makes a coroutine and runs none of the
+    // body yet, so this one call stays referentially transparent even
+    // inside an f^ -- what would actually run the body (start()) is itself
+    // a p^, caught the same as any other below.
+    LHAT_TEST("an f^ may call a yieldable p^, since the call alone runs nothing");
+    check_text(&u,
+               "let^ gen = p^ { yield^ 1 }\n"
+               "let^ f = f^ { return^ gen() }\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("but an f^ may not start the coroutine that call makes");
+    check_text(&u,
+               "let^ gen = p^ { yield^ 1 }\n"
+               "let^ f = f^ { return^ gen().start() }\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_FUNCTION_CALLS_PROCEDURE);
+    unit_dispose(&u);
+
+    LHAT_TEST("a p^ nested inside an f^ may call a p^ again");
+    check_text(&u,
+               "let^ log = p^ x:any^ { }\n"
+               "let^ outer = f^ {\n"
+               "    let^ inner = p^ { log(1) }\n"
+               "    return^ 0\n"
+               "}\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("an f^ nested inside a p^ still may not call a p^");
+    check_text(&u,
+               "let^ log = p^ x:any^ { }\n"
+               "let^ outer = p^ {\n"
+               "    let^ inner = f^ { log(1) }\n"
+               "}\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_FUNCTION_CALLS_PROCEDURE);
+    unit_dispose(&u);
+
+    LHAT_TEST("the same rule reaches through a member");
+    check_text(&u,
+               "let^ t = { log := p^self^, x:any^ { } }\n"
+               "let^ f = f^ { t.log(1) }\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_FUNCTION_CALLS_PROCEDURE);
+    unit_dispose(&u);
+
+    // 14.12: an overloaded member is an intersection of signatures, and
+    // whichever arm the call resolves to still answers to 15.1.
+    LHAT_TEST("and through whichever overload^ arm the call resolves to");
+    check_text(&u,
+               "let^ A = def^{\n"
+               "    self^{},\n"
+               "    bar := p^self^ { },\n"
+               "}\n"
+               "let^ B = A .. def^{\n"
+               "    self^{},\n"
+               "    overload^ bar := p^self^, n:number^ { },\n"
+               "}\n"
+               "let^ o = B.new^()\n"
+               "let^ f = f^ { o.bar() }\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_FUNCTION_CALLS_PROCEDURE);
+    unit_dispose(&u);
+}
+
 // 02 の 16.3. The focus of an in^ loop is bound from what the walk yields,
 // which is the one place a for^ header defines names rather than reading
 // them. Until this, they were read -- and found nothing.
@@ -3840,6 +3936,7 @@ int main(void)
     test_patterns();
     test_modules();
     test_coroutines();
+    test_purity();
     test_walking();
     test_positions();
     test_no_value();

@@ -92,6 +92,12 @@ typedef struct {
     // which is what this^ names. NULL outside any body.
     LhatType *this_type;
 
+    // 02 の 15.1: f^ may call only f^, never p^. True inside an f^ body
+    // (and nested f^ literals within it), false everywhere else -- outside
+    // any body (top level) and inside a p^ both allow either kind, so
+    // false is the right default with no body open at all.
+    bool in_function;
+
     // 02 の 14.12改: what an override^ is writing over, which is what super^
     // names. NULL anywhere else, so 14.12's marker is what makes it a name.
     LhatType *super_type;
@@ -1355,6 +1361,14 @@ static LhatType *infer_call(Checker *c, const LhatNode *node)
         for (const LhatTypeList *arm = callee->v.composite.arms; arm != NULL;
              arm = arm->next) {
             if (signature_accepts(arm->type, args, tracked, through_member)) {
+                // 15.1, 15.5: f^ may call only f^, whichever arm 14.12
+                // resolved to -- except a yieldable p^, whose call alone
+                // stays referentially transparent (see the plain-call site
+                // above for why).
+                if (c->in_function && !arm->type->v.func.is_function &&
+                    !arm->type->v.func.yields) {
+                    report(c, node, LHAT_CHECK_ERR_FUNCTION_CALLS_PROCEDURE);
+                }
                 return arm->type->v.func.result;
             }
         }
@@ -1365,6 +1379,19 @@ static LhatType *infer_call(Checker *c, const LhatNode *node)
     if (callee->kind != LHAT_TYPE_FUNC) {
         report(c, node, LHAT_CHECK_ERR_NOT_CALLABLE);
         return simple(c, LHAT_TYPE_UNKNOWN);
+    }
+
+    // 15.1: f^ may call only f^, never p^ -- a p^ may run side effects an f^
+    // is not allowed to. 15.5 carves out one exception: calling a yieldable
+    // p^ does not run its body at all, only makes a coroutine (start()
+    // is what runs it, and that is p^ itself, caught the same way any other
+    // p^ call is) -- so that call alone stays referentially transparent and
+    // is not what this rule exists to catch. Reported here rather than
+    // refused earlier so arguments still get checked, the same as an
+    // ordinary mismatch.
+    if (c->in_function && !callee->v.func.is_function &&
+        !callee->v.func.yields) {
+        report(c, node, LHAT_CHECK_ERR_FUNCTION_CALLS_PROCEDURE);
     }
 
     // 14.15: an instance carries a value under every name its definition
@@ -1865,6 +1892,7 @@ static LhatType *infer_func(Checker *c, const LhatNode *node)
     LhatType *outer_coroutine_receive = c->coroutine_receive;
     enum YieldContext outer_yield_context = c->yield_context;
     LhatType *outer_yield_bound_type = c->yield_bound_type;
+    bool outer_in_function = c->in_function;
 
     c->scope = &body;
     c->declared_result = declared;
@@ -1873,6 +1901,7 @@ static LhatType *infer_func(Checker *c, const LhatNode *node)
     c->recursive_return = false;
     c->valueless_return = false;
     c->this_type = func;
+    c->in_function = node->v.func.is_function;
     c->deferred++;
     // 15.2: a nested p^{...} starts collecting its own Y/R from scratch, so
     // its yield^ sites never unify with the ones out here.
@@ -1945,6 +1974,7 @@ static LhatType *infer_func(Checker *c, const LhatNode *node)
     c->coroutine_receive = outer_coroutine_receive;
     c->yield_context = outer_yield_context;
     c->yield_bound_type = outer_yield_bound_type;
+    c->in_function = outer_in_function;
 
     scope_dispose(&body);
     // The compiler reads this back instead of re-deriving the signature from
@@ -4440,6 +4470,8 @@ const char *lhat_check_error_message(LhatCheckErrorCode code)
             return "this has to be bool^";
         case LHAT_CHECK_ERR_NOT_CALLABLE:
             return "this is not a function or a procedure";
+        case LHAT_CHECK_ERR_FUNCTION_CALLS_PROCEDURE:
+            return "f^ may call only f^, and this callee is a p^";
         case LHAT_CHECK_ERR_ARITY:
             return "the wrong number of arguments";
         case LHAT_CHECK_ERR_NOT_VARIADIC:

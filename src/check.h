@@ -35,6 +35,8 @@ typedef enum {
                                         // 11.3's question instead (11.8)
     LHAT_CHECK_ERR_NOT_BOOL,            // a condition, and^ / or^ / '!'
     LHAT_CHECK_ERR_NOT_CALLABLE,
+    LHAT_CHECK_ERR_FUNCTION_CALLS_PROCEDURE, // 15.1: f^ may call only f^;
+                                              // this callee is a p^
     LHAT_CHECK_ERR_ARITY,               // too few or too many arguments
     LHAT_CHECK_ERR_NOT_VARIADIC,        // 13.7: 'expr...' spreads into a
                                         // variadic tail, and this callee has
