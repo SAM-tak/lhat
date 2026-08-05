@@ -426,7 +426,7 @@ static LhatType *resolve_func_type(Checker *c, const LhatNode *node)
         lhat_type_add_param(c->result->types, func,
                             param->v.param.type != NULL
                                 ? resolve_type(c, param->v.param.type)
-                                : simple(c, LHAT_TYPE_UNKNOWN));
+                                : simple(c, LHAT_TYPE_PENDING));
     }
     if (node->v.func.return_type != NULL) {
         func->v.func.result = resolve_type(c, node->v.func.return_type);
@@ -627,6 +627,7 @@ static LhatType *without(Checker *c, LhatType *type, LhatType *unwanted)
 static bool can_be(const LhatType *type, const LhatType *wanted)
 {
     return type == NULL || type->kind == LHAT_TYPE_UNKNOWN ||
+           type->kind == LHAT_TYPE_PENDING ||
            !lhat_type_disjoint(type, wanted);
 }
 
@@ -692,7 +693,8 @@ static bool is_operator_name(const char *name, size_t length)
 static void check_operator_shape(Checker *c, const LhatNode *at,
                                  const LhatType *type)
 {
-    if (type == NULL || type->kind == LHAT_TYPE_UNKNOWN) {
+    if (type == NULL || type->kind == LHAT_TYPE_UNKNOWN ||
+        type->kind == LHAT_TYPE_PENDING) {
         return;
     }
     if (type->kind == LHAT_TYPE_INTERSECT) {
@@ -764,7 +766,7 @@ static LhatType *operator_member(Checker *c, const LhatType *type,
 static bool operator_undecided(const LhatType *type)
 {
     return type == NULL || type->kind == LHAT_TYPE_UNKNOWN ||
-           type->kind == LHAT_TYPE_ANY;
+           type->kind == LHAT_TYPE_PENDING || type->kind == LHAT_TYPE_ANY;
 }
 
 // ---------------------------------------------------------------------------
@@ -1036,7 +1038,13 @@ static void narrow_from(Checker *c, const LhatNode *condition, bool truth)
 static void expect(Checker *c, const LhatNode *at, LhatType *value,
                    LhatType *target, LhatCheckErrorCode code)
 {
-    if (!lhat_type_conforms(value, target)) {
+    // 03 の 3.1・3.5: strict reports a lingering gap in inference here
+    // instead of forgiving it the way relaxed's default reading does --
+    // relaxed has no runtime check to fall back on yet, so it keeps waving
+    // unknown^ through rather than refusing code that has nowhere to land.
+    bool ok = c->strict ? lhat_type_conforms_strict(value, target)
+                        : lhat_type_conforms(value, target);
+    if (!ok) {
         report(c, at, code);
     }
 }
@@ -1310,12 +1318,19 @@ static LhatType *infer_call(Checker *c, const LhatNode *node)
         given++;
     }
 
-    if (callee == NULL || callee->kind == LHAT_TYPE_UNKNOWN) {
+    if (callee == NULL || callee->kind == LHAT_TYPE_UNKNOWN ||
+        callee->kind == LHAT_TYPE_PENDING) {
         for (const LhatNode *arg = node->v.access.argument; arg != NULL;
              arg = arg->next) {
             infer(c, arg);
         }
-        return simple(c, LHAT_TYPE_UNKNOWN);
+        // 03 の 3.1・3.5、P6: a callee still pending^ (a mutually recursive
+        // partner not yet checked) makes this call's result pending^ too,
+        // not merely unknown^ -- strict needs to keep seeing the gap if it
+        // survives to where a concrete type is wanted.
+        return simple(c, callee != NULL && callee->kind == LHAT_TYPE_PENDING
+                              ? LHAT_TYPE_PENDING
+                              : LHAT_TYPE_UNKNOWN);
     }
 
     // 14.12: an overloaded member is the intersection of its signatures, so
@@ -1545,8 +1560,15 @@ static LhatType *infer_member(Checker *c, const LhatNode *node)
         return simple(c, LHAT_TYPE_UNKNOWN);
     }
 
-    if (target == NULL || target->kind == LHAT_TYPE_UNKNOWN) {
-        return simple(c, LHAT_TYPE_UNKNOWN);
+    if (target == NULL || target->kind == LHAT_TYPE_UNKNOWN ||
+        target->kind == LHAT_TYPE_PENDING) {
+        // 03 の 3.1・3.5、P6: a target still pending^ makes this member's
+        // type pending^ too, not merely unknown^ -- the gap has to survive
+        // for strict to see it if it reaches somewhere a concrete type was
+        // wanted.
+        return simple(c, target != NULL && target->kind == LHAT_TYPE_PENDING
+                              ? LHAT_TYPE_PENDING
+                              : LHAT_TYPE_UNKNOWN);
     }
 
     // 04 の 2.3: every kind carries message and cause without declaring them.
@@ -1687,6 +1709,7 @@ static LhatType *infer_table(Checker *c, const LhatNode *node)
             // is the other refusal, and stays the machine's -- nothing in
             // 14.8's one number type tells them apart.
             if (asked != NULL && asked->kind != LHAT_TYPE_UNKNOWN &&
+                asked->kind != LHAT_TYPE_PENDING &&
                 lhat_type_conforms(asked, simple(c, LHAT_TYPE_NIL))) {
                 report(c, key, LHAT_CHECK_ERR_BAD_KEY);
             }
@@ -1721,7 +1744,8 @@ static LhatType *infer_table(Checker *c, const LhatNode *node)
 static void unify_yield(Checker *c, const LhatNode *at, LhatType **slot,
                         LhatType *candidate)
 {
-    if (candidate == NULL || candidate->kind == LHAT_TYPE_UNKNOWN) {
+    if (candidate == NULL || candidate->kind == LHAT_TYPE_UNKNOWN ||
+        candidate->kind == LHAT_TYPE_PENDING) {
         // 13.11: UNKNOWN carries no information, so there is nothing here to
         // agree or disagree with.
         return;
@@ -1759,7 +1783,7 @@ static LhatType *declared_signature(Checker *c, const LhatNode *node)
         }
         LhatType *type = param->v.param.type != NULL
                              ? resolve_type(c, param->v.param.type)
-                             : simple(c, LHAT_TYPE_UNKNOWN);
+                             : simple(c, LHAT_TYPE_PENDING);
         if (param->v.param.variadic) {
             func->v.func.variadic =
                 param->v.param.type != NULL ? type : simple(c, LHAT_TYPE_ANY);
@@ -1795,7 +1819,7 @@ static LhatType *infer_func(Checker *c, const LhatNode *node)
         }
         LhatType *type = param->v.param.type != NULL
                              ? resolve_type(c, param->v.param.type)
-                             : simple(c, LHAT_TYPE_UNKNOWN);
+                             : simple(c, LHAT_TYPE_PENDING);
         if (param->v.param.variadic) {
             LhatType *element =
                 param->v.param.type != NULL ? type : simple(c, LHAT_TYPE_ANY);
@@ -2704,8 +2728,14 @@ static LhatType *infer(Checker *c, const LhatNode *node)
         // body's own Y/R, same as a yield^ written directly here would.
         case LHAT_NODE_YIELD_ALL: {
             LhatType *inner = infer(c, node->v.jump.value);
-            if (inner == NULL || inner->kind == LHAT_TYPE_UNKNOWN) {
-                return simple(c, LHAT_TYPE_UNKNOWN);
+            if (inner == NULL || inner->kind == LHAT_TYPE_UNKNOWN ||
+                inner->kind == LHAT_TYPE_PENDING) {
+                // 03 の 3.1・3.5、P6: delegating to a still-pending^ inner
+                // expression makes this yieldall^ pending^ too.
+                return simple(c, inner != NULL &&
+                                          inner->kind == LHAT_TYPE_PENDING
+                                      ? LHAT_TYPE_PENDING
+                                      : LHAT_TYPE_UNKNOWN);
             }
             if (inner->kind != LHAT_TYPE_CORO) {
                 report(c, node, LHAT_CHECK_ERR_NOT_COROUTINE);
@@ -2989,7 +3019,8 @@ static LhatType *typeinfo_type(Checker *c)
 // is the one kind of table a member cannot be added to.
 static LhatType *holds_members(Checker *c, const LhatNode *at, LhatType *type)
 {
-    if (type == NULL || type->kind == LHAT_TYPE_UNKNOWN) {
+    if (type == NULL || type->kind == LHAT_TYPE_UNKNOWN ||
+        type->kind == LHAT_TYPE_PENDING) {
         return NULL;  // already reported, or nothing known to report against
     }
     if (type->kind != LHAT_TYPE_TABLE) {
@@ -3028,7 +3059,8 @@ static LhatType *path_table(Checker *c, const LhatNode *node)
             report_named(c, node, LHAT_CHECK_ERR_UNDEFINED, name, length);
             return NULL;
         }
-        if (b->type == NULL || b->type->kind == LHAT_TYPE_UNKNOWN) {
+        if (b->type == NULL || b->type->kind == LHAT_TYPE_UNKNOWN ||
+            b->type->kind == LHAT_TYPE_PENDING) {
             b->type = lhat_type_table(c->result->types);
         }
         b->reached = true;
@@ -3155,8 +3187,12 @@ static void check_define(Checker *c, const LhatNode *node)
         if (unpacked != NULL) {
             actual = unpacked_at(c, unpacked, position);
         } else {
+            // 03 の 3.1・3.5: a target past the values a multiple assignment
+            // actually gave is a gap in inference, not table subtyping's
+            // silence -- there is genuinely nothing here yet, so it is
+            // pending^ rather than unknown^.
             actual = value != NULL ? infer(c, value)
-                                   : simple(c, LHAT_TYPE_UNKNOWN);
+                                   : simple(c, LHAT_TYPE_PENDING);
         }
 
         c->yield_context = outer_yctx;
@@ -3334,7 +3370,8 @@ static void check_import(Checker *c, const LhatNode *node, bool binds)
             return;
         }
         root->reached = true;
-    } else if (root->type == NULL || root->type->kind == LHAT_TYPE_UNKNOWN) {
+    } else if (root->type == NULL || root->type->kind == LHAT_TYPE_UNKNOWN ||
+               root->type->kind == LHAT_TYPE_PENDING) {
         root->type = lhat_type_table(c->result->types);
     }
 
@@ -3410,7 +3447,8 @@ static void check_require_stmt(Checker *c, const LhatNode *node)
             return;
         }
         root->reached = true;
-    } else if (root->type == NULL || root->type->kind == LHAT_TYPE_UNKNOWN) {
+    } else if (root->type == NULL || root->type->kind == LHAT_TYPE_UNKNOWN ||
+               root->type->kind == LHAT_TYPE_PENDING) {
         root->type = lhat_type_table(c->result->types);
     }
 
@@ -3507,6 +3545,11 @@ static const LhatTypeMember *member_named(const LhatType *type,
 // because the loop has no member access written in it to infer.
 static LhatType *walk_produce(Checker *c, const LhatNode *at, LhatType *over)
 {
+    if (over != NULL && over->kind == LHAT_TYPE_PENDING) {
+        // 03 の 3.1・3.5、P6: walking a still-pending^ expression makes the
+        // element type pending^ too, not merely unknown^.
+        return simple(c, LHAT_TYPE_PENDING);
+    }
     if (over == NULL || over->kind == LHAT_TYPE_UNKNOWN ||
         over->kind == LHAT_TYPE_ANY) {
         return simple(c, LHAT_TYPE_UNKNOWN);
@@ -3519,8 +3562,12 @@ static LhatType *walk_produce(Checker *c, const LhatNode *at, LhatType *over)
     if (written != NULL) {
         // 16.3 lets a written iterate win, so this comes before the built-in.
         LhatType *answer = written->type;
-        if (answer == NULL || answer->kind == LHAT_TYPE_UNKNOWN) {
-            return simple(c, LHAT_TYPE_UNKNOWN);
+        if (answer == NULL || answer->kind == LHAT_TYPE_UNKNOWN ||
+            answer->kind == LHAT_TYPE_PENDING) {
+            return simple(c, answer != NULL &&
+                                      answer->kind == LHAT_TYPE_PENDING
+                                  ? LHAT_TYPE_PENDING
+                                  : LHAT_TYPE_UNKNOWN);
         }
         if (answer->kind != LHAT_TYPE_FUNC || answer->v.func.result == NULL ||
             answer->v.func.result->kind != LHAT_TYPE_CORO) {
@@ -3601,7 +3648,7 @@ static void check_focus_in(Checker *c, const LhatNode *node)
 static void check_disposable(Checker *c, const LhatNode *at, LhatType *type)
 {
     if (type == NULL || type->kind == LHAT_TYPE_UNKNOWN ||
-        type->kind == LHAT_TYPE_ANY) {
+        type->kind == LHAT_TYPE_PENDING || type->kind == LHAT_TYPE_ANY) {
         return;
     }
 
@@ -3611,7 +3658,8 @@ static void check_disposable(Checker *c, const LhatNode *at, LhatType *type)
         if (m->name_length != 7 || memcmp(m->name, "dispose", 7) != 0) {
             continue;
         }
-        if (m->type == NULL || m->type->kind == LHAT_TYPE_UNKNOWN) {
+        if (m->type == NULL || m->type->kind == LHAT_TYPE_UNKNOWN ||
+            m->type->kind == LHAT_TYPE_PENDING) {
             return;
         }
         if (m->type->kind != LHAT_TYPE_FUNC || m->type->v.func.result != NULL) {
@@ -3699,7 +3747,7 @@ static void collect_bindings(Checker *c, const LhatNode *statements)
                     node_name(c, root, &name, &length) &&
                     scope_find(c->scope, name, length) == NULL) {
                     scope_add(c->scope, name, length,
-                              simple(c, LHAT_TYPE_UNKNOWN), root->offset);
+                              simple(c, LHAT_TYPE_PENDING), root->offset);
                 }
                 continue;
             }
@@ -3720,7 +3768,7 @@ static void collect_bindings(Checker *c, const LhatNode *statements)
                 already->from_session = false;
                 continue;
             }
-            scope_add(c->scope, name, length, simple(c, LHAT_TYPE_UNKNOWN),
+            scope_add(c->scope, name, length, simple(c, LHAT_TYPE_PENDING),
                       target_name_node(target)->offset);
         }
     }
@@ -3957,8 +4005,19 @@ static void check_statement(Checker *c, const LhatNode *node)
             c->saw_self_call = enclosing_self_call || recursive;
 
             if (c->declared_result != NULL) {
-                expect(c, node, value, c->declared_result,
-                       LHAT_CHECK_ERR_MISMATCH);
+                // 03 の 7 章、P6: unlike expect()'s other callers, this one
+                // runs while the subroutine being defined is still open --
+                // a call to a not-yet-checked partner in a mutually
+                // recursive pair is pending^ here for a reason that has
+                // nothing to do with strict, and forgiving it is what lets
+                // 03 の 3.4's "no forward declaration needed" hold under
+                // strict too. lhat_type_conforms_strict belongs where a
+                // value's own checking has already finished (this one's
+                // declared result has not) -- this call stays on the plain,
+                // always-lenient lhat_type_conforms instead.
+                if (!lhat_type_conforms(value, c->declared_result)) {
+                    report(c, node, LHAT_CHECK_ERR_MISMATCH);
+                }
                 break;
             }
 
@@ -3970,7 +4029,8 @@ static void check_statement(Checker *c, const LhatNode *node)
             // expression the answer may not depend on it at all --
             // 'return^ "a" .. f(n).to_s()' is string^ whatever f answers --
             // and dropping it would lose that.
-            if (recursive && (value == NULL || value->kind == LHAT_TYPE_UNKNOWN)) {
+            if (recursive && (value == NULL || value->kind == LHAT_TYPE_UNKNOWN ||
+                              value->kind == LHAT_TYPE_PENDING)) {
                 break;
             }
             // 13.2: a return^ with an expression carries a value, and a call

@@ -46,6 +46,14 @@ typedef enum {
     LHAT_TYPE_UNION,       // A | B  (13.5)
     LHAT_TYPE_INTERSECT,   // A & B  (14.5)
 
+    // A gap in inference specifically: a seed placed before a signature or a
+    // mutually recursive partner has been checked, waiting to be replaced
+    // once that checking finishes. 03 の 3.1・3.5、P6: strict reports this
+    // one if it survives to a place a concrete type was wanted, unlike
+    // UNKNOWN above, which also covers table subtyping's silence, computed
+    // keys, and other cases with nothing to report even under strict.
+    LHAT_TYPE_PENDING,
+
     LHAT_TYPE_KIND_COUNT
 } LhatTypeKind;
 
@@ -247,6 +255,21 @@ LhatType *lhat_type_intersect(LhatTypeArena *arena, LhatType *a, LhatType *b);
 // question an annotation asks, and is^ asks the same one, which is why one
 // type expression means one thing wherever it appears.
 bool lhat_type_conforms(const LhatType *value, const LhatType *target);
+
+// 03 の 3.1・3.5: the same question, asked the way strict asks it, and
+// asymmetrically at that. A *value* still pending^ (a mutually recursive
+// partner not yet checked, not buried in a union either -- lhat_type_conforms
+// already refuses that case) is not forgiven here the way it is under the
+// lenient default above; strict reports it instead of leaving it for a
+// runtime check relaxed has not grown yet. A *target* left pending^ is a
+// different thing -- a constraint nobody wrote (an omitted parameter or
+// return annotation, a binding a multiple-assignment left short) -- and
+// stays forgiven, the same as any^. unknown^ itself stays forgiven on
+// either side even under strict -- it covers cases (table subtyping's
+// silence, computed keys, and other spots with nothing to report) that have
+// nothing to do with a gap strict should be closing. Checkers running
+// relaxed keep using lhat_type_conforms.
+bool lhat_type_conforms_strict(const LhatType *value, const LhatType *target);
 
 // Mutual conformance. Used to drop redundant union arms.
 bool lhat_type_equal(const LhatType *a, const LhatType *b);

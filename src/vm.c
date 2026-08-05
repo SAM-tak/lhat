@@ -831,6 +831,7 @@ static LhatRuntimeType *rt_from_checked(LhatHeap *heap, const LhatType *type)
     }
     switch (type->kind) {
         case LHAT_TYPE_UNKNOWN:
+        case LHAT_TYPE_PENDING:
         case LHAT_TYPE_ANY:
         case LHAT_TYPE_NONE:
             return NULL;  // asks nothing, same as nothing written (13.7)
@@ -976,6 +977,7 @@ static bool type_is_concrete(const LhatType *type)
     }
     switch (type->kind) {
         case LHAT_TYPE_UNKNOWN:
+        case LHAT_TYPE_PENDING:
         case LHAT_TYPE_ANY:
         case LHAT_TYPE_ERROR_KIND:
         case LHAT_TYPE_ERROR_SET:

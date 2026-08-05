@@ -344,9 +344,11 @@ bool lhat_type_conforms(const LhatType *value, const LhatType *target)
     }
 
     // A gap in inference is not a mismatch. Under relaxed it becomes a runtime
-    // check (03 の 3.5); under strict the failure was already reported where
-    // it happened.
-    if (value->kind == LHAT_TYPE_UNKNOWN || target->kind == LHAT_TYPE_UNKNOWN) {
+    // check (03 の 3.5); under strict, lhat_type_conforms_strict is the one
+    // that refuses pending^ -- this function stays lenient for every caller
+    // that has not asked for that.
+    if (value->kind == LHAT_TYPE_UNKNOWN || target->kind == LHAT_TYPE_UNKNOWN ||
+        value->kind == LHAT_TYPE_PENDING || target->kind == LHAT_TYPE_PENDING) {
         return true;
     }
 
@@ -367,13 +369,15 @@ bool lhat_type_conforms(const LhatType *value, const LhatType *target)
     if (value->kind == LHAT_TYPE_UNION) {
         for (const LhatTypeList *arm = value->v.composite.arms; arm != NULL;
              arm = arm->next) {
-            // 03 の 7 章、P6: an arm left unknown^ here is not the gap the
-            // leniency above forgives -- it is typically a mutually
-            // recursive call whose own inference had not run yet, so this
-            // union was never actually checked against anything. Letting it
-            // through the way a bare unknown^ passes everything would hide
-            // the very mismatch this function exists to catch.
-            if (arm->type != NULL && arm->type->kind == LHAT_TYPE_UNKNOWN) {
+            // 03 の 7 章、P6: an arm left pending^ here is not the gap the
+            // leniency above forgives -- it is a mutually recursive call
+            // whose own inference had not run yet, so this union was never
+            // actually checked against anything. Letting it through the way
+            // a bare pending^ passes everything would hide the very
+            // mismatch this function exists to catch. unknown^ arms (table
+            // subtyping's silence and the like) are not this -- they stay
+            // forgiven and fall through to the ordinary per-arm check below.
+            if (arm->type != NULL && arm->type->kind == LHAT_TYPE_PENDING) {
                 return false;
             }
             if (!lhat_type_conforms(arm->type, target)) {
@@ -501,16 +505,57 @@ bool lhat_type_conforms(const LhatType *value, const LhatType *target)
     }
 }
 
+bool lhat_type_conforms_strict(const LhatType *value, const LhatType *target)
+{
+    // NULL means nothing was inferred (a cascade to avoid, not a gap to
+    // report) -- lhat_type_conforms already treats it that way, and strict
+    // has no argument against that reading of it.
+    if (value == NULL || target == NULL) {
+        return true;
+    }
+    // 13.2: NONE is judged by kind alone -- neither any^ nor a gap forgives
+    // it, so it has to be settled before either check below runs.
+    if (value->kind == LHAT_TYPE_NONE || target->kind == LHAT_TYPE_NONE) {
+        return lhat_type_conforms(value, target);
+    }
+    // 13.7: any^ is the top of every value, pending^ included -- a value
+    // whose own type is still unresolved still fits where anything does.
+    // 03 の 3.1・3.5: a *target* left pending^ is a constraint that was
+    // never written -- an omitted parameter or return annotation, a
+    // binding a multiple-assignment left short -- not a gap strict has any
+    // business closing. That is a different question from whether the
+    // *value* itself is pending^, which the check below still asks.
+    if (target->kind == LHAT_TYPE_ANY || target->kind == LHAT_TYPE_PENDING) {
+        return true;
+    }
+    // 03 の 3.1・3.5、P6: a value still pending^ here -- inference that had
+    // somewhere left to run but did not -- is exactly the gap strict exists
+    // to report, unlike unknown^ (lhat_type_conforms's leniency for that one
+    // stands even here).
+    if (value->kind == LHAT_TYPE_PENDING) {
+        return false;
+    }
+    return lhat_type_conforms(value, target);
+}
+
 bool lhat_type_equal(const LhatType *a, const LhatType *b)
 {
-    // 03 の 7 章、P6: lhat_type_conforms treats unknown^ as fitting anywhere
-    // -- a gap in inference, not a claim about sameness. Two-way conforms
-    // would call unknown^ "equal" to whatever it is compared against, which
-    // is what let append_arms (build_composite) mistake an unknown^ arm for
-    // a duplicate of an arm already in a union and drop it silently.
-    bool a_unknown = a != NULL && a->kind == LHAT_TYPE_UNKNOWN;
-    bool b_unknown = b != NULL && b->kind == LHAT_TYPE_UNKNOWN;
-    if (a_unknown != b_unknown) {
+    // 03 の 7 章、P6: lhat_type_conforms treats unknown^ and pending^ as
+    // fitting anywhere -- a gap in inference, not a claim about sameness.
+    // Two-way conforms would call either one "equal" to whatever it is
+    // compared against, which is what let append_arms (build_composite)
+    // mistake a gap arm for a duplicate of an arm already in a union and
+    // drop it silently. The two kinds of gap are also not each other --
+    // "nothing known" and "not checked yet" collapsing together would
+    // reintroduce the same silent drop one level up.
+    bool a_gap = a != NULL &&
+                 (a->kind == LHAT_TYPE_UNKNOWN || a->kind == LHAT_TYPE_PENDING);
+    bool b_gap = b != NULL &&
+                 (b->kind == LHAT_TYPE_UNKNOWN || b->kind == LHAT_TYPE_PENDING);
+    if (a_gap != b_gap) {
+        return false;
+    }
+    if (a_gap && b_gap && a->kind != b->kind) {
         return false;
     }
     return lhat_type_conforms(a, b) && lhat_type_conforms(b, a);
@@ -528,6 +573,7 @@ bool lhat_type_disjoint(const LhatType *a, const LhatType *b)
 
     // Neither a gap in inference nor the top rules anything out.
     if (a->kind == LHAT_TYPE_UNKNOWN || b->kind == LHAT_TYPE_UNKNOWN ||
+        a->kind == LHAT_TYPE_PENDING || b->kind == LHAT_TYPE_PENDING ||
         a->kind == LHAT_TYPE_ANY || b->kind == LHAT_TYPE_ANY) {
         return false;
     }
@@ -719,6 +765,7 @@ const char *lhat_type_kind_name(LhatTypeKind kind)
         case LHAT_TYPE_ERROR_KIND:  return "error kind";
         case LHAT_TYPE_UNION:       return "|";
         case LHAT_TYPE_INTERSECT:   return "&";
+        case LHAT_TYPE_PENDING:     return "pending";
         case LHAT_TYPE_KIND_COUNT:  break;
     }
     return "?";

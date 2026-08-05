@@ -176,6 +176,32 @@ static void test_names(void)
     check_text(&u, "let^ f = f^ n:number^ -> number^ { return^ n + 1 }\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
+
+    // 03 の 3.1・3.5: an unannotated parameter is pending^ itself (a
+    // constraint nobody wrote), and a body that just hands it back leaves
+    // the inferred result pending^ too. That is the same kind of gap P6's
+    // unannotated mutual recursion leaves, and strict reports it the same
+    // way, once it survives to somewhere a concrete type is wanted.
+    LHAT_TEST("an unannotated parameter handed straight back is pending where it lands");
+    check_text(&u,
+               "let^ f = f^ n {\n"
+               "  return^ n\n"
+               "}\n"
+               "let^ x : number^ = f(4)\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
+    unit_dispose(&u);
+
+    // The omitted annotation is a constraint nobody wrote, not a claim that
+    // nothing fits -- so calling through it with an ordinary argument stays
+    // clean under strict, the same as any^ would.
+    LHAT_TEST("but calling through an unannotated parameter is still fine");
+    check_text(&u,
+               "let^ f = f^ n -> number^ {\n"
+               "  return^ 1\n"
+               "}\n"
+               "let^ x : number^ = f(\"anything\")\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
 }
 
 static void test_expressions(void)
