@@ -426,7 +426,7 @@ static void test_results(void)
     LHAT_TEST("and the if^ form of for^ is not a loop to break out of");
     check_text(&u,
                "let^ f = f^ -> number^ {\n"
-               "    repeat^ { for^ x := 1 if^ true^ { break^ } }\n"
+               "    repeat^ { for^ let^ x := 1 if^ true^ { break^ } }\n"
                "}\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_FUNCTION_FALLS_OUT);
     unit_dispose(&u);
@@ -1052,14 +1052,14 @@ static void test_definitions(void)
     LHAT_TEST("with^ accepts a value that has dispose()");
     check_text(&u,
                "let^ C = def^{ self^{ v := 1 }, dispose := p^self^ { } }\n"
-               "with^ c := C.new^() { }\n");
+               "with^ c = C.new^() { }\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
     LHAT_TEST("with^ refuses a value without one");
     check_text(&u,
                "let^ C = def^{ self^{ v := 1 } }\n"
-               "with^ c := C.new^() { }\n");
+               "with^ c = C.new^() { }\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_NOT_DISPOSABLE);
     unit_dispose(&u);
 
@@ -1863,7 +1863,7 @@ static void test_patterns(void)
     LHAT_TEST("a named subject is in scope under its name");
     check_text(&u,
                "let^ f = f^ -> number^ { return^ 0 }\n"
-               "for^ r := f() { when^ 0: let^ n : number^ = r other^: }\n");
+               "for^ let^ r := f() { when^ 0: let^ n : number^ = r other^: }\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
@@ -1879,7 +1879,7 @@ static void test_patterns(void)
     check_text(&u,
                "errordef^ ParseError { Syntax { line : number^ }, Eof }\n"
                "let^ parse = f^ -> number^|ParseError { return^ 0 }\n"
-               "for^ r := parse() {\n"
+               "for^ let^ r := parse() {\n"
                "    when^ is^ ParseError.Syntax:\n"
                "        let^ n : number^ = r.line\n"
                "    other^:\n"
@@ -1891,7 +1891,7 @@ static void test_patterns(void)
     check_text(&u,
                "errordef^ ParseError { Syntax { line : number^ }, Eof }\n"
                "let^ parse = f^ -> number^|ParseError { return^ 0 }\n"
-               "for^ r := parse() {\n"
+               "for^ let^ r := parse() {\n"
                "    when^ is^ ParseError.Eof:\n"
                "        let^ n = r.line\n"
                "    other^:\n"
@@ -1906,7 +1906,7 @@ static void test_patterns(void)
                "errordef^ IOError { NotFound, Denied }\n"
                "let^ open = f^ -> number^|IOError { return^ 0 }\n"
                "let^ use = f^ -> number^ {\n"
-               "    for^ r := open() {\n"
+               "    for^ let^ r := open() {\n"
                "        when^ is^ IOError.NotFound: return^ 0\n"
                "        when^ is^ IOError.Denied: return^ 0\n"
                "        other^: return^ r\n"
@@ -1921,7 +1921,7 @@ static void test_patterns(void)
                "errordef^ IOError { NotFound, Denied }\n"
                "let^ open = f^ -> number^|IOError { return^ 0 }\n"
                "let^ use = f^ -> number^ {\n"
-               "    for^ r := open() {\n"
+               "    for^ let^ r := open() {\n"
                "        when^ is^ IOError.NotFound: return^ 0\n"
                "        other^: return^ r\n"
                "    }\n"

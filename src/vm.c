@@ -2577,8 +2577,12 @@ static const LhatNode *clause_of(const LhatNode *body, LhatClauseKind kind)
 // themselves, so they need a single name to advance, unlike the other forms.
 static const Local *numeric_focus(Compiler *c, const LhatNode *focus)
 {
+    // 8.6改: to^/downto^'s focus is LHAT_NODE_REASSIGN now when it reaches
+    // an existing name (no let^ written) rather than always LHAT_NODE_DEFINE
+    // -- both share the same v.binding shape, so define_target_name below
+    // reads either the same way.
     if (focus == NULL || focus->next != NULL ||
-        focus->kind != LHAT_NODE_DEFINE) {
+        (focus->kind != LHAT_NODE_DEFINE && focus->kind != LHAT_NODE_REASSIGN)) {
         return NULL;
     }
     const LhatNode *target = focus->v.binding.targets;

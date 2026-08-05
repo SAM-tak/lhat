@@ -340,7 +340,7 @@ let^ h = try^ open(p)
 
 ```lhat
 f^ read(p:string^) -> string^|IOError {
-    with^ h := try^ open(p) {
+    with^ h = try^ open(p) {
         return^ try^ h.readAll()
     }
 }

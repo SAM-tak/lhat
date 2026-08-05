@@ -4012,8 +4012,11 @@ static void check_statement(Checker *c, const LhatNode *node)
         case LHAT_NODE_FOR:
         case LHAT_NODE_REPEAT:
         case LHAT_NODE_WITH: {
-            // The focus and the bindings belong to a scope of their own, which
-            // is why 8.6 treats these keywords as introducers.
+            // The focus and the bindings belong to a scope of their own.
+            // with^ still treats its own keyword as the introducer (12 章);
+            // for^'s focus is introduced by let^ written inside it, if any --
+            // otherwise a bare ':=' reaches out through this scope to an
+            // existing name instead of defining one here (8.6改, 16.3改).
             Scope scope;
             scope.bindings = NULL;
             scope.tail = NULL;

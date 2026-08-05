@@ -103,6 +103,13 @@ static void test_statements(void)
                       LHAT_NODE_PARAM);
     parse_dispose(&p);
 
+    LHAT_TEST("let^ with a type annotation also accepts the longer spelling");
+    parse_text(&p, "let^ x : number^ := 1");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    LHAT_CHECK_EQ_INT(first_statement(&p)->v.binding.targets->kind,
+                      LHAT_NODE_PARAM);
+    parse_dispose(&p);
+
     LHAT_TEST("multiple definition binds pairwise");
     parse_text(&p, "let^ a, b = 1, 2");
     LHAT_CHECK_EQ_INT(error_count(&p), 0);
@@ -243,7 +250,7 @@ static void test_statements(void)
     // has both. 16.7 is not against it -- the focus still does not leave;
     // only the value built from it does, which is what an expression is.
     LHAT_TEST("the if^ of a for^ has an expression form too");
-    parse_interactive_text(&p, "for^ n := 5 if^ n > 1: n el^: 0 ;");
+    parse_interactive_text(&p, "for^ let^ n = 5 if^ n > 1: n el^: 0 ;");
     LHAT_CHECK_EQ_INT(error_count(&p), 0);
     {
         const LhatNode *s = first_statement(&p);
@@ -254,7 +261,7 @@ static void test_statements(void)
     parse_dispose(&p);
 
     LHAT_TEST("and its statement form is unaffected");
-    parse_interactive_text(&p, "for^ n := 5 if^ n > 1 { x := n }");
+    parse_interactive_text(&p, "for^ let^ n = 5 if^ n > 1 { x := n }");
     LHAT_CHECK_EQ_INT(error_count(&p), 0);
     LHAT_CHECK_EQ_INT(first_statement(&p)->kind, LHAT_NODE_FOR);
     parse_dispose(&p);
@@ -268,7 +275,7 @@ static void test_statements(void)
     parse_dispose(&p);
 
     LHAT_TEST("but in a file neither does");
-    parse_text(&p, "for^ n := 5 if^ n > 1: n el^: 0 ;");
+    parse_text(&p, "for^ let^ n = 5 if^ n > 1: n el^: 0 ;");
     LHAT_CHECK(p.result.diagnostic_count > 0, "expected a diagnostic");
     LHAT_CHECK_EQ_INT(p.result.diagnostics[0].code,
                       LHAT_PARSE_ERR_BARE_EXPRESSION);
@@ -581,7 +588,7 @@ static void test_statements(void)
     // 8.6: the enclosing construct is the introducer, so ':=' still defines
     // inside for^, with^ and a brace list.
     LHAT_TEST("an introducer keeps ':=' a definition");
-    parse_text(&p, "for^ k := 1 to^ 3 { print(k) }");
+    parse_text(&p, "for^ let^ k = 1 to^ 3 { print(k) }");
     LHAT_CHECK_EQ_INT(error_count(&p), 0);
     LHAT_CHECK_EQ_INT(first_statement(&p)->v.loop.focus->kind, LHAT_NODE_DEFINE);
     parse_dispose(&p);
@@ -664,6 +671,18 @@ static void test_statements(void)
         LHAT_CHECK_EQ_INT(s->kind, LHAT_NODE_WITH);
         LHAT_CHECK_EQ_INT(lhat_node_list_length(s->v.list.items), 2);
         LHAT_CHECK(s->v.list.extra != NULL, "with^ should have a body");
+    }
+    parse_dispose(&p);
+
+    // 8.6: with^ is its own introducer, so '=' defines exactly as ':=' does
+    // -- ':=' is the accepted spelling, not the only one.
+    LHAT_TEST("with^ also accepts '=', and a type annotation");
+    parse_text(&p, "with^ h:table^ = open(\"d\")\n{ }");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    {
+        const LhatNode *s = first_statement(&p);
+        LHAT_CHECK_EQ_INT(s->kind, LHAT_NODE_WITH);
+        LHAT_CHECK_EQ_INT(s->v.list.items->kind, LHAT_NODE_DEFINE);
     }
     parse_dispose(&p);
 }
@@ -1331,7 +1350,7 @@ static void test_loops(void)
     Parse p;
 
     LHAT_TEST("numeric iteration");
-    parse_text(&p, "for^ i := 1 to^ 10 { print(i) }");
+    parse_text(&p, "for^ let^ i = 1 to^ 10 { print(i) }");
     LHAT_CHECK_EQ_INT(error_count(&p), 0);
     {
         const LhatNode *s = first_statement(&p);
@@ -1344,7 +1363,7 @@ static void test_loops(void)
     parse_dispose(&p);
 
     LHAT_TEST("step and downto");
-    parse_text(&p, "for^ i := 10 downto^ 1 step^ 2 { }");
+    parse_text(&p, "for^ let^ i = 10 downto^ 1 step^ 2 { }");
     LHAT_CHECK_EQ_INT(error_count(&p), 0);
     {
         const LhatNode *s = first_statement(&p);
@@ -1372,7 +1391,7 @@ static void test_loops(void)
     parse_dispose(&p);
 
     LHAT_TEST("conditional iteration with next^");
-    parse_text(&p, "for^ i := 1 while^ i < 10 next^ i := i + 1 { }");
+    parse_text(&p, "for^ let^ i = 1 while^ i < 10 next^ i := i + 1 { }");
     LHAT_CHECK_EQ_INT(error_count(&p), 0);
     {
         const LhatNode *s = first_statement(&p);
@@ -1383,7 +1402,7 @@ static void test_loops(void)
     parse_dispose(&p);
 
     LHAT_TEST("until^ is the negated form");
-    parse_text(&p, "for^ i := 1 until^ i \xE2\x89\xA7 10 next^ i.inc() { }");
+    parse_text(&p, "for^ let^ i := 1 until^ i \xE2\x89\xA7 10 next^ i.inc() { }");
     LHAT_CHECK_EQ_INT(error_count(&p), 0);
     LHAT_CHECK_EQ_INT(first_statement(&p)->v.loop.kind, LHAT_FOR_UNTIL);
     parse_dispose(&p);
@@ -1404,7 +1423,7 @@ static void test_loops(void)
 
     // 16.3: this form does not iterate at all.
     LHAT_TEST("for^ ... if^ ... scopes definitions to a condition");
-    parse_text(&p, "for^ i := 1, j := 2 if^ i + j < 10 { print(i) else^: print(j) }");
+    parse_text(&p, "for^ let^ i = 1, let^ j = 2 if^ i + j < 10 { print(i) else^: print(j) }");
     LHAT_CHECK_EQ_INT(error_count(&p), 0);
     {
         const LhatNode *s = first_statement(&p);
@@ -1416,7 +1435,7 @@ static void test_loops(void)
     parse_dispose(&p);
 
     LHAT_TEST("for^ needs a driving clause");
-    parse_text(&p, "for^ i := 1 { }");
+    parse_text(&p, "for^ let^ i = 1 { }");
     LHAT_CHECK(p.result.diagnostic_count > 0, "expected a diagnostic");
     LHAT_CHECK_EQ_INT(p.result.diagnostics[0].code,
                       LHAT_PARSE_ERR_FOR_NEEDS_CLAUSE);
@@ -1459,7 +1478,7 @@ static void test_patterns(void)
     parse_dispose(&p);
 
     LHAT_TEST("the subject may be named");
-    parse_text(&p, "for^ r := parse(s) { when^ 0: a() }");
+    parse_text(&p, "for^ let^ r = parse(s) { when^ 0: a() }");
     LHAT_CHECK_EQ_INT(error_count(&p), 0);
     LHAT_CHECK_EQ_INT(
         first_statement(&p)->v.loop.focus->v.binding.targets->kind,
@@ -1530,7 +1549,7 @@ static void test_patterns(void)
     // The ':' of the expression form has the shape of 16.3's annotation, and
     // what follows is what tells them apart.
     LHAT_TEST("a typed focus is still a typed focus");
-    parse_text(&p, "for^ i:number^ := 1 to^ 3 { print(i) }");
+    parse_text(&p, "for^ let^ i:number^ = 1 to^ 3 { print(i) }");
     LHAT_CHECK_EQ_INT(error_count(&p), 0);
     {
         const LhatNode *target =
@@ -1542,7 +1561,7 @@ static void test_patterns(void)
 
     // A brace with no when^ dispatches on nothing and iterates over nothing.
     LHAT_TEST("a match with no clauses is the missing clause of 16.3");
-    parse_text(&p, "for^ i := 1 { }");
+    parse_text(&p, "for^ let^ i = 1 { }");
     LHAT_CHECK(p.result.diagnostic_count > 0, "expected a diagnostic");
     LHAT_CHECK_EQ_INT(p.result.diagnostics[0].code,
                       LHAT_PARSE_ERR_FOR_NEEDS_CLAUSE);
@@ -1601,7 +1620,7 @@ static void test_loop_clauses(void)
 
     LHAT_TEST("all clauses in order");
     parse_text(&p,
-               "for^ i := 1 to^ 10 {\n"
+               "for^ let^ i := 1 to^ 10 {\n"
                "    prolog^: total := 0\n"
                "    first^: log('start')\n"
                "    main^: total := total + i\n"
@@ -1621,7 +1640,7 @@ static void test_loop_clauses(void)
     parse_dispose(&p);
 
     LHAT_TEST("a body with no clause markers");
-    parse_text(&p, "for^ i := 1 to^ 10 { print(i) }");
+    parse_text(&p, "for^ let^ i := 1 to^ 10 { print(i) }");
     {
         const LhatNode *body = first_statement(&p)->v.loop.body;
         LHAT_CHECK_EQ_INT(lhat_node_list_length(body->v.list.items), 1);
@@ -1632,12 +1651,12 @@ static void test_loop_clauses(void)
     // 9.3: last^ and epilog^ are trailing markers, so the statements before
     // them are unambiguously the body.
     LHAT_TEST("trailing clauses need no main^");
-    parse_text(&p, "for^ i := 1 to^ 10 { print(i) last^: log(i) }");
+    parse_text(&p, "for^ let^ i := 1 to^ 10 { print(i) last^: log(i) }");
     LHAT_CHECK_EQ_INT(error_count(&p), 0);
     parse_dispose(&p);
 
     LHAT_TEST("prolog^ after unlabelled statements needs main^");
-    parse_text(&p, "for^ i := 1 to^ 10 { print(i) prolog^: total := 0 }");
+    parse_text(&p, "for^ let^ i := 1 to^ 10 { print(i) prolog^: total := 0 }");
     LHAT_CHECK(p.result.diagnostic_count > 0, "expected a diagnostic");
     LHAT_CHECK_EQ_INT(p.result.diagnostics[0].code,
                       LHAT_PARSE_ERR_MAIN_REQUIRED);
@@ -1645,7 +1664,7 @@ static void test_loop_clauses(void)
 
     // 9.2: the order is fixed.
     LHAT_TEST("clauses out of order are rejected");
-    parse_text(&p, "for^ i := 1 to^ 10 { epilog^: a() prolog^: b() }");
+    parse_text(&p, "for^ let^ i := 1 to^ 10 { epilog^: a() prolog^: b() }");
     LHAT_CHECK(p.result.diagnostic_count > 0, "expected a diagnostic");
     LHAT_CHECK_EQ_INT(p.result.diagnostics[0].code,
                       LHAT_PARSE_ERR_CLAUSE_ORDER);
@@ -1655,27 +1674,27 @@ static void test_loop_clauses(void)
     // the body. Statements written after prolog^ join it instead, which is
     // the shape this catches.
     LHAT_TEST("a loop carved into clauses needs a body among them");
-    parse_text(&p, "for^ i := 1 to^ 10 { prolog^: total := 0 total := total + i }");
+    parse_text(&p, "for^ let^ i := 1 to^ 10 { prolog^: total := 0 total := total + i }");
     LHAT_CHECK(p.result.diagnostic_count > 0, "expected a diagnostic");
     LHAT_CHECK_EQ_INT(p.result.diagnostics[0].code,
                       LHAT_PARSE_ERR_NO_BODY_CLAUSE);
     parse_dispose(&p);
 
     LHAT_TEST("and a prolog^ on its own is not one");
-    parse_text(&p, "for^ i := 1 to^ 10 { prolog^: total := 0 }");
+    parse_text(&p, "for^ let^ i := 1 to^ 10 { prolog^: total := 0 }");
     LHAT_CHECK(p.result.diagnostic_count > 0, "expected a diagnostic");
     LHAT_CHECK_EQ_INT(p.result.diagnostics[0].code,
                       LHAT_PARSE_ERR_NO_BODY_CLAUSE);
     parse_dispose(&p);
 
     LHAT_TEST("but last^ is a body clause and settles it");
-    parse_text(&p, "for^ i := 1 to^ 10 { prolog^: total := 0 last^: log(i) }");
+    parse_text(&p, "for^ let^ i := 1 to^ 10 { prolog^: total := 0 last^: log(i) }");
     LHAT_CHECK_EQ_INT(error_count(&p), 0);
     parse_dispose(&p);
 
     // Braces with no clause heading are an implicit main^, empty ones too.
     LHAT_TEST("and braces with no clause at all are the body");
-    parse_text(&p, "for^ i := 1 to^ 10 { }");
+    parse_text(&p, "for^ let^ i := 1 to^ 10 { }");
     LHAT_CHECK_EQ_INT(error_count(&p), 0);
     parse_dispose(&p);
 
@@ -1712,13 +1731,13 @@ static void test_loop_clauses(void)
     // first^ -- which is where it has to be written.
     LHAT_TEST("pre^ takes its place between prolog^ and first^");
     parse_text(&p,
-               "for^ i := 1 to^ 10 { prolog^: a() pre^: b() first^: c() "
+               "for^ let^ i := 1 to^ 10 { prolog^: a() pre^: b() first^: c() "
                "main^: d() }");
     LHAT_CHECK_EQ_INT(error_count(&p), 0);
     parse_dispose(&p);
 
     LHAT_TEST("premain^ is the same clause");
-    parse_text(&p, "for^ i := 1 to^ 10 { premain^: b() }");
+    parse_text(&p, "for^ let^ i := 1 to^ 10 { premain^: b() }");
     LHAT_CHECK_EQ_INT(error_count(&p), 0);
     {
         const LhatNode *body = first_statement(&p)->v.loop.body;
@@ -1728,7 +1747,7 @@ static void test_loop_clauses(void)
     parse_dispose(&p);
 
     LHAT_TEST("pre^ after main^ is out of order");
-    parse_text(&p, "for^ i := 1 to^ 10 { main^: a() pre^: b() }");
+    parse_text(&p, "for^ let^ i := 1 to^ 10 { main^: a() pre^: b() }");
     LHAT_CHECK(p.result.diagnostic_count > 0, "expected a diagnostic");
     LHAT_CHECK_EQ_INT(p.result.diagnostics[0].code,
                       LHAT_PARSE_ERR_CLAUSE_ORDER);
@@ -1755,21 +1774,21 @@ static void test_loop_clauses(void)
     // 16.4 makes to^ and downto^ sugar for a while^ that already carries a
     // next^ of its own, so writing another is the same mistake.
     LHAT_TEST("nor does to^");
-    parse_text(&p, "for^ i := 1 to^ 10 next^ i := i + 1 { main^: a() }");
+    parse_text(&p, "for^ let^ i := 1 to^ 10 next^ i := i + 1 { main^: a() }");
     LHAT_CHECK(p.result.diagnostic_count > 0, "expected a diagnostic");
     LHAT_CHECK_EQ_INT(p.result.diagnostics[0].code,
                       LHAT_PARSE_ERR_NEXT_NOT_HERE);
     parse_dispose(&p);
 
     LHAT_TEST("nor downto^");
-    parse_text(&p, "for^ i := 10 downto^ 1 next^ i := i - 1 { main^: a() }");
+    parse_text(&p, "for^ let^ i := 10 downto^ 1 next^ i := i - 1 { main^: a() }");
     LHAT_CHECK(p.result.diagnostic_count > 0, "expected a diagnostic");
     LHAT_CHECK_EQ_INT(p.result.diagnostics[0].code,
                       LHAT_PARSE_ERR_NEXT_NOT_HERE);
     parse_dispose(&p);
 
     LHAT_TEST("but while^ and until^ are what it is for");
-    parse_text(&p, "for^ i := 1 while^ i < 3 next^ i := i + 1 { main^: a() }");
+    parse_text(&p, "for^ let^ i := 1 while^ i < 3 next^ i := i + 1 { main^: a() }");
     LHAT_CHECK_EQ_INT(error_count(&p), 0);
     parse_dispose(&p);
 

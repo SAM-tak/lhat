@@ -334,7 +334,7 @@ Memo.md L177 のとおり。文の側では短縮形を使わない。
 ```lhat
 > if^ true^: 1 el^: 2;                    # プロンプトでは 8.2 により答えになる
 1
-> for^ n := 5 if^ n > 1: n el^: 0 ;       # for^ も同じ
+> for^ let^ n = 5 if^ n > 1: n el^: 0 ;   # for^ も同じ
 5
 > for^ 2: when^ 1: "x" other^: "y" ;      # 17 章のマッチも同じ
 "y"
@@ -734,13 +734,18 @@ let^ P = def^{ self^{ w = 5 } }
 
 ```lhat
 { a = 1 }              # 「メンバ a に 1」か「位置指定の要素 a = 1」か決まらない
-for^ i = 1 to^ 10      # 焦点が比較式 i = 1 とも読める（16.2）
-with^ h = open(p)      # 同じ
 ```
 
-テーブルリテラルは位置指定の要素を許し（10.7）、
-`for^` は名前のない焦点を許す（16.2）。
-どちらも `=` の左に式が立ちうるため、真の曖昧性になる。**これらは `:=` のままとする。**
+テーブルリテラルは位置指定の要素を許すため（10.7）、`=` の左に式が立ちうる。
+これは真の曖昧性になる。**これは `:=` のままとする。**
+
+`for^` の焦点が `=` を使えない理由はこれとは別である（16.3改）。
+`let^` を書かなければ `for^` はもう導入子でないため、`i = 1` はただの比較式にしか
+読めず、8.6 の一般規則（`x = 1` は文にならない）がそのまま及ぶ。
+
+`with^`（12 章）は局所変数の定義だけを受け付け、位置指定の要素のような無名の形を
+持たないため、この曖昧性を持たない。`let^` と同じく、`=`（推奨）と `:=`（許容形）の
+どちらも定義になる。
 
 #### 導入子が名前を作る［確定］
 
@@ -750,9 +755,12 @@ with^ h = open(p)      # 同じ
 | --- | --- | --- |
 | `let^ x = 0` | `let^` | 定義 |
 | `x := 1` | なし | 再代入 |
-| `{ a := 1 }` | `{` | メンバの定義 |
-| `for^ i := 1 to^ 10` | `for^` | 焦点の定義（16.3） |
-| `with^ h := open(p)` | `with^` | 束縛の定義（12 章） |
+| `{ a = 1 }` | `{` | メンバの定義 |
+| `for^ let^ i = 1 to^ 10` | `let^` | 焦点の定義。`for^` 自身はもう導入子でない（16.3改） |
+| `for^ let^ i := 1 to^ 10` | `let^` | 許容形。推奨はしない |
+| `for^ i := 1 to^ 10` | なし | 焦点の再代入。既存の外側名を要る（16.3改） |
+| `with^ h = open(p)` | `with^` | 束縛の定義（12 章） |
+| `with^ h := open(p)` | `with^` | 許容形。推奨はしない |
 
 > **`:=` は値を与える。名前を作るかどうかは導入子が決める。**
 
@@ -1153,9 +1161,9 @@ Memo.md L215 のとおり、**すべての繰り返し構文** がこれらの�
 
 - `repeat^ n { … }`、`repeat^ { … }`
 - `repeat^ while^ expr { … }`、`repeat^ until^ expr { … }`
-- `for^ i := 1 to^ 10 { … }`、`for^ i := 10 downto^ 1 { … }`（`step^` つきを含む）
+- `for^ let^ i = 1 to^ 10 { … }`、`for^ let^ i = 10 downto^ 1 { … }`（`step^` つきを含む）
 - `for^ k, v in^ table { … }`
-- `for^ i := 1 while^ expr next^ stmt { … }`、`for^ i := 1 until^ expr next^ stmt { … }`
+- `for^ let^ i = 1 while^ expr next^ stmt { … }`、`for^ let^ i = 1 until^ expr next^ stmt { … }`
 
 **`for^ … if^ … { … }` は繰り返しではないため、これらの節を持てない**（16.3）。
 
@@ -1188,7 +1196,7 @@ Memo.md L210 が「`last^` があると前回の状態を保存しておく必�
 その時点でループ変数は、条件を満たさなかった値になっている。
 
 ```lhat
-for^ i := 1 to^ 10 {
+for^ let^ i = 1 to^ 10 {
     last^:
         log(i)      # 10 でなければならない。11 ではない
 }
@@ -1259,7 +1267,7 @@ for^ i := 1 to^ 10 {
 したがって妥当な最後の要素は **現在の反復の値** である。
 
 ```lhat
-for^ i := 1 to^ 10 {
+for^ let^ i = 1 to^ 10 {
     main^:
         if^ i = 5 { break^ }
     last^:
@@ -2103,8 +2111,8 @@ op^.. := 5                                      # 誤り。関数ですらない
 `with^` は **局所変数の定義だけ** を受け付ける。
 
 ```lhat
-with^ r := open("data")
-with^ w := create("out")
+with^ r = open("data")
+with^ w = create("out")
 {
     copy(r, w)
 }
@@ -2113,7 +2121,7 @@ with^ w := create("out")
 定義された変数が指すオブジェクトは、**`dispose()` メソッドを持つことが求められる**。
 
 ```lhat
-with^ bar := Boo()   # error : Boo は dispose を持たない
+with^ bar = Boo()   # error : Boo は dispose を持たない
 ```
 
 Memo.md L371–L372 の記述に対応する。
@@ -2148,7 +2156,7 @@ Memo.md L371–L372 の記述に対応する。
 `finally^` はブロックの内側の最後の節だからである。
 
 ```lhat
-with^ r := open("data")
+with^ r = open("data")
 {
     process(r)
 finally^:
@@ -3150,7 +3158,7 @@ let^ _^, v = unpack^ pair()
 - 分解束縛の各位置（13.10）
 - 引数（13.1）— 署名に合わせるが本体で使わないもの。`override^` で効く
 - `for^ … in^` の焦点（16.3）— 対の片方だけ要る場合
-- `with^ _^ := open() { … }` — 名前は要らないが 12.6 の破棄は要る
+- `with^ _^ = open() { … }` — 名前は要らないが 12.6 の破棄は要る
 
 #### 読むと誤り
 
@@ -5006,7 +5014,7 @@ yieldable な手続きの呼び出しには、その効果がない。
 ```lhat
 yieldall^ a()            # 委譲する
 let^ c = a()             # コルーチンとして受け取る
-with^ c := a() { … }     # 受け取り、抜けるときに破棄する（12.6）
+with^ c = a() { … }     # 受け取り、抜けるときに破棄する（12.6）
 ```
 
 ```text
@@ -5385,7 +5393,7 @@ for^ <焦点> <駆動節> { … }
 | `if^` | 反復せず、条件判定に1回だけ使う |
 | `when^` 節群 | 値を分岐に掛ける（パターンマッチ。17 章） |
 
-この理解がないと、`for^ x := 1 if^ c { … }` が例外にしか見えない。
+この理解がないと、`for^ let^ x = 1 if^ c { … }` が例外にしか見えない。
 実際には5つの形すべてが1つの原理から出ている。
 
 **`for^` という語は他のどの言語でも「ループ」を意味する。**
@@ -5397,8 +5405,8 @@ for^ <焦点> <駆動節> { … }
 焦点に名前を付けるかどうかは任意である。付けなければ `it^` で参照する。
 
 ```lhat
-for^ i := 1 to^ 10 { print(i) }     # 焦点に i と名付けた
-for^ 1 to^ 10 { print(it^) }        # 名付けていないので it^
+for^ let^ i = 1 to^ 10 { print(i) }  # 焦点に i と名付けた
+for^ 1 to^ 10 { print(it^) }         # 名付けていないので it^
 ```
 
 Memo.md L330 が既にこの形を用いている。
@@ -5409,25 +5417,54 @@ for^i+t[3]: when^t[1] to^t[2]: it^ other^ nil^
 
 ここでの `it^` は `for^` が導入した焦点そのものを指す。
 
-名前を付ける場合、初期値を伴う束縛は `:=` で書く（16.3）。
+名前を付けて新規に定義する場合は `let^` を書く（16.3改。8.6と同じ規則）。
+`let^` を書かなければ、`:=` は既存の外側の名前への再代入になる。
 
-### 16.3 `for^` の形［確定］
+### 16.3 `for^` の形［確定・16.3改で焦点の宣言規則を変更］
 
 #### 数値の反復
 
 ```lhat
-for^ i := 1 to^ 10 { … }
-for^ i := 1 to^ 10 step^ 2 { … }
-for^ i := 10 downto^ 1 { … }
-for^ i := 10 downto^ 1 step^ 2 { … }
+for^ let^ i = 1 to^ 10 { … }
+for^ let^ i = 1 to^ 10 step^ 2 { … }
+for^ let^ i = 10 downto^ 1 { … }
+for^ let^ i = 10 downto^ 1 step^ 2 { … }
 ```
 
 Memo.md L243–L247 の `from^` は **採らない**。
-`i := 1` と書くことで、初期値を伴う束縛は `:=` という規則が言語全体で保たれる。
+`let^ i = 1` と書くことで、定義は `let^` という 8.6 の規則が `for^` でも保たれる。
 
 ```lhat
-for^ i from^ 1 to^ 10     # 採らない。i が := なしで生まれる唯一の場所になる
+for^ i from^ 1 to^ 10     # 採らない。let^ を素通りする専用の綴りを増やすだけになる
 ```
+
+##### 16.3改 既存の名前を使い回す場合［確定］
+
+`let^` を省いて `:=` だけを書くと、ループの外側にある既存の名前への**再代入**になる。
+新規のループスコープ変数は作られない。存在しない名前を再代入しようとすればエラーになる。
+
+```lhat
+let^ i = 3
+for^ i := 0 while^ i < 5 next^ i := i + 1 { … }   # 外側の i を使い回す
+return^ i                                          # 5 になる（for^ の外の i そのもの）
+```
+
+```lhat
+let^ i = 3
+for^ let^ i := 0 while^ i < 5 next^ i := i + 1 { … }  # for^ 内だけの新しい i
+return^ i                                              # 3 のまま（外側の i は触れない）
+```
+
+`let^` を省いた `=`（`for^ i = 0 to^ 10` など）は、8.6 の一般規則どおり比較として
+読まれ、非合法になる。`for^` はもう独自の導入子ではないため、他の文の位置と同じ
+診断（`'=' compares; write 'x := 1' to reassign or 'let^ x = 1' to make a new name`）
+を受ける。
+
+この規則は `for^ … in^`（16.3 の反復子の節）を除く `for^` のあらゆる形
+（`to^` / `downto^` / `while^` / `until^` / `if^` / `when^` 節群。17.9 のパターンの
+主語も同じ焦点である）に及ぶ。`with^`（12 章）の焦点は対象外で、
+これまでどおり導入子として振る舞う。`in^` は初期値を持たないため、
+`:=`/`let^` のどちらとも無縁の独自の束縛規則に従う（`check_focus_in`）。
 
 `in^` に `:=` がないのは初期値が存在しないためであり、例外ではない。
 
@@ -5563,8 +5600,8 @@ for^ x in^ t { … }                                      # 誤り
 #### 条件つき反復
 
 ```lhat
-for^ i := 1 while^ i < 10 next^ i := i + 1 { … }
-for^ i := 1 until^ i ≧ 10 next^ i.inc() { … }
+for^ let^ i = 1 while^ i < 10 next^ i := i + 1 { … }
+for^ let^ i = 1 until^ i ≧ 10 next^ i.inc() { … }
 ```
 
 `next^` は毎回の反復の後に実行される文である。省略できる。
@@ -5579,8 +5616,8 @@ Memo.md L259 は `next^ i -> i + 1` と書いているが、
 `next^` に動かす対象がない。書けば構文の誤りとする。
 
 ```lhat
-for^ i := 1 while^ i < 3 next^ i := i + 1 { … }   # これが next^ の場
-for^ i := 1 to^ 3 next^ i := i + 1 { … }          # 誤り
+for^ let^ i = 1 while^ i < 3 next^ i := i + 1 { … }   # これが next^ の場
+for^ let^ i = 1 to^ 3 next^ i := i + 1 { … }          # 誤り
 for^ k, v in^ t next^ … { … }                     # 誤り
 repeat^3 next^ … { … }                            # 誤り（16.5）
 ```
@@ -5593,7 +5630,7 @@ repeat^3 next^ … { … }                            # 誤り（16.5）
 #### 反復せず1回だけ使う
 
 ```lhat
-for^ i := 1, j:int^ := 2 if^ i + j < 10 { … }
+for^ let^ i = 1, let^ j:int^ = 2 if^ i + j < 10 { … }
 ```
 
 **これは繰り返しではない。** 次と等価である。
@@ -5614,7 +5651,7 @@ do^{
 別々の呼び出しが絡む場合には効かない。
 
 複数の定義をカンマで並べられる。
-`for^ k, v in^ t` のカンマとは役割が違うが、`:=` の有無で判別できる。
+`for^ k, v in^ t` のカンマとは役割が違うが、`in^` が続くかどうかで判別できる。
 
 `elseif^` `else^` の節からも焦点が見える。
 
@@ -5625,7 +5662,7 @@ do^{
 5.1 と同じく、`{` が文の形を、`:` が式の形を開く。
 
 ```lhat
-let^ i = for^ n := f(1) if^ n > 1: n el^: 0 ;
+let^ i = for^ let^ n = f(1) if^ n > 1: n el^: 0 ;
 ```
 
 16.1 のとおり **`for^` は続く節の形をそのまま採る**。
@@ -5653,7 +5690,7 @@ Memo.md L245 は `for^i from^10 to^1` を降順（Lua の `for i=10,1,-1` 相当
 推論すると **空の範囲を表現できなくなる**。
 
 ```lhat
-for^ i := 1 to^ n { … }
+for^ let^ i = 1 to^ n { … }
 ```
 
 `n` が `0` のとき、推論する設計では `1 > 0` なので降順と解釈され、
@@ -5676,19 +5713,21 @@ Memo.md L338–L341 が「10を返した後一回で終わってしまう」と�
 数値の反復は条件つき反復への糖衣である。
 
 ```text
-for^ i := A to^ B step^ S      →  for^ i := A while^ i ≦ B next^ i := i + S
-for^ i := A downto^ B step^ S  →  for^ i := A while^ i ≧ B next^ i := i - S
+for^ let^ i = A to^ B step^ S      →  for^ let^ i = A while^ i ≦ B next^ i := i + S
+for^ let^ i = A downto^ B step^ S  →  for^ let^ i = A while^ i ≧ B next^ i := i - S
 ```
 
 原始的な形は **条件つき反復と `in^` の2つ** であり、
 `to^` と `downto^` はその上の糖衣にあたる。
+`let^` を外して既存の名前を使い回す場合も、焦点部分をそのまま置き換えるだけで
+同じ展開が成り立つ（16.3改）。
 
 #### 上限と `step^` は1度だけ評価する［確定］
 
 > **`to^` / `downto^` の上限と `step^` は、繰り返しに入る前に1度だけ評価する。**
 
 ```lhat
-for^ i := 1 to^ t.size() { … }     # size() は1度だけ呼ばれる
+for^ let^ i = 1 to^ t.size() { … }     # size() は1度だけ呼ばれる
 ```
 
 上の展開をそのまま読むと毎回評価されることになるが、
@@ -5701,7 +5740,7 @@ Lua と Pascal が上限と歩幅を1度だけ評価するのも同じ理由に�
 反復ごとに変えたい場合は、それを行う節が別にある。
 
 ```lhat
-for^ i := 1 while^ i ≦ 9 next^ i := i + step { … }
+for^ let^ i = 1 while^ i ≦ 9 next^ i := i + step { … }
 ```
 
 `next^` は反復のたびに実行される **文** であり（16.3）、そこが可変な前進の置き場になる。
@@ -6092,7 +6131,7 @@ Memo.md L186–L199 の形である。綴りの差は 17.4 と 17.5 に記す。
 
 ```lhat
 for^ parse(s) { when^ is^ ParseError.Syntax: report(it^.line) other^: recover() }
-for^ r := parse(s) { when^ is^ ParseError.Syntax: report(r.line) other^: recover() }
+for^ let^ r = parse(s) { when^ is^ ParseError.Syntax: report(r.line) other^: recover() }
 ```
 
 **節の中では主語をこの名前で参照する。** 主語の式そのものを書き直すことはしない。
@@ -6204,7 +6243,7 @@ C、Go、Java（17 未満）、JavaScript の `switch` は値だけを見る。L
 ```lhat
 errordef^ ParseError { Syntax { line : number^, column : number^ }, Eof }
 
-for^ r := parse(s) {
+for^ let^ r = parse(s) {
     when^ is^ ParseError.Syntax:
         report(r.line, r.column)
     other^:

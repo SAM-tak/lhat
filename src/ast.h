@@ -63,10 +63,10 @@ typedef enum {
     LHAT_NODE_IF_STMT,
     LHAT_NODE_RETURN,
     LHAT_NODE_BREAK,
-    LHAT_NODE_PANIC,         // panic^ expr              (04 の 11.6改)
+    LHAT_NODE_PANIC,         // panic^ expr                 (04 の 11.6改)
     LHAT_NODE_YIELD,
-    LHAT_NODE_YIELD_ALL,     // yieldall^ expr           (15.8)
-    LHAT_NODE_WITH,          // with^ x := e  ... { ... }   (12 章)
+    LHAT_NODE_YIELD_ALL,     // yieldall^ expr              (15.8)
+    LHAT_NODE_WITH,          // with^ x = e  ... { ... }    (12 章)
     LHAT_NODE_FOR,           // for^ ...                    (16 章)
     LHAT_NODE_REPEAT,        // repeat^ ...                 (16.5)
     LHAT_NODE_LOOP_CLAUSE,   // prolog^: first^: last^: ... (9 章)

@@ -302,6 +302,13 @@ static void test_names(void)
     CHECK_INTEGER(&r, 1);
     run_dispose(&r);
 
+    // 8.6: let^ present means define regardless of which spelling follows --
+    // ':=' after let^ is accepted as a convenience, not a different meaning.
+    LHAT_TEST("let^ also defines with ':='");
+    run_text(&r, "let^ x := 1\nreturn^ x\n");
+    CHECK_INTEGER(&r, 1);
+    run_dispose(&r);
+
     LHAT_TEST("an unknown name does not compile");
     run_text(&r, "return^ nowhere\n");
     LHAT_CHECK_EQ_INT(r.compiled, LHAT_COMPILE_UNDEFINED);
@@ -1058,7 +1065,7 @@ static void test_for(void)
     LHAT_TEST("to^ counts up and includes the limit");
     run_text(&r,
              "let^ total = 0\n"
-             "for^ i := 1 to^ 4 { total := total + i }\n"
+             "for^ let^ i := 1 to^ 4 { total := total + i }\n"
              "return^ total\n");
     CHECK_INTEGER(&r, 10);
     run_dispose(&r);
@@ -1068,7 +1075,7 @@ static void test_for(void)
     LHAT_TEST("a limit below the start runs none");
     run_text(&r,
              "let^ x = 0\n"
-             "for^ i := 1 to^ 0 { x := x + 1 }\n"
+             "for^ let^ i := 1 to^ 0 { x := x + 1 }\n"
              "return^ x\n");
     CHECK_INTEGER(&r, 0);
     run_dispose(&r);
@@ -1076,7 +1083,7 @@ static void test_for(void)
     LHAT_TEST("downto^ counts down");
     run_text(&r,
              "let^ seen = 0\n"
-             "for^ i := 3 downto^ 1 { seen := seen * 10 + i }\n"
+             "for^ let^ i := 3 downto^ 1 { seen := seen * 10 + i }\n"
              "return^ seen\n");
     CHECK_INTEGER(&r, 321);
     run_dispose(&r);
@@ -1086,14 +1093,14 @@ static void test_for(void)
     LHAT_TEST("step^ is a positive amount for both directions");
     run_text(&r,
              "let^ up = 0\n"
-             "for^ i := 1 to^ 9 step^ 3 { up := up * 10 + i }\n"
+             "for^ let^ i := 1 to^ 9 step^ 3 { up := up * 10 + i }\n"
              "return^ up\n");
     CHECK_INTEGER(&r, 147);
     run_dispose(&r);
 
     run_text(&r,
              "let^ down = 0\n"
-             "for^ i := 9 downto^ 1 step^ 3 { down := down * 10 + i }\n"
+             "for^ let^ i := 9 downto^ 1 step^ 3 { down := down * 10 + i }\n"
              "return^ down\n");
     CHECK_INTEGER(&r, 963);
     run_dispose(&r);
@@ -1104,7 +1111,7 @@ static void test_for(void)
     run_text(&r,
              "let^ n = 3\n"
              "let^ x = 0\n"
-             "for^ i := 1 to^ n { n := 100 x := x + 1 }\n"
+             "for^ let^ i := 1 to^ n { n := 100 x := x + 1 }\n"
              "return^ x\n");
     CHECK_INTEGER(&r, 3);
     run_dispose(&r);
@@ -1113,7 +1120,7 @@ static void test_for(void)
     run_text(&r,
              "let^ n = 1\n"
              "let^ x = 0\n"
-             "for^ i := 3 downto^ n { n := -100 x := x + 1 }\n"
+             "for^ let^ i := 3 downto^ n { n := -100 x := x + 1 }\n"
              "return^ x\n");
     CHECK_INTEGER(&r, 3);
     run_dispose(&r);
@@ -1122,7 +1129,7 @@ static void test_for(void)
     run_text(&r,
              "let^ s = 1\n"
              "let^ n = 0\n"
-             "for^ i := 1 to^ 9 step^ s { n := n + 1 s := 3 }\n"
+             "for^ let^ i := 1 to^ 9 step^ s { n := n + 1 s := 3 }\n"
              "return^ n\n");
     CHECK_INTEGER(&r, 9);  // reading s each time round would give three
     run_dispose(&r);
@@ -1130,7 +1137,7 @@ static void test_for(void)
     LHAT_TEST("10 to^ 1 step^ 2 is empty rather than confusing");
     run_text(&r,
              "let^ x = 0\n"
-             "for^ i := 10 to^ 1 step^ 2 { x := x + 1 }\n"
+             "for^ let^ i := 10 to^ 1 step^ 2 { x := x + 1 }\n"
              "return^ x\n");
     CHECK_INTEGER(&r, 0);
     run_dispose(&r);
@@ -1147,7 +1154,7 @@ static void test_for(void)
     LHAT_TEST("while^ tests before the body and next^ runs after it");
     run_text(&r,
              "let^ total = 0\n"
-             "for^ i := 1 while^ i ≦ 4 next^ i := i + 1 { total := total + i }\n"
+             "for^ let^ i := 1 while^ i ≦ 4 next^ i := i + 1 { total := total + i }\n"
              "return^ total\n");
     CHECK_INTEGER(&r, 10);
     run_dispose(&r);
@@ -1155,21 +1162,21 @@ static void test_for(void)
     LHAT_TEST("until^ is the same the other way round");
     run_text(&r,
              "let^ total = 0\n"
-             "for^ i := 1 until^ i > 4 next^ i := i + 1 { total := total + i }\n"
+             "for^ let^ i := 1 until^ i > 4 next^ i := i + 1 { total := total + i }\n"
              "return^ total\n");
     CHECK_INTEGER(&r, 10);
     run_dispose(&r);
 
     LHAT_TEST("the focus is gone after the loop");
-    run_text(&r, "for^ i := 1 to^ 2 { }\nreturn^ i\n");
+    run_text(&r, "for^ let^ i := 1 to^ 2 { }\nreturn^ i\n");
     LHAT_CHECK_EQ_INT(r.compiled, LHAT_COMPILE_UNDEFINED);
     run_dispose(&r);
 
     LHAT_TEST("loops nest");
     run_text(&r,
              "let^ n = 0\n"
-             "for^ i := 1 to^ 3 {\n"
-             "  for^ j := 1 to^ 4 { n := n + 1 }\n"
+             "for^ let^ i := 1 to^ 3 {\n"
+             "  for^ let^ j := 1 to^ 4 { n := n + 1 }\n"
              "}\n"
              "return^ n\n");
     CHECK_INTEGER(&r, 12);
@@ -1234,7 +1241,7 @@ static void test_for(void)
              "  new^ := f^ n { return^ self^{ upto := n } },\n"
              "  iterate := f^self^ {\n"
              "    let^ limit = self^.upto\n"
-             "    return^ p^ { for^ i := 1 to^ limit { yield^ i } }()\n"
+             "    return^ p^ { for^ let^ i := 1 to^ limit { yield^ i } }()\n"
              "  },\n"
              "}\n"
              "let^ total = 0\n"
@@ -1358,13 +1365,13 @@ static void test_for(void)
     LHAT_TEST("if^ uses the focus once and does not repeat");
     run_text(&r,
              "let^ x = 0\n"
-             "for^ i := 1, j := 2 if^ i + j < 10 { x := i + j }\n"
+             "for^ let^ i := 1, let^ j := 2 if^ i + j < 10 { x := i + j }\n"
              "return^ x\n");
     CHECK_INTEGER(&r, 3);
     run_dispose(&r);
 
     LHAT_TEST("and its focus does not escape either");
-    run_text(&r, "for^ i := 1 if^ i > 0 { }\nreturn^ i\n");
+    run_text(&r, "for^ let^ i := 1 if^ i > 0 { }\nreturn^ i\n");
     LHAT_CHECK_EQ_INT(r.compiled, LHAT_COMPILE_UNDEFINED);
     run_dispose(&r);
 
@@ -1372,7 +1379,7 @@ static void test_for(void)
     // anywhere -- 16.1 has for^ take the form its clause does.
     LHAT_TEST("and it answers a value when written with ':'");
     run_text(&r,
-             "let^ x = for^ i := 1, j := 2 if^ i + j < 10: i + j el^: 0 ;\n"
+             "let^ x = for^ let^ i := 1, let^ j := 2 if^ i + j < 10: i + j el^: 0 ;\n"
              "return^ x\n");
     CHECK_INTEGER(&r, 3);
     run_dispose(&r);
@@ -1381,7 +1388,7 @@ static void test_for(void)
     // built from it, which is what an expression is.
     LHAT_TEST("and the focus still does not escape");
     run_text(&r,
-             "let^ x = for^ i := 1 if^ i > 0: i el^: 0 ;\n"
+             "let^ x = for^ let^ i := 1 if^ i > 0: i el^: 0 ;\n"
              "return^ i\n");
     LHAT_CHECK_EQ_INT(r.compiled, LHAT_COMPILE_UNDEFINED);
     run_dispose(&r);
@@ -1390,7 +1397,7 @@ static void test_for(void)
     LHAT_TEST("a loop fills a table");
     run_text(&r,
              "let^ t = { }\n"
-             "for^ i := 1 to^ 4 { t[i] := i * i }\n"
+             "for^ let^ i := 1 to^ 4 { t[i] := i * i }\n"
              "return^ t.3\n");
     CHECK_INTEGER(&r, 9);
     run_dispose(&r);
@@ -1570,7 +1577,7 @@ static void test_loop_clauses(void)
     LHAT_TEST("last^ sees the value the condition last accepted");
     run_text(&r,
              "let^ seen = 0\n"
-             "for^ i := 1 to^ 4 {\n"
+             "for^ let^ i := 1 to^ 4 {\n"
              "  last^:\n"
              "    seen := i\n"
              "}\n"
@@ -1583,7 +1590,7 @@ static void test_loop_clauses(void)
     LHAT_TEST("break^ leaves last^ looking at the current iteration");
     run_text(&r,
              "let^ seen = 0\n"
-             "for^ i := 1 to^ 10 {\n"
+             "for^ let^ i := 1 to^ 10 {\n"
              "  main^:\n"
              "    if^ i = 5 { break^ }\n"
              "  last^:\n"
@@ -1657,7 +1664,7 @@ static void test_loop_clauses(void)
     LHAT_TEST("a closure made in a loop captures the place, not the moment");
     run_text(&r,
              "let^ get = f^ { return^ 0 }\n"
-             "for^ i := 1 to^ 3 {\n"
+             "for^ let^ i := 1 to^ 3 {\n"
              "  get := f^ { return^ i }\n"
              "}\n"
              "return^ get()\n");
@@ -2079,7 +2086,7 @@ static void test_cleanups(void)
     run_text(&r,
              "let^ log = { n := 0 }\n"
              "let^ open = f^ { return^ { dispose := p^ { log.n := 1 } } }\n"
-             "with^ h := open()\n"
+             "with^ h = open()\n"
              "{\n"
              "  log.n := 0\n"
              "}\n"
@@ -2093,7 +2100,7 @@ static void test_cleanups(void)
     run_text(&r,
              "let^ log = { s := 0 }\n"
              "let^ res = f^n { return^ { dispose := p^ { log.s := log.s * 10 + n } } }\n"
-             "with^ a := res(1)\n"
+             "with^ a = res(1)\n"
              "with^ b := res(2)\n"
              "{\n"
              "  log.s := 0\n"
@@ -2108,7 +2115,7 @@ static void test_cleanups(void)
              "let^ log = { n := 0 }\n"
              "let^ open = f^ { return^ { dispose := p^ { log.n := 4 } } }\n"
              "let^ go = p^ {\n"
-             "  with^ h := open()\n"
+             "  with^ h = open()\n"
              "  {\n"
              "    return^ 1\n"
              "  }\n"
@@ -2124,7 +2131,7 @@ static void test_cleanups(void)
     run_text(&r,
              "let^ log = { s := 0 }\n"
              "let^ open = f^ { return^ { dispose := p^ { log.s := log.s * 10 + 2 } } }\n"
-             "with^ h := open()\n"
+             "with^ h = open()\n"
              "{\n"
              "  log.s := 0\n"
              "finally^:\n"
@@ -2138,7 +2145,7 @@ static void test_cleanups(void)
     run_text(&r,
              "let^ open = f^ { return^ { dispose := p^ { }, n := 6 } }\n"
              "let^ seen = 0\n"
-             "with^ h := open()\n"
+             "with^ h = open()\n"
              "{\n"
              "  seen := h.n\n"
              "}\n"
@@ -2148,7 +2155,7 @@ static void test_cleanups(void)
 
     run_text(&r,
              "let^ open = f^ { return^ { dispose := p^ { } } }\n"
-             "with^ h := open()\n"
+             "with^ h = open()\n"
              "{\n"
              "}\n"
              "return^ h\n");
@@ -3371,7 +3378,7 @@ static void test_coroutines(void)
              "    log.n := 3\n"
              "  }\n"
              "}\n"
-             "with^ c := gen()\n"
+             "with^ c = gen()\n"
              "{\n"
              "  c.start()\n"
              "}\n"
@@ -3682,7 +3689,7 @@ static void test_patterns(void)
     LHAT_TEST("a range pattern includes both ends");
     run_text(&r,
              "let^ seen = 0\n"
-             "for^ i := 1 to^ 5 {\n"
+             "for^ let^ i := 1 to^ 5 {\n"
              "  for^ i { when^ 2 to^ 4: seen := seen + 1 other^: }\n"
              "}\n"
              "return^ seen\n");
@@ -3693,7 +3700,7 @@ static void test_patterns(void)
     LHAT_TEST("patterns separated by commas share an arm");
     run_text(&r,
              "let^ hits = 0\n"
-             "for^ i := 1 to^ 6 {\n"
+             "for^ let^ i := 1 to^ 6 {\n"
              "  for^ i { when^ 2, 3, 5: hits := hits + 1 other^: }\n"
              "}\n"
              "return^ hits\n");
@@ -3723,14 +3730,22 @@ static void test_patterns(void)
     LHAT_TEST("and through a name when one is written");
     run_text(&r,
              "let^ x = 0\n"
-             "for^ n := 7 { when^ 7: x := n other^: }\n"
+             "for^ let^ n := 7 { when^ 7: x := n other^: }\n"
              "return^ x\n");
     CHECK_INTEGER(&r, 7);
     run_dispose(&r);
 
     LHAT_TEST("the subject is gone after the match");
-    run_text(&r, "for^ n := 1 { when^ 1: other^: }\nreturn^ n\n");
+    run_text(&r, "for^ let^ n := 1 { when^ 1: other^: }\nreturn^ n\n");
     LHAT_CHECK_EQ_INT(r.compiled, LHAT_COMPILE_UNDEFINED);
+    run_dispose(&r);
+
+    // 8.6改・16.3改: without let^, the subject's name reaches an existing
+    // outer one instead of a fresh one -- the pattern itself still has to
+    // compile against it, not just the body.
+    LHAT_TEST("a bare name reuses an outer subject, patterns included");
+    run_text(&r, "let^ n = 7\nfor^ n := 7 { when^ 7: n := 100 other^: n := 200 }\nreturn^ n\n");
+    CHECK_INTEGER(&r, 100);
     run_dispose(&r);
 
     // 17.4: a type pattern writes is^, since a bare name could be either.
@@ -3767,7 +3782,7 @@ static void test_patterns(void)
     LHAT_TEST("a further test goes inside the arm");
     run_text(&r,
              "let^ x = 0\n"
-             "for^ n := 5 {\n"
+             "for^ let^ n := 5 {\n"
              "  when^ 1 to^ 9:\n"
              "    if^ n > 3 { x := 1 else^: x := 2 }\n"
              "  other^:\n"
@@ -3801,7 +3816,7 @@ static void test_collection(void)
     LHAT_TEST("what the program holds is kept");
     run_text(&r,
              "let^ kept = { }\n"
-             "for^ i := 1 to^ 2000 { kept[i] := { a := i } }\n"
+             "for^ let^ i := 1 to^ 2000 { kept[i] := { a := i } }\n"
              "return^ kept[1500].a\n");
     CHECK_INTEGER(&r, 1500);
     LHAT_CHECK(r.ran.live > 2000, "every table held is still there");
