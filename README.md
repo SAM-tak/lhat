@@ -187,7 +187,7 @@ src/                  The language                        -> lhat.lib
   code.[ch]             Bytecode, chunks and compiled units
   vm.[ch]               Code generation and the machine
   machine.h             The inside of a machine: stack, frames, heap
-  gc.[ch]               The collector: mark and sweep, nothing moves
+  gc.[ch]               The collector: mark and sweep, a step at a time
   value.[ch]            Runtime values
   object.[ch]           Heap values
   port.h                What the language asks of its surroundings

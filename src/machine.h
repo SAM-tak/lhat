@@ -67,8 +67,16 @@ struct LhatMachine {
     // 5.12: what the collector has reached and not yet looked into, threaded
     // through LhatObject.gclist. Empty except while a collection is running.
     LhatObject *gray;
+
+    // Where the cycle has got to (gc.h's LHAT_GC_PAUSE and friends), and
+    // where in the heap's list the sweep is. The sweep is a link rather than
+    // an object so that freeing the one it is on needs no special case; it
+    // is NULL outside LHAT_GC_SWEEP.
+    uint8_t gcstate;
+    LhatObject **sweep;
+
     size_t collected;
-    size_t threshold;   // how many live objects before the next collection
+    size_t threshold;   // how many live objects before the next step
 
     // 05 の 8.6: what L^ answers. The one table nothing has to import, so it
     // is made with the machine and rooted by it rather than by any frame.

@@ -4690,6 +4690,11 @@ static void test_collection(void)
     run_dispose(&r);
 
     // The same loop, holding on to every table. Nothing may be freed.
+    //
+    // 5.12: this is also where a missing write barrier on a table shows up.
+    // The loop runs long enough for `kept` to be black by the time most of
+    // these are written into it, so without the barrier they are never
+    // reached and the sweep takes them while the program still holds them.
     LHAT_TEST("what the program holds is kept");
     run_text(&r,
              "let^ kept = { }\n"
@@ -4727,6 +4732,113 @@ static void test_collection(void)
              "repeat^ 2000 { let^ waste = { a := 1 } }\n"
              "return^ c.resume(nil^)\n");
     CHECK_INTEGER(&r, 7);
+    run_dispose(&r);
+
+    // 5.12: the same for a coroutine that suspends after the collector has
+    // already looked at it. `kept` is what makes that possible -- a heap big
+    // enough that the marking cannot finish inside one step, so the cycle is
+    // really left half done while the program runs. The coroutine is black
+    // by the second yield^, and what that one saves into its registers is
+    // reached only through the barrier.
+    LHAT_TEST("and ones it takes in after the collector has looked at it");
+    run_text(&r,
+             "let^ kept = { }\n"
+             "let^ gen = p^ {\n"
+             "  let^ last = 0\n"
+             "  repeat^ 200 {\n"
+             "    let^ mine = { n := 11 }\n"
+             "    yield^ last\n"
+             "    last := mine.n\n"
+             "  }\n"
+             "}\n"
+             "let^ c = gen()\n"
+             "c.start()\n"
+             "let^ next = 30\n"
+             "for^ let^ i := 1 to^ 2000 {\n"
+             "  kept[i] := { a := i }\n"
+             "  if^ i = next { c.resume(nil^)  next := next + 30 }\n"
+             "}\n"
+             "return^ c.resume(nil^)\n");
+    CHECK_INTEGER(&r, 11);
+    run_dispose(&r);
+
+    // 5.12: and a closed upvalue, which is the other place a value goes that
+    // no register holds. While the upvalue is open the place is a stack slot
+    // and the roots cover it; closed, the upvalue is the only way to what it
+    // holds, and a write to a black one needs the forward barrier. `kept` is
+    // again what keeps a cycle open long enough for the upvalue to be black
+    // when the writes land.
+    LHAT_TEST("a closed upvalue keeps what is written through it");
+    run_text(&r,
+             "let^ kept = { }\n"
+             "let^ put = p^ v { }\n"
+             "let^ read = f^ { return^ 0 }\n"
+             "do^{\n"
+             "  let^ box = { n := 0 }\n"
+             "  put := p^ v { box := v }\n"
+             "  read := f^ { return^ box.n }\n"
+             "}\n"
+             "for^ let^ i := 1 to^ 2000 {\n"
+             "  kept[i] := { a := i }\n"
+             "  put({ n := i })\n"
+             "}\n"
+             "return^ read()\n");
+    CHECK_INTEGER(&r, 2000);
+    run_dispose(&r);
+
+    // 14.12: an overload^ adds an arm to the group already in the definition
+    // it composes with, and that group has been sitting in a table since
+    // long before. 5.12 puts a barrier on that write for the same reason as
+    // the three above -- though unlike them nothing here can make the group
+    // be black at the moment the arm arrives, since a composition happens
+    // once and not in a loop. This pins the composition, not the barrier.
+    LHAT_TEST("an overload group keeps the arms added to an old one");
+    run_text(&r,
+             "let^ kept = { }\n"
+             "let^ Base = def^{ self^{ }, m := f^ x:string^ { return^ 1 } }\n"
+             "let^ Mid = Base .. def^{\n"
+             "  self^{ },\n"
+             "  overload^\n"
+             "  m := f^ x:number^ { return^ x },\n"
+             "}\n"
+             "for^ let^ i := 1 to^ 500 { kept[i] := { a := i } }\n"
+             "let^ Sub = Mid .. def^{\n"
+             "  self^{ },\n"
+             "  overload^\n"
+             "  m := f^ x:bool^ { return^ 3 },\n"
+             "}\n"
+             "return^ Sub.new^().m(7)\n");
+    CHECK_INTEGER(&r, 7);
+    run_dispose(&r);
+
+    // 5.12: collectgarbage() answers for the heap as it is when it is
+    // called, which a cycle already half run does not. So it finishes that
+    // one and then runs another from a standing start -- and 02 の 10.7's
+    // holding back happens in the second, where the drop is visible. Without
+    // the second cycle this coroutine's finally^ would wait for whenever the
+    // collector next came round.
+    LHAT_TEST("collectgarbage answers for the heap as it is, mid-cycle");
+    run_text(&r,
+             "let^ log = { n := 0 }\n"
+             "let^ gen = p^ {\n"
+             "  do^{\n"
+             "    yield^ 1\n"
+             "  finally^:\n"
+             "    log.n := 5\n"
+             "  }\n"
+             "}\n"
+             "let^ outer = p^ {\n"
+             "  let^ drop = p^ {\n"
+             "    let^ c = gen()\n"
+             "    c.start()\n"
+             "  }\n"
+             "  drop()\n"
+             "}\n"
+             "repeat^ 2000 { let^ waste = { a := 1 } }\n"
+             "outer()\n"
+             "L^.collectgarbage()\n"
+             "return^ log.n\n");
+    CHECK_INTEGER(&r, 5);
     run_dispose(&r);
 
     // A string the answer points at has to outlive every collection between

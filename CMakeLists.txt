@@ -53,6 +53,13 @@ target_include_directories(lhat
 )
 target_compile_definitions(lhat PUBLIC LHAT_VERSION="${PROJECT_VERSION}")
 
+# 03 の 5.12: a write barrier that is missing does not fail where it is
+# missing. The object is freed while still live and the program reads it back
+# some time later, somewhere else -- so the collector checks its own invariant
+# outright wherever that can be paid for. A pass over the heap per cycle, in
+# builds that are already not fast.
+target_compile_definitions(lhat PRIVATE $<$<CONFIG:Debug>:LHAT_GC_PARANOID>)
+
 # ---- What the language asks of its surroundings ---------------------------
 # 05 の 8.9: the seam is the linker. A host with its own allocator, or its own
 # way of reading a unit, copies these files, changes them, and leaves this

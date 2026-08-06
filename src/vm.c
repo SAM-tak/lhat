@@ -4777,6 +4777,26 @@ static LhatUpvalue *capture(Machine *m, LhatValue *slot)
     return upvalue;
 }
 
+// 5.12: everything in this file that writes into a table goes through here.
+// A table is written over and over, so the barrier it takes is the backward
+// one -- the table goes back on the collector's list, to be looked at once
+// the writing has settled, rather than every value being marked as it
+// arrives. Both the key and the value are stored, so both are asked about.
+//
+// One place for the barrier to be missing from rather than nine. A table
+// made in this same instruction is white and the barrier does nothing, so
+// there is no call site that has to know which kind it has.
+static bool set_key(Machine *m, LhatTable *table, LhatValue key,
+                    LhatValue value, bool *refused)
+{
+    if (!lhat_table_set(table, key, value, refused)) {
+        return false;
+    }
+    lhat_gc_barrier_back(m, (LhatObject *)table, key);
+    lhat_gc_barrier_back(m, (LhatObject *)table, value);
+    return true;
+}
+
 // The frame is going, so anything still pointing into it carries its value
 // away. Without this a closure returned from a subroutine would read a slot
 // that has been reused.
@@ -4786,6 +4806,10 @@ static void close_upvalues(Machine *m, const LhatValue *above)
         LhatUpvalue *upvalue = m->open;
         upvalue->closed = *upvalue->location;
         upvalue->location = &upvalue->closed;
+        // 5.12: what was a stack slot the roots covered is now a place the
+        // upvalue itself holds, so a black upvalue has just gained a
+        // reference the collector has not seen.
+        lhat_gc_barrier(m, (LhatObject *)upvalue, upvalue->closed);
         m->open = upvalue->next_open;
         upvalue->next_open = NULL;
     }
@@ -4806,6 +4830,7 @@ static void close_one_upvalue(Machine *m, const LhatValue *slot)
         }
         upvalue->closed = *upvalue->location;
         upvalue->location = &upvalue->closed;
+        lhat_gc_barrier(m, (LhatObject *)upvalue, upvalue->closed);  // 5.12
         *link = upvalue->next_open;
         upvalue->next_open = NULL;
     }
@@ -4869,8 +4894,8 @@ static WalkStep step_table_walk(Machine *m, LhatCoroutine *co, LhatValue *out)
     LhatTable *pair = lhat_table_new(&m->objects);
     bool refused = false;
     if (pair == NULL ||
-        !lhat_table_set(pair, lhat_integer(1), key, &refused) ||
-        !lhat_table_set(pair, lhat_integer(2), value, &refused)) {
+        !set_key(m, pair, lhat_integer(1), key, &refused) ||
+        !set_key(m, pair, lhat_integer(2), value, &refused)) {
         return WALK_NO_MEMORY;
     }
     co->state = LHAT_COROUTINE_SUSPENDED;
@@ -4889,8 +4914,8 @@ static bool set_member(Machine *m, LhatTable *table, const char *name,
         return false;
     }
     bool refused = false;
-    return lhat_table_set(table, lhat_object((LhatObject *)key), value,
-                          &refused) && !refused;
+    return set_key(m, table, lhat_object((LhatObject *)key), value, &refused) &&
+           !refused;
 }
 
 static bool build_environment(Machine *m)
@@ -4982,8 +5007,8 @@ static LhatTable *reach_table(Machine *m, LhatTable *owner, const char *path)
             next = lhat_table_new(&m->objects);
             bool refused = false;
             if (next == NULL ||
-                !lhat_table_set(owner, lhat_object((LhatObject *)key),
-                                lhat_object((LhatObject *)next), &refused) ||
+                !set_key(m, owner, lhat_object((LhatObject *)key),
+                         lhat_object((LhatObject *)next), &refused) ||
                 refused) {
                 return NULL;
             }
@@ -5067,8 +5092,8 @@ bool lhat_machine_register(LhatMachine *machine, const char *module,
         return false;
     }
     bool refused = false;
-    return lhat_table_set(owner, lhat_object((LhatObject *)key), value,
-                          &refused) && !refused;
+    return set_key(machine, owner, lhat_object((LhatObject *)key), value,
+                   &refused) && !refused;
 }
 
 void lhat_machine_dispose(LhatMachine *machine)
@@ -5141,10 +5166,14 @@ LhatRunResult lhat_run(LhatMachine *m, const LhatProto *proto)
     while (pc < chunk->count) {
         // Between instructions, where every live value is in a register, a
         // frame or the open list. Inside one there is a half-built object the
-        // roots do not name yet.
+        // roots do not name yet -- which is also why a write made in the same
+        // instruction that made the object it goes into needs no barrier.
+        //
+        // 5.12: a step, not a collection. What this costs is bounded by
+        // LHAT_GC_STEP_WORK whatever the heap has grown to.
         if (m->objects.count >= m->threshold) {
             frame->pc = pc;
-            lhat_gc_collect(m);
+            lhat_gc_step(m);
         }
 
         // 02 の 10.7: and here is where what the collector held back gets to
@@ -5346,9 +5375,16 @@ LhatRunResult lhat_run(LhatMachine *m, const LhatProto *proto)
                 registers[a] = *frame->closure->upvalues[b]->location;
                 break;
 
-            case LHAT_BC_SETUPVAL:
-                *frame->closure->upvalues[b]->location = registers[a];
+            case LHAT_BC_SETUPVAL: {
+                // 5.12: an open upvalue's place is a stack slot and the
+                // stack is a root, so only a closed one gains anything the
+                // collector has not seen. The barrier asks which it is by
+                // asking whether the upvalue is black.
+                LhatUpvalue *upvalue = frame->closure->upvalues[b];
+                *upvalue->location = registers[a];
+                lhat_gc_barrier(m, (LhatObject *)upvalue, registers[a]);
                 break;
+            }
 
             // 02 の 11.2: '..' is concatenation in general, and strings are
             // the case that is settled. 11.3 leaves the rest to the
@@ -5523,8 +5559,7 @@ LhatRunResult lhat_run(LhatMachine *m, const LhatProto *proto)
                     return finish(m, chunk, LHAT_RUN_TYPE_ERROR, lhat_nil(), at);
                 }
                 bool refused = false;
-                if (!lhat_table_set(table, registers[b], registers[cc],
-                                    &refused)) {
+                if (!set_key(m, table, registers[b], registers[cc], &refused)) {
                     return finish(m, chunk, LHAT_RUN_OUT_OF_MEMORY, lhat_nil(), at);
                 }
                 // nil^ is how 11.3 spells "not there", so it cannot also be
@@ -5556,15 +5591,18 @@ LhatRunResult lhat_run(LhatMachine *m, const LhatProto *proto)
                         return finish(m, chunk, LHAT_RUN_OUT_OF_MEMORY, lhat_nil(), at);
                     }
                     bool refused = false;
-                    if (!lhat_table_set(table, registers[b],
-                                        lhat_object((LhatObject *)group),
-                                        &refused)) {
+                    if (!set_key(m, table, registers[b],
+                                 lhat_object((LhatObject *)group), &refused)) {
                         return finish(m, chunk, LHAT_RUN_OUT_OF_MEMORY, lhat_nil(), at);
                     }
                 }
                 if (!lhat_overload_add(group, registers[cc])) {
                     return finish(m, chunk, LHAT_RUN_OUT_OF_MEMORY, lhat_nil(), at);
                 }
+                // 5.12: `group` may be one already in the table, black since
+                // an earlier step. A group gains arms one at a time, so the
+                // forward barrier is the cheaper of the two.
+                lhat_gc_barrier(m, (LhatObject *)group, registers[cc]);
                 break;
             }
 
@@ -5587,9 +5625,8 @@ LhatRunResult lhat_run(LhatMachine *m, const LhatProto *proto)
                                       at);
                     }
                     bool refused = false;
-                    if (!lhat_table_set(table, registers[b],
-                                        lhat_object((LhatObject *)made),
-                                        &refused)) {
+                    if (!set_key(m, table, registers[b],
+                                 lhat_object((LhatObject *)made), &refused)) {
                         return finish(m, chunk, LHAT_RUN_OUT_OF_MEMORY, lhat_nil(),
                                       at);
                     }
@@ -6024,10 +6061,9 @@ LhatRunResult lhat_run(LhatMachine *m, const LhatProto *proto)
                         LhatValue value = call_arg(registers, a, skip,
                                                    spread_table, before_spread,
                                                    i);
-                        if (!lhat_table_set(
-                                collected,
-                                lhat_integer((int64_t)(i - required + 1)),
-                                value, &refused)) {
+                        if (!set_key(m, collected,
+                                     lhat_integer((int64_t)(i - required + 1)),
+                                     value, &refused)) {
                             return finish(m, chunk, LHAT_RUN_OUT_OF_MEMORY,
                                           lhat_nil(), at);
                         }
@@ -6164,6 +6200,11 @@ LhatRunResult lhat_run(LhatMachine *m, const LhatProto *proto)
 
                 for (size_t i = 0; i < co->register_count; i++) {
                     co->registers[i] = registers[i];
+                    // 5.12: the coroutine has just taken a whole frame's
+                    // worth of the stack into itself. The backward barrier,
+                    // as for a table: one more visit to the coroutine costs
+                    // less than marking every register as it is copied.
+                    lhat_gc_barrier_back(m, (LhatObject *)co, registers[i]);
                 }
                 co->pc = pc;
                 co->sent_into = a;

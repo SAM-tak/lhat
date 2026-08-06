@@ -9,6 +9,11 @@
 
 #include "gc.h"
 
+#ifdef LHAT_GC_PARANOID
+#include <stdio.h>
+#include <stdlib.h>
+#endif
+
 #include "lhatconfig.h"
 #include "machine.h"
 
@@ -142,36 +147,8 @@ void lhat_gc_children(LhatObject **gray, LhatObject *object)
     }
 }
 
-size_t lhat_gc_sweep(LhatHeap *heap, Machine *machine)
-{
-    // The caller has already swapped, so this is the white the marking was
-    // handing out -- and so the colour of everything it did not reach.
-    uint8_t dead = lhat_gc_other_white(heap->white);
-
-    size_t freed = 0;
-    LhatObject **link = &heap->objects;
-    while (*link != NULL) {
-        LhatObject *object = *link;
-        if (object->color != dead) {
-            // Black, or one born since the swap. Either way it lives, and
-            // goes back to white for the collection after this one.
-            object->color = heap->white;
-            link = &object->next;
-            continue;
-        }
-        *link = object->next;
-        // 05 の 8.8: what the host made is the host's to free, and this is
-        // 10.7's last resort for one nothing disposed of by hand.
-        lhat_hostdata_release(object, machine);
-        lhat_object_free(object);
-        heap->count--;
-        freed++;
-    }
-    return freed;
-}
-
 // ---------------------------------------------------------------------------
-// The roots, and one whole cycle
+// The roots, and running a cycle
 // ---------------------------------------------------------------------------
 
 // The roots: everything the program can still reach. Collection happens
@@ -209,18 +186,26 @@ static void mark_roots(Machine *m)
     }
 }
 
-// Follows what the roots reached until nothing grey is left.
+// Takes the object at the head of the gray list and looks into it. The list
+// is the whole of the collector's progress, so one of these is the smallest
+// piece of marking there is.
+static void propagate_one(Machine *m)
+{
+    LhatObject *object = m->gray;
+    m->gray = object->gclist;
+    object->gclist = NULL;
+    // Black before the children rather than after: one that refers to itself
+    // would otherwise be put back on the list it was just taken off, and go
+    // round for as long as the loop cared to.
+    object->color = LHAT_GC_BLACK;
+    lhat_gc_children(&m->gray, object);
+}
+
+// Follows what the roots reached until nothing gray is left.
 static void follow_gray(Machine *m)
 {
     while (m->gray != NULL) {
-        LhatObject *object = m->gray;
-        m->gray = object->gclist;
-        object->gclist = NULL;
-        // Black before the children rather than after: one that refers to
-        // itself would otherwise be put back on the list it was just taken
-        // off, and go round for as long as the loop cared to.
-        object->color = LHAT_GC_BLACK;
-        lhat_gc_children(&m->gray, object);
+        propagate_one(m);
     }
 }
 
@@ -259,9 +244,51 @@ static void hold_pending_disposals(Machine *m)
     }
 }
 
-// 03 の 1.2 keeps Lua's incremental collector as something to borrow later.
-// This is the working form 5.1's order asks for first.
-void lhat_gc_collect(Machine *m)
+#ifdef LHAT_GC_PARANOID
+// The whole of 5.12's invariant, asked outright: no black object refers to a
+// white one. A missing barrier breaks exactly this and breaks it silently --
+// the object is freed while live and the program reads freed memory some
+// time later, somewhere else. So it is worth a pass over the heap in a build
+// that can afford one.
+//
+// lhat_gc_children does the asking. Given a black object it grays every
+// white child, so an empty list afterwards is the invariant holding, and one
+// that is not empty names the object that broke it.
+static void check_invariant(Machine *m)
+{
+    LhatObject *offenders = NULL;
+    for (LhatObject *object = m->objects.objects; object != NULL;
+         object = object->next) {
+        if (!lhat_gc_is_black(object)) {
+            continue;
+        }
+        lhat_gc_children(&offenders, object);
+        if (offenders != NULL) {
+            fprintf(stderr,
+                    "lhat: a black object of kind %d refers to a white one "
+                    "of kind %d -- a write to it went without a barrier\n",
+                    (int)object->kind, (int)offenders->kind);
+            fflush(stderr);
+#ifdef _MSC_VER
+            // Left alone, abort() stops at a dialog with nobody there to
+            // answer it, and a test run reads that as a hang rather than as
+            // the failure it is.
+            _set_abort_behavior(0, _WRITE_ABORT_MSG | _CALL_REPORTFAULT);
+#endif
+            abort();
+        }
+    }
+}
+#endif
+
+// The one part of a cycle the program may not run across. Everything the
+// marking could have missed is settled here.
+//
+// The roots are read a second time, from scratch. They are the one place the
+// program writes to without a barrier -- registers, frames, open upvalues --
+// and L^ has one set of them rather than a thread apiece, so re-reading them
+// is the whole of what Lua does by re-traversing every thread.
+static void atomic(Machine *m)
 {
     mark_roots(m);
     follow_gray(m);
@@ -270,15 +297,148 @@ void lhat_gc_collect(Machine *m)
     hold_pending_disposals(m);
     follow_gray(m);
 
+#ifdef LHAT_GC_PARANOID
+    check_invariant(m);
+#endif
+
     // The swap: from here on a new object is born the other white, so the
     // only things still wearing this one are what the marking did not reach.
     m->objects.white = lhat_gc_other_white(m->objects.white);
-    m->collected += lhat_gc_sweep(&m->objects, m);
+    m->sweep = &m->objects.objects;
+    m->gcstate = LHAT_GC_SWEEP;
+}
 
-    // What survived is the new baseline, so a program holding a lot does not
-    // collect on every allocation. The floor keeps a nearly-empty heap from
-    // triggering the next collection almost immediately.
-    m->threshold = m->objects.count * LHAT_GC_GROWTH_FACTOR + LHAT_GC_MIN_THRESHOLD;
+// Frees up to `budget` objects' worth of the heap, picking up where the last
+// step left off. Answers how many it looked at.
+static size_t sweep_some(Machine *m, size_t budget)
+{
+    uint8_t dead = lhat_gc_other_white(m->objects.white);
+    size_t looked = 0;
+    while (looked < budget && *m->sweep != NULL) {
+        LhatObject *object = *m->sweep;
+        looked++;
+        if (object->color != dead) {
+            // Black, or born since the swap. Either way it lives, and goes
+            // back to white for the cycle after this one.
+            object->color = m->objects.white;
+            m->sweep = &object->next;
+            continue;
+        }
+        *m->sweep = object->next;
+        // 05 の 8.8: what the host made is the host's to free, and this is
+        // 10.7's last resort for one nothing disposed of by hand.
+        lhat_hostdata_release(object, m);
+        lhat_object_free(object);
+        m->objects.count--;
+        m->collected++;
+    }
+    if (*m->sweep == NULL) {
+        m->sweep = NULL;
+        m->gcstate = LHAT_GC_PAUSE;
+    }
+    return looked;
+}
+
+// Reads the roots and leaves the collector following them.
+static void start_cycle(Machine *m)
+{
+    mark_roots(m);
+    m->gcstate = LHAT_GC_PROPAGATE;
+}
+
+// The smallest piece of work there is in whatever phase the cycle is in.
+// Answers how much it did, in objects looked at. `atomic` is the exception
+// and is charged what it is: the pause a step-at-a-time collector still has.
+static size_t single_step(Machine *m)
+{
+    switch (m->gcstate) {
+        case LHAT_GC_PAUSE:
+            start_cycle(m);
+            return 1;
+
+        case LHAT_GC_PROPAGATE:
+            if (m->gray != NULL) {
+                propagate_one(m);
+                return 1;
+            }
+            atomic(m);
+            return LHAT_GC_STEP_WORK;
+
+        case LHAT_GC_SWEEP:
+            return sweep_some(m, LHAT_GC_STEP_WORK);
+    }
+    return 0;
+}
+
+// 03 の 1.2: Lua's incremental collector, borrowed. A step's worth of
+// whichever phase the cycle is in, and then back to the program.
+void lhat_gc_step(Machine *m)
+{
+    size_t done = 0;
+    do {
+        done += single_step(m);
+    } while (done < LHAT_GC_STEP_WORK && m->gcstate != LHAT_GC_PAUSE);
+
+    if (m->gcstate == LHAT_GC_PAUSE) {
+        // A cycle just ended. What survived is the new baseline, so a program
+        // holding a lot does not collect on every allocation, and the floor
+        // keeps a nearly-empty heap from starting the next one at once.
+        m->threshold =
+            m->objects.count * LHAT_GC_GROWTH_FACTOR + LHAT_GC_MIN_THRESHOLD;
+    } else {
+        // In the middle of one, so the next step is due after a fixed number
+        // of allocations rather than at a size of heap.
+        m->threshold = m->objects.count + LHAT_GC_STEP_SIZE;
+    }
+#ifdef LHAT_GC_PARANOID
+    // A step at every instruction, so that a cycle is nearly always half
+    // done and every barrier is on the path something takes. Without this a
+    // small heap finishes its marking inside one step and the barriers are
+    // never reached at all -- which reads as "the tests pass" and means
+    // "the tests do not go there". Lua's HARDMEMTESTS is the same idea.
+    m->threshold = 0;
+#endif
+}
+
+void lhat_gc_collect(Machine *m)
+{
+    // Whatever is under way first: its marking began before the program
+    // dropped whatever it dropped since, so finishing it is not the same as
+    // asking the question now. Then one cycle from a standing start, which
+    // is. Lua's luaC_fullgc takes the same two.
+    while (m->gcstate != LHAT_GC_PAUSE) {
+        single_step(m);
+    }
+    start_cycle(m);
+    while (m->gcstate != LHAT_GC_PAUSE) {
+        single_step(m);
+    }
+    m->threshold =
+        m->objects.count * LHAT_GC_GROWTH_FACTOR + LHAT_GC_MIN_THRESHOLD;
+}
+
+// ---------------------------------------------------------------------------
+// The barriers
+// ---------------------------------------------------------------------------
+
+void lhat_gc_barrier(Machine *m, LhatObject *parent, LhatValue value)
+{
+    if (m->gcstate != LHAT_GC_PROPAGATE || !lhat_gc_is_black(parent)) {
+        return;
+    }
+    lhat_gc_reach(&m->gray, value);
+}
+
+void lhat_gc_barrier_back(Machine *m, LhatObject *parent, LhatValue value)
+{
+    if (m->gcstate != LHAT_GC_PROPAGATE || !lhat_gc_is_black(parent) ||
+        !lhat_is_object(value) || !lhat_gc_is_white(lhat_as_object(value))) {
+        return;
+    }
+    // Back on the list, to be looked at again once the writing has settled.
+    parent->color = LHAT_GC_GRAY;
+    parent->gclist = m->gray;
+    m->gray = parent;
 }
 
 // 02 の 10.7: the next coroutine waiting to have its cleanups run, or NULL.

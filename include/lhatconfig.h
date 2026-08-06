@@ -70,6 +70,18 @@
 #define LHAT_GC_INITIAL_THRESHOLD 256
 #define LHAT_GC_GROWTH_FACTOR 2
 #define LHAT_GC_MIN_THRESHOLD 64
+// 5.12: how much of a cycle one step does, counted in objects looked at --
+// traversed while marking, or passed over while sweeping. The pause a
+// collection costs is this, not the whole heap.
+#define LHAT_GC_STEP_WORK 20
+// And how many allocations go by before the next step. Their **ratio** is
+// what decides whether the collector keeps up with the program: more work per
+// allocation finishes cycles sooner and leaves less floating garbage. The
+// sizes themselves decide only how long one pause is, so they are small --
+// a heap of a hundred objects should be collected over several steps and not
+// in one, or the whole point of stepping is lost on everything but the
+// largest heaps.
+#define LHAT_GC_STEP_SIZE 10
 
 // value
 // 14 章 makes a table both a sequence and a mapping, and one holding itself

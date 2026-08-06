@@ -71,19 +71,59 @@ void lhat_gc_reach(LhatObject **gray, LhatValue value);
 // value would need the barriers 5.12 puts on the machine's own.
 void lhat_gc_children(LhatObject **gray, LhatObject *object);
 
-// Frees what still wears the heap's other white, and turns what survives to
-// the heap's current one. Returns how many objects were freed. **The caller
-// swaps LhatHeap.white before calling this**: what was being handed out
-// during the marking is what the unreached are wearing.
+// ---------------------------------------------------------------------------
+// Running a cycle a piece at a time
+// ---------------------------------------------------------------------------
 //
-// `machine` is what a host value's dispose^ is handed; NULL where the heap
-// cannot hold one, as a chunk's cannot.
-size_t lhat_gc_sweep(LhatHeap *heap, struct LhatMachine *machine);
+// Where a cycle has got to. A step picks up from here and leaves it here.
+//
+//   PAUSE      nothing under way. Everything is white; the next step starts
+//              a cycle by reading the roots.
+//   PROPAGATE  following what the roots reached. The program runs between
+//              steps, so this is where the barriers below have to hold.
+//   SWEEP      walking the heap, freeing what still wears the dead white.
+//              The marking is over, so everything the program can reach is
+//              black or was born since the swap: the barriers are not needed
+//              here, and nothing new can be lost.
+#define LHAT_GC_PAUSE     0
+#define LHAT_GC_PROPAGATE 1
+#define LHAT_GC_SWEEP     2
 
-// One whole cycle: the roots, what they reach, 10.7's holding back, and the
-// sweep. The machine's threshold is set from what survived, so this is also
-// what decides when the next one happens.
+// LHAT_GC_STEP_WORK objects' worth of whatever phase the collector is in,
+// and then back to the program. Also sets when the next step is due.
+void lhat_gc_step(struct LhatMachine *machine);
+
+// A whole cycle, now, and nothing left half done: what the program cannot
+// reach when this is called has been freed when it answers. What 05 の 8.6's
+// collectgarbage() is, and the only thing that gives a pause the size of the
+// heap -- which is why the program has to ask for it by name.
 void lhat_gc_collect(struct LhatMachine *machine);
+
+// ---------------------------------------------------------------------------
+// The barriers
+// ---------------------------------------------------------------------------
+//
+// 5.12: a black object is one the collector is finished with, so a white
+// object that only it refers to would be swept while still live. These are
+// what a write that could do that has to go through. Both are nothing at all
+// unless a cycle is in PROPAGATE and `parent` is actually black.
+//
+// The collector only ever runs at an instruction boundary (5.12's rule about
+// half-built objects), so a write in the same instruction that made `parent`
+// needs neither: nothing has looked at it yet. What needs one is a write to
+// an object that was already there when a step ran -- a table, an upvalue,
+// a suspended coroutine's saved registers, an overload^ group.
+
+// Forward: reaches `value` now, so the black parent is telling the truth
+// again. For a place written once or twice.
+void lhat_gc_barrier(struct LhatMachine *machine, LhatObject *parent,
+                     LhatValue value);
+
+// Backward: puts `parent` back on the gray list to be looked at again. For a
+// place written over and over -- a table -- where marking each value as it
+// arrives would cost more than one more visit to the table at the end.
+void lhat_gc_barrier_back(struct LhatMachine *machine, LhatObject *parent,
+                          LhatValue value);
 
 // 02 の 10.7: the next coroutine the last collection held back, or NULL.
 // Taking it off the list is the caller's signal that it is about to run the
