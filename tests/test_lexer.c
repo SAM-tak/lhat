@@ -764,29 +764,28 @@ static void test_scope_specifiers(void)
 {
     Scan s;
 
-    // Section 8. '$' is the unit; a global table was given up, so nothing
-    // shorter than it is left to name.
-    LHAT_TEST("file and relative scopes");
-    scan_text(&s, "$a $^c $^^^d");
+    // Section 8: two ways of counting. Repeating '$' counts inwards from the
+    // outermost scope, so the depth is an absolute index with the unit at 0;
+    // repeating '^' counts outwards from here.
+    LHAT_TEST("the absolute form counts inwards from the unit");
+    scan_text(&s, "$a $$b $$$c");
     LHAT_CHECK_EQ_INT(token_count(&s), 6);
     LHAT_CHECK_EQ_INT(s.tokens[0].v.scope.kind, LHAT_SCOPE_FILE);
-    LHAT_CHECK_EQ_INT(s.tokens[2].v.scope.kind, LHAT_SCOPE_RELATIVE);
+    LHAT_CHECK_EQ_INT(s.tokens[0].v.scope.depth, 0);
+    LHAT_CHECK_EQ_INT(s.tokens[2].v.scope.kind, LHAT_SCOPE_FILE);
     LHAT_CHECK_EQ_INT(s.tokens[2].v.scope.depth, 1);
-    LHAT_CHECK_EQ_INT(s.tokens[4].v.scope.kind, LHAT_SCOPE_RELATIVE);
-    LHAT_CHECK_EQ_INT(s.tokens[4].v.scope.depth, 3);
+    LHAT_CHECK_EQ_INT(s.tokens[4].v.scope.kind, LHAT_SCOPE_FILE);
+    LHAT_CHECK_EQ_INT(s.tokens[4].v.scope.depth, 2);
     LHAT_CHECK_EQ_INT(s.tokens[1].kind, LHAT_TOKEN_IDENT);
     scan_dispose(&s);
 
-    // '$$' was the unit while '$' was a global. With the global gone the
-    // doubled sigil is nothing at all -- the second '$' is not a name.
-    LHAT_TEST("'$$' is no longer a specifier");
-    scan_text(&s, "$$b");
-    LHAT_CHECK(s.lexer.diagnostic_count > 0, "reported");
-    if (s.lexer.diagnostic_count > 0) {
-        // Named, so a reader is told which sigil moved rather than left to
-        // read "a sigil with no name after it" about a '$' that has one.
-        LHAT_CHECK_EQ_INT(s.lexer.diagnostics[0].code, LHAT_ERR_SCOPE_DOUBLED);
-    }
+    LHAT_TEST("and the relative form outwards from here");
+    scan_text(&s, "$^c $^^^d");
+    LHAT_CHECK_EQ_INT(token_count(&s), 4);
+    LHAT_CHECK_EQ_INT(s.tokens[0].v.scope.kind, LHAT_SCOPE_RELATIVE);
+    LHAT_CHECK_EQ_INT(s.tokens[0].v.scope.depth, 1);
+    LHAT_CHECK_EQ_INT(s.tokens[2].v.scope.kind, LHAT_SCOPE_RELATIVE);
+    LHAT_CHECK_EQ_INT(s.tokens[2].v.scope.depth, 3);
     scan_dispose(&s);
 
     LHAT_TEST("the sigil must be glued to the name");

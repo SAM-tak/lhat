@@ -300,20 +300,39 @@ static const Local *find_local_at(const Compiler *c, const char *name,
     return NULL;
 }
 
-// Where a specifier says to start looking. 01 の 8 章: '$^' steps out of the
-// scope the name was written in, '$^^' out of that one too, and '$' goes
-// straight to the unit. Crossing into an enclosing subroutine spends every
-// scope still open in this one plus its body's own, since 5.4 makes that
-// body one scope the way any block is.
+// Where a specifier says to start looking, counted either way. 01 の 8 章:
+// '$^' steps out of the scope the name was written in and '$^^' out of that
+// one too; '$' names the unit, '$$' the one scope inside it and '$$$' the
+// one inside that. Crossing into an enclosing subroutine spends every scope
+// still open in this one plus its body's own, since 5.4 makes that body one
+// scope the way any block is -- which is what lets an absolute index run
+// through a chain of them as one numbering.
 //
-// Answers false when there are not that many scopes to step out of.
+// Answers false when there are not that many scopes.
 static bool scope_start(Compiler *c, const LhatNode *node, Compiler **owner,
                         uint32_t *max_depth)
 {
     if (node->v.scope.kind == LHAT_SCOPE_FILE) {
-        *owner = root_of(c);
-        *max_depth = 0;  // 03 の 4.3: the unit's own top level
-        return true;
+        // The absolute index counts inwards, so it is turned into a place in
+        // the chain by asking how many scopes stand outside each body.
+        uint32_t total = 0;
+        for (Compiler *at = c; at != NULL; at = at->parent) {
+            total += at->scope_depth + 1;
+        }
+        if (node->v.scope.depth >= total) {
+            return false;  // naming a scope further in than the one here
+        }
+        uint32_t inside = 0;
+        for (Compiler *at = c; at != NULL; at = at->parent) {
+            inside += at->scope_depth + 1;
+            uint32_t outside = total - inside;
+            if (node->v.scope.depth >= outside) {
+                *owner = at;
+                *max_depth = node->v.scope.depth - outside;
+                return true;
+            }
+        }
+        return false;
     }
     uint32_t out = node->v.scope.depth;
     Compiler *at = c;

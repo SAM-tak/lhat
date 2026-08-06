@@ -1892,6 +1892,36 @@ static void test_scope_specifiers(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
+    // Repeating the sigil counts inwards from there, which is the other of
+    // the two ways -- '$^' counts outwards from here.
+    LHAT_TEST("'$$' is the scope one inside the unit");
+    check_text(&u,
+               "let^ x = 1\n"
+               "do^{ let^ x = \"a\"\n"
+               "  do^{ let^ x = 2\n"
+               "    let^ n : string^ = $$x\n"
+               "  }\n"
+               "}\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // The same place named both ways, so the two numberings meet.
+    LHAT_TEST("and reaches what '$^' reaches from the other side");
+    check_text(&u,
+               "let^ x = 1\n"
+               "do^{ let^ x = \"a\"\n"
+               "  do^{ let^ x = 2\n"
+               "    let^ n : string^ = $^x\n"
+               "  }\n"
+               "}\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("naming a scope further in than this one is refused");
+    check_text(&u, "let^ x = 1\nlet^ n = $$x\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_SCOPE_TOO_FAR);
+    unit_dispose(&u);
+
     // A subroutine's body is one scope, the way a block is -- its parameters
     // are in it rather than around it.
     LHAT_TEST("a body is one scope, parameters and all");

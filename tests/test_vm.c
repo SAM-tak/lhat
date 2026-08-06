@@ -3265,6 +3265,8 @@ static void test_scope_specifiers(void)
     CHECK_INTEGER(&r, 12);
     run_dispose(&r);
 
+    // Memo.md L676-695 is this table: the same three scopes named from
+    // either end, and the two numberings meeting in the middle.
     LHAT_TEST("'$' reads the unit's own top level");
     run_text(&r,
              "let^ x = 1\n"
@@ -3275,6 +3277,49 @@ static void test_scope_specifiers(void)
              "}\n"
              "return^ 0\n");
     CHECK_INTEGER(&r, 1);
+    run_dispose(&r);
+
+    LHAT_TEST("and repeating the sigil counts inwards from it");
+    run_text(&r,
+             "let^ x = 1\n"
+             "do^{ let^ x = 2\n"
+             "  do^{ let^ x = 3\n"
+             "    return^ $$x * 10 + $$$x\n"
+             "  }\n"
+             "}\n"
+             "return^ 0\n");
+    CHECK_INTEGER(&r, 23);
+    run_dispose(&r);
+
+    LHAT_TEST("naming a scope further in than this one is refused");
+    run_text(&r, "let^ x = 1\nreturn^ $$x\n");
+    LHAT_CHECK_EQ_INT(r.compiled, LHAT_COMPILE_SCOPE_TOO_FAR);
+    run_dispose(&r);
+
+    // A subroutine body is one scope like any other, so it takes its place
+    // in the absolute numbering too.
+    LHAT_TEST("a body counts in the absolute numbering as well");
+    run_text(&r,
+             "let^ x = 1\n"
+             "let^ f = f^ -> number^ { let^ x = 2\n"
+             "  return^ $$x\n"
+             "}\n"
+             "return^ f()\n");
+    CHECK_INTEGER(&r, 2);
+    run_dispose(&r);
+
+    LHAT_TEST("a write through the absolute form lands there too");
+    run_text(&r,
+             "let^ x = 1\n"
+             "let^ seen = 0\n"
+             "do^{ let^ x = 2\n"
+             "  do^{ let^ x = 3\n"
+             "    $$x := 9\n"
+             "  }\n"
+             "  seen := x\n"
+             "}\n"
+             "return^ seen\n");
+    CHECK_INTEGER(&r, 9);
     run_dispose(&r);
 
     // 5.4: reaching out of a body is a capture, so the specifier has to

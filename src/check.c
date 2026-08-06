@@ -272,22 +272,38 @@ static Binding *scope_find(Scope *scope, const char *name, size_t length)
     return NULL;
 }
 
-// 01 の 8 章: where a scope specifier starts looking. `$^` skips the scope
-// the name was written in and searches from its parent, `$^^` from the one
-// above that; `$` goes straight to the outermost, which 05 の 3 章 makes
-// the unit and 03 の 4.3 makes the session's top level. Answers NULL when
-// there are not that many scopes to skip, which is the writer counting
-// wrong rather than a name that is missing.
+// 01 の 8 章: where a scope specifier starts looking, counted either way.
+//
+// `$^` skips the scope the name was written in and searches from its
+// parent, `$^^` from the one above that -- outwards from here. `$` names
+// the outermost, which 05 の 3 章 makes the unit and 03 の 4.3 makes the
+// session's top level; `$$` the one scope inside it and `$$$` the one
+// inside that -- inwards from there. The lexer eats the first sigil before
+// counting, so `depth` is the absolute index outright: 0 is the unit.
+//
+// Answers NULL when there are not that many scopes, which is the writer
+// counting wrong rather than a name that is missing.
 //
 // The search from there is the ordinary one -- a specifier says where to
 // begin, not where to stop, so an ancestor further out still answers.
 static Scope *scope_from(Scope *scope, const LhatNode *node)
 {
     if (node->v.scope.kind == LHAT_SCOPE_FILE) {
-        if (scope == NULL) {
-            return NULL;
+        // How many scopes stand between here and the outermost, so that an
+        // absolute depth can be turned into that many steps outwards.
+        uint32_t open = 0;
+        for (Scope *at = scope; at != NULL && at->parent != NULL;
+             at = at->parent) {
+            open++;
         }
-        while (scope->parent != NULL) {
+        if (node->v.scope.depth > open) {
+            return NULL;  // naming a scope further in than the one here
+        }
+        uint32_t out = open - node->v.scope.depth;
+        for (uint32_t i = 0; i < out; i++) {
+            if (scope == NULL) {
+                return NULL;
+            }
             scope = scope->parent;
         }
         return scope;

@@ -30,8 +30,6 @@ typedef enum {
     LHAT_ERR_MALFORMED_ESCAPE,           // \xHH or \u{...} with bad digits
     LHAT_ERR_UNTERMINATED_BLOCK_COMMENT, // 6.2
     LHAT_ERR_SCOPE_WITHOUT_NAME,         // 8: '$' must be glued to a name
-    LHAT_ERR_SCOPE_DOUBLED,              // 8: '$$' was the unit while '$' was
-                                         // a global; the global is gone
     LHAT_ERR_INTERPOLATION_NEEDS_QUOTES, // 5.4: $'...' does not interpolate
     LHAT_ERR_INTERPOLATION_TOO_DEEP      // 5.4: nesting limit reached
 } LhatErrorCode;
