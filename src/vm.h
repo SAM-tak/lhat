@@ -141,7 +141,8 @@ typedef struct {
 // still be there for the next.
 //
 // It is large -- a whole stack and a frame array -- so it comes from the heap
-// and a caller keeps the handle rather than the object.
+// and a caller keeps the handle rather than the object. The inside of it is
+// machine.h, which vm.c and gc.c include and nothing else does.
 typedef struct LhatMachine LhatMachine;
 
 LhatMachine *lhat_machine_new(void);

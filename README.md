@@ -186,8 +186,10 @@ src/                  The language                        -> lhat.lib
   program.[ch]          The unit graph, and what a host registers
   code.[ch]             Bytecode, chunks and compiled units
   vm.[ch]               Code generation and the machine
+  machine.h             The inside of a machine: stack, frames, heap
+  gc.[ch]               The collector: mark and sweep, nothing moves
   value.[ch]            Runtime values
-  object.[ch]           Heap values and the collector
+  object.[ch]           Heap values
   port.h                What the language asks of its surroundings
 
 port/                 Default memory and file access      -> lhatport.lib
@@ -204,6 +206,11 @@ Memo.md               Language design notes (brainstorming, not a spec)
 The pipeline runs left to right: `source` → `lexer` → `parser` → `check` →
 `vm`, with `program` walking the unit graph so that a unit is checked after
 everything it requires.
+
+`vm.h` keeps `LhatMachine` opaque, so the two files that are the machine —
+`vm.c`, which runs it, and `gc.c`, which has to see the roots — share
+`machine.h` between them. It and `gc.h` are the only headers under `src/` that
+are not installed: nothing reachable from `lhat.h` names either one.
 
 ### Replacing the port
 

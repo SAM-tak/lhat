@@ -10,7 +10,8 @@
 // Every object is linked into an owner's list when it is made, and the owner
 // frees the whole list at once. Two owners exist: a chunk, which holds the
 // strings its constants name, and the machine, which holds what a program
-// makes while it runs. A collector replaces the second.
+// makes while it runs. The second is collected as the program runs, which is
+// gc.h's business -- what is here is making an object and giving one up.
 
 #ifndef LHAT_OBJECT_H
 #define LHAT_OBJECT_H
@@ -373,31 +374,11 @@ LhatOverload *lhat_overload_with_first(LhatHeap *heap,
 bool lhat_error_is_kind(LhatValue value, const LhatErrorKind *kind);
 
 // ---------------------------------------------------------------------------
-// Collection
+// Freeing
 // ---------------------------------------------------------------------------
 //
-// A mark and sweep that does not move anything, so nothing outside has to be
-// told where a value went. 03 の 1.2 keeps Lua's incremental collector as
-// something to borrow later; this is the working form it would replace.
-//
-// Marking uses an explicit list rather than recursion, so a deep structure
-// cannot run the C stack out.
-
-typedef struct {
-    LhatObject **items;
-    size_t count;
-    size_t capacity;
-} LhatGray;
-
-void lhat_gray_dispose(LhatGray *gray);
-
-// Marks the value if it is an unmarked object, and remembers it so that what
-// it refers to is reached too. Returns false only when out of memory.
-bool lhat_gc_reach(LhatGray *gray, LhatValue value);
-
-// Marks everything the object refers to. Objects a chunk owns are reached
-// like any other; the sweep simply never visits that list.
-bool lhat_gc_children(LhatGray *gray, LhatObject *object);
+// gc.h holds the collector. What is here is what an object costs to give up,
+// which the collector's sweep asks for and a chunk's own list asks for too.
 
 // 05 の 8.8: hands a host value's pointer back to whoever registered its
 // type, and answers whether it did. Does nothing for a type that registered
@@ -405,14 +386,9 @@ bool lhat_gc_children(LhatGray *gray, LhatObject *object);
 // back already -- 02 の 10.7's rule, which is the same rule.
 //
 // The release runs while the object is still whole, so it may read the
-// pointer out of it. It must not reach into the L^ API: this is called from
-// the middle of a collection, where the heap is half swept.
+// pointer out of it. It must not reach into the L^ API: the sweep calls this
+// from the middle of a collection, where the heap is half swept.
 bool lhat_hostdata_release(LhatObject *object, struct LhatMachine *machine);
-
-// Frees what is not marked, and unmarks what is. Returns how many objects
-// were freed. `machine` is what a host value's dispose^ is handed; NULL where
-// the heap cannot hold one, as a chunk's cannot.
-size_t lhat_gc_sweep(LhatHeap *heap, struct LhatMachine *machine);
 
 // Frees one object and whatever it owns, but not what it refers to.
 void lhat_object_free(LhatObject *object);

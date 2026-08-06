@@ -39,6 +39,7 @@ add_library(lhat
     src/program.c
     src/code.c
     src/vm.c
+    src/gc.c
     src/value.c
     src/object.c
 )
@@ -90,7 +91,14 @@ install(TARGETS lhat lhatport
 # are installed keeping the shape they have here. A host still names only
 # <prefix>/include/lhat.h and puts only <prefix>/include on its path.
 install(FILES include/lhat.h DESTINATION include)
-install(DIRECTORY src/ DESTINATION src FILES_MATCHING PATTERN "*.h")
+
+# machine.h is the inside of LhatMachine and gc.h is what reads it. vm.h keeps
+# the machine opaque on purpose, and nothing lhat.h reaches includes either of
+# these -- so they are the machine's own business and are not shipped.
+install(DIRECTORY src/ DESTINATION src
+    FILES_MATCHING PATTERN "*.h"
+    PATTERN "machine.h" EXCLUDE
+    PATTERN "gc.h" EXCLUDE)
 
 # ---- Tests ----------------------------------------------------------------
 if(LHAT_BUILD_TESTS)
