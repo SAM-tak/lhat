@@ -3235,6 +3235,145 @@ static void test_tostring(void)
     run_dispose(&r);
 }
 
+// 01 の 8 章: a scope specifier starts the search further out. What the
+// compiler counts as one scope has to be what the checker counts, or the
+// name a program was checked against is not the one it reaches -- so these
+// pin the count from the running side as well.
+static void test_scope_specifiers(void)
+{
+    Run r;
+
+    LHAT_TEST("'$^' reads the binding one scope out");
+    run_text(&r,
+             "let^ x = 1\n"
+             "do^{ let^ x = 2\n"
+             "  return^ $^x\n"
+             "}\n"
+             "return^ 0\n");
+    CHECK_INTEGER(&r, 1);
+    run_dispose(&r);
+
+    LHAT_TEST("'$^^' one further, and '$^' still the nearer one");
+    run_text(&r,
+             "let^ x = 1\n"
+             "do^{ let^ x = 2\n"
+             "  do^{ let^ x = 3\n"
+             "    return^ $^^x * 10 + $^x\n"
+             "  }\n"
+             "}\n"
+             "return^ 0\n");
+    CHECK_INTEGER(&r, 12);
+    run_dispose(&r);
+
+    LHAT_TEST("'$$' reads the unit's own top level");
+    run_text(&r,
+             "let^ x = 1\n"
+             "do^{ let^ x = 2\n"
+             "  do^{ let^ x = 3\n"
+             "    return^ $$x\n"
+             "  }\n"
+             "}\n"
+             "return^ 0\n");
+    CHECK_INTEGER(&r, 1);
+    run_dispose(&r);
+
+    // 5.4: reaching out of a body is a capture, so the specifier has to
+    // count the body as the one scope its parameters are already in.
+    LHAT_TEST("and reaches out of a subroutine as a captured place");
+    run_text(&r,
+             "let^ x = 1\n"
+             "let^ f = f^ -> number^ { let^ x = 2\n"
+             "  return^ $^x\n"
+             "}\n"
+             "return^ f()\n");
+    CHECK_INTEGER(&r, 1);
+    run_dispose(&r);
+
+    LHAT_TEST("a loop body is one scope like any other");
+    run_text(&r,
+             "let^ x = 1\n"
+             "let^ seen = 0\n"
+             "repeat^ 1 { let^ x = 2\n"
+             "  seen := $^x\n"
+             "}\n"
+             "return^ seen\n");
+    CHECK_INTEGER(&r, 1);
+    run_dispose(&r);
+
+    // 8.6 with 01 の 8 章: writing through a specifier reaches the binding a
+    // read of the same words would, and leaves the nearer one alone.
+    LHAT_TEST("':=' through '$^' writes the outer binding");
+    run_text(&r,
+             "let^ x = 1\n"
+             "do^{ let^ x = 2\n"
+             "  $^x := 9\n"
+             "}\n"
+             "return^ x\n");
+    CHECK_INTEGER(&r, 9);
+    run_dispose(&r);
+
+    LHAT_TEST("and leaves the one it was written beside");
+    run_text(&r,
+             "let^ x = 1\n"
+             "let^ seen = 0\n"
+             "do^{ let^ x = 2\n"
+             "  $^x := 9\n"
+             "  seen := x\n"
+             "}\n"
+             "return^ seen\n");
+    CHECK_INTEGER(&r, 2);
+    run_dispose(&r);
+
+    LHAT_TEST("a write out of a subroutine reaches the captured place");
+    run_text(&r,
+             "let^ x = 1\n"
+             "let^ f = p^ { let^ x = 2\n"
+             "  $^x := 9\n"
+             "}\n"
+             "f()\n"
+             "return^ x\n");
+    CHECK_INTEGER(&r, 9);
+    run_dispose(&r);
+
+    LHAT_TEST("reading back through the same words sees the write");
+    run_text(&r,
+             "let^ x = 1\n"
+             "do^{ let^ x = 2\n"
+             "  $^x := 42\n"
+             "  return^ $^x\n"
+             "}\n"
+             "return^ 0\n");
+    CHECK_INTEGER(&r, 42);
+    run_dispose(&r);
+
+    // 14.4 binds class^ into the scope a def^'s '{' opens, so a specifier
+    // written in a method counts that scope -- the same one the checker
+    // pushes there.
+    LHAT_TEST("a def^ body is one scope on this side too");
+    run_text(&r,
+             "let^ class = 1\n"
+             "let^ D = def^{ self^{ v := 7 },\n"
+             "  m := f^self^ -> string^ { return^ typeof^($^class).signature }\n"
+             "}\n"
+             "return^ D.new^().m()\n");
+    LHAT_CHECK_EQ_INT(r.compiled, LHAT_COMPILE_OK);
+    LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_OK);
+    LHAT_CHECK(lhat_is_object_kind(r.ran.value, LHAT_OBJECT_STRING),
+               "expected a string");
+    if (lhat_is_object_kind(r.ran.value, LHAT_OBJECT_STRING)) {
+        const LhatString *s = (const LhatString *)lhat_as_object(r.ran.value);
+        // The definition, not the number^ named `class` outside it.
+        LHAT_CHECK(strncmp(s->text, "t^{", 3) == 0,
+                   "'$^class' reached the definition");
+    }
+    run_dispose(&r);
+
+    LHAT_TEST("counting past the scopes that are open is refused");
+    run_text(&r, "do^{ return^ $^^^^x }\n");
+    LHAT_CHECK_EQ_INT(r.compiled, LHAT_COMPILE_SCOPE_TOO_FAR);
+    run_dispose(&r);
+}
+
 // 01 の 5.4: the lexer and the parser have read $"..." from the start; this
 // is what it compiles to. A hole is 02 の 14.17's tostring and the pieces
 // are joined with 11.2's '..', so interpolation adds no way of building a
@@ -4723,6 +4862,7 @@ int main(void)
     test_definitions();
     test_typeof();
     test_tostring();
+    test_scope_specifiers();
     test_interpolation();
     test_variadic();
     test_coroutines();

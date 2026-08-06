@@ -29,6 +29,9 @@ typedef struct {
     const char *name;
     size_t length;
     uint8_t reg;  // 5.2: a name is a slot in the frame like anything else
+    // 01 の 8 章: which scope declared it, counted from this subroutine's
+    // own body outwards -- what '$^' walks past. See Compiler.scope_depth.
+    uint32_t depth;
 } Local;
 
 typedef struct DefChain {
@@ -67,6 +70,16 @@ typedef struct Compiler {
     uint32_t line;
 
     LoopContext *loop;  // the innermost loop being compiled, NULL outside one
+
+    // 01 の 8 章: how many scopes are open here, counting this subroutine's
+    // body as 0. A scope is what a '{' opens when names become visible in
+    // it -- a block, a loop body, an if^ arm, a def^ body -- which is
+    // exactly where the checker pushes a Scope, so '$^' counts the same on
+    // both sides. A table literal, a self^{ }, an error^ construction and
+    // an interpolation hole hold entries or an expression rather than
+    // bindings, and open none; catch^'s it^ and with^'s names are written
+    // without braces at all and so add none either.
+    uint32_t scope_depth;
 
     // 03 の 4.3: the statements being declared are the top level of a
     // session's input, where a name written again keeps the slot it had.
@@ -153,6 +166,11 @@ static bool node_name(const Compiler *c, const LhatNode *node,
         *text = "it";
         *length = 2;
         return true;
+    }
+    // 01 の 8 章: the sigil says where to look, and the name is what to look
+    // for -- so a specifier answers with the name it is glued to.
+    if (node->kind == LHAT_NODE_SCOPE) {
+        return node_name(c, node->v.scope.name, text, length);
     }
     return false;
 }
@@ -260,10 +278,145 @@ static size_t find_upvalue(Compiler *c, const char *name, size_t length)
     return added;
 }
 
+// ---------------------------------------------------------------------------
+// Scope specifiers (01 の 8 章)
+// ---------------------------------------------------------------------------
+
+static Compiler *root_of(Compiler *c);
+
+// The same backwards search find_local does, but blind to anything declared
+// deeper than `max_depth` -- which is how '$^' looks past the scope it was
+// written in without looking past the name it wants.
+static const Local *find_local_at(const Compiler *c, const char *name,
+                                  size_t length, uint32_t max_depth)
+{
+    for (size_t i = c->local_count; i > 0; i--) {
+        const Local *local = &c->locals[i - 1];
+        if (local->depth <= max_depth && local->length == length &&
+            memcmp(local->name, name, length) == 0) {
+            return local;
+        }
+    }
+    return NULL;
+}
+
+// Where a specifier says to start looking. 01 の 8 章: '$^' steps out of the
+// scope the name was written in, '$^^' out of that one too, and '$$' goes
+// straight to the unit. Crossing into an enclosing subroutine spends every
+// scope still open in this one plus its body's own, since 5.4 makes that
+// body one scope the way any block is.
+//
+// Answers false when there are not that many scopes to step out of.
+static bool scope_start(Compiler *c, const LhatNode *node, Compiler **owner,
+                        uint32_t *max_depth)
+{
+    if (node->v.scope.kind == LHAT_SCOPE_FILE) {
+        *owner = root_of(c);
+        *max_depth = 0;  // 03 の 4.3: the unit's own top level
+        return true;
+    }
+    uint32_t out = node->v.scope.depth;
+    Compiler *at = c;
+    while (out > at->scope_depth) {
+        out -= at->scope_depth + 1;
+        at = at->parent;
+        if (at == NULL) {
+            return false;
+        }
+    }
+    *owner = at;
+    *max_depth = at->scope_depth - out;
+    return true;
+}
+
+// 5.4's capture, aimed at one place rather than at the nearest name. The
+// ordinary find_upvalue searches by name from the innermost enclosing body,
+// which would stop at a shadow the specifier was written to look past.
+static size_t capture_at(Compiler *c, const char *name, size_t length,
+                         const Compiler *owner, uint32_t max_depth)
+{
+    if (c->parent == NULL) {
+        return SIZE_MAX;
+    }
+
+    bool from_register = false;
+    uint8_t index = 0;
+    if (c->parent == owner) {
+        const Local *local = find_local_at(c->parent, name, length, max_depth);
+        if (local == NULL) {
+            return SIZE_MAX;
+        }
+        from_register = true;
+        index = local->reg;
+    } else {
+        size_t outer = capture_at(c->parent, name, length, owner, max_depth);
+        if (outer == SIZE_MAX) {
+            return SIZE_MAX;
+        }
+        index = (uint8_t)outer;
+    }
+
+    // Not shared with the upvalues find_upvalue names: two of them over one
+    // slot read and write the same place, and giving this one its own entry
+    // keeps a name from being taken for a target it was not resolved to.
+    size_t added = lhat_proto_add_upvalue(c->proto, from_register, index);
+    if (added == SIZE_MAX) {
+        fail(c, LHAT_COMPILE_TOO_COMPLEX);
+        return SIZE_MAX;
+    }
+    c->upvalue_names[added].name = name;
+    c->upvalue_names[added].length = length;
+    return added;
+}
+
+// What a '$…name' resolves to. `reg` is filled when the name is a register of
+// this body, `upvalue` when it is a place an enclosing one holds.
+typedef enum {
+    SCOPED_NONE,      // no such name from there outwards
+    SCOPED_TOO_FAR,   // fewer scopes are open than the specifier counts
+    SCOPED_REGISTER,
+    SCOPED_UPVALUE
+} ScopedKind;
+
+static ScopedKind resolve_scoped(Compiler *c, const LhatNode *node,
+                                 const char *name, size_t length,
+                                 uint8_t *reg, size_t *upvalue)
+{
+    Compiler *owner = NULL;
+    uint32_t max_depth = 0;
+    if (!scope_start(c, node, &owner, &max_depth)) {
+        return SCOPED_TOO_FAR;
+    }
+
+    // 01 の 8 章: a specifier says where to begin, not where to stop, so an
+    // ancestor further out still answers when the scope named holds nothing.
+    for (Compiler *at = owner; at != NULL; at = at->parent) {
+        const Local *local = find_local_at(at, name, length, max_depth);
+        if (local != NULL) {
+            if (at == c) {
+                *reg = local->reg;
+                return SCOPED_REGISTER;
+            }
+            size_t index = capture_at(c, name, length, at, max_depth);
+            if (index == SIZE_MAX) {
+                return SCOPED_NONE;
+            }
+            *upvalue = index;
+            return SCOPED_UPVALUE;
+        }
+        // Every scope of an enclosing body is open to the search.
+        if (at->parent != NULL) {
+            max_depth = at->parent->scope_depth;
+        }
+    }
+    return SCOPED_NONE;
+}
+
 static void compile_expression(Compiler *c, const LhatNode *node, uint8_t into);
 static void compile_statement(Compiler *c, const LhatNode *node);
 static void compile_statements(Compiler *c, const LhatNode *statements);
 static void compile_block(Compiler *c, const LhatNode *block);
+static void compile_block_in_scope(Compiler *c, const LhatNode *block);
 static const LhatNode *define_target_name(const LhatNode *target);
 static void compile_for_once(Compiler *c, const LhatNode *node, uint8_t into,
                              bool as_expression);
@@ -664,6 +817,7 @@ static void compile_catch(Compiler *c, const LhatNode *node, uint8_t into)
         local->name = "it";
         local->length = 2;
         local->reg = caught;
+        local->depth = c->scope_depth;  // catch^ opens no brace of its own
     }
     compile_expression(c, node->v.binary.right, into);
 
@@ -1360,10 +1514,15 @@ static void compile_def(Compiler *c, const LhatNode *node, uint8_t into)
         fail(c, LHAT_COMPILE_TOO_COMPLEX);
         return;
     }
+    // 01 の 8 章: the def^'s '{' opens a scope for '$^' to count, and class^
+    // is a name of it -- the checker binds self^ and class^ into the Scope
+    // it pushes here, so both sides count this one the same.
+    c->scope_depth++;
     Local *local = &c->locals[c->local_count++];
     local->name = "class";
     local->length = 5;
     local->reg = into;
+    local->depth = c->scope_depth;
 
     const DefChain *enclosing = c->building;
     c->building = &chain;
@@ -1419,6 +1578,7 @@ static void compile_def(Compiler *c, const LhatNode *node, uint8_t into)
                 previous->name = "super";
                 previous->length = 5;
                 previous->reg = hidden;
+                previous->depth = c->scope_depth;
             }
 
             compile_expression(c, entry->v.entry.value, value);
@@ -1455,6 +1615,7 @@ static void compile_def(Compiler *c, const LhatNode *node, uint8_t into)
 
     c->building = enclosing;
     c->local_count = local_mark;
+    c->scope_depth--;
 }
 
 // The new^ of 14.11 that a definition gets when it declares none: a function
@@ -1733,6 +1894,7 @@ static void compile_subroutine(Compiler *c, const LhatNode *node, uint8_t into)
         local->name = name;
         local->length = length;
         local->reg = slot;
+        local->depth = inner.scope_depth;  // a parameter belongs to the body
 
         // 14.12: the search that resolves an overloaded call asks each
         // candidate what it takes, so each body carries that with it. For
@@ -1778,7 +1940,7 @@ static void compile_subroutine(Compiler *c, const LhatNode *node, uint8_t into)
 
     // 02 の 10.1: a p^ body is a block that may carry a finally^, which is
     // where resources are handled and so where it is most wanted.
-    compile_block(&inner, node->v.func.body);
+    compile_block_in_scope(&inner, node->v.func.body);
     if (lhat_chunk_emit(&proto->chunk,
                         lhat_encode_abc(LHAT_BC_RETURN_NIL, 0, 0, 0),
                         inner.line) == SIZE_MAX) {
@@ -2153,6 +2315,38 @@ static void compile_expression(Compiler *c, const LhatNode *node, uint8_t into)
             return;
         }
 
+        // 01 の 8 章: the same name, looked for from a scope further out.
+        case LHAT_NODE_SCOPE: {
+            const char *name = NULL;
+            size_t length = 0;
+            if (!node_name(c, node, &name, &length)) {
+                fail(c, LHAT_COMPILE_UNSUPPORTED);
+                return;
+            }
+            if (node->v.scope.kind == LHAT_SCOPE_GLOBAL) {
+                fail(c, LHAT_COMPILE_UNSUPPORTED);  // '$' has no meaning yet
+                return;
+            }
+            uint8_t reg = 0;
+            size_t upvalue = 0;
+            switch (resolve_scoped(c, node, name, length, &reg, &upvalue)) {
+                case SCOPED_REGISTER:
+                    emit(c, lhat_encode_abc(LHAT_BC_MOVE, into, reg, 0));
+                    return;
+                case SCOPED_UPVALUE:
+                    emit(c, lhat_encode_abc(LHAT_BC_GETUPVAL, into,
+                                            (uint8_t)upvalue, 0));
+                    return;
+                case SCOPED_TOO_FAR:
+                    fail(c, LHAT_COMPILE_SCOPE_TOO_FAR);
+                    return;
+                case SCOPED_NONE:
+                    fail(c, LHAT_COMPILE_UNDEFINED);
+                    return;
+            }
+            return;
+        }
+
         case LHAT_NODE_UNARY: {
             uint8_t mark = c->next_register;
             uint8_t operand = reserve(c);
@@ -2345,6 +2539,7 @@ static void declare_names(Compiler *c, const LhatNode *statements)
                 local->name = module_name;
                 local->length = length;
                 local->reg = slot;
+                local->depth = c->scope_depth;
                 continue;
             }
             module_name = required_module_name(c, s);
@@ -2365,6 +2560,7 @@ static void declare_names(Compiler *c, const LhatNode *statements)
             local->name = module_name;
             local->length = root;
             local->reg = slot;
+            local->depth = c->scope_depth;
             continue;
         }
         if (s->kind != LHAT_NODE_DEFINE) {
@@ -2418,6 +2614,7 @@ static void declare_names(Compiler *c, const LhatNode *statements)
             local->name = name;
             local->length = length;
             local->reg = slot;
+            local->depth = c->scope_depth;
         }
     }
 }
@@ -2533,6 +2730,43 @@ static void compile_reassign(Compiler *c, const LhatNode *node)
             fail(c, LHAT_COMPILE_UNSUPPORTED);
             return;
         }
+
+        // 01 の 8 章: a specifier says which binding is being written, and
+        // it has to name the same one reading it would -- so the write goes
+        // through the same resolution the read does.
+        if (target->kind == LHAT_NODE_SCOPE) {
+            if (target->v.scope.kind == LHAT_SCOPE_GLOBAL) {
+                fail(c, LHAT_COMPILE_UNSUPPORTED);
+                return;
+            }
+            uint8_t reg = 0;
+            size_t at = 0;
+            ScopedKind found =
+                resolve_scoped(c, target, name, length, &reg, &at);
+            if (found == SCOPED_TOO_FAR) {
+                fail(c, LHAT_COMPILE_SCOPE_TOO_FAR);
+                return;
+            }
+            if (found == SCOPED_NONE) {
+                fail(c, LHAT_COMPILE_UNDEFINED);
+                return;
+            }
+            if (value != NULL) {
+                if (found == SCOPED_REGISTER) {
+                    compile_expression(c, value, reg);
+                } else {
+                    uint8_t mark = c->next_register;
+                    uint8_t slot = reserve(c);
+                    compile_expression(c, value, slot);
+                    emit(c, lhat_encode_abc(LHAT_BC_SETUPVAL, slot,
+                                            (uint8_t)at, 0));
+                    c->next_register = mark;
+                }
+                value = value->next;
+            }
+            continue;
+        }
+
         const Local *local = find_local(c, name, length);
         if (local != NULL) {
             if (value != NULL) {
@@ -2733,7 +2967,12 @@ static void compile_numeric_advance(Compiler *c, const LhatNode *node,
 // 02 の 10.1: finally^ belongs to blocks in general, not to loops. A block
 // that has one remembers it on the way in and runs it on every way out --
 // which 10.2 wants and 5.5 says is the frame's job rather than the compiler's.
-static void compile_block(Compiler *c, const LhatNode *block)
+// The block's statements in the scope that is already open. 01 の 8 章: a
+// subroutine's body is written with a '{', but the scope it opens is the one
+// its parameters are already in -- the checker puts both in the one Scope
+// infer_func pushes, so counting it again here would put '$^' one step
+// behind on this side.
+static void compile_block_in_scope(Compiler *c, const LhatNode *block)
 {
     if (block == NULL) {
         return;
@@ -2761,6 +3000,16 @@ static void compile_block(Compiler *c, const LhatNode *block)
     emit(c, lhat_encode_abc(LHAT_BC_ENDCLEANUP, 0, 0, 0));
 
     lhat_chunk_patch_here(&c->proto->chunk, over);
+}
+
+// The same, opening the scope the block's '{' stands for. 01 の 8 章 counts
+// it, and its clauses sit inside it -- the checker keeps them in the block's
+// own Scope too, so both sides count this the same.
+static void compile_block(Compiler *c, const LhatNode *block)
+{
+    c->scope_depth++;
+    compile_block_in_scope(c, block);
+    c->scope_depth--;
 }
 
 // 02 の 12 章: with^ names a resource and the block's end disposes of it.
@@ -2866,6 +3115,7 @@ static void declare_targets(Compiler *c, const LhatNode *focus)
         local->name = name;
         local->length = length;
         local->reg = slot;
+        local->depth = c->scope_depth;
     }
 }
 
@@ -3121,7 +3371,10 @@ static void compile_loop(Compiler *c, const LhatNode *node)
     }
 
     // 9.4: what main^ declares lives one iteration, so it gets its own scope.
+    // 01 の 8 章 counts that scope: the body's '{' is one for '$^' to walk.
+    c->scope_depth++;
     compile_statements(c, body != NULL ? body->v.list.items : NULL);
+    c->scope_depth--;
 
     if (advance != NULL) {
         compile_in_scope(c, advance);
@@ -3701,6 +3954,9 @@ static LhatCompileStatus compile_unit(LhatCompileSession *session,
             c.locals[c.local_count].name = session->names[i].name;
             c.locals[c.local_count].length = session->names[i].length;
             c.locals[c.local_count].reg = session->names[i].reg;
+            // 03 の 4.3: the session's top level is this input's top level,
+            // which 01 の 8 章 makes what '$$' names.
+            c.locals[c.local_count].depth = 0;
             c.local_count++;
         }
         c.session_locals = c.local_count;
@@ -3851,6 +4107,8 @@ const char *lhat_compile_status_message(LhatCompileStatus status)
         case LHAT_COMPILE_UNDEFINED:   return "no such name";
         case LHAT_COMPILE_BREAK_TOO_FAR:
             return "this break^ leaves more loops than there are around it";
+        case LHAT_COMPILE_SCOPE_TOO_FAR:
+            return "this reaches out past more scopes than are open here";
     }
     return "unknown";
 }

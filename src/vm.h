@@ -28,7 +28,11 @@ typedef enum {
     // 02 の 9.8: a break^ naming more loops than stand around it, or one
     // written outside any. Not the same as UNSUPPORTED above -- nothing is
     // waiting to be implemented here, the count is simply wrong.
-    LHAT_COMPILE_BREAK_TOO_FAR
+    LHAT_COMPILE_BREAK_TOO_FAR,
+    // 01 の 8 章: a '$^' counting more scopes out than are open here. The
+    // same kind of miscount as BREAK_TOO_FAR, and not a form still waiting
+    // on the compiler.
+    LHAT_COMPILE_SCOPE_TOO_FAR
 } LhatCompileStatus;
 
 // 05 の 5 章. The compile-time twin of check.h's LhatRequireResolver: asked

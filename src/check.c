@@ -272,6 +272,35 @@ static Binding *scope_find(Scope *scope, const char *name, size_t length)
     return NULL;
 }
 
+// 01 の 8 章: where a scope specifier starts looking. `$^` skips the scope
+// the name was written in and searches from its parent, `$^^` from the one
+// above that; `$$` goes straight to the outermost, which 05 の 3 章 makes
+// the unit and 03 の 4.3 makes the session's top level. Answers NULL when
+// there are not that many scopes to skip, which is the writer counting
+// wrong rather than a name that is missing.
+//
+// The search from there is the ordinary one -- a specifier says where to
+// begin, not where to stop, so an ancestor further out still answers.
+static Scope *scope_from(Scope *scope, const LhatNode *node)
+{
+    if (node->v.scope.kind == LHAT_SCOPE_FILE) {
+        if (scope == NULL) {
+            return NULL;
+        }
+        while (scope->parent != NULL) {
+            scope = scope->parent;
+        }
+        return scope;
+    }
+    for (uint32_t out = 0; out < node->v.scope.depth; out++) {
+        if (scope == NULL) {
+            return NULL;
+        }
+        scope = scope->parent;
+    }
+    return scope;
+}
+
 static Binding *scope_add(Scope *scope, const char *name, size_t length,
                           LhatType *type, uint32_t offset)
 {
@@ -322,6 +351,7 @@ static void register_module_type(Checker *c, const char *module_name,
                                  LhatType *exports);  // 05 の 5.3
 static LhatType *hosted_module(Checker *c, const LhatNode *path);  // 8.7
 static void check_statement(Checker *c, const LhatNode *node);
+static void check_block_in_scope(Checker *c, const LhatNode *node);
 static LhatType *collect_exports(Checker *c, const LhatNode *statements);
 static void check_statements(Checker *c, const LhatNode *statements);
 static LhatType *infer_def(Checker *c, const LhatNode *node, LhatType *base);
@@ -1163,7 +1193,22 @@ static LhatType *infer_name(Checker *c, const LhatNode *node)
         c->saw_self_call = true;
     }
 
-    Binding *b = scope_find(c->scope, name, length);
+    // 01 の 8 章: a specifier says which scope to start the search in.
+    // Without one it starts here, which is every other name.
+    Scope *from = c->scope;
+    if (node->kind == LHAT_NODE_SCOPE) {
+        if (node->v.scope.kind == LHAT_SCOPE_GLOBAL) {
+            report(c, node, LHAT_CHECK_ERR_SCOPE_UNSUPPORTED);
+            return simple(c, LHAT_TYPE_UNKNOWN);
+        }
+        from = scope_from(c->scope, node);
+        if (from == NULL) {
+            report(c, node, LHAT_CHECK_ERR_SCOPE_TOO_FAR);
+            return simple(c, LHAT_TYPE_UNKNOWN);
+        }
+    }
+
+    Binding *b = scope_find(from, name, length);
     if (b == NULL) {
         report_named(c, node, LHAT_CHECK_ERR_UNDEFINED, name, length);
         return simple(c, LHAT_TYPE_UNKNOWN);
@@ -1967,7 +2012,15 @@ static LhatType *infer_func(Checker *c, const LhatNode *node)
     c->yield_context = YIELD_CTX_NONE;
     c->yield_bound_type = NULL;
 
-    check_statement(c, node->v.func.body);
+    // 01 の 8 章: the body's '{' is the scope its parameters are already in
+    // (made just above), so the statements go straight into it rather than
+    // opening a second one a '$^' would have to count.
+    if (node->v.func.body != NULL &&
+        node->v.func.body->kind == LHAT_NODE_BLOCK) {
+        check_block_in_scope(c, node->v.func.body);
+    } else {
+        check_statement(c, node->v.func.body);
+    }
 
     if (node->v.func.yields) {
         func->v.func.yield_produce = c->coroutine_produce;
@@ -3250,6 +3303,12 @@ static void check_define(Checker *c, const LhatNode *node)
     for (const LhatNode *target = node->v.binding.targets; target != NULL;
          target = target->next) {
         position++;
+        // 8.7 with 01 の 8 章: a let^ makes a name in the scope it is
+        // written in, so there is no other scope for a specifier to name.
+        // ':=' is what reaches an existing binding, here as anywhere.
+        if (target_name_node(target)->kind == LHAT_NODE_SCOPE) {
+            report(c, target, LHAT_CHECK_ERR_SCOPE_ON_DEFINE);
+        }
         LhatType *annotated = target->kind == LHAT_NODE_PARAM
                                   ? resolve_type(c, target->v.param.type)
                                   : NULL;
@@ -3962,6 +4021,20 @@ static void check_statements(Checker *c, const LhatNode *statements)
     pop_narrowings(c, mark);
 }
 
+// The block's statements in the scope that is already open. 01 の 8 章: a
+// subroutine's body is written with one '{', so it is one scope for '$^' to
+// count -- and its parameters are in it, not around it. infer_func has
+// already made that scope and put them there, so this must not make another
+// or a specifier would find the parameters one step too soon.
+static void check_block_in_scope(Checker *c, const LhatNode *node)
+{
+    check_statements(c, node->v.list.items);
+    for (const LhatNode *clause = node->v.list.extra; clause != NULL;
+         clause = clause->next) {
+        check_statements(c, clause->v.loop_clause.body);
+    }
+}
+
 static void check_block(Checker *c, const LhatNode *node)
 {
     Scope scope;
@@ -3972,11 +4045,7 @@ static void check_block(Checker *c, const LhatNode *node)
     Scope *outer = c->scope;
     c->scope = &scope;
 
-    check_statements(c, node->v.list.items);
-    for (const LhatNode *clause = node->v.list.extra; clause != NULL;
-         clause = clause->next) {
-        check_statements(c, clause->v.loop_clause.body);
-    }
+    check_block_in_scope(c, node);
 
     c->scope = outer;
     scope_dispose(&scope);
@@ -4620,6 +4689,14 @@ const char *lhat_check_error_message(LhatCheckErrorCode code)
         case LHAT_CHECK_ERR_NEVER_RETURNS:
             return "every way out of this body calls it again, so it never "
                    "produces a value";
+        case LHAT_CHECK_ERR_SCOPE_TOO_FAR:
+            return "this reaches out past more scopes than are open here";
+        case LHAT_CHECK_ERR_SCOPE_UNSUPPORTED:
+            return "'$' names a global, which does not exist yet; '$$' is the "
+                   "unit and '$^' the scope around this one";
+        case LHAT_CHECK_ERR_SCOPE_ON_DEFINE:
+            return "let^ makes a name here, so it takes no scope specifier; "
+                   "':=' is what writes one that is already there";
     }
     return "unknown error";
 }

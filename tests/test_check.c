@@ -1833,6 +1833,125 @@ static void test_typeof(void)
     }
 }
 
+// 01 の 8 章: a scope specifier says which scope to start looking in. What
+// counts as one is what a '{' opens when names become visible in it, which
+// is exactly where this pushes a Scope -- so the compiler counting the same
+// braces reaches the same binding.
+static void test_scope_specifiers(void)
+{
+    Unit u;
+
+    LHAT_TEST("'$^' looks past the scope it is written in");
+    check_text(&u,
+               "let^ x = 1\n"
+               "do^{ let^ x = \"s\"\n"
+               "  let^ n : number^ = $^x\n"
+               "}\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("and does not see the one it was written beside");
+    check_text(&u,
+               "let^ x = 1\n"
+               "do^{ let^ x = \"s\"\n"
+               "  let^ n : string^ = $^x\n"
+               "}\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
+    unit_dispose(&u);
+
+    LHAT_TEST("'$^^' steps out of one more");
+    check_text(&u,
+               "let^ x = 1\n"
+               "do^{ let^ x = \"a\"\n"
+               "  do^{ let^ x = \"b\"\n"
+               "    let^ n : number^ = $^^x\n"
+               "  }\n"
+               "}\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // A specifier says where to begin, not where to stop, so a scope that
+    // holds nothing of that name hands the search on outwards.
+    LHAT_TEST("the search goes on outwards from there");
+    check_text(&u,
+               "let^ x = 1\n"
+               "do^{ do^{ let^ y = 2\n"
+               "  let^ n : number^ = $^x\n"
+               "}}\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("'$$' names the unit's own top level");
+    check_text(&u,
+               "let^ x = 1\n"
+               "do^{ let^ x = \"a\"\n"
+               "  do^{ let^ x = \"b\"\n"
+               "    let^ n : number^ = $$x\n"
+               "  }\n"
+               "}\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // A subroutine's body is one scope, the way a block is -- its parameters
+    // are in it rather than around it.
+    LHAT_TEST("a body is one scope, parameters and all");
+    check_text(&u,
+               "let^ x = 1\n"
+               "let^ f = f^ x:string^ -> number^ { return^ $^x }\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // 14.4 binds class^ into the scope a def^'s '{' opens, so that scope is
+    // one for a specifier to count.
+    LHAT_TEST("a def^ body is one scope too");
+    check_text(&u,
+               "let^ class = 1\n"
+               "let^ D = def^{ self^{},\n"
+               "  m := f^self^ -> t^{} { return^ $^class }\n"
+               "}\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("counting more scopes than are open is refused");
+    check_text(&u, "do^{ let^ n = $^^^^x }\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_SCOPE_TOO_FAR);
+    unit_dispose(&u);
+
+    // '$' is a global, which is its own idea and has none yet -- refused by
+    // name rather than left to mean the same as writing nothing.
+    LHAT_TEST("'$' alone is refused by name");
+    check_text(&u, "let^ x = 1\nlet^ n = $x\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_SCOPE_UNSUPPORTED);
+    unit_dispose(&u);
+
+    // 8.7: a let^ makes a name where it is written, so there is no other
+    // scope for a specifier to name. ':=' is what reaches an existing one.
+    LHAT_TEST("a let^ takes no specifier");
+    check_text(&u, "let^ x = 1\ndo^{ let^ $^x = 2 }\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_SCOPE_ON_DEFINE);
+    unit_dispose(&u);
+
+    LHAT_TEST("but ':=' writes through one");
+    check_text(&u,
+               "let^ x = 1\n"
+               "do^{ let^ x = 2\n"
+               "  $^x := 9\n"
+               "}\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // Reading and writing resolve the same way, so a write cannot land
+    // somewhere a read of the same words would not.
+    LHAT_TEST("and writes where a read of the same words looks");
+    check_text(&u,
+               "let^ x = 1\n"
+               "do^{ let^ x = \"s\"\n"
+               "  $^x := \"no\"\n"
+               "}\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
+    unit_dispose(&u);
+}
+
 // 02 の 14.17: every value carries tostring, and a number^ carries a second
 // signature taking a format. 14.12 makes the two an intersection.
 static void test_tostring(void)
@@ -3982,6 +4101,7 @@ int main(void)
     test_definitions();
     test_composition();
     test_typeof();
+    test_scope_specifiers();
     test_tostring();
     test_variadic();
     test_patterns();
