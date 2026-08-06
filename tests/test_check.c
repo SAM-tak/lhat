@@ -1833,6 +1833,56 @@ static void test_typeof(void)
     }
 }
 
+// 02 の 14.17: every value carries tostring, and a number^ carries a second
+// signature taking a format. 14.12 makes the two an intersection.
+static void test_tostring(void)
+{
+    Unit u;
+
+    LHAT_TEST("every value answers with a string^");
+    check_text(&u,
+               "let^ a : string^ = nil^.tostring()\n"
+               "let^ b : string^ = true^.tostring()\n"
+               "let^ c : string^ = (1).tostring()\n"
+               "let^ d : string^ = \"x\".tostring()\n"
+               "let^ e : string^ = { n := 1 }.tostring()\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("a number^ also takes a format");
+    check_text(&u, "let^ a : string^ = (255).tostring(\"%x\")\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // The second signature is the number^'s alone, so this is neither of the
+    // two ways of writing a string^ down.
+    LHAT_TEST("but nothing else does");
+    check_text(&u, "let^ a : string^ = \"x\".tostring(\"%x\")\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_ARITY);
+    unit_dispose(&u);
+
+    LHAT_TEST("the format has to be a string^");
+    check_text(&u, "let^ a : string^ = (1).tostring(2)\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
+    unit_dispose(&u);
+
+    // 11.1's reason for keeping an operator pure holds here too: writing a
+    // value down changes nothing, so 15.1 lets an f^ reach it.
+    LHAT_TEST("an f^ may call it");
+    check_text(&u,
+               "let^ show = f^ n:number^ -> string^ { return^ n.tostring() }\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // 16.3's rule for iterate, which 14.17 follows.
+    LHAT_TEST("a written tostring is what the type says");
+    check_text(&u,
+               "let^ t = { tostring := f^self^ -> number^ { return^ 1 } }\n"
+               "let^ n : number^ = t.tostring()\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+}
+
 // 02 の 13.7: the variadic collector. '...' inside the body names it, typed
 // as 14.10改's unbounded tail -- a table whose sequence half is one element
 // type repeated, nothing fixed.
@@ -3932,6 +3982,7 @@ int main(void)
     test_definitions();
     test_composition();
     test_typeof();
+    test_tostring();
     test_variadic();
     test_patterns();
     test_modules();

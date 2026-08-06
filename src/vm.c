@@ -4302,8 +4302,9 @@ static LhatRuntimeType *reflect_type(LhatHeap *heap, LhatValue value,
     return lhat_type_rt_new(heap, LHAT_TYPE_RT_ANY);
 }
 
-// The operations 02 の 12.6 and 15.6 give a coroutine. The rest of the
-// standard library is M2 and will not go through here.
+// The operations 02 の 12.6 and 15.6 give a coroutine, and 14.17's tostring,
+// which every value carries. The rest of the standard library is M2 and will
+// not go through here.
 static bool native_named(LhatValue key, LhatNativeKind *out)
 {
     if (!lhat_is_object_kind(key, LHAT_OBJECT_STRING)) {
@@ -4334,6 +4335,10 @@ static bool native_named(LhatValue key, LhatNativeKind *out)
         *out = LHAT_NATIVE_STARTED;
         return true;
     }
+    if (name->length == 8 && memcmp(name->text, "tostring", 8) == 0) {
+        *out = LHAT_NATIVE_TOSTRING;
+        return true;
+    }
     return false;
 }
 
@@ -4345,6 +4350,10 @@ static bool builtin_member(LhatValue on, LhatValue key, LhatNativeKind *out)
 {
     if (!native_named(key, out)) {
         return false;
+    }
+    // 02 の 14.17: whatever the value is, it can be written down.
+    if (*out == LHAT_NATIVE_TOSTRING) {
+        return true;
     }
     if (lhat_is_object_kind(on, LHAT_OBJECT_COROUTINE)) {
         return true;  // every one of them applies to a coroutine
@@ -5149,12 +5158,29 @@ LhatRunResult lhat_run(LhatMachine *m, const LhatProto *proto)
                 }
                 const LhatTable *table = readable_table(registers[b]);
                 if (table == NULL) {
+                    // 02 の 14.17: nil^, bool^, number^ and string^ hold no
+                    // members of their own, but every value can be written
+                    // down. Nothing else reaches a value that is not a
+                    // table, so this is the whole of what one answers.
+                    LhatNativeKind bare;
+                    if (native_named(registers[cc], &bare) &&
+                        bare == LHAT_NATIVE_TOSTRING) {
+                        LhatNative *native =
+                            lhat_native_new(&m->objects, bare, registers[b]);
+                        if (native == NULL) {
+                            return finish(m, chunk, LHAT_RUN_OUT_OF_MEMORY,
+                                          lhat_nil(), at);
+                        }
+                        registers[a] = lhat_object((LhatObject *)native);
+                        break;
+                    }
                     return finish(m, chunk, LHAT_RUN_TYPE_ERROR, lhat_nil(), at);
                 }
                 registers[a] = lhat_table_get(table, registers[cc]);
 
                 // 16.3: a table has an iterate of its own, but only where
-                // nothing was written under that name.
+                // nothing was written under that name. 14.17 gives tostring
+                // the same rule, which this order is already the whole of.
                 LhatNativeKind which;
                 if (lhat_is_nil(registers[a]) &&
                     builtin_member(registers[b], registers[cc], &which)) {
@@ -5361,6 +5387,66 @@ LhatRunResult lhat_run(LhatMachine *m, const LhatProto *proto)
                         }
                         collect(m);
                         registers[a] = lhat_nil();
+                        break;
+                    }
+
+                    // 02 の 14.17: the value written down. Takes nothing, or
+                    // a format when what it is bound to is a number^ -- the
+                    // two signatures 14.12 makes an intersection of, told
+                    // apart here by how many arguments arrived.
+                    if (native->kind == LHAT_NATIVE_TOSTRING) {
+                        if (b > 1) {
+                            return finish(m, chunk, LHAT_RUN_ARITY, lhat_nil(),
+                                          at);
+                        }
+                        size_t needed;
+                        char *text;
+                        if (b == 1) {
+                            if (!lhat_is_number(native->bound)) {
+                                // Only a number^ carries the second
+                                // signature, so this call was never one of
+                                // the two ways of writing this value.
+                                return finish(m, chunk, LHAT_RUN_ARITY,
+                                              lhat_nil(), at);
+                            }
+                            LhatValue fmt = sent;
+                            if (!lhat_is_object_kind(fmt, LHAT_OBJECT_STRING)) {
+                                return finish(m, chunk, LHAT_RUN_TYPE_ERROR,
+                                              lhat_nil(), at);
+                            }
+                            const LhatString *spelt =
+                                (const LhatString *)lhat_as_object(fmt);
+                            if (!lhat_number_format(native->bound, spelt->text,
+                                                    spelt->length, NULL, 0,
+                                                    &needed)) {
+                                return finish(m, chunk, LHAT_RUN_BAD_FORMAT,
+                                              lhat_nil(), at);
+                            }
+                            text = (char *)lhat_alloc(needed + 1);
+                            if (text == NULL) {
+                                return finish(m, chunk, LHAT_RUN_OUT_OF_MEMORY,
+                                              lhat_nil(), at);
+                            }
+                            lhat_number_format(native->bound, spelt->text,
+                                               spelt->length, text, needed + 1,
+                                               &needed);
+                        } else {
+                            needed = lhat_value_text(native->bound, NULL, 0);
+                            text = (char *)lhat_alloc(needed + 1);
+                            if (text == NULL) {
+                                return finish(m, chunk, LHAT_RUN_OUT_OF_MEMORY,
+                                              lhat_nil(), at);
+                            }
+                            lhat_value_text(native->bound, text, needed + 1);
+                        }
+                        LhatString *written =
+                            lhat_string_new(&m->objects, text, needed);
+                        lhat_free(text);
+                        if (written == NULL) {
+                            return finish(m, chunk, LHAT_RUN_OUT_OF_MEMORY,
+                                          lhat_nil(), at);
+                        }
+                        registers[a] = lhat_object((LhatObject *)written);
                         break;
                     }
 
@@ -5995,6 +6081,9 @@ const char *lhat_run_status_message(LhatRunStatus status)
         case LHAT_RUN_STACK_OVERFLOW:  return "the calls went too deep";
         case LHAT_RUN_OUT_OF_MEMORY:   return "out of memory";
         case LHAT_RUN_BAD_KEY:         return "this cannot be a key";
+        case LHAT_RUN_BAD_FORMAT:
+            return "a number^ is written through one numeric conversion; "
+                   "write '%d' or '%g' and no length of your own";
         case LHAT_RUN_DEAD_COROUTINE:  return "this coroutine has finished";
         case LHAT_RUN_NO_SUCH_UNIT:
             return "this machine was not given the unit this require^ asks for";

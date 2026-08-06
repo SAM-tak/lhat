@@ -91,6 +91,8 @@ typedef enum {
     LHAT_RUN_OUT_OF_MEMORY,
     LHAT_RUN_BAD_KEY,         // 04 の 11.3: nil^ means "not there", so it
                               // cannot also be a key
+    LHAT_RUN_BAD_FORMAT,      // 02 の 14.17: tostring was handed a format a
+                              // number^ cannot be written through
     LHAT_RUN_DEAD_COROUTINE,  // resumed one that has finished
     LHAT_RUN_YIELD_OUTSIDE,   // 02 の 15.2 and 10.7: yield^ where nothing is
                               // waiting to be resumed

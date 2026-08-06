@@ -205,6 +205,38 @@ const char *lhat_value_tag_name(LhatValueTag tag);
 // order, then its keyed half. Nesting stops at a depth of its own, which is
 // what keeps a table holding itself from being followed for ever.
 size_t lhat_value_write(LhatValue value, char *out, size_t capacity);
+
+// 02 の 14.17: what tostring() answers -- the text a reader reads, where
+// lhat_value_write gives the spelling L^ would read back. They differ for
+// the three that name themselves as literals: a string^ is its own bytes
+// rather than a quoted spelling (03 の 4 章 quotes so that 1 and "1" read
+// apart at a prompt, which turning a value into text has no need to do),
+// and nil^ and bool^ are the words "nil", "true" and "false" without the
+// hats that make them literals.
+//
+// Only the value handed over is read that way. One inside a table is
+// written as the table spells it, since that is the table's spelling.
+//
+// Follows lhat_value_write's contract: asks with (NULL, 0) first.
+size_t lhat_value_text(LhatValue value, char *out, size_t capacity);
+
+// 02 の 14.17: a number^ written through the format a program wrote.
+//
+// The format is checked rather than handed to snprintf as it stands: it must
+// carry exactly one conversion and that conversion must be a numeric one, or
+// 'tostring(1, "%s")' would read the number as a pointer. The length
+// modifier is the machine's to supply -- the value is an int64_t whatever
+// this platform calls one, so a program spelling 'l' would be naming a width
+// it cannot know. 14.8: the conversion decides how the number is read, so
+// either representation answers either family.
+//
+// Answers false when the format is not one a number^ can be written through,
+// and fills nothing then. Otherwise `*needed` is the length the whole text
+// wants, the same as snprintf's answer.
+bool lhat_number_format(LhatValue value, const char *format,
+                        size_t format_length, char *out, size_t capacity,
+                        size_t *needed);
+
 const char *lhat_object_kind_name(LhatObjectKind kind);
 
 #endif  // LHAT_VALUE_H

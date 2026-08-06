@@ -1578,6 +1578,29 @@ static LhatType *table_walk_pair(Checker *c, const LhatType *over)
     return pair;
 }
 
+// 02 の 14.17: every value carries this, the way 05 の 8.5 gives a coroutine
+// its operations -- a member of the value rather than a name a unit has to
+// import. An f^: writing a value down changes nothing, which is 11.1's
+// reason for keeping an operator pure applied to the same question.
+static LhatType *builtin_tostring(Checker *c, const LhatType *target)
+{
+    LhatType *plain = lhat_type_func(c->result->types, true);
+    plain->v.func.takes_self = true;
+    plain->v.func.result = simple(c, LHAT_TYPE_STRING);
+    if (target == NULL || target->kind != LHAT_TYPE_NUMBER) {
+        return plain;
+    }
+    // 14.17: a number^ also takes a format. 14.12 makes the two an
+    // intersection, and the counts they allow -- none and one -- keep them
+    // from overlapping without the types being looked at.
+    LhatType *formatted = lhat_type_func(c->result->types, true);
+    formatted->v.func.takes_self = true;
+    lhat_type_add_param(c->result->types, formatted,
+                        simple(c, LHAT_TYPE_STRING));
+    formatted->v.func.result = simple(c, LHAT_TYPE_STRING);
+    return lhat_type_intersect(c->result->types, plain, formatted);
+}
+
 static LhatType *infer_member(Checker *c, const LhatNode *node)
 {
     LhatType *target = infer(c, node->v.access.target);
@@ -1670,9 +1693,17 @@ static LhatType *infer_member(Checker *c, const LhatNode *node)
             signature->v.func.result = simple(c, LHAT_TYPE_BOOL);
             return signature;
         }
+        if (name_is(name, length, "tostring")) {
+            return builtin_tostring(c, target);  // 14.17
+        }
         report_named(c, node, LHAT_CHECK_ERR_NO_MEMBER, name, length);
         return simple(c, LHAT_TYPE_UNKNOWN);
     } else {
+        // 14.17: nil^, bool^, number^, string^ and the rest hold no members
+        // of their own, and this is the one every value answers.
+        if (name_is(name, length, "tostring")) {
+            return builtin_tostring(c, target);
+        }
         report_named(c, node, LHAT_CHECK_ERR_NO_MEMBER, name, length);
         return simple(c, LHAT_TYPE_UNKNOWN);
     }
@@ -1705,6 +1736,12 @@ static LhatType *infer_member(Checker *c, const LhatNode *node)
         LhatType *signature = lhat_type_func(c->result->types, false);
         signature->v.func.result = walk;
         return signature;
+    }
+
+    // 14.17, the same order and for the same reason: a written tostring is
+    // the one that answers, and this is what a table falls back to.
+    if (name_is(name, length, "tostring")) {
+        return builtin_tostring(c, target);
     }
 
     report_named(c, node, LHAT_CHECK_ERR_NO_MEMBER, name, length);

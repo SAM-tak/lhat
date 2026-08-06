@@ -368,3 +368,177 @@ size_t lhat_value_write(LhatValue value, char *out, size_t capacity)
     }
     return w.used;
 }
+
+// ---------------------------------------------------------------------------
+// tostring (02 の 14.17)
+// ---------------------------------------------------------------------------
+
+size_t lhat_value_text(LhatValue value, char *out, size_t capacity)
+{
+    Writer w;
+    w.out = out;
+    w.capacity = capacity;
+    w.used = 0;
+
+    // 14.17: the text a reader reads, where lhat_value_write gives the
+    // spelling L^ would read back. A string^ is already its own text; nil^
+    // and bool^ are words rather than the hatted literals that name them.
+    // Only the value itself is read this way -- one inside a table is
+    // written as the table spells it, which is the table's spelling and not
+    // that value's.
+    if (lhat_is_object_kind(value, LHAT_OBJECT_STRING)) {
+        const LhatString *string = (const LhatString *)lhat_as_object(value);
+        put(&w, string->text, string->length);
+    } else if (lhat_is_nil(value)) {
+        put_text(&w, "nil");
+    } else if (lhat_is_bool(value)) {
+        put_text(&w, lhat_as_bool(value) ? "true" : "false");
+    } else {
+        return lhat_value_write(value, out, capacity);
+    }
+
+    if (out != NULL && capacity > 0) {
+        out[w.used < capacity ? w.used : capacity - 1] = '\0';
+    }
+    return w.used;
+}
+
+// Which reading of a number^ a conversion asks for, or that it asks for
+// something a number^ cannot answer.
+typedef enum {
+    FORMAT_BAD,
+    FORMAT_INTEGER,
+    FORMAT_REAL
+} FormatFamily;
+
+// Reads the written format and builds the one to hand snprintf. They differ
+// only in the length modifier, which the writer does not spell and this
+// supplies -- see lhat_number_format's comment in value.h.
+static FormatFamily read_format(const char *format, size_t length,
+                                char *rebuilt, size_t room)
+{
+    size_t out = 0;
+    FormatFamily family = FORMAT_BAD;  // still nothing to write the number into
+
+    for (size_t at = 0; at < length;) {
+        char c = format[at];
+        if (c == '\0') {
+            // snprintf would stop here and the rest would be a lie, so this
+            // is not a format even though the bytes are there.
+            return FORMAT_BAD;
+        }
+        if (c != '%') {
+            if (out + 1 >= room) {
+                return FORMAT_BAD;
+            }
+            rebuilt[out++] = c;
+            at++;
+            continue;
+        }
+        // '%%' is a per cent sign the writer wanted, not a conversion.
+        if (at + 1 < length && format[at + 1] == '%') {
+            if (out + 2 >= room) {
+                return FORMAT_BAD;
+            }
+            rebuilt[out++] = '%';
+            rebuilt[out++] = '%';
+            at += 2;
+            continue;
+        }
+        if (family != FORMAT_BAD || out + 1 >= room) {
+            return FORMAT_BAD;  // a second conversion, with one number to write
+        }
+        rebuilt[out++] = '%';
+        at++;
+
+        // Flags, width and precision. '*' is refused: it reads its number
+        // from a further argument, and there is only ever the one here.
+        while (at < length) {
+            char f = format[at];
+            bool carried = (f >= '0' && f <= '9') || f == '-' || f == '+' ||
+                           f == ' ' || f == '#' || f == '.';
+            if (!carried) {
+                break;
+            }
+            if (out + 1 >= room) {
+                return FORMAT_BAD;
+            }
+            rebuilt[out++] = f;
+            at++;
+        }
+        if (at >= length) {
+            return FORMAT_BAD;  // the conversion was never finished
+        }
+
+        char spec = format[at++];
+        switch (spec) {
+            case 'd': case 'i': case 'o': case 'u': case 'x': case 'X':
+                family = FORMAT_INTEGER;
+                if (out + 2 >= room) {
+                    return FORMAT_BAD;
+                }
+                rebuilt[out++] = 'l';
+                rebuilt[out++] = 'l';
+                break;
+            case 'f': case 'F': case 'e': case 'E':
+            case 'g': case 'G': case 'a': case 'A':
+                family = FORMAT_REAL;  // a double is what varargs promote to
+                break;
+            default:
+                // 's' and 'p' would read the number as an address and 'n'
+                // would write through one. A length modifier lands here too:
+                // naming a width is not the writer's to do.
+                return FORMAT_BAD;
+        }
+        if (out + 1 >= room) {
+            return FORMAT_BAD;
+        }
+        rebuilt[out++] = spec;
+        // Whatever the writer put after it is carried over by the loop, and
+        // a second conversion among it is refused where this one was taken.
+    }
+
+    rebuilt[out] = '\0';
+    return family;  // FORMAT_BAD when nothing asked for the number
+}
+
+bool lhat_number_format(LhatValue value, const char *format,
+                        size_t format_length, char *out, size_t capacity,
+                        size_t *needed)
+{
+    char rebuilt[LHAT_FORMAT_MAX_BYTES];
+    FormatFamily family =
+        read_format(format, format_length, rebuilt, sizeof rebuilt);
+    if (family == FORMAT_BAD) {
+        return false;
+    }
+
+    int written;
+    if (family == FORMAT_INTEGER) {
+        int64_t whole;
+        if (lhat_is_integer(value)) {
+            whole = lhat_as_integer(value);
+        } else {
+            // 14.8: the conversion decides the reading, so a real asked for
+            // as an integer is read as one -- but only where it names one.
+            // Outside that range the conversion is undefined in C, which is
+            // not an answer this may give.
+            double real = lhat_as_real(value);
+            if (!(real >= -9223372036854775808.0 &&
+                  real < 9223372036854775808.0)) {
+                return false;
+            }
+            whole = (int64_t)real;
+        }
+        written = snprintf(out, out != NULL ? capacity : 0, rebuilt,
+                           (long long)whole);
+    } else {
+        written = snprintf(out, out != NULL ? capacity : 0, rebuilt,
+                           lhat_number_as_real(value));
+    }
+    if (written < 0) {
+        return false;
+    }
+    *needed = (size_t)written;
+    return true;
+}

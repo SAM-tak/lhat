@@ -698,7 +698,8 @@ static void test_closures(void)
         if (lhat_is_object_kind((r)->ran.value, LHAT_OBJECT_STRING)) {        \
             const LhatString *s =                                             \
                 (const LhatString *)lhat_as_object((r)->ran.value);           \
-            LHAT_CHECK(strcmp(s->text, (expected)) == 0, (expected));         \
+            LHAT_CHECK(strcmp(s->text, (expected)) == 0,                      \
+                       "got \"%s\", want \"%s\"", s->text, (expected));       \
         }                                                                     \
     } while (0)
 
@@ -2972,6 +2973,141 @@ static void test_typeof(void)
     run_dispose(&r);
 }
 
+// 02 の 14.17: every value carries tostring. 14.16 above turns a value's type
+// into text; this turns the value itself into text.
+static void test_tostring(void)
+{
+    Run r;
+
+    // The three that name themselves as literals read as words rather than
+    // as the spelling a prompt would show, which is the whole of what
+    // separates this from lhat_value_write.
+    LHAT_TEST("nil^ is the word");
+    run_text(&r, "return^ nil^.tostring()\n");
+    CHECK_STRING(&r, "nil");
+    run_dispose(&r);
+
+    LHAT_TEST("and so are the two bools");
+    run_text(&r, "return^ true^.tostring() .. false^.tostring()\n");
+    CHECK_STRING(&r, "truefalse");
+    run_dispose(&r);
+
+    LHAT_TEST("a string^ is its own text, unquoted");
+    run_text(&r, "return^ \"hi\".tostring()\n");
+    CHECK_STRING(&r, "hi");
+    run_dispose(&r);
+
+    // 14.8: one type, two representations, and tostring keeps them apart the
+    // same way a literal does -- 3 and 3.0 are not the same text.
+    LHAT_TEST("a number^ says which representation it has");
+    run_text(&r, "return^ (3).tostring() .. \" \" .. (3.0).tostring()\n");
+    CHECK_STRING(&r, "3 3.0");
+    run_dispose(&r);
+
+    LHAT_TEST("a table is written the way 14 章 writes one");
+    run_text(&r, "return^ { 1, \"a\" }.tostring()\n");
+    CHECK_STRING(&r, "{ 1, \"a\" }");
+    run_dispose(&r);
+
+    // The value handed over is read as text; one inside a table is written
+    // as the table spells it, which is the table's spelling and not that
+    // value's.
+    LHAT_TEST("but what is inside it keeps the table's spelling");
+    run_text(&r, "return^ { \"a\", true^ }.tostring()\n");
+    CHECK_STRING(&r, "{ \"a\", true^ }");
+    run_dispose(&r);
+
+    LHAT_TEST("a format writes the number through it");
+    run_text(&r, "return^ (255).tostring(\"%x\")\n");
+    CHECK_STRING(&r, "ff");
+    run_dispose(&r);
+
+    LHAT_TEST("and carries whatever text was written around it");
+    run_text(&r, "return^ (42).tostring(\"n = %d units\")\n");
+    CHECK_STRING(&r, "n = 42 units");
+    run_dispose(&r);
+
+    // 14.8: the conversion decides the reading, so either representation
+    // answers either family.
+    LHAT_TEST("the conversion decides how the number is read");
+    run_text(&r,
+             "return^ (3.9).tostring(\"%d\") .. \" \" .. (3).tostring(\"%.2f\")\n");
+    CHECK_STRING(&r, "3 3.00");
+    run_dispose(&r);
+
+    LHAT_TEST("a per cent sign the writer wanted survives");
+    run_text(&r, "return^ (50).tostring(\"%d%%\")\n");
+    CHECK_STRING(&r, "50%");
+    run_dispose(&r);
+
+    // Handing snprintf a program's format unchecked would read the number as
+    // a pointer, so the conversion is checked before anything is written.
+    LHAT_TEST("a conversion a number^ cannot answer is refused");
+    run_text(&r, "return^ (1).tostring(\"%s\")\n");
+    LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_BAD_FORMAT);
+    run_dispose(&r);
+
+    LHAT_TEST("and so is a second conversion, with one number to write");
+    run_text(&r, "return^ (1).tostring(\"%d %d\")\n");
+    LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_BAD_FORMAT);
+    run_dispose(&r);
+
+    LHAT_TEST("and a format asking for no number at all");
+    run_text(&r, "return^ (1).tostring(\"plain\")\n");
+    LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_BAD_FORMAT);
+    run_dispose(&r);
+
+    // The length is the machine's to supply -- a program spelling one would
+    // be naming a width it cannot know.
+    LHAT_TEST("and a length the writer spelled");
+    run_text(&r, "return^ (1).tostring(\"%ld\")\n");
+    LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_BAD_FORMAT);
+    run_dispose(&r);
+
+    // '*' reads its width from a further argument, and there is only ever
+    // the one number here.
+    LHAT_TEST("and a width taken from an argument that is not there");
+    run_text(&r, "return^ (1).tostring(\"%*d\")\n");
+    LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_BAD_FORMAT);
+    run_dispose(&r);
+
+    // 16.3's rule for iterate, which 14.17 follows: the built-in answers
+    // only where nothing was written under that name.
+    LHAT_TEST("a written tostring wins over the built-in");
+    run_text(&r,
+             "let^ t = { tostring := f^self^ -> string^ { return^ \"mine\" } }\n"
+             "return^ t.tostring()\n");
+    CHECK_STRING(&r, "mine");
+    run_dispose(&r);
+
+    LHAT_TEST("and one written into a def^ answers for its instances");
+    run_text(&r,
+             "let^ P = def^{ self^{ x := 7 },\n"
+             "  tostring := f^self^ -> string^ { return^ \"P\" } }\n"
+             "return^ P.new^().tostring()\n");
+    CHECK_STRING(&r, "P");
+    run_dispose(&r);
+
+    // Only a number^ carries the second signature, so this call is neither
+    // of the two ways of writing the value down.
+    LHAT_TEST("nothing but a number^ takes a format");
+    run_text(&r, "return^ \"x\".tostring(\"%d\")\n");
+    LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_ARITY);
+    run_dispose(&r);
+
+    LHAT_TEST("and a third argument is not one of them either");
+    run_text(&r, "return^ (1).tostring(\"%d\", \"%d\")\n");
+    LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_ARITY);
+    run_dispose(&r);
+
+    LHAT_TEST("a coroutine carries it beside its own operations");
+    run_text(&r,
+             "let^ gen = p^ { yield^ 1 }\n"
+             "return^ gen().tostring()\n");
+    CHECK_STRING(&r, "c^");
+    run_dispose(&r);
+}
+
 // 02 の 13.7: the variadic collector, made to actually compile and run.
 // compile_subroutine used to refuse any variadic parameter outright.
 static void test_variadic(void)
@@ -4371,6 +4507,7 @@ int main(void)
     test_cleanups();
     test_definitions();
     test_typeof();
+    test_tostring();
     test_variadic();
     test_coroutines();
     test_patterns();

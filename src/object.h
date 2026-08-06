@@ -221,7 +221,9 @@ typedef enum {
     LHAT_NATIVE_STARTED,  // start() has already run, so resume() is the way on
     // 05 の 8.6: what L^ carries. Reaching the collector by hand is the one
     // thing a program cannot arrange for itself.
-    LHAT_NATIVE_COLLECTGARBAGE
+    LHAT_NATIVE_COLLECTGARBAGE,
+    // 02 の 14.17: every value carries this one, not just a coroutine.
+    LHAT_NATIVE_TOSTRING
 } LhatNativeKind;
 
 typedef struct LhatNative {

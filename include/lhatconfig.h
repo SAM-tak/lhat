@@ -76,6 +76,11 @@
 // is nothing the type system forbids. A depth of its own is what stops the
 // walk; nothing here has to know whether it went round.
 #define LHAT_WRITE_MAX_DEPTH 6
+// 02 の 14.17: how long a format written for a number^ may be. It carries
+// one conversion and whatever text the writer put around it, so the room is
+// for the text -- a format needing more than this is doing something a
+// tostring of one number was not meant for.
+#define LHAT_FORMAT_MAX_BYTES 128
 
 // error report
 // A terminal that wraps a long line puts the mark under the wrong place,
