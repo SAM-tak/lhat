@@ -882,25 +882,30 @@ static void drop_narrowings_for(Checker *c, const LhatNode *target)
     }
 }
 
-// 02 の 9.8: break^ leaves the innermost loop. The multi-level form is still
-// a proposal and the compiler refuses it, so a break^ found here belongs to
-// the loop this is the body of -- unless another loop stands between them,
-// which takes its own. Answers whether this loop has a way out written in it.
-static bool breaks_out(const LhatNode *node)
+// 02 の 9.8: a break^ leaves as many loops as its level names, counting the
+// innermost as 1. Answers whether this loop has a way out written in it --
+// `depth` is how many loops stand between the statements being read and the
+// one being asked about, so a break^ leaves it when its level reaches past
+// them. Whether it is that loop's normal end or one it is only passed
+// through does not matter here: either way control leaves.
+static bool breaks_out_from(const LhatNode *node, uint32_t depth)
 {
     for (; node != NULL; node = node->next) {
         switch (node->kind) {
             case LHAT_NODE_BREAK:
-                return true;
+                if (node->v.jump.level > depth) {
+                    return true;
+                }
+                break;
 
             case LHAT_NODE_BLOCK:
-                if (breaks_out(node->v.list.items)) {
+                if (breaks_out_from(node->v.list.items, depth)) {
                     return true;
                 }
                 // 9 章: the clauses of a loop body are statements of it too.
                 for (const LhatNode *clause = node->v.list.extra;
                      clause != NULL; clause = clause->next) {
-                    if (breaks_out(clause->v.loop_clause.body)) {
+                    if (breaks_out_from(clause->v.loop_clause.body, depth)) {
                         return true;
                     }
                 }
@@ -909,14 +914,14 @@ static bool breaks_out(const LhatNode *node)
             case LHAT_NODE_IF_STMT:
                 for (const LhatNode *clause = node->v.list.items;
                      clause != NULL; clause = clause->next) {
-                    if (breaks_out(clause->v.clause.body)) {
+                    if (breaks_out_from(clause->v.clause.body, depth)) {
                         return true;
                     }
                 }
                 break;
 
             case LHAT_NODE_WITH:
-                if (breaks_out(node->v.list.extra)) {
+                if (breaks_out_from(node->v.list.extra, depth)) {
                     return true;
                 }
                 break;
@@ -924,21 +929,36 @@ static bool breaks_out(const LhatNode *node)
             case LHAT_NODE_FOR:
                 // 16.3 and 17 章: the if^ and when^ forms do not iterate, so
                 // a break^ inside one still leaves the loop out here. Every
-                // other form is a loop and takes its own.
-                if ((node->v.loop.kind == LHAT_FOR_IF ||
-                     node->v.loop.kind == LHAT_FOR_WHEN) &&
-                    breaks_out(node->v.loop.body)) {
+                // other form is a loop, and standing inside it is one more
+                // loop for a level to count past.
+                if (node->v.loop.kind == LHAT_FOR_IF ||
+                    node->v.loop.kind == LHAT_FOR_WHEN) {
+                    if (breaks_out_from(node->v.loop.body, depth)) {
+                        return true;
+                    }
+                } else if (breaks_out_from(node->v.loop.body, depth + 1)) {
                     return true;
                 }
                 break;
 
-            // A repeat^ is a loop, and a nested body has its own loops. What
-            // a break^ in either one leaves is not this loop.
+            case LHAT_NODE_REPEAT:
+                if (breaks_out_from(node->v.repeat.body, depth + 1)) {
+                    return true;
+                }
+                break;
+
+            // A nested subroutine body is not this loop's, whatever it
+            // writes -- a break^ there leaves that body's own loops.
             default:
                 break;
         }
     }
     return false;
+}
+
+static bool breaks_out(const LhatNode *node)
+{
+    return breaks_out_from(node, 0);
 }
 
 // Whether control cannot reach the end of this statement. 04 の 6.1 is

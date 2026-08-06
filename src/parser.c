@@ -2901,12 +2901,28 @@ static LhatNode *parse_jump(Parser *p, LhatNodeKind kind)
         return NULL;
     }
 
-    // Memo.md L500 writes a multi-level break as 'break^[name]', so the
-    // operand is bracketed and never a bare expression.
+    // 02 の 9.8: how many loops to leave, spelt either way. The hats on the
+    // word count it -- break^ is one, break^^^ is three -- and Memo.md L500's
+    // bracketed form says the same number, so 'break^[3]' and 'break^^^' are
+    // one thing written twice. The bracket is never a bare expression, which
+    // is what keeps it apart from the operand return^ and yield^ take.
     if (kind == LHAT_NODE_BREAK) {
+        node->v.jump.level = start.v.hats > 0 ? start.v.hats : 1;
         if (match_op(p, LHAT_OP_LBRACKET)) {
-            node->v.jump.value = parse_expression(p);
+            LhatNode *written = parse_expression(p);
             expect_op(p, LHAT_OP_RBRACKET);
+            if (written != NULL && written->kind == LHAT_NODE_INT &&
+                start.v.hats <= 1) {
+                // A count, and the hats did not already give one. Saying it
+                // twice is refused below rather than reconciled.
+                node->v.jump.level = written->v.integer.value > 0
+                                         ? (uint32_t)written->v.integer.value
+                                         : 0;
+            } else {
+                // 9.8's label form, or a count contradicting the hats. Kept
+                // for the compiler to refuse by name.
+                node->v.jump.value = written;
+            }
         }
         return node;
     }

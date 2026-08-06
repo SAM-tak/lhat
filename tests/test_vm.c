@@ -1140,6 +1140,120 @@ static void test_repeat(void)
     run_text(&r, "break^\n");
     LHAT_CHECK_EQ_INT(r.compiled, LHAT_COMPILE_UNSUPPORTED);
     run_dispose(&r);
+
+    // 02 の 9.8: the hats count the loops to leave, so break^ is one and
+    // break^^ is two. Written this way the level is read off the word
+    // itself, which is why a plain break^ needs nothing added to it.
+    LHAT_TEST("break^^ leaves two loops");
+    run_text(&r,
+             "let^ n = 0\n"
+             "repeat^ 3 {\n"
+             "  repeat^ 3 { n := n + 1 break^^ }\n"
+             "  n := n + 10\n"
+             "}\n"
+             "return^ n\n");
+    CHECK_INTEGER(&r, 1);
+    run_dispose(&r);
+
+    // 9.8: Memo.md L500's bracketed form says the same number, so the two
+    // spellings are one thing and neither is the primary one.
+    LHAT_TEST("and break^[2] says the same");
+    run_text(&r,
+             "let^ n = 0\n"
+             "repeat^ 3 {\n"
+             "  repeat^ 3 { n := n + 1 break^[2] }\n"
+             "  n := n + 10\n"
+             "}\n"
+             "return^ n\n");
+    CHECK_INTEGER(&r, 1);
+    run_dispose(&r);
+
+    LHAT_TEST("three loops and break^^^ leaves all of them");
+    run_text(&r,
+             "let^ n = 0\n"
+             "repeat^ 3 {\n"
+             "  repeat^ 3 {\n"
+             "    repeat^ 3 { n := 7 break^^^ }\n"
+             "    n := n + 100\n"
+             "  }\n"
+             "  n := n + 10\n"
+             "}\n"
+             "return^ n\n");
+    CHECK_INTEGER(&r, 7);
+    run_dispose(&r);
+
+    // Asking for more loops than stand here is written down wrong rather
+    // than quietly clamped to the outermost one.
+    LHAT_TEST("a level past the loops that are there does not compile");
+    run_text(&r, "repeat^ 3 { break^^^ }\n");
+    LHAT_CHECK_EQ_INT(r.compiled, LHAT_COMPILE_UNSUPPORTED);
+    run_dispose(&r);
+
+    // 9.8: the loop the level names ends the way it would have ended on its
+    // own, so its epilog^ runs. The ones passed through are left rather than
+    // ended, and theirs do not.
+    LHAT_TEST("the loop named ends normally, the ones passed through do not");
+    run_text(&r,
+             "let^ log = { s := \"\" }\n"
+             "repeat^ 1 {\n"
+             "  repeat^ 1 {\n"
+             "    break^^\n"
+             "  epilog^:\n"
+             "    log.s := log.s .. \"in,\"\n"
+             "  }\n"
+             "epilog^:\n"
+             "  log.s := log.s .. \"out,\"\n"
+             "}\n"
+             "return^ log.s\n");
+    CHECK_STRING(&r, "out,");
+    run_dispose(&r);
+
+    LHAT_TEST("and one level runs both, being the inner loop's own end");
+    run_text(&r,
+             "let^ log = { s := \"\" }\n"
+             "repeat^ 1 {\n"
+             "  repeat^ 1 {\n"
+             "    break^\n"
+             "  epilog^:\n"
+             "    log.s := log.s .. \"in,\"\n"
+             "  }\n"
+             "epilog^:\n"
+             "  log.s := log.s .. \"out,\"\n"
+             "}\n"
+             "return^ log.s\n");
+    CHECK_STRING(&r, "in,out,");
+    run_dispose(&r);
+
+    // 9.8 with 10.7: what a loop is only passed through still has to give
+    // back what it took, so its finally^ runs where its epilog^ does not.
+    LHAT_TEST("a finally^ passed through still runs");
+    run_text(&r,
+             "let^ log = { s := \"\" }\n"
+             "repeat^ 1 {\n"
+             "  repeat^ 1 {\n"
+             "    break^^\n"
+             "  finally^:\n"
+             "    log.s := log.s .. \"fin,\"\n"
+             "  }\n"
+             "epilog^:\n"
+             "  log.s := log.s .. \"out,\"\n"
+             "}\n"
+             "return^ log.s\n");
+    CHECK_STRING(&r, "fin,out,");
+    run_dispose(&r);
+
+    // 16.5: an endless repeat^ ends the statements around it unless
+    // something leaves it, and a break^ from inside a nested loop is one --
+    // which is what the level is for.
+    LHAT_TEST("a level reaching out of an endless repeat^ is a way out");
+    run_text(&r,
+             "let^ n = 0\n"
+             "repeat^ {\n"
+             "  repeat^ 3 { n := 5 break^^ }\n"
+             "}\n"
+             "return^ n\n");
+    CHECK_INTEGER(&r, 5);
+    run_dispose(&r);
 }
 
 // 16.1: for^ is where the value being looked at is defined. Whether it

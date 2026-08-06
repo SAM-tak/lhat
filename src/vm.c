@@ -3351,22 +3351,34 @@ static void compile_statement(Compiler *c, const LhatNode *node)
             return;
 
         case LHAT_NODE_BREAK: {
-            if (c->loop == NULL) {
+            // 9.8's label form, or a level written two ways at once. Nothing
+            // labels a loop yet, so neither has an answer here.
+            if (node->v.jump.value != NULL || node->v.jump.level == 0) {
                 fail(c, LHAT_COMPILE_UNSUPPORTED);
                 return;
             }
-            // 9.8 marks the multi-level form still a proposal, so the level
-            // is refused rather than guessed at.
-            if (node->v.jump.value != NULL ||
-                c->loop->count >= LHAT_MAX_BREAKS) {
+            // 9.8: the loop being left is the one the level names, counting
+            // the innermost as 1. Asking for more loops than stand here is
+            // written down wrong rather than clamped to the outermost.
+            LoopContext *target = c->loop;
+            for (uint32_t out = 1; out < node->v.jump.level; out++) {
+                if (target == NULL) {
+                    break;
+                }
+                target = target->enclosing;
+            }
+            if (target == NULL || target->count >= LHAT_MAX_BREAKS) {
                 fail(c, LHAT_COMPILE_UNSUPPORTED);
                 return;
             }
-            // 9.8: break^ is a normal end for the loop, so the blocks between
-            // here and it are left the ordinary way -- their cleanups run
-            // before the jump rather than being carried out of the frame.
-            emit_cleanup_drain(c, c->loop->cleanup_depth);
-            c->loop->jumps[c->loop->count++] = emit_jump(c, LHAT_BC_JUMP, 0);
+            // 9.8: break^ is a normal end for the loop it names, so the jump
+            // lands where that loop's own last^ and epilog^ run. The loops
+            // it passes through are left rather than ended -- their clauses
+            // sit in the code being jumped over, and what has to run anyway
+            // is their finally^, which draining the cleanups down to the
+            // target's depth is exactly.
+            emit_cleanup_drain(c, target->cleanup_depth);
+            target->jumps[target->count++] = emit_jump(c, LHAT_BC_JUMP, 0);
             return;
         }
 

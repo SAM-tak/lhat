@@ -337,6 +337,14 @@ struct LhatNode {
             LhatNode *format;
         } hole;
 
+        // 02 の 9.8: how many loops a break^ leaves, counting the innermost
+        // as 1. Written either as the hats on the word (break^^^) or in
+        // brackets after it (break^[3]); the parser settles the two into
+        // this. Unused by the other jumps.
+        //
+        // BREAK only: `value` holds what was bracketed when it was not a
+        // count -- 9.8's label form, which nothing labels a loop for yet.
+        //
         // RETURN / YIELD carry an optional value; BREAK carries a level;
         // PANIC's value is required (`phantom` unused).
         struct {
@@ -344,6 +352,8 @@ struct LhatNode {
             // YIELD only. 15.11: written '_yield^', which types exactly as a
             // yield^ does and makes the body yieldable, but never suspends.
             bool phantom;
+            // BREAK only, and never zero -- a plain break^ is one loop.
+            uint32_t level;
         } jump;
 
         // TYPE_CORO: the three types of 13.9.
