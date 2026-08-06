@@ -262,6 +262,10 @@ bool lhat_value_satisfies(LhatValue value, const LhatRuntimeType *type)
     }
     switch (type->kind) {
         case LHAT_TYPE_RT_ANY:
+        // 03 の 3.4: inference did not decide, so nothing is being asked --
+        // the same answer as a place nobody wrote. Only 14.16's writing tells
+        // the two apart.
+        case LHAT_TYPE_RT_UNKNOWN:
             return true;
         case LHAT_TYPE_RT_NIL:
             return lhat_is_nil(value);
@@ -380,6 +384,13 @@ static void write_runtime_type(TypeWriter *w, const LhatRuntimeType *type)
     switch (type->kind) {
         case LHAT_TYPE_RT_ANY:
             type_put_text(w, "any^");
+            return;
+        // 03 の 3.4: not a type. 05 の 8.7 has a signature read back as a type
+        // expression, and one with this in it will not -- which is the point.
+        // A place inference did not decide is where an annotation is wanted,
+        // and writing any^ there would hide both facts.
+        case LHAT_TYPE_RT_UNKNOWN:
+            type_put_text(w, "UNKNOWN");
             return;
         case LHAT_TYPE_RT_NIL:
             type_put_text(w, "nil^");
@@ -534,6 +545,11 @@ bool lhat_runtime_type_equal(const LhatRuntimeType *a, const LhatRuntimeType *b)
         case LHAT_TYPE_RT_STRING:
         case LHAT_TYPE_RT_TABLE:
         case LHAT_TYPE_RT_ERROR:
+        // 03 の 3.4: two undecided places are the same undecided place. Not
+        // equal to any^ though -- the kinds differ above, and NULL normalises
+        // to any^ rather than to this, which keeps "nobody wrote one" apart
+        // from "inference could not say".
+        case LHAT_TYPE_RT_UNKNOWN:
             return true;
         // 13.9's three slots now carry real answers (S28), so two coroutine
         // types are equal only when R, Y and T line up -- not just by kind.

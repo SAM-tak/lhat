@@ -8,6 +8,7 @@
 #include <math.h>
 #include <string.h>
 
+#include "check.h"
 #include "code.h"
 #include "object.h"
 #include "lexer.h"
@@ -87,6 +88,35 @@ static void run_dispose(Run *r)
     lhat_machine_dispose(r->machine);
     r->machine = NULL;
     compiled_dispose(r);
+}
+
+// The same, with the checker run first. 03 の 5.11a and 5.11b read what it
+// settled off the tree, so the two paths they choose between are only both
+// reachable here -- run_text above compiles without checking on purpose, which
+// is what pins that compiling alone still works.
+//
+// The result is disposed after compiling, not before: checked_type points into
+// its arena, and the compiler reads it.
+static void run_checked_text(Run *r, const char *text)
+{
+    lhat_source_init_from_string(&r->source, "<test>", text, strlen(text));
+    lhat_lexer_init(&r->lexer, &r->source);
+    lhat_parse(&r->lexer, &r->parsed);
+
+    LhatCheckResult checked;
+    lhat_check(r->parsed.root, &r->lexer, true, &checked);
+    r->compiled = lhat_compile(r->parsed.root, &r->lexer, &r->proto);
+    lhat_check_result_dispose(&checked);
+
+    r->machine = NULL;
+    memset(&r->ran, 0, sizeof r->ran);
+    if (r->compiled != LHAT_COMPILE_OK) {
+        return;
+    }
+    r->machine = lhat_machine_new();
+    if (r->machine != NULL) {
+        r->ran = lhat_run(r->machine, r->proto);
+    }
 }
 
 // The value a unit's return^ produced, asserted as an exact integer.
@@ -2990,6 +3020,43 @@ static void test_typeof(void)
     LHAT_TEST("and a procedure with no result says nothing after it");
     run_text(&r, "let^ p = p^ x:number^ { }\nreturn^ typeof^(p).signature\n");
     CHECK_STRING(&r, "p^number^;");
+    run_dispose(&r);
+
+    // 03 の 3.4: nothing was written, and the body decided it. 5.11b takes the
+    // checker's answer here rather than walking the closure, which carries no
+    // parameter types of its own beyond the written ones.
+    LHAT_TEST("an inferred parameter type reaches the signature");
+    run_checked_text(&r,
+                     "let^ f = f^ x, y { x + y }\n"
+                     "return^ typeof^(f).signature\n");
+    CHECK_STRING(&r, "f^number^, number^ -> number^;");
+    run_dispose(&r);
+
+    // 02 の 14.10: what inference did not decide is written out as UNKNOWN,
+    // which is deliberately not a type expression -- writing any^ would hide
+    // both that it is undecided and which member wants an annotation.
+    LHAT_TEST("what inference did not decide is written UNKNOWN");
+    run_checked_text(&r,
+                     "let^ h = p^ x { x.write() }\n"
+                     "return^ typeof^(h).signature\n");
+    CHECK_STRING(&r, "p^t^{ write : UNKNOWN };");
+    run_dispose(&r);
+
+    LHAT_TEST("and a parameter nothing demanded says so too");
+    run_checked_text(&r,
+                     "let^ g = f^ x { 1 }\n"
+                     "return^ typeof^(g).signature\n");
+    CHECK_STRING(&r, "f^UNKNOWN -> number^;");
+    run_dispose(&r);
+
+    // 5.11b without the checker: the closure carries only what was written, so
+    // the walk answers any^ for the rest. What compiles without checking is
+    // unchanged by any of the above (4.2).
+    LHAT_TEST("compiled without checking, the same one walks the closure");
+    run_text(&r,
+             "let^ g = f^ x { 1 }\n"
+             "return^ typeof^(g).signature\n");
+    CHECK_STRING(&r, "f^any^;");
     run_dispose(&r);
 
     // 04 の 2.4: identity is the declaration, so typeof^ answers with the

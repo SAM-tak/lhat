@@ -1012,8 +1012,14 @@ static LhatRuntimeType *rt_from_checked(LhatHeap *heap, const LhatType *type)
         return NULL;
     }
     switch (type->kind) {
+        // 03 の 3.4: inference did not decide this one. Asks nothing of a
+        // value, the same as nothing written -- but 14.16 writes it out as
+        // UNKNOWN rather than any^, so a signature says which parameter or
+        // member is still waiting for an annotation.
         case LHAT_TYPE_UNKNOWN:
         case LHAT_TYPE_PENDING:
+            return lhat_type_rt_new(heap, LHAT_TYPE_RT_UNKNOWN);
+
         case LHAT_TYPE_ANY:
         case LHAT_TYPE_NONE:
             return NULL;  // asks nothing, same as nothing written (13.7)
@@ -2134,10 +2140,20 @@ static void compile_expression(Compiler *c, const LhatNode *node, uint8_t into)
             uint8_t mark = c->next_register;
             uint8_t value = reserve(c);
             compile_expression(c, node->v.jump.value, value);
-            if (node->checked_type != NULL &&
-                type_is_concrete((const LhatType *)node->checked_type)) {
-                LhatRuntimeType *rt = rt_from_checked(
-                    &c->proto->chunk.heap, (const LhatType *)node->checked_type);
+            // 5.11a asks for a gap-free answer because reflecting the value is
+            // otherwise the more precise of the two. A subroutine is the one
+            // case where it is not: a closure carries no parameter types at
+            // run time except the written ones (5.3 keeps those for 14.12's
+            // dispatch, and 4.2 keeps that from depending on whether checking
+            // ran), so reflecting one answers any^ for every parameter nobody
+            // wrote -- including the ones 03 の 3.4 did decide. What the
+            // checker settled says strictly more here, and what it did not
+            // settle is written UNKNOWN rather than widened to any^.
+            const LhatType *checked = (const LhatType *)node->checked_type;
+            if (checked != NULL &&
+                (type_is_concrete(checked) || checked->kind == LHAT_TYPE_FUNC)) {
+                LhatRuntimeType *rt =
+                    rt_from_checked(&c->proto->chunk.heap, checked);
                 c->next_register = mark;
                 if (rt == NULL) {
                     fail(c, LHAT_COMPILE_TOO_COMPLEX);

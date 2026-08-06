@@ -167,7 +167,16 @@ typedef enum {
     LHAT_TYPE_RT_ERROR_KIND, // one kind, or one declaration's union of them
     LHAT_TYPE_RT_UNION,      // 13.5
     LHAT_TYPE_RT_INTERSECT,  // 14.5, 14.12: an overload^ed member's arms
-    LHAT_TYPE_RT_STRUCTURE   // 14.10: at least these members
+    LHAT_TYPE_RT_STRUCTURE,  // 14.10: at least these members
+
+    // 03 の 3.4: a place inference did not decide. Asks nothing of a value,
+    // exactly as ANY does -- what differs is only how 14.16 writes it out.
+    // 05 の 8.7 requires a signature to read back as a type expression, and
+    // this one deliberately does not: there is no such hat identifier, so a
+    // signature carrying it is visibly not a type, which is the honest
+    // answer when part of it was never decided. Which member or parameter it
+    // was is what the writer needs, and that is what this shows.
+    LHAT_TYPE_RT_UNKNOWN
 } LhatRuntimeTypeKind;
 
 // STRUCTURE's named half. Given its own tag rather than left anonymous inside

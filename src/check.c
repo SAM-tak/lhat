@@ -45,6 +45,32 @@ typedef struct Narrowing {
     struct Narrowing *next;
 } Narrowing;
 
+// 03 の 3.4: a parameter written without a type, while the body that decides
+// it is being read. `slot` is the pending^ object infer_func made, and the
+// binding and the signature both hold that very pointer -- settling one writes
+// through to both, which is what keeps this to a single walk of the body.
+//
+// A member reached off such a parameter gets one of these too, so that
+// 'x.foo(1)' can demand t^{ foo : p^number^; } rather than only the name.
+// Its slot is the member's type inside the demand its parent is collecting.
+typedef struct ParamVar {
+    LhatType *slot;
+    // What positions that always run have asked of it, and what the ones
+    // under a branch have. Kept apart because 3.4 settles them differently:
+    // the first is a requirement, the second is only added when it does not
+    // contradict.
+    LhatType *demanded;
+    LhatType *conditional;
+    // Two demands from under branches ruled each other out, so the branches
+    // disagree and nothing here is decided (3.4 leaves that unknown^ rather
+    // than reporting -- the uses report for themselves).
+    bool conditional_dropped;
+    // Reassigned, self-referential, or two unconditional demands ruled each
+    // other out. Collection stops and the answer is unknown^.
+    bool closed;
+    struct ParamVar *next;
+} ParamVar;
+
 typedef struct {
     // The tree points into both the source text and the lexer's decoded
     // string storage, so the lexer is what has to outlive the result.
@@ -62,6 +88,18 @@ typedef struct {
     // Innermost first. A branch pushes and pops around its body, so the list
     // is a stack rather than something scopes own.
     Narrowing *narrowings;
+
+    // 03 の 3.4: the parameters whose types the bodies now open are deciding.
+    // Innermost first, and a nested body's are pushed in front of the enclosing
+    // one's -- a demand made inside one still reaches an outer parameter, since
+    // the value it names came from out there.
+    ParamVar *param_vars;
+
+    // 05 の 4.3: inside a public^ declaration, where 3.4's inference of a
+    // parameter type is not available. A counter for the same reason
+    // `deferred` is one, though only a top-level declaration can carry the
+    // marker.
+    size_t exporting;
 
     // 8.7: inside a subroutine body nothing runs where it is written, so the
     // ordering rule does not apply. A counter rather than a flag, since
@@ -379,6 +417,7 @@ static const LhatTypeMember *find_member(const LhatType *table, const char *name
                                          size_t length);
 static LhatType *only(Checker *c, LhatType *type, LhatType *wanted);
 static LhatType *without(Checker *c, LhatType *type, LhatType *unwanted);
+static ParamVar *param_var_for(Checker *c, const LhatType *type);
 
 // 14.8: one number type over integers and reals. The rest are the plain
 // builtin spellings.
@@ -1098,9 +1137,253 @@ static void narrow_from(Checker *c, const LhatNode *condition, bool truth)
 
     LhatType *current = infer(c, path);
     LhatType *tested = resolve_type(c, condition->v.binary.right);
-    push_narrowing(c, path,
-                   truth ? only(c, current, tested)
-                         : without(c, current, tested));
+    LhatType *inside =
+        truth ? only(c, current, tested) : without(c, current, tested);
+
+    // 03 の 3.4: a parameter still being decided says nothing to narrow, so
+    // both sides hand its own object straight back. Inside the branch that
+    // object would be read as the parameter itself and every use of it as a
+    // demand -- which is exactly what a narrowing is written to prevent. The
+    // true side knows what was tested for; the false side knows only what it
+    // is not, which is not a type here.
+    if (param_var_for(c, inside) != NULL) {
+        inside = truth ? tested : simple(c, LHAT_TYPE_UNKNOWN);
+    }
+    push_narrowing(c, path, inside);
+}
+
+// ---------------------------------------------------------------------------
+// Parameter types (03 の 3.4)
+// ---------------------------------------------------------------------------
+
+// A parameter still being decided, found by the pending^ object standing for
+// it. 13.11's narrowing is what keeps a narrowed use from arriving here: infer
+// answers a narrowed path with the narrowed type, which is a different object,
+// so the demand a branch makes of the narrowed value never reaches the
+// parameter itself.
+static ParamVar *param_var_for(Checker *c, const LhatType *type)
+{
+    if (type == NULL || type->kind != LHAT_TYPE_PENDING) {
+        return NULL;
+    }
+    for (ParamVar *pv = c->param_vars; pv != NULL; pv = pv->next) {
+        if (pv->slot == type) {
+            return pv;
+        }
+    }
+    return NULL;
+}
+
+// Whether a demand would contain the very variable it is about, which would
+// leave the settled type pointing at itself.
+static bool demand_mentions(const LhatType *type, const LhatType *slot,
+                            unsigned depth)
+{
+    if (type == NULL || depth > 8) {
+        return false;
+    }
+    if (type == slot) {
+        return true;
+    }
+    switch (type->kind) {
+        case LHAT_TYPE_TABLE:
+            for (const LhatTypeMember *m = type->v.table.members; m != NULL;
+                 m = m->next) {
+                if (demand_mentions(m->type, slot, depth + 1)) {
+                    return true;
+                }
+            }
+            return demand_mentions(type->v.table.variadic, slot, depth + 1);
+
+        case LHAT_TYPE_FUNC:
+            for (const LhatTypeList *p = type->v.func.params; p != NULL;
+                 p = p->next) {
+                if (demand_mentions(p->type, slot, depth + 1)) {
+                    return true;
+                }
+            }
+            return demand_mentions(type->v.func.result, slot, depth + 1) ||
+                   demand_mentions(type->v.func.variadic, slot, depth + 1);
+
+        case LHAT_TYPE_UNION:
+        case LHAT_TYPE_INTERSECT:
+            for (const LhatTypeList *arm = type->v.composite.arms; arm != NULL;
+                 arm = arm->next) {
+                if (demand_mentions(arm->type, slot, depth + 1)) {
+                    return true;
+                }
+            }
+            return false;
+
+        default:
+            return false;
+    }
+}
+
+// Two demands held at once. 14.5's intersection is the general answer, but two
+// structural demands describe one table rather than two: 14.10 reads 't^{ … }'
+// as "at least these", so asking for 'a' and asking for 'b' is asking for a
+// table carrying both, and writing that out is what the writer would have
+// written by hand.
+static LhatType *merge_demand(Checker *c, LhatType *a, LhatType *b)
+{
+    if (a == NULL) {
+        return b;
+    }
+    if (b == NULL || lhat_type_equal(a, b)) {
+        return a;
+    }
+    if (a->kind != LHAT_TYPE_TABLE || b->kind != LHAT_TYPE_TABLE ||
+        a->v.table.is_definition || b->v.table.is_definition ||
+        a->v.table.nominal || b->v.table.nominal) {
+        return lhat_type_intersect(c->result->types, a, b);
+    }
+
+    LhatType *merged = lhat_type_table(c->result->types);
+    if (merged == NULL) {
+        return a;
+    }
+    for (const LhatTypeMember *m = a->v.table.members; m != NULL; m = m->next) {
+        lhat_type_add_member(c->result->types, merged, m->name, m->name_length,
+                             m->type);
+    }
+    for (const LhatTypeMember *m = b->v.table.members; m != NULL; m = m->next) {
+        LhatTypeMember *into =
+            (LhatTypeMember *)find_member(merged, m->name, m->name_length);
+        if (into != NULL) {
+            into->type = merge_demand(c, into->type, m->type);
+        } else {
+            lhat_type_add_member(c->result->types, merged, m->name,
+                                 m->name_length, m->type);
+        }
+    }
+    merged->v.table.variadic =
+        merge_demand(c, a->v.table.variadic, b->v.table.variadic);
+    return merged;
+}
+
+// 03 の 3.4: `value` was used somewhere that wants `wanted`. When the value is
+// a parameter whose type is still being decided, that is a demand on it rather
+// than something to report.
+static void constrain(Checker *c, LhatType *value, LhatType *wanted)
+{
+    ParamVar *pv = param_var_for(c, value);
+    if (pv == NULL || pv->closed || wanted == NULL) {
+        return;
+    }
+    // A position that would take anything says nothing about what arrives.
+    switch (wanted->kind) {
+        case LHAT_TYPE_UNKNOWN:
+        case LHAT_TYPE_PENDING:
+        case LHAT_TYPE_ANY:
+        case LHAT_TYPE_NONE:
+            return;
+        default:
+            break;
+    }
+    if (demand_mentions(wanted, pv->slot, 0)) {
+        pv->closed = true;
+        return;
+    }
+
+    // 3.4: only what always runs decides. What a branch asks is added when it
+    // agrees with that, and dropped when it does not -- the branch reports for
+    // itself, and intersecting the two would leave a type no value inhabits.
+    if (c->conditional > 0) {
+        if (pv->conditional_dropped) {
+            return;
+        }
+        if (pv->conditional == NULL) {
+            pv->conditional = wanted;
+        } else if (lhat_type_disjoint(pv->conditional, wanted)) {
+            pv->conditional = NULL;
+            pv->conditional_dropped = true;
+        } else {
+            pv->conditional = merge_demand(c, pv->conditional, wanted);
+        }
+        return;
+    }
+
+    if (pv->demanded == NULL) {
+        pv->demanded = wanted;
+    } else if (lhat_type_disjoint(pv->demanded, wanted)) {
+        pv->closed = true;  // 3.4: undecided rather than reported
+    } else {
+        pv->demanded = merge_demand(c, pv->demanded, wanted);
+    }
+}
+
+// 3.4: what arrives is no longer what the name holds, so nothing after this
+// says anything about the parameter.
+static void close_param_var(Checker *c, const LhatType *value)
+{
+    ParamVar *pv = param_var_for(c, value);
+    if (pv != NULL) {
+        pv->closed = true;
+    }
+}
+
+// 3.4: reading a member off a parameter demands a structure carrying it. The
+// member's own type is left unknown^ -- what may be done with it is decided by
+// what the member turns out to be, and a call through it says too little to
+// pin a signature down (13.1 asks the f^/p^ distinction and 13.2 the presence
+// of a result, and neither is readable off one call).
+static void constrain_member(Checker *c, LhatType *target, const char *name,
+                             size_t length)
+{
+    if (param_var_for(c, target) == NULL) {
+        return;
+    }
+    LhatType *shape = lhat_type_table(c->result->types);
+    if (shape == NULL ||
+        lhat_type_add_member(c->result->types, shape, name, length,
+                             simple(c, LHAT_TYPE_UNKNOWN)) == NULL) {
+        return;
+    }
+    constrain(c, target, shape);
+}
+
+static ParamVar *push_param_var(Checker *c, LhatType *slot)
+{
+    ParamVar *pv = (ParamVar *)lhat_calloc(1, sizeof *pv);
+    if (pv == NULL) {
+        return NULL;
+    }
+    pv->slot = slot;
+    pv->next = c->param_vars;
+    c->param_vars = pv;
+    return pv;
+}
+
+// The body has been read, so the demands are all in. Written through the slot
+// rather than returned: the binding and the signature hold that same pointer,
+// which is what let a single walk decide both.
+static void settle_param_vars(Checker *c, ParamVar *mark)
+{
+    while (c->param_vars != mark) {
+        ParamVar *pv = c->param_vars;
+        c->param_vars = pv->next;
+
+        LhatType *settled = NULL;
+        if (!pv->closed) {
+            settled = pv->demanded;
+            if (settled == NULL) {
+                settled = pv->conditional_dropped ? NULL : pv->conditional;
+            } else if (pv->conditional != NULL &&
+                       !lhat_type_disjoint(settled, pv->conditional)) {
+                settled = merge_demand(c, settled, pv->conditional);
+            }
+        }
+        // 3.4: nothing was demanded, or the demands did not agree. Inference
+        // did not decide, so the slot is left as what it already is -- a
+        // constraint nobody wrote, which 3.1 reports under strict and 3.5
+        // hands to a runtime check under relaxed. Not any^: 3.5 makes that
+        // the reading under which relaxed would be the stricter setting.
+        if (settled != NULL && settled != pv->slot) {
+            *pv->slot = *settled;
+        }
+        lhat_free(pv);
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -1110,6 +1393,14 @@ static void narrow_from(Checker *c, const LhatNode *condition, bool truth)
 static void expect(Checker *c, const LhatNode *at, LhatType *value,
                    LhatType *target, LhatCheckErrorCode code)
 {
+    // 03 の 3.4: a parameter whose type the body is deciding is not being
+    // checked here -- this position is one of the things deciding it. Most of
+    // what a body demands arrives through this one call.
+    if (param_var_for(c, value) != NULL) {
+        constrain(c, value, target);
+        return;
+    }
+
     // 03 の 3.1・3.5: strict reports a lingering gap in inference here
     // instead of forgiving it the way relaxed's default reading does --
     // relaxed has no runtime check to fall back on yet, so it keeps waving
@@ -1134,7 +1425,29 @@ static LhatType *infer_operator(Checker *c, const LhatNode *node, LhatOpKind op,
 {
     size_t length = 0;
     const char *name = operator_name(op, &length);
-    if (name == NULL || operator_undecided(left)) {
+    if (name == NULL) {
+        return NULL;
+    }
+
+    // 03 の 3.4: the left operand is the receiver (14.4), so an operator used
+    // on a parameter is a demand on it. 14.8 makes number^ the one type
+    // carrying the arithmetic, which is what makes this readable -- '..' is
+    // the one name here that more than one type answers (11.2), so it demands
+    // nothing. builtin_operator reads the same distinction the same way.
+    //
+    // Once demanded, the rest reads as though number^ had been written: the
+    // right operand is asked for what number^'s operator takes, which is a
+    // demand of its own when that side is a parameter too ('x + y').
+    if (param_var_for(c, left) != NULL) {
+        if (name[0] == '.') {
+            return NULL;
+        }
+        LhatType *number = simple(c, LHAT_TYPE_NUMBER);
+        constrain(c, left, number);
+        left = number;
+    }
+
+    if (operator_undecided(left)) {
         return NULL;
     }
 
@@ -1148,7 +1461,11 @@ static LhatType *infer_operator(Checker *c, const LhatNode *node, LhatOpKind op,
     }
     LhatType *wanted =
         carrier->v.func.params != NULL ? carrier->v.func.params->type : NULL;
-    if (wanted != NULL && !operator_undecided(right)) {
+    // 03 の 3.4: a parameter on this side is undecided in the sense above, but
+    // what the operator takes is a demand on it rather than a gap to wave
+    // through -- expect is what tells the two apart.
+    if (wanted != NULL &&
+        (param_var_for(c, right) != NULL || !operator_undecided(right))) {
         expect(c, node->v.binary.right, right, wanted,
                LHAT_CHECK_ERR_NO_OPERATOR);
     }
@@ -1689,6 +2006,9 @@ static LhatType *infer_member(Checker *c, const LhatNode *node)
 
     if (target == NULL || target->kind == LHAT_TYPE_UNKNOWN ||
         target->kind == LHAT_TYPE_PENDING) {
+        // 03 の 3.4: a parameter read for a member has to carry one, and
+        // 14.10's "at least these" is exactly that demand written as a type.
+        constrain_member(c, target, name, length);
         // 03 の 3.1・3.5、P6: a target still pending^ makes this member's
         // type pending^ too, not merely unknown^ -- the gap has to survive
         // for strict to see it if it reaches somewhere a concrete type was
@@ -1944,6 +2264,12 @@ static LhatType *infer_func(Checker *c, const LhatNode *node)
     // 15.2: whether the body suspends is read off the body, not written.
     func->v.func.yields = node->v.func.yields;
 
+    // 03 の 3.4: where this body's own parameters begin. A body nested in
+    // another leaves the enclosing one's in place behind this mark -- a demand
+    // written in here still reaches them, since the value it names came from
+    // out there.
+    ParamVar *param_mark = c->param_vars;
+
     Scope body;
     body.bindings = NULL;
     body.tail = NULL;
@@ -1957,6 +2283,10 @@ static LhatType *infer_func(Checker *c, const LhatNode *node)
         if (param == node->v.func.params && is_self_marker(c, param)) {
             func->v.func.takes_self = true;
             continue;
+        }
+        // 05 の 4.3: what leaves the unit is not decided by reading a body.
+        if (param->v.param.type == NULL && c->exporting > 0) {
+            report(c, param, LHAT_CHECK_ERR_PUBLIC_NEEDS_TYPE);
         }
         LhatType *type = param->v.param.type != NULL
                              ? resolve_type(c, param->v.param.type)
@@ -1978,6 +2308,12 @@ static LhatType *infer_func(Checker *c, const LhatNode *node)
             continue;
         }
         lhat_type_add_param(c->result->types, func, type);
+        // 03 の 3.4: with nothing written, the body is what decides. The
+        // binding below and the signature above hold this same object, so
+        // settling it once at the end writes through to both.
+        if (param->v.param.type == NULL) {
+            push_param_var(c, type);
+        }
 
         const char *name = NULL;
         size_t length = 0;
@@ -2033,6 +2369,11 @@ static LhatType *infer_func(Checker *c, const LhatNode *node)
     } else {
         check_statement(c, node->v.func.body);
     }
+
+    // 03 の 3.4: every demand this body makes is in. Settled before the result
+    // is put together, since a return^ of a parameter carries this very object
+    // into it.
+    settle_param_vars(c, param_mark);
 
     if (node->v.func.yields) {
         func->v.func.yield_produce = c->coroutine_produce;
@@ -3312,6 +3653,15 @@ static void check_define(Checker *c, const LhatNode *node)
     LhatType *unpacked = unpacked_source(c, value);
     size_t position = 0;
 
+    // 05 の 4.3: everything written inside a public^ declaration has to say
+    // what its parameters take. 4.1's reason carries over -- what a unit
+    // publishes is settled by reading the declaration, not by running or
+    // checking a body -- and telling what leaves the unit from what stays
+    // would need more than the syntax to decide (4.3).
+    if (node->v.binding.exported) {
+        c->exporting++;
+    }
+
     for (const LhatNode *target = node->v.binding.targets; target != NULL;
          target = target->next) {
         position++;
@@ -3393,6 +3743,10 @@ static void check_define(Checker *c, const LhatNode *node)
         if (unpacked == NULL && value != NULL) {
             value = value->next;
         }
+    }
+
+    if (node->v.binding.exported) {
+        c->exporting--;
     }
 }
 
@@ -3650,6 +4004,9 @@ static void check_reassign(Checker *c, const LhatNode *node)
          target = target->next) {
         position++;
         LhatType *wanted = infer(c, target_name_node(target));
+        // 03 の 3.4: what the name holds from here on is not what was passed
+        // in, so nothing after this says anything about the parameter.
+        close_param_var(c, wanted);
         if (unpacked != NULL) {
             expect(c, node, unpacked_at(c, unpacked, position), wanted,
                    LHAT_CHECK_ERR_MISMATCH);
@@ -4706,6 +5063,9 @@ const char *lhat_check_error_message(LhatCheckErrorCode code)
         case LHAT_CHECK_ERR_SCOPE_ON_DEFINE:
             return "let^ makes a name here, so it takes no scope specifier; "
                    "':=' is what writes one that is already there";
+        case LHAT_CHECK_ERR_PUBLIC_NEEDS_TYPE:
+            return "a parameter written inside a public^ declaration needs a "
+                   "type; what leaves the unit is not read off a body";
     }
     return "unknown error";
 }

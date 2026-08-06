@@ -593,6 +593,191 @@ static void test_results(void)
     unit_dispose(&u);
 }
 
+// 03 の 3.4: a parameter written without a type is what the body demands of
+// it. Not unification -- the demands are collected and intersected, which is
+// why 11.3's structural reading is what makes this work rather than what makes
+// it hard.
+static void test_parameter_inference(void)
+{
+    Unit u;
+
+    // 11.8 with 14.8: number^ is the one type carrying the arithmetic, so an
+    // arithmetic use says which type arrived.
+    LHAT_TEST("arithmetic on a parameter decides it");
+    check_text(&u,
+               "let^ f = f^ x -> number^ { return^ x + 1 }\n"
+               "let^ y : number^ = f(2)\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("and the call site is checked against what was demanded");
+    check_text(&u,
+               "let^ f = f^ x -> number^ { return^ x + 1 }\n"
+               "let^ y : number^ = f(\"a\")\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
+    unit_dispose(&u);
+
+    // 14.4 puts the left operand in self^ and leaves the right one the
+    // argument, so both sides of 'x + y' demand what number^'s operator takes.
+    LHAT_TEST("both operands of an arithmetic operator are demands");
+    check_text(&u,
+               "let^ f = f^ x, y -> number^ { return^ x + y }\n"
+               "let^ n : number^ = f(1, \"a\")\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
+    unit_dispose(&u);
+
+    // 14.10's "at least these" is the demand a member read makes, written as
+    // a type. Nothing has to be named for this to work.
+    LHAT_TEST("a member read demands a structure carrying it");
+    check_text(&u,
+               "let^ f = p^ x { x.write() }\n"
+               "f(5)\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
+    unit_dispose(&u);
+
+    LHAT_TEST("and a table carrying that member is accepted");
+    check_text(&u,
+               "let^ f = p^ x { x.write() }\n"
+               "let^ t = { write := p^ { } }\n"
+               "f(t)\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // 13.1: a call says what the arguments are and nothing about the rest of
+    // the signature, so it is not a demand -- see 03 の 3.4.
+    LHAT_TEST("calling a parameter demands nothing");
+    check_text(&u,
+               "let^ f = p^ x { x() }\n"
+               "f(5)\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // 13.11: the demand belongs to the narrowed value, not to what arrived.
+    // Counting it would undo the narrowing the writer put there.
+    LHAT_TEST("a use under a narrowing is not a demand");
+    check_text(&u,
+               "let^ f = p^ x {\n"
+               "    if^ x isa^ number^ { let^ n : number^ = x + 1 }\n"
+               "}\n"
+               "f(\"a\")\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // 3.4: what always runs decides; a branch is added only when it agrees.
+    LHAT_TEST("an unconditional demand wins over a branch that disagrees");
+    check_text(&u,
+               "let^ f = p^ b:bool^, x {\n"
+               "    let^ n : number^ = x + 1\n"
+               "    if^ b { x.write() }\n"
+               "}\n"
+               "f(true^, \"a\")\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
+    unit_dispose(&u);
+
+    // Two branches ruling each other out leave nothing decided. Reporting
+    // here would be reporting the same thing twice: each use says so itself.
+    LHAT_TEST("branches that disagree decide nothing");
+    check_text(&u,
+               "let^ f = p^ b:bool^, x {\n"
+               "    if^ b { let^ n : number^ = x + 1 else^: x.write() }\n"
+               "}\n"
+               "f(true^, \"a\")\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // Two branches that agree decide it between them.
+    LHAT_TEST("branches that agree decide it");
+    check_text(&u,
+               "let^ f = p^ b:bool^, x {\n"
+               "    if^ b { let^ n : number^ = x + 1 else^: let^ m : number^ = x * 2 }\n"
+               "}\n"
+               "f(true^, \"a\")\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
+    unit_dispose(&u);
+
+    // 3.4: a nested body demands of the enclosing parameter too. Whether it
+    // ever runs is not the question -- what it needs when it does, the value
+    // handed in has to carry.
+    LHAT_TEST("a demand written in a nested body still reaches the parameter");
+    check_text(&u,
+               "let^ f = p^ x {\n"
+               "    let^ inner = p^ { let^ n : number^ = x + 1 }\n"
+               "    inner()\n"
+               "}\n"
+               "f(\"a\")\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
+    unit_dispose(&u);
+
+    // 3.4: what the name holds after a reassignment is not what was passed in.
+    LHAT_TEST("a reassignment ends the collection");
+    check_text(&u,
+               "let^ f = p^ x {\n"
+               "    x := \"z\"\n"
+               "    let^ n : number^ = x + 1\n"
+               "}\n"
+               "f(\"a\")\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // A demand made where the argument type is known travels the same way.
+    LHAT_TEST("passing a parameter on demands what the callee takes");
+    check_text(&u,
+               "let^ g = p^ n:number^ { }\n"
+               "let^ f = p^ x { g(x) }\n"
+               "f(\"a\")\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
+    unit_dispose(&u);
+
+    // Two member reads are one demand for a table carrying both (14.10),
+    // rather than two demands standing side by side.
+    LHAT_TEST("two member reads merge into one structure");
+    check_text(&u,
+               "let^ f = p^ x { x.a() x.b() }\n"
+               "let^ t = { a := p^ { } }\n"
+               "f(t)\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
+    unit_dispose(&u);
+
+    // L^ has no generic types (02 の 13.7, 04 の 7 章), so a parameter handed
+    // straight back demands nothing and stays what nobody wrote -- which
+    // strict reports where it lands, exactly as it did before 3.4 read
+    // anything off a body at all.
+    LHAT_TEST("a parameter nothing demands stays undecided");
+    check_text(&u,
+               "let^ id = f^ x { return^ x }\n"
+               "let^ y : number^ = id(4)\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
+    unit_dispose(&u);
+
+    // 05 の 4.3: what leaves the unit is not read off a body.
+    LHAT_TEST("a public^ subroutine has to write its parameter types");
+    check_text(&u, "public^ let^ f = p^ x { x.write() }\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_PUBLIC_NEEDS_TYPE);
+    unit_dispose(&u);
+
+    LHAT_TEST("written out, the same one is fine");
+    check_text(&u,
+               "public^ let^ f = p^ x:t^{ write : p^; } { x.write() }\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // 4.3: telling what leaves the unit from what stays would take more than
+    // the syntax, so everything written inside the declaration is included.
+    LHAT_TEST("a subroutine nested in a public^ one is included");
+    check_text(&u,
+               "public^ let^ make = p^ -> number^ {\n"
+               "    let^ step = p^ y { }\n"
+               "    return^ 1\n"
+               "}\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_PUBLIC_NEEDS_TYPE);
+    unit_dispose(&u);
+
+    LHAT_TEST("and one that is not published is not");
+    check_text(&u, "let^ helper = p^ x { x.write() }\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+}
+
 // 04.
 static void test_errors(void)
 {
@@ -4118,6 +4303,7 @@ int main(void)
     test_names();
     test_expressions();
     test_results();
+    test_parameter_inference();
     test_errors();
     test_annotations();
     test_narrowing();

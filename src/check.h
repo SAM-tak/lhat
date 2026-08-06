@@ -105,9 +105,13 @@ typedef enum {
                                         // host registered, and nothing here
     LHAT_CHECK_ERR_SCOPE_TOO_FAR,       // 01 の 8 章: '$^' naming more scopes
                                         // out than are open here
-    LHAT_CHECK_ERR_SCOPE_ON_DEFINE      // 01 の 8 章 with 8.7: a let^ makes a
+    LHAT_CHECK_ERR_SCOPE_ON_DEFINE,     // 01 の 8 章 with 8.7: a let^ makes a
                                         // name where it is written, so there
                                         // is no other scope for one to name
+    LHAT_CHECK_ERR_PUBLIC_NEEDS_TYPE    // 05 の 4.3: 03 の 3.4 reads an
+                                        // omitted parameter type off the body,
+                                        // and what leaves the unit may not be
+                                        // decided that way
 } LhatCheckErrorCode;
 
 typedef struct {
