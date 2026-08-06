@@ -21,6 +21,7 @@
 #include "parser.h"
 #include "source.h"
 #include "type.h"
+#include "vm.h"  // LhatCompileStatus: why a compile of the program stopped
 
 typedef enum {
     LHAT_PROGRAM_ERR_CANNOT_READ,  // no such unit
@@ -79,6 +80,12 @@ typedef struct {
     // 05 の 5.3: what lhat_program_compile built, owned here.
     LhatModule *modules;
     size_t module_count;
+
+    // Why that answered NULL, for a caller with a diagnostic to write. It
+    // compiles unit by unit and stops at the first that will not, so what a
+    // reader has to be told is that one status rather than "something".
+    // LHAT_COMPILE_OK until a compile has actually failed.
+    LhatCompileStatus compile_status;
 
     // 05 の 8.7: what the host registered, as one nested table type keyed by
     // module path -- the same shape L^.modules has, since that is where it

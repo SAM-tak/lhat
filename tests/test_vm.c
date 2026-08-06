@@ -1136,9 +1136,12 @@ static void test_repeat(void)
     CHECK_INTEGER(&r, 3);
     run_dispose(&r);
 
-    LHAT_TEST("break^ outside a loop does not compile");
+    // 9.8: one loop to leave and none around it is the same mistake as
+    // naming more than are there, so it is the same diagnostic -- not the
+    // "does not compile yet" a form still waiting on the compiler gets.
+    LHAT_TEST("break^ outside a loop is a break^ reaching too far");
     run_text(&r, "break^\n");
-    LHAT_CHECK_EQ_INT(r.compiled, LHAT_COMPILE_UNSUPPORTED);
+    LHAT_CHECK_EQ_INT(r.compiled, LHAT_COMPILE_BREAK_TOO_FAR);
     run_dispose(&r);
 
     // 02 の 9.8: the hats count the loops to leave, so break^ is one and
@@ -1184,9 +1187,19 @@ static void test_repeat(void)
 
     // Asking for more loops than stand here is written down wrong rather
     // than quietly clamped to the outermost one.
-    LHAT_TEST("a level past the loops that are there does not compile");
+    LHAT_TEST("a level past the loops that are there is refused by name");
     run_text(&r, "repeat^ 3 { break^^^ }\n");
-    LHAT_CHECK_EQ_INT(r.compiled, LHAT_COMPILE_UNSUPPORTED);
+    LHAT_CHECK_EQ_INT(r.compiled, LHAT_COMPILE_BREAK_TOO_FAR);
+    run_dispose(&r);
+
+    LHAT_TEST("and one loop too many is enough to be too far");
+    run_text(&r, "repeat^ 3 { repeat^ 3 { repeat^ 3 { break^^^^ } } }\n");
+    LHAT_CHECK_EQ_INT(r.compiled, LHAT_COMPILE_BREAK_TOO_FAR);
+    run_dispose(&r);
+
+    LHAT_TEST("the bracketed spelling is refused the same way");
+    run_text(&r, "repeat^ 3 { repeat^ 3 { break^[3] } }\n");
+    LHAT_CHECK_EQ_INT(r.compiled, LHAT_COMPILE_BREAK_TOO_FAR);
     run_dispose(&r);
 
     // 9.8: the loop the level names ends the way it would have ended on its

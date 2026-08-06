@@ -24,7 +24,11 @@ typedef enum {
     LHAT_COMPILE_OK,
     LHAT_COMPILE_UNSUPPORTED,   // a form the compiler does not cover yet
     LHAT_COMPILE_TOO_COMPLEX,   // out of registers or constants (5.2)
-    LHAT_COMPILE_UNDEFINED      // a name with no binding
+    LHAT_COMPILE_UNDEFINED,     // a name with no binding
+    // 02 の 9.8: a break^ naming more loops than stand around it, or one
+    // written outside any. Not the same as UNSUPPORTED above -- nothing is
+    // waiting to be implemented here, the count is simply wrong.
+    LHAT_COMPILE_BREAK_TOO_FAR
 } LhatCompileStatus;
 
 // 05 の 5 章. The compile-time twin of check.h's LhatRequireResolver: asked

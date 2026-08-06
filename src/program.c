@@ -537,8 +537,12 @@ const LhatModule *lhat_program_compile(LhatProgram *program, size_t *count)
         units.module_name = u->checked.module_name;
 
         LhatProto *proto = NULL;
-        if (lhat_compile_module(u->parsed.root, &u->lexer, &units, &proto) !=
-            LHAT_COMPILE_OK) {
+        LhatCompileStatus status =
+            lhat_compile_module(u->parsed.root, &u->lexer, &units, &proto);
+        if (status != LHAT_COMPILE_OK) {
+            // Kept so the caller can say which form stopped it rather than
+            // only that something did.
+            program->compile_status = status;
             lhat_modules_free(modules, total);
             lhat_free(modules);
             return NULL;

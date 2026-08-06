@@ -3352,14 +3352,17 @@ static void compile_statement(Compiler *c, const LhatNode *node)
 
         case LHAT_NODE_BREAK: {
             // 9.8's label form, or a level written two ways at once. Nothing
-            // labels a loop yet, so neither has an answer here.
+            // labels a loop yet, so neither has an answer here -- and unlike
+            // the count below, these really are waiting on the compiler.
             if (node->v.jump.value != NULL || node->v.jump.level == 0) {
                 fail(c, LHAT_COMPILE_UNSUPPORTED);
                 return;
             }
             // 9.8: the loop being left is the one the level names, counting
             // the innermost as 1. Asking for more loops than stand here is
-            // written down wrong rather than clamped to the outermost.
+            // written down wrong rather than clamped to the outermost, and
+            // a break^ outside every loop is the same mistake with nothing
+            // to count from.
             LoopContext *target = c->loop;
             for (uint32_t out = 1; out < node->v.jump.level; out++) {
                 if (target == NULL) {
@@ -3367,8 +3370,12 @@ static void compile_statement(Compiler *c, const LhatNode *node)
                 }
                 target = target->enclosing;
             }
-            if (target == NULL || target->count >= LHAT_MAX_BREAKS) {
-                fail(c, LHAT_COMPILE_UNSUPPORTED);
+            if (target == NULL) {
+                fail(c, LHAT_COMPILE_BREAK_TOO_FAR);
+                return;
+            }
+            if (target->count >= LHAT_MAX_BREAKS) {
+                fail(c, LHAT_COMPILE_TOO_COMPLEX);  // 5.2's limits, not 9.8's
                 return;
             }
             // 9.8: break^ is a normal end for the loop it names, so the jump
@@ -3842,6 +3849,8 @@ const char *lhat_compile_status_message(LhatCompileStatus status)
         case LHAT_COMPILE_UNSUPPORTED: return "this form does not compile yet";
         case LHAT_COMPILE_TOO_COMPLEX: return "too many registers or constants";
         case LHAT_COMPILE_UNDEFINED:   return "no such name";
+        case LHAT_COMPILE_BREAK_TOO_FAR:
+            return "this break^ leaves more loops than there are around it";
     }
     return "unknown";
 }

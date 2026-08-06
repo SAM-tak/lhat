@@ -529,7 +529,15 @@ static int check_program(const char *path, bool run, bool strict)
         const LhatModule *modules = lhat_program_compile(&program, &count);
         LhatMachine *machine = modules != NULL ? lhat_machine_new() : NULL;
         if (machine == NULL) {
-            fprintf(stderr, "%s: error: the program did not compile\n", path);
+            // A unit that would not compile says which form stopped it; only
+            // a machine that could not be made has nothing more to add.
+            if (program.compile_status != LHAT_COMPILE_OK) {
+                fprintf(stderr, "%s: error: %s\n", path,
+                        lhat_compile_status_message(program.compile_status));
+            } else {
+                fprintf(stderr, "%s: error: the program did not compile\n",
+                        path);
+            }
             failed = true;
         } else {
             lhat_machine_set_modules(machine, modules, count);
