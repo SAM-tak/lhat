@@ -136,6 +136,14 @@ typedef struct {
     // false is the right default with no body open at all.
     bool in_function;
 
+    // 15.1's other half: an f^ assigns to local variables only. This is the
+    // scope its parameters were bound in, which is the outermost one its body
+    // made -- a name found at or inside it is the body's own, and one found
+    // past it belongs to whoever called. NULL outside any body. Saved and
+    // restored around a nested one the same way `in_function` is, so an f^
+    // written inside another measures against its own.
+    Scope *body_scope;
+
     // 02 の 14.12改: what an override^ is writing over, which is what super^
     // names. NULL anywhere else, so 14.12's marker is what makes it a name.
     LhatType *super_type;
@@ -299,15 +307,27 @@ static Binding *scope_find_local(Scope *scope, const char *name, size_t length)
     return NULL;
 }
 
-static Binding *scope_find(Scope *scope, const char *name, size_t length)
+// 15.1 asks which scope answered, not only what it holds: an f^ may write to
+// a name its own body made and to no other. `found_in` may be NULL for the
+// callers that only want the binding.
+static Binding *scope_find_in(Scope *scope, const char *name, size_t length,
+                              Scope **found_in)
 {
     for (Scope *s = scope; s != NULL; s = s->parent) {
         Binding *b = scope_find_local(s, name, length);
         if (b != NULL) {
+            if (found_in != NULL) {
+                *found_in = s;
+            }
             return b;
         }
     }
     return NULL;
+}
+
+static Binding *scope_find(Scope *scope, const char *name, size_t length)
+{
+    return scope_find_in(scope, name, length, NULL);
 }
 
 // 01 の 8 章: where a scope specifier starts looking, counted either way.
@@ -2343,6 +2363,7 @@ static LhatType *infer_func(Checker *c, const LhatNode *node)
     enum YieldContext outer_yield_context = c->yield_context;
     LhatType *outer_yield_bound_type = c->yield_bound_type;
     bool outer_in_function = c->in_function;
+    Scope *outer_body_scope = c->body_scope;
 
     c->scope = &body;
     c->declared_result = declared;
@@ -2352,6 +2373,7 @@ static LhatType *infer_func(Checker *c, const LhatNode *node)
     c->valueless_return = false;
     c->this_type = func;
     c->in_function = node->v.func.is_function;
+    c->body_scope = &body;
     c->deferred++;
     // 15.2: a nested p^{...} starts collecting its own Y/R from scratch, so
     // its yield^ sites never unify with the ones out here.
@@ -2438,6 +2460,7 @@ static LhatType *infer_func(Checker *c, const LhatNode *node)
     c->yield_context = outer_yield_context;
     c->yield_bound_type = outer_yield_bound_type;
     c->in_function = outer_in_function;
+    c->body_scope = outer_body_scope;
 
     scope_dispose(&body);
     // The compiler reads this back instead of re-deriving the signature from
@@ -3994,6 +4017,51 @@ static void check_require_stmt(Checker *c, const LhatNode *node)
     }
 }
 
+// 15.1: an f^ assigns to local variables only. 10.6 reads that twice over --
+// a body with nothing writable outside it has nothing a finally^ could
+// restore, which is why one may not be written there at all.
+//
+// A path target is a different question: 'p.x := v' writes into a table, and
+// whether the table came from outside is 14 章's to answer rather than this
+// one. Only a plain name is judged here.
+static void check_write_target(Checker *c, const LhatNode *target)
+{
+    if (!c->in_function || c->body_scope == NULL || target_is_path(target)) {
+        return;
+    }
+    const LhatNode *name_node = target_name_node(target);
+    const char *name = NULL;
+    size_t length = 0;
+    if (!node_name(c, name_node, &name, &length)) {
+        return;
+    }
+
+    // 01 の 8 章: a specifier says where to start looking. Reaching outward
+    // with one is the same write as reaching outward without one, so it is
+    // judged by where the name was found either way.
+    Scope *from = c->scope;
+    if (name_node->kind == LHAT_NODE_SCOPE) {
+        from = scope_from(c->scope, name_node);
+        if (from == NULL) {
+            return;  // already reported where the name was read
+        }
+    }
+
+    Scope *found_in = NULL;
+    if (scope_find_in(from, name, length, &found_in) == NULL) {
+        return;  // no such name; infer_name reports that
+    }
+    for (Scope *s = c->scope; s != NULL; s = s->parent) {
+        if (s == found_in) {
+            return;  // at or inside the body, so this body made it
+        }
+        if (s == c->body_scope) {
+            break;  // past the body's own outermost scope
+        }
+    }
+    report(c, target, LHAT_CHECK_ERR_FUNCTION_WRITES_OUT);
+}
+
 static void check_reassign(Checker *c, const LhatNode *node)
 {
     const LhatNode *value = node->v.binding.values;
@@ -4003,6 +4071,7 @@ static void check_reassign(Checker *c, const LhatNode *node)
     for (const LhatNode *target = node->v.binding.targets; target != NULL;
          target = target->next) {
         position++;
+        check_write_target(c, target);
         LhatType *wanted = infer(c, target_name_node(target));
         // 03 の 3.4: what the name holds from here on is not what was passed
         // in, so nothing after this says anything about the parameter.
@@ -5066,6 +5135,9 @@ const char *lhat_check_error_message(LhatCheckErrorCode code)
         case LHAT_CHECK_ERR_PUBLIC_NEEDS_TYPE:
             return "a parameter written inside a public^ declaration needs a "
                    "type; what leaves the unit is not read off a body";
+        case LHAT_CHECK_ERR_FUNCTION_WRITES_OUT:
+            return "an f^ assigns to local variables only, and this name was "
+                   "bound outside its body";
     }
     return "unknown error";
 }

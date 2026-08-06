@@ -3209,6 +3209,105 @@ static void test_purity(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_FUNCTION_CALLS_PROCEDURE);
     unit_dispose(&u);
 
+    // 15.1's other half: assignment reaches local variables only. 10.6 reads
+    // it twice over -- a body with nothing writable outside it has nothing a
+    // finally^ could restore.
+    LHAT_TEST("an f^ may not assign to a name bound outside it");
+    check_text(&u,
+               "let^ total = 0\n"
+               "let^ f = f^ -> number^ {\n"
+               "    total := 1\n"
+               "    return^ total\n"
+               "}\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_FUNCTION_WRITES_OUT);
+    unit_dispose(&u);
+
+    LHAT_TEST("a compound assignment is the same write");
+    check_text(&u,
+               "let^ total = 0\n"
+               "let^ f = f^ -> number^ {\n"
+               "    total += 1\n"
+               "    return^ total\n"
+               "}\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_FUNCTION_WRITES_OUT);
+    unit_dispose(&u);
+
+    // 01 の 8 章: a specifier says where to start looking, so reaching out
+    // with one is the same write as reaching out without one.
+    LHAT_TEST("a scope specifier does not open a way out");
+    check_text(&u,
+               "let^ total = 0\n"
+               "let^ f = f^ -> number^ {\n"
+               "    $^total := 1\n"
+               "    return^ 0\n"
+               "}\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_FUNCTION_WRITES_OUT);
+    unit_dispose(&u);
+
+    LHAT_TEST("but its own local is fine");
+    check_text(&u,
+               "let^ f = f^ -> number^ {\n"
+               "    let^ n = 0\n"
+               "    n := 1\n"
+               "    return^ n\n"
+               "}\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // A block inside the body is still inside it, and the parameters are the
+    // body's own names -- what arrives in them is a copy of the argument, so
+    // writing there is not observable from outside either.
+    LHAT_TEST("and so are a nested block's and a parameter's");
+    check_text(&u,
+               "let^ f = f^ n:number^ -> number^ {\n"
+               "    let^ m = 0\n"
+               "    do^{ m := 1 }\n"
+               "    n := 2\n"
+               "    return^ n + m\n"
+               "}\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("a p^ writes wherever it likes");
+    check_text(&u,
+               "let^ total = 0\n"
+               "let^ g = p^ { total := 1 }\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // The rule is about the body being written in, not the one around it --
+    // the same way the call rule is.
+    LHAT_TEST("a p^ inside an f^ may write out again");
+    check_text(&u,
+               "let^ total = 0\n"
+               "let^ outer = f^ -> number^ {\n"
+               "    let^ inner = p^ { total := 1 }\n"
+               "    return^ 0\n"
+               "}\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("an f^ inside a p^ still may not");
+    check_text(&u,
+               "let^ total = 0\n"
+               "let^ outer = p^ {\n"
+               "    let^ inner = f^ -> number^ { total := 1 return^ 0 }\n"
+               "}\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_FUNCTION_WRITES_OUT);
+    unit_dispose(&u);
+
+    // An f^ nested in another f^ measures against its own body, so what the
+    // outer one made is outside the inner one.
+    LHAT_TEST("a nested f^ measures against its own body");
+    check_text(&u,
+               "let^ outer = f^ -> number^ {\n"
+               "    let^ n = 0\n"
+               "    let^ inner = f^ -> number^ { n := 1 return^ 0 }\n"
+               "    return^ n\n"
+               "}\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_FUNCTION_WRITES_OUT);
+    unit_dispose(&u);
+
     // 14.12: an overloaded member is an intersection of signatures, and
     // whichever arm the call resolves to still answers to 15.1.
     LHAT_TEST("and through whichever overload^ arm the call resolves to");
