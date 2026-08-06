@@ -3366,6 +3366,17 @@ static LhatType *infer(Checker *c, const LhatNode *node)
                 report(c, node, LHAT_CHECK_ERR_NOT_COROUTINE);
                 return simple(c, LHAT_TYPE_UNKNOWN);
             }
+            // 15.8 with 15.3改: delegating runs the inner body -- that is what
+            // makes its yield^ reach out here -- so it advances the coroutine
+            // as surely as resume() does, and the same two questions apply.
+            // Asked here rather than left to 15.1, since no call of start()
+            // or resume() is written for the rule to catch.
+            if (c->in_function && !inner->v.coroutine.is_function) {
+                report(c, node, LHAT_CHECK_ERR_FUNCTION_CALLS_PROCEDURE);
+            } else if (c->in_function &&
+                       !receiver_is_own_coroutine(c, node->v.jump.value)) {
+                report(c, node, LHAT_CHECK_ERR_ADVANCES_OUTSIDE);
+            }
             unify_yield(c, node, &c->coroutine_produce, inner->v.coroutine.produce);
             unify_yield(c, node, &c->coroutine_receive, inner->v.coroutine.receive);
             // 13.9改: a coroutine that cannot end has no return type, so a
