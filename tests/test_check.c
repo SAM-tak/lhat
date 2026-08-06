@@ -2544,6 +2544,28 @@ static void test_modules(void)
     LHAT_CHECK(lib.provider.checked.module_name == NULL, "3.2 allows none");
     check_against_dispose(&u, &lib);
 
+    // 05 の 8.6改 (M5): what require^ answers is the machine's record of what
+    // the unit published, not a table the requiring unit adds to.
+    LHAT_TEST("a module table is the machine's own");
+    memset(&lib, 0, sizeof lib);
+    lib.expected_path = "lib/plain.lh";
+    check_against(&u, &lib, "public^ let^ thing = 1\n",
+                  "let^ g = require^ \"lib/plain.lh\"\n"
+                  "g.thing := 2\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_TABLE_IS_SEALED);
+    check_against_dispose(&u, &lib);
+
+    // 4.2 publishes names. A table one of them holds is as mutable as it was,
+    // which is what leaves room for deciding that separately later.
+    LHAT_TEST("but what it published stays as writable as it was");
+    memset(&lib, 0, sizeof lib);
+    lib.expected_path = "lib/plain.lh";
+    check_against(&u, &lib, "public^ let^ registry = { x := 0 }\n",
+                  "let^ g = require^ \"lib/plain.lh\"\n"
+                  "g.registry.x := 2\n");
+    CHECK_CLEAN(&u);
+    check_against_dispose(&u, &lib);
+
     // 05 の 5.4改: without a let^ the unit goes under the path it declared.
     // 8.8 makes the tables on the way, so only the root is a new name.
     LHAT_TEST("the short form binds under the declared path");
@@ -2763,22 +2785,31 @@ static void test_coroutines(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_ARITY);
     unit_dispose(&u);
 
-    // 8.6: the registry a unit is loaded into once, grown the way 8.8 grows
-    // any table.
-    LHAT_TEST("and L^ may be the root of a path");
-    check_text(&u,
-               "let^ L^.modules.ns1.mod1 = { greet := 1 }\n"
-               "let^ L^.modules.ns1.mod2 = { x := 2 }\n"
-               "let^ n : number^ = L^.modules.ns1.mod1.greet\n"
-               "let^ k : number^ = L^.modules.ns1.mod2.x\n");
-    CHECK_CLEAN(&u);
+    // 05 の 8.6改 (M5): the registry is the machine's, and 5.3's registration
+    // is what the compiler emits rather than a line anyone writes. Adding a
+    // member is refused the same way writing over one is -- 8.8's walk is
+    // exactly what would have made the segments on the way.
+    LHAT_TEST("L^ is not a root a path may be grown from");
+    check_text(&u, "let^ L^.modules.ns1.mod1 = { greet := 1 }\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_TABLE_IS_SEALED);
     unit_dispose(&u);
 
-    LHAT_TEST("and the same path twice is a redefinition");
+    LHAT_TEST("and writing over what it holds is the same refusal");
+    check_text(&u, "L^.collectgarbage := p^ { }\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_TABLE_IS_SEALED);
+    unit_dispose(&u);
+
+    // 15.1改 answers the f^ side of the same question; this is the other one.
+    LHAT_TEST("a p^ reaches it no more than the top level does");
+    check_text(&u, "let^ f = p^ { L^.collectgarbage := p^ { } }\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_TABLE_IS_SEALED);
+    unit_dispose(&u);
+
+    LHAT_TEST("but reading it is untouched");
     check_text(&u,
-               "let^ L^.modules.ns1.mod1 = { }\n"
-               "let^ L^.modules.ns1.mod1 = { }\n");
-    CHECK_REPORTS(&u, LHAT_CHECK_ERR_REDEFINED);
+               "L^.collectgarbage()\n"
+               "let^ m = L^.modules\n");
+    CHECK_CLEAN(&u);
     unit_dispose(&u);
 
     // Only that one spelling is a place; the rest name nothing.

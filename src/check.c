@@ -447,6 +447,7 @@ static ParamVar *param_var_for(Checker *c, const LhatType *type);
 static bool value_is_fresh(const Checker *c, const LhatNode *value,
                            const LhatType *type);
 static void check_write_target(Checker *c, const LhatNode *target);
+static void check_opaque_write(Checker *c, const LhatNode *target);
 static bool receiver_is_own_coroutine(Checker *c, const LhatNode *receiver);
 
 // 14.8: one number type over integers and reals. The rest are the plain
@@ -3622,6 +3623,11 @@ static LhatType *environment_type(Checker *c)
     if (env == NULL || modules == NULL || collect_now == NULL) {
         return NULL;
     }
+    // 05 の 8.6改: L^ is the machine itself, and the registry inside it is
+    // what require^ and import^ write. Both are the machine's to change, not
+    // the program's -- M5 asked whether to say so and this is the answer.
+    env->v.table.sealed = true;
+    modules->v.table.sealed = true;
     // 05 の 5.3: the registry a unit is loaded into once, grown by 8.8.
     lhat_type_add_member(c->result->types, env, "modules", 7, modules);
     lhat_type_add_member(c->result->types, env, "collectgarbage", 14,
@@ -3665,6 +3671,13 @@ static LhatType *holds_members(Checker *c, const LhatNode *at, LhatType *type)
     }
     if (type->v.table.from_definition) {
         report(c, at, LHAT_CHECK_ERR_PATH_IS_DEFINITION);
+        return NULL;
+    }
+    // 05 の 8.6改 (M5): the machine's own tables are not grown from here
+    // either. Adding a member changes one as much as writing over one does,
+    // and 8.8's own walk is what would make the segments on the way.
+    if (type->v.table.sealed) {
+        report(c, at, LHAT_CHECK_ERR_TABLE_IS_SEALED);
         return NULL;
     }
     return type;
@@ -3871,9 +3884,11 @@ static void check_define(Checker *c, const LhatNode *node)
             // something (node->v.binding.via_reassign_op is only ever set
             // by parse_let -- for^/with^ still always define).
             //
-            // 15.1改: adding a member changes the table as much as writing
-            // over one does, so an f^ is judged here the same way.
+            // 15.1改 and 05 の 8.6改: adding a member changes the table as
+            // much as writing over one does, so both judgements apply here
+            // the same way they do to a reassignment.
             check_write_target(c, target);
+            check_opaque_write(c, target);
             define_path(c, target, annotated != NULL ? annotated : actual,
                        node->v.binding.via_reassign_op);
         } else if (node_name(c, target_name_node(target), &name, &length)) {
@@ -3943,6 +3958,9 @@ static void register_module_type(Checker *c, const char *module_name,
                                      made) == NULL) {
                 return;
             }
+            // 05 の 8.6改: a segment of the registry is the machine's, the
+            // same as the registry itself.
+            made->v.table.sealed = true;
             owner = made;
         }
         segment += length + 1;
@@ -4315,6 +4333,10 @@ static const LhatType *path_type_of(Checker *c, const LhatNode *node)
     size_t length = 0;
 
     if (node->kind != LHAT_NODE_MEMBER) {
+        // 05 の 8.6: L^ is a place too, and the one no scope holds.
+        if (is_environment(c, node)) {
+            return environment_type(c);
+        }
         if (!node_name(c, node, &name, &length)) {
             return NULL;
         }
@@ -4344,9 +4366,18 @@ static void check_opaque_write(Checker *c, const LhatNode *target)
         return;
     }
     const LhatType *owner = path_type_of(c, last->v.access.target);
-    if (owner != NULL && owner->kind == LHAT_TYPE_TABLE &&
-        owner->v.table.nominal) {
+    if (owner == NULL || owner->kind != LHAT_TYPE_TABLE) {
+        return;
+    }
+    if (owner->v.table.nominal) {
         report(c, last, LHAT_CHECK_ERR_PATH_IS_OPAQUE);
+    }
+    // 05 の 8.6改 (M5): the machine's own tables -- L^, its registry, and what
+    // require^ or import^ answers with. The host writes these through its own
+    // API, which never comes through here, so refusing what is written in L^
+    // is the whole rule.
+    if (owner->v.table.sealed) {
+        report(c, last, LHAT_CHECK_ERR_TABLE_IS_SEALED);
     }
 }
 
@@ -4728,6 +4759,14 @@ static LhatType *collect_exports(Checker *c, const LhatNode *statements)
             }
             if (table == NULL) {
                 table = lhat_type_table(c->result->types);
+                // 05 の 8.6改: what require^ answers is the machine's record
+                // of what the unit published, not a table the requiring unit
+                // may add to or write over. What the published names hold is
+                // untouched -- 4.2 publishes names, and a table one of them
+                // holds stays as mutable as it was.
+                if (table != NULL) {
+                    table->v.table.sealed = true;
+                }
             }
             lhat_type_add_member(c->result->types, table, name, length, b->type);
         }
@@ -5439,6 +5478,9 @@ const char *lhat_check_error_message(LhatCheckErrorCode code)
                    "this one came from somewhere else";
         case LHAT_CHECK_ERR_COROUTINE_ESCAPES:
             return "an f^ coroutine may not leave the body that made it";
+        case LHAT_CHECK_ERR_TABLE_IS_SEALED:
+            return "this table belongs to the machine; what it holds is "
+                   "written by the host, not from here";
     }
     return "unknown error";
 }

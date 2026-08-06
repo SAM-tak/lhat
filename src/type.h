@@ -131,6 +131,15 @@ struct LhatType {
             // would make every one of them the same type and hand a pointer
             // to the C that expects another.
             bool nominal;
+            // 05 の 8.6改: a table the machine made rather than the program --
+            // L^ itself, its module registry, and what require^ or import^
+            // answers with. Nothing written in L^ may change one. The host
+            // reaches these through its own API, which never goes through the
+            // checker, so refusing every write written here is the whole rule
+            // and there is nothing to spell in the source. Like the two above
+            // it records where the structure came from and takes no part in
+            // conformance (11.3).
+            bool sealed;
             // 13.7's variadic collector as a table type, and 14.10改's
             // 't^{ ...:T }': the sequence half is unbounded, every position
             // of it T. NULL everywhere else -- mirrors func.variadic below,

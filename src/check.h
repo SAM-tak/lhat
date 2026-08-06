@@ -126,9 +126,13 @@ typedef enum {
     LHAT_CHECK_ERR_ADVANCES_OUTSIDE,    // 15.3改: an f^ advancing a coroutine
                                         // its own body did not make, whose
                                         // progress the caller can see
-    LHAT_CHECK_ERR_COROUTINE_ESCAPES    // 15.3改: an f^ coroutine reaching the
+    LHAT_CHECK_ERR_COROUTINE_ESCAPES,   // 15.3改: an f^ coroutine reaching the
                                         // outside, where advancing it is what
                                         // makes the call observable
+    LHAT_CHECK_ERR_TABLE_IS_SEALED      // 05 の 8.6改 (M5): L^, its registry
+                                        // and what require^/import^ answers
+                                        // are the machine's own; the host
+                                        // writes them through its API
 } LhatCheckErrorCode;
 
 typedef struct {
