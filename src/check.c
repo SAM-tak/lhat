@@ -274,7 +274,7 @@ static Binding *scope_find(Scope *scope, const char *name, size_t length)
 
 // 01 の 8 章: where a scope specifier starts looking. `$^` skips the scope
 // the name was written in and searches from its parent, `$^^` from the one
-// above that; `$$` goes straight to the outermost, which 05 の 3 章 makes
+// above that; `$` goes straight to the outermost, which 05 の 3 章 makes
 // the unit and 03 の 4.3 makes the session's top level. Answers NULL when
 // there are not that many scopes to skip, which is the writer counting
 // wrong rather than a name that is missing.

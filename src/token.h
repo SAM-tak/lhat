@@ -26,7 +26,7 @@ typedef enum {
     LHAT_TOKEN_INT,
     LHAT_TOKEN_FLOAT,
     LHAT_TOKEN_STRING,
-    LHAT_TOKEN_SCOPE,        // '$', '$$', '$^^^'
+    LHAT_TOKEN_SCOPE,        // '$', '$^^^'
     LHAT_TOKEN_OP,
 
     // Section 5.4. An interpolated string is delivered as a sequence rather

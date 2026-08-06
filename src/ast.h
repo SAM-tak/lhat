@@ -28,7 +28,9 @@ typedef enum {
     // 16.2: the focus for^ introduced when no name was written. Carries no
     // span, since 'it^' need not appear in the source for it to be there.
     LHAT_NODE_FOCUS,
-    LHAT_NODE_SCOPE,         // $x, $$x, $^x  (01 の 8 章)
+    LHAT_NODE_SCOPE,         // $x, $^x  (01 の 8 章). The sigil is glued to
+                             // the name and nothing may come between, so
+                             // '$.x' is not another way of writing it
     LHAT_NODE_INTERP,        // $"..." -- list of INTERP_TEXT / INTERP_HOLE
     LHAT_NODE_INTERP_TEXT,
     LHAT_NODE_INTERP_HOLE,   // expression plus an optional format string
@@ -56,8 +58,8 @@ typedef enum {
     LHAT_NODE_IF_EXPR,       // if^c: e el^c: e el^: e ;
 
     // ---- statements ----
-    LHAT_NODE_DEFINE,        // a, b := x, y
-    LHAT_NODE_REASSIGN,      // a, b << x, y
+    LHAT_NODE_DEFINE,        // let^ a, b = x, y
+    LHAT_NODE_REASSIGN,      // a, b := x, y
     LHAT_NODE_CALL_STMT,
     LHAT_NODE_BLOCK,         // do^{ ... } and any braced body
     LHAT_NODE_IF_STMT,

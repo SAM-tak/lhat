@@ -301,7 +301,7 @@ static const Local *find_local_at(const Compiler *c, const char *name,
 }
 
 // Where a specifier says to start looking. 01 の 8 章: '$^' steps out of the
-// scope the name was written in, '$^^' out of that one too, and '$$' goes
+// scope the name was written in, '$^^' out of that one too, and '$' goes
 // straight to the unit. Crossing into an enclosing subroutine spends every
 // scope still open in this one plus its body's own, since 5.4 makes that
 // body one scope the way any block is.
@@ -3947,7 +3947,7 @@ static LhatCompileStatus compile_unit(LhatCompileSession *session,
             c.locals[c.local_count].length = session->names[i].length;
             c.locals[c.local_count].reg = session->names[i].reg;
             // 03 の 4.3: the session's top level is this input's top level,
-            // which 01 の 8 章 makes what '$$' names.
+            // which 01 の 8 章 makes what '$' names.
             c.locals[c.local_count].depth = 0;
             c.local_count++;
         }

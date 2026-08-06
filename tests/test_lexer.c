@@ -794,6 +794,14 @@ static void test_scope_specifiers(void)
     LHAT_CHECK_EQ_INT(s.tokens[0].kind, LHAT_TOKEN_ERROR);
     LHAT_CHECK_EQ_INT(s.lexer.diagnostics[0].code, LHAT_ERR_SCOPE_WITHOUT_NAME);
     scan_dispose(&s);
+
+    // What is glued has to be a name, so '$x' is the only spelling -- there
+    // is no '$' standing alone with a member reached off it.
+    LHAT_TEST("and '$.x' is not another way of writing it");
+    scan_text(&s, "$.x");
+    LHAT_CHECK_EQ_INT(s.tokens[0].kind, LHAT_TOKEN_ERROR);
+    LHAT_CHECK_EQ_INT(s.lexer.diagnostics[0].code, LHAT_ERR_SCOPE_WITHOUT_NAME);
+    scan_dispose(&s);
 }
 
 static void test_positions(void)
