@@ -32,6 +32,14 @@
 typedef struct {
     LhatObject *objects;
     size_t count;
+
+    // 5.12: the colour a new object is born with. It is one of gc.h's two
+    // whites, and the collector swaps it for the other one each cycle -- so
+    // an object made while a sweep is under way wears the colour of the
+    // living and is not taken by the sweep it was born into. Zero is
+    // LHAT_GC_WHITE0, which is why a heap needs no initialiser: a chunk's
+    // is never swept and so never swaps.
+    uint8_t white;
 } LhatHeap;
 
 // The bytes are copied in and kept NUL-terminated, so a string can be handed
@@ -292,6 +300,12 @@ typedef struct LhatHostData {
 // ---------------------------------------------------------------------------
 // Making and freeing
 // ---------------------------------------------------------------------------
+
+// The one place an object comes into being: zeroed, given its kind and the
+// heap's current white (5.12), and linked into the heap. Everything below
+// goes through this, so there is one answer to what colour a new object is.
+// Returns NULL when out of memory.
+void *lhat_object_alloc(LhatHeap *heap, size_t size, LhatObjectKind kind);
 
 // Both link the new object into the heap. Return NULL when out of memory.
 LhatString *lhat_string_new(LhatHeap *heap, const char *text, size_t length);

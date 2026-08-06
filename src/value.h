@@ -54,7 +54,9 @@ typedef enum {
 
 typedef struct LhatObject {
     LhatObjectKind kind;
-    bool marked;              // reached in the collection now running
+    // 5.12: white, gray or black, and which of the two whites. gc.h says
+    // what each means and what the invariant between them is.
+    uint8_t color;
     struct LhatObject *next;  // every object, for the collector to walk
 
     // 5.12: the collector's own list of what it has reached but not yet

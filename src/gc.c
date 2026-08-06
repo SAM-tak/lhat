@@ -16,15 +16,15 @@
 // The object graph
 // ---------------------------------------------------------------------------
 
-// A push that cannot fail: the link is the object's own. `marked` is what
-// keeps one from going on the list twice -- set here, before the object is
-// linked, and not cleared again until the sweep.
+// A push that cannot fail: the link is the object's own. Only a white object
+// goes on the list -- one already gray is on it, and a black one has been
+// taken off it and looked into.
 static void reach(LhatObject **gray, LhatObject *object)
 {
-    if (object == NULL || object->marked) {
+    if (object == NULL || !lhat_gc_is_white(object)) {
         return;
     }
-    object->marked = true;
+    object->color = LHAT_GC_GRAY;
     object->gclist = *gray;
     *gray = object;
 }
@@ -144,12 +144,18 @@ void lhat_gc_children(LhatObject **gray, LhatObject *object)
 
 size_t lhat_gc_sweep(LhatHeap *heap, Machine *machine)
 {
+    // The caller has already swapped, so this is the white the marking was
+    // handing out -- and so the colour of everything it did not reach.
+    uint8_t dead = lhat_gc_other_white(heap->white);
+
     size_t freed = 0;
     LhatObject **link = &heap->objects;
     while (*link != NULL) {
         LhatObject *object = *link;
-        if (object->marked) {
-            object->marked = false;  // ready for the next collection
+        if (object->color != dead) {
+            // Black, or one born since the swap. Either way it lives, and
+            // goes back to white for the collection after this one.
+            object->color = heap->white;
             link = &object->next;
             continue;
         }
@@ -210,6 +216,10 @@ static void follow_gray(Machine *m)
         LhatObject *object = m->gray;
         m->gray = object->gclist;
         object->gclist = NULL;
+        // Black before the children rather than after: one that refers to
+        // itself would otherwise be put back on the list it was just taken
+        // off, and go round for as long as the loop cared to.
+        object->color = LHAT_GC_BLACK;
         lhat_gc_children(&m->gray, object);
     }
 }
@@ -223,16 +233,16 @@ static void follow_gray(Machine *m)
 // same reason.
 //
 // Nothing marks one as "already held". While it is on the list mark_roots
-// reaches it, so the `marked` test above is what keeps this pass from
-// finding it twice; and once its cleanups have run its count is 0 and its
-// state is DONE, so it never answers here again and a later cycle takes it
-// like anything else. What a cleanup did in between -- including storing
-// what it reached somewhere still live -- is asked about from scratch then.
+// reaches it, so the white test below is what keeps this pass from finding
+// it twice; and once its cleanups have run its count is 0 and its state is
+// DONE, so it never answers here again and a later cycle takes it like
+// anything else. What a cleanup did in between -- including storing what it
+// reached somewhere still live -- is asked about from scratch then.
 static void hold_pending_disposals(Machine *m)
 {
     for (LhatObject *object = m->objects.objects; object != NULL;
          object = object->next) {
-        if (object->marked || object->kind != LHAT_OBJECT_COROUTINE) {
+        if (!lhat_gc_is_white(object) || object->kind != LHAT_OBJECT_COROUTINE) {
             continue;
         }
         LhatCoroutine *co = (LhatCoroutine *)object;
@@ -259,6 +269,10 @@ void lhat_gc_collect(Machine *m)
     // after -- a coroutine kept for its cleanups keeps its registers too.
     hold_pending_disposals(m);
     follow_gray(m);
+
+    // The swap: from here on a new object is born the other white, so the
+    // only things still wearing this one are what the marking did not reach.
+    m->objects.white = lhat_gc_other_white(m->objects.white);
     m->collected += lhat_gc_sweep(&m->objects, m);
 
     // What survived is the new baseline, so a program holding a lot does not

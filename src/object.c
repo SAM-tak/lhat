@@ -12,13 +12,14 @@
 // Making and freeing
 // ---------------------------------------------------------------------------
 
-static void *allocate(LhatHeap *heap, size_t size, LhatObjectKind kind)
+void *lhat_object_alloc(LhatHeap *heap, size_t size, LhatObjectKind kind)
 {
     LhatObject *object = (LhatObject *)lhat_calloc(1, size);
     if (object == NULL) {
         return NULL;
     }
     object->kind = kind;
+    object->color = heap->white;
     object->next = heap->objects;
     heap->objects = object;
     heap->count++;
@@ -39,8 +40,8 @@ uint32_t lhat_string_hash(const char *text, size_t length)
 LhatString *lhat_string_new(LhatHeap *heap, const char *text, size_t length)
 {
     LhatString *string =
-        (LhatString *)allocate(heap, sizeof *string + length + 1,
-                               LHAT_OBJECT_STRING);
+        (LhatString *)lhat_object_alloc(
+            heap, sizeof *string + length + 1, LHAT_OBJECT_STRING);
     if (string == NULL) {
         return NULL;
     }
@@ -58,8 +59,8 @@ LhatString *lhat_string_concat(LhatHeap *heap, const LhatString *left,
 {
     size_t length = left->length + right->length;
     LhatString *joined =
-        (LhatString *)allocate(heap, sizeof *joined + length + 1,
-                               LHAT_OBJECT_STRING);
+        (LhatString *)lhat_object_alloc(
+            heap, sizeof *joined + length + 1, LHAT_OBJECT_STRING);
     if (joined == NULL) {
         return NULL;
     }
@@ -73,15 +74,16 @@ LhatString *lhat_string_concat(LhatHeap *heap, const LhatString *left,
 
 LhatTable *lhat_table_new(LhatHeap *heap)
 {
-    return (LhatTable *)allocate(heap, sizeof(LhatTable), LHAT_OBJECT_TABLE);
+    return (LhatTable *)lhat_object_alloc(heap, sizeof(LhatTable),
+                                          LHAT_OBJECT_TABLE);
 }
 
 LhatErrorKind *lhat_error_kind_new(LhatHeap *heap,
                                    const LhatErrorKind *group,
                                    const LhatString *name)
 {
-    LhatErrorKind *kind = (LhatErrorKind *)allocate(heap, sizeof(LhatErrorKind),
-                                                    LHAT_OBJECT_ERROR_KIND);
+    LhatErrorKind *kind = (LhatErrorKind *)lhat_object_alloc(
+        heap, sizeof(LhatErrorKind), LHAT_OBJECT_ERROR_KIND);
     if (kind == NULL) {
         return NULL;
     }
@@ -97,7 +99,8 @@ LhatError *lhat_error_new(LhatHeap *heap, const LhatErrorKind *kind)
         return NULL;
     }
     LhatError *error =
-        (LhatError *)allocate(heap, sizeof(LhatError), LHAT_OBJECT_ERROR);
+        (LhatError *)lhat_object_alloc(heap, sizeof(LhatError),
+                                       LHAT_OBJECT_ERROR);
     if (error == NULL) {
         return NULL;
     }
@@ -110,8 +113,8 @@ LhatCoroutine *lhat_coroutine_new(LhatHeap *heap, const LhatClosure *closure,
                                   size_t registers)
 {
     LhatCoroutine *coroutine =
-        (LhatCoroutine *)allocate(heap, sizeof(LhatCoroutine),
-                                  LHAT_OBJECT_COROUTINE);
+        (LhatCoroutine *)lhat_object_alloc(
+            heap, sizeof(LhatCoroutine), LHAT_OBJECT_COROUTINE);
     if (coroutine == NULL) {
         return NULL;
     }
@@ -132,8 +135,8 @@ LhatCoroutine *lhat_coroutine_new(LhatHeap *heap, const LhatClosure *closure,
 LhatCoroutine *lhat_table_iterator(LhatHeap *heap, const LhatTable *table)
 {
     LhatCoroutine *walk =
-        (LhatCoroutine *)allocate(heap, sizeof(LhatCoroutine),
-                                  LHAT_OBJECT_COROUTINE);
+        (LhatCoroutine *)lhat_object_alloc(
+            heap, sizeof(LhatCoroutine), LHAT_OBJECT_COROUTINE);
     if (walk == NULL) {
         return NULL;
     }
@@ -172,7 +175,8 @@ LhatNative *lhat_native_new(LhatHeap *heap, LhatNativeKind kind,
                             LhatValue bound)
 {
     LhatNative *native =
-        (LhatNative *)allocate(heap, sizeof(LhatNative), LHAT_OBJECT_NATIVE);
+        (LhatNative *)lhat_object_alloc(heap, sizeof(LhatNative),
+                                        LHAT_OBJECT_NATIVE);
     if (native == NULL) {
         return NULL;
     }
@@ -185,7 +189,7 @@ LhatHost *lhat_host_new(LhatHeap *heap, LhatHostFn call, void *context,
                         uint8_t parameters, bool takes_self)
 {
     LhatHost *host =
-        (LhatHost *)allocate(heap, sizeof(LhatHost), LHAT_OBJECT_HOST);
+        (LhatHost *)lhat_object_alloc(heap, sizeof(LhatHost), LHAT_OBJECT_HOST);
     if (host == NULL) {
         return NULL;
     }
@@ -201,7 +205,8 @@ LhatHostData *lhat_hostdata_new(LhatHeap *heap, const LhatHostDataTag *tag,
                                 void *pointer, LhatTable *members)
 {
     LhatHostData *data =
-        (LhatHostData *)allocate(heap, sizeof(LhatHostData), LHAT_OBJECT_HOSTDATA);
+        (LhatHostData *)lhat_object_alloc(heap, sizeof(LhatHostData),
+                                          LHAT_OBJECT_HOSTDATA);
     if (data == NULL) {
         return NULL;
     }
@@ -214,8 +219,8 @@ LhatHostData *lhat_hostdata_new(LhatHeap *heap, const LhatHostDataTag *tag,
 LhatRuntimeType *lhat_type_rt_new(LhatHeap *heap, LhatRuntimeTypeKind kind)
 {
     LhatRuntimeType *type =
-        (LhatRuntimeType *)allocate(heap, sizeof(LhatRuntimeType),
-                                    LHAT_OBJECT_TYPE);
+        (LhatRuntimeType *)lhat_object_alloc(
+            heap, sizeof(LhatRuntimeType), LHAT_OBJECT_TYPE);
     if (type != NULL) {
         type->kind = kind;
     }
@@ -624,8 +629,8 @@ bool lhat_runtime_type_equal(const LhatRuntimeType *a, const LhatRuntimeType *b)
 
 LhatOverload *lhat_overload_new(LhatHeap *heap)
 {
-    return (LhatOverload *)allocate(heap, sizeof(LhatOverload),
-                                    LHAT_OBJECT_OVERLOAD);
+    return (LhatOverload *)lhat_object_alloc(heap, sizeof(LhatOverload),
+                                             LHAT_OBJECT_OVERLOAD);
 }
 
 bool lhat_overload_add(LhatOverload *overload, LhatValue candidate)

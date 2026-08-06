@@ -4713,19 +4713,6 @@ static bool fits_call(LhatValue candidate, const LhatValue *at, uint8_t given,
     return true;
 }
 
-static void *allocate(Machine *m, size_t size, LhatObjectKind kind)
-{
-    LhatObject *object = (LhatObject *)lhat_calloc(1, size);
-    if (object == NULL) {
-        return NULL;
-    }
-    object->kind = kind;
-    object->next = m->objects.objects;
-    m->objects.objects = object;
-    m->objects.count++;
-    return object;
-}
-
 // 5.11 with 02 の 10.7: puts a suspended coroutine's one saved frame back on
 // the stack so that what it still owes can be run. The caller has already
 // made room (LHAT_MAX_FRAMES and the stack's own end) and picked where the
@@ -4779,7 +4766,8 @@ static LhatUpvalue *capture(Machine *m, LhatValue *slot)
     }
 
     LhatUpvalue *upvalue =
-        (LhatUpvalue *)allocate(m, sizeof *upvalue, LHAT_OBJECT_UPVALUE);
+        (LhatUpvalue *)lhat_object_alloc(&m->objects, sizeof *upvalue,
+                                        LHAT_OBJECT_UPVALUE);
     if (upvalue == NULL) {
         return NULL;
     }
@@ -5121,7 +5109,8 @@ LhatRunResult lhat_run(LhatMachine *m, const LhatProto *proto)
     }
 
     LhatClosure *entry =
-        (LhatClosure *)allocate(m, sizeof *entry, LHAT_OBJECT_SUBROUTINE);
+        (LhatClosure *)lhat_object_alloc(&m->objects, sizeof *entry,
+                                        LHAT_OBJECT_SUBROUTINE);
     if (entry == NULL) {
         return finish(m, chunk, LHAT_RUN_OUT_OF_MEMORY, lhat_nil(), 0);
     }
@@ -5323,8 +5312,8 @@ LhatRunResult lhat_run(LhatMachine *m, const LhatProto *proto)
             case LHAT_BC_CLOSURE: {
                 const LhatProto *nested =
                     frame->closure->proto->protos[lhat_bx(instruction)];
-                LhatClosure *closure = (LhatClosure *)allocate(
-                    m, sizeof *closure, LHAT_OBJECT_SUBROUTINE);
+                LhatClosure *closure = (LhatClosure *)lhat_object_alloc(
+                    &m->objects, sizeof *closure, LHAT_OBJECT_SUBROUTINE);
                 if (closure == NULL) {
                     return finish(m, chunk, LHAT_RUN_OUT_OF_MEMORY, lhat_nil(), at);
                 }
@@ -5416,8 +5405,8 @@ LhatRunResult lhat_run(LhatMachine *m, const LhatProto *proto)
                 if (which >= m->module_count) {
                     return finish(m, chunk, LHAT_RUN_NO_SUCH_UNIT, lhat_nil(), at);
                 }
-                LhatClosure *closure = (LhatClosure *)allocate(
-                    m, sizeof *closure, LHAT_OBJECT_SUBROUTINE);
+                LhatClosure *closure = (LhatClosure *)lhat_object_alloc(
+                    &m->objects, sizeof *closure, LHAT_OBJECT_SUBROUTINE);
                 if (closure == NULL) {
                     return finish(m, chunk, LHAT_RUN_OUT_OF_MEMORY, lhat_nil(), at);
                 }
