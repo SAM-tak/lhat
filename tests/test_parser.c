@@ -1383,9 +1383,10 @@ static void test_types(void)
         2);
     parse_dispose(&p);
 
-    // 13.9: three types, uniform across suspension points.
+    // 13.9 with 15.3改: the front half is the signature one resume follows,
+    // and it carries the kind of the body.
     LHAT_TEST("coroutine type");
-    parse_text(&p, "x := y as^ c^{ number^, string^, nil^ }");
+    parse_text(&p, "x := y as^ c^{ p^number^ -> string^;, nil^ }");
     LHAT_CHECK_EQ_INT(error_count(&p), 0);
     {
         const LhatNode *t = first_value(&p)->v.ascription.type;
@@ -1393,6 +1394,21 @@ static void test_types(void)
         LHAT_CHECK(t->v.coroutine.receive != NULL, "receive type");
         LHAT_CHECK(t->v.coroutine.produce != NULL, "produce type");
         LHAT_CHECK(t->v.coroutine.result != NULL, "result type");
+        LHAT_CHECK(!t->v.coroutine.is_function, "a p^ coroutine");
+    }
+    parse_dispose(&p);
+
+    LHAT_TEST("and an f^ one says so");
+    parse_text(&p, "x := y as^ c^{ f^ -> string^;, nil^ }");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    {
+        const LhatNode *t = first_value(&p)->v.ascription.type;
+        LHAT_CHECK_EQ_INT(t->kind, LHAT_NODE_TYPE_CORO);
+        LHAT_CHECK(t->v.coroutine.is_function, "an f^ coroutine");
+        // 15.2改: nothing is sent to this one, which is written by leaving
+        // the parameter list empty rather than by naming nil^.
+        LHAT_CHECK(t->v.coroutine.receive == NULL, "no receive type");
+        LHAT_CHECK(t->v.coroutine.produce != NULL, "produce type");
     }
     parse_dispose(&p);
 

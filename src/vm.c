@@ -981,9 +981,9 @@ static LhatRuntimeType *lower_type(Compiler *c, const LhatNode *node)
 
         case LHAT_NODE_TYPE_FUNC:
             return lhat_type_rt_new(owner, LHAT_TYPE_RT_SUBROUTINE);
-        // 13.9: a written c^{ receive, produce, result } names its three
-        // slots the same way a table literal names members -- read each
-        // rather than leaving the bare tag S28 used to stop at.
+        // 13.9 with 15.3改: a written 'c^{ f^R -> Y;, T }' names its three
+        // slots and the kind of the body -- read each rather than leaving the
+        // bare tag S28 used to stop at.
         case LHAT_NODE_TYPE_CORO: {
             LhatRuntimeType *type =
                 lhat_type_rt_new(owner, LHAT_TYPE_RT_COROUTINE);
@@ -993,9 +993,7 @@ static LhatRuntimeType *lower_type(Compiler *c, const LhatNode *node)
             type->receive = lower_type(c, node->v.coroutine.receive);
             type->produce = lower_type(c, node->v.coroutine.produce);
             type->result = lower_type(c, node->v.coroutine.result);
-            // 13.9 writes the kind in the front half, which the parser does
-            // not read yet -- so a written annotation still means the p^ one,
-            // as every one written so far did (15.3 had no other kind).
+            type->is_function = node->v.coroutine.is_function;  // 15.3改
             return type;
         }
 

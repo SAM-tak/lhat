@@ -86,7 +86,7 @@ typedef enum {
     // ---- types (13 章) ----
     LHAT_NODE_TYPE_NAME,     // number^, FooBar
     LHAT_NODE_TYPE_FUNC,     // f^A, B -> C;
-    LHAT_NODE_TYPE_CORO,     // c^{ recv, yield, ret }
+    LHAT_NODE_TYPE_CORO,     // c^{ f^recv -> yield;, ret }  (13.9, 15.3改)
     LHAT_NODE_TYPE_TABLE,    // t^{ member : type }
     LHAT_NODE_TYPE_UNION,    // A | B
     LHAT_NODE_TYPE_INTERSECT,// A & B
@@ -365,6 +365,10 @@ struct LhatNode {
             LhatNode *receive;
             LhatNode *produce;
             LhatNode *result;
+            // 15.3改: which kind of body it came from, written as the front
+            // half of 13.9's form ('c^{ f^R -> Y;, T }'). What may advance a
+            // coroutine, and where it may be held, follows from this.
+            bool is_function;
         } coroutine;
     } v;
 };

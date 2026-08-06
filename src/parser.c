@@ -287,9 +287,31 @@ static LhatNode *parse_type_coroutine(Parser *p)
     }
 
     expect_op(p, LHAT_OP_LBRACE);
-    node->v.coroutine.receive = parse_type(p);
-    expect_op(p, LHAT_OP_COMMA);
-    node->v.coroutine.produce = parse_type(p);
+
+    // 13.9 with 15.3改: the front half is written as the signature one resume
+    // follows -- 'f^R -> Y;' or 'p^R -> Y;' -- which is where the kind of the
+    // body goes now that both kinds exist. Read with parse_type so that 13.1's
+    // own grammar applies unchanged, including 'f^ -> Y;' for a coroutine
+    // nothing is sent to.
+    LhatNode *signature = parse_type(p);
+    if (signature != NULL && signature->kind == LHAT_NODE_TYPE_FUNC) {
+        node->v.coroutine.is_function = signature->v.func.is_function;
+        // 15.2改: one resume takes exactly one value, so the parameter list
+        // holds at most one. An absent one is what a nil^ receive is written
+        // as, the same way 13.2 writes an absent result.
+        node->v.coroutine.receive =
+            signature->v.func.params != NULL
+                ? signature->v.func.params->v.param.type
+                : NULL;
+        node->v.coroutine.produce = signature->v.func.return_type;
+        if (signature->v.func.params != NULL &&
+            signature->v.func.params->next != NULL) {
+            report(p, &start, LHAT_PARSE_ERR_EXPECTED_TYPE);
+        }
+    } else if (signature != NULL) {
+        report(p, &start, LHAT_PARSE_ERR_EXPECTED_TYPE);
+    }
+
     expect_op(p, LHAT_OP_COMMA);
     node->v.coroutine.result = parse_type(p);
     expect_op(p, LHAT_OP_RBRACE);

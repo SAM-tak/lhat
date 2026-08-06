@@ -656,15 +656,19 @@ static LhatType *resolve_type(Checker *c, const LhatNode *node)
                                        resolve_type(c, node->v.binary.right));
 
         case LHAT_NODE_TYPE_CORO:
-            // 13.9 writes the kind in the front half ('c^{ f^R -> Y;, T }').
-            // The parser does not read that spelling yet, so a written
-            // annotation still means the p^ one -- which is what every
-            // annotation written so far meant, since 15.3 had no other kind.
-            return lhat_type_coro(c->result->types,
-                                  resolve_type(c, node->v.coroutine.receive),
-                                  resolve_type(c, node->v.coroutine.produce),
-                                  resolve_type(c, node->v.coroutine.result),
-                                  false);
+            // 13.9 with 15.3改: 'c^{ f^R -> Y;, T }'. An omitted R or Y is
+            // nil^ -- 13.2's absent result and an empty parameter list both
+            // mean "nothing here", and 04 の 11.3 already spells that nil^.
+            return lhat_type_coro(
+                c->result->types,
+                node->v.coroutine.receive != NULL
+                    ? resolve_type(c, node->v.coroutine.receive)
+                    : simple(c, LHAT_TYPE_NIL),
+                node->v.coroutine.produce != NULL
+                    ? resolve_type(c, node->v.coroutine.produce)
+                    : simple(c, LHAT_TYPE_NIL),
+                resolve_type(c, node->v.coroutine.result),
+                node->v.coroutine.is_function);
 
         default:
             report(c, node, LHAT_CHECK_ERR_UNKNOWN_TYPE);
@@ -838,8 +842,11 @@ static void check_operator_shape(Checker *c, const LhatNode *at,
          p != NULL; p = p->next) {
         params++;
     }
+    // 15.7改: and it may not be yieldable. Not because it is an f^ -- 15.3改
+    // lets one of those suspend -- but because 15.5 has a yieldable call
+    // answer a coroutine, where the signature above says it answers T.
     if (type->kind != LHAT_TYPE_FUNC || !type->v.func.is_function ||
-        !type->v.func.takes_self || params != 1) {
+        !type->v.func.takes_self || params != 1 || type->v.func.yields) {
         report(c, at, LHAT_CHECK_ERR_BAD_OPERATOR);
     }
 }
@@ -5357,8 +5364,9 @@ const char *lhat_check_error_message(LhatCheckErrorCode code)
             return "an operator is answered by what stands to its left, and "
                    "this does not answer this one";
         case LHAT_CHECK_ERR_BAD_OPERATOR:
-            return "an op^ is an f^ taking self^ and one argument; the left "
-                   "operand is the self^ and the right one the argument";
+            return "an op^ is an f^ taking self^ and one argument, and it may "
+                   "not yield^; the left operand is the self^ and the right "
+                   "one the argument";
         case LHAT_CHECK_ERR_ISA_ALWAYS_TRUE:
             return "any^ holds of every value, so this asks nothing";
         case LHAT_CHECK_ERR_MEMBER_EXISTS:

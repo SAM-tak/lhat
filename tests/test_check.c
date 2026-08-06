@@ -2876,15 +2876,15 @@ static void test_coroutines(void)
                "  let^ got : string^ = _yield^ 1\n"
                "  return^ 9\n"
                "}\n"
-               "let^ a : c^{string^, number^, number^} = real()\n"
-               "let^ b : c^{string^, number^, number^} = fake()\n");
+               "let^ a : c^{ p^string^ -> number^;, number^ } = real()\n"
+               "let^ b : c^{ p^string^ -> number^;, number^ } = fake()\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
     LHAT_TEST("and a body with only _yield^ is still a coroutine");
     check_text(&u,
                "let^ fake = p^ { _yield^ 1 }\n"
-               "let^ c : c^{nil^, number^, nil^} = fake()\n"
+               "let^ c : c^{ p^nil^ -> number^;, nil^ } = fake()\n"
                "let^ d : bool^ = c.done()\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
@@ -2900,7 +2900,7 @@ static void test_coroutines(void)
     LHAT_TEST("and the wrong type is caught the same way");
     check_text(&u,
                "let^ fake = p^ { let^ got : string^ = _yield^ 1 }\n"
-               "let^ c : c^{number^, number^, nil^} = fake()\n");
+               "let^ c : c^{ p^number^ -> number^;, nil^ } = fake()\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
@@ -3305,6 +3305,49 @@ static void test_purity(void)
                "    return^ { c := co }\n"
                "}\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_COROUTINE_ESCAPES);
+    unit_dispose(&u);
+
+    // 13.9 with 15.3改: the front half is a signature, and its kind is the
+    // body's. Written out, an f^ coroutine can be taken as an argument --
+    // which is the one thing 15.3改 allows without letting it be advanced.
+    LHAT_TEST("an f^ coroutine may be taken as an argument");
+    check_text(&u,
+               "let^ hold = f^ co:c^{ f^nil^ -> number^;, nil^ } -> number^ {\n"
+               "    return^ 0\n"
+               "}\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("but not advanced, since the caller shares its state");
+    check_text(&u,
+               "let^ take = f^ co:c^{ f^nil^ -> number^;, nil^ } -> number^ {\n"
+               "    let^ a = co.start()\n"
+               "    return^ 0\n"
+               "}\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_ADVANCES_OUTSIDE);
+    unit_dispose(&u);
+
+    LHAT_TEST("and the two kinds are different types");
+    check_text(&u,
+               "let^ gen = f^ { yield^ 1 }\n"
+               "let^ f = f^ -> number^ {\n"
+               "    let^ c : c^{ p^nil^ -> number^;, nil^ } = gen()\n"
+               "    return^ 0\n"
+               "}\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
+    unit_dispose(&u);
+
+    // 15.7改: not because an operator is an f^ -- 15.3改 lets one suspend --
+    // but because 11.8's signature answers T and a yieldable call answers a
+    // coroutine (15.5).
+    LHAT_TEST("an operator may not be yieldable");
+    check_text(&u,
+               "let^ V = def^{\n"
+               "    self^{ x := 0 },\n"
+               "    op^+ := f^self^, o:number^ -> number^ "
+               "{ yield^ 1 return^ 0 },\n"
+               "}\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_BAD_OPERATOR);
     unit_dispose(&u);
 
     // A p^ coroutine leaving a p^ is what 15.5 is for; nothing here applies.
