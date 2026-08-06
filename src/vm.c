@@ -993,6 +993,9 @@ static LhatRuntimeType *lower_type(Compiler *c, const LhatNode *node)
             type->receive = lower_type(c, node->v.coroutine.receive);
             type->produce = lower_type(c, node->v.coroutine.produce);
             type->result = lower_type(c, node->v.coroutine.result);
+            // 13.9 writes the kind in the front half, which the parser does
+            // not read yet -- so a written annotation still means the p^ one,
+            // as every one written so far did (15.3 had no other kind).
             return type;
         }
 
@@ -1104,6 +1107,7 @@ static LhatRuntimeType *rt_from_checked(LhatHeap *heap, const LhatType *type)
             rt->receive = rt_from_checked(heap, type->v.coroutine.receive);
             rt->produce = rt_from_checked(heap, type->v.coroutine.produce);
             rt->result = rt_from_checked(heap, type->v.coroutine.result);
+            rt->is_function = type->v.coroutine.is_function;  // 15.3改
             return rt;
         }
 
@@ -4509,6 +4513,9 @@ static LhatRuntimeType *reflect_type(LhatHeap *heap, LhatValue value,
             type->receive = proto->yield_receive_type;
             type->produce = proto->yield_produce_type;
             type->result = proto->result_type;
+            // 15.3改: which kind of body this came from, which is what
+            // decides who may advance it (15.6改).
+            type->is_function = proto->is_function;
         }
         return type;
     }

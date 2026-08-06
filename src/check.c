@@ -444,8 +444,10 @@ static const LhatTypeMember *find_member(const LhatType *table, const char *name
 static LhatType *only(Checker *c, LhatType *type, LhatType *wanted);
 static LhatType *without(Checker *c, LhatType *type, LhatType *unwanted);
 static ParamVar *param_var_for(Checker *c, const LhatType *type);
-static bool value_is_fresh(const Checker *c, const LhatNode *value);
+static bool value_is_fresh(const Checker *c, const LhatNode *value,
+                           const LhatType *type);
 static void check_write_target(Checker *c, const LhatNode *target);
+static bool receiver_is_own_coroutine(Checker *c, const LhatNode *receiver);
 
 // 14.8: one number type over integers and reals. The rest are the plain
 // builtin spellings.
@@ -654,10 +656,15 @@ static LhatType *resolve_type(Checker *c, const LhatNode *node)
                                        resolve_type(c, node->v.binary.right));
 
         case LHAT_NODE_TYPE_CORO:
+            // 13.9 writes the kind in the front half ('c^{ f^R -> Y;, T }').
+            // The parser does not read that spelling yet, so a written
+            // annotation still means the p^ one -- which is what every
+            // annotation written so far meant, since 15.3 had no other kind.
             return lhat_type_coro(c->result->types,
                                   resolve_type(c, node->v.coroutine.receive),
                                   resolve_type(c, node->v.coroutine.produce),
-                                  resolve_type(c, node->v.coroutine.result));
+                                  resolve_type(c, node->v.coroutine.result),
+                                  false);
 
         default:
             report(c, node, LHAT_CHECK_ERR_UNKNOWN_TYPE);
@@ -1200,6 +1207,53 @@ static ParamVar *param_var_for(Checker *c, const LhatType *type)
         }
     }
     return NULL;
+}
+
+// 15.3改: whether an f^ coroutine is reachable anywhere in this type. The
+// result of an f^ is read with this, since one reaches the outside through a
+// member or a nested signature as readily as by being the result itself.
+static bool mentions_function_coroutine(const LhatType *type, unsigned depth)
+{
+    if (type == NULL || depth > 8) {
+        return false;
+    }
+    switch (type->kind) {
+        case LHAT_TYPE_CORO:
+            return type->v.coroutine.is_function;
+
+        case LHAT_TYPE_TABLE:
+            for (const LhatTypeMember *m = type->v.table.members; m != NULL;
+                 m = m->next) {
+                if (mentions_function_coroutine(m->type, depth + 1)) {
+                    return true;
+                }
+            }
+            return mentions_function_coroutine(type->v.table.variadic,
+                                               depth + 1);
+
+        case LHAT_TYPE_FUNC:
+            for (const LhatTypeList *p = type->v.func.params; p != NULL;
+                 p = p->next) {
+                if (mentions_function_coroutine(p->type, depth + 1)) {
+                    return true;
+                }
+            }
+            return mentions_function_coroutine(type->v.func.result, depth + 1) ||
+                   mentions_function_coroutine(type->v.func.variadic, depth + 1);
+
+        case LHAT_TYPE_UNION:
+        case LHAT_TYPE_INTERSECT:
+            for (const LhatTypeList *arm = type->v.composite.arms; arm != NULL;
+                 arm = arm->next) {
+                if (mentions_function_coroutine(arm->type, depth + 1)) {
+                    return true;
+                }
+            }
+            return false;
+
+        default:
+            return false;
+    }
 }
 
 // Whether a demand would contain the very variable it is about, which would
@@ -1933,6 +1987,8 @@ static LhatType *infer_call(Checker *c, const LhatNode *node)
         if (ends_with == NULL && callee->v.func.ends_without_value) {
             ends_with = simple(c, LHAT_TYPE_NIL);
         }
+        // 15.3改: the coroutine carries the kind of the body it came from,
+        // which is what decides who may advance it (15.6改).
         return lhat_type_coro(c->result->types,
                               callee->v.func.yield_receive != NULL
                                   ? callee->v.func.yield_receive
@@ -1940,7 +1996,7 @@ static LhatType *infer_call(Checker *c, const LhatNode *node)
                               callee->v.func.yield_produce != NULL
                                   ? callee->v.func.yield_produce
                                   : simple(c, LHAT_TYPE_NIL),
-                              ends_with);
+                              ends_with, callee->v.func.is_function);
     }
     // 13.2: a signature with no result answers no value. That is not a gap in
     // inference, so it is not spelled with a NULL -- 03 の 3.4 kept it apart
@@ -2063,6 +2119,24 @@ static LhatType *infer_member(Checker *c, const LhatNode *node)
         // 05 の 8.5: a coroutine carries these without importing anything.
         // 02 の 12.6 spells dispose(), 15.6 puts resume beside it, and 16.3
         // makes iterate what `in^` asks for.
+        //
+        // 15.6改: the three that run the body take the body's own kind, so
+        // 15.1's calling rule settles who may advance it -- an f^ reaching for
+        // a p^ coroutine is an f^ calling a p^, and nothing about yield^ has
+        // to be said again. The three that do not run it (done, started,
+        // iterate) read state or hand the coroutine back, so they are f^
+        // whatever the body is.
+        bool advances = target->v.coroutine.is_function;
+        // 15.3改: the kind alone would let a body advance one it was handed,
+        // whose progress the caller can see afterwards. What a body made is
+        // its own, exactly as 15.1改 reads it for a table.
+        if (advances && c->in_function &&
+            (name_is(name, length, "start") ||
+             name_is(name, length, "resume") ||
+             name_is(name, length, "dispose")) &&
+            !receiver_is_own_coroutine(c, node->v.access.target)) {
+            report(c, node, LHAT_CHECK_ERR_ADVANCES_OUTSIDE);
+        }
         if (name_is(name, length, "start")) {
             // 15.2改: runs the body from the top, for a coroutine that has
             // never been resumed. Takes nothing, since nothing has been
@@ -2070,7 +2144,7 @@ static LhatType *infer_member(Checker *c, const LhatNode *node)
             // resume does -- which is the yield type alone when the third
             // type is absent, since a coroutine that cannot end never
             // answers with one (13.9改).
-            LhatType *signature = lhat_type_func(c->result->types, false);
+            LhatType *signature = lhat_type_func(c->result->types, advances);
             signature->v.func.result =
                 lhat_type_union(c->result->types, target->v.coroutine.produce,
                                 target->v.coroutine.result);
@@ -2086,7 +2160,7 @@ static LhatType *infer_member(Checker *c, const LhatNode *node)
             LhatType *answer =
                 lhat_type_union(c->result->types, target->v.coroutine.produce,
                                 target->v.coroutine.result);
-            LhatType *signature = lhat_type_func(c->result->types, false);
+            LhatType *signature = lhat_type_func(c->result->types, advances);
             lhat_type_add_param(c->result->types, signature,
                                 target->v.coroutine.receive);
             signature->v.func.result = answer;
@@ -2094,10 +2168,10 @@ static LhatType *infer_member(Checker *c, const LhatNode *node)
         }
         if (name_is(name, length, "dispose")) {
             // 12.7: it answers nothing, which is what 12.5 checks for.
-            return lhat_type_func(c->result->types, false);
+            return lhat_type_func(c->result->types, advances);
         }
         if (name_is(name, length, "iterate")) {
-            LhatType *signature = lhat_type_func(c->result->types, false);
+            LhatType *signature = lhat_type_func(c->result->types, true);
             signature->v.func.result = target;  // 16.3: itself
             return signature;
         }
@@ -2106,7 +2180,7 @@ static LhatType *infer_member(Checker *c, const LhatNode *node)
         // that has ended answer the same value. So the state is asked for
         // rather than read out of the value.
         if (name_is(name, length, "done")) {
-            LhatType *signature = lhat_type_func(c->result->types, false);
+            LhatType *signature = lhat_type_func(c->result->types, true);
             signature->v.func.result = simple(c, LHAT_TYPE_BOOL);
             return signature;
         }
@@ -2114,7 +2188,7 @@ static LhatType *infer_member(Checker *c, const LhatNode *node)
         // alike, so a consumer handed one it did not make could not tell
         // which of start() and resume() this is.
         if (name_is(name, length, "started")) {
-            LhatType *signature = lhat_type_func(c->result->types, false);
+            LhatType *signature = lhat_type_func(c->result->types, true);
             signature->v.func.result = simple(c, LHAT_TYPE_BOOL);
             return signature;
         }
@@ -2154,11 +2228,14 @@ static LhatType *infer_member(Checker *c, const LhatNode *node)
     if (name_is(name, length, "iterate")) {
         // 13.8 has no tuples, so a pair is a table. The walk sends nothing
         // in and ends without a value, which 04 の 11.3 spells nil^.
+        //
+        // 15.3改: the built-in walk changes nothing, so it is an f^ coroutine
+        // -- which is what lets 'for^ k, v in^ t' stand inside an f^ body.
         LhatType *walk = lhat_type_coro(c->result->types,
                                         simple(c, LHAT_TYPE_NIL),
                                         table_walk_pair(c, target),
-                                        simple(c, LHAT_TYPE_NIL));
-        LhatType *signature = lhat_type_func(c->result->types, false);
+                                        simple(c, LHAT_TYPE_NIL), true);
+        LhatType *signature = lhat_type_func(c->result->types, true);
         signature->v.func.result = walk;
         return signature;
     }
@@ -2421,7 +2498,13 @@ static LhatType *infer_func(Checker *c, const LhatNode *node)
     // 02 の 13.2: a function always has a result -- Memo.md L152 is where
     // that comes from. So an f^ with a path that answers nothing has one
     // with nothing to answer with, and no result type would make it right.
-    if (leaves_without_value && node->v.func.is_function) {
+    //
+    // 15.3改 with 15.5: a yieldable one answers a coroutine, and it answers
+    // one whatever the body goes on to do. Reaching the end of the body ends
+    // the coroutine (13.9改 puts that in the third type); it is not the
+    // function failing to answer. So 13.2 is already satisfied here.
+    if (leaves_without_value && node->v.func.is_function &&
+        !node->v.func.yields) {
         report(c, node, LHAT_CHECK_ERR_FUNCTION_FALLS_OUT);
     } else if (leaves_without_value && declared != NULL &&
                !lhat_type_conforms(simple(c, LHAT_TYPE_NIL), declared)) {
@@ -2453,6 +2536,17 @@ static LhatType *infer_func(Checker *c, const LhatNode *node)
             report(c, node, LHAT_CHECK_ERR_NEVER_RETURNS);
         }
         func->v.func.result = c->inferred_result;
+    }
+
+    // 15.3改: an f^ coroutine may not leave the body that made it. Reaching
+    // the outside is what would make advancing it observable from there, and
+    // it reaches out through a table member or a nested signature as readily
+    // as through the result itself -- so the whole result type is read rather
+    // than its outermost shape. A p^ coroutine needs nothing here: advancing
+    // one is a p^ call, which 15.1 already refuses inside an f^.
+    if (node->v.func.is_function &&
+        mentions_function_coroutine(func->v.func.result, 0)) {
+        report(c, node, LHAT_CHECK_ERR_COROUTINE_ESCAPES);
     }
 
     c->deferred--;
@@ -3773,7 +3867,7 @@ static void check_define(Checker *c, const LhatNode *node)
                 // 15.1改. A destructuring bind takes pieces out of something
                 // that was already there (13.10), so nothing it binds is new
                 // whatever the source looks like.
-                b->fresh = unpacked == NULL && value_is_fresh(c, value);
+                b->fresh = unpacked == NULL && value_is_fresh(c, value, actual);
             }
             // A new name of the same spelling makes any narrowing of the old
             // one stale, since the path now reaches something else.
@@ -4038,7 +4132,8 @@ static void check_require_stmt(Checker *c, const LhatNode *node)
 // followed: 'let^ v = t' names a table, and a call that is not a new^ may well
 // answer one of its arguments ('f^ t { return^ t }' is a function like any
 // other), so neither counts.
-static bool value_is_fresh(const Checker *c, const LhatNode *value)
+static bool value_is_fresh(const Checker *c, const LhatNode *value,
+                           const LhatType *type)
 {
     if (value == NULL) {
         return false;
@@ -4050,6 +4145,12 @@ static bool value_is_fresh(const Checker *c, const LhatNode *value)
             return true;
 
         case LHAT_NODE_CALL: {
+            // 15.5: calling a yieldable subroutine builds a coroutine, and
+            // builds a new one every time -- the call is what makes it, so
+            // 15.3改 counts it the way 14.11's new^ is counted below.
+            if (type != NULL && type->kind == LHAT_TYPE_CORO) {
+                return true;
+            }
             // 14.11: 'X.new^()' answers an instance nobody else holds yet.
             const LhatNode *callee = value->v.access.target;
             if (callee == NULL || callee->kind != LHAT_NODE_MEMBER) {
@@ -4086,6 +4187,26 @@ static Binding *path_root_binding(Checker *c, const LhatNode *target,
         }
     }
     return scope_find_in(from, name, length, found_in);
+}
+
+// 15.3改: whether this expression names a coroutine the body being checked
+// made. Advancing one is only allowed for those -- one that arrived is shared
+// with whoever passed it, and the progress would be visible out there.
+static bool scope_within_body(Checker *c, const Scope *found_in);
+
+static bool receiver_is_own_coroutine(Checker *c, const LhatNode *receiver)
+{
+    if (receiver == NULL) {
+        return false;
+    }
+    // 15.5: a call builds one on the spot, so 'gen().start()' can never be
+    // reaching anyone else's.
+    if (receiver->kind == LHAT_NODE_CALL) {
+        return true;
+    }
+    Scope *found_in = NULL;
+    Binding *root = path_root_binding(c, receiver, &found_in);
+    return root != NULL && root->fresh && scope_within_body(c, found_in);
 }
 
 // Whether `found_in` is the body being checked or something inside it.
@@ -5294,6 +5415,11 @@ const char *lhat_check_error_message(LhatCheckErrorCode code)
         case LHAT_CHECK_ERR_PATH_IS_OPAQUE:
             return "this type carries what registered it, so what it holds "
                    "cannot be written over";
+        case LHAT_CHECK_ERR_ADVANCES_OUTSIDE:
+            return "an f^ may advance only a coroutine its own body made; "
+                   "this one came from somewhere else";
+        case LHAT_CHECK_ERR_COROUTINE_ESCAPES:
+            return "an f^ coroutine may not leave the body that made it";
     }
     return "unknown error";
 }

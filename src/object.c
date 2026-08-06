@@ -426,12 +426,16 @@ static void write_runtime_type(TypeWriter *w, const LhatRuntimeType *type)
         // was wired up carries none of the three) -- not a guess, the same
         // "nothing written asks for the top type" convention as everywhere
         // else in this function.
+        // 15.3改: the front half is written as the signature it always
+        // described -- one resume takes R and answers Y -- which is where the
+        // kind of the body goes now that both kinds exist.
         case LHAT_TYPE_RT_COROUTINE:
             type_put_text(w, "c^{");
+            type_put_text(w, type->is_function ? "f^" : "p^");
             write_runtime_type(w, type->receive);
-            type_put_text(w, ", ");
+            type_put_text(w, " -> ");
             write_runtime_type(w, type->produce);
-            type_put_text(w, ", ");
+            type_put_text(w, ";, ");
             write_runtime_type(w, type->result);
             type_put_text(w, "}");
             return;
@@ -553,8 +557,11 @@ bool lhat_runtime_type_equal(const LhatRuntimeType *a, const LhatRuntimeType *b)
             return true;
         // 13.9's three slots now carry real answers (S28), so two coroutine
         // types are equal only when R, Y and T line up -- not just by kind.
+        // 15.3改 adds the body's own kind to that: what may be done with an
+        // f^ coroutine is not what may be done with a p^ one.
         case LHAT_TYPE_RT_COROUTINE:
-            return lhat_runtime_type_equal(a->receive, b->receive) &&
+            return a->is_function == b->is_function &&
+                   lhat_runtime_type_equal(a->receive, b->receive) &&
                    lhat_runtime_type_equal(a->produce, b->produce) &&
                    lhat_runtime_type_equal(a->result, b->result);
         case LHAT_TYPE_RT_ERROR_KIND:

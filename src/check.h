@@ -119,10 +119,16 @@ typedef enum {
                                            // -- this one is not one the body
                                            // made, so changing it is
                                            // observable from outside
-    LHAT_CHECK_ERR_PATH_IS_OPAQUE       // 05 の 8.8: a host type carries what
+    LHAT_CHECK_ERR_PATH_IS_OPAQUE,      // 05 の 8.8: a host type carries what
                                         // the host registered, and 14.16's
                                         // type info what made it; neither is
                                         // written over from L^
+    LHAT_CHECK_ERR_ADVANCES_OUTSIDE,    // 15.3改: an f^ advancing a coroutine
+                                        // its own body did not make, whose
+                                        // progress the caller can see
+    LHAT_CHECK_ERR_COROUTINE_ESCAPES    // 15.3改: an f^ coroutine reaching the
+                                        // outside, where advancing it is what
+                                        // makes the call observable
 } LhatCheckErrorCode;
 
 typedef struct {

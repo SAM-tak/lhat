@@ -3229,6 +3229,92 @@ static void test_purity(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_FUNCTION_CALLS_PROCEDURE);
     unit_dispose(&u);
 
+    // 15.3改: an f^ may yield^. What it may not do is let the coroutine out,
+    // since advancing one is only unobservable while it stays inside.
+    LHAT_TEST("an f^ may yield^ and walk what it made");
+    check_text(&u,
+               "let^ gen = f^ { yield^ 1 }\n"
+               "let^ sum = f^ -> number^ {\n"
+               "    let^ co = gen()\n"
+               "    let^ a = co.start()\n"
+               "    return^ 0\n"
+               "}\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // 15.5: a yieldable body answers a coroutine whatever else it does, so
+    // 13.2 is satisfied without a return^ reaching the end.
+    LHAT_TEST("a yieldable f^ needs no value-returning exit");
+    check_text(&u, "let^ gen = f^ { yield^ 1 }\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // 16.3: the built-in walk of a table changes nothing, so it is an f^
+    // coroutine -- which is the case 15.3改 was reopened for.
+    LHAT_TEST("an f^ may walk a table with for^ in^");
+    check_text(&u,
+               "let^ count = f^ t:t^{ ...:number^ } -> number^ {\n"
+               "    let^ n = 0\n"
+               "    for^ k, v in^ t { n := n + 1 }\n"
+               "    return^ n\n"
+               "}\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // 15.6改: start()/resume()/dispose() carry the body's kind, so 15.1's
+    // calling rule is what refuses a p^ coroutine here. Nothing about yield^
+    // has to be said again.
+    LHAT_TEST("but not a p^ coroutine, which is an ordinary p^ call");
+    check_text(&u,
+               "let^ gen = p^ { yield^ 1 }\n"
+               "let^ f = f^ -> number^ {\n"
+               "    let^ co = gen()\n"
+               "    let^ a = co.start()\n"
+               "    return^ 0\n"
+               "}\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_FUNCTION_CALLS_PROCEDURE);
+    unit_dispose(&u);
+
+    // The kind alone would let a body advance one it was handed. A nested f^
+    // measures against its own body, the same way 15.1改 does for a table.
+    LHAT_TEST("a nested f^ may not advance what the enclosing one made");
+    check_text(&u,
+               "let^ gen = f^ { yield^ 1 }\n"
+               "let^ outer = f^ -> number^ {\n"
+               "    let^ co = gen()\n"
+               "    let^ inner = f^ -> number^ { let^ a = co.start() return^ 0 }\n"
+               "    return^ 0\n"
+               "}\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_ADVANCES_OUTSIDE);
+    unit_dispose(&u);
+
+    LHAT_TEST("and an f^ coroutine may not be returned");
+    check_text(&u,
+               "let^ gen = f^ { yield^ 1 }\n"
+               "let^ f = f^ { return^ gen() }\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_COROUTINE_ESCAPES);
+    unit_dispose(&u);
+
+    // The result type is read through, since a coroutine reaches the outside
+    // in a table member as readily as on its own.
+    LHAT_TEST("nor carried out inside a table");
+    check_text(&u,
+               "let^ gen = f^ { yield^ 1 }\n"
+               "let^ f = f^ {\n"
+               "    let^ co = gen()\n"
+               "    return^ { c := co }\n"
+               "}\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_COROUTINE_ESCAPES);
+    unit_dispose(&u);
+
+    // A p^ coroutine leaving a p^ is what 15.5 is for; nothing here applies.
+    LHAT_TEST("a p^ hands its coroutines out as before");
+    check_text(&u,
+               "let^ gen = p^ { yield^ 1 }\n"
+               "let^ make = p^ { return^ gen() }\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
     // 15.1's other half: assignment reaches local variables only. 10.6 reads
     // it twice over -- a body with nothing writable outside it has nothing a
     // finally^ could restore.

@@ -168,6 +168,14 @@ struct LhatType {
             LhatType *receive;
             LhatType *produce;
             LhatType *result;
+            // 15.3改: the kind of the body this came from, which 13.9 writes
+            // as the front half ('c^{ f^R -> Y;, T }'). Advancing a coroutine
+            // runs its body, so start()/resume()/dispose() take this kind and
+            // 15.1's calling rule does the rest -- an f^ reaching for a p^
+            // coroutine is an f^ calling a p^, caught where every other one
+            // is. Two of these differing here are different types: what may
+            // be done with one is not what may be done with the other.
+            bool is_function;
         } coroutine;
 
         // ERROR_SET and ERROR_KIND. A kind points back at the set that
@@ -210,8 +218,11 @@ LhatType *lhat_type_simple(LhatTypeArena *arena, LhatTypeKind kind);
 
 LhatType *lhat_type_table(LhatTypeArena *arena);
 LhatType *lhat_type_func(LhatTypeArena *arena, bool is_function);
+// 15.3改: `is_function` is the kind of the body, which decides what may
+// advance the coroutine and where it may be held.
 LhatType *lhat_type_coro(LhatTypeArena *arena, LhatType *receive,
-                         LhatType *produce, LhatType *result);
+                         LhatType *produce, LhatType *result,
+                         bool is_function);
 
 // 04 の 2.2. The set is created first; each kind then points at it, which is
 // what makes two identically written declarations different types.

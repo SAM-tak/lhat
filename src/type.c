@@ -101,13 +101,15 @@ LhatType *lhat_type_func(LhatTypeArena *arena, bool is_function)
 }
 
 LhatType *lhat_type_coro(LhatTypeArena *arena, LhatType *receive,
-                         LhatType *produce, LhatType *result)
+                         LhatType *produce, LhatType *result,
+                         bool is_function)
 {
     LhatType *type = new_type(arena, LHAT_TYPE_CORO);
     if (type != NULL) {
         type->v.coroutine.receive = receive;
         type->v.coroutine.produce = produce;
         type->v.coroutine.result = result;
+        type->v.coroutine.is_function = is_function;
     }
     return type;
 }
@@ -491,6 +493,14 @@ bool lhat_type_conforms(const LhatType *value, const LhatType *target)
             return conforms_func(value, target);
 
         case LHAT_TYPE_CORO:
+            // 15.3改: advancing one runs its body, so start()/resume() carry
+            // the body's kind (15.6改). One kind cannot stand where the other
+            // is written -- an f^ holding a p^ coroutine could not advance it,
+            // and a p^ one is not subject to 15.3改's containment either.
+            if (value->v.coroutine.is_function !=
+                target->v.coroutine.is_function) {
+                return false;
+            }
             // 13.9. What the coroutine receives is an input, so it varies the
             // other way round from what it produces and returns.
             return lhat_type_conforms(target->v.coroutine.receive,
