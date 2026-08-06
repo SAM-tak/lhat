@@ -2003,6 +2003,26 @@ static void test_typeof(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
+    // 05 の 8.8: a nominal type carries what made it, and nothing written in
+    // L^ replaces that. The same mark is what a registered host type carries
+    // (program.c), so both are refused by this one rule -- adding a member is
+    // already refused by 02 の 8.8's own mark, and this is the other half.
+    LHAT_TEST("what a nominal type carries cannot be written over");
+    check_text(&u,
+               "let^ t = typeof^(5)\n"
+               "t.signature := \"x\"\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_PATH_IS_OPAQUE);
+    unit_dispose(&u);
+
+    // 14 章's fields are what a def^ instance is for, and it is not nominal.
+    LHAT_TEST("but a def^ instance's fields still are");
+    check_text(&u,
+               "let^ P = def^{ self^{ x := 0 } }\n"
+               "let^ o = P.new^()\n"
+               "o.x := 1\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
     // Session-scoped the way L^'s environment is (05 の 8.6), so a typeof^
     // bound in one input is still the same nominal type in the next.
     LHAT_TEST("the TypeInfo type is the same across a session's inputs");
@@ -3306,6 +3326,100 @@ static void test_purity(void)
                "    return^ n\n"
                "}\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_FUNCTION_WRITES_OUT);
+    unit_dispose(&u);
+
+    // 15.1改: the same rule for a table. What the body made is its own;
+    // what arrived belongs to whoever passed it, and writing there is what
+    // makes the call observable from outside.
+    LHAT_TEST("an f^ may change a table it made itself");
+    check_text(&u,
+               "let^ f = f^ -> number^ {\n"
+               "    let^ u = { x := 0 }\n"
+               "    u.x := 1\n"
+               "    return^ u.x\n"
+               "}\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("and one a new^ answered with");
+    check_text(&u,
+               "let^ P = def^{ self^{ x := 0 } }\n"
+               "let^ f = f^ -> number^ {\n"
+               "    let^ u = P.new^()\n"
+               "    u.x := 1\n"
+               "    return^ u.x\n"
+               "}\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // 8.8: adding a member changes the table as much as writing over one.
+    LHAT_TEST("adding a member to its own table is fine too");
+    check_text(&u,
+               "let^ f = f^ -> number^ {\n"
+               "    let^ u = { }\n"
+               "    let^ u.y := 5\n"
+               "    return^ u.y\n"
+               "}\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("but not one that arrived as an argument");
+    check_text(&u,
+               "let^ f = f^ t:t^{ x:number^ } -> number^ {\n"
+               "    t.x := 1\n"
+               "    return^ t.x\n"
+               "}\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_FUNCTION_CHANGES_TABLE);
+    unit_dispose(&u);
+
+    // The shape of the initialiser is what decides, which is what closes the
+    // way round: naming a table again does not make a new one.
+    LHAT_TEST("and binding it to a new name does not make it the body's");
+    check_text(&u,
+               "let^ f = f^ t:t^{ x:number^ } -> number^ {\n"
+               "    let^ v = t\n"
+               "    v.x := 1\n"
+               "    return^ v.x\n"
+               "}\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_FUNCTION_CHANGES_TABLE);
+    unit_dispose(&u);
+
+    // 05 の 8.6: L^ is the machine's own table, which no body made. M5 asks
+    // separately whether a p^ may write there; inside an f^ this answers it.
+    LHAT_TEST("L^ is not a table any body made");
+    check_text(&u,
+               "let^ f = f^ -> number^ {\n"
+               "    L^.modules := { }\n"
+               "    return^ 0\n"
+               "}\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_FUNCTION_CHANGES_TABLE);
+    unit_dispose(&u);
+
+    // 14.4: the receiver is the instance the caller handed over.
+    LHAT_TEST("nor is the receiver of an f^ method");
+    check_text(&u,
+               "let^ P = def^{\n"
+               "    self^{ x := 0 },\n"
+               "    bump := f^self^ -> number^ { self^.x := 1 return^ 0 },\n"
+               "}\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_FUNCTION_CHANGES_TABLE);
+    unit_dispose(&u);
+
+    LHAT_TEST("a p^ changes whatever it is given");
+    check_text(&u,
+               "let^ g = p^ t:t^{ x:number^ } { t.x := 1 }\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // An f^ inside another measures against its own body here as well.
+    LHAT_TEST("a nested f^ may not change what the enclosing one made");
+    check_text(&u,
+               "let^ outer = f^ -> number^ {\n"
+               "    let^ u = { x := 0 }\n"
+               "    let^ inner = f^ -> number^ { u.x := 1 return^ 0 }\n"
+               "    return^ u.x\n"
+               "}\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_FUNCTION_CHANGES_TABLE);
     unit_dispose(&u);
 
     // 14.12: an overloaded member is an intersection of signatures, and

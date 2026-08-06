@@ -112,9 +112,17 @@ typedef enum {
                                         // omitted parameter type off the body,
                                         // and what leaves the unit may not be
                                         // decided that way
-    LHAT_CHECK_ERR_FUNCTION_WRITES_OUT  // 15.1: an f^ assigns to local
-                                        // variables only, and this name was
-                                        // bound outside its body
+    LHAT_CHECK_ERR_FUNCTION_WRITES_OUT,  // 15.1: an f^ assigns to local
+                                         // variables only, and this name was
+                                         // bound outside its body
+    LHAT_CHECK_ERR_FUNCTION_CHANGES_TABLE, // 15.1改: the same rule for a table
+                                           // -- this one is not one the body
+                                           // made, so changing it is
+                                           // observable from outside
+    LHAT_CHECK_ERR_PATH_IS_OPAQUE       // 05 の 8.8: a host type carries what
+                                        // the host registered, and 14.16's
+                                        // type info what made it; neither is
+                                        // written over from L^
 } LhatCheckErrorCode;
 
 typedef struct {

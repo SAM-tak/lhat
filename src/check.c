@@ -22,6 +22,12 @@ typedef struct Binding {
     LhatType *type;
     uint32_t offset;
     bool reached;  // its let^ has been walked past
+    // 15.1改: bound to a table this scope's own code made -- a literal or a
+    // 14.11 new^ -- rather than to one that arrived from somewhere else. An
+    // f^ may change the first and not the second, and reading it off the
+    // initialiser's shape is what keeps that decidable without following
+    // aliases: 'let^ v = t' binds a name, not a new table, so it is false.
+    bool fresh;
     // 03 の 4.3: bound by an earlier input of a session. Writing the name
     // again is a redefinition rather than the clash 8.7 makes of two let^ in
     // one scope -- it is the same place, written again.
@@ -438,6 +444,8 @@ static const LhatTypeMember *find_member(const LhatType *table, const char *name
 static LhatType *only(Checker *c, LhatType *type, LhatType *wanted);
 static LhatType *without(Checker *c, LhatType *type, LhatType *unwanted);
 static ParamVar *param_var_for(Checker *c, const LhatType *type);
+static bool value_is_fresh(const Checker *c, const LhatNode *value);
+static void check_write_target(Checker *c, const LhatNode *target);
 
 // 14.8: one number type over integers and reals. The rest are the plain
 // builtin spellings.
@@ -3750,6 +3758,10 @@ static void check_define(Checker *c, const LhatNode *node)
             // reassign rather than fail when the path already answers to
             // something (node->v.binding.via_reassign_op is only ever set
             // by parse_let -- for^/with^ still always define).
+            //
+            // 15.1改: adding a member changes the table as much as writing
+            // over one does, so an f^ is judged here the same way.
+            check_write_target(c, target);
             define_path(c, target, annotated != NULL ? annotated : actual,
                        node->v.binding.via_reassign_op);
         } else if (node_name(c, target_name_node(target), &name, &length)) {
@@ -3758,6 +3770,10 @@ static void check_define(Checker *c, const LhatNode *node)
                 // Collected before the walk, so this is where its let^ runs.
                 b->type = annotated != NULL ? annotated : actual;
                 b->reached = true;
+                // 15.1改. A destructuring bind takes pieces out of something
+                // that was already there (13.10), so nothing it binds is new
+                // whatever the source looks like.
+                b->fresh = unpacked == NULL && value_is_fresh(c, value);
             }
             // A new name of the same spelling makes any narrowing of the old
             // one stale, since the path now reaches something else.
@@ -4017,18 +4033,100 @@ static void check_require_stmt(Checker *c, const LhatNode *node)
     }
 }
 
+// 15.1改: whether this initialiser makes a table rather than naming one that
+// was already there. Read off the shape alone, so that no aliases have to be
+// followed: 'let^ v = t' names a table, and a call that is not a new^ may well
+// answer one of its arguments ('f^ t { return^ t }' is a function like any
+// other), so neither counts.
+static bool value_is_fresh(const Checker *c, const LhatNode *value)
+{
+    if (value == NULL) {
+        return false;
+    }
+    switch (value->kind) {
+        // 14.1, 14.11: a literal and a self^{ … } both build one here.
+        case LHAT_NODE_TABLE:
+        case LHAT_NODE_SELF_TABLE:
+            return true;
+
+        case LHAT_NODE_CALL: {
+            // 14.11: 'X.new^()' answers an instance nobody else holds yet.
+            const LhatNode *callee = value->v.access.target;
+            if (callee == NULL || callee->kind != LHAT_NODE_MEMBER) {
+                return false;
+            }
+            const char *name = NULL;
+            size_t length = 0;
+            return node_name(c, callee->v.access.argument, &name, &length) &&
+                   name_is(name, length, "new");
+        }
+
+        default:
+            return false;
+    }
+}
+
+// The binding a path is rooted in, with the scope that answered, or NULL when
+// the root is not a name a scope holds -- L^ (05 の 8.6) and self^ among them,
+// neither of which any body made.
+static Binding *path_root_binding(Checker *c, const LhatNode *target,
+                                  Scope **found_in)
+{
+    const LhatNode *root = target_root(target);
+    const char *name = NULL;
+    size_t length = 0;
+    if (root == NULL || !node_name(c, root, &name, &length)) {
+        return NULL;
+    }
+    Scope *from = c->scope;
+    if (root->kind == LHAT_NODE_SCOPE) {
+        from = scope_from(c->scope, root);
+        if (from == NULL) {
+            return NULL;
+        }
+    }
+    return scope_find_in(from, name, length, found_in);
+}
+
+// Whether `found_in` is the body being checked or something inside it.
+static bool scope_within_body(Checker *c, const Scope *found_in)
+{
+    for (Scope *s = c->scope; s != NULL; s = s->parent) {
+        if (s == found_in) {
+            return true;
+        }
+        if (s == c->body_scope) {
+            return false;  // past the body's own outermost scope
+        }
+    }
+    return false;
+}
+
 // 15.1: an f^ assigns to local variables only. 10.6 reads that twice over --
 // a body with nothing writable outside it has nothing a finally^ could
 // restore, which is why one may not be written there at all.
 //
-// A path target is a different question: 'p.x := v' writes into a table, and
-// whether the table came from outside is 14 章's to answer rather than this
-// one. Only a plain name is judged here.
+// 15.1改 carries it to 't.x := v', which changes a table rather than a name.
+// A table the body made is its own and changing it is not observable from
+// outside; one that arrived belongs to whoever passed it.
 static void check_write_target(Checker *c, const LhatNode *target)
 {
-    if (!c->in_function || c->body_scope == NULL || target_is_path(target)) {
+    if (!c->in_function || c->body_scope == NULL) {
         return;
     }
+
+    if (target_is_path(target)) {
+        Scope *found_in = NULL;
+        Binding *root = path_root_binding(c, target, &found_in);
+        // A root that is no binding at all is nothing this body made: L^ is
+        // the machine's own table (05 の 8.6, and its M5), self^ is the
+        // instance the caller handed over (14.4).
+        if (root == NULL || !root->fresh || !scope_within_body(c, found_in)) {
+            report(c, target, LHAT_CHECK_ERR_FUNCTION_CHANGES_TABLE);
+        }
+        return;
+    }
+
     const LhatNode *name_node = target_name_node(target);
     const char *name = NULL;
     size_t length = 0;
@@ -4051,15 +4149,66 @@ static void check_write_target(Checker *c, const LhatNode *target)
     if (scope_find_in(from, name, length, &found_in) == NULL) {
         return;  // no such name; infer_name reports that
     }
-    for (Scope *s = c->scope; s != NULL; s = s->parent) {
-        if (s == found_in) {
-            return;  // at or inside the body, so this body made it
-        }
-        if (s == c->body_scope) {
-            break;  // past the body's own outermost scope
-        }
+    if (!scope_within_body(c, found_in)) {
+        report(c, target, LHAT_CHECK_ERR_FUNCTION_WRITES_OUT);
     }
-    report(c, target, LHAT_CHECK_ERR_FUNCTION_WRITES_OUT);
+}
+
+// 05 の 8.8: a host type is opaque -- 11.3 gives way to nominal identity
+// precisely because there is no structure to compare -- and what it carries
+// is what the host registered: C functions reading a raw pointer as the type
+// their tag names. Writing over one of those leaves the tag saying one thing
+// and the member doing another, which is the mistake 8.8 spends its two
+// checks avoiding. 8.8's own mark already refuses a member being *added*
+// (holds_members reads from_definition for that); this is the other half.
+//
+// 02 の 14.16's type info is nominal for the same kind of reason: what it
+// carries is fixed by what made it.
+//
+// A def^ instance is not nominal, so 14 章's fields stay writable -- that is
+// what a field is for.
+// The type a path segment names, followed without reporting anything. The
+// ordinary walk below does the reporting; inferring the same nodes twice
+// would say everything twice.
+static const LhatType *path_type_of(Checker *c, const LhatNode *node)
+{
+    const char *name = NULL;
+    size_t length = 0;
+
+    if (node->kind != LHAT_NODE_MEMBER) {
+        if (!node_name(c, node, &name, &length)) {
+            return NULL;
+        }
+        Scope *from = c->scope;
+        if (node->kind == LHAT_NODE_SCOPE) {
+            from = scope_from(c->scope, node);
+            if (from == NULL) {
+                return NULL;
+            }
+        }
+        const Binding *b = scope_find(from, name, length);
+        return b != NULL ? b->type : NULL;
+    }
+
+    const LhatType *owner = path_type_of(c, node->v.access.target);
+    if (owner == NULL || !node_name(c, node->v.access.argument, &name, &length)) {
+        return NULL;
+    }
+    const LhatTypeMember *m = member_named(owner, name, length);
+    return m != NULL ? m->type : NULL;
+}
+
+static void check_opaque_write(Checker *c, const LhatNode *target)
+{
+    const LhatNode *last = target_name_node(target);
+    if (last->kind != LHAT_NODE_MEMBER) {
+        return;
+    }
+    const LhatType *owner = path_type_of(c, last->v.access.target);
+    if (owner != NULL && owner->kind == LHAT_TYPE_TABLE &&
+        owner->v.table.nominal) {
+        report(c, last, LHAT_CHECK_ERR_PATH_IS_OPAQUE);
+    }
 }
 
 static void check_reassign(Checker *c, const LhatNode *node)
@@ -4072,6 +4221,7 @@ static void check_reassign(Checker *c, const LhatNode *node)
          target = target->next) {
         position++;
         check_write_target(c, target);
+        check_opaque_write(c, target);
         LhatType *wanted = infer(c, target_name_node(target));
         // 03 の 3.4: what the name holds from here on is not what was passed
         // in, so nothing after this says anything about the parameter.
@@ -5138,6 +5288,12 @@ const char *lhat_check_error_message(LhatCheckErrorCode code)
         case LHAT_CHECK_ERR_FUNCTION_WRITES_OUT:
             return "an f^ assigns to local variables only, and this name was "
                    "bound outside its body";
+        case LHAT_CHECK_ERR_FUNCTION_CHANGES_TABLE:
+            return "an f^ may change only a table its own body made; this one "
+                   "came from somewhere else";
+        case LHAT_CHECK_ERR_PATH_IS_OPAQUE:
+            return "this type carries what registered it, so what it holds "
+                   "cannot be written over";
     }
     return "unknown error";
 }
