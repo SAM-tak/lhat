@@ -1504,6 +1504,67 @@ static void compile_default_new(Compiler *c, const LhatNode *node,
     c->next_register = mark;
 }
 
+// 01 の 5.4: one piece of an interpolated string. A text run is its own
+// bytes; a hole is its value written down -- 02 の 14.17's tostring, reached
+// and called the way a program would write it, so a type carrying one of its
+// own answers with it. A format written after ':' becomes tostring's second
+// argument, which 14.17 gives to number^ alone.
+//
+// `at` is the first of three consecutive registers the caller reserved: 5.3
+// lays a method call out as callee, receiver, then arguments, and the key is
+// read out of the third before the argument is written over it.
+static void compile_interp_part(Compiler *c, const LhatNode *part, uint8_t at)
+{
+    if (part->kind == LHAT_NODE_INTERP_TEXT) {
+        load_string(c, at, part);
+        return;
+    }
+
+    uint8_t receiver = (uint8_t)(at + 1);
+    uint8_t argument = (uint8_t)(at + 2);
+    compile_expression(c, part->v.hole.value, receiver);
+    load_string_bytes(c, argument, "tostring", 8);
+    emit(c, lhat_encode_abc(LHAT_BC_GETINDEX, at, receiver, argument));
+
+    uint8_t given = 0;
+    if (part->v.hole.format != NULL) {
+        load_string(c, argument, part->v.hole.format);
+        given = 1;
+    }
+    emit(c, lhat_encode_abc(LHAT_BC_CALLMETHOD, at, given, 0));
+}
+
+// 01 の 5.4: the pieces joined, left to right. Every piece is a string^ by
+// the time it is here, so this is 11.2's '..' over them and nothing more --
+// there is no separate way of building a string for interpolation to use.
+static void compile_interp(Compiler *c, const LhatNode *node, uint8_t into)
+{
+    uint8_t mark = c->next_register;
+    bool started = false;
+
+    for (const LhatNode *part = node->v.list.items; part != NULL;
+         part = part->next) {
+        // A hole wants three slots of its own, and the first piece cannot
+        // simply take `into` and the two above it -- what those hold belongs
+        // to whoever reserved them.
+        uint8_t piece = reserve(c);
+        reserve(c);
+        reserve(c);
+        compile_interp_part(c, part, piece);
+        if (started) {
+            emit(c, lhat_encode_abc(LHAT_BC_CONCAT, into, into, piece));
+        } else {
+            emit(c, lhat_encode_abc(LHAT_BC_MOVE, into, piece, 0));
+            started = true;
+        }
+        c->next_register = mark;
+    }
+
+    if (!started) {
+        load_string_bytes(c, into, "", 0);  // $"" says nothing, at length 0
+    }
+}
+
 // 02 の 14 章: a table literal makes a table and fills it in. A keyed entry
 // names its key; a positional one takes the next integer, counting from 1 as
 // 16.4 の 'for^ i := 1 to^ n' does.
@@ -1837,6 +1898,10 @@ static void compile_expression(Compiler *c, const LhatNode *node, uint8_t into)
         case LHAT_NODE_STRING:
         case LHAT_NODE_NAME:
             load_string(c, into, node);
+            return;
+
+        case LHAT_NODE_INTERP:
+            compile_interp(c, node, into);
             return;
 
         case LHAT_NODE_TABLE:

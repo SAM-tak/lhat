@@ -3108,6 +3108,94 @@ static void test_tostring(void)
     run_dispose(&r);
 }
 
+// 01 の 5.4: the lexer and the parser have read $"..." from the start; this
+// is what it compiles to. A hole is 02 の 14.17's tostring and the pieces
+// are joined with 11.2's '..', so interpolation adds no way of building a
+// string that writing it out by hand would not reach.
+static void test_interpolation(void)
+{
+    Run r;
+
+    LHAT_TEST("text with no hole is just the text");
+    run_text(&r, "return^ $\"plain\"\n");
+    CHECK_STRING(&r, "plain");
+    run_dispose(&r);
+
+    LHAT_TEST("and nothing at all is the empty string");
+    run_text(&r, "return^ $\"\"\n");
+    CHECK_STRING(&r, "");
+    run_dispose(&r);
+
+    LHAT_TEST("a hole is its value written down");
+    run_text(&r, "let^ a = 5\nreturn^ $\"n = {a}\"\n");
+    CHECK_STRING(&r, "n = 5");
+    run_dispose(&r);
+
+    // 5.4: no empty text run is made between two holes that meet.
+    LHAT_TEST("two holes may meet");
+    run_text(&r, "let^ a = 5\nreturn^ $\"{a}{a}\"\n");
+    CHECK_STRING(&r, "55");
+    run_dispose(&r);
+
+    LHAT_TEST("a hole holds an expression, not just a name");
+    run_text(&r, "return^ $\"{ 1 + 2 }\"\n");
+    CHECK_STRING(&r, "3");
+    run_dispose(&r);
+
+    // 14.17: nil^ and bool^ are the bare words there, so they are here.
+    LHAT_TEST("what a hole writes is what tostring answers");
+    run_text(&r, "return^ $\"{nil^} {true^} {\"s\"} {3.0}\"\n");
+    CHECK_STRING(&r, "nil true s 3.0");
+    run_dispose(&r);
+
+    // 5.4: the text after ':' is a format, and 14.17 hands it to a number^.
+    LHAT_TEST("a format after ':' reaches tostring");
+    run_text(&r, "let^ a = 5\nreturn^ $\"{a:%04d}\"\n");
+    CHECK_STRING(&r, "0005");
+    run_dispose(&r);
+
+    LHAT_TEST("a bad format is the same runtime error as anywhere");
+    run_text(&r, "return^ $\"{ 1 :%s}\"\n");
+    LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_BAD_FORMAT);
+    run_dispose(&r);
+
+    // 5.4: '{{' and '}}' spell the braces themselves.
+    LHAT_TEST("doubled braces are the braces");
+    run_text(&r, "return^ $\"{{literal}}\"\n");
+    CHECK_STRING(&r, "{literal}");
+    run_dispose(&r);
+
+    // 5.4: a hole is scanned by the ordinary rules, so what is in it may be
+    // a string literal, a table, or another interpolation.
+    LHAT_TEST("a hole may hold a string of its own");
+    run_text(&r, "return^ $\"{ \"in\" }\"\n");
+    CHECK_STRING(&r, "in");
+    run_dispose(&r);
+
+    LHAT_TEST("and another interpolated string");
+    run_text(&r, "let^ a = 5\nreturn^ $\"[{ $\"{a}\" }]\"\n");
+    CHECK_STRING(&r, "[5]");
+    run_dispose(&r);
+
+    // 14.17: reached the way a program would reach it, so a written one is
+    // what answers.
+    LHAT_TEST("a written tostring is what a hole uses");
+    run_text(&r,
+             "let^ p = { tostring := f^self^ -> string^ { return^ \"P\" } }\n"
+             "return^ $\"got {p}\"\n");
+    CHECK_STRING(&r, "got P");
+    run_dispose(&r);
+
+    LHAT_TEST("a hole runs where it stands, not where the string was made");
+    run_text(&r,
+             "let^ n = 1\n"
+             "let^ show = f^ -> string^ { return^ $\"n is {n}\" }\n"
+             "n := 2\n"
+             "return^ show()\n");
+    CHECK_STRING(&r, "n is 2");
+    run_dispose(&r);
+}
+
 // 02 の 13.7: the variadic collector, made to actually compile and run.
 // compile_subroutine used to refuse any variadic parameter outright.
 static void test_variadic(void)
@@ -4508,6 +4596,7 @@ int main(void)
     test_definitions();
     test_typeof();
     test_tostring();
+    test_interpolation();
     test_variadic();
     test_coroutines();
     test_patterns();
