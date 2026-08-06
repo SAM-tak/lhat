@@ -6367,7 +6367,9 @@ LhatRunResult lhat_run(LhatMachine *m, const LhatProto *proto)
         }
         const LhatClosure *carried =
             (const LhatClosure *)lhat_as_object(found);
-        // 15.3: an operator is an f^, so it cannot suspend.
+        // 15.7改: an operator may not be yieldable. Not because it is an f^ --
+        // 15.3改 lets one of those suspend -- but because 11.8's signature
+        // answers T, and a yieldable subroutine answers a coroutine (15.5).
         if (carried->proto == NULL || carried->proto->yields) {
             return finish(m, chunk, LHAT_RUN_TYPE_ERROR, lhat_nil(), at);
         }
