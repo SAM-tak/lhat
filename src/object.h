@@ -131,6 +131,14 @@ typedef struct LhatCoroutine {
     // 02 の 10.7: what a discarded coroutine still has to run.
     size_t cleanups[LHAT_COROUTINE_CLEANUPS];
     size_t cleanup_count;
+
+    // 02 の 10.7: the collector is the last place a discarded coroutine's
+    // cleanups can be reached from, so one found unreachable with some still
+    // pending is put on the machine's list of them rather than freed. Only
+    // meaningful while it is on that list -- the same intrusive link
+    // LhatUpvalue.next_open is, and kept for the same reason: the list has
+    // no bound worth fixing and the objects are already there to hold it.
+    struct LhatCoroutine *next_pending;
 } LhatCoroutine;
 
 // 03 の 2.1 keeps a type tag on every value, which is what lets a written

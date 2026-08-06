@@ -4023,6 +4023,263 @@ static void test_coroutines(void)
     LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_YIELD_OUTSIDE);
     run_dispose(&r);
 
+    // 02 の 10.7: dispose() is how a program asks; the collector is what
+    // happens when it never does. Dropping a suspended coroutine has to run
+    // what is pending just the same, or a finally^ becomes a promise the
+    // language keeps only when it is watched.
+    LHAT_TEST("a coroutine dropped while suspended has its finally^ run");
+    run_text(&r,
+             "let^ log = { n := 0 }\n"
+             "let^ gen = p^ {\n"
+             "  do^{\n"
+             "    yield^ 1\n"
+             "  finally^:\n"
+             "    log.n := 5\n"
+             "  }\n"
+             "}\n"
+             "let^ drop = p^ {\n"
+             "  let^ c = gen()\n"
+             "  c.start()\n"
+             "}\n"
+             "drop()\n"
+             "L^.collectgarbage()\n"
+             "return^ log.n\n");
+    CHECK_INTEGER(&r, 5);
+    run_dispose(&r);
+
+    // The cleanup is L^ code, so it cannot run inside the collection -- it
+    // runs at the first instruction boundary after it. That boundary is
+    // before the next statement, which is the part worth pinning: the delay
+    // is real in the implementation and invisible to the program.
+    LHAT_TEST("and has run by the next statement");
+    run_text(&r,
+             "let^ log = { n := 0, seen := 0 }\n"
+             "let^ gen = p^ {\n"
+             "  do^{\n"
+             "    yield^ 1\n"
+             "  finally^:\n"
+             "    log.n := 5\n"
+             "  }\n"
+             "}\n"
+             "let^ drop = p^ {\n"
+             "  let^ c = gen()\n"
+             "  c.start()\n"
+             "}\n"
+             "drop()\n"
+             "L^.collectgarbage()\n"
+             "log.seen := log.n\n"
+             "return^ log.seen\n");
+    CHECK_INTEGER(&r, 5);
+    run_dispose(&r);
+
+    // 10.7 again: never twice. What the program already disposed of has
+    // nothing left pending, so becoming unreachable afterwards is quiet.
+    LHAT_TEST("one already disposed of is not run again by the collector");
+    run_text(&r,
+             "let^ log = { n := 0 }\n"
+             "let^ gen = p^ {\n"
+             "  do^{\n"
+             "    yield^ 1\n"
+             "  finally^:\n"
+             "    log.n := log.n + 1\n"
+             "  }\n"
+             "}\n"
+             "let^ drop = p^ {\n"
+             "  let^ c = gen()\n"
+             "  c.start()\n"
+             "  c.dispose()\n"
+             "}\n"
+             "drop()\n"
+             "L^.collectgarbage()\n"
+             "return^ log.n\n");
+    CHECK_INTEGER(&r, 1);
+    run_dispose(&r);
+
+    // 10.7: and the collector does not run one twice either. Nothing marks
+    // a coroutine as already done -- what does the work is that its count
+    // of pending cleanups is 0 afterwards, so every later collection walks
+    // past it. Asked with two collections after the drop.
+    LHAT_TEST("the collector does not run the same one on a later cycle");
+    run_text(&r,
+             "let^ log = { n := 0 }\n"
+             "let^ gen = p^ {\n"
+             "  do^{\n"
+             "    yield^ 1\n"
+             "  finally^:\n"
+             "    log.n := log.n + 1\n"
+             "  }\n"
+             "}\n"
+             "let^ drop = p^ {\n"
+             "  let^ c = gen()\n"
+             "  c.start()\n"
+             "}\n"
+             "drop()\n"
+             "L^.collectgarbage()\n"
+             "L^.collectgarbage()\n"
+             "return^ log.n\n");
+    CHECK_INTEGER(&r, 1);
+    run_dispose(&r);
+
+    // One that ran its body to the end has nothing pending either, and one
+    // that never started never pushed anything.
+    LHAT_TEST("one that finished on its own is quiet at the collection");
+    run_text(&r,
+             "let^ log = { n := 0 }\n"
+             "let^ gen = p^ {\n"
+             "  do^{\n"
+             "    yield^ 1\n"
+             "  finally^:\n"
+             "    log.n := log.n + 1\n"
+             "  }\n"
+             "}\n"
+             "let^ drop = p^ {\n"
+             "  let^ c = gen()\n"
+             "  c.start()\n"
+             "  c.resume(nil^)\n"
+             "}\n"
+             "drop()\n"
+             "L^.collectgarbage()\n"
+             "return^ log.n\n");
+    CHECK_INTEGER(&r, 1);
+    run_dispose(&r);
+
+    LHAT_TEST("one dropped before it started has nothing to run");
+    run_text(&r,
+             "let^ log = { n := 0 }\n"
+             "let^ gen = p^ {\n"
+             "  do^{\n"
+             "    yield^ 1\n"
+             "  finally^:\n"
+             "    log.n := 5\n"
+             "  }\n"
+             "}\n"
+             "let^ drop = p^ { let^ c = gen() }\n"
+             "drop()\n"
+             "L^.collectgarbage()\n"
+             "return^ log.n\n");
+    CHECK_INTEGER(&r, 0);
+    run_dispose(&r);
+
+    // The queue takes one per instruction boundary, so several dropped at
+    // once all run -- innermost cleanup of each, in the order they come off
+    // the list. Only the count is asserted; the order between coroutines is
+    // the collector's business and 10.7 promises nothing about it.
+    LHAT_TEST("several dropped at once all run");
+    run_text(&r,
+             "let^ log = { n := 0 }\n"
+             "let^ gen = p^ {\n"
+             "  do^{\n"
+             "    yield^ 1\n"
+             "  finally^:\n"
+             "    log.n := log.n + 1\n"
+             "  }\n"
+             "}\n"
+             "let^ drop = p^ {\n"
+             "  let^ a = gen()  a.start()\n"
+             "  let^ b = gen()  b.start()\n"
+             "  let^ c = gen()  c.start()\n"
+             "}\n"
+             "drop()\n"
+             "L^.collectgarbage()\n"
+             "return^ log.n\n");
+    CHECK_INTEGER(&r, 3);
+    run_dispose(&r);
+
+    // 10.7: the cleanups run innermost first here as anywhere else -- the
+    // collector picks when, not what.
+    LHAT_TEST("a dropped one's nested cleanups run innermost first");
+    run_text(&r,
+             "let^ log = { s := 0 }\n"
+             "let^ gen = p^ {\n"
+             "  do^{\n"
+             "    do^{\n"
+             "      yield^ 1\n"
+             "    finally^:\n"
+             "      log.s := log.s * 10 + 1\n"
+             "    }\n"
+             "  finally^:\n"
+             "    log.s := log.s * 10 + 2\n"
+             "  }\n"
+             "}\n"
+             "let^ drop = p^ {\n"
+             "  let^ c = gen()\n"
+             "  c.start()\n"
+             "}\n"
+             "drop()\n"
+             "L^.collectgarbage()\n"
+             "return^ log.s\n");
+    CHECK_INTEGER(&r, 12);
+    run_dispose(&r);
+
+    // 10.7: dropped too late for any collection to have noticed -- nothing
+    // here fills the heap, so without a collection at the end of the run
+    // this finally^ would never run at all. No statement can watch it
+    // happen, since the answer was settled before it ran, so the table the
+    // run answers with is read from here.
+    LHAT_TEST("one dropped too late for a collection still runs at the end");
+    run_text(&r,
+             "let^ log = { 0 }\n"
+             "let^ gen = p^ {\n"
+             "  do^{\n"
+             "    yield^ 1\n"
+             "  finally^:\n"
+             "    log[1] := 5\n"
+             "  }\n"
+             "}\n"
+             "let^ outer = p^ {\n"
+             "  let^ drop = p^ {\n"
+             "    let^ c = gen()\n"
+             "    c.start()\n"
+             "  }\n"
+             "  drop()\n"
+             "}\n"
+             "outer()\n"
+             "return^ log\n");
+    LHAT_CHECK(lhat_is_object_kind(r.ran.value, LHAT_OBJECT_TABLE), "a table");
+    LHAT_CHECK_EQ_INT(
+        lhat_as_integer(lhat_table_get(
+            (const LhatTable *)lhat_as_object(r.ran.value), lhat_integer(1))),
+        5);
+    run_dispose(&r);
+
+    // The other side of the same rule: the run ending is not the machine
+    // ending, so what the program is still holding is not garbage and its
+    // cleanups do not run. 10.7 promises a dropped coroutine, not a live one.
+    LHAT_TEST("one still held when the run ends is left alone");
+    run_text(&r,
+             "let^ log = { 0 }\n"
+             "let^ gen = p^ {\n"
+             "  do^{\n"
+             "    yield^ 1\n"
+             "  finally^:\n"
+             "    log[1] := 5\n"
+             "  }\n"
+             "}\n"
+             "let^ c = gen()\n"
+             "c.start()\n"
+             "return^ log\n");
+    LHAT_CHECK(lhat_is_object_kind(r.ran.value, LHAT_OBJECT_TABLE), "a table");
+    LHAT_CHECK_EQ_INT(
+        lhat_as_integer(lhat_table_get(
+            (const LhatTable *)lhat_as_object(r.ran.value), lhat_integer(1))),
+        0);
+    run_dispose(&r);
+
+    // 16.3: a walk has no body to have left anything pending in, and holds
+    // neither closure nor registers -- the collector has to leave it alone.
+    LHAT_TEST("a dropped walk is collected without any of this");
+    run_text(&r,
+             "let^ drop = p^ {\n"
+             "  let^ t = { 10, 20, 30 }\n"
+             "  let^ w = t.iterate()\n"
+             "  w.start()\n"
+             "}\n"
+             "drop()\n"
+             "L^.collectgarbage()\n"
+             "return^ 7\n");
+    CHECK_INTEGER(&r, 7);
+    run_dispose(&r);
+
     // 02 の 15.8: what a plain call does not do, yieldall^ does. The inner
     // one's yields reach the outer one's resumer.
     LHAT_TEST("yieldall^ forwards the inner one's yields");

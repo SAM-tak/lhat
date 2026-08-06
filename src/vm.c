@@ -4361,6 +4361,12 @@ struct LhatMachine {
     LhatHeap objects;
     LhatUpvalue *open;  // 5.4, innermost first
 
+    // 02 の 10.7: coroutines the collector found unreachable with cleanups
+    // still pending. They are kept alive a cycle longer and run one at a
+    // time at an instruction boundary, since a finally^ is L^ code and the
+    // middle of a collection is no place to run any.
+    LhatCoroutine *pending_dispose;
+
     LhatGray gray;
     size_t collected;
     size_t threshold;   // how many live objects before the next collection
@@ -4809,6 +4815,65 @@ static bool mark_roots(Machine *m)
             return false;
         }
     }
+    // 02 の 10.7: one already waiting to have its cleanups run is alive
+    // until they have -- it was unreachable to the program when it was put
+    // here, and the sweep would take it back if this did not hold it.
+    for (LhatCoroutine *co = m->pending_dispose; co != NULL;
+         co = co->next_pending) {
+        if (!lhat_gc_reach(&m->gray, lhat_object((LhatObject *)co))) {
+            return false;
+        }
+    }
+    return true;
+}
+
+// Follows what the roots reached until nothing grey is left.
+static bool follow_gray(Machine *m)
+{
+    while (m->gray.count > 0) {
+        LhatObject *object = m->gray.items[--m->gray.count];
+        if (!lhat_gc_children(&m->gray, object)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+// 02 の 10.7: a coroutine the program can no longer reach may still owe its
+// pending finally^ bodies. Running them here is out of the question -- they
+// are L^ code and the heap is about to be swept -- so this holds one back
+// instead: it is reached (which keeps the sweep off it for this cycle) and
+// put on the machine's list, to be run at an instruction boundary and
+// collected by a later cycle. Lua takes the same two-cycle route for the
+// same reason.
+//
+// Nothing marks one as "already held". While it is on the list mark_roots
+// reaches it, so the `marked` test above is what keeps this pass from
+// finding it twice; and once its cleanups have run its count is 0 and its
+// state is DONE, so it never answers here again and a later cycle takes it
+// like anything else. What a cleanup did in between -- including storing
+// what it reached somewhere still live -- is asked about from scratch then.
+static bool hold_pending_disposals(Machine *m)
+{
+    for (LhatObject *object = m->objects.objects; object != NULL;
+         object = object->next) {
+        if (object->marked || object->kind != LHAT_OBJECT_COROUTINE) {
+            continue;
+        }
+        LhatCoroutine *co = (LhatCoroutine *)object;
+        // 16.3's walk of a table has no body and so no cleanups, and holds
+        // neither closure nor registers -- entering a frame for one would
+        // read through NULL. Said outright rather than left to the count.
+        if (co->source != LHAT_COROUTINE_BODY ||
+            co->state != LHAT_COROUTINE_SUSPENDED || co->cleanup_count == 0) {
+            continue;
+        }
+        if (!lhat_gc_reach(&m->gray, lhat_object(object))) {
+            return false;
+        }
+        co->next_pending = m->pending_dispose;
+        m->pending_dispose = co;
+    }
     return true;
 }
 
@@ -4816,16 +4881,15 @@ static bool mark_roots(Machine *m)
 // This is the working form 5.1's order asks for first.
 static void collect(Machine *m)
 {
-    if (!mark_roots(m)) {
+    if (!mark_roots(m) || !follow_gray(m)) {
         m->threshold = SIZE_MAX;  // out of memory; stop trying to collect
         return;
     }
-    while (m->gray.count > 0) {
-        LhatObject *object = m->gray.items[--m->gray.count];
-        if (!lhat_gc_children(&m->gray, object)) {
-            m->threshold = SIZE_MAX;
-            return;
-        }
+    // 02 の 10.7: held back before the sweep, and what they reach followed
+    // after -- a coroutine kept for its cleanups keeps its registers too.
+    if (!hold_pending_disposals(m) || !follow_gray(m)) {
+        m->threshold = SIZE_MAX;
+        return;
     }
     m->collected += lhat_gc_sweep(&m->objects, m);
 
@@ -4833,6 +4897,58 @@ static void collect(Machine *m)
     // collect on every allocation. The floor keeps a nearly-empty heap from
     // triggering the next collection almost immediately.
     m->threshold = m->objects.count * LHAT_GC_GROWTH_FACTOR + LHAT_GC_MIN_THRESHOLD;
+}
+
+// 5.11 with 02 の 10.7: puts a suspended coroutine's one saved frame back on
+// the stack so that what it still owes can be run. The caller has already
+// made room (LHAT_MAX_FRAMES and the stack's own end) and picked where the
+// frame goes: `next_base` is its first register and `result` the slot in the
+// caller's frame the answer lands in.
+//
+// The frame comes back marked `disposing`, which 10.7 needs -- a yield^ from
+// inside a cleanup has nothing to suspend into -- and set to drain rather
+// than to run: every cleanup, innermost first, and then the coroutine is
+// finished. What the caller does with `frame`/`registers`/`chunk`/`pc` after
+// this is jump to the drain.
+static void enter_disposal_frame(Machine *m, LhatCoroutine *co,
+                                 LhatValue *next_base, uint8_t result,
+                                 Frame **frame, LhatValue **registers,
+                                 const LhatChunk **chunk, size_t *pc)
+{
+    for (size_t i = 0; i < co->register_count; i++) {
+        next_base[i] = co->registers[i];
+    }
+    Frame *called = &m->frames[m->frame_count++];
+    called->closure = co->closure;
+    called->pc = co->pc;
+    called->base = next_base;
+    called->result = result;
+    called->coroutine = co;
+    called->disposing = true;
+    called->returning = true;
+    called->drain_target = 0;
+    called->answer = lhat_nil();
+    called->cleanup_count = co->cleanup_count;
+    for (size_t i = 0; i < co->cleanup_count; i++) {
+        called->cleanups[i] = co->cleanups[i];
+    }
+    co->state = LHAT_COROUTINE_RUNNING;
+
+    *frame = called;
+    *registers = called->base;
+    *chunk = &co->closure->proto->chunk;
+    *pc = called->pc;
+}
+
+// 02 の 10.7: the next coroutine waiting to have its cleanups run, or NULL.
+static LhatCoroutine *dequeue_pending_dispose(Machine *m)
+{
+    LhatCoroutine *co = m->pending_dispose;
+    if (co != NULL) {
+        m->pending_dispose = co->next_pending;
+        co->next_pending = NULL;
+    }
+    return co;
 }
 
 // 5.4: one place per slot, so two closures capturing the same name share it.
@@ -5211,6 +5327,14 @@ LhatRunResult lhat_run(LhatMachine *m, const LhatProto *proto)
     LhatValue *registers = frame->base;
     size_t pc = 0;
 
+    // 02 の 10.7: the last collection of the run, and what it found. See the
+    // drain, which is where both are decided. `at` is hoisted out of the
+    // loop only so that `ending` can jump to the drain without stepping over
+    // its initialiser.
+    bool end_swept = false;
+    bool ending = false;
+    size_t at = 0;
+
     while (pc < chunk->count) {
         // Between instructions, where every live value is in a register, a
         // frame or the open list. Inside one there is a half-built object the
@@ -5220,8 +5344,48 @@ LhatRunResult lhat_run(LhatMachine *m, const LhatProto *proto)
             collect(m);
         }
 
+        // 02 の 10.7: and here is where what the collector held back gets to
+        // run. The heap is whole again and this is an ordinary place to call
+        // L^ code, which is exactly what a finally^ body is. One coroutine
+        // per boundary -- the rest keep, so a long list never becomes one
+        // long pause.
+        //
+        // Never on top of a disposal already under way (`disposing`): a
+        // cleanup is 10.7's own unwinding and another coroutine's cleanups
+        // cutting into it would interleave two unwindings that have nothing
+        // to do with each other. The queue waits; it is in no hurry.
+        if (m->pending_dispose != NULL && !frame->disposing) {
+            if (m->frame_count >= LHAT_MAX_FRAMES) {
+                return finish(m, chunk, LHAT_RUN_STACK_OVERFLOW, lhat_nil(), pc);
+            }
+            // Just past what this frame uses, so nothing live is written
+            // over. Disposal answers nil^ and no one is asking, but the
+            // return still lands somewhere and this is somewhere harmless.
+            uint8_t into = chunk->registers;
+            LhatValue *next_base = &registers[into] + 1;
+            if (next_base + LHAT_MAX_REGISTERS >= m->stack + LHAT_STACK_SLOTS) {
+                return finish(m, chunk, LHAT_RUN_STACK_OVERFLOW, lhat_nil(), pc);
+            }
+            LhatCoroutine *co = dequeue_pending_dispose(m);
+            frame->pc = pc;
+            enter_disposal_frame(m, co, next_base, into, &frame, &registers,
+                                 &chunk, &pc);
+            // 15.4: same as an explicit dispose -- the slot a yield^ answers
+            // into gets nil^, since nothing sent anything in.
+            registers[co->sent_into] = lhat_nil();
+            goto drain;
+        }
+
+        // 02 の 10.7: the run already ended and only the queue was holding
+        // it open. It is empty now, so back to the frame that was leaving.
+        // Only once that frame is on top again -- while a cleanup of its
+        // own is running there is a frame above it with instructions left.
+        if (ending && m->frame_count == 1) {
+            goto drain;
+        }
+
         LhatInstruction instruction = chunk->code[pc];
-        size_t at = pc++;
+        at = pc++;
 
         uint8_t a = lhat_a(instruction);
         uint8_t b = lhat_b(instruction);
@@ -5922,19 +6086,32 @@ LhatRunResult lhat_run(LhatMachine *m, const LhatProto *proto)
                         m->stack + LHAT_STACK_SLOTS) {
                         return finish(m, chunk, LHAT_RUN_STACK_OVERFLOW, lhat_nil(), at);
                     }
+                    frame->pc = pc;
+
+                    if (dispose) {
+                        // 10.7: what is pending runs, innermost first, and
+                        // then the coroutine is finished.
+                        enter_disposal_frame(m, co, next_base, a, &frame,
+                                             &registers, &chunk, &pc);
+                        // 15.4: the guards above leave only a suspended
+                        // coroutine here, so the slot a yield^ answers into
+                        // is written the way a resume writes it -- with
+                        // nil^, since dispose sends nothing in.
+                        registers[co->sent_into] = sent;
+                        goto drain;
+                    }
 
                     // 5.11: one frame, put back where it left off.
                     for (size_t i = 0; i < co->register_count; i++) {
                         next_base[i] = co->registers[i];
                     }
-                    frame->pc = pc;
                     Frame *called = &m->frames[m->frame_count++];
                     called->closure = co->closure;
                     called->pc = co->pc;
                     called->base = next_base;
                     called->result = a;
                     called->coroutine = co;
-                    called->disposing = dispose;
+                    called->disposing = false;
                     called->returning = false;
                     called->cleanup_count = co->cleanup_count;
                     for (size_t i = 0; i < co->cleanup_count; i++) {
@@ -5953,14 +6130,6 @@ LhatRunResult lhat_run(LhatMachine *m, const LhatProto *proto)
                         // 15.4: the value the resume sent arrives where the
                         // yield^ put the one it sent out.
                         registers[co->sent_into] = sent;
-                    }
-                    if (dispose) {
-                        // 10.7: what is pending runs, innermost first, and
-                        // then the coroutine is finished.
-                        frame->drain_target = 0;
-                        frame->returning = true;
-                        frame->answer = lhat_nil();
-                        goto drain;
                     }
                     break;
                 }
@@ -6399,6 +6568,7 @@ LhatRunResult lhat_run(LhatMachine *m, const LhatProto *proto)
                 frame->coroutine->state = LHAT_COROUTINE_DONE;
                 frame->coroutine->cleanup_count = 0;
             }
+
             // 03 の 4.3: a session's top-level slots outlive the input, so
             // what points into them goes on sharing them. Closing those here
             // would undo the CLOSE compile_session_statements deliberately
@@ -6408,6 +6578,32 @@ LhatRunResult lhat_run(LhatMachine *m, const LhatProto *proto)
             // ordinary frame closed whole the way it always was.
             const LhatProto *ran = frame->closure->proto;
             close_upvalues(m, frame->base + (ran != NULL ? ran->kept : 0));
+
+            // 02 の 10.7: a coroutine dropped in the last few instructions
+            // never met a collection, and without one here whether its
+            // finally^ runs comes down to whether the heap happened to fill
+            // up in time. The frame is still counted, which is what makes
+            // this safe -- its registers and its answer are still roots, so
+            // this asks the same question every other collection asks and
+            // not a wider one. What the program is still holding when the
+            // run ends is still held; the run ending is not the machine
+            // ending, and lhat_run's own start is what lets the next one go.
+            //
+            // `ending` says the queue is the only thing keeping the run
+            // open. The loop takes one coroutine per turn and comes straight
+            // back here, and once nothing is left the frame goes for real.
+            // Once only (`end_swept`): a cleanup that drops something has
+            // already had its own chance, and the end of a run must not be
+            // something a program can go on extending.
+            if (m->frame_count == 1 && !end_swept) {
+                end_swept = true;
+                collect(m);
+                if (m->pending_dispose != NULL) {
+                    ending = true;
+                    pc = at;
+                    continue;
+                }
+            }
             m->frame_count--;
 
             if (m->frame_count == 0) {
