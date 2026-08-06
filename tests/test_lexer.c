@@ -764,17 +764,29 @@ static void test_scope_specifiers(void)
 {
     Scan s;
 
-    // Section 8.
-    LHAT_TEST("global, file and relative scopes");
-    scan_text(&s, "$a $$b $^c $^^^d");
-    LHAT_CHECK_EQ_INT(token_count(&s), 8);
-    LHAT_CHECK_EQ_INT(s.tokens[0].v.scope.kind, LHAT_SCOPE_GLOBAL);
-    LHAT_CHECK_EQ_INT(s.tokens[2].v.scope.kind, LHAT_SCOPE_FILE);
+    // Section 8. '$' is the unit; a global table was given up, so nothing
+    // shorter than it is left to name.
+    LHAT_TEST("file and relative scopes");
+    scan_text(&s, "$a $^c $^^^d");
+    LHAT_CHECK_EQ_INT(token_count(&s), 6);
+    LHAT_CHECK_EQ_INT(s.tokens[0].v.scope.kind, LHAT_SCOPE_FILE);
+    LHAT_CHECK_EQ_INT(s.tokens[2].v.scope.kind, LHAT_SCOPE_RELATIVE);
+    LHAT_CHECK_EQ_INT(s.tokens[2].v.scope.depth, 1);
     LHAT_CHECK_EQ_INT(s.tokens[4].v.scope.kind, LHAT_SCOPE_RELATIVE);
-    LHAT_CHECK_EQ_INT(s.tokens[4].v.scope.depth, 1);
-    LHAT_CHECK_EQ_INT(s.tokens[6].v.scope.kind, LHAT_SCOPE_RELATIVE);
-    LHAT_CHECK_EQ_INT(s.tokens[6].v.scope.depth, 3);
+    LHAT_CHECK_EQ_INT(s.tokens[4].v.scope.depth, 3);
     LHAT_CHECK_EQ_INT(s.tokens[1].kind, LHAT_TOKEN_IDENT);
+    scan_dispose(&s);
+
+    // '$$' was the unit while '$' was a global. With the global gone the
+    // doubled sigil is nothing at all -- the second '$' is not a name.
+    LHAT_TEST("'$$' is no longer a specifier");
+    scan_text(&s, "$$b");
+    LHAT_CHECK(s.lexer.diagnostic_count > 0, "reported");
+    if (s.lexer.diagnostic_count > 0) {
+        // Named, so a reader is told which sigil moved rather than left to
+        // read "a sigil with no name after it" about a '$' that has one.
+        LHAT_CHECK_EQ_INT(s.lexer.diagnostics[0].code, LHAT_ERR_SCOPE_DOUBLED);
+    }
     scan_dispose(&s);
 
     LHAT_TEST("the sigil must be glued to the name");

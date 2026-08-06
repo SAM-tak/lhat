@@ -1881,12 +1881,12 @@ static void test_scope_specifiers(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    LHAT_TEST("'$$' names the unit's own top level");
+    LHAT_TEST("'$' names the unit's own top level");
     check_text(&u,
                "let^ x = 1\n"
                "do^{ let^ x = \"a\"\n"
                "  do^{ let^ x = \"b\"\n"
-               "    let^ n : number^ = $$x\n"
+               "    let^ n : number^ = $x\n"
                "  }\n"
                "}\n");
     CHECK_CLEAN(&u);
@@ -1915,13 +1915,6 @@ static void test_scope_specifiers(void)
     LHAT_TEST("counting more scopes than are open is refused");
     check_text(&u, "do^{ let^ n = $^^^^x }\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_SCOPE_TOO_FAR);
-    unit_dispose(&u);
-
-    // '$' is a global, which is its own idea and has none yet -- refused by
-    // name rather than left to mean the same as writing nothing.
-    LHAT_TEST("'$' alone is refused by name");
-    check_text(&u, "let^ x = 1\nlet^ n = $x\n");
-    CHECK_REPORTS(&u, LHAT_CHECK_ERR_SCOPE_UNSUPPORTED);
     unit_dispose(&u);
 
     // 8.7: a let^ makes a name where it is written, so there is no other

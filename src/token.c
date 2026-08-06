@@ -98,7 +98,6 @@ const char *lhat_string_kind_name(LhatStringKind kind)
 const char *lhat_scope_kind_name(LhatScopeKind kind)
 {
     switch (kind) {
-        case LHAT_SCOPE_GLOBAL:   return "global";
         case LHAT_SCOPE_FILE:     return "file";
         case LHAT_SCOPE_RELATIVE: return "relative";
     }

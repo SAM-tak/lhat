@@ -2323,10 +2323,6 @@ static void compile_expression(Compiler *c, const LhatNode *node, uint8_t into)
                 fail(c, LHAT_COMPILE_UNSUPPORTED);
                 return;
             }
-            if (node->v.scope.kind == LHAT_SCOPE_GLOBAL) {
-                fail(c, LHAT_COMPILE_UNSUPPORTED);  // '$' has no meaning yet
-                return;
-            }
             uint8_t reg = 0;
             size_t upvalue = 0;
             switch (resolve_scoped(c, node, name, length, &reg, &upvalue)) {
@@ -2735,10 +2731,6 @@ static void compile_reassign(Compiler *c, const LhatNode *node)
         // it has to name the same one reading it would -- so the write goes
         // through the same resolution the read does.
         if (target->kind == LHAT_NODE_SCOPE) {
-            if (target->v.scope.kind == LHAT_SCOPE_GLOBAL) {
-                fail(c, LHAT_COMPILE_UNSUPPORTED);
-                return;
-            }
             uint8_t reg = 0;
             size_t at = 0;
             ScopedKind found =

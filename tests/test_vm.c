@@ -3265,12 +3265,12 @@ static void test_scope_specifiers(void)
     CHECK_INTEGER(&r, 12);
     run_dispose(&r);
 
-    LHAT_TEST("'$$' reads the unit's own top level");
+    LHAT_TEST("'$' reads the unit's own top level");
     run_text(&r,
              "let^ x = 1\n"
              "do^{ let^ x = 2\n"
              "  do^{ let^ x = 3\n"
-             "    return^ $$x\n"
+             "    return^ $x\n"
              "  }\n"
              "}\n"
              "return^ 0\n");

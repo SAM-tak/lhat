@@ -1197,10 +1197,6 @@ static LhatType *infer_name(Checker *c, const LhatNode *node)
     // Without one it starts here, which is every other name.
     Scope *from = c->scope;
     if (node->kind == LHAT_NODE_SCOPE) {
-        if (node->v.scope.kind == LHAT_SCOPE_GLOBAL) {
-            report(c, node, LHAT_CHECK_ERR_SCOPE_UNSUPPORTED);
-            return simple(c, LHAT_TYPE_UNKNOWN);
-        }
         from = scope_from(c->scope, node);
         if (from == NULL) {
             report(c, node, LHAT_CHECK_ERR_SCOPE_TOO_FAR);
@@ -4691,9 +4687,6 @@ const char *lhat_check_error_message(LhatCheckErrorCode code)
                    "produces a value";
         case LHAT_CHECK_ERR_SCOPE_TOO_FAR:
             return "this reaches out past more scopes than are open here";
-        case LHAT_CHECK_ERR_SCOPE_UNSUPPORTED:
-            return "'$' names a global, which does not exist yet; '$$' is the "
-                   "unit and '$^' the scope around this one";
         case LHAT_CHECK_ERR_SCOPE_ON_DEFINE:
             return "let^ makes a name here, so it takes no scope specifier; "
                    "':=' is what writes one that is already there";

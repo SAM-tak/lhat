@@ -105,8 +105,6 @@ typedef enum {
                                         // host registered, and nothing here
     LHAT_CHECK_ERR_SCOPE_TOO_FAR,       // 01 の 8 章: '$^' naming more scopes
                                         // out than are open here
-    LHAT_CHECK_ERR_SCOPE_UNSUPPORTED,   // 01 の 8 章: '$' alone -- a global is
-                                        // its own idea and has none yet
     LHAT_CHECK_ERR_SCOPE_ON_DEFINE      // 01 の 8 章 with 8.7: a let^ makes a
                                         // name where it is written, so there
                                         // is no other scope for one to name

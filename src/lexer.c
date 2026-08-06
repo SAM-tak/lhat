@@ -866,13 +866,24 @@ static LhatToken scan_dollar(LhatLexer *lexer, Mark start)
 
     advance(lexer);  // '$'
 
-    LhatScopeKind kind = LHAT_SCOPE_GLOBAL;
+    // Section 8: '$' on its own names the unit. It once named a global and
+    // the unit was written '$$', but a global table was given up -- 05 の
+    // 3 章's require^/import^/module^ leave it nothing to do that a module
+    // does not do better -- so the shorter sigil goes to the one meaning
+    // that remains.
+    LhatScopeKind kind = LHAT_SCOPE_FILE;
     uint32_t depth = 0;
 
+    // Written the way the unit used to be. Saying which sigil moved beats
+    // letting the second '$' fail as a sigil with no name after it.
     if (current_byte(lexer) == '$') {
         advance(lexer);
-        kind = LHAT_SCOPE_FILE;
-    } else if (current_byte(lexer) == '^') {
+        report_at(lexer, LHAT_ERR_SCOPE_DOUBLED, (uint32_t)start.offset,
+                  start.line, start.column);
+        return finish(lexer, start, LHAT_TOKEN_ERROR);
+    }
+
+    if (current_byte(lexer) == '^') {
         kind = LHAT_SCOPE_RELATIVE;
         while (current_byte(lexer) == '^') {
             depth++;
@@ -1168,6 +1179,8 @@ const char *lhat_lexer_error_message(LhatErrorCode code)
             return "malformed escape sequence";
         case LHAT_ERR_UNTERMINATED_BLOCK_COMMENT:
             return "unterminated block comment";
+        case LHAT_ERR_SCOPE_DOUBLED:
+            return "'$' is the unit's own scope; there is no '$$'";
         case LHAT_ERR_SCOPE_WITHOUT_NAME:
             return "scope specifier must be followed directly by a name";
         case LHAT_ERR_INTERPOLATION_NEEDS_QUOTES:

@@ -136,8 +136,7 @@ typedef enum {
 
 // Section 8.
 typedef enum {
-    LHAT_SCOPE_GLOBAL,    // $
-    LHAT_SCOPE_FILE,      // $$
+    LHAT_SCOPE_FILE,      // $
     LHAT_SCOPE_RELATIVE   // $^, $^^, ...
 } LhatScopeKind;
 
