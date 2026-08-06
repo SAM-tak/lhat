@@ -56,6 +56,16 @@ typedef struct LhatObject {
     LhatObjectKind kind;
     bool marked;              // reached in the collection now running
     struct LhatObject *next;  // every object, for the collector to walk
+
+    // 5.12: the collector's own list of what it has reached but not yet
+    // looked into. Kept on the object rather than in an array of its own so
+    // that adding to the list cannot fail -- a collection that runs out of
+    // memory halfway is a bad enough position while it is stop-the-world,
+    // and an unaffordable one once it runs a step at a time. Lua's
+    // 'gclist' is this field, put per type rather than in the header;
+    // here the eight bytes a string does not need buy one rule instead of
+    // twelve. Meaningful only while the object is on the list.
+    struct LhatObject *gclist;
 } LhatObject;
 
 

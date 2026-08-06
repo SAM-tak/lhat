@@ -10,7 +10,11 @@
 // this is the working form it would replace.
 //
 // Marking uses an explicit list rather than recursion, so a deep structure
-// cannot run the C stack out.
+// cannot run the C stack out. The list is threaded through the objects
+// themselves (LhatObject.gclist), so putting one on it cannot fail -- there
+// is nothing to allocate. Nothing here answers "out of memory": a collection
+// that could give up halfway would be leaving the heap in a state it has no
+// way to describe.
 //
 // The machine owns the heap and the roots, and this reads both. 02 の 10.7
 // also has it hold back a coroutine it finds unreachable with cleanups still
@@ -27,21 +31,13 @@
 
 struct LhatMachine;
 
-typedef struct {
-    LhatObject **items;
-    size_t count;
-    size_t capacity;
-} LhatGray;
-
-void lhat_gray_dispose(LhatGray *gray);
-
-// Marks the value if it is an unmarked object, and remembers it so that what
-// it refers to is reached too. Returns false only when out of memory.
-bool lhat_gc_reach(LhatGray *gray, LhatValue value);
+// Marks the value if it is an unmarked object, and puts it on `*gray` so that
+// what it refers to is reached too.
+void lhat_gc_reach(LhatObject **gray, LhatValue value);
 
 // Marks everything the object refers to. Objects a chunk owns are reached
 // like any other; the sweep simply never visits that list.
-bool lhat_gc_children(LhatGray *gray, LhatObject *object);
+void lhat_gc_children(LhatObject **gray, LhatObject *object);
 
 // Frees what is not marked, and unmarks what is. Returns how many objects
 // were freed. `machine` is what a host value's dispose^ is handed; NULL where

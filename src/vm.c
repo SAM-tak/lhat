@@ -4856,7 +4856,6 @@ static LhatRunResult finish(Machine *m, const LhatChunk *chunk,
     // that name again) nor find it to share (a second closure over the same
     // name). What the run above left pointing into slots that do not survive
     // is closed by the next lhat_run, before it clears them.
-    lhat_gray_dispose(&m->gray);
     return result;
 }
 
@@ -5097,7 +5096,6 @@ void lhat_machine_dispose(LhatMachine *machine)
         lhat_hostdata_release(object, machine);
     }
     lhat_object_free_all(&machine->objects);
-    lhat_gray_dispose(&machine->gray);
     lhat_free(machine);
 }
 

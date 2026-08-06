@@ -64,7 +64,9 @@ struct LhatMachine {
     // middle of a collection is no place to run any.
     LhatCoroutine *pending_dispose;
 
-    LhatGray gray;
+    // 5.12: what the collector has reached and not yet looked into, threaded
+    // through LhatObject.gclist. Empty except while a collection is running.
+    LhatObject *gray;
     size_t collected;
     size_t threshold;   // how many live objects before the next collection
 
