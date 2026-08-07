@@ -216,6 +216,18 @@ LhatHostData *lhat_hostdata_new(LhatHeap *heap, const LhatHostDataTag *tag,
     return data;
 }
 
+LhatHostDataTagRef *lhat_hostdata_tag_ref_new(LhatHeap *heap,
+                                              const LhatHostDataTag *tag)
+{
+    LhatHostDataTagRef *ref = (LhatHostDataTagRef *)lhat_object_alloc(
+        heap, sizeof(LhatHostDataTagRef), LHAT_OBJECT_HOSTDATA_TAG_REF);
+    if (ref == NULL) {
+        return NULL;
+    }
+    ref->tag = tag;
+    return ref;
+}
+
 LhatRuntimeType *lhat_type_rt_new(LhatHeap *heap, LhatRuntimeTypeKind kind)
 {
     LhatRuntimeType *type =

@@ -87,6 +87,10 @@ typedef enum {
     LHAT_BC_NEWERROR,   // A B   R[A] = an error of the kind in R[B]
     LHAT_BC_ISERROR,    // A B   R[A] = R[B] is an error of any kind
     LHAT_BC_ISKIND,     // A B C R[A] = R[B] is an error of the kind in R[C]
+    LHAT_BC_ISHOSTDATA, // A B C R[A] = R[B] is hostdata tagged by R[C]
+                        //       (02 の 13.11's isa^ against 05 の 8.8's
+                        //       identity-by-tag; R[C] is a
+                        //       LhatHostDataTagRef constant)
     LHAT_BC_ISNIL,      // A B   R[A] = R[B] is nil^   (02 の 11.7)
 
     // 02 の 14 章. A definition is a table of shared members; an instance is

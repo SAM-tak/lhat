@@ -106,6 +106,15 @@ typedef struct {
     size_t host_error_entry_count;
     size_t host_error_entry_capacity;
 
+    // 05 の 8.8 の isa^ 版: lhat_register_hostdata_type が返した
+    // LhatHostDataTag を、コンパイラが "module.Name" から引けるように
+    // した登録簿。tag 自体は host_entries[i].tag が既に持っているが、
+    // それは非公開の LhatHostEntry の中なので、vm.h から読める形の
+    // 薄いコピーをここにも持つ -- host_error_entries と同じ理由。
+    LhatHostTypeEntry *host_type_entries;
+    size_t host_type_entry_count;
+    size_t host_type_entry_capacity;
+
     // 05 の 8.6: what the host put in L^ itself, as the type side of it. The
     // checker's own L^ carries these on top of what 8.6 lists.
     LhatType *globals;

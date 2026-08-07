@@ -47,9 +47,13 @@ typedef enum {
     LHAT_OBJECT_HOST,        // 05 の 8.7: a subroutine the host wrote in C.
                              // 04 の 12.8 makes an error a value, so it
                              // answers one rather than unwinding
-    LHAT_OBJECT_HOSTDATA     // 05 の 8.8: something the host made and holds,
+    LHAT_OBJECT_HOSTDATA,    // 05 の 8.8: something the host made and holds,
                              // reached through a pointer the collector does
                              // not look into
+    LHAT_OBJECT_HOSTDATA_TAG_REF  // 02 の 13.11 の hostdata 版 isa^: a
+                             // LhatHostDataTag wrapped so it can sit in a
+                             // chunk's constant pool -- the tag itself is
+                             // the program's, not a GC value (05 の 8.8)
 } LhatObjectKind;
 
 typedef struct LhatObject {

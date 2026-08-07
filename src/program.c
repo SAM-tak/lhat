@@ -447,6 +447,30 @@ const LhatHostDataTag *lhat_register_hostdata_type(LhatProgram *program,
     }
     entry->tag->module = entry->module;
     entry->tag->name = entry->name;
+
+    // 05 の 8.8 の isa^ 版: vm.c がコンパイル時に "module.Name" から
+    // 引けるよう、host_entries(非公開)とは別に vm.h の形へ薄く複製する。
+    // 文字列は entry->module/name(host_entries が所有)をそのまま指す
+    // だけ -- ここでは複製しない。program_dispose も host_type_entries
+    // 側の文字列は解放しない。
+    if (program->host_type_entry_count == program->host_type_entry_capacity) {
+        size_t grown = program->host_type_entry_capacity
+                           ? program->host_type_entry_capacity * 2
+                           : 4;
+        LhatHostTypeEntry *bigger = (LhatHostTypeEntry *)lhat_realloc(
+            program->host_type_entries, grown * sizeof *bigger);
+        if (bigger == NULL) {
+            return NULL;
+        }
+        program->host_type_entries = bigger;
+        program->host_type_entry_capacity = grown;
+    }
+    LhatHostTypeEntry *type_entry =
+        &program->host_type_entries[program->host_type_entry_count++];
+    type_entry->module = entry->module;
+    type_entry->name = entry->name;
+    type_entry->tag = entry->tag;
+
     return entry->tag;
 }
 
@@ -833,6 +857,8 @@ const LhatModule *lhat_program_compile(LhatProgram *program, size_t *count)
         units.initial_count = program->initial_count;  // 05 の 8.2
         units.host_errors = program->host_error_entries;  // 05 の 8.7 の誤り版
         units.host_error_count = program->host_error_entry_count;
+        units.host_types = program->host_type_entries;  // 05 の 8.8 の isa^ 版
+        units.host_type_count = program->host_type_entry_count;
 
         LhatProto *proto = NULL;
         LhatCompileStatus status =
@@ -924,6 +950,14 @@ void lhat_program_dispose(LhatProgram *program)
     program->host_entries = NULL;
     program->host_entry_count = 0;
     program->host_entry_capacity = 0;
+
+    // host_type_entries[i] の module/name/tag は上の host_entries[i] が
+    // 所有する同じポインタを指すだけなので、ここでは配列自体だけを解放
+    // する(要素の中身は既に上で解放済み)。
+    lhat_free(program->host_type_entries);
+    program->host_type_entries = NULL;
+    program->host_type_entry_count = 0;
+    program->host_type_entry_capacity = 0;
 
     for (size_t i = 0; i < program->host_error_entry_count; i++) {
         LhatHostErrorKind *entry = &program->host_error_entries[i];

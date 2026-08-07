@@ -64,6 +64,18 @@ typedef struct LhatHostErrorKind {
     size_t variant_count;
 } LhatHostErrorKind;
 
+// 05 の 8.8 の isa^ 版: one hostdata type lhat_register_hostdata_type
+// (program.h) registered. resolve_isa_type (vm.c) reads these to answer a
+// qualified name an import^ed module wrote -- "module...Name" -- against
+// the tag 8.8's identity rule compares by. `tag` is owned by the
+// LhatProgram that registered it and outlives every machine and every
+// compile that reads this, the same as LhatHostErrorKind's objects.
+typedef struct LhatHostTypeEntry {
+    const char *module;
+    const char *name;
+    const LhatHostDataTag *tag;
+} LhatHostTypeEntry;
+
 typedef struct {
     LhatUnitResolver resolve;
     void *context;
@@ -89,6 +101,12 @@ typedef struct {
     // declared. NULL/0 when the host registered none.
     const LhatHostErrorKind *host_errors;
     size_t host_error_count;
+
+    // What the program's lhat_register_hostdata_type calls registered, so
+    // that isa^ against a hostdata type (05 の 8.8) can be compiled. NULL/0
+    // when the host registered none.
+    const LhatHostTypeEntry *host_types;
+    size_t host_type_count;
 } LhatUnits;
 
 // Compiles one unit into a proto, which owns the bodies written inside it.

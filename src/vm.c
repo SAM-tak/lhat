@@ -749,6 +749,35 @@ static const LhatErrorKind *resolve_kind(Compiler *c, const LhatNode *path,
     return resolve_host_kind(c, path, from_host);
 }
 
+// 05 の 8.8 の isa^ 版: what lhat_register_hostdata_type (program.h) put
+// in LhatUnits.host_types. "module...Name" only -- a hostdata type has no
+// variant to walk into the way an errordef^'s declaration does; 8.8's
+// identity is the tag alone.
+static const LhatHostDataTag *resolve_host_type_tag(Compiler *c,
+                                                     const LhatNode *path)
+{
+    const LhatUnits *units = root_of(c)->units;
+    if (units == NULL || units->host_types == NULL) {
+        return NULL;
+    }
+
+    QualifierSegment segments[LHAT_MAX_QUALIFIER_SEGMENTS];
+    size_t count = flatten_qualified_path(c, path, segments,
+                                          LHAT_MAX_QUALIFIER_SEGMENTS);
+    if (count < 2) {
+        return NULL;  // a module name alone never reaches a type
+    }
+
+    for (size_t i = 0; i < units->host_type_count; i++) {
+        const LhatHostTypeEntry *entry = &units->host_types[i];
+        if (segments_match(segments, 0, count - 1, entry->module) &&
+            segments_match(segments, count - 1, count, entry->name)) {
+            return entry->tag;
+        }
+    }
+    return NULL;
+}
+
 static void load_string_bytes(Compiler *c, uint8_t into, const char *text,
                               size_t length)
 {
@@ -813,6 +842,29 @@ static void load_kind(Compiler *c, uint8_t into, const LhatErrorKind *kind)
 {
     size_t k = lhat_chunk_constant(&c->proto->chunk,
                                    lhat_object((LhatObject *)(void *)kind));
+    if (k == SIZE_MAX) {
+        fail(c, LHAT_COMPILE_TOO_COMPLEX);
+        return;
+    }
+    emit(c, lhat_encode_abx(LHAT_BC_LOADK, into, (uint16_t)k));
+}
+
+// 05 の 8.8 の isa^ 版: a LhatHostDataTag has no object of its own the way
+// an LhatErrorKind does (04 の 2.4), so one is made here -- on the root
+// chunk's heap, same as declare_error's kinds, so it outlives every nested
+// body that might load it as a constant.
+static void load_hostdata_tag(Compiler *c, uint8_t into,
+                              const LhatHostDataTag *tag)
+{
+    Compiler *root = root_of(c);
+    LhatHostDataTagRef *ref =
+        lhat_hostdata_tag_ref_new(&root->proto->chunk.heap, tag);
+    if (ref == NULL) {
+        fail(c, LHAT_COMPILE_TOO_COMPLEX);
+        return;
+    }
+    size_t k = lhat_chunk_constant(&c->proto->chunk,
+                                   lhat_object((LhatObject *)ref));
     if (k == SIZE_MAX) {
         fail(c, LHAT_COMPILE_TOO_COMPLEX);
         return;
@@ -994,7 +1046,23 @@ static void compile_isa(Compiler *c, const LhatNode *node, uint8_t into)
     const LhatNode *unused = NULL;
     const LhatErrorKind *kind =
         resolve_kind(c, node->v.binary.right, &unused, NULL);
-    if (kind == NULL) {
+    if (kind != NULL) {
+        uint8_t mark = c->next_register;
+        uint8_t value = reserve(c);
+        uint8_t holder = reserve(c);
+        compile_expression(c, node->v.binary.left, value);
+        load_kind(c, holder, kind);
+        emit(c, lhat_encode_abc(LHAT_BC_ISKIND, into, value, holder));
+        c->next_register = mark;
+        return;
+    }
+
+    // 05 の 8.8: a hostdata type resolve_kind does not reach (it only ever
+    // answers an errordef^-shaped kind) -- host_types is the isa^ version
+    // of resolve_host_kind's fallback, tried only once a local errordef^
+    // and a host-registered error kind have both had their chance.
+    const LhatHostDataTag *tag = resolve_host_type_tag(c, node->v.binary.right);
+    if (tag == NULL) {
         fail(c, LHAT_COMPILE_UNSUPPORTED);
         return;
     }
@@ -1003,8 +1071,8 @@ static void compile_isa(Compiler *c, const LhatNode *node, uint8_t into)
     uint8_t value = reserve(c);
     uint8_t holder = reserve(c);
     compile_expression(c, node->v.binary.left, value);
-    load_kind(c, holder, kind);
-    emit(c, lhat_encode_abc(LHAT_BC_ISKIND, into, value, holder));
+    load_hostdata_tag(c, holder, tag);
+    emit(c, lhat_encode_abc(LHAT_BC_ISHOSTDATA, into, value, holder));
     c->next_register = mark;
 }
 
@@ -5901,6 +5969,27 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
                 const LhatErrorKind *kind =
                     (const LhatErrorKind *)lhat_as_object(registers[cc]);
                 registers[a] = lhat_bool(lhat_error_is_kind(registers[b], kind));
+                break;
+            }
+
+            // 05 の 8.8: identity is the tag alone (7.3's exception for an
+            // opaque host type) -- registers[b] has to actually be
+            // hostdata, or the tags being compared are answering a
+            // question about two different kinds of value.
+            case LHAT_BC_ISHOSTDATA: {
+                if (!lhat_is_object_kind(registers[cc],
+                                         LHAT_OBJECT_HOSTDATA_TAG_REF)) {
+                    return finish(m, chunk, LHAT_RUN_TYPE_ERROR, lhat_nil(), at);
+                }
+                const LhatHostDataTagRef *wanted =
+                    (const LhatHostDataTagRef *)lhat_as_object(registers[cc]);
+                bool matches = false;
+                if (lhat_is_object_kind(registers[b], LHAT_OBJECT_HOSTDATA)) {
+                    const LhatHostData *data =
+                        (const LhatHostData *)lhat_as_object(registers[b]);
+                    matches = data->tag == wanted->tag;
+                }
+                registers[a] = lhat_bool(matches);
                 break;
             }
 

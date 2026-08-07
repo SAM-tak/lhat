@@ -128,6 +128,10 @@ const char *lhat_object_kind_name(LhatObjectKind kind)
         // Neither has anything to show past what it is.
         case LHAT_OBJECT_HOST:       return "a host subroutine";
         case LHAT_OBJECT_HOSTDATA:   return "host data";
+        // 02 の 13.11: never itself a value a program can hold -- only a
+        // constant compile_isa loads to check R[B] against, so this name
+        // exists for completeness rather than because a caller ever sees it.
+        case LHAT_OBJECT_HOSTDATA_TAG_REF: return "a hostdata type tag";
     }
     return "?";
 }

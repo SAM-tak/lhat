@@ -315,6 +315,17 @@ typedef struct LhatHostData {
     bool released;
 } LhatHostData;
 
+// 02 の 13.11: isa^ against a registered hostdata type asks whether a
+// value's tag is this one (05 の 8.8's identity rule) -- but a
+// LhatHostDataTag lives on the program, not the heap, so it cannot sit in
+// a chunk's constant pool as itself the way an LhatErrorKind can. This is
+// the pool-shaped wrapper: nothing but the pointer, and the collector
+// never follows it (same reasoning as LhatHostData.tag above).
+typedef struct LhatHostDataTagRef {
+    LhatObject header;
+    const LhatHostDataTag *tag;
+} LhatHostDataTagRef;
+
 // ---------------------------------------------------------------------------
 // Making and freeing
 // ---------------------------------------------------------------------------
@@ -359,6 +370,9 @@ LhatHost *lhat_host_new(LhatHeap *heap, LhatHostFn call, void *context,
 
 LhatHostData *lhat_hostdata_new(LhatHeap *heap, const LhatHostDataTag *tag,
                                 void *pointer, LhatTable *members);
+
+LhatHostDataTagRef *lhat_hostdata_tag_ref_new(LhatHeap *heap,
+                                              const LhatHostDataTag *tag);
 
 LhatRuntimeType *lhat_type_rt_new(LhatHeap *heap, LhatRuntimeTypeKind kind);
 
