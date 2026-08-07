@@ -265,6 +265,18 @@ struct LhatNode {
             LhatNode *targets;
             LhatNode *values;
             bool exported;  // 05 の 4 章: written public^
+            // 8.9. DEFINE only: written let^ (or with^) rather than var^, so
+            // the names it introduces refuse a later ':='. What the machine
+            // does to a slot is not a write in this sense -- 16.4's to^ and
+            // downto^ advance their focus themselves, and 8.7's LOADNIL seeds
+            // one before its own definition runs; both leave the name still
+            // one nothing written in the source may reassign.
+            bool immutable;
+            // 8.9 with 12.1 and 16.3改2: the construct bound it, not a word
+            // the writer chose -- a with^, or the focus of a counted for^.
+            // There is no var^ to write instead, so the diagnostic for a ':='
+            // on one of these must not offer it.
+            bool bound_by_form;
             // 8.8改. DEFINE only, and only from let^: written ':=' rather
             // than '='. For a plain name this changes nothing (8.6 already
             // makes the two spellings the same there); for a path target

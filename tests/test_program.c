@@ -84,10 +84,10 @@ static void test_dependencies(void)
         {"lib/geometry.lh",
          "module^ ns.geometry\n"
          "public^ let^ dist = f^ a:number^, b:number^ -> number^ { return^ a }\n"
-         "let^ secret = 1\n"},
+         "var^ secret = 1\n"},
         {"main.lh",
-         "let^ g = require^ \"lib/geometry.lh\"\n"
-         "let^ d : number^ = g.dist(1, 2)\n"},
+         "var^ g = require^ \"lib/geometry.lh\"\n"
+         "var^ d : number^ = g.dist(1, 2)\n"},
     };
 
     LHAT_TEST("a required unit is checked first");
@@ -106,8 +106,8 @@ static void test_dependencies(void)
             {"lib/geometry.lh",
              "public^ let^ dist = f^ a:number^, b:number^ -> number^ { return^ a }\n"},
             {"main.lh",
-             "let^ g = require^ \"lib/geometry.lh\"\n"
-             "let^ d = g.dist(1, \"text\")\n"},
+             "var^ g = require^ \"lib/geometry.lh\"\n"
+             "var^ d = g.dist(1, \"text\")\n"},
         };
         program_with(&program, &disk, bad, 2);
         const LhatUnit *main_unit = lhat_program_check(&program, "main.lh");
@@ -123,11 +123,11 @@ static void test_dependencies(void)
         static const File nested[] = {
             {"lib/inner.lh", "public^ let^ v = 1\n"},
             {"lib/outer.lh",
-             "let^ i = require^ \"inner.lh\"\n"
+             "var^ i = require^ \"inner.lh\"\n"
              "public^ let^ w : number^ = i.v\n"},
             {"main.lh",
-             "let^ o = require^ \"lib/outer.lh\"\n"
-             "let^ n : number^ = o.w\n"},
+             "var^ o = require^ \"lib/outer.lh\"\n"
+             "var^ n : number^ = o.w\n"},
         };
         program_with(&program, &disk, nested, 3);
         lhat_program_check(&program, "main.lh");
@@ -141,9 +141,9 @@ static void test_dependencies(void)
         static const File updown[] = {
             {"shared.lh", "public^ let^ v = 1\n"},
             {"lib/user.lh",
-             "let^ s = require^ \"../shared.lh\"\n"
+             "var^ s = require^ \"../shared.lh\"\n"
              "public^ let^ w : number^ = s.v\n"},
-            {"main.lh", "let^ u = require^ \"lib/user.lh\"\n"},
+            {"main.lh", "var^ u = require^ \"lib/user.lh\"\n"},
         };
         program_with(&program, &disk, updown, 3);
         lhat_program_check(&program, "main.lh");
@@ -163,15 +163,15 @@ static void test_loading(void)
         static const File shared[] = {
             {"lib/common.lh", "public^ let^ v = 1\n"},
             {"lib/a.lh",
-             "let^ c = require^ \"common.lh\"\n"
+             "var^ c = require^ \"common.lh\"\n"
              "public^ let^ x : number^ = c.v\n"},
             {"lib/b.lh",
-             "let^ c = require^ \"common.lh\"\n"
+             "var^ c = require^ \"common.lh\"\n"
              "public^ let^ y : number^ = c.v\n"},
             {"main.lh",
-             "let^ a = require^ \"lib/a.lh\"\n"
-             "let^ b = require^ \"lib/b.lh\"\n"
-             "let^ n : number^ = a.x + b.y\n"},
+             "var^ a = require^ \"lib/a.lh\"\n"
+             "var^ b = require^ \"lib/b.lh\"\n"
+             "var^ n : number^ = a.x + b.y\n"},
         };
         program_with(&program, &disk, shared, 4);
         lhat_program_check(&program, "main.lh");
@@ -187,8 +187,8 @@ static void test_loading(void)
         static const File aliased[] = {
             {"lib/common.lh", "public^ let^ v = 1\n"},
             {"main.lh",
-             "let^ a = require^ \"lib/common.lh\"\n"
-             "let^ b = require^ \"./lib/../lib/common.lh\"\n"},
+             "var^ a = require^ \"lib/common.lh\"\n"
+             "var^ b = require^ \"./lib/../lib/common.lh\"\n"},
         };
         program_with(&program, &disk, aliased, 2);
         lhat_program_check(&program, "main.lh");
@@ -201,7 +201,7 @@ static void test_loading(void)
     LHAT_TEST("a unit that is not there is reported");
     {
         static const File missing[] = {
-            {"main.lh", "let^ g = require^ \"nowhere.lh\"\n"},
+            {"main.lh", "var^ g = require^ \"nowhere.lh\"\n"},
         };
         program_with(&program, &disk, missing, 1);
         const LhatUnit *main_unit = lhat_program_check(&program, "main.lh");
@@ -235,10 +235,10 @@ static void test_cycles(void)
     {
         static const File cycle[] = {
             {"a.lh",
-             "let^ b = require^ \"b.lh\"\n"
+             "var^ b = require^ \"b.lh\"\n"
              "public^ let^ x = 1\n"},
             {"b.lh",
-             "let^ a = require^ \"a.lh\"\n"
+             "var^ a = require^ \"a.lh\"\n"
              "public^ let^ y = 1\n"},
         };
         program_with(&program, &disk, cycle, 2);
@@ -251,9 +251,9 @@ static void test_cycles(void)
     LHAT_TEST("a longer cycle is caught too");
     {
         static const File cycle[] = {
-            {"a.lh", "let^ b = require^ \"b.lh\"\n"},
-            {"b.lh", "let^ c = require^ \"c.lh\"\n"},
-            {"c.lh", "let^ a = require^ \"a.lh\"\n"},
+            {"a.lh", "var^ b = require^ \"b.lh\"\n"},
+            {"b.lh", "var^ c = require^ \"c.lh\"\n"},
+            {"c.lh", "var^ a = require^ \"a.lh\"\n"},
         };
         program_with(&program, &disk, cycle, 3);
         lhat_program_check(&program, "a.lh");
@@ -269,14 +269,14 @@ static void test_cycles(void)
         static const File diamond[] = {
             {"common.lh", "public^ let^ v = 1\n"},
             {"a.lh",
-             "let^ c = require^ \"common.lh\"\n"
+             "var^ c = require^ \"common.lh\"\n"
              "public^ let^ x : number^ = c.v\n"},
             {"b.lh",
-             "let^ c = require^ \"common.lh\"\n"
+             "var^ c = require^ \"common.lh\"\n"
              "public^ let^ y : number^ = c.v\n"},
             {"main.lh",
-             "let^ a = require^ \"a.lh\"\n"
-             "let^ b = require^ \"b.lh\"\n"},
+             "var^ a = require^ \"a.lh\"\n"
+             "var^ b = require^ \"b.lh\"\n"},
         };
         program_with(&program, &disk, diamond, 4);
         lhat_program_check(&program, "main.lh");
@@ -343,8 +343,8 @@ static void test_running(void)
              "module^ ns.one\n"
              "public^ let^ v = 7\n"},
             {"main.lh",
-             "let^ poke = p^ x:t^{ v:number^ } { x.v := 99 }\n"
-             "let^ m = require^ \"one.lh\"\n"
+             "var^ poke = p^ x:t^{ v:number^ } { x.v := 99 }\n"
+             "var^ m = require^ \"one.lh\"\n"
              "poke(m)\n"
              "return^ m.v\n"},
         };
@@ -532,12 +532,12 @@ static void test_hosting(void)
     lhat_program_dispose(&program);
 
     // What it reaches stays readable as L^.<member>, since 8.1 keeps the hat
-    // identifier out of the spellings a let^ can make.
-    LHAT_TEST("a let^ of the same spelling shadows it, and L^ still reaches it");
+    // identifier out of the spellings a var^ can make.
+    LHAT_TEST("a var^ of the same spelling shadows it, and L^ still reaches it");
     {
         static const File files[] = {
             {"main.lh",
-             "let^ twice = f^ n:number^ -> number^ { return^ L^.twice(n) + 1 }\n"
+             "var^ twice = f^ n:number^ -> number^ { return^ L^.twice(n) + 1 }\n"
              "return^ twice(20)\n"},
         };
         program_with(&program, &disk, files, 1);
@@ -581,7 +581,7 @@ static void test_hosting(void)
     {
         static const File files[] = {
             {"main.lh",
-             "let^ g = import^ system.gfx\n"
+             "var^ g = import^ system.gfx\n"
              "return^ g.add(20, 22)\n"},
         };
         program_with(&program, &disk, files, 1);
@@ -741,8 +741,8 @@ static void test_host_data(void)
         static const File files[] = {
             {"main.lh",
              "import^ store\n"
-             "let^ h = store.make()\n"
-             "let^ v : number^ = h.read()\n"
+             "var^ h = store.make()\n"
+             "var^ v : number^ = h.read()\n"
              "h.dispose()\n"
              "return^ v\n"},
         };
@@ -784,8 +784,8 @@ static void test_host_data(void)
         static const File files[] = {
             {"main.lh",
              "import^ store\n"
-             "let^ o = store.makeOther()\n"
-             "let^ v = o.read()\n"
+             "var^ o = store.makeOther()\n"
+             "var^ v = o.read()\n"
              "return^ 0\n"},
         };
         program_with(&program, &disk, files, 1);
@@ -822,7 +822,7 @@ static void test_host_data(void)
         static const File files[] = {
             {"main.lh",
              "import^ store\n"
-             "let^ h : store.Held = store.makeOther()\n"},
+             "var^ h : store.Held = store.makeOther()\n"},
         };
         program_with(&program, &disk, files, 1);
         held_tag = lhat_register_hostdata_type(&program, "store", "Held");
@@ -916,14 +916,14 @@ static void test_host_data_release(void)
     int freed = -1;
 
     LHAT_TEST("a dispose^ written by hand gives the pointer back");
-    with_cells("import^ store\nlet^ c = store.make()\nc.dispose()\nreturn^ 0\n",
+    with_cells("import^ store\nvar^ c = store.make()\nc.dispose()\nreturn^ 0\n",
                &live, &freed);
     LHAT_CHECK_EQ_INT(live, 0);
     // 10.7: and the machine going does not give it back a second time.
     LHAT_CHECK_EQ_INT(freed, 1);
 
     LHAT_TEST("and one nobody disposed of goes back when the machine does");
-    with_cells("import^ store\nlet^ c = store.make()\nreturn^ 0\n", &live,
+    with_cells("import^ store\nvar^ c = store.make()\nreturn^ 0\n", &live,
                &freed);
     LHAT_CHECK_EQ_INT(live, 1);   // still the host's while the machine lives
     LHAT_CHECK_EQ_INT(freed, 1);  // and given back when it went
@@ -932,7 +932,7 @@ static void test_host_data_release(void)
     // pointer goes back then rather than at the end.
     LHAT_TEST("and one that became unreachable goes back at the collection");
     with_cells("import^ store\n"
-               "let^ drop = p^ { let^ c = store.make() }\n"
+               "var^ drop = p^ { var^ c = store.make() }\n"
                "drop()\n"
                "L^.collectgarbage()\n"
                "return^ 0\n",
@@ -942,7 +942,7 @@ static void test_host_data_release(void)
 
     LHAT_TEST("and one disposed of then collected goes back once");
     with_cells("import^ store\n"
-               "let^ drop = p^ { let^ c = store.make()  c.dispose() }\n"
+               "var^ drop = p^ { var^ c = store.make()  c.dispose() }\n"
                "drop()\n"
                "L^.collectgarbage()\n"
                "return^ 0\n",

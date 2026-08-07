@@ -83,35 +83,35 @@ static void test_statements(void)
 {
     Parse p;
 
-    // 8.6: let^ is what creates a name; := on its own reassigns.
+    // 8.6: var^ is what creates a name; := on its own reassigns.
     LHAT_TEST("definition");
-    parse_text(&p, "let^ x = 1");
+    parse_text(&p, "var^ x = 1");
     LHAT_CHECK_EQ_INT(error_count(&p), 0);
     LHAT_CHECK_EQ_INT(first_statement(&p)->kind, LHAT_NODE_DEFINE);
     parse_dispose(&p);
 
-    LHAT_TEST("let^ also accepts the longer spelling");
-    parse_text(&p, "let^ x := 1");
+    LHAT_TEST("var^ also accepts the longer spelling");
+    parse_text(&p, "var^ x := 1");
     LHAT_CHECK_EQ_INT(error_count(&p), 0);
     LHAT_CHECK_EQ_INT(first_statement(&p)->kind, LHAT_NODE_DEFINE);
     parse_dispose(&p);
 
-    LHAT_TEST("let^ with a type annotation");
-    parse_text(&p, "let^ x : number^ = 1");
+    LHAT_TEST("var^ with a type annotation");
+    parse_text(&p, "var^ x : number^ = 1");
     LHAT_CHECK_EQ_INT(error_count(&p), 0);
     LHAT_CHECK_EQ_INT(first_statement(&p)->v.binding.targets->kind,
                       LHAT_NODE_PARAM);
     parse_dispose(&p);
 
-    LHAT_TEST("let^ with a type annotation also accepts the longer spelling");
-    parse_text(&p, "let^ x : number^ := 1");
+    LHAT_TEST("var^ with a type annotation also accepts the longer spelling");
+    parse_text(&p, "var^ x : number^ := 1");
     LHAT_CHECK_EQ_INT(error_count(&p), 0);
     LHAT_CHECK_EQ_INT(first_statement(&p)->v.binding.targets->kind,
                       LHAT_NODE_PARAM);
     parse_dispose(&p);
 
     LHAT_TEST("multiple definition binds pairwise");
-    parse_text(&p, "let^ a, b = 1, 2");
+    parse_text(&p, "var^ a, b = 1, 2");
     LHAT_CHECK_EQ_INT(error_count(&p), 0);
     {
         const LhatNode *s = first_statement(&p);
@@ -122,7 +122,7 @@ static void test_statements(void)
     parse_dispose(&p);
 
     // 7.3 (Q2) and 8.6: reassignment puts the target first and is written
-    // with :=, since let^ took over making names.
+    // with :=, since var^ took over making names.
     LHAT_TEST("reassignment");
     parse_text(&p, "i := i + 1");
     LHAT_CHECK_EQ_INT(error_count(&p), 0);
@@ -187,7 +187,7 @@ static void test_statements(void)
 
     // 13.10: the marker sits on the value, not on the binding.
     LHAT_TEST("destructuring binding");
-    parse_text(&p, "let^ q, r = unpack^ divmod(7, 2)");
+    parse_text(&p, "var^ q, r = unpack^ divmod(7, 2)");
     LHAT_CHECK_EQ_INT(error_count(&p), 0);
     {
         const LhatNode *s = first_statement(&p);
@@ -231,7 +231,7 @@ static void test_statements(void)
 
     // The target list is the ordinary one, so a type may be written on it.
     LHAT_TEST("typed destructuring targets");
-    parse_text(&p, "let^ q:number^, r:number^ = unpack^ f()");
+    parse_text(&p, "var^ q:number^, r:number^ = unpack^ f()");
     LHAT_CHECK_EQ_INT(error_count(&p), 0);
     {
         const LhatNode *target = first_statement(&p)->v.binding.targets;
@@ -241,7 +241,7 @@ static void test_statements(void)
     parse_dispose(&p);
 
     LHAT_TEST("a single definition may carry a type");
-    parse_text(&p, "let^ x:number^ = 1");
+    parse_text(&p, "var^ x:number^ = 1");
     LHAT_CHECK_EQ_INT(error_count(&p), 0);
     LHAT_CHECK_EQ_INT(first_statement(&p)->v.binding.targets->kind,
                       LHAT_NODE_PARAM);
@@ -300,7 +300,7 @@ static void test_statements(void)
     // has both. 16.7 is not against it -- the focus still does not leave;
     // only the value built from it does, which is what an expression is.
     LHAT_TEST("the if^ of a for^ has an expression form too");
-    parse_interactive_text(&p, "for^ let^ n = 5 if^ n > 1: n el^: 0 ;");
+    parse_interactive_text(&p, "for^ var^ n = 5 if^ n > 1: n el^: 0 ;");
     LHAT_CHECK_EQ_INT(error_count(&p), 0);
     {
         const LhatNode *s = first_statement(&p);
@@ -311,7 +311,7 @@ static void test_statements(void)
     parse_dispose(&p);
 
     LHAT_TEST("and its statement form is unaffected");
-    parse_interactive_text(&p, "for^ let^ n = 5 if^ n > 1 { x := n }");
+    parse_interactive_text(&p, "for^ var^ n = 5 if^ n > 1 { x := n }");
     LHAT_CHECK_EQ_INT(error_count(&p), 0);
     LHAT_CHECK_EQ_INT(first_statement(&p)->kind, LHAT_NODE_FOR);
     parse_dispose(&p);
@@ -325,7 +325,7 @@ static void test_statements(void)
     parse_dispose(&p);
 
     LHAT_TEST("but in a file neither does");
-    parse_text(&p, "for^ let^ n = 5 if^ n > 1: n el^: 0 ;");
+    parse_text(&p, "for^ var^ n = 5 if^ n > 1: n el^: 0 ;");
     LHAT_CHECK(p.result.diagnostic_count > 0, "expected a diagnostic");
     LHAT_CHECK_EQ_INT(p.result.diagnostics[0].code,
                       LHAT_PARSE_ERR_BARE_EXPRESSION);
@@ -344,7 +344,7 @@ static void test_statements(void)
     // only at the ';'. That is where the parser noticed, not where the writer
     // has to look -- the marker is.
     LHAT_TEST("a missing ':' after el^ is reported at the marker");
-    parse_text(&p, "let^ a = if^ 1 < 2: 1 el^ 2 ;");
+    parse_text(&p, "var^ a = if^ 1 < 2: 1 el^ 2 ;");
     {
         LHAT_CHECK_EQ_INT(error_count(&p), 1);
         LHAT_CHECK(p.result.diagnostic_count > 0, "expected a diagnostic");
@@ -360,7 +360,7 @@ static void test_statements(void)
     // What was read is taken as the value, so the rest of the construct is
     // still readable and one mistake makes one diagnostic.
     LHAT_TEST("and the expression read is taken as the value");
-    parse_text(&p, "let^ a = if^ 1 < 2: 1 el^ 2 ;");
+    parse_text(&p, "var^ a = if^ 1 < 2: 1 el^ 2 ;");
     {
         const LhatNode *value = first_statement(&p)->v.binding.values;
         const LhatNode *clauses = value->v.list.items;
@@ -379,7 +379,7 @@ static void test_statements(void)
     // Only when nothing follows. A value after it means the clause really was
     // a further test, and then the ':' belongs after its condition.
     LHAT_TEST("but a further test still reports where the ':' goes");
-    parse_text(&p, "let^ a = if^ 1 < 2: 1 el^ 3 < 4 2 el^: 3 ;");
+    parse_text(&p, "var^ a = if^ 1 < 2: 1 el^ 3 < 4 2 el^: 3 ;");
     {
         LHAT_CHECK(p.result.diagnostic_count > 0, "expected a diagnostic");
         if (p.result.diagnostic_count > 0) {
@@ -391,7 +391,7 @@ static void test_statements(void)
     parse_dispose(&p);
 
     LHAT_TEST("and a well-formed chain is untouched");
-    parse_text(&p, "let^ a = if^ 1 < 2: 1 el^ 3 < 4: 2 el^: 3 ;");
+    parse_text(&p, "var^ a = if^ 1 < 2: 1 el^ 3 < 4: 2 el^: 3 ;");
     LHAT_CHECK_EQ_INT(error_count(&p), 0);
     parse_dispose(&p);
 
@@ -427,7 +427,7 @@ static void test_statements(void)
     // A code about the token it met names that token, without any site
     // having to hand it over: report already had it.
     LHAT_TEST("and a code about a token names the one it met");
-    parse_text(&p, "let^ 1 = 2");
+    parse_text(&p, "var^ 1 = 2");
     {
         LHAT_CHECK(p.result.diagnostic_count > 0, "expected a diagnostic");
         if (p.result.diagnostic_count > 0) {
@@ -491,7 +491,7 @@ static void test_statements(void)
 
     // Narrow on purpose: everywhere it does not reach, 8.2 holds as it did.
     LHAT_TEST("but not when the body is more than one statement");
-    parse_text(&p, "g := f^ -> number^ { let^ x = 1  x + 1 }");
+    parse_text(&p, "g := f^ -> number^ { var^ x = 1  x + 1 }");
     LHAT_CHECK(p.result.diagnostic_count > 0, "expected a diagnostic");
     LHAT_CHECK_EQ_INT(p.result.diagnostics[0].code,
                       LHAT_PARSE_ERR_BARE_EXPRESSION);
@@ -542,7 +542,7 @@ static void test_statements(void)
     parse_dispose(&p);
 
     LHAT_TEST("nor inside a body");
-    parse_interactive_text(&p, "let^ f = p^ { a + b }");
+    parse_interactive_text(&p, "var^ f = p^ { a + b }");
     LHAT_CHECK(p.result.diagnostic_count > 0, "expected a diagnostic");
     LHAT_CHECK_EQ_INT(p.result.diagnostics[0].code,
                       LHAT_PARSE_ERR_BARE_EXPRESSION);
@@ -568,7 +568,7 @@ static void test_statements(void)
     // statement. A hat identifier that names a value can, so it must not be
     // swallowed as one more argument to the line above.
     LHAT_TEST("self^ begins a statement after a call");
-    parse_text(&p, "let^ T = def^{ self^{ n := 0 }, a := p^self^ { },\n"
+    parse_text(&p, "var^ T = def^{ self^{ n := 0 }, a := p^self^ { },\n"
                    "  s := p^self^ { self^.a()\nself^.n := 1 } }");
     LHAT_CHECK_EQ_INT(error_count(&p), 0);
     parse_dispose(&p);
@@ -584,14 +584,14 @@ static void test_statements(void)
     parse_dispose(&p);
 
     LHAT_TEST("this^ begins a statement after a call");
-    parse_text(&p, "let^ f = p^ { foo()\nthis^() }");
+    parse_text(&p, "var^ f = p^ { foo()\nthis^() }");
     LHAT_CHECK_EQ_INT(error_count(&p), 0);
     parse_dispose(&p);
 
-    // 8.6: the accident this replaced. Without let^, ':=' inside a nested
+    // 8.6: the accident this replaced. Without var^, ':=' inside a nested
     // scope reassigns rather than quietly shadowing.
     LHAT_TEST("':=' in a nested scope reassigns");
-    parse_text(&p, "let^ i = 0\nif^ foo() { i := 1 }");
+    parse_text(&p, "var^ i = 0\nif^ foo() { i := 1 }");
     LHAT_CHECK_EQ_INT(error_count(&p), 0);
     {
         const LhatNode *inner =
@@ -601,7 +601,7 @@ static void test_statements(void)
     parse_dispose(&p);
 
     LHAT_TEST("shadowing has to be written out");
-    parse_text(&p, "let^ i = 0\nif^ foo() { let^ i = 1 }");
+    parse_text(&p, "var^ i = 0\nif^ foo() { var^ i = 1 }");
     LHAT_CHECK_EQ_INT(error_count(&p), 0);
     {
         const LhatNode *inner =
@@ -612,11 +612,107 @@ static void test_statements(void)
 
     // 8.7: mutual recursion is handled by scope-wide visibility, so a
     // declaration without a value has no job to do.
-    LHAT_TEST("let^ needs a value");
-    parse_text(&p, "let^ x : number^");
+    LHAT_TEST("var^ needs a value");
+    parse_text(&p, "var^ x : number^");
     LHAT_CHECK(p.result.diagnostic_count > 0, "expected a diagnostic");
     LHAT_CHECK_EQ_INT(p.result.diagnostics[0].code,
                       LHAT_PARSE_ERR_LET_NEEDS_VALUE);
+    parse_dispose(&p);
+
+    // 14.14改2: every brace introduces, so all five read '=' as well as ':='
+    // and the two mean the same thing. Before this they disagreed three ways.
+    LHAT_TEST("every brace reads both spellings");
+    parse_text(&p,
+               "var^ t = { a = 1, [2] = 2 }\n"
+               "var^ u = { a := 1, [2] := 2 }\n"
+               "var^ P = def^{ self^{ w = 5 }, m = p^ { } }\n"
+               "var^ Q = def^{ self^{ w := 5 }, m := p^ { } }\n"
+               "errordef^ E { K { line : number^ = 0 } }\n"
+               "errordef^ F { K { line : number^ := 0 } }\n"
+               "var^ e = error^E.K{ line = 3 }\n"
+               "var^ g = error^E.K{ line := 3 }\n");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    parse_dispose(&p);
+
+    // 14.14改2: and a name written twice is the later one, in either spelling
+    // -- what a mechanically built literal relies on.
+    LHAT_TEST("and a repeated key is not an error");
+    parse_text(&p, "var^ t = { a = 1, a = 2 }\nvar^ u = { a := 1, a := 2 }\n");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    parse_dispose(&p);
+
+    // 8.9: let^ binds the same way var^ does and leaves a name behind that
+    // nothing reassigns. The word is the only difference, and it is recorded
+    // on the node the two share.
+    LHAT_TEST("let^ and var^ both make a definition");
+    parse_text(&p, "var^ a = 1\nlet^ b = 2\n");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    {
+        const LhatNode *first = first_statement(&p);
+        LHAT_CHECK_EQ_INT(first->kind, LHAT_NODE_DEFINE);
+        LHAT_CHECK(!first->v.binding.immutable, "var^ leaves it writable");
+        LHAT_CHECK_EQ_INT(first->next->kind, LHAT_NODE_DEFINE);
+        LHAT_CHECK(first->next->v.binding.immutable, "let^ does not");
+    }
+    parse_dispose(&p);
+
+    // 8.9: 8.6 made '=' and ':=' the same word after an introducer. let^ takes
+    // only the one that does not also mean reassign.
+    LHAT_TEST("let^ refuses ':='");
+    parse_text(&p, "let^ x := 1");
+    LHAT_CHECK(p.result.diagnostic_count > 0, "expected a diagnostic");
+    LHAT_CHECK_EQ_INT(p.result.diagnostics[0].code,
+                      LHAT_PARSE_ERR_LET_NEEDS_EQUALS);
+    parse_dispose(&p);
+
+    LHAT_TEST("while var^ still takes it");
+    parse_text(&p, "var^ x := 1");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    parse_dispose(&p);
+
+    // 8.9: 8.8's member introduction stays var^'s, so that a name let^ bound
+    // is one nothing may reassign.
+    LHAT_TEST("let^ binds a name and not a path");
+    parse_text(&p, "let^ t.a = 1");
+    LHAT_CHECK(p.result.diagnostic_count > 0, "expected a diagnostic");
+    LHAT_CHECK_EQ_INT(p.result.diagnostics[0].code,
+                      LHAT_PARSE_ERR_LET_NEEDS_NAME);
+    parse_dispose(&p);
+
+    LHAT_TEST("while var^ introduces one");
+    parse_text(&p, "var^ t.a = 1");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    parse_dispose(&p);
+
+    // 12 章: with^ is a let^, so the spelling that also means reassign is not
+    // one it accepts either.
+    LHAT_TEST("with^ refuses ':=' too");
+    parse_text(&p, "with^ r := open(\"d\")\n{ }");
+    LHAT_CHECK(p.result.diagnostic_count > 0, "expected a diagnostic");
+    LHAT_CHECK_EQ_INT(p.result.diagnostics[0].code,
+                      LHAT_PARSE_ERR_LET_NEEDS_EQUALS);
+    parse_dispose(&p);
+
+    // 16.3改 with 8.9: either word introduces a focus, and which one was
+    // written is carried through on the binding.
+    LHAT_TEST("a for^ focus takes either word");
+    parse_text(&p, "for^ i from^ 1 to^ 3 { }");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    {
+        const LhatNode *focus = first_statement(&p)->v.loop.focus;
+        LHAT_CHECK_EQ_INT(focus->kind, LHAT_NODE_DEFINE);
+        LHAT_CHECK(focus->v.binding.immutable, "let^ focus");
+    }
+    parse_dispose(&p);
+
+    LHAT_TEST("and var^ leaves it writable");
+    parse_text(&p, "for^ var^ i = 1 while^ i < 3 next^ i := i + 1 { }");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    {
+        const LhatNode *focus = first_statement(&p)->v.loop.focus;
+        LHAT_CHECK_EQ_INT(focus->kind, LHAT_NODE_DEFINE);
+        LHAT_CHECK(!focus->v.binding.immutable, "var^ focus");
+    }
     parse_dispose(&p);
 
     // 8.6: '=' compares, so this reaches the statement level as an
@@ -638,7 +734,7 @@ static void test_statements(void)
     // 8.6: the enclosing construct is the introducer, so ':=' still defines
     // inside for^, with^ and a brace list.
     LHAT_TEST("an introducer keeps ':=' a definition");
-    parse_text(&p, "for^ let^ k = 1 to^ 3 { print(k) }");
+    parse_text(&p, "for^ k from^ 1 to^ 3 { print(k) }");
     LHAT_CHECK_EQ_INT(error_count(&p), 0);
     LHAT_CHECK_EQ_INT(first_statement(&p)->v.loop.focus->kind, LHAT_NODE_DEFINE);
     parse_dispose(&p);
@@ -714,7 +810,7 @@ static void test_statements(void)
 
     // 12.1: with^ takes local definitions and one block.
     LHAT_TEST("with^");
-    parse_text(&p, "with^ r := open(\"d\")\nwith^ w := create(\"o\")\n{ copy(r, w) }");
+    parse_text(&p, "with^ r = open(\"d\")\nwith^ w = create(\"o\")\n{ copy(r, w) }");
     LHAT_CHECK_EQ_INT(error_count(&p), 0);
     {
         const LhatNode *s = first_statement(&p);
@@ -1122,16 +1218,16 @@ static void test_functions(void)
     LHAT_CHECK_EQ_INT(first_statement(&p)->kind, LHAT_NODE_REQUIRE_STMT);
     parse_dispose(&p);
 
-    LHAT_TEST("and one with a let^ is still an expression");
-    parse_text(&p, "let^ m = require^ \"lib/m.lh\"");
+    LHAT_TEST("and one with a var^ is still an expression");
+    parse_text(&p, "var^ m = require^ \"lib/m.lh\"");
     LHAT_CHECK_EQ_INT(error_count(&p), 0);
     LHAT_CHECK_EQ_INT(first_value(&p)->kind, LHAT_NODE_REQUIRE);
     parse_dispose(&p);
 
-    // 8.8: a let^ target may name a member. The path is the same node an
+    // 8.8: a var^ target may name a member. The path is the same node an
     // expression uses, so nothing new is read here.
-    LHAT_TEST("a let^ target may be a path");
-    parse_text(&p, "let^ a.b.c = 1");
+    LHAT_TEST("a var^ target may be a path");
+    parse_text(&p, "var^ a.b.c = 1");
     LHAT_CHECK_EQ_INT(error_count(&p), 0);
     {
         const LhatNode *target = first_statement(&p)->v.binding.targets;
@@ -1143,7 +1239,7 @@ static void test_functions(void)
     parse_dispose(&p);
 
     LHAT_TEST("and it may still be annotated");
-    parse_text(&p, "let^ a.b : number^ = 1");
+    parse_text(&p, "var^ a.b : number^ = 1");
     LHAT_CHECK_EQ_INT(error_count(&p), 0);
     {
         const LhatNode *target = first_statement(&p)->v.binding.targets;
@@ -1166,7 +1262,7 @@ static void test_functions(void)
     parse_dispose(&p);
 
     LHAT_TEST("and it is written the same way where a yield^ takes a value");
-    parse_text(&p, "g := p^ { let^ a : string^ = _yield^ 1 }");
+    parse_text(&p, "g := p^ { var^ a : string^ = _yield^ 1 }");
     LHAT_CHECK_EQ_INT(error_count(&p), 0);
     LHAT_CHECK(first_value(&p)->v.func.yields, "the procedure should yield");
     {
@@ -1428,7 +1524,7 @@ static void test_loops(void)
     Parse p;
 
     LHAT_TEST("numeric iteration");
-    parse_text(&p, "for^ let^ i = 1 to^ 10 { print(i) }");
+    parse_text(&p, "for^ i from^ 1 to^ 10 { print(i) }");
     LHAT_CHECK_EQ_INT(error_count(&p), 0);
     {
         const LhatNode *s = first_statement(&p);
@@ -1441,7 +1537,7 @@ static void test_loops(void)
     parse_dispose(&p);
 
     LHAT_TEST("step and downto");
-    parse_text(&p, "for^ let^ i = 10 downto^ 1 step^ 2 { }");
+    parse_text(&p, "for^ i from^ 10 downto^ 1 step^ 2 { }");
     LHAT_CHECK_EQ_INT(error_count(&p), 0);
     {
         const LhatNode *s = first_statement(&p);
@@ -1450,12 +1546,68 @@ static void test_loops(void)
     }
     parse_dispose(&p);
 
-    // 16.3: from^ was withdrawn, and the parser says what replaced it.
-    LHAT_TEST("from^ reports what replaced it");
+    // 16.3改2: from^ opens the counted range, and the name it introduces is a
+    // let^ -- nothing in the source advances it.
+    LHAT_TEST("from^ introduces the focus of a counted loop");
     parse_text(&p, "for^ i from^ 1 to^ 10 { }");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    {
+        const LhatNode *focus = first_statement(&p)->v.loop.focus;
+        LHAT_CHECK_EQ_INT(focus->kind, LHAT_NODE_DEFINE);
+        LHAT_CHECK(focus->v.binding.immutable, "from^ binds a let^");
+        LHAT_CHECK_EQ_INT(first_statement(&p)->v.loop.kind, LHAT_FOR_TO);
+    }
+    parse_dispose(&p);
+
+    LHAT_TEST("and with downto^ and step^ too");
+    parse_text(&p, "for^ i from^ 10 downto^ 1 step^ 2 { }");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    {
+        const LhatNode *s = first_statement(&p);
+        LHAT_CHECK_EQ_INT(s->v.loop.kind, LHAT_FOR_DOWNTO);
+        LHAT_CHECK(s->v.loop.step != NULL, "expected a step");
+        LHAT_CHECK(s->v.loop.focus->v.binding.immutable, "still a let^");
+    }
+    parse_dispose(&p);
+
+    // The annotation of 16.3 sits where it always did, before the introducer.
+    LHAT_TEST("and takes a type annotation");
+    parse_text(&p, "for^ i:number^ from^ 1 to^ 10 { }");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    parse_dispose(&p);
+
+    // 16.3改2: a counted loop advances its own focus, so the header names no
+    // introducer -- writing one would say the source moves it.
+    LHAT_TEST("an introducer is refused on a counted loop");
+    parse_text(&p, "for^ let^ i = 1 to^ 10 { }");
     LHAT_CHECK(p.result.diagnostic_count > 0, "expected a diagnostic");
     LHAT_CHECK_EQ_INT(p.result.diagnostics[0].code,
-                      LHAT_PARSE_ERR_WITHDRAWN_FROM);
+                      LHAT_PARSE_ERR_FOCUS_NEEDS_FROM);
+    parse_dispose(&p);
+
+    LHAT_TEST("var^ is refused there as well");
+    parse_text(&p, "for^ var^ i = 1 to^ 10 { }");
+    LHAT_CHECK(p.result.diagnostic_count > 0, "expected a diagnostic");
+    LHAT_CHECK_EQ_INT(p.result.diagnostics[0].code,
+                      LHAT_PARSE_ERR_FOCUS_NEEDS_FROM);
+    parse_dispose(&p);
+
+    // 16.3改: a bare ':=' still counts with a name that is already there.
+    LHAT_TEST("but a bare ':=' still counts an existing name");
+    parse_text(&p, "for^ i := 1 to^ 10 { }");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    {
+        const LhatNode *focus = first_statement(&p)->v.loop.focus;
+        LHAT_CHECK_EQ_INT(focus->kind, LHAT_NODE_REASSIGN);
+    }
+    parse_dispose(&p);
+
+    // 16.3改2: and from^ belongs to the counted forms and nowhere else.
+    LHAT_TEST("from^ is refused on a conditional loop");
+    parse_text(&p, "for^ i from^ 1 while^ i < 3 next^ i := i + 1 { }");
+    LHAT_CHECK(p.result.diagnostic_count > 0, "expected a diagnostic");
+    LHAT_CHECK_EQ_INT(p.result.diagnostics[0].code,
+                      LHAT_PARSE_ERR_FROM_NOT_HERE);
     parse_dispose(&p);
 
     LHAT_TEST("iteration through an iterator");
@@ -1469,7 +1621,7 @@ static void test_loops(void)
     parse_dispose(&p);
 
     LHAT_TEST("conditional iteration with next^");
-    parse_text(&p, "for^ let^ i = 1 while^ i < 10 next^ i := i + 1 { }");
+    parse_text(&p, "for^ var^ i = 1 while^ i < 10 next^ i := i + 1 { }");
     LHAT_CHECK_EQ_INT(error_count(&p), 0);
     {
         const LhatNode *s = first_statement(&p);
@@ -1480,7 +1632,7 @@ static void test_loops(void)
     parse_dispose(&p);
 
     LHAT_TEST("until^ is the negated form");
-    parse_text(&p, "for^ let^ i := 1 until^ i \xE2\x89\xA7 10 next^ i.inc() { }");
+    parse_text(&p, "for^ var^ i := 1 until^ i \xE2\x89\xA7 10 next^ i.inc() { }");
     LHAT_CHECK_EQ_INT(error_count(&p), 0);
     LHAT_CHECK_EQ_INT(first_statement(&p)->v.loop.kind, LHAT_FOR_UNTIL);
     parse_dispose(&p);
@@ -1501,7 +1653,7 @@ static void test_loops(void)
 
     // 16.3: this form does not iterate at all.
     LHAT_TEST("for^ ... if^ ... scopes definitions to a condition");
-    parse_text(&p, "for^ let^ i = 1, let^ j = 2 if^ i + j < 10 { print(i) else^: print(j) }");
+    parse_text(&p, "for^ var^ i = 1, var^ j = 2 if^ i + j < 10 { print(i) else^: print(j) }");
     LHAT_CHECK_EQ_INT(error_count(&p), 0);
     {
         const LhatNode *s = first_statement(&p);
@@ -1513,7 +1665,7 @@ static void test_loops(void)
     parse_dispose(&p);
 
     LHAT_TEST("for^ needs a driving clause");
-    parse_text(&p, "for^ let^ i = 1 { }");
+    parse_text(&p, "for^ var^ i = 1 { }");
     LHAT_CHECK(p.result.diagnostic_count > 0, "expected a diagnostic");
     LHAT_CHECK_EQ_INT(p.result.diagnostics[0].code,
                       LHAT_PARSE_ERR_FOR_NEEDS_CLAUSE);
@@ -1556,7 +1708,7 @@ static void test_patterns(void)
     parse_dispose(&p);
 
     LHAT_TEST("the subject may be named");
-    parse_text(&p, "for^ let^ r = parse(s) { when^ 0: a() }");
+    parse_text(&p, "for^ var^ r = parse(s) { when^ 0: a() }");
     LHAT_CHECK_EQ_INT(error_count(&p), 0);
     LHAT_CHECK_EQ_INT(
         first_statement(&p)->v.loop.focus->v.binding.targets->kind,
@@ -1612,7 +1764,7 @@ static void test_patterns(void)
 
     // 17.6: only the ':' after the subject opens, so one ';' closes it.
     LHAT_TEST("the expression form is closed by one ';'");
-    parse_text(&p, "let^ r = for^ x: when^ 0: 1 when^ 1 to^ 3: 2 other^: 3 ;");
+    parse_text(&p, "var^ r = for^ x: when^ 0: 1 when^ 1 to^ 3: 2 other^: 3 ;");
     LHAT_CHECK_EQ_INT(error_count(&p), 0);
     {
         const LhatNode *value = first_value(&p);
@@ -1627,7 +1779,7 @@ static void test_patterns(void)
     // The ':' of the expression form has the shape of 16.3's annotation, and
     // what follows is what tells them apart.
     LHAT_TEST("a typed focus is still a typed focus");
-    parse_text(&p, "for^ let^ i:number^ = 1 to^ 3 { print(i) }");
+    parse_text(&p, "for^ i:number^ from^ 1 to^ 3 { print(i) }");
     LHAT_CHECK_EQ_INT(error_count(&p), 0);
     {
         const LhatNode *target =
@@ -1639,7 +1791,7 @@ static void test_patterns(void)
 
     // A brace with no when^ dispatches on nothing and iterates over nothing.
     LHAT_TEST("a match with no clauses is the missing clause of 16.3");
-    parse_text(&p, "for^ let^ i = 1 { }");
+    parse_text(&p, "for^ var^ i = 1 { }");
     LHAT_CHECK(p.result.diagnostic_count > 0, "expected a diagnostic");
     LHAT_CHECK_EQ_INT(p.result.diagnostics[0].code,
                       LHAT_PARSE_ERR_FOR_NEEDS_CLAUSE);
@@ -1698,7 +1850,7 @@ static void test_loop_clauses(void)
 
     LHAT_TEST("all clauses in order");
     parse_text(&p,
-               "for^ let^ i := 1 to^ 10 {\n"
+               "for^ i from^ 1 to^ 10 {\n"
                "    prolog^: total := 0\n"
                "    first^: log('start')\n"
                "    main^: total := total + i\n"
@@ -1718,7 +1870,7 @@ static void test_loop_clauses(void)
     parse_dispose(&p);
 
     LHAT_TEST("a body with no clause markers");
-    parse_text(&p, "for^ let^ i := 1 to^ 10 { print(i) }");
+    parse_text(&p, "for^ i from^ 1 to^ 10 { print(i) }");
     {
         const LhatNode *body = first_statement(&p)->v.loop.body;
         LHAT_CHECK_EQ_INT(lhat_node_list_length(body->v.list.items), 1);
@@ -1729,12 +1881,12 @@ static void test_loop_clauses(void)
     // 9.3: last^ and epilog^ are trailing markers, so the statements before
     // them are unambiguously the body.
     LHAT_TEST("trailing clauses need no main^");
-    parse_text(&p, "for^ let^ i := 1 to^ 10 { print(i) last^: log(i) }");
+    parse_text(&p, "for^ i from^ 1 to^ 10 { print(i) last^: log(i) }");
     LHAT_CHECK_EQ_INT(error_count(&p), 0);
     parse_dispose(&p);
 
     LHAT_TEST("prolog^ after unlabelled statements needs main^");
-    parse_text(&p, "for^ let^ i := 1 to^ 10 { print(i) prolog^: total := 0 }");
+    parse_text(&p, "for^ i from^ 1 to^ 10 { print(i) prolog^: total := 0 }");
     LHAT_CHECK(p.result.diagnostic_count > 0, "expected a diagnostic");
     LHAT_CHECK_EQ_INT(p.result.diagnostics[0].code,
                       LHAT_PARSE_ERR_MAIN_REQUIRED);
@@ -1742,7 +1894,7 @@ static void test_loop_clauses(void)
 
     // 9.2: the order is fixed.
     LHAT_TEST("clauses out of order are rejected");
-    parse_text(&p, "for^ let^ i := 1 to^ 10 { epilog^: a() prolog^: b() }");
+    parse_text(&p, "for^ i from^ 1 to^ 10 { epilog^: a() prolog^: b() }");
     LHAT_CHECK(p.result.diagnostic_count > 0, "expected a diagnostic");
     LHAT_CHECK_EQ_INT(p.result.diagnostics[0].code,
                       LHAT_PARSE_ERR_CLAUSE_ORDER);
@@ -1752,27 +1904,27 @@ static void test_loop_clauses(void)
     // the body. Statements written after prolog^ join it instead, which is
     // the shape this catches.
     LHAT_TEST("a loop carved into clauses needs a body among them");
-    parse_text(&p, "for^ let^ i := 1 to^ 10 { prolog^: total := 0 total := total + i }");
+    parse_text(&p, "for^ i from^ 1 to^ 10 { prolog^: total := 0 total := total + i }");
     LHAT_CHECK(p.result.diagnostic_count > 0, "expected a diagnostic");
     LHAT_CHECK_EQ_INT(p.result.diagnostics[0].code,
                       LHAT_PARSE_ERR_NO_BODY_CLAUSE);
     parse_dispose(&p);
 
     LHAT_TEST("and a prolog^ on its own is not one");
-    parse_text(&p, "for^ let^ i := 1 to^ 10 { prolog^: total := 0 }");
+    parse_text(&p, "for^ i from^ 1 to^ 10 { prolog^: total := 0 }");
     LHAT_CHECK(p.result.diagnostic_count > 0, "expected a diagnostic");
     LHAT_CHECK_EQ_INT(p.result.diagnostics[0].code,
                       LHAT_PARSE_ERR_NO_BODY_CLAUSE);
     parse_dispose(&p);
 
     LHAT_TEST("but last^ is a body clause and settles it");
-    parse_text(&p, "for^ let^ i := 1 to^ 10 { prolog^: total := 0 last^: log(i) }");
+    parse_text(&p, "for^ i from^ 1 to^ 10 { prolog^: total := 0 last^: log(i) }");
     LHAT_CHECK_EQ_INT(error_count(&p), 0);
     parse_dispose(&p);
 
     // Braces with no clause heading are an implicit main^, empty ones too.
     LHAT_TEST("and braces with no clause at all are the body");
-    parse_text(&p, "for^ let^ i := 1 to^ 10 { }");
+    parse_text(&p, "for^ i from^ 1 to^ 10 { }");
     LHAT_CHECK_EQ_INT(error_count(&p), 0);
     parse_dispose(&p);
 
@@ -1809,13 +1961,13 @@ static void test_loop_clauses(void)
     // first^ -- which is where it has to be written.
     LHAT_TEST("pre^ takes its place between prolog^ and first^");
     parse_text(&p,
-               "for^ let^ i := 1 to^ 10 { prolog^: a() pre^: b() first^: c() "
+               "for^ i from^ 1 to^ 10 { prolog^: a() pre^: b() first^: c() "
                "main^: d() }");
     LHAT_CHECK_EQ_INT(error_count(&p), 0);
     parse_dispose(&p);
 
     LHAT_TEST("premain^ is the same clause");
-    parse_text(&p, "for^ let^ i := 1 to^ 10 { premain^: b() }");
+    parse_text(&p, "for^ i from^ 1 to^ 10 { premain^: b() }");
     LHAT_CHECK_EQ_INT(error_count(&p), 0);
     {
         const LhatNode *body = first_statement(&p)->v.loop.body;
@@ -1825,7 +1977,7 @@ static void test_loop_clauses(void)
     parse_dispose(&p);
 
     LHAT_TEST("pre^ after main^ is out of order");
-    parse_text(&p, "for^ let^ i := 1 to^ 10 { main^: a() pre^: b() }");
+    parse_text(&p, "for^ i from^ 1 to^ 10 { main^: a() pre^: b() }");
     LHAT_CHECK(p.result.diagnostic_count > 0, "expected a diagnostic");
     LHAT_CHECK_EQ_INT(p.result.diagnostics[0].code,
                       LHAT_PARSE_ERR_CLAUSE_ORDER);
@@ -1852,21 +2004,21 @@ static void test_loop_clauses(void)
     // 16.4 makes to^ and downto^ sugar for a while^ that already carries a
     // next^ of its own, so writing another is the same mistake.
     LHAT_TEST("nor does to^");
-    parse_text(&p, "for^ let^ i := 1 to^ 10 next^ i := i + 1 { main^: a() }");
+    parse_text(&p, "for^ i from^ 1 to^ 10 next^ i := i + 1 { main^: a() }");
     LHAT_CHECK(p.result.diagnostic_count > 0, "expected a diagnostic");
     LHAT_CHECK_EQ_INT(p.result.diagnostics[0].code,
                       LHAT_PARSE_ERR_NEXT_NOT_HERE);
     parse_dispose(&p);
 
     LHAT_TEST("nor downto^");
-    parse_text(&p, "for^ let^ i := 10 downto^ 1 next^ i := i - 1 { main^: a() }");
+    parse_text(&p, "for^ i from^ 10 downto^ 1 next^ i := i - 1 { main^: a() }");
     LHAT_CHECK(p.result.diagnostic_count > 0, "expected a diagnostic");
     LHAT_CHECK_EQ_INT(p.result.diagnostics[0].code,
                       LHAT_PARSE_ERR_NEXT_NOT_HERE);
     parse_dispose(&p);
 
     LHAT_TEST("but while^ and until^ are what it is for");
-    parse_text(&p, "for^ let^ i := 1 while^ i < 3 next^ i := i + 1 { main^: a() }");
+    parse_text(&p, "for^ var^ i := 1 while^ i < 3 next^ i := i + 1 { main^: a() }");
     LHAT_CHECK_EQ_INT(error_count(&p), 0);
     parse_dispose(&p);
 
@@ -2299,7 +2451,7 @@ static void test_recovery(void)
     Parse p;
 
     LHAT_TEST("parsing continues after an error");
-    parse_text(&p, "let^ x = 1\na + b\nlet^ y = 2");
+    parse_text(&p, "var^ x = 1\na + b\nvar^ y = 2");
     LHAT_CHECK(p.result.diagnostic_count > 0, "expected a diagnostic");
     {
         // The first and last statements should still be recognised.
@@ -2382,7 +2534,7 @@ static void test_command_form(void)
     LHAT_CHECK(!is_command("x.y"), "'.' continues");
     LHAT_CHECK(!is_command("x := 1"), "':=' continues");
     LHAT_CHECK(!is_command("foo(1)"), "'(' continues");
-    LHAT_CHECK(!is_command("let^ x = 1"), "a hat identifier is not a name");
+    LHAT_CHECK(!is_command("var^ x = 1"), "a hat identifier is not a name");
 
     LHAT_TEST("juxtaposed arguments become a call");
     command_text(&p, "foo 1 2 3");
@@ -2415,7 +2567,7 @@ static void test_command_form(void)
 
     // 2.3: this is the case the condition exists for.
     LHAT_TEST("arithmetic at a prompt stays arithmetic");
-    command_text(&p, "let^ x = 1\nx - 1\n");
+    command_text(&p, "var^ x = 1\nx - 1\n");
     LHAT_CHECK(p.result.diagnostic_count > 0, "a bare expression is no statement");
     parse_dispose(&p);
 
@@ -2434,7 +2586,7 @@ static void test_command_form(void)
     // 3.2: a fragment that is not the command form falls through, so a host
     // can hand every line to one entry point.
     LHAT_TEST("a non-command fragment is parsed normally");
-    command_text(&p, "let^ x = 1");
+    command_text(&p, "var^ x = 1");
     LHAT_CHECK_EQ_INT(error_count(&p), 0);
     LHAT_CHECK_EQ_INT(first_statement(&p)->kind, LHAT_NODE_DEFINE);
     parse_dispose(&p);
@@ -2442,7 +2594,7 @@ static void test_command_form(void)
     // 3.1: an unfinished fragment is not an error, and the command entry
     // point has to say so too.
     LHAT_TEST("an unfinished fragment is reported as incomplete");
-    command_text(&p, "let^ t = {");
+    command_text(&p, "var^ t = {");
     LHAT_CHECK(p.result.incomplete, "expected incomplete");
     parse_dispose(&p);
 
@@ -2463,7 +2615,7 @@ static void test_modules(void)
 
     // 05 の 3 章: a name for the unit, independent of where its file sits.
     LHAT_TEST("module^ names the unit");
-    parse_text(&p, "module^ namespace1.module1\nlet^ x = 1\n");
+    parse_text(&p, "module^ namespace1.module1\nvar^ x = 1\n");
     LHAT_CHECK_EQ_INT(error_count(&p), 0);
     {
         const LhatNode *s = first_statement(&p);
@@ -2473,7 +2625,7 @@ static void test_modules(void)
     parse_dispose(&p);
 
     LHAT_TEST("module^ goes first");
-    parse_text(&p, "let^ x = 1\nmodule^ m\n");
+    parse_text(&p, "var^ x = 1\nmodule^ m\n");
     LHAT_CHECK(p.result.diagnostic_count > 0, "expected a diagnostic");
     LHAT_CHECK_EQ_INT(p.result.diagnostics[0].code,
                       LHAT_PARSE_ERR_MODULE_MISPLACED);
@@ -2491,7 +2643,7 @@ static void test_modules(void)
     LHAT_TEST("public^ marks the declaration");
     parse_text(&p,
                "public^ let^ x = 1\n"
-               "let^ y = 2\n"
+               "var^ y = 2\n"
                "public^ errordef^ E { A }\n");
     LHAT_CHECK_EQ_INT(error_count(&p), 0);
     {
@@ -2510,7 +2662,7 @@ static void test_modules(void)
     parse_dispose(&p);
 
     LHAT_TEST("require^ takes a path");
-    parse_text(&p, "let^ io = require^ \"system/io.lh\"");
+    parse_text(&p, "var^ io = require^ \"system/io.lh\"");
     LHAT_CHECK_EQ_INT(error_count(&p), 0);
     {
         const LhatNode *value = first_value(&p);
@@ -2521,7 +2673,7 @@ static void test_modules(void)
 
     // 05 の 5.2: the checker follows this, so the path cannot be computed.
     LHAT_TEST("require^ refuses a computed path");
-    parse_text(&p, "let^ p = \"x\"\nlet^ m = require^ p\n");
+    parse_text(&p, "var^ p = \"x\"\nvar^ m = require^ p\n");
     LHAT_CHECK(p.result.diagnostic_count > 0, "expected a diagnostic");
     LHAT_CHECK_EQ_INT(p.result.diagnostics[0].code,
                       LHAT_PARSE_ERR_REQUIRE_NEEDS_LITERAL);
@@ -2531,8 +2683,8 @@ static void test_modules(void)
     // member access.
     LHAT_TEST("what require^ yields is reached into normally");
     parse_text(&p,
-               "let^ io = require^ \"system/io.lh\"\n"
-               "let^ open = io.File.open\n");
+               "var^ io = require^ \"system/io.lh\"\n"
+               "var^ open = io.File.open\n");
     LHAT_CHECK_EQ_INT(error_count(&p), 0);
     LHAT_CHECK_EQ_INT(first_statement(&p)->next->v.binding.values->kind,
                       LHAT_NODE_MEMBER);
@@ -2546,29 +2698,29 @@ static void test_typeof(void)
     Parse p;
 
     LHAT_TEST("typeof^(expr) parses as one node");
-    parse_text(&p, "let^ t = typeof^(5)\n");
+    parse_text(&p, "var^ t = typeof^(5)\n");
     LHAT_CHECK_EQ_INT(error_count(&p), 0);
     LHAT_CHECK_EQ_INT(first_value(&p)->kind, LHAT_NODE_TYPEOF);
     parse_dispose(&p);
 
     LHAT_TEST("what it names is the operand alone");
-    parse_text(&p, "let^ t = typeof^(5)\n");
+    parse_text(&p, "var^ t = typeof^(5)\n");
     LHAT_CHECK_EQ_INT(first_value(&p)->v.jump.value->kind, LHAT_NODE_INT);
     parse_dispose(&p);
 
     LHAT_TEST("the parentheses are not optional");
-    parse_text(&p, "let^ t = typeof^ 5\n");
+    parse_text(&p, "var^ t = typeof^ 5\n");
     LHAT_CHECK(p.result.diagnostic_count > 0, "expected a diagnostic");
     parse_dispose(&p);
 
     LHAT_TEST("nor is an operand");
-    parse_text(&p, "let^ t = typeof^()\n");
+    parse_text(&p, "var^ t = typeof^()\n");
     LHAT_CHECK(p.result.diagnostic_count > 0, "expected a diagnostic");
     parse_dispose(&p);
 
     // 14.4: a method reached the ordinary way, exactly as any other member.
     LHAT_TEST("'.signature' reads as a member access");
-    parse_text(&p, "let^ s = typeof^(5).signature\n");
+    parse_text(&p, "var^ s = typeof^(5).signature\n");
     LHAT_CHECK_EQ_INT(error_count(&p), 0);
     LHAT_CHECK_EQ_INT(first_value(&p)->kind, LHAT_NODE_MEMBER);
     LHAT_CHECK_EQ_INT(first_value(&p)->v.access.target->kind, LHAT_NODE_TYPEOF);

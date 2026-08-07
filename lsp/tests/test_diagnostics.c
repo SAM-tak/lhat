@@ -66,7 +66,7 @@ static void test_ascii_position(void)
     //         0    1    2    3    4    5    6    7    8    9
     //         l    e    t    ^    _    x    _    =    _    n(owhere)
     Pos pos;
-    bool found = first_diagnostic_start("let^ x = nowhere\n", &pos);
+    bool found = first_diagnostic_start("var^ x = nowhere\n", &pos);
     LHAT_CHECK(found, "expected a diagnostic");
     if (found) {
         LHAT_CHECK_EQ_INT(pos.line, 0);
@@ -83,7 +83,7 @@ static void test_surrogate_pair_position(void)
     // terminal-cell one; this is the LSP server's own third count.
     Pos pos;
     bool found = first_diagnostic_start(
-        "let^ s = \"\xF0\x9F\x98\x80\" .. nowhere\n", &pos);
+        "var^ s = \"\xF0\x9F\x98\x80\" .. nowhere\n", &pos);
     LHAT_CHECK(found, "expected a diagnostic");
     if (found) {
         LHAT_CHECK_EQ_INT(pos.line, 0);

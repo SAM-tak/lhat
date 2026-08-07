@@ -41,7 +41,13 @@ typedef enum {
     LHAT_PARSE_ERR_NEXT_NOT_HERE,             // 16.3: next^ updates a while^
                                               // or until^; the other forms
                                               // advance their own focus
-    LHAT_PARSE_ERR_WITHDRAWN_FROM,            // 16.3: from^ replaced by ':='
+    LHAT_PARSE_ERR_FROM_NOT_HERE,             // 16.3改2: from^ opens the
+                                              // counted range of a to^ or
+                                              // downto^; the other forms take
+                                              // an introducer
+    LHAT_PARSE_ERR_FOCUS_NEEDS_FROM,          // 16.3改2: a to^ or downto^
+                                              // advances its own focus, so the
+                                              // header names no introducer
     LHAT_PARSE_ERR_EXPECTED_MEMBER,           // 14 章: def^ holds members
     LHAT_PARSE_ERR_OPERATOR_NOT_DEFINABLE,    // 11.4: only '..' has an op^
                                               // definition so far
@@ -53,6 +59,11 @@ typedef enum {
     LHAT_PARSE_ERR_ERROR_NEEDS_KIND,          // 04 の 2.5
     LHAT_PARSE_ERR_WITHDRAWN_SHIFT,           // 8.6: '<<' replaced by ':='
     LHAT_PARSE_ERR_LET_NEEDS_VALUE,           // 8.7: no declaration without one
+    LHAT_PARSE_ERR_LET_NEEDS_EQUALS,          // 8.9: let^ defines and never
+                                              // reassigns, so ':=' after one
+                                              // says two opposite things
+    LHAT_PARSE_ERR_LET_NEEDS_NAME,            // 8.9: let^ binds a name; a
+                                              // member of a table is var^'s
     LHAT_PARSE_ERR_EQUALS_IS_COMPARISON,      // 8.6: 'x = 1' as a statement
     LHAT_PARSE_ERR_MODULE_MISPLACED,          // 05 の 3 章: one, and first
     LHAT_PARSE_ERR_PUBLIC_NEEDS_DECLARATION,  // 05 の 4 章

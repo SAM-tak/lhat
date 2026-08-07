@@ -234,7 +234,7 @@ static void test_arithmetic(void)
     // What fits is untouched -- 20! is the largest that does.
     LHAT_TEST("what the integers do hold stays exact");
     run_text(&r,
-             "let^ f = f^ n:number^ -> number^ {\n"
+             "var^ f = f^ n:number^ -> number^ {\n"
              "  if^ n < 2 { return^ 1 }\n"
              "  return^ n * this^(n - 1)\n"
              "}\n"
@@ -310,49 +310,49 @@ static void test_names(void)
 {
     Run r;
 
-    // 02 の 8.6: let^ makes the name, ':=' reaches it.
+    // 02 の 8.6: var^ makes the name, ':=' reaches it.
     LHAT_TEST("a name holds its value");
-    run_text(&r, "let^ x = 2\nlet^ y = 3\nreturn^ x * y\n");
+    run_text(&r, "var^ x = 2\nvar^ y = 3\nreturn^ x * y\n");
     CHECK_INTEGER(&r, 6);
     run_dispose(&r);
 
     LHAT_TEST("':=' reassigns rather than shadowing");
-    run_text(&r, "let^ x = 1\nx := x + 41\nreturn^ x\n");
+    run_text(&r, "var^ x = 1\nx := x + 41\nreturn^ x\n");
     CHECK_INTEGER(&r, 42);
     run_dispose(&r);
 
     // 8.6's whole point: the inner statement reaches the outer name.
     // 7.4改: 'target op= value' means 'target := target op value'.
     LHAT_TEST("every compound assignment operator");
-    run_text(&r, "let^ x = 10\nx += 5\nreturn^ x\n");
+    run_text(&r, "var^ x = 10\nx += 5\nreturn^ x\n");
     CHECK_INTEGER(&r, 15);
     run_dispose(&r);
 
-    run_text(&r, "let^ x = 10\nx -= 3\nreturn^ x\n");
+    run_text(&r, "var^ x = 10\nx -= 3\nreturn^ x\n");
     CHECK_INTEGER(&r, 7);
     run_dispose(&r);
 
-    run_text(&r, "let^ x = 10\nx *= 3\nreturn^ x\n");
+    run_text(&r, "var^ x = 10\nx *= 3\nreturn^ x\n");
     CHECK_INTEGER(&r, 30);
     run_dispose(&r);
 
-    run_text(&r, "let^ x = 10\nx /= 4\nreturn^ x\n");
+    run_text(&r, "var^ x = 10\nx /= 4\nreturn^ x\n");
     CHECK_REAL(&r, 2.5);
     run_dispose(&r);
 
-    run_text(&r, "let^ x = 10\nx %= 3\nreturn^ x\n");
+    run_text(&r, "var^ x = 10\nx %= 3\nreturn^ x\n");
     CHECK_INTEGER(&r, 1);
     run_dispose(&r);
 
-    run_text(&r, "let^ x = 10\nx //= 3\nreturn^ x\n");
+    run_text(&r, "var^ x = 10\nx //= 3\nreturn^ x\n");
     CHECK_INTEGER(&r, 3);
     run_dispose(&r);
 
-    run_text(&r, "let^ x = 2\nx **= 5\nreturn^ x\n");
+    run_text(&r, "var^ x = 2\nx **= 5\nreturn^ x\n");
     CHECK_REAL(&r, 32.0);
     run_dispose(&r);
 
-    run_text(&r, "let^ x = \"ab\"\nx ..= \"cd\"\nreturn^ x = \"abcd\"\n");
+    run_text(&r, "var^ x = \"ab\"\nx ..= \"cd\"\nreturn^ x = \"abcd\"\n");
     CHECK_BOOL(&r, true);
     run_dispose(&r);
 
@@ -361,9 +361,9 @@ static void test_names(void)
     // target run something with a side effect.
     LHAT_TEST("a path target is evaluated once, not twice");
     run_text(&r,
-             "let^ t = { 100, 200 }\n"
-             "let^ calls = 0\n"
-             "let^ idx = p^ { calls := calls + 1\nreturn^ 1 }\n"
+             "var^ t = { 100, 200 }\n"
+             "var^ calls = 0\n"
+             "var^ idx = p^ { calls := calls + 1\nreturn^ 1 }\n"
              "t[idx()] += 5\n"
              "return^ t.1 = 105 and^ calls = 1\n");
     CHECK_BOOL(&r, true);
@@ -371,26 +371,26 @@ static void test_names(void)
 
     LHAT_TEST("and the same holds for a member target");
     run_text(&r,
-             "let^ t = { x := 10 }\n"
+             "var^ t = { x := 10 }\n"
              "t.x += 7\n"
              "return^ t.x\n");
     CHECK_INTEGER(&r, 17);
     run_dispose(&r);
 
     LHAT_TEST("':=' inside a block reaches out");
-    run_text(&r, "let^ x = 1\ndo^{ x := 9 }\nreturn^ x\n");
+    run_text(&r, "var^ x = 1\ndo^{ x := 9 }\nreturn^ x\n");
     CHECK_INTEGER(&r, 9);
     run_dispose(&r);
 
-    LHAT_TEST("let^ inside a block does not");
-    run_text(&r, "let^ x = 1\ndo^{ let^ x = 9 }\nreturn^ x\n");
+    LHAT_TEST("var^ inside a block does not");
+    run_text(&r, "var^ x = 1\ndo^{ var^ x = 9 }\nreturn^ x\n");
     CHECK_INTEGER(&r, 1);
     run_dispose(&r);
 
-    // 8.6: let^ present means define regardless of which spelling follows --
-    // ':=' after let^ is accepted as a convenience, not a different meaning.
-    LHAT_TEST("let^ also defines with ':='");
-    run_text(&r, "let^ x := 1\nreturn^ x\n");
+    // 8.6: var^ present means define regardless of which spelling follows --
+    // ':=' after var^ is accepted as a convenience, not a different meaning.
+    LHAT_TEST("var^ also defines with ':='");
+    run_text(&r, "var^ x := 1\nreturn^ x\n");
     CHECK_INTEGER(&r, 1);
     run_dispose(&r);
 
@@ -406,7 +406,7 @@ static void test_control(void)
 
     LHAT_TEST("an if statement takes the true branch");
     run_text(&r,
-             "let^ x = 0\n"
+             "var^ x = 0\n"
              "if^ 1 < 2 { x := 10 else^: x := 20 }\n"
              "return^ x\n");
     CHECK_INTEGER(&r, 10);
@@ -414,7 +414,7 @@ static void test_control(void)
 
     LHAT_TEST("and the false one");
     run_text(&r,
-             "let^ x = 0\n"
+             "var^ x = 0\n"
              "if^ 1 > 2 { x := 10 else^: x := 20 }\n"
              "return^ x\n");
     CHECK_INTEGER(&r, 20);
@@ -422,7 +422,7 @@ static void test_control(void)
 
     LHAT_TEST("an elseif chain picks one arm");
     run_text(&r,
-             "let^ x = 0\n"
+             "var^ x = 0\n"
              "if^ 1 > 2 {\n"
              "    x := 1\n"
              "    elseif^ 2 > 1:\n"
@@ -436,7 +436,7 @@ static void test_control(void)
 
     // 02 の 5.1: the expression form yields a value.
     LHAT_TEST("the if expression yields a value");
-    run_text(&r, "let^ x = if^ 1 < 2: 7 el^: 8 ;\nreturn^ x\n");
+    run_text(&r, "var^ x = if^ 1 < 2: 7 el^: 8 ;\nreturn^ x\n");
     CHECK_INTEGER(&r, 7);
     run_dispose(&r);
 
@@ -468,12 +468,12 @@ static void test_control(void)
 
     // A condition has to be a bool; nothing else is a truth value.
     LHAT_TEST("a condition that is not a bool is refused");
-    run_text(&r, "let^ x = 0\nif^ 1 { x := 1 }\nreturn^ x\n");
+    run_text(&r, "var^ x = 0\nif^ 1 { x := 1 }\nreturn^ x\n");
     LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_TYPE_ERROR);
     run_dispose(&r);
 
     LHAT_TEST("a unit with no return^ yields nil^");
-    run_text(&r, "let^ x = 1\n");
+    run_text(&r, "var^ x = 1\n");
     LHAT_CHECK_EQ_INT(r.compiled, LHAT_COMPILE_OK);
     LHAT_CHECK(lhat_is_nil(r.ran.value), "nil^");
     run_dispose(&r);
@@ -487,13 +487,13 @@ static void test_calls(void)
     Run r;
 
     LHAT_TEST("a subroutine is called and answers");
-    run_text(&r, "let^ twice = f^n { return^ n * 2 }\nreturn^ twice(21)\n");
+    run_text(&r, "var^ twice = f^n { return^ n * 2 }\nreturn^ twice(21)\n");
     CHECK_INTEGER(&r, 42);
     run_dispose(&r);
 
     LHAT_TEST("arguments arrive in order");
     run_text(&r,
-             "let^ less = f^a, b { return^ a - b }\n"
+             "var^ less = f^a, b { return^ a - b }\n"
              "return^ less(10, 3)\n");
     CHECK_INTEGER(&r, 7);
     run_dispose(&r);
@@ -503,14 +503,14 @@ static void test_calls(void)
     // or in the checker had to change.
     LHAT_TEST("a function whose body is one expression answers with it");
     run_text(&r,
-             "let^ square = f^ n:number^ -> number^ { n * n }\n"
+             "var^ square = f^ n:number^ -> number^ { n * n }\n"
              "return^ square(7)\n");
     CHECK_INTEGER(&r, 49);
     run_dispose(&r);
 
     LHAT_TEST("and the expression may be one of 5.1");
     run_text(&r,
-             "let^ sign = f^ n:number^ -> number^ { if^ n < 0: 0 el^: 1 ; }\n"
+             "var^ sign = f^ n:number^ -> number^ { if^ n < 0: 0 el^: 1 ; }\n"
              "return^ sign(0 - 3) * 10 + sign(3)\n");
     CHECK_INTEGER(&r, 1);
     run_dispose(&r);
@@ -520,8 +520,8 @@ static void test_calls(void)
     // a refused body work.
     LHAT_TEST("and a call that is the whole body is the answer");
     run_text(&r,
-             "let^ inner = f^ -> number^ { return^ 42 }\n"
-             "let^ wrap = f^ -> number^ { inner() }\n"
+             "var^ inner = f^ -> number^ { return^ 42 }\n"
+             "var^ wrap = f^ -> number^ { inner() }\n"
              "return^ wrap()\n");
     CHECK_INTEGER(&r, 42);
     run_dispose(&r);
@@ -530,16 +530,16 @@ static void test_calls(void)
     // always meant "run this and drop what it answers".
     LHAT_TEST("but beside another statement it drops what it answers");
     run_text(&r,
-             "let^ log = { n := 0 }\n"
-             "let^ bump = f^ -> number^ { log.n := log.n + 1  return^ 9 }\n"
-             "let^ wrap = f^ -> number^ { bump()  return^ log.n }\n"
+             "var^ log = { n := 0 }\n"
+             "var^ bump = f^ -> number^ { log.n := log.n + 1  return^ 9 }\n"
+             "var^ wrap = f^ -> number^ { bump()  return^ log.n }\n"
              "return^ wrap()\n");
     CHECK_INTEGER(&r, 1);
     run_dispose(&r);
 
     LHAT_TEST("a call is an expression like any other");
     run_text(&r,
-             "let^ one = f^ { return^ 1 }\n"
+             "var^ one = f^ { return^ 1 }\n"
              "return^ one() + one() * 3\n");
     CHECK_INTEGER(&r, 4);
     run_dispose(&r);
@@ -548,7 +548,7 @@ static void test_calls(void)
     // itself without anything declared ahead of it.
     LHAT_TEST("a subroutine reaches its own name");
     run_text(&r,
-             "let^ fact = f^n {\n"
+             "var^ fact = f^n {\n"
              "  if^ n <= 1 { return^ 1 }\n"
              "  return^ n * fact(n - 1)\n"
              "}\n"
@@ -559,7 +559,7 @@ static void test_calls(void)
     // 02 の 15.10: a body with no name still has one way to reach itself.
     LHAT_TEST("this^ reaches the subroutine running");
     run_text(&r,
-             "let^ fact = f^n {\n"
+             "var^ fact = f^n {\n"
              "  if^ n <= 1 { return^ 1 }\n"
              "  return^ n * this^(n - 1)\n"
              "}\n"
@@ -569,7 +569,7 @@ static void test_calls(void)
 
     LHAT_TEST("and it works where there is no name to use");
     run_text(&r,
-             "let^ apply = f^ g, n { return^ g(n) }\n"
+             "var^ apply = f^ g, n { return^ g(n) }\n"
              "return^ apply(f^n { if^ n <= 1 { return^ 1 } "
              "return^ n + this^(n - 1) }, 4)\n");
     CHECK_INTEGER(&r, 10);
@@ -578,8 +578,8 @@ static void test_calls(void)
     // The innermost one, so an inner body does not reach the outer one.
     LHAT_TEST("this^ is the innermost subroutine");
     run_text(&r,
-             "let^ outer = f^ {\n"
-             "  let^ inner = f^n { if^ n <= 0 { return^ 0 } "
+             "var^ outer = f^ {\n"
+             "  var^ inner = f^n { if^ n <= 0 { return^ 0 } "
              "return^ 1 + this^(n - 1) }\n"
              "  return^ inner(3)\n"
              "}\n"
@@ -593,25 +593,25 @@ static void test_calls(void)
     run_dispose(&r);
 
     LHAT_TEST("a p^ with no return^ answers nil^");
-    run_text(&r, "let^ nothing = p^ { }\nreturn^ nothing()\n");
+    run_text(&r, "var^ nothing = p^ { }\nreturn^ nothing()\n");
     LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_OK);
     LHAT_CHECK(lhat_is_nil(r.ran.value), "nil^");
     run_dispose(&r);
 
     LHAT_TEST("calling something that is not a subroutine is a fault");
-    run_text(&r, "let^ x = 1\nreturn^ x()\n");
+    run_text(&r, "var^ x = 1\nreturn^ x()\n");
     LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_NOT_CALLABLE);
     run_dispose(&r);
 
     LHAT_TEST("the wrong number of arguments is a fault");
-    run_text(&r, "let^ f = f^a, b { return^ a }\nreturn^ f(1)\n");
+    run_text(&r, "var^ f = f^a, b { return^ a }\nreturn^ f(1)\n");
     LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_ARITY);
     run_dispose(&r);
 
     // Nothing bounds the recursion, so the frames run out. 5.3 wants that
     // reported rather than reached by walking off the array.
     LHAT_TEST("frames that go too deep are reported, not walked off");
-    run_text(&r, "let^ f = f^ { return^ f() }\nreturn^ f()\n");
+    run_text(&r, "var^ f = f^ { return^ f() }\nreturn^ f()\n");
     LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_STACK_OVERFLOW);
     run_dispose(&r);
 }
@@ -625,16 +625,16 @@ static void test_closures(void)
 
     LHAT_TEST("a body reads a name from around it");
     run_text(&r,
-             "let^ base = 10\n"
-             "let^ add = f^n { return^ base + n }\n"
+             "var^ base = 10\n"
+             "var^ add = f^n { return^ base + n }\n"
              "return^ add(5)\n");
     CHECK_INTEGER(&r, 15);
     run_dispose(&r);
 
     LHAT_TEST("a ':=' inside a body reaches the outer binding");
     run_text(&r,
-             "let^ count = 0\n"
-             "let^ bump = p^ { count := count + 1 }\n"
+             "var^ count = 0\n"
+             "var^ bump = p^ { count := count + 1 }\n"
              "bump()\n"
              "bump()\n"
              "return^ count\n");
@@ -643,9 +643,9 @@ static void test_closures(void)
 
     LHAT_TEST("two bodies capturing one name share it");
     run_text(&r,
-             "let^ n = 1\n"
-             "let^ set = p^ { n := 9 }\n"
-             "let^ get = f^ { return^ n }\n"
+             "var^ n = 1\n"
+             "var^ set = p^ { n := 9 }\n"
+             "var^ get = f^ { return^ n }\n"
              "set()\n"
              "return^ get()\n");
     CHECK_INTEGER(&r, 9);
@@ -655,11 +655,11 @@ static void test_closures(void)
     // upvalue is for.
     LHAT_TEST("a captured place outlives the frame that held it");
     run_text(&r,
-             "let^ counter = f^ {\n"
-             "  let^ n = 0\n"
+             "var^ counter = f^ {\n"
+             "  var^ n = 0\n"
              "  return^ p^ { n := n + 1 return^ n }\n"
              "}\n"
-             "let^ next = counter()\n"
+             "var^ next = counter()\n"
              "next()\n"
              "next()\n"
              "return^ next()\n");
@@ -668,12 +668,12 @@ static void test_closures(void)
 
     LHAT_TEST("two closures from one body get separate places");
     run_text(&r,
-             "let^ counter = f^ {\n"
-             "  let^ n = 0\n"
+             "var^ counter = f^ {\n"
+             "  var^ n = 0\n"
              "  return^ p^ { n := n + 1 return^ n }\n"
              "}\n"
-             "let^ a = counter()\n"
-             "let^ b = counter()\n"
+             "var^ a = counter()\n"
+             "var^ b = counter()\n"
              "a()\n"
              "a()\n"
              "return^ b()\n");
@@ -684,8 +684,8 @@ static void test_closures(void)
     // each level on the way down has to carry it.
     LHAT_TEST("a name is carried down through more than one level");
     run_text(&r,
-             "let^ outer = f^ {\n"
-             "  let^ n = 7\n"
+             "var^ outer = f^ {\n"
+             "  var^ n = 7\n"
              "  return^ f^ { return^ f^ { return^ n }() }\n"
              "}\n"
              "return^ outer()()\n");
@@ -697,13 +697,13 @@ static void test_closures(void)
     // that it would read whatever the block after it put there.
     LHAT_TEST("a place captured in a block survives the block");
     run_text(&r,
-             "let^ get = f^ { return^ 0 }\n"
+             "var^ get = f^ { return^ 0 }\n"
              "do^{\n"
-             "  let^ n = 5\n"
+             "  var^ n = 5\n"
              "  get := f^ { return^ n }\n"
              "}\n"
              "do^{\n"
-             "  let^ other = 99\n"
+             "  var^ other = 99\n"
              "  other := other\n"
              "}\n"
              "return^ get()\n");
@@ -712,8 +712,8 @@ static void test_closures(void)
 
     LHAT_TEST("a parameter is captured like anything else");
     run_text(&r,
-             "let^ adder = f^by { return^ f^n { return^ n + by } }\n"
-             "let^ add3 = adder(3)\n"
+             "var^ adder = f^by { return^ f^n { return^ n + by } }\n"
+             "var^ add3 = adder(3)\n"
              "return^ add3(4)\n");
     CHECK_INTEGER(&r, 7);
     run_dispose(&r);
@@ -765,14 +765,14 @@ static void test_strings(void)
     // the same.
     LHAT_TEST("is^ asks identity rather than spelling, even for strings");
     run_text(&r,
-             "let^ a = \"f\" .. \"oo\"\n"
-             "let^ b = \"f\" .. \"oo\"\n"
+             "var^ a = \"f\" .. \"oo\"\n"
+             "var^ b = \"f\" .. \"oo\"\n"
              "return^ a is^ b\n");
     CHECK_BOOL(&r, false);
     run_dispose(&r);
 
     LHAT_TEST("but a name for the same string is the same instance");
-    run_text(&r, "let^ a = \"f\" .. \"oo\"\nlet^ b = a\nreturn^ a is^ b\n");
+    run_text(&r, "var^ a = \"f\" .. \"oo\"\nvar^ b = a\nreturn^ a is^ b\n");
     CHECK_BOOL(&r, true);
     run_dispose(&r);
 
@@ -800,8 +800,8 @@ static void test_strings(void)
 
     LHAT_TEST("neither operand is changed");
     run_text(&r,
-             "let^ a = \"one\"\n"
-             "let^ b = a .. \"two\"\n"
+             "var^ a = \"one\"\n"
+             "var^ b = a .. \"two\"\n"
              "return^ a\n");
     CHECK_STRING(&r, "one");
     run_dispose(&r);
@@ -811,26 +811,26 @@ static void test_strings(void)
     // which 14.4 hands the left operand as self^.
     LHAT_TEST("a definition answers '..' with its own op^");
     run_text(&r,
-             "let^ Vec = def^{\n"
+             "var^ Vec = def^{\n"
              "  self^{ tag := \"v\" },\n"
              "  op^.. := f^self^, other:string^ -> string^ {\n"
              "    return^ self^.tag .. other\n"
              "  },\n"
              "}\n"
-             "let^ v = Vec.new^()\n"
+             "var^ v = Vec.new^()\n"
              "return^ v .. \"!\"\n");
     CHECK_STRING(&r, "v!");
     run_dispose(&r);
 
     LHAT_TEST("and what it answers is an ordinary value");
     run_text(&r,
-             "let^ Vec = def^{\n"
+             "var^ Vec = def^{\n"
              "  self^{ tag := \"v\" },\n"
              "  op^.. := f^self^, other:string^ -> string^ {\n"
              "    return^ self^.tag .. other\n"
              "  },\n"
              "}\n"
-             "let^ v = Vec.new^()\n"
+             "var^ v = Vec.new^()\n"
              "return^ (v .. \"!\") .. \"?\"\n");
     CHECK_STRING(&r, "v!?");
     run_dispose(&r);
@@ -838,12 +838,12 @@ static void test_strings(void)
     // 11.4改: the arithmetic operators ask the same question '..' does.
     LHAT_TEST("a definition answers arithmetic with its own op^");
     run_text(&r,
-             "let^ Vec = def^{\n"
+             "var^ Vec = def^{\n"
              "  self^{ n := 10 },\n"
              "  op^+ := f^self^, o:number^ -> number^ { return^ self^.n + o },\n"
              "  op^* := f^self^, o:number^ -> number^ { return^ self^.n * o },\n"
              "}\n"
-             "let^ v = Vec.new^()\n"
+             "var^ v = Vec.new^()\n"
              "return^ (v + 5) * 100 + (v * 3)\n");
     CHECK_INTEGER(&r, 1530);  // 15, then 30
     run_dispose(&r);
@@ -857,15 +857,15 @@ static void test_strings(void)
 
     LHAT_TEST("a structure with no op^ for it is refused");
     run_text(&r,
-             "let^ t = { a := 1 }\n"
+             "var^ t = { a := 1 }\n"
              "return^ t + 1\n");
     LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_TYPE_ERROR);
     run_dispose(&r);
 
     LHAT_TEST("a structure with no '..' cannot answer");
     run_text(&r,
-             "let^ t = { a := 1 }\n"
-             "let^ u = { b := 2 }\n"
+             "var^ t = { a := 1 }\n"
+             "var^ u = { b := 2 }\n"
              "return^ t .. u\n");
     LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_TYPE_ERROR);
     run_dispose(&r);
@@ -889,40 +889,40 @@ static void test_tables(void)
     Run r;
 
     LHAT_TEST("an empty table is a table");
-    run_text(&r, "let^ t = { }\nreturn^ t\n");
+    run_text(&r, "var^ t = { }\nreturn^ t\n");
     LHAT_CHECK_EQ_INT(r.compiled, LHAT_COMPILE_OK);
     LHAT_CHECK(lhat_is_object_kind(r.ran.value, LHAT_OBJECT_TABLE), "a table");
     run_dispose(&r);
 
     LHAT_TEST("a named member reads back");
-    run_text(&r, "let^ t = { a := 1, b := 2 }\nreturn^ t.b\n");
+    run_text(&r, "var^ t = { a := 1, b := 2 }\nreturn^ t.b\n");
     CHECK_INTEGER(&r, 2);
     run_dispose(&r);
 
     // 04 の 11.3: t.foo and t[k] differ in what the checker knows, not in
     // where the machine looks.
     LHAT_TEST("the two spellings reach one place");
-    run_text(&r, "let^ t = { a := 1 }\nreturn^ t[\"a\"]\n");
+    run_text(&r, "var^ t = { a := 1 }\nreturn^ t[\"a\"]\n");
     CHECK_INTEGER(&r, 1);
     run_dispose(&r);
 
     LHAT_TEST("a positional entry counts from one");
-    run_text(&r, "let^ t = { 10, 20, 30 }\nreturn^ t.1 + t.3\n");
+    run_text(&r, "var^ t = { 10, 20, 30 }\nreturn^ t.1 + t.3\n");
     CHECK_INTEGER(&r, 40);
     run_dispose(&r);
 
     LHAT_TEST("keyed and positional entries mix");
-    run_text(&r, "let^ t = { 10, a := 1, 20 }\nreturn^ t.2 + t.a\n");
+    run_text(&r, "var^ t = { 10, a := 1, 20 }\nreturn^ t.2 + t.a\n");
     CHECK_INTEGER(&r, 21);
     run_dispose(&r);
 
     LHAT_TEST("a value may be any expression");
-    run_text(&r, "let^ n = 3\nlet^ t = { a := n * 2 }\nreturn^ t.a\n");
+    run_text(&r, "var^ n = 3\nvar^ t = { a := n * 2 }\nreturn^ t.a\n");
     CHECK_INTEGER(&r, 6);
     run_dispose(&r);
 
     LHAT_TEST("tables nest");
-    run_text(&r, "let^ t = { a := { b := 5 } }\nreturn^ t.a.b\n");
+    run_text(&r, "var^ t = { a := { b := 5 } }\nreturn^ t.a.b\n");
     CHECK_INTEGER(&r, 5);
     run_dispose(&r);
 
@@ -930,16 +930,16 @@ static void test_tables(void)
     // costs is that a comparison standing on its own has to say so.
     LHAT_TEST("an entry written with '=' is a member, not a comparison");
     run_text(&r,
-             "let^ a = 1\n"
-             "let^ t = { a = 0, b = 2 }\n"
+             "var^ a = 1\n"
+             "var^ t = { a = 0, b = 2 }\n"
              "return^ t.a * 10 + t.b\n");
     CHECK_INTEGER(&r, 2);  // t.a is 0, not the comparison's false^
     run_dispose(&r);
 
     LHAT_TEST("and one in brackets is the comparison");
     run_text(&r,
-             "let^ a = 1\n"
-             "let^ t = { (a = 1), (a = 2) }\n"
+             "var^ a = 1\n"
+             "var^ t = { (a = 1), (a = 2) }\n"
              "if^ t[1] {\n"
              "  if^ t[2] { return^ 0 }\n"
              "  return^ 1\n"
@@ -951,51 +951,51 @@ static void test_tables(void)
     // 11.3: a table is a mapping, so there is no out of range -- only a key
     // that is there and one that is not.
     LHAT_TEST("a missing key answers nil^ rather than failing");
-    run_text(&r, "let^ t = { }\nreturn^ t[\"nowhere\"]\n");
+    run_text(&r, "var^ t = { }\nreturn^ t[\"nowhere\"]\n");
     LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_OK);
     LHAT_CHECK(lhat_is_nil(r.ran.value), "nil^");
     run_dispose(&r);
 
     LHAT_TEST("a member is a place that ':=' reaches");
-    run_text(&r, "let^ t = { a := 1 }\nt.a := 9\nreturn^ t.a\n");
+    run_text(&r, "var^ t = { a := 1 }\nt.a := 9\nreturn^ t.a\n");
     CHECK_INTEGER(&r, 9);
     run_dispose(&r);
 
     LHAT_TEST("':=' may make a member that was not there");
-    run_text(&r, "let^ t = { }\nt.a := 7\nreturn^ t.a\n");
+    run_text(&r, "var^ t = { }\nt.a := 7\nreturn^ t.a\n");
     CHECK_INTEGER(&r, 7);
     run_dispose(&r);
 
     LHAT_TEST("an index is a place too");
-    run_text(&r, "let^ t = { }\nlet^ k = \"key\"\nt[k] := 4\nreturn^ t[\"key\"]\n");
+    run_text(&r, "var^ t = { }\nvar^ k = \"key\"\nt[k] := 4\nreturn^ t[\"key\"]\n");
     CHECK_INTEGER(&r, 4);
     run_dispose(&r);
 
     LHAT_TEST("storing nil^ removes the key");
-    run_text(&r, "let^ t = { a := 1 }\nt.a := nil^\nreturn^ t[\"a\"]\n");
+    run_text(&r, "var^ t = { a := 1 }\nt.a := nil^\nreturn^ t[\"a\"]\n");
     LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_OK);
     LHAT_CHECK(lhat_is_nil(r.ran.value), "nil^");
     run_dispose(&r);
 
     LHAT_TEST("nil^ cannot be a key");
-    run_text(&r, "let^ t = { }\nlet^ k = nil^\nt[k] := 1\nreturn^ t\n");
+    run_text(&r, "var^ t = { }\nvar^ k = nil^\nt[k] := 1\nreturn^ t\n");
     LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_BAD_KEY);
     run_dispose(&r);
 
     LHAT_TEST("indexing something that is not a table is refused");
-    run_text(&r, "let^ n = 1\nreturn^ n[\"a\"]\n");
+    run_text(&r, "var^ n = 1\nreturn^ n[\"a\"]\n");
     LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_TYPE_ERROR);
     run_dispose(&r);
 
     // 14.2 makes a table's identity what it is, so two literals of the same
     // shape are two tables.
     LHAT_TEST("a table is equal only to itself");
-    run_text(&r, "let^ a = { x := 1 }\nlet^ b = { x := 1 }\nreturn^ a = b\n");
+    run_text(&r, "var^ a = { x := 1 }\nvar^ b = { x := 1 }\nreturn^ a = b\n");
     CHECK_BOOL(&r, false);
     run_dispose(&r);
 
     LHAT_TEST("and a name for one is the same one");
-    run_text(&r, "let^ a = { x := 1 }\nlet^ b = a\nreturn^ a = b\n");
+    run_text(&r, "var^ a = { x := 1 }\nvar^ b = a\nreturn^ a = b\n");
     CHECK_BOOL(&r, true);
     run_dispose(&r);
 
@@ -1003,26 +1003,26 @@ static void test_tables(void)
     // '=' an identity comparison -- 'is^' means to keep meaning that once
     // '=' moves to comparing a table's contents instead (03 の 7 章、P7).
     LHAT_TEST("'is^' agrees with '=' on tables for now");
-    run_text(&r, "let^ a = { x := 1 }\nlet^ b = { x := 1 }\nreturn^ a is^ b\n");
+    run_text(&r, "var^ a = { x := 1 }\nvar^ b = { x := 1 }\nreturn^ a is^ b\n");
     CHECK_BOOL(&r, false);
     run_dispose(&r);
 
     LHAT_TEST("and a name for one is the same instance under 'is^' too");
-    run_text(&r, "let^ a = { x := 1 }\nlet^ b = a\nreturn^ a is^ b\n");
+    run_text(&r, "var^ a = { x := 1 }\nvar^ b = a\nreturn^ a is^ b\n");
     CHECK_BOOL(&r, true);
     run_dispose(&r);
 
     // A table is a reference, so the two names reach one table (Memo.md の
     // 「シンボルはすべて参照」).
     LHAT_TEST("a table is shared rather than copied");
-    run_text(&r, "let^ a = { x := 1 }\nlet^ b = a\nb.x := 5\nreturn^ a.x\n");
+    run_text(&r, "var^ a = { x := 1 }\nvar^ b = a\nb.x := 5\nreturn^ a.x\n");
     CHECK_INTEGER(&r, 5);
     run_dispose(&r);
 
     LHAT_TEST("a table passes into a subroutine as itself");
     run_text(&r,
-             "let^ bump = p^t { t.n := t.n + 1 }\n"
-             "let^ t = { n := 0 }\n"
+             "var^ bump = p^t { t.n := t.n + 1 }\n"
+             "var^ t = { n := 0 }\n"
              "bump(t)\n"
              "bump(t)\n"
              "return^ t.n\n");
@@ -1031,7 +1031,7 @@ static void test_tables(void)
 
     LHAT_TEST("a subroutine may be a member");
     run_text(&r,
-             "let^ t = { twice := f^n { return^ n * 2 } }\n"
+             "var^ t = { twice := f^n { return^ n * 2 } }\n"
              "return^ t.twice(4)\n");
     CHECK_INTEGER(&r, 8);
     run_dispose(&r);
@@ -1043,12 +1043,12 @@ static void test_repeat(void)
     Run r;
 
     LHAT_TEST("repeat^ n runs n times");
-    run_text(&r, "let^ x = 0\nrepeat^ 5 { x := x + 1 }\nreturn^ x\n");
+    run_text(&r, "var^ x = 0\nrepeat^ 5 { x := x + 1 }\nreturn^ x\n");
     CHECK_INTEGER(&r, 5);
     run_dispose(&r);
 
     LHAT_TEST("repeat^ 0 runs none");
-    run_text(&r, "let^ x = 0\nrepeat^ 0 { x := x + 1 }\nreturn^ x\n");
+    run_text(&r, "var^ x = 0\nrepeat^ 0 { x := x + 1 }\nreturn^ x\n");
     CHECK_INTEGER(&r, 0);
     run_dispose(&r);
 
@@ -1056,8 +1056,8 @@ static void test_repeat(void)
     // finishing line.
     LHAT_TEST("the count is read once");
     run_text(&r,
-             "let^ n = 3\n"
-             "let^ x = 0\n"
+             "var^ n = 3\n"
+             "var^ x = 0\n"
              "repeat^ n { n := 100 x := x + 1 }\n"
              "return^ x\n");
     CHECK_INTEGER(&r, 3);
@@ -1065,7 +1065,7 @@ static void test_repeat(void)
 
     LHAT_TEST("repeat^ while^ tests before the body");
     run_text(&r,
-             "let^ i = 0\n"
+             "var^ i = 0\n"
              "repeat^ while^ i < 4 { i := i + 1 }\n"
              "return^ i\n");
     CHECK_INTEGER(&r, 4);
@@ -1073,7 +1073,7 @@ static void test_repeat(void)
 
     LHAT_TEST("a condition that is false at the start runs nothing");
     run_text(&r,
-             "let^ x = 0\n"
+             "var^ x = 0\n"
              "repeat^ while^ false^ { x := 1 }\n"
              "return^ x\n");
     CHECK_INTEGER(&r, 0);
@@ -1082,7 +1082,7 @@ static void test_repeat(void)
     // 16.5: until^ is while^ negated, tested in the same place.
     LHAT_TEST("repeat^ until^ is while^ negated");
     run_text(&r,
-             "let^ i = 0\n"
+             "var^ i = 0\n"
              "repeat^ until^ i ≧ 4 { i := i + 1 }\n"
              "return^ i\n");
     CHECK_INTEGER(&r, 4);
@@ -1090,26 +1090,26 @@ static void test_repeat(void)
 
     // 14.6改: '[ ... ] :=' builds an entry under a key that is not a name.
     LHAT_TEST("a computed key lands where it says");
-    run_text(&r, "let^ t = { [0] := 7 }\nreturn^ t[0]\n");
+    run_text(&r, "var^ t = { [0] := 7 }\nreturn^ t[0]\n");
     CHECK_INTEGER(&r, 7);
     run_dispose(&r);
 
     LHAT_TEST("and the key is an ordinary expression");
     run_text(&r,
-             "let^ k = 3\n"
-             "let^ t = { [k + 1] := 5 }\n"
+             "var^ k = 3\n"
+             "var^ t = { [k + 1] := 5 }\n"
              "return^ t[4]\n");
     CHECK_INTEGER(&r, 5);
     run_dispose(&r);
 
     // 14 章 follows Lua here: t.a and t["a"] are one key.
     LHAT_TEST("a string key and a name are the same entry");
-    run_text(&r, "let^ t = { [\"a\"] := 1 }\nreturn^ t.a\n");
+    run_text(&r, "var^ t = { [\"a\"] := 1 }\nreturn^ t.a\n");
     CHECK_INTEGER(&r, 1);
     run_dispose(&r);
 
     LHAT_TEST("and it reads back the other way round");
-    run_text(&r, "let^ t = { a := 2 }\nreturn^ t[\"a\"]\n");
+    run_text(&r, "var^ t = { a := 2 }\nreturn^ t[\"a\"]\n");
     CHECK_INTEGER(&r, 2);
     run_dispose(&r);
 
@@ -1117,14 +1117,14 @@ static void test_repeat(void)
     // carry on counting past it.
     LHAT_TEST("a keyed entry takes no position from the sequence");
     run_text(&r,
-             "let^ t = { 10, [\"k\"] := 20, 30 }\n"
+             "var^ t = { 10, [\"k\"] := 20, 30 }\n"
              "return^ t[2]\n");
     CHECK_INTEGER(&r, 30);
     run_dispose(&r);
 
     LHAT_TEST("and is still reachable by its key");
     run_text(&r,
-             "let^ t = { 10, [\"k\"] := 20, 30 }\n"
+             "var^ t = { 10, [\"k\"] := 20, 30 }\n"
              "return^ t[\"k\"]\n");
     CHECK_INTEGER(&r, 20);
     run_dispose(&r);
@@ -1132,15 +1132,15 @@ static void test_repeat(void)
     // 04 の 11.3: what the checker cannot see coming, the machine refuses.
     LHAT_TEST("a key that turns out to be nil^ is a fault");
     run_text(&r,
-             "let^ x : number^|nil^ = nil^\n"
-             "let^ t = { [x] := 1 }\n"
+             "var^ x : number^|nil^ = nil^\n"
+             "var^ t = { [x] := 1 }\n"
              "return^ 0\n");
     LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_BAD_KEY);
     run_dispose(&r);
 
     LHAT_TEST("repeat^ on its own needs break^ to end");
     run_text(&r,
-             "let^ i = 0\n"
+             "var^ i = 0\n"
              "repeat^ { i := i + 1 if^ i = 3 { break^ } }\n"
              "return^ i\n");
     CHECK_INTEGER(&r, 3);
@@ -1151,14 +1151,14 @@ static void test_repeat(void)
     // blesses has to run.
     LHAT_TEST("a return^ leaves an endless repeat^ too");
     run_text(&r,
-             "let^ f = f^ -> number^ { repeat^ { return^ 7 } }\n"
+             "var^ f = f^ -> number^ { repeat^ { return^ 7 } }\n"
              "return^ f()\n");
     CHECK_INTEGER(&r, 7);
     run_dispose(&r);
 
     LHAT_TEST("break^ leaves only the loop it is in");
     run_text(&r,
-             "let^ n = 0\n"
+             "var^ n = 0\n"
              "repeat^ 3 {\n"
              "  repeat^ 3 { n := n + 1 break^ }\n"
              "}\n"
@@ -1179,7 +1179,7 @@ static void test_repeat(void)
     // itself, which is why a plain break^ needs nothing added to it.
     LHAT_TEST("break^^ leaves two loops");
     run_text(&r,
-             "let^ n = 0\n"
+             "var^ n = 0\n"
              "repeat^ 3 {\n"
              "  repeat^ 3 { n := n + 1 break^^ }\n"
              "  n := n + 10\n"
@@ -1192,7 +1192,7 @@ static void test_repeat(void)
     // spellings are one thing and neither is the primary one.
     LHAT_TEST("and break^[2] says the same");
     run_text(&r,
-             "let^ n = 0\n"
+             "var^ n = 0\n"
              "repeat^ 3 {\n"
              "  repeat^ 3 { n := n + 1 break^[2] }\n"
              "  n := n + 10\n"
@@ -1203,7 +1203,7 @@ static void test_repeat(void)
 
     LHAT_TEST("three loops and break^^^ leaves all of them");
     run_text(&r,
-             "let^ n = 0\n"
+             "var^ n = 0\n"
              "repeat^ 3 {\n"
              "  repeat^ 3 {\n"
              "    repeat^ 3 { n := 7 break^^^ }\n"
@@ -1237,7 +1237,7 @@ static void test_repeat(void)
     // ended, and theirs do not.
     LHAT_TEST("the loop named ends normally, the ones passed through do not");
     run_text(&r,
-             "let^ log = { s := \"\" }\n"
+             "var^ log = { s := \"\" }\n"
              "repeat^ 1 {\n"
              "  repeat^ 1 {\n"
              "    break^^\n"
@@ -1253,7 +1253,7 @@ static void test_repeat(void)
 
     LHAT_TEST("and one level runs both, being the inner loop's own end");
     run_text(&r,
-             "let^ log = { s := \"\" }\n"
+             "var^ log = { s := \"\" }\n"
              "repeat^ 1 {\n"
              "  repeat^ 1 {\n"
              "    break^\n"
@@ -1271,7 +1271,7 @@ static void test_repeat(void)
     // back what it took, so its finally^ runs where its epilog^ does not.
     LHAT_TEST("a finally^ passed through still runs");
     run_text(&r,
-             "let^ log = { s := \"\" }\n"
+             "var^ log = { s := \"\" }\n"
              "repeat^ 1 {\n"
              "  repeat^ 1 {\n"
              "    break^^\n"
@@ -1290,7 +1290,7 @@ static void test_repeat(void)
     // which is what the level is for.
     LHAT_TEST("a level reaching out of an endless repeat^ is a way out");
     run_text(&r,
-             "let^ n = 0\n"
+             "var^ n = 0\n"
              "repeat^ {\n"
              "  repeat^ 3 { n := 5 break^^ }\n"
              "}\n"
@@ -1307,8 +1307,8 @@ static void test_for(void)
 
     LHAT_TEST("to^ counts up and includes the limit");
     run_text(&r,
-             "let^ total = 0\n"
-             "for^ let^ i := 1 to^ 4 { total := total + i }\n"
+             "var^ total = 0\n"
+             "for^ i from^ 1 to^ 4 { total := total + i }\n"
              "return^ total\n");
     CHECK_INTEGER(&r, 10);
     run_dispose(&r);
@@ -1317,16 +1317,16 @@ static void test_for(void)
     // counting down.
     LHAT_TEST("a limit below the start runs none");
     run_text(&r,
-             "let^ x = 0\n"
-             "for^ let^ i := 1 to^ 0 { x := x + 1 }\n"
+             "var^ x = 0\n"
+             "for^ i from^ 1 to^ 0 { x := x + 1 }\n"
              "return^ x\n");
     CHECK_INTEGER(&r, 0);
     run_dispose(&r);
 
     LHAT_TEST("downto^ counts down");
     run_text(&r,
-             "let^ seen = 0\n"
-             "for^ let^ i := 3 downto^ 1 { seen := seen * 10 + i }\n"
+             "var^ seen = 0\n"
+             "for^ i from^ 3 downto^ 1 { seen := seen * 10 + i }\n"
              "return^ seen\n");
     CHECK_INTEGER(&r, 321);
     run_dispose(&r);
@@ -1335,15 +1335,15 @@ static void test_for(void)
     // clause.
     LHAT_TEST("step^ is a positive amount for both directions");
     run_text(&r,
-             "let^ up = 0\n"
-             "for^ let^ i := 1 to^ 9 step^ 3 { up := up * 10 + i }\n"
+             "var^ up = 0\n"
+             "for^ i from^ 1 to^ 9 step^ 3 { up := up * 10 + i }\n"
              "return^ up\n");
     CHECK_INTEGER(&r, 147);
     run_dispose(&r);
 
     run_text(&r,
-             "let^ down = 0\n"
-             "for^ let^ i := 9 downto^ 1 step^ 3 { down := down * 10 + i }\n"
+             "var^ down = 0\n"
+             "for^ i from^ 9 downto^ 1 step^ 3 { down := down * 10 + i }\n"
              "return^ down\n");
     CHECK_INTEGER(&r, 963);
     run_dispose(&r);
@@ -1352,35 +1352,35 @@ static void test_for(void)
     // loop starts and cannot move while it runs.
     LHAT_TEST("the bound is read once");
     run_text(&r,
-             "let^ n = 3\n"
-             "let^ x = 0\n"
-             "for^ let^ i := 1 to^ n { n := 100 x := x + 1 }\n"
+             "var^ n = 3\n"
+             "var^ x = 0\n"
+             "for^ i from^ 1 to^ n { n := 100 x := x + 1 }\n"
              "return^ x\n");
     CHECK_INTEGER(&r, 3);
     run_dispose(&r);
 
     LHAT_TEST("and downto^ reads its bound once too");
     run_text(&r,
-             "let^ n = 1\n"
-             "let^ x = 0\n"
-             "for^ let^ i := 3 downto^ n { n := -100 x := x + 1 }\n"
+             "var^ n = 1\n"
+             "var^ x = 0\n"
+             "for^ i from^ 3 downto^ n { n := -100 x := x + 1 }\n"
              "return^ x\n");
     CHECK_INTEGER(&r, 3);
     run_dispose(&r);
 
     LHAT_TEST("and step^ is read once as well");
     run_text(&r,
-             "let^ s = 1\n"
-             "let^ n = 0\n"
-             "for^ let^ i := 1 to^ 9 step^ s { n := n + 1 s := 3 }\n"
+             "var^ s = 1\n"
+             "var^ n = 0\n"
+             "for^ i from^ 1 to^ 9 step^ s { n := n + 1 s := 3 }\n"
              "return^ n\n");
     CHECK_INTEGER(&r, 9);  // reading s each time round would give three
     run_dispose(&r);
 
     LHAT_TEST("10 to^ 1 step^ 2 is empty rather than confusing");
     run_text(&r,
-             "let^ x = 0\n"
-             "for^ let^ i := 10 to^ 1 step^ 2 { x := x + 1 }\n"
+             "var^ x = 0\n"
+             "for^ i from^ 10 to^ 1 step^ 2 { x := x + 1 }\n"
              "return^ x\n");
     CHECK_INTEGER(&r, 0);
     run_dispose(&r);
@@ -1388,7 +1388,7 @@ static void test_for(void)
     // 16.2: a focus with no name written is still a focus.
     LHAT_TEST("an unnamed focus is reached through it^");
     run_text(&r,
-             "let^ total = 0\n"
+             "var^ total = 0\n"
              "for^ 1 to^ 4 { total := total + it^ }\n"
              "return^ total\n");
     CHECK_INTEGER(&r, 10);
@@ -1396,30 +1396,30 @@ static void test_for(void)
 
     LHAT_TEST("while^ tests before the body and next^ runs after it");
     run_text(&r,
-             "let^ total = 0\n"
-             "for^ let^ i := 1 while^ i ≦ 4 next^ i := i + 1 { total := total + i }\n"
+             "var^ total = 0\n"
+             "for^ var^ i := 1 while^ i ≦ 4 next^ i := i + 1 { total := total + i }\n"
              "return^ total\n");
     CHECK_INTEGER(&r, 10);
     run_dispose(&r);
 
     LHAT_TEST("until^ is the same the other way round");
     run_text(&r,
-             "let^ total = 0\n"
-             "for^ let^ i := 1 until^ i > 4 next^ i := i + 1 { total := total + i }\n"
+             "var^ total = 0\n"
+             "for^ var^ i := 1 until^ i > 4 next^ i := i + 1 { total := total + i }\n"
              "return^ total\n");
     CHECK_INTEGER(&r, 10);
     run_dispose(&r);
 
     LHAT_TEST("the focus is gone after the loop");
-    run_text(&r, "for^ let^ i := 1 to^ 2 { }\nreturn^ i\n");
+    run_text(&r, "for^ i from^ 1 to^ 2 { }\nreturn^ i\n");
     LHAT_CHECK_EQ_INT(r.compiled, LHAT_COMPILE_UNDEFINED);
     run_dispose(&r);
 
     LHAT_TEST("loops nest");
     run_text(&r,
-             "let^ n = 0\n"
-             "for^ let^ i := 1 to^ 3 {\n"
-             "  for^ let^ j := 1 to^ 4 { n := n + 1 }\n"
+             "var^ n = 0\n"
+             "for^ i from^ 1 to^ 3 {\n"
+             "  for^ j from^ 1 to^ 4 { n := n + 1 }\n"
              "}\n"
              "return^ n\n");
     CHECK_INTEGER(&r, 12);
@@ -1429,8 +1429,8 @@ static void test_for(void)
     // one over its keys, so the dense part comes back in index order.
     LHAT_TEST("in^ walks a table's dense part in order");
     run_text(&r,
-             "let^ t = { 10, 20, 30 }\n"
-             "let^ seen = 0\n"
+             "var^ t = { 10, 20, 30 }\n"
+             "var^ seen = 0\n"
              "for^ k, v in^ t { seen := seen * 100 + k * 10 + v // 10 }\n"
              "return^ seen\n");
     CHECK_INTEGER(&r, 112233);
@@ -1438,8 +1438,8 @@ static void test_for(void)
 
     LHAT_TEST("and reaches the keyed part too");
     run_text(&r,
-             "let^ t = { a := 5, b := 7 }\n"
-             "let^ total = 0\n"
+             "var^ t = { a := 5, b := 7 }\n"
+             "var^ total = 0\n"
              "for^ k, v in^ t { total := total + v }\n"
              "return^ total\n");
     CHECK_INTEGER(&r, 12);
@@ -1447,8 +1447,8 @@ static void test_for(void)
 
     LHAT_TEST("an empty table walks no turns");
     run_text(&r,
-             "let^ t = { }\n"
-             "let^ n = 0\n"
+             "var^ t = { }\n"
+             "var^ n = 0\n"
              "for^ k, v in^ t { n := n + 1 }\n"
              "return^ n\n");
     CHECK_INTEGER(&r, 0);
@@ -1458,8 +1458,8 @@ static void test_for(void)
     // position. in^ is the marker, so no unpack^ is written.
     LHAT_TEST("one name takes what was yielded whole");
     run_text(&r,
-             "let^ gen = p^ { yield^ 1 yield^ 2 yield^ 3 }\n"
-             "let^ total = 0\n"
+             "var^ gen = p^ { yield^ 1 yield^ 2 yield^ 3 }\n"
+             "var^ total = 0\n"
              "for^ v in^ gen() { total := total + v }\n"
              "return^ total\n");
     CHECK_INTEGER(&r, 6);
@@ -1467,9 +1467,9 @@ static void test_for(void)
 
     LHAT_TEST("a coroutine answers iterate with itself");
     run_text(&r,
-             "let^ gen = p^ { yield^ 4 yield^ 5 }\n"
-             "let^ c = gen()\n"
-             "let^ total = 0\n"
+             "var^ gen = p^ { yield^ 4 yield^ 5 }\n"
+             "var^ c = gen()\n"
+             "var^ total = 0\n"
              "for^ v in^ c { total := total + v }\n"
              "return^ total\n");
     CHECK_INTEGER(&r, 9);
@@ -1479,15 +1479,15 @@ static void test_for(void)
     // convention rather than a special case for tables.
     LHAT_TEST("a definition answers by writing iterate");
     run_text(&r,
-             "let^ Range = def^{\n"
+             "var^ Range = def^{\n"
              "  self^{ upto := 0 },\n"
              "  new^ := f^ n { return^ self^{ upto := n } },\n"
              "  iterate := f^self^ {\n"
-             "    let^ limit = self^.upto\n"
-             "    return^ p^ { for^ let^ i := 1 to^ limit { yield^ i } }()\n"
+             "    var^ limit = self^.upto\n"
+             "    return^ p^ { for^ i from^ 1 to^ limit { yield^ i } }()\n"
              "  },\n"
              "}\n"
-             "let^ total = 0\n"
+             "var^ total = 0\n"
              "for^ v in^ Range.new^(4) { total := total + v }\n"
              "return^ total\n");
     CHECK_INTEGER(&r, 10);
@@ -1495,8 +1495,8 @@ static void test_for(void)
 
     LHAT_TEST("a written iterate wins over the built-in one");
     run_text(&r,
-             "let^ t = { 1, 2, 3, iterate := f^ { return^ p^ { yield^ 9 }() } }\n"
-             "let^ total = 0\n"
+             "var^ t = { 1, 2, 3, iterate := f^ { return^ p^ { yield^ 9 }() } }\n"
+             "var^ total = 0\n"
              "for^ v in^ t { total := total + v }\n"
              "return^ total\n");
     CHECK_INTEGER(&r, 9);
@@ -1509,30 +1509,30 @@ static void test_for(void)
     // closure and the machine read through a null pointer.
     LHAT_TEST("a walk taken by hand starts like any other coroutine");
     run_text(&r,
-             "let^ t = { 10, 20 }\n"
-             "let^ w = t.iterate()\n"
-             "let^ pair = w.start()\n"
+             "var^ t = { 10, 20 }\n"
+             "var^ w = t.iterate()\n"
+             "var^ pair = w.start()\n"
              "return^ pair[1] * 100 + pair[2]\n");
     CHECK_INTEGER(&r, 110);  // key 1, value 10
     run_dispose(&r);
 
     LHAT_TEST("and resumes to the pairs after it");
     run_text(&r,
-             "let^ t = { 10, 20 }\n"
-             "let^ w = t.iterate()\n"
+             "var^ t = { 10, 20 }\n"
+             "var^ w = t.iterate()\n"
              "w.start()\n"
-             "let^ pair = w.resume(nil^)\n"
+             "var^ pair = w.resume(nil^)\n"
              "return^ pair[1] * 100 + pair[2]\n");
     CHECK_INTEGER(&r, 220);  // key 2, value 20
     run_dispose(&r);
 
     LHAT_TEST("and finishes when the table runs out");
     run_text(&r,
-             "let^ t = { 10 }\n"
-             "let^ w = t.iterate()\n"
+             "var^ t = { 10 }\n"
+             "var^ w = t.iterate()\n"
              "w.start()\n"
-             "let^ last = w.resume(nil^)\n"
-             "let^ n = last ?? 0\n"
+             "var^ last = w.resume(nil^)\n"
+             "var^ n = last ?? 0\n"
              "if^ w.done() { n := n + 1 }\n"
              "return^ n\n");
     CHECK_INTEGER(&r, 1);  // nil^, and done
@@ -1542,8 +1542,8 @@ static void test_for(void)
     // the first resume mean something on its own.
     LHAT_TEST("resuming a walk that has not started is a fault");
     run_text(&r,
-             "let^ t = { 10 }\n"
-             "let^ w = t.iterate()\n"
+             "var^ t = { 10 }\n"
+             "var^ w = t.iterate()\n"
              "w.resume(nil^)\n"
              "return^ 0\n");
     LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_COROUTINE_NOT_STARTED);
@@ -1551,8 +1551,8 @@ static void test_for(void)
 
     LHAT_TEST("starting a walk twice is a fault");
     run_text(&r,
-             "let^ t = { 10, 20 }\n"
-             "let^ w = t.iterate()\n"
+             "var^ t = { 10, 20 }\n"
+             "var^ w = t.iterate()\n"
              "w.start()\n"
              "w.start()\n"
              "return^ 0\n");
@@ -1562,8 +1562,8 @@ static void test_for(void)
     // 10.7: a walk has nothing pending, so disposal is only the state.
     LHAT_TEST("a walk in progress can be disposed");
     run_text(&r,
-             "let^ t = { 10, 20, 30 }\n"
-             "let^ w = t.iterate()\n"
+             "var^ t = { 10, 20, 30 }\n"
+             "var^ w = t.iterate()\n"
              "w.start()\n"
              "w.dispose()\n"
              "return^ w.done()\n");
@@ -1572,8 +1572,8 @@ static void test_for(void)
 
     LHAT_TEST("break^ leaves a walk like any other loop");
     run_text(&r,
-             "let^ t = { 1, 2, 3, 4 }\n"
-             "let^ n = 0\n"
+             "var^ t = { 1, 2, 3, 4 }\n"
+             "var^ n = 0\n"
              "for^ k, v in^ t { n := n + 1 if^ n = 2 { break^ } }\n"
              "return^ n\n");
     CHECK_INTEGER(&r, 2);
@@ -1581,8 +1581,8 @@ static void test_for(void)
 
     LHAT_TEST("the clauses of 9 章 apply to a walk too");
     run_text(&r,
-             "let^ t = { 1, 2, 3 }\n"
-             "let^ log = { s := 0 }\n"
+             "var^ t = { 1, 2, 3 }\n"
+             "var^ log = { s := 0 }\n"
              "for^ k, v in^ t {\n"
              "  main^:\n"
              "    log.s := log.s + v\n"
@@ -1594,12 +1594,12 @@ static void test_for(void)
     run_dispose(&r);
 
     LHAT_TEST("the focus is gone after the walk");
-    run_text(&r, "let^ t = { 1 }\nfor^ k, v in^ t { }\nreturn^ v\n");
+    run_text(&r, "var^ t = { 1 }\nfor^ k, v in^ t { }\nreturn^ v\n");
     LHAT_CHECK_EQ_INT(r.compiled, LHAT_COMPILE_UNDEFINED);
     run_dispose(&r);
 
     LHAT_TEST("walking something with no iterate is refused at run time");
-    run_text(&r, "let^ n = 1\nfor^ v in^ n { }\nreturn^ 0\n");
+    run_text(&r, "var^ n = 1\nfor^ v in^ n { }\nreturn^ 0\n");
     LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_TYPE_ERROR);
     run_dispose(&r);
 
@@ -1607,14 +1607,14 @@ static void test_for(void)
     // without the extra nesting.
     LHAT_TEST("if^ uses the focus once and does not repeat");
     run_text(&r,
-             "let^ x = 0\n"
-             "for^ let^ i := 1, let^ j := 2 if^ i + j < 10 { x := i + j }\n"
+             "var^ x = 0\n"
+             "for^ var^ i := 1, var^ j := 2 if^ i + j < 10 { x := i + j }\n"
              "return^ x\n");
     CHECK_INTEGER(&r, 3);
     run_dispose(&r);
 
     LHAT_TEST("and its focus does not escape either");
-    run_text(&r, "for^ let^ i := 1 if^ i > 0 { }\nreturn^ i\n");
+    run_text(&r, "for^ var^ i := 1 if^ i > 0 { }\nreturn^ i\n");
     LHAT_CHECK_EQ_INT(r.compiled, LHAT_COMPILE_UNDEFINED);
     run_dispose(&r);
 
@@ -1622,7 +1622,7 @@ static void test_for(void)
     // anywhere -- 16.1 has for^ take the form its clause does.
     LHAT_TEST("and it answers a value when written with ':'");
     run_text(&r,
-             "let^ x = for^ let^ i := 1, let^ j := 2 if^ i + j < 10: i + j el^: 0 ;\n"
+             "var^ x = for^ var^ i := 1, var^ j := 2 if^ i + j < 10: i + j el^: 0 ;\n"
              "return^ x\n");
     CHECK_INTEGER(&r, 3);
     run_dispose(&r);
@@ -1631,7 +1631,7 @@ static void test_for(void)
     // built from it, which is what an expression is.
     LHAT_TEST("and the focus still does not escape");
     run_text(&r,
-             "let^ x = for^ let^ i := 1 if^ i > 0: i el^: 0 ;\n"
+             "var^ x = for^ var^ i := 1 if^ i > 0: i el^: 0 ;\n"
              "return^ i\n");
     LHAT_CHECK_EQ_INT(r.compiled, LHAT_COMPILE_UNDEFINED);
     run_dispose(&r);
@@ -1639,8 +1639,8 @@ static void test_for(void)
     // 14 章 の table with 16: what a loop is mostly for.
     LHAT_TEST("a loop fills a table");
     run_text(&r,
-             "let^ t = { }\n"
-             "for^ let^ i := 1 to^ 4 { t[i] := i * i }\n"
+             "var^ t = { }\n"
+             "for^ i from^ 1 to^ 4 { t[i] := i * i }\n"
              "return^ t.3\n");
     CHECK_INTEGER(&r, 9);
     run_dispose(&r);
@@ -1655,10 +1655,10 @@ static void test_loop_clauses(void)
     // out of it.
     LHAT_TEST("prolog^ runs once and its names last the whole loop");
     run_text(&r,
-             "let^ out = 0\n"
+             "var^ out = 0\n"
              "repeat^ 4 {\n"
              "  prolog^:\n"
-             "    let^ total = 0\n"
+             "    var^ total = 0\n"
              "  main^:\n"
              "    total := total + 1\n"
              "  epilog^:\n"
@@ -1671,7 +1671,7 @@ static void test_loop_clauses(void)
     // 9.1: prolog^ runs whether the condition ever holds or not.
     LHAT_TEST("prolog^ and epilog^ run even when the body does not");
     run_text(&r,
-             "let^ seen = 0\n"
+             "var^ seen = 0\n"
              "repeat^ 0 {\n"
              "  prolog^:\n"
              "    seen := seen + 1\n"
@@ -1689,7 +1689,7 @@ static void test_loop_clauses(void)
     // is the shape C spells do ... while.
     LHAT_TEST("pre^ runs even when the condition never holds");
     run_text(&r,
-             "let^ n = 0\n"
+             "var^ n = 0\n"
              "repeat^ while^ false^ {\n"
              "  pre^:\n"
              "    n := n + 1\n"
@@ -1700,7 +1700,7 @@ static void test_loop_clauses(void)
 
     LHAT_TEST("where main^ under the same condition never does");
     run_text(&r,
-             "let^ n = 0\n"
+             "var^ n = 0\n"
              "repeat^ while^ false^ {\n"
              "  main^:\n"
              "    n := n + 1\n"
@@ -1713,8 +1713,8 @@ static void test_loop_clauses(void)
     // main^, since the turn whose test failed still ran its pre^.
     LHAT_TEST("pre^ and main^ straddle the condition");
     run_text(&r,
-             "let^ n = 0\n"
-             "let^ i = 0\n"
+             "var^ n = 0\n"
+             "var^ i = 0\n"
              "repeat^ while^ i < 3 {\n"
              "  pre^:\n"
              "    n := n + 10\n"
@@ -1728,7 +1728,7 @@ static void test_loop_clauses(void)
 
     LHAT_TEST("premain^ is the same clause");
     run_text(&r,
-             "let^ n = 0\n"
+             "var^ n = 0\n"
              "repeat^ while^ false^ {\n"
              "  premain^:\n"
              "    n := n + 7\n"
@@ -1741,7 +1741,7 @@ static void test_loop_clauses(void)
     // accepted, and pre^ does not make one of those.
     LHAT_TEST("a turn that only ran pre^ is not one first^ or last^ counts");
     run_text(&r,
-             "let^ n = 0\n"
+             "var^ n = 0\n"
              "repeat^ while^ false^ {\n"
              "  pre^:\n"
              "    n := n + 1\n"
@@ -1757,7 +1757,7 @@ static void test_loop_clauses(void)
     // 9.8: break^ leaves from inside pre^ like from anywhere else.
     LHAT_TEST("break^ leaves a loop from inside pre^");
     run_text(&r,
-             "let^ n = 0\n"
+             "var^ n = 0\n"
              "repeat^ {\n"
              "  pre^:\n"
              "    n := n + 1\n"
@@ -1771,11 +1771,11 @@ static void test_loop_clauses(void)
     // test writable at all -- 9.4 gives prolog^ names the whole loop.
     LHAT_TEST("prolog^ and pre^ together are the loop-and-a-half");
     run_text(&r,
-             "let^ out = 0\n"
-             "let^ i = 0\n"
+             "var^ out = 0\n"
+             "var^ i = 0\n"
              "repeat^ while^ i < 3 {\n"
              "  prolog^:\n"
-             "    let^ seen = 0\n"
+             "    var^ seen = 0\n"
              "  pre^:\n"
              "    i := i + 1\n"
              "  main^:\n"
@@ -1789,7 +1789,7 @@ static void test_loop_clauses(void)
 
     LHAT_TEST("first^ runs at the head of the first iteration only");
     run_text(&r,
-             "let^ n = 0\n"
+             "var^ n = 0\n"
              "repeat^ 3 {\n"
              "  first^:\n"
              "    n := n + 100\n"
@@ -1803,7 +1803,7 @@ static void test_loop_clauses(void)
     // 9.1: first^ and last^ do not run when the condition never holds.
     LHAT_TEST("first^ and last^ stay away when nothing ran");
     run_text(&r,
-             "let^ n = 0\n"
+             "var^ n = 0\n"
              "repeat^ 0 {\n"
              "  first^:\n"
              "    n := n + 1\n"
@@ -1819,8 +1819,8 @@ static void test_loop_clauses(void)
     // 9.7: the whole reason last^ keeps a copy. Naively it would see 5.
     LHAT_TEST("last^ sees the value the condition last accepted");
     run_text(&r,
-             "let^ seen = 0\n"
-             "for^ let^ i := 1 to^ 4 {\n"
+             "var^ seen = 0\n"
+             "for^ i from^ 1 to^ 4 {\n"
              "  last^:\n"
              "    seen := i\n"
              "}\n"
@@ -1832,8 +1832,8 @@ static void test_loop_clauses(void)
     // copy taken at the head of the iteration is the right one.
     LHAT_TEST("break^ leaves last^ looking at the current iteration");
     run_text(&r,
-             "let^ seen = 0\n"
-             "for^ let^ i := 1 to^ 10 {\n"
+             "var^ seen = 0\n"
+             "for^ i from^ 1 to^ 10 {\n"
              "  main^:\n"
              "    if^ i = 5 { break^ }\n"
              "  last^:\n"
@@ -1845,7 +1845,7 @@ static void test_loop_clauses(void)
 
     LHAT_TEST("break^ runs epilog^ too");
     run_text(&r,
-             "let^ n = 0\n"
+             "var^ n = 0\n"
              "repeat^ 10 {\n"
              "  main^:\n"
              "    break^\n"
@@ -1859,8 +1859,8 @@ static void test_loop_clauses(void)
     // 9.8: return^ is not a normal end for the loop, so neither runs.
     LHAT_TEST("return^ runs neither last^ nor epilog^");
     run_text(&r,
-             "let^ out = { n := 0 }\n"
-             "let^ go = f^ {\n"
+             "var^ out = { n := 0 }\n"
+             "var^ go = f^ {\n"
              "  repeat^ 3 {\n"
              "    main^:\n"
              "      return^ 1\n"
@@ -1880,9 +1880,9 @@ static void test_loop_clauses(void)
     // over rather than seeing the last.
     LHAT_TEST("what main^ declares lasts one iteration");
     run_text(&r,
-             "let^ out = 0\n"
+             "var^ out = 0\n"
              "repeat^ 3 {\n"
-             "  let^ each = 0\n"
+             "  var^ each = 0\n"
              "  each := each + 1\n"
              "  out := each\n"
              "}\n"
@@ -1894,7 +1894,7 @@ static void test_loop_clauses(void)
     run_text(&r,
              "repeat^ 1 {\n"
              "  prolog^:\n"
-             "    let^ total = 0\n"
+             "    var^ total = 0\n"
              "  main^:\n"
              "    total := 1\n"
              "}\n"
@@ -1906,8 +1906,8 @@ static void test_loop_clauses(void)
     // closure made inside sees where it ended up.
     LHAT_TEST("a closure made in a loop captures the place, not the moment");
     run_text(&r,
-             "let^ get = f^ { return^ 0 }\n"
-             "for^ let^ i := 1 to^ 3 {\n"
+             "var^ get = f^ { return^ 0 }\n"
+             "for^ i from^ 1 to^ 3 {\n"
              "  get := f^ { return^ i }\n"
              "}\n"
              "return^ get()\n");
@@ -1924,7 +1924,7 @@ static void test_errors(void)
     LHAT_TEST("an error is a value like any other");
     run_text(&r,
              "errordef^ IOError { NotFound, Denied }\n"
-             "let^ e = error^IOError.NotFound{ message := \"no such file\" }\n"
+             "var^ e = error^IOError.NotFound{ message := \"no such file\" }\n"
              "return^ e.message\n");
     CHECK_STRING(&r, "no such file");
     run_dispose(&r);
@@ -1948,7 +1948,7 @@ static void test_errors(void)
     LHAT_TEST("a declared field comes back");
     run_text(&r,
              "errordef^ ParseError { Syntax { line : number^, column : number^ }, Eof }\n"
-             "let^ e = error^ParseError.Syntax{ line := 3, column := 12 }\n"
+             "var^ e = error^ParseError.Syntax{ line := 3, column := 12 }\n"
              "return^ e.line * 100 + e.column\n");
     CHECK_INTEGER(&r, 312);
     run_dispose(&r);
@@ -1958,18 +1958,18 @@ static void test_errors(void)
     LHAT_TEST("a field left out takes its default");
     run_text(&r,
              "errordef^ ParseError { Syntax { line := 0, column := 0 } }\n"
-             "let^ e = error^ParseError.Syntax{ line := 7 }\n"
+             "var^ e = error^ParseError.Syntax{ line := 7 }\n"
              "return^ e.line * 100 + e.column\n");
     CHECK_INTEGER(&r, 700);
     run_dispose(&r);
 
     LHAT_TEST("the default is evaluated at each construction");
     run_text(&r,
-             "let^ n = 0\n"
-             "let^ next = f^ { n := n + 1 return^ n }\n"
+             "var^ n = 0\n"
+             "var^ next = f^ { n := n + 1 return^ n }\n"
              "errordef^ E { K { seq := next() } }\n"
-             "let^ a = error^E.K{ }\n"
-             "let^ b = error^E.K{ }\n"
+             "var^ a = error^E.K{ }\n"
+             "var^ b = error^E.K{ }\n"
              "return^ b.seq\n");
     CHECK_INTEGER(&r, 2);
     run_dispose(&r);
@@ -1980,7 +1980,7 @@ static void test_errors(void)
     run_text(&r,
              "errordef^ IOError { NotFound }\n"
              "errordef^ UserError { NotFound }\n"
-             "let^ e = error^IOError.NotFound{ }\n"
+             "var^ e = error^IOError.NotFound{ }\n"
              "return^ e isa^ UserError.NotFound\n");
     CHECK_BOOL(&r, false);
     run_dispose(&r);
@@ -1989,7 +1989,7 @@ static void test_errors(void)
     run_text(&r,
              "errordef^ IOError { NotFound }\n"
              "errordef^ UserError { NotFound }\n"
-             "let^ e = error^IOError.NotFound{ }\n"
+             "var^ e = error^IOError.NotFound{ }\n"
              "return^ e isa^ IOError.NotFound\n");
     CHECK_BOOL(&r, true);
     run_dispose(&r);
@@ -1998,7 +1998,7 @@ static void test_errors(void)
     LHAT_TEST("naming the declaration asks about all of its kinds");
     run_text(&r,
              "errordef^ IOError { NotFound, Denied }\n"
-             "let^ e = error^IOError.Denied{ }\n"
+             "var^ e = error^IOError.Denied{ }\n"
              "return^ e isa^ IOError\n");
     CHECK_BOOL(&r, true);
     run_dispose(&r);
@@ -2006,7 +2006,7 @@ static void test_errors(void)
     LHAT_TEST("a sibling kind is not the one it is");
     run_text(&r,
              "errordef^ IOError { NotFound, Denied }\n"
-             "let^ e = error^IOError.Denied{ }\n"
+             "var^ e = error^IOError.Denied{ }\n"
              "return^ e isa^ IOError.NotFound\n");
     CHECK_BOOL(&r, false);
     run_dispose(&r);
@@ -2040,7 +2040,7 @@ static void test_catch_and_try(void)
     LHAT_TEST("catch^ replaces an error with its right side");
     run_text(&r,
              "errordef^ E { Bad }\n"
-             "let^ fail = f^ { return^ error^E.Bad{ } }\n"
+             "var^ fail = f^ { return^ error^E.Bad{ } }\n"
              "return^ fail() catch^ 0\n");
     CHECK_INTEGER(&r, 0);
     run_dispose(&r);
@@ -2048,7 +2048,7 @@ static void test_catch_and_try(void)
     LHAT_TEST("and leaves a value that is not an error alone");
     run_text(&r,
              "errordef^ E { Bad }\n"
-             "let^ ok = f^ { return^ 7 }\n"
+             "var^ ok = f^ { return^ 7 }\n"
              "return^ ok() catch^ 0\n");
     CHECK_INTEGER(&r, 7);
     run_dispose(&r);
@@ -2058,7 +2058,7 @@ static void test_catch_and_try(void)
     LHAT_TEST("the caught error is it^");
     run_text(&r,
              "errordef^ E { Bad }\n"
-             "let^ fail = f^ { return^ error^E.Bad{ message := \"oh\" } }\n"
+             "var^ fail = f^ { return^ error^E.Bad{ message := \"oh\" } }\n"
              "return^ fail() catch^ it^.message\n");
     CHECK_STRING(&r, "oh");
     run_dispose(&r);
@@ -2066,7 +2066,7 @@ static void test_catch_and_try(void)
     LHAT_TEST("it^ tells the kinds apart");
     run_text(&r,
              "errordef^ E { A, B }\n"
-             "let^ fail = f^ { return^ error^E.B{ } }\n"
+             "var^ fail = f^ { return^ error^E.B{ } }\n"
              "return^ fail() catch^ if^ it^ isa^ E.A: 1 el^: 2 ;\n");
     CHECK_INTEGER(&r, 2);
     run_dispose(&r);
@@ -2076,7 +2076,7 @@ static void test_catch_and_try(void)
     LHAT_TEST("catch^ attaches to the operation, not the sum");
     run_text(&r,
              "errordef^ E { Bad }\n"
-             "let^ fail = f^ { return^ error^E.Bad{ } }\n"
+             "var^ fail = f^ { return^ error^E.Bad{ } }\n"
              "return^ 10 + fail() catch^ 5\n");
     CHECK_INTEGER(&r, 15);
     run_dispose(&r);
@@ -2084,8 +2084,8 @@ static void test_catch_and_try(void)
     LHAT_TEST("it^ is gone again after the catch^");
     run_text(&r,
              "errordef^ E { Bad }\n"
-             "let^ ok = f^ { return^ 1 }\n"
-             "let^ x = ok() catch^ 0\n"
+             "var^ ok = f^ { return^ 1 }\n"
+             "var^ x = ok() catch^ 0\n"
              "return^ it^\n");
     LHAT_CHECK_EQ_INT(r.compiled, LHAT_COMPILE_UNDEFINED);
     run_dispose(&r);
@@ -2094,9 +2094,9 @@ static void test_catch_and_try(void)
     LHAT_TEST("try^ returns the error from the procedure that wrote it");
     run_text(&r,
              "errordef^ E { Bad }\n"
-             "let^ inner = f^ { return^ error^E.Bad{ message := \"deep\" } }\n"
-             "let^ outer = f^ {\n"
-             "  let^ v = try^ inner()\n"
+             "var^ inner = f^ { return^ error^E.Bad{ message := \"deep\" } }\n"
+             "var^ outer = f^ {\n"
+             "  var^ v = try^ inner()\n"
              "  return^ v + 1\n"
              "}\n"
              "return^ outer().message\n");
@@ -2106,8 +2106,8 @@ static void test_catch_and_try(void)
     LHAT_TEST("and gets out of the way when there is no error");
     run_text(&r,
              "errordef^ E { Bad }\n"
-             "let^ inner = f^ { return^ 41 }\n"
-             "let^ outer = f^ { return^ try^ inner() + 1 }\n"
+             "var^ inner = f^ { return^ 41 }\n"
+             "var^ outer = f^ { return^ try^ inner() + 1 }\n"
              "return^ outer()\n");
     CHECK_INTEGER(&r, 42);
     run_dispose(&r);
@@ -2117,12 +2117,12 @@ static void test_catch_and_try(void)
     LHAT_TEST("try^ leaving a loop runs neither last^ nor epilog^");
     run_text(&r,
              "errordef^ E { Bad }\n"
-             "let^ out = { n := 0 }\n"
-             "let^ fail = f^ { return^ error^E.Bad{ } }\n"
-             "let^ go = f^ {\n"
+             "var^ out = { n := 0 }\n"
+             "var^ fail = f^ { return^ error^E.Bad{ } }\n"
+             "var^ go = f^ {\n"
              "  repeat^ 3 {\n"
              "    main^:\n"
-             "      let^ v = try^ fail()\n"
+             "      var^ v = try^ fail()\n"
              "    last^:\n"
              "      out.n := out.n + 10\n"
              "    epilog^:\n"
@@ -2138,8 +2138,8 @@ static void test_catch_and_try(void)
     LHAT_TEST("try^ stands as a statement when the value is not wanted");
     run_text(&r,
              "errordef^ E { Bad }\n"
-             "let^ fail = f^ { return^ error^E.Bad{ message := \"gone\" } }\n"
-             "let^ go = f^ { try^ fail() return^ 0 }\n"
+             "var^ fail = f^ { return^ error^E.Bad{ message := \"gone\" } }\n"
+             "var^ go = f^ { try^ fail() return^ 0 }\n"
              "return^ go().message\n");
     CHECK_STRING(&r, "gone");
     run_dispose(&r);
@@ -2147,19 +2147,19 @@ static void test_catch_and_try(void)
     // 02 の 11.7: '??' is the same shape, asking about nil^.
     // The escape keeps "??'" from being read as a trigraph for '^'.
     LHAT_TEST("'?\?' supplies a value for a missing key");
-    run_text(&r, "let^ t = { }\nreturn^ t[\"nowhere\"] ?? 5\n");
+    run_text(&r, "var^ t = { }\nreturn^ t[\"nowhere\"] ?? 5\n");
     CHECK_INTEGER(&r, 5);
     run_dispose(&r);
 
     LHAT_TEST("and leaves a key that is there alone");
-    run_text(&r, "let^ t = { a := 1 }\nreturn^ t[\"a\"] ?? 5\n");
+    run_text(&r, "var^ t = { a := 1 }\nreturn^ t[\"a\"] ?? 5\n");
     CHECK_INTEGER(&r, 1);
     run_dispose(&r);
 
     // 11.7 asks about nil^ and nothing else, so false^ is a value that is
     // there rather than one that is missing.
     LHAT_TEST("'?\?' asks about nil^, not about being false");
-    run_text(&r, "let^ t = { a := false^ }\nreturn^ t[\"a\"] ?? true^\n");
+    run_text(&r, "var^ t = { a := false^ }\nreturn^ t[\"a\"] ?? true^\n");
     CHECK_BOOL(&r, false);
     run_dispose(&r);
 }
@@ -2171,7 +2171,7 @@ static void test_cleanups(void)
 
     LHAT_TEST("finally^ runs when the block ends");
     run_text(&r,
-             "let^ log = { n := 0 }\n"
+             "var^ log = { n := 0 }\n"
              "do^{\n"
              "  log.n := 1\n"
              "finally^:\n"
@@ -2184,8 +2184,8 @@ static void test_cleanups(void)
     // 10.2: however the block is left.
     LHAT_TEST("finally^ runs when return^ leaves through it");
     run_text(&r,
-             "let^ log = { n := 0 }\n"
-             "let^ go = p^ {\n"
+             "var^ log = { n := 0 }\n"
+             "var^ go = p^ {\n"
              "  do^{\n"
              "    return^ 1\n"
              "  finally^:\n"
@@ -2199,7 +2199,7 @@ static void test_cleanups(void)
 
     LHAT_TEST("and when break^ leaves through it");
     run_text(&r,
-             "let^ log = { n := 0 }\n"
+             "var^ log = { n := 0 }\n"
              "repeat^ 5 {\n"
              "  do^{\n"
              "    log.n := log.n + 1\n"
@@ -2216,11 +2216,11 @@ static void test_cleanups(void)
     LHAT_TEST("and when try^ hands an error to the caller");
     run_text(&r,
              "errordef^ E { Bad }\n"
-             "let^ log = { n := 0 }\n"
-             "let^ fail = f^ { return^ error^E.Bad{ } }\n"
-             "let^ go = p^ {\n"
+             "var^ log = { n := 0 }\n"
+             "var^ fail = f^ { return^ error^E.Bad{ } }\n"
+             "var^ go = p^ {\n"
              "  do^{\n"
-             "    let^ v = try^ fail()\n"
+             "    var^ v = try^ fail()\n"
              "  finally^:\n"
              "    log.n := 3\n"
              "  }\n"
@@ -2234,8 +2234,8 @@ static void test_cleanups(void)
     // 10.1: a p^ body is a block like any other.
     LHAT_TEST("a procedure body may carry a finally^");
     run_text(&r,
-             "let^ log = { n := 0 }\n"
-             "let^ go = p^ {\n"
+             "var^ log = { n := 0 }\n"
+             "var^ go = p^ {\n"
              "  return^ 1\n"
              "finally^:\n"
              "  log.n := 5\n"
@@ -2248,8 +2248,8 @@ static void test_cleanups(void)
     // 10.4: innermost first, which is the order the frame drains in.
     LHAT_TEST("nested finally^ run from the inside out");
     run_text(&r,
-             "let^ log = { s := 0 }\n"
-             "let^ go = p^ {\n"
+             "var^ log = { s := 0 }\n"
+             "var^ go = p^ {\n"
              "  do^{\n"
              "    do^{\n"
              "      return^ 1\n"
@@ -2267,8 +2267,8 @@ static void test_cleanups(void)
 
     LHAT_TEST("a finally^ that was already run is not run again");
     run_text(&r,
-             "let^ log = { n := 0 }\n"
-             "let^ go = p^ {\n"
+             "var^ log = { n := 0 }\n"
+             "var^ go = p^ {\n"
              "  do^{\n"
              "    log.n := log.n + 1\n"
              "  finally^:\n"
@@ -2284,14 +2284,14 @@ static void test_cleanups(void)
     // 10.5: Java lets a finally return and silently replace the answer. C#
     // refuses; so does this.
     LHAT_TEST("return^ inside a finally^ does not compile");
-    run_text(&r, "do^{\n  let^ x = 1\nfinally^:\n  return^ 2\n}\n");
+    run_text(&r, "do^{\n  var^ x = 1\nfinally^:\n  return^ 2\n}\n");
     LHAT_CHECK_EQ_INT(r.compiled, LHAT_COMPILE_UNSUPPORTED);
     run_dispose(&r);
 
     // 9.2 and 10.9: finally^ comes after the loop's own clauses.
     LHAT_TEST("a loop's finally^ runs after its epilog^");
     run_text(&r,
-             "let^ log = { s := 0 }\n"
+             "var^ log = { s := 0 }\n"
              "repeat^ 1 {\n"
              "  main^:\n"
              "    log.s := log.s * 10 + 1\n"
@@ -2308,8 +2308,8 @@ static void test_cleanups(void)
     // still runs the finally^.
     LHAT_TEST("a return^ out of a loop runs the finally^ and nothing else");
     run_text(&r,
-             "let^ log = { s := 0 }\n"
-             "let^ go = p^ {\n"
+             "var^ log = { s := 0 }\n"
+             "var^ go = p^ {\n"
              "  repeat^ 3 {\n"
              "    main^:\n"
              "      return^ 1\n"
@@ -2327,8 +2327,8 @@ static void test_cleanups(void)
     // 12.2: dispose() at the end of the block.
     LHAT_TEST("with^ disposes at the end of the block");
     run_text(&r,
-             "let^ log = { n := 0 }\n"
-             "let^ open = f^ { return^ { dispose := p^ { log.n := 1 } } }\n"
+             "var^ log = { n := 0 }\n"
+             "var^ open = f^ { return^ { dispose := p^ { log.n := 1 } } }\n"
              "with^ h = open()\n"
              "{\n"
              "  log.n := 0\n"
@@ -2341,10 +2341,10 @@ static void test_cleanups(void)
     // depends on an earlier one goes first.
     LHAT_TEST("several with^ dispose in reverse order");
     run_text(&r,
-             "let^ log = { s := 0 }\n"
-             "let^ res = f^n { return^ { dispose := p^ { log.s := log.s * 10 + n } } }\n"
+             "var^ log = { s := 0 }\n"
+             "var^ res = f^n { return^ { dispose := p^ { log.s := log.s * 10 + n } } }\n"
              "with^ a = res(1)\n"
-             "with^ b := res(2)\n"
+             "with^ b = res(2)\n"
              "{\n"
              "  log.s := 0\n"
              "}\n"
@@ -2355,9 +2355,9 @@ static void test_cleanups(void)
     // 12.3: dispose() has the same strength as finally^.
     LHAT_TEST("with^ disposes when return^ leaves through it");
     run_text(&r,
-             "let^ log = { n := 0 }\n"
-             "let^ open = f^ { return^ { dispose := p^ { log.n := 4 } } }\n"
-             "let^ go = p^ {\n"
+             "var^ log = { n := 0 }\n"
+             "var^ open = f^ { return^ { dispose := p^ { log.n := 4 } } }\n"
+             "var^ go = p^ {\n"
              "  with^ h = open()\n"
              "  {\n"
              "    return^ 1\n"
@@ -2372,8 +2372,8 @@ static void test_cleanups(void)
     // from outside and finally^ is its last clause from inside.
     LHAT_TEST("finally^ runs before the dispose that surrounds it");
     run_text(&r,
-             "let^ log = { s := 0 }\n"
-             "let^ open = f^ { return^ { dispose := p^ { log.s := log.s * 10 + 2 } } }\n"
+             "var^ log = { s := 0 }\n"
+             "var^ open = f^ { return^ { dispose := p^ { log.s := log.s * 10 + 2 } } }\n"
              "with^ h = open()\n"
              "{\n"
              "  log.s := 0\n"
@@ -2386,8 +2386,8 @@ static void test_cleanups(void)
 
     LHAT_TEST("the resource is in scope inside the block and not after it");
     run_text(&r,
-             "let^ open = f^ { return^ { dispose := p^ { }, n := 6 } }\n"
-             "let^ seen = 0\n"
+             "var^ open = f^ { return^ { dispose := p^ { }, n := 6 } }\n"
+             "var^ seen = 0\n"
              "with^ h = open()\n"
              "{\n"
              "  seen := h.n\n"
@@ -2397,7 +2397,7 @@ static void test_cleanups(void)
     run_dispose(&r);
 
     run_text(&r,
-             "let^ open = f^ { return^ { dispose := p^ { } } }\n"
+             "var^ open = f^ { return^ { dispose := p^ { } } }\n"
              "with^ h = open()\n"
              "{\n"
              "}\n"
@@ -2415,8 +2415,8 @@ static void test_definitions(void)
     // arguments that answers what the template says.
     LHAT_TEST("the default new^ builds an instance from the template");
     run_text(&r,
-             "let^ Foo = def^{ self^{ a := 1, b := 2 } }\n"
-             "let^ f = Foo.new^()\n"
+             "var^ Foo = def^{ self^{ a := 1, b := 2 } }\n"
+             "var^ f = Foo.new^()\n"
              "return^ f.a * 10 + f.b\n");
     CHECK_INTEGER(&r, 12);
     run_dispose(&r);
@@ -2425,9 +2425,9 @@ static void test_definitions(void)
     // to the instance and is copied.
     LHAT_TEST("two instances have their own fields");
     run_text(&r,
-             "let^ Foo = def^{ self^{ n := 0 } }\n"
-             "let^ a = Foo.new^()\n"
-             "let^ b = Foo.new^()\n"
+             "var^ Foo = def^{ self^{ n := 0 } }\n"
+             "var^ a = Foo.new^()\n"
+             "var^ b = Foo.new^()\n"
              "a.n := 5\n"
              "return^ b.n\n");
     CHECK_INTEGER(&r, 0);
@@ -2438,9 +2438,9 @@ static void test_definitions(void)
     // argument has no counterpart here.
     LHAT_TEST("a mutable initial value is not shared between instances");
     run_text(&r,
-             "let^ Foo = def^{ self^{ items := { } } }\n"
-             "let^ a = Foo.new^()\n"
-             "let^ b = Foo.new^()\n"
+             "var^ Foo = def^{ self^{ items := { } } }\n"
+             "var^ a = Foo.new^()\n"
+             "var^ b = Foo.new^()\n"
              "a.items[1] := 9\n"
              "return^ b.items[1] ?? 0\n");
     CHECK_INTEGER(&r, 0);
@@ -2449,7 +2449,7 @@ static void test_definitions(void)
     // 14.4: the shape of the signature says it is a method. No modifier does.
     LHAT_TEST("a method gets the receiver as its self^");
     run_text(&r,
-             "let^ Foo = def^{\n"
+             "var^ Foo = def^{\n"
              "  self^{ n := 7 },\n"
              "  get := f^self^ { return^ self^.n },\n"
              "}\n"
@@ -2459,7 +2459,7 @@ static void test_definitions(void)
 
     LHAT_TEST("a method takes arguments after the receiver");
     run_text(&r,
-             "let^ Foo = def^{\n"
+             "var^ Foo = def^{\n"
              "  self^{ n := 1 },\n"
              "  add := f^self^, x { return^ self^.n + x },\n"
              "}\n"
@@ -2469,11 +2469,11 @@ static void test_definitions(void)
 
     LHAT_TEST("a method may change the instance");
     run_text(&r,
-             "let^ Foo = def^{\n"
+             "var^ Foo = def^{\n"
              "  self^{ n := 0 },\n"
              "  bump := p^self^ { self^.n := self^.n + 1 },\n"
              "}\n"
-             "let^ f = Foo.new^()\n"
+             "var^ f = Foo.new^()\n"
              "f.bump()\n"
              "f.bump()\n"
              "return^ f.n\n");
@@ -2484,12 +2484,12 @@ static void test_definitions(void)
     // same call written differently.
     LHAT_TEST("a method taken out is called with the receiver by hand");
     run_text(&r,
-             "let^ Foo = def^{\n"
+             "var^ Foo = def^{\n"
              "  self^{ n := 3 },\n"
              "  get := f^self^ { return^ self^.n },\n"
              "}\n"
-             "let^ f = Foo.new^()\n"
-             "let^ g = f.get\n"
+             "var^ f = Foo.new^()\n"
+             "var^ g = f.get\n"
              "return^ g(f)\n");
     CHECK_INTEGER(&r, 3);
     run_dispose(&r);
@@ -2498,7 +2498,7 @@ static void test_definitions(void)
     // passed to it.
     LHAT_TEST("a member without self^ is static");
     run_text(&r,
-             "let^ Foo = def^{ self^{ }, make := f^x { return^ x * 2 } }\n"
+             "var^ Foo = def^{ self^{ }, make := f^x { return^ x * 2 } }\n"
              "return^ Foo.make(21)\n");
     CHECK_INTEGER(&r, 42);
     run_dispose(&r);
@@ -2506,7 +2506,7 @@ static void test_definitions(void)
     // 14.7: an instance sees the definition's members too.
     LHAT_TEST("an instance reaches a static member");
     run_text(&r,
-             "let^ Foo = def^{ self^{ }, tag := f^ { return^ 9 } }\n"
+             "var^ Foo = def^{ self^{ }, tag := f^ { return^ 9 } }\n"
              "return^ Foo.new^().tag()\n");
     CHECK_INTEGER(&r, 9);
     run_dispose(&r);
@@ -2514,11 +2514,11 @@ static void test_definitions(void)
     // 14.11: new^ may fill some fields and leave the rest to the template.
     LHAT_TEST("new^ fills what it names and the template the rest");
     run_text(&r,
-             "let^ Foo = def^{\n"
+             "var^ Foo = def^{\n"
              "  self^{ a := 1, b := 2 },\n"
              "  new^ := f^v { return^ self^{ a := v } },\n"
              "}\n"
-             "let^ f = Foo.new^(8)\n"
+             "var^ f = Foo.new^(8)\n"
              "return^ f.a * 10 + f.b\n");
     CHECK_INTEGER(&r, 82);
     run_dispose(&r);
@@ -2527,13 +2527,13 @@ static void test_definitions(void)
     // initialiser should be made to do.
     LHAT_TEST("the initialiser of a field new^ named is not evaluated");
     run_text(&r,
-             "let^ log = { n := 0 }\n"
-             "let^ side = f^ { log.n := log.n + 1 return^ 0 }\n"
-             "let^ Foo = def^{\n"
+             "var^ log = { n := 0 }\n"
+             "var^ side = f^ { log.n := log.n + 1 return^ 0 }\n"
+             "var^ Foo = def^{\n"
              "  self^{ a := side() },\n"
              "  new^ := f^ { return^ self^{ a := 5 } },\n"
              "}\n"
-             "let^ f = Foo.new^()\n"
+             "var^ f = Foo.new^()\n"
              "return^ log.n\n");
     CHECK_INTEGER(&r, 0);
     run_dispose(&r);
@@ -2542,7 +2542,7 @@ static void test_definitions(void)
     // can see class^, which does.
     LHAT_TEST("an initialiser sees class^");
     run_text(&r,
-             "let^ Foo = def^{\n"
+             "var^ Foo = def^{\n"
              "  self^{ a := class^.base() },\n"
              "  base := f^ { return^ 6 },\n"
              "}\n"
@@ -2552,7 +2552,7 @@ static void test_definitions(void)
 
     LHAT_TEST("a method sees class^ too");
     run_text(&r,
-             "let^ Foo = def^{\n"
+             "var^ Foo = def^{\n"
              "  self^{ },\n"
              "  base := f^ { return^ 4 },\n"
              "  get := f^self^ { return^ class^.base() },\n"
@@ -2564,9 +2564,9 @@ static void test_definitions(void)
     // 14.5: composition is '..' and the order matters.
     LHAT_TEST("composition brings the base's members along");
     run_text(&r,
-             "let^ Foo = def^{ self^{ a := 1 }, one := f^ { return^ 1 } }\n"
-             "let^ Bar = Foo .. def^{ self^{ b := 2 }, two := f^ { return^ 2 } }\n"
-             "let^ x = Bar.new^()\n"
+             "var^ Foo = def^{ self^{ a := 1 }, one := f^ { return^ 1 } }\n"
+             "var^ Bar = Foo .. def^{ self^{ b := 2 }, two := f^ { return^ 2 } }\n"
+             "var^ x = Bar.new^()\n"
              "return^ x.a * 1000 + x.b * 100 + x.one() * 10 + x.two()\n");
     CHECK_INTEGER(&r, 1212);
     run_dispose(&r);
@@ -2574,8 +2574,8 @@ static void test_definitions(void)
     // 14.12: override^ replaces, and the later part is what wins.
     LHAT_TEST("override^ replaces the member it names");
     run_text(&r,
-             "let^ Foo = def^{ self^{ }, tag := f^ { return^ 1 } }\n"
-             "let^ Bar = Foo .. def^{\n"
+             "var^ Foo = def^{ self^{ }, tag := f^ { return^ 1 } }\n"
+             "var^ Bar = Foo .. def^{\n"
              "  self^{ },\n"
              "  override^\n"
              "  tag := f^ { return^ 2 },\n"
@@ -2586,8 +2586,8 @@ static void test_definitions(void)
 
     LHAT_TEST("and the base keeps its own");
     run_text(&r,
-             "let^ Foo = def^{ self^{ }, tag := f^ { return^ 1 } }\n"
-             "let^ Bar = Foo .. def^{\n"
+             "var^ Foo = def^{ self^{ }, tag := f^ { return^ 1 } }\n"
+             "var^ Bar = Foo .. def^{\n"
              "  self^{ },\n"
              "  override^\n"
              "  tag := f^ { return^ 2 },\n"
@@ -2600,8 +2600,8 @@ static void test_definitions(void)
     // in order, so it is read out of the table before the write.
     LHAT_TEST("super^ reaches the definition an override^ replaced");
     run_text(&r,
-             "let^ Foo = def^{ self^{ }, tag := f^ { return^ 1 } }\n"
-             "let^ Bar = Foo .. def^{\n"
+             "var^ Foo = def^{ self^{ }, tag := f^ { return^ 1 } }\n"
+             "var^ Bar = Foo .. def^{\n"
              "  self^{ },\n"
              "  override^ tag := f^ { return^ super^() + 100 },\n"
              "}\n"
@@ -2613,10 +2613,10 @@ static void test_definitions(void)
     // parts up to that point had built.
     LHAT_TEST("and each link of a chain reaches its own");
     run_text(&r,
-             "let^ A = def^{ self^{ }, m := f^ { return^ 1 } }\n"
-             "let^ B = A .. def^{ self^{ },\n"
+             "var^ A = def^{ self^{ }, m := f^ { return^ 1 } }\n"
+             "var^ B = A .. def^{ self^{ },\n"
              "  override^ m := f^ { return^ super^() + 10 } }\n"
-             "let^ C = B .. def^{ self^{ },\n"
+             "var^ C = B .. def^{ self^{ },\n"
              "  override^ m := f^ { return^ super^() + 100 } }\n"
              "return^ C.new^().m()\n");
     CHECK_INTEGER(&r, 111);
@@ -2626,9 +2626,9 @@ static void test_definitions(void)
     // it is not written. This one reads a field through it.
     LHAT_TEST("super^ takes the receiver without it being written");
     run_text(&r,
-             "let^ Foo = def^{ self^{ n := 3 },\n"
+             "var^ Foo = def^{ self^{ n := 3 },\n"
              "  get := f^self^ -> number^ { return^ self^.n } }\n"
-             "let^ Bar = Foo .. def^{ self^{ },\n"
+             "var^ Bar = Foo .. def^{ self^{ },\n"
              "  override^ get := f^self^ -> number^ { return^ super^() * 10 } }\n"
              "return^ Bar.new^().get()\n");
     CHECK_INTEGER(&r, 30);
@@ -2638,11 +2638,11 @@ static void test_definitions(void)
     // the receiver is spelled out.
     LHAT_TEST("and spelled out once super^ is taken as a value");
     run_text(&r,
-             "let^ Foo = def^{ self^{ n := 3 },\n"
+             "var^ Foo = def^{ self^{ n := 3 },\n"
              "  get := f^self^ -> number^ { return^ self^.n } }\n"
-             "let^ Bar = Foo .. def^{ self^{ },\n"
+             "var^ Bar = Foo .. def^{ self^{ },\n"
              "  override^ get := f^self^ -> number^ {\n"
-             "    let^ old = super^\n"
+             "    var^ old = super^\n"
              "    return^ old(self^) + 1\n"
              "  } }\n"
              "return^ Bar.new^().get()\n");
@@ -2653,10 +2653,10 @@ static void test_definitions(void)
     // overlaps, so a plain write would take the whole group with it.
     LHAT_TEST("override^ over an overload^ keeps the other arms");
     run_text(&r,
-             "let^ A = def^{ self^{ }, m := f^ { return^ 1 } }\n"
-             "let^ B = A .. def^{ self^{ },\n"
+             "var^ A = def^{ self^{ }, m := f^ { return^ 1 } }\n"
+             "var^ B = A .. def^{ self^{ },\n"
              "  overload^ m := f^ x:number^ { return^ x } }\n"
-             "let^ C = B .. def^{ self^{ },\n"
+             "var^ C = B .. def^{ self^{ },\n"
              "  override^ m := f^ { return^ super^() + 100 } }\n"
              "return^ C.new^().m(7)\n");
     CHECK_INTEGER(&r, 7);
@@ -2664,10 +2664,10 @@ static void test_definitions(void)
 
     LHAT_TEST("and super^ there is the arm that was replaced");
     run_text(&r,
-             "let^ A = def^{ self^{ }, m := f^ { return^ 1 } }\n"
-             "let^ B = A .. def^{ self^{ },\n"
+             "var^ A = def^{ self^{ }, m := f^ { return^ 1 } }\n"
+             "var^ B = A .. def^{ self^{ },\n"
              "  overload^ m := f^ x:number^ { return^ x } }\n"
-             "let^ C = B .. def^{ self^{ },\n"
+             "var^ C = B .. def^{ self^{ },\n"
              "  override^ m := f^ { return^ super^() + 100 } }\n"
              "return^ C.new^().m()\n");
     CHECK_INTEGER(&r, 101);
@@ -2677,16 +2677,16 @@ static void test_definitions(void)
     // provides goes under the same name. The mixin's own body reaches it.
     LHAT_TEST("what fills an abstract^ is what the mixin calls");
     run_text(&r,
-             "let^ Counting = def^{\n"
+             "var^ Counting = def^{\n"
              "  self^{ count := 0 },\n"
              "  abstract^ step : f^ -> number^;,\n"
              "  bump := p^self^ { self^.count := self^.count + class^.step() },\n"
              "}\n"
-             "let^ Fast = Counting .. def^{\n"
+             "var^ Fast = Counting .. def^{\n"
              "  self^{},\n"
              "  step := f^ -> number^ { return^ 10 },\n"
              "}\n"
-             "let^ o = Fast.new^()\n"
+             "var^ o = Fast.new^()\n"
              "o.bump()\n"
              "return^ o.count\n");
     CHECK_INTEGER(&r, 10);
@@ -2696,11 +2696,11 @@ static void test_definitions(void)
     // it is the only one the construction sees.
     LHAT_TEST("an abstract^ field is initialised by what fills it");
     run_text(&r,
-             "let^ Greet = def^{\n"
+             "var^ Greet = def^{\n"
              "  self^{ abstract^ n : number^ },\n"
              "  hello := f^self^ -> number^ { return^ self^.n + 1 },\n"
              "}\n"
-             "let^ Thing = Greet .. def^{ self^{ n := 10 } }\n"
+             "var^ Thing = Greet .. def^{ self^{ n := 10 } }\n"
              "return^ Thing.new^().hello()\n");
     CHECK_INTEGER(&r, 11);
     run_dispose(&r);
@@ -2709,13 +2709,13 @@ static void test_definitions(void)
     // super^ reaches is settled by 14.2's chain the same as any other.
     LHAT_TEST("a mixin written against no base reaches the base it gets");
     run_text(&r,
-             "let^ Base = def^{ self^{ n := 0 },\n"
+             "var^ Base = def^{ self^{ n := 0 },\n"
              "  run := p^self^ { self^.n := self^.n + 1 } }\n"
-             "let^ Logged = def^{ self^{ abstract^ n : number^ },\n"
+             "var^ Logged = def^{ self^{ abstract^ n : number^ },\n"
              "  override^ run := p^self^ { self^.n := self^.n + 10\n"
              "                             super^() } }\n"
-             "let^ App = Base .. Logged\n"
-             "let^ o = App.new^()\n"
+             "var^ App = Base .. Logged\n"
+             "var^ o = App.new^()\n"
              "o.run()\n"
              "return^ o.n\n");
     CHECK_INTEGER(&r, 11);
@@ -2723,16 +2723,16 @@ static void test_definitions(void)
 
     LHAT_TEST("and two of them stack in the order they are written");
     run_text(&r,
-             "let^ Base = def^{ self^{ n := 0 },\n"
+             "var^ Base = def^{ self^{ n := 0 },\n"
              "  run := p^self^ { self^.n := self^.n + 1 } }\n"
-             "let^ A = def^{ self^{ abstract^ n : number^ },\n"
+             "var^ A = def^{ self^{ abstract^ n : number^ },\n"
              "  override^ run := p^self^ { self^.n := self^.n + 10\n"
              "                             super^() } }\n"
-             "let^ B = def^{ self^{ abstract^ n : number^ },\n"
+             "var^ B = def^{ self^{ abstract^ n : number^ },\n"
              "  override^ run := p^self^ { self^.n := self^.n + 100\n"
              "                             super^() } }\n"
-             "let^ App = Base .. A .. B\n"
-             "let^ o = App.new^()\n"
+             "var^ App = Base .. A .. B\n"
+             "var^ o = App.new^()\n"
              "o.run()\n"
              "return^ o.n\n");
     CHECK_INTEGER(&r, 111);
@@ -2743,14 +2743,14 @@ static void test_definitions(void)
     // side wrote is still a value, and 14.4 applies it to whatever fits.
     LHAT_TEST("either side of an ambiguous name is still reachable");
     run_text(&r,
-             "let^ A = def^{ self^{},\n"
+             "var^ A = def^{ self^{},\n"
              "  m := f^self^ -> number^ { return^ 1 },\n"
              "  only := f^ -> number^ { return^ 9 } }\n"
-             "let^ B = def^{ self^{}, m := f^self^ -> number^ { return^ 2 } }\n"
-             "let^ D = A .. B\n"
-             "let^ fromA = A.m\n"
-             "let^ fromB = B.m\n"
-             "let^ o = D.new^()\n"
+             "var^ B = def^{ self^{}, m := f^self^ -> number^ { return^ 2 } }\n"
+             "var^ D = A .. B\n"
+             "var^ fromA = A.m\n"
+             "var^ fromB = B.m\n"
+             "var^ o = D.new^()\n"
              "return^ fromA(o) * 100 + fromB(o) * 10 + D.new^().only()\n");
     CHECK_INTEGER(&r, 129);
     run_dispose(&r);
@@ -2759,20 +2759,20 @@ static void test_definitions(void)
     // before a later definition is unaffected by it.
     LHAT_TEST("two definitions of the same shape stay separate");
     run_text(&r,
-             "let^ Foo = def^{ self^{ n := 1 } }\n"
-             "let^ Bar = def^{ self^{ n := 2 } }\n"
+             "var^ Foo = def^{ self^{ n := 1 } }\n"
+             "var^ Bar = def^{ self^{ n := 2 } }\n"
              "return^ Foo.new^().n * 10 + Bar.new^().n\n");
     CHECK_INTEGER(&r, 12);
     run_dispose(&r);
 
     LHAT_TEST("a composed definition's new^ fills the base's fields too");
     run_text(&r,
-             "let^ Foo = def^{ self^{ a := 1, b := 2 } }\n"
-             "let^ Bar = Foo .. def^{\n"
+             "var^ Foo = def^{ self^{ a := 1, b := 2 } }\n"
+             "var^ Bar = Foo .. def^{\n"
              "  self^{ c := 3 },\n"
              "  new^ := f^v { return^ self^{ b := v } },\n"
              "}\n"
-             "let^ x = Bar.new^(9)\n"
+             "var^ x = Bar.new^(9)\n"
              "return^ x.a * 100 + x.b * 10 + x.c\n");
     CHECK_INTEGER(&r, 193);
     run_dispose(&r);
@@ -2782,8 +2782,8 @@ static void test_definitions(void)
     // at most one candidate -- a search rather than a choice.
     LHAT_TEST("overload^ keeps the way that was already there");
     run_text(&r,
-             "let^ Foo = def^{ self^{ }, m := f^ { return^ 1 } }\n"
-             "let^ Bar = Foo .. def^{\n"
+             "var^ Foo = def^{ self^{ }, m := f^ { return^ 1 } }\n"
+             "var^ Bar = Foo .. def^{\n"
              "  self^{ },\n"
              "  overload^\n"
              "  m := f^ x:string^ { return^ 2 },\n"
@@ -2794,8 +2794,8 @@ static void test_definitions(void)
 
     LHAT_TEST("and answers the added one when that is what fits");
     run_text(&r,
-             "let^ Foo = def^{ self^{ }, m := f^ { return^ 1 } }\n"
-             "let^ Bar = Foo .. def^{\n"
+             "var^ Foo = def^{ self^{ }, m := f^ { return^ 1 } }\n"
+             "var^ Bar = Foo .. def^{\n"
              "  self^{ },\n"
              "  overload^\n"
              "  m := f^ x:string^ { return^ 2 },\n"
@@ -2810,22 +2810,22 @@ static void test_definitions(void)
     // self^ ever fitted.
     LHAT_TEST("a candidate taking self^ is found");
     run_text(&r,
-             "let^ V = def^{ self^{},\n"
+             "var^ V = def^{ self^{},\n"
              "  m := f^self^, o:number^ -> number^ { return^ o },\n"
              "  overload^ m := f^self^, o:string^ -> number^ { return^ 9 },\n"
              "}\n"
-             "let^ v = V.new^()\n"
+             "var^ v = V.new^()\n"
              "return^ v.m(7) * 10 + v.m(\"x\")\n");
     CHECK_INTEGER(&r, 79);
     run_dispose(&r);
 
     LHAT_TEST("across a composition as well");
     run_text(&r,
-             "let^ Foo = def^{ self^{},\n"
+             "var^ Foo = def^{ self^{},\n"
              "  m := f^self^, o:number^ -> number^ { return^ o } }\n"
-             "let^ Bar = Foo .. def^{ self^{},\n"
+             "var^ Bar = Foo .. def^{ self^{},\n"
              "  overload^ m := f^self^, o:string^ -> number^ { return^ 9 } }\n"
-             "let^ v = Bar.new^()\n"
+             "var^ v = Bar.new^()\n"
              "return^ v.m(7) * 10 + v.m(\"x\")\n");
     CHECK_INTEGER(&r, 79);
     run_dispose(&r);
@@ -2833,18 +2833,18 @@ static void test_definitions(void)
     // 14.5 and 14.12 reach an operator the way they reach any other member.
     LHAT_TEST("a composition carries an operator in");
     run_text(&r,
-             "let^ B = def^{ self^{ t := \"b\" },\n"
+             "var^ B = def^{ self^{ t := \"b\" },\n"
              "  op^.. := f^self^, o:string^ -> string^ { return^ self^.t .. o } }\n"
-             "let^ D = B .. def^{ self^{} }\n"
+             "var^ D = B .. def^{ self^{} }\n"
              "return^ D.new^() .. \"x\"\n");
     CHECK_STRING(&r, "bx");
     run_dispose(&r);
 
     LHAT_TEST("and an override^ of one replaces it");
     run_text(&r,
-             "let^ B = def^{ self^{},\n"
+             "var^ B = def^{ self^{},\n"
              "  op^.. := f^self^, o:string^ -> string^ { return^ \"base\" } }\n"
-             "let^ D = B .. def^{ self^{},\n"
+             "var^ D = B .. def^{ self^{},\n"
              "  override^ op^.. := f^self^, o:string^ -> string^ {\n"
              "    return^ \"derived\" } }\n"
              "return^ D.new^() .. \"x\"\n");
@@ -2853,12 +2853,12 @@ static void test_definitions(void)
 
     LHAT_TEST("while an overload^ of one adds to it");
     run_text(&r,
-             "let^ B = def^{ self^{},\n"
+             "var^ B = def^{ self^{},\n"
              "  op^.. := f^self^, o:string^ -> string^ { return^ \"s\" } }\n"
-             "let^ D = B .. def^{ self^{},\n"
+             "var^ D = B .. def^{ self^{},\n"
              "  overload^ op^.. := f^self^, o:number^ -> string^ {\n"
              "    return^ \"n\" } }\n"
-             "let^ d = D.new^()\n"
+             "var^ d = D.new^()\n"
              "return^ (d .. \"x\") .. (d .. 7)\n");
     CHECK_STRING(&r, "sn");
     run_dispose(&r);
@@ -2867,7 +2867,7 @@ static void test_definitions(void)
     // computed key answers exactly as a written op^ does.
     LHAT_TEST("a '..' reached by a computed key answers as well");
     run_text(&r,
-             "let^ t = { [\"..\"] := f^self^, o:string^ -> string^ {\n"
+             "var^ t = { [\"..\"] := f^self^, o:string^ -> string^ {\n"
              "  return^ o } }\n"
              "return^ t .. \"x\"\n");
     CHECK_STRING(&r, "x");
@@ -2875,7 +2875,7 @@ static void test_definitions(void)
 
     LHAT_TEST("and an operator may answer with a structure");
     run_text(&r,
-             "let^ V = def^{ self^{ n := 3 },\n"
+             "var^ V = def^{ self^{ n := 3 },\n"
              "  op^+ := f^self^, o:number^ -> t^{ n : number^ } {\n"
              "    return^ self^ } }\n"
              "return^ (V.new^() + 1).n\n");
@@ -2887,11 +2887,11 @@ static void test_definitions(void)
     // search has to ask in.
     LHAT_TEST("an operator may be overloaded like any member");
     run_text(&r,
-             "let^ V = def^{ self^{},\n"
+             "var^ V = def^{ self^{},\n"
              "  op^.. := f^self^, o:string^ -> number^ { return^ 1 },\n"
              "  overload^ op^.. := f^self^, o:number^ -> number^ { return^ 2 },\n"
              "}\n"
-             "let^ v = V.new^()\n"
+             "var^ v = V.new^()\n"
              "return^ (v .. \"s\") * 10 + (v .. 7)\n");
     CHECK_INTEGER(&r, 12);
     run_dispose(&r);
@@ -2900,13 +2900,13 @@ static void test_definitions(void)
     // the case a count alone could not tell apart.
     LHAT_TEST("candidates of one arity are told apart by type");
     run_text(&r,
-             "let^ Show = def^{\n"
+             "var^ Show = def^{\n"
              "  self^{ },\n"
              "  show := f^ x:string^ { return^ 1 },\n"
              "  overload^\n"
              "  show := f^ x:number^ { return^ 2 },\n"
              "}\n"
-             "let^ s = Show.new^()\n"
+             "var^ s = Show.new^()\n"
              "return^ s.show(\"t\") * 10 + s.show(7)\n");
     CHECK_INTEGER(&r, 12);
     run_dispose(&r);
@@ -2915,20 +2915,20 @@ static void test_definitions(void)
     // asked whether the value has those members.
     LHAT_TEST("a structural parameter is judged by its members");
     run_text(&r,
-             "let^ Draw = def^{\n"
+             "var^ Draw = def^{\n"
              "  self^{ },\n"
              "  draw := f^ s:t^{ radius : number^ } { return^ 1 },\n"
              "  overload^\n"
              "  draw := f^ s:t^{ width : number^, height : number^ } { return^ 2 },\n"
              "}\n"
-             "let^ d = Draw.new^()\n"
+             "var^ d = Draw.new^()\n"
              "return^ d.draw({ radius := 1 }) * 10 + d.draw({ width := 1, height := 2 })\n");
     CHECK_INTEGER(&r, 12);
     run_dispose(&r);
 
     LHAT_TEST("no candidate taking these arguments is a fault");
     run_text(&r,
-             "let^ Show = def^{\n"
+             "var^ Show = def^{\n"
              "  self^{ },\n"
              "  show := f^ x:string^ { return^ 1 },\n"
              "  overload^\n"
@@ -2941,7 +2941,7 @@ static void test_definitions(void)
     // 14.8: number^ is one type, so either representation answers to it.
     LHAT_TEST("either representation of a number answers to number^");
     run_text(&r,
-             "let^ Show = def^{\n"
+             "var^ Show = def^{\n"
              "  self^{ },\n"
              "  show := f^ x:string^ { return^ 1 },\n"
              "  overload^\n"
@@ -2953,14 +2953,14 @@ static void test_definitions(void)
 
     LHAT_TEST("an ordinary member is untouched by any of this");
     run_text(&r,
-             "let^ Foo = def^{ self^{ }, m := f^ x { return^ x + 1 } }\n"
+             "var^ Foo = def^{ self^{ }, m := f^ x { return^ x + 1 } }\n"
              "return^ Foo.new^().m(1)\n");
     CHECK_INTEGER(&r, 2);
     run_dispose(&r);
 
     // 14.13: self^{ … } outside a definition has no fields to name.
     LHAT_TEST("self^{ } outside a definition does not compile");
-    run_text(&r, "let^ x = self^{ a := 1 }\nreturn^ x\n");
+    run_text(&r, "var^ x = self^{ a := 1 }\nreturn^ x\n");
     LHAT_CHECK_EQ_INT(r.compiled, LHAT_COMPILE_UNSUPPORTED);
     run_dispose(&r);
 }
@@ -3002,7 +3002,7 @@ static void test_typeof(void)
     // reflect_type walks both and folds them into one structure.
     LHAT_TEST("an instance's signature carries fields and methods");
     run_text(&r,
-             "let^ Point = def^{ self^{ x := 0, y := 0 },\n"
+             "var^ Point = def^{ self^{ x := 0, y := 0 },\n"
              "  sum := f^self^ -> number^ { return^ self^.x + self^.y } }\n"
              "return^ typeof^(Point.new^()).signature\n");
     CHECK_STRING(&r, "t^{ new : f^;, sum : f^ -> number^;, x : number^, "
@@ -3012,13 +3012,13 @@ static void test_typeof(void)
     // 14.4: self^ is the receiver, not a parameter of the signature.
     LHAT_TEST("a function's signature carries its parameters and result");
     run_text(&r,
-             "let^ f = f^ x:number^, y:string^ -> bool^ { return^ true^ }\n"
+             "var^ f = f^ x:number^, y:string^ -> bool^ { return^ true^ }\n"
              "return^ typeof^(f).signature\n");
     CHECK_STRING(&r, "f^number^, string^ -> bool^;");
     run_dispose(&r);
 
     LHAT_TEST("and a procedure with no result says nothing after it");
-    run_text(&r, "let^ p = p^ x:number^ { }\nreturn^ typeof^(p).signature\n");
+    run_text(&r, "var^ p = p^ x:number^ { }\nreturn^ typeof^(p).signature\n");
     CHECK_STRING(&r, "p^number^;");
     run_dispose(&r);
 
@@ -3027,7 +3027,7 @@ static void test_typeof(void)
     // parameter types of its own beyond the written ones.
     LHAT_TEST("an inferred parameter type reaches the signature");
     run_checked_text(&r,
-                     "let^ f = f^ x, y { x + y }\n"
+                     "var^ f = f^ x, y { x + y }\n"
                      "return^ typeof^(f).signature\n");
     CHECK_STRING(&r, "f^number^, number^ -> number^;");
     run_dispose(&r);
@@ -3037,14 +3037,14 @@ static void test_typeof(void)
     // both that it is undecided and which member wants an annotation.
     LHAT_TEST("what inference did not decide is written UNKNOWN");
     run_checked_text(&r,
-                     "let^ h = p^ x { x.write() }\n"
+                     "var^ h = p^ x { x.write() }\n"
                      "return^ typeof^(h).signature\n");
     CHECK_STRING(&r, "p^t^{ write : UNKNOWN };");
     run_dispose(&r);
 
     LHAT_TEST("and a parameter nothing demanded says so too");
     run_checked_text(&r,
-                     "let^ g = f^ x { 1 }\n"
+                     "var^ g = f^ x { 1 }\n"
                      "return^ typeof^(g).signature\n");
     CHECK_STRING(&r, "f^UNKNOWN -> number^;");
     run_dispose(&r);
@@ -3054,7 +3054,7 @@ static void test_typeof(void)
     // unchanged by any of the above (4.2).
     LHAT_TEST("compiled without checking, the same one walks the closure");
     run_text(&r,
-             "let^ g = f^ x { 1 }\n"
+             "var^ g = f^ x { 1 }\n"
              "return^ typeof^(g).signature\n");
     CHECK_STRING(&r, "f^any^;");
     run_dispose(&r);
@@ -3064,7 +3064,7 @@ static void test_typeof(void)
     LHAT_TEST("an error's signature is its qualified kind name");
     run_text(&r,
              "errordef^ IOError { NotFound }\n"
-             "let^ e = error^IOError.NotFound{ }\n"
+             "var^ e = error^IOError.NotFound{ }\n"
              "return^ typeof^(e).signature\n");
     CHECK_STRING(&r, "IOError.NotFound");
     run_dispose(&r);
@@ -3093,16 +3093,16 @@ static void test_typeof(void)
     // definitions of the same shape are the same type.
     LHAT_TEST("two unrelated definitions of the same shape are equal");
     run_text(&r,
-             "let^ A = def^{ self^{ n := 0 } }\n"
-             "let^ B = def^{ self^{ n := 5 } }\n"
+             "var^ A = def^{ self^{ n := 0 } }\n"
+             "var^ B = def^{ self^{ n := 5 } }\n"
              "return^ typeof^(A.new^()) = typeof^(B.new^())\n");
     CHECK_BOOL(&r, true);
     run_dispose(&r);
 
     LHAT_TEST("and unequal once the shapes differ");
     run_text(&r,
-             "let^ A = def^{ self^{ n := 0 } }\n"
-             "let^ B = def^{ self^{ n := 0, extra := 1 } }\n"
+             "var^ A = def^{ self^{ n := 0 } }\n"
+             "var^ B = def^{ self^{ n := 0, extra := 1 } }\n"
              "return^ typeof^(A.new^()) = typeof^(B.new^())\n");
     CHECK_BOOL(&r, false);
     run_dispose(&r);
@@ -3111,8 +3111,8 @@ static void test_typeof(void)
     // usable as a type annotation.
     LHAT_TEST("the signature parses back as an annotation");
     run_text(&r,
-             "let^ Point = def^{ self^{ x := 0, y := 0 } }\n"
-             "let^ p : t^{ x : number^, y : number^ } = Point.new^()\n"
+             "var^ Point = def^{ self^{ x := 0, y := 0 } }\n"
+             "var^ p : t^{ x : number^, y : number^ } = Point.new^()\n"
              "return^ p.x + p.y\n");
     CHECK_INTEGER(&r, 0);
     run_dispose(&r);
@@ -3121,23 +3121,23 @@ static void test_typeof(void)
     // list, which is what '&' means -- matching 14.12's own example.
     LHAT_TEST("an overload^ed member's signature is an intersection");
     run_text(&r,
-             "let^ Foo = def^{ self^{}, foo := p^ { } }\n"
-             "let^ Bar = Foo .. def^{ self^{},\n"
+             "var^ Foo = def^{ self^{}, foo := p^ { } }\n"
+             "var^ Bar = Foo .. def^{ self^{},\n"
              "  overload^ foo := p^ x:string^ { } }\n"
              "return^ typeof^(Bar.new^()).signature\n");
     CHECK_STRING(&r, "t^{ foo : p^; & p^string^;, new : f^; }");
     run_dispose(&r);
 
     // 02 の 14.16: 8.8 lets a written annotation widen what a path introduces
-    // past the value's own type ('let^ a.next : t^{} = b' does not narrow to
+    // past the value's own type ('var^ a.next : t^{} = b' does not narrow to
     // b), which is enough to make two tables hold each other. Measured to
     // crash with a stack overflow before the walk tracked its own path.
     LHAT_TEST("a cycle between two tables does not recurse forever");
     run_text(&r,
-             "let^ a = { }\n"
-             "let^ b = { }\n"
-             "let^ a.next : t^{} = b\n"
-             "let^ b.next : t^{} = a\n"
+             "var^ a = { }\n"
+             "var^ b = { }\n"
+             "var^ a.next : t^{} = b\n"
+             "var^ b.next : t^{} = a\n"
              "return^ typeof^(a).signature\n");
     CHECK_STRING(&r, "t^{ next : t^{ next : table^ } }");
     run_dispose(&r);
@@ -3147,9 +3147,9 @@ static void test_typeof(void)
     // conforms to, including another instance of the same definition.
     LHAT_TEST("and between two instances of the same definition");
     run_text(&r,
-             "let^ Node = def^{ self^{ next := { } } }\n"
-             "let^ a = Node.new^()\n"
-             "let^ b = Node.new^()\n"
+             "var^ Node = def^{ self^{ next := { } } }\n"
+             "var^ a = Node.new^()\n"
+             "var^ b = Node.new^()\n"
              "a.next := b\n"
              "b.next := a\n"
              "return^ typeof^(a).signature\n");
@@ -3160,8 +3160,8 @@ static void test_typeof(void)
     // cut short. Only revisiting something still on the current path is.
     LHAT_TEST("a value reached two ways (no cycle) is not cut short");
     run_text(&r,
-             "let^ shared = { v := 1 }\n"
-             "let^ t = { a := shared, b := shared }\n"
+             "var^ shared = { v := 1 }\n"
+             "var^ t = { a := shared, b := shared }\n"
              "return^ typeof^(t).signature\n");
     CHECK_STRING(&r, "t^{ a : t^{ v : number^ }, b : t^{ v : number^ } }");
     run_dispose(&r);
@@ -3269,14 +3269,14 @@ static void test_tostring(void)
     // only where nothing was written under that name.
     LHAT_TEST("a written tostring wins over the built-in");
     run_text(&r,
-             "let^ t = { tostring := f^self^ -> string^ { return^ \"mine\" } }\n"
+             "var^ t = { tostring := f^self^ -> string^ { return^ \"mine\" } }\n"
              "return^ t.tostring()\n");
     CHECK_STRING(&r, "mine");
     run_dispose(&r);
 
     LHAT_TEST("and one written into a def^ answers for its instances");
     run_text(&r,
-             "let^ P = def^{ self^{ x := 7 },\n"
+             "var^ P = def^{ self^{ x := 7 },\n"
              "  tostring := f^self^ -> string^ { return^ \"P\" } }\n"
              "return^ P.new^().tostring()\n");
     CHECK_STRING(&r, "P");
@@ -3296,7 +3296,7 @@ static void test_tostring(void)
 
     LHAT_TEST("a coroutine carries it beside its own operations");
     run_text(&r,
-             "let^ gen = p^ { yield^ 1 }\n"
+             "var^ gen = p^ { yield^ 1 }\n"
              "return^ gen().tostring()\n");
     CHECK_STRING(&r, "c^");
     run_dispose(&r);
@@ -3312,8 +3312,8 @@ static void test_scope_specifiers(void)
 
     LHAT_TEST("'$^' reads the binding one scope out");
     run_text(&r,
-             "let^ x = 1\n"
-             "do^{ let^ x = 2\n"
+             "var^ x = 1\n"
+             "do^{ var^ x = 2\n"
              "  return^ $^x\n"
              "}\n"
              "return^ 0\n");
@@ -3322,9 +3322,9 @@ static void test_scope_specifiers(void)
 
     LHAT_TEST("'$^^' one further, and '$^' still the nearer one");
     run_text(&r,
-             "let^ x = 1\n"
-             "do^{ let^ x = 2\n"
-             "  do^{ let^ x = 3\n"
+             "var^ x = 1\n"
+             "do^{ var^ x = 2\n"
+             "  do^{ var^ x = 3\n"
              "    return^ $^^x * 10 + $^x\n"
              "  }\n"
              "}\n"
@@ -3336,9 +3336,9 @@ static void test_scope_specifiers(void)
     // either end, and the two numberings meeting in the middle.
     LHAT_TEST("'$' reads the unit's own top level");
     run_text(&r,
-             "let^ x = 1\n"
-             "do^{ let^ x = 2\n"
-             "  do^{ let^ x = 3\n"
+             "var^ x = 1\n"
+             "do^{ var^ x = 2\n"
+             "  do^{ var^ x = 3\n"
              "    return^ $x\n"
              "  }\n"
              "}\n"
@@ -3348,9 +3348,9 @@ static void test_scope_specifiers(void)
 
     LHAT_TEST("and repeating the sigil counts inwards from it");
     run_text(&r,
-             "let^ x = 1\n"
-             "do^{ let^ x = 2\n"
-             "  do^{ let^ x = 3\n"
+             "var^ x = 1\n"
+             "do^{ var^ x = 2\n"
+             "  do^{ var^ x = 3\n"
              "    return^ $$x * 10 + $$$x\n"
              "  }\n"
              "}\n"
@@ -3359,7 +3359,7 @@ static void test_scope_specifiers(void)
     run_dispose(&r);
 
     LHAT_TEST("naming a scope further in than this one is refused");
-    run_text(&r, "let^ x = 1\nreturn^ $$x\n");
+    run_text(&r, "var^ x = 1\nreturn^ $$x\n");
     LHAT_CHECK_EQ_INT(r.compiled, LHAT_COMPILE_SCOPE_TOO_FAR);
     run_dispose(&r);
 
@@ -3367,8 +3367,8 @@ static void test_scope_specifiers(void)
     // in the absolute numbering too.
     LHAT_TEST("a body counts in the absolute numbering as well");
     run_text(&r,
-             "let^ x = 1\n"
-             "let^ f = f^ -> number^ { let^ x = 2\n"
+             "var^ x = 1\n"
+             "var^ f = f^ -> number^ { var^ x = 2\n"
              "  return^ $$x\n"
              "}\n"
              "return^ f()\n");
@@ -3377,10 +3377,10 @@ static void test_scope_specifiers(void)
 
     LHAT_TEST("a write through the absolute form lands there too");
     run_text(&r,
-             "let^ x = 1\n"
-             "let^ seen = 0\n"
-             "do^{ let^ x = 2\n"
-             "  do^{ let^ x = 3\n"
+             "var^ x = 1\n"
+             "var^ seen = 0\n"
+             "do^{ var^ x = 2\n"
+             "  do^{ var^ x = 3\n"
              "    $$x := 9\n"
              "  }\n"
              "  seen := x\n"
@@ -3393,8 +3393,8 @@ static void test_scope_specifiers(void)
     // count the body as the one scope its parameters are already in.
     LHAT_TEST("and reaches out of a subroutine as a captured place");
     run_text(&r,
-             "let^ x = 1\n"
-             "let^ f = f^ -> number^ { let^ x = 2\n"
+             "var^ x = 1\n"
+             "var^ f = f^ -> number^ { var^ x = 2\n"
              "  return^ $^x\n"
              "}\n"
              "return^ f()\n");
@@ -3403,9 +3403,9 @@ static void test_scope_specifiers(void)
 
     LHAT_TEST("a loop body is one scope like any other");
     run_text(&r,
-             "let^ x = 1\n"
-             "let^ seen = 0\n"
-             "repeat^ 1 { let^ x = 2\n"
+             "var^ x = 1\n"
+             "var^ seen = 0\n"
+             "repeat^ 1 { var^ x = 2\n"
              "  seen := $^x\n"
              "}\n"
              "return^ seen\n");
@@ -3416,8 +3416,8 @@ static void test_scope_specifiers(void)
     // read of the same words would, and leaves the nearer one alone.
     LHAT_TEST("':=' through '$^' writes the outer binding");
     run_text(&r,
-             "let^ x = 1\n"
-             "do^{ let^ x = 2\n"
+             "var^ x = 1\n"
+             "do^{ var^ x = 2\n"
              "  $^x := 9\n"
              "}\n"
              "return^ x\n");
@@ -3426,9 +3426,9 @@ static void test_scope_specifiers(void)
 
     LHAT_TEST("and leaves the one it was written beside");
     run_text(&r,
-             "let^ x = 1\n"
-             "let^ seen = 0\n"
-             "do^{ let^ x = 2\n"
+             "var^ x = 1\n"
+             "var^ seen = 0\n"
+             "do^{ var^ x = 2\n"
              "  $^x := 9\n"
              "  seen := x\n"
              "}\n"
@@ -3438,8 +3438,8 @@ static void test_scope_specifiers(void)
 
     LHAT_TEST("a write out of a subroutine reaches the captured place");
     run_text(&r,
-             "let^ x = 1\n"
-             "let^ f = p^ { let^ x = 2\n"
+             "var^ x = 1\n"
+             "var^ f = p^ { var^ x = 2\n"
              "  $^x := 9\n"
              "}\n"
              "f()\n"
@@ -3449,8 +3449,8 @@ static void test_scope_specifiers(void)
 
     LHAT_TEST("reading back through the same words sees the write");
     run_text(&r,
-             "let^ x = 1\n"
-             "do^{ let^ x = 2\n"
+             "var^ x = 1\n"
+             "do^{ var^ x = 2\n"
              "  $^x := 42\n"
              "  return^ $^x\n"
              "}\n"
@@ -3463,8 +3463,8 @@ static void test_scope_specifiers(void)
     // pushes there.
     LHAT_TEST("a def^ body is one scope on this side too");
     run_text(&r,
-             "let^ class = 1\n"
-             "let^ D = def^{ self^{ v := 7 },\n"
+             "var^ class = 1\n"
+             "var^ D = def^{ self^{ v := 7 },\n"
              "  m := f^self^ -> string^ { return^ typeof^($^class).signature }\n"
              "}\n"
              "return^ D.new^().m()\n");
@@ -3505,13 +3505,13 @@ static void test_interpolation(void)
     run_dispose(&r);
 
     LHAT_TEST("a hole is its value written down");
-    run_text(&r, "let^ a = 5\nreturn^ $\"n = {a}\"\n");
+    run_text(&r, "var^ a = 5\nreturn^ $\"n = {a}\"\n");
     CHECK_STRING(&r, "n = 5");
     run_dispose(&r);
 
     // 5.4: no empty text run is made between two holes that meet.
     LHAT_TEST("two holes may meet");
-    run_text(&r, "let^ a = 5\nreturn^ $\"{a}{a}\"\n");
+    run_text(&r, "var^ a = 5\nreturn^ $\"{a}{a}\"\n");
     CHECK_STRING(&r, "55");
     run_dispose(&r);
 
@@ -3528,7 +3528,7 @@ static void test_interpolation(void)
 
     // 5.4: the text after ':' is a format, and 14.17 hands it to a number^.
     LHAT_TEST("a format after ':' reaches tostring");
-    run_text(&r, "let^ a = 5\nreturn^ $\"{a:%04d}\"\n");
+    run_text(&r, "var^ a = 5\nreturn^ $\"{a:%04d}\"\n");
     CHECK_STRING(&r, "0005");
     run_dispose(&r);
 
@@ -3551,7 +3551,7 @@ static void test_interpolation(void)
     run_dispose(&r);
 
     LHAT_TEST("and another interpolated string");
-    run_text(&r, "let^ a = 5\nreturn^ $\"[{ $\"{a}\" }]\"\n");
+    run_text(&r, "var^ a = 5\nreturn^ $\"[{ $\"{a}\" }]\"\n");
     CHECK_STRING(&r, "[5]");
     run_dispose(&r);
 
@@ -3559,15 +3559,15 @@ static void test_interpolation(void)
     // what answers.
     LHAT_TEST("a written tostring is what a hole uses");
     run_text(&r,
-             "let^ p = { tostring := f^self^ -> string^ { return^ \"P\" } }\n"
+             "var^ p = { tostring := f^self^ -> string^ { return^ \"P\" } }\n"
              "return^ $\"got {p}\"\n");
     CHECK_STRING(&r, "got P");
     run_dispose(&r);
 
     LHAT_TEST("a hole runs where it stands, not where the string was made");
     run_text(&r,
-             "let^ n = 1\n"
-             "let^ show = f^ -> string^ { return^ $\"n is {n}\" }\n"
+             "var^ n = 1\n"
+             "var^ show = f^ -> string^ { return^ $\"n is {n}\" }\n"
              "n := 2\n"
              "return^ show()\n");
     CHECK_STRING(&r, "n is 2");
@@ -3582,8 +3582,8 @@ static void test_variadic(void)
 
     LHAT_TEST("a variadic sum over what was actually passed");
     run_text(&r,
-             "let^ sum = f^ ...:number^ -> number^ {\n"
-             "  let^ total = 0\n"
+             "var^ sum = f^ ...:number^ -> number^ {\n"
+             "  var^ total = 0\n"
              "  for^ i, x in^ ... { total := total + x }\n"
              "  return^ total\n"
              "}\n"
@@ -3593,8 +3593,8 @@ static void test_variadic(void)
 
     LHAT_TEST("zero variadic arguments collects an empty table");
     run_text(&r,
-             "let^ sum = f^ ...:number^ -> number^ {\n"
-             "  let^ total = 0\n"
+             "var^ sum = f^ ...:number^ -> number^ {\n"
+             "  var^ total = 0\n"
              "  for^ i, x in^ ... { total := total + x }\n"
              "  return^ total\n"
              "}\n"
@@ -3604,8 +3604,8 @@ static void test_variadic(void)
 
     LHAT_TEST("fixed parameters lead the variadic tail");
     run_text(&r,
-             "let^ f = f^ label:string^, ...:number^ -> number^ {\n"
-             "  let^ total = 0\n"
+             "var^ f = f^ label:string^, ...:number^ -> number^ {\n"
+             "  var^ total = 0\n"
              "  for^ i, x in^ ... { total := total + x }\n"
              "  return^ total\n"
              "}\n"
@@ -3618,7 +3618,7 @@ static void test_variadic(void)
     // checker, so this is the runtime path answering on its own.
     LHAT_TEST("fewer than the fixed count fails at run time");
     run_text(&r,
-             "let^ f = f^ a:number^, b:number^, ...:number^ -> number^ {\n"
+             "var^ f = f^ a:number^, b:number^, ...:number^ -> number^ {\n"
              "  return^ a + b\n"
              "}\n"
              "return^ f(1)\n");
@@ -3629,24 +3629,24 @@ static void test_variadic(void)
     // 13.7: 'expr...' forwards the collected tail into another call.
     LHAT_TEST("'...' forwards into another variadic call");
     run_text(&r,
-             "let^ sum = f^ ...:number^ -> number^ {\n"
-             "  let^ total = 0\n"
+             "var^ sum = f^ ...:number^ -> number^ {\n"
+             "  var^ total = 0\n"
              "  for^ i, x in^ ... { total := total + x }\n"
              "  return^ total\n"
              "}\n"
-             "let^ logged = f^ ...:number^ -> number^ { return^ sum(...) }\n"
+             "var^ logged = f^ ...:number^ -> number^ { return^ sum(...) }\n"
              "return^ logged(1, 2, 3, 4, 5)\n");
     CHECK_INTEGER(&r, 15);
     run_dispose(&r);
 
     LHAT_TEST("a fixed argument may lead the forwarded spread");
     run_text(&r,
-             "let^ sum3 = f^ base:number^, ...:number^ -> number^ {\n"
-             "  let^ total = base\n"
+             "var^ sum3 = f^ base:number^, ...:number^ -> number^ {\n"
+             "  var^ total = base\n"
              "  for^ i, x in^ ... { total := total + x }\n"
              "  return^ total\n"
              "}\n"
-             "let^ wrap = f^ ...:number^ -> number^ {\n"
+             "var^ wrap = f^ ...:number^ -> number^ {\n"
              "  return^ sum3(100, ...)\n"
              "}\n"
              "return^ wrap(1, 2, 3)\n");
@@ -3656,14 +3656,14 @@ static void test_variadic(void)
     // 02 の 14.16: typeof^ reconstructs the signature, including the tail.
     LHAT_TEST("typeof^ reflects a variadic signature");
     run_text(&r,
-             "let^ sum = f^ ...:number^ -> number^ { return^ 0 }\n"
+             "var^ sum = f^ ...:number^ -> number^ { return^ 0 }\n"
              "return^ typeof^(sum).signature\n");
     CHECK_STRING(&r, "f^...:number^ -> number^;");
     run_dispose(&r);
 
     LHAT_TEST("fixed and variadic together in the signature");
     run_text(&r,
-             "let^ f = f^ label:string^, ...:number^ -> number^ {\n"
+             "var^ f = f^ label:string^, ...:number^ -> number^ {\n"
              "  return^ 0\n"
              "}\n"
              "return^ typeof^(f).signature\n");
@@ -3673,8 +3673,8 @@ static void test_variadic(void)
     // 14.10's round trip: the printed signature has to parse back.
     LHAT_TEST("the variadic signature parses back as an annotation");
     run_text(&r,
-             "let^ sum = f^ ...:number^ -> number^ { return^ 0 }\n"
-             "let^ typed : f^...:number^ -> number^; = sum\n"
+             "var^ sum = f^ ...:number^ -> number^ { return^ 0 }\n"
+             "var^ typed : f^...:number^ -> number^; = sum\n"
              "return^ typed(1, 2, 3)\n");
     CHECK_INTEGER(&r, 0);
     run_dispose(&r);
@@ -3689,9 +3689,9 @@ static void test_coroutines(void)
     // 15.5: the call answers a coroutine and the body has not started.
     LHAT_TEST("calling a yieldable procedure runs nothing");
     run_text(&r,
-             "let^ log = { n := 0 }\n"
-             "let^ gen = p^ { log.n := 1 yield^ 0 }\n"
-             "let^ c = gen()\n"
+             "var^ log = { n := 0 }\n"
+             "var^ gen = p^ { log.n := 1 yield^ 0 }\n"
+             "var^ c = gen()\n"
              "return^ log.n\n");
     CHECK_INTEGER(&r, 0);
     run_dispose(&r);
@@ -3700,16 +3700,16 @@ static void test_coroutines(void)
     // start() comes, so each side of a yield^ runs on its own turn.
     LHAT_TEST("the body starts at its top, not after the first yield^");
     run_text(&r,
-             "let^ log = { s := 0 }\n"
-             "let^ p = p^ {\n"
+             "var^ log = { s := 0 }\n"
+             "var^ p = p^ {\n"
              "  log.s := log.s * 10 + 1\n"
              "  yield^\n"
              "  log.s := log.s * 10 + 2\n"
              "}\n"
-             "let^ c = p()\n"
-             "let^ made = log.s\n"
+             "var^ c = p()\n"
+             "var^ made = log.s\n"
              "c.start()\n"
-             "let^ first = log.s\n"
+             "var^ first = log.s\n"
              "c.resume(nil^)\n"
              "return^ made * 10000 + first * 100 + log.s\n");
     CHECK_INTEGER(&r, 112);  // nothing, then 1, then 12
@@ -3717,26 +3717,26 @@ static void test_coroutines(void)
 
     LHAT_TEST("starting runs the body up to the yield^");
     run_text(&r,
-             "let^ gen = p^ { yield^ 7 }\n"
-             "let^ c = gen()\n"
+             "var^ gen = p^ { yield^ 7 }\n"
+             "var^ c = gen()\n"
              "return^ c.start()\n");
     CHECK_INTEGER(&r, 7);
     run_dispose(&r);
 
     LHAT_TEST("each resume carries on from where it stopped");
     run_text(&r,
-             "let^ gen = p^ { yield^ 1 yield^ 2 yield^ 3 }\n"
-             "let^ c = gen()\n"
-             "let^ a = c.start()\n"
-             "let^ b = c.resume(nil^)\n"
+             "var^ gen = p^ { yield^ 1 yield^ 2 yield^ 3 }\n"
+             "var^ c = gen()\n"
+             "var^ a = c.start()\n"
+             "var^ b = c.resume(nil^)\n"
              "return^ a * 10 + b\n");
     CHECK_INTEGER(&r, 12);
     run_dispose(&r);
 
     LHAT_TEST("the arguments of the call reach the body");
     run_text(&r,
-             "let^ gen = p^n { yield^ n * 2 }\n"
-             "let^ c = gen(21)\n"
+             "var^ gen = p^n { yield^ n * 2 }\n"
+             "var^ c = gen(21)\n"
              "return^ c.start()\n");
     CHECK_INTEGER(&r, 42);
     run_dispose(&r);
@@ -3744,11 +3744,11 @@ static void test_coroutines(void)
     // 15.4: bidirectional. Without this there is no await^ to build (15.4).
     LHAT_TEST("yield^ answers what the resume sent");
     run_text(&r,
-             "let^ gen = p^ {\n"
-             "  let^ got = yield^ 0\n"
+             "var^ gen = p^ {\n"
+             "  var^ got = yield^ 0\n"
              "  yield^ got + 1\n"
              "}\n"
-             "let^ c = gen()\n"
+             "var^ c = gen()\n"
              "c.start()\n"
              "return^ c.resume(41)\n");
     CHECK_INTEGER(&r, 42);
@@ -3756,14 +3756,14 @@ static void test_coroutines(void)
 
     LHAT_TEST("the body keeps its own names between resumes");
     run_text(&r,
-             "let^ counter = p^ {\n"
-             "  let^ n = 0\n"
+             "var^ counter = p^ {\n"
+             "  var^ n = 0\n"
              "  repeat^ {\n"
              "    n := n + 1\n"
              "    yield^ n\n"
              "  }\n"
              "}\n"
-             "let^ c = counter()\n"
+             "var^ c = counter()\n"
              "c.start()\n"
              "c.resume(nil^)\n"
              "return^ c.resume(nil^)\n");
@@ -3772,8 +3772,8 @@ static void test_coroutines(void)
 
     LHAT_TEST("the last resume answers what the body returned");
     run_text(&r,
-             "let^ gen = p^ { yield^ 1 return^ 9 }\n"
-             "let^ c = gen()\n"
+             "var^ gen = p^ { yield^ 1 return^ 9 }\n"
+             "var^ c = gen()\n"
              "c.start()\n"
              "return^ c.resume(nil^)\n");
     CHECK_INTEGER(&r, 9);
@@ -3785,8 +3785,8 @@ static void test_coroutines(void)
     // reach a caller.
     LHAT_TEST("and nil^ when the body reached its end without one");
     run_text(&r,
-             "let^ gen = p^ { yield^ 1 }\n"
-             "let^ c = gen()\n"
+             "var^ gen = p^ { yield^ 1 }\n"
+             "var^ c = gen()\n"
              "c.start()\n"
              "return^ c.resume(nil^)\n");
     LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_OK);
@@ -3795,8 +3795,8 @@ static void test_coroutines(void)
 
     LHAT_TEST("resuming one that has finished is a fault");
     run_text(&r,
-             "let^ gen = p^ { yield^ 1 }\n"
-             "let^ c = gen()\n"
+             "var^ gen = p^ { yield^ 1 }\n"
+             "var^ c = gen()\n"
              "c.start()\n"
              "c.resume(nil^)\n"
              "c.resume(nil^)\n"
@@ -3804,14 +3804,14 @@ static void test_coroutines(void)
     LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_DEAD_COROUTINE);
     run_dispose(&r);
 
-    // 8.8 の S23: the checker walks a body whether or not it runs, so a let^
+    // 8.8 の S23: the checker walks a body whether or not it runs, so a var^
     // on a path that is never taken puts a member in the type that the table
     // does not have. Written down as a test because the hole is known and
     // left open -- 03 の 5.1's checks are what catches it, at the use.
-    LHAT_TEST("a path let^ that never runs leaves the member absent");
+    LHAT_TEST("a path var^ that never runs leaves the member absent");
     run_text(&r,
-             "let^ t = { }\n"
-             "let^ never = p^ { let^ t.b = 1 }\n"
+             "var^ t = { }\n"
+             "var^ never = p^ { var^ t.b = 1 }\n"
              "return^ t.b + 1\n");
     LHAT_CHECK_EQ_INT(r.compiled, LHAT_COMPILE_OK);
     LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_TYPE_ERROR);
@@ -3819,8 +3819,8 @@ static void test_coroutines(void)
 
     LHAT_TEST("and running it is what puts the member there");
     run_text(&r,
-             "let^ t = { }\n"
-             "let^ fill = p^ { let^ t.b = 1 }\n"
+             "var^ t = { }\n"
+             "var^ fill = p^ { var^ t.b = 1 }\n"
              "fill()\n"
              "return^ t.b + 1\n");
     CHECK_INTEGER(&r, 2);
@@ -3829,8 +3829,8 @@ static void test_coroutines(void)
     // 05 の 8.6: one table per machine, made with it and rooted by it.
     LHAT_TEST("L^ answers the machine's own table");
     run_text(&r,
-             "let^ L^.modules.ns1.mod1 = { greet := 7 }\n"
-             "let^ L^.modules.ns1.mod2 = { x := 2 }\n"
+             "var^ L^.modules.ns1.mod1 = { greet := 7 }\n"
+             "var^ L^.modules.ns1.mod2 = { x := 2 }\n"
              "return^ L^.modules.ns1.mod1.greet * 10 + L^.modules.ns1.mod2.x\n");
     CHECK_INTEGER(&r, 72);
     run_dispose(&r);
@@ -3839,7 +3839,7 @@ static void test_coroutines(void)
     // collection run by hand does not take it.
     LHAT_TEST("and what it holds survives a collection");
     run_text(&r,
-             "let^ L^.modules.ns1.mod1 = { greet := 7 }\n"
+             "var^ L^.modules.ns1.mod1 = { greet := 7 }\n"
              "L^.collectgarbage()\n"
              "return^ L^.modules.ns1.mod1.greet\n");
     CHECK_INTEGER(&r, 7);
@@ -3852,7 +3852,7 @@ static void test_coroutines(void)
     // is the same thing that path amounts to.
     LHAT_TEST("L^ refuses a write that reached it through a parameter");
     run_text(&r,
-             "let^ poke = p^ x { let^ x.zzz := 1 }\n"
+             "var^ poke = p^ x { var^ x.zzz := 1 }\n"
              "poke(L^)\n"
              "return^ 0\n");
     LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_SEALED);
@@ -3860,8 +3860,8 @@ static void test_coroutines(void)
 
     LHAT_TEST("but an ordinary table takes one");
     run_text(&r,
-             "let^ poke = p^ x { let^ x.zzz := 1 }\n"
-             "let^ t = { }\n"
+             "var^ poke = p^ x { var^ x.zzz := 1 }\n"
+             "var^ t = { }\n"
              "poke(t)\n"
              "return^ t.zzz\n");
     CHECK_INTEGER(&r, 1);
@@ -3870,7 +3870,7 @@ static void test_coroutines(void)
     LHAT_TEST("and two machines do not share one");
     {
         Run one;
-        compile_text(&one, "let^ L^.modules.a = { n := 1 }\nreturn^ 0\n");
+        compile_text(&one, "var^ L^.modules.a = { n := 1 }\nreturn^ 0\n");
         LhatMachine *first = lhat_machine_new();
         LhatMachine *second = lhat_machine_new();
         lhat_run(first, one.proto);
@@ -3889,26 +3889,26 @@ static void test_coroutines(void)
 
     // 8.8: the tables on the way are made where the path does not reach one
     // yet, and left alone where it does.
-    LHAT_TEST("let^ along a path makes the tables it needs");
+    LHAT_TEST("var^ along a path makes the tables it needs");
     run_text(&r,
-             "let^ a.b.c = 1\n"
+             "var^ a.b.c = 1\n"
              "return^ a.b.c\n");
     CHECK_INTEGER(&r, 1);
     run_dispose(&r);
 
     LHAT_TEST("and a second path through one table does not replace it");
     run_text(&r,
-             "let^ a.b.c = 1\n"
-             "let^ a.b.d = 2\n"
-             "let^ a.z = 3\n"
+             "var^ a.b.c = 1\n"
+             "var^ a.b.d = 2\n"
+             "var^ a.z = 3\n"
              "return^ a.b.c * 100 + a.b.d * 10 + a.z\n");
     CHECK_INTEGER(&r, 123);
     run_dispose(&r);
 
     LHAT_TEST("and a table already there keeps what it had");
     run_text(&r,
-             "let^ t = { p := 4 }\n"
-             "let^ t.q = 5\n"
+             "var^ t = { p := 4 }\n"
+             "var^ t.q = 5\n"
              "return^ t.p * 10 + t.q\n");
     CHECK_INTEGER(&r, 45);
     run_dispose(&r);
@@ -3917,8 +3917,8 @@ static void test_coroutines(void)
     // the place the enclosing frame holds.
     LHAT_TEST("and a nested body reaches the root it does not own");
     run_text(&r,
-             "let^ outer = { }\n"
-             "let^ add = p^ { let^ outer.k = 7 }\n"
+             "var^ outer = { }\n"
+             "var^ add = p^ { var^ outer.k = 7 }\n"
              "add()\n"
              "return^ outer.k\n");
     CHECK_INTEGER(&r, 7);
@@ -3928,25 +3928,25 @@ static void test_coroutines(void)
     // start() runs the whole thing and finishes.
     LHAT_TEST("_yield^ does not suspend");
     run_text(&r,
-             "let^ log = { s := 0 }\n"
-             "let^ fake = p^ -> number^ {\n"
+             "var^ log = { s := 0 }\n"
+             "var^ fake = p^ -> number^ {\n"
              "  log.s := 1\n"
              "  _yield^ 7\n"
              "  log.s := 2\n"
              "  return^ 9\n"
              "}\n"
-             "let^ c = fake()\n"
-             "let^ made = log.s\n"
-             "let^ ended = c.start()\n"
+             "var^ c = fake()\n"
+             "var^ made = log.s\n"
+             "var^ ended = c.start()\n"
              "return^ made * 1000 + log.s * 100 + ended\n");
     CHECK_INTEGER(&r, 209);  // nothing ran until start(), then all of it
     run_dispose(&r);
 
     LHAT_TEST("and the coroutine it answers is finished after start()");
     run_text(&r,
-             "let^ fake = p^ { _yield^ 1 }\n"
-             "let^ c = fake()\n"
-             "let^ before = c.done()\n"
+             "var^ fake = p^ { _yield^ 1 }\n"
+             "var^ c = fake()\n"
+             "var^ before = c.done()\n"
              "c.start()\n"
              "if^ before { return^ 0 }\n"
              "if^ c.done() { return^ 1 }\n"
@@ -3958,10 +3958,10 @@ static void test_coroutines(void)
     // dropped, so an expression written there still does what it does.
     LHAT_TEST("what it would have sent is still evaluated");
     run_text(&r,
-             "let^ log = { n := 0 }\n"
-             "let^ bump = f^ -> number^ { log.n := log.n + 1  return^ log.n }\n"
-             "let^ fake = p^ { _yield^ bump() }\n"
-             "let^ c = fake()\n"
+             "var^ log = { n := 0 }\n"
+             "var^ bump = f^ -> number^ { log.n := log.n + 1  return^ log.n }\n"
+             "var^ fake = p^ { _yield^ bump() }\n"
+             "var^ c = fake()\n"
              "c.start()\n"
              "return^ log.n\n");
     CHECK_INTEGER(&r, 1);
@@ -3972,11 +3972,11 @@ static void test_coroutines(void)
     // "this never runs" turned out to be wrong.
     LHAT_TEST("but nothing comes back from it");
     run_text(&r,
-             "let^ fake = p^ -> string^ {\n"
-             "  let^ got : string^ = _yield^ 1\n"
+             "var^ fake = p^ -> string^ {\n"
+             "  var^ got : string^ = _yield^ 1\n"
              "  return^ got .. \"!\"\n"
              "}\n"
-             "let^ c = fake()\n"
+             "var^ c = fake()\n"
              "c.start()\n"
              "return^ 0\n");
     LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_TYPE_ERROR);
@@ -3984,12 +3984,12 @@ static void test_coroutines(void)
 
     LHAT_TEST("two coroutines from one procedure are separate");
     run_text(&r,
-             "let^ counter = p^ {\n"
-             "  let^ n = 0\n"
+             "var^ counter = p^ {\n"
+             "  var^ n = 0\n"
              "  repeat^ { n := n + 1 yield^ n }\n"
              "}\n"
-             "let^ a = counter()\n"
-             "let^ b = counter()\n"
+             "var^ a = counter()\n"
+             "var^ b = counter()\n"
              "a.start()\n"
              "a.resume(nil^)\n"
              "return^ b.start()\n");
@@ -4000,9 +4000,9 @@ static void test_coroutines(void)
     // so nothing has to be marked on the way up.
     LHAT_TEST("an ordinary procedure may drive a coroutine");
     run_text(&r,
-             "let^ gen = p^ { yield^ 1 yield^ 2 }\n"
-             "let^ sum = p^ {\n"
-             "  let^ c = gen()\n"
+             "var^ gen = p^ { yield^ 1 yield^ 2 }\n"
+             "var^ sum = p^ {\n"
+             "  var^ c = gen()\n"
              "  return^ c.start() + c.resume(nil^)\n"
              "}\n"
              "return^ sum()\n");
@@ -4013,15 +4013,15 @@ static void test_coroutines(void)
     // pending, and 12.6 says dispose() is how that is asked for.
     LHAT_TEST("disposing runs the finally^ the body was inside");
     run_text(&r,
-             "let^ log = { n := 0 }\n"
-             "let^ gen = p^ {\n"
+             "var^ log = { n := 0 }\n"
+             "var^ gen = p^ {\n"
              "  do^{\n"
              "    yield^ 1\n"
              "  finally^:\n"
              "    log.n := 5\n"
              "  }\n"
              "}\n"
-             "let^ c = gen()\n"
+             "var^ c = gen()\n"
              "c.start()\n"
              "c.dispose()\n"
              "return^ log.n\n");
@@ -4031,8 +4031,8 @@ static void test_coroutines(void)
     // 10.7: the same finally^ is never run twice.
     LHAT_TEST("a finally^ already run is not run again at disposal");
     run_text(&r,
-             "let^ log = { n := 0 }\n"
-             "let^ gen = p^ {\n"
+             "var^ log = { n := 0 }\n"
+             "var^ gen = p^ {\n"
              "  do^{\n"
              "    yield^ 1\n"
              "  finally^:\n"
@@ -4040,7 +4040,7 @@ static void test_coroutines(void)
              "  }\n"
              "  yield^ 2\n"
              "}\n"
-             "let^ c = gen()\n"
+             "var^ c = gen()\n"
              "c.start()\n"
              "c.resume(nil^)\n"
              "c.dispose()\n"
@@ -4050,15 +4050,15 @@ static void test_coroutines(void)
 
     LHAT_TEST("disposing one that never started has nothing to run");
     run_text(&r,
-             "let^ log = { n := 0 }\n"
-             "let^ gen = p^ {\n"
+             "var^ log = { n := 0 }\n"
+             "var^ gen = p^ {\n"
              "  do^{\n"
              "    yield^ 1\n"
              "  finally^:\n"
              "    log.n := 5\n"
              "  }\n"
              "}\n"
-             "let^ c = gen()\n"
+             "var^ c = gen()\n"
              "c.dispose()\n"
              "return^ log.n\n");
     CHECK_INTEGER(&r, 0);
@@ -4066,8 +4066,8 @@ static void test_coroutines(void)
 
     LHAT_TEST("a disposed coroutine cannot be resumed");
     run_text(&r,
-             "let^ gen = p^ { yield^ 1 yield^ 2 }\n"
-             "let^ c = gen()\n"
+             "var^ gen = p^ { yield^ 1 yield^ 2 }\n"
+             "var^ c = gen()\n"
              "c.start()\n"
              "c.dispose()\n"
              "c.resume(nil^)\n"
@@ -4079,8 +4079,8 @@ static void test_coroutines(void)
     // like any other resource.
     LHAT_TEST("with^ disposes a coroutine at the end of the block");
     run_text(&r,
-             "let^ log = { n := 0 }\n"
-             "let^ gen = p^ {\n"
+             "var^ log = { n := 0 }\n"
+             "var^ gen = p^ {\n"
              "  do^{\n"
              "    yield^ 1\n"
              "  finally^:\n"
@@ -4098,14 +4098,14 @@ static void test_coroutines(void)
     // 10.7: there is nothing waiting to resume a coroutine being disposed.
     LHAT_TEST("yield^ during disposal is a fault");
     run_text(&r,
-             "let^ gen = p^ {\n"
+             "var^ gen = p^ {\n"
              "  do^{\n"
              "    yield^ 1\n"
              "  finally^:\n"
              "    yield^ 2\n"
              "  }\n"
              "}\n"
-             "let^ c = gen()\n"
+             "var^ c = gen()\n"
              "c.start()\n"
              "c.dispose()\n"
              "return^ 0\n");
@@ -4118,16 +4118,16 @@ static void test_coroutines(void)
     // language keeps only when it is watched.
     LHAT_TEST("a coroutine dropped while suspended has its finally^ run");
     run_text(&r,
-             "let^ log = { n := 0 }\n"
-             "let^ gen = p^ {\n"
+             "var^ log = { n := 0 }\n"
+             "var^ gen = p^ {\n"
              "  do^{\n"
              "    yield^ 1\n"
              "  finally^:\n"
              "    log.n := 5\n"
              "  }\n"
              "}\n"
-             "let^ drop = p^ {\n"
-             "  let^ c = gen()\n"
+             "var^ drop = p^ {\n"
+             "  var^ c = gen()\n"
              "  c.start()\n"
              "}\n"
              "drop()\n"
@@ -4142,16 +4142,16 @@ static void test_coroutines(void)
     // is real in the implementation and invisible to the program.
     LHAT_TEST("and has run by the next statement");
     run_text(&r,
-             "let^ log = { n := 0, seen := 0 }\n"
-             "let^ gen = p^ {\n"
+             "var^ log = { n := 0, seen := 0 }\n"
+             "var^ gen = p^ {\n"
              "  do^{\n"
              "    yield^ 1\n"
              "  finally^:\n"
              "    log.n := 5\n"
              "  }\n"
              "}\n"
-             "let^ drop = p^ {\n"
-             "  let^ c = gen()\n"
+             "var^ drop = p^ {\n"
+             "  var^ c = gen()\n"
              "  c.start()\n"
              "}\n"
              "drop()\n"
@@ -4165,16 +4165,16 @@ static void test_coroutines(void)
     // nothing left pending, so becoming unreachable afterwards is quiet.
     LHAT_TEST("one already disposed of is not run again by the collector");
     run_text(&r,
-             "let^ log = { n := 0 }\n"
-             "let^ gen = p^ {\n"
+             "var^ log = { n := 0 }\n"
+             "var^ gen = p^ {\n"
              "  do^{\n"
              "    yield^ 1\n"
              "  finally^:\n"
              "    log.n := log.n + 1\n"
              "  }\n"
              "}\n"
-             "let^ drop = p^ {\n"
-             "  let^ c = gen()\n"
+             "var^ drop = p^ {\n"
+             "  var^ c = gen()\n"
              "  c.start()\n"
              "  c.dispose()\n"
              "}\n"
@@ -4190,16 +4190,16 @@ static void test_coroutines(void)
     // past it. Asked with two collections after the drop.
     LHAT_TEST("the collector does not run the same one on a later cycle");
     run_text(&r,
-             "let^ log = { n := 0 }\n"
-             "let^ gen = p^ {\n"
+             "var^ log = { n := 0 }\n"
+             "var^ gen = p^ {\n"
              "  do^{\n"
              "    yield^ 1\n"
              "  finally^:\n"
              "    log.n := log.n + 1\n"
              "  }\n"
              "}\n"
-             "let^ drop = p^ {\n"
-             "  let^ c = gen()\n"
+             "var^ drop = p^ {\n"
+             "  var^ c = gen()\n"
              "  c.start()\n"
              "}\n"
              "drop()\n"
@@ -4213,16 +4213,16 @@ static void test_coroutines(void)
     // that never started never pushed anything.
     LHAT_TEST("one that finished on its own is quiet at the collection");
     run_text(&r,
-             "let^ log = { n := 0 }\n"
-             "let^ gen = p^ {\n"
+             "var^ log = { n := 0 }\n"
+             "var^ gen = p^ {\n"
              "  do^{\n"
              "    yield^ 1\n"
              "  finally^:\n"
              "    log.n := log.n + 1\n"
              "  }\n"
              "}\n"
-             "let^ drop = p^ {\n"
-             "  let^ c = gen()\n"
+             "var^ drop = p^ {\n"
+             "  var^ c = gen()\n"
              "  c.start()\n"
              "  c.resume(nil^)\n"
              "}\n"
@@ -4234,15 +4234,15 @@ static void test_coroutines(void)
 
     LHAT_TEST("one dropped before it started has nothing to run");
     run_text(&r,
-             "let^ log = { n := 0 }\n"
-             "let^ gen = p^ {\n"
+             "var^ log = { n := 0 }\n"
+             "var^ gen = p^ {\n"
              "  do^{\n"
              "    yield^ 1\n"
              "  finally^:\n"
              "    log.n := 5\n"
              "  }\n"
              "}\n"
-             "let^ drop = p^ { let^ c = gen() }\n"
+             "var^ drop = p^ { var^ c = gen() }\n"
              "drop()\n"
              "L^.collectgarbage()\n"
              "return^ log.n\n");
@@ -4255,18 +4255,18 @@ static void test_coroutines(void)
     // the collector's business and 10.7 promises nothing about it.
     LHAT_TEST("several dropped at once all run");
     run_text(&r,
-             "let^ log = { n := 0 }\n"
-             "let^ gen = p^ {\n"
+             "var^ log = { n := 0 }\n"
+             "var^ gen = p^ {\n"
              "  do^{\n"
              "    yield^ 1\n"
              "  finally^:\n"
              "    log.n := log.n + 1\n"
              "  }\n"
              "}\n"
-             "let^ drop = p^ {\n"
-             "  let^ a = gen()  a.start()\n"
-             "  let^ b = gen()  b.start()\n"
-             "  let^ c = gen()  c.start()\n"
+             "var^ drop = p^ {\n"
+             "  var^ a = gen()  a.start()\n"
+             "  var^ b = gen()  b.start()\n"
+             "  var^ c = gen()  c.start()\n"
              "}\n"
              "drop()\n"
              "L^.collectgarbage()\n"
@@ -4278,8 +4278,8 @@ static void test_coroutines(void)
     // collector picks when, not what.
     LHAT_TEST("a dropped one's nested cleanups run innermost first");
     run_text(&r,
-             "let^ log = { s := 0 }\n"
-             "let^ gen = p^ {\n"
+             "var^ log = { s := 0 }\n"
+             "var^ gen = p^ {\n"
              "  do^{\n"
              "    do^{\n"
              "      yield^ 1\n"
@@ -4290,8 +4290,8 @@ static void test_coroutines(void)
              "    log.s := log.s * 10 + 2\n"
              "  }\n"
              "}\n"
-             "let^ drop = p^ {\n"
-             "  let^ c = gen()\n"
+             "var^ drop = p^ {\n"
+             "  var^ c = gen()\n"
              "  c.start()\n"
              "}\n"
              "drop()\n"
@@ -4307,17 +4307,17 @@ static void test_coroutines(void)
     // run answers with is read from here.
     LHAT_TEST("one dropped too late for a collection still runs at the end");
     run_text(&r,
-             "let^ log = { 0 }\n"
-             "let^ gen = p^ {\n"
+             "var^ log = { 0 }\n"
+             "var^ gen = p^ {\n"
              "  do^{\n"
              "    yield^ 1\n"
              "  finally^:\n"
              "    log[1] := 5\n"
              "  }\n"
              "}\n"
-             "let^ outer = p^ {\n"
-             "  let^ drop = p^ {\n"
-             "    let^ c = gen()\n"
+             "var^ outer = p^ {\n"
+             "  var^ drop = p^ {\n"
+             "    var^ c = gen()\n"
              "    c.start()\n"
              "  }\n"
              "  drop()\n"
@@ -4336,15 +4336,15 @@ static void test_coroutines(void)
     // cleanups do not run. 10.7 promises a dropped coroutine, not a live one.
     LHAT_TEST("one still held when the run ends is left alone");
     run_text(&r,
-             "let^ log = { 0 }\n"
-             "let^ gen = p^ {\n"
+             "var^ log = { 0 }\n"
+             "var^ gen = p^ {\n"
              "  do^{\n"
              "    yield^ 1\n"
              "  finally^:\n"
              "    log[1] := 5\n"
              "  }\n"
              "}\n"
-             "let^ c = gen()\n"
+             "var^ c = gen()\n"
              "c.start()\n"
              "return^ log\n");
     LHAT_CHECK(lhat_is_object_kind(r.ran.value, LHAT_OBJECT_TABLE), "a table");
@@ -4358,9 +4358,9 @@ static void test_coroutines(void)
     // neither closure nor registers -- the collector has to leave it alone.
     LHAT_TEST("a dropped walk is collected without any of this");
     run_text(&r,
-             "let^ drop = p^ {\n"
-             "  let^ t = { 10, 20, 30 }\n"
-             "  let^ w = t.iterate()\n"
+             "var^ drop = p^ {\n"
+             "  var^ t = { 10, 20, 30 }\n"
+             "  var^ w = t.iterate()\n"
              "  w.start()\n"
              "}\n"
              "drop()\n"
@@ -4373,12 +4373,12 @@ static void test_coroutines(void)
     // one's yields reach the outer one's resumer.
     LHAT_TEST("yieldall^ forwards the inner one's yields");
     run_text(&r,
-             "let^ a = p^ { yield^ 1 yield^ 2 }\n"
-             "let^ b = p^ { yieldall^ a() yield^ 3 }\n"
-             "let^ c = b()\n"
-             "let^ x = c.start()\n"
-             "let^ y = c.resume(nil^)\n"
-             "let^ z = c.resume(nil^)\n"
+             "var^ a = p^ { yield^ 1 yield^ 2 }\n"
+             "var^ b = p^ { yieldall^ a() yield^ 3 }\n"
+             "var^ c = b()\n"
+             "var^ x = c.start()\n"
+             "var^ y = c.resume(nil^)\n"
+             "var^ z = c.resume(nil^)\n"
              "return^ x * 100 + y * 10 + z\n");
     CHECK_INTEGER(&r, 123);
     run_dispose(&r);
@@ -4387,9 +4387,9 @@ static void test_coroutines(void)
     // shape PEP 380 gave a generator's return.
     LHAT_TEST("the value of yieldall^ is the inner return");
     run_text(&r,
-             "let^ a = p^ { yield^ 1 return^ 9 }\n"
-             "let^ b = p^ { let^ r = yieldall^ a() yield^ r }\n"
-             "let^ c = b()\n"
+             "var^ a = p^ { yield^ 1 return^ 9 }\n"
+             "var^ b = p^ { var^ r = yieldall^ a() yield^ r }\n"
+             "var^ c = b()\n"
              "c.start()\n"
              "return^ c.resume(nil^)\n");
     CHECK_INTEGER(&r, 9);
@@ -4398,12 +4398,12 @@ static void test_coroutines(void)
     // 15.4 through a delegation: what the resume sends reaches the inner one.
     LHAT_TEST("what the resume sends reaches the inner coroutine");
     run_text(&r,
-             "let^ a = p^ {\n"
-             "  let^ got = yield^ 0\n"
+             "var^ a = p^ {\n"
+             "  var^ got = yield^ 0\n"
              "  return^ got + 1\n"
              "}\n"
-             "let^ b = p^ { let^ r = yieldall^ a() yield^ r }\n"
-             "let^ c = b()\n"
+             "var^ b = p^ { var^ r = yieldall^ a() yield^ r }\n"
+             "var^ c = b()\n"
              "c.start()\n"
              "return^ c.resume(41)\n");
     CHECK_INTEGER(&r, 42);
@@ -4411,22 +4411,22 @@ static void test_coroutines(void)
 
     LHAT_TEST("delegations nest");
     run_text(&r,
-             "let^ a = p^ { yield^ 1 }\n"
-             "let^ b = p^ { yieldall^ a() yield^ 2 }\n"
-             "let^ d = p^ { yieldall^ b() yield^ 3 }\n"
-             "let^ c = d()\n"
-             "let^ x = c.start()\n"
-             "let^ y = c.resume(nil^)\n"
-             "let^ z = c.resume(nil^)\n"
+             "var^ a = p^ { yield^ 1 }\n"
+             "var^ b = p^ { yieldall^ a() yield^ 2 }\n"
+             "var^ d = p^ { yieldall^ b() yield^ 3 }\n"
+             "var^ c = d()\n"
+             "var^ x = c.start()\n"
+             "var^ y = c.resume(nil^)\n"
+             "var^ z = c.resume(nil^)\n"
              "return^ x * 100 + y * 10 + z\n");
     CHECK_INTEGER(&r, 123);
     run_dispose(&r);
 
     LHAT_TEST("a body that only delegates is still yieldable");
     run_text(&r,
-             "let^ a = p^ { yield^ 5 }\n"
-             "let^ b = p^ { yieldall^ a() }\n"
-             "let^ c = b()\n"
+             "var^ a = p^ { yield^ 5 }\n"
+             "var^ b = p^ { yieldall^ a() }\n"
+             "var^ c = b()\n"
              "return^ c.start()\n");
     CHECK_INTEGER(&r, 5);
     run_dispose(&r);
@@ -4435,10 +4435,10 @@ static void test_coroutines(void)
     // reason the delegation had to be written.
     LHAT_TEST("a plain call still only makes a coroutine");
     run_text(&r,
-             "let^ log = { n := 0 }\n"
-             "let^ a = p^ { log.n := 1 yield^ 0 }\n"
-             "let^ b = p^ { a() yield^ 9 }\n"
-             "let^ c = b()\n"
+             "var^ log = { n := 0 }\n"
+             "var^ a = p^ { log.n := 1 yield^ 0 }\n"
+             "var^ b = p^ { a() yield^ 9 }\n"
+             "var^ c = b()\n"
              "c.start()\n"
              "return^ log.n\n");
     CHECK_INTEGER(&r, 0);
@@ -4455,8 +4455,8 @@ static void test_coroutines(void)
     // something.
     LHAT_TEST("resuming one that has never started is a fault");
     run_text(&r,
-             "let^ gen = p^ { yield^ 1 }\n"
-             "let^ c = gen()\n"
+             "var^ gen = p^ { yield^ 1 }\n"
+             "var^ c = gen()\n"
              "c.resume(nil^)\n"
              "return^ 0\n");
     LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_COROUTINE_NOT_STARTED);
@@ -4464,8 +4464,8 @@ static void test_coroutines(void)
 
     LHAT_TEST("starting one that is already suspended is a fault");
     run_text(&r,
-             "let^ gen = p^ { yield^ 1 yield^ 2 }\n"
-             "let^ c = gen()\n"
+             "var^ gen = p^ { yield^ 1 yield^ 2 }\n"
+             "var^ c = gen()\n"
              "c.start()\n"
              "c.start()\n"
              "return^ 0\n");
@@ -4474,8 +4474,8 @@ static void test_coroutines(void)
 
     LHAT_TEST("starting one that has already finished is a fault");
     run_text(&r,
-             "let^ gen = p^ { yield^ 1 }\n"
-             "let^ c = gen()\n"
+             "var^ gen = p^ { yield^ 1 }\n"
+             "var^ c = gen()\n"
              "c.start()\n"
              "c.resume(nil^)\n"
              "c.start()\n"
@@ -4485,8 +4485,8 @@ static void test_coroutines(void)
 
     LHAT_TEST("start() takes no arguments");
     run_text(&r,
-             "let^ gen = p^ { yield^ 1 }\n"
-             "let^ c = gen()\n"
+             "var^ gen = p^ { yield^ 1 }\n"
+             "var^ c = gen()\n"
              "c.start(1)\n"
              "return^ 0\n");
     LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_ARITY);
@@ -4494,8 +4494,8 @@ static void test_coroutines(void)
 
     LHAT_TEST("resume() needs exactly one argument, not zero");
     run_text(&r,
-             "let^ gen = p^ { yield^ 1 }\n"
-             "let^ c = gen()\n"
+             "var^ gen = p^ { yield^ 1 }\n"
+             "var^ c = gen()\n"
              "c.start()\n"
              "c.resume()\n"
              "return^ 0\n");
@@ -4504,8 +4504,8 @@ static void test_coroutines(void)
 
     LHAT_TEST("resume() needs exactly one argument, not two");
     run_text(&r,
-             "let^ gen = p^ { yield^ 1 }\n"
-             "let^ c = gen()\n"
+             "var^ gen = p^ { yield^ 1 }\n"
+             "var^ c = gen()\n"
              "c.start()\n"
              "c.resume(1, 2)\n"
              "return^ 0\n");
@@ -4516,16 +4516,16 @@ static void test_coroutines(void)
     // rather than finding out by faulting.
     LHAT_TEST("a fresh coroutine has neither started nor finished");
     run_text(&r,
-             "let^ gen = p^ { yield^ 1 }\n"
-             "let^ c = gen()\n"
+             "var^ gen = p^ { yield^ 1 }\n"
+             "var^ c = gen()\n"
              "return^ c.started() or^ c.done()\n");
     CHECK_BOOL(&r, false);
     run_dispose(&r);
 
     LHAT_TEST("a suspended one has started and has not finished");
     run_text(&r,
-             "let^ gen = p^ { yield^ 1 yield^ 2 }\n"
-             "let^ c = gen()\n"
+             "var^ gen = p^ { yield^ 1 yield^ 2 }\n"
+             "var^ c = gen()\n"
              "c.start()\n"
              "return^ c.started() and^ !c.done()\n");
     CHECK_BOOL(&r, true);
@@ -4533,8 +4533,8 @@ static void test_coroutines(void)
 
     LHAT_TEST("a finished one answers both");
     run_text(&r,
-             "let^ gen = p^ { yield^ 1 }\n"
-             "let^ c = gen()\n"
+             "var^ gen = p^ { yield^ 1 }\n"
+             "var^ c = gen()\n"
              "c.start()\n"
              "c.resume(nil^)\n"
              "return^ c.started() and^ c.done()\n");
@@ -4546,9 +4546,9 @@ static void test_coroutines(void)
     // way. Nothing in the value says which one it was.
     LHAT_TEST("done() tells the end from a yield^ of the same value");
     run_text(&r,
-             "let^ gen = p^ { yield^ }\n"
-             "let^ c = gen()\n"
-             "let^ log = { s := 0 }\n"
+             "var^ gen = p^ { yield^ }\n"
+             "var^ c = gen()\n"
+             "var^ log = { s := 0 }\n"
              "c.start()\n"
              "if^ c.done() { log.s := log.s + 1 }\n"
              "c.resume(nil^)\n"
@@ -4560,8 +4560,8 @@ static void test_coroutines(void)
     // 10.7: disposal ends the coroutine without the body reaching its end.
     LHAT_TEST("disposal finishes it too");
     run_text(&r,
-             "let^ gen = p^ { yield^ 1 yield^ 2 }\n"
-             "let^ c = gen()\n"
+             "var^ gen = p^ { yield^ 1 yield^ 2 }\n"
+             "var^ c = gen()\n"
              "c.start()\n"
              "c.dispose()\n"
              "return^ c.done()\n");
@@ -4572,8 +4572,8 @@ static void test_coroutines(void)
     // other operation would fault on.
     LHAT_TEST("both still answer after the coroutine is dead");
     run_text(&r,
-             "let^ gen = p^ { yield^ 1 }\n"
-             "let^ c = gen()\n"
+             "var^ gen = p^ { yield^ 1 }\n"
+             "var^ c = gen()\n"
              "c.start()\n"
              "c.resume(nil^)\n"
              "return^ c.done() and^ c.started()\n");
@@ -4582,8 +4582,8 @@ static void test_coroutines(void)
 
     LHAT_TEST("done() takes no arguments");
     run_text(&r,
-             "let^ gen = p^ { yield^ 1 }\n"
-             "let^ c = gen()\n"
+             "var^ gen = p^ { yield^ 1 }\n"
+             "var^ c = gen()\n"
              "c.done(1)\n"
              "return^ 0\n");
     LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_ARITY);
@@ -4591,8 +4591,8 @@ static void test_coroutines(void)
 
     LHAT_TEST("started() takes no arguments");
     run_text(&r,
-             "let^ gen = p^ { yield^ 1 }\n"
-             "let^ c = gen()\n"
+             "var^ gen = p^ { yield^ 1 }\n"
+             "var^ c = gen()\n"
              "c.started(1)\n"
              "return^ 0\n");
     LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_ARITY);
@@ -4603,9 +4603,9 @@ static void test_coroutines(void)
     // and a suspended one both answer false.
     LHAT_TEST("the two together drive one of unknown state");
     run_text(&r,
-             "let^ gen = p^ { yield^ 1 yield^ 2 yield^ 3 }\n"
-             "let^ drain = p^ c {\n"
-             "  let^ n = 0\n"
+             "var^ gen = p^ { yield^ 1 yield^ 2 yield^ 3 }\n"
+             "var^ drain = p^ c {\n"
+             "  var^ n = 0\n"
              "  if^ !c.started() { c.start() n := n + 1 }\n"
              "  repeat^ while^ !c.done() { c.resume(nil^) n := n + 1 }\n"
              "  return^ n\n"
@@ -4619,9 +4619,9 @@ static void test_coroutines(void)
     // this by itself.
     LHAT_TEST("yieldall^ still starts a fresh coroutine on its own");
     run_text(&r,
-             "let^ a = p^ { yield^ 1 }\n"
-             "let^ b = p^ { yieldall^ a() }\n"
-             "let^ c = b()\n"
+             "var^ a = p^ { yield^ 1 }\n"
+             "var^ b = p^ { yieldall^ a() }\n"
+             "var^ c = b()\n"
              "return^ c.start()\n");
     CHECK_INTEGER(&r, 1);
     run_dispose(&r);
@@ -4635,8 +4635,8 @@ static void test_patterns(void)
 
     LHAT_TEST("a value pattern picks its arm");
     run_text(&r,
-             "let^ n = 2\n"
-             "let^ x = 0\n"
+             "var^ n = 2\n"
+             "var^ x = 0\n"
              "for^ n { when^ 1: x := 10 when^ 2: x := 20 other^: x := 30 }\n"
              "return^ x\n");
     CHECK_INTEGER(&r, 20);
@@ -4644,8 +4644,8 @@ static void test_patterns(void)
 
     LHAT_TEST("other^ takes what is left");
     run_text(&r,
-             "let^ n = 9\n"
-             "let^ x = 0\n"
+             "var^ n = 9\n"
+             "var^ x = 0\n"
              "for^ n { when^ 1: x := 10 other^: x := 30 }\n"
              "return^ x\n");
     CHECK_INTEGER(&r, 30);
@@ -4654,8 +4654,8 @@ static void test_patterns(void)
     // 17.3: to^ includes both ends, as 16.4 has it.
     LHAT_TEST("a range pattern includes both ends");
     run_text(&r,
-             "let^ seen = 0\n"
-             "for^ let^ i := 1 to^ 5 {\n"
+             "var^ seen = 0\n"
+             "for^ i from^ 1 to^ 5 {\n"
              "  for^ i { when^ 2 to^ 4: seen := seen + 1 other^: }\n"
              "}\n"
              "return^ seen\n");
@@ -4665,8 +4665,8 @@ static void test_patterns(void)
     // 17.3: several on one arm, which 17.9 makes an or^.
     LHAT_TEST("patterns separated by commas share an arm");
     run_text(&r,
-             "let^ hits = 0\n"
-             "for^ let^ i := 1 to^ 6 {\n"
+             "var^ hits = 0\n"
+             "for^ i from^ 1 to^ 6 {\n"
              "  for^ i { when^ 2, 3, 5: hits := hits + 1 other^: }\n"
              "}\n"
              "return^ hits\n");
@@ -4677,8 +4677,8 @@ static void test_patterns(void)
     // where a focus is defined (16.1).
     LHAT_TEST("the subject is evaluated once");
     run_text(&r,
-             "let^ calls = { n := 0 }\n"
-             "let^ get = f^ { calls.n := calls.n + 1 return^ 2 }\n"
+             "var^ calls = { n := 0 }\n"
+             "var^ get = f^ { calls.n := calls.n + 1 return^ 2 }\n"
              "for^ get() { when^ 1: when^ 2: when^ 3: other^: }\n"
              "return^ calls.n\n");
     CHECK_INTEGER(&r, 1);
@@ -4687,7 +4687,7 @@ static void test_patterns(void)
     // 16.2 and 17.2: unnamed, the subject is it^; named, it is the name.
     LHAT_TEST("the subject is reached through it^");
     run_text(&r,
-             "let^ x = 0\n"
+             "var^ x = 0\n"
              "for^ 7 { when^ 7: x := it^ other^: }\n"
              "return^ x\n");
     CHECK_INTEGER(&r, 7);
@@ -4695,22 +4695,22 @@ static void test_patterns(void)
 
     LHAT_TEST("and through a name when one is written");
     run_text(&r,
-             "let^ x = 0\n"
-             "for^ let^ n := 7 { when^ 7: x := n other^: }\n"
+             "var^ x = 0\n"
+             "for^ var^ n := 7 { when^ 7: x := n other^: }\n"
              "return^ x\n");
     CHECK_INTEGER(&r, 7);
     run_dispose(&r);
 
     LHAT_TEST("the subject is gone after the match");
-    run_text(&r, "for^ let^ n := 1 { when^ 1: other^: }\nreturn^ n\n");
+    run_text(&r, "for^ var^ n := 1 { when^ 1: other^: }\nreturn^ n\n");
     LHAT_CHECK_EQ_INT(r.compiled, LHAT_COMPILE_UNDEFINED);
     run_dispose(&r);
 
-    // 8.6改・16.3改: without let^, the subject's name reaches an existing
+    // 8.6改・16.3改: without var^, the subject's name reaches an existing
     // outer one instead of a fresh one -- the pattern itself still has to
     // compile against it, not just the body.
     LHAT_TEST("a bare name reuses an outer subject, patterns included");
-    run_text(&r, "let^ n = 7\nfor^ n := 7 { when^ 7: n := 100 other^: n := 200 }\nreturn^ n\n");
+    run_text(&r, "var^ n = 7\nfor^ n := 7 { when^ 7: n := 100 other^: n := 200 }\nreturn^ n\n");
     CHECK_INTEGER(&r, 100);
     run_dispose(&r);
 
@@ -4718,7 +4718,7 @@ static void test_patterns(void)
     LHAT_TEST("a type pattern uses isa^");
     run_text(&r,
              "errordef^ E { A, B }\n"
-             "let^ x = 0\n"
+             "var^ x = 0\n"
              "for^ error^E.B{ } {\n"
              "  when^ isa^ E.A: x := 1\n"
              "  when^ isa^ E.B: x := 2\n"
@@ -4731,15 +4731,15 @@ static void test_patterns(void)
     // 17.2 の 式形. 17.6: only the ':' of for^ opens, and ';' closes it all.
     LHAT_TEST("the expression form answers a value");
     run_text(&r,
-             "let^ n = 2\n"
-             "let^ r = for^ n: when^ 1: 10 when^ 2: 20 other^: 30 ;\n"
+             "var^ n = 2\n"
+             "var^ r = for^ n: when^ 1: 10 when^ 2: 20 other^: 30 ;\n"
              "return^ r\n");
     CHECK_INTEGER(&r, 20);
     run_dispose(&r);
 
     LHAT_TEST("and reaches its subject the same way");
     run_text(&r,
-             "let^ r = for^ 3: when^ 1 to^ 2: 0 other^: it^ * 100 ;\n"
+             "var^ r = for^ 3: when^ 1 to^ 2: 0 other^: it^ * 100 ;\n"
              "return^ r\n");
     CHECK_INTEGER(&r, 300);
     run_dispose(&r);
@@ -4747,8 +4747,8 @@ static void test_patterns(void)
     // 17.8: no guards. The arm's body is where a further test goes.
     LHAT_TEST("a further test goes inside the arm");
     run_text(&r,
-             "let^ x = 0\n"
-             "for^ let^ n := 5 {\n"
+             "var^ x = 0\n"
+             "for^ var^ n := 5 {\n"
              "  when^ 1 to^ 9:\n"
              "    if^ n > 3 { x := 1 else^: x := 2 }\n"
              "  other^:\n"
@@ -4770,8 +4770,8 @@ static void test_collection(void)
     // pile up until the run ends.
     LHAT_TEST("what the program lets go of is reclaimed");
     run_text(&r,
-             "let^ n = 0\n"
-             "repeat^ 2000 { let^ t = { a := 1, b := 2 } n := n + 1 }\n"
+             "var^ n = 0\n"
+             "repeat^ 2000 { var^ t = { a := 1, b := 2 } n := n + 1 }\n"
              "return^ n\n");
     CHECK_INTEGER(&r, 2000);
     LHAT_CHECK(r.ran.collected > 1000, "the collector ran and freed");
@@ -4786,8 +4786,8 @@ static void test_collection(void)
     // reached and the sweep takes them while the program still holds them.
     LHAT_TEST("what the program holds is kept");
     run_text(&r,
-             "let^ kept = { }\n"
-             "for^ let^ i := 1 to^ 2000 { kept[i] := { a := i } }\n"
+             "var^ kept = { }\n"
+             "for^ i from^ 1 to^ 2000 { kept[i] := { a := i } }\n"
              "return^ kept[1500].a\n");
     CHECK_INTEGER(&r, 1500);
     LHAT_CHECK(r.ran.live > 2000, "every table held is still there");
@@ -4797,12 +4797,12 @@ static void test_collection(void)
     // has to survive the collection too.
     LHAT_TEST("a captured place keeps its value alive");
     run_text(&r,
-             "let^ get = f^ { return^ 0 }\n"
+             "var^ get = f^ { return^ 0 }\n"
              "do^{\n"
-             "  let^ held = { n := 42 }\n"
+             "  var^ held = { n := 42 }\n"
              "  get := f^ { return^ held.n }\n"
              "}\n"
-             "repeat^ 2000 { let^ waste = { a := 1 } }\n"
+             "repeat^ 2000 { var^ waste = { a := 1 } }\n"
              "return^ get()\n");
     CHECK_INTEGER(&r, 42);
     run_dispose(&r);
@@ -4811,14 +4811,14 @@ static void test_collection(void)
     // it rather than through any frame.
     LHAT_TEST("a suspended coroutine keeps what its registers hold");
     run_text(&r,
-             "let^ gen = p^ {\n"
-             "  let^ mine = { n := 7 }\n"
+             "var^ gen = p^ {\n"
+             "  var^ mine = { n := 7 }\n"
              "  yield^ 0\n"
              "  yield^ mine.n\n"
              "}\n"
-             "let^ c = gen()\n"
+             "var^ c = gen()\n"
              "c.start()\n"
-             "repeat^ 2000 { let^ waste = { a := 1 } }\n"
+             "repeat^ 2000 { var^ waste = { a := 1 } }\n"
              "return^ c.resume(nil^)\n");
     CHECK_INTEGER(&r, 7);
     run_dispose(&r);
@@ -4831,19 +4831,19 @@ static void test_collection(void)
     // reached only through the barrier.
     LHAT_TEST("and ones it takes in after the collector has looked at it");
     run_text(&r,
-             "let^ kept = { }\n"
-             "let^ gen = p^ {\n"
-             "  let^ last = 0\n"
+             "var^ kept = { }\n"
+             "var^ gen = p^ {\n"
+             "  var^ last = 0\n"
              "  repeat^ 200 {\n"
-             "    let^ mine = { n := 11 }\n"
+             "    var^ mine = { n := 11 }\n"
              "    yield^ last\n"
              "    last := mine.n\n"
              "  }\n"
              "}\n"
-             "let^ c = gen()\n"
+             "var^ c = gen()\n"
              "c.start()\n"
-             "let^ next = 30\n"
-             "for^ let^ i := 1 to^ 2000 {\n"
+             "var^ next = 30\n"
+             "for^ i from^ 1 to^ 2000 {\n"
              "  kept[i] := { a := i }\n"
              "  if^ i = next { c.resume(nil^)  next := next + 30 }\n"
              "}\n"
@@ -4859,15 +4859,15 @@ static void test_collection(void)
     // when the writes land.
     LHAT_TEST("a closed upvalue keeps what is written through it");
     run_text(&r,
-             "let^ kept = { }\n"
-             "let^ put = p^ v { }\n"
-             "let^ read = f^ { return^ 0 }\n"
+             "var^ kept = { }\n"
+             "var^ put = p^ v { }\n"
+             "var^ read = f^ { return^ 0 }\n"
              "do^{\n"
-             "  let^ box = { n := 0 }\n"
+             "  var^ box = { n := 0 }\n"
              "  put := p^ v { box := v }\n"
              "  read := f^ { return^ box.n }\n"
              "}\n"
-             "for^ let^ i := 1 to^ 2000 {\n"
+             "for^ i from^ 1 to^ 2000 {\n"
              "  kept[i] := { a := i }\n"
              "  put({ n := i })\n"
              "}\n"
@@ -4883,15 +4883,15 @@ static void test_collection(void)
     // once and not in a loop. This pins the composition, not the barrier.
     LHAT_TEST("an overload group keeps the arms added to an old one");
     run_text(&r,
-             "let^ kept = { }\n"
-             "let^ Base = def^{ self^{ }, m := f^ x:string^ { return^ 1 } }\n"
-             "let^ Mid = Base .. def^{\n"
+             "var^ kept = { }\n"
+             "var^ Base = def^{ self^{ }, m := f^ x:string^ { return^ 1 } }\n"
+             "var^ Mid = Base .. def^{\n"
              "  self^{ },\n"
              "  overload^\n"
              "  m := f^ x:number^ { return^ x },\n"
              "}\n"
-             "for^ let^ i := 1 to^ 500 { kept[i] := { a := i } }\n"
-             "let^ Sub = Mid .. def^{\n"
+             "for^ i from^ 1 to^ 500 { kept[i] := { a := i } }\n"
+             "var^ Sub = Mid .. def^{\n"
              "  self^{ },\n"
              "  overload^\n"
              "  m := f^ x:bool^ { return^ 3 },\n"
@@ -4908,22 +4908,22 @@ static void test_collection(void)
     // collector next came round.
     LHAT_TEST("collectgarbage answers for the heap as it is, mid-cycle");
     run_text(&r,
-             "let^ log = { n := 0 }\n"
-             "let^ gen = p^ {\n"
+             "var^ log = { n := 0 }\n"
+             "var^ gen = p^ {\n"
              "  do^{\n"
              "    yield^ 1\n"
              "  finally^:\n"
              "    log.n := 5\n"
              "  }\n"
              "}\n"
-             "let^ outer = p^ {\n"
-             "  let^ drop = p^ {\n"
-             "    let^ c = gen()\n"
+             "var^ outer = p^ {\n"
+             "  var^ drop = p^ {\n"
+             "    var^ c = gen()\n"
              "    c.start()\n"
              "  }\n"
              "  drop()\n"
              "}\n"
-             "repeat^ 2000 { let^ waste = { a := 1 } }\n"
+             "repeat^ 2000 { var^ waste = { a := 1 } }\n"
              "outer()\n"
              "L^.collectgarbage()\n"
              "return^ log.n\n");
@@ -4934,8 +4934,8 @@ static void test_collection(void)
     // it being made and the run ending.
     LHAT_TEST("the answer survives");
     run_text(&r,
-             "let^ s = \"kept\"\n"
-             "repeat^ 2000 { let^ waste = { a := 1 } }\n"
+             "var^ s = \"kept\"\n"
+             "repeat^ 2000 { var^ waste = { a := 1 } }\n"
              "return^ s .. \"!\"\n");
     CHECK_STRING(&r, "kept!");
     run_dispose(&r);
@@ -4944,10 +4944,10 @@ static void test_collection(void)
     // would keep it. Marking from the roots does not.
     LHAT_TEST("a cycle the program dropped is reclaimed");
     run_text(&r,
-             "let^ n = 0\n"
+             "var^ n = 0\n"
              "repeat^ 2000 {\n"
-             "  let^ a = { }\n"
-             "  let^ b = { }\n"
+             "  var^ a = { }\n"
+             "  var^ b = { }\n"
              "  a.other := b\n"
              "  b.other := a\n"
              "  n := n + 1\n"
@@ -4961,9 +4961,9 @@ static void test_collection(void)
     // other, and the definition outlives the instances.
     LHAT_TEST("a definition outlives the instances that read it");
     run_text(&r,
-             "let^ Foo = def^{ self^{ n := 0 }, get := f^self^ { return^ self^.n } }\n"
-             "let^ last = Foo.new^()\n"
-             "repeat^ 2000 { let^ f = Foo.new^() }\n"
+             "var^ Foo = def^{ self^{ n := 0 }, get := f^self^ { return^ self^.n } }\n"
+             "var^ last = Foo.new^()\n"
+             "repeat^ 2000 { var^ f = Foo.new^() }\n"
              "return^ last.get()\n");
     CHECK_INTEGER(&r, 0);
     run_dispose(&r);
@@ -5018,8 +5018,8 @@ static void test_machine(void)
         LhatMachine *m = lhat_machine_new();
         LhatCompileSession *s = lhat_compile_session_new();
         Run one, two, three;
-        compile_next_text(&one, s, "let^ x = 40\nreturn^ x\n");
-        compile_next_text(&two, s, "let^ y = 2\nreturn^ x + y\n");
+        compile_next_text(&one, s, "var^ x = 40\nreturn^ x\n");
+        compile_next_text(&two, s, "var^ y = 2\nreturn^ x + y\n");
         compile_next_text(&three, s, "x := x + y\nreturn^ x\n");
         LHAT_CHECK_EQ_INT(lhat_as_integer(lhat_run(m, one.proto).value), 40);
         LHAT_CHECK_EQ_INT(lhat_as_integer(lhat_run(m, two.proto).value), 42);
@@ -5038,7 +5038,7 @@ static void test_machine(void)
         Run one, two;
         compile_next_text(
             &one, s,
-            "let^ greet = f^ n:string^ -> string^ { return^ \"hi \" .. n }\n");
+            "var^ greet = f^ n:string^ -> string^ { return^ \"hi \" .. n }\n");
         compile_next_text(&two, s, "return^ greet(\"there\")\n");
         lhat_run(m, one.proto);
         LhatRunResult r = lhat_run(m, two.proto);
@@ -5062,7 +5062,7 @@ static void test_machine(void)
         bool all_compiled = true;
         for (size_t i = 0; i < 300; i++) {
             char text[64];
-            snprintf(text, sizeof text, "let^ x = %zu\nreturn^ x\n", i);
+            snprintf(text, sizeof text, "var^ x = %zu\nreturn^ x\n", i);
             compile_next_text(&turns[taken], s, text);
             if (turns[taken].compiled != LHAT_COMPILE_OK) {
                 all_compiled = false;
@@ -5084,15 +5084,15 @@ static void test_machine(void)
         lhat_compile_session_dispose(s);
     }
 
-    // 8.7 keeps a name visible before its let^ runs, and the slot still holds
+    // 8.7 keeps a name visible before its var^ runs, and the slot still holds
     // what the last input put there.
     LHAT_TEST("and a redefinition reads what is already in it");
     {
         LhatMachine *m = lhat_machine_new();
         LhatCompileSession *s = lhat_compile_session_new();
         Run one, two;
-        compile_next_text(&one, s, "let^ x = 1\n");
-        compile_next_text(&two, s, "let^ x = x + 10\nreturn^ x\n");
+        compile_next_text(&one, s, "var^ x = 1\n");
+        compile_next_text(&two, s, "var^ x = x + 10\nreturn^ x\n");
         lhat_run(m, one.proto);
         LHAT_CHECK_EQ_INT(lhat_as_integer(lhat_run(m, two.proto).value), 11);
         lhat_machine_dispose(m);
@@ -5112,13 +5112,13 @@ static void test_machine(void)
         compile_asked_text(&one, s, "2 + 3\n");
         compile_asked_text(
             &two, s,
-            "let^ twice = f^ n:number^ -> number^ { return^ n * 2 }\n");
+            "var^ twice = f^ n:number^ -> number^ { return^ n * 2 }\n");
         compile_asked_text(&three, s, "twice(21)\n");
         // Only the last one answers; the statements before it still run.
-        compile_asked_text(&four, s, "let^ k = 7\nk + 1\n");
+        compile_asked_text(&four, s, "var^ k = 7\nk + 1\n");
         LHAT_CHECK_EQ_INT(lhat_as_integer(lhat_run(m, one.proto).value), 5);
         LhatRunResult made = lhat_run(m, two.proto);
-        LHAT_CHECK(lhat_is_nil(made.value), "a let^ answers with nothing");
+        LHAT_CHECK(lhat_is_nil(made.value), "a var^ answers with nothing");
         LHAT_CHECK_EQ_INT(lhat_as_integer(lhat_run(m, three.proto).value), 42);
         LHAT_CHECK_EQ_INT(lhat_as_integer(lhat_run(m, four.proto).value), 8);
         lhat_machine_dispose(m);
@@ -5137,8 +5137,8 @@ static void test_machine(void)
         LhatCompileSession *s = lhat_compile_session_new();
         Run one;
         compile_asked_text(&one, s,
-                           "let^ n = 0\n"
-                           "let^ bump = p^ { n := n + 1 }\n"
+                           "var^ n = 0\n"
+                           "var^ bump = p^ { n := n + 1 }\n"
                            "bump()\n"
                            "bump()\n"
                            "n\n");
@@ -5156,12 +5156,12 @@ static void test_machine(void)
         LhatMachine *m = lhat_machine_new();
         LhatCompileSession *s = lhat_compile_session_new();
         Run one, two, three;
-        compile_next_text(&one, s, "let^ A = def^{ self^{ x = 1 } }\n");
+        compile_next_text(&one, s, "var^ A = def^{ self^{ x = 1 } }\n");
         compile_next_text(&two, s,
-                          "let^ B = A .. def^{ bar := f^self^ -> number^ "
+                          "var^ B = A .. def^{ bar := f^self^ -> number^ "
                           "{ return^ 2 } }\n");
         compile_next_text(&three, s,
-                          "let^ b = B.new^()\n"
+                          "var^ b = B.new^()\n"
                           "return^ b.x * 10 + b.bar()\n");
         LHAT_CHECK_EQ_INT(one.compiled, LHAT_COMPILE_OK);
         LHAT_CHECK_EQ_INT(two.compiled, LHAT_COMPILE_OK);
@@ -5186,7 +5186,7 @@ static void test_machine(void)
         Run one, two;
         compile_next_text(&one, s, "errordef^ E { Bad, Worse }\n");
         compile_next_text(&two, s,
-                          "let^ e = error^ E.Worse { }\n"
+                          "var^ e = error^ E.Worse { }\n"
                           "if^ e isa^ E.Worse { return^ 1 }\n"
                           "return^ 0\n");
         LHAT_CHECK_EQ_INT(one.compiled, LHAT_COMPILE_OK);
@@ -5207,14 +5207,14 @@ static void test_machine(void)
         LhatCompileSession *s = lhat_compile_session_new();
         Run one, two, three;
         compile_next_text(&one, s,
-                          "let^ Foo = def^{ self^{}, "
+                          "var^ Foo = def^{ self^{}, "
                           "foo := f^self^ -> number^ { return^ 1 } }\n");
         compile_next_text(&two, s,
-                          "let^ Bar = Foo .. def^{ overload^ "
+                          "var^ Bar = Foo .. def^{ overload^ "
                           "foo := f^self^, s:string^ -> number^ "
                           "{ return^ 2 } }\n");
         compile_next_text(&three, s,
-                          "let^ b = Bar.new^()\n"
+                          "var^ b = Bar.new^()\n"
                           "return^ b.foo() * 10 + b.foo(\"x\")\n");
         lhat_run(m, one.proto);
         lhat_run(m, two.proto);
@@ -5235,9 +5235,9 @@ static void test_machine(void)
         LhatMachine *m = lhat_machine_new();
         LhatCompileSession *s = lhat_compile_session_new();
         Run one, two, three, four;
-        compile_next_text(&one, s, "let^ a = 1\n");
+        compile_next_text(&one, s, "var^ a = 1\n");
         compile_next_text(&two, s,
-                          "let^ f = f^ -> number^ { a := 2 return^ 1 }\n");
+                          "var^ f = f^ -> number^ { a := 2 return^ 1 }\n");
         compile_next_text(&three, s, "return^ f()\n");
         compile_next_text(&four, s, "return^ a\n");
         lhat_run(m, one.proto);
@@ -5253,7 +5253,7 @@ static void test_machine(void)
     }
 
     // Severing one name's sharing is severing that name's, not the slot's
-    // neighbours' -- every let^ of a name at a session's top level goes back
+    // neighbours' -- every var^ of a name at a session's top level goes back
     // in the one slot, so a CLOSE over the whole frame would take the
     // bindings above it with it.
     LHAT_TEST("and writing another name over does not sever it");
@@ -5261,10 +5261,10 @@ static void test_machine(void)
         LhatMachine *m = lhat_machine_new();
         LhatCompileSession *s = lhat_compile_session_new();
         Run one, two, three, four;
-        compile_next_text(&one, s, "let^ a = 1\nlet^ b = 2\n");
+        compile_next_text(&one, s, "var^ a = 1\nvar^ b = 2\n");
         compile_next_text(&two, s,
-                          "let^ g = f^ -> number^ { b := 9 return^ 0 }\n");
-        compile_next_text(&three, s, "let^ a = 5\nreturn^ g()\n");
+                          "var^ g = f^ -> number^ { b := 9 return^ 0 }\n");
+        compile_next_text(&three, s, "var^ a = 5\nreturn^ g()\n");
         compile_next_text(&four, s, "return^ b\n");
         lhat_run(m, one.proto);
         lhat_run(m, two.proto);
@@ -5279,7 +5279,7 @@ static void test_machine(void)
     }
 
     // 5.4's sharing is of one binding, not of the slot it happens to sit in.
-    // A let^ writing the name again is a new binding -- it reuses the slot,
+    // A var^ writing the name again is a new binding -- it reuses the slot,
     // so what captured the earlier one has to stop sharing it there. That is
     // the difference from the ':=' above, which writes the same binding.
     LHAT_TEST("a closure keeps what it captured when its input ended");
@@ -5287,10 +5287,10 @@ static void test_machine(void)
         LhatMachine *m = lhat_machine_new();
         LhatCompileSession *s = lhat_compile_session_new();
         Run one, two, three, four;
-        compile_next_text(&one, s, "let^ x = 1\n");
+        compile_next_text(&one, s, "var^ x = 1\n");
         compile_next_text(&two, s,
-                          "let^ show = f^ -> number^ { return^ x }\n");
-        compile_next_text(&three, s, "let^ x = 2\nreturn^ x\n");
+                          "var^ show = f^ -> number^ { return^ x }\n");
+        compile_next_text(&three, s, "var^ x = 2\nreturn^ x\n");
         compile_next_text(&four, s, "return^ show()\n");
         lhat_run(m, one.proto);
         lhat_run(m, two.proto);
@@ -5311,10 +5311,10 @@ static void test_machine(void)
         LhatMachine *m = lhat_machine_new();
         LhatCompileSession *s = lhat_compile_session_new();
         Run one, two, three, four;
-        compile_next_text(&one, s, "let^ x = 1\n");
+        compile_next_text(&one, s, "var^ x = 1\n");
         compile_next_text(&two, s,
-                          "let^ show = f^ -> number^ { return^ x }\n");
-        compile_next_text(&three, s, "let^ x = \"now\"\n");
+                          "var^ show = f^ -> number^ { return^ x }\n");
+        compile_next_text(&three, s, "var^ x = \"now\"\n");
         compile_next_text(&four, s, "return^ show() + 1\n");
         lhat_run(m, one.proto);
         lhat_run(m, two.proto);
@@ -5336,7 +5336,7 @@ static void test_machine(void)
     {
         LhatMachine *m = lhat_machine_new();
         Run text;
-        compile_text(&text, "let^ n = 0\nn := n + 1\nreturn^ n\n");
+        compile_text(&text, "var^ n = 0\nn := n + 1\nreturn^ n\n");
         LhatRunResult a = lhat_run(m, text.proto);
         LhatRunResult b = lhat_run(m, text.proto);
         LHAT_CHECK_EQ_INT(lhat_as_integer(a.value), 1);

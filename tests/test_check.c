@@ -91,7 +91,7 @@ static void test_names(void)
     Unit u;
 
     LHAT_TEST("a definition binds and a reassignment finds it");
-    check_text(&u, "let^ x = 1\nx := 2\n");
+    check_text(&u, "var^ x = 1\nx := 2\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
@@ -100,28 +100,28 @@ static void test_names(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_UNDEFINED);
     unit_dispose(&u);
 
-    // 8.6: the accident let^ was introduced to remove. The inner statement
+    // 8.6: the accident var^ was introduced to remove. The inner statement
     // reassigns the outer name rather than making a second one.
     LHAT_TEST("':=' in a nested scope reaches the outer name");
-    check_text(&u, "let^ i = 0\ndo^{ i := 1 }\n");
+    check_text(&u, "var^ i = 0\ndo^{ i := 1 }\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
     LHAT_TEST("shadowing gets its own binding");
-    check_text(&u, "let^ i = 0\ndo^{ let^ i = \"text\" }\n");
+    check_text(&u, "var^ i = 0\ndo^{ var^ i = \"text\" }\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
     // 8.7: twice in one scope is an error; the nested case above is not.
     LHAT_TEST("the same scope may not define a name twice");
-    check_text(&u, "let^ x = 1\nlet^ x = 2\n");
+    check_text(&u, "var^ x = 1\nvar^ x = 2\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_REDEFINED);
     unit_dispose(&u);
 
-    // 8.7: visible throughout the scope, but not readable before its let^
+    // 8.7: visible throughout the scope, but not readable before its var^
     // has run.
-    LHAT_TEST("reading before the let^ has run is an error");
-    check_text(&u, "let^ x = y\nlet^ y = 2\n");
+    LHAT_TEST("reading before the var^ has run is an error");
+    check_text(&u, "var^ x = y\nvar^ y = 2\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_USED_BEFORE_DEFINED);
     unit_dispose(&u);
 
@@ -129,8 +129,8 @@ static void test_names(void)
     // no forward declaration, since a body does not run where it is written.
     LHAT_TEST("mutual recursion needs no forward declaration");
     check_text(&u,
-               "let^ isEven = f^ n:number^ -> bool^ { return^ isOdd(n) }\n"
-               "let^ isOdd = f^ n:number^ -> bool^ { return^ isEven(n) }\n");
+               "var^ isEven = f^ n:number^ -> bool^ { return^ isOdd(n) }\n"
+               "var^ isOdd = f^ n:number^ -> bool^ { return^ isEven(n) }\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
@@ -143,15 +143,15 @@ static void test_names(void)
     // leaving 'a' looking like a clean bool^ when it was not one.
     LHAT_TEST("mutual recursion still needs its own annotation to be checked");
     check_text(&u,
-               "let^ a = f^ n:number^ {\n"
+               "var^ a = f^ n:number^ {\n"
                "  if^ n <= 0 { return^ true^ }\n"
                "  return^ b(n - 1)\n"
                "}\n"
-               "let^ b = f^ n:number^ {\n"
+               "var^ b = f^ n:number^ {\n"
                "  if^ n <= 0 { return^ 999 }\n"
                "  return^ a(n - 1)\n"
                "}\n"
-               "let^ x : bool^ = a(4)\n");
+               "var^ x : bool^ = a(4)\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
@@ -159,21 +159,21 @@ static void test_names(void)
     // 'b' really is number^|bool^, and saying so is what makes 'a' check.
     LHAT_TEST("and a correct annotation on both sides checks cleanly");
     check_text(&u,
-               "let^ a = f^ n:number^ -> bool^ {\n"
+               "var^ a = f^ n:number^ -> bool^ {\n"
                "  if^ n <= 0 { return^ true^ }\n"
                "  return^ b(n - 1)\n"
                "}\n"
-               "let^ b = f^ n:number^ -> number^|bool^ {\n"
+               "var^ b = f^ n:number^ -> number^|bool^ {\n"
                "  if^ n <= 0 { return^ 999 }\n"
                "  return^ a(n - 1)\n"
                "}\n"
-               "let^ x : bool^ = a(4)\n"
-               "let^ y : number^|bool^ = b(4)\n");
+               "var^ x : bool^ = a(4)\n"
+               "var^ y : number^|bool^ = b(4)\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
     LHAT_TEST("a parameter is in scope in the body");
-    check_text(&u, "let^ f = f^ n:number^ -> number^ { return^ n + 1 }\n");
+    check_text(&u, "var^ f = f^ n:number^ -> number^ { return^ n + 1 }\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
@@ -184,10 +184,10 @@ static void test_names(void)
     // way, once it survives to somewhere a concrete type is wanted.
     LHAT_TEST("an unannotated parameter handed straight back is pending where it lands");
     check_text(&u,
-               "let^ f = f^ n {\n"
+               "var^ f = f^ n {\n"
                "  return^ n\n"
                "}\n"
-               "let^ x : number^ = f(4)\n");
+               "var^ x : number^ = f(4)\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
@@ -196,10 +196,10 @@ static void test_names(void)
     // clean under strict, the same as any^ would.
     LHAT_TEST("but calling through an unannotated parameter is still fine");
     check_text(&u,
-               "let^ f = f^ n -> number^ {\n"
+               "var^ f = f^ n -> number^ {\n"
                "  return^ 1\n"
                "}\n"
-               "let^ x : number^ = f(\"anything\")\n");
+               "var^ x : number^ = f(\"anything\")\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 }
@@ -209,27 +209,27 @@ static void test_expressions(void)
     Unit u;
 
     LHAT_TEST("arithmetic needs numbers");
-    check_text(&u, "let^ s = \"a\"\nlet^ n = s + 1\n");
+    check_text(&u, "var^ s = \"a\"\nvar^ n = s + 1\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_NO_OPERATOR);
     unit_dispose(&u);
 
     LHAT_TEST("a comparison is a bool");
-    check_text(&u, "let^ b : bool^ = 1 < 2\n");
+    check_text(&u, "var^ b : bool^ = 1 < 2\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
     LHAT_TEST("and^ takes bools");
-    check_text(&u, "let^ b = 1 and^ 2\n");
+    check_text(&u, "var^ b = 1 and^ 2\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_NOT_BOOL);
     unit_dispose(&u);
 
     LHAT_TEST("an annotation has to be satisfied");
-    check_text(&u, "let^ x : number^ = \"text\"\n");
+    check_text(&u, "var^ x : number^ = \"text\"\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
     LHAT_TEST("a reassignment keeps the type of the name");
-    check_text(&u, "let^ x = 1\nx := \"text\"\n");
+    check_text(&u, "var^ x = 1\nx := \"text\"\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
@@ -237,51 +237,51 @@ static void test_expressions(void)
     // it stands for has to accept the right side, and the result has to fit
     // the name.
     LHAT_TEST("compound assignment checks like the operator it stands for");
-    check_text(&u, "let^ x : number^ = 1\nx += 1\n");
+    check_text(&u, "var^ x : number^ = 1\nx += 1\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
     LHAT_TEST("and refuses what the operator would refuse");
-    check_text(&u, "let^ s = \"hi\"\ns += 1\n");
+    check_text(&u, "var^ s = \"hi\"\ns += 1\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_NO_OPERATOR);
     unit_dispose(&u);
 
     LHAT_TEST("a call checks its arguments and arity");
     check_text(&u,
-               "let^ f = f^ n:number^ -> number^ { return^ n }\n"
-               "let^ a = f(1)\n"
-               "let^ b = f(\"text\")\n");
+               "var^ f = f^ n:number^ -> number^ { return^ n }\n"
+               "var^ a = f(1)\n"
+               "var^ b = f(\"text\")\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
     LHAT_TEST("too few arguments is reported");
     check_text(&u,
-               "let^ f = f^ n:number^ -> number^ { return^ n }\n"
-               "let^ a = f()\n");
+               "var^ f = f^ n:number^ -> number^ { return^ n }\n"
+               "var^ a = f()\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_ARITY);
     unit_dispose(&u);
 
     LHAT_TEST("calling something that is not a subroutine");
-    check_text(&u, "let^ x = 1\nlet^ y = x(1)\n");
+    check_text(&u, "var^ x = 1\nvar^ y = x(1)\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_NOT_CALLABLE);
     unit_dispose(&u);
 
     // 14.10: a structure asks for at least its members, so reading one it
     // does not have is where the report belongs.
     LHAT_TEST("a member has to exist");
-    check_text(&u, "let^ t = { a := 1 }\nlet^ x = t.a\nlet^ y = t.b\n");
+    check_text(&u, "var^ t = { a := 1 }\nvar^ x = t.a\nvar^ y = t.b\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_NO_MEMBER);
     unit_dispose(&u);
 
     LHAT_TEST("a table literal keeps its members' types");
-    check_text(&u, "let^ t = { a := 1 }\nlet^ n : number^ = t.a\n");
+    check_text(&u, "var^ t = { a := 1 }\nvar^ n : number^ = t.a\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
     // 13.7: any^ admits every value, so passing one on is fine.
     LHAT_TEST("any^ accepts anything");
     check_text(&u,
-               "let^ log = p^ x:any^ { }\n"
+               "var^ log = p^ x:any^ { }\n"
                "log(1)\n"
                "log(\"text\")\n");
     CHECK_CLEAN(&u);
@@ -295,23 +295,23 @@ static void test_results(void)
 
     LHAT_TEST("the result type is inferred from return^");
     check_text(&u,
-               "let^ f = f^ { return^ 0 }\n"
-               "let^ n : number^ = f()\n");
+               "var^ f = f^ { return^ 0 }\n"
+               "var^ n : number^ = f()\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
     LHAT_TEST("several return^ make a union");
     check_text(&u,
-               "let^ f = f^ b:bool^ {\n"
+               "var^ f = f^ b:bool^ {\n"
                "    if^ b { return^ 0 }\n"
                "    return^ nil^\n"
                "}\n"
-               "let^ n : number^ = f(true^)\n");
+               "var^ n : number^ = f(true^)\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
     LHAT_TEST("a declared result is checked against return^");
-    check_text(&u, "let^ f = f^ -> number^ { return^ \"text\" }\n");
+    check_text(&u, "var^ f = f^ -> number^ { return^ \"text\" }\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
@@ -319,21 +319,21 @@ static void test_results(void)
     // result between them, so recursion needs nothing written.
     LHAT_TEST("recursion is inferred from the exits that are not recursive");
     check_text(&u,
-               "let^ fact = f^ n:number^ {\n"
+               "var^ fact = f^ n:number^ {\n"
                "    if^ n <= 1 { return^ 1 }\n"
                "    return^ n * fact(n - 1)\n"
                "}\n"
-               "let^ n : number^ = fact(5)\n");
+               "var^ n : number^ = fact(5)\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
     LHAT_TEST("and the recursive exit does not widen it");
     check_text(&u,
-               "let^ fact = f^ n:number^ {\n"
+               "var^ fact = f^ n:number^ {\n"
                "    if^ n <= 1 { return^ 1 }\n"
                "    return^ fact(n - 1)\n"
                "}\n"
-               "let^ s : string^ = fact(5)\n");
+               "var^ s : string^ = fact(5)\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
@@ -342,36 +342,36 @@ static void test_results(void)
     // depend on it, so the arm it contributes has to be kept.
     LHAT_TEST("a recursive call inside a larger expression still counts");
     check_text(&u,
-               "let^ tag = f^ v:any^ -> string^ { return^ \"t\" }\n"
-               "let^ f = f^ x:number^ {\n"
+               "var^ tag = f^ v:any^ -> string^ { return^ \"t\" }\n"
+               "var^ f = f^ x:number^ {\n"
                "    if^ x > 1 { return^ tag(f(x - 1)) }\n"
                "    return^ 1\n"
                "}\n"
-               "let^ v : number^|string^ = f(3)\n");
+               "var^ v : number^|string^ = f(3)\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
     LHAT_TEST("and the union really is both arms");
     check_text(&u,
-               "let^ tag = f^ v:any^ -> string^ { return^ \"t\" }\n"
-               "let^ f = f^ x:number^ {\n"
+               "var^ tag = f^ v:any^ -> string^ { return^ \"t\" }\n"
+               "var^ f = f^ x:number^ {\n"
                "    if^ x > 1 { return^ tag(f(x - 1)) }\n"
                "    return^ 1\n"
                "}\n"
-               "let^ v : number^ = f(3)\n");
+               "var^ v : number^ = f(3)\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
     // 12.8 and 03 の 5.6 leave no other way out, so a body every exit of
     // which calls itself can never produce a value.
     LHAT_TEST("a body whose every exit is recursive is reported");
-    check_text(&u, "let^ f = f^ n:number^ { return^ f(n) }\n");
+    check_text(&u, "var^ f = f^ n:number^ { return^ f(n) }\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_NEVER_RETURNS);
     unit_dispose(&u);
 
     LHAT_TEST("falling out of the body is an exit, so this one is not that");
     check_text(&u,
-               "let^ f = p^ n:number^ {\n"
+               "var^ f = p^ n:number^ {\n"
                "    if^ n > 0 { return^ f(n - 1) }\n"
                "}\n");
     CHECK_CLEAN(&u);
@@ -382,56 +382,56 @@ static void test_results(void)
     // value, so the missing one is nil^ (04 の 11.3).
     LHAT_TEST("falling out of the body puts nil^ in the result");
     check_text(&u,
-               "let^ f = p^ b:bool^ { if^ b { return^ 1 } }\n"
-               "let^ n : number^ = f(true^)\n");
+               "var^ f = p^ b:bool^ { if^ b { return^ 1 } }\n"
+               "var^ n : number^ = f(true^)\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
     LHAT_TEST("and the union is what the caller has to handle");
     check_text(&u,
-               "let^ f = p^ b:bool^ { if^ b { return^ 1 } }\n"
-               "let^ n : number^ = f(true^) ?? 0\n");
+               "var^ f = p^ b:bool^ { if^ b { return^ 1 } }\n"
+               "var^ n : number^ = f(true^) ?? 0\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
     // 13.2: a function answers on every path, so an f^ that can reach its
     // end has one with nothing to answer with. No result type fixes that.
     LHAT_TEST("a function that can reach its end is reported");
-    check_text(&u, "let^ f = f^ b:bool^ { if^ b { return^ true^ } }\n");
+    check_text(&u, "var^ f = f^ b:bool^ { if^ b { return^ true^ } }\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_FUNCTION_FALLS_OUT);
     unit_dispose(&u);
 
     LHAT_TEST("and writing the result does not excuse it");
     check_text(&u,
-               "let^ f = f^ b:bool^ -> bool^|nil^ { if^ b { return^ true^ } }\n");
+               "var^ f = f^ b:bool^ -> bool^|nil^ { if^ b { return^ true^ } }\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_FUNCTION_FALLS_OUT);
     unit_dispose(&u);
 
     LHAT_TEST("covering every path is what it takes");
     check_text(&u,
-               "let^ f = f^ b:bool^ {\n"
+               "var^ f = f^ b:bool^ {\n"
                "    if^ b { return^ true^ }\n"
                "    return^ false^\n"
                "}\n"
-               "let^ x : bool^ = f(true^)\n");
+               "var^ x : bool^ = f(true^)\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
     LHAT_TEST("an empty function body is reported too");
-    check_text(&u, "let^ f = f^ { }\n");
+    check_text(&u, "var^ f = f^ { }\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_FUNCTION_FALLS_OUT);
     unit_dispose(&u);
 
     // The same exit under a p^ that wrote a result which does not admit it.
     LHAT_TEST("a written result has to admit the value-less exit");
     check_text(&u,
-               "let^ f = p^ b:bool^ -> number^ { if^ b { return^ 1 } }\n");
+               "var^ f = p^ b:bool^ -> number^ { if^ b { return^ 1 } }\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_FALLS_OUT_OF_RESULT);
     unit_dispose(&u);
 
     LHAT_TEST("and admitting it is enough");
     check_text(&u,
-               "let^ f = p^ b:bool^ -> number^|nil^ { if^ b { return^ 1 } }\n");
+               "var^ f = p^ b:bool^ -> number^|nil^ { if^ b { return^ 1 } }\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
@@ -440,61 +440,61 @@ static void test_results(void)
     // leaves the same nil^ behind at run time.
     LHAT_TEST("a bare return^ is an exit that produces no value");
     check_text(&u,
-               "let^ f = p^ b:bool^ { if^ b { return^ 1 } return^ }\n"
-               "let^ v : number^ = f(true^)\n");
+               "var^ f = p^ b:bool^ { if^ b { return^ 1 } return^ }\n"
+               "var^ v : number^ = f(true^)\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
     LHAT_TEST("so nil^ joins the result beside the value the other exit makes");
     check_text(&u,
-               "let^ f = p^ b:bool^ { if^ b { return^ 1 } return^ }\n"
-               "let^ v : number^|nil^ = f(true^)\n");
+               "var^ f = p^ b:bool^ { if^ b { return^ 1 } return^ }\n"
+               "var^ v : number^|nil^ = f(true^)\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
     LHAT_TEST("an f^ may not take that exit either");
-    check_text(&u, "let^ f = f^ -> number^ { return^ }\n");
+    check_text(&u, "var^ f = f^ -> number^ { return^ }\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_FUNCTION_FALLS_OUT);
     unit_dispose(&u);
 
     LHAT_TEST("and a written result has to admit it");
-    check_text(&u, "let^ f = p^ -> number^ { return^ }\n");
+    check_text(&u, "var^ f = p^ -> number^ { return^ }\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_FALLS_OUT_OF_RESULT);
     unit_dispose(&u);
 
     // 16.5: a repeat^ with no bound and no break^ of its own never ends, so
     // the end of the body is not somewhere control can arrive.
     LHAT_TEST("an endless repeat^ is not a way to the end of a body");
-    check_text(&u, "let^ f = f^ -> number^ { repeat^ { } }\n");
+    check_text(&u, "var^ f = f^ -> number^ { repeat^ { } }\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
     LHAT_TEST("nor when every turn of it returns");
-    check_text(&u, "let^ f = f^ -> number^ { repeat^ { return^ 1 } }\n");
+    check_text(&u, "var^ f = f^ -> number^ { repeat^ { return^ 1 } }\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
     LHAT_TEST("and a p^ with a written result is not made to admit nil^");
-    check_text(&u, "let^ g = p^ -> number^ { repeat^ { yield^ 1 } }\n");
+    check_text(&u, "var^ g = p^ -> number^ { repeat^ { yield^ 1 } }\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
     // 9.8: break^ leaves the loop, so the end is reachable again.
     LHAT_TEST("a break^ puts the end of the body back within reach");
-    check_text(&u, "let^ f = f^ -> number^ { repeat^ { break^ } }\n");
+    check_text(&u, "var^ f = f^ -> number^ { repeat^ { break^ } }\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_FUNCTION_FALLS_OUT);
     unit_dispose(&u);
 
     LHAT_TEST("wherever the break^ is written inside the loop");
     check_text(&u,
-               "let^ f = f^ -> number^ { repeat^ { if^ true^ { break^ } } }\n");
+               "var^ f = f^ -> number^ { repeat^ { if^ true^ { break^ } } }\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_FUNCTION_FALLS_OUT);
     unit_dispose(&u);
 
     // A break^ of an inner loop leaves that one, not this one.
     LHAT_TEST("but a nested loop keeps its own break^");
     check_text(&u,
-               "let^ f = f^ -> number^ { repeat^ { repeat^ { break^ } } }\n");
+               "var^ f = f^ -> number^ { repeat^ { repeat^ { break^ } } }\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
@@ -502,8 +502,8 @@ static void test_results(void)
     // outer loop's.
     LHAT_TEST("and the if^ form of for^ is not a loop to break out of");
     check_text(&u,
-               "let^ f = f^ -> number^ {\n"
-               "    repeat^ { for^ let^ x := 1 if^ true^ { break^ } }\n"
+               "var^ f = f^ -> number^ {\n"
+               "    repeat^ { for^ var^ x := 1 if^ true^ { break^ } }\n"
                "}\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_FUNCTION_FALLS_OUT);
     unit_dispose(&u);
@@ -511,7 +511,7 @@ static void test_results(void)
     // 17 章: nor is the when^ form.
     LHAT_TEST("nor is the when^ form");
     check_text(&u,
-               "let^ f = f^ -> number^ {\n"
+               "var^ f = f^ -> number^ {\n"
                "    repeat^ { for^ 1 { when^ 1: break^ other^: } }\n"
                "}\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_FUNCTION_FALLS_OUT);
@@ -519,19 +519,19 @@ static void test_results(void)
 
     // Only the endless form. The others can run out on their own.
     LHAT_TEST("a bounded repeat^ still reaches the end of the body");
-    check_text(&u, "let^ f = f^ -> number^ { repeat^ 3 { } }\n");
+    check_text(&u, "var^ f = f^ -> number^ { repeat^ 3 { } }\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_FUNCTION_FALLS_OUT);
     unit_dispose(&u);
 
     LHAT_TEST("and so does a conditional one");
-    check_text(&u, "let^ f = f^ -> number^ { repeat^ while^ true^ { } }\n");
+    check_text(&u, "var^ f = f^ -> number^ { repeat^ while^ true^ { } }\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_FUNCTION_FALLS_OUT);
     unit_dispose(&u);
 
     // 13.11: a branch that ends in an endless loop is a branch that leaves.
     LHAT_TEST("a branch ending in one covers its path");
     check_text(&u,
-               "let^ f = f^ -> number^ {\n"
+               "var^ f = f^ -> number^ {\n"
                "    if^ true^ { repeat^ { } el^: return^ 1 }\n"
                "}\n");
     CHECK_CLEAN(&u);
@@ -541,15 +541,15 @@ static void test_results(void)
     // it, and nil^ is not it.
     LHAT_TEST("a body that returns nothing stays returning nothing");
     check_text(&u,
-               "let^ log = p^ n:number^ { let^ x = n }\n"
+               "var^ log = p^ n:number^ { var^ x = n }\n"
                "log(1)\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
     LHAT_TEST("every path returning means no nil^ joins in");
     check_text(&u,
-               "let^ f = p^ b:bool^ { if^ b { return^ 1 else^: return^ 2 } }\n"
-               "let^ n : number^ = f(true^)\n");
+               "var^ f = p^ b:bool^ { if^ b { return^ 1 else^: return^ 2 } }\n"
+               "var^ n : number^ = f(true^)\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
@@ -557,16 +557,16 @@ static void test_results(void)
     // same way and a body with no name can recurse.
     LHAT_TEST("this^ recursion is inferred the same way");
     check_text(&u,
-               "let^ fact = f^ n:number^ {\n"
+               "var^ fact = f^ n:number^ {\n"
                "    if^ n <= 1 { return^ 1 }\n"
                "    return^ n * this^(n - 1)\n"
                "}\n"
-               "let^ n : number^ = fact(5)\n");
+               "var^ n : number^ = fact(5)\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
     LHAT_TEST("and a body whose every exit is this^ is reported");
-    check_text(&u, "let^ f = f^ n:number^ { return^ this^(n) }\n");
+    check_text(&u, "var^ f = f^ n:number^ { return^ this^(n) }\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_NEVER_RETURNS);
     unit_dispose(&u);
 
@@ -575,7 +575,7 @@ static void test_results(void)
     // being bound.
     LHAT_TEST("this^ checks its arguments");
     check_text(&u,
-               "let^ f = f^ n:number^ {\n"
+               "var^ f = f^ n:number^ {\n"
                "    if^ n <= 1 { return^ 1 }\n"
                "    return^ this^(\"text\")\n"
                "}\n");
@@ -583,12 +583,12 @@ static void test_results(void)
     unit_dispose(&u);
 
     LHAT_TEST("this^ outside any body is reported");
-    check_text(&u, "let^ x = this^\n");
+    check_text(&u, "var^ x = this^\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_THIS_OUTSIDE);
     unit_dispose(&u);
 
     LHAT_TEST("with the result written, recursion is fine");
-    check_text(&u, "let^ f = f^ n:number^ -> number^ { return^ f(n) }\n");
+    check_text(&u, "var^ f = f^ n:number^ -> number^ { return^ f(n) }\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 }
@@ -605,15 +605,15 @@ static void test_parameter_inference(void)
     // arithmetic use says which type arrived.
     LHAT_TEST("arithmetic on a parameter decides it");
     check_text(&u,
-               "let^ f = f^ x -> number^ { return^ x + 1 }\n"
-               "let^ y : number^ = f(2)\n");
+               "var^ f = f^ x -> number^ { return^ x + 1 }\n"
+               "var^ y : number^ = f(2)\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
     LHAT_TEST("and the call site is checked against what was demanded");
     check_text(&u,
-               "let^ f = f^ x -> number^ { return^ x + 1 }\n"
-               "let^ y : number^ = f(\"a\")\n");
+               "var^ f = f^ x -> number^ { return^ x + 1 }\n"
+               "var^ y : number^ = f(\"a\")\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
@@ -621,8 +621,8 @@ static void test_parameter_inference(void)
     // argument, so both sides of 'x + y' demand what number^'s operator takes.
     LHAT_TEST("both operands of an arithmetic operator are demands");
     check_text(&u,
-               "let^ f = f^ x, y -> number^ { return^ x + y }\n"
-               "let^ n : number^ = f(1, \"a\")\n");
+               "var^ f = f^ x, y -> number^ { return^ x + y }\n"
+               "var^ n : number^ = f(1, \"a\")\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
@@ -630,15 +630,15 @@ static void test_parameter_inference(void)
     // a type. Nothing has to be named for this to work.
     LHAT_TEST("a member read demands a structure carrying it");
     check_text(&u,
-               "let^ f = p^ x { x.write() }\n"
+               "var^ f = p^ x { x.write() }\n"
                "f(5)\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
     LHAT_TEST("and a table carrying that member is accepted");
     check_text(&u,
-               "let^ f = p^ x { x.write() }\n"
-               "let^ t = { write := p^ { } }\n"
+               "var^ f = p^ x { x.write() }\n"
+               "var^ t = { write := p^ { } }\n"
                "f(t)\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
@@ -647,7 +647,7 @@ static void test_parameter_inference(void)
     // the signature, so it is not a demand -- see 03 の 3.4.
     LHAT_TEST("calling a parameter demands nothing");
     check_text(&u,
-               "let^ f = p^ x { x() }\n"
+               "var^ f = p^ x { x() }\n"
                "f(5)\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
@@ -656,8 +656,8 @@ static void test_parameter_inference(void)
     // Counting it would undo the narrowing the writer put there.
     LHAT_TEST("a use under a narrowing is not a demand");
     check_text(&u,
-               "let^ f = p^ x {\n"
-               "    if^ x isa^ number^ { let^ n : number^ = x + 1 }\n"
+               "var^ f = p^ x {\n"
+               "    if^ x isa^ number^ { var^ n : number^ = x + 1 }\n"
                "}\n"
                "f(\"a\")\n");
     CHECK_CLEAN(&u);
@@ -666,8 +666,8 @@ static void test_parameter_inference(void)
     // 3.4: what always runs decides; a branch is added only when it agrees.
     LHAT_TEST("an unconditional demand wins over a branch that disagrees");
     check_text(&u,
-               "let^ f = p^ b:bool^, x {\n"
-               "    let^ n : number^ = x + 1\n"
+               "var^ f = p^ b:bool^, x {\n"
+               "    var^ n : number^ = x + 1\n"
                "    if^ b { x.write() }\n"
                "}\n"
                "f(true^, \"a\")\n");
@@ -678,8 +678,8 @@ static void test_parameter_inference(void)
     // here would be reporting the same thing twice: each use says so itself.
     LHAT_TEST("branches that disagree decide nothing");
     check_text(&u,
-               "let^ f = p^ b:bool^, x {\n"
-               "    if^ b { let^ n : number^ = x + 1 else^: x.write() }\n"
+               "var^ f = p^ b:bool^, x {\n"
+               "    if^ b { var^ n : number^ = x + 1 else^: x.write() }\n"
                "}\n"
                "f(true^, \"a\")\n");
     CHECK_CLEAN(&u);
@@ -688,8 +688,8 @@ static void test_parameter_inference(void)
     // Two branches that agree decide it between them.
     LHAT_TEST("branches that agree decide it");
     check_text(&u,
-               "let^ f = p^ b:bool^, x {\n"
-               "    if^ b { let^ n : number^ = x + 1 else^: let^ m : number^ = x * 2 }\n"
+               "var^ f = p^ b:bool^, x {\n"
+               "    if^ b { var^ n : number^ = x + 1 else^: var^ m : number^ = x * 2 }\n"
                "}\n"
                "f(true^, \"a\")\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
@@ -700,8 +700,8 @@ static void test_parameter_inference(void)
     // handed in has to carry.
     LHAT_TEST("a demand written in a nested body still reaches the parameter");
     check_text(&u,
-               "let^ f = p^ x {\n"
-               "    let^ inner = p^ { let^ n : number^ = x + 1 }\n"
+               "var^ f = p^ x {\n"
+               "    var^ inner = p^ { var^ n : number^ = x + 1 }\n"
                "    inner()\n"
                "}\n"
                "f(\"a\")\n");
@@ -711,9 +711,9 @@ static void test_parameter_inference(void)
     // 3.4: what the name holds after a reassignment is not what was passed in.
     LHAT_TEST("a reassignment ends the collection");
     check_text(&u,
-               "let^ f = p^ x {\n"
+               "var^ f = p^ x {\n"
                "    x := \"z\"\n"
-               "    let^ n : number^ = x + 1\n"
+               "    var^ n : number^ = x + 1\n"
                "}\n"
                "f(\"a\")\n");
     CHECK_CLEAN(&u);
@@ -722,8 +722,8 @@ static void test_parameter_inference(void)
     // A demand made where the argument type is known travels the same way.
     LHAT_TEST("passing a parameter on demands what the callee takes");
     check_text(&u,
-               "let^ g = p^ n:number^ { }\n"
-               "let^ f = p^ x { g(x) }\n"
+               "var^ g = p^ n:number^ { }\n"
+               "var^ f = p^ x { g(x) }\n"
                "f(\"a\")\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
@@ -732,8 +732,8 @@ static void test_parameter_inference(void)
     // rather than two demands standing side by side.
     LHAT_TEST("two member reads merge into one structure");
     check_text(&u,
-               "let^ f = p^ x { x.a() x.b() }\n"
-               "let^ t = { a := p^ { } }\n"
+               "var^ f = p^ x { x.a() x.b() }\n"
+               "var^ t = { a := p^ { } }\n"
                "f(t)\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
@@ -744,8 +744,8 @@ static void test_parameter_inference(void)
     // anything off a body at all.
     LHAT_TEST("a parameter nothing demands stays undecided");
     check_text(&u,
-               "let^ id = f^ x { return^ x }\n"
-               "let^ y : number^ = id(4)\n");
+               "var^ id = f^ x { return^ x }\n"
+               "var^ y : number^ = id(4)\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
@@ -766,14 +766,14 @@ static void test_parameter_inference(void)
     LHAT_TEST("a subroutine nested in a public^ one is included");
     check_text(&u,
                "public^ let^ make = p^ -> number^ {\n"
-               "    let^ step = p^ y { }\n"
+               "    var^ step = p^ y { }\n"
                "    return^ 1\n"
                "}\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_PUBLIC_NEEDS_TYPE);
     unit_dispose(&u);
 
     LHAT_TEST("and one that is not published is not");
-    check_text(&u, "let^ helper = p^ x { x.write() }\n");
+    check_text(&u, "var^ helper = p^ x { x.write() }\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 }
@@ -786,7 +786,7 @@ static void test_errors(void)
     LHAT_TEST("a kind and its set become types");
     check_text(&u,
                "errordef^ IOError { NotFound, Denied }\n"
-               "let^ e : IOError = error^IOError.NotFound{ }\n");
+               "var^ e : IOError = error^IOError.NotFound{ }\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
@@ -795,43 +795,43 @@ static void test_errors(void)
     LHAT_TEST("an unhandled error cannot be used as the value");
     check_text(&u,
                "errordef^ IOError { NotFound }\n"
-               "let^ f = f^ -> number^|IOError { return^ 0 }\n"
-               "let^ n : number^ = f()\n");
+               "var^ f = f^ -> number^|IOError { return^ 0 }\n"
+               "var^ n : number^ = f()\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
     LHAT_TEST("catch^ drops the error arm");
     check_text(&u,
                "errordef^ IOError { NotFound }\n"
-               "let^ f = f^ -> number^|IOError { return^ 0 }\n"
-               "let^ n : number^ = f() catch^ 0\n");
+               "var^ f = f^ -> number^|IOError { return^ 0 }\n"
+               "var^ n : number^ = f() catch^ 0\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
     // 04 の 4.1: a catch^ that can never fire is an error, since it says
     // something about a failure that cannot happen.
     LHAT_TEST("catch^ on what cannot fail is reported");
-    check_text(&u, "let^ n = 1 catch^ 0\n");
+    check_text(&u, "var^ n = 1 catch^ 0\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_CANNOT_FAIL);
     unit_dispose(&u);
 
     LHAT_TEST("?? drops the nil arm");
     check_text(&u,
-               "let^ f = f^ -> number^|nil^ { return^ 0 }\n"
-               "let^ n : number^ = f() ?? 0\n");
+               "var^ f = f^ -> number^|nil^ { return^ 0 }\n"
+               "var^ n : number^ = f() ?? 0\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
     LHAT_TEST("?? on what cannot be nil is reported");
-    check_text(&u, "let^ n = 1 ?? 0\n");
+    check_text(&u, "var^ n = 1 ?? 0\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_CANNOT_BE_NIL);
     unit_dispose(&u);
 
     LHAT_TEST("try^ unwraps and the result is the success type");
     check_text(&u,
                "errordef^ IOError { NotFound }\n"
-               "let^ open = f^ -> number^|IOError { return^ 0 }\n"
-               "let^ read = f^ -> number^|IOError { return^ try^ open() }\n");
+               "var^ open = f^ -> number^|IOError { return^ 0 }\n"
+               "var^ read = f^ -> number^|IOError { return^ try^ open() }\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
@@ -839,8 +839,8 @@ static void test_errors(void)
     LHAT_TEST("try^ may not let out an error the result excludes");
     check_text(&u,
                "errordef^ IOError { NotFound, Denied }\n"
-               "let^ open = f^ -> number^|IOError { return^ 0 }\n"
-               "let^ read = f^ -> number^|IOError.NotFound {\n"
+               "var^ open = f^ -> number^|IOError { return^ 0 }\n"
+               "var^ read = f^ -> number^|IOError.NotFound {\n"
                "    return^ try^ open()\n"
                "}\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_TRY_OUTSIDE);
@@ -851,7 +851,7 @@ static void test_errors(void)
     check_text(&u,
                "errordef^ IOError { NotFound }\n"
                "errordef^ UserError { NotFound }\n"
-               "let^ e : IOError = error^UserError.NotFound{ }\n");
+               "var^ e : IOError = error^UserError.NotFound{ }\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
@@ -860,16 +860,16 @@ static void test_errors(void)
     LHAT_TEST("a default stands in for the type");
     check_text(&u,
                "errordef^ ParseError { Syntax { line := 0 } }\n"
-               "let^ e = error^ParseError.Syntax{ }\n"
-               "let^ n : number^ = e.line\n");
+               "var^ e = error^ParseError.Syntax{ }\n"
+               "var^ n : number^ = e.line\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
     LHAT_TEST("a field may carry both a type and a default");
     check_text(&u,
                "errordef^ ParseError { Syntax { line : number^ := 0 } }\n"
-               "let^ e = error^ParseError.Syntax{ }\n"
-               "let^ n : number^ = e.line\n");
+               "var^ e = error^ParseError.Syntax{ }\n"
+               "var^ n : number^ = e.line\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
@@ -883,14 +883,14 @@ static void test_errors(void)
     LHAT_TEST("a field with no default has to be written");
     check_text(&u,
                "errordef^ ParseError { Syntax { line : number^ } }\n"
-               "let^ e = error^ParseError.Syntax{ }\n");
+               "var^ e = error^ParseError.Syntax{ }\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISSING_FIELD);
     unit_dispose(&u);
 
     LHAT_TEST("a default may still be overridden at the construction");
     check_text(&u,
                "errordef^ ParseError { Syntax { line := 0 } }\n"
-               "let^ e = error^ParseError.Syntax{ line := 3 }\n");
+               "var^ e = error^ParseError.Syntax{ line := 3 }\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
@@ -898,9 +898,9 @@ static void test_errors(void)
     LHAT_TEST("a kind's declared field is visible");
     check_text(&u,
                "errordef^ ParseError { Syntax { line : number^ } }\n"
-               "let^ e = error^ParseError.Syntax{ line := 3 }\n"
-               "let^ n : number^ = e.line\n"
-               "let^ m : string^ = e.message\n");
+               "var^ e = error^ParseError.Syntax{ line := 3 }\n"
+               "var^ n : number^ = e.line\n"
+               "var^ m : string^ = e.message\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 }
@@ -910,19 +910,19 @@ static void test_annotations(void)
     Unit u;
 
     LHAT_TEST("an unknown type name is reported");
-    check_text(&u, "let^ x : Nonesuch = 1\n");
+    check_text(&u, "var^ x : Nonesuch = 1\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_UNKNOWN_TYPE);
     unit_dispose(&u);
 
     // 14.10: at least the listed members.
     LHAT_TEST("a structural annotation asks for at least its members");
     check_text(&u,
-               "let^ t : t^{ a : number^ } = { a := 1, b := 2 }\n");
+               "var^ t : t^{ a : number^ } = { a := 1, b := 2 }\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
     LHAT_TEST("a missing member fails the annotation");
-    check_text(&u, "let^ t : t^{ a : number^ } = { b := 2 }\n");
+    check_text(&u, "var^ t : t^{ a : number^ } = { b := 2 }\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
@@ -930,39 +930,39 @@ static void test_annotations(void)
     // the top of tables, which 13.7 notes is not the top of every value.
     LHAT_TEST("a bare table type takes any table");
     check_text(&u,
-               "let^ x : table^ = { a := 1 }\n"
-               "let^ y : t^ = { 1, 2 }\n");
+               "var^ x : table^ = { a := 1 }\n"
+               "var^ y : t^ = { 1, 2 }\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
     LHAT_TEST("and nothing that is not one");
-    check_text(&u, "let^ x : table^ = 5\n");
+    check_text(&u, "var^ x : table^ = 5\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
     LHAT_TEST("a bare one joins a union like any other type");
     check_text(&u,
-               "let^ x : table^|nil^ = { a := 1 }\n"
-               "let^ y : nil^|t^ = nil^\n");
+               "var^ x : table^|nil^ = { a := 1 }\n"
+               "var^ y : nil^|t^ = nil^\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
     LHAT_TEST("a union annotation accepts either arm");
     check_text(&u,
-               "let^ x : number^|string^ = 1\n"
-               "let^ y : number^|string^ = \"text\"\n");
+               "var^ x : number^|string^ = 1\n"
+               "var^ y : number^|string^ = \"text\"\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
     LHAT_TEST("a union annotation refuses a third type");
-    check_text(&u, "let^ x : number^|string^ = true^\n");
+    check_text(&u, "var^ x : number^|string^ = true^\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
     // 11.6改: is^ is a comparison like '=', so the same disjointness check
     // applies and it answers bool^ either way.
     LHAT_TEST("is^ answers bool^");
-    check_text(&u, "let^ x : bool^ = 1 is^ 2\n");
+    check_text(&u, "var^ x : bool^ = 1 is^ 2\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
@@ -973,7 +973,7 @@ static void test_annotations(void)
 
     // 13.11: isa^ reads a type, so an unknown one is reported there too.
     LHAT_TEST("isa^ resolves its right side as a type");
-    check_text(&u, "let^ x = 1\nlet^ b : bool^ = x isa^ number^\n");
+    check_text(&u, "var^ x = 1\nvar^ b : bool^ = x isa^ number^\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
@@ -981,19 +981,19 @@ static void test_annotations(void)
     // on the left. 13.11 decides this from the right side alone -- it never
     // reads the left's inferred type against the right.
     LHAT_TEST("asking isa^ any^ asks nothing and is reported");
-    check_text(&u, "let^ x : number^ = 1\nlet^ b = x isa^ any^\n");
+    check_text(&u, "var^ x : number^ = 1\nvar^ b = x isa^ any^\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_ISA_ALWAYS_TRUE);
     unit_dispose(&u);
 
     LHAT_TEST("whatever the left happens to be");
-    check_text(&u, "let^ x : any^ = 1\nlet^ b = x isa^ any^\n");
+    check_text(&u, "var^ x : any^ = 1\nvar^ b = x isa^ any^\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_ISA_ALWAYS_TRUE);
     unit_dispose(&u);
 
     // 13.5 collapses a union with any^ to any^, so the written form does not
     // let it through.
     LHAT_TEST("and however the any^ is spelled");
-    check_text(&u, "let^ x : number^ = 1\nlet^ b = x isa^ any^|nil^\n");
+    check_text(&u, "var^ x : number^ = 1\nvar^ b = x isa^ any^|nil^\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_ISA_ALWAYS_TRUE);
     unit_dispose(&u);
 
@@ -1002,14 +1002,14 @@ static void test_annotations(void)
     // it thinks it knows is what 13.7 introduced any^ to avoid.
     LHAT_TEST("but an answer fixed by the left is left alone");
     check_text(&u,
-               "let^ x : number^ = 1\n"
-               "let^ a = x isa^ string^\n"
-               "let^ b = x isa^ number^\n");
+               "var^ x : number^ = 1\n"
+               "var^ a = x isa^ string^\n"
+               "var^ b = x isa^ number^\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
     LHAT_TEST("which is what makes any^ usable at all");
-    check_text(&u, "let^ f = p^ x:any^ { let^ b = x isa^ string^ }\n");
+    check_text(&u, "var^ f = p^ x:any^ { var^ b = x isa^ string^ }\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 }
@@ -1021,28 +1021,28 @@ static void test_narrowing(void)
 
     LHAT_TEST("the true branch keeps only the arms that fit");
     check_text(&u,
-               "let^ f = f^ -> number^|string^ { return^ 0 }\n"
-               "let^ r = f()\n"
-               "if^ r isa^ number^ { let^ n : number^ = r }\n");
+               "var^ f = f^ -> number^|string^ { return^ 0 }\n"
+               "var^ r = f()\n"
+               "if^ r isa^ number^ { var^ n : number^ = r }\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
     LHAT_TEST("the false branch keeps the rest");
     check_text(&u,
-               "let^ f = f^ -> number^|string^ { return^ 0 }\n"
-               "let^ r = f()\n"
+               "var^ f = f^ -> number^|string^ { return^ 0 }\n"
+               "var^ r = f()\n"
                "if^ r isa^ number^ {\n"
                "    else^:\n"
-               "        let^ s : string^ = r\n"
+               "        var^ s : string^ = r\n"
                "}\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
     LHAT_TEST("narrowing does not reach past what was tested");
     check_text(&u,
-               "let^ f = f^ -> number^|string^ { return^ 0 }\n"
-               "let^ r = f()\n"
-               "if^ r isa^ number^ { let^ s : string^ = r }\n");
+               "var^ f = f^ -> number^|string^ { return^ 0 }\n"
+               "var^ r = f()\n"
+               "if^ r isa^ number^ { var^ s : string^ = r }\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
@@ -1050,18 +1050,18 @@ static void test_narrowing(void)
     LHAT_TEST("a narrowed error kind shows its fields");
     check_text(&u,
                "errordef^ ParseError { Syntax { line : number^ }, Eof }\n"
-               "let^ parse = f^ -> number^|ParseError { return^ 0 }\n"
-               "let^ r = parse()\n"
-               "if^ r isa^ ParseError.Syntax { let^ n : number^ = r.line }\n");
+               "var^ parse = f^ -> number^|ParseError { return^ 0 }\n"
+               "var^ r = parse()\n"
+               "if^ r isa^ ParseError.Syntax { var^ n : number^ = r.line }\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
     LHAT_TEST("the field is not visible without narrowing");
     check_text(&u,
                "errordef^ ParseError { Syntax { line : number^ }, Eof }\n"
-               "let^ parse = f^ -> number^|ParseError { return^ 0 }\n"
-               "let^ r = parse()\n"
-               "let^ n = r.line\n");
+               "var^ parse = f^ -> number^|ParseError { return^ 0 }\n"
+               "var^ r = parse()\n"
+               "var^ n = r.line\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_NO_MEMBER);
     unit_dispose(&u);
 
@@ -1070,9 +1070,9 @@ static void test_narrowing(void)
     LHAT_TEST("an exiting branch narrows what follows it");
     check_text(&u,
                "errordef^ ParseError { Syntax { line : number^ }, Eof }\n"
-               "let^ parse = f^ -> number^|ParseError { return^ 0 }\n"
-               "let^ use = f^ -> number^ {\n"
-               "    let^ r = parse()\n"
+               "var^ parse = f^ -> number^|ParseError { return^ 0 }\n"
+               "var^ use = f^ -> number^ {\n"
+               "    var^ r = parse()\n"
                "    if^ r isa^ ParseError.Syntax { return^ 0 }\n"
                "    if^ r isa^ ParseError.Eof { return^ 0 }\n"
                "    return^ r + 1\n"
@@ -1082,9 +1082,9 @@ static void test_narrowing(void)
 
     LHAT_TEST("a branch that falls through leaves nothing behind");
     check_text(&u,
-               "let^ f = f^ -> number^|string^ { return^ 0 }\n"
-               "let^ g = f^ -> number^ {\n"
-               "    let^ r = f()\n"
+               "var^ f = f^ -> number^|string^ { return^ 0 }\n"
+               "var^ g = f^ -> number^ {\n"
+               "    var^ r = f()\n"
                "    if^ r isa^ string^ { }\n"
                "    return^ r + 1\n"
                "}\n");
@@ -1096,9 +1096,9 @@ static void test_narrowing(void)
     LHAT_TEST("an exhausted union leaves the success type");
     check_text(&u,
                "errordef^ IOError { NotFound, Denied }\n"
-               "let^ open = f^ -> number^|IOError { return^ 0 }\n"
-               "let^ use = f^ -> number^ {\n"
-               "    let^ r = open()\n"
+               "var^ open = f^ -> number^|IOError { return^ 0 }\n"
+               "var^ use = f^ -> number^ {\n"
+               "    var^ r = open()\n"
                "    if^ r isa^ IOError.NotFound {\n"
                "        return^ 0\n"
                "        elseif^ r isa^ IOError.Denied:\n"
@@ -1114,9 +1114,9 @@ static void test_narrowing(void)
     LHAT_TEST("a union not exhausted still carries its errors");
     check_text(&u,
                "errordef^ IOError { NotFound, Denied }\n"
-               "let^ open = f^ -> number^|IOError { return^ 0 }\n"
-               "let^ use = f^ -> number^ {\n"
-               "    let^ r = open()\n"
+               "var^ open = f^ -> number^|IOError { return^ 0 }\n"
+               "var^ use = f^ -> number^ {\n"
+               "    var^ r = open()\n"
                "    if^ r isa^ IOError.NotFound {\n"
                "        return^ 0\n"
                "        else^:\n"
@@ -1129,21 +1129,21 @@ static void test_narrowing(void)
 
     LHAT_TEST("'!' turns the branches around");
     check_text(&u,
-               "let^ f = f^ -> number^|string^ { return^ 0 }\n"
-               "let^ r = f()\n"
-               "if^ !(r isa^ number^) { let^ s : string^ = r }\n");
+               "var^ f = f^ -> number^|string^ { return^ 0 }\n"
+               "var^ r = f()\n"
+               "if^ !(r isa^ number^) { var^ s : string^ = r }\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
     // 13.11: and^ tells us both held; or^ says nothing when it is true.
     LHAT_TEST("and^ narrows both sides");
     check_text(&u,
-               "let^ f = f^ -> number^|string^ { return^ 0 }\n"
-               "let^ g = f^ -> number^|string^ { return^ 0 }\n"
-               "let^ a = f()\n"
-               "let^ b = g()\n"
+               "var^ f = f^ -> number^|string^ { return^ 0 }\n"
+               "var^ g = f^ -> number^|string^ { return^ 0 }\n"
+               "var^ a = f()\n"
+               "var^ b = g()\n"
                "if^ a isa^ number^ and^ b isa^ number^ {\n"
-               "    let^ n : number^ = a + b\n"
+               "    var^ n : number^ = a + b\n"
                "}\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
@@ -1152,8 +1152,8 @@ static void test_narrowing(void)
     // different value the second time.
     LHAT_TEST("a call is not narrowed");
     check_text(&u,
-               "let^ f = f^ -> number^|string^ { return^ 0 }\n"
-               "let^ g = f^ -> number^ {\n"
+               "var^ f = f^ -> number^|string^ { return^ 0 }\n"
+               "var^ g = f^ -> number^ {\n"
                "    if^ f() isa^ number^ { return^ f() + 1 }\n"
                "    return^ 0\n"
                "}\n");
@@ -1162,29 +1162,29 @@ static void test_narrowing(void)
 
     LHAT_TEST("a dot path is narrowed");
     check_text(&u,
-               "let^ f = f^ -> number^|string^ { return^ 0 }\n"
-               "let^ t = { a := f() }\n"
-               "if^ t.a isa^ number^ { let^ n : number^ = t.a }\n");
+               "var^ f = f^ -> number^|string^ { return^ 0 }\n"
+               "var^ t = { a := f() }\n"
+               "if^ t.a isa^ number^ { var^ n : number^ = t.a }\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
     // 13.11: reassigning ends it, since the claim was about what was examined.
     LHAT_TEST("a reassignment ends the narrowing");
     check_text(&u,
-               "let^ f = f^ -> number^|string^ { return^ 0 }\n"
-               "let^ r = f()\n"
+               "var^ f = f^ -> number^|string^ { return^ 0 }\n"
+               "var^ r = f()\n"
                "if^ r isa^ number^ {\n"
                "    r := f()\n"
-               "    let^ n : number^ = r\n"
+               "    var^ n : number^ = r\n"
                "}\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
     LHAT_TEST("narrowing works in the if expression too");
     check_text(&u,
-               "let^ f = f^ -> number^|string^ { return^ 0 }\n"
-               "let^ r = f()\n"
-               "let^ n : number^ = if^ r isa^ number^: r el^: 0 ;\n");
+               "var^ f = f^ -> number^|string^ { return^ 0 }\n"
+               "var^ r = f()\n"
+               "var^ n : number^ = if^ r isa^ number^: r el^: 0 ;\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 }
@@ -1198,35 +1198,35 @@ static void test_definitions(void)
     // both those and the template's fields.
     LHAT_TEST("an instance has the fields and the members");
     check_text(&u,
-               "let^ C = def^{\n"
+               "var^ C = def^{\n"
                "    self^{ value := 0, label := \"\" },\n"
                "    show := p^self^ { },\n"
                "}\n"
-               "let^ c = C.new^()\n"
-               "let^ n : number^ = c.value\n"
-               "let^ s : string^ = c.label\n"
+               "var^ c = C.new^()\n"
+               "var^ n : number^ = c.value\n"
+               "var^ s : string^ = c.label\n"
                "c.show()\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
     // 14.11: a definition without one still offers a new^ taking nothing.
     LHAT_TEST("new^ exists without being written");
-    check_text(&u, "let^ C = def^{ self^{ v := 1 } }\nlet^ c = C.new^()\n");
+    check_text(&u, "var^ C = def^{ self^{ v := 1 } }\nvar^ c = C.new^()\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
     LHAT_TEST("a field the definition does not declare is reported");
     check_text(&u,
-               "let^ C = def^{ self^{ v := 1 } }\n"
-               "let^ c = C.new^()\n"
-               "let^ x = c.missing\n");
+               "var^ C = def^{ self^{ v := 1 } }\n"
+               "var^ c = C.new^()\n"
+               "var^ x = c.missing\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_NO_MEMBER);
     unit_dispose(&u);
 
     // 14.4: self^ reaches the instance from inside a method.
     LHAT_TEST("self^ reaches the fields");
     check_text(&u,
-               "let^ C = def^{\n"
+               "var^ C = def^{\n"
                "    self^{ v := 0 },\n"
                "    bump := p^self^, step:number^ {\n"
                "        self^.v := self^.v + step\n"
@@ -1237,8 +1237,8 @@ static void test_definitions(void)
 
     LHAT_TEST("class^ reaches the definition's members");
     check_text(&u,
-               "let^ print = p^ x:any^ { }\n"
-               "let^ C = def^{\n"
+               "var^ print = p^ x:any^ { }\n"
+               "var^ C = def^{\n"
                "    self^{ v := 0 },\n"
                "    origin := 7,\n"
                "    show := p^ { print(class^.origin) },\n"
@@ -1249,33 +1249,33 @@ static void test_definitions(void)
     // 14.4: the receiver is not written at the call, so it is not counted.
     LHAT_TEST("a method call does not pass the receiver");
     check_text(&u,
-               "let^ C = def^{\n"
+               "var^ C = def^{\n"
                "    self^{ v := 0 },\n"
                "    bump := p^self^, step:number^ { },\n"
                "}\n"
-               "let^ c = C.new^()\n"
+               "var^ c = C.new^()\n"
                "c.bump(1)\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
     LHAT_TEST("a method call still checks its arguments");
     check_text(&u,
-               "let^ C = def^{\n"
+               "var^ C = def^{\n"
                "    self^{ v := 0 },\n"
                "    bump := p^self^, step:number^ { },\n"
                "}\n"
-               "let^ c = C.new^()\n"
+               "var^ c = C.new^()\n"
                "c.bump(\"text\")\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
     LHAT_TEST("a method call with too few arguments is reported");
     check_text(&u,
-               "let^ C = def^{\n"
+               "var^ C = def^{\n"
                "    self^{ v := 0 },\n"
                "    bump := p^self^, step:number^ { },\n"
                "}\n"
-               "let^ c = C.new^()\n"
+               "var^ c = C.new^()\n"
                "c.bump()\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_ARITY);
     unit_dispose(&u);
@@ -1284,12 +1284,12 @@ static void test_definitions(void)
     // receiver out, and then it is counted like any other argument.
     LHAT_TEST("a method taken as a value is passed the receiver");
     check_text(&u,
-               "let^ C = def^{\n"
+               "var^ C = def^{\n"
                "    self^{ v := 0 },\n"
                "    bump := p^self^, step:number^ { },\n"
                "}\n"
-               "let^ c = C.new^()\n"
-               "let^ bump = C.bump\n"
+               "var^ c = C.new^()\n"
+               "var^ bump = C.bump\n"
                "bump(c, 1)\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
@@ -1298,11 +1298,11 @@ static void test_definitions(void)
     // JavaScript reads '(obj.m)()' the same way.
     LHAT_TEST("parentheses do not take the receiver off");
     check_text(&u,
-               "let^ C = def^{\n"
+               "var^ C = def^{\n"
                "    self^{ v := 0 },\n"
                "    bump := p^self^, step:number^ { },\n"
                "}\n"
-               "let^ c = C.new^()\n"
+               "var^ c = C.new^()\n"
                "(C.bump)(c, 1)\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_ARITY);
     unit_dispose(&u);
@@ -1311,12 +1311,12 @@ static void test_definitions(void)
     // the receiver, and what is called is still a member access.
     LHAT_TEST("a parenthesised receiver is still a method call");
     check_text(&u,
-               "let^ C = def^{\n"
+               "var^ C = def^{\n"
                "    self^{ v := 0 },\n"
                "    bump := p^self^, step:number^ { },\n"
                "}\n"
-               "let^ x = C.new^()\n"
-               "let^ y = C.new^()\n"
+               "var^ x = C.new^()\n"
+               "var^ y = C.new^()\n"
                "(if^ true^: x el^: y;).bump(1)\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
@@ -1325,25 +1325,25 @@ static void test_definitions(void)
     // because 12.7 made cleanup unable to fail.
     LHAT_TEST("with^ accepts a value that has dispose()");
     check_text(&u,
-               "let^ C = def^{ self^{ v := 1 }, dispose := p^self^ { } }\n"
+               "var^ C = def^{ self^{ v := 1 }, dispose := p^self^ { } }\n"
                "with^ c = C.new^() { }\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
     LHAT_TEST("with^ refuses a value without one");
     check_text(&u,
-               "let^ C = def^{ self^{ v := 1 } }\n"
+               "var^ C = def^{ self^{ v := 1 } }\n"
                "with^ c = C.new^() { }\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_NOT_DISPOSABLE);
     unit_dispose(&u);
 
     LHAT_TEST("with^ refuses a dispose() that returns something");
     check_text(&u,
-               "let^ C = def^{\n"
+               "var^ C = def^{\n"
                "    self^{ v := 1 },\n"
                "    dispose := f^self^ -> number^ { return^ 0 },\n"
                "}\n"
-               "with^ c := C.new^() { }\n");
+               "with^ c = C.new^() { }\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_NOT_DISPOSABLE);
     unit_dispose(&u);
 
@@ -1351,9 +1351,9 @@ static void test_definitions(void)
     // has to resolve on its own.
     LHAT_TEST("the structural form of a disposable resolves");
     check_text(&u,
-               "let^ C = def^{ self^{ v := 1 }, dispose := p^self^ { } }\n"
-               "let^ c = C.new^()\n"
-               "let^ d : t^{ dispose : p^self^; } = c\n");
+               "var^ C = def^{ self^{ v := 1 }, dispose := p^self^ { } }\n"
+               "var^ c = C.new^()\n"
+               "var^ d : t^{ dispose : p^self^; } = c\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
@@ -1362,8 +1362,8 @@ static void test_definitions(void)
     // be reachable where a type is written.
     LHAT_TEST("a definition's name works as a type");
     check_text(&u,
-               "let^ Foo = def^{ self^{ v := 1 } }\n"
-               "let^ x : Foo = Foo.new^()\n");
+               "var^ Foo = def^{ self^{ v := 1 } }\n"
+               "var^ x : Foo = Foo.new^()\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
@@ -1371,16 +1371,16 @@ static void test_definitions(void)
     // an instance carries -- so as a type the name means an instance.
     LHAT_TEST("as a type the name means an instance");
     check_text(&u,
-               "let^ Foo = def^{ self^{ v := 1 } }\n"
-               "let^ x : Foo = Foo.new^()\n"
-               "let^ n : number^ = x.v\n");
+               "var^ Foo = def^{ self^{ v := 1 } }\n"
+               "var^ x : Foo = Foo.new^()\n"
+               "var^ n : number^ = x.v\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
     LHAT_TEST("the definition itself is not an instance");
     check_text(&u,
-               "let^ Foo = def^{ self^{ v := 1 } }\n"
-               "let^ x : Foo = Foo\n");
+               "var^ Foo = def^{ self^{ v := 1 } }\n"
+               "var^ x : Foo = Foo\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
@@ -1389,7 +1389,7 @@ static void test_definitions(void)
     LHAT_TEST("a type and a value of one name collide");
     check_text(&u,
                "errordef^ E { A }\n"
-               "let^ E = 1\n");
+               "var^ E = 1\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_REDEFINED);
     unit_dispose(&u);
 
@@ -1397,9 +1397,9 @@ static void test_definitions(void)
     // type and nothing has to be shared for that to hold.
     LHAT_TEST("identity stays structural");
     check_text(&u,
-               "let^ A = def^{ self^{ v := 0 } }\n"
-               "let^ B = def^{ self^{ v := 0 } }\n"
-               "let^ take = p^ x:t^{ v : number^ } { }\n"
+               "var^ A = def^{ self^{ v := 0 } }\n"
+               "var^ B = def^{ self^{ v := 0 } }\n"
+               "var^ take = p^ x:t^{ v : number^ } { }\n"
                "take(A.new^())\n"
                "take(B.new^())\n");
     CHECK_CLEAN(&u);
@@ -1412,7 +1412,7 @@ static void test_composition(void)
     Unit u;
 
     static const char *const base =
-        "let^ Foo = def^{\n"
+        "var^ Foo = def^{\n"
         "    self^{ a := 0 },\n"
         "    foo := p^self^, x:string^ { },\n"
         "    bar := p^self^ { },\n"
@@ -1424,10 +1424,10 @@ static void test_composition(void)
     {
         char text[1024];
         snprintf(text, sizeof text, "%s%s", base,
-                 "let^ Bar = Foo .. def^{ self^{ b := 0 }, extra := p^self^ { } }\n"
-                 "let^ o = Bar.new^()\n"
-                 "let^ x : number^ = o.a\n"
-                 "let^ y : number^ = o.b\n"
+                 "var^ Bar = Foo .. def^{ self^{ b := 0 }, extra := p^self^ { } }\n"
+                 "var^ o = Bar.new^()\n"
+                 "var^ x : number^ = o.a\n"
+                 "var^ y : number^ = o.b\n"
                  "o.bar()\n"
                  "o.extra()\n");
         check_text(&u, text);
@@ -1440,7 +1440,7 @@ static void test_composition(void)
     {
         char text[1024];
         snprintf(text, sizeof text, "%s%s", base,
-                 "let^ Bar = Foo .. def^{ self^{}, foo := p^self^ { } }\n");
+                 "var^ Bar = Foo .. def^{ self^{}, foo := p^self^ { } }\n");
         check_text(&u, text);
     }
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MEMBER_EXISTS);
@@ -1452,7 +1452,7 @@ static void test_composition(void)
     {
         char text[1024];
         snprintf(text, sizeof text, "%s%s", base,
-                 "let^ Bar = Foo .. def^{\n"
+                 "var^ Bar = Foo .. def^{\n"
                  "    self^{},\n"
                  "    override^ foo := p^self^, x:string^|number^ { },\n"
                  "}\n");
@@ -1465,7 +1465,7 @@ static void test_composition(void)
     {
         char text[1024];
         snprintf(text, sizeof text, "%s%s", base,
-                 "let^ Bar = Foo .. def^{\n"
+                 "var^ Bar = Foo .. def^{\n"
                  "    self^{},\n"
                  "    override^ foo := p^self^, x:number^ { },\n"
                  "}\n");
@@ -1479,7 +1479,7 @@ static void test_composition(void)
     {
         char text[1024];
         snprintf(text, sizeof text, "%s%s", base,
-                 "let^ Bar = Foo .. def^{\n"
+                 "var^ Bar = Foo .. def^{\n"
                  "    self^{},\n"
                  "    overload^ bar := p^self^, n:number^ { },\n"
                  "}\n");
@@ -1492,7 +1492,7 @@ static void test_composition(void)
     {
         char text[1024];
         snprintf(text, sizeof text, "%s%s", base,
-                 "let^ Bar = Foo .. def^{\n"
+                 "var^ Bar = Foo .. def^{\n"
                  "    self^{},\n"
                  "    overload^ foo := p^self^, y:string^ { },\n"
                  "}\n");
@@ -1508,7 +1508,7 @@ static void test_composition(void)
     {
         char text[1024];
         snprintf(text, sizeof text, "%s%s", base,
-                 "let^ Bar = Foo .. def^{ self^{}, override^ nope := p^self^ { } }\n");
+                 "var^ Bar = Foo .. def^{ self^{}, override^ nope := p^self^ { } }\n");
         check_text(&u, text);
     }
     CHECK_CLEAN(&u);
@@ -1518,8 +1518,8 @@ static void test_composition(void)
     {
         char text[1024];
         snprintf(text, sizeof text, "%s%s", base,
-                 "let^ Bar = Foo .. def^{ self^{}, override^ nope := p^self^ { } }\n"
-                 "let^ o = Bar.new^()\n");
+                 "var^ Bar = Foo .. def^{ self^{}, override^ nope := p^self^ { } }\n"
+                 "var^ o = Bar.new^()\n");
         check_text(&u, text);
     }
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_STILL_ABSTRACT);
@@ -1531,7 +1531,7 @@ static void test_composition(void)
     {
         char text[1024];
         snprintf(text, sizeof text, "%s%s", base,
-                 "let^ Bar = Foo .. def^{ self^{}, overload^ nope := p^self^ { } }\n");
+                 "var^ Bar = Foo .. def^{ self^{}, overload^ nope := p^self^ { } }\n");
         check_text(&u, text);
     }
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_NOTHING_TO_OVERRIDE);
@@ -1543,11 +1543,11 @@ static void test_composition(void)
     {
         char text[1024];
         snprintf(text, sizeof text, "%s%s", base,
-                 "let^ Bar = Foo .. def^{\n"
+                 "var^ Bar = Foo .. def^{\n"
                  "    self^{},\n"
                  "    overload^ bar := p^self^, n:number^ { },\n"
                  "}\n"
-                 "let^ o = Bar.new^()\n"
+                 "var^ o = Bar.new^()\n"
                  "o.bar()\n"
                  "o.bar(1)\n");
         check_text(&u, text);
@@ -1563,11 +1563,11 @@ static void test_composition(void)
     {
         char text[1024];
         snprintf(text, sizeof text, "%s%s", base,
-                 "let^ Bar = Foo .. def^{\n"
+                 "var^ Bar = Foo .. def^{\n"
                  "    self^{},\n"
                  "    overload^ bar := p^self^, n:number^ { },\n"
                  "}\n"
-                 "let^ Baz = Bar .. def^{\n"
+                 "var^ Baz = Bar .. def^{\n"
                  "    self^{},\n"
                  "    override^ bar := p^self^, n:number^ { },\n"
                  "}\n");
@@ -1582,15 +1582,15 @@ static void test_composition(void)
     {
         char text[1024];
         snprintf(text, sizeof text, "%s%s", base,
-                 "let^ Bar = Foo .. def^{\n"
+                 "var^ Bar = Foo .. def^{\n"
                  "    self^{},\n"
                  "    overload^ bar := p^self^, n:number^ { },\n"
                  "}\n"
-                 "let^ Baz = Bar .. def^{\n"
+                 "var^ Baz = Bar .. def^{\n"
                  "    self^{},\n"
                  "    override^ bar := p^self^, n:number^ { },\n"
                  "}\n"
-                 "let^ o = Baz.new^()\n"
+                 "var^ o = Baz.new^()\n"
                  "o.bar()\n"
                  "o.bar(1)\n");
         check_text(&u, text);
@@ -1604,11 +1604,11 @@ static void test_composition(void)
     {
         char text[1024];
         snprintf(text, sizeof text, "%s%s", base,
-                 "let^ Bar = Foo .. def^{\n"
+                 "var^ Bar = Foo .. def^{\n"
                  "    self^{},\n"
                  "    overload^ bar := p^self^, n:number^ { },\n"
                  "}\n"
-                 "let^ Baz = Bar .. def^{\n"
+                 "var^ Baz = Bar .. def^{\n"
                  "    self^{},\n"
                  "    override^ bar := p^self^, ...:number^ { },\n"
                  "}\n");
@@ -1624,11 +1624,11 @@ static void test_composition(void)
     {
         char text[1024];
         snprintf(text, sizeof text, "%s%s", base,
-                 "let^ Bar = Foo .. def^{\n"
+                 "var^ Bar = Foo .. def^{\n"
                  "    self^{},\n"
                  "    overload^ bar := p^self^, n:number^ { },\n"
                  "}\n"
-                 "let^ Baz = Bar .. def^{\n"
+                 "var^ Baz = Bar .. def^{\n"
                  "    self^{},\n"
                  "    override^ bar := p^self^, a:number^, b:number^ { },\n"
                  "}\n");
@@ -1643,8 +1643,8 @@ static void test_composition(void)
     {
         char text[1024];
         snprintf(text, sizeof text, "%s%s", base,
-                 "let^ Bar = Foo .. def^{ self^{ b := \"\" } }\n"
-                 "let^ s : string^ = Bar.new^().b\n");
+                 "var^ Bar = Foo .. def^{ self^{ b := \"\" } }\n"
+                 "var^ s : string^ = Bar.new^().b\n");
         check_text(&u, text);
     }
     CHECK_CLEAN(&u);
@@ -1655,16 +1655,16 @@ static void test_composition(void)
     // the type has to carry both sides -- it used to answer with the right
     // one alone and lose everything the left brought.
     static const char *const parts =
-        "let^ A = def^{ self^{ x := 0 }, a := f^ -> number^ { return^ 1 } }\n"
-        "let^ B = def^{ self^{ y := \"s\" }, b := f^ -> number^ { return^ 2 } }\n";
+        "var^ A = def^{ self^{ x := 0 }, a := f^ -> number^ { return^ 1 } }\n"
+        "var^ B = def^{ self^{ y := \"s\" }, b := f^ -> number^ { return^ 2 } }\n";
 
     LHAT_TEST("composition by name carries both sides");
     {
         char text[1024];
         snprintf(text, sizeof text, "%s%s", parts,
-                 "let^ D = A .. B\n"
-                 "let^ p : number^ = D.a()\n"
-                 "let^ q : number^ = D.b()\n");
+                 "var^ D = A .. B\n"
+                 "var^ p : number^ = D.a()\n"
+                 "var^ q : number^ = D.b()\n");
         check_text(&u, text);
     }
     CHECK_CLEAN(&u);
@@ -1674,10 +1674,10 @@ static void test_composition(void)
     {
         char text[1024];
         snprintf(text, sizeof text, "%s%s", parts,
-                 "let^ D = A .. B\n"
-                 "let^ o = D.new^()\n"
-                 "let^ p : number^ = o.x\n"
-                 "let^ q : string^ = o.y\n");
+                 "var^ D = A .. B\n"
+                 "var^ o = D.new^()\n"
+                 "var^ p : number^ = o.x\n"
+                 "var^ q : string^ = o.y\n");
         check_text(&u, text);
     }
     CHECK_CLEAN(&u);
@@ -1689,13 +1689,13 @@ static void test_composition(void)
     {
         char text[1024];
         snprintf(text, sizeof text, "%s%s", parts,
-                 "let^ D = A .. B .. def^{ self^{ z := true^ },\n"
+                 "var^ D = A .. B .. def^{ self^{ z := true^ },\n"
                  "                         c := f^ -> number^ { return^ 3 } }\n"
-                 "let^ o = D.new^()\n"
-                 "let^ p : number^ = o.x\n"
-                 "let^ q : string^ = o.y\n"
-                 "let^ r : bool^ = o.z\n"
-                 "let^ s : number^ = o.c()\n");
+                 "var^ o = D.new^()\n"
+                 "var^ p : number^ = o.x\n"
+                 "var^ q : string^ = o.y\n"
+                 "var^ r : bool^ = o.z\n"
+                 "var^ s : number^ = o.c()\n");
         check_text(&u, text);
     }
     CHECK_CLEAN(&u);
@@ -1707,18 +1707,18 @@ static void test_composition(void)
     // reachable through it.
     LHAT_TEST("a member both sides carry does not stop the composition");
     check_text(&u,
-               "let^ A = def^{ self^{}, m := f^ -> number^ { return^ 1 } }\n"
-               "let^ B = def^{ self^{}, m := f^ -> number^ { return^ 2 } }\n"
-               "let^ D = A .. B\n");
+               "var^ A = def^{ self^{}, m := f^ -> number^ { return^ 1 } }\n"
+               "var^ B = def^{ self^{}, m := f^ -> number^ { return^ 2 } }\n"
+               "var^ D = A .. B\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
     LHAT_TEST("and reading it through the composition is reported");
     check_text(&u,
-               "let^ A = def^{ self^{}, m := f^ -> number^ { return^ 1 } }\n"
-               "let^ B = def^{ self^{}, m := f^ -> number^ { return^ 2 } }\n"
-               "let^ D = A .. B\n"
-               "let^ r : number^ = D.new^().m()\n");
+               "var^ A = def^{ self^{}, m := f^ -> number^ { return^ 1 } }\n"
+               "var^ B = def^{ self^{}, m := f^ -> number^ { return^ 2 } }\n"
+               "var^ D = A .. B\n"
+               "var^ r : number^ = D.new^().m()\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_AMBIGUOUS_MEMBER);
     unit_dispose(&u);
 
@@ -1726,24 +1726,24 @@ static void test_composition(void)
     // the side that wrote it applies to whatever fits it structurally.
     LHAT_TEST("but naming the side reaches either one");
     check_text(&u,
-               "let^ A = def^{ self^{}, m := f^self^ -> number^ { return^ 1 } }\n"
-               "let^ B = def^{ self^{}, m := f^self^ -> number^ { return^ 2 } }\n"
-               "let^ D = A .. B\n"
-               "let^ fromA = A.m\n"
-               "let^ fromB = B.m\n"
-               "let^ o = D.new^()\n"
-               "let^ x : number^ = fromA(o)\n"
-               "let^ y : number^ = fromB(o)\n");
+               "var^ A = def^{ self^{}, m := f^self^ -> number^ { return^ 1 } }\n"
+               "var^ B = def^{ self^{}, m := f^self^ -> number^ { return^ 2 } }\n"
+               "var^ D = A .. B\n"
+               "var^ fromA = A.m\n"
+               "var^ fromB = B.m\n"
+               "var^ o = D.new^()\n"
+               "var^ x : number^ = fromA(o)\n"
+               "var^ y : number^ = fromB(o)\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
     LHAT_TEST("and the names only one side carries are untouched");
     check_text(&u,
-               "let^ A = def^{ self^{}, m := f^ -> number^ { return^ 1 },\n"
+               "var^ A = def^{ self^{}, m := f^ -> number^ { return^ 1 },\n"
                "  only := f^ -> number^ { return^ 9 } }\n"
-               "let^ B = def^{ self^{}, m := f^ -> number^ { return^ 2 } }\n"
-               "let^ D = A .. B\n"
-               "let^ r : number^ = D.new^().only()\n");
+               "var^ B = def^{ self^{}, m := f^ -> number^ { return^ 2 } }\n"
+               "var^ D = A .. B\n"
+               "var^ r : number^ = D.new^().only()\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
@@ -1753,9 +1753,9 @@ static void test_composition(void)
     // qualified form to fall back to.
     LHAT_TEST("a field both templates carry is still reported at the '..'");
     check_text(&u,
-               "let^ A = def^{ self^{ v := 0 } }\n"
-               "let^ B = def^{ self^{ v := \"x\" } }\n"
-               "let^ D = A .. B\n");
+               "var^ A = def^{ self^{ v := 0 } }\n"
+               "var^ B = def^{ self^{ v := \"x\" } }\n"
+               "var^ D = A .. B\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_COMPOSE_COLLIDES);
     unit_dispose(&u);
 
@@ -1763,13 +1763,13 @@ static void test_composition(void)
     // and two of them compose without ever colliding.
     LHAT_TEST("and two mixins that declare rather than own do not collide");
     check_text(&u,
-               "let^ A = def^{ self^{ abstract^ v : number^ },\n"
+               "var^ A = def^{ self^{ abstract^ v : number^ },\n"
                "  a := f^self^ -> number^ { return^ self^.v } }\n"
-               "let^ B = def^{ self^{ abstract^ v : number^ },\n"
+               "var^ B = def^{ self^{ abstract^ v : number^ },\n"
                "  b := f^self^ -> number^ { return^ self^.v } }\n"
-               "let^ Host = def^{ self^{ v := 3 } }\n"
-               "let^ D = Host .. A .. B\n"
-               "let^ r : number^ = D.new^().a()\n");
+               "var^ Host = def^{ self^{ v := 3 } }\n"
+               "var^ D = Host .. A .. B\n"
+               "var^ r : number^ = D.new^().a()\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
@@ -1777,20 +1777,20 @@ static void test_composition(void)
     // name only there. Nothing else in a def^ hid anything.
     LHAT_TEST("super^ is a name inside an override^");
     check_text(&u,
-               "let^ A = def^{ self^{}, m := f^ -> number^ { return^ 1 } }\n"
-               "let^ D = A .. def^{ self^{},\n"
+               "var^ A = def^{ self^{}, m := f^ -> number^ { return^ 1 } }\n"
+               "var^ D = A .. def^{ self^{},\n"
                "  override^ m := f^ -> number^ { return^ super^() + 1 } }\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
     LHAT_TEST("and not in a member with no marker");
     check_text(&u,
-               "let^ A = def^{ self^{}, m := f^ -> number^ { return^ super^() } }\n");
+               "var^ A = def^{ self^{}, m := f^ -> number^ { return^ super^() } }\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_SUPER_OUTSIDE);
     unit_dispose(&u);
 
     LHAT_TEST("and not outside a def^ at all");
-    check_text(&u, "let^ x = super^\n");
+    check_text(&u, "var^ x = super^\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_SUPER_OUTSIDE);
     unit_dispose(&u);
 
@@ -1799,20 +1799,20 @@ static void test_composition(void)
     // is.
     LHAT_TEST("super^ called directly takes the receiver on its own");
     check_text(&u,
-               "let^ A = def^{ self^{ n := 0 },\n"
+               "var^ A = def^{ self^{ n := 0 },\n"
                "  get := f^self^ -> number^ { return^ self^.n } }\n"
-               "let^ D = A .. def^{ self^{},\n"
+               "var^ D = A .. def^{ self^{},\n"
                "  override^ get := f^self^ -> number^ { return^ super^() } }\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
     LHAT_TEST("and wants it written once taken as a value");
     check_text(&u,
-               "let^ A = def^{ self^{ n := 0 },\n"
+               "var^ A = def^{ self^{ n := 0 },\n"
                "  get := f^self^ -> number^ { return^ self^.n } }\n"
-               "let^ D = A .. def^{ self^{},\n"
+               "var^ D = A .. def^{ self^{},\n"
                "  override^ get := f^self^ -> number^ {\n"
-               "    let^ old = super^\n"
+               "    var^ old = super^\n"
                "    return^ old(self^)\n"
                "  } }\n");
     CHECK_CLEAN(&u);
@@ -1822,16 +1822,16 @@ static void test_composition(void)
     // which is what lets a mixin call something it does not itself provide.
     LHAT_TEST("abstract^ is filled in by a composition");
     check_text(&u,
-               "let^ Counting = def^{\n"
+               "var^ Counting = def^{\n"
                "    self^{ count := 0 },\n"
                "    abstract^ step : f^ -> number^;,\n"
                "    bump := p^self^ { self^.count := self^.count + class^.step() },\n"
                "}\n"
-               "let^ Fast = Counting .. def^{\n"
+               "var^ Fast = Counting .. def^{\n"
                "    self^{},\n"
                "    step := f^ -> number^ { return^ 10 },\n"
                "}\n"
-               "let^ o = Fast.new^()\n");
+               "var^ o = Fast.new^()\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
@@ -1839,8 +1839,8 @@ static void test_composition(void)
     // declared has nothing to make.
     LHAT_TEST("and a definition still holding one cannot be instantiated");
     check_text(&u,
-               "let^ Counting = def^{ self^{}, abstract^ step : f^ -> number^; }\n"
-               "let^ o = Counting.new^()\n");
+               "var^ Counting = def^{ self^{}, abstract^ step : f^ -> number^; }\n"
+               "var^ o = Counting.new^()\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_STILL_ABSTRACT);
     unit_dispose(&u);
 
@@ -1848,17 +1848,17 @@ static void test_composition(void)
     // not 14.12's collision and wants no marker.
     LHAT_TEST("filling an abstract^ in needs no marker");
     check_text(&u,
-               "let^ A = def^{ self^{}, abstract^ m : f^ -> number^; }\n"
-               "let^ B = A .. def^{ self^{},\n"
+               "var^ A = def^{ self^{}, abstract^ m : f^ -> number^; }\n"
+               "var^ B = A .. def^{ self^{},\n"
                "  m := f^ -> number^ { return^ 1 } }\n"
-               "let^ o = B.new^()\n");
+               "var^ o = B.new^()\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
     LHAT_TEST("and refuses one, since nothing was replaced");
     check_text(&u,
-               "let^ A = def^{ self^{}, abstract^ m : f^ -> number^; }\n"
-               "let^ B = A .. def^{ self^{},\n"
+               "var^ A = def^{ self^{}, abstract^ m : f^ -> number^; }\n"
+               "var^ B = A .. def^{ self^{},\n"
                "  override^ m := f^ -> number^ { return^ 1 } }\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_NOTHING_TO_OVERRIDE);
     unit_dispose(&u);
@@ -1866,16 +1866,16 @@ static void test_composition(void)
     // What the declaration does ask is that the value fit the type it wrote.
     LHAT_TEST("what fills an abstract^ has to fit the type it declared");
     check_text(&u,
-               "let^ A = def^{ self^{}, abstract^ m : f^ -> number^; }\n"
-               "let^ B = A .. def^{ self^{},\n"
+               "var^ A = def^{ self^{}, abstract^ m : f^ -> number^; }\n"
+               "var^ B = A .. def^{ self^{},\n"
                "  m := f^ -> string^ { return^ \"x\" } }\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
     LHAT_TEST("declaring what is already provided is reported");
     check_text(&u,
-               "let^ A = def^{ self^{}, m := f^ -> number^ { return^ 1 } }\n"
-               "let^ B = A .. def^{ self^{}, abstract^ m : f^ -> number^; }\n");
+               "var^ A = def^{ self^{}, m := f^ -> number^ { return^ 1 } }\n"
+               "var^ B = A .. def^{ self^{}, abstract^ m : f^ -> number^; }\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_ALREADY_PROVIDED);
     unit_dispose(&u);
 
@@ -1883,19 +1883,19 @@ static void test_composition(void)
     // field through self^ without owning it.
     LHAT_TEST("a template field may be abstract^ as well");
     check_text(&u,
-               "let^ Greet = def^{\n"
+               "var^ Greet = def^{\n"
                "    self^{ abstract^ n : number^ },\n"
                "    hello := f^self^ -> number^ { return^ self^.n + 1 },\n"
                "}\n"
-               "let^ Thing = Greet .. def^{ self^{ n := 10 } }\n"
-               "let^ r : number^ = Thing.new^().hello()\n");
+               "var^ Thing = Greet .. def^{ self^{ n := 10 } }\n"
+               "var^ r : number^ = Thing.new^().hello()\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
     LHAT_TEST("and one left unfilled stops the construction too");
     check_text(&u,
-               "let^ Greet = def^{ self^{ abstract^ n : number^ } }\n"
-               "let^ o = Greet.new^()\n");
+               "var^ Greet = def^{ self^{ abstract^ n : number^ } }\n"
+               "var^ o = Greet.new^()\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_STILL_ABSTRACT);
     unit_dispose(&u);
 
@@ -1903,10 +1903,10 @@ static void test_composition(void)
     // one declaring what the other provides is the point, not a collision.
     LHAT_TEST("a declaration and a definition compose by name");
     check_text(&u,
-               "let^ Need = def^{ self^{}, abstract^ m : f^ -> number^; }\n"
-               "let^ Give = def^{ self^{}, m := f^ -> number^ { return^ 7 } }\n"
-               "let^ D = Need .. Give\n"
-               "let^ r : number^ = D.new^().m()\n");
+               "var^ Need = def^{ self^{}, abstract^ m : f^ -> number^; }\n"
+               "var^ Give = def^{ self^{}, m := f^ -> number^ { return^ 7 } }\n"
+               "var^ D = Need .. Give\n"
+               "var^ r : number^ = D.new^().m()\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
@@ -1915,27 +1915,27 @@ static void test_composition(void)
     // host must hold, the pending override^ says what it must provide.
     LHAT_TEST("a mixin written against no base composes onto one");
     check_text(&u,
-               "let^ Base = def^{ self^{ n := 0 },\n"
+               "var^ Base = def^{ self^{ n := 0 },\n"
                "  run := p^self^ { self^.n := self^.n + 1 } }\n"
-               "let^ Logged = def^{ self^{ abstract^ n : number^ },\n"
+               "var^ Logged = def^{ self^{ abstract^ n : number^ },\n"
                "  override^ run := p^self^ { self^.n := self^.n + 10\n"
                "                             super^() } }\n"
-               "let^ App = Base .. Logged\n"
-               "let^ o = App.new^()\n"
+               "var^ App = Base .. Logged\n"
+               "var^ o = App.new^()\n"
                "o.run()\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
     LHAT_TEST("and two of them stack");
     check_text(&u,
-               "let^ Base = def^{ self^{ n := 0 },\n"
+               "var^ Base = def^{ self^{ n := 0 },\n"
                "  run := p^self^ { self^.n := self^.n + 1 } }\n"
-               "let^ A = def^{ self^{ abstract^ n : number^ },\n"
+               "var^ A = def^{ self^{ abstract^ n : number^ },\n"
                "  override^ run := p^self^ { super^() } }\n"
-               "let^ B = def^{ self^{ abstract^ n : number^ },\n"
+               "var^ B = def^{ self^{ abstract^ n : number^ },\n"
                "  override^ run := p^self^ { super^() } }\n"
-               "let^ App = Base .. A .. B\n"
-               "let^ o = App.new^()\n");
+               "var^ App = Base .. A .. B\n"
+               "var^ o = App.new^()\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
@@ -1943,10 +1943,10 @@ static void test_composition(void)
     // them both, so new^ stays out of reach.
     LHAT_TEST("but stacking two does not settle either");
     check_text(&u,
-               "let^ A = def^{ self^{}, override^ run := p^self^ { super^() } }\n"
-               "let^ B = def^{ self^{}, override^ run := p^self^ { super^() } }\n"
-               "let^ X = A .. B\n"
-               "let^ o = X.new^()\n");
+               "var^ A = def^{ self^{}, override^ run := p^self^ { super^() } }\n"
+               "var^ B = def^{ self^{}, override^ run := p^self^ { super^() } }\n"
+               "var^ X = A .. B\n"
+               "var^ o = X.new^()\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_STILL_ABSTRACT);
     unit_dispose(&u);
 
@@ -1954,10 +1954,10 @@ static void test_composition(void)
     // two finally meet instead.
     LHAT_TEST("substitutability is checked where the two meet");
     check_text(&u,
-               "let^ Base = def^{ self^{}, run := f^ -> number^ { return^ 1 } }\n"
-               "let^ Bad = def^{ self^{},\n"
+               "var^ Base = def^{ self^{}, run := f^ -> number^ { return^ 1 } }\n"
+               "var^ Bad = def^{ self^{},\n"
                "  override^ run := f^ -> string^ { return^ \"x\" } }\n"
-               "let^ App = Base .. Bad\n");
+               "var^ App = Base .. Bad\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_NOT_SUBSTITUTABLE);
     unit_dispose(&u);
 
@@ -1966,7 +1966,7 @@ static void test_composition(void)
     LHAT_TEST("the synthesised new^ is not a collision");
     {
         char text[1024];
-        snprintf(text, sizeof text, "%s%s", parts, "let^ D = A .. B\n");
+        snprintf(text, sizeof text, "%s%s", parts, "var^ D = A .. B\n");
         check_text(&u, text);
     }
     CHECK_CLEAN(&u);
@@ -1982,24 +1982,24 @@ static void test_typeof(void)
     Unit u;
 
     LHAT_TEST("typeof^(x).signature is a string^");
-    check_text(&u, "let^ s : string^ = typeof^(5).signature\n");
+    check_text(&u, "var^ s : string^ = typeof^(5).signature\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
     LHAT_TEST("an unknown member is refused");
-    check_text(&u, "let^ x = typeof^(5).bogus\n");
+    check_text(&u, "var^ x = typeof^(5).bogus\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_NO_MEMBER);
     unit_dispose(&u);
 
     LHAT_TEST("the operand is still checked");
-    check_text(&u, "let^ x = typeof^(nowhere)\n");
+    check_text(&u, "var^ x = typeof^(nowhere)\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_UNDEFINED);
     unit_dispose(&u);
 
     // 02 の 2811: typeof^(x) = typeof^(y) has to type-check at all, which
     // needs both sides to resolve to the very same TypeInfo type.
     LHAT_TEST("two typeof^ results compare with '='");
-    check_text(&u, "let^ b : bool^ = typeof^(5) = typeof^(\"x\")\n");
+    check_text(&u, "var^ b : bool^ = typeof^(5) = typeof^(\"x\")\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
@@ -2009,7 +2009,7 @@ static void test_typeof(void)
     // already refused by 02 の 8.8's own mark, and this is the other half.
     LHAT_TEST("what a nominal type carries cannot be written over");
     check_text(&u,
-               "let^ t = typeof^(5)\n"
+               "var^ t = typeof^(5)\n"
                "t.signature := \"x\"\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_PATH_IS_OPAQUE);
     unit_dispose(&u);
@@ -2017,8 +2017,8 @@ static void test_typeof(void)
     // 14 章's fields are what a def^ instance is for, and it is not nominal.
     LHAT_TEST("but a def^ instance's fields still are");
     check_text(&u,
-               "let^ P = def^{ self^{ x := 0 } }\n"
-               "let^ o = P.new^()\n"
+               "var^ P = def^{ self^{ x := 0 } }\n"
+               "var^ o = P.new^()\n"
                "o.x := 1\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
@@ -2028,10 +2028,10 @@ static void test_typeof(void)
     LHAT_TEST("the TypeInfo type is the same across a session's inputs");
     {
         LhatCheckSession *s = lhat_check_session_new();
-        check_next_text(&u, s, "let^ t = typeof^(5)\n");
+        check_next_text(&u, s, "var^ t = typeof^(5)\n");
         CHECK_CLEAN(&u);
         unit_dispose(&u);
-        check_next_text(&u, s, "let^ b : bool^ = t = typeof^(\"x\")\n");
+        check_next_text(&u, s, "var^ b : bool^ = t = typeof^(\"x\")\n");
         CHECK_CLEAN(&u);
         unit_dispose(&u);
         lhat_check_session_dispose(s);
@@ -2048,28 +2048,28 @@ static void test_scope_specifiers(void)
 
     LHAT_TEST("'$^' looks past the scope it is written in");
     check_text(&u,
-               "let^ x = 1\n"
-               "do^{ let^ x = \"s\"\n"
-               "  let^ n : number^ = $^x\n"
+               "var^ x = 1\n"
+               "do^{ var^ x = \"s\"\n"
+               "  var^ n : number^ = $^x\n"
                "}\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
     LHAT_TEST("and does not see the one it was written beside");
     check_text(&u,
-               "let^ x = 1\n"
-               "do^{ let^ x = \"s\"\n"
-               "  let^ n : string^ = $^x\n"
+               "var^ x = 1\n"
+               "do^{ var^ x = \"s\"\n"
+               "  var^ n : string^ = $^x\n"
                "}\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
     LHAT_TEST("'$^^' steps out of one more");
     check_text(&u,
-               "let^ x = 1\n"
-               "do^{ let^ x = \"a\"\n"
-               "  do^{ let^ x = \"b\"\n"
-               "    let^ n : number^ = $^^x\n"
+               "var^ x = 1\n"
+               "do^{ var^ x = \"a\"\n"
+               "  do^{ var^ x = \"b\"\n"
+               "    var^ n : number^ = $^^x\n"
                "  }\n"
                "}\n");
     CHECK_CLEAN(&u);
@@ -2079,19 +2079,19 @@ static void test_scope_specifiers(void)
     // holds nothing of that name hands the search on outwards.
     LHAT_TEST("the search goes on outwards from there");
     check_text(&u,
-               "let^ x = 1\n"
-               "do^{ do^{ let^ y = 2\n"
-               "  let^ n : number^ = $^x\n"
+               "var^ x = 1\n"
+               "do^{ do^{ var^ y = 2\n"
+               "  var^ n : number^ = $^x\n"
                "}}\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
     LHAT_TEST("'$' names the unit's own top level");
     check_text(&u,
-               "let^ x = 1\n"
-               "do^{ let^ x = \"a\"\n"
-               "  do^{ let^ x = \"b\"\n"
-               "    let^ n : number^ = $x\n"
+               "var^ x = 1\n"
+               "do^{ var^ x = \"a\"\n"
+               "  do^{ var^ x = \"b\"\n"
+               "    var^ n : number^ = $x\n"
                "  }\n"
                "}\n");
     CHECK_CLEAN(&u);
@@ -2101,10 +2101,10 @@ static void test_scope_specifiers(void)
     // the two ways -- '$^' counts outwards from here.
     LHAT_TEST("'$$' is the scope one inside the unit");
     check_text(&u,
-               "let^ x = 1\n"
-               "do^{ let^ x = \"a\"\n"
-               "  do^{ let^ x = 2\n"
-               "    let^ n : string^ = $$x\n"
+               "var^ x = 1\n"
+               "do^{ var^ x = \"a\"\n"
+               "  do^{ var^ x = 2\n"
+               "    var^ n : string^ = $$x\n"
                "  }\n"
                "}\n");
     CHECK_CLEAN(&u);
@@ -2113,17 +2113,17 @@ static void test_scope_specifiers(void)
     // The same place named both ways, so the two numberings meet.
     LHAT_TEST("and reaches what '$^' reaches from the other side");
     check_text(&u,
-               "let^ x = 1\n"
-               "do^{ let^ x = \"a\"\n"
-               "  do^{ let^ x = 2\n"
-               "    let^ n : string^ = $^x\n"
+               "var^ x = 1\n"
+               "do^{ var^ x = \"a\"\n"
+               "  do^{ var^ x = 2\n"
+               "    var^ n : string^ = $^x\n"
                "  }\n"
                "}\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
     LHAT_TEST("naming a scope further in than this one is refused");
-    check_text(&u, "let^ x = 1\nlet^ n = $$x\n");
+    check_text(&u, "var^ x = 1\nvar^ n = $$x\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_SCOPE_TOO_FAR);
     unit_dispose(&u);
 
@@ -2131,8 +2131,8 @@ static void test_scope_specifiers(void)
     // are in it rather than around it.
     LHAT_TEST("a body is one scope, parameters and all");
     check_text(&u,
-               "let^ x = 1\n"
-               "let^ f = f^ x:string^ -> number^ { return^ $^x }\n");
+               "var^ x = 1\n"
+               "var^ f = f^ x:string^ -> number^ { return^ $^x }\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
@@ -2140,29 +2140,29 @@ static void test_scope_specifiers(void)
     // one for a specifier to count.
     LHAT_TEST("a def^ body is one scope too");
     check_text(&u,
-               "let^ class = 1\n"
-               "let^ D = def^{ self^{},\n"
+               "var^ class = 1\n"
+               "var^ D = def^{ self^{},\n"
                "  m := f^self^ -> t^{} { return^ $^class }\n"
                "}\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
     LHAT_TEST("counting more scopes than are open is refused");
-    check_text(&u, "do^{ let^ n = $^^^^x }\n");
+    check_text(&u, "do^{ var^ n = $^^^^x }\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_SCOPE_TOO_FAR);
     unit_dispose(&u);
 
-    // 8.7: a let^ makes a name where it is written, so there is no other
+    // 8.7: a var^ makes a name where it is written, so there is no other
     // scope for a specifier to name. ':=' is what reaches an existing one.
-    LHAT_TEST("a let^ takes no specifier");
-    check_text(&u, "let^ x = 1\ndo^{ let^ $^x = 2 }\n");
+    LHAT_TEST("a var^ takes no specifier");
+    check_text(&u, "var^ x = 1\ndo^{ var^ $^x = 2 }\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_SCOPE_ON_DEFINE);
     unit_dispose(&u);
 
     LHAT_TEST("but ':=' writes through one");
     check_text(&u,
-               "let^ x = 1\n"
-               "do^{ let^ x = 2\n"
+               "var^ x = 1\n"
+               "do^{ var^ x = 2\n"
                "  $^x := 9\n"
                "}\n");
     CHECK_CLEAN(&u);
@@ -2172,8 +2172,8 @@ static void test_scope_specifiers(void)
     // somewhere a read of the same words would not.
     LHAT_TEST("and writes where a read of the same words looks");
     check_text(&u,
-               "let^ x = 1\n"
-               "do^{ let^ x = \"s\"\n"
+               "var^ x = 1\n"
+               "do^{ var^ x = \"s\"\n"
                "  $^x := \"no\"\n"
                "}\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
@@ -2188,28 +2188,28 @@ static void test_tostring(void)
 
     LHAT_TEST("every value answers with a string^");
     check_text(&u,
-               "let^ a : string^ = nil^.tostring()\n"
-               "let^ b : string^ = true^.tostring()\n"
-               "let^ c : string^ = (1).tostring()\n"
-               "let^ d : string^ = \"x\".tostring()\n"
-               "let^ e : string^ = { n := 1 }.tostring()\n");
+               "var^ a : string^ = nil^.tostring()\n"
+               "var^ b : string^ = true^.tostring()\n"
+               "var^ c : string^ = (1).tostring()\n"
+               "var^ d : string^ = \"x\".tostring()\n"
+               "var^ e : string^ = { n := 1 }.tostring()\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
     LHAT_TEST("a number^ also takes a format");
-    check_text(&u, "let^ a : string^ = (255).tostring(\"%x\")\n");
+    check_text(&u, "var^ a : string^ = (255).tostring(\"%x\")\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
     // The second signature is the number^'s alone, so this is neither of the
     // two ways of writing a string^ down.
     LHAT_TEST("but nothing else does");
-    check_text(&u, "let^ a : string^ = \"x\".tostring(\"%x\")\n");
+    check_text(&u, "var^ a : string^ = \"x\".tostring(\"%x\")\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_ARITY);
     unit_dispose(&u);
 
     LHAT_TEST("the format has to be a string^");
-    check_text(&u, "let^ a : string^ = (1).tostring(2)\n");
+    check_text(&u, "var^ a : string^ = (1).tostring(2)\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
@@ -2217,15 +2217,15 @@ static void test_tostring(void)
     // value down changes nothing, so 15.1 lets an f^ reach it.
     LHAT_TEST("an f^ may call it");
     check_text(&u,
-               "let^ show = f^ n:number^ -> string^ { return^ n.tostring() }\n");
+               "var^ show = f^ n:number^ -> string^ { return^ n.tostring() }\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
     // 16.3's rule for iterate, which 14.17 follows.
     LHAT_TEST("a written tostring is what the type says");
     check_text(&u,
-               "let^ t = { tostring := f^self^ -> number^ { return^ 1 } }\n"
-               "let^ n : number^ = t.tostring()\n");
+               "var^ t = { tostring := f^self^ -> number^ { return^ 1 } }\n"
+               "var^ n : number^ = t.tostring()\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 }
@@ -2239,8 +2239,8 @@ static void test_variadic(void)
 
     LHAT_TEST("'...' inside the body is a table of the element type");
     check_text(&u,
-               "let^ f = f^ ...:number^ -> number^ {\n"
-               "  let^ t : t^{ ...:number^ } = ...\n"
+               "var^ f = f^ ...:number^ -> number^ {\n"
+               "  var^ t : t^{ ...:number^ } = ...\n"
                "  return^ 0\n"
                "}\n");
     CHECK_CLEAN(&u);
@@ -2251,11 +2251,11 @@ static void test_variadic(void)
     // special-case this.
     LHAT_TEST("for^ i, x in^ ... gives x the element type");
     check_text(&u,
-               "let^ f = f^ ...:number^ -> number^ {\n"
-               "  let^ total = 0\n"
+               "var^ f = f^ ...:number^ -> number^ {\n"
+               "  var^ total = 0\n"
                "  for^ i, x in^ ... {\n"
-               "    let^ n : number^ = x\n"
-               "    let^ p : number^ = i\n"
+               "    var^ n : number^ = x\n"
+               "    var^ p : number^ = i\n"
                "    total := total + x\n"
                "  }\n"
                "  return^ total\n"
@@ -2267,9 +2267,9 @@ static void test_variadic(void)
     // be -- the count is unbounded, unlike a table with listed members.
     LHAT_TEST("a dynamic index into ... may be nil^");
     check_text(&u,
-               "let^ f = f^ ...:number^ -> number^ {\n"
-               "  let^ i = 1\n"
-               "  let^ v : number^|nil^ = ...[i]\n"
+               "var^ f = f^ ...:number^ -> number^ {\n"
+               "  var^ i = 1\n"
+               "  var^ v : number^|nil^ = ...[i]\n"
                "  return^ 0\n"
                "}\n");
     CHECK_CLEAN(&u);
@@ -2278,7 +2278,7 @@ static void test_variadic(void)
     // 13.7: at least the fixed count, any number beyond it.
     LHAT_TEST("fewer than the fixed count is refused");
     check_text(&u,
-               "let^ f = f^ a:number^, b:number^, ...:number^ -> number^ {\n"
+               "var^ f = f^ a:number^, b:number^, ...:number^ -> number^ {\n"
                "  return^ a + b\n"
                "}\n"
                "f(1)\n");
@@ -2287,7 +2287,7 @@ static void test_variadic(void)
 
     LHAT_TEST("exactly the fixed count, with none variadic, is fine");
     check_text(&u,
-               "let^ f = f^ a:number^, b:number^, ...:number^ -> number^ {\n"
+               "var^ f = f^ a:number^, b:number^, ...:number^ -> number^ {\n"
                "  return^ a + b\n"
                "}\n"
                "f(1, 2)\n");
@@ -2296,7 +2296,7 @@ static void test_variadic(void)
 
     LHAT_TEST("and a mismatched variadic argument is still caught");
     check_text(&u,
-               "let^ f = f^ ...:number^ -> number^ { return^ 0 }\n"
+               "var^ f = f^ ...:number^ -> number^ { return^ 0 }\n"
                "f(1, \"x\")\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
@@ -2304,8 +2304,8 @@ static void test_variadic(void)
     // 13.7: 'expr...' spreads a collected table back into a variadic tail.
     LHAT_TEST("'...' forwards into another variadic call");
     check_text(&u,
-               "let^ inner = f^ ...:number^ -> number^ { return^ 0 }\n"
-               "let^ outer = f^ ...:number^ -> number^ {\n"
+               "var^ inner = f^ ...:number^ -> number^ { return^ 0 }\n"
+               "var^ outer = f^ ...:number^ -> number^ {\n"
                "  return^ inner(...)\n"
                "}\n");
     CHECK_CLEAN(&u);
@@ -2313,8 +2313,8 @@ static void test_variadic(void)
 
     LHAT_TEST("forwarding into a non-variadic callee is refused");
     check_text(&u,
-               "let^ inner = f^ -> number^ { return^ 0 }\n"
-               "let^ outer = f^ ...:number^ -> number^ {\n"
+               "var^ inner = f^ -> number^ { return^ 0 }\n"
+               "var^ outer = f^ ...:number^ -> number^ {\n"
                "  return^ inner(...)\n"
                "}\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_NOT_VARIADIC);
@@ -2322,10 +2322,10 @@ static void test_variadic(void)
 
     LHAT_TEST("fixed arguments may lead a forwarded spread");
     check_text(&u,
-               "let^ inner = f^ base:number^, ...:number^ -> number^ {\n"
+               "var^ inner = f^ base:number^, ...:number^ -> number^ {\n"
                "  return^ base\n"
                "}\n"
-               "let^ outer = f^ ...:number^ -> number^ {\n"
+               "var^ outer = f^ ...:number^ -> number^ {\n"
                "  return^ inner(100, ...)\n"
                "}\n");
     CHECK_CLEAN(&u);
@@ -2341,21 +2341,21 @@ static void test_patterns(void)
     // 16.2: the focus with no name written is called it^, and it is bound.
     LHAT_TEST("the subject is in scope as it^");
     check_text(&u,
-               "let^ f = f^ -> number^ { return^ 0 }\n"
-               "for^ f() { when^ 0: let^ n : number^ = it^ other^: }\n");
+               "var^ f = f^ -> number^ { return^ 0 }\n"
+               "for^ f() { when^ 0: var^ n : number^ = it^ other^: }\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
     LHAT_TEST("a named subject is in scope under its name");
     check_text(&u,
-               "let^ f = f^ -> number^ { return^ 0 }\n"
-               "for^ let^ r := f() { when^ 0: let^ n : number^ = r other^: }\n");
+               "var^ f = f^ -> number^ { return^ 0 }\n"
+               "for^ var^ r := f() { when^ 0: var^ n : number^ = r other^: }\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
     // 16.2 applies to every form of for^, not only to a match.
     LHAT_TEST("it^ is bound in a loop too");
-    check_text(&u, "for^ 1 to^ 3 { let^ n : number^ = it^ }\n");
+    check_text(&u, "for^ 1 to^ 3 { var^ n : number^ = it^ }\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
@@ -2364,10 +2364,10 @@ static void test_patterns(void)
     LHAT_TEST("a type pattern narrows the subject");
     check_text(&u,
                "errordef^ ParseError { Syntax { line : number^ }, Eof }\n"
-               "let^ parse = f^ -> number^|ParseError { return^ 0 }\n"
-               "for^ let^ r := parse() {\n"
+               "var^ parse = f^ -> number^|ParseError { return^ 0 }\n"
+               "for^ var^ r := parse() {\n"
                "    when^ isa^ ParseError.Syntax:\n"
-               "        let^ n : number^ = r.line\n"
+               "        var^ n : number^ = r.line\n"
                "    other^:\n"
                "}\n");
     CHECK_CLEAN(&u);
@@ -2376,10 +2376,10 @@ static void test_patterns(void)
     LHAT_TEST("the field is not visible in another clause");
     check_text(&u,
                "errordef^ ParseError { Syntax { line : number^ }, Eof }\n"
-               "let^ parse = f^ -> number^|ParseError { return^ 0 }\n"
-               "for^ let^ r := parse() {\n"
+               "var^ parse = f^ -> number^|ParseError { return^ 0 }\n"
+               "for^ var^ r := parse() {\n"
                "    when^ isa^ ParseError.Eof:\n"
-               "        let^ n = r.line\n"
+               "        var^ n = r.line\n"
                "    other^:\n"
                "}\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_NO_MEMBER);
@@ -2390,9 +2390,9 @@ static void test_patterns(void)
     LHAT_TEST("an exhausted union leaves the success type");
     check_text(&u,
                "errordef^ IOError { NotFound, Denied }\n"
-               "let^ open = f^ -> number^|IOError { return^ 0 }\n"
-               "let^ use = f^ -> number^ {\n"
-               "    for^ let^ r := open() {\n"
+               "var^ open = f^ -> number^|IOError { return^ 0 }\n"
+               "var^ use = f^ -> number^ {\n"
+               "    for^ var^ r := open() {\n"
                "        when^ isa^ IOError.NotFound: return^ 0\n"
                "        when^ isa^ IOError.Denied: return^ 0\n"
                "        other^: return^ r\n"
@@ -2405,9 +2405,9 @@ static void test_patterns(void)
     LHAT_TEST("a union not exhausted still carries its errors");
     check_text(&u,
                "errordef^ IOError { NotFound, Denied }\n"
-               "let^ open = f^ -> number^|IOError { return^ 0 }\n"
-               "let^ use = f^ -> number^ {\n"
-               "    for^ let^ r := open() {\n"
+               "var^ open = f^ -> number^|IOError { return^ 0 }\n"
+               "var^ use = f^ -> number^ {\n"
+               "    for^ var^ r := open() {\n"
                "        when^ isa^ IOError.NotFound: return^ 0\n"
                "        other^: return^ r\n"
                "    }\n"
@@ -2431,15 +2431,15 @@ static void test_patterns(void)
     // 17.2: the expression form has a type, taken from its clauses.
     LHAT_TEST("the expression form yields the union of its clauses");
     check_text(&u,
-               "let^ n = 1\n"
-               "let^ s : string^ = for^ n: when^ 0: \"zero\" other^: \"more\" ;\n");
+               "var^ n = 1\n"
+               "var^ s : string^ = for^ n: when^ 0: \"zero\" other^: \"more\" ;\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
     LHAT_TEST("a clause of the wrong type is reported");
     check_text(&u,
-               "let^ n = 1\n"
-               "let^ s : string^ = for^ n: when^ 0: \"zero\" other^: 1 ;\n");
+               "var^ n = 1\n"
+               "var^ s : string^ = for^ n: when^ 0: \"zero\" other^: 1 ;\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 }
@@ -2508,7 +2508,7 @@ static void test_modules(void)
         "module^ ns.geometry\n"
         "public^ let^ Point = def^{ self^{ x := 0, y := 0 } }\n"
         "public^ errordef^ Bad { Degenerate }\n"
-        "let^ secret = 1\n"
+        "var^ secret = 1\n"
         "public^ let^ dist = f^ a:number^, b:number^ -> number^ { return^ a }\n";
 
     // 05 の 4 章: what a unit publishes is read from its declarations, so a
@@ -2517,8 +2517,8 @@ static void test_modules(void)
     memset(&lib, 0, sizeof lib);
     lib.expected_path = "lib/geometry.lh";
     check_against(&u, &lib, provider,
-                  "let^ g = require^ \"lib/geometry.lh\"\n"
-                  "let^ d : number^ = g.dist(1, 2)\n");
+                  "var^ g = require^ \"lib/geometry.lh\"\n"
+                  "var^ d : number^ = g.dist(1, 2)\n");
     LHAT_CHECK(lib.asked, "the resolver was asked");
     CHECK_CLEAN(&u);
     check_against_dispose(&u, &lib);
@@ -2528,7 +2528,7 @@ static void test_modules(void)
     LHAT_TEST("the path module^ declared is recorded");
     memset(&lib, 0, sizeof lib);
     lib.expected_path = "lib/geometry.lh";
-    check_against(&u, &lib, provider, "let^ g = require^ \"lib/geometry.lh\"\n");
+    check_against(&u, &lib, provider, "var^ g = require^ \"lib/geometry.lh\"\n");
     LHAT_CHECK(lib.provider.checked.module_name != NULL,
                "the provider declared a path");
     if (lib.provider.checked.module_name != NULL) {
@@ -2541,7 +2541,7 @@ static void test_modules(void)
     memset(&lib, 0, sizeof lib);
     lib.expected_path = "lib/plain.lh";
     check_against(&u, &lib, "public^ let^ thing = 1\n",
-                  "let^ g = require^ \"lib/plain.lh\"\n");
+                  "var^ g = require^ \"lib/plain.lh\"\n");
     LHAT_CHECK(lib.provider.checked.module_name == NULL, "3.2 allows none");
     check_against_dispose(&u, &lib);
 
@@ -2551,7 +2551,7 @@ static void test_modules(void)
     memset(&lib, 0, sizeof lib);
     lib.expected_path = "lib/plain.lh";
     check_against(&u, &lib, "public^ let^ thing = 1\n",
-                  "let^ g = require^ \"lib/plain.lh\"\n"
+                  "var^ g = require^ \"lib/plain.lh\"\n"
                   "g.thing := 2\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_TABLE_IS_SEALED);
     check_against_dispose(&u, &lib);
@@ -2562,12 +2562,12 @@ static void test_modules(void)
     memset(&lib, 0, sizeof lib);
     lib.expected_path = "lib/plain.lh";
     check_against(&u, &lib, "public^ let^ registry = { x := 0 }\n",
-                  "let^ g = require^ \"lib/plain.lh\"\n"
+                  "var^ g = require^ \"lib/plain.lh\"\n"
                   "g.registry.x := 2\n");
     CHECK_CLEAN(&u);
     check_against_dispose(&u, &lib);
 
-    // 05 の 5.4改: without a let^ the unit goes under the path it declared.
+    // 05 の 5.4改: without a var^ the unit goes under the path it declared.
     // 8.8 makes the tables on the way, so only the root is a new name.
     LHAT_TEST("the short form binds under the declared path");
     memset(&lib, 0, sizeof lib);
@@ -2575,7 +2575,7 @@ static void test_modules(void)
     check_against(&u, &lib,
                   provider,
                   "require^ \"lib/geometry.lh\"\n"
-                  "let^ d : number^ = ns.geometry.dist(1, 2)\n");
+                  "var^ d : number^ = ns.geometry.dist(1, 2)\n");
     CHECK_CLEAN(&u);
     check_against_dispose(&u, &lib);
 
@@ -2584,7 +2584,7 @@ static void test_modules(void)
     lib.expected_path = "lib/geometry.lh";
     check_against(&u, &lib, provider,
                   "require^ \"lib/geometry.lh\"\n"
-                  "let^ s = ns.geometry.secret\n");
+                  "var^ s = ns.geometry.secret\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_NO_MEMBER);
     check_against_dispose(&u, &lib);
 
@@ -2613,8 +2613,8 @@ static void test_modules(void)
     memset(&lib, 0, sizeof lib);
     lib.expected_path = "lib/geometry.lh";
     check_against(&u, &lib, provider,
-                  "let^ g = require^ \"lib/geometry.lh\"\n"
-                  "let^ s = g.secret\n");
+                  "var^ g = require^ \"lib/geometry.lh\"\n"
+                  "var^ s = g.secret\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_NO_MEMBER);
     check_against_dispose(&u, &lib);
 
@@ -2624,9 +2624,9 @@ static void test_modules(void)
     memset(&lib, 0, sizeof lib);
     lib.expected_path = "lib/geometry.lh";
     check_against(&u, &lib, provider,
-                  "let^ g = require^ \"lib/geometry.lh\"\n"
-                  "let^ p : g.Point = g.Point.new^()\n"
-                  "let^ n : number^ = p.x\n");
+                  "var^ g = require^ \"lib/geometry.lh\"\n"
+                  "var^ p : g.Point = g.Point.new^()\n"
+                  "var^ n : number^ = p.x\n");
     CHECK_CLEAN(&u);
     check_against_dispose(&u, &lib);
 
@@ -2634,8 +2634,8 @@ static void test_modules(void)
     memset(&lib, 0, sizeof lib);
     lib.expected_path = "lib/geometry.lh";
     check_against(&u, &lib, provider,
-                  "let^ g = require^ \"lib/geometry.lh\"\n"
-                  "let^ e : g.Bad = error^g.Bad.Degenerate{ }\n");
+                  "var^ g = require^ \"lib/geometry.lh\"\n"
+                  "var^ e : g.Bad = error^g.Bad.Degenerate{ }\n");
     CHECK_CLEAN(&u);
     check_against_dispose(&u, &lib);
 
@@ -2645,8 +2645,8 @@ static void test_modules(void)
     memset(&lib, 0, sizeof lib);
     lib.expected_path = "lib/geometry.lh";
     check_against(&u, &lib, provider,
-                  "let^ g = require^ \"lib/geometry.lh\"\n"
-                  "let^ d = g.dist(1, \"text\")\n");
+                  "var^ g = require^ \"lib/geometry.lh\"\n"
+                  "var^ d = g.dist(1, \"text\")\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     check_against_dispose(&u, &lib);
 
@@ -2655,7 +2655,7 @@ static void test_modules(void)
     memset(&lib, 0, sizeof lib);
     lib.expected_path = "lib/geometry.lh";
     check_against(&u, &lib, provider,
-                  "let^ g = require^ \"nowhere.lh\"\n");
+                  "var^ g = require^ \"nowhere.lh\"\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_REQUIRE_FAILED);
     check_against_dispose(&u, &lib);
 
@@ -2665,8 +2665,8 @@ static void test_modules(void)
     memset(&lib, 0, sizeof lib);
     lib.expected_path = "lib/geometry.lh";
     check_against(&u, &lib, provider,
-                  "let^ theirs = require^ \"lib/geometry.lh\"\n"
-                  "let^ d : number^ = theirs.dist(1, 2)\n");
+                  "var^ theirs = require^ \"lib/geometry.lh\"\n"
+                  "var^ d : number^ = theirs.dist(1, 2)\n");
     CHECK_CLEAN(&u);
     check_against_dispose(&u, &lib);
 }
@@ -2679,8 +2679,8 @@ static void test_coroutines(void)
 
     LHAT_TEST("a call of a yieldable procedure answers a coroutine");
     check_text(&u,
-               "let^ gen = p^ { yield^ 1 }\n"
-               "let^ c = gen()\n");
+               "var^ gen = p^ { yield^ 1 }\n"
+               "var^ c = gen()\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
@@ -2688,23 +2688,23 @@ static void test_coroutines(void)
     // has no effect at all. C#'s IEnumerator allows this silently.
     LHAT_TEST("dropping the coroutine is reported");
     check_text(&u,
-               "let^ gen = p^ { yield^ 1 }\n"
+               "var^ gen = p^ { yield^ 1 }\n"
                "gen()\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_COROUTINE_DROPPED);
     unit_dispose(&u);
 
     LHAT_TEST("delegating to it is not");
     check_text(&u,
-               "let^ gen = p^ { yield^ 1 }\n"
-               "let^ outer = p^ { yieldall^ gen() }\n");
+               "var^ gen = p^ { yield^ 1 }\n"
+               "var^ outer = p^ { yieldall^ gen() }\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
     LHAT_TEST("binding it is not either");
     check_text(&u,
-               "let^ gen = p^ { yield^ 1 }\n"
-               "let^ c = gen()\n"
-               "let^ d = c\n");
+               "var^ gen = p^ { yield^ 1 }\n"
+               "var^ c = gen()\n"
+               "var^ d = c\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
@@ -2712,7 +2712,7 @@ static void test_coroutines(void)
     // happened when the call returns.
     LHAT_TEST("an ordinary call still stands alone");
     check_text(&u,
-               "let^ go = p^ { let^ x = 1 }\n"
+               "var^ go = p^ { var^ x = 1 }\n"
                "go()\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
@@ -2720,10 +2720,10 @@ static void test_coroutines(void)
     // 05 の 8.5: a coroutine carries these without anything being imported.
     LHAT_TEST("a coroutine carries start, resume, dispose and iterate");
     check_text(&u,
-               "let^ gen = p^ { yield^ 1 }\n"
-               "let^ c = gen()\n"
-               "let^ v = c.start()\n"
-               "let^ w = c.resume(nil^)\n"
+               "var^ gen = p^ { yield^ 1 }\n"
+               "var^ c = gen()\n"
+               "var^ v = c.start()\n"
+               "var^ w = c.resume(nil^)\n"
                "c.dispose()\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
@@ -2732,10 +2732,10 @@ static void test_coroutines(void)
     // types of 13.9 turn out to be.
     LHAT_TEST("a coroutine carries done and started");
     check_text(&u,
-               "let^ gen = p^ { yield^ 1 }\n"
-               "let^ c = gen()\n"
-               "let^ d : bool^ = c.done()\n"
-               "let^ s : bool^ = c.started()\n");
+               "var^ gen = p^ { yield^ 1 }\n"
+               "var^ c = gen()\n"
+               "var^ d : bool^ = c.done()\n"
+               "var^ s : bool^ = c.started()\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
@@ -2744,26 +2744,26 @@ static void test_coroutines(void)
     // sign of which of the two happened.
     LHAT_TEST("they answer even where the resume union says nothing");
     check_text(&u,
-               "let^ gen = p^ { yield^ }\n"
-               "let^ c = gen()\n"
-               "let^ v : nil^ = c.start()\n"
-               "let^ d : bool^ = c.done()\n");
+               "var^ gen = p^ { yield^ }\n"
+               "var^ c = gen()\n"
+               "var^ v : nil^ = c.start()\n"
+               "var^ d : bool^ = c.done()\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
     LHAT_TEST("neither takes an argument");
     check_text(&u,
-               "let^ gen = p^ { yield^ 1 }\n"
-               "let^ c = gen()\n"
+               "var^ gen = p^ { yield^ 1 }\n"
+               "var^ c = gen()\n"
                "c.done(1)\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_ARITY);
     unit_dispose(&u);
 
     LHAT_TEST("and nothing else");
     check_text(&u,
-               "let^ gen = p^ { yield^ 1 }\n"
-               "let^ c = gen()\n"
-               "let^ v = c.nowhere\n");
+               "var^ gen = p^ { yield^ 1 }\n"
+               "var^ c = gen()\n"
+               "var^ v = c.nowhere\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_NO_MEMBER);
     unit_dispose(&u);
 
@@ -2772,12 +2772,12 @@ static void test_coroutines(void)
     LHAT_TEST("L^ carries the collector and the registry");
     check_text(&u,
                "L^.collectgarbage()\n"
-               "let^ m = L^.modules\n");
+               "var^ m = L^.modules\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
     LHAT_TEST("and nothing else");
-    check_text(&u, "let^ x = L^.nowhere\n");
+    check_text(&u, "var^ x = L^.nowhere\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_NO_MEMBER);
     unit_dispose(&u);
 
@@ -2791,7 +2791,7 @@ static void test_coroutines(void)
     // member is refused the same way writing over one is -- 8.8's walk is
     // exactly what would have made the segments on the way.
     LHAT_TEST("L^ is not a root a path may be grown from");
-    check_text(&u, "let^ L^.modules.ns1.mod1 = { greet := 1 }\n");
+    check_text(&u, "var^ L^.modules.ns1.mod1 = { greet := 1 }\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_TABLE_IS_SEALED);
     unit_dispose(&u);
 
@@ -2802,61 +2802,61 @@ static void test_coroutines(void)
 
     // 15.1改 answers the f^ side of the same question; this is the other one.
     LHAT_TEST("a p^ reaches it no more than the top level does");
-    check_text(&u, "let^ f = p^ { L^.collectgarbage := p^ { } }\n");
+    check_text(&u, "var^ f = p^ { L^.collectgarbage := p^ { } }\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_TABLE_IS_SEALED);
     unit_dispose(&u);
 
     LHAT_TEST("but reading it is untouched");
     check_text(&u,
                "L^.collectgarbage()\n"
-               "let^ m = L^.modules\n");
+               "var^ m = L^.modules\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
     // Only that one spelling is a place; the rest name nothing.
     LHAT_TEST("but another hat identifier is not a root");
-    check_text(&u, "let^ true^.x = 1\n");
+    check_text(&u, "var^ true^.x = 1\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_UNDEFINED);
     unit_dispose(&u);
 
-    // 8.8: let^ introduces a member, the way ':=' reassigns one. The tables on
+    // 8.8: var^ introduces a member, the way ':=' reassigns one. The tables on
     // the way are made where the path does not reach one yet.
-    LHAT_TEST("let^ introduces a member along a path");
+    LHAT_TEST("var^ introduces a member along a path");
     check_text(&u,
-               "let^ a.b.c = 1\n"
-               "let^ n : number^ = a.b.c\n");
+               "var^ a.b.c = 1\n"
+               "var^ n : number^ = a.b.c\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
     LHAT_TEST("and two paths through one table meet");
     check_text(&u,
-               "let^ a.b.c = 1\n"
-               "let^ a.b.d = 2\n"
-               "let^ a.z = 3\n"
-               "let^ n : number^ = a.b.c + a.b.d + a.z\n");
+               "var^ a.b.c = 1\n"
+               "var^ a.b.d = 2\n"
+               "var^ a.z = 3\n"
+               "var^ n : number^ = a.b.c + a.b.d + a.z\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
     LHAT_TEST("and an existing table gains the member");
     check_text(&u,
-               "let^ t = { p := 1 }\n"
-               "let^ t.q = 2\n"
-               "let^ n : number^ = t.p + t.q\n");
+               "var^ t = { p := 1 }\n"
+               "var^ t.q = 2\n"
+               "var^ n : number^ = t.p + t.q\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
     // The last segment is the name being introduced, so 8.7 holds for it.
     LHAT_TEST("but writing the last segment twice is a redefinition");
     check_text(&u,
-               "let^ a.b = 1\n"
-               "let^ a.b = 2\n");
+               "var^ a.b = 1\n"
+               "var^ a.b = 2\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_REDEFINED);
     unit_dispose(&u);
 
     LHAT_TEST("and a segment on the way has to be a table");
     check_text(&u,
-               "let^ a = 1\n"
-               "let^ a.b = 2\n");
+               "var^ a = 1\n"
+               "var^ a.b = 2\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_PATH_NOT_TABLE);
     unit_dispose(&u);
 
@@ -2864,16 +2864,16 @@ static void test_coroutines(void)
     // of table this cannot add to.
     LHAT_TEST("and a def^ instance takes no new member");
     check_text(&u,
-               "let^ P = def^{ self^{ x := 0 } }\n"
-               "let^ p = P.new^()\n"
-               "let^ p.y = 1\n");
+               "var^ P = def^{ self^{ x := 0 } }\n"
+               "var^ p = P.new^()\n"
+               "var^ p.y = 1\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_PATH_IS_DEFINITION);
     unit_dispose(&u);
 
     LHAT_TEST("nor does the definition itself");
     check_text(&u,
-               "let^ P = def^{ self^{ x := 0 } }\n"
-               "let^ P.y = 1\n");
+               "var^ P = def^{ self^{ x := 0 } }\n"
+               "var^ P.y = 1\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_PATH_IS_DEFINITION);
     unit_dispose(&u);
 
@@ -2881,16 +2881,16 @@ static void test_coroutines(void)
     // enclosing binding is reached rather than shadowed.
     LHAT_TEST("and the root is not shadowed");
     check_text(&u,
-               "let^ outer = { }\n"
-               "let^ add = p^ { let^ outer.k = 7 }\n"
+               "var^ outer = { }\n"
+               "var^ add = p^ { var^ outer.k = 7 }\n"
                "add()\n"
-               "let^ n : number^ = outer.k\n");
+               "var^ n : number^ = outer.k\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
     LHAT_TEST("and an annotation on the last segment is checked");
     check_text(&u,
-               "let^ a.b : string^ = 1\n");
+               "var^ a.b : string^ = 1\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
@@ -2900,39 +2900,39 @@ static void test_coroutines(void)
     // 13.9's三つ has to match what the consumer was written against.
     LHAT_TEST("_yield^ gives the same coroutine type a yield^ does");
     check_text(&u,
-               "let^ real = p^ -> number^ {\n"
-               "  let^ got : string^ = yield^ 1\n"
+               "var^ real = p^ -> number^ {\n"
+               "  var^ got : string^ = yield^ 1\n"
                "  return^ 9\n"
                "}\n"
-               "let^ fake = p^ -> number^ {\n"
-               "  let^ got : string^ = _yield^ 1\n"
+               "var^ fake = p^ -> number^ {\n"
+               "  var^ got : string^ = _yield^ 1\n"
                "  return^ 9\n"
                "}\n"
-               "let^ a : c^{ p^string^ -> number^;, number^ } = real()\n"
-               "let^ b : c^{ p^string^ -> number^;, number^ } = fake()\n");
+               "var^ a : c^{ p^string^ -> number^;, number^ } = real()\n"
+               "var^ b : c^{ p^string^ -> number^;, number^ } = fake()\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
     LHAT_TEST("and a body with only _yield^ is still a coroutine");
     check_text(&u,
-               "let^ fake = p^ { _yield^ 1 }\n"
-               "let^ c : c^{ p^nil^ -> number^;, nil^ } = fake()\n"
-               "let^ d : bool^ = c.done()\n");
+               "var^ fake = p^ { _yield^ 1 }\n"
+               "var^ c : c^{ p^nil^ -> number^;, nil^ } = fake()\n"
+               "var^ d : bool^ = c.done()\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
     // Same node, same rule: 15.8 does not care which of the two made it.
     LHAT_TEST("and dropping what it answers is reported the same way");
     check_text(&u,
-               "let^ fake = p^ { _yield^ 1 }\n"
+               "var^ fake = p^ { _yield^ 1 }\n"
                "fake()\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_COROUTINE_DROPPED);
     unit_dispose(&u);
 
     LHAT_TEST("and the wrong type is caught the same way");
     check_text(&u,
-               "let^ fake = p^ { let^ got : string^ = _yield^ 1 }\n"
-               "let^ c : c^{ p^number^ -> number^;, nil^ } = fake()\n");
+               "var^ fake = p^ { var^ got : string^ = _yield^ 1 }\n"
+               "var^ c : c^{ p^number^ -> number^;, nil^ } = fake()\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
@@ -2941,24 +2941,24 @@ static void test_coroutines(void)
     // type of it was missing here.
     LHAT_TEST("a table carries the built-in iterate");
     check_text(&u,
-               "let^ t = { 1, 2 }\n"
-               "let^ w = t.iterate()\n"
-               "let^ d : bool^ = w.done()\n");
+               "var^ t = { 1, 2 }\n"
+               "var^ w = t.iterate()\n"
+               "var^ d : bool^ = w.done()\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
     // 13.8 has no tuples, so what a walk yields is a table of the pair.
     LHAT_TEST("and the walk yields a table");
     check_text(&u,
-               "let^ t = { 1, 2 }\n"
-               "let^ pair : t^{} |nil^ = t.iterate().start()\n");
+               "var^ t = { 1, 2 }\n"
+               "var^ pair : t^{} |nil^ = t.iterate().start()\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
     LHAT_TEST("and it is not the values the table holds");
     check_text(&u,
-               "let^ t = { 1, 2 }\n"
-               "let^ pair : number^|nil^ = t.iterate().start()\n");
+               "var^ t = { 1, 2 }\n"
+               "var^ pair : number^|nil^ = t.iterate().start()\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
@@ -2966,8 +2966,8 @@ static void test_coroutines(void)
     // reached once the search for a written member has failed.
     LHAT_TEST("a written iterate wins over the built-in one");
     check_text(&u,
-               "let^ t = { iterate := f^ { return^ p^ { yield^ 9 }() } }\n"
-               "let^ v : number^|nil^ = t.iterate().start()\n");
+               "var^ t = { iterate := f^ { return^ p^ { yield^ 9 }() } }\n"
+               "var^ v : number^|nil^ = t.iterate().start()\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
@@ -2976,15 +2976,15 @@ static void test_coroutines(void)
     // types as the coroutine's receive type -- a different thing.
     LHAT_TEST("the arguments belong to the call");
     check_text(&u,
-               "let^ p = p^ x:number^, y:string^ { let^ a:number^ = yield^ 10 return^ \"a\" }\n"
-               "let^ c = p(1, \"b\")\n");
+               "var^ p = p^ x:number^, y:string^ { var^ a:number^ = yield^ 10 return^ \"a\" }\n"
+               "var^ c = p(1, \"b\")\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
     LHAT_TEST("and the call still checks them");
     check_text(&u,
-               "let^ p = p^ x:number^, y:string^ { yield^ 10 }\n"
-               "let^ c = p(1)\n");
+               "var^ p = p^ x:number^, y:string^ { yield^ 10 }\n"
+               "var^ c = p(1)\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_ARITY);
     unit_dispose(&u);
 
@@ -2993,9 +2993,9 @@ static void test_coroutines(void)
     // inferred from the body's yield^/return^ sites.
     LHAT_TEST("what a resume answers includes both the yield and the return type");
     check_text(&u,
-               "let^ p = p^ -> string^ { let^ a:number^ = yield^ 10 return^ \"a\" }\n"
-               "let^ c = p()\n"
-               "let^ s : number^|string^ = c.resume(1)\n");
+               "var^ p = p^ -> string^ { var^ a:number^ = yield^ 10 return^ \"a\" }\n"
+               "var^ c = p()\n"
+               "var^ s : number^|string^ = c.resume(1)\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
@@ -3004,23 +3004,23 @@ static void test_coroutines(void)
     // the machine really hands back, not 03's "returns nothing" leaking in.
     LHAT_TEST("a body with no return^ answers nil^ at the end");
     check_text(&u,
-               "let^ p = p^ { yield^ 1 }\n"
-               "let^ v : number^|nil^ = p().start()\n");
+               "var^ p = p^ { yield^ 1 }\n"
+               "var^ v : number^|nil^ = p().start()\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
     LHAT_TEST("so the yield type alone does not cover it");
     check_text(&u,
-               "let^ p = p^ { yield^ 1 }\n"
-               "let^ v : number^ = p().start()\n");
+               "var^ p = p^ { yield^ 1 }\n"
+               "var^ v : number^ = p().start()\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
     // And where every exit produces one, nothing spurious joins the union.
     LHAT_TEST("a body that always returns a value brings no nil^");
     check_text(&u,
-               "let^ p = p^ { yield^ 1 return^ 9 }\n"
-               "let^ v : number^ = p().start()\n");
+               "var^ p = p^ { yield^ 1 return^ 9 }\n"
+               "var^ v : number^ = p().start()\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
@@ -3030,15 +3030,15 @@ static void test_coroutines(void)
     // that never arrives.
     LHAT_TEST("a coroutine that cannot end answers only what it yields");
     check_text(&u,
-               "let^ p = p^ { repeat^ { yield^ 1 } }\n"
-               "let^ v : number^ = p().start()\n");
+               "var^ p = p^ { repeat^ { yield^ 1 } }\n"
+               "var^ v : number^ = p().start()\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
     LHAT_TEST("and its walk binds a focus with no nil^ in it either");
     check_text(&u,
-               "let^ p = p^ { repeat^ { yield^ 1 } }\n"
-               "for^ x in^ p() { let^ n : number^ = x }\n");
+               "var^ p = p^ { repeat^ { yield^ 1 } }\n"
+               "for^ x in^ p() { var^ n : number^ = x }\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
@@ -3046,45 +3046,45 @@ static void test_coroutines(void)
     // exit really receives one.
     LHAT_TEST("but a bare return^ is an end, and brings nil^ with it");
     check_text(&u,
-               "let^ p = p^ { yield^ 1 return^ }\n"
-               "let^ v : number^ = p().start()\n");
+               "var^ p = p^ { yield^ 1 return^ }\n"
+               "var^ v : number^ = p().start()\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
     LHAT_TEST("and so does a break^ that lets the loop finish");
     check_text(&u,
-               "let^ p = p^ { repeat^ { yield^ 1 break^ } }\n"
-               "let^ v : number^ = p().start()\n");
+               "var^ p = p^ { repeat^ { yield^ 1 break^ } }\n"
+               "var^ v : number^ = p().start()\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
     // done() is what tells the two apart, and it is there either way.
     LHAT_TEST("done() is carried whether or not the body can end");
     check_text(&u,
-               "let^ p = p^ { repeat^ { yield^ 1 } }\n"
-               "let^ d : bool^ = p().done()\n");
+               "var^ p = p^ { repeat^ { yield^ 1 } }\n"
+               "var^ d : bool^ = p().done()\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
     LHAT_TEST("yieldall^ needs a coroutine");
     check_text(&u,
-               "let^ plain = f^ -> number^ { return^ 1 }\n"
-               "let^ outer = p^ { yieldall^ plain() }\n");
+               "var^ plain = f^ -> number^ { return^ 1 }\n"
+               "var^ outer = p^ { yieldall^ plain() }\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_NOT_COROUTINE);
     unit_dispose(&u);
 
     // 15.8: the value of a delegation is the inner one's return value.
     LHAT_TEST("the value of yieldall^ is the inner return type");
     check_text(&u,
-               "let^ gen = p^ -> number^ { yield^ 1 return^ 2 }\n"
-               "let^ outer = p^ { let^ n : number^ = yieldall^ gen() }\n");
+               "var^ gen = p^ -> number^ { yield^ 1 return^ 2 }\n"
+               "var^ outer = p^ { var^ n : number^ = yieldall^ gen() }\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
     LHAT_TEST("and it is not the type it yields");
     check_text(&u,
-               "let^ gen = p^ -> number^ { yield^ 1 return^ 2 }\n"
-               "let^ outer = p^ { let^ s : string^ = yieldall^ gen() }\n");
+               "var^ gen = p^ -> number^ { yield^ 1 return^ 2 }\n"
+               "var^ outer = p^ { var^ s : string^ = yieldall^ gen() }\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
@@ -3092,16 +3092,16 @@ static void test_coroutines(void)
     // it is what runs a fresh coroutine from the top.
     LHAT_TEST("start() answers the same union as resume()");
     check_text(&u,
-               "let^ p = p^ -> string^ { let^ a:number^ = yield^ 10 return^ \"a\" }\n"
-               "let^ c = p()\n"
-               "let^ s : number^|string^ = c.start()\n");
+               "var^ p = p^ -> string^ { var^ a:number^ = yield^ 10 return^ \"a\" }\n"
+               "var^ c = p()\n"
+               "var^ s : number^|string^ = c.start()\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
     LHAT_TEST("start() takes no arguments");
     check_text(&u,
-               "let^ gen = p^ { yield^ 1 }\n"
-               "let^ c = gen()\n"
+               "var^ gen = p^ { yield^ 1 }\n"
+               "var^ c = gen()\n"
                "c.start(1)\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_ARITY);
     unit_dispose(&u);
@@ -3109,16 +3109,16 @@ static void test_coroutines(void)
     // 15.2改: R is one fixed type now, so resume takes exactly one argument.
     LHAT_TEST("resume needs exactly one argument, not zero");
     check_text(&u,
-               "let^ gen = p^ { yield^ 1 }\n"
-               "let^ c = gen()\n"
+               "var^ gen = p^ { yield^ 1 }\n"
+               "var^ c = gen()\n"
                "c.resume()\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_ARITY);
     unit_dispose(&u);
 
     LHAT_TEST("resume needs exactly one argument, not two");
     check_text(&u,
-               "let^ gen = p^ { yield^ 1 }\n"
-               "let^ c = gen()\n"
+               "var^ gen = p^ { yield^ 1 }\n"
+               "var^ c = gen()\n"
                "c.resume(1, 2)\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_ARITY);
     unit_dispose(&u);
@@ -3127,38 +3127,38 @@ static void test_coroutines(void)
     // what it answers (R) -- no more folding differing yields into a union.
     LHAT_TEST("two bare yield^ that agree on Y stay clean");
     check_text(&u,
-               "let^ p = p^ { yield^ 1 yield^ 2 }\n");
+               "var^ p = p^ { yield^ 1 yield^ 2 }\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
     LHAT_TEST("two bare yield^ that disagree on Y are reported");
     check_text(&u,
-               "let^ p = p^ { yield^ 1 yield^ \"a\" }\n");
+               "var^ p = p^ { yield^ 1 yield^ \"a\" }\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_YIELD_TYPE_MISMATCH);
     unit_dispose(&u);
 
     LHAT_TEST("two bound yield^ that disagree on R are reported");
     check_text(&u,
-               "let^ p = p^ {\n"
-               "    let^ a:number^ = yield^ 1\n"
-               "    let^ b:string^ = yield^ 2\n"
+               "var^ p = p^ {\n"
+               "    var^ a:number^ = yield^ 1\n"
+               "    var^ b:string^ = yield^ 2\n"
                "}\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_YIELD_TYPE_MISMATCH);
     unit_dispose(&u);
 
-    // 15.2改: a yield^ that a let^ binds directly is the only place R can be
+    // 15.2改: a yield^ that a var^ binds directly is the only place R can be
     // written, so leaving the annotation off is reported rather than left
     // to infer to UNKNOWN.
     LHAT_TEST("a bound yield^ needs a written type");
     check_text(&u,
-               "let^ p = p^ { let^ a = yield^ 1 }\n");
+               "var^ p = p^ { var^ a = yield^ 1 }\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_YIELD_NEEDS_ANNOTATION);
     unit_dispose(&u);
 
     LHAT_TEST("a reassigned yield^ has nowhere to write the annotation");
     check_text(&u,
-               "let^ p = p^ {\n"
-               "    let^ a:number^ = 0\n"
+               "var^ p = p^ {\n"
+               "    var^ a:number^ = 0\n"
                "    a := yield^ 1\n"
                "}\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_YIELD_NEEDS_ANNOTATION);
@@ -3166,7 +3166,7 @@ static void test_coroutines(void)
 
     LHAT_TEST("a yield^ buried in an expression has nowhere to write it either");
     check_text(&u,
-               "let^ p = p^ -> number^ { return^ 1 + yield^ 1 }\n");
+               "var^ p = p^ -> number^ { return^ 1 + yield^ 1 }\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_YIELD_NEEDS_ANNOTATION);
     unit_dispose(&u);
 
@@ -3174,9 +3174,9 @@ static void test_coroutines(void)
     // body's own, exactly as if a yield^ had been written here directly.
     LHAT_TEST("yieldall^ can disagree with this body's own yield^ on R");
     check_text(&u,
-               "let^ inner = p^ { let^ a:number^ = yield^ 1 }\n"
-               "let^ outer = p^ {\n"
-               "    let^ b:string^ = yield^ \"x\"\n"
+               "var^ inner = p^ { var^ a:number^ = yield^ 1 }\n"
+               "var^ outer = p^ {\n"
+               "    var^ b:string^ = yield^ \"x\"\n"
                "    yieldall^ inner()\n"
                "}\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_YIELD_TYPE_MISMATCH);
@@ -3191,29 +3191,29 @@ static void test_purity(void)
 
     LHAT_TEST("an f^ may not call a p^");
     check_text(&u,
-               "let^ log = p^ x:any^ { }\n"
-               "let^ f = f^ { log(1) }\n");
+               "var^ log = p^ x:any^ { }\n"
+               "var^ f = f^ { log(1) }\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_FUNCTION_CALLS_PROCEDURE);
     unit_dispose(&u);
 
     LHAT_TEST("a p^ may call another p^");
     check_text(&u,
-               "let^ log = p^ x:any^ { }\n"
-               "let^ g = p^ { log(1) }\n");
+               "var^ log = p^ x:any^ { }\n"
+               "var^ g = p^ { log(1) }\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
     LHAT_TEST("top level may call a p^");
     check_text(&u,
-               "let^ log = p^ x:any^ { }\n"
+               "var^ log = p^ x:any^ { }\n"
                "log(1)\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
     LHAT_TEST("an f^ may call another f^");
     check_text(&u,
-               "let^ inc = f^ n:number^ -> number^ { return^ n + 1 }\n"
-               "let^ f = f^ n:number^ -> number^ { return^ inc(n) }\n");
+               "var^ inc = f^ n:number^ -> number^ { return^ n + 1 }\n"
+               "var^ f = f^ n:number^ -> number^ { return^ inc(n) }\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
@@ -3223,23 +3223,23 @@ static void test_purity(void)
     // a p^, caught the same as any other below.
     LHAT_TEST("an f^ may call a yieldable p^, since the call alone runs nothing");
     check_text(&u,
-               "let^ gen = p^ { yield^ 1 }\n"
-               "let^ f = f^ { return^ gen() }\n");
+               "var^ gen = p^ { yield^ 1 }\n"
+               "var^ f = f^ { return^ gen() }\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
     LHAT_TEST("but an f^ may not start the coroutine that call makes");
     check_text(&u,
-               "let^ gen = p^ { yield^ 1 }\n"
-               "let^ f = f^ { return^ gen().start() }\n");
+               "var^ gen = p^ { yield^ 1 }\n"
+               "var^ f = f^ { return^ gen().start() }\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_FUNCTION_CALLS_PROCEDURE);
     unit_dispose(&u);
 
     LHAT_TEST("a p^ nested inside an f^ may call a p^ again");
     check_text(&u,
-               "let^ log = p^ x:any^ { }\n"
-               "let^ outer = f^ {\n"
-               "    let^ inner = p^ { log(1) }\n"
+               "var^ log = p^ x:any^ { }\n"
+               "var^ outer = f^ {\n"
+               "    var^ inner = p^ { log(1) }\n"
                "    return^ 0\n"
                "}\n");
     CHECK_CLEAN(&u);
@@ -3247,17 +3247,17 @@ static void test_purity(void)
 
     LHAT_TEST("an f^ nested inside a p^ still may not call a p^");
     check_text(&u,
-               "let^ log = p^ x:any^ { }\n"
-               "let^ outer = p^ {\n"
-               "    let^ inner = f^ { log(1) }\n"
+               "var^ log = p^ x:any^ { }\n"
+               "var^ outer = p^ {\n"
+               "    var^ inner = f^ { log(1) }\n"
                "}\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_FUNCTION_CALLS_PROCEDURE);
     unit_dispose(&u);
 
     LHAT_TEST("the same rule reaches through a member");
     check_text(&u,
-               "let^ t = { log := p^self^, x:any^ { } }\n"
-               "let^ f = f^ { t.log(1) }\n");
+               "var^ t = { log := p^self^, x:any^ { } }\n"
+               "var^ f = f^ { t.log(1) }\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_FUNCTION_CALLS_PROCEDURE);
     unit_dispose(&u);
 
@@ -3265,10 +3265,10 @@ static void test_purity(void)
     // since advancing one is only unobservable while it stays inside.
     LHAT_TEST("an f^ may yield^ and walk what it made");
     check_text(&u,
-               "let^ gen = f^ { yield^ 1 }\n"
-               "let^ sum = f^ -> number^ {\n"
-               "    let^ co = gen()\n"
-               "    let^ a = co.start()\n"
+               "var^ gen = f^ { yield^ 1 }\n"
+               "var^ sum = f^ -> number^ {\n"
+               "    var^ co = gen()\n"
+               "    var^ a = co.start()\n"
                "    return^ 0\n"
                "}\n");
     CHECK_CLEAN(&u);
@@ -3277,7 +3277,7 @@ static void test_purity(void)
     // 15.5: a yieldable body answers a coroutine whatever else it does, so
     // 13.2 is satisfied without a return^ reaching the end.
     LHAT_TEST("a yieldable f^ needs no value-returning exit");
-    check_text(&u, "let^ gen = f^ { yield^ 1 }\n");
+    check_text(&u, "var^ gen = f^ { yield^ 1 }\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
@@ -3285,8 +3285,8 @@ static void test_purity(void)
     // coroutine -- which is the case 15.3改 was reopened for.
     LHAT_TEST("an f^ may walk a table with for^ in^");
     check_text(&u,
-               "let^ count = f^ t:t^{ ...:number^ } -> number^ {\n"
-               "    let^ n = 0\n"
+               "var^ count = f^ t:t^{ ...:number^ } -> number^ {\n"
+               "    var^ n = 0\n"
                "    for^ k, v in^ t { n := n + 1 }\n"
                "    return^ n\n"
                "}\n");
@@ -3298,10 +3298,10 @@ static void test_purity(void)
     // has to be said again.
     LHAT_TEST("but not a p^ coroutine, which is an ordinary p^ call");
     check_text(&u,
-               "let^ gen = p^ { yield^ 1 }\n"
-               "let^ f = f^ -> number^ {\n"
-               "    let^ co = gen()\n"
-               "    let^ a = co.start()\n"
+               "var^ gen = p^ { yield^ 1 }\n"
+               "var^ f = f^ -> number^ {\n"
+               "    var^ co = gen()\n"
+               "    var^ a = co.start()\n"
                "    return^ 0\n"
                "}\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_FUNCTION_CALLS_PROCEDURE);
@@ -3311,10 +3311,10 @@ static void test_purity(void)
     // measures against its own body, the same way 15.1改 does for a table.
     LHAT_TEST("a nested f^ may not advance what the enclosing one made");
     check_text(&u,
-               "let^ gen = f^ { yield^ 1 }\n"
-               "let^ outer = f^ -> number^ {\n"
-               "    let^ co = gen()\n"
-               "    let^ inner = f^ -> number^ { let^ a = co.start() return^ 0 }\n"
+               "var^ gen = f^ { yield^ 1 }\n"
+               "var^ outer = f^ -> number^ {\n"
+               "    var^ co = gen()\n"
+               "    var^ inner = f^ -> number^ { var^ a = co.start() return^ 0 }\n"
                "    return^ 0\n"
                "}\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_ADVANCES_OUTSIDE);
@@ -3322,8 +3322,8 @@ static void test_purity(void)
 
     LHAT_TEST("and an f^ coroutine may not be returned");
     check_text(&u,
-               "let^ gen = f^ { yield^ 1 }\n"
-               "let^ f = f^ { return^ gen() }\n");
+               "var^ gen = f^ { yield^ 1 }\n"
+               "var^ f = f^ { return^ gen() }\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_COROUTINE_ESCAPES);
     unit_dispose(&u);
 
@@ -3331,9 +3331,9 @@ static void test_purity(void)
     // in a table member as readily as on its own.
     LHAT_TEST("nor carried out inside a table");
     check_text(&u,
-               "let^ gen = f^ { yield^ 1 }\n"
-               "let^ f = f^ {\n"
-               "    let^ co = gen()\n"
+               "var^ gen = f^ { yield^ 1 }\n"
+               "var^ f = f^ {\n"
+               "    var^ co = gen()\n"
                "    return^ { c := co }\n"
                "}\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_COROUTINE_ESCAPES);
@@ -3344,7 +3344,7 @@ static void test_purity(void)
     // which is the one thing 15.3改 allows without letting it be advanced.
     LHAT_TEST("an f^ coroutine may be taken as an argument");
     check_text(&u,
-               "let^ hold = f^ co:c^{ f^nil^ -> number^;, nil^ } -> number^ {\n"
+               "var^ hold = f^ co:c^{ f^nil^ -> number^;, nil^ } -> number^ {\n"
                "    return^ 0\n"
                "}\n");
     CHECK_CLEAN(&u);
@@ -3352,8 +3352,8 @@ static void test_purity(void)
 
     LHAT_TEST("but not advanced, since the caller shares its state");
     check_text(&u,
-               "let^ take = f^ co:c^{ f^nil^ -> number^;, nil^ } -> number^ {\n"
-               "    let^ a = co.start()\n"
+               "var^ take = f^ co:c^{ f^nil^ -> number^;, nil^ } -> number^ {\n"
+               "    var^ a = co.start()\n"
                "    return^ 0\n"
                "}\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_ADVANCES_OUTSIDE);
@@ -3361,9 +3361,9 @@ static void test_purity(void)
 
     LHAT_TEST("and the two kinds are different types");
     check_text(&u,
-               "let^ gen = f^ { yield^ 1 }\n"
-               "let^ f = f^ -> number^ {\n"
-               "    let^ c : c^{ p^nil^ -> number^;, nil^ } = gen()\n"
+               "var^ gen = f^ { yield^ 1 }\n"
+               "var^ f = f^ -> number^ {\n"
+               "    var^ c : c^{ p^nil^ -> number^;, nil^ } = gen()\n"
                "    return^ 0\n"
                "}\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
@@ -3375,23 +3375,23 @@ static void test_purity(void)
     // reaches through yieldall^ itself.
     LHAT_TEST("yieldall^ to a p^ coroutine is an f^ running a p^");
     check_text(&u,
-               "let^ gen = p^ { yield^ 1 }\n"
-               "let^ f = f^ { yieldall^ gen() }\n");
+               "var^ gen = p^ { yield^ 1 }\n"
+               "var^ f = f^ { yieldall^ gen() }\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_FUNCTION_CALLS_PROCEDURE);
     unit_dispose(&u);
 
     LHAT_TEST("but to one this body made it is fine");
     check_text(&u,
-               "let^ gen = f^ { yield^ 1 }\n"
-               "let^ f = f^ { yieldall^ gen() }\n");
+               "var^ gen = f^ { yield^ 1 }\n"
+               "var^ f = f^ { yieldall^ gen() }\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
     LHAT_TEST("and a bound one is the body's just the same");
     check_text(&u,
-               "let^ gen = f^ { yield^ 1 }\n"
-               "let^ f = f^ {\n"
-               "    let^ co = gen()\n"
+               "var^ gen = f^ { yield^ 1 }\n"
+               "var^ f = f^ {\n"
+               "    var^ co = gen()\n"
                "    yieldall^ co\n"
                "}\n");
     CHECK_CLEAN(&u);
@@ -3399,15 +3399,15 @@ static void test_purity(void)
 
     LHAT_TEST("delegating to one that arrived is refused too");
     check_text(&u,
-               "let^ f = f^ co:c^{ f^nil^ -> number^;, nil^ } "
+               "var^ f = f^ co:c^{ f^nil^ -> number^;, nil^ } "
                "{ yieldall^ co }\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_ADVANCES_OUTSIDE);
     unit_dispose(&u);
 
     LHAT_TEST("a p^ delegates to either kind");
     check_text(&u,
-               "let^ gen = f^ { yield^ 1 }\n"
-               "let^ g = p^ { yieldall^ gen() }\n");
+               "var^ gen = f^ { yield^ 1 }\n"
+               "var^ g = p^ { yieldall^ gen() }\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
@@ -3416,7 +3416,7 @@ static void test_purity(void)
     // coroutine (15.5).
     LHAT_TEST("an operator may not be yieldable");
     check_text(&u,
-               "let^ V = def^{\n"
+               "var^ V = def^{\n"
                "    self^{ x := 0 },\n"
                "    op^+ := f^self^, o:number^ -> number^ "
                "{ yield^ 1 return^ 0 },\n"
@@ -3427,8 +3427,8 @@ static void test_purity(void)
     // A p^ coroutine leaving a p^ is what 15.5 is for; nothing here applies.
     LHAT_TEST("a p^ hands its coroutines out as before");
     check_text(&u,
-               "let^ gen = p^ { yield^ 1 }\n"
-               "let^ make = p^ { return^ gen() }\n");
+               "var^ gen = p^ { yield^ 1 }\n"
+               "var^ make = p^ { return^ gen() }\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
@@ -3437,8 +3437,8 @@ static void test_purity(void)
     // finally^ could restore.
     LHAT_TEST("an f^ may not assign to a name bound outside it");
     check_text(&u,
-               "let^ total = 0\n"
-               "let^ f = f^ -> number^ {\n"
+               "var^ total = 0\n"
+               "var^ f = f^ -> number^ {\n"
                "    total := 1\n"
                "    return^ total\n"
                "}\n");
@@ -3447,8 +3447,8 @@ static void test_purity(void)
 
     LHAT_TEST("a compound assignment is the same write");
     check_text(&u,
-               "let^ total = 0\n"
-               "let^ f = f^ -> number^ {\n"
+               "var^ total = 0\n"
+               "var^ f = f^ -> number^ {\n"
                "    total += 1\n"
                "    return^ total\n"
                "}\n");
@@ -3459,8 +3459,8 @@ static void test_purity(void)
     // with one is the same write as reaching out without one.
     LHAT_TEST("a scope specifier does not open a way out");
     check_text(&u,
-               "let^ total = 0\n"
-               "let^ f = f^ -> number^ {\n"
+               "var^ total = 0\n"
+               "var^ f = f^ -> number^ {\n"
                "    $^total := 1\n"
                "    return^ 0\n"
                "}\n");
@@ -3469,8 +3469,8 @@ static void test_purity(void)
 
     LHAT_TEST("but its own local is fine");
     check_text(&u,
-               "let^ f = f^ -> number^ {\n"
-               "    let^ n = 0\n"
+               "var^ f = f^ -> number^ {\n"
+               "    var^ n = 0\n"
                "    n := 1\n"
                "    return^ n\n"
                "}\n");
@@ -3482,8 +3482,8 @@ static void test_purity(void)
     // writing there is not observable from outside either.
     LHAT_TEST("and so are a nested block's and a parameter's");
     check_text(&u,
-               "let^ f = f^ n:number^ -> number^ {\n"
-               "    let^ m = 0\n"
+               "var^ f = f^ n:number^ -> number^ {\n"
+               "    var^ m = 0\n"
                "    do^{ m := 1 }\n"
                "    n := 2\n"
                "    return^ n + m\n"
@@ -3493,8 +3493,8 @@ static void test_purity(void)
 
     LHAT_TEST("a p^ writes wherever it likes");
     check_text(&u,
-               "let^ total = 0\n"
-               "let^ g = p^ { total := 1 }\n");
+               "var^ total = 0\n"
+               "var^ g = p^ { total := 1 }\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
@@ -3502,9 +3502,9 @@ static void test_purity(void)
     // the same way the call rule is.
     LHAT_TEST("a p^ inside an f^ may write out again");
     check_text(&u,
-               "let^ total = 0\n"
-               "let^ outer = f^ -> number^ {\n"
-               "    let^ inner = p^ { total := 1 }\n"
+               "var^ total = 0\n"
+               "var^ outer = f^ -> number^ {\n"
+               "    var^ inner = p^ { total := 1 }\n"
                "    return^ 0\n"
                "}\n");
     CHECK_CLEAN(&u);
@@ -3512,9 +3512,9 @@ static void test_purity(void)
 
     LHAT_TEST("an f^ inside a p^ still may not");
     check_text(&u,
-               "let^ total = 0\n"
-               "let^ outer = p^ {\n"
-               "    let^ inner = f^ -> number^ { total := 1 return^ 0 }\n"
+               "var^ total = 0\n"
+               "var^ outer = p^ {\n"
+               "    var^ inner = f^ -> number^ { total := 1 return^ 0 }\n"
                "}\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_FUNCTION_WRITES_OUT);
     unit_dispose(&u);
@@ -3523,9 +3523,9 @@ static void test_purity(void)
     // outer one made is outside the inner one.
     LHAT_TEST("a nested f^ measures against its own body");
     check_text(&u,
-               "let^ outer = f^ -> number^ {\n"
-               "    let^ n = 0\n"
-               "    let^ inner = f^ -> number^ { n := 1 return^ 0 }\n"
+               "var^ outer = f^ -> number^ {\n"
+               "    var^ n = 0\n"
+               "    var^ inner = f^ -> number^ { n := 1 return^ 0 }\n"
                "    return^ n\n"
                "}\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_FUNCTION_WRITES_OUT);
@@ -3536,8 +3536,8 @@ static void test_purity(void)
     // makes the call observable from outside.
     LHAT_TEST("an f^ may change a table it made itself");
     check_text(&u,
-               "let^ f = f^ -> number^ {\n"
-               "    let^ u = { x := 0 }\n"
+               "var^ f = f^ -> number^ {\n"
+               "    var^ u = { x := 0 }\n"
                "    u.x := 1\n"
                "    return^ u.x\n"
                "}\n");
@@ -3546,9 +3546,9 @@ static void test_purity(void)
 
     LHAT_TEST("and one a new^ answered with");
     check_text(&u,
-               "let^ P = def^{ self^{ x := 0 } }\n"
-               "let^ f = f^ -> number^ {\n"
-               "    let^ u = P.new^()\n"
+               "var^ P = def^{ self^{ x := 0 } }\n"
+               "var^ f = f^ -> number^ {\n"
+               "    var^ u = P.new^()\n"
                "    u.x := 1\n"
                "    return^ u.x\n"
                "}\n");
@@ -3558,9 +3558,9 @@ static void test_purity(void)
     // 8.8: adding a member changes the table as much as writing over one.
     LHAT_TEST("adding a member to its own table is fine too");
     check_text(&u,
-               "let^ f = f^ -> number^ {\n"
-               "    let^ u = { }\n"
-               "    let^ u.y := 5\n"
+               "var^ f = f^ -> number^ {\n"
+               "    var^ u = { }\n"
+               "    var^ u.y := 5\n"
                "    return^ u.y\n"
                "}\n");
     CHECK_CLEAN(&u);
@@ -3568,7 +3568,7 @@ static void test_purity(void)
 
     LHAT_TEST("but not one that arrived as an argument");
     check_text(&u,
-               "let^ f = f^ t:t^{ x:number^ } -> number^ {\n"
+               "var^ f = f^ t:t^{ x:number^ } -> number^ {\n"
                "    t.x := 1\n"
                "    return^ t.x\n"
                "}\n");
@@ -3579,8 +3579,8 @@ static void test_purity(void)
     // way round: naming a table again does not make a new one.
     LHAT_TEST("and binding it to a new name does not make it the body's");
     check_text(&u,
-               "let^ f = f^ t:t^{ x:number^ } -> number^ {\n"
-               "    let^ v = t\n"
+               "var^ f = f^ t:t^{ x:number^ } -> number^ {\n"
+               "    var^ v = t\n"
                "    v.x := 1\n"
                "    return^ v.x\n"
                "}\n");
@@ -3591,7 +3591,7 @@ static void test_purity(void)
     // separately whether a p^ may write there; inside an f^ this answers it.
     LHAT_TEST("L^ is not a table any body made");
     check_text(&u,
-               "let^ f = f^ -> number^ {\n"
+               "var^ f = f^ -> number^ {\n"
                "    L^.modules := { }\n"
                "    return^ 0\n"
                "}\n");
@@ -3601,7 +3601,7 @@ static void test_purity(void)
     // 14.4: the receiver is the instance the caller handed over.
     LHAT_TEST("nor is the receiver of an f^ method");
     check_text(&u,
-               "let^ P = def^{\n"
+               "var^ P = def^{\n"
                "    self^{ x := 0 },\n"
                "    bump := f^self^ -> number^ { self^.x := 1 return^ 0 },\n"
                "}\n");
@@ -3610,16 +3610,16 @@ static void test_purity(void)
 
     LHAT_TEST("a p^ changes whatever it is given");
     check_text(&u,
-               "let^ g = p^ t:t^{ x:number^ } { t.x := 1 }\n");
+               "var^ g = p^ t:t^{ x:number^ } { t.x := 1 }\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
     // An f^ inside another measures against its own body here as well.
     LHAT_TEST("a nested f^ may not change what the enclosing one made");
     check_text(&u,
-               "let^ outer = f^ -> number^ {\n"
-               "    let^ u = { x := 0 }\n"
-               "    let^ inner = f^ -> number^ { u.x := 1 return^ 0 }\n"
+               "var^ outer = f^ -> number^ {\n"
+               "    var^ u = { x := 0 }\n"
+               "    var^ inner = f^ -> number^ { u.x := 1 return^ 0 }\n"
                "    return^ u.x\n"
                "}\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_FUNCTION_CHANGES_TABLE);
@@ -3629,16 +3629,16 @@ static void test_purity(void)
     // whichever arm the call resolves to still answers to 15.1.
     LHAT_TEST("and through whichever overload^ arm the call resolves to");
     check_text(&u,
-               "let^ A = def^{\n"
+               "var^ A = def^{\n"
                "    self^{},\n"
                "    bar := p^self^ { },\n"
                "}\n"
-               "let^ B = A .. def^{\n"
+               "var^ B = A .. def^{\n"
                "    self^{},\n"
                "    overload^ bar := p^self^, n:number^ { },\n"
                "}\n"
-               "let^ o = B.new^()\n"
-               "let^ f = f^ { o.bar() }\n");
+               "var^ o = B.new^()\n"
+               "var^ f = f^ { o.bar() }\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_FUNCTION_CALLS_PROCEDURE);
     unit_dispose(&u);
 }
@@ -3652,46 +3652,46 @@ static void test_walking(void)
 
     LHAT_TEST("the focus of an in^ loop is in scope inside the body");
     check_text(&u,
-               "let^ gen = p^ { yield^ 1 }\n"
-               "for^ x in^ gen() { let^ n = x }\n");
+               "var^ gen = p^ { yield^ 1 }\n"
+               "for^ x in^ gen() { var^ n = x }\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
     LHAT_TEST("and carries what the coroutine yields");
     check_text(&u,
-               "let^ gen = p^ { yield^ 1 }\n"
-               "for^ x in^ gen() { let^ n : number^ = x }\n");
+               "var^ gen = p^ { yield^ 1 }\n"
+               "for^ x in^ gen() { var^ n : number^ = x }\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
     LHAT_TEST("so the wrong type is caught in the body");
     check_text(&u,
-               "let^ gen = p^ { yield^ 1 }\n"
-               "for^ x in^ gen() { let^ s : string^ = x }\n");
+               "var^ gen = p^ { yield^ 1 }\n"
+               "for^ x in^ gen() { var^ s : string^ = x }\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
     // 16.7: the focus belongs to the loop, which is a scope of its own.
     LHAT_TEST("and it does not outlive the loop");
     check_text(&u,
-               "let^ gen = p^ { yield^ 1 }\n"
+               "var^ gen = p^ { yield^ 1 }\n"
                "for^ x in^ gen() { }\n"
-               "let^ n = x\n");
+               "var^ n = x\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_UNDEFINED);
     unit_dispose(&u);
 
     // 16.3: the annotation form of the focus.
     LHAT_TEST("a written focus type is what the name gets");
     check_text(&u,
-               "let^ gen = p^ { yield^ 1 }\n"
-               "for^ x:number^ in^ gen() { let^ n = x }\n");
+               "var^ gen = p^ { yield^ 1 }\n"
+               "for^ x:number^ in^ gen() { var^ n = x }\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
     LHAT_TEST("and it has to admit what the walk yields");
     check_text(&u,
-               "let^ gen = p^ { yield^ 1 }\n"
-               "for^ x:string^ in^ gen() { let^ n = x }\n");
+               "var^ gen = p^ { yield^ 1 }\n"
+               "for^ x:string^ in^ gen() { var^ n = x }\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
@@ -3699,9 +3699,9 @@ static void test_walking(void)
     // walks without being called again.
     LHAT_TEST("a coroutine walks as itself");
     check_text(&u,
-               "let^ gen = p^ { yield^ 1 }\n"
-               "let^ c = gen()\n"
-               "for^ x in^ c { let^ n : number^ = x }\n");
+               "var^ gen = p^ { yield^ 1 }\n"
+               "var^ c = gen()\n"
+               "for^ x in^ c { var^ n : number^ = x }\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
@@ -3709,8 +3709,8 @@ static void test_walking(void)
     // table -- not the values the table holds.
     LHAT_TEST("a table walks as pairs");
     check_text(&u,
-               "let^ t = { 1, 2 }\n"
-               "for^ pair in^ t { let^ n : number^ = pair }\n");
+               "var^ t = { 1, 2 }\n"
+               "for^ pair in^ t { var^ n : number^ = pair }\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
@@ -3718,15 +3718,15 @@ static void test_walking(void)
     // position 1 the key and position 2 the value of the pair.
     LHAT_TEST("several names take the pair apart by position");
     check_text(&u,
-               "let^ t = { 10, 20 }\n"
-               "for^ k, v in^ t { let^ n : number^ = v }\n");
+               "var^ t = { 10, 20 }\n"
+               "for^ k, v in^ t { var^ n : number^ = v }\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
     LHAT_TEST("so the wrong type is caught for a position too");
     check_text(&u,
-               "let^ t = { 10, 20 }\n"
-               "for^ k, v in^ t { let^ s : string^ = v }\n");
+               "var^ t = { 10, 20 }\n"
+               "for^ k, v in^ t { var^ s : string^ = v }\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
@@ -3734,71 +3734,71 @@ static void test_walking(void)
     // be depends on which halves the table has.
     LHAT_TEST("the key of a walk over the dense part is a number^");
     check_text(&u,
-               "let^ t = { 10, 20 }\n"
-               "for^ k, v in^ t { let^ n : number^ = k }\n");
+               "var^ t = { 10, 20 }\n"
+               "for^ k, v in^ t { var^ n : number^ = k }\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
     LHAT_TEST("and of one over written members a string^");
     check_text(&u,
-               "let^ t = { a := \"x\" }\n"
-               "for^ k, v in^ t { let^ s : string^ = k }\n");
+               "var^ t = { a := \"x\" }\n"
+               "for^ k, v in^ t { var^ s : string^ = k }\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
     LHAT_TEST("a table with both halves yields either");
     check_text(&u,
-               "let^ t = { 10, a := \"x\" }\n"
-               "for^ k, v in^ t { let^ x : number^|string^ = v }\n");
+               "var^ t = { 10, a := \"x\" }\n"
+               "for^ k, v in^ t { var^ x : number^|string^ = v }\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
     LHAT_TEST("and neither half alone covers it");
     check_text(&u,
-               "let^ t = { 10, a := \"x\" }\n"
-               "for^ k, v in^ t { let^ n : number^ = v }\n");
+               "var^ t = { 10, a := \"x\" }\n"
+               "for^ k, v in^ t { var^ n : number^ = v }\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
     // 16.3: a written focus type is checked against the position it takes.
     LHAT_TEST("a focus annotation is checked against its position");
     check_text(&u,
-               "let^ t = { 10, 20 }\n"
-               "for^ k, v:string^ in^ t { let^ n = v }\n");
+               "var^ t = { 10, 20 }\n"
+               "for^ k, v:string^ in^ t { var^ n = v }\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
     LHAT_TEST("a written iterate is what the walk comes from");
     check_text(&u,
-               "let^ t = { iterate := f^ { return^ p^ { yield^ 9 }() } }\n"
-               "for^ v in^ t { let^ s : string^ = v }\n");
+               "var^ t = { iterate := f^ { return^ p^ { yield^ 9 }() } }\n"
+               "for^ v in^ t { var^ s : string^ = v }\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
     LHAT_TEST("and a definition may answer with one");
     check_text(&u,
-               "let^ Range = def^{\n"
+               "var^ Range = def^{\n"
                "  self^{ upto := 0 },\n"
                "  new^ := f^ n { return^ self^{ upto := n } },\n"
                "  iterate := f^self^ {\n"
                "    return^ p^ { yield^ 1 }()\n"
                "  },\n"
                "}\n"
-               "for^ v in^ Range.new^(4) { let^ n : number^ = v }\n");
+               "for^ v in^ Range.new^(4) { var^ n : number^ = v }\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
     // 16.3: what in^ walks has to answer with a coroutine, the same demand
     // 15.8 makes of yieldall^.
     LHAT_TEST("walking something with no iterate is reported");
-    check_text(&u, "for^ x in^ 5 { let^ n = x }\n");
+    check_text(&u, "for^ x in^ 5 { var^ n = x }\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_NOT_COROUTINE);
     unit_dispose(&u);
 
     LHAT_TEST("and so is an iterate that answers something else");
     check_text(&u,
-               "let^ t = { iterate := f^ -> number^ { return^ 1 } }\n"
-               "for^ x in^ t { let^ n = x }\n");
+               "var^ t = { iterate := f^ -> number^ { return^ 1 } }\n"
+               "for^ x in^ t { var^ n = x }\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_NOT_COROUTINE);
     unit_dispose(&u);
 }
@@ -3813,22 +3813,22 @@ static void test_positions(void)
 
     LHAT_TEST("a positional entry carries its type");
     check_text(&u,
-               "let^ t = { 10, 20 }\n"
-               "let^ n : number^ = t[1]\n");
+               "var^ t = { 10, 20 }\n"
+               "var^ n : number^ = t[1]\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
     LHAT_TEST("so the wrong type at a position is caught");
     check_text(&u,
-               "let^ t = { 10, 20 }\n"
-               "let^ s : string^ = t[1]\n");
+               "var^ t = { 10, 20 }\n"
+               "var^ s : string^ = t[1]\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
     LHAT_TEST("and each position keeps its own");
     check_text(&u,
-               "let^ t = { 10, \"a\" }\n"
-               "let^ s : string^ = t[2]\n");
+               "var^ t = { 10, \"a\" }\n"
+               "var^ s : string^ = t[2]\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
@@ -3836,8 +3836,8 @@ static void test_positions(void)
     // entries that carry a key -- so the types have to be counted the same.
     LHAT_TEST("a keyed entry takes no position from the ones after it");
     check_text(&u,
-               "let^ t = { 10, a := \"x\", 20 }\n"
-               "let^ n : number^ = t[2]\n");
+               "var^ t = { 10, a := \"x\", 20 }\n"
+               "var^ n : number^ = t[2]\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
@@ -3845,15 +3845,15 @@ static void test_positions(void)
     // says nothing about is unknown rather than absent.
     LHAT_TEST("a position the type does not mention says nothing");
     check_text(&u,
-               "let^ t = { 10 }\n"
-               "let^ s : string^ = t[9]\n");
+               "var^ t = { 10 }\n"
+               "var^ s : string^ = t[9]\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
     LHAT_TEST("a written key reaches the member of that name");
     check_text(&u,
-               "let^ t = { a := 1 }\n"
-               "let^ s : string^ = t[\"a\"]\n");
+               "var^ t = { a := 1 }\n"
+               "var^ s : string^ = t[\"a\"]\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
@@ -3861,16 +3861,16 @@ static void test_positions(void)
     // a name. A literal one still tells the type what it named.
     LHAT_TEST("an integer key reaches the sequence half");
     check_text(&u,
-               "let^ t = { [0] := 7 }\n"
-               "let^ s : string^ = t[0]\n");
+               "var^ t = { [0] := 7 }\n"
+               "var^ s : string^ = t[0]\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
     // Lua's rule, which 14 章 follows: t.a and t["a"] are one key.
     LHAT_TEST("and a string key is the member of that name");
     check_text(&u,
-               "let^ t = { [\"a\"] := 7 }\n"
-               "let^ s : string^ = t.a\n");
+               "var^ t = { [\"a\"] := 7 }\n"
+               "var^ s : string^ = t.a\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
@@ -3878,28 +3878,28 @@ static void test_positions(void)
     // when it runs leaves the type saying nothing about it.
     LHAT_TEST("a computed key leaves the type quiet");
     check_text(&u,
-               "let^ k = 3\n"
-               "let^ t = { [k] := 7 }\n"
-               "let^ s : string^ = t[3]\n");
+               "var^ k = 3\n"
+               "var^ t = { [k] := 7 }\n"
+               "var^ s : string^ = t[3]\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
     LHAT_TEST("but the key itself is checked");
-    check_text(&u, "let^ t = { [nowhere] := 7 }\n");
+    check_text(&u, "var^ t = { [nowhere] := 7 }\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_UNDEFINED);
     unit_dispose(&u);
 
     // 04 の 11.3: nil^ spells absence, so it cannot also be a key. A key that
     // can only ever be one is decided here rather than left to the machine.
     LHAT_TEST("a key that can only be nil^ is reported");
-    check_text(&u, "let^ t = { [nil^] := 7 }\n");
+    check_text(&u, "var^ t = { [nil^] := 7 }\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_BAD_KEY);
     unit_dispose(&u);
 
     LHAT_TEST("while one that merely might be is left to run time");
     check_text(&u,
-               "let^ x : number^|nil^ = 1\n"
-               "let^ t = { [x] := 7 }\n");
+               "var^ x : number^|nil^ = 1\n"
+               "var^ t = { [x] := 7 }\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
@@ -3907,37 +3907,37 @@ static void test_positions(void)
     // does not.
     LHAT_TEST("a computed key takes no position");
     check_text(&u,
-               "let^ t = { 10, [\"k\"] := 20, 30 }\n"
-               "let^ s : string^ = t[2]\n");
+               "var^ t = { 10, [\"k\"] := 20, 30 }\n"
+               "var^ s : string^ = t[2]\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
     // 14.10改: the sequence half can be written down as well as inferred --
     // types listed with no name in front of them, in order.
     LHAT_TEST("a written type may list its positions");
-    check_text(&u, "let^ t : t^{ number^, string^ } = { 1, \"a\" }\n");
+    check_text(&u, "var^ t : t^{ number^, string^ } = { 1, \"a\" }\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
     LHAT_TEST("and each one is checked");
-    check_text(&u, "let^ t : t^{ number^, string^ } = { 1, 2 }\n");
+    check_text(&u, "var^ t : t^{ number^, string^ } = { 1, 2 }\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
     LHAT_TEST("a position the value does not fill is missing");
-    check_text(&u, "let^ t : t^{ number^, string^ } = { 1 }\n");
+    check_text(&u, "var^ t : t^{ number^, string^ } = { 1 }\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
     // 14.10 asks for at least what is listed, positions included.
     LHAT_TEST("but more positions than were asked for are fine");
-    check_text(&u, "let^ t : t^{ number^ } = { 1, \"a\" }\n");
+    check_text(&u, "var^ t : t^{ number^ } = { 1, \"a\" }\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
     LHAT_TEST("names and positions mix in one type");
     check_text(&u,
-               "let^ t : t^{ number^, a : string^ } = { 1, a := \"x\" }\n");
+               "var^ t : t^{ number^, a : string^ } = { 1, a := \"x\" }\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
@@ -3945,7 +3945,7 @@ static void test_positions(void)
     // literal -- so the count does not depend on where it was written.
     LHAT_TEST("and a named one takes no position, wherever it stands");
     check_text(&u,
-               "let^ t : t^{ a : string^, number^ } = { 1, a := \"x\" }\n");
+               "var^ t : t^{ a : string^, number^ } = { 1, a := \"x\" }\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
@@ -3953,25 +3953,25 @@ static void test_positions(void)
     // annotation, not only from a literal the checker watched being built.
     LHAT_TEST("a written position reaches unpack^");
     check_text(&u,
-               "let^ f = f^ -> t^{ number^, string^ } { return^ { 1, \"a\" } }\n"
-               "let^ q, r = unpack^ f()\n"
-               "let^ n : number^ = q\n"
-               "let^ s : string^ = r\n");
+               "var^ f = f^ -> t^{ number^, string^ } { return^ { 1, \"a\" } }\n"
+               "var^ q, r = unpack^ f()\n"
+               "var^ n : number^ = q\n"
+               "var^ s : string^ = r\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
     LHAT_TEST("and is not interchangeable there either");
     check_text(&u,
-               "let^ f = f^ -> t^{ number^, string^ } { return^ { 1, \"a\" } }\n"
-               "let^ q, r = unpack^ f()\n"
-               "let^ s : string^ = q\n");
+               "var^ f = f^ -> t^{ number^, string^ } { return^ { 1, \"a\" } }\n"
+               "var^ q, r = unpack^ f()\n"
+               "var^ s : string^ = q\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
     LHAT_TEST("and an index reaches it too");
     check_text(&u,
-               "let^ f = p^ x : t^{ number^, string^ } {\n"
-               "    let^ s : string^ = x[1]\n"
+               "var^ f = p^ x : t^{ number^, string^ } {\n"
+               "    var^ s : string^ = x[1]\n"
                "}\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
@@ -3980,42 +3980,42 @@ static void test_positions(void)
     // right, which is what tells this from a multiple definition.
     LHAT_TEST("unpack^ gives each name the position it takes");
     check_text(&u,
-               "let^ q, r = unpack^ { 1, \"a\" }\n"
-               "let^ n : number^ = q\n"
-               "let^ s : string^ = r\n");
+               "var^ q, r = unpack^ { 1, \"a\" }\n"
+               "var^ n : number^ = q\n"
+               "var^ s : string^ = r\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
     LHAT_TEST("and the positions are not interchangeable");
     check_text(&u,
-               "let^ q, r = unpack^ { 1, \"a\" }\n"
-               "let^ s : string^ = q\n");
+               "var^ q, r = unpack^ { 1, \"a\" }\n"
+               "var^ s : string^ = q\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
     LHAT_TEST("an annotation on a destructured name is checked");
-    check_text(&u, "let^ q:string^, r:string^ = unpack^ { 1, \"a\" }\n");
+    check_text(&u, "var^ q:string^, r:string^ = unpack^ { 1, \"a\" }\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
     LHAT_TEST("and one that agrees is not");
-    check_text(&u, "let^ q:number^, r:string^ = unpack^ { 1, \"a\" }\n");
+    check_text(&u, "var^ q:number^, r:string^ = unpack^ { 1, \"a\" }\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
     // 8.6: the same form reassigning names that already exist.
     LHAT_TEST("a destructuring reassignment is checked the same way");
     check_text(&u,
-               "let^ q = 0\n"
-               "let^ r = \"\"\n"
+               "var^ q = 0\n"
+               "var^ r = \"\"\n"
                "q, r := unpack^ { 1, \"a\" }\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
     LHAT_TEST("and a position that does not fit the name is reported");
     check_text(&u,
-               "let^ q = \"\"\n"
-               "let^ r = \"\"\n"
+               "var^ q = \"\"\n"
+               "var^ r = \"\"\n"
                "q, r := unpack^ { 1, \"a\" }\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
@@ -4024,16 +4024,16 @@ static void test_positions(void)
     // that path is untouched.
     LHAT_TEST("a multiple definition still pairs the two sides off");
     check_text(&u,
-               "let^ a, b = 1, \"x\"\n"
-               "let^ n : number^ = a\n"
-               "let^ s : string^ = b\n");
+               "var^ a, b = 1, \"x\"\n"
+               "var^ n : number^ = a\n"
+               "var^ s : string^ = b\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
     LHAT_TEST("and still catches a pair that does not fit");
     check_text(&u,
-               "let^ a, b = 1, \"x\"\n"
-               "let^ s : string^ = a\n");
+               "var^ a, b = 1, \"x\"\n"
+               "var^ s : string^ = a\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 }
@@ -4051,58 +4051,58 @@ static void test_no_value(void)
     // The case 03 names outright.
     LHAT_TEST("?? cannot apply to a call that produces nothing");
     check_text(&u,
-               "let^ log = p^ m:string^ { let^ y = m }\n"
-               "let^ v = log(\"a\") ?? 0\n");
+               "var^ log = p^ m:string^ { var^ y = m }\n"
+               "var^ v = log(\"a\") ?? 0\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_CANNOT_BE_NIL);
     unit_dispose(&u);
 
     // 04 の 4.1 puts catch^ on the same footing.
     LHAT_TEST("nor can catch^");
     check_text(&u,
-               "let^ log = p^ m:string^ { let^ y = m }\n"
-               "let^ v = log(\"a\") catch^ 0\n");
+               "var^ log = p^ m:string^ { var^ y = m }\n"
+               "var^ v = log(\"a\") catch^ 0\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_CANNOT_FAIL);
     unit_dispose(&u);
 
     LHAT_TEST("a name cannot be bound to it");
     check_text(&u,
-               "let^ log = p^ m:string^ { let^ y = m }\n"
-               "let^ v = log(\"a\")\n");
+               "var^ log = p^ m:string^ { var^ y = m }\n"
+               "var^ v = log(\"a\")\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
     LHAT_TEST("nor reassigned to one");
     check_text(&u,
-               "let^ log = p^ m:string^ { let^ y = m }\n"
-               "let^ v = 1\n"
+               "var^ log = p^ m:string^ { var^ y = m }\n"
+               "var^ v = 1\n"
                "v := log(\"a\")\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
     LHAT_TEST("an annotation does not admit it either");
     check_text(&u,
-               "let^ log = p^ m:string^ { let^ y = m }\n"
-               "let^ v : number^ = log(\"a\")\n");
+               "var^ log = p^ m:string^ { var^ y = m }\n"
+               "var^ v : number^ = log(\"a\")\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
     LHAT_TEST("and neither does an argument");
     check_text(&u,
-               "let^ log = p^ m:string^ { let^ y = m }\n"
-               "let^ v = log(log(\"a\"))\n");
+               "var^ log = p^ m:string^ { var^ y = m }\n"
+               "var^ v = log(log(\"a\"))\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
     LHAT_TEST("arithmetic needs a number, which this is not");
     check_text(&u,
-               "let^ log = p^ m:string^ { let^ y = m }\n"
-               "let^ v = log(\"a\") + 1\n");
+               "var^ log = p^ m:string^ { var^ y = m }\n"
+               "var^ v = log(\"a\") + 1\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_NO_OPERATOR);
     unit_dispose(&u);
 
     LHAT_TEST("and a condition a bool^");
     check_text(&u,
-               "let^ log = p^ m:string^ { let^ y = m }\n"
+               "var^ log = p^ m:string^ { var^ y = m }\n"
                "if^ log(\"a\") { }\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_NOT_BOOL);
     unit_dispose(&u);
@@ -4111,15 +4111,15 @@ static void test_no_value(void)
     // would reach every caller as a type nothing inhabits.
     LHAT_TEST("a return^ cannot carry it");
     check_text(&u,
-               "let^ log = p^ m:string^ { let^ y = m }\n"
-               "let^ f = p^ { return^ log(\"a\") }\n");
+               "var^ log = p^ m:string^ { var^ y = m }\n"
+               "var^ f = p^ { return^ log(\"a\") }\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
     LHAT_TEST("with a written result saying so too");
     check_text(&u,
-               "let^ log = p^ m:string^ { let^ y = m }\n"
-               "let^ f = p^ -> number^ { return^ log(\"a\") }\n");
+               "var^ log = p^ m:string^ { var^ y = m }\n"
+               "var^ f = p^ -> number^ { return^ log(\"a\") }\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
@@ -4127,7 +4127,7 @@ static void test_no_value(void)
     // that is where a subroutine with no result belongs.
     LHAT_TEST("but calling it as a statement is the point of it");
     check_text(&u,
-               "let^ log = p^ m:string^ { let^ y = m }\n"
+               "var^ log = p^ m:string^ { var^ y = m }\n"
                "log(\"a\")\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
@@ -4136,11 +4136,11 @@ static void test_no_value(void)
     // calling itself has to keep getting one.
     LHAT_TEST("and a self-call is still a result being inferred");
     check_text(&u,
-               "let^ fact = f^ n:number^ {\n"
+               "var^ fact = f^ n:number^ {\n"
                "    if^ n <= 1 { return^ 1 }\n"
                "    return^ n * this^(n - 1)\n"
                "}\n"
-               "let^ n : number^ = fact(5)\n");
+               "var^ n : number^ = fact(5)\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
@@ -4148,8 +4148,8 @@ static void test_no_value(void)
     // delegating to one produces nothing either.
     LHAT_TEST("delegating to a coroutine that cannot end produces nothing");
     check_text(&u,
-               "let^ g = p^ { repeat^ { yield^ 1 } }\n"
-               "let^ o = p^ { let^ v = yieldall^ g() }\n");
+               "var^ g = p^ { repeat^ { yield^ 1 } }\n"
+               "var^ o = p^ { var^ v = yieldall^ g() }\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
@@ -4157,37 +4157,37 @@ static void test_no_value(void)
     // does not (8.2), and it is checked above.
     LHAT_TEST("a table entry wants a value");
     check_text(&u,
-               "let^ log = p^ m:string^ { let^ y = m }\n"
-               "let^ t = { a := log(\"x\") }\n");
+               "var^ log = p^ m:string^ { var^ y = m }\n"
+               "var^ t = { a := log(\"x\") }\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
     LHAT_TEST("and so does a positional one");
     check_text(&u,
-               "let^ log = p^ m:string^ { let^ y = m }\n"
-               "let^ t = { log(\"x\") }\n");
+               "var^ log = p^ m:string^ { var^ y = m }\n"
+               "var^ t = { log(\"x\") }\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
     LHAT_TEST("an index key wants one");
     check_text(&u,
-               "let^ log = p^ m:string^ { let^ y = m }\n"
-               "let^ t = { 1 }\n"
-               "let^ v = t[log(\"x\")]\n");
+               "var^ log = p^ m:string^ { var^ y = m }\n"
+               "var^ t = { 1 }\n"
+               "var^ v = t[log(\"x\")]\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
     LHAT_TEST("as^ wants one to ascribe");
     check_text(&u,
-               "let^ log = p^ m:string^ { let^ y = m }\n"
-               "let^ v = log(\"x\") as^ number^\n");
+               "var^ log = p^ m:string^ { var^ y = m }\n"
+               "var^ v = log(\"x\") as^ number^\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
     LHAT_TEST("unpack^ wants one to take apart");
     check_text(&u,
-               "let^ log = p^ m:string^ { let^ y = m }\n"
-               "let^ q, r = unpack^ log(\"x\")\n");
+               "var^ log = p^ m:string^ { var^ y = m }\n"
+               "var^ q, r = unpack^ log(\"x\")\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
@@ -4195,38 +4195,38 @@ static void test_no_value(void)
     // when handed nothing.
     LHAT_TEST("'..' wants one on either side");
     check_text(&u,
-               "let^ log = p^ m:string^ { let^ y = m }\n"
-               "let^ v = log(\"x\") .. \"a\"\n");
+               "var^ log = p^ m:string^ { var^ y = m }\n"
+               "var^ v = log(\"x\") .. \"a\"\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
     // 11.2: '..' joins what answers it, and 11.3 settles that here. The
     // machine already refused these; the checker had been silent.
     LHAT_TEST("a number does not answer '..'");
-    check_text(&u, "let^ v = 1 .. \"b\"\n");
+    check_text(&u, "var^ v = 1 .. \"b\"\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_NO_OPERATOR);
     unit_dispose(&u);
 
     LHAT_TEST("on either side of it");
-    check_text(&u, "let^ v = \"a\" .. 1\n");
+    check_text(&u, "var^ v = \"a\" .. 1\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_NO_OPERATOR);
     unit_dispose(&u);
 
     LHAT_TEST("nor does a bool^ or a nil^");
-    check_text(&u, "let^ v = true^ .. \"a\"\n");
+    check_text(&u, "var^ v = true^ .. \"a\"\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_NO_OPERATOR);
     unit_dispose(&u);
 
     // Every arm has to answer, since the value may be any of them.
     LHAT_TEST("and a union answers only when all of it does");
     check_text(&u,
-               "let^ x : string^|nil^ = \"a\"\n"
-               "let^ v = x .. \"b\"\n");
+               "var^ x : string^|nil^ = \"a\"\n"
+               "var^ v = x .. \"b\"\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_NO_OPERATOR);
     unit_dispose(&u);
 
     LHAT_TEST("a string answers, which is 11.2's first example");
-    check_text(&u, "let^ v : string^ = \"a\" .. \"b\" .. \"c\"\n");
+    check_text(&u, "var^ v : string^ = \"a\" .. \"b\" .. \"c\"\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
@@ -4235,10 +4235,10 @@ static void test_no_value(void)
     // same members, so what tells them apart is what made them.
     LHAT_TEST("and between two definitions it composes");
     check_text(&u,
-               "let^ Foo = def^{ self^{} }\n"
-               "let^ Baz = def^{ self^{} }\n"
-               "let^ A = Foo .. Baz\n"
-               "let^ B = Foo .. def^{ self^{} }\n");
+               "var^ Foo = def^{ self^{} }\n"
+               "var^ Baz = def^{ self^{} }\n"
+               "var^ A = Foo .. Baz\n"
+               "var^ B = Foo .. def^{ self^{} }\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
@@ -4246,23 +4246,23 @@ static void test_no_value(void)
     // name is the operator. 01 の 6 章 keeps that name unwritable by hand.
     LHAT_TEST("an instance answers with the op^ its definition wrote");
     check_text(&u,
-               "let^ Vec = def^{\n"
+               "var^ Vec = def^{\n"
                "  self^{ x := 0 },\n"
                "  op^.. := f^self^, other:string^ -> string^ { return^ other },\n"
                "}\n"
-               "let^ v = Vec.new^()\n"
-               "let^ s : string^ = v .. \"a\"\n");
+               "var^ v = Vec.new^()\n"
+               "var^ s : string^ = v .. \"a\"\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
     LHAT_TEST("and the operator's result is what the join answers");
     check_text(&u,
-               "let^ Vec = def^{\n"
+               "var^ Vec = def^{\n"
                "  self^{ x := 0 },\n"
                "  op^.. := f^self^, other:string^ -> string^ { return^ other },\n"
                "}\n"
-               "let^ v = Vec.new^()\n"
-               "let^ n : number^ = v .. \"a\"\n");
+               "var^ v = Vec.new^()\n"
+               "var^ n : number^ = v .. \"a\"\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
@@ -4270,19 +4270,19 @@ static void test_no_value(void)
     // stand there is what its parameter admits.
     LHAT_TEST("and its parameter is what may stand on the right");
     check_text(&u,
-               "let^ Vec = def^{\n"
+               "var^ Vec = def^{\n"
                "  self^{ x := 0 },\n"
                "  op^.. := f^self^, other:string^ -> string^ { return^ other },\n"
                "}\n"
-               "let^ v = Vec.new^()\n"
-               "let^ s = v .. 1\n");
+               "var^ v = Vec.new^()\n"
+               "var^ s = v .. 1\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_NO_OPERATOR);
     unit_dispose(&u);
 
     LHAT_TEST("a structure with no op^ does not answer at all");
     check_text(&u,
-               "let^ t = { a := 1 }\n"
-               "let^ v = t .. t\n");
+               "var^ t = { a := 1 }\n"
+               "var^ v = t .. t\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_NO_OPERATOR);
     unit_dispose(&u);
 
@@ -4290,23 +4290,23 @@ static void test_no_value(void)
     // op^ answers them too.
     LHAT_TEST("a definition answers arithmetic with its own op^");
     check_text(&u,
-               "let^ Vec = def^{\n"
+               "var^ Vec = def^{\n"
                "  self^{ n := 0 },\n"
                "  op^+ := f^self^, o:number^ -> string^ { return^ \"x\" },\n"
                "}\n"
-               "let^ v = Vec.new^()\n"
-               "let^ s : string^ = v + 1\n");
+               "var^ v = Vec.new^()\n"
+               "var^ s : string^ = v + 1\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
     LHAT_TEST("with its parameter deciding the right side");
     check_text(&u,
-               "let^ Vec = def^{\n"
+               "var^ Vec = def^{\n"
                "  self^{ n := 0 },\n"
                "  op^+ := f^self^, o:number^ -> number^ { return^ o },\n"
                "}\n"
-               "let^ v = Vec.new^()\n"
-               "let^ n = v + \"a\"\n");
+               "var^ v = Vec.new^()\n"
+               "var^ n = v + \"a\"\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_NO_OPERATOR);
     unit_dispose(&u);
 
@@ -4314,14 +4314,14 @@ static void test_no_value(void)
     // exactly what it was.
     LHAT_TEST("and a number still answers all of them itself");
     check_text(&u,
-               "let^ n : number^ = 1 + 2 - 3 * 4 / 5\n"
-               "let^ m : number^ = 7 // 2 + 7 % 2 + 2 ** 3\n");
+               "var^ n : number^ = 1 + 2 - 3 * 4 / 5\n"
+               "var^ m : number^ = 7 // 2 + 7 % 2 + 2 ** 3\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
     // 11.8: bool^ carries none, and and^/or^/'!' are the language's own.
     LHAT_TEST("a bool^ answers no operator");
-    check_text(&u, "let^ v = true^ + 1\n");
+    check_text(&u, "var^ v = true^ + 1\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_NO_OPERATOR);
     unit_dispose(&u);
 
@@ -4331,7 +4331,7 @@ static void test_no_value(void)
     // so a shape that is not an operator has to be refused here.
     LHAT_TEST("an op^ without a self^ is not an operator");
     check_text(&u,
-               "let^ V = def^{ self^{},\n"
+               "var^ V = def^{ self^{},\n"
                "  op^.. := f^ o:string^ -> string^ { return^ o } }\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_BAD_OPERATOR);
     unit_dispose(&u);
@@ -4340,26 +4340,26 @@ static void test_no_value(void)
     // one.
     LHAT_TEST("nor is a p^");
     check_text(&u,
-               "let^ V = def^{ self^{}, op^.. := p^self^, o:string^ { } }\n");
+               "var^ V = def^{ self^{}, op^.. := p^self^, o:string^ { } }\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_BAD_OPERATOR);
     unit_dispose(&u);
 
     LHAT_TEST("nor anything that is not a subroutine");
-    check_text(&u, "let^ V = def^{ self^{}, op^.. := 5 }\n");
+    check_text(&u, "var^ V = def^{ self^{}, op^.. := 5 }\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_BAD_OPERATOR);
     unit_dispose(&u);
 
     // 14.4 leaves exactly one parameter beside the self^: the right operand.
     LHAT_TEST("and it takes the right operand, no more and no less");
     check_text(&u,
-               "let^ V = def^{ self^{},\n"
+               "var^ V = def^{ self^{},\n"
                "  op^.. := f^self^ -> string^ { return^ \"z\" } }\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_BAD_OPERATOR);
     unit_dispose(&u);
 
     LHAT_TEST("two arguments is not an operator either");
     check_text(&u,
-               "let^ V = def^{ self^{},\n"
+               "var^ V = def^{ self^{},\n"
                "  op^.. := f^self^, a:string^, b:string^ -> string^ { return^ a } }\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_BAD_OPERATOR);
     unit_dispose(&u);
@@ -4368,7 +4368,7 @@ static void test_no_value(void)
     // an operator on its own.
     LHAT_TEST("every arm of an overloaded operator is checked");
     check_text(&u,
-               "let^ V = def^{ self^{},\n"
+               "var^ V = def^{ self^{},\n"
                "  op^.. := f^self^, o:string^ -> string^ { return^ o },\n"
                "  overload^ op^.. := f^self^ -> string^ { return^ \"z\" },\n"
                "}\n");
@@ -4379,30 +4379,30 @@ static void test_no_value(void)
     // reach an operator like any other member.
     LHAT_TEST("a composition carries an operator in");
     check_text(&u,
-               "let^ B = def^{ self^{},\n"
+               "var^ B = def^{ self^{},\n"
                "  op^.. := f^self^, o:string^ -> string^ { return^ o } }\n"
-               "let^ D = B .. def^{ self^{} }\n"
-               "let^ s : string^ = D.new^() .. \"x\"\n");
+               "var^ D = B .. def^{ self^{} }\n"
+               "var^ s : string^ = D.new^() .. \"x\"\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
     LHAT_TEST("override^ may widen what an operator takes");
     check_text(&u,
-               "let^ B = def^{ self^{},\n"
+               "var^ B = def^{ self^{},\n"
                "  op^.. := f^self^, o:string^ -> string^ { return^ o } }\n"
-               "let^ D = B .. def^{ self^{},\n"
+               "var^ D = B .. def^{ self^{},\n"
                "  override^ op^.. := f^self^, o:string^|number^ -> string^ {\n"
                "    return^ \"d\" } }\n"
-               "let^ s : string^ = D.new^() .. 1\n");
+               "var^ s : string^ = D.new^() .. 1\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
     LHAT_TEST("and not narrow it");
     check_text(&u,
-               "let^ B = def^{ self^{},\n"
+               "var^ B = def^{ self^{},\n"
                "  op^.. := f^self^, o:string^|number^ -> string^ {\n"
                "    return^ \"b\" } }\n"
-               "let^ D = B .. def^{ self^{},\n"
+               "var^ D = B .. def^{ self^{},\n"
                "  override^ op^.. := f^self^, o:string^ -> string^ {\n"
                "    return^ \"d\" } }\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_NOT_SUBSTITUTABLE);
@@ -4412,9 +4412,9 @@ static void test_no_value(void)
     // key answers exactly as a written op^ does.
     LHAT_TEST("a '..' reached by a computed key answers too");
     check_text(&u,
-               "let^ t = { [\"..\"] := f^self^, o:string^ -> string^ {\n"
+               "var^ t = { [\"..\"] := f^self^, o:string^ -> string^ {\n"
                "  return^ o } }\n"
-               "let^ s : string^ = t .. \"x\"\n");
+               "var^ s : string^ = t .. \"x\"\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
@@ -4422,14 +4422,14 @@ static void test_no_value(void)
     // type answer several right-hand types.
     LHAT_TEST("overload^ gives one operator several right-hand types");
     check_text(&u,
-               "let^ Vec = def^{\n"
+               "var^ Vec = def^{\n"
                "  self^{},\n"
                "  op^.. := f^self^, o:string^ -> string^ { return^ o },\n"
                "  overload^ op^.. := f^self^, o:number^ -> number^ { return^ o },\n"
                "}\n"
-               "let^ v = Vec.new^()\n"
-               "let^ s : string^ = v .. \"a\"\n"
-               "let^ n : number^ = v .. 1\n");
+               "var^ v = Vec.new^()\n"
+               "var^ s : string^ = v .. \"a\"\n"
+               "var^ n : number^ = v .. 1\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
@@ -4437,7 +4437,7 @@ static void test_no_value(void)
     // from a base or from the same def^. Only the base had been looked at.
     LHAT_TEST("two members of one name in one def^ need the marker too");
     check_text(&u,
-               "let^ V = def^{\n"
+               "var^ V = def^{\n"
                "  self^{},\n"
                "  show := p^self^, x:string^ { },\n"
                "  overload^ show := p^self^, x:number^ { },\n"
@@ -4447,7 +4447,7 @@ static void test_no_value(void)
 
     LHAT_TEST("and without one it is still the ordinary mistake");
     check_text(&u,
-               "let^ V = def^{\n"
+               "var^ V = def^{\n"
                "  self^{},\n"
                "  show := p^self^, x:string^ { },\n"
                "  show := p^self^, x:number^ { },\n"
@@ -4457,7 +4457,7 @@ static void test_no_value(void)
 
     LHAT_TEST("with the overlap rule applying inside one def^ as well");
     check_text(&u,
-               "let^ V = def^{\n"
+               "var^ V = def^{\n"
                "  self^{},\n"
                "  show := p^self^, x:string^ { },\n"
                "  overload^ show := p^self^, x:string^ { },\n"
@@ -4467,21 +4467,21 @@ static void test_no_value(void)
 
     // 03 の 3.5 turns what is not known into the machine's business.
     LHAT_TEST("a gap in inference says nothing either way");
-    check_text(&u, "let^ f = f^ x -> string^ { return^ x .. \"b\" }\n");
+    check_text(&u, "var^ f = f^ x -> string^ { return^ x .. \"b\" }\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
     LHAT_TEST("and 13.7's any^ is every value at once");
     check_text(&u,
-               "let^ x : any^ = \"a\"\n"
-               "let^ v = x .. \"b\"\n");
+               "var^ x : any^ = \"a\"\n"
+               "var^ v = x .. \"b\"\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
     LHAT_TEST("a yield^ wants one to send out");
     check_text(&u,
-               "let^ log = p^ m:string^ { let^ y = m }\n"
-               "let^ g = p^ { yield^ log(\"x\") }\n");
+               "var^ log = p^ m:string^ { var^ y = m }\n"
+               "var^ g = p^ { yield^ log(\"x\") }\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
@@ -4489,20 +4489,20 @@ static void test_no_value(void)
     // at all -- not for this and not for anything else.
     LHAT_TEST("an interpolation hole wants one");
     check_text(&u,
-               "let^ log = p^ m:string^ { let^ y = m }\n"
-               "let^ s = $\"v={log(\"x\")}\"\n");
+               "var^ log = p^ m:string^ { var^ y = m }\n"
+               "var^ s = $\"v={log(\"x\")}\"\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
     LHAT_TEST("and is checked like any other expression");
-    check_text(&u, "let^ s = $\"v={nowhere}\"\n");
+    check_text(&u, "var^ s = $\"v={nowhere}\"\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_UNDEFINED);
     unit_dispose(&u);
 
     LHAT_TEST("while a sound one stays sound");
     check_text(&u,
-               "let^ n = 1\n"
-               "let^ s = $\"v={n} and {n + 1}\"\n");
+               "var^ n = 1\n"
+               "var^ s = $\"v={n} and {n + 1}\"\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 }
@@ -4516,10 +4516,10 @@ static void test_session(void)
     LHAT_TEST("a name keeps its type into the next input");
     {
         LhatCheckSession *s = lhat_check_session_new();
-        check_next_text(&u, s, "let^ x : number^ = 40\n");
+        check_next_text(&u, s, "var^ x : number^ = 40\n");
         CHECK_CLEAN(&u);
         unit_dispose(&u);
-        check_next_text(&u, s, "let^ n : number^ = x\n");
+        check_next_text(&u, s, "var^ n : number^ = x\n");
         CHECK_CLEAN(&u);
         unit_dispose(&u);
         lhat_check_session_dispose(s);
@@ -4528,9 +4528,9 @@ static void test_session(void)
     LHAT_TEST("and the wrong type is caught across inputs");
     {
         LhatCheckSession *s = lhat_check_session_new();
-        check_next_text(&u, s, "let^ x : number^ = 40\n");
+        check_next_text(&u, s, "var^ x : number^ = 40\n");
         unit_dispose(&u);
-        check_next_text(&u, s, "let^ t : string^ = x\n");
+        check_next_text(&u, s, "var^ t : string^ = x\n");
         CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
         unit_dispose(&u);
         lhat_check_session_dispose(s);
@@ -4542,7 +4542,7 @@ static void test_session(void)
     LHAT_TEST("the statement an input answers with may make a coroutine");
     {
         LhatCheckSession *s = lhat_check_session_new();
-        check_asked_text(&u, s, "let^ count = p^ { yield^ 1 }\n");
+        check_asked_text(&u, s, "var^ count = p^ { yield^ 1 }\n");
         CHECK_CLEAN(&u);
         unit_dispose(&u);
         check_asked_text(&u, s, "count()\n");
@@ -4554,9 +4554,9 @@ static void test_session(void)
     LHAT_TEST("but one before the last still drops it");
     {
         LhatCheckSession *s = lhat_check_session_new();
-        check_asked_text(&u, s, "let^ count = p^ { yield^ 1 }\n");
+        check_asked_text(&u, s, "var^ count = p^ { yield^ 1 }\n");
         unit_dispose(&u);
-        check_asked_text(&u, s, "count()\nlet^ k = 1\n");
+        check_asked_text(&u, s, "count()\nvar^ k = 1\n");
         CHECK_REPORTS(&u, LHAT_CHECK_ERR_COROUTINE_DROPPED);
         unit_dispose(&u);
         lhat_check_session_dispose(s);
@@ -4565,23 +4565,23 @@ static void test_session(void)
     LHAT_TEST("a name never bound is still not in scope");
     {
         LhatCheckSession *s = lhat_check_session_new();
-        check_next_text(&u, s, "let^ x : number^ = 1\n");
+        check_next_text(&u, s, "var^ x : number^ = 1\n");
         unit_dispose(&u);
-        check_next_text(&u, s, "let^ n : number^ = nowhere\n");
+        check_next_text(&u, s, "var^ n : number^ = nowhere\n");
         CHECK_REPORTS(&u, LHAT_CHECK_ERR_UNDEFINED);
         unit_dispose(&u);
         lhat_check_session_dispose(s);
     }
 
     // 03 の 4.3: at the top level of a session a name written again is the
-    // same place written again, not the clash 8.7 makes of two let^ in one
+    // same place written again, not the clash 8.7 makes of two var^ in one
     // scope. A prompt is for writing a line again.
     LHAT_TEST("a name written again is a redefinition, not a clash");
     {
         LhatCheckSession *s = lhat_check_session_new();
-        check_next_text(&u, s, "let^ x : number^ = 1\n");
+        check_next_text(&u, s, "var^ x : number^ = 1\n");
         unit_dispose(&u);
-        check_next_text(&u, s, "let^ x : string^ = \"now\"\n");
+        check_next_text(&u, s, "var^ x : string^ = \"now\"\n");
         CHECK_CLEAN(&u);
         unit_dispose(&u);
         lhat_check_session_dispose(s);
@@ -4590,11 +4590,11 @@ static void test_session(void)
     LHAT_TEST("and the newer type is the one it has");
     {
         LhatCheckSession *s = lhat_check_session_new();
-        check_next_text(&u, s, "let^ x : number^ = 1\n");
+        check_next_text(&u, s, "var^ x : number^ = 1\n");
         unit_dispose(&u);
-        check_next_text(&u, s, "let^ x : string^ = \"now\"\n");
+        check_next_text(&u, s, "var^ x : string^ = \"now\"\n");
         unit_dispose(&u);
-        check_next_text(&u, s, "let^ n : number^ = x\n");
+        check_next_text(&u, s, "var^ n : number^ = x\n");
         CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
         unit_dispose(&u);
         lhat_check_session_dispose(s);
@@ -4604,34 +4604,34 @@ static void test_session(void)
     LHAT_TEST("but twice in one input is still a clash");
     {
         LhatCheckSession *s = lhat_check_session_new();
-        check_next_text(&u, s, "let^ x = 1\nlet^ x = 2\n");
+        check_next_text(&u, s, "var^ x = 1\nvar^ x = 2\n");
         CHECK_REPORTS(&u, LHAT_CHECK_ERR_REDEFINED);
         unit_dispose(&u);
         lhat_check_session_dispose(s);
     }
 
     // Including when the first of the two came from an earlier input: the
-    // mark saying "bound elsewhere" is spent by the first let^ that writes
+    // mark saying "bound elsewhere" is spent by the first var^ that writes
     // the name again.
     LHAT_TEST("and so is one redefinition too many in a single input");
     {
         LhatCheckSession *s = lhat_check_session_new();
-        check_next_text(&u, s, "let^ x = 1\n");
+        check_next_text(&u, s, "var^ x = 1\n");
         unit_dispose(&u);
-        check_next_text(&u, s, "let^ x = 2\nlet^ x = 3\n");
+        check_next_text(&u, s, "var^ x = 2\nvar^ x = 3\n");
         CHECK_REPORTS(&u, LHAT_CHECK_ERR_REDEFINED);
         unit_dispose(&u);
         lhat_check_session_dispose(s);
     }
 
-    // 8.7 keeps a name visible before its let^ runs, so a redefinition may
+    // 8.7 keeps a name visible before its var^ runs, so a redefinition may
     // read what the name already holds.
     LHAT_TEST("a redefinition may read what is already there");
     {
         LhatCheckSession *s = lhat_check_session_new();
-        check_next_text(&u, s, "let^ x : number^ = 1\n");
+        check_next_text(&u, s, "var^ x : number^ = 1\n");
         unit_dispose(&u);
-        check_next_text(&u, s, "let^ x = x + 10\n");
+        check_next_text(&u, s, "var^ x = x + 10\n");
         CHECK_CLEAN(&u);
         unit_dispose(&u);
         lhat_check_session_dispose(s);
@@ -4645,7 +4645,7 @@ static void test_named_diagnostics(void)
     Unit u;
 
     LHAT_TEST("a name that is not in scope is named");
-    check_text(&u, "let^ x = nowhere\n");
+    check_text(&u, "var^ x = nowhere\n");
     {
         LHAT_CHECK(u.checked.diagnostic_count > 0, "expected a diagnostic");
         if (u.checked.diagnostic_count > 0) {
@@ -4664,7 +4664,7 @@ static void test_named_diagnostics(void)
     unit_dispose(&u);
 
     LHAT_TEST("and a member that is not there is too");
-    check_text(&u, "let^ t = { p = 1 }\nlet^ v = t.missing\n");
+    check_text(&u, "var^ t = { p = 1 }\nvar^ v = t.missing\n");
     if (u.checked.diagnostic_count > 0) {
         const LhatCheckDiagnostic *d = &u.checked.diagnostics[0];
         LHAT_CHECK_EQ_INT(d->code, LHAT_CHECK_ERR_NO_MEMBER);
@@ -4677,7 +4677,7 @@ static void test_named_diagnostics(void)
     unit_dispose(&u);
 
     LHAT_TEST("and so is one defined twice");
-    check_text(&u, "let^ dup = 1\nlet^ dup = 2\n");
+    check_text(&u, "var^ dup = 1\nvar^ dup = 2\n");
     if (u.checked.diagnostic_count > 0) {
         const LhatCheckDiagnostic *d = &u.checked.diagnostics[0];
         LHAT_CHECK_EQ_INT(d->code, LHAT_CHECK_ERR_REDEFINED);
@@ -4688,7 +4688,7 @@ static void test_named_diagnostics(void)
     // The name is borrowed from the source, so it has to still say the same
     // thing once the diagnostic has been carried around a little.
     LHAT_TEST("and the borrowed text is the name itself");
-    check_text(&u, "let^ x = elsewhere\n");
+    check_text(&u, "var^ x = elsewhere\n");
     if (u.checked.diagnostic_count > 0) {
         const LhatCheckDiagnostic *d = &u.checked.diagnostics[0];
         LHAT_CHECK(d->name != NULL, "there is one");
@@ -4701,7 +4701,7 @@ static void test_named_diagnostics(void)
 
     // A code that knows nothing besides itself answers what it always did.
     LHAT_TEST("but one that names nothing keeps its own message");
-    check_text(&u, "let^ x : string^ = 1\n");
+    check_text(&u, "var^ x : string^ = 1\n");
     if (u.checked.diagnostic_count > 0) {
         const LhatCheckDiagnostic *d = &u.checked.diagnostics[0];
         LHAT_CHECK(d->name == NULL, "nothing to name");
@@ -4711,6 +4711,188 @@ static void test_named_diagnostics(void)
                    "the code's own message");
     }
     unit_dispose(&u);
+}
+
+// 8.9: var^ binds a name a ':=' may reach and let^ one it may not. The rule is
+// about the name and not about the value, which is what keeps it apart from
+// 15.1改's question about a table and 05 の 8.6改's about the machine's own.
+static void test_immutable_bindings(void)
+{
+    Unit u;
+
+    LHAT_TEST("var^ takes a reassignment");
+    check_text(&u, "var^ x = 1\nx := 2\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("and let^ refuses one");
+    check_text(&u, "let^ x = 1\nx := 2\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_ASSIGN_TO_LET);
+    unit_dispose(&u);
+
+    // The diagnostic says which name, since a statement may write several.
+    LHAT_TEST("and says which name it was");
+    check_text(&u, "let^ total = 0\ntotal := 1\n");
+    {
+        LHAT_CHECK(u.checked.diagnostic_count > 0, "expected a diagnostic");
+        if (u.checked.diagnostic_count > 0) {
+            const LhatCheckDiagnostic *d = &u.checked.diagnostics[0];
+            LHAT_CHECK_EQ_INT(d->code, LHAT_CHECK_ERR_ASSIGN_TO_LET);
+            LHAT_CHECK(d->name != NULL && d->name_length == 5, "total");
+        }
+    }
+    unit_dispose(&u);
+
+    // 7.4改: a compound assignment is a ':=' spelled shorter, so it meets the
+    // same rule rather than slipping past it.
+    LHAT_TEST("a compound assignment is a reassignment too");
+    check_text(&u, "let^ n = 1\nn += 1\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_ASSIGN_TO_LET);
+    unit_dispose(&u);
+
+    // 8.7 makes the name visible throughout the scope, so a write standing
+    // before the definition is judged by the same rule as one after it.
+    LHAT_TEST("a write before the definition is refused as well");
+    check_text(&u, "do^{ x := 2\nlet^ x = 1 }\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_ASSIGN_TO_LET);
+    unit_dispose(&u);
+
+    // Shadowing is a second name, not a write to the first (8.7).
+    LHAT_TEST("but shadowing in a nested scope is not a write");
+    check_text(&u, "let^ i = 0\ndo^{ var^ i = 1\ni := 2 }\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // 8.9: what let^ holds is still the value it was. A table it names keeps
+    // its members writable -- that axis is 15.1改's and 05 の 8.6改's.
+    LHAT_TEST("a let^ table still has writable members");
+    check_text(&u, "let^ t = { a := 1 }\nt.a := 2\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("while the name itself is not");
+    check_text(&u, "let^ t = { a := 1 }\nt := { a := 2 }\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_ASSIGN_TO_LET);
+    unit_dispose(&u);
+
+    // 15.1: a parameter is a name the body made, and 8.9 leaves it a var^ --
+    // writing it is closed inside the frame and the caller never sees it.
+    LHAT_TEST("a parameter is a var^");
+    check_text(&u, "var^ f = f^ n:number^ -> number^ { n := n + 1\n"
+                   "return^ n }\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // 01 の 8 章: a specifier says where to start looking, not what the name
+    // may be written as.
+    LHAT_TEST("a scope specifier does not get round it");
+    check_text(&u, "let^ i = 0\ndo^{ $^i := 1 }\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_ASSIGN_TO_LET);
+    unit_dispose(&u);
+
+    // 12 章: with^ holds a resource for the life of the block, and 12.2
+    // disposes of what the name still holds at the end of it.
+    LHAT_TEST("a with^ binding is a let^");
+    check_text(&u,
+               "var^ C = def^{\n"
+               "    self^{ v := 1 },\n"
+               "    dispose := p^self^ { },\n"
+               "}\n"
+               "with^ c = C.new^() { c := C.new^() }\n");
+    // The writer chose no word here, so the diagnostic offers no var^.
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_ASSIGN_TO_FORM);
+    unit_dispose(&u);
+
+    // 16.3改2 with 16.4: to^ and downto^ advance the focus themselves, so the
+    // header writes neither word -- from^ opens the range and the name it
+    // introduces is a let^.
+    LHAT_TEST("a from^ focus is a let^");
+    check_text(&u, "for^ i from^ 1 to^ 10 { var^ n = i }\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("and the body may not write it");
+    check_text(&u, "for^ i from^ 1 to^ 10 { i := 0 }\n");
+    // 16.3改2 leaves no var^ to write here either, so this is the diagnostic
+    // that does not offer one.
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_ASSIGN_TO_FORM);
+    unit_dispose(&u);
+
+    // And it says so without pointing at a spelling that is itself refused:
+    // 'for^ var^ i = 1 to^ 10' is an error of its own (16.3改2).
+    LHAT_TEST("and the message offers no var^");
+    check_text(&u, "for^ i from^ 1 to^ 10 { i := 0 }\n");
+    if (u.checked.diagnostic_count > 0) {
+        char message[256];
+        lhat_check_message_write(&u.checked.diagnostics[0], message,
+                                 sizeof message);
+        LHAT_CHECK(strstr(message, "var^") == NULL,
+                   "a from^ focus has no var^ spelling to suggest");
+    }
+    unit_dispose(&u);
+
+    // 16.3: while^ asks the writer for the step, which a let^ focus refuses
+    // -- the diagnostic lands on the next^ that cannot happen.
+    LHAT_TEST("a while^ focus has to be a var^");
+    check_text(&u, "for^ var^ i = 1 while^ i < 3 next^ i := i + 1 { }\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("and a let^ one is refused at its next^");
+    check_text(&u, "for^ let^ i = 1 while^ i < 3 next^ i := i + 1 { }\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_ASSIGN_TO_LET);
+    unit_dispose(&u);
+
+    // 16.3: in^ binds its focus afresh each turn from what the walk yields,
+    // which is the walk's to say and not the body's.
+    LHAT_TEST("an in^ focus is a let^");
+    check_text(&u, "var^ t = { a := 1 }\nfor^ k, v in^ t { v := 2 }\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_ASSIGN_TO_FORM);
+    unit_dispose(&u);
+
+    // 05 の 4 章 with 01 の 8.3: a name another unit could see change is the
+    // global variable the language does not have.
+    LHAT_TEST("public^ binds with let^");
+    check_text(&u, "module^ m\npublic^ let^ answer = 42\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("and refuses a var^");
+    check_text(&u, "module^ m\npublic^ var^ answer = 42\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_PUBLIC_IS_IMMUTABLE);
+    unit_dispose(&u);
+
+    // 03 の 4.3: a session redefinition is the same place written again, so
+    // what the new input says about the name is what holds from there.
+    LHAT_TEST("a session redefinition says which it is now");
+    {
+        LhatCheckSession *s = lhat_check_session_new();
+        check_asked_text(&u, s, "let^ x = 1\n");
+        CHECK_CLEAN(&u);
+        unit_dispose(&u);
+        check_asked_text(&u, s, "var^ x = 2\n");
+        CHECK_CLEAN(&u);
+        unit_dispose(&u);
+        check_asked_text(&u, s, "x := 3\n");
+        CHECK_CLEAN(&u);
+        unit_dispose(&u);
+        lhat_check_session_dispose(s);
+    }
+
+    LHAT_TEST("and the other way round");
+    {
+        LhatCheckSession *s = lhat_check_session_new();
+        check_asked_text(&u, s, "var^ x = 1\n");
+        CHECK_CLEAN(&u);
+        unit_dispose(&u);
+        check_asked_text(&u, s, "let^ x = 2\n");
+        CHECK_CLEAN(&u);
+        unit_dispose(&u);
+        check_asked_text(&u, s, "x := 3\n");
+        CHECK_REPORTS(&u, LHAT_CHECK_ERR_ASSIGN_TO_LET);
+        unit_dispose(&u);
+        lhat_check_session_dispose(s);
+    }
 }
 
 
@@ -4738,5 +4920,6 @@ int main(void)
     test_no_value();
     test_session();
     test_named_diagnostics();
+    test_immutable_bindings();
     return lhat_test_report("test_check");
 }

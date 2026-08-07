@@ -14,11 +14,11 @@ registers what it provides by writing the type out in C.
 Sample:
 
 ```lhat
-import^debug
-let^print=debug.print
+import^std.io
+let^print=std.io.print
 
 let^factorial = f^n:number^{ if^ n < 2: 1 el^: n * this^(n - 1); }
-print(factorial(10))
+print($"{factorial(10)}")
 ```
 
 ## Requirements

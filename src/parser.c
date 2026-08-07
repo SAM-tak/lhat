@@ -198,6 +198,24 @@ static bool expect_op(Parser *p, LhatOpKind op)
     return false;
 }
 
+// 14.14改: what a brace introduces takes either spelling, and they mean the
+// same thing. '=' is 8.6's word for a definition and the recommended form;
+// ':=' is the older one and still reads. Neither is ambiguous here -- a name
+// is what stands to the left of both, so there is no expression for '=' to be
+// read as a comparison of, which is the one thing 8.6 had to protect.
+//
+// This is every brace the language has: a table literal and the self^{ … }
+// template (14.6改), a def^ member (14.13), and the fields an errordef^
+// declares (04 の 2.2). They agreed on nothing before; they agree here.
+static bool expect_introduces(Parser *p)
+{
+    if (match_op(p, LHAT_OP_EQ) || match_op(p, LHAT_OP_DEFINE)) {
+        return true;
+    }
+    report_expected(p, &p->current, LHAT_OP_EQ);
+    return false;
+}
+
 // Skips forward until something that can begin a statement, so one mistake
 // does not turn the rest of the file into noise.
 static void synchronize(Parser *p)
@@ -695,9 +713,7 @@ static LhatNode *parse_brace_entries(Parser *p, bool require_key)
             entry->v.entry.key = parse_expression(p);
             entry->v.entry.computed = true;
             expect_op(p, LHAT_OP_RBRACKET);
-            if (!match_op(p, LHAT_OP_EQ) && !match_op(p, LHAT_OP_DEFINE)) {
-                report_expected(p, &p->current, LHAT_OP_EQ);
-            }
+            expect_introduces(p);
             // 14.6: a field template names every field, so a computed key is
             // not one of them.
             if (require_key) {
@@ -888,7 +904,7 @@ static LhatNode *parse_def(Parser *p)
             }
             entry->v.entry.key = name;
             advance(p);
-            if (expect_op(p, LHAT_OP_DEFINE)) {
+            if (expect_introduces(p)) {
                 entry->v.entry.value = parse_expression(p);
             }
         } else if (p->current.kind == LHAT_TOKEN_IDENT ||
@@ -903,7 +919,7 @@ static LhatNode *parse_def(Parser *p)
                 if (expect_op(p, LHAT_OP_COLON)) {
                     entry->v.entry.value = parse_type(p);
                 }
-            } else if (expect_op(p, LHAT_OP_DEFINE)) {
+            } else if (expect_introduces(p)) {
                 entry->v.entry.value = parse_expression(p);
             }
         } else {
@@ -1081,7 +1097,8 @@ static bool is_else_marker(const Parser *p)
 static bool is_statement_keyword(const Parser *p)
 {
     static const char *const words[] = {
-        "if", "do", "let", "with", "return", "break", "panic", "yield", "_yield",
+        "if", "do", "var", "let", "with", "return", "break", "panic", "yield",
+        "_yield",
         "for", "repeat", "while", "until", "when", "other", "errordef",
         "prolog", "prologue", "pre", "premain", "first", "main", "last",
         "epilog", "epilogue", "finally"
@@ -2144,17 +2161,23 @@ static LhatNode *parse_public(Parser *p)
     return declaration;
 }
 
-// 8.6. let^ is what creates a name; without it ':=' reassigns. Making the
-// dangerous spelling the longer one is the whole point -- writing ':=' where
-// a definition was meant used to shadow silently, which is the accident Go
-// is known for.
+// 8.6. An introducer is what creates a name; without one ':=' reassigns.
+// Making the dangerous spelling the longer one is the whole point -- writing
+// ':=' where a definition was meant used to shadow silently, which is the
+// accident Go is known for.
 //
 // 8.6 also allows '=' here, and only here, because no expression can follow
-// 'let^ name': the same reason 13.4 already writes a default with '='.
-// What let^ binds is a name, never an arbitrary expression, so this does not
-// go through parse_target: reading the target as an expression would swallow
-// the '=' as a comparison before the binding ever saw it.
-static LhatNode *parse_let_target(Parser *p)
+// 'var^ name': the same reason 13.4 already writes a default with '='.
+// What an introducer binds is a name, never an arbitrary expression, so this
+// does not go through parse_target: reading the target as an expression would
+// swallow the '=' as a comparison before the binding ever saw it.
+//
+// 8.9: `allow_path` is false under let^, which binds a name and nothing else.
+// 8.8's member introduction stays var^'s, so that a name let^ bound is one
+// nothing may reassign -- 'let^ t.a = 1' followed by 't.a := 2' would say
+// otherwise, and per-member immutability is 05 の M5改's question, not this
+// one's.
+static LhatNode *parse_let_target(Parser *p, bool allow_path)
 {
     LhatToken start = p->current;
     // 05 の 8.6: L^ is a place a path may start from, and the only hat
@@ -2176,6 +2199,10 @@ static LhatNode *parse_let_target(Parser *p)
     // not a question a name being introduced can answer.
     while (check_op(p, LHAT_OP_DOT)) {
         LhatToken at = p->current;
+        if (!allow_path) {
+            report(p, &at, LHAT_PARSE_ERR_LET_NEEDS_NAME);
+            allow_path = true;  // read the rest of the path; say this once
+        }
         advance(p);
         name = access_node(p, LHAT_NODE_MEMBER, &at, name, simple_node(p),
                            false);
@@ -2222,16 +2249,19 @@ static LhatNode *parse_with_target(Parser *p)
     return target;
 }
 
-static LhatNode *parse_let(Parser *p)
+// 8.9: var^ and let^ read alike and differ only in what they leave behind --
+// a name a later ':=' may reach, or one it may not. The word is not otherwise
+// part of the grammar, which is why one function reads both.
+static LhatNode *parse_let(Parser *p, bool immutable)
 {
     LhatToken start = p->current;
-    advance(p);  // let^
+    advance(p);  // var^ or let^
 
     LhatNode *targets = NULL;
     LhatNode *tail = NULL;
-    lhat_node_append(&targets, &tail, parse_let_target(p));
+    lhat_node_append(&targets, &tail, parse_let_target(p, !immutable));
     while (match_op(p, LHAT_OP_COMMA)) {
-        lhat_node_append(&targets, &tail, parse_let_target(p));
+        lhat_node_append(&targets, &tail, parse_let_target(p, !immutable));
     }
 
     LhatToken at = p->current;
@@ -2244,9 +2274,17 @@ static LhatNode *parse_let(Parser *p)
         report(p, &p->current, LHAT_PARSE_ERR_LET_NEEDS_VALUE);
         return make(p, LHAT_NODE_ERROR, &start);
     }
+    // 8.9: 8.6 made '=' and ':=' the same word after an introducer, and 8.8改
+    // gave ':=' a second meaning for a path. Neither survives let^: a name it
+    // binds is never reassigned, so the spelling that says "reassign" is not
+    // one it accepts.
+    if (immutable && via_reassign_op) {
+        report(p, &at, LHAT_PARSE_ERR_LET_NEEDS_EQUALS);
+    }
     LhatNode *node = parse_binding(p, LHAT_NODE_DEFINE, &at, targets);
     if (node != NULL) {
-        node->v.binding.via_reassign_op = via_reassign_op;
+        node->v.binding.via_reassign_op = via_reassign_op && !immutable;
+        node->v.binding.immutable = immutable;
     }
     return node;
 }
@@ -2349,19 +2387,35 @@ static bool opens_when_clauses(const Parser *p)
            token_is_hat(p, &p->ahead, "else");
 }
 
-static LhatNode *parse_for_focus(Parser *p)
+// `saw_from` and `saw_word` answer which spelling the focus used, so that
+// parse_for can judge it against the form -- which is not known until the
+// clause after the focus has been read (16.3改2).
+static LhatNode *parse_for_focus(Parser *p, bool *saw_from, bool *saw_word)
 {
     LhatNode *head = NULL;
     LhatNode *tail = NULL;
+    *saw_from = false;
+    *saw_word = false;
 
     for (;;) {
         LhatToken at = p->current;
-        // 8.6改: for^ is no longer an introducer of its own. let^ asks for a
-        // fresh, loop-scoped name exactly as it would anywhere else; without
-        // it, a bare ':=' reaches an existing name instead (8.6's own rule
-        // for a bare ':=', applied here rather than for^ making every focus
-        // a definition regardless of what was written).
-        bool has_let = match_hat(p, "let");
+        // 8.6改: for^ is no longer an introducer of its own. An introducer
+        // asks for a fresh, loop-scoped name exactly as it would anywhere
+        // else; without one, a bare ':=' reaches an existing name instead
+        // (8.6's own rule for a bare ':=', applied here rather than for^
+        // making every focus a definition regardless of what was written).
+        //
+        // 8.9 and 16.3改2: either word may introduce a focus, and nothing here
+        // decides between them -- parse_for judges which the form wanted, once
+        // the clause after the focus has said what the form is. The while^ and
+        // until^ forms of 16.3 ask the writer for a 'next^ i := i + 1', so
+        // theirs is a var^; the to^ and downto^ forms advance their own focus
+        // and take neither word, spelling the range 'i from^ A to^ B' instead.
+        bool immutable = check_hat(p, "let");
+        bool has_let = match_hat(p, "var") || match_hat(p, "let");
+        if (has_let) {
+            *saw_word = true;
+        }
 
         LhatNode *target;
         // 8.6: set the moment a bare '=' is found meaning comparison rather
@@ -2376,7 +2430,7 @@ static LhatNode *parse_for_focus(Parser *p)
             // 'i = 0' whole, as a comparison, before '=' had a chance to
             // mean definition here -- ':=' never had this problem, since it
             // is not a token an expression continues through.
-            target = parse_let_target(p);
+            target = parse_let_target(p, !immutable);
         } else {
             // 17.2's expression form puts a ':' straight after the subject,
             // which is the shape of the type annotation of 16.3. What
@@ -2406,18 +2460,46 @@ static LhatNode *parse_for_focus(Parser *p)
         if (equals_error) {
             target = make(p, LHAT_NODE_ERROR, &at);
         } else if (has_let) {
-            // 8.6: let^ accepts either spelling, both meaning define.
+            // 8.6: var^ accepts either spelling, both meaning define. 8.9:
+            // let^ takes only the one that does not also mean reassign.
+            LhatToken op = p->current;
+            bool via_reassign_op = check_op(p, LHAT_OP_DEFINE);
             if (!match_op(p, LHAT_OP_DEFINE) && !match_op(p, LHAT_OP_EQ)) {
                 report(p, &p->current, LHAT_PARSE_ERR_LET_NEEDS_VALUE);
             } else {
+                if (immutable && via_reassign_op) {
+                    report(p, &op, LHAT_PARSE_ERR_LET_NEEDS_EQUALS);
+                }
                 LhatNode *binding = make(p, LHAT_NODE_DEFINE, &at);
                 if (binding == NULL) {
                     break;
                 }
                 binding->v.binding.targets = target;
                 binding->v.binding.values = parse_expression(p);
+                binding->v.binding.immutable = immutable;
                 target = binding;
             }
+        } else if (check_hat(p, "from")) {
+            // 16.3改2: 'i from^ 1 to^ 10'. from^ is the introducer of the
+            // counted form, and the only one it takes. A keyword cannot be
+            // read as a comparison, so this brings back what 16.3改 had to
+            // take away when the spelling was '=' -- for^ introducing its own
+            // focus -- without the ambiguity that cost it.
+            //
+            // 8.9: the name is a let^. Nothing in the source advances it,
+            // 16.4's machine does, and writing neither word is what keeps the
+            // header from saying something the reader has to un-learn.
+            *saw_from = true;
+            advance(p);
+            LhatNode *binding = make(p, LHAT_NODE_DEFINE, &at);
+            if (binding == NULL) {
+                break;
+            }
+            binding->v.binding.targets = target;
+            binding->v.binding.values = parse_expression(p);
+            binding->v.binding.immutable = true;
+            binding->v.binding.bound_by_form = true;
+            target = binding;
         } else if (check_op(p, LHAT_OP_DEFINE)) {
             // 8.6: no introducer, so ':=' reassigns an existing name.
             advance(p);
@@ -2631,6 +2713,22 @@ static LhatNode *parse_advance(Parser *p)
     return head;
 }
 
+// 16.3改2: which spelling the focus took has to agree with the form, and the
+// form is not known until the clause after the focus has been read. The
+// counted forms advance their own focus and so take from^ (or a bare ':=' for
+// a name already there); every other form takes an introducer.
+static void check_focus_form(Parser *p, const LhatNode *node,
+                             const LhatToken *at, bool saw_from, bool saw_word)
+{
+    bool counted = node->v.loop.kind == LHAT_FOR_TO ||
+                   node->v.loop.kind == LHAT_FOR_DOWNTO;
+    if (counted && saw_word) {
+        report(p, at, LHAT_PARSE_ERR_FOCUS_NEEDS_FROM);
+    } else if (!counted && saw_from) {
+        report(p, at, LHAT_PARSE_ERR_FROM_NOT_HERE);
+    }
+}
+
 static LhatNode *parse_for(Parser *p)
 {
     LhatToken start = p->current;
@@ -2641,16 +2739,10 @@ static LhatNode *parse_for(Parser *p)
         return NULL;
     }
 
-    node->v.loop.focus = parse_for_focus(p);
-
-    // 16.3: from^ was replaced by ':=' so that every binding with an initial
-    // value is written the same way. The initial value is read and discarded
-    // so that the rest of the header still parses.
-    if (check_hat(p, "from")) {
-        report(p, &p->current, LHAT_PARSE_ERR_WITHDRAWN_FROM);
-        advance(p);
-        parse_expression(p);
-    }
+    LhatToken focus_at = p->current;
+    bool saw_from = false;
+    bool saw_word = false;
+    node->v.loop.focus = parse_for_focus(p, &saw_from, &saw_word);
 
     bool is_loop = true;
     if (match_hat(p, "to")) {
@@ -2686,6 +2778,7 @@ static LhatNode *parse_for(Parser *p)
         // here as anywhere. The focus still does not leave -- only the value
         // built from it does, which is what an expression is.
         node->v.loop.is_expression = check_op(p, LHAT_OP_COLON);
+        check_focus_form(p, node, &focus_at, saw_from, saw_word);
         node->v.loop.body =
             node->v.loop.is_expression
                 ? parse_if_expression_from(p, at, node->v.loop.bound)
@@ -2695,6 +2788,7 @@ static LhatNode *parse_for(Parser *p)
         // 17 章: no driving clause at all, so what follows dispatches on the
         // subject rather than iterating over it.
         node->v.loop.kind = LHAT_FOR_WHEN;
+        check_focus_form(p, node, &focus_at, saw_from, saw_word);
         bool as_expression = check_op(p, LHAT_OP_COLON);
         node->v.loop.is_expression = as_expression;
         LhatToken at = p->current;
@@ -2719,6 +2813,8 @@ static LhatNode *parse_for(Parser *p)
         report(p, &p->current, LHAT_PARSE_ERR_FOR_NEEDS_CLAUSE);
         return node;
     }
+
+    check_focus_form(p, node, &focus_at, saw_from, saw_word);
 
     // 16.3: next^ is the update of a conditional loop, and only that. 16.4
     // makes to^ and downto^ sugar for a while^ that already carries one, and
@@ -2799,7 +2895,11 @@ static LhatNode *parse_error_fields(Parser *p)
         if (match_op(p, LHAT_OP_COLON)) {
             field->v.param.type = parse_type(p);
         }
-        if (match_op(p, LHAT_OP_DEFINE)) {
+        // 14.14改: a brace introduces, so either spelling reads. Unlike the
+        // sites that call expect_introduces, a default is optional here --
+        // 04 の 2.2 lets a field carry only a type -- so nothing is reported
+        // when neither is there.
+        if (match_op(p, LHAT_OP_EQ) || match_op(p, LHAT_OP_DEFINE)) {
             field->v.param.fallback = parse_expression(p);
         }
         if (field->v.param.type == NULL && field->v.param.fallback == NULL) {
@@ -2888,9 +2988,15 @@ static LhatNode *parse_with(Parser *p)
 
     // 12.1: only local definitions may appear, and several with^ clauses may
     // precede one block. with^ is its own introducer (8.6), so a name gets
-    // an optional ':type' the same way let^'s target does, and either '='
-    // or ':=' means define -- but never a '.member' path, since with^ always
-    // introduces a fresh local rather than reaching into an existing table.
+    // an optional ':type' the same way let^'s target does -- but never a
+    // '.member' path, since with^ always introduces a fresh local rather than
+    // reaching into an existing table.
+    //
+    // 8.9: what it introduces is a let^, not a var^. The block holds the
+    // resource for exactly as long as the name does, and 12.2 disposes of
+    // whatever the name still holds at the end of it; a ':=' in between would
+    // leave the block disposing of one object having leaked another. So ':='
+    // is refused here for the same reason let^ refuses it.
     while (check_hat(p, "with")) {
         LhatToken at = p->current;
         advance(p);
@@ -2899,13 +3005,18 @@ static LhatNode *parse_with(Parser *p)
             break;
         }
         binding->v.binding.targets = parse_with_target(p);
+        LhatToken op = p->current;
         bool via_reassign_op = match_op(p, LHAT_OP_DEFINE);
         if (!via_reassign_op && !match_op(p, LHAT_OP_EQ)) {
             report(p, &p->current, LHAT_PARSE_ERR_LET_NEEDS_VALUE);
         } else {
+            if (via_reassign_op) {
+                report(p, &op, LHAT_PARSE_ERR_LET_NEEDS_EQUALS);
+            }
             binding->v.binding.values = parse_expression(p);
         }
-        binding->v.binding.via_reassign_op = via_reassign_op;
+        binding->v.binding.immutable = true;
+        binding->v.binding.bound_by_form = true;
         lhat_node_append(&head, &tail, binding);
     }
 
@@ -3101,8 +3212,13 @@ static LhatNode *parse_statement(Parser *p)
         if (check_hat(p, "errordef")) {
             return parse_errordef(p);
         }
+        // 8.9: the two introducers of a name. var^ is 8.6's, unchanged; let^
+        // is the same form binding a name nothing may reassign.
+        if (check_hat(p, "var")) {
+            return parse_let(p, false);
+        }
         if (check_hat(p, "let")) {
-            return parse_let(p);
+            return parse_let(p, true);
         }
         if (check_hat(p, "module")) {
             return parse_module(p);
@@ -3443,8 +3559,13 @@ const char *lhat_parse_error_message(LhatParseErrorCode code)
         case LHAT_PARSE_ERR_NEXT_NOT_HERE:
             return "next^ updates the focus of a while^ or until^ loop; this "
                    "form advances its own";
-        case LHAT_PARSE_ERR_WITHDRAWN_FROM:
-            return "from^ was withdrawn; write 'for^ i := 1 to^ 10'";
+        case LHAT_PARSE_ERR_FROM_NOT_HERE:
+            return "from^ opens the counted range of a to^ or downto^ loop; "
+                   "this form takes 'var^ i = 1' or 'let^ i = 1'";
+        case LHAT_PARSE_ERR_FOCUS_NEEDS_FROM:
+            return "a to^ or downto^ loop advances its own focus; write "
+                   "'for^ i from^ 1 to^ 10', or 'for^ i := 1 to^ 10' to count "
+                   "with a name that is already there";
         case LHAT_PARSE_ERR_OPERATOR_NOT_DEFINABLE:
             return "op^ defines '..' and the arithmetic operators; and^, or^, "
                    "'!' and the comparisons are the language's own";
@@ -3477,9 +3598,15 @@ const char *lhat_parse_error_message(LhatParseErrorCode code)
         case LHAT_PARSE_ERR_WITHDRAWN_SHIFT:
             return "'<<' was withdrawn; reassignment is written 'x := 1'";
         case LHAT_PARSE_ERR_LET_NEEDS_VALUE:
-            return "let^ needs a value; write 'let^ x = 0'";
+            return "a definition needs a value; write 'var^ x = 0'";
+        case LHAT_PARSE_ERR_LET_NEEDS_EQUALS:
+            return "let^ defines and never reassigns; write 'let^ x = 0', or "
+                   "'var^ x = 0' for a name that may be reassigned";
+        case LHAT_PARSE_ERR_LET_NEEDS_NAME:
+            return "let^ binds a name; write 'var^ t.a = 1' for a member of a "
+                   "table";
         case LHAT_PARSE_ERR_EQUALS_IS_COMPARISON:
-            return "'=' compares; write 'x := 1' to reassign or 'let^ x = 1' "
+            return "'=' compares; write 'x := 1' to reassign or 'var^ x = 1' "
                    "to make a new name";
         case LHAT_PARSE_ERR_LEXICAL:
             return "the input could not be tokenised";

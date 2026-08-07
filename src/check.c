@@ -32,6 +32,20 @@ typedef struct Binding {
     // again is a redefinition rather than the clash 8.7 makes of two let^ in
     // one scope -- it is the same place, written again.
     bool from_session;
+    // 8.9: introduced by a let^ rather than a var^, so nothing written after
+    // it may reassign the name. 12 章's with^ and 16.3's in^ focus bind this
+    // way too -- the first because the block disposes of whatever the name
+    // still holds, the second because each turn binds it afresh.
+    //
+    // This says nothing about the value: a table a let^ holds is still the
+    // table it was, and 8.8's members of it are still written through 15.1改
+    // and 05 の 8.6改. What it refuses is the name coming to mean something
+    // else.
+    bool immutable;
+    // 8.9 with 12.1 and 16.3改2: the construct bound it, not a word the writer
+    // chose -- a with^, or the focus of a counted or walking for^. Writing
+    // var^ instead is not open to them, so the diagnostic must not offer it.
+    bool bound_by_form;
     struct Binding *next;
 } Binding;
 
@@ -3856,6 +3870,14 @@ static void check_define(Checker *c, const LhatNode *node)
     // would need more than the syntax to decide (4.3).
     if (node->v.binding.exported) {
         c->exporting++;
+        // 05 の 4 章 with 8.9: what a unit publishes is a name other units
+        // read, and 01 の 8.3 refused a global variable outright. A public^
+        // var^ would be one under another spelling -- a name a reader of
+        // another unit sees change without being able to see what changed it.
+        // A p^ that publishes an accessor is how a unit lets its state move.
+        if (!node->v.binding.immutable) {
+            report(c, node, LHAT_CHECK_ERR_PUBLIC_IS_IMMUTABLE);
+        }
     }
 
     for (const LhatNode *target = node->v.binding.targets; target != NULL;
@@ -4351,6 +4373,50 @@ static void check_write_target(Checker *c, const LhatNode *target)
     }
 }
 
+// 8.9: a name a let^ bound is not one anything may reassign. Kept apart from
+// check_write_target because that one answers 15.1's question -- whose name is
+// this to write -- and only inside an f^; this holds wherever the name does,
+// in a p^, at the top level of a unit, and in a session.
+//
+// Only a plain name is asked about. A path is a member of a table (8.8), and
+// what may be written there is settled by 15.1改 and 05 の 8.6改 -- a table a
+// let^ holds is still the table it was. What this refuses is the name coming
+// to mean something else.
+static void check_immutable_write(Checker *c, const LhatNode *target)
+{
+    if (target_is_path(target)) {
+        return;
+    }
+
+    const LhatNode *name_node = target_name_node(target);
+    const char *name = NULL;
+    size_t length = 0;
+    if (!node_name(c, name_node, &name, &length)) {
+        return;
+    }
+
+    // 01 の 8 章: a specifier says where to start looking, exactly as it does
+    // for 15.1's question above.
+    Scope *from = c->scope;
+    if (name_node->kind == LHAT_NODE_SCOPE) {
+        from = scope_from(c->scope, name_node);
+        if (from == NULL) {
+            return;  // already reported where the name was read
+        }
+    }
+
+    const Binding *b = scope_find(from, name, length);
+    if (b != NULL && b->immutable) {
+        // 12.1 and 16.3改2 bind without the writer choosing a word, so there
+        // is no var^ for them to write instead. Saying otherwise would send a
+        // reader to a spelling that is itself refused.
+        report_named(c, name_node,
+                     b->bound_by_form ? LHAT_CHECK_ERR_ASSIGN_TO_FORM
+                                      : LHAT_CHECK_ERR_ASSIGN_TO_LET,
+                     name, length);
+    }
+}
+
 // 05 の 8.8: a host type is opaque -- 11.3 gives way to nominal identity
 // precisely because there is no structure to compare -- and what it carries
 // is what the host registered: C functions reading a raw pointer as the type
@@ -4430,6 +4496,7 @@ static void check_reassign(Checker *c, const LhatNode *node)
     for (const LhatNode *target = node->v.binding.targets; target != NULL;
          target = target->next) {
         position++;
+        check_immutable_write(c, target);
         check_write_target(c, target);
         check_opaque_write(c, target);
         LhatType *wanted = infer(c, target_name_node(target));
@@ -4577,6 +4644,12 @@ static void check_focus_in(Checker *c, const LhatNode *node)
                                target_name_node(element)->offset);
         if (b != NULL) {
             b->reached = true;  // 8.7: a turn of the loop has bound it
+            // 8.9: what each turn binds is the walk's to say, so the focus of
+            // an in^ is a let^ -- 16.3 already refuses the ':=' and the
+            // introducer that would have said otherwise, since there is no
+            // initial value for either to give.
+            b->immutable = true;
+            b->bound_by_form = true;
         }
     }
 }
@@ -4710,10 +4783,24 @@ static void collect_bindings(Checker *c, const LhatNode *statements)
                                  LHAT_CHECK_ERR_REDEFINED, name, length);
                 }
                 already->from_session = false;
+                // 8.9 and 03 の 4.3: a session redefinition is the name being
+                // written again, so what the new input says about it is what
+                // holds -- a let^ over an earlier var^ makes it a let^ from
+                // here on, and the other way round.
+                already->immutable = s->v.binding.immutable;
                 continue;
             }
-            scope_add(c->scope, name, length, simple(c, LHAT_TYPE_PENDING),
-                      target_name_node(target)->offset);
+            Binding *b =
+                scope_add(c->scope, name, length, simple(c, LHAT_TYPE_PENDING),
+                          target_name_node(target)->offset);
+            // 8.9: set here rather than in check_define, so that a write
+            // standing textually before the definition it names is judged by
+            // the same rule as one standing after it -- 8.7 makes the name
+            // visible throughout the scope either way.
+            if (b != NULL) {
+                b->immutable = s->v.binding.immutable;
+                b->bound_by_form = s->v.binding.bound_by_form;
+            }
         }
     }
 }
@@ -5153,6 +5240,11 @@ struct LhatCheckSession {
         char *name;
         size_t length;
         LhatType *type;
+        // 8.9: which word bound it, so that a let^ in one input is still a
+        // let^ when a later one writes ':=' -- and a var^ over it makes the
+        // name writable again, the way 03 の 4.3 makes a redefinition the
+        // same place written afresh.
+        bool immutable;
     } *names;
     size_t count;
     size_t capacity;
@@ -5254,12 +5346,13 @@ void lhat_check_session_dispose(LhatCheckSession *session)
 // same name -- 8.7 makes a second let^ a new name, and at the top level of a
 // REPL that is what a writer means by it.
 static void session_keep(LhatCheckSession *session, const char *name,
-                         size_t length, LhatType *type)
+                         size_t length, LhatType *type, bool immutable)
 {
     for (size_t i = 0; i < session->count; i++) {
         if (session->names[i].length == length &&
             memcmp(session->names[i].name, name, length) == 0) {
             session->names[i].type = type;
+            session->names[i].immutable = immutable;
             return;
         }
     }
@@ -5281,6 +5374,7 @@ static void session_keep(LhatCheckSession *session, const char *name,
     session->names[session->count].name = kept;
     session->names[session->count].length = length;
     session->names[session->count].type = type;
+    session->names[session->count].immutable = immutable;
     session->count++;
 }
 
@@ -5345,6 +5439,7 @@ void lhat_check_next(LhatCheckSession *session, const LhatNode *unit,
         if (b != NULL) {
             b->reached = true;
             b->from_session = true;
+            b->immutable = session->names[i].immutable;
         }
     }
 
@@ -5355,7 +5450,7 @@ void lhat_check_next(LhatCheckSession *session, const LhatNode *unit,
     // bound under the same name. The types are in the session's arena
     // already, so only the names are copied.
     for (Binding *b = scope.bindings; b != NULL; b = b->next) {
-        session_keep(session, b->name, b->name_length, b->type);
+        session_keep(session, b->name, b->name_length, b->type, b->immutable);
     }
     session->environment = checker.environment;
     session->typeinfo_type = checker.typeinfo_type;
@@ -5590,6 +5685,16 @@ const char *lhat_check_error_message(LhatCheckErrorCode code)
         case LHAT_CHECK_ERR_TABLE_IS_SEALED:
             return "this table belongs to the machine; what it holds is "
                    "written by the host, not from here";
+        case LHAT_CHECK_ERR_ASSIGN_TO_LET:
+            return "this name was bound by a let^ and is not reassigned; "
+                   "write var^ where the name has to change";
+        case LHAT_CHECK_ERR_ASSIGN_TO_FORM:
+            return "the construct that introduces this name is what gives it a "
+                   "value -- a with^ holds it for the block, a for^ advances "
+                   "or rebinds its focus -- so nothing else writes it";
+        case LHAT_CHECK_ERR_PUBLIC_IS_IMMUTABLE:
+            return "a public^ declaration binds with let^; another unit would "
+                   "otherwise see a name change under it";
     }
     return "unknown error";
 }

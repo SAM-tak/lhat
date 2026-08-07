@@ -129,10 +129,20 @@ typedef enum {
     LHAT_CHECK_ERR_COROUTINE_ESCAPES,   // 15.3改: an f^ coroutine reaching the
                                         // outside, where advancing it is what
                                         // makes the call observable
-    LHAT_CHECK_ERR_TABLE_IS_SEALED      // 05 の 8.6改 (M5): L^, its registry
+    LHAT_CHECK_ERR_TABLE_IS_SEALED,     // 05 の 8.6改 (M5): L^, its registry
                                         // and what require^/import^ answers
                                         // are the machine's own; the host
                                         // writes them through its API
+    LHAT_CHECK_ERR_ASSIGN_TO_LET,       // 8.9: the name was bound by a let^,
+                                        // which a ':=' may not reach. Writing
+                                        // var^ instead is open here
+    LHAT_CHECK_ERR_ASSIGN_TO_FORM,      // 8.9 with 12.1 and 16.3改2: bound by
+                                        // the construct rather than a word --
+                                        // a with^, or a for^ focus -- so
+                                        // there is no var^ to offer
+    LHAT_CHECK_ERR_PUBLIC_IS_IMMUTABLE  // 05 の 4 章 with 8.9: a public^ var^
+                                        // is a name another unit could see
+                                        // change, which 01 の 8.3 refused
 } LhatCheckErrorCode;
 
 typedef struct {

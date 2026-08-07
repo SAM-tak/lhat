@@ -47,7 +47,7 @@ static LhatReport at(const char *message, uint32_t offset, uint32_t line,
 static void test_plain(void)
 {
     LhatSource source;
-    lhat_source_init_from_string(&source, "main.lh", "let^ x = 1\n", 11);
+    lhat_source_init_from_string(&source, "main.lh", "var^ x = 1\n", 11);
 
     LHAT_TEST("the plain form is one line");
     {
@@ -88,7 +88,7 @@ static void test_plain(void)
 static void test_rich(void)
 {
     // Three lines, so the middle one has to be found rather than assumed.
-    static const char *const text = "let^ a = 1\nlet^ b = wrong\nlet^ c = 3\n";
+    static const char *const text = "var^ a = 1\nvar^ b = wrong\nvar^ c = 3\n";
     LhatSource source;
     lhat_source_init_from_string(&source, "main.lh", text, strlen(text));
 
@@ -100,7 +100,7 @@ static void test_rich(void)
         LHAT_CHECK(out != NULL, "measured and filled agree");
         if (out != NULL) {
             LHAT_CHECK(strcmp(out,
-                              "let^ b = wrong\n"
+                              "var^ b = wrong\n"
                               "         ~\n"
                               "(main.lh)2:10: error: no such name in scope") == 0,
                        "the line, the mark under it, then the place");
@@ -115,7 +115,7 @@ static void test_rich(void)
         LhatReport report = at("m", 20, 2, 10, 0);
         char *out = rendered(&report, &source, NULL, true);
         if (out != NULL) {
-            LHAT_CHECK(strchr(out, '^') == NULL || strstr(out, "let^") != NULL,
+            LHAT_CHECK(strchr(out, '^') == NULL || strstr(out, "var^") != NULL,
                        "no hat of its own");
             LHAT_CHECK(strstr(out, "\n         ~\n") != NULL, "a tilde");
             free(out);
@@ -239,14 +239,14 @@ static void test_window(void)
     // all differ, so getting the mark right means using the correct one.
     LHAT_TEST("and a full-width character is two cells wide");
     {
-        static const char *const text = "let^ x = \"\xe6\x97\xa5\xe6\x9c\xac\" + 1";
+        static const char *const text = "var^ x = \"\xe6\x97\xa5\xe6\x9c\xac\" + 1";
         LhatSource source;
         lhat_source_init_from_string(&source, "m", text, strlen(text));
 
         const char *plus = strchr(text, '+');
         LHAT_CHECK_EQ_INT((int)(plus - text), 18);  // bytes
 
-        // 'let^ x = "' is ten cells, 日本 four, then the quote and a blank.
+        // 'var^ x = "' is ten cells, 日本 four, then the quote and a blank.
         LhatReport report = at("m", (uint32_t)(plus - text), 1, 15, 0);
         char *out = rendered(&report, &source, NULL, true);
         if (out != NULL) {
