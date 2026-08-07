@@ -10,15 +10,12 @@
 // xorshift64* (Marsaglia/Vigna): small, dependency-free, good enough for the
 // games and tools this is a sample for. Not cryptographic.
 //
-// std.random.make answers std.random.Random|std.random.RandomError.
-// OutOfMemory -- read it with try^/catch^, not isa^ and not `!= nil^`:
-// compile_isa (vm.c) only resolves an error kind (04 の 6.1), not a
-// hostdata type like Random, so `x isa^ std.random.Random` fails to
-// compile (LHAT_COMPILE_UNSUPPORTED); and check.c's narrow_from only ever
-// narrows on isa^ (see the `op != LHAT_OP_ISA` early return), so
-// `if^ x != nil^` would not narrow `x` either even if the answer were
-// `Random|nil^` instead.
+// std.random.make answers std.random.Random|std.error.OutOfMemory -- read
+// it with try^/catch^, or narrow with isa^ against std.random.Random
+// (05 の 8.8's hostdata path). See error.h for why OutOfMemory lives in
+// std.error rather than a std.random.RandomError of its own.
 
+#include "error.h"
 #include "random.h"
 
 #include <stdint.h>
@@ -152,19 +149,18 @@ static LhatValue random_dispose(LhatMachine *machine, void *context,
 
 bool lhatstdlib_random_register(LhatProgram *program)
 {
+    // 05 の 8.7: 登録は検査より前 -- std.error.OutOfMemory を使う側(この
+    // モジュール)より前に確実に存在させる。lhatstdlib_error_register は
+    // 冪等なので、他の stdlib モジュールが先に呼んでいても構わない。
+    if (!lhatstdlib_error_register(program)) {
+        return false;
+    }
+
     RandomModule *module = (RandomModule *)lhat_calloc(1, sizeof *module);
     if (module == NULL) {
         return false;
     }
-
-    static const char *const variants[] = {"OutOfMemory"};
-    const LhatErrorKind *kinds[1];
-    if (!lhat_register_error_kind(program, "std.random", "RandomError",
-                                  variants, 1, NULL, kinds)) {
-        lhat_free(module);
-        return false;
-    }
-    module->out_of_memory = kinds[0];
+    module->out_of_memory = lhatstdlib_error_lookup(program, "OutOfMemory");
 
     module->tag = lhat_register_hostdata_type(program, "std.random", "Random");
     if (module->tag == NULL) {
@@ -174,8 +170,7 @@ bool lhatstdlib_random_register(LhatProgram *program)
 
     return lhat_register_func(
                program, "std.random", "make",
-               "f^number^ -> "
-               "std.random.Random|std.random.RandomError.OutOfMemory;",
+               "f^number^ -> std.random.Random|std.error.OutOfMemory;",
                random_make, module) &&
            lhat_register_member(program, "std.random", "Random", "reseed",
                                 "p^self^, number^;", random_reseed, module) &&

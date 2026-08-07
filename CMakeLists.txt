@@ -95,6 +95,7 @@ if(LHAT_BUILD_STDLIB)
     find_package(Threads REQUIRED)
 
     add_library(lhatstdlib
+        stdlib/error.c
         stdlib/io.c
         stdlib/random.c
         stdlib/thread.c
@@ -109,7 +110,7 @@ if(LHAT_BUILD_STDLIB)
         ARCHIVE DESTINATION lib
         LIBRARY DESTINATION lib
         RUNTIME DESTINATION bin)
-    install(FILES stdlib/io.h stdlib/random.h stdlib/thread.h
+    install(FILES stdlib/error.h stdlib/io.h stdlib/random.h stdlib/thread.h
         DESTINATION include/lhatstdlib)
 endif()
 

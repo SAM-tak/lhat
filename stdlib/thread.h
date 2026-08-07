@@ -11,10 +11,13 @@
 // A ThreadHandle's dispose() blocks until the spawned thread finishes if it
 // was never join()ed -- see stdlib/thread.c's thread_dispose comment for why.
 //
-// spawn/join answer a ThreadHandle or a ThreadError -- read the result with
-// try^/catch^, not isa^: compile_isa (vm.c) only resolves an error kind
-// (04 の 6.1), not a hostdata type like ThreadHandle, so
-// `x isa^ std.thread.ThreadHandle` fails to compile (LHAT_COMPILE_UNSUPPORTED).
+// spawn/join answer a ThreadHandle, a ThreadError, or std.error.
+// OutOfMemory for the one failure this module shares with every other
+// stdlib module -- read the result with try^/catch^, or narrow with isa^
+// against std.thread.ThreadHandle or an error kind (both supported).
+// Naming std.error.OutOfMemory in an isa^ needs its own
+// `import^ std.error` -- 8.1's "the language hands out no names" applies
+// to a name reached through another module's registration too.
 
 #ifndef LHATSTDLIB_THREAD_H
 #define LHATSTDLIB_THREAD_H

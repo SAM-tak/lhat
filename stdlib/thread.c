@@ -18,11 +18,13 @@
 // Proto, unlike its upvalues, is safe to share -- see lhat_proto_new's
 // comment on why it is always born already black.
 //
-// spawn/join answer a ThreadHandle or a ThreadError -- read the result with
-// try^/catch^, not isa^: compile_isa (vm.c) only resolves an error kind
-// (04 の 6.1), not a hostdata type like ThreadHandle, so
-// `x isa^ std.thread.ThreadHandle` fails to compile (LHAT_COMPILE_UNSUPPORTED).
+// spawn/join answer a ThreadHandle or a ThreadError, or std.error.
+// OutOfMemory for the one failure this module shares with every other
+// stdlib module (see error.h) -- read the result with try^/catch^, or
+// narrow with isa^ against std.thread.ThreadHandle (05 の 8.8's hostdata
+// path).
 
+#include "error.h"
 #include "thread.h"
 
 #include <stdint.h>
@@ -47,6 +49,7 @@ typedef struct {
     const LhatErrorKind *spawn_failed;
     const LhatErrorKind *bad_result;
     const LhatErrorKind *already_joined;
+    const LhatErrorKind *out_of_memory;  // std.error.OutOfMemory -- error.h
     const LhatHostDataTag *handle_tag;
 } ThreadModule;
 
@@ -244,7 +247,7 @@ static LhatValue thread_spawn(LhatMachine *machine, void *context,
     if (handle == NULL || start == NULL) {
         lhat_free(handle);
         lhat_free(start);
-        return fail_with(machine, module->spawn_failed, "out of memory");
+        return fail_with(machine, module->out_of_memory, "out of memory");
     }
     start->proto = closure->proto;
     start->modules = modules;
@@ -265,7 +268,7 @@ static LhatValue thread_spawn(LhatMachine *machine, void *context,
         // caller -- wait for it and free `handle` ourselves, the same as
         // an unjoined dispose() would.
         join_and_free(handle);
-        return fail_with(machine, module->spawn_failed, "out of memory");
+        return fail_with(machine, module->out_of_memory, "out of memory");
     }
     return out;
 }
@@ -290,7 +293,7 @@ static LhatValue thread_join(LhatMachine *machine, void *context,
     }
     LhatValue out = lhat_nil();
     if (!from_thread_result(machine, &handle->result, &out)) {
-        return fail_with(machine, module->bad_result, "out of memory");
+        return fail_with(machine, module->out_of_memory, "out of memory");
     }
     return out;
 }
@@ -324,10 +327,18 @@ static LhatValue thread_dispose(LhatMachine *machine, void *context,
 
 bool lhatstdlib_thread_register(LhatProgram *program)
 {
+    // 05 の 8.7: 登録は検査より前 -- std.error.OutOfMemory を使う側(この
+    // モジュール)より前に確実に存在させる。lhatstdlib_error_register は
+    // 冪等なので、他の stdlib モジュールが先に呼んでいても構わない。
+    if (!lhatstdlib_error_register(program)) {
+        return false;
+    }
+
     ThreadModule *module = (ThreadModule *)lhat_calloc(1, sizeof *module);
     if (module == NULL) {
         return false;
     }
+    module->out_of_memory = lhatstdlib_error_lookup(program, "OutOfMemory");
 
     static const char *const variants[] = {"NotSpawnable", "SpawnFailed",
                                            "BadResult", "AlreadyJoined"};
@@ -353,13 +364,13 @@ bool lhatstdlib_thread_register(LhatProgram *program)
                program, "std.thread", "spawn",
                "f^p^ -> number^|bool^|string^|nil^; -> "
                "std.thread.ThreadHandle|std.thread.ThreadError.NotSpawnable"
-               "|std.thread.ThreadError.SpawnFailed;",
+               "|std.thread.ThreadError.SpawnFailed|std.error.OutOfMemory;",
                thread_spawn, module) &&
            lhat_register_member(
                program, "std.thread", "ThreadHandle", "join",
                "f^self^ -> (number^|bool^|string^|nil^)"
                "|std.thread.ThreadError.AlreadyJoined"
-               "|std.thread.ThreadError.BadResult;",
+               "|std.thread.ThreadError.BadResult|std.error.OutOfMemory;",
                thread_join, module) &&
            lhat_register_member(program, "std.thread", "ThreadHandle",
                                 "dispose", "p^self^;", thread_dispose,

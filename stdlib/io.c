@@ -11,10 +11,13 @@
 // an ordinary value, the same shape 04 の 2.5's error^Kind{...} builds.
 //
 // std.io.open answers std.io.File|std.io.IOError.NotFound|std.io.IOError.
-// Denied -- read it with try^/catch^, not isa^: compile_isa (vm.c) only
-// resolves an error kind (04 の 6.1), not a hostdata type like File, so
-// `x isa^ std.io.File` fails to compile (LHAT_COMPILE_UNSUPPORTED).
+// Denied|std.error.OutOfMemory -- read it with try^/catch^, or narrow with
+// isa^ against std.io.File (05 の 8.8's hostdata path). std.error.
+// OutOfMemory (rather than a std.io.IOError.OutOfMemory of its own) is
+// shared with every other stdlib module that can fail the same way --
+// see error.h.
 
+#include "error.h"
 #include "io.h"
 
 #include <errno.h>
@@ -37,6 +40,7 @@ typedef struct {
     const LhatErrorKind *not_found;
     const LhatErrorKind *denied;
     const LhatErrorKind *eof;
+    const LhatErrorKind *out_of_memory;  // std.error.OutOfMemory -- error.h
     const LhatHostDataTag *file_tag;
 } IoModule;
 
@@ -68,12 +72,12 @@ static bool arg_text(LhatValue value, const char **out_text,
 // A line without its newline, or IOError.Eof when there was none left. A
 // fixed buffer is this sample's simplification -- a line longer than it
 // comes back truncated rather than split across two reads.
-static LhatValue read_line_from(LhatMachine *machine,
-                                const LhatErrorKind *eof_kind, FILE *stream)
+static LhatValue read_line_from(LhatMachine *machine, const IoModule *module,
+                                FILE *stream)
 {
     char buffer[4096];
     if (stream == NULL || fgets(buffer, sizeof buffer, stream) == NULL) {
-        return fail_with(machine, eof_kind, "end of file");
+        return fail_with(machine, module->eof, "end of file");
     }
     size_t length = strlen(buffer);
     if (length > 0 && buffer[length - 1] == '\n') {
@@ -85,7 +89,7 @@ static LhatValue read_line_from(LhatMachine *machine,
     LhatValue out = lhat_nil();
     return lhat_machine_make_string(machine, buffer, length, &out)
                ? out
-               : lhat_nil();
+               : fail_with(machine, module->out_of_memory, "out of memory");
 }
 
 static LhatValue std_print(LhatMachine *machine, void *context,
@@ -109,7 +113,7 @@ static LhatValue std_read_line(LhatMachine *machine, void *context,
     (void)arguments;
     (void)count;
     const IoModule *module = (const IoModule *)context;
-    return read_line_from(machine, module->eof, stdin);
+    return read_line_from(machine, module, stdin);
 }
 
 static LhatValue file_open(LhatMachine *machine, void *context,
@@ -137,7 +141,7 @@ static LhatValue file_open(LhatMachine *machine, void *context,
     File *handle = (File *)lhat_alloc(sizeof *handle);
     if (handle == NULL) {
         fclose(stream);
-        return lhat_nil();
+        return fail_with(machine, module->out_of_memory, "out of memory");
     }
     handle->stream = stream;
     LhatValue out = lhat_nil();
@@ -145,7 +149,7 @@ static LhatValue file_open(LhatMachine *machine, void *context,
                                     &out)) {
         fclose(stream);
         lhat_free(handle);
-        return lhat_nil();
+        return fail_with(machine, module->out_of_memory, "out of memory");
     }
     return out;
 }
@@ -157,8 +161,8 @@ static LhatValue file_read_line(LhatMachine *machine, void *context,
     const IoModule *module = (const IoModule *)context;
     File *handle =
         (File *)lhat_hostdata_pointer(arguments[0], module->file_tag);
-    return read_line_from(machine, module->eof,
-                          handle != NULL ? handle->stream : NULL);
+    return read_line_from(machine, module, handle != NULL ? handle->stream
+                                                          : NULL);
 }
 
 static LhatValue file_write(LhatMachine *machine, void *context,
@@ -200,10 +204,18 @@ static LhatValue file_dispose(LhatMachine *machine, void *context,
 
 bool lhatstdlib_io_register(LhatProgram *program)
 {
+    // 05 の 8.7: 登録は検査より前 -- std.error.OutOfMemory を使う側(この
+    // モジュール)より前に確実に存在させる。lhatstdlib_error_register は
+    // 冪等なので、他の stdlib モジュールが先に呼んでいても構わない。
+    if (!lhatstdlib_error_register(program)) {
+        return false;
+    }
+
     IoModule *module = (IoModule *)lhat_calloc(1, sizeof *module);
     if (module == NULL) {
         return false;
     }
+    module->out_of_memory = lhatstdlib_error_lookup(program, "OutOfMemory");
 
     static const char *const variants[] = {"NotFound", "Denied", "Eof"};
     const LhatErrorKind *kinds[3];
@@ -224,17 +236,19 @@ bool lhatstdlib_io_register(LhatProgram *program)
 
     return lhat_register_func(program, "std.io", "print", "p^string^;",
                               std_print, module) &&
-           lhat_register_func(program, "std.io", "readLine",
-                              "f^ -> string^|std.io.IOError.Eof;",
-                              std_read_line, module) &&
+           lhat_register_func(
+               program, "std.io", "readLine",
+               "f^ -> string^|std.io.IOError.Eof|std.error.OutOfMemory;",
+               std_read_line, module) &&
            lhat_register_func(
                program, "std.io", "open",
-               "f^string^, string^ -> "
-               "std.io.File|std.io.IOError.NotFound|std.io.IOError.Denied;",
+               "f^string^, string^ -> std.io.File|std.io.IOError.NotFound"
+               "|std.io.IOError.Denied|std.error.OutOfMemory;",
                file_open, module) &&
-           lhat_register_member(program, "std.io", "File", "readLine",
-                                "f^self^ -> string^|std.io.IOError.Eof;",
-                                file_read_line, module) &&
+           lhat_register_member(
+               program, "std.io", "File", "readLine",
+               "f^self^ -> string^|std.io.IOError.Eof|std.error.OutOfMemory;",
+               file_read_line, module) &&
            lhat_register_member(program, "std.io", "File", "write",
                                 "p^self^, string^;", file_write, module) &&
            lhat_register_member(program, "std.io", "File", "dispose",

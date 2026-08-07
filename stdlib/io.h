@@ -5,9 +5,11 @@
 // a host that never calls this never sees an "io" module.
 //
 // std.io.open answers std.io.File|std.io.IOError.NotFound|std.io.IOError.
-// Denied -- read it with try^/catch^, not isa^: compile_isa (vm.c) only
-// resolves an error kind (04 の 6.1), not a hostdata type like File, so
-// `x isa^ std.io.File` fails to compile (LHAT_COMPILE_UNSUPPORTED).
+// Denied|std.error.OutOfMemory -- read it with try^/catch^, or narrow with
+// isa^ against std.io.File or an error kind (both supported). Naming
+// std.error.OutOfMemory in an isa^ needs its own `import^ std.error` --
+// 8.1's "the language hands out no names" applies to a name reached
+// through another module's registration too.
 
 #ifndef LHATSTDLIB_IO_H
 #define LHATSTDLIB_IO_H
