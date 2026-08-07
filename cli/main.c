@@ -10,6 +10,13 @@
 
 #include "lhat.h"
 
+#ifdef LHAT_CLI_WITH_STDLIB
+#include "stdlib/error.h"
+#include "stdlib/io.h"
+#include "stdlib/random.h"
+#include "stdlib/thread.h"
+#endif
+
 static void print_token(const LhatLexer *lexer, const LhatToken *token)
 {
     printf("%4u:%-3u %-18s", token->line, token->column,
@@ -504,12 +511,25 @@ static const char *const bound_names[] = {"print", "collectgarbage"};
 static const char *const bound_members[] = {"print", "collectgarbage"};
 static const size_t bound_count = sizeof bound_names / sizeof bound_names[0];
 
-static void bind_host_names(LhatProgram *program)
+// stdlib/ 全体 (std.io/std.thread/std.random, どれも std.error に依存) を
+// このサンプルドライバで既定登録する -- どれも lhatstdlib_error_register を
+// 自分の先頭で冪等に呼ぶので、呼ぶ順序はここでは問わない。
+static bool bind_host_names(LhatProgram *program)
 {
     lhat_register_global(program, "print", "f^string^ -> nil^;", host_print,
                          NULL);
     lhat_bind_initial(program, "print", "L^.print");
     lhat_bind_initial(program, "collectgarbage", "L^.collectgarbage");
+
+#ifdef LHAT_CLI_WITH_STDLIB
+    if (!lhatstdlib_io_register(program) ||
+        !lhatstdlib_thread_register(program) ||
+        !lhatstdlib_random_register(program)) {
+        return false;
+    }
+#endif
+
+    return true;
 }
 
 // The same for 03 の 4.3's prompt, which has no program to hold any of it:
@@ -535,7 +555,11 @@ static int check_program(const char *path, bool run, bool strict)
 {
     LhatProgram program;
     lhat_program_init(&program, strict, lhat_load_file, NULL);
-    bind_host_names(&program);  // 05 の 8.2, before checking (8.3)
+    if (!bind_host_names(&program)) {  // 05 の 8.2, before checking (8.3)
+        fprintf(stderr, "lhat: out of memory\n");
+        lhat_program_dispose(&program);
+        return EXIT_FAILURE;
+    }
 
     const LhatUnit *root = lhat_program_check(&program, path);
 

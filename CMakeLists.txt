@@ -83,9 +83,10 @@ target_link_libraries(lhat PUBLIC lhatport)
 
 # ---- Sample standard library ------------------------------------------------
 # stdlib/ の隔離は port/ と非対称: port はコアが既定でリンクする既定実装で、
-# stdlib はホストが選んで足す任意のライブラリ。lhat_cli/lhat_lsp はどちらも
-# 既定でこれをリンクしない -- 丸ごと消せるだけでなく、最初から組み込まれて
-# すらいない、というのが「サンプル」の意図をより厳密に体現する形。
+# stdlib はホストが選んで足す任意のライブラリ。lhat_lsp はこれをリンクしない
+# -- 丸ごと消せるだけでなく、最初から組み込まれてすらいない、というのが
+# 「サンプル」の意図をより厳密に体現する形。lhat_cli はサンプルドライバとして
+# 下の Driver セクションで LHAT_BUILD_STDLIB が ON の間だけこれをリンクする。
 option(LHAT_BUILD_STDLIB "Build the L^ sample standard library (stdlib/)" ON)
 
 if(LHAT_BUILD_STDLIB)
@@ -119,6 +120,17 @@ if(LHAT_BUILD_CLI)
     add_executable(lhat_cli cli/main.c)
     set_target_properties(lhat_cli PROPERTIES OUTPUT_NAME lhat)
     target_link_libraries(lhat_cli PRIVATE lhat)
+    # サンプルドライバとして、stdlib/ が建っているならそれを丸ごと登録する
+    # (cli/main.c の bind_host_names 参照)。LHAT_BUILD_STDLIB=OFF でも
+    # cli/main.c 自体はこのマクロなしでビルドできる -- stdlib は常に任意。
+    if(LHAT_BUILD_STDLIB)
+        target_link_libraries(lhat_cli PRIVATE lhatstdlib)
+        # stdlib/*.h 同士は同じディレクトリにある前提で "error.h" のように
+        # 相互 include している (stdlib/io.c 参照) -- cli/main.c だけが
+        # よそから見るので、リポジトリルートを足して "stdlib/foo.h" と書く。
+        target_include_directories(lhat_cli PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+        target_compile_definitions(lhat_cli PRIVATE LHAT_CLI_WITH_STDLIB)
+    endif()
     install(TARGETS lhat_cli RUNTIME DESTINATION bin)
 endif()
 
