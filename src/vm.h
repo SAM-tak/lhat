@@ -48,6 +48,22 @@ typedef enum {
 typedef size_t (*LhatUnitResolver)(void *context, const char *path,
                                    size_t length, const char **module_name);
 
+// 05 の 8.7 の誤り版: one error kind lhat_register_error_kind (program.h)
+// registered. resolve_kind (vm.c) reads these to answer a qualified name an
+// import^ed module wrote -- "module...Name" for the declaration as a whole,
+// "module...Name.Variant" for one of its kinds. The strings and the kind
+// objects are all owned by the LhatProgram that registered them (its
+// host_error_heap, 04 の 12.4), and outlive every machine and every compile
+// that reads this.
+typedef struct LhatHostErrorKind {
+    const char *module;                    // "." 区切り可; declared by
+    const char *name;                      // hosted_table 参照
+    const LhatErrorKind *group;            // 宣言全体。isa^ module.Name 用
+    const char *const *variant_names;
+    const LhatErrorKind *const *variants;  // variant_names と対応
+    size_t variant_count;
+} LhatHostErrorKind;
+
 typedef struct {
     LhatUnitResolver resolve;
     void *context;
@@ -67,6 +83,12 @@ typedef struct {
     const char *const *initial_names;
     const char *const *initial_members;
     size_t initial_count;
+
+    // What the program's lhat_register_error_kind calls registered, so that
+    // resolve_kind can answer a name none of this unit's own errordef^s
+    // declared. NULL/0 when the host registered none.
+    const LhatHostErrorKind *host_errors;
+    size_t host_error_count;
 } LhatUnits;
 
 // Compiles one unit into a proto, which owns the bodies written inside it.
@@ -210,15 +232,64 @@ bool lhat_machine_set_global(LhatMachine *machine, const char *name,
 bool lhat_machine_make_hostdata(LhatMachine *machine, const LhatHostDataTag *tag,
                             void *pointer, LhatValue *out);
 
+// 04 の 2.5 の host 版: error^kind{message:=..., cause:=...} が LHAT_BC_NEWERROR
+// と compile_error_new のフィールド既定処理でしていることを、C から直接行う。
+// `kind` は lhat_register_error_kind が返したもの(host 登録は v1 ではフィール
+// ド無し限定なので、message/cause 以外のフィールドを埋める経路はない -- 04 の
+// 2.3 が言う「どの種別も持つ」2つだけがここで書ける)。`message` は NULL なら
+// ""、`cause` は lhat_nil() なら書かれない(2.3 の既定と同じ)。
+bool lhat_machine_make_error(LhatMachine *machine, const LhatErrorKind *kind,
+                             const char *message, LhatValue cause,
+                             LhatValue *out);
+
 // The pointer back, or NULL when the value is not one of these or was made
 // with a different tag. 7.3 makes the tags distinct per declaration, so this
 // is what stops a Texture reaching the C that expects a Sound.
 void *lhat_hostdata_pointer(LhatValue value, const LhatHostDataTag *tag);
 
+// A string on `machine`'s own heap, made the way 05 の 8.7's registration
+// makes a table or a host -- the machine has to make it, since the value's
+// object header and its place in the collector's heap are the machine's to
+// give (05 の 8.8: "LhatValue is not widened; the machine makes it").
+bool lhat_machine_make_string(LhatMachine *machine, const char *text,
+                              size_t length, LhatValue *out);
+
+// A closure of `proto` on `machine`, with no upvalues. Answers false when
+// `proto` captures anything (upvalue_count != 0) -- a captured place lives on
+// whatever machine made it, and a closure carrying one is not safe to hand to
+// another. What this is for is std.thread's spawn: a proto is shared,
+// unwritten data (see the comment on lhat_chunk_init/lhat_proto_new), so
+// wrapping it fresh on a machine of its own is always safe when there is
+// nothing captured to carry across.
+bool lhat_machine_make_closure(LhatMachine *machine, const LhatProto *proto,
+                               LhatValue *out);
+
+// The modules `machine` was given by lhat_machine_set_modules, borrowed back
+// out. A proto is shared, unwritten data once compiled (same comment as
+// above), so handing the same array to a second machine -- another OS thread
+// -- is safe without copying anything.
+void lhat_machine_modules(const LhatMachine *machine,
+                          const LhatModule **out_modules, size_t *out_count);
+
 // Runs `proto` on `machine`. What the run allocates belongs to the machine,
 // so the answer is good until the machine is disposed or run again -- there
 // is nothing in the result to free.
 LhatRunResult lhat_run(LhatMachine *machine, const LhatProto *proto);
+
+// Calls an ordinary L^ value the way an instruction would, without a proto of
+// its own to run first -- for a host that already holds a callable value
+// (05 の 8.7's `LhatHostFn` has no way to call back into L^ on its own, since
+// a call site is normally compiled). `callee` has to be a plain subroutine
+// (LHAT_OBJECT_SUBROUTINE, not a member, not an overload^ group); arity is
+// checked the same way a CALL instruction checks it, variadics collect the
+// same way, but there is no self^ and no 'expr...' spread -- a host handing
+// values over already has them as a flat array.
+//
+// May be called on a fresh machine (nothing run on it yet) or nested inside
+// a running one -- what a call already on the stack looks like from here is
+// only how many frames are already open, which the machine already knows.
+LhatRunResult lhat_machine_call(LhatMachine *machine, LhatValue callee,
+                                const LhatValue *arguments, size_t count);
 
 const char *lhat_run_status_message(LhatRunStatus status);
 

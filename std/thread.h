@@ -1,0 +1,26 @@
+// L^ (lhat) -- sample standard library: std.thread.
+//
+// One function a host calls once, before lhat_program_check, the same as any
+// of program.h's own registrations (05 の 8.7). Nothing here is required --
+// a host that never calls this never sees a "thread" module.
+//
+// Needs an OS thread implementation: C11 <threads.h>, the same one
+// lsp/worker.c already uses in this codebase. A host linking this must also
+// link Threads::Threads (CMake's find_package(Threads)).
+//
+// A ThreadHandle's dispose() blocks until the spawned thread finishes if it
+// was never join()ed -- see std/thread.c's thread_dispose comment for why.
+//
+// spawn/join answer a ThreadHandle or a ThreadError -- read the result with
+// try^/catch^, not isa^: compile_isa (vm.c) only resolves an error kind
+// (04 の 6.1), not a hostdata type like ThreadHandle, so
+// `x isa^ std.thread.ThreadHandle` fails to compile (LHAT_COMPILE_UNSUPPORTED).
+
+#ifndef LHATSTD_THREAD_H
+#define LHATSTD_THREAD_H
+
+#include "lhat.h"
+
+bool lhatstd_thread_register(LhatProgram *program);
+
+#endif  // LHATSTD_THREAD_H

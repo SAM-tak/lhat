@@ -81,6 +81,37 @@ target_include_directories(lhatport PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
 # otherwise. PUBLIC so it carries through to whatever links lhat.
 target_link_libraries(lhat PUBLIC lhatport)
 
+# ---- Sample standard library ------------------------------------------------
+# std/ の隔離は port/ と非対称: port はコアが既定でリンクする既定実装で、
+# std はホストが選んで足す任意のライブラリ。lhat_cli/lhat_lsp はどちらも
+# 既定でこれをリンクしない -- 丸ごと消せるだけでなく、最初から組み込まれて
+# すらいない、というのが「サンプル」の意図をより厳密に体現する形。
+option(LHAT_BUILD_STD "Build the L^ sample standard library (std/)" ON)
+
+if(LHAT_BUILD_STD)
+    # std.thread が新規 OS スレッドを起動するためだけに要る。std.io/
+    # std.random はリンクするだけでこれに巻き込まれる -- 3つを別ライブラリ
+    # に分けるほどの理由はなく、port/ と同様ひとまとまりのターゲットにする。
+    find_package(Threads REQUIRED)
+
+    add_library(lhatstd
+        std/io.c
+        std/random.c
+        std/thread.c
+    )
+    # lhat.h だけで完結する(src/ への private path は要らない) -- port/ と
+    # 同じ理由で、これ自体が「lhat.h だけを使って書けるサンプル」の実例
+    # になっている。
+    target_include_directories(lhatstd PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
+    target_link_libraries(lhatstd PUBLIC lhat PRIVATE Threads::Threads)
+
+    install(TARGETS lhatstd
+        ARCHIVE DESTINATION lib
+        LIBRARY DESTINATION lib
+        RUNTIME DESTINATION bin)
+    install(FILES std/io.h std/random.h std/thread.h DESTINATION include/lhatstd)
+endif()
+
 # ---- Driver ---------------------------------------------------------------
 if(LHAT_BUILD_CLI)
     add_executable(lhat_cli cli/main.c)

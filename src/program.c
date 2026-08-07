@@ -5,7 +5,9 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "gc.h"  // LHAT_GC_BLACK -- host_error_heap の初期色 (04 の 12.4)
 #include "port.h"
+#include "type.h"
 
 #include "vm.h"  // 05 の 5.3: the units are compiled here too, not only checked
 
@@ -454,6 +456,175 @@ bool lhat_register_type(LhatProgram *program, const char *module,
     return lhat_register_hostdata_type(program, module, name) != NULL;
 }
 
+// lhat_register_error_kind の失敗経路が繰り返し要る後始末: variant_copies
+// の先頭 filled_count 個(まだ何も書かれていない calloc 直後なら 0)と、
+// 配列自体2つ。variants/variant_copies のどちらかが NULL でも(要素数0の
+// 登録、あるいは calloc 失敗直後)、filled_count が 0 ならループが回らず
+// 安全。
+static void free_variant_arrays(char **variant_copies,
+                                LhatErrorKind **variants, size_t filled_count)
+{
+    for (size_t i = 0; i < filled_count; i++) {
+        lhat_free(variant_copies[i]);
+    }
+    lhat_free(variant_copies);
+    lhat_free(variants);
+}
+
+// 04 の 12.4 の host 版: errordef^ を書かずに存在する誤り種別。型側は
+// lhat_register_hostdata_type と同じ hosted_table/hosted_member を通る;
+// 実行時側は check.c の check_errordef / vm.c の declare_error が unit の
+// ASTから作るのと同じ2つの呼び出し(lhat_type_error_set/error_kind、
+// lhat_error_kind_new)を、program->host_error_heap に対して行う。
+bool lhat_register_error_kind(LhatProgram *program, const char *module,
+                              const char *name,
+                              const char *const *variant_names,
+                              size_t variant_count,
+                              const LhatErrorKind **out_group,
+                              const LhatErrorKind **out_variants)
+{
+    if (program == NULL || module == NULL || name == NULL) {
+        return false;
+    }
+    LhatType *root = hosted_root(program);
+    LhatType *table = root != NULL ? hosted_table(program, root, module) : NULL;
+    if (table == NULL || hosted_member(table, name) != NULL) {
+        return false;  // 8.7: one name, one thing
+    }
+
+    LhatType *set = lhat_type_error_set(&program->types, name, strlen(name));
+    if (set == NULL ||
+        lhat_type_add_member(&program->types, table, name, strlen(name),
+                             set) == NULL) {
+        return false;
+    }
+    for (size_t i = 0; i < variant_count; i++) {
+        if (lhat_type_error_kind(&program->types, set, variant_names[i],
+                                 strlen(variant_names[i])) == NULL) {
+            return false;
+        }
+    }
+
+    // 04 の 2.3 と同じ形。途中で確保に失敗しても、既にヒープへ繋いだ分は
+    // chunk の定数と同じ扱いで lhat_program_dispose がまとめて解放する --
+    // 明示的に取り消さない。
+    LhatString *group_name =
+        lhat_string_new(&program->host_error_heap, name, strlen(name));
+    LhatErrorKind *group =
+        group_name != NULL
+            ? lhat_error_kind_new(&program->host_error_heap, NULL, group_name)
+            : NULL;
+    if (group == NULL) {
+        return false;
+    }
+
+    LhatErrorKind **variants = NULL;
+    char **variant_copies = NULL;
+    if (variant_count > 0) {
+        variants =
+            (LhatErrorKind **)lhat_calloc(variant_count, sizeof *variants);
+        variant_copies =
+            (char **)lhat_calloc(variant_count, sizeof *variant_copies);
+        if (variants == NULL || variant_copies == NULL) {
+            free_variant_arrays(variant_copies, variants, 0);
+            return false;
+        }
+    }
+    for (size_t i = 0; i < variant_count; i++) {
+        size_t name_length = strlen(name);
+        size_t variant_length = strlen(variant_names[i]);
+        char qualified[LHAT_QUALIFIED_NAME_BUFFER];
+        size_t total = name_length + 1 + variant_length;
+        LhatString *text = NULL;
+        if (total < sizeof qualified) {
+            // "IOError.NotFound" -- declare_error (vm.c) が typeof^ 用に
+            // 作るのと同じ綴り。module は含まない。
+            memcpy(qualified, name, name_length);
+            qualified[name_length] = '.';
+            memcpy(qualified + name_length + 1, variant_names[i],
+                  variant_length);
+            text = lhat_string_new(&program->host_error_heap, qualified, total);
+        }
+        LhatErrorKind *kind =
+            text != NULL
+                ? lhat_error_kind_new(&program->host_error_heap, group, text)
+                : NULL;
+        variant_copies[i] = kind != NULL ? duplicate(variant_names[i]) : NULL;
+        if (kind == NULL || variant_copies[i] == NULL) {
+            free_variant_arrays(variant_copies, variants, i + 1);
+            return false;
+        }
+        variants[i] = kind;
+    }
+
+    if (program->host_error_entry_count == program->host_error_entry_capacity) {
+        size_t grown = program->host_error_entry_capacity
+                           ? program->host_error_entry_capacity * 2
+                           : 4;
+        LhatHostErrorKind *bigger = (LhatHostErrorKind *)lhat_realloc(
+            program->host_error_entries, grown * sizeof *bigger);
+        if (bigger == NULL) {
+            free_variant_arrays(variant_copies, variants, variant_count);
+            return false;
+        }
+        program->host_error_entries = bigger;
+        program->host_error_entry_capacity = grown;
+    }
+
+    LhatHostErrorKind *entry =
+        &program->host_error_entries[program->host_error_entry_count];
+    entry->module = duplicate(module);
+    entry->name = duplicate(name);
+    entry->group = group;
+    entry->variant_names = (const char *const *)variant_copies;
+    entry->variants = (const LhatErrorKind *const *)variants;
+    entry->variant_count = variant_count;
+    if (entry->module == NULL || entry->name == NULL) {
+        lhat_free((void *)entry->module);
+        lhat_free((void *)entry->name);
+        free_variant_arrays(variant_copies, variants, variant_count);
+        return false;
+    }
+    program->host_error_entry_count++;
+
+    if (out_group != NULL) {
+        *out_group = group;
+    }
+    if (out_variants != NULL) {
+        for (size_t i = 0; i < variant_count; i++) {
+            out_variants[i] = variants[i];
+        }
+    }
+    return true;
+}
+
+const LhatErrorKind *lhat_lookup_error_kind(const LhatProgram *program,
+                                            const char *module,
+                                            const char *name,
+                                            const char *variant)
+{
+    if (program == NULL || module == NULL || name == NULL) {
+        return NULL;
+    }
+    for (size_t i = 0; i < program->host_error_entry_count; i++) {
+        const LhatHostErrorKind *entry = &program->host_error_entries[i];
+        if (strcmp(entry->module, module) != 0 ||
+            strcmp(entry->name, name) != 0) {
+            continue;
+        }
+        if (variant == NULL) {
+            return entry->group;
+        }
+        for (size_t v = 0; v < entry->variant_count; v++) {
+            if (strcmp(entry->variant_names[v], variant) == 0) {
+                return entry->variants[v];
+            }
+        }
+        return NULL;
+    }
+    return NULL;
+}
+
 static bool register_into(LhatProgram *program, LhatType *owner,
                           const char *module, const char *type,
                           const char *name, const char *signature,
@@ -660,6 +831,8 @@ const LhatModule *lhat_program_compile(LhatProgram *program, size_t *count)
         units.initial_names = (const char *const *)program->initial_names;
         units.initial_members = (const char *const *)program->initial_members;
         units.initial_count = program->initial_count;  // 05 の 8.2
+        units.host_errors = program->host_error_entries;  // 05 の 8.7 の誤り版
+        units.host_error_count = program->host_error_entry_count;
 
         LhatProto *proto = NULL;
         LhatCompileStatus status =
@@ -728,6 +901,10 @@ void lhat_program_init(LhatProgram *program, bool strict,
     program->strict = strict;
     program->load = load;
     program->loader_context = context;
+    // See lhat_proto_new's comment: born black so a machine reading a
+    // host-registered error kind never writes into program->host_error_heap
+    // -- required once more than one machine (std.thread) can read it.
+    program->host_error_heap.white = LHAT_GC_BLACK;
 }
 
 void lhat_program_dispose(LhatProgram *program)
@@ -747,6 +924,25 @@ void lhat_program_dispose(LhatProgram *program)
     program->host_entries = NULL;
     program->host_entry_count = 0;
     program->host_entry_capacity = 0;
+
+    for (size_t i = 0; i < program->host_error_entry_count; i++) {
+        LhatHostErrorKind *entry = &program->host_error_entries[i];
+        lhat_free((void *)entry->module);
+        lhat_free((void *)entry->name);
+        for (size_t v = 0; v < entry->variant_count; v++) {
+            lhat_free((void *)entry->variant_names[v]);
+        }
+        lhat_free((void *)entry->variant_names);
+        lhat_free((void *)entry->variants);
+    }
+    lhat_free(program->host_error_entries);
+    program->host_error_entries = NULL;
+    program->host_error_entry_count = 0;
+    program->host_error_entry_capacity = 0;
+    // 04 の 12.4: この program が登録した誤り種別のオブジェクト自身
+    // (LhatErrorKind/LhatString)。chunk->heap と同じ扱いで、program の
+    // 寿命が尽きるここでまとめて解放する。
+    lhat_object_free_all(&program->host_error_heap);
 
     for (size_t i = 0; i < program->global_count; i++) {
         lhat_free(program->global_entries[i].name);

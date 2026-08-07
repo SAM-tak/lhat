@@ -8,11 +8,17 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "gc.h"
 #include "port.h"
 
 LhatProto *lhat_proto_new(void)
 {
     LhatProto *proto = (LhatProto *)lhat_calloc(1, sizeof *proto);
+    if (proto != NULL) {
+        // See lhat_chunk_init's comment: born black so that a machine
+        // reading this proto's constants never writes into it.
+        proto->chunk.heap.white = LHAT_GC_BLACK;
+    }
     return proto;
 }
 
@@ -95,6 +101,16 @@ size_t lhat_proto_add_upvalue(LhatProto *proto, bool from_parent_register,
 void lhat_chunk_init(LhatChunk *chunk)
 {
     memset(chunk, 0, sizeof *chunk);
+    // 5.12 の白は、掃かれる heap がどちらを配っているかを言うためのもの
+    // (object.h の LhatHeap.white)。chunk の heap は掃かれることが無い
+    // -- 一度作られたら書き換わらない定数だけを持つので、machine の
+    // GC サイクルをまたいで生き続ける。白のままだと、実行中の machine が
+    // このヒープ上のオブジェクト(誤り種別・文字列定数)へ触れるたびに
+    // reach() がその object->color/gclist を書き換えてしまい、複数の
+    // machine (= 複数の OS スレッド, std.thread) が同じ chunk を共有する
+    // と data race になる。生まれた時点で黒にしておけば reach() は即座に
+    // 戻り、何も書き換えない。
+    chunk->heap.white = LHAT_GC_BLACK;
 }
 
 void lhat_chunk_dispose(LhatChunk *chunk)

@@ -50,6 +50,10 @@
 // "Group.Kind" -- what typeof^ answers for an error made from an errordef^
 // (04 の 2.3). Longer than any name a writer is likely to choose.
 #define LHAT_QUALIFIED_NAME_BUFFER 256
+// How many "." segments a qualified name reaching into a host-registered
+// error kind (05 の 8.7 の誤り版) may have -- "module...Name.Variant". Same
+// margin as LHAT_MAX_DEF_CHAIN gives a chain of composition.
+#define LHAT_MAX_QUALIFIER_SEGMENTS 8
 
 // vm -- running
 // The shared stack every frame's registers live on.

@@ -96,6 +96,16 @@ typedef struct {
     size_t host_entry_count;
     size_t host_entry_capacity;
 
+    // 05 の 8.7 の誤り版、04 の 12.4: lhat_register_error_kind が作る実行時
+    // オブジェクト専用のヒープ。どの machine の GC サイクルにも属さず、
+    // program 自身と同じだけ生きる -- chunk->heap (code.h) と同じ理屈
+    // (lhat_proto_new のコメント参照)。host_error_entries は
+    // lhat_compile_module に渡す LhatUnits.host_errors の元になる登録簿。
+    LhatHeap host_error_heap;
+    LhatHostErrorKind *host_error_entries;
+    size_t host_error_entry_count;
+    size_t host_error_entry_capacity;
+
     // 05 の 8.6: what the host put in L^ itself, as the type side of it. The
     // checker's own L^ carries these on top of what 8.6 lists.
     LhatType *globals;
@@ -178,6 +188,32 @@ bool lhat_register_member(LhatProgram *program, const char *module,
 bool lhat_register_func(LhatProgram *program, const char *module,
                         const char *name, const char *signature,
                         LhatHostFn call, void *context);
+
+// 04 の 2.2/12.4 の host 版: an errordef^ the host declares in C rather than
+// in an L^ unit -- "L^ has its own errordef^-shaped things without writing
+// errordef^" (04 の 12.4 が撤回しなかった経路)。v1 は付随フィールドを持たな
+// い variant のみ対応(std.io の IOError{NotFound,Denied,Eof} のようなもの)。
+// module/name/variant_names の文字列は program と同じだけ生きねばならない
+// (register_func 同様、通常は文字列リテラルを渡す)。
+//
+// lhat_program_check より前に呼ぶこと(8.7 と同じ制約 -- 検査器が型を知る
+//必要がある)。out_group/out_variants はどちらも NULL でよく、後から
+// lhat_lookup_error_kind で引ける。out_variants は variant_count 個分の
+// 領域を呼び出し側が用意する。
+bool lhat_register_error_kind(LhatProgram *program, const char *module,
+                              const char *name,
+                              const char *const *variant_names,
+                              size_t variant_count,
+                              const LhatErrorKind **out_group,
+                              const LhatErrorKind **out_variants);
+
+// 登録済みの誤り種別を module・name・variant の完全一致で引く。variant が
+// NULL なら宣言全体(lhat_register_error_kind の out_group 相当)を返す。
+// 見つからなければ NULL。
+const LhatErrorKind *lhat_lookup_error_kind(const LhatProgram *program,
+                                            const char *module,
+                                            const char *name,
+                                            const char *variant);
 
 // 05 の 8.6: a member of L^ itself rather than of a module under it. Reserved
 // for what a program cannot provide for itself -- 8.6 keeps that list short,

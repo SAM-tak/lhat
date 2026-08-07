@@ -574,13 +574,132 @@ static void declare_errors(Compiler *c, const LhatNode *statements)
     }
 }
 
-// Resolves the 'IOError' or 'IOError.NotFound' a use writes. `kind_node` comes
-// back as the ERROR_KIND declaring the fields, or NULL when the whole
-// declaration was named.
+typedef struct {
+    const char *text;
+    size_t length;
+} QualifierSegment;
+
+// Flattens a chain of MEMBER nodes into [root, ..., leaf] -- "io.IOError.
+// NotFound" becomes [io, IOError, NotFound]. 0 when a segment along the way
+// is not a plain name, or there are more than fit in `capacity`.
+static size_t flatten_qualified_path(Compiler *c, const LhatNode *node,
+                                     QualifierSegment *segments,
+                                     size_t capacity)
+{
+    if (node->kind == LHAT_NODE_MEMBER) {
+        size_t count = flatten_qualified_path(c, node->v.access.target,
+                                              segments, capacity);
+        if (count == 0 || count >= capacity) {
+            return 0;
+        }
+        const char *text = NULL;
+        size_t length = 0;
+        if (!node_name(c, node->v.access.argument, &text, &length)) {
+            return 0;
+        }
+        segments[count].text = text;
+        segments[count].length = length;
+        return count + 1;
+    }
+    if (capacity == 0) {
+        return 0;
+    }
+    const char *text = NULL;
+    size_t length = 0;
+    if (!node_name(c, node, &text, &length)) {
+        return 0;
+    }
+    segments[0].text = text;
+    segments[0].length = length;
+    return 1;
+}
+
+// segments[from..to), joined by ".", spells exactly `entry_text`.
+static bool segments_match(const QualifierSegment *segments, size_t from,
+                           size_t to, const char *entry_text)
+{
+    for (size_t i = from; i < to; i++) {
+        size_t seg_len = segments[i].length;
+        if (strncmp(entry_text, segments[i].text, seg_len) != 0) {
+            return false;
+        }
+        entry_text += seg_len;
+        if (i + 1 < to) {
+            if (*entry_text != '.') {
+                return false;
+            }
+            entry_text++;
+        }
+    }
+    return *entry_text == '\0';
+}
+
+// 05 の 8.7 の誤り版: what lhat_register_error_kind (program.h) put in
+// LhatUnits.host_errors. Tried only once the unit's own errordef^s have had
+// their chance (resolve_kind below) -- import^'s own rule, so a local name
+// always wins and the answer for a host name does not depend on what else
+// this unit happens to declare.
+static const LhatErrorKind *resolve_host_kind(Compiler *c, const LhatNode *path,
+                                              bool *from_host)
+{
+    const LhatUnits *units = root_of(c)->units;
+    if (units == NULL || units->host_errors == NULL) {
+        return NULL;
+    }
+
+    QualifierSegment segments[LHAT_MAX_QUALIFIER_SEGMENTS];
+    size_t count = flatten_qualified_path(c, path, segments,
+                                          LHAT_MAX_QUALIFIER_SEGMENTS);
+    if (count < 2) {
+        return NULL;  // a module name alone never reaches a kind
+    }
+
+    for (size_t i = 0; i < units->host_error_count; i++) {
+        const LhatHostErrorKind *entry = &units->host_errors[i];
+
+        // "module...Name.Variant" -- the last segment names one kind.
+        if (count >= 3 &&
+            segments_match(segments, 0, count - 2, entry->module) &&
+            segments_match(segments, count - 2, count - 1, entry->name)) {
+            const char *wanted = segments[count - 1].text;
+            size_t wanted_length = segments[count - 1].length;
+            for (size_t v = 0; v < entry->variant_count; v++) {
+                size_t vlen = strlen(entry->variant_names[v]);
+                if (vlen == wanted_length &&
+                    memcmp(entry->variant_names[v], wanted, vlen) == 0) {
+                    if (from_host != NULL) {
+                        *from_host = true;
+                    }
+                    return entry->variants[v];
+                }
+            }
+        }
+
+        // "module...Name" -- the declaration as a whole (04 の 2.3: what
+        // isa^ against the union, rather than one kind, asks for).
+        if (segments_match(segments, 0, count - 1, entry->module) &&
+            segments_match(segments, count - 1, count, entry->name)) {
+            return entry->group;
+        }
+    }
+    return NULL;
+}
+
+// Resolves the 'IOError' or 'IOError.NotFound' a use writes. `kind_node`
+// comes back as the ERROR_KIND declaring the fields, or NULL either when the
+// whole declaration was named or when the answer came from a host
+// registration (05 の 8.7 の誤り版) rather than an errordef^ in this unit --
+// a host kind has no AST of fields to point at. `from_host`, when not NULL,
+// is set to say which of those two NULL cases it was; compile_error_new is
+// the only caller that needs to tell them apart.
 static const LhatErrorKind *resolve_kind(Compiler *c, const LhatNode *path,
-                                         const LhatNode **kind_node)
+                                         const LhatNode **kind_node,
+                                         bool *from_host)
 {
     *kind_node = NULL;
+    if (from_host != NULL) {
+        *from_host = false;
+    }
     if (path == NULL) {
         return NULL;
     }
@@ -594,40 +713,40 @@ static const LhatErrorKind *resolve_kind(Compiler *c, const LhatNode *path,
 
     const char *name = NULL;
     size_t length = 0;
-    if (!node_name(c, group_node, &name, &length)) {
-        return NULL;
-    }
-    const ErrorDecl *decl = find_error_decl(c, name, length);
-    if (decl == NULL) {
-        return NULL;
-    }
-    if (member == NULL) {
-        return decl->group;
-    }
-
-    const char *wanted = NULL;
-    size_t wanted_length = 0;
-    if (!node_name(c, member, &wanted, &wanted_length)) {
-        return NULL;
-    }
-    // The declaration may be an earlier input's, and its offsets index that
-    // input's text rather than this one's.
-    Compiler reading = *c;
-    reading.lexer = decl->lexer;
-
-    size_t index = 0;
-    for (const LhatNode *k = decl->node->v.named.members; k != NULL;
-         k = k->next, index++) {
-        const char *kind_name = NULL;
-        size_t kind_length = 0;
-        if (node_name(&reading, k->v.named.name, &kind_name, &kind_length) &&
-            kind_length == wanted_length &&
-            memcmp(kind_name, wanted, wanted_length) == 0) {
-            *kind_node = k;
-            return decl->kinds[index];
+    const ErrorDecl *decl = node_name(c, group_node, &name, &length)
+                                ? find_error_decl(c, name, length)
+                                : NULL;
+    if (decl != NULL) {
+        if (member == NULL) {
+            return decl->group;
         }
+
+        const char *wanted = NULL;
+        size_t wanted_length = 0;
+        if (node_name(c, member, &wanted, &wanted_length)) {
+            // The declaration may be an earlier input's, and its offsets
+            // index that input's text rather than this one's.
+            Compiler reading = *c;
+            reading.lexer = decl->lexer;
+
+            size_t index = 0;
+            for (const LhatNode *k = decl->node->v.named.members; k != NULL;
+                 k = k->next, index++) {
+                const char *kind_name = NULL;
+                size_t kind_length = 0;
+                if (node_name(&reading, k->v.named.name, &kind_name,
+                              &kind_length) &&
+                    kind_length == wanted_length &&
+                    memcmp(kind_name, wanted, wanted_length) == 0) {
+                    *kind_node = k;
+                    return decl->kinds[index];
+                }
+            }
+        }
+        return NULL;
     }
-    return NULL;
+
+    return resolve_host_kind(c, path, from_host);
 }
 
 static void load_string_bytes(Compiler *c, uint8_t into, const char *text,
@@ -726,8 +845,10 @@ static bool error_field_given(Compiler *c, const LhatNode *node,
 static void compile_error_new(Compiler *c, const LhatNode *node, uint8_t into)
 {
     const LhatNode *kind_node = NULL;
-    const LhatErrorKind *kind = resolve_kind(c, node->v.named.name, &kind_node);
-    if (kind == NULL || kind_node == NULL) {
+    bool from_host = false;
+    const LhatErrorKind *kind =
+        resolve_kind(c, node->v.named.name, &kind_node, &from_host);
+    if (kind == NULL || (kind_node == NULL && !from_host)) {
         // Naming the declaration rather than one of its kinds leaves nothing
         // to construct: 2.3 makes it the union, not a type of its own.
         fail(c, LHAT_COMPILE_UNDEFINED);
@@ -761,8 +882,11 @@ static void compile_error_new(Compiler *c, const LhatNode *node, uint8_t into)
     // The declared fields the construction left out. 2.2 makes a default an
     // expression evaluated at each construction rather than a stored value,
     // which is why it is compiled here and not once at the declaration.
-    for (const LhatNode *field = kind_node->v.named.members; field != NULL;
-         field = field->next) {
+    // kind_node is NULL for a host-registered kind (from_host above) --
+    // v1 registers none of those with fields, so there is nothing to add.
+    for (const LhatNode *field =
+             kind_node != NULL ? kind_node->v.named.members : NULL;
+         field != NULL; field = field->next) {
         const LhatNode *fallback = field->v.param.fallback;
         if (fallback == NULL) {
             continue;  // no default; 2.5 required the construction to give it
@@ -868,7 +992,8 @@ static void compile_nil_else(Compiler *c, const LhatNode *node, uint8_t into)
 static void compile_isa(Compiler *c, const LhatNode *node, uint8_t into)
 {
     const LhatNode *unused = NULL;
-    const LhatErrorKind *kind = resolve_kind(c, node->v.binary.right, &unused);
+    const LhatErrorKind *kind =
+        resolve_kind(c, node->v.binary.right, &unused, NULL);
     if (kind == NULL) {
         fail(c, LHAT_COMPILE_UNSUPPORTED);
         return;
@@ -943,7 +1068,7 @@ static LhatRuntimeType *lower_type(Compiler *c, const LhatNode *node)
             // 04 の 2.4: a kind is the object its declaration made, so a
             // qualified name resolves to that rather than to any structure.
             const LhatNode *unused = NULL;
-            const LhatErrorKind *kind = resolve_kind(c, node, &unused);
+            const LhatErrorKind *kind = resolve_kind(c, node, &unused, NULL);
             if (kind != NULL) {
                 LhatRuntimeType *type =
                     lhat_type_rt_new(owner, LHAT_TYPE_RT_ERROR_KIND);
@@ -5232,48 +5357,18 @@ void lhat_machine_dispose(LhatMachine *machine)
     lhat_free(machine);
 }
 
-LhatRunResult lhat_run(LhatMachine *m, const LhatProto *proto)
+// The run loop itself, shared by lhat_run (base_depth == 0, a fresh unit
+// entered through its own wrapper closure) and lhat_machine_call
+// (base_depth == m->frame_count at the time of the call, a value already
+// callable pushed as one more frame). "the run is over" means the frame
+// count has drained back down to base_depth, not to zero -- 0 stays right
+// for lhat_run because nothing was on the machine before it pushed frame 0.
+static LhatRunResult run_frames(Machine *m, size_t base_depth)
 {
-    const LhatChunk *chunk = &proto->chunk;
-
-    // 5.4 and 5.2: the frames and the registers belong to the run, so each
-    // starts with neither. What the heap holds is the machine's and stays.
-    //
-    // 03 の 4.3: except the registers the unit says are already spoken for.
-    // A REPL's second input finds the top-level names of the first there,
-    // and clearing them would be clearing the session.
-    // 5.4: what an earlier run left sharing a slot this one is about to
-    // clear takes its value away first. The slots below `reserved` are the
-    // session's and survive, so what points into them stays open and shared
-    // -- that is what lets a closure an earlier input made go on naming the
-    // very place a later one reads and writes.
-    m->frame_count = 0;
-    close_upvalues(m, m->stack + proto->reserved);
-    for (size_t i = proto->reserved; i < LHAT_STACK_SLOTS; i++) {
-        m->stack[i] = lhat_nil();
-    }
-
-    LhatClosure *entry =
-        (LhatClosure *)lhat_object_alloc(&m->objects, sizeof *entry,
-                                        LHAT_OBJECT_SUBROUTINE);
-    if (entry == NULL) {
-        return finish(m, chunk, LHAT_RUN_OUT_OF_MEMORY, lhat_nil(), 0);
-    }
-    entry->proto = proto;
-
-    Frame *frame = &m->frames[m->frame_count++];
-    frame->closure = entry;
-    frame->pc = 0;
-    frame->base = m->stack;
-    frame->result = 0;
-    frame->cleanup_count = 0;
-    frame->returning = false;
-    frame->coroutine = NULL;
-    frame->disposing = false;
-    frame->answer = lhat_nil();
-
+    Frame *frame = &m->frames[m->frame_count - 1];
+    const LhatChunk *chunk = &frame->closure->proto->chunk;
     LhatValue *registers = frame->base;
-    size_t pc = 0;
+    size_t pc = frame->pc;
 
     // 02 の 10.7: the last collection of the run, and what it found. See the
     // drain, which is where both are decided. `at` is hoisted out of the
@@ -5332,7 +5427,7 @@ LhatRunResult lhat_run(LhatMachine *m, const LhatProto *proto)
         // it open. It is empty now, so back to the frame that was leaving.
         // Only once that frame is on top again -- while a cleanup of its
         // own is running there is a frame above it with instructions left.
-        if (ending && m->frame_count == 1) {
+        if (ending && m->frame_count == base_depth + 1) {
             goto drain;
         }
 
@@ -6583,7 +6678,7 @@ LhatRunResult lhat_run(LhatMachine *m, const LhatProto *proto)
             // Once only (`end_swept`): a cleanup that drops something has
             // already had its own chance, and the end of a run must not be
             // something a program can go on extending.
-            if (m->frame_count == 1 && !end_swept) {
+            if (m->frame_count == base_depth + 1 && !end_swept) {
                 end_swept = true;
                 lhat_gc_collect(m);
                 if (m->pending_dispose != NULL) {
@@ -6594,7 +6689,7 @@ LhatRunResult lhat_run(LhatMachine *m, const LhatProto *proto)
             }
             m->frame_count--;
 
-            if (m->frame_count == 0) {
+            if (m->frame_count == base_depth) {
                 return finish(m, chunk, LHAT_RUN_OK, value, at);
             }
 
@@ -6608,6 +6703,231 @@ LhatRunResult lhat_run(LhatMachine *m, const LhatProto *proto)
     }
 
     return finish(m, chunk, LHAT_RUN_OK, lhat_nil(), chunk->count);
+}
+
+LhatRunResult lhat_run(LhatMachine *m, const LhatProto *proto)
+{
+    const LhatChunk *chunk = &proto->chunk;
+
+    // 5.4 and 5.2: the frames and the registers belong to the run, so each
+    // starts with neither. What the heap holds is the machine's and stays.
+    //
+    // 03 の 4.3: except the registers the unit says are already spoken for.
+    // A REPL's second input finds the top-level names of the first there,
+    // and clearing them would be clearing the session.
+    // 5.4: what an earlier run left sharing a slot this one is about to
+    // clear takes its value away first. The slots below `reserved` are the
+    // session's and survive, so what points into them stays open and shared
+    // -- that is what lets a closure an earlier input made go on naming the
+    // very place a later one reads and writes.
+    m->frame_count = 0;
+    close_upvalues(m, m->stack + proto->reserved);
+    for (size_t i = proto->reserved; i < LHAT_STACK_SLOTS; i++) {
+        m->stack[i] = lhat_nil();
+    }
+
+    LhatClosure *entry =
+        (LhatClosure *)lhat_object_alloc(&m->objects, sizeof *entry,
+                                        LHAT_OBJECT_SUBROUTINE);
+    if (entry == NULL) {
+        return finish(m, chunk, LHAT_RUN_OUT_OF_MEMORY, lhat_nil(), 0);
+    }
+    entry->proto = proto;
+
+    Frame *frame = &m->frames[m->frame_count++];
+    frame->closure = entry;
+    frame->pc = 0;
+    frame->base = m->stack;
+    frame->result = 0;
+    frame->cleanup_count = 0;
+    frame->returning = false;
+    frame->coroutine = NULL;
+    frame->disposing = false;
+    frame->answer = lhat_nil();
+
+    return run_frames(m, 0);
+}
+
+// A LhatRunResult for a call that never got as far as pushing a frame -- no
+// chunk exists yet to name a line or an operator from, so both come back
+// empty the way finish() already leaves them for `at` out of range.
+static LhatRunResult call_fault(Machine *m, LhatRunStatus status)
+{
+    LhatRunResult result;
+    result.status = status;
+    result.value = lhat_nil();
+    result.at = 0;
+    result.line = 0;
+    result.op_name = NULL;
+    result.op_name_length = 0;
+    result.collected = m->collected;
+    result.live = m->objects.count;
+    return result;
+}
+
+LhatRunResult lhat_machine_call(LhatMachine *machine, LhatValue callee,
+                                const LhatValue *arguments, size_t count)
+{
+    Machine *m = (Machine *)machine;
+    size_t base = m->frame_count;
+
+    // 05 の 8.7's LhatHostFn has no shape for a receiver or a spread; a host
+    // calling back in already has its arguments as a flat array, so this is
+    // the plain-call subset of what LHAT_BC_CALL does (vm.c's CALL case).
+    if (!lhat_is_object_kind(callee, LHAT_OBJECT_SUBROUTINE)) {
+        return call_fault(m, LHAT_RUN_NOT_CALLABLE);
+    }
+    const LhatClosure *closure = (const LhatClosure *)lhat_as_object(callee);
+    // 02 の 15.5: a yieldable subroutine answers a coroutine rather than
+    // running -- there is nowhere here to hand that back as a distinct kind
+    // of success, so a host reaching for one of these gets NOT_CALLABLE.
+    if (closure->proto == NULL || closure->proto->yields) {
+        return call_fault(m, LHAT_RUN_NOT_CALLABLE);
+    }
+
+    size_t declared_slots = closure->proto->parameters;
+    size_t required =
+        closure->proto->has_variadic ? declared_slots - 1 : declared_slots;
+    if (closure->proto->has_variadic ? count < required
+                                     : count != declared_slots) {
+        return call_fault(m, LHAT_RUN_ARITY);
+    }
+
+    if (base >= LHAT_MAX_FRAMES) {
+        return call_fault(m, LHAT_RUN_STACK_OVERFLOW);
+    }
+
+    // Mirrors 6249's "just past what the caller's frame uses" -- a native
+    // caller has no registers[a] of its own to measure from, so the frame
+    // already on top (if there is one) stands in for it. base == 0 is
+    // lhat_run's own case: nothing is on the stack yet, so frame 0 starts at
+    // its beginning.
+    LhatValue *next_base =
+        base == 0 ? m->stack
+                  : m->frames[base - 1].base +
+                        m->frames[base - 1].closure->proto->chunk.registers;
+    if (next_base + LHAT_MAX_REGISTERS >= m->stack + LHAT_STACK_SLOTS) {
+        return call_fault(m, LHAT_RUN_STACK_OVERFLOW);
+    }
+
+    for (size_t i = 0; i < required; i++) {
+        next_base[i] = arguments[i];
+    }
+    if (closure->proto->has_variadic) {
+        LhatTable *collected = lhat_table_new(&m->objects);
+        if (collected == NULL) {
+            return call_fault(m, LHAT_RUN_OUT_OF_MEMORY);
+        }
+        for (size_t i = required; i < count; i++) {
+            bool refused = false;
+            if (!set_key(m, collected,
+                         lhat_integer((int64_t)(i - required + 1)),
+                         arguments[i], &refused)) {
+                return call_fault(m, LHAT_RUN_OUT_OF_MEMORY);
+            }
+        }
+        next_base[required] = lhat_object((LhatObject *)collected);
+    }
+
+    Frame *called = &m->frames[m->frame_count++];
+    called->closure = closure;
+    called->pc = 0;
+    called->base = next_base;
+    called->result = 0;  // never read: base_depth's drain returns instead
+    called->cleanup_count = 0;
+    called->returning = false;
+    called->coroutine = NULL;
+    called->disposing = false;
+    called->answer = lhat_nil();
+
+    return run_frames(m, base);
+}
+
+bool lhat_machine_make_string(LhatMachine *machine, const char *text,
+                              size_t length, LhatValue *out)
+{
+    Machine *m = (Machine *)machine;
+    LhatString *string = lhat_string_new(&m->objects, text, length);
+    if (string == NULL) {
+        return false;
+    }
+    *out = lhat_object((LhatObject *)string);
+    return true;
+}
+
+bool lhat_machine_make_closure(LhatMachine *machine, const LhatProto *proto,
+                               LhatValue *out)
+{
+    Machine *m = (Machine *)machine;
+    if (m == NULL || proto == NULL || proto->upvalue_count != 0) {
+        return false;
+    }
+    LhatClosure *closure = (LhatClosure *)lhat_object_alloc(
+        &m->objects, sizeof *closure, LHAT_OBJECT_SUBROUTINE);
+    if (closure == NULL) {
+        return false;
+    }
+    closure->proto = proto;
+    // calloc 起源(lhat_object_alloc)なので upvalues/upvalue_count は
+    // 既に NULL/0 -- proto->upvalue_count == 0 の前提と一致する。
+    *out = lhat_object((LhatObject *)closure);
+    return true;
+}
+
+void lhat_machine_modules(const LhatMachine *machine,
+                          const LhatModule **out_modules, size_t *out_count)
+{
+    const Machine *m = (const Machine *)machine;
+    if (m == NULL) {
+        if (out_modules != NULL) *out_modules = NULL;
+        if (out_count != NULL) *out_count = 0;
+        return;
+    }
+    if (out_modules != NULL) *out_modules = m->modules;
+    if (out_count != NULL) *out_count = m->module_count;
+}
+
+bool lhat_machine_make_error(LhatMachine *machine, const LhatErrorKind *kind,
+                             const char *message, LhatValue cause,
+                             LhatValue *out)
+{
+    Machine *m = (Machine *)machine;
+    if (m == NULL || kind == NULL) {
+        return false;
+    }
+    // Same shape LHAT_BC_NEWERROR builds, and the same field defaults
+    // compile_error_new writes for what a construction left out (04 の
+    // 2.3): every kind has message and cause without either being declared.
+    LhatError *error = lhat_error_new(&m->objects, kind);
+    if (error == NULL) {
+        return false;
+    }
+    LhatString *message_key = lhat_string_new(&m->objects, "message", 7);
+    LhatString *message_text = lhat_string_new(
+        &m->objects, message != NULL ? message : "",
+        message != NULL ? strlen(message) : 0);
+    if (message_key == NULL || message_text == NULL) {
+        return false;
+    }
+    bool refused = false;
+    if (!set_key(m, error->fields, lhat_object((LhatObject *)message_key),
+                 lhat_object((LhatObject *)message_text), &refused) ||
+        refused) {
+        return false;
+    }
+    if (!lhat_is_nil(cause)) {
+        LhatString *cause_key = lhat_string_new(&m->objects, "cause", 5);
+        if (cause_key == NULL) {
+            return false;
+        }
+        if (!set_key(m, error->fields, lhat_object((LhatObject *)cause_key),
+                     cause, &refused) ||
+            refused) {
+            return false;
+        }
+    }
+    *out = lhat_object((LhatObject *)error);
+    return true;
 }
 
 const char *lhat_run_status_message(LhatRunStatus status)
