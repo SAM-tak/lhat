@@ -1057,6 +1057,23 @@ static void compile_isa(Compiler *c, const LhatNode *node, uint8_t into)
         return;
     }
 
+    // 04 の 11.4: a T|nil^ answer is narrowed with isa^ (or ?.) since !=/=
+    // do not narrow (narrow_from only reacts to LHAT_OP_ISA) -- nil^ is a
+    // builtin name, neither an error kind nor a hostdata type, so it needs
+    // its own check here. compile_nil_else's ?? already emits exactly this
+    // instruction for the same question.
+    const char *nil_name = NULL;
+    size_t nil_length = 0;
+    if (node_name(c, node->v.binary.right, &nil_name, &nil_length) &&
+        name_is(nil_name, nil_length, "nil")) {
+        uint8_t mark = c->next_register;
+        uint8_t value = reserve(c);
+        compile_expression(c, node->v.binary.left, value);
+        emit(c, lhat_encode_abc(LHAT_BC_ISNIL, into, value, 0));
+        c->next_register = mark;
+        return;
+    }
+
     // 05 の 8.8: a hostdata type resolve_kind does not reach (it only ever
     // answers an errordef^-shaped kind) -- host_types is the isa^ version
     // of resolve_host_kind's fallback, tried only once a local errordef^
