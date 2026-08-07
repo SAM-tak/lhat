@@ -247,6 +247,28 @@ bool lhat_bind_initial(LhatProgram *program, const char *name,
 typedef struct LhatMachine LhatMachine;
 bool lhat_program_install(const LhatProgram *program, LhatMachine *machine);
 
+// 03 の 4.3: the same for a prompt, which has no program of its own driving
+// it. A host that wants import^ to answer there makes an LhatProgram with no
+// loader -- 5.3 gives a require^ at a prompt nowhere to go anyway -- registers
+// into it as it would for a file, and hands it to all three of the prompt's
+// pieces: the check session, the compile session and the machine.
+//
+//     LhatProgram program;
+//     lhat_program_init(&program, false, NULL, NULL);
+//     lhatstdlib_io_register(&program);          // or any registration
+//     lhat_program_install_checks(&program, checks);
+//     lhat_program_install_compiles(&program, compiles);
+//     lhat_program_install(&program, machine);
+//
+// What each hands over is what LhatRequire and LhatUnits carry for a file:
+// the registry import^ resolves against and 8.6's L^ members for the checker,
+// the error kinds and hostdata types isa^ names for the compiler. Both borrow
+// from the program, so it has to outlive the sessions.
+void lhat_program_install_checks(const LhatProgram *program,
+                                 LhatCheckSession *session);
+void lhat_program_install_compiles(const LhatProgram *program,
+                                   LhatCompileSession *session);
+
 // True when any unit, or the program itself, reported something.
 bool lhat_program_has_errors(const LhatProgram *program);
 

@@ -266,6 +266,19 @@ void lhat_check_session_bind(LhatCheckSession *session,
                              const char *const *names,
                              const char *const *members, size_t count);
 
+// 05 の 8.7: the host registry a prompt's import^ resolves against, and 8.6's
+// L^ members alongside it -- the LhatRequire fields a file gets from its
+// LhatProgram. A prompt has no program of its own, so a host that wants
+// import^ to answer at a prompt makes one, registers into it, and hands the
+// two over. program.h's lhat_program_install_checks is that call written out.
+//
+// Both types belong to whatever arena made them, so that has to outlive the
+// session -- a program registered into keeps its own and is the usual answer.
+// `globals` may be NULL to leave what lhat_check_session_global built alone;
+// anything else replaces it.
+void lhat_check_session_hosted(LhatCheckSession *session, LhatType *hosted,
+                               LhatType *globals);
+
 // Checks `unit` as the next input of `session`. The names already bound in it
 // are in scope, and the ones this input binds stay for the next. The result
 // borrows the session's arena, so it has none of its own to dispose.

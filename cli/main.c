@@ -505,12 +505,6 @@ static LhatValue host_print(LhatMachine *machine, void *context,
 // driver binds print, and collectgarbage because 8.6 already puts it in L^ --
 // writing both out is what shows the two are the same mechanism.
 //
-// The names live here rather than in each caller because a session borrows
-// them: 8.2's arrays belong to the host and have to outlive what reads them.
-static const char *const bound_names[] = {"print", "collectgarbage"};
-static const char *const bound_members[] = {"print", "collectgarbage"};
-static const size_t bound_count = sizeof bound_names / sizeof bound_names[0];
-
 // stdlib/ 全体 (std.io/std.thread/std.random, どれも std.error に依存) を
 // このサンプルドライバで既定登録する -- どれも lhatstdlib_error_register を
 // 自分の先頭で冪等に呼ぶので、呼ぶ順序はここでは問わない。
@@ -530,22 +524,6 @@ static bool bind_host_names(LhatProgram *program)
 #endif
 
     return true;
-}
-
-// The same for 03 の 4.3's prompt, which has no program to hold any of it:
-// the value goes straight into the machine's L^, and the two sessions are
-// told the names on their own.
-static void bind_prompt_names(LhatMachine *machine, LhatCheckSession *checks,
-                              LhatCompileSession *compiles)
-{
-    LhatValue fn = lhat_nil();
-    if (lhat_machine_make_host(machine, host_print, NULL, 1, false, &fn)) {
-        lhat_machine_set_global(machine, "print", fn);
-    }
-    lhat_check_session_global(checks, "print", "f^string^ -> nil^;");
-    lhat_check_session_bind(checks, bound_names, bound_members, bound_count);
-    lhat_compile_session_bind(compiles, bound_names, bound_members,
-                              bound_count);
 }
 
 // 03 の 1.1's third stage, over the unit graph of 05 の 6.2: a unit cannot be
@@ -686,7 +664,26 @@ static int repl(bool strict)
         fprintf(stderr, "lhat: out of memory\n");
         return EXIT_FAILURE;
     }
-    bind_prompt_names(machine, checks, compiles);  // 05 の 8.2
+
+    // 05 の 8.7: a prompt has no program driving it, so it is given one that
+    // holds nothing but the registrations -- with no loader, since 5.3 gives a
+    // require^ here nowhere to go regardless. That is what lets a prompt see
+    // exactly what a file sees: the same bind_host_names, hence the same
+    // stdlib. It outlives both sessions, which borrow its types.
+    LhatProgram program;
+    lhat_program_init(&program, strict, NULL, NULL);
+    if (!bind_host_names(&program)) {  // 05 の 8.2 and 8.7
+        fprintf(stderr, "lhat: out of memory\n");
+        lhat_program_dispose(&program);
+        return EXIT_FAILURE;
+    }
+    lhat_program_install_checks(&program, checks);
+    lhat_program_install_compiles(&program, compiles);
+    if (!lhat_program_install(&program, machine)) {
+        fprintf(stderr, "lhat: out of memory\n");
+        lhat_program_dispose(&program);
+        return EXIT_FAILURE;
+    }
 
     printf("L^ (lhat) %s\n", LHAT_VERSION);
     printf("an expression on its own is answered; an unfinished construct "
@@ -848,6 +845,8 @@ static int repl(bool strict)
     lhat_compile_session_dispose(compiles);
     lhat_check_session_dispose(checks);
     lhat_machine_dispose(machine);
+    // Last: the sessions above borrowed its types and its tags.
+    lhat_program_dispose(&program);
     return EXIT_SUCCESS;
 }
 

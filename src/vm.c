@@ -3985,6 +3985,15 @@ struct LhatCompileSession {
     const char *const *initial_names;
     const char *const *initial_members;
     size_t initial_count;
+
+    // 04 の 12.4 and 05 の 8.8: what a host's lhat_register_error_kind and
+    // lhat_register_hostdata_type registered, so that isa^ against either
+    // compiles at a prompt as it does in a file. The other half of LhatUnits
+    // a session carries; NULL/0 when the host registered none.
+    const LhatHostErrorKind *host_errors;
+    size_t host_error_count;
+    const LhatHostTypeEntry *host_types;
+    size_t host_type_count;
 };
 
 void lhat_compile_session_bind(LhatCompileSession *session,
@@ -3997,6 +4006,21 @@ void lhat_compile_session_bind(LhatCompileSession *session,
     session->initial_names = names;
     session->initial_members = members;
     session->initial_count = count;
+}
+
+void lhat_compile_session_hosted(LhatCompileSession *session,
+                                 const LhatHostErrorKind *errors,
+                                 size_t error_count,
+                                 const LhatHostTypeEntry *types,
+                                 size_t type_count)
+{
+    if (session == NULL) {
+        return;
+    }
+    session->host_errors = errors;
+    session->host_error_count = error_count;
+    session->host_types = types;
+    session->host_type_count = type_count;
 }
 
 LhatCompileSession *lhat_compile_session_new(void)
@@ -4402,13 +4426,19 @@ LhatCompileStatus lhat_compile_next(LhatCompileSession *session,
                                     const LhatLexer *lexer, LhatProto **out)
 {
     // 05 の 8.2: the session carries the host's bindings where a file has a
-    // program to. Nothing else of LhatUnits applies -- 5.3 gives a require^
-    // at a prompt nowhere to go, which a NULL resolver already says.
+    // program to, and 8.8/04 の 12.4's registries alongside them. What is left
+    // of LhatUnits does not apply -- 5.3 gives a require^ at a prompt nowhere
+    // to go, which a NULL resolver already says, and import^ needs nothing
+    // here at all (compile_import_path reads L^.modules at run time).
     LhatUnits units;
     memset(&units, 0, sizeof units);
     units.initial_names = session->initial_names;
     units.initial_members = session->initial_members;
     units.initial_count = session->initial_count;
+    units.host_errors = session->host_errors;
+    units.host_error_count = session->host_error_count;
+    units.host_types = session->host_types;
+    units.host_type_count = session->host_type_count;
     return compile_unit(session, unit, lexer, &units, out);
 }
 

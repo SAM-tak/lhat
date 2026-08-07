@@ -919,6 +919,36 @@ bool lhat_program_install(const LhatProgram *program, LhatMachine *machine)
     return true;
 }
 
+void lhat_program_install_checks(const LhatProgram *program,
+                                 LhatCheckSession *session)
+{
+    if (program == NULL) {
+        return;
+    }
+    lhat_check_session_hosted(session, program->hosted, program->globals);
+    // 8.2's arrays are the program's and outlive the session with it, which is
+    // exactly what lhat_check_session_bind asks of a caller.
+    lhat_check_session_bind(session, (const char *const *)program->initial_names,
+                            (const char *const *)program->initial_members,
+                            program->initial_count);
+}
+
+void lhat_program_install_compiles(const LhatProgram *program,
+                                   LhatCompileSession *session)
+{
+    if (program == NULL) {
+        return;
+    }
+    lhat_compile_session_hosted(session, program->host_error_entries,
+                                program->host_error_entry_count,
+                                program->host_type_entries,
+                                program->host_type_entry_count);
+    lhat_compile_session_bind(session,
+                              (const char *const *)program->initial_names,
+                              (const char *const *)program->initial_members,
+                              program->initial_count);
+}
+
 void lhat_program_init(LhatProgram *program, bool strict,
                        LhatProgramLoader load, void *context)
 {

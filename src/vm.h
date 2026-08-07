@@ -139,6 +139,20 @@ void lhat_compile_session_bind(LhatCompileSession *session,
                                const char *const *names,
                                const char *const *members, size_t count);
 
+// 04 の 12.4 and 05 の 8.8: the other half of what LhatUnits carries for a
+// file -- the error kinds and hostdata types a host registered, so that isa^
+// against either compiles at a prompt too. Both arrays belong to whatever
+// registered them (an LhatProgram, normally) and have to outlive the session.
+// program.h's lhat_program_install_compiles is this call written out.
+//
+// import^ itself needs nothing here: it compiles to reading L^.modules, which
+// is filled by lhat_program_install once the machine exists.
+void lhat_compile_session_hosted(LhatCompileSession *session,
+                                 const LhatHostErrorKind *errors,
+                                 size_t error_count,
+                                 const LhatHostTypeEntry *types,
+                                 size_t type_count);
+
 // Compiles `unit` as the next input of `session`. The top-level names already
 // in it are in scope, and the ones this input declares stay for the next.
 //

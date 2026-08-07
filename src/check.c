@@ -5172,6 +5172,12 @@ struct LhatCheckSession {
     const char *const *initial_names;
     const char *const *initial_members;
     size_t initial_count;
+
+    // 05 の 8.7: the host registry import^ resolves against, when a host made
+    // an LhatProgram to hold one and handed it over. NULL when it did not,
+    // and then a prompt's import^ finds nothing -- which is what it did
+    // before this existed.
+    LhatType *hosted;
 };
 
 bool lhat_check_session_global(LhatCheckSession *session, const char *name,
@@ -5203,6 +5209,22 @@ void lhat_check_session_bind(LhatCheckSession *session,
     session->initial_names = names;
     session->initial_members = members;
     session->initial_count = count;
+}
+
+void lhat_check_session_hosted(LhatCheckSession *session, LhatType *hosted,
+                               LhatType *globals)
+{
+    if (session == NULL) {
+        return;
+    }
+    session->hosted = hosted;
+    // 8.6: the two arrive together, since both are what the same registry
+    // registered. Replacing rather than merging is what makes handing over a
+    // program the whole answer -- what lhat_check_session_global built in the
+    // session's own arena was the other way of answering the same question.
+    if (globals != NULL) {
+        session->globals = globals;
+    }
 }
 
 LhatCheckSession *lhat_check_session_new(void)
@@ -5297,6 +5319,9 @@ void lhat_check_next(LhatCheckSession *session, const LhatNode *unit,
     checker.require.initial_names = session->initial_names;
     checker.require.initial_members = session->initial_members;
     checker.require.initial_count = session->initial_count;
+    // 05 の 8.7: and what import^ resolves against, when a host handed a
+    // registry over. NULL leaves import^ finding nothing, as before.
+    checker.require.hosted = session->hosted;
 
     // 03 の 4.3: the last statement is what the input answers with, when it
     // is an expression. What that changes here is 15.8's reasoning about a
