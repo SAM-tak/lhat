@@ -8,6 +8,7 @@ project(lhat
 
 option(LHAT_BUILD_TESTS "Build the L^ test suite" ON)
 option(LHAT_BUILD_CLI "Build the lhat command line driver" ON)
+option(LHAT_BUILD_LSP "Build the L^ language server" ON)
 
 # ---- Language level -------------------------------------------------------
 set(CMAKE_C_STANDARD 11)
@@ -88,6 +89,47 @@ if(LHAT_BUILD_CLI)
     install(TARGETS lhat_cli RUNTIME DESTINATION bin)
 endif()
 
+# ---- Language server --------------------------------------------------------
+# A second, independent consumer of lhat.lib alongside the CLI -- it speaks
+# LSP over stdio instead of a prompt. vendor/cjson is JSON-RPC's message
+# shape; nothing about lhat's own build needs it, so it is scoped to here.
+if(LHAT_BUILD_LSP)
+    add_library(cjson STATIC vendor/cjson/cJSON.c)
+    target_include_directories(cjson PUBLIC vendor/cjson)
+    if(MSVC)
+        target_compile_options(cjson PRIVATE /W0)
+    else()
+        target_compile_options(cjson PRIVATE -w)
+    endif()
+
+    find_package(Threads REQUIRED)
+
+    add_executable(lhat_lsp
+        lsp/main.c
+        lsp/server.c
+        lsp/worker.c
+        lsp/transport.c
+        lsp/rpc.c
+        lsp/dispatch.c
+        lsp/dispatch_table.c
+        lsp/uri.c
+        lsp/util.c
+        lsp/document_store.c
+        lsp/workspace.c
+        lsp/diagnostics.c
+        lsp/queue.c
+        lsp/handlers/initialize.c
+        lsp/handlers/text_document_sync.c
+    )
+    set_target_properties(lhat_lsp PROPERTIES OUTPUT_NAME lhat-lsp)
+    target_link_libraries(lhat_lsp PRIVATE lhat cjson Threads::Threads)
+    target_include_directories(lhat_lsp PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
+        ${CMAKE_CURRENT_SOURCE_DIR}/lsp
+    )
+    install(TARGETS lhat_lsp RUNTIME DESTINATION bin)
+endif()
+
 install(TARGETS lhat lhatport
     ARCHIVE DESTINATION lib
     LIBRARY DESTINATION lib
@@ -111,4 +153,7 @@ install(DIRECTORY src/ DESTINATION src
 if(LHAT_BUILD_TESTS)
     enable_testing()
     add_subdirectory(tests)
+    if(LHAT_BUILD_LSP)
+        add_subdirectory(lsp/tests)
+    endif()
 endif()

@@ -1,0 +1,56 @@
+{
+  "name": "lhat-lsp-client",
+  "displayName": "L^ (lhat) Language Support",
+  "description": "Real-time type-check diagnostics for the L^ (lhat) language, via lhat-lsp",
+  "version": "0.1.0",
+  "publisher": "lhat",
+  "private": true,
+  "license": "Apache-2.0",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "activationEvents": [
+    "onLanguage:lhat"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "languages": [
+      {
+        "id": "lhat",
+        "extensions": [
+          ".lh"
+        ],
+        "aliases": [
+          "L^",
+          "lhat"
+        ]
+      }
+    ],
+    "configuration": {
+      "title": "L^ (lhat)",
+      "properties": {
+        "lhat.serverPath": {
+          "type": "string",
+          "default": "",
+          "description": "lhat-lsp(.exe) へのパス。空ならPATH上の lhat-lsp(.exe) を探す。"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "tsc -p ./",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./"
+  },
+  "dependencies": {
+    "vscode-languageclient": "^9.0.1"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "@types/vscode": "^1.85.0",
+    "typescript": "^5.4.0"
+  }
+}
