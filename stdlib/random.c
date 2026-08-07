@@ -96,7 +96,7 @@ static LhatValue random_range(LhatMachine *machine, void *context,
     return lhat_integer((int64_t)lo + (int64_t)offset);
 }
 
-bool lhatstd_random_register(LhatProgram *program)
+bool lhatstdlib_random_register(LhatProgram *program)
 {
     return lhat_register_func(program, "std.random", "seed", "p^number^;",
                               random_seed, NULL) &&

@@ -5,11 +5,11 @@
 // a host that never calls this never sees a "random" module, the same way a
 // host that leaves port/ out never sees the default allocator.
 
-#ifndef LHATSTD_RANDOM_H
-#define LHATSTD_RANDOM_H
+#ifndef LHATSTDLIB_RANDOM_H
+#define LHATSTDLIB_RANDOM_H
 
 #include "lhat.h"
 
-bool lhatstd_random_register(LhatProgram *program);
+bool lhatstdlib_random_register(LhatProgram *program);
 
-#endif  // LHATSTD_RANDOM_H
+#endif  // LHATSTDLIB_RANDOM_H

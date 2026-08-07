@@ -9,11 +9,11 @@
 // resolves an error kind (04 の 6.1), not a hostdata type like File, so
 // `x isa^ std.io.File` fails to compile (LHAT_COMPILE_UNSUPPORTED).
 
-#ifndef LHATSTD_IO_H
-#define LHATSTD_IO_H
+#ifndef LHATSTDLIB_IO_H
+#define LHATSTDLIB_IO_H
 
 #include "lhat.h"
 
-bool lhatstd_io_register(LhatProgram *program);
+bool lhatstdlib_io_register(LhatProgram *program);
 
-#endif  // LHATSTD_IO_H
+#endif  // LHATSTDLIB_IO_H

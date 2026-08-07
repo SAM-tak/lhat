@@ -9,18 +9,18 @@
 // link Threads::Threads (CMake's find_package(Threads)).
 //
 // A ThreadHandle's dispose() blocks until the spawned thread finishes if it
-// was never join()ed -- see std/thread.c's thread_dispose comment for why.
+// was never join()ed -- see stdlib/thread.c's thread_dispose comment for why.
 //
 // spawn/join answer a ThreadHandle or a ThreadError -- read the result with
 // try^/catch^, not isa^: compile_isa (vm.c) only resolves an error kind
 // (04 の 6.1), not a hostdata type like ThreadHandle, so
 // `x isa^ std.thread.ThreadHandle` fails to compile (LHAT_COMPILE_UNSUPPORTED).
 
-#ifndef LHATSTD_THREAD_H
-#define LHATSTD_THREAD_H
+#ifndef LHATSTDLIB_THREAD_H
+#define LHATSTDLIB_THREAD_H
 
 #include "lhat.h"
 
-bool lhatstd_thread_register(LhatProgram *program);
+bool lhatstdlib_thread_register(LhatProgram *program);
 
-#endif  // LHATSTD_THREAD_H
+#endif  // LHATSTDLIB_THREAD_H

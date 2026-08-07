@@ -21,14 +21,14 @@
 #include <stdio.h>
 #include <string.h>
 
-// What lhatstd_io_register made, threaded through as every registration's
+// What lhatstdlib_io_register made, threaded through as every registration's
 // `context` (05 の 8.7) rather than kept in file-scope statics -- a second
 // LhatProgram registering this module gets its own kinds/tag instead of
 // silently overwriting the first program's, which would hand its already-
 // checked code a different (04 の 2.4: identity-by-declaration) kind object
 // than the one its signatures were checked against.
 //
-// Allocated once per lhatstd_io_register call and never freed -- program.h
+// Allocated once per lhatstdlib_io_register call and never freed -- program.h
 // has no hook to run when its LhatProgram is disposed, so a host that
 // registers this module many times over a process's life leaks one of these
 // per registration. Fine for a program set up once and run, which is this
@@ -198,7 +198,7 @@ static LhatValue file_dispose(LhatMachine *machine, void *context,
     return lhat_nil();
 }
 
-bool lhatstd_io_register(LhatProgram *program)
+bool lhatstdlib_io_register(LhatProgram *program)
 {
     IoModule *module = (IoModule *)lhat_calloc(1, sizeof *module);
     if (module == NULL) {
