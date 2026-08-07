@@ -4,6 +4,12 @@
 // of program.h's own registrations (05 の 8.7). Nothing here is required --
 // a host that never calls this never sees a "random" module, the same way a
 // host that leaves port/ out never sees the default allocator.
+//
+// std.random.make answers std.random.Random|std.random.RandomError.
+// OutOfMemory -- read it with try^/catch^, not isa^: compile_isa (vm.c)
+// only resolves an error kind (04 の 6.1), not a hostdata type like
+// Random, so `x isa^ std.random.Random` fails to compile
+// (LHAT_COMPILE_UNSUPPORTED).
 
 #ifndef LHATSTDLIB_RANDOM_H
 #define LHATSTDLIB_RANDOM_H
