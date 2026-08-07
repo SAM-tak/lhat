@@ -2965,8 +2965,148 @@ static void compile_define(Compiler *c, const LhatNode *node)
     }
 }
 
+// One target of a multiple assignment, carried from the pass that reads to the
+// pass that writes. A member target holds the two registers its place was
+// evaluated into, so that 7.4改's "the target is evaluated once" survives the
+// split -- the write reaches the same owner and key the read did.
+typedef struct {
+    const LhatNode *target;
+    uint8_t owner;
+    uint8_t key;
+    uint8_t value;
+    bool indexed;
+} PendingWrite;
+
+// 13.8: reads everything, then writes everything. Only reached with more than
+// one target -- see compile_reassign.
+static void compile_reassign_parallel(Compiler *c, const LhatNode *node)
+{
+    PendingWrite pending[LHAT_MAX_LOCALS];
+    size_t count = 0;
+    uint8_t mark = c->next_register;
+    const LhatNode *value = node->v.binding.values;
+
+    for (const LhatNode *target = node->v.binding.targets;
+         target != NULL && value != NULL; target = target->next) {
+        if (count >= LHAT_MAX_LOCALS) {
+            fail(c, LHAT_COMPILE_TOO_COMPLEX);
+            return;
+        }
+        PendingWrite *w = &pending[count++];
+        w->target = target;
+        w->indexed = target->kind == LHAT_NODE_MEMBER ||
+                     target->kind == LHAT_NODE_INDEX;
+        w->owner = 0;
+        w->key = 0;
+
+        if (w->indexed) {
+            w->owner = reserve(c);
+            w->key = reserve(c);
+            compile_expression(c, target->v.access.target, w->owner);
+            compile_key(c, target, w->key);
+
+            // 7.4改, as in the single-target path: the current value comes
+            // back through the owner and key already evaluated rather than
+            // from compiling the target again.
+            if (node->v.binding.has_compound_op &&
+                value->kind == LHAT_NODE_BINARY) {
+                LhatOpcode opcode;
+                if (!binary_opcode(value->v.binary.op, &opcode)) {
+                    fail(c, LHAT_COMPILE_UNSUPPORTED);
+                    return;
+                }
+                uint8_t current = reserve(c);
+                emit(c, lhat_encode_abc(LHAT_BC_GETINDEX, current, w->owner,
+                                        w->key));
+                uint8_t rhs = reserve(c);
+                compile_expression(c, value->v.binary.right, rhs);
+                w->value = reserve(c);
+                emit(c, lhat_encode_abc(opcode, w->value, current, rhs));
+                value = value->next;
+                continue;
+            }
+        }
+
+        // A name has no place to evaluate, so a compound value is compiled
+        // whole: its left is the target node itself, which reads the register
+        // the name already lives in.
+        w->value = reserve(c);
+        compile_expression(c, value, w->value);
+        value = value->next;
+    }
+
+    for (size_t i = 0; i < count; i++) {
+        const PendingWrite *w = &pending[i];
+        if (w->indexed) {
+            emit(c, lhat_encode_abc(LHAT_BC_SETINDEX, w->owner, w->key,
+                                    w->value));
+            continue;
+        }
+
+        const char *name = NULL;
+        size_t length = 0;
+        if (!node_name(c, w->target, &name, &length)) {
+            fail(c, LHAT_COMPILE_UNSUPPORTED);
+            return;
+        }
+
+        if (w->target->kind == LHAT_NODE_SCOPE) {
+            uint8_t reg = 0;
+            size_t at = 0;
+            ScopedKind found =
+                resolve_scoped(c, w->target, name, length, &reg, &at);
+            if (found == SCOPED_TOO_FAR) {
+                fail(c, LHAT_COMPILE_SCOPE_TOO_FAR);
+                return;
+            }
+            if (found == SCOPED_NONE) {
+                fail(c, LHAT_COMPILE_UNDEFINED);
+                return;
+            }
+            if (found == SCOPED_REGISTER) {
+                emit(c, lhat_encode_abc(LHAT_BC_MOVE, reg, w->value, 0));
+            } else {
+                emit(c, lhat_encode_abc(LHAT_BC_SETUPVAL, w->value,
+                                        (uint8_t)at, 0));
+            }
+            continue;
+        }
+
+        const Local *local = find_local(c, name, length);
+        if (local != NULL) {
+            emit(c, lhat_encode_abc(LHAT_BC_MOVE, local->reg, w->value, 0));
+            continue;
+        }
+
+        size_t upvalue = find_upvalue(c, name, length);
+        if (upvalue == SIZE_MAX) {
+            fail(c, LHAT_COMPILE_UNDEFINED);
+            return;
+        }
+        emit(c, lhat_encode_abc(LHAT_BC_SETUPVAL, w->value, (uint8_t)upvalue,
+                                0));
+    }
+
+    c->next_register = mark;
+}
+
 static void compile_reassign(Compiler *c, const LhatNode *node)
 {
+    // 13.8's table offers 'a, b := b, a' as what replaces multiple return
+    // values, and it exchanges anything only if nothing is stored until every
+    // value has been read. So more than one target is compiled in two passes,
+    // through a slot each.
+    //
+    // One target keeps the direct path below, which writes straight into the
+    // place it names. There is nothing for it to interleave with, and the
+    // common assignment should not pay a move for a promise about a form it
+    // is not using.
+    if (node->v.binding.targets != NULL &&
+        node->v.binding.targets->next != NULL) {
+        compile_reassign_parallel(c, node);
+        return;
+    }
+
     const LhatNode *value = node->v.binding.values;
     for (const LhatNode *target = node->v.binding.targets; target != NULL;
          target = target->next) {

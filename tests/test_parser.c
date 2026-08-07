@@ -178,11 +178,29 @@ static void test_statements(void)
         }
     }
 
-    LHAT_TEST("compound assignment refuses more than one target");
+    // 7.4改2: several targets, each paired with the value at its own position
+    // -- one BINARY per pair, the way a plain ':=' takes one value per target.
+    LHAT_TEST("compound assignment takes several targets");
+    parse_text(&p, "a, b += 1, 2");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    {
+        const LhatNode *s = first_statement(&p);
+        LHAT_CHECK_EQ_INT(s->kind, LHAT_NODE_REASSIGN);
+        LHAT_CHECK(s->v.binding.has_compound_op, "compound");
+        LHAT_CHECK_EQ_INT(lhat_node_list_length(s->v.binding.targets), 2);
+        LHAT_CHECK_EQ_INT(lhat_node_list_length(s->v.binding.values), 2);
+        LHAT_CHECK_EQ_INT(s->v.binding.values->kind, LHAT_NODE_BINARY);
+        LHAT_CHECK_EQ_INT(s->v.binding.values->next->kind, LHAT_NODE_BINARY);
+    }
+    parse_dispose(&p);
+
+    // Nothing spreads one value across several targets: 13.10's unpack^ says
+    // so in the source for a plain ':=', and an operator cannot.
+    LHAT_TEST("but the two lists have to be the same length");
     parse_text(&p, "a, b += 1");
     LHAT_CHECK(error_count(&p) > 0, "expected a diagnostic");
     LHAT_CHECK_EQ_INT(p.result.diagnostics[0].code,
-                      LHAT_PARSE_ERR_COMPOUND_ASSIGN_ONE_TARGET);
+                      LHAT_PARSE_ERR_BINDING_ARITY);
     parse_dispose(&p);
 
     // 13.10: the marker sits on the value, not on the binding.

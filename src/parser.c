@@ -3270,33 +3270,58 @@ static LhatNode *parse_statement(Parser *p)
     }
 
     // 7.4改: 'target op= value' is 'target := target op value' with target
-    // read once. A single target is all that reads once means, so more than
-    // one is refused rather than guessed at.
+    // read once. 7.4改2 lets several be written at once, the way a plain ':='
+    // already may: each target is paired with the value standing at its own
+    // position, and 13.8's "read everything, then write everything" holds
+    // here as it does there.
     LhatOpKind compound_base;
     if (p->current.kind == LHAT_TOKEN_OP &&
         compound_assign_op(p->current.v.op, &compound_base)) {
         LhatToken at = p->current;
         advance(p);
-        if (head == NULL || head->next != NULL) {
-            report(p, &at, LHAT_PARSE_ERR_COMPOUND_ASSIGN_ONE_TARGET);
+
+        LhatNode *rhs_head = NULL;
+        LhatNode *rhs_tail = NULL;
+        lhat_node_append(&rhs_head, &rhs_tail, parse_expression(p));
+        while (match_op(p, LHAT_OP_COMMA)) {
+            lhat_node_append(&rhs_head, &rhs_tail, parse_expression(p));
         }
-        LhatNode *rhs = parse_expression(p);
+
         LhatNode *node = make(p, LHAT_NODE_REASSIGN, &at);
         if (node == NULL) {
             return NULL;
         }
         node->v.binding.targets = head;
-        // The value read is 'target op rhs' -- built around the very same
+
+        size_t target_count = lhat_node_list_length(head);
+        size_t source_count = lhat_node_list_length(rhs_head);
+        if (target_count != source_count) {
+            // Nothing spreads one value across several targets here. 13.10's
+            // unpack^ answers that for a plain ':=' and says so in the source;
+            // guessing it from an operator would not.
+            report(p, &at, LHAT_PARSE_ERR_BINDING_ARITY);
+        }
+
+        // Each value read is 'target op rhs' -- built around the very same
         // target node the compiler already reads for its address, so
         // checking it costs nothing (infer has no side effect) and compiling
         // it costs a register read, never owner/key evaluated again (below).
-        LhatNode *binary = make(p, LHAT_NODE_BINARY, &at);
-        if (binary != NULL) {
+        LhatNode *values = NULL;
+        LhatNode *values_tail = NULL;
+        LhatNode *rhs = rhs_head;
+        for (LhatNode *target = head; target != NULL && rhs != NULL;
+             target = target->next, rhs = rhs->next) {
+            LhatNode *binary = make(p, LHAT_NODE_BINARY, &at);
+            if (binary == NULL) {
+                break;
+            }
             binary->v.binary.op = compound_base;
-            binary->v.binary.left = head;
+            binary->v.binary.left = target;
             binary->v.binary.right = rhs;
+            lhat_node_append(&values, &values_tail, binary);
         }
-        node->v.binding.values = binary != NULL ? binary : rhs;
+
+        node->v.binding.values = values != NULL ? values : rhs_head;
         node->v.binding.has_compound_op = true;
         node->v.binding.compound_op = compound_base;
         return node;
@@ -3543,9 +3568,6 @@ const char *lhat_parse_error_message(LhatParseErrorCode code)
             return "taking one value apart needs 'unpack^' before it";
         case LHAT_PARSE_ERR_BINDING_ARITY:
             return "the number of targets and values does not match";
-        case LHAT_PARSE_ERR_COMPOUND_ASSIGN_ONE_TARGET:
-            return "compound assignment ('+=' and the like) takes exactly "
-                   "one target";
         case LHAT_PARSE_ERR_UNPACK_NOT_ALONE:
             return "'unpack^' must be the only value of the binding";
         case LHAT_PARSE_ERR_UNPACK_MISPLACED:

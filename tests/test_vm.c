@@ -377,6 +377,57 @@ static void test_names(void)
     CHECK_INTEGER(&r, 17);
     run_dispose(&r);
 
+    // 8.6改3: 13.8 offers 'a, b := b, a' in place of multiple return values,
+    // which it is only if nothing is stored until every value has been read.
+    LHAT_TEST("multiple assignment exchanges two values");
+    run_text(&r, "var^ a = 1\nvar^ b = 2\na, b := b, a\nreturn^ a * 10 + b\n");
+    CHECK_INTEGER(&r, 21);
+    run_dispose(&r);
+
+    LHAT_TEST("and rotates three");
+    run_text(&r,
+             "var^ p = 1\nvar^ q = 2\nvar^ s = 3\n"
+             "p, q, s := s, p, q\n"
+             "return^ p * 100 + q * 10 + s\n");
+    CHECK_INTEGER(&r, 312);
+    run_dispose(&r);
+
+    LHAT_TEST("members exchange the same way");
+    run_text(&r,
+             "var^ t = { x := 10, y := 20 }\n"
+             "t.x, t.y := t.y, t.x\n"
+             "return^ t.x * 100 + t.y\n");
+    CHECK_INTEGER(&r, 2010);
+    run_dispose(&r);
+
+    LHAT_TEST("and so does a mixture of a member and a name");
+    run_text(&r,
+             "var^ u = { a := 1 }\nvar^ n = 0\n"
+             "u.a, n := n, u.a\n"
+             "return^ u.a * 10 + n\n");
+    CHECK_INTEGER(&r, 1);
+    run_dispose(&r);
+
+    // 8.6改2: several targets, paired by position with the values.
+    LHAT_TEST("compound assignment takes several targets");
+    run_text(&r,
+             "var^ a = 10\nvar^ b = 20\na, b += 1, 2\nreturn^ a * 100 + b\n");
+    CHECK_INTEGER(&r, 1122);
+    run_dispose(&r);
+
+    LHAT_TEST("and reads every value before writing any of them");
+    run_text(&r, "var^ x = 1\nvar^ y = 2\nx, y += y, x\nreturn^ x * 10 + y\n");
+    CHECK_INTEGER(&r, 33);
+    run_dispose(&r);
+
+    LHAT_TEST("and reaches members too");
+    run_text(&r,
+             "var^ t = { p := 100, q := 200 }\n"
+             "t.p, t.q *= 2, 3\n"
+             "return^ t.p + t.q\n");
+    CHECK_INTEGER(&r, 800);
+    run_dispose(&r);
+
     LHAT_TEST("':=' inside a block reaches out");
     run_text(&r, "var^ x = 1\ndo^{ x := 9 }\nreturn^ x\n");
     CHECK_INTEGER(&r, 9);
