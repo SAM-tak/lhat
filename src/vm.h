@@ -55,6 +55,18 @@ typedef struct {
     // (3.2). A unit that has one registers itself under it and answers what
     // an earlier require^ registered, which is how 5.3 loads it once.
     const char *module_name;
+
+    // 05 の 8.2: the names the host bound before anything ran, each to a
+    // member of L^ (8.6). A name no scope holds is one of these, and compiles
+    // to reading that member -- so nothing new exists at run time. 8.1 stays
+    // as it was: the language hands out no names, the host does, and a host
+    // that binds none leaves the program seeing nothing.
+    //
+    // Two arrays rather than one of pairs, so that neither this header nor
+    // check.h has to know a type the other declares.
+    const char *const *initial_names;
+    const char *const *initial_members;
+    size_t initial_count;
 } LhatUnits;
 
 // Compiles one unit into a proto, which owns the bodies written inside it.
@@ -78,6 +90,14 @@ typedef struct LhatCompileSession LhatCompileSession;
 
 LhatCompileSession *lhat_compile_session_new(void);
 void lhat_compile_session_dispose(LhatCompileSession *session);
+
+// 05 の 8.2: the names the host bound to members of L^, which a bare name
+// falls back on. The same two arrays LhatUnits carries for a file; a prompt
+// has no program to hold them, so the session does. They belong to the caller
+// and have to outlive it.
+void lhat_compile_session_bind(LhatCompileSession *session,
+                               const char *const *names,
+                               const char *const *members, size_t count);
 
 // Compiles `unit` as the next input of `session`. The top-level names already
 // in it are in scope, and the ones this input declares stay for the next.
@@ -175,6 +195,11 @@ bool lhat_machine_make_host(LhatMachine *machine, LhatHostFn call,
 bool lhat_machine_register(LhatMachine *machine, const char *module,
                            const char *type, const char *name,
                            LhatValue value);
+
+// 05 の 8.6: a member of L^ itself. Writes through the machine rather than
+// through an instruction, which is why 8.6改's seal does not refuse it.
+bool lhat_machine_set_global(LhatMachine *machine, const char *name,
+                             LhatValue value);
 
 // 05 の 8.8: a value standing for something the host made. `pointer` is the
 // host's and nothing here reads it; `tag` is what a later call checks before

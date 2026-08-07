@@ -414,6 +414,22 @@ static void test_running(void)
 }
 
 // 05 の 8.7: what the host registers, and how import^ reaches it.
+// 05 の 8.6: one that goes into L^ itself rather than under its registry,
+// so that 8.2's initial binding has something to name.
+static LhatValue host_twice(LhatMachine *machine, void *context,
+                            const LhatValue *arguments, size_t count)
+{
+    (void)machine;
+    int *calls = (int *)context;
+    if (calls != NULL) {
+        (*calls)++;
+    }
+    if (count != 1 || !lhat_is_integer(arguments[0])) {
+        return lhat_nil();
+    }
+    return lhat_integer(lhat_as_integer(arguments[0]) * 2);
+}
+
 static LhatValue host_add(LhatMachine *machine, void *context,
                           const LhatValue *arguments, size_t count)
 {
@@ -478,6 +494,86 @@ static void test_hosting(void)
             LHAT_CHECK_EQ_INT(calls, 1);
             lhat_machine_dispose(machine);
         }
+    }
+    lhat_program_dispose(&program);
+
+    // 05 の 8.2: a host may bind a name so that a program writes it with no
+    // qualification. 8.1 is unchanged -- the language hands out nothing, and
+    // a host that binds none leaves a program seeing nothing.
+    LHAT_TEST("a host-bound name is written without any qualification");
+    {
+        static const File files[] = {
+            {"main.lh", "return^ twice(21)\n"},
+        };
+        program_with(&program, &disk, files, 1);
+        LHAT_CHECK(lhat_register_global(&program, "twice",
+                                        "f^number^ -> number^;", host_twice,
+                                        &calls),
+                   "the registration took");
+        LHAT_CHECK(lhat_bind_initial(&program, "twice", "L^.twice"),
+                   "the binding took");
+        const LhatUnit *root = lhat_program_check(&program, "main.lh");
+        LHAT_CHECK(root != NULL && !lhat_program_has_errors(&program) &&
+                       root->checked.diagnostic_count == 0,
+                   "the program checked");
+        size_t count = 0;
+        const LhatModule *modules = lhat_program_compile(&program, &count);
+        if (modules != NULL && root != NULL) {
+            LhatMachine *machine = lhat_machine_new();
+            lhat_machine_set_modules(machine, modules, count);
+            LHAT_CHECK(lhat_program_install(&program, machine),
+                       "what was registered reached L^");
+            LhatRunResult ran = lhat_run(machine, modules[root->index].proto);
+            LHAT_CHECK_EQ_INT(ran.status, LHAT_RUN_OK);
+            LHAT_CHECK_EQ_INT(lhat_as_integer(ran.value), 42);
+            lhat_machine_dispose(machine);
+        }
+    }
+    lhat_program_dispose(&program);
+
+    // What it reaches stays readable as L^.<member>, since 8.1 keeps the hat
+    // identifier out of the spellings a let^ can make.
+    LHAT_TEST("a let^ of the same spelling shadows it, and L^ still reaches it");
+    {
+        static const File files[] = {
+            {"main.lh",
+             "let^ twice = f^ n:number^ -> number^ { return^ L^.twice(n) + 1 }\n"
+             "return^ twice(20)\n"},
+        };
+        program_with(&program, &disk, files, 1);
+        lhat_register_global(&program, "twice", "f^number^ -> number^;",
+                             host_twice, NULL);
+        lhat_bind_initial(&program, "twice", "L^.twice");
+        const LhatUnit *root = lhat_program_check(&program, "main.lh");
+        LHAT_CHECK(root != NULL && !lhat_program_has_errors(&program) &&
+                       root->checked.diagnostic_count == 0,
+                   "the program checked");
+        size_t count = 0;
+        const LhatModule *modules = lhat_program_compile(&program, &count);
+        if (modules != NULL && root != NULL) {
+            LhatMachine *machine = lhat_machine_new();
+            lhat_machine_set_modules(machine, modules, count);
+            lhat_program_install(&program, machine);
+            LhatRunResult ran = lhat_run(machine, modules[root->index].proto);
+            LHAT_CHECK_EQ_INT(ran.status, LHAT_RUN_OK);
+            LHAT_CHECK_EQ_INT(lhat_as_integer(ran.value), 41);
+            lhat_machine_dispose(machine);
+        }
+    }
+    lhat_program_dispose(&program);
+
+    // 8.1: nothing is handed out on its own. A name the host did not bind is
+    // missing exactly as it was before.
+    LHAT_TEST("and a name nobody bound is still missing");
+    {
+        static const File files[] = {
+            {"main.lh", "return^ twice(21)\n"},
+        };
+        program_with(&program, &disk, files, 1);
+        const LhatUnit *root = lhat_program_check(&program, "main.lh");
+        LHAT_CHECK(root != NULL, "the unit loaded");
+        LHAT_CHECK(root == NULL || root->checked.diagnostic_count > 0,
+                   "an unbound name is reported");
     }
     lhat_program_dispose(&program);
 

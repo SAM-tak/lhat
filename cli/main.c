@@ -476,6 +476,58 @@ static int dump_tokens(const LhatSource *source)
     return status;
 }
 
+// 05 の 8.2's example, and the only name this driver hands out. 02 の 10.6
+// calls this the one exception the f^ constraints allow: what it changes is
+// the host's, not the machine's, so nothing a program can read afterwards
+// tells it apart from having done nothing. 13.2 has an f^ answer on every
+// path, so it answers nil^ -- which 04 の 11.3 already spells "nothing here".
+static LhatValue host_print(LhatMachine *machine, void *context,
+                            const LhatValue *arguments, size_t count)
+{
+    (void)machine;
+    (void)context;
+    if (count >= 1 && lhat_is_object_kind(arguments[0], LHAT_OBJECT_STRING)) {
+        const LhatString *text =
+            (const LhatString *)lhat_as_object(arguments[0]);
+        printf("%.*s\n", (int)text->length, text->text);
+    }
+    return lhat_nil();
+}
+
+// 05 の 8.2: the host decides what a program sees without a require^. This
+// driver binds print, and collectgarbage because 8.6 already puts it in L^ --
+// writing both out is what shows the two are the same mechanism.
+//
+// The names live here rather than in each caller because a session borrows
+// them: 8.2's arrays belong to the host and have to outlive what reads them.
+static const char *const bound_names[] = {"print", "collectgarbage"};
+static const char *const bound_members[] = {"print", "collectgarbage"};
+static const size_t bound_count = sizeof bound_names / sizeof bound_names[0];
+
+static void bind_host_names(LhatProgram *program)
+{
+    lhat_register_global(program, "print", "f^string^ -> nil^;", host_print,
+                         NULL);
+    lhat_bind_initial(program, "print", "L^.print");
+    lhat_bind_initial(program, "collectgarbage", "L^.collectgarbage");
+}
+
+// The same for 03 の 4.3's prompt, which has no program to hold any of it:
+// the value goes straight into the machine's L^, and the two sessions are
+// told the names on their own.
+static void bind_prompt_names(LhatMachine *machine, LhatCheckSession *checks,
+                              LhatCompileSession *compiles)
+{
+    LhatValue fn = lhat_nil();
+    if (lhat_machine_make_host(machine, host_print, NULL, 1, false, &fn)) {
+        lhat_machine_set_global(machine, "print", fn);
+    }
+    lhat_check_session_global(checks, "print", "f^string^ -> nil^;");
+    lhat_check_session_bind(checks, bound_names, bound_members, bound_count);
+    lhat_compile_session_bind(compiles, bound_names, bound_members,
+                              bound_count);
+}
+
 // 03 の 1.1's third stage, over the unit graph of 05 の 6.2: a unit cannot be
 // checked before the units it requires, so the whole graph is walked rather
 // than the one file named on the command line.
@@ -483,6 +535,7 @@ static int check_program(const char *path, bool run, bool strict)
 {
     LhatProgram program;
     lhat_program_init(&program, strict, lhat_load_file, NULL);
+    bind_host_names(&program);  // 05 の 8.2, before checking (8.3)
 
     const LhatUnit *root = lhat_program_check(&program, path);
 
@@ -541,6 +594,9 @@ static int check_program(const char *path, bool run, bool strict)
             failed = true;
         } else {
             lhat_machine_set_modules(machine, modules, count);
+            // 05 の 8.7: what was registered reaches the machine here, which
+            // is what makes the names bound above answer something.
+            lhat_program_install(&program, machine);
             LhatRunResult ran = lhat_run(machine, modules[root->index].proto);
             if (ran.status != LHAT_RUN_OK) {
                 say_run_error(path, ran);
@@ -606,6 +662,7 @@ static int repl(bool strict)
         fprintf(stderr, "lhat: out of memory\n");
         return EXIT_FAILURE;
     }
+    bind_prompt_names(machine, checks, compiles);  // 05 の 8.2
 
     printf("L^ (lhat) %s\n", LHAT_VERSION);
     printf("an expression on its own is answered; an unfinished construct "

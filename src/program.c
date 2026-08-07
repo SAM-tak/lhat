@@ -236,6 +236,10 @@ static LhatUnit *check_path(LhatProgram *program, char *path)
     require.resolve = resolve_require;
     require.context = &resolution;
     require.hosted = program->hosted;  // 05 の 8.7
+    require.globals = program->globals;  // 05 の 8.6
+    require.initial_names = (const char *const *)program->initial_names;
+    require.initial_members = (const char *const *)program->initial_members;
+    require.initial_count = program->initial_count;  // 05 の 8.2
 
     // The recursion is what puts the graph in dependency order (6.2): the
     // required unit finishes before this one's checking gets past the
@@ -287,6 +291,16 @@ typedef struct LhatHostEntry {
     // it lives as long as the program and points at the entry's own strings.
     LhatHostDataTag *tag;
 } LhatHostEntry;
+
+// 05 の 8.6: one member of L^ itself. Separate from the above because it does
+// not land under L^.modules, so install puts it somewhere else.
+typedef struct LhatGlobalEntry {
+    char *name;  // owned
+    LhatHostFn call;
+    void *context;
+    uint8_t parameters;
+    bool takes_self;
+} LhatGlobalEntry;
 
 // The table type a dotted path names inside `owner`, made where the path does
 // not reach one. The same walk 02 の 8.8 does, over text.
@@ -504,6 +518,107 @@ bool lhat_register_func(LhatProgram *program, const char *module,
                          module, NULL, name, signature, call, context);
 }
 
+// 05 の 8.6: L^ itself. Kept apart from the entries above because those land
+// under L^.modules and this one does not -- and because the checker reads it
+// from a different place, its own L^ rather than the import^ registry.
+bool lhat_register_global(LhatProgram *program, const char *name,
+                          const char *signature, LhatHostFn call,
+                          void *context)
+{
+    if (program == NULL || name == NULL || call == NULL) {
+        return false;
+    }
+    if (program->globals == NULL) {
+        program->globals = lhat_type_table(&program->types);
+        if (program->globals == NULL) {
+            return false;
+        }
+    }
+    if (hosted_member(program->globals, name) != NULL) {
+        return false;  // 8.7: one name, one thing
+    }
+    LhatType *written = lhat_type_of_text(signature, strlen(signature),
+                                          &program->types, program->hosted);
+    if (written == NULL ||
+        lhat_type_add_member(&program->types, program->globals, name,
+                             strlen(name), written) == NULL) {
+        return false;
+    }
+
+    if (program->global_count == program->global_capacity) {
+        size_t grown =
+            program->global_capacity ? program->global_capacity * 2 : 4;
+        LhatGlobalEntry *bigger = (LhatGlobalEntry *)lhat_realloc(
+            program->global_entries, grown * sizeof *bigger);
+        if (bigger == NULL) {
+            return false;
+        }
+        program->global_entries = bigger;
+        program->global_capacity = grown;
+    }
+    LhatGlobalEntry *entry = &program->global_entries[program->global_count];
+    memset(entry, 0, sizeof *entry);
+    entry->name = duplicate(name);
+    entry->call = call;
+    entry->context = context;
+    if (written->kind == LHAT_TYPE_FUNC) {
+        size_t count = 0;
+        for (const LhatTypeList *p = written->v.func.params; p != NULL;
+             p = p->next) {
+            count++;
+        }
+        entry->parameters = (uint8_t)count;
+        entry->takes_self = written->v.func.takes_self;
+    }
+    if (entry->name == NULL) {
+        return false;
+    }
+    program->global_count++;
+    return true;
+}
+
+// 05 の 8.2. `member` is written "L^.<name>", which is the only form for now:
+// 8.6's table is where a host puts what it wants seen without a require^.
+bool lhat_bind_initial(LhatProgram *program, const char *name,
+                       const char *member)
+{
+    static const char prefix[] = "L^.";
+    if (program == NULL || name == NULL || member == NULL ||
+        strncmp(member, prefix, sizeof prefix - 1) != 0) {
+        return false;
+    }
+    const char *reached = member + sizeof prefix - 1;
+    if (*reached == '\0') {
+        return false;
+    }
+
+    if (program->initial_count == program->initial_capacity) {
+        size_t grown =
+            program->initial_capacity ? program->initial_capacity * 2 : 4;
+        char **names = (char **)lhat_realloc(program->initial_names,
+                                             grown * sizeof *names);
+        if (names == NULL) {
+            return false;
+        }
+        program->initial_names = names;
+        char **members = (char **)lhat_realloc(program->initial_members,
+                                               grown * sizeof *members);
+        if (members == NULL) {
+            return false;
+        }
+        program->initial_members = members;
+        program->initial_capacity = grown;
+    }
+    program->initial_names[program->initial_count] = duplicate(name);
+    program->initial_members[program->initial_count] = duplicate(reached);
+    if (program->initial_names[program->initial_count] == NULL ||
+        program->initial_members[program->initial_count] == NULL) {
+        return false;
+    }
+    program->initial_count++;
+    return true;
+}
+
 // ---------------------------------------------------------------------------
 // Public interface
 // ---------------------------------------------------------------------------
@@ -542,6 +657,9 @@ const LhatModule *lhat_program_compile(LhatProgram *program, size_t *count)
         units.resolve = resolve_unit;
         units.context = &resolution;
         units.module_name = u->checked.module_name;
+        units.initial_names = (const char *const *)program->initial_names;
+        units.initial_members = (const char *const *)program->initial_members;
+        units.initial_count = program->initial_count;  // 05 の 8.2
 
         LhatProto *proto = NULL;
         LhatCompileStatus status =
@@ -589,6 +707,16 @@ bool lhat_program_install(const LhatProgram *program, LhatMachine *machine)
             return false;
         }
     }
+    // 05 の 8.6: what goes in L^ itself rather than under its registry.
+    for (size_t i = 0; i < program->global_count; i++) {
+        const LhatGlobalEntry *e = &program->global_entries[i];
+        LhatValue value = lhat_nil();
+        if (!lhat_machine_make_host(machine, e->call, e->context,
+                                    e->parameters, e->takes_self, &value) ||
+            !lhat_machine_set_global(machine, e->name, value)) {
+            return false;
+        }
+    }
     return true;
 }
 
@@ -619,6 +747,25 @@ void lhat_program_dispose(LhatProgram *program)
     program->host_entries = NULL;
     program->host_entry_count = 0;
     program->host_entry_capacity = 0;
+
+    for (size_t i = 0; i < program->global_count; i++) {
+        lhat_free(program->global_entries[i].name);
+    }
+    lhat_free(program->global_entries);
+    program->global_entries = NULL;
+    program->global_count = 0;
+    program->global_capacity = 0;
+
+    for (size_t i = 0; i < program->initial_count; i++) {
+        lhat_free(program->initial_names[i]);
+        lhat_free(program->initial_members[i]);
+    }
+    lhat_free(program->initial_names);
+    lhat_free(program->initial_members);
+    program->initial_names = NULL;
+    program->initial_members = NULL;
+    program->initial_count = 0;
+    program->initial_capacity = 0;
 
     LhatUnit *unit = program->units;
     while (unit != NULL) {

@@ -200,6 +200,25 @@ typedef struct {
     // module path. import^ resolves against this alone, so its answer does
     // not depend on the order units happen to be checked in.
     LhatType *hosted;
+
+    // 05 の 8.6: what the host put in L^ itself, as a table type whose members
+    // are those. NULL when it put nothing there. What 8.6 lists is carried by
+    // the checker regardless; this is what a host added on top.
+    LhatType *globals;
+
+    // 05 の 8.2: the names the host bound before anything ran, each to a
+    // member of L^ (8.6). A name no scope holds is looked up here before it
+    // is reported missing, and its type is the member's.
+    //
+    // 8.1 is unchanged by this. The language hands out no names; a host does,
+    // and one that binds none leaves the program seeing nothing. What a name
+    // reaches stays readable as L^.<member> whatever a let^ later shadows.
+    //
+    // Two arrays rather than one of pairs, so that neither this header nor
+    // vm.h has to know a type the other declares.
+    const char *const *initial_names;
+    const char *const *initial_members;
+    size_t initial_count;
 } LhatRequire;
 
 // 03 の 3.1. `strict` is a setting of the compilation unit, not a dialect:
@@ -232,6 +251,20 @@ LhatCheckSession *lhat_check_session_new(void);
 // Frees the session, the names it copied and every type in its arena. Nothing
 // read out of a result checked in it stays valid.
 void lhat_check_session_dispose(LhatCheckSession *session);
+
+// 05 の 8.6: a member of L^ the host provides, its type written in 13 章's
+// grammar the way 8.7's registration writes one. A prompt has no LhatProgram
+// to hold these, so the session does -- what a file gets through LhatRequire.
+// Resolved in the session's own arena, so the caller keeps no type.
+bool lhat_check_session_global(LhatCheckSession *session, const char *name,
+                               const char *signature);
+
+// 05 の 8.2: the names the host bound to members of L^. The arrays belong to
+// the caller and have to outlive the session; setting them again replaces
+// what was there.
+void lhat_check_session_bind(LhatCheckSession *session,
+                             const char *const *names,
+                             const char *const *members, size_t count);
 
 // Checks `unit` as the next input of `session`. The names already bound in it
 // are in scope, and the ones this input binds stay for the next. The result

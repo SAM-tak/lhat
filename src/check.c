@@ -1562,6 +1562,30 @@ static LhatType *infer_operator(Checker *c, const LhatNode *node, LhatOpKind op,
     return carrier->v.func.result;
 }
 
+// 05 の 8.2: the member of L^ a host-bound name reaches, or NULL when the
+// host bound no such name. Nothing is added to any scope for these -- they
+// are asked for only where a scope answered nothing, which is what lets a
+// let^ of the same spelling shadow one without anything being removed.
+static LhatType *initial_binding_type(Checker *c, const char *name,
+                                      size_t length)
+{
+    for (size_t i = 0; i < c->require.initial_count; i++) {
+        const char *bound = c->require.initial_names[i];
+        if (bound == NULL || strlen(bound) != length ||
+            memcmp(bound, name, length) != 0) {
+            continue;
+        }
+        const char *member = c->require.initial_members[i];
+        LhatType *env = environment_type(c);
+        if (member == NULL || env == NULL) {
+            return NULL;
+        }
+        const LhatTypeMember *m = find_member(env, member, strlen(member));
+        return m != NULL ? m->type : NULL;
+    }
+    return NULL;
+}
+
 static LhatType *infer_name(Checker *c, const LhatNode *node)
 {
     const char *name = NULL;
@@ -1629,6 +1653,14 @@ static LhatType *infer_name(Checker *c, const LhatNode *node)
 
     Binding *b = scope_find(from, name, length);
     if (b == NULL) {
+        // 05 の 8.2: what the host bound before anything ran. Asked after
+        // every scope, so a let^ of the same spelling shadows it -- and what
+        // it reaches stays readable as L^.<member>, since 8.1 keeps the hat
+        // identifier out of the spellings a let^ can make.
+        LhatType *bound = initial_binding_type(c, name, length);
+        if (bound != NULL) {
+            return bound;
+        }
         report_named(c, node, LHAT_CHECK_ERR_UNDEFINED, name, length);
         return simple(c, LHAT_TYPE_UNKNOWN);
     }
@@ -3632,6 +3664,14 @@ static LhatType *environment_type(Checker *c)
     lhat_type_add_member(c->result->types, env, "modules", 7, modules);
     lhat_type_add_member(c->result->types, env, "collectgarbage", 14,
                          collect_now);
+    // 05 の 8.6: and whatever the host put here on top of that list.
+    if (c->require.globals != NULL) {
+        for (const LhatTypeMember *m = c->require.globals->v.table.members;
+             m != NULL; m = m->next) {
+            lhat_type_add_member(c->result->types, env, m->name,
+                                 m->name_length, m->type);
+        }
+    }
     c->environment = env;
     return env;
 }
@@ -5125,7 +5165,45 @@ struct LhatCheckSession {
     // the same way -- so a typeof^ result bound in one input is still the
     // same nominal type when a later input names it in a comparison.
     LhatType *typeinfo_type;
+
+    // 05 の 8.6 and 8.2: what the host put in L^, and the names it bound to
+    // members of it. A prompt has no LhatProgram to carry these.
+    LhatType *globals;
+    const char *const *initial_names;
+    const char *const *initial_members;
+    size_t initial_count;
 };
+
+bool lhat_check_session_global(LhatCheckSession *session, const char *name,
+                               const char *signature)
+{
+    if (session == NULL || name == NULL || signature == NULL) {
+        return false;
+    }
+    if (session->globals == NULL) {
+        session->globals = lhat_type_table(&session->types);
+        if (session->globals == NULL) {
+            return false;
+        }
+    }
+    LhatType *written =
+        lhat_type_of_text(signature, strlen(signature), &session->types, NULL);
+    return written != NULL &&
+           lhat_type_add_member(&session->types, session->globals, name,
+                                strlen(name), written) != NULL;
+}
+
+void lhat_check_session_bind(LhatCheckSession *session,
+                             const char *const *names,
+                             const char *const *members, size_t count)
+{
+    if (session == NULL) {
+        return;
+    }
+    session->initial_names = names;
+    session->initial_members = members;
+    session->initial_count = count;
+}
 
 LhatCheckSession *lhat_check_session_new(void)
 {
@@ -5213,6 +5291,12 @@ void lhat_check_next(LhatCheckSession *session, const LhatNode *unit,
     // it is still there in the next.
     checker.environment = session->environment;
     checker.typeinfo_type = session->typeinfo_type;
+    // 05 の 8.6 and 8.2: what the host put in L^ and bound names to. A file
+    // gets these through LhatRequire; a prompt has no program to carry them.
+    checker.require.globals = session->globals;
+    checker.require.initial_names = session->initial_names;
+    checker.require.initial_members = session->initial_members;
+    checker.require.initial_count = session->initial_count;
 
     // 03 の 4.3: the last statement is what the input answers with, when it
     // is an expression. What that changes here is 15.8's reasoning about a

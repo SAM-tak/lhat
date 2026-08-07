@@ -95,6 +95,21 @@ typedef struct {
     struct LhatHostEntry *host_entries;
     size_t host_entry_count;
     size_t host_entry_capacity;
+
+    // 05 の 8.6: what the host put in L^ itself, as the type side of it. The
+    // checker's own L^ carries these on top of what 8.6 lists.
+    LhatType *globals;
+    struct LhatGlobalEntry *global_entries;
+    size_t global_count;
+    size_t global_capacity;
+
+    // 05 の 8.2: the names bound without a require^, kept as two arrays so
+    // that check.h and vm.h can each read them without knowing a type the
+    // other declares.
+    char **initial_names;    // owned
+    char **initial_members;  // owned
+    size_t initial_count;
+    size_t initial_capacity;
 } LhatProgram;
 
 // 05 の 8.9: the loader is handed over rather than defaulted to, so nothing
@@ -163,6 +178,24 @@ bool lhat_register_member(LhatProgram *program, const char *module,
 bool lhat_register_func(LhatProgram *program, const char *module,
                         const char *name, const char *signature,
                         LhatHostFn call, void *context);
+
+// 05 の 8.6: a member of L^ itself rather than of a module under it. Reserved
+// for what a program cannot provide for itself -- 8.6 keeps that list short,
+// and 8.1 sends everything else through require^.
+bool lhat_register_global(LhatProgram *program, const char *name,
+                          const char *signature, LhatHostFn call,
+                          void *context);
+
+// 05 の 8.2: bind `name` to a member of L^, so that a program may write it
+// without any qualification. `member` is spelled "L^.<member>" -- the only
+// form for now, since 8.6's table is where a host puts what it wants seen
+// without a require^.
+//
+// 8.1 is unaffected. The language hands out no names; a host that binds none
+// leaves a program seeing nothing. A let^ of the same spelling shadows the
+// binding, and L^.<member> still reaches what it named.
+bool lhat_bind_initial(LhatProgram *program, const char *name,
+                       const char *member);
 
 // Puts what was registered into the machine's L^.modules, so that an import^
 // finds it. Belongs after lhat_machine_set_modules and before the run.

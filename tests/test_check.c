@@ -2482,6 +2482,7 @@ static void check_against(Unit *u, Library *lib, const char *provider,
                &lib->provider.checked);
 
     LhatRequire require;
+    memset(&require, 0, sizeof require);
     require.resolve = library_resolve;
     require.context = lib;
 

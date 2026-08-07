@@ -1231,6 +1231,27 @@ static bool type_is_concrete(const LhatType *type)
 
 // Reads a name into a register, wherever it is held. Returns false when there
 // is no such name anywhere.
+// 05 の 8.2: the member of L^ a host-bound name reaches, or NULL when the host
+// bound no such name. Read after the scopes, so a let^ of the same spelling
+// shadows it -- and nothing is placed in a scope for one, which is what keeps
+// 8.1's "the let^ in this place tell you what is here" true of the source.
+static const char *initial_binding_member(Compiler *c, const char *name,
+                                          size_t length)
+{
+    const LhatUnits *units = root_of(c)->units;
+    if (units == NULL) {
+        return NULL;
+    }
+    for (size_t i = 0; i < units->initial_count; i++) {
+        const char *bound = units->initial_names[i];
+        if (bound != NULL && strlen(bound) == length &&
+            memcmp(bound, name, length) == 0) {
+            return units->initial_members[i];
+        }
+    }
+    return NULL;
+}
+
 static bool resolve_name(Compiler *c, const char *name, size_t length,
                          uint8_t into)
 {
@@ -1240,10 +1261,22 @@ static bool resolve_name(Compiler *c, const char *name, size_t length,
         return true;
     }
     size_t upvalue = find_upvalue(c, name, length);
-    if (upvalue == SIZE_MAX) {
+    if (upvalue != SIZE_MAX) {
+        emit(c, lhat_encode_abc(LHAT_BC_GETUPVAL, into, (uint8_t)upvalue, 0));
+        return true;
+    }
+    // 05 の 8.2: nothing new exists at run time for one of these -- the name
+    // compiles to reading the member of L^ the host bound it to.
+    const char *member = initial_binding_member(c, name, length);
+    if (member == NULL) {
         return false;
     }
-    emit(c, lhat_encode_abc(LHAT_BC_GETUPVAL, into, (uint8_t)upvalue, 0));
+    uint8_t mark = c->next_register;
+    uint8_t key = reserve(c);
+    emit(c, lhat_encode_abc(LHAT_BC_ENV, into, 0, 0));
+    load_string_bytes(c, key, member, strlen(member));
+    emit(c, lhat_encode_abc(LHAT_BC_GETINDEX, into, into, key));
+    c->next_register = mark;
     return true;
 }
 
@@ -2340,17 +2373,12 @@ static void compile_expression(Compiler *c, const LhatNode *node, uint8_t into)
                     return;
                 }
             }
-            const Local *local = find_local(c, name, length);
-            if (local != NULL) {
-                emit(c, lhat_encode_abc(LHAT_BC_MOVE, into, local->reg, 0));
-                return;
-            }
-            size_t upvalue = find_upvalue(c, name, length);
-            if (upvalue == SIZE_MAX) {
+            // 05 の 8.2: resolve_name asks the scopes first and the host's
+            // initial bindings last, which is what lets a let^ of the same
+            // spelling shadow one.
+            if (!resolve_name(c, name, length, into)) {
                 fail(c, LHAT_COMPILE_UNDEFINED);
-                return;
             }
-            emit(c, lhat_encode_abc(LHAT_BC_GETUPVAL, into, (uint8_t)upvalue, 0));
             return;
         }
 
@@ -3741,7 +3769,25 @@ struct LhatCompileSession {
     struct ErrorDecl *errors;
     size_t error_count;
     size_t error_capacity;
+
+    // 05 の 8.2: the names the host bound to members of L^. A file gets these
+    // through LhatUnits; a prompt has no program to carry them.
+    const char *const *initial_names;
+    const char *const *initial_members;
+    size_t initial_count;
 };
+
+void lhat_compile_session_bind(LhatCompileSession *session,
+                               const char *const *names,
+                               const char *const *members, size_t count)
+{
+    if (session == NULL) {
+        return;
+    }
+    session->initial_names = names;
+    session->initial_members = members;
+    session->initial_count = count;
+}
 
 LhatCompileSession *lhat_compile_session_new(void)
 {
@@ -4145,7 +4191,15 @@ LhatCompileStatus lhat_compile_next(LhatCompileSession *session,
                                     const LhatNode *unit,
                                     const LhatLexer *lexer, LhatProto **out)
 {
-    return compile_unit(session, unit, lexer, NULL, out);
+    // 05 の 8.2: the session carries the host's bindings where a file has a
+    // program to. Nothing else of LhatUnits applies -- 5.3 gives a require^
+    // at a prompt nowhere to go, which a NULL resolver already says.
+    LhatUnits units;
+    memset(&units, 0, sizeof units);
+    units.initial_names = session->initial_names;
+    units.initial_members = session->initial_members;
+    units.initial_count = session->initial_count;
+    return compile_unit(session, unit, lexer, &units, out);
 }
 
 const char *lhat_compile_status_message(LhatCompileStatus status)
@@ -5147,6 +5201,19 @@ bool lhat_machine_register(LhatMachine *machine, const char *module,
     bool refused = false;
     return set_key(machine, owner, lhat_object((LhatObject *)key), value,
                    &refused) && !refused;
+}
+
+bool lhat_machine_set_global(LhatMachine *machine, const char *name,
+                             LhatValue value)
+{
+    Machine *m = (Machine *)machine;
+    if (m == NULL || m->environment == NULL || name == NULL) {
+        return false;
+    }
+    // 05 の 8.6改: set_key rather than an instruction, so the seal on L^ is
+    // not in the way -- what it refuses is what a program writes, and this is
+    // the host writing what the program will read.
+    return set_member(m, m->environment, name, value);
 }
 
 void lhat_machine_dispose(LhatMachine *machine)
