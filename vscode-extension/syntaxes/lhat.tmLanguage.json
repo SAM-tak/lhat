@@ -1,0 +1,227 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "L^",
+  "scopeName": "source.lhat",
+  "patterns": [
+    { "include": "#comments" },
+    { "include": "#strings" },
+    { "include": "#numbers" },
+    { "include": "#scope-specifiers" },
+    { "include": "#hat-identifiers" },
+    { "include": "#operators" },
+    { "include": "#punctuation" }
+  ],
+  "repository": {
+    "comments": {
+      "patterns": [
+        {
+          "name": "comment.block.lhat",
+          "begin": "#\\[",
+          "end": "\\]#",
+          "patterns": [{ "include": "#comments" }]
+        },
+        {
+          "name": "comment.line.number-sign.lhat",
+          "match": "#.*$"
+        }
+      ]
+    },
+
+    "strings": {
+      "patterns": [
+        { "include": "#string-interpolated" },
+        { "include": "#string-line" },
+        { "include": "#string-escaped" },
+        { "include": "#string-raw" },
+        { "include": "#name-literal" }
+      ]
+    },
+    "string-interpolated": {
+      "name": "string.quoted.double.interpolated.lhat",
+      "begin": "\\$\"",
+      "beginCaptures": { "0": { "name": "punctuation.definition.string.begin.lhat" } },
+      "end": "\"",
+      "endCaptures": { "0": { "name": "punctuation.definition.string.end.lhat" } },
+      "patterns": [
+        { "match": "\\{\\{|\\}\\}", "name": "constant.character.escape.lhat" },
+        {
+          "name": "meta.interpolation.lhat",
+          "begin": "\\{",
+          "beginCaptures": { "0": { "name": "punctuation.section.interpolation.begin.lhat" } },
+          "end": "\\}",
+          "endCaptures": { "0": { "name": "punctuation.section.interpolation.end.lhat" } },
+          "patterns": [
+            { "include": "#comments" },
+            { "include": "#strings" },
+            { "include": "#numbers" },
+            { "include": "#scope-specifiers" },
+            { "include": "#hat-identifiers" },
+            {
+              "comment": "A plain identifier (no trailing '^') has no scope of its own otherwise, so it keeps reading as the outer string's colour -- the string.quoted.* scope this hole sits inside never goes away, TextMate scopes only stack. Giving it 'variable' explicitly is what most themes key a non-string colour off.",
+              "match": "[\\p{L}_][\\p{L}\\p{N}_]*",
+              "name": "variable.other.readwrite.lhat"
+            },
+            { "include": "#operators" },
+            { "include": "#punctuation" }
+          ]
+        }
+      ]
+    },
+    "string-line": {
+      "comment": "01-lexical-structure.md 5.3: runs to the end of the line, no escapes",
+      "name": "string.quoted.triple.lhat",
+      "match": "\"\"\".*$"
+    },
+    "string-escaped": {
+      "comment": "01-lexical-structure.md 5.1",
+      "name": "string.quoted.double.lhat",
+      "begin": "\"",
+      "beginCaptures": { "0": { "name": "punctuation.definition.string.begin.lhat" } },
+      "end": "\"",
+      "endCaptures": { "0": { "name": "punctuation.definition.string.end.lhat" } },
+      "patterns": [
+        {
+          "match": "\\\\(n|r|t|0|\\\\|\"|x[0-9A-Fa-f]{2}|u\\{[0-9A-Fa-f]+\\}|\\n)",
+          "name": "constant.character.escape.lhat"
+        },
+        { "match": "\\\\.", "name": "invalid.illegal.escape.lhat" }
+      ]
+    },
+    "string-raw": {
+      "comment": "01-lexical-structure.md 5.2: no escapes, '' denotes a single quote",
+      "name": "string.quoted.single.lhat",
+      "begin": "'",
+      "beginCaptures": { "0": { "name": "punctuation.definition.string.begin.lhat" } },
+      "end": "'",
+      "endCaptures": { "0": { "name": "punctuation.definition.string.end.lhat" } },
+      "patterns": [
+        { "match": "''", "name": "constant.character.escape.lhat" }
+      ]
+    },
+    "name-literal": {
+      "comment": "01-lexical-structure.md 3.4: backtick-delimited, cannot span a line",
+      "name": "string.quoted.other.name-literal.lhat",
+      "begin": "`",
+      "beginCaptures": { "0": { "name": "punctuation.definition.string.begin.lhat" } },
+      "end": "`|$",
+      "endCaptures": { "0": { "name": "punctuation.definition.string.end.lhat" } },
+      "patterns": [
+        { "match": "``", "name": "constant.character.escape.lhat" }
+      ]
+    },
+
+    "numbers": {
+      "patterns": [
+        { "match": "\\b0[xX][0-9A-Fa-f_]+\\b", "name": "constant.numeric.hex.lhat" },
+        { "match": "\\b0[bB][01_]+\\b", "name": "constant.numeric.binary.lhat" },
+        { "match": "\\b0[oO][0-7_]+\\b", "name": "constant.numeric.octal.lhat" },
+        {
+          "match": "\\b[0-9][0-9_]*\\.[0-9][0-9_]*([eE][+-]?[0-9]+)?\\b",
+          "name": "constant.numeric.float.lhat"
+        },
+        {
+          "match": "\\b[0-9][0-9_]*[eE][+-]?[0-9]+\\b",
+          "name": "constant.numeric.float.lhat"
+        },
+        { "match": "\\b[0-9][0-9_]*\\b", "name": "constant.numeric.integer.lhat" }
+      ]
+    },
+
+    "scope-specifiers": {
+      "comment": "01-lexical-structure.md 8章: $x $$x $^x $^^x ...",
+      "match": "\\$[\\$\\^]*[\\p{L}_][\\p{L}\\p{N}_]*",
+      "name": "variable.language.scope.lhat"
+    },
+
+    "hat-identifiers": {
+      "comment": "01-lexical-structure.md 2章: '^'-suffixed words carry every keyword. The lexer treats them all alike; the groups below are a syntax-highlighting convenience, not a lexical distinction the language itself makes. Each match splits the word from its trailing '^'s so a theme can style punctuation.definition.hat.lhat (the hat itself) separately from the word.",
+      "patterns": [
+        {
+          "match": "\\b(if|else|elseif|elsif|elif|ei|el|for|when|other|to|downto|step|in|while|until|next|repeat|do|break|return|yield|yieldall|defer|with|finally|try|catch|panic)(\\^+)",
+          "captures": {
+            "1": { "name": "keyword.control.lhat" },
+            "2": { "name": "punctuation.definition.hat.lhat" }
+          }
+        },
+        {
+          "match": "\\b(let|op|def|new|enum|unpack|module|public|require|import|override|overload|errordef|mutable)(\\^+)",
+          "captures": {
+            "1": { "name": "keyword.other.declaration.lhat" },
+            "2": { "name": "punctuation.definition.hat.lhat" }
+          }
+        },
+        {
+          "match": "\\b(f|p|number|string|bool|nil|any|t|table|type|c|error)(\\^+)",
+          "captures": {
+            "1": { "name": "storage.type.lhat" },
+            "2": { "name": "punctuation.definition.hat.lhat" }
+          }
+        },
+        {
+          "match": "\\b(true|false)(\\^+)",
+          "captures": {
+            "1": { "name": "constant.language.lhat" },
+            "2": { "name": "punctuation.definition.hat.lhat" }
+          }
+        },
+        {
+          "match": "\\b(and|or|is|isa|as)(\\^+)",
+          "captures": {
+            "1": { "name": "keyword.operator.word.lhat" },
+            "2": { "name": "punctuation.definition.hat.lhat" }
+          }
+        },
+        {
+          "match": "\\b(this|it|self|super|class)(\\^+)",
+          "captures": {
+            "1": { "name": "variable.language.lhat" },
+            "2": { "name": "punctuation.definition.hat.lhat" }
+          }
+        },
+        {
+          "match": "\\b(typeof|width|autowidth|prolog|pre|first|main|last|epilog)(\\^+)",
+          "captures": {
+            "1": { "name": "support.function.lhat" },
+            "2": { "name": "punctuation.definition.hat.lhat" }
+          }
+        },
+        {
+          "comment": "Any other ^-suffixed word: 2.1's 'no reserved words' means this is legal, not a name the highlighter recognises.",
+          "match": "([\\p{L}_][\\p{L}\\p{N}_]*)(\\^+)",
+          "captures": {
+            "1": { "name": "keyword.other.lhat" },
+            "2": { "name": "punctuation.definition.hat.lhat" }
+          }
+        }
+      ]
+    },
+
+    "operators": {
+      "patterns": [
+        { "match": "::|<<", "name": "invalid.deprecated.lhat" },
+        { "match": "(\\+|-|\\*|/|%|//|\\*\\*|\\.\\.)=", "name": "keyword.operator.assignment.compound.lhat" },
+        { "match": ":=", "name": "keyword.operator.assignment.lhat" },
+        { "match": "≠|!=|=/|≦|≤|<=|≧|≥|>=", "name": "keyword.operator.comparison.lhat" },
+        { "match": "=|<|>", "name": "keyword.operator.comparison.lhat" },
+        { "match": "\\?\\?", "name": "keyword.operator.nil-coalescing.lhat" },
+        { "match": "\\?\\.|\\?\\(|\\?\\[", "name": "keyword.operator.nil-propagation.lhat" },
+        { "match": "\\.\\.\\.", "name": "keyword.operator.spread.lhat" },
+        { "match": "\\.\\.", "name": "keyword.operator.concat.lhat" },
+        { "match": "\\*\\*|//", "name": "keyword.operator.arithmetic.lhat" },
+        { "match": "[+\\-*/%]", "name": "keyword.operator.arithmetic.lhat" },
+        { "match": "!", "name": "keyword.operator.logical.lhat" },
+        { "match": "\\|", "name": "keyword.operator.type.union.lhat" },
+        { "match": "&", "name": "keyword.operator.type.intersect.lhat" },
+        { "match": "@", "name": "keyword.operator.at.lhat" },
+        { "match": "\\.", "name": "punctuation.accessor.lhat" }
+      ]
+    },
+
+    "punctuation": {
+      "patterns": [
+        { "match": "[(){}\\[\\]]", "name": "punctuation.bracket.lhat" },
+        { "match": "[,;:]", "name": "punctuation.separator.lhat" }
+      ]
+    }
+  }
+}

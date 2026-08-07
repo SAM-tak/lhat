@@ -12,9 +12,6 @@
   "categories": [
     "Programming Languages"
   ],
-  "activationEvents": [
-    "onLanguage:lhat"
-  ],
   "main": "./out/extension.js",
   "contributes": {
     "languages": [
@@ -26,7 +23,15 @@
         "aliases": [
           "L^",
           "lhat"
-        ]
+        ],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "lhat",
+        "scopeName": "source.lhat",
+        "path": "./syntaxes/lhat.tmLanguage.json"
       }
     ],
     "configuration": {
@@ -37,6 +42,26 @@
           "default": "",
           "description": "lhat-lsp(.exe) へのパス。空ならPATH上の lhat-lsp(.exe) を探す。"
         }
+      }
+    },
+    "configurationDefaults": {
+      "editor.tokenColorCustomizations": {
+        "textMateRules": [
+          {
+            "comment": "01-lexical-structure.md 2章: every keyword is a '^'-suffixed word. The hat itself carries no meaning of its own beyond marking the word, so it stays out of the way -- a translucent grey that the editor's own background (dark or light) tints, rather than a fixed colour picked per theme.",
+            "scope": "punctuation.definition.hat.lhat",
+            "settings": {
+              "foreground": "#88888899"
+            }
+          },
+          {
+            "comment": "Built-in type keywords (f^, p^, number^, string^, ...) -- fixed rather than left to whatever a theme's storage.type happens to be, since that varies a lot theme to theme.",
+            "scope": "storage.type.lhat",
+            "settings": {
+              "foreground": "#569CD6"
+            }
+          }
+        ]
       }
     }
   },
