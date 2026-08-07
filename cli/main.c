@@ -11,6 +11,7 @@
 #include "lhat.h"
 
 #ifdef LHAT_CLI_WITH_STDLIB
+#include "stdlib/debug.h"
 #include "stdlib/error.h"
 #include "stdlib/io.h"
 #include "stdlib/random.h"
@@ -504,10 +505,6 @@ static LhatValue host_print(LhatMachine *machine, void *context,
 // 05 の 8.2: the host decides what a program sees without a require^. This
 // driver binds print, and collectgarbage because 8.6 already puts it in L^ --
 // writing both out is what shows the two are the same mechanism.
-//
-// stdlib/ 全体 (std.io/std.thread/std.random, どれも std.error に依存) を
-// このサンプルドライバで既定登録する -- どれも lhatstdlib_error_register を
-// 自分の先頭で冪等に呼ぶので、呼ぶ順序はここでは問わない。
 static bool bind_host_names(LhatProgram *program)
 {
     lhat_register_global(program, "print", "f^string^ -> nil^;", host_print,
@@ -518,7 +515,8 @@ static bool bind_host_names(LhatProgram *program)
 #ifdef LHAT_CLI_WITH_STDLIB
     if (!lhatstdlib_io_register(program) ||
         !lhatstdlib_thread_register(program) ||
-        !lhatstdlib_random_register(program)) {
+        !lhatstdlib_random_register(program) ||
+        !lhatstdlib_debug_register(program)) {
         return false;
     }
 #endif
