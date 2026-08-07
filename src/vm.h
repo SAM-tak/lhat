@@ -110,6 +110,10 @@ typedef enum {
                                          // been started
     LHAT_RUN_COROUTINE_ALREADY_STARTED, // 15.2改: started one that already
                                          // has been
+    LHAT_RUN_SEALED,          // 05 の 8.6改 (M5): wrote into a table the
+                              // machine owns -- L^, or what require^ answers
+                              // with. check.c refuses the ones it can name;
+                              // this is one reached through a parameter
     LHAT_RUN_NO_SUCH_UNIT,    // 05 の 5.3: a require^ reached for a unit the
                               // machine was not given
     LHAT_RUN_PANIC            // 04 の 11.6改: panic^, written by the program

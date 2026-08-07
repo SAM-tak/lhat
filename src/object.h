@@ -80,6 +80,15 @@ typedef struct LhatTable {
     // made and never afterwards. That is what separates it from Lua's
     // metatable, which 14.1 refuses.
     const struct LhatTable *definition;
+
+    // 05 の 8.6改 (M5): the machine's own -- L^, its registry, and what
+    // require^ or import^ answers with. The checker refuses what is written
+    // against one directly, but a table reaches a p^ through a parameter
+    // typed t^{ … }, which carries no such mark (the writer has no spelling
+    // for it). So the machine asks as well: an instruction written in L^ may
+    // not change one. The host is unaffected -- it reaches a table through
+    // this file's own API rather than through an instruction.
+    bool sealed;
 } LhatTable;
 
 // 04 の 2.4: what a kind is, is where it was declared. Two errordef^ bodies

@@ -3845,6 +3845,28 @@ static void test_coroutines(void)
     CHECK_INTEGER(&r, 7);
     run_dispose(&r);
 
+    // 05 の 8.6改 (M5): check.c refuses what is written against L^ by name,
+    // but a table reaches a p^ through a t^{ … } parameter, which carries no
+    // mark of this -- the writer has no spelling for one. So the machine asks
+    // again where the write happens. Compiled without the checker here, which
+    // is the same thing that path amounts to.
+    LHAT_TEST("L^ refuses a write that reached it through a parameter");
+    run_text(&r,
+             "let^ poke = p^ x { let^ x.zzz := 1 }\n"
+             "poke(L^)\n"
+             "return^ 0\n");
+    LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_SEALED);
+    run_dispose(&r);
+
+    LHAT_TEST("but an ordinary table takes one");
+    run_text(&r,
+             "let^ poke = p^ x { let^ x.zzz := 1 }\n"
+             "let^ t = { }\n"
+             "poke(t)\n"
+             "return^ t.zzz\n");
+    CHECK_INTEGER(&r, 1);
+    run_dispose(&r);
+
     LHAT_TEST("and two machines do not share one");
     {
         Run one;

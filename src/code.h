@@ -115,6 +115,11 @@ typedef enum {
     LHAT_BC_RETURN_NIL,
 
     LHAT_BC_PANIC,      // A     panic^ R[A]  (04 の 11.6改)
+    // 05 の 8.6改 (M5): mark R[A] as the machine's own, so that no later
+    // instruction may write into it. Emitted where a unit builds what
+    // require^ answers with -- what a table holds is written before this,
+    // and nothing writes into it afterwards.
+    LHAT_BC_SEAL,       // A     R[A] accepts no further writes
     LHAT_BC_ASCAST,     // A B   panic unless R[A] satisfies the type in
                         //       R[B]; R[A] is unchanged either way (11.6, S27)
 

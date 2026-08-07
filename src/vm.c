@@ -2489,6 +2489,26 @@ static void ensure_table(Compiler *c, uint8_t slot)
     c->next_register = mark;
 }
 
+// The same for a segment reached through a table, writing the new one back
+// into owner[key] -- but only when one was actually made.
+//
+// 05 の 8.6改 (M5): writing back what was already there used to cost one
+// instruction and save a branch. It is a write like any other, so the
+// machine's own tables refuse it, and a path through L^ would fail on its own
+// second segment. The branch is the cheaper of the two now.
+static void ensure_table_at(Compiler *c, uint8_t slot, uint8_t owner,
+                            uint8_t key)
+{
+    uint8_t mark = c->next_register;
+    uint8_t test = reserve(c);
+    emit(c, lhat_encode_abc(LHAT_BC_ISNIL, test, slot, 0));
+    size_t there = emit_jump(c, LHAT_BC_JUMP_FALSE, test);
+    emit(c, lhat_encode_abc(LHAT_BC_NEWTABLE, slot, 0, 0));
+    emit(c, lhat_encode_abc(LHAT_BC_SETINDEX, owner, key, slot));
+    lhat_chunk_patch_here(&c->proto->chunk, there);
+    c->next_register = mark;
+}
+
 // Puts the table a path segment names into `into`, making the ones the path
 // does not reach yet. The checker has already refused a segment that cannot
 // hold a member (8.8), so what is found here is a table or nothing.
@@ -2530,10 +2550,7 @@ static void compile_path_prefix(Compiler *c, const LhatNode *node, uint8_t into)
     compile_path_prefix(c, node->v.access.target, owner);
     compile_key(c, node, key);
     emit(c, lhat_encode_abc(LHAT_BC_GETINDEX, into, owner, key));
-    ensure_table(c, into);
-    // Writing back what was already there costs one instruction and saves a
-    // branch; a let^ is not a place worth the second jump.
-    emit(c, lhat_encode_abc(LHAT_BC_SETINDEX, owner, key, into));
+    ensure_table_at(c, into, owner, key);
     c->next_register = mark;
 }
 
@@ -3816,8 +3833,7 @@ static void compile_bind_path(Compiler *c, const char *path, uint8_t value)
         uint8_t next = reserve(c);
         load_string_bytes(c, key, segment, length);
         emit(c, lhat_encode_abc(LHAT_BC_GETINDEX, next, owner, key));
-        ensure_table(c, next);
-        emit(c, lhat_encode_abc(LHAT_BC_SETINDEX, owner, key, next));
+        ensure_table_at(c, next, owner, key);
         emit(c, lhat_encode_abc(LHAT_BC_MOVE, owner, next, 0));
         c->next_register = next;
         segment += length + 1;
@@ -3929,6 +3945,10 @@ static void compile_module_register(Compiler *c, const LhatNode *statements,
     uint8_t key = reserve(c);
 
     compile_exports(c, statements, exports);
+    // 05 の 8.6改 (M5): everything it holds is in, so nothing else writes to
+    // it. Before the registry gets it, since what goes into the registry is
+    // the same object every requirer is handed.
+    emit(c, lhat_encode_abc(LHAT_BC_SEAL, exports, 0, 0));
 
     emit(c, lhat_encode_abc(LHAT_BC_ENV, owner, 0, 0));
     load_string_bytes(c, key, "modules", 7);
@@ -3940,8 +3960,7 @@ static void compile_module_register(Compiler *c, const LhatNode *statements,
         uint8_t next = reserve(c);
         load_string_bytes(c, key, segment, length);
         emit(c, lhat_encode_abc(LHAT_BC_GETINDEX, next, owner, key));
-        ensure_table(c, next);
-        emit(c, lhat_encode_abc(LHAT_BC_SETINDEX, owner, key, next));
+        ensure_table_at(c, next, owner, key);
         emit(c, lhat_encode_abc(LHAT_BC_MOVE, owner, next, 0));
         c->next_register = next;
         segment += length + 1;
@@ -4950,10 +4969,23 @@ static bool build_environment(Machine *m)
     if (m->environment == NULL || modules == NULL || collect_now == NULL) {
         return false;
     }
-    return set_member(m, m->environment, "modules",
-                      lhat_object((LhatObject *)modules)) &&
-           set_member(m, m->environment, "collectgarbage",
-                      lhat_object((LhatObject *)collect_now));
+    if (!set_member(m, m->environment, "modules",
+                    lhat_object((LhatObject *)modules)) ||
+        !set_member(m, m->environment, "collectgarbage",
+                    lhat_object((LhatObject *)collect_now))) {
+        return false;
+    }
+    // 05 の 8.6改 (M5): sealed once built, not before -- the two members above
+    // are the machine writing its own table, which is exactly what the mark
+    // goes on to refuse from an instruction.
+    //
+    // The registry inside it is not marked here. 5.3 has a unit register
+    // itself, and what it emits for that is an ordinary instruction writing
+    // into L^.modules -- the mark would refuse the machine's own bookkeeping.
+    // check.c refuses what a writer spells there, which is the half that can
+    // be told apart by looking at the source.
+    m->environment->sealed = true;
+    return true;
 }
 
 LhatMachine *lhat_machine_new(void)
@@ -5483,6 +5515,20 @@ LhatRunResult lhat_run(LhatMachine *m, const LhatProto *proto)
                 break;
             }
 
+            // 05 の 8.6改 (M5): what require^ answers is the machine's record
+            // of what a unit published. Sealed once it is built, so that a
+            // requiring unit cannot add to it or write over it -- not even by
+            // passing it to a p^ whose parameter is written t^{ … }, which is
+            // the one path check.c cannot name.
+            case LHAT_BC_SEAL: {
+                LhatTable *table = table_of(registers[a]);
+                if (table == NULL) {
+                    return finish(m, chunk, LHAT_RUN_TYPE_ERROR, lhat_nil(), at);
+                }
+                table->sealed = true;
+                break;
+            }
+
             // 04 の 11.3: a key that is not there answers nil^, so the only
             // way this fails is being asked of something that is not a table.
             // An error answers from its fields: 2.3 gives every kind message
@@ -5578,6 +5624,14 @@ LhatRunResult lhat_run(LhatMachine *m, const LhatProto *proto)
                 LhatTable *table = table_of(registers[a]);
                 if (table == NULL) {
                     return finish(m, chunk, LHAT_RUN_TYPE_ERROR, lhat_nil(), at);
+                }
+                // 05 の 8.6改 (M5): the machine's own tables are written by
+                // the host, not by an instruction. check.c refuses the ones it
+                // can name, but a t^{ … } parameter carries no mark of this,
+                // so the same question is asked once more where the write
+                // actually happens.
+                if (table->sealed) {
+                    return finish(m, chunk, LHAT_RUN_SEALED, lhat_nil(), at);
                 }
                 bool refused = false;
                 if (!set_key(m, table, registers[b], registers[cc], &refused)) {
@@ -6499,6 +6553,9 @@ const char *lhat_run_status_message(LhatRunStatus status)
         case LHAT_RUN_STACK_OVERFLOW:  return "the calls went too deep";
         case LHAT_RUN_OUT_OF_MEMORY:   return "out of memory";
         case LHAT_RUN_BAD_KEY:         return "this cannot be a key";
+        case LHAT_RUN_SEALED:
+            return "this table belongs to the machine; what it holds is "
+                   "written by the host, not from here";
         case LHAT_RUN_BAD_FORMAT:
             return "a number^ is written through one numeric conversion; "
                    "write '%d' or '%g' and no length of your own";

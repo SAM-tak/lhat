@@ -12,17 +12,26 @@
 //
 // The order a host works in is 05 の 8.7 and 5.3:
 //
+//     LhatProgram program;
 //     lhat_program_init(&program, true, lhat_load_file, NULL);
 //     lhat_register_func(&program, "system.io", "print", "p^string^;", fn, ctx);
-//     lhat_program_check(&program, "main.lh");
-//     lhat_program_compile(&program, &count);
+//
+//     const LhatUnit *root = lhat_program_check(&program, "main.lh");
+//     size_t count = 0;
+//     const LhatModule *modules = lhat_program_compile(&program, &count);
+//
+//     LhatMachine *machine = lhat_machine_new();
 //     lhat_machine_set_modules(machine, modules, count);
-//     lhat_program_install(&program, machine);
+//     lhat_program_install(&program, machine);   // only with registrations
 //     lhat_run(machine, modules[root->index].proto);
 //
 // Registering comes before checking, because the checker has to know what a
 // signature says. Installing comes before running, because that is when what
-// was registered reaches L^.modules.
+// was registered reaches L^.modules -- a host that registered nothing may
+// leave it out, as cli/main.c does.
+//
+// The machine is made after compiling only because nothing needs it earlier;
+// lhat_machine_new() takes no arguments and may be called whenever.
 
 #ifndef LHAT_H
 #define LHAT_H

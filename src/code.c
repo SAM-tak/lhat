@@ -233,6 +233,7 @@ const char *lhat_opcode_name(LhatOpcode op)
         case LHAT_BC_ENV:         return "env";
         case LHAT_BC_UNIT:        return "unit";
         case LHAT_BC_NEWTABLE:    return "newtable";
+        case LHAT_BC_SEAL:        return "seal";
         case LHAT_BC_GETINDEX:    return "getindex";
         case LHAT_BC_SETINDEX:    return "setindex";
         case LHAT_BC_ADDOVERLOAD: return "addoverload";
@@ -302,6 +303,7 @@ void lhat_chunk_print(const LhatChunk *chunk, size_t index, char *out,
         case LHAT_BC_THIS:
         case LHAT_BC_ENV:
         case LHAT_BC_NEWTABLE:
+        case LHAT_BC_SEAL:
         case LHAT_BC_POPCLEANUP:
         case LHAT_BC_YIELD:
         case LHAT_BC_RETURN:

@@ -332,6 +332,38 @@ static void test_running(void)
     }
     lhat_program_dispose(&program);
 
+    // 05 の 8.6改 (M5): what require^ answers is sealed once the unit has
+    // built it. check.c refuses a write named against it, but a t^{ … }
+    // parameter carries no mark of this -- so the machine asks again where
+    // the write happens.
+    LHAT_TEST("a module table refuses a write that reached it as an argument");
+    {
+        static const File reading[] = {
+            {"one.lh",
+             "module^ ns.one\n"
+             "public^ let^ v = 7\n"},
+            {"main.lh",
+             "let^ poke = p^ x:t^{ v:number^ } { x.v := 99 }\n"
+             "let^ m = require^ \"one.lh\"\n"
+             "poke(m)\n"
+             "return^ m.v\n"},
+        };
+        program_with(&program, &disk, reading, 2);
+        const LhatUnit *root = lhat_program_check(&program, "main.lh");
+        LHAT_CHECK(root != NULL && !lhat_program_has_errors(&program),
+                   "the program checked");
+        size_t count = 0;
+        const LhatModule *modules = lhat_program_compile(&program, &count);
+        if (modules != NULL && root != NULL) {
+            LhatMachine *machine = lhat_machine_new();
+            lhat_machine_set_modules(machine, modules, count);
+            LhatRunResult ran = lhat_run(machine, modules[root->index].proto);
+            LHAT_CHECK_EQ_INT(ran.status, LHAT_RUN_SEALED);
+            lhat_machine_dispose(machine);
+        }
+    }
+    lhat_program_dispose(&program);
+
     // 8.6: the registry is where the guard looks, so what ran is in it.
     LHAT_TEST("and L^.modules holds what was registered");
     {
