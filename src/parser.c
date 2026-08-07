@@ -2387,15 +2387,17 @@ static bool opens_when_clauses(const Parser *p)
            token_is_hat(p, &p->ahead, "else");
 }
 
-// `saw_from` and `saw_word` answer which spelling the focus used, so that
+// The three flags answer which spelling the focus used, so that
 // parse_for can judge it against the form -- which is not known until the
 // clause after the focus has been read (16.3改2).
-static LhatNode *parse_for_focus(Parser *p, bool *saw_from, bool *saw_word)
+static LhatNode *parse_for_focus(Parser *p, bool *saw_from, bool *saw_word,
+                                 bool *saw_reassign)
 {
     LhatNode *head = NULL;
     LhatNode *tail = NULL;
     *saw_from = false;
     *saw_word = false;
+    *saw_reassign = false;
 
     for (;;) {
         LhatToken at = p->current;
@@ -2502,6 +2504,7 @@ static LhatNode *parse_for_focus(Parser *p, bool *saw_from, bool *saw_word)
             target = binding;
         } else if (check_op(p, LHAT_OP_DEFINE)) {
             // 8.6: no introducer, so ':=' reassigns an existing name.
+            *saw_reassign = true;
             advance(p);
             LhatNode *binding = make(p, LHAT_NODE_REASSIGN, &at);
             if (binding == NULL) {
@@ -2714,15 +2717,22 @@ static LhatNode *parse_advance(Parser *p)
 }
 
 // 16.3改2: which spelling the focus took has to agree with the form, and the
-// form is not known until the clause after the focus has been read. The
-// counted forms advance their own focus and so take from^ (or a bare ':=' for
-// a name already there); every other form takes an introducer.
+// form is not known until the clause after the focus has been read.
+//
+// A counted loop takes from^ and nothing else. It refuses both introducers
+// because it advances its own focus -- let^ would have the source say a name
+// changes when nothing in it does, and var^ would invite a write the body may
+// not make. Refusing a bare ':=' as well follows from that: if neither word
+// may name a focus the machine drives, neither may an outer name be handed to
+// it. What 16.3改 wanted there is the conditional form, which says in the
+// source what it does to the name.
 static void check_focus_form(Parser *p, const LhatNode *node,
-                             const LhatToken *at, bool saw_from, bool saw_word)
+                             const LhatToken *at, bool saw_from, bool saw_word,
+                             bool saw_reassign)
 {
     bool counted = node->v.loop.kind == LHAT_FOR_TO ||
                    node->v.loop.kind == LHAT_FOR_DOWNTO;
-    if (counted && saw_word) {
+    if (counted && (saw_word || saw_reassign)) {
         report(p, at, LHAT_PARSE_ERR_FOCUS_NEEDS_FROM);
     } else if (!counted && saw_from) {
         report(p, at, LHAT_PARSE_ERR_FROM_NOT_HERE);
@@ -2742,7 +2752,9 @@ static LhatNode *parse_for(Parser *p)
     LhatToken focus_at = p->current;
     bool saw_from = false;
     bool saw_word = false;
-    node->v.loop.focus = parse_for_focus(p, &saw_from, &saw_word);
+    bool saw_reassign = false;
+    node->v.loop.focus =
+        parse_for_focus(p, &saw_from, &saw_word, &saw_reassign);
 
     bool is_loop = true;
     if (match_hat(p, "to")) {
@@ -2778,7 +2790,7 @@ static LhatNode *parse_for(Parser *p)
         // here as anywhere. The focus still does not leave -- only the value
         // built from it does, which is what an expression is.
         node->v.loop.is_expression = check_op(p, LHAT_OP_COLON);
-        check_focus_form(p, node, &focus_at, saw_from, saw_word);
+        check_focus_form(p, node, &focus_at, saw_from, saw_word, saw_reassign);
         node->v.loop.body =
             node->v.loop.is_expression
                 ? parse_if_expression_from(p, at, node->v.loop.bound)
@@ -2788,7 +2800,7 @@ static LhatNode *parse_for(Parser *p)
         // 17 章: no driving clause at all, so what follows dispatches on the
         // subject rather than iterating over it.
         node->v.loop.kind = LHAT_FOR_WHEN;
-        check_focus_form(p, node, &focus_at, saw_from, saw_word);
+        check_focus_form(p, node, &focus_at, saw_from, saw_word, saw_reassign);
         bool as_expression = check_op(p, LHAT_OP_COLON);
         node->v.loop.is_expression = as_expression;
         LhatToken at = p->current;
@@ -2814,7 +2826,7 @@ static LhatNode *parse_for(Parser *p)
         return node;
     }
 
-    check_focus_form(p, node, &focus_at, saw_from, saw_word);
+    check_focus_form(p, node, &focus_at, saw_from, saw_word, saw_reassign);
 
     // 16.3: next^ is the update of a conditional loop, and only that. 16.4
     // makes to^ and downto^ sugar for a while^ that already carries one, and
@@ -3563,9 +3575,9 @@ const char *lhat_parse_error_message(LhatParseErrorCode code)
             return "from^ opens the counted range of a to^ or downto^ loop; "
                    "this form takes 'var^ i = 1' or 'let^ i = 1'";
         case LHAT_PARSE_ERR_FOCUS_NEEDS_FROM:
-            return "a to^ or downto^ loop advances its own focus; write "
-                   "'for^ i from^ 1 to^ 10', or 'for^ i := 1 to^ 10' to count "
-                   "with a name that is already there";
+            return "a to^ or downto^ loop advances a focus of its own; write "
+                   "'for^ i from^ 1 to^ 10', or a while^ loop to count with a "
+                   "name that is already there";
         case LHAT_PARSE_ERR_OPERATOR_NOT_DEFINABLE:
             return "op^ defines '..' and the arithmetic operators; and^, or^, "
                    "'!' and the comparisons are the language's own";

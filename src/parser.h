@@ -46,8 +46,9 @@ typedef enum {
                                               // downto^; the other forms take
                                               // an introducer
     LHAT_PARSE_ERR_FOCUS_NEEDS_FROM,          // 16.3改2: a to^ or downto^
-                                              // advances its own focus, so the
-                                              // header names no introducer
+                                              // advances a focus of its own,
+                                              // so the header takes neither an
+                                              // introducer nor a bare ':='
     LHAT_PARSE_ERR_EXPECTED_MEMBER,           // 14 章: def^ holds members
     LHAT_PARSE_ERR_OPERATOR_NOT_DEFINABLE,    // 11.4: only '..' has an op^
                                               // definition so far

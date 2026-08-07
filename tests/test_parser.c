@@ -1592,9 +1592,19 @@ static void test_loops(void)
                       LHAT_PARSE_ERR_FOCUS_NEEDS_FROM);
     parse_dispose(&p);
 
-    // 16.3改: a bare ':=' still counts with a name that is already there.
-    LHAT_TEST("but a bare ':=' still counts an existing name");
+    // 16.3改2: and so is a bare ':='. If neither word may name a focus the
+    // machine drives, neither may an outer name be handed to it.
+    LHAT_TEST("and a bare ':=' is refused there too");
     parse_text(&p, "for^ i := 1 to^ 10 { }");
+    LHAT_CHECK(p.result.diagnostic_count > 0, "expected a diagnostic");
+    LHAT_CHECK_EQ_INT(p.result.diagnostics[0].code,
+                      LHAT_PARSE_ERR_FOCUS_NEEDS_FROM);
+    parse_dispose(&p);
+
+    // 16.3改: counting an outer name is what the conditional form is for --
+    // there the source says what it does to the name.
+    LHAT_TEST("while^ is where a bare ':=' counts an existing name");
+    parse_text(&p, "for^ i := 1 while^ i < 10 next^ i := i + 1 { }");
     LHAT_CHECK_EQ_INT(error_count(&p), 0);
     {
         const LhatNode *focus = first_statement(&p)->v.loop.focus;
