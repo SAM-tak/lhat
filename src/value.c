@@ -124,6 +124,10 @@ const char *lhat_object_kind_name(LhatObjectKind kind)
         case LHAT_OBJECT_TYPE:       return "a type";
         case LHAT_OBJECT_OVERLOAD:   return "an overloaded member";
         case LHAT_OBJECT_UPVALUE:    return "upvalue";
+        // 05 の 8.7 and 8.8: what the host wrote and what the host made.
+        // Neither has anything to show past what it is.
+        case LHAT_OBJECT_HOST:       return "a host subroutine";
+        case LHAT_OBJECT_HOSTDATA:   return "host data";
     }
     return "?";
 }
@@ -261,7 +265,10 @@ static void write_table(Writer *w, const LhatTable *table, size_t depth)
             write_value(w, key, depth + 1);
             put_text(w, "]");
         }
-        put_text(w, " := ");
+        // 02 の 14.14改: an element is an introduction, so '=' is the spelling.
+        // ':=' is still read, but writing one out here would be showing the
+        // form the chapter calls the unintended one.
+        put_text(w, " = ");
         write_value(w, table->entries[i].value, depth + 1);
     }
 

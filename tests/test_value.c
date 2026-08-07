@@ -212,6 +212,9 @@ static void test_writing(void)
         wrote(lhat_object((LhatObject *)t), "{}");
     }
 
+    // 02 の 14.14改: an element is an introduction, so '=' is the spelling.
+    // ':=' is read as well, but writing one out would be showing the form the
+    // chapter calls the unintended one.
     LHAT_TEST("a key that spells a name is written as one");
     {
         LhatTable *t = lhat_table_new(&heap);
@@ -219,7 +222,7 @@ static void test_writing(void)
         bool refused = false;
         lhat_table_set(t, lhat_object((LhatObject *)key), lhat_integer(1),
                        &refused);
-        wrote(lhat_object((LhatObject *)t), "{ a := 1 }");
+        wrote(lhat_object((LhatObject *)t), "{ a = 1 }");
     }
 
     LHAT_TEST("and one that does not is bracketed");
@@ -229,7 +232,7 @@ static void test_writing(void)
         bool refused = false;
         lhat_table_set(t, lhat_object((LhatObject *)key), lhat_integer(1),
                        &refused);
-        wrote(lhat_object((LhatObject *)t), "{ [\"a b\"] := 1 }");
+        wrote(lhat_object((LhatObject *)t), "{ [\"a b\"] = 1 }");
     }
 
     // A table may hold itself, which nothing forbids. The depth is what
