@@ -87,7 +87,7 @@ and a construct that has not finished reads on:
 ```text
 > 2 + 3
 5
-> let^ greet = f^n { "hi " .. n }
+> let^greet = f^n { $"hi {n}" }
 > greet("there")
 "hi there"
 > let^add = f^a, b {
@@ -132,7 +132,7 @@ A host checks, compiles, gives the units to a machine, and runs one:
 LhatProgram program;
 lhat_program_init(&program, true, lhat_load_file, NULL);
 
-lhat_register_func(&program, "system.io", "print", "p^string^;", print_fn, NULL);
+lhat_register_func(&program, "std.io", "print", "p^string^;", print_fn, NULL);
 
 const LhatUnit *root = lhat_program_check(&program, "main.lh");
 size_t count = 0;
