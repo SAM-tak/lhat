@@ -96,6 +96,23 @@ static void test_print(void)
         lhat_test_ran_dispose(&ran);
     }
 
+    // 13.7 の '...': どの型でも何個でも取り、1つにつき1行。読み方は 02 の
+    // 14.17 の tostring と同じなので、string^ は引用符なしのまま並び、nil^ と
+    // bool^ は語になる。引数0個は何も書かない。
+    LHAT_TEST("print writes every argument on a line of its own");
+    {
+        char written[256];
+        LhatTestRan ran =
+            run_capturing("import^ std.io\n"
+                          "std.io.print(1, \"two\", nil^, true^)\n"
+                          "std.io.print()\n"
+                          "return^ 1\n",
+                          written, sizeof written);
+        LHAT_CHECK_RAN_INTEGER(ran, 1);
+        LHAT_CHECK_EQ_STR(written, strlen(written), "1\ntwo\nnil\ntrue\n");
+        lhat_test_ran_dispose(&ran);
+    }
+
     // A p^ rather than an f^, which is what keeps it out of a pure function --
     // std.debug.log is the one name registered on the other side of that
     // (02 の 10.6, and tests/test_debug.c).
