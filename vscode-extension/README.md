@@ -1,7 +1,8 @@
 # L^ (lhat) Language Support
 
-`lhat-lsp` を起動し、VSCode に L^ の型検査の診断（赤波線）だけを届ける薄いクライアント。
-ホバー・補完・定義ジャンプは今回のスコープ外（MVP は診断のみ）。
+`lhatls`（言語サーバー本体。ソースは `lsp/`、CMake ターゲット名は `lhat_lsp`）を
+起動し、VSCode に L^ の型検査の診断（赤波線）とセマンティックハイライトを届ける
+薄いクライアント。ホバー・補完・定義ジャンプは今回のスコープ外。
 
 ## セットアップ
 
@@ -13,7 +14,7 @@
    cmake --build --preset debug --target lhat_lsp
    ```
 
-   `build\debug\lhat-lsp.exe` ができる。
+   `build\debug\lhatls.exe` ができる。
 
 2. この拡張の依存関係を入れてコンパイル:
 
@@ -28,8 +29,8 @@
    `.vscode/launch.json` が認識されず、F5 は今開いているファイルを
    素で（Plain Text として）デバッグしようとしてしまう。
    `vscode-extension` を開いた状態で F5 → 拡張開発ホストが起動する。
-   `lhat-lsp.exe` が PATH 上になければ、設定 `lhat.serverPath` に
-   `build\debug\lhat-lsp.exe` への絶対パスを指定する。
+   `lhatls.exe` が PATH 上になければ、設定 `lhat.serverPath` に
+   `build\debug\lhatls.exe` への絶対パスを指定する。
 
 4. `.lh` ファイルを開くと、保存前の編集内容がそのまま型検査され、
    `require^` で参照する同じワークスペース内の他ファイルも辿って検査される。
@@ -51,9 +52,18 @@
 この既定はユーザーが自分で `editor.tokenColorCustomizations` を
 設定していれば上書きされない。
 
+## セマンティックハイライト
+
+`textDocument/semanticTokens/full` を実装済み。構文木（`lsp/semantic_tokens.c`
+がノードの文脈だけを見て歩く。型検査は通さない）から、宣言と参照、パラメータ、
+関数呼び出しの対象、型名、モジュールパスを区別して塗る。TextMate は正規表現しか
+見えないためこの区別ができず、意味カテゴリ（キーワード等）の色分けを担う土台
+として今も残る。両者は VSCode の「TextMate が下地、セマンティックトークンが
+上書き」という標準の2層構造で共存する。
+
 ## 既知の制約
 
-- 診断のみ。ホバー・補完・定義ジャンプは無い。
+- ホバー・補完・定義ジャンプは無い。
 - ホストが `lhat_register_func` 等で登録する独自 API は、このサーバーは知らない
   （`print`/`collectgarbage` のみ登録済み）。独自 API を使うスクリプトは
   「no such name in scope」の偽陽性が出る。

@@ -180,7 +180,13 @@ if(LHAT_BUILD_LSP)
         lsp/handlers/text_document_sync.c
         lsp/handlers/semantic_tokens.c
     )
-    set_target_properties(lhat_lsp PROPERTIES OUTPUT_NAME lhat-lsp)
+    # The binary is a language server, not "LSP" itself, so the executable
+    # is named lhatls -- but the target, lsp/ and the archive/pdb byproducts
+    # stay lhat-lsp/lhat_lsp; only RUNTIME_OUTPUT_NAME (the .exe) changes.
+    set_target_properties(lhat_lsp PROPERTIES
+        OUTPUT_NAME lhat-lsp
+        RUNTIME_OUTPUT_NAME lhatls
+    )
     target_link_libraries(lhat_lsp PRIVATE lhat cjson lhatthread)
     target_include_directories(lhat_lsp PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/src

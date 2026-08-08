@@ -1,7 +1,9 @@
-// L^ (lhat) -- VSCode extension: a thin client that spawns lhat-lsp and
-// speaks LSP to it over stdio. Diagnostics only for now (MVP) -- no hover,
-// completion or go-to-definition; textDocumentSync is Full, matching
-// lhat-lsp's own capabilities response (lsp/handlers/initialize.c).
+// L^ (lhat) -- VSCode extension: a thin client that spawns lhatls (the
+// language server binary; source lives under lsp/, built as target
+// lhat_lsp) and speaks LSP to it over stdio. Diagnostics only for now
+// (MVP) -- no hover, completion or go-to-definition; textDocumentSync is
+// Full, matching lhatls's own capabilities response
+// (lsp/handlers/initialize.c).
 
 import * as vscode from "vscode";
 import {
@@ -21,7 +23,7 @@ function resolveServerCommand(): string {
     }
     // No path configured: let the OS resolve it off PATH, as clangd's
     // extension does for clangd itself.
-    return process.platform === "win32" ? "lhat-lsp.exe" : "lhat-lsp";
+    return process.platform === "win32" ? "lhatls.exe" : "lhatls";
 }
 
 export function activate(context: vscode.ExtensionContext): void {
@@ -46,8 +48,8 @@ export function activate(context: vscode.ExtensionContext): void {
     client.start().catch((error: unknown) => {
         const reason = error instanceof Error ? error.message : String(error);
         void vscode.window.showErrorMessage(
-            `lhat-lsp を起動できません（${command}）: ${reason}\n` +
-            `設定 "lhat.serverPath" で lhat-lsp(.exe) へのパスを指定してください。`
+            `Could not launch lhatls (${command}): ${reason}\n` +
+            `Set "lhat.serverPath" to the path of lhatls(.exe).`
         );
     });
 

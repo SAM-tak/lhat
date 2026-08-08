@@ -1,6 +1,6 @@
 # Each test links the lsp/ source file(s) it exercises directly against
 # lhat and cjson, the same shape tests/CMakeLists.txt uses for lhat itself --
-# these check code inside the LSP server, not lhat-lsp.exe as a subprocess.
+# these check code inside the language server, not lhatls.exe as a subprocess.
 
 function(lhat_lsp_add_test name)
     add_executable(${name} ${name}.c ${ARGN})

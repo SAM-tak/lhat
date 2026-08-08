@@ -74,7 +74,7 @@ cJSON *lsp_handle_initialize(LspServer *server, const cJSON *params)
     cJSON_AddItemToObject(result, "capabilities", capabilities);
 
     cJSON *info = cJSON_CreateObject();
-    cJSON_AddStringToObject(info, "name", "lhat-lsp");
+    cJSON_AddStringToObject(info, "name", "lhatls");
     cJSON_AddItemToObject(result, "serverInfo", info);
     return result;
 }
