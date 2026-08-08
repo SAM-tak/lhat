@@ -255,7 +255,7 @@ const char *lhat_opcode_name(LhatOpcode op)
         case LHAT_BC_ADDOVERLOAD: return "addoverload";
         case LHAT_BC_NEWERROR:    return "newerror";
         case LHAT_BC_ISERROR:     return "iserror";
-        case LHAT_BC_ISKIND:      return "iskind";
+        case LHAT_BC_ISA:         return "isa";
         case LHAT_BC_ISNIL:       return "isnil";
         case LHAT_BC_NEWINSTANCE: return "newinstance";
         case LHAT_BC_CALLMETHOD:  return "callmethod";

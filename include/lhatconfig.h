@@ -47,6 +47,12 @@
 // So the compiler resolves composition rather than the machine: what a def^
 // composes onto is a def^ it can already see.
 #define LHAT_MAX_DEF_CHAIN 8
+// 02 の 13.11 with 14.9: a def^ name written as a type lowers to the shape it
+// stands for, and 14.15 lets a field of that shape be annotated with another
+// definition -- so the walk nests. How far it may, before a member is left as
+// its name alone. A definition already inside the walk is answered that way
+// too, whatever the depth, which is what closes a cycle.
+#define LHAT_MAX_TYPE_NESTING 8
 // "Group.Kind" -- what typeof^ answers for an error made from an errordef^
 // (04 の 2.3). Longer than any name a writer is likely to choose.
 #define LHAT_QUALIFIED_NAME_BUFFER 256

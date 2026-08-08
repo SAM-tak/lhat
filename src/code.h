@@ -86,11 +86,13 @@ typedef enum {
     // instructions because 5.1 keeps the machine independent of the checker.
     LHAT_BC_NEWERROR,   // A B   R[A] = an error of the kind in R[B]
     LHAT_BC_ISERROR,    // A B   R[A] = R[B] is an error of any kind
-    LHAT_BC_ISKIND,     // A B C R[A] = R[B] is an error of the kind in R[C]
-    LHAT_BC_ISHOSTDATA, // A B C R[A] = R[B] is hostdata tagged by R[C]
-                        //       (02 の 13.11's isa^ against 05 の 8.8's
-                        //       identity-by-tag; R[C] is a
-                        //       LhatHostDataTagRef constant)
+    // 02 の 13.11: the one question isa^ asks, whatever is written on its
+    // right. R[C] carries the type: either an LhatRuntimeType the compiler
+    // lowered the annotation into -- the same object as^ hands ASCAST -- or,
+    // where the name reaches something only the run knows (a def^, 14.9),
+    // the definition itself, tested structurally. An error kind and a host
+    // type are both the first case, so this replaced ISKIND/ISHOSTDATA.
+    LHAT_BC_ISA,        // A B C R[A] = R[B] isa^ R[C]
     LHAT_BC_ISNIL,      // A B   R[A] = R[B] is nil^   (02 の 11.7)
 
     // 02 の 14 章. A definition is a table of shared members; an instance is

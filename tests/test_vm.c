@@ -3016,6 +3016,253 @@ static void test_definitions(void)
     run_dispose(&r);
 }
 
+// 02 の 13.11: isa^ against anything that can be written as a type. 04 の 6.1's
+// error kinds are in test_errors above and 05 の 8.8's host types in test_io --
+// the same instruction answers all of them, so what is pinned here is the rest:
+// the builtin names, a structure, a union, and a def^.
+static void test_isa(void)
+{
+    Run r;
+
+    LHAT_TEST("a builtin name asks about the value's own tag");
+    run_text(&r, "return^ 1 isa^ number^\n");
+    CHECK_BOOL(&r, true);
+    run_dispose(&r);
+
+    LHAT_TEST("and answers false for a value of another kind");
+    run_text(&r, "return^ \"x\" isa^ number^\n");
+    CHECK_BOOL(&r, false);
+    run_dispose(&r);
+
+    LHAT_TEST("string^");
+    run_text(&r, "return^ \"x\" isa^ string^\n");
+    CHECK_BOOL(&r, true);
+    run_dispose(&r);
+
+    LHAT_TEST("bool^");
+    run_text(&r, "return^ true^ isa^ bool^\n");
+    CHECK_BOOL(&r, true);
+    run_dispose(&r);
+
+    // 14.8: one type, two representations -- so both answer number^.
+    LHAT_TEST("a real is a number^ the same way an integer is");
+    run_text(&r, "return^ 1.5 isa^ number^\n");
+    CHECK_BOOL(&r, true);
+    run_dispose(&r);
+
+    LHAT_TEST("table^");
+    run_text(&r, "return^ { a := 1 } isa^ table^\n");
+    CHECK_BOOL(&r, true);
+    run_dispose(&r);
+
+    // 14.10 and 14.8: the spellings the checker reads together are read
+    // together here too, or a name it accepts would fail to compile.
+    LHAT_TEST("t^ is the other spelling of table^");
+    run_text(&r, "return^ { a := 1 } isa^ t^\n");
+    CHECK_BOOL(&r, true);
+    run_dispose(&r);
+
+    LHAT_TEST("int^ and float^ are both number^");
+    run_text(&r, "return^ 1 isa^ int^ and^ 1.5 isa^ float^\n");
+    CHECK_BOOL(&r, true);
+    run_dispose(&r);
+
+    LHAT_TEST("p^; asks only that it is a subroutine");
+    run_text(&r, "return^ (p^ { }) isa^ p^;\n");
+    CHECK_BOOL(&r, true);
+    run_dispose(&r);
+
+    // 11.7 and 04 の 11.4: nil^ is a name like the others now, so the question
+    // reaches the same instruction rather than one of its own.
+    LHAT_TEST("nil^");
+    run_text(&r, "return^ nil^ isa^ nil^\n");
+    CHECK_BOOL(&r, true);
+    run_dispose(&r);
+
+    LHAT_TEST("and something that is not nil^ is not");
+    run_text(&r, "return^ 1 isa^ nil^\n");
+    CHECK_BOOL(&r, false);
+    run_dispose(&r);
+
+    // 14.10: at least these members.
+    LHAT_TEST("a structure asks for the members it names");
+    run_text(&r, "return^ { a := 1, b := 2 } isa^ t^{ a : number^ }\n");
+    CHECK_BOOL(&r, true);
+    run_dispose(&r);
+
+    LHAT_TEST("and refuses a value missing one of them");
+    run_text(&r, "return^ { b := 2 } isa^ t^{ a : number^ }\n");
+    CHECK_BOOL(&r, false);
+    run_dispose(&r);
+
+    LHAT_TEST("a member of the wrong type does not answer for it either");
+    run_text(&r, "return^ { a := \"x\" } isa^ t^{ a : number^ }\n");
+    CHECK_BOOL(&r, false);
+    run_dispose(&r);
+
+    // 13.5: an arm is enough. The parser leaves a union as a tree of two
+    // sides, so a three-armed one is what pins that every arm is reached.
+    LHAT_TEST("a union holds when any arm does");
+    run_text(&r, "return^ \"x\" isa^ number^|string^\n");
+    CHECK_BOOL(&r, true);
+    run_dispose(&r);
+
+    LHAT_TEST("a three-armed union reaches its last arm");
+    run_text(&r, "return^ true^ isa^ number^|string^|bool^\n");
+    CHECK_BOOL(&r, true);
+    run_dispose(&r);
+
+    LHAT_TEST("and fails when no arm does");
+    run_text(&r, "return^ true^ isa^ number^|string^\n");
+    CHECK_BOOL(&r, false);
+    run_dispose(&r);
+
+    // 13.7: any^ is the top of every value, so the answer is fixed. The
+    // checker reports the writing (test_check); a compile that never checked
+    // still has to answer, and this is the answer.
+    LHAT_TEST("isa^ any^ is true whatever is on the left");
+    run_text(&r, "return^ \"x\" isa^ any^\n");
+    CHECK_BOOL(&r, true);
+    run_dispose(&r);
+
+    LHAT_TEST("and the left side still runs");
+    run_text(&r,
+             "var^ n = 0\n"
+             "var^ bump = f^ { n := n + 1 return^ n }\n"
+             "var^ b = bump() isa^ any^\n"
+             "return^ n\n");
+    CHECK_INTEGER(&r, 1);
+    run_dispose(&r);
+
+    // 14.9 keeps a definition structural, and 14.2 builds it while the program
+    // runs -- so the name is loaded as a value and the shape read off it.
+    LHAT_TEST("a def^ name asks for the shape the definition holds");
+    run_text(&r,
+             "var^ Point = def^{ self^{ x := 0, y := 0 } }\n"
+             "return^ Point.new^() isa^ Point\n");
+    CHECK_BOOL(&r, true);
+    run_dispose(&r);
+
+    LHAT_TEST("a value that is not a table is not an instance of one");
+    run_text(&r,
+             "var^ Point = def^{ self^{ x := 0, y := 0 } }\n"
+             "return^ 1 isa^ Point\n");
+    CHECK_BOOL(&r, false);
+    run_dispose(&r);
+
+    LHAT_TEST("a table missing a member of the definition does not fit it");
+    run_text(&r,
+             "var^ Point = def^{ self^{ x := 0, y := 0 }, m := f^ { return^ 1 } }\n"
+             "return^ { m := 1 } isa^ Point\n");
+    CHECK_BOOL(&r, false);
+    run_dispose(&r);
+
+    // 14.7: composition carries everything the left part carried, so an
+    // instance of the composed definition still fits the plain one. This is
+    // what 13.11 wanted conformance rather than exact identity for.
+    LHAT_TEST("an instance of a composition fits the definition composed into");
+    run_text(&r,
+             "var^ Point = def^{ self^{ x := 0 }, m := f^ { return^ 1 } }\n"
+             "var^ Point3 = Point .. def^{ self^{ z := 0 } }\n"
+             "return^ Point3.new^() isa^ Point\n");
+    CHECK_BOOL(&r, true);
+    run_dispose(&r);
+
+    LHAT_TEST("and the other direction does not hold");
+    run_text(&r,
+             "var^ Point = def^{ self^{ x := 0 } }\n"
+             "var^ Point3 = Point .. def^{ self^{ z := 0 } }\n"
+             "return^ Point.new^() isa^ Point3\n");
+    CHECK_BOOL(&r, false);
+    run_dispose(&r);
+
+    // 14.15: a field written as a type rather than a value, which is where a
+    // definition's shape carries a type at all.
+    LHAT_TEST("a declared field asks for its type as well as its name");
+    run_text(&r,
+             "var^ Named = def^{ self^{ abstract^ name : string^ } }\n"
+             "return^ { name := 1 } isa^ Named\n");
+    CHECK_BOOL(&r, false);
+    run_dispose(&r);
+
+    LHAT_TEST("and holds when the member is of that type");
+    run_text(&r,
+             "var^ Named = def^{ self^{ abstract^ name : string^ } }\n"
+             "return^ { name := \"x\" } isa^ Named\n");
+    CHECK_BOOL(&r, true);
+    run_dispose(&r);
+
+    // 14.15 again: a definition may be annotated with itself, and the walk of
+    // its shape has to stop descending rather than follow that for ever. The
+    // member is left asking for its name alone, which is what makes this
+    // answer at all.
+    LHAT_TEST("a definition naming itself lowers without running away");
+    run_text(&r,
+             "var^ Node = def^{ self^{ value := 0 }, abstract^ next : Node }\n"
+             "return^ { value := 1, next := 2 } isa^ Node\n");
+    CHECK_BOOL(&r, true);
+    run_dispose(&r);
+
+    // A definition the compile cannot see: reached through a parameter, so
+    // the name is loaded as a value and the machine reads the shape off the
+    // definition itself. That reaches its members but not 14.11's template,
+    // so this asks less than naming the def^ does -- pinned as it stands.
+    LHAT_TEST("a definition reached as a value asks about its members");
+    run_text(&r,
+             "var^ Point = def^{ self^{ x := 0 }, m := f^ { return^ 1 } }\n"
+             "var^ fits = f^ D { return^ Point.new^() isa^ D }\n"
+             "return^ fits(Point)\n");
+    CHECK_BOOL(&r, true);
+    run_dispose(&r);
+
+    LHAT_TEST("and refuses a value that has none of them");
+    run_text(&r,
+             "var^ Point = def^{ self^{ x := 0 }, m := f^ { return^ 1 } }\n"
+             "var^ fits = f^ D { return^ { } isa^ D }\n"
+             "return^ fits(Point)\n");
+    CHECK_BOOL(&r, false);
+    run_dispose(&r);
+
+    LHAT_TEST("a name that reaches nothing does not compile");
+    run_text(&r, "return^ 1 isa^ Nowhere\n");
+    LHAT_CHECK_EQ_INT(r.compiled, LHAT_COMPILE_UNDEFINED);
+    run_dispose(&r);
+
+    // 11.6, S27: as^ lowers the written type the same way isa^ does, so a
+    // union reaching every one of its arms is one question for both. What
+    // this pins is the lowering: a union used to keep only its first arm,
+    // which made the second one panic where it should hold.
+    LHAT_TEST("as^ against a union holds for an arm past the first");
+    run_text(&r,
+             "var^ x = nil^\n"
+             "var^ y = x as^ number^|nil^\n"
+             "return^ 1\n");
+    CHECK_INTEGER(&r, 1);
+    run_dispose(&r);
+
+    LHAT_TEST("and still panics for a value no arm admits");
+    run_text(&r,
+             "var^ x = \"s\"\n"
+             "var^ y = x as^ number^|nil^\n"
+             "return^ 1\n");
+    LHAT_CHECK_EQ_INT(r.compiled, LHAT_COMPILE_OK);
+    LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_TYPE_ERROR);
+    run_dispose(&r);
+
+    // 13.11's narrowing is the checker's half; this is the machine's -- the
+    // branch taken has to be the one the value actually answers for.
+    LHAT_TEST("isa^ decides a branch at run time");
+    run_checked_text(&r,
+                     "var^ describe = f^ x:any^ {\n"
+                     "    if^ x isa^ number^ { return^ 1 }\n"
+                     "    if^ x isa^ string^ { return^ 2 }\n"
+                     "    return^ 0\n"
+                     "}\n"
+                     "return^ describe(\"x\")\n");
+    CHECK_INTEGER(&r, 2);
+    run_dispose(&r);
+}
+
 // 02 の 14.12改: typeof^ reflects the value itself rather than anything the
 // checker inferred (03 の 4.2), so this is testing reflect_type's walk of the
 // actual runtime object graph.
@@ -5414,6 +5661,7 @@ int main(void)
     test_catch_and_try();
     test_cleanups();
     test_definitions();
+    test_isa();
     test_typeof();
     test_tostring();
     test_scope_specifiers();

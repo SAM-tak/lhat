@@ -122,12 +122,6 @@ void lhat_gc_children(LhatObject **gray, LhatObject *object)
             reach(gray, (LhatObject *)((const LhatHostData *)object)->members);
             return;
 
-        // Nothing but a pointer the program owns (see the type's own
-        // comment) -- same as LHAT_OBJECT_STRING, there is nothing here for
-        // the collector to follow.
-        case LHAT_OBJECT_HOSTDATA_TAG_REF:
-            return;
-
         case LHAT_OBJECT_TYPE: {
             const LhatRuntimeType *type = (const LhatRuntimeType *)object;
             for (size_t i = 0; i < type->part_count; i++) {

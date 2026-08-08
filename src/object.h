@@ -174,6 +174,10 @@ typedef enum {
     LHAT_TYPE_RT_COROUTINE,
     LHAT_TYPE_RT_ERROR,      // 04 の 2.3: any kind
     LHAT_TYPE_RT_ERROR_KIND, // one kind, or one declaration's union of them
+    // 05 の 8.8: a host type, whose identity is its tag and nothing else
+    // (7.3's exception for an opaque value). Written like any other name, so
+    // it belongs here rather than beside a question of its own.
+    LHAT_TYPE_RT_HOSTDATA,
     LHAT_TYPE_RT_UNION,      // 13.5
     LHAT_TYPE_RT_INTERSECT,  // 14.5, 14.12: an overload^ed member's arms
     LHAT_TYPE_RT_STRUCTURE,  // 14.10: at least these members
@@ -201,6 +205,11 @@ typedef struct LhatRuntimeType {
     LhatRuntimeTypeKind kind;
 
     const LhatErrorKind *error_kind;  // ERROR_KIND
+
+    // HOSTDATA. Lives on the program rather than the heap, exactly as
+    // LhatHostData.tag does, so the collector never follows it either. The
+    // struct itself is written further down, next to the values it tags.
+    const struct LhatHostDataTag *hostdata_tag;
 
     // UNION: the arms. SUBROUTINE: the parameter types, in order -- a
     // signature's parameters are a list the same way a union's arms are, and
@@ -321,17 +330,6 @@ typedef struct LhatHostData {
     bool released;
 } LhatHostData;
 
-// 02 の 13.11: isa^ against a registered hostdata type asks whether a
-// value's tag is this one (05 の 8.8's identity rule) -- but a
-// LhatHostDataTag lives on the program, not the heap, so it cannot sit in
-// a chunk's constant pool as itself the way an LhatErrorKind can. This is
-// the pool-shaped wrapper: nothing but the pointer, and the collector
-// never follows it (same reasoning as LhatHostData.tag above).
-typedef struct LhatHostDataTagRef {
-    LhatObject header;
-    const LhatHostDataTag *tag;
-} LhatHostDataTagRef;
-
 // ---------------------------------------------------------------------------
 // Making and freeing
 // ---------------------------------------------------------------------------
@@ -377,9 +375,6 @@ LhatHost *lhat_host_new(LhatHeap *heap, LhatHostFn call, void *context,
 
 LhatHostData *lhat_hostdata_new(LhatHeap *heap, const LhatHostDataTag *tag,
                                 void *pointer, LhatTable *members);
-
-LhatHostDataTagRef *lhat_hostdata_tag_ref_new(LhatHeap *heap,
-                                              const LhatHostDataTag *tag);
 
 LhatRuntimeType *lhat_type_rt_new(LhatHeap *heap, LhatRuntimeTypeKind kind);
 

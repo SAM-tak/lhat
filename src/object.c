@@ -217,18 +217,6 @@ LhatHostData *lhat_hostdata_new(LhatHeap *heap, const LhatHostDataTag *tag,
     return data;
 }
 
-LhatHostDataTagRef *lhat_hostdata_tag_ref_new(LhatHeap *heap,
-                                              const LhatHostDataTag *tag)
-{
-    LhatHostDataTagRef *ref = (LhatHostDataTagRef *)lhat_object_alloc(
-        heap, sizeof(LhatHostDataTagRef), LHAT_OBJECT_HOSTDATA_TAG_REF);
-    if (ref == NULL) {
-        return NULL;
-    }
-    ref->tag = tag;
-    return ref;
-}
-
 LhatRuntimeType *lhat_type_rt_new(LhatHeap *heap, LhatRuntimeTypeKind kind)
 {
     LhatRuntimeType *type =
@@ -299,6 +287,13 @@ bool lhat_value_satisfies(LhatValue value, const LhatRuntimeType *type)
             return lhat_is_object_kind(value, LHAT_OBJECT_ERROR);
         case LHAT_TYPE_RT_ERROR_KIND:
             return lhat_error_is_kind(value, type->error_kind);
+        // 05 の 8.8: identity is the tag alone, so the value has to actually
+        // be hostdata -- otherwise there is no tag to compare and the answer
+        // is about two different kinds of value.
+        case LHAT_TYPE_RT_HOSTDATA:
+            return lhat_is_object_kind(value, LHAT_OBJECT_HOSTDATA) &&
+                   ((const LhatHostData *)lhat_as_object(value))->tag ==
+                       type->hostdata_tag;
         case LHAT_TYPE_RT_UNION:
             for (size_t i = 0; i < type->part_count; i++) {
                 if (lhat_value_satisfies(value, type->parts[i])) {
@@ -433,6 +428,20 @@ static void write_runtime_type(TypeWriter *w, const LhatRuntimeType *type)
             } else {
                 type_put_text(w, "error^");
             }
+            return;
+        // 05 の 8.7: a signature reads back as a type expression, and 8.8
+        // names a host type the same way a program writes it -- qualified by
+        // the module it was registered under.
+        case LHAT_TYPE_RT_HOSTDATA:
+            if (type->hostdata_tag == NULL) {
+                type_put_text(w, "UNKNOWN");
+                return;
+            }
+            if (type->hostdata_tag->module != NULL) {
+                type_put_text(w, type->hostdata_tag->module);
+                type_put_text(w, ".");
+            }
+            type_put_text(w, type->hostdata_tag->name);
             return;
         // 13.9's three slots. NULL still prints any^ (S28's residual: a
         // coroutine value or a yielding subroutine reflected before this
@@ -580,6 +589,10 @@ bool lhat_runtime_type_equal(const LhatRuntimeType *a, const LhatRuntimeType *b)
         case LHAT_TYPE_RT_ERROR_KIND:
             // 04 の 2.4: identity is the declaration.
             return a->error_kind == b->error_kind;
+        // 05 の 8.8: identity is the tag, which is the whole of what a
+        // registered type is.
+        case LHAT_TYPE_RT_HOSTDATA:
+            return a->hostdata_tag == b->hostdata_tag;
         // 11.3's structural identity for a union or an intersection asks the
         // same of both sides without caring about the order the arms were
         // written in.
