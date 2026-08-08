@@ -940,6 +940,11 @@ static LhatNode *parse_def(Parser *p)
 }
 
 // A parameter in a definition may be named, typed and given a default.
+//
+// 13.4: the default is kept on the node and read by nothing downstream. It is
+// what completion and the visual editor put into a call site while the call is
+// being written, not a value the callee supplies for a missing argument, so
+// neither the checker nor the compiler has anything to do with it.
 static LhatNode *parse_params(Parser *p)
 {
     LhatNode *head = NULL;

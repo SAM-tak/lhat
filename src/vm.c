@@ -2300,6 +2300,13 @@ static void compile_subroutine(Compiler *c, const LhatNode *node, uint8_t into)
     inner.status = c->status;
 
     // 5.3: the parameters are the frame's first registers, in order.
+    //
+    // 13.4, 03 の 5.3: v.param.fallback is skipped on purpose. A default is
+    // written into a call site by completion or the visual editor as the call
+    // is built, so by the time anything runs the argument is there like any
+    // other -- there is no defaulting left for the callee to do. Contrast the
+    // fields of an error kind (04 の 2.2), whose defaults do get compiled, at
+    // the construction rather than here.
     for (const LhatNode *param = node->v.func.params; param != NULL;
          param = param->next) {
         const char *name = NULL;
@@ -6809,6 +6816,9 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
                 size_t required = callee->proto->has_variadic
                                       ? declared_slots - 1
                                       : declared_slots;
+                // 13.4: nothing fills a missing argument in. A parameter's
+                // default belongs to the editor that writes the call, so the
+                // count owed here is the declared one either way.
                 if (callee->proto->has_variadic ? given < required
                                                 : given != declared_slots) {
                     return finish(m, chunk, LHAT_RUN_ARITY, lhat_nil(), at);
