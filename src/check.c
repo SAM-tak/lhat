@@ -1990,6 +1990,9 @@ static LhatType *infer_call(Checker *c, const LhatNode *node)
         }
     } else if (given < declared ||
               (given > declared && callee->v.func.variadic == NULL)) {
+        // 13.4: a written default does not make a parameter optional. What it
+        // fills in is a call site being written by an editor, so a call that
+        // reaches here still owes every declared argument.
         report(c, node, LHAT_CHECK_ERR_ARITY);
     }
 
@@ -2450,6 +2453,21 @@ static LhatType *infer_func(Checker *c, const LhatNode *node)
         LhatType *type = param->v.param.type != NULL
                              ? resolve_type(c, param->v.param.type)
                              : simple(c, LHAT_TYPE_PENDING);
+        // 13.4: a default is what completion and the visual editor write into
+        // a call site, so it has to fit the position it will be written into.
+        // Read out here, before c->scope becomes the body below -- the
+        // expression stands at the call, where none of these parameters is in
+        // scope, so it may not name them.
+        //
+        // Only against a written type. With nothing written the slot is still
+        // pending^, and 03 の 3.4 leaves what settles it to the body's demands;
+        // a default is not one of them (it is a value the call carries, not a
+        // use the body makes).
+        LhatType *fallback = infer(c, param->v.param.fallback);
+        if (fallback != NULL && param->v.param.type != NULL) {
+            expect(c, param->v.param.fallback, fallback, type,
+                   LHAT_CHECK_ERR_MISMATCH);
+        }
         if (param->v.param.variadic) {
             LhatType *element =
                 param->v.param.type != NULL ? type : simple(c, LHAT_TYPE_ANY);

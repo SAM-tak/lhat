@@ -776,6 +776,44 @@ static void test_parameter_inference(void)
     check_text(&u, "var^ helper = p^ x { x.write() }\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
+
+    // 13.4: a default is what an editor writes into a call site, so it is held
+    // to what that position takes -- a call carrying it has to be a call that
+    // would have checked.
+    LHAT_TEST("a default has to fit the parameter it stands in for");
+    check_text(&u, "var^ f = p^ x:number^ = \"a\" { }\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
+    unit_dispose(&u);
+
+    LHAT_TEST("and one that fits is accepted");
+    check_text(&u, "var^ f = p^ x:number^ = 1 { }\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // 03 の 3.4 reads the body's demands and nothing else. A default is a value
+    // the call carries, not a use the body makes, so it decides nothing --
+    // this is the case above it with the annotation taken away.
+    LHAT_TEST("a default is not a demand");
+    check_text(&u,
+               "var^ id = f^ x = 1 { return^ x }\n"
+               "var^ y : number^ = id(4)\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
+    unit_dispose(&u);
+
+    // 13.4: it does not make the parameter optional either.
+    LHAT_TEST("a default does not let the call leave the argument out");
+    check_text(&u,
+               "var^ f = p^ x:number^ = 1 { }\n"
+               "f()\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_ARITY);
+    unit_dispose(&u);
+
+    // The expression will stand at the call, where the parameters of the body
+    // it belongs to are not in scope.
+    LHAT_TEST("a default may not name another parameter");
+    check_text(&u, "var^ f = p^ a:number^, b:number^ = a { }\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_UNDEFINED);
+    unit_dispose(&u);
 }
 
 // 04.
