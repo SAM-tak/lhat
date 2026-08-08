@@ -7,6 +7,16 @@
 // Needs an OS thread implementation: port/thread.h, the same one lsp/ uses in
 // this codebase. A host linking this must also link lhatthread.
 //
+// spawn is written
+//
+//     let^ h = std.thread.spawn(p^ ... { ... }, 1, "two", true)
+//
+// -- fn takes '...' and nothing else, captures nothing, and yields nothing;
+// everything past it is handed to fn on the new machine. Only nil^, bool^,
+// number^ and string^ cross (a table or a closure points into the heap it was
+// made on), which is exactly why fn's parameter list is '...' rather than one
+// written out: stdlib/thread.c's comment on the boundary says the rest.
+//
 // A ThreadHandle's dispose() blocks until the spawned thread finishes if it
 // was never join()ed -- see stdlib/thread.c's thread_dispose comment for why.
 //

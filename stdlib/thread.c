@@ -1,22 +1,31 @@
 // L^ (lhat) -- sample standard library: std.thread.
 //
-// spawn(fn) starts fn -- p^ -> (number^|bool^|string^|nil^); with no
-// upvalues -- on a fresh LhatMachine of its own, on a new OS thread. join()
-// blocks for the result and dispose() (05 の 8.8) blocks the same way if the
-// caller never joined -- see thread_dispose's comment for why letting an
-// unjoined thread run past its ThreadHandle's disposal is not safe here.
+// spawn(fn, ...) starts fn -- p^... -> (number^|bool^|string^|nil^); with no
+// upvalues -- on a fresh LhatMachine of its own, on a new OS thread, and hands
+// it whatever else was written. join() blocks for the result and dispose()
+// (05 の 8.8) blocks the same way if the caller never joined -- see
+// thread_dispose's comment for why letting an unjoined thread run past its
+// ThreadHandle's disposal is not safe here.
 //
 // A Machine/its GC heap is one OS thread's alone (src/gc.c's "one set of
 // roots rather than a thread apiece"), so a value cannot simply be handed to
 // another machine -- it would still point into the first one's heap.
 // Everything that crosses the boundary here is copied into a plain C
-// representation first (ThreadResult) and only turned back into an LhatValue
-// on the machine that is going to use it. That is also why spawn takes no
-// arguments: a table, a closure or a hostdata value has no such plain
-// representation, and there is no host API to build a table's contents from
-// C, so carrying one across is not attempted by this sample. A closure's
-// Proto, unlike its upvalues, is safe to share -- see lhat_proto_new's
-// comment on why it is always born already black.
+// representation first (ThreadValue) and only turned back into an LhatValue on
+// the machine that is going to use it. The same copy runs both ways: the
+// arguments on the way in, the answer on the way back.
+//
+// What that copy can carry is what the boundary allows, and it is the whole of
+// why fn is written 'p^...' rather than with parameters of its own. A table, a
+// closure or a hostdata value has no plain representation, and there is no
+// host API to build a table's contents from C, so only nil^, bool^, number^
+// and string^ cross -- 13.7's collector is any^ underneath, which is exactly
+// the shape that takes those four without a written parameter having to name
+// them. What crosses is checked as the call is made, not before it: an
+// argument of any other type answers ThreadError.BadArgument. See the
+// registration at the foot of this file for why that is a run-time answer and
+// not a type. A closure's Proto, unlike its upvalues, is safe to share -- see
+// lhat_proto_new's comment on why it is always born already black.
 //
 // spawn/join answer a ThreadHandle or a ThreadError, or std.error.
 // OutOfMemory for the one failure this module shares with every other
@@ -47,6 +56,7 @@
 // trade for the same reason.
 typedef struct {
     const LhatErrorKind *not_spawnable;
+    const LhatErrorKind *bad_argument;
     const LhatErrorKind *spawn_failed;
     const LhatErrorKind *bad_result;
     const LhatErrorKind *already_joined;
@@ -55,15 +65,16 @@ typedef struct {
 } ThreadModule;
 
 typedef enum {
-    RESULT_NIL,
-    RESULT_BOOL,
-    RESULT_INT,
-    RESULT_REAL,
-    RESULT_STRING
-} ResultKind;
+    CARRIED_NIL,
+    CARRIED_BOOL,
+    CARRIED_INT,
+    CARRIED_REAL,
+    CARRIED_STRING
+} CarriedKind;
 
+// One value in the only form that belongs to neither machine.
 typedef struct {
-    ResultKind kind;
+    CarriedKind kind;
     union {
         bool boolean;
         int64_t integer;
@@ -73,12 +84,16 @@ typedef struct {
             size_t length;
         } text;
     } as;
-} ThreadResult;
+} ThreadValue;
 
 typedef struct {
     const LhatProto *proto;      // borrowed; lives as long as the program
     const LhatModule *modules;   // borrowed; same
     size_t module_count;
+    // 13.7's collector, still in the form that crossed. Owned by this, and
+    // given back by thread_main as soon as the new machine has its own copy.
+    ThreadValue *arguments;
+    size_t argument_count;
     struct ThreadHandle *handle;  // owned by spawn's caller, not by this
 } ThreadStart;
 
@@ -91,7 +106,7 @@ typedef struct ThreadHandle {
     // machines), so it needs no lock either.
     bool joined;
     LhatRunStatus status;
-    ThreadResult result;
+    ThreadValue result;
 } ThreadHandle;
 
 static LhatValue fail_with(LhatMachine *machine, const LhatErrorKind *kind,
@@ -103,24 +118,24 @@ static LhatValue fail_with(LhatMachine *machine, const LhatErrorKind *kind,
                : lhat_nil();
 }
 
-static bool to_thread_result(LhatValue value, ThreadResult *out)
+static bool to_thread_value(LhatValue value, ThreadValue *out)
 {
     if (lhat_is_nil(value)) {
-        out->kind = RESULT_NIL;
+        out->kind = CARRIED_NIL;
         return true;
     }
     if (lhat_is_bool(value)) {
-        out->kind = RESULT_BOOL;
+        out->kind = CARRIED_BOOL;
         out->as.boolean = lhat_as_bool(value);
         return true;
     }
     if (lhat_is_integer(value)) {
-        out->kind = RESULT_INT;
+        out->kind = CARRIED_INT;
         out->as.integer = lhat_as_integer(value);
         return true;
     }
     if (lhat_is_real(value)) {
-        out->kind = RESULT_REAL;
+        out->kind = CARRIED_REAL;
         out->as.real = lhat_as_real(value);
         return true;
     }
@@ -134,7 +149,7 @@ static bool to_thread_result(LhatValue value, ThreadResult *out)
         if (string->length > 0) {
             memcpy(copy, string->text, string->length);
         }
-        out->kind = RESULT_STRING;
+        out->kind = CARRIED_STRING;
         out->as.text.bytes = copy;
         out->as.text.length = string->length;
         return true;
@@ -142,34 +157,67 @@ static bool to_thread_result(LhatValue value, ThreadResult *out)
     return false;  // a table, a closure, a hostdata value -- not carryable
 }
 
-static bool from_thread_result(LhatMachine *machine,
-                               const ThreadResult *result, LhatValue *out)
+static bool from_thread_value(LhatMachine *machine, const ThreadValue *carried,
+                              LhatValue *out)
 {
-    switch (result->kind) {
-        case RESULT_NIL:
+    switch (carried->kind) {
+        case CARRIED_NIL:
             *out = lhat_nil();
             return true;
-        case RESULT_BOOL:
-            *out = lhat_bool(result->as.boolean);
+        case CARRIED_BOOL:
+            *out = lhat_bool(carried->as.boolean);
             return true;
-        case RESULT_INT:
-            *out = lhat_integer(result->as.integer);
+        case CARRIED_INT:
+            *out = lhat_integer(carried->as.integer);
             return true;
-        case RESULT_REAL:
-            *out = lhat_real(result->as.real);
+        case CARRIED_REAL:
+            *out = lhat_real(carried->as.real);
             return true;
-        case RESULT_STRING:
-            return lhat_machine_make_string(machine, result->as.text.bytes,
-                                            result->as.text.length, out);
+        case CARRIED_STRING:
+            return lhat_machine_make_string(machine, carried->as.text.bytes,
+                                            carried->as.text.length, out);
     }
     return false;
 }
 
-static void free_thread_result(ThreadResult *result)
+static void free_thread_value(ThreadValue *carried)
 {
-    if (result->kind == RESULT_STRING) {
-        lhat_free(result->as.text.bytes);
+    if (carried->kind == CARRIED_STRING) {
+        lhat_free(carried->as.text.bytes);
     }
+}
+
+static void free_thread_values(ThreadValue *carried, size_t count)
+{
+    for (size_t i = 0; i < count; i++) {
+        free_thread_value(&carried[i]);
+    }
+    lhat_free(carried);
+}
+
+// 実引数を新しいマシンの上に組み直す。組み立て途中の LhatValue はどの根から
+// も辿れないが、収集が走るのは run_frames の命令境界だけ(src/gc.c)で、確保
+// そのものは収集を起こさない -- だからこのループの間に回収されることはない。
+static bool rebuild_arguments(LhatMachine *machine, const ThreadStart *start,
+                              LhatValue **out)
+{
+    if (start->argument_count == 0) {
+        *out = NULL;
+        return true;
+    }
+    LhatValue *values =
+        (LhatValue *)lhat_alloc(start->argument_count * sizeof *values);
+    if (values == NULL) {
+        return false;
+    }
+    for (size_t i = 0; i < start->argument_count; i++) {
+        if (!from_thread_value(machine, &start->arguments[i], &values[i])) {
+            lhat_free(values);
+            return false;
+        }
+    }
+    *out = values;
+    return true;
 }
 
 static int thread_main(void *raw)
@@ -184,19 +232,26 @@ static int thread_main(void *raw)
         lhat_machine_set_modules(machine, start->modules, start->module_count);
 
         LhatValue fn = lhat_nil();
-        if (!lhat_machine_make_closure(machine, start->proto, &fn)) {
+        LhatValue *arguments = NULL;
+        if (!lhat_machine_make_closure(machine, start->proto, &fn) ||
+            !rebuild_arguments(machine, start, &arguments)) {
             handle->status = LHAT_RUN_OUT_OF_MEMORY;
         } else {
-            LhatRunResult ran = lhat_machine_call(machine, fn, NULL, 0);
+            // 13.7: fn takes one variadic slot, so lhat_machine_call is what
+            // collects these into the table the body reads as '...'.
+            LhatRunResult ran = lhat_machine_call(machine, fn, arguments,
+                                                  start->argument_count);
             handle->status = ran.status;
             if (ran.status == LHAT_RUN_OK &&
-                !to_thread_result(ran.value, &handle->result)) {
+                !to_thread_value(ran.value, &handle->result)) {
                 handle->status = LHAT_RUN_TYPE_ERROR;  // 表現できない戻り値
             }
         }
+        lhat_free(arguments);
         lhat_machine_dispose(machine);
     }
 
+    free_thread_values(start->arguments, start->argument_count);
     lhat_free(start);
     return 0;
 }
@@ -215,15 +270,50 @@ static void join_and_free(ThreadHandle *handle)
 {
     lhat_thread_join(&handle->os);
     if (handle->status == LHAT_RUN_OK) {
-        free_thread_result(&handle->result);
+        free_thread_value(&handle->result);
     }
     lhat_free(handle);
+}
+
+// 13.7: the tail reaches an LhatHostFn uncollected (see LhatHost), so what
+// spawn was written past fn is arguments[1..count) and nothing else. NULL out
+// with a count of 0 when there was none.
+//
+// `type_refused` tells the two failures apart. to_thread_value answers false
+// both for a value of a kind that does not cross and for a string it could not
+// copy, and only the caller's error kind depends on which -- a string is the
+// one carryable kind that allocates, so that is the whole test.
+static bool carry_arguments(const LhatValue *arguments, size_t count,
+                            ThreadValue **out, size_t *out_count,
+                            bool *type_refused)
+{
+    *out = NULL;
+    *out_count = 0;
+    *type_refused = false;
+    if (count <= 1) {
+        return true;
+    }
+    size_t wanted = count - 1;
+    ThreadValue *carried = (ThreadValue *)lhat_calloc(wanted, sizeof *carried);
+    if (carried == NULL) {
+        return false;
+    }
+    for (size_t i = 0; i < wanted; i++) {
+        if (!to_thread_value(arguments[i + 1], &carried[i])) {
+            *type_refused = !lhat_is_object_kind(arguments[i + 1],
+                                                 LHAT_OBJECT_STRING);
+            free_thread_values(carried, i);
+            return false;
+        }
+    }
+    *out = carried;
+    *out_count = wanted;
+    return true;
 }
 
 static LhatValue thread_spawn(LhatMachine *machine, void *context,
                               const LhatValue *arguments, size_t count)
 {
-    (void)count;
     const ThreadModule *module = (const ThreadModule *)context;
 
     if (!lhat_is_object_kind(arguments[0], LHAT_OBJECT_SUBROUTINE)) {
@@ -231,12 +321,30 @@ static LhatValue thread_spawn(LhatMachine *machine, void *context,
     }
     const LhatClosure *closure =
         (const LhatClosure *)lhat_as_object(arguments[0]);
+    // 13.7: one variadic slot and nothing else. A parameter of its own would
+    // have a type spawn cannot promise to fill -- only the four kinds
+    // to_thread_value carries reach the other machine, and '...' is the one
+    // shape whose element type (any^) every one of them conforms to.
     if (closure->proto == NULL || closure->proto->yields ||
-        closure->proto->upvalue_count != 0) {
+        closure->proto->upvalue_count != 0 ||
+        !closure->proto->has_variadic || closure->proto->parameters != 1) {
         return fail_with(machine, module->not_spawnable,
-                         "fn closes over a variable, or is yieldable; "
-                         "spawn requires a plain closure with no captured "
-                         "places");
+                         "fn closes over a variable, is yieldable, or does "
+                         "not take '...' alone; spawn requires a plain "
+                         "'p^...' closure with no captured places");
+    }
+
+    ThreadValue *carried = NULL;
+    size_t carried_count = 0;
+    bool type_refused = false;
+    if (!carry_arguments(arguments, count, &carried, &carried_count,
+                         &type_refused)) {
+        return type_refused
+                   ? fail_with(machine, module->bad_argument,
+                               "an argument is not a nil^, bool^, number^ or "
+                               "string^, and nothing else crosses to another "
+                               "machine")
+                   : fail_with(machine, module->out_of_memory, "out of memory");
     }
 
     const LhatModule *modules = NULL;
@@ -246,6 +354,7 @@ static LhatValue thread_spawn(LhatMachine *machine, void *context,
     ThreadHandle *handle = (ThreadHandle *)lhat_calloc(1, sizeof *handle);
     ThreadStart *start = (ThreadStart *)lhat_alloc(sizeof *start);
     if (handle == NULL || start == NULL) {
+        free_thread_values(carried, carried_count);
         lhat_free(handle);
         lhat_free(start);
         return fail_with(machine, module->out_of_memory, "out of memory");
@@ -253,9 +362,12 @@ static LhatValue thread_spawn(LhatMachine *machine, void *context,
     start->proto = closure->proto;
     start->modules = modules;
     start->module_count = module_count;
+    start->arguments = carried;
+    start->argument_count = carried_count;
     start->handle = handle;
 
     if (!lhat_thread_start(&handle->os, thread_main, start)) {
+        free_thread_values(carried, carried_count);
         lhat_free(start);
         lhat_free(handle);
         return fail_with(machine, module->spawn_failed,
@@ -293,7 +405,7 @@ static LhatValue thread_join(LhatMachine *machine, void *context,
                          lhat_run_status_message(handle->status));
     }
     LhatValue out = lhat_nil();
-    if (!from_thread_result(machine, &handle->result, &out)) {
+    if (!from_thread_value(machine, &handle->result, &out)) {
         return fail_with(machine, module->out_of_memory, "out of memory");
     }
     return out;
@@ -317,7 +429,7 @@ static LhatValue thread_dispose(LhatMachine *machine, void *context,
     }
     if (handle->joined) {
         if (handle->status == LHAT_RUN_OK) {
-            free_thread_result(&handle->result);
+            free_thread_value(&handle->result);
         }
         lhat_free(handle);
     } else {
@@ -341,18 +453,20 @@ bool lhatstdlib_thread_register(LhatProgram *program)
     }
     module->out_of_memory = lhatstdlib_error_lookup(program, "OutOfMemory");
 
-    static const char *const variants[] = {"NotSpawnable", "SpawnFailed",
-                                           "BadResult", "AlreadyJoined"};
-    const LhatErrorKind *kinds[4];
+    static const char *const variants[] = {"NotSpawnable", "BadArgument",
+                                           "SpawnFailed", "BadResult",
+                                           "AlreadyJoined"};
+    const LhatErrorKind *kinds[5];
     if (!lhat_register_error_kind(program, "std.thread", "ThreadError",
-                                  variants, 4, NULL, kinds)) {
+                                  variants, 5, NULL, kinds)) {
         lhat_free(module);
         return false;
     }
     module->not_spawnable = kinds[0];
-    module->spawn_failed = kinds[1];
-    module->bad_result = kinds[2];
-    module->already_joined = kinds[3];
+    module->bad_argument = kinds[1];
+    module->spawn_failed = kinds[2];
+    module->bad_result = kinds[3];
+    module->already_joined = kinds[4];
 
     module->handle_tag =
         lhat_register_hostdata_type(program, "std.thread", "ThreadHandle");
@@ -361,10 +475,26 @@ bool lhatstdlib_thread_register(LhatProgram *program)
         return false;
     }
 
+    // 13.7: fn's own '...' takes any^ underneath, so a plain 'p^ ... { }' is
+    // the closure this signature asks for (conformance on a variadic element
+    // is contravariant, the same as an ordinary parameter's).
+    //
+    // spawn's own '...' is any^ for the same reason read the other way round.
+    // Naming the four carryable kinds here would read better, and would also
+    // make the one call this feature exists for -- forwarding a caller's own
+    // collector, 'spawn(fn, ...)' -- impossible: that collector is any^ and
+    // any^ conforms to no narrower type (S16). So the boundary is stated at
+    // run time instead, by ThreadError.BadArgument, and the signature asks
+    // only what it can ask without shutting the door on a spread.
+    //
+    // The result is not widened the same way: it is copied back rather than
+    // forwarded, nothing has to fit through a variadic slot on the way, and
+    // the checker settles it outright.
     return lhat_register_func(
                program, "std.thread", "spawn",
-               "f^p^ -> number^|bool^|string^|nil^; -> "
+               "f^p^... -> number^|bool^|string^|nil^;, ...:any^ -> "
                "std.thread.ThreadHandle|std.thread.ThreadError.NotSpawnable"
+               "|std.thread.ThreadError.BadArgument"
                "|std.thread.ThreadError.SpawnFailed|std.error.OutOfMemory;",
                thread_spawn, module) &&
            lhat_register_member(
