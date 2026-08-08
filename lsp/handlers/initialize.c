@@ -4,9 +4,20 @@
 
 #include <stdlib.h>
 
+#include "../semantic_tokens.h"  // LSP_SEMANTIC_TOKEN_TYPES/MODIFIERS
+
 #include "queue.h"
 #include "server.h"
 #include "uri.h"
+
+static cJSON *string_array(const char *const *items, size_t count)
+{
+    cJSON *array = cJSON_CreateArray();
+    for (size_t i = 0; i < count; i++) {
+        cJSON_AddItemToArray(array, cJSON_CreateString(items[i]));
+    }
+    return array;
+}
 
 static char *read_root_path(const cJSON *params)
 {
@@ -45,6 +56,21 @@ cJSON *lsp_handle_initialize(LspServer *server, const cJSON *params)
     cJSON_AddBoolToObject(sync, "openClose", true);
     cJSON_AddNumberToObject(sync, "change", 1);  // Full document sync
     cJSON_AddItemToObject(capabilities, "textDocumentSync", sync);
+
+    // semantic_tokens.c's legend -- the token type/modifier indices it
+    // emits are indices into these same two arrays, so this has to echo
+    // them exactly rather than write its own copy.
+    cJSON *semantic_tokens = cJSON_CreateObject();
+    cJSON *legend = cJSON_CreateObject();
+    cJSON_AddItemToObject(legend, "tokenTypes",
+        string_array(LSP_SEMANTIC_TOKEN_TYPES, LSP_SEMANTIC_TOKEN_TYPES_COUNT));
+    cJSON_AddItemToObject(legend, "tokenModifiers",
+        string_array(LSP_SEMANTIC_TOKEN_MODIFIERS,
+                     LSP_SEMANTIC_TOKEN_MODIFIERS_COUNT));
+    cJSON_AddItemToObject(semantic_tokens, "legend", legend);
+    cJSON_AddBoolToObject(semantic_tokens, "full", true);
+    cJSON_AddItemToObject(capabilities, "semanticTokensProvider", semantic_tokens);
+
     cJSON_AddItemToObject(result, "capabilities", capabilities);
 
     cJSON *info = cJSON_CreateObject();

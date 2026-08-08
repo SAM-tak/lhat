@@ -58,7 +58,7 @@
             "comment": "Built-in type keywords (f^, p^, number^, string^, ...) -- fixed rather than left to whatever a theme's storage.type happens to be, since that varies a lot theme to theme.",
             "scope": "storage.type.lhat",
             "settings": {
-              "foreground": "#569CD6"
+              "foreground": "#d7ba7d"
             }
           }
         ]

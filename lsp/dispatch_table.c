@@ -6,11 +6,13 @@
 #include "dispatch.h"
 
 #include "handlers/initialize.h"
+#include "handlers/semantic_tokens.h"
 #include "handlers/text_document_sync.h"
 
 const LspRequestEntry LSP_REQUEST_TABLE[] = {
     {"initialize", lsp_handle_initialize},
     {"shutdown", lsp_handle_shutdown},
+    {"textDocument/semanticTokens/full", lsp_handle_semantic_tokens_full},
     {NULL, NULL},
 };
 

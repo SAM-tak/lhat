@@ -83,4 +83,15 @@ typedef void (*LspDiagnosticsSink)(void *context, const char *path,
 void lsp_workspace_collect_diagnostics(LspWorkspace *ws,
                                        LspDiagnosticsSink sink, void *context);
 
+// Finds the LhatUnit at `path` among every known root's units and calls
+// `sink` with it while still holding the workspace lock -- a request
+// handler (e.g. semantic tokens) needs the tree for one path, but a
+// pointer handed back after unlocking could be freed by the worker
+// thread's next recheck (recheck_one_root disposes and rebuilds a root's
+// whole LhatProgram). Not called at all when `path` is not part of any
+// checked root's graph.
+typedef void (*LspUnitSink)(void *context, const LhatUnit *unit);
+void lsp_workspace_with_unit(LspWorkspace *ws, const char *path,
+                             LspUnitSink sink, void *context);
+
 #endif  // LSP_WORKSPACE_H

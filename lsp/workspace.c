@@ -434,3 +434,23 @@ void lsp_workspace_collect_diagnostics(LspWorkspace *ws,
     free(seen);
     lhat_mutex_unlock(&ws->lock);
 }
+
+void lsp_workspace_with_unit(LspWorkspace *ws, const char *path,
+                             LspUnitSink sink, void *context)
+{
+    lhat_mutex_lock(&ws->lock);
+    for (LspRoot *r = ws->roots; r != NULL; r = r->next) {
+        if (!r->checked) {
+            continue;
+        }
+        for (const LhatUnit *unit = r->program.units; unit != NULL;
+             unit = unit->next) {
+            if (unit->loaded && strcmp(unit->path, path) == 0) {
+                sink(context, unit);
+                lhat_mutex_unlock(&ws->lock);
+                return;
+            }
+        }
+    }
+    lhat_mutex_unlock(&ws->lock);
+}

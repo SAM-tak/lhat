@@ -144,14 +144,14 @@
           }
         },
         {
-          "match": "\\b(var|let|op|def|new|enum|unpack|module|public|require|import|override|overload|errordef)(\\^+)",
+          "match": "\\b(var|let|f|p|op|def|new|enum|unpack|module|public|require|import|override|overload|errordef)(\\^+)",
           "captures": {
             "1": { "name": "keyword.other.declaration.lhat" },
             "2": { "name": "punctuation.definition.hat.lhat" }
           }
         },
         {
-          "match": "\\b(f|p|number|string|bool|nil|any|t|table|type|c|error)(\\^+)",
+          "match": "\\b(number|string|bool|nil|any|t|table|type|c|error)(\\^+)",
           "captures": {
             "1": { "name": "storage.type.lhat" },
             "2": { "name": "punctuation.definition.hat.lhat" }

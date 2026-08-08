@@ -173,9 +173,12 @@ if(LHAT_BUILD_LSP)
         lsp/document_store.c
         lsp/workspace.c
         lsp/diagnostics.c
+        lsp/position.c
+        lsp/semantic_tokens.c
         lsp/queue.c
         lsp/handlers/initialize.c
         lsp/handlers/text_document_sync.c
+        lsp/handlers/semantic_tokens.c
     )
     set_target_properties(lhat_lsp PROPERTIES OUTPUT_NAME lhat-lsp)
     target_link_libraries(lhat_lsp PRIVATE lhat cjson lhatthread)
