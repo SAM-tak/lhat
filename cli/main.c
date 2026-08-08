@@ -489,15 +489,25 @@ static int dump_tokens(const LhatSource *source)
 // the host's, not the machine's, so nothing a program can read afterwards
 // tells it apart from having done nothing. 13.2 has an f^ answer on every
 // path, so it answers nil^ -- which 04 の 11.3 already spells "nothing here".
+//
+// 13.7 の '...' なので、渡された値を渡された順に1行ずつ書く。読み方は 02 の
+// 14.17 の tostring と同じ lhat_value_text -- string^ はそれ自身のバイト列で、
+// 1 と "1" を読み分けさせる引用符は付かない (それが要るのは 03 の 4 章の
+// プロンプト側で、書き出す側ではない)。stdlib/io.c の std.io.print と同じ。
 static LhatValue host_print(LhatMachine *machine, void *context,
                             const LhatValue *arguments, size_t count)
 {
     (void)machine;
     (void)context;
-    if (count >= 1 && lhat_is_object_kind(arguments[0], LHAT_OBJECT_STRING)) {
-        const LhatString *text =
-            (const LhatString *)lhat_as_object(arguments[0]);
-        printf("%.*s\n", (int)text->length, text->text);
+    for (size_t i = 0; i < count; i++) {
+        size_t needed = lhat_value_text(arguments[i], NULL, 0);
+        char *text = (char *)malloc(needed + 1);
+        if (text != NULL) {
+            lhat_value_text(arguments[i], text, needed + 1);
+            fwrite(text, 1, needed, stdout);
+            fputc('\n', stdout);
+            free(text);
+        }
     }
     return lhat_nil();
 }
@@ -507,8 +517,7 @@ static LhatValue host_print(LhatMachine *machine, void *context,
 // writing both out is what shows the two are the same mechanism.
 static bool bind_host_names(LhatProgram *program)
 {
-    lhat_register_global(program, "print", "f^string^ -> nil^;", host_print,
-                         NULL);
+    lhat_register_global(program, "print", "f^...->nil^;", host_print, NULL);
     lhat_bind_initial(program, "print", "L^.print");
     lhat_bind_initial(program, "collectgarbage", "L^.collectgarbage");
 
