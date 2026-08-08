@@ -27,13 +27,13 @@ void lsp_server_dispose(LspServer *server)
 {
     lsp_queue_shutdown(&server->queue);
     if (server->worker_started) {
-        thrd_join(server->worker_thread, NULL);
+        lhat_thread_join(&server->worker_thread);
     }
     lsp_queue_dispose(&server->queue);
     lsp_rpc_out_dispose(&server->out);
     lsp_workspace_dispose(&server->workspace);
 
-    // thrd_join above already ensured the worker is done touching these.
+    // The join above already ensured the worker is done touching these.
     for (size_t i = 0; i < server->published_count; i++) {
         free(server->published_paths[i]);
     }

@@ -14,7 +14,7 @@
 void lsp_document_store_init(LspDocumentStore *store)
 {
     store->open = NULL;
-    mtx_init(&store->lock, mtx_plain);
+    lhat_mutex_init(&store->lock);
 }
 
 void lsp_document_store_dispose(LspDocumentStore *store)
@@ -28,7 +28,7 @@ void lsp_document_store_dispose(LspDocumentStore *store)
         doc = next;
     }
     store->open = NULL;
-    mtx_destroy(&store->lock);
+    lhat_mutex_destroy(&store->lock);
 }
 
 static LspDocument *find_locked(LspDocumentStore *store, const char *path)
@@ -44,7 +44,7 @@ static LspDocument *find_locked(LspDocumentStore *store, const char *path)
 void lsp_document_store_put(LspDocumentStore *store, const char *path,
                             char *text, size_t length, int version)
 {
-    mtx_lock(&store->lock);
+    lhat_mutex_lock(&store->lock);
     LspDocument *doc = find_locked(store, path);
     if (doc != NULL) {
         free(doc->text);
@@ -62,12 +62,12 @@ void lsp_document_store_put(LspDocumentStore *store, const char *path,
             store->open = doc;
         }
     }
-    mtx_unlock(&store->lock);
+    lhat_mutex_unlock(&store->lock);
 }
 
 void lsp_document_store_remove(LspDocumentStore *store, const char *path)
 {
-    mtx_lock(&store->lock);
+    lhat_mutex_lock(&store->lock);
     LspDocument **link = &store->open;
     while (*link != NULL) {
         if (strcmp((*link)->path, path) == 0) {
@@ -80,13 +80,13 @@ void lsp_document_store_remove(LspDocumentStore *store, const char *path)
         }
         link = &(*link)->next;
     }
-    mtx_unlock(&store->lock);
+    lhat_mutex_unlock(&store->lock);
 }
 
 char *lsp_document_store_copy(LspDocumentStore *store, const char *path,
                               size_t *out_length)
 {
-    mtx_lock(&store->lock);
+    lhat_mutex_lock(&store->lock);
     LspDocument *doc = find_locked(store, path);
     char *copy = NULL;
     if (doc != NULL) {
@@ -98,14 +98,14 @@ char *lsp_document_store_copy(LspDocumentStore *store, const char *path,
             *out_length = doc->length;
         }
     }
-    mtx_unlock(&store->lock);
+    lhat_mutex_unlock(&store->lock);
     return copy;
 }
 
 bool lsp_document_store_has(LspDocumentStore *store, const char *path)
 {
-    mtx_lock(&store->lock);
+    lhat_mutex_lock(&store->lock);
     bool found = find_locked(store, path) != NULL;
-    mtx_unlock(&store->lock);
+    lhat_mutex_unlock(&store->lock);
     return found;
 }

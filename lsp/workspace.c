@@ -292,9 +292,9 @@ void lsp_workspace_discover_roots(LspWorkspace *ws)
     if (ws->root_path == NULL) {
         return;
     }
-    mtx_lock(&ws->lock);
+    lhat_mutex_lock(&ws->lock);
     scan_dir(ws, ws->root_path);
-    mtx_unlock(&ws->lock);
+    lhat_mutex_unlock(&ws->lock);
 }
 
 // ---------------------------------------------------------------------------
@@ -307,7 +307,7 @@ void lsp_workspace_init(LspWorkspace *ws, const char *root_path)
     lsp_document_store_init(&ws->documents);
     ws->roots = NULL;
     ws->reverse = NULL;
-    mtx_init(&ws->lock, mtx_plain);
+    lhat_mutex_init(&ws->lock);
 }
 
 void lsp_workspace_dispose(LspWorkspace *ws)
@@ -339,12 +339,12 @@ void lsp_workspace_dispose(LspWorkspace *ws)
 
     lsp_document_store_dispose(&ws->documents);
     free(ws->root_path);
-    mtx_destroy(&ws->lock);
+    lhat_mutex_destroy(&ws->lock);
 }
 
 void lsp_workspace_recheck_affected(LspWorkspace *ws, const char *path)
 {
-    mtx_lock(&ws->lock);
+    lhat_mutex_lock(&ws->lock);
 
     // The roots that reached `path` before this change -- collected up
     // front, since recheck_one_root rebuilds the reverse index as it goes.
@@ -376,22 +376,22 @@ void lsp_workspace_recheck_affected(LspWorkspace *ws, const char *path)
     }
     free(affected);
 
-    mtx_unlock(&ws->lock);
+    lhat_mutex_unlock(&ws->lock);
 }
 
 void lsp_workspace_recheck_all(LspWorkspace *ws)
 {
-    mtx_lock(&ws->lock);
+    lhat_mutex_lock(&ws->lock);
     for (LspRoot *r = ws->roots; r != NULL; r = r->next) {
         recheck_one_root(ws, r);
     }
-    mtx_unlock(&ws->lock);
+    lhat_mutex_unlock(&ws->lock);
 }
 
 void lsp_workspace_collect_diagnostics(LspWorkspace *ws,
                                        LspDiagnosticsSink sink, void *context)
 {
-    mtx_lock(&ws->lock);
+    lhat_mutex_lock(&ws->lock);
 
     char **seen = NULL;
     size_t seen_count = 0;
@@ -432,5 +432,5 @@ void lsp_workspace_collect_diagnostics(LspWorkspace *ws,
         }
     }
     free(seen);
-    mtx_unlock(&ws->lock);
+    lhat_mutex_unlock(&ws->lock);
 }

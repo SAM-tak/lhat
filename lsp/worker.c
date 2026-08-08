@@ -3,7 +3,8 @@
 #include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
-#include <threads.h>
+
+#include "port/thread.h"
 
 #include "diagnostics.h"
 #include "queue.h"
@@ -124,7 +125,7 @@ void lsp_server_start_worker(LspServer *server)
     if (server->worker_started) {
         return;
     }
-    if (thrd_create(&server->worker_thread, worker_main, server) == thrd_success) {
+    if (lhat_thread_start(&server->worker_thread, worker_main, server)) {
         server->worker_started = true;
     }
 }

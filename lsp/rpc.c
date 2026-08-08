@@ -9,21 +9,21 @@
 void lsp_rpc_out_init(LspRpcOut *out, FILE *stream)
 {
     out->out = stream;
-    mtx_init(&out->lock, mtx_plain);
+    lhat_mutex_init(&out->lock);
 }
 
 void lsp_rpc_out_dispose(LspRpcOut *out)
 {
-    mtx_destroy(&out->lock);
+    lhat_mutex_destroy(&out->lock);
 }
 
 static void send_envelope(LspRpcOut *out, cJSON *envelope)
 {
     char *text = cJSON_PrintUnformatted(envelope);
     if (text != NULL) {
-        mtx_lock(&out->lock);
+        lhat_mutex_lock(&out->lock);
         lsp_transport_write_message(out->out, text, strlen(text));
-        mtx_unlock(&out->lock);
+        lhat_mutex_unlock(&out->lock);
         cJSON_free(text);
     }
     cJSON_Delete(envelope);

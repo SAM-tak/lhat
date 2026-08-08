@@ -4,7 +4,9 @@
 
 function(lhat_lsp_add_test name)
     add_executable(${name} ${name}.c ${ARGN})
-    target_link_libraries(${name} PRIVATE lhat cjson)
+    # lhatthread は lsp/*.h が port/thread.h の型を持つから要る -- 直接呼ぶ
+    # テストは今のところないが、リンクせずに含めることはできない。
+    target_link_libraries(${name} PRIVATE lhat cjson lhatthread)
     target_include_directories(${name} PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}
         ${CMAKE_SOURCE_DIR}/tests

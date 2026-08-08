@@ -4,9 +4,8 @@
 // of program.h's own registrations (05 の 8.7). Nothing here is required --
 // a host that never calls this never sees a "thread" module.
 //
-// Needs an OS thread implementation: C11 <threads.h>, the same one
-// lsp/worker.c already uses in this codebase. A host linking this must also
-// link Threads::Threads (CMake's find_package(Threads)).
+// Needs an OS thread implementation: port/thread.h, the same one lsp/ uses in
+// this codebase. A host linking this must also link lhatthread.
 //
 // A ThreadHandle's dispose() blocks until the spawned thread finishes if it
 // was never join()ed -- see stdlib/thread.c's thread_dispose comment for why.

@@ -11,15 +11,16 @@
 
 #include <stdbool.h>
 #include <stddef.h>
-#include <threads.h>
+
+#include "port/thread.h"
 
 typedef struct {
     char **paths;  // pending, deduplicated
     size_t count;
     size_t capacity;
     bool shutdown;
-    mtx_t lock;
-    cnd_t signal;
+    LhatMutex lock;
+    LhatCondition signal;
 } LspRecheckQueue;
 
 void lsp_queue_init(LspRecheckQueue *queue);

@@ -8,13 +8,14 @@
 #define LSP_RPC_H
 
 #include <stdio.h>
-#include <threads.h>
+
+#include "port/thread.h"
 
 #include "cJSON.h"
 
 typedef struct {
     FILE *out;
-    mtx_t lock;
+    LhatMutex lock;
 } LspRpcOut;
 
 void lsp_rpc_out_init(LspRpcOut *out, FILE *stream);

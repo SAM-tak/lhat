@@ -11,7 +11,8 @@
 
 #include <stdbool.h>
 #include <stdio.h>
-#include <threads.h>
+
+#include "port/thread.h"
 
 #include "queue.h"
 #include "rpc.h"
@@ -22,7 +23,7 @@ typedef struct LspServer {
     LspRpcOut out;
     LspRecheckQueue queue;
 
-    thrd_t worker_thread;
+    LhatThread worker_thread;
     bool worker_started;
 
     bool shutdown_requested;  // "shutdown" request handled; only "exit" may follow

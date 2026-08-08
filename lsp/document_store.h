@@ -10,7 +10,8 @@
 
 #include <stdbool.h>
 #include <stddef.h>
-#include <threads.h>
+
+#include "port/thread.h"
 
 typedef struct LspDocument {
     char *path;   // absolute, '/'-separated; owned
@@ -22,7 +23,7 @@ typedef struct LspDocument {
 
 typedef struct {
     LspDocument *open;
-    mtx_t lock;
+    LhatMutex lock;
 } LspDocumentStore;
 
 void lsp_document_store_init(LspDocumentStore *store);

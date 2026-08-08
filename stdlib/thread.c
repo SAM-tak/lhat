@@ -27,9 +27,10 @@
 #include "error.h"
 #include "thread.h"
 
+#include "port/thread.h"
+
 #include <stdint.h>
 #include <string.h>
-#include <threads.h>
 
 // What lhatstdlib_thread_register made, threaded through as every registration's
 // `context` (05 の 8.7) rather than kept in file-scope statics -- a second
@@ -82,9 +83,9 @@ typedef struct {
 } ThreadStart;
 
 typedef struct ThreadHandle {
-    thrd_t os;
-    // Written once by thread_main, read only after thrd_join -- C11's
-    // happens-before guarantee on join is what makes this safe without a
+    LhatThread os;
+    // Written once by thread_main, read only after the join -- the
+    // happens-before a join establishes is what makes this safe without a
     // lock of its own. `joined` itself is touched only by whichever L^ code
     // holds this handle (one OS thread, since a value never crosses
     // machines), so it needs no lock either.
@@ -212,7 +213,7 @@ static int thread_main(void *raw)
 // せず spawn→dispose するだけのテストで検証済みの実クラッシュだった。
 static void join_and_free(ThreadHandle *handle)
 {
-    thrd_join(handle->os, NULL);
+    lhat_thread_join(&handle->os);
     if (handle->status == LHAT_RUN_OK) {
         free_thread_result(&handle->result);
     }
@@ -254,7 +255,7 @@ static LhatValue thread_spawn(LhatMachine *machine, void *context,
     start->module_count = module_count;
     start->handle = handle;
 
-    if (thrd_create(&handle->os, thread_main, start) != thrd_success) {
+    if (!lhat_thread_start(&handle->os, thread_main, start)) {
         lhat_free(start);
         lhat_free(handle);
         return fail_with(machine, module->spawn_failed,
@@ -284,7 +285,7 @@ static LhatValue thread_join(LhatMachine *machine, void *context,
         return fail_with(machine, module->already_joined, "already joined");
     }
 
-    thrd_join(handle->os, NULL);
+    lhat_thread_join(&handle->os);
     handle->joined = true;
 
     if (handle->status != LHAT_RUN_OK) {

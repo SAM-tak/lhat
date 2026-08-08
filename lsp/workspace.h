@@ -18,7 +18,8 @@
 
 #include <stdbool.h>
 #include <stddef.h>
-#include <threads.h>
+
+#include "port/thread.h"
 
 #include "cJSON.h"
 #include "program.h"
@@ -46,7 +47,7 @@ typedef struct {
     LspDocumentStore documents;
     LspRoot *roots;
     LspReverseEntry *reverse;
-    mtx_t lock;  // guards roots/reverse. Reached from the main thread only
+    LhatMutex lock;  // guards roots/reverse. Reached from the main thread only
                  // once, by "initialized"'s discover_roots (handlers/
                  // initialize.c) before the worker starts; every other
                  // access is the worker thread's own (recheck_all/

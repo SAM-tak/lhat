@@ -81,6 +81,21 @@ target_include_directories(lhatport PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
 # otherwise. PUBLIC so it carries through to whatever links lhat.
 target_link_libraries(lhat PUBLIC lhatport)
 
+# ---- Threads --------------------------------------------------------------
+# port/thread.h の頭のコメントの通り、これはコアが求めるものではない -- 言語は
+# 単一スレッドで走る。コアの脇に建つもの(stdlib/thread.c と lsp/)だけが要る
+# ので、lhatport とは別ターゲットにして `lhat` にはリンクしない。C11 の
+# <threads.h> は使わない: macOS には存在せず、MSVC は VS2022 17.8 以降にしか
+# ない。pthread と Win32 同期 API のどちらもそれより古くから在る。
+find_package(Threads REQUIRED)
+
+add_library(lhatthread port/thread.c)
+target_link_libraries(lhatthread PUBLIC Threads::Threads)
+
+# "port/thread.h" と書いて含める -- ヘッダ名だけを置くと stdlib/thread.h と
+# 衝突する。下の Driver セクションが stdlib/*.h に対して使っているのと同じ手。
+target_include_directories(lhatthread PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+
 # ---- Sample standard library ------------------------------------------------
 # stdlib/ の隔離は port/ と非対称: port はコアが既定でリンクする既定実装で、
 # stdlib はホストが選んで足す任意のライブラリ。lhat_lsp はこれをリンクしない
@@ -90,11 +105,6 @@ target_link_libraries(lhat PUBLIC lhatport)
 option(LHAT_BUILD_STDLIB "Build the L^ sample standard library (stdlib/)" ON)
 
 if(LHAT_BUILD_STDLIB)
-    # std.thread が新規 OS スレッドを起動するためだけに要る。std.io/
-    # std.random はリンクするだけでこれに巻き込まれる -- 3つを別ライブラリ
-    # に分けるほどの理由はなく、port/ と同様ひとまとまりのターゲットにする。
-    find_package(Threads REQUIRED)
-
     add_library(lhatstdlib
         stdlib/debug.c
         stdlib/error.c
@@ -104,9 +114,10 @@ if(LHAT_BUILD_STDLIB)
     )
     # lhat.h だけで完結する(src/ への private path は要らない) -- port/ と
     # 同じ理由で、これ自体が「lhat.h だけを使って書けるサンプル」の実例
-    # になっている。
+    # になっている。std.thread だけが例外で、OS スレッドは lhat.h の外なので
+    # port/thread.h を足す。stdlib/*.h には現れないので PRIVATE。
     target_include_directories(lhatstdlib PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
-    target_link_libraries(lhatstdlib PUBLIC lhat PRIVATE Threads::Threads)
+    target_link_libraries(lhatstdlib PUBLIC lhat PRIVATE lhatthread)
 
     install(TARGETS lhatstdlib
         ARCHIVE DESTINATION lib
@@ -149,8 +160,6 @@ if(LHAT_BUILD_LSP)
         target_compile_options(cjson PRIVATE -w)
     endif()
 
-    find_package(Threads REQUIRED)
-
     add_executable(lhat_lsp
         lsp/main.c
         lsp/server.c
@@ -169,7 +178,7 @@ if(LHAT_BUILD_LSP)
         lsp/handlers/text_document_sync.c
     )
     set_target_properties(lhat_lsp PROPERTIES OUTPUT_NAME lhat-lsp)
-    target_link_libraries(lhat_lsp PRIVATE lhat cjson Threads::Threads)
+    target_link_libraries(lhat_lsp PRIVATE lhat cjson lhatthread)
     target_include_directories(lhat_lsp PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/src
         ${CMAKE_CURRENT_SOURCE_DIR}/lsp
@@ -177,11 +186,16 @@ if(LHAT_BUILD_LSP)
     install(TARGETS lhat_lsp RUNTIME DESTINATION bin)
 endif()
 
-install(TARGETS lhat lhatport
+install(TARGETS lhat lhatport lhatthread
     ARCHIVE DESTINATION lib
     LIBRARY DESTINATION lib
     RUNTIME DESTINATION bin
 )
+
+# lhatstdlib.lib は lhat_thread_* を参照したまま出荷されるので、それを解ける
+# ライブラリとヘッダも一緒に置く。含める側が書く名前は "port/thread.h" のまま
+# になるよう、ディレクトリごと据える。
+install(FILES port/thread.h DESTINATION include/port)
 
 # lhat.h reaches the rest by a path relative to itself, so the two directories
 # are installed keeping the shape they have here. A host still names only
