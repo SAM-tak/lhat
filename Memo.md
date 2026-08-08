@@ -47,8 +47,8 @@ a[1, 1] これも等価
 値比較でなくインスタンスが同じかを比較したい場合は isa^ 演算子
 ≠ ≦ ≧ も演算子として許可する、というかこちらを推奨する != =/ <= >= も許可する が、フォーマッタが書き換える
 ~~定義は:=~~
-定義は let^
-let^id : type = value
+定義は var^ または let^。let^の場合は再代入禁止
+var^id : type = value
 : とセットで使われたときに比較ではない扱い
 ~~再代入は<-~~
 ~~->はいいけど<-は a<-2とか負数との比較のとき困るか… 再代入は後置式にするか i + 1 -> i~~
@@ -276,15 +276,15 @@ for^v in^table.values^ {
 }
 
 for while next 文
-for^let^i = 1 while^i < 10 next^i := i + 1 { // Cのfor(;;)と同じように使える
+for^var^i = 1 while^i < 10 next^i := i + 1 { // Cのfor(;;)と同じように使える
 }
 
 for until next 文
-for^let^i = 1 until^i >= 10 next^i.inc() {
+for^var^i = 1 until^i >= 10 next^i.inc() {
 }
 
 for if 文
-for^let^i = 1, j : int = 2 if^i + j < 10 {
+for^var^i = 1, j : int = 2 if^i + j < 10 {
 }
 do^{
     let^i = 1
@@ -384,7 +384,7 @@ let^$Foo = aspect..protocol..prototype..def^{
 // プロトタイプベース・ダックタイピングで行くのだから、継承はいらない。
 // 静的な型検査もダックタイピングでいく
 
-foo=Foo.new^()
+var^foo=Foo.new^()
 foo.selfcall()
 ...
 foo.dispose()
