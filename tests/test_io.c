@@ -96,9 +96,9 @@ static void test_print(void)
         lhat_test_ran_dispose(&ran);
     }
 
-    // 13.7 の '...': どの型でも何個でも取り、1つにつき1行。読み方は 02 の
-    // 14.17 の tostring と同じなので、string^ は引用符なしのまま並び、nil^ と
-    // bool^ は語になる。引数0個は何も書かない。
+    // 13.7's '...': any type, as many as were given, one line each. The
+    // reading is 02 の 14.17's tostring, so a string^ lines up unquoted while
+    // nil^ and bool^ come out as words. No arguments writes nothing.
     LHAT_TEST("print writes every argument on a line of its own");
     {
         char written[256];

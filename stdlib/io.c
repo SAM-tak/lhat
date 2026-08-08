@@ -92,14 +92,16 @@ static LhatValue read_line_from(LhatMachine *machine, const IoModule *module,
                : fail_with(machine, module->out_of_memory, "out of memory");
 }
 
-// 13.7 の '...' なので、渡された値を渡された順に1行ずつ書く -- 0 個なら
-// 何も書かない。読み方は 02 の 14.17 の tostring と同じ lhat_value_text:
-// string^ はそれ自身のバイト列で、1 と "1" を読み分けさせる引用符は付かない
-// (それが要るのは 03 の 4 章のプロンプトであって、書き出す側ではない)。
-// nil^ と bool^ は語、それ以外は lhat_value_write と同じ綴りになる。
+// 13.7's '...', so what was handed over is written in the order it came, one
+// line each -- and nothing at all when nothing was. The reading is 02 の
+// 14.17's tostring, lhat_value_text: a string^ is its own bytes, without the
+// quotes that let 1 and "1" be read apart (those belong to 03 の 4 章's
+// prompt, not to a writer). nil^ and bool^ are words, and everything else is
+// spelled the way lhat_value_write spells it.
 //
-// 確保に失敗した値は黙って飛ばす: p^ は答えを持たないので誤りを渡す先がなく、
-// ここで機械を止める理由もない。
+// A value whose room could not be found is skipped in silence: a p^ has no
+// answer to hand an error back through, and one line of output is not worth
+// stopping the machine over.
 static LhatValue std_print(LhatMachine *machine, void *context,
                            const LhatValue *arguments, size_t count)
 {

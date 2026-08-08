@@ -62,10 +62,14 @@ static LhatValue lsp_stub_host_fn(LhatMachine *machine, void *context,
 // host's own API beyond this sees an undefined name here: this server has
 // no way to learn what a real embedding registered, so anything past
 // print/collectgarbage is a known false positive for now.
+//
+// The signature is a copy of cli/main.c's same-named function rather than a
+// shared one -- rewrite print there and the same string has to be rewritten
+// here. For as long as the two differ, the editor goes on teaching the older
+// type.
 static void bind_host_names(LhatProgram *program)
 {
-    lhat_register_global(program, "print", "f^string^ -> nil^;",
-                         lsp_stub_host_fn, NULL);
+    lhat_register_global(program, "print", "f^...->nil^;", lsp_stub_host_fn, NULL);
     lhat_bind_initial(program, "print", "L^.print");
     lhat_bind_initial(program, "collectgarbage", "L^.collectgarbage");
 }

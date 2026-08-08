@@ -490,10 +490,11 @@ static int dump_tokens(const LhatSource *source)
 // tells it apart from having done nothing. 13.2 has an f^ answer on every
 // path, so it answers nil^ -- which 04 の 11.3 already spells "nothing here".
 //
-// 13.7 の '...' なので、渡された値を渡された順に1行ずつ書く。読み方は 02 の
-// 14.17 の tostring と同じ lhat_value_text -- string^ はそれ自身のバイト列で、
-// 1 と "1" を読み分けさせる引用符は付かない (それが要るのは 03 の 4 章の
-// プロンプト側で、書き出す側ではない)。stdlib/io.c の std.io.print と同じ。
+// 13.7's '...', so what was handed over is written in the order it came, one
+// line each. The reading is 02 の 14.17's tostring, lhat_value_text -- a
+// string^ is its own bytes, without the quotes that let 1 and "1" be read
+// apart (those belong to 03 の 4 章's prompt, not to a writer). The same
+// print stdlib/io.c registers as std.io.print.
 static LhatValue host_print(LhatMachine *machine, void *context,
                             const LhatValue *arguments, size_t count)
 {

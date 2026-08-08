@@ -1,4 +1,4 @@
-# UnityFighters
+# The Programming Language L^
 
 プロジェクト指示は @AGENT.md を参照。
 
