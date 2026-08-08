@@ -78,6 +78,324 @@ static const LhatNode *first_value(const Parse *p)
 }
 
 // ---------------------------------------------------------------------------
+// Spans (ast.h's `end`)
+
+typedef struct {
+    const LhatNode *parent;
+    int failures;
+} SpanWalk;
+
+static void span_check_child(void *context, const LhatNode *child);
+
+// A parent that ends before one of its children does has forgotten to widen
+// itself -- parser.c's finish is what a parse function calls on the way out,
+// and a missed call always shows up this way round, never the other.
+static void span_walk(const LhatNode *node, SpanWalk *state)
+{
+    if (node == NULL) {
+        return;
+    }
+    LHAT_CHECK(node->end >= node->offset, "%s: end %u before offset %u",
+               lhat_node_kind_name(node->kind), node->end, node->offset);
+
+    SpanWalk inner = {node, 0};
+    lhat_node_visit_children(node, span_check_child, &inner);
+    state->failures += inner.failures;
+}
+
+static void span_check_child(void *context, const LhatNode *child)
+{
+    SpanWalk *state = (SpanWalk *)context;
+    // FOCUS carries no span at all: 16.2's it^ need not appear in the source.
+    if (child->kind != LHAT_NODE_FOCUS) {
+        LHAT_CHECK(state->parent->end >= child->end,
+                   "%s ends at %u but its %s child ends at %u",
+                   lhat_node_kind_name(state->parent->kind), state->parent->end,
+                   lhat_node_kind_name(child->kind), child->end);
+    }
+    span_walk(child, state);
+}
+
+static void check_spans_enclose(const char *text)
+{
+    Parse p;
+    parse_text(&p, text);
+    LHAT_CHECK(error_count(&p) == 0, "%s: %zu unexpected diagnostics", text,
+               error_count(&p));
+    SpanWalk state = {NULL, 0};
+    span_walk(p.result.root, &state);
+    parse_dispose(&p);
+}
+
+// 06 の 4.1: the source a node covers. An infix or postfix node is written
+// starting at its operator, so the left edge comes from the subtree rather
+// than from the node itself; the right edge is the node's own, since the
+// token that closes a construct belongs to no child.
+static void subtree_start(void *context, const LhatNode *child);
+
+static void subtree_start_of(const LhatNode *node, uint32_t *least)
+{
+    if (node->kind != LHAT_NODE_FOCUS && node->offset < *least) {
+        *least = node->offset;
+    }
+    lhat_node_visit_children(node, subtree_start, least);
+}
+
+static void subtree_start(void *context, const LhatNode *child)
+{
+    subtree_start_of(child, (uint32_t *)context);
+}
+
+static void check_span_text(const char *text, const LhatNode *(*pick)(const Parse *),
+                            const char *expected)
+{
+    Parse p;
+    parse_text(&p, text);
+    const LhatNode *node = pick(&p);
+    if (node == NULL) {
+        LHAT_CHECK(false, "%s: no node", text);
+    } else {
+        uint32_t start = node->offset;
+        subtree_start_of(node, &start);
+        LHAT_CHECK_EQ_STR(p.source.text + start, node->end - start, expected);
+    }
+    parse_dispose(&p);
+}
+
+static void test_spans(void)
+{
+    // Every construct, walked. The check is structural, so one realistic
+    // program per form is worth more than many spellings of the same one.
+    LHAT_TEST("a span encloses the spans below it");
+    check_spans_enclose("var^ x = 1\n");
+    check_spans_enclose("let^ y = f(1, 2) + g.h[3]\n");
+    check_spans_enclose("if^ x > 0 { print(\"p\") el^: print(\"n\") }\n");
+    check_spans_enclose("let^ v = if^ x > 0: 1 el^: 2 ;\n");
+    check_spans_enclose("for^ i from^ 1 to^ 10 { print(i) }\n");
+    check_spans_enclose("for^ x in^ xs { print(x) }\n");
+    check_spans_enclose("repeat^ 3 { print(1) }\n");
+    check_spans_enclose("let^ f = f^a:number^, b:number^ -> number^ { return^ a + b }\n");
+    check_spans_enclose("let^ t = { 1, 2, k := 3 }\n");
+    check_spans_enclose("let^ d = def^{ self^{ a := 1 }, m := f^ { return^ 1 } }\n");
+    check_spans_enclose("errordef^ E { NotFound { path : string^ } }\n");
+    check_spans_enclose("let^ s = $\"a{x}b\"\n");
+    check_spans_enclose("let^ c = a < b < c\n");
+    check_spans_enclose("let^ n = x as^ number^ | string^\n");
+    check_spans_enclose("with^ h = open() { read(h) }\n");
+    check_spans_enclose("for^ v { when^ 1, 2: print(1) other^: print(2) }\n");
+    check_spans_enclose("module^ a.b\nlet^ q = try^ f() catch^ 0\n");
+    check_spans_enclose("do^ { var^ i = 0\ni += 1 }\n");
+    check_spans_enclose("let^ g = p^ { yield^ 1 }\n");
+    check_spans_enclose("let^ ty = x as^ f^number^ -> string^ ;\n");
+    check_spans_enclose("let^ co = x as^ c^{ f^number^ -> string^;, nil^ }\n");
+
+    // The whole of a construct, closing token included.
+    LHAT_TEST("a span reaches the token that closes the construct");
+    check_span_text("if^ x { f() }\n", first_statement, "if^ x { f() }");
+    // 'do^' and 'public^' lead a construct without being part of any node
+    // under it, so the parser moves the node's own start back over them.
+    check_span_text("do^ { f() }\n", first_statement, "do^ { f() }");
+    check_span_text("public^ let^ x = 1\n", first_statement,
+                    "public^ let^ x = 1");
+    check_span_text("let^ v = { 1, 2 }\n", first_value, "{ 1, 2 }");
+    check_span_text("let^ v = f(1, 2)\n", first_value, "f(1, 2)");
+    check_span_text("let^ v = a.b[1]\n", first_value, "a.b[1]");
+    check_span_text("let^ v = if^ c: 1 el^: 2 ;\n", first_value,
+                    "if^ c: 1 el^: 2 ;");
+    check_span_text("let^ v = f^ { return^ 1 }\n", first_value,
+                    "f^ { return^ 1 }");
+    check_span_text("for^ i from^ 1 to^ 3 { f() }\n", first_statement,
+                    "for^ i from^ 1 to^ 3 { f() }");
+    check_span_text("repeat^ 2 { f() }\n", first_statement, "repeat^ 2 { f() }");
+
+    check_span_text("let^ v = a + b * c\n", first_value, "a + b * c");
+    check_span_text("let^ v = a.b.c\n", first_value, "a.b.c");
+
+    // The left edge really does come from the subtree and not from the node:
+    // an infix node is written starting at its own operator.
+    LHAT_TEST("an infix node's own offset is its operator");
+    Parse p;
+    parse_text(&p, "let^ v = a + b\n");
+    const LhatNode *sum = first_value(&p);
+    if (sum == NULL || sum->kind != LHAT_NODE_BINARY) {
+        LHAT_CHECK(false, "expected a binary node");
+    } else {
+        LHAT_CHECK_EQ_STR(p.source.text + sum->offset,
+                          sum->end - sum->offset, "+ b");
+    }
+    parse_dispose(&p);
+}
+
+// ---------------------------------------------------------------------------
+// Comments (01 の 6.4)
+
+#ifdef LHAT_WITH_COMMENTS
+
+// The comments a node was given, joined so one check reads them all. Ordered
+// as they were written, which is what the table's order guarantees.
+static void comments_of(const Parse *p, const LhatNode *node, char *out,
+                        size_t size)
+{
+    out[0] = '\0';
+    if (node == NULL) {
+        return;
+    }
+    size_t used = 0;
+    for (const LhatComment *c = node->comments; c != NULL;
+         c = c->next_for_node) {
+        size_t length = c->end - c->offset;
+        if (used + length + 2 >= size) {
+            break;
+        }
+        if (used > 0) {
+            out[used++] = '|';
+        }
+        memcpy(out + used, p->source.text + c->offset, length);
+        used += length;
+        out[used] = '\0';
+    }
+}
+
+static void check_comments(const char *text,
+                           const LhatNode *(*pick)(const Parse *),
+                           const char *expected)
+{
+    Parse p;
+    parse_text(&p, text);
+    char joined[512];
+    comments_of(&p, pick(&p), joined, sizeof joined);
+    LHAT_CHECK_EQ_STR(joined, strlen(joined), expected);
+    parse_dispose(&p);
+}
+
+static const LhatNode *root_node(const Parse *p)
+{
+    return p->result.root;
+}
+
+static const LhatNode *second_statement(const Parse *p)
+{
+    const LhatNode *first = first_statement(p);
+    return first != NULL ? first->next : NULL;
+}
+
+// Counts what the tree holds, so it can be compared with what the lexer
+// scanned. A comment attached twice is counted twice here, and one dropped
+// is not counted at all.
+static void count_attached(void *context, const LhatNode *child);
+
+static void count_attached_in(const LhatNode *node, size_t *total)
+{
+    for (const LhatComment *c = node->comments; c != NULL;
+         c = c->next_for_node) {
+        (*total)++;
+    }
+    lhat_node_visit_children(node, count_attached, total);
+}
+
+static void count_attached(void *context, const LhatNode *child)
+{
+    count_attached_in(child, (size_t *)context);
+}
+
+static void check_attached_once(const char *text)
+{
+    Parse p;
+    parse_text(&p, text);
+    size_t attached = 0;
+    if (p.result.root != NULL) {
+        count_attached_in(p.result.root, &attached);
+    }
+    LHAT_CHECK(attached == p.lexer.comment_count,
+               "%zu comments scanned but %zu attached", p.lexer.comment_count,
+               attached);
+    parse_dispose(&p);
+}
+
+static void test_comments(void)
+{
+    // The lexer keeps them at all -- it used to drop them on the floor.
+    LHAT_TEST("comments are kept");
+    Parse p;
+    parse_text(&p, "# one\nvar^ x = 1  # two\n#[ three ]#\n");
+    LHAT_CHECK_EQ_INT(p.lexer.comment_count, 3);
+    LHAT_CHECK_EQ_INT(p.lexer.comments[2].block, true);
+    LHAT_CHECK_EQ_INT(p.lexer.comments[0].block, false);
+    // The span covers the whole of the comment, markers included.
+    LHAT_CHECK_EQ_STR(p.source.text + p.lexer.comments[2].offset,
+                      p.lexer.comments[2].end - p.lexer.comments[2].offset,
+                      "#[ three ]#");
+    parse_dispose(&p);
+
+    LHAT_TEST("a comment before a statement belongs to it");
+    check_comments("# why\nvar^ x = 1\n", first_statement, "# why");
+    check_comments("# a\n# b\nvar^ x = 1\n", first_statement, "# a|# b");
+    check_comments("#[ block ]#\nvar^ x = 1\n", first_statement, "#[ block ]#");
+
+    // 6.4: a comment on the same line as the code before it was written
+    // against that code, not against whatever follows.
+    LHAT_TEST("a trailing comment belongs to the line it ends");
+    check_comments("var^ x = 1  # here\nvar^ y = 2\n", first_statement,
+                   "# here");
+    check_comments("var^ x = 1  # here\nvar^ y = 2\n", second_statement, "");
+    check_comments("var^ x = 1\n# next\nvar^ y = 2\n", first_statement, "");
+    check_comments("var^ x = 1\n# next\nvar^ y = 2\n", second_statement,
+                   "# next");
+
+    LHAT_TEST("a comment inside a block stays inside it");
+    {
+        Parse q;
+        parse_text(&q, "do^ {\n  # inner\n  f()\n}\n");
+        const LhatNode *block = first_statement(&q);
+        const LhatNode *inner = block != NULL ? block->v.list.items : NULL;
+        char joined[512];
+        comments_of(&q, inner, joined, sizeof joined);
+        LHAT_CHECK_EQ_STR(joined, strlen(joined), "# inner");
+        parse_dispose(&q);
+    }
+
+    // Nothing follows it inside the braces, so it belongs to the last thing
+    // there rather than escaping to the statement after the block.
+    LHAT_TEST("a comment after the last statement of a block stays in it");
+    check_comments("do^ {\n  f()\n  # last\n}\nvar^ y = 2\n", second_statement,
+                   "");
+
+    LHAT_TEST("a comment after every statement belongs to the unit");
+    check_comments("var^ x = 1\n# tail\n", root_node, "# tail");
+
+    // Every comment lands on exactly one node: none dropped, none shared.
+    // A node may be given comments in two goes -- the ones above it and the
+    // one ending its last line -- with another node's comment scanned in
+    // between, so a node holding a range of the table would swallow that one.
+    LHAT_TEST("every comment is attached exactly once");
+    check_attached_once("# lead\n"
+                        "module^ a.b  # on the module\n"
+                        "#[ before ]#\n"
+                        "let^ f = f^n:number^ -> number^ {\n"
+                        "  # in the body\n"
+                        "  return^ n + 1  # trailing\n"
+                        "}\n"
+                        "# tail\n");
+    // The shape that breaks a range: leading, then one deeper in the subtree,
+    // then one trailing the same statement.
+    check_attached_once("do^ {\n"
+                        "  # a\n"
+                        "  f(\n"
+                        "    # b\n"
+                        "    1\n"
+                        "  )  # c\n"
+                        "}\n");
+    check_attached_once("let^ t = {\n"
+                        "  # first\n"
+                        "  1,  # one\n"
+                        "  # second\n"
+                        "  2\n"
+                        "}  # after\n");
+}
+
+#endif  // LHAT_WITH_COMMENTS
+
+// ---------------------------------------------------------------------------
 
 static void test_statements(void)
 {
@@ -2757,6 +3075,10 @@ static void test_typeof(void)
 
 int main(void)
 {
+    test_spans();
+#ifdef LHAT_WITH_COMMENTS
+    test_comments();
+#endif
     test_statements();
     test_command_form();
     test_modules();

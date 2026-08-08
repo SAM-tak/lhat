@@ -54,6 +54,9 @@ LhatNode *lhat_node_new(LhatAstArena *arena, LhatNodeKind kind,
         node->offset = at->offset;
         node->line = at->line;
         node->column = at->column;
+        // The whole of a one-token construct. A longer one widens this as the
+        // parser leaves it (parser.c's finish).
+        node->end = at->offset + at->length;
     }
     return node;
 }
@@ -78,6 +81,192 @@ size_t lhat_node_list_length(const LhatNode *head)
         n++;
     }
     return n;
+}
+
+// One child, which may be absent.
+static void visit_one(const LhatNode *child, LhatNodeVisitor visit,
+                      void *context)
+{
+    if (child != NULL) {
+        visit(context, child);
+    }
+}
+
+// A list threaded through `next`. Each element is one child.
+static void visit_list(const LhatNode *head, LhatNodeVisitor visit,
+                       void *context)
+{
+    for (const LhatNode *node = head; node != NULL; node = node->next) {
+        visit(context, node);
+    }
+}
+
+void lhat_node_visit_children(const LhatNode *node, LhatNodeVisitor visit,
+                              void *context)
+{
+    if (node == NULL || visit == NULL) {
+        return;
+    }
+
+    switch (node->kind) {
+        // Nothing below them.
+        case LHAT_NODE_INT:
+        case LHAT_NODE_FLOAT:
+        case LHAT_NODE_STRING:
+        case LHAT_NODE_NAME:
+        case LHAT_NODE_IDENT:
+        case LHAT_NODE_HAT_IDENT:
+        case LHAT_NODE_FOCUS:
+        case LHAT_NODE_INTERP_TEXT:
+        case LHAT_NODE_TYPE_NAME:
+        case LHAT_NODE_ERROR:
+            break;
+
+        case LHAT_NODE_SCOPE:
+            visit_one(node->v.scope.name, visit, context);
+            break;
+
+        case LHAT_NODE_INTERP_HOLE:
+            visit_one(node->v.hole.value, visit, context);
+            visit_one(node->v.hole.format, visit, context);
+            break;
+
+        // Braced lists. BLOCK and WITH carry a second one; for a BLOCK that
+        // is 9 章's clauses, for a WITH the body it guards.
+        case LHAT_NODE_INTERP:
+        case LHAT_NODE_TABLE:
+        case LHAT_NODE_DEF:
+        case LHAT_NODE_SELF_TABLE:
+        case LHAT_NODE_IF_EXPR:
+        case LHAT_NODE_IF_STMT:
+        case LHAT_NODE_TYPE_TABLE:
+            visit_list(node->v.list.items, visit, context);
+            break;
+
+        case LHAT_NODE_BLOCK:
+        case LHAT_NODE_WITH:
+            visit_list(node->v.list.items, visit, context);
+            visit_list(node->v.list.extra, visit, context);
+            break;
+
+        case LHAT_NODE_TABLE_ENTRY:
+        case LHAT_NODE_MEMBER_DECL:
+            visit_one(node->v.entry.key, visit, context);
+            visit_one(node->v.entry.value, visit, context);
+            break;
+
+        case LHAT_NODE_ERROR_NEW:
+        case LHAT_NODE_ERRORDEF:
+        case LHAT_NODE_ERROR_KIND:
+            visit_one(node->v.named.name, visit, context);
+            visit_list(node->v.named.members, visit, context);
+            break;
+
+        case LHAT_NODE_MODULE:
+            visit_one(node->v.named.name, visit, context);
+            break;
+
+        // Everything holding a single operand in `jump.value`, whether it is
+        // an expression's operand or a statement's.
+        case LHAT_NODE_TRY:
+        case LHAT_NODE_TYPEOF:
+        case LHAT_NODE_SPREAD:
+        case LHAT_NODE_REQUIRE:
+        case LHAT_NODE_REQUIRE_STMT:
+        case LHAT_NODE_IMPORT:
+        case LHAT_NODE_IMPORT_STMT:
+        case LHAT_NODE_UNPACK:
+        case LHAT_NODE_CALL_STMT:
+        case LHAT_NODE_RETURN:
+        case LHAT_NODE_BREAK:
+        case LHAT_NODE_PANIC:
+        case LHAT_NODE_YIELD:
+        case LHAT_NODE_YIELD_ALL:
+            visit_one(node->v.jump.value, visit, context);
+            break;
+
+        case LHAT_NODE_UNARY:
+            visit_one(node->v.unary.operand, visit, context);
+            break;
+
+        case LHAT_NODE_BINARY:
+        case LHAT_NODE_TYPE_UNION:
+        case LHAT_NODE_TYPE_INTERSECT:
+            visit_one(node->v.binary.left, visit, context);
+            visit_one(node->v.binary.right, visit, context);
+            break;
+
+        // 11.5 の (5): the operators stand between the operands, but they are
+        // held as two lists rather than interleaved. Operands first keeps the
+        // walk in source order for everything that reads a whole subtree.
+        case LHAT_NODE_COMPARE_CHAIN:
+            visit_list(node->v.chain.operands, visit, context);
+            visit_list(node->v.chain.operators, visit, context);
+            break;
+
+        case LHAT_NODE_MEMBER:
+        case LHAT_NODE_INDEX:
+        case LHAT_NODE_CALL:
+            visit_one(node->v.access.target, visit, context);
+            // A call's argument field is the list of them.
+            visit_list(node->v.access.argument, visit, context);
+            break;
+
+        case LHAT_NODE_AS:
+            visit_one(node->v.ascription.value, visit, context);
+            visit_one(node->v.ascription.type, visit, context);
+            break;
+
+        case LHAT_NODE_FUNC:
+        case LHAT_NODE_TYPE_FUNC:
+            visit_list(node->v.func.params, visit, context);
+            visit_one(node->v.func.return_type, visit, context);
+            visit_one(node->v.func.body, visit, context);
+            break;
+
+        case LHAT_NODE_TYPE_CORO:
+            visit_one(node->v.coroutine.receive, visit, context);
+            visit_one(node->v.coroutine.produce, visit, context);
+            visit_one(node->v.coroutine.result, visit, context);
+            break;
+
+        case LHAT_NODE_DEFINE:
+        case LHAT_NODE_REASSIGN:
+            visit_list(node->v.binding.targets, visit, context);
+            visit_list(node->v.binding.values, visit, context);
+            break;
+
+        case LHAT_NODE_FOR:
+            visit_list(node->v.loop.focus, visit, context);
+            visit_one(node->v.loop.bound, visit, context);
+            visit_one(node->v.loop.step, visit, context);
+            visit_list(node->v.loop.advance, visit, context);
+            visit_one(node->v.loop.body, visit, context);
+            break;
+
+        case LHAT_NODE_REPEAT:
+            visit_one(node->v.repeat.bound, visit, context);
+            visit_one(node->v.repeat.body, visit, context);
+            break;
+
+        case LHAT_NODE_LOOP_CLAUSE:
+            visit_list(node->v.loop_clause.body, visit, context);
+            break;
+
+        case LHAT_NODE_IF_CLAUSE:
+            visit_one(node->v.clause.condition, visit, context);
+            visit_one(node->v.clause.body, visit, context);
+            break;
+
+        case LHAT_NODE_PARAM:
+            visit_one(node->v.param.name, visit, context);
+            visit_one(node->v.param.type, visit, context);
+            visit_one(node->v.param.fallback, visit, context);
+            break;
+
+        case LHAT_NODE_KIND_COUNT:
+            break;
+    }
 }
 
 const char *lhat_node_kind_name(LhatNodeKind kind)

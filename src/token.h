@@ -181,6 +181,35 @@ typedef struct {
     } v;
 } LhatToken;
 
+#ifdef LHAT_WITH_COMMENTS
+// 6.4. A comment, kept rather than discarded. The span covers the whole of it,
+// '#' or '#[' and ']#' included, so the text of one is a slice of the source.
+//
+// The lexer keeps these in a table of its own, in source order, rather than
+// mixing them into the token stream: the parser reads tokens and never has to
+// know these exist. What ties one to a node is its position, which is why
+// nothing here names a node -- parser.c's attach_comments does the tying,
+// once the whole unit is parsed and the table has stopped growing.
+//
+// Here rather than in lexer.h so that ast.h can name it without the syntax
+// tree having to know what a lexer is.
+typedef struct LhatComment LhatComment;
+
+struct LhatComment {
+    uint32_t offset;
+    uint32_t end;  // one past the last byte
+    uint32_t line;
+    uint32_t column;
+    bool block;  // '#[ ... ]#' rather than '#' to the end of the line
+
+    // The next comment of the same node, in source order. Threaded here
+    // rather than kept as a range of the table, because a node may be given
+    // comments in two goes -- the ones written above it and the one left at
+    // the end of its last line -- with other nodes' comments in between.
+    LhatComment *next_for_node;
+};
+#endif
+
 const char *lhat_token_kind_name(LhatTokenKind kind);
 const char *lhat_op_name(LhatOpKind op);
 const char *lhat_string_kind_name(LhatStringKind kind);

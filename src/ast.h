@@ -153,7 +153,30 @@ struct LhatNode {
     uint32_t line;
     uint32_t column;
 
+    // One past the last byte the construct consumed, so [offset, end) is the
+    // whole of it. Diagnostics only ever needed the start, but a tool that
+    // shows or replaces the source of one node needs the span (06 の 4.2).
+    //
+    // A node built from a single token gets this from that token. Anything
+    // longer sets it on the way out of the construct, so a parse function
+    // that forgets leaves a span that is too short rather than one that runs
+    // past the construct -- and test_parser.c's span_encloses_children walk
+    // finds the omission, since a parent that ends before a child does is
+    // always a missed one.
+    uint32_t end;
+
     LhatNode *next;  // next sibling when this node sits in a list
+
+#ifdef LHAT_WITH_COMMENTS
+    // 01 の 6.4: the comments written against this node, in source order,
+    // threaded through their own `next_for_node`. They live in the lexer's
+    // table, so the lexer has to outlive the tree -- as it already must for
+    // a string's bytes.
+    //
+    // Filled in by parser.c's attach_comments, once the whole unit is parsed
+    // and the table has stopped growing.
+    LhatComment *comments;
+#endif
 
     // FUNC only: the whole signature infer_func (check.c) built for this
     // literal, an LhatType* from the checker's arena. void* here rather than
@@ -407,5 +430,16 @@ const char *lhat_node_kind_name(LhatNodeKind kind);
 void lhat_node_append(LhatNode **head, LhatNode **tail, LhatNode *node);
 
 size_t lhat_node_list_length(const LhatNode *head);
+
+// Calls `visit` once per child, in source order, for every kind of node.
+//
+// Where a field holds a list, every element of it is one child. Nothing is
+// visited twice and nothing is skipped, so a caller can walk the whole tree
+// without a case of its own per kind -- which is what a tool that renders or
+// serialises the tree wants, unlike semantic_tokens.c, whose whole job is to
+// treat each kind differently.
+typedef void (*LhatNodeVisitor)(void *context, const LhatNode *child);
+void lhat_node_visit_children(const LhatNode *node, LhatNodeVisitor visit,
+                              void *context);
 
 #endif  // LHAT_AST_H

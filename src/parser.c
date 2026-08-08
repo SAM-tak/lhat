@@ -11,6 +11,9 @@
 
 typedef struct {
     LhatLexer *lexer;
+    // The token last consumed. Only `finish` reads it, to learn where the
+    // construct being left ended.
+    LhatToken previous;
     LhatToken current;
     LhatToken ahead;
     LhatParseResult *result;
@@ -67,6 +70,7 @@ static bool is_statement_keyword(const Parser *p);
 
 static void advance(Parser *p)
 {
+    p->previous = p->current;
     p->current = p->ahead;
     p->ahead = lhat_lexer_next(p->lexer);
 }
@@ -183,6 +187,48 @@ static LhatNode *make(Parser *p, LhatNodeKind kind, const LhatToken *at)
     return lhat_node_new(&p->result->arena, kind, at);
 }
 
+// Widens `node` to end where the last consumed token does. A parse function
+// that reads more than one token calls this on the way out, so `make` gives
+// the start and this gives the end (ast.h).
+//
+// It only ever widens. A node whose last token was consumed by something
+// parsed after it -- a binary operator's right operand, say, which the
+// operator node adopts -- keeps the wider of the two.
+static LhatNode *finish(Parser *p, LhatNode *node)
+{
+    if (node != NULL) {
+        uint32_t end = p->previous.offset + p->previous.length;
+        if (end > node->end) {
+            node->end = end;
+        }
+    }
+    return node;
+}
+
+// Same, for a node whose last token is one another node already accounted
+// for -- the parser has usually moved on by then, so `finish` would be wrong.
+static LhatNode *finish_at(LhatNode *node, const LhatNode *last)
+{
+    if (node != NULL && last != NULL && last->end > node->end) {
+        node->end = last->end;
+    }
+    return node;
+}
+
+// Moves a node's start back to `at`, for the words that lead a construct
+// without belonging to any node under it -- 'do^' before its braces, and the
+// 'public^' that marks the declaration it precedes. Without this the span
+// begins after the word, and a tool showing the source of the node loses it.
+static LhatNode *start_at(LhatNode *node, const LhatToken *at)
+{
+    if (node != NULL && at->offset < node->offset) {
+        node->offset = at->offset;
+        node->line = at->line;
+        node->column = at->column;
+    }
+    return node;
+}
+
 static LhatNode *error_node(Parser *p, LhatParseErrorCode code)
 {
     report(p, &p->current, code);
@@ -260,7 +306,7 @@ static LhatNode *parse_type_params(Parser *p)
             param->v.param.type = parse_type(p);
         }
 
-        lhat_node_append(&head, &tail, param);
+        lhat_node_append(&head, &tail, finish(p, param));
 
         if (!match_op(p, LHAT_OP_COMMA)) {
             break;
@@ -291,7 +337,7 @@ static LhatNode *parse_type_function(Parser *p, bool is_function)
     }
 
     expect_op(p, LHAT_OP_SEMICOLON);
-    return node;
+    return finish(p, node);
 }
 
 static LhatNode *parse_type_coroutine(Parser *p)
@@ -333,7 +379,7 @@ static LhatNode *parse_type_coroutine(Parser *p)
     expect_op(p, LHAT_OP_COMMA);
     node->v.coroutine.result = parse_type(p);
     expect_op(p, LHAT_OP_RBRACE);
-    return node;
+    return finish(p, node);
 }
 
 // 'name : type, ...' up to the closing brace. Shared by t^{ ... } and by the
@@ -358,7 +404,7 @@ static LhatNode *parse_member_decls(Parser *p)
             if (match_op(p, LHAT_OP_COLON)) {
                 member->v.entry.value = parse_type(p);
             }
-            lhat_node_append(&head, &tail, member);
+            lhat_node_append(&head, &tail, finish(p, member));
             if (!match_op(p, LHAT_OP_COMMA)) {
                 break;
             }
@@ -377,7 +423,7 @@ static LhatNode *parse_member_decls(Parser *p)
         if (!named) {
             member->v.entry.key = NULL;
             member->v.entry.value = parse_type(p);
-            lhat_node_append(&head, &tail, member);
+            lhat_node_append(&head, &tail, finish(p, member));
             if (!match_op(p, LHAT_OP_COMMA)) {
                 break;
             }
@@ -415,7 +461,7 @@ static LhatNode *parse_member_decls(Parser *p)
         // 13.6 の (1): ':' ties a name to a type.
         expect_op(p, LHAT_OP_COLON);
         member->v.entry.value = parse_type(p);
-        lhat_node_append(&head, &tail, member);
+        lhat_node_append(&head, &tail, finish(p, member));
 
         if (!match_op(p, LHAT_OP_COMMA)) {
             break;
@@ -450,7 +496,7 @@ static LhatNode *parse_type_table(Parser *p)
     expect_op(p, LHAT_OP_LBRACE);
     node->v.list.items = parse_member_decls(p);
     expect_op(p, LHAT_OP_RBRACE);
-    return node;
+    return finish(p, node);
 }
 
 static LhatNode *parse_type_primary(Parser *p)
@@ -498,7 +544,7 @@ static LhatNode *parse_type_primary(Parser *p)
             node = access_node(p, LHAT_NODE_MEMBER, &at, node,
                                simple_node(p), false);
         }
-        return node;
+        return finish(p, node);
     }
 
     return error_node(p, LHAT_PARSE_ERR_EXPECTED_TYPE);
@@ -517,7 +563,7 @@ static LhatNode *parse_type_intersection(Parser *p)
         }
         node->v.binary.left = left;
         node->v.binary.right = parse_type_primary(p);
-        left = node;
+        left = finish(p, node);
     }
     return left;
 }
@@ -534,7 +580,7 @@ static LhatNode *parse_type(Parser *p)
         }
         node->v.binary.left = left;
         node->v.binary.right = parse_type_intersection(p);
-        left = node;
+        left = finish(p, node);
     }
     return left;
 }
@@ -636,7 +682,7 @@ static LhatNode *parse_interpolation(Parser *p)
                 // 5.4: what closes a hole, spelled as the brace it is.
                 report_expected(p, &p->current, LHAT_OP_RBRACE);
             }
-            lhat_node_append(&head, &tail, hole);
+            lhat_node_append(&head, &tail, finish(p, hole));
             continue;
         }
         if (p->current.kind == LHAT_TOKEN_INTERP_END) {
@@ -648,7 +694,7 @@ static LhatNode *parse_interpolation(Parser *p)
     }
 
     node->v.list.items = head;
-    return node;
+    return finish(p, node);
 }
 
 // Entries of a braced list, shared by the table literal and by the field
@@ -683,7 +729,7 @@ static LhatNode *parse_brace_entries(Parser *p, bool require_key)
             if (expect_op(p, LHAT_OP_COLON)) {
                 entry->v.entry.value = parse_type(p);
             }
-            lhat_node_append(&head, &tail, entry);
+            lhat_node_append(&head, &tail, finish(p, entry));
             if (!match_op(p, LHAT_OP_COMMA)) {
                 break;
             }
@@ -727,7 +773,7 @@ static LhatNode *parse_brace_entries(Parser *p, bool require_key)
         }
         entry->v.entry.value = parse_expression(p);
 
-        lhat_node_append(&head, &tail, entry);
+        lhat_node_append(&head, &tail, finish(p, entry));
 
         if (!match_op(p, LHAT_OP_COMMA)) {
             break;
@@ -748,7 +794,7 @@ static LhatNode *parse_table(Parser *p)
     }
     node->v.list.items = parse_brace_entries(p, false);
     expect_op(p, LHAT_OP_RBRACE);
-    return node;
+    return finish(p, node);
 }
 
 // 14.6 and 14.11: one spelling, two readings decided by where it stands. In
@@ -767,7 +813,7 @@ static LhatNode *parse_self_table(Parser *p)
     advance(p);  // {
     node->v.list.items = parse_brace_entries(p, true);
     expect_op(p, LHAT_OP_RBRACE);
-    return node;
+    return finish(p, node);
 }
 
 // A dotted path, as in IOError.NotFound. Kept as MEMBER nodes so it reads
@@ -790,7 +836,7 @@ static LhatNode *parse_qualified_name(Parser *p)
         }
         node = access_node(p, LHAT_NODE_MEMBER, &at, node, simple_node(p), false);
     }
-    return node;
+    return finish(p, node);
 }
 
 // 04 の 2.5. The kind is written into the construction rather than left to a
@@ -819,7 +865,7 @@ static LhatNode *parse_error_new(Parser *p)
         node->v.named.members = parse_brace_entries(p, true);
         expect_op(p, LHAT_OP_RBRACE);
     }
-    return node;
+    return finish(p, node);
 }
 
 // 14 章. def^ stays an expression (14.9), so the name of a definition comes
@@ -927,7 +973,7 @@ static LhatNode *parse_def(Parser *p)
             break;
         }
 
-        lhat_node_append(&head, &tail, entry);
+        lhat_node_append(&head, &tail, finish(p, entry));
 
         if (!match_op(p, LHAT_OP_COMMA)) {
             break;
@@ -936,7 +982,7 @@ static LhatNode *parse_def(Parser *p)
 
     node->v.list.items = head;
     expect_op(p, LHAT_OP_RBRACE);
-    return node;
+    return finish(p, node);
 }
 
 // A parameter in a definition may be named, typed and given a default.
@@ -977,7 +1023,7 @@ static LhatNode *parse_params(Parser *p)
             break;
         }
 
-        lhat_node_append(&head, &tail, param);
+        lhat_node_append(&head, &tail, finish(p, param));
 
         if (!match_op(p, LHAT_OP_COMMA)) {
             break;
@@ -1079,11 +1125,14 @@ static LhatNode *parse_function(Parser *p, bool is_function)
             answer_with_body(p, node->v.func.body);
         }
         expect_op(p, LHAT_OP_RBRACE);
+        // As in parse_braced_block: the brace closes the body, not the
+        // statement list parse_clause_body stopped at.
+        finish(p, node->v.func.body);
     }
 
     node->v.func.yields = p->saw_yield;
     p->saw_yield = enclosing;
-    return node;
+    return finish(p, node);
 }
 
 // 5.1 and 5.3: one marker, 'el^', covers both else-if and else, and a
@@ -1145,7 +1194,7 @@ static LhatNode *parse_if_expression_from(Parser *p, LhatToken start,
     first->v.clause.condition = condition;
     expect_op(p, LHAT_OP_COLON);
     first->v.clause.body = parse_expression(p);
-    lhat_node_append(&head, &tail, first);
+    lhat_node_append(&head, &tail, finish(p, first));
 
     while (is_else_marker(p)) {
         LhatToken at = p->current;
@@ -1170,18 +1219,18 @@ static LhatNode *parse_if_expression_from(Parser *p, LhatToken start,
             report(p, &at, LHAT_PARSE_ERR_ELSE_NEEDS_COLON);
             clause->v.clause.body = clause->v.clause.condition;
             clause->v.clause.condition = NULL;
-            lhat_node_append(&head, &tail, clause);
+            lhat_node_append(&head, &tail, finish(p, clause));
             break;
         }
         expect_op(p, LHAT_OP_COLON);
         clause->v.clause.body = parse_expression(p);
-        lhat_node_append(&head, &tail, clause);
+        lhat_node_append(&head, &tail, finish(p, clause));
     }
 
     // 6 章: a ':' opens the construct and a ';' closes it.
     expect_op(p, LHAT_OP_SEMICOLON);
     node->v.list.items = head;
-    return node;
+    return finish(p, node);
 }
 
 static LhatNode *parse_if_expression(Parser *p, LhatToken start)
@@ -1214,7 +1263,7 @@ static LhatNode *parse_primary(Parser *p)
                     report(p, &p->current, LHAT_PARSE_ERR_EXPECTED_NAME);
                 }
             }
-            return node;
+            return finish(p, node);
         }
 
         case LHAT_TOKEN_INTERP_BEGIN:
@@ -1254,7 +1303,7 @@ static LhatNode *parse_primary(Parser *p)
                 }
                 node->v.jump.value = parse_expression(p);
                 expect_op(p, LHAT_OP_RPAREN);
-                return node;
+                return finish(p, node);
             }
             // 'self^' on its own is an ordinary value, as in self^.value1, so
             // only a '{' immediately after it makes the form of 14.6. The
@@ -1312,7 +1361,9 @@ static LhatNode *access_node(Parser *p, LhatNodeKind kind, const LhatToken *at,
     node->v.access.target = target;
     node->v.access.argument = argument;
     node->v.access.nil_safe = nil_safe;
-    return node;
+    // Every caller has already read the whole of the access -- the member
+    // name, the ']' or the ')' -- by the time it gets here.
+    return finish(p, node);
 }
 
 static LhatNode *parse_arguments(Parser *p)
@@ -1422,7 +1473,7 @@ static LhatNode *parse_power(Parser *p)
         node->v.binary.op = LHAT_OP_POW;
         node->v.binary.left = left;
         node->v.binary.right = parse_unary(p);
-        return node;
+        return finish(p, node);
     }
     return left;
 }
@@ -1446,7 +1497,7 @@ static LhatNode *parse_unary(Parser *p)
             return node;
         }
         node->v.jump.value = simple_node(p);
-        return node;
+        return finish(p, node);
     }
 
     // 05 の 8.7: import^ names a module rather than a file, so its operand is
@@ -1461,7 +1512,7 @@ static LhatNode *parse_unary(Parser *p)
             return NULL;
         }
         node->v.jump.value = parse_qualified_name(p);
-        return node;
+        return finish(p, node);
     }
 
     // 02 の 15.8: delegation. A word of its own rather than a reading of
@@ -1476,7 +1527,7 @@ static LhatNode *parse_unary(Parser *p)
             return NULL;
         }
         node->v.jump.value = parse_unary(p);
-        return node;
+        return finish(p, node);
     }
 
     // 02 の 15.4: yield^ is an expression, since its value is what the resume
@@ -1501,7 +1552,7 @@ static LhatNode *parse_unary(Parser *p)
             !is_statement_keyword(p)) {
             node->v.jump.value = parse_expression(p);
         }
-        return node;
+        return finish(p, node);
     }
 
     // 04 の 5 章: try^ sits at the unary level, so 'try^ f() + 1' adds to the
@@ -1514,7 +1565,7 @@ static LhatNode *parse_unary(Parser *p)
             return NULL;
         }
         node->v.jump.value = parse_unary(p);
-        return node;
+        return finish(p, node);
     }
 
     if (check_op(p, LHAT_OP_NOT) || check_op(p, LHAT_OP_SUB)) {
@@ -1526,7 +1577,7 @@ static LhatNode *parse_unary(Parser *p)
         }
         node->v.unary.op = at.v.op;
         node->v.unary.operand = parse_unary(p);
-        return node;
+        return finish(p, node);
     }
     return parse_power(p);
 }
@@ -1555,7 +1606,7 @@ static LhatNode *parse_fallback(Parser *p)
         node->v.binary.op = catching ? LHAT_OP_CATCH : LHAT_OP_NIL_ELSE;
         node->v.binary.left = left;
         node->v.binary.right = parse_unary(p);
-        left = node;
+        left = finish(p, node);
     }
     return left;
 }
@@ -1572,7 +1623,7 @@ static LhatNode *parse_ascription(Parser *p)
         }
         node->v.ascription.value = left;
         node->v.ascription.type = parse_type(p);
-        left = node;
+        left = finish(p, node);
     }
     return left;
 }
@@ -1681,7 +1732,7 @@ static LhatNode *parse_binary(Parser *p, int min_precedence)
         node->v.binary.op = op;
         node->v.binary.left = left;
         node->v.binary.right = right;
-        left = node;
+        left = finish(p, node);
     }
     return left;
 }
@@ -1735,7 +1786,7 @@ static LhatNode *parse_comparison(Parser *p)
         node->v.binary.left = operands;
         node->v.binary.right = operands->next;
         operands->next = NULL;
-        return node;
+        return finish(p, node);
     }
 
     LhatNode *node = make(p, LHAT_NODE_COMPARE_CHAIN, NULL);
@@ -1747,7 +1798,7 @@ static LhatNode *parse_comparison(Parser *p)
     node->column = operands->column;
     node->v.chain.operands = operands;
     node->v.chain.operators = operators;
-    return node;
+    return finish(p, node);
 }
 
 static LhatNode *parse_logical(Parser *p, int min_precedence)
@@ -1774,7 +1825,7 @@ static LhatNode *parse_logical(Parser *p, int min_precedence)
         node->v.binary.op = op;
         node->v.binary.left = left;
         node->v.binary.right = right;
-        left = node;
+        left = finish(p, node);
     }
     return left;
 }
@@ -1931,7 +1982,7 @@ static LhatNode *parse_block_body(Parser *p, const LhatToken *at)
         return NULL;
     }
     block->v.list.items = parse_statement_list(p);
-    return block;
+    return finish(p, block);
 }
 
 // A body that may carry the clauses of 9 章. Outside a loop only finally^ is
@@ -1992,7 +2043,7 @@ static LhatNode *parse_clause_body(Parser *p, const LhatToken *at, bool in_loop,
         }
         clause->v.loop_clause.kind = (LhatClauseKind)index;
         clause->v.loop_clause.body = statements;
-        lhat_node_append(&head, &tail, clause);
+        lhat_node_append(&head, &tail, finish(p, clause));
     }
 
     // 9.3改: first^, pre^, main^ and last^ are the body. Once the braces are
@@ -2007,7 +2058,7 @@ static LhatNode *parse_clause_body(Parser *p, const LhatToken *at, bool in_loop,
     }
 
     block->v.list.extra = head;
-    return block;
+    return finish(p, block);
 }
 
 static LhatNode *parse_braced_block(Parser *p, bool in_loop, bool walks)
@@ -2018,7 +2069,9 @@ static LhatNode *parse_braced_block(Parser *p, bool in_loop, bool walks)
     }
     LhatNode *block = parse_clause_body(p, &brace, in_loop, walks);
     expect_op(p, LHAT_OP_RBRACE);
-    return block;
+    // The closing brace belongs to the block, and parse_clause_body ends
+    // before reading it.
+    return finish(p, block);
 }
 
 // A target may carry a type, as an ordinary definition may (Memo.md L36).
@@ -2039,7 +2092,7 @@ static LhatNode *parse_target(Parser *p)
     }
     target->v.param.name = value;
     target->v.param.type = parse_type(p);
-    return target;
+    return finish(p, target);
 }
 
 // 13.10: 'unpack^ expr' marks the value that is taken apart. Putting the
@@ -2059,7 +2112,7 @@ static LhatNode *parse_value(Parser *p)
         return NULL;
     }
     node->v.jump.value = parse_expression(p);
-    return node;
+    return finish(p, node);
 }
 
 // 7.4改: 'target op= value' names the plain operator it stands for. Not an
@@ -2119,7 +2172,7 @@ static LhatNode *parse_binding(Parser *p, LhatNodeKind kind,
                source_count == 1 ? LHAT_PARSE_ERR_DESTRUCTURE_NEEDS_UNPACK
                                  : LHAT_PARSE_ERR_BINDING_ARITY);
     }
-    return node;
+    return finish(p, node);
 }
 
 // 05 の 3 章. Names the unit, independently of where its file sits, so that
@@ -2134,7 +2187,7 @@ static LhatNode *parse_module(Parser *p)
         return NULL;
     }
     node->v.named.name = parse_qualified_name(p);
-    return node;
+    return finish(p, node);
 }
 
 // 05 の 4 章. A mark on the declaration rather than a list at the end of the
@@ -2163,7 +2216,7 @@ static LhatNode *parse_public(Parser *p)
             report(p, &start, LHAT_PARSE_ERR_PUBLIC_NEEDS_DECLARATION);
             break;
     }
-    return declaration;
+    return start_at(declaration, &start);
 }
 
 // 8.6. An introducer is what creates a name; without one ':=' reassigns.
@@ -2224,7 +2277,7 @@ static LhatNode *parse_let_target(Parser *p, bool allow_path)
     }
     target->v.param.name = name;
     target->v.param.type = parse_type(p);
-    return target;
+    return finish(p, target);
 }
 
 // 12.1: with^ always introduces a fresh local of its own, never a path into
@@ -2251,7 +2304,7 @@ static LhatNode *parse_with_target(Parser *p)
     }
     target->v.param.name = name;
     target->v.param.type = parse_type(p);
-    return target;
+    return finish(p, target);
 }
 
 // 8.9: var^ and let^ read alike and differ only in what they leave behind --
@@ -2316,7 +2369,7 @@ static LhatNode *parse_if_body(Parser *p, LhatToken start, LhatNode *condition)
     }
     first->v.clause.condition = condition;
     first->v.clause.body = parse_block_body(p, &brace);
-    lhat_node_append(&head, &tail, first);
+    lhat_node_append(&head, &tail, finish(p, first));
 
     while (is_else_marker(p)) {
         LhatToken at = p->current;
@@ -2330,12 +2383,12 @@ static LhatNode *parse_if_body(Parser *p, LhatToken start, LhatNode *condition)
         }
         expect_op(p, LHAT_OP_COLON);
         clause->v.clause.body = parse_block_body(p, &at);
-        lhat_node_append(&head, &tail, clause);
+        lhat_node_append(&head, &tail, finish(p, clause));
     }
 
     expect_op(p, LHAT_OP_RBRACE);
     node->v.list.items = head;
-    return node;
+    return finish(p, node);
 }
 
 static LhatNode *parse_if_statement(Parser *p, LhatToken start)
@@ -2371,7 +2424,7 @@ static LhatNode *expression_as_statement(Parser *p, LhatToken start,
             return NULL;
         }
         node->v.jump.value = value;
-        return node;
+        return finish(p, node);
     }
     report(p, &start, LHAT_PARSE_ERR_BARE_EXPRESSION);
     return make(p, LHAT_NODE_ERROR, &start);
@@ -2460,7 +2513,7 @@ static LhatNode *parse_for_focus(Parser *p, bool *saw_from, bool *saw_word,
                 }
                 annotated->v.param.name = target;
                 annotated->v.param.type = parse_type(p);
-                target = annotated;
+                target = finish(p, annotated);
             }
         }
 
@@ -2484,7 +2537,7 @@ static LhatNode *parse_for_focus(Parser *p, bool *saw_from, bool *saw_word,
                 binding->v.binding.targets = target;
                 binding->v.binding.values = parse_expression(p);
                 binding->v.binding.immutable = immutable;
-                target = binding;
+                target = finish(p, binding);
             }
         } else if (check_hat(p, "from")) {
             // 16.3改2: 'i from^ 1 to^ 10'. from^ is the introducer of the
@@ -2506,7 +2559,7 @@ static LhatNode *parse_for_focus(Parser *p, bool *saw_from, bool *saw_word,
             binding->v.binding.values = parse_expression(p);
             binding->v.binding.immutable = true;
             binding->v.binding.bound_by_form = true;
-            target = binding;
+            target = finish(p, binding);
         } else if (check_op(p, LHAT_OP_DEFINE)) {
             // 8.6: no introducer, so ':=' reassigns an existing name.
             *saw_reassign = true;
@@ -2517,7 +2570,7 @@ static LhatNode *parse_for_focus(Parser *p, bool *saw_from, bool *saw_word,
             }
             binding->v.binding.targets = target;
             binding->v.binding.values = parse_expression(p);
-            target = binding;
+            target = finish(p, binding);
         } else if (check_op(p, LHAT_OP_EQ)) {
             // 8.6: '=' with no introducer reads as a comparison -- the same
             // ambiguity for^'s old blanket-introducer rule existed to avoid,
@@ -2541,7 +2594,7 @@ static LhatNode *parse_for_focus(Parser *p, bool *saw_from, bool *saw_word,
             }
             binding->v.binding.targets = name;
             binding->v.binding.values = target;
-            target = binding;
+            target = finish_at(binding, target);
         }
 
         lhat_node_append(&head, &tail, target);
@@ -2593,7 +2646,7 @@ static LhatNode *binary_node(Parser *p, const LhatToken *at, LhatOpKind op,
     node->v.binary.op = op;
     node->v.binary.left = left;
     node->v.binary.right = right;
-    return node;
+    return finish(p, node);
 }
 
 // One pattern of 17.3, lowered against the subject.
@@ -2695,17 +2748,17 @@ static LhatNode *parse_when_clauses(Parser *p, const LhatToken *start,
                 }
             }
             block->v.list.items = statements;
-            clause->v.clause.body = block;
+            clause->v.clause.body = finish(p, block);
         }
 
-        lhat_node_append(&head, &tail, clause);
+        lhat_node_append(&head, &tail, finish(p, clause));
         if (defaulting) {
             break;  // 17.5: the default is the last thing there can be
         }
     }
 
     node->v.list.items = head;
-    return node;
+    return finish(p, node);
 }
 
 // next^ takes one or more statements, separated by commas (Memo.md L532).
@@ -2800,7 +2853,7 @@ static LhatNode *parse_for(Parser *p)
             node->v.loop.is_expression
                 ? parse_if_expression_from(p, at, node->v.loop.bound)
                 : parse_if_body(p, at, node->v.loop.bound);
-        return node;
+        return finish(p, node);
     } else if (check_op(p, LHAT_OP_LBRACE) || check_op(p, LHAT_OP_COLON)) {
         // 17 章: no driving clause at all, so what follows dispatches on the
         // subject rather than iterating over it.
@@ -2825,10 +2878,10 @@ static LhatNode *parse_for(Parser *p)
         // 17.6: one ';' closes the expression form, since only the ':' after
         // the subject opened anything.
         expect_op(p, as_expression ? LHAT_OP_SEMICOLON : LHAT_OP_RBRACE);
-        return node;
+        return finish(p, node);
     } else {
         report(p, &p->current, LHAT_PARSE_ERR_FOR_NEEDS_CLAUSE);
-        return node;
+        return finish(p, node);
     }
 
     check_focus_form(p, node, &focus_at, saw_from, saw_word, saw_reassign);
@@ -2847,7 +2900,7 @@ static LhatNode *parse_for(Parser *p)
 
     node->v.loop.body =
         parse_braced_block(p, is_loop, node->v.loop.kind == LHAT_FOR_IN);
-    return node;
+    return finish(p, node);
 }
 
 // 16.5: repeat^ introduces no focus, and takes no next^.
@@ -2881,7 +2934,7 @@ static LhatNode *parse_repeat(Parser *p)
     }
 
     node->v.repeat.body = parse_braced_block(p, true, false);
-    return node;
+    return finish(p, node);
 }
 
 // 04 の 2.2. A field of an error kind, which may carry a type, a default, or
@@ -2923,7 +2976,7 @@ static LhatNode *parse_error_fields(Parser *p)
             report(p, &p->current, LHAT_PARSE_ERR_FIELD_NEEDS_TYPE);
         }
 
-        lhat_node_append(&head, &tail, field);
+        lhat_node_append(&head, &tail, finish(p, field));
         if (!match_op(p, LHAT_OP_COMMA)) {
             break;
         }
@@ -2980,7 +3033,7 @@ static LhatNode *parse_errordef(Parser *p)
             expect_op(p, LHAT_OP_RBRACE);
         }
 
-        lhat_node_append(&head, &tail, kind);
+        lhat_node_append(&head, &tail, finish(p, kind));
 
         if (!match_op(p, LHAT_OP_COMMA)) {
             break;
@@ -2989,7 +3042,7 @@ static LhatNode *parse_errordef(Parser *p)
 
     node->v.named.members = head;
     expect_op(p, LHAT_OP_RBRACE);
-    return node;
+    return finish(p, node);
 }
 
 static LhatNode *parse_with(Parser *p)
@@ -3034,12 +3087,12 @@ static LhatNode *parse_with(Parser *p)
         }
         binding->v.binding.immutable = true;
         binding->v.binding.bound_by_form = true;
-        lhat_node_append(&head, &tail, binding);
+        lhat_node_append(&head, &tail, finish(p, binding));
     }
 
     node->v.list.items = head;
     node->v.list.extra = parse_braced_block(p, false, false);
-    return node;
+    return finish(p, node);
 }
 
 static LhatNode *parse_jump(Parser *p, LhatNodeKind kind)
@@ -3074,7 +3127,7 @@ static LhatNode *parse_jump(Parser *p, LhatNodeKind kind)
                 node->v.jump.value = written;
             }
         }
-        return node;
+        return finish(p, node);
     }
 
     // With no statement terminator, a word that begins a statement must not
@@ -3093,7 +3146,7 @@ static LhatNode *parse_jump(Parser *p, LhatNodeKind kind)
     if (operand_follows) {
         node->v.jump.value = parse_expression(p);
     }
-    return node;
+    return finish(p, node);
 }
 
 // 04 の 11.6改: unlike return^/break^/yield^, the value is not optional --
@@ -3107,7 +3160,7 @@ static LhatNode *parse_panic(Parser *p)
         return NULL;
     }
     node->v.jump.value = parse_expression(p);
-    return node;
+    return finish(p, node);
 }
 
 // 8.2 lets a call stand alone. try^ (04 の 5.1) and catch^ (04 の 4.4) wrap
@@ -3154,7 +3207,7 @@ static LhatNode *parse_statement(Parser *p)
     if (start.kind == LHAT_TOKEN_HAT_IDENT) {
         if (check_hat(p, "do")) {
             advance(p);
-            return parse_braced_block(p, false, false);
+            return start_at(parse_braced_block(p, false, false), &start);
         }
         if (check_hat(p, "with")) {
             return parse_with(p);
@@ -3201,7 +3254,7 @@ static LhatNode *parse_statement(Parser *p)
                 return NULL;
             }
             node->v.jump.value = inner->v.jump.value;
-            return node;
+            return finish_at(node, inner);
         }
         if (check_hat(p, "yield") || check_hat(p, "_yield")) {
             bool phantom = check_hat(p, "_yield");  // 15.11
@@ -3323,13 +3376,13 @@ static LhatNode *parse_statement(Parser *p)
             binary->v.binary.op = compound_base;
             binary->v.binary.left = target;
             binary->v.binary.right = rhs;
-            lhat_node_append(&values, &values_tail, binary);
+            lhat_node_append(&values, &values_tail, finish_at(binary, rhs));
         }
 
         node->v.binding.values = values != NULL ? values : rhs_head;
         node->v.binding.has_compound_op = true;
         node->v.binding.compound_op = compound_base;
-        return node;
+        return finish(p, node);
     }
 
     // The withdrawn postfix reassignment of Q2.
@@ -3355,7 +3408,7 @@ static LhatNode *parse_statement(Parser *p)
             return NULL;
         }
         node->v.jump.value = head;
-        return node;
+        return finish(p, node);
     }
 
     if (head != NULL && head->kind == LHAT_NODE_ERROR) {
@@ -3396,15 +3449,154 @@ static void parser_begin(Parser *p, LhatLexer *lexer, LhatParseResult *result)
     p->saw_yield = false;
     p->interactive = false;
     p->depth = 0;
+    // Nothing has been consumed yet, so `finish` before the first advance
+    // must not widen anything.
+    memset(&p->previous, 0, sizeof p->previous);
     p->current = lhat_lexer_next(lexer);
     p->ahead = lhat_lexer_next(lexer);
 }
+
+#ifdef LHAT_WITH_COMMENTS
+
+// 01 の 6.4: tying the kept comments to the nodes they were written against.
+//
+// One pass, after the whole unit is parsed. Both the comment table and the
+// walk are in source order, so a single cursor over the table is enough --
+// and doing it here rather than while parsing means the table has stopped
+// growing, so the pointers handed to nodes stay valid.
+typedef struct {
+    const LhatSource *source;
+    LhatComment *comments;  // the lexer's table, threaded as it is handed out
+    size_t count;
+    size_t cursor;
+} CommentWalk;
+
+// The least offset in a subtree. An infix or postfix node begins at its own
+// operator, so the node's own offset is not where the construct starts
+// (06 の 4.2) -- and a comment written before 'a' in 'a + b' belongs to the
+// sum, not to whatever the parser happened to build first.
+static void least_offset(void *context, const LhatNode *child);
+
+static void least_offset_of(const LhatNode *node, uint32_t *least)
+{
+    // 16.2: a FOCUS carries no span, so it would drag this to zero.
+    if (node->kind != LHAT_NODE_FOCUS && node->offset < *least) {
+        *least = node->offset;
+    }
+    lhat_node_visit_children(node, least_offset, least);
+}
+
+static void least_offset(void *context, const LhatNode *child)
+{
+    least_offset_of(child, (uint32_t *)context);
+}
+
+static uint32_t subtree_start(const LhatNode *node)
+{
+    uint32_t least = node->offset;
+    least_offset_of(node, &least);
+    return least;
+}
+
+// Whether a comment sits on the same line as the code before it -- a trailing
+// comment, which belongs to what it follows rather than to what comes next.
+// Asked of the source text rather than of line numbers, since a node records
+// only where it starts and a statement may span several lines.
+static bool same_line(const CommentWalk *walk, uint32_t after, uint32_t offset)
+{
+    if (offset <= after || walk->source == NULL) {
+        return false;
+    }
+    const char *from = walk->source->text + after;
+    return memchr(from, '\n', (size_t)(offset - after)) == NULL;
+}
+
+// Gives `node` every comment from the cursor up to `limit`, appending so that
+// a node given comments twice -- the ones above it, then the one left at the
+// end of its last line -- keeps them in source order.
+static void take_comments(CommentWalk *walk, LhatNode *node, uint32_t limit)
+{
+    while (walk->cursor < walk->count &&
+           walk->comments[walk->cursor].offset < limit) {
+        LhatComment *c = &walk->comments[walk->cursor++];
+        if (node == NULL) {
+            continue;
+        }
+        c->next_for_node = NULL;
+        LhatComment **slot = &node->comments;
+        while (*slot != NULL) {
+            slot = &(*slot)->next_for_node;
+        }
+        *slot = c;
+    }
+}
+
+static void attach_within(CommentWalk *walk, LhatNode *node);
+
+typedef struct {
+    CommentWalk *walk;
+    LhatNode *parent;
+    LhatNode *previous;  // the child last walked, for a trailing comment
+} AttachContext;
+
+static void attach_child(void *context, const LhatNode *child)
+{
+    AttachContext *state = (AttachContext *)context;
+    LhatNode *mutable_child = (LhatNode *)child;
+    uint32_t starts = subtree_start(child);
+
+    // A comment between the last child and this one goes to whichever of the
+    // two it was written beside: the one before it if it is on that line,
+    // this one otherwise.
+    while (state->walk->cursor < state->walk->count &&
+           state->walk->comments[state->walk->cursor].offset < starts) {
+        const LhatComment *c = &state->walk->comments[state->walk->cursor];
+        bool trailing = state->previous != NULL &&
+                        same_line(state->walk, state->previous->end, c->offset);
+        take_comments(state->walk, trailing ? state->previous : mutable_child,
+                      c->offset + 1);
+    }
+
+    attach_within(state->walk, mutable_child);
+    state->previous = mutable_child;
+}
+
+// Everything inside `node`, then whatever is left before it ends -- a comment
+// after the last child but still within the braces belongs to the node.
+static void attach_within(CommentWalk *walk, LhatNode *node)
+{
+    if (walk->cursor >= walk->count) {
+        return;
+    }
+    AttachContext state = {walk, node, NULL};
+    lhat_node_visit_children(node, attach_child, &state);
+    take_comments(walk, state.previous != NULL ? state.previous : node,
+                  node->end);
+}
+
+static void attach_comments(LhatLexer *lexer, LhatParseResult *result)
+{
+    if (result->root == NULL || lexer->comment_count == 0) {
+        return;
+    }
+    CommentWalk walk = {lexer->source, lexer->comments, lexer->comment_count, 0};
+    attach_within(&walk, result->root);
+    // Anything past the end of the tree -- a comment on the last line of the
+    // file, after every statement -- still belongs to the unit.
+    take_comments(&walk, result->root, UINT32_MAX);
+}
+
+#endif  // LHAT_WITH_COMMENTS
 
 static void parser_finish(Parser *p, LhatLexer *lexer, LhatParseResult *result)
 {
     if (!at_eof(p)) {
         report(p, &p->current, LHAT_PARSE_ERR_UNEXPECTED);
     }
+
+#ifdef LHAT_WITH_COMMENTS
+    attach_comments(lexer, result);
+#endif
 
     // A lexical error means the token stream was already wrong, and two of
     // them mean the input simply stopped early (02 の 3.1).

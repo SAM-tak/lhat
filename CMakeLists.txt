@@ -10,6 +10,12 @@ option(LHAT_BUILD_TESTS "Build the L^ test suite" ON)
 option(LHAT_BUILD_CLI "Build the lhat command line driver" ON)
 option(LHAT_BUILD_LSP "Build the L^ language server" ON)
 
+# 01 の 6.4: comments are kept and attached to the tree, for the language
+# server to show and the visual editor to edit. Nothing in the language reads
+# them, so a host that embeds the language and no tooling turns this off and
+# pays for neither the table nor the walk that attaches it.
+option(LHAT_WITH_COMMENTS "Keep comments and attach them to the syntax tree" ON)
+
 # ---- Language level -------------------------------------------------------
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
@@ -53,6 +59,12 @@ target_include_directories(lhat
     PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src
 )
 target_compile_definitions(lhat PUBLIC LHAT_VERSION="${PROJECT_VERSION}")
+
+# PUBLIC: it changes the shape of LhatLexer and LhatNode, so everything
+# compiled against these headers has to agree on it.
+if(LHAT_WITH_COMMENTS)
+    target_compile_definitions(lhat PUBLIC LHAT_WITH_COMMENTS)
+endif()
 
 # 03 の 5.12: a write barrier that is missing does not fail where it is
 # missing. The object is freed while still live and the program reads it back

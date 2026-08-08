@@ -272,6 +272,39 @@ static void string_push_byte(LhatLexer *lexer, char byte)
 // Trivia: whitespace, newlines and comments (sections 6 and 9)
 // ---------------------------------------------------------------------------
 
+#ifdef LHAT_WITH_COMMENTS
+// 6.4: kept rather than dropped, in source order. Called once the whole of a
+// comment has been scanned, so `lexer->pos` is already past it.
+static void record_comment(LhatLexer *lexer, uint32_t offset, uint32_t line,
+                           uint32_t column, bool block)
+{
+    if (lexer->comment_count == lexer->comment_capacity) {
+        size_t grown = lexer->comment_capacity ? lexer->comment_capacity * 2 : 8;
+        LhatComment *bigger =
+            (LhatComment *)lhat_realloc(lexer->comments, grown * sizeof *bigger);
+        if (bigger == NULL) {
+            return;  // drop the comment rather than fail the scan
+        }
+        lexer->comments = bigger;
+        lexer->comment_capacity = grown;
+    }
+
+    LhatComment *c = &lexer->comments[lexer->comment_count++];
+    c->offset = offset;
+    c->end = (uint32_t)lexer->pos;
+    c->line = line;
+    c->column = column;
+    c->block = block;
+    c->next_for_node = NULL;  // parser.c's attach_comments threads these
+}
+#else
+// Consumes its arguments so that what a comment's span was computed from does
+// not read as dead in a build that keeps no comments.
+#define record_comment(lexer, offset, line, column, block)                  \
+    ((void)(lexer), (void)(offset), (void)(line), (void)(column),           \
+     (void)(block))
+#endif
+
 static void skip_block_comment(LhatLexer *lexer)
 {
     uint32_t start_offset = (uint32_t)lexer->pos;
@@ -289,6 +322,8 @@ static void skip_block_comment(LhatLexer *lexer)
         } else if (c == ']' && byte_at(lexer, 1) == '#') {
             advance_n(lexer, 2);
             if (--depth == 0) {
+                record_comment(lexer, start_offset, start_line, start_column,
+                               true);
                 return;
             }
         } else {
@@ -299,6 +334,10 @@ static void skip_block_comment(LhatLexer *lexer)
         }
     }
 
+    // 6.2: it ran to the end of the input. Kept all the same -- what was
+    // written is still a comment, and a tool showing the source of a node
+    // should not lose it because the file is mid-edit.
+    record_comment(lexer, start_offset, start_line, start_column, true);
     report_at(lexer, LHAT_ERR_UNTERMINATED_BLOCK_COMMENT, start_offset,
               start_line, start_column);
 }
@@ -321,9 +360,15 @@ static void skip_trivia(LhatLexer *lexer)
             if (byte_at(lexer, 1) == '[') {
                 skip_block_comment(lexer);
             } else {
+                uint32_t start_offset = (uint32_t)lexer->pos;
+                uint32_t start_line = lexer->line;
+                uint32_t start_column = lexer->column;
                 while (!at_end(lexer) && current_byte(lexer) != '\n') {
                     advance(lexer);
                 }
+                // The newline ends the comment without belonging to it.
+                record_comment(lexer, start_offset, start_line, start_column,
+                               false);
             }
             continue;
         }
@@ -1014,6 +1059,11 @@ void lhat_lexer_dispose(LhatLexer *lexer)
     lexer->diagnostics = NULL;
     lexer->strings_length = lexer->strings_capacity = 0;
     lexer->diagnostic_count = lexer->diagnostic_capacity = 0;
+#ifdef LHAT_WITH_COMMENTS
+    lhat_free(lexer->comments);
+    lexer->comments = NULL;
+    lexer->comment_count = lexer->comment_capacity = 0;
+#endif
 }
 
 static bool inside_interpolated_text(const LhatLexer *lexer)
