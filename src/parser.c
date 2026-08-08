@@ -2385,7 +2385,11 @@ static LhatNode *parse_if_body(Parser *p, LhatToken start, LhatNode *condition)
             clause->v.clause.condition = parse_expression(p);
         }
         expect_op(p, LHAT_OP_COLON);
-        clause->v.clause.body = parse_block_body(p, &at);
+        // From after the ':', not from the 'el^'. The marker and the condition
+        // belong to the clause; starting the body at the marker would make the
+        // two spans identical, and a tool showing a clause could not tell what
+        // the clause itself says from what its body does.
+        clause->v.clause.body = parse_block_body(p, &p->current);
         lhat_node_append(&head, &tail, finish(p, clause));
     }
 
