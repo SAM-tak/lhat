@@ -85,7 +85,8 @@ typedef struct {
     int failures;
 } SpanWalk;
 
-static void span_check_child(void *context, const LhatNode *child);
+static void span_check_child(void *context, const char *field, bool in_list,
+                             const LhatNode *child);
 
 // A parent that ends before one of its children does has forgotten to widen
 // itself -- parser.c's finish is what a parse function calls on the way out,
@@ -103,8 +104,11 @@ static void span_walk(const LhatNode *node, SpanWalk *state)
     state->failures += inner.failures;
 }
 
-static void span_check_child(void *context, const LhatNode *child)
+static void span_check_child(void *context, const char *field, bool in_list,
+                             const LhatNode *child)
 {
+    (void)field;
+    (void)in_list;
     SpanWalk *state = (SpanWalk *)context;
     // FOCUS carries no span at all: 16.2's it^ need not appear in the source.
     if (child->kind != LHAT_NODE_FOCUS) {
@@ -127,25 +131,10 @@ static void check_spans_enclose(const char *text)
     parse_dispose(&p);
 }
 
-// 06 の 4.1: the source a node covers. An infix or postfix node is written
-// starting at its operator, so the left edge comes from the subtree rather
-// than from the node itself; the right edge is the node's own, since the
-// token that closes a construct belongs to no child.
-static void subtree_start(void *context, const LhatNode *child);
-
-static void subtree_start_of(const LhatNode *node, uint32_t *least)
-{
-    if (node->kind != LHAT_NODE_FOCUS && node->offset < *least) {
-        *least = node->offset;
-    }
-    lhat_node_visit_children(node, subtree_start, least);
-}
-
-static void subtree_start(void *context, const LhatNode *child)
-{
-    subtree_start_of(child, (uint32_t *)context);
-}
-
+// 06 の 4.2: the source a node covers. The left edge comes from the subtree
+// (lhat_node_span_start) because an infix or postfix node is written starting
+// at its operator; the right edge is the node's own, since the token that
+// closes a construct belongs to no child.
 static void check_span_text(const char *text, const LhatNode *(*pick)(const Parse *),
                             const char *expected)
 {
@@ -155,8 +144,7 @@ static void check_span_text(const char *text, const LhatNode *(*pick)(const Pars
     if (node == NULL) {
         LHAT_CHECK(false, "%s: no node", text);
     } else {
-        uint32_t start = node->offset;
-        subtree_start_of(node, &start);
+        uint32_t start = lhat_node_span_start(node);
         LHAT_CHECK_EQ_STR(p.source.text + start, node->end - start, expected);
     }
     parse_dispose(&p);
@@ -192,11 +180,15 @@ static void test_spans(void)
     // The whole of a construct, closing token included.
     LHAT_TEST("a span reaches the token that closes the construct");
     check_span_text("if^ x { f() }\n", first_statement, "if^ x { f() }");
-    // 'do^' and 'public^' lead a construct without being part of any node
-    // under it, so the parser moves the node's own start back over them.
+    // A word that leads a construct belongs to no node under it -- a binding
+    // is built at its '=' -- so the parser moves the node's own start back
+    // over it.
     check_span_text("do^ { f() }\n", first_statement, "do^ { f() }");
     check_span_text("public^ let^ x = 1\n", first_statement,
                     "public^ let^ x = 1");
+    check_span_text("var^ x = 1\n", first_statement, "var^ x = 1");
+    check_span_text("let^ y = f(1)\n", first_statement, "let^ y = f(1)");
+    check_span_text("var^ a, b = 1, 2\n", first_statement, "var^ a, b = 1, 2");
     check_span_text("let^ v = { 1, 2 }\n", first_value, "{ 1, 2 }");
     check_span_text("let^ v = f(1, 2)\n", first_value, "f(1, 2)");
     check_span_text("let^ v = a.b[1]\n", first_value, "a.b[1]");
@@ -282,7 +274,8 @@ static const LhatNode *second_statement(const Parse *p)
 // Counts what the tree holds, so it can be compared with what the lexer
 // scanned. A comment attached twice is counted twice here, and one dropped
 // is not counted at all.
-static void count_attached(void *context, const LhatNode *child);
+static void count_attached(void *context, const char *field, bool in_list,
+                           const LhatNode *child);
 
 static void count_attached_in(const LhatNode *node, size_t *total)
 {
@@ -293,8 +286,11 @@ static void count_attached_in(const LhatNode *node, size_t *total)
     lhat_node_visit_children(node, count_attached, total);
 }
 
-static void count_attached(void *context, const LhatNode *child)
+static void count_attached(void *context, const char *field, bool in_list,
+                           const LhatNode *child)
 {
+    (void)field;
+    (void)in_list;
     count_attached_in(child, (size_t *)context);
 }
 

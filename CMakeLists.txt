@@ -187,10 +187,12 @@ if(LHAT_BUILD_LSP)
         lsp/diagnostics.c
         lsp/position.c
         lsp/semantic_tokens.c
+        lsp/ast_json.c
         lsp/queue.c
         lsp/handlers/initialize.c
         lsp/handlers/text_document_sync.c
         lsp/handlers/semantic_tokens.c
+        lsp/handlers/ast.c
     )
     # The binary is a language server, not "LSP" itself, so the executable
     # is named lhatls -- but the target, lsp/ and the archive/pdb byproducts

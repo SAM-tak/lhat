@@ -24,3 +24,4 @@ lhat_lsp_add_test(test_diagnostics
     ${CMAKE_SOURCE_DIR}/lsp/diagnostics.c
     ${CMAKE_SOURCE_DIR}/lsp/position.c
 )
+lhat_lsp_add_test(test_ast_json ${CMAKE_SOURCE_DIR}/lsp/ast_json.c)

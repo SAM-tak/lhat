@@ -433,13 +433,28 @@ size_t lhat_node_list_length(const LhatNode *head);
 
 // Calls `visit` once per child, in source order, for every kind of node.
 //
-// Where a field holds a list, every element of it is one child. Nothing is
-// visited twice and nothing is skipped, so a caller can walk the whole tree
-// without a case of its own per kind -- which is what a tool that renders or
-// serialises the tree wants, unlike semantic_tokens.c, whose whole job is to
-// treat each kind differently.
-typedef void (*LhatNodeVisitor)(void *context, const LhatNode *child);
+// Nothing is visited twice and nothing is skipped, so a caller can walk the
+// whole tree without a case of its own per kind -- which is what a tool that
+// renders or serialises the tree wants, unlike semantic_tokens.c, whose whole
+// job is to treat each kind differently.
+//
+// `field` names the place the child came from, spelled as the union member in
+// this header ("left", "items", "targets"), so a serialised tree can be read
+// back without knowing the order each kind writes its children in. `in_list`
+// says that place holds a list rather than a single child -- true even when
+// the list happens to hold one, so a reader can shape it the same way every
+// time.
+typedef void (*LhatNodeVisitor)(void *context, const char *field, bool in_list,
+                                const LhatNode *child);
 void lhat_node_visit_children(const LhatNode *node, LhatNodeVisitor visit,
                               void *context);
+
+// Where the construct actually begins: the least offset in the subtree.
+//
+// Not the node's own offset. An infix or postfix node is written starting at
+// its operator -- the '+' of 'a + b', the '(' of 'f(1)' -- with the left side
+// hanging below it, so [lhat_node_span_start(n), n->end) is the whole of the
+// construct while [n->offset, n->end) is only the part from the operator on.
+uint32_t lhat_node_span_start(const LhatNode *node);
 
 #endif  // LHAT_AST_H

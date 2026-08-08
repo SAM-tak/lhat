@@ -2344,7 +2344,10 @@ static LhatNode *parse_let(Parser *p, bool immutable)
         node->v.binding.via_reassign_op = via_reassign_op && !immutable;
         node->v.binding.immutable = immutable;
     }
-    return node;
+    // parse_binding builds the node at the '=', and the word that introduced
+    // the definition is under no node at all -- the same shape 'do^' and
+    // 'public^' have.
+    return start_at(node, &start);
 }
 
 static LhatNode *parse_if_body(Parser *p, LhatToken start, LhatNode *condition)
@@ -3471,33 +3474,6 @@ typedef struct {
     size_t cursor;
 } CommentWalk;
 
-// The least offset in a subtree. An infix or postfix node begins at its own
-// operator, so the node's own offset is not where the construct starts
-// (06 の 4.2) -- and a comment written before 'a' in 'a + b' belongs to the
-// sum, not to whatever the parser happened to build first.
-static void least_offset(void *context, const LhatNode *child);
-
-static void least_offset_of(const LhatNode *node, uint32_t *least)
-{
-    // 16.2: a FOCUS carries no span, so it would drag this to zero.
-    if (node->kind != LHAT_NODE_FOCUS && node->offset < *least) {
-        *least = node->offset;
-    }
-    lhat_node_visit_children(node, least_offset, least);
-}
-
-static void least_offset(void *context, const LhatNode *child)
-{
-    least_offset_of(child, (uint32_t *)context);
-}
-
-static uint32_t subtree_start(const LhatNode *node)
-{
-    uint32_t least = node->offset;
-    least_offset_of(node, &least);
-    return least;
-}
-
 // Whether a comment sits on the same line as the code before it -- a trailing
 // comment, which belongs to what it follows rather than to what comes next.
 // Asked of the source text rather than of line numbers, since a node records
@@ -3533,36 +3509,48 @@ static void take_comments(CommentWalk *walk, LhatNode *node, uint32_t limit)
 
 static void attach_within(CommentWalk *walk, LhatNode *node);
 
+// Hands out every comment before `limit`, choosing for each between what it
+// follows and what it precedes: the one before it when it ends that line, and
+// otherwise the one it was written above.
+static void split_comments(CommentWalk *walk, LhatNode *previous,
+                           LhatNode *following, uint32_t limit)
+{
+    while (walk->cursor < walk->count &&
+           walk->comments[walk->cursor].offset < limit) {
+        const LhatComment *c = &walk->comments[walk->cursor];
+        bool trailing =
+            previous != NULL && same_line(walk, previous->end, c->offset);
+        // One at a time: whether the next is trailing is its own question.
+        take_comments(walk, trailing ? previous : following, c->offset + 1);
+    }
+}
+
 typedef struct {
     CommentWalk *walk;
     LhatNode *parent;
     LhatNode *previous;  // the child last walked, for a trailing comment
 } AttachContext;
 
-static void attach_child(void *context, const LhatNode *child)
+static void attach_child(void *context, const char *field, bool in_list,
+                         const LhatNode *child)
 {
+    (void)field;
+    (void)in_list;
     AttachContext *state = (AttachContext *)context;
     LhatNode *mutable_child = (LhatNode *)child;
-    uint32_t starts = subtree_start(child);
-
-    // A comment between the last child and this one goes to whichever of the
-    // two it was written beside: the one before it if it is on that line,
-    // this one otherwise.
-    while (state->walk->cursor < state->walk->count &&
-           state->walk->comments[state->walk->cursor].offset < starts) {
-        const LhatComment *c = &state->walk->comments[state->walk->cursor];
-        bool trailing = state->previous != NULL &&
-                        same_line(state->walk, state->previous->end, c->offset);
-        take_comments(state->walk, trailing ? state->previous : mutable_child,
-                      c->offset + 1);
-    }
+    // Where the child's construct begins, not where its own node does: a
+    // comment written before 'a' in 'a + b' belongs to the sum, and the sum's
+    // own offset is the '+'.
+    split_comments(state->walk, state->previous, mutable_child,
+                   lhat_node_span_start(child));
 
     attach_within(state->walk, mutable_child);
     state->previous = mutable_child;
 }
 
-// Everything inside `node`, then whatever is left before it ends -- a comment
-// after the last child but still within the braces belongs to the node.
+// Everything inside `node`, then whatever is left before it ends. A comment
+// after the last child but still within the braces belongs to the node --
+// unless it ends the last child's line, which makes it that child's.
 static void attach_within(CommentWalk *walk, LhatNode *node)
 {
     if (walk->cursor >= walk->count) {
@@ -3570,8 +3558,7 @@ static void attach_within(CommentWalk *walk, LhatNode *node)
     }
     AttachContext state = {walk, node, NULL};
     lhat_node_visit_children(node, attach_child, &state);
-    take_comments(walk, state.previous != NULL ? state.previous : node,
-                  node->end);
+    split_comments(walk, state.previous, node, node->end);
 }
 
 static void attach_comments(LhatLexer *lexer, LhatParseResult *result)
@@ -3636,6 +3623,19 @@ static void parse_unit(LhatLexer *lexer, LhatParseResult *result,
                 report(&parser, &at, LHAT_PARSE_ERR_MODULE_MISPLACED);
             }
             first = false;
+        }
+    }
+
+    // The unit is the whole of the file, not the stretch from its first
+    // statement to its last. Without this a comment on the first or last line
+    // falls outside the tree entirely, and there is nothing there for it to
+    // belong to.
+    if (result->root != NULL && lexer->source != NULL) {
+        result->root->offset = 0;
+        result->root->line = 1;
+        result->root->column = 1;
+        if ((uint32_t)lexer->source->length > result->root->end) {
+            result->root->end = (uint32_t)lexer->source->length;
         }
     }
 
