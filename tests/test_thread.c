@@ -145,21 +145,22 @@ static void test_arguments(void)
     // A string is the one carried kind that allocates on both sides, so it is
     // what pins the copy rather than the value. A position of '...' is any^
     // (S16), and the only thing to do with an any^ is narrow it -- 02 の
-    // 13.11's isa^ reaches a builtin name now (S33), so what crossed is asked
-    // about on the far side rather than merely counted. The way back is the
-    // bytes the thread answers with.
-    LHAT_TEST("a string crosses to the thread and one comes back");
+    // 13.11's isa^ reaches a builtin name now (S33), so the far side reads the
+    // bytes it was given rather than counting that something arrived. Joining
+    // them is what pins their order as well: the two go out separately and
+    // come back as one string, which they could not do if either had been
+    // rebuilt wrongly on the way.
+    LHAT_TEST("the bytes of a string cross to the thread and come back");
     {
         LhatTestRan ran = run_source(
             WITH_SPAWN("std.thread.spawn(p^ ... {\n"
-                       "    var^ seen = 0\n"
+                       "    var^ joined = \"\"\n"
                        "    for^ i, x in^ ... {\n"
-                       "        if^ x isa^ string^ { seen := seen + 1 }\n"
+                       "        if^ x isa^ string^ { joined := joined .. x }\n"
                        "    }\n"
-                       "    if^ seen = 1 { return^ \"one carried\" }\n"
-                       "    return^ \"\"\n"
-                       "}, \"carried across\")"));
-        LHAT_CHECK_RAN_TEXT(ran, "one carried");
+                       "    return^ joined\n"
+                       "}, \"carried \", \"across\")"));
+        LHAT_CHECK_RAN_TEXT(ran, "carried across");
         lhat_test_ran_dispose(&ran);
     }
 

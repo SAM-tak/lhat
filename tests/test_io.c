@@ -71,11 +71,16 @@ static LhatTestRan run_reading(const char *text, const char *bytes)
     return ran;
 }
 
-// What a case answers when the line it read was an error rather than a
-// string, so a failure names which half went wrong.
-#define OR_ERROR(name)                                              \
-    "    if^ " name " isa^ std.io.IOError.Eof { return^ \"eof\" }\n" \
-    "    if^ " name " isa^ std.io.IOError { return^ \"error\" }\n"
+// The line a case read, handed back once it is known to be one. readLine
+// answers a string^ or an error, so the string is taken by name rather than
+// by ruling the errors out -- 13.11's isa^ reaches a builtin now (S33), and
+// asking for what is wanted leaves nothing in the returned type that the
+// case did not mean. The failures answer words of their own, so a case that
+// goes wrong says which half did.
+#define TEXT_OF(name)                                                     \
+    "    if^ " name " isa^ string^ { return^ " name " }\n"                \
+    "    if^ " name " isa^ std.io.IOError.Eof { return^ \"eof\" }\n"      \
+    "    return^ \"error\"\n"
 
 static void test_print(void)
 {
@@ -151,8 +156,7 @@ static void test_open(void)
                        "let^ back = std.io.open(\"" SCRATCH "\", \"r\")\n"
                        "if^ back isa^ std.io.File {\n"
                        "    let^ line = back.readLine()\n"
-                       "    back.dispose()\n" OR_ERROR("line")
-                       "    return^ line\n"
+                       "    back.dispose()\n" TEXT_OF("line")
                        "}\n"
                        "return^ \"not opened\"\n");
         LHAT_CHECK_RAN_TEXT(ran, "alpha");
@@ -176,8 +180,7 @@ static void test_read_line(void)
                        "let^ back = std.io.open(\"" SCRATCH "\", \"r\")\n"
                        "if^ back isa^ std.io.File {\n"
                        "    let^ line = back.readLine()\n"
-                       "    back.dispose()\n" OR_ERROR("line")
-                       "    return^ line\n"
+                       "    back.dispose()\n" TEXT_OF("line")
                        "}\n"
                        "return^ \"not opened\"\n");
         LHAT_CHECK_RAN_TEXT(first, "alpha");
@@ -189,8 +192,7 @@ static void test_read_line(void)
                        "if^ back isa^ std.io.File {\n"
                        "    let^ skipped = back.readLine()\n"
                        "    let^ line = back.readLine()\n"
-                       "    back.dispose()\n" OR_ERROR("line")
-                       "    return^ line\n"
+                       "    back.dispose()\n" TEXT_OF("line")
                        "}\n"
                        "return^ \"not opened\"\n");
         LHAT_CHECK_RAN_TEXT(second, "beta");
@@ -226,9 +228,8 @@ static void test_read_line_from_stdin(void)
     LHAT_TEST("readLine takes a line from stdin");
     {
         LhatTestRan ran = run_reading("import^ std.io\n"
-                                      "let^ line = std.io.readLine()\n" //
-                                      OR_ERROR("line")                  //
-                                      "return^ line\n",
+                                      "let^ line = std.io.readLine()\n"
+                                      TEXT_OF("line"),
                                       "typed in\nand more\n");
         LHAT_CHECK_RAN_TEXT(ran, "typed in");
         lhat_test_ran_dispose(&ran);
