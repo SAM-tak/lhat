@@ -5462,11 +5462,11 @@ bool lhat_machine_make_table(LhatMachine *machine, LhatValue *out)
 }
 
 bool lhat_machine_make_host(LhatMachine *machine, LhatHostFn call,
-                            void *context, uint8_t parameters, bool takes_self,
-                            LhatValue *out)
+                            void *context, uint8_t parameters,
+                            bool has_variadic, bool takes_self, LhatValue *out)
 {
     LhatHost *host = lhat_host_new(&machine->objects, call, context, parameters,
-                                   takes_self);
+                                   has_variadic, takes_self);
     if (host == NULL) {
         return false;
     }
@@ -6210,21 +6210,72 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
                 // one -- there is no unwinding to arrange.
                 if (lhat_is_object_kind(registers[a], LHAT_OBJECT_HOST)) {
                     LhatHost *host = (LhatHost *)lhat_as_object(registers[a]);
+                    size_t skip = op == LHAT_BC_CALLMETHOD ? 2 : 1;
+
+                    // 13.7: 'expr...' wrote a table in the last slot instead
+                    // of an ordinary argument. The closure path below unpacks
+                    // one into the frame it is about to push; there is no
+                    // frame to push here, so it is unpacked into an array of
+                    // its own further down.
+                    const LhatTable *spread_table = NULL;
+                    size_t written = b;
+                    if (cc != 0) {
+                        if (b == 0) {
+                            return finish(m, chunk, LHAT_RUN_TYPE_ERROR,
+                                          lhat_nil(), at);
+                        }
+                        spread_table = table_of(registers[a + skip + b - 1]);
+                        if (spread_table == NULL) {
+                            return finish(m, chunk, LHAT_RUN_TYPE_ERROR,
+                                          lhat_nil(), at);
+                        }
+                        written = (size_t)b - 1 + spread_table->array_count;
+                    }
+
                     // 13.4 keeps self^ out of the parameter list, so what the
                     // call wrote is compared against the list and the
-                    // receiver is handed over besides it.
-                    if (b != host->parameters) {
+                    // receiver is handed over besides it. 13.7 makes that
+                    // comparison a floor once the signature ended in '...'.
+                    if (host->has_variadic ? written < host->parameters
+                                           : written != host->parameters) {
                         return finish(m, chunk, LHAT_RUN_ARITY, lhat_nil(), at);
                     }
-                    size_t first = a + (op == LHAT_BC_CALLMETHOD ? 2 : 1);
-                    size_t given = b;
-                    const LhatValue *arguments = &registers[first];
+
                     // 14.4: the receiver comes first, and sits just below the
                     // arguments the call wrote.
-                    if (host->takes_self && op == LHAT_BC_CALLMETHOD) {
-                        arguments = &registers[a + 1];
-                        given = b + 1;
+                    bool receiver_first =
+                        host->takes_self && op == LHAT_BC_CALLMETHOD;
+                    size_t given = written + (receiver_first ? 1 : 0);
+                    const LhatValue *arguments =
+                        receiver_first ? &registers[a + 1] : &registers[a + skip];
+
+                    // Packed only where a spread broke the contiguity the
+                    // registers otherwise have. An allocation rather than the
+                    // stack above this frame, because a host function may call
+                    // back in and lhat_machine_call starts its frame exactly
+                    // there. Nothing in it needs rooting: every value is also
+                    // a position of `spread_table` or a register of this
+                    // frame, and both stay reachable for as long as the call
+                    // does.
+                    LhatValue *packed = NULL;
+                    if (spread_table != NULL && given > 0) {
+                        packed = (LhatValue *)lhat_alloc(given * sizeof *packed);
+                        if (packed == NULL) {
+                            return finish(m, chunk, LHAT_RUN_OUT_OF_MEMORY,
+                                          lhat_nil(), at);
+                        }
+                        size_t into = 0;
+                        if (receiver_first) {
+                            packed[into++] = registers[a + 1];
+                        }
+                        for (size_t i = 0; i < written; i++) {
+                            packed[into++] = call_arg(registers, a, skip,
+                                                      spread_table,
+                                                      (size_t)b - 1, i);
+                        }
+                        arguments = packed;
                     }
+
                     // 05 の 8.8: a dispose^ written by hand is the same
                     // giving-back the collection would do, so it is marked
                     // here and 10.7 keeps the sweep from doing it again.
@@ -6240,6 +6291,7 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
                     }
                     registers[a] = host->call(m, host->context, arguments,
                                               given);
+                    lhat_free(packed);
                     break;
                 }
 

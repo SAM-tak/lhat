@@ -284,7 +284,13 @@ typedef struct LhatHost {
     LhatHostFn call;
     void *context;   // what the registration handed over; the host owns it
     LhatValue bound;  // 14.4: the receiver, when reached as a member
+    // 13.7: `parameters` is what a call owes at least, not exactly, once
+    // has_variadic is set -- the same ">=" a variadic LhatProto asks for.
+    // Unlike a proto's, the tail is not collected into a table: LhatHostFn is
+    // handed its arguments as an array and a count already, so a variadic host
+    // function reads the tail off the end of what it was given.
     uint8_t parameters;
+    bool has_variadic;
     bool takes_self;
 } LhatHost;
 
@@ -366,7 +372,8 @@ LhatNative *lhat_native_new(LhatHeap *heap, LhatNativeKind kind,
                             LhatValue bound);
 
 LhatHost *lhat_host_new(LhatHeap *heap, LhatHostFn call, void *context,
-                        uint8_t parameters, bool takes_self);
+                        uint8_t parameters, bool has_variadic,
+                        bool takes_self);
 
 LhatHostData *lhat_hostdata_new(LhatHeap *heap, const LhatHostDataTag *tag,
                                 void *pointer, LhatTable *members);

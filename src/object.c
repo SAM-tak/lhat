@@ -186,7 +186,7 @@ LhatNative *lhat_native_new(LhatHeap *heap, LhatNativeKind kind,
 }
 
 LhatHost *lhat_host_new(LhatHeap *heap, LhatHostFn call, void *context,
-                        uint8_t parameters, bool takes_self)
+                        uint8_t parameters, bool has_variadic, bool takes_self)
 {
     LhatHost *host =
         (LhatHost *)lhat_object_alloc(heap, sizeof(LhatHost), LHAT_OBJECT_HOST);
@@ -197,6 +197,7 @@ LhatHost *lhat_host_new(LhatHeap *heap, LhatHostFn call, void *context,
     host->context = context;
     host->bound = lhat_nil();
     host->parameters = parameters;
+    host->has_variadic = has_variadic;
     host->takes_self = takes_self;
     return host;
 }

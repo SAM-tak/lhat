@@ -288,6 +288,7 @@ typedef struct LhatHostEntry {
     LhatHostFn call;  // NULL for a type, which carries no value of its own
     void *context;
     uint8_t parameters;
+    bool has_variadic;  // 13.7: the signature ended in '...' -- see LhatHost
     bool takes_self;
     // 05 の 8.8: the tag values of this type carry. Kept on the entry so that
     // it lives as long as the program and points at the entry's own strings.
@@ -301,6 +302,7 @@ typedef struct LhatGlobalEntry {
     LhatHostFn call;
     void *context;
     uint8_t parameters;
+    bool has_variadic;
     bool takes_self;
 } LhatGlobalEntry;
 
@@ -400,6 +402,10 @@ static bool keep_entry(LhatProgram *program, const char *module,
             count++;
         }
         entry->parameters = (uint8_t)count;
+        // 13.7: '...' is kept apart from the parameter list (check.c's
+        // resolve_func_type), so what is counted above is the floor and this
+        // is what says the count is one.
+        entry->has_variadic = signature->v.func.variadic != NULL;
         entry->takes_self = signature->v.func.takes_self;
     }
     if (entry->module == NULL || entry->name == NULL ||
@@ -763,6 +769,7 @@ bool lhat_register_global(LhatProgram *program, const char *name,
             count++;
         }
         entry->parameters = (uint8_t)count;
+        entry->has_variadic = written->v.func.variadic != NULL;
         entry->takes_self = written->v.func.takes_self;
     }
     if (entry->name == NULL) {
@@ -897,8 +904,8 @@ bool lhat_program_install(const LhatProgram *program, LhatMachine *machine)
                 return false;
             }
         } else if (!lhat_machine_make_host(machine, e->call, e->context,
-                                           e->parameters, e->takes_self,
-                                           &value)) {
+                                           e->parameters, e->has_variadic,
+                                           e->takes_self, &value)) {
             return false;
         }
         if (!lhat_machine_register(machine, e->module, e->type, e->name,
@@ -911,7 +918,8 @@ bool lhat_program_install(const LhatProgram *program, LhatMachine *machine)
         const LhatGlobalEntry *e = &program->global_entries[i];
         LhatValue value = lhat_nil();
         if (!lhat_machine_make_host(machine, e->call, e->context,
-                                    e->parameters, e->takes_self, &value) ||
+                                    e->parameters, e->has_variadic,
+                                    e->takes_self, &value) ||
             !lhat_machine_set_global(machine, e->name, value)) {
             return false;
         }

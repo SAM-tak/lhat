@@ -239,8 +239,14 @@ void lhat_machine_set_modules(LhatMachine *machine, const LhatModule *modules,
 // rather than in program.c because only this file may touch the heap -- the
 // values belong to the machine and the collector has to see them.
 bool lhat_machine_make_table(LhatMachine *machine, LhatValue *out);
+
+// 13.7: `has_variadic` makes `parameters` a floor rather than an exact count,
+// so the registration's signature ended in '...' and a call may write more.
+// The extra arguments reach LhatHostFn as the tail of `arguments`, uncollected
+// -- there is nothing to collect them into that a C function would want.
 bool lhat_machine_make_host(LhatMachine *machine, LhatHostFn call,
-                            void *context, uint8_t parameters, bool takes_self,
+                            void *context, uint8_t parameters,
+                            bool has_variadic, bool takes_self,
                             LhatValue *out);
 
 // Puts `value` at L^.modules.<module>[.<type>].<name>, making the tables on
