@@ -13,99 +13,22 @@
 // outliving its program would be reading a chunk that has been freed, which
 // is the crash stdlib/thread.c's join_and_free comment describes.
 
-#include <stdlib.h>
+#if !defined(_WIN32) && !defined(_POSIX_C_SOURCE)
+#define _POSIX_C_SOURCE 200809L
+#endif
+
 #include <string.h>
 
-#include "object.h"
-#include "port.h"
-#include "program.h"
+#include "stdlibutil.h"
 #include "testutil.h"
-#include "value.h"
-#include "vm.h"
 
 #include "../stdlib/thread.h"
 
-typedef struct {
-    const char *path;
-    const char *text;
-} File;
-
-static char *load_one(void *context, const char *path, size_t *length)
+// std.thread is the module every case here registers; the run itself is
+// stdlibutil.h's, shared with the other stdlib tests.
+static LhatTestRan run_source(const char *text)
 {
-    const File *file = (const File *)context;
-    if (strcmp(file->path, path) != 0) {
-        return NULL;
-    }
-    size_t size = strlen(file->text);
-    char *copy = (char *)malloc(size + 1);
-    if (copy != NULL) {
-        memcpy(copy, file->text, size + 1);
-        *length = size;
-    }
-    return copy;
-}
-
-// What a run answered, in a form that outlives the machine it ran on. The
-// value itself does not: lhat_machine_dispose frees everything still on the
-// heap, so a returned string has to be copied out before the run is torn down
-// rather than read afterwards.
-typedef struct {
-    bool ok;  // false when anything before the run went wrong
-    LhatRunStatus status;
-    int64_t integer;  // 0 unless an integer came back
-    char *text;       // owned, NUL-terminated; NULL unless a string came back
-} Ran;
-
-static void ran_dispose(Ran *ran) { free(ran->text); }
-
-// Checks, compiles and runs one unit with std.thread registered.
-static Ran run_source(const char *text)
-{
-    static File file;
-    file.path = "main.lh";
-    file.text = text;
-
-    Ran out;
-    out.ok = false;
-    out.status = LHAT_RUN_OK;
-    out.integer = 0;
-    out.text = NULL;
-
-    LhatProgram program;
-    lhat_program_init(&program, true, load_one, &file);
-    const LhatUnit *root = NULL;
-    const LhatModule *modules = NULL;
-    size_t count = 0;
-    if (lhatstdlib_thread_register(&program)) {
-        root = lhat_program_check(&program, "main.lh");
-    }
-    if (root != NULL && !lhat_program_has_errors(&program) &&
-        root->checked.diagnostic_count == 0) {
-        modules = lhat_program_compile(&program, &count);
-    }
-    if (modules != NULL) {
-        LhatMachine *machine = lhat_machine_new();
-        lhat_machine_set_modules(machine, modules, count);
-        if (lhat_program_install(&program, machine)) {
-            LhatRunResult ran = lhat_run(machine, modules[root->index].proto);
-            out.ok = true;
-            out.status = ran.status;
-            if (lhat_is_integer(ran.value)) {
-                out.integer = lhat_as_integer(ran.value);
-            } else if (lhat_is_object_kind(ran.value, LHAT_OBJECT_STRING)) {
-                const LhatString *s =
-                    (const LhatString *)lhat_as_object(ran.value);
-                out.text = (char *)malloc(s->length + 1);
-                if (out.text != NULL) {
-                    memcpy(out.text, s->text, s->length);
-                    out.text[s->length] = '\0';
-                }
-            }
-        }
-        lhat_machine_dispose(machine);
-    }
-    lhat_program_dispose(&program);
-    return out;
+    return lhat_test_run(lhatstdlib_thread_register, text);
 }
 
 // Whether the unit checks at all. The refusals below are type errors rather
@@ -113,19 +36,7 @@ static Ran run_source(const char *text)
 // cases ask.
 static bool checks(const char *text)
 {
-    static File file;
-    file.path = "main.lh";
-    file.text = text;
-
-    LhatProgram program;
-    lhat_program_init(&program, true, load_one, &file);
-    bool registered = lhatstdlib_thread_register(&program);
-    const LhatUnit *root = lhat_program_check(&program, "main.lh");
-    bool clean = registered && root != NULL &&
-                 !lhat_program_has_errors(&program) &&
-                 root->checked.diagnostic_count == 0;
-    lhat_program_dispose(&program);
-    return clean;
+    return lhat_test_check_text(lhatstdlib_thread_register, text);
 }
 
 // The preamble every case shares: spawn, join, and hand the answer back. Both
@@ -145,12 +56,10 @@ static void test_spawn_shape(void)
 {
     LHAT_TEST("a 'p^...' closure with no upvalues is what spawn takes");
     {
-        Ran ran = run_source(WITH_SPAWN("std.thread.spawn(p^ ... "
-                                        "{ return^ 42 })"));
-        LHAT_CHECK(ran.ok, "the program ran");
-        LHAT_CHECK_EQ_INT(ran.status, LHAT_RUN_OK);
-        LHAT_CHECK_EQ_INT(ran.integer, 42);
-        ran_dispose(&ran);
+        LhatTestRan ran = run_source(WITH_SPAWN("std.thread.spawn(p^ ... "
+                                                "{ return^ 42 })"));
+        LHAT_CHECK_RAN_INTEGER(ran, 42);
+        lhat_test_ran_dispose(&ran);
     }
 
     // 13.7: the collector's element type is any^, so a plain 'p^ ...' is what
@@ -191,19 +100,16 @@ static void test_spawn_upvalue(void)
 {
     LHAT_TEST("a closure that closes over a variable is refused at run time");
     {
-        Ran ran = run_source("import^ std.thread\n"
-                             "let^ n = 7\n"
-                             "let^ h = std.thread.spawn(p^ ... { return^ n })\n"
-                             "if^ h isa^ std.thread.ThreadError.NotSpawnable {\n"
-                             "    return^ \"refused\"\n"
-                             "}\n"
-                             "return^ \"taken\"\n");
-        LHAT_CHECK(ran.ok, "the program ran");
-        LHAT_CHECK_EQ_INT(ran.status, LHAT_RUN_OK);
-        LHAT_CHECK(ran.text != NULL && strcmp(ran.text, "refused") == 0,
-                   "got \"%s\", want \"refused\"",
-                   ran.text != NULL ? ran.text : "(not a string)");
-        ran_dispose(&ran);
+        LhatTestRan ran = run_source(
+            "import^ std.thread\n"
+            "let^ n = 7\n"
+            "let^ h = std.thread.spawn(p^ ... { return^ n })\n"
+            "if^ h isa^ std.thread.ThreadError.NotSpawnable {\n"
+            "    return^ \"refused\"\n"
+            "}\n"
+            "return^ \"taken\"\n");
+        LHAT_CHECK_RAN_TEXT(ran, "refused");
+        lhat_test_ran_dispose(&ran);
     }
 }
 
@@ -214,54 +120,47 @@ static void test_arguments(void)
     // the callee's '...' by lhat_machine_call on the other machine.
     LHAT_TEST("what is written past fn arrives as fn's '...'");
     {
-        Ran ran = run_source(
+        LhatTestRan ran = run_source(
             WITH_SPAWN("std.thread.spawn(p^ ... {\n"
                        "    var^ total = 0\n"
                        "    for^ i, x in^ ... { total := total + x }\n"
                        "    return^ total\n"
                        "}, 3, 4, 5)"));
-        LHAT_CHECK(ran.ok, "the program ran");
-        LHAT_CHECK_EQ_INT(ran.status, LHAT_RUN_OK);
-        LHAT_CHECK_EQ_INT(ran.integer, 12);
-        ran_dispose(&ran);
+        LHAT_CHECK_RAN_INTEGER(ran, 12);
+        lhat_test_ran_dispose(&ran);
     }
 
     LHAT_TEST("no arguments at all leaves '...' empty");
     {
-        Ran ran = run_source(
+        LhatTestRan ran = run_source(
             WITH_SPAWN("std.thread.spawn(p^ ... {\n"
                        "    var^ total = 0\n"
                        "    for^ i, x in^ ... { total := total + 1 }\n"
                        "    return^ total\n"
                        "})"));
-        LHAT_CHECK(ran.ok, "the program ran");
-        LHAT_CHECK_EQ_INT(ran.status, LHAT_RUN_OK);
-        LHAT_CHECK_EQ_INT(ran.integer, 0);
-        ran_dispose(&ran);
+        LHAT_CHECK_RAN_INTEGER(ran, 0);
+        lhat_test_ran_dispose(&ran);
     }
 
     // A string is the one carried kind that allocates on both sides, so it is
-    // what pins the copy rather than the value. Only the way back is asserted
-    // on: a position of '...' is any^ (S16) and the only thing that can be
-    // done with an any^ is to narrow it, which today means isa^ against a
-    // registered type -- 'isa^ string^' does not compile yet (02 の 13.11's
-    // general narrowing). So the string going in is pinned by its being
-    // accepted rather than refused, and the string coming out by its bytes.
+    // what pins the copy rather than the value. A position of '...' is any^
+    // (S16), and the only thing to do with an any^ is narrow it -- 02 の
+    // 13.11's isa^ reaches a builtin name now (S33), so what crossed is asked
+    // about on the far side rather than merely counted. The way back is the
+    // bytes the thread answers with.
     LHAT_TEST("a string crosses to the thread and one comes back");
     {
-        Ran ran = run_source(
+        LhatTestRan ran = run_source(
             WITH_SPAWN("std.thread.spawn(p^ ... {\n"
                        "    var^ seen = 0\n"
-                       "    for^ i, x in^ ... { seen := seen + 1 }\n"
+                       "    for^ i, x in^ ... {\n"
+                       "        if^ x isa^ string^ { seen := seen + 1 }\n"
+                       "    }\n"
                        "    if^ seen = 1 { return^ \"one carried\" }\n"
                        "    return^ \"\"\n"
                        "}, \"carried across\")"));
-        LHAT_CHECK(ran.ok, "the program ran");
-        LHAT_CHECK_EQ_INT(ran.status, LHAT_RUN_OK);
-        LHAT_CHECK(ran.text != NULL && strcmp(ran.text, "one carried") == 0,
-                   "got \"%s\", want \"one carried\"",
-                   ran.text != NULL ? ran.text : "(not a string)");
-        ran_dispose(&ran);
+        LHAT_CHECK_RAN_TEXT(ran, "one carried");
+        lhat_test_ran_dispose(&ran);
     }
 
     // A collector is a table, and a table holds no nil^ -- so a nil^ written
@@ -270,13 +169,13 @@ static void test_arguments(void)
     // counts the same one position, which is what this pins.
     LHAT_TEST("a nil^ argument collapses the same way an ordinary call's does");
     {
-        Ran spawned = run_source(
+        LhatTestRan spawned = run_source(
             WITH_SPAWN("std.thread.spawn(p^ ... {\n"
                        "    var^ n = 0\n"
                        "    for^ i, x in^ ... { n := n + 1 }\n"
                        "    return^ n\n"
                        "}, \"here\", nil^)"));
-        Ran called = run_source("let^ count = p^ ... {\n"
+        LhatTestRan called = run_source("let^ count = p^ ... {\n"
                                 "    var^ n = 0\n"
                                 "    for^ i, x in^ ... { n := n + 1 }\n"
                                 "    return^ n\n"
@@ -285,8 +184,8 @@ static void test_arguments(void)
         LHAT_CHECK(spawned.ok && called.ok, "both programs ran");
         LHAT_CHECK_EQ_INT(spawned.integer, called.integer);
         LHAT_CHECK_EQ_INT(spawned.integer, 1);
-        ran_dispose(&spawned);
-        ran_dispose(&called);
+        lhat_test_ran_dispose(&spawned);
+        lhat_test_ran_dispose(&called);
     }
 
     // 13.7's 'expr...' at a host call: the closure path unpacks a spread into
@@ -294,7 +193,7 @@ static void test_arguments(void)
     // array instead. Without that the table would arrive as a single argument.
     LHAT_TEST("a spread into spawn forwards the caller's own '...'");
     {
-        Ran ran = run_source(
+        LhatTestRan ran = run_source(
             "import^ std.thread\n"
             "let^ forward = p^ ... {\n"
             "    return^ std.thread.spawn(p^ ... {\n"
@@ -310,10 +209,8 @@ static void test_arguments(void)
             "    return^ answer\n"
             "}\n"
             "return^ 0 - 2\n");
-        LHAT_CHECK(ran.ok, "the program ran");
-        LHAT_CHECK_EQ_INT(ran.status, LHAT_RUN_OK);
-        LHAT_CHECK_EQ_INT(ran.integer, 21);
-        ran_dispose(&ran);
+        LHAT_CHECK_RAN_INTEGER(ran, 21);
+        lhat_test_ran_dispose(&ran);
     }
 
     // Only the four kinds cross, and spawn's own '...' is any^ so that a
@@ -321,7 +218,7 @@ static void test_arguments(void)
     // refusal at run time, by name, rather than in the checker.
     LHAT_TEST("a table is not an argument spawn can carry");
     {
-        Ran ran = run_source(
+        LhatTestRan ran = run_source(
             "import^ std.thread\n"
             "let^ h = std.thread.spawn(p^ ... { return^ 1 }, {1, 2})\n"
             "if^ h isa^ std.thread.ThreadError.BadArgument {\n"
@@ -332,12 +229,8 @@ static void test_arguments(void)
             "    return^ \"taken\"\n"
             "}\n"
             "return^ \"other\"\n");
-        LHAT_CHECK(ran.ok, "the program ran");
-        LHAT_CHECK_EQ_INT(ran.status, LHAT_RUN_OK);
-        LHAT_CHECK(ran.text != NULL && strcmp(ran.text, "refused") == 0,
-                   "got \"%s\", want \"refused\"",
-                   ran.text != NULL ? ran.text : "(not a string)");
-        ran_dispose(&ran);
+        LHAT_CHECK_RAN_TEXT(ran, "refused");
+        lhat_test_ran_dispose(&ran);
     }
 }
 
@@ -348,7 +241,7 @@ static void test_dispose(void)
     // detach-and-forget version into a use-after-free.
     LHAT_TEST("a handle disposed without a join waits for its thread");
     {
-        Ran ran =
+        LhatTestRan ran =
             run_source("import^ std.thread\n"
                        "var^ started = 0\n"
                        "for^ i from^ 1 to^ 20 {\n"
@@ -359,15 +252,13 @@ static void test_dispose(void)
                        "    }\n"
                        "}\n"
                        "return^ started\n");
-        LHAT_CHECK(ran.ok, "the program ran");
-        LHAT_CHECK_EQ_INT(ran.status, LHAT_RUN_OK);
-        LHAT_CHECK_EQ_INT(ran.integer, 20);
-        ran_dispose(&ran);
+        LHAT_CHECK_RAN_INTEGER(ran, 20);
+        lhat_test_ran_dispose(&ran);
     }
 
     LHAT_TEST("joining twice answers AlreadyJoined rather than waiting again");
     {
-        Ran ran =
+        LhatTestRan ran =
             run_source("import^ std.thread\n"
                        "let^ h = std.thread.spawn(p^ ... { return^ 1 })\n"
                        "if^ h isa^ std.thread.ThreadHandle {\n"
@@ -379,10 +270,8 @@ static void test_dispose(void)
                        "    return^ 0\n"
                        "}\n"
                        "return^ 0 - 1\n");
-        LHAT_CHECK(ran.ok, "the program ran");
-        LHAT_CHECK_EQ_INT(ran.status, LHAT_RUN_OK);
-        LHAT_CHECK_EQ_INT(ran.integer, 1);
-        ran_dispose(&ran);
+        LHAT_CHECK_RAN_INTEGER(ran, 1);
+        lhat_test_ran_dispose(&ran);
     }
 }
 

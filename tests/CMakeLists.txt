@@ -30,9 +30,20 @@ lhat_add_test(test_object)
 lhat_add_test(test_program)
 lhat_add_test(test_vm)
 
-# 唯一 lhat 以外を要るテスト -- std.thread はサンプル stdlib の側にあり、
-# それ自体が OS スレッドを起動する。LHAT_BUILD_STDLIB=OFF なら建てない。
+# サンプル stdlib のテスト。src/ ではなく include/lhat.h 越しに、L^ の
+# プログラムから見える形を検査する(tests/stdlibutil.h の頭のコメント)。
+# LHAT_BUILD_STDLIB=OFF なら建てない。
 if(LHAT_BUILD_STDLIB)
+    # std.thread だけは OS スレッドを自分で起動するので lhatthread も要る。
     lhat_add_test(test_thread)
     target_link_libraries(test_thread PRIVATE lhatstdlib lhatthread)
+
+    lhat_add_test(test_io)
+    target_link_libraries(test_io PRIVATE lhatstdlib)
+
+    lhat_add_test(test_random)
+    target_link_libraries(test_random PRIVATE lhatstdlib)
+
+    lhat_add_test(test_debug)
+    target_link_libraries(test_debug PRIVATE lhatstdlib)
 endif()
