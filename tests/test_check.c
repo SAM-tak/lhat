@@ -1058,6 +1058,51 @@ static void test_annotations(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
+    // 14.9 (S38): and it asks what it says. The collecting pass leaves a
+    // pending^ seed for every let^, which conforms to everything -- so the
+    // annotation used to ask nothing at all where the same one outside the
+    // def^ asked for the whole structure.
+    LHAT_TEST("a definition's own name asks for an instance of it");
+    check_text(&u,
+               "let^ T = def^{\n"
+               "  self^{ n := 0 },\n"
+               "  a = f^self^, x:T -> number^ { return^ x.n },\n"
+               "}\n"
+               "var^ y : number^ = T.new().a(5)\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
+    unit_dispose(&u);
+
+    LHAT_TEST("and an instance is what fits there");
+    check_text(&u,
+               "let^ T = def^{\n"
+               "  self^{ n := 0 },\n"
+               "  a = f^self^, x:T -> number^ { return^ x.n },\n"
+               "}\n"
+               "var^ y : number^ = T.new().a(T.new())\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // 14.5: the definition is the right side of the '..', which is where
+    // infer_binary reads it too.
+    LHAT_TEST("a composed one is written against its name as well");
+    check_text(&u,
+               "var^ A = def^{ self^{ n := 0 } }\n"
+               "var^ B = A..def^{ m = f^self^, y:B -> number^ { return^ 0 } }\n"
+               "var^ z : number^ = B.new().m(5)\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
+    unit_dispose(&u);
+
+    // Only the definition the name is being bound to. One made deeper inside
+    // the value -- in a body, say -- is not what this name will hold.
+    LHAT_TEST("but a def^ deeper in the value does not take the name");
+    check_text(&u,
+               "var^ x = f^ -> t^{} {\n"
+               "  return^ def^{ self^{ n := 0 }, "
+               "m = f^self^, y:x -> number^ { return^ 0 } }\n"
+               "}\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
     // 13.13 (S37): and a literal with no binding to take a name from says it
     // with Self^. Capital S -- self^ is the receiver, a value, and 13.1 has no
     // type by that name; this is the type, and only ever written as one.

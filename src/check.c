@@ -173,6 +173,23 @@ typedef struct {
         struct SelfLink *outer;
     } *self_link;
 
+    // 14.9 with 8.7: the definitions being built and the names they are on
+    // their way into. A def^ writing its own name inside itself reached the
+    // pending^ seed the collecting pass leaves for every let^, and pending^
+    // conforms to everything -- so 'x:T' inside T asked nothing at all, while
+    // the same annotation outside asked for the whole structure.
+    //
+    // Only resolve_type reads this. The *value* is genuinely not assigned yet
+    // at that point, which is 8.7's own business and stays as it was; what a
+    // name means as a type is settled by the def^ itself (14.7's instance),
+    // and that exists from the first line of infer_def onwards.
+    struct DefLink {
+        const Binding *binding;
+        const LhatNode *node;    // the def^ this name is being bound to
+        LhatType *instance;      // NULL until infer_def has made it
+        struct DefLink *outer;
+    } *def_link;
+
     // 02 の 15.1: f^ may call only f^, never p^. True inside an f^ body
     // (and nested f^ literals within it), false everywhere else -- outside
     // any body (top level) and inside a p^ both allow either kind, so
@@ -807,6 +824,18 @@ static LhatType *resolve_type(Checker *c, const LhatNode *node)
             if (declared == NULL) {
                 report(c, node, LHAT_CHECK_ERR_UNKNOWN_TYPE);
                 return simple(c, LHAT_TYPE_UNKNOWN);
+            }
+
+            // 14.9: written inside the very def^ this name is being bound to,
+            // where the binding still holds the collecting pass's pending^
+            // seed. What it will mean is already built, so the name says the
+            // same thing here as it does anywhere else -- 14.7's instance,
+            // which is what Self^ answers with too.
+            for (const struct DefLink *d = c->def_link; d != NULL;
+                 d = d->outer) {
+                if (d->binding == declared && d->instance != NULL) {
+                    return d->instance;
+                }
             }
 
             // 2.2 gives a type to a def^ and an errordef^, and to nothing
@@ -3468,6 +3497,12 @@ static LhatType *infer_def(Checker *c, const LhatNode *node, LhatType *base)
     struct SelfLink self_here = { instance, c->self_link };
     c->self_link = &self_here;
 
+    // 14.9: and the name this one is landing in, if check_define found one,
+    // means the same instance from here on.
+    if (c->def_link != NULL && c->def_link->node == node) {
+        c->def_link->instance = instance;
+    }
+
     const LhatNode *template = NULL;
     for (const LhatNode *entry = node->v.list.items; entry != NULL;
          entry = entry->next) {
@@ -4303,6 +4338,32 @@ static void check_define(Checker *c, const LhatNode *node)
                                 ? YIELD_CTX_BOUND : YIELD_CTX_NONE;
         c->yield_bound_type = annotated;
 
+        // 14.9: a def^ landing in a name may be written against that name
+        // from inside itself. 14.5 composes with '..' and the definition is
+        // the right side of it, which is where infer_binary reads it too.
+        // Anything deeper is some other def^ -- one made inside a body, say --
+        // and this name is not what it will be bound to.
+        const LhatNode *definition = value;
+        if (definition != NULL && definition->kind == LHAT_NODE_BINARY &&
+            definition->v.binary.op == LHAT_OP_CONCAT) {
+            definition = definition->v.binary.right;
+        }
+        struct DefLink def_here = {NULL, definition, NULL, c->def_link};
+        bool defining = false;
+        if (definition != NULL && definition->kind == LHAT_NODE_DEF &&
+            !target_is_path(target)) {
+            const char *bound = NULL;
+            size_t bound_length = 0;
+            if (node_name(c, target_name_node(target), &bound, &bound_length)) {
+                def_here.binding =
+                    scope_find_local(c->scope, bound, bound_length);
+                defining = def_here.binding != NULL;
+                if (defining) {
+                    c->def_link = &def_here;
+                }
+            }
+        }
+
         LhatType *actual;
         if (unpacked != NULL) {
             actual = unpacked_at(c, unpacked, position);
@@ -4317,6 +4378,10 @@ static void check_define(Checker *c, const LhatNode *node)
 
         c->yield_context = outer_yctx;
         c->yield_bound_type = outer_ybound;
+
+        if (defining) {
+            c->def_link = def_here.outer;
+        }
 
         c->defining_name = outer_name;
         c->defining_length = outer_length;
