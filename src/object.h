@@ -64,7 +64,11 @@ typedef struct {
 typedef struct LhatTable {
     LhatObject header;
 
-    LhatValue *array;  // array[i] is the value at key i+1
+    // 2.2改: the dense half as two parallel runs (payloads + one-byte tags)
+    // rather than an LhatValue array -- half the memory, and the tag run is
+    // what a scan (the collector's, a walk's) touches first. Slot i is the
+    // value at key i+1; read and written only through lhat_slots_get/set.
+    LhatSlots array;
     size_t array_count;
     size_t array_capacity;
 

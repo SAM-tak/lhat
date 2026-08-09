@@ -71,15 +71,44 @@ typedef struct LhatObject {
 } LhatObject;
 
 
+// 2.2改: the payload on its own, so that bulk storage can keep payloads and
+// tags in two parallel runs (LhatSlots below) instead of paying eight bytes
+// of padding per value for a tag that needs three bits.
+typedef union {
+    bool boolean;
+    int64_t integer;
+    double real;
+    LhatObject *object;
+} LhatValueUnion;
+
 typedef struct {
-    union {
-        bool boolean;
-        int64_t integer;
-        double real;
-        LhatObject *object;
-    } as;
+    LhatValueUnion as;
     LhatValueTag tag;
 } LhatValue;
+
+// 2.2改: a run of values stored as two parallel arrays -- the payloads
+// aligned and dense, the tags one byte each. This is the shape every bulk
+// store takes (a table's array part; the machine's stack and a coroutine's
+// saved registers are to follow); LhatValue stays the currency handed
+// around by value, and these two functions are the only bridge.
+typedef struct {
+    LhatValueUnion *values;
+    uint8_t *tags;
+} LhatSlots;
+
+static inline LhatValue lhat_slots_get(LhatSlots slots, size_t i)
+{
+    LhatValue v;
+    v.as = slots.values[i];
+    v.tag = (LhatValueTag)slots.tags[i];
+    return v;
+}
+
+static inline void lhat_slots_set(LhatSlots slots, size_t i, LhatValue v)
+{
+    slots.values[i] = v.as;
+    slots.tags[i] = (uint8_t)v.tag;
+}
 
 // 5.4: a place shared between a frame and the closures made inside it. While
 // the frame lives, `location` points into it; once the frame goes, the value

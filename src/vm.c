@@ -5129,7 +5129,7 @@ static LhatValue call_arg(const LhatValue *registers, uint8_t a, size_t skip,
                           size_t i)
 {
     if (spread != NULL && i >= before_spread) {
-        return spread->array[i - before_spread];
+        return lhat_slots_get(spread->array, i - before_spread);
     }
     return registers[a + skip + i];
 }

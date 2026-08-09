@@ -256,7 +256,7 @@ static void write_table(Writer *w, const LhatTable *table, size_t depth)
     for (size_t i = 0; i < table->array_count; i++) {
         put_text(w, first ? " " : ", ");
         first = false;
-        write_value(w, table->array[i], depth + 1);
+        write_value(w, lhat_slots_get(table->array, i), depth + 1);
     }
     for (size_t i = 0; i < table->entry_capacity; i++) {
         LhatValue key = table->entries[i].key;

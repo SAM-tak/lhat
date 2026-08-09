@@ -50,7 +50,7 @@ void lhat_gc_children(LhatObject **gray, LhatObject *object)
         case LHAT_OBJECT_TABLE: {
             const LhatTable *table = (const LhatTable *)object;
             for (size_t i = 0; i < table->array_count; i++) {
-                lhat_gc_reach(gray, table->array[i]);
+                lhat_gc_reach(gray, lhat_slots_get(table->array, i));
             }
             for (size_t i = 0; i < table->entry_capacity; i++) {
                 lhat_gc_reach(gray, table->entries[i].key);

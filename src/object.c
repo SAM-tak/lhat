@@ -157,7 +157,7 @@ bool lhat_table_walk(LhatCoroutine *walk, LhatValue *key, LhatValue *value)
     // keeping. What order the rest comes in is not promised.
     if (walk->at_array < table->array_count) {
         *key = lhat_integer((int64_t)walk->at_array + 1);
-        *value = table->array[walk->at_array++];
+        *value = lhat_slots_get(table->array, walk->at_array++);
         return true;
     }
     while (walk->at_entry < table->entry_capacity) {
@@ -770,7 +770,8 @@ void lhat_object_free(LhatObject *object)
     switch (object->kind) {
         case LHAT_OBJECT_TABLE: {
             LhatTable *table = (LhatTable *)object;
-            lhat_free(table->array);
+            lhat_free(table->array.values);
+            lhat_free(table->array.tags);
             lhat_free(table->entries);
             break;
         }
@@ -977,11 +978,20 @@ static bool array_index(const LhatTable *table, LhatValue key, size_t *index)
 static bool grow_array(LhatTable *table)
 {
     size_t capacity = table->array_capacity ? table->array_capacity * 2 : 8;
-    LhatValue *array = (LhatValue *)lhat_realloc(table->array, capacity * sizeof *array);
-    if (array == NULL) {
+    LhatValueUnion *values = (LhatValueUnion *)lhat_realloc(
+        table->array.values, capacity * sizeof *values);
+    if (values == NULL) {
         return false;
     }
-    table->array = array;
+    table->array.values = values;
+    uint8_t *tags = (uint8_t *)lhat_realloc(table->array.tags,
+                                            capacity * sizeof *tags);
+    if (tags == NULL) {
+        // The payload run grew and the capacity did not -- wasted room, not
+        // an inconsistency, since count and capacity still hold.
+        return false;
+    }
+    table->array.tags = tags;
     table->array_capacity = capacity;
     return true;
 }
@@ -1001,7 +1011,7 @@ static void drain_into_array(LhatTable *table)
         if (table->array_count == table->array_capacity && !grow_array(table)) {
             return;
         }
-        table->array[table->array_count++] = entry->value;
+        lhat_slots_set(table->array, table->array_count++, entry->value);
         entry->key = lhat_nil();
         entry->value = lhat_bool(true);  // a tombstone
         table->entry_count--;
@@ -1026,7 +1036,7 @@ LhatValue lhat_table_get(const LhatTable *table, LhatValue key)
     for (; table != NULL; table = table->definition) {
         size_t index;
         if (array_index(table, key, &index)) {
-            return table->array[index];
+            return lhat_slots_get(table->array, index);
         }
         if (table->entry_capacity == 0) {
             continue;
@@ -1056,7 +1066,7 @@ bool lhat_table_set(LhatTable *table, LhatValue key, LhatValue value,
             table->array_count--;  // removing the last one shortens the run
             return true;
         }
-        table->array[index] = value;
+        lhat_slots_set(table->array, index, value);
         return true;
     }
 
@@ -1067,7 +1077,7 @@ bool lhat_table_set(LhatTable *table, LhatValue key, LhatValue value,
         if (table->array_count == table->array_capacity && !grow_array(table)) {
             return false;
         }
-        table->array[table->array_count++] = value;
+        lhat_slots_set(table->array, table->array_count++, value);
         drain_into_array(table);
         return true;
     }
