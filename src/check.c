@@ -1021,6 +1021,7 @@ static LhatType *require_value(Checker *c, const LhatNode *at, LhatType *type)
 static const char *operator_name(LhatOpKind op, size_t *length)
 {
     switch (op) {
+        case LHAT_OP_SPACESHIP: *length = 3; return "<=>";  // 11.9 (S40)
         case LHAT_OP_CONCAT:   *length = 2; return "..";
         case LHAT_OP_ADD:      *length = 1; return "+";
         case LHAT_OP_SUB:      *length = 1; return "-";
@@ -1040,6 +1041,7 @@ static const char *operator_name(LhatOpKind op, size_t *length)
 static bool is_operator_name(const char *name, size_t length)
 {
     static const LhatOpKind written[] = {
+        LHAT_OP_SPACESHIP,  // 11.9 (S40)
         LHAT_OP_CONCAT, LHAT_OP_ADD, LHAT_OP_SUB,      LHAT_OP_MUL,
         LHAT_OP_DIV,    LHAT_OP_MOD, LHAT_OP_FLOORDIV, LHAT_OP_POW,
     };
@@ -1060,8 +1062,10 @@ static bool is_operator_name(const char *name, size_t length)
 // parameter. Nothing later checks this: the call site reads the signature and
 // believes it, and the machine hands over a receiver and one argument
 // whatever the body declared.
+// 11.9 (S40): and a '<=>' answers a number^, since the four orderings are
+// read off it by asking which side of zero the answer falls.
 static void check_operator_shape(Checker *c, const LhatNode *at,
-                                 const LhatType *type)
+                                 const LhatType *type, bool compares)
 {
     if (type == NULL || type->kind == LHAT_TYPE_UNKNOWN ||
         type->kind == LHAT_TYPE_PENDING) {
@@ -1072,7 +1076,7 @@ static void check_operator_shape(Checker *c, const LhatNode *at,
         // an operator on its own.
         for (const LhatTypeList *arm = type->v.composite.arms; arm != NULL;
              arm = arm->next) {
-            check_operator_shape(c, at, arm->type);
+            check_operator_shape(c, at, arm->type, compares);
         }
         return;
     }
@@ -1093,6 +1097,14 @@ static void check_operator_shape(Checker *c, const LhatNode *at,
     if (type->kind != LHAT_TYPE_FUNC || !type->v.func.is_function ||
         !type->v.func.takes_self || params != 1 || type->v.func.yields) {
         report(c, at, LHAT_CHECK_ERR_BAD_OPERATOR);
+        return;
+    }
+    // 11.9 (S40): '(a <=> b) < 0' is what an ordering reads, so the answer has
+    // to be a thing zero can be on one side of.
+    if (compares && (type->v.func.result == NULL ||
+                     !lhat_type_conforms(type->v.func.result,
+                                         simple(c, LHAT_TYPE_NUMBER)))) {
+        report(c, at, LHAT_CHECK_ERR_COMPARE_NOT_NUMBER);
     }
 }
 
@@ -1124,6 +1136,18 @@ static void refuse_self_last(Checker *c, const LhatNode *at,
 static LhatType *builtin_operator(Checker *c, LhatTypeKind carrier,
                                   const char *name, size_t length)
 {
+    // 11.9 (S40): number^ and string^ each order their own, so both carry the
+    // one comparison -- and it answers a number^ whatever it was asked of.
+    // Without this a written '"a" < "b"' had nothing to reach at all.
+    if (name_is(name, length, "<=>") &&
+        (carrier == LHAT_TYPE_NUMBER || carrier == LHAT_TYPE_STRING)) {
+        LhatType *compare = lhat_type_func(c->result->types, true);
+        compare->v.func.takes_self = true;
+        lhat_type_add_param(c->result->types, compare, simple(c, carrier));
+        compare->v.func.result = simple(c, LHAT_TYPE_NUMBER);
+        return compare;
+    }
+
     LhatTypeKind takes;
     if (carrier == LHAT_TYPE_STRING && name_is(name, length, "..")) {
         takes = LHAT_TYPE_STRING;  // 11.2: joining two strings answers one
@@ -1801,6 +1825,55 @@ static void expect(Checker *c, const LhatNode *at, LhatType *value,
 // NULL means nothing was decided: the operand types said too little (03 の
 // 3.5), or the answer was already reported. The caller says what to fall back
 // on, since that differs by operator.
+// The arm of an operator member that takes these arguments, or NULL. 14.12
+// forbids overlapping signatures, so at most one ever does. `self_last` picks
+// which side the arm was written for (11.3改): one written the other way round
+// describes the other order and is passed over.
+static const LhatType *operator_arm(const LhatType *carrier,
+                                    LhatType *const *args, bool self_last)
+{
+    if (carrier == NULL) {
+        return NULL;
+    }
+    if (carrier->kind == LHAT_TYPE_INTERSECT) {
+        for (const LhatTypeList *arm = carrier->v.composite.arms; arm != NULL;
+             arm = arm->next) {
+            if (arm->type != NULL && arm->type->kind == LHAT_TYPE_FUNC &&
+                arm->type->v.func.self_last == self_last &&
+                signature_accepts(arm->type, args, 1, true)) {
+                return arm->type;
+            }
+        }
+        return NULL;
+    }
+    if (carrier->kind != LHAT_TYPE_FUNC ||
+        carrier->v.func.self_last != self_last ||
+        !signature_accepts(carrier, args, 1, true)) {
+        return NULL;
+    }
+    return carrier;
+}
+
+// 11.9 (S40): whether one of the two carries a '<=>' taking the other, which
+// is what an ordering is read off. 3.5: wherever inference has not decided,
+// this says nothing rather than reporting -- the machine asks the same
+// question of the actual values.
+static bool ordered_pair(Checker *c, LhatType *left, LhatType *right)
+{
+    if (operator_undecided(left) || operator_undecided(right)) {
+        return true;
+    }
+    LhatType *args[1];
+    args[0] = right;
+    if (operator_arm(operator_member(c, left, "<=>", 3), args, false) != NULL) {
+        return true;
+    }
+    // 11.3改: or the right operand carries one written as the receiver, which
+    // is how a value joins a comparison whose left side is a built-in.
+    args[0] = left;
+    return operator_arm(operator_member(c, right, "<=>", 3), args, true) != NULL;
+}
+
 // 11.3改 (S39): what the RIGHT operand answers, when it was written as the
 // receiver ('op^+ = f^lhs:number^, self^'). Reached only once the left has
 // been asked and has no arm taking this right operand, which is what keeps
@@ -1826,28 +1899,16 @@ static LhatType *right_operator(Checker *c, const char *name, size_t length,
 
     // The left operand is the single argument here, so an arm is asked exactly
     // as a member call asks -- the same judgement the left side uses, with the
-    // operands the other way round. 14.12's ban on overlap leaves at most one.
+    // operands the other way round. A left-receiver one on this side answers
+    // 'right op left', which is not what is written, so only a self^-last arm
+    // will do.
     LhatType *args[1] = {left};
-    if (carrier->kind == LHAT_TYPE_INTERSECT) {
-        for (const LhatTypeList *arm = carrier->v.composite.arms; arm != NULL;
-             arm = arm->next) {
-            if (arm->type != NULL && arm->type->kind == LHAT_TYPE_FUNC &&
-                arm->type->v.func.self_last &&
-                signature_accepts(arm->type, args, 1, true)) {
-                *answered = true;
-                return arm->type->v.func.result;
-            }
-        }
-        return NULL;
-    }
-    // A left-receiver operator on this side answers 'right op left', which is
-    // not what is written here, so only a self^-last one will do.
-    if (carrier->kind != LHAT_TYPE_FUNC || !carrier->v.func.self_last ||
-        !signature_accepts(carrier, args, 1, true)) {
+    const LhatType *arm = operator_arm(carrier, args, true);
+    if (arm == NULL) {
         return NULL;
     }
     *answered = true;
-    return carrier->v.func.result;
+    return arm->v.func.result;
 }
 
 static LhatType *infer_operator(Checker *c, const LhatNode *node, LhatOpKind op,
@@ -2213,6 +2274,16 @@ static LhatType *infer_binary(Checker *c, const LhatNode *node)
             return boolean;
         }
 
+        // 11.9 (S40): the one comparison a type writes. Asked exactly the way
+        // '..' and the arithmetic are, so an op^<=> on either side answers it
+        // (11.3改), and number^ and string^ carry their own.
+        case LHAT_OP_SPACESHIP: {
+            left = require_value(c, node->v.binary.left, left);
+            right = require_value(c, node->v.binary.right, right);
+            LhatType *answer = infer_operator(c, node, op, left, right);
+            return answer != NULL ? answer : simple(c, LHAT_TYPE_NUMBER);
+        }
+
         case LHAT_OP_EQ:
         case LHAT_OP_IS:
         case LHAT_OP_NE:
@@ -2220,14 +2291,32 @@ static LhatType *infer_binary(Checker *c, const LhatNode *node)
         case LHAT_OP_GT:
         case LHAT_OP_LE:
         case LHAT_OP_GE:
+        {
+            // 11.9 (S40): a '<=>' taking the two is what says how they
+            // compare, and it is asked first. One written across two types --
+            // 11.3改 lets the right operand carry it -- relates a pair that
+            // 14.12 would otherwise call separate, so the judgement below has
+            // to come second.
+            bool related = ordered_pair(c, left, right);
+
             // 14.12's disjointness says whether any value inhabits both. If
-            // none does the answer is fixed before the program runs, which is
-            // a mistake rather than a comparison. Which types are ordered is
-            // left alone -- this only refuses the pairs that can never meet.
-            if (lhat_type_disjoint(left, right)) {
+            // none does, and nothing says how they compare either, the answer
+            // is fixed before the program runs -- a mistake rather than a
+            // comparison.
+            if (!related && lhat_type_disjoint(left, right)) {
                 report(c, node, LHAT_CHECK_ERR_INCOMPARABLE);
+                return simple(c, LHAT_TYPE_BOOL);
+            }
+            // An ordering has nothing but a '<=>' to read. Equality is a
+            // different matter and is left alone -- every value is the same
+            // as itself or not, whatever it is (14.2), and a '<=>' only
+            // refines that for a type that writes one.
+            if (!related && op != LHAT_OP_EQ && op != LHAT_OP_NE &&
+                op != LHAT_OP_IS) {
+                report(c, node, LHAT_CHECK_ERR_NOT_ORDERED);
             }
             return simple(c, LHAT_TYPE_BOOL);
+        }
 
         case LHAT_OP_CONCAT: {
             // 11.2: '..' is concatenation in general. 11.3 asks the left
@@ -3755,7 +3844,7 @@ static LhatType *infer_def(Checker *c, const LhatNode *node, LhatType *base)
         // copied from the base above and has been accumulating since.
         type = check_same_name(c, entry, hidden, type);
         if (is_operator_name(name, length)) {
-            check_operator_shape(c, entry, type);
+            check_operator_shape(c, entry, type, name_is(name, length, "<=>"));
         } else {
             refuse_self_last(c, entry, type);
         }
@@ -6265,6 +6354,13 @@ const char *lhat_check_error_message(LhatCheckErrorCode code)
             return "an op^ is an f^ taking self^ and one argument, and it may "
                    "not yield^; the self^ is whichever operand it is written "
                    "as -- first for the left one, last for the right";
+        case LHAT_CHECK_ERR_COMPARE_NOT_NUMBER:
+            return "op^<=> answers a number^: '<' and the rest read which "
+                   "side of zero the answer falls on";
+        case LHAT_CHECK_ERR_NOT_ORDERED:
+            return "nothing here says how these compare: an ordering is read "
+                   "off '<=>', and neither side carries one that takes the "
+                   "other";
         case LHAT_CHECK_ERR_SELF_LAST_NOT_OPERATOR:
             return "only an op^ writes its self^ last, to say the right "
                    "operand is the receiver; everywhere else the receiver is "

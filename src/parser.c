@@ -39,6 +39,10 @@ enum {
     PREC_OR,
     PREC_AND,
     PREC_COMPARE,
+    // 11.9 (S40): tighter than the comparisons it is read for, so
+    // 'a <=> b < 0' asks about the answer rather than chaining. C++ places
+    // its own at the same remove from the relational operators.
+    PREC_SPACESHIP,
     PREC_CONCAT,
     PREC_ADD,
     PREC_MUL
@@ -128,6 +132,15 @@ static bool token_is_hat(const Parser *p, const LhatToken *token, const char *wo
 
 static void refuse_extra_hats(Parser *p, const LhatToken *token);
 static bool compound_assign_op(LhatOpKind token_op, LhatOpKind *base_op);
+
+// 11.9 (S40): the comparisons a type answers through '<=>' rather than one by
+// one. is^ and isa^ are not among them -- one asks identity and the other a
+// type, and neither is anything a value's own order decides.
+static bool is_derived_comparison(LhatOpKind op)
+{
+    return op == LHAT_OP_EQ || op == LHAT_OP_NE || op == LHAT_OP_LT ||
+           op == LHAT_OP_GT || op == LHAT_OP_LE || op == LHAT_OP_GE;
+}
 
 static bool check_hat(const Parser *p, const char *word)
 {
@@ -993,10 +1006,12 @@ static LhatNode *parse_def(Parser *p)
             advance(p);
             LhatToken symbol = p->current;
             // 11.8: '..' and the arithmetic of 11.4. and^, or^ and '!' stay
-            // built in, and 11.5's comparisons decide by disjointness rather
-            // than by asking a type -- neither takes an op^.
+            // built in, and 11.5's comparisons are not written one by one --
+            // 11.9 (S40) has '<=>' answer for all of them at once, so that is
+            // the one comparison an op^ takes.
             bool definable = symbol.kind == LHAT_TOKEN_OP &&
-                             (symbol.v.op == LHAT_OP_CONCAT ||
+                             (symbol.v.op == LHAT_OP_SPACESHIP ||
+                              symbol.v.op == LHAT_OP_CONCAT ||
                               symbol.v.op == LHAT_OP_ADD ||
                               symbol.v.op == LHAT_OP_SUB ||
                               symbol.v.op == LHAT_OP_MUL ||
@@ -1011,11 +1026,18 @@ static LhatNode *parse_def(Parser *p)
                 // op^ that decides it, so there is a definition to point at
                 // rather than only a rule to state.
                 LhatOpKind base;
-                report(p, &symbol,
-                       symbol.kind == LHAT_TOKEN_OP &&
-                               compound_assign_op(symbol.v.op, &base)
-                           ? LHAT_PARSE_ERR_COMPOUND_NOT_DEFINABLE
-                           : LHAT_PARSE_ERR_OPERATOR_NOT_DEFINABLE);
+                LhatParseErrorCode why = LHAT_PARSE_ERR_OPERATOR_NOT_DEFINABLE;
+                if (symbol.kind == LHAT_TOKEN_OP &&
+                    compound_assign_op(symbol.v.op, &base)) {
+                    why = LHAT_PARSE_ERR_COMPOUND_NOT_DEFINABLE;
+                } else if (symbol.kind == LHAT_TOKEN_OP &&
+                           is_derived_comparison(symbol.v.op)) {
+                    // 11.9 (S40): the same shape of answer as the compound
+                    // spellings -- there is a definition to point at, and it
+                    // is the one that decides all six at once.
+                    why = LHAT_PARSE_ERR_COMPARISON_NOT_DEFINABLE;
+                }
+                report(p, &symbol, why);
                 break;
             }
             LhatNode *name = make(p, LHAT_NODE_IDENT, &symbol);
@@ -1730,6 +1752,12 @@ static bool binary_info(const Parser *p, LhatOpKind *op, int *precedence,
     }
 
     switch (p->current.v.op) {
+        // 11.9 (S40): an ordinary binary operator, not one of the chaining
+        // comparisons -- its answer is a number^, which nothing chains on.
+        case LHAT_OP_SPACESHIP:
+            *op = LHAT_OP_SPACESHIP;
+            *precedence = PREC_SPACESHIP;
+            return true;
         case LHAT_OP_CONCAT:
             *op = LHAT_OP_CONCAT;
             *precedence = PREC_CONCAT;
@@ -1819,7 +1847,8 @@ static LhatNode *parse_binary(Parser *p, int min_precedence)
 // evaluated once, which is why the chain is kept as one node.
 static LhatNode *parse_comparison(Parser *p)
 {
-    LhatNode *first = parse_binary(p, PREC_CONCAT);
+    // 11.9 (S40): '<=>' binds tighter than the chain, so each link may be one.
+    LhatNode *first = parse_binary(p, PREC_SPACESHIP);
 
     LhatOpKind op;
     if (!is_comparison(p, &op)) {
@@ -1848,7 +1877,7 @@ static LhatNode *parse_comparison(Parser *p)
         // asks identity, an ordinary value on both sides.
         lhat_node_append(&operands, &operand_tail,
                          op == LHAT_OP_ISA ? parse_type(p)
-                                           : parse_binary(p, PREC_CONCAT));
+                                           : parse_binary(p, PREC_SPACESHIP));
         links++;
     }
 
@@ -3888,6 +3917,10 @@ const char *lhat_parse_error_message(LhatParseErrorCode code)
             return "a compound assignment has no definition of its own: "
                    "'a += b' is 'a := a + b', so it is op^+ that decides what "
                    "it does";
+        case LHAT_PARSE_ERR_COMPARISON_NOT_DEFINABLE:
+            return "the comparisons are not written one by one: op^<=> "
+                   "answers with a number^, and '<', '>', '\xE2\x89\xA6', "
+                   "'\xE2\x89\xA7', '=' and '\xE2\x89\xA0' are all read off it";
         case LHAT_PARSE_ERR_EXPECTED_MEMBER:
             return "a def^ holds 'name := value' members and one self^{ ... }";
         case LHAT_PARSE_ERR_FIELD_NEEDS_NAME:

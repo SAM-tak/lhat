@@ -55,6 +55,9 @@ typedef enum {
     LHAT_PARSE_ERR_COMPOUND_NOT_DEFINABLE,    // 8.6改: 'a += b' is
                                               // 'a := a + b', so the plain
                                               // operator is what answers it
+    LHAT_PARSE_ERR_COMPARISON_NOT_DEFINABLE,  // 11.9: the orderings are read
+                                              // off '<=>', so that is the one
+                                              // comparison to write
     LHAT_PARSE_ERR_FIELD_NEEDS_NAME,          // 14.6: every field is named
     LHAT_PARSE_ERR_DUPLICATE_TEMPLATE,        // 14.6: one self^{ ... } per def^
     LHAT_PARSE_ERR_MODIFIER_ON_TEMPLATE,      // 14.12 marks members, not fields

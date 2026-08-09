@@ -46,7 +46,18 @@ typedef struct {
     // ordinary call.
     LhatCoroutine *coroutine;
     bool disposing;  // 02 の 10.7: no yield^ while the cleanups are running
+
+    // 02 の 11.9 (S40): an ordering that had to reach for '<=>' to answer.
+    // The frame carries which comparison was written, and what comes back is
+    // read against zero with it rather than handed over as it is -- the one
+    // place a frame's answer is not the value of the expression that made it.
+    // LHAT_FRAME_NO_DERIVE means an ordinary call, which every other frame is.
+    LhatOpcode derive;
 } Frame;
+
+// What `derive` holds when a frame's answer is its own. LOADK is never a
+// comparison, so it stands for "nothing to read off this one".
+#define LHAT_FRAME_NO_DERIVE LHAT_BC_LOADK
 
 struct LhatMachine {
     // 2.2改: the one shared stack, as two parallel runs -- payloads dense,

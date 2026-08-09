@@ -4793,6 +4793,74 @@ static void test_no_value(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_NO_OPERATOR);
     unit_dispose(&u);
 
+    // 11.9 (S40): the one comparison a type writes, and the four orderings
+    // are read off it. Without one there was nothing to reach for at all --
+    // a written 'a < b' passed here and faulted at run time.
+    LHAT_TEST("an ordering is read off op^<=>");
+    check_text(&u,
+               "var^ V = def^{\n"
+               "  self^{ n := 0 },\n"
+               "  op^<=> := f^self^, o:V -> number^ { return^ self^.n },\n"
+               "}\n"
+               "var^ a : bool^ = V.new() < V.new()\n"
+               "var^ b : bool^ = V.new() >= V.new()\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("and without one there is no ordering to read");
+    check_text(&u,
+               "var^ V = def^{ self^{ n := 0 } }\n"
+               "var^ a = V.new() < V.new()\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_NOT_ORDERED);
+    unit_dispose(&u);
+
+    // Equality is a different matter: 14.2 says what a table is the same as
+    // whether or not it says how it orders.
+    LHAT_TEST("but equality needs none");
+    check_text(&u,
+               "var^ V = def^{ self^{ n := 0 } }\n"
+               "var^ a : bool^ = V.new() = V.new()\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // '(a <=> b) < 0' is what an ordering reads, so the answer has to be a
+    // thing zero can be on one side of.
+    LHAT_TEST("op^<=> answers a number^");
+    check_text(&u,
+               "var^ V = def^{\n"
+               "  self^{ n := 0 },\n"
+               "  op^<=> := f^self^, o:V -> bool^ { return^ true^ },\n"
+               "}\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_COMPARE_NOT_NUMBER);
+    unit_dispose(&u);
+
+    // 11.3改: written with the self^ last it relates a pair 14.12 would
+    // otherwise call separate, so the disjointness rule gives way to it.
+    LHAT_TEST("a self^-last one orders against a built-in");
+    check_text(&u,
+               "var^ V = def^{\n"
+               "  self^{ n := 0 },\n"
+               "  op^<=> := f^lhs:number^, self^ -> number^ { return^ lhs },\n"
+               "}\n"
+               "var^ a : bool^ = 3 < V.new()\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // 11.9: number^ and string^ each order their own. A written '"a" < "b"'
+    // used to reach nothing and fault at run time.
+    LHAT_TEST("the built-in types carry their own");
+    check_text(&u,
+               "var^ a : bool^ = \"a\" < \"b\"\n"
+               "var^ b : number^ = 1 <=> 2\n"
+               "var^ c : number^ = \"a\" <=> \"b\"\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("and two that never meet are still fixed already");
+    check_text(&u, "var^ a = 1 < \"b\"\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_INCOMPARABLE);
+    unit_dispose(&u);
+
     // 11.3改 (S39): a self^ written last says the receiver is the RIGHT
     // operand, which is the only way to join an operation whose left operand
     // is a built-in -- number^ carries the arithmetic and takes nothing but

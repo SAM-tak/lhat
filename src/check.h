@@ -146,6 +146,11 @@ typedef enum {
     LHAT_CHECK_ERR_PUBLIC_IS_IMMUTABLE, // 05 の 4 章 with 8.9: a public^ var^
                                         // is a name another unit could see
                                         // change, which 01 の 8.3 refused
+    LHAT_CHECK_ERR_COMPARE_NOT_NUMBER,  // 11.9: an op^<=> answers a number^,
+                                        // which is what the orderings read
+    LHAT_CHECK_ERR_NOT_ORDERED,         // 11.9: an ordering is read off '<=>',
+                                        // and neither side carries one taking
+                                        // the other
     LHAT_CHECK_ERR_SELF_LAST_NOT_OPERATOR, // 11.3改: a self^ written last says
                                            // the right operand is the
                                            // receiver, which only an op^ has

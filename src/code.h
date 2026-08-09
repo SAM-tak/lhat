@@ -49,6 +49,10 @@ typedef enum {
     LHAT_BC_LE,
     LHAT_BC_GT,
     LHAT_BC_GE,
+    // 02 の 11.9 (S40): A B C R[A] = R[B] <=> R[C], a number^ saying which of
+    // the two comes first. The four above read their answer off this one
+    // whenever they cannot answer for themselves.
+    LHAT_BC_SPACESHIP,
 
     LHAT_BC_JUMP,       // Bx    signed, relative to the next instruction
     LHAT_BC_JUMP_FALSE, // A Bx  jump when R[A] is false

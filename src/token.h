@@ -89,6 +89,9 @@ typedef enum {
     LHAT_OP_GE,          // ≧ >=
     LHAT_OP_LT,
     LHAT_OP_GT,
+    // 11.9 (S40): three-way comparison. The one comparison a type defines,
+    // and the four orderings are read off it -- 'a < b' is '(a <=> b) < 0'.
+    LHAT_OP_SPACESHIP,   // <=>
 
     LHAT_OP_ADD,
     LHAT_OP_SUB,

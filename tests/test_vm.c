@@ -899,6 +899,58 @@ static void test_strings(void)
     CHECK_INTEGER(&r, 1530);  // 15, then 30
     run_dispose(&r);
 
+    // 11.9 (S40): the four orderings are read off the one comparison a type
+    // writes, by asking which side of zero its answer falls on.
+    LHAT_TEST("an ordering is read off op^<=>");
+    run_text(&r,
+             "var^ V = def^{\n"
+             "  self^{ n := 0 },\n"
+             "  op^<=> := f^self^, o:V -> number^ { return^ self^.n - o.n },\n"
+             "}\n"
+             "var^ a = V.new()\n"
+             "var^ b = V.new()\n"
+             "a.n := 3\n"
+             "b.n := 7\n"
+             "if^ a < b and^ b > a and^ a <= b { return^ 1 }\n"
+             "return^ 0\n");
+    CHECK_INTEGER(&r, 1);
+    run_dispose(&r);
+
+    // and so is equality, for a type that says how it orders: two of them
+    // that compare the same are equal, where 14.2 alone would say no.
+    LHAT_TEST("and so is equality");
+    run_text(&r,
+             "var^ V = def^{\n"
+             "  self^{ n := 0 },\n"
+             "  op^<=> := f^self^, o:V -> number^ { return^ self^.n - o.n },\n"
+             "}\n"
+             "var^ a = V.new()\n"
+             "var^ b = V.new()\n"
+             "if^ a = b and^ !(a is^ b) { return^ 1 }\n"
+             "return^ 0\n");
+    CHECK_INTEGER(&r, 1);
+    run_dispose(&r);
+
+    // 14.2 still answers for a table that says nothing about how it orders.
+    LHAT_TEST("a table with no op^<=> is equal only to itself");
+    run_text(&r,
+             "var^ t = { a := 1 }\n"
+             "var^ u = { a := 1 }\n"
+             "if^ t = t and^ !(t = u) { return^ 1 }\n"
+             "return^ 0\n");
+    CHECK_INTEGER(&r, 1);
+    run_dispose(&r);
+
+    // 11.9: number^ and string^ order their own, which is what a written
+    // '"a" < "b"' had nothing to reach for before.
+    LHAT_TEST("the built-in types order their own");
+    run_text(&r,
+             "if^ \"a\" < \"b\" and^ \"abc\" < \"abd\" and^ !(\"b\" < \"a\") "
+             "{ return^ 1 <=> 2 }\n"
+             "return^ 9\n");
+    CHECK_INTEGER(&r, -1);
+    run_dispose(&r);
+
     // 11.3改 (S39): with the built-in on the left there is no other way in --
     // number^ carries the arithmetic and takes nothing but its own kind, and
     // no program adds to what it carries. A self^ written last is the answer.

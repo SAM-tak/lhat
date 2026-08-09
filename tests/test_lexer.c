@@ -663,6 +663,16 @@ static void test_operators(void)
     LHAT_CHECK(is_op(&s.tokens[7], LHAT_OP_LE), "expected <=");
     scan_dispose(&s);
 
+    // 02 の 11.9 (S40): and '<=>' must win over both of those, or the '>'
+    // would be left stray the way an '=' would be after a compound spelling.
+    LHAT_TEST("<=> wins over <= and <");
+    scan_text(&s, "a <=> b a <= b a < b");
+    LHAT_CHECK(is_op(&s.tokens[1], LHAT_OP_SPACESHIP), "expected <=>");
+    LHAT_CHECK(is_op(&s.tokens[4], LHAT_OP_LE), "expected <=");
+    LHAT_CHECK(is_op(&s.tokens[7], LHAT_OP_LT), "expected <");
+    LHAT_CHECK_EQ_INT(s.lexer.diagnostic_count, 0);
+    scan_dispose(&s);
+
     // Unlike the '<-' the memo considered, '<<' does not collide with a
     // comparison against a negative number.
     LHAT_TEST("a<-2 stays a comparison alongside <<");

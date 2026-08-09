@@ -2539,6 +2539,7 @@ static bool binary_opcode(LhatOpKind op, LhatOpcode *out)
         case LHAT_OP_GT:       *out = LHAT_BC_GT;   return true;
         case LHAT_OP_LE:       *out = LHAT_BC_LE;   return true;
         case LHAT_OP_GE:       *out = LHAT_BC_GE;   return true;
+        case LHAT_OP_SPACESHIP: *out = LHAT_BC_SPACESHIP; return true;  // 11.9
         default: return false;
     }
 }
@@ -4968,6 +4969,7 @@ const char *lhat_compile_status_message(LhatCompileStatus status)
 static const char *operator_name(LhatOpcode op, size_t *length)
 {
     switch (op) {
+        case LHAT_BC_SPACESHIP: *length = 3; return "<=>";  // 02 の 11.9
         case LHAT_BC_CONCAT: *length = 2; return "..";
         case LHAT_BC_ADD:    *length = 1; return "+";
         case LHAT_BC_SUB:    *length = 1; return "-";
@@ -5138,20 +5140,59 @@ static bool arithmetic(LhatOpcode op, LhatValue left, LhatValue right,
     }
 }
 
+// 02 の 11.9 (S40): which of the two comes first, for the types that order
+// their own. Negative, zero or positive -- the shape every '<=>' answers in,
+// and what the four orderings read against zero. False when neither number^
+// nor string^ is what is being asked about, which sends the question to the
+// member 11.8 names.
+static bool three_way(LhatValue left, LhatValue right, int *out)
+{
+    if (lhat_is_number(left) && lhat_is_number(right)) {
+        // 14.8: one type over integers and reals, so the comparison is the
+        // one lhat_value_equal already makes across the two representations.
+        if (lhat_value_equal(left, right)) {
+            *out = 0;
+            return true;
+        }
+        *out = lhat_number_as_real(left) < lhat_number_as_real(right) ? -1 : 1;
+        return true;
+    }
+    if (lhat_is_object_kind(left, LHAT_OBJECT_STRING) &&
+        lhat_is_object_kind(right, LHAT_OBJECT_STRING)) {
+        // The bytes, in order. 01 の 1 章 fixes the encoding at UTF-8, which
+        // orders code points the same way their bytes order.
+        const LhatString *a = (const LhatString *)lhat_as_object(left);
+        const LhatString *b = (const LhatString *)lhat_as_object(right);
+        size_t shorter = a->length < b->length ? a->length : b->length;
+        int by_bytes = shorter > 0 ? memcmp(a->text, b->text, shorter) : 0;
+        if (by_bytes != 0) {
+            *out = by_bytes < 0 ? -1 : 1;
+        } else if (a->length == b->length) {
+            *out = 0;
+        } else {
+            *out = a->length < b->length ? -1 : 1;
+        }
+        return true;
+    }
+    return false;
+}
+
+// 11.9 (S40): every ordering is read off a three-way answer, whether the
+// answer came from a type that orders its own or from a written op^<=>. False
+// when neither side is one of those, which is what sends the question on.
 static bool ordering(LhatOpcode op, LhatValue left, LhatValue right,
                      bool *out, LhatRunStatus *status)
 {
-    if (!lhat_is_number(left) || !lhat_is_number(right)) {
+    int outcome = 0;
+    if (!three_way(left, right, &outcome)) {
         *status = LHAT_RUN_TYPE_ERROR;
         return false;
     }
-    double a = lhat_number_as_real(left);
-    double b = lhat_number_as_real(right);
     switch (op) {
-        case LHAT_BC_LT: *out = a < b;  return true;
-        case LHAT_BC_LE: *out = a <= b; return true;
-        case LHAT_BC_GT: *out = a > b;  return true;
-        case LHAT_BC_GE: *out = a >= b; return true;
+        case LHAT_BC_LT: *out = outcome <  0; return true;
+        case LHAT_BC_LE: *out = outcome <= 0; return true;
+        case LHAT_BC_GT: *out = outcome >  0; return true;
+        case LHAT_BC_GE: *out = outcome >= 0; return true;
         default:
             *status = LHAT_RUN_TYPE_ERROR;
             return false;
@@ -6126,6 +6167,10 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
         uint8_t b = lhat_b(instruction);
         uint8_t cc = lhat_c(instruction);
         LhatOpcode op = lhat_op(instruction);
+        // 02 の 11.9 (S40): the comparison that sent control to call_operator,
+        // when one did. `op` becomes SPACESHIP there -- that is the member to
+        // look for -- and this is what the answer gets read against zero with.
+        LhatOpcode derive_from = LHAT_FRAME_NO_DERIVE;
 
         switch (op) {
             case LHAT_BC_LOADK:
@@ -6204,17 +6249,23 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
                 break;
             }
 
+            // 11.9 (S40): a type saying how it compares says what equality
+            // means as well, so a table is asked before 14.2's own answer is
+            // taken. Nothing carrying a '<=>' falls back to that answer, which
+            // is what leaves every other table exactly as it was.
             case LHAT_BC_EQ:
-                SET_R(a, lhat_bool(
-                    lhat_value_equal(R(b), R(cc))));
+            case LHAT_BC_NE:
+                if (table_of(R(b)) != NULL || table_of(R(cc)) != NULL) {
+                    derive_from = op;
+                    op = LHAT_BC_SPACESHIP;
+                    goto call_operator;
+                }
+                SET_R(a, lhat_bool(lhat_value_equal(R(b), R(cc)) ==
+                                   (op == LHAT_BC_EQ)));
                 break;
             case LHAT_BC_SAME:
                 SET_R(a, lhat_bool(
                     lhat_value_same(R(b), R(cc))));
-                break;
-            case LHAT_BC_NE:
-                SET_R(a, lhat_bool(
-                    !lhat_value_equal(R(b), R(cc))));
                 break;
 
             case LHAT_BC_LT:
@@ -6223,10 +6274,25 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
             case LHAT_BC_GE: {
                 bool out = false;
                 LhatRunStatus status = LHAT_RUN_OK;
-                if (!ordering(op, R(b), R(cc), &out, &status)) {
-                    return finish(m, chunk, status, lhat_nil(), at);
+                if (ordering(op, R(b), R(cc), &out, &status)) {
+                    SET_R(a, lhat_bool(out));
+                    break;
                 }
-                SET_R(a, lhat_bool(out));
+                // 11.9 (S40): numbers order themselves; anything else says
+                // how it orders with a '<=>', and this reads the answer.
+                derive_from = op;
+                op = LHAT_BC_SPACESHIP;
+                goto call_operator;
+            }
+
+            // 11.9 (S40): written out. number^ and string^ each order their
+            // own; anything else answers with the member 11.8 names.
+            case LHAT_BC_SPACESHIP: {
+                int outcome = 0;
+                if (!three_way(R(b), R(cc), &outcome)) {
+                    goto call_operator;
+                }
+                SET_R(a, lhat_integer(outcome));
                 break;
             }
 
@@ -7042,6 +7108,7 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
                     called->result = a;
                     called->coroutine = co;
                     called->disposing = false;
+                    called->derive = LHAT_FRAME_NO_DERIVE;
                     called->returning = false;
                     called->cleanup_count = co->cleanup_count;
                     for (size_t i = 0; i < co->cleanup_count; i++) {
@@ -7234,6 +7301,7 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
                 called->returning = false;
                 called->coroutine = NULL;
                 called->disposing = false;
+                called->derive = LHAT_FRAME_NO_DERIVE;
 
                 frame = called;
                 rbase = frame->base;
@@ -7409,6 +7477,7 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
                 called->result = a;
                 called->coroutine = co;
                 called->disposing = false;
+                called->derive = LHAT_FRAME_NO_DERIVE;
                 called->returning = false;
                 called->cleanup_count = co->cleanup_count;
                 for (size_t i = 0; i < co->cleanup_count; i++) {
@@ -7459,6 +7528,16 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
         if (answer == OPERATOR_NO_MEMORY) {
             return finish(m, chunk, LHAT_RUN_OUT_OF_MEMORY, lhat_nil(), at);
         }
+        // 11.9 (S40): equality is answered whether or not a '<=>' was
+        // written -- 14.2 says what a table is the same as, and a type that
+        // orders itself only refines that. An ordering has no such answer to
+        // fall back on and faults the way it always did.
+        if (answer != OPERATOR_PICKED &&
+            (derive_from == LHAT_BC_EQ || derive_from == LHAT_BC_NE)) {
+            SET_R(a, lhat_bool(lhat_value_equal(R(b), R(cc)) ==
+                               (derive_from == LHAT_BC_EQ)));
+            continue;  // the label sits in the loop, not in the switch
+        }
         if (answer == OPERATOR_NO_CANDIDATE) {
             return finish(m, chunk, LHAT_RUN_NO_CANDIDATE, lhat_nil(), at);
         }
@@ -7504,6 +7583,9 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
         entered->returning = false;
         entered->coroutine = NULL;
         entered->disposing = false;
+        // 11.9 (S40): an ordering that reached for '<=>' wants the answer
+        // read against zero, not handed over as it is.
+        entered->derive = derive_from;
 
         frame = entered;
         rbase = frame->base;
@@ -7577,10 +7659,29 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
             }
 
             uint8_t into = frame->result;
+            // 02 の 11.9 (S40): the one frame whose answer is not the value of
+            // the expression that made it. An ordering that reached for '<=>'
+            // asked a number^ of it, and what was written asks which side of
+            // zero that falls on.
+            LhatOpcode derived = frame->derive;
             frame = &m->frames[m->frame_count - 1];
             rbase = frame->base;
             chunk = &frame->closure->proto->chunk;
             pc = frame->pc;
+            if (derived != LHAT_FRAME_NO_DERIVE) {
+                bool held = false;
+                LhatRunStatus status = LHAT_RUN_OK;
+                if (derived == LHAT_BC_EQ || derived == LHAT_BC_NE) {
+                    held = lhat_value_equal(value, lhat_integer(0)) ==
+                           (derived == LHAT_BC_EQ);
+                } else if (!ordering(derived, value, lhat_integer(0), &held,
+                                     &status)) {
+                    // 11.9: the shape rule asks an op^<=> for a number^, so
+                    // this is a body that answered with something else.
+                    return finish(m, chunk, status, lhat_nil(), at);
+                }
+                value = lhat_bool(held);
+            }
             SET_R(into, value);
         }
     }
@@ -7626,6 +7727,7 @@ LhatRunResult lhat_run(LhatMachine *m, const LhatProto *proto)
     frame->returning = false;
     frame->coroutine = NULL;
     frame->disposing = false;
+    frame->derive = LHAT_FRAME_NO_DERIVE;
     frame->answer = lhat_nil();
 
     return run_frames(m, 0);
@@ -7721,6 +7823,7 @@ LhatRunResult lhat_machine_call(LhatMachine *machine, LhatValue callee,
     called->returning = false;
     called->coroutine = NULL;
     called->disposing = false;
+    called->derive = LHAT_FRAME_NO_DERIVE;
     called->answer = lhat_nil();
 
     return run_frames(m, base);
