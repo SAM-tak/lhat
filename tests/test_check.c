@@ -4581,6 +4581,34 @@ static void test_no_value(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
+    // Which arm it is has to reach the answer's type. Until the arms were
+    // walked here, an overloaded operator settled nothing and the caller fell
+    // back -- on unknown^ for '..', which fits anywhere, and on 14.8's
+    // number^ for arithmetic, which fits where the arm's own answer does not.
+    LHAT_TEST("the arm that fits decides what an operator answers");
+    check_text(&u,
+               "var^ Vec = def^{\n"
+               "  self^{},\n"
+               "  op^+ := f^self^, o:number^ -> number^ { return^ o },\n"
+               "  overload^ op^+ := f^self^, o:string^ -> string^ { return^ o },\n"
+               "}\n"
+               "var^ n : number^ = Vec.new() + \"a\"\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
+    unit_dispose(&u);
+
+    // 14.12 leaves at most one arm fitting, so none fitting is the same
+    // mistake a single arm makes when the right operand is not what it takes.
+    LHAT_TEST("a right operand no arm takes is reported");
+    check_text(&u,
+               "var^ Vec = def^{\n"
+               "  self^{},\n"
+               "  op^+ := f^self^, o:number^ -> number^ { return^ o },\n"
+               "  overload^ op^+ := f^self^, o:string^ -> string^ { return^ o },\n"
+               "}\n"
+               "var^ x = Vec.new() + true^\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_NO_OPERATOR);
+    unit_dispose(&u);
+
     // 14.12 asks for a marker on two members of one name whether they came
     // from a base or from the same def^. Only the base had been looked at.
     LHAT_TEST("two members of one name in one def^ need the marker too");

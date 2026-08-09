@@ -521,6 +521,8 @@ static const LhatTypeMember *find_member(const LhatType *table, const char *name
 static LhatType *only(Checker *c, LhatType *type, LhatType *wanted);
 static LhatType *without(Checker *c, LhatType *type, LhatType *unwanted);
 static ParamVar *param_var_for(Checker *c, const LhatType *type);
+static bool signature_accepts(const LhatType *func, LhatType *const *args,
+                              size_t count, bool through_member);
 static bool value_is_fresh(const Checker *c, const LhatNode *value,
                            const LhatType *type);
 static void check_write_target(Checker *c, const LhatNode *target);
@@ -1648,6 +1650,37 @@ static LhatType *infer_operator(Checker *c, const LhatNode *node, LhatOpKind op,
         report(c, node->v.binary.left, LHAT_CHECK_ERR_NO_OPERATOR);
         return NULL;
     }
+
+    // 11.8 with 14.12: one type may answer an operator for several right-hand
+    // types, and then the member is the intersection of those signatures.
+    // Which arm a use means is settled the way a call's is -- by what is
+    // handed over -- and the ban on overlapping signatures leaves at most one.
+    // 14.4 puts the left operand in self^, so the right one is the single
+    // argument and each arm is asked the way a member call asks.
+    //
+    // Answering NULL here instead would fall back on 14.8's number^ (the
+    // caller's), which is not what the arm says and not what the machine
+    // returns -- call_operator has always searched these.
+    if (carrier->kind == LHAT_TYPE_INTERSECT) {
+        // 3.5: with nothing decided about the right operand there is nothing
+        // to choose by. The demand a single arm would make cannot be made
+        // either, since the arms disagree about what they want.
+        if (operator_undecided(right) || param_var_for(c, right) != NULL) {
+            return NULL;
+        }
+        LhatType *args[1] = { right };
+        for (const LhatTypeList *arm = carrier->v.composite.arms; arm != NULL;
+             arm = arm->next) {
+            if (signature_accepts(arm->type, args, 1, true)) {
+                return arm->type->v.func.result;
+            }
+        }
+        // The same report the single arm makes below: what is wrong is that
+        // nothing here takes this right operand.
+        report(c, node->v.binary.right, LHAT_CHECK_ERR_NO_OPERATOR);
+        return NULL;
+    }
+
     if (carrier->kind != LHAT_TYPE_FUNC) {
         return NULL;
     }
