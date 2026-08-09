@@ -1565,9 +1565,11 @@ static void settle_param_vars(Checker *c, ParamVar *mark)
         }
         // 3.4: nothing was demanded, or the demands did not agree. Inference
         // did not decide, so the slot is left as what it already is -- a
-        // constraint nobody wrote, which 3.1 reports under strict and 3.5
-        // hands to a runtime check under relaxed. Not any^: 3.5 makes that
-        // the reading under which relaxed would be the stricter setting.
+        // constraint nobody wrote, which 3.1 reports under strict and
+        // relaxed forgives (3.5改: no check is inserted; a real mismatch
+        // meets the machine's own instruction check where it lands). Not
+        // any^: 3.5 makes that the reading under which relaxed would be the
+        // stricter setting.
         if (settled != NULL && settled != pv->slot) {
             *pv->slot = *settled;
         }
@@ -1590,10 +1592,11 @@ static void expect(Checker *c, const LhatNode *at, LhatType *value,
         return;
     }
 
-    // 03 の 3.1・3.5: strict reports a lingering gap in inference here
-    // instead of forgiving it the way relaxed's default reading does --
-    // relaxed has no runtime check to fall back on yet, so it keeps waving
-    // unknown^ through rather than refusing code that has nowhere to land.
+    // 03 の 3.1・3.5改: strict reports a lingering gap in inference here;
+    // relaxed waves unknown^ through on purpose. 3.5改 withdrew the inserted
+    // runtime check that was once meant to stand behind the waving -- what a
+    // waved-through mismatch meets now is the machine's own instruction
+    // check, which panics where it lands (04 の 11.6).
     bool ok = c->strict ? lhat_type_conforms_strict(value, target)
                         : lhat_type_conforms(value, target);
     if (!ok) {
@@ -2318,6 +2321,19 @@ static LhatType *infer_member(Checker *c, const LhatNode *node)
         return simple(c, target != NULL && target->kind == LHAT_TYPE_PENDING
                               ? LHAT_TYPE_PENDING
                               : LHAT_TYPE_UNKNOWN);
+    }
+
+    // 04 の 11.4改: under relaxed, a T|nil^ value may be referenced as T.
+    // The checker steps aside; a nil^ actually arriving meets the machine's
+    // own instruction check and panics where it lands, with 11.6's line.
+    // strict keeps refusing -- narrowing (isa^, ??, ?.) is the spelling
+    // there. Only nil^ is stepped past: a union of two real types still has
+    // no one member type to answer with.
+    if (!c->strict && target->kind == LHAT_TYPE_UNION) {
+        LhatType *bare = without(c, target, simple(c, LHAT_TYPE_NIL));
+        if (bare != NULL && bare->kind != LHAT_TYPE_UNION) {
+            target = bare;
+        }
     }
 
     // 04 の 2.3: every kind carries message and cause without declaring them

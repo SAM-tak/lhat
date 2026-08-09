@@ -31,6 +31,17 @@ static void check_text(Unit *u, const char *text)
     lhat_check(u->parsed.root, &u->lexer, true, &u->checked);
 }
 
+// The same, relaxed (03 の 3.1). The few rules that differ by strictness are
+// pinned through this -- most of the suite is strictness-independent and
+// stays on check_text above.
+static void check_relaxed_text(Unit *u, const char *text)
+{
+    lhat_source_init_from_string(&u->source, "<test>", text, strlen(text));
+    lhat_lexer_init(&u->lexer, &u->source);
+    lhat_parse(&u->lexer, &u->parsed);
+    lhat_check(u->parsed.root, &u->lexer, false, &u->checked);
+}
+
 // The same, as the next input of a session (03 の 4.3).
 static void check_next_text(Unit *u, LhatCheckSession *s, const char *text)
 {
@@ -5001,6 +5012,41 @@ static void test_immutable_bindings(void)
 }
 
 
+// 04 の 11.4改 with 03 の 3.5改: relaxed steps past nil^ in a union and lets
+// the machine's own instruction check answer at run time; strict keeps
+// refusing, since narrowing is the spelling there. No check is inserted --
+// 3.5改 withdrew that -- so what these pin is only the checker's posture.
+static void test_relaxed_nil_reference(void)
+{
+    Unit u;
+
+    LHAT_TEST("relaxed lets a T|nil^ member reference through");
+    check_relaxed_text(&u,
+                       "var^ f = f^ -> t^{ a : number^ }|nil^ { return^ nil^ }\n"
+                       "var^ t = f()\n"
+                       "var^ x : number^ = t.a\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("and strict still refuses the same reference");
+    check_text(&u,
+               "var^ f = f^ -> t^{ a : number^ }|nil^ { return^ nil^ }\n"
+               "var^ t = f()\n"
+               "var^ x : number^ = t.a\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_NO_MEMBER);
+    unit_dispose(&u);
+
+    // Only nil^ is stepped past: two real types still have no one member
+    // type to answer with, whichever the strictness.
+    LHAT_TEST("relaxed does not step past a union of two real types");
+    check_relaxed_text(&u,
+                       "var^ f = f^ -> t^{ a : number^ }|number^ { return^ 1 }\n"
+                       "var^ t = f()\n"
+                       "var^ x = t.a\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_NO_MEMBER);
+    unit_dispose(&u);
+}
+
 // 01 の 2.3改 (S35): the stacked reach, typed. The checker walks the same
 // bindings the machine resolves, so it^^ carries the outer focus's type and
 // this^^ the enclosing subroutine's own.
@@ -5088,5 +5134,6 @@ int main(void)
     test_named_diagnostics();
     test_immutable_bindings();
     test_stacked_hats();
+    test_relaxed_nil_reference();
     return lhat_test_report("test_check");
 }
