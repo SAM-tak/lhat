@@ -646,6 +646,36 @@ static LhatType *as_written_type(LhatType *bound)
     return instance != NULL ? instance : bound;
 }
 
+// 05 の 2.2: one environment, and a name in it stands for a value, a type, or
+// both. Only three things carry a type -- a def^ (its instances, 14.7), an
+// errordef^ and its kinds (04 の 2.4), and a host type (05 の 8.8) -- so a
+// name bound to anything else is not one that may be written where a type is.
+//
+// Without this the lookup answered with whatever the name was worth, which
+// made every binding a type meaning "what this value is". 'let^ x = 1' then
+// admitted 'y : x' for number^, which 2.2 does not say and nothing relies on.
+static bool names_a_type(const LhatType *bound)
+{
+    if (bound == NULL) {
+        return true;  // 3.4's gap; nothing here says it is wrong
+    }
+    switch (bound->kind) {
+        // A value and nothing else. 11.3 makes identity structural, so a
+        // table -- a def^, a host type (8.8), what require^ answers (6.1) --
+        // has a structure that can be asked for, and is left alone here. What
+        // these have is a value's worth and no structure at all.
+        case LHAT_TYPE_NUMBER:
+        case LHAT_TYPE_STRING:
+        case LHAT_TYPE_BOOL:
+        case LHAT_TYPE_NIL:
+        case LHAT_TYPE_FUNC:
+        case LHAT_TYPE_CORO:
+            return false;
+        default:
+            return true;
+    }
+}
+
 static LhatType *resolve_qualified_type(Checker *c, const LhatNode *node)
 {
     LhatType *outer = resolve_type(c, node->v.access.target);
@@ -673,7 +703,9 @@ static LhatType *resolve_qualified_type(Checker *c, const LhatNode *node)
     // qualified name writable as a type; this is that form over a unit.
     if (outer->kind == LHAT_TYPE_TABLE) {
         const LhatTypeMember *member = find_member(outer, name, length);
-        if (member != NULL) {
+        // 2.2 again: a unit publishes values as well as types, and only the
+        // types among them may be written here.
+        if (member != NULL && names_a_type(member->type)) {
             return as_written_type(member->type);
         }
     }
@@ -709,13 +741,11 @@ static LhatType *resolve_type(Checker *c, const LhatNode *node)
             // signature, which is resolve_func_type's business, not a name
             // standing for a type.
             //
-            // Refused here because 05 の 2.2's one environment would hand
-            // them over below, being bindings in scope inside a def^. What
-            // came back was a type holding itself, and the relations walk
-            // one of those until the stack is gone -- a crash with no
-            // diagnostic at all. Outside a def^ there is no binding to find
-            // and the answer was already this one, so this is what makes the
-            // spelling mean the same thing in both places.
+            // class^ needs saying separately: it is bound to the def^ under
+            // construction, so names_a_type below would let it through. What
+            // that answers with is a type holding itself, and the relations
+            // walk one of those until the stack is gone -- a crash with no
+            // diagnostic at all.
             if (name_is(name, length, "self^") ||
                 name_is(name, length, "class^")) {
                 report(c, node, LHAT_CHECK_ERR_UNKNOWN_TYPE);
@@ -728,6 +758,13 @@ static LhatType *resolve_type(Checker *c, const LhatNode *node)
             // binding lives here.
             Binding *declared = scope_find(c->scope, name, length);
             if (declared == NULL) {
+                report(c, node, LHAT_CHECK_ERR_UNKNOWN_TYPE);
+                return simple(c, LHAT_TYPE_UNKNOWN);
+            }
+
+            // 2.2 gives a type to a def^ and an errordef^, and to nothing
+            // else. Being in scope is not enough to be written here.
+            if (!names_a_type(declared->type)) {
                 report(c, node, LHAT_CHECK_ERR_UNKNOWN_TYPE);
                 return simple(c, LHAT_TYPE_UNKNOWN);
             }

@@ -27,7 +27,10 @@ typedef enum {
     LHAT_CHECK_ERR_UNDEFINED,           // no such name in scope
     LHAT_CHECK_ERR_USED_BEFORE_DEFINED, // 8.7
     LHAT_CHECK_ERR_REDEFINED,           // 8.7: twice in one scope
-    LHAT_CHECK_ERR_UNKNOWN_TYPE,        // an annotation names nothing
+    LHAT_CHECK_ERR_UNKNOWN_TYPE,        // an annotation names nothing, or
+                                        // names a value -- 05 の 2.2 gives a
+                                        // type to a definition and an
+                                        // errordef^, and to nothing else
 
     LHAT_CHECK_ERR_MISMATCH,            // 13.11: the value does not fit
     LHAT_CHECK_ERR_NOT_NUMBER,          // unary '-' on something else. The

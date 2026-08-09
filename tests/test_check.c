@@ -1019,6 +1019,32 @@ static void test_annotations(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_UNKNOWN_TYPE);
     unit_dispose(&u);
 
+    // 05 の 2.2: a name stands for a value, a type, or both, and 'let^ x = 1'
+    // is the first of those. Being in scope used to be enough to be written
+    // as a type, which made every binding one meaning "what this value is".
+    LHAT_TEST("a name bound to a plain value is not a type");
+    check_text(&u, "var^ x = 1\nvar^ y : x = 2\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_UNKNOWN_TYPE);
+    unit_dispose(&u);
+
+    LHAT_TEST("nor is one bound to a subroutine");
+    check_text(&u,
+               "var^ g = f^ -> number^ { return^ 1 }\n"
+               "var^ y : g = g\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_UNKNOWN_TYPE);
+    unit_dispose(&u);
+
+    // 11.3 keeps identity structural, so what a table names is a shape that
+    // can be asked for -- a def^, a host type (05 の 8.8), what require^
+    // answers (05 の 6.1), and a table written by hand alike. The line is
+    // drawn at values with no structure to ask about, not at def^.
+    LHAT_TEST("a table's name still says the shape it has");
+    check_text(&u,
+               "var^ t = { a := 1 }\n"
+               "var^ y : t = { a := 2 }\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
     // What the two of them were reached for is written with the binding's own
     // name, which 8.7 makes visible throughout the scope it is defined in, or
     // structurally where the definition has no name to use.
