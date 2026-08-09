@@ -994,6 +994,44 @@ static void test_annotations(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_UNKNOWN_TYPE);
     unit_dispose(&u);
 
+    // 13 章 has no such type as self^ or class^, and outside a def^ that is
+    // already the answer, there being no binding of either to find. Inside
+    // one there is, and 05 の 2.2's one environment used to hand it over --
+    // answering with a type that holds itself, which the relations walk until
+    // the stack is gone. The spelling means the same thing in both places now.
+    LHAT_TEST("self^ is not a type, inside a def^ as well as out");
+    check_text(&u,
+               "var^ V = def^{\n"
+               "  self^{ n := 0 },\n"
+               "  m := f^self^, r:self^ -> number^ { return^ r.n },\n"
+               "}\n"
+               "var^ x = V.new().m(V.new())\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_UNKNOWN_TYPE);
+    unit_dispose(&u);
+
+    LHAT_TEST("nor is class^");
+    check_text(&u,
+               "var^ V = def^{\n"
+               "  self^{ n := 0 },\n"
+               "  op^+ := f^self^, r:class^ -> number^ { return^ 0 },\n"
+               "}\n"
+               "var^ x = V.new() + V.new()\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_UNKNOWN_TYPE);
+    unit_dispose(&u);
+
+    // What the two of them were reached for is written with the binding's own
+    // name, which 8.7 makes visible throughout the scope it is defined in, or
+    // structurally where the definition has no name to use.
+    LHAT_TEST("a definition's own name says the same thing and works");
+    check_text(&u,
+               "var^ V = def^{\n"
+               "  self^{ n := 0 },\n"
+               "  op^+ := f^self^, r:V -> number^ { return^ self^.n + r.n },\n"
+               "}\n"
+               "var^ x : number^ = V.new() + V.new()\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
     // 14.10: at least the listed members.
     LHAT_TEST("a structural annotation asks for at least its members");
     check_text(&u,

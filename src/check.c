@@ -703,6 +703,25 @@ static LhatType *resolve_type(Checker *c, const LhatNode *node)
             if (builtin != NULL) {
                 return builtin;
             }
+            // 13 章 has no such type as self^ or class^. They are the
+            // receiver and the definition being built (14.4, 03 の 5.10),
+            // and both are values -- 'p^self^;' writes a receiver into a
+            // signature, which is resolve_func_type's business, not a name
+            // standing for a type.
+            //
+            // Refused here because 05 の 2.2's one environment would hand
+            // them over below, being bindings in scope inside a def^. What
+            // came back was a type holding itself, and the relations walk
+            // one of those until the stack is gone -- a crash with no
+            // diagnostic at all. Outside a def^ there is no binding to find
+            // and the answer was already this one, so this is what makes the
+            // spelling mean the same thing in both places.
+            if (name_is(name, length, "self^") ||
+                name_is(name, length, "class^")) {
+                report(c, node, LHAT_CHECK_ERR_UNKNOWN_TYPE);
+                return simple(c, LHAT_TYPE_UNKNOWN);
+            }
+
             // 05 の 2.2: one environment. A name written as a type is looked
             // up in the same place a value is, which is what 14.9 needs --
             // it says a definition takes its name from its binding, and a
