@@ -3452,16 +3452,15 @@ static void test_typeof(void)
     CHECK_STRING(&r, "nil^");
     run_dispose(&r);
 
-    // 14.7: an instance's members are split between it (fields, set at
-    // construction, 14.11) and its definition (methods, shared, 14.2) --
-    // reflect_type walks both and folds them into one structure.
+    // 14.16改 (S36): typeof^ answers the checker's type for the instance --
+    // fields and methods folded as the checker sees them, with 14.11's new
+    // belonging to the definition rather than to what it makes.
     LHAT_TEST("an instance's signature carries fields and methods");
-    run_text(&r,
+    run_checked_text(&r,
              "var^ Point = def^{ self^{ x := 0, y := 0 },\n"
              "  sum := f^self^ -> number^ { return^ self^.x + self^.y } }\n"
              "return^ typeof^(Point.new()).signature\n");
-    CHECK_STRING(&r, "t^{ new : f^;, sum : f^ -> number^;, x : number^, "
-                     "y : number^ }");
+    CHECK_STRING(&r, "t^{ sum : f^ -> number^;, x : number^, y : number^ }");
     run_dispose(&r);
 
     // 14.4: self^ is the receiver, not a parameter of the signature.
@@ -3527,7 +3526,7 @@ static void test_typeof(void)
     // 14.10改: the sequence half is written as bare types, in order, with no
     // names -- not as members keyed by their position.
     LHAT_TEST("a table literal's positional part has no names");
-    run_text(&r, "return^ typeof^({1, \"x\"}).signature\n");
+    run_checked_text(&r, "return^ typeof^({1, \"x\"}).signature\n");
     CHECK_STRING(&r, "t^{ number^, string^ }");
     run_dispose(&r);
 
@@ -3547,7 +3546,7 @@ static void test_typeof(void)
     // 14.9: a name never takes part in identity -- two independently written
     // definitions of the same shape are the same type.
     LHAT_TEST("two unrelated definitions of the same shape are equal");
-    run_text(&r,
+    run_checked_text(&r,
              "var^ A = def^{ self^{ n := 0 } }\n"
              "var^ B = def^{ self^{ n := 5 } }\n"
              "return^ typeof^(A.new()) = typeof^(B.new())\n");
@@ -3555,7 +3554,7 @@ static void test_typeof(void)
     run_dispose(&r);
 
     LHAT_TEST("and unequal once the shapes differ");
-    run_text(&r,
+    run_checked_text(&r,
              "var^ A = def^{ self^{ n := 0 } }\n"
              "var^ B = def^{ self^{ n := 0, extra := 1 } }\n"
              "return^ typeof^(A.new()) = typeof^(B.new())\n");
@@ -3575,46 +3574,42 @@ static void test_typeof(void)
     // 14.5, 14.12: a multi-dispatched member is callable every way its arms
     // list, which is what '&' means -- matching 14.12's own example.
     LHAT_TEST("an overload^ed member's signature is an intersection");
-    run_text(&r,
+    run_checked_text(&r,
              "var^ Foo = def^{ self^{}, foo := p^ { } }\n"
              "var^ Bar = Foo .. def^{ self^{},\n"
              "  overload^ foo := p^ x:string^ { } }\n"
              "return^ typeof^(Bar.new()).signature\n");
-    CHECK_STRING(&r, "t^{ foo : p^; & p^string^;, new : f^; }");
+    CHECK_STRING(&r, "t^{ foo : p^; & p^string^; }");
     run_dispose(&r);
 
-    // 02 の 14.16: 8.8 lets a written annotation widen what a path introduces
-    // past the value's own type ('var^ a.next : t^{} = b' does not narrow to
-    // b), which is enough to make two tables hold each other. Measured to
-    // crash with a stack overflow before the walk tracked its own path.
-    LHAT_TEST("a cycle between two tables does not recurse forever");
-    run_text(&r,
+    // 14.16改: a cycle among VALUES is invisible to a static answer -- the
+    // annotation said t^{}, and that is the type, however the tables ended
+    // up holding each other. The walk that once had to survive this is gone.
+    LHAT_TEST("a cycle between two tables is no concern of the type");
+    run_checked_text(&r,
              "var^ a = { }\n"
              "var^ b = { }\n"
              "var^ a.next : t^{} = b\n"
              "var^ b.next : t^{} = a\n"
              "return^ typeof^(a).signature\n");
-    CHECK_STRING(&r, "t^{ next : t^{ next : table^ } }");
+    CHECK_STRING(&r, "t^{ next : t^{} }");
     run_dispose(&r);
 
-    // The same through two def^ instances -- 'next := { }' defaults the
-    // field to the unstructured top of tables (13.7), which anything at all
-    // conforms to, including another instance of the same definition.
     LHAT_TEST("and between two instances of the same definition");
-    run_text(&r,
+    run_checked_text(&r,
              "var^ Node = def^{ self^{ next := { } } }\n"
              "var^ a = Node.new()\n"
              "var^ b = Node.new()\n"
              "a.next := b\n"
              "b.next := a\n"
              "return^ typeof^(a).signature\n");
-    CHECK_STRING(&r, "t^{ new : f^;, next : t^{ new : f^;, next : table^ } }");
+    CHECK_STRING(&r, "t^{ next : t^{} }");
     run_dispose(&r);
 
     // A value reached twice without a cycle -- shared, not circular -- is not
     // cut short. Only revisiting something still on the current path is.
     LHAT_TEST("a value reached two ways (no cycle) is not cut short");
-    run_text(&r,
+    run_checked_text(&r,
              "var^ shared = { v := 1 }\n"
              "var^ t = { a := shared, b := shared }\n"
              "return^ typeof^(t).signature\n");
@@ -3974,6 +3969,9 @@ static void test_scope_specifiers(void)
              "  m := f^self^ -> string^ { return^ typeof^($^class^).signature }\n"
              "}\n"
              "return^ D.new().m()\n");
+    // 14.16改: compiled without checking, typeof^ answers the tag -- so the
+    // definition reads "table^" where the outer `class` would read "number^",
+    // which is still the whole of what the specifier has to prove here.
     LHAT_CHECK_EQ_INT(r.compiled, LHAT_COMPILE_OK);
     LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_OK);
     LHAT_CHECK(lhat_is_object_kind(r.ran.value, LHAT_OBJECT_STRING),
@@ -3981,7 +3979,7 @@ static void test_scope_specifiers(void)
     if (lhat_is_object_kind(r.ran.value, LHAT_OBJECT_STRING)) {
         const LhatString *s = (const LhatString *)lhat_as_object(r.ran.value);
         // The definition, not the number^ named `class` outside it.
-        LHAT_CHECK(strncmp(s->text, "t^{", 3) == 0,
+        LHAT_CHECK(strncmp(s->text, "table^", 6) == 0,
                    "'$^class' reached the definition");
     }
     run_dispose(&r);

@@ -1247,7 +1247,7 @@ static LhatRuntimeType *lower_def_chain(Compiler *c, const DefChain *chain)
     }
     c->lexer = enclosing;
 
-    // The order reflect_type leaves its own structures in, so 11.3's
+    // The order rt_from_checked leaves its own structures in, so 11.3's
     // structural comparison lines two of them up without a search.
     lhat_type_rt_sort_members(type);
     return type;
@@ -1440,11 +1440,32 @@ static LhatRuntimeType *lower_type(Compiler *c, const LhatNode *node)
 // written at all -- lower_type already has nothing to read there, so this is
 // a fallback onto what infer_func (check.c) settled instead, not a second
 // opinion on what was written.
-static LhatRuntimeType *rt_from_checked(LhatHeap *heap, const LhatType *type)
+//
+// A checker type may hold itself (an instance whose member is its own
+// definition), so the tables on the way in are remembered on the C stack --
+// meeting one again answers 13.7's unstructured top of tables, which is what
+// ends the walk. The same convention typeof^'s old value reflection used.
+typedef struct RtSeen {
+    const LhatType *type;
+    const struct RtSeen *outer;
+} RtSeen;
+
+static LhatRuntimeType *rt_from_checked_in(LhatHeap *heap,
+                                           const LhatType *type,
+                                           const RtSeen *seen)
 {
     if (type == NULL) {
         return NULL;
     }
+    if (type->kind == LHAT_TYPE_TABLE) {
+        for (const RtSeen *s = seen; s != NULL; s = s->outer) {
+            if (s->type == type) {
+                return lhat_type_rt_new(heap, LHAT_TYPE_RT_TABLE);
+            }
+        }
+    }
+    RtSeen here = { type, seen };
+    seen = &here;
     switch (type->kind) {
         // 03 の 3.4: inference did not decide this one. Asks nothing of a
         // value, the same as nothing written -- but 14.16 writes it out as
@@ -1473,7 +1494,7 @@ static LhatRuntimeType *rt_from_checked(LhatHeap *heap, const LhatType *type)
                 return NULL;
             }
             // 14.10改: the sequence half first, in position order, the way a
-            // written t^{ ... } and reflect_table_members both put it.
+            // written t^{ ... } puts it.
             size_t sequence = 0;
             for (;;) {
                 const LhatTypeMember *m =
@@ -1481,7 +1502,7 @@ static LhatRuntimeType *rt_from_checked(LhatHeap *heap, const LhatType *type)
                 if (m == NULL) {
                     break;
                 }
-                if (!lhat_type_rt_add_part(rt, rt_from_checked(heap, m->type))) {
+                if (!lhat_type_rt_add_part(rt, rt_from_checked_in(heap, m->type, seen))) {
                     return NULL;
                 }
                 sequence++;
@@ -1500,12 +1521,12 @@ static LhatRuntimeType *rt_from_checked(LhatHeap *heap, const LhatType *type)
                 }
                 LhatString *name = lhat_string_new(heap, m->name, m->name_length);
                 if (name == NULL ||
-                    !lhat_type_rt_add_member(rt, name, rt_from_checked(heap, m->type))) {
+                    !lhat_type_rt_add_member(rt, name, rt_from_checked_in(heap, m->type, seen))) {
                     return NULL;
                 }
             }
             if (type->v.table.variadic != NULL) {
-                rt->variadic = rt_from_checked(heap, type->v.table.variadic);
+                rt->variadic = rt_from_checked_in(heap, type->v.table.variadic, seen);
             }
             lhat_type_rt_sort_members(rt);
             return rt;
@@ -1519,14 +1540,14 @@ static LhatRuntimeType *rt_from_checked(LhatHeap *heap, const LhatType *type)
             rt->is_function = type->v.func.is_function;
             rt->takes_self = type->v.func.takes_self;
             for (LhatTypeList *p = type->v.func.params; p != NULL; p = p->next) {
-                if (!lhat_type_rt_add_part(rt, rt_from_checked(heap, p->type))) {
+                if (!lhat_type_rt_add_part(rt, rt_from_checked_in(heap, p->type, seen))) {
                     return NULL;
                 }
             }
             if (type->v.func.variadic != NULL) {
-                rt->variadic = rt_from_checked(heap, type->v.func.variadic);
+                rt->variadic = rt_from_checked_in(heap, type->v.func.variadic, seen);
             }
-            rt->result = rt_from_checked(heap, type->v.func.result);
+            rt->result = rt_from_checked_in(heap, type->v.func.result, seen);
             return rt;
         }
 
@@ -1535,9 +1556,9 @@ static LhatRuntimeType *rt_from_checked(LhatHeap *heap, const LhatType *type)
             if (rt == NULL) {
                 return NULL;
             }
-            rt->receive = rt_from_checked(heap, type->v.coroutine.receive);
-            rt->produce = rt_from_checked(heap, type->v.coroutine.produce);
-            rt->result = rt_from_checked(heap, type->v.coroutine.result);
+            rt->receive = rt_from_checked_in(heap, type->v.coroutine.receive, seen);
+            rt->produce = rt_from_checked_in(heap, type->v.coroutine.produce, seen);
+            rt->result = rt_from_checked_in(heap, type->v.coroutine.result, seen);
             rt->is_function = type->v.coroutine.is_function;  // 15.3改
             return rt;
         }
@@ -1558,7 +1579,7 @@ static LhatRuntimeType *rt_from_checked(LhatHeap *heap, const LhatType *type)
             }
             for (LhatTypeList *a = type->v.composite.arms; a != NULL;
                  a = a->next) {
-                if (!lhat_type_rt_add_part(rt, rt_from_checked(heap, a->type))) {
+                if (!lhat_type_rt_add_part(rt, rt_from_checked_in(heap, a->type, seen))) {
                     return NULL;
                 }
             }
@@ -1572,7 +1593,7 @@ static LhatRuntimeType *rt_from_checked(LhatHeap *heap, const LhatType *type)
             }
             for (LhatTypeList *a = type->v.composite.arms; a != NULL;
                  a = a->next) {
-                if (!lhat_type_rt_add_part(rt, rt_from_checked(heap, a->type))) {
+                if (!lhat_type_rt_add_part(rt, rt_from_checked_in(heap, a->type, seen))) {
                     return NULL;
                 }
             }
@@ -1582,80 +1603,69 @@ static LhatRuntimeType *rt_from_checked(LhatHeap *heap, const LhatType *type)
     return NULL;
 }
 
-// 03 の 5.11a: whether a checker type is gap-free enough to answer typeof^
-// statically. UNKNOWN/ANY are both "nothing useful here", one from inference
-// not deciding and one from a written any^ that means the same for this
-// purpose -- either way the actual value is likely to say more than the
-// static answer would, so this asks for the runtime walk instead.
-//
-// ERROR_KIND/ERROR_SET are excluded on their own grounds: the checker's type
-// only carries a name, and there is no runtime LhatErrorKind object to find
-// from that alone here, while reflect_type already answers precisely and
-// cheaply (an error's kind is a pointer read, not a walk) -- so there is
-// nothing this shortcut would save.
-static bool type_is_concrete(const LhatType *type)
+static LhatRuntimeType *rt_from_checked(LhatHeap *heap, const LhatType *type)
+{
+    return rt_from_checked_in(heap, type, NULL);
+}
+
+// 14.16改 (S36): typeof^ answers the checker's settled type wherever one
+// exists -- with one carve-out. An error's identity is the declaration (04
+// の 2.4), and the checker's type carries only its NAME; the runtime
+// LhatErrorKind object it would take to build the descriptor is not
+// reachable from here. The value carries the kind as a pointer read, so an
+// operand whose type mentions an error anywhere is answered by the tag
+// instruction instead -- which is also what keeps typeof^(e) naming the
+// leaf kind rather than the declared union.
+static bool mentions_error(const LhatType *type)
 {
     if (type == NULL) {
-        return true;  // e.g. a func's absent result -- nothing hidden here
+        return false;
     }
     switch (type->kind) {
-        case LHAT_TYPE_UNKNOWN:
-        case LHAT_TYPE_PENDING:
-        case LHAT_TYPE_ANY:
+        case LHAT_TYPE_ERROR:
         case LHAT_TYPE_ERROR_KIND:
         case LHAT_TYPE_ERROR_SET:
-            return false;
-
-        case LHAT_TYPE_NONE:
-        case LHAT_TYPE_NIL:
-        case LHAT_TYPE_BOOL:
-        case LHAT_TYPE_NUMBER:
-        case LHAT_TYPE_STRING:
-        case LHAT_TYPE_ERROR:
             return true;
 
         case LHAT_TYPE_TABLE:
             for (const LhatTypeMember *m = type->v.table.members; m != NULL;
                  m = m->next) {
-                // S23: a member the checker added without knowing whether
-                // its let^ path actually ran is not something to answer
-                // typeof^ with as fact -- the real value may not have it.
-                if (m->unconfirmed || !type_is_concrete(m->type)) {
-                    return false;
+                if (mentions_error(m->type)) {
+                    return true;
                 }
             }
-            return type->v.table.variadic == NULL ||
-                   type_is_concrete(type->v.table.variadic);
+            return type->v.table.variadic != NULL &&
+                   mentions_error(type->v.table.variadic);
 
         case LHAT_TYPE_FUNC:
             for (LhatTypeList *p = type->v.func.params; p != NULL;
                  p = p->next) {
-                if (!type_is_concrete(p->type)) {
-                    return false;
+                if (mentions_error(p->type)) {
+                    return true;
                 }
             }
-            if (type->v.func.variadic != NULL &&
-                !type_is_concrete(type->v.func.variadic)) {
-                return false;
-            }
-            return type_is_concrete(type->v.func.result);
+            return (type->v.func.variadic != NULL &&
+                    mentions_error(type->v.func.variadic)) ||
+                   mentions_error(type->v.func.result);
 
         case LHAT_TYPE_UNION:
         case LHAT_TYPE_INTERSECT:
             for (LhatTypeList *a = type->v.composite.arms; a != NULL;
                  a = a->next) {
-                if (!type_is_concrete(a->type)) {
-                    return false;
+                if (mentions_error(a->type)) {
+                    return true;
                 }
             }
-            return true;
+            return false;
 
         case LHAT_TYPE_CORO:
-            return type_is_concrete(type->v.coroutine.receive) &&
-                   type_is_concrete(type->v.coroutine.produce) &&
-                   type_is_concrete(type->v.coroutine.result);
+            return mentions_error(type->v.coroutine.receive) ||
+                   mentions_error(type->v.coroutine.produce) ||
+                   mentions_error(type->v.coroutine.result);
+
+        default:
+            return false;
     }
-    return false;
 }
 
 // ---------------------------------------------------------------------------
@@ -2609,32 +2619,33 @@ static void compile_expression(Compiler *c, const LhatNode *node, uint8_t into)
             compile_try(c, node, into);
             return;
 
-        // 02 の 14.16: reflect_type reads the value once it is in a
-        // register, so the operand is compiled the ordinary way first.
+        // 02 の 14.16改 (S36): typeof^ answers the type the checker settled,
+        // compiled in as a constant -- type information is a compile-time
+        // thing, and the run manufactures none (3.5改 and 5.13改 are the
+        // same posture). The operand still runs, for whatever it does along
+        // the way.
         //
-        // 03 の 5.11a: when the checker settled the operand's type without a
-        // gap, that answer is compiled in as a constant instead -- the
-        // operand still runs, for whatever it does along the way, but
-        // reflect_type's walk of the result is skipped since the checker
-        // already has a precise, cheaper answer for it.
+        // Two things fall to the tag instruction instead. A type that
+        // mentions an error is one: the value's own kind is a pointer read
+        // and the leaf answer (04 の 2.4), where the static name cannot even
+        // be built here (mentions_error). No checker having run is the
+        // other: the instruction answers from the value's tag alone -- the
+        // dispatch information every value already carries -- never by
+        // walking a structure.
         case LHAT_NODE_TYPEOF: {
             uint8_t mark = c->next_register;
             uint8_t value = reserve(c);
             compile_expression(c, node->v.jump.value, value);
-            // 5.11a asks for a gap-free answer because reflecting the value is
-            // otherwise the more precise of the two. A subroutine is the one
-            // case where it is not: a closure carries no parameter types at
-            // run time except the written ones (5.3 keeps those for 14.12's
-            // dispatch, and 4.2 keeps that from depending on whether checking
-            // ran), so reflecting one answers any^ for every parameter nobody
-            // wrote -- including the ones 03 の 3.4 did decide. What the
-            // checker settled says strictly more here, and what it did not
-            // settle is written UNKNOWN rather than widened to any^.
             const LhatType *checked = (const LhatType *)node->checked_type;
-            if (checked != NULL &&
-                (type_is_concrete(checked) || checked->kind == LHAT_TYPE_FUNC)) {
+            if (checked != NULL && !mentions_error(checked)) {
+                // 13.7: any^ converts to no descriptor at all ("asks
+                // nothing"), but as an ANSWER it is a value of its own.
                 LhatRuntimeType *rt =
-                    rt_from_checked(&c->proto->chunk.heap, checked);
+                    checked->kind == LHAT_TYPE_ANY ||
+                            checked->kind == LHAT_TYPE_NONE
+                        ? lhat_type_rt_new(&c->proto->chunk.heap,
+                                           LHAT_TYPE_RT_ANY)
+                        : rt_from_checked(&c->proto->chunk.heap, checked);
                 c->next_register = mark;
                 if (rt == NULL) {
                     fail(c, LHAT_COMPILE_TOO_COMPLEX);
@@ -5135,102 +5146,15 @@ static const LhatTable *readable_table(LhatValue value)
     return table_of(value);
 }
 
-// 02 の 14.16: a table can be made to reference itself (8.8's path
-// introduction accepts a written annotation wider than the value being
-// stored, so 'let^ a.next : t^{} = b' need not narrow to what b already is --
-// measured: two tables, or two def^ instances through a field defaulted to
-// '{}', can each end up holding the other). Walking such a value recurses
-// forever, so the walk remembers which tables are on the current path and
-// answers the unstructured top of tables (13.7's table^) for one it is
-// already inside of, rather than reflect_type's own stack going with it.
-typedef struct {
-    const LhatTable **tables;
-    size_t count;
-    size_t capacity;
-} Visited;
-
-static bool visited_contains(const Visited *seen, const LhatTable *table)
-{
-    for (size_t i = 0; i < seen->count; i++) {
-        if (seen->tables[i] == table) {
-            return true;
-        }
-    }
-    return false;
-}
-
-// Pushes unconditionally; the caller has already checked visited_contains.
-// Returns false only on allocation failure, in which case nothing was pushed.
-static bool visited_push(Visited *seen, const LhatTable *table)
-{
-    if (seen->count == seen->capacity) {
-        size_t grown = seen->capacity ? seen->capacity * 2 : 8;
-        const LhatTable **bigger = (const LhatTable **)lhat_realloc(
-            (void *)seen->tables, grown * sizeof *bigger);
-        if (bigger == NULL) {
-            return false;
-        }
-        seen->tables = bigger;
-        seen->capacity = grown;
-    }
-    seen->tables[seen->count++] = table;
-    return true;
-}
-
-// A stack: what is popped is always what the matching push added last.
-static void visited_pop(Visited *seen)
-{
-    seen->count--;
-}
-
-// 02 の 14.16: typeof^'s reflection over an actual value, as opposed to
-// lower_type's reflection over a written annotation. 03 の 4.2 rules out
-// answering from what the checker inferred -- that would make typeof^'s
-// answer depend on whether checking ran -- so this walks the value itself,
-// which exists identically either way.
-static LhatRuntimeType *reflect_type(LhatHeap *heap, LhatValue value,
-                                     Visited *seen);
-
-// 14.7: a definition's methods and an instance's fields are both flattened at
-// compile time (14.2, 14.11) onto separate tables, so reflecting the whole
-// shape a definition promises means walking one table here for the fields and
-// again for the methods, and folding the two together.
-//
-// The sequence half (14 章) goes into `parts`, in order, the way a signature's
-// parameters do -- 14.10改 writes a positional member as a bare type, with no
-// name, and STRUCTURE otherwise has no use for `parts`.
-static bool reflect_table_members(LhatHeap *heap, const LhatTable *table,
-                                  LhatRuntimeType *into, Visited *seen)
-{
-    for (size_t i = 0; i < table->array_count; i++) {
-        LhatRuntimeType *member = reflect_type(heap, table->array[i], seen);
-        if (member == NULL || !lhat_type_rt_add_part(into, member)) {
-            return false;
-        }
-    }
-    for (size_t i = 0; i < table->entry_capacity; i++) {
-        LhatValue key = table->entries[i].key;
-        // 14.6改: every name a def^ or a table literal writes is a string
-        // key (14.14) -- anything else is a computed key (14.6改), which has
-        // no name to give a member.
-        if (!lhat_is_object_kind(key, LHAT_OBJECT_STRING)) {
-            continue;
-        }
-        const LhatString *original = (const LhatString *)lhat_as_object(key);
-        LhatString *name =
-            lhat_string_new(heap, original->text, original->length);
-        LhatRuntimeType *member =
-            reflect_type(heap, table->entries[i].value, seen);
-        if (name == NULL || member == NULL ||
-            !lhat_type_rt_add_member(into, name, member)) {
-            return false;
-        }
-    }
-    return true;
-}
-
-static LhatRuntimeType *reflect_type(LhatHeap *heap, LhatValue value,
-                                     Visited *seen)
+// 02 の 14.16改 (S36): what typeof^ answers where no checked type was
+// compiled in -- the value's TAG, the dispatch information every value
+// already carries, read in O(1). It never walks a structure: a table is
+// table^ whatever it holds (the deep answer is the checker's to give, at
+// compile time), and a subroutine or coroutine answers from the types its
+// proto already carries, which were made at compile time too (03 の 5.11a).
+// The one deep-looking case, an overload's arms, is bounded by the arm
+// count rather than by any value's size.
+static LhatRuntimeType *tag_type(LhatHeap *heap, LhatValue value)
 {
     if (lhat_is_nil(value)) {
         return lhat_type_rt_new(heap, LHAT_TYPE_RT_NIL);
@@ -5287,8 +5211,7 @@ static LhatRuntimeType *reflect_type(LhatHeap *heap, LhatValue value,
             return NULL;
         }
         for (size_t i = 0; i < overload->count; i++) {
-            LhatRuntimeType *arm =
-                reflect_type(heap, overload->candidates[i], seen);
+            LhatRuntimeType *arm = tag_type(heap, overload->candidates[i]);
             if (arm == NULL || !lhat_type_rt_add_part(type, arm)) {
                 return NULL;
             }
@@ -5339,42 +5262,24 @@ static LhatRuntimeType *reflect_type(LhatHeap *heap, LhatValue value,
         type->result = proto->result_type;
         return type;
     }
+    // 14.16改: a table answers 13.7's unstructured top of tables, whatever
+    // it holds -- deep shape is the checker's answer, given at compile time,
+    // and the run does not build one out of data.
     if (lhat_is_object_kind(value, LHAT_OBJECT_TABLE)) {
-        const LhatTable *table = (const LhatTable *)lhat_as_object(value);
-        // 02 の 14.16: this table is already being walked further up the same
-        // path, so the shape it would add here is exactly what is missing --
-        // answering 13.7's unstructured top of tables is what stops the walk
-        // rather than reflect_type's own call stack doing it.
-        if (visited_contains(seen, table)) {
-            return lhat_type_rt_new(heap, LHAT_TYPE_RT_TABLE);
-        }
-        if (!visited_push(seen, table)) {
-            return NULL;
-        }
+        return lhat_type_rt_new(heap, LHAT_TYPE_RT_TABLE);
+    }
+    // 05 の 8.8: a host value's identity is its tag, another pointer read.
+    if (lhat_is_object_kind(value, LHAT_OBJECT_HOSTDATA)) {
         LhatRuntimeType *type =
-            lhat_type_rt_new(heap, LHAT_TYPE_RT_STRUCTURE);
-        bool ok = type != NULL && reflect_table_members(heap, table, type, seen);
-        if (ok && table->definition != NULL &&
-            !visited_contains(seen, table->definition)) {
-            if (visited_push(seen, table->definition)) {
-                ok = reflect_table_members(heap, table->definition, type, seen);
-                visited_pop(seen);
-            } else {
-                ok = false;
-            }
+            lhat_type_rt_new(heap, LHAT_TYPE_RT_HOSTDATA);
+        if (type != NULL) {
+            type->hostdata_tag =
+                ((const LhatHostData *)lhat_as_object(value))->tag;
         }
-        visited_pop(seen);
-        if (!ok) {
-            return NULL;
-        }
-        // A hash table's own order is not writer-chosen and not stable across
-        // rehashes, so the named half is put in a canonical order here --
-        // once, rather than at every printing or comparison.
-        lhat_type_rt_sort_members(type);
         return type;
     }
-    // Host data, an overloaded member, a type-info value itself, … -- none of
-    // these has a signature worth reconstructing yet.
+    // A type-info value itself, a runtime operation, … -- nothing more to
+    // say than that a value is there.
     return lhat_type_rt_new(heap, LHAT_TYPE_RT_ANY);
 }
 
@@ -6087,10 +5992,7 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
             }
 
             case LHAT_BC_TYPEOF: {
-                Visited seen = {0};
-                LhatRuntimeType *type =
-                    reflect_type(&m->objects, registers[b], &seen);
-                lhat_free((void *)seen.tables);
+                LhatRuntimeType *type = tag_type(&m->objects, registers[b]);
                 if (type == NULL) {
                     return finish(m, chunk, LHAT_RUN_OUT_OF_MEMORY, lhat_nil(), at);
                 }
