@@ -301,4 +301,17 @@ bool lhat_type_disjoint(const LhatType *a, const LhatType *b);
 
 const char *lhat_type_kind_name(LhatTypeKind kind);
 
+// Writes `type` in the notation 13 章 spells it with -- 'number^',
+// 't^{ a : string^ }', 'f^number^ -> string^;' -- into `buffer`, always
+// NUL-terminated when `size` is not zero.
+//
+// Returns the length written, which is at most `size - 1`: a type too long
+// for the buffer is cut and ends in an ellipsis rather than being refused.
+// The same happens past LHAT_TYPE_WRITE_MAX_DEPTH, which is what stops a
+// table that holds itself (14 章) from being walked forever.
+//
+// For reading, not for round-tripping: 03 の 5.11b's typeof^ answers with a
+// value's own shape, while this writes what the checker inferred.
+size_t lhat_type_write(const LhatType *type, char *buffer, size_t size);
+
 #endif  // LHAT_TYPE_H

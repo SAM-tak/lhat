@@ -25,6 +25,13 @@
 // type
 // Types are handed out from fixed-size blocks the same way ast nodes are.
 #define LHAT_TYPE_BLOCK_BYTES 8192
+// 07 の 4 章: how far lhat_type_write descends before writing an ellipsis.
+// A table may hold itself (14 章), so something has to stop the walk; and
+// past this depth a written-out type says less to a reader than a short one
+// does anyway.
+#define LHAT_TYPE_WRITE_MAX_DEPTH 3
+// How many members or parameters it writes before eliding the rest.
+#define LHAT_TYPE_WRITE_MAX_ITEMS 6
 
 // check
 // How many of a call's arguments the checker keeps type information for at

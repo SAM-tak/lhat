@@ -12,7 +12,7 @@
 | [04-errors.md](04-errors.md) | 誤りの表現と伝播（`errordef^`、`catch^`、`try^`、網羅性、取りこぼしの検出） | 未決事項なし |
 | [05-modules.md](05-modules.md) | 名前空間とモジュール（`module^`、`public^`、`require^`、型の札、初期束縛） | M2〜M4 が未決 |
 | [06-visual-editor.md](06-visual-editor.md) | ビジュアルエディタ（`lhat/ast`、AST からグラフへの写像、ELK レイアウト、描画層、`*.lhl`） | V2・V7〜V14・V16〜V18 が未決。V1・V3〜V6・V15・V19〜V23 と `lhat/ast` は決定または実装済み |
-| [07-language-server.md](07-language-server.md) | 言語サーバとエディタ統合（`lhatls` の機能、ホバー、VSCode 拡張の構成） | L1・L2・L5 が未決。`lhat/ast` とグラフ表示の webview は実装済み |
+| [07-language-server.md](07-language-server.md) | 言語サーバとエディタ統合（`lhatls` の機能、ホバー、VSCode 拡張の構成） | L2・L5・L8 が未決。ホバー・`lhat/ast`・グラフ表示の webview は実装済み |
 
 ## Memo.md との関係
 

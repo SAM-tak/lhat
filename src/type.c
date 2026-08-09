@@ -757,6 +757,210 @@ LhatType *lhat_type_intersect(LhatTypeArena *arena, LhatType *a, LhatType *b)
     return build_composite(arena, LHAT_TYPE_INTERSECT, a, b);
 }
 
+// ---------------------------------------------------------------------------
+// Writing a type out (07 の 4 章)
+// ---------------------------------------------------------------------------
+
+// Keeps writing past the end of the buffer without touching it, so the caller
+// learns how long the whole thing was -- and so nothing has to check the room
+// left at every step.
+typedef struct {
+    char *at;
+    size_t left;
+    size_t written;
+} TypeSink;
+
+static void put(TypeSink *sink, const char *text, size_t length)
+{
+    size_t room = length < sink->left ? length : sink->left;
+    if (room > 0) {
+        memcpy(sink->at, text, room);
+        sink->at += room;
+        sink->left -= room;
+    }
+    sink->written += length;
+}
+
+static void put_text(TypeSink *sink, const char *text)
+{
+    put(sink, text, strlen(text));
+}
+
+static void write_type(TypeSink *sink, const LhatType *type, int depth);
+
+static void write_members(TypeSink *sink, const LhatTypeMember *members,
+                          int depth)
+{
+    int count = 0;
+    for (const LhatTypeMember *m = members; m != NULL; m = m->next) {
+        if (count == LHAT_TYPE_WRITE_MAX_ITEMS) {
+            put_text(sink, ", …");
+            return;
+        }
+        if (count > 0) {
+            put_text(sink, ", ");
+        }
+        put(sink, m->name, m->name_length);
+        put_text(sink, " : ");
+        write_type(sink, m->type, depth + 1);
+        count++;
+    }
+}
+
+static void write_list(TypeSink *sink, const LhatTypeList *list, int depth,
+                       const char *separator)
+{
+    int count = 0;
+    for (const LhatTypeList *item = list; item != NULL; item = item->next) {
+        if (count == LHAT_TYPE_WRITE_MAX_ITEMS) {
+            put_text(sink, separator);
+            put_text(sink, "…");
+            return;
+        }
+        if (count > 0) {
+            put_text(sink, separator);
+        }
+        write_type(sink, item->type, depth + 1);
+        count++;
+    }
+}
+
+static void write_type(TypeSink *sink, const LhatType *type, int depth)
+{
+    if (type == NULL) {
+        put_text(sink, "?");
+        return;
+    }
+    // 14 章 lets a table hold itself, so the walk needs a floor of its own.
+    if (depth > LHAT_TYPE_WRITE_MAX_DEPTH) {
+        put_text(sink, "…");
+        return;
+    }
+
+    switch (type->kind) {
+        case LHAT_TYPE_UNKNOWN:
+        case LHAT_TYPE_PENDING:
+            // Inference has not decided. Saying so is better than naming a
+            // type the checker never settled on.
+            put_text(sink, "?");
+            return;
+        case LHAT_TYPE_NONE:
+            // 13.2: nothing is produced, which is not nil^ (03 の 3.4).
+            put_text(sink, "no value");
+            return;
+        case LHAT_TYPE_ANY:    put_text(sink, "any^"); return;
+        case LHAT_TYPE_NIL:    put_text(sink, "nil^"); return;
+        case LHAT_TYPE_BOOL:   put_text(sink, "bool^"); return;
+        case LHAT_TYPE_NUMBER: put_text(sink, "number^"); return;
+        case LHAT_TYPE_STRING: put_text(sink, "string^"); return;
+        case LHAT_TYPE_ERROR:  put_text(sink, "error^"); return;
+
+        case LHAT_TYPE_TABLE:
+            // 14.10: bare t^ asks for nothing in particular.
+            if (type->v.table.members == NULL &&
+                type->v.table.variadic == NULL) {
+                put_text(sink, "t^");
+                return;
+            }
+            put_text(sink, "t^{ ");
+            write_members(sink, type->v.table.members, depth);
+            if (type->v.table.variadic != NULL) {
+                // 14.10改: the sequence half, unbounded.
+                if (type->v.table.members != NULL) {
+                    put_text(sink, ", ");
+                }
+                put_text(sink, "...:");
+                write_type(sink, type->v.table.variadic, depth + 1);
+            }
+            put_text(sink, " }");
+            return;
+
+        case LHAT_TYPE_FUNC:
+            // 13.1's form. 13.2 writes '->' only when something is returned.
+            put_text(sink, type->v.func.is_function ? "f^" : "p^");
+            write_list(sink, type->v.func.params, depth, ", ");
+            if (type->v.func.variadic != NULL) {
+                if (type->v.func.params != NULL) {
+                    put_text(sink, ", ");
+                }
+                put_text(sink, "...:");
+                write_type(sink, type->v.func.variadic, depth + 1);
+            }
+            if (type->v.func.result != NULL &&
+                type->v.func.result->kind != LHAT_TYPE_NONE) {
+                put_text(sink, " -> ");
+                write_type(sink, type->v.func.result, depth + 1);
+            }
+            put_text(sink, ";");
+            return;
+
+        case LHAT_TYPE_CORO:
+            // 13.9 with 15.3改: 'c^{ f^R -> Y;, T }'.
+            put_text(sink, "c^{ ");
+            put_text(sink, type->v.coroutine.is_function ? "f^" : "p^");
+            if (type->v.coroutine.receive != NULL) {
+                write_type(sink, type->v.coroutine.receive, depth + 1);
+            }
+            if (type->v.coroutine.produce != NULL) {
+                put_text(sink, " -> ");
+                write_type(sink, type->v.coroutine.produce, depth + 1);
+            }
+            put_text(sink, ";, ");
+            write_type(sink, type->v.coroutine.result, depth + 1);
+            put_text(sink, " }");
+            return;
+
+        case LHAT_TYPE_ERROR_SET:
+            put(sink, type->v.error.name, type->v.error.name_length);
+            return;
+
+        case LHAT_TYPE_ERROR_KIND:
+            // 04 の 2.4: a kind is named through the set that declared it.
+            if (type->v.error.set != NULL) {
+                put(sink, type->v.error.set->v.error.name,
+                    type->v.error.set->v.error.name_length);
+                put_text(sink, ".");
+            }
+            put(sink, type->v.error.name, type->v.error.name_length);
+            return;
+
+        case LHAT_TYPE_UNION:
+            write_list(sink, type->v.composite.arms, depth, " | ");
+            return;
+        case LHAT_TYPE_INTERSECT:
+            write_list(sink, type->v.composite.arms, depth, " & ");
+            return;
+
+        case LHAT_TYPE_KIND_COUNT:
+            break;
+    }
+    put_text(sink, "?");
+}
+
+size_t lhat_type_write(const LhatType *type, char *buffer, size_t size)
+{
+    if (buffer == NULL || size == 0) {
+        return 0;
+    }
+    // One byte held back for the terminator, so `left` running out and the
+    // string being closed are the same condition.
+    TypeSink sink = {buffer, size - 1, 0};
+    write_type(&sink, type, 0);
+    *sink.at = '\0';
+
+    if (sink.written > size - 1) {
+        // Cut. Say so rather than leaving a type that reads as complete.
+        size_t room = size - 1;
+        const char *mark = "…";  // three bytes in UTF-8
+        size_t mark_length = strlen(mark);
+        if (room > mark_length) {
+            memcpy(buffer + room - mark_length, mark, mark_length);
+        }
+        return room;
+    }
+    return sink.written;
+}
+
 const char *lhat_type_kind_name(LhatTypeKind kind)
 {
     switch (kind) {

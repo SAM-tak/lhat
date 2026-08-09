@@ -241,6 +241,34 @@ static void report(Checker *c, const LhatNode *at, LhatCheckErrorCode code)
     d->name_length = 0;
 }
 
+// 07 の 4 章: what a written name turned out to mean. Kept so that a tool
+// reads the walk's own answer rather than resolving 8 章's scoping a second
+// time. Dropped rather than failing the check when there is no room -- what
+// it feeds is a convenience, and the program is no less checked without it.
+static void record_resolution(Checker *c, const LhatNode *at, const Binding *b)
+{
+    LhatCheckResult *r = c->result;
+    if (at->end <= at->offset) {
+        return;  // no span: nothing to hover over
+    }
+    if (r->resolution_count == r->resolution_capacity) {
+        size_t grown = r->resolution_capacity ? r->resolution_capacity * 2 : 64;
+        LhatResolution *bigger = (LhatResolution *)lhat_realloc(
+            r->resolutions, grown * sizeof *bigger);
+        if (bigger == NULL) {
+            return;
+        }
+        r->resolutions = bigger;
+        r->resolution_capacity = grown;
+    }
+
+    LhatResolution *entry = &r->resolutions[r->resolution_count++];
+    entry->use = at->offset;
+    entry->use_end = at->end;
+    entry->definition = b->offset;
+    entry->type = b->type;
+}
+
 // The same, about a name. The text is borrowed from the source, which 6 章
 // keeps alive as long as the result -- a copy per diagnostic would be paid
 // for by every program, and almost none of them read one.
@@ -1686,6 +1714,7 @@ static LhatType *infer_name(Checker *c, const LhatNode *node)
     if (!b->reached && c->deferred == 0) {
         report(c, node, LHAT_CHECK_ERR_USED_BEFORE_DEFINED);
     }
+    record_resolution(c, node, b);
     return b->type;
 }
 
@@ -3785,6 +3814,7 @@ static LhatType *path_table(Checker *c, const LhatNode *node)
             b->type = lhat_type_table(c->result->types);
         }
         b->reached = true;
+        record_resolution(c, node, b);
         return holds_members(c, node, b->type);
     }
 
@@ -5547,12 +5577,40 @@ LhatType *lhat_type_of_text(const char *text, size_t length,
     return type;
 }
 
+const LhatResolution *lhat_check_resolution_at(const LhatCheckResult *result,
+                                               uint32_t offset)
+{
+    if (result == NULL) {
+        return NULL;
+    }
+    // Recorded in walk order, which is source order for the names within one
+    // unit, so this can halve its way in rather than scanning.
+    size_t low = 0;
+    size_t high = result->resolution_count;
+    while (low < high) {
+        size_t mid = low + (high - low) / 2;
+        const LhatResolution *entry = &result->resolutions[mid];
+        if (offset < entry->use) {
+            high = mid;
+        } else if (offset >= entry->use_end) {
+            low = mid + 1;
+        } else {
+            return entry;
+        }
+    }
+    return NULL;
+}
+
 void lhat_check_result_dispose(LhatCheckResult *result)
 {
     lhat_free(result->diagnostics);
     result->diagnostics = NULL;
     result->diagnostic_count = 0;
     result->diagnostic_capacity = 0;
+    lhat_free(result->resolutions);
+    result->resolutions = NULL;
+    result->resolution_count = 0;
+    result->resolution_capacity = 0;
     lhat_free(result->module_name);
     result->module_name = NULL;
     // Only the arena this result made for itself; a shared one belongs to

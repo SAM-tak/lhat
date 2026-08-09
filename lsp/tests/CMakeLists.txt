@@ -25,3 +25,7 @@ lhat_lsp_add_test(test_diagnostics
     ${CMAKE_SOURCE_DIR}/lsp/position.c
 )
 lhat_lsp_add_test(test_ast_json ${CMAKE_SOURCE_DIR}/lsp/ast_json.c)
+lhat_lsp_add_test(test_hover
+    ${CMAKE_SOURCE_DIR}/lsp/hover.c
+    ${CMAKE_SOURCE_DIR}/lsp/position.c
+)

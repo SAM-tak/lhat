@@ -159,6 +159,21 @@ typedef struct {
     uint32_t name_length;
 } LhatCheckDiagnostic;
 
+// 07 の 4 章: where a name that was written got its meaning.
+//
+// Recorded as each use is resolved, so that a tool answering "what is this"
+// reads what the checker decided rather than resolving names a second time.
+// A second implementation of 8 章's scoping would be one more thing to keep
+// in step, and it would disagree in exactly the cases that are hard.
+typedef struct {
+    uint32_t use;      // where the name stands, as written
+    uint32_t use_end;  // one past it, so a position within the name matches
+    uint32_t definition;  // where the name it reaches was bound
+    // What the name holds there. Belongs to the result's type arena, so it
+    // is valid for as long as the result is.
+    LhatType *type;
+} LhatResolution;
+
 // 05 の 8.7: a host registers what it provides by writing the type out, so
 // there has to be a way from written text to a type without a unit around
 // it. `named` stands for the names a type may mention -- a table type whose
@@ -181,6 +196,13 @@ typedef struct {
     size_t diagnostic_count;
     size_t diagnostic_capacity;
 
+    // Every name the walk resolved, in the order it met them. Ordered by
+    // `use` as a consequence, which is what lets a lookup by position be a
+    // binary search rather than a scan.
+    LhatResolution *resolutions;
+    size_t resolution_count;
+    size_t resolution_capacity;
+
     // 05 の 4 章: the structure of what this unit publishes, or NULL when it
     // publishes nothing. What a require^ of it yields.
     LhatType *exports;
@@ -190,6 +212,11 @@ typedef struct {
     // allows. 5.4改 needs it to say what the short form of require^ binds.
     char *module_name;
 } LhatCheckResult;
+
+// The resolution covering `offset`, or NULL when no name was written there.
+// `offset` may fall anywhere within the name, not only on its first byte.
+const LhatResolution *lhat_check_resolution_at(const LhatCheckResult *result,
+                                               uint32_t offset);
 
 // 05 の 5 章. Asked for the unit at `path`, relative to whatever the resolver
 // considers the requiring unit. Returns its export structure, or NULL when it

@@ -71,6 +71,9 @@ cJSON *lsp_handle_initialize(LspServer *server, const cJSON *params)
     cJSON_AddBoolToObject(semantic_tokens, "full", true);
     cJSON_AddItemToObject(capabilities, "semanticTokensProvider", semantic_tokens);
 
+    // 07 の 4 章: the definition a name reaches, and what was written about it.
+    cJSON_AddBoolToObject(capabilities, "hoverProvider", true);
+
     cJSON_AddItemToObject(result, "capabilities", capabilities);
 
     cJSON *info = cJSON_CreateObject();
