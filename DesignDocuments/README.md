@@ -11,7 +11,7 @@
 | [03-compilation-pipeline.md](03-compilation-pipeline.md) | 処理の構成（段階構成、実行時の値表現、型検査の厳格度、推論の範囲） | P3・P4（REPL）が未決。仮想機械の設計が未着手 |
 | [04-errors.md](04-errors.md) | 誤りの表現と伝播（`errordef^`、`catch^`、`try^`、網羅性、取りこぼしの検出） | 未決事項なし |
 | [05-modules.md](05-modules.md) | 名前空間とモジュール（`module^`、`public^`、`require^`、型の札、初期束縛） | M2〜M4 が未決 |
-| [06-visual-editor.md](06-visual-editor.md) | ビジュアルエディタ（`lhat/ast`、AST からグラフへの写像、ELK レイアウト、描画層、`*.lhl`） | V2・V7〜V16 が未決。V1・V3〜V6 と `lhat/ast` は決定または実装済み |
+| [06-visual-editor.md](06-visual-editor.md) | ビジュアルエディタ（`lhat/ast`、AST からグラフへの写像、ELK レイアウト、描画層、`*.lhl`） | V2・V7〜V14・V16〜V18・V23 が未決。V1・V3〜V6・V15・V19〜V22 と `lhat/ast` は決定または実装済み |
 | [07-language-server.md](07-language-server.md) | 言語サーバとエディタ統合（`lhatls` の機能、ホバー、VSCode 拡張の構成） | L1〜L5 が未決。`lhat/ast` は実装済み |
 
 ## Memo.md との関係
