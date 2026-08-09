@@ -154,9 +154,38 @@ function labelOf(node: AstNode, source: string, drawn: Child[]): string {
 const widthFor = (label: string) =>
     Math.max(56, Math.round(label.length * CH) + 18);
 
+// 06 の 8.2: a named subroutine is a unit of its own, so opening one means
+// going into it rather than unfolding it where it stands. Anonymous ones are
+// only meaningful where they were written, so they stay put.
+export function isDrillTarget(node: AstNode): boolean {
+    if (!COLLAPSIBLE.has(node.kind)) return false;
+    return node.kind === "func" ? false : true;
+}
+
+/** The node a view is rooted at, found by the position it starts at. */
+export function nodeAt(root: AstNode, start: number): AstNode | undefined {
+    if (root.start === start) return root;
+    for (const { node: c } of allChildren(root)) {
+        if (start < c.start || start >= c.end) continue;
+        const found = nodeAt(c, start);
+        if (found !== undefined) return found;
+    }
+    return undefined;
+}
+
+/** What a definition is called, for the trail of where a view came from. */
+export function titleOf(node: AstNode, source: string): string {
+    return labelOf(node, source, drawnChildren(node)).replace(/\s*…\s*$/, "");
+}
+
 export interface MapOptions {
     /** V15: fold definitions when the view opens. */
     collapse?: boolean;
+    /**
+     * 8.2: the node this view is rooted at. Its own box is not drawn -- the
+     * view *is* that definition -- so what shows is the body alone.
+     */
+    root?: AstNode;
 }
 
 export function toElk(reply: AstReply, options: MapOptions = {}): ElkNode {
@@ -228,14 +257,19 @@ export function toElk(reply: AstReply, options: MapOptions = {}): ElkNode {
         return rows;
     }
 
-    function build(node: AstNode, voice: "stmt" | "expr"): ElkNode {
+    // `unfold` marks the way down to the body of the definition this view was
+    // opened at (8.2). Going into a definition is what opens it, so neither it
+    // nor its body is folded again -- but a definition *inside* that body is,
+    // since that one is a way further in rather than part of what is shown.
+    function build(node: AstNode, voice: "stmt" | "expr",
+                   unfold: boolean): ElkNode {
         const kind = node.kind;
         const kids = drawnChildren(node);
         const label = labelOf(node, source, kids);
 
         if (kids.length === 0) return leaf(node, label);
 
-        if (options.collapse &&
+        if (options.collapse && !unfold &&
             (COLLAPSIBLE.has(kind) ||
                 (FOLDS_WITH_VALUE.has(kind) && holdsCollapsible(node)))) {
             const text = label + " …";
@@ -255,11 +289,15 @@ export function toElk(reply: AstReply, options: MapOptions = {}): ElkNode {
             return leaf(node, label);
         }
 
+        // Past a subroutine or definition, the way down has been walked: what
+        // lies below is another way in rather than more of this view.
+        const childUnfold = unfold && !COLLAPSIBLE.has(kind);
+
         const id = nextId(kind);
 
         // 5.3.1: an element list wraps, and does not follow the voice.
         if (ELEMENT_LIST.has(kind)) {
-            const items = kids.map((c) => build(c.node, "expr"));
+            const items = kids.map((c) => build(c.node, "expr", childUnfold));
             const columns = COLUMNS[kind] ?? 1;
             if (columns > 1 && items.length > columns) {
                 const rows = griddedRows(id, items, columns);
@@ -270,7 +308,7 @@ export function toElk(reply: AstReply, options: MapOptions = {}): ElkNode {
 
         // A branch transposes; each clause goes back to the enclosing voice.
         if (BRANCH.has(kind)) {
-            const clauses = kids.map((c) => build(c.node, voice));
+            const clauses = kids.map((c) => build(c.node, voice, childUnfold));
             const dir = voice === "stmt" ? "RIGHT" : "DOWN";
             // 6.3: clauses carry no edge of their own, so ELK would pack them
             // by area and lose both the axis and the source order.
@@ -287,7 +325,7 @@ export function toElk(reply: AstReply, options: MapOptions = {}): ElkNode {
             if (VOICE_TURN.has(kind) && field === "body") childVoice = "stmt";
             if (BODY_STATEMENT.has(kind) && field === "body") childVoice = "stmt";
             if (kind === "if-clause" && field === "body") childVoice = voice;
-            inner.push(build(c, childVoice));
+            inner.push(build(c, childVoice, childUnfold));
         }
 
         // V4: 9 章's clauses are `extra` on a BLOCK and run in a fixed order,
@@ -296,7 +334,8 @@ export function toElk(reply: AstReply, options: MapOptions = {}): ElkNode {
         return container(id, label, dir, inner, chain(id, inner), node);
     }
 
-    const root = build(reply.root, "stmt");
+    const root = build(options.root ?? reply.root, "stmt",
+                       options.root !== undefined);
     // The root of a view need not be a container -- one definition opened on
     // its own may map to a single box -- so give it something to sit in.
     if (!root.layoutOptions) {

@@ -41,6 +41,45 @@ body {
     opacity: 0.75;
 }
 
+/* 06 の 8.2: the way back out of a definition that was drilled into. */
+#trail {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    align-items: center;
+    padding: 4px 10px;
+    font-size: 12px;
+    background: var(--vscode-editorWidget-background);
+    border-bottom: 1px solid var(--vscode-editorWidget-border, transparent);
+}
+
+#trail[hidden] {
+    display: none;
+}
+
+.crumb {
+    font: inherit;
+    font-family: var(--vscode-editor-font-family, monospace);
+    color: var(--vscode-textLink-foreground);
+    background: none;
+    border: none;
+    padding: 0 2px;
+    cursor: pointer;
+}
+
+.crumb:hover {
+    text-decoration: underline;
+}
+
+#trail .sep {
+    opacity: 0.5;
+}
+
+/* A folded definition is a way in, so it says so on hover. */
+g.collapsed {
+    cursor: zoom-in;
+}
+
 /* The whole picture scrolls; 8.3's partial scrolling comes with the real
    drawing layer. */
 #view {

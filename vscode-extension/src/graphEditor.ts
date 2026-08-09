@@ -113,7 +113,12 @@ export class LhatGraphEditorProvider implements vscode.CustomTextEditorProvider 
 <title>L^ graph</title>
 </head>
 <body>
-<div id="bar"><button id="fold" type="button">fold / unfold</button><span id="status"></span></div>
+<div id="bar">
+  <button id="up" type="button" title="Leave this definition">▲</button>
+  <button id="fold" type="button">fold / unfold</button>
+  <span id="status"></span>
+</div>
+<div id="trail" hidden></div>
 <div id="view"></div>
 <script nonce="${nonce}" src="${elk}"></script>
 <script nonce="${nonce}" type="module" src="${main}"></script>
