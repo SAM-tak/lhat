@@ -2443,8 +2443,17 @@ static void compile_subroutine(Compiler *c, const LhatNode *node, uint8_t into)
         }
         // 14.4: a first parameter written self^ is what marks a method. No
         // modifier says so; the shape of the signature does.
-        if (param == node->v.func.params && name_is(name, length, "self^")) {
-            proto->takes_self = true;
+        //
+        // 11.3改 (S39): written last it marks one too, and says the receiver
+        // is the RIGHT operand -- check.c refuses that on anything but an
+        // op^, so reading it here is reading a shape already judged.
+        if (name_is(name, length, "self^")) {
+            if (param == node->v.func.params) {
+                proto->takes_self = true;
+            } else if (param->next == NULL) {
+                proto->takes_self = true;
+                proto->self_last = true;
+            }
         }
         if (inner.local_count >= LHAT_MAX_LOCALS) {
             fail(c, LHAT_COMPILE_TOO_COMPLEX);
@@ -5277,8 +5286,13 @@ static LhatRuntimeType *tag_type(LhatHeap *heap, LhatValue value)
         uint8_t fixed_end = proto->has_variadic ? proto->parameters - 1
                                                 : proto->parameters;
         // 14.4: self^ is not a parameter of the signature -- it is the
-        // receiver, written out only where 14.4 already says so.
-        for (uint8_t i = proto->takes_self ? 1 : 0; i < fixed_end; i++) {
+        // receiver, written out only where 14.4 already says so. 11.3改: the
+        // slot it occupies is the last one when it was written there.
+        uint8_t first = proto->takes_self && !proto->self_last ? 1 : 0;
+        if (proto->takes_self && proto->self_last && fixed_end > 0) {
+            fixed_end--;
+        }
+        for (uint8_t i = first; i < fixed_end; i++) {
             LhatRuntimeType *param = proto->parameter_types != NULL
                                          ? proto->parameter_types[i]
                                          : NULL;
@@ -5453,7 +5467,14 @@ static bool fits_call(LhatValue candidate, const LhatValue *at, uint8_t given,
         return false;
     }
 
-    for (size_t i = declared; i < proto->parameters; i++) {
+    // 11.3改 (S39): the receiver occupies the last slot instead, so the
+    // arguments are the ones before it and the walk stops one short.
+    size_t stop = proto->parameters;
+    if (method && proto->takes_self && proto->self_last) {
+        declared = 0;
+        stop = proto->parameters > 0 ? proto->parameters - 1 : 0;
+    }
+    for (size_t i = declared; i < stop; i++) {
         const struct LhatRuntimeType *wanted =
             proto->parameter_types != NULL ? proto->parameter_types[i] : NULL;
         if (!lhat_value_satisfies(at[first + i - declared], wanted)) {
@@ -5462,6 +5483,96 @@ static bool fits_call(LhatValue candidate, const LhatValue *at, uint8_t given,
     }
     *skip = method && !proto->takes_self ? 2 : 1;
     return true;
+}
+
+// The body a value carries, or NULL when it is not a subroutine at all.
+static const LhatProto *proto_of(LhatValue value)
+{
+    if (!lhat_is_object_kind(value, LHAT_OBJECT_SUBROUTINE)) {
+        return NULL;
+    }
+    return ((const LhatClosure *)lhat_as_object(value))->proto;
+}
+
+// 11.3改 (S39): how one side answered the operator it was asked for.
+typedef enum {
+    OPERATOR_PICKED,       // a candidate was found and takes the other operand
+    OPERATOR_ABSENT,       // this side carries no such member
+    OPERATOR_NO_CANDIDATE, // it carries a group, and none of it takes this
+    OPERATOR_NOT_CALLABLE, // the member is there and is not a subroutine
+    OPERATOR_NO_MEMORY
+} OperatorLookup;
+
+// The operator `name` as one side carries it, when that side is the receiver.
+//
+// `self_last` says which spelling is being looked for: the side standing on
+// the left writes its self^ first (14.4), the side standing on the right
+// writes it last. One written the other way round describes the other order,
+// so it is not an answer here and the search passes over it.
+//
+// The right side is a fallback and has to qualify to be chosen, so its lone
+// candidate is asked whether it takes the other operand -- the left's is not,
+// which keeps the ordinary path exactly as it was (the checker is what judges
+// a written one, and 03 の 3.1's relaxed leaves it to the body).
+static OperatorLookup operator_candidate(Machine *m, LhatValue side,
+                                         const char *name, size_t length,
+                                         LhatValue receiver, LhatValue argument,
+                                         bool self_last, LhatValue *picked)
+{
+    *picked = lhat_nil();
+    const LhatTable *carrier = table_of(side);
+    if (name == NULL || carrier == NULL) {
+        return OPERATOR_ABSENT;
+    }
+    LhatString *key = lhat_string_new(&m->objects, name, length);
+    if (key == NULL) {
+        return OPERATOR_NO_MEMORY;
+    }
+    LhatValue found = lhat_table_get(carrier, lhat_object((LhatObject *)key));
+    if (lhat_is_nil(found)) {
+        return OPERATOR_ABSENT;
+    }
+
+    // 14.12: a type may answer one operator for several right-hand types, and
+    // then the member is a group. The search is the same one a call makes --
+    // at most one candidate fits, so it ends at the first. 14.4's layout for
+    // a method call is callee, receiver, arguments.
+    LhatValue shaped[3];
+    shaped[1] = receiver;
+    shaped[2] = argument;
+    if (lhat_is_object_kind(found, LHAT_OBJECT_OVERLOAD)) {
+        const LhatOverload *group = (const LhatOverload *)lhat_as_object(found);
+        for (size_t i = 0; i < group->count; i++) {
+            if (proto_of(group->candidates[i]) == NULL ||
+                proto_of(group->candidates[i])->self_last != self_last) {
+                continue;
+            }
+            size_t skip = 1;
+            shaped[0] = group->candidates[i];
+            if (fits_call(group->candidates[i], shaped, 1, true, &skip)) {
+                *picked = group->candidates[i];
+                return OPERATOR_PICKED;
+            }
+        }
+        return OPERATOR_NO_CANDIDATE;
+    }
+
+    if (!lhat_is_object_kind(found, LHAT_OBJECT_SUBROUTINE)) {
+        return OPERATOR_NOT_CALLABLE;
+    }
+    const LhatProto *proto = proto_of(found);
+    if (proto == NULL || proto->self_last != self_last) {
+        return OPERATOR_ABSENT;  // it answers the other order
+    }
+    if (self_last) {
+        size_t skip = 1;
+        shaped[0] = found;
+        if (!fits_call(found, shaped, 1, true, &skip)) {
+            return OPERATOR_NO_CANDIDATE;
+        }
+    }
+    *picked = found;
+    return OPERATOR_PICKED;
 }
 
 // 15.4 with 5.4: the inverse of the move a yield^ makes. The frame is back
@@ -6046,8 +6157,13 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
                 }
                 // 02 の 11.3: numbers answer built in; anything else answers
                 // with the member 11.8 names, or not at all.
+                //
+                // 11.3改 (S39): the right operand is reason enough to go on.
+                // '1 + v' is the case the rule exists for -- number^ carries
+                // the arithmetic and takes only its own kind, so the answer
+                // can only be on the other side.
                 if (status != LHAT_RUN_TYPE_ERROR ||
-                    table_of(R(b)) == NULL) {
+                    (table_of(R(b)) == NULL && table_of(R(cc)) == NULL)) {
                     return finish(m, chunk, status, lhat_nil(), at);
                 }
                 goto call_operator;
@@ -6235,8 +6351,9 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
                 }
 
                 // 02 の 11.3: a string answers above, built in. Anything else
-                // answers with the member 11.8 names, or not at all.
-                if (table_of(R(b)) == NULL) {
+                // answers with the member 11.8 names, or not at all -- and
+                // 11.3改 (S39) reads the right operand for one too.
+                if (table_of(R(b)) == NULL && table_of(R(cc)) == NULL) {
                     return finish(m, chunk, LHAT_RUN_TYPE_ERROR, lhat_nil(), at);
                 }
                 goto call_operator;
@@ -7321,42 +7438,31 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
     call_operator: {
         size_t length = 0;
         const char *name = operator_name(op, &length);
-        const LhatTable *carrier = table_of(R(b));
+        // 14.4 makes an operator a method: the left operand is the receiver
+        // and the right one the single argument.
         LhatValue found = lhat_nil();
-        if (name != NULL && carrier != NULL) {
-            LhatString *key = lhat_string_new(&m->objects, name, length);
-            if (key == NULL) {
-                return finish(m, chunk, LHAT_RUN_OUT_OF_MEMORY, lhat_nil(), at);
+        OperatorLookup answer = operator_candidate(m, R(b), name, length, R(b),
+                                                   R(cc), false, &found);
+        // 11.3改 (S39): the left carries nothing that takes this right
+        // operand, so the right one is asked whether it was written as the
+        // receiver instead. This is what lets a value join an operation whose
+        // left operand is a built-in, which can carry no answer for it.
+        if (answer == OPERATOR_ABSENT || answer == OPERATOR_NO_CANDIDATE) {
+            LhatValue other = lhat_nil();
+            OperatorLookup right = operator_candidate(
+                m, R(cc), name, length, R(cc), R(b), true, &other);
+            if (right == OPERATOR_PICKED || right == OPERATOR_NO_MEMORY) {
+                found = other;
+                answer = right;
             }
-            found = lhat_table_get(carrier, lhat_object((LhatObject *)key));
         }
-        // 14.12: a type may answer one operator for several right-hand types,
-        // and then the member is a group. The search is the same one a call
-        // makes -- at most one candidate fits, so it ends at the first.
-        if (lhat_is_object_kind(found, LHAT_OBJECT_OVERLOAD)) {
-            const LhatOverload *group =
-                (const LhatOverload *)lhat_as_object(found);
-            // 14.4 makes an operator a method: the left operand is the
-            // receiver and the right one the single argument, which is the
-            // layout 5.3 gives a method call -- callee, receiver, arguments.
-            LhatValue shaped[3];
-            shaped[0] = found;
-            shaped[1] = R(b);
-            shaped[2] = R(cc);
-            LhatValue picked = lhat_nil();
-            for (size_t i = 0; i < group->count; i++) {
-                size_t skip = 1;
-                if (fits_call(group->candidates[i], shaped, 1, true, &skip)) {
-                    picked = group->candidates[i];
-                    break;
-                }
-            }
-            if (lhat_is_nil(picked)) {
-                return finish(m, chunk, LHAT_RUN_NO_CANDIDATE, lhat_nil(), at);
-            }
-            found = picked;
+        if (answer == OPERATOR_NO_MEMORY) {
+            return finish(m, chunk, LHAT_RUN_OUT_OF_MEMORY, lhat_nil(), at);
         }
-        if (!lhat_is_object_kind(found, LHAT_OBJECT_SUBROUTINE)) {
+        if (answer == OPERATOR_NO_CANDIDATE) {
+            return finish(m, chunk, LHAT_RUN_NO_CANDIDATE, lhat_nil(), at);
+        }
+        if (answer != OPERATOR_PICKED) {
             return finish(m, chunk, LHAT_RUN_TYPE_ERROR, lhat_nil(), at);
         }
         const LhatClosure *carried =
@@ -7375,14 +7481,18 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
         // be one. 14.4 puts the left operand in self^, so it leads: the frame
         // is laid out just past where the answer goes, the way a native call
         // lays one out.
+        //
+        // 11.3改 (S39): and a self^-last one needs nothing else here. Its
+        // parameter list is written in operand order too -- the left operand
+        // first, the self^ after it -- so the same two slots hold the same two
+        // values whichever side the receiver is. Only which slot the body
+        // calls self^ differs, and that is the body's own business.
         size_t next_base = rbase + (a) + 1;
         if (next_base + LHAT_MAX_REGISTERS >= LHAT_STACK_SLOTS) {
             return finish(m, chunk, LHAT_RUN_STACK_OVERFLOW, lhat_nil(), at);
         }
-        LhatValue receiver = R(b);
-        LhatValue argument = R(cc);
-        lhat_slots_set(m->slots, next_base + (0), receiver);
-        lhat_slots_set(m->slots, next_base + (1), argument);
+        lhat_slots_set(m->slots, next_base + (0), R(b));
+        lhat_slots_set(m->slots, next_base + (1), R(cc));
 
         frame->pc = pc;
         Frame *entered = &m->frames[m->frame_count++];

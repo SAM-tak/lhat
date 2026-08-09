@@ -158,6 +158,14 @@ struct LhatType {
             // 'x.m()' passes x there without writing it. The receiver is not
             // in `params`, so an ordinary call needs no special case.
             bool takes_self;
+            // 11.3改 (S39): the self^ was written last instead, which only an
+            // op^ may do -- it says the receiver is the RIGHT operand, so
+            // 'op^+ = f^lhs:number^, self^' answers '1 + v'. The receiver is
+            // out of `params` either way; this says which side it stands on.
+            // Two signatures differing here are different types: what may be
+            // written on the left of one cannot be written on the left of the
+            // other.
+            bool self_last;
             // 15.2: the body contains yield^ or yieldall^, so calling it answers
             // a coroutine rather than running anything (15.5)
             bool yields;

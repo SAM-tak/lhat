@@ -899,6 +899,36 @@ static void test_strings(void)
     CHECK_INTEGER(&r, 1530);  // 15, then 30
     run_dispose(&r);
 
+    // 11.3改 (S39): with the built-in on the left there is no other way in --
+    // number^ carries the arithmetic and takes nothing but its own kind, and
+    // no program adds to what it carries. A self^ written last is the answer.
+    LHAT_TEST("a self^ written last answers from the right");
+    run_text(&r,
+             "var^ Vec = def^{\n"
+             "  self^{ n := 10 },\n"
+             "  op^+ := f^lhs:number^, self^ -> number^ "
+             "{ return^ lhs + self^.n },\n"
+             "}\n"
+             "return^ 1 + Vec.new()\n");
+    CHECK_INTEGER(&r, 11);
+    run_dispose(&r);
+
+    // 11.3's order stands: the right side is reached only where the left
+    // carries no answer for this operand. Both claiming the same pair is the
+    // left one answering, with the other never reached.
+    LHAT_TEST("and the left one still answers first");
+    run_text(&r,
+             "var^ Vec = def^{\n"
+             "  self^{ n := 10 },\n"
+             "  op^+ := f^self^, o:number^ -> number^ { return^ 1 },\n"
+             "  overload^ op^+ := f^lhs:number^, self^ -> number^ "
+             "{ return^ 2 },\n"
+             "}\n"
+             "var^ v = Vec.new()\n"
+             "return^ (v + 1) * 10 + (1 + v)\n");
+    CHECK_INTEGER(&r, 12);  // the left arm, then the right one
+    run_dispose(&r);
+
     // 14.8's number^ carries all seven built in, so ordinary arithmetic keeps
     // the instructions it had and pays nothing for the lookup.
     LHAT_TEST("numbers keep their own instructions");

@@ -647,13 +647,41 @@ static bool is_self_marker(const Checker *c, const LhatNode *param)
            name_is(name, length, "self^");
 }
 
+// Where the receiver stands in a written parameter list: 0 when this parameter
+// is not the marker at all, 1 when it leads, 2 when it trails.
+//
+// 11.3改 (S39): a trailing self^ says the receiver is the RIGHT operand, which
+// only an op^ may mean -- 'op^+ = f^lhs:number^, self^' is what answers
+// '1 + v', where the left operand can carry no answer of its own. infer_def
+// refuses it on any other member (14.4: everywhere else the receiver is what
+// stands before the dot).
+//
+// Written at both ends it counts as both, leaving a signature with no ordinary
+// parameter at all -- which 11.8's shape rule then reports for an op^, and the
+// rule above for anything else. Neither needs a case here.
+static int self_marker_at(const Checker *c, const LhatNode *params,
+                          const LhatNode *param)
+{
+    if (!is_self_marker(c, param)) {
+        return 0;
+    }
+    if (param == params) {
+        return 1;
+    }
+    // A self^ written in the middle is not a marker: it stays a parameter
+    // whose type is the word self^, which 13.1 has no such type for.
+    return param->next == NULL ? 2 : 0;
+}
+
 static LhatType *resolve_func_type(Checker *c, const LhatNode *node)
 {
     LhatType *func = lhat_type_func(c->result->types, node->v.func.is_function);
     for (const LhatNode *param = node->v.func.params; param != NULL;
          param = param->next) {
-        if (param == node->v.func.params && is_self_marker(c, param)) {
+        int marker = self_marker_at(c, node->v.func.params, param);
+        if (marker != 0) {
             func->v.func.takes_self = true;
+            func->v.func.self_last = marker == 2;
             continue;
         }
         if (param->v.param.variadic) {
@@ -1057,9 +1085,36 @@ static void check_operator_shape(Checker *c, const LhatNode *at,
     // 15.7改: and it may not be yieldable. Not because it is an f^ -- 15.3改
     // lets one of those suspend -- but because 15.5 has a yieldable call
     // answer a coroutine, where the signature above says it answers T.
+    //
+    // 11.3改 (S39): which side the self^ was written on is not judged here.
+    // Either way the receiver is out of `params`, so the count is the same,
+    // and both spellings are operators -- the position only says which
+    // operand the receiver is.
     if (type->kind != LHAT_TYPE_FUNC || !type->v.func.is_function ||
         !type->v.func.takes_self || params != 1 || type->v.func.yields) {
         report(c, at, LHAT_CHECK_ERR_BAD_OPERATOR);
+    }
+}
+
+// 11.3改 (S39): and nothing but an op^ has any use for a trailing self^. A
+// call written 'x.m(y)' takes its receiver from what stands before the dot,
+// so a member saying the receiver is its last argument says nothing 14.4 can
+// act on. Reads an overloaded member arm by arm, the way the shape rule does.
+static void refuse_self_last(Checker *c, const LhatNode *at,
+                             const LhatType *type)
+{
+    if (type == NULL) {
+        return;
+    }
+    if (type->kind == LHAT_TYPE_INTERSECT) {
+        for (const LhatTypeList *arm = type->v.composite.arms; arm != NULL;
+             arm = arm->next) {
+            refuse_self_last(c, at, arm->type);
+        }
+        return;
+    }
+    if (type->kind == LHAT_TYPE_FUNC && type->v.func.self_last) {
+        report(c, at, LHAT_CHECK_ERR_SELF_LAST_NOT_OPERATOR);
     }
 }
 
@@ -1746,6 +1801,55 @@ static void expect(Checker *c, const LhatNode *at, LhatType *value,
 // NULL means nothing was decided: the operand types said too little (03 の
 // 3.5), or the answer was already reported. The caller says what to fall back
 // on, since that differs by operator.
+// 11.3改 (S39): what the RIGHT operand answers, when it was written as the
+// receiver ('op^+ = f^lhs:number^, self^'). Reached only once the left has
+// been asked and has no arm taking this right operand, which is what keeps
+// 11.3's left-first rule intact -- and is the case that matters, since a
+// built-in on the left carries the arithmetic but takes only its own kind.
+//
+// `answered` tells a result of NULL (an operator answering nothing) from no
+// answer at all; the caller reports only in the second case.
+static LhatType *right_operator(Checker *c, const char *name, size_t length,
+                                LhatType *left, LhatType *right,
+                                bool *answered)
+{
+    *answered = false;
+    // 3.5: nothing decided about the right operand is nothing to look a member
+    // up on. The demand the left side would have made has already been made.
+    if (operator_undecided(right) || param_var_for(c, right) != NULL) {
+        return NULL;
+    }
+    LhatType *carrier = operator_member(c, right, name, length);
+    if (carrier == NULL) {
+        return NULL;
+    }
+
+    // The left operand is the single argument here, so an arm is asked exactly
+    // as a member call asks -- the same judgement the left side uses, with the
+    // operands the other way round. 14.12's ban on overlap leaves at most one.
+    LhatType *args[1] = {left};
+    if (carrier->kind == LHAT_TYPE_INTERSECT) {
+        for (const LhatTypeList *arm = carrier->v.composite.arms; arm != NULL;
+             arm = arm->next) {
+            if (arm->type != NULL && arm->type->kind == LHAT_TYPE_FUNC &&
+                arm->type->v.func.self_last &&
+                signature_accepts(arm->type, args, 1, true)) {
+                *answered = true;
+                return arm->type->v.func.result;
+            }
+        }
+        return NULL;
+    }
+    // A left-receiver operator on this side answers 'right op left', which is
+    // not what is written here, so only a self^-last one will do.
+    if (carrier->kind != LHAT_TYPE_FUNC || !carrier->v.func.self_last ||
+        !signature_accepts(carrier, args, 1, true)) {
+        return NULL;
+    }
+    *answered = true;
+    return carrier->v.func.result;
+}
+
 static LhatType *infer_operator(Checker *c, const LhatNode *node, LhatOpKind op,
                                 LhatType *left, LhatType *right)
 {
@@ -1778,7 +1882,22 @@ static LhatType *infer_operator(Checker *c, const LhatNode *node, LhatOpKind op,
     }
 
     LhatType *carrier = operator_member(c, left, name, length);
+    // 11.3改 (S39): a self^-last one on this side describes the other order --
+    // it answers when its owner stands on the RIGHT. Carrying it is not
+    // answering here, so the question moves on exactly as if it were absent.
+    if (carrier != NULL && carrier->kind == LHAT_TYPE_FUNC &&
+        carrier->v.func.self_last) {
+        carrier = NULL;
+    }
     if (carrier == NULL) {
+        // 11.3改 (S39): nothing on the left, so the right operand gets the
+        // question -- it may have been written as the receiver.
+        bool answered = false;
+        LhatType *result =
+            right_operator(c, name, length, left, right, &answered);
+        if (answered) {
+            return result;
+        }
         report(c, node->v.binary.left, LHAT_CHECK_ERR_NO_OPERATOR);
         return NULL;
     }
@@ -1803,9 +1922,23 @@ static LhatType *infer_operator(Checker *c, const LhatNode *node, LhatOpKind op,
         LhatType *args[1] = { right };
         for (const LhatTypeList *arm = carrier->v.composite.arms; arm != NULL;
              arm = arm->next) {
+            // 11.3改 (S39): the self^-last arms of this same group answer the
+            // other order, so they are not candidates here.
+            if (arm->type != NULL && arm->type->kind == LHAT_TYPE_FUNC &&
+                arm->type->v.func.self_last) {
+                continue;
+            }
             if (signature_accepts(arm->type, args, 1, true)) {
                 return arm->type->v.func.result;
             }
+        }
+        // 11.3改 (S39): no arm here takes it, so the right operand is asked
+        // whether it was written as the receiver instead.
+        bool answered = false;
+        LhatType *result =
+            right_operator(c, name, length, left, right, &answered);
+        if (answered) {
+            return result;
         }
         // The same report the single arm makes below: what is wrong is that
         // nothing here takes this right operand.
@@ -1818,6 +1951,20 @@ static LhatType *infer_operator(Checker *c, const LhatNode *node, LhatOpKind op,
     }
     LhatType *wanted =
         carrier->v.func.params != NULL ? carrier->v.func.params->type : NULL;
+    // 11.3改 (S39): this one does not take the right operand, so that side is
+    // asked whether it was written as the receiver. Tried before expect so
+    // that the answer is taken rather than reported -- and only when the left
+    // has already failed, which is 11.3's order kept intact. A built-in on
+    // the left lands here: number^ carries the arithmetic but takes only a
+    // number^, so '1 + v' is exactly this case.
+    if (wanted != NULL && !lhat_type_conforms(right, wanted)) {
+        bool answered = false;
+        LhatType *result =
+            right_operator(c, name, length, left, right, &answered);
+        if (answered) {
+            return result;
+        }
+    }
     // 03 の 3.4: a parameter on this side is undecided in the sense above, but
     // what the operator takes is a demand on it rather than a gap to wave
     // through -- expect is what tells the two apart.
@@ -2762,8 +2909,10 @@ static LhatType *declared_signature(Checker *c, const LhatNode *node)
     func->v.func.yields = node->v.func.yields;
     for (const LhatNode *param = node->v.func.params; param != NULL;
          param = param->next) {
-        if (param == node->v.func.params && is_self_marker(c, param)) {
+        int marker = self_marker_at(c, node->v.func.params, param);
+        if (marker != 0) {
             func->v.func.takes_self = true;
+            func->v.func.self_last = marker == 2;
             continue;
         }
         LhatType *type = param->v.param.type != NULL
@@ -2804,8 +2953,10 @@ static LhatType *infer_func(Checker *c, const LhatNode *node)
         // 14.4: the receiver is not an ordinary parameter. Leaving it unbound
         // lets the self^ that infer_def put in scope show through, which is
         // what the body is actually talking about.
-        if (param == node->v.func.params && is_self_marker(c, param)) {
+        int marker = self_marker_at(c, node->v.func.params, param);
+        if (marker != 0) {
             func->v.func.takes_self = true;
+            func->v.func.self_last = marker == 2;
             continue;
         }
         // 05 の 4.3: what leaves the unit is not decided by reading a body.
@@ -3568,6 +3719,9 @@ static LhatType *infer_def(Checker *c, const LhatNode *node, LhatType *base)
         // it, so 14.12 has nothing to check here.
         if (entry->v.entry.declared) {
             LhatType *declared = resolve_type(c, entry->v.entry.value);
+            if (!is_operator_name(name, length)) {
+                refuse_self_last(c, entry, declared);
+            }
             if (hidden != NULL && !hidden->abstract) {
                 // Already provided, so the declaration asks for nothing.
                 report(c, entry, LHAT_CHECK_ERR_ALREADY_PROVIDED);
@@ -3602,6 +3756,8 @@ static LhatType *infer_def(Checker *c, const LhatNode *node, LhatType *base)
         type = check_same_name(c, entry, hidden, type);
         if (is_operator_name(name, length)) {
             check_operator_shape(c, entry, type);
+        } else {
+            refuse_self_last(c, entry, type);
         }
         // 14.15改: an override^ that found nothing waits for a composition to
         // bring what it replaces. Until then super^ inside it points at
@@ -6102,12 +6258,17 @@ const char *lhat_check_error_message(LhatCheckErrorCode code)
         case LHAT_CHECK_ERR_BAD_KEY:
             return "nil^ is how a table spells 'not there', so it cannot be a key";
         case LHAT_CHECK_ERR_NO_OPERATOR:
-            return "an operator is answered by what stands to its left, and "
-                   "this does not answer this one";
+            return "an operator is answered by what stands to its left, or by "
+                   "what stands to its right when that side writes the self^ "
+                   "last; neither answers this one";
         case LHAT_CHECK_ERR_BAD_OPERATOR:
             return "an op^ is an f^ taking self^ and one argument, and it may "
-                   "not yield^; the left operand is the self^ and the right "
-                   "one the argument";
+                   "not yield^; the self^ is whichever operand it is written "
+                   "as -- first for the left one, last for the right";
+        case LHAT_CHECK_ERR_SELF_LAST_NOT_OPERATOR:
+            return "only an op^ writes its self^ last, to say the right "
+                   "operand is the receiver; everywhere else the receiver is "
+                   "what stands before the dot";
         case LHAT_CHECK_ERR_ISA_ALWAYS_TRUE:
             return "any^ holds of every value, so this asks nothing";
         case LHAT_CHECK_ERR_MEMBER_EXISTS:

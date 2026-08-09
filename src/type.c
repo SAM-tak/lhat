@@ -323,6 +323,11 @@ static bool conforms_func(const LhatType *value, const LhatType *target,
     if (value->v.func.takes_self != target->v.func.takes_self) {
         return false;
     }
+    // 11.3改 (S39): and which operand the receiver is decides which way round
+    // the operator may be written, so the two are not each other.
+    if (value->v.func.self_last != target->v.func.self_last) {
+        return false;
+    }
 
     const LhatTypeList *a = value->v.func.params;
     const LhatTypeList *b = target->v.func.params;

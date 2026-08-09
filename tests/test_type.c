@@ -375,6 +375,26 @@ static void test_functions(void)
         LHAT_CHECK(!lhat_type_conforms(narrow, wide), "the other way does not");
     }
 
+    // 11.3改 (S39): which operand the receiver is decides which way round the
+    // operator may be written, so the two spellings are not each other.
+    LHAT_TEST("a left receiver and a right one are different types");
+    {
+        LhatType *on_left = lhat_type_func(&t.arena, true);
+        lhat_type_add_param(&t.arena, on_left, simple(&t, LHAT_TYPE_NUMBER));
+        on_left->v.func.takes_self = true;
+        on_left->v.func.result = simple(&t, LHAT_TYPE_NUMBER);
+
+        LhatType *on_right = lhat_type_func(&t.arena, true);
+        lhat_type_add_param(&t.arena, on_right, simple(&t, LHAT_TYPE_NUMBER));
+        on_right->v.func.takes_self = true;
+        on_right->v.func.self_last = true;
+        on_right->v.func.result = simple(&t, LHAT_TYPE_NUMBER);
+
+        LHAT_CHECK(!lhat_type_conforms(on_left, on_right),
+                   "one answers with its owner on the left");
+        LHAT_CHECK(!lhat_type_conforms(on_right, on_left), "the other on the right");
+    }
+
     // 15 章: f^ and p^ are different kinds of subroutine, not two spellings.
     LHAT_TEST("f^ and p^ do not substitute for each other");
     {

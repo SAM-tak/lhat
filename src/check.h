@@ -146,6 +146,10 @@ typedef enum {
     LHAT_CHECK_ERR_PUBLIC_IS_IMMUTABLE, // 05 の 4 章 with 8.9: a public^ var^
                                         // is a name another unit could see
                                         // change, which 01 の 8.3 refused
+    LHAT_CHECK_ERR_SELF_LAST_NOT_OPERATOR, // 11.3改: a self^ written last says
+                                           // the right operand is the
+                                           // receiver, which only an op^ has
+                                           // any use for (14.4)
     LHAT_CHECK_ERR_SELF_TYPE_OUTSIDE    // 13.13: Self^ names the type literal
                                         // around it, and here there is none --
                                         // no t^ or def^ encloses it, or a

@@ -249,6 +249,11 @@ typedef struct LhatProto {
                        // answers a coroutine rather than running it (15.5)
     bool takes_self;   // 02 の 14.4: the first parameter is written self^,
                        // which is what makes it an instance method
+    bool self_last;    // 02 の 11.3改 (S39): the self^ was written last
+                       // instead, which only an op^ may do -- it says the
+                       // RIGHT operand is the receiver, so '1 + v' reaches it.
+                       // The receiver still occupies a parameter slot; this
+                       // says which one.
 
     struct LhatProto **protos;
     size_t proto_count;

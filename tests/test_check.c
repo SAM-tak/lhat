@@ -4793,6 +4793,79 @@ static void test_no_value(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_NO_OPERATOR);
     unit_dispose(&u);
 
+    // 11.3改 (S39): a self^ written last says the receiver is the RIGHT
+    // operand, which is the only way to join an operation whose left operand
+    // is a built-in -- number^ carries the arithmetic and takes nothing but
+    // its own kind, and no program can add to what it carries.
+    LHAT_TEST("a self^ written last answers from the right");
+    check_text(&u,
+               "var^ V = def^{\n"
+               "  self^{ n := 0 },\n"
+               "  op^+ := f^lhs:number^, self^ -> number^ { return^ lhs },\n"
+               "}\n"
+               "var^ a : number^ = 1 + V.new()\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // and only from the right: written that way it describes one order, and
+    // standing on the left is the other one.
+    LHAT_TEST("and does not answer with its owner on the left");
+    check_text(&u,
+               "var^ V = def^{\n"
+               "  self^{ n := 0 },\n"
+               "  op^+ := f^lhs:number^, self^ -> number^ { return^ lhs },\n"
+               "}\n"
+               "var^ a = V.new() + 1\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_NO_OPERATOR);
+    unit_dispose(&u);
+
+    // 11.3's order is kept: the right side is asked only once the left has
+    // no arm taking this operand. Both sides claiming the same pair is not a
+    // question -- the left one answers and the other is never reached.
+    LHAT_TEST("the left still answers first when it can");
+    check_text(&u,
+               "var^ V = def^{\n"
+               "  self^{ n := 0 },\n"
+               "  op^+ := f^self^, r:number^ -> string^ { return^ \"left\" },\n"
+               "  overload^ op^+ := f^lhs:string^, self^ -> number^ "
+               "{ return^ 0 },\n"
+               "}\n"
+               "var^ a : string^ = V.new() + 1\n"
+               "var^ b : number^ = \"x\" + V.new()\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // 14.4: everywhere else the receiver is what stands before the dot, so a
+    // member saying it is the last argument says nothing that can be acted on.
+    LHAT_TEST("only an op^ writes its self^ last");
+    check_text(&u,
+               "var^ V = def^{\n"
+               "  self^{ n := 0 },\n"
+               "  m := f^x:number^, self^ -> number^ { return^ x },\n"
+               "}\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_SELF_LAST_NOT_OPERATOR);
+    unit_dispose(&u);
+
+    LHAT_TEST("a declared one is refused the same way");
+    check_text(&u,
+               "var^ V = def^{\n"
+               "  self^{},\n"
+               "  abstract^ m : f^number^, self^ -> number^;,\n"
+               "}\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_SELF_LAST_NOT_OPERATOR);
+    unit_dispose(&u);
+
+    // Written at both ends it is the receiver twice over, leaving no ordinary
+    // parameter at all -- which 11.8's shape rule is what reports.
+    LHAT_TEST("and a self^ at both ends leaves no argument");
+    check_text(&u,
+               "var^ V = def^{\n"
+               "  self^{ n := 0 },\n"
+               "  op^+ := f^self^, self^ -> number^ { return^ 0 },\n"
+               "}\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_BAD_OPERATOR);
+    unit_dispose(&u);
+
     // 14.12 asks for a marker on two members of one name whether they came
     // from a base or from the same def^. Only the base had been looked at.
     LHAT_TEST("two members of one name in one def^ need the marker too");
