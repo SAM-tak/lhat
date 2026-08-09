@@ -92,6 +92,11 @@ void lhat_gc_children(LhatObject **gray, LhatObject *object)
             if (upvalue->location != NULL) {
                 lhat_gc_reach(gray, *upvalue->location);
             }
+            // 15.4: while the owning frame is suspended, the place is a slot
+            // of that coroutine's saved registers -- so the coroutine has to
+            // live as long as this capture does, even once nothing else
+            // holds it.
+            reach(gray, (LhatObject *)(void *)upvalue->suspended_in);
             return;
         }
 

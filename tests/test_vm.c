@@ -4875,6 +4875,87 @@ static void test_coroutines(void)
     CHECK_INTEGER(&r, 7);
     run_dispose(&r);
 
+    // 15.4 with 5.4: a capture of a coroutine's own local has to survive the
+    // suspension. The frame's registers move into the coroutine at a yield^
+    // and come back at a resume -- possibly at a different depth, where the
+    // old slots belong to somebody else -- so the capture travels with them
+    // (retargeted into the saved buffer, and back). Before this, it kept
+    // pointing at the old addresses and read whatever frame took them over.
+    LHAT_TEST("a capture survives a resume at another depth");
+    run_text(&r,
+             "var^ result = 0\n"
+             "var^ gen = p^ {\n"
+             "  var^ x = 1\n"
+             "  var^ get = f^ -> number^ { return^ x }\n"
+             "  yield^ 1\n"
+             "  x := 99\n"
+             "  result := get()\n"
+             "  yield^ 2\n"
+             "}\n"
+             "var^ co = gen()\n"
+             "co.start()\n"
+             "var^ deep = p^ d {\n"
+             "  if^ d > 0 { deep(d - 1) return^ 0 }\n"
+             "  co.resume(nil^)\n"
+             "  return^ 0\n"
+             "}\n"
+             "deep(6)\n"
+             "return^ result\n");
+    CHECK_INTEGER(&r, 99);
+    run_dispose(&r);
+
+    // The write side of the same sharing: while the frame is suspended, the
+    // capture points into the saved buffer, so a ':=' through an escaped
+    // closure lands where the resume restores from.
+    LHAT_TEST("and a write made while suspended is seen after the resume");
+    run_text(&r,
+             "var^ setter : p^number^;|nil^ = nil^\n"
+             "var^ reader = 0\n"
+             "var^ gen = p^ {\n"
+             "  var^ x = 1\n"
+             "  setter := p^ v:number^ { x := v }\n"
+             "  yield^ 1\n"
+             "  reader := x\n"
+             "  yield^ 2\n"
+             "}\n"
+             "var^ co = gen()\n"
+             "co.start()\n"
+             "var^ s = setter ?? p^ v:number^ { }\n"
+             "s(50)\n"
+             "var^ deep = p^ d {\n"
+             "  if^ d > 0 { deep(d - 1) return^ 0 }\n"
+             "  co.resume(nil^)\n"
+             "  return^ 0\n"
+             "}\n"
+             "deep(4)\n"
+             "return^ reader\n");
+    CHECK_INTEGER(&r, 50);
+    run_dispose(&r);
+
+    // 5.12: the capture keeps the coroutine reachable (suspended_in). With
+    // the handle dropped and the collector run, the escaped closure still
+    // reads the saved slot rather than freed memory.
+    LHAT_TEST("a capture keeps the suspended coroutine alive");
+    run_text(&r,
+             "var^ g : (f^ -> number^;)|nil^ = nil^\n"
+             "var^ hold = p^ {\n"
+             "  var^ gen = p^ {\n"
+             "    var^ y = 7\n"
+             "    g := f^ -> number^ { return^ y }\n"
+             "    yield^ 1\n"
+             "    yield^ 2\n"
+             "  }\n"
+             "  var^ c = gen()\n"
+             "  c.start()\n"
+             "}\n"
+             "hold()\n"
+             "L^.collectgarbage()\n"
+             "L^.collectgarbage()\n"
+             "var^ gf = g ?? f^ -> number^ { return^ -1 }\n"
+             "return^ gf()\n");
+    CHECK_INTEGER(&r, 7);
+    run_dispose(&r);
+
     // 02 の 15.8: what a plain call does not do, yieldall^ does. The inner
     // one's yields reach the outer one's resumer.
     LHAT_TEST("yieldall^ forwards the inner one's yields");

@@ -91,6 +91,13 @@ typedef struct LhatUpvalue {
     LhatValue *location;
     LhatValue closed;
     struct LhatUpvalue *next_open;  // the machine's open list, innermost first
+
+    // 15.4 with 5.4: while the frame that owns the slot is suspended,
+    // `location` points into that coroutine's saved registers rather than
+    // into the stack, and this says whose. The coroutine has to outlive the
+    // capture (gc.c reaches it through this), and every resume clears it
+    // when the slot moves back onto the stack. NULL everywhere else.
+    struct LhatCoroutine *suspended_in;
 } LhatUpvalue;
 
 // A compiled body together with the places it captured. The proto is shared

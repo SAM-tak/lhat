@@ -164,6 +164,15 @@ typedef struct LhatCoroutine {
     // LhatUpvalue.next_open is, and kept for the same reason: the list has
     // no bound worth fixing and the objects are already there to hold it.
     struct LhatCoroutine *next_pending;
+
+    // 15.4 with 5.4: the captures of the suspended frame's own slots. They
+    // travel with the registers -- at a yield^ each is retargeted from the
+    // stack into `registers` above and moved here off the machine's open
+    // list; every resume moves them back (vm.c's reattach_upvalues). Kept in
+    // ascending slot order, which is what lets the resume splice them onto
+    // the machine's descending list head without a search. NULL while the
+    // coroutine is running or fresh.
+    LhatUpvalue *open;
 } LhatCoroutine;
 
 // 03 の 2.1 keeps a type tag on every value, which is what lets a written

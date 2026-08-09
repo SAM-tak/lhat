@@ -5421,6 +5421,25 @@ static bool fits_call(LhatValue candidate, const LhatValue *at, uint8_t given,
     return true;
 }
 
+// 15.4 with 5.4: the inverse of the move a yield^ makes. The frame is back
+// on the stack at `base` -- always as the new top frame, so its slots are
+// the highest addresses in use -- and every capture that traveled with the
+// saved registers points back into the live slots and rejoins the machine's
+// open list at its head. The coroutine's own list is kept in ascending slot
+// order, so prepending one by one lands them in the descending order the
+// machine's list keeps.
+static void reattach_upvalues(Machine *m, LhatCoroutine *co, LhatValue *base)
+{
+    while (co->open != NULL) {
+        LhatUpvalue *up = co->open;
+        co->open = up->next_open;
+        up->location = base + (up->location - co->registers);
+        up->suspended_in = NULL;
+        up->next_open = m->open;
+        m->open = up;
+    }
+}
+
 // 5.11 with 02 の 10.7: puts a suspended coroutine's one saved frame back on
 // the stack so that what it still owes can be run. The caller has already
 // made room (LHAT_MAX_FRAMES and the stack's own end) and picked where the
@@ -5440,6 +5459,7 @@ static void enter_disposal_frame(Machine *m, LhatCoroutine *co,
     for (size_t i = 0; i < co->register_count; i++) {
         next_base[i] = co->registers[i];
     }
+    reattach_upvalues(m, co, next_base);
     Frame *called = &m->frames[m->frame_count++];
     called->closure = co->closure;
     called->pc = co->pc;
@@ -6751,6 +6771,7 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
                     for (size_t i = 0; i < co->register_count; i++) {
                         next_base[i] = co->registers[i];
                     }
+                    reattach_upvalues(m, co, next_base);
                     Frame *called = &m->frames[m->frame_count++];
                     called->closure = co->closure;
                     called->pc = co->pc;
@@ -7015,6 +7036,25 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
                     // less than marking every register as it is copied.
                     lhat_gc_barrier_back(m, (LhatObject *)co, registers[i]);
                 }
+                // 15.4 with 5.4: the captures of this frame's slots travel
+                // with the registers, or a resume at another depth would
+                // leave them reading whatever frame took these addresses
+                // over. This frame is the top one, so its captures are the
+                // head of the machine's descending open list; popped highest
+                // first and prepended, the coroutine's own list comes out
+                // ascending, which is what reattach_upvalues expects.
+                while (m->open != NULL && m->open->location >= frame->base) {
+                    LhatUpvalue *up = m->open;
+                    m->open = up->next_open;
+                    up->location = co->registers + (up->location - frame->base);
+                    up->suspended_in = co;
+                    up->next_open = co->open;
+                    co->open = up;
+                    // 5.12: the capture now keeps the coroutine alive
+                    // (gc.c), which a black upvalue has to declare.
+                    lhat_gc_barrier(m, (LhatObject *)up,
+                                    lhat_object((LhatObject *)co));
+                }
                 co->pc = pc;
                 co->sent_into = a;
                 co->state = LHAT_COROUTINE_SUSPENDED;
@@ -7083,6 +7123,7 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
                 for (size_t i = 0; i < co->register_count; i++) {
                     next_base[i] = co->registers[i];
                 }
+                reattach_upvalues(m, co, next_base);
                 frame->pc = pc;
                 Frame *called = &m->frames[m->frame_count++];
                 called->closure = co->closure;
