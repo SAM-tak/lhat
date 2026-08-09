@@ -3350,28 +3350,38 @@ static void test_isa(void)
     CHECK_BOOL(&r, true);
     run_dispose(&r);
 
-    // A definition the compile cannot see: reached through a parameter, so
-    // the name is loaded as a value and the machine reads the shape off the
-    // definition itself. That reaches its members but not 14.11's template,
-    // so this asks less than naming the def^ does -- pinned as it stands.
-    LHAT_TEST("a definition reached as a value asks about its members");
+    // 5.13改: the right side is a type the compiler settles, always. A value
+    // that only arrives while the program runs -- a definition passed as a
+    // parameter -- carries no type to ask about: it is a plain table there,
+    // and a program that receives one probes it member by member instead.
+    // The fallback that read a shape off the table at run time is withdrawn.
+    LHAT_TEST("a definition reached as a value is not a type");
     run_text(&r,
              "var^ Point = def^{ self^{ x := 0 }, m := f^ { return^ 1 } }\n"
              "var^ fits = f^ D { return^ Point.new() isa^ D }\n"
              "return^ fits(Point)\n");
-    CHECK_BOOL(&r, true);
+    LHAT_CHECK_EQ_INT(r.compiled, LHAT_COMPILE_UNDEFINED);
     run_dispose(&r);
 
-    LHAT_TEST("and refuses a value that has none of them");
+    LHAT_TEST("and not inside a union either");
     run_text(&r,
-             "var^ Point = def^{ self^{ x := 0 }, m := f^ { return^ 1 } }\n"
-             "var^ fits = f^ D { return^ { } isa^ D }\n"
-             "return^ fits(Point)\n");
-    CHECK_BOOL(&r, false);
+             "var^ f = f^ D { return^ 1 isa^ D|nil^ }\n"
+             "return^ 0\n");
+    LHAT_CHECK_EQ_INT(r.compiled, LHAT_COMPILE_UNSUPPORTED);
     run_dispose(&r);
 
     LHAT_TEST("a name that reaches nothing does not compile");
     run_text(&r, "return^ 1 isa^ Nowhere\n");
+    LHAT_CHECK_EQ_INT(r.compiled, LHAT_COMPILE_UNDEFINED);
+    run_dispose(&r);
+
+    // 11.6, S27 with 5.13改: the same rule holds for as^ -- it promised to
+    // panic on a mismatch, so a cast the compiler cannot lower is refused
+    // rather than silently checking nothing.
+    LHAT_TEST("as^ against a value-only definition is refused too");
+    run_text(&r,
+             "var^ f = f^ D { return^ 1 as^ D }\n"
+             "return^ 0\n");
     LHAT_CHECK_EQ_INT(r.compiled, LHAT_COMPILE_UNDEFINED);
     run_dispose(&r);
 

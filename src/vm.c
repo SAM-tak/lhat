@@ -1114,37 +1114,6 @@ static void compile_nil_else(Compiler *c, const LhatNode *node, uint8_t into)
     lhat_chunk_patch_here(&c->proto->chunk, to_default);
 }
 
-// 14.9 keeps a definition's name off the definition itself, so a name that
-// stands for one reaches nothing until the program has run the def^ that
-// builds it. That is what this loads: the value the name is bound to, read
-// the way any other name is. Written as a type (parse_type), so the nodes are
-// TYPE_NAME and MEMBER rather than the IDENT and MEMBER an expression uses --
-// the same shapes, and node_name already reads either.
-static void compile_type_as_value(Compiler *c, const LhatNode *node,
-                                  uint8_t into)
-{
-    if (node->kind == LHAT_NODE_MEMBER) {
-        uint8_t mark = c->next_register;
-        uint8_t target = reserve(c);
-        uint8_t key = reserve(c);
-        compile_type_as_value(c, node->v.access.target, target);
-        compile_key(c, node, key);
-        emit(c, lhat_encode_abc(LHAT_BC_GETINDEX, into, target, key));
-        c->next_register = mark;
-        return;
-    }
-
-    const char *name = NULL;
-    size_t length = 0;
-    if (!node_name(c, node, &name, &length)) {
-        fail(c, LHAT_COMPILE_UNSUPPORTED);
-        return;
-    }
-    if (!resolve_name(c, name, length, into)) {
-        fail(c, LHAT_COMPILE_UNDEFINED);
-    }
-}
-
 // 02 の 13.11: isa^ asks whether the left side may stand where the right side
 // is written. Every spelling of the right side is that one question at run
 // time, so there is one instruction for it: lower_type turns the written type
@@ -1153,14 +1122,21 @@ static void compile_type_as_value(Compiler *c, const LhatNode *node,
 // host type (05 の 8.8) are both ordinary results of that lowering, which is
 // why neither needs a case here any more.
 //
-// Two writings lower_type answers NULL for, and which one it is decides what
-// to do. any^ is the top of every value (13.7), so the question is empty --
-// check.c reports the writing itself (ISA_ALWAYS_TRUE), and this is what a
-// compile that never checked makes of it. A name this compile cannot see is
-// the other: a definition reached through a parameter, or through a member of
-// another unit. It is loaded as an ordinary value and the machine reads the
-// shape off it -- less than lower_def_chain reads (value_fits_definition says
-// which half is missing), but it is what there is to read at that point.
+// 5.13改: the right side is a type the COMPILER settles, always. A value that
+// only arrives while the program runs -- a definition passed as a parameter,
+// another unit's member -- carries no type to ask about: it is a plain table
+// (13.7's t^{}), however it was made, and a program that receives one probes
+// it the dynamic way, member by member, nil^ by nil^. There used to be a
+// fallback here that loaded such a name as a value and had the machine read a
+// shape off the table at run time; it was withdrawn -- constructing type
+// information out of runtime data is the wrong direction (the table may be
+// pure data, arbitrarily large), and the checker never accepted the form
+// anyway.
+//
+// So NULL from lower_type is answered by what was written: any^ makes the
+// question empty (13.7; check.c reports the writing itself), a bare name
+// reaches no type (UNDEFINED), and anything else is a written form nothing
+// settles (UNSUPPORTED).
 static void compile_isa(Compiler *c, const LhatNode *node, uint8_t into)
 {
     const LhatNode *asked = node->v.binary.right;
@@ -1178,23 +1154,19 @@ static void compile_isa(Compiler *c, const LhatNode *node, uint8_t into)
         return;
     }
 
+    LhatRuntimeType *wanted = lower_type(c, asked);
+    if (wanted == NULL) {
+        fail(c, asked->kind == LHAT_NODE_TYPE_NAME ||
+                     asked->kind == LHAT_NODE_MEMBER
+                 ? LHAT_COMPILE_UNDEFINED
+                 : LHAT_COMPILE_UNSUPPORTED);
+        return;
+    }
+
     uint8_t value = reserve(c);
     uint8_t holder = reserve(c);
     compile_expression(c, node->v.binary.left, value);
-
-    LhatRuntimeType *wanted = lower_type(c, asked);
-    if (wanted != NULL) {
-        load_constant(c, holder, lhat_object((LhatObject *)wanted));
-    } else if (asked->kind == LHAT_NODE_TYPE_NAME ||
-               asked->kind == LHAT_NODE_MEMBER) {
-        compile_type_as_value(c, asked, holder);
-    } else {
-        // A written type carrying a name lower_type could not settle -- a
-        // union arm, a member of a t^{ ... }. There is no constant to build
-        // and no single name to load either, so nothing here can ask it.
-        fail(c, LHAT_COMPILE_UNSUPPORTED);
-        return;
-    }
+    load_constant(c, holder, lhat_object((LhatObject *)wanted));
     emit(c, lhat_encode_abc(LHAT_BC_ISA, into, value, holder));
     c->next_register = mark;
 }
@@ -2684,10 +2656,24 @@ static void compile_expression(Compiler *c, const LhatNode *node, uint8_t into)
         // already trusts) is the check LHAT_BC_ASCAST makes at run time.
         case LHAT_NODE_AS: {
             compile_expression(c, node->v.ascription.value, into);
-            LhatRuntimeType *wanted = lower_type(c, node->v.ascription.type);
+            const LhatNode *asked = node->v.ascription.type;
+            LhatRuntimeType *wanted = lower_type(c, asked);
             if (wanted == NULL) {
-                // 13.7: nothing written, or any^ -- asks nothing, so there
-                // is nothing for LHAT_BC_ASCAST to check.
+                // 13.7: any^ asks nothing, so there is nothing for
+                // LHAT_BC_ASCAST to check. Anything else lower_type could
+                // not settle is refused (5.13改) -- S27 promised as^ panics
+                // on a mismatch, and a cast that silently checked nothing
+                // would be that promise quietly broken.
+                const char *name = NULL;
+                size_t length = 0;
+                if (node_name(c, asked, &name, &length) &&
+                    name_is(name, length, "any^")) {
+                    return;
+                }
+                fail(c, asked->kind == LHAT_NODE_TYPE_NAME ||
+                             asked->kind == LHAT_NODE_MEMBER
+                         ? LHAT_COMPILE_UNDEFINED
+                         : LHAT_COMPILE_UNSUPPORTED);
                 return;
             }
             uint8_t mark = c->next_register;
@@ -5955,50 +5941,6 @@ void lhat_machine_dispose(LhatMachine *machine)
     lhat_free(machine);
 }
 
-// 02 の 13.11 with 14.9: what a def^ asks of a value, read off the definition
-// itself. 14.9 makes a definition structural, so this is 14.10's "at least
-// these members" against the shape the definition holds -- which is what lets
-// 14.7's composition answer too: `Point .. def^{ z }` carries everything Point
-// carried, so its instances still fit a plain Point.
-//
-// lhat_table_get walks the definition link (14.2), so an instance is asked
-// about its own fields and its definition's members alike, in one lookup per
-// member the definition names.
-//
-// [known gap] This asks about the members only. 14.11 keeps a definition's
-// template out of the table -- it is initialisers to run at each construction,
-// not values stored anywhere -- so the fields an instance carries are not
-// nameable from here, and two definitions differing only in fields ask the
-// same question. lower_def_chain has both halves and is what answers wherever
-// the compiler can see the def^ (which is every def^ of the unit being
-// compiled); this is the fallback for the rest, a definition reached as a
-// value -- through a parameter, or a member of another unit.
-static bool value_fits_definition(LhatValue value, const LhatTable *definition)
-{
-    const LhatTable *table = NULL;
-    if (lhat_is_object_kind(value, LHAT_OBJECT_TABLE)) {
-        table = (const LhatTable *)lhat_as_object(value);
-    } else if (lhat_is_object_kind(value, LHAT_OBJECT_ERROR)) {
-        // The same reach lhat_value_satisfies makes for a STRUCTURE: 04 の 2.2
-        // gives an error fields, and they are a table like any other.
-        table = ((const LhatError *)lhat_as_object(value))->fields;
-    } else {
-        return false;
-    }
-
-    for (size_t i = 0; i < definition->entry_capacity; i++) {
-        LhatValue key = definition->entries[i].key;
-        // 14.6改: a computed key names no member, so it asks nothing.
-        if (!lhat_is_object_kind(key, LHAT_OBJECT_STRING)) {
-            continue;
-        }
-        if (lhat_is_nil(lhat_table_get(table, key))) {
-            return false;
-        }
-    }
-    return true;
-}
-
 // The run loop itself, shared by lhat_run (base_depth == 0, a fresh unit
 // entered through its own wrapper closure) and lhat_machine_call
 // (base_depth == m->frame_count at the time of the call, a value already
@@ -6559,29 +6501,22 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
                                                   LHAT_OBJECT_ERROR));
                 break;
 
-            // 02 の 13.11. Two things can be written on the right of an isa^
-            // and they arrive here as two kinds of value: a lowered type,
-            // which lhat_value_satisfies answers about -- the same relation
-            // ASCAST and fits_call already trust -- or a definition, which
-            // 14.9 makes a structural question and value_fits_definition
-            // reads member by member.
+            // 02 の 13.11 with 03 の 5.13改: R[C] is always a type the
+            // compiler lowered -- a written type, never a runtime value --
+            // and lhat_value_satisfies answers, the same relation ASCAST and
+            // fits_call already trust. (A fallback that read a shape off a
+            // definition table at run time was withdrawn: a value that only
+            // arrives while the program runs carries no type to ask about.)
             case LHAT_BC_ISA: {
                 LhatValue wanted = registers[cc];
-                if (lhat_is_object_kind(wanted, LHAT_OBJECT_TYPE)) {
-                    const LhatRuntimeType *type =
-                        (const LhatRuntimeType *)lhat_as_object(wanted);
-                    registers[a] =
-                        lhat_bool(lhat_value_satisfies(registers[b], type));
-                    break;
+                if (!lhat_is_object_kind(wanted, LHAT_OBJECT_TYPE)) {
+                    return finish(m, chunk, LHAT_RUN_TYPE_ERROR, lhat_nil(), at);
                 }
-                if (lhat_is_object_kind(wanted, LHAT_OBJECT_TABLE)) {
-                    const LhatTable *definition =
-                        (const LhatTable *)lhat_as_object(wanted);
-                    registers[a] =
-                        lhat_bool(value_fits_definition(registers[b], definition));
-                    break;
-                }
-                return finish(m, chunk, LHAT_RUN_TYPE_ERROR, lhat_nil(), at);
+                const LhatRuntimeType *type =
+                    (const LhatRuntimeType *)lhat_as_object(wanted);
+                registers[a] =
+                    lhat_bool(lhat_value_satisfies(registers[b], type));
+                break;
             }
 
             case LHAT_BC_ISNIL:
