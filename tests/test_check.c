@@ -4793,6 +4793,34 @@ static void test_no_value(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_NO_OPERATOR);
     unit_dispose(&u);
 
+    // 11.5 の (5): every link of a chain is asked what a comparison written
+    // on its own is asked. Until the links were walked here, a chain was
+    // checked by inferring its operands and nothing else.
+    LHAT_TEST("every link of a chain is judged");
+    check_text(&u, "var^ a : bool^ = 1 < 2 < 3\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("and a pair that can never meet is caught in one");
+    check_text(&u, "var^ a = 1 < 2 < \"x\"\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_INCOMPARABLE);
+    unit_dispose(&u);
+
+    LHAT_TEST("and so is a pair with no ordering between them");
+    check_text(&u,
+               "var^ V = def^{ self^{ n := 0 } }\n"
+               "var^ a = V.new() < V.new() < V.new()\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_NOT_ORDERED);
+    unit_dispose(&u);
+
+    // 13.11: an isa^ link takes a type, which is not an operand the next link
+    // could compare against -- so it tests the value to its left and leaves
+    // that value in place.
+    LHAT_TEST("an isa^ link tests the operand to its left");
+    check_text(&u, "var^ a : bool^ = 1 < 2 isa^ number^ < 3\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
     // 11.9 (S40): the one comparison a type writes, and the four orderings
     // are read off it. Without one there was nothing to reach for at all --
     // a written 'a < b' passed here and faulted at run time.

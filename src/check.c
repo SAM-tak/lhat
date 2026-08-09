@@ -1874,6 +1874,35 @@ static bool ordered_pair(Checker *c, LhatType *left, LhatType *right)
     return operator_arm(operator_member(c, right, "<=>", 3), args, true) != NULL;
 }
 
+// 11.5 の (5) with 11.9: one link of a comparison, asked the same way whether
+// it stands alone or in a chain. Always answers bool^ -- what may be wrong is
+// the pair, never the shape of the answer.
+static LhatType *check_comparison(Checker *c, const LhatNode *at, LhatOpKind op,
+                                  LhatType *left, LhatType *right)
+{
+    // 11.9 (S40): a '<=>' taking the two is what says how they compare, and
+    // it is asked first. One written across two types -- 11.3改 lets the
+    // right operand carry it -- relates a pair that 14.12 would otherwise
+    // call separate, so the judgement below has to come second.
+    bool related = ordered_pair(c, left, right);
+
+    // 14.12's disjointness says whether any value inhabits both. If none
+    // does, and nothing says how they compare either, the answer is fixed
+    // before the program runs -- a mistake rather than a comparison.
+    if (!related && lhat_type_disjoint(left, right)) {
+        report(c, at, LHAT_CHECK_ERR_INCOMPARABLE);
+        return simple(c, LHAT_TYPE_BOOL);
+    }
+    // An ordering has nothing but a '<=>' to read. Equality is a different
+    // matter and is left alone -- every value is the same as itself or not,
+    // whatever it is (14.2), and a '<=>' only refines that for a type that
+    // writes one.
+    if (!related && op != LHAT_OP_EQ && op != LHAT_OP_NE && op != LHAT_OP_IS) {
+        report(c, at, LHAT_CHECK_ERR_NOT_ORDERED);
+    }
+    return simple(c, LHAT_TYPE_BOOL);
+}
+
 // 11.3改 (S39): what the RIGHT operand answers, when it was written as the
 // receiver ('op^+ = f^lhs:number^, self^'). Reached only once the left has
 // been asked and has no arm taking this right operand, which is what keeps
@@ -2291,32 +2320,7 @@ static LhatType *infer_binary(Checker *c, const LhatNode *node)
         case LHAT_OP_GT:
         case LHAT_OP_LE:
         case LHAT_OP_GE:
-        {
-            // 11.9 (S40): a '<=>' taking the two is what says how they
-            // compare, and it is asked first. One written across two types --
-            // 11.3改 lets the right operand carry it -- relates a pair that
-            // 14.12 would otherwise call separate, so the judgement below has
-            // to come second.
-            bool related = ordered_pair(c, left, right);
-
-            // 14.12's disjointness says whether any value inhabits both. If
-            // none does, and nothing says how they compare either, the answer
-            // is fixed before the program runs -- a mistake rather than a
-            // comparison.
-            if (!related && lhat_type_disjoint(left, right)) {
-                report(c, node, LHAT_CHECK_ERR_INCOMPARABLE);
-                return simple(c, LHAT_TYPE_BOOL);
-            }
-            // An ordering has nothing but a '<=>' to read. Equality is a
-            // different matter and is left alone -- every value is the same
-            // as itself or not, whatever it is (14.2), and a '<=>' only
-            // refines that for a type that writes one.
-            if (!related && op != LHAT_OP_EQ && op != LHAT_OP_NE &&
-                op != LHAT_OP_IS) {
-                report(c, node, LHAT_CHECK_ERR_NOT_ORDERED);
-            }
-            return simple(c, LHAT_TYPE_BOOL);
-        }
+            return check_comparison(c, node, op, left, right);
 
         case LHAT_OP_CONCAT: {
             // 11.2: '..' is concatenation in general. 11.3 asks the left
@@ -3960,12 +3964,37 @@ static LhatType *infer(Checker *c, const LhatNode *node)
         case LHAT_NODE_BINARY:
             return infer_binary(c, node);
 
-        case LHAT_NODE_COMPARE_CHAIN:
-            for (const LhatNode *operand = node->v.chain.operands;
-                 operand != NULL; operand = operand->next) {
-                infer(c, operand);
+        // 11.5 の (5): 'a < b < c' is '(a < b) and^ (b < c)', so every link
+        // is asked what a comparison written on its own is asked. The operand
+        // two links share is inferred once, the way it is evaluated once.
+        //
+        // 13.11: an isa^ link takes a type on the right, and what it tests is
+        // the operand standing to its left -- a type is not a value the next
+        // link could compare against, so it does not take that place. 'a < b
+        // isa^ number^ < c' asks about b three times over.
+        case LHAT_NODE_COMPARE_CHAIN: {
+            const LhatNode *operand = node->v.chain.operands;
+            LhatType *left = infer(c, operand);
+            for (const LhatNode *marker = node->v.chain.operators;
+                 marker != NULL && operand != NULL; marker = marker->next) {
+                LhatOpKind op = marker->v.unary.op;
+                operand = operand->next;
+                if (operand == NULL) {
+                    break;
+                }
+                if (op == LHAT_OP_ISA) {
+                    LhatType *asked = resolve_type(c, operand);
+                    if (asked != NULL && asked->kind == LHAT_TYPE_ANY) {
+                        report(c, operand, LHAT_CHECK_ERR_ISA_ALWAYS_TRUE);
+                    }
+                    continue;  // the left of the next link is still `left`
+                }
+                LhatType *right = infer(c, operand);
+                check_comparison(c, operand, op, left, right);
+                left = right;
             }
             return simple(c, LHAT_TYPE_BOOL);
+        }
 
         case LHAT_NODE_CALL:
             return infer_call(c, node);

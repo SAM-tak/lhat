@@ -899,6 +899,49 @@ static void test_strings(void)
     CHECK_INTEGER(&r, 1530);  // 15, then 30
     run_dispose(&r);
 
+    // 11.5 の (5): 'a < b < c' is '(a < b) and^ (b < c)'. Written out and
+    // compiled as that and^ it would read `b` twice, which is why the chain
+    // is one node -- these two pin what that buys.
+    LHAT_TEST("a comparison chain reads as the mathematics does");
+    run_text(&r,
+             "if^ 1 <= 2 <= 3 and^ !(1 <= 5 <= 3) and^ !(5 <= 2 <= 3) "
+             "{ return^ 1 }\n"
+             "return^ 0\n");
+    CHECK_INTEGER(&r, 1);
+    run_dispose(&r);
+
+    LHAT_TEST("and mixes kinds along its length");
+    run_text(&r,
+             "if^ 1 < 2 = 2 < 3 and^ \"a\" < \"b\" < \"c\" and^ "
+             "1 < 2 isa^ number^ { return^ 1 }\n"
+             "return^ 0\n");
+    CHECK_INTEGER(&r, 1);
+    run_dispose(&r);
+
+    // The operand two links share is evaluated once. A call written there
+    // would otherwise run twice, and how many times is not something the
+    // reader of 'a < f() < b' expects to have to work out.
+    LHAT_TEST("a shared operand runs once");
+    run_text(&r,
+             "var^ n = 0\n"
+             "var^ bump = p^ -> number^ { n := n + 1 return^ 2 }\n"
+             "var^ held = 1 < bump() < 3\n"
+             "return^ n\n");
+    CHECK_INTEGER(&r, 1);
+    run_dispose(&r);
+
+    // and^ decides without the right side once the left has settled it, so a
+    // link that fails ends the chain where it stands.
+    LHAT_TEST("and a false link ends it");
+    run_text(&r,
+             "var^ m = 0\n"
+             "var^ side = p^ -> number^ { m := m + 1 return^ 5 }\n"
+             "var^ held = 5 < 1 < side()\n"
+             "if^ held { return^ 99 }\n"
+             "return^ m\n");
+    CHECK_INTEGER(&r, 0);
+    run_dispose(&r);
+
     // 11.9 (S40): the four orderings are read off the one comparison a type
     // writes, by asking which side of zero its answer falls on.
     LHAT_TEST("an ordering is read off op^<=>");

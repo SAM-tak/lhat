@@ -1137,19 +1137,15 @@ static void compile_nil_else(Compiler *c, const LhatNode *node, uint8_t into)
 // question empty (13.7; check.c reports the writing itself), a bare name
 // reaches no type (UNDEFINED), and anything else is a written form nothing
 // settles (UNSUPPORTED).
-static void compile_isa(Compiler *c, const LhatNode *node, uint8_t into)
+// The test itself, against a left operand already in a register. 11.5 の (5)
+// shares an operand between two links of a chain and evaluates it once, so
+// there the left is compiled by the caller.
+static void compile_isa_test(Compiler *c, const LhatNode *asked, uint8_t value,
+                             uint8_t into)
 {
-    const LhatNode *asked = node->v.binary.right;
-    uint8_t mark = c->next_register;
-
     const char *name = NULL;
     size_t length = 0;
     if (node_name(c, asked, &name, &length) && name_is(name, length, "any^")) {
-        // The left side still runs, for whatever it does along the way --
-        // the same reason compile_expression keeps typeof^'s operand.
-        uint8_t discarded = reserve(c);
-        compile_expression(c, node->v.binary.left, discarded);
-        c->next_register = mark;
         emit(c, lhat_encode_abc(LHAT_BC_LOADBOOL, into, 1, 0));
         return;
     }
@@ -1163,11 +1159,21 @@ static void compile_isa(Compiler *c, const LhatNode *node, uint8_t into)
         return;
     }
 
-    uint8_t value = reserve(c);
+    uint8_t mark = c->next_register;
     uint8_t holder = reserve(c);
-    compile_expression(c, node->v.binary.left, value);
     load_constant(c, holder, lhat_object((LhatObject *)wanted));
     emit(c, lhat_encode_abc(LHAT_BC_ISA, into, value, holder));
+    c->next_register = mark;
+}
+
+static void compile_isa(Compiler *c, const LhatNode *node, uint8_t into)
+{
+    // The left side runs whatever the answer turns out to be -- for an any^
+    // it is still the reason compile_expression keeps typeof^'s operand.
+    uint8_t mark = c->next_register;
+    uint8_t value = reserve(c);
+    compile_expression(c, node->v.binary.left, value);
+    compile_isa_test(c, node->v.binary.right, value, into);
     c->next_register = mark;
 }
 
@@ -2612,6 +2618,72 @@ static void compile_binary(Compiler *c, const LhatNode *node, uint8_t into)
     c->next_register = mark;
 }
 
+// 02 の 11.5 の (5): 'a < b < c' means '(a < b) and^ (b < c)', with the
+// operand two links share **evaluated once**. Compiling it as the and^ it
+// stands for would read `b` twice, and a call written there would run twice --
+// which is the whole reason the parser keeps a chain as one node.
+//
+// Every link writes its answer into `into`, and a false one jumps past the
+// rest: the same shape compile_binary gives and^, laid out along the chain.
+// So the register holds the link that settled it, and nothing after a false
+// link is evaluated at all.
+static void compile_compare_chain(Compiler *c, const LhatNode *node,
+                                  uint8_t into)
+{
+    uint8_t mark = c->next_register;
+    const LhatNode *operand = node->v.chain.operands;
+    if (operand == NULL) {
+        fail(c, LHAT_COMPILE_UNSUPPORTED);
+        return;
+    }
+
+    uint8_t left = reserve(c);
+    compile_expression(c, operand, left);
+
+    size_t settled[LHAT_MAX_LOCALS];
+    size_t settled_count = 0;
+    for (const LhatNode *marker = node->v.chain.operators; marker != NULL;
+         marker = marker->next) {
+        operand = operand->next;
+        if (operand == NULL || *c->status != LHAT_COMPILE_OK) {
+            break;
+        }
+        // Every link but the last leaves a jump for a false answer to take.
+        if (settled_count > 0 && settled_count >= LHAT_MAX_LOCALS) {
+            fail(c, LHAT_COMPILE_TOO_COMPLEX);
+            break;
+        }
+        if (marker != node->v.chain.operators) {
+            settled[settled_count++] =
+                emit_jump(c, LHAT_BC_JUMP_FALSE, into);
+        }
+
+        LhatOpKind op = marker->v.unary.op;
+        // 13.11: an isa^ link takes a type, which is not an operand the next
+        // link could compare against -- so what it tests is the value still
+        // standing to its left, and that value stays where it is.
+        if (op == LHAT_OP_ISA) {
+            compile_isa_test(c, operand, left, into);
+            continue;
+        }
+
+        LhatOpcode opcode;
+        if (!binary_opcode(op, &opcode)) {
+            fail(c, LHAT_COMPILE_UNSUPPORTED);
+            break;
+        }
+        uint8_t right = reserve(c);
+        compile_expression(c, operand, right);
+        emit(c, lhat_encode_abc(opcode, into, left, right));
+        left = right;  // shared with the next link, and already evaluated
+    }
+
+    for (size_t i = 0; i < settled_count; i++) {
+        lhat_chunk_patch_here(&c->proto->chunk, settled[i]);
+    }
+    c->next_register = mark;
+}
+
 static void compile_expression(Compiler *c, const LhatNode *node, uint8_t into)
 {
     if (node == NULL || *c->status != LHAT_COMPILE_OK) {
@@ -2993,6 +3065,10 @@ static void compile_expression(Compiler *c, const LhatNode *node, uint8_t into)
 
         case LHAT_NODE_BINARY:
             compile_binary(c, node, into);
+            return;
+
+        case LHAT_NODE_COMPARE_CHAIN:
+            compile_compare_chain(c, node, into);
             return;
 
         case LHAT_NODE_CALL:
