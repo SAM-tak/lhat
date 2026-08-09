@@ -27,7 +27,7 @@
 typedef struct {
     const LhatClosure *closure;
     size_t pc;
-    LhatValue *base;   // 5.2: the frame's registers start here
+    size_t base;       // 5.2: the frame's registers start at this stack slot
     uint8_t result;    // where in the caller's frame the answer goes
 
     // 5.5: the cleanups this frame has entered and not yet run, innermost
@@ -49,7 +49,13 @@ typedef struct {
 } Frame;
 
 struct LhatMachine {
-    LhatValue stack[LHAT_STACK_SLOTS];
+    // 2.2改: the one shared stack, as two parallel runs -- payloads dense,
+    // tags one byte each -- read and written through `slots` below. 16
+    // bytes a slot becomes 9, and a frame's worth of tags sits in one or
+    // two cache lines.
+    LhatValueUnion stack_values[LHAT_STACK_SLOTS];
+    uint8_t stack_tags[LHAT_STACK_SLOTS];
+    LhatSlots slots;  // the view over the two, fixed at lhat_machine_new
     Frame frames[LHAT_MAX_FRAMES];
     size_t frame_count;
 

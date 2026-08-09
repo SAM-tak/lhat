@@ -110,15 +110,52 @@ static inline void lhat_slots_set(LhatSlots slots, size_t i, LhatValue v)
     slots.tags[i] = (uint8_t)v.tag;
 }
 
+// 2.2改: one slot of a run, named so it can be held. What an upvalue's
+// location is now -- the payload and tag pointers travel as a pair, and the
+// pair may aim into the machine's stack, a coroutine's saved registers, or
+// the upvalue's own closed cell, which is what 5.4's sharing and 15.4's
+// suspension both need. Never a raw LhatValue pointer: bulk storage holds
+// no LhatValue to point at.
+typedef struct {
+    LhatValueUnion *value;
+    uint8_t *tag;
+} LhatValueRef;
+
+static inline LhatValueRef lhat_slots_ref(LhatSlots slots, size_t i)
+{
+    LhatValueRef r;
+    r.value = slots.values + i;
+    r.tag = slots.tags + i;
+    return r;
+}
+
+static inline LhatValue lhat_ref_get(LhatValueRef r)
+{
+    LhatValue v;
+    v.as = *r.value;
+    v.tag = (LhatValueTag)*r.tag;
+    return v;
+}
+
+static inline void lhat_ref_set(LhatValueRef r, LhatValue v)
+{
+    *r.value = v.as;
+    *r.tag = (uint8_t)v.tag;
+}
+
 // 5.4: a place shared between a frame and the closures made inside it. While
-// the frame lives, `location` points into it; once the frame goes, the value
-// is carried into `closed` and `location` is aimed there. 02 の 8.6 is what
-// requires the sharing -- a ':=' inside a nested subroutine has to reach the
-// outer binding, which a copy would not.
+// the frame lives, `location` aims into the machine's stack; once the frame
+// goes, the value is carried into the closed cell and `location` is aimed
+// there. 02 の 8.6 is what requires the sharing -- a ':=' inside a nested
+// subroutine has to reach the outer binding, which a copy would not.
 typedef struct LhatUpvalue {
     LhatObject header;
-    LhatValue *location;
-    LhatValue closed;
+    LhatValueRef location;
+    // The closed cell, one slot in the shape bulk storage keeps them --
+    // location is a pair of pointers, and pointing it here needs the tag
+    // to be the byte it points at, not an enum inside an LhatValue.
+    LhatValueUnion closed_value;
+    uint8_t closed_tag;
     struct LhatUpvalue *next_open;  // the machine's open list, innermost first
 
     // 15.4 with 5.4: while the frame that owns the slot is suspended,
@@ -128,6 +165,16 @@ typedef struct LhatUpvalue {
     // when the slot moves back onto the stack. NULL everywhere else.
     struct LhatCoroutine *suspended_in;
 } LhatUpvalue;
+
+// The closed cell seen as a one-slot ref, which is what closing aims
+// location at -- the same uniform dereference open and closed.
+static inline LhatValueRef lhat_upvalue_closed_ref(LhatUpvalue *upvalue)
+{
+    LhatValueRef r;
+    r.value = &upvalue->closed_value;
+    r.tag = &upvalue->closed_tag;
+    return r;
+}
 
 // A compiled body together with the places it captured. The proto is shared
 // between every closure made from it; only the upvalues differ.

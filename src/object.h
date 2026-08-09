@@ -152,7 +152,10 @@ typedef struct LhatCoroutine {
     size_t at_array;
     size_t at_entry;
 
-    LhatValue *registers;  // the saved frame, as wide as the body needs
+    // 2.2改: the saved frame, as wide as the body needs, in the same two-run
+    // shape the stack keeps -- what a yield^'s copy and a capture's
+    // retargeting both move between.
+    LhatSlots registers;
     size_t register_count;
     size_t pc;
     uint8_t sent_into;     // the register a resume's value arrives in

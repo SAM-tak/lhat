@@ -88,9 +88,8 @@ void lhat_gc_children(LhatObject **gray, LhatObject *object)
             // 5.4: while it is open the place is a stack slot, and the stack
             // is a root of its own. Closed, the value is here.
             const LhatUpvalue *upvalue = (const LhatUpvalue *)object;
-            lhat_gc_reach(gray, upvalue->closed);
-            if (upvalue->location != NULL) {
-                lhat_gc_reach(gray, *upvalue->location);
+            if (upvalue->location.value != NULL) {
+                lhat_gc_reach(gray, lhat_ref_get(upvalue->location));
             }
             // 15.4: while the owning frame is suspended, the place is a slot
             // of that coroutine's saved registers -- so the coroutine has to
@@ -103,7 +102,7 @@ void lhat_gc_children(LhatObject **gray, LhatObject *object)
         case LHAT_OBJECT_COROUTINE: {
             const LhatCoroutine *co = (const LhatCoroutine *)object;
             for (size_t i = 0; i < co->register_count; i++) {
-                lhat_gc_reach(gray, co->registers[i]);
+                lhat_gc_reach(gray, lhat_slots_get(co->registers, i));
             }
             reach(gray, (LhatObject *)(void *)co->closure);
             reach(gray, (LhatObject *)(void *)co->walking);
@@ -176,7 +175,7 @@ static void mark_roots(Machine *m)
         const LhatProto *proto = frame->closure->proto;
         size_t width = proto != NULL ? proto->chunk.registers : 0;
         for (size_t r = 0; r < width; r++) {
-            lhat_gc_reach(&m->gray, frame->base[r]);
+            lhat_gc_reach(&m->gray, lhat_slots_get(m->slots, frame->base + r));
         }
     }
     for (LhatUpvalue *open = m->open; open != NULL; open = open->next_open) {

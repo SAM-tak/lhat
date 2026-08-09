@@ -118,13 +118,17 @@ LhatCoroutine *lhat_coroutine_new(LhatHeap *heap, const LhatClosure *closure,
     if (coroutine == NULL) {
         return NULL;
     }
-    coroutine->registers =
-        (LhatValue *)lhat_calloc(registers ? registers : 1, sizeof *coroutine->registers);
-    if (coroutine->registers == NULL) {
+    // 2.2改: the saved frame in the stack's own two-run shape. calloc gives
+    // all-zero payloads and tags, and tag zero is LHAT_VALUE_NIL -- so the
+    // slots start as nil^ without a pass of their own.
+    size_t width = registers ? registers : 1;
+    coroutine->registers.values = (LhatValueUnion *)lhat_calloc(
+        width, sizeof *coroutine->registers.values);
+    coroutine->registers.tags =
+        (uint8_t *)lhat_calloc(width, sizeof *coroutine->registers.tags);
+    if (coroutine->registers.values == NULL ||
+        coroutine->registers.tags == NULL) {
         return NULL;
-    }
-    for (size_t i = 0; i < registers; i++) {
-        coroutine->registers[i] = lhat_nil();
     }
     coroutine->closure = closure;
     coroutine->state = LHAT_COROUTINE_FRESH;
@@ -779,7 +783,8 @@ void lhat_object_free(LhatObject *object)
             lhat_free(((LhatClosure *)object)->upvalues);
             break;
         case LHAT_OBJECT_COROUTINE:
-            lhat_free(((LhatCoroutine *)object)->registers);
+            lhat_free(((LhatCoroutine *)object)->registers.values);
+            lhat_free(((LhatCoroutine *)object)->registers.tags);
             break;
         case LHAT_OBJECT_TYPE:
             lhat_free(((LhatRuntimeType *)object)->parts);
