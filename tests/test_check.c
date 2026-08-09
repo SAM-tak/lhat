@@ -853,6 +853,37 @@ static void test_errors(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_CANNOT_FAIL);
     unit_dispose(&u);
 
+    // 04 の 4.2: catch^ names the error it^ inside its right side. The
+    // machine always bound it (compile_catch); the checker used to know
+    // nothing of it and refused the very programs 4.2 describes.
+    LHAT_TEST("catch^ binds it^ in its right side");
+    check_text(&u,
+               "errordef^ IOError { NotFound }\n"
+               "var^ f = f^ -> number^|IOError { return^ 0 }\n"
+               "var^ n : number^ = f() catch^ if^ it^ isa^ IOError.NotFound:"
+               " 0 el^: 1 ;\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // 2.3 gives every kind message and cause, so the error half of the left
+    // side is enough for it^.message to answer through.
+    LHAT_TEST("and it^ is typed as the error half of the left");
+    check_text(&u,
+               "errordef^ IOError { NotFound }\n"
+               "var^ f = f^ -> number^|IOError { return^ 0 }\n"
+               "var^ s : string^|number^ = f() catch^ it^.message\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // 11.7: ?? asks about nil^, and there is nothing in a nil^ to name --
+    // it^ is catch^'s alone.
+    LHAT_TEST("?? binds no it^");
+    check_text(&u,
+               "var^ f = f^ -> number^|nil^ { return^ 0 }\n"
+               "var^ n = f() ?? it^\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_UNDEFINED);
+    unit_dispose(&u);
+
     LHAT_TEST("?? drops the nil arm");
     check_text(&u,
                "var^ f = f^ -> number^|nil^ { return^ 0 }\n"

@@ -99,8 +99,11 @@ static bool match_op(Parser *p, LhatOpKind op)
     return true;
 }
 
-// Compares a hat identifier against a word, ignoring the trailing carets.
-static bool token_is_hat(const Parser *p, const LhatToken *token, const char *word)
+// Compares a hat identifier's word, whatever its hat count. Only for the
+// spellings that stack (01 の 2.3改): break^^^ reads its count as how many
+// loops to leave, so its keyword check must not insist on one hat.
+static bool token_is_hat_stacked(const Parser *p, const LhatToken *token,
+                                 const char *word)
 {
     if (token->kind != LHAT_TOKEN_HAT_IDENT) {
         return false;
@@ -112,6 +115,18 @@ static bool token_is_hat(const Parser *p, const LhatToken *token, const char *wo
     }
     return memcmp(p->lexer->source->text + token->offset, word, wanted) == 0;
 }
+
+// Compares a hat identifier against a word. 01 の 2.3改: one hat is the
+// identifier itself and further hats count levels, so a keyword -- which
+// counts nothing -- is only itself with exactly one. 'if^^' is not a
+// misspelt if^; it falls through to being read as a name, where the count
+// is refused with a message of its own (parse_name_hats).
+static bool token_is_hat(const Parser *p, const LhatToken *token, const char *word)
+{
+    return token_is_hat_stacked(p, token, word) && token->v.hats == 1;
+}
+
+static void refuse_extra_hats(Parser *p, const LhatToken *token);
 
 static bool check_hat(const Parser *p, const char *word)
 {
@@ -433,6 +448,7 @@ static LhatNode *parse_member_decls(Parser *p)
         if (p->current.kind == LHAT_TOKEN_IDENT ||
             p->current.kind == LHAT_TOKEN_NAME_LITERAL ||
             p->current.kind == LHAT_TOKEN_HAT_IDENT) {
+            refuse_extra_hats(p, &p->current);
             LhatNodeKind kind = p->current.kind == LHAT_TOKEN_NAME_LITERAL
                                     ? LHAT_NODE_NAME
                                     : (p->current.kind == LHAT_TOKEN_HAT_IDENT
@@ -522,6 +538,8 @@ static LhatNode *parse_type_primary(Parser *p)
 
     if (p->current.kind == LHAT_TOKEN_HAT_IDENT ||
         p->current.kind == LHAT_TOKEN_IDENT) {
+        // A type name never stacks: number^^ counts nothing (01 の 2.3改).
+        refuse_extra_hats(p, &p->current);
         LhatNode *node = make(p, LHAT_NODE_TYPE_NAME, &p->current);
         if (node != NULL) {
             node->v.name.offset = p->current.offset;
@@ -589,7 +607,33 @@ static LhatNode *parse_type(Parser *p)
 // Expressions
 // ---------------------------------------------------------------------------
 
-static LhatNode *simple_node(Parser *p)
+// 01 の 2.3改: only these words have levels for a second hat to count --
+// it^ this^ self^ class^ reach the enclosing focus, subroutine, receiver or
+// definition (specified; the compiler does not take them yet). break^ and
+// the '$' specifier read their counts on paths of their own. super^^ is
+// refused on purpose (14.12改): which implementation an override wraps is
+// the composition's business, and skipping layers by count breaks the
+// moment a part is inserted -- naming the part (A.a) is that spelling.
+static bool word_stacks(const Parser *p, const LhatToken *token)
+{
+    return token_is_hat_stacked(p, token, "it") ||
+           token_is_hat_stacked(p, token, "this") ||
+           token_is_hat_stacked(p, token, "self") ||
+           token_is_hat_stacked(p, token, "class");
+}
+
+// The refusal for a name position that never stacks: a key, a type name, a
+// declaration -- extra hats count nothing there, whatever the word.
+static void refuse_extra_hats(Parser *p, const LhatToken *token)
+{
+    if (token->kind == LHAT_TOKEN_HAT_IDENT && token->v.hats > 1) {
+        report(p, token, LHAT_PARSE_ERR_HATS_DONT_STACK);
+    }
+}
+
+// `stackable` says whether this position may carry a stacked word at all:
+// only a value reference may (parse_primary), and only the words above.
+static LhatNode *simple_node_in(Parser *p, bool stackable)
 {
     LhatToken t = p->current;
     LhatNodeKind kind;
@@ -602,6 +646,11 @@ static LhatNode *simple_node(Parser *p)
         case LHAT_TOKEN_IDENT:        kind = LHAT_NODE_IDENT; break;
         case LHAT_TOKEN_HAT_IDENT:    kind = LHAT_NODE_HAT_IDENT; break;
         default: return NULL;
+    }
+
+    if (t.kind == LHAT_TOKEN_HAT_IDENT && t.v.hats > 1 &&
+        !(stackable && word_stacks(p, &t))) {
+        report(p, &t, LHAT_PARSE_ERR_HATS_DONT_STACK);
     }
 
     LhatNode *node = make(p, kind, &t);
@@ -632,6 +681,13 @@ static LhatNode *simple_node(Parser *p)
 
     advance(p);
     return node;
+}
+
+// Every name position but parse_primary's value reference, where the four
+// stacking words are allowed through (simple_node_in above).
+static LhatNode *simple_node(Parser *p)
+{
+    return simple_node_in(p, false);
 }
 
 // 5.4: the lexer hands over an interpolated string as a sequence, so the
@@ -1320,7 +1376,9 @@ static LhatNode *parse_primary(Parser *p)
                  is_op(&p->ahead, LHAT_OP_LBRACE))) {
                 return parse_error_new(p);
             }
-            return simple_node(p);
+            // The one position a stacked word may be written in: a value
+            // reference (01 の 2.3改), where it^^ means the enclosing focus.
+            return simple_node_in(p, true);
 
         case LHAT_TOKEN_OP:
             if (t.v.op == LHAT_OP_LPAREN) {
@@ -3236,7 +3294,9 @@ static LhatNode *parse_statement(Parser *p)
         if (check_hat(p, "return")) {
             return parse_jump(p, LHAT_NODE_RETURN);
         }
-        if (check_hat(p, "break")) {
+        // 9.8: break^^^ counts loops with its hats, the one keyword that
+        // stacks -- so it alone is matched by the word.
+        if (token_is_hat_stacked(p, &p->current, "break")) {
             return parse_jump(p, LHAT_NODE_BREAK);
         }
         if (check_hat(p, "panic")) {
@@ -3824,6 +3884,9 @@ const char *lhat_parse_error_message(LhatParseErrorCode code)
         case LHAT_PARSE_ERR_SPREAD_NOT_LAST:
             return "'...' forwards the whole collected tail, so nothing can "
                    "follow it here";
+        case LHAT_PARSE_ERR_HATS_DONT_STACK:
+            return "a second hat counts levels, which this word does not "
+                   "take here";
         case LHAT_PARSE_ERR_FIELD_NEEDS_TYPE:
             return "a field needs a type, a default, or both";
         case LHAT_PARSE_ERR_ERRORDEF_NEEDS_NAME:

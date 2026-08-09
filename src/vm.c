@@ -157,7 +157,7 @@ static void fail(Compiler *c, LhatCompileStatus status)
 // 01 の 2.3改 (S34): the hat is part of the name. A hat identifier's name is
 // the word plus one hat -- 'self^' is a different name from 'self' -- and a
 // spelling with more hats than one is that same name reached further out:
-// super^^^ is the super^ two levels up, its name still 'super^' with the
+// this^^^ is the this^ two levels up, its name still 'this^' with the
 // count kept on the node (v.name.hats) for the constructs that stack. So
 // what this answers is the canonical spelling, word + one hat at most.
 static bool node_name(const Compiler *c, const LhatNode *node,
@@ -2732,6 +2732,13 @@ static void compile_expression(Compiler *c, const LhatNode *node, uint8_t into)
             const char *name = NULL;
             size_t length = 0;
             if (!node_name(c, node, &name, &length)) {
+                fail(c, LHAT_COMPILE_UNSUPPORTED);
+                return;
+            }
+            // 01 の 2.3改: a stacked reach -- it^^ the enclosing focus, this^^
+            // the enclosing subroutine, self^^/class^^ the enclosing def^'s.
+            // The parser only lets those four through, and none compiles yet.
+            if (node->kind == LHAT_NODE_HAT_IDENT && node->v.name.hats > 1) {
                 fail(c, LHAT_COMPILE_UNSUPPORTED);
                 return;
             }

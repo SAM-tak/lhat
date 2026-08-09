@@ -295,7 +295,7 @@ static void report_named(Checker *c, const LhatNode *at,
 //
 // 01 の 2.3改 (S34): the hat is part of the name -- 'self^' is a different
 // name from 'self'. A spelling with more hats than one is the same name
-// reached further out (super^^^ is the super^ two levels up), so the
+// reached further out (this^^^ is the this^ two levels up), so the
 // canonical name is the word plus one hat at most, and the count stays on
 // the node for the constructs that stack. vm.c's node_name is the same rule
 // on the other side, and the two have to agree exactly: what the checker
@@ -1733,9 +1733,35 @@ static LhatType *infer_binary(Checker *c, const LhatNode *node)
     // 04 の 4.1 and 11.7: both drop one arm and put a value in its place.
     if (op == LHAT_OP_CATCH || op == LHAT_OP_NIL_ELSE) {
         LhatType *left = infer(c, node->v.binary.left);
-        LhatType *right = infer(c, node->v.binary.right);
         LhatType *unwanted = simple(c, op == LHAT_OP_CATCH ? LHAT_TYPE_ERROR
                                                            : LHAT_TYPE_NIL);
+
+        // 04 の 4.2: catch^ names the error it^ inside its right side, so the
+        // right side is inferred under a scope holding it -- typed as the
+        // error half of the left, which is exactly what the machine puts in
+        // that register (compile_catch). ?? has no it^: what it replaces is
+        // nil^, and there is nothing in a nil^ to name.
+        LhatType *right = NULL;
+        if (op == LHAT_OP_CATCH) {
+            Scope scope;
+            scope.bindings = NULL;
+            scope.tail = NULL;
+            scope.parent = c->scope;
+
+            Scope *outer = c->scope;
+            c->scope = &scope;
+            Binding *caught = scope_add(&scope, "it^", 3,
+                                        only(c, left, unwanted), node->offset);
+            if (caught != NULL) {
+                caught->reached = true;
+            }
+            right = infer(c, node->v.binary.right);
+            c->scope = outer;
+            scope_dispose(&scope);
+        } else {
+            right = infer(c, node->v.binary.right);
+        }
+
         if (!can_be(left, unwanted)) {
             report(c, node, op == LHAT_OP_CATCH ? LHAT_CHECK_ERR_CANNOT_FAIL
                                                 : LHAT_CHECK_ERR_CANNOT_BE_NIL);
@@ -2219,11 +2245,16 @@ static LhatType *infer_member(Checker *c, const LhatNode *node)
                               : LHAT_TYPE_UNKNOWN);
     }
 
-    // 04 の 2.3: every kind carries message and cause without declaring them.
+    // 04 の 2.3: every kind carries message and cause without declaring them
+    // -- so they answer however much of the kind is known: a leaf, a
+    // declaration's whole set, or error^ alone (4.2's it^ can be any of the
+    // three). A declared field is the leaf's own and wants the narrowing.
     const LhatTypeMember *members = NULL;
     if (target->kind == LHAT_TYPE_TABLE) {
         members = target->v.table.members;
-    } else if (target->kind == LHAT_TYPE_ERROR_KIND) {
+    } else if (target->kind == LHAT_TYPE_ERROR_KIND ||
+               target->kind == LHAT_TYPE_ERROR_SET ||
+               target->kind == LHAT_TYPE_ERROR) {
         if (name_is(name, length, "message")) {
             return simple(c, LHAT_TYPE_STRING);
         }
@@ -2231,7 +2262,11 @@ static LhatType *infer_member(Checker *c, const LhatNode *node)
             return lhat_type_union(c->result->types, simple(c, LHAT_TYPE_ERROR),
                                    simple(c, LHAT_TYPE_NIL));
         }
-        members = target->v.error.fields;
+        if (target->kind == LHAT_TYPE_ERROR_KIND) {
+            members = target->v.error.fields;
+        }
+        // ERROR and ERROR_SET carry no fields of their own; the search below
+        // finds nothing and the shared tail still answers tostring.
     } else if (target->kind == LHAT_TYPE_CORO) {
         // 05 の 8.5: a coroutine carries these without importing anything.
         // 02 の 12.6 spells dispose(), 15.6 puts resume beside it, and 16.3

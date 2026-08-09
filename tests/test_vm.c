@@ -2095,6 +2095,37 @@ static void test_errors(void)
     run_dispose(&r);
 }
 
+// 01 の 2.3改 (S34): the four stacking words pass the parser -- the reach
+// they spell (the enclosing focus, subroutine, receiver, definition) is
+// specified but nothing compiles it yet, and the refusal has to say "yet"
+// rather than resolve the innermost silently, which is what it used to do.
+static void test_stacked_hats_compile(void)
+{
+    Run r;
+
+    LHAT_TEST("it^^ does not compile yet");
+    run_text(&r, "for^ 1 to^ 2 { for^ 1 to^ 2 { var^ x = it^^ } }\n");
+    LHAT_CHECK_EQ_INT(r.compiled, LHAT_COMPILE_UNSUPPORTED);
+    run_dispose(&r);
+
+    LHAT_TEST("this^^ does not compile yet");
+    run_text(&r,
+             "var^ f = p^ {\n"
+             "  var^ g = p^ { return^ this^^ }\n"
+             "}\n"
+             "return^ 0\n");
+    LHAT_CHECK_EQ_INT(r.compiled, LHAT_COMPILE_UNSUPPORTED);
+    run_dispose(&r);
+
+    LHAT_TEST("self^^ does not compile yet");
+    run_text(&r,
+             "var^ P = def^{ self^{ x := 1 },\n"
+             "  m := f^self^ -> number^ { return^ self^^.x } }\n"
+             "return^ 0\n");
+    LHAT_CHECK_EQ_INT(r.compiled, LHAT_COMPILE_UNSUPPORTED);
+    run_dispose(&r);
+}
+
 // 04 の 4 章 and 5 章, and 02 の 11.7.
 static void test_catch_and_try(void)
 {
@@ -5727,6 +5758,7 @@ int main(void)
     test_cleanups();
     test_definitions();
     test_isa();
+    test_stacked_hats_compile();
     test_typeof();
     test_tostring();
     test_scope_specifiers();

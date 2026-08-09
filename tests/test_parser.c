@@ -3069,6 +3069,73 @@ static void test_typeof(void)
     parse_dispose(&p);
 }
 
+// 01 の 2.3改 (S34): a second hat counts levels, and only it^/this^/self^/
+// class^ have levels to count -- everywhere else, and for every other word,
+// the extra hats are refused where they are written.
+static void test_stacked_hats(void)
+{
+    Parse p;
+
+    LHAT_TEST("a value word does not stack");
+    parse_text(&p, "x := true^^");
+    LHAT_CHECK(p.result.diagnostic_count > 0, "expected a diagnostic");
+    LHAT_CHECK_EQ_INT(p.result.diagnostics[0].code,
+                      LHAT_PARSE_ERR_HATS_DONT_STACK);
+    parse_dispose(&p);
+
+    // 14.12改: which implementation an override wraps is the composition's
+    // business -- skipping layers by count breaks the moment a part is
+    // inserted, so naming the part is the spelling for that.
+    LHAT_TEST("super does not stack");
+    parse_text(&p, "x := super^^.a()");
+    LHAT_CHECK(p.result.diagnostic_count > 0, "expected a diagnostic");
+    LHAT_CHECK_EQ_INT(p.result.diagnostics[0].code,
+                      LHAT_PARSE_ERR_HATS_DONT_STACK);
+    parse_dispose(&p);
+
+    LHAT_TEST("a keyword does not stack");
+    parse_text(&p, "if^^ x { }");
+    LHAT_CHECK(p.result.diagnostic_count > 0, "expected a diagnostic");
+    LHAT_CHECK_EQ_INT(p.result.diagnostics[0].code,
+                      LHAT_PARSE_ERR_HATS_DONT_STACK);
+    parse_dispose(&p);
+
+    LHAT_TEST("a type name does not stack");
+    parse_text(&p, "var^ n : number^^ = 1");
+    LHAT_CHECK(p.result.diagnostic_count > 0, "expected a diagnostic");
+    LHAT_CHECK_EQ_INT(p.result.diagnostics[0].code,
+                      LHAT_PARSE_ERR_HATS_DONT_STACK);
+    parse_dispose(&p);
+
+    LHAT_TEST("a member key does not stack");
+    parse_text(&p, "x := t.foo^^");
+    LHAT_CHECK(p.result.diagnostic_count > 0, "expected a diagnostic");
+    LHAT_CHECK_EQ_INT(p.result.diagnostics[0].code,
+                      LHAT_PARSE_ERR_HATS_DONT_STACK);
+    parse_dispose(&p);
+
+    // The four that do stack pass the parser -- the reach is 01 の 2.3改's,
+    // and whether it compiles yet is the compiler's answer (test_vm).
+    LHAT_TEST("it^^ parses, carrying its count");
+    parse_text(&p, "x := it^^");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    LHAT_CHECK_EQ_INT(first_value(&p)->kind, LHAT_NODE_HAT_IDENT);
+    LHAT_CHECK_EQ_INT(first_value(&p)->v.name.hats, 2);
+    parse_dispose(&p);
+
+    LHAT_TEST("this^^ parses too");
+    parse_text(&p, "x := this^^");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    parse_dispose(&p);
+
+    // 9.8: the one keyword whose hats count -- unchanged.
+    LHAT_TEST("break^^^ still counts its loops");
+    parse_text(&p,
+               "for^ 1 to^ 3 { for^ 1 to^ 3 { for^ 1 to^ 3 { break^^^ } } }");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    parse_dispose(&p);
+}
+
 int main(void)
 {
     test_spans();
@@ -3095,5 +3162,6 @@ int main(void)
     test_incomplete();
     test_recovery();
     test_realistic();
+    test_stacked_hats();
     return lhat_test_report("test_parser");
 }
