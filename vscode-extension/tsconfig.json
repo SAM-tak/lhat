@@ -8,5 +8,8 @@
     "sourceMap": true,
     "strict": true
   },
-  "include": ["src/**/*.ts"]
+  // The webview half builds separately (tsconfig.webview.json): it targets a
+  // browser and is emitted as ES modules, which this half is not.
+  "include": ["src/**/*.ts"],
+  "exclude": ["src/webview"]
 }

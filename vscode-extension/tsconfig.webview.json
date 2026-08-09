@@ -1,0 +1,20 @@
+// The webview half. It runs in a browser context rather than in Node, and is
+// loaded as a module by a plain <script type="module">, so it is emitted as
+// ES modules with browser libs -- unlike the extension host half, which stays
+// CommonJS. Keeping the two apart is what lets the extension build with tsc
+// alone and no bundler.
+{
+  "compilerOptions": {
+    "module": "ES2020",
+    "moduleResolution": "bundler",
+    "target": "ES2020",
+    "lib": ["ES2020", "DOM"],
+    // rootDir is src, so src/webview/main.ts lands at media/webview/main.js
+    // and the shared src/protocol.ts at media/protocol.js.
+    "outDir": "media",
+    "rootDir": "src",
+    "sourceMap": true,
+    "strict": true
+  },
+  "include": ["src/webview/**/*.ts", "src/protocol.ts"]
+}

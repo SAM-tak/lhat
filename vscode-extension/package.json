@@ -34,6 +34,42 @@
         "path": "./syntaxes/lhat.tmLanguage.json"
       }
     ],
+    "customEditors": [
+      {
+        "viewType": "lhat.graph",
+        "displayName": "L^ Graph",
+        "selector": [
+          {
+            "filenamePattern": "*.lh"
+          }
+        ],
+        "priority": "option"
+      }
+    ],
+    "commands": [
+      {
+        "command": "lhat.openGraph",
+        "title": "Open Graph View",
+        "category": "L^",
+        "icon": "$(type-hierarchy)"
+      }
+    ],
+    "menus": {
+      "editor/title": [
+        {
+          "comment": "Only on a .lh tab, and not on the graph's own tab -- the graph is the same resource, so resourceLangId alone would put the button on it too.",
+          "command": "lhat.openGraph",
+          "when": "resourceLangId == lhat && activeCustomEditorId != lhat.graph",
+          "group": "navigation"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "lhat.openGraph",
+          "when": "resourceLangId == lhat"
+        }
+      ]
+    },
     "configuration": {
       "title": "L^ (lhat)",
       "properties": {
@@ -41,6 +77,11 @@
           "type": "string",
           "default": "",
           "description": "Path to lhatls(.exe). If empty, looks for lhatls(.exe) on PATH."
+        },
+        "lhat.graph.openBeside": {
+          "type": "boolean",
+          "default": false,
+          "description": "Open the graph view in a split beside the current editor. When off, it opens as another tab in the same editor group."
         }
       }
     },
@@ -59,11 +100,13 @@
     }
   },
   "scripts": {
-    "vscode:prepublish": "tsc -p ./",
-    "compile": "tsc -p ./",
-    "watch": "tsc -watch -p ./"
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./ && tsc -p ./tsconfig.webview.json",
+    "watch": "tsc -watch -p ./",
+    "watch:webview": "tsc -watch -p ./tsconfig.webview.json"
   },
   "dependencies": {
+    "elkjs": "^0.12.0",
     "vscode-languageclient": "^9.0.1"
   },
   "devDependencies": {

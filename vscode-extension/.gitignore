@@ -1,3 +1,6 @@
 node_modules/
 out/
+media/webview/
+media/protocol.js
+media/protocol.js.map
 *.vsix
