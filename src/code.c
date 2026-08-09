@@ -240,6 +240,7 @@ const char *lhat_opcode_name(LhatOpcode op)
         case LHAT_BC_GE:          return "ge";
         case LHAT_BC_CLOSURE:     return "closure";
         case LHAT_BC_CALL:        return "call";
+        case LHAT_BC_PICKARM:     return "pickarm";
         case LHAT_BC_GETUPVAL:    return "getupval";
         case LHAT_BC_SETUPVAL:    return "setupval";
         case LHAT_BC_CLOSE:       return "close";
@@ -252,6 +253,8 @@ const char *lhat_opcode_name(LhatOpcode op)
         case LHAT_BC_GETINDEX:    return "getindex";
         case LHAT_BC_SETINDEX:    return "setindex";
         case LHAT_BC_ADDOVERLOAD: return "addoverload";
+        case LHAT_BC_OVERRIDEINDEX: return "overrideindex";
+        case LHAT_BC_OVERRIDEARM: return "overridearm";
         case LHAT_BC_NEWERROR:    return "newerror";
         case LHAT_BC_ISERROR:     return "iserror";
         case LHAT_BC_ISA:         return "isa";

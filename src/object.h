@@ -439,6 +439,13 @@ LhatOverload *lhat_overload_with_first(LhatHeap *heap,
                                        const LhatOverload *existing,
                                        LhatValue candidate);
 
+// 03 の 5.11c: a new group with arm `arm` of `existing` replaced. NULL when
+// there is no such arm, which leaves the caller to fall back on the search
+// form above. The old group is left as it was, again for super^.
+LhatOverload *lhat_overload_replacing(LhatHeap *heap,
+                                      const LhatOverload *existing, size_t arm,
+                                      LhatValue candidate);
+
 // 04 の 2.6 and 6.1: whether `value` is an error of `kind`. A kind object
 // standing for a whole errordef^ answers yes for any of its kinds, since 2.3
 // makes the declaration the union of them.

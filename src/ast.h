@@ -185,6 +185,19 @@ struct LhatNode {
     // NULL until checking runs, and unset entirely when it never does.
     void *checked_type;
 
+    // 03 の 5.11c: which arm of an overloaded member (02 の 14.12) the checker
+    // settled on, as the index into that member's arms plus one -- zero means
+    // it settled nothing, which is what an unchecked compile always sees.
+    //
+    // CALL: the candidate this call means, written only under strict, where
+    // resolving is not optional (a call that fits no arm is a MISMATCH). The
+    // compiler turns it into the PICKARM that spares the run the search.
+    //
+    // TABLE_ENTRY marked override^: the arm it replaces, written whatever the
+    // strictness -- it decides the shape of the group rather than how a call
+    // reads one, and 03 の 4.2 keeps that the same either way.
+    uint16_t checked_arm;
+
     union {
         struct {
             uint64_t value;

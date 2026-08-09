@@ -1568,6 +1568,38 @@ static void test_composition(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
+    // 14.12: what a new arm has to stay apart from is each arm already under
+    // the name, one at a time. Asking the intersection as though it were one
+    // signature answers "cannot be told apart" for every one of them, which
+    // used to refuse a third arm however plainly it differed.
+    LHAT_TEST("a third overload^ is told apart from each arm, not from all");
+    {
+        char text[1024];
+        snprintf(text, sizeof text, "%s%s", base,
+                 "var^ Bar = Foo .. def^{\n"
+                 "    self^{},\n"
+                 "    overload^ bar := p^self^, n:number^ { },\n"
+                 "    overload^ bar := p^self^, b:bool^ { },\n"
+                 "}\n");
+        check_text(&u, text);
+    }
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("and a third that overlaps an earlier arm still is not");
+    {
+        char text[1024];
+        snprintf(text, sizeof text, "%s%s", base,
+                 "var^ Bar = Foo .. def^{\n"
+                 "    self^{},\n"
+                 "    overload^ bar := p^self^, n:number^ { },\n"
+                 "    overload^ bar := p^self^, m:number^ { },\n"
+                 "}\n");
+        check_text(&u, text);
+    }
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_OVERLOAD_OVERLAPS);
+    unit_dispose(&u);
+
     LHAT_TEST("an overlapping overload^ is reported");
     {
         char text[1024];

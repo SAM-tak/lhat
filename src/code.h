@@ -60,6 +60,11 @@ typedef enum {
                         //       'expr...' -- R[A+B] is a table whose
                         //       positions are unpacked as further arguments,
                         //       in place of being the last argument itself
+    // 03 の 5.11c: strict settled which candidate of an overloaded member
+    // (02 の 14.12) the call ahead means, so the search 5.11改 runs is not
+    // run. Anything but a group in R[A] is left alone -- a value that got
+    // here another way is still called the ordinary way.
+    LHAT_BC_PICKARM,    // A Bx  R[A] = candidate Bx of the group R[A]
     LHAT_BC_GETUPVAL,   // A B   R[A] = *upvalue[B]
     LHAT_BC_SETUPVAL,   // A B   *upvalue[B] = R[A]
     LHAT_BC_CLOSE,      // A     the places at R[A] and above stop being shared
@@ -85,6 +90,18 @@ typedef enum {
     LHAT_BC_SETINDEX,   // A B C R[A][R[B]] = R[C]
     LHAT_BC_ADDOVERLOAD,// A B C R[A][R[B]] gains R[C] as another way to call it
     LHAT_BC_OVERRIDEINDEX, // A B C R[A][R[B]] := R[C], ahead of any overload
+    // 03 の 5.11c: the same write, once the checker has said which arm is
+    // being replaced. The group then keeps its shape -- the arm goes in the
+    // place of the one it replaces instead of in front of it, and that one is
+    // dropped rather than left shadowed, so the arms a call can reach are the
+    // arms the checker's type says the name carries. super^ still reaches the
+    // old group: the GETINDEX binding it ran before this write (14.12改).
+    //
+    // The value is at R[B+1] rather than in an operand of its own, since C is
+    // spent on the arm. compile_def lays the key and the value out as one run
+    // the way 5.3 lays out a call, and falls back to OVERRIDEINDEX if ever
+    // they are not adjacent.
+    LHAT_BC_OVERRIDEARM,// A B C R[A][R[B]] := R[B+1], replacing arm C
 
     // 04. An error carries its kind and a table of fields, and the tests are
     // instructions because 5.1 keeps the machine independent of the checker.

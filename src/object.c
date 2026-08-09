@@ -728,6 +728,33 @@ LhatOverload *lhat_overload_with_first(LhatHeap *heap,
     return made;
 }
 
+// 03 の 5.11c: the same replacement, once the checker has named the arm. The
+// group then holds exactly the arms the name's type says it does -- the one
+// replaced is gone rather than kept behind the replacement -- so an index
+// into the arms means the same thing on both sides, which is what lets a
+// call be settled at compile time.
+//
+// A fresh group for the reason above: super^ holds the old one.
+LhatOverload *lhat_overload_replacing(LhatHeap *heap,
+                                      const LhatOverload *existing, size_t arm,
+                                      LhatValue candidate)
+{
+    if (existing == NULL || arm >= existing->count) {
+        return NULL;
+    }
+    LhatOverload *made = lhat_overload_new(heap);
+    if (made == NULL) {
+        return NULL;
+    }
+    for (size_t i = 0; i < existing->count; i++) {
+        LhatValue part = i == arm ? candidate : existing->candidates[i];
+        if (!lhat_overload_add(made, part)) {
+            return NULL;
+        }
+    }
+    return made;
+}
+
 bool lhat_error_is_kind(LhatValue value, const LhatErrorKind *kind)
 {
     if (!lhat_is_object_kind(value, LHAT_OBJECT_ERROR) || kind == NULL) {

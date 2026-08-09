@@ -3136,6 +3136,123 @@ static void test_definitions(void)
     LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_NO_CANDIDATE);
     run_dispose(&r);
 
+    // 03 の 5.11c. The two paths answer differently here, which is the whole
+    // reason the static one exists: a parameter left to inference (03 の 3.4)
+    // is a type the checker knows and the descriptor fits_call reads does not
+    // -- lower_type had no annotation to read, and a descriptor that is not
+    // there asks nothing. So the search takes the first arm for any argument
+    // at all, while the checker took the second. Strict bakes in the arm it
+    // resolved, and the answer is the one checking promised.
+    static const char *inferred_parameter_arms =
+        "var^ Show = def^{\n"
+        "  self^{ },\n"
+        "  show := f^ x { return^ x + 1 },\n"
+        "  overload^\n"
+        "  show := f^ y:string^ -> number^ { return^ 2 },\n"
+        "}\n"
+        "return^ Show.new().show(\"t\")\n";
+
+    LHAT_TEST("strict takes the arm the checker resolved");
+    run_checked_text(&r, inferred_parameter_arms);
+    CHECK_INTEGER(&r, 2);
+    run_dispose(&r);
+
+    LHAT_TEST("without checking the search takes the arm asking nothing");
+    run_text(&r, inferred_parameter_arms);
+    LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_TYPE_ERROR);
+    run_dispose(&r);
+
+    // 03 の 5.11c: an arm index means the same thing on both sides only if
+    // the group holds what the checker's type says it holds. An override^
+    // over an overloaded name is where that is decided -- the replacement
+    // takes the place of the arm it replaces rather than going in front of a
+    // group that still carries it, so the arms after it keep their positions.
+    LHAT_TEST("an override^ leaves the other arms where they were");
+    run_checked_text(&r,
+             "var^ Base = def^{\n"
+             "  self^{ },\n"
+             "  m := f^ x:number^ -> number^ { return^ 1 },\n"
+             "  overload^\n"
+             "  m := f^ y:string^ -> number^ { return^ 2 },\n"
+             "}\n"
+             "var^ Derived = Base .. def^{\n"
+             "  override^\n"
+             "  m := f^ x:number^ -> number^ { return^ 3 },\n"
+             "}\n"
+             "var^ d = Derived.new()\n"
+             "return^ d.m(0) * 10 + d.m(\"t\")\n");
+    CHECK_INTEGER(&r, 32);
+    run_dispose(&r);
+
+    // 02 の 14.12: the ban is pairwise, so a name carries as many ways of
+    // being called as are told apart. Three of them is where an arm index
+    // starts being worth checking: the middle one is not reachable by taking
+    // either end.
+    static const char *three_arms =
+        "var^ S = def^{\n"
+        "  self^{ },\n"
+        "  m := f^ x:number^ -> number^ { return^ 1 },\n"
+        "  overload^\n"
+        "  m := f^ y:string^ -> number^ { return^ 2 },\n"
+        "  overload^\n"
+        "  m := f^ z:bool^ -> number^ { return^ 4 },\n"
+        "}\n"
+        "var^ s = S.new()\n"
+        "return^ s.m(0) * 100 + s.m(\"t\") * 10 + s.m(true^)\n";
+
+    LHAT_TEST("three arms are told apart, resolved statically");
+    run_checked_text(&r, three_arms);
+    CHECK_INTEGER(&r, 124);
+    run_dispose(&r);
+
+    // The search has to reach the same three, which is what says the index
+    // strict bakes in and the order the group is built in agree.
+    LHAT_TEST("three arms are told apart by the search too");
+    run_text(&r, three_arms);
+    CHECK_INTEGER(&r, 124);
+    run_dispose(&r);
+
+    // 03 の 5.11c, the case the two orders differ in most: the arm replaced
+    // is neither the first nor the last, so putting the replacement in front
+    // instead of in its place would move both of the others.
+    LHAT_TEST("an override^ of a middle arm moves none of the others");
+    run_checked_text(&r,
+             "var^ Base = def^{\n"
+             "  self^{ },\n"
+             "  m := f^ x:number^ -> number^ { return^ 1 },\n"
+             "  overload^\n"
+             "  m := f^ y:string^ -> number^ { return^ 2 },\n"
+             "  overload^\n"
+             "  m := f^ z:bool^ -> number^ { return^ 4 },\n"
+             "}\n"
+             "var^ Derived = Base .. def^{\n"
+             "  override^\n"
+             "  m := f^ y:string^ -> number^ { return^ super^(y) + 20 },\n"
+             "}\n"
+             "var^ d = Derived.new()\n"
+             "return^ d.m(0) * 1000 + d.m(\"t\") * 10 + d.m(true^)\n");
+    CHECK_INTEGER(&r, 1224);
+    run_dispose(&r);
+
+    // 02 の 14.12改: super^ is bound from the group as it was before the
+    // write, so dropping the replaced arm from the new group leaves it
+    // reachable -- and the call through it resolves against the old arms.
+    LHAT_TEST("super^ still reaches the arm an override^ replaced");
+    run_checked_text(&r,
+             "var^ Base = def^{\n"
+             "  self^{ },\n"
+             "  m := f^ x:number^ -> number^ { return^ 1 },\n"
+             "  overload^\n"
+             "  m := f^ y:string^ -> number^ { return^ 2 },\n"
+             "}\n"
+             "var^ Derived = Base .. def^{\n"
+             "  override^\n"
+             "  m := f^ x:number^ -> number^ { return^ super^(x) + 30 },\n"
+             "}\n"
+             "return^ Derived.new().m(0)\n");
+    CHECK_INTEGER(&r, 31);
+    run_dispose(&r);
+
     // 14.8: number^ is one type, so either representation answers to it.
     LHAT_TEST("either representation of a number answers to number^");
     run_text(&r,

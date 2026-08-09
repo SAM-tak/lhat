@@ -2029,9 +2029,20 @@ static LhatType *infer_call(Checker *c, const LhatNode *node)
 
         bool through_member =
             node->v.access.target->kind == LHAT_NODE_MEMBER;
+        size_t position = 0;
         for (const LhatTypeList *arm = callee->v.composite.arms; arm != NULL;
-             arm = arm->next) {
+             arm = arm->next, position++) {
             if (signature_accepts(arm->type, args, tracked, through_member)) {
+                // 03 の 5.11c: under strict this is the answer, not a guess --
+                // an argument whose type is not settled is 3.1's gap and is
+                // reported where it reaches a place wanting a concrete type,
+                // and a call fitting no arm is the MISMATCH below. So the
+                // compiler may bake the arm in and let the run skip 5.11改's
+                // search. Relaxed writes nothing and keeps the search, which
+                // is the only thing left there to decide the call.
+                if (c->strict && position + 1 <= UINT16_MAX) {
+                    ((LhatNode *)node)->checked_arm = (uint16_t)(position + 1);
+                }
                 // 15.1, 15.5: f^ may call only f^, whichever arm 14.12
                 // resolved to -- except a yieldable p^, whose call alone
                 // stays referentially transparent (see the plain-call site
@@ -3037,10 +3048,13 @@ static LhatType *override_one(Checker *c, const LhatNode *entry,
 
     LhatType *overlapped = NULL;
     size_t overlaps = 0;
+    size_t position = 0;
+    size_t at = 0;
     for (const LhatTypeList *arm = inherited->v.composite.arms; arm != NULL;
-         arm = arm->next) {
+         arm = arm->next, position++) {
         if (signatures_overlap(replacement, arm->type)) {
             overlapped = arm->type;
+            at = position;
             overlaps++;
         }
     }
@@ -3059,6 +3073,15 @@ static LhatType *override_one(Checker *c, const LhatNode *entry,
     if (!lhat_type_conforms(replacement, overlapped)) {
         report(c, entry, LHAT_CHECK_ERR_NOT_SUBSTITUTABLE);
         return replacement;
+    }
+
+    // 03 の 5.11c: which arm this is settles the shape of the group the run
+    // builds, so the compiler is told rather than left to put the replacement
+    // in front of a group that keeps the arm it replaced. Not a strict-only
+    // matter: 03 の 4.2 asks that what runs be the same either way, and the
+    // arms a name carries are read by typeof^ (14.16) whichever it is.
+    if (at + 1 <= UINT16_MAX) {
+        ((LhatNode *)entry)->checked_arm = (uint16_t)(at + 1);
     }
 
     // The others are untouched, so the name goes on carrying them.
@@ -3117,8 +3140,24 @@ static LhatType *check_same_name(Checker *c, const LhatNode *entry,
             // of them was.
             return override_one(c, entry, inherited->type, replacement);
 
-        case LHAT_DEF_OVERLOAD:
-            if (signatures_overlap(replacement, inherited->type)) {
+        case LHAT_DEF_OVERLOAD: {
+            // 14.12: the ban is on one signature overlapping another, so a
+            // name already overloaded is asked arm by arm -- the same reason
+            // override^ above walks them. An intersection is not a signature,
+            // and signatures_overlap answers "cannot tell them apart" for
+            // anything that is not one, so asking it as a whole would refuse
+            // every arm past the second.
+            bool overlaps = false;
+            if (inherited->type != NULL &&
+                inherited->type->kind == LHAT_TYPE_INTERSECT) {
+                for (const LhatTypeList *arm = inherited->type->v.composite.arms;
+                     arm != NULL && !overlaps; arm = arm->next) {
+                    overlaps = signatures_overlap(replacement, arm->type);
+                }
+            } else {
+                overlaps = signatures_overlap(replacement, inherited->type);
+            }
+            if (overlaps) {
                 report(c, entry, LHAT_CHECK_ERR_OVERLOAD_OVERLAPS);
                 return replacement;
             }
@@ -3126,6 +3165,7 @@ static LhatType *check_same_name(Checker *c, const LhatNode *entry,
             // what '&' means (14.5).
             return lhat_type_intersect(c->result->types, inherited->type,
                                        replacement);
+        }
     }
     return replacement;
 }

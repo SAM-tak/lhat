@@ -2095,14 +2095,25 @@ static void compile_def(Compiler *c, const LhatNode *node, uint8_t into)
             // means is settled when it runs, since 14.12's ban on overlapping
             // signatures leaves at most one that fits.
             LhatOpcode write = LHAT_BC_SETINDEX;
+            uint8_t operand = value;
             if (entry->v.entry.modifier == LHAT_DEF_OVERLOAD) {
                 write = LHAT_BC_ADDOVERLOAD;
             } else if (entry->v.entry.modifier == LHAT_DEF_OVERRIDE) {
                 // 14.12: and an override^ over an overloaded name takes the
                 // one arm it overlaps rather than the group.
                 write = LHAT_BC_OVERRIDEINDEX;
+                // 03 の 5.11c: the checker knows which arm that is, so the
+                // group can keep its shape instead of carrying the replaced
+                // arm behind the replacement. OVERRIDEARM reads the value at
+                // key + 1, which is where it is -- but the fallback keeps
+                // that from being a silent assumption.
+                if (entry->checked_arm != 0 &&
+                    entry->checked_arm - 1 <= 0xFF && value == key + 1) {
+                    write = LHAT_BC_OVERRIDEARM;
+                    operand = (uint8_t)(entry->checked_arm - 1);
+                }
             }
-            emit(c, lhat_encode_abc(write, into, key, value));
+            emit(c, lhat_encode_abc(write, into, key, operand));
             // The slot goes back to the pool for the next entry, so a body
             // that captured it has to stop sharing it first.
             if (c->local_count > entry_mark) {
@@ -2341,6 +2352,15 @@ static void compile_call(Compiler *c, const LhatNode *node, uint8_t into)
         return;
     }
 
+    // 03 の 5.11c: strict settled which candidate of an overloaded member this
+    // call means, so the search 5.11改 would run is replaced by taking that
+    // one. Emitted here rather than beside the callee so the one place that
+    // knows the call is complete is the one place that decides -- the
+    // arguments are above the callee and PICKARM touches nothing but it.
+    if (node->checked_arm != 0) {
+        emit(c, lhat_encode_abx(LHAT_BC_PICKARM, callee,
+                                (uint16_t)(node->checked_arm - 1)));
+    }
     emit(c, lhat_encode_abc(method ? LHAT_BC_CALLMETHOD : LHAT_BC_CALL, callee,
                             (uint8_t)count, spread ? 1 : 0));
     if (into != callee) {
@@ -6140,6 +6160,23 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
                 break;
             }
 
+            // 03 の 5.11c: strict already found the one arm that fits (14.12
+            // leaves at most one), so the call ahead takes it instead of
+            // asking every candidate again. Nothing else is touched: a value
+            // that is not a group reached here some way the checker did not
+            // read, and the ordinary call is still right for it.
+            case LHAT_BC_PICKARM: {
+                if (lhat_is_object_kind(R(a), LHAT_OBJECT_OVERLOAD)) {
+                    const LhatOverload *group =
+                        (const LhatOverload *)lhat_as_object(R(a));
+                    size_t which = lhat_bx(instruction);
+                    if (which < group->count) {
+                        SET_R(a, group->candidates[which]);
+                    }
+                }
+                break;
+            }
+
             case LHAT_BC_GETUPVAL:
                 SET_R(a, lhat_ref_get(frame->closure->upvalues[b]->location));
                 break;
@@ -6427,6 +6464,57 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
                     break;
                 }
                 goto set_index;
+            }
+
+            // 03 の 5.11c: the same write with the arm named. What it replaces
+            // is dropped rather than shadowed, so the arms left are the arms
+            // the checker's type says the name carries -- which is what makes
+            // an arm index mean the same thing on both sides. super^ is
+            // unaffected: it was bound from the old group before this ran.
+            case LHAT_BC_OVERRIDEARM: {
+                LhatTable *table = table_of(R(a));
+                if (table == NULL) {
+                    return finish(m, chunk, LHAT_RUN_TYPE_ERROR, lhat_nil(), at);
+                }
+                LhatValue held = lhat_table_get(table, R(b));
+                if (lhat_is_object_kind(held, LHAT_OBJECT_OVERLOAD)) {
+                    const LhatOverload *group =
+                        (const LhatOverload *)lhat_as_object(held);
+                    LhatOverload *made = lhat_overload_replacing(
+                        &m->objects, group, cc, R(b + 1));
+                    if (made == NULL) {
+                        // No such arm. The group is not the one the checker
+                        // read, so the honest answer is 14.12's own: put the
+                        // replacement in front and let the search sort it out.
+                        made = lhat_overload_with_first(&m->objects, group,
+                                                        R(b + 1));
+                    }
+                    if (made == NULL) {
+                        return finish(m, chunk, LHAT_RUN_OUT_OF_MEMORY, lhat_nil(),
+                                      at);
+                    }
+                    bool refused = false;
+                    if (!set_key(m, table, R(b),
+                                 lhat_object((LhatObject *)made), &refused)) {
+                        return finish(m, chunk, LHAT_RUN_OUT_OF_MEMORY, lhat_nil(),
+                                      at);
+                    }
+                    break;
+                }
+                // Nothing overloaded under the name, so this is a plain write.
+                // set_index cannot be jumped to for it: that reads the value
+                // from C, which here is the arm.
+                if (table->sealed) {
+                    return finish(m, chunk, LHAT_RUN_SEALED, lhat_nil(), at);
+                }
+                bool refused = false;
+                if (!set_key(m, table, R(b), R(b + 1), &refused)) {
+                    return finish(m, chunk, LHAT_RUN_OUT_OF_MEMORY, lhat_nil(), at);
+                }
+                if (refused) {
+                    return finish(m, chunk, LHAT_RUN_BAD_KEY, lhat_nil(), at);
+                }
+                break;
             }
 
             case LHAT_BC_NEWERROR: {
