@@ -67,13 +67,13 @@ size_t lhat_proto_add(LhatProto *parent, LhatProto *child)
     return parent->proto_count++;
 }
 
-size_t lhat_proto_add_upvalue(LhatProto *proto, bool from_parent_register,
+size_t lhat_proto_add_upvalue(LhatProto *proto, LhatUpvalueSource source,
                               uint8_t index)
 {
     // Reused rather than appended: a name read twice is one shared place, not
     // two, which is what 5.4 means by sharing the location.
     for (size_t i = 0; i < proto->upvalue_count; i++) {
-        if (proto->upvalues[i].from_parent_register == from_parent_register &&
+        if (proto->upvalues[i].source == source &&
             proto->upvalues[i].index == index) {
             return i;
         }
@@ -92,8 +92,7 @@ size_t lhat_proto_add_upvalue(LhatProto *proto, bool from_parent_register,
     if (proto->upvalue_count > 0xFF) {
         return SIZE_MAX;
     }
-    proto->upvalues[proto->upvalue_count].from_parent_register =
-        from_parent_register;
+    proto->upvalues[proto->upvalue_count].source = source;
     proto->upvalues[proto->upvalue_count].index = index;
     return proto->upvalue_count++;
 }

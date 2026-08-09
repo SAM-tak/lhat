@@ -60,6 +60,12 @@ typedef struct Compiler {
     struct {
         const char *name;
         size_t length;
+        // 01 の 2.3改 (S35): how many inner bindings of the name this capture
+        // was resolved past -- it^^ and it^ are two different targets under
+        // one spelling, so the cache tells them apart by the count. SIZE_MAX
+        // marks a capture_at entry, which no name search may ever answer
+        // with: a '$…name' capture was aimed at a place, not at a name.
+        size_t skip;
     } upvalue_names[LHAT_MAX_UPVALUES];
 
     // Slots below this hold live names; everything above is scratch for the
@@ -259,7 +265,27 @@ static const Local *find_local(const Compiler *c, const char *name,
 // way down records how it reaches the level above -- a register when the
 // parent holds it, or one of the parent's own upvalues when it does not.
 // Returns SIZE_MAX when there is no such name anywhere.
-static size_t find_upvalue(Compiler *c, const char *name, size_t length)
+// The same backwards search find_local does, passing over the innermost
+// `*skip` bindings of the name -- 01 の 2.3改's stacked reach, where it^^
+// means the it^ one binding out. What was not consumed stays in `*skip`, so
+// the search may continue into an enclosing body.
+static const Local *find_local_skipping(const Compiler *c, const char *name,
+                                        size_t length, size_t *skip)
+{
+    for (size_t i = c->local_count; i > 0; i--) {
+        const Local *local = &c->locals[i - 1];
+        if (local->length == length && memcmp(local->name, name, length) == 0) {
+            if (*skip == 0) {
+                return local;
+            }
+            (*skip)--;
+        }
+    }
+    return NULL;
+}
+
+static size_t find_upvalue_skipping(Compiler *c, const char *name,
+                                    size_t length, size_t skip)
 {
     if (c->parent == NULL) {
         return SIZE_MAX;
@@ -267,33 +293,80 @@ static size_t find_upvalue(Compiler *c, const char *name, size_t length)
 
     for (size_t i = 0; i < c->proto->upvalue_count; i++) {
         if (c->upvalue_names[i].length == length &&
+            c->upvalue_names[i].skip == skip &&
             memcmp(c->upvalue_names[i].name, name, length) == 0) {
             return i;
         }
     }
 
-    bool from_register = false;
+    LhatUpvalueSource source = LHAT_UPVALUE_OUTER;
     uint8_t index = 0;
+    size_t remaining = skip;
 
-    const Local *local = find_local(c->parent, name, length);
+    const Local *local = find_local_skipping(c->parent, name, length,
+                                             &remaining);
     if (local != NULL) {
-        from_register = true;
+        source = LHAT_UPVALUE_REGISTER;
         index = local->reg;
     } else {
-        size_t outer = find_upvalue(c->parent, name, length);
+        size_t outer = find_upvalue_skipping(c->parent, name, length,
+                                             remaining);
         if (outer == SIZE_MAX) {
             return SIZE_MAX;
         }
         index = (uint8_t)outer;
     }
 
-    size_t added = lhat_proto_add_upvalue(c->proto, from_register, index);
+    size_t added = lhat_proto_add_upvalue(c->proto, source, index);
     if (added == SIZE_MAX) {
         fail(c, LHAT_COMPILE_TOO_COMPLEX);
         return SIZE_MAX;
     }
     c->upvalue_names[added].name = name;
     c->upvalue_names[added].length = length;
+    c->upvalue_names[added].skip = skip;
+    return added;
+}
+
+static size_t find_upvalue(Compiler *c, const char *name, size_t length)
+{
+    return find_upvalue_skipping(c, name, length, 0);
+}
+
+// 15.10改 (S35): this^^ is the subroutine enclosing the one running --
+// `levels` bodies out. No register ever holds an enclosing body's closure
+// (BC_THIS reads the running frame), so the capture is the third upvalue
+// source: at CLOSURE time the maker boxes its own closure, and the chain
+// through any intermediate bodies is the ordinary one. Cached under the
+// this^ spelling with the level for a count, beside the other captures.
+static size_t resolve_this(Compiler *c, size_t levels)
+{
+    for (size_t i = 0; i < c->proto->upvalue_count; i++) {
+        if (c->upvalue_names[i].length == 5 &&
+            c->upvalue_names[i].skip == levels &&
+            memcmp(c->upvalue_names[i].name, "this^", 5) == 0) {
+            return i;
+        }
+    }
+
+    size_t added;
+    if (levels == 1) {
+        added = lhat_proto_add_upvalue(c->proto, LHAT_UPVALUE_THIS, 0);
+    } else {
+        size_t outer = resolve_this(c->parent, levels - 1);
+        if (outer == SIZE_MAX) {
+            return SIZE_MAX;
+        }
+        added = lhat_proto_add_upvalue(c->proto, LHAT_UPVALUE_OUTER,
+                                       (uint8_t)outer);
+    }
+    if (added == SIZE_MAX) {
+        fail(c, LHAT_COMPILE_TOO_COMPLEX);
+        return SIZE_MAX;
+    }
+    c->upvalue_names[added].name = "this^";
+    c->upvalue_names[added].length = 5;
+    c->upvalue_names[added].skip = levels;
     return added;
 }
 
@@ -396,14 +469,19 @@ static size_t capture_at(Compiler *c, const char *name, size_t length,
 
     // Not shared with the upvalues find_upvalue names: two of them over one
     // slot read and write the same place, and giving this one its own entry
-    // keeps a name from being taken for a target it was not resolved to.
-    size_t added = lhat_proto_add_upvalue(c->proto, from_register, index);
+    // keeps a name from being taken for a target it was not resolved to --
+    // the SIZE_MAX skip is what keeps every name search from answering with
+    // this entry.
+    size_t added = lhat_proto_add_upvalue(
+        c->proto, from_register ? LHAT_UPVALUE_REGISTER : LHAT_UPVALUE_OUTER,
+        index);
     if (added == SIZE_MAX) {
         fail(c, LHAT_COMPILE_TOO_COMPLEX);
         return SIZE_MAX;
     }
     c->upvalue_names[added].name = name;
     c->upvalue_names[added].length = length;
+    c->upvalue_names[added].skip = SIZE_MAX;
     return added;
 }
 
@@ -2735,11 +2813,49 @@ static void compile_expression(Compiler *c, const LhatNode *node, uint8_t into)
                 fail(c, LHAT_COMPILE_UNSUPPORTED);
                 return;
             }
-            // 01 の 2.3改: a stacked reach -- it^^ the enclosing focus, this^^
-            // the enclosing subroutine, self^^/class^^ the enclosing def^'s.
-            // The parser only lets those four through, and none compiles yet.
+            // 01 の 2.3改 (S35): a stacked reach -- it^^ the enclosing focus,
+            // self^^/class^^ the enclosing def^'s, this^^ the enclosing
+            // subroutine. The parser only lets those four through. The first
+            // three are ordinary bindings resolved past their inner shadows;
+            // this^ is an instruction rather than a binding, so its stacked
+            // form is a capture of its own (resolve_this).
             if (node->kind == LHAT_NODE_HAT_IDENT && node->v.name.hats > 1) {
-                fail(c, LHAT_COMPILE_UNSUPPORTED);
+                size_t levels = node->v.name.hats - 1;
+                if (name_is(name, length, "this^")) {
+                    // The body `levels` out has to exist, and be a body --
+                    // the unit's top level is not this^-able (15.10).
+                    Compiler *target = c;
+                    for (size_t i = 0; i <= levels && target != NULL; i++) {
+                        target = target->parent;
+                    }
+                    if (target == NULL) {
+                        fail(c, LHAT_COMPILE_SCOPE_TOO_FAR);
+                        return;
+                    }
+                    size_t up = resolve_this(c, levels);
+                    if (up == SIZE_MAX) {
+                        fail(c, LHAT_COMPILE_TOO_COMPLEX);
+                        return;
+                    }
+                    emit(c, lhat_encode_abc(LHAT_BC_GETUPVAL, into,
+                                            (uint8_t)up, 0));
+                    return;
+                }
+                size_t skip = levels;
+                const Local *outer = find_local_skipping(c, name, length,
+                                                         &skip);
+                if (outer != NULL) {
+                    emit(c, lhat_encode_abc(LHAT_BC_MOVE, into, outer->reg, 0));
+                    return;
+                }
+                size_t up = find_upvalue_skipping(c, name, length, skip);
+                if (up == SIZE_MAX) {
+                    // Fewer bindings of the name than the hats count out.
+                    fail(c, LHAT_COMPILE_SCOPE_TOO_FAR);
+                    return;
+                }
+                emit(c, lhat_encode_abc(LHAT_BC_GETUPVAL, into, (uint8_t)up,
+                                        0));
                 return;
             }
             // 01 の 2.2: three hat identifiers are values in themselves.
@@ -6096,15 +6212,35 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
                         return finish(m, chunk, LHAT_RUN_OUT_OF_MEMORY, lhat_nil(), at);
                     }
                 }
-                // 5.4: a register of this frame, or one of its own upvalues
-                // when the name came from further out.
+                // 5.4: a register of this frame, one of its own upvalues
+                // when the name came from further out, or -- 15.10改's
+                // this^^ -- this frame's own closure, boxed closed on the
+                // spot: nothing on the stack holds it, so there is nothing
+                // to keep open.
                 for (size_t i = 0; i < nested->upvalue_count; i++) {
                     const LhatUpvalueDesc *desc = &nested->upvalues[i];
-                    closure->upvalues[i] =
-                        desc->from_parent_register
-                            ? capture(m, &registers[desc->index])
-                            : frame->closure->upvalues[desc->index];
-                    if (closure->upvalues[i] == NULL) {
+                    LhatUpvalue *made = NULL;
+                    switch (desc->source) {
+                        case LHAT_UPVALUE_REGISTER:
+                            made = capture(m, &registers[desc->index]);
+                            break;
+                        case LHAT_UPVALUE_OUTER:
+                            made = frame->closure->upvalues[desc->index];
+                            break;
+                        case LHAT_UPVALUE_THIS:
+                            made = (LhatUpvalue *)lhat_object_alloc(
+                                &m->objects, sizeof *made,
+                                LHAT_OBJECT_UPVALUE);
+                            if (made != NULL) {
+                                made->closed = lhat_object(
+                                    (LhatObject *)frame->closure);
+                                made->location = &made->closed;
+                                made->next_open = NULL;
+                            }
+                            break;
+                    }
+                    closure->upvalues[i] = made;
+                    if (made == NULL) {
                         return finish(m, chunk, LHAT_RUN_OUT_OF_MEMORY, lhat_nil(), at);
                     }
                 }

@@ -2095,34 +2095,138 @@ static void test_errors(void)
     run_dispose(&r);
 }
 
-// 01 の 2.3改 (S34): the four stacking words pass the parser -- the reach
-// they spell (the enclosing focus, subroutine, receiver, definition) is
-// specified but nothing compiles it yet, and the refusal has to say "yet"
-// rather than resolve the innermost silently, which is what it used to do.
+// 01 の 2.3改 (S35): the stacked reach. it^^ is the enclosing loop's focus,
+// self^^/class^^ the enclosing def^'s, resolved past the inner binding of
+// the same name; this^^ is the enclosing subroutine, captured as its maker's
+// own closure since no register ever holds one.
 static void test_stacked_hats_compile(void)
 {
     Run r;
 
-    LHAT_TEST("it^^ does not compile yet");
-    run_text(&r, "for^ 1 to^ 2 { for^ 1 to^ 2 { var^ x = it^^ } }\n");
-    LHAT_CHECK_EQ_INT(r.compiled, LHAT_COMPILE_UNSUPPORTED);
-    run_dispose(&r);
-
-    LHAT_TEST("this^^ does not compile yet");
+    LHAT_TEST("it^^ reads the enclosing loop's focus");
     run_text(&r,
-             "var^ f = p^ {\n"
-             "  var^ g = p^ { return^ this^^ }\n"
+             "var^ total = 0\n"
+             "for^ 1 to^ 2 {\n"
+             "  for^ 10 to^ 11 { total := total + it^^ * 100 + it^ }\n"
              "}\n"
-             "return^ 0\n");
-    LHAT_CHECK_EQ_INT(r.compiled, LHAT_COMPILE_UNSUPPORTED);
+             "return^ total\n");
+    // (1,10) (1,11) (2,10) (2,11): 110+111+210+211
+    CHECK_INTEGER(&r, 642);
     run_dispose(&r);
 
-    LHAT_TEST("self^^ does not compile yet");
+    // The count is over bindings of the name, not scopes -- and the chain
+    // may cross a body boundary, where the reach becomes a capture.
+    LHAT_TEST("and reaches across a body in between");
+    run_text(&r,
+             "var^ answer = 0\n"
+             "for^ 7 to^ 7 {\n"
+             "  var^ f = f^ -> number^ {\n"
+             "    for^ 1 to^ 1 { return^ it^^ }\n"
+             "    return^ 0\n"
+             "  }\n"
+             "  answer := f()\n"
+             "}\n"
+             "return^ answer\n");
+    CHECK_INTEGER(&r, 7);
+    run_dispose(&r);
+
+    // 04 の 4.2: catch^'s it^ is a binding like the focus, so the two stack.
+    LHAT_TEST("catch^'s it^ shadows a loop's, and it^^ still reaches it");
+    run_text(&r,
+             "errordef^ E { Bad }\n"
+             "var^ fail = f^ { return^ error^E.Bad{ } }\n"
+             "var^ n = 0\n"
+             "for^ 5 to^ 5 { n := fail() catch^ it^^ }\n"
+             "return^ n\n");
+    CHECK_INTEGER(&r, 5);
+    run_dispose(&r);
+
+    LHAT_TEST("this^^ is the enclosing subroutine");
+    run_text(&r,
+             "var^ outer = p^ {\n"
+             "  var^ inner = p^ { return^ this^^ }\n"
+             "  return^ inner()\n"
+             "}\n"
+             "return^ outer() is^ outer\n");
+    CHECK_BOOL(&r, true);
+    run_dispose(&r);
+
+    // 15.10改: what the reach is for -- a body with no name of its own
+    // calling the enclosing one, which is recursion written without naming
+    // anybody. Lexical, not dynamic: the capture is made where the inner
+    // body is written, by whichever instance of the outer one makes it.
+    LHAT_TEST("this^^ recurses the enclosing subroutine namelessly");
+    run_text(&r,
+             "var^ outer = f^ n:number^ -> number^ {\n"
+             "  var^ inner = f^ -> number^ {\n"
+             "    if^ n <= 0 { return^ 0 }\n"
+             "    return^ this^^(n - 1) + 1\n"
+             "  }\n"
+             "  return^ inner()\n"
+             "}\n"
+             "return^ outer(3)\n");
+    CHECK_INTEGER(&r, 3);
+    run_dispose(&r);
+
+    LHAT_TEST("and this^^^ one further out");
+    run_text(&r,
+             "var^ a = p^ {\n"
+             "  var^ b = p^ {\n"
+             "    var^ d = p^ { return^ this^^^ }\n"
+             "    return^ d()\n"
+             "  }\n"
+             "  return^ b()\n"
+             "}\n"
+             "return^ a() is^ a\n");
+    CHECK_BOOL(&r, true);
+    run_dispose(&r);
+
+    LHAT_TEST("self^^ is the enclosing def^'s receiver");
+    run_text(&r,
+             "var^ Outer = def^{ self^{ x := 7 },\n"
+             "  m := f^self^ -> number^ {\n"
+             "    var^ Inner = def^{ self^{ y := 1 },\n"
+             "      n := f^self^ -> number^ { return^ self^^.x + self^.y }\n"
+             "    }\n"
+             "    return^ Inner.new().n()\n"
+             "  }\n"
+             "}\n"
+             "return^ Outer.new().m()\n");
+    CHECK_INTEGER(&r, 8);
+    run_dispose(&r);
+
+    LHAT_TEST("class^^ is the enclosing definition");
+    run_text(&r,
+             "var^ Outer = def^{ self^{ x := 1 }, tag := 42,\n"
+             "  m := f^self^ -> number^ {\n"
+             "    var^ Inner = def^{ self^{ y := 2 },\n"
+             "      n := f^self^ -> number^ { return^ class^^.tag }\n"
+             "    }\n"
+             "    return^ Inner.new().n()\n"
+             "  }\n"
+             "}\n"
+             "return^ Outer.new().m()\n");
+    CHECK_INTEGER(&r, 42);
+    run_dispose(&r);
+
+    // Fewer bindings than the hats count out: refused as a miscount, the
+    // same answer '$^' gives past the outermost scope.
+    LHAT_TEST("it^^ with one loop is a miscount");
+    run_text(&r, "for^ 1 to^ 2 { var^ x = it^^ }\nreturn^ 0\n");
+    LHAT_CHECK_EQ_INT(r.compiled, LHAT_COMPILE_SCOPE_TOO_FAR);
+    run_dispose(&r);
+
+    LHAT_TEST("this^^ in an unnested body is a miscount");
+    run_text(&r, "var^ f = p^ { return^ this^^ }\nreturn^ 0\n");
+    LHAT_CHECK_EQ_INT(r.compiled, LHAT_COMPILE_SCOPE_TOO_FAR);
+    run_dispose(&r);
+
+    LHAT_TEST("self^^ with one receiver is a miscount");
     run_text(&r,
              "var^ P = def^{ self^{ x := 1 },\n"
              "  m := f^self^ -> number^ { return^ self^^.x } }\n"
              "return^ 0\n");
-    LHAT_CHECK_EQ_INT(r.compiled, LHAT_COMPILE_UNSUPPORTED);
+    LHAT_CHECK_EQ_INT(r.compiled, LHAT_COMPILE_SCOPE_TOO_FAR);
     run_dispose(&r);
 }
 

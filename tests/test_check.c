@@ -5001,6 +5001,67 @@ static void test_immutable_bindings(void)
 }
 
 
+// 01 の 2.3改 (S35): the stacked reach, typed. The checker walks the same
+// bindings the machine resolves, so it^^ carries the outer focus's type and
+// this^^ the enclosing subroutine's own.
+static void test_stacked_hats(void)
+{
+    Unit u;
+
+    LHAT_TEST("it^^ carries the enclosing focus's type");
+    check_text(&u,
+               "for^ 1 to^ 2 {\n"
+               "  for^ 10 to^ 11 { var^ n : number^ = it^^ + it^ }\n"
+               "}\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("self^^ carries the enclosing receiver's members");
+    check_text(&u,
+               "var^ Outer = def^{ self^{ x := 7 },\n"
+               "  m := f^self^ -> number^ {\n"
+               "    var^ Inner = def^{ self^{ y := 1 },\n"
+               "      n := f^self^ -> number^ { return^ self^^.x + self^.y }\n"
+               "    }\n"
+               "    return^ Inner.new().n()\n"
+               "  }\n"
+               "}\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("and a member the outer receiver lacks is reported");
+    check_text(&u,
+               "var^ Outer = def^{ self^{ x := 7 },\n"
+               "  m := f^self^ -> number^ {\n"
+               "    var^ Inner = def^{ self^{ y := 1 },\n"
+               "      n := f^self^ -> number^ { return^ self^^.y }\n"
+               "    }\n"
+               "    return^ Inner.new().n()\n"
+               "  }\n"
+               "}\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_NO_MEMBER);
+    unit_dispose(&u);
+
+    LHAT_TEST("this^^ is the enclosing subroutine's own type");
+    check_text(&u,
+               "var^ outer = p^ {\n"
+               "  var^ inner = p^ { var^ q = this^^ }\n"
+               "  inner()\n"
+               "}\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("counting past the bindings there are is reported");
+    check_text(&u, "for^ 1 to^ 2 { var^ x = it^^ }\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_SCOPE_TOO_FAR);
+    unit_dispose(&u);
+
+    LHAT_TEST("and so is this^^ in an unnested body");
+    check_text(&u, "var^ f = p^ { var^ q = this^^ }\nf()\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_SCOPE_TOO_FAR);
+    unit_dispose(&u);
+}
+
 int main(void)
 {
     test_names();
@@ -5026,5 +5087,6 @@ int main(void)
     test_session();
     test_named_diagnostics();
     test_immutable_bindings();
+    test_stacked_hats();
     return lhat_test_report("test_check");
 }

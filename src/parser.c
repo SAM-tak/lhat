@@ -609,7 +609,7 @@ static LhatNode *parse_type(Parser *p)
 
 // 01 の 2.3改: only these words have levels for a second hat to count --
 // it^ this^ self^ class^ reach the enclosing focus, subroutine, receiver or
-// definition (specified; the compiler does not take them yet). break^ and
+// definition (compiled as stacked reaches -- vm.c). break^ and
 // the '$' specifier read their counts on paths of their own. super^^ is
 // refused on purpose (14.12改): which implementation an override wraps is
 // the composition's business, and skipping layers by count breaks the

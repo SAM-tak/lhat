@@ -150,6 +150,14 @@ typedef struct {
     // which is what this^ names. NULL outside any body.
     LhatType *this_type;
 
+    // 15.10改 (S35): the bodies enclosing this one, outermost last -- what
+    // this^^ walks. Links live on the C stack of the infer that pushed them,
+    // the same way the saved this_type does.
+    struct ThisLink {
+        LhatType *type;
+        struct ThisLink *outer;
+    } *this_link;
+
     // 02 の 15.1: f^ may call only f^, never p^. True inside an f^ body
     // (and nested f^ literals within it), false everywhere else -- outside
     // any body (top level) and inside a p^ both allow either kind, so
@@ -384,6 +392,25 @@ static Binding *scope_find_in(Scope *scope, const char *name, size_t length,
 static Binding *scope_find(Scope *scope, const char *name, size_t length)
 {
     return scope_find_in(scope, name, length, NULL);
+}
+
+// 01 の 2.3改 (S35): the stacked reach, passing over the innermost `skip`
+// bindings of the name -- it^^ is the it^ one binding out, self^^/class^^
+// the enclosing def^'s. The same search order as scope_find, so the two
+// agree on which binding is "innermost".
+static Binding *scope_find_skipping(Scope *scope, const char *name,
+                                    size_t length, size_t skip)
+{
+    for (Scope *s = scope; s != NULL; s = s->parent) {
+        Binding *b = scope_find_local(s, name, length);
+        if (b != NULL) {
+            if (skip == 0) {
+                return b;
+            }
+            skip--;
+        }
+    }
+    return NULL;
 }
 
 // 01 の 8 章: where a scope specifier starts looking, counted either way.
@@ -978,6 +1005,27 @@ static bool narrowable(const LhatNode *node)
     }
 }
 
+// 01 の 2.3改 (S35): the canonical name cuts after the first hat, so it^ and
+// it^^ spell the same name reaching two different bindings -- a narrowing
+// recorded for one must not apply to the other, which is what comparing the
+// counts guards.
+static size_t name_hats(const LhatNode *node)
+{
+    if (node == NULL) {
+        return 0;
+    }
+    // 16.2: the focus with no name written is it^ -- one hat, so a written
+    // it^ still names the same binding it does.
+    if (node->kind == LHAT_NODE_FOCUS) {
+        return 1;
+    }
+    if (node->kind == LHAT_NODE_IDENT || node->kind == LHAT_NODE_HAT_IDENT ||
+        node->kind == LHAT_NODE_TYPE_NAME) {
+        return node->v.name.hats;
+    }
+    return 0;
+}
+
 static bool same_name(const Checker *c, const LhatNode *a, const LhatNode *b)
 {
     const char *na = NULL;
@@ -985,7 +1033,8 @@ static bool same_name(const Checker *c, const LhatNode *a, const LhatNode *b)
     size_t la = 0;
     size_t lb = 0;
     return node_name(c, a, &na, &la) && node_name(c, b, &nb, &lb) &&
-           la == lb && memcmp(na, nb, la) == 0;
+           la == lb && memcmp(na, nb, la) == 0 &&
+           name_hats(a) == name_hats(b);
 }
 
 static bool same_path(const Checker *c, const LhatNode *a, const LhatNode *b)
@@ -1642,6 +1691,32 @@ static LhatType *infer_name(Checker *c, const LhatNode *node)
     size_t length = 0;
     if (!node_name(c, node, &name, &length)) {
         return simple(c, LHAT_TYPE_UNKNOWN);
+    }
+
+    // 01 の 2.3改 (S35): the stacked reach. this^^ walks the chain of
+    // enclosing bodies; it^^/self^^/class^^ walk past inner bindings of the
+    // same name -- the same search vm.c makes, so the two agree on which
+    // binding a count lands on. The parser admits no other word here.
+    if (node->kind == LHAT_NODE_HAT_IDENT && node->v.name.hats > 1) {
+        size_t levels = node->v.name.hats - 1;
+        if (name_is(name, length, "this^")) {
+            struct ThisLink *link = c->this_link;
+            for (size_t i = 0; i < levels && link != NULL; i++) {
+                link = link->outer;
+            }
+            if (link == NULL) {
+                report(c, node, LHAT_CHECK_ERR_SCOPE_TOO_FAR);
+                return simple(c, LHAT_TYPE_UNKNOWN);
+            }
+            return link->type;
+        }
+        Binding *outer = scope_find_skipping(c->scope, name, length, levels);
+        if (outer == NULL) {
+            report(c, node, LHAT_CHECK_ERR_SCOPE_TOO_FAR);
+            return simple(c, LHAT_TYPE_UNKNOWN);
+        }
+        outer->reached = true;
+        return outer->type;
     }
 
     // A few hat identifiers are values rather than names (01 の 2.2).
@@ -2624,6 +2699,10 @@ static LhatType *infer_func(Checker *c, const LhatNode *node)
     c->recursive_return = false;
     c->valueless_return = false;
     c->this_type = func;
+    // 15.10改: the chain this^^ walks. Lives here on the C stack, exactly
+    // as long as the body is being checked.
+    struct ThisLink this_link = { func, c->this_link };
+    c->this_link = &this_link;
     c->in_function = node->v.func.is_function;
     c->body_scope = &body;
     c->deferred++;
@@ -2724,6 +2803,7 @@ static LhatType *infer_func(Checker *c, const LhatNode *node)
     c->recursive_return = outer_recursive;
     c->valueless_return = outer_valueless;
     c->this_type = outer_this;
+    c->this_link = this_link.outer;
     c->coroutine_produce = outer_coroutine_produce;
     c->coroutine_receive = outer_coroutine_receive;
     c->yield_context = outer_yield_context;

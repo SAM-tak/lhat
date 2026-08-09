@@ -193,12 +193,20 @@ typedef struct {
     uint8_t registers;
 } LhatChunk;
 
-// 5.4: how a closure gets each of the places it shares. Either a register of
-// the frame making it, or one of that frame's own upvalues -- the second is
-// what carries a name down through more than one level of nesting.
+// 5.4: how a closure gets each of the places it shares. A register of the
+// frame making it, one of that frame's own upvalues -- the second is what
+// carries a name down through more than one level of nesting -- or, for
+// 15.10改's this^^, the maker's own closure: no register ever holds it, so
+// at CLOSURE time it is boxed closed on the spot.
+typedef enum {
+    LHAT_UPVALUE_REGISTER,
+    LHAT_UPVALUE_OUTER,
+    LHAT_UPVALUE_THIS
+} LhatUpvalueSource;
+
 typedef struct {
-    bool from_parent_register;
-    uint8_t index;
+    LhatUpvalueSource source;
+    uint8_t index;  // unused for LHAT_UPVALUE_THIS
 } LhatUpvalueDesc;
 
 // One compiled subroutine: its own code, the bodies written inside it, and
@@ -275,7 +283,7 @@ void lhat_modules_free(LhatModule *modules, size_t count);
 
 // Returns the index of the nested body, or SIZE_MAX when out of memory.
 size_t lhat_proto_add(LhatProto *parent, LhatProto *child);
-size_t lhat_proto_add_upvalue(LhatProto *proto, bool from_parent_register,
+size_t lhat_proto_add_upvalue(LhatProto *proto, LhatUpvalueSource source,
                               uint8_t index);
 
 void lhat_chunk_init(LhatChunk *chunk);
