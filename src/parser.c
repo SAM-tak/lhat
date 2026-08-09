@@ -127,6 +127,7 @@ static bool token_is_hat(const Parser *p, const LhatToken *token, const char *wo
 }
 
 static void refuse_extra_hats(Parser *p, const LhatToken *token);
+static bool compound_assign_op(LhatOpKind token_op, LhatOpKind *base_op);
 
 static bool check_hat(const Parser *p, const char *word)
 {
@@ -1004,7 +1005,17 @@ static LhatNode *parse_def(Parser *p)
                               symbol.v.op == LHAT_OP_MOD ||
                               symbol.v.op == LHAT_OP_POW);
             if (!definable) {
-                report(p, &symbol, LHAT_PARSE_ERR_OPERATOR_NOT_DEFINABLE);
+                // 8.6改: a compound spelling is worth its own answer. It is
+                // the one an overload would plausibly be written for, and
+                // what it stands for -- 'a := a + b' -- already carries the
+                // op^ that decides it, so there is a definition to point at
+                // rather than only a rule to state.
+                LhatOpKind base;
+                report(p, &symbol,
+                       symbol.kind == LHAT_TOKEN_OP &&
+                               compound_assign_op(symbol.v.op, &base)
+                           ? LHAT_PARSE_ERR_COMPOUND_NOT_DEFINABLE
+                           : LHAT_PARSE_ERR_OPERATOR_NOT_DEFINABLE);
                 break;
             }
             LhatNode *name = make(p, LHAT_NODE_IDENT, &symbol);
@@ -3873,6 +3884,10 @@ const char *lhat_parse_error_message(LhatParseErrorCode code)
         case LHAT_PARSE_ERR_OPERATOR_NOT_DEFINABLE:
             return "op^ defines '..' and the arithmetic operators; and^, or^, "
                    "'!' and the comparisons are the language's own";
+        case LHAT_PARSE_ERR_COMPOUND_NOT_DEFINABLE:
+            return "a compound assignment has no definition of its own: "
+                   "'a += b' is 'a := a + b', so it is op^+ that decides what "
+                   "it does";
         case LHAT_PARSE_ERR_EXPECTED_MEMBER:
             return "a def^ holds 'name := value' members and one self^{ ... }";
         case LHAT_PARSE_ERR_FIELD_NEEDS_NAME:

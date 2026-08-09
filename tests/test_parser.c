@@ -2299,6 +2299,32 @@ static void test_loop_clauses(void)
     }
     parse_dispose(&p);
 
+    // 8.6改: nor is a compound spelling. 'a += b' is 'a := a + b', so what it
+    // does is already settled by the op^ of the plain operator -- there is
+    // nothing left for a definition of its own to say. Answered separately
+    // from the rule above, since the thing to point at is that definition.
+    LHAT_TEST("and a compound assignment has no definition of its own");
+    parse_text(&p,
+               "V := def^{ self^{}, op^+= := f^self^, o:number^ -> number^ { "
+               "return^ o } }");
+    LHAT_CHECK(p.result.diagnostic_count > 0, "expected a diagnostic");
+    if (p.result.diagnostic_count > 0) {
+        LHAT_CHECK_EQ_INT(p.result.diagnostics[0].code,
+                          LHAT_PARSE_ERR_COMPOUND_NOT_DEFINABLE);
+    }
+    parse_dispose(&p);
+
+    LHAT_TEST("the concatenating one is refused the same way");
+    parse_text(&p,
+               "V := def^{ self^{}, op^..= := f^self^, o:string^ -> string^ { "
+               "return^ o } }");
+    LHAT_CHECK(p.result.diagnostic_count > 0, "expected a diagnostic");
+    if (p.result.diagnostic_count > 0) {
+        LHAT_CHECK_EQ_INT(p.result.diagnostics[0].code,
+                          LHAT_PARSE_ERR_COMPOUND_NOT_DEFINABLE);
+    }
+    parse_dispose(&p);
+
     // 9.10: pre^ runs before the condition, so it sits between prolog^ and
     // first^ -- which is where it has to be written.
     LHAT_TEST("pre^ takes its place between prolog^ and first^");
