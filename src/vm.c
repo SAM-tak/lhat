@@ -107,14 +107,14 @@ typedef struct Compiler {
     size_t error_count;
     size_t error_capacity;
 
-    // The def^ bound to each name, so that '..' and a self^{ … } inside new^
+    // The def^ bound to each name, so that '..' and a self^{ … } inside new
     // can be resolved without running anything (14.2).
     struct DefDecl *defs;
     size_t def_count;
     size_t def_capacity;
 
     // The definition being compiled, which is what a self^{ … } inside its
-    // new^ builds and what class^ names.
+    // new builds and what class^ names.
     const DefChain *building;
 
     // 14.9: the definitions lower_def_chain is inside right now, kept on the
@@ -154,7 +154,12 @@ static void fail(Compiler *c, LhatCompileStatus status)
     }
 }
 
-// The trailing hats are not part of a name (01 の 2.3).
+// 01 の 2.3改 (S34): the hat is part of the name. A hat identifier's name is
+// the word plus one hat -- 'self^' is a different name from 'self' -- and a
+// spelling with more hats than one is that same name reached further out:
+// super^^^ is the super^ two levels up, its name still 'super^' with the
+// count kept on the node (v.name.hats) for the constructs that stack. So
+// what this answers is the canonical spelling, word + one hat at most.
 static bool node_name(const Compiler *c, const LhatNode *node,
                       const char **text, size_t *length)
 {
@@ -166,14 +171,19 @@ static bool node_name(const Compiler *c, const LhatNode *node,
     if (node->kind == LHAT_NODE_IDENT || node->kind == LHAT_NODE_HAT_IDENT ||
         node->kind == LHAT_NODE_TYPE_NAME) {
         *text = c->lexer->source->text + node->v.name.offset;
-        *length = node->v.name.length >= node->v.name.hats
-                      ? node->v.name.length - node->v.name.hats
-                      : node->v.name.length;
+        // The hats sit right after the word in the source, so the canonical
+        // name is the span cut after the first of them.
+        size_t word = node->v.name.length >= node->v.name.hats
+                          ? node->v.name.length - node->v.name.hats
+                          : node->v.name.length;
+        *length = node->v.name.hats > 0 ? word + 1 : word;
         return true;
     }
     if (node->kind == LHAT_NODE_FOCUS) {
-        *text = "it";
-        *length = 2;
+        // 16.2: the focus with no name written is called it^, and the source
+        // need not contain the word for that to be its name.
+        *text = "it^";
+        *length = 3;
         return true;
     }
     // 01 の 8 章: the sigil says where to look, and the name is what to look
@@ -999,8 +1009,8 @@ static void compile_catch(Compiler *c, const LhatNode *node, uint8_t into)
 
     if (c->local_count < LHAT_MAX_LOCALS) {
         Local *local = &c->locals[c->local_count++];
-        local->name = "it";
-        local->length = 2;
+        local->name = "it^";
+        local->length = 3;
         local->reg = caught;
         local->depth = c->scope_depth;  // catch^ opens no brace of its own
     }
@@ -1080,7 +1090,7 @@ static void compile_isa(Compiler *c, const LhatNode *node, uint8_t into)
 
     const char *name = NULL;
     size_t length = 0;
-    if (node_name(c, asked, &name, &length) && name_is(name, length, "any")) {
+    if (node_name(c, asked, &name, &length) && name_is(name, length, "any^")) {
         // The left side still runs, for whatever it does along the way --
         // the same reason compile_expression keeps typeof^'s operand.
         uint8_t discarded = reserve(c);
@@ -1297,24 +1307,24 @@ static LhatRuntimeType *lower_type(Compiler *c, const LhatNode *node)
             LhatRuntimeTypeKind simple = LHAT_TYPE_RT_ANY;
             // 14.8: one type, and int^/float^ are the two representations of
             // it -- the three spellings check.c's resolve_type reads together.
-            if (name_is(name, length, "number") || name_is(name, length, "int") ||
-                name_is(name, length, "float")) {
+            if (name_is(name, length, "number^") || name_is(name, length, "int^") ||
+                name_is(name, length, "float^")) {
                 simple = LHAT_TYPE_RT_NUMBER;
-            } else if (name_is(name, length, "string")) {
+            } else if (name_is(name, length, "string^")) {
                 simple = LHAT_TYPE_RT_STRING;
-            } else if (name_is(name, length, "bool")) {
+            } else if (name_is(name, length, "bool^")) {
                 simple = LHAT_TYPE_RT_BOOL;
-            } else if (name_is(name, length, "nil")) {
+            } else if (name_is(name, length, "nil^")) {
                 simple = LHAT_TYPE_RT_NIL;
-            } else if (name_is(name, length, "table") ||
-                       name_is(name, length, "t")) {
+            } else if (name_is(name, length, "table^") ||
+                       name_is(name, length, "t^")) {
                 // 14.10: bare t^ asks for nothing in particular -- the top of
                 // tables, which is the other spelling of this one name (the
                 // pair check.c's resolve_type reads together).
                 simple = LHAT_TYPE_RT_TABLE;
-            } else if (name_is(name, length, "error")) {
+            } else if (name_is(name, length, "error^")) {
                 simple = LHAT_TYPE_RT_ERROR;
-            } else if (name_is(name, length, "any")) {
+            } else if (name_is(name, length, "any^")) {
                 return NULL;  // asks nothing
             } else {
                 // 14.9: a definition's name stands for its shape, which 14.2
@@ -1660,7 +1670,7 @@ static bool is_super_ident(Compiler *c, const LhatNode *node)
     const char *name = NULL;
     size_t length = 0;
     return node != NULL && node->kind == LHAT_NODE_HAT_IDENT &&
-           node_name(c, node, &name, &length) && name_is(name, length, "super");
+           node_name(c, node, &name, &length) && name_is(name, length, "super^");
 }
 
 static void compile_default_new(Compiler *c, const LhatNode *node,
@@ -1829,7 +1839,7 @@ static bool ambiguous_member(Compiler *c, const DefChain *chain,
     return plain > 1;
 }
 
-// 14.11: self^{ … } inside new^ makes the instance. The fields it names are
+// 14.11: self^{ … } inside new makes the instance. The fields it names are
 // filled from what it wrote; the rest come from the template's initialisers,
 // which 14.11 makes expressions evaluated at each construction rather than
 // values stored anywhere -- so they are compiled here, at the construction.
@@ -1852,7 +1862,7 @@ static void compile_self_table(Compiler *c, const LhatNode *node, uint8_t into)
 
     uint8_t mark = c->next_register;
     uint8_t definition = reserve(c);
-    if (!resolve_name(c, "class", 5, definition)) {
+    if (!resolve_name(c, "class^", 6, definition)) {
         fail(c, LHAT_COMPILE_UNDEFINED);
         return;
     }
@@ -1882,7 +1892,7 @@ static void compile_self_table(Compiler *c, const LhatNode *node, uint8_t into)
         c->next_register = at;
     }
 
-    // 14.11: in the order they were written, base first, and a field new^
+    // 14.11: in the order they were written, base first, and a field new
     // named is not initialised twice -- producing a value to be overwritten
     // is not something an initialiser should be made to do.
     for (size_t i = 0; i < chain->count; i++) {
@@ -1939,7 +1949,10 @@ static void compile_def(Compiler *c, const LhatNode *node, uint8_t into)
         return;
     }
 
-    emit(c, lhat_encode_abc(LHAT_BC_NEWTABLE, into, 0, 0));
+    // 14.9: the same structure a table literal makes, marked as the one a
+    // def^ made. Nothing about conformance reads that (11.3 keeps identity
+    // structural) -- 14.17改 does, to tell whose the member names are.
+    emit(c, lhat_encode_abc(LHAT_BC_NEWTABLE, into, 1, 0));
 
     // class^ names the definition (14.4), and binding it as an ordinary local
     // is what lets a method or an initialiser reach it -- through the capture
@@ -1954,8 +1967,8 @@ static void compile_def(Compiler *c, const LhatNode *node, uint8_t into)
     // it pushes here, so both sides count this one the same.
     c->scope_depth++;
     Local *local = &c->locals[c->local_count++];
-    local->name = "class";
-    local->length = 5;
+    local->name = "class^";
+    local->length = 6;
     local->reg = into;
     local->depth = c->scope_depth;
 
@@ -2010,8 +2023,8 @@ static void compile_def(Compiler *c, const LhatNode *node, uint8_t into)
                 uint8_t hidden = reserve(c);
                 emit(c, lhat_encode_abc(LHAT_BC_GETINDEX, hidden, into, key));
                 Local *previous = &c->locals[c->local_count++];
-                previous->name = "super";
-                previous->length = 5;
+                previous->name = "super^";
+                previous->length = 6;
                 previous->reg = hidden;
                 previous->depth = c->scope_depth;
             }
@@ -2041,9 +2054,9 @@ static void compile_def(Compiler *c, const LhatNode *node, uint8_t into)
         c->lexer = enclosing_lexer;
     }
 
-    // 14.11: without a new^ of its own, a definition gets one that takes no
+    // 14.11: without a new of its own, a definition gets one that takes no
     // arguments and returns what the template says. Written out it is
-    // 'new^ := f^ { return^ self^{ } }', so that is what is compiled.
+    // 'new := f^ { return^ self^{ } }', so that is what is compiled.
     if (!has_new && *c->status == LHAT_COMPILE_OK) {
         compile_default_new(c, node, into);
     }
@@ -2053,7 +2066,7 @@ static void compile_def(Compiler *c, const LhatNode *node, uint8_t into)
     c->scope_depth--;
 }
 
-// The new^ of 14.11 that a definition gets when it declares none: a function
+// The new of 14.11 that a definition gets when it declares none: a function
 // of no arguments answering what the template says. It is compiled as a body
 // of its own so that it is an ordinary member, callable like any other.
 static void compile_default_new(Compiler *c, const LhatNode *node,
@@ -2119,7 +2132,10 @@ static void compile_interp_part(Compiler *c, const LhatNode *part, uint8_t at)
     uint8_t receiver = (uint8_t)(at + 1);
     uint8_t argument = (uint8_t)(at + 2);
     compile_expression(c, part->v.hole.value, receiver);
-    load_string_bytes(c, argument, "tostring", 8);
+    // 14.17改: the hat spelling is the one that reaches the built-in on every
+    // value -- a hole may hold a plain table, where the bare name is the
+    // writer's and may hold anything.
+    load_string_bytes(c, argument, "tostring^", 9);
     emit(c, lhat_encode_abc(LHAT_BC_GETINDEX, at, receiver, argument));
 
     uint8_t given = 0;
@@ -2234,7 +2250,7 @@ static void compile_call(Compiler *c, const LhatNode *node, uint8_t into)
     } else if (super_call) {
         compile_expression(c, target, callee);
         uint8_t receiver = reserve(c);
-        if (!resolve_name(c, "self", 4, receiver)) {
+        if (!resolve_name(c, "self^", 5, receiver)) {
             // A static member has no self^ to hand over, and 14.4 says its
             // replacement takes none either. The plain call form is right.
             c->next_register = (uint8_t)(callee + 1);
@@ -2324,7 +2340,7 @@ static void compile_subroutine(Compiler *c, const LhatNode *node, uint8_t into)
         }
         // 14.4: a first parameter written self^ is what marks a method. No
         // modifier says so; the shape of the signature does.
-        if (param == node->v.func.params && name_is(name, length, "self")) {
+        if (param == node->v.func.params && name_is(name, length, "self^")) {
             proto->takes_self = true;
         }
         if (inner.local_count >= LHAT_MAX_LOCALS) {
@@ -2533,7 +2549,7 @@ static void compile_expression(Compiler *c, const LhatNode *node, uint8_t into)
             return;
 
         // 14.13: the two readings of self^{ … } are told apart by where it
-        // stands. Reaching it as an expression means the one inside new^;
+        // stands. Reaching it as an expression means the one inside new;
         // compile_def takes the template before anything gets here.
         case LHAT_NODE_SELF_TABLE:
             compile_self_table(c, node, into);
@@ -2724,21 +2740,21 @@ static void compile_expression(Compiler *c, const LhatNode *node, uint8_t into)
             // it^ is a name the for^ made, so it is looked up rather than
             // recognised.
             if (node->kind == LHAT_NODE_HAT_IDENT) {
-                if (name_is(name, length, "true") ||
-                    name_is(name, length, "false")) {
+                if (name_is(name, length, "true^") ||
+                    name_is(name, length, "false^")) {
                     emit(c, lhat_encode_abc(LHAT_BC_LOADBOOL, into,
-                                            name_is(name, length, "true") ? 1 : 0,
+                                            name_is(name, length, "true^") ? 1 : 0,
                                             0));
                     return;
                 }
-                if (name_is(name, length, "nil")) {
+                if (name_is(name, length, "nil^")) {
                     emit(c, lhat_encode_abc(LHAT_BC_LOADNIL, into, 0, 0));
                     return;
                 }
                 // 15.10: the subroutine running, which is how a body with no
                 // name recurses. Only the hatted spelling means it, so an
                 // ordinary name `this` stays an ordinary name.
-                if (name_is(name, length, "this")) {
+                if (name_is(name, length, "this^")) {
                     if (c->parent == NULL) {
                         fail(c, LHAT_COMPILE_UNDEFINED);
                         return;
@@ -2748,7 +2764,7 @@ static void compile_expression(Compiler *c, const LhatNode *node, uint8_t into)
                 }
                 // 05 の 8.6: the machine's own table, reachable from anywhere
                 // without being imported.
-                if (name_is(name, length, "L")) {
+                if (name_is(name, length, "L^")) {
                     emit(c, lhat_encode_abc(LHAT_BC_ENV, into, 0, 0));
                     return;
                 }
@@ -2880,7 +2896,7 @@ static const LhatNode *define_target_root(const LhatNode *target)
 static bool is_environment(const LhatNode *node, const char *name,
                            size_t length)
 {
-    return node->kind == LHAT_NODE_HAT_IDENT && name_is(name, length, "L");
+    return node->kind == LHAT_NODE_HAT_IDENT && name_is(name, length, "L^");
 }
 
 // Makes a table in a place that holds nothing yet, and leaves alone one that
@@ -3822,7 +3838,7 @@ static void compile_loop(Compiler *c, const LhatNode *node)
         uint8_t receiver = reserve(c);
         uint8_t key = reserve(c);
         compile_expression(c, bound, receiver);
-        load_string_bytes(c, key, "iterate", 7);
+        load_string_bytes(c, key, "iterate^", 8);
         emit(c, lhat_encode_abc(LHAT_BC_GETINDEX, walk, receiver, key));
         emit(c, lhat_encode_abc(LHAT_BC_CALLMETHOD, walk, 0, 0));
         c->next_register = (uint8_t)(walk + 1);
@@ -5256,12 +5272,17 @@ static LhatRuntimeType *reflect_type(LhatHeap *heap, LhatValue value,
 // The operations 02 の 12.6 and 15.6 give a coroutine, and 14.17's tostring,
 // which every value carries. The rest of the standard library is M2 and will
 // not go through here.
-static bool native_named(LhatValue key, LhatNativeKind *out)
+//
+// 14.17改 and 16.3改: the two a table carries are written with a hat as well.
+// `hatted` says which spelling reached here, which is what builtin_member
+// needs -- the bare one is a name a writer may mean for something else.
+static bool native_named(LhatValue key, LhatNativeKind *out, bool *hatted)
 {
     if (!lhat_is_object_kind(key, LHAT_OBJECT_STRING)) {
         return false;
     }
     const LhatString *name = (const LhatString *)lhat_as_object(key);
+    *hatted = false;
     if (name->length == 5 && memcmp(name->text, "start", 5) == 0) {
         *out = LHAT_NATIVE_START;
         return true;
@@ -5274,10 +5295,6 @@ static bool native_named(LhatValue key, LhatNativeKind *out)
         *out = LHAT_NATIVE_DISPOSE;
         return true;
     }
-    if (name->length == 7 && memcmp(name->text, "iterate", 7) == 0) {
-        *out = LHAT_NATIVE_ITERATE;
-        return true;
-    }
     if (name->length == 4 && memcmp(name->text, "done", 4) == 0) {
         *out = LHAT_NATIVE_DONE;
         return true;
@@ -5286,20 +5303,53 @@ static bool native_named(LhatValue key, LhatNativeKind *out)
         *out = LHAT_NATIVE_STARTED;
         return true;
     }
-    if (name->length == 8 && memcmp(name->text, "tostring", 8) == 0) {
+    if ((name->length == 7 && memcmp(name->text, "iterate", 7) == 0) ||
+        (name->length == 8 && memcmp(name->text, "iterate^", 8) == 0)) {
+        *out = LHAT_NATIVE_ITERATE;
+        *hatted = name->length == 8;
+        return true;
+    }
+    if ((name->length == 8 && memcmp(name->text, "tostring", 8) == 0) ||
+        (name->length == 9 && memcmp(name->text, "tostring^", 9) == 0)) {
         *out = LHAT_NATIVE_TOSTRING;
+        *hatted = name->length == 9;
         return true;
     }
     return false;
+}
+
+// 14.9: a table nobody made with a def^. Every name on one is the writer's,
+// which is what 14.17改 turns on -- a definition and an instance of it carry
+// names 14 章 reserved, and a table literal carries none.
+static bool plain_table(LhatValue on)
+{
+    if (!lhat_is_object_kind(on, LHAT_OBJECT_TABLE)) {
+        return false;
+    }
+    const LhatTable *table = (const LhatTable *)lhat_as_object(on);
+    return table->definition == NULL && !table->is_definition;
 }
 
 // 02 の 16.3: `in^ e` asks e for the coroutine to walk. A table answers with
 // one over its keys and a coroutine answers with itself, and both are built
 // in -- the same footing 12.6 gives dispose(). A member of that name written
 // by hand wins, since lhat_table_get is asked first.
+//
+// 14.17改 and 16.3改: on a plain table the bare spelling is not one of these
+// at all. 14.11 already writes new with a hat, and the reason is the same
+// one: every name on a table the writer wrote is the writer's, so a built-in
+// sitting on `tostring` there is the implementation taking a word it has no
+// claim to. A def^ is the other way round -- 14 章 reserves new, tostring and
+// dispose on one, which is what the hat spelling is saying -- and a value
+// with no members of its own (a number^, a coroutine, an error) has no names
+// to take. Those keep both spellings.
 static bool builtin_member(LhatValue on, LhatValue key, LhatNativeKind *out)
 {
-    if (!native_named(key, out)) {
+    bool hatted = false;
+    if (!native_named(key, out, &hatted)) {
+        return false;
+    }
+    if (!hatted && plain_table(on)) {
         return false;
     }
     // 02 の 14.17: whatever the value is, it can be written down.
@@ -6142,6 +6192,7 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
                 if (table == NULL) {
                     return finish(m, chunk, LHAT_RUN_OUT_OF_MEMORY, lhat_nil(), at);
                 }
+                table->is_definition = b != 0;  // 14.9
                 registers[a] = lhat_object((LhatObject *)table);
                 break;
             }
@@ -6169,7 +6220,8 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
                 // runtime provides, bound to what they came through.
                 if (lhat_is_object_kind(registers[b], LHAT_OBJECT_COROUTINE)) {
                     LhatNativeKind which;
-                    if (!native_named(registers[cc], &which)) {
+                    bool hatted = false;
+                    if (!native_named(registers[cc], &which, &hatted)) {
                         return finish(m, chunk, LHAT_RUN_TYPE_ERROR, lhat_nil(), at);
                     }
                     LhatNative *native =
@@ -6219,7 +6271,8 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
                     // down. Nothing else reaches a value that is not a
                     // table, so this is the whole of what one answers.
                     LhatNativeKind bare;
-                    if (native_named(registers[cc], &bare) &&
+                    bool bare_hatted = false;
+                    if (native_named(registers[cc], &bare, &bare_hatted) &&
                         bare == LHAT_NATIVE_TOSTRING) {
                         LhatNative *native =
                             lhat_native_new(&m->objects, bare, registers[b]);

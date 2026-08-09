@@ -72,7 +72,7 @@ typedef struct LhatTypeMember {
     bool optional;
     // 02 の 14.15: declared by an abstract^ and not yet provided. The shape
     // is the same either way -- what a caller may ask of the member does not
-    // change -- so the relations do not read this. 14.11's new^ does: a
+    // change -- so the relations do not read this. 14.11's new does: a
     // definition still holding one cannot be instantiated.
     bool abstract;
     // 02 の 14.15改: written with an override^ that has not met what it

@@ -798,7 +798,7 @@ static LhatNode *parse_table(Parser *p)
 }
 
 // 14.6 and 14.11: one spelling, two readings decided by where it stands. In
-// the body of a def^ it declares the fields an instance gets; inside new^ it
+// the body of a def^ it declares the fields an instance gets; inside new it
 // fills them in. Both name the fields of an instance, so the parser keeps
 // them as one node and lets the position speak.
 static LhatNode *parse_self_table(Parser *p)

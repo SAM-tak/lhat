@@ -23,7 +23,7 @@ typedef struct Binding {
     uint32_t offset;
     bool reached;  // its let^ has been walked past
     // 15.1改: bound to a table this scope's own code made -- a literal or a
-    // 14.11 new^ -- rather than to one that arrived from somewhere else. An
+    // 14.11 new -- rather than to one that arrived from somewhere else. An
     // f^ may change the first and not the second, and reading it off the
     // initialiser's shape is what keeps that decidable without following
     // aliases: 'let^ v = t' binds a name, not a new table, so it is false.
@@ -293,9 +293,13 @@ static void report_named(Checker *c, const LhatNode *at,
 // The text of an IDENT, HAT_IDENT or TYPE_NAME node. Names live as spans into
 // the source, so nothing is copied.
 //
-// The trailing hats are not part of the name. 01 の 2.3 has the lexer count
-// them and keep them on the token, so 'number^' arrives with a length that
-// covers the '^' as well; comparing against the word means dropping them.
+// 01 の 2.3改 (S34): the hat is part of the name -- 'self^' is a different
+// name from 'self'. A spelling with more hats than one is the same name
+// reached further out (super^^^ is the super^ two levels up), so the
+// canonical name is the word plus one hat at most, and the count stays on
+// the node for the constructs that stack. vm.c's node_name is the same rule
+// on the other side, and the two have to agree exactly: what the checker
+// looks a member up under is the string the machine will use as a key.
 static bool node_name(const Checker *c, const LhatNode *node,
                       const char **text, size_t *length)
 {
@@ -305,19 +309,23 @@ static bool node_name(const Checker *c, const LhatNode *node,
     switch (node->kind) {
         case LHAT_NODE_IDENT:
         case LHAT_NODE_HAT_IDENT:
-        case LHAT_NODE_TYPE_NAME:
+        case LHAT_NODE_TYPE_NAME: {
             *text = c->lexer->source->text + node->v.name.offset;
-            *length = node->v.name.length >= node->v.name.hats
-                          ? node->v.name.length - node->v.name.hats
-                          : node->v.name.length;
+            // The hats sit right after the word in the source, so the
+            // canonical name is the span cut after the first of them.
+            size_t word = node->v.name.length >= node->v.name.hats
+                              ? node->v.name.length - node->v.name.hats
+                              : node->v.name.length;
+            *length = node->v.name.hats > 0 ? word + 1 : word;
             return true;
+        }
         case LHAT_NODE_SCOPE:
             return node_name(c, node->v.scope.name, text, length);
         case LHAT_NODE_FOCUS:
             // 16.2: the focus with no name written is called it^, and the
             // source need not contain the word for that to be its name.
-            *text = "it";
-            *length = 2;
+            *text = "it^";
+            *length = 3;
             return true;
         default:
             return false;
@@ -338,7 +346,7 @@ static bool is_super_name(Checker *c, const LhatNode *node)
     size_t length = 0;
     return node != NULL && node->kind == LHAT_NODE_HAT_IDENT &&
            node_name(c, node, &name, &length) &&
-           name_is(name, length, "super");
+           name_is(name, length, "super^");
 }
 
 // ---------------------------------------------------------------------------
@@ -496,29 +504,29 @@ static bool receiver_is_own_coroutine(Checker *c, const LhatNode *receiver);
 // builtin spellings.
 static LhatType *builtin_type(Checker *c, const char *name, size_t length)
 {
-    if (name_is(name, length, "number") || name_is(name, length, "int") ||
-        name_is(name, length, "float")) {
+    if (name_is(name, length, "number^") || name_is(name, length, "int^") ||
+        name_is(name, length, "float^")) {
         return simple(c, LHAT_TYPE_NUMBER);
     }
-    if (name_is(name, length, "string")) {
+    if (name_is(name, length, "string^")) {
         return simple(c, LHAT_TYPE_STRING);
     }
-    if (name_is(name, length, "bool")) {
+    if (name_is(name, length, "bool^")) {
         return simple(c, LHAT_TYPE_BOOL);
     }
-    if (name_is(name, length, "nil")) {
+    if (name_is(name, length, "nil^")) {
         return simple(c, LHAT_TYPE_NIL);
     }
-    if (name_is(name, length, "any")) {
+    if (name_is(name, length, "any^")) {
         return simple(c, LHAT_TYPE_ANY);
     }
-    if (name_is(name, length, "error")) {
+    if (name_is(name, length, "error^")) {
         return simple(c, LHAT_TYPE_ERROR);
     }
     // 14.10: t^ and table^ are the same word. Bare, with no members listed,
     // it asks for nothing in particular -- the top of tables, which 13.7
     // notes is not the top of every value.
-    if (name_is(name, length, "t") || name_is(name, length, "table")) {
+    if (name_is(name, length, "t^") || name_is(name, length, "table^")) {
         return lhat_type_table(c->result->types);
     }
     return NULL;
@@ -569,7 +577,7 @@ static bool is_self_marker(const Checker *c, const LhatNode *param)
            (written->kind == LHAT_NODE_HAT_IDENT ||
             written->kind == LHAT_NODE_TYPE_NAME) &&
            node_name(c, written, &name, &length) &&
-           name_is(name, length, "self");
+           name_is(name, length, "self^");
 }
 
 static LhatType *resolve_func_type(Checker *c, const LhatNode *node)
@@ -1638,16 +1646,16 @@ static LhatType *infer_name(Checker *c, const LhatNode *node)
 
     // A few hat identifiers are values rather than names (01 の 2.2).
     if (node->kind == LHAT_NODE_HAT_IDENT) {
-        if (name_is(name, length, "true") || name_is(name, length, "false")) {
+        if (name_is(name, length, "true^") || name_is(name, length, "false^")) {
             return simple(c, LHAT_TYPE_BOOL);
         }
-        if (name_is(name, length, "nil")) {
+        if (name_is(name, length, "nil^")) {
             return simple(c, LHAT_TYPE_NIL);
         }
         // 15.10: this^ names the subroutine running, which is what lets a
         // body with no name recurse. Only the hatted spelling means it, so
         // an ordinary name `this` is untouched.
-        if (name_is(name, length, "this")) {
+        if (name_is(name, length, "this^")) {
             if (c->this_type == NULL) {
                 report(c, node, LHAT_CHECK_ERR_THIS_OUTSIDE);
                 return simple(c, LHAT_TYPE_UNKNOWN);
@@ -1660,7 +1668,7 @@ static LhatType *infer_name(Checker *c, const LhatNode *node)
         // its own it is an ordinary value, so 14.4 applies and the receiver
         // is written out; called directly it is the bound form, which
         // infer_call takes.
-        if (name_is(name, length, "super")) {
+        if (name_is(name, length, "super^")) {
             if (c->super_type == NULL) {
                 report(c, node, LHAT_CHECK_ERR_SUPER_OUTSIDE);
                 return simple(c, LHAT_TYPE_UNKNOWN);
@@ -1668,7 +1676,7 @@ static LhatType *infer_name(Checker *c, const LhatNode *node)
             return c->super_type;
         }
         // 05 の 8.6: the machine's own table, there without being imported.
-        if (name_is(name, length, "L")) {
+        if (name_is(name, length, "L^")) {
             LhatType *env = environment_type(c);
             return env != NULL ? env : simple(c, LHAT_TYPE_UNKNOWN);
         }
@@ -2165,6 +2173,29 @@ static LhatType *builtin_tostring(Checker *c, const LhatType *target)
     return lhat_type_intersect(c->result->types, plain, formatted);
 }
 
+// 14.9 with 14.17改: a table nobody made with a def^. Every name on one is
+// the writer's -- vm.c's plain_table asks the same of the value, and the two
+// have to answer alike or the checker would allow what the machine refuses.
+static bool plain_table_type(const LhatType *type)
+{
+    return type != NULL && type->kind == LHAT_TYPE_TABLE &&
+           !type->v.table.is_definition && !type->v.table.from_definition;
+}
+
+// 14.17改, 16.3改: the hat spelling always reaches the built-in. The bare one
+// does too, except where the names are the writer's -- there it is an
+// ordinary member like any other, and absent unless something was written
+// under it.
+static bool builtin_named(const char *name, size_t length, const char *word,
+                          bool hatted_only)
+{
+    size_t n = strlen(word);
+    if (length == n + 1 && name[n] == '^' && memcmp(name, word, n) == 0) {
+        return true;
+    }
+    return !hatted_only && length == n && memcmp(name, word, n) == 0;
+}
+
 static LhatType *infer_member(Checker *c, const LhatNode *node)
 {
     LhatType *target = infer(c, node->v.access.target);
@@ -2256,7 +2287,7 @@ static LhatType *infer_member(Checker *c, const LhatNode *node)
             // 12.7: it answers nothing, which is what 12.5 checks for.
             return lhat_type_func(c->result->types, advances);
         }
-        if (name_is(name, length, "iterate")) {
+        if (builtin_named(name, length, "iterate", false)) {
             LhatType *signature = lhat_type_func(c->result->types, true);
             signature->v.func.result = target;  // 16.3: itself
             return signature;
@@ -2278,7 +2309,7 @@ static LhatType *infer_member(Checker *c, const LhatNode *node)
             signature->v.func.result = simple(c, LHAT_TYPE_BOOL);
             return signature;
         }
-        if (name_is(name, length, "tostring")) {
+        if (builtin_named(name, length, "tostring", false)) {
             return builtin_tostring(c, target);  // 14.17
         }
         report_named(c, node, LHAT_CHECK_ERR_NO_MEMBER, name, length);
@@ -2286,7 +2317,7 @@ static LhatType *infer_member(Checker *c, const LhatNode *node)
     } else {
         // 14.17: nil^, bool^, number^, string^ and the rest hold no members
         // of their own, and this is the one every value answers.
-        if (name_is(name, length, "tostring")) {
+        if (builtin_named(name, length, "tostring", false)) {
             return builtin_tostring(c, target);
         }
         report_named(c, node, LHAT_CHECK_ERR_NO_MEMBER, name, length);
@@ -2311,7 +2342,7 @@ static LhatType *infer_member(Checker *c, const LhatNode *node)
     // with one over its keys without anything being written. This comes
     // after the search, not before it, because 16.3 lets a written iterate
     // win -- the same order the machine reads it in.
-    if (name_is(name, length, "iterate")) {
+    if (builtin_named(name, length, "iterate", plain_table_type(target))) {
         // 13.8 has no tuples, so a pair is a table. The walk sends nothing
         // in and ends without a value, which 04 の 11.3 spells nil^.
         //
@@ -2328,7 +2359,7 @@ static LhatType *infer_member(Checker *c, const LhatNode *node)
 
     // 14.17, the same order and for the same reason: a written tostring is
     // the one that answers, and this is what a table falls back to.
-    if (name_is(name, length, "tostring")) {
+    if (builtin_named(name, length, "tostring", plain_table_type(target))) {
         return builtin_tostring(c, target);
     }
 
@@ -2677,7 +2708,7 @@ static LhatType *infer_func(Checker *c, const LhatNode *node)
 // an instance can reach the definition's members, so its type contains them
 // as well as the fields the template declares.
 //
-//   definition : the members, plus a new^ if none was written (14.11)
+//   definition : the members, plus a new if none was written (14.11)
 //   instance   : those members, plus the template's fields
 //
 // 14.9 keeps the name out of it. Both are ordinary structures, so 11.3's
@@ -2697,7 +2728,7 @@ static const LhatTypeMember *find_member(const LhatType *table,
     return NULL;
 }
 
-// 14.11 makes new^ return an instance, so a definition's own structure is
+// 14.11 makes new return an instance, so a definition's own structure is
 // where its instance type can be found again. Composition needs it, to carry
 // the base's fields into the derived instance.
 static LhatType *instance_of(const LhatType *definition)
@@ -2762,7 +2793,7 @@ static void mark_ambiguous(LhatType *table, const char *name, size_t length)
 }
 
 // 14.15: whether the definition is still waiting on a composition. 14.11's
-// new^ is what this stands in the way of -- an abstract^ would leave a name
+// new is what this stands in the way of -- an abstract^ would leave a name
 // with nothing under it, and 14.15改's pending override^ would leave a super^
 // pointing at nothing.
 static const LhatTypeMember *unimplemented_member(const LhatType *definition)
@@ -2921,7 +2952,7 @@ static LhatType *check_same_name(Checker *c, const LhatNode *entry,
         // 14.15改: an override^ with nothing yet under the name is a mixin
         // written against a base it has not met. It is not an error -- it
         // says what the composition has to bring, and the member stays
-        // pending until something does. 14.11's new^ is what it stands in
+        // pending until something does. 14.11's new is what it stands in
         // the way of; overload^ has no such reading, since adding a way to
         // call something that is not there says nothing.
         if (modifier == LHAT_DEF_OVERLOAD) {
@@ -2991,7 +3022,7 @@ static LhatType *compose_definitions(Checker *c, const LhatNode *node,
     const LhatType *left_instance = instance_of(left);
     const LhatType *right_instance = instance_of(right);
 
-    // new^ is on both sides whether or not either wrote one (14.11), so it
+    // new is on both sides whether or not either wrote one (14.11), so it
     // would collide every time. It is rebuilt at the end instead.
     for (const LhatTypeMember *m = left->v.table.members; m != NULL;
          m = m->next) {
@@ -3160,8 +3191,8 @@ static LhatType *infer_def(Checker *c, const LhatNode *node, LhatType *base)
     members.bindings = NULL;
     members.tail = NULL;
     members.parent = c->scope;
-    Binding *receiver = scope_add(&members, "self", 4, instance, node->offset);
-    Binding *owner = scope_add(&members, "class", 5, definition, node->offset);
+    Binding *receiver = scope_add(&members, "self^", 5, instance, node->offset);
+    Binding *owner = scope_add(&members, "class^", 6, definition, node->offset);
     if (receiver != NULL) {
         receiver->reached = true;
     }
@@ -3225,7 +3256,7 @@ static LhatType *infer_def(Checker *c, const LhatNode *node, LhatType *base)
         }
         // 14.15改: an override^ that found nothing waits for a composition to
         // bring what it replaces. Until then super^ inside it points at
-        // nothing, so 14.11's new^ has to stay out of reach. Landing on
+        // nothing, so 14.11's new has to stay out of reach. Landing on
         // another one that is waiting settles neither.
         bool pending = entry->v.entry.modifier == LHAT_DEF_OVERRIDE &&
                        (hidden == NULL || hidden->pending);
@@ -3239,7 +3270,7 @@ static LhatType *infer_def(Checker *c, const LhatNode *node, LhatType *base)
     c->scope = outer;
     scope_dispose(&members);
 
-    // 14.11: without one written, a definition still offers a new^ taking no
+    // 14.11: without one written, a definition still offers a new taking no
     // arguments, since the template already fixes every field's value.
     //
     // An inherited one keeps its parameters but has to build the derived
@@ -3308,13 +3339,13 @@ static LhatType *infer(Checker *c, const LhatNode *node)
 
         case LHAT_NODE_SELF_TABLE: {
             // 14.11: in the body of a def^ this declares the fields, and
-            // inside new^ it builds one. Either way it names the instance,
+            // inside new it builds one. Either way it names the instance,
             // which is what self^ is bound to.
             for (const LhatNode *field = node->v.list.items; field != NULL;
                  field = field->next) {
                 infer(c, field->v.entry.value);
             }
-            Binding *receiver = scope_find(c->scope, "self", 4);
+            Binding *receiver = scope_find(c->scope, "self^", 5);
             return receiver != NULL ? receiver->type
                                     : simple(c, LHAT_TYPE_UNKNOWN);
         }
@@ -3698,7 +3729,7 @@ static bool is_environment(const Checker *c, const LhatNode *node)
     const char *name = NULL;
     size_t length = 0;
     return node->kind == LHAT_NODE_HAT_IDENT &&
-           node_name(c, node, &name, &length) && name_is(name, length, "L");
+           node_name(c, node, &name, &length) && name_is(name, length, "L^");
 }
 
 // What L^ carries. vm.c's build_environment makes the values; the two lists
@@ -4275,7 +4306,7 @@ static void check_require_stmt(Checker *c, const LhatNode *node)
 
 // 15.1改: whether this initialiser makes a table rather than naming one that
 // was already there. Read off the shape alone, so that no aliases have to be
-// followed: 'let^ v = t' names a table, and a call that is not a new^ may well
+// followed: 'let^ v = t' names a table, and a call that is not a new may well
 // answer one of its arguments ('f^ t { return^ t }' is a function like any
 // other), so neither counts.
 static bool value_is_fresh(const Checker *c, const LhatNode *value,
@@ -4293,11 +4324,11 @@ static bool value_is_fresh(const Checker *c, const LhatNode *value,
         case LHAT_NODE_CALL: {
             // 15.5: calling a yieldable subroutine builds a coroutine, and
             // builds a new one every time -- the call is what makes it, so
-            // 15.3改 counts it the way 14.11's new^ is counted below.
+            // 15.3改 counts it the way 14.11's new is counted below.
             if (type != NULL && type->kind == LHAT_TYPE_CORO) {
                 return true;
             }
-            // 14.11: 'X.new^()' answers an instance nobody else holds yet.
+            // 14.11: 'X.new()' answers an instance nobody else holds yet.
             const LhatNode *callee = value->v.access.target;
             if (callee == NULL || callee->kind != LHAT_NODE_MEMBER) {
                 return false;
@@ -4617,7 +4648,7 @@ static LhatType *walk_produce(Checker *c, const LhatNode *at, LhatType *over)
         return over->v.coroutine.produce;
     }
 
-    const LhatTypeMember *written = member_named(over, "iterate", 7);
+    const LhatTypeMember *written = member_named(over, "iterate^", 8);
     if (written != NULL) {
         // 16.3 lets a written iterate win, so this comes before the built-in.
         LhatType *answer = written->type;

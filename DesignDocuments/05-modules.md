@@ -32,7 +32,7 @@
 
 ```lhat
 let^ Foo = def^{ self^{ v := 1 } }
-let^ x : Foo = Foo.new^()          # 誤り。Foo という型はない
+let^ x : Foo = Foo.new()          # 誤り。Foo という型はない
 ```
 
 02 の 14.9 は **「定義の右辺に `def^` が直接現れる場合、その名前を型の名前として採る」**
@@ -57,7 +57,7 @@ let^ x : Foo = Foo.new^()          # 誤り。Foo という型はない
 「インスタンスの型は定義の構造をそのまま含む」と続けている。
 
 ```lhat
-let^ x : Foo = Foo.new^()
+let^ x : Foo = Foo.new()
 ```
 
 `Foo` は値としては **定義**、型としては **そのインスタンス** を意味する。
@@ -352,7 +352,7 @@ require^ "src/geometry.lt"                      # 名乗ったパスに入る
 
 ```lhat
 let^ g = require^ "lib/geometry.lt"
-let^ p : g.Point = g.Point.new^()
+let^ p : g.Point = g.Point.new()
 g.dist(p, "text")                    # 型の誤りとして報告される
 ```
 
@@ -400,7 +400,7 @@ public^ let^ Point = def^{ self^{ x := 0, y := 0 } }
 
 ```lhat
 let^ m = require^ "lib/module1.lt"
-let^ p = m.Point.new^()
+let^ p = m.Point.new()
 print(typeof^(p))          # namespace1.module1.Point
 ```
 
@@ -1040,7 +1040,7 @@ let^ f = f^ n:number^ -> shapes.Foo {
 
 #### 構築は普通の関数である［確定］
 
-`new^`（14 章）は `def^` のための機構であり、ホスト型には載せない。
+`new`（14 章）は `def^` のための機構であり、ホスト型には載せない。
 Lua の `io.open` と同じく、モジュールの関数が作る。記法を増やさずに済む。
 
 ```lhat

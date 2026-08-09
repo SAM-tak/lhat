@@ -76,7 +76,11 @@ typedef enum {
 
     // 02 の 14 章: the one data structure. 04 の 11.3 makes a missing key
     // nil^ rather than a failure, so GETINDEX cannot fail on that account.
-    LHAT_BC_NEWTABLE,   // A     R[A] = { }
+    LHAT_BC_NEWTABLE,   // A B   R[A] = { }. B != 0 marks it a definition
+                        //       (14.9), which is what tells a def^ apart from
+                        //       a table written by hand -- the two are the
+                        //       same structure otherwise, and 14.17改 asks
+                        //       which one it is
     LHAT_BC_GETINDEX,   // A B C R[A] = R[B][R[C]]
     LHAT_BC_SETINDEX,   // A B C R[A][R[B]] = R[C]
     LHAT_BC_ADDOVERLOAD,// A B C R[A][R[B]] gains R[C] as another way to call it

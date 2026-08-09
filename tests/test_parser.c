@@ -2459,12 +2459,12 @@ static void test_definitions(void)
     }
     parse_dispose(&p);
 
-    // 14.11: the same spelling builds an instance inside new^.
-    LHAT_TEST("self^{ ... } inside new^");
+    // 14.11: the same spelling builds an instance inside new.
+    LHAT_TEST("self^{ ... } inside new");
     parse_text(&p,
                "FooBar := def^{\n"
                "    self^{ value1 := 0, value2 := '' },\n"
-               "    new^ := f^v1:number^, v2:string^ {\n"
+               "    new := f^v1:number^, v2:string^ {\n"
                "        return^ self^{ value1 := v1 }\n"
                "    },\n"
                "}");

@@ -81,6 +81,13 @@ typedef struct LhatTable {
     // metatable, which 14.1 refuses.
     const struct LhatTable *definition;
 
+    // 14.9: made by a def^ rather than written as a table literal. `definition`
+    // above answers the same question for an instance, and this is the other
+    // half -- the definition itself is a table nothing points at that way.
+    // Neither takes part in conformance (11.3 keeps identity structural);
+    // 14.17改 reads both, to know whether the member names are the writer's.
+    bool is_definition;
+
     // 05 の 8.6改 (M5): the machine's own -- L^, its registry, and what
     // require^ or import^ answers with. The checker refuses what is written
     // against one directly, but a table reaches a p^ through a parameter

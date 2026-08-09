@@ -1240,23 +1240,23 @@ static void test_definitions(void)
                "    self^{ value := 0, label := \"\" },\n"
                "    show := p^self^ { },\n"
                "}\n"
-               "var^ c = C.new^()\n"
+               "var^ c = C.new()\n"
                "var^ n : number^ = c.value\n"
                "var^ s : string^ = c.label\n"
                "c.show()\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // 14.11: a definition without one still offers a new^ taking nothing.
-    LHAT_TEST("new^ exists without being written");
-    check_text(&u, "var^ C = def^{ self^{ v := 1 } }\nvar^ c = C.new^()\n");
+    // 14.11: a definition without one still offers a new taking nothing.
+    LHAT_TEST("new exists without being written");
+    check_text(&u, "var^ C = def^{ self^{ v := 1 } }\nvar^ c = C.new()\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
     LHAT_TEST("a field the definition does not declare is reported");
     check_text(&u,
                "var^ C = def^{ self^{ v := 1 } }\n"
-               "var^ c = C.new^()\n"
+               "var^ c = C.new()\n"
                "var^ x = c.missing\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_NO_MEMBER);
     unit_dispose(&u);
@@ -1291,7 +1291,7 @@ static void test_definitions(void)
                "    self^{ v := 0 },\n"
                "    bump := p^self^, step:number^ { },\n"
                "}\n"
-               "var^ c = C.new^()\n"
+               "var^ c = C.new()\n"
                "c.bump(1)\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
@@ -1302,7 +1302,7 @@ static void test_definitions(void)
                "    self^{ v := 0 },\n"
                "    bump := p^self^, step:number^ { },\n"
                "}\n"
-               "var^ c = C.new^()\n"
+               "var^ c = C.new()\n"
                "c.bump(\"text\")\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
@@ -1313,7 +1313,7 @@ static void test_definitions(void)
                "    self^{ v := 0 },\n"
                "    bump := p^self^, step:number^ { },\n"
                "}\n"
-               "var^ c = C.new^()\n"
+               "var^ c = C.new()\n"
                "c.bump()\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_ARITY);
     unit_dispose(&u);
@@ -1326,7 +1326,7 @@ static void test_definitions(void)
                "    self^{ v := 0 },\n"
                "    bump := p^self^, step:number^ { },\n"
                "}\n"
-               "var^ c = C.new^()\n"
+               "var^ c = C.new()\n"
                "var^ bump = C.bump\n"
                "bump(c, 1)\n");
     CHECK_CLEAN(&u);
@@ -1340,7 +1340,7 @@ static void test_definitions(void)
                "    self^{ v := 0 },\n"
                "    bump := p^self^, step:number^ { },\n"
                "}\n"
-               "var^ c = C.new^()\n"
+               "var^ c = C.new()\n"
                "(C.bump)(c, 1)\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_ARITY);
     unit_dispose(&u);
@@ -1353,8 +1353,8 @@ static void test_definitions(void)
                "    self^{ v := 0 },\n"
                "    bump := p^self^, step:number^ { },\n"
                "}\n"
-               "var^ x = C.new^()\n"
-               "var^ y = C.new^()\n"
+               "var^ x = C.new()\n"
+               "var^ y = C.new()\n"
                "(if^ true^: x el^: y;).bump(1)\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
@@ -1364,14 +1364,14 @@ static void test_definitions(void)
     LHAT_TEST("with^ accepts a value that has dispose()");
     check_text(&u,
                "var^ C = def^{ self^{ v := 1 }, dispose := p^self^ { } }\n"
-               "with^ c = C.new^() { }\n");
+               "with^ c = C.new() { }\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
     LHAT_TEST("with^ refuses a value without one");
     check_text(&u,
                "var^ C = def^{ self^{ v := 1 } }\n"
-               "with^ c = C.new^() { }\n");
+               "with^ c = C.new() { }\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_NOT_DISPOSABLE);
     unit_dispose(&u);
 
@@ -1381,7 +1381,7 @@ static void test_definitions(void)
                "    self^{ v := 1 },\n"
                "    dispose := f^self^ -> number^ { return^ 0 },\n"
                "}\n"
-               "with^ c = C.new^() { }\n");
+               "with^ c = C.new() { }\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_NOT_DISPOSABLE);
     unit_dispose(&u);
 
@@ -1390,7 +1390,7 @@ static void test_definitions(void)
     LHAT_TEST("the structural form of a disposable resolves");
     check_text(&u,
                "var^ C = def^{ self^{ v := 1 }, dispose := p^self^ { } }\n"
-               "var^ c = C.new^()\n"
+               "var^ c = C.new()\n"
                "var^ d : t^{ dispose : p^self^; } = c\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
@@ -1401,7 +1401,7 @@ static void test_definitions(void)
     LHAT_TEST("a definition's name works as a type");
     check_text(&u,
                "var^ Foo = def^{ self^{ v := 1 } }\n"
-               "var^ x : Foo = Foo.new^()\n");
+               "var^ x : Foo = Foo.new()\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
@@ -1410,7 +1410,7 @@ static void test_definitions(void)
     LHAT_TEST("as a type the name means an instance");
     check_text(&u,
                "var^ Foo = def^{ self^{ v := 1 } }\n"
-               "var^ x : Foo = Foo.new^()\n"
+               "var^ x : Foo = Foo.new()\n"
                "var^ n : number^ = x.v\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
@@ -1438,8 +1438,8 @@ static void test_definitions(void)
                "var^ A = def^{ self^{ v := 0 } }\n"
                "var^ B = def^{ self^{ v := 0 } }\n"
                "var^ take = p^ x:t^{ v : number^ } { }\n"
-               "take(A.new^())\n"
-               "take(B.new^())\n");
+               "take(A.new())\n"
+               "take(B.new())\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 }
@@ -1463,7 +1463,7 @@ static void test_composition(void)
         char text[1024];
         snprintf(text, sizeof text, "%s%s", base,
                  "var^ Bar = Foo .. def^{ self^{ b := 0 }, extra := p^self^ { } }\n"
-                 "var^ o = Bar.new^()\n"
+                 "var^ o = Bar.new()\n"
                  "var^ x : number^ = o.a\n"
                  "var^ y : number^ = o.b\n"
                  "o.bar()\n"
@@ -1552,12 +1552,12 @@ static void test_composition(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    LHAT_TEST("and stands in the way of new^ until one comes");
+    LHAT_TEST("and stands in the way of new until one comes");
     {
         char text[1024];
         snprintf(text, sizeof text, "%s%s", base,
                  "var^ Bar = Foo .. def^{ self^{}, override^ nope := p^self^ { } }\n"
-                 "var^ o = Bar.new^()\n");
+                 "var^ o = Bar.new()\n");
         check_text(&u, text);
     }
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_STILL_ABSTRACT);
@@ -1585,7 +1585,7 @@ static void test_composition(void)
                  "    self^{},\n"
                  "    overload^ bar := p^self^, n:number^ { },\n"
                  "}\n"
-                 "var^ o = Bar.new^()\n"
+                 "var^ o = Bar.new()\n"
                  "o.bar()\n"
                  "o.bar(1)\n");
         check_text(&u, text);
@@ -1628,7 +1628,7 @@ static void test_composition(void)
                  "    self^{},\n"
                  "    override^ bar := p^self^, n:number^ { },\n"
                  "}\n"
-                 "var^ o = Baz.new^()\n"
+                 "var^ o = Baz.new()\n"
                  "o.bar()\n"
                  "o.bar(1)\n");
         check_text(&u, text);
@@ -1677,12 +1677,12 @@ static void test_composition(void)
 
     // 14.5 composes to make something new, so a constructor inherited from
     // the base still has to build the derived instance.
-    LHAT_TEST("new^ builds the derived instance");
+    LHAT_TEST("new builds the derived instance");
     {
         char text[1024];
         snprintf(text, sizeof text, "%s%s", base,
                  "var^ Bar = Foo .. def^{ self^{ b := \"\" } }\n"
-                 "var^ s : string^ = Bar.new^().b\n");
+                 "var^ s : string^ = Bar.new().b\n");
         check_text(&u, text);
     }
     CHECK_CLEAN(&u);
@@ -1713,7 +1713,7 @@ static void test_composition(void)
         char text[1024];
         snprintf(text, sizeof text, "%s%s", parts,
                  "var^ D = A .. B\n"
-                 "var^ o = D.new^()\n"
+                 "var^ o = D.new()\n"
                  "var^ p : number^ = o.x\n"
                  "var^ q : string^ = o.y\n");
         check_text(&u, text);
@@ -1729,7 +1729,7 @@ static void test_composition(void)
         snprintf(text, sizeof text, "%s%s", parts,
                  "var^ D = A .. B .. def^{ self^{ z := true^ },\n"
                  "                         c := f^ -> number^ { return^ 3 } }\n"
-                 "var^ o = D.new^()\n"
+                 "var^ o = D.new()\n"
                  "var^ p : number^ = o.x\n"
                  "var^ q : string^ = o.y\n"
                  "var^ r : bool^ = o.z\n"
@@ -1756,7 +1756,7 @@ static void test_composition(void)
                "var^ A = def^{ self^{}, m := f^ -> number^ { return^ 1 } }\n"
                "var^ B = def^{ self^{}, m := f^ -> number^ { return^ 2 } }\n"
                "var^ D = A .. B\n"
-               "var^ r : number^ = D.new^().m()\n");
+               "var^ r : number^ = D.new().m()\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_AMBIGUOUS_MEMBER);
     unit_dispose(&u);
 
@@ -1769,7 +1769,7 @@ static void test_composition(void)
                "var^ D = A .. B\n"
                "var^ fromA = A.m\n"
                "var^ fromB = B.m\n"
-               "var^ o = D.new^()\n"
+               "var^ o = D.new()\n"
                "var^ x : number^ = fromA(o)\n"
                "var^ y : number^ = fromB(o)\n");
     CHECK_CLEAN(&u);
@@ -1781,7 +1781,7 @@ static void test_composition(void)
                "  only := f^ -> number^ { return^ 9 } }\n"
                "var^ B = def^{ self^{}, m := f^ -> number^ { return^ 2 } }\n"
                "var^ D = A .. B\n"
-               "var^ r : number^ = D.new^().only()\n");
+               "var^ r : number^ = D.new().only()\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
@@ -1807,7 +1807,7 @@ static void test_composition(void)
                "  b := f^self^ -> number^ { return^ self^.v } }\n"
                "var^ Host = def^{ self^{ v := 3 } }\n"
                "var^ D = Host .. A .. B\n"
-               "var^ r : number^ = D.new^().a()\n");
+               "var^ r : number^ = D.new().a()\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
@@ -1869,7 +1869,7 @@ static void test_composition(void)
                "    self^{},\n"
                "    step := f^ -> number^ { return^ 10 },\n"
                "}\n"
-               "var^ o = Fast.new^()\n");
+               "var^ o = Fast.new()\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
@@ -1878,7 +1878,7 @@ static void test_composition(void)
     LHAT_TEST("and a definition still holding one cannot be instantiated");
     check_text(&u,
                "var^ Counting = def^{ self^{}, abstract^ step : f^ -> number^; }\n"
-               "var^ o = Counting.new^()\n");
+               "var^ o = Counting.new()\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_STILL_ABSTRACT);
     unit_dispose(&u);
 
@@ -1889,7 +1889,7 @@ static void test_composition(void)
                "var^ A = def^{ self^{}, abstract^ m : f^ -> number^; }\n"
                "var^ B = A .. def^{ self^{},\n"
                "  m := f^ -> number^ { return^ 1 } }\n"
-               "var^ o = B.new^()\n");
+               "var^ o = B.new()\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
@@ -1926,14 +1926,14 @@ static void test_composition(void)
                "    hello := f^self^ -> number^ { return^ self^.n + 1 },\n"
                "}\n"
                "var^ Thing = Greet .. def^{ self^{ n := 10 } }\n"
-               "var^ r : number^ = Thing.new^().hello()\n");
+               "var^ r : number^ = Thing.new().hello()\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
     LHAT_TEST("and one left unfilled stops the construction too");
     check_text(&u,
                "var^ Greet = def^{ self^{ abstract^ n : number^ } }\n"
-               "var^ o = Greet.new^()\n");
+               "var^ o = Greet.new()\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_STILL_ABSTRACT);
     unit_dispose(&u);
 
@@ -1944,7 +1944,7 @@ static void test_composition(void)
                "var^ Need = def^{ self^{}, abstract^ m : f^ -> number^; }\n"
                "var^ Give = def^{ self^{}, m := f^ -> number^ { return^ 7 } }\n"
                "var^ D = Need .. Give\n"
-               "var^ r : number^ = D.new^().m()\n");
+               "var^ r : number^ = D.new().m()\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
@@ -1959,7 +1959,7 @@ static void test_composition(void)
                "  override^ run := p^self^ { self^.n := self^.n + 10\n"
                "                             super^() } }\n"
                "var^ App = Base .. Logged\n"
-               "var^ o = App.new^()\n"
+               "var^ o = App.new()\n"
                "o.run()\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
@@ -1973,18 +1973,18 @@ static void test_composition(void)
                "var^ B = def^{ self^{ abstract^ n : number^ },\n"
                "  override^ run := p^self^ { super^() } }\n"
                "var^ App = Base .. A .. B\n"
-               "var^ o = App.new^()\n");
+               "var^ o = App.new()\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
     // Stacking two settles neither -- the chain still wants something under
-    // them both, so new^ stays out of reach.
+    // them both, so new stays out of reach.
     LHAT_TEST("but stacking two does not settle either");
     check_text(&u,
                "var^ A = def^{ self^{}, override^ run := p^self^ { super^() } }\n"
                "var^ B = def^{ self^{}, override^ run := p^self^ { super^() } }\n"
                "var^ X = A .. B\n"
-               "var^ o = X.new^()\n");
+               "var^ o = X.new()\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_STILL_ABSTRACT);
     unit_dispose(&u);
 
@@ -1999,9 +1999,9 @@ static void test_composition(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_NOT_SUBSTITUTABLE);
     unit_dispose(&u);
 
-    // 14.11 gives every definition a new^ whether or not one was written, so
+    // 14.11 gives every definition a new whether or not one was written, so
     // the two always carry that name. It is rebuilt rather than collided.
-    LHAT_TEST("the synthesised new^ is not a collision");
+    LHAT_TEST("the synthesised new is not a collision");
     {
         char text[1024];
         snprintf(text, sizeof text, "%s%s", parts, "var^ D = A .. B\n");
@@ -2056,7 +2056,7 @@ static void test_typeof(void)
     LHAT_TEST("but a def^ instance's fields still are");
     check_text(&u,
                "var^ P = def^{ self^{ x := 0 } }\n"
-               "var^ o = P.new^()\n"
+               "var^ o = P.new()\n"
                "o.x := 1\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
@@ -2175,12 +2175,13 @@ static void test_scope_specifiers(void)
     unit_dispose(&u);
 
     // 14.4 binds class^ into the scope a def^'s '{' opens, so that scope is
-    // one for a specifier to count.
+    // one for a specifier to count. 01 の 2.3改: class^ is its own name, so
+    // the outer `class` never collides and the specifier spells the hat.
     LHAT_TEST("a def^ body is one scope too");
     check_text(&u,
                "var^ class = 1\n"
                "var^ D = def^{ self^{},\n"
-               "  m := f^self^ -> t^{} { return^ $^class }\n"
+               "  m := f^self^ -> t^{} { return^ $^class^ }\n"
                "}\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
@@ -2230,7 +2231,7 @@ static void test_tostring(void)
                "var^ b : string^ = true^.tostring()\n"
                "var^ c : string^ = (1).tostring()\n"
                "var^ d : string^ = \"x\".tostring()\n"
-               "var^ e : string^ = { n := 1 }.tostring()\n");
+               "var^ e : string^ = { n := 1 }.tostring^()\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
@@ -2265,6 +2266,41 @@ static void test_tostring(void)
                "var^ t = { tostring := f^self^ -> number^ { return^ 1 } }\n"
                "var^ n : number^ = t.tostring()\n");
     CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // 14.17改: on a table the writer wrote, the bare name is the writer's
+    // and holds nothing until something is written under it. The checker has
+    // to say the same as the machine, or it would pass what the machine
+    // answers nil^ for.
+    LHAT_TEST("a plain table holds no bare tostring");
+    check_text(&u, "var^ t = { n := 1 }\nvar^ s : string^ = t.tostring()\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_NO_MEMBER);
+    unit_dispose(&u);
+
+    LHAT_TEST("and answers the hat spelling instead");
+    check_text(&u, "var^ t = { n := 1 }\nvar^ s : string^ = t.tostring^()\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("an instance answers either spelling");
+    check_text(&u,
+               "var^ P = def^{ self^{ x := 1 } }\n"
+               "var^ a : string^ = P.new().tostring()\n"
+               "var^ b : string^ = P.new().tostring^()\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("and so does the definition itself");
+    check_text(&u,
+               "var^ P = def^{ self^{ x := 1 } }\n"
+               "var^ s : string^ = P.tostring()\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // 16.3改: the same split, for the name in^ asks for.
+    LHAT_TEST("a plain table holds no bare iterate either");
+    check_text(&u, "var^ t = { 1, 2 }\nvar^ w = t.iterate()\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_NO_MEMBER);
     unit_dispose(&u);
 }
 
@@ -2663,7 +2699,7 @@ static void test_modules(void)
     lib.expected_path = "lib/geometry.lh";
     check_against(&u, &lib, provider,
                   "var^ g = require^ \"lib/geometry.lh\"\n"
-                  "var^ p : g.Point = g.Point.new^()\n"
+                  "var^ p : g.Point = g.Point.new()\n"
                   "var^ n : number^ = p.x\n");
     CHECK_CLEAN(&u);
     check_against_dispose(&u, &lib);
@@ -2903,7 +2939,7 @@ static void test_coroutines(void)
     LHAT_TEST("and a def^ instance takes no new member");
     check_text(&u,
                "var^ P = def^{ self^{ x := 0 } }\n"
-               "var^ p = P.new^()\n"
+               "var^ p = P.new()\n"
                "var^ p.y = 1\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_PATH_IS_DEFINITION);
     unit_dispose(&u);
@@ -2980,7 +3016,7 @@ static void test_coroutines(void)
     LHAT_TEST("a table carries the built-in iterate");
     check_text(&u,
                "var^ t = { 1, 2 }\n"
-               "var^ w = t.iterate()\n"
+               "var^ w = t.iterate^()\n"
                "var^ d : bool^ = w.done()\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
@@ -2989,14 +3025,14 @@ static void test_coroutines(void)
     LHAT_TEST("and the walk yields a table");
     check_text(&u,
                "var^ t = { 1, 2 }\n"
-               "var^ pair : t^{} |nil^ = t.iterate().start()\n");
+               "var^ pair : t^{} |nil^ = t.iterate^().start()\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
     LHAT_TEST("and it is not the values the table holds");
     check_text(&u,
                "var^ t = { 1, 2 }\n"
-               "var^ pair : number^|nil^ = t.iterate().start()\n");
+               "var^ pair : number^|nil^ = t.iterate^().start()\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
@@ -3004,8 +3040,8 @@ static void test_coroutines(void)
     // reached once the search for a written member has failed.
     LHAT_TEST("a written iterate wins over the built-in one");
     check_text(&u,
-               "var^ t = { iterate := f^ { return^ p^ { yield^ 9 }() } }\n"
-               "var^ v : number^|nil^ = t.iterate().start()\n");
+               "var^ t = { iterate^ := f^ { return^ p^ { yield^ 9 }() } }\n"
+               "var^ v : number^|nil^ = t.iterate^().start()\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
@@ -3582,11 +3618,11 @@ static void test_purity(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    LHAT_TEST("and one a new^ answered with");
+    LHAT_TEST("and one a new answered with");
     check_text(&u,
                "var^ P = def^{ self^{ x := 0 } }\n"
                "var^ f = f^ -> number^ {\n"
-               "    var^ u = P.new^()\n"
+               "    var^ u = P.new()\n"
                "    u.x := 1\n"
                "    return^ u.x\n"
                "}\n");
@@ -3675,7 +3711,7 @@ static void test_purity(void)
                "    self^{},\n"
                "    overload^ bar := p^self^, n:number^ { },\n"
                "}\n"
-               "var^ o = B.new^()\n"
+               "var^ o = B.new()\n"
                "var^ f = f^ { o.bar() }\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_FUNCTION_CALLS_PROCEDURE);
     unit_dispose(&u);
@@ -3808,7 +3844,7 @@ static void test_walking(void)
 
     LHAT_TEST("a written iterate is what the walk comes from");
     check_text(&u,
-               "var^ t = { iterate := f^ { return^ p^ { yield^ 9 }() } }\n"
+               "var^ t = { iterate^ := f^ { return^ p^ { yield^ 9 }() } }\n"
                "for^ v in^ t { var^ s : string^ = v }\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
@@ -3817,12 +3853,12 @@ static void test_walking(void)
     check_text(&u,
                "var^ Range = def^{\n"
                "  self^{ upto := 0 },\n"
-               "  new^ := f^ n { return^ self^{ upto := n } },\n"
-               "  iterate := f^self^ {\n"
+               "  new := f^ n { return^ self^{ upto := n } },\n"
+               "  iterate^ := f^self^ {\n"
                "    return^ p^ { yield^ 1 }()\n"
                "  },\n"
                "}\n"
-               "for^ v in^ Range.new^(4) { var^ n : number^ = v }\n");
+               "for^ v in^ Range.new(4) { var^ n : number^ = v }\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
@@ -3835,7 +3871,7 @@ static void test_walking(void)
 
     LHAT_TEST("and so is an iterate that answers something else");
     check_text(&u,
-               "var^ t = { iterate := f^ -> number^ { return^ 1 } }\n"
+               "var^ t = { iterate^ := f^ -> number^ { return^ 1 } }\n"
                "for^ x in^ t { var^ n = x }\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_NOT_COROUTINE);
     unit_dispose(&u);
@@ -4288,7 +4324,7 @@ static void test_no_value(void)
                "  self^{ x := 0 },\n"
                "  op^.. := f^self^, other:string^ -> string^ { return^ other },\n"
                "}\n"
-               "var^ v = Vec.new^()\n"
+               "var^ v = Vec.new()\n"
                "var^ s : string^ = v .. \"a\"\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
@@ -4299,7 +4335,7 @@ static void test_no_value(void)
                "  self^{ x := 0 },\n"
                "  op^.. := f^self^, other:string^ -> string^ { return^ other },\n"
                "}\n"
-               "var^ v = Vec.new^()\n"
+               "var^ v = Vec.new()\n"
                "var^ n : number^ = v .. \"a\"\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
@@ -4312,7 +4348,7 @@ static void test_no_value(void)
                "  self^{ x := 0 },\n"
                "  op^.. := f^self^, other:string^ -> string^ { return^ other },\n"
                "}\n"
-               "var^ v = Vec.new^()\n"
+               "var^ v = Vec.new()\n"
                "var^ s = v .. 1\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_NO_OPERATOR);
     unit_dispose(&u);
@@ -4332,7 +4368,7 @@ static void test_no_value(void)
                "  self^{ n := 0 },\n"
                "  op^+ := f^self^, o:number^ -> string^ { return^ \"x\" },\n"
                "}\n"
-               "var^ v = Vec.new^()\n"
+               "var^ v = Vec.new()\n"
                "var^ s : string^ = v + 1\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
@@ -4343,7 +4379,7 @@ static void test_no_value(void)
                "  self^{ n := 0 },\n"
                "  op^+ := f^self^, o:number^ -> number^ { return^ o },\n"
                "}\n"
-               "var^ v = Vec.new^()\n"
+               "var^ v = Vec.new()\n"
                "var^ n = v + \"a\"\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_NO_OPERATOR);
     unit_dispose(&u);
@@ -4420,7 +4456,7 @@ static void test_no_value(void)
                "var^ B = def^{ self^{},\n"
                "  op^.. := f^self^, o:string^ -> string^ { return^ o } }\n"
                "var^ D = B .. def^{ self^{} }\n"
-               "var^ s : string^ = D.new^() .. \"x\"\n");
+               "var^ s : string^ = D.new() .. \"x\"\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
@@ -4431,7 +4467,7 @@ static void test_no_value(void)
                "var^ D = B .. def^{ self^{},\n"
                "  override^ op^.. := f^self^, o:string^|number^ -> string^ {\n"
                "    return^ \"d\" } }\n"
-               "var^ s : string^ = D.new^() .. 1\n");
+               "var^ s : string^ = D.new() .. 1\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
@@ -4465,7 +4501,7 @@ static void test_no_value(void)
                "  op^.. := f^self^, o:string^ -> string^ { return^ o },\n"
                "  overload^ op^.. := f^self^, o:number^ -> number^ { return^ o },\n"
                "}\n"
-               "var^ v = Vec.new^()\n"
+               "var^ v = Vec.new()\n"
                "var^ s : string^ = v .. \"a\"\n"
                "var^ n : number^ = v .. 1\n");
     CHECK_CLEAN(&u);
@@ -4836,7 +4872,7 @@ static void test_immutable_bindings(void)
                "    self^{ v := 1 },\n"
                "    dispose := p^self^ { },\n"
                "}\n"
-               "with^ c = C.new^() { c := C.new^() }\n");
+               "with^ c = C.new() { c := C.new() }\n");
     // The writer chose no word here, so the diagnostic offers no var^.
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_ASSIGN_TO_FORM);
     unit_dispose(&u);

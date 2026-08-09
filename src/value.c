@@ -220,12 +220,21 @@ static void write_value(Writer *w, LhatValue value, size_t depth);
 
 // 14.14: a key written as a name is the same key written as a string, so one
 // that spells an identifier is written back in the shorter form.
+//
+// 14.17改: a member's key keeps its hats (01 の 2.3's exception), and 01 の
+// 2.3 makes a word with them a name like any other -- so 'new' is written
+// back as 'new' rather than quoted. The hats have to be the tail of it, as
+// the lexer reads them.
 static bool spells_a_name(const LhatString *string)
 {
-    if (string->length == 0) {
+    size_t length = string->length;
+    while (length > 0 && string->text[length - 1] == '^') {
+        length--;
+    }
+    if (length == 0) {
         return false;
     }
-    for (size_t i = 0; i < string->length; i++) {
+    for (size_t i = 0; i < length; i++) {
         char c = string->text[i];
         bool letter = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
                       c == '_';

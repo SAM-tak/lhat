@@ -868,7 +868,7 @@ static void test_strings(void)
              "    return^ self^.tag .. other\n"
              "  },\n"
              "}\n"
-             "var^ v = Vec.new^()\n"
+             "var^ v = Vec.new()\n"
              "return^ v .. \"!\"\n");
     CHECK_STRING(&r, "v!");
     run_dispose(&r);
@@ -881,7 +881,7 @@ static void test_strings(void)
              "    return^ self^.tag .. other\n"
              "  },\n"
              "}\n"
-             "var^ v = Vec.new^()\n"
+             "var^ v = Vec.new()\n"
              "return^ (v .. \"!\") .. \"?\"\n");
     CHECK_STRING(&r, "v!?");
     run_dispose(&r);
@@ -894,7 +894,7 @@ static void test_strings(void)
              "  op^+ := f^self^, o:number^ -> number^ { return^ self^.n + o },\n"
              "  op^* := f^self^, o:number^ -> number^ { return^ self^.n * o },\n"
              "}\n"
-             "var^ v = Vec.new^()\n"
+             "var^ v = Vec.new()\n"
              "return^ (v + 5) * 100 + (v * 3)\n");
     CHECK_INTEGER(&r, 1530);  // 15, then 30
     run_dispose(&r);
@@ -1532,25 +1532,37 @@ static void test_for(void)
     run_text(&r,
              "var^ Range = def^{\n"
              "  self^{ upto := 0 },\n"
-             "  new^ := f^ n { return^ self^{ upto := n } },\n"
-             "  iterate := f^self^ {\n"
+             "  new := f^ n { return^ self^{ upto := n } },\n"
+             "  iterate^ := f^self^ {\n"
              "    var^ limit = self^.upto\n"
              "    return^ p^ { for^ i from^ 1 to^ limit { yield^ i } }()\n"
              "  },\n"
              "}\n"
              "var^ total = 0\n"
-             "for^ v in^ Range.new^(4) { total := total + v }\n"
+             "for^ v in^ Range.new(4) { total := total + v }\n"
              "return^ total\n");
     CHECK_INTEGER(&r, 10);
     run_dispose(&r);
 
     LHAT_TEST("a written iterate wins over the built-in one");
     run_text(&r,
-             "var^ t = { 1, 2, 3, iterate := f^ { return^ p^ { yield^ 9 }() } }\n"
+             "var^ t = { 1, 2, 3, iterate^ := f^ { return^ p^ { yield^ 9 }() } }\n"
              "var^ total = 0\n"
              "for^ v in^ t { total := total + v }\n"
              "return^ total\n");
     CHECK_INTEGER(&r, 9);
+    run_dispose(&r);
+
+    // 16.3改: what in^ asks for is the hat spelling, so a bare iterate on a
+    // table the writer wrote is a member like any other and the walk is
+    // still the built-in one.
+    LHAT_TEST("a bare iterate on a plain table is not what in^ asks for");
+    run_text(&r,
+             "var^ t = { 1, 2, 3, iterate := f^ { return^ p^ { yield^ 9 }() } }\n"
+             "var^ total = 0\n"
+             "for^ k, v in^ t { if^ v isa^ number^ { total := total + v } }\n"
+             "return^ total\n");
+    CHECK_INTEGER(&r, 6);
     run_dispose(&r);
 
     // 16.3 puts a table's iterate() on the same footing as any other
@@ -1561,7 +1573,7 @@ static void test_for(void)
     LHAT_TEST("a walk taken by hand starts like any other coroutine");
     run_text(&r,
              "var^ t = { 10, 20 }\n"
-             "var^ w = t.iterate()\n"
+             "var^ w = t.iterate^()\n"
              "var^ pair = w.start()\n"
              "return^ pair[1] * 100 + pair[2]\n");
     CHECK_INTEGER(&r, 110);  // key 1, value 10
@@ -1570,7 +1582,7 @@ static void test_for(void)
     LHAT_TEST("and resumes to the pairs after it");
     run_text(&r,
              "var^ t = { 10, 20 }\n"
-             "var^ w = t.iterate()\n"
+             "var^ w = t.iterate^()\n"
              "w.start()\n"
              "var^ pair = w.resume(nil^)\n"
              "return^ pair[1] * 100 + pair[2]\n");
@@ -1580,7 +1592,7 @@ static void test_for(void)
     LHAT_TEST("and finishes when the table runs out");
     run_text(&r,
              "var^ t = { 10 }\n"
-             "var^ w = t.iterate()\n"
+             "var^ w = t.iterate^()\n"
              "w.start()\n"
              "var^ last = w.resume(nil^)\n"
              "var^ n = last ?? 0\n"
@@ -1594,7 +1606,7 @@ static void test_for(void)
     LHAT_TEST("resuming a walk that has not started is a fault");
     run_text(&r,
              "var^ t = { 10 }\n"
-             "var^ w = t.iterate()\n"
+             "var^ w = t.iterate^()\n"
              "w.resume(nil^)\n"
              "return^ 0\n");
     LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_COROUTINE_NOT_STARTED);
@@ -1603,7 +1615,7 @@ static void test_for(void)
     LHAT_TEST("starting a walk twice is a fault");
     run_text(&r,
              "var^ t = { 10, 20 }\n"
-             "var^ w = t.iterate()\n"
+             "var^ w = t.iterate^()\n"
              "w.start()\n"
              "w.start()\n"
              "return^ 0\n");
@@ -1614,7 +1626,7 @@ static void test_for(void)
     LHAT_TEST("a walk in progress can be disposed");
     run_text(&r,
              "var^ t = { 10, 20, 30 }\n"
-             "var^ w = t.iterate()\n"
+             "var^ w = t.iterate^()\n"
              "w.start()\n"
              "w.dispose()\n"
              "return^ w.done()\n");
@@ -2462,12 +2474,12 @@ static void test_definitions(void)
 {
     Run r;
 
-    // 14.11: without a new^ of its own, a definition gets one taking no
+    // 14.11: without a new of its own, a definition gets one taking no
     // arguments that answers what the template says.
-    LHAT_TEST("the default new^ builds an instance from the template");
+    LHAT_TEST("the default new builds an instance from the template");
     run_text(&r,
              "var^ Foo = def^{ self^{ a := 1, b := 2 } }\n"
-             "var^ f = Foo.new^()\n"
+             "var^ f = Foo.new()\n"
              "return^ f.a * 10 + f.b\n");
     CHECK_INTEGER(&r, 12);
     run_dispose(&r);
@@ -2477,8 +2489,8 @@ static void test_definitions(void)
     LHAT_TEST("two instances have their own fields");
     run_text(&r,
              "var^ Foo = def^{ self^{ n := 0 } }\n"
-             "var^ a = Foo.new^()\n"
-             "var^ b = Foo.new^()\n"
+             "var^ a = Foo.new()\n"
+             "var^ b = Foo.new()\n"
              "a.n := 5\n"
              "return^ b.n\n");
     CHECK_INTEGER(&r, 0);
@@ -2490,8 +2502,8 @@ static void test_definitions(void)
     LHAT_TEST("a mutable initial value is not shared between instances");
     run_text(&r,
              "var^ Foo = def^{ self^{ items := { } } }\n"
-             "var^ a = Foo.new^()\n"
-             "var^ b = Foo.new^()\n"
+             "var^ a = Foo.new()\n"
+             "var^ b = Foo.new()\n"
              "a.items[1] := 9\n"
              "return^ b.items[1] ?? 0\n");
     CHECK_INTEGER(&r, 0);
@@ -2504,7 +2516,7 @@ static void test_definitions(void)
              "  self^{ n := 7 },\n"
              "  get := f^self^ { return^ self^.n },\n"
              "}\n"
-             "return^ Foo.new^().get()\n");
+             "return^ Foo.new().get()\n");
     CHECK_INTEGER(&r, 7);
     run_dispose(&r);
 
@@ -2514,7 +2526,7 @@ static void test_definitions(void)
              "  self^{ n := 1 },\n"
              "  add := f^self^, x { return^ self^.n + x },\n"
              "}\n"
-             "return^ Foo.new^().add(4)\n");
+             "return^ Foo.new().add(4)\n");
     CHECK_INTEGER(&r, 5);
     run_dispose(&r);
 
@@ -2524,7 +2536,7 @@ static void test_definitions(void)
              "  self^{ n := 0 },\n"
              "  bump := p^self^ { self^.n := self^.n + 1 },\n"
              "}\n"
-             "var^ f = Foo.new^()\n"
+             "var^ f = Foo.new()\n"
              "f.bump()\n"
              "f.bump()\n"
              "return^ f.n\n");
@@ -2539,7 +2551,7 @@ static void test_definitions(void)
              "  self^{ n := 3 },\n"
              "  get := f^self^ { return^ self^.n },\n"
              "}\n"
-             "var^ f = Foo.new^()\n"
+             "var^ f = Foo.new()\n"
              "var^ g = f.get\n"
              "return^ g(f)\n");
     CHECK_INTEGER(&r, 3);
@@ -2558,33 +2570,33 @@ static void test_definitions(void)
     LHAT_TEST("an instance reaches a static member");
     run_text(&r,
              "var^ Foo = def^{ self^{ }, tag := f^ { return^ 9 } }\n"
-             "return^ Foo.new^().tag()\n");
+             "return^ Foo.new().tag()\n");
     CHECK_INTEGER(&r, 9);
     run_dispose(&r);
 
-    // 14.11: new^ may fill some fields and leave the rest to the template.
-    LHAT_TEST("new^ fills what it names and the template the rest");
+    // 14.11: new may fill some fields and leave the rest to the template.
+    LHAT_TEST("new fills what it names and the template the rest");
     run_text(&r,
              "var^ Foo = def^{\n"
              "  self^{ a := 1, b := 2 },\n"
-             "  new^ := f^v { return^ self^{ a := v } },\n"
+             "  new := f^v { return^ self^{ a := v } },\n"
              "}\n"
-             "var^ f = Foo.new^(8)\n"
+             "var^ f = Foo.new(8)\n"
              "return^ f.a * 10 + f.b\n");
     CHECK_INTEGER(&r, 82);
     run_dispose(&r);
 
     // 14.11: producing a value only to overwrite it is not something an
     // initialiser should be made to do.
-    LHAT_TEST("the initialiser of a field new^ named is not evaluated");
+    LHAT_TEST("the initialiser of a field new named is not evaluated");
     run_text(&r,
              "var^ log = { n := 0 }\n"
              "var^ side = f^ { log.n := log.n + 1 return^ 0 }\n"
              "var^ Foo = def^{\n"
              "  self^{ a := side() },\n"
-             "  new^ := f^ { return^ self^{ a := 5 } },\n"
+             "  new := f^ { return^ self^{ a := 5 } },\n"
              "}\n"
-             "var^ f = Foo.new^()\n"
+             "var^ f = Foo.new()\n"
              "return^ log.n\n");
     CHECK_INTEGER(&r, 0);
     run_dispose(&r);
@@ -2597,7 +2609,7 @@ static void test_definitions(void)
              "  self^{ a := class^.base() },\n"
              "  base := f^ { return^ 6 },\n"
              "}\n"
-             "return^ Foo.new^().a\n");
+             "return^ Foo.new().a\n");
     CHECK_INTEGER(&r, 6);
     run_dispose(&r);
 
@@ -2608,7 +2620,7 @@ static void test_definitions(void)
              "  base := f^ { return^ 4 },\n"
              "  get := f^self^ { return^ class^.base() },\n"
              "}\n"
-             "return^ Foo.new^().get()\n");
+             "return^ Foo.new().get()\n");
     CHECK_INTEGER(&r, 4);
     run_dispose(&r);
 
@@ -2617,7 +2629,7 @@ static void test_definitions(void)
     run_text(&r,
              "var^ Foo = def^{ self^{ a := 1 }, one := f^ { return^ 1 } }\n"
              "var^ Bar = Foo .. def^{ self^{ b := 2 }, two := f^ { return^ 2 } }\n"
-             "var^ x = Bar.new^()\n"
+             "var^ x = Bar.new()\n"
              "return^ x.a * 1000 + x.b * 100 + x.one() * 10 + x.two()\n");
     CHECK_INTEGER(&r, 1212);
     run_dispose(&r);
@@ -2631,7 +2643,7 @@ static void test_definitions(void)
              "  override^\n"
              "  tag := f^ { return^ 2 },\n"
              "}\n"
-             "return^ Bar.new^().tag()\n");
+             "return^ Bar.new().tag()\n");
     CHECK_INTEGER(&r, 2);
     run_dispose(&r);
 
@@ -2643,7 +2655,7 @@ static void test_definitions(void)
              "  override^\n"
              "  tag := f^ { return^ 2 },\n"
              "}\n"
-             "return^ Foo.new^().tag()\n");
+             "return^ Foo.new().tag()\n");
     CHECK_INTEGER(&r, 1);
     run_dispose(&r);
 
@@ -2656,7 +2668,7 @@ static void test_definitions(void)
              "  self^{ },\n"
              "  override^ tag := f^ { return^ super^() + 100 },\n"
              "}\n"
-             "return^ Bar.new^().tag()\n");
+             "return^ Bar.new().tag()\n");
     CHECK_INTEGER(&r, 101);
     run_dispose(&r);
 
@@ -2669,7 +2681,7 @@ static void test_definitions(void)
              "  override^ m := f^ { return^ super^() + 10 } }\n"
              "var^ C = B .. def^{ self^{ },\n"
              "  override^ m := f^ { return^ super^() + 100 } }\n"
-             "return^ C.new^().m()\n");
+             "return^ C.new().m()\n");
     CHECK_INTEGER(&r, 111);
     run_dispose(&r);
 
@@ -2681,7 +2693,7 @@ static void test_definitions(void)
              "  get := f^self^ -> number^ { return^ self^.n } }\n"
              "var^ Bar = Foo .. def^{ self^{ },\n"
              "  override^ get := f^self^ -> number^ { return^ super^() * 10 } }\n"
-             "return^ Bar.new^().get()\n");
+             "return^ Bar.new().get()\n");
     CHECK_INTEGER(&r, 30);
     run_dispose(&r);
 
@@ -2696,7 +2708,7 @@ static void test_definitions(void)
              "    var^ old = super^\n"
              "    return^ old(self^) + 1\n"
              "  } }\n"
-             "return^ Bar.new^().get()\n");
+             "return^ Bar.new().get()\n");
     CHECK_INTEGER(&r, 4);
     run_dispose(&r);
 
@@ -2709,7 +2721,7 @@ static void test_definitions(void)
              "  overload^ m := f^ x:number^ { return^ x } }\n"
              "var^ C = B .. def^{ self^{ },\n"
              "  override^ m := f^ { return^ super^() + 100 } }\n"
-             "return^ C.new^().m(7)\n");
+             "return^ C.new().m(7)\n");
     CHECK_INTEGER(&r, 7);
     run_dispose(&r);
 
@@ -2720,7 +2732,7 @@ static void test_definitions(void)
              "  overload^ m := f^ x:number^ { return^ x } }\n"
              "var^ C = B .. def^{ self^{ },\n"
              "  override^ m := f^ { return^ super^() + 100 } }\n"
-             "return^ C.new^().m()\n");
+             "return^ C.new().m()\n");
     CHECK_INTEGER(&r, 101);
     run_dispose(&r);
 
@@ -2737,7 +2749,7 @@ static void test_definitions(void)
              "  self^{},\n"
              "  step := f^ -> number^ { return^ 10 },\n"
              "}\n"
-             "var^ o = Fast.new^()\n"
+             "var^ o = Fast.new()\n"
              "o.bump()\n"
              "return^ o.count\n");
     CHECK_INTEGER(&r, 10);
@@ -2752,7 +2764,7 @@ static void test_definitions(void)
              "  hello := f^self^ -> number^ { return^ self^.n + 1 },\n"
              "}\n"
              "var^ Thing = Greet .. def^{ self^{ n := 10 } }\n"
-             "return^ Thing.new^().hello()\n");
+             "return^ Thing.new().hello()\n");
     CHECK_INTEGER(&r, 11);
     run_dispose(&r);
 
@@ -2766,7 +2778,7 @@ static void test_definitions(void)
              "  override^ run := p^self^ { self^.n := self^.n + 10\n"
              "                             super^() } }\n"
              "var^ App = Base .. Logged\n"
-             "var^ o = App.new^()\n"
+             "var^ o = App.new()\n"
              "o.run()\n"
              "return^ o.n\n");
     CHECK_INTEGER(&r, 11);
@@ -2783,7 +2795,7 @@ static void test_definitions(void)
              "  override^ run := p^self^ { self^.n := self^.n + 100\n"
              "                             super^() } }\n"
              "var^ App = Base .. A .. B\n"
-             "var^ o = App.new^()\n"
+             "var^ o = App.new()\n"
              "o.run()\n"
              "return^ o.n\n");
     CHECK_INTEGER(&r, 111);
@@ -2801,8 +2813,8 @@ static void test_definitions(void)
              "var^ D = A .. B\n"
              "var^ fromA = A.m\n"
              "var^ fromB = B.m\n"
-             "var^ o = D.new^()\n"
-             "return^ fromA(o) * 100 + fromB(o) * 10 + D.new^().only()\n");
+             "var^ o = D.new()\n"
+             "return^ fromA(o) * 100 + fromB(o) * 10 + D.new().only()\n");
     CHECK_INTEGER(&r, 129);
     run_dispose(&r);
 
@@ -2812,18 +2824,18 @@ static void test_definitions(void)
     run_text(&r,
              "var^ Foo = def^{ self^{ n := 1 } }\n"
              "var^ Bar = def^{ self^{ n := 2 } }\n"
-             "return^ Foo.new^().n * 10 + Bar.new^().n\n");
+             "return^ Foo.new().n * 10 + Bar.new().n\n");
     CHECK_INTEGER(&r, 12);
     run_dispose(&r);
 
-    LHAT_TEST("a composed definition's new^ fills the base's fields too");
+    LHAT_TEST("a composed definition's new fills the base's fields too");
     run_text(&r,
              "var^ Foo = def^{ self^{ a := 1, b := 2 } }\n"
              "var^ Bar = Foo .. def^{\n"
              "  self^{ c := 3 },\n"
-             "  new^ := f^v { return^ self^{ b := v } },\n"
+             "  new := f^v { return^ self^{ b := v } },\n"
              "}\n"
-             "var^ x = Bar.new^(9)\n"
+             "var^ x = Bar.new(9)\n"
              "return^ x.a * 100 + x.b * 10 + x.c\n");
     CHECK_INTEGER(&r, 193);
     run_dispose(&r);
@@ -2839,7 +2851,7 @@ static void test_definitions(void)
              "  overload^\n"
              "  m := f^ x:string^ { return^ 2 },\n"
              "}\n"
-             "return^ Bar.new^().m()\n");
+             "return^ Bar.new().m()\n");
     CHECK_INTEGER(&r, 1);
     run_dispose(&r);
 
@@ -2851,7 +2863,7 @@ static void test_definitions(void)
              "  overload^\n"
              "  m := f^ x:string^ { return^ 2 },\n"
              "}\n"
-             "return^ Bar.new^().m(\"s\")\n");
+             "return^ Bar.new().m(\"s\")\n");
     CHECK_INTEGER(&r, 2);
     run_dispose(&r);
 
@@ -2865,7 +2877,7 @@ static void test_definitions(void)
              "  m := f^self^, o:number^ -> number^ { return^ o },\n"
              "  overload^ m := f^self^, o:string^ -> number^ { return^ 9 },\n"
              "}\n"
-             "var^ v = V.new^()\n"
+             "var^ v = V.new()\n"
              "return^ v.m(7) * 10 + v.m(\"x\")\n");
     CHECK_INTEGER(&r, 79);
     run_dispose(&r);
@@ -2876,7 +2888,7 @@ static void test_definitions(void)
              "  m := f^self^, o:number^ -> number^ { return^ o } }\n"
              "var^ Bar = Foo .. def^{ self^{},\n"
              "  overload^ m := f^self^, o:string^ -> number^ { return^ 9 } }\n"
-             "var^ v = Bar.new^()\n"
+             "var^ v = Bar.new()\n"
              "return^ v.m(7) * 10 + v.m(\"x\")\n");
     CHECK_INTEGER(&r, 79);
     run_dispose(&r);
@@ -2887,7 +2899,7 @@ static void test_definitions(void)
              "var^ B = def^{ self^{ t := \"b\" },\n"
              "  op^.. := f^self^, o:string^ -> string^ { return^ self^.t .. o } }\n"
              "var^ D = B .. def^{ self^{} }\n"
-             "return^ D.new^() .. \"x\"\n");
+             "return^ D.new() .. \"x\"\n");
     CHECK_STRING(&r, "bx");
     run_dispose(&r);
 
@@ -2898,7 +2910,7 @@ static void test_definitions(void)
              "var^ D = B .. def^{ self^{},\n"
              "  override^ op^.. := f^self^, o:string^ -> string^ {\n"
              "    return^ \"derived\" } }\n"
-             "return^ D.new^() .. \"x\"\n");
+             "return^ D.new() .. \"x\"\n");
     CHECK_STRING(&r, "derived");
     run_dispose(&r);
 
@@ -2909,7 +2921,7 @@ static void test_definitions(void)
              "var^ D = B .. def^{ self^{},\n"
              "  overload^ op^.. := f^self^, o:number^ -> string^ {\n"
              "    return^ \"n\" } }\n"
-             "var^ d = D.new^()\n"
+             "var^ d = D.new()\n"
              "return^ (d .. \"x\") .. (d .. 7)\n");
     CHECK_STRING(&r, "sn");
     run_dispose(&r);
@@ -2929,7 +2941,7 @@ static void test_definitions(void)
              "var^ V = def^{ self^{ n := 3 },\n"
              "  op^+ := f^self^, o:number^ -> t^{ n : number^ } {\n"
              "    return^ self^ } }\n"
-             "return^ (V.new^() + 1).n\n");
+             "return^ (V.new() + 1).n\n");
     CHECK_INTEGER(&r, 3);
     run_dispose(&r);
 
@@ -2942,7 +2954,7 @@ static void test_definitions(void)
              "  op^.. := f^self^, o:string^ -> number^ { return^ 1 },\n"
              "  overload^ op^.. := f^self^, o:number^ -> number^ { return^ 2 },\n"
              "}\n"
-             "var^ v = V.new^()\n"
+             "var^ v = V.new()\n"
              "return^ (v .. \"s\") * 10 + (v .. 7)\n");
     CHECK_INTEGER(&r, 12);
     run_dispose(&r);
@@ -2957,7 +2969,7 @@ static void test_definitions(void)
              "  overload^\n"
              "  show := f^ x:number^ { return^ 2 },\n"
              "}\n"
-             "var^ s = Show.new^()\n"
+             "var^ s = Show.new()\n"
              "return^ s.show(\"t\") * 10 + s.show(7)\n");
     CHECK_INTEGER(&r, 12);
     run_dispose(&r);
@@ -2972,7 +2984,7 @@ static void test_definitions(void)
              "  overload^\n"
              "  draw := f^ s:t^{ width : number^, height : number^ } { return^ 2 },\n"
              "}\n"
-             "var^ d = Draw.new^()\n"
+             "var^ d = Draw.new()\n"
              "return^ d.draw({ radius := 1 }) * 10 + d.draw({ width := 1, height := 2 })\n");
     CHECK_INTEGER(&r, 12);
     run_dispose(&r);
@@ -2985,7 +2997,7 @@ static void test_definitions(void)
              "  overload^\n"
              "  show := f^ x:number^ { return^ 2 },\n"
              "}\n"
-             "return^ Show.new^().show(true^)\n");
+             "return^ Show.new().show(true^)\n");
     LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_NO_CANDIDATE);
     run_dispose(&r);
 
@@ -2998,14 +3010,14 @@ static void test_definitions(void)
              "  overload^\n"
              "  show := f^ x:number^ { return^ 2 },\n"
              "}\n"
-             "return^ Show.new^().show(0.5)\n");
+             "return^ Show.new().show(0.5)\n");
     CHECK_INTEGER(&r, 2);
     run_dispose(&r);
 
     LHAT_TEST("an ordinary member is untouched by any of this");
     run_text(&r,
              "var^ Foo = def^{ self^{ }, m := f^ x { return^ x + 1 } }\n"
-             "return^ Foo.new^().m(1)\n");
+             "return^ Foo.new().m(1)\n");
     CHECK_INTEGER(&r, 2);
     run_dispose(&r);
 
@@ -3139,7 +3151,7 @@ static void test_isa(void)
     LHAT_TEST("a def^ name asks for the shape the definition holds");
     run_text(&r,
              "var^ Point = def^{ self^{ x := 0, y := 0 } }\n"
-             "return^ Point.new^() isa^ Point\n");
+             "return^ Point.new() isa^ Point\n");
     CHECK_BOOL(&r, true);
     run_dispose(&r);
 
@@ -3164,7 +3176,7 @@ static void test_isa(void)
     run_text(&r,
              "var^ Point = def^{ self^{ x := 0 }, m := f^ { return^ 1 } }\n"
              "var^ Point3 = Point .. def^{ self^{ z := 0 } }\n"
-             "return^ Point3.new^() isa^ Point\n");
+             "return^ Point3.new() isa^ Point\n");
     CHECK_BOOL(&r, true);
     run_dispose(&r);
 
@@ -3172,7 +3184,7 @@ static void test_isa(void)
     run_text(&r,
              "var^ Point = def^{ self^{ x := 0 } }\n"
              "var^ Point3 = Point .. def^{ self^{ z := 0 } }\n"
-             "return^ Point.new^() isa^ Point3\n");
+             "return^ Point.new() isa^ Point3\n");
     CHECK_BOOL(&r, false);
     run_dispose(&r);
 
@@ -3210,7 +3222,7 @@ static void test_isa(void)
     LHAT_TEST("a definition reached as a value asks about its members");
     run_text(&r,
              "var^ Point = def^{ self^{ x := 0 }, m := f^ { return^ 1 } }\n"
-             "var^ fits = f^ D { return^ Point.new^() isa^ D }\n"
+             "var^ fits = f^ D { return^ Point.new() isa^ D }\n"
              "return^ fits(Point)\n");
     CHECK_BOOL(&r, true);
     run_dispose(&r);
@@ -3302,7 +3314,7 @@ static void test_typeof(void)
     run_text(&r,
              "var^ Point = def^{ self^{ x := 0, y := 0 },\n"
              "  sum := f^self^ -> number^ { return^ self^.x + self^.y } }\n"
-             "return^ typeof^(Point.new^()).signature\n");
+             "return^ typeof^(Point.new()).signature\n");
     CHECK_STRING(&r, "t^{ new : f^;, sum : f^ -> number^;, x : number^, "
                      "y : number^ }");
     run_dispose(&r);
@@ -3393,7 +3405,7 @@ static void test_typeof(void)
     run_text(&r,
              "var^ A = def^{ self^{ n := 0 } }\n"
              "var^ B = def^{ self^{ n := 5 } }\n"
-             "return^ typeof^(A.new^()) = typeof^(B.new^())\n");
+             "return^ typeof^(A.new()) = typeof^(B.new())\n");
     CHECK_BOOL(&r, true);
     run_dispose(&r);
 
@@ -3401,7 +3413,7 @@ static void test_typeof(void)
     run_text(&r,
              "var^ A = def^{ self^{ n := 0 } }\n"
              "var^ B = def^{ self^{ n := 0, extra := 1 } }\n"
-             "return^ typeof^(A.new^()) = typeof^(B.new^())\n");
+             "return^ typeof^(A.new()) = typeof^(B.new())\n");
     CHECK_BOOL(&r, false);
     run_dispose(&r);
 
@@ -3410,7 +3422,7 @@ static void test_typeof(void)
     LHAT_TEST("the signature parses back as an annotation");
     run_text(&r,
              "var^ Point = def^{ self^{ x := 0, y := 0 } }\n"
-             "var^ p : t^{ x : number^, y : number^ } = Point.new^()\n"
+             "var^ p : t^{ x : number^, y : number^ } = Point.new()\n"
              "return^ p.x + p.y\n");
     CHECK_INTEGER(&r, 0);
     run_dispose(&r);
@@ -3422,7 +3434,7 @@ static void test_typeof(void)
              "var^ Foo = def^{ self^{}, foo := p^ { } }\n"
              "var^ Bar = Foo .. def^{ self^{},\n"
              "  overload^ foo := p^ x:string^ { } }\n"
-             "return^ typeof^(Bar.new^()).signature\n");
+             "return^ typeof^(Bar.new()).signature\n");
     CHECK_STRING(&r, "t^{ foo : p^; & p^string^;, new : f^; }");
     run_dispose(&r);
 
@@ -3446,8 +3458,8 @@ static void test_typeof(void)
     LHAT_TEST("and between two instances of the same definition");
     run_text(&r,
              "var^ Node = def^{ self^{ next := { } } }\n"
-             "var^ a = Node.new^()\n"
-             "var^ b = Node.new^()\n"
+             "var^ a = Node.new()\n"
+             "var^ b = Node.new()\n"
              "a.next := b\n"
              "b.next := a\n"
              "return^ typeof^(a).signature\n");
@@ -3497,7 +3509,7 @@ static void test_tostring(void)
     run_dispose(&r);
 
     LHAT_TEST("a table is written the way 14 章 writes one");
-    run_text(&r, "return^ { 1, \"a\" }.tostring()\n");
+    run_text(&r, "return^ { 1, \"a\" }.tostring^()\n");
     CHECK_STRING(&r, "{ 1, \"a\" }");
     run_dispose(&r);
 
@@ -3505,7 +3517,7 @@ static void test_tostring(void)
     // as the table spells it, which is the table's spelling and not that
     // value's.
     LHAT_TEST("but what is inside it keeps the table's spelling");
-    run_text(&r, "return^ { \"a\", true^ }.tostring()\n");
+    run_text(&r, "return^ { \"a\", true^ }.tostring^()\n");
     CHECK_STRING(&r, "{ \"a\", true^ }");
     run_dispose(&r);
 
@@ -3576,7 +3588,7 @@ static void test_tostring(void)
     run_text(&r,
              "var^ P = def^{ self^{ x := 7 },\n"
              "  tostring := f^self^ -> string^ { return^ \"P\" } }\n"
-             "return^ P.new^().tostring()\n");
+             "return^ P.new().tostring()\n");
     CHECK_STRING(&r, "P");
     run_dispose(&r);
 
@@ -3597,6 +3609,56 @@ static void test_tostring(void)
              "var^ gen = p^ { yield^ 1 }\n"
              "return^ gen().tostring()\n");
     CHECK_STRING(&r, "c^");
+    run_dispose(&r);
+
+    // 14.17改: on a table the writer wrote, every name is the writer's, so
+    // the built-in is reached by the hat spelling alone. 14.11 already wrote
+    // new that way and this is the same rule kept to.
+    LHAT_TEST("a plain table answers the hat spelling");
+    run_text(&r, "return^ { 1 }.tostring^()\n");
+    CHECK_STRING(&r, "{ 1 }");
+    run_dispose(&r);
+
+    LHAT_TEST("and holds nothing under the bare one");
+    run_text(&r,
+             "var^ t = { 1 }\n"
+             "return^ t.tostring isa^ nil^\n");
+    CHECK_BOOL(&r, true);
+    run_dispose(&r);
+
+    // A def^ is the other way round: 14 章 reserves these names on one, which
+    // is what the hat was saying all along, so both spellings answer.
+    LHAT_TEST("an instance answers either spelling");
+    run_text(&r,
+             "var^ P = def^{ self^{ x := 7 } }\n"
+             "return^ P.new().tostring() .. \" \" .. P.new().tostring^()\n");
+    CHECK_STRING(&r, "{ x = 7 } { x = 7 }");
+    run_dispose(&r);
+
+    // 14.9: the definition itself is a table nothing points at as one, so it
+    // carries a mark of its own -- without it this would read as plain.
+    LHAT_TEST("and so does the definition it came from");
+    run_text(&r,
+             "var^ P = def^{ self^{ x := 7 } }\n"
+             "return^ P.tostring()\n");
+    CHECK_STRING(&r, "{ new = f^ }");
+    run_dispose(&r);
+
+    // 01 の 2.3改: the hat is part of the name, which is the whole of what
+    // makes the two spellings two names.
+    LHAT_TEST("a written tostring^ is what the hat spelling then finds");
+    run_text(&r,
+             "var^ t = { tostring^ := f^self^ -> string^ { return^ \"mine\" } }\n"
+             "return^ t.tostring^()\n");
+    CHECK_STRING(&r, "mine");
+    run_dispose(&r);
+
+    LHAT_TEST("and a bare tostring beside it is a different member");
+    run_text(&r,
+             "var^ t = { tostring := 1, tostring^ := f^self^ -> string^ {\n"
+             "  return^ \"mine\" } }\n"
+             "return^ t.tostring^() .. t.tostring.tostring^()\n");
+    CHECK_STRING(&r, "mine1");
     run_dispose(&r);
 }
 
@@ -3758,14 +3820,15 @@ static void test_scope_specifiers(void)
 
     // 14.4 binds class^ into the scope a def^'s '{' opens, so a specifier
     // written in a method counts that scope -- the same one the checker
-    // pushes there.
+    // pushes there. 01 の 2.3改: class^ is its own name now, so the outer
+    // `class` never collides with it and the specifier spells the hat.
     LHAT_TEST("a def^ body is one scope on this side too");
     run_text(&r,
              "var^ class = 1\n"
              "var^ D = def^{ self^{ v := 7 },\n"
-             "  m := f^self^ -> string^ { return^ typeof^($^class).signature }\n"
+             "  m := f^self^ -> string^ { return^ typeof^($^class^).signature }\n"
              "}\n"
-             "return^ D.new^().m()\n");
+             "return^ D.new().m()\n");
     LHAT_CHECK_EQ_INT(r.compiled, LHAT_COMPILE_OK);
     LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_OK);
     LHAT_CHECK(lhat_is_object_kind(r.ran.value, LHAT_OBJECT_STRING),
@@ -3853,11 +3916,13 @@ static void test_interpolation(void)
     CHECK_STRING(&r, "[5]");
     run_dispose(&r);
 
-    // 14.17: reached the way a program would reach it, so a written one is
-    // what answers.
-    LHAT_TEST("a written tostring is what a hole uses");
+    // 14.17改: a hole asks for tostring^ -- the spelling that reaches the
+    // built-in on every value -- so that is also the name a written one
+    // answers under. A bare `tostring` on a plain table is the writer's own
+    // member and no part of this.
+    LHAT_TEST("a written tostring^ is what a hole uses");
     run_text(&r,
-             "var^ p = { tostring := f^self^ -> string^ { return^ \"P\" } }\n"
+             "var^ p = { tostring^ := f^self^ -> string^ { return^ \"P\" } }\n"
              "return^ $\"got {p}\"\n");
     CHECK_STRING(&r, "got P");
     run_dispose(&r);
@@ -4658,7 +4723,7 @@ static void test_coroutines(void)
     run_text(&r,
              "var^ drop = p^ {\n"
              "  var^ t = { 10, 20, 30 }\n"
-             "  var^ w = t.iterate()\n"
+             "  var^ w = t.iterate^()\n"
              "  w.start()\n"
              "}\n"
              "drop()\n"
@@ -5194,7 +5259,7 @@ static void test_collection(void)
              "  overload^\n"
              "  m := f^ x:bool^ { return^ 3 },\n"
              "}\n"
-             "return^ Sub.new^().m(7)\n");
+             "return^ Sub.new().m(7)\n");
     CHECK_INTEGER(&r, 7);
     run_dispose(&r);
 
@@ -5260,8 +5325,8 @@ static void test_collection(void)
     LHAT_TEST("a definition outlives the instances that read it");
     run_text(&r,
              "var^ Foo = def^{ self^{ n := 0 }, get := f^self^ { return^ self^.n } }\n"
-             "var^ last = Foo.new^()\n"
-             "repeat^ 2000 { var^ f = Foo.new^() }\n"
+             "var^ last = Foo.new()\n"
+             "repeat^ 2000 { var^ f = Foo.new() }\n"
              "return^ last.get()\n");
     CHECK_INTEGER(&r, 0);
     run_dispose(&r);
@@ -5459,7 +5524,7 @@ static void test_machine(void)
                           "var^ B = A .. def^{ bar := f^self^ -> number^ "
                           "{ return^ 2 } }\n");
         compile_next_text(&three, s,
-                          "var^ b = B.new^()\n"
+                          "var^ b = B.new()\n"
                           "return^ b.x * 10 + b.bar()\n");
         LHAT_CHECK_EQ_INT(one.compiled, LHAT_COMPILE_OK);
         LHAT_CHECK_EQ_INT(two.compiled, LHAT_COMPILE_OK);
@@ -5512,7 +5577,7 @@ static void test_machine(void)
                           "foo := f^self^, s:string^ -> number^ "
                           "{ return^ 2 } }\n");
         compile_next_text(&three, s,
-                          "var^ b = Bar.new^()\n"
+                          "var^ b = Bar.new()\n"
                           "return^ b.foo() * 10 + b.foo(\"x\")\n");
         lhat_run(m, one.proto);
         lhat_run(m, two.proto);
