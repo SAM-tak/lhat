@@ -188,6 +188,51 @@ static void test_structures(void)
                    "a table is not a number");
     }
 
+    // 13.13 (S37): a written Self^ makes a structure hold itself, so both
+    // relations walk a cycle. Neither may run off the stack, and 11.3 still
+    // has to say that two of them written apart are one type.
+    LHAT_TEST("a structure that holds itself is comparable");
+    {
+        LhatType *a = table1(&t, "next", NULL);
+        a->v.table.members->type = a;
+        LhatType *b = table1(&t, "next", NULL);
+        b->v.table.members->type = b;
+        LHAT_CHECK(a != b, "two separate objects");
+        LHAT_CHECK(lhat_type_equal(a, b), "and one type");
+        LHAT_CHECK(!lhat_type_disjoint(a, b), "with values in common");
+    }
+
+    LHAT_TEST("and one holding a different shape is still told apart");
+    {
+        LhatType *a = table2(&t, "next", NULL, "n", simple(&t, LHAT_TYPE_NUMBER));
+        a->v.table.members->type = a;
+        LhatType *b = table2(&t, "next", NULL, "n", simple(&t, LHAT_TYPE_STRING));
+        b->v.table.members->type = b;
+        LHAT_CHECK(!lhat_type_equal(a, b), "n disagrees");
+        LHAT_CHECK(lhat_type_disjoint(a, b), "and nothing inhabits both");
+    }
+
+    // 13 章's notation for one: the back edge is written the way the source
+    // wrote it, since there is no name to put there.
+    LHAT_TEST("and writes itself as Self^");
+    {
+        LhatType *a = table1(&t, "next", NULL);
+        a->v.table.members->type = a;
+        char buffer[64];
+        size_t written = lhat_type_write(a, buffer, sizeof buffer);
+        LHAT_CHECK_EQ_STR(buffer, written, "t^{ next : Self^ }");
+    }
+
+    LHAT_TEST("counting outwards for the one further out");
+    {
+        LhatType *outer = table1(&t, "a", NULL);
+        LhatType *inner = table1(&t, "b", outer);
+        outer->v.table.members->type = inner;
+        char buffer[64];
+        size_t written = lhat_type_write(outer, buffer, sizeof buffer);
+        LHAT_CHECK_EQ_STR(buffer, written, "t^{ a : t^{ b : Self^^ } }");
+    }
+
     types_dispose(&t);
 }
 

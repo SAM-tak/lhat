@@ -292,7 +292,26 @@ static bool is_error_type(const LhatType *type)
            type->kind == LHAT_TYPE_ERROR_KIND;
 }
 
-static bool conforms_func(const LhatType *value, const LhatType *target)
+// 13.13: a written Self^ makes a type hold itself, so a walk over two of them
+// has to be given a way to end. The pairs already being asked about are kept
+// on the C stack, and meeting one again answers yes.
+//
+// That is not a shortcut but the rule for recursive structures: a value fails
+// to conform only if some *finite* path through it disagrees, and a finite
+// path would have been walked before the question came back around. Assuming
+// yes and looking for a disagreement elsewhere is what decides the rest. The
+// same convention rt_from_checked_in (vm.c) uses to end its own walk.
+typedef struct Assumed {
+    const LhatType *value;
+    const LhatType *target;
+    const struct Assumed *outer;
+} Assumed;
+
+static bool conforms_in(const LhatType *value, const LhatType *target,
+                        const Assumed *seen);
+
+static bool conforms_func(const LhatType *value, const LhatType *target,
+                          const Assumed *seen)
 {
     // 14.12 already states the rule for override^, and it is the ordinary one
     // for functions: arguments may be wider, results may be narrower.
@@ -308,7 +327,7 @@ static bool conforms_func(const LhatType *value, const LhatType *target)
     const LhatTypeList *a = value->v.func.params;
     const LhatTypeList *b = target->v.func.params;
     while (a != NULL && b != NULL) {
-        if (!lhat_type_conforms(b->type, a->type)) {  // contravariant
+        if (!conforms_in(b->type, a->type, seen)) {  // contravariant
             return false;
         }
         a = a->next;
@@ -324,7 +343,7 @@ static bool conforms_func(const LhatType *value, const LhatType *target)
         return false;
     }
     if (value->v.func.variadic != NULL &&
-        !lhat_type_conforms(target->v.func.variadic, value->v.func.variadic)) {
+        !conforms_in(target->v.func.variadic, value->v.func.variadic, seen)) {
         return false;
     }
 
@@ -333,17 +352,28 @@ static bool conforms_func(const LhatType *value, const LhatType *target)
         return false;
     }
     if (value->v.func.result != NULL &&
-        !lhat_type_conforms(value->v.func.result, target->v.func.result)) {
+        !conforms_in(value->v.func.result, target->v.func.result, seen)) {
         return false;
     }
     return true;
 }
 
-bool lhat_type_conforms(const LhatType *value, const LhatType *target)
+static bool conforms_in(const LhatType *value, const LhatType *target,
+                        const Assumed *seen)
 {
     if (value == NULL || target == NULL) {
         return true;  // nothing was inferred here; do not cascade
     }
+
+    // 13.13: this pair is already open further up the walk, so a Self^ has
+    // brought the question back to itself.
+    for (const Assumed *s = seen; s != NULL; s = s->outer) {
+        if (s->value == value && s->target == target) {
+            return true;
+        }
+    }
+    Assumed here = { value, target, seen };
+    seen = &here;
 
     // A gap in inference is not a mismatch. Under relaxed it becomes a runtime
     // check (03 の 3.5); under strict, lhat_type_conforms_strict is the one
@@ -382,7 +412,7 @@ bool lhat_type_conforms(const LhatType *value, const LhatType *target)
             if (arm->type != NULL && arm->type->kind == LHAT_TYPE_PENDING) {
                 return false;
             }
-            if (!lhat_type_conforms(arm->type, target)) {
+            if (!conforms_in(arm->type, target, seen)) {
                 return false;
             }
         }
@@ -393,7 +423,7 @@ bool lhat_type_conforms(const LhatType *value, const LhatType *target)
     if (value->kind == LHAT_TYPE_INTERSECT) {
         for (const LhatTypeList *arm = value->v.composite.arms; arm != NULL;
              arm = arm->next) {
-            if (lhat_type_conforms(arm->type, target)) {
+            if (conforms_in(arm->type, target, seen)) {
                 return true;
             }
         }
@@ -404,7 +434,7 @@ bool lhat_type_conforms(const LhatType *value, const LhatType *target)
     if (target->kind == LHAT_TYPE_UNION) {
         for (const LhatTypeList *arm = target->v.composite.arms; arm != NULL;
              arm = arm->next) {
-            if (lhat_type_conforms(value, arm->type)) {
+            if (conforms_in(value, arm->type, seen)) {
                 return true;
             }
         }
@@ -414,7 +444,7 @@ bool lhat_type_conforms(const LhatType *value, const LhatType *target)
     if (target->kind == LHAT_TYPE_INTERSECT) {
         for (const LhatTypeList *arm = target->v.composite.arms; arm != NULL;
              arm = arm->next) {
-            if (!lhat_type_conforms(value, arm->type)) {
+            if (!conforms_in(value, arm->type, seen)) {
                 return false;
             }
         }
@@ -460,7 +490,7 @@ bool lhat_type_conforms(const LhatType *value, const LhatType *target)
                 const LhatTypeMember *have =
                     find_member(value->v.table.members, want);
                 if (have == NULL ||
-                    !lhat_type_conforms(have->type, want->type)) {
+                    !conforms_in(have->type, want->type, seen)) {
                     return false;
                 }
             }
@@ -481,8 +511,8 @@ bool lhat_type_conforms(const LhatType *value, const LhatType *target)
                     if (have == NULL) {
                         break;
                     }
-                    if (!lhat_type_conforms(have->type,
-                                            target->v.table.variadic)) {
+                    if (!conforms_in(have->type, target->v.table.variadic,
+                                     seen)) {
                         return false;
                     }
                 }
@@ -490,7 +520,7 @@ bool lhat_type_conforms(const LhatType *value, const LhatType *target)
             return true;
 
         case LHAT_TYPE_FUNC:
-            return conforms_func(value, target);
+            return conforms_func(value, target, seen);
 
         case LHAT_TYPE_CORO:
             // 15.3改: advancing one runs its body, so start()/resume() carry
@@ -503,16 +533,21 @@ bool lhat_type_conforms(const LhatType *value, const LhatType *target)
             }
             // 13.9. What the coroutine receives is an input, so it varies the
             // other way round from what it produces and returns.
-            return lhat_type_conforms(target->v.coroutine.receive,
-                                      value->v.coroutine.receive) &&
-                   lhat_type_conforms(value->v.coroutine.produce,
-                                      target->v.coroutine.produce) &&
-                   lhat_type_conforms(value->v.coroutine.result,
-                                      target->v.coroutine.result);
+            return conforms_in(target->v.coroutine.receive,
+                               value->v.coroutine.receive, seen) &&
+                   conforms_in(value->v.coroutine.produce,
+                               target->v.coroutine.produce, seen) &&
+                   conforms_in(value->v.coroutine.result,
+                               target->v.coroutine.result, seen);
 
         default:
             return true;  // the primitives, matched by kind above
     }
+}
+
+bool lhat_type_conforms(const LhatType *value, const LhatType *target)
+{
+    return conforms_in(value, target, NULL);
 }
 
 bool lhat_type_conforms_strict(const LhatType *value, const LhatType *target)
@@ -575,11 +610,24 @@ bool lhat_type_equal(const LhatType *a, const LhatType *b)
 // Disjointness (14.12)
 // ---------------------------------------------------------------------------
 
-bool lhat_type_disjoint(const LhatType *a, const LhatType *b)
+static bool disjoint_in(const LhatType *a, const LhatType *b,
+                        const Assumed *seen)
 {
     if (a == NULL || b == NULL) {
         return false;
     }
+
+    // 13.13: the question has come back to itself through a Self^. Nothing on
+    // this path tells the two apart, which is what false says here -- the
+    // dual of the assumption conforms_in makes, and for the same reason: only
+    // a finite path can be a witness, and one would already have been walked.
+    for (const Assumed *s = seen; s != NULL; s = s->outer) {
+        if (s->value == a && s->target == b) {
+            return false;
+        }
+    }
+    Assumed here = { a, b, seen };
+    seen = &here;
 
     // Neither a gap in inference nor the top rules anything out.
     if (a->kind == LHAT_TYPE_UNKNOWN || b->kind == LHAT_TYPE_UNKNOWN ||
@@ -599,14 +647,14 @@ bool lhat_type_disjoint(const LhatType *a, const LhatType *b)
     if (a->kind == LHAT_TYPE_UNION) {
         for (const LhatTypeList *arm = a->v.composite.arms; arm != NULL;
              arm = arm->next) {
-            if (!lhat_type_disjoint(arm->type, b)) {
+            if (!disjoint_in(arm->type, b, seen)) {
                 return false;
             }
         }
         return true;
     }
     if (b->kind == LHAT_TYPE_UNION) {
-        return lhat_type_disjoint(b, a);
+        return disjoint_in(b, a, seen);
     }
 
     // An intersection has to satisfy every arm, so one separate arm is enough
@@ -614,14 +662,14 @@ bool lhat_type_disjoint(const LhatType *a, const LhatType *b)
     if (a->kind == LHAT_TYPE_INTERSECT) {
         for (const LhatTypeList *arm = a->v.composite.arms; arm != NULL;
              arm = arm->next) {
-            if (lhat_type_disjoint(arm->type, b)) {
+            if (disjoint_in(arm->type, b, seen)) {
                 return true;
             }
         }
         return false;
     }
     if (b->kind == LHAT_TYPE_INTERSECT) {
-        return lhat_type_disjoint(b, a);
+        return disjoint_in(b, a, seen);
     }
 
     // 04 の 2.6: an error is separate from everything that is not one. Within
@@ -652,7 +700,7 @@ bool lhat_type_disjoint(const LhatType *a, const LhatType *b)
         for (const LhatTypeMember *m = a->v.table.members; m != NULL;
              m = m->next) {
             const LhatTypeMember *other = find_member(b->v.table.members, m);
-            if (other != NULL && lhat_type_disjoint(m->type, other->type)) {
+            if (other != NULL && disjoint_in(m->type, other->type, seen)) {
                 return true;
             }
         }
@@ -663,6 +711,11 @@ bool lhat_type_disjoint(const LhatType *a, const LhatType *b)
     // argument inhabits both of two narrower ones, so nothing here is decided
     // by the parameter types alone. Treat them as overlapping.
     return false;
+}
+
+bool lhat_type_disjoint(const LhatType *a, const LhatType *b)
+{
+    return disjoint_in(a, b, NULL);
 }
 
 // ---------------------------------------------------------------------------
@@ -764,10 +817,21 @@ LhatType *lhat_type_intersect(LhatTypeArena *arena, LhatType *a, LhatType *b)
 // Keeps writing past the end of the buffer without touching it, so the caller
 // learns how long the whole thing was -- and so nothing has to check the room
 // left at every step.
+// 13.13: the structures this walk is already inside, innermost first. A type
+// that holds itself is reached again through one of them, and what stands
+// there in the source is a Self^ -- so that is what is written, with a second
+// hat for each further one out, the way the annotation counts them.
+typedef struct WriteSeen {
+    const LhatType *type;
+    const struct WriteSeen *outer;
+} WriteSeen;
+
 typedef struct {
     char *at;
     size_t left;
     size_t written;
+    // Pushed and popped around a structure as write_type descends into it.
+    const WriteSeen *seen;
 } TypeSink;
 
 static void put(TypeSink *sink, const char *text, size_t length)
@@ -855,13 +919,28 @@ static void write_type(TypeSink *sink, const LhatType *type, int depth)
         case LHAT_TYPE_STRING: put_text(sink, "string^"); return;
         case LHAT_TYPE_ERROR:  put_text(sink, "error^"); return;
 
-        case LHAT_TYPE_TABLE:
+        case LHAT_TYPE_TABLE: {
+            // 13.13: already inside this one, so the source said Self^ here.
+            unsigned level = 1;
+            for (const WriteSeen *s = sink->seen; s != NULL; s = s->outer) {
+                if (s->type == type) {
+                    put_text(sink, "Self");
+                    for (unsigned i = 0; i < level; i++) {
+                        put_text(sink, "^");
+                    }
+                    return;
+                }
+                level++;
+            }
+
             // 14.10: bare t^ asks for nothing in particular.
             if (type->v.table.members == NULL &&
                 type->v.table.variadic == NULL) {
                 put_text(sink, "t^");
                 return;
             }
+            WriteSeen here = { type, sink->seen };
+            sink->seen = &here;
             put_text(sink, "t^{ ");
             write_members(sink, type->v.table.members, depth);
             if (type->v.table.variadic != NULL) {
@@ -873,7 +952,9 @@ static void write_type(TypeSink *sink, const LhatType *type, int depth)
                 write_type(sink, type->v.table.variadic, depth + 1);
             }
             put_text(sink, " }");
+            sink->seen = here.outer;
             return;
+        }
 
         case LHAT_TYPE_FUNC:
             // 13.1's form. 13.2 writes '->' only when something is returned.
@@ -944,7 +1025,7 @@ size_t lhat_type_write(const LhatType *type, char *buffer, size_t size)
     }
     // One byte held back for the terminator, so `left` running out and the
     // string being closed are the same condition.
-    TypeSink sink = {buffer, size - 1, 0};
+    TypeSink sink = {buffer, size - 1, 0, NULL};
     write_type(&sink, type, 0);
     *sink.at = '\0';
 

@@ -539,7 +539,16 @@ static LhatNode *parse_type_primary(Parser *p)
     if (p->current.kind == LHAT_TOKEN_HAT_IDENT ||
         p->current.kind == LHAT_TOKEN_IDENT) {
         // A type name never stacks: number^^ counts nothing (01 の 2.3改).
-        refuse_extra_hats(p, &p->current);
+        //
+        // 13.13 (S37) is the one exception, and the fifth word of 01 の 2.3改
+        // to count levels: Self^ names the type literal enclosing it, so a
+        // second hat counts written t^/def^ literals outwards the way it^^
+        // counts loops. The word is not self^ -- capital S, a different name
+        // (01 の 2.3改: a hat identifier is its word plus one hat, compared
+        // byte for byte) -- and unlike self^ it is a type rather than a value.
+        if (!token_is_hat_stacked(p, &p->current, "Self")) {
+            refuse_extra_hats(p, &p->current);
+        }
         LhatNode *node = make(p, LHAT_NODE_TYPE_NAME, &p->current);
         if (node != NULL) {
             node->v.name.offset = p->current.offset;

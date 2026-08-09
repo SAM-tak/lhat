@@ -1354,6 +1354,14 @@ static LhatRuntimeType *lower_type(Compiler *c, const LhatNode *node)
             if (!node_name(c, node, &name, &length)) {
                 return NULL;
             }
+            // 13.13: the back edge of a written structure. Asking nothing
+            // there ends the walk, which is what the def^ chain below already
+            // does when a shape is written from inside itself -- a descriptor
+            // is a finite question about one value, so the recursion is where
+            // it stops rather than something to unfold.
+            if (name_is(name, length, "Self^")) {
+                return NULL;
+            }
             LhatRuntimeTypeKind simple = LHAT_TYPE_RT_ANY;
             // 14.8: one type, and int^/float^ are the two representations of
             // it -- the three spellings check.c's resolve_type reads together.
@@ -1616,11 +1624,26 @@ static LhatRuntimeType *rt_from_checked(LhatHeap *heap, const LhatType *type)
 // operand whose type mentions an error anywhere is answered by the tag
 // instruction instead -- which is also what keeps typeof^(e) naming the
 // leaf kind rather than the declared union.
-static bool mentions_error(const LhatType *type)
+//
+// 13.13: a Self^ makes the walk come back to a type it has already read, so
+// the tables on the way in are remembered on the C stack the way
+// rt_from_checked_in remembers its own -- `seen` is NULL at the outermost
+// call. Meeting one again says false: nothing is found here that the first
+// visit will not find.
+static bool mentions_error(const LhatType *type, const RtSeen *seen)
 {
     if (type == NULL) {
         return false;
     }
+    if (type->kind == LHAT_TYPE_TABLE) {
+        for (const RtSeen *s = seen; s != NULL; s = s->outer) {
+            if (s->type == type) {
+                return false;
+            }
+        }
+    }
+    RtSeen here = { type, seen };
+    seen = &here;
     switch (type->kind) {
         case LHAT_TYPE_ERROR:
         case LHAT_TYPE_ERROR_KIND:
@@ -1630,38 +1653,38 @@ static bool mentions_error(const LhatType *type)
         case LHAT_TYPE_TABLE:
             for (const LhatTypeMember *m = type->v.table.members; m != NULL;
                  m = m->next) {
-                if (mentions_error(m->type)) {
+                if (mentions_error(m->type, seen)) {
                     return true;
                 }
             }
             return type->v.table.variadic != NULL &&
-                   mentions_error(type->v.table.variadic);
+                   mentions_error(type->v.table.variadic, seen);
 
         case LHAT_TYPE_FUNC:
             for (LhatTypeList *p = type->v.func.params; p != NULL;
                  p = p->next) {
-                if (mentions_error(p->type)) {
+                if (mentions_error(p->type, seen)) {
                     return true;
                 }
             }
             return (type->v.func.variadic != NULL &&
-                    mentions_error(type->v.func.variadic)) ||
-                   mentions_error(type->v.func.result);
+                    mentions_error(type->v.func.variadic, seen)) ||
+                   mentions_error(type->v.func.result, seen);
 
         case LHAT_TYPE_UNION:
         case LHAT_TYPE_INTERSECT:
             for (LhatTypeList *a = type->v.composite.arms; a != NULL;
                  a = a->next) {
-                if (mentions_error(a->type)) {
+                if (mentions_error(a->type, seen)) {
                     return true;
                 }
             }
             return false;
 
         case LHAT_TYPE_CORO:
-            return mentions_error(type->v.coroutine.receive) ||
-                   mentions_error(type->v.coroutine.produce) ||
-                   mentions_error(type->v.coroutine.result);
+            return mentions_error(type->v.coroutine.receive, seen) ||
+                   mentions_error(type->v.coroutine.produce, seen) ||
+                   mentions_error(type->v.coroutine.result, seen);
 
         default:
             return false;
@@ -2657,7 +2680,7 @@ static void compile_expression(Compiler *c, const LhatNode *node, uint8_t into)
             uint8_t value = reserve(c);
             compile_expression(c, node->v.jump.value, value);
             const LhatType *checked = (const LhatType *)node->checked_type;
-            if (checked != NULL && !mentions_error(checked)) {
+            if (checked != NULL && !mentions_error(checked, NULL)) {
                 // 13.7: any^ converts to no descriptor at all ("asks
                 // nothing"), but as an ANSWER it is a value of its own.
                 LhatRuntimeType *rt =

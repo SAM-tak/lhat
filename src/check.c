@@ -158,6 +158,21 @@ typedef struct {
         struct ThisLink *outer;
     } *this_link;
 
+    // 13.13 (S37): the written type literals enclosing this point, innermost
+    // first -- what Self^ names, and what a second hat counts outwards. Only
+    // t^{ … } and def^{ … } bind one: a signature and a coroutine type are
+    // written around a type rather than being a structure of their own, so
+    // 'f^Self^ -> Self^;' inside a def^ still names the definition's instance,
+    // which is what makes a method able to say its own type at all.
+    //
+    // A def^ binds the instance (14.7), the same object self^ is bound to --
+    // self^ is one value of that type, Self^ is the type. Links live on the C
+    // stack of the resolve/infer that pushed them, like this_link above.
+    struct SelfLink {
+        LhatType *type;
+        struct SelfLink *outer;
+    } *self_link;
+
     // 02 の 15.1: f^ may call only f^, never p^. True inside an f^ body
     // (and nested f^ literals within it), false everywhere else -- outside
     // any body (top level) and inside a p^ both allow either kind, so
@@ -564,6 +579,11 @@ static LhatType *builtin_type(Checker *c, const char *name, size_t length)
 static LhatType *resolve_table_type(Checker *c, const LhatNode *node)
 {
     LhatType *table = lhat_type_table(c->result->types);
+    // 13.13: the structure is what Self^ inside it names, so it is bound
+    // before the members are read -- a member's type is written after the
+    // literal it belongs to has been opened, which is the whole point.
+    struct SelfLink here = { table, c->self_link };
+    c->self_link = &here;
     // 14.10改: an entry with no name is the type of the next position. They
     // are counted the way a literal counts its own -- from one, in written
     // order, with the named ones taking no place in the sequence.
@@ -590,6 +610,7 @@ static LhatType *resolve_table_type(Checker *c, const LhatNode *node)
         lhat_type_add_member(c->result->types, table, name, length,
                              resolve_type(c, m->v.entry.value));
     }
+    c->self_link = here.outer;
     return table;
 }
 
@@ -735,6 +756,32 @@ static LhatType *resolve_type(Checker *c, const LhatNode *node)
             if (builtin != NULL) {
                 return builtin;
             }
+
+            // 13.13 (S37): the type literal this is written inside. Read
+            // before the environment, since 05 の 2.2 has no binding for it --
+            // a name for a type and nothing else has no value to stand for,
+            // and putting one in scope would make it answerable to 8.7's
+            // ordering and to every other rule about names.
+            //
+            // 14.9 already lets a definition say its own type by the name its
+            // binding gave it. A literal written where no name is taken has
+            // only this, which is what S37 is for: a t^{ … } holding one of
+            // itself, or a def^ with no binding, could not be written at all.
+            if (name_is(name, length, "Self^")) {
+                // 01 の 2.3改: one hat is the word, and the rest count
+                // outwards -- Self^^ is the literal one further out.
+                uint32_t levels = node->v.name.hats > 0 ? node->v.name.hats : 1;
+                const struct SelfLink *link = c->self_link;
+                for (uint32_t i = 1; link != NULL && i < levels; i++) {
+                    link = link->outer;
+                }
+                if (link == NULL) {
+                    report(c, node, LHAT_CHECK_ERR_SELF_TYPE_OUTSIDE);
+                    return simple(c, LHAT_TYPE_UNKNOWN);
+                }
+                return link->type;
+            }
+
             // 13 章 has no such type as self^ or class^. They are the
             // receiver and the definition being built (14.4, 03 の 5.10),
             // and both are values -- 'p^self^;' writes a receiver into a
@@ -3414,6 +3461,13 @@ static LhatType *infer_def(Checker *c, const LhatNode *node, LhatType *base)
     copy_members(c, definition, base);
     copy_members(c, instance, instance_of(base));
 
+    // 13.13 with 14.7: writing the name of a definition asks for an instance
+    // of it, so Self^ inside one names the instance as well -- the same object
+    // self^ is bound to below. A definition written with no binding to take a
+    // name from (14.9) has this and nothing else to say its own type with.
+    struct SelfLink self_here = { instance, c->self_link };
+    c->self_link = &self_here;
+
     const LhatNode *template = NULL;
     for (const LhatNode *entry = node->v.list.items; entry != NULL;
          entry = entry->next) {
@@ -3550,6 +3604,7 @@ static LhatType *infer_def(Checker *c, const LhatNode *node, LhatType *base)
         constructor->v.func.result = instance;
         set_member(c, definition, "new", 3, constructor);
     }
+    c->self_link = self_here.outer;
     return definition;
 }
 
@@ -6062,6 +6117,10 @@ const char *lhat_check_error_message(LhatCheckErrorCode code)
         case LHAT_CHECK_ERR_PUBLIC_IS_IMMUTABLE:
             return "a public^ declaration binds with let^; another unit would "
                    "otherwise see a name change under it";
+        case LHAT_CHECK_ERR_SELF_TYPE_OUTSIDE:
+            return "Self^ names the t^ or def^ written around it, and there is "
+                   "no such literal here -- or a second hat counted past the "
+                   "outermost one";
     }
     return "unknown error";
 }

@@ -143,9 +143,14 @@ typedef enum {
                                         // the construct rather than a word --
                                         // a with^, or a for^ focus -- so
                                         // there is no var^ to offer
-    LHAT_CHECK_ERR_PUBLIC_IS_IMMUTABLE  // 05 の 4 章 with 8.9: a public^ var^
+    LHAT_CHECK_ERR_PUBLIC_IS_IMMUTABLE, // 05 の 4 章 with 8.9: a public^ var^
                                         // is a name another unit could see
                                         // change, which 01 の 8.3 refused
+    LHAT_CHECK_ERR_SELF_TYPE_OUTSIDE    // 13.13: Self^ names the type literal
+                                        // around it, and here there is none --
+                                        // no t^ or def^ encloses it, or a
+                                        // second hat counted past the
+                                        // outermost one
 } LhatCheckErrorCode;
 
 typedef struct {

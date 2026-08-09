@@ -1058,6 +1058,81 @@ static void test_annotations(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
+    // 13.13 (S37): and a literal with no binding to take a name from says it
+    // with Self^. Capital S -- self^ is the receiver, a value, and 13.1 has no
+    // type by that name; this is the type, and only ever written as one.
+    LHAT_TEST("Self^ names the structure written around it");
+    check_text(&u,
+               "var^ t : t^{ value : number^, next : Self^|nil^ } = "
+               "{ value = 1, next = nil^ }\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("and the shape it stands for is what the nested value must have");
+    check_text(&u,
+               "var^ t : t^{ value : number^, next : Self^|nil^ } = "
+               "{ value = 1, next = { value = \"no\", next = nil^ } }\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
+    unit_dispose(&u);
+
+    // 11.3: identity is structural, so two of these written apart are one
+    // type. The walk that decides it meets the same pair twice and answers
+    // yes, which is what makes a recursive structure comparable at all.
+    LHAT_TEST("two written apart are the same type");
+    check_text(&u,
+               "var^ a : t^{ value : number^, next : Self^|nil^ } = "
+               "{ value = 1, next = nil^ }\n"
+               "var^ b : t^{ value : number^, next : Self^|nil^ } = a\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // 14.7: writing a definition's name asks for an instance, and Self^
+    // inside one says the same thing without needing the name.
+    LHAT_TEST("a def^ says its own type with it");
+    check_text(&u,
+               "var^ V = def^{\n"
+               "  self^{ n := 0 },\n"
+               "  plus := f^self^, r:Self^ -> Self^ { return^ self^ },\n"
+               "}\n"
+               "var^ x : number^ = V.new().plus(V.new()).n\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // A signature and a coroutine type are written around a type rather than
+    // being a structure of their own, so neither binds one -- which is what
+    // lets a method say Self^ at all.
+    // Reported as a value that does not fit rather than as a Self^ with
+    // nothing around it: the signature let the structure through, which is
+    // what the def^ above relies on for its methods.
+    LHAT_TEST("a signature inside one does not take Self^ from it");
+    check_text(&u, "var^ t : t^{ m : f^Self^ -> Self^; } = { m = 1 }\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
+    unit_dispose(&u);
+
+    LHAT_TEST("but with nothing written around it there is nothing to name");
+    check_text(&u, "var^ x : Self^ = 1\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_SELF_TYPE_OUTSIDE);
+    unit_dispose(&u);
+
+    LHAT_TEST("and a c^ on its own binds none either");
+    check_text(&u, "var^ c : c^{ p^nil^ -> Self^;, nil^ } = 1\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_SELF_TYPE_OUTSIDE);
+    unit_dispose(&u);
+
+    // 01 の 2.3改 (S35): the fifth word to count levels with a second hat.
+    LHAT_TEST("Self^^ reaches the literal one further out");
+    check_text(&u,
+               "var^ t : t^{ a : t^{ b : Self^^|nil^ } } = "
+               "{ a = { b = nil^ } }\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("and counting past the outermost is refused");
+    check_text(&u,
+               "var^ t : t^{ a : t^{ b : Self^^^ } } = { a = { b = 1 } }\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_SELF_TYPE_OUTSIDE);
+    unit_dispose(&u);
+
     // 14.10: at least the listed members.
     LHAT_TEST("a structural annotation asks for at least its members");
     check_text(&u,
