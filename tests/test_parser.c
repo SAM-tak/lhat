@@ -508,8 +508,8 @@ static void test_statements(void)
     }
     parse_dispose(&p);
 
-    // Nothing spreads one value across several targets: 13.10's unpack^ says
-    // so in the source for a plain ':=', and an operator cannot.
+    // Nothing spreads one value across several targets here: a compound
+    // operator reads the target it writes back to.
     LHAT_TEST("but the two lists have to be the same length");
     parse_text(&p, "a, b += 1");
     LHAT_CHECK(error_count(&p) > 0, "expected a diagnostic");
@@ -517,26 +517,16 @@ static void test_statements(void)
                       LHAT_PARSE_ERR_BINDING_ARITY);
     parse_dispose(&p);
 
-    // 13.10: the marker sits on the value, not on the binding.
+    // 13.8改 (S46): several names take the values of one call apart, with no
+    // mark at all -- 13.10 marked the table path, and both went together.
     LHAT_TEST("destructuring binding");
-    parse_text(&p, "var^ q, r = unpack^ divmod(7, 2)");
+    parse_text(&p, "var^ q, r = divmod(7, 2)");
     LHAT_CHECK_EQ_INT(error_count(&p), 0);
     {
         const LhatNode *s = first_statement(&p);
         LHAT_CHECK_EQ_INT(s->kind, LHAT_NODE_DEFINE);
         LHAT_CHECK_EQ_INT(lhat_node_list_length(s->v.binding.targets), 2);
-        LHAT_CHECK_EQ_INT(s->v.binding.values->kind, LHAT_NODE_UNPACK);
-    }
-    parse_dispose(&p);
-
-    // Putting the marker on the value is what makes this work at all.
-    LHAT_TEST("destructuring reassignment");
-    parse_text(&p, "q, r := unpack^ divmod(7, 2)");
-    LHAT_CHECK_EQ_INT(error_count(&p), 0);
-    {
-        const LhatNode *s = first_statement(&p);
-        LHAT_CHECK_EQ_INT(s->kind, LHAT_NODE_REASSIGN);
-        LHAT_CHECK_EQ_INT(s->v.binding.values->kind, LHAT_NODE_UNPACK);
+        LHAT_CHECK_EQ_INT(lhat_node_list_length(s->v.binding.values), 1);
     }
     parse_dispose(&p);
 
@@ -555,23 +545,9 @@ static void test_statements(void)
                       LHAT_PARSE_ERR_BINDING_ARITY);
     parse_dispose(&p);
 
-    LHAT_TEST("unpack^ must be the only value");
-    parse_text(&p, "a, b := unpack^ f(), 3");
-    LHAT_CHECK(p.result.diagnostic_count > 0, "expected a diagnostic");
-    LHAT_CHECK_EQ_INT(p.result.diagnostics[0].code,
-                      LHAT_PARSE_ERR_UNPACK_NOT_ALONE);
-    parse_dispose(&p);
-
-    LHAT_TEST("unpack^ outside a binding is rejected");
-    parse_text(&p, "unpack^ f()");
-    LHAT_CHECK(p.result.diagnostic_count > 0, "expected a diagnostic");
-    LHAT_CHECK_EQ_INT(p.result.diagnostics[0].code,
-                      LHAT_PARSE_ERR_UNPACK_MISPLACED);
-    parse_dispose(&p);
-
     // The target list is the ordinary one, so a type may be written on it.
     LHAT_TEST("typed destructuring targets");
-    parse_text(&p, "var^ q:number^, r:number^ = unpack^ f()");
+    parse_text(&p, "var^ q:number^, r:number^ = f()");
     LHAT_CHECK_EQ_INT(error_count(&p), 0);
     {
         const LhatNode *target = first_statement(&p)->v.binding.targets;
@@ -2875,7 +2851,7 @@ static void test_realistic(void)
                "if^ c.value \xE2\x89\xA6 10 {\n"
                "    print('done')\n"
                "}\n"
-               "q, r := unpack^ divmod(7, 2)\n"
+               "q, r := divmod(7, 2)\n"
                "msg := $\"q = {q}, r = {r}\"\n");
     LHAT_CHECK_EQ_INT(error_count(&p), 0);
     LHAT_CHECK(lhat_node_list_length(first_statement(&p)) >= 5,

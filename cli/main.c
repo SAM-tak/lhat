@@ -263,7 +263,6 @@ static void print_node(const LhatLexer *lexer, const LhatNode *node, int depth)
             break;
         case LHAT_NODE_BREAK:
         case LHAT_NODE_CALL_STMT:
-        case LHAT_NODE_UNPACK:
         case LHAT_NODE_PACK:
         case LHAT_NODE_REQUIRE:
         case LHAT_NODE_REQUIRE_STMT:

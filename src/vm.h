@@ -188,10 +188,6 @@ typedef enum {
     LHAT_RUN_OUT_OF_MEMORY,
     LHAT_RUN_BAD_KEY,         // 04 の 11.3: nil^ means "not there", so it
                               // cannot also be a key
-    LHAT_RUN_UNPACK_SHORT,    // 02 の 13.10: a destructuring bind reached a
-                              // position the value does not have. Under
-                              // strict the checker says so first; this is
-                              // where relaxed lands
     LHAT_RUN_BAD_FORMAT,      // 02 の 14.17: tostring was handed a format a
                               // number^ cannot be written through
     LHAT_RUN_DEAD_COROUTINE,  // resumed one that has finished

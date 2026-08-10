@@ -41,10 +41,6 @@ typedef enum {
     LHAT_CHECK_ERR_FUNCTION_CALLS_PROCEDURE, // 15.1: f^ may call only f^;
                                               // this callee is a p^
     LHAT_CHECK_ERR_ARITY,               // too few or too many arguments
-    LHAT_CHECK_ERR_UNPACK_ARITY,        // 02 の 13.10: the names to bind and
-                                        // the positions the value has do not
-                                        // agree. Its own spelling rather than
-                                        // ARITY above: a destructuring is not
                                         // a call, and the two read differently
     LHAT_CHECK_ERR_NOT_VARIADIC,        // 13.7: 'expr...' spreads into a
                                         // variadic tail, and this callee has
@@ -178,11 +174,10 @@ typedef enum {
                                         // union with is an error
     LHAT_CHECK_ERR_TUPLE_ARITY,         // 13.8改: the names taking the values
                                         // apart and the values answered are
-                                        // not the same count. Unlike 13.10's
-                                        // UNPACK_ARITY this is never about
-                                        // width subtyping -- a tuple has
-                                        // exactly its positions, since each
-                                        // one is a slot the caller reserved
+                                        // not the same count. A tuple has exactly its
+                                        // positions, since each one is a slot
+                                        // the caller reserved -- 14.10.s width
+                                        // subtyping never applies here
     LHAT_CHECK_ERR_TUPLE_ERROR_POSITION,// 13.8改 with 04 の 8.2: the error
                                         // goes around the values, never among
                                         // them. '(number^, IOError)' is the

@@ -4725,10 +4725,6 @@ static LhatType *infer_node(Checker *c, const LhatNode *node)
             return kind;
         }
 
-        case LHAT_NODE_UNPACK:
-            require_value(c, node->v.jump.value, infer(c, node->v.jump.value));
-            return simple(c, LHAT_TYPE_UNKNOWN);
-
         // 13.8改: pack^ turns the several values a call answered with into a
         // table a name can hold -- 14.10's positional members, numbered from
         // 1, which is what 't[1]' and a destructuring both read.
@@ -4972,99 +4968,20 @@ static void define_path(Checker *c, const LhatNode *target, LhatType *type,
     }
 }
 
-// 13.10: unpack^ marks one value being taken apart rather than one value per
-// target -- which is what tells a destructuring bind from a multiple one, and
-// why the mark is on the right. Answers what is being taken apart, or NULL
-// when this is an ordinary bind.
-static LhatType *unpacked_source(Checker *c, const LhatNode *values)
-{
-    if (values == NULL || values->next != NULL ||
-        values->kind != LHAT_NODE_UNPACK) {
-        return NULL;
-    }
-    LhatType *source = require_value(c, values->v.jump.value,
-                                     infer(c, values->v.jump.value));
-    return source != NULL ? source : simple(c, LHAT_TYPE_UNKNOWN);
-}
-
-// The type at a position of what unpack^ is taking apart. 14.10 lets a table
-// carry more than its type lists, so a position it says nothing about is
-// unknown rather than absent -- what the shape check below makes of that
-// silence is a separate question from what type to give the name.
-static LhatType *unpacked_at(Checker *c, LhatType *source, size_t position)
-{
-    const LhatTypeMember *at = lhat_type_member_at(source, position);
-    return at != NULL ? at->type : simple(c, LHAT_TYPE_UNKNOWN);
-}
-
-// 13.10: what a destructuring bind may take apart, asked once the targets
-// have been walked and `count` of them are known. Writes onto the unpack^
-// node how many positions the source type accounts for, which is what lets
-// the compiler leave those unchecked (03 の 5.11c's channel).
-//
-// 14.10's width subtyping is the reason to REFUSE a count that does not
-// agree, not a reason to allow one. A type listing two positions is
-// inhabited by values carrying exactly two, so a bind taking three positions
-// out of it breaks on one of them -- the type promises nothing there, and a
-// program may only rely on what the type promises. 13.10 says the same in
-// its own words: what cannot be taken apart can be caught statically, and
-// letting it fall to a runtime nil^ makes a nil^ that slips through
-// everything downstream.
-//
-// Strict only. Under relaxed a written type has not been checked against the
-// value it annotates, so reporting from one would report on programs that
-// run -- and 13.10 already says relaxed falls to the runtime check instead.
-static void check_unpack_shape(Checker *c, const LhatNode *node,
-                               const LhatNode *value, LhatType *source,
-                               size_t count)
-{
-    if (!c->strict || source == NULL) {
-        return;
-    }
-    // 03 の 3.1: a type nothing has settled yet is the gap, not an error.
-    // any^ is not one of those -- 13.7 makes it the top, which nothing may be
-    // done with until it is narrowed, exactly as a member of one is refused.
-    if (source->kind == LHAT_TYPE_UNKNOWN || source->kind == LHAT_TYPE_PENDING) {
-        return;
-    }
-    if (source->kind != LHAT_TYPE_TABLE) {
-        report(c, node, LHAT_CHECK_ERR_MISMATCH);  // 13.10: not a table
-        return;
-    }
-    // 13.7, 14.10改: an unbounded sequence has no number of positions to
-    // disagree with, so neither direction can be reported. The runtime check
-    // is what is left.
-    if (source->v.table.variadic != NULL) {
-        return;
-    }
-    size_t positions = 0;
-    while (lhat_type_member_at(source, positions + 1) != NULL) {
-        positions++;
-    }
-    if (positions != count) {
-        report(c, node, LHAT_CHECK_ERR_UNPACK_ARITY);
-        return;
-    }
-    // Every position is accounted for, so the compiler may leave the lot
-    // unchecked. Written on the unpack^ node itself, which is the one part of
-    // the binding that says a destructuring is happening at all.
-    ((LhatNode *)value)->v.jump.level = (uint32_t)count;
-}
-
 static void check_define(Checker *c, const LhatNode *node)
 {
     const LhatNode *value = node->v.binding.values;
-    LhatType *unpacked = unpacked_source(c, value);
     size_t position = 0;
     // 13.8改: what a call answered with, when several names are taking it
     // apart. Settled on the first target from the type of the one value, so
     // nothing is inferred twice -- and so the inference still happens inside
     // the defining-name context the loop sets up around it.
     //
-    // 13.10 required unpack^ because "印がなければ右辺の個数を数えなければ
-    // 判別できない". That reason is withdrawn: one value on the right with
-    // several names on the left is a tuple being taken apart, two values is
-    // 8.6's multiple definition, and neither reading fits the other's shape.
+    // 13.10 required a mark (unpack^) because "印がなければ右辺の個数を
+    // 数えなければ判別できない". That reason is withdrawn along with the word:
+    // one value on the right with several names on the left is a tuple being
+    // taken apart, two values is 8.6.s multiple definition, and neither
+    // reading fits the other.s shape.
     LhatType *tuple = NULL;
     size_t target_count = lhat_node_list_length(node->v.binding.targets);
 
@@ -5141,9 +5058,7 @@ static void check_define(Checker *c, const LhatNode *node)
         }
 
         LhatType *actual;
-        if (unpacked != NULL) {
-            actual = unpacked_at(c, unpacked, position);
-        } else if (tuple != NULL) {
+        if (tuple != NULL) {
             // 13.8改: the positions of what the one value answered with.
             actual = lhat_type_tuple_at(tuple, position - 1);
             if (actual == NULL) {
@@ -5232,20 +5147,17 @@ static void check_define(Checker *c, const LhatNode *node)
                 // 15.1改. A destructuring bind takes pieces out of something
                 // that was already there (13.10), so nothing it binds is new
                 // whatever the source looks like.
-                b->fresh = unpacked == NULL && value_is_fresh(c, value, actual);
+                b->fresh = value_is_fresh(c, value, actual);
             }
             // A new name of the same spelling makes any narrowing of the old
             // one stale, since the path now reaches something else.
             drop_narrowings_for(c, target_name_node(target));
         }
-        if (unpacked == NULL && tuple == NULL && value != NULL) {
+        if (tuple == NULL && value != NULL) {
             value = value->next;
         }
     }
 
-    if (unpacked != NULL) {
-        check_unpack_shape(c, node, node->v.binding.values, unpacked, position);
-    }
     // 13.8改: exactly the positions, both ways. 14.10's width subtyping has
     // nothing to say here -- a tuple carries its positions and no others,
     // since each one is a slot the caller reserved.
@@ -5254,8 +5166,8 @@ static void check_define(Checker *c, const LhatNode *node)
     }
     // 13.8改: the parser stopped asking for a mark, so this is where one
     // value meeting several names is answered for. It is a tuple being taken
-    // apart, an unpack^ of a table, or an error.
-    if (unpacked == NULL && tuple == NULL && target_count > 1 &&
+    // apart, or an error.
+    if (tuple == NULL && target_count > 1 &&
         lhat_node_list_length(node->v.binding.values) == 1) {
         report(c, node, LHAT_CHECK_ERR_TUPLE_ARITY);
     }
@@ -5796,7 +5708,6 @@ static void check_opaque_write(Checker *c, const LhatNode *target)
 static void check_reassign(Checker *c, const LhatNode *node)
 {
     const LhatNode *value = node->v.binding.values;
-    LhatType *unpacked = unpacked_source(c, value);
     size_t position = 0;
     LhatType *tuple = NULL;  // 13.8改, as in check_define
     size_t target_count = lhat_node_list_length(node->v.binding.targets);
@@ -5811,10 +5722,7 @@ static void check_reassign(Checker *c, const LhatNode *node)
         // 03 の 3.4: what the name holds from here on is not what was passed
         // in, so nothing after this says anything about the parameter.
         close_param_var(c, wanted);
-        if (unpacked != NULL) {
-            expect(c, node, unpacked_at(c, unpacked, position), wanted,
-                   LHAT_CHECK_ERR_MISMATCH);
-        } else if (tuple != NULL) {
+        if (tuple != NULL) {
             // 13.8改: the positions of what the one value answered with.
             expect(c, node, lhat_type_tuple_at(tuple, position - 1), wanted,
                    LHAT_CHECK_ERR_MISMATCH);
@@ -5845,13 +5753,10 @@ static void check_reassign(Checker *c, const LhatNode *node)
         drop_narrowings_for(c, target_name_node(target));
     }
 
-    if (unpacked != NULL) {
-        check_unpack_shape(c, node, node->v.binding.values, unpacked, position);
-    }
     if (tuple != NULL && position != lhat_type_tuple_width(tuple)) {
         report(c, node, LHAT_CHECK_ERR_TUPLE_ARITY);  // 13.8改
     }
-    if (unpacked == NULL && tuple == NULL && target_count > 1 &&
+    if (tuple == NULL && target_count > 1 &&
         lhat_node_list_length(node->v.binding.values) == 1) {
         report(c, node, LHAT_CHECK_ERR_TUPLE_ARITY);  // 13.8改, as above
     }
@@ -6993,9 +6898,6 @@ const char *lhat_check_error_message(LhatCheckErrorCode code)
             return "f^ may call only f^, and this callee is a p^";
         case LHAT_CHECK_ERR_ARITY:
             return "the wrong number of arguments";
-        case LHAT_CHECK_ERR_UNPACK_ARITY:
-            return "this value does not have exactly the positions these "
-                   "names take apart";
         case LHAT_CHECK_ERR_NOT_VARIADIC:
             return "'...' spreads into a variadic tail, and this callee "
                    "takes none";

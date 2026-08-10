@@ -588,7 +588,7 @@ return^ log(m)         # 誤り。return^ は値を運ぶ
 { a := log(m) }        # 誤り。テーブルの要素は値
 t[log(m)]              # 誤り。添字は値
 log(m) as^ number^     # 誤り。注釈をつける対象がない
-unpack^ log(m)         # 誤り。分解する対象がない
+pack^ log(m)           # 誤り。まとめる対象がない
 log(m) .. "a"          # 誤り。連結する対象がない
 yield^ log(m)          # 誤り。出す値がない
 $"v={log(m)}"          # 誤り。穴に入る値がない

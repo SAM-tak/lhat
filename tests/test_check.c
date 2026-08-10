@@ -4304,7 +4304,7 @@ static void test_walking(void)
 
 // 02 の 14 章 makes a table a sequence as well as a mapping. The keyed half
 // was described by name from the start; the sequence half was dropped on the
-// floor, so nothing downstream of it -- t[1], unpack^, a walk's pair -- had
+// floor, so nothing downstream of it -- t[1], a walk.s pair -- had
 // anything to read.
 static void test_positions(void)
 {
@@ -4448,149 +4448,8 @@ static void test_positions(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // What it is for: the positions reach unpack^ and an index from an
-    // annotation, not only from a literal the checker watched being built.
-    LHAT_TEST("a written position reaches unpack^");
-    check_text(&u,
-               "var^ f = f^ -> t^{ number^, string^ } { return^ { 1, \"a\" } }\n"
-               "var^ q, r = unpack^ f()\n"
-               "var^ n : number^ = q\n"
-               "var^ s : string^ = r\n");
-    CHECK_CLEAN(&u);
-    unit_dispose(&u);
-
-    LHAT_TEST("and is not interchangeable there either");
-    check_text(&u,
-               "var^ f = f^ -> t^{ number^, string^ } { return^ { 1, \"a\" } }\n"
-               "var^ q, r = unpack^ f()\n"
-               "var^ s : string^ = q\n");
-    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
-    unit_dispose(&u);
-
-    LHAT_TEST("and an index reaches it too");
-    check_text(&u,
-               "var^ f = p^ x : t^{ number^, string^ } {\n"
-               "    var^ s : string^ = x[1]\n"
-               "}\n");
-    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
-    unit_dispose(&u);
-
-    // 13.10: unpack^ takes one value apart by position. The mark is on the
-    // right, which is what tells this from a multiple definition.
-    LHAT_TEST("unpack^ gives each name the position it takes");
-    check_text(&u,
-               "var^ q, r = unpack^ { 1, \"a\" }\n"
-               "var^ n : number^ = q\n"
-               "var^ s : string^ = r\n");
-    CHECK_CLEAN(&u);
-    unit_dispose(&u);
-
-    LHAT_TEST("and the positions are not interchangeable");
-    check_text(&u,
-               "var^ q, r = unpack^ { 1, \"a\" }\n"
-               "var^ s : string^ = q\n");
-    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
-    unit_dispose(&u);
-
-    LHAT_TEST("an annotation on a destructured name is checked");
-    check_text(&u, "var^ q:string^, r:string^ = unpack^ { 1, \"a\" }\n");
-    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
-    unit_dispose(&u);
-
-    LHAT_TEST("and one that agrees is not");
-    check_text(&u, "var^ q:number^, r:string^ = unpack^ { 1, \"a\" }\n");
-    CHECK_CLEAN(&u);
-    unit_dispose(&u);
-
-    // 8.6: the same form reassigning names that already exist.
-    LHAT_TEST("a destructuring reassignment is checked the same way");
-    check_text(&u,
-               "var^ q = 0\n"
-               "var^ r = \"\"\n"
-               "q, r := unpack^ { 1, \"a\" }\n");
-    CHECK_CLEAN(&u);
-    unit_dispose(&u);
-
-    LHAT_TEST("and a position that does not fit the name is reported");
-    check_text(&u,
-               "var^ q = \"\"\n"
-               "var^ r = \"\"\n"
-               "q, r := unpack^ { 1, \"a\" }\n");
-    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
-    unit_dispose(&u);
-
-    // 13.10: what is not a table cannot be taken apart.
-    LHAT_TEST("what is not a table cannot be taken apart");
-    check_text(&u, "var^ q, r = unpack^ 1\n");
-    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
-    unit_dispose(&u);
-
-    check_text(&u, "var^ q, r = unpack^ \"s\"\n");
-    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
-    unit_dispose(&u);
-
-    // 13.7: any^ is the top, and nothing may be done with one until it is
-    // narrowed -- the same refusal a member of one meets.
-    LHAT_TEST("nor may an any^, until it is narrowed");
-    check_text(&u,
-               "var^ f = f^ x:any^ -> any^ { return^ x }\n"
-               "var^ q, r = unpack^ f(1)\n");
-    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
-    unit_dispose(&u);
-
-    // 13.10: "左辺の名前の個数と分解できる要素数が合わない場合も誤り".
-    // 14.10's width subtyping is why this is refused rather than allowed: a
-    // type listing two positions is inhabited by values carrying exactly
-    // two, so a bind taking three out of it breaks on one of them. A program
-    // may rely only on what the type promises.
-    LHAT_TEST("a name past the positions the type promises is reported");
-    check_text(&u,
-               "var^ f = f^ -> t^{ number^, string^ } { return^ { 1, \"a\" } }\n"
-               "var^ q, r, s = unpack^ f()\n");
-    CHECK_REPORTS(&u, LHAT_CHECK_ERR_UNPACK_ARITY);
-    unit_dispose(&u);
-
-    // The other direction is 13.10 refusing Lua's list adjustment rather
-    // than soundness, but 13.10 makes it an error all the same.
-    LHAT_TEST("and so is a position no name takes");
-    check_text(&u,
-               "var^ f = f^ -> t^{ number^, string^ } { return^ { 1, \"a\" } }\n"
-               "var^ q = unpack^ f()\n");
-    CHECK_REPORTS(&u, LHAT_CHECK_ERR_UNPACK_ARITY);
-    unit_dispose(&u);
-
-    LHAT_TEST("a table promising no position at all promises none");
-    check_text(&u,
-               "var^ t : t^ = { 1, 2 }\n"
-               "var^ q, r = unpack^ t\n");
-    CHECK_REPORTS(&u, LHAT_CHECK_ERR_UNPACK_ARITY);
-    unit_dispose(&u);
-
-    LHAT_TEST("the same count is not reported");
-    check_text(&u,
-               "var^ f = f^ -> t^{ number^, string^ } { return^ { 1, \"a\" } }\n"
-               "var^ q, r = unpack^ f()\n");
-    CHECK_CLEAN(&u);
-    unit_dispose(&u);
-
-    // 13.7, 14.10改: an unbounded sequence has no number of positions for a
-    // count to disagree with, so neither direction can be reported.
-    LHAT_TEST("an unbounded sequence has no count to disagree with");
-    check_text(&u,
-               "var^ f = f^ -> t^{ ...:number^ } { return^ { 1, 2 } }\n"
-               "var^ q, r, s = unpack^ f()\n");
-    CHECK_CLEAN(&u);
-    unit_dispose(&u);
-
-    // 03 の 3.1: a type nothing has settled is the gap, not an error.
-    LHAT_TEST("and a source still unknown^ is the gap, not an error");
-    check_relaxed_text(&u,
-                       "var^ take = p^ v { var^ q, r = unpack^ v }\n");
-    CHECK_CLEAN(&u);
-    unit_dispose(&u);
-
-    // Without the mark the right side is one value per target (13.10), and
-    // that path is untouched.
+    // 8.6: two values on the right pair off with two names on the left, and
+    // 13.8改 left that path exactly as it was.
     LHAT_TEST("a multiple definition still pairs the two sides off");
     check_text(&u,
                "var^ a, b = 1, \"x\"\n"
@@ -4753,12 +4612,6 @@ static void test_no_value(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
-    LHAT_TEST("unpack^ wants one to take apart");
-    check_text(&u,
-               "var^ log = p^ m:string^ { var^ y = m }\n"
-               "var^ q, r = unpack^ log(\"x\")\n");
-    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
-    unit_dispose(&u);
 
     // 11.3 leaves what '..' means to op^, but it cannot mean anything at all
     // when handed nothing.

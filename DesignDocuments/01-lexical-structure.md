@@ -69,7 +69,7 @@ Memo.md 全体を通じて、`^` は算術（べき乗）にも論理（XOR）�
 - 制御構文: `if^` `else^` `elseif^` `elsif^` `elif^` `ei^` `el^` `or^` `for^` `when^`
   `other^` `from^` `to^` `downto^` `step^` `in^` `while^` `until^` `next^` `repeat^`
   `do^` `break^` `return^` `yield^` `yieldall^` `defer^` `with^`
-- 定義子: `f^` `p^` `op^` `def^` `self^` `enum^` `unpack^`
+- 定義子: `f^` `p^` `op^` `def^` `self^` `enum^`
 - 型・修飾: `number^` `string^` `int^` `nil^` `true^` `false^` `as^` `is^`
 - メタプロパティ: `.class^` `.super^` `.keys^` `.values^` `this^` `it^`
 - テーブル制御: `width^` `autowidth^`
@@ -92,7 +92,7 @@ Memo.md L28–L29 の `mutable^` は **退役させる**。「引数は既定で
 綴りとしての `mutable^` はどこにも実装されておらず、上の分類から外した。
 
 このうち **名前ではなく構文であるもの** は取り込みを要さない。
-`try^` `catch^` `unpack^` `require^` `typeof^` がそれにあたる（05 の 8.4）。
+`try^` `catch^` `pack^` `require^` `typeof^` がそれにあたる（05 の 8.4）。
 `rawsignature^` は提案されたが実装されず撤回した（02 の 14.16）。
 
 **語が増減しても字句解析器は変わらない。** それが 2.1 の決定の効果である。

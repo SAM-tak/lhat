@@ -102,18 +102,10 @@ typedef enum {
                         //       which one it is
     LHAT_BC_GETINDEX,   // A B C R[A] = R[B][R[C]]
     LHAT_BC_SETINDEX,   // A B C R[A][R[B]] = R[C]
-    // 02 の 13.10: a destructuring bind reached position B, and R[A] is what
-    // came out. Faults unless something did -- 04 の 11.3 spells absence
-    // nil^, so a position answering nil^ is a position that is not there.
-    //
-    // The checker settles this under strict (13.10 makes a count that does
-    // not agree an error), so this is what relaxed and an unchecked compile
-    // fall to. B is the position, for the reader rather than for the read.
-    LHAT_BC_CHECKPOS,   // A B   R[A] is position B of a destructuring
-    // 02 の 13.8改: the same guard for a tuple. The checker settles the width
-    // where it ran, so this is what relaxed and an unchecked compile fall to
-    // -- and it is what stands between an error arriving where a run was
-    // expected and a register being read as a position.
+    // 02 の 13.8改: the checker settles the width where it ran, so this is
+    // what relaxed and an unchecked compile fall to -- and it is what stands
+    // between an error arriving where a run was expected and a register being
+    // read as a position.
     LHAT_BC_CHECKRUN,   // A B   R[A] is the head of a run of B positions
     // 02 の 13.8改: pack^ -- the one bridge from a tuple to a table. A tuple
     // is not a value a name can hold; this makes one that is.

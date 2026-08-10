@@ -602,7 +602,7 @@ lhat_register_func(&program, "system.io", "print", "p^string^;", print_fn, NULL)
 ### 8.4 構文である語は取り込まない［確定］
 
 `require^` は名前ではなく **構文** である。したがって取り込む必要がない。
-`try^`（04 の 5 章）や `unpack^`（02 の 13.10）と同じ位置づけになる。
+`try^`（04 の 5 章）や `pack^`（02 の 13.8改）と同じ位置づけになる。
 
 `typeof^` も同様に構文とする（`rawsignature^` は提案のみで撤回、02 の 14.16）。
 

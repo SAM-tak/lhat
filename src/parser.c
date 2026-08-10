@@ -2256,26 +2256,6 @@ static LhatNode *parse_target(Parser *p)
     return finish(p, target);
 }
 
-// 13.10: 'unpack^ expr' marks the value that is taken apart. Putting the
-// marker on the value rather than on the binding is what lets a
-// reassignment destructure too.
-static LhatNode *parse_value(Parser *p)
-{
-    if (!check_hat(p, "unpack")) {
-        return parse_expression(p);
-    }
-
-    LhatToken start = p->current;
-    advance(p);
-
-    LhatNode *node = make(p, LHAT_NODE_UNPACK, &start);
-    if (node == NULL) {
-        return NULL;
-    }
-    node->v.jump.value = parse_expression(p);
-    return finish(p, node);
-}
-
 // 7.4改: 'target op= value' names the plain operator it stands for. Not an
 // operator table lookup, since a compound token never reaches parse_binary --
 // is_comparison/binary_info never see one, so this is the only place asking.
@@ -2300,9 +2280,9 @@ static LhatNode *parse_binding(Parser *p, LhatNodeKind kind,
 {
     LhatNode *values = NULL;
     LhatNode *values_tail = NULL;
-    lhat_node_append(&values, &values_tail, parse_value(p));
+    lhat_node_append(&values, &values_tail, parse_expression(p));
     while (match_op(p, LHAT_OP_COMMA)) {
-        lhat_node_append(&values, &values_tail, parse_value(p));
+        lhat_node_append(&values, &values_tail, parse_expression(p));
     }
 
     LhatNode *node = make(p, kind, at);
@@ -2315,20 +2295,7 @@ static LhatNode *parse_binding(Parser *p, LhatNodeKind kind,
     size_t target_count = lhat_node_list_length(targets);
     size_t source_count = lhat_node_list_length(values);
 
-    bool unpacking = false;
-    for (LhatNode *value = values; value != NULL; value = value->next) {
-        if (value->kind == LHAT_NODE_UNPACK) {
-            unpacking = true;
-        }
-    }
-
-    if (unpacking) {
-        // 13.10: the marked value has to be the only one, since it is spread
-        // across every target.
-        if (source_count != 1) {
-            report(p, at, LHAT_PARSE_ERR_UNPACK_NOT_ALONE);
-        }
-    } else if (target_count != source_count && source_count != 1) {
+    if (target_count != source_count && source_count != 1) {
         report(p, at, LHAT_PARSE_ERR_BINDING_ARITY);
     }
     // 13.8改: one value on the right with several names on the left is a
@@ -3496,14 +3463,6 @@ static LhatNode *parse_statement(Parser *p)
         }
     }
 
-    // 13.10: unpack^ belongs to the value of a binding and nowhere else.
-    if (check_hat(p, "unpack")) {
-        report(p, &p->current, LHAT_PARSE_ERR_UNPACK_MISPLACED);
-        advance(p);
-        parse_expression(p);
-        return make(p, LHAT_NODE_ERROR, &start);
-    }
-
     // Otherwise a reassignment or a call. A definition needs let^ (8.6), so
     // nothing here can create a name.
     LhatNode *head = NULL;
@@ -3552,9 +3511,9 @@ static LhatNode *parse_statement(Parser *p)
         size_t target_count = lhat_node_list_length(head);
         size_t source_count = lhat_node_list_length(rhs_head);
         if (target_count != source_count) {
-            // Nothing spreads one value across several targets here. 13.10's
-            // unpack^ answers that for a plain ':=' and says so in the source;
-            // guessing it from an operator would not.
+            // Nothing spreads one value across several targets here: a
+            // compound operator reads the target it writes back to, so a
+            // value it never saw cannot stand for one.
             report(p, &at, LHAT_PARSE_ERR_BINDING_ARITY);
         }
 
@@ -3956,14 +3915,8 @@ const char *lhat_parse_error_message(LhatParseErrorCode code)
             return "postfix reassignment was withdrawn; write 'target << value'";
         case LHAT_PARSE_ERR_WITHDRAWN_COLONCOLON:
             return "'::' was withdrawn; write '->' before the return type";
-        case LHAT_PARSE_ERR_DESTRUCTURE_NEEDS_UNPACK:
-            return "taking one value apart needs 'unpack^' before it";
         case LHAT_PARSE_ERR_BINDING_ARITY:
             return "the number of targets and values does not match";
-        case LHAT_PARSE_ERR_UNPACK_NOT_ALONE:
-            return "'unpack^' must be the only value of the binding";
-        case LHAT_PARSE_ERR_UNPACK_MISPLACED:
-            return "'unpack^' is only valid as the value of ':=' or '<<'";
         case LHAT_PARSE_ERR_CLAUSE_ORDER:
             return "loop clauses run prolog^, pre^, first^, main^, last^, "
                    "epilog^, finally^ and must be written in that order";

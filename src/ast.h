@@ -55,7 +55,6 @@ typedef enum {
     LHAT_NODE_INDEX,         // a[i]  a?[i]
     LHAT_NODE_CALL,          // f(x)  f?(x)
     LHAT_NODE_AS,            // expr as^ Type
-    LHAT_NODE_UNPACK,        // unpack^ expr          (13.10)
     LHAT_NODE_PACK,          // pack^ expr            (13.8改): the one bridge
                              // from a tuple to a table a name can hold
     LHAT_NODE_FUNC,          // f^... { ... } / p^... { ... }
@@ -411,12 +410,9 @@ struct LhatNode {
             // BREAK: the number of loops to leave, and never zero -- a plain
             // break^ is one.
             //
-            // UNPACK (13.10): how many leading positions the checker confirmed
-            // the source type names, so the compiler can leave those
-            // unchecked. Under strict it is all of them or none -- a count
-            // that does not agree is reported rather than compiled. Zero is
-            // what relaxed and an unchecked compile both see, and 5.11a keeps
-            // that a working compile rather than a missing one.
+            // RETURN / YIELD (13.8改): how many values are written, when
+            // several are. They hang off `value` as a list. 0 and 1 both mean
+            // one, which is every return^ and yield^ written before tuples.
             uint32_t level;
         } jump;
 

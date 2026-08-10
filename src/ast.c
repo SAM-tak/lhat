@@ -176,7 +176,6 @@ void lhat_node_visit_children(const LhatNode *node, LhatNodeVisitor visit,
         case LHAT_NODE_REQUIRE_STMT:
         case LHAT_NODE_IMPORT:
         case LHAT_NODE_IMPORT_STMT:
-        case LHAT_NODE_UNPACK:
         case LHAT_NODE_PACK:
         case LHAT_NODE_CALL_STMT:
         case LHAT_NODE_BREAK:
@@ -344,7 +343,6 @@ const char *lhat_node_kind_name(LhatNodeKind kind)
         case LHAT_NODE_INDEX:          return "index";
         case LHAT_NODE_CALL:           return "call";
         case LHAT_NODE_AS:             return "as";
-        case LHAT_NODE_UNPACK:         return "unpack";
         case LHAT_NODE_PACK:           return "pack";
         case LHAT_NODE_FUNC:           return "func";
         case LHAT_NODE_IF_EXPR:        return "if-expr";
