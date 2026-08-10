@@ -412,24 +412,18 @@ static Binding *scope_find_local(Scope *scope, const char *name, size_t length)
 // 15.1 asks which scope answered, not only what it holds: an f^ may write to
 // a name its own body made and to no other. `found_in` may be NULL for the
 // callers that only want the binding.
-static Binding *scope_find_in(Scope *scope, const char *name, size_t length,
-                              Scope **found_in)
+static Binding *scope_find(Scope *scope, const char *name, size_t length, Scope **found)
 {
     for (Scope *s = scope; s != NULL; s = s->parent) {
         Binding *b = scope_find_local(s, name, length);
         if (b != NULL) {
-            if (found_in != NULL) {
-                *found_in = s;
+            if (found != NULL) {
+                *found = s;
             }
             return b;
         }
     }
     return NULL;
-}
-
-static Binding *scope_find(Scope *scope, const char *name, size_t length)
-{
-    return scope_find_in(scope, name, length, NULL);
 }
 
 // 01 の 2.3改 (S35): the stacked reach, passing over the innermost `skip`
@@ -542,13 +536,12 @@ static LhatType *resolve_type(Checker *c, const LhatNode *node);
 static LhatType *infer(Checker *c, const LhatNode *node);
 static LhatType *environment_type(Checker *c);  // 05 の 8.6
 // 05 の 8.9: the escape rules, written where the escapes would happen.
-static Binding *scope_find_in(Scope *scope, const char *name, size_t length,
-                              Scope **found_in);
-static bool scope_within_body(Checker *c, const Scope *found_in);
+static Binding *scope_find(Scope *scope, const char *name, size_t length, Scope **found);
+static bool scope_within_body(Checker *c, const Scope *found);
 static bool is_hostvalue(const LhatType *type);
-// 04 の 11.4改 (S43): what a target offers with its nil^ arm set aside.
-// Written beside the member access it belongs to; infer_call, which stands
-// above that, reads it too.
+// 04 の 11.4改 (S43): the two halves of the '?' forms, written beside the
+// member access they belong to and used by the call path above it.
+static LhatType *nil_propagated(Checker *c, const LhatNode *node, LhatType *answer);
 static LhatType *without_nil_arm(Checker *c, LhatType *target);
 static LhatType *typeinfo_type(Checker *c);     // 14.16
 static void register_module_type(Checker *c, const char *module_name,
@@ -868,7 +861,7 @@ static LhatType *resolve_type(Checker *c, const LhatNode *node)
             // up in the same place a value is, which is what 14.9 needs --
             // it says a definition takes its name from its binding, and a
             // binding lives here.
-            Binding *declared = scope_find(c->scope, name, length);
+            Binding *declared = scope_find(c->scope, name, length, NULL);
             if (declared == NULL) {
                 report(c, node, LHAT_CHECK_ERR_UNKNOWN_TYPE);
                 return simple(c, LHAT_TYPE_UNKNOWN);
@@ -2251,7 +2244,7 @@ static LhatType *infer_name(Checker *c, const LhatNode *node)
         }
     }
 
-    Binding *b = scope_find(from, name, length);
+    Binding *b = scope_find(from, name, length, NULL);
     if (b == NULL) {
         // 05 の 8.2: what the host bound before anything ran. Asked after
         // every scope, so a let^ of the same spelling shadows it -- and what
@@ -2277,9 +2270,9 @@ static LhatType *infer_name(Checker *c, const LhatNode *node)
     // same boundary test 15.1 uses for writes, asked of a read here because
     // for a host value the read is what would build the upvalue.
     if (is_hostvalue(b->type) && c->body_scope != NULL) {
-        Scope *found_in = NULL;
-        scope_find_in(from, name, length, &found_in);
-        if (!scope_within_body(c, found_in)) {
+        Scope *found = NULL;
+        scope_find(from, name, length, &found);
+        if (!scope_within_body(c, found)) {
             report(c, node, LHAT_CHECK_ERR_HOSTVALUE_ESCAPES);
         }
     }
@@ -4184,7 +4177,7 @@ static LhatType *infer_node(Checker *c, const LhatNode *node)
                            LHAT_CHECK_ERR_HOSTVALUE_ESCAPES);
                 }
             }
-            Binding *receiver = scope_find(c->scope, "self^", 5);
+            Binding *receiver = scope_find(c->scope, "self^", 5, NULL);
             return receiver != NULL ? receiver->type
                                     : simple(c, LHAT_TYPE_UNKNOWN);
         }
@@ -4667,7 +4660,7 @@ static LhatType *path_table(Checker *c, const LhatNode *node)
         if (!node_name(c, node, &name, &length)) {
             return NULL;
         }
-        Binding *b = scope_find(c->scope, name, length);
+        Binding *b = scope_find(c->scope, name, length, NULL);
         if (b == NULL) {
             // collect_bindings puts an ordinary root there before the walk,
             // so what reaches here is a hat identifier that is not L^.
@@ -5060,7 +5053,7 @@ static void check_import(Checker *c, const LhatNode *node, bool binds)
     if (!node_name(c, root_node, &name, &length)) {
         return;
     }
-    Binding *root = scope_find(c->scope, name, length);
+    Binding *root = scope_find(c->scope, name, length, NULL);
     if (root == NULL) {
         root = scope_add(c->scope, name, length,
                          lhat_type_table(c->result->types), node->offset);
@@ -5137,7 +5130,7 @@ static void check_require_stmt(Checker *c, const LhatNode *node)
     // shadowing it, which is what lets two units of one namespace meet. The
     // name points into the required unit's result, and 6 章 keeps that alive
     // as long as the program is.
-    Binding *root = scope_find(c->scope, segment, length);
+    Binding *root = scope_find(c->scope, segment, length, NULL);
     if (root == NULL) {
         root = scope_add(c->scope, segment, length,
                          lhat_type_table(c->result->types), node->offset);
@@ -5223,8 +5216,7 @@ static bool value_is_fresh(const Checker *c, const LhatNode *value,
 // The binding a path is rooted in, with the scope that answered, or NULL when
 // the root is not a name a scope holds -- L^ (05 の 8.6) and self^ among them,
 // neither of which any body made.
-static Binding *path_root_binding(Checker *c, const LhatNode *target,
-                                  Scope **found_in)
+static Binding *path_root_binding(Checker *c, const LhatNode *target, Scope **found)
 {
     const LhatNode *root = target_root(target);
     const char *name = NULL;
@@ -5239,7 +5231,7 @@ static Binding *path_root_binding(Checker *c, const LhatNode *target,
             return NULL;
         }
     }
-    return scope_find_in(from, name, length, found_in);
+    return scope_find(from, name, length, found);
 }
 
 // 15.3改: whether this expression names a coroutine the body being checked
@@ -5319,11 +5311,11 @@ static void check_write_target(Checker *c, const LhatNode *target)
         }
     }
 
-    Scope *found_in = NULL;
-    if (scope_find_in(from, name, length, &found_in) == NULL) {
+    Scope *found = NULL;
+    if (scope_find(from, name, length, &found) == NULL) {
         return;  // no such name; infer_name reports that
     }
-    if (!scope_within_body(c, found_in)) {
+    if (!scope_within_body(c, found)) {
         report(c, target, LHAT_CHECK_ERR_FUNCTION_WRITES_OUT);
     }
 }
@@ -5360,7 +5352,7 @@ static void check_immutable_write(Checker *c, const LhatNode *target)
         }
     }
 
-    const Binding *b = scope_find(from, name, length);
+    const Binding *b = scope_find(from, name, length, NULL);
     if (b != NULL && b->immutable) {
         // 12.1 and 16.3改2 bind without the writer choosing a word, so there
         // is no var^ for them to write instead. Saying otherwise would send a
@@ -5408,7 +5400,7 @@ static const LhatType *path_type_of(Checker *c, const LhatNode *node)
                 return NULL;
             }
         }
-        const Binding *b = scope_find(from, name, length);
+        const Binding *b = scope_find(from, name, length, NULL);
         return b != NULL ? b->type : NULL;
     }
 
@@ -5582,7 +5574,7 @@ static LhatType *walk_produce(Checker *c, const LhatNode *at, LhatType *over)
 // 16.3: the focus of an in^ loop is bound, not evaluated, so it is checked
 // here rather than by check_statements -- which would read the names as uses
 // and find nothing in scope.
-static void check_focus_in(Checker *c, const LhatNode *node)
+static void check_focus(Checker *c, const LhatNode *node)
 {
     LhatType *produced =
         walk_produce(c, node->v.loop.bound, infer(c, node->v.loop.bound));
@@ -5744,7 +5736,7 @@ static void collect_bindings(Checker *c, const LhatNode *statements)
                 // the path is walked.
                 if (root->kind != LHAT_NODE_HAT_IDENT &&
                     node_name(c, root, &name, &length) &&
-                    scope_find(c->scope, name, length) == NULL) {
+                    scope_find(c->scope, name, length, NULL) == NULL) {
                     scope_add(c->scope, name, length,
                               simple(c, LHAT_TYPE_PENDING), root->offset);
                 }
@@ -6131,7 +6123,7 @@ static void check_statement(Checker *c, const LhatNode *node)
                 // 16.3: in^ binds its focus each turn from what the walk
                 // yields, so the names are defined here rather than read.
                 if (node->v.loop.kind == LHAT_FOR_IN) {
-                    check_focus_in(c, node);
+                    check_focus(c, node);
                 } else {
                     check_statements(c, node->v.loop.focus);
                     infer(c, node->v.loop.bound);
