@@ -6865,7 +6865,7 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
             }
 
             case LHAT_BC_NOT: {
-                // 02 の 8.6's condition rule: only a bool is a truth value,
+                // 02 の 5.4's condition rule: only a bool is a truth value,
                 // so this refuses anything else rather than inventing one.
                 if (!lhat_is_bool(R(b))) {
                     return finish(m, chunk, LHAT_RUN_TYPE_ERROR, lhat_nil(), at);
