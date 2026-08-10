@@ -304,6 +304,13 @@ bool lhat_value_satisfies(LhatValue value, const LhatRuntimeType *type)
         case LHAT_TYPE_RT_HOSTVALUE:
             return lhat_is_hostvalue(value) &&
                    lhat_as_hostvalue_tag(value) == type->hostvalue_tag;
+        // 13.8改: no value satisfies a tuple. One is never a value in hand --
+        // it lives in the slots a call reserved and is taken apart there,
+        // which is why the checker refuses it everywhere a name could hold
+        // one. Reaching here means a written type got past that, and false is
+        // the honest answer: there is nothing to hold up against it.
+        case LHAT_TYPE_RT_TUPLE:
+            return false;
         case LHAT_TYPE_RT_UNION:
             for (size_t i = 0; i < type->part_count; i++) {
                 if (lhat_value_satisfies(value, type->parts[i])) {
@@ -484,6 +491,18 @@ static void write_runtime_type(TypeWriter *w, const LhatRuntimeType *type)
             write_runtime_type(w, type->result);
             type_put_text(w, "}");
             return;
+        // 13.8改: '(A, B)'. The parentheses the type grammar already used for
+        // grouping, which is why there is no one-position form to write.
+        case LHAT_TYPE_RT_TUPLE:
+            type_put_text(w, "(");
+            for (size_t i = 0; i < type->part_count; i++) {
+                if (i > 0) {
+                    type_put_text(w, ", ");
+                }
+                write_runtime_type(w, type->parts[i]);
+            }
+            type_put_text(w, ")");
+            return;
         case LHAT_TYPE_RT_UNION:
             for (size_t i = 0; i < type->part_count; i++) {
                 if (i > 0) {
@@ -652,6 +671,19 @@ bool lhat_runtime_type_equal(const LhatRuntimeType *a, const LhatRuntimeType *b)
             lhat_free(matched);
             return equal;
         }
+        // 13.8改: the order and the count are what a tuple means, so this is
+        // the positional walk the SUBROUTINE arm below does rather than the
+        // order-blind matching a union gets above.
+        case LHAT_TYPE_RT_TUPLE:
+            if (a->part_count != b->part_count) {
+                return false;
+            }
+            for (size_t i = 0; i < a->part_count; i++) {
+                if (!lhat_runtime_type_equal(a->parts[i], b->parts[i])) {
+                    return false;
+                }
+            }
+            return true;
         case LHAT_TYPE_RT_SUBROUTINE:
             if (a->is_function != b->is_function ||
                 a->takes_self != b->takes_self ||

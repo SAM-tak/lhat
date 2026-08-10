@@ -248,6 +248,32 @@ static size_t width_of(const LhatNode *node)
     return tag != NULL ? tag->width : 1;
 }
 
+// 02 の 13.8改: how many values this expression answers with, or 0 when it is
+// not a tuple. Read off the checker's stamp the way hostvalue_of reads a host
+// value's -- an unchecked compile sees 0 and takes the ordinary one-slot
+// path, which then faults at run time rather than laying out a run nobody
+// reserved (03 の 4.2: what runs must not depend on whether checking did).
+static size_t tuple_width_of(const LhatNode *node)
+{
+    if (node == NULL || node->checked_type == NULL) {
+        return 0;
+    }
+    return lhat_type_tuple_width((const LhatType *)node->checked_type);
+}
+
+// 02 の 13.8改: the forms a tuple can arrive through -- a call, or a call
+// with 04 の 5.1's try^ around it. try^ is transparent here because the head
+// slot's tag is what tells the error arm from the value arm, so the same run
+// serves both.
+static bool is_run_source(const LhatNode *node)
+{
+    return node != NULL &&
+           (node->kind == LHAT_NODE_CALL || node->kind == LHAT_NODE_TRY);
+}
+
+static void compile_run_source(Compiler *c, const LhatNode *node, uint8_t into,
+                               size_t reserved);
+
 // A run of consecutive slots, first one answered. The scratch discipline
 // (mark/restore of next_register) frees a wide reservation the same way it
 // frees a narrow one.
@@ -602,6 +628,24 @@ static ScopedKind resolve_scoped(Compiler *c, const LhatNode *node,
 }
 
 static void compile_expression(Compiler *c, const LhatNode *node, uint8_t into);
+// 02 の 13.8改: `reserved` is how many consecutive slots the answer is to be
+// written into -- 0 and 1 both mean the ordinary one.
+static void compile_call_wide(Compiler *c, const LhatNode *node, uint8_t into,
+                              size_t reserved);
+static void compile_try_wide(Compiler *c, const LhatNode *node, uint8_t into,
+                             size_t reserved);
+
+// Lays a tuple answer into the run at `into`. Only called where is_run_source
+// said yes.
+static void compile_run_source(Compiler *c, const LhatNode *node, uint8_t into,
+                               size_t reserved)
+{
+    if (node->kind == LHAT_NODE_TRY) {
+        compile_try_wide(c, node, into, reserved);
+    } else {
+        compile_call_wide(c, node, into, reserved);
+    }
+}
 static void compile_statement(Compiler *c, const LhatNode *node);
 static void compile_statements(Compiler *c, const LhatNode *statements);
 static void compile_block(Compiler *c, const LhatNode *block);
@@ -1154,9 +1198,20 @@ static void compile_error_new(Compiler *c, const LhatNode *node, uint8_t into)
 
 // 04 の 5.1: try^ hands the caller the error and keeps going otherwise. 5.6
 // wants no unwinding for it, and none is needed -- returning is all it does.
-static void compile_try(Compiler *c, const LhatNode *node, uint8_t into)
+// 02 の 13.8改: `reserved` widens the answer the way it does for a call --
+// '(A, B)|SomeError' reserves one head slot plus the positions, and the two
+// arms are told apart by the tag that lands in the head. So ISERROR below
+// reads exactly what it always read, and the error arm still travels as one
+// value: the RETURN carrying it out is narrow (B stays 0).
+static void compile_try_wide(Compiler *c, const LhatNode *node, uint8_t into,
+                             size_t reserved)
 {
-    compile_expression(c, node->v.jump.value, into);
+    const LhatNode *operand = node->v.jump.value;
+    if (reserved > 1 && operand != NULL && operand->kind == LHAT_NODE_CALL) {
+        compile_call_wide(c, operand, into, reserved);
+    } else {
+        compile_expression(c, operand, into);
+    }
 
     uint8_t mark = c->next_register;
     uint8_t test = reserve(c);
@@ -1166,6 +1221,11 @@ static void compile_try(Compiler *c, const LhatNode *node, uint8_t into)
 
     emit(c, lhat_encode_abc(LHAT_BC_RETURN, into, 0, 0));
     lhat_chunk_patch_here(&c->proto->chunk, past);
+}
+
+static void compile_try(Compiler *c, const LhatNode *node, uint8_t into)
+{
+    compile_try_wide(c, node, into, 0);
 }
 
 // 04 の 4 章: catch^ replaces the value on the spot, and 4.2 names the error
@@ -1399,6 +1459,24 @@ static LhatRuntimeType *lower_type(Compiler *c, const LhatNode *node)
             for (size_t i = 0; i < 2; i++) {
                 LhatRuntimeType *arm = lower_type(c, sides[i]);
                 if (arm == NULL || !lhat_type_rt_add_part(type, arm)) {
+                    return NULL;
+                }
+            }
+            return type;
+        }
+
+        case LHAT_NODE_TYPE_TUPLE: {
+            // 13.8改: the positions, in order, held the way a union's arms
+            // are. A position that lowers to nothing takes the tuple with it,
+            // for the reason the union above gives.
+            LhatRuntimeType *type = lhat_type_rt_new(owner, LHAT_TYPE_RT_TUPLE);
+            if (type == NULL) {
+                return NULL;
+            }
+            for (const LhatNode *item = node->v.list.items; item != NULL;
+                 item = item->next) {
+                LhatRuntimeType *position = lower_type(c, item);
+                if (position == NULL || !lhat_type_rt_add_part(type, position)) {
                     return NULL;
                 }
             }
@@ -1726,6 +1804,23 @@ static LhatRuntimeType *rt_from_checked(LhatHeap *heap,
 
         case LHAT_TYPE_INTERSECT: {
             LhatRuntimeType *rt = lhat_type_rt_new(heap, LHAT_TYPE_RT_INTERSECT);
+            if (rt == NULL) {
+                return NULL;
+            }
+            for (LhatTypeList *a = type->v.composite.arms; a != NULL;
+                 a = a->next) {
+                if (!lhat_type_rt_add_part(rt, rt_from_checked(heap, a->type, seen))) {
+                    return NULL;
+                }
+            }
+            return rt;
+        }
+
+        // 13.8改: the positions, in order. Same walk as the two above -- the
+        // checker holds them in the same list -- but its own kind, since the
+        // order and the count are what a tuple means.
+        case LHAT_TYPE_TUPLE: {
+            LhatRuntimeType *rt = lhat_type_rt_new(heap, LHAT_TYPE_RT_TUPLE);
             if (rt == NULL) {
                 return NULL;
             }
@@ -2446,7 +2541,15 @@ static void compile_table(Compiler *c, const LhatNode *node, uint8_t into)
 
 // 5.3: the callee sits in a register and its arguments follow it, so the
 // machine can hand the callee's frame a contiguous run.
-static void compile_call(Compiler *c, const LhatNode *node, uint8_t into)
+// 02 の 13.8改: `reserved` is how many consecutive slots the caller wants the
+// answer written into -- one head slot plus the positions. 0 and 1 both mean
+// the ordinary one-slot answer, which is every call site but a destructuring
+// bind. The count travels in CALL's C so the callee can be told what is
+// expected of it; the two sides cannot agree statically (an unchecked
+// compile, 03 の 4.3's session, 05 の 5.3's units, a callee that is only a
+// value), so the machine catches a disagreement instead.
+static void compile_call_wide(Compiler *c, const LhatNode *node, uint8_t into,
+                              size_t reserved)
 {
     uint8_t mark = c->next_register;
     uint8_t callee = reserve(c);
@@ -2554,19 +2657,31 @@ static void compile_call(Compiler *c, const LhatNode *node, uint8_t into)
     // 05 の 8.9: a call that answers a host value has the machine write the
     // whole width at the callee slot, so the frame has to be at least that
     // wide there even when the arguments took less.
-    while (c->next_register < callee + width_of(node)) {
+    // 13.8改: a tuple answer needs the same room -- a head slot and then the
+    // positions -- so the wider of the two is what the frame has to hold.
+    size_t answer_width = width_of(node);
+    if (reserved > answer_width) {
+        answer_width = reserved;
+    }
+    while (c->next_register < callee + answer_width) {
         reserve(c);
     }
     emit(c, lhat_encode_abc(method ? LHAT_BC_CALLMETHOD : LHAT_BC_CALL, callee,
-                            (uint8_t)count, spread ? 1 : 0));
+                            (uint8_t)count,
+                            lhat_call_operand(spread, (unsigned)reserved)));
     // The answer then moves to the destination the same way it was written.
-    emit_move_wide(c, into, callee, width_of(node));
+    emit_move_wide(c, into, callee, answer_width);
     // S43: where an absent callee's nil^ lands, past everything the call
     // itself does.
     if (past_call != SIZE_MAX) {
         lhat_chunk_patch_here(&c->proto->chunk, past_call);
     }
     c->next_register = mark;
+}
+
+static void compile_call(Compiler *c, const LhatNode *node, uint8_t into)
+{
+    compile_call_wide(c, node, into, 0);
 }
 
 // 02 の 15 章: f^ and p^ are both compiled the same way here; the difference
@@ -3099,6 +3214,34 @@ static void compile_expression(Compiler *c, const LhatNode *node, uint8_t into)
         // 02 の 15.4: an expression, not a statement -- what it answers is
         // what the resume sent, so one register carries both directions.
         case LHAT_NODE_YIELD:
+            // 13.8改: 'yield^ a, b' answers a tuple -- the positions go in
+            // consecutive slots and YIELD carries how many, the same shape
+            // return^ uses. The head is the machine's, put down in the
+            // resumer's frame. Only written as a statement, so what the
+            // resume sends lands in the first position's slot and nothing
+            // here reads it back.
+            if (node->v.jump.level > 1) {
+                size_t positions = node->v.jump.level;
+                if (positions > LHAT_MAX_TUPLE) {
+                    fail(c, LHAT_COMPILE_TOO_COMPLEX);
+                    return;
+                }
+                uint8_t mark = c->next_register;
+                uint8_t first = reserve_wide(c, positions);
+                uint8_t at = first;
+                for (const LhatNode *item = node->v.jump.value; item != NULL;
+                     item = item->next) {
+                    compile_expression(c, item, at);
+                    at++;
+                }
+                if (!node->v.jump.phantom) {  // 15.11
+                    emit(c, lhat_encode_abc(LHAT_BC_YIELD, first,
+                                            (uint8_t)positions, 0));
+                }
+                emit(c, lhat_encode_abc(LHAT_BC_LOADNIL, into, 0, 0));
+                c->next_register = mark;
+                return;
+            }
             if (node->v.jump.value == NULL) {
                 emit(c, lhat_encode_abc(LHAT_BC_LOADNIL, into, 0, 0));
             } else {
@@ -3310,6 +3453,27 @@ static void compile_expression(Compiler *c, const LhatNode *node, uint8_t into)
         case LHAT_NODE_CALL:
             compile_call(c, node, into);
             return;
+
+        // 13.8改: pack^ -- the run is laid down and turned into a table in
+        // place. The one allocation here is the table the writer asked for.
+        case LHAT_NODE_PACK: {
+            const LhatNode *source = node->v.jump.value;
+            size_t positions = tuple_width_of(source);
+            if (positions < 2 || positions > LHAT_MAX_TUPLE ||
+                !is_run_source(source)) {
+                fail(c, LHAT_COMPILE_UNSUPPORTED);
+                return;
+            }
+            uint8_t mark = c->next_register;
+            uint8_t head = reserve_wide(c, positions + 1);
+            compile_run_source(c, source, head, positions + 1);
+            emit(c, lhat_encode_abc(LHAT_BC_CHECKRUN, head,
+                                    (uint8_t)positions, 0));
+            emit(c, lhat_encode_abc(LHAT_BC_PACK, head, (uint8_t)positions, 0));
+            emit(c, lhat_encode_abc(LHAT_BC_MOVE, into, head, 0));
+            c->next_register = mark;
+            return;
+        }
 
         case LHAT_NODE_FUNC:
             compile_subroutine(c, node, into);
@@ -3702,9 +3866,99 @@ static void compile_unpack_define(Compiler *c, const LhatNode *node)
     c->next_register = mark;
 }
 
+// 02 の 13.8改: 'var^ a, b = f()'. The call lays a head slot and the positions
+// into the run reserved here, and every name takes its own out of it. No
+// table is made anywhere along the way -- which is what 13.8 promised when it
+// said the cost would be absorbed by the implementation, and never built.
+//
+// Same shape as compile_unpack_define above, with a MOVE where that one has a
+// GETINDEX. It needs no CHECKPOS sibling: reaching here at all means the
+// checker settled the width (tuple_width_of reads its stamp), and the two
+// sides are reconciled by the machine at the pop, where a callee compiled
+// separately is caught.
+static void compile_tuple_define(Compiler *c, const LhatNode *node,
+                                 size_t positions)
+{
+    if (positions > LHAT_MAX_TUPLE) {
+        fail(c, LHAT_COMPILE_TOO_COMPLEX);
+        return;
+    }
+    uint8_t mark = c->next_register;
+    uint8_t head = reserve_wide(c, positions + 1);
+    compile_run_source(c, node->v.binding.values, head, positions + 1);
+    // 13.8改: what stands between a value that is not a run and the slots
+    // after it being read as positions nobody wrote. The type settled this
+    // wherever the checker ran; a separately compiled callee is what lands
+    // here. A try^'s error arm never reaches it -- that RETURN already left.
+    emit(c, lhat_encode_abc(LHAT_BC_CHECKRUN, head, (uint8_t)positions, 0));
+
+    size_t position = 0;
+    for (const LhatNode *target = node->v.binding.targets; target != NULL;
+         target = target->next) {
+        position++;
+        if (position > positions || position > LHAT_MAX_LOCALS) {
+            fail(c, LHAT_COMPILE_TOO_COMPLEX);
+            return;
+        }
+        uint8_t from = (uint8_t)(head + position);
+        uint8_t inner = c->next_register;
+
+        // 8.8: the place is a member of a table the path reaches, exactly as
+        // in compile_unpack_define.
+        if (define_target_is_path(target)) {
+            const LhatNode *last = define_target_name(target);
+            uint8_t owner = reserve(c);
+            uint8_t place = reserve(c);
+            compile_path_prefix(c, last->v.access.target, owner);
+            compile_key(c, last, place);
+            emit(c, lhat_encode_abc(LHAT_BC_SETINDEX, owner, place, from));
+            c->next_register = inner;
+            continue;
+        }
+
+        const char *name = NULL;
+        size_t length = 0;
+        if (!node_name(c, define_target_name(target), &name, &length)) {
+            fail(c, LHAT_COMPILE_UNSUPPORTED);
+            return;
+        }
+        const Local *local = find_local(c, name, length);
+        if (local == NULL) {
+            fail(c, LHAT_COMPILE_UNDEFINED);
+            return;
+        }
+        // 05 の 8.9: a position is one slot, so a name taking one is never
+        // wide. The checker refused a host value as a position; this is the
+        // backstop rather than a trust.
+        if (local->width > 1) {
+            fail(c, LHAT_COMPILE_UNSUPPORTED);
+            return;
+        }
+        // 03 の 4.3, as in the ordinary define: a name an earlier input bound
+        // stops sharing its place before this let^ writes it.
+        if ((size_t)(local - c->locals) < c->session_locals) {
+            emit(c, lhat_encode_abc(LHAT_BC_CLOSEONE, local->reg, 0, 0));
+        }
+        emit(c, lhat_encode_abc(LHAT_BC_MOVE, local->reg, from, 0));
+        c->next_register = inner;
+    }
+    c->next_register = mark;
+}
+
 static void compile_define(Compiler *c, const LhatNode *node)
 {
     const LhatNode *value = node->v.binding.values;
+    // 13.8改: several values on the right and several names on the left, with
+    // no word between them -- what the type says is what tells this from
+    // 8.6's multiple definition, and the parser already told them apart by
+    // how many values were written.
+    if (value != NULL && value->next == NULL &&
+        is_run_source(value) && tuple_width_of(value) > 1 &&
+        node->v.binding.targets != NULL &&
+        node->v.binding.targets->next != NULL) {
+        compile_tuple_define(c, node, tuple_width_of(value));
+        return;
+    }
     // 13.10: the mark is on the value, so this is where the two forms part.
     if (value != NULL && value->kind == LHAT_NODE_UNPACK) {
         compile_unpack_define(c, node);
@@ -3805,9 +4059,34 @@ static void compile_reassign_parallel(Compiler *c, const LhatNode *node)
         confirmed = unpack->v.jump.level;
     }
 
+    // 13.8改: several values from one call, taken apart the way an unpack^ is
+    // -- laid down once, here, with each target reading its own position out
+    // of the run. 13.8's read-everything-then-write-everything (8.6改3) needs
+    // nothing extra for the same reason the unpack^ above does not: there is
+    // one read.
+    const LhatNode *tuple_call = NULL;
+    size_t tuple_positions = 0;
+    uint8_t run_head = 0;
+    if (unpack == NULL && value != NULL && value->next == NULL &&
+        is_run_source(value) && tuple_width_of(value) > 1 &&
+        node->v.binding.targets != NULL &&
+        node->v.binding.targets->next != NULL) {
+        tuple_positions = tuple_width_of(value);
+        if (tuple_positions > LHAT_MAX_TUPLE) {
+            fail(c, LHAT_COMPILE_TOO_COMPLEX);
+            return;
+        }
+        tuple_call = value;
+        run_head = reserve_wide(c, tuple_positions + 1);
+        compile_run_source(c, value, run_head, tuple_positions + 1);
+        emit(c, lhat_encode_abc(LHAT_BC_CHECKRUN, run_head,
+                                (uint8_t)tuple_positions, 0));  // 13.8改
+    }
+
     size_t position = 0;
     for (const LhatNode *target = node->v.binding.targets;
-         target != NULL && (unpack != NULL || value != NULL);
+         target != NULL &&
+         (unpack != NULL || tuple_call != NULL || value != NULL);
          target = target->next) {
         if (count >= LHAT_MAX_LOCALS) {
             fail(c, LHAT_COMPILE_TOO_COMPLEX);
@@ -3836,7 +4115,8 @@ static void compile_reassign_parallel(Compiler *c, const LhatNode *node)
             // back through the owner and key already evaluated rather than
             // from compiling the target again. Never a destructuring: 13.10's
             // mark stands where a value would, so there is no operator on it.
-            if (unpack == NULL && node->v.binding.has_compound_op &&
+            if (unpack == NULL && tuple_call == NULL &&
+                node->v.binding.has_compound_op &&
                 value->kind == LHAT_NODE_BINARY) {
                 LhatOpcode opcode;
                 if (!binary_opcode(value->v.binary.op, &opcode)) {
@@ -3866,6 +4146,17 @@ static void compile_reassign_parallel(Compiler *c, const LhatNode *node)
                 emit(c, lhat_encode_abc(LHAT_BC_CHECKPOS, w->value,
                                         (uint8_t)position, 0));
             }
+            continue;
+        }
+
+        // 13.8改: the position sits in the run already, so the write pass
+        // reads it straight out -- no move of its own.
+        if (tuple_call != NULL) {
+            if (position > tuple_positions) {
+                fail(c, LHAT_COMPILE_TOO_COMPLEX);
+                return;
+            }
+            w->value = (uint8_t)(run_head + position);
             continue;
         }
 
@@ -4790,6 +5081,28 @@ static void compile_statement(Compiler *c, const LhatNode *node)
                 return;
             }
             uint8_t mark = c->next_register;
+            // 02 の 13.8改: 'return^ a, b' answers a tuple -- the positions go
+            // in consecutive slots and RETURN carries how many. No head slot
+            // is built here: the head belongs in the caller's frame, and the
+            // machine puts it there.
+            if (node->v.jump.level > 1) {
+                size_t positions = node->v.jump.level;
+                if (positions > LHAT_MAX_TUPLE) {
+                    fail(c, LHAT_COMPILE_TOO_COMPLEX);
+                    return;
+                }
+                uint8_t first = reserve_wide(c, positions);
+                uint8_t at = first;
+                for (const LhatNode *item = node->v.jump.value; item != NULL;
+                     item = item->next) {
+                    compile_expression(c, item, at);
+                    at++;
+                }
+                emit(c, lhat_encode_abc(LHAT_BC_RETURN, first,
+                                        (uint8_t)positions, 0));
+                c->next_register = mark;
+                return;
+            }
             // 05 の 8.9: a returned host value needs its whole width here;
             // the machine reads that width off the head when the frame pops.
             uint8_t slot = reserve_for(c, node->v.jump.value);
@@ -6416,6 +6729,7 @@ static void enter_disposal_frame(Machine *m, LhatCoroutine *co,
     called->pc = co->pc;
     called->base = next_base;
     called->result = result;
+    called->prepared = 1;  // 13.8改: a dispose answers nothing to take apart
     called->coroutine = co;
     called->disposing = true;
     called->returning = true;
@@ -7472,6 +7786,48 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
                 break;
             }
 
+            // 02 の 13.8改: what stands between an error (or a plain value)
+            // arriving where a run was expected and the slots after it being
+            // read as positions that were never written.
+            case LHAT_BC_CHECKRUN: {
+                if (!lhat_is_run(R(a))) {
+                    return finish(m, chunk, LHAT_RUN_TUPLE_ARITY, lhat_nil(),
+                                  at);
+                }
+                if (lhat_run_width(R(a)) != (size_t)b) {
+                    return finish(m, chunk, LHAT_RUN_TUPLE_ARITY, lhat_nil(),
+                                  at);
+                }
+                break;
+            }
+
+            // 02 の 13.8改: pack^ -- the one bridge from a tuple to a table.
+            // 14.10 numbers positions from 1, which is what a destructuring
+            // and 't[1]' both read.
+            case LHAT_BC_PACK: {
+                if (!lhat_is_run(R(a)) || lhat_run_width(R(a)) != (size_t)b) {
+                    return finish(m, chunk, LHAT_RUN_TUPLE_ARITY, lhat_nil(),
+                                  at);
+                }
+                LhatTable *packed = lhat_table_new(&m->objects);
+                if (packed == NULL) {
+                    return finish(m, chunk, LHAT_RUN_OUT_OF_MEMORY, lhat_nil(),
+                                  at);
+                }
+                for (size_t i = 0; i < (size_t)b; i++) {
+                    // The key is a positive integer every time, so `refused`
+                    // (04 の 11.3's nil^, a NaN) cannot come back set.
+                    bool refused = false;
+                    if (!set_key(m, packed, lhat_integer((int64_t)i + 1),
+                                 R(a + 1 + i), &refused)) {
+                        return finish(m, chunk, LHAT_RUN_OUT_OF_MEMORY,
+                                      lhat_nil(), at);
+                    }
+                }
+                SET_R(a, lhat_object((LhatObject *)packed));
+                break;
+            }
+
             case LHAT_BC_SETINDEX: {
             set_index:;
                 // 05 の 8.9: 'v.x := n' writes the field's bytes in place --
@@ -7708,7 +8064,9 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
                     // its own further down.
                     const LhatTable *spread_table = NULL;
                     size_t written = b;
-                    if (cc != 0) {
+                    // 13.8改: C carries the reserved-slot count too, so the
+                    // spread is the low bit rather than the whole byte.
+                    if ((cc & LHAT_CALL_SPREAD) != 0) {
                         if (b == 0) {
                             return finish(m, chunk, LHAT_RUN_TYPE_ERROR,
                                           lhat_nil(), at);
@@ -8097,6 +8455,9 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
                     called->pc = co->pc;
                     called->base = next_base;
                     called->result = a;
+                    // 13.8改: what the call site reserved, carried so the
+                    // callee can tell whether a run is wanted here.
+                    called->prepared = (uint8_t)lhat_call_prepared(cc);
                     called->coroutine = co;
                     called->disposing = false;
                     called->derive = LHAT_FRAME_NO_DERIVE;
@@ -8179,7 +8540,7 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
                 // call_arg() from here on rather than off registers directly.
                 const LhatTable *spread_table = NULL;
                 size_t before_spread = given;
-                if (cc != 0) {
+                if ((cc & LHAT_CALL_SPREAD) != 0) {  // 13.8改, as above
                     if (given == 0) {
                         return finish(m, chunk, LHAT_RUN_TYPE_ERROR, lhat_nil(), at);
                     }
@@ -8288,6 +8649,7 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
                 called->pc = 0;
                 called->base = next_base;
                 called->result = a;
+                called->prepared = (uint8_t)lhat_call_prepared(cc);  // 13.8改
                 called->cleanup_count = 0;  // 5.5: pending cleanups are per frame
                 called->returning = false;
                 called->coroutine = NULL;
@@ -8344,6 +8706,24 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
                     }
                     frame->answer.as.hostvalue_run = frame->answer_run;
                 }
+                // 02 の 13.8改: a tuple answer moves into the same room, for
+                // the same reason -- no register survives the drain. The
+                // positions are values rather than raw bytes, so their tags
+                // travel beside them, and the collector reads them there
+                // (gc.c's mark_roots) while the cleanups run.
+                if (op == LHAT_BC_RETURN && b != 0) {
+                    if ((size_t)b > LHAT_MAX_TUPLE) {
+                        return finish(m, chunk, LHAT_RUN_TUPLE_ARITY,
+                                      lhat_nil(), at);
+                    }
+                    for (size_t i = 0; i < (size_t)b; i++) {
+                        frame->answer_run[i + 1] =
+                            m->slots.values[rbase + a + i];
+                        frame->answer_tags[i + 1] =
+                            m->slots.tags[rbase + a + i];
+                    }
+                    frame->answer = lhat_run_head((size_t)b);
+                }
                 goto drain;
 
             // 04 の 11.6改: unlike a fault the machine itself raises, the
@@ -8377,6 +8757,26 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
                     return finish(m, chunk, LHAT_RUN_YIELD_OUTSIDE, lhat_nil(), at);
                 }
                 LhatValue value = R(a);
+                // 02 の 13.8改: a tuple goes out whole. The positions ride
+                // the frame's own room the way a return^'s do -- the window
+                // is about to be copied into the coroutine and then left
+                // behind, so no register survives to be read from the
+                // resumer's side. What the resume sends still comes back as
+                // one value, into the first position's slot (co->sent_into
+                // below), since a resume sends one.
+                if (b != 0) {
+                    if ((size_t)b > LHAT_MAX_TUPLE) {
+                        return finish(m, chunk, LHAT_RUN_TUPLE_ARITY,
+                                      lhat_nil(), at);
+                    }
+                    for (size_t i = 0; i < (size_t)b; i++) {
+                        frame->answer_run[i + 1] =
+                            m->slots.values[rbase + a + i];
+                        frame->answer_tags[i + 1] =
+                            m->slots.tags[rbase + a + i];
+                    }
+                    value = lhat_run_head((size_t)b);
+                }
 
                 for (size_t i = 0; i < co->register_count; i++) {
                     lhat_slots_set(co->registers, i, R(i));
@@ -8420,12 +8820,38 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
                 }
 
                 uint8_t into = frame->result;
+                // 13.8改: read before `frame` becomes the resumer below. The
+                // room outlives the pop -- the entry is still there, only
+                // uncounted.
+                uint8_t reserved = frame->prepared;
+                const LhatValueUnion *out_run = frame->answer_run;
+                const uint8_t *out_tags = frame->answer_tags;
                 m->frame_count--;
                 frame = &m->frames[m->frame_count - 1];
                 rbase = frame->base;
                 chunk = &frame->closure->proto->chunk;
                 pc = frame->pc;
-                SET_R(into, value);
+                if (lhat_is_run(value)) {
+                    // 13.8改: laid out as a head slot naming the width plus
+                    // the positions, exactly as a returned tuple is. 13.9's
+                    // 'union(Y, T)' is what the resumer holds, and the head's
+                    // tag is what tells the two apart there.
+                    size_t positions = lhat_run_width(value);
+                    if ((size_t)reserved != positions + 1 ||
+                        rbase + into + positions >= LHAT_STACK_SLOTS) {
+                        return finish(m, chunk, LHAT_RUN_TUPLE_ARITY,
+                                      lhat_nil(), at);
+                    }
+                    lhat_slots_set(m->slots, rbase + into, value);
+                    for (size_t i = 0; i < positions; i++) {
+                        LhatValue held;
+                        held.as = out_run[i + 1];
+                        held.tag = (LhatValueTag)out_tags[i + 1];
+                        lhat_slots_set(m->slots, rbase + into + 1 + i, held);
+                    }
+                } else {
+                    SET_R(into, value);
+                }
                 break;
             }
 
@@ -8484,6 +8910,9 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
                 called->pc = co->pc;
                 called->base = next_base;
                 called->result = a;
+                // 13.8改: a resume takes one value back. What the body yields
+                // as a tuple is placed by the yield itself (15.4).
+                called->prepared = 1;
                 called->coroutine = co;
                 called->disposing = false;
                 called->derive = LHAT_FRAME_NO_DERIVE;
@@ -8626,6 +9055,7 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
         entered->pc = 0;
         entered->base = next_base;
         entered->result = a;
+        entered->prepared = 1;  // 13.8改: an operator answers one value
         entered->cleanup_count = 0;
         entered->returning = false;
         entered->coroutine = NULL;
@@ -8708,10 +9138,23 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
                 if (lhat_is_hostvalue(value)) {
                     value = lhat_nil();
                 }
+                // 02 の 13.8改: a tuple does not cross the host boundary
+                // either -- LhatRunResult carries one value. The checker
+                // refuses this; a relaxed run that got here has nothing to
+                // hand over, and pack^ is what a body answering one uses.
+                if (lhat_is_run(value)) {
+                    value = lhat_nil();
+                }
                 return finish(m, chunk, LHAT_RUN_OK, value, at);
             }
 
             uint8_t into = frame->result;
+            // 02 の 13.8改: read off the frame that is going, before `frame`
+            // becomes the caller below. The room outlives the pop -- the
+            // array entry is still there, only uncounted.
+            uint8_t reserved = frame->prepared;
+            const LhatValueUnion *answered_run = frame->answer_run;
+            const uint8_t *answered_tags = frame->answer_tags;
             // 02 の 11.9 (S40): the one frame whose answer is not the value of
             // the expression that made it. An ordering that reached for '<=>'
             // asked a number^ of it, and what was written asks which side of
@@ -8739,7 +9182,41 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
             // through the drain (see the RETURN case), and is written out
             // whole here, into the caller's slots -- which are live again
             // now that the callee's window is gone.
-            if (lhat_is_hostvalue(value)) {
+            // 02 の 13.8改: a tuple rides the same room, and is laid out here
+            // as a head slot naming the width plus the positions after it.
+            // The two sides have to agree on that width; a disagreement is
+            // reported rather than reconciled, because a tuple and a t^{...}
+            // are different types and only pack^ turns one into the other.
+            // Wherever the checker ran, the type settled this already -- an
+            // unchecked compile, 03 の 4.3's session and 05 の 5.3's
+            // separately compiled units are what land here.
+            if (lhat_is_run(value)) {
+                size_t positions = lhat_run_width(value);
+                if (reserved <= 1) {
+                    return finish(m, chunk, LHAT_RUN_TUPLE_UNEXPECTED,
+                                  lhat_nil(), at);
+                }
+                if ((size_t)reserved != positions + 1 ||
+                    rbase + into + positions >= LHAT_STACK_SLOTS) {
+                    return finish(m, chunk, LHAT_RUN_TUPLE_ARITY, lhat_nil(),
+                                  at);
+                }
+                lhat_slots_set(m->slots, rbase + into, value);
+                for (size_t i = 0; i < positions; i++) {
+                    LhatValue held;
+                    held.as = answered_run[i + 1];
+                    held.tag = (LhatValueTag)answered_tags[i + 1];
+                    lhat_slots_set(m->slots, rbase + into + 1 + i, held);
+                }
+            } else if (reserved > 1) {
+                // 13.8改 with 04 の 3.1: the call site reserved a run and one
+                // value came back. Not a fault by itself -- '(A, B)|SomeError'
+                // answers its error arm as one value, and the head slot is
+                // where it belongs so that ISERROR reads it. What tells that
+                // apart from a callee that simply answered wrong is CHECKRUN,
+                // emitted on the path past the error.
+                SET_R(into, value);
+            } else if (lhat_is_hostvalue(value)) {
                 if (!place_hostvalue_answer(m, rbase + into, value)) {
                     return finish(m, chunk, LHAT_RUN_TYPE_ERROR, lhat_nil(),
                                   at);
@@ -8787,6 +9264,7 @@ LhatRunResult lhat_run(LhatMachine *m, const LhatProto *proto)
     frame->pc = 0;
     frame->base = 0;
     frame->result = 0;
+    frame->prepared = 1;  // 13.8改: a unit's answer leaves through one slot
     frame->cleanup_count = 0;
     frame->returning = false;
     frame->coroutine = NULL;
@@ -8883,6 +9361,9 @@ LhatRunResult lhat_machine_call(LhatMachine *machine, LhatValue callee,
     called->pc = 0;
     called->base = next_base;
     called->result = 0;  // never read: base_depth's drain returns instead
+    // 13.8改: the host boundary takes one value (LhatRunResult.value), so a
+    // tuple never crosses it. pack^ is what a body answering one uses here.
+    called->prepared = 1;
     called->cleanup_count = 0;
     called->returning = false;
     called->coroutine = NULL;
@@ -9009,6 +9490,13 @@ const char *lhat_run_status_message(LhatRunStatus status)
         // status's own name -- the actual message is what the program
         // panicked with, in LhatRunResult.value, which this cannot see.
         case LHAT_RUN_PANIC:                     return "panic^";
+        // 02 の 13.8改
+        case LHAT_RUN_TUPLE_ARITY:
+            return "this call and what it called disagree on how many values "
+                   "come back";
+        case LHAT_RUN_TUPLE_UNEXPECTED:
+            return "this answered several values where one was expected; "
+                   "pack^ makes a table of them";
     }
     return "unknown";
 }

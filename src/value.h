@@ -37,7 +37,23 @@ typedef enum {
     // 05 の 8.9: a continuation slot of a host value. The payload is raw
     // bytes belonging to the head before it; no reader gives one a meaning
     // of its own, and every bulk copy moves it exactly as any other slot.
-    LHAT_VALUE_CONT
+    LHAT_VALUE_CONT,
+    // 02 の 13.8改: the head slot of a tuple -- the several values a
+    // subroutine answers with, laid in the consecutive stack slots the caller
+    // reserved instead of in a table on the heap. The payload is the number
+    // of positions, which follow in the next slots.
+    //
+    // Not LHAT_VALUE_CONT for those positions: a host value's continuation
+    // slots are bytes with no meaning of their own, while a tuple's positions
+    // are ordinary values, each keeping its own tag so the collector reads
+    // them as values. The head is what makes the width self-describing, which
+    // is what lets '(A, B)|SomeError' reserve one run and tell the two arms
+    // apart by the tag sitting in this slot.
+    //
+    // Never a value a name can hold: the machine puts one down and the next
+    // few instructions take it apart. 13.8改 confines it to a result, and the
+    // checker refuses every place it could escape to.
+    LHAT_VALUE_RUN
 } LhatValueTag;
 
 // What a heap value is. Kept on the object rather than in the tag so that a
@@ -240,6 +256,16 @@ static inline LhatValue lhat_integer(int64_t i)
     return v;
 }
 
+// 13.8改: the head slot of a tuple. The positions are in the slots after it
+// and are ordinary values; this one only says how many.
+static inline LhatValue lhat_run_head(size_t positions)
+{
+    LhatValue v;
+    v.tag = LHAT_VALUE_RUN;
+    v.as.integer = (int64_t)positions;
+    return v;
+}
+
 static inline LhatValue lhat_real(double d)
 {
     LhatValue v;
@@ -277,6 +303,12 @@ static inline bool lhat_is_integer(LhatValue v) { return v.tag == LHAT_VALUE_INT
 static inline bool lhat_is_real(LhatValue v)    { return v.tag == LHAT_VALUE_REAL; }
 static inline bool lhat_is_object(LhatValue v)  { return v.tag == LHAT_VALUE_OBJECT; }
 static inline bool lhat_is_hostvalue(LhatValue v) { return v.tag == LHAT_VALUE_HOSTVALUE; }
+// 13.8改: the head of a tuple, whose payload is how many positions follow it.
+static inline bool lhat_is_run(LhatValue v)     { return v.tag == LHAT_VALUE_RUN; }
+static inline size_t lhat_run_width(LhatValue v)
+{
+    return v.tag == LHAT_VALUE_RUN ? (size_t)v.as.integer : 0;
+}
 
 // 02 の 14.8: one type, two representations. Code asking "is this a number^"
 // has to accept either, and asking which representation is a separate

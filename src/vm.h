@@ -209,6 +209,19 @@ typedef enum {
                               // this is one reached through a parameter
     LHAT_RUN_NO_SUCH_UNIT,    // 05 の 5.3: a require^ reached for a unit the
                               // machine was not given
+    LHAT_RUN_TUPLE_ARITY,     // 02 の 13.8改: a call reserved slots for one
+                              // width of tuple and the callee answered
+                              // another -- or answered a single value where
+                              // a run was expected. Settled by the type
+                              // wherever the checker ran; this is where an
+                              // unchecked compile, 03 の 4.3's session and
+                              // 05 の 5.3's separately compiled units land
+    LHAT_RUN_TUPLE_UNEXPECTED,// 02 の 13.8改: the other direction -- a tuple
+                              // came back where the call site reserved one
+                              // slot. Not quietly boxed into a table: a
+                              // tuple and a t^{...} are different types, so
+                              // converting between them is the program's
+                              // word (pack^) and never the machine's
     LHAT_RUN_PANIC            // 04 の 11.6改: panic^, written by the program
                               // itself -- `value` is what it panicked with
 } LhatRunStatus;

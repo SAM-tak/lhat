@@ -165,6 +165,35 @@ typedef enum {
                                         // no t^ or def^ encloses it, or a
                                         // second hat counted past the
                                         // outermost one
+    LHAT_CHECK_ERR_TUPLE_MISPLACED,     // 13.8改: a tuple is written in a
+                                        // result and nowhere else -- not
+                                        // bound to a name, passed as an
+                                        // argument, held in a table, or
+                                        // nested in another tuple. Confining
+                                        // it there is what keeps 13.8's four
+                                        // propagations from coming back. Use
+                                        // pack^ to make a table of it
+    LHAT_CHECK_ERR_TUPLE_UNION,         // 13.8改 with 04 の 3.1: the only
+                                        // thing a tuple may be written in a
+                                        // union with is an error
+    LHAT_CHECK_ERR_TUPLE_ARITY,         // 13.8改: the names taking the values
+                                        // apart and the values answered are
+                                        // not the same count. Unlike 13.10's
+                                        // UNPACK_ARITY this is never about
+                                        // width subtyping -- a tuple has
+                                        // exactly its positions, since each
+                                        // one is a slot the caller reserved
+    LHAT_CHECK_ERR_TUPLE_ERROR_POSITION,// 13.8改 with 04 の 8.2: the error
+                                        // goes around the values, never among
+                                        // them. '(number^, IOError)' is the
+                                        // shape Go's 'v, err := f()' needs --
+                                        // one value to use and one to drop --
+                                        // and 8.2 kept it unwritable by
+                                        // having no second value at all.
+                                        // Multi-value return brings the
+                                        // second value back, so the rule has
+                                        // to be said out loud instead. Write
+                                        // '(A, B)|IOError'
     LHAT_CHECK_ERR_HOSTVALUE_ESCAPES    // 05 の 8.9: a host value lives in
                                         // stack slots and nowhere else, so a
                                         // table, a capture, an any^, a yield

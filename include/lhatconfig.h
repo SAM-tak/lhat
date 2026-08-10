@@ -75,6 +75,12 @@
 // whole value (one head slot plus the data slots) fits the machine's answer
 // scratch. Generous for the small mathematical types the feature exists for.
 #define LHAT_HOSTVALUE_MAX_BYTES 248
+// 02 の 13.8改: how many positions a tuple may have. A tuple rides a frame's
+// answer room through the cleanup drain the way a host value does, so it is
+// bounded by the same scratch -- one head slot plus this many positions. Far
+// beyond anything a signature is written with; the bound exists so the room
+// can be a fixed array rather than an allocation on the way out.
+#define LHAT_MAX_TUPLE (LHAT_HOSTVALUE_MAX_BYTES / 8)
 // How deep a call may recurse before the machine gives up, rather than
 // letting the host's own stack decide it for us.
 #define LHAT_MAX_FRAMES 200

@@ -207,6 +207,11 @@ typedef enum {
     LHAT_TYPE_RT_UNION,      // 13.5
     LHAT_TYPE_RT_INTERSECT,  // 14.5, 14.12: an overload^ed member's arms
     LHAT_TYPE_RT_STRUCTURE,  // 14.10: at least these members
+    // 13.8改: '(A, B)' -- the positions a multi-value return answers with,
+    // held in `parts` the way a union holds its arms. Exactly these, in this
+    // order: unlike STRUCTURE above there is no "at least", since every
+    // position is a slot the caller reserved.
+    LHAT_TYPE_RT_TUPLE,
 
     // 03 の 3.4: a place inference did not decide. Asks nothing of a value,
     // exactly as ANY does -- what differs is only how 14.16 writes it out.

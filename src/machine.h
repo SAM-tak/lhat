@@ -30,6 +30,15 @@ typedef struct {
     size_t base;       // 5.2: the frame's registers start at this stack slot
     uint8_t result;    // where in the caller's frame the answer goes
 
+    // 02 の 13.8改: how many consecutive slots the call site reserved at
+    // `result` for the answer. 0 and 1 both mean one, which is every call
+    // written before tuples existed. The callee reads it to know whether the
+    // caller is expecting a run of slots -- the agreement cannot be settled
+    // statically (an unchecked compile, 03 の 4.3's session, 05 の 5.3's
+    // units, and a callee that is only ever a value), so it is carried here
+    // and a mismatch is caught rather than papered over.
+    uint8_t prepared;
+
     // 5.5: the cleanups this frame has entered and not yet run, innermost
     // last. A finally^ and a with^ are both just a stretch of code to run.
     size_t cleanups[LHAT_MAX_CLEANUPS];
@@ -51,6 +60,14 @@ typedef struct {
     // frames' rooms.
     LhatValueUnion answer_run[1 + LHAT_HOSTVALUE_MAX_BYTES / 8];
 
+    // 02 の 13.8改: the tags of the run above, when it is carrying a tuple
+    // rather than a host value. A host value's continuation slots are raw
+    // bytes and need none; a tuple's positions are ordinary values, and the
+    // collector has to read them as values while the cleanups run -- so this
+    // array is the whole of what a tuple adds to the room. Meaningful only
+    // when `answer` is LHAT_VALUE_RUN.
+    uint8_t answer_tags[1 + LHAT_HOSTVALUE_MAX_BYTES / 8];
+
     // 5.11: the coroutine this frame belongs to, when it is one. NULL for an
     // ordinary call.
     LhatCoroutine *coroutine;
@@ -63,6 +80,12 @@ typedef struct {
     // LHAT_FRAME_NO_DERIVE means an ordinary call, which every other frame is.
     LhatOpcode derive;
 } Frame;
+
+// 02 の 13.8改: the room above holds one head slot plus the positions, and a
+// tuple shares it with 05 の 8.9's host values. Keeping the two limits tied
+// here means widening one cannot silently outgrow the other.
+_Static_assert(LHAT_MAX_TUPLE <= LHAT_HOSTVALUE_MAX_BYTES / 8,
+               "LHAT_MAX_TUPLE must fit a frame's answer room");
 
 // What `derive` holds when a frame's answer is its own. LOADK is never a
 // comparison, so it stands for "nothing to read off this one".

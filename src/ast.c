@@ -140,6 +140,7 @@ void lhat_node_visit_children(const LhatNode *node, LhatNodeVisitor visit,
         case LHAT_NODE_IF_EXPR:
         case LHAT_NODE_IF_STMT:
         case LHAT_NODE_TYPE_TABLE:
+        case LHAT_NODE_TYPE_TUPLE:
             visit_list("items", node->v.list.items, visit, context);
             break;
 
@@ -176,13 +177,21 @@ void lhat_node_visit_children(const LhatNode *node, LhatNodeVisitor visit,
         case LHAT_NODE_IMPORT:
         case LHAT_NODE_IMPORT_STMT:
         case LHAT_NODE_UNPACK:
+        case LHAT_NODE_PACK:
         case LHAT_NODE_CALL_STMT:
-        case LHAT_NODE_RETURN:
         case LHAT_NODE_BREAK:
         case LHAT_NODE_PANIC:
-        case LHAT_NODE_YIELD:
         case LHAT_NODE_YIELD_ALL:
             visit_one("value", node->v.jump.value, visit, context);
+            break;
+
+        // 13.8改: return^ may carry several values -- 'return^ a, b' answers
+        // a tuple. They hang off `value` as a list, and one value is a list
+        // of one, so this reads every return^ ever written.
+        // 13.8改: yield^ answers several values as a statement, the same way.
+        case LHAT_NODE_RETURN:
+        case LHAT_NODE_YIELD:
+            visit_list("value", node->v.jump.value, visit, context);
             break;
 
         case LHAT_NODE_UNARY:
@@ -336,6 +345,7 @@ const char *lhat_node_kind_name(LhatNodeKind kind)
         case LHAT_NODE_CALL:           return "call";
         case LHAT_NODE_AS:             return "as";
         case LHAT_NODE_UNPACK:         return "unpack";
+        case LHAT_NODE_PACK:           return "pack";
         case LHAT_NODE_FUNC:           return "func";
         case LHAT_NODE_IF_EXPR:        return "if-expr";
         case LHAT_NODE_DEFINE:         return "define";
@@ -358,6 +368,7 @@ const char *lhat_node_kind_name(LhatNodeKind kind)
         case LHAT_NODE_TYPE_FUNC:      return "type-func";
         case LHAT_NODE_TYPE_CORO:      return "type-coro";
         case LHAT_NODE_TYPE_TABLE:     return "type-table";
+        case LHAT_NODE_TYPE_TUPLE:     return "type-tuple";
         case LHAT_NODE_TYPE_UNION:     return "type-union";
         case LHAT_NODE_TYPE_INTERSECT: return "type-intersect";
         case LHAT_NODE_ERROR:          return "error";

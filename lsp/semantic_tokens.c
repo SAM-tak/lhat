@@ -193,6 +193,14 @@ static void walk_type(SemCollector *out, const LhatNode *node)
         case LHAT_NODE_TYPE_TABLE:
             walk_table_entries(out, node->v.list.items);
             break;
+        case LHAT_NODE_TYPE_TUPLE:
+            // 13.8改: the positions are bare types, not member declarations,
+            // so they walk as types rather than through walk_table_entries.
+            for (const LhatNode *item = node->v.list.items; item != NULL;
+                 item = item->next) {
+                walk_type(out, item);
+            }
+            break;
         case LHAT_NODE_TYPE_UNION:
         case LHAT_NODE_TYPE_INTERSECT:
             walk_type(out, node->v.binary.left);
@@ -310,13 +318,20 @@ static void walk_value(SemCollector *out, const LhatNode *node)
         case LHAT_NODE_SPREAD:
         case LHAT_NODE_REQUIRE_STMT:
         case LHAT_NODE_UNPACK:
+        case LHAT_NODE_PACK:
         case LHAT_NODE_YIELD_ALL:
-        case LHAT_NODE_RETURN:
         case LHAT_NODE_BREAK:
         case LHAT_NODE_PANIC:
-        case LHAT_NODE_YIELD:
         case LHAT_NODE_CALL_STMT:
             walk_value(out, node->v.jump.value);
+            break;
+        // 13.8改: return^ may carry several values, and one is a list of one.
+        case LHAT_NODE_RETURN:
+        case LHAT_NODE_YIELD:
+            for (const LhatNode *value = node->v.jump.value; value != NULL;
+                 value = value->next) {
+                walk_value(out, value);
+            }
             break;
         case LHAT_NODE_IMPORT:
         case LHAT_NODE_IMPORT_STMT:

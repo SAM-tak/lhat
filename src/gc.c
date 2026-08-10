@@ -169,6 +169,22 @@ static void mark_roots(Machine *m)
                       lhat_object((LhatObject *)(void *)frame->closure));
         lhat_gc_reach(&m->gray, lhat_object((LhatObject *)frame->coroutine));
         lhat_gc_reach(&m->gray, frame->answer);
+        // 02 の 13.8改: a tuple answer rides the frame's own room through the
+        // drain, so its positions are roots the way a register is -- and they
+        // are invisible to the line above, which reaches one value. A host
+        // value in the same room needs nothing here: its continuation slots
+        // are raw bytes and hold no reference. This matters because cleanups
+        // run arbitrary L^ code between the return^ and the pop, with a
+        // collection in the pop path itself.
+        if (lhat_is_run(frame->answer)) {
+            size_t positions = lhat_run_width(frame->answer);
+            for (size_t at = 1; at <= positions; at++) {
+                LhatValue held;
+                held.as = frame->answer_run[at];
+                held.tag = (LhatValueTag)frame->answer_tags[at];
+                lhat_gc_reach(&m->gray, held);
+            }
+        }
         // 5.2 fixed the frame's width at compile time, and the scratch above
         // the names is inside it, so this covers the values a half-finished
         // expression is holding.

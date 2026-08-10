@@ -544,10 +544,34 @@ static LhatNode *parse_type_primary(Parser *p)
         return parse_type_table(p);
     }
 
-    if (match_op(p, LHAT_OP_LPAREN)) {
-        LhatNode *inner = parse_type(p);
+    if (check_op(p, LHAT_OP_LPAREN)) {
+        LhatToken start = p->current;
+        advance(p);
+        LhatNode *first = parse_type(p);
+        if (!check_op(p, LHAT_OP_COMMA)) {
+            // Grouping, exactly as before. 13.8改 leaves this reading
+            // untouched, and that is what makes a one-position tuple
+            // unwritable: '(T)' was already taken, so there is no '(T,)' to
+            // invent and no arbitrary choice to make.
+            expect_op(p, LHAT_OP_RPAREN);
+            return first;
+        }
+
+        // 13.8改: two positions or more, in order. A trailing ',' is not
+        // allowed -- parse_type reports on the ')' that follows one.
+        LhatNode *node = make(p, LHAT_NODE_TYPE_TUPLE, &start);
+        if (node == NULL) {
+            return NULL;
+        }
+        LhatNode *head = NULL;
+        LhatNode *tail = NULL;
+        lhat_node_append(&head, &tail, first);
+        while (match_op(p, LHAT_OP_COMMA)) {
+            lhat_node_append(&head, &tail, parse_type(p));
+        }
+        node->v.list.items = head;
         expect_op(p, LHAT_OP_RPAREN);
-        return inner;
+        return finish(p, node);
     }
 
     if (p->current.kind == LHAT_TOKEN_HAT_IDENT ||
@@ -1684,6 +1708,20 @@ static LhatNode *parse_unary(Parser *p)
         return finish(p, node);
     }
 
+    // 13.8改: 'pack^ expr' is the one bridge from a tuple to a table. At the
+    // unary level, like try^ above -- 'pack^ f().x' would be reading a member
+    // of a tuple, which is not a thing, so binding tighter buys nothing.
+    if (check_hat(p, "pack")) {
+        LhatToken at = p->current;
+        advance(p);
+        LhatNode *node = make(p, LHAT_NODE_PACK, &at);
+        if (node == NULL) {
+            return NULL;
+        }
+        node->v.jump.value = parse_unary(p);
+        return finish(p, node);
+    }
+
     if (check_op(p, LHAT_OP_NOT) || check_op(p, LHAT_OP_SUB)) {
         LhatToken at = p->current;
         advance(p);
@@ -2290,11 +2328,14 @@ static LhatNode *parse_binding(Parser *p, LhatNodeKind kind,
         if (source_count != 1) {
             report(p, at, LHAT_PARSE_ERR_UNPACK_NOT_ALONE);
         }
-    } else if (target_count != source_count) {
-        report(p, at,
-               source_count == 1 ? LHAT_PARSE_ERR_DESTRUCTURE_NEEDS_UNPACK
-                                 : LHAT_PARSE_ERR_BINDING_ARITY);
+    } else if (target_count != source_count && source_count != 1) {
+        report(p, at, LHAT_PARSE_ERR_BINDING_ARITY);
     }
+    // 13.8改: one value on the right with several names on the left is a
+    // tuple being taken apart. Whether it actually is one is a question about
+    // the type, which the parser cannot answer -- so it no longer asks, and
+    // 13.10's demand for a mark is withdrawn with it. A value that turns out
+    // not to be a tuple is the checker's TUPLE_ARITY.
     return finish(p, node);
 }
 
@@ -3275,6 +3316,31 @@ static LhatNode *parse_jump(Parser *p, LhatNodeKind kind)
 
     if (operand_follows) {
         node->v.jump.value = parse_expression(p);
+
+        // 02 の 13.8改: 'return^ a, b' answers a tuple. The values are a list
+        // hanging off `value`, and `level` says how many -- 0 and 1 both mean
+        // one, which is every return^ written before tuples existed.
+        //
+        // A ',' can only be this here: 11 章 has no comma operator, and the
+        // ones inside a call or a table were consumed by parse_expression.
+        // 'return^ { a, b }' is untouched, and still answers a table -- the
+        // two forms are told apart by what is written, which is why nothing
+        // has to ask whether a table escapes.
+        // yield^ takes the same form as a statement. As an expression it does
+        // not: there the ',' would be the value list of the binding around it
+        // ('var^ x = yield^ a, b' could be either reading), and that other
+        // path is parsed elsewhere. A yield^ answering several values and
+        // receiving one is written as a statement.
+        if ((kind == LHAT_NODE_RETURN || kind == LHAT_NODE_YIELD) &&
+            check_op(p, LHAT_OP_COMMA)) {
+            LhatNode *head = node->v.jump.value;
+            LhatNode *tail = head;
+            while (match_op(p, LHAT_OP_COMMA)) {
+                lhat_node_append(&head, &tail, parse_expression(p));
+            }
+            node->v.jump.value = head;
+            node->v.jump.level = (uint32_t)lhat_node_list_length(head);
+        }
     }
     return finish(p, node);
 }

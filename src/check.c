@@ -146,6 +146,16 @@ typedef struct {
     // same nil^ behind at run time.
     bool valueless_return;
 
+    // 13.8改: whether the type about to be resolved may be a tuple. Consumed
+    // by resolve_type on entry, so every nested resolve refuses one unless it
+    // deliberately sets this again -- which only a signature's result, a
+    // coroutine's Y and T, and the arms of a union do. Refusing everywhere
+    // else is the whole of what confines a tuple to a result position, and
+    // that confinement is what keeps 13.8's four propagations from coming
+    // back: an argument cannot hold one, so 13.7's expansion rule has nothing
+    // to expand; a name cannot, so there is nothing to compose further.
+    bool tuple_allowed;
+
     // 02 の 15.10: the type of the subroutine whose body is being checked,
     // which is what this^ names. NULL outside any body.
     LhatType *this_type;
@@ -706,6 +716,11 @@ static LhatType *resolve_func_type(Checker *c, const LhatNode *node)
                                 : simple(c, LHAT_TYPE_PENDING));
     }
     if (node->v.func.return_type != NULL) {
+        // 13.8改: a result is one of the few positions a tuple may be written
+        // in. The parameters above were resolved without the permission, so
+        // '(A, B)' as an argument is already refused -- which is what leaves
+        // 13.7's expansion rule with nothing to expand.
+        c->tuple_allowed = true;
         func->v.func.result = resolve_type(c, node->v.func.return_type);
     }
     return func;
@@ -790,8 +805,73 @@ static LhatType *resolve_qualified_type(Checker *c, const LhatNode *node)
     return simple(c, LHAT_TYPE_UNKNOWN);
 }
 
+// 04 の 2.3: error^ itself, one declaration's set, one kind, or a union of
+// nothing else. 13.8改 asks this of whatever stands beside a tuple in a union.
+static bool is_error_only(const LhatType *type)
+{
+    if (type == NULL) {
+        return false;
+    }
+    switch (type->kind) {
+        case LHAT_TYPE_ERROR:
+        case LHAT_TYPE_ERROR_SET:
+        case LHAT_TYPE_ERROR_KIND:
+            return true;
+        case LHAT_TYPE_UNION:
+            for (const LhatTypeList *arm = type->v.composite.arms; arm != NULL;
+                 arm = arm->next) {
+                if (!is_error_only(arm->type)) {
+                    return false;
+                }
+            }
+            return true;
+        default:
+            return false;
+    }
+}
+
+// 13.8改 with 04 の 8.2: does an error hide anywhere in this type? A tuple
+// position may not carry one -- not directly and not buried in a union --
+// because a value beside the good ones is a value a program may drop, which
+// is the whole of what 8.2 kept unwritable.
+static bool contains_error(const LhatType *type)
+{
+    if (type == NULL) {
+        return false;
+    }
+    switch (type->kind) {
+        case LHAT_TYPE_ERROR:
+        case LHAT_TYPE_ERROR_SET:
+        case LHAT_TYPE_ERROR_KIND:
+            return true;
+        case LHAT_TYPE_UNION:
+        case LHAT_TYPE_INTERSECT:
+            for (const LhatTypeList *arm = type->v.composite.arms; arm != NULL;
+                 arm = arm->next) {
+                if (contains_error(arm->type)) {
+                    return true;
+                }
+            }
+            return false;
+        default:
+            // Deliberately shallow otherwise. An error reachable through a
+            // table member or a signature's result is a value that has to be
+            // asked for, not one sitting beside the answer.
+            return false;
+    }
+}
+
 static LhatType *resolve_type(Checker *c, const LhatNode *node)
 {
+    // 13.8改: the permission is for this one type, not for what it contains.
+    // Taking it here means every nested resolve below starts out refusing a
+    // tuple, and the few places that may hold one -- a result, a coroutine's
+    // Y and T, a union's arms -- hand it back deliberately. Cleared before
+    // the NULL test so an absent type consumes it too: an unwritten result
+    // must not leave the permission standing for whatever resolves next.
+    bool tuple_allowed = c->tuple_allowed;
+    c->tuple_allowed = false;
+
     if (node == NULL) {
         return NULL;
     }
@@ -895,10 +975,48 @@ static LhatType *resolve_type(Checker *c, const LhatNode *node)
         case LHAT_NODE_TYPE_FUNC:
             return resolve_func_type(c, node);
 
-        case LHAT_NODE_TYPE_UNION:
-            return lhat_type_union(c->result->types,
-                                   resolve_type(c, node->v.binary.left),
-                                   resolve_type(c, node->v.binary.right));
+        case LHAT_NODE_TYPE_TUPLE: {
+            // 13.8改: two positions or more, in order. The parser only builds
+            // one from a parenthesised list with a ',' in it, so there is no
+            // one-position form to reject here.
+            if (!tuple_allowed) {
+                report(c, node, LHAT_CHECK_ERR_TUPLE_MISPLACED);
+            }
+            LhatType *tuple = lhat_type_tuple(c->result->types);
+            for (const LhatNode *item = node->v.list.items; item != NULL;
+                 item = item->next) {
+                // c->tuple_allowed is already false, so a tuple written as a
+                // position lands on the refusal above -- 13.8改 does not nest
+                // them, since a position is a slot and not a run of slots.
+                LhatType *position = resolve_type(c, item);
+                // 04 の 8.2: the error goes around the values, never among
+                // them. Written among them it becomes a value the program may
+                // drop, which is exactly the shape 8.2 exists to prevent.
+                if (contains_error(position)) {
+                    report(c, item, LHAT_CHECK_ERR_TUPLE_ERROR_POSITION);
+                }
+                lhat_type_add_position(c->result->types, tuple, position);
+            }
+            return tuple;
+        }
+
+        case LHAT_NODE_TYPE_UNION: {
+            // 13.8改: a union is transparent to the permission. '(A, B)|E' is
+            // written where a result is, and both arms are that result.
+            c->tuple_allowed = tuple_allowed;
+            LhatType *left = resolve_type(c, node->v.binary.left);
+            c->tuple_allowed = tuple_allowed;
+            LhatType *right = resolve_type(c, node->v.binary.right);
+            // 04 の 3.1: an error is the only thing a tuple may stand beside.
+            // This is what keeps 04 の 8.2 -- an error among the values
+            // rather than around them is the shape 'v, err := f()' needs, and
+            // 8.2 exists to leave it unwritable.
+            if ((lhat_type_tuple_width(left) > 0 && !is_error_only(right)) ||
+                (lhat_type_tuple_width(right) > 0 && !is_error_only(left))) {
+                report(c, node, LHAT_CHECK_ERR_TUPLE_UNION);
+            }
+            return lhat_type_union(c->result->types, left, right);
+        }
 
         case LHAT_NODE_TYPE_INTERSECT:
             return lhat_type_intersect(c->result->types,
@@ -912,9 +1030,15 @@ static LhatType *resolve_type(Checker *c, const LhatNode *node)
             LhatType *receive = node->v.coroutine.receive != NULL
                                     ? resolve_type(c, node->v.coroutine.receive)
                                     : simple(c, LHAT_TYPE_NIL);
-            LhatType *produce = node->v.coroutine.produce != NULL
-                                    ? resolve_type(c, node->v.coroutine.produce)
-                                    : simple(c, LHAT_TYPE_NIL);
+            // 13.8改: Y and T are results -- what the body yields and what it
+            // finally answers -- so a tuple may be written in either. R is an
+            // input and takes none: a resume sends one value.
+            LhatType *produce = simple(c, LHAT_TYPE_NIL);
+            if (node->v.coroutine.produce != NULL) {
+                c->tuple_allowed = true;
+                produce = resolve_type(c, node->v.coroutine.produce);
+            }
+            c->tuple_allowed = true;
             LhatType *result = resolve_type(c, node->v.coroutine.result);
             // 05 の 8.9: what crosses a suspension crosses frames, so none
             // of the three positions carries a host value -- the same rule
@@ -2324,8 +2448,17 @@ static LhatType *infer_binary(Checker *c, const LhatNode *node)
             report(c, node, op == LHAT_OP_CATCH ? LHAT_CHECK_ERR_CANNOT_FAIL
                                                 : LHAT_CHECK_ERR_CANNOT_BE_NIL);
         }
-        return lhat_type_union(c->result->types, without(c, left, unwanted),
-                               right);
+        LhatType *kept = without(c, left, unwanted);
+        // 13.8改 with 04 の 4.1: catch^'s right side is one expression, and
+        // there is no expression that is a tuple -- so a call answering
+        // several values has no replacement that could stand for them. Said
+        // here rather than left to the binding, which would only see that a
+        // union is not a tuple and report the count.
+        if (lhat_type_tuple_width(kept) > 0 &&
+            lhat_type_tuple_width(right) != lhat_type_tuple_width(kept)) {
+            report(c, node, LHAT_CHECK_ERR_TUPLE_UNION);
+        }
+        return lhat_type_union(c->result->types, kept, right);
     }
 
     LhatType *left = infer(c, node->v.binary.left);
@@ -3237,6 +3370,7 @@ static LhatType *declared_signature(Checker *c, const LhatNode *node)
         lhat_type_add_param(c->result->types, func, type);
     }
     if (node->v.func.return_type != NULL) {
+        c->tuple_allowed = true;  // 13.8改, as above
         func->v.func.result = resolve_type(c, node->v.func.return_type);
     }
     return func;
@@ -3327,9 +3461,11 @@ static LhatType *infer_func(Checker *c, const LhatNode *node)
         }
     }
 
-    LhatType *declared = node->v.func.return_type != NULL
-                             ? resolve_type(c, node->v.func.return_type)
-                             : NULL;
+    LhatType *declared = NULL;
+    if (node->v.func.return_type != NULL) {
+        c->tuple_allowed = true;  // 13.8改, as in resolve_func_type
+        declared = resolve_type(c, node->v.func.return_type);
+    }
     func->v.func.result = declared;
 
     Scope *outer_scope = c->scope;
@@ -3424,9 +3560,17 @@ static LhatType *infer_func(Checker *c, const LhatNode *node)
         // produce one.
         if (leaves_without_value &&
             (c->inferred_result != NULL || c->recursive_return)) {
-            c->inferred_result = lhat_type_union(c->result->types,
-                                                 c->inferred_result,
-                                                 simple(c, LHAT_TYPE_NIL));
+            // 13.8改: there is no union of a tuple with nil^ to fall into, so
+            // every exit of a body answering several values has to carry
+            // them. 13.2 asks this of an f^ already; the width is what a
+            // caller reserves slots by, so it reaches p^ too.
+            if (lhat_type_tuple_width(c->inferred_result) > 0) {
+                report(c, node, LHAT_CHECK_ERR_TUPLE_UNION);
+            } else {
+                c->inferred_result = lhat_type_union(c->result->types,
+                                                     c->inferred_result,
+                                                     simple(c, LHAT_TYPE_NIL));
+            }
         }
 
         // Every way out goes through the subroutine itself, so no call of it
@@ -4140,7 +4284,12 @@ static LhatType *infer_node(Checker *c, const LhatNode *node);
 static LhatType *infer(Checker *c, const LhatNode *node)
 {
     LhatType *type = infer_node(c, node);
-    if (node != NULL && is_hostvalue(type)) {
+    // 13.8改: a tuple is the other type the compiler has to size slots by --
+    // a call answering one writes a run rather than a slot -- so it is
+    // stamped for exactly the reason a host value is. Its kind is no more a
+    // FUNC or a TYPEOF than HOSTVALUE is, so those stamps stay untouched.
+    if (node != NULL &&
+        (is_hostvalue(type) || lhat_type_tuple_width(type) > 0)) {
         ((LhatNode *)node)->checked_type = type;
     }
     return type;
@@ -4324,8 +4473,28 @@ static LhatType *infer_node(Checker *c, const LhatNode *node)
             c->yield_context = YIELD_CTX_NONE;
             c->yield_bound_type = NULL;
 
-            LhatType *produced = require_value(c, node,
-                                               infer(c, node->v.jump.value));
+            // 13.8改: 'yield^ a, b' answers a tuple, exactly as a return^ of
+            // several values does. Only written as a statement, so nothing
+            // receives what comes back here.
+            LhatType *produced;
+            if (node->v.jump.level > 1) {
+                LhatType *tuple = lhat_type_tuple(c->result->types);
+                for (const LhatNode *item = node->v.jump.value; item != NULL;
+                     item = item->next) {
+                    LhatType *position = require_value(c, item, infer(c, item));
+                    if (contains_error(position)) {
+                        report(c, item, LHAT_CHECK_ERR_TUPLE_ERROR_POSITION);
+                    }
+                    if (position != NULL && position->kind == LHAT_TYPE_TUPLE) {
+                        report(c, item, LHAT_CHECK_ERR_TUPLE_MISPLACED);
+                    }
+                    lhat_type_add_position(c->result->types, tuple, position);
+                }
+                produced = tuple;
+            } else {
+                produced = require_value(c, node,
+                                         infer(c, node->v.jump.value));
+            }
             unify_yield(c, node, &c->coroutine_produce, produced);
 
             if (ctx == YIELD_CTX_DISCARD) {
@@ -4559,6 +4728,26 @@ static LhatType *infer_node(Checker *c, const LhatNode *node)
         case LHAT_NODE_UNPACK:
             require_value(c, node->v.jump.value, infer(c, node->v.jump.value));
             return simple(c, LHAT_TYPE_UNKNOWN);
+
+        // 13.8改: pack^ turns the several values a call answered with into a
+        // table a name can hold -- 14.10's positional members, numbered from
+        // 1, which is what 't[1]' and a destructuring both read.
+        case LHAT_NODE_PACK: {
+            LhatType *source = infer(c, node->v.jump.value);
+            size_t width = lhat_type_tuple_width(source);
+            if (width == 0) {
+                // Nothing to pack. Saying so by name is better than answering
+                // a table that was never built.
+                report(c, node, LHAT_CHECK_ERR_TUPLE_MISPLACED);
+                return simple(c, LHAT_TYPE_UNKNOWN);
+            }
+            LhatType *packed = lhat_type_table(c->result->types);
+            for (size_t i = 0; i < width; i++) {
+                lhat_type_add_index_member(c->result->types, packed, i + 1,
+                                           lhat_type_tuple_at(source, i));
+            }
+            return packed;
+        }
 
         default:
             return simple(c, LHAT_TYPE_UNKNOWN);
@@ -4867,6 +5056,17 @@ static void check_define(Checker *c, const LhatNode *node)
     const LhatNode *value = node->v.binding.values;
     LhatType *unpacked = unpacked_source(c, value);
     size_t position = 0;
+    // 13.8改: what a call answered with, when several names are taking it
+    // apart. Settled on the first target from the type of the one value, so
+    // nothing is inferred twice -- and so the inference still happens inside
+    // the defining-name context the loop sets up around it.
+    //
+    // 13.10 required unpack^ because "印がなければ右辺の個数を数えなければ
+    // 判別できない". That reason is withdrawn: one value on the right with
+    // several names on the left is a tuple being taken apart, two values is
+    // 8.6's multiple definition, and neither reading fits the other's shape.
+    LhatType *tuple = NULL;
+    size_t target_count = lhat_node_list_length(node->v.binding.targets);
 
     // 05 の 4.3: everything written inside a public^ declaration has to say
     // what its parameters take. 4.1's reason carries over -- what a unit
@@ -4943,6 +5143,12 @@ static void check_define(Checker *c, const LhatNode *node)
         LhatType *actual;
         if (unpacked != NULL) {
             actual = unpacked_at(c, unpacked, position);
+        } else if (tuple != NULL) {
+            // 13.8改: the positions of what the one value answered with.
+            actual = lhat_type_tuple_at(tuple, position - 1);
+            if (actual == NULL) {
+                actual = simple(c, LHAT_TYPE_PENDING);
+            }
         } else {
             // 03 の 3.1・3.5: a target past the values a multiple assignment
             // actually gave is a gap in inference, not table subtyping's
@@ -4950,6 +5156,23 @@ static void check_define(Checker *c, const LhatNode *node)
             // pending^ rather than unknown^.
             actual = value != NULL ? infer(c, value)
                                    : simple(c, LHAT_TYPE_PENDING);
+
+            if (lhat_type_tuple_width(actual) > 0) {
+                if (position == 1 && target_count > 1 && value->next == NULL) {
+                    // 13.8改: several values, several names, no word needed.
+                    tuple = actual;
+                    actual = lhat_type_tuple_at(tuple, 0);
+                    if (actual == NULL) {
+                        actual = simple(c, LHAT_TYPE_PENDING);
+                    }
+                } else {
+                    // A tuple is not a value one name can hold, and it is not
+                    // an item of a longer right-hand side either -- that
+                    // would bind one name to the whole run. This is what
+                    // makes 'var^ a, b = f(), 0' an error.
+                    report(c, value, LHAT_CHECK_ERR_TUPLE_MISPLACED);
+                }
+            }
         }
 
         c->yield_context = outer_yctx;
@@ -5015,13 +5238,26 @@ static void check_define(Checker *c, const LhatNode *node)
             // one stale, since the path now reaches something else.
             drop_narrowings_for(c, target_name_node(target));
         }
-        if (unpacked == NULL && value != NULL) {
+        if (unpacked == NULL && tuple == NULL && value != NULL) {
             value = value->next;
         }
     }
 
     if (unpacked != NULL) {
         check_unpack_shape(c, node, node->v.binding.values, unpacked, position);
+    }
+    // 13.8改: exactly the positions, both ways. 14.10's width subtyping has
+    // nothing to say here -- a tuple carries its positions and no others,
+    // since each one is a slot the caller reserved.
+    if (tuple != NULL && position != lhat_type_tuple_width(tuple)) {
+        report(c, node, LHAT_CHECK_ERR_TUPLE_ARITY);
+    }
+    // 13.8改: the parser stopped asking for a mark, so this is where one
+    // value meeting several names is answered for. It is a tuple being taken
+    // apart, an unpack^ of a table, or an error.
+    if (unpacked == NULL && tuple == NULL && target_count > 1 &&
+        lhat_node_list_length(node->v.binding.values) == 1) {
+        report(c, node, LHAT_CHECK_ERR_TUPLE_ARITY);
     }
 
     if (node->v.binding.exported) {
@@ -5562,6 +5798,8 @@ static void check_reassign(Checker *c, const LhatNode *node)
     const LhatNode *value = node->v.binding.values;
     LhatType *unpacked = unpacked_source(c, value);
     size_t position = 0;
+    LhatType *tuple = NULL;  // 13.8改, as in check_define
+    size_t target_count = lhat_node_list_length(node->v.binding.targets);
 
     for (const LhatNode *target = node->v.binding.targets; target != NULL;
          target = target->next) {
@@ -5576,6 +5814,10 @@ static void check_reassign(Checker *c, const LhatNode *node)
         if (unpacked != NULL) {
             expect(c, node, unpacked_at(c, unpacked, position), wanted,
                    LHAT_CHECK_ERR_MISMATCH);
+        } else if (tuple != NULL) {
+            // 13.8改: the positions of what the one value answered with.
+            expect(c, node, lhat_type_tuple_at(tuple, position - 1), wanted,
+                   LHAT_CHECK_ERR_MISMATCH);
         } else if (value != NULL) {
             LhatType *given = infer(c, value);
             // 05 の 8.9: a dotted or indexed target lands in a table, and a
@@ -5584,8 +5826,20 @@ static void check_reassign(Checker *c, const LhatNode *node)
             if (is_hostvalue(given) && target_is_path(target)) {
                 report(c, target, LHAT_CHECK_ERR_HOSTVALUE_ESCAPES);
             }
-            expect(c, value, given, wanted, LHAT_CHECK_ERR_MISMATCH);
-            value = value->next;
+            if (lhat_type_tuple_width(given) > 0) {
+                if (position == 1 && target_count > 1 && value->next == NULL) {
+                    tuple = given;  // 13.8改, as in check_define
+                    expect(c, node, lhat_type_tuple_at(tuple, 0), wanted,
+                           LHAT_CHECK_ERR_MISMATCH);
+                } else {
+                    report(c, value, LHAT_CHECK_ERR_TUPLE_MISPLACED);
+                }
+            } else {
+                expect(c, value, given, wanted, LHAT_CHECK_ERR_MISMATCH);
+            }
+            if (tuple == NULL) {
+                value = value->next;
+            }
         }
         // 13.11: what a branch established about this path no longer holds.
         drop_narrowings_for(c, target_name_node(target));
@@ -5593,6 +5847,13 @@ static void check_reassign(Checker *c, const LhatNode *node)
 
     if (unpacked != NULL) {
         check_unpack_shape(c, node, node->v.binding.values, unpacked, position);
+    }
+    if (tuple != NULL && position != lhat_type_tuple_width(tuple)) {
+        report(c, node, LHAT_CHECK_ERR_TUPLE_ARITY);  // 13.8改
+    }
+    if (unpacked == NULL && tuple == NULL && target_count > 1 &&
+        lhat_node_list_length(node->v.binding.values) == 1) {
+        report(c, node, LHAT_CHECK_ERR_TUPLE_ARITY);  // 13.8改, as above
     }
 }
 
@@ -6130,7 +6391,36 @@ static void check_statement(Checker *c, const LhatNode *node)
 
             bool enclosing_self_call = c->saw_self_call;
             c->saw_self_call = false;
-            LhatType *value = infer(c, node->v.jump.value);
+            LhatType *value = NULL;
+            if (node->v.jump.level > 1) {
+                // 13.8改: 'return^ a, b' answers a tuple. The values hang off
+                // `value` as a list and `level` counted them.
+                LhatType *tuple = lhat_type_tuple(c->result->types);
+                for (const LhatNode *item = node->v.jump.value; item != NULL;
+                     item = item->next) {
+                    LhatType *position = infer(c, item);
+                    // 04 の 8.2: the error goes around the values, never among
+                    // them -- the same rule resolve_type applies to a written
+                    // '(A, SomeError)', asked here of an inferred one.
+                    if (contains_error(position)) {
+                        report(c, item, LHAT_CHECK_ERR_TUPLE_ERROR_POSITION);
+                    }
+                    // A position is a slot, not a run of slots.
+                    if (position != NULL && position->kind == LHAT_TYPE_TUPLE) {
+                        report(c, item, LHAT_CHECK_ERR_TUPLE_MISPLACED);
+                    }
+                    // 05 の 8.9: a host value is as wide as its tag says, and
+                    // a position is one slot. The frame's answer room carries
+                    // one of the two, never a mixture.
+                    if (is_hostvalue(position)) {
+                        report(c, item, LHAT_CHECK_ERR_HOSTVALUE_ESCAPES);
+                    }
+                    lhat_type_add_position(c->result->types, tuple, position);
+                }
+                value = tuple;
+            } else {
+                value = infer(c, node->v.jump.value);
+            }
             bool recursive = c->saw_self_call;
             c->saw_self_call = enclosing_self_call || recursive;
 
@@ -6139,6 +6429,12 @@ static void check_statement(Checker *c, const LhatNode *node)
             // reads -- there is no frame above for the slots to land in.
             if (c->body_scope == NULL && is_hostvalue(value)) {
                 report(c, node, LHAT_CHECK_ERR_HOSTVALUE_ESCAPES);
+            }
+            // 13.8改: and a tuple leaves through that same one slot, so it
+            // does not cross the host boundary either. pack^ makes a table a
+            // host can read.
+            if (c->body_scope == NULL && lhat_type_tuple_width(value) > 0) {
+                report(c, node, LHAT_CHECK_ERR_TUPLE_MISPLACED);
             }
 
             if (c->declared_result != NULL) {
@@ -6177,6 +6473,16 @@ static void check_statement(Checker *c, const LhatNode *node)
             // caught it above.
             if (value != NULL && value->kind == LHAT_TYPE_NONE) {
                 report(c, node, LHAT_CHECK_ERR_MISMATCH);
+                break;
+            }
+            // 13.8改: every exit of one subroutine answers the same width.
+            // A union of a tuple with anything but an error cannot be written
+            // (resolve_type refuses it), and is not inferred either -- one
+            // that could be would leave a caller with no width to reserve.
+            if (c->inferred_result != NULL &&
+                lhat_type_tuple_width(value) !=
+                    lhat_type_tuple_width(c->inferred_result)) {
+                report(c, node, LHAT_CHECK_ERR_TUPLE_UNION);
                 break;
             }
             // 03 の 3.4: several return^ make a union.
@@ -6834,6 +7140,20 @@ const char *lhat_check_error_message(LhatCheckErrorCode code)
         case LHAT_CHECK_ERR_HOSTVALUE_ESCAPES:
             return "a host value lives on the stack and nowhere else; box it "
                    "into the container type its library provides to keep it";
+        case LHAT_CHECK_ERR_TUPLE_MISPLACED:
+            return "(A, B) is what a subroutine answers with, and it is "
+                   "written nowhere else -- not as an argument, a name, a "
+                   "table member, or a position of another tuple; pack^ makes "
+                   "a t^{ A, B } of one";
+        case LHAT_CHECK_ERR_TUPLE_UNION:
+            return "the only thing (A, B) may be written in a union with is "
+                   "an error";
+        case LHAT_CHECK_ERR_TUPLE_ARITY:
+            return "this answers a different number of values than there are "
+                   "names to take them";
+        case LHAT_CHECK_ERR_TUPLE_ERROR_POSITION:
+            return "an error goes around the values, not among them; write "
+                   "(A, B)|SomeError rather than (A, SomeError)";
     }
     return "unknown error";
 }

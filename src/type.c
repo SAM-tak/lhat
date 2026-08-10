@@ -268,6 +268,57 @@ bool lhat_type_add_param(LhatTypeArena *arena, LhatType *func, LhatType *param)
     return true;
 }
 
+LhatType *lhat_type_tuple(LhatTypeArena *arena)
+{
+    return new_type(arena, LHAT_TYPE_TUPLE);
+}
+
+bool lhat_type_add_position(LhatTypeArena *arena, LhatType *tuple,
+                            LhatType *position)
+{
+    if (tuple == NULL) {
+        return false;
+    }
+    LhatTypeList *link = (LhatTypeList *)arena_alloc(arena, sizeof *link);
+    if (link == NULL) {
+        return false;
+    }
+    link->type = position;
+
+    // Appended, never merged: two positions of the same type are two
+    // positions. lhat_type_union's arm folding would lose one.
+    LhatTypeList **slot = &tuple->v.composite.arms;
+    while (*slot != NULL) {
+        slot = &(*slot)->next;
+    }
+    *slot = link;
+    return true;
+}
+
+size_t lhat_type_tuple_width(const LhatType *type)
+{
+    if (type == NULL || type->kind != LHAT_TYPE_TUPLE) {
+        return 0;
+    }
+    size_t width = 0;
+    for (const LhatTypeList *p = type->v.composite.arms; p != NULL; p = p->next) {
+        width++;
+    }
+    return width;
+}
+
+LhatType *lhat_type_tuple_at(const LhatType *type, size_t index)
+{
+    if (type == NULL || type->kind != LHAT_TYPE_TUPLE) {
+        return NULL;
+    }
+    const LhatTypeList *p = type->v.composite.arms;
+    for (size_t i = 0; i < index && p != NULL; i++) {
+        p = p->next;
+    }
+    return p != NULL ? p->type : NULL;
+}
+
 // ---------------------------------------------------------------------------
 // Conformance (13.11)
 // ---------------------------------------------------------------------------
@@ -427,7 +478,14 @@ static bool conforms_in(const LhatType *value, const LhatType *target,
 
     // 13.7: any^ is the top of every value, not just of tables.
     if (target->kind == LHAT_TYPE_ANY) {
-        return true;
+        // 13.8改: except a tuple. any^ is the top of every value a name can
+        // hold, and a tuple is not one -- it lives in the slots a caller
+        // reserved and is taken apart there. Refusing it here is what confines
+        // it to a result position, the same way the HOSTVALUE arm above
+        // confines a host value to its frame. The one place a tuple still
+        // reaches past itself is a union with an error kind (04 の 3.1),
+        // which the UNION arms below take, since this only refuses any^.
+        return value->kind != LHAT_TYPE_TUPLE;
     }
 
     // Every arm has to fit, since the value may be any of them. This is what
@@ -552,6 +610,23 @@ static bool conforms_in(const LhatType *value, const LhatType *target,
                 }
             }
             return true;
+
+        case LHAT_TYPE_TUPLE: {
+            // 13.8改: the width is exact. 14.10's width subtyping is a rule
+            // about tables and does not reach here -- every position of a
+            // tuple is a slot the caller reserved, so one more or one fewer
+            // is a different call, not a wider value.
+            const LhatTypeList *have = value->v.composite.arms;
+            const LhatTypeList *want = target->v.composite.arms;
+            while (have != NULL && want != NULL) {
+                if (!conforms_in(have->type, want->type, seen)) {
+                    return false;
+                }
+                have = have->next;
+                want = want->next;
+            }
+            return have == NULL && want == NULL;
+        }
 
         case LHAT_TYPE_FUNC:
             return conforms_func(value, target, seen);
@@ -731,6 +806,22 @@ static bool disjoint_in(const LhatType *a, const LhatType *b,
     // the way two tables below might.
     if (a->kind == LHAT_TYPE_HOSTVALUE) {
         return a->v.table.hostvalue_tag != b->v.table.hostvalue_tag;
+    }
+
+    // 13.8改: two tuples overlap only if they have the same positions and
+    // something inhabits every pair of them. Differing widths leave nothing in
+    // both, unlike two tables, which may always carry each other's members.
+    if (a->kind == LHAT_TYPE_TUPLE) {
+        const LhatTypeList *left = a->v.composite.arms;
+        const LhatTypeList *right = b->v.composite.arms;
+        while (left != NULL && right != NULL) {
+            if (disjoint_in(left->type, right->type, seen)) {
+                return true;
+            }
+            left = left->next;
+            right = right->next;
+        }
+        return left != NULL || right != NULL;
     }
 
     if (a->kind == LHAT_TYPE_TABLE) {
@@ -1010,6 +1101,15 @@ static void write_type(TypeSink *sink, const LhatType *type, int depth)
             }
             return;
 
+        case LHAT_TYPE_TUPLE:
+            // 13.8改: '(A, B)'. The grouping parentheses 13.1's grammar
+            // already had are what leave a one-position form unwritable, so
+            // there is no '(T,)' to spell here.
+            put_text(sink, "(");
+            write_list(sink, type->v.composite.arms, depth, ", ");
+            put_text(sink, ")");
+            return;
+
         case LHAT_TYPE_FUNC:
             // 13.1's form. 13.2 writes '->' only when something is returned.
             put_text(sink, type->v.func.is_function ? "f^" : "p^");
@@ -1110,6 +1210,7 @@ const char *lhat_type_kind_name(LhatTypeKind kind)
         case LHAT_TYPE_HOSTVALUE:   return "host value";
         case LHAT_TYPE_FUNC:        return "f^";
         case LHAT_TYPE_CORO:        return "c^{...}";
+        case LHAT_TYPE_TUPLE:       return "(...)";
         case LHAT_TYPE_ERROR:       return "error^";
         case LHAT_TYPE_ERROR_SET:   return "error set";
         case LHAT_TYPE_ERROR_KIND:  return "error kind";

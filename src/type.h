@@ -43,6 +43,19 @@ typedef enum {
     LHAT_TYPE_FUNC,        // f^ and p^ (15 章)
     LHAT_TYPE_CORO,        // c^{ ... } (13.9)
 
+    // 13.8改: (A, B) -- several values returned at once. A type, unlike the
+    // value sequence 13.8 refused: it has a name and conforms like anything
+    // else. What keeps 13.8's four propagations from coming back is where it
+    // may be written rather than what it is -- a result position and nowhere
+    // else, which the checker enforces off this kind. A separate kind from
+    // TABLE on purpose: 14.10's width subtyping says a table may carry more
+    // than its type lists, and a tuple may not, since every position of one
+    // is a slot the caller reserved.
+    //
+    // The positions live in v.composite.arms, ordered, the way a union's arms
+    // do. The two kinds never mix, so sharing the field costs nothing.
+    LHAT_TYPE_TUPLE,
+
     // 05 の 8.9: a host-defined value type, held in consecutive stack slots
     // rather than on the heap. Its own kind rather than a nominal TABLE so
     // that every place a type may escape the stack (a table member, a
@@ -291,6 +304,22 @@ const LhatTypeMember *lhat_type_member_at(const LhatType *table, size_t index);
 
 // Appends to a parameter list or to a set's kinds.
 bool lhat_type_add_param(LhatTypeArena *arena, LhatType *func, LhatType *param);
+
+// 13.8改: a tuple, built one position at a time. Positions are never merged
+// the way lhat_type_union merges arms -- '(number^, number^)' has two of them
+// and means it. A tuple with fewer than two positions is never built: 13.1
+// writes one value as itself, and '(T)' is the grouping parentheses the type
+// grammar already had.
+LhatType *lhat_type_tuple(LhatTypeArena *arena);
+bool lhat_type_add_position(LhatTypeArena *arena, LhatType *tuple,
+                            LhatType *position);
+
+// How many positions a tuple has, or 0 for anything else -- so a caller may
+// ask without testing the kind first.
+size_t lhat_type_tuple_width(const LhatType *type);
+
+// The type at a zero-based position, or NULL when there is none.
+LhatType *lhat_type_tuple_at(const LhatType *type, size_t index);
 
 // Builds a union or an intersection. Arms that add nothing are dropped, so
 // 'number^|number^' collapses and 'T|any^' becomes any^. A single surviving

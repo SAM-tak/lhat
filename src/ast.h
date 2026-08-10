@@ -56,6 +56,8 @@ typedef enum {
     LHAT_NODE_CALL,          // f(x)  f?(x)
     LHAT_NODE_AS,            // expr as^ Type
     LHAT_NODE_UNPACK,        // unpack^ expr          (13.10)
+    LHAT_NODE_PACK,          // pack^ expr            (13.8改): the one bridge
+                             // from a tuple to a table a name can hold
     LHAT_NODE_FUNC,          // f^... { ... } / p^... { ... }
     LHAT_NODE_IF_EXPR,       // if^c: e el^c: e el^: e ;
 
@@ -88,6 +90,8 @@ typedef enum {
     LHAT_NODE_TYPE_FUNC,     // f^A, B -> C;
     LHAT_NODE_TYPE_CORO,     // c^{ f^recv -> yield;, ret }  (13.9, 15.3改)
     LHAT_NODE_TYPE_TABLE,    // t^{ member : type }
+    LHAT_NODE_TYPE_TUPLE,    // (A, B)  (13.8改). Two positions or more: '(T)'
+                             // is the grouping the type grammar already had
     LHAT_NODE_TYPE_UNION,    // A | B
     LHAT_NODE_TYPE_INTERSECT,// A & B
 

@@ -540,11 +540,19 @@ static void test_statements(void)
     }
     parse_dispose(&p);
 
-    LHAT_TEST("destructuring without unpack^ is rejected");
+    // 13.8改 (S46): one value with several names parses. Whether it is a
+    // tuple being taken apart is a question about the type, so the mark 13.10
+    // used to demand is withdrawn and the checker answers instead.
+    LHAT_TEST("one value with several names parses without a mark");
     parse_text(&p, "q, r := divmod(7, 2)");
+    LHAT_CHECK_EQ_INT(p.result.diagnostic_count, 0);
+    parse_dispose(&p);
+
+    LHAT_TEST("but a count that cannot be either is still refused");
+    parse_text(&p, "a, b := 1, 2, 3");
     LHAT_CHECK(p.result.diagnostic_count > 0, "expected a diagnostic");
     LHAT_CHECK_EQ_INT(p.result.diagnostics[0].code,
-                      LHAT_PARSE_ERR_DESTRUCTURE_NEEDS_UNPACK);
+                      LHAT_PARSE_ERR_BINDING_ARITY);
     parse_dispose(&p);
 
     LHAT_TEST("unpack^ must be the only value");

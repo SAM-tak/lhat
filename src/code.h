@@ -57,13 +57,23 @@ typedef enum {
     LHAT_BC_JUMP,       // Bx    signed, relative to the next instruction
     LHAT_BC_JUMP_FALSE, // A Bx  jump when R[A] is false
 
-    // 5.3: arguments sit above the callee in the caller's frame, and exactly
-    // one value comes back -- 02 の 13.8 left nothing to reconcile.
+    // 5.3改: arguments sit above the callee in the caller's frame, and one
+    // value comes back -- 02 の 13.8改 lets that value be a tuple, which
+    // arrives as a run of slots rather than one, and the count is settled by
+    // the type either way. Lua's calling convention is complicated because
+    // the count is settled at run time; that reconciliation still does not
+    // exist here.
     LHAT_BC_CLOSURE,    // A Bx  R[A] = closure of protos[Bx]
-    LHAT_BC_CALL,       // A B C R[A] = R[A](R[A+1] .. R[A+B]). C != 0: 13.7's
-                        //       'expr...' -- R[A+B] is a table whose
-                        //       positions are unpacked as further arguments,
-                        //       in place of being the last argument itself
+    LHAT_BC_CALL,       // A B C R[A] = R[A](R[A+1] .. R[A+B]).
+                        //       C bit 0: 13.7's 'expr...' -- R[A+B] is a
+                        //         table whose positions are unpacked as
+                        //         further arguments, in place of being the
+                        //         last argument itself.
+                        //       C bits 1-7 (13.8改): how many consecutive
+                        //         slots the call site reserved at R[A] for
+                        //         the answer. 0 and 1 both mean one, which is
+                        //         every call written before tuples existed.
+                        //         The byte was a boolean and had the room.
     // 03 の 5.11c: strict settled which candidate of an overloaded member
     // (02 の 14.12) the call ahead means, so the search 5.11改 runs is not
     // run. Anything but a group in R[A] is left alone -- a value that got
@@ -100,6 +110,14 @@ typedef enum {
     // not agree an error), so this is what relaxed and an unchecked compile
     // fall to. B is the position, for the reader rather than for the read.
     LHAT_BC_CHECKPOS,   // A B   R[A] is position B of a destructuring
+    // 02 の 13.8改: the same guard for a tuple. The checker settles the width
+    // where it ran, so this is what relaxed and an unchecked compile fall to
+    // -- and it is what stands between an error arriving where a run was
+    // expected and a register being read as a position.
+    LHAT_BC_CHECKRUN,   // A B   R[A] is the head of a run of B positions
+    // 02 の 13.8改: pack^ -- the one bridge from a tuple to a table. A tuple
+    // is not a value a name can hold; this makes one that is.
+    LHAT_BC_PACK,       // A B   R[A] = t^{...} of the run of B at R[A]
     LHAT_BC_ADDOVERLOAD,// A B C R[A][R[B]] gains R[C] as another way to call it
     LHAT_BC_OVERRIDEINDEX, // A B C R[A][R[B]] := R[C], ahead of any overload
     // 03 の 5.11c: the same write, once the checker has said which arm is
@@ -143,14 +161,20 @@ typedef enum {
     LHAT_BC_ENDCLEANUP,   //     the end of a cleanup body
 
     // 02 の 15.4: bidirectional. The value goes out and the one the resume
-    // supplies comes back into the same register.
-    LHAT_BC_YIELD,      // A     yield R[A]; R[A] = what the resume sent
+    // supplies comes back into the same register. 13.8改: B != 0 means what
+    // goes out is a tuple -- R[A] is its head and B positions follow. What
+    // comes back is still one value, since a resume sends one.
+    LHAT_BC_YIELD,      // A B   yield R[A]; R[A] = what the resume sent
 
     // 02 の 15.8: delegation, which compiles to the loop 5.7 writes out.
     LHAT_BC_RESUME,     // A B   R[A] = resume the coroutine R[B], sending R[A]
     LHAT_BC_ISDONE,     // A B   R[A] = the coroutine R[B] has finished
 
-    LHAT_BC_RETURN,     // A     return R[A]
+    // 13.8改: B != 0 means the answer is a tuple of B positions, sitting in
+    // R[A] .. R[A+B-1]. No head slot here -- the head is the machine's, put
+    // down in the caller's frame where the width has to be readable off the
+    // value itself (a union with an error tells its arms apart by that tag).
+    LHAT_BC_RETURN,     // A B   return R[A], or the B positions from R[A]
     LHAT_BC_RETURN_NIL,
 
     LHAT_BC_PANIC,      // A     panic^ R[A]  (04 の 11.6改)
@@ -168,6 +192,22 @@ typedef enum {
 // 5.2. Bx is signed for a jump and unsigned everywhere else; the two are read
 // through different accessors rather than stored differently.
 #define LHAT_BX_BIAS 32768
+
+// LHAT_BC_CALL's C, which was a boolean with a whole byte to itself.
+#define LHAT_CALL_SPREAD 0x01u          // 13.7's 'expr...'
+#define LHAT_CALL_PREPARED_SHIFT 1      // 13.8改: slots reserved for the answer
+#define LHAT_CALL_PREPARED_MAX (0xFFu >> LHAT_CALL_PREPARED_SHIFT)
+
+static inline unsigned lhat_call_prepared(uint8_t c)
+{
+    return (unsigned)c >> LHAT_CALL_PREPARED_SHIFT;
+}
+
+static inline uint8_t lhat_call_operand(bool spread, unsigned prepared)
+{
+    return (uint8_t)((spread ? LHAT_CALL_SPREAD : 0u) |
+                     (prepared << LHAT_CALL_PREPARED_SHIFT));
+}
 
 static inline LhatInstruction lhat_encode_abc(LhatOpcode op, uint8_t a,
                                               uint8_t b, uint8_t c)

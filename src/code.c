@@ -253,6 +253,8 @@ const char *lhat_opcode_name(LhatOpcode op)
         case LHAT_BC_GETINDEX:    return "getindex";
         case LHAT_BC_SETINDEX:    return "setindex";
         case LHAT_BC_CHECKPOS:    return "checkpos";
+        case LHAT_BC_CHECKRUN:    return "checkrun";
+        case LHAT_BC_PACK:        return "pack";
         case LHAT_BC_ADDOVERLOAD: return "addoverload";
         case LHAT_BC_OVERRIDEINDEX: return "overrideindex";
         case LHAT_BC_OVERRIDEARM: return "overridearm";
@@ -300,10 +302,20 @@ void lhat_chunk_print(const LhatChunk *chunk, size_t index, char *out,
             snprintf(out, size, "%-10s r%u p%u", name, lhat_a(i), lhat_bx(i));
             break;
         case LHAT_BC_CALL:
-        case LHAT_BC_CALLMETHOD:
-            snprintf(out, size, "%-10s r%u (%u args)", name, lhat_a(i),
-                     lhat_b(i));
+        case LHAT_BC_CALLMETHOD: {
+            // 13.8改: C's high bits say how many slots the answer was given
+            // room in. Shown only when it is a run, so every call written
+            // before tuples reads exactly as it did.
+            unsigned prepared = lhat_call_prepared(lhat_c(i));
+            if (prepared > 1) {
+                snprintf(out, size, "%-10s r%u (%u args, %u slots)", name,
+                         lhat_a(i), lhat_b(i), prepared);
+            } else {
+                snprintf(out, size, "%-10s r%u (%u args)", name, lhat_a(i),
+                         lhat_b(i));
+            }
             break;
+        }
         case LHAT_BC_GETUPVAL:
         case LHAT_BC_SETUPVAL:
             snprintf(out, size, "%-10s r%u u%u", name, lhat_a(i), lhat_b(i));

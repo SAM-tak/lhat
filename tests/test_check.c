@@ -97,6 +97,15 @@ static bool has_error(const Unit *u, LhatCheckErrorCode code)
         LHAT_CHECK(has_error(u, code), "expected " #code);                    \
     } while (0)
 
+// For a case that is allowed to report something else. Used where the point
+// is one specific refusal not happening, and the surrounding program cannot
+// yet be written without any diagnostic at all.
+#define CHECK_NOT_REPORTED(u, code)                                           \
+    do {                                                                      \
+        LHAT_CHECK_EQ_INT(syntax_errors(u), 0);                               \
+        LHAT_CHECK(!has_error(u, code), "unexpected " #code);                 \
+    } while (0)
+
 static void test_names(void)
 {
     Unit u;
@@ -5828,6 +5837,111 @@ static void test_stacked_hats(void)
     unit_dispose(&u);
 }
 
+// 13.8改: (A, B) is a type. What keeps 13.8's four propagations from coming
+// back is where it may be written rather than what it is -- a result and
+// nowhere else. These cases are that confinement.
+//
+// The bodies below are deliberately wrong (a tuple result answered with 0),
+// because a right one cannot be written until return^ takes several values.
+// What each case asserts is the one refusal it is about.
+static void test_tuple_positions(void)
+{
+    Unit u;
+
+    LHAT_TEST("a tuple may be written as a result");
+    check_text(&u, "var^ g : f^ -> (number^, string^); = 0\n");
+    CHECK_NOT_REPORTED(&u, LHAT_CHECK_ERR_TUPLE_MISPLACED);
+    unit_dispose(&u);
+
+    // 13.7's expansion rule -- Lua's "truncate to one except in tail
+    // position" -- is what 13.8 named as the worst of the four. It has
+    // nothing to expand once an argument cannot hold a tuple.
+    LHAT_TEST("but not as an argument");
+    check_text(&u, "var^ g : f^(number^, string^) -> number^; = 0\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_TUPLE_MISPLACED);
+    unit_dispose(&u);
+
+    LHAT_TEST("nor bound to a name");
+    check_text(&u, "var^ t : (number^, string^) = 0\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_TUPLE_MISPLACED);
+    unit_dispose(&u);
+
+    LHAT_TEST("nor held in a table");
+    check_text(&u, "var^ t : t^{ a : (number^, string^) } = { }\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_TUPLE_MISPLACED);
+    unit_dispose(&u);
+
+    // A position is a slot, not a run of slots.
+    LHAT_TEST("nor nested in another tuple");
+    check_text(&u, "var^ g : f^ -> ((number^, string^), number^); = 0\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_TUPLE_MISPLACED);
+    unit_dispose(&u);
+
+    // 04 の 3.1: the error goes around the values, never among them.
+    LHAT_TEST("a union with an error is how a failing one is written");
+    check_text(&u,
+               "errordef^ IOError { NotFound }\n"
+               "var^ g : f^ -> (number^, string^)|IOError; = 0\n");
+    CHECK_NOT_REPORTED(&u, LHAT_CHECK_ERR_TUPLE_UNION);
+    unit_dispose(&u);
+
+    // 04 の 8.2: an error among the values is the shape Go's 'v, err := f()'
+    // needs, and it stays unwritable.
+    LHAT_TEST("and a union with anything else is refused");
+    check_text(&u, "var^ g : f^ -> (number^, string^)|number^; = 0\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_TUPLE_UNION);
+    unit_dispose(&u);
+
+    // Multi-value return brings back the second value 8.2 relied on not
+    // existing, so the rule it used to get for free is stated outright.
+    LHAT_TEST("an error written among the values is refused");
+    check_text(&u,
+               "errordef^ IOError { NotFound }\n"
+               "var^ g : f^ -> (number^, IOError); = 0\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_TUPLE_ERROR_POSITION);
+    unit_dispose(&u);
+
+    LHAT_TEST("and so is one buried in a position's union");
+    check_text(&u,
+               "errordef^ IOError { NotFound }\n"
+               "var^ g : f^ -> (number^, string^|IOError); = 0\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_TUPLE_ERROR_POSITION);
+    unit_dispose(&u);
+
+    // 13.9 with 15.3改: Y and T are results, R is an input.
+    LHAT_TEST("a coroutine yields and answers tuples");
+    check_text(&u,
+               "var^ c : c^{ p^number^ -> (number^, string^);, "
+               "(bool^, number^) } = 0\n");
+    CHECK_NOT_REPORTED(&u, LHAT_CHECK_ERR_TUPLE_MISPLACED);
+    unit_dispose(&u);
+
+    LHAT_TEST("but a resume sends one value");
+    check_text(&u,
+               "var^ c : c^{ p^(number^, string^) -> number^;, number^ } = 0\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_TUPLE_MISPLACED);
+    unit_dispose(&u);
+
+    // 04 の 4.1: catch^'s right side is one expression, and 13.8改 leaves no
+    // expression that is a tuple. So a failing subroutine answering several
+    // values cannot be given a replacement here -- the union of the tuple
+    // with whatever was written is what gets reported.
+    LHAT_TEST("catch^ cannot supply a replacement for a tuple");
+    check_text(&u,
+               "errordef^ E { X }\n"
+               "var^ f = f^ -> (number^, number^)|E { return^ error^E.X{} }\n"
+               "var^ q, r = f() catch^ 0\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_TUPLE_UNION);
+    unit_dispose(&u);
+
+    // The grouping parentheses 13.1's grammar already had. This is what
+    // leaves a one-position tuple unwritable without inventing '(T,)'.
+    LHAT_TEST("'(T)' is still the grouping it always was");
+    check_text(&u, "var^ x : (number^) = 1\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+}
+
 int main(void)
 {
     test_names();
@@ -5857,5 +5971,6 @@ int main(void)
     test_stacked_hats();
     test_relaxed_nil_reference();
     test_nil_propagation();
+    test_tuple_positions();
     return lhat_test_report("test_check");
 }
