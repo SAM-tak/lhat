@@ -298,6 +298,12 @@ bool lhat_value_satisfies(LhatValue value, const LhatRuntimeType *type)
             return lhat_is_object_kind(value, LHAT_OBJECT_HOSTDATA) &&
                    ((const LhatHostData *)lhat_as_object(value))->tag ==
                        type->hostdata_tag;
+        // 05 の 8.9: the same rule over the head slot's own tag. A head
+        // travels as the first slot of its width, so asking the head is
+        // asking the value.
+        case LHAT_TYPE_RT_HOSTVALUE:
+            return lhat_is_hostvalue(value) &&
+                   lhat_as_hostvalue_tag(value) == type->hostvalue_tag;
         case LHAT_TYPE_RT_UNION:
             for (size_t i = 0; i < type->part_count; i++) {
                 if (lhat_value_satisfies(value, type->parts[i])) {
@@ -446,6 +452,19 @@ static void write_runtime_type(TypeWriter *w, const LhatRuntimeType *type)
                 type_put_text(w, ".");
             }
             type_put_text(w, type->hostdata_tag->name);
+            return;
+
+        // 05 の 8.9: named the same qualified way.
+        case LHAT_TYPE_RT_HOSTVALUE:
+            if (type->hostvalue_tag == NULL) {
+                type_put_text(w, "UNKNOWN");
+                return;
+            }
+            if (type->hostvalue_tag->module != NULL) {
+                type_put_text(w, type->hostvalue_tag->module);
+                type_put_text(w, ".");
+            }
+            type_put_text(w, type->hostvalue_tag->name);
             return;
         // 13.9's three slots. NULL still prints any^ (S28's residual: a
         // coroutine value or a yielding subroutine reflected before this
@@ -597,6 +616,9 @@ bool lhat_runtime_type_equal(const LhatRuntimeType *a, const LhatRuntimeType *b)
         // registered type is.
         case LHAT_TYPE_RT_HOSTDATA:
             return a->hostdata_tag == b->hostdata_tag;
+        // 05 の 8.9: the same.
+        case LHAT_TYPE_RT_HOSTVALUE:
+            return a->hostvalue_tag == b->hostvalue_tag;
         // 11.3's structural identity for a union or an intersection asks the
         // same of both sides without caring about the order the arms were
         // written in.

@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "object.h"  // 05 の 8.9: LhatHostValueTag, for naming a host value
 #include "port.h"
 #include "lhatconfig.h"
 
@@ -89,6 +90,21 @@ LhatType *lhat_type_simple(LhatTypeArena *arena, LhatTypeKind kind)
 LhatType *lhat_type_table(LhatTypeArena *arena)
 {
     return new_type(arena, LHAT_TYPE_TABLE);
+}
+
+LhatType *lhat_type_hostvalue(LhatTypeArena *arena,
+                              const struct LhatHostValueTag *tag)
+{
+    LhatType *type = new_type(arena, LHAT_TYPE_HOSTVALUE);
+    if (type != NULL) {
+        // 05 の 8.9: the payload shares v.table so member registration and
+        // lookup read it unchanged; nominal is set for the readers that key
+        // off it rather than off the kind.
+        type->v.table.nominal = true;
+        type->v.table.from_definition = true;
+        type->v.table.hostvalue_tag = tag;
+    }
+    return type;
 }
 
 LhatType *lhat_type_func(LhatTypeArena *arena, bool is_function)
@@ -396,6 +412,19 @@ static bool conforms_in(const LhatType *value, const LhatType *target,
         return value->kind == target->kind;
     }
 
+    // 05 の 8.9: a host value fits exactly its own type and nothing wider.
+    // Checked before any^'s shortcut on purpose: any^ is the top of every
+    // value that can live anywhere a value lives, and a host value cannot
+    // leave its frame -- letting it under any^ (or into a union, checked
+    // below by falling out of this early return) would be the first step of
+    // every escape the kind exists to refuse. Identity is the tag, for
+    // 8.8's reason sharpened by value semantics.
+    if (value->kind == LHAT_TYPE_HOSTVALUE ||
+        target->kind == LHAT_TYPE_HOSTVALUE) {
+        return value->kind == target->kind &&
+               value->v.table.hostvalue_tag == target->v.table.hostvalue_tag;
+    }
+
     // 13.7: any^ is the top of every value, not just of tables.
     if (target->kind == LHAT_TYPE_ANY) {
         return true;
@@ -697,6 +726,13 @@ static bool disjoint_in(const LhatType *a, const LhatType *b,
         return true;  // different primitives, or a primitive and a structure
     }
 
+    // 05 の 8.9: identity is the tag, so two host value types overlap exactly
+    // when they are the same registration. There is no structure to combine
+    // the way two tables below might.
+    if (a->kind == LHAT_TYPE_HOSTVALUE) {
+        return a->v.table.hostvalue_tag != b->v.table.hostvalue_tag;
+    }
+
     if (a->kind == LHAT_TYPE_TABLE) {
         // Two structures are separate only when a name they share is declared
         // with types that nothing satisfies at once. Sharing no name at all
@@ -961,6 +997,19 @@ static void write_type(TypeSink *sink, const LhatType *type, int depth)
             return;
         }
 
+        case LHAT_TYPE_HOSTVALUE:
+            // 05 の 8.9: named the way the host registered it. The members
+            // are not written out -- like a hostdata type, what it is is the
+            // declaration, not the shape.
+            if (type->v.table.hostvalue_tag != NULL) {
+                put_text(sink, type->v.table.hostvalue_tag->module);
+                put_text(sink, ".");
+                put_text(sink, type->v.table.hostvalue_tag->name);
+            } else {
+                put_text(sink, "hostvalue");
+            }
+            return;
+
         case LHAT_TYPE_FUNC:
             // 13.1's form. 13.2 writes '->' only when something is returned.
             put_text(sink, type->v.func.is_function ? "f^" : "p^");
@@ -1058,6 +1107,7 @@ const char *lhat_type_kind_name(LhatTypeKind kind)
         case LHAT_TYPE_NUMBER:      return "number^";
         case LHAT_TYPE_STRING:      return "string^";
         case LHAT_TYPE_TABLE:       return "t^{...}";
+        case LHAT_TYPE_HOSTVALUE:   return "host value";
         case LHAT_TYPE_FUNC:        return "f^";
         case LHAT_TYPE_CORO:        return "c^{...}";
         case LHAT_TYPE_ERROR:       return "error^";

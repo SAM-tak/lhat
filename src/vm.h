@@ -76,6 +76,16 @@ typedef struct LhatHostTypeEntry {
     const LhatHostDataTag *tag;
 } LhatHostTypeEntry;
 
+// 05 の 8.9: the same for one host value type lhat_register_hostvalue_type
+// (program.h) registered. The compiler reads these to put a tag -- and with
+// it a width -- behind a written "module...Name", both for a type position
+// and for isa^. Owned by the registering LhatProgram, as above.
+typedef struct LhatHostValueTypeEntry {
+    const char *module;
+    const char *name;
+    const LhatHostValueTag *tag;
+} LhatHostValueTypeEntry;
+
 typedef struct {
     LhatUnitResolver resolve;
     void *context;
@@ -107,6 +117,11 @@ typedef struct {
     // when the host registered none.
     const LhatHostTypeEntry *host_types;
     size_t host_type_count;
+
+    // 05 の 8.9: the host value types, the same way. NULL/0 when the host
+    // registered none.
+    const LhatHostValueTypeEntry *hostvalue_types;
+    size_t hostvalue_type_count;
 } LhatUnits;
 
 // Compiles one unit into a proto, which owns the bodies written inside it.
@@ -284,6 +299,30 @@ bool lhat_machine_make_error(LhatMachine *machine, const LhatErrorKind *kind,
 // with a different tag. 7.3 makes the tags distinct per declaration, so this
 // is what stops a Texture reaching the C that expects a Sound.
 void *lhat_hostdata_pointer(LhatValue value, const LhatHostDataTag *tag);
+
+// 05 の 8.9: gives the machine its per-type members tables, one per
+// registered host value type, found back by tag->index. Called by
+// lhat_program_install after the entries have landed under L^.modules --
+// the tables bound here are those very ones, so the collector reaches them
+// through the environment already.
+bool lhat_machine_bind_hostvalues(LhatMachine *machine,
+                                  const LhatHostValueTypeEntry *entries,
+                                  size_t count);
+
+// 05 の 8.9: the bytes of a host value argument, or NULL when the argument
+// is not one of `tag`'s -- the same double check lhat_hostdata_pointer
+// makes, over bytes instead of a pointer. The bytes belong to the machine's
+// stack and are good for the duration of the call that handed them over;
+// writing through them changes a scratch copy and nothing the program sees.
+void *lhat_hostvalue_data(LhatValue argument, const LhatHostValueTag *tag);
+
+// 05 の 8.9: the value a host answers with -- `size` bytes (the registered
+// size) copied into the machine's scratch and handed back as a value the
+// machine writes out whole the moment the call returns. Never stored: the
+// scratch has room for exactly one answer, which is all a call can make.
+// False when the tag is NULL or the machine is.
+bool lhat_make_hostvalue(LhatMachine *machine, const LhatHostValueTag *tag,
+                         const void *bytes, LhatValue *out);
 
 // A string on `machine`'s own heap, made the way 05 の 8.7's registration
 // makes a table or a host -- the machine has to make it, since the value's

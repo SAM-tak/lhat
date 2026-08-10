@@ -201,6 +201,9 @@ typedef enum {
     // (7.3's exception for an opaque value). Written like any other name, so
     // it belongs here rather than beside a question of its own.
     LHAT_TYPE_RT_HOSTDATA,
+    // 05 の 8.9: a host value type -- the same nominal rule over the head
+    // slot's tag instead of a heap object's.
+    LHAT_TYPE_RT_HOSTVALUE,
     LHAT_TYPE_RT_UNION,      // 13.5
     LHAT_TYPE_RT_INTERSECT,  // 14.5, 14.12: an overload^ed member's arms
     LHAT_TYPE_RT_STRUCTURE,  // 14.10: at least these members
@@ -233,6 +236,9 @@ typedef struct LhatRuntimeType {
     // LhatHostData.tag does, so the collector never follows it either. The
     // struct itself is written further down, next to the values it tags.
     const struct LhatHostDataTag *hostdata_tag;
+
+    // HOSTVALUE (05 の 8.9). The same arrangement.
+    const struct LhatHostValueTag *hostvalue_tag;
 
     // UNION: the arms. SUBROUTINE: the parameter types, in order -- a
     // signature's parameters are a list the same way a union's arms are, and
@@ -340,6 +346,51 @@ typedef struct LhatHostDataTag {
     LhatHostFn release;
     void *release_context;
 } LhatHostDataTag;
+
+// 05 の 8.9: the element kind of one registered host-value field, which is
+// what LHAT_BC_HVGET/HVSET convert to and from number^ with.
+typedef enum {
+    LHAT_HVFIELD_F32,
+    LHAT_HVFIELD_F64,
+    LHAT_HVFIELD_I8,
+    LHAT_HVFIELD_I16,
+    LHAT_HVFIELD_I32,
+    LHAT_HVFIELD_I64,
+    LHAT_HVFIELD_U8,
+    LHAT_HVFIELD_U16,
+    LHAT_HVFIELD_U32
+} LhatHostValueFieldKind;
+
+// One field the host declared: 'v.x' reads `kind`-shaped bytes at `offset`
+// without a host call. The name belongs to the program, as the tag's does.
+typedef struct LhatHostValueField {
+    const char *name;
+    size_t offset;
+    LhatHostValueFieldKind kind;
+} LhatHostValueField;
+
+// 05 の 8.9: a host-defined value type -- Lua's light/full split re-cut as
+// value against reference. Where LhatHostDataTag stands for something the
+// host holds, this stands for bytes the machine itself keeps, laid out in
+// consecutive stack slots: one head slot carrying this tag, then enough
+// continuation slots for `size` bytes. Identity is the tag's address, for
+// 8.8's reason: two value types with the same shape are still not the same
+// type, or the C reading the bytes back would read them as the wrong one.
+// No lifetime, no dispose, nothing for the collector: a host value is bits.
+typedef struct LhatHostValueTag {
+    const char *module;
+    const char *name;
+    size_t size;   // bytes of payload the host declared
+    size_t width;  // slots on the stack: 1 head + ceil(size / 8)
+    // The fields registered for direct access, offset-checked against `size`
+    // at registration. Owned by the tag, freed with the program.
+    LhatHostValueField *fields;
+    size_t field_count;
+    // Registration order. A hostdata value carries its members table itself;
+    // a host value has no heap half to carry one, so the machine keeps one
+    // table per registered type (built at install) and this is the way in.
+    size_t index;
+} LhatHostValueTag;
 
 // Something the host made. The pointer is the host's and the collector never
 // looks into it; what is reachable from here is the table of members the

@@ -34,6 +34,11 @@ typedef struct {
     // 01 の 8 章: which scope declared it, counted from this subroutine's
     // own body outwards -- what '$^' walks past. See Compiler.scope_depth.
     uint32_t depth;
+    // 05 の 8.9: how many consecutive slots the name holds -- 1 for
+    // everything but a host value, whose registered width the checker's
+    // stamp (or the written annotation) decided at declaration. Reading or
+    // writing the name moves this many slots.
+    uint8_t width;
 } Local;
 
 typedef struct DefChain {
@@ -219,6 +224,62 @@ static uint8_t reserve(Compiler *c)
     return r;
 }
 
+// 05 の 8.9: what the checker stamped on an expression that holds a host
+// value (check.c's infer), or NULL for every other expression. The compiler
+// is otherwise type-blind; this is the one channel a width arrives through,
+// so compiling without checking simply never sees one -- and the checker's
+// escape rules have already refused every place a width could go wrong.
+static const struct LhatHostValueTag *hostvalue_of(const LhatNode *node)
+{
+    const LhatType *checked =
+        node != NULL ? (const LhatType *)node->checked_type : NULL;
+    return checked != NULL && checked->kind == LHAT_TYPE_HOSTVALUE
+               ? checked->v.table.hostvalue_tag
+               : NULL;
+}
+
+static size_t width_of(const LhatNode *node)
+{
+    const struct LhatHostValueTag *tag = hostvalue_of(node);
+    return tag != NULL ? tag->width : 1;
+}
+
+// A run of consecutive slots, first one answered. The scratch discipline
+// (mark/restore of next_register) frees a wide reservation the same way it
+// frees a narrow one.
+static uint8_t reserve_wide(Compiler *c, size_t width)
+{
+    uint8_t first = reserve(c);
+    for (size_t i = 1; i < width; i++) {
+        reserve(c);
+    }
+    return first;
+}
+
+// The slot(s) an expression's value will need: reserve_wide sized by the
+// checker's stamp.
+static uint8_t reserve_for(Compiler *c, const LhatNode *node)
+{
+    return reserve_wide(c, width_of(node));
+}
+
+static void emit(Compiler *c, LhatInstruction instruction);
+
+// 05 の 8.9: MOVE copies one slot blindly (payload and tag alike), so a wide
+// value moves as that many MOVEs. Ranges from the register allocator never
+// interleave, so an ascending copy is safe wherever this is emitted.
+static void emit_move_wide(Compiler *c, uint8_t into, uint8_t from,
+                           size_t width)
+{
+    if (into == from) {
+        return;
+    }
+    for (size_t i = 0; i < width; i++) {
+        emit(c, lhat_encode_abc(LHAT_BC_MOVE, (uint8_t)(into + i),
+                                (uint8_t)(from + i), 0));
+    }
+}
+
 static void emit(Compiler *c, LhatInstruction instruction)
 {
     if (lhat_chunk_emit(&c->proto->chunk, instruction, c->line) == SIZE_MAX) {
@@ -306,6 +367,14 @@ static size_t find_upvalue_skipping(Compiler *c, const char *name,
     const Local *local = find_local_skipping(c->parent, name, length,
                                              &remaining);
     if (local != NULL) {
+        // 05 の 8.9: an upvalue is one slot and a capture outlives the
+        // frame, so a host value is never captured. The checker refused
+        // this first (LHAT_CHECK_ERR_HOSTVALUE_ESCAPES); this is the
+        // backstop for a compile without checking.
+        if (local->width > 1) {
+            fail(c, LHAT_COMPILE_UNSUPPORTED);
+            return SIZE_MAX;
+        }
         source = LHAT_UPVALUE_REGISTER;
         index = local->reg;
     } else {
@@ -877,6 +946,34 @@ static const LhatHostDataTag *resolve_host_type_tag(Compiler *c,
     return NULL;
 }
 
+// 05 の 8.9: the same for a host value type, out of
+// LhatUnits.hostvalue_types. This is how a written annotation carries a
+// width into the compiler when the checker's stamp is not there to.
+static const LhatHostValueTag *resolve_hostvalue_type_tag(Compiler *c,
+                                                          const LhatNode *path)
+{
+    const LhatUnits *units = root_of(c)->units;
+    if (units == NULL || units->hostvalue_types == NULL || path == NULL) {
+        return NULL;
+    }
+
+    QualifierSegment segments[LHAT_MAX_QUALIFIER_SEGMENTS];
+    size_t count = flatten_qualified_path(c, path, segments,
+                                          LHAT_MAX_QUALIFIER_SEGMENTS);
+    if (count < 2) {
+        return NULL;
+    }
+
+    for (size_t i = 0; i < units->hostvalue_type_count; i++) {
+        const LhatHostValueTypeEntry *entry = &units->hostvalue_types[i];
+        if (segments_match(segments, 0, count - 1, entry->module) &&
+            segments_match(segments, count - 1, count, entry->name)) {
+            return entry->tag;
+        }
+    }
+    return NULL;
+}
+
 static void load_string_bytes(Compiler *c, uint8_t into, const char *text,
                               size_t length)
 {
@@ -1091,6 +1188,7 @@ static void compile_catch(Compiler *c, const LhatNode *node, uint8_t into)
         local->length = 3;
         local->reg = caught;
         local->depth = c->scope_depth;  // catch^ opens no brace of its own
+        local->width = 1;
     }
     compile_expression(c, node->v.binary.right, into);
 
@@ -1171,7 +1269,8 @@ static void compile_isa(Compiler *c, const LhatNode *node, uint8_t into)
     // The left side runs whatever the answer turns out to be -- for an any^
     // it is still the reason compile_expression keeps typeof^'s operand.
     uint8_t mark = c->next_register;
-    uint8_t value = reserve(c);
+    // 05 の 8.9: a host value operand keeps its width here as anywhere.
+    uint8_t value = reserve_for(c, node->v.binary.left);
     compile_expression(c, node->v.binary.left, value);
     compile_isa_test(c, node->v.binary.right, value, into);
     c->next_register = mark;
@@ -1354,6 +1453,17 @@ static LhatRuntimeType *lower_type(Compiler *c, const LhatNode *node)
                 }
                 return type;
             }
+            // 05 の 8.9: a host value type, written the same qualified way.
+            const LhatHostValueTag *value_tag =
+                resolve_hostvalue_type_tag(c, node);
+            if (value_tag != NULL) {
+                LhatRuntimeType *type =
+                    lhat_type_rt_new(owner, LHAT_TYPE_RT_HOSTVALUE);
+                if (type != NULL) {
+                    type->hostvalue_tag = value_tag;
+                }
+                return type;
+            }
 
             const char *name = NULL;
             size_t length = 0;
@@ -1501,6 +1611,16 @@ static LhatRuntimeType *rt_from_checked_in(LhatHeap *heap,
             return lhat_type_rt_new(heap, LHAT_TYPE_RT_NUMBER);
         case LHAT_TYPE_STRING:
             return lhat_type_rt_new(heap, LHAT_TYPE_RT_STRING);
+
+        // 05 の 8.9: identity is the tag, carried across whole.
+        case LHAT_TYPE_HOSTVALUE: {
+            LhatRuntimeType *rt =
+                lhat_type_rt_new(heap, LHAT_TYPE_RT_HOSTVALUE);
+            if (rt != NULL) {
+                rt->hostvalue_tag = type->v.table.hostvalue_tag;
+            }
+            return rt;
+        }
 
         case LHAT_TYPE_TABLE: {
             LhatRuntimeType *rt = lhat_type_rt_new(heap, LHAT_TYPE_RT_STRUCTURE);
@@ -1729,7 +1849,12 @@ static bool resolve_name(Compiler *c, const char *name, size_t length,
 {
     const Local *local = find_local(c, name, length);
     if (local != NULL) {
-        emit(c, lhat_encode_abc(LHAT_BC_MOVE, into, local->reg, 0));
+        // 05 の 8.9: a host value name moves as its width of slots. The
+        // destination was sized by the same checker stamp, so the two
+        // agree. (emit_move_wide drops a self-move, which was always a
+        // no-op here.)
+        emit_move_wide(c, into, local->reg,
+                       local->width > 1 ? local->width : 1);
         return true;
     }
     size_t upvalue = find_upvalue(c, name, length);
@@ -2060,6 +2185,7 @@ static void compile_def(Compiler *c, const LhatNode *node, uint8_t into)
     local->length = 6;
     local->reg = into;
     local->depth = c->scope_depth;
+    local->width = 1;
 
     const DefChain *enclosing = c->building;
     c->building = &chain;
@@ -2116,6 +2242,7 @@ static void compile_def(Compiler *c, const LhatNode *node, uint8_t into)
                 previous->length = 6;
                 previous->reg = hidden;
                 previous->depth = c->scope_depth;
+                previous->width = 1;
             }
 
             compile_expression(c, entry->v.entry.value, value);
@@ -2336,7 +2463,11 @@ static void compile_call(Compiler *c, const LhatNode *node, uint8_t into)
     // machine skips it when the hidden member turns out to take none.
     bool super_call = !method && is_super_ident(c, target);
     if (method) {
-        uint8_t receiver = reserve(c);
+        // 05 の 8.9: a host value receiver takes its width of slots, and the
+        // machine reads the member off its head tag -- so the receiver run
+        // is kept whole below the arguments exactly as a one-slot one is.
+        size_t receiver_width = width_of(target->v.access.target);
+        uint8_t receiver = reserve_wide(c, receiver_width);
         compile_expression(c, target->v.access.target, receiver);
         uint8_t key = c->next_register;
         if (key >= LHAT_MAX_REGISTERS) {
@@ -2346,7 +2477,7 @@ static void compile_call(Compiler *c, const LhatNode *node, uint8_t into)
         (void)reserve(c);
         compile_key(c, target, key);
         emit(c, lhat_encode_abc(LHAT_BC_GETINDEX, callee, receiver, key));
-        c->next_register = (uint8_t)(receiver + 1);
+        c->next_register = (uint8_t)(receiver + receiver_width);
     } else if (super_call) {
         compile_expression(c, target, callee);
         uint8_t receiver = reserve(c);
@@ -2363,9 +2494,14 @@ static void compile_call(Compiler *c, const LhatNode *node, uint8_t into)
 
     size_t count = 0;
     bool spread = false;
+    bool wide_args = false;
     for (const LhatNode *arg = node->v.access.argument; arg != NULL;
          arg = arg->next) {
-        uint8_t slot = reserve(c);
+        // 05 の 8.9: a host value argument takes its width of consecutive
+        // slots; the callee's parameter run was laid out by the same widths,
+        // so the frame window still lines up with no copying.
+        uint8_t slot = reserve_for(c, arg);
+        wide_args = wide_args || width_of(arg) > 1;
         // 13.7: the table itself goes in the slot; C tells the machine the
         // last one is not an ordinary argument but something to unpack.
         if (arg->kind == LHAT_NODE_SPREAD) {
@@ -2380,6 +2516,13 @@ static void compile_call(Compiler *c, const LhatNode *node, uint8_t into)
         fail(c, LHAT_COMPILE_TOO_COMPLEX);
         return;
     }
+    // 05 の 8.9: a spread re-reads the argument run by value index, which a
+    // wide argument would put out of step. The checker refuses a host value
+    // into a variadic tail already; the mixed form is refused here.
+    if (spread && wide_args) {
+        fail(c, LHAT_COMPILE_UNSUPPORTED);
+        return;
+    }
 
     // 03 の 5.11c: strict settled which candidate of an overloaded member this
     // call means, so the search 5.11改 would run is replaced by taking that
@@ -2390,11 +2533,16 @@ static void compile_call(Compiler *c, const LhatNode *node, uint8_t into)
         emit(c, lhat_encode_abx(LHAT_BC_PICKARM, callee,
                                 (uint16_t)(node->checked_arm - 1)));
     }
+    // 05 の 8.9: a call that answers a host value has the machine write the
+    // whole width at the callee slot, so the frame has to be at least that
+    // wide there even when the arguments took less.
+    while (c->next_register < callee + width_of(node)) {
+        reserve(c);
+    }
     emit(c, lhat_encode_abc(method ? LHAT_BC_CALLMETHOD : LHAT_BC_CALL, callee,
                             (uint8_t)count, spread ? 1 : 0));
-    if (into != callee) {
-        emit(c, lhat_encode_abc(LHAT_BC_MOVE, into, callee, 0));
-    }
+    // The answer then moves to the destination the same way it was written.
+    emit_move_wide(c, into, callee, width_of(node));
     c->next_register = mark;
 }
 
@@ -2432,6 +2580,7 @@ static void compile_subroutine(Compiler *c, const LhatNode *node, uint8_t into)
     // other -- there is no defaulting left for the callee to do. Contrast the
     // fields of an error kind (04 の 2.2), whose defaults do get compiled, at
     // the construction rather than here.
+    bool wide_param = false;  // 05 の 8.9: any parameter wider than a slot
     for (const LhatNode *param = node->v.func.params; param != NULL;
          param = param->next) {
         const char *name = NULL;
@@ -2465,12 +2614,32 @@ static void compile_subroutine(Compiler *c, const LhatNode *node, uint8_t into)
             fail(c, LHAT_COMPILE_TOO_COMPLEX);
             return;
         }
-        uint8_t slot = reserve(&inner);
+        // 05 の 8.9: a host value parameter takes its registered width of
+        // consecutive slots; the caller lays the argument out the same way,
+        // so the windows agree without any copying.
+        const LhatHostValueTag *param_hostvalue =
+            resolve_hostvalue_type_tag(&inner, param->v.param.type);
+        size_t param_width = param_hostvalue != NULL ? param_hostvalue->width
+                                                     : 1;
+        // The two places that still count arguments by value index rather
+        // than by slot: a variadic collection, and a yielding body's copy
+        // of its arguments into the coroutine's registers. Both are refused
+        // with a wide parameter rather than silently read out of step.
+        // ('...' comes last, so has_variadic is checked again after the
+        // loop for the parameters that preceded it.)
+        if (param_width > 1 &&
+            (node->v.func.yields || param->v.param.variadic)) {
+            fail(c, LHAT_COMPILE_UNSUPPORTED);
+            return;
+        }
+        wide_param = wide_param || param_width > 1;
+        uint8_t slot = reserve_wide(&inner, param_width);
         Local *local = &inner.locals[inner.local_count++];
         local->name = name;
         local->length = length;
         local->reg = slot;
         local->depth = inner.scope_depth;  // a parameter belongs to the body
+        local->width = (uint8_t)param_width;
 
         // 14.12: the search that resolves an overloaded call asks each
         // candidate what it takes, so each body carries that with it. For
@@ -2487,6 +2656,12 @@ static void compile_subroutine(Compiler *c, const LhatNode *node, uint8_t into)
         proto->parameter_types = types;
         types[proto->parameters] = lower_type(c, param->v.param.type);
         proto->parameters++;
+    }
+    // 05 の 8.9: see the wide-parameter refusal inside the loop -- '...'
+    // comes last, so the parameters before it are re-judged here.
+    if (wide_param && proto->has_variadic) {
+        fail(c, LHAT_COMPILE_UNSUPPORTED);
+        return;
     }
 
     // 02 の 14.16: kept the same way parameter_types is, for typeof^ to
@@ -2609,9 +2784,13 @@ static void compile_binary(Compiler *c, const LhatNode *node, uint8_t into)
 
     // Operands go above the names, and the scratch is given back as soon as
     // the instruction has consumed it.
+    // 05 の 8.9: a host value operand takes its width; the machine reads
+    // that width off the head, so the instruction still names one register
+    // per operand. The answer may be wide too (a registered "+"), which the
+    // machine writes whole at `into` -- reserved by this node's own caller.
     uint8_t mark = c->next_register;
-    uint8_t left = reserve(c);
-    uint8_t right = reserve(c);
+    uint8_t left = reserve_for(c, node->v.binary.left);
+    uint8_t right = reserve_for(c, node->v.binary.right);
     compile_expression(c, node->v.binary.left, left);
     compile_expression(c, node->v.binary.right, right);
     emit(c, lhat_encode_abc(opcode, into, left, right));
@@ -2637,7 +2816,8 @@ static void compile_compare_chain(Compiler *c, const LhatNode *node,
         return;
     }
 
-    uint8_t left = reserve(c);
+    // 05 の 8.9: a host value operand takes its width here as anywhere.
+    uint8_t left = reserve_for(c, operand);
     compile_expression(c, operand, left);
 
     size_t settled[LHAT_MAX_LOCALS];
@@ -2672,7 +2852,7 @@ static void compile_compare_chain(Compiler *c, const LhatNode *node,
             fail(c, LHAT_COMPILE_UNSUPPORTED);
             break;
         }
-        uint8_t right = reserve(c);
+        uint8_t right = reserve_for(c, operand);
         compile_expression(c, operand, right);
         emit(c, lhat_encode_abc(opcode, into, left, right));
         left = right;  // shared with the next link, and already evaluated
@@ -2917,7 +3097,9 @@ static void compile_expression(Compiler *c, const LhatNode *node, uint8_t into)
         case LHAT_NODE_MEMBER:
         case LHAT_NODE_INDEX: {
             uint8_t mark = c->next_register;
-            uint8_t target = reserve(c);
+            // 05 の 8.9: a host value target takes its width of slots, or
+            // the key would land inside its bytes.
+            uint8_t target = reserve_for(c, node->v.access.target);
             uint8_t key = reserve(c);
             compile_expression(c, node->v.access.target, target);
             compile_key(c, node, key);
@@ -3265,6 +3447,7 @@ static void declare_names(Compiler *c, const LhatNode *statements)
                 local->length = length;
                 local->reg = slot;
                 local->depth = c->scope_depth;
+                local->width = 1;
                 continue;
             }
             module_name = required_module_name(c, s);
@@ -3286,15 +3469,34 @@ static void declare_names(Compiler *c, const LhatNode *statements)
             local->length = root;
             local->reg = slot;
             local->depth = c->scope_depth;
+            local->width = 1;
             continue;
         }
         if (s->kind != LHAT_NODE_DEFINE) {
             continue;
         }
+        const LhatNode *bound_value = s->v.binding.values;
         for (const LhatNode *target = s->v.binding.targets; target != NULL;
              target = target->next) {
             const char *name = NULL;
             size_t length = 0;
+            // 05 の 8.9: the width this name will hold. The checker's stamp
+            // on the value is the usual channel; a written annotation covers
+            // a compile whose value node carries none.
+            size_t width = 1;
+            if (bound_value != NULL) {
+                width = width_of(bound_value);
+            }
+            if (width == 1 && target->kind == LHAT_NODE_PARAM) {
+                const LhatHostValueTag *tag =
+                    resolve_hostvalue_type_tag(c, target->v.param.type);
+                if (tag != NULL) {
+                    width = tag->width;
+                }
+            }
+            if (bound_value != NULL) {
+                bound_value = bound_value->next;
+            }
 
             // 8.8: a path introduces a member, so the only name it can make
             // is its root -- and only when nothing already holds that.
@@ -3329,17 +3531,27 @@ static void declare_names(Compiler *c, const LhatNode *statements)
                 return;
             }
 
-            uint8_t slot = reserve(c);
+            // 03 の 4.3 with 05 の 8.9: a session's slots are one wide and
+            // stay; the checker refuses this first, this is the backstop.
+            if (width > 1 && c->session_top) {
+                fail(c, LHAT_COMPILE_UNSUPPORTED);
+                return;
+            }
+            uint8_t slot = reserve_wide(c, width);
             // The slot may still hold what an earlier block left in it, and
             // 8.7 lets the name be read from a body before its let^ has run.
             // Emptying it makes that nil^ rather than rubbish.
-            emit(c, lhat_encode_abc(LHAT_BC_LOADNIL, slot, 0, 0));
+            for (size_t i = 0; i < width; i++) {
+                emit(c, lhat_encode_abc(LHAT_BC_LOADNIL,
+                                        (uint8_t)(slot + i), 0, 0));
+            }
 
             Local *local = &c->locals[c->local_count++];
             local->name = name;
             local->length = length;
             local->reg = slot;
             local->depth = c->scope_depth;
+            local->width = (uint8_t)width;
         }
     }
 }
@@ -3356,6 +3568,12 @@ static void compile_define(Compiler *c, const LhatNode *node)
         if (define_target_is_path(target)) {
             if (value == NULL) {
                 continue;
+            }
+            // 05 の 8.9: a path lands in a table, and a table never holds a
+            // host value; the checker refused this first.
+            if (width_of(value) > 1) {
+                fail(c, LHAT_COMPILE_UNSUPPORTED);
+                return;
             }
             const LhatNode *last = define_target_name(target);
             uint8_t mark = c->next_register;
@@ -3435,7 +3653,12 @@ static void compile_reassign_parallel(Compiler *c, const LhatNode *node)
         w->key = 0;
 
         if (w->indexed) {
-            w->owner = reserve(c);
+            // 05 の 8.9: a host value owner keeps its width, as in the
+            // single-target path. (Writing a field through the copy here is
+            // still the copy's -- the checker's escape rules never let a
+            // host value be a table member, so an indexed target with a
+            // wide owner only ever reads.)
+            w->owner = reserve_for(c, target->v.access.target);
             w->key = reserve(c);
             compile_expression(c, target->v.access.target, w->owner);
             compile_key(c, target, w->key);
@@ -3465,7 +3688,9 @@ static void compile_reassign_parallel(Compiler *c, const LhatNode *node)
         // A name has no place to evaluate, so a compound value is compiled
         // whole: its left is the target node itself, which reads the register
         // the name already lives in.
-        w->value = reserve(c);
+        // 05 の 8.9: sized by the checker's stamp, so a host value rides the
+        // two-pass exchange whole.
+        w->value = reserve_for(c, value);
         compile_expression(c, value, w->value);
         value = value->next;
     }
@@ -3509,7 +3734,9 @@ static void compile_reassign_parallel(Compiler *c, const LhatNode *node)
 
         const Local *local = find_local(c, name, length);
         if (local != NULL) {
-            emit(c, lhat_encode_abc(LHAT_BC_MOVE, local->reg, w->value, 0));
+            // 05 の 8.9: as wide as the name is.
+            emit_move_wide(c, local->reg, w->value,
+                           local->width > 1 ? local->width : 1);
             continue;
         }
 
@@ -3553,10 +3780,30 @@ static void compile_reassign(Compiler *c, const LhatNode *node)
             if (value == NULL) {
                 continue;
             }
+            // 05 の 8.9: 'v.x := n' writes v's own bytes, so the owner has
+            // to be the local's registers themselves -- a copy would take
+            // the write with it when the scratch is released.
+            const Local *hv_owner = NULL;
+            {
+                const char *owner_name = NULL;
+                size_t owner_length = 0;
+                if (node_name(c, target->v.access.target, &owner_name,
+                              &owner_length)) {
+                    const Local *found =
+                        find_local(c, owner_name, owner_length);
+                    if (found != NULL && found->width > 1) {
+                        hv_owner = found;
+                    }
+                }
+            }
             uint8_t mark = c->next_register;
-            uint8_t into = reserve(c);
+            uint8_t into = hv_owner != NULL
+                               ? hv_owner->reg
+                               : reserve_for(c, target->v.access.target);
             uint8_t key = reserve(c);
-            compile_expression(c, target->v.access.target, into);
+            if (hv_owner == NULL) {
+                compile_expression(c, target->v.access.target, into);
+            }
             compile_key(c, target, key);
 
             // 7.4改: owner and key were just evaluated once, above. A
@@ -3580,6 +3827,13 @@ static void compile_reassign(Compiler *c, const LhatNode *node)
                 emit(c, lhat_encode_abc(opcode, result, current, rhs));
                 emit(c, lhat_encode_abc(LHAT_BC_SETINDEX, into, key, result));
             } else {
+                // 05 の 8.9: a table never holds a host value; the checker
+                // refused this first and this is the backstop.
+                if (width_of(value) > 1) {
+                    fail(c, LHAT_COMPILE_UNSUPPORTED);
+                    c->next_register = mark;
+                    return;
+                }
                 uint8_t slot = reserve(c);
                 compile_expression(c, value, slot);
                 emit(c, lhat_encode_abc(LHAT_BC_SETINDEX, into, key, slot));
@@ -3645,6 +3899,12 @@ static void compile_reassign(Compiler *c, const LhatNode *node)
             return;
         }
         if (value != NULL) {
+            // 05 の 8.9: an upvalue cell is one slot, and a host value is
+            // never captured -- the checker refused this first.
+            if (width_of(value) > 1) {
+                fail(c, LHAT_COMPILE_UNSUPPORTED);
+                return;
+            }
             uint8_t mark = c->next_register;
             uint8_t slot = reserve(c);
             compile_expression(c, value, slot);
@@ -3977,6 +4237,7 @@ static void declare_targets(Compiler *c, const LhatNode *focus)
         local->length = length;
         local->reg = slot;
         local->depth = c->scope_depth;
+        local->width = 1;
     }
 }
 
@@ -4339,7 +4600,9 @@ static void compile_statement(Compiler *c, const LhatNode *node)
                 return;
             }
             uint8_t mark = c->next_register;
-            uint8_t slot = reserve(c);
+            // 05 の 8.9: a returned host value needs its whole width here;
+            // the machine reads that width off the head when the frame pops.
+            uint8_t slot = reserve_for(c, node->v.jump.value);
             compile_expression(c, node->v.jump.value, slot);
             emit(c, lhat_encode_abc(LHAT_BC_RETURN, slot, 0, 0));
             c->next_register = mark;
@@ -5289,6 +5552,197 @@ static LhatTable *table_of(LhatValue value)
     return NULL;
 }
 
+// ---------------------------------------------------------------------------
+// 05 の 8.9: host values at run time
+// ---------------------------------------------------------------------------
+
+// The members table the machine built for a host value type at install, or
+// NULL when the registration never reached this machine.
+static LhatTable *hostvalue_members_of(Machine *m, const LhatHostValueTag *tag)
+{
+    return tag != NULL && tag->index < m->hostvalue_member_count
+               ? m->hostvalue_members[tag->index]
+               : NULL;
+}
+
+// Value equality is byte equality under the same tag -- a host value has no
+// identity to fall back on, which is half of what makes it a value. Every
+// making zeroes the data run's unused tail, so whole slots compare exactly.
+static bool hostvalue_equal(LhatSlots slots, size_t left, size_t right)
+{
+    const LhatHostValueTag *tag = slots.values[left].hostvalue;
+    if (tag == NULL || slots.tags[right] != LHAT_VALUE_HOSTVALUE ||
+        slots.values[right].hostvalue != tag) {
+        return false;
+    }
+    return memcmp(slots.values + left + 1, slots.values + right + 1,
+                  (tag->width - 1) * sizeof(LhatValueUnion)) == 0;
+}
+
+// A host answered with a head-shaped run -- an argument passed through, or
+// the scratch lhat_make_hostvalue filled -- written out whole into the slots
+// at `at`. False when the run is not one.
+static bool place_hostvalue_answer(Machine *m, size_t at, LhatValue answered)
+{
+    const LhatValueUnion *run = answered.as.hostvalue_run;
+    const LhatHostValueTag *tag = run != NULL ? run[0].hostvalue : NULL;
+    if (tag == NULL || at + tag->width > LHAT_STACK_SLOTS) {
+        return false;
+    }
+    // Ascending, which survives the one overlapping case there is: a host
+    // echoing an argument back, whose run sits above the answer slot.
+    m->slots.values[at] = run[0];
+    m->slots.tags[at] = (uint8_t)LHAT_VALUE_HOSTVALUE;
+    for (size_t i = 1; i < tag->width; i++) {
+        m->slots.values[at + i] = run[i];
+        m->slots.tags[at + i] = (uint8_t)LHAT_VALUE_CONT;
+    }
+    return true;
+}
+
+// The reverse: the argument whose head sits at `slot`, gathered for a host
+// as a value aiming back into the stack. Stable for the call's duration --
+// the stack is a fixed array of the machine's.
+static LhatValue hostvalue_argument(LhatSlots slots, size_t slot)
+{
+    LhatValue v;
+    v.tag = LHAT_VALUE_HOSTVALUE;
+    v.as.hostvalue_run = slots.values + slot;
+    return v;
+}
+
+// The registered field a string key names, or NULL.
+static const LhatHostValueField *hostvalue_field_named(
+    const LhatHostValueTag *tag, LhatValue key)
+{
+    if (!lhat_is_object_kind(key, LHAT_OBJECT_STRING)) {
+        return NULL;
+    }
+    const LhatString *name = (const LhatString *)lhat_as_object(key);
+    for (size_t i = 0; i < tag->field_count; i++) {
+        if (strlen(tag->fields[i].name) == name->length &&
+            memcmp(tag->fields[i].name, name->text, name->length) == 0) {
+            return &tag->fields[i];
+        }
+    }
+    return NULL;
+}
+
+// 'v.x' as a number^, off the data run that follows a head. Offsets were
+// checked against the registered size when the field was.
+static LhatValue hostvalue_field_get(const LhatValueUnion *data,
+                                     const LhatHostValueField *field)
+{
+    const uint8_t *bytes = (const uint8_t *)data + field->offset;
+    switch (field->kind) {
+        case LHAT_HVFIELD_F32: {
+            float f;
+            memcpy(&f, bytes, sizeof f);
+            return lhat_real((double)f);
+        }
+        case LHAT_HVFIELD_F64: {
+            double d;
+            memcpy(&d, bytes, sizeof d);
+            return lhat_real(d);
+        }
+        case LHAT_HVFIELD_I8: {
+            int8_t i;
+            memcpy(&i, bytes, sizeof i);
+            return lhat_integer(i);
+        }
+        case LHAT_HVFIELD_I16: {
+            int16_t i;
+            memcpy(&i, bytes, sizeof i);
+            return lhat_integer(i);
+        }
+        case LHAT_HVFIELD_I32: {
+            int32_t i;
+            memcpy(&i, bytes, sizeof i);
+            return lhat_integer(i);
+        }
+        case LHAT_HVFIELD_I64: {
+            int64_t i;
+            memcpy(&i, bytes, sizeof i);
+            return lhat_integer(i);
+        }
+        case LHAT_HVFIELD_U8: {
+            uint8_t u;
+            memcpy(&u, bytes, sizeof u);
+            return lhat_integer(u);
+        }
+        case LHAT_HVFIELD_U16: {
+            uint16_t u;
+            memcpy(&u, bytes, sizeof u);
+            return lhat_integer(u);
+        }
+        case LHAT_HVFIELD_U32: {
+            uint32_t u;
+            memcpy(&u, bytes, sizeof u);
+            return lhat_integer(u);
+        }
+    }
+    return lhat_nil();
+}
+
+// And the write. False when the value is not a number^ -- 14.8's one type,
+// either representation.
+static bool hostvalue_field_set(LhatValueUnion *data,
+                                const LhatHostValueField *field,
+                                LhatValue value)
+{
+    if (!lhat_is_number(value)) {
+        return false;
+    }
+    uint8_t *bytes = (uint8_t *)data + field->offset;
+    double real = lhat_number_as_real(value);
+    int64_t integer = lhat_is_integer(value) ? lhat_as_integer(value)
+                                             : (int64_t)real;
+    switch (field->kind) {
+        case LHAT_HVFIELD_F32: {
+            float f = (float)real;
+            memcpy(bytes, &f, sizeof f);
+            return true;
+        }
+        case LHAT_HVFIELD_F64:
+            memcpy(bytes, &real, sizeof real);
+            return true;
+        case LHAT_HVFIELD_I8: {
+            int8_t i = (int8_t)integer;
+            memcpy(bytes, &i, sizeof i);
+            return true;
+        }
+        case LHAT_HVFIELD_I16: {
+            int16_t i = (int16_t)integer;
+            memcpy(bytes, &i, sizeof i);
+            return true;
+        }
+        case LHAT_HVFIELD_I32: {
+            int32_t i = (int32_t)integer;
+            memcpy(bytes, &i, sizeof i);
+            return true;
+        }
+        case LHAT_HVFIELD_I64:
+            memcpy(bytes, &integer, sizeof integer);
+            return true;
+        case LHAT_HVFIELD_U8: {
+            uint8_t u = (uint8_t)integer;
+            memcpy(bytes, &u, sizeof u);
+            return true;
+        }
+        case LHAT_HVFIELD_U16: {
+            uint16_t u = (uint16_t)integer;
+            memcpy(bytes, &u, sizeof u);
+            return true;
+        }
+        case LHAT_HVFIELD_U32: {
+            uint32_t u = (uint32_t)integer;
+            memcpy(bytes, &u, sizeof u);
+            return true;
+        }
+    }
+    return false;
+}
+
 // 13.7: the i-th effective argument of a call, whether it sits in an
 // ordinary register or is a position of the table a spread ('expr...')
 // unpacked -- the two are not contiguous in memory, so nothing beyond this
@@ -5449,6 +5903,15 @@ static LhatRuntimeType *tag_type(LhatHeap *heap, LhatValue value)
         if (type != NULL) {
             type->hostdata_tag =
                 ((const LhatHostData *)lhat_as_object(value))->tag;
+        }
+        return type;
+    }
+    // 05 の 8.9: the same off the head slot's tag.
+    if (lhat_is_hostvalue(value)) {
+        LhatRuntimeType *type =
+            lhat_type_rt_new(heap, LHAT_TYPE_RT_HOSTVALUE);
+        if (type != NULL) {
+            type->hostvalue_tag = lhat_as_hostvalue_tag(value);
         }
         return type;
     }
@@ -5638,6 +6101,11 @@ static OperatorLookup operator_candidate(Machine *m, LhatValue side,
 {
     *picked = lhat_nil();
     const LhatTable *carrier = table_of(side);
+    // 05 の 8.9: a host value's operators live in the members table the
+    // machine bound for its type -- the value has no heap half of its own.
+    if (carrier == NULL && lhat_is_hostvalue(side)) {
+        carrier = hostvalue_members_of(m, lhat_as_hostvalue_tag(side));
+    }
     if (name == NULL || carrier == NULL) {
         return OPERATOR_ABSENT;
     }
@@ -5674,6 +6142,16 @@ static OperatorLookup operator_candidate(Machine *m, LhatValue side,
         return OPERATOR_NO_CANDIDATE;
     }
 
+    // 05 の 8.9: a host value's operator is a host function -- registered,
+    // never written in L^. It carries no self_last (11.3改 is a written
+    // shape), so only the left-operand ask takes it.
+    if (lhat_is_object_kind(found, LHAT_OBJECT_HOST)) {
+        if (self_last) {
+            return OPERATOR_ABSENT;
+        }
+        *picked = found;
+        return OPERATOR_PICKED;
+    }
     if (!lhat_is_object_kind(found, LHAT_OBJECT_SUBROUTINE)) {
         return OPERATOR_NOT_CALLABLE;
     }
@@ -6094,6 +6572,80 @@ void *lhat_hostdata_pointer(LhatValue value, const LhatHostDataTag *tag)
     return data->tag == tag ? data->pointer : NULL;
 }
 
+void *lhat_hostvalue_data(LhatValue argument, const LhatHostValueTag *tag)
+{
+    if (!lhat_is_hostvalue(argument) || tag == NULL) {
+        return NULL;
+    }
+    const LhatValueUnion *run = argument.as.hostvalue_run;
+    if (run == NULL || run[0].hostvalue != tag) {
+        return NULL;
+    }
+    // The head carries the tag; the bytes start one slot later. The cast
+    // drops const on purpose: the run is a scratch copy of the caller's,
+    // and 8.9 lets a host read or write it freely for the call's duration.
+    return (void *)(run + 1);
+}
+
+bool lhat_make_hostvalue(LhatMachine *machine, const LhatHostValueTag *tag,
+                         const void *bytes, LhatValue *out)
+{
+    if (machine == NULL || tag == NULL || bytes == NULL || out == NULL ||
+        tag->size > LHAT_HOSTVALUE_MAX_BYTES) {
+        return false;
+    }
+    LhatValueUnion *run = machine->hostvalue_scratch;
+    // The data run's tail is zeroed so equality can compare whole slots.
+    memset(run, 0, tag->width * sizeof *run);
+    run[0].hostvalue = tag;
+    memcpy(run + 1, bytes, tag->size);
+    out->tag = LHAT_VALUE_HOSTVALUE;
+    out->as.hostvalue_run = run;
+    return true;
+}
+
+bool lhat_machine_bind_hostvalues(LhatMachine *machine,
+                                  const LhatHostValueTypeEntry *entries,
+                                  size_t count)
+{
+    if (machine == NULL || entries == NULL || count == 0) {
+        return false;
+    }
+    LhatTable **tables =
+        (LhatTable **)lhat_calloc(count, sizeof *tables);
+    if (tables == NULL) {
+        return false;
+    }
+    LhatString *modules_key = lhat_string_new(&machine->objects, "modules", 7);
+    LhatTable *registry =
+        modules_key != NULL
+            ? table_of(lhat_table_get(machine->environment,
+                                      lhat_object((LhatObject *)modules_key)))
+            : NULL;
+    if (registry == NULL) {
+        lhat_free(tables);
+        return false;
+    }
+    for (size_t i = 0; i < count; i++) {
+        // The same walk lhat_machine_make_hostdata does for a hostdata
+        // type's members: the table registration put under the type's own
+        // name is the type's members table.
+        LhatTable *module = reach_table(machine, registry, entries[i].tag->module);
+        LhatTable *members =
+            module != NULL ? reach_table(machine, module, entries[i].tag->name)
+                           : NULL;
+        if (members == NULL || entries[i].tag->index >= count) {
+            lhat_free(tables);
+            return false;
+        }
+        tables[entries[i].tag->index] = members;
+    }
+    lhat_free(machine->hostvalue_members);  // a second install replaces
+    machine->hostvalue_members = tables;
+    machine->hostvalue_member_count = count;
+    return true;
+}
+
 bool lhat_machine_register(LhatMachine *machine, const char *module,
                            const char *type, const char *name, LhatValue value)
 {
@@ -6153,6 +6705,9 @@ void lhat_machine_dispose(LhatMachine *machine)
         lhat_hostdata_release(object, machine);
     }
     lhat_object_free_all(&machine->objects);
+    // 05 の 8.9: the tables were the heap's (freed just above); the array
+    // alone is the machine's.
+    lhat_free(machine->hostvalue_members);
     lhat_free(machine);
 }
 
@@ -6283,8 +6838,11 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
                 // '1 + v' is the case the rule exists for -- number^ carries
                 // the arithmetic and takes only its own kind, so the answer
                 // can only be on the other side.
+                // 05 の 8.9: a host value carries its registered operators
+                // the same way a table carries 11.8's members.
                 if (status != LHAT_RUN_TYPE_ERROR ||
-                    (table_of(R(b)) == NULL && table_of(R(cc)) == NULL)) {
+                    (table_of(R(b)) == NULL && table_of(R(cc)) == NULL &&
+                     !lhat_is_hostvalue(R(b)) && !lhat_is_hostvalue(R(cc)))) {
                     return finish(m, chunk, status, lhat_nil(), at);
                 }
                 goto call_operator;
@@ -6331,6 +6889,16 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
             // is what leaves every other table exactly as it was.
             case LHAT_BC_EQ:
             case LHAT_BC_NE:
+                // 05 の 8.9: byte equality under the same tag. Asked before
+                // the raw compare below, which would read the heads alone
+                // and call two same-typed values equal whatever their bytes.
+                if (lhat_is_hostvalue(R(b)) || lhat_is_hostvalue(R(cc))) {
+                    bool equal = lhat_is_hostvalue(R(b)) &&
+                                 hostvalue_equal(m->slots, rbase + b,
+                                                 rbase + cc);
+                    SET_R(a, lhat_bool(equal == (op == LHAT_BC_EQ)));
+                    break;
+                }
                 if (table_of(R(b)) != NULL || table_of(R(cc)) != NULL) {
                     derive_from = op;
                     op = LHAT_BC_SPACESHIP;
@@ -6340,6 +6908,14 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
                                    (op == LHAT_BC_EQ)));
                 break;
             case LHAT_BC_SAME:
+                // 05 の 8.9: a value type has no identity apart from its
+                // bytes, so "the same" is the equality above.
+                if (lhat_is_hostvalue(R(b)) || lhat_is_hostvalue(R(cc))) {
+                    SET_R(a, lhat_bool(lhat_is_hostvalue(R(b)) &&
+                                       hostvalue_equal(m->slots, rbase + b,
+                                                       rbase + cc)));
+                    break;
+                }
                 SET_R(a, lhat_bool(
                     lhat_value_same(R(b), R(cc))));
                 break;
@@ -6618,6 +7194,27 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
                     SET_R(a, lhat_object((LhatObject *)written));
                     break;
                 }
+                // 05 の 8.9: a host value answers a registered field off its
+                // own bytes -- no host call -- and a registered member out
+                // of the type's table the machine bound at install.
+                if (lhat_is_hostvalue(R(b))) {
+                    const LhatHostValueTag *hv_tag = lhat_as_hostvalue_tag(R(b));
+                    const LhatHostValueField *field =
+                        hostvalue_field_named(hv_tag, R(cc));
+                    if (field != NULL) {
+                        SET_R(a, hostvalue_field_get(
+                                     m->slots.values + rbase + b + 1, field));
+                        break;
+                    }
+                    const LhatTable *hv_members =
+                        hostvalue_members_of(m, hv_tag);
+                    if (hv_members == NULL) {
+                        return finish(m, chunk, LHAT_RUN_TYPE_ERROR,
+                                      lhat_nil(), at);
+                    }
+                    SET_R(a, lhat_table_get(hv_members, R(cc)));
+                    break;
+                }
                 const LhatTable *table = readable_table(R(b));
                 if (table == NULL) {
                     // 02 の 14.17: nil^, bool^, number^ and string^ hold no
@@ -6659,6 +7256,21 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
 
             case LHAT_BC_SETINDEX: {
             set_index:;
+                // 05 の 8.9: 'v.x := n' writes the field's bytes in place --
+                // the owner register IS the value, so the write lands in the
+                // very slots the name holds. Only a registered field takes a
+                // write; the members are the host's (8.8's rule holds).
+                if (lhat_is_hostvalue(R(a))) {
+                    const LhatHostValueField *field = hostvalue_field_named(
+                        lhat_as_hostvalue_tag(R(a)), R(b));
+                    if (field == NULL ||
+                        !hostvalue_field_set(
+                            m->slots.values + rbase + a + 1, field, R(cc))) {
+                        return finish(m, chunk, LHAT_RUN_TYPE_ERROR,
+                                      lhat_nil(), at);
+                    }
+                    break;
+                }
                 LhatTable *table = table_of(R(a));
                 if (table == NULL) {
                     return finish(m, chunk, LHAT_RUN_TYPE_ERROR, lhat_nil(), at);
@@ -6905,12 +7517,35 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
                     bool receiver_first =
                         host->takes_self && op == LHAT_BC_CALLMETHOD;
                     size_t given = written + (receiver_first ? 1 : 0);
+                    // 05 の 8.9: a host value receiver holds its width of
+                    // slots, so a skipped receiver is skipped whole.
+                    size_t receiver_width =
+                        op == LHAT_BC_CALLMETHOD && lhat_is_hostvalue(R(a + 1))
+                            ? lhat_as_hostvalue_tag(R(a + 1))->width
+                            : 1;
                     // 2.2改: the stack holds no LhatValue run any more, so
                     // the arguments a host receives are gathered into one.
+                    // 05 の 8.9: walked by slot rather than by value -- a
+                    // host value argument is one argument, its head handed
+                    // over aiming into the stack, and its width of slots
+                    // stepped past.
                     LhatValue gathered[LHAT_MAX_REGISTERS + 2];
-                    size_t arg_from = receiver_first ? a + 1 : a + skip;
+                    size_t slot = receiver_first
+                                      ? (size_t)a + 1
+                                      : (size_t)a +
+                                            (op == LHAT_BC_CALLMETHOD
+                                                 ? 1 + receiver_width
+                                                 : 1);
                     for (size_t i = 0; i < given; i++) {
-                        gathered[i] = R(arg_from + i);
+                        LhatValue held = R(slot);
+                        if (lhat_is_hostvalue(held)) {
+                            gathered[i] =
+                                hostvalue_argument(m->slots, rbase + slot);
+                            slot += lhat_as_hostvalue_tag(held)->width;
+                        } else {
+                            gathered[i] = held;
+                            slot += 1;
+                        }
                     }
                     const LhatValue *arguments = gathered;
 
@@ -6954,9 +7589,21 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
                             data->released = true;
                         }
                     }
-                    SET_R(a, host->call(m, host->context, arguments,
-                                              given));
+                    LhatValue answered =
+                        host->call(m, host->context, arguments, given);
                     lhat_free(packed);
+                    // 05 の 8.9: a host value answer arrives as a
+                    // head-shaped run and is written out whole on the spot,
+                    // before anything else can touch the scratch it may live
+                    // in.
+                    if (lhat_is_hostvalue(answered)) {
+                        if (!place_hostvalue_answer(m, rbase + a, answered)) {
+                            return finish(m, chunk, LHAT_RUN_TYPE_ERROR,
+                                          lhat_nil(), at);
+                        }
+                        break;
+                    }
+                    SET_R(a, answered);
                     break;
                 }
 
@@ -7411,6 +8058,24 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
                 frame->drain_target = 0;
                 frame->returning = true;
                 frame->answer = op == LHAT_BC_RETURN ? R(a) : lhat_nil();
+                // 05 の 8.9: a host value answer moves into the frame's own
+                // room before the drain -- the callee's window overlaps the
+                // caller's scratch, so no register survives the cleanups.
+                // The pop places it whole from there. A coroutine's own
+                // return crossing a suspension was refused by the checker;
+                // this is the backstop.
+                if (op == LHAT_BC_RETURN && lhat_is_hostvalue(R(a))) {
+                    if (frame->coroutine != NULL ||
+                        m->frame_count <= base_depth + 1) {
+                        return finish(m, chunk, LHAT_RUN_TYPE_ERROR,
+                                      lhat_nil(), at);
+                    }
+                    const LhatHostValueTag *tag = lhat_as_hostvalue_tag(R(a));
+                    for (size_t i = 0; i < tag->width; i++) {
+                        frame->answer_run[i] = m->slots.values[rbase + a + i];
+                    }
+                    frame->answer.as.hostvalue_run = frame->answer_run;
+                }
                 goto drain;
 
             // 04 の 11.6改: unlike a fault the machine itself raises, the
@@ -7620,6 +8285,44 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
         if (answer != OPERATOR_PICKED) {
             return finish(m, chunk, LHAT_RUN_TYPE_ERROR, lhat_nil(), at);
         }
+        // 05 の 8.9: a host value's operator is C and answers on the spot --
+        // no frame, no derive to carry: the receiver convention is 14.4's,
+        // with each operand handed over as its head aimed into the stack.
+        if (lhat_is_object_kind(found, LHAT_OBJECT_HOST)) {
+            LhatHost *carried_host = (LhatHost *)lhat_as_object(found);
+            LhatValue operands[2];
+            operands[0] = lhat_is_hostvalue(R(b))
+                              ? hostvalue_argument(m->slots, rbase + b)
+                              : R(b);
+            operands[1] = lhat_is_hostvalue(R(cc))
+                              ? hostvalue_argument(m->slots, rbase + cc)
+                              : R(cc);
+            LhatValue answered =
+                carried_host->call(m, carried_host->context, operands, 2);
+            if (derive_from != LHAT_FRAME_NO_DERIVE) {
+                // 11.9 (S40): what came back is read against zero.
+                bool held = false;
+                LhatRunStatus status = LHAT_RUN_OK;
+                if (derive_from == LHAT_BC_EQ || derive_from == LHAT_BC_NE) {
+                    held = lhat_value_equal(answered, lhat_integer(0)) ==
+                           (derive_from == LHAT_BC_EQ);
+                } else if (!ordering(derive_from, answered, lhat_integer(0),
+                                     &held, &status)) {
+                    return finish(m, chunk, status, lhat_nil(), at);
+                }
+                SET_R(a, lhat_bool(held));
+                continue;
+            }
+            if (lhat_is_hostvalue(answered)) {
+                if (!place_hostvalue_answer(m, rbase + a, answered)) {
+                    return finish(m, chunk, LHAT_RUN_TYPE_ERROR, lhat_nil(),
+                                  at);
+                }
+                continue;
+            }
+            SET_R(a, answered);
+            continue;
+        }
         const LhatClosure *carried =
             (const LhatClosure *)lhat_as_object(found);
         // 15.7改: an operator may not be yieldable. Not because it is an f^ --
@@ -7731,6 +8434,12 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
             m->frame_count--;
 
             if (m->frame_count == base_depth) {
+                // 05 の 8.9: the checker refused a host value as the
+                // program's answer; a relaxed run that got here anyway has
+                // nothing meaningful to hand the host.
+                if (lhat_is_hostvalue(value)) {
+                    value = lhat_nil();
+                }
                 return finish(m, chunk, LHAT_RUN_OK, value, at);
             }
 
@@ -7758,7 +8467,18 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
                 }
                 value = lhat_bool(held);
             }
-            SET_R(into, value);
+            // 05 の 8.9: a host value answer rides the frame's own room
+            // through the drain (see the RETURN case), and is written out
+            // whole here, into the caller's slots -- which are live again
+            // now that the callee's window is gone.
+            if (lhat_is_hostvalue(value)) {
+                if (!place_hostvalue_answer(m, rbase + into, value)) {
+                    return finish(m, chunk, LHAT_RUN_TYPE_ERROR, lhat_nil(),
+                                  at);
+                }
+            } else {
+                SET_R(into, value);
+            }
         }
     }
 

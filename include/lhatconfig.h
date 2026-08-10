@@ -71,6 +71,10 @@
 // vm -- running
 // The shared stack every frame's registers live on.
 #define LHAT_STACK_SLOTS 8192
+// 05 の 8.9: the largest payload a host value type may register, sized so a
+// whole value (one head slot plus the data slots) fits the machine's answer
+// scratch. Generous for the small mathematical types the feature exists for.
+#define LHAT_HOSTVALUE_MAX_BYTES 248
 // How deep a call may recurse before the machine gives up, rather than
 // letting the host's own stack decide it for us.
 #define LHAT_MAX_FRAMES 200

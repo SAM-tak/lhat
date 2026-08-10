@@ -1,0 +1,47 @@
+# 05 の 8.9: host values, end to end. LVector3 lives on the stack; Vector3
+# is the hostdata box a table can hold. Memo.md's sketch, runnable.
+import^std.math
+
+# --- the boxed side: containers in a table, get/set as unboxing/boxing ---
+# new answers Vector3|OutOfMemory (04 の 8.1), so as^ narrows it -- S27 makes
+# a miss panic, which is the right answer for a sample that has no fallback.
+let^positions = {
+    a := std.math.Vector3.new(1, 2, 3) as^ std.math.Vector3,
+    b := std.math.Vector3.new(10, 20, 30) as^ std.math.Vector3,
+    c := std.math.Vector3.new(0, 0, 0) as^ std.math.Vector3
+}
+positions.c.set(positions.a.get() + positions.b.get())
+let^landed = positions.c.get()
+print($"c = ({landed.x}, {landed.y}, {landed.z})")
+
+# --- the value side: arithmetic with no heap in sight ---
+let^v = std.math.lvec3(3, 4, 0)
+print($"length = {v.length()}")
+
+let^doubled = v * 2
+print($"doubled.x = {doubled.x}")
+print($"dot = {v.dot(doubled)}")
+
+let^unit = v.normalized()
+print($"unit = ({unit.x}, {unit.y}, {unit.z})")
+
+# fields write in place -- a value type, so only this copy changes
+var^ m = std.math.lvec3(0, 0, 0)
+m.x := 7
+m.y := m.x + 1
+print($"m = ({m.x}, {m.y}, {m.z})")
+
+# equality is bytes under the same type
+print($"v = lvec3(3,4,0): {v = std.math.lvec3(3, 4, 0)}")
+print($"v = doubled: {v = doubled}")
+
+# host values pass through L^ subroutines whole
+let^blend = f^p:std.math.LVector3, q:std.math.LVector3 -> std.math.LVector3 {
+    return^ (p + q) * 0.5
+}
+let^mid = blend(v, doubled)
+print($"mid = ({mid.x}, {mid.y}, {mid.z})")
+
+positions.a.dispose()
+positions.b.dispose()
+positions.c.dispose()

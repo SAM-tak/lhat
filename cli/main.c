@@ -14,6 +14,7 @@
 #include "stdlib/debug.h"
 #include "stdlib/error.h"
 #include "stdlib/io.h"
+#include "stdlib/math.h"
 #include "stdlib/random.h"
 #include "stdlib/thread.h"
 #endif
@@ -526,6 +527,7 @@ static bool bind_host_names(LhatProgram *program)
     if (!lhatstdlib_io_register(program) ||
         !lhatstdlib_thread_register(program) ||
         !lhatstdlib_random_register(program) ||
+        !lhatstdlib_math_register(program) ||
         !lhatstdlib_debug_register(program)) {
         return false;
     }

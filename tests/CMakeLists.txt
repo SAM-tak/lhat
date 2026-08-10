@@ -44,6 +44,9 @@ if(LHAT_BUILD_STDLIB)
     lhat_add_test(test_random)
     target_link_libraries(test_random PRIVATE lhatstdlib)
 
+    lhat_add_test(test_math)
+    target_link_libraries(test_math PRIVATE lhatstdlib)
+
     lhat_add_test(test_debug)
     target_link_libraries(test_debug PRIVATE lhatstdlib)
 endif()

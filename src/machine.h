@@ -42,6 +42,15 @@ typedef struct {
     LhatValue answer;
     bool returning;
 
+    // 05 の 8.9: a host value answer, carried whole. `answer` is one slot,
+    // and no register survives the drain -- the callee's window overlaps
+    // the caller's scratch, so there is nowhere on the stack a wide answer
+    // could sit while the cleanups run. The frame carries its own room
+    // instead (a head-shaped run, as everywhere at the host boundary), and
+    // nesting is free: a cleanup's own calls return through their own
+    // frames' rooms.
+    LhatValueUnion answer_run[1 + LHAT_HOSTVALUE_MAX_BYTES / 8];
+
     // 5.11: the coroutine this frame belongs to, when it is one. NULL for an
     // ordinary call.
     LhatCoroutine *coroutine;
@@ -103,6 +112,21 @@ struct LhatMachine {
     // compiled them. Borrowed -- the program owns them and outlives the run.
     const LhatModule *modules;
     size_t module_count;
+
+    // 05 の 8.9: one members table per registered host value type, indexed
+    // by tag->index -- what a member call on a host value answers through,
+    // since the value itself has no heap half to carry one. The tables live
+    // under L^.modules (bound by lhat_machine_bind_hostvalues), so the
+    // environment root already keeps them; only the array is the machine's
+    // to free.
+    LhatTable **hostvalue_members;
+    size_t hostvalue_member_count;
+
+    // 05 の 8.9: where lhat_make_hostvalue builds the head-shaped run a host
+    // answers with. Consumed the moment the call returns (the machine writes
+    // it out into slots before anything else runs), so one is enough even
+    // when hosts call back in.
+    LhatValueUnion hostvalue_scratch[1 + LHAT_HOSTVALUE_MAX_BYTES / 8];
 };
 
 typedef struct LhatMachine Machine;

@@ -4,11 +4,14 @@
 // prefixed with "02".
 //
 // 2.1: a value carries its own type. 2.2 makes that a tagged union rather
-// than NaN boxing, so a 64-bit integer fits without being put on the heap.
+// than NaN boxing, so a 64-bit integer fits without being put on the heap;
+// 2.2改 then split payloads from tags for bulk storage (LhatSlots below),
+// which is also what 05 の 8.9's host values stand on -- consecutive payload
+// slots are plain contiguous bytes.
 //
-// **Nothing outside this header touches the representation.** 2.2 keeps NaN
-// boxing available as a later swap, and that only stays true while the rest
-// of the runtime goes through the constructors and accessors below.
+// **Nothing outside this header touches the representation.** That only
+// stays true while the rest of the runtime goes through the constructors
+// and accessors below.
 
 #ifndef LHAT_VALUE_H
 #define LHAT_VALUE_H
@@ -24,7 +27,17 @@ typedef enum {
     LHAT_VALUE_BOOL,
     LHAT_VALUE_INTEGER,
     LHAT_VALUE_REAL,
-    LHAT_VALUE_OBJECT
+    LHAT_VALUE_OBJECT,
+    // 05 の 8.9: the head slot of a host value -- a host-defined value type
+    // living in consecutive stack slots rather than on the heap. The payload
+    // is the registered LhatHostValueTag, which knows how many continuation
+    // slots follow; the raw bytes live in those. Only ever a stack register:
+    // the checker keeps one out of every place that outlives a frame.
+    LHAT_VALUE_HOSTVALUE,
+    // 05 の 8.9: a continuation slot of a host value. The payload is raw
+    // bytes belonging to the head before it; no reader gives one a meaning
+    // of its own, and every bulk copy moves it exactly as any other slot.
+    LHAT_VALUE_CONT
 } LhatValueTag;
 
 // What a heap value is. Kept on the object rather than in the tag so that a
@@ -74,11 +87,25 @@ typedef struct LhatObject {
 // 2.2改: the payload on its own, so that bulk storage can keep payloads and
 // tags in two parallel runs (LhatSlots below) instead of paying eight bytes
 // of padding per value for a tag that needs three bits.
-typedef union {
+typedef union LhatValueUnion {
     bool boolean;
     int64_t integer;
     double real;
     LhatObject *object;
+    // 05 の 8.9: what a LHAT_VALUE_HOSTVALUE head carries *in a stack slot*.
+    // The tag lives on the program, exactly as LhatHostData.tag does, so the
+    // collector never follows it.
+    const struct LhatHostValueTag *hostvalue;
+    // 05 の 8.9: what a LHAT_VALUE_HOSTVALUE value carries *at the host
+    // boundary* -- an argument handed to a host function, or the value one
+    // answers with. It aims at a head-shaped run: run[0].hostvalue is the
+    // tag, run[1..] the bytes. The machine expands one back into slots the
+    // moment the call answers, so nothing holds this form for longer than
+    // the call.
+    const union LhatValueUnion *hostvalue_run;
+    // 05 の 8.9: a continuation slot's eight bytes, and the unit host-value
+    // bytes are copied in and out by.
+    uint8_t bytes[8];
 } LhatValueUnion;
 
 typedef struct {
@@ -229,6 +256,17 @@ static inline LhatValue lhat_object(LhatObject *o)
     return v;
 }
 
+// 05 の 8.9: the head slot alone. The continuation slots are written where
+// the value is laid down -- a head only ever travels as the first of its
+// tag's width, so nothing builds a whole host value as one LhatValue.
+static inline LhatValue lhat_hostvalue_head(const struct LhatHostValueTag *tag)
+{
+    LhatValue v;
+    v.tag = LHAT_VALUE_HOSTVALUE;
+    v.as.hostvalue = tag;
+    return v;
+}
+
 // ---------------------------------------------------------------------------
 // Questions
 // ---------------------------------------------------------------------------
@@ -238,6 +276,7 @@ static inline bool lhat_is_bool(LhatValue v)    { return v.tag == LHAT_VALUE_BOO
 static inline bool lhat_is_integer(LhatValue v) { return v.tag == LHAT_VALUE_INTEGER; }
 static inline bool lhat_is_real(LhatValue v)    { return v.tag == LHAT_VALUE_REAL; }
 static inline bool lhat_is_object(LhatValue v)  { return v.tag == LHAT_VALUE_OBJECT; }
+static inline bool lhat_is_hostvalue(LhatValue v) { return v.tag == LHAT_VALUE_HOSTVALUE; }
 
 // 02 の 14.8: one type, two representations. Code asking "is this a number^"
 // has to accept either, and asking which representation is a separate
@@ -261,6 +300,10 @@ static inline bool lhat_as_bool(LhatValue v)       { return v.as.boolean; }
 static inline int64_t lhat_as_integer(LhatValue v) { return v.as.integer; }
 static inline double lhat_as_real(LhatValue v)     { return v.as.real; }
 static inline LhatObject *lhat_as_object(LhatValue v) { return v.as.object; }
+static inline const struct LhatHostValueTag *lhat_as_hostvalue_tag(LhatValue v)
+{
+    return v.as.hostvalue;
+}
 
 // The numeric value whichever representation it has. Reading an integer as a
 // double loses exactness past 2^53, so this is for the places that genuinely

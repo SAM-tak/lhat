@@ -155,11 +155,20 @@ typedef enum {
                                            // the right operand is the
                                            // receiver, which only an op^ has
                                            // any use for (14.4)
-    LHAT_CHECK_ERR_SELF_TYPE_OUTSIDE    // 13.13: Self^ names the type literal
+    LHAT_CHECK_ERR_SELF_TYPE_OUTSIDE,   // 13.13: Self^ names the type literal
                                         // around it, and here there is none --
                                         // no t^ or def^ encloses it, or a
                                         // second hat counted past the
                                         // outermost one
+    LHAT_CHECK_ERR_HOSTVALUE_ESCAPES    // 05 の 8.9: a host value lives in
+                                        // stack slots and nowhere else, so a
+                                        // table, a capture, an any^, a yield
+                                        // and the program's answer all refuse
+                                        // one -- box it into the hostdata
+                                        // container its library provides.
+                                        // Refused even under relaxed: a
+                                        // runtime check cannot make room
+                                        // where the representation has none
 } LhatCheckErrorCode;
 
 typedef struct {

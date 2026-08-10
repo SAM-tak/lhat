@@ -719,6 +719,169 @@ bool lhat_register_func(LhatProgram *program, const char *module,
                          module, NULL, name, signature, call, context);
 }
 
+// 05 の 8.9: how many payload bytes one field kind occupies, which is what
+// registration checks offsets against.
+static size_t hostvalue_field_bytes(LhatHostValueFieldKind kind)
+{
+    switch (kind) {
+        case LHAT_HVFIELD_F32: return 4;
+        case LHAT_HVFIELD_F64: return 8;
+        case LHAT_HVFIELD_I8:  return 1;
+        case LHAT_HVFIELD_I16: return 2;
+        case LHAT_HVFIELD_I32: return 4;
+        case LHAT_HVFIELD_I64: return 8;
+        case LHAT_HVFIELD_U8:  return 1;
+        case LHAT_HVFIELD_U16: return 2;
+        case LHAT_HVFIELD_U32: return 4;
+    }
+    return 0;
+}
+
+const LhatHostValueTag *lhat_register_hostvalue_type(LhatProgram *program,
+                                                     const char *module,
+                                                     const char *name,
+                                                     size_t size)
+{
+    if (program == NULL || module == NULL || name == NULL || size == 0 ||
+        size > LHAT_HOSTVALUE_MAX_BYTES) {
+        return NULL;
+    }
+    LhatType *root = hosted_root(program);
+    if (root == NULL) {
+        return NULL;
+    }
+    LhatType *table = hosted_table(program, root, module);
+    if (table == NULL || hosted_member(table, name) != NULL) {
+        return NULL;  // 8.7: one name, one thing
+    }
+
+    // Grown before anything below can half-succeed, so a refusal here leaves
+    // the program exactly as it was.
+    if (program->hostvalue_type_entry_count ==
+        program->hostvalue_type_entry_capacity) {
+        size_t grown_count = program->hostvalue_type_entry_capacity
+                                 ? program->hostvalue_type_entry_capacity * 2
+                                 : 4;
+        LhatHostValueTypeEntry *bigger = (LhatHostValueTypeEntry *)lhat_realloc(
+            program->hostvalue_type_entries, grown_count * sizeof *bigger);
+        if (bigger == NULL) {
+            return NULL;
+        }
+        program->hostvalue_type_entries = bigger;
+        program->hostvalue_type_entry_capacity = grown_count;
+    }
+
+    // 8.9: the tag is identity, made here where there is exactly one per
+    // registration. Unlike a hostdata tag it is owned by
+    // hostvalue_type_entries rather than by a host entry, since the entry's
+    // tag field is the hostdata-shaped one.
+    LhatHostValueTag *tag = (LhatHostValueTag *)lhat_calloc(1, sizeof *tag);
+    if (tag == NULL) {
+        return NULL;
+    }
+    tag->size = size;
+    tag->width = 1 + (size + 7) / 8;  // one head slot, then the bytes
+    tag->index = program->hostvalue_type_entry_count;
+
+    LhatType *made = lhat_type_hostvalue(&program->types, tag);
+    if (made == NULL ||
+        lhat_type_add_member(&program->types, table, name, strlen(name),
+                             made) == NULL ||
+        !keep_entry(program, module, NULL, name, NULL, NULL, NULL)) {
+        lhat_free(tag);
+        return NULL;
+    }
+    // keep_entry has install make an empty table under the type's name in
+    // L^.modules, exactly as for a hostdata type -- that table is where the
+    // registered members land, and what the machine reads back as the
+    // type's members table.
+    LhatHostEntry *entry = &program->host_entries[program->host_entry_count - 1];
+    tag->module = entry->module;
+    tag->name = entry->name;
+
+    LhatHostValueTypeEntry *type_entry =
+        &program->hostvalue_type_entries[program->hostvalue_type_entry_count++];
+    type_entry->module = entry->module;
+    type_entry->name = entry->name;
+    type_entry->tag = tag;
+
+    return tag;
+}
+
+bool lhat_register_hostvalue_member(LhatProgram *program, const char *module,
+                                    const char *type, const char *name,
+                                    const char *signature, LhatHostFn call,
+                                    void *context)
+{
+    LhatType *table = hosted_table(program, hosted_root(program), module);
+    const LhatTypeMember *found = hosted_member(table, type);
+    if (found == NULL || found->type->kind != LHAT_TYPE_HOSTVALUE) {
+        return false;  // no such value type registered under that module
+    }
+    // No dispose special case here: a host value has no lifetime to hand
+    // over, which is half of what makes it one.
+    return register_into(program, found->type, module, type, name, signature,
+                         call, context);
+}
+
+bool lhat_register_hostvalue_field(LhatProgram *program, const char *module,
+                                   const char *type, const char *field,
+                                   size_t offset, LhatHostValueFieldKind kind)
+{
+    if (program == NULL || module == NULL || type == NULL || field == NULL) {
+        return false;
+    }
+    // The tag comes from the registry rather than through the checker type,
+    // so the const on the public pointer stays honest -- the program owns
+    // what it hands out and may still write to it here.
+    LhatHostValueTag *tag = NULL;
+    for (size_t i = 0; i < program->hostvalue_type_entry_count; i++) {
+        const LhatHostValueTypeEntry *entry =
+            &program->hostvalue_type_entries[i];
+        if (strcmp(entry->module, module) == 0 &&
+            strcmp(entry->name, type) == 0) {
+            tag = (LhatHostValueTag *)entry->tag;
+            break;
+        }
+    }
+    size_t bytes = hostvalue_field_bytes(kind);
+    if (tag == NULL || bytes == 0 || offset > tag->size ||
+        tag->size - offset < bytes) {
+        return false;
+    }
+
+    // The checker side has to exist and not already answer the name --
+    // neither as a field nor as a registered member.
+    LhatType *table = hosted_table(program, hosted_root(program), module);
+    const LhatTypeMember *found = hosted_member(table, type);
+    if (found == NULL || found->type->kind != LHAT_TYPE_HOSTVALUE ||
+        hosted_member(found->type, field) != NULL) {
+        return false;
+    }
+
+    char *copy = duplicate(field);
+    LhatHostValueField *grown = (LhatHostValueField *)lhat_realloc(
+        tag->fields, (tag->field_count + 1) * sizeof *grown);
+    if (grown != NULL) {
+        tag->fields = grown;
+    }
+    LhatType *number = copy != NULL && grown != NULL
+                           ? lhat_type_simple(&program->types, LHAT_TYPE_NUMBER)
+                           : NULL;
+    if (number == NULL ||
+        lhat_type_add_member(&program->types, found->type, copy, strlen(copy),
+                             number) == NULL) {
+        lhat_free(copy);
+        return false;
+    }
+
+    LhatHostValueField *made = &tag->fields[tag->field_count++];
+    made->name = copy;
+    made->offset = offset;
+    made->kind = kind;
+    return true;
+}
+
 // 05 の 8.6: L^ itself. Kept apart from the entries above because those land
 // under L^.modules and this one does not -- and because the checker reads it
 // from a different place, its own L^ rather than the import^ registry.
@@ -866,6 +1029,8 @@ const LhatModule *lhat_program_compile(LhatProgram *program, size_t *count)
         units.host_error_count = program->host_error_entry_count;
         units.host_types = program->host_type_entries;  // 05 の 8.8 の isa^ 版
         units.host_type_count = program->host_type_entry_count;
+        units.hostvalue_types = program->hostvalue_type_entries;  // 05 の 8.9
+        units.hostvalue_type_count = program->hostvalue_type_entry_count;
 
         LhatProto *proto = NULL;
         LhatCompileStatus status =
@@ -923,6 +1088,17 @@ bool lhat_program_install(const LhatProgram *program, LhatMachine *machine)
             !lhat_machine_set_global(machine, e->name, value)) {
             return false;
         }
+    }
+    // 05 の 8.9: a host value has no heap half to carry its members table,
+    // so the machine keeps one per registered type, found by the tag's
+    // index. The tables themselves are the ones the entry loop above put
+    // under L^.modules -- reachable from the environment, so the collector
+    // needs nothing new.
+    if (program->hostvalue_type_entry_count > 0 &&
+        !lhat_machine_bind_hostvalues(machine,
+                                      program->hostvalue_type_entries,
+                                      program->hostvalue_type_entry_count)) {
+        return false;
     }
     return true;
 }
@@ -996,6 +1172,22 @@ void lhat_program_dispose(LhatProgram *program)
     program->host_type_entries = NULL;
     program->host_type_entry_count = 0;
     program->host_type_entry_capacity = 0;
+
+    // 05 の 8.9: unlike the two registries above, this one owns its tags and
+    // their field arrays (the strings are host_entries', freed above).
+    for (size_t i = 0; i < program->hostvalue_type_entry_count; i++) {
+        LhatHostValueTag *tag =
+            (LhatHostValueTag *)program->hostvalue_type_entries[i].tag;
+        for (size_t f = 0; f < tag->field_count; f++) {
+            lhat_free((void *)tag->fields[f].name);
+        }
+        lhat_free(tag->fields);
+        lhat_free(tag);
+    }
+    lhat_free(program->hostvalue_type_entries);
+    program->hostvalue_type_entries = NULL;
+    program->hostvalue_type_entry_count = 0;
+    program->hostvalue_type_entry_capacity = 0;
 
     for (size_t i = 0; i < program->host_error_entry_count; i++) {
         LhatHostErrorKind *entry = &program->host_error_entries[i];

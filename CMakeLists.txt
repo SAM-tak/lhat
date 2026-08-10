@@ -121,6 +121,7 @@ if(LHAT_BUILD_STDLIB)
         stdlib/debug.c
         stdlib/error.c
         stdlib/io.c
+        stdlib/math.c
         stdlib/random.c
         stdlib/thread.c
     )

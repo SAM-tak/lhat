@@ -16,6 +16,10 @@
 #include <stdbool.h>
 #include <stddef.h>
 
+// 05 の 8.9: declared in object.h; the checker only ever compares the
+// address, so the shape is not needed here.
+struct LhatHostValueTag;
+
 typedef enum {
     // Inference has not decided. Conforms to everything and nothing is
     // reported against it, so one failure does not produce a cascade. 03 の
@@ -38,6 +42,15 @@ typedef enum {
     LHAT_TYPE_TABLE,       // t^{ ... }: at least these members (14.10)
     LHAT_TYPE_FUNC,        // f^ and p^ (15 章)
     LHAT_TYPE_CORO,        // c^{ ... } (13.9)
+
+    // 05 の 8.9: a host-defined value type, held in consecutive stack slots
+    // rather than on the heap. Its own kind rather than a nominal TABLE so
+    // that every place a type may escape the stack (a table member, a
+    // capture, an any^) has to say it accepts one -- a switch that does not
+    // know the kind refuses, which is the right default for a type that
+    // must never leave a frame. The payload shares v.table so the member
+    // machinery (registration, lookup) reads it unchanged.
+    LHAT_TYPE_HOSTVALUE,
 
     LHAT_TYPE_ERROR,       // error^ (04 の 2.3): the supertype of every kind
     LHAT_TYPE_ERROR_SET,   // what one errordef^ declares (04 の 2.2)
@@ -145,6 +158,11 @@ struct LhatType {
             // of it T. NULL everywhere else -- mirrors func.variadic below,
             // which is the same idea for a parameter list instead of members.
             LhatType *variadic;
+            // 05 の 8.9: set exactly when the kind is LHAT_TYPE_HOSTVALUE.
+            // Identity is this pointer, for 8.8's reason sharpened by value
+            // semantics: the C reading the bytes back must never read them
+            // as another type's. The tag belongs to the program.
+            const struct LhatHostValueTag *hostvalue_tag;
         } table;
 
         // 13.1. `result` is NULL when nothing is returned (13.2), and
@@ -234,6 +252,11 @@ void lhat_type_arena_dispose(LhatTypeArena *arena);
 LhatType *lhat_type_simple(LhatTypeArena *arena, LhatTypeKind kind);
 
 LhatType *lhat_type_table(LhatTypeArena *arena);
+// 05 の 8.9: a host value type. Nominal like a hostdata type -- identity is
+// the tag -- and additionally barred from every place that outlives a frame,
+// which conformance and the checker enforce off the kind.
+LhatType *lhat_type_hostvalue(LhatTypeArena *arena,
+                              const struct LhatHostValueTag *tag);
 LhatType *lhat_type_func(LhatTypeArena *arena, bool is_function);
 // 15.3改: `is_function` is the kind of the body, which decides what may
 // advance the coroutine and where it may be held.

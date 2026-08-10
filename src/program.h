@@ -115,6 +115,15 @@ typedef struct {
     size_t host_type_entry_count;
     size_t host_type_entry_capacity;
 
+    // 05 の 8.9: the host value types, one entry per registration. Unlike
+    // the two registries above this one owns its tags (and their field
+    // arrays); the strings belong to host_entries as usual. Registration
+    // order is the tag's index, which is how a machine finds the members
+    // table it built for the type at install.
+    LhatHostValueTypeEntry *hostvalue_type_entries;
+    size_t hostvalue_type_entry_count;
+    size_t hostvalue_type_entry_capacity;
+
     // 05 の 8.6: what the host put in L^ itself, as the type side of it. The
     // checker's own L^ carries these on top of what 8.6 lists.
     LhatType *globals;
@@ -192,6 +201,35 @@ bool lhat_register_member(LhatProgram *program, const char *module,
                           const char *type, const char *name,
                           const char *signature, LhatHostFn call,
                           void *context);
+
+// 05 の 8.9: a host-defined value type -- `size` bytes the machine keeps in
+// consecutive stack slots rather than behind a pointer. Nominal like a
+// hostdata type, and additionally barred by the checker from every place
+// that outlives a frame (a table, a capture, an any^): boxing into a
+// hostdata container is the library's job, not the language's. NULL when
+// the name is taken, the size is zero, or there is no memory. The tag
+// belongs to the program and lives as long as it does.
+const LhatHostValueTag *lhat_register_hostvalue_type(LhatProgram *program,
+                                                     const char *module,
+                                                     const char *name,
+                                                     size_t size);
+
+// A member of a host value type: an operator ("+", "-", ...) or a method.
+// `signature` names the value type by its full written path
+// ("std.math.LVector3"); a first parameter of self^ is the receiver (14.4).
+bool lhat_register_hostvalue_member(LhatProgram *program, const char *module,
+                                    const char *type, const char *name,
+                                    const char *signature, LhatHostFn call,
+                                    void *context);
+
+// One field read and written directly -- 'v.x' compiles to bytes at `offset`
+// without a host call, converted with number^ by `kind`. The field also
+// appears to the checker as a number^ member. False when the type is not a
+// registered host value type, the field name is taken, or offset+size of
+// `kind` overruns the registered size.
+bool lhat_register_hostvalue_field(LhatProgram *program, const char *module,
+                                   const char *type, const char *field,
+                                   size_t offset, LhatHostValueFieldKind kind);
 
 // A subroutine of the module itself.
 bool lhat_register_func(LhatProgram *program, const char *module,

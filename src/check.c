@@ -212,6 +212,12 @@ typedef struct {
     // input is one of a session. NULL for a file, where nothing answers.
     const LhatNode *answering;
 
+    // 03 の 4.3 with 05 の 8.9: checking one input of a session. A session's
+    // top-level names keep their one-slot places across inputs, which a
+    // host value's width does not fit -- so the top level of a prompt
+    // refuses one where a unit's top level (one ordinary frame) does not.
+    bool session;
+
     // 05 の 8.6: the type L^ answers. One per check, since 8.8 lets a path
     // add to it and every mention has to see the same table. A session hands
     // its own in, so what one input registers is there for the next.
@@ -535,6 +541,11 @@ static LhatType *simple(Checker *c, LhatTypeKind kind)
 static LhatType *resolve_type(Checker *c, const LhatNode *node);
 static LhatType *infer(Checker *c, const LhatNode *node);
 static LhatType *environment_type(Checker *c);  // 05 の 8.6
+// 05 の 8.9: the escape rules, written where the escapes would happen.
+static Binding *scope_find_in(Scope *scope, const char *name, size_t length,
+                              Scope **found_in);
+static bool scope_within_body(Checker *c, const Scope *found_in);
+static bool is_hostvalue(const LhatType *type);
 static LhatType *typeinfo_type(Checker *c);     // 14.16
 static void register_module_type(Checker *c, const char *module_name,
                                  LhatType *exports);  // 05 の 5.3
@@ -608,24 +619,29 @@ static LhatType *resolve_table_type(Checker *c, const LhatNode *node)
     for (const LhatNode *m = node->v.list.items; m != NULL; m = m->next) {
         const char *name = NULL;
         size_t length = 0;
+        LhatType *member = resolve_type(c, m->v.entry.value);
+        // 05 の 8.9: a table member is never a host value, written no more
+        // than inferred.
+        if (is_hostvalue(member)) {
+            report(c, m->v.entry.value != NULL ? m->v.entry.value : node,
+                   LHAT_CHECK_ERR_HOSTVALUE_ESCAPES);
+        }
         // 13.7, 14.10改: the unbounded tail. 'value' is NULL for an untyped
         // '...', which 13.7 makes any^.
         if (m->v.entry.variadic) {
-            table->v.table.variadic = m->v.entry.value != NULL
-                                          ? resolve_type(c, m->v.entry.value)
-                                          : simple(c, LHAT_TYPE_ANY);
+            table->v.table.variadic =
+                m->v.entry.value != NULL ? member : simple(c, LHAT_TYPE_ANY);
             continue;
         }
         if (m->v.entry.key == NULL) {
             lhat_type_add_index_member(c->result->types, table, ++position,
-                                       resolve_type(c, m->v.entry.value));
+                                       member);
             continue;
         }
         if (!node_name(c, m->v.entry.key, &name, &length)) {
             continue;
         }
-        lhat_type_add_member(c->result->types, table, name, length,
-                             resolve_type(c, m->v.entry.value));
+        lhat_type_add_member(c->result->types, table, name, length, member);
     }
     c->self_link = here.outer;
     return table;
@@ -895,20 +911,27 @@ static LhatType *resolve_type(Checker *c, const LhatNode *node)
                                        resolve_type(c, node->v.binary.left),
                                        resolve_type(c, node->v.binary.right));
 
-        case LHAT_NODE_TYPE_CORO:
+        case LHAT_NODE_TYPE_CORO: {
             // 13.9 with 15.3改: 'c^{ f^R -> Y;, T }'. An omitted R or Y is
             // nil^ -- 13.2's absent result and an empty parameter list both
             // mean "nothing here", and 04 の 11.3 already spells that nil^.
-            return lhat_type_coro(
-                c->result->types,
-                node->v.coroutine.receive != NULL
-                    ? resolve_type(c, node->v.coroutine.receive)
-                    : simple(c, LHAT_TYPE_NIL),
-                node->v.coroutine.produce != NULL
-                    ? resolve_type(c, node->v.coroutine.produce)
-                    : simple(c, LHAT_TYPE_NIL),
-                resolve_type(c, node->v.coroutine.result),
-                node->v.coroutine.is_function);
+            LhatType *receive = node->v.coroutine.receive != NULL
+                                    ? resolve_type(c, node->v.coroutine.receive)
+                                    : simple(c, LHAT_TYPE_NIL);
+            LhatType *produce = node->v.coroutine.produce != NULL
+                                    ? resolve_type(c, node->v.coroutine.produce)
+                                    : simple(c, LHAT_TYPE_NIL);
+            LhatType *result = resolve_type(c, node->v.coroutine.result);
+            // 05 の 8.9: what crosses a suspension crosses frames, so none
+            // of the three positions carries a host value -- the same rule
+            // unify_yield applies to the inferred side.
+            if (is_hostvalue(receive) || is_hostvalue(produce) ||
+                is_hostvalue(result)) {
+                report(c, node, LHAT_CHECK_ERR_HOSTVALUE_ESCAPES);
+            }
+            return lhat_type_coro(c->result->types, receive, produce, result,
+                                  node->v.coroutine.is_function);
+        }
 
         default:
             report(c, node, LHAT_CHECK_ERR_UNKNOWN_TYPE);
@@ -1178,7 +1201,9 @@ static LhatType *operator_member(Checker *c, const LhatType *type,
     if (type == NULL || name == NULL) {
         return NULL;
     }
-    if (type->kind == LHAT_TYPE_TABLE) {
+    // 05 の 8.9: a host value carries its registered operators in the same
+    // member list a table carries 11.8's.
+    if (type->kind == LHAT_TYPE_TABLE || type->kind == LHAT_TYPE_HOSTVALUE) {
         const LhatTypeMember *m = find_member(type, name, length);
         return m != NULL ? m->type : NULL;
     }
@@ -2202,6 +2227,17 @@ static LhatType *infer_name(Checker *c, const LhatNode *node)
     if (!b->reached && c->deferred == 0) {
         report(c, node, LHAT_CHECK_ERR_USED_BEFORE_DEFINED);
     }
+    // 05 の 8.9: a name bound outside this body reaches the value through a
+    // capture, and a capture outlives the frame the slots belong to. The
+    // same boundary test 15.1 uses for writes, asked of a read here because
+    // for a host value the read is what would build the upvalue.
+    if (is_hostvalue(b->type) && c->body_scope != NULL) {
+        Scope *found_in = NULL;
+        scope_find_in(from, name, length, &found_in);
+        if (!scope_within_body(c, found_in)) {
+            report(c, node, LHAT_CHECK_ERR_HOSTVALUE_ESCAPES);
+        }
+    }
     record_resolution(c, node, b);
     return b->type;
 }
@@ -2757,7 +2793,10 @@ static LhatType *infer_member(Checker *c, const LhatNode *node)
     // declaration's whole set, or error^ alone (4.2's it^ can be any of the
     // three). A declared field is the leaf's own and wants the narrowing.
     const LhatTypeMember *members = NULL;
-    if (target->kind == LHAT_TYPE_TABLE) {
+    if (target->kind == LHAT_TYPE_TABLE ||
+        target->kind == LHAT_TYPE_HOSTVALUE) {
+        // 05 の 8.9: fields and registered members alike, off the shared
+        // member list.
         members = target->v.table.members;
     } else if (target->kind == LHAT_TYPE_ERROR_KIND ||
                target->kind == LHAT_TYPE_ERROR_SET ||
@@ -2921,6 +2960,12 @@ static LhatType *infer_table(Checker *c, const LhatNode *node)
         LhatType *value = require_value(c, entry->v.entry.value,
                                         infer(c, entry->v.entry.value));
 
+        // 05 の 8.9: a table lives on the heap and a host value does not
+        // leave the stack, so no member of one is ever a host value.
+        if (is_hostvalue(value)) {
+            report(c, entry->v.entry.value, LHAT_CHECK_ERR_HOSTVALUE_ESCAPES);
+        }
+
         // 14.6改: a computed key is an expression, checked like any other.
         // What it names is only known when it is written out -- an integer
         // reaches the sequence half, a string the keyed one, and anything
@@ -2975,6 +3020,14 @@ static void unify_yield(Checker *c, const LhatNode *at, LhatType **slot,
         // agree or disagree with.
         return;
     }
+    // 05 の 8.9: what a yield^ carries crosses the frame boundary -- it lands
+    // in the resumer's slot, and the suspended registers may be walked over
+    // -- so a host value does not ride one. Its locals inside the body are
+    // fine: suspension copies every register blindly.
+    if (is_hostvalue(candidate)) {
+        report(c, at, LHAT_CHECK_ERR_HOSTVALUE_ESCAPES);
+        return;
+    }
     if (*slot == NULL) {
         *slot = candidate;
         return;
@@ -3012,6 +3065,11 @@ static LhatType *declared_signature(Checker *c, const LhatNode *node)
                              ? resolve_type(c, param->v.param.type)
                              : simple(c, LHAT_TYPE_PENDING);
         if (param->v.param.variadic) {
+            // 05 の 8.9: the tail is collected into a table (13.7), and a
+            // table member is never a host value.
+            if (is_hostvalue(type)) {
+                report(c, param, LHAT_CHECK_ERR_HOSTVALUE_ESCAPES);
+            }
             func->v.func.variadic =
                 param->v.param.type != NULL ? type : simple(c, LHAT_TYPE_ANY);
             continue;
@@ -3267,7 +3325,10 @@ static LhatType *infer_func(Checker *c, const LhatNode *node)
 static const LhatTypeMember *find_member(const LhatType *table,
                                          const char *name, size_t length)
 {
-    if (table == NULL || table->kind != LHAT_TYPE_TABLE) {
+    // 05 の 8.9: a host value type keeps its registered members in the same
+    // list a table keeps its own, so the one search serves both.
+    if (table == NULL || (table->kind != LHAT_TYPE_TABLE &&
+                          table->kind != LHAT_TYPE_HOSTVALUE)) {
         return NULL;
     }
     for (const LhatTypeMember *m = table->v.table.members; m != NULL;
@@ -3284,6 +3345,15 @@ static const LhatTypeMember *find_member(const LhatType *table,
 // the base's fields into the derived instance.
 static LhatType *instance_of(const LhatType *definition)
 {
+    // 05 の 8.8: a registered host type is its own written type -- it has
+    // no instance half, and a member the host happened to call "new"
+    // (std.math.Vector3.new, say) is an ordinary constructor function, not
+    // 14.11's mechanism. Without this, writing the type's name answered
+    // with that member's result instead of the type.
+    if (definition != NULL && definition->kind == LHAT_TYPE_TABLE &&
+        definition->v.table.nominal) {
+        return NULL;
+    }
     const LhatTypeMember *constructor = find_member(definition, "new", 3);
     if (constructor == NULL || constructor->type == NULL ||
         constructor->type->kind != LHAT_TYPE_FUNC) {
@@ -3892,7 +3962,31 @@ static LhatType *infer_def(Checker *c, const LhatNode *node, LhatType *base)
     return definition;
 }
 
+// 05 の 8.9: the one question every escape rule asks.
+static bool is_hostvalue(const LhatType *type)
+{
+    return type != NULL && type->kind == LHAT_TYPE_HOSTVALUE;
+}
+
+static LhatType *infer_node(Checker *c, const LhatNode *node);
+
+// The one door every expression's type leaves through. 05 の 8.9 with 03 の
+// 5.11a: the compiler is otherwise type-blind, and a host value changes what
+// it has to emit -- how many slots to reserve, how wide a move is -- so every
+// expression whose type is one gets that type stamped on its node, the same
+// checked_type channel infer_func already uses for a signature. Stamping only
+// host values keeps the FUNC and TYPEOF stamps (whose kinds are never
+// HOSTVALUE) untouched.
 static LhatType *infer(Checker *c, const LhatNode *node)
+{
+    LhatType *type = infer_node(c, node);
+    if (node != NULL && is_hostvalue(type)) {
+        ((LhatNode *)node)->checked_type = type;
+    }
+    return type;
+}
+
+static LhatType *infer_node(Checker *c, const LhatNode *node)
 {
     if (node == NULL) {
         return NULL;
@@ -3915,8 +4009,16 @@ static LhatType *infer(Checker *c, const LhatNode *node)
             for (const LhatNode *part = node->v.list.items; part != NULL;
                  part = part->next) {
                 if (part->kind == LHAT_NODE_INTERP_HOLE) {
-                    require_value(c, part->v.hole.value,
-                                  infer(c, part->v.hole.value));
+                    LhatType *held =
+                        require_value(c, part->v.hole.value,
+                                      infer(c, part->v.hole.value));
+                    // 05 の 8.9: writing a whole host value down would go
+                    // through tostring machinery a value type does not
+                    // carry. Its fields are numbers -- write those.
+                    if (is_hostvalue(held)) {
+                        report(c, part->v.hole.value,
+                               LHAT_CHECK_ERR_HOSTVALUE_ESCAPES);
+                    }
                 }
             }
             return simple(c, LHAT_TYPE_STRING);
@@ -3942,7 +4044,13 @@ static LhatType *infer(Checker *c, const LhatNode *node)
             // which is what self^ is bound to.
             for (const LhatNode *field = node->v.list.items; field != NULL;
                  field = field->next) {
-                infer(c, field->v.entry.value);
+                LhatType *value = infer(c, field->v.entry.value);
+                // 05 の 8.9: an instance is a table, so its fields refuse a
+                // host value the way any table member does.
+                if (is_hostvalue(value)) {
+                    report(c, field->v.entry.value,
+                           LHAT_CHECK_ERR_HOSTVALUE_ESCAPES);
+                }
             }
             Binding *receiver = scope_find(c->scope, "self^", 5);
             return receiver != NULL ? receiver->type
@@ -4672,6 +4780,7 @@ static void check_define(Checker *c, const LhatNode *node)
 
         const char *name = NULL;
         size_t length = 0;
+        LhatType *held = annotated != NULL ? annotated : actual;
         if (target_is_path(target)) {
             // 8.8: the place is a member of a table the path reaches, not a
             // name of this scope. 8.8改: let^'s ':=' spelling asks to
@@ -4684,9 +4793,20 @@ static void check_define(Checker *c, const LhatNode *node)
             // the same way they do to a reassignment.
             check_write_target(c, target);
             check_opaque_write(c, target);
-            define_path(c, target, annotated != NULL ? annotated : actual,
-                       node->v.binding.via_reassign_op);
+            // 05 の 8.9: a path lands in a table, and a table member is
+            // never a host value.
+            if (is_hostvalue(held)) {
+                report(c, target, LHAT_CHECK_ERR_HOSTVALUE_ESCAPES);
+            }
+            define_path(c, target, held, node->v.binding.via_reassign_op);
         } else if (node_name(c, target_name_node(target), &name, &length)) {
+            // 05 の 8.9: a session's top-level names keep one-slot places
+            // across inputs (03 の 4.3), which a host value's width does
+            // not fit. A unit's top level is one ordinary frame and holds
+            // one fine.
+            if (c->session && c->body_scope == NULL && is_hostvalue(held)) {
+                report(c, target, LHAT_CHECK_ERR_HOSTVALUE_ESCAPES);
+            }
             Binding *b = scope_find_local(c->scope, name, length);
             if (b != NULL) {
                 // Collected before the walk, so this is where its let^ runs.
@@ -5205,7 +5325,27 @@ static void check_opaque_write(Checker *c, const LhatNode *target)
         return;
     }
     const LhatType *owner = path_type_of(c, last->v.access.target);
-    if (owner == NULL || owner->kind != LHAT_TYPE_TABLE) {
+    if (owner == NULL) {
+        return;
+    }
+    // 05 の 8.9: a host value's registered fields take writes -- they are
+    // number^ members, and writing the bytes of one's own copy is the
+    // field's whole purpose. Its registered members (operators, methods)
+    // stay the host's, 8.8's rule unchanged.
+    if (owner->kind == LHAT_TYPE_HOSTVALUE) {
+        const char *name = NULL;
+        size_t length = 0;
+        const LhatTypeMember *member =
+            node_name(c, last->v.access.argument, &name, &length)
+                ? find_member(owner, name, length)
+                : NULL;
+        if (member != NULL && member->type != NULL &&
+            member->type->kind != LHAT_TYPE_NUMBER) {
+            report(c, last, LHAT_CHECK_ERR_PATH_IS_OPAQUE);
+        }
+        return;
+    }
+    if (owner->kind != LHAT_TYPE_TABLE) {
         return;
     }
     if (owner->v.table.nominal) {
@@ -5240,7 +5380,14 @@ static void check_reassign(Checker *c, const LhatNode *node)
             expect(c, node, unpacked_at(c, unpacked, position), wanted,
                    LHAT_CHECK_ERR_MISMATCH);
         } else if (value != NULL) {
-            expect(c, value, infer(c, value), wanted, LHAT_CHECK_ERR_MISMATCH);
+            LhatType *given = infer(c, value);
+            // 05 の 8.9: a dotted or indexed target lands in a table, and a
+            // table member is never a host value. Conformance alone would
+            // let this through where the table's own typing went unknown^.
+            if (is_hostvalue(given) && target_is_path(target)) {
+                report(c, target, LHAT_CHECK_ERR_HOSTVALUE_ESCAPES);
+            }
+            expect(c, value, given, wanted, LHAT_CHECK_ERR_MISMATCH);
             value = value->next;
         }
         // 13.11: what a branch established about this path no longer holds.
@@ -5269,7 +5416,7 @@ static const LhatTypeMember *member_named(const LhatType *type,
                                           const char *name, size_t length)
 {
     const LhatTypeMember *members = NULL;
-    if (type->kind == LHAT_TYPE_TABLE) {
+    if (type->kind == LHAT_TYPE_TABLE || type->kind == LHAT_TYPE_HOSTVALUE) {
         members = type->v.table.members;
     } else if (type->kind == LHAT_TYPE_ERROR_KIND) {
         members = type->v.error.fields;
@@ -5786,6 +5933,13 @@ static void check_statement(Checker *c, const LhatNode *node)
             bool recursive = c->saw_self_call;
             c->saw_self_call = enclosing_self_call || recursive;
 
+            // 05 の 8.9: at the top level of a unit this is the program's
+            // answer, which leaves through a single value slot the host
+            // reads -- there is no frame above for the slots to land in.
+            if (c->body_scope == NULL && is_hostvalue(value)) {
+                report(c, node, LHAT_CHECK_ERR_HOSTVALUE_ESCAPES);
+            }
+
             if (c->declared_result != NULL) {
                 // 03 の 7 章、P6: unlike expect()'s other callers, this one
                 // runs while the subroutine being defined is still open --
@@ -6136,6 +6290,7 @@ void lhat_check_next(LhatCheckSession *session, const LhatNode *unit,
     checker.result = result;
     checker.strict = strict;
     checker.scope = &scope;
+    checker.session = true;  // 05 の 8.9: a prompt's top level, see Checker
     // 05 の 8.6: one L^ for the whole session, so what an input registers in
     // it is still there in the next.
     checker.environment = session->environment;
@@ -6472,6 +6627,9 @@ const char *lhat_check_error_message(LhatCheckErrorCode code)
             return "Self^ names the t^ or def^ written around it, and there is "
                    "no such literal here -- or a second hat counted past the "
                    "outermost one";
+        case LHAT_CHECK_ERR_HOSTVALUE_ESCAPES:
+            return "a host value lives on the stack and nowhere else; box it "
+                   "into the container type its library provides to keep it";
     }
     return "unknown error";
 }
