@@ -539,9 +539,6 @@ static LhatType *environment_type(Checker *c);  // 05 の 8.6
 static Binding *scope_find(Scope *scope, const char *name, size_t length, Scope **found);
 static bool scope_within_body(Checker *c, const Scope *found);
 static bool is_hostvalue(const LhatType *type);
-// 04 の 11.4改 (S43): the two halves of the '?' forms, written beside the
-// member access they belong to and used by the call path above it.
-static LhatType *nil_propagated(Checker *c, const LhatNode *node, LhatType *answer);
 static LhatType *without_nil_arm(Checker *c, LhatType *target);
 static LhatType *typeinfo_type(Checker *c);     // 14.16
 static void register_module_type(Checker *c, const char *module_name,
