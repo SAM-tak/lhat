@@ -1310,6 +1310,54 @@ static void test_narrowing(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
+    // 13.11 with 04 の 11.3: a comparison against the nil^ literal narrows the
+    // way isa^ does. Without it 'if^ t != nil^ { … }' passed the condition and
+    // then reported against the *use* inside the branch -- a diagnostic
+    // nowhere near its cause, on the first form anyone reaches for.
+    LHAT_TEST("'!= nil^' narrows the true branch");
+    check_text(&u,
+               "var^ t : number^|nil^ = nil^\n"
+               "if^ t != nil^ { var^ n : number^ = t }\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("'= nil^' narrows the false branch");
+    check_text(&u,
+               "var^ t : number^|nil^ = nil^\n"
+               "if^ t = nil^ {\n"
+               "    else^:\n"
+               "        var^ n : number^ = t\n"
+               "}\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // Either side may carry the literal.
+    LHAT_TEST("the nil^ literal narrows from the left as well");
+    check_text(&u,
+               "var^ t : number^|nil^ = nil^\n"
+               "if^ nil^ != t { var^ n : number^ = t }\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // nil^ has one value, so 13.11's closing rule makes 'is^' and '=' agree
+    // -- leaving is^ out would be a gap with nothing behind it.
+    LHAT_TEST("'is^ nil^' narrows the same as '= nil^'");
+    check_text(&u,
+               "var^ t : number^|nil^ = nil^\n"
+               "if^ t is^ nil^ {\n"
+               "    else^:\n"
+               "        var^ n : number^ = t\n"
+               "}\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("a nil^ narrowing does not reach past what was tested");
+    check_text(&u,
+               "var^ t : number^|nil^ = nil^\n"
+               "if^ t != nil^ { var^ n : nil^ = t }\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
+    unit_dispose(&u);
+
     // 04 の 6.1: narrowing to a kind is what makes its declared field visible.
     LHAT_TEST("a narrowed error kind shows its fields");
     check_text(&u,

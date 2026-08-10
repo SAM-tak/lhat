@@ -1243,6 +1243,19 @@ static bool narrowable(const LhatNode *node)
     }
 }
 
+// 13.11: the nil^ written down, which is what makes a comparison against it a
+// narrowing. The literal only -- a narrowing needs somewhere in the source to
+// anchor to, and nothing is gained by following an expression that merely
+// happens to be typed nil^. The same test infer_name makes for the value.
+static bool is_nil_literal(const Checker *c, const LhatNode *node)
+{
+    const char *name = NULL;
+    size_t length = 0;
+    return node != NULL && node->kind == LHAT_NODE_HAT_IDENT &&
+           node_name(c, node, &name, &length) &&
+           name_is(name, length, "nil^");
+}
+
 // 01 の 2.3改 (S35): the canonical name cuts after the first hat, so it^ and
 // it^^ spell the same name reaching two different bindings -- a narrowing
 // recorded for one must not apply to the other, which is what comparing the
@@ -1506,19 +1519,47 @@ static void narrow_from(Checker *c, const LhatNode *condition, bool truth)
         return;
     }
 
-    if (op != LHAT_OP_ISA) {
+    // 13.11 with 04 の 11.3: two shapes narrow. 'x isa^ T' asks about a type;
+    // '=' / '!=' / 'is^' against the nil^ literal asks about absence, which
+    // 11.3 spells with nil^ and is the first thing anyone writes. Without the
+    // second, 'if^ t != nil^ { t[1] }' passed the condition and then reported
+    // against t[1] -- a diagnostic nowhere near its cause.
+    const LhatNode *path = NULL;
+    LhatType *tested = NULL;
+    // Whether the branch has the path *being* what was tested for. '!=' is
+    // the same question the other way round, exactly as '!' above is.
+    bool holds = truth;
+
+    if (op == LHAT_OP_ISA) {
+        path = condition->v.binary.left;
+        tested = resolve_type(c, condition->v.binary.right);
+    } else if (op == LHAT_OP_EQ || op == LHAT_OP_NE || op == LHAT_OP_IS) {
+        // Either side may carry the literal; the other is the path. 'is^'
+        // rides with '=' because nil^ has one value, so 13.11's closing rule
+        // makes the two always agree -- leaving it out would be a gap with
+        // no reason behind it.
+        if (is_nil_literal(c, condition->v.binary.right)) {
+            path = condition->v.binary.left;
+        } else if (is_nil_literal(c, condition->v.binary.left)) {
+            path = condition->v.binary.right;
+        } else {
+            return;
+        }
+        tested = simple(c, LHAT_TYPE_NIL);
+        if (op == LHAT_OP_NE) {
+            holds = !truth;
+        }
+    } else {
         return;
     }
 
-    const LhatNode *path = condition->v.binary.left;
-    if (!narrowable(path)) {
+    if (path == NULL || !narrowable(path)) {
         return;
     }
 
     LhatType *current = infer(c, path);
-    LhatType *tested = resolve_type(c, condition->v.binary.right);
     LhatType *inside =
-        truth ? only(c, current, tested) : without(c, current, tested);
+        holds ? only(c, current, tested) : without(c, current, tested);
 
     // 03 の 3.4: a parameter still being decided says nothing to narrow, so
     // both sides hand its own object straight back. Inside the branch that
