@@ -4605,13 +4605,14 @@ static void bind_targets(Compiler *c, const LhatNode *focus, size_t local_mark,
                                 0));
         return;
     }
+    // 16.3 with 13.8改: several names read the run the walk laid at `from` --
+    // head slot first, positions after it. The machine put every shape of
+    // iterator into this form (a table walk directly, a tuple-yielding body
+    // by the yield's own placement, a table-yielding one expanded on
+    // landing), so the binds are the same three MOVEs whatever was walked.
     for (size_t i = 0; i < count; i++) {
-        uint8_t mark = c->next_register;
-        uint8_t key = reserve(c);
-        load_constant(c, key, lhat_integer((int64_t)i + 1));
-        emit(c, lhat_encode_abc(LHAT_BC_GETINDEX,
-                                c->locals[local_mark + i].reg, from, key));
-        c->next_register = mark;
+        emit(c, lhat_encode_abc(LHAT_BC_MOVE, c->locals[local_mark + i].reg,
+                                (uint8_t)(from + 1 + i), 0));
     }
     (void)focus;
 }
@@ -4705,7 +4706,12 @@ static void compile_loop(Compiler *c, const LhatNode *node)
         emit(c, lhat_encode_abc(LHAT_BC_GETINDEX, walk, receiver, key));
         emit(c, lhat_encode_abc(LHAT_BC_CALLMETHOD, walk, 0, 0));
         c->next_register = (uint8_t)(walk + 1);
-        taken = reserve(c);
+        // 13.8改: several names take a run -- one head slot plus a position
+        // each -- and one name takes one value, so the answer's room is
+        // sized by the count. The count is syntax, which is what lets an
+        // unchecked compile reserve the same slots a checked one does.
+        taken = focus_locals > 1 ? reserve_wide(c, focus_locals + 1)
+                                 : reserve(c);
     }
 
     // 16.4: the bound and the step^ of to^/downto^ are both read once, before
@@ -4802,11 +4808,24 @@ static void compile_loop(Compiler *c, const LhatNode *node)
         uint8_t mark = c->next_register;
         uint8_t test = reserve(c);
         emit(c, lhat_encode_abc(LHAT_BC_LOADNIL, taken, 0, 0));
-        emit(c, lhat_encode_abc(LHAT_BC_RESUME, taken, walk, 0));
+        // 16.3 with 13.8改: C carries the loop's word on what one step should
+        // put down -- N+1 for N names (a run), 2 for one name (a table's
+        // sequence values; a body's yield unchanged). 03 の 5.3改's shape:
+        // the two sides tell each other, and a mismatch faults rather than
+        // being papered over.
+        emit(c, lhat_encode_abc(LHAT_BC_RESUME, taken, walk,
+                                focus_locals > 1 ? (uint8_t)(focus_locals + 1)
+                                                 : 2));
         emit(c, lhat_encode_abc(LHAT_BC_ISDONE, test, walk, 0));
         emit(c, lhat_encode_abc(LHAT_BC_NOT, test, test, 0));
         leaving = emit_jump(c, LHAT_BC_JUMP_FALSE, test);
         c->next_register = mark;
+        // The guard for an unchecked iterator that answered some other
+        // shape; the checker's own report came first wherever it ran.
+        if (focus_locals > 1) {
+            emit(c, lhat_encode_abc(LHAT_BC_CHECKRUN, taken,
+                                    (uint8_t)focus_locals, 0));
+        }
         bind_targets(c, focus, local_mark, focus_locals, taken);
     } else if (!is_for && node->v.repeat.kind == LHAT_REPEAT_COUNT) {
         uint8_t mark = c->next_register;
@@ -6759,15 +6778,62 @@ typedef enum {
     WALK_NO_MEMORY
 } WalkStep;
 
-static WalkStep step_table_walk(Machine *m, LhatCoroutine *co, LhatValue *out)
+// 16.3 with 13.8改: how the walk was asked, which decides what one step puts
+// down. The loop says which by RESUME's C -- the count of names is syntax,
+// so an unchecked compile says the same thing a checked one does (03 の 4.2).
+typedef enum {
+    // start()/resume() written by hand, yieldall^, and code from before: one
+    // slot, the pair as a table. The one mode that still allocates, kept so
+    // driving a walk off the loop path answers a value a name can hold.
+    WALK_AS_PAIR,
+    // 'for^ v in^ t': the values of the sequence half, in order, the keyed
+    // half not visited -- 'for^ i from^ 1 to^ the length { t[i] }' written
+    // as a walk. No pair exists, so nothing allocates.
+    WALK_AS_VALUE,
+    // 'for^ k, v in^ t': the pair as a run -- head slot plus two positions
+    // in the slots the loop reserved. Nothing allocates.
+    WALK_AS_RUN
+} WalkMode;
+
+// Puts one step down at slot `at` (WALK_AS_RUN fills at..at+2). The caller
+// reserved the slots; the bounds check is here because the loop's reservation
+// and a hand-driven call site reserve different widths.
+static WalkStep step_table_walk(Machine *m, LhatCoroutine *co, WalkMode mode,
+                                size_t at)
 {
+    if (mode == WALK_AS_VALUE) {
+        // Only the dense half, by index -- lhat_table_walk would go on into
+        // the keyed half, which this form does not visit.
+        LhatValue value = lhat_table_get(
+            co->walking, lhat_integer((int64_t)co->at_array + 1));
+        if (lhat_is_nil(value)) {
+            co->state = LHAT_COROUTINE_DONE;
+            lhat_slots_set(m->slots, at, lhat_nil());
+            return WALK_ENDED;
+        }
+        co->at_array++;
+        co->state = LHAT_COROUTINE_SUSPENDED;
+        lhat_slots_set(m->slots, at, value);
+        return WALK_TOOK;
+    }
+
     LhatValue key, value;
     if (!lhat_table_walk(co, &key, &value)) {
         co->state = LHAT_COROUTINE_DONE;
-        *out = lhat_nil();
+        lhat_slots_set(m->slots, at, lhat_nil());
         return WALK_ENDED;
     }
-    // 13.8 has no tuples, so the pair a walk yields is a table.
+    co->state = LHAT_COROUTINE_SUSPENDED;
+
+    if (mode == WALK_AS_RUN) {
+        // 13.8改: the pair as a tuple, laid into the loop's reserved slots.
+        lhat_slots_set(m->slots, at, lhat_run_head(2));
+        lhat_slots_set(m->slots, at + 1, key);
+        lhat_slots_set(m->slots, at + 2, value);
+        return WALK_TOOK;
+    }
+
+    // WALK_AS_PAIR -- what every walk answered before 13.8改.
     LhatTable *pair = lhat_table_new(&m->objects);
     bool refused = false;
     if (pair == NULL ||
@@ -6775,8 +6841,7 @@ static WalkStep step_table_walk(Machine *m, LhatCoroutine *co, LhatValue *out)
         !set_key(m, pair, lhat_integer(2), value, &refused)) {
         return WALK_NO_MEMORY;
     }
-    co->state = LHAT_COROUTINE_SUSPENDED;
-    *out = lhat_object((LhatObject *)pair);
+    lhat_slots_set(m->slots, at, lhat_object((LhatObject *)pair));
     return WALK_TOOK;
 }
 
@@ -8276,13 +8341,13 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
                             SET_R(a, lhat_nil());
                             break;
                         }
-                        LhatValue stepped = lhat_nil();
-                        if (step_table_walk(m, co, &stepped) ==
+                        // Hand-driven, so one slot and the pair as a table
+                        // -- the answer has to be a value a name can hold.
+                        if (step_table_walk(m, co, WALK_AS_PAIR, rbase + a) ==
                             WALK_NO_MEMORY) {
                             return finish(m, chunk, LHAT_RUN_OUT_OF_MEMORY,
                                           lhat_nil(), at);
                         }
-                        SET_R(a, stepped);
                         break;
                     }
 
@@ -8713,6 +8778,33 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
                         held.tag = (LhatValueTag)out_tags[i + 1];
                         lhat_slots_set(m->slots, rbase + into + 1 + i, held);
                     }
+                } else if (reserved > 1 &&
+                           lhat_is_object_kind(value, LHAT_OBJECT_TABLE)) {
+                    // 16.3 with 13.8改: a loop reserved a run and the body
+                    // yielded a table -- the iterator that answers pairs as
+                    // tables, from before tuples. Its positions go into the
+                    // reserved slots: the GETINDEXes the loop used to emit,
+                    // performed here instead, so the two iterator shapes
+                    // meet the same binds. A missing position is 04 の 11.3's
+                    // absence, which a destructuring faults on.
+                    const LhatTable *yielded =
+                        (const LhatTable *)lhat_as_object(value);
+                    size_t positions = (size_t)reserved - 1;
+                    if (rbase + into + positions >= LHAT_STACK_SLOTS) {
+                        return finish(m, chunk, LHAT_RUN_TUPLE_ARITY,
+                                      lhat_nil(), at);
+                    }
+                    for (size_t i = 0; i < positions; i++) {
+                        LhatValue held = lhat_table_get(
+                            yielded, lhat_integer((int64_t)i + 1));
+                        if (lhat_is_nil(held)) {
+                            return finish(m, chunk, LHAT_RUN_TUPLE_ARITY,
+                                          lhat_nil(), at);
+                        }
+                        lhat_slots_set(m->slots, rbase + into + 1 + i, held);
+                    }
+                    lhat_slots_set(m->slots, rbase + into,
+                                   lhat_run_head(positions));
                 } else {
                     SET_R(into, value);
                 }
@@ -8743,21 +8835,39 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
                     return finish(m, chunk, LHAT_RUN_DEAD_COROUTINE, lhat_nil(), at);
                 }
 
+                // 16.3 with 13.8改: which shape one step puts down. C is the
+                // loop's word -- the count of names is syntax, so unchecked
+                // and checked compiles say the same thing (03 の 4.2).
+                // 0 (and 1) is everything else: hand-driven code and
+                // yieldall^, which take the pair as a table.
+                WalkMode mode = cc >= 3   ? WALK_AS_RUN
+                                : cc == 2 ? WALK_AS_VALUE
+                                          : WALK_AS_PAIR;
+
                 // 16.3: a table's walk has no body to enter, so resuming it
                 // is one step and nothing more.
                 if (co->source == LHAT_COROUTINE_TABLE) {
-                    LhatValue stepped = lhat_nil();
-                    if (step_table_walk(m, co, &stepped) ==
+                    // A run is two positions; a loop that reserved another
+                    // width asked for something the walk does not yield.
+                    if (mode == WALK_AS_RUN &&
+                        ((size_t)cc != 3 ||
+                         rbase + a + 2 >= LHAT_STACK_SLOTS)) {
+                        return finish(m, chunk, LHAT_RUN_TUPLE_ARITY,
+                                      lhat_nil(), at);
+                    }
+                    if (step_table_walk(m, co, mode, rbase + a) ==
                         WALK_NO_MEMORY) {
                         return finish(m, chunk, LHAT_RUN_OUT_OF_MEMORY, lhat_nil(), at);
                     }
-                    SET_R(a, stepped);
                     break;
                 }
                 if (m->frame_count >= LHAT_MAX_FRAMES) {
                     return finish(m, chunk, LHAT_RUN_STACK_OVERFLOW, lhat_nil(), at);
                 }
-                size_t next_base = rbase + (a) + 1;
+                // 13.8改: the frame goes above the slots the loop reserved
+                // for the answer, or the callee's window would overlap the
+                // run about to be written back into this one.
+                size_t next_base = rbase + (a) + (cc >= 3 ? (size_t)cc : 1);
                 if (next_base + LHAT_MAX_REGISTERS >= LHAT_STACK_SLOTS) {
                     return finish(m, chunk, LHAT_RUN_STACK_OVERFLOW, lhat_nil(), at);
                 }
@@ -8774,9 +8884,11 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
                 called->pc = co->pc;
                 called->base = next_base;
                 called->result = a;
-                // 13.8改: a resume takes one value back. What the body yields
-                // as a tuple is placed by the yield itself (15.4).
-                called->prepared = 1;
+                // 13.8改: what the resume reserved for the answer -- a loop
+                // driving a tuple-yielding body says its width here, and the
+                // yield's placement reads it (15.4). Everything else takes
+                // one value back, as a resume always did.
+                called->prepared = cc >= 3 ? cc : 1;
                 called->coroutine = co;
                 called->disposing = false;
                 called->derive = LHAT_FRAME_NO_DERIVE;

@@ -6670,6 +6670,137 @@ static void test_multi_value_return(void)
     run_dispose(&r);
 }
 
+// 02 の 16.3 with 13.8改: a walk's pair is the tuple (K, V), and a single
+// name takes the sequence half's values -- neither shape allocates. The
+// table the walk used to make every step was the last per-step allocation
+// the loops had.
+static void test_walk_shapes(void)
+{
+    Run r;
+
+    LHAT_TEST("one name over a table takes the values in order");
+    run_text(&r,
+             "var^ total = 0\n"
+             "for^ v in^ { 10, 20, 30 } { total := total + v }\n"
+             "return^ total\n");
+    CHECK_INTEGER(&r, 60);
+    run_dispose(&r);
+
+    LHAT_TEST("and never visits the keyed half");
+    run_text(&r,
+             "var^ turns = 0\n"
+             "var^ t = { a := 5, b := 7 }\n"
+             "for^ v in^ t { turns := turns + 1 }\n"
+             "return^ turns\n");
+    CHECK_INTEGER(&r, 0);
+    run_dispose(&r);
+
+    // 13.7: the variadic collector is a table, so its walk changes shape the
+    // same way -- one name takes the elements themselves now.
+    LHAT_TEST("one name over ... takes the elements");
+    run_text(&r,
+             "var^ join = p^ ...:number^ {\n"
+             "  var^ total = 0\n"
+             "  for^ x in^ ... { total := total + x }\n"
+             "  return^ total }\n"
+             "return^ join(1, 2, 3)\n");
+    CHECK_INTEGER(&r, 6);
+    run_dispose(&r);
+
+    // What the whole change is for. A step's only heap traffic would be the
+    // pair table it used to make -- 2000 steps of one walk now touch the
+    // heap not at all, so the collector's count is the proof. (The walk
+    // coroutine itself is still made once per loop, which is why the loop
+    // here is one loop of many steps.)
+    LHAT_TEST("two names walk a table without allocating per step");
+    run_checked_text(&r,
+                     "var^ t = { }\n"
+                     "for^ i from^ 1 to^ 2000 { t[i] := i }\n"
+                     "var^ total = 0\n"
+                     "for^ k, v in^ t { total := total + v }\n"
+                     "return^ total\n");
+    CHECK_INTEGER(&r, 2000 * 2001 / 2);
+    // A step apiece would be ~2000; a stray object or two from the build
+    // phase crossing a collection threshold is not that.
+    LHAT_CHECK(r.ran.collected < 10, "no per-step allocation");
+    run_dispose(&r);
+
+    LHAT_TEST("and so does one name");
+    run_checked_text(&r,
+                     "var^ t = { }\n"
+                     "for^ i from^ 1 to^ 2000 { t[i] := i }\n"
+                     "var^ total = 0\n"
+                     "for^ v in^ t { total := total + v }\n"
+                     "return^ total\n");
+    CHECK_INTEGER(&r, 2000 * 2001 / 2);
+    // A step apiece would be ~2000; a stray object or two from the build
+    // phase crossing a collection threshold is not that.
+    LHAT_CHECK(r.ran.collected < 10, "no per-step allocation");
+    run_dispose(&r);
+
+    // The negative control: driving the walk by hand still answers the pair
+    // as a table -- the one place a name has to be able to hold the answer.
+    LHAT_TEST("a hand-driven walk still allocates its pairs");
+    run_text(&r,
+             "var^ t = { 10, 20, 30 }\n"
+             "var^ total = 0\n"
+             "repeat^ 700 {\n"
+             "  var^ w = t.iterate^()\n"
+             "  var^ pair = w.start()\n"
+             "  total := total + pair[2]\n"
+             "}\n"
+             "return^ total\n");
+    CHECK_INTEGER(&r, 700 * 10);
+    LHAT_CHECK(r.ran.collected > 500, "the pair tables were made and dropped");
+    run_dispose(&r);
+
+    // A user iterator that yields tuples meets the same binds the built-in
+    // walk does, with the same zero cost.
+    LHAT_TEST("a user iterator yields tuples into two names");
+    run_checked_text(&r,
+                     "var^ gen = p^ -> (number^, number^) {\n"
+                     "  yield^ 1, 10\n"
+                     "  yield^ 2, 20\n"
+                     "  return^ 0, 0 }\n"
+                     "var^ total = 0\n"
+                     "for^ k, v in^ gen() { total := total + k + v }\n"
+                     "return^ total\n");
+    CHECK_INTEGER(&r, 33);
+    run_dispose(&r);
+
+    // And one that yields tables -- the shape from before tuples -- still
+    // works: the machine expands its positions into the same run.
+    LHAT_TEST("a user iterator yielding tables still meets two names");
+    run_text(&r,
+             "var^ gen = p^ {\n"
+             "  yield^ { 1, 10 }\n"
+             "  yield^ { 2, 20 } }\n"
+             "var^ total = 0\n"
+             "for^ k, v in^ gen() { total := total + k + v }\n"
+             "return^ total\n");
+    CHECK_INTEGER(&r, 33);
+    run_dispose(&r);
+
+    // 16.3's other guarantees, over the new shapes.
+    LHAT_TEST("break^ leaves a two-name walk cleanly");
+    run_text(&r,
+             "var^ total = 0\n"
+             "for^ k, v in^ { 10, 20, 30 } {\n"
+             "  if^ k = 3 { break^ }\n"
+             "  total := total + v }\n"
+             "return^ total\n");
+    CHECK_INTEGER(&r, 30);
+    run_dispose(&r);
+
+    LHAT_TEST("a two-name walk over an empty table walks no turns");
+    run_text(&r,
+             "var^ turns = 0\n"
+             "for^ k, v in^ { } { turns := turns + 1 }\n"
+             "return^ turns\n");
+    CHECK_INTEGER(&r, 0);
+    run_dispose(&r);
+}
+
 int main(void)
 {
     test_encoding();
@@ -6700,5 +6831,6 @@ int main(void)
     test_collection();
     test_machine();
     test_multi_value_return();
+    test_walk_shapes();
     return lhat_test_report("test_vm");
 }

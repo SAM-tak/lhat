@@ -3446,19 +3446,15 @@ static void test_coroutines(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // 13.8 has no tuples, so what a walk yields is a table of the pair.
-    LHAT_TEST("and the walk yields a table");
+    // 13.8改: the walk yields the tuple (K, V), so what start() answers is
+    // '(K, V)|nil^' -- a maybe-run no name can hold. The loop is what
+    // discriminates and takes one apart; hand-driving a walk in checked
+    // code has nothing to bind the answer to.
+    LHAT_TEST("and the walk's answer is a maybe-tuple no name can hold");
     check_text(&u,
                "var^ t = { 1, 2 }\n"
-               "var^ pair : t^{} |nil^ = t.iterate^().start()\n");
-    CHECK_CLEAN(&u);
-    unit_dispose(&u);
-
-    LHAT_TEST("and it is not the values the table holds");
-    check_text(&u,
-               "var^ t = { 1, 2 }\n"
-               "var^ pair : number^|nil^ = t.iterate^().start()\n");
-    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
+               "var^ pair = t.iterate^().start()\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_TUPLE_MISPLACED);
     unit_dispose(&u);
 
     // 16.3 lets a written iterate win, which is why the built-in is only
@@ -4204,12 +4200,20 @@ static void test_walking(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // 13.8 has no tuples, so a table's built-in walk yields the pair as a
-    // table -- not the values the table holds.
-    LHAT_TEST("a table walks as pairs");
+    // 16.3 with 13.8改: one name over a table takes the sequence half's
+    // values in order -- 'for^ i from^ 1 to^ the length { t[i] }' written as
+    // a walk. The keyed half is not visited, and no pair exists to receive.
+    LHAT_TEST("one name over a table takes the values");
     check_text(&u,
                "var^ t = { 1, 2 }\n"
-               "for^ pair in^ t { var^ n : number^ = pair }\n");
+               "for^ v in^ t { var^ n : number^ = v }\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("and their type is the elements', not the pair's");
+    check_text(&u,
+               "var^ t = { 1, 2 }\n"
+               "for^ v in^ t { var^ s : string^ = v }\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 

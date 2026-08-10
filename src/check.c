@@ -805,9 +805,14 @@ static LhatType *resolve_qualified_type(Checker *c, const LhatNode *node)
     return simple(c, LHAT_TYPE_UNKNOWN);
 }
 
-// 04 の 2.3: error^ itself, one declaration's set, one kind, or a union of
-// nothing else. 13.8改 asks this of whatever stands beside a tuple in a union.
-static bool is_error_only(const LhatType *type)
+// 13.8改 asks this of whatever stands beside a tuple in a union. The
+// principle is not "errors only": it is that the other arm must be told
+// apart by the tag in the head slot, with a construct that does the telling.
+// An error qualifies (ISERROR, try^/catch^), and so does nil^ (ISNIL and the
+// loop's own isDone; 04 の 11.3's absence) -- which is what types a table's
+// walk, whose resume answers (K, V)|nil^. Anything else has no construct
+// that discriminates it, so '(A, B)|number^' stays unwritable.
+static bool may_stand_beside_tuple(const LhatType *type)
 {
     if (type == NULL) {
         return false;
@@ -816,11 +821,12 @@ static bool is_error_only(const LhatType *type)
         case LHAT_TYPE_ERROR:
         case LHAT_TYPE_ERROR_SET:
         case LHAT_TYPE_ERROR_KIND:
+        case LHAT_TYPE_NIL:
             return true;
         case LHAT_TYPE_UNION:
             for (const LhatTypeList *arm = type->v.composite.arms; arm != NULL;
                  arm = arm->next) {
-                if (!is_error_only(arm->type)) {
+                if (!may_stand_beside_tuple(arm->type)) {
                     return false;
                 }
             }
@@ -859,6 +865,28 @@ static bool contains_error(const LhatType *type)
             // asked for, not one sitting beside the answer.
             return false;
     }
+}
+
+// 13.8改: does a tuple hide in this type -- as itself or as a union arm? A
+// name may bind neither: the union case is a walk's '(K, V)|nil^', which
+// would make the name a maybe-run.
+static bool contains_tuple(const LhatType *type)
+{
+    if (type == NULL) {
+        return false;
+    }
+    if (type->kind == LHAT_TYPE_TUPLE) {
+        return true;
+    }
+    if (type->kind == LHAT_TYPE_UNION) {
+        for (const LhatTypeList *arm = type->v.composite.arms; arm != NULL;
+             arm = arm->next) {
+            if (contains_tuple(arm->type)) {
+                return true;
+            }
+        }
+    }
+    return false;
 }
 
 static LhatType *resolve_type(Checker *c, const LhatNode *node)
@@ -1007,12 +1035,14 @@ static LhatType *resolve_type(Checker *c, const LhatNode *node)
             LhatType *left = resolve_type(c, node->v.binary.left);
             c->tuple_allowed = tuple_allowed;
             LhatType *right = resolve_type(c, node->v.binary.right);
-            // 04 の 3.1: an error is the only thing a tuple may stand beside.
-            // This is what keeps 04 の 8.2 -- an error among the values
-            // rather than around them is the shape 'v, err := f()' needs, and
-            // 8.2 exists to leave it unwritable.
-            if ((lhat_type_tuple_width(left) > 0 && !is_error_only(right)) ||
-                (lhat_type_tuple_width(right) > 0 && !is_error_only(left))) {
+            // 04 の 3.1: what stands beside a tuple has to be discriminable
+            // -- an error or nil^. This keeps 04 の 8.2 all the same: an
+            // error among the values rather than around them is the shape
+            // 'v, err := f()' needs, and 8.2 leaves it unwritable.
+            if ((lhat_type_tuple_width(left) > 0 &&
+                 !may_stand_beside_tuple(right)) ||
+                (lhat_type_tuple_width(right) > 0 &&
+                 !may_stand_beside_tuple(left))) {
                 report(c, node, LHAT_CHECK_ERR_TUPLE_UNION);
             }
             return lhat_type_union(c->result->types, left, right);
@@ -2453,9 +2483,12 @@ static LhatType *infer_binary(Checker *c, const LhatNode *node)
         // there is no expression that is a tuple -- so a call answering
         // several values has no replacement that could stand for them. Said
         // here rather than left to the binding, which would only see that a
-        // union is not a tuple and report the count.
+        // union is not a tuple and report the count. 'catch^ nil^' stays
+        // writable (04 の 4.4's deliberate ignoring): nil^ may stand beside
+        // a tuple, and the result is discarded or discriminated, not bound.
         if (lhat_type_tuple_width(kept) > 0 &&
-            lhat_type_tuple_width(right) != lhat_type_tuple_width(kept)) {
+            lhat_type_tuple_width(right) != lhat_type_tuple_width(kept) &&
+            !may_stand_beside_tuple(right)) {
             report(c, node, LHAT_CHECK_ERR_TUPLE_UNION);
         }
         return lhat_type_union(c->result->types, kept, right);
@@ -2842,49 +2875,78 @@ static LhatType *infer_call(Checker *c, const LhatNode *node)
     return callee->v.func.result;
 }
 
-// 02 § 16.3: what the built-in walk of a table yields. 13.8 has no tuples,
-// so the pair is a table -- position 1 the key, position 2 the value. Both
-// come from what the table holds: 14 章 makes it a sequence and a mapping at
+// 02 § 16.3 with 13.8改: what the built-in walk of a table yields -- the
+// tuple (K, V), position 1 the key, position 2 the value. A tuple rather
+// than the table it used to be: the pair was a table only because 13.8 had
+// no tuples, and a table cost an allocation every step. Both halves come
+// from what the table holds: 14 章 makes it a sequence and a mapping at
 // once, so a walk of one that is both hands over keys of either kind.
-static LhatType *table_walk_pair(Checker *c, const LhatType *over)
+static LhatType *table_walk_tuple(Checker *c, const LhatType *over)
 {
-    LhatType *pair = lhat_type_table(c->result->types);
-    if (over == NULL || over->kind != LHAT_TYPE_TABLE) {
-        return pair;
+    LhatType *keys = NULL;
+    LhatType *values = NULL;
+    if (over != NULL && over->kind == LHAT_TYPE_TABLE) {
+        for (const LhatTypeMember *m = over->v.table.members; m != NULL;
+             m = m->next) {
+            // The sequence half is described by members whose names are
+            // digits, which 01 の 6 章 keeps a program from writing.
+            bool positional = m->name_length > 0;
+            for (size_t i = 0; positional && i < m->name_length; i++) {
+                positional = m->name[i] >= '0' && m->name[i] <= '9';
+            }
+            keys = lhat_type_union(
+                c->result->types, keys,
+                simple(c, positional ? LHAT_TYPE_NUMBER : LHAT_TYPE_STRING));
+            values = lhat_type_union(c->result->types, values, m->type);
+        }
+        // 13.7: an unbounded tail is walked as more positions beyond any
+        // listed, every one of the same element type.
+        if (over->v.table.variadic != NULL) {
+            keys = lhat_type_union(c->result->types, keys,
+                                   simple(c, LHAT_TYPE_NUMBER));
+            values = lhat_type_union(c->result->types, values,
+                                     over->v.table.variadic);
+        }
     }
 
-    LhatType *keys = NULL;
+    // 14.10 lets a table carry more than its type lists, so what is written
+    // down only ever adds to what a walk may hand over -- it never bounds
+    // it. The width is always two, whatever is known about the halves.
+    LhatType *pair = lhat_type_tuple(c->result->types);
+    lhat_type_add_position(c->result->types, pair,
+                           keys != NULL ? keys : simple(c, LHAT_TYPE_UNKNOWN));
+    lhat_type_add_position(c->result->types, pair,
+                           values != NULL ? values
+                                          : simple(c, LHAT_TYPE_UNKNOWN));
+    return pair;
+}
+
+// 02 § 16.3 with 13.8改: what a single name walking a table receives -- the
+// values of the sequence half, in order, the keyed half not visited. The
+// same loop as 'for^ i from^ 1 to^ the length { t[i] }', so the type is the
+// union of the positional members and the unbounded tail; named members are
+// not part of it.
+static LhatType *table_element_type(Checker *c, const LhatType *over)
+{
+    if (over == NULL || over->kind != LHAT_TYPE_TABLE) {
+        return simple(c, LHAT_TYPE_UNKNOWN);
+    }
     LhatType *values = NULL;
     for (const LhatTypeMember *m = over->v.table.members; m != NULL;
          m = m->next) {
-        // The sequence half is described by members whose names are digits,
-        // which 01 の 6 章 keeps a program from writing.
         bool positional = m->name_length > 0;
         for (size_t i = 0; positional && i < m->name_length; i++) {
             positional = m->name[i] >= '0' && m->name[i] <= '9';
         }
-        keys = lhat_type_union(
-            c->result->types, keys,
-            simple(c, positional ? LHAT_TYPE_NUMBER : LHAT_TYPE_STRING));
-        values = lhat_type_union(c->result->types, values, m->type);
+        if (positional) {
+            values = lhat_type_union(c->result->types, values, m->type);
+        }
     }
-    // 13.7: an unbounded tail is walked as more positions beyond any listed,
-    // every one of the same element type.
     if (over->v.table.variadic != NULL) {
-        keys = lhat_type_union(c->result->types, keys,
-                               simple(c, LHAT_TYPE_NUMBER));
-        values =
-            lhat_type_union(c->result->types, values, over->v.table.variadic);
+        values = lhat_type_union(c->result->types, values,
+                                 over->v.table.variadic);
     }
-
-    // 14.10 lets a table carry more than its type lists, so what is written
-    // down only ever adds to what a walk may hand over -- it never bounds it.
-    // With nothing listed there is nothing to say.
-    if (keys != NULL) {
-        lhat_type_add_index_member(c->result->types, pair, 1, keys);
-        lhat_type_add_index_member(c->result->types, pair, 2, values);
-    }
-    return pair;
+    return values != NULL ? values : simple(c, LHAT_TYPE_UNKNOWN);
 }
 
 // 02 の 14.17: every value carries this, the way 05 の 8.5 gives a coroutine
@@ -3172,14 +3234,16 @@ static LhatType *infer_member(Checker *c, const LhatNode *node)
     // after the search, not before it, because 16.3 lets a written iterate
     // win -- the same order the machine reads it in.
     if (builtin_named(name, length, "iterate", plain_table_type(target))) {
-        // 13.8 has no tuples, so a pair is a table. The walk sends nothing
-        // in and ends without a value, which 04 の 11.3 spells nil^.
+        // 13.8改: the pair is the tuple (K, V). The walk sends nothing in
+        // and ends without a value, which 04 の 11.3 spells nil^ -- so what
+        // resume() answers is (K, V)|nil^, the union 13.8改 admits beside
+        // an error's, since nil^ is discriminable off the head slot too.
         //
         // 15.3改: the built-in walk changes nothing, so it is an f^ coroutine
         // -- which is what lets 'for^ k, v in^ t' stand inside an f^ body.
         LhatType *walk = lhat_type_coro(c->result->types,
                                         simple(c, LHAT_TYPE_NIL),
-                                        table_walk_pair(c, target),
+                                        table_walk_tuple(c, target),
                                         simple(c, LHAT_TYPE_NIL), true);
         LhatType *signature = lhat_type_func(c->result->types, true);
         signature->v.func.result = walk;
@@ -5087,6 +5151,12 @@ static void check_define(Checker *c, const LhatNode *node)
                     // makes 'var^ a, b = f(), 0' an error.
                     report(c, value, LHAT_CHECK_ERR_TUPLE_MISPLACED);
                 }
+            } else if (contains_tuple(actual)) {
+                // 13.8改: a union with a tuple arm ('(K, V)|nil^', a walk's
+                // resume) is no more bindable than the tuple itself -- the
+                // name would hold a maybe-run. The loop is what discriminates
+                // and takes one apart; drive the walk with it.
+                report(c, value, LHAT_CHECK_ERR_TUPLE_MISPLACED);
             }
         }
 
@@ -5801,7 +5871,12 @@ static const LhatTypeMember *member_named(const LhatType *type,
 // with a walk over its keys, and anything else by having a member of that
 // name -- the same three infer_member answers for, read off the type here
 // because the loop has no member access written in it to infer.
-static LhatType *walk_produce(Checker *c, const LhatNode *at, LhatType *over)
+// `count` is how many names the focus binds. 16.3 with 13.8改 gives the two
+// forms different meanings over a table -- one name takes the values of the
+// sequence half in order, several take the (K, V) pairs apart -- so what the
+// walk produces depends on which was written.
+static LhatType *walk_produce(Checker *c, const LhatNode *at, LhatType *over,
+                              size_t count)
 {
     if (over != NULL && over->kind == LHAT_TYPE_PENDING) {
         // 03 の 3.1・3.5、P6: walking a still-pending^ expression makes the
@@ -5835,9 +5910,13 @@ static LhatType *walk_produce(Checker *c, const LhatNode *at, LhatType *over)
         return answer->v.func.result->v.coroutine.produce;
     }
 
-    // The built-in walk of a table, whose pairs 13.8 makes tables.
+    // The built-in walk of a table. 13.8改: several names take the (K, V)
+    // pairs; one name takes the sequence half's values, and never visits the
+    // keyed half at all -- 'for^ i from^ 1 to^ the length { t[i] }' written
+    // as a walk.
     if (over->kind == LHAT_TYPE_TABLE || over->kind == LHAT_TYPE_ERROR_KIND) {
-        return table_walk_pair(c, over);
+        return count > 1 ? table_walk_tuple(c, over)
+                         : table_element_type(c, over);
     }
 
     report(c, at, LHAT_CHECK_ERR_NOT_COROUTINE);
@@ -5849,12 +5928,26 @@ static LhatType *walk_produce(Checker *c, const LhatNode *at, LhatType *over)
 // and find nothing in scope.
 static void check_focus(Checker *c, const LhatNode *node)
 {
-    LhatType *produced =
-        walk_produce(c, node->v.loop.bound, infer(c, node->v.loop.bound));
-
     size_t count = 0;
     for (const LhatNode *e = node->v.loop.focus; e != NULL; e = e->next) {
         count++;
+    }
+
+    LhatType *produced = walk_produce(c, node->v.loop.bound,
+                                      infer(c, node->v.loop.bound), count);
+
+    // 13.8改: a tuple has exactly its positions, and each one is a slot the
+    // loop reserved -- said once here rather than once per name below.
+    size_t width = lhat_type_tuple_width(produced);
+    if (width > 0 && count > 1 && count != width) {
+        report(c, node, LHAT_CHECK_ERR_TUPLE_ARITY);
+    }
+    // A single name cannot hold a tuple, over an iterator or anywhere else.
+    // A table never reaches this: walk_produce answered its element type.
+    if (width > 0 && count == 1) {
+        report(c, node, LHAT_CHECK_ERR_TUPLE_MISPLACED);
+        produced = simple(c, LHAT_TYPE_UNKNOWN);
+        width = 0;
     }
 
     size_t position = 0;
@@ -5868,10 +5961,16 @@ static void check_focus(Checker *c, const LhatNode *node)
                                   ? resolve_type(c, element->v.param.type)
                                   : NULL;
 
-        // 13.10 and 16.3: one name takes what was yielded whole, several take
-        // it apart by position.
+        // 13.10 and 16.3: one name takes what was yielded whole, several
+        // take it apart by position. A tuple's positions come off the tuple;
+        // a table's (a user iterator yielding one) off its indexed members.
         LhatType *taken = produced;
-        if (count > 1) {
+        if (count > 1 && width > 0) {
+            taken = lhat_type_tuple_at(produced, position - 1);
+            if (taken == NULL) {
+                taken = simple(c, LHAT_TYPE_UNKNOWN);
+            }
+        } else if (count > 1) {
             const LhatTypeMember *at = lhat_type_member_at(produced, position);
             taken = at != NULL ? at->type : simple(c, LHAT_TYPE_UNKNOWN);
         }
