@@ -5508,6 +5508,85 @@ static void test_relaxed_nil_reference(void)
     unit_dispose(&u);
 }
 
+// 04 の 11.4改 with 01 の 7.1 (S43): the written spelling for reaching through
+// a T|nil^, which 11.4改 names beside narrowing. The target is read without
+// its nil^ arm and the answer gains one, so what these pin is both halves --
+// the access is admitted under strict, and its result still says it may be
+// absent.
+static void test_nil_propagation(void)
+{
+    Unit u;
+
+    LHAT_TEST("'?.' reaches through a T|nil^ under strict");
+    check_text(&u,
+               "var^ f = f^ -> t^{ a : number^ }|nil^ { return^ nil^ }\n"
+               "var^ t = f()\n"
+               "var^ x : number^|nil^ = t?.a\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("and the answer carries the nil^ it may produce");
+    check_text(&u,
+               "var^ f = f^ -> t^{ a : number^ }|nil^ { return^ nil^ }\n"
+               "var^ t = f()\n"
+               "var^ x : number^ = t?.a\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
+    unit_dispose(&u);
+
+    // 11.7: which is what '??' is for -- the pair is the whole idiom.
+    LHAT_TEST("'??' takes the nil^ back off again");
+    check_text(&u,
+               "var^ f = f^ -> t^{ a : number^ }|nil^ { return^ nil^ }\n"
+               "var^ t = f()\n"
+               "var^ x : number^ = t?.a ?? 0\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("'?[' reaches through one the same way");
+    check_text(&u,
+               "var^ f = f^ -> t^{ ...:string^ }|nil^ { return^ nil^ }\n"
+               "var^ t = f()\n"
+               "var^ s : string^ = t?[1] ?? \"\"\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("'?(' reaches through an absent callee");
+    check_text(&u,
+               "var^ f : (f^number^ -> number^;)|nil^ = nil^\n"
+               "var^ n : number^ = f?(1) ?? 0\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // Per link, not per chain (Kotlin reads the same way): 'a?.b' is still a
+    // T|nil^, and 11.4改 refuses to reach through one, so every link carries
+    // its own '?'. Nothing has to know where a chain begins or ends.
+    LHAT_TEST("a chain marks every link");
+    check_text(&u,
+               "var^ f = f^ -> t^{ a : t^{ b : number^ } }|nil^ { return^ nil^ }\n"
+               "var^ t = f()\n"
+               "var^ n : number^ = t?.a.b ?? 0\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_NO_MEMBER);
+    unit_dispose(&u);
+
+    LHAT_TEST("and marking every link is accepted");
+    check_text(&u,
+               "var^ f = f^ -> t^{ a : t^{ b : number^ } }|nil^ { return^ nil^ }\n"
+               "var^ t = f()\n"
+               "var^ n : number^ = t?.a?.b ?? 0\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // 13.11: `narrowable` refuses a '?.' path, so a narrowing recorded for
+    // one name never leaks onto the nil-safe reach through it.
+    LHAT_TEST("a '?.' path is not narrowed");
+    check_text(&u,
+               "var^ f = f^ -> t^{ a : number^|nil^ }|nil^ { return^ nil^ }\n"
+               "var^ t = f()\n"
+               "if^ t?.a != nil^ { var^ n : number^ = t?.a }\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
+    unit_dispose(&u);
+}
+
 // 01 の 2.3改 (S35): the stacked reach, typed. The checker walks the same
 // bindings the machine resolves, so it^^ carries the outer focus's type and
 // this^^ the enclosing subroutine's own.
@@ -5596,5 +5675,6 @@ int main(void)
     test_immutable_bindings();
     test_stacked_hats();
     test_relaxed_nil_reference();
+    test_nil_propagation();
     return lhat_test_report("test_check");
 }

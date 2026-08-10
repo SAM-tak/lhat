@@ -2485,6 +2485,72 @@ static void test_catch_and_try(void)
     run_text(&r, "var^ t = { a := false^ }\nreturn^ t[\"a\"] ?? true^\n");
     CHECK_BOOL(&r, false);
     run_dispose(&r);
+
+    // 04 の 11.4改 with 01 の 7.1 (S43): the '?' access forms answer nil^ for
+    // an absent target rather than reaching into one. Before this they were
+    // parsed and then compiled as ordinary accesses, so they faulted on the
+    // very value they exist to handle.
+    LHAT_TEST("'?.' answers nil^ for an absent target");
+    run_text(&r,
+             "var^ a : t^{ x : number^ }|nil^ = nil^\n"
+             "return^ a?.x ?? 7\n");
+    CHECK_INTEGER(&r, 7);
+    run_dispose(&r);
+
+    LHAT_TEST("and reads the member when one is there");
+    run_text(&r,
+             "var^ a : t^{ x : number^ }|nil^ = { x = 41 }\n"
+             "return^ a?.x ?? 7\n");
+    CHECK_INTEGER(&r, 41);
+    run_dispose(&r);
+
+    LHAT_TEST("'?[' answers nil^ for an absent target");
+    run_text(&r,
+             "var^ t : t^{ ...:number^ }|nil^ = nil^\n"
+             "return^ t?[1] ?? 7\n");
+    CHECK_INTEGER(&r, 7);
+    run_dispose(&r);
+
+    LHAT_TEST("'?(' answers nil^ for an absent callee");
+    run_text(&r,
+             "var^ f : (f^number^ -> number^;)|nil^ = nil^\n"
+             "return^ f?(20) ?? 7\n");
+    CHECK_INTEGER(&r, 7);
+    run_dispose(&r);
+
+    LHAT_TEST("and calls the callee when one is there");
+    run_text(&r,
+             "var^ f : (f^number^ -> number^;)|nil^ ="
+             " f^ n:number^ -> number^ { return^ n * 2 }\n"
+             "return^ f?(21) ?? 7\n");
+    CHECK_INTEGER(&r, 42);
+    run_dispose(&r);
+
+    // The short circuit is the point: an absent target skips what the access
+    // was going to evaluate. Every optional-chaining language reads this way,
+    // and a key or an argument with an effect in it would otherwise run for a
+    // call that never happened.
+    LHAT_TEST("an absent callee evaluates no argument");
+    run_text(&r,
+             "var^ log = { ran = 0 }\n"
+             "var^ f : (f^number^ -> number^;)|nil^ = nil^\n"
+             "var^ side = p^ -> number^ { log.ran := 1 return^ 5 }\n"
+             "f?(side())\n"
+             "return^ log.ran\n");
+    CHECK_INTEGER(&r, 0);
+    run_dispose(&r);
+
+    // 8.2 keeps a bare expression from being a statement, so this one is
+    // bound -- a call is a statement (8.3) and an index is not.
+    LHAT_TEST("an absent target evaluates no key");
+    run_text(&r,
+             "var^ log = { ran = 0 }\n"
+             "var^ t : t^{ ...:number^ }|nil^ = nil^\n"
+             "var^ side = p^ -> number^ { log.ran := 1 return^ 1 }\n"
+             "var^ got = t?[side()]\n"
+             "return^ log.ran\n");
+    CHECK_INTEGER(&r, 0);
+    run_dispose(&r);
 }
 
 // 02 の 10 章 and 12 章: the cleanups, which 5.5 makes one mechanism.

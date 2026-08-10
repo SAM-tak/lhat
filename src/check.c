@@ -546,6 +546,10 @@ static Binding *scope_find_in(Scope *scope, const char *name, size_t length,
                               Scope **found_in);
 static bool scope_within_body(Checker *c, const Scope *found_in);
 static bool is_hostvalue(const LhatType *type);
+// 04 の 11.4改 (S43): what a target offers with its nil^ arm set aside.
+// Written beside the member access it belongs to; infer_call, which stands
+// above that, reads it too.
+static LhatType *without_nil_arm(Checker *c, LhatType *target);
 static LhatType *typeinfo_type(Checker *c);     // 14.16
 static void register_module_type(Checker *c, const char *module_name,
                                  LhatType *exports);  // 05 の 5.3
@@ -2470,6 +2474,12 @@ static bool signature_accepts(const LhatType *func, LhatType *const *args,
 static LhatType *infer_call(Checker *c, const LhatNode *node)
 {
     LhatType *callee = infer(c, node->v.access.target);
+    // 04 の 11.4改, S43: '?(' reaches through a callee that may be absent --
+    // 'f?(x)' where f is (f^…)|nil^. Relaxed steps past a nil^ arm anywhere;
+    // this is the written form that does it under strict too.
+    if (!c->strict || node->v.access.nil_safe) {
+        callee = without_nil_arm(c, callee);
+    }
 
     size_t given = 0;
     for (const LhatNode *arg = node->v.access.argument; arg != NULL;
@@ -2793,6 +2803,42 @@ static bool builtin_named(const char *name, size_t length, const char *word,
     return !hatted_only && length == n && memcmp(name, word, n) == 0;
 }
 
+// 04 の 11.4改 with 01 の 7.1 (S43): the '?' forms are one of the two ways to
+// reach through a T|nil^ -- the other is 13.11's narrowing. Two halves make
+// one: the target is read without its nil^ arm (the strips below), and what
+// comes back gains one, since a nil^ target answers nil^ rather than a
+// member, a position or a call.
+//
+// Per link, not per chain: 'a?.b.c' leaves 'a?.b' a T|nil^, which 11.4改
+// refuses to reach through under strict -- so the writer marks every link,
+// 'a?.b?.c'. Kotlin reads the same way. Nothing here has to know where a
+// chain begins or ends.
+//
+// A p^ call answers nothing (13.2), and nothing unions with nil^ into
+// something -- a nil-safe call of one produces no value either way.
+static LhatType *nil_propagated(Checker *c, const LhatNode *node,
+                                LhatType *answer)
+{
+    if (!node->v.access.nil_safe || answer == NULL ||
+        answer->kind == LHAT_TYPE_NONE) {
+        return answer;
+    }
+    return lhat_type_union(c->result->types, answer, simple(c, LHAT_TYPE_NIL));
+}
+
+// 04 の 11.4改: what a target offers once its nil^ arm is set aside, for the
+// '?' forms and for relaxed's own stepping aside. Answers `target` unchanged
+// when there is no nil^ to remove, or when what is left is still a union of
+// real types -- one of those has no single member type to answer with.
+static LhatType *without_nil_arm(Checker *c, LhatType *target)
+{
+    if (target == NULL || target->kind != LHAT_TYPE_UNION) {
+        return target;
+    }
+    LhatType *bare = without(c, target, simple(c, LHAT_TYPE_NIL));
+    return bare != NULL && bare->kind != LHAT_TYPE_UNION ? bare : target;
+}
+
 static LhatType *infer_member(Checker *c, const LhatNode *node)
 {
     LhatType *target = infer(c, node->v.access.target);
@@ -2822,11 +2868,11 @@ static LhatType *infer_member(Checker *c, const LhatNode *node)
     // strict keeps refusing -- narrowing (isa^, ??, ?.) is the spelling
     // there. Only nil^ is stepped past: a union of two real types still has
     // no one member type to answer with.
-    if (!c->strict && target->kind == LHAT_TYPE_UNION) {
-        LhatType *bare = without(c, target, simple(c, LHAT_TYPE_NIL));
-        if (bare != NULL && bare->kind != LHAT_TYPE_UNION) {
-            target = bare;
-        }
+    //
+    // S43: '?.' is that spelling, so it steps past under strict too -- and
+    // unlike relaxed it says so in the answer (nil_propagated).
+    if (!c->strict || node->v.access.nil_safe) {
+        target = without_nil_arm(c, target);
     }
 
     // 04 の 2.3: every kind carries message and cause without declaring them
@@ -2986,6 +3032,51 @@ static LhatType *infer_member(Checker *c, const LhatNode *node)
     }
 
     report_named(c, node, LHAT_CHECK_ERR_NO_MEMBER, name, length);
+    return simple(c, LHAT_TYPE_UNKNOWN);
+}
+
+// The '[' half of the same. Lifted out of infer's switch so that it reads
+// beside infer_member, which it now shares its nil^ handling with.
+static LhatType *infer_index(Checker *c, const LhatNode *node)
+{
+    LhatType *over = infer(c, node->v.access.target);
+    require_value(c, node->v.access.argument,
+                  infer(c, node->v.access.argument));
+    // 04 の 11.4改, S43: as in infer_member -- relaxed steps past a nil^
+    // arm, and '?[' steps past it under strict as well.
+    if (!c->strict || node->v.access.nil_safe) {
+        over = without_nil_arm(c, over);
+    }
+    // A key written out names one position or one member, so the
+    // table says what is there. 04 の 11.3: a key that is not there
+    // answers nil^ -- but a written one that the type does not
+    // mention says nothing, since 14.10 lets a table carry more than
+    // it declares.
+    const LhatNode *key = node->v.access.argument;
+    if (over != NULL && over->kind == LHAT_TYPE_TABLE && key != NULL &&
+        key->next == NULL) {
+        const LhatTypeMember *found = NULL;
+        if (key->kind == LHAT_NODE_INT) {
+            found = lhat_type_member_at(over, (size_t)key->v.integer.value);
+        } else if (key->kind == LHAT_NODE_STRING) {
+            found = find_member(over, c->lexer->strings + key->v.string.offset,
+                                key->v.string.length);
+        }
+        if (found != NULL) {
+            return found->type;
+        }
+    }
+    // 13.7: every position of an unbounded tail is the one element
+    // type, so a key that did not resolve to one specific position
+    // above still has an answer -- unlike an ordinary table's
+    // members, which need not share one type to union with nil^.
+    if (over != NULL && over->kind == LHAT_TYPE_TABLE &&
+        over->v.table.variadic != NULL) {
+        return lhat_type_union(c->result->types, over->v.table.variadic,
+                               simple(c, LHAT_TYPE_NIL));
+    }
+    // 04 §11.3: a dynamic key may be absent, and absence is not a
+    // failure, so nothing narrower than this is safe here.
     return simple(c, LHAT_TYPE_UNKNOWN);
 }
 
@@ -4145,53 +4236,23 @@ static LhatType *infer_node(Checker *c, const LhatNode *node)
             return simple(c, LHAT_TYPE_BOOL);
         }
 
+        // 04 の 11.4改 (S43): the second half of the '?' forms. Each of the
+        // three reads its target with the nil^ arm set aside; what comes back
+        // gains one here, since an absent target answers nil^ rather than a
+        // member, a position or a call. A narrowed path never reaches
+        // nil_propagated: 13.11's `narrowable` refuses a '?.' path outright.
         case LHAT_NODE_CALL:
-            return infer_call(c, node);
+            return nil_propagated(c, node, infer_call(c, node));
 
         case LHAT_NODE_MEMBER: {
             LhatType *narrowed = narrowed_type(c, node);
-            return narrowed != NULL ? narrowed : infer_member(c, node);
+            return narrowed != NULL
+                       ? narrowed
+                       : nil_propagated(c, node, infer_member(c, node));
         }
 
-        case LHAT_NODE_INDEX: {
-            LhatType *over = infer(c, node->v.access.target);
-            require_value(c, node->v.access.argument,
-                          infer(c, node->v.access.argument));
-            // A key written out names one position or one member, so the
-            // table says what is there. 04 の 11.3: a key that is not there
-            // answers nil^ -- but a written one that the type does not
-            // mention says nothing, since 14.10 lets a table carry more than
-            // it declares.
-            const LhatNode *key = node->v.access.argument;
-            if (over != NULL && over->kind == LHAT_TYPE_TABLE && key != NULL &&
-                key->next == NULL) {
-                const LhatTypeMember *found = NULL;
-                if (key->kind == LHAT_NODE_INT) {
-                    found = lhat_type_member_at(over,
-                                                (size_t)key->v.integer.value);
-                } else if (key->kind == LHAT_NODE_STRING) {
-                    found = find_member(over,
-                                        c->lexer->strings + key->v.string.offset,
-                                        key->v.string.length);
-                }
-                if (found != NULL) {
-                    return found->type;
-                }
-            }
-            // 13.7: every position of an unbounded tail is the one element
-            // type, so a key that did not resolve to one specific position
-            // above still has an answer -- unlike an ordinary table's
-            // members, which need not share one type to union with nil^.
-            if (over != NULL && over->kind == LHAT_TYPE_TABLE &&
-                over->v.table.variadic != NULL) {
-                return lhat_type_union(c->result->types,
-                                       over->v.table.variadic,
-                                       simple(c, LHAT_TYPE_NIL));
-            }
-            // 04 §11.3: a dynamic key may be absent, and absence is not a
-            // failure, so nothing narrower than this is safe here.
-            return simple(c, LHAT_TYPE_UNKNOWN);
-        }
+        case LHAT_NODE_INDEX:
+            return nil_propagated(c, node, infer_index(c, node));
 
         // 11.6, S27: sound rather than a bare relabelling -- 14.12's
         // disjointness rules out what could never succeed at compile time

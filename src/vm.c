@@ -2492,6 +2492,25 @@ static void compile_call(Compiler *c, const LhatNode *node, uint8_t into)
     }
     method = method || super_call;
 
+    // 04 の 11.4改 with 01 の 7.1 (S43): '?(' answers nil^ for an absent
+    // callee instead of calling one. Placed here, after the callee is in
+    // place and before any argument is compiled, so an absent callee
+    // evaluates no argument -- the same short circuit '?.' makes over its
+    // key. The receiver of a method form is already in its slot above; it
+    // was going to be evaluated either way, since it is what the callee was
+    // read out of.
+    size_t past_call = SIZE_MAX;
+    if (node->v.access.nil_safe) {
+        uint8_t test = c->next_register;
+        (void)reserve(c);
+        emit(c, lhat_encode_abc(LHAT_BC_ISNIL, test, callee, 0));
+        size_t to_call = emit_jump(c, LHAT_BC_JUMP_FALSE, test);
+        c->next_register = test;
+        emit(c, lhat_encode_abc(LHAT_BC_LOADNIL, into, 0, 0));
+        past_call = emit_jump(c, LHAT_BC_JUMP, 0);
+        lhat_chunk_patch_here(&c->proto->chunk, to_call);
+    }
+
     size_t count = 0;
     bool spread = false;
     bool wide_args = false;
@@ -2543,6 +2562,11 @@ static void compile_call(Compiler *c, const LhatNode *node, uint8_t into)
                             (uint8_t)count, spread ? 1 : 0));
     // The answer then moves to the destination the same way it was written.
     emit_move_wide(c, into, callee, width_of(node));
+    // S43: where an absent callee's nil^ lands, past everything the call
+    // itself does.
+    if (past_call != SIZE_MAX) {
+        lhat_chunk_patch_here(&c->proto->chunk, past_call);
+    }
     c->next_register = mark;
 }
 
@@ -3100,10 +3124,31 @@ static void compile_expression(Compiler *c, const LhatNode *node, uint8_t into)
             // 05 の 8.9: a host value target takes its width of slots, or
             // the key would land inside its bytes.
             uint8_t target = reserve_for(c, node->v.access.target);
-            uint8_t key = reserve(c);
             compile_expression(c, node->v.access.target, target);
+
+            // 04 の 11.4改 with 01 の 7.1 (S43): '?.' and '?[' answer nil^
+            // for a nil^ target instead of reaching into one. The key is
+            // compiled inside the branch, so an absent target does not
+            // evaluate it -- what a reader expects of a form written to skip
+            // the access, and what the other optional-chaining languages do.
+            size_t past = SIZE_MAX;
+            if (node->v.access.nil_safe) {
+                uint8_t test = c->next_register;
+                (void)reserve(c);
+                emit(c, lhat_encode_abc(LHAT_BC_ISNIL, test, target, 0));
+                size_t to_access = emit_jump(c, LHAT_BC_JUMP_FALSE, test);
+                c->next_register = (uint8_t)(target + 1);
+                emit(c, lhat_encode_abc(LHAT_BC_LOADNIL, into, 0, 0));
+                past = emit_jump(c, LHAT_BC_JUMP, 0);
+                lhat_chunk_patch_here(&c->proto->chunk, to_access);
+            }
+
+            uint8_t key = reserve(c);
             compile_key(c, node, key);
             emit(c, lhat_encode_abc(LHAT_BC_GETINDEX, into, target, key));
+            if (past != SIZE_MAX) {
+                lhat_chunk_patch_here(&c->proto->chunk, past);
+            }
             c->next_register = mark;
             return;
         }
