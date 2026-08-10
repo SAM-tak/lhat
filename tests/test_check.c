@@ -4510,6 +4510,76 @@ static void test_positions(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
+    // 13.10: what is not a table cannot be taken apart.
+    LHAT_TEST("what is not a table cannot be taken apart");
+    check_text(&u, "var^ q, r = unpack^ 1\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
+    unit_dispose(&u);
+
+    check_text(&u, "var^ q, r = unpack^ \"s\"\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
+    unit_dispose(&u);
+
+    // 13.7: any^ is the top, and nothing may be done with one until it is
+    // narrowed -- the same refusal a member of one meets.
+    LHAT_TEST("nor may an any^, until it is narrowed");
+    check_text(&u,
+               "var^ f = f^ x:any^ -> any^ { return^ x }\n"
+               "var^ q, r = unpack^ f(1)\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
+    unit_dispose(&u);
+
+    // 13.10: "左辺の名前の個数と分解できる要素数が合わない場合も誤り".
+    // 14.10's width subtyping is why this is refused rather than allowed: a
+    // type listing two positions is inhabited by values carrying exactly
+    // two, so a bind taking three out of it breaks on one of them. A program
+    // may rely only on what the type promises.
+    LHAT_TEST("a name past the positions the type promises is reported");
+    check_text(&u,
+               "var^ f = f^ -> t^{ number^, string^ } { return^ { 1, \"a\" } }\n"
+               "var^ q, r, s = unpack^ f()\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_UNPACK_ARITY);
+    unit_dispose(&u);
+
+    // The other direction is 13.10 refusing Lua's list adjustment rather
+    // than soundness, but 13.10 makes it an error all the same.
+    LHAT_TEST("and so is a position no name takes");
+    check_text(&u,
+               "var^ f = f^ -> t^{ number^, string^ } { return^ { 1, \"a\" } }\n"
+               "var^ q = unpack^ f()\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_UNPACK_ARITY);
+    unit_dispose(&u);
+
+    LHAT_TEST("a table promising no position at all promises none");
+    check_text(&u,
+               "var^ t : t^ = { 1, 2 }\n"
+               "var^ q, r = unpack^ t\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_UNPACK_ARITY);
+    unit_dispose(&u);
+
+    LHAT_TEST("the same count is not reported");
+    check_text(&u,
+               "var^ f = f^ -> t^{ number^, string^ } { return^ { 1, \"a\" } }\n"
+               "var^ q, r = unpack^ f()\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // 13.7, 14.10改: an unbounded sequence has no number of positions for a
+    // count to disagree with, so neither direction can be reported.
+    LHAT_TEST("an unbounded sequence has no count to disagree with");
+    check_text(&u,
+               "var^ f = f^ -> t^{ ...:number^ } { return^ { 1, 2 } }\n"
+               "var^ q, r, s = unpack^ f()\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // 03 の 3.1: a type nothing has settled is the gap, not an error.
+    LHAT_TEST("and a source still unknown^ is the gap, not an error");
+    check_relaxed_text(&u,
+                       "var^ take = p^ v { var^ q, r = unpack^ v }\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
     // Without the mark the right side is one value per target (13.10), and
     // that path is untouched.
     LHAT_TEST("a multiple definition still pairs the two sides off");

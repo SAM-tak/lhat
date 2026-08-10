@@ -92,6 +92,14 @@ typedef enum {
                         //       which one it is
     LHAT_BC_GETINDEX,   // A B C R[A] = R[B][R[C]]
     LHAT_BC_SETINDEX,   // A B C R[A][R[B]] = R[C]
+    // 02 の 13.10: a destructuring bind reached position B, and R[A] is what
+    // came out. Faults unless something did -- 04 の 11.3 spells absence
+    // nil^, so a position answering nil^ is a position that is not there.
+    //
+    // The checker settles this under strict (13.10 makes a count that does
+    // not agree an error), so this is what relaxed and an unchecked compile
+    // fall to. B is the position, for the reader rather than for the read.
+    LHAT_BC_CHECKPOS,   // A B   R[A] is position B of a destructuring
     LHAT_BC_ADDOVERLOAD,// A B C R[A][R[B]] gains R[C] as another way to call it
     LHAT_BC_OVERRIDEINDEX, // A B C R[A][R[B]] := R[C], ahead of any overload
     // 03 の 5.11c: the same write, once the checker has said which arm is

@@ -3530,6 +3530,13 @@ static void declare_names(Compiler *c, const LhatNode *statements)
             continue;
         }
         const LhatNode *bound_value = s->v.binding.values;
+        // 13.10 with 05 の 8.9: a destructuring spreads one value across the
+        // targets rather than pairing them off, and a table never holds a
+        // host value -- so every name it binds is one slot wide, and the
+        // pairing below has nothing to say about them.
+        if (bound_value != NULL && bound_value->kind == LHAT_NODE_UNPACK) {
+            bound_value = NULL;
+        }
         for (const LhatNode *target = s->v.binding.targets; target != NULL;
              target = target->next) {
             const char *name = NULL;
@@ -3612,9 +3619,97 @@ static void declare_names(Compiler *c, const LhatNode *statements)
 
 // 02 の 8.6: let^ makes a name, and the name is a slot that stays. The slot
 // itself was made by declare_names; this fills it.
+// 02 の 13.10: one value taken apart by position, which is what the mark on
+// the value says and what tells this from a multiple definition. The targets
+// are the ordinary list either way (13.10), paths included.
+//
+// The source is compiled once and read from, since it is one value being
+// spread rather than one per target. Each position comes out the way 16.3's
+// walk takes a pair apart (bind_targets below) -- the two are the same
+// operation, and 13.10 says so.
+static void compile_unpack_define(Compiler *c, const LhatNode *node)
+{
+    const LhatNode *unpack = node->v.binding.values;
+    uint8_t mark = c->next_register;
+    uint8_t source = reserve(c);
+    compile_expression(c, unpack->v.jump.value, source);
+
+    // 03 の 5.11c's channel: the positions the checker accounted for need no
+    // check of their own. Zero under relaxed and on an unchecked compile,
+    // where every one of them is checked instead.
+    uint32_t confirmed = unpack->v.jump.level;
+
+    size_t position = 0;
+    for (const LhatNode *target = node->v.binding.targets; target != NULL;
+         target = target->next) {
+        position++;
+        if (position > LHAT_MAX_LOCALS) {
+            fail(c, LHAT_COMPILE_TOO_COMPLEX);
+            return;
+        }
+        uint8_t inner = c->next_register;
+        uint8_t key = reserve(c);
+        load_constant(c, key, lhat_integer((int64_t)position));
+
+        // 8.8: the place is a member of a table the path reaches, exactly as
+        // in the ordinary define below.
+        if (define_target_is_path(target)) {
+            const LhatNode *last = define_target_name(target);
+            uint8_t owner = reserve(c);
+            uint8_t place = reserve(c);
+            uint8_t slot = reserve(c);
+            compile_path_prefix(c, last->v.access.target, owner);
+            compile_key(c, last, place);
+            emit(c, lhat_encode_abc(LHAT_BC_GETINDEX, slot, source, key));
+            if (position > confirmed) {
+                emit(c, lhat_encode_abc(LHAT_BC_CHECKPOS, slot,
+                                        (uint8_t)position, 0));
+            }
+            emit(c, lhat_encode_abc(LHAT_BC_SETINDEX, owner, place, slot));
+            c->next_register = inner;
+            continue;
+        }
+
+        const char *name = NULL;
+        size_t length = 0;
+        if (!node_name(c, define_target_name(target), &name, &length)) {
+            fail(c, LHAT_COMPILE_UNSUPPORTED);
+            return;
+        }
+        const Local *local = find_local(c, name, length);
+        if (local == NULL) {
+            fail(c, LHAT_COMPILE_UNDEFINED);
+            return;
+        }
+        // 05 の 8.9: a table never holds a host value, so a position taken
+        // out of one is never wide. The backstop is here rather than trusted.
+        if (local->width > 1) {
+            fail(c, LHAT_COMPILE_UNSUPPORTED);
+            return;
+        }
+        // 03 の 4.3, as in the ordinary define: a name an earlier input bound
+        // stops sharing its place before this let^ writes it.
+        if ((size_t)(local - c->locals) < c->session_locals) {
+            emit(c, lhat_encode_abc(LHAT_BC_CLOSEONE, local->reg, 0, 0));
+        }
+        emit(c, lhat_encode_abc(LHAT_BC_GETINDEX, local->reg, source, key));
+        if (position > confirmed) {
+            emit(c, lhat_encode_abc(LHAT_BC_CHECKPOS, local->reg,
+                                    (uint8_t)position, 0));
+        }
+        c->next_register = inner;
+    }
+    c->next_register = mark;
+}
+
 static void compile_define(Compiler *c, const LhatNode *node)
 {
     const LhatNode *value = node->v.binding.values;
+    // 13.10: the mark is on the value, so this is where the two forms part.
+    if (value != NULL && value->kind == LHAT_NODE_UNPACK) {
+        compile_unpack_define(c, node);
+        return;
+    }
     for (const LhatNode *target = node->v.binding.targets; target != NULL;
          target = target->next) {
         // 8.8: the place is a member of a table the path reaches. Everything
@@ -3693,12 +3788,32 @@ static void compile_reassign_parallel(Compiler *c, const LhatNode *node)
     uint8_t mark = c->next_register;
     const LhatNode *value = node->v.binding.values;
 
+    // 13.10: one value spread across every target rather than one for each.
+    // The source is compiled here, once, and each target reads its position
+    // out of it below -- which is also why 13.8's read-everything before
+    // write-everything needs nothing extra of this form: there is one read.
+    //
+    // Every target kind the write pass below handles comes for free that way
+    // -- a name, a '$' specifier, an upvalue, a member of a table.
+    const LhatNode *unpack =
+        value != NULL && value->kind == LHAT_NODE_UNPACK ? value : NULL;
+    uint8_t source = 0;
+    uint32_t confirmed = 0;  // 03 の 5.11c, as in compile_unpack_define
+    if (unpack != NULL) {
+        source = reserve(c);
+        compile_expression(c, unpack->v.jump.value, source);
+        confirmed = unpack->v.jump.level;
+    }
+
+    size_t position = 0;
     for (const LhatNode *target = node->v.binding.targets;
-         target != NULL && value != NULL; target = target->next) {
+         target != NULL && (unpack != NULL || value != NULL);
+         target = target->next) {
         if (count >= LHAT_MAX_LOCALS) {
             fail(c, LHAT_COMPILE_TOO_COMPLEX);
             return;
         }
+        position++;
         PendingWrite *w = &pending[count++];
         w->target = target;
         w->indexed = target->kind == LHAT_NODE_MEMBER ||
@@ -3719,8 +3834,9 @@ static void compile_reassign_parallel(Compiler *c, const LhatNode *node)
 
             // 7.4改, as in the single-target path: the current value comes
             // back through the owner and key already evaluated rather than
-            // from compiling the target again.
-            if (node->v.binding.has_compound_op &&
+            // from compiling the target again. Never a destructuring: 13.10's
+            // mark stands where a value would, so there is no operator on it.
+            if (unpack == NULL && node->v.binding.has_compound_op &&
                 value->kind == LHAT_NODE_BINARY) {
                 LhatOpcode opcode;
                 if (!binary_opcode(value->v.binary.op, &opcode)) {
@@ -3737,6 +3853,20 @@ static void compile_reassign_parallel(Compiler *c, const LhatNode *node)
                 value = value->next;
                 continue;
             }
+        }
+
+        // 13.10: the position this target takes, read the way 16.3's walk
+        // takes a pair apart.
+        if (unpack != NULL) {
+            uint8_t key = reserve(c);
+            load_constant(c, key, lhat_integer((int64_t)position));
+            w->value = reserve(c);
+            emit(c, lhat_encode_abc(LHAT_BC_GETINDEX, w->value, source, key));
+            if (position > confirmed) {
+                emit(c, lhat_encode_abc(LHAT_BC_CHECKPOS, w->value,
+                                        (uint8_t)position, 0));
+            }
+            continue;
         }
 
         // A name has no place to evaluate, so a compound value is compiled
@@ -3817,8 +3947,14 @@ static void compile_reassign(Compiler *c, const LhatNode *node)
     // place it names. There is nothing for it to interleave with, and the
     // common assignment should not pay a move for a promise about a form it
     // is not using.
-    if (node->v.binding.targets != NULL &&
-        node->v.binding.targets->next != NULL) {
+    //
+    // 13.10's destructuring goes the same way whatever the target count: the
+    // two-pass path already writes every kind of place a target can be, and
+    // reading one value by position is what its read pass does there.
+    const LhatNode *values = node->v.binding.values;
+    if ((node->v.binding.targets != NULL &&
+         node->v.binding.targets->next != NULL) ||
+        (values != NULL && values->kind == LHAT_NODE_UNPACK)) {
         compile_reassign_parallel(c, node);
         return;
     }
@@ -7321,6 +7457,21 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
                 break;
             }
 
+            // 02 の 13.10: the position a destructuring bind just read.
+            // 04 の 11.3 spells absence nil^, so a position answering nil^
+            // is a position the value does not have, and 13.10 makes a count
+            // that does not agree an error rather than Lua's list
+            // adjustment. Under strict the checker has already said so and
+            // the compiler leaves this out; this is where relaxed and an
+            // unchecked compile land.
+            case LHAT_BC_CHECKPOS: {
+                if (lhat_is_nil(R(a))) {
+                    return finish(m, chunk, LHAT_RUN_UNPACK_SHORT, lhat_nil(),
+                                  at);
+                }
+                break;
+            }
+
             case LHAT_BC_SETINDEX: {
             set_index:;
                 // 05 の 8.9: 'v.x := n' writes the field's bytes in place --
@@ -8839,6 +8990,8 @@ const char *lhat_run_status_message(LhatRunStatus status)
         case LHAT_RUN_STACK_OVERFLOW:  return "the calls went too deep";
         case LHAT_RUN_OUT_OF_MEMORY:   return "out of memory";
         case LHAT_RUN_BAD_KEY:         return "this cannot be a key";
+        case LHAT_RUN_UNPACK_SHORT:
+            return "this value has no such position to take apart";
         case LHAT_RUN_SEALED:
             return "this table belongs to the machine; what it holds is "
                    "written by the host, not from here";

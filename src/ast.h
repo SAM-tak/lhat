@@ -404,7 +404,15 @@ struct LhatNode {
             // YIELD only. 15.11: written '_yield^', which types exactly as a
             // yield^ does and makes the body yieldable, but never suspends.
             bool phantom;
-            // BREAK only, and never zero -- a plain break^ is one loop.
+            // BREAK: the number of loops to leave, and never zero -- a plain
+            // break^ is one.
+            //
+            // UNPACK (13.10): how many leading positions the checker confirmed
+            // the source type names, so the compiler can leave those
+            // unchecked. Under strict it is all of them or none -- a count
+            // that does not agree is reported rather than compiled. Zero is
+            // what relaxed and an unchecked compile both see, and 5.11a keeps
+            // that a working compile rather than a missing one.
             uint32_t level;
         } jump;
 

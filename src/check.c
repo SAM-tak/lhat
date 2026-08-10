@@ -4800,11 +4800,66 @@ static LhatType *unpacked_source(Checker *c, const LhatNode *values)
 
 // The type at a position of what unpack^ is taking apart. 14.10 lets a table
 // carry more than its type lists, so a position it says nothing about is
-// unknown rather than absent.
+// unknown rather than absent -- what the shape check below makes of that
+// silence is a separate question from what type to give the name.
 static LhatType *unpacked_at(Checker *c, LhatType *source, size_t position)
 {
     const LhatTypeMember *at = lhat_type_member_at(source, position);
     return at != NULL ? at->type : simple(c, LHAT_TYPE_UNKNOWN);
+}
+
+// 13.10: what a destructuring bind may take apart, asked once the targets
+// have been walked and `count` of them are known. Writes onto the unpack^
+// node how many positions the source type accounts for, which is what lets
+// the compiler leave those unchecked (03 の 5.11c's channel).
+//
+// 14.10's width subtyping is the reason to REFUSE a count that does not
+// agree, not a reason to allow one. A type listing two positions is
+// inhabited by values carrying exactly two, so a bind taking three positions
+// out of it breaks on one of them -- the type promises nothing there, and a
+// program may only rely on what the type promises. 13.10 says the same in
+// its own words: what cannot be taken apart can be caught statically, and
+// letting it fall to a runtime nil^ makes a nil^ that slips through
+// everything downstream.
+//
+// Strict only. Under relaxed a written type has not been checked against the
+// value it annotates, so reporting from one would report on programs that
+// run -- and 13.10 already says relaxed falls to the runtime check instead.
+static void check_unpack_shape(Checker *c, const LhatNode *node,
+                               const LhatNode *value, LhatType *source,
+                               size_t count)
+{
+    if (!c->strict || source == NULL) {
+        return;
+    }
+    // 03 の 3.1: a type nothing has settled yet is the gap, not an error.
+    // any^ is not one of those -- 13.7 makes it the top, which nothing may be
+    // done with until it is narrowed, exactly as a member of one is refused.
+    if (source->kind == LHAT_TYPE_UNKNOWN || source->kind == LHAT_TYPE_PENDING) {
+        return;
+    }
+    if (source->kind != LHAT_TYPE_TABLE) {
+        report(c, node, LHAT_CHECK_ERR_MISMATCH);  // 13.10: not a table
+        return;
+    }
+    // 13.7, 14.10改: an unbounded sequence has no number of positions to
+    // disagree with, so neither direction can be reported. The runtime check
+    // is what is left.
+    if (source->v.table.variadic != NULL) {
+        return;
+    }
+    size_t positions = 0;
+    while (lhat_type_member_at(source, positions + 1) != NULL) {
+        positions++;
+    }
+    if (positions != count) {
+        report(c, node, LHAT_CHECK_ERR_UNPACK_ARITY);
+        return;
+    }
+    // Every position is accounted for, so the compiler may leave the lot
+    // unchecked. Written on the unpack^ node itself, which is the one part of
+    // the binding that says a destructuring is happening at all.
+    ((LhatNode *)value)->v.jump.level = (uint32_t)count;
 }
 
 static void check_define(Checker *c, const LhatNode *node)
@@ -4963,6 +5018,10 @@ static void check_define(Checker *c, const LhatNode *node)
         if (unpacked == NULL && value != NULL) {
             value = value->next;
         }
+    }
+
+    if (unpacked != NULL) {
+        check_unpack_shape(c, node, node->v.binding.values, unpacked, position);
     }
 
     if (node->v.binding.exported) {
@@ -5530,6 +5589,10 @@ static void check_reassign(Checker *c, const LhatNode *node)
         }
         // 13.11: what a branch established about this path no longer holds.
         drop_narrowings_for(c, target_name_node(target));
+    }
+
+    if (unpacked != NULL) {
+        check_unpack_shape(c, node, node->v.binding.values, unpacked, position);
     }
 }
 
@@ -6624,6 +6687,9 @@ const char *lhat_check_error_message(LhatCheckErrorCode code)
             return "f^ may call only f^, and this callee is a p^";
         case LHAT_CHECK_ERR_ARITY:
             return "the wrong number of arguments";
+        case LHAT_CHECK_ERR_UNPACK_ARITY:
+            return "this value does not have exactly the positions these "
+                   "names take apart";
         case LHAT_CHECK_ERR_NOT_VARIADIC:
             return "'...' spreads into a variadic tail, and this callee "
                    "takes none";

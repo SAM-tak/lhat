@@ -1213,6 +1213,173 @@ static void test_tables(void)
     run_dispose(&r);
 }
 
+// Whether the chunk carries an instruction of this opcode anywhere. Only the
+// destructuring tests below look at instructions at all -- 5.1 expects the
+// ones chosen to be replaced by specialised ones later, so the rest of this
+// file pins answers. What is pinned here is 03 の 5.11c's channel itself: the
+// checker settling a shape has to leave the check out, and a check that is
+// there or not is not something an answer can show.
+static bool chunk_has_op(const LhatProto *proto, LhatOpcode op)
+{
+    for (size_t i = 0; i < proto->chunk.count; i++) {
+        if (lhat_op(proto->chunk.code[i]) == op) {
+            return true;
+        }
+    }
+    return false;
+}
+
+// 02 の 13.10: one value taken apart by position. The mark is on the value,
+// which is what tells this from a multiple definition -- 13.8 dropped
+// multiple return values, so this is how a subroutine's several values are
+// received.
+static void test_unpack(void)
+{
+    Run r;
+
+    LHAT_TEST("each name takes its own position");
+    run_text(&r,
+             "var^ q, r = unpack^ { 1, \"a\" }\n"
+             "return^ q.tostring^() .. r\n");
+    CHECK_STRING(&r, "1a");
+    run_dispose(&r);
+
+    LHAT_TEST("what 13.8 sends back instead of several values");
+    run_text(&r,
+             "var^ divmod = f^ a:number^, b:number^ {\n"
+             "  return^ { a // b, a % b } }\n"
+             "var^ q, r = unpack^ divmod(7, 2)\n"
+             "return^ q * 10 + r\n");
+    CHECK_INTEGER(&r, 31);
+    run_dispose(&r);
+
+    // The mark says one value is spread, so the value is evaluated once --
+    // not once per name.
+    LHAT_TEST("the source is evaluated once");
+    run_text(&r,
+             "var^ calls = 0\n"
+             "var^ pair = p^ { calls := calls + 1\n"
+             "  return^ { 1, 2 } }\n"
+             "var^ q, r = unpack^ pair()\n"
+             "return^ calls\n");
+    CHECK_INTEGER(&r, 1);
+    run_dispose(&r);
+
+    LHAT_TEST("one name takes position 1");
+    run_text(&r, "var^ q = unpack^ { 9, 8 }\nreturn^ q\n");
+    CHECK_INTEGER(&r, 9);
+    run_dispose(&r);
+
+    // 13.10: the target list is the ordinary one, so 8.8's paths are in it.
+    LHAT_TEST("a path is a target like any other");
+    run_text(&r,
+             "var^ t = { }\n"
+             "var^ t.a, t.b = unpack^ { 1, 2 }\n"
+             "return^ t.a * 10 + t.b\n");
+    CHECK_INTEGER(&r, 12);
+    run_dispose(&r);
+
+    // 8.6: the same form writing names that already exist, which is the
+    // reason 13.10 put the mark on the value rather than on the binding.
+    LHAT_TEST("a reassignment destructures too");
+    run_text(&r,
+             "var^ q = 0\n"
+             "var^ r = 0\n"
+             "q, r := unpack^ { 3, 4 }\n"
+             "return^ q * 10 + r\n");
+    CHECK_INTEGER(&r, 34);
+    run_dispose(&r);
+
+    LHAT_TEST("into a member of a table");
+    run_text(&r,
+             "var^ t = { a := 0, b := 0 }\n"
+             "t.a, t.b := unpack^ { 5, 6 }\n"
+             "return^ t.a * 10 + t.b\n");
+    CHECK_INTEGER(&r, 56);
+    run_dispose(&r);
+
+    // 8.6 is the reason 5.4 shares a place rather than a value: the write
+    // has to reach the outer binding, destructuring or not.
+    LHAT_TEST("into a place an enclosing frame holds");
+    run_text(&r,
+             "var^ q = 0\n"
+             "var^ r = 0\n"
+             "var^ fill = p^ { q, r := unpack^ { 7, 8 } }\n"
+             "fill()\n"
+             "return^ q * 10 + r\n");
+    CHECK_INTEGER(&r, 78);
+    run_dispose(&r);
+
+    LHAT_TEST("and through a scope specifier");
+    run_text(&r,
+             "var^ q = 0\n"
+             "do^ {\n"
+             "  var^ q = 1\n"
+             "  $^q, q := unpack^ { 2, 3 }\n"
+             "}\n"
+             "return^ q\n");
+    CHECK_INTEGER(&r, 2);
+    run_dispose(&r);
+
+    LHAT_TEST("a single target reassignment takes position 1");
+    run_text(&r, "var^ q = 0\nq := unpack^ { 9 }\nreturn^ q\n");
+    CHECK_INTEGER(&r, 9);
+    run_dispose(&r);
+
+    // 13.10 refuses Lua's list adjustment: a name with no position to take
+    // is an error, not a nil^. Nothing checked this compile, so it is the
+    // machine that says so (13.10's relaxed reading).
+    LHAT_TEST("a name with no position to take is an error");
+    run_text(&r, "var^ q, r, s = unpack^ { 1, 2 }\nreturn^ s\n");
+    LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_UNPACK_SHORT);
+    run_dispose(&r);
+
+    LHAT_TEST("and so is one in a reassignment");
+    run_text(&r,
+             "var^ q = 0\nvar^ r = 0\nvar^ s = 0\n"
+             "q, r, s := unpack^ { 1, 2 }\n");
+    LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_UNPACK_SHORT);
+    run_dispose(&r);
+
+    // 13.10: what is not a table cannot be taken apart. The index
+    // instruction already refuses it, so nothing of its own is needed.
+    LHAT_TEST("what is not a table cannot be taken apart");
+    run_text(&r, "var^ q, r = unpack^ 1\n");
+    LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_TYPE_ERROR);
+    run_dispose(&r);
+
+    // 03 の 5.11c: the checker settling the shape is what lets the check go.
+    // 5.11a keeps the unchecked compile working, so both have to be seen.
+    LHAT_TEST("an unchecked compile checks every position");
+    run_text(&r,
+             "var^ f = f^ -> t^{ number^, number^ } { return^ { 1, 2 } }\n"
+             "var^ q, r = unpack^ f()\n");
+    LHAT_CHECK_EQ_INT(r.compiled, LHAT_COMPILE_OK);
+    LHAT_CHECK(chunk_has_op(r.proto, LHAT_BC_CHECKPOS), "checked");
+    run_dispose(&r);
+
+    LHAT_TEST("and a checked one leaves the settled positions alone");
+    run_checked_text(&r,
+                     "var^ f = f^ -> t^{ number^, number^ } {\n"
+                     "  return^ { 1, 2 } }\n"
+                     "var^ q, r = unpack^ f()\n"
+                     "return^ q * 10 + r\n");
+    CHECK_INTEGER(&r, 12);
+    LHAT_CHECK(!chunk_has_op(r.proto, LHAT_BC_CHECKPOS), "no check left");
+    run_dispose(&r);
+
+    // 14.10改, 13.7: an unbounded sequence has no count to settle, so the
+    // check stays even where everything else was checked.
+    LHAT_TEST("an unbounded sequence keeps its checks");
+    run_checked_text(&r,
+                     "var^ f = f^ -> t^{ ...:number^ } { return^ { 1, 2 } }\n"
+                     "var^ q, r = unpack^ f()\n"
+                     "return^ q * 10 + r\n");
+    CHECK_INTEGER(&r, 12);
+    LHAT_CHECK(chunk_has_op(r.proto, LHAT_BC_CHECKPOS), "checked");
+    run_dispose(&r);
+}
+
 // 16.5: repeat^ is the one that carries no focus.
 static void test_repeat(void)
 {
@@ -6520,6 +6687,7 @@ int main(void)
     test_closures();
     test_strings();
     test_tables();
+    test_unpack();
     test_repeat();
     test_for();
     test_loop_clauses();

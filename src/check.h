@@ -41,6 +41,11 @@ typedef enum {
     LHAT_CHECK_ERR_FUNCTION_CALLS_PROCEDURE, // 15.1: f^ may call only f^;
                                               // this callee is a p^
     LHAT_CHECK_ERR_ARITY,               // too few or too many arguments
+    LHAT_CHECK_ERR_UNPACK_ARITY,        // 02 の 13.10: the names to bind and
+                                        // the positions the value has do not
+                                        // agree. Its own spelling rather than
+                                        // ARITY above: a destructuring is not
+                                        // a call, and the two read differently
     LHAT_CHECK_ERR_NOT_VARIADIC,        // 13.7: 'expr...' spreads into a
                                         // variadic tail, and this callee has
                                         // none
