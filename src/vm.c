@@ -3275,8 +3275,18 @@ static void compile_expression(Compiler *c, const LhatNode *node, uint8_t into)
 
         case LHAT_NODE_UNARY: {
             uint8_t mark = c->next_register;
-            uint8_t operand = reserve(c);
+            // 05 の 8.9: a host value operand keeps its width, as everywhere.
+            uint8_t operand = reserve_for(c, node->v.unary.operand);
             compile_expression(c, node->v.unary.operand, operand);
+            // 11.7改2 (S42): 'x?' is '!(x isa^ nil^)' written short, and the
+            // two instructions it needs already exist. NOT reads its operand
+            // before it writes, so into == into is safe.
+            if (node->v.unary.op == LHAT_OP_PRESENT) {
+                emit(c, lhat_encode_abc(LHAT_BC_ISNIL, into, operand, 0));
+                emit(c, lhat_encode_abc(LHAT_BC_NOT, into, into, 0));
+                c->next_register = mark;
+                return;
+            }
             emit(c, lhat_encode_abc(node->v.unary.op == LHAT_OP_NOT
                                         ? LHAT_BC_NOT
                                         : LHAT_BC_NEG,

@@ -1551,6 +1551,22 @@ static LhatNode *parse_postfix(Parser *p)
             continue;
         }
 
+        // 11.7改2 (S42): postfix '?' asks whether the value is not absent --
+        // '!(x isa^ nil^)' written short. Here with the other postfix forms
+        // rather than in parse_unary, so it binds as tightly as they do
+        // (11.6's level 11): 'a.b?' is '(a.b)?'.
+        if (check_op(p, LHAT_OP_PRESENT)) {
+            advance(p);
+            LhatNode *asked = make(p, LHAT_NODE_UNARY, &at);
+            if (asked == NULL) {
+                break;
+            }
+            asked->v.unary.op = LHAT_OP_PRESENT;
+            asked->v.unary.operand = node;
+            node = finish(p, asked);
+            continue;
+        }
+
         break;
     }
     return node;

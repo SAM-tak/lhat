@@ -763,10 +763,39 @@ static void test_operators(void)
     LHAT_CHECK_EQ_INT(s.lexer.diagnostic_count, 0);
     scan_dispose(&s);
 
-    LHAT_TEST("a lone question mark is an error");
+    // 11.7改2 (S42): a lone '?' used to be an error of its own -- the family
+    // was '?.' '?(' '?[' and nothing was allowed to stand alone. It is the
+    // postfix "not absent" operator now, so it lexes like any other.
+    LHAT_TEST("a lone question mark is the postfix operator");
     scan_text(&s, "a ? b");
-    LHAT_CHECK_EQ_INT(s.tokens[1].kind, LHAT_TOKEN_ERROR);
-    LHAT_CHECK_EQ_INT(s.lexer.diagnostics[0].code, LHAT_ERR_LONE_QUESTION_MARK);
+    LHAT_CHECK(is_op(&s.tokens[1], LHAT_OP_PRESENT), "expected ?");
+    LHAT_CHECK_EQ_INT(s.lexer.diagnostic_count, 0);
+    scan_dispose(&s);
+
+    // The table is ordered longest first (maximal munch), so the two-character
+    // spellings still win wherever they can be read -- the postfix form only
+    // ever lands where none of them fits.
+    LHAT_TEST("the two-character '?' spellings still win");
+    scan_text(&s, "a ?? b");
+    LHAT_CHECK(is_op(&s.tokens[1], LHAT_OP_NIL_ELSE), "expected ??");
+    LHAT_CHECK_EQ_INT(s.lexer.diagnostic_count, 0);
+    scan_dispose(&s);
+
+    LHAT_TEST("and the postfix form falls out where they cannot");
+    scan_text(&s, "t? {");
+    LHAT_CHECK_EQ_INT(token_count(&s), 3);
+    LHAT_CHECK_EQ_STR(token_text(&s, 0), token_length(&s, 0), "t");
+    LHAT_CHECK(is_op(&s.tokens[1], LHAT_OP_PRESENT), "expected ?");
+    LHAT_CHECK(is_op(&s.tokens[2], LHAT_OP_LBRACE), "expected {");
+    scan_dispose(&s);
+
+    // 5.1's if-expression form puts a ':' straight after the condition, and
+    // '?:' is not a spelling of anything, so the two split.
+    LHAT_TEST("'?:' splits into the postfix form and the colon");
+    scan_text(&s, "t?:");
+    LHAT_CHECK_EQ_INT(token_count(&s), 3);
+    LHAT_CHECK(is_op(&s.tokens[1], LHAT_OP_PRESENT), "expected ?");
+    LHAT_CHECK(is_op(&s.tokens[2], LHAT_OP_COLON), "expected :");
     scan_dispose(&s);
 }
 

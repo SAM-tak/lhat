@@ -124,6 +124,9 @@ typedef enum {
     LHAT_OP_NIL_CALL,    // ?(
     LHAT_OP_NIL_INDEX,   // ?[
     LHAT_OP_NIL_ELSE,    // ??   value to use when the left side is nil^ (11.7)
+    LHAT_OP_PRESENT,     // ?    postfix: not absent (11.7改2). The rest of the
+                         // '?' family reaches through an absent value; this
+                         // one asks about it and answers bool^
 
     LHAT_OP_AT,          // @
 

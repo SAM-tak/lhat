@@ -1496,52 +1496,59 @@ static void narrow_from(Checker *c, const LhatNode *condition, bool truth)
         return;
     }
 
-    if (condition->kind == LHAT_NODE_UNARY &&
-        condition->v.unary.op == LHAT_OP_NOT) {
-        narrow_from(c, condition->v.unary.operand, !truth);
-        return;
-    }
-
-    if (condition->kind != LHAT_NODE_BINARY) {
-        return;
-    }
-
-    LhatOpKind op = condition->v.binary.op;
-    if ((op == LHAT_OP_AND && truth) || (op == LHAT_OP_OR && !truth)) {
-        narrow_from(c, condition->v.binary.left, truth);
-        narrow_from(c, condition->v.binary.right, truth);
-        return;
-    }
-
-    // 13.11 with 04 の 11.3: two shapes narrow. 'x isa^ T' asks about a type;
-    // '=' / '!=' / 'is^' against the nil^ literal asks about absence, which
-    // 11.3 spells with nil^ and is the first thing anyone writes. Without the
-    // second, 'if^ t != nil^ { t[1] }' passed the condition and then reported
+    // 13.11 with 04 の 11.3: three shapes narrow. 'x isa^ T' asks about a
+    // type; '=' / '!=' / 'is^' against the nil^ literal asks about absence,
+    // which 11.3 spells with nil^ and is the first thing anyone writes; and
+    // 11.7改2's 'x?' is the second of those written short. Without the nil^
+    // ones, 'if^ t != nil^ { t[1] }' passed the condition and then reported
     // against t[1] -- a diagnostic nowhere near its cause.
     const LhatNode *path = NULL;
     LhatType *tested = NULL;
-    // Whether the branch has the path *being* what was tested for. '!=' is
-    // the same question the other way round, exactly as '!' above is.
+    // Whether the branch has the path *being* what was tested for. '!=' and
+    // '?' are the same question the other way round, exactly as '!' is.
     bool holds = truth;
 
-    if (op == LHAT_OP_ISA) {
-        path = condition->v.binary.left;
-        tested = resolve_type(c, condition->v.binary.right);
-    } else if (op == LHAT_OP_EQ || op == LHAT_OP_NE || op == LHAT_OP_IS) {
-        // Either side may carry the literal; the other is the path. 'is^'
-        // rides with '=' because nil^ has one value, so 13.11's closing rule
-        // makes the two always agree -- leaving it out would be a gap with
-        // no reason behind it.
-        if (is_nil_literal(c, condition->v.binary.right)) {
-            path = condition->v.binary.left;
-        } else if (is_nil_literal(c, condition->v.binary.left)) {
-            path = condition->v.binary.right;
-        } else {
+    if (condition->kind == LHAT_NODE_UNARY) {
+        if (condition->v.unary.op == LHAT_OP_NOT) {
+            narrow_from(c, condition->v.unary.operand, !truth);
             return;
         }
+        // 11.7改2 (S42): 'x?' is '!(x isa^ nil^)', so it narrows to exactly
+        // what that would -- the true side without the nil^ arm.
+        if (condition->v.unary.op != LHAT_OP_PRESENT) {
+            return;
+        }
+        path = condition->v.unary.operand;
         tested = simple(c, LHAT_TYPE_NIL);
-        if (op == LHAT_OP_NE) {
-            holds = !truth;
+        holds = !truth;
+    } else if (condition->kind == LHAT_NODE_BINARY) {
+        LhatOpKind op = condition->v.binary.op;
+        if ((op == LHAT_OP_AND && truth) || (op == LHAT_OP_OR && !truth)) {
+            narrow_from(c, condition->v.binary.left, truth);
+            narrow_from(c, condition->v.binary.right, truth);
+            return;
+        }
+        if (op == LHAT_OP_ISA) {
+            path = condition->v.binary.left;
+            tested = resolve_type(c, condition->v.binary.right);
+        } else if (op == LHAT_OP_EQ || op == LHAT_OP_NE || op == LHAT_OP_IS) {
+            // Either side may carry the literal; the other is the path.
+            // 'is^' rides with '=' because nil^ has one value, so 13.11's
+            // closing rule makes the two always agree -- leaving it out
+            // would be a gap with no reason behind it.
+            if (is_nil_literal(c, condition->v.binary.right)) {
+                path = condition->v.binary.left;
+            } else if (is_nil_literal(c, condition->v.binary.left)) {
+                path = condition->v.binary.right;
+            } else {
+                return;
+            }
+            tested = simple(c, LHAT_TYPE_NIL);
+            if (op == LHAT_OP_NE) {
+                holds = !truth;
+            }
+        } else {
+            return;
         }
     } else {
         return;
@@ -4181,6 +4188,15 @@ static LhatType *infer_node(Checker *c, const LhatNode *node)
 
         case LHAT_NODE_UNARY: {
             LhatType *operand = infer(c, node->v.unary.operand);
+            // 11.7改2 (S42): 'x?' is '!(x isa^ nil^)' written short, so it
+            // asks nothing of its operand -- every value either is nil^ or
+            // is not. A type with no nil^ arm answers true^ always, which is
+            // let through rather than reported: 11.7改 takes the same posture
+            // for a '?.' that cannot find an absent target.
+            if (node->v.unary.op == LHAT_OP_PRESENT) {
+                require_value(c, node->v.unary.operand, operand);
+                return simple(c, LHAT_TYPE_BOOL);
+            }
             if (node->v.unary.op == LHAT_OP_NOT) {
                 expect(c, node, operand, simple(c, LHAT_TYPE_BOOL),
                        LHAT_CHECK_ERR_NOT_BOOL);

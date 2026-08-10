@@ -2540,6 +2540,33 @@ static void test_catch_and_try(void)
     CHECK_INTEGER(&r, 0);
     run_dispose(&r);
 
+    // 11.7改2 (S42): the postfix form asks about absence instead of reaching
+    // through it, so it answers bool^ and the '?' family is complete.
+    LHAT_TEST("'?' answers false for an absent value");
+    run_text(&r, "var^ t : number^|nil^ = nil^\nreturn^ t?\n");
+    CHECK_BOOL(&r, false);
+    run_dispose(&r);
+
+    LHAT_TEST("and true for one that is there");
+    run_text(&r, "var^ t : number^|nil^ = 5\nreturn^ t?\n");
+    CHECK_BOOL(&r, true);
+    run_dispose(&r);
+
+    // 11.7 asks about nil^ and nothing else, and so does this -- 5.4 keeps
+    // truthiness out, which is what lets false^ be a value that is there.
+    LHAT_TEST("'?' asks about nil^, not about being false");
+    run_text(&r, "var^ t : bool^|nil^ = false^\nreturn^ t?\n");
+    CHECK_BOOL(&r, true);
+    run_dispose(&r);
+
+    LHAT_TEST("'?' narrows what the branch reads");
+    run_text(&r,
+             "var^ t : number^|nil^ = 41\n"
+             "if^ t? { return^ t + 1 }\n"
+             "return^ 0\n");
+    CHECK_INTEGER(&r, 42);
+    run_dispose(&r);
+
     // 8.2 keeps a bare expression from being a statement, so this one is
     // bound -- a call is a statement (8.3) and an index is not.
     LHAT_TEST("an absent target evaluates no key");

@@ -1023,6 +1023,12 @@ static const OperatorEntry operator_table[] = {
     { "&", 1, LHAT_OP_INTERSECT },
     { ".", 1, LHAT_OP_DOT },
     { "@", 1, LHAT_OP_AT },
+    // 11.7改2 (S42): postfix '?'. Last of the '?' family on purpose -- the
+    // two-character spellings above are matched first, so this one is only
+    // ever reached where none of them can be ('?' before '{', ':', ')', ',',
+    // a newline or a word). '(t?).x' therefore needs its parentheses, which
+    // costs nothing: 14.17's tostring is all a bool^ carries.
+    { "?", 1, LHAT_OP_PRESENT },
 };
 
 static bool match_operator(const LhatLexer *lexer, const OperatorEntry **found)
@@ -1156,11 +1162,6 @@ LhatToken lhat_lexer_next(LhatLexer *lexer)
             advance_n(lexer, entry->length);
             token = finish(lexer, start, LHAT_TOKEN_OP);
             token.v.op = entry->op;
-        } else if (c == '?') {
-            // '?' exists only as part of ?. ?( ?[ and must be glued to them.
-            report(lexer, LHAT_ERR_LONE_QUESTION_MARK);
-            advance(lexer);
-            token = finish(lexer, start, LHAT_TOKEN_ERROR);
         } else {
             report(lexer, LHAT_ERR_UNEXPECTED_CHARACTER);
             advance_n(lexer, (size_t)width);
@@ -1210,8 +1211,6 @@ const char *lhat_lexer_error_message(LhatErrorCode code)
             return "invalid UTF-8 sequence";
         case LHAT_ERR_BARE_HAT:
             return "'^' must directly follow an identifier";
-        case LHAT_ERR_LONE_QUESTION_MARK:
-            return "'?' is only valid as part of '?.', '?(' or '?['";
         case LHAT_ERR_IDENT_AFTER_NUMBER:
             return "a number must be separated from an identifier by whitespace";
         case LHAT_ERR_MALFORMED_NUMBER:

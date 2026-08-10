@@ -1358,6 +1358,48 @@ static void test_narrowing(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
+    // 11.7改2 (S42): 'x?' is '!(x isa^ nil^)' written short, so it narrows
+    // to exactly what that would -- the same machinery, one more spelling.
+    LHAT_TEST("'?' narrows the true branch");
+    check_text(&u,
+               "var^ t : number^|nil^ = nil^\n"
+               "if^ t? { var^ n : number^ = t }\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("and leaves the nil^ on the false side");
+    check_text(&u,
+               "var^ t : number^|nil^ = nil^\n"
+               "if^ t? {\n"
+               "    else^:\n"
+               "        var^ n : nil^ = t\n"
+               "}\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("'!' over it swaps the sides as it does for isa^");
+    check_text(&u,
+               "var^ t : number^|nil^ = nil^\n"
+               "if^ !(t?) { var^ n : nil^ = t }\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("'?' answers bool^ wherever a value is wanted");
+    check_text(&u,
+               "var^ t : number^|nil^ = nil^\n"
+               "var^ b : bool^ = t?\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // 11.7改 takes the same posture for a '?.' whose target cannot be
+    // absent: the answer is known, and saying so is not this checker's job.
+    LHAT_TEST("'?' on something that cannot be absent is let through");
+    check_text(&u,
+               "var^ n : number^ = 1\n"
+               "var^ b : bool^ = n?\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
     // 04 の 6.1: narrowing to a kind is what makes its declared field visible.
     LHAT_TEST("a narrowed error kind shows its fields");
     check_text(&u,

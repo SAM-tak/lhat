@@ -18,7 +18,6 @@ typedef enum {
     LHAT_ERR_UNEXPECTED_CHARACTER,
     LHAT_ERR_INVALID_UTF8,
     LHAT_ERR_BARE_HAT,                   // 2.5
-    LHAT_ERR_LONE_QUESTION_MARK,         // 3.2: '?' only forms ?. ?( ?[
     LHAT_ERR_IDENT_AFTER_NUMBER,         // 10.3 (Q7): '1to^3'
     LHAT_ERR_MALFORMED_NUMBER,           // '0x' with no digits, stray '_'
     LHAT_ERR_MALFORMED_EXPONENT,         // 4.5: 'e' not followed by digits
