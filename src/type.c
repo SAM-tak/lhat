@@ -316,7 +316,7 @@ static bool is_error_type(const LhatType *type)
 // to conform only if some *finite* path through it disagrees, and a finite
 // path would have been walked before the question came back around. Assuming
 // yes and looking for a disagreement elsewhere is what decides the rest. The
-// same convention rt_from_checked_in (vm.c) uses to end its own walk.
+// same convention rt_from_checked(vm.c) uses to end its own walk.
 typedef struct Assumed {
     const LhatType *value;
     const LhatType *target;

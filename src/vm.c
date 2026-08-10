@@ -1574,9 +1574,9 @@ typedef struct RtSeen {
     const struct RtSeen *outer;
 } RtSeen;
 
-static LhatRuntimeType *rt_from_checked_in(LhatHeap *heap,
-                                           const LhatType *type,
-                                           const RtSeen *seen)
+static LhatRuntimeType *rt_from_checked(LhatHeap *heap,
+                                        const LhatType *type,
+                                        const RtSeen *seen)
 {
     if (type == NULL) {
         return NULL;
@@ -1636,7 +1636,7 @@ static LhatRuntimeType *rt_from_checked_in(LhatHeap *heap,
                 if (m == NULL) {
                     break;
                 }
-                if (!lhat_type_rt_add_part(rt, rt_from_checked_in(heap, m->type, seen))) {
+                if (!lhat_type_rt_add_part(rt, rt_from_checked(heap, m->type, seen))) {
                     return NULL;
                 }
                 sequence++;
@@ -1655,12 +1655,12 @@ static LhatRuntimeType *rt_from_checked_in(LhatHeap *heap,
                 }
                 LhatString *name = lhat_string_new(heap, m->name, m->name_length);
                 if (name == NULL ||
-                    !lhat_type_rt_add_member(rt, name, rt_from_checked_in(heap, m->type, seen))) {
+                    !lhat_type_rt_add_member(rt, name, rt_from_checked(heap, m->type, seen))) {
                     return NULL;
                 }
             }
             if (type->v.table.variadic != NULL) {
-                rt->variadic = rt_from_checked_in(heap, type->v.table.variadic, seen);
+                rt->variadic = rt_from_checked(heap, type->v.table.variadic, seen);
             }
             lhat_type_rt_sort_members(rt);
             return rt;
@@ -1674,14 +1674,14 @@ static LhatRuntimeType *rt_from_checked_in(LhatHeap *heap,
             rt->is_function = type->v.func.is_function;
             rt->takes_self = type->v.func.takes_self;
             for (LhatTypeList *p = type->v.func.params; p != NULL; p = p->next) {
-                if (!lhat_type_rt_add_part(rt, rt_from_checked_in(heap, p->type, seen))) {
+                if (!lhat_type_rt_add_part(rt, rt_from_checked(heap, p->type, seen))) {
                     return NULL;
                 }
             }
             if (type->v.func.variadic != NULL) {
-                rt->variadic = rt_from_checked_in(heap, type->v.func.variadic, seen);
+                rt->variadic = rt_from_checked(heap, type->v.func.variadic, seen);
             }
-            rt->result = rt_from_checked_in(heap, type->v.func.result, seen);
+            rt->result = rt_from_checked(heap, type->v.func.result, seen);
             return rt;
         }
 
@@ -1690,9 +1690,9 @@ static LhatRuntimeType *rt_from_checked_in(LhatHeap *heap,
             if (rt == NULL) {
                 return NULL;
             }
-            rt->receive = rt_from_checked_in(heap, type->v.coroutine.receive, seen);
-            rt->produce = rt_from_checked_in(heap, type->v.coroutine.produce, seen);
-            rt->result = rt_from_checked_in(heap, type->v.coroutine.result, seen);
+            rt->receive = rt_from_checked(heap, type->v.coroutine.receive, seen);
+            rt->produce = rt_from_checked(heap, type->v.coroutine.produce, seen);
+            rt->result = rt_from_checked(heap, type->v.coroutine.result, seen);
             rt->is_function = type->v.coroutine.is_function;  // 15.3改
             return rt;
         }
@@ -1713,7 +1713,7 @@ static LhatRuntimeType *rt_from_checked_in(LhatHeap *heap,
             }
             for (LhatTypeList *a = type->v.composite.arms; a != NULL;
                  a = a->next) {
-                if (!lhat_type_rt_add_part(rt, rt_from_checked_in(heap, a->type, seen))) {
+                if (!lhat_type_rt_add_part(rt, rt_from_checked(heap, a->type, seen))) {
                     return NULL;
                 }
             }
@@ -1727,7 +1727,7 @@ static LhatRuntimeType *rt_from_checked_in(LhatHeap *heap,
             }
             for (LhatTypeList *a = type->v.composite.arms; a != NULL;
                  a = a->next) {
-                if (!lhat_type_rt_add_part(rt, rt_from_checked_in(heap, a->type, seen))) {
+                if (!lhat_type_rt_add_part(rt, rt_from_checked(heap, a->type, seen))) {
                     return NULL;
                 }
             }
@@ -1735,11 +1735,6 @@ static LhatRuntimeType *rt_from_checked_in(LhatHeap *heap,
         }
     }
     return NULL;
-}
-
-static LhatRuntimeType *rt_from_checked(LhatHeap *heap, const LhatType *type)
-{
-    return rt_from_checked_in(heap, type, NULL);
 }
 
 // 14.16改 (S36): typeof^ answers the checker's settled type wherever one
@@ -1753,7 +1748,7 @@ static LhatRuntimeType *rt_from_checked(LhatHeap *heap, const LhatType *type)
 //
 // 13.13: a Self^ makes the walk come back to a type it has already read, so
 // the tables on the way in are remembered on the C stack the way
-// rt_from_checked_in remembers its own -- `seen` is NULL at the outermost
+// rt_from_checked remembers its own -- `seen` is NULL at the outermost
 // call. Meeting one again says false: nothing is found here that the first
 // visit will not find.
 static bool mentions_error(const LhatType *type, const RtSeen *seen)
@@ -2701,7 +2696,7 @@ static void compile_subroutine(Compiler *c, const LhatNode *node, uint8_t into)
         // this only fires when return_type itself is absent.
         const LhatType *checked = (const LhatType *)node->checked_type;
         proto->result_type = rt_from_checked(&root_of(c)->proto->chunk.heap,
-                                             checked->v.func.result);
+                                             checked->v.func.result, NULL);
     }
 
     // 15.2, 13.9 (S28): Y and R have no written form at all -- 03 の 5.11a's
@@ -2709,8 +2704,8 @@ static void compile_subroutine(Compiler *c, const LhatNode *node, uint8_t into)
     if (node->v.func.yields && node->checked_type != NULL) {
         const LhatType *checked = (const LhatType *)node->checked_type;
         LhatHeap *owner = &root_of(c)->proto->chunk.heap;
-        proto->yield_produce_type = rt_from_checked(owner, checked->v.func.yield_produce);
-        proto->yield_receive_type = rt_from_checked(owner, checked->v.func.yield_receive);
+        proto->yield_produce_type = rt_from_checked(owner, checked->v.func.yield_produce, NULL);
+        proto->yield_receive_type = rt_from_checked(owner, checked->v.func.yield_receive, NULL);
     }
 
     // 02 の 10.1: a p^ body is a block that may carry a finally^, which is
@@ -2974,7 +2969,7 @@ static void compile_expression(Compiler *c, const LhatNode *node, uint8_t into)
                             checked->kind == LHAT_TYPE_NONE
                         ? lhat_type_rt_new(&c->proto->chunk.heap,
                                            LHAT_TYPE_RT_ANY)
-                        : rt_from_checked(&c->proto->chunk.heap, checked);
+                        : rt_from_checked(&c->proto->chunk.heap, checked, NULL);
                 c->next_register = mark;
                 if (rt == NULL) {
                     fail(c, LHAT_COMPILE_TOO_COMPLEX);
