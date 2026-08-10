@@ -21,6 +21,7 @@ endfunction()
 
 lhat_add_test(test_source)
 lhat_add_test(test_error)
+lhat_add_test(test_number)
 lhat_add_test(test_lexer)
 lhat_add_test(test_parser)
 lhat_add_test(test_type)

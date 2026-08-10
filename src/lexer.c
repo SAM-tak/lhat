@@ -2,10 +2,10 @@
 
 #include "lexer.h"
 
-#include <errno.h>
 #include <stdlib.h>
 #include <string.h>
 
+#include "number.h"
 #include "port.h"
 
 #define LHAT_CP_INVALID 0xFFFFFFFFu
@@ -491,103 +491,28 @@ static LhatToken scan_name_literal(LhatLexer *lexer, Mark start)
 // Numbers (sections 4, 10.1, 10.2, 10.3)
 // ---------------------------------------------------------------------------
 
-// Consumes a run of digits in the given base, allowing '_' only between two
-// digits. Reports how many digits were seen and whether a separator was
-// misplaced.
-static void scan_digit_run(LhatLexer *lexer, int base, size_t *digits, bool *malformed)
-{
-    *digits = 0;
-    *malformed = false;
-
-    bool previous_was_digit = false;
-    for (;;) {
-        char c = current_byte(lexer);
-        if (c == '_') {
-            if (!previous_was_digit || !is_digit_of_base(byte_at(lexer, 1), base)) {
-                *malformed = true;
-            }
-            advance(lexer);
-            previous_was_digit = false;
-            continue;
-        }
-        if (!is_digit_of_base(c, base)) {
-            break;
-        }
-        advance(lexer);
-        (*digits)++;
-        previous_was_digit = true;
-    }
-}
-
+// The grammar itself is number.c's: 02 の 14.17改2 reads it too, and one
+// grammar read two ways is two grammars. What is left here is what a lexer
+// owns -- moving the position, naming the error to a reader, and 10.3's rule
+// about what may follow, which needs the identifier tables that number.c has
+// no business knowing about.
 static LhatToken scan_number(LhatLexer *lexer, Mark start)
 {
-    int base = 10;
-    bool is_float = false;
-    bool malformed = false;
-    size_t digits = 0;
+    LhatNumberLiteral read;
+    lhat_number_literal(lexer->source->text + start.offset,
+                        lexer->source->length - start.offset, lexer->after_dot,
+                        &read);
+    advance_n(lexer, read.length);  // 4.5: what was read stays read
 
-    // Section 10.1: immediately after a '.' the digits form an integer key and
-    // must not swallow a further '.', so no prefix, fraction or exponent is
-    // considered here.
-    if (lexer->after_dot) {
-        bool bad = false;
-        scan_digit_run(lexer, 10, &digits, &bad);
-        malformed = malformed || bad;
-    } else {
-        if (current_byte(lexer) == '0') {
-            char marker = byte_at(lexer, 1);
-            if (marker == 'x' || marker == 'X') {
-                base = 16;
-            } else if (marker == 'b' || marker == 'B') {
-                base = 2;
-            } else if (marker == 'o' || marker == 'O') {
-                base = 8;
-            }
-            if (base != 10) {
-                advance_n(lexer, 2);
-            }
-        }
-
-        bool bad = false;
-        scan_digit_run(lexer, base, &digits, &bad);
-        malformed = malformed || bad;
-
-        if (base == 10) {
-            // Section 10.2: the fraction is taken only when a digit follows the
-            // '.', so "1..2" scans as INT CONCAT INT.
-            if (current_byte(lexer) == '.' && is_decimal_digit(byte_at(lexer, 1))) {
-                advance(lexer);
-                is_float = true;
-                size_t fraction_digits = 0;
-                scan_digit_run(lexer, 10, &fraction_digits, &bad);
-                malformed = malformed || bad;
-            }
-
-            char exponent = current_byte(lexer);
-            if (exponent == 'e' || exponent == 'E') {
-                size_t sign = (byte_at(lexer, 1) == '+' || byte_at(lexer, 1) == '-') ? 1 : 0;
-                if (!is_decimal_digit(byte_at(lexer, 1 + sign))) {
-                    // Section 4.5: no backtracking. Q7 makes "1e^3" illegal
-                    // anyway, so a malformed exponent is simply an error.
-                    advance(lexer);
-                    report_at(lexer, LHAT_ERR_MALFORMED_EXPONENT, (uint32_t)start.offset,
-                              start.line, start.column);
-                    return finish(lexer, start, LHAT_TOKEN_ERROR);
-                }
-                advance_n(lexer, 1 + sign);
-                is_float = true;
-                size_t exponent_digits = 0;
-                scan_digit_run(lexer, 10, &exponent_digits, &bad);
-                malformed = malformed || bad;
-            }
-        }
+    if (read.status == LHAT_NUMBER_BAD_EXPONENT) {
+        report_at(lexer, LHAT_ERR_MALFORMED_EXPONENT, (uint32_t)start.offset,
+                  start.line, start.column);
+        return finish(lexer, start, LHAT_TOKEN_ERROR);
     }
 
-    if (digits == 0) {
-        malformed = true;
-    }
-
-    // Section 10.3 (Q7): "1to^3" is an error; a space is required.
+    // Section 10.3 (Q7): "1to^3" is an error; a space is required. Asked
+    // before the status below, so that "0xg" is a number with a word stuck to
+    // it rather than a malformed one.
     int width;
     uint32_t next = current_cp(lexer, &width);
     if (width > 0 && is_ident_start(next)) {
@@ -603,42 +528,27 @@ static LhatToken scan_number(LhatLexer *lexer, Mark start)
         return finish(lexer, start, LHAT_TOKEN_ERROR);
     }
 
-    size_t length = lexer->pos - start.offset;
-    if (malformed || length >= LHAT_NUMBER_BUFFER) {
+    if (read.status == LHAT_NUMBER_MALFORMED ||
+        read.status == LHAT_NUMBER_TOO_LONG) {
         report_at(lexer, LHAT_ERR_MALFORMED_NUMBER, (uint32_t)start.offset,
                   start.line, start.column);
         return finish(lexer, start, LHAT_TOKEN_ERROR);
     }
 
-    // Strip the '_' separators before handing the text to the C library.
-    char buffer[LHAT_NUMBER_BUFFER];
-    size_t out = 0;
-    size_t from = start.offset;
-    if (base != 10) {
-        from += 2;  // skip the 0x / 0b / 0o marker
+    LhatToken token = finish(
+        lexer, start,
+        read.kind == LHAT_NUMBER_REAL ? LHAT_TOKEN_FLOAT : LHAT_TOKEN_INT);
+    if (read.status == LHAT_NUMBER_OVERFLOW) {
+        report_at(lexer, LHAT_ERR_INTEGER_OVERFLOW, (uint32_t)start.offset,
+                  start.line, start.column);
+        token.kind = LHAT_TOKEN_ERROR;
+        return token;
     }
-    for (size_t i = from; i < lexer->pos; i++) {
-        char c = lexer->source->text[i];
-        if (c != '_') {
-            buffer[out++] = c;
-        }
-    }
-    buffer[out] = '\0';
-
-    LhatToken token = finish(lexer, start, is_float ? LHAT_TOKEN_FLOAT : LHAT_TOKEN_INT);
-    errno = 0;
-    if (is_float) {
-        token.v.real = strtod(buffer, NULL);
+    if (read.kind == LHAT_NUMBER_REAL) {
+        token.v.real = read.real;
     } else {
-        unsigned long long value = strtoull(buffer, NULL, base);
-        if (errno == ERANGE) {
-            report_at(lexer, LHAT_ERR_INTEGER_OVERFLOW, (uint32_t)start.offset,
-                      start.line, start.column);
-            token.kind = LHAT_TOKEN_ERROR;
-            return token;
-        }
-        token.v.integer.value = (uint64_t)value;
-        token.v.integer.base = (uint8_t)base;
+        token.v.integer.value = read.integer;
+        token.v.integer.base = read.base;
     }
     return token;
 }

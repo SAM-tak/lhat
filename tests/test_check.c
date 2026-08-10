@@ -2652,6 +2652,74 @@ static void test_tostring(void)
     unit_dispose(&u);
 }
 
+// 02 の 14.17改2: the same two signatures the other way round, on the one
+// value a number^ can be read out of.
+static void test_tonumber(void)
+{
+    Unit u;
+
+    // The nil^ arm is the type saying what 14.17改2 says: a string^ holding
+    // no number^ is data, so the answer is a number^ or nothing.
+    LHAT_TEST("a string^ answers a number^ or nil^");
+    check_text(&u,
+               "var^ a : number^|nil^ = \"1\".tonumber()\n"
+               "var^ b : number^|nil^ = \"ff\".tonumber(\"%x\")\n"
+               "var^ c : number^|nil^ = \"1\".tonumber^()\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("and the arm has to be dealt with");
+    check_text(&u, "var^ a : number^ = \"1\".tonumber()\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
+    unit_dispose(&u);
+
+    // 11.7's '??' is one of the two ways of dealing with it; 11.4改's
+    // narrowing is the other.
+    LHAT_TEST("'??' is one way of dealing with it");
+    check_text(&u, "var^ a : number^ = \"1\".tonumber() ?? 0\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("the format has to be a string^");
+    check_text(&u, "var^ a : number^|nil^ = \"1\".tonumber(2)\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
+    unit_dispose(&u);
+
+    // 14.12: a call fitting no arm of the intersection is a mismatch, which
+    // is where both of these land -- there is no arm taking two, and none
+    // taking a number^.
+    LHAT_TEST("and a third argument is neither signature");
+    check_text(&u,
+               "var^ a : number^|nil^ = \"1\".tonumber(\"%d\", \"%d\")\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
+    unit_dispose(&u);
+
+    // Reading a value changes nothing, the same as 14.17's tostring.
+    LHAT_TEST("an f^ may call it");
+    check_text(&u,
+               "var^ read = f^ s:string^ -> number^ {\n"
+               "  return^ s.tonumber() ?? 0 }\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // Every value carries tostring; this one only a string^ carries, and the
+    // checker has to say so where the machine does.
+    LHAT_TEST("nothing else carries it");
+    check_text(&u, "var^ a : number^|nil^ = (1).tonumber()\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_NO_MEMBER);
+    unit_dispose(&u);
+
+    check_text(&u, "var^ a : number^|nil^ = nil^.tonumber()\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_NO_MEMBER);
+    unit_dispose(&u);
+
+    LHAT_TEST("and on a table it is a name like any other");
+    check_text(&u,
+               "var^ t = { n := 1 }\nvar^ a : number^|nil^ = t.tonumber^()\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_NO_MEMBER);
+    unit_dispose(&u);
+}
+
 // 02 の 13.7: the variadic collector. '...' inside the body names it, typed
 // as 14.10改's unbounded tail -- a table whose sequence half is one element
 // type repeated, nothing fixed.
@@ -5704,6 +5772,7 @@ int main(void)
     test_typeof();
     test_scope_specifiers();
     test_tostring();
+    test_tonumber();
     test_variadic();
     test_patterns();
     test_modules();

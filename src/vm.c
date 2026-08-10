@@ -10,6 +10,10 @@
 #include "gc.h"
 #include "lhatconfig.h"
 #include "machine.h"
+// 02 の 14.17改2: tonumber reads 01 の 10 章's grammar. number.h is that
+// grammar and nothing else -- no source, no token, no diagnostic -- so the
+// machine carries it without carrying a front end.
+#include "number.h"
 #include "port.h"
 #include "type.h"
 
@@ -6016,6 +6020,12 @@ static bool native_named(LhatValue key, LhatNativeKind *out, bool *hatted)
         *hatted = name->length == 9;
         return true;
     }
+    if ((name->length == 8 && memcmp(name->text, "tonumber", 8) == 0) ||
+        (name->length == 9 && memcmp(name->text, "tonumber^", 9) == 0)) {
+        *out = LHAT_NATIVE_TONUMBER;
+        *hatted = name->length == 9;
+        return true;
+    }
     return false;
 }
 
@@ -6056,6 +6066,10 @@ static bool builtin_member(LhatValue on, LhatValue key, LhatNativeKind *out)
     // 02 の 14.17: whatever the value is, it can be written down.
     if (*out == LHAT_NATIVE_TOSTRING) {
         return true;
+    }
+    // 14.17改2: only a string^ can be read as a number^.
+    if (*out == LHAT_NATIVE_TONUMBER) {
+        return lhat_is_object_kind(on, LHAT_OBJECT_STRING);
     }
     if (lhat_is_object_kind(on, LHAT_OBJECT_COROUTINE)) {
         return true;  // every one of them applies to a coroutine
@@ -7269,12 +7283,15 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
                 if (table == NULL) {
                     // 02 の 14.17: nil^, bool^, number^ and string^ hold no
                     // members of their own, but every value can be written
-                    // down. Nothing else reaches a value that is not a
-                    // table, so this is the whole of what one answers.
+                    // down, and 14.17改2 reads a number^ back out of a
+                    // string^. Nothing else reaches a value that is not a
+                    // table, so these two are the whole of what one answers
+                    // -- iterate stays the table path's, which is where a
+                    // value carrying fields comes through.
                     LhatNativeKind bare;
-                    bool bare_hatted = false;
-                    if (native_named(R(cc), &bare, &bare_hatted) &&
-                        bare == LHAT_NATIVE_TOSTRING) {
+                    if (builtin_member(R(b), R(cc), &bare) &&
+                        (bare == LHAT_NATIVE_TOSTRING ||
+                         bare == LHAT_NATIVE_TONUMBER)) {
                         LhatNative *native =
                             lhat_native_new(&m->objects, bare, R(b));
                         if (native == NULL) {
@@ -7733,6 +7750,56 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
                                           lhat_nil(), at);
                         }
                         SET_R(a, lhat_object((LhatObject *)written));
+                        break;
+                    }
+
+                    // 02 の 14.17改2: the number^ a string^ names, or nil^
+                    // where it names none. Takes nothing, or a format -- the
+                    // same two signatures 14.17's takes, told apart the same
+                    // way, by how many arguments arrived.
+                    if (native->kind == LHAT_NATIVE_TONUMBER) {
+                        if (b > 1) {
+                            return finish(m, chunk, LHAT_RUN_ARITY, lhat_nil(),
+                                          at);
+                        }
+                        // builtin_member only ever binds this to a string^.
+                        const LhatString *subject =
+                            (const LhatString *)lhat_as_object(native->bound);
+                        if (b == 0) {
+                            // 01 の 10 章's own grammar, so what tonumber
+                            // reads and what L^ reads cannot drift apart.
+                            bool is_real = false;
+                            int64_t whole = 0;
+                            double real = 0.0;
+                            if (!lhat_number_read(subject->text,
+                                                  subject->length, &is_real,
+                                                  &whole, &real)) {
+                                SET_R(a, lhat_nil());
+                                break;
+                            }
+                            SET_R(a, is_real ? lhat_real(real)
+                                             : lhat_integer(whole));
+                            break;
+                        }
+                        if (!lhat_is_object_kind(sent, LHAT_OBJECT_STRING)) {
+                            return finish(m, chunk, LHAT_RUN_TYPE_ERROR,
+                                          lhat_nil(), at);
+                        }
+                        const LhatString *spelt =
+                            (const LhatString *)lhat_as_object(sent);
+                        LhatValue number = lhat_nil();
+                        bool got = false;
+                        if (!lhat_number_scan(subject->text, subject->length,
+                                              spelt->text, spelt->length,
+                                              &number, &got)) {
+                            // 14.17 draws the line in the same place: the
+                            // format is the writer's and a bad one is an
+                            // error, where the text is data and a text that
+                            // does not match is simply not a number^.
+                            return finish(m, chunk, LHAT_RUN_BAD_FORMAT,
+                                          lhat_nil(), at);
+                        }
+                        SET_R(a, got ? number : lhat_nil());
                         break;
                     }
 

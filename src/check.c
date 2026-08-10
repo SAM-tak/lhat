@@ -2777,6 +2777,32 @@ static LhatType *builtin_tostring(Checker *c, const LhatType *target)
     return lhat_type_intersect(c->result->types, plain, formatted);
 }
 
+// 02 の 14.17改2: tostring read backwards, carried by the one value a number^
+// can be read out of. The two signatures are shaped exactly as 14.17's and
+// made an intersection for the same reason -- 14.12 forbids them overlapping,
+// and taking none and taking one keeps them apart without a type being asked
+// about.
+//
+// The answer carries a nil^ arm: a string^ holding no number^ is data, not a
+// mistake, so 11.4改's narrowing or 11.7's '??' is what a caller writes. An f^
+// -- reading a value changes nothing.
+static LhatType *builtin_tonumber(Checker *c)
+{
+    LhatType *answer = lhat_type_union(
+        c->result->types, simple(c, LHAT_TYPE_NUMBER), simple(c, LHAT_TYPE_NIL));
+
+    LhatType *plain = lhat_type_func(c->result->types, true);
+    plain->v.func.takes_self = true;
+    plain->v.func.result = answer;
+
+    LhatType *formatted = lhat_type_func(c->result->types, true);
+    formatted->v.func.takes_self = true;
+    lhat_type_add_param(c->result->types, formatted,
+                        simple(c, LHAT_TYPE_STRING));
+    formatted->v.func.result = answer;
+    return lhat_type_intersect(c->result->types, plain, formatted);
+}
+
 // 14.9 with 14.17改: a table nobody made with a def^. Every name on one is
 // the writer's -- vm.c's plain_table asks the same of the value, and the two
 // have to answer alike or the checker would allow what the machine refuses.
@@ -2984,6 +3010,11 @@ static LhatType *infer_member(Checker *c, const LhatNode *node)
         // of their own, and this is the one every value answers.
         if (builtin_named(name, length, "tostring", false)) {
             return builtin_tostring(c, target);
+        }
+        // 14.17改2: and this is the one only a string^ answers.
+        if (target->kind == LHAT_TYPE_STRING &&
+            builtin_named(name, length, "tonumber", false)) {
+            return builtin_tonumber(c);
         }
         report_named(c, node, LHAT_CHECK_ERR_NO_MEMBER, name, length);
         return simple(c, LHAT_TYPE_UNKNOWN);

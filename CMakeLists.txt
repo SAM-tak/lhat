@@ -38,6 +38,10 @@ add_library(lhat
     src/source.c
     src/error.c
     src/token.c
+    # 01 の 10 章 の数値リテラル文法。02 の 14.17改2 の tonumber も読むため、
+    # 字句解析器から切り離してある——バイトコードだけを実行するビルドは
+    # これを持ち、lexer.c 以降を持たない。
+    src/number.c
     src/lexer.c
     src/ast.c
     src/parser.c

@@ -2,6 +2,7 @@
 
 #include "value.h"
 
+#include <limits.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <string.h>
@@ -556,5 +557,164 @@ bool lhat_number_format(LhatValue value, const char *format,
         return false;
     }
     *needed = (size_t)written;
+    return true;
+}
+
+// read_format's sibling, for sscanf rather than snprintf. Beside it rather
+// than folded into it: the two agree on which conversions a number^ may go
+// through and on there being exactly one of them, and disagree on everything
+// around it -- the length modifier a double wants, the flags, the precision.
+// One function taking a flag would be two functions with a seam down it.
+//
+// The rebuilt format ends in "%n" so that the caller can demand the whole
+// text was read. %n is not counted by sscanf's answer, which is why the
+// caller checks both.
+static FormatFamily read_scan_format(const char *format, size_t length,
+                                     char *rebuilt, size_t room,
+                                     char *conversion)
+{
+    *conversion = '\0';
+    size_t out = 0;
+    FormatFamily family = FORMAT_BAD;  // still nothing to read the number into
+
+    for (size_t at = 0; at < length;) {
+        char c = format[at];
+        if (c == '\0') {
+            // sscanf would stop here and the rest would be a lie, so this is
+            // not a format even though the bytes are there.
+            return FORMAT_BAD;
+        }
+        if (c != '%') {
+            if (out + 1 >= room) {
+                return FORMAT_BAD;
+            }
+            rebuilt[out++] = c;
+            at++;
+            continue;
+        }
+        if (at + 1 < length && format[at + 1] == '%') {
+            if (out + 2 >= room) {
+                return FORMAT_BAD;
+            }
+            rebuilt[out++] = '%';
+            rebuilt[out++] = '%';
+            at += 2;
+            continue;
+        }
+        if (family != FORMAT_BAD || out + 1 >= room) {
+            return FORMAT_BAD;  // a second conversion, with one number to read
+        }
+        rebuilt[out++] = '%';
+        at++;
+
+        // Width only. '*' would suppress the assignment and leave the number
+        // unwritten; '.' and the printf flags are not scanf's, so a format
+        // carrying them was never one this could read through.
+        while (at < length && format[at] >= '0' && format[at] <= '9') {
+            if (out + 1 >= room) {
+                return FORMAT_BAD;
+            }
+            rebuilt[out++] = format[at++];
+        }
+        if (at >= length) {
+            return FORMAT_BAD;  // the conversion was never finished
+        }
+
+        char spec = format[at++];
+        switch (spec) {
+            case 'd': case 'i': case 'o': case 'u': case 'x': case 'X':
+                family = FORMAT_INTEGER;
+                if (out + 2 >= room) {
+                    return FORMAT_BAD;
+                }
+                rebuilt[out++] = 'l';
+                rebuilt[out++] = 'l';
+                break;
+            case 'f': case 'F': case 'e': case 'E':
+            case 'g': case 'G': case 'a': case 'A':
+                family = FORMAT_REAL;
+                // Where printf promotes a float to a double and wants no
+                // modifier, scanf writes through a pointer and has to be told
+                // which one. The value is a double, so 'l' it is.
+                if (out + 1 >= room) {
+                    return FORMAT_BAD;
+                }
+                rebuilt[out++] = 'l';
+                break;
+            default:
+                // 's', 'c' and '[' would read text, 'p' an address and 'n' a
+                // count, and none of those is a number^. A length modifier
+                // lands here too: naming a width is not the writer's to do.
+                return FORMAT_BAD;
+        }
+        if (out + 1 >= room) {
+            return FORMAT_BAD;
+        }
+        rebuilt[out++] = spec;
+        *conversion = spec;
+    }
+
+    if (family == FORMAT_BAD || out + 3 >= room) {
+        return FORMAT_BAD;  // nothing asked for the number, or no room for %n
+    }
+    rebuilt[out++] = '%';
+    rebuilt[out++] = 'n';
+    rebuilt[out] = '\0';
+    return family;
+}
+
+bool lhat_number_scan(const char *text, size_t length, const char *format,
+                      size_t format_length, LhatValue *out, bool *read)
+{
+    char rebuilt[LHAT_FORMAT_MAX_BYTES];
+    char conversion = '\0';
+    FormatFamily family = read_scan_format(format, format_length, rebuilt,
+                                           sizeof rebuilt, &conversion);
+    if (family == FORMAT_BAD) {
+        return false;
+    }
+
+    // A count sscanf can always hold: the text may be longer than an int can
+    // say, and one that long was never going to be a single number anyway.
+    if (length > (size_t)INT_MAX) {
+        *read = false;
+        return true;
+    }
+
+    // 'o', 'u', 'x' and 'X' write through an unsigned long long and the other
+    // two through a signed one. The pointer has to be the one the conversion
+    // names, so the two are kept apart here rather than cast together.
+    bool unsigned_read = conversion == 'o' || conversion == 'u' ||
+                         conversion == 'x' || conversion == 'X';
+    int consumed = -1;
+    *read = false;
+    if (family == FORMAT_REAL) {
+        double real = 0.0;
+        if (sscanf(text, rebuilt, &real, &consumed) == 1 &&
+            consumed == (int)length) {
+            *out = lhat_real(real);
+            *read = true;
+        }
+    } else if (unsigned_read) {
+        unsigned long long magnitude = 0;
+        // A number^ is an int64_t (14.8), so one written past its range names
+        // no number^ this can answer with.
+        if (sscanf(text, rebuilt, &magnitude, &consumed) == 1 &&
+            consumed == (int)length &&
+            magnitude <= (unsigned long long)INT64_MAX) {
+            *out = lhat_integer((int64_t)magnitude);
+            *read = true;
+        }
+    } else {
+        long long whole = 0;
+        if (sscanf(text, rebuilt, &whole, &consumed) == 1 &&
+            consumed == (int)length) {
+            *out = lhat_integer((int64_t)whole);
+            *read = true;
+        }
+    }
+    // Whatever is left is a text that did not match, or one that matched a
+    // prefix and left bytes over -- a NUL among them stops sscanf and lands
+    // here as well.
     return true;
 }

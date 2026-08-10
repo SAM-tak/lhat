@@ -296,7 +296,10 @@ typedef enum {
     // thing a program cannot arrange for itself.
     LHAT_NATIVE_COLLECTGARBAGE,
     // 02 の 14.17: every value carries this one, not just a coroutine.
-    LHAT_NATIVE_TOSTRING
+    LHAT_NATIVE_TOSTRING,
+    // 14.17改2: the other way round, and only a string^ carries it -- it is
+    // the one value a number^ can be read out of.
+    LHAT_NATIVE_TONUMBER
 } LhatNativeKind;
 
 typedef struct LhatNative {

@@ -375,6 +375,24 @@ bool lhat_number_format(LhatValue value, const char *format,
                         size_t format_length, char *out, size_t capacity,
                         size_t *needed);
 
+// 02 の 14.17改2: the same format read backwards -- what lhat_number_format
+// writes, this reads. snprintf on one side, sscanf on the other.
+//
+// The format is checked the same way and for the same reason, but against
+// what sscanf spells rather than what snprintf does: the two differ over the
+// length modifier a double wants, and scanf has no precision and no printf
+// flags. '*' is refused there too, where it suppresses the assignment and
+// would leave nothing written.
+//
+// Two answers, because two things can go wrong and they are not the same
+// mistake. False: the format is not one a number^ can be read through -- the
+// writer's error, and *read is untouched. True with *read false: the format
+// was fine and the text did not match it -- data, which 14.17改2 answers
+// nil^ for. True with *read true: *out holds the number^, an integer or a
+// real as 14.8 says the conversion asked for.
+bool lhat_number_scan(const char *text, size_t length, const char *format,
+                      size_t format_length, LhatValue *out, bool *read);
+
 const char *lhat_object_kind_name(LhatObjectKind kind);
 
 #endif  // LHAT_VALUE_H

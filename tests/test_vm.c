@@ -4137,6 +4137,248 @@ static void test_tostring(void)
     run_dispose(&r);
 }
 
+// 02 の 14.17改2: tostring read backwards, and only a string^ carries it. The
+// argument-less form runs 01 の 10 章's own grammar, so most of these are
+// pinning that the literal grammar is what arrived rather than a second one
+// written beside it.
+static void test_tonumber(void)
+{
+    Run r;
+
+    LHAT_TEST("digits are the number they spell");
+    run_text(&r, "return^ \"123\".tonumber()\n");
+    CHECK_INTEGER(&r, 123);
+    run_dispose(&r);
+
+    // 14.8: one type, two representations. Which one a text names is the
+    // literal grammar's answer, not a rounding this makes up.
+    LHAT_TEST("and a fraction is the real the same digits spell");
+    run_text(&r, "return^ \"3.5\".tonumber()\n");
+    CHECK_REAL(&r, 3.5);
+    run_dispose(&r);
+
+    LHAT_TEST("an integer stays an integer, so the two write apart");
+    run_text(&r,
+             "return^ \"3\".tonumber().tostring^() .. \" \" ..\n"
+             "        \"3.0\".tonumber().tostring^()\n");
+    CHECK_STRING(&r, "3 3.0");
+    run_dispose(&r);
+
+    // 01 の 10.1 and 10.2, reached without a word of grammar written here.
+    LHAT_TEST("the bases the literal grammar has");
+    run_text(&r, "return^ \"0xff\".tonumber()\n");
+    CHECK_INTEGER(&r, 255);
+    run_dispose(&r);
+
+    run_text(&r, "return^ \"0b1010\".tonumber()\n");
+    CHECK_INTEGER(&r, 10);
+    run_dispose(&r);
+
+    run_text(&r, "return^ \"0o777\".tonumber()\n");
+    CHECK_INTEGER(&r, 511);
+    run_dispose(&r);
+
+    LHAT_TEST("the separator it allows");
+    run_text(&r, "return^ \"1_000\".tonumber()\n");
+    CHECK_INTEGER(&r, 1000);
+    run_dispose(&r);
+
+    LHAT_TEST("and the exponent, which makes a real of it");
+    run_text(&r, "return^ \"1e3\".tonumber()\n");
+    CHECK_REAL(&r, 1000.0);
+    run_dispose(&r);
+
+    // Section 10 has no sign in it -- '-1' is 11 章's unary minus applied to
+    // a literal -- so tonumber reads the sign itself rather than leaving a
+    // text no writer would call anything but a number unreadable.
+    LHAT_TEST("a sign in front is read");
+    run_text(&r, "return^ \"-5\".tonumber()\n");
+    CHECK_INTEGER(&r, -5);
+    run_dispose(&r);
+
+    run_text(&r, "return^ \"+5\".tonumber()\n");
+    CHECK_INTEGER(&r, 5);
+    run_dispose(&r);
+
+    run_text(&r, "return^ \"-2.5\".tonumber()\n");
+    CHECK_REAL(&r, -2.5);
+    run_dispose(&r);
+
+    LHAT_TEST("but only one, and glued to the digits");
+    run_text(&r, "return^ \"- 5\".tonumber()\n");
+    LHAT_CHECK(lhat_is_nil(r.ran.value), "nil^");
+    run_dispose(&r);
+
+    run_text(&r, "return^ \"--5\".tonumber()\n");
+    LHAT_CHECK(lhat_is_nil(r.ran.value), "nil^");
+    run_dispose(&r);
+
+    LHAT_TEST("whitespace around it is allowed");
+    run_text(&r, "return^ \"  12  \".tonumber()\n");
+    CHECK_INTEGER(&r, 12);
+    run_dispose(&r);
+
+    // Trivia is skipped by the scan, so leaving the trimming to it would
+    // make a comment part of a number. It is not one.
+    LHAT_TEST("a comment beside it is not");
+    run_text(&r, "return^ \"12 # hi\".tonumber()\n");
+    LHAT_CHECK(lhat_is_nil(r.ran.value), "nil^");
+    run_dispose(&r);
+
+    LHAT_TEST("nor is a second number");
+    run_text(&r, "return^ \"1 2\".tonumber()\n");
+    LHAT_CHECK(lhat_is_nil(r.ran.value), "nil^");
+    run_dispose(&r);
+
+    // 14.17改2 answers nil^ rather than faulting: a text holding no number^
+    // is data, and reading data is not a mistake.
+    LHAT_TEST("a text that names no number^ answers nil^");
+    run_text(&r, "return^ \"abc\".tonumber()\n");
+    LHAT_CHECK(lhat_is_nil(r.ran.value), "nil^");
+    run_dispose(&r);
+
+    run_text(&r, "return^ \"\".tonumber()\n");
+    LHAT_CHECK(lhat_is_nil(r.ran.value), "nil^");
+    run_dispose(&r);
+
+    // 10.3 (Q7) refuses this in a unit, and the same refusal arrives here.
+    run_text(&r, "return^ \"12abc\".tonumber()\n");
+    LHAT_CHECK(lhat_is_nil(r.ran.value), "nil^");
+    run_dispose(&r);
+
+    LHAT_TEST("and so does one naming a number no number^ can hold");
+    run_text(&r, "return^ \"99999999999999999999\".tonumber()\n");
+    LHAT_CHECK(lhat_is_nil(r.ran.value), "nil^");
+    run_dispose(&r);
+
+    run_text(&r, "return^ \"9223372036854775808\".tonumber()\n");
+    LHAT_CHECK(lhat_is_nil(r.ran.value), "nil^");
+    run_dispose(&r);
+
+    LHAT_TEST("the far end of the range is held, sign and all");
+    run_text(&r, "return^ \"-9223372036854775808\".tonumber()\n");
+    CHECK_INTEGER(&r, INT64_MIN);
+    run_dispose(&r);
+
+    run_text(&r, "return^ \"9223372036854775807\".tonumber()\n");
+    CHECK_INTEGER(&r, INT64_MAX);
+    run_dispose(&r);
+
+    // 14.17's format written the other way round.
+    LHAT_TEST("a format reads the number through it");
+    run_text(&r, "return^ \"ff\".tonumber(\"%x\")\n");
+    CHECK_INTEGER(&r, 255);
+    run_dispose(&r);
+
+    LHAT_TEST("and matches whatever text was written around it");
+    run_text(&r, "return^ \"n = 42 units\".tonumber(\"n = %d units\")\n");
+    CHECK_INTEGER(&r, 42);
+    run_dispose(&r);
+
+    LHAT_TEST("the two are a pair -- what one writes the other reads");
+    run_text(&r, "return^ (255).tostring(\"%x\").tonumber(\"%x\")\n");
+    CHECK_INTEGER(&r, 255);
+    run_dispose(&r);
+
+    // 14.8: the conversion decides the reading, on this side too.
+    LHAT_TEST("a real conversion answers a real");
+    run_text(&r, "return^ \"3.5\".tonumber(\"%f\")\n");
+    CHECK_REAL(&r, 3.5);
+    run_dispose(&r);
+
+    run_text(&r, "return^ \"3\".tonumber(\"%f\").tostring^()\n");
+    CHECK_STRING(&r, "3.0");
+    run_dispose(&r);
+
+    LHAT_TEST("text the format does not match is nil^, not an error");
+    run_text(&r, "return^ \"zz\".tonumber(\"%x\")\n");
+    LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_OK);
+    LHAT_CHECK(lhat_is_nil(r.ran.value), "nil^");
+    run_dispose(&r);
+
+    LHAT_TEST("nor does a match that leaves bytes over count");
+    run_text(&r, "return^ \"42 units\".tonumber(\"%d\")\n");
+    LHAT_CHECK(lhat_is_nil(r.ran.value), "nil^");
+    run_dispose(&r);
+
+    // The other half of 14.17's line: the format is the writer's, so a bad
+    // one is the writer's mistake and faults where a bad text does not.
+    LHAT_TEST("a format a number^ cannot be read through is an error");
+    run_text(&r, "return^ \"1\".tonumber(\"%s\")\n");
+    LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_BAD_FORMAT);
+    run_dispose(&r);
+
+    run_text(&r, "return^ \"1 2\".tonumber(\"%d %d\")\n");
+    LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_BAD_FORMAT);
+    run_dispose(&r);
+
+    run_text(&r, "return^ \"1\".tonumber(\"plain\")\n");
+    LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_BAD_FORMAT);
+    run_dispose(&r);
+
+    // scanf reads '*' as "match it and assign nothing", which would leave no
+    // number at all, and has no precision to read '.' as.
+    run_text(&r, "return^ \"1\".tonumber(\"%*d\")\n");
+    LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_BAD_FORMAT);
+    run_dispose(&r);
+
+    run_text(&r, "return^ \"1\".tonumber(\"%.2f\")\n");
+    LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_BAD_FORMAT);
+    run_dispose(&r);
+
+    run_text(&r, "return^ \"1\".tonumber(\"%ld\")\n");
+    LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_BAD_FORMAT);
+    run_dispose(&r);
+
+    LHAT_TEST("a width is the one thing scanf carries that this passes on");
+    run_text(&r, "return^ \"1234\".tonumber(\"%2d34\")\n");
+    CHECK_INTEGER(&r, 12);
+    run_dispose(&r);
+
+    LHAT_TEST("'%%' is a per cent sign the writer wanted");
+    run_text(&r, "return^ \"50%\".tonumber(\"%d%%\")\n");
+    CHECK_INTEGER(&r, 50);
+    run_dispose(&r);
+
+    LHAT_TEST("an unsigned conversion stops at what a number^ can hold");
+    run_text(&r, "return^ \"ffffffffffffffff\".tonumber(\"%x\")\n");
+    LHAT_CHECK(lhat_is_nil(r.ran.value), "nil^");
+    run_dispose(&r);
+
+    LHAT_TEST("a third argument is neither of the two signatures");
+    run_text(&r, "return^ \"1\".tonumber(\"%d\", \"%d\")\n");
+    LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_ARITY);
+    run_dispose(&r);
+
+    LHAT_TEST("the format has to be a string^");
+    run_text(&r, "return^ \"1\".tonumber(2)\n");
+    LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_TYPE_ERROR);
+    run_dispose(&r);
+
+    // 14.17改's table: a string^ is a value a writer cannot add names to, so
+    // both spellings reach the built-in there.
+    LHAT_TEST("the hat spelling reaches the same built-in");
+    run_text(&r, "return^ \"7\".tonumber^()\n");
+    CHECK_INTEGER(&r, 7);
+    run_dispose(&r);
+
+    // Only a string^ carries it -- it is the one value a number^ can be read
+    // out of, where every value can be written down.
+    LHAT_TEST("nothing else carries it");
+    run_text(&r, "return^ (1).tonumber()\n");
+    LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_TYPE_ERROR);
+    run_dispose(&r);
+
+    run_text(&r, "return^ nil^.tonumber()\n");
+    LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_TYPE_ERROR);
+    run_dispose(&r);
+
+    LHAT_TEST("and on a table it is a name like any other");
+    run_text(&r, "return^ { n := 1 }.tonumber^ isa^ nil^\n");
+    CHECK_BOOL(&r, true);
+    run_dispose(&r);
+}
+
 // 01 の 8 章: a scope specifier starts the search further out. What the
 // compiler counts as one scope has to be what the checker counts, or the
 // name a program was checked against is not the one it reaches -- so these
@@ -6289,6 +6531,7 @@ int main(void)
     test_stacked_hats_compile();
     test_typeof();
     test_tostring();
+    test_tonumber();
     test_scope_specifiers();
     test_interpolation();
     test_variadic();
