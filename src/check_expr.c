@@ -764,11 +764,13 @@ LhatType *chk_infer_call(Checker *c, const LhatNode *node)
         skip = 1;
     }
 
-    // 13.7: 'expr...' as the last argument spreads a collected table back
-    // into the variadic tail. It stands for zero or more of the callee's
-    // own, so what came before it has to be exactly the fixed arguments --
-    // 'declared' does not count the variadic one (v.func.variadic is kept
-    // apart from `params`, the same way self^ is).
+    // 13.7: 'expr...' as the last argument spreads a collected table -- or a
+    // tuple -- back into the variadic tail. It stands for zero or more of the
+    // callee's own, so what comes before it owes the fixed arguments and may
+    // then write as many of the variadic ones as it likes: `print("a", ...)`
+    // reads as the tail beginning with "a". 'declared' does not count the
+    // variadic one (v.func.variadic is kept apart from `params`, the same way
+    // self^ is).
     const LhatNode *last_arg = node->v.access.argument;
     while (last_arg != NULL && last_arg->next != NULL) {
         last_arg = last_arg->next;
@@ -783,7 +785,7 @@ LhatType *chk_infer_call(Checker *c, const LhatNode *node)
         if (callee->v.func.variadic == NULL) {
             chk_report(c, last_arg, LHAT_CHECK_ERR_NOT_VARIADIC);
         }
-        if (given != declared) {
+        if (given < declared) {
             chk_report(c, node, LHAT_CHECK_ERR_ARITY);
         }
     } else if (given < declared ||

@@ -491,6 +491,17 @@ static void test_tuple_spread(void)
     CHECK_INTEGER(&r, 30);
     run_dispose(&r);
 
+    LHAT_TEST("values written into the tail may lead it");
+    run_checked_text(&r,
+                     "var^ f = f^ -> (number^, number^) { return^ 10, 20 }\n"
+                     "var^ sum = f^ ...:number^ -> number^ {\n"
+                     "  var^ total = 0\n"
+                     "  for^ x in^ ... { total := total + x }\n"
+                     "  return^ total }\n"
+                     "return^ sum(1, 2, f()...)\n");
+    CHECK_INTEGER(&r, 33);
+    run_dispose(&r);
+
     LHAT_TEST("and takes its place after the fixed arguments");
     run_checked_text(&r,
                      "var^ f = f^ -> (number^, number^) { return^ 10, 20 }\n"

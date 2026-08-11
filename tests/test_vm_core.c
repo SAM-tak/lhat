@@ -1058,6 +1058,23 @@ static void test_variadic(void)
     CHECK_INTEGER(&r, 106);
     run_dispose(&r);
 
+    // 13.7: what leads the spread owes the fixed arguments and no more, so
+    // the values beyond them join the tail the spread continues. Here the
+    // callee has no fixed arguments at all -- print's shape.
+    LHAT_TEST("values written into the tail may lead the spread");
+    run_text(&r,
+             "var^ sum = f^ ...:number^ -> number^ {\n"
+             "  var^ total = 0\n"
+             "  for^ i, x in^ ... { total := total + x }\n"
+             "  return^ total\n"
+             "}\n"
+             "var^ wrap = f^ ...:number^ -> number^ {\n"
+             "  return^ sum(10, 20, ...)\n"
+             "}\n"
+             "return^ wrap(1, 2, 3)\n");
+    CHECK_INTEGER(&r, 36);
+    run_dispose(&r);
+
     // 02 の 14.16: typeof^ reconstructs the signature, including the tail.
     LHAT_TEST("typeof^ reflects a variadic signature");
     run_text(&r,

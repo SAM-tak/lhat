@@ -408,6 +408,37 @@ static void test_variadic(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
+    // What leads a spread owes the fixed arguments and no more. Beyond them
+    // the values written join the tail the spread continues, which is the
+    // only way to write `print("a", ...)` -- print declares no fixed ones.
+    LHAT_TEST("values written into the tail may lead a spread");
+    check_text(&u,
+               "var^ inner = f^ ...:number^ -> number^ { return^ 0 }\n"
+               "var^ outer = f^ ...:number^ -> number^ {\n"
+               "  return^ inner(10, 20, ...)\n"
+               "}\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("and they are matched against the variadic type");
+    check_text(&u,
+               "var^ inner = f^ ...:number^ -> number^ { return^ 0 }\n"
+               "var^ outer = f^ ...:number^ -> number^ {\n"
+               "  return^ inner(\"a\", ...)\n"
+               "}\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
+    unit_dispose(&u);
+
+    LHAT_TEST("a spread does not stand in for a missing fixed argument");
+    check_text(&u,
+               "var^ inner = f^ base:number^, tag:string^, ...:number^ "
+               "-> number^ { return^ base }\n"
+               "var^ outer = f^ ...:number^ -> number^ {\n"
+               "  return^ inner(1, ...)\n"
+               "}\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_ARITY);
+    unit_dispose(&u);
+
     // 13.8改: the same spelling over a tuple. Unlike a table, whose tail is
     // one element type, each position is matched against the variadic type on
     // its own -- so a mixed tuple is refused at the position that does not fit
