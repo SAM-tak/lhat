@@ -795,6 +795,54 @@ static void test_coroutines(void)
     CHECK_INTEGER(&r, 123);
     run_dispose(&r);
 
+    // 15.8 with 13.8改: what the inner body yields may be a tuple, and the
+    // loop cannot say its width -- a yieldall^ has no count of names to read
+    // one off, the way a for^ does. So the run travels through the frame's
+    // answer room and the loop forwards it whole. Before this it was
+    // refused: the checker took the inner's produce type as its own, and
+    // then the machine faulted on a width nobody had reserved.
+    LHAT_TEST("yieldall^ forwards a tuple the inner body yields");
+    run_checked_text(&r,
+                     "var^ g = p^ { yield^ 1, 2  yield^ 3, 4 }\n"
+                     "var^ d = p^ { yieldall^ g() }\n"
+                     "var^ total = 0\n"
+                     "for^ a, b in^ d() { total := total + a * 10 + b }\n"
+                     "return^ total\n");
+    CHECK_INTEGER(&r, 12 + 34);
+    run_dispose(&r);
+
+    LHAT_TEST("and goes on yielding tuples of its own afterwards");
+    run_checked_text(&r,
+                     "var^ g = p^ { yield^ 1, 2  yield^ 3, 4 }\n"
+                     "var^ d = p^ { yieldall^ g()  yield^ 5, 6 }\n"
+                     "var^ total = 0\n"
+                     "for^ a, b in^ d() { total := total + a * 10 + b }\n"
+                     "return^ total\n");
+    CHECK_INTEGER(&r, 12 + 34 + 56);
+    run_dispose(&r);
+
+    // A chain hands the run along one answer room at a time, so a middle
+    // link is not a special case.
+    LHAT_TEST("a chain of delegations forwards it too");
+    run_checked_text(&r,
+                     "var^ g = p^ { yield^ 1, 2  yield^ 3, 4 }\n"
+                     "var^ m = p^ { yieldall^ g() }\n"
+                     "var^ d = p^ { yieldall^ m() }\n"
+                     "var^ total = 0\n"
+                     "for^ a, b in^ d() { total := total + a * 10 + b }\n"
+                     "return^ total\n");
+    CHECK_INTEGER(&r, 12 + 34);
+    run_dispose(&r);
+
+    LHAT_TEST("the width is whatever the inner body said, not two");
+    run_checked_text(&r,
+                     "var^ g = p^ { yield^ 1, 2, 3 }\n"
+                     "var^ d = p^ { yieldall^ g() }\n"
+                     "for^ a, b, c in^ d() { return^ a + b + c }\n"
+                     "return^ 0\n");
+    CHECK_INTEGER(&r, 6);
+    run_dispose(&r);
+
     // 15.8: the value of the delegation is the inner one's return value, the
     // shape PEP 380 gave a generator's return.
     LHAT_TEST("the value of yieldall^ is the inner return");

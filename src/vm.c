@@ -1168,8 +1168,12 @@ static WalkStep step_table_walk(Machine *m, LhatCoroutine *co, WalkMode mode,
         return WALK_TOOK;
     }
 
-    // WALK_AS_ANSWER: the positions ride the frame's answer room -- a root,
-    // so the collector sees them -- and only the head sits in the slot.
+    // WALK_AS_ANSWER: the positions ride the frame's answer room and only
+    // the head sits in the slot, which is what the YIELD of 15.8's
+    // delegation loop forwards. They stay reachable while they sit there
+    // through the table being walked, which the walk holds and the loop
+    // holds in a register -- not through the room itself, which gc.c walks
+    // only for a frame whose answer is a run.
     frame->answer_run[1] = key.as;
     frame->answer_tags[1] = (uint8_t)key.tag;
     frame->answer_run[2] = value.as;
@@ -3056,10 +3060,12 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
                 // below), since a resume sends one.
                 //
                 // b == 0 with a run head in the slot is 15.8's delegation
-                // loop forwarding a walk's pair: the positions are already
-                // in this frame's answer room, put there by the RESUME just
-                // above (WALK_AS_ANSWER), so there is nothing to fill and
-                // the head goes out as it stands.
+                // loop forwarding what it was handed: the positions are
+                // already in this frame's answer room, put there by the
+                // RESUME just above -- by WALK_AS_ANSWER for a table's walk,
+                // or by the inner body's own yield collating into it -- so
+                // there is nothing to fill and the head goes out as it
+                // stands.
                 if (b != 0) {
                     if ((size_t)b > LHAT_MAX_TUPLE) {
                         return finish(m, chunk, LHAT_RUN_TUPLE_ARITY,
@@ -3127,7 +3133,32 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
                 rbase = frame->base;
                 chunk = &frame->closure->proto->chunk;
                 pc = frame->pc;
-                if (lhat_is_run(value)) {
+                if (lhat_is_run(value) && reserved == 0) {
+                    // 15.8: the resumer is a delegation loop, which reserved
+                    // one slot because it could not know this width (see
+                    // RESUME). The head goes in that slot and the positions
+                    // into the resumer's own answer room -- which is exactly
+                    // where the YIELD it runs next reads a run's positions
+                    // from, so the run is forwarded outwards untouched, and
+                    // a chain of delegations hands it along one room at a
+                    // time.
+                    //
+                    // The positions are safe across the collections the
+                    // instructions between here and that YIELD may take: the
+                    // loop holds the coroutine in a register for as long as
+                    // it drives it, the yield above has just copied its
+                    // registers into it, and everything yielded came from
+                    // there. Reachability is through the coroutine, not
+                    // through this room -- gc.c only walks the room for a
+                    // frame whose answer is a run, which is a return in
+                    // progress and not this.
+                    size_t positions = lhat_run_width(value);
+                    for (size_t i = 0; i < positions; i++) {
+                        frame->answer_run[i + 1] = out_run[i + 1];
+                        frame->answer_tags[i + 1] = out_tags[i + 1];
+                    }
+                    lhat_slots_set(m->slots, rbase + into, value);
+                } else if (lhat_is_run(value)) {
                     // 13.8改: laid out as a head slot naming the width plus
                     // the positions, exactly as a returned tuple is. 13.9's
                     // 'union(Y, T)' is what the resumer holds, and the head's
@@ -3250,9 +3281,17 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
                 called->result = a;
                 // 13.8改: what the resume reserved for the answer -- a loop
                 // driving a tuple-yielding body says its width here, and the
-                // yield's placement reads it (15.4). Everything else takes
-                // one value back, as a resume always did.
-                called->prepared = cc >= 3 ? cc : 1;
+                // yield's placement reads it (15.4).
+                //
+                // 15.8: zero is the delegation loop, and means "whatever
+                // width comes, forward it". It cannot say a width: unlike a
+                // for^, whose count of names is syntax (03 の 4.2), a
+                // yieldall^ would have to read the inner body's type to know
+                // one, and an unchecked compile has no type to read. So the
+                // width is settled where it is known -- at the yield -- and
+                // the run travels through this frame's answer room rather
+                // than through slots it never reserved.
+                called->prepared = cc >= 3 ? cc : (cc == 0 ? 0 : 1);
                 called->coroutine = co;
                 called->disposing = false;
                 called->derive = LHAT_FRAME_NO_DERIVE;
