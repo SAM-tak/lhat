@@ -1260,12 +1260,13 @@ static bool breaks_out_from(const LhatNode *node, uint32_t depth)
                 break;
 
             case LHAT_NODE_FOR:
-                // 16.3 and 17 章: the if^ and when^ forms do not iterate, so
-                // a break^ inside one still leaves the loop out here. Every
+                // 16.3 and 17 章: the if^, when^ and do^ forms do not iterate,
+                // so a break^ inside one still leaves the loop out here. Every
                 // other form is a loop, and standing inside it is one more
                 // loop for a level to count past.
                 if (node->v.loop.kind == LHAT_FOR_IF ||
-                    node->v.loop.kind == LHAT_FOR_WHEN) {
+                    node->v.loop.kind == LHAT_FOR_WHEN ||
+                    node->v.loop.kind == LHAT_FOR_ONCE) {
                     if (breaks_out_from(node->v.loop.body, depth)) {
                         return true;
                     }

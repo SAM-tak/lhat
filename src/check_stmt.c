@@ -1694,10 +1694,17 @@ void chk_check_statement(Checker *c, const LhatNode *node)
                 }
                 chk_infer(c, node->v.loop.step);
                 chk_check_statements(c, node->v.loop.advance);
-                // a loop body may run zero times.
-                c->conditional++;
+                // a loop body may run zero times. 16.3's do^ form has no
+                // clause to drive it, so its body is reached whatever the
+                // focus turned out to be.
+                bool always = node->v.loop.kind == LHAT_FOR_ONCE;
+                if (!always) {
+                    c->conditional++;
+                }
                 chk_check_statement(c, node->v.loop.body);
-                c->conditional--;
+                if (!always) {
+                    c->conditional--;
+                }
             } else if (node->kind == LHAT_NODE_REPEAT) {
                 chk_infer(c, node->v.repeat.bound);
                 c->conditional++;

@@ -410,6 +410,49 @@ static void test_variadic(void)
     unit_dispose(&u);
 }
 
+// 16.3: the forms of for^ that answer with a value rather than iterate.
+static void test_for_expressions(void)
+{
+    Unit u;
+
+    // 13.8改 keeps a tuple out of an argument list, so the focus is where the
+    // names for its positions go, and do^: answers with what they build.
+    LHAT_TEST("do^: takes the type of its body");
+    check_text(&u,
+               "var^ f = f^ -> (number^, number^) { return^ 0, 1 }\n"
+               "var^ n : number^ = for^ let^ x, y = f() do^: x + y;\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("and a body of the wrong type is reported");
+    check_text(&u,
+               "var^ f = f^ -> (number^, number^) { return^ 0, 1 }\n"
+               "var^ s : string^ = for^ let^ x, y = f() do^: x + y;\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
+    unit_dispose(&u);
+
+    // Each focus is scoped to the one after it, so the outer names are there
+    // for the inner clause as well as for the body.
+    LHAT_TEST("a run of for^ sees the focuses before it");
+    check_text(&u,
+               "var^ f = f^ -> (number^, number^) { return^ 0, 1 }\n"
+               "var^ g = f^ a:number^ -> number^ { return^ a }\n"
+               "var^ n : number^ = for^ let^ x, y = f()\n"
+               "                   for^ let^ z = g(x)\n"
+               "                   do^: x + y + z;\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // 16.7: the focus does not leave, whichever form was written.
+    LHAT_TEST("but the focus does not leave the construct");
+    check_text(&u,
+               "var^ f = f^ -> (number^, number^) { return^ 0, 1 }\n"
+               "var^ n : number^ = for^ let^ x, y = f() do^: x + y;\n"
+               "var^ m : number^ = x\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_UNDEFINED);
+    unit_dispose(&u);
+}
+
 // 17 章. Nothing here is checked by machinery of its own -- 17.9 lowers a
 // pattern to a condition, so what runs is 13.11's narrowing.
 static void test_patterns(void)
@@ -528,6 +571,7 @@ int main(void)
     test_tostring();
     test_tonumber();
     test_variadic();
+    test_for_expressions();
     test_patterns();
     return lhat_test_report("test_check_forms");
 }

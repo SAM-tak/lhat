@@ -2831,7 +2831,8 @@ static void compile_expression(Compiler *c, const LhatNode *node, uint8_t into)
         // answers a value rather than running statements.
         case LHAT_NODE_FOR:
             if (node->v.loop.kind != LHAT_FOR_IF &&
-                node->v.loop.kind != LHAT_FOR_WHEN) {
+                node->v.loop.kind != LHAT_FOR_WHEN &&
+                node->v.loop.kind != LHAT_FOR_ONCE) {
                 fail(c, LHAT_COMPILE_UNSUPPORTED);
                 return;
             }
@@ -4913,7 +4914,8 @@ static void compile_statement(Compiler *c, const LhatNode *node)
             // 16.1: for^ introduces a value; whether it repeats is up to the
             // clause after it, and if^ is the clause that does not.
             if (node->v.loop.kind == LHAT_FOR_IF ||
-                node->v.loop.kind == LHAT_FOR_WHEN) {
+                node->v.loop.kind == LHAT_FOR_WHEN ||
+                node->v.loop.kind == LHAT_FOR_ONCE) {
                 compile_for_once(c, node, 0, false);
             } else {
                 compile_loop(c, node);

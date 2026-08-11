@@ -2668,7 +2668,21 @@ static LhatNode *parse_for_focus(Parser *p, bool *saw_from, bool *saw_word,
             // 'i = 0' whole, as a comparison, before '=' had a chance to
             // mean definition here -- ':=' never had this problem, since it
             // is not a token an expression continues through.
-            target = parse_let_target(p, !immutable);
+            //
+            // 13.10: a run of names before one '=' takes apart what the value
+            // answers with, here as anywhere -- which is what lets a focus be
+            // 'let^ x, y = f()'. parse_define reads its targets the same way.
+            // The other ',' of 16.3 is the walk's own 'k, v', and that one is
+            // written with no introducer, so the two do not meet.
+            LhatNode *targets = NULL;
+            LhatNode *targets_tail = NULL;
+            lhat_node_append(&targets, &targets_tail,
+                             parse_let_target(p, !immutable));
+            while (match_op(p, LHAT_OP_COMMA)) {
+                lhat_node_append(&targets, &targets_tail,
+                                 parse_let_target(p, !immutable));
+            }
+            target = targets;
         } else {
             // 17.2's expression form puts a ':' straight after the subject,
             // which is the shape of the type annotation of 16.3. What
@@ -2704,6 +2718,9 @@ static LhatNode *parse_for_focus(Parser *p, bool *saw_from, bool *saw_word,
             bool via_reassign_op = check_op(p, LHAT_OP_REASSIGN);
             if (!match_op(p, LHAT_OP_REASSIGN) && !match_op(p, LHAT_OP_EQ)) {
                 report(p, &p->current, LHAT_PARSE_ERR_LET_NEEDS_VALUE);
+                // The targets read so far are a list, and one node is what
+                // the focus takes -- so the mistake stands as one node too.
+                target = make(p, LHAT_NODE_ERROR, &at);
             } else {
                 if (immutable && via_reassign_op) {
                     report(p, &op, LHAT_PARSE_ERR_LET_NEEDS_EQUALS);
@@ -3043,6 +3060,46 @@ static LhatNode *parse_for(Parser *p)
             node->v.loop.is_expression
                 ? parse_if_expression_from(p, at, node->v.loop.bound)
                 : parse_if_body(p, at, node->v.loop.bound);
+        return finish(p, node);
+    } else if (check_hat(p, "do")) {
+        // 16.3: the focus is made and what follows it is the answer. This is
+        // how a tuple reaches another call without a name for each position
+        // (13.8改): 'for^ let^ x, y = f() do^: g(x, y);'.
+        //
+        // There is no statement form. 'do^{ let^ x, y = f() … }' with the
+        // definitions written inside is that, and it was always there.
+        LhatToken at = p->current;
+        advance(p);
+        node->v.loop.kind = LHAT_FOR_ONCE;
+        node->v.loop.is_expression = true;
+        expect_op(p, LHAT_OP_COLON);
+        check_focus_form(p, node, &focus_at, saw_from, saw_word, saw_reassign);
+        // 17.6: a match is opened by the ':' after its subject, and that is
+        // the only spelling it has -- so this is one way of writing it too
+        // many. The clauses are still read, since reading them as one
+        // expression would earn a second diagnostic for the same mistake.
+        if (is_when_marker(p)) {
+            report(p, &p->current, LHAT_PARSE_ERR_MATCH_OPENS_AFTER_SUBJECT);
+            node->v.loop.kind = LHAT_FOR_WHEN;
+            node->v.loop.body =
+                parse_when_clauses(p, &at, node->v.loop.focus, true);
+        } else {
+            node->v.loop.body = parse_expression(p);
+        }
+        // 6 章: the ':' opened this, so a ';' closes it.
+        expect_op(p, LHAT_OP_SEMICOLON);
+        return finish(p, node);
+    } else if (check_hat(p, "for")) {
+        // 16.3: several definitions stand in a row, each scoped to the one
+        // after it. The innermost carries the driving clause, so 16.1's rule
+        // -- for^ takes the form of the clause that follows it -- reaches
+        // this one through the body rather than from anything written here.
+        node->v.loop.kind = LHAT_FOR_ONCE;
+        check_focus_form(p, node, &focus_at, saw_from, saw_word, saw_reassign);
+        node->v.loop.body = parse_for(p);
+        node->v.loop.is_expression = node->v.loop.body != NULL &&
+                                     node->v.loop.body->kind == LHAT_NODE_FOR &&
+                                     node->v.loop.body->v.loop.is_expression;
         return finish(p, node);
     } else if (check_op(p, LHAT_OP_LBRACE) || check_op(p, LHAT_OP_COLON)) {
         // 17 章: no driving clause at all, so what follows dispatches on the
@@ -4068,6 +4125,10 @@ const char *lhat_parse_error_message(LhatParseErrorCode code)
             return "a match written as an expression answers in every case; "
                    "write 'other^: ...' before the ';', or the statement form "
                    "with braces";
+        case LHAT_PARSE_ERR_MATCH_OPENS_AFTER_SUBJECT:
+            return "a match is opened by the ':' after its subject; write "
+                   "'for^ e: when^ ...;' -- a do^: answers with the "
+                   "expression that follows it";
         case LHAT_PARSE_ERR_SPREAD_NOT_LAST:
             return "'...' forwards the whole collected tail, so nothing can "
                    "follow it here";

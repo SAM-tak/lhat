@@ -111,7 +111,10 @@ typedef enum {
     LHAT_FOR_WHILE,   // while^ cond [next^ stmt]
     LHAT_FOR_UNTIL,   // until^ cond [next^ stmt]
     LHAT_FOR_IF,      // if^ cond -- not a loop at all (16.3)
-    LHAT_FOR_WHEN     // when^ patterns -- not a loop either (17 章)
+    LHAT_FOR_WHEN,    // when^ patterns -- not a loop either (17 章)
+    LHAT_FOR_ONCE     // do^: expr, and the outer one of a run of for^ (16.3):
+                      // a focus with no clause to drive it, so the body is
+                      // reached once
 } LhatForKind;
 
 // 16.5: repeat^ carries no focus.

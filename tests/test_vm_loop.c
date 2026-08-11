@@ -615,6 +615,59 @@ static void test_for(void)
     LHAT_CHECK_EQ_INT(r.compiled, LHAT_COMPILE_UNDEFINED);
     run_dispose(&r);
 
+    // 16.3: do^: makes the focus and answers with what follows it. 13.8改
+    // keeps a tuple out of an argument list, so this is the shape that opens
+    // one straight into the next call.
+    // 16.3: do^: makes the focus and answers with what follows it. 13.8改
+    // keeps a tuple out of an argument list, so this is the shape that opens
+    // one straight into the next call. The width comes off the signature, so
+    // these run the checker first as every other tuple test does.
+    LHAT_TEST("do^: answers with its body");
+    run_checked_text(&r,
+                     "var^ f = f^ -> (number^, number^) { return^ 3, 4 }\n"
+                     "var^ g = f^ a:number^, b:number^ -> number^ "
+                     "{ return^ a * b }\n"
+                     "var^ x = for^ let^ p, q = f() do^: g(p, q);\n"
+                     "return^ x\n");
+    CHECK_INTEGER(&r, 12);
+    run_dispose(&r);
+
+    // Each focus is scoped to the one after it and to the body.
+    LHAT_TEST("a run of for^ opens several at once");
+    run_checked_text(&r,
+                     "var^ f = f^ -> (number^, number^) { return^ 3, 4 }\n"
+                     "var^ x = for^ let^ p, q = f()\n"
+                     "         for^ let^ n = p + q\n"
+                     "         do^: n * 2;\n"
+                     "return^ x\n");
+    CHECK_INTEGER(&r, 14);
+    run_dispose(&r);
+
+    LHAT_TEST("and a run may end on an if^ expression");
+    run_checked_text(&r,
+                     "var^ f = f^ -> (number^, number^) { return^ 3, 4 }\n"
+                     "var^ x = for^ let^ p, q = f()\n"
+                     "         for^ let^ n = p + q\n"
+                     "         if^ n > 5: n el^: 0;\n"
+                     "return^ x\n");
+    CHECK_INTEGER(&r, 7);
+    run_dispose(&r);
+
+    LHAT_TEST("a run of for^ works as a statement too");
+    run_text(&r,
+             "var^ x = 0\n"
+             "for^ let^ a = 1 for^ let^ b = 2 if^ a < b { x := a + b }\n"
+             "return^ x\n");
+    CHECK_INTEGER(&r, 3);
+    run_dispose(&r);
+
+    LHAT_TEST("and the focus of a do^: does not escape either");
+    run_text(&r,
+             "var^ x = for^ let^ p = 3 do^: p + 1;\n"
+             "return^ p\n");
+    LHAT_CHECK_EQ_INT(r.compiled, LHAT_COMPILE_UNDEFINED);
+    run_dispose(&r);
+
     // 14 章 の table with 16: what a loop is mostly for.
     LHAT_TEST("a loop fills a table");
     run_text(&r,

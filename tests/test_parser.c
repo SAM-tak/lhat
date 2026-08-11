@@ -2039,6 +2039,75 @@ static void test_loops(void)
     LHAT_CHECK_EQ_INT(p.result.diagnostics[0].code,
                       LHAT_PARSE_ERR_FOR_NEEDS_CLAUSE);
     parse_dispose(&p);
+
+    // 16.3: do^: makes the focus and answers with what follows it. 13.8改
+    // keeps a tuple out of an argument list, so this is how one reaches the
+    // next call without a statement for each position.
+    LHAT_TEST("do^: is a driving clause of its own");
+    parse_text(&p, "var^ r = for^ let^ x, y = f() do^: g(x, y);");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    {
+        const LhatNode *s = first_value(&p);
+        LHAT_CHECK_EQ_INT(s->kind, LHAT_NODE_FOR);
+        LHAT_CHECK_EQ_INT(s->v.loop.kind, LHAT_FOR_ONCE);
+        LHAT_CHECK(s->v.loop.is_expression, "do^: opens the expression form");
+        LHAT_CHECK_EQ_INT(s->v.loop.body->kind, LHAT_NODE_CALL);
+
+        // 13.10: the names before the '=' take the tuple apart, which is one
+        // binding rather than one focus each.
+        const LhatNode *focus = s->v.loop.focus;
+        LHAT_CHECK_EQ_INT(lhat_node_list_length(focus), 1);
+        LHAT_CHECK_EQ_INT(focus->kind, LHAT_NODE_DEFINE);
+        LHAT_CHECK_EQ_INT(lhat_node_list_length(focus->v.binding.targets), 2);
+    }
+    parse_dispose(&p);
+
+    LHAT_TEST("and it has no statement form");
+    parse_text(&p, "for^ let^ x = 1 do^{ print(x) }");
+    LHAT_CHECK(p.result.diagnostic_count > 0, "expected a diagnostic");
+    LHAT_CHECK_EQ_INT(p.result.diagnostics[0].code,
+                      LHAT_PARSE_ERR_EXPECTED_TOKEN);
+    parse_dispose(&p);
+
+    // 17.6: the ':' after the subject is the only thing that opens a match.
+    LHAT_TEST("when^ clauses do not follow a do^:");
+    parse_text(&p, "var^ r = for^ 2 do^: when^ 1: \"x\" other^: \"y\";");
+    LHAT_CHECK_EQ_INT(error_count(&p), 1);
+    LHAT_CHECK(p.result.diagnostic_count > 0 &&
+                   p.result.diagnostics[0].code ==
+                       LHAT_PARSE_ERR_MATCH_OPENS_AFTER_SUBJECT,
+               "expected the misplaced-match diagnostic");
+    parse_dispose(&p);
+
+    // 16.3: definitions stand in a row, and 16.1 has the innermost clause
+    // say which form the whole is.
+    LHAT_TEST("several for^ stand in a row");
+    parse_text(&p, "var^ r = for^ let^ x = 1 for^ let^ y = 2 do^: x + y;");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    {
+        const LhatNode *outer = first_value(&p);
+        LHAT_CHECK_EQ_INT(outer->kind, LHAT_NODE_FOR);
+        LHAT_CHECK_EQ_INT(outer->v.loop.kind, LHAT_FOR_ONCE);
+        LHAT_CHECK(outer->v.loop.is_expression, "the inner one says so");
+
+        const LhatNode *inner = outer->v.loop.body;
+        LHAT_CHECK_EQ_INT(inner->kind, LHAT_NODE_FOR);
+        LHAT_CHECK_EQ_INT(inner->v.loop.kind, LHAT_FOR_ONCE);
+        LHAT_CHECK_EQ_INT(inner->v.loop.body->kind, LHAT_NODE_BINARY);
+    }
+    parse_dispose(&p);
+
+    LHAT_TEST("and a run may end on a statement form");
+    parse_text(&p, "for^ let^ x = 1 for^ let^ y = 2 if^ x < y { print(x) }");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    {
+        const LhatNode *outer = first_statement(&p);
+        LHAT_CHECK_EQ_INT(outer->kind, LHAT_NODE_FOR);
+        LHAT_CHECK_EQ_INT(outer->v.loop.kind, LHAT_FOR_ONCE);
+        LHAT_CHECK(!outer->v.loop.is_expression, "the inner one is a statement");
+        LHAT_CHECK_EQ_INT(outer->v.loop.body->v.loop.kind, LHAT_FOR_IF);
+    }
+    parse_dispose(&p);
 }
 
 // 17 章.
