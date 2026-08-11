@@ -6,11 +6,15 @@
 # check is inside: a lexer, an arena, a type. So src/ is on their path, which
 # is the one place outside the library itself that it is.
 
+# The harness's own translation unit: counters and the tally, shared by
+# every test executable (and by lsp/tests).
+add_library(lhat_testkit STATIC testutil.c)
+target_include_directories(lhat_testkit PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+
 function(lhat_add_test name)
     add_executable(${name} ${name}.c)
-    target_link_libraries(${name} PRIVATE lhat)
+    target_link_libraries(${name} PRIVATE lhat lhat_testkit)
     target_include_directories(${name} PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}
         ${CMAKE_SOURCE_DIR}/src
     )
     if(NOT MSVC)
