@@ -17,7 +17,7 @@
 #include <stdbool.h>
 #include <stddef.h>
 
-#include "code.h"
+#include "lhat/module.h"
 #include "object.h"
 #include "value.h"
 

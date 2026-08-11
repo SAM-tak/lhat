@@ -16,21 +16,7 @@
 #include "code.h"
 #include "hosted.h"
 #include "lexer.h"
-
-typedef enum {
-    LHAT_COMPILE_OK,
-    LHAT_COMPILE_UNSUPPORTED,   // a form the compiler does not cover yet
-    LHAT_COMPILE_TOO_COMPLEX,   // out of registers or constants (5.2)
-    LHAT_COMPILE_UNDEFINED,     // a name with no binding
-    // 02 の 9.8: a break^ naming more loops than stand around it, or one
-    // written outside any. Not the same as UNSUPPORTED above -- nothing is
-    // waiting to be implemented here, the count is simply wrong.
-    LHAT_COMPILE_BREAK_TOO_FAR,
-    // 01 の 8 章: a '$^' counting more scopes out than are open here. The
-    // same kind of miscount as BREAK_TOO_FAR, and not a form still waiting
-    // on the compiler.
-    LHAT_COMPILE_SCOPE_TOO_FAR
-} LhatCompileStatus;
+#include "lhat/module.h"  // LhatCompileStatus, and what a compile answers
 
 // 05 の 5 章. The compile-time twin of check.h's LhatRequireResolver: asked
 // for the unit at `path`, it answers where that unit sits in what the machine
@@ -135,7 +121,5 @@ void lhat_compile_session_hosted(LhatCompileSession *session,
 LhatCompileStatus lhat_compile_next(LhatCompileSession *session,
                                     const LhatNode *unit,
                                     const LhatLexer *lexer, LhatProto **out);
-
-const char *lhat_compile_status_message(LhatCompileStatus status);
 
 #endif  // LHAT_COMPILE_H

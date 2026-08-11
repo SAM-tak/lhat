@@ -18,6 +18,10 @@
 #include <stddef.h>
 #include <stdint.h>
 
+// LhatProto and LhatModule are what a host is handed; this file is what
+// they are made of.
+#include "lhat/module.h"
+
 #include "object.h"
 #include "value.h"
 
@@ -272,8 +276,9 @@ typedef struct {
 
 // One compiled subroutine: its own code, the bodies written inside it, and
 // what it captures. 02 の 14.9 keeps the name out of this; a proto is the
-// shape of a body, not a named thing.
-typedef struct LhatProto {
+// shape of a body, not a named thing. Declared in lhat/module.h, where a
+// host meets it as a handle; completed here.
+struct LhatProto {
     LhatChunk chunk;
 
     // 03 の 4.3: how many registers already hold values when this unit
@@ -330,22 +335,9 @@ typedef struct LhatProto {
     // parameter is still one slot the calling convention reserves, only what
     // a call site owes it differs (13.7's ">=" rather than "==").
     bool has_variadic;
-} LhatProto;
+};
 
 LhatProto *lhat_proto_new(void);
-void lhat_proto_free(LhatProto *proto);
-
-// 05 の 5.3: one unit, compiled. The path 3 章 had it declare is kept beside
-// the body, since that is where the unit registers itself and what a
-// diagnostic names it by. NULL when the unit declared none (3.2), and then
-// nothing registers it -- 5.5 already refused the short form for it.
-typedef struct {
-    LhatProto *proto;
-    char *module_name;  // owned
-} LhatModule;
-
-// Frees the protos and the names. The array itself belongs to the caller.
-void lhat_modules_free(LhatModule *modules, size_t count);
 
 // Returns the index of the nested body, or SIZE_MAX when out of memory.
 size_t lhat_proto_add(LhatProto *parent, LhatProto *child);

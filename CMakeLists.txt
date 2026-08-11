@@ -274,7 +274,8 @@ install(FILES port/thread.h DESTINATION include/port)
 # lhatconfig.h is found back through the include path (the internal headers
 # say "lhatconfig.h" bare), and the generated version.h as "lhat/version.h".
 install(FILES include/lhat.h include/lhatconfig.h DESTINATION include)
-install(FILES ${CMAKE_CURRENT_BINARY_DIR}/include/lhat/version.h
+install(FILES include/lhat/module.h
+              ${CMAKE_CURRENT_BINARY_DIR}/include/lhat/version.h
     DESTINATION include/lhat)
 
 # machine.h is the inside of LhatMachine and gc.h is what reads it. vm.h keeps
