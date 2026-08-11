@@ -688,15 +688,15 @@ static void test_coroutines(void)
     // 16.3: a walk has no body to have left anything pending in, and holds
     // neither closure nor registers -- the collector has to leave it alone.
     LHAT_TEST("a dropped walk is collected without any of this");
-    run_text(&r,
-             "var^ drop = p^ {\n"
-             "  var^ t = { 10, 20, 30 }\n"
-             "  var^ w = t.iterate^()\n"
-             "  w.start()\n"
-             "}\n"
-             "drop()\n"
-             "L^.collectgarbage()\n"
-             "return^ 7\n");
+    run_checked_text(&r,
+                     "var^ drop = p^ {\n"
+                     "  var^ t = { 10, 20, 30 }\n"
+                     "  var^ w = t.iterate^()\n"
+                     "  w.start()\n"
+                     "}\n"
+                     "drop()\n"
+                     "L^.collectgarbage()\n"
+                     "return^ 7\n");
     CHECK_INTEGER(&r, 7);
     run_dispose(&r);
 

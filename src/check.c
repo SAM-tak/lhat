@@ -4349,10 +4349,13 @@ static LhatType *infer(Checker *c, const LhatNode *node)
     LhatType *type = infer_node(c, node);
     // 13.8改: a tuple is the other type the compiler has to size slots by --
     // a call answering one writes a run rather than a slot -- so it is
-    // stamped for exactly the reason a host value is. Its kind is no more a
-    // FUNC or a TYPEOF than HOSTVALUE is, so those stamps stay untouched.
+    // stamped for exactly the reason a host value is. A union carrying a
+    // tuple arm ('(K, V)|nil^', a walk's resume) is stamped too: even a
+    // discarded call has to reserve the arm's width for the run to land in.
+    // Its kind is no more a FUNC or a TYPEOF than HOSTVALUE is, so those
+    // stamps stay untouched.
     if (node != NULL &&
-        (is_hostvalue(type) || lhat_type_tuple_width(type) > 0)) {
+        (is_hostvalue(type) || lhat_type_tuple_arm_width(type) > 0)) {
         ((LhatNode *)node)->checked_type = type;
     }
     return type;

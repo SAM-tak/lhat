@@ -5096,11 +5096,26 @@ static void compile_statement(Compiler *c, const LhatNode *node)
             // 02 の 8.2: a call may stand alone, and its value is discarded.
             // A yield^ written for its effect alone is the same shape.
             uint8_t mark = c->next_register;
-            uint8_t slot = reserve(c);
-            compile_expression(c, node->kind == LHAT_NODE_CALL_STMT
-                                      ? node->v.jump.value
-                                      : node,
-                               slot);
+            const LhatNode *value = node->kind == LHAT_NODE_CALL_STMT
+                                        ? node->v.jump.value
+                                        : node;
+            // 13.8改: a discarded call may still answer a tuple -- a walk's
+            // resume, whose type is '(K, V)|nil^' -- and the run needs its
+            // width in slots even with nobody reading it. The checker's
+            // stamp sizes the reservation; unchecked, the call reserves one
+            // slot and a tuple coming back is the machine's to refuse.
+            size_t width =
+                node->kind == LHAT_NODE_CALL_STMT && value->checked_type != NULL
+                    ? lhat_type_tuple_arm_width(
+                          (const LhatType *)value->checked_type)
+                    : 0;
+            if (width > 0 && is_run_source(value)) {
+                uint8_t first = reserve_wide(c, width + 1);
+                compile_run_source(c, value, first, width + 1);
+            } else {
+                uint8_t slot = reserve(c);
+                compile_expression(c, value, slot);
+            }
             c->next_register = mark;
             return;
         }
@@ -6772,32 +6787,33 @@ static LhatRunResult finish(Machine *m, const LhatChunk *chunk,
 // the same footing as any other coroutine, so what the two do has to agree.
 typedef enum {
     WALK_TOOK,      // a pair came out; the walk is suspended again
-    WALK_ENDED,     // nothing left, so the walk is finished
-    WALK_NO_MEMORY
+    WALK_ENDED      // nothing left, so the walk is finished
 } WalkStep;
 
-// 16.3 with 13.8改: how the walk was asked, which decides what one step puts
-// down. The loop says which by RESUME's C -- the count of names is syntax,
-// so an unchecked compile says the same thing a checked one does (03 の 4.2).
+// 16.3 with 13.8改: how the walk was asked, which decides where one step's
+// tuple goes. The loop says which by RESUME's C -- the count of names is
+// syntax, so an unchecked compile says the same thing a checked one does
+// (03 の 4.2). No mode allocates.
 typedef enum {
-    // start()/resume() written by hand, yieldall^, and code from before: one
-    // slot, the pair as a table. The one mode that still allocates, kept so
-    // driving a walk off the loop path answers a value a name can hold.
-    WALK_AS_PAIR,
     // 'for^ v in^ t': the values of the sequence half, in order, the keyed
     // half not visited -- 'for^ i from^ 1 to^ the length { t[i] }' written
-    // as a walk. No pair exists, so nothing allocates.
+    // as a walk.
     WALK_AS_VALUE,
-    // 'for^ k, v in^ t': the pair as a run -- head slot plus two positions
-    // in the slots the loop reserved. Nothing allocates.
-    WALK_AS_RUN
+    // 'for^ k, v in^ t', and a hand-driven call that reserved the width:
+    // the pair as a run -- head slot plus two positions in the slots the
+    // caller reserved.
+    WALK_AS_RUN,
+    // 15.8's delegation loop, which reserved one slot: the head goes into
+    // it and the positions into the frame's answer room, which is exactly
+    // where the YIELD forwarding them reads a tuple's positions from.
+    WALK_AS_ANSWER
 } WalkMode;
 
 // Puts one step down at slot `at` (WALK_AS_RUN fills at..at+2). The caller
-// reserved the slots; the bounds check is here because the loop's reservation
-// and a hand-driven call site reserve different widths.
+// reserved the slots; the bounds check is the caller's, since the loop's
+// reservation and a hand-driven call site reserve different widths.
 static WalkStep step_table_walk(Machine *m, LhatCoroutine *co, WalkMode mode,
-                                size_t at)
+                                size_t at, Frame *frame)
 {
     if (mode == WALK_AS_VALUE) {
         // Only the dense half, by index -- lhat_table_walk would go on into
@@ -6824,22 +6840,20 @@ static WalkStep step_table_walk(Machine *m, LhatCoroutine *co, WalkMode mode,
     co->state = LHAT_COROUTINE_SUSPENDED;
 
     if (mode == WALK_AS_RUN) {
-        // 13.8改: the pair as a tuple, laid into the loop's reserved slots.
+        // 13.8改: the pair as a tuple, laid into the caller's reserved slots.
         lhat_slots_set(m->slots, at, lhat_run_head(2));
         lhat_slots_set(m->slots, at + 1, key);
         lhat_slots_set(m->slots, at + 2, value);
         return WALK_TOOK;
     }
 
-    // WALK_AS_PAIR -- what every walk answered before 13.8改.
-    LhatTable *pair = lhat_table_new(&m->objects);
-    bool refused = false;
-    if (pair == NULL ||
-        !set_key(m, pair, lhat_integer(1), key, &refused) ||
-        !set_key(m, pair, lhat_integer(2), value, &refused)) {
-        return WALK_NO_MEMORY;
-    }
-    lhat_slots_set(m->slots, at, lhat_object((LhatObject *)pair));
+    // WALK_AS_ANSWER: the positions ride the frame's answer room -- a root,
+    // so the collector sees them -- and only the head sits in the slot.
+    frame->answer_run[1] = key.as;
+    frame->answer_tags[1] = (uint8_t)key.tag;
+    frame->answer_run[2] = value.as;
+    frame->answer_tags[2] = (uint8_t)value.tag;
+    lhat_slots_set(m->slots, at, lhat_run_head(2));
     return WALK_TOOK;
 }
 
@@ -8338,14 +8352,40 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
                             SET_R(a, lhat_nil());
                             break;
                         }
-                        // Hand-driven, so one slot and the pair as a table
-                        // -- the answer has to be a value a name can hold.
-                        if (step_table_walk(m, co, WALK_AS_PAIR, rbase + a) ==
-                            WALK_NO_MEMORY) {
-                            return finish(m, chunk, LHAT_RUN_OUT_OF_MEMORY,
+                        // 16.3 with 13.8改: hand-driven start()/resume()
+                        // answer the pair as the tuple every walk yields.
+                        // The call's reservation says whether the run has
+                        // anywhere to land; a checked call reserved the
+                        // width (the stamp on a discarded one included),
+                        // and a mismatch is refused the way 03 の 5.3
+                        // refuses any tuple answer.
+                        unsigned room = lhat_call_prepared(cc);
+                        if (room > 1 && room != 3) {
+                            return finish(m, chunk, LHAT_RUN_TUPLE_ARITY,
                                           lhat_nil(), at);
                         }
-                        break;
+                        if (room == 3) {
+                            if (rbase + a + 2 >= LHAT_STACK_SLOTS) {
+                                return finish(m, chunk,
+                                              LHAT_RUN_STACK_OVERFLOW,
+                                              lhat_nil(), at);
+                            }
+                            step_table_walk(m, co, WALK_AS_RUN, rbase + a,
+                                            frame);
+                            break;
+                        }
+                        // One slot reserved: the step still advances, and
+                        // the walk ending still answers nil^; a pair coming
+                        // back has nowhere to land.
+                        LhatValue key, value;
+                        if (!lhat_table_walk(co, &key, &value)) {
+                            co->state = LHAT_COROUTINE_DONE;
+                            SET_R(a, lhat_nil());
+                            break;
+                        }
+                        co->state = LHAT_COROUTINE_SUSPENDED;
+                        return finish(m, chunk, LHAT_RUN_TUPLE_UNEXPECTED,
+                                      lhat_nil(), at);
                     }
 
                     if (m->frame_count >= LHAT_MAX_FRAMES) {
@@ -8690,6 +8730,12 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
                 // resumer's side. What the resume sends still comes back as
                 // one value, into the first position's slot (co->sent_into
                 // below), since a resume sends one.
+                //
+                // b == 0 with a run head in the slot is 15.8's delegation
+                // loop forwarding a walk's pair: the positions are already
+                // in this frame's answer room, put there by the RESUME just
+                // above (WALK_AS_ANSWER), so there is nothing to fill and
+                // the head goes out as it stands.
                 if (b != 0) {
                     if ((size_t)b > LHAT_MAX_TUPLE) {
                         return finish(m, chunk, LHAT_RUN_TUPLE_ARITY,
@@ -8834,11 +8880,12 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
                 // 16.3 with 13.8改: which shape one step puts down. C is the
                 // loop's word -- the count of names is syntax, so unchecked
                 // and checked compiles say the same thing (03 の 4.2).
-                // 0 (and 1) is everything else: hand-driven code and
-                // yieldall^, which take the pair as a table.
+                // 0 (and 1) is 15.8's delegation loop, the one emitter of a
+                // RESUME with no width: the pair rides the answer room and
+                // the YIELD after it forwards the run as it stands.
                 WalkMode mode = cc >= 3   ? WALK_AS_RUN
                                 : cc == 2 ? WALK_AS_VALUE
-                                          : WALK_AS_PAIR;
+                                          : WALK_AS_ANSWER;
 
                 // 16.3: a table's walk has no body to enter, so resuming it
                 // is one step and nothing more.
@@ -8851,10 +8898,7 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
                         return finish(m, chunk, LHAT_RUN_TUPLE_ARITY,
                                       lhat_nil(), at);
                     }
-                    if (step_table_walk(m, co, mode, rbase + a) ==
-                        WALK_NO_MEMORY) {
-                        return finish(m, chunk, LHAT_RUN_OUT_OF_MEMORY, lhat_nil(), at);
-                    }
+                    step_table_walk(m, co, mode, rbase + a, frame);
                     break;
                 }
                 if (m->frame_count >= LHAT_MAX_FRAMES) {

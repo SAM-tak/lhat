@@ -489,39 +489,32 @@ static void test_for(void)
     run_dispose(&r);
 
     // 16.3 puts a table's iterate() on the same footing as any other
-    // coroutine, so what it answers has to be drivable by hand and not only
-    // by the loop -- which emits BC_RESUME rather than going through the
-    // members. Before this, start() built a frame out of a walk that has no
-    // closure and the machine read through a null pointer.
+    // coroutine, so it is drivable by hand and not only by the loop -- which
+    // emits BC_RESUME rather than going through the members. The answer is
+    // the tuple every walk yields, so a checked call reserves its width even
+    // when discarding it, and stepping past elements works.
     LHAT_TEST("a walk taken by hand starts like any other coroutine");
+    run_checked_text(&r,
+                     "var^ t = { 10 }\n"
+                     "var^ w = t.iterate^()\n"
+                     "w.start()\n"
+                     "if^ w.done() { return^ 0 }\n"
+                     "w.resume(nil^)\n"
+                     "if^ w.done() { return^ 1 }\n"
+                     "return^ 2\n");
+    CHECK_INTEGER(&r, 1);  // one element taken, then the walk ended
+    run_dispose(&r);
+
+    // An unchecked compile reserved one slot, and the pair coming back has
+    // nowhere to land -- 03 の 5.3's mismatch, dropped rather than
+    // reconciled.
+    LHAT_TEST("a one-slot hand drive is refused when the pair arrives");
     run_text(&r,
              "var^ t = { 10, 20 }\n"
              "var^ w = t.iterate^()\n"
              "var^ pair = w.start()\n"
-             "return^ pair[1] * 100 + pair[2]\n");
-    CHECK_INTEGER(&r, 110);  // key 1, value 10
-    run_dispose(&r);
-
-    LHAT_TEST("and resumes to the pairs after it");
-    run_text(&r,
-             "var^ t = { 10, 20 }\n"
-             "var^ w = t.iterate^()\n"
-             "w.start()\n"
-             "var^ pair = w.resume(nil^)\n"
-             "return^ pair[1] * 100 + pair[2]\n");
-    CHECK_INTEGER(&r, 220);  // key 2, value 20
-    run_dispose(&r);
-
-    LHAT_TEST("and finishes when the table runs out");
-    run_text(&r,
-             "var^ t = { 10 }\n"
-             "var^ w = t.iterate^()\n"
-             "w.start()\n"
-             "var^ last = w.resume(nil^)\n"
-             "var^ n = last ?? 0\n"
-             "if^ w.done() { n := n + 1 }\n"
-             "return^ n\n");
-    CHECK_INTEGER(&r, 1);  // nil^, and done
+             "return^ 0\n");
+    LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_TUPLE_UNEXPECTED);
     run_dispose(&r);
 
     // 15.2 applies to a walk unchanged: nothing about having no body makes
@@ -536,23 +529,23 @@ static void test_for(void)
     run_dispose(&r);
 
     LHAT_TEST("starting a walk twice is a fault");
-    run_text(&r,
-             "var^ t = { 10, 20 }\n"
-             "var^ w = t.iterate^()\n"
-             "w.start()\n"
-             "w.start()\n"
-             "return^ 0\n");
+    run_checked_text(&r,
+                     "var^ t = { 10, 20 }\n"
+                     "var^ w = t.iterate^()\n"
+                     "w.start()\n"
+                     "w.start()\n"
+                     "return^ 0\n");
     LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_COROUTINE_ALREADY_STARTED);
     run_dispose(&r);
 
     // 10.7: a walk has nothing pending, so disposal is only the state.
     LHAT_TEST("a walk in progress can be disposed");
-    run_text(&r,
-             "var^ t = { 10, 20, 30 }\n"
-             "var^ w = t.iterate^()\n"
-             "w.start()\n"
-             "w.dispose()\n"
-             "return^ w.done()\n");
+    run_checked_text(&r,
+                     "var^ t = { 10, 20, 30 }\n"
+                     "var^ w = t.iterate^()\n"
+                     "w.start()\n"
+                     "w.dispose()\n"
+                     "return^ w.done()\n");
     CHECK_BOOL(&r, true);
     run_dispose(&r);
 

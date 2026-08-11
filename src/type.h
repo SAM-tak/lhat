@@ -305,6 +305,10 @@ bool lhat_type_add_position(LhatTypeArena *arena, LhatType *tuple,
 // ask without testing the kind first.
 size_t lhat_type_tuple_width(const LhatType *type);
 
+// The same, reaching through a union to the one tuple arm 13.8改 allows in
+// it -- '(K, V)|nil^' answers 2. 0 when no arm is a tuple.
+size_t lhat_type_tuple_arm_width(const LhatType *type);
+
 // The type at a zero-based position, or NULL when there is none.
 LhatType *lhat_type_tuple_at(const LhatType *type, size_t index);
 

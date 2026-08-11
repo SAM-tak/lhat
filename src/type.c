@@ -307,6 +307,28 @@ size_t lhat_type_tuple_width(const LhatType *type)
     return width;
 }
 
+size_t lhat_type_tuple_arm_width(const LhatType *type)
+{
+    if (type == NULL) {
+        return 0;
+    }
+    if (type->kind == LHAT_TYPE_TUPLE) {
+        return lhat_type_tuple_width(type);
+    }
+    if (type->kind == LHAT_TYPE_UNION) {
+        // 02 の 13.8改: at most one arm can be a tuple -- two could not be
+        // told apart by the head slot -- so the first found is the answer.
+        for (const LhatTypeList *p = type->v.composite.arms; p != NULL;
+             p = p->next) {
+            size_t width = lhat_type_tuple_arm_width(p->type);
+            if (width > 0) {
+                return width;
+            }
+        }
+    }
+    return 0;
+}
+
 LhatType *lhat_type_tuple_at(const LhatType *type, size_t index)
 {
     if (type == NULL || type->kind != LHAT_TYPE_TUPLE) {

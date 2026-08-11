@@ -1794,6 +1794,11 @@ LHAT_BC_ASCAST で問う。
   `LhatRuntimeType` の COROUTINE 種が `receive`/`produce` を持ち、
   `reflect_type` がコルーチン値のリフレクションを返すとき
   `coroutine->closure->proto` からこの2つと `result_type` を読む
+- 値の側の刻印も同じ枠を使う: 型がホスト値である式（05 の 8.9 — 幅が
+  スロット数を決める）と、タプルを含む型の式（13.8改）。後者は
+  タプルを選択肢に持つ合併（走査の `resume` の `(K, V)|nil^`）も刻む —
+  答えを捨てる呼び出し文でも、組の届きうる幅だけ席を予約する必要が
+  あるため（02 の 16.3 の手駆動）
 
 #### 5.11b `typeof^` は静的な答えである
 

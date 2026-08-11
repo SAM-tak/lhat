@@ -246,20 +246,26 @@ static void test_walk_shapes(void)
     LHAT_CHECK(r.ran.collected < 10, "no per-step allocation");
     run_dispose(&r);
 
-    // The negative control: driving the walk by hand still answers the pair
-    // as a table -- the one place a name has to be able to hold the answer.
-    LHAT_TEST("a hand-driven walk still allocates its pairs");
-    run_text(&r,
-             "var^ t = { 10, 20, 30 }\n"
-             "var^ total = 0\n"
-             "repeat^ 700 {\n"
-             "  var^ w = t.iterate^()\n"
-             "  var^ pair = w.start()\n"
-             "  total := total + pair[2]\n"
-             "}\n"
-             "return^ total\n");
-    CHECK_INTEGER(&r, 700 * 10);
-    LHAT_CHECK(r.ran.collected > 500, "the pair tables were made and dropped");
+    // Hand-driving allocates nothing either: the pair is a tuple here too,
+    // riding the reserved slots rather than a per-step table.
+    LHAT_TEST("a hand-driven walk allocates nothing per step");
+    run_checked_text(&r,
+                     "var^ t = { }\n"
+                     "for^ i from^ 1 to^ 700 { t[i] := i }\n"
+                     "var^ w = t.iterate^()\n"
+                     "var^ n = 0\n"
+                     "w.start()\n"
+                     "repeat^ 699 {\n"
+                     "  w.resume(nil^)\n"
+                     "  n := n + 1\n"
+                     "}\n"
+                     "return^ n\n");
+    CHECK_INTEGER(&r, 699);
+    // Reading `w.resume` makes a native per step -- a member-lookup cost
+    // this test is not about -- so ~700 objects are collected regardless.
+    // The pair tables would be another ~700 on top; their absence is what
+    // the bound checks.
+    LHAT_CHECK(r.ran.collected < 1000, "no per-step pair table");
     run_dispose(&r);
 
     // A user iterator that yields tuples meets the same binds the built-in
