@@ -9,8 +9,8 @@
 #ifndef LHAT_LEXER_H
 #define LHAT_LEXER_H
 
-#include "lhatconfig.h"
-#include "source.h"
+#include "lhat/config.h"
+#include "lhat/source.h"
 #include "token.h"
 
 typedef enum {

@@ -9,7 +9,7 @@
 #include <stdbool.h>
 #include <stddef.h>
 
-#include "object.h"
+#include "lhat/object.h"
 
 // 05 の 8.7 の誤り版: one error kind lhat_register_error_kind (program.h)
 // registered. resolve_kind (compile.c) reads these to answer a qualified

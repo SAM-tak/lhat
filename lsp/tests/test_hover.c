@@ -7,7 +7,7 @@
 #include "check.h"
 #include "lexer.h"
 #include "parser.h"
-#include "source.h"
+#include "lhat/source.h"
 
 #include "hover.h"
 #include "testutil.h"

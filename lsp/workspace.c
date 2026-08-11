@@ -13,9 +13,9 @@
 #include <sys/stat.h>
 #endif
 
-#include "port.h"   // lhat_load_file
-#include "value.h"  // lhat_nil
-#include "vm.h"     // LhatMachine, LhatHostFn's shape
+#include "lhat/port.h"   // lhat_load_file
+#include "lhat/value.h"  // lhat_nil
+#include "lhat/vm.h"     // LhatMachine, LhatHostFn's shape
 
 #include "diagnostics.h"
 #include "util.h"

@@ -7,8 +7,8 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "lhatconfig.h"
-#include "port.h"
+#include "lhat/config.h"
+#include "lhat/port.h"
 #include "rttype.h"
 #include "type.h"
 
@@ -5389,4 +5389,3 @@ const char *lhat_compile_status_message(LhatCompileStatus status)
     }
     return "unknown";
 }
-

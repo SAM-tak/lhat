@@ -1,14 +1,14 @@
 // L^ (lhat) -- the whole of what a host names.
 //
-// One header, because the rest are called source.h, value.h, token.h and the
-// like: ordinary enough that putting them on somebody else's include path
-// would be rude. A host puts include/ on its path, writes
+// One header over the few in lhat/, which are the whole of the public
+// surface: a host puts include/ on its path, writes
 //
 //     #include "lhat.h"
 //
-// and has the language. The three below reach everything else between them:
-// program.h pulls in the parser, the checker and the types, and vm.h pulls in
-// the machine and its values.
+// and has the language. What is not here is not a host's business -- the
+// tokens, the tree, the checker's types, the instruction set and the
+// collector all live in src/ and ship nowhere (05 の 8.7, and 02 の
+// 14.17改2's build that runs bytecode with no front end at all).
 //
 // The order a host works in is 05 の 8.7 and 5.3:
 //
@@ -41,16 +41,17 @@
 #include "lhat/version.h"
 
 // One shape for what every stage reports (03 の 1.1).
-#include "../src/error.h"
+#include "lhat/error.h"
 
 // What the language asks of its surroundings: where memory comes from, and
 // how a unit's text is read (05 の 8.9).
-#include "../src/port.h"
+#include "lhat/port.h"
 
 // The unit graph, and what a host registers into it (05 の 5 章, 8.7, 8.8).
-#include "../src/program.h"
+#include "lhat/program.h"
 
-// Compiling a unit and running one (03 の 5 章).
-#include "../src/vm.h"
+// What a compile answers with (03 の 5.3), and the machine that runs it.
+#include "lhat/module.h"
+#include "lhat/vm.h"
 
 #endif  // LHAT_H

@@ -3,7 +3,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "source.h"
+#include "lhat/source.h"
 #include "testutil.h"
 
 static void check_normalised(const char *name, const char *input, size_t input_length,

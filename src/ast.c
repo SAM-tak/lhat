@@ -6,8 +6,8 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "lhatconfig.h"
-#include "port.h"
+#include "lhat/config.h"
+#include "lhat/port.h"
 
 struct LhatArenaBlock {
     LhatArenaBlock *next;

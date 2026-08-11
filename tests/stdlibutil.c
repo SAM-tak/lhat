@@ -29,8 +29,8 @@
 #define LHAT_TEST_CLOSE close
 #endif
 
-#include "object.h"
-#include "value.h"
+#include "lhat/object.h"
+#include "lhat/value.h"
 
 typedef struct {
     const char *path;

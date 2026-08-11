@@ -1,13 +1,13 @@
 // L^ (lhat) -- the heap values: strings and tables.
 
-#include "object.h"
+#include "lhat/object.h"
 
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>
 
 #include "grow.h"
-#include "port.h"
+#include "lhat/port.h"
 
 // 04 の 2.6 and 6.1: whether `value` is an error of `kind`. A kind object
 // standing for a whole errordef^ answers yes for any of its kinds, since 2.3

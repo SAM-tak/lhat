@@ -20,9 +20,9 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "program.h"
+#include "lhat/program.h"
 #include "testutil.h"
-#include "vm.h"
+#include "lhat/vm.h"
 
 // Which modules a run registers. Every lhatstdlib_*_register has this
 // shape; a case hands in the ones it imports, usually one.

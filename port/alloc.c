@@ -17,7 +17,7 @@
 // has to be set before anything is taken. That is checkable, so it is
 // checked -- see lhat_set_allocator.
 
-#include "../src/port.h"
+#include "lhat/port.h"
 
 #include <stdlib.h>
 

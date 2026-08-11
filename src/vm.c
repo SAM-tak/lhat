@@ -1,6 +1,6 @@
 // L^ (lhat) -- the machine: running compiled bytecode.
 
-#include "vm.h"
+#include "lhat/vm.h"
 
 #include <math.h>
 #include <stdio.h>
@@ -10,7 +10,7 @@
 #include "environment.h"
 #include "gc.h"
 #include "hosted.h"
-#include "lhatconfig.h"
+#include "lhat/config.h"
 #include "machine.h"
 // For LHAT_OPERATOR_MEMBERS alone: the one list of operator spellings lives
 // with the tokens. Types and macros only -- nothing here calls the lexer,
@@ -20,7 +20,7 @@
 // grammar and nothing else -- no source, no token, no diagnostic -- so the
 // machine carries it without carrying a front end.
 #include "number.h"
-#include "port.h"
+#include "lhat/port.h"
 #include "type.h"
 
 // ---------------------------------------------------------------------------

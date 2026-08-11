@@ -13,7 +13,7 @@
 #ifndef LHAT_GROW_H
 #define LHAT_GROW_H
 
-#include "port.h"
+#include "lhat/port.h"
 
 #define LHAT_GROW(array, count, capacity, first, fail_stmt)              \
     do {                                                                 \

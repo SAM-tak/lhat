@@ -1,12 +1,12 @@
 // L^ (lhat) -- source text loading and normalisation.
 
-#include "source.h"
+#include "lhat/source.h"
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
-#include "port.h"
+#include "lhat/port.h"
 
 static char *duplicate(const char *s)
 {

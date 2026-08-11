@@ -1,7 +1,7 @@
 // L^ (lhat) -- writing a diagnostic down.
 
-#include "lhatconfig.h"
-#include "error.h"
+#include "lhat/config.h"
+#include "lhat/error.h"
 
 #include <stdio.h>
 #include <string.h>

@@ -5,7 +5,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "port.h"  // lhat_alloc: lsp_document_store_copy feeds LhatProgramLoader,
+#include "lhat/port.h"  // lhat_alloc: lsp_document_store_copy feeds LhatProgramLoader,
                    // whose result program.c frees with lhat_free (program.c's
                    // check_path calls lhat_free(text) right after handing it
                    // to lhat_source_init_from_string)

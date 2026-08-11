@@ -7,7 +7,7 @@
 
 #include <string.h>
 
-#include "object.h"
+#include "lhat/object.h"
 #include "testutil.h"
 
 static LhatValue string_value(LhatHeap *owner, const char *text)

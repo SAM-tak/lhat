@@ -18,8 +18,8 @@
 #include <stddef.h>
 
 #include "lhat/module.h"
-#include "object.h"
-#include "value.h"
+#include "lhat/object.h"
+#include "lhat/value.h"
 
 typedef enum {
     LHAT_RUN_OK,

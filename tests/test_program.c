@@ -8,11 +8,11 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "port.h"
+#include "lhat/port.h"
 #include "program_internal.h"
 #include "testutil.h"
-#include "value.h"
-#include "vm.h"
+#include "lhat/value.h"
+#include "lhat/vm.h"
 
 typedef struct {
     const char *path;

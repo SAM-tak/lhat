@@ -9,7 +9,7 @@
 #ifndef LHAT_RTTYPE_H
 #define LHAT_RTTYPE_H
 
-#include "object.h"
+#include "lhat/object.h"
 #include "type.h"
 
 // Converts one of the checker's own LhatType objects into the shape

@@ -5,7 +5,7 @@
 #include <errno.h>
 #include <stdlib.h>
 
-#include "lhatconfig.h"
+#include "lhat/config.h"
 
 static bool is_decimal_digit(char c)
 {

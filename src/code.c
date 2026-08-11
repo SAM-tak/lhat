@@ -2,7 +2,7 @@
 
 #include "code.h"
 
-#include "object.h"
+#include "lhat/object.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -10,7 +10,7 @@
 
 #include "gc.h"
 #include "grow.h"
-#include "port.h"
+#include "lhat/port.h"
 
 LhatProto *lhat_proto_new(void)
 {

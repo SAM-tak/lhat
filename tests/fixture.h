@@ -18,11 +18,11 @@
 #include "check.h"
 #include "compile.h"
 #include "lexer.h"
-#include "object.h"
+#include "lhat/object.h"
 #include "parser.h"
-#include "source.h"
+#include "lhat/source.h"
 #include "testutil.h"
-#include "vm.h"
+#include "lhat/vm.h"
 
 // ---------------------------------------------------------------------------
 // Parse: source to tree

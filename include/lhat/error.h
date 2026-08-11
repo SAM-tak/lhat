@@ -19,7 +19,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "source.h"
+#include "lhat/source.h"
 
 typedef enum {
     LHAT_REPORT_ERROR,

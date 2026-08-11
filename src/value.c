@@ -1,6 +1,6 @@
 // L^ (lhat) -- the runtime representation of a value.
 
-#include "value.h"
+#include "lhat/value.h"
 
 #include <limits.h>
 #include <stdarg.h>
@@ -8,7 +8,7 @@
 #include <string.h>
 
 #include "code.h"
-#include "object.h"
+#include "lhat/object.h"
 
 bool lhat_value_equal(LhatValue a, LhatValue b)
 {

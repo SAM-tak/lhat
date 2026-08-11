@@ -22,8 +22,8 @@
 // they are made of.
 #include "lhat/module.h"
 
-#include "object.h"
-#include "value.h"
+#include "lhat/object.h"
+#include "lhat/value.h"
 
 typedef uint32_t LhatInstruction;
 

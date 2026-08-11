@@ -8,9 +8,9 @@
 #include "compile.h"  // 05 の 5.3: the units are compiled here too
 #include "gc.h"  // LHAT_GC_BLACK -- host_error_heap の初期色 (04 の 12.4)
 #include "grow.h"
-#include "port.h"
+#include "lhat/port.h"
 #include "type.h"
-#include "vm.h"
+#include "lhat/vm.h"
 
 // ---------------------------------------------------------------------------
 // Paths

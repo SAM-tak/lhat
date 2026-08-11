@@ -6,7 +6,7 @@
 
 #include "lexer.h"
 #include "parser.h"
-#include "source.h"
+#include "lhat/source.h"
 
 #include "ast_json.h"
 #include "testutil.h"

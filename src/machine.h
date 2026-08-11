@@ -20,9 +20,9 @@
 
 #include "code.h"
 #include "gc.h"
-#include "lhatconfig.h"
-#include "object.h"
-#include "value.h"
+#include "lhat/config.h"
+#include "lhat/object.h"
+#include "lhat/value.h"
 
 typedef struct {
     const LhatClosure *closure;

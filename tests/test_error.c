@@ -7,7 +7,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "error.h"
+#include "lhat/error.h"
 #include "testutil.h"
 
 // Writes into a buffer of its own, the way a caller would: measure, then fill.

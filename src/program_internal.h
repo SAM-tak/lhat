@@ -13,8 +13,8 @@
 #include "hosted.h"
 #include "lexer.h"
 #include "parser.h"
-#include "program.h"
-#include "source.h"
+#include "lhat/program.h"
+#include "lhat/source.h"
 #include "type.h"
 
 struct LhatUnit {

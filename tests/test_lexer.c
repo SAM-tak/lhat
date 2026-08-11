@@ -9,7 +9,7 @@
 #include <string.h>
 
 #include "lexer.h"
-#include "source.h"
+#include "lhat/source.h"
 #include "testutil.h"
 #include "token.h"
 

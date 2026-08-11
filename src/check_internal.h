@@ -13,14 +13,14 @@
 #include <string.h>
 
 #include "environment.h"
-#include "lhatconfig.h"
+#include "lhat/config.h"
 #include "grow.h"
-#include "port.h"
+#include "lhat/port.h"
 
 // 05 の 8.7: a host writes a type out as text, so the checker reads the type
 // grammar of 13 章 back through the parser it came from.
 #include "parser.h"
-#include "source.h"
+#include "lhat/source.h"
 
 // A name bound in a scope. `offset` is where its let^ stands, which 8.7 needs
 // to tell a use before the definition from one after it.

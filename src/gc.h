@@ -26,8 +26,8 @@
 #include <stdbool.h>
 #include <stddef.h>
 
-#include "object.h"
-#include "value.h"
+#include "lhat/object.h"
+#include "lhat/value.h"
 
 struct LhatMachine;
 

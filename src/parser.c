@@ -7,8 +7,8 @@
 #include <string.h>
 
 #include "grow.h"
-#include "port.h"
-#include "lhatconfig.h"
+#include "lhat/port.h"
+#include "lhat/config.h"
 
 typedef struct {
     LhatLexer *lexer;

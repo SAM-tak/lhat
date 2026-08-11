@@ -20,8 +20,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "value.h"
-#include "lhatconfig.h"
+#include "lhat/value.h"
+#include "lhat/config.h"
 
 // Who an object belongs to. Two exist: a chunk, holding what its constants
 // name, and the machine, holding what a program makes while it runs. Only the

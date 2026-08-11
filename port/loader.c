@@ -7,7 +7,7 @@
 // A host reading units from an archive, or out of memory it built itself,
 // writes its own of this shape and hands that over instead.
 
-#include "../src/port.h"
+#include "lhat/port.h"
 
 #include <stdio.h>
 

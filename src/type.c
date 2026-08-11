@@ -5,9 +5,9 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "object.h"  // 05 の 8.9: LhatHostValueTag, for naming a host value
-#include "port.h"
-#include "lhatconfig.h"
+#include "lhat/object.h"  // 05 の 8.9: LhatHostValueTag, for naming a host value
+#include "lhat/port.h"
+#include "lhat/config.h"
 
 // MSVC does not provide max_align_t in C mode, so the arena carries its own
 // worst-case alignment rather than depending on it.

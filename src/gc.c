@@ -14,7 +14,7 @@
 #include <stdlib.h>
 #endif
 
-#include "lhatconfig.h"
+#include "lhat/config.h"
 #include "machine.h"
 
 // ---------------------------------------------------------------------------

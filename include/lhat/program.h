@@ -20,8 +20,8 @@
 #include <stddef.h>
 
 #include "lhat/module.h"  // what a compile answers with, and why one stopped
-#include "object.h"  // 05 の 8.7: LhatHostFn
-#include "vm.h"
+#include "lhat/object.h"  // 05 の 8.7: LhatHostFn
+#include "lhat/vm.h"
 
 typedef struct LhatProgram LhatProgram;
 typedef struct LhatUnit LhatUnit;

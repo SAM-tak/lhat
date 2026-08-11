@@ -8,9 +8,9 @@
 #include <math.h>
 #include <string.h>
 
-#include "object.h"
+#include "lhat/object.h"
 #include "testutil.h"
-#include "value.h"
+#include "lhat/value.h"
 
 static void test_tags(void)
 {
