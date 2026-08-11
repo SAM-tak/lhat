@@ -9,8 +9,13 @@
 
 #include "environment.h"
 #include "gc.h"
+#include "hosted.h"
 #include "lhatconfig.h"
 #include "machine.h"
+// For LHAT_OPERATOR_MEMBERS alone: the one list of operator spellings lives
+// with the tokens. Types and macros only -- nothing here calls the lexer,
+// so a bytecode-only build still links no front end (02 の 14.17改2).
+#include "token.h"
 // 02 の 14.17改2: tonumber reads 01 の 10 章's grammar. number.h is that
 // grammar and nothing else -- no source, no token, no diagnostic -- so the
 // machine carries it without carrying a front end.

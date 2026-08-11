@@ -1,22 +1,15 @@
 // L^ (lhat) -- compiling a tree to bytecode.
 
-#include "vm.h"
+#include "compile.h"
 
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
-#include "environment.h"
-#include "rttype.h"
-#include "gc.h"
 #include "lhatconfig.h"
-#include "machine.h"
-// 02 の 14.17改2: tonumber reads 01 の 10 章's grammar. number.h is that
-// grammar and nothing else -- no source, no token, no diagnostic -- so the
-// machine carries it without carrying a front end.
-#include "number.h"
 #include "port.h"
+#include "rttype.h"
 #include "type.h"
 
 // 9.8: break^ is a normal end for the loop it leaves, so its jump lands where

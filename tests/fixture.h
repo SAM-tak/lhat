@@ -16,6 +16,7 @@
 #include <string.h>
 
 #include "check.h"
+#include "compile.h"
 #include "lexer.h"
 #include "object.h"
 #include "parser.h"

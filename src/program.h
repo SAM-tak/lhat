@@ -21,7 +21,9 @@
 #include "parser.h"
 #include "source.h"
 #include "type.h"
-#include "vm.h"  // LhatCompileStatus: why a compile of the program stopped
+#include "compile.h"  // LhatCompileStatus: why a compile of the program stopped
+#include "hosted.h"
+#include "vm.h"
 
 typedef enum {
     LHAT_PROGRAM_ERR_CANNOT_READ,  // no such unit
