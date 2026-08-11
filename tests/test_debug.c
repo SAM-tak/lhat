@@ -12,10 +12,6 @@
 // is stdlibutil.h's redirect; the fd is duplicated aside and put back, since
 // LHAT_CHECK prints to stdout too and would otherwise report into the file.
 
-#if !defined(_WIN32) && !defined(_POSIX_C_SOURCE)
-#define _POSIX_C_SOURCE 200809L
-#endif
-
 #include <string.h>
 
 #include "stdlibutil.h"
@@ -27,17 +23,18 @@
 // run_capturing, so nothing survives the case that wrote it.
 #define SCRATCH "test_debug_out.txt"
 
+static const LhatTestRegister regs[] = {lhatstdlib_debug_register};
+
 static bool checks(const char *text)
 {
-    return lhat_test_check_text(lhatstdlib_debug_register, text);
+    return lhat_test_check_text(regs, 1, text);
 }
 
 // Every case here runs with stdout pointed at a file, so this is the one
 // spelling of it -- the run is stdlibutil.h's, shared with test_io.c.
 static LhatTestRan run_capturing(const char *text, char *buffer, size_t size)
 {
-    return lhat_test_run_capturing(lhatstdlib_debug_register, SCRATCH, text,
-                                   buffer, size);
+    return lhat_test_run_capturing(regs, 1, SCRATCH, text, buffer, size);
 }
 
 static void test_log_writes(void)

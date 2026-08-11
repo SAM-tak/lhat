@@ -14,18 +14,16 @@
 // by hand is a double free, since vm.c only stops the collector from
 // disposing what a program already did.
 
-#if !defined(_WIN32) && !defined(_POSIX_C_SOURCE)
-#define _POSIX_C_SOURCE 200809L
-#endif
-
 #include "stdlibutil.h"
 #include "testutil.h"
 
 #include "../stdlib/random.h"
 
+static const LhatTestRegister regs[] = {lhatstdlib_random_register};
+
 static LhatTestRan run_source(const char *text)
 {
-    return lhat_test_run(lhatstdlib_random_register, text);
+    return lhat_test_run(regs, 1, text);
 }
 
 // Every case narrows what make answered before using it, so the preamble is

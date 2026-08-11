@@ -9,7 +9,7 @@
 # The harness's own translation units: counters and the tally in testutil.c,
 # the parse/check/run fixtures in fixture.c. Shared by every test executable
 # (and by lsp/tests).
-add_library(lhat_testkit STATIC testutil.c fixture.c)
+add_library(lhat_testkit STATIC testutil.c fixture.c stdlibutil.c)
 target_include_directories(lhat_testkit PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(lhat_testkit PUBLIC lhat)
 target_include_directories(lhat_testkit PRIVATE ${CMAKE_SOURCE_DIR}/src)

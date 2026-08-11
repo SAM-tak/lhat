@@ -17,10 +17,6 @@
 // -- what sets errno to EACCES rather than something else is the platform's
 // to decide, and stdlib/io.c folds everything but EACCES into NotFound.
 
-#if !defined(_WIN32) && !defined(_POSIX_C_SOURCE)
-#define _POSIX_C_SOURCE 200809L
-#endif
-
 #include <stdio.h>
 #include <string.h>
 
@@ -38,17 +34,23 @@
 // directory ctest runs the executable in rather than anywhere in particular.
 #define MISSING "test_io_no_such_file.txt"
 
+static const LhatTestRegister regs[] = {lhatstdlib_io_register};
+
 static LhatTestRan run_source(const char *text)
 {
-    return lhat_test_run(lhatstdlib_io_register, text);
+    return lhat_test_run(regs, 1, text);
+}
+
+static bool checks(const char *text)
+{
+    return lhat_test_check_text(regs, 1, text);
 }
 
 // Runs `text` with stdout pointed at CAPTURED -- stdlibutil.h's, shared with
 // test_debug.c, which captures the same way for the same reason.
 static LhatTestRan run_capturing(const char *text, char *buffer, size_t size)
 {
-    return lhat_test_run_capturing(lhatstdlib_io_register, CAPTURED, text,
-                                   buffer, size);
+    return lhat_test_run_capturing(regs, 1, CAPTURED, text, buffer, size);
 }
 
 // Runs `text` with stdin coming from `bytes` instead of the terminal.
@@ -119,22 +121,20 @@ static void test_print(void)
     LHAT_TEST("print is a p^, so an f^ cannot call it");
     {
         LHAT_CHECK(
-            !lhat_test_check_text(lhatstdlib_io_register,
-                                  "import^ std.io\n"
-                                  "let^ noisy = f^ -> number^ {\n"
-                                  "    std.io.print(\"from a pure one\")\n"
-                                  "    return^ 1\n"
-                                  "}\n"
-                                  "return^ noisy()\n"),
+            !checks("import^ std.io\n"
+                    "let^ noisy = f^ -> number^ {\n"
+                    "    std.io.print(\"from a pure one\")\n"
+                    "    return^ 1\n"
+                    "}\n"
+                    "return^ noisy()\n"),
             "the checker refuses it before anything runs");
         LHAT_CHECK(
-            lhat_test_check_text(lhatstdlib_io_register,
-                                 "import^ std.io\n"
-                                 "let^ noisy = p^ {\n"
-                                 "    std.io.print(\"from a procedure\")\n"
-                                 "}\n"
-                                 "noisy()\n"
-                                 "return^ 1\n"),
+            checks("import^ std.io\n"
+                   "let^ noisy = p^ {\n"
+                   "    std.io.print(\"from a procedure\")\n"
+                   "}\n"
+                   "noisy()\n"
+                   "return^ 1\n"),
             "and takes the same body in a p^, so it is the f^ it refused");
     }
 }

@@ -9,23 +9,21 @@
 // than heads, and fields reading and writing the value in place. The
 // numbers are chosen so a wrong slot somewhere answers a wrong number here.
 
-#if !defined(_WIN32) && !defined(_POSIX_C_SOURCE)
-#define _POSIX_C_SOURCE 200809L
-#endif
-
 #include "stdlibutil.h"
 #include "testutil.h"
 
 #include "../stdlib/math.h"
 
+static const LhatTestRegister regs[] = {lhatstdlib_math_register};
+
 static LhatTestRan run_source(const char *text)
 {
-    return lhat_test_run(lhatstdlib_math_register, text);
+    return lhat_test_run(regs, 1, text);
 }
 
 static bool checks(const char *text)
 {
-    return lhat_test_check_text(lhatstdlib_math_register, text);
+    return lhat_test_check_text(regs, 1, text);
 }
 
 // ---------------------------------------------------------------------------

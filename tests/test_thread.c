@@ -13,10 +13,6 @@
 // outliving its program would be reading a chunk that has been freed, which
 // is the crash stdlib/thread.c's join_and_free comment describes.
 
-#if !defined(_WIN32) && !defined(_POSIX_C_SOURCE)
-#define _POSIX_C_SOURCE 200809L
-#endif
-
 #include <string.h>
 
 #include "stdlibutil.h"
@@ -26,9 +22,11 @@
 
 // std.thread is the module every case here registers; the run itself is
 // stdlibutil.h's, shared with the other stdlib tests.
+static const LhatTestRegister regs[] = {lhatstdlib_thread_register};
+
 static LhatTestRan run_source(const char *text)
 {
-    return lhat_test_run(lhatstdlib_thread_register, text);
+    return lhat_test_run(regs, 1, text);
 }
 
 // Whether the unit checks at all. The refusals below are type errors rather
@@ -36,7 +34,7 @@ static LhatTestRan run_source(const char *text)
 // cases ask.
 static bool checks(const char *text)
 {
-    return lhat_test_check_text(lhatstdlib_thread_register, text);
+    return lhat_test_check_text(regs, 1, text);
 }
 
 // The preamble every case shares: spawn, join, and hand the answer back. Both
