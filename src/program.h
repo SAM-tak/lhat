@@ -19,8 +19,7 @@
 #include <stdbool.h>
 #include <stddef.h>
 
-#include "compile.h"  // LhatCompileStatus, and the prompt's compile session
-#include "hosted.h"
+#include "lhat/module.h"  // what a compile answers with, and why one stopped
 #include "object.h"  // 05 の 8.7: LhatHostFn
 #include "vm.h"
 
@@ -71,6 +70,11 @@ const LhatUnit *lhat_program_check(LhatProgram *program, const char *path);
 // The unit to run is the one lhat_program_check returned: its index says
 // which proto of the array is it.
 const LhatModule *lhat_program_compile(LhatProgram *program, size_t *count);
+
+// Why that answered NULL. LHAT_COMPILE_OK until a compile has actually
+// failed, so a caller with a diagnostic to write asks this rather than
+// having to say "something".
+LhatCompileStatus lhat_program_compile_status(const LhatProgram *program);
 
 // ---------------------------------------------------------------------------
 // What a unit answers
@@ -230,6 +234,7 @@ bool lhat_program_install(const LhatProgram *program, LhatMachine *machine);
 // the error kinds and hostdata types isa^ names for the compiler. Both borrow
 // from the program, so it has to outlive the sessions.
 typedef struct LhatCheckSession LhatCheckSession;
+typedef struct LhatCompileSession LhatCompileSession;
 void lhat_program_install_checks(const LhatProgram *program,
                                  LhatCheckSession *session);
 void lhat_program_install_compiles(const LhatProgram *program,

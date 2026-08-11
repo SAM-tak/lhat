@@ -12,8 +12,11 @@
 
 // The dump modes and the diagnostic rendering read each stage's results off
 // a unit directly -- the cli is one of the language's own front ends, so it
-// reaches the internal header the way lsp/ does, rather than asking the
-// host API for accessors it alone would use.
+// reaches the internal headers the way lsp/ does, rather than asking the
+// host API for accessors it alone would use. code.h is for --dump-bytecode,
+// which writes out the instructions a host is never shown.
+#include "code.h"
+#include "compile.h"
 #include "program_internal.h"
 
 #ifdef LHAT_CLI_WITH_STDLIB

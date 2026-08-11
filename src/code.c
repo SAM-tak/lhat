@@ -23,6 +23,26 @@ LhatProto *lhat_proto_new(void)
     return proto;
 }
 
+bool lhat_proto_yields(const LhatProto *proto)
+{
+    return proto->yields;
+}
+
+size_t lhat_proto_upvalue_count(const LhatProto *proto)
+{
+    return proto->upvalue_count;
+}
+
+size_t lhat_proto_parameters(const LhatProto *proto)
+{
+    return proto->parameters;
+}
+
+bool lhat_proto_has_variadic(const LhatProto *proto)
+{
+    return proto->has_variadic;
+}
+
 void lhat_proto_free(LhatProto *proto)
 {
     if (proto == NULL) {

@@ -11,6 +11,7 @@
 #ifndef LHAT_MODULE_H
 #define LHAT_MODULE_H
 
+#include <stdbool.h>
 #include <stddef.h>
 
 // One compiled subroutine. src/code.h completes it for the library; nothing
@@ -18,6 +19,16 @@
 typedef struct LhatProto LhatProto;
 
 void lhat_proto_free(LhatProto *proto);
+
+// The calling shape of a body, for a host holding one and deciding what it
+// may do with it -- std.thread's spawn asks all four before it hands a
+// closure to another machine. 02 の 15.2 makes a yieldable body answer a
+// coroutine rather than run; 03 の 5.4's captured places belong to the
+// machine that made them; 13.7's variadic makes `parameters` a floor.
+bool lhat_proto_yields(const LhatProto *proto);
+size_t lhat_proto_upvalue_count(const LhatProto *proto);
+size_t lhat_proto_parameters(const LhatProto *proto);
+bool lhat_proto_has_variadic(const LhatProto *proto);
 
 // 05 の 5.3: one unit, compiled. The path 3 章 had it declare is kept beside
 // the body, since that is where the unit registers itself and what a

@@ -10,6 +10,7 @@
 #define LHAT_PROGRAM_INTERNAL_H
 
 #include "check.h"
+#include "hosted.h"
 #include "lexer.h"
 #include "parser.h"
 #include "program.h"

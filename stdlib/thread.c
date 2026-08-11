@@ -325,9 +325,10 @@ static LhatValue thread_spawn(LhatMachine *machine, void *context,
     // have a type spawn cannot promise to fill -- only the four kinds
     // to_thread_value carries reach the other machine, and '...' is the one
     // shape whose element type (any^) every one of them conforms to.
-    if (closure->proto == NULL || closure->proto->yields ||
-        closure->proto->upvalue_count != 0 ||
-        !closure->proto->has_variadic || closure->proto->parameters != 1) {
+    if (closure->proto == NULL || lhat_proto_yields(closure->proto) ||
+        lhat_proto_upvalue_count(closure->proto) != 0 ||
+        !lhat_proto_has_variadic(closure->proto) ||
+        lhat_proto_parameters(closure->proto) != 1) {
         return fail_with(machine, module->not_spawnable,
                          "fn closes over a variable, is yieldable, or does "
                          "not take '...' alone; spawn requires a plain "

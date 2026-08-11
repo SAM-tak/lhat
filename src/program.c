@@ -5,12 +5,12 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "compile.h"  // 05 の 5.3: the units are compiled here too
 #include "gc.h"  // LHAT_GC_BLACK -- host_error_heap の初期色 (04 の 12.4)
 #include "grow.h"
 #include "port.h"
 #include "type.h"
-
-#include "vm.h"  // 05 の 5.3: the units are compiled here too, not only checked
+#include "vm.h"
 
 // ---------------------------------------------------------------------------
 // Paths
@@ -1268,6 +1268,11 @@ bool lhat_unit_ok(const LhatUnit *unit)
            unit->lexer.diagnostic_count == 0 &&
            unit->parsed.diagnostic_count == 0 &&
            unit->checked.diagnostic_count == 0;
+}
+
+LhatCompileStatus lhat_program_compile_status(const LhatProgram *program)
+{
+    return program->compile_status;
 }
 
 size_t lhat_program_diagnostic_count(const LhatProgram *program)
