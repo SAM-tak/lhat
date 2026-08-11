@@ -268,23 +268,16 @@ install(TARGETS lhat lhatport lhatthread EXPORT lhatTargets
 # になるよう、ディレクトリごと据える。
 install(FILES port/thread.h DESTINATION include/port)
 
-# lhat.h reaches the rest by a path relative to itself, so the two directories
-# are installed keeping the shape they have here. A host still names only
-# <prefix>/include/lhat.h and puts only <prefix>/include on its path.
-# lhatconfig.h is found back through the include path (the internal headers
-# say "lhatconfig.h" bare), and the generated version.h as "lhat/version.h".
-install(FILES include/lhat.h include/lhatconfig.h DESTINATION include)
-install(FILES include/lhat/module.h
-              ${CMAKE_CURRENT_BINARY_DIR}/include/lhat/version.h
+# What ships is what a host may name: lhat.h and the headers under lhat/,
+# in the shape they already have here. Nothing in src/ is installed -- the
+# tokens, the tree, the checker, the instruction set and the collector are
+# the library's own, and install_smoke is what proves lhat.h no longer
+# reaches any of them (it builds a host against this tree alone).
+install(FILES include/lhat.h DESTINATION include)
+install(DIRECTORY include/lhat/ DESTINATION include/lhat
+    FILES_MATCHING PATTERN "*.h")
+install(FILES ${CMAKE_CURRENT_BINARY_DIR}/include/lhat/version.h
     DESTINATION include/lhat)
-
-# machine.h is the inside of LhatMachine and gc.h is what reads it. vm.h keeps
-# the machine opaque on purpose, and nothing lhat.h reaches includes either of
-# these -- so they are the machine's own business and are not shipped.
-install(DIRECTORY src/ DESTINATION src
-    FILES_MATCHING PATTERN "*.h"
-    PATTERN "machine.h" EXCLUDE
-    PATTERN "gc.h" EXCLUDE)
 
 # The package: find_package(lhat CONFIG) answers lhat::lhat and friends.
 # tests/install_smoke is the proof the installed tree actually works --
