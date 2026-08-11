@@ -74,10 +74,10 @@ typedef enum {
     LHAT_OP_POW_ASSIGN,      // **=
     LHAT_OP_CONCAT_ASSIGN,   // ..=
 
-    // Neither of these is part of the language; both are recognised so the
-    // parser can say what replaced them instead of reporting a stray
-    // character. '->' has been proposed as postfix reassignment and '::' as the
-    // return separator; 01 の 7.3 and 7.6 explain what each gave way to.
+    // Not part of the language; recognised so the parser can say what
+    // replaced it instead of reporting a stray character. '::' was once the
+    // return separator; 01 の 7.6 explains what it gave way to ('->', above,
+    // which stayed).
     LHAT_OP_COLONCOLON,  // ::
 
     LHAT_OP_LSHIFT,      // <<   reserved

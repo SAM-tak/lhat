@@ -131,9 +131,9 @@ typedef struct {
 
 // 2.2: a run of values stored as two parallel arrays -- the payloads
 // aligned and dense, the tags one byte each. This is the shape every bulk
-// store takes (a table's array part; the machine's stack and a coroutine's
-// saved registers are to follow); LhatValue stays the currency handed
-// around by value, and these two functions are the only bridge.
+// store takes: a table's array part, the machine's stack, a coroutine's
+// saved registers. LhatValue stays the currency handed around by value,
+// and these two functions are the only bridge.
 typedef struct {
     LhatValueUnion *values;
     uint8_t *tags;
