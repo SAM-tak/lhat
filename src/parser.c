@@ -1349,6 +1349,19 @@ static LhatNode *parse_if_expression_from(Parser *p, LhatToken start,
         lhat_node_append(&head, &tail, finish(p, clause));
     }
 
+    // 5.1: an expression answers with a value in every case, and the clause
+    // written without a condition is the one that answers when no test held.
+    // The statement form may leave that case out; this one may not -- every
+    // clause writes into the same register, so a chain that ends on a test
+    // reads back whatever stood there.
+    //
+    // Reported where the missing clause goes, which is right before the ';'.
+    // Input that ran out stands here as EOF, and report() takes that for 3.1's
+    // unfinished input rather than a mistake.
+    if (tail == NULL || tail->v.clause.condition != NULL) {
+        report(p, &p->current, LHAT_PARSE_ERR_IF_EXPR_NEEDS_ELSE);
+    }
+
     // 6 章: a ':' opens the construct and a ';' closes it.
     expect_op(p, LHAT_OP_SEMICOLON);
     node->v.list.items = head;
@@ -2922,6 +2935,18 @@ static LhatNode *parse_when_clauses(Parser *p, const LhatToken *start,
         }
     }
 
+    // 17.5: the statement form does nothing when the subject matches no
+    // clause, so it may leave the default out. The expression form has to
+    // answer, and there is no way to show that a set of value patterns
+    // exhausted the cases -- so it takes other^ whatever the patterns are.
+    //
+    // No clause at all is the caller's LHAT_PARSE_ERR_FOR_NEEDS_CLAUSE, and
+    // that is the one to leave standing.
+    if (as_expression && head != NULL &&
+        (tail == NULL || tail->v.clause.condition != NULL)) {
+        report(p, &p->current, LHAT_PARSE_ERR_MATCH_NEEDS_OTHER);
+    }
+
     node->v.list.items = head;
     return finish(p, node);
 }
@@ -4035,6 +4060,14 @@ const char *lhat_parse_error_message(LhatParseErrorCode code)
         case LHAT_PARSE_ERR_ELSE_NEEDS_COLON:
             return "this needs a ':' after it; what follows was read as the "
                    "condition of a further test, and no ':' came";
+        case LHAT_PARSE_ERR_IF_EXPR_NEEDS_ELSE:
+            return "an if^ written as an expression answers in every case; "
+                   "write 'el^: ...' before the ';', or the statement form "
+                   "with braces";
+        case LHAT_PARSE_ERR_MATCH_NEEDS_OTHER:
+            return "a match written as an expression answers in every case; "
+                   "write 'other^: ...' before the ';', or the statement form "
+                   "with braces";
         case LHAT_PARSE_ERR_SPREAD_NOT_LAST:
             return "'...' forwards the whole collected tail, so nothing can "
                    "follow it here";

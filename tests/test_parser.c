@@ -680,6 +680,63 @@ static void test_statements(void)
     LHAT_CHECK_EQ_INT(error_count(&p), 0);
     parse_dispose(&p);
 
+    // 5.1: an expression answers in every case, and the clause with no
+    // condition is the one that answers when no test held. Without it the
+    // compiled chain falls through to the join with nothing written into the
+    // register the clauses share, and reads back whatever stood there.
+    LHAT_TEST("an if^ expression that ends on a test is reported");
+    parse_text(&p, "var^ a = if^ 1 < 2: 1 ;");
+    {
+        LHAT_CHECK_EQ_INT(error_count(&p), 1);
+        LHAT_CHECK(p.result.diagnostic_count > 0, "expected a diagnostic");
+        if (p.result.diagnostic_count > 0) {
+            const LhatParseDiagnostic *d = &p.result.diagnostics[0];
+            LHAT_CHECK_EQ_INT(d->code, LHAT_PARSE_ERR_IF_EXPR_NEEDS_ELSE);
+            // Where the missing clause goes: the ';' at column 23.
+            LHAT_CHECK_EQ_INT((int)d->column, 23);
+        }
+    }
+    parse_dispose(&p);
+
+    LHAT_TEST("a longer chain that ends on one is too");
+    parse_text(&p, "var^ a = if^ 1 < 2: 1 el^ 3 < 4: 2 ;");
+    LHAT_CHECK_EQ_INT(error_count(&p), 1);
+    LHAT_CHECK(p.result.diagnostic_count > 0 &&
+                   p.result.diagnostics[0].code ==
+                       LHAT_PARSE_ERR_IF_EXPR_NEEDS_ELSE,
+               "expected the missing-else diagnostic");
+    parse_dispose(&p);
+
+    // 16.3's if^ builds the same node, so the rule reaches it without knowing
+    // it is there.
+    LHAT_TEST("and so is the if^ of a for^ written as an expression");
+    parse_text(&p, "var^ a = for^ let^ n = 5 if^ n > 1: n ;");
+    LHAT_CHECK_EQ_INT(error_count(&p), 1);
+    LHAT_CHECK(p.result.diagnostic_count > 0 &&
+                   p.result.diagnostics[0].code ==
+                       LHAT_PARSE_ERR_IF_EXPR_NEEDS_ELSE,
+               "expected the missing-else diagnostic");
+    parse_dispose(&p);
+
+    // The statement form does nothing when no condition holds, so it may
+    // leave the case out.
+    LHAT_TEST("but the statement form may still leave it out");
+    parse_text(&p, "if^ 1 < 2 { a() }\n");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    parse_dispose(&p);
+
+    LHAT_TEST("as may the statement form of a for^ if^");
+    parse_text(&p, "for^ let^ n = 5 if^ n > 1 { a() }\n");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    parse_dispose(&p);
+
+    // 3.1: input that stopped early is unfinished rather than wrong, and the
+    // token standing where the clause goes is EOF.
+    LHAT_TEST("input that runs out first is unfinished, not wrong");
+    parse_interactive_text(&p, "var^ a = if^ 1 < 2: 1");
+    LHAT_CHECK(p.result.incomplete, "expected unfinished input");
+    parse_dispose(&p);
+
     // Every expect_op knows the token it wanted, and the diagnostic carries
     // it -- "a different token" says nothing a reader can act on.
     LHAT_TEST("a diagnostic names the token it wanted");
@@ -2086,6 +2143,22 @@ static void test_patterns(void)
         LHAT_CHECK_EQ_INT(
             lhat_node_list_length(value->v.loop.body->v.list.items), 3);
     }
+    parse_dispose(&p);
+
+    // 17.5: no set of value patterns can show that the cases were exhausted,
+    // so the form that has to answer takes other^ whatever they are.
+    LHAT_TEST("the expression form without a default is reported");
+    parse_text(&p, "var^ r = for^ x: when^ 0: 1 ;");
+    LHAT_CHECK_EQ_INT(error_count(&p), 1);
+    LHAT_CHECK(p.result.diagnostic_count > 0 &&
+                   p.result.diagnostics[0].code ==
+                       LHAT_PARSE_ERR_MATCH_NEEDS_OTHER,
+               "expected the missing-other diagnostic");
+    parse_dispose(&p);
+
+    LHAT_TEST("but the statement form may leave it out");
+    parse_text(&p, "for^ x { when^ 0: a() }");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
     parse_dispose(&p);
 
     // The ':' of the expression form has the shape of 16.3's annotation, and
