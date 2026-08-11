@@ -51,6 +51,26 @@ static void test_encoding(void)
         LHAT_CHECK_EQ_INT(chunk.constant_count, 2);
         lhat_chunk_dispose(&chunk);
     }
+
+    // 5.2: 256 registers, and a call's arguments all live at once. A call
+    // written with 300 of them is refused as a whole rather than mis-encoded.
+    LHAT_TEST("an expression needing more registers than exist is refused");
+    {
+        char text[4096];
+        size_t at = 0;
+        at += (size_t)snprintf(text + at, sizeof text - at,
+                               "var^ log = p^... { }\nlog(");
+        for (int i = 0; i < 300; i++) {
+            at += (size_t)snprintf(text + at, sizeof text - at,
+                                   i != 0 ? ",1" : "1");
+        }
+        snprintf(text + at, sizeof text - at, ")\nreturn^ 1\n");
+
+        Run r;
+        compile_text(&r, text);
+        LHAT_CHECK_EQ_INT(r.compiled, LHAT_COMPILE_TOO_COMPLEX);
+        compiled_dispose(&r);
+    }
 }
 
 static void test_arithmetic(void)

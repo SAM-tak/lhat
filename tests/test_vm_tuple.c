@@ -163,6 +163,21 @@ static void test_multi_value_return(void)
     LHAT_CHECK_EQ_INT(r.compiled, LHAT_COMPILE_OK);
     LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_TUPLE_UNEXPECTED);
     run_dispose(&r);
+
+    // 03 の 5.3: both sides declare and the machine collates -- a mismatch
+    // is dropped, never reconciled. The annotation promises three positions,
+    // so the checked call site reserves three; the body answers two. The
+    // checker reports the lie, and compiling goes ahead regardless here,
+    // which is what leaves the machine to refuse it a second time.
+    LHAT_TEST("a run answering fewer positions than reserved is refused");
+    run_checked_text(&r,
+                     "var^ both : f^ -> (number^, number^, number^); ="
+                     " f^ { return^ 1, 2 }\n"
+                     "var^ a, b, c = both()\n"
+                     "return^ 0\n");
+    LHAT_CHECK_EQ_INT(r.compiled, LHAT_COMPILE_OK);
+    LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_TUPLE_ARITY);
+    run_dispose(&r);
 }
 
 // 02 の 16.3 with 13.8改: a walk's pair is the tuple (K, V), and a single

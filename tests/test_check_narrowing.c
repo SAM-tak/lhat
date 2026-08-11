@@ -275,6 +275,15 @@ static void test_narrowing(void)
                "var^ n : number^ = if^ r isa^ number^: r el^: 0 ;\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
+
+    // 11.6改: as^ is sound -- a pair no value can inhabit both sides of is
+    // refused at check time, not left to panic.
+    LHAT_TEST("as^ between disjoint types is refused at check time");
+    check_text(&u,
+               "var^ n = 1\n"
+               "var^ s = n as^ string^\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_AS_IMPOSSIBLE);
+    unit_dispose(&u);
 }
 
 // 04 の 11.4 with 03 の 3.5: relaxed steps past nil^ in a union and lets
@@ -554,6 +563,15 @@ static void test_tuple_positions(void)
     LHAT_TEST("'(T)' is still the grouping it always was");
     check_text(&u, "var^ x : (number^) = 1\n");
     CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // 13.8改: the names on the left take every position or the checker
+    // refuses -- strict never leaves the count to the machine.
+    LHAT_TEST("destructuring must take every position");
+    check_text(&u,
+               "var^ both = f^ -> (number^, number^) { return^ 1, 2 }\n"
+               "var^ a, b, c = both()\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_TUPLE_ARITY);
     unit_dispose(&u);
 }
 

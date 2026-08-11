@@ -212,6 +212,13 @@ static void test_expressions(void)
                "log(\"text\")\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
+
+    // 11 章: unary '-' has no member form, so a wrong operand is refused by
+    // its own name rather than as a generic mismatch.
+    LHAT_TEST("unary '-' on a string is refused by name");
+    check_text(&u, "var^ x = -\"a\"\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_NOT_NUMBER);
+    unit_dispose(&u);
 }
 
 // 03 の 3.4.

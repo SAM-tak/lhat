@@ -1020,6 +1020,36 @@ static void test_port(void)
     }
 }
 
+// 05 の 8.9: a host value lives in stack slots and nowhere else. A table
+// element is the first place one would escape to, and the checker refuses
+// it by name. The maker is never called -- the check is the whole test.
+static void test_hostvalue_escape(void)
+{
+    LhatProgram program;
+    Disk disk;
+
+    LHAT_TEST("a host value stored into a table is refused by name");
+    {
+        static const File files[] = {
+            {"main.lh",
+             "import^ test.v\n"
+             "var^ t = { test.v.make() }\n"
+             "return^ 1\n"},
+        };
+        program_with(&program, &disk, files, 1);
+        LHAT_CHECK(lhat_register_hostvalue_type(&program, "test.v", "V", 8) !=
+                       NULL,
+                   "the type registration took");
+        LHAT_CHECK(lhat_register_func(&program, "test.v", "make",
+                                      "f^ -> test.v.V;", host_add, NULL),
+                   "the maker registration took");
+        const LhatUnit *root = lhat_program_check(&program, "main.lh");
+        LHAT_CHECK(has_check_error(root, LHAT_CHECK_ERR_HOSTVALUE_ESCAPES),
+                   "the escape is refused by name");
+    }
+    lhat_program_dispose(&program);
+}
+
 int main(void)
 {
     // 8.9: before anything is taken, so the refusal above is about the order
@@ -1030,6 +1060,7 @@ int main(void)
     test_cycles();
     test_running();
     test_hosting();
+    test_hostvalue_escape();
     test_host_data();
     test_host_data_release();
     return lhat_test_report("test_program");

@@ -126,6 +126,29 @@ static void test_errors(void)
              "return^ error^IOError{ }\n");
     LHAT_CHECK_EQ_INT(r.compiled, LHAT_COMPILE_UNDEFINED);
     run_dispose(&r);
+
+    // 02 の 12.7改, 04 の 11.6: the program's own panic. The value rides
+    // along, the line names where, and op_name stays empty -- it answers
+    // only for the eight operator instructions.
+    LHAT_TEST("panic^ carries its value out");
+    run_text(&r, "panic^ 42\n");
+    LHAT_CHECK_EQ_INT(r.compiled, LHAT_COMPILE_OK);
+    LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_PANIC);
+    LHAT_CHECK(lhat_is_integer(r.ran.value), "the value rides along");
+    LHAT_CHECK_EQ_INT(lhat_as_integer(r.ran.value), 42);
+    LHAT_CHECK_EQ_INT(r.ran.line, 1);
+    LHAT_CHECK(r.ran.op_name == NULL, "no operator to name");
+    run_dispose(&r);
+
+    // 12.7改: not catchable -- catch^ substitutes error values, and a panic
+    // is not one.
+    LHAT_TEST("panic^ passes catch^ by");
+    run_text(&r,
+             "var^ f = p^ -> number^ { panic^ 7 }\n"
+             "return^ f() catch^ 0\n");
+    LHAT_CHECK_EQ_INT(r.compiled, LHAT_COMPILE_OK);
+    LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_PANIC);
+    run_dispose(&r);
 }
 
 // 04 の 4 章 and 5 章, and 02 の 11.7.
