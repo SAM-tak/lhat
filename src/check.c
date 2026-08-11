@@ -8,6 +8,7 @@
 
 #include "environment.h"
 #include "lhatconfig.h"
+#include "grow.h"
 #include "port.h"
 
 // 05 の 8.7: a host writes a type out as text, so the checker reads the type
@@ -278,16 +279,8 @@ static void report(Checker *c, const LhatNode *at, LhatCheckErrorCode code)
     }
 
     LhatCheckResult *r = c->result;
-    if (r->diagnostic_count == r->diagnostic_capacity) {
-        size_t grown = r->diagnostic_capacity ? r->diagnostic_capacity * 2 : 8;
-        LhatCheckDiagnostic *bigger = (LhatCheckDiagnostic *)lhat_realloc(
-            r->diagnostics, grown * sizeof *bigger);
-        if (bigger == NULL) {
-            return;
-        }
-        r->diagnostics = bigger;
-        r->diagnostic_capacity = grown;
-    }
+    LHAT_GROW(r->diagnostics, r->diagnostic_count, r->diagnostic_capacity, 8,
+              return);
 
     LhatCheckDiagnostic *d = &r->diagnostics[r->diagnostic_count++];
     d->code = code;
@@ -308,16 +301,8 @@ static void record_resolution(Checker *c, const LhatNode *at, const Binding *b)
     if (at->end <= at->offset) {
         return;  // no span: nothing to hover over
     }
-    if (r->resolution_count == r->resolution_capacity) {
-        size_t grown = r->resolution_capacity ? r->resolution_capacity * 2 : 64;
-        LhatResolution *bigger = (LhatResolution *)lhat_realloc(
-            r->resolutions, grown * sizeof *bigger);
-        if (bigger == NULL) {
-            return;
-        }
-        r->resolutions = bigger;
-        r->resolution_capacity = grown;
-    }
+    LHAT_GROW(r->resolutions, r->resolution_count, r->resolution_capacity, 64,
+              return);
 
     LhatResolution *entry = &r->resolutions[r->resolution_count++];
     entry->use = at->offset;
@@ -3656,6 +3641,19 @@ static LhatType *infer_func(Checker *c, const LhatNode *node)
 //
 // 14.9 keeps the name out of it. Both are ordinary structures, so 11.3's
 // structural identity applies unchanged and nothing here has to be interned.
+// The one walk of a member list, under both of the searches below.
+static const LhatTypeMember *members_search(const LhatTypeMember *members,
+                                            const char *name, size_t length)
+{
+    for (; members != NULL; members = members->next) {
+        if (members->name_length == length &&
+            memcmp(members->name, name, length) == 0) {
+            return members;
+        }
+    }
+    return NULL;
+}
+
 static const LhatTypeMember *find_member(const LhatType *table,
                                          const char *name, size_t length)
 {
@@ -3665,13 +3663,7 @@ static const LhatTypeMember *find_member(const LhatType *table,
                           table->kind != LHAT_TYPE_HOSTVALUE)) {
         return NULL;
     }
-    for (const LhatTypeMember *m = table->v.table.members; m != NULL;
-         m = m->next) {
-        if (m->name_length == length && memcmp(m->name, name, length) == 0) {
-            return m;
-        }
-    }
-    return NULL;
+    return members_search(table->v.table.members, name, length);
 }
 
 // 14.11 makes new return an instance, so a definition's own structure is
@@ -5802,22 +5794,14 @@ static const LhatNode *focus_element(const LhatNode *element)
 }
 
 // The member of that name a structure declares, or NULL.
+// find_member's search, reaching an error kind's fields too (04 の 2.2).
 static const LhatTypeMember *member_named(const LhatType *type,
                                           const char *name, size_t length)
 {
-    const LhatTypeMember *members = NULL;
-    if (type->kind == LHAT_TYPE_TABLE || type->kind == LHAT_TYPE_HOSTVALUE) {
-        members = type->v.table.members;
-    } else if (type->kind == LHAT_TYPE_ERROR_KIND) {
-        members = type->v.error.fields;
+    if (type->kind == LHAT_TYPE_ERROR_KIND) {
+        return members_search(type->v.error.fields, name, length);
     }
-    for (; members != NULL; members = members->next) {
-        if (members->name_length == length &&
-            memcmp(members->name, name, length) == 0) {
-            return members;
-        }
-    }
-    return NULL;
+    return find_member(type, name, length);
 }
 
 // 16.3: `in^ e` walks e.iterate(). A coroutine answers with itself, a table
@@ -6706,15 +6690,7 @@ static void session_keep(LhatCheckSession *session, const char *name,
             return;
         }
     }
-    if (session->count == session->capacity) {
-        size_t grown = session->capacity ? session->capacity * 2 : 16;
-        void *bigger = lhat_realloc(session->names, grown * sizeof *session->names);
-        if (bigger == NULL) {
-            return;
-        }
-        session->names = bigger;
-        session->capacity = grown;
-    }
+    LHAT_GROW(session->names, session->count, session->capacity, 16, return);
     char *kept = (char *)lhat_alloc(length + 1);
     if (kept == NULL) {
         return;

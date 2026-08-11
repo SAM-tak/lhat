@@ -6,6 +6,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "grow.h"
 #include "port.h"
 #include "lhatconfig.h"
 
@@ -173,16 +174,8 @@ static void report(Parser *p, const LhatToken *at, LhatParseErrorCode code)
     p->panicking = true;
 
     LhatParseResult *r = p->result;
-    if (r->diagnostic_count == r->diagnostic_capacity) {
-        size_t grown = r->diagnostic_capacity ? r->diagnostic_capacity * 2 : 8;
-        LhatParseDiagnostic *bigger =
-            (LhatParseDiagnostic *)lhat_realloc(r->diagnostics, grown * sizeof *bigger);
-        if (bigger == NULL) {
-            return;
-        }
-        r->diagnostics = bigger;
-        r->diagnostic_capacity = grown;
-    }
+    LHAT_GROW(r->diagnostics, r->diagnostic_count, r->diagnostic_capacity, 8,
+              return);
 
     LhatParseDiagnostic *d = &r->diagnostics[r->diagnostic_count++];
     d->code = code;

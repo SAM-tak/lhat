@@ -6,6 +6,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "grow.h"
 #include "port.h"
 
 // 04 の 2.6 and 6.1: whether `value` is an error of `kind`. A kind object
@@ -745,16 +746,8 @@ LhatOverload *lhat_overload_new(LhatHeap *heap)
 
 bool lhat_overload_add(LhatOverload *overload, LhatValue candidate)
 {
-    if (overload->count == overload->capacity) {
-        size_t grown = overload->capacity ? overload->capacity * 2 : 4;
-        LhatValue *bigger =
-            (LhatValue *)lhat_realloc(overload->candidates, grown * sizeof *bigger);
-        if (bigger == NULL) {
-            return false;
-        }
-        overload->candidates = bigger;
-        overload->capacity = grown;
-    }
+    LHAT_GROW(overload->candidates, overload->count, overload->capacity, 4,
+              return false);
     overload->candidates[overload->count++] = candidate;
     return true;
 }

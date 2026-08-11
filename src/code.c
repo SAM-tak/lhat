@@ -9,6 +9,7 @@
 #include <string.h>
 
 #include "gc.h"
+#include "grow.h"
 #include "port.h"
 
 LhatProto *lhat_proto_new(void)
@@ -50,16 +51,8 @@ void lhat_modules_free(LhatModule *modules, size_t count)
 
 size_t lhat_proto_add(LhatProto *parent, LhatProto *child)
 {
-    if (parent->proto_count == parent->proto_capacity) {
-        size_t grown = parent->proto_capacity ? parent->proto_capacity * 2 : 4;
-        LhatProto **bigger =
-            (LhatProto **)lhat_realloc(parent->protos, grown * sizeof *bigger);
-        if (bigger == NULL) {
-            return SIZE_MAX;
-        }
-        parent->protos = bigger;
-        parent->proto_capacity = grown;
-    }
+    LHAT_GROW(parent->protos, parent->proto_count, parent->proto_capacity, 4,
+              return SIZE_MAX);
     if (parent->proto_count > 0xFFFF) {
         return SIZE_MAX;
     }
@@ -79,16 +72,8 @@ size_t lhat_proto_add_upvalue(LhatProto *proto, LhatUpvalueSource source,
         }
     }
 
-    if (proto->upvalue_count == proto->upvalue_capacity) {
-        size_t grown = proto->upvalue_capacity ? proto->upvalue_capacity * 2 : 4;
-        LhatUpvalueDesc *bigger =
-            (LhatUpvalueDesc *)lhat_realloc(proto->upvalues, grown * sizeof *bigger);
-        if (bigger == NULL) {
-            return SIZE_MAX;
-        }
-        proto->upvalues = bigger;
-        proto->upvalue_capacity = grown;
-    }
+    LHAT_GROW(proto->upvalues, proto->upvalue_count, proto->upvalue_capacity,
+              4, return SIZE_MAX);
     if (proto->upvalue_count > 0xFF) {
         return SIZE_MAX;
     }
@@ -160,16 +145,8 @@ size_t lhat_chunk_constant(LhatChunk *chunk, LhatValue value)
         }
     }
 
-    if (chunk->constant_count == chunk->constant_capacity) {
-        size_t grown = chunk->constant_capacity ? chunk->constant_capacity * 2 : 8;
-        LhatValue *bigger =
-            (LhatValue *)lhat_realloc(chunk->constants, grown * sizeof *bigger);
-        if (bigger == NULL) {
-            return SIZE_MAX;
-        }
-        chunk->constants = bigger;
-        chunk->constant_capacity = grown;
-    }
+    LHAT_GROW(chunk->constants, chunk->constant_count,
+              chunk->constant_capacity, 8, return SIZE_MAX);
     if (chunk->constant_count > 0xFFFF) {
         return SIZE_MAX;
     }

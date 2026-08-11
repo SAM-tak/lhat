@@ -282,17 +282,6 @@ static inline LhatValue lhat_object(LhatObject *o)
     return v;
 }
 
-// 05 の 8.9: the head slot alone. The continuation slots are written where
-// the value is laid down -- a head only ever travels as the first of its
-// tag's width, so nothing builds a whole host value as one LhatValue.
-static inline LhatValue lhat_hostvalue_head(const struct LhatHostValueTag *tag)
-{
-    LhatValue v;
-    v.tag = LHAT_VALUE_HOSTVALUE;
-    v.as.hostvalue = tag;
-    return v;
-}
-
 // ---------------------------------------------------------------------------
 // Questions
 // ---------------------------------------------------------------------------

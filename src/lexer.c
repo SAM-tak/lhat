@@ -6,6 +6,7 @@
 #include <string.h>
 
 #include "number.h"
+#include "grow.h"
 #include "port.h"
 
 #define LHAT_CP_INVALID 0xFFFFFFFFu
@@ -213,16 +214,9 @@ static void advance_n(LhatLexer *lexer, size_t n)
 static void report_at(LhatLexer *lexer, LhatErrorCode code, uint32_t offset,
                       uint32_t line, uint32_t column)
 {
-    if (lexer->diagnostic_count == lexer->diagnostic_capacity) {
-        size_t grown = lexer->diagnostic_capacity ? lexer->diagnostic_capacity * 2 : 8;
-        LhatDiagnostic *bigger =
-            (LhatDiagnostic *)lhat_realloc(lexer->diagnostics, grown * sizeof *bigger);
-        if (bigger == NULL) {
-            return;  // drop the diagnostic rather than fail the scan
-        }
-        lexer->diagnostics = bigger;
-        lexer->diagnostic_capacity = grown;
-    }
+    // On refusal the diagnostic is dropped rather than the scan failed.
+    LHAT_GROW(lexer->diagnostics, lexer->diagnostic_count,
+              lexer->diagnostic_capacity, 8, return);
 
     LhatDiagnostic *d = &lexer->diagnostics[lexer->diagnostic_count++];
     d->code = code;
@@ -278,16 +272,9 @@ static void string_push_byte(LhatLexer *lexer, char byte)
 static void record_comment(LhatLexer *lexer, uint32_t offset, uint32_t line,
                            uint32_t column, bool block)
 {
-    if (lexer->comment_count == lexer->comment_capacity) {
-        size_t grown = lexer->comment_capacity ? lexer->comment_capacity * 2 : 8;
-        LhatComment *bigger =
-            (LhatComment *)lhat_realloc(lexer->comments, grown * sizeof *bigger);
-        if (bigger == NULL) {
-            return;  // drop the comment rather than fail the scan
-        }
-        lexer->comments = bigger;
-        lexer->comment_capacity = grown;
-    }
+    // On refusal the comment is dropped rather than the scan failed.
+    LHAT_GROW(lexer->comments, lexer->comment_count, lexer->comment_capacity,
+              8, return);
 
     LhatComment *c = &lexer->comments[lexer->comment_count++];
     c->offset = offset;

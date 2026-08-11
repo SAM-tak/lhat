@@ -6,6 +6,7 @@
 #include <string.h>
 
 #include "gc.h"  // LHAT_GC_BLACK -- host_error_heap の初期色 (04 の 12.4)
+#include "grow.h"
 #include "port.h"
 #include "type.h"
 
@@ -106,17 +107,8 @@ static char *duplicate(const char *text);
 static void report(LhatProgram *program, LhatProgramErrorCode code,
                    const char *path)
 {
-    if (program->diagnostic_count == program->diagnostic_capacity) {
-        size_t grown =
-            program->diagnostic_capacity ? program->diagnostic_capacity * 2 : 4;
-        LhatProgramDiagnostic *bigger = (LhatProgramDiagnostic *)lhat_realloc(
-            program->diagnostics, grown * sizeof *bigger);
-        if (bigger == NULL) {
-            return;
-        }
-        program->diagnostics = bigger;
-        program->diagnostic_capacity = grown;
-    }
+    LHAT_GROW(program->diagnostics, program->diagnostic_count,
+              program->diagnostic_capacity, 4, return);
 
     LhatProgramDiagnostic *d = &program->diagnostics[program->diagnostic_count];
     d->code = code;
@@ -376,17 +368,8 @@ static bool keep_entry(LhatProgram *program, const char *module,
                        const char *type, const char *name, LhatHostFn call,
                        void *context, const LhatType *signature)
 {
-    if (program->host_entry_count == program->host_entry_capacity) {
-        size_t grown =
-            program->host_entry_capacity ? program->host_entry_capacity * 2 : 8;
-        LhatHostEntry *bigger = (LhatHostEntry *)lhat_realloc(
-            program->host_entries, grown * sizeof *bigger);
-        if (bigger == NULL) {
-            return false;
-        }
-        program->host_entries = bigger;
-        program->host_entry_capacity = grown;
-    }
+    LHAT_GROW(program->host_entries, program->host_entry_count,
+              program->host_entry_capacity, 8, return false);
 
     LhatHostEntry *entry = &program->host_entries[program->host_entry_count];
     memset(entry, 0, sizeof *entry);
@@ -909,17 +892,8 @@ bool lhat_register_global(LhatProgram *program, const char *name,
         return false;
     }
 
-    if (program->global_count == program->global_capacity) {
-        size_t grown =
-            program->global_capacity ? program->global_capacity * 2 : 4;
-        LhatGlobalEntry *bigger = (LhatGlobalEntry *)lhat_realloc(
-            program->global_entries, grown * sizeof *bigger);
-        if (bigger == NULL) {
-            return false;
-        }
-        program->global_entries = bigger;
-        program->global_capacity = grown;
-    }
+    LHAT_GROW(program->global_entries, program->global_count,
+              program->global_capacity, 4, return false);
     LhatGlobalEntry *entry = &program->global_entries[program->global_count];
     memset(entry, 0, sizeof *entry);
     entry->name = duplicate(name);
