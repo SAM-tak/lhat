@@ -1,4 +1,5 @@
-// L^ (lhat) -- syntax tree: arena and node construction.
+// L^ (lhat) -- syntax tree: arena, node construction, and the readings of a
+// node the checker and the compiler have to agree on.
 
 #include "ast.h"
 
@@ -373,4 +374,80 @@ const char *lhat_node_kind_name(LhatNodeKind kind)
         case LHAT_NODE_KIND_COUNT:     break;
     }
     return "?";
+}
+
+// 01 の 2.3: the canonical name -- the word plus one hat at most, with the
+// extra hats counted on the node rather than kept in the spelling. One
+// definition, because what the checker looks a member up under is the
+// string the machine will use as a key.
+bool lhat_node_name(const LhatNode *node, const char *source_text,
+                    const char **text, size_t *length)
+{
+    if (node == NULL) {
+        return false;
+    }
+    switch (node->kind) {
+        // TYPE_NAME carries a name the same way: 13.11's is^ writes a type
+        // on the right, and 04 の 14.4 lets that be a qualified error kind.
+        case LHAT_NODE_IDENT:
+        case LHAT_NODE_HAT_IDENT:
+        case LHAT_NODE_TYPE_NAME: {
+            *text = source_text + node->v.name.offset;
+            // The hats sit right after the word in the source, so the
+            // canonical name is the span cut after the first of them.
+            size_t word = node->v.name.length >= node->v.name.hats
+                              ? node->v.name.length - node->v.name.hats
+                              : node->v.name.length;
+            *length = node->v.name.hats > 0 ? word + 1 : word;
+            return true;
+        }
+        case LHAT_NODE_FOCUS:
+            // 16.2: the focus with no name written is called it^, and the
+            // source need not contain the word for that to be its name.
+            *text = "it^";
+            *length = 3;
+            return true;
+        case LHAT_NODE_SCOPE:
+            // 01 の 8 章: the sigil says where to look, and the name is what
+            // to look for -- a specifier answers with the name it is glued
+            // to.
+            return lhat_node_name(node->v.scope.name, source_text, text,
+                                  length);
+        default:
+            return false;
+    }
+}
+
+bool lhat_name_is(const char *text, size_t length, const char *literal)
+{
+    size_t n = strlen(literal);
+    return length == n && memcmp(text, literal, n) == 0;
+}
+
+bool lhat_node_is_environment(const LhatNode *node, const char *source_text)
+{
+    const char *name = NULL;
+    size_t length = 0;
+    return node != NULL && node->kind == LHAT_NODE_HAT_IDENT &&
+           lhat_node_name(node, source_text, &name, &length) &&
+           lhat_name_is(name, length, "L^");
+}
+
+const LhatNode *lhat_define_target_name(const LhatNode *target)
+{
+    return target->kind == LHAT_NODE_PARAM ? target->v.param.name : target;
+}
+
+const LhatNode *lhat_define_target_root(const LhatNode *target)
+{
+    const LhatNode *node = lhat_define_target_name(target);
+    while (node->kind == LHAT_NODE_MEMBER) {
+        node = node->v.access.target;
+    }
+    return node;
+}
+
+bool lhat_define_target_is_path(const LhatNode *target)
+{
+    return lhat_define_target_name(target)->kind == LHAT_NODE_MEMBER;
 }

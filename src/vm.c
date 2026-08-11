@@ -169,50 +169,16 @@ static void fail(Compiler *c, LhatCompileStatus status)
     }
 }
 
-// 01 の 2.3: the hat is part of the name. A hat identifier's name is
-// the word plus one hat -- 'self^' is a different name from 'self' -- and a
-// spelling with more hats than one is that same name reached further out:
-// this^^^ is the this^ two levels up, its name still 'this^' with the
-// count kept on the node (v.name.hats) for the constructs that stack. So
-// what this answers is the canonical spelling, word + one hat at most.
+// ast.c's canonical-name reading (01 の 2.3), against this unit's source.
 static bool node_name(const Compiler *c, const LhatNode *node,
                       const char **text, size_t *length)
 {
-    if (node == NULL) {
-        return false;
-    }
-    // TYPE_NAME carries a name the same way: 13.11's is^ writes a type on the
-    // right, and 04 の 14.4 lets that be a qualified error kind.
-    if (node->kind == LHAT_NODE_IDENT || node->kind == LHAT_NODE_HAT_IDENT ||
-        node->kind == LHAT_NODE_TYPE_NAME) {
-        *text = c->lexer->source->text + node->v.name.offset;
-        // The hats sit right after the word in the source, so the canonical
-        // name is the span cut after the first of them.
-        size_t word = node->v.name.length >= node->v.name.hats
-                          ? node->v.name.length - node->v.name.hats
-                          : node->v.name.length;
-        *length = node->v.name.hats > 0 ? word + 1 : word;
-        return true;
-    }
-    if (node->kind == LHAT_NODE_FOCUS) {
-        // 16.2: the focus with no name written is called it^, and the source
-        // need not contain the word for that to be its name.
-        *text = "it^";
-        *length = 3;
-        return true;
-    }
-    // 01 の 8 章: the sigil says where to look, and the name is what to look
-    // for -- so a specifier answers with the name it is glued to.
-    if (node->kind == LHAT_NODE_SCOPE) {
-        return node_name(c, node->v.scope.name, text, length);
-    }
-    return false;
+    return lhat_node_name(node, c->lexer->source->text, text, length);
 }
 
 static bool name_is(const char *text, size_t length, const char *literal)
 {
-    size_t n = strlen(literal);
-    return length == n && memcmp(text, literal, n) == 0;
+    return lhat_name_is(text, length, literal);
 }
 
 static uint8_t reserve(Compiler *c)
@@ -3518,34 +3484,28 @@ static void compile_expression(Compiler *c, const LhatNode *node, uint8_t into)
     }
 }
 
-// The name a let^ target carries, whether or not it was annotated.
+// ast.c's target readings (8.8), shared with the checker.
 static const LhatNode *define_target_name(const LhatNode *target)
 {
-    return target->kind == LHAT_NODE_PARAM ? target->v.param.name : target;
+    return lhat_define_target_name(target);
 }
 
-// 8.8: 'let^ a.b.c = v' puts c into a table reached through a and b. Only the
-// root is a name of a scope; the rest are members.
 static bool define_target_is_path(const LhatNode *target)
 {
-    return define_target_name(target)->kind == LHAT_NODE_MEMBER;
+    return lhat_define_target_is_path(target);
 }
 
 static const LhatNode *define_target_root(const LhatNode *target)
 {
-    const LhatNode *node = define_target_name(target);
-    while (node->kind == LHAT_NODE_MEMBER) {
-        node = node->v.access.target;
-    }
-    return node;
+    return lhat_define_target_root(target);
 }
 
-// 05 の 8.6: L^ names the machine's own table. Only the hatted spelling means
-// it, so an ordinary name `L` is untouched.
+// ast.c's L^ test (05 の 8.6), shared with the checker. The name the caller
+// already cut is enough to answer from, so the source is not re-read.
 static bool is_environment(const LhatNode *node, const char *name,
                            size_t length)
 {
-    return node->kind == LHAT_NODE_HAT_IDENT && name_is(name, length, "L^");
+    return node->kind == LHAT_NODE_HAT_IDENT && lhat_name_is(name, length, "L^");
 }
 
 // Makes a table in a place that holds nothing yet, and leaves alone one that

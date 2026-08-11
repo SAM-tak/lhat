@@ -352,46 +352,18 @@ static void report_named(Checker *c, const LhatNode *at,
 // 01 の 2.3: the hat is part of the name -- 'self^' is a different
 // name from 'self'. A spelling with more hats than one is the same name
 // reached further out (this^^^ is the this^ two levels up), so the
-// canonical name is the word plus one hat at most, and the count stays on
-// the node for the constructs that stack. vm.c's node_name is the same rule
-// on the other side, and the two have to agree exactly: what the checker
-// looks a member up under is the string the machine will use as a key.
+// ast.c's canonical-name reading (01 の 2.3), against this unit's source.
+// One definition is what keeps the checker and the machine agreeing on the
+// key a member lives under.
 static bool node_name(const Checker *c, const LhatNode *node,
                       const char **text, size_t *length)
 {
-    if (node == NULL) {
-        return false;
-    }
-    switch (node->kind) {
-        case LHAT_NODE_IDENT:
-        case LHAT_NODE_HAT_IDENT:
-        case LHAT_NODE_TYPE_NAME: {
-            *text = c->lexer->source->text + node->v.name.offset;
-            // The hats sit right after the word in the source, so the
-            // canonical name is the span cut after the first of them.
-            size_t word = node->v.name.length >= node->v.name.hats
-                              ? node->v.name.length - node->v.name.hats
-                              : node->v.name.length;
-            *length = node->v.name.hats > 0 ? word + 1 : word;
-            return true;
-        }
-        case LHAT_NODE_SCOPE:
-            return node_name(c, node->v.scope.name, text, length);
-        case LHAT_NODE_FOCUS:
-            // 16.2: the focus with no name written is called it^, and the
-            // source need not contain the word for that to be its name.
-            *text = "it^";
-            *length = 3;
-            return true;
-        default:
-            return false;
-    }
+    return lhat_node_name(node, c->lexer->source->text, text, length);
 }
 
 static bool name_is(const char *text, size_t length, const char *literal)
 {
-    size_t n = strlen(literal);
-    return length == n && memcmp(text, literal, n) == 0;
+    return lhat_name_is(text, length, literal);
 }
 
 // 14.12改: whether this is super^ written out. Only the hatted spelling means
@@ -4820,38 +4792,29 @@ static LhatType *infer_node(Checker *c, const LhatNode *node)
 // Statements
 // ---------------------------------------------------------------------------
 
+// ast.c's target readings (8.8), shared with the compiler.
 static const LhatNode *target_name_node(const LhatNode *target)
 {
-    return target->kind == LHAT_NODE_PARAM ? target->v.param.name : target;
+    return lhat_define_target_name(target);
 }
 
-// 8.8: 'let^ a.b.c = v' introduces c inside a table reached through a and b.
-// The root is the name a scope holds; the rest are members.
 static const LhatNode *target_root(const LhatNode *target)
 {
-    const LhatNode *node = target_name_node(target);
-    while (node->kind == LHAT_NODE_MEMBER) {
-        node = node->v.access.target;
-    }
-    return node;
+    return lhat_define_target_root(target);
 }
 
 static bool target_is_path(const LhatNode *target)
 {
-    return target_name_node(target)->kind == LHAT_NODE_MEMBER;
+    return lhat_define_target_is_path(target);
 }
 
 static const LhatTypeMember *member_named(const LhatType *type,
                                           const char *name, size_t length);
 
-// 05 の 8.6: L^ names the machine's own table. Only the hatted spelling means
-// it, so an ordinary name `L` is untouched.
+// ast.c's L^ test (05 の 8.6), shared with the compiler.
 static bool is_environment(const Checker *c, const LhatNode *node)
 {
-    const char *name = NULL;
-    size_t length = 0;
-    return node->kind == LHAT_NODE_HAT_IDENT &&
-           node_name(c, node, &name, &length) && name_is(name, length, "L^");
+    return lhat_node_is_environment(node, c->lexer->source->text);
 }
 
 // What L^ carries. vm.c's build_environment makes the values; the two lists

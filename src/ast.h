@@ -478,4 +478,30 @@ void lhat_node_visit_children(const LhatNode *node, LhatNodeVisitor visit,
 // construct while [n->offset, n->end) is only the part from the operator on.
 uint32_t lhat_node_span_start(const LhatNode *node);
 
+// 01 の 2.3: the hat is part of the name. A hat identifier's name is the
+// word plus one hat -- 'self^' is a different name from 'self' -- and a
+// spelling with more hats than one is that same name reached further out:
+// this^^^ is the this^ two levels up, its name still 'this^' with the count
+// kept on the node (v.name.hats) for the constructs that stack. What this
+// answers is that canonical spelling, cut from `source_text` (the text the
+// node's offsets index into). The checker looks a member up under it and
+// the compiler uses it as a key, so one definition is what keeps the two
+// agreeing byte for byte.
+bool lhat_node_name(const LhatNode *node, const char *source_text,
+                    const char **text, size_t *length);
+
+bool lhat_name_is(const char *text, size_t length, const char *literal);
+
+// 05 の 8.6: L^ names the machine's own table. Only the hatted spelling
+// means it, so an ordinary name `L` is untouched.
+bool lhat_node_is_environment(const LhatNode *node, const char *source_text);
+
+// The name a let^ target carries, whether or not it was annotated.
+const LhatNode *lhat_define_target_name(const LhatNode *target);
+
+// 8.8: 'let^ a.b.c = v' introduces c inside a table reached through a and
+// b. Only the root is a name a scope holds; the rest are members.
+const LhatNode *lhat_define_target_root(const LhatNode *target);
+bool lhat_define_target_is_path(const LhatNode *target);
+
 #endif  // LHAT_AST_H
