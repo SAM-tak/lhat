@@ -110,13 +110,6 @@ typedef struct LhatTypeMember {
     // reachable through the composed type -- what each side wrote is still
     // reachable through that side.
     bool ambiguous;
-    // 02 の 8.8: introduced by a let^ path the checker walked without
-    // knowing whether it runs before whatever reads the member -- inside a
-    // subroutine body that may never be called, or a branch/loop that may
-    // not run. The relations do not read this (conformance is unaffected);
-    // 03 の 5.11b does, to avoid answering typeof^ with a member the value
-    // may not actually carry yet.
-    bool unconfirmed;
     struct LhatTypeMember *next;
 } LhatTypeMember;
 
@@ -129,12 +122,6 @@ typedef struct LhatTypeList {
 
 struct LhatType {
     LhatTypeKind kind;
-
-    // For display and diagnostics only. 14.9: a name never takes part in
-    // identity, so nothing below reads this. Error kinds are the exception
-    // and keep their name in `error` instead.
-    const char *label;
-    size_t label_length;
 
     union {
         struct {
@@ -358,8 +345,6 @@ bool lhat_type_equal(const LhatType *a, const LhatType *b);
 // requires this of every pair of signatures, and narrowing reads it to decide
 // which arms of a union survive a branch.
 bool lhat_type_disjoint(const LhatType *a, const LhatType *b);
-
-const char *lhat_type_kind_name(LhatTypeKind kind);
 
 // Writes `type` in the notation 13 章 spells it with -- 'number^',
 // 't^{ a : string^ }', 'f^number^ -> string^;' -- into `buffer`, always

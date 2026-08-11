@@ -8,6 +8,11 @@
 
 #include "port.h"
 
+// 04 の 2.6 and 6.1: whether `value` is an error of `kind`. A kind object
+// standing for a whole errordef^ answers yes for any of its kinds, since 2.3
+// makes the declaration the union of them.
+static bool lhat_error_is_kind(LhatValue value, const LhatErrorKind *kind);
+
 // ---------------------------------------------------------------------------
 // Making and freeing
 // ---------------------------------------------------------------------------
@@ -807,7 +812,7 @@ LhatOverload *lhat_overload_replacing(LhatHeap *heap,
     return made;
 }
 
-bool lhat_error_is_kind(LhatValue value, const LhatErrorKind *kind)
+static bool lhat_error_is_kind(LhatValue value, const LhatErrorKind *kind)
 {
     if (!lhat_is_object_kind(value, LHAT_OBJECT_ERROR) || kind == NULL) {
         return false;

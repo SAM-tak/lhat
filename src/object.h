@@ -505,11 +505,6 @@ LhatOverload *lhat_overload_replacing(LhatHeap *heap,
                                       const LhatOverload *existing, size_t arm,
                                       LhatValue candidate);
 
-// 04 の 2.6 and 6.1: whether `value` is an error of `kind`. A kind object
-// standing for a whole errordef^ answers yes for any of its kinds, since 2.3
-// makes the declaration the union of them.
-bool lhat_error_is_kind(LhatValue value, const LhatErrorKind *kind);
-
 // ---------------------------------------------------------------------------
 // Freeing
 // ---------------------------------------------------------------------------

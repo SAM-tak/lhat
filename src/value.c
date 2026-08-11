@@ -100,18 +100,6 @@ bool lhat_value_same(LhatValue a, LhatValue b)
     }
 }
 
-const char *lhat_value_tag_name(LhatValueTag tag)
-{
-    switch (tag) {
-        case LHAT_VALUE_NIL:     return "nil^";
-        case LHAT_VALUE_BOOL:    return "bool^";
-        case LHAT_VALUE_INTEGER: return "number^ (integer)";
-        case LHAT_VALUE_REAL:    return "number^ (real)";
-        case LHAT_VALUE_OBJECT:  return "object";
-    }
-    return "?";
-}
-
 const char *lhat_object_kind_name(LhatObjectKind kind)
 {
     switch (kind) {

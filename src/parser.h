@@ -77,10 +77,9 @@ typedef enum {
     LHAT_PARSE_ERR_SPREAD_NOT_LAST,           // 13.7: '...' forwards the
                                               // whole tail, so nothing can
                                               // follow it in a call
-    LHAT_PARSE_ERR_HATS_DONT_STACK,           // 01 の 2.3: extra hats count
+    LHAT_PARSE_ERR_HATS_DONT_STACK            // 01 の 2.3: extra hats count
                                               // levels, and this word has no
                                               // levels to count
-    LHAT_PARSE_ERR_LEXICAL                    // the lexer already reported one
 } LhatParseErrorCode;
 
 typedef struct {

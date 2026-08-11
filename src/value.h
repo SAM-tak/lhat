@@ -362,8 +362,6 @@ bool lhat_value_equal(LhatValue a, LhatValue b);
 // value comparison for tables and strings.
 bool lhat_value_same(LhatValue a, LhatValue b);
 
-const char *lhat_value_tag_name(LhatValueTag tag);
-
 // 03 の 4 章: a prompt answers with a value, so something has to write one
 // down. Writes `value` into `out` and answers how long the whole text is --
 // snprintf's contract, so a caller may ask with a capacity of zero first.

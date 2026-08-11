@@ -1195,29 +1195,3 @@ size_t lhat_type_write(const LhatType *type, char *buffer, size_t size)
     }
     return sink.written;
 }
-
-const char *lhat_type_kind_name(LhatTypeKind kind)
-{
-    switch (kind) {
-        case LHAT_TYPE_UNKNOWN:     return "unknown";
-        case LHAT_TYPE_NONE:        return "no value";
-        case LHAT_TYPE_ANY:         return "any^";
-        case LHAT_TYPE_NIL:         return "nil^";
-        case LHAT_TYPE_BOOL:        return "bool^";
-        case LHAT_TYPE_NUMBER:      return "number^";
-        case LHAT_TYPE_STRING:      return "string^";
-        case LHAT_TYPE_TABLE:       return "t^{...}";
-        case LHAT_TYPE_HOSTVALUE:   return "host value";
-        case LHAT_TYPE_FUNC:        return "f^";
-        case LHAT_TYPE_CORO:        return "c^{...}";
-        case LHAT_TYPE_TUPLE:       return "(...)";
-        case LHAT_TYPE_ERROR:       return "error^";
-        case LHAT_TYPE_ERROR_SET:   return "error set";
-        case LHAT_TYPE_ERROR_KIND:  return "error kind";
-        case LHAT_TYPE_UNION:       return "|";
-        case LHAT_TYPE_INTERSECT:   return "&";
-        case LHAT_TYPE_PENDING:     return "pending";
-        case LHAT_TYPE_KIND_COUNT:  break;
-    }
-    return "?";
-}

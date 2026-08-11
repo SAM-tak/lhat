@@ -1212,12 +1212,6 @@ static void test_tables(void)
     run_dispose(&r);
 }
 
-// Whether the chunk carries an instruction of this opcode anywhere. Only the
-// destructuring tests below look at instructions at all -- 5.1 expects the
-// ones chosen to be replaced by specialised ones later, so the rest of this
-// file pins answers. What is pinned here is 03 の 5.11c's channel itself: the
-// checker settling a shape has to leave the check out, and a check that is
-// there or not is not something an answer can show.
 // 16.5: repeat^ is the one that carries no focus.
 static void test_repeat(void)
 {

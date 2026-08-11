@@ -4995,9 +4995,7 @@ static LhatType *path_table(Checker *c, const LhatNode *node)
 // this -- 8.6's table still makes '=' mean plain definition). Then a path
 // that already answers to something is reassigned instead: the same check
 // check_reassign makes for a bare 'path := value', just reached through a
-// let^'s syntax instead. The type is not touched either way in that branch,
-// so nothing here needs the `unconfirmed` marking -- that only matters
-// where a member is being added.
+// let^'s syntax instead. The type is not touched either way in that branch.
 static void define_path(Checker *c, const LhatNode *target, LhatType *type,
                         bool upsert)
 {
@@ -5021,14 +5019,7 @@ static void define_path(Checker *c, const LhatNode *target, LhatType *type,
         expect(c, target, type, found->type, LHAT_CHECK_ERR_MISMATCH);
         return;
     }
-    LhatTypeMember *added =
-        lhat_type_add_member(c->result->types, owner, name, length, type);
-    // nothing here confirms this path actually runs before whatever
-    // reads the member later -- inside a deferred body it may never run at
-    // all, and inside a branch or loop it may not run this time.
-    if (added != NULL && (c->deferred > 0 || c->conditional > 0)) {
-        added->unconfirmed = true;
-    }
+    lhat_type_add_member(c->result->types, owner, name, length, type);
 }
 
 static void check_define(Checker *c, const LhatNode *node)

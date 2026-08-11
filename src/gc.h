@@ -50,7 +50,6 @@ struct LhatMachine;
 #define LHAT_GC_BLACK  3
 
 #define lhat_gc_is_white(o) ((o)->color <= LHAT_GC_WHITE1)
-#define lhat_gc_is_gray(o)  ((o)->color == LHAT_GC_GRAY)
 #define lhat_gc_is_black(o) ((o)->color == LHAT_GC_BLACK)
 
 // The white a heap is not handing out. After the swap, an object still

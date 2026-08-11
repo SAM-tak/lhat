@@ -2529,11 +2529,6 @@ static LhatNode *parse_if_body(Parser *p, LhatToken start, LhatNode *condition)
     return finish(p, node);
 }
 
-static LhatNode *parse_if_statement(Parser *p, LhatToken start)
-{
-    return parse_if_body(p, start, parse_expression(p));
-}
-
 // Where a bare expression is read at all: the top of interactive input (8.2,
 // where 03 の 4.3 makes it the answer) and the body of a function (15.12,
 // where answer_with_body makes it the return^). Not in a block nested inside
@@ -3991,8 +3986,6 @@ const char *lhat_parse_error_message(LhatParseErrorCode code)
         case LHAT_PARSE_ERR_EQUALS_IS_COMPARISON:
             return "'=' compares; write 'x := 1' to reassign or 'var^ x = 1' "
                    "to make a new name";
-        case LHAT_PARSE_ERR_LEXICAL:
-            return "the input could not be tokenised";
     }
     return "unknown error";
 }
