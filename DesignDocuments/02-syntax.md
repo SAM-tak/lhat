@@ -2298,7 +2298,7 @@ k as^number^|nil^
 
 ##### (4) 型の交差は `&` とする
 
-**`&` を型の合併演算子とする。**
+**`&` を型の交差演算子とする。**
 
 ```lhat
 f:f^number^->number^;&f^string^->number^;
@@ -2516,8 +2516,8 @@ let^ a = t?[1] ?? "100"
 #### リンク単位であり、連鎖単位ではない
 
 ```lhat
-t?.a.b     # 誤り: t?.a は T|nil^ で、11.4 がそこへ手を伸ばすのを拒む
-t?.a?.b    # これを書く
+t?.a.b     # 誤り: t?.a は T|nil^ で、11.4 がそこへ到達するのを拒む
+t?.a?.b    # こう書く必要がある
 ```
 
 Swift と TypeScript は最初の `?` が連鎖の残り全部を短絡させるが、L^ は
@@ -2551,8 +2551,8 @@ t?[side()]     # 同じ
 同じ `?` 族だが仕事が逆である。
 
 ```lhat
-if^ t? { … }                # これ
-if^ !(t isa^ nil^) { … }    # と同じ
+if^ t? { … }                # これは
+if^ !(t isa^ nil^) { … }    # 上と同じ
 ```
 
 13.11 が `!= nil^` を絞り込むようにした結果、`nil^` を巡って残るのは
@@ -2682,7 +2682,7 @@ op^.. := f^ o:string^ -> string^ { … }         # 誤り。self^ がない
 op^.. := p^self^, o:string^ { … }              # 誤り。11.1 により関数
 op^.. := f^self^ -> string^ { … }              # 誤り。右の被演算子を取らない
 op^.. := f^self^, a:T, b:T -> R { … }          # 誤り。引数は1つ
-op^.. := 5                                      # 誤り。関数ですらない
+op^.. := 5                                     # 誤り。関数ですらない
 ```
 
 **後段は形を確かめない。** 呼び出し側は署名を読んでそのまま信じ、
@@ -3809,7 +3809,7 @@ typeof^(x) = typeof^(y)
 `isa^` を `if^` の条件に直接書いた場合、分岐の中で左辺の型が狭まる。
 
 ```lhat
-let^ r = parse(s)                        # number^|ParseError.Syntax|ParseError.Eof
+let^ r = parse(s)                    # number^|ParseError.Syntax|ParseError.Eof
 
 if^ r isa^ ParseError.Syntax {
     report(r.line, r.column)         # ここでは r : ParseError.Syntax
