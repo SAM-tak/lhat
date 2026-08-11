@@ -10,7 +10,7 @@ option(LHAT_BUILD_TESTS "Build the L^ test suite" ON)
 option(LHAT_BUILD_CLI "Build the lhat command line driver" ON)
 option(LHAT_BUILD_LSP "Build the L^ language server" ON)
 
-# 01 の 6.4: comments are kept and attached to the tree, for the language
+# comments are kept and attached to the tree, for the language
 # server to show and the visual editor to edit. Nothing in the language reads
 # them, so a host that embeds the language and no tooling turns this off and
 # pays for neither the table nor the walk that attaches it.
