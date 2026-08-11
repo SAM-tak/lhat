@@ -577,6 +577,43 @@ static void test_tuple_positions(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_TUPLE_UNION);
     unit_dispose(&u);
 
+    // 11.7: '??' is the same shape as catch^, so it takes the same
+    // replacement -- 04 の 4.1 pairs them, and nothing here tells them apart.
+    LHAT_TEST("?? takes a replacement tuple too");
+    check_text(&u,
+               "var^ f = f^ -> (number^, number^)|nil^ { return^ nil^ }\n"
+               "var^ q, r = f() ?? (0, 1)\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("and refuses the wrong width the same way");
+    check_text(&u,
+               "var^ f = f^ -> (number^, number^)|nil^ { return^ nil^ }\n"
+               "var^ q, r = f() ?? (0, 1, 2)\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_TUPLE_UNION);
+    unit_dispose(&u);
+
+    // 13.8改: two tuples of the same width fold position by position, so the
+    // answer stays a tuple and can be taken apart. Where both sides are the
+    // same type the arm folding already collapsed them -- these are the
+    // cases that showed the fold was missing.
+    LHAT_TEST("positions of different types still fold into one tuple");
+    check_text(&u,
+               "var^ f = f^ -> (number^, number^)|nil^ { return^ nil^ }\n"
+               "var^ q, r = f() ?? (nil^, nil^)\n"
+               "var^ n : number^|nil^ = q\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("and the same holds through catch^");
+    check_text(&u,
+               "errordef^ E { X }\n"
+               "var^ f = f^ -> (number^, string^)|E { return^ error^E.X{} }\n"
+               "var^ q, r = f() catch^ (nil^, nil^)\n"
+               "var^ s : string^|nil^ = r\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
     // The grouping parentheses 13.1's grammar already had. This is what
     // leaves a one-position tuple unwritable without inventing '(T,)'.
     LHAT_TEST("'(T)' is still the grouping it always was");

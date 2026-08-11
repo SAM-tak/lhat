@@ -956,6 +956,29 @@ static LhatType *build_composite(LhatTypeArena *arena, LhatTypeKind kind,
 
 LhatType *lhat_type_union(LhatTypeArena *arena, LhatType *a, LhatType *b)
 {
+    // 13.8改: two tuples of the same width fold position by position --
+    // '(A, B)|(C, D)' is '(A|C, B|D)'. The answer is two values either way,
+    // and each position is one side's or the other's; leaving the union
+    // outside would say the answer is a run OR a run, which is not a shape
+    // anything can reserve slots for.
+    //
+    // This is what lets 'f() catch^ (0, 1)' and 'f() ?? (nil^, nil^)' be
+    // taken apart. Where the two sides are the same type the arm-folding
+    // below already collapsed them, which is why the first tuple literals
+    // worked without this -- widths that agree but positions that do not
+    // were the case it missed.
+    size_t width = lhat_type_tuple_width(a);
+    if (width > 0 && width == lhat_type_tuple_width(b)) {
+        LhatType *folded = lhat_type_tuple(arena);
+        for (size_t i = 0; i < width; i++) {
+            lhat_type_add_position(
+                arena, folded,
+                build_composite(arena, LHAT_TYPE_UNION,
+                                lhat_type_tuple_at(a, i),
+                                lhat_type_tuple_at(b, i)));
+        }
+        return folded;
+    }
     return build_composite(arena, LHAT_TYPE_UNION, a, b);
 }
 

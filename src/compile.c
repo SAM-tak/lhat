@@ -231,11 +231,14 @@ static bool is_run_source(const LhatNode *node)
     if (node == NULL) {
         return false;
     }
-    // 13.8改: a catch^ answers a run when both its arms do -- which the type
-    // settles, since the union of two tuples of the same width collapses to
-    // that tuple. A written '(a, b)' is a run outright.
+    // 13.8改: a catch^ or a '??' answers a run when both its arms do --
+    // which the type settles, since the union of two tuples of the same
+    // width folds into one tuple. 04 の 4.1 and 11.7 make the two the same
+    // shape (drop one arm, put a value in its place), so they are the same
+    // here too. A written '(a, b)' is a run outright.
     if (node->kind == LHAT_NODE_BINARY &&
-        node->v.binary.op == LHAT_OP_CATCH) {
+        (node->v.binary.op == LHAT_OP_CATCH ||
+         node->v.binary.op == LHAT_OP_NIL_ELSE)) {
         return true;
     }
     return node->kind == LHAT_NODE_CALL || node->kind == LHAT_NODE_TRY ||
@@ -607,6 +610,8 @@ static void compile_try_wide(Compiler *c, const LhatNode *node, uint8_t into,
                              size_t reserved);
 static void compile_catch_wide(Compiler *c, const LhatNode *node, uint8_t into,
                                size_t reserved);
+static void compile_nil_else_wide(Compiler *c, const LhatNode *node,
+                                  uint8_t into, size_t reserved);
 static void compile_tuple_literal(Compiler *c, const LhatNode *node,
                                   uint8_t into, size_t positions);
 
@@ -620,7 +625,13 @@ static void compile_run_source(Compiler *c, const LhatNode *node, uint8_t into,
     } else if (node->kind == LHAT_NODE_TUPLE) {
         compile_tuple_literal(c, node, into, reserved > 0 ? reserved - 1 : 0);
     } else if (node->kind == LHAT_NODE_BINARY) {
-        compile_catch_wide(c, node, into, reserved);
+        // 04 の 4.1 and 11.7: the same shape, asking about a different
+        // unwanted half -- an error for catch^, nil^ for .??..
+        if (node->v.binary.op == LHAT_OP_NIL_ELSE) {
+            compile_nil_else_wide(c, node, into, reserved);
+        } else {
+            compile_catch_wide(c, node, into, reserved);
+        }
     } else {
         compile_call_wide(c, node, into, reserved);
     }
@@ -1287,9 +1298,19 @@ static void compile_tuple_literal(Compiler *c, const LhatNode *node,
 }
 
 // 02 の 11.7: '??' is the same shape as catch^, asking about nil^ instead.
-static void compile_nil_else(Compiler *c, const LhatNode *node, uint8_t into)
+// 13.8改: `reserved` is the run the caller laid out, exactly as it is for
+// compile_catch_wide -- 04 の 4.1 and 11.7 make the two the same shape, so
+// they get the same treatment. Both arms write the same run, and ISNIL reads
+// the head slot: a run's head is not nil^, so the left arm stands; a nil^
+// there takes the right. The instruction is unchanged.
+static void compile_nil_else_wide(Compiler *c, const LhatNode *node,
+                                  uint8_t into, size_t reserved)
 {
-    compile_expression(c, node->v.binary.left, into);
+    if (reserved > 1) {
+        compile_run_source(c, node->v.binary.left, into, reserved);
+    } else {
+        compile_expression(c, node->v.binary.left, into);
+    }
 
     uint8_t mark = c->next_register;
     uint8_t test = reserve(c);
@@ -1297,8 +1318,17 @@ static void compile_nil_else(Compiler *c, const LhatNode *node, uint8_t into)
     size_t to_default = emit_jump(c, LHAT_BC_JUMP_FALSE, test);
     c->next_register = mark;
 
-    compile_expression(c, node->v.binary.right, into);
+    if (reserved > 1 && is_run_source(node->v.binary.right)) {
+        compile_run_source(c, node->v.binary.right, into, reserved);
+    } else {
+        compile_expression(c, node->v.binary.right, into);
+    }
     lhat_chunk_patch_here(&c->proto->chunk, to_default);
+}
+
+static void compile_nil_else(Compiler *c, const LhatNode *node, uint8_t into)
+{
+    compile_nil_else_wide(c, node, into, 0);
 }
 
 // 02 の 13.11: isa^ asks whether the left side may stand where the right side

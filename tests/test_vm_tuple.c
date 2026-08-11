@@ -157,6 +157,64 @@ static void test_multi_value_return(void)
 
     // 13.8改 (S48): the literal. Both arms of the catch^ write the same run,
     // so the error arm's replacement lands where the values would have.
+    // 11.7 with 13.8改: '??' is the same shape as catch^, asking about nil^
+    // instead -- so it takes a replacement tuple the same way. ISNIL reads
+    // the head slot, and a run's head is not nil^.
+    LHAT_TEST("?? replaces an absent tuple with a literal");
+    run_checked_text(&r,
+                     "var^ maybe = f^ b:number^ -> (number^, number^)|nil^ {\n"
+                     "  if^ b = 0 { return^ nil^ }\n"
+                     "  return^ b, b * 2 }\n"
+                     "var^ q, r2 = maybe(0) ?? (5, 6)\n"
+                     "return^ q * 10 + r2\n");
+    CHECK_INTEGER(&r, 56);
+    run_dispose(&r);
+
+    LHAT_TEST("and leaves the values alone when there is one");
+    run_checked_text(&r,
+                     "var^ maybe = f^ b:number^ -> (number^, number^)|nil^ {\n"
+                     "  if^ b = 0 { return^ nil^ }\n"
+                     "  return^ b, b * 2 }\n"
+                     "var^ q, r2 = maybe(3) ?? (5, 6)\n"
+                     "return^ q * 10 + r2\n");
+    CHECK_INTEGER(&r, 36);
+    run_dispose(&r);
+
+    // S47 said the loop is what discriminates a walk's answer and takes it
+    // apart. With '??' the hand-driven form can too: collapse the nil^ and
+    // what is left is the pair.
+    LHAT_TEST("?? lets a hand-driven walk be taken apart");
+    run_checked_text(&r,
+                     "var^ t = { 10, 20 }\n"
+                     "var^ w = t.iterate^()\n"
+                     "var^ k, v = w.start() ?? (0, 0)\n"
+                     "return^ k * 100 + v\n");
+    CHECK_INTEGER(&r, 110);
+    run_dispose(&r);
+
+    LHAT_TEST("and answers the replacement once it runs out");
+    run_checked_text(&r,
+                     "var^ t = { }\n"
+                     "var^ w = t.iterate^()\n"
+                     "var^ k, v = w.start() ?? (7, 8)\n"
+                     "return^ k * 10 + v\n");
+    CHECK_INTEGER(&r, 78);
+    run_dispose(&r);
+
+    LHAT_TEST("neither arm of a ?? allocates");
+    run_checked_text(&r,
+                     "var^ maybe = f^ b:number^ -> (number^, number^)|nil^ {\n"
+                     "  if^ b = 0 { return^ nil^ }\n"
+                     "  return^ b, b * 2 }\n"
+                     "var^ total = 0\n"
+                     "repeat^ 2000 {\n"
+                     "  var^ q, r2 = maybe(3) ?? (5, 6)\n"
+                     "  total := total + q + r2 }\n"
+                     "return^ total\n");
+    CHECK_INTEGER(&r, 18000);
+    LHAT_CHECK_EQ_INT(r.ran.collected, 0);
+    run_dispose(&r);
+
     LHAT_TEST("catch^ replaces a failed tuple with a literal");
     run_checked_text(&r,
                      "errordef^ DivError { ByZero }\n"
