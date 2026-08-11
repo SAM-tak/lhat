@@ -37,9 +37,9 @@ let^f = f^ { return^ 0, 1 }
 
 x, y = f()
 g(x, y)
-# let^r = (let^x, y = f(); f(x, y)) # こう書きたい
-# let^r = for^let^x, y = f() { f(x, y) } # あるいは
-# let^r = do^(let^x, y = f(); f(x, y)) # あるいは
+# let^r = (let^x, y = f(); g(x, y)) # こう書きたい
+# let^r = for^let^x, y = f() { g(x, y) } # あるいは
+# let^r = do^(let^x, y = f(); g(x, y)) # あるいは
 # 式の途中で 多値返却の値を別関数の引数に渡せれば何でもいい。
 ```
 
