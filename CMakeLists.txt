@@ -67,6 +67,7 @@ add_library(lhat
     src/check.c
     src/program.c
     src/code.c
+    src/compile.c
     src/vm.c
     src/gc.c
     src/value.c
