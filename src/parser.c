@@ -1466,6 +1466,16 @@ static LhatNode *parse_primary(Parser *p)
                 advance(p);
                 return node;
             }
+            // 11.5: '@(式)' and '@自然数' are recorded and unsupported, so
+            // the message can be about that rather than a stray character.
+            if (t.v.op == LHAT_OP_AT) {
+                return error_node(p, LHAT_PARSE_ERR_UNSUPPORTED_AT);
+            }
+            // The reserved shift spellings, met where a value should begin
+            // ('x = a >> 2' ends the expression at 'a' and lands here).
+            if (t.v.op == LHAT_OP_LSHIFT || t.v.op == LHAT_OP_RSHIFT) {
+                return error_node(p, LHAT_PARSE_ERR_RESERVED_SHIFT);
+            }
             break;
 
         default:
@@ -3539,6 +3549,16 @@ static LhatNode *parse_statement(Parser *p)
         return make(p, LHAT_NODE_ERROR, &start);
     }
 
+    // '<<' and '>>' are reserved. Met after a target they read as an
+    // operator that does not exist; 01 の 7 章 makes bit operations
+    // functions rather than operators, so the message can say so.
+    if (check_op(p, LHAT_OP_LSHIFT) || check_op(p, LHAT_OP_RSHIFT)) {
+        report(p, &p->current, LHAT_PARSE_ERR_RESERVED_SHIFT);
+        advance(p);
+        parse_expression(p);
+        return make(p, LHAT_NODE_ERROR, &start);
+    }
+
     // 2.1: 'foo 1 2 3' is only a call in command mode. What follows here is
     // juxtaposition only if it could not have started a statement of its own,
     // since there is no separator to tell the two apart.
@@ -3905,6 +3925,12 @@ const char *lhat_parse_error_message(LhatParseErrorCode code)
         case LHAT_PARSE_ERR_WITHDRAWN_COLONCOLON:
             return "'::' is not part of the language; write '->' before the "
                    "return type";
+        case LHAT_PARSE_ERR_RESERVED_SHIFT:
+            return "'<<' and '>>' are reserved and not part of the language; "
+                   "a bit operation is a function";
+        case LHAT_PARSE_ERR_UNSUPPORTED_AT:
+            return "'@' is reserved for naming an operand position and is "
+                   "not supported yet";
         case LHAT_PARSE_ERR_BINDING_ARITY:
             return "the number of targets and values does not match";
         case LHAT_PARSE_ERR_CLAUSE_ORDER:

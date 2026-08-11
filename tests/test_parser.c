@@ -1057,6 +1057,29 @@ static void test_statements(void)
                       LHAT_PARSE_ERR_WITHDRAWN_ARROW);
     parse_dispose(&p);
 
+    LHAT_TEST("'<<' after a target reports that it is reserved");
+    parse_text(&p, "a << b");
+    LHAT_CHECK(p.result.diagnostic_count > 0, "expected a diagnostic");
+    LHAT_CHECK_EQ_INT(p.result.diagnostics[0].code,
+                      LHAT_PARSE_ERR_RESERVED_SHIFT);
+    parse_dispose(&p);
+
+    LHAT_TEST("'>>' where a value should begin shares the shift diagnostic");
+    parse_text(&p, "var^ x = a >> 2");
+    LHAT_CHECK(p.result.diagnostic_count > 0, "expected a diagnostic");
+    LHAT_CHECK_EQ_INT(p.result.diagnostics[0].code,
+                      LHAT_PARSE_ERR_RESERVED_SHIFT);
+    parse_dispose(&p);
+
+    // 02 の 11.5: recorded, not supported -- the message says so rather
+    // than calling '@' a stray character.
+    LHAT_TEST("'@' reports that the notation is not supported yet");
+    parse_text(&p, "var^ x = @(1)");
+    LHAT_CHECK(p.result.diagnostic_count > 0, "expected a diagnostic");
+    LHAT_CHECK_EQ_INT(p.result.diagnostics[0].code,
+                      LHAT_PARSE_ERR_UNSUPPORTED_AT);
+    parse_dispose(&p);
+
     LHAT_TEST("do^ block");
     parse_text(&p, "do^{ x := 1 y := 2 }");
     LHAT_CHECK_EQ_INT(error_count(&p), 0);

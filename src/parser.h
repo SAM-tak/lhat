@@ -25,6 +25,9 @@ typedef enum {
     LHAT_PARSE_ERR_JUXTAPOSITION,          // 2.1: 'foo 1 2 3' outside command mode
     LHAT_PARSE_ERR_WITHDRAWN_ARROW,        // '->' as postfix reassignment
     LHAT_PARSE_ERR_WITHDRAWN_COLONCOLON,   // '::' as the return separator
+    LHAT_PARSE_ERR_RESERVED_SHIFT,         // '<<' and '>>' are reserved
+    LHAT_PARSE_ERR_UNSUPPORTED_AT,         // 11.5: '@' is recorded and not
+                                           // supported
     LHAT_PARSE_ERR_BINDING_ARITY,             // targets and values disagree
     LHAT_PARSE_ERR_CLAUSE_ORDER,              // 9.2: clauses have a fixed order
     LHAT_PARSE_ERR_MAIN_REQUIRED,             // 9.3
