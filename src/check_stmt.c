@@ -256,7 +256,7 @@ void chk_check_define(Checker *c, const LhatNode *node)
         const char *outer_name = c->defining_name;
         size_t outer_length = c->defining_length;
         chk_node_name(c, target_name_node(target), &c->defining_name,
-                  &c->defining_length);
+                      &c->defining_length);
 
         // 15.2: a let^ that binds a yield^ directly is where R gets fixed --
         // it is the only place a yield^'s own annotation can be written. The
@@ -427,7 +427,7 @@ void chk_check_define(Checker *c, const LhatNode *node)
 // Idempotent: 5.3 loads once, so meeting the same unit again adds nothing
 // and is not the clash 8.7 makes of two let^ writing one place.
 void chk_register_module_type(Checker *c, const char *module_name,
-                                 LhatType *exports)
+                              LhatType *exports)
 {
     LhatType *env = chk_environment_type(c);
     if (env == NULL || module_name == NULL || *module_name == '\0') {
@@ -549,7 +549,7 @@ static void check_import(Checker *c, const LhatNode *node, bool binds)
     Binding *root = chk_scope_find(c->scope, name, length, NULL);
     if (root == NULL) {
         root = chk_scope_add(c->scope, name, length,
-                         lhat_type_table(c->result->types), node->offset);
+                             lhat_type_table(c->result->types), node->offset);
         if (root == NULL) {
             return;
         }
@@ -626,7 +626,7 @@ static void check_require_stmt(Checker *c, const LhatNode *node)
     Binding *root = chk_scope_find(c->scope, segment, length, NULL);
     if (root == NULL) {
         root = chk_scope_add(c->scope, segment, length,
-                         lhat_type_table(c->result->types), node->offset);
+                             lhat_type_table(c->result->types), node->offset);
         if (root == NULL) {
             return;
         }
@@ -672,7 +672,7 @@ static void check_require_stmt(Checker *c, const LhatNode *node)
 // answer one of its arguments ('f^ t { return^ t }' is a function like any
 // other), so neither counts.
 bool chk_value_is_fresh(const Checker *c, const LhatNode *value,
-                           const LhatType *type)
+                        const LhatType *type)
 {
     if (value == NULL) {
         return false;
@@ -851,9 +851,9 @@ static void check_immutable_write(Checker *c, const LhatNode *target)
         // is no var^ for them to write instead. Saying otherwise would send a
         // reader to a spelling that is itself refused.
         chk_report_named(c, name_node,
-                     b->bound_by_form ? LHAT_CHECK_ERR_ASSIGN_TO_FORM
-                                      : LHAT_CHECK_ERR_ASSIGN_TO_LET,
-                     name, length);
+                         b->bound_by_form ? LHAT_CHECK_ERR_ASSIGN_TO_FORM
+                                          : LHAT_CHECK_ERR_ASSIGN_TO_LET,
+                         name, length);
     }
 }
 
@@ -967,7 +967,7 @@ static void check_reassign(Checker *c, const LhatNode *node)
         if (tuple != NULL) {
             // 13.8改: the positions of what the one value answered with.
             chk_expect(c, node, lhat_type_tuple_at(tuple, position - 1), wanted,
-                   LHAT_CHECK_ERR_MISMATCH);
+                       LHAT_CHECK_ERR_MISMATCH);
         } else if (value != NULL) {
             LhatType *given = chk_infer(c, value);
             // 05 の 8.9: a dotted or indexed target lands in a table, and a
@@ -980,7 +980,7 @@ static void check_reassign(Checker *c, const LhatNode *node)
                 if (position == 1 && target_count > 1 && value->next == NULL) {
                     tuple = given;  // 13.8改, as in check_define
                     chk_expect(c, node, lhat_type_tuple_at(tuple, 0), wanted,
-                           LHAT_CHECK_ERR_MISMATCH);
+                               LHAT_CHECK_ERR_MISMATCH);
                 } else {
                     chk_report(c, value, LHAT_CHECK_ERR_TUPLE_MISPLACED);
                 }
@@ -1151,7 +1151,7 @@ static void check_focus(Checker *c, const LhatNode *node)
             continue;
         }
         Binding *b = chk_scope_add(c->scope, name, length, type,
-                               target_name_node(element)->offset);
+                                   target_name_node(element)->offset);
         if (b != NULL) {
             b->reached = true;  // 8.7: a turn of the loop has bound it
             // 8.9: what each turn binds is the walk's to say, so the focus of
@@ -1232,7 +1232,7 @@ static void check_errordef(Checker *c, const LhatNode *node)
             LhatType *fallback = chk_infer(c, field->v.param.fallback);
             if (declared != NULL && fallback != NULL) {
                 chk_expect(c, field->v.param.fallback, fallback, declared,
-                       LHAT_CHECK_ERR_MISMATCH);
+                           LHAT_CHECK_ERR_MISMATCH);
             }
             LhatTypeMember *member = lhat_type_add_member(
                 c->result->types, type, field_name, field_length,
@@ -1274,7 +1274,7 @@ static void collect_bindings(Checker *c, const LhatNode *statements)
                     chk_node_name(c, root, &name, &length) &&
                     chk_scope_find(c->scope, name, length, NULL) == NULL) {
                     chk_scope_add(c->scope, name, length,
-                              chk_simple(c, LHAT_TYPE_PENDING), root->offset);
+                                  chk_simple(c, LHAT_TYPE_PENDING), root->offset);
                 }
                 continue;
             }
@@ -1290,7 +1290,7 @@ static void collect_bindings(Checker *c, const LhatNode *statements)
                 // within this input.
                 if (!already->from_session) {
                     chk_report_named(c, target_name_node(target),
-                                 LHAT_CHECK_ERR_REDEFINED, name, length);
+                                     LHAT_CHECK_ERR_REDEFINED, name, length);
                 }
                 already->from_session = false;
                 // 8.9 and 03 の 4.3: a session redefinition is the name being
@@ -1302,7 +1302,7 @@ static void collect_bindings(Checker *c, const LhatNode *statements)
             }
             Binding *b =
                 chk_scope_add(c->scope, name, length, chk_simple(c, LHAT_TYPE_PENDING),
-                          target_name_node(target)->offset);
+                              target_name_node(target)->offset);
             // 8.9: set here rather than in check_define, so that a write
             // standing textually before the definition it names is judged by
             // the same rule as one standing after it -- 8.7 makes the name
@@ -1520,7 +1520,7 @@ void chk_check_statement(Checker *c, const LhatNode *node)
                     continue;
                 }
                 chk_expect(c, condition, chk_infer(c, condition),
-                       chk_simple(c, LHAT_TYPE_BOOL), LHAT_CHECK_ERR_NOT_BOOL);
+                           chk_simple(c, LHAT_TYPE_BOOL), LHAT_CHECK_ERR_NOT_BOOL);
 
                 Narrowing *before = c->narrowings;
                 chk_narrow_from(c, condition, true);

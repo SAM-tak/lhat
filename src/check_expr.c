@@ -7,7 +7,7 @@
 // ---------------------------------------------------------------------------
 
 void chk_expect(Checker *c, const LhatNode *at, LhatType *value,
-                   LhatType *target, LhatCheckErrorCode code)
+                LhatType *target, LhatCheckErrorCode code)
 {
     // 03 の 3.4: a parameter whose type the body is deciding is not being
     // checked here -- this position is one of the things deciding it. Most of
@@ -273,7 +273,7 @@ static LhatType *infer_operator(Checker *c, const LhatNode *node, LhatOpKind op,
     if (wanted != NULL &&
         (chk_param_var_for(c, right) != NULL || !chk_operator_undecided(right))) {
         chk_expect(c, node->v.binary.right, right, wanted,
-               LHAT_CHECK_ERR_NO_OPERATOR);
+                   LHAT_CHECK_ERR_NO_OPERATOR);
     }
     return carrier->v.func.result;
 }
@@ -454,7 +454,7 @@ LhatType *chk_infer_binary(Checker *c, const LhatNode *node)
             Scope *outer = c->scope;
             c->scope = &scope;
             Binding *caught = chk_scope_add(&scope, "it^", 3,
-                                        chk_only(c, left, unwanted), node->offset);
+                                            chk_only(c, left, unwanted), node->offset);
             if (caught != NULL) {
                 caught->reached = true;
             }
@@ -534,7 +534,7 @@ LhatType *chk_infer_binary(Checker *c, const LhatNode *node)
             LhatType *boolean = chk_simple(c, LHAT_TYPE_BOOL);
             chk_expect(c, node->v.binary.left, left, boolean, LHAT_CHECK_ERR_NOT_BOOL);
             chk_expect(c, node->v.binary.right, right, boolean,
-                   LHAT_CHECK_ERR_NOT_BOOL);
+                       LHAT_CHECK_ERR_NOT_BOOL);
             return boolean;
         }
 
@@ -589,7 +589,7 @@ LhatType *chk_infer_binary(Checker *c, const LhatNode *node)
 // an overloaded member can answer yes, which makes resolution a search rather
 // than a ranking.
 bool chk_signature_accepts(const LhatType *func, LhatType *const *args,
-                              size_t count, bool through_member)
+                           size_t count, bool through_member)
 {
     if (func == NULL || func->kind != LHAT_TYPE_FUNC) {
         return false;
@@ -730,13 +730,13 @@ LhatType *chk_infer_call(Checker *c, const LhatNode *node)
         const char *called = NULL;
         size_t called_length = 0;
         if (chk_node_name(c, node->v.access.target->v.access.argument, &called,
-                      &called_length) &&
-            chk_name_is(called, called_length, "new")) {
+                          &called_length) &&
+                chk_name_is(called, called_length, "new")) {
             LhatType *owner = chk_infer(c, node->v.access.target->v.access.target);
             const LhatTypeMember *hole = chk_unimplemented_member(owner);
             if (hole != NULL) {
                 chk_report_named(c, node, LHAT_CHECK_ERR_STILL_ABSTRACT, hole->name,
-                             hole->name_length);
+                                 hole->name_length);
             }
         }
     }
@@ -805,7 +805,7 @@ LhatType *chk_infer_call(Checker *c, const LhatNode *node)
                 spread->kind == LHAT_TYPE_TABLE &&
                 spread->v.table.variadic != NULL) {
                 chk_expect(c, arg, spread->v.table.variadic,
-                      callee->v.func.variadic, LHAT_CHECK_ERR_MISMATCH);
+                           callee->v.func.variadic, LHAT_CHECK_ERR_MISMATCH);
             } else if (callee->v.func.variadic != NULL) {
                 chk_report(c, arg, LHAT_CHECK_ERR_NOT_VARIADIC);
             }
@@ -1212,7 +1212,7 @@ LhatType *chk_infer_member(Checker *c, const LhatNode *node)
             // 'let^ f = A.m' is how the side is named.
             if (m->ambiguous) {
                 chk_report_named(c, node, LHAT_CHECK_ERR_AMBIGUOUS_MEMBER, name,
-                             length);
+                                 length);
                 return chk_simple(c, LHAT_TYPE_UNKNOWN);
             }
             return m->type;
@@ -1256,7 +1256,7 @@ static LhatType *infer_index(Checker *c, const LhatNode *node)
 {
     LhatType *over = chk_infer(c, node->v.access.target);
     chk_require_value(c, node->v.access.argument,
-                  chk_infer(c, node->v.access.argument));
+                      chk_infer(c, node->v.access.argument));
     // 04 の 11.4: as in infer_member -- relaxed steps past a nil^
     // arm, and '?[' steps past it under strict as well.
     if (!c->strict || node->v.access.nil_safe) {
@@ -1275,7 +1275,7 @@ static LhatType *infer_index(Checker *c, const LhatNode *node)
             found = lhat_type_member_at(over, (size_t)key->v.integer.value);
         } else if (key->kind == LHAT_NODE_STRING) {
             found = chk_find_member(over, c->lexer->strings + key->v.string.offset,
-                                key->v.string.length);
+                                    key->v.string.length);
         }
         if (found != NULL) {
             return found->type;
@@ -1305,7 +1305,7 @@ static LhatType *infer_table(Checker *c, const LhatNode *node)
     for (const LhatNode *entry = node->v.list.items; entry != NULL;
          entry = entry->next) {
         LhatType *value = chk_require_value(c, entry->v.entry.value,
-                                        chk_infer(c, entry->v.entry.value));
+                                            chk_infer(c, entry->v.entry.value));
 
         // 05 の 8.9: a table lives on the heap and a host value does not
         // leave the stack, so no member of one is ever a host value.
@@ -1359,7 +1359,7 @@ static LhatType *infer_table(Checker *c, const LhatNode *node)
 // The first site fixes it; every later one has to agree, or the body is
 // mixing yields the way 13.9 does not allow.
 void chk_unify_yield(Checker *c, const LhatNode *at, LhatType **slot,
-                        LhatType *candidate)
+                     LhatType *candidate)
 {
     if (candidate == NULL || candidate->kind == LHAT_TYPE_UNKNOWN ||
         candidate->kind == LHAT_TYPE_PENDING) {
@@ -1478,7 +1478,7 @@ LhatType *chk_infer_func(Checker *c, const LhatNode *node)
         LhatType *fallback = chk_infer(c, param->v.param.fallback);
         if (fallback != NULL && param->v.param.type != NULL) {
             chk_expect(c, param->v.param.fallback, fallback, type,
-                   LHAT_CHECK_ERR_MISMATCH);
+                       LHAT_CHECK_ERR_MISMATCH);
         }
         if (param->v.param.variadic) {
             LhatType *element =
@@ -1508,7 +1508,7 @@ LhatType *chk_infer_func(Checker *c, const LhatNode *node)
         size_t length = 0;
         if (chk_node_name(c, param->v.param.name, &name, &length)) {
             Binding *b = chk_scope_add(&body, name, length, type,
-                                   param->v.param.name->offset);
+                                       param->v.param.name->offset);
             if (b != NULL) {
                 b->reached = true;
             }
@@ -1682,7 +1682,7 @@ LhatType *chk_infer_func(Checker *c, const LhatNode *node)
 // structural identity applies unchanged and nothing here has to be interned.
 // The one walk of a member list, under both of the searches below.
 const LhatTypeMember *chk_members_search(const LhatTypeMember *members,
-                                            const char *name, size_t length)
+                                         const char *name, size_t length)
 {
     for (; members != NULL; members = members->next) {
         if (members->name_length == length &&
@@ -1694,7 +1694,7 @@ const LhatTypeMember *chk_members_search(const LhatTypeMember *members,
 }
 
 const LhatTypeMember *chk_find_member(const LhatType *table,
-                                         const char *name, size_t length)
+                                      const char *name, size_t length)
 {
     // 05 の 8.9: a host value type keeps its registered members in the same
     // list a table keeps its own, so the one search serves both.
@@ -2026,7 +2026,7 @@ static LhatType *check_same_name(Checker *c, const LhatNode *entry,
 // The compiler flattens the same chain through the def^ registry (14.2), so
 // what this builds has to agree with that: every member of both sides.
 LhatType *chk_compose_definitions(Checker *c, const LhatNode *node,
-                                     LhatType *left, LhatType *right)
+                                  LhatType *left, LhatType *right)
 {
     LhatType *definition = lhat_type_table(c->result->types);
     LhatType *instance = lhat_type_table(c->result->types);
@@ -2384,13 +2384,13 @@ static LhatType *infer_node(Checker *c, const LhatNode *node)
                 if (part->kind == LHAT_NODE_INTERP_HOLE) {
                     LhatType *held =
                         chk_require_value(c, part->v.hole.value,
-                                      chk_infer(c, part->v.hole.value));
+                                          chk_infer(c, part->v.hole.value));
                     // 05 の 8.9: writing a whole host value down would go
                     // through tostring machinery a value type does not
                     // carry. Its fields are numbers -- write those.
                     if (chk_is_hostvalue(held)) {
                         chk_report(c, part->v.hole.value,
-                               LHAT_CHECK_ERR_HOSTVALUE_ESCAPES);
+                                   LHAT_CHECK_ERR_HOSTVALUE_ESCAPES);
                     }
                 }
             }
@@ -2422,7 +2422,7 @@ static LhatType *infer_node(Checker *c, const LhatNode *node)
                 // host value the way any table member does.
                 if (chk_is_hostvalue(value)) {
                     chk_report(c, field->v.entry.value,
-                           LHAT_CHECK_ERR_HOSTVALUE_ESCAPES);
+                               LHAT_CHECK_ERR_HOSTVALUE_ESCAPES);
                 }
             }
             Binding *receiver = chk_scope_find(c->scope, "self^", 5, NULL);
@@ -2443,11 +2443,11 @@ static LhatType *infer_node(Checker *c, const LhatNode *node)
             }
             if (node->v.unary.op == LHAT_OP_NOT) {
                 chk_expect(c, node, operand, chk_simple(c, LHAT_TYPE_BOOL),
-                       LHAT_CHECK_ERR_NOT_BOOL);
+                           LHAT_CHECK_ERR_NOT_BOOL);
                 return chk_simple(c, LHAT_TYPE_BOOL);
             }
             chk_expect(c, node, operand, chk_simple(c, LHAT_TYPE_NUMBER),
-                   LHAT_CHECK_ERR_NOT_NUMBER);
+                       LHAT_CHECK_ERR_NOT_NUMBER);
             return chk_simple(c, LHAT_TYPE_NUMBER);
         }
 
@@ -2557,7 +2557,7 @@ static LhatType *infer_node(Checker *c, const LhatNode *node)
                 produced = tuple;
             } else {
                 produced = chk_require_value(c, node,
-                                         chk_infer(c, node->v.jump.value));
+                                             chk_infer(c, node->v.jump.value));
             }
             chk_unify_yield(c, node, &c->coroutine_produce, produced);
 
@@ -2661,7 +2661,7 @@ static LhatType *infer_node(Checker *c, const LhatNode *node)
                     continue;
                 }
                 chk_expect(c, condition, chk_infer(c, condition),
-                       chk_simple(c, LHAT_TYPE_BOOL), LHAT_CHECK_ERR_NOT_BOOL);
+                           chk_simple(c, LHAT_TYPE_BOOL), LHAT_CHECK_ERR_NOT_BOOL);
 
                 Narrowing *before = c->narrowings;
                 chk_narrow_from(c, condition, true);
@@ -2742,7 +2742,7 @@ static LhatType *infer_node(Checker *c, const LhatNode *node)
                 // declared (2.3); the rest have to have been.
                 if (chk_name_is(name, length, "message")) {
                     chk_expect(c, entry, given, chk_simple(c, LHAT_TYPE_STRING),
-                           LHAT_CHECK_ERR_MISMATCH);
+                               LHAT_CHECK_ERR_MISMATCH);
                     continue;
                 }
                 if (chk_name_is(name, length, "cause")) {
@@ -2760,7 +2760,7 @@ static LhatType *infer_node(Checker *c, const LhatNode *node)
                 }
                 if (!found) {
                     chk_report_named(c, entry, LHAT_CHECK_ERR_NO_MEMBER, name,
-                                 length);
+                                     length);
                 }
             }
 

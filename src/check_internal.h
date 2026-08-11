@@ -278,23 +278,23 @@ typedef struct {
 void chk_report(Checker *c, const LhatNode *at, LhatCheckErrorCode code);
 void chk_record_resolution(Checker *c, const LhatNode *at, const Binding *b);
 void chk_report_named(Checker *c, const LhatNode *at,
-                         LhatCheckErrorCode code, const char *name,
-                         size_t length);
+                      LhatCheckErrorCode code, const char *name,
+                      size_t length);
 bool chk_node_name(const Checker *c, const LhatNode *node,
-                      const char **text, size_t *length);
+                   const char **text, size_t *length);
 bool chk_name_is(const char *text, size_t length, const char *literal);
 bool chk_is_super_name(Checker *c, const LhatNode *node);
 Binding *chk_scope_find_local(Scope *scope, const char *name, size_t length);
 Binding *chk_scope_find(Scope *scope, const char *name, size_t length, Scope **found);
 Binding *chk_scope_find_skipping(Scope *scope, const char *name,
-                                    size_t length, size_t skip);
+                                 size_t length, size_t skip);
 Scope *chk_scope_from(Scope *scope, const LhatNode *node);
 Binding *chk_scope_add(Scope *scope, const char *name, size_t length,
-                          LhatType *type, uint32_t offset);
+                       LhatType *type, uint32_t offset);
 void chk_scope_dispose(Scope *scope);
 LhatType *chk_simple(Checker *c, LhatTypeKind kind);
 int chk_self_marker_at(const Checker *c, const LhatNode *params,
-                          const LhatNode *param);
+                       const LhatNode *param);
 LhatType *chk_resolve_func_type(Checker *c, const LhatNode *node);
 bool chk_may_stand_beside_tuple(const LhatType *type);
 bool chk_contains_error(const LhatType *type);
@@ -307,13 +307,13 @@ LhatType *chk_require_value(Checker *c, const LhatNode *at, LhatType *type);
 const char *chk_operator_name(LhatOpKind op, size_t *length);
 bool chk_is_operator_name(const char *name, size_t length);
 void chk_check_operator_shape(Checker *c, const LhatNode *at,
-                                 const LhatType *type, bool compares);
+                              const LhatType *type, bool compares);
 void chk_refuse_self_last(Checker *c, const LhatNode *at,
-                             const LhatType *type);
+                          const LhatType *type);
 LhatType *chk_builtin_operator(Checker *c, LhatTypeKind carrier,
-                                  const char *name, size_t length);
+                               const char *name, size_t length);
 LhatType *chk_operator_member(Checker *c, const LhatType *type,
-                                 const char *name, size_t length);
+                              const char *name, size_t length);
 bool chk_operator_undecided(const LhatType *type);
 bool chk_narrowable(const LhatNode *node);
 LhatType *chk_narrowed_type(Checker *c, const LhatNode *path);
@@ -326,31 +326,31 @@ bool chk_mentions_function_coroutine(const LhatType *type, unsigned depth);
 void chk_constrain(Checker *c, LhatType *value, LhatType *wanted);
 void chk_close_param_var(Checker *c, const LhatType *value);
 void chk_constrain_member(Checker *c, LhatType *target, const char *name,
-                             size_t length);
+                          size_t length);
 ParamVar *chk_push_param_var(Checker *c, LhatType *slot);
 void chk_settle_param_vars(Checker *c, ParamVar *mark);
 void chk_expect(Checker *c, const LhatNode *at, LhatType *value,
-                   LhatType *target, LhatCheckErrorCode code);
+                LhatType *target, LhatCheckErrorCode code);
 LhatType *chk_infer_name(Checker *c, const LhatNode *node);
 LhatType *chk_infer_binary(Checker *c, const LhatNode *node);
 bool chk_signature_accepts(const LhatType *func, LhatType *const *args,
-                              size_t count, bool through_member);
+                           size_t count, bool through_member);
 LhatType *chk_infer_call(Checker *c, const LhatNode *node);
 LhatType *chk_table_walk_tuple(Checker *c, const LhatType *over);
 LhatType *chk_table_element_type(Checker *c, const LhatType *over);
 LhatType *chk_without_nil_arm(Checker *c, LhatType *target);
 LhatType *chk_infer_member(Checker *c, const LhatNode *node);
 void chk_unify_yield(Checker *c, const LhatNode *at, LhatType **slot,
-                        LhatType *candidate);
+                     LhatType *candidate);
 LhatType *chk_infer_func(Checker *c, const LhatNode *node);
 const LhatTypeMember *chk_members_search(const LhatTypeMember *members,
-                                            const char *name, size_t length);
-const LhatTypeMember *chk_find_member(const LhatType *table,
                                          const char *name, size_t length);
+const LhatTypeMember *chk_find_member(const LhatType *table,
+                                      const char *name, size_t length);
 LhatType *chk_instance_of(const LhatType *definition);
 const LhatTypeMember *chk_unimplemented_member(const LhatType *definition);
 LhatType *chk_compose_definitions(Checker *c, const LhatNode *node,
-                                     LhatType *left, LhatType *right);
+                                  LhatType *left, LhatType *right);
 LhatType *chk_infer_def(Checker *c, const LhatNode *node, LhatType *base);
 bool chk_is_hostvalue(const LhatType *type);
 LhatType *chk_infer(Checker *c, const LhatNode *node);
@@ -358,10 +358,10 @@ LhatType *chk_environment_type(Checker *c);
 LhatType *chk_typeinfo_type(Checker *c);
 void chk_check_define(Checker *c, const LhatNode *node);
 void chk_register_module_type(Checker *c, const char *module_name,
-                                 LhatType *exports);
+                              LhatType *exports);
 LhatType *chk_hosted_module(Checker *c, const LhatNode *path);
 bool chk_value_is_fresh(const Checker *c, const LhatNode *value,
-                           const LhatType *type);
+                        const LhatType *type);
 bool chk_receiver_is_own_coroutine(Checker *c, const LhatNode *receiver);
 bool chk_scope_within_body(Checker *c, const Scope *found_in);
 void chk_check_write_target(Checker *c, const LhatNode *target);

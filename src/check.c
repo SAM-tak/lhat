@@ -50,8 +50,8 @@ void chk_record_resolution(Checker *c, const LhatNode *at, const Binding *b)
 // keeps alive as long as the result -- a copy per diagnostic would be paid
 // for by every program, and almost none of them read one.
 void chk_report_named(Checker *c, const LhatNode *at,
-                         LhatCheckErrorCode code, const char *name,
-                         size_t length)
+                      LhatCheckErrorCode code, const char *name,
+                      size_t length)
 {
     size_t before = c->result->diagnostic_count;
     chk_report(c, at, code);
@@ -77,7 +77,7 @@ void chk_report_named(Checker *c, const LhatNode *at,
 // One definition is what keeps the checker and the machine agreeing on the
 // key a member lives under.
 bool chk_node_name(const Checker *c, const LhatNode *node,
-                      const char **text, size_t *length)
+                   const char **text, size_t *length)
 {
     return lhat_node_name(node, c->lexer->source->text, text, length);
 }
@@ -134,7 +134,7 @@ Binding *chk_scope_find(Scope *scope, const char *name, size_t length, Scope **f
 // the enclosing def^'s. The same search order as scope_find, so the two
 // agree on which binding is "innermost".
 Binding *chk_scope_find_skipping(Scope *scope, const char *name,
-                                    size_t length, size_t skip)
+                                 size_t length, size_t skip)
 {
     for (Scope *s = scope; s != NULL; s = s->parent) {
         Binding *b = chk_scope_find_local(s, name, length);
@@ -194,7 +194,7 @@ Scope *chk_scope_from(Scope *scope, const LhatNode *node)
 }
 
 Binding *chk_scope_add(Scope *scope, const char *name, size_t length,
-                          LhatType *type, uint32_t offset)
+                       LhatType *type, uint32_t offset)
 {
     Binding *b = (Binding *)lhat_calloc(1, sizeof *b);
     if (b == NULL) {
@@ -245,7 +245,7 @@ bool chk_is_hostvalue(const LhatType *type);
 LhatType *chk_without_nil_arm(Checker *c, LhatType *target);
 LhatType *chk_typeinfo_type(Checker *c);     // 14.16
 void chk_register_module_type(Checker *c, const char *module_name,
-                                 LhatType *exports);  // 05 の 5.3
+                              LhatType *exports);  // 05 の 5.3
 LhatType *chk_hosted_module(Checker *c, const LhatNode *path);  // 8.7
 void chk_check_statement(Checker *c, const LhatNode *node);
 void chk_check_block_in_scope(Checker *c, const LhatNode *node);
@@ -253,18 +253,18 @@ LhatType *chk_collect_exports(Checker *c, const LhatNode *statements);
 void chk_check_statements(Checker *c, const LhatNode *statements);
 LhatType *chk_infer_def(Checker *c, const LhatNode *node, LhatType *base);
 LhatType *chk_compose_definitions(Checker *c, const LhatNode *node,
-                                     LhatType *left, LhatType *right);
+                                  LhatType *left, LhatType *right);
 LhatType *chk_instance_of(const LhatType *definition);
 const LhatTypeMember *chk_unimplemented_member(const LhatType *definition);
 const LhatTypeMember *chk_find_member(const LhatType *table, const char *name,
-                                         size_t length);
+                                      size_t length);
 LhatType *chk_only(Checker *c, LhatType *type, LhatType *wanted);
 LhatType *chk_without(Checker *c, LhatType *type, LhatType *unwanted);
 ParamVar *chk_param_var_for(Checker *c, const LhatType *type);
 bool chk_signature_accepts(const LhatType *func, LhatType *const *args,
-                              size_t count, bool through_member);
+                           size_t count, bool through_member);
 bool chk_value_is_fresh(const Checker *c, const LhatNode *value,
-                           const LhatType *type);
+                        const LhatType *type);
 void chk_check_write_target(Checker *c, const LhatNode *target);
 void chk_check_opaque_write(Checker *c, const LhatNode *target);
 bool chk_receiver_is_own_coroutine(Checker *c, const LhatNode *receiver);
@@ -321,7 +321,7 @@ static LhatType *resolve_table_type(Checker *c, const LhatNode *node)
         // than inferred.
         if (chk_is_hostvalue(member)) {
             chk_report(c, m->v.entry.value != NULL ? m->v.entry.value : node,
-                   LHAT_CHECK_ERR_HOSTVALUE_ESCAPES);
+                       LHAT_CHECK_ERR_HOSTVALUE_ESCAPES);
         }
         // 13.7, 14.10: the unbounded tail. 'value' is NULL for an untyped
         // '...', which 13.7 makes any^.
@@ -373,7 +373,7 @@ static bool is_self_marker(const Checker *c, const LhatNode *param)
 // parameter at all -- which 11.8's shape rule then reports for an op^, and the
 // rule above for anything else. Neither needs a case here.
 int chk_self_marker_at(const Checker *c, const LhatNode *params,
-                          const LhatNode *param)
+                       const LhatNode *param)
 {
     if (!is_self_marker(c, param)) {
         return 0;
@@ -923,7 +923,7 @@ bool chk_is_operator_name(const char *name, size_t length)
 // 11.9: and a '<=>' answers a number^, since the four orderings are
 // read off it by asking which side of zero the answer falls.
 void chk_check_operator_shape(Checker *c, const LhatNode *at,
-                                 const LhatType *type, bool compares)
+                              const LhatType *type, bool compares)
 {
     if (type == NULL || type->kind == LHAT_TYPE_UNKNOWN ||
         type->kind == LHAT_TYPE_PENDING) {
@@ -971,7 +971,7 @@ void chk_check_operator_shape(Checker *c, const LhatNode *at,
 // so a member saying the receiver is its last argument says nothing 14.4 can
 // act on. Reads an overloaded member arm by arm, the way the shape rule does.
 void chk_refuse_self_last(Checker *c, const LhatNode *at,
-                             const LhatType *type)
+                          const LhatType *type)
 {
     if (type == NULL) {
         return;
@@ -992,7 +992,7 @@ void chk_refuse_self_last(Checker *c, const LhatNode *at,
 // L^ writing them out, the way 15.6 gives a coroutine start(). 14.4 puts the
 // left operand in self^, so the right one is the only parameter.
 LhatType *chk_builtin_operator(Checker *c, LhatTypeKind carrier,
-                                  const char *name, size_t length)
+                               const char *name, size_t length)
 {
     // 11.9: number^ and string^ each order their own, so both carry the
     // one comparison -- and it answers a number^ whatever it was asked of.
@@ -1031,7 +1031,7 @@ LhatType *chk_builtin_operator(Checker *c, LhatTypeKind carrier,
 // operator is a name no program can write by hand and nothing of the
 // writer's can collide with it.
 LhatType *chk_operator_member(Checker *c, const LhatType *type,
-                                 const char *name, size_t length)
+                              const char *name, size_t length)
 {
     if (type == NULL || name == NULL) {
         return NULL;
@@ -1457,7 +1457,7 @@ bool chk_mentions_function_coroutine(const LhatType *type, unsigned depth)
                 }
             }
             return chk_mentions_function_coroutine(type->v.table.variadic,
-                                               depth + 1);
+                                                   depth + 1);
 
         case LHAT_TYPE_FUNC:
             for (const LhatTypeList *p = type->v.func.params; p != NULL;
@@ -1639,7 +1639,7 @@ void chk_close_param_var(Checker *c, const LhatType *value)
 // pin a signature down (13.1 asks the f^/p^ distinction and 13.2 the presence
 // of a result, and neither is readable off one call).
 void chk_constrain_member(Checker *c, LhatType *target, const char *name,
-                             size_t length)
+                          size_t length)
 {
     if (chk_param_var_for(c, target) == NULL) {
         return;
@@ -1944,8 +1944,8 @@ void lhat_check_next(LhatCheckSession *session, const LhatNode *unit,
     // defined" is about the statements of this input.
     for (size_t i = 0; i < session->count; i++) {
         Binding *b = chk_scope_add(&scope, session->names[i].name,
-                               session->names[i].length,
-                               session->names[i].type, 0);
+                                   session->names[i].length,
+                                   session->names[i].type, 0);
         if (b != NULL) {
             b->reached = true;
             b->from_session = true;
@@ -2015,7 +2015,7 @@ LhatType *lhat_type_of_text(const char *text, size_t length,
             for (const LhatTypeMember *m = named->v.table.members; m != NULL;
                  m = m->next) {
                 Binding *b = chk_scope_add(&scope, m->name, m->name_length,
-                                       m->type, 0);
+                                           m->type, 0);
                 if (b != NULL) {
                     b->reached = true;
                 }
