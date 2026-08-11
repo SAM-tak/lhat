@@ -92,12 +92,15 @@ static LhatValue read_line_from(LhatMachine *machine, const IoModule *module,
                : fail_with(machine, module->out_of_memory, "out of memory");
 }
 
-// 13.7's '...', so what was handed over is written in the order it came, one
-// line each -- and nothing at all when nothing was. The reading is 02 の
-// 14.17's tostring, lhat_value_text: a string^ is its own bytes, without the
-// quotes that let 1 and "1" be read apart (those belong to 03 の 4 章's
-// prompt, not to a writer). nil^ and bool^ are words, and everything else is
-// spelled the way lhat_value_write spells it.
+// 13.7's '...', so what was handed over is written in the order it came,
+// separated by a space and closed by one newline -- and nothing at all when
+// nothing was. A newline between them would make the argument boundary
+// indistinguishable from a newline inside a value, and a comma would read as
+// the table syntax, leaving `print(pack^ f())` and `print(f()...)` looking
+// alike. The reading is 02 の 14.17's tostring, lhat_value_text: a string^ is
+// its own bytes, without the quotes that let 1 and "1" be read apart (those
+// belong to 03 の 4 章's prompt, not to a writer). nil^ and bool^ are words,
+// and everything else is spelled the way lhat_value_write spells it.
 //
 // A value whose room could not be found is skipped in silence: a p^ has no
 // answer to hand an error back through, and one line of output is not worth
@@ -107,6 +110,7 @@ static LhatValue std_print(LhatMachine *machine, void *context,
 {
     (void)machine;
     (void)context;
+    size_t written = 0;
     for (size_t i = 0; i < count; i++) {
         size_t needed = lhat_value_text(arguments[i], NULL, 0);
         char *text = (char *)lhat_alloc(needed + 1);
@@ -114,9 +118,15 @@ static LhatValue std_print(LhatMachine *machine, void *context,
             continue;
         }
         lhat_value_text(arguments[i], text, needed + 1);
+        if (written > 0) {
+            fputc(' ', stdout);
+        }
         fwrite(text, 1, needed, stdout);
-        fputc('\n', stdout);
+        written++;
         lhat_free(text);
+    }
+    if (written > 0) {
+        fputc('\n', stdout);
     }
     return lhat_nil();
 }

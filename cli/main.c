@@ -506,25 +506,33 @@ static int dump_tokens(const LhatSource *source)
 // tells it apart from having done nothing. 13.2 has an f^ answer on every
 // path, so it answers nil^ -- which 04 の 11.3 already spells "nothing here".
 //
-// 13.7's '...', so what was handed over is written in the order it came, one
-// line each. The reading is 02 の 14.17's tostring, lhat_value_text -- a
-// string^ is its own bytes, without the quotes that let 1 and "1" be read
-// apart (those belong to 03 の 4 章's prompt, not to a writer). The same
-// print stdlib/io.c registers as std.io.print.
+// 13.7's '...', so what was handed over is written in the order it came,
+// separated by a space and closed by one newline. The reading is 02 の 14.17's
+// tostring, lhat_value_text -- a string^ is its own bytes, without the quotes
+// that let 1 and "1" be read apart (those belong to 03 の 4 章's prompt, not to
+// a writer). The same print stdlib/io.c registers as std.io.print, and the
+// reasoning for the separator is written there.
 static LhatValue host_print(LhatMachine *machine, void *context,
                             const LhatValue *arguments, size_t count)
 {
     (void)machine;
     (void)context;
+    size_t written = 0;
     for (size_t i = 0; i < count; i++) {
         size_t needed = lhat_value_text(arguments[i], NULL, 0);
         char *text = (char *)malloc(needed + 1);
         if (text != NULL) {
             lhat_value_text(arguments[i], text, needed + 1);
+            if (written > 0) {
+                fputc(' ', stdout);
+            }
             fwrite(text, 1, needed, stdout);
-            fputc('\n', stdout);
+            written++;
             free(text);
         }
+    }
+    if (written > 0) {
+        fputc('\n', stdout);
     }
     return lhat_nil();
 }

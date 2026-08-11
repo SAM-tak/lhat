@@ -98,10 +98,11 @@ static void test_print(void)
         lhat_test_ran_dispose(&ran);
     }
 
-    // 13.7's '...': any type, as many as were given, one line each. The
-    // reading is 02 の 14.17's tostring, so a string^ lines up unquoted while
-    // nil^ and bool^ come out as words. No arguments writes nothing.
-    LHAT_TEST("print writes every argument on a line of its own");
+    // 13.7's '...': any type, as many as were given, separated by a space and
+    // closed by one newline. The reading is 02 の 14.17's tostring, so a
+    // string^ comes out unquoted while nil^ and bool^ come out as words. No
+    // arguments writes nothing at all -- not even the newline.
+    LHAT_TEST("print writes its arguments on one line, space separated");
     {
         char written[256];
         LhatTestRan ran =
@@ -111,7 +112,7 @@ static void test_print(void)
                           "return^ 1\n",
                           written, sizeof written);
         LHAT_CHECK_RAN_INTEGER(ran, 1);
-        LHAT_CHECK_EQ_STR(written, strlen(written), "1\ntwo\nnil\ntrue\n");
+        LHAT_CHECK_EQ_STR(written, strlen(written), "1 two nil true\n");
         lhat_test_ran_dispose(&ran);
     }
 
