@@ -66,11 +66,13 @@ lhat_add_test(test_vm_coroutine vm)
 lhat_add_test(test_vm_machine vm)
 lhat_add_test(test_vm_tuple vm)
 
-# サンプル stdlib のテスト。src/ ではなく include/lhat.h 越しに、L^ の
-# プログラムから見える形を検査する(tests/stdlibutil.h の頭のコメント)。
-# LHAT_BUILD_STDLIB=OFF なら建てない。
+# The sample stdlib's tests. They ask what an L^ program sees when it
+# imports a module, through the public headers rather than through src/
+# (see the head of tests/stdlibutil.h) -- which makes them the acceptance
+# test of that surface. Not built when LHAT_BUILD_STDLIB is OFF.
 if(LHAT_BUILD_STDLIB)
-    # std.thread だけは OS スレッドを自分で起動するので lhatthread も要る。
+    # std.thread is the one that starts OS threads itself, so it needs
+    # lhatthread as well.
     lhat_add_test(test_thread stdlib)
     target_link_libraries(test_thread PRIVATE lhatstdlib lhatthread)
 

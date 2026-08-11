@@ -4,8 +4,9 @@
 
 function(lhat_lsp_add_test name)
     add_executable(${name} ${name}.c ${ARGN})
-    # lhatthread は lsp/*.h が port/thread.h の型を持つから要る -- 直接呼ぶ
-    # テストは今のところないが、リンクせずに含めることはできない。
+    # lhatthread is needed because the lsp/*.h carry types from
+    # port/thread.h -- no test calls one directly yet, but they cannot be
+    # included without linking it.
     target_link_libraries(${name} PRIVATE lhat cjson lhatthread lhat_testkit)
     target_include_directories(${name} PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}

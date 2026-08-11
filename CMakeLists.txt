@@ -56,9 +56,6 @@ add_library(lhat
     src/source.c
     src/error.c
     src/token.c
-    # 01 の 10 章 の数値リテラル文法。02 の 14.17改2 の tonumber も読むため、
-    # 字句解析器から切り離してある——バイトコードだけを実行するビルドは
-    # これを持ち、lexer.c 以降を持たない。
     src/number.c
     src/lexer.c
     src/ast.c
@@ -131,28 +128,31 @@ target_include_directories(lhatport PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
 target_link_libraries(lhat PUBLIC lhatport)
 
 # ---- Threads --------------------------------------------------------------
-# port/thread.h の頭のコメントの通り、これはコアが求めるものではない -- 言語は
-# 単一スレッドで走る。コアの脇に建つもの(stdlib/thread.c と lsp/)だけが要る
-# ので、lhatport とは別ターゲットにして `lhat` にはリンクしない。C11 の
-# <threads.h> は使わない: macOS には存在せず、MSVC は VS2022 17.8 以降にしか
-# ない。pthread と Win32 同期 API のどちらもそれより古くから在る。
+# As port/thread.h says at its head, this is not something the core asks
+# for -- the language runs on one thread. Only what stands beside the core
+# needs it (stdlib/thread.c and lsp/), so it is a target of its own rather
+# than part of lhatport, and `lhat` does not link it. C11's <threads.h> is
+# not used: macOS does not have it, and MSVC only gained it in VS2022 17.8.
+# Both pthreads and the Win32 synchronisation API predate that by years.
 find_package(Threads REQUIRED)
 
 add_library(lhatthread port/thread.c)
 target_link_libraries(lhatthread PUBLIC Threads::Threads)
 
-# "port/thread.h" と書いて含める -- ヘッダ名だけを置くと stdlib/thread.h と
-# 衝突する。下の Driver セクションが stdlib/*.h に対して使っているのと同じ手。
+# Included as "port/thread.h" -- putting the bare header name on a path
+# would collide with stdlib/thread.h. The Driver section below does the same
+# for stdlib/*.h.
 target_include_directories(lhatthread
     PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
            $<INSTALL_INTERFACE:include>)
 
 # ---- Sample standard library ------------------------------------------------
-# stdlib/ の隔離は port/ と非対称: port はコアが既定でリンクする既定実装で、
-# stdlib はホストが選んで足す任意のライブラリ。lhat_lsp はこれをリンクしない
-# -- 丸ごと消せるだけでなく、最初から組み込まれてすらいない、というのが
-# 「サンプル」の意図をより厳密に体現する形。lhat_cli はサンプルドライバとして
-# 下の Driver セクションで LHAT_BUILD_STDLIB が ON の間だけこれをリンクする。
+# stdlib/ is kept at arm's length differently from port/: port is the
+# default implementation the core links unless told otherwise, while stdlib
+# is an optional library a host chooses to add. lhat_lsp does not link it --
+# that it can not only be deleted whole but was never built in to begin with
+# is what "sample" is meant to say. lhat_cli, being the sample driver, links
+# it in the Driver section below for as long as LHAT_BUILD_STDLIB is ON.
 option(LHAT_BUILD_STDLIB "Build the L^ sample standard library (stdlib/)" ON)
 
 if(LHAT_BUILD_STDLIB)
@@ -164,10 +164,11 @@ if(LHAT_BUILD_STDLIB)
         stdlib/random.c
         stdlib/thread.c
     )
-    # lhat.h だけで完結する(src/ への private path は要らない) -- port/ と
-    # 同じ理由で、これ自体が「lhat.h だけを使って書けるサンプル」の実例
-    # になっている。std.thread だけが例外で、OS スレッドは lhat.h の外なので
-    # port/thread.h を足す。stdlib/*.h には現れないので PRIVATE。
+    # lhat.h is the whole of what it needs (no private path into src/) --
+    # for the same reason port/ has none, this is itself the worked example
+    # of "a library written against lhat.h alone". std.thread is the one
+    # exception: an OS thread is outside lhat.h, so port/thread.h is added
+    # for it. It appears in no stdlib/*.h, hence PRIVATE.
     target_include_directories(lhatstdlib
         PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
                $<INSTALL_INTERFACE:include>)
@@ -191,14 +192,16 @@ if(LHAT_BUILD_CLI)
     # directly -- the cli is an in-tree front end, so it names the internal
     # headers honestly instead of getting them by leakage.
     target_include_directories(lhat_cli PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
-    # サンプルドライバとして、stdlib/ が建っているならそれを丸ごと登録する
-    # (cli/main.c の bind_host_names 参照)。LHAT_BUILD_STDLIB=OFF でも
-    # cli/main.c 自体はこのマクロなしでビルドできる -- stdlib は常に任意。
+    # Being the sample driver, it registers the whole of stdlib/ when
+    # stdlib/ was built (see bind_host_names in cli/main.c). With
+    # LHAT_BUILD_STDLIB=OFF, cli/main.c still builds without the macro --
+    # stdlib is optional, always.
     if(LHAT_BUILD_STDLIB)
         target_link_libraries(lhat_cli PRIVATE lhatstdlib)
-        # stdlib/*.h 同士は同じディレクトリにある前提で "error.h" のように
-        # 相互 include している (stdlib/io.c 参照) -- cli/main.c だけが
-        # よそから見るので、リポジトリルートを足して "stdlib/foo.h" と書く。
+        # The stdlib/*.h include each other flat, as "error.h", on the
+        # understanding that they sit in one directory (see stdlib/io.c).
+        # cli/main.c is the one that looks at them from outside, so the
+        # repository root goes on its path and it writes "stdlib/foo.h".
         target_include_directories(lhat_cli PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
         target_compile_definitions(lhat_cli PRIVATE LHAT_CLI_WITH_STDLIB)
     endif()
@@ -263,9 +266,9 @@ install(TARGETS lhat lhatport lhatthread EXPORT lhatTargets
     RUNTIME DESTINATION bin
 )
 
-# lhatstdlib.lib は lhat_thread_* を参照したまま出荷されるので、それを解ける
-# ライブラリとヘッダも一緒に置く。含める側が書く名前は "port/thread.h" のまま
-# になるよう、ディレクトリごと据える。
+# lhatstdlib ships still naming lhat_thread_*, so the library and the header
+# that resolve those go with it. Installed as a directory, so that whoever
+# includes it still writes "port/thread.h".
 install(FILES port/thread.h DESTINATION include/port)
 
 # What ships is what a host may name: lhat.h and the headers under lhat/,
