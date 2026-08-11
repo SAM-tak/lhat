@@ -32,11 +32,30 @@ lhat_add_test(test_number)
 lhat_add_test(test_lexer)
 lhat_add_test(test_parser)
 lhat_add_test(test_type)
-lhat_add_test(test_check)
 lhat_add_test(test_value)
 lhat_add_test(test_object)
 lhat_add_test(test_program)
-lhat_add_test(test_vm)
+
+# The checker suite, split by topic; each file is one executable.
+lhat_add_test(test_check_core)
+lhat_add_test(test_check_narrowing)
+lhat_add_test(test_check_def)
+lhat_add_test(test_check_forms)
+lhat_add_test(test_check_modules)
+lhat_add_test(test_check_coroutine)
+lhat_add_test(test_check_purity)
+lhat_add_test(test_check_tables)
+lhat_add_test(test_check_novalue)
+
+# The machine suite, the same way.
+lhat_add_test(test_vm_core)
+lhat_add_test(test_vm_data)
+lhat_add_test(test_vm_loop)
+lhat_add_test(test_vm_error)
+lhat_add_test(test_vm_def)
+lhat_add_test(test_vm_coroutine)
+lhat_add_test(test_vm_machine)
+lhat_add_test(test_vm_tuple)
 
 # サンプル stdlib のテスト。src/ ではなく include/lhat.h 越しに、L^ の
 # プログラムから見える形を検査する(tests/stdlibutil.h の頭のコメント)。
