@@ -68,6 +68,7 @@ add_library(lhat
     src/program.c
     src/code.c
     src/compile.c
+    src/rttype.c
     src/vm.c
     src/gc.c
     src/value.c
