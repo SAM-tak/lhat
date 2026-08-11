@@ -540,36 +540,23 @@ static bool bind_host_names(LhatProgram *program)
     return true;
 }
 
-// 03 の 1.1's third stage, over the unit graph of 05 の 6.2: a unit cannot be
-// checked before the units it requires, so the whole graph is walked rather
-// than the one file named on the command line.
-static int check_program(const char *path, bool run, bool strict)
+// 03 の 1.1's three stages, each with its own codes and one shape to show
+// them in. Answers how many units the graph reached.
+static size_t say_unit_diagnostics(const LhatProgram *program)
 {
-    LhatProgram program;
-    lhat_program_init(&program, strict, lhat_load_file, NULL);
-    if (!bind_host_names(&program)) {  // 05 の 8.2, before checking (8.3)
-        fprintf(stderr, "lhat: out of memory\n");
-        lhat_program_dispose(&program);
-        return EXIT_FAILURE;
-    }
-
-    const LhatUnit *root = lhat_program_check(&program, path);
-
-    for (size_t i = 0; i < program.diagnostic_count; i++) {
-        const LhatProgramDiagnostic *d = &program.diagnostics[i];
+    for (size_t i = 0; i < program->diagnostic_count; i++) {
+        const LhatProgramDiagnostic *d = &program->diagnostics[i];
         fprintf(stderr, "%s: error: %s\n", d->path,
                 lhat_program_error_message(d->code));
     }
 
     size_t units = 0;
-    for (const LhatUnit *unit = program.units; unit != NULL;
+    for (const LhatUnit *unit = program->units; unit != NULL;
          unit = unit->next) {
         units++;
         if (!unit->loaded) {
             continue;
         }
-        // 03 の 1.1's three stages, each with its own codes and one shape to
-        // show them in.
         for (size_t i = 0; i < unit->lexer.diagnostic_count; i++) {
             const LhatDiagnostic *d = &unit->lexer.diagnostics[i];
             say_error(&unit->source, unit->path, d->offset, d->line, d->column,
@@ -584,6 +571,24 @@ static int check_program(const char *path, bool run, bool strict)
             say_check_error(&unit->source, unit->path, d);
         }
     }
+    return units;
+}
+
+// 03 の 1.1's third stage, over the unit graph of 05 の 6.2: a unit cannot be
+// checked before the units it requires, so the whole graph is walked rather
+// than the one file named on the command line.
+static int check_program(const char *path, bool run, bool strict)
+{
+    LhatProgram program;
+    lhat_program_init(&program, strict, lhat_load_file, NULL);
+    if (!bind_host_names(&program)) {  // 05 の 8.2, before checking (8.3)
+        fprintf(stderr, "lhat: out of memory\n");
+        lhat_program_dispose(&program);
+        return EXIT_FAILURE;
+    }
+
+    const LhatUnit *root = lhat_program_check(&program, path);
+    size_t units = say_unit_diagnostics(&program);
 
     bool failed = root == NULL || lhat_program_has_errors(&program);
     if (!failed && !run) {
@@ -664,6 +669,75 @@ static int dump_tree(const LhatSource *source, bool typed, bool command)
     lhat_parse_result_dispose(&result);
     lhat_lexer_dispose(&lexer);
     return status;
+}
+
+// One compiled body, then the bodies written inside it, one step deeper --
+// the shape 03 の 5.2 gives a unit. lhat_chunk_print writes the instruction;
+// what is added here is the line column, since a chunk keeps one source line
+// per instruction (04 の 11 章).
+static void print_proto(const LhatProto *proto, size_t number, int depth)
+{
+    printf("%*sbody %zu: %u registers", depth * 2, "", number,
+           proto->chunk.registers);
+    if (proto->parameters != 0) {
+        printf(", %u parameters", proto->parameters);
+    }
+    if (proto->yields) {
+        printf(", yields");
+    }
+    printf("\n");
+    for (size_t i = 0; i < proto->chunk.count; i++) {
+        char text[96];
+        lhat_chunk_print(&proto->chunk, i, text, sizeof text);
+        printf("%*s%4zu  line %-4u  %s\n", depth * 2, "", i,
+               proto->chunk.lines[i], text);
+    }
+    for (size_t i = 0; i < proto->proto_count; i++) {
+        print_proto(proto->protos[i], i + 1, depth + 1);
+    }
+}
+
+// The compiled form of the whole program: the same graph walk as
+// check_program, ending at the instructions instead of the run. Checking
+// comes first because 05 の 5.3 compiles every unit the root requires, and
+// the graph is only known once it has been walked -- relaxed, since the dump
+// is after the instructions, not the diagnoses (03 の 4.2 emits the same
+// ones either way).
+static int dump_bytecode(const char *path)
+{
+    LhatProgram program;
+    lhat_program_init(&program, false, lhat_load_file, NULL);
+    if (!bind_host_names(&program)) {  // 05 の 8.2, before checking (8.3)
+        fprintf(stderr, "lhat: out of memory\n");
+        lhat_program_dispose(&program);
+        return EXIT_FAILURE;
+    }
+
+    const LhatUnit *root = lhat_program_check(&program, path);
+    say_unit_diagnostics(&program);
+
+    bool failed = root == NULL || lhat_program_has_errors(&program);
+    if (!failed) {
+        size_t count = 0;
+        const LhatModule *modules = lhat_program_compile(&program, &count);
+        if (modules == NULL) {
+            if (program.compile_status != LHAT_COMPILE_OK) {
+                fprintf(stderr, "%s: error: %s\n", path,
+                        lhat_compile_status_message(program.compile_status));
+            }
+            failed = true;
+        } else {
+            for (size_t i = 0; i < count; i++) {
+                printf("%s\n", modules[i].module_name != NULL
+                                   ? modules[i].module_name
+                                   : path);
+                print_proto(modules[i].proto, 0, 0);
+            }
+        }
+    }
+
+    lhat_program_dispose(&program);
+    return failed ? EXIT_FAILURE : EXIT_SUCCESS;
 }
 
 // 03 の 4 章: one machine and one session of each stage, answering many
@@ -868,6 +942,7 @@ int main(int argc, char **argv)
 {
     const char *path = NULL;
     bool tokens_only = false;
+    bool bytecode_only = false;
     bool check_only = false;
     bool run_program = false;
     bool command_form = false;
@@ -879,6 +954,8 @@ int main(int argc, char **argv)
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "--tokens") == 0) {
             tokens_only = true;
+        } else if (strcmp(argv[i], "--dump-bytecode") == 0) {
+            bytecode_only = true;
         } else if (strcmp(argv[i], "--check") == 0) {
             check_only = true;
         } else if (strcmp(argv[i], "--run") == 0) {
@@ -895,32 +972,40 @@ int main(int argc, char **argv)
     }
 
     // 03 の 4 章: with nothing to read, read from the prompt.
-    if (path == NULL && !tokens_only && !check_only && !run_program &&
-        !command_form) {
+    if (path == NULL && !tokens_only && !bytecode_only && !check_only &&
+        !run_program && !command_form) {
         return repl(strictness == STRICTNESS_STRICT);
     }
 
     if (path == NULL) {
         printf("L^ (lhat) %s\n", LHAT_VERSION);
         printf("usage: lhat [option] <file>\n");
-        printf("  no file    read from a prompt (03 の 4 章)\n");
-        printf("  --run      check the whole program and run it (05 の 5.3)\n");
-        printf("  --check    type check and report, without running\n");
-        printf("  default    print the syntax tree\n");
-        printf("  --tokens   print the token stream instead\n");
-        printf("  --command  read the input as the command form (02 の 2 章)\n");
-        printf("  --strict   report a type error at compile time"
-                            " (03 の 3.1; default for a file)\n");
-        printf("  --relaxed  leave an undecided type to a runtime check"
-                            " (03 の 3.1; default for the prompt)\n");
+        printf("  no file        read from a prompt (03 の 4 章)\n");
+        printf("  --run          check the whole program and run it"
+                                " (05 の 5.3)\n");
+        printf("  --check        type check and report, without running\n");
+        printf("  default        print the syntax tree\n");
+        printf("  --tokens       print the token stream instead\n");
+        printf("  --dump-bytecode  print what the unit compiles to"
+                                  " (03 の 5 章)\n");
+        printf("  --command      read the input as the command form"
+                                " (02 の 2 章)\n");
+        printf("  --strict       report a type error at compile time"
+                                " (03 の 3.1; default for a file)\n");
+        printf("  --relaxed      leave an undecided type to a runtime check"
+                                " (03 の 3.1; default for the prompt)\n");
         return EXIT_SUCCESS;
     }
 
     // Checking is a question about a program, not about a file: 05 の 6.2
-    // puts the units a file requires ahead of it.
+    // puts the units a file requires ahead of it. The bytecode dump walks
+    // the same graph, so it reads its own input the same way.
     if (check_only || run_program) {
         return check_program(path, run_program,
                              strictness != STRICTNESS_RELAXED);
+    }
+    if (bytecode_only) {
+        return dump_bytecode(path);
     }
 
     LhatSource source;
