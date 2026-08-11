@@ -1050,6 +1050,228 @@ static void test_hostvalue_escape(void)
     lhat_program_dispose(&program);
 }
 
+// 02 の 13.8改: a host answering several values. The positions go into the
+// machine's room and come back as the run every other producer makes.
+static LhatValue host_divmod(LhatMachine *machine, void *context,
+                             const LhatValue *arguments, size_t count)
+{
+    (void)context;
+    if (count != 2 || !lhat_is_integer(arguments[0]) ||
+        !lhat_is_integer(arguments[1]) ||
+        lhat_as_integer(arguments[1]) == 0) {
+        return lhat_nil();
+    }
+    int64_t a = lhat_as_integer(arguments[0]);
+    int64_t b = lhat_as_integer(arguments[1]);
+    LhatValue out[2] = { lhat_integer(a / b), lhat_integer(a % b) };
+    LhatValue answer = lhat_nil();
+    if (!lhat_make_tuple(machine, out, 2, &answer)) {
+        return lhat_nil();
+    }
+    return answer;
+}
+
+// The same, but allocating after the room is filled -- what proves the
+// positions are roots. A table made here would be swept if they were not.
+static LhatValue host_divmod_then_allocate(LhatMachine *machine, void *context,
+                                           const LhatValue *arguments,
+                                           size_t count)
+{
+    LhatValue answer = host_divmod(machine, context, arguments, count);
+    if (!lhat_is_run(answer)) {
+        return answer;
+    }
+    for (int i = 0; i < 64; i++) {
+        LhatValue dropped = lhat_nil();
+        lhat_machine_make_table(machine, &dropped);  // dropped at once
+    }
+    return answer;
+}
+
+// 05 の 8.7 with 13.8改: registered as answering several values but written
+// to answer one. The two sides can only disagree by being built apart, and
+// the machine is what catches it.
+static LhatValue host_answers_one(LhatMachine *machine, void *context,
+                                  const LhatValue *arguments, size_t count)
+{
+    (void)machine;
+    (void)context;
+    (void)arguments;
+    (void)count;
+    return lhat_integer(7);
+}
+
+static void test_host_tuple(void)
+{
+    LhatProgram program;
+    Disk disk;
+
+    LHAT_TEST("a host answers several values");
+    {
+        static const File files[] = {
+            {"main.lh",
+             "import^ system.num\n"
+             "var^ q, r = system.num.divmod(7, 2)\n"
+             "return^ q * 10 + r\n"},
+        };
+        program_with(&program, &disk, files, 1);
+        LHAT_CHECK(lhat_register_func(&program, "system.num", "divmod",
+                                      "f^number^, number^ -> "
+                                      "(number^, number^);",
+                                      host_divmod, NULL),
+                   "the registration took");
+        const LhatUnit *root = lhat_program_check(&program, "main.lh");
+        LHAT_CHECK(root != NULL && root->checked.diagnostic_count == 0,
+                   "the program checked");
+        size_t count = 0;
+        const LhatModule *modules = lhat_program_compile(&program, &count);
+        if (modules != NULL && root != NULL) {
+            LhatMachine *machine = lhat_machine_new();
+            lhat_machine_set_modules(machine, modules, count);
+            LHAT_CHECK(lhat_program_install(&program, machine), "installed");
+            LhatRunResult ran = lhat_run(machine, modules[root->index].proto);
+            LHAT_CHECK_EQ_INT(ran.status, LHAT_RUN_OK);
+            LHAT_CHECK_EQ_INT(lhat_as_integer(ran.value), 31);
+            lhat_machine_dispose(machine);
+        }
+    }
+    lhat_program_dispose(&program);
+
+    // The positions sit in the machine's room while the host runs on, so a
+    // collection in between has to reach them.
+    LHAT_TEST("and they survive what the host allocates afterwards");
+    {
+        static const File files[] = {
+            {"main.lh",
+             "import^ system.num\n"
+             "var^ q, r = system.num.divmod(7, 2)\n"
+             "return^ q * 10 + r\n"},
+        };
+        program_with(&program, &disk, files, 1);
+        lhat_register_func(&program, "system.num", "divmod",
+                           "f^number^, number^ -> (number^, number^);",
+                           host_divmod_then_allocate, NULL);
+        const LhatUnit *root = lhat_program_check(&program, "main.lh");
+        size_t count = 0;
+        const LhatModule *modules = lhat_program_compile(&program, &count);
+        if (modules != NULL && root != NULL) {
+            LhatMachine *machine = lhat_machine_new();
+            lhat_machine_set_modules(machine, modules, count);
+            lhat_program_install(&program, machine);
+            LhatRunResult ran = lhat_run(machine, modules[root->index].proto);
+            LHAT_CHECK_EQ_INT(ran.status, LHAT_RUN_OK);
+            LHAT_CHECK_EQ_INT(lhat_as_integer(ran.value), 31);
+            lhat_machine_dispose(machine);
+        }
+    }
+    lhat_program_dispose(&program);
+
+    // The hole this closed: the host path used to ignore what the call site
+    // reserved, so a registration promising two values and a C function
+    // answering one left the position slots holding whatever was there.
+    LHAT_TEST("a host that answers one where two were promised faults");
+    {
+        static const File files[] = {
+            {"main.lh",
+             "import^ system.num\n"
+             "var^ t = pack^ system.num.divmod(7, 2)\n"
+             "return^ t[1]\n"},
+        };
+        program_with(&program, &disk, files, 1);
+        lhat_register_func(&program, "system.num", "divmod",
+                           "f^number^, number^ -> (number^, number^);",
+                           host_answers_one, NULL);
+        const LhatUnit *root = lhat_program_check(&program, "main.lh");
+        size_t count = 0;
+        const LhatModule *modules = lhat_program_compile(&program, &count);
+        if (modules != NULL && root != NULL) {
+            LhatMachine *machine = lhat_machine_new();
+            lhat_machine_set_modules(machine, modules, count);
+            lhat_program_install(&program, machine);
+            LhatRunResult ran = lhat_run(machine, modules[root->index].proto);
+            LHAT_CHECK_EQ_INT(ran.status, LHAT_RUN_TUPLE_ARITY);
+            lhat_machine_dispose(machine);
+        }
+    }
+    lhat_program_dispose(&program);
+
+    // 13.8改: the other direction. A unit answering a tuple hands the host
+    // its positions, and `value` is position 1 so a host written before
+    // tuples still reads something it can use.
+    LHAT_TEST("a unit answers several values to the host");
+    {
+        static const File files[] = {
+            {"main.lh",
+             "var^ divmod = f^ a:number^, b:number^ -> (number^, number^) {\n"
+             "  return^ a // b, a % b }\n"
+             "var^ q, r = divmod(7, 2)\n"
+             "return^ q, r\n"},
+        };
+        program_with(&program, &disk, files, 1);
+        const LhatUnit *root = lhat_program_check(&program, "main.lh");
+        size_t count = 0;
+        const LhatModule *modules = lhat_program_compile(&program, &count);
+        if (modules != NULL && root != NULL) {
+            LhatMachine *machine = lhat_machine_new();
+            lhat_machine_set_modules(machine, modules, count);
+            LhatRunResult ran = lhat_run(machine, modules[root->index].proto);
+            LHAT_CHECK_EQ_INT(ran.status, LHAT_RUN_OK);
+            LHAT_CHECK_EQ_INT(ran.position_count, 2);
+            if (ran.position_count == 2) {
+                LHAT_CHECK_EQ_INT(lhat_as_integer(ran.positions[0]), 3);
+                LHAT_CHECK_EQ_INT(lhat_as_integer(ran.positions[1]), 1);
+            }
+            // Position 1, so reading only `value` still reads a number.
+            LHAT_CHECK_EQ_INT(lhat_as_integer(ran.value), 3);
+            lhat_machine_dispose(machine);
+        }
+    }
+    lhat_program_dispose(&program);
+
+    // An ordinary answer leaves the count at zero, which is what keeps every
+    // host written before this reading exactly what it always read.
+    LHAT_TEST("and one value leaves no positions behind");
+    {
+        static const File files[] = {
+            {"main.lh", "return^ 5\n"},
+        };
+        program_with(&program, &disk, files, 1);
+        const LhatUnit *root = lhat_program_check(&program, "main.lh");
+        size_t count = 0;
+        const LhatModule *modules = lhat_program_compile(&program, &count);
+        if (modules != NULL && root != NULL) {
+            LhatMachine *machine = lhat_machine_new();
+            lhat_machine_set_modules(machine, modules, count);
+            LhatRunResult ran = lhat_run(machine, modules[root->index].proto);
+            LHAT_CHECK_EQ_INT(ran.status, LHAT_RUN_OK);
+            LHAT_CHECK_EQ_INT(ran.position_count, 0);
+            LHAT_CHECK(ran.positions == NULL, "nothing to point at");
+            LHAT_CHECK_EQ_INT(lhat_as_integer(ran.value), 5);
+            lhat_machine_dispose(machine);
+        }
+    }
+    lhat_program_dispose(&program);
+
+    // 05 の 8.9 with 13.8改: a position is one slot, and a host value is as
+    // wide as its tag says. Refused where the signature is read, which is
+    // the asymmetry closing this opened.
+    LHAT_TEST("a host value written as a position is refused");
+    {
+        static const File files[] = {
+            {"main.lh", "import^ test.w\nreturn^ 1\n"},
+        };
+        program_with(&program, &disk, files, 1);
+        LHAT_CHECK(lhat_register_hostvalue_type(&program, "test.w", "W", 8) !=
+                       NULL,
+                   "the type registration took");
+        LHAT_CHECK(!lhat_register_func(&program, "test.w", "bad",
+                                       "f^ -> (number^, test.w.W);",
+                                       host_answers_one, NULL),
+                   "a host value cannot be a position");
+    }
+    lhat_program_dispose(&program);
+}
+
 int main(void)
 {
     // 8.9: before anything is taken, so the refusal above is about the order
@@ -1061,6 +1283,7 @@ int main(void)
     test_running();
     test_hosting();
     test_hostvalue_escape();
+    test_host_tuple();
     test_host_data();
     test_host_data_release();
     return lhat_test_report("test_program");

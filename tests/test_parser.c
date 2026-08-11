@@ -2693,6 +2693,56 @@ static void test_errors(void)
     }
     parse_dispose(&p);
 
+    // 02 の 13.8改 (S48): the value side reads '(' the way the type side
+    // does -- a ',' inside makes a tuple, none leaves the grouping alone.
+    LHAT_TEST("a comma inside parentheses makes a tuple");
+    parse_text(&p, "n := f() catch^ (1, 2)");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    {
+        const LhatNode *value = first_value(&p);
+        LHAT_CHECK(is_binary(value, LHAT_OP_CATCH), "catch^ is outermost");
+        LHAT_CHECK_EQ_INT(value->v.binary.right->kind, LHAT_NODE_TUPLE);
+        LHAT_CHECK_EQ_INT(
+            lhat_node_list_length(value->v.binary.right->v.list.items), 2);
+    }
+    parse_dispose(&p);
+
+    LHAT_TEST("and without one it is still the grouping it always was");
+    parse_text(&p, "n := (1) + 2");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    {
+        const LhatNode *value = first_value(&p);
+        LHAT_CHECK(is_binary(value, LHAT_OP_ADD), "the sum is outermost");
+        // No node is left behind: '(1)' is the 1 itself.
+        LHAT_CHECK_EQ_INT(value->v.binary.left->kind, LHAT_NODE_INT);
+    }
+    parse_dispose(&p);
+
+    // 13.8改: the two spellings of an answer become one node, which is what
+    // lets 15.12's implicit return carry a tuple without a rule of its own.
+    LHAT_TEST("return^ (a, b) folds into return^ a, b");
+    parse_text(&p, "let^ f = f^ { return^ (1, 2) }");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    {
+        const LhatNode *body = first_value(&p)->v.func.body;
+        const LhatNode *only = body->v.list.items;
+        LHAT_CHECK_EQ_INT(only->kind, LHAT_NODE_RETURN);
+        LHAT_CHECK_EQ_INT(only->v.jump.level, 2);
+        LHAT_CHECK_EQ_INT(lhat_node_list_length(only->v.jump.value), 2);
+    }
+    parse_dispose(&p);
+
+    LHAT_TEST("and 15.12's implicit one folds the same way");
+    parse_text(&p, "let^ f = f^ { (1, 2) }");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    {
+        const LhatNode *body = first_value(&p)->v.func.body;
+        const LhatNode *only = body->v.list.items;
+        LHAT_CHECK_EQ_INT(only->kind, LHAT_NODE_RETURN);
+        LHAT_CHECK_EQ_INT(only->v.jump.level, 2);
+    }
+    parse_dispose(&p);
+
     // 8.2 with 04 の 5.1 and 4.4: a call is still a call when it is wrapped.
     LHAT_TEST("try^ and catch^ around a call stand alone as statements");
     parse_text(&p, "try^ save(x)\nsave(y) catch^ nil^\n");

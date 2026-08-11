@@ -550,7 +550,26 @@ static void test_tuple_positions(void)
     // expression that is a tuple. So a failing subroutine answering several
     // values cannot be given a replacement here -- the union of the tuple
     // with whatever was written is what gets reported.
-    LHAT_TEST("catch^ cannot supply a replacement for a tuple");
+    // 13.8改 (S48): the literal is what a failing multi-value operation is
+    // given as a replacement. Before it there was no expression that was a
+    // tuple, so catch^ had nothing to offer one.
+    LHAT_TEST("catch^ supplies a replacement tuple");
+    check_text(&u,
+               "errordef^ E { X }\n"
+               "var^ f = f^ -> (number^, number^)|E { return^ error^E.X{} }\n"
+               "var^ q, r = f() catch^ (0, 1)\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("but not one of the wrong width");
+    check_text(&u,
+               "errordef^ E { X }\n"
+               "var^ f = f^ -> (number^, number^)|E { return^ error^E.X{} }\n"
+               "var^ q, r = f() catch^ (0, 1, 2)\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_TUPLE_UNION);
+    unit_dispose(&u);
+
+    LHAT_TEST("nor a single value");
     check_text(&u,
                "errordef^ E { X }\n"
                "var^ f = f^ -> (number^, number^)|E { return^ error^E.X{} }\n"
@@ -563,6 +582,47 @@ static void test_tuple_positions(void)
     LHAT_TEST("'(T)' is still the grouping it always was");
     check_text(&u, "var^ x : (number^) = 1\n");
     CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // The value side reads '(' the same way, so the same thing holds there.
+    LHAT_TEST("and '(x)' is still the grouping on the value side");
+    check_text(&u, "var^ x : number^ = (1)\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // 13.8改: a literal is a tuple wherever it stands, so every rule about
+    // where one may be written applies to it without being restated.
+    LHAT_TEST("a literal may not be bound to a name");
+    check_text(&u, "var^ t = (1, 2)\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_TUPLE_MISPLACED);
+    unit_dispose(&u);
+
+    // 13.7's expansion rule is what this keeps from arising.
+    LHAT_TEST("nor passed as an argument");
+    check_text(&u,
+               "var^ g = p^ x:number^ { var^ y = x }\n"
+               "g((1, 2))\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_TUPLE_MISPLACED);
+    unit_dispose(&u);
+
+    LHAT_TEST("nor held in a table");
+    check_text(&u, "var^ t = { (1, 2) }\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_TUPLE_MISPLACED);
+    unit_dispose(&u);
+
+    LHAT_TEST("nor nested in another literal");
+    check_text(&u,
+               "var^ f = f^ -> ((number^, number^), number^) { return^ 0 }\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_TUPLE_MISPLACED);
+    unit_dispose(&u);
+
+    // 04 の 8.2, asked of a literal the way it is asked of 'return^ a, b'.
+    LHAT_TEST("nor carrying an error in a position");
+    check_text(&u,
+               "errordef^ E { X }\n"
+               "var^ f = f^ -> (number^, number^)|E { return^ error^E.X{} }\n"
+               "var^ q, r = f() catch^ (0, error^E.X{})\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_TUPLE_ERROR_POSITION);
     unit_dispose(&u);
 
     // 13.8改: the names on the left take every position or the checker

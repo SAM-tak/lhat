@@ -228,8 +228,18 @@ static size_t tuple_width_of(const LhatNode *node)
 // serves both.
 static bool is_run_source(const LhatNode *node)
 {
-    return node != NULL &&
-           (node->kind == LHAT_NODE_CALL || node->kind == LHAT_NODE_TRY);
+    if (node == NULL) {
+        return false;
+    }
+    // 13.8改: a catch^ answers a run when both its arms do -- which the type
+    // settles, since the union of two tuples of the same width collapses to
+    // that tuple. A written '(a, b)' is a run outright.
+    if (node->kind == LHAT_NODE_BINARY &&
+        node->v.binary.op == LHAT_OP_CATCH) {
+        return true;
+    }
+    return node->kind == LHAT_NODE_CALL || node->kind == LHAT_NODE_TRY ||
+           node->kind == LHAT_NODE_TUPLE;
 }
 
 static void compile_run_source(Compiler *c, const LhatNode *node, uint8_t into,
@@ -595,6 +605,10 @@ static void compile_call_wide(Compiler *c, const LhatNode *node, uint8_t into,
                               size_t reserved);
 static void compile_try_wide(Compiler *c, const LhatNode *node, uint8_t into,
                              size_t reserved);
+static void compile_catch_wide(Compiler *c, const LhatNode *node, uint8_t into,
+                               size_t reserved);
+static void compile_tuple_literal(Compiler *c, const LhatNode *node,
+                                  uint8_t into, size_t positions);
 
 // Lays a tuple answer into the run at `into`. Only called where is_run_source
 // said yes.
@@ -603,6 +617,10 @@ static void compile_run_source(Compiler *c, const LhatNode *node, uint8_t into,
 {
     if (node->kind == LHAT_NODE_TRY) {
         compile_try_wide(c, node, into, reserved);
+    } else if (node->kind == LHAT_NODE_TUPLE) {
+        compile_tuple_literal(c, node, into, reserved > 0 ? reserved - 1 : 0);
+    } else if (node->kind == LHAT_NODE_BINARY) {
+        compile_catch_wide(c, node, into, reserved);
     } else {
         compile_call_wide(c, node, into, reserved);
     }
@@ -1191,9 +1209,23 @@ static void compile_try(Compiler *c, const LhatNode *node, uint8_t into)
 
 // 04 の 4 章: catch^ replaces the value on the spot, and 4.2 names the error
 // it^ inside the right side -- the same word 02 の 16.2 uses for a focus.
-static void compile_catch(Compiler *c, const LhatNode *node, uint8_t into)
+// 13.8改: `reserved` is the run the caller laid out -- one head slot plus a
+// position each. 0 and 1 both mean the ordinary one-slot answer, which is
+// every catch^ written before tuples.
+//
+// Both arms write the same run. The left is laid out by compile_run_source,
+// so the head slot holds either the error or the run's own head, and ISERROR
+// reads it exactly as it always did -- the discrimination try^ already
+// relies on. The right side then writes its own positions over the same
+// slots, which is why nothing needs to be moved when the arms meet again.
+static void compile_catch_wide(Compiler *c, const LhatNode *node, uint8_t into,
+                               size_t reserved)
 {
-    compile_expression(c, node->v.binary.left, into);
+    if (reserved > 1) {
+        compile_run_source(c, node->v.binary.left, into, reserved);
+    } else {
+        compile_expression(c, node->v.binary.left, into);
+    }
 
     size_t local_mark = c->local_count;
     uint8_t register_mark = c->next_register;
@@ -1215,11 +1247,43 @@ static void compile_catch(Compiler *c, const LhatNode *node, uint8_t into)
         local->depth = c->scope_depth;  // catch^ opens no brace of its own
         local->width = 1;
     }
-    compile_expression(c, node->v.binary.right, into);
+    if (reserved > 1 && is_run_source(node->v.binary.right)) {
+        compile_run_source(c, node->v.binary.right, into, reserved);
+    } else {
+        compile_expression(c, node->v.binary.right, into);
+    }
 
     lhat_chunk_patch_here(&c->proto->chunk, past);
     c->local_count = local_mark;
     c->next_register = register_mark;
+}
+
+static void compile_catch(Compiler *c, const LhatNode *node, uint8_t into)
+{
+    compile_catch_wide(c, node, into, 0);
+}
+
+// 13.8改: '(a, b)' written as a value. The positions go into the slots above
+// the head, and MAKERUN puts the head down over them -- the one place a run
+// is built without crossing a frame boundary.
+static void compile_tuple_literal(Compiler *c, const LhatNode *node,
+                                  uint8_t into, size_t positions)
+{
+    size_t written = lhat_node_list_length(node->v.list.items);
+    if (positions == 0) {
+        positions = written;
+    }
+    if (positions < 2 || positions != written || positions > LHAT_MAX_TUPLE) {
+        fail(c, LHAT_COMPILE_UNSUPPORTED);
+        return;
+    }
+    uint8_t at = (uint8_t)(into + 1);
+    for (const LhatNode *item = node->v.list.items; item != NULL;
+         item = item->next) {
+        compile_expression(c, item, at);
+        at++;
+    }
+    emit(c, lhat_encode_abc(LHAT_BC_MAKERUN, into, (uint8_t)positions, 0));
 }
 
 // 02 の 11.7: '??' is the same shape as catch^, asking about nil^ instead.
@@ -3145,6 +3209,14 @@ static void compile_expression(Compiler *c, const LhatNode *node, uint8_t into)
 
         case LHAT_NODE_CALL:
             compile_call(c, node, into);
+            return;
+
+        // 13.8改: a tuple literal reached as an ordinary expression means it
+        // was written where no run was reserved -- a name, an argument, a
+        // table's element. The checker refuses every one of those by name;
+        // this is the backstop for an unchecked compile.
+        case LHAT_NODE_TUPLE:
+            fail(c, LHAT_COMPILE_UNSUPPORTED);
             return;
 
         // 13.8改: pack^ -- the run is laid down and turned into a table in

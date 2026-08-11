@@ -303,6 +303,7 @@ static void print_node(const LhatLexer *lexer, const LhatNode *node, int depth)
         case LHAT_NODE_INTERP:
         case LHAT_NODE_TYPE_TABLE:
         case LHAT_NODE_TYPE_TUPLE:  // 13.8改: the positions, in order
+        case LHAT_NODE_TUPLE:
             print_list(lexer, "items", node->v.list.items, depth + 1);
             break;
         case LHAT_NODE_FOR:

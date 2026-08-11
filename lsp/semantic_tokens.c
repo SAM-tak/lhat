@@ -308,6 +308,10 @@ static void walk_value(SemCollector *out, const LhatNode *node)
         case LHAT_NODE_SELF_TABLE:
             walk_table_entries(out, node->v.list.items);
             break;
+        // 13.8改: a tuple holds plain values, not table entries.
+        case LHAT_NODE_TUPLE:
+            walk_list(out, node->v.list.items);
+            break;
         case LHAT_NODE_ERROR_NEW:
             // 04 の 2.5: 'error^Kind{ ... }' -- Kind is a qualified path.
             walk_qualified_path(out, node->v.named.name, SEM_TYPE);

@@ -298,6 +298,14 @@ int chk_self_marker_at(const Checker *c, const LhatNode *params,
 LhatType *chk_resolve_func_type(Checker *c, const LhatNode *node);
 bool chk_may_stand_beside_tuple(const LhatType *type);
 bool chk_contains_error(const LhatType *type);
+
+// 13.8改: what every position of a tuple has to satisfy, wherever the tuple
+// came from -- 'return^ a, b', 'yield^ a, b', or the literal '(a, b)'. An
+// error among the values rather than around them (04 の 8.2), a position
+// that is itself a run, and a host value that would not fit one slot are all
+// refused here so the three spellings cannot drift apart.
+void chk_check_tuple_position(Checker *c, const LhatNode *at,
+                              const LhatType *position);
 bool chk_contains_tuple(const LhatType *type);
 LhatType *chk_resolve_type(Checker *c, const LhatNode *node);
 LhatType *chk_only(Checker *c, LhatType *type, LhatType *wanted);

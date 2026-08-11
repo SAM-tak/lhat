@@ -38,6 +38,10 @@ typedef enum {
     LHAT_NODE_INTERP_HOLE,   // expression plus an optional format string
     LHAT_NODE_TABLE,         // { ... }
     LHAT_NODE_TABLE_ENTRY,   // key := value, or a positional value
+    LHAT_NODE_TUPLE,         // (a, b)  (13.8改). The value side of the type
+                             // grammar's own rule: a ',' inside the
+                             // parentheses makes a tuple, none leaves the
+                             // grouping '(x)' was always read as
     LHAT_NODE_DEF,           // def^{ ... }                  (14 章)
     LHAT_NODE_SELF_TABLE,    // self^{ ... }                 (14.6, 14.11)
     LHAT_NODE_ERROR_NEW,     // error^Kind{ ... }            (04 の 2.5)

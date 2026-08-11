@@ -328,6 +328,33 @@ static bool place_hostvalue_answer(Machine *m, size_t at, LhatValue answered)
     return true;
 }
 
+// 02 の 13.8改: the several values a host answered with, laid down at `at`
+// as the run every other producer makes -- head slot naming the width, the
+// positions after it. `reserved` is what the call site left room for (CALL's
+// C), and it has to agree: a host and its caller can disagree only by being
+// compiled against different registrations, and quietly writing the wrong
+// count would leave the caller reading slots nobody wrote.
+//
+// The room is released here, which is what keeps one enough: the next host
+// call finds it free. Answers false when the widths disagree or the run
+// would not fit.
+static bool place_run_answer(Machine *m, size_t at, size_t reserved,
+                             LhatValue answered)
+{
+    size_t positions = lhat_run_width(answered);
+    size_t held = m->tuple_scratch_count;
+    m->tuple_scratch_count = 0;
+    if (positions != held || reserved != positions + 1 ||
+        at + positions >= LHAT_STACK_SLOTS) {
+        return false;
+    }
+    lhat_slots_set(m->slots, at, answered);
+    for (size_t i = 0; i < positions; i++) {
+        lhat_slots_set(m->slots, at + 1 + i, m->tuple_scratch[i]);
+    }
+    return true;
+}
+
 // The reverse: the argument whose head sits at `slot`, gathered for a host
 // as a value aiming back into the stack. Stable for the call's duration --
 // the stack is a fixed array of the machine's.
@@ -1076,6 +1103,11 @@ static LhatRunResult finish(Machine *m, const LhatChunk *chunk,
     LhatRunResult result;
     result.status = status;
     result.value = value;
+    // 02 の 13.8改: the positions of a tuple answer, which the pop copied
+    // into the machine's room before coming here. Everything else leaves the
+    // count at zero, so an ordinary answer reads as it always did.
+    result.positions = m->tuple_scratch_count > 0 ? m->tuple_scratch : NULL;
+    result.position_count = m->tuple_scratch_count;
     result.at = at;
     // 04 の 11 章: named from the chunk's own line table (03 の 5.11a-style
     // parallel array) and 02 の 11.8's operator names -- both silently
@@ -1392,6 +1424,23 @@ bool lhat_make_hostvalue(LhatMachine *machine, const LhatHostValueTag *tag,
     memcpy(run + 1, bytes, tag->size);
     out->tag = LHAT_VALUE_HOSTVALUE;
     out->as.hostvalue_run = run;
+    return true;
+}
+
+bool lhat_make_tuple(LhatMachine *machine, const LhatValue *values,
+                     size_t count, LhatValue *out)
+{
+    if (machine == NULL || values == NULL || out == NULL || count < 2 ||
+        count > LHAT_MAX_TUPLE) {
+        return false;
+    }
+    for (size_t i = 0; i < count; i++) {
+        machine->tuple_scratch[i] = values[i];
+    }
+    // Held until the call returns and the machine lays the run down. The
+    // count is what tells the collector how much of the room to read.
+    machine->tuple_scratch_count = count;
+    *out = lhat_run_head(count);
     return true;
 }
 
@@ -2070,6 +2119,19 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
                 break;
             }
 
+            // 02 の 13.8改: a tuple written as a value. The positions are in
+            // the slots above already -- the head goes down over them, and
+            // from here the run is the one every other path produces.
+            case LHAT_BC_MAKERUN: {
+                if (b < 2 || (size_t)b > LHAT_MAX_TUPLE ||
+                    rbase + a + (size_t)b >= LHAT_STACK_SLOTS) {
+                    return finish(m, chunk, LHAT_RUN_TUPLE_ARITY, lhat_nil(),
+                                  at);
+                }
+                SET_R(a, lhat_run_head((size_t)b));
+                break;
+            }
+
             // 02 の 13.8改: pack^ -- the one bridge from a tuple to a table.
             // 14.10 numbers positions from 1, which is what a destructuring
             // and 't[1]' both read.
@@ -2447,6 +2509,30 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
                                           lhat_nil(), at);
                         }
                         break;
+                    }
+                    // 02 の 13.8改: and the several values a host answers
+                    // with go down the same way. Until this, the host path
+                    // was the one caller that never read C's reserved count
+                    // -- a registration saying '-> (A, B)' compiled to a
+                    // reservation nothing filled, and the slots behind the
+                    // head kept whatever the frame last had there.
+                    size_t room = lhat_call_prepared(cc);
+                    if (lhat_is_run(answered)) {
+                        if (!place_run_answer(m, rbase + a, room, answered)) {
+                            return finish(m, chunk, LHAT_RUN_TUPLE_ARITY,
+                                          lhat_nil(), at);
+                        }
+                        break;
+                    }
+                    // Whatever the host may have staged, it did not answer
+                    // with it, so the room is free again.
+                    m->tuple_scratch_count = 0;
+                    if (room > 1) {
+                        // The call site reserved a run and one value came
+                        // back: a host registered as answering several and
+                        // written to answer one.
+                        return finish(m, chunk, LHAT_RUN_TUPLE_ARITY,
+                                      lhat_nil(), at);
                     }
                     SET_R(a, answered);
                     break;
@@ -3389,6 +3475,14 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
                 SET_R(a, lhat_bool(held));
                 continue;
             }
+            // 02 の 13.8改: an operator answers one value, whoever wrote it
+            // -- 11.8's shape gives it no room for several, and the frame
+            // pushed for an L^ one says so too (prepared = 1 below). A host
+            // that answered a run has nowhere to put it here.
+            if (lhat_is_run(answered)) {
+                m->tuple_scratch_count = 0;
+                return finish(m, chunk, LHAT_RUN_TYPE_ERROR, lhat_nil(), at);
+            }
             if (lhat_is_hostvalue(answered)) {
                 if (!place_hostvalue_answer(m, rbase + a, answered)) {
                     return finish(m, chunk, LHAT_RUN_TYPE_ERROR, lhat_nil(),
@@ -3517,12 +3611,26 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
                 if (lhat_is_hostvalue(value)) {
                     value = lhat_nil();
                 }
-                // 02 の 13.8改: a tuple does not cross the host boundary
-                // either -- LhatRunResult carries one value. The checker
-                // refuses this; a relaxed run that got here has nothing to
-                // hand over, and pack^ is what a body answering one uses.
+                // 02 の 13.8改: several values do cross. The positions rode
+                // the frame's own room through the drain; they are copied
+                // into the machine's here so the result may point at them
+                // once the frame is gone. `value` becomes position 1, which
+                // is what lets a host written before tuples read the answer
+                // and get something it can use.
                 if (lhat_is_run(value)) {
-                    value = lhat_nil();
+                    size_t positions = lhat_run_width(value);
+                    if (positions > LHAT_MAX_TUPLE) {
+                        return finish(m, chunk, LHAT_RUN_TUPLE_ARITY,
+                                      lhat_nil(), at);
+                    }
+                    for (size_t i = 0; i < positions; i++) {
+                        LhatValue held;
+                        held.as = frame->answer_run[i + 1];
+                        held.tag = (LhatValueTag)frame->answer_tags[i + 1];
+                        m->tuple_scratch[i] = held;
+                    }
+                    m->tuple_scratch_count = positions;
+                    value = positions > 0 ? m->tuple_scratch[0] : lhat_nil();
                 }
                 return finish(m, chunk, LHAT_RUN_OK, value, at);
             }
@@ -3613,6 +3721,10 @@ LhatRunResult lhat_run(LhatMachine *m, const LhatProto *proto)
 {
     const LhatChunk *chunk = &proto->chunk;
 
+    // 02 の 13.8改: whatever the last answer left in the room is not this
+    // run.s, and holding it would keep those values from being collected.
+    m->tuple_scratch_count = 0;
+
     // 5.4 and 5.2: the frames and the registers belong to the run, so each
     // starts with neither. What the heap holds is the machine's and stays.
     //
@@ -3676,6 +3788,7 @@ LhatRunResult lhat_machine_call(LhatMachine *machine, LhatValue callee,
 {
     Machine *m = (Machine *)machine;
     size_t base = m->frame_count;
+    m->tuple_scratch_count = 0;  // 13.8改, as in lhat_run
 
     // 05 の 8.7's LhatHostFn has no shape for a receiver or a spread; a host
     // calling back in already has its arguments as a flat array, so this is

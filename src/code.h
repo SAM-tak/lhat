@@ -114,6 +114,11 @@ typedef enum {
     // 02 の 13.8改: pack^ -- the one bridge from a tuple to a table. A tuple
     // is not a value a name can hold; this makes one that is.
     LHAT_BC_PACK,       // A B   R[A] = t^{...} of the run of B at R[A]
+    // 02 の 13.8改: a tuple written as a value (.(a, b).). The positions are
+    // already in the slots above; this puts the head down over them. The one
+    // place a run is built without crossing a frame boundary -- RETURN, YIELD
+    // and a table.s walk all have the machine make the head instead.
+    LHAT_BC_MAKERUN,    // A B   R[A] = the head of the B positions at R[A+1]
     LHAT_BC_ADDOVERLOAD,// A B C R[A][R[B]] gains R[C] as another way to call it
     LHAT_BC_OVERRIDEINDEX, // A B C R[A][R[B]] := R[C], ahead of any overload
     // 03 の 5.11c: the same write, once the checker has said which arm is

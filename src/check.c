@@ -533,6 +533,27 @@ bool chk_may_stand_beside_tuple(const LhatType *type)
 // position may not carry one -- not directly and not buried in a union --
 // because a value beside the good ones is a value a program may drop, which
 // is the whole of what 8.2 kept unwritable.
+void chk_check_tuple_position(Checker *c, const LhatNode *at,
+                              const LhatType *position)
+{
+    // 04 の 8.2: the error goes around the values, never among them -- the
+    // same rule resolve_type applies to a written '(A, SomeError)', asked
+    // here of an inferred one.
+    if (chk_contains_error(position)) {
+        chk_report(c, at, LHAT_CHECK_ERR_TUPLE_ERROR_POSITION);
+    }
+    // A position is a slot, not a run of slots.
+    if (position != NULL && position->kind == LHAT_TYPE_TUPLE) {
+        chk_report(c, at, LHAT_CHECK_ERR_TUPLE_MISPLACED);
+    }
+    // 05 の 8.9: a host value is as wide as its tag says, and a position is
+    // one slot. A frame's answer room carries one of the two, never a
+    // mixture.
+    if (chk_is_hostvalue(position)) {
+        chk_report(c, at, LHAT_CHECK_ERR_HOSTVALUE_ESCAPES);
+    }
+}
+
 bool chk_contains_error(const LhatType *type)
 {
     if (type == NULL) {
@@ -710,12 +731,11 @@ LhatType *chk_resolve_type(Checker *c, const LhatNode *node)
                 // position lands on the refusal above -- 13.8改 does not nest
                 // them, since a position is a slot and not a run of slots.
                 LhatType *position = chk_resolve_type(c, item);
-                // 04 の 8.2: the error goes around the values, never among
-                // them. Written among them it becomes a value the program may
-                // drop, which is exactly the shape 8.2 exists to prevent.
-                if (chk_contains_error(position)) {
-                    chk_report(c, item, LHAT_CHECK_ERR_TUPLE_ERROR_POSITION);
-                }
+                // The same three a position has to satisfy wherever it comes
+                // from. Written positions used to ask only about errors,
+                // which let a registered '-> (number^, SomeHostValue)'
+                // through -- 05 の 8.9 has no slot to spare for one.
+                chk_check_tuple_position(c, item, position);
                 lhat_type_add_position(c->result->types, tuple, position);
             }
             return tuple;

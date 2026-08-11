@@ -1567,22 +1567,7 @@ void chk_check_statement(Checker *c, const LhatNode *node)
                 for (const LhatNode *item = node->v.jump.value; item != NULL;
                      item = item->next) {
                     LhatType *position = chk_infer(c, item);
-                    // 04 の 8.2: the error goes around the values, never among
-                    // them -- the same rule resolve_type applies to a written
-                    // '(A, SomeError)', asked here of an inferred one.
-                    if (chk_contains_error(position)) {
-                        chk_report(c, item, LHAT_CHECK_ERR_TUPLE_ERROR_POSITION);
-                    }
-                    // A position is a slot, not a run of slots.
-                    if (position != NULL && position->kind == LHAT_TYPE_TUPLE) {
-                        chk_report(c, item, LHAT_CHECK_ERR_TUPLE_MISPLACED);
-                    }
-                    // 05 の 8.9: a host value is as wide as its tag says, and
-                    // a position is one slot. The frame's answer room carries
-                    // one of the two, never a mixture.
-                    if (chk_is_hostvalue(position)) {
-                        chk_report(c, item, LHAT_CHECK_ERR_HOSTVALUE_ESCAPES);
-                    }
+                    chk_check_tuple_position(c, item, position);
                     lhat_type_add_position(c->result->types, tuple, position);
                 }
                 value = tuple;
@@ -1598,12 +1583,10 @@ void chk_check_statement(Checker *c, const LhatNode *node)
             if (c->body_scope == NULL && chk_is_hostvalue(value)) {
                 chk_report(c, node, LHAT_CHECK_ERR_HOSTVALUE_ESCAPES);
             }
-            // 13.8改: and a tuple leaves through that same one slot, so it
-            // does not cross the host boundary either. pack^ makes a table a
-            // host can read.
-            if (c->body_scope == NULL && lhat_type_tuple_width(value) > 0) {
-                chk_report(c, node, LHAT_CHECK_ERR_TUPLE_MISPLACED);
-            }
+            // 13.8改: a tuple does cross -- 05 の 8.7's LhatRunResult carries
+            // the positions beside the value, so a unit may answer several.
+            // A host value still may not: its width is its tag's, and the
+            // result has one slot for the value itself.
 
             if (c->declared_result != NULL) {
                 // 03 の 7 章、P6: unlike chk_expect()'s other callers, this one

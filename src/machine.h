@@ -150,6 +150,18 @@ struct LhatMachine {
     // it out into slots before anything else runs), so one is enough even
     // when hosts call back in.
     LhatValueUnion hostvalue_scratch[1 + LHAT_HOSTVALUE_MAX_BYTES / 8];
+
+    // 02 の 13.8改: the same room for the several values a host answers with,
+    // and what a run answered to a host is copied into on the way out. One is
+    // enough for the same reason as above.
+    //
+    // The one place this is not like 8.9's: a host value is bytes and holds
+    // no reference, so the scratch above is not a root. These are ordinary
+    // values, and a host may allocate between filling them and returning
+    // (a table it builds, a call back into L^), so gc.c walks these -- the
+    // same reason a frame's answer room is walked.
+    LhatValue tuple_scratch[LHAT_MAX_TUPLE];
+    size_t tuple_scratch_count;  // 0 when nothing is being carried
 };
 
 typedef struct LhatMachine Machine;

@@ -142,6 +142,7 @@ void lhat_node_visit_children(const LhatNode *node, LhatNodeVisitor visit,
         case LHAT_NODE_IF_STMT:
         case LHAT_NODE_TYPE_TABLE:
         case LHAT_NODE_TYPE_TUPLE:
+        case LHAT_NODE_TUPLE:  // 13.8改: the positions, in order
             visit_list("items", node->v.list.items, visit, context);
             break;
 
@@ -325,6 +326,7 @@ const char *lhat_node_kind_name(LhatNodeKind kind)
         case LHAT_NODE_INTERP_TEXT:    return "interp-text";
         case LHAT_NODE_INTERP_HOLE:    return "interp-hole";
         case LHAT_NODE_TABLE:          return "table";
+        case LHAT_NODE_TUPLE:          return "tuple";
         case LHAT_NODE_TABLE_ENTRY:    return "table-entry";
         case LHAT_NODE_DEF:            return "def";
         case LHAT_NODE_SELF_TABLE:     return "self-table";

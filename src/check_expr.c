@@ -816,6 +816,14 @@ LhatType *chk_infer_call(Checker *c, const LhatNode *node)
             skip--;  // the receiver, whose type the call site already knows
             continue;
         }
+        // 13.8改: an argument is one value. A tuple in one is what would
+        // bring back 13.7's expansion rule (Lua's truncate-except-in-tail-
+        // position), and refusing it here is what keeps that rule from
+        // arising. Said by name rather than left to the mismatch below,
+        // which would report the position's type against the parameter's.
+        if (lhat_type_tuple_width(actual) > 0) {
+            chk_report(c, arg, LHAT_CHECK_ERR_TUPLE_MISPLACED);
+        }
         LhatType *wanted = param != NULL ? param->type : callee->v.func.variadic;
         if (wanted != NULL) {
             chk_expect(c, arg, actual, wanted, LHAT_CHECK_ERR_MISMATCH);
@@ -1311,6 +1319,12 @@ static LhatType *infer_table(Checker *c, const LhatNode *node)
         // leave the stack, so no member of one is ever a host value.
         if (chk_is_hostvalue(value)) {
             chk_report(c, entry->v.entry.value, LHAT_CHECK_ERR_HOSTVALUE_ESCAPES);
+        }
+        // 13.8改: nor a tuple, for the same reason said of slots -- a member
+        // is one value, and a run is several. pack^ is what puts one in a
+        // table, and it makes the table itself.
+        if (lhat_type_tuple_width(value) > 0) {
+            chk_report(c, entry->v.entry.value, LHAT_CHECK_ERR_TUPLE_MISPLACED);
         }
 
         // 14.14改: a computed key is an expression, checked like any other.
@@ -2545,13 +2559,9 @@ static LhatType *infer_node(Checker *c, const LhatNode *node)
                 LhatType *tuple = lhat_type_tuple(c->result->types);
                 for (const LhatNode *item = node->v.jump.value; item != NULL;
                      item = item->next) {
-                    LhatType *position = chk_require_value(c, item, chk_infer(c, item));
-                    if (chk_contains_error(position)) {
-                        chk_report(c, item, LHAT_CHECK_ERR_TUPLE_ERROR_POSITION);
-                    }
-                    if (position != NULL && position->kind == LHAT_TYPE_TUPLE) {
-                        chk_report(c, item, LHAT_CHECK_ERR_TUPLE_MISPLACED);
-                    }
+                    LhatType *position =
+                        chk_require_value(c, item, chk_infer(c, item));
+                    chk_check_tuple_position(c, item, position);
                     lhat_type_add_position(c->result->types, tuple, position);
                 }
                 produced = tuple;
@@ -2787,6 +2797,25 @@ static LhatType *infer_node(Checker *c, const LhatNode *node)
                 }
             }
             return kind;
+        }
+
+        // 13.8改: '(a, b)' written as a value. Where the tuple came from
+        // makes no difference downstream -- this is the same type a
+        // 'return^ a, b' builds, so every rule about where a tuple may
+        // stand applies to a literal without being restated. The parser
+        // folds one written as a jump's value into the jump itself, so what
+        // reaches here stands in expression position: a catch^'s right side,
+        // or somewhere a tuple may not be, which the callers refuse.
+        case LHAT_NODE_TUPLE: {
+            LhatType *tuple = lhat_type_tuple(c->result->types);
+            for (const LhatNode *item = node->v.list.items; item != NULL;
+                 item = item->next) {
+                LhatType *position =
+                    chk_require_value(c, item, chk_infer(c, item));
+                chk_check_tuple_position(c, item, position);
+                lhat_type_add_position(c->result->types, tuple, position);
+            }
+            return tuple;
         }
 
         // 13.8改: pack^ turns the several values a call answered with into a

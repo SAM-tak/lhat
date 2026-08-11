@@ -52,6 +52,10 @@ enum {
 static LhatNode *parse_expression(Parser *p);
 static LhatNode *parse_type(Parser *p);
 static LhatNode *parse_statement(Parser *p);
+// 13.8改: '(a, b)' written as a jump's value becomes the same node the
+// comma-separated spelling makes. Used by parse_jump and by 15.12's
+// answer_with_body, which is what lets 'f^ { (0, 1) }' work.
+static void fold_tuple_answer(LhatNode *jump);
 static LhatNode *parse_block_body(Parser *p, const LhatToken *at);
 static LhatNode *parse_clause_body(Parser *p, const LhatToken *at, bool in_loop,
                                    bool walks);
@@ -1172,6 +1176,9 @@ static void answer_with_body(Parser *p, LhatNode *body)
         // turn, and says so better than falling out did.
         if (only->kind == LHAT_NODE_CALL_STMT) {
             only->kind = LHAT_NODE_RETURN;
+            // 13.8改: 'f^ { (0, 1) }' answers a tuple, and folding it here is
+            // what makes that the very node 'return^ 0, 1' produces.
+            fold_tuple_answer(only);
         }
         return;
     }
@@ -1443,8 +1450,30 @@ static LhatNode *parse_primary(Parser *p)
             if (t.v.op == LHAT_OP_LPAREN) {
                 advance(p);
                 LhatNode *inner = parse_expression(p);
+                if (!check_op(p, LHAT_OP_COMMA)) {
+                    // Grouping, as it always was. 13.8改 leaves this reading
+                    // untouched, which is what makes a one-position tuple
+                    // unwritable on the value side too: '(x)' was taken.
+                    expect_op(p, LHAT_OP_RPAREN);
+                    return inner;
+                }
+
+                // 13.8改: two positions or more -- the same shape and the
+                // same one-token lookahead parse_type_primary uses, so the
+                // value side and the type side read '(' alike.
+                LhatNode *node = make(p, LHAT_NODE_TUPLE, &t);
+                if (node == NULL) {
+                    return NULL;
+                }
+                LhatNode *head = NULL;
+                LhatNode *tail = NULL;
+                lhat_node_append(&head, &tail, inner);
+                while (match_op(p, LHAT_OP_COMMA)) {
+                    lhat_node_append(&head, &tail, parse_expression(p));
+                }
+                node->v.list.items = head;
                 expect_op(p, LHAT_OP_RPAREN);
-                return inner;
+                return finish(p, node);
             }
             if (t.v.op == LHAT_OP_LBRACE) {
                 return parse_table(p);
@@ -3231,6 +3260,29 @@ static LhatNode *parse_with(Parser *p)
     return finish(p, node);
 }
 
+// 13.8改: 'return^ (a, b)' and 'return^ a, b' answer the same tuple, so they
+// become the same node -- the positions hang off `value` with `level` naming
+// how many. One shape reaches the checker and the compiler, and neither
+// grows a case for the parenthesised spelling.
+//
+// This is also what makes 15.12's implicit return of a literal work without
+// a word of its own: answer_with_body turns the body's bare '(a, b)' into a
+// return^ and folds it here, so 'f^ { (0, 1) }' and 'f^ { return^ 0, 1 }'
+// compile to the same instructions.
+//
+// Left alone in expression position: 'f() catch^ (0, 1)' has no jump to fold
+// into, and the literal stands there as a value (13.8改's MAKERUN).
+static void fold_tuple_answer(LhatNode *jump)
+{
+    LhatNode *value = jump->v.jump.value;
+    if (value == NULL || value->next != NULL ||
+        value->kind != LHAT_NODE_TUPLE) {
+        return;
+    }
+    jump->v.jump.value = value->v.list.items;
+    jump->v.jump.level = (uint32_t)lhat_node_list_length(value->v.list.items);
+}
+
 static LhatNode *parse_jump(Parser *p, LhatNodeKind kind)
 {
     LhatToken start = p->current;
@@ -3306,6 +3358,7 @@ static LhatNode *parse_jump(Parser *p, LhatNodeKind kind)
             node->v.jump.value = head;
             node->v.jump.level = (uint32_t)lhat_node_list_length(head);
         }
+        fold_tuple_answer(node);
     }
     return finish(p, node);
 }

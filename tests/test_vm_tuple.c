@@ -11,6 +11,27 @@
 #include "code.h"
 #include "fixture.h"
 
+// Whether the opcode appears anywhere in a unit -- its own chunk or a body
+// written inside it. A subroutine's instructions live in its own proto, so
+// asking only the top one would miss everything a body does.
+static bool chunk_has_op_deep(const LhatProto *proto, LhatOpcode op)
+{
+    if (proto == NULL) {
+        return false;
+    }
+    for (size_t i = 0; i < proto->chunk.count; i++) {
+        if (lhat_op(proto->chunk.code[i]) == op) {
+            return true;
+        }
+    }
+    for (size_t i = 0; i < proto->proto_count; i++) {
+        if (chunk_has_op_deep(proto->protos[i], op)) {
+            return true;
+        }
+    }
+    return false;
+}
+
 // 02 の 13.8改: several values, on the stack, with no table between them.
 static void test_multi_value_return(void)
 {
@@ -132,6 +153,85 @@ static void test_multi_value_return(void)
                      "  return^ q * 10 + r2 }\n"
                      "return^ go() catch^ -1\n");
     CHECK_INTEGER(&r, -1);
+    run_dispose(&r);
+
+    // 13.8改 (S48): the literal. Both arms of the catch^ write the same run,
+    // so the error arm's replacement lands where the values would have.
+    LHAT_TEST("catch^ replaces a failed tuple with a literal");
+    run_checked_text(&r,
+                     "errordef^ DivError { ByZero }\n"
+                     "var^ divmod = f^ a:number^, b:number^ "
+                     "-> (number^, number^)|DivError {\n"
+                     "  if^ b = 0 { return^ error^DivError.ByZero{} }\n"
+                     "  return^ a // b, a % b }\n"
+                     "var^ q, r2 = divmod(7, 0) catch^ (5, 6)\n"
+                     "return^ q * 10 + r2\n");
+    CHECK_INTEGER(&r, 56);
+    run_dispose(&r);
+
+    LHAT_TEST("and leaves the values alone when it succeeds");
+    run_checked_text(&r,
+                     "errordef^ DivError { ByZero }\n"
+                     "var^ divmod = f^ a:number^, b:number^ "
+                     "-> (number^, number^)|DivError {\n"
+                     "  if^ b = 0 { return^ error^DivError.ByZero{} }\n"
+                     "  return^ a // b, a % b }\n"
+                     "var^ q, r2 = divmod(7, 2) catch^ (5, 6)\n"
+                     "return^ q * 10 + r2\n");
+    CHECK_INTEGER(&r, 31);
+    run_dispose(&r);
+
+    // One run is shared by both arms, so nothing is boxed on either path.
+    LHAT_TEST("and neither arm allocates");
+    run_checked_text(&r,
+                     "errordef^ DivError { ByZero }\n"
+                     "var^ divmod = f^ a:number^, b:number^ "
+                     "-> (number^, number^)|DivError {\n"
+                     "  if^ b = 0 { return^ error^DivError.ByZero{} }\n"
+                     "  return^ a // b, a % b }\n"
+                     "var^ total = 0\n"
+                     "repeat^ 2000 {\n"
+                     "  var^ q, r2 = divmod(7, 2) catch^ (5, 6)\n"
+                     "  total := total + q + r2 }\n"
+                     "return^ total\n");
+    CHECK_INTEGER(&r, 8000);
+    LHAT_CHECK_EQ_INT(r.ran.collected, 0);
+    run_dispose(&r);
+
+    // 15.12: the body's one expression is what the function answers with,
+    // and 13.8改 folds a literal written there into the very node
+    // 'return^ 0, 1' makes -- so this needs no rule of its own.
+    LHAT_TEST("an implicit return answers a tuple");
+    run_checked_text(&r,
+                     "var^ pair = f^ -> (number^, number^) { (3, 4) }\n"
+                     "var^ a, b = pair()\n"
+                     "return^ a * 10 + b\n");
+    CHECK_INTEGER(&r, 34);
+    run_dispose(&r);
+
+    // The fold is what makes the two spellings one node, so neither leaves a
+    // MAKERUN behind -- the machine builds the head at the frame boundary.
+    LHAT_TEST("and compiles to what the written return^ compiles to");
+    run_checked_text(&r,
+                     "var^ pair = f^ -> (number^, number^) { (3, 4) }\n"
+                     "return^ 0\n");
+    LHAT_CHECK_EQ_INT(r.compiled, LHAT_COMPILE_OK);
+    LHAT_CHECK(!chunk_has_op_deep(r.proto, LHAT_BC_MAKERUN),
+               "the fold left no run to build");
+    run_dispose(&r);
+
+    LHAT_TEST("while a catch^ replacement does build one");
+    run_checked_text(&r,
+                     "errordef^ DivError { ByZero }\n"
+                     "var^ divmod = f^ a:number^, b:number^ "
+                     "-> (number^, number^)|DivError {\n"
+                     "  if^ b = 0 { return^ error^DivError.ByZero{} }\n"
+                     "  return^ a // b, a % b }\n"
+                     "var^ q, r2 = divmod(7, 0) catch^ (5, 6)\n"
+                     "return^ 0\n");
+    LHAT_CHECK_EQ_INT(r.compiled, LHAT_COMPILE_OK);
+    LHAT_CHECK(chunk_has_op_deep(r.proto, LHAT_BC_MAKERUN),
+               "the literal built its own head");
     run_dispose(&r);
 
     // 13.9 with 13.8改: Y is a result, so a coroutine may yield several

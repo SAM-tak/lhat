@@ -67,6 +67,16 @@ typedef enum {
 typedef struct {
     LhatRunStatus status;
     LhatValue value;   // what the unit returned, or nil^
+
+    // 02 の 13.8改: the several values, when the answer was a tuple. `value`
+    // is position 1 then, so a host that reads only it still reads a value
+    // it can use -- which is why nothing written before tuples has to change.
+    // `positions` aims into the machine's own room and is good until the
+    // next run or call on that machine; copy what has to outlive it.
+    // `position_count` is 0 for an ordinary one-value answer.
+    const LhatValue *positions;
+    size_t position_count;
+
     size_t at;         // the instruction that failed, when one did
     // 04 の 11 章: where `at` came from, for a host to report -- 0 when
     // status is LHAT_RUN_OK, since nothing failed to name a line for.
@@ -169,6 +179,20 @@ void *lhat_hostvalue_data(LhatValue argument, const LhatHostValueTag *tag);
 // False when the tag is NULL or the machine is.
 bool lhat_make_hostvalue(LhatMachine *machine, const LhatHostValueTag *tag,
                          const void *bytes, LhatValue *out);
+
+// 02 の 13.8改: the several values a host answers with, for a function whose
+// registered signature says '-> (A, B)'. The positions are copied into the
+// machine's own room and handed back as one value the machine writes out
+// whole the moment the call returns -- the same round trip
+// lhat_make_hostvalue makes, over values instead of bytes.
+//
+// `count` is two or more and at most LHAT_MAX_TUPLE. Never stored: the room
+// holds exactly one answer, which is all a call can make. Unlike a host
+// value's, these positions are ordinary values, so the collector reaches
+// them for as long as they sit here -- a host may allocate before it
+// returns. False when count is out of range or a pointer is NULL.
+bool lhat_make_tuple(LhatMachine *machine, const LhatValue *values,
+                     size_t count, LhatValue *out);
 
 // A string on `machine`'s own heap, made the way 05 の 8.7's registration
 // makes a table or a host -- the machine has to make it, since the value's

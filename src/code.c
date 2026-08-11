@@ -251,6 +251,7 @@ const char *lhat_opcode_name(LhatOpcode op)
         case LHAT_BC_SETINDEX:    return "setindex";
         case LHAT_BC_CHECKRUN:    return "checkrun";
         case LHAT_BC_PACK:        return "pack";
+        case LHAT_BC_MAKERUN:     return "makerun";
         case LHAT_BC_ADDOVERLOAD: return "addoverload";
         case LHAT_BC_OVERRIDEINDEX: return "overrideindex";
         case LHAT_BC_OVERRIDEARM: return "overridearm";
