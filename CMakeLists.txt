@@ -16,6 +16,11 @@ option(LHAT_BUILD_LSP "Build the L^ language server" ON)
 # pays for neither the table nor the walk that attaches it.
 option(LHAT_WITH_COMMENTS "Keep comments and attach them to the syntax tree" ON)
 
+# Address (and, off MSVC, undefined-behaviour) sanitizers for the whole
+# build. A switch rather than a default: the suite runs it before the risky
+# refactors, not on every developer build.
+option(LHAT_SANITIZE "Build with AddressSanitizer (+UBSan where available)" OFF)
+
 # ---- Language level -------------------------------------------------------
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
@@ -29,6 +34,19 @@ if(MSVC)
     add_compile_definitions(_CRT_SECURE_NO_WARNINGS)
 else()
     add_compile_options(-Wall -Wextra -Wpedantic)
+endif()
+
+# ---- Sanitizers ------------------------------------------------------------
+if(LHAT_SANITIZE)
+    if(MSVC)
+        # MSVC's ASan refuses /RTC1, which the default Debug flags carry.
+        string(REPLACE "/RTC1" "" CMAKE_C_FLAGS_DEBUG "${CMAKE_C_FLAGS_DEBUG}")
+        add_compile_options(/fsanitize=address)
+    else()
+        add_compile_options(-fsanitize=address,undefined
+                            -fno-omit-frame-pointer)
+        add_link_options(-fsanitize=address,undefined)
+    endif()
 endif()
 
 # ---- The language ---------------------------------------------------------

@@ -30,6 +30,12 @@
       "cacheVariables": { "CMAKE_BUILD_TYPE": "Release" }
     },
     {
+      "name": "asan",
+      "displayName": "Debug + sanitizers (Ninja)",
+      "inherits": "debug",
+      "cacheVariables": { "LHAT_SANITIZE": "ON" }
+    },
+    {
       "name": "vs",
       "displayName": "Visual Studio (multi-config)",
       "inherits": "base",
@@ -59,6 +65,23 @@
       "displayName": "Release (Visual Studio)",
       "configurePreset": "vs",
       "configuration": "Release"
+    }
+  ],
+  "testPresets": [
+    {
+      "name": "debug",
+      "configurePreset": "debug",
+      "output": { "outputOnFailure": true }
+    },
+    {
+      "name": "release",
+      "configurePreset": "release",
+      "output": { "outputOnFailure": true }
+    },
+    {
+      "name": "asan",
+      "configurePreset": "asan",
+      "output": { "outputOnFailure": true }
     }
   ]
 }

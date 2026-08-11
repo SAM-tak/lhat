@@ -16,6 +16,7 @@ function(lhat_lsp_add_test name)
         target_link_libraries(${name} PRIVATE m)
     endif()
     add_test(NAME ${name} COMMAND ${name})
+    set_tests_properties(${name} PROPERTIES LABELS lsp TIMEOUT 60)
 endfunction()
 
 lhat_lsp_add_test(test_uri ${CMAKE_SOURCE_DIR}/lsp/uri.c)
