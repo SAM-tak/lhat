@@ -123,7 +123,7 @@ static void add_child(void *context, const char *field, bool in_list,
     cJSON_AddItemToArray(array, json);
 }
 
-#ifdef LHAT_WITH_COMMENTS
+#if LHAT_WITH_COMMENTS
 // 01 の 6.4. Spans only: the text is a slice of the source, which the reply
 // carries once.
 static bool add_comments(cJSON *out, const LhatNode *node, const Utf16Map *map)
@@ -176,7 +176,7 @@ static cJSON *node_to_json(const LhatNode *node, const Utf16Map *map)
         return NULL;
     }
 
-#ifdef LHAT_WITH_COMMENTS
+#if LHAT_WITH_COMMENTS
     if (!add_comments(out, node, map)) {
         cJSON_Delete(out);
         return NULL;

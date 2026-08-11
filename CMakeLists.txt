@@ -77,20 +77,28 @@ add_library(lhat
     src/object.c
 )
 
+# The version and the build knobs live in a generated header rather than in
+# compile definitions: LHAT_WITH_COMMENTS changes the shape of LhatLexer and
+# LhatNode, and a definition an installed consumer forgets to repeat would
+# hand them a differently-sized struct without a compile error to show for
+# it. Baked into a header, every translation unit that can see the structs
+# agrees by construction.
+if(LHAT_WITH_COMMENTS)
+    set(LHAT_WITH_COMMENTS_VALUE 1)
+else()
+    set(LHAT_WITH_COMMENTS_VALUE 0)
+endif()
+configure_file(include/lhat/version.h.in
+    ${CMAKE_CURRENT_BINARY_DIR}/include/lhat/version.h)
+
 # A host gets include/ and nothing else. src/ holds names like source.h and
 # value.h, which are too ordinary to put on someone else's include path --
 # include/lhat.h reaches them and is the only header a host names.
 target_include_directories(lhat
     PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include
+           ${CMAKE_CURRENT_BINARY_DIR}/include
     PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src
 )
-target_compile_definitions(lhat PUBLIC LHAT_VERSION="${PROJECT_VERSION}")
-
-# PUBLIC: it changes the shape of LhatLexer and LhatNode, so everything
-# compiled against these headers has to agree on it.
-if(LHAT_WITH_COMMENTS)
-    target_compile_definitions(lhat PUBLIC LHAT_WITH_COMMENTS)
-endif()
 
 # 03 の 5.12: a write barrier that is missing does not fail where it is
 # missing. The object is freed while still live and the program reads it back

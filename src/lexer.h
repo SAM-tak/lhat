@@ -68,7 +68,7 @@ typedef struct {
     size_t diagnostic_count;
     size_t diagnostic_capacity;
 
-#ifdef LHAT_WITH_COMMENTS
+#if LHAT_WITH_COMMENTS
     // 6.4, in source order. Grows as scanning goes; nothing removes from it.
     LhatComment *comments;
     size_t comment_count;

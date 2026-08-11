@@ -217,7 +217,7 @@ static void test_spans(void)
     tree_dispose(&t);
 }
 
-#ifdef LHAT_WITH_COMMENTS
+#if LHAT_WITH_COMMENTS
 static void test_comments(void)
 {
     Tree t;
@@ -261,7 +261,7 @@ int main(void)
     test_shape();
     test_fields();
     test_spans();
-#ifdef LHAT_WITH_COMMENTS
+#if LHAT_WITH_COMMENTS
     test_comments();
 #endif
     test_absent();

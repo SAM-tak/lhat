@@ -190,7 +190,7 @@ static void test_spans(void)
 // ---------------------------------------------------------------------------
 // Comments (01 の 6.4)
 
-#ifdef LHAT_WITH_COMMENTS
+#if LHAT_WITH_COMMENTS
 
 // The comments a node was given, joined so one check reads them all. Ordered
 // as they were written, which is what the table's order guarantees.
@@ -3161,7 +3161,7 @@ static void test_stacked_hats(void)
 int main(void)
 {
     test_spans();
-#ifdef LHAT_WITH_COMMENTS
+#if LHAT_WITH_COMMENTS
     test_comments();
 #endif
     test_statements();

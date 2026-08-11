@@ -170,7 +170,7 @@ struct LhatNode {
 
     LhatNode *next;  // next sibling when this node sits in a list
 
-#ifdef LHAT_WITH_COMMENTS
+#if LHAT_WITH_COMMENTS
     // 01 の 6.4: the comments written against this node, in source order,
     // threaded through their own `next_for_node`. They live in the lexer's
     // table, so the lexer has to outlive the tree -- as it already must for

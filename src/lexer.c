@@ -266,7 +266,7 @@ static void string_push_byte(LhatLexer *lexer, char byte)
 // Trivia: whitespace, newlines and comments (sections 6 and 9)
 // ---------------------------------------------------------------------------
 
-#ifdef LHAT_WITH_COMMENTS
+#if LHAT_WITH_COMMENTS
 // 6.4: kept rather than dropped, in source order. Called once the whole of a
 // comment has been scanned, so `lexer->pos` is already past it.
 static void record_comment(LhatLexer *lexer, uint32_t offset, uint32_t line,
@@ -965,7 +965,7 @@ void lhat_lexer_dispose(LhatLexer *lexer)
     lexer->diagnostics = NULL;
     lexer->strings_length = lexer->strings_capacity = 0;
     lexer->diagnostic_count = lexer->diagnostic_capacity = 0;
-#ifdef LHAT_WITH_COMMENTS
+#if LHAT_WITH_COMMENTS
     lhat_free(lexer->comments);
     lexer->comments = NULL;
     lexer->comment_count = lexer->comment_capacity = 0;

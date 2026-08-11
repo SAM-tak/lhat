@@ -117,7 +117,7 @@ static void first_line(const LhatUnit *unit, const LhatNode *node,
     *length = span;
 }
 
-#ifdef LHAT_WITH_COMMENTS
+#if LHAT_WITH_COMMENTS
 // 01 の 6.4: the comment block written above a definition is what it says
 // about itself. The markers are stripped so the text reads as prose.
 static void append_comments(cJSON *lines, const LhatUnit *unit,
@@ -232,7 +232,7 @@ cJSON *lsp_hover_for_unit(const LhatUnit *unit, uint32_t offset)
     cJSON_AddItemToArray(parts, cJSON_CreateString(fenced));
     free(fenced);
 
-#ifdef LHAT_WITH_COMMENTS
+#if LHAT_WITH_COMMENTS
     append_comments(parts, unit, definition);
 #endif
 

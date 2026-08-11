@@ -163,7 +163,7 @@ static void test_definition(void)
     check_dispose(&c);
 }
 
-#ifdef LHAT_WITH_COMMENTS
+#if LHAT_WITH_COMMENTS
 static void test_comments(void)
 {
     Checked c;
@@ -195,7 +195,7 @@ static void test_comments(void)
 }
 #endif
 
-#ifdef LHAT_WITH_COMMENTS
+#if LHAT_WITH_COMMENTS
 static void test_module(void)
 {
     Checked c;
@@ -252,7 +252,7 @@ static void test_nothing(void)
 int main(void)
 {
     test_definition();
-#ifdef LHAT_WITH_COMMENTS
+#if LHAT_WITH_COMMENTS
     test_comments();
     test_module();
 #endif

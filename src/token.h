@@ -10,6 +10,10 @@
 #include <stddef.h>
 #include <stdint.h>
 
+// LHAT_WITH_COMMENTS changes the shape of LhatLexer and LhatNode, so it
+// comes from the generated header rather than a compile definition.
+#include "lhat/version.h"
+
 // Section 10.9.
 typedef enum {
     LHAT_TOKEN_EOF,
@@ -203,7 +207,7 @@ typedef struct {
     } v;
 } LhatToken;
 
-#ifdef LHAT_WITH_COMMENTS
+#if LHAT_WITH_COMMENTS
 // 6.4. A comment, kept rather than discarded. The span covers the whole of it,
 // '#' or '#[' and ']#' included, so the text of one is a slice of the source.
 //

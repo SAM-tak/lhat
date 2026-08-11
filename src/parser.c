@@ -3615,7 +3615,7 @@ static void parser_begin(Parser *p, LhatLexer *lexer, LhatParseResult *result)
     p->ahead = lhat_lexer_next(lexer);
 }
 
-#ifdef LHAT_WITH_COMMENTS
+#if LHAT_WITH_COMMENTS
 
 // 01 の 6.4: tying the kept comments to the nodes they were written against.
 //
@@ -3737,7 +3737,7 @@ static void parser_finish(Parser *p, LhatLexer *lexer, LhatParseResult *result)
         report(p, &p->current, LHAT_PARSE_ERR_UNEXPECTED);
     }
 
-#ifdef LHAT_WITH_COMMENTS
+#if LHAT_WITH_COMMENTS
     attach_comments(lexer, result);
 #endif
 
