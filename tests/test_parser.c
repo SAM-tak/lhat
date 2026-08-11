@@ -10,38 +10,7 @@
 #include <string.h>
 
 #include "ast.h"
-#include "lexer.h"
-#include "parser.h"
-#include "source.h"
-#include "testutil.h"
-
-typedef struct {
-    LhatSource source;
-    LhatLexer lexer;
-    LhatParseResult result;
-} Parse;
-
-static void parse_text(Parse *p, const char *text)
-{
-    lhat_source_init_from_string(&p->source, "<test>", text, strlen(text));
-    lhat_lexer_init(&p->lexer, &p->source);
-    lhat_parse(&p->lexer, &p->result);
-}
-
-// 02 の 8.2: one input of an interactive session.
-static void parse_interactive_text(Parse *p, const char *text)
-{
-    lhat_source_init_from_string(&p->source, "<test>", text, strlen(text));
-    lhat_lexer_init(&p->lexer, &p->source);
-    lhat_parse_interactive(&p->lexer, &p->result);
-}
-
-static void parse_dispose(Parse *p)
-{
-    lhat_parse_result_dispose(&p->result);
-    lhat_lexer_dispose(&p->lexer);
-    lhat_source_dispose(&p->source);
-}
+#include "fixture.h"
 
 static const LhatNode *first_statement(const Parse *p)
 {
