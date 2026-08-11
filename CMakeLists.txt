@@ -65,6 +65,8 @@ add_library(lhat
     src/parser.c
     src/type.c
     src/check.c
+    src/check_expr.c
+    src/check_stmt.c
     src/program.c
     src/code.c
     src/compile.c
