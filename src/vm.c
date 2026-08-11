@@ -7,6 +7,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "environment.h"
 #include "gc.h"
 #include "lhatconfig.h"
 #include "machine.h"
@@ -6836,20 +6837,23 @@ static bool set_member(Machine *m, LhatTable *table, const char *name,
 static bool build_environment(Machine *m)
 {
     m->environment = lhat_table_new(&m->objects);
-    LhatTable *modules = lhat_table_new(&m->objects);
     // 05 の 5.3: the registry a unit is loaded into once. Empty until
     // something is loaded, and grown the way 8.8 grows any table.
-    LhatNative *collect_now =
+    LhatTable *modules_value = lhat_table_new(&m->objects);
+    LhatNative *collectgarbage_value =
         lhat_native_new(&m->objects, LHAT_NATIVE_COLLECTGARBAGE, lhat_nil());
-    if (m->environment == NULL || modules == NULL || collect_now == NULL) {
+    if (m->environment == NULL || modules_value == NULL ||
+        collectgarbage_value == NULL) {
         return false;
     }
-    if (!set_member(m, m->environment, "modules",
-                    lhat_object((LhatObject *)modules)) ||
-        !set_member(m, m->environment, "collectgarbage",
-                    lhat_object((LhatObject *)collect_now))) {
-        return false;
+    // environment.h's one list -- check.c's environment_type expands the
+    // same one for the types.
+#define LHAT_ENVIRONMENT_SET(name, value, type)               \
+    if (!set_member(m, m->environment, #name, (value))) {     \
+        return false;                                         \
     }
+    LHAT_ENVIRONMENT(LHAT_ENVIRONMENT_SET)
+#undef LHAT_ENVIRONMENT_SET
     // 05 の 8.6: sealed once built, not before -- the two members above
     // are the machine writing its own table, which is exactly what the mark
     // goes on to refuse from an instruction.

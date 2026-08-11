@@ -6,6 +6,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "environment.h"
 #include "lhatconfig.h"
 #include "port.h"
 
@@ -4819,22 +4820,25 @@ static LhatType *environment_type(Checker *c)
         return c->environment;
     }
     LhatType *env = lhat_type_table(c->result->types);
-    LhatType *modules = lhat_type_table(c->result->types);
+    LhatType *modules_type = lhat_type_table(c->result->types);
     // 12.7's shape: a p^ taking nothing and answering nothing. Running the
     // collector is an effect, so it is not an f^.
-    LhatType *collect_now = lhat_type_func(c->result->types, false);
-    if (env == NULL || modules == NULL || collect_now == NULL) {
+    LhatType *collectgarbage_type = lhat_type_func(c->result->types, false);
+    if (env == NULL || modules_type == NULL || collectgarbage_type == NULL) {
         return NULL;
     }
     // 05 の 8.6: L^ is the machine itself, and the registry inside it is
     // what require^ and import^ write. Both are the machine's to change, not
     // the program's.
     env->v.table.sealed = true;
-    modules->v.table.sealed = true;
-    // 05 の 5.3: the registry a unit is loaded into once, grown by 8.8.
-    lhat_type_add_member(c->result->types, env, "modules", 7, modules);
-    lhat_type_add_member(c->result->types, env, "collectgarbage", 14,
-                         collect_now);
+    modules_type->v.table.sealed = true;
+    // environment.h's one list -- vm.c's build_environment expands the same
+    // one for the values.
+#define LHAT_ENVIRONMENT_ADD(name, value, type)                     \
+    lhat_type_add_member(c->result->types, env, #name,              \
+                         sizeof #name - 1, (type));
+    LHAT_ENVIRONMENT(LHAT_ENVIRONMENT_ADD)
+#undef LHAT_ENVIRONMENT_ADD
     // 05 の 8.6: and whatever the host put here on top of that list.
     if (c->require.globals != NULL) {
         for (const LhatTypeMember *m = c->require.globals->v.table.members;
