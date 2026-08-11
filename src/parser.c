@@ -1567,6 +1567,30 @@ static LhatNode *parse_arguments(Parser *p)
             break;
         }
         argument = parse_expression(p);
+        // 13.7: the same forwarding written after a value rather than as the
+        // bare word -- 'expr...', which the section is named for. The reading
+        // is the one the bare form has and for the same reason: a variadic
+        // slot never takes one value as a whole, so there is nothing else
+        // '...' could mean here.
+        //
+        // 13.8改: this is what lets a tuple reach a variadic tail. Spreading
+        // is written rather than inferred from the callee, which is what
+        // keeps 13.7's expansion rule from arising.
+        if (check_op(p, LHAT_OP_ELLIPSIS)) {
+            LhatToken at = p->current;
+            advance(p);
+            LhatNode *spread = make(p, LHAT_NODE_SPREAD, &at);
+            if (spread != NULL) {
+                spread->v.jump.value = argument;
+                argument = finish(p, spread);
+            }
+            lhat_node_append(&head, &tail, argument);
+            // 13.7: nothing can follow the whole tail it forwards.
+            if (check_op(p, LHAT_OP_COMMA)) {
+                report(p, &p->current, LHAT_PARSE_ERR_SPREAD_NOT_LAST);
+            }
+            break;
+        }
         lhat_node_append(&head, &tail, argument);
         if (!match_op(p, LHAT_OP_COMMA)) {
             break;

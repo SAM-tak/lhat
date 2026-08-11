@@ -324,9 +324,8 @@ static void test_variadic(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // 13.8 has no tuples, so a single name over an in^ walk takes the whole
-    // pair (14 章), the same as walking any other table -- 13.7 does not
-    // special-case this.
+    // 16.3: two names over an in^ walk take the index and the element, the
+    // same as walking any other table -- 13.7 does not special-case this.
     LHAT_TEST("for^ i, x in^ ... gives x the element type");
     check_text(&u,
                "var^ f = f^ ...:number^ -> number^ {\n"
@@ -407,6 +406,44 @@ static void test_variadic(void)
                "  return^ inner(100, ...)\n"
                "}\n");
     CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // 13.8改: the same spelling over a tuple. Unlike a table, whose tail is
+    // one element type, each position is matched against the variadic type on
+    // its own -- so a mixed tuple is refused at the position that does not fit
+    // rather than wholesale.
+    LHAT_TEST("a tuple spreads into a variadic tail");
+    check_text(&u,
+               "var^ inner = f^ ...:number^ -> number^ { return^ 0 }\n"
+               "var^ pair = f^ -> (number^, number^) { return^ 1, 2 }\n"
+               "var^ outer = f^ -> number^ {\n"
+               "  return^ inner(pair()...)\n"
+               "}\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("and a position that does not fit the tail is refused");
+    check_text(&u,
+               "var^ inner = f^ ...:number^ -> number^ { return^ 0 }\n"
+               "var^ pair = f^ -> (number^, string^) { return^ 1, \"a\" }\n"
+               "var^ outer = f^ -> number^ {\n"
+               "  return^ inner(pair()...)\n"
+               "}\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
+    unit_dispose(&u);
+
+    // 13.8改 keeps the two readings apart: a tuple reaches a variadic tail
+    // only where '...' is written, never because the callee happens to take
+    // one. Without the spelling it is a value in an argument position, which
+    // is where a tuple cannot stand.
+    LHAT_TEST("a tuple does not expand on its own");
+    check_text(&u,
+               "var^ inner = f^ ...:number^ -> number^ { return^ 0 }\n"
+               "var^ pair = f^ -> (number^, number^) { return^ 1, 2 }\n"
+               "var^ outer = f^ -> number^ {\n"
+               "  return^ inner(pair())\n"
+               "}\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_TUPLE_MISPLACED);
     unit_dispose(&u);
 }
 

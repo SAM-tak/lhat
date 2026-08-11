@@ -1071,6 +1071,23 @@ static LhatValue host_divmod(LhatMachine *machine, void *context,
     return answer;
 }
 
+// 13.7 with 13.8改: the host arm gathers its own arguments, so a tuple spread
+// into a variadic tail reaches it as ordinary arguments and nothing else.
+static LhatValue host_sum(LhatMachine *machine, void *context,
+                          const LhatValue *arguments, size_t count)
+{
+    (void)machine;
+    (void)context;
+    int64_t total = 0;
+    for (size_t i = 0; i < count; i++) {
+        if (!lhat_is_integer(arguments[i])) {
+            return lhat_nil();
+        }
+        total += lhat_as_integer(arguments[i]);
+    }
+    return lhat_integer(total);
+}
+
 // The same, but allocating after the room is filled -- what proves the
 // positions are roots. A table made here would be swept if they were not.
 static LhatValue host_divmod_then_allocate(LhatMachine *machine, void *context,
@@ -1247,6 +1264,39 @@ static void test_host_tuple(void)
             LHAT_CHECK_EQ_INT(ran.position_count, 0);
             LHAT_CHECK(ran.positions == NULL, "nothing to point at");
             LHAT_CHECK_EQ_INT(lhat_as_integer(ran.value), 5);
+            lhat_machine_dispose(machine);
+        }
+    }
+    lhat_program_dispose(&program);
+
+    // 13.7: 'expr...' forwards a tuple the same way it forwards a collected
+    // tail. The host arm builds its argument array itself, so it expands the
+    // run on a path of its own -- the closure arm passing is no evidence.
+    LHAT_TEST("a tuple spreads into a host's variadic tail");
+    {
+        static const File files[] = {
+            {"main.lh",
+             "import^ system.num\n"
+             "var^ f = f^ -> (number^, number^) { return^ 10, 20 }\n"
+             "return^ system.num.sum(1, f()...)\n"},
+        };
+        program_with(&program, &disk, files, 1);
+        LHAT_CHECK(lhat_register_func(&program, "system.num", "sum",
+                                      "f^number^, ...:number^ -> number^;",
+                                      host_sum, NULL),
+                   "the registration took");
+        const LhatUnit *root = lhat_program_check(&program, "main.lh");
+        LHAT_CHECK(root != NULL && root->checked.diagnostic_count == 0,
+                   "the program checked");
+        size_t count = 0;
+        const LhatModule *modules = lhat_program_compile(&program, &count);
+        if (modules != NULL && root != NULL) {
+            LhatMachine *machine = lhat_machine_new();
+            lhat_machine_set_modules(machine, modules, count);
+            lhat_program_install(&program, machine);
+            LhatRunResult ran = lhat_run(machine, modules[root->index].proto);
+            LHAT_CHECK_EQ_INT(ran.status, LHAT_RUN_OK);
+            LHAT_CHECK_EQ_INT(lhat_as_integer(ran.value), 31);
             lhat_machine_dispose(machine);
         }
     }

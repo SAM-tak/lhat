@@ -473,9 +473,88 @@ static void test_walk_shapes(void)
     run_dispose(&r);
 }
 
+// 13.7: the spread that forwards a collected tail forwards a tuple too. The
+// positions are already a run on the stack, so the table 'pack^' used to
+// interpose is the whole of what this saves.
+static void test_tuple_spread(void)
+{
+    Run r;
+
+    LHAT_TEST("a tuple spreads into a variadic tail");
+    run_checked_text(&r,
+                     "var^ f = f^ -> (number^, number^) { return^ 10, 20 }\n"
+                     "var^ sum = f^ ...:number^ -> number^ {\n"
+                     "  var^ total = 0\n"
+                     "  for^ x in^ ... { total := total + x }\n"
+                     "  return^ total }\n"
+                     "return^ sum(f()...)\n");
+    CHECK_INTEGER(&r, 30);
+    run_dispose(&r);
+
+    LHAT_TEST("and takes its place after the fixed arguments");
+    run_checked_text(&r,
+                     "var^ f = f^ -> (number^, number^) { return^ 10, 20 }\n"
+                     "var^ sum = f^ first:number^, ...:number^ -> number^ {\n"
+                     "  var^ total = first\n"
+                     "  for^ x in^ ... { total := total + x }\n"
+                     "  return^ total }\n"
+                     "return^ sum(1, f()...)\n");
+    CHECK_INTEGER(&r, 31);
+    run_dispose(&r);
+
+    // Each position keeps its own type through the spread, so a tail of
+    // string^ takes the string position of a mixed tuple.
+    LHAT_TEST("the positions keep their types across the spread");
+    run_checked_text(&r,
+                     "var^ f = f^ -> (string^, string^) { return^ \"a\", \"b\" }\n"
+                     "var^ join = f^ ...:string^ -> string^ {\n"
+                     "  var^ out = \"\"\n"
+                     "  for^ s in^ ... { out := out .. s }\n"
+                     "  return^ out }\n"
+                     "return^ join(f()...)\n");
+    CHECK_STRING(&r, "ab");
+    run_dispose(&r);
+
+    // What the work is for. Both loops pay for the callee's collector, which
+    // 13.7 defines as an ordinary table; only the spread through a tuple is
+    // spared the second table 'pack^' would build to carry the same values.
+    LHAT_TEST("and no table is built to carry the positions there");
+    run_checked_text(&r,
+                     "var^ f = f^ -> (number^, number^) { return^ 10, 20 }\n"
+                     "var^ sum = f^ ...:number^ -> number^ {\n"
+                     "  var^ total = 0\n"
+                     "  for^ x in^ ... { total := total + x }\n"
+                     "  return^ total }\n"
+                     "var^ total = 0\n"
+                     "repeat^ 2000 { total := total + sum(f()...) }\n"
+                     "return^ total\n");
+    CHECK_INTEGER(&r, 60000);
+    size_t spread_cost = r.ran.collected;
+    run_dispose(&r);
+
+    // The control: the same loop into the same variadic tail, with the table
+    // written back in. Both pay for the collector, so what is left of the
+    // difference is the table 'pack^' builds and the spread does not.
+    LHAT_TEST("where routing the same values through a table does build one");
+    run_checked_text(&r,
+                     "var^ f = f^ -> (number^, number^) { return^ 10, 20 }\n"
+                     "var^ sum = f^ ...:t^{ number^, number^ } -> number^ {\n"
+                     "  var^ total = 0\n"
+                     "  for^ t in^ ... { total := total + t[1] + t[2] }\n"
+                     "  return^ total }\n"
+                     "var^ total = 0\n"
+                     "repeat^ 2000 { total := total + sum(pack^ f()) }\n"
+                     "return^ total\n");
+    CHECK_INTEGER(&r, 60000);
+    LHAT_CHECK(r.ran.collected > spread_cost,
+               "the table path allocates what the spread does not");
+    run_dispose(&r);
+}
+
 int main(void)
 {
     test_multi_value_return();
     test_walk_shapes();
+    test_tuple_spread();
     return lhat_test_report("test_vm_tuple");
 }

@@ -2403,19 +2403,30 @@ static void compile_call_wide(Compiler *c, const LhatNode *node, uint8_t into,
     bool wide_args = false;
     for (const LhatNode *arg = node->v.access.argument; arg != NULL;
          arg = arg->next) {
+        // 13.7: the value to unpack goes in the slot; C tells the machine the
+        // last argument is not an ordinary one but something to spread.
+        if (arg->kind == LHAT_NODE_SPREAD) {
+            // 13.8改: a tuple spreads as the run it already is -- head slot
+            // and positions -- so nothing is built to hand over. A table
+            // spreads as the one value it is, the way it always did.
+            size_t positions = tuple_width_of(arg->v.jump.value);
+            if (positions > 1) {
+                uint8_t head = reserve_wide(c, positions + 1);
+                compile_run_source(c, arg->v.jump.value, head, positions + 1);
+            } else {
+                uint8_t slot = reserve(c);
+                compile_expression(c, arg->v.jump.value, slot);
+            }
+            spread = true;
+            count++;
+            continue;
+        }
         // 05 の 8.9: a host value argument takes its width of consecutive
         // slots; the callee's parameter run was laid out by the same widths,
         // so the frame window still lines up with no copying.
         uint8_t slot = reserve_for(c, arg);
         wide_args = wide_args || width_of(arg) > 1;
-        // 13.7: the table itself goes in the slot; C tells the machine the
-        // last one is not an ordinary argument but something to unpack.
-        if (arg->kind == LHAT_NODE_SPREAD) {
-            compile_expression(c, arg->v.jump.value, slot);
-            spread = true;
-        } else {
-            compile_expression(c, arg, slot);
-        }
+        compile_expression(c, arg, slot);
         count++;
     }
     if (count > 0xFF) {

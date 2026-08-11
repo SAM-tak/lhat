@@ -801,9 +801,19 @@ LhatType *chk_infer_call(Checker *c, const LhatNode *node)
         // parameter position for it to line up with.
         if (arg->kind == LHAT_NODE_SPREAD) {
             LhatType *spread = chk_infer(c, arg->v.jump.value);
-            if (callee->v.func.variadic != NULL && spread != NULL &&
-                spread->kind == LHAT_TYPE_TABLE &&
-                spread->v.table.variadic != NULL) {
+            size_t positions = lhat_type_tuple_width(spread);
+            if (callee->v.func.variadic != NULL && positions > 0) {
+                // 13.8改: a tuple spreads too. Unlike a table, whose tail is
+                // one element type, each position carries its own -- so each
+                // is asked separately whether it fits the variadic's.
+                for (size_t i = 0; i < positions; i++) {
+                    chk_expect(c, arg, lhat_type_tuple_at(spread, i),
+                               callee->v.func.variadic,
+                               LHAT_CHECK_ERR_MISMATCH);
+                }
+            } else if (callee->v.func.variadic != NULL && spread != NULL &&
+                       spread->kind == LHAT_TYPE_TABLE &&
+                       spread->v.table.variadic != NULL) {
                 chk_expect(c, arg, spread->v.table.variadic,
                            callee->v.func.variadic, LHAT_CHECK_ERR_MISMATCH);
             } else if (callee->v.func.variadic != NULL) {
