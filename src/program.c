@@ -1,6 +1,6 @@
 // L^ (lhat) -- a program: one unit and everything it requires.
 
-#include "program.h"
+#include "program_internal.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -1225,6 +1225,61 @@ void lhat_program_dispose(LhatProgram *program)
     program->diagnostic_capacity = 0;
 
     lhat_type_arena_dispose(&program->types);
+}
+
+// The opaque forms a host uses (program.h): the by-value pair above wrapped
+// around an allocation.
+LhatProgram *lhat_program_new(bool strict, LhatProgramLoader load,
+                              void *context)
+{
+    LhatProgram *program = (LhatProgram *)lhat_alloc(sizeof *program);
+    if (program != NULL) {
+        lhat_program_init(program, strict, load, context);
+    }
+    return program;
+}
+
+void lhat_program_free(LhatProgram *program)
+{
+    if (program != NULL) {
+        lhat_program_dispose(program);
+        lhat_free(program);
+    }
+}
+
+size_t lhat_unit_index(const LhatUnit *unit)
+{
+    return unit->index;
+}
+
+const char *lhat_unit_path(const LhatUnit *unit)
+{
+    return unit->path;
+}
+
+LhatUnitState lhat_unit_state(const LhatUnit *unit)
+{
+    return unit->state;
+}
+
+bool lhat_unit_ok(const LhatUnit *unit)
+{
+    return unit != NULL && unit->loaded && unit->state == LHAT_UNIT_DONE &&
+           unit->lexer.diagnostic_count == 0 &&
+           unit->parsed.diagnostic_count == 0 &&
+           unit->checked.diagnostic_count == 0;
+}
+
+size_t lhat_program_diagnostic_count(const LhatProgram *program)
+{
+    return program->diagnostic_count;
+}
+
+const LhatProgramDiagnostic *lhat_program_diagnostic(const LhatProgram *program,
+                                                     size_t index)
+{
+    return index < program->diagnostic_count ? &program->diagnostics[index]
+                                             : NULL;
 }
 
 const LhatUnit *lhat_program_check(LhatProgram *program, const char *path)

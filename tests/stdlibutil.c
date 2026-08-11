@@ -80,23 +80,26 @@ LhatTestRan lhat_test_run(const LhatTestRegister *regs, size_t count,
     out.integer = 0;
     out.text = NULL;
 
-    LhatProgram program;
-    lhat_program_init(&program, true, load_one, &file);
+    LhatProgram *program = lhat_program_new(true, load_one, &file);
+    if (program == NULL) {
+        return out;
+    }
     const LhatUnit *root = NULL;
     const LhatModule *modules = NULL;
     size_t module_count = 0;
-    if (register_all(&program, regs, count)) {
-        root = lhat_program_check(&program, "main.lh");
+    if (register_all(program, regs, count)) {
+        root = lhat_program_check(program, "main.lh");
     }
-    if (root != NULL && !lhat_program_has_errors(&program) &&
-        root->checked.diagnostic_count == 0) {
-        modules = lhat_program_compile(&program, &module_count);
+    if (root != NULL && !lhat_program_has_errors(program) &&
+        lhat_unit_ok(root)) {
+        modules = lhat_program_compile(program, &module_count);
     }
     if (modules != NULL) {
         LhatMachine *machine = lhat_machine_new();
         lhat_machine_set_modules(machine, modules, module_count);
-        if (lhat_program_install(&program, machine)) {
-            LhatRunResult ran = lhat_run(machine, modules[root->index].proto);
+        if (lhat_program_install(program, machine)) {
+            LhatRunResult ran =
+                lhat_run(machine, modules[lhat_unit_index(root)].proto);
             out.ok = true;
             out.status = ran.status;
             if (lhat_is_integer(ran.value)) {
@@ -113,7 +116,7 @@ LhatTestRan lhat_test_run(const LhatTestRegister *regs, size_t count,
         }
         lhat_machine_dispose(machine);
     }
-    lhat_program_dispose(&program);
+    lhat_program_free(program);
     return out;
 }
 
@@ -122,14 +125,15 @@ bool lhat_test_check_text(const LhatTestRegister *regs, size_t count,
 {
     LhatTestFile file = {"main.lh", text};
 
-    LhatProgram program;
-    lhat_program_init(&program, true, load_one, &file);
-    bool registered = register_all(&program, regs, count);
-    const LhatUnit *root = lhat_program_check(&program, "main.lh");
+    LhatProgram *program = lhat_program_new(true, load_one, &file);
+    if (program == NULL) {
+        return false;
+    }
+    bool registered = register_all(program, regs, count);
+    const LhatUnit *root = lhat_program_check(program, "main.lh");
     bool clean = registered && root != NULL &&
-                 !lhat_program_has_errors(&program) &&
-                 root->checked.diagnostic_count == 0;
-    lhat_program_dispose(&program);
+                 !lhat_program_has_errors(program) && lhat_unit_ok(root);
+    lhat_program_free(program);
     return clean;
 }
 

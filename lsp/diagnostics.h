@@ -11,7 +11,7 @@
 #define LSP_DIAGNOSTICS_H
 
 #include "cJSON.h"
-#include "program.h"
+#include "program_internal.h"
 
 // A cJSON array of LSP Diagnostic objects covering every lexer, parser and
 // checker diagnostic `unit` carries -- 03 の 1.3's "the stage is its own,

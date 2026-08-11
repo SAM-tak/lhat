@@ -22,7 +22,7 @@
 #include "port/thread.h"
 
 #include "cJSON.h"
-#include "program.h"
+#include "program_internal.h"
 
 #include "document_store.h"
 

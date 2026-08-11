@@ -23,7 +23,7 @@
 #include <stddef.h>
 
 #include "cJSON.h"
-#include "program.h"
+#include "program_internal.h"
 
 // The legend initialize.c's capabilities response advertises. Token type
 // and modifier indices this file emits are indices into these arrays, so

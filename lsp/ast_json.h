@@ -8,7 +8,7 @@
 #define LSP_AST_JSON_H
 
 #include "cJSON.h"
-#include "program.h"
+#include "program_internal.h"
 
 // The unit's tree, plus the source it was read from. Returns NULL only when
 // the unit holds no tree (out of memory, or never parsed).

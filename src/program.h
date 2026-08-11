@@ -7,6 +7,11 @@
 // dependency order. It also holds everything alive -- the sources, the trees
 // and one shared type arena -- because 6 章 has a unit keep pointing at the
 // types its imports published.
+//
+// A program and its units are opaque here: 8.7's contract is register,
+// check, compile, run and read reports, and none of that walks a tree. The
+// library's own tools read the stages' results through program_internal.h
+// instead; a host never needs to.
 
 #ifndef LHAT_PROGRAM_H
 #define LHAT_PROGRAM_H
@@ -14,16 +19,13 @@
 #include <stdbool.h>
 #include <stddef.h>
 
-#include "check.h"
-#include "code.h"  // 05 の 5.3: a unit compiles to one of these
-#include "lexer.h"
-#include "object.h"  // 05 の 8.7: LhatHostFn
-#include "parser.h"
-#include "source.h"
-#include "type.h"
-#include "compile.h"  // LhatCompileStatus: why a compile of the program stopped
+#include "compile.h"  // LhatCompileStatus, and the prompt's compile session
 #include "hosted.h"
+#include "object.h"  // 05 の 8.7: LhatHostFn
 #include "vm.h"
+
+typedef struct LhatProgram LhatProgram;
+typedef struct LhatUnit LhatUnit;
 
 typedef enum {
     LHAT_PROGRAM_ERR_CANNOT_READ,  // no such unit
@@ -32,7 +34,7 @@ typedef enum {
 
 typedef struct {
     LhatProgramErrorCode code;
-    char *path;  // owned
+    char *path;  // owned by the program
 } LhatProgramDiagnostic;
 
 typedef enum {
@@ -41,106 +43,10 @@ typedef enum {
     LHAT_UNIT_FAILED
 } LhatUnitState;
 
-typedef struct LhatUnit {
-    char *path;  // resolved and normalised; the key 5.3 loads once against
-    bool loaded;
-
-    LhatSource source;
-    LhatLexer lexer;
-    LhatParseResult parsed;
-    LhatCheckResult checked;
-
-    LhatUnitState state;
-
-    // 05 の 5.3: where this unit sits in what lhat_program_compile built, so
-    // a require^ of it names it by number. Only meaningful after that ran.
-    size_t index;
-
-    struct LhatUnit *next;
-} LhatUnit;
-
 // How a unit's text is obtained. Returns NULL when there is no such unit,
 // and otherwise a buffer the program frees.
 typedef char *(*LhatProgramLoader)(void *context, const char *path,
                                    size_t *length);
-
-typedef struct {
-    // 6 章: shared, so the types one unit publishes stay valid in the units
-    // that require it.
-    LhatTypeArena types;
-
-    LhatUnit *units;
-    bool strict;
-
-    LhatProgramLoader load;
-    void *loader_context;
-
-    LhatProgramDiagnostic *diagnostics;
-    size_t diagnostic_count;
-    size_t diagnostic_capacity;
-
-    // 05 の 5.3: what lhat_program_compile built, owned here.
-    LhatModule *modules;
-    size_t module_count;
-
-    // Why that answered NULL, for a caller with a diagnostic to write. It
-    // compiles unit by unit and stops at the first that will not, so what a
-    // reader has to be told is that one status rather than "something".
-    // LHAT_COMPILE_OK until a compile has actually failed.
-    LhatCompileStatus compile_status;
-
-    // 05 の 8.7: what the host registered, as one nested table type keyed by
-    // module path -- the same shape L^.modules has, since that is where it
-    // ends up. import^ resolves against this and against nothing else, which
-    // is what keeps its answer independent of the order units are checked in.
-    LhatType *hosted;
-    struct LhatHostEntry *host_entries;
-    size_t host_entry_count;
-    size_t host_entry_capacity;
-
-    // 05 の 8.7 の誤り版、04 の 12.4: lhat_register_error_kind が作る実行時
-    // オブジェクト専用のヒープ。どの machine の GC サイクルにも属さず、
-    // program 自身と同じだけ生きる -- chunk->heap (code.h) と同じ理屈
-    // (lhat_proto_new のコメント参照)。host_error_entries は
-    // lhat_compile_module に渡す LhatUnits.host_errors の元になる登録簿。
-    LhatHeap host_error_heap;
-    LhatHostErrorKind *host_error_entries;
-    size_t host_error_entry_count;
-    size_t host_error_entry_capacity;
-
-    // 05 の 8.8 の isa^ 版: lhat_register_hostdata_type が返した
-    // LhatHostDataTag を、コンパイラが "module.Name" から引けるように
-    // した登録簿。tag 自体は host_entries[i].tag が既に持っているが、
-    // それは非公開の LhatHostEntry の中なので、vm.h から読める形の
-    // 薄いコピーをここにも持つ -- host_error_entries と同じ理由。
-    LhatHostTypeEntry *host_type_entries;
-    size_t host_type_entry_count;
-    size_t host_type_entry_capacity;
-
-    // 05 の 8.9: the host value types, one entry per registration. Unlike
-    // the two registries above this one owns its tags (and their field
-    // arrays); the strings belong to host_entries as usual. Registration
-    // order is the tag's index, which is how a machine finds the members
-    // table it built for the type at install.
-    LhatHostValueTypeEntry *hostvalue_type_entries;
-    size_t hostvalue_type_entry_count;
-    size_t hostvalue_type_entry_capacity;
-
-    // 05 の 8.6: what the host put in L^ itself, as the type side of it. The
-    // checker's own L^ carries these on top of what 8.6 lists.
-    LhatType *globals;
-    struct LhatGlobalEntry *global_entries;
-    size_t global_count;
-    size_t global_capacity;
-
-    // 05 の 8.2: the names bound without a require^, kept as two arrays so
-    // that check.h and vm.h can each read them without knowing a type the
-    // other declares.
-    char **initial_names;    // owned
-    char **initial_members;  // owned
-    size_t initial_count;
-    size_t initial_capacity;
-} LhatProgram;
 
 // 05 の 8.9: the loader is handed over rather than defaulted to, so nothing
 // embedded reaches a file system without having been told to. `load` may be
@@ -148,10 +54,10 @@ typedef struct {
 // only units are ones it hands over itself.
 //
 // port.h's lhat_load_file is written in this shape, for a host that does want
-// the file system.
-void lhat_program_init(LhatProgram *program, bool strict,
-                       LhatProgramLoader load, void *context);
-void lhat_program_dispose(LhatProgram *program);
+// the file system. NULL when out of memory.
+LhatProgram *lhat_program_new(bool strict, LhatProgramLoader load,
+                              void *context);
+void lhat_program_free(LhatProgram *program);
 
 // Checks the unit at `path` and, first, everything it requires. `path` is
 // taken as written; a require^ inside a unit is relative to that unit (5.1).
@@ -162,9 +68,30 @@ const LhatUnit *lhat_program_check(LhatProgram *program, const char *path);
 // machine is given with lhat_machine_set_modules. The program owns it; a
 // second call answers the same one. NULL when a unit would not compile.
 //
-// The unit to run is the one lhat_program_check returned: its `index` says
+// The unit to run is the one lhat_program_check returned: its index says
 // which proto of the array is it.
 const LhatModule *lhat_program_compile(LhatProgram *program, size_t *count);
+
+// ---------------------------------------------------------------------------
+// What a unit answers
+// ---------------------------------------------------------------------------
+
+// Where the unit sits in what lhat_program_compile answered.
+size_t lhat_unit_index(const LhatUnit *unit);
+
+const char *lhat_unit_path(const LhatUnit *unit);
+LhatUnitState lhat_unit_state(const LhatUnit *unit);
+
+// Whether the unit read, parsed and checked without one diagnostic from any
+// stage -- the whole of what a host asks before running it.
+bool lhat_unit_ok(const LhatUnit *unit);
+
+// The program's own diagnostics (a unit that could not be read, a cycle).
+// What each unit's stages reported is rendered by the in-tree drivers;
+// a host asks lhat_unit_ok and stops there.
+size_t lhat_program_diagnostic_count(const LhatProgram *program);
+const LhatProgramDiagnostic *lhat_program_diagnostic(const LhatProgram *program,
+                                                     size_t index);
 
 // ---------------------------------------------------------------------------
 // 05 の 8.7: what the host provides
@@ -284,7 +211,6 @@ bool lhat_bind_initial(LhatProgram *program, const char *name,
 
 // Puts what was registered into the machine's L^.modules, so that an import^
 // finds it. Belongs after lhat_machine_set_modules and before the run.
-typedef struct LhatMachine LhatMachine;
 bool lhat_program_install(const LhatProgram *program, LhatMachine *machine);
 
 // 03 の 4.3: the same for a prompt, which has no program of its own driving
@@ -293,17 +219,17 @@ bool lhat_program_install(const LhatProgram *program, LhatMachine *machine);
 // into it as it would for a file, and hands it to all three of the prompt's
 // pieces: the check session, the compile session and the machine.
 //
-//     LhatProgram program;
-//     lhat_program_init(&program, false, NULL, NULL);
-//     lhatstdlib_io_register(&program);          // or any registration
-//     lhat_program_install_checks(&program, checks);
-//     lhat_program_install_compiles(&program, compiles);
-//     lhat_program_install(&program, machine);
+//     LhatProgram *program = lhat_program_new(false, NULL, NULL);
+//     lhatstdlib_io_register(program);           // or any registration
+//     lhat_program_install_checks(program, checks);
+//     lhat_program_install_compiles(program, compiles);
+//     lhat_program_install(program, machine);
 //
 // What each hands over is what LhatRequire and LhatUnits carry for a file:
 // the registry import^ resolves against and 8.6's L^ members for the checker,
 // the error kinds and hostdata types isa^ names for the compiler. Both borrow
 // from the program, so it has to outlive the sessions.
+typedef struct LhatCheckSession LhatCheckSession;
 void lhat_program_install_checks(const LhatProgram *program,
                                  LhatCheckSession *session);
 void lhat_program_install_compiles(const LhatProgram *program,

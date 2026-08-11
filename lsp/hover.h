@@ -10,7 +10,7 @@
 #include <stdint.h>
 
 #include "cJSON.h"
-#include "program.h"
+#include "program_internal.h"
 
 // A Hover for the name at `offset` (a byte offset into the unit's source), or
 // NULL when nothing there has a definition to show. The caller owns it.

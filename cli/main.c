@@ -10,6 +10,12 @@
 
 #include "lhat.h"
 
+// The dump modes and the diagnostic rendering read each stage's results off
+// a unit directly -- the cli is one of the language's own front ends, so it
+// reaches the internal header the way lsp/ does, rather than asking the
+// host API for accessors it alone would use.
+#include "program_internal.h"
+
 #ifdef LHAT_CLI_WITH_STDLIB
 #include "stdlib/debug.h"
 #include "stdlib/error.h"

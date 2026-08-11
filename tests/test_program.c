@@ -9,7 +9,7 @@
 #include <string.h>
 
 #include "port.h"
-#include "program.h"
+#include "program_internal.h"
 #include "testutil.h"
 #include "value.h"
 #include "vm.h"

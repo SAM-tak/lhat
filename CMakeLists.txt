@@ -187,6 +187,10 @@ if(LHAT_BUILD_CLI)
     add_executable(lhat_cli cli/main.c)
     set_target_properties(lhat_cli PROPERTIES OUTPUT_NAME lhat)
     target_link_libraries(lhat_cli PRIVATE lhat)
+    # The dump and REPL paths read tokens, trees and each stage's results
+    # directly -- the cli is an in-tree front end, so it names the internal
+    # headers honestly instead of getting them by leakage.
+    target_include_directories(lhat_cli PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
     # サンプルドライバとして、stdlib/ が建っているならそれを丸ごと登録する
     # (cli/main.c の bind_host_names 参照)。LHAT_BUILD_STDLIB=OFF でも
     # cli/main.c 自体はこのマクロなしでビルドできる -- stdlib は常に任意。

@@ -36,31 +36,32 @@ static char *load_main(void *context, const char *path, size_t *length)
 
 int main(void)
 {
-    LhatProgram program;
-    lhat_program_init(&program, true, load_main, NULL);
-    if (!lhat_register_global(&program, "twice", "f^number^ -> number^;",
+    LhatProgram *program = lhat_program_new(true, load_main, NULL);
+    if (program == NULL ||
+        !lhat_register_global(program, "twice", "f^number^ -> number^;",
                               host_twice, NULL) ||
-        !lhat_bind_initial(&program, "twice", "L^.twice")) {
+        !lhat_bind_initial(program, "twice", "L^.twice")) {
         fprintf(stderr, "registration failed\n");
         return 1;
     }
 
-    const LhatUnit *root = lhat_program_check(&program, "main.lh");
-    if (root == NULL || lhat_program_has_errors(&program)) {
+    const LhatUnit *root = lhat_program_check(program, "main.lh");
+    if (root == NULL || lhat_program_has_errors(program) ||
+        !lhat_unit_ok(root)) {
         fprintf(stderr, "check failed\n");
         return 1;
     }
 
     size_t count = 0;
-    const LhatModule *modules = lhat_program_compile(&program, &count);
+    const LhatModule *modules = lhat_program_compile(program, &count);
     LhatMachine *machine = modules != NULL ? lhat_machine_new() : NULL;
     if (machine == NULL) {
         fprintf(stderr, "compile failed\n");
         return 1;
     }
     lhat_machine_set_modules(machine, modules, count);
-    lhat_program_install(&program, machine);
-    LhatRunResult ran = lhat_run(machine, modules[root->index].proto);
+    lhat_program_install(program, machine);
+    LhatRunResult ran = lhat_run(machine, modules[lhat_unit_index(root)].proto);
 
     int status = 1;
     if (ran.status == LHAT_RUN_OK && lhat_is_integer(ran.value) &&
@@ -72,6 +73,6 @@ int main(void)
                 (int)ran.status);
     }
     lhat_machine_dispose(machine);
-    lhat_program_dispose(&program);
+    lhat_program_free(program);
     return status;
 }
