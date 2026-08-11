@@ -64,7 +64,7 @@ typedef struct {
 typedef struct LhatTable {
     LhatObject header;
 
-    // 2.2改: the dense half as two parallel runs (payloads + one-byte tags)
+    // 2.2: the dense half as two parallel runs (payloads + one-byte tags)
     // rather than an LhatValue array -- half the memory, and the tag run is
     // what a scan (the collector's, a walk's) touches first. Slot i is the
     // value at key i+1; read and written only through lhat_slots_get/set.
@@ -92,7 +92,7 @@ typedef struct LhatTable {
     // 14.17改 reads both, to know whether the member names are the writer's.
     bool is_definition;
 
-    // 05 の 8.6改 (M5): the machine's own -- L^, its registry, and what
+    // 05 の 8.6: the machine's own -- L^, its registry, and what
     // require^ or import^ answers with. The checker refuses what is written
     // against one directly, but a table reaches a p^ through a parameter
     // typed t^{ … }, which carries no such mark (the writer has no spelling
@@ -152,7 +152,7 @@ typedef struct LhatCoroutine {
     size_t at_array;
     size_t at_entry;
 
-    // 2.2改: the saved frame, as wide as the body needs, in the same two-run
+    // 2.2: the saved frame, as wide as the body needs, in the same two-run
     // shape the stack keeps -- what a yield^'s copy and a capture's
     // retargeting both move between.
     LhatSlots registers;
@@ -251,16 +251,16 @@ typedef struct LhatRuntimeType {
     struct LhatRuntimeType **parts;
     size_t part_count;
 
-    // SUBROUTINE only. 02 の 14.16's typeof^ is what first needed a
-    // signature reconstructed in full; is^'s narrowing never asked for more
-    // than "is this a subroutine" (LHAT_TYPE_RT_SUBROUTINE above), so these
-    // are NULL/false wherever nothing built them.
+    // SUBROUTINE only. 02 の 14.16's typeof^ is what needs a signature
+    // reconstructed in full; narrowing asks no more than "is this a
+    // subroutine" (LHAT_TYPE_RT_SUBROUTINE above), so these are NULL/false
+    // wherever nothing built them.
     struct LhatRuntimeType *result;   // NULL when nothing is returned (13.2)
     bool is_function;                 // f^ rather than p^ (15 章)
     bool takes_self;                  // 14.4: the first parameter is self^
 
     // COROUTINE only (13.9). `result` above doubles as the third slot (T);
-    // these are the other two. NULL/any^ wherever nothing built them (S28).
+    // these are the other two. NULL/any^ wherever nothing built them.
     struct LhatRuntimeType *receive;  // R
     struct LhatRuntimeType *produce;  // Y
 
@@ -289,7 +289,7 @@ typedef struct LhatOverload {
 // An operation the runtime provides rather than the program. 02 の 12.6 and
 // 15.6 give a coroutine these; the rest of the standard library is M2.
 typedef enum {
-    LHAT_NATIVE_START,    // 15.2改: runs a fresh coroutine from the top
+    LHAT_NATIVE_START,    // 15.2: runs a fresh coroutine from the top
     LHAT_NATIVE_RESUME,
     LHAT_NATIVE_DISPOSE,
     LHAT_NATIVE_ITERATE,  // 02 の 16.3: answers the coroutine `in^` walks

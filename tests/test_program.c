@@ -332,7 +332,7 @@ static void test_running(void)
     }
     lhat_program_dispose(&program);
 
-    // 05 の 8.6改 (M5): what require^ answers is sealed once the unit has
+    // 05 の 8.6: what require^ answers is sealed once the unit has
     // built it. check.c refuses a write named against it, but a t^{ … }
     // parameter carries no mark of this -- so the machine asks again where
     // the write happens.

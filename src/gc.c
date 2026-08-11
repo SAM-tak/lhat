@@ -2,7 +2,7 @@
 // this is the working form of it.
 //
 // Two halves meet here. The first is the object graph -- what one object
-// refers to -- which used to sit beside the objects themselves. The second is
+// refers to. The second is
 // the roots, which only the machine knows, and 02 の 10.7's holding back of a
 // coroutine that still owes its cleanups. Neither half collects anything
 // without the other, so both are here.

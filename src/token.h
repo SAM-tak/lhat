@@ -10,13 +10,13 @@
 #include <stddef.h>
 #include <stdint.h>
 
-// Section 11.
+// Section 10.9.
 typedef enum {
     LHAT_TOKEN_EOF,
     LHAT_TOKEN_IDENT,
     LHAT_TOKEN_HAT_IDENT,    // identifier followed by one or more '^'
 
-    // Section 3.4. A backtick delimited name denotes one that either cannot be
+    // Section 3.3. A backtick delimited name denotes one that either cannot be
     // written as a bare identifier, or is meant as a value rather than as a
     // reference. Deliberately a separate kind from LHAT_TOKEN_IDENT: were it
     // the same, `a` and a would be indistinguishable and the second use would
@@ -59,11 +59,10 @@ typedef enum {
     LHAT_OP_SEMICOLON,
     LHAT_OP_COLON,
 
-    LHAT_OP_DEFINE,      // :=
-    LHAT_OP_REASSIGN,    // <<   target << value (Q2)
-    LHAT_OP_ARROW,       // ->   separates arguments from return value (Q9)
+    LHAT_OP_REASSIGN,    // :=
+    LHAT_OP_ARROW,       // ->   separates arguments from return value
 
-    // 7.4改: compound assignment. 'target op= value' means 'target :=
+    // 7.4: compound assignment. 'target op= value' means 'target :=
     // target op value', with target evaluated once. Each names the plain
     // operator it stands for; the parser reads the pair apart.
     LHAT_OP_ADD_ASSIGN,      // +=
@@ -77,11 +76,12 @@ typedef enum {
 
     // Neither of these is part of the language; both are recognised so the
     // parser can say what replaced them instead of reporting a stray
-    // character. Q2 first made '->' postfix reassignment before settling on
-    // '<<', and Q9 first used '::' as the return separator before moving to
-    // '->', which reads better among the many uses of ':'.
+    // character. '->' has been proposed as postfix reassignment and '::' as the
+    // return separator; 01 の 7.3 and 7.6 explain what each gave way to.
     LHAT_OP_COLONCOLON,  // ::
 
+    LHAT_OP_LSHIFT,      // <<   reserved
+    LHAT_OP_RSHIFT,      // >>   reserved
 
     LHAT_OP_EQ,          // =    comparison, not assignment
     LHAT_OP_NE,          // ≠ != =/
@@ -89,7 +89,7 @@ typedef enum {
     LHAT_OP_GE,          // ≧ >=
     LHAT_OP_LT,
     LHAT_OP_GT,
-    // 11.9 (S40): three-way comparison. The one comparison a type defines,
+    // 11.9: three-way comparison. The one comparison a type defines,
     // and the four orderings are read off it -- 'a < b' is '(a <=> b) < 0'.
     LHAT_OP_SPACESHIP,   // <=>
 
@@ -97,11 +97,11 @@ typedef enum {
     LHAT_OP_SUB,
     LHAT_OP_MUL,
     LHAT_OP_DIV,
-    LHAT_OP_FLOORDIV,    // //   (Q5 freed this by moving comments to '#')
+    LHAT_OP_FLOORDIV,    // //   (01 の 6.1 freed this by putting comments on '#')
     LHAT_OP_MOD,         // %
     LHAT_OP_POW,         // **
 
-    LHAT_OP_NOT,         // !    prefix logical negation (Q3)
+    LHAT_OP_NOT,         // !    prefix logical negation
 
     // These are operators (01 の 7.1) but reach the parser as hat
     // identifiers, since the lexer keeps no keyword table (01 の 2.1). They

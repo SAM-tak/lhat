@@ -253,7 +253,7 @@ static void test_expressions(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
-    // 7.4改: 'x += 1' checks the same way 'x := x + 1' would -- the operator
+    // 7.4: 'x += 1' checks the same way 'x := x + 1' would -- the operator
     // it stands for has to accept the right side, and the result has to fit
     // the name.
     LHAT_TEST("compound assignment checks like the operator it stands for");
@@ -873,9 +873,9 @@ static void test_errors(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_CANNOT_FAIL);
     unit_dispose(&u);
 
-    // 04 の 4.2: catch^ names the error it^ inside its right side. The
-    // machine always bound it (compile_catch); the checker used to know
-    // nothing of it and refused the very programs 4.2 describes.
+    // 04 の 4.2: catch^ names the error it^ inside its right side. Both
+    // halves have to know it -- the machine binds it (compile_catch) and the
+    // checker resolves it.
     LHAT_TEST("catch^ binds it^ in its right side");
     check_text(&u,
                "errordef^ IOError { NotFound }\n"
@@ -1005,9 +1005,9 @@ static void test_annotations(void)
 
     // 13 章 has no such type as self^ or class^, and outside a def^ that is
     // already the answer, there being no binding of either to find. Inside
-    // one there is, and 05 の 2.2's one environment used to hand it over --
-    // answering with a type that holds itself, which the relations walk until
-    // the stack is gone. The spelling means the same thing in both places now.
+    // one there is, and 05 の 2.2's one environment would otherwise hand it
+    // over -- answering with a type that holds itself, which the relations walk
+    // until the stack is gone. The spelling means the same thing in both places.
     LHAT_TEST("self^ is not a type, inside a def^ as well as out");
     check_text(&u,
                "var^ V = def^{\n"
@@ -1029,8 +1029,8 @@ static void test_annotations(void)
     unit_dispose(&u);
 
     // 05 の 2.2: a name stands for a value, a type, or both, and 'let^ x = 1'
-    // is the first of those. Being in scope used to be enough to be written
-    // as a type, which made every binding one meaning "what this value is".
+    // is the first of those. Being in scope is not enough to be written as a
+    // type -- that would make every binding one meaning "what this value is".
     LHAT_TEST("a name bound to a plain value is not a type");
     check_text(&u, "var^ x = 1\nvar^ y : x = 2\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_UNKNOWN_TYPE);
@@ -1067,10 +1067,10 @@ static void test_annotations(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // 14.9 (S38): and it asks what it says. The collecting pass leaves a
-    // pending^ seed for every let^, which conforms to everything -- so the
-    // annotation used to ask nothing at all where the same one outside the
-    // def^ asked for the whole structure.
+    // 14.9: and it asks what it says. The collecting pass leaves a
+    // pending^ seed for every let^, which conforms to everything -- so reading
+    // that seed would make the annotation ask nothing at all, where the same
+    // one outside the def^ asks for the whole structure.
     LHAT_TEST("a definition's own name asks for an instance of it");
     check_text(&u,
                "let^ T = def^{\n"
@@ -1112,7 +1112,7 @@ static void test_annotations(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // 13.13 (S37): and a literal with no binding to take a name from says it
+    // 13.13: and a literal with no binding to take a name from says it
     // with Self^. Capital S -- self^ is the receiver, a value, and 13.1 has no
     // type by that name; this is the type, and only ever written as one.
     LHAT_TEST("Self^ names the structure written around it");
@@ -1173,7 +1173,7 @@ static void test_annotations(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_SELF_TYPE_OUTSIDE);
     unit_dispose(&u);
 
-    // 01 の 2.3改 (S35): the fifth word to count levels with a second hat.
+    // 01 の 2.3: the fifth word to count levels with a second hat.
     LHAT_TEST("Self^^ reaches the literal one further out");
     check_text(&u,
                "var^ t : t^{ a : t^{ b : Self^^|nil^ } } = "
@@ -1367,7 +1367,7 @@ static void test_narrowing(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
-    // 11.7改2 (S42): 'x?' is '!(x isa^ nil^)' written short, so it narrows
+    // 11.7改2: 'x?' is '!(x isa^ nil^)' written short, so it narrows
     // to exactly what that would -- the same machinery, one more spelling.
     LHAT_TEST("'?' narrows the true branch");
     check_text(&u,
@@ -1854,7 +1854,7 @@ static void test_composition(void)
     // 14.12: what a new arm has to stay apart from is each arm already under
     // the name, one at a time. Asking the intersection as though it were one
     // signature answers "cannot be told apart" for every one of them, which
-    // used to refuse a third arm however plainly it differed.
+    // would refuse a third arm however plainly it differed.
     LHAT_TEST("a third overload^ is told apart from each arm, not from all");
     {
         char text[1024];
@@ -2047,8 +2047,8 @@ static void test_composition(void)
 
     // 14.5: the right side of '..' may be a name rather than a def^ literal.
     // The compiler flattens that chain through its own registry (14.2), so
-    // the type has to carry both sides -- it used to answer with the right
-    // one alone and lose everything the left brought.
+    // the type has to carry both sides: answering with the right one alone
+    // would lose everything the left brought.
     static const char *const parts =
         "var^ A = def^{ self^{ x := 0 }, a := f^ -> number^ { return^ 1 } }\n"
         "var^ B = def^{ self^{ y := \"s\" }, b := f^ -> number^ { return^ 2 } }\n";
@@ -2532,7 +2532,7 @@ static void test_scope_specifiers(void)
     unit_dispose(&u);
 
     // 14.4 binds class^ into the scope a def^'s '{' opens, so that scope is
-    // one for a specifier to count. 01 の 2.3改: class^ is its own name, so
+    // one for a specifier to count. 01 の 2.3: class^ is its own name, so
     // the outer `class` never collides and the specifier spells the hat.
     LHAT_TEST("a def^ body is one scope too");
     check_text(&u,
@@ -2682,7 +2682,7 @@ static void test_tonumber(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
-    // 11.7's '??' is one of the two ways of dealing with it; 11.4改's
+    // 11.7's '??' is one of the two ways of dealing with it; 04 の 11.4's
     // narrowing is the other.
     LHAT_TEST("'??' is one way of dealing with it");
     check_text(&u, "var^ a : number^ = \"1\".tonumber() ?? 0\n");
@@ -2730,7 +2730,7 @@ static void test_tonumber(void)
 }
 
 // 02 の 13.7: the variadic collector. '...' inside the body names it, typed
-// as 14.10改's unbounded tail -- a table whose sequence half is one element
+// as 14.10's unbounded tail -- a table whose sequence half is one element
 // type repeated, nothing fixed.
 static void test_variadic(void)
 {
@@ -2961,7 +2961,7 @@ static LhatType *library_resolve(void *context, const char *path, size_t length,
         memcmp(lib->expected_path, path, length) != 0) {
         return NULL;  // 6.3 reports a unit that could not be had
     }
-    // 05 の 3 章: what the provider declared, which 5.4改 binds it under.
+    // 05 の 3 章: what the provider declared, which 5.5 binds it under.
     if (module_name != NULL) {
         *module_name = lib->provider.checked.module_name;
     }
@@ -3022,7 +3022,7 @@ static void test_modules(void)
     CHECK_CLEAN(&u);
     check_against_dispose(&u, &lib);
 
-    // 05 の 3.1改: the path module^ declared is kept, which is what 5.4改
+    // 05 の 3.1: the path module^ declared is kept, which is what 5.5
     // reads to decide where the short form binds.
     LHAT_TEST("the path module^ declared is recorded");
     memset(&lib, 0, sizeof lib);
@@ -3044,7 +3044,7 @@ static void test_modules(void)
     LHAT_CHECK(lib.provider.checked.module_name == NULL, "3.2 allows none");
     check_against_dispose(&u, &lib);
 
-    // 05 の 8.6改 (M5): what require^ answers is the machine's record of what
+    // 05 の 8.6: what require^ answers is the machine's record of what
     // the unit published, not a table the requiring unit adds to.
     LHAT_TEST("a module table is the machine's own");
     memset(&lib, 0, sizeof lib);
@@ -3066,7 +3066,7 @@ static void test_modules(void)
     CHECK_CLEAN(&u);
     check_against_dispose(&u, &lib);
 
-    // 05 の 5.4改: without a var^ the unit goes under the path it declared.
+    // 05 の 5.5: without a var^ the unit goes under the path it declared.
     // 8.8 makes the tables on the way, so only the root is a new name.
     LHAT_TEST("the short form binds under the declared path");
     memset(&lib, 0, sizeof lib);
@@ -3285,7 +3285,7 @@ static void test_coroutines(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_ARITY);
     unit_dispose(&u);
 
-    // 05 の 8.6改 (M5): the registry is the machine's, and 5.3's registration
+    // 05 の 8.6: the registry is the machine's, and 5.3's registration
     // is what the compiler emits rather than a line anyone writes. Adding a
     // member is refused the same way writing over one is -- 8.8's walk is
     // exactly what would have made the segments on the way.
@@ -3484,7 +3484,7 @@ static void test_coroutines(void)
     unit_dispose(&u);
 
     // 13.9: what a resume answers is the union of the yield type and the
-    // return type, which the consumer tells apart. 15.2改: both are now
+    // return type, which the consumer tells apart. 15.2: both are now
     // inferred from the body's yield^/return^ sites.
     LHAT_TEST("what a resume answers includes both the yield and the return type");
     check_text(&u,
@@ -3519,7 +3519,7 @@ static void test_coroutines(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // 13.9改: nor does one that cannot end at all. 16.5's endless repeat^ has
+    // 13.9: nor does one that cannot end at all. 16.5's endless repeat^ has
     // no last resume, so there is no value for the third type to be the type
     // of -- and a nil^ there would make every consumer narrow away something
     // that never arrives.
@@ -3583,7 +3583,7 @@ static void test_coroutines(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
-    // 15.2改: start() takes nothing and answers the same union resume does --
+    // 15.2: start() takes nothing and answers the same union resume does --
     // it is what runs a fresh coroutine from the top.
     LHAT_TEST("start() answers the same union as resume()");
     check_text(&u,
@@ -3601,7 +3601,7 @@ static void test_coroutines(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_ARITY);
     unit_dispose(&u);
 
-    // 15.2改: R is one fixed type now, so resume takes exactly one argument.
+    // 15.2: R is one fixed type now, so resume takes exactly one argument.
     LHAT_TEST("resume needs exactly one argument, not zero");
     check_text(&u,
                "var^ gen = p^ { yield^ 1 }\n"
@@ -3618,7 +3618,7 @@ static void test_coroutines(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_ARITY);
     unit_dispose(&u);
 
-    // 13.9改: every yield^ in a body has to agree on what it sends (Y) and
+    // 13.9: every yield^ in a body has to agree on what it sends (Y) and
     // what it answers (R) -- no more folding differing yields into a union.
     LHAT_TEST("two bare yield^ that agree on Y stay clean");
     check_text(&u,
@@ -3641,7 +3641,7 @@ static void test_coroutines(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_YIELD_TYPE_MISMATCH);
     unit_dispose(&u);
 
-    // 15.2改: a yield^ that a var^ binds directly is the only place R can be
+    // 15.2: a yield^ that a var^ binds directly is the only place R can be
     // written, so leaving the annotation off is reported rather than left
     // to infer to UNKNOWN.
     LHAT_TEST("a bound yield^ needs a written type");
@@ -4082,8 +4082,7 @@ static void test_purity(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_FUNCTION_CHANGES_TABLE);
     unit_dispose(&u);
 
-    // 05 の 8.6: L^ is the machine's own table, which no body made. M5 asks
-    // separately whether a p^ may write there; inside an f^ this answers it.
+    // 05 の 8.6: L^ is the machine's own table, which no body made.
     LHAT_TEST("L^ is not a table any body made");
     check_text(&u,
                "var^ f = f^ -> number^ {\n"
@@ -4308,7 +4307,7 @@ static void test_walking(void)
 
 // 02 の 14 章 makes a table a sequence as well as a mapping. The keyed half
 // was described by name from the start; the sequence half was dropped on the
-// floor, so nothing downstream of it -- t[1], a walk.s pair -- had
+// floor, so nothing downstream of it -- t[1], a walk's pair -- had
 // anything to read.
 static void test_positions(void)
 {
@@ -4360,7 +4359,7 @@ static void test_positions(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
-    // 14.6改: '[ ... ] :=' writes a key that 01 の 6 章 leaves unwritable as
+    // 14.14改: '[ ... ] :=' writes a key that 01 の 6 章 leaves unwritable as
     // a name. A literal one still tells the type what it named.
     LHAT_TEST("an integer key reaches the sequence half");
     check_text(&u,
@@ -4415,7 +4414,7 @@ static void test_positions(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
-    // 14.10改: the sequence half can be written down as well as inferred --
+    // 14.10: the sequence half can be written down as well as inferred --
     // types listed with no name in front of them, in order.
     LHAT_TEST("a written type may list its positions");
     check_text(&u, "var^ t : t^{ number^, string^ } = { 1, \"a\" }\n");
@@ -4576,7 +4575,7 @@ static void test_no_value(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // 13.9改: a coroutine that cannot end never produces a return value, so
+    // 13.9: a coroutine that cannot end never produces a return value, so
     // delegating to one produces nothing either.
     LHAT_TEST("delegating to a coroutine that cannot end produces nothing");
     check_text(&u,
@@ -4712,7 +4711,7 @@ static void test_no_value(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_NO_OPERATOR);
     unit_dispose(&u);
 
-    // 11.4改: the arithmetic operators ask the same question, so a written
+    // 11.4: the arithmetic operators ask the same question, so a written
     // op^ answers them too.
     LHAT_TEST("a definition answers arithmetic with its own op^");
     check_text(&u,
@@ -4915,7 +4914,7 @@ static void test_no_value(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // 11.9 (S40): the one comparison a type writes, and the four orderings
+    // 11.9: the one comparison a type writes, and the four orderings
     // are read off it. Without one there was nothing to reach for at all --
     // a written 'a < b' passed here and faulted at run time.
     LHAT_TEST("an ordering is read off op^<=>");
@@ -4968,8 +4967,8 @@ static void test_no_value(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // 11.9: number^ and string^ each order their own. A written '"a" < "b"'
-    // used to reach nothing and fault at run time.
+    // 11.9: number^ and string^ each order their own, so a written '"a" < "b"'
+    // resolves rather than faulting at run time.
     LHAT_TEST("the built-in types carry their own");
     check_text(&u,
                "var^ a : bool^ = \"a\" < \"b\"\n"
@@ -4983,7 +4982,7 @@ static void test_no_value(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_INCOMPARABLE);
     unit_dispose(&u);
 
-    // 11.3改 (S39): a self^ written last says the receiver is the RIGHT
+    // 11.3改: a self^ written last says the receiver is the RIGHT
     // operand, which is the only way to join an operation whose left operand
     // is a built-in -- number^ carries the arithmetic and takes nothing but
     // its own kind, and no program can add to what it carries.
@@ -5338,7 +5337,7 @@ static void test_named_diagnostics(void)
 
 // 8.9: var^ binds a name a ':=' may reach and let^ one it may not. The rule is
 // about the name and not about the value, which is what keeps it apart from
-// 15.1改's question about a table and 05 の 8.6改's about the machine's own.
+// 15.1改's question about a table and 05 の 8.6's about the machine's own.
 static void test_immutable_bindings(void)
 {
     Unit u;
@@ -5366,7 +5365,7 @@ static void test_immutable_bindings(void)
     }
     unit_dispose(&u);
 
-    // 7.4改: a compound assignment is a ':=' spelled shorter, so it meets the
+    // 7.4: a compound assignment is a ':=' spelled shorter, so it meets the
     // same rule rather than slipping past it.
     LHAT_TEST("a compound assignment is a reassignment too");
     check_text(&u, "let^ n = 1\nn += 1\n");
@@ -5387,7 +5386,7 @@ static void test_immutable_bindings(void)
     unit_dispose(&u);
 
     // 8.9: what let^ holds is still the value it was. A table it names keeps
-    // its members writable -- that axis is 15.1改's and 05 の 8.6改's.
+    // its members writable -- that axis is 15.1改's and 05 の 8.6's.
     LHAT_TEST("a let^ table still has writable members");
     check_text(&u, "let^ t = { a := 1 }\nt.a := 2\n");
     CHECK_CLEAN(&u);
@@ -5519,10 +5518,10 @@ static void test_immutable_bindings(void)
 }
 
 
-// 04 の 11.4改 with 03 の 3.5改: relaxed steps past nil^ in a union and lets
+// 04 の 11.4 with 03 の 3.5: relaxed steps past nil^ in a union and lets
 // the machine's own instruction check answer at run time; strict keeps
 // refusing, since narrowing is the spelling there. No check is inserted --
-// 3.5改 withdrew that -- so what these pin is only the checker's posture.
+// 3.5 withdrew that -- so what these pin is only the checker's posture.
 static void test_relaxed_nil_reference(void)
 {
     Unit u;
@@ -5554,8 +5553,8 @@ static void test_relaxed_nil_reference(void)
     unit_dispose(&u);
 }
 
-// 04 の 11.4改 with 01 の 7.1 (S43): the written spelling for reaching through
-// a T|nil^, which 11.4改 names beside narrowing. The target is read without
+// 04 の 11.4 with 01 の 7.1: the written spelling for reaching through
+// a T|nil^, which 11.4 names beside narrowing. The target is read without
 // its nil^ arm and the answer gains one, so what these pin is both halves --
 // the access is admitted under strict, and its result still says it may be
 // absent.
@@ -5604,7 +5603,7 @@ static void test_nil_propagation(void)
     unit_dispose(&u);
 
     // Per link, not per chain (Kotlin reads the same way): 'a?.b' is still a
-    // T|nil^, and 11.4改 refuses to reach through one, so every link carries
+    // T|nil^, and 11.4 refuses to reach through one, so every link carries
     // its own '?'. Nothing has to know where a chain begins or ends.
     LHAT_TEST("a chain marks every link");
     check_text(&u,
@@ -5633,7 +5632,7 @@ static void test_nil_propagation(void)
     unit_dispose(&u);
 }
 
-// 01 の 2.3改 (S35): the stacked reach, typed. The checker walks the same
+// 01 の 2.3: the stacked reach, typed. The checker walks the same
 // bindings the machine resolves, so it^^ carries the outer focus's type and
 // this^^ the enclosing subroutine's own.
 static void test_stacked_hats(void)
@@ -5749,8 +5748,8 @@ static void test_tuple_positions(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_TUPLE_UNION);
     unit_dispose(&u);
 
-    // Multi-value return brings back the second value 8.2 relied on not
-    // existing, so the rule it used to get for free is stated outright.
+    // Multi-value return brings back the second value 8.2 relies on not
+    // existing among the values, so that rule is stated outright.
     LHAT_TEST("an error written among the values is refused");
     check_text(&u,
                "errordef^ IOError { NotFound }\n"

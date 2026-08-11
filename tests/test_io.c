@@ -73,7 +73,7 @@ static LhatTestRan run_reading(const char *text, const char *bytes)
 
 // The line a case read, handed back once it is known to be one. readLine
 // answers a string^ or an error, so the string is taken by name rather than
-// by ruling the errors out -- 13.11's isa^ reaches a builtin now (S33), and
+// by ruling the errors out -- 13.11's isa^ reaches a builtin now, and
 // asking for what is wanted leaves nothing in the returned type that the
 // case did not mean. The failures answer words of their own, so a case that
 // goes wrong says which half did.

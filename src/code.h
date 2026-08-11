@@ -49,7 +49,7 @@ typedef enum {
     LHAT_BC_LE,
     LHAT_BC_GT,
     LHAT_BC_GE,
-    // 02 の 11.9 (S40): A B C R[A] = R[B] <=> R[C], a number^ saying which of
+    // 02 の 11.9: A B C R[A] = R[B] <=> R[C], a number^ saying which of
     // the two comes first. The four above read their answer off this one
     // whenever they cannot answer for themselves.
     LHAT_BC_SPACESHIP,
@@ -57,7 +57,7 @@ typedef enum {
     LHAT_BC_JUMP,       // Bx    signed, relative to the next instruction
     LHAT_BC_JUMP_FALSE, // A Bx  jump when R[A] is false
 
-    // 5.3改: arguments sit above the callee in the caller's frame, and one
+    // 5.3: arguments sit above the callee in the caller's frame, and one
     // value comes back -- 02 の 13.8改 lets that value be a tuple, which
     // arrives as a run of slots rather than one, and the count is settled by
     // the type either way. Lua's calling convention is complicated because
@@ -75,7 +75,7 @@ typedef enum {
                         //         every call written before tuples existed.
                         //         The byte was a boolean and had the room.
     // 03 の 5.11c: strict settled which candidate of an overloaded member
-    // (02 の 14.12) the call ahead means, so the search 5.11改 runs is not
+    // (02 の 14.12) the call ahead means, so the search 5.11 runs is not
     // run. Anything but a group in R[A] is left alone -- a value that got
     // here another way is still called the ordinary way.
     LHAT_BC_PICKARM,    // A Bx  R[A] = candidate Bx of the group R[A]
@@ -169,14 +169,14 @@ typedef enum {
     LHAT_BC_RETURN,     // A B   return R[A], or the B positions from R[A]
     LHAT_BC_RETURN_NIL,
 
-    LHAT_BC_PANIC,      // A     panic^ R[A]  (04 の 11.6改)
-    // 05 の 8.6改 (M5): mark R[A] as the machine's own, so that no later
+    LHAT_BC_PANIC,      // A     panic^ R[A]  (04 の 11.6)
+    // 05 の 8.6: mark R[A] as the machine's own, so that no later
     // instruction may write into it. Emitted where a unit builds what
     // require^ answers with -- what a table holds is written before this,
     // and nothing writes into it afterwards.
     LHAT_BC_SEAL,       // A     R[A] accepts no further writes
     LHAT_BC_ASCAST,     // A B   panic unless R[A] satisfies the type in
-                        //       R[B]; R[A] is unchanged either way (11.6, S27)
+                        //       R[B]; R[A] is unchanged either way (11.6)
 
     LHAT_BC_COUNT
 } LhatOpcode;
@@ -257,7 +257,7 @@ typedef struct {
 // 5.4: how a closure gets each of the places it shares. A register of the
 // frame making it, one of that frame's own upvalues -- the second is what
 // carries a name down through more than one level of nesting -- or, for
-// 15.10改's this^^, the maker's own closure: no register ever holds it, so
+// 15.10's this^^, the maker's own closure: no register ever holds it, so
 // at CLOSURE time it is boxed closed on the spot.
 typedef enum {
     LHAT_UPVALUE_REGISTER,
@@ -293,7 +293,7 @@ typedef struct LhatProto {
                        // answers a coroutine rather than running it (15.5)
     bool takes_self;   // 02 の 14.4: the first parameter is written self^,
                        // which is what makes it an instance method
-    bool self_last;    // 02 の 11.3改 (S39): the self^ was written last
+    bool self_last;    // 02 の 11.3改: the self^ was written last
                        // instead, which only an op^ may do -- it says the
                        // RIGHT operand is the receiver, so '1 + v' reaches it.
                        // The receiver still occupies a parameter slot; this
@@ -317,7 +317,7 @@ typedef struct LhatProto {
     // its absence here belongs to a p^.
     struct LhatRuntimeType *result_type;
 
-    // 15.2, 13.9 (S28). What a yielding body's yield^ sites agreed on --
+    // 15.2, 13.9. What a yielding body's yield^ sites agreed on --
     // there is no written form for either, so these come only from 03 の
     // 5.11a's checked_type when checking ran; NULL otherwise (yields is
     // false, or the checker never settled one).
@@ -338,7 +338,7 @@ void lhat_proto_free(LhatProto *proto);
 // 05 の 5.3: one unit, compiled. The path 3 章 had it declare is kept beside
 // the body, since that is where the unit registers itself and what a
 // diagnostic names it by. NULL when the unit declared none (3.2), and then
-// nothing registers it -- 5.4改 already refused the short form for it.
+// nothing registers it -- 5.5 already refused the short form for it.
 typedef struct {
     LhatProto *proto;
     char *module_name;  // owned

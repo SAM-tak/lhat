@@ -78,7 +78,7 @@ static void search_child(void *context, const char *field, bool in_list,
     search(child, (DefinitionSearch *)context);
 }
 
-// 07 の L1: module^ says what the unit is, so a comment written against it is
+// 07 の module^ says what the unit is, so a comment written against it is
 // the unit's own description. It declares rather than uses a name, so the
 // checker records no resolution for it and it is found by position instead.
 static const LhatNode *module_at(const LhatNode *root, uint32_t offset)
@@ -178,7 +178,7 @@ cJSON *lsp_hover_for_unit(const LhatUnit *unit, uint32_t offset)
         definition = state.best;
     } else {
         // Not a name that was used. The one declaration worth showing on its
-        // own is module^ (L1).
+        // own is module^.
         definition = module_at(unit->parsed.root, offset);
     }
     if (definition == NULL) {
@@ -200,7 +200,7 @@ cJSON *lsp_hover_for_unit(const LhatUnit *unit, uint32_t offset)
         return NULL;
     }
 
-    // 07 の L6: the type the checker settled on, under the line as written.
+    // 07 の the type the checker settled on, under the line as written.
     // The two say different things -- one is what the writer put down, the
     // other what was inferred from it -- and a definition with no annotation
     // has only the second.

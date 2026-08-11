@@ -390,7 +390,7 @@ static bool conforms_func(const LhatType *value, const LhatType *target,
     if (value->v.func.takes_self != target->v.func.takes_self) {
         return false;
     }
-    // 11.3改 (S39): and which operand the receiver is decides which way round
+    // 11.3改: and which operand the receiver is decides which way round
     // the operator may be written, so the two are not each other.
     if (value->v.func.self_last != target->v.func.self_last) {
         return false;
@@ -586,8 +586,8 @@ static bool conforms_in(const LhatType *value, const LhatType *target,
                     return false;
                 }
             }
-            // 13.7, 14.10改: an unbounded tail, checked by walking the
-            // positions after the named ones the way 14.10改 counts them --
+            // 13.7, 14.10: an unbounded tail, checked by walking the
+            // positions after the named ones the way 14.10 counts them --
             // from 1, since a variadic type here is not written mixed with
             // fixed positions in practice. Stops at the first position
             // value does not have; 13.7 asks for zero or more, not a count.
@@ -1076,7 +1076,7 @@ static void write_type(TypeSink *sink, const LhatType *type, int depth)
             put_text(sink, "t^{ ");
             write_members(sink, type->v.table.members, depth);
             if (type->v.table.variadic != NULL) {
-                // 14.10改: the sequence half, unbounded.
+                // 14.10: the sequence half, unbounded.
                 if (type->v.table.members != NULL) {
                     put_text(sink, ", ");
                 }

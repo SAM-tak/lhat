@@ -276,7 +276,7 @@ static void test_arithmetic(void)
     LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_OK);
     run_dispose(&r);
 
-    // 04 の 11.2改: like an overflow (14.8改), a zero divisor widens to
+    // 04 の 11.2: like an overflow (14.8改), a zero divisor widens to
     // real arithmetic instead of failing -- '//' and '%' answer inf/nan
     // the same way '/' already does.
     LHAT_TEST("'//' by zero widens to real and answers inf");
@@ -322,7 +322,7 @@ static void test_names(void)
     run_dispose(&r);
 
     // 8.6's whole point: the inner statement reaches the outer name.
-    // 7.4改: 'target op= value' means 'target := target op value'.
+    // 7.4: 'target op= value' means 'target := target op value'.
     LHAT_TEST("every compound assignment operator");
     run_text(&r, "var^ x = 10\nx += 5\nreturn^ x\n");
     CHECK_INTEGER(&r, 15);
@@ -356,7 +356,7 @@ static void test_names(void)
     CHECK_BOOL(&r, true);
     run_dispose(&r);
 
-    // 7.4改's whole reason to exist: the target is read once, not twice.
+    // 7.4's whole reason to exist: the target is read once, not twice.
     // A path target proves it, since only there does re-evaluating the
     // target run something with a side effect.
     LHAT_TEST("a path target is evaluated once, not twice");
@@ -886,7 +886,7 @@ static void test_strings(void)
     CHECK_STRING(&r, "v!?");
     run_dispose(&r);
 
-    // 11.4改: the arithmetic operators ask the same question '..' does.
+    // 11.4: the arithmetic operators ask the same question '..' does.
     LHAT_TEST("a definition answers arithmetic with its own op^");
     run_text(&r,
              "var^ Vec = def^{\n"
@@ -942,7 +942,7 @@ static void test_strings(void)
     CHECK_INTEGER(&r, 0);
     run_dispose(&r);
 
-    // 11.9 (S40): the four orderings are read off the one comparison a type
+    // 11.9: the four orderings are read off the one comparison a type
     // writes, by asking which side of zero its answer falls on.
     LHAT_TEST("an ordering is read off op^<=>");
     run_text(&r,
@@ -994,7 +994,7 @@ static void test_strings(void)
     CHECK_INTEGER(&r, -1);
     run_dispose(&r);
 
-    // 11.3改 (S39): with the built-in on the left there is no other way in --
+    // 11.3改: with the built-in on the left there is no other way in --
     // number^ carries the arithmetic and takes nothing but its own kind, and
     // no program adds to what it carries. A self^ written last is the answer.
     LHAT_TEST("a self^ written last answers from the right");
@@ -1188,8 +1188,7 @@ static void test_tables(void)
     CHECK_BOOL(&r, true);
     run_dispose(&r);
 
-    // A table is a reference, so the two names reach one table (Memo.md の
-    // 「シンボルはすべて参照」).
+    // A table is a reference, so the two names reach one table (「シンボルはすべて参照」).
     LHAT_TEST("a table is shared rather than copied");
     run_text(&r, "var^ a = { x := 1 }\nvar^ b = a\nb.x := 5\nreturn^ a.x\n");
     CHECK_INTEGER(&r, 5);
@@ -1270,7 +1269,7 @@ static void test_repeat(void)
     CHECK_INTEGER(&r, 4);
     run_dispose(&r);
 
-    // 14.6改: '[ ... ] :=' builds an entry under a key that is not a name.
+    // 14.14改: '[ ... ] :=' builds an entry under a key that is not a name.
     LHAT_TEST("a computed key lands where it says");
     run_text(&r, "var^ t = { [0] := 7 }\nreturn^ t[0]\n");
     CHECK_INTEGER(&r, 7);
@@ -1370,7 +1369,7 @@ static void test_repeat(void)
     CHECK_INTEGER(&r, 1);
     run_dispose(&r);
 
-    // 9.8: Memo.md L500's bracketed form says the same number, so the two
+    // 02 の 9.8: the bracketed form says the same number, so the two
     // spellings are one thing and neither is the primary one.
     LHAT_TEST("and break^[2] says the same");
     run_text(&r,
@@ -1732,7 +1731,7 @@ static void test_for(void)
     CHECK_INTEGER(&r, 1);  // nil^, and done
     run_dispose(&r);
 
-    // 15.2改 applies to a walk unchanged: nothing about having no body makes
+    // 15.2 applies to a walk unchanged: nothing about having no body makes
     // the first resume mean something on its own.
     LHAT_TEST("resuming a walk that has not started is a fault");
     run_text(&r,
@@ -1812,7 +1811,7 @@ static void test_for(void)
     LHAT_CHECK_EQ_INT(r.compiled, LHAT_COMPILE_UNDEFINED);
     run_dispose(&r);
 
-    // 5.2改: '{' opens the statement form and ':' the expression one, here as
+    // 5.2: '{' opens the statement form and ':' the expression one, here as
     // anywhere -- 16.1 has for^ take the form its clause does.
     LHAT_TEST("and it answers a value when written with ':'");
     run_text(&r,
@@ -2226,7 +2225,7 @@ static void test_errors(void)
     run_dispose(&r);
 }
 
-// 01 の 2.3改 (S35): the stacked reach. it^^ is the enclosing loop's focus,
+// 01 の 2.3: the stacked reach. it^^ is the enclosing loop's focus,
 // self^^/class^^ the enclosing def^'s, resolved past the inner binding of
 // the same name; this^^ is the enclosing subroutine, captured as its maker's
 // own closure since no register ever holds one.
@@ -2282,7 +2281,7 @@ static void test_stacked_hats_compile(void)
     CHECK_BOOL(&r, true);
     run_dispose(&r);
 
-    // 15.10改: what the reach is for -- a body with no name of its own
+    // 15.10: what the reach is for -- a body with no name of its own
     // calling the enclosing one, which is recursion written without naming
     // anybody. Lexical, not dynamic: the capture is made where the inner
     // body is written, by whichever instance of the outer one makes it.
@@ -2492,7 +2491,7 @@ static void test_catch_and_try(void)
     CHECK_BOOL(&r, false);
     run_dispose(&r);
 
-    // 04 の 11.4改 with 01 の 7.1 (S43): the '?' access forms answer nil^ for
+    // 04 の 11.4 with 01 の 7.1: the '?' access forms answer nil^ for
     // an absent target rather than reaching into one. Before this they were
     // parsed and then compiled as ordinary accesses, so they faulted on the
     // very value they exist to handle.
@@ -2546,7 +2545,7 @@ static void test_catch_and_try(void)
     CHECK_INTEGER(&r, 0);
     run_dispose(&r);
 
-    // 11.7改2 (S42): the postfix form asks about absence instead of reaching
+    // 11.7改2: the postfix form asks about absence instead of reaching
     // through it, so it answers bool^ and the '?' family is complete.
     LHAT_TEST("'?' answers false for an absent value");
     run_text(&r, "var^ t : number^|nil^ = nil^\nreturn^ t?\n");
@@ -3691,11 +3690,11 @@ static void test_isa(void)
     CHECK_BOOL(&r, true);
     run_dispose(&r);
 
-    // 5.13改: the right side is a type the compiler settles, always. A value
+    // 5.13: the right side is a type the compiler settles, always. A value
     // that only arrives while the program runs -- a definition passed as a
     // parameter -- carries no type to ask about: it is a plain table there,
     // and a program that receives one probes it member by member instead.
-    // The fallback that read a shape off the table at run time is withdrawn.
+    // No fallback reads a shape off the table at run time.
     LHAT_TEST("a definition reached as a value is not a type");
     run_text(&r,
              "var^ Point = def^{ self^{ x := 0 }, m := f^ { return^ 1 } }\n"
@@ -3716,7 +3715,7 @@ static void test_isa(void)
     LHAT_CHECK_EQ_INT(r.compiled, LHAT_COMPILE_UNDEFINED);
     run_dispose(&r);
 
-    // 11.6, S27 with 5.13改: the same rule holds for as^ -- it promised to
+    // 11.6 with 5.13: the same rule holds for as^ -- it promised to
     // panic on a mismatch, so a cast the compiler cannot lower is refused
     // rather than silently checking nothing.
     LHAT_TEST("as^ against a value-only definition is refused too");
@@ -3726,10 +3725,10 @@ static void test_isa(void)
     LHAT_CHECK_EQ_INT(r.compiled, LHAT_COMPILE_UNDEFINED);
     run_dispose(&r);
 
-    // 11.6, S27: as^ lowers the written type the same way isa^ does, so a
+    // 11.6: as^ lowers the written type the same way isa^ does, so a
     // union reaching every one of its arms is one question for both. What
-    // this pins is the lowering: a union used to keep only its first arm,
-    // which made the second one panic where it should hold.
+    // this pins is the lowering: a union that kept only its first arm would
+    // make the second one panic where it should hold.
     LHAT_TEST("as^ against a union holds for an arm past the first");
     run_text(&r,
              "var^ x = nil^\n"
@@ -3793,7 +3792,7 @@ static void test_typeof(void)
     CHECK_STRING(&r, "nil^");
     run_dispose(&r);
 
-    // 14.16改 (S36): typeof^ answers the checker's type for the instance --
+    // 14.16: typeof^ answers the checker's type for the instance --
     // fields and methods folded as the checker sees them, with 14.11's new
     // belonging to the definition rather than to what it makes.
     LHAT_TEST("an instance's signature carries fields and methods");
@@ -3864,7 +3863,7 @@ static void test_typeof(void)
     CHECK_STRING(&r, "IOError.NotFound");
     run_dispose(&r);
 
-    // 14.10改: the sequence half is written as bare types, in order, with no
+    // 14.10: the sequence half is written as bare types, in order, with no
     // names -- not as members keyed by their position.
     LHAT_TEST("a table literal's positional part has no names");
     run_checked_text(&r, "return^ typeof^({1, \"x\"}).signature\n");
@@ -3923,7 +3922,7 @@ static void test_typeof(void)
     CHECK_STRING(&r, "t^{ foo : p^; & p^string^; }");
     run_dispose(&r);
 
-    // 14.16改: a cycle among VALUES is invisible to a static answer -- the
+    // 14.16: a cycle among VALUES is invisible to a static answer -- the
     // annotation said t^{}, and that is the type, however the tables ended
     // up holding each other. The walk that once had to survive this is gone.
     LHAT_TEST("a cycle between two tables is no concern of the type");
@@ -4125,7 +4124,7 @@ static void test_tostring(void)
     CHECK_STRING(&r, "{ new = f^ }");
     run_dispose(&r);
 
-    // 01 の 2.3改: the hat is part of the name, which is the whole of what
+    // 01 の 2.3: the hat is part of the name, which is the whole of what
     // makes the two spellings two names.
     LHAT_TEST("a written tostring^ is what the hat spelling then finds");
     run_text(&r,
@@ -4247,7 +4246,7 @@ static void test_tonumber(void)
     LHAT_CHECK(lhat_is_nil(r.ran.value), "nil^");
     run_dispose(&r);
 
-    // 10.3 (Q7) refuses this in a unit, and the same refusal arrives here.
+    // 10.3 refuses this in a unit, and the same refusal arrives here.
     run_text(&r, "return^ \"12abc\".tonumber()\n");
     LHAT_CHECK(lhat_is_nil(r.ran.value), "nil^");
     run_dispose(&r);
@@ -4415,7 +4414,7 @@ static void test_scope_specifiers(void)
     CHECK_INTEGER(&r, 12);
     run_dispose(&r);
 
-    // Memo.md L676-695 is this table: the same three scopes named from
+    // 01 の 8: this is that table -- the same three scopes named from
     // either end, and the two numberings meeting in the middle.
     LHAT_TEST("'$' reads the unit's own top level");
     run_text(&r,
@@ -4543,7 +4542,7 @@ static void test_scope_specifiers(void)
 
     // 14.4 binds class^ into the scope a def^'s '{' opens, so a specifier
     // written in a method counts that scope -- the same one the checker
-    // pushes there. 01 の 2.3改: class^ is its own name now, so the outer
+    // pushes there. 01 の 2.3: class^ is its own name now, so the outer
     // `class` never collides with it and the specifier spells the hat.
     LHAT_TEST("a def^ body is one scope on this side too");
     run_text(&r,
@@ -4552,7 +4551,7 @@ static void test_scope_specifiers(void)
              "  m := f^self^ -> string^ { return^ typeof^($^class^).signature }\n"
              "}\n"
              "return^ D.new().m()\n");
-    // 14.16改: compiled without checking, typeof^ answers the tag -- so the
+    // 14.16: compiled without checking, typeof^ answers the tag -- so the
     // definition reads "table^" where the outer `class` would read "number^",
     // which is still the whole of what the specifier has to prove here.
     LHAT_CHECK_EQ_INT(r.compiled, LHAT_COMPILE_OK);
@@ -4663,8 +4662,7 @@ static void test_interpolation(void)
     run_dispose(&r);
 }
 
-// 02 の 13.7: the variadic collector, made to actually compile and run.
-// compile_subroutine used to refuse any variadic parameter outright.
+// 02 の 13.7: the variadic collector, compiled and run.
 static void test_variadic(void)
 {
     Run r;
@@ -4893,7 +4891,7 @@ static void test_coroutines(void)
     LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_DEAD_COROUTINE);
     run_dispose(&r);
 
-    // 8.8 の S23: the checker walks a body whether or not it runs, so a var^
+    // 8.8 の the checker walks a body whether or not it runs, so a var^
     // on a path that is never taken puts a member in the type that the table
     // does not have. Written down as a test because the hole is known and
     // left open -- 03 の 5.1's checks are what catches it, at the use.
@@ -4934,7 +4932,7 @@ static void test_coroutines(void)
     CHECK_INTEGER(&r, 7);
     run_dispose(&r);
 
-    // 05 の 8.6改 (M5): check.c refuses what is written against L^ by name,
+    // 05 の 8.6: check.c refuses what is written against L^ by name,
     // but a table reaches a p^ through a t^{ … } parameter, which carries no
     // mark of this -- the writer has no spelling for one. So the machine asks
     // again where the write happens. Compiled without the checker here, which
@@ -5619,10 +5617,9 @@ static void test_coroutines(void)
     LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_YIELD_OUTSIDE);
     run_dispose(&r);
 
-    // 15.2改: start and resume now split what the first resume used to do
-    // silently -- the machine holds that split itself (vm.h's opening
-    // comment), so each has to be called on the state that makes it mean
-    // something.
+    // 15.2: start and resume split the two jobs -- the machine holds that
+    // split itself (vm.h's opening comment), so each has to be called on the
+    // state that makes it mean something.
     LHAT_TEST("resuming one that has never started is a fault");
     run_text(&r,
              "var^ gen = p^ { yield^ 1 }\n"
@@ -6541,8 +6538,8 @@ static void test_multi_value_return(void)
     run_dispose(&r);
 
     // What 13.8 promised when it said the cost would be absorbed by the
-    // implementation. The loop's only heap traffic would be the table a
-    // returned pair used to be, so the count is the proof.
+    // implementation. The loop's only heap traffic would be a table for the
+    // returned pair, so the count is the proof.
     LHAT_TEST("and nothing is allocated to carry them");
     run_checked_text(&r,
                      "var^ divmod = f^ a:number^, b:number^ "
@@ -6584,7 +6581,7 @@ static void test_multi_value_return(void)
     CHECK_INTEGER(&r, 34);
     run_dispose(&r);
 
-    // 8.6: .:=. reaches existing names, and 8.6改3.s read-then-write holds
+    // 8.6: ':=' reaches existing names, and 8.6改3's read-then-write holds
     // here: there is one read.
     LHAT_TEST("existing names take them too");
     run_checked_text(&r,
@@ -6671,9 +6668,8 @@ static void test_multi_value_return(void)
 }
 
 // 02 の 16.3 with 13.8改: a walk's pair is the tuple (K, V), and a single
-// name takes the sequence half's values -- neither shape allocates. The
-// table the walk used to make every step was the last per-step allocation
-// the loops had.
+// name takes the sequence half's values -- neither shape allocates, which is
+// what keeps a walk free of per-step heap traffic.
 static void test_walk_shapes(void)
 {
     Run r;
@@ -6707,9 +6703,8 @@ static void test_walk_shapes(void)
     CHECK_INTEGER(&r, 6);
     run_dispose(&r);
 
-    // What the whole change is for. A step's only heap traffic would be the
-    // pair table it used to make -- 2000 steps of one walk now touch the
-    // heap not at all, so the collector's count is the proof. (The walk
+    // A step's only heap traffic would be a pair table -- 2000 steps of one
+    // walk touch the heap not at all, so the collector's count is the proof. (The walk
     // coroutine itself is still made once per loop, which is why the loop
     // here is one loop of many steps.)
     LHAT_TEST("two names walk a table without allocating per step");

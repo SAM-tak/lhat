@@ -69,7 +69,7 @@ typedef struct Compiler {
     struct {
         const char *name;
         size_t length;
-        // 01 の 2.3改 (S35): how many inner bindings of the name this capture
+        // 01 の 2.3: how many inner bindings of the name this capture
         // was resolved past -- it^^ and it^ are two different targets under
         // one spelling, so the cache tells them apart by the count. SIZE_MAX
         // marks a capture_at entry, which no name search may ever answer
@@ -169,7 +169,7 @@ static void fail(Compiler *c, LhatCompileStatus status)
     }
 }
 
-// 01 の 2.3改 (S34): the hat is part of the name. A hat identifier's name is
+// 01 の 2.3: the hat is part of the name. A hat identifier's name is
 // the word plus one hat -- 'self^' is a different name from 'self' -- and a
 // spelling with more hats than one is that same name reached further out:
 // this^^^ is the this^ two levels up, its name still 'this^' with the
@@ -357,7 +357,7 @@ static const Local *find_local(const Compiler *c, const char *name,
 // parent holds it, or one of the parent's own upvalues when it does not.
 // Returns SIZE_MAX when there is no such name anywhere.
 // The same backwards search find_local does, passing over the innermost
-// `*skip` bindings of the name -- 01 の 2.3改's stacked reach, where it^^
+// `*skip` bindings of the name -- 01 の 2.3's stacked reach, where it^^
 // means the it^ one binding out. What was not consumed stays in `*skip`, so
 // the search may continue into an enclosing body.
 static const Local *find_local_skipping(const Compiler *c, const char *name,
@@ -432,7 +432,7 @@ static size_t find_upvalue(Compiler *c, const char *name, size_t length)
     return find_upvalue_skipping(c, name, length, 0);
 }
 
-// 15.10改 (S35): this^^ is the subroutine enclosing the one running --
+// 15.10: this^^ is the subroutine enclosing the one running --
 // `levels` bodies out. No register ever holds an enclosing body's closure
 // (BC_THIS reads the running frame), so the capture is the third upvalue
 // source: at CLOSURE time the maker boxes its own closure, and the chain
@@ -1284,13 +1284,13 @@ static void compile_nil_else(Compiler *c, const LhatNode *node, uint8_t into)
 // host type (05 の 8.8) are both ordinary results of that lowering, which is
 // why neither needs a case here any more.
 //
-// 5.13改: the right side is a type the COMPILER settles, always. A value that
+// 5.13: the right side is a type the COMPILER settles, always. A value that
 // only arrives while the program runs -- a definition passed as a parameter,
 // another unit's member -- carries no type to ask about: it is a plain table
 // (13.7's t^{}), however it was made, and a program that receives one probes
-// it the dynamic way, member by member, nil^ by nil^. There used to be a
-// fallback here that loaded such a name as a value and had the machine read a
-// shape off the table at run time; it was withdrawn -- constructing type
+// it the dynamic way, member by member, nil^ by nil^. There is no fallback
+// that loads such a name as a value and has the machine read a shape off the
+// table at run time: constructing type
 // information out of runtime data is the wrong direction (the table may be
 // pure data, arbitrarily large), and the checker never accepted the form
 // anyway.
@@ -1353,7 +1353,7 @@ static bool add_shape_member(Compiler *c, LhatRuntimeType *into,
 {
     const char *name = NULL;
     size_t length = 0;
-    // 14.6改: a computed key names no member, so it asks for nothing.
+    // 14.14改: a computed key names no member, so it asks for nothing.
     if (entry->v.entry.computed || entry->v.entry.key == NULL ||
         !node_name(c, entry->v.entry.key, &name, &length)) {
         return true;
@@ -1524,7 +1524,7 @@ static LhatRuntimeType *lower_type(Compiler *c, const LhatNode *node)
 
             // 05 の 8.8: a host-registered type, which resolve_kind never
             // answers -- it only reaches an errordef^-shaped kind. Tried
-            // after it for the same reason compile_isa used to try it last:
+            // after it for the same reason compile_isa tries it last:
             // a local declaration is what a name means first.
             const LhatHostDataTag *tag = resolve_host_type_tag(c, node);
             if (tag != NULL) {
@@ -1622,7 +1622,7 @@ static LhatRuntimeType *lower_type(Compiler *c, const LhatNode *node)
             return lhat_type_rt_new(owner, LHAT_TYPE_RT_SUBROUTINE);
         // 13.9 with 15.3改: a written 'c^{ f^R -> Y;, T }' names its three
         // slots and the kind of the body -- read each rather than leaving the
-        // bare tag S28 used to stop at.
+        // bare tag alone.
         case LHAT_NODE_TYPE_CORO: {
             LhatRuntimeType *type =
                 lhat_type_rt_new(owner, LHAT_TYPE_RT_COROUTINE);
@@ -1709,7 +1709,7 @@ static LhatRuntimeType *rt_from_checked(LhatHeap *heap,
             if (rt == NULL) {
                 return NULL;
             }
-            // 14.10改: the sequence half first, in position order, the way a
+            // 14.10: the sequence half first, in position order, the way a
             // written t^{ ... } puts it.
             size_t sequence = 0;
             for (;;) {
@@ -1836,7 +1836,7 @@ static LhatRuntimeType *rt_from_checked(LhatHeap *heap,
     return NULL;
 }
 
-// 14.16改 (S36): typeof^ answers the checker's settled type wherever one
+// 14.16: typeof^ answers the checker's settled type wherever one
 // exists -- with one carve-out. An error's identity is the declaration (04
 // の 2.4), and the checker's type carries only its NAME; the runtime
 // LhatErrorKind object it would take to build the descriptor is not
@@ -2513,7 +2513,7 @@ static void compile_table(Compiler *c, const LhatNode *node, uint8_t into)
         uint8_t value = reserve(c);
 
         if (entry->v.entry.computed) {
-            // 14.6改: the key is an expression, evaluated here like any
+            // 14.14改: the key is an expression, evaluated here like any
             // other. 04 の 11.3 keeps nil^ and a NaN out of a key, which the
             // machine reports when it lands.
             compile_expression(c, entry->v.entry.key, key);
@@ -2594,7 +2594,7 @@ static void compile_call_wide(Compiler *c, const LhatNode *node, uint8_t into,
     }
     method = method || super_call;
 
-    // 04 の 11.4改 with 01 の 7.1 (S43): '?(' answers nil^ for an absent
+    // 04 の 11.4 with 01 の 7.1: '?(' answers nil^ for an absent
     // callee instead of calling one. Placed here, after the callee is in
     // place and before any argument is compiled, so an absent callee
     // evaluates no argument -- the same short circuit '?.' makes over its
@@ -2646,7 +2646,7 @@ static void compile_call_wide(Compiler *c, const LhatNode *node, uint8_t into,
     }
 
     // 03 の 5.11c: strict settled which candidate of an overloaded member this
-    // call means, so the search 5.11改 would run is replaced by taking that
+    // call means, so the search 5.11 would run is replaced by taking that
     // one. Emitted here rather than beside the callee so the one place that
     // knows the call is complete is the one place that decides -- the
     // arguments are above the callee and PICKARM touches nothing but it.
@@ -2671,7 +2671,7 @@ static void compile_call_wide(Compiler *c, const LhatNode *node, uint8_t into,
                             lhat_call_operand(spread, (unsigned)reserved)));
     // The answer then moves to the destination the same way it was written.
     emit_move_wide(c, into, callee, answer_width);
-    // S43: where an absent callee's nil^ lands, past everything the call
+    // where an absent callee's nil^ lands, past everything the call
     // itself does.
     if (past_call != SIZE_MAX) {
         lhat_chunk_patch_here(&c->proto->chunk, past_call);
@@ -2737,7 +2737,7 @@ static void compile_subroutine(Compiler *c, const LhatNode *node, uint8_t into)
         // 14.4: a first parameter written self^ is what marks a method. No
         // modifier says so; the shape of the signature does.
         //
-        // 11.3改 (S39): written last it marks one too, and says the receiver
+        // 11.3改: written last it marks one too, and says the receiver
         // is the RIGHT operand -- check.c refuses that on anything but an
         // op^, so reading it here is reading a shape already judged.
         if (name_is(name, length, "self^")) {
@@ -2818,7 +2818,7 @@ static void compile_subroutine(Compiler *c, const LhatNode *node, uint8_t into)
                                              checked->v.func.result, NULL);
     }
 
-    // 15.2, 13.9 (S28): Y and R have no written form at all -- 03 の 5.11a's
+    // 15.2, 13.9: Y and R have no written form at all -- 03 の 5.11a's
     // checked_type is the only place either can come from, written or not.
     if (node->v.func.yields && node->checked_type != NULL) {
         const LhatType *checked = (const LhatType *)node->checked_type;
@@ -3062,9 +3062,9 @@ static void compile_expression(Compiler *c, const LhatNode *node, uint8_t into)
             compile_try(c, node, into);
             return;
 
-        // 02 の 14.16改 (S36): typeof^ answers the type the checker settled,
+        // 02 の 14.16: typeof^ answers the type the checker settled,
         // compiled in as a constant -- type information is a compile-time
-        // thing, and the run manufactures none (3.5改 and 5.13改 are the
+        // thing, and the run manufactures none (3.5 and 5.13 are the
         // same posture). The operand still runs, for whatever it does along
         // the way.
         //
@@ -3102,7 +3102,7 @@ static void compile_expression(Compiler *c, const LhatNode *node, uint8_t into)
             return;
         }
 
-        // 11.6, S27: the operand lands in `into` and stays there -- as^
+        // 11.6: the operand lands in `into` and stays there -- as^
         // narrows the type the checker tracks, not the value, so there is
         // nothing to write back once the check passes. lower_type reads
         // the written type the same way an overload^ed parameter's does
@@ -3115,7 +3115,7 @@ static void compile_expression(Compiler *c, const LhatNode *node, uint8_t into)
             if (wanted == NULL) {
                 // 13.7: any^ asks nothing, so there is nothing for
                 // LHAT_BC_ASCAST to check. Anything else lower_type could
-                // not settle is refused (5.13改) -- S27 promised as^ panics
+                // not settle is refused (5.13) -- 02 の 11.6改 promises as^ panics
                 // on a mismatch, and a cast that silently checked nothing
                 // would be that promise quietly broken.
                 const char *name = NULL;
@@ -3268,7 +3268,7 @@ static void compile_expression(Compiler *c, const LhatNode *node, uint8_t into)
             uint8_t target = reserve_for(c, node->v.access.target);
             compile_expression(c, node->v.access.target, target);
 
-            // 04 の 11.4改 with 01 の 7.1 (S43): '?.' and '?[' answer nil^
+            // 04 の 11.4 with 01 の 7.1: '?.' and '?[' answer nil^
             // for a nil^ target instead of reaching into one. The key is
             // compiled inside the branch, so an absent target does not
             // evaluate it -- what a reader expects of a form written to skip
@@ -3304,7 +3304,7 @@ static void compile_expression(Compiler *c, const LhatNode *node, uint8_t into)
                 fail(c, LHAT_COMPILE_UNSUPPORTED);
                 return;
             }
-            // 01 の 2.3改 (S35): a stacked reach -- it^^ the enclosing focus,
+            // 01 の 2.3: a stacked reach -- it^^ the enclosing focus,
             // self^^/class^^ the enclosing def^'s, this^^ the enclosing
             // subroutine. The parser only lets those four through. The first
             // three are ordinary bindings resolved past their inner shadows;
@@ -3425,7 +3425,7 @@ static void compile_expression(Compiler *c, const LhatNode *node, uint8_t into)
             // 05 の 8.9: a host value operand keeps its width, as everywhere.
             uint8_t operand = reserve_for(c, node->v.unary.operand);
             compile_expression(c, node->v.unary.operand, operand);
-            // 11.7改2 (S42): 'x?' is '!(x isa^ nil^)' written short, and the
+            // 11.7改2: 'x?' is '!(x isa^ nil^)' written short, and the
             // two instructions it needs already exist. NOT reads its operand
             // before it writes, so into == into is safe.
             if (node->v.unary.op == LHAT_OP_PRESENT) {
@@ -3565,10 +3565,9 @@ static void ensure_table(Compiler *c, uint8_t slot)
 // The same for a segment reached through a table, writing the new one back
 // into owner[key] -- but only when one was actually made.
 //
-// 05 の 8.6改 (M5): writing back what was already there used to cost one
-// instruction and save a branch. It is a write like any other, so the
-// machine's own tables refuse it, and a path through L^ would fail on its own
-// second segment. The branch is the cheaper of the two now.
+// 05 の 8.6: writing back what was already there is a write like any other,
+// so the machine's own tables refuse it, and a path through L^ would fail on
+// its own second segment. The branch this costs is cheaper than skipping it.
 static void ensure_table_at(Compiler *c, uint8_t slot, uint8_t owner,
                             uint8_t key)
 {
@@ -3634,7 +3633,7 @@ static void compile_path_prefix(Compiler *c, const LhatNode *node, uint8_t into)
 static void declare_names(Compiler *c, const LhatNode *statements)
 {
     for (const LhatNode *s = statements; s != NULL; s = s->next) {
-        // 05 の 5.4改: the short form makes one name too -- the root of the
+        // 05 の 5.5: the short form makes one name too -- the root of the
         // path the unit declared. The rest of the path is members of it.
         if (s->kind == LHAT_NODE_REQUIRE_STMT ||
             s->kind == LHAT_NODE_IMPORT_STMT) {
@@ -3923,7 +3922,7 @@ static void compile_define(Compiler *c, const LhatNode *node)
 
 // One target of a multiple assignment, carried from the pass that reads to the
 // pass that writes. A member target holds the two registers its place was
-// evaluated into, so that 7.4改's "the target is evaluated once" survives the
+// evaluated into, so that 7.4's "the target is evaluated once" survives the
 // split -- the write reaches the same owner and key the read did.
 typedef struct {
     const LhatNode *target;
@@ -3997,7 +3996,7 @@ static void compile_reassign_parallel(Compiler *c, const LhatNode *node)
             compile_expression(c, target->v.access.target, w->owner);
             compile_key(c, target, w->key);
 
-            // 7.4改, as in the single-target path: the current value comes
+            // 7.4, as in the single-target path: the current value comes
             // back through the owner and key already evaluated rather than
             // from compiling the target again. Never a destructuring: 13.10's
             // mark stands where a value would, so there is no operator on it.
@@ -4159,7 +4158,7 @@ static void compile_reassign(Compiler *c, const LhatNode *node)
             }
             compile_key(c, target, key);
 
-            // 7.4改: owner and key were just evaluated once, above. A
+            // 7.4: owner and key were just evaluated once, above. A
             // compound assignment reads the current value back out through
             // them rather than compiling the target a second time, which
             // would run owner/key again and defeat the point of writing
@@ -4810,7 +4809,7 @@ static void compile_loop(Compiler *c, const LhatNode *node)
         emit(c, lhat_encode_abc(LHAT_BC_LOADNIL, taken, 0, 0));
         // 16.3 with 13.8改: C carries the loop's word on what one step should
         // put down -- N+1 for N names (a run), 2 for one name (a table's
-        // sequence values; a body's yield unchanged). 03 の 5.3改's shape:
+        // sequence values; a body's yield unchanged). 03 の 5.3's shape:
         // the two sides tell each other, and a mismatch faults rather than
         // being papered over.
         emit(c, lhat_encode_abc(LHAT_BC_RESUME, taken, walk,
@@ -5003,7 +5002,7 @@ static void compile_statement(Compiler *c, const LhatNode *node)
             return;
         }
 
-        // 04 の 11.6改: unlike return^, this does not answer anything a
+        // 04 の 11.6: unlike return^, this does not answer anything a
         // finally^ could be seen as replacing, so 02 の 10.5's restriction
         // does not apply here.
         case LHAT_NODE_PANIC: {
@@ -5075,7 +5074,7 @@ static void compile_statement(Compiler *c, const LhatNode *node)
             return;
         }
 
-        // 05 の 5.4改: bring the unit in, then put it where the path it
+        // 05 の 5.5: bring the unit in, then put it where the path it
         // declared says. 8.8 makes the tables on the way, here as there.
         case LHAT_NODE_REQUIRE_STMT: {
             const char *module_name = required_module_name(c, node);
@@ -5301,7 +5300,7 @@ static void compile_import_path(Compiler *c, const LhatNode *path, uint8_t into,
     emit(c, lhat_encode_abc(LHAT_BC_GETINDEX, into, into, key));
 }
 
-// 05 の 5.4改: the path a require^ standing alone brings a unit in under, or
+// 05 の 5.5: the path a require^ standing alone brings a unit in under, or
 // NULL when there is no such unit or it declared none.
 static const char *required_module_name(Compiler *c, const LhatNode *node)
 {
@@ -5457,7 +5456,7 @@ static void compile_module_register(Compiler *c, const LhatNode *statements,
     uint8_t key = reserve(c);
 
     compile_exports(c, statements, exports);
-    // 05 の 8.6改 (M5): everything it holds is in, so nothing else writes to
+    // 05 の 8.6: everything it holds is in, so nothing else writes to
     // it. Before the registry gets it, since what goes into the registry is
     // the same object every requirer is handed.
     emit(c, lhat_encode_abc(LHAT_BC_SEAL, exports, 0, 0));
@@ -5817,7 +5816,7 @@ static bool arithmetic(LhatOpcode op, LhatValue left, LhatValue right,
             return true;
         case LHAT_BC_IDIV:
         case LHAT_BC_MOD: {
-            // 04 の 11.2改: a zero divisor no longer fails -- like an
+            // 04 の 11.2: a zero divisor does not fail -- like an
             // overflow (14.8改), it widens to real arithmetic instead,
             // which already answers inf/nan for this the same way '/'
             // does, so ordinary arithmetic stays out of a union either way.
@@ -5838,8 +5837,7 @@ static bool arithmetic(LhatOpcode op, LhatValue left, LhatValue right,
             }
             // floor() rather than a hand-rolled truncate-and-adjust: the
             // quotient can be inf or nan here (b == 0), and casting either
-            // to int64_t, which the hand-rolled form used to do, is
-            // undefined.
+            // to int64_t is undefined.
             double floored = floor(a / b);
             *out = op == LHAT_BC_IDIV ? lhat_real(floored)
                                       : lhat_real(a - floored * b);
@@ -5873,7 +5871,7 @@ static bool arithmetic(LhatOpcode op, LhatValue left, LhatValue right,
     }
 }
 
-// 02 の 11.9 (S40): which of the two comes first, for the types that order
+// 02 の 11.9: which of the two comes first, for the types that order
 // their own. Negative, zero or positive -- the shape every '<=>' answers in,
 // and what the four orderings read against zero. False when neither number^
 // nor string^ is what is being asked about, which sends the question to the
@@ -5910,7 +5908,7 @@ static bool three_way(LhatValue left, LhatValue right, int *out)
     return false;
 }
 
-// 11.9 (S40): every ordering is read off a three-way answer, whether the
+// 11.9: every ordering is read off a three-way answer, whether the
 // answer came from a type that orders its own or from a written op^<=>. False
 // when neither side is one of those, which is what sends the question on.
 static bool ordering(LhatOpcode op, LhatValue left, LhatValue right,
@@ -6163,7 +6161,7 @@ static const LhatTable *readable_table(LhatValue value)
     return table_of(value);
 }
 
-// 02 の 14.16改 (S36): what typeof^ answers where no checked type was
+// 02 の 14.16: what typeof^ answers where no checked type was
 // compiled in -- the value's TAG, the dispatch information every value
 // already carries, read in O(1). It never walks a structure: a table is
 // table^ whatever it holds (the deep answer is the checker's to give, at
@@ -6186,7 +6184,7 @@ static LhatRuntimeType *tag_type(LhatHeap *heap, LhatValue value)
         return lhat_type_rt_new(heap, LHAT_TYPE_RT_STRING);
     }
     if (lhat_is_object_kind(value, LHAT_OBJECT_COROUTINE)) {
-        // 13.9, S28: R and Y have no written form, so wherever they are
+        // 13.9: R and Y have no written form, so wherever they are
         // known at all it is through 03 の 5.11a's checked_type, already
         // converted onto the originating proto by compile_subroutine.
         // Reused directly (not copied) the same way the SUBROUTINE branch
@@ -6284,7 +6282,7 @@ static LhatRuntimeType *tag_type(LhatHeap *heap, LhatValue value)
         type->result = proto->result_type;
         return type;
     }
-    // 14.16改: a table answers 13.7's unstructured top of tables, whatever
+    // 14.16: a table answers 13.7's unstructured top of tables, whatever
     // it holds -- deep shape is the checker's answer, given at compile time,
     // and the run does not build one out of data.
     if (lhat_is_object_kind(value, LHAT_OBJECT_TABLE)) {
@@ -6451,7 +6449,7 @@ static bool fits_call(LhatValue candidate, const LhatValue *at, uint8_t given,
         return false;
     }
 
-    // 11.3改 (S39): the receiver occupies the last slot instead, so the
+    // 11.3改: the receiver occupies the last slot instead, so the
     // arguments are the ones before it and the walk stops one short.
     size_t stop = proto->parameters;
     if (method && proto->takes_self && proto->self_last) {
@@ -6478,7 +6476,7 @@ static const LhatProto *proto_of(LhatValue value)
     return ((const LhatClosure *)lhat_as_object(value))->proto;
 }
 
-// 11.3改 (S39): how one side answered the operator it was asked for.
+// 11.3改: how one side answered the operator it was asked for.
 typedef enum {
     OPERATOR_PICKED,       // a candidate was found and takes the other operand
     OPERATOR_ABSENT,       // this side carries no such member
@@ -6877,7 +6875,7 @@ static bool build_environment(Machine *m)
                     lhat_object((LhatObject *)collect_now))) {
         return false;
     }
-    // 05 の 8.6改 (M5): sealed once built, not before -- the two members above
+    // 05 の 8.6: sealed once built, not before -- the two members above
     // are the machine writing its own table, which is exactly what the mark
     // goes on to refuse from an instruction.
     //
@@ -6901,7 +6899,7 @@ LhatMachine *lhat_machine_new(void)
     if (m == NULL) {
         return NULL;
     }
-    // 2.2改: the one view every register read goes through, fixed for the
+    // 2.2: the one view every register read goes through, fixed for the
     // machine's whole life. Tag zero is nil^, so the zeroed runs above are
     // already a stack full of it.
     m->slots.values = m->stack_values;
@@ -7137,7 +7135,7 @@ bool lhat_machine_set_global(LhatMachine *machine, const char *name,
     if (m == NULL || m->environment == NULL || name == NULL) {
         return false;
     }
-    // 05 の 8.6改: set_key rather than an instruction, so the seal on L^ is
+    // 05 の 8.6: set_key rather than an instruction, so the seal on L^ is
     // not in the way -- what it refuses is what a program writes, and this is
     // the host writing what the program will read.
     return set_member(m, m->environment, name, value);
@@ -7168,7 +7166,7 @@ void lhat_machine_dispose(LhatMachine *machine)
 // callable pushed as one more frame). "the run is over" means the frame
 // count has drained back down to base_depth, not to zero -- 0 stays right
 // for lhat_run because nothing was on the machine before it pushed frame 0.
-// 2.2改: the frame's registers, read and written through the machine's two
+// 2.2: the frame's registers, read and written through the machine's two
 // parallel runs. `m` and `rbase` are run_frames' own locals; nothing outside
 // it may use these.
 #define R(i) lhat_slots_get(m->slots, rbase + (size_t)(i))
@@ -7249,7 +7247,7 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
         uint8_t b = lhat_b(instruction);
         uint8_t cc = lhat_c(instruction);
         LhatOpcode op = lhat_op(instruction);
-        // 02 の 11.9 (S40): the comparison that sent control to call_operator,
+        // 02 の 11.9: the comparison that sent control to call_operator,
         // when one did. `op` becomes SPACESHIP there -- that is the member to
         // look for -- and this is what the answer gets read against zero with.
         LhatOpcode derive_from = LHAT_FRAME_NO_DERIVE;
@@ -7285,7 +7283,7 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
                 // 02 の 11.3: numbers answer built in; anything else answers
                 // with the member 11.8 names, or not at all.
                 //
-                // 11.3改 (S39): the right operand is reason enough to go on.
+                // 11.3改: the right operand is reason enough to go on.
                 // '1 + v' is the case the rule exists for -- number^ carries
                 // the arithmetic and takes only its own kind, so the answer
                 // can only be on the other side.
@@ -7334,7 +7332,7 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
                 break;
             }
 
-            // 11.9 (S40): a type saying how it compares says what equality
+            // 11.9: a type saying how it compares says what equality
             // means as well, so a table is asked before 14.2's own answer is
             // taken. Nothing carrying a '<=>' falls back to that answer, which
             // is what leaves every other table exactly as it was.
@@ -7381,14 +7379,14 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
                     SET_R(a, lhat_bool(out));
                     break;
                 }
-                // 11.9 (S40): numbers order themselves; anything else says
+                // 11.9: numbers order themselves; anything else says
                 // how it orders with a '<=>', and this reads the answer.
                 derive_from = op;
                 op = LHAT_BC_SPACESHIP;
                 goto call_operator;
             }
 
-            // 11.9 (S40): written out. number^ and string^ each order their
+            // 11.9: written out. number^ and string^ each order their
             // own; anything else answers with the member 11.8 names.
             case LHAT_BC_SPACESHIP: {
                 int outcome = 0;
@@ -7430,7 +7428,7 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
                     }
                 }
                 // 5.4: a register of this frame, one of its own upvalues
-                // when the name came from further out, or -- 15.10改's
+                // when the name came from further out, or -- 15.10's
                 // this^^ -- this frame's own closure, boxed closed on the
                 // spot: nothing on the stack holds it, so there is nothing
                 // to keep open.
@@ -7521,7 +7519,7 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
 
                 // 02 の 11.3: a string answers above, built in. Anything else
                 // answers with the member 11.8 names, or not at all -- and
-                // 11.3改 (S39) reads the right operand for one too.
+                // 11.3改 reads the right operand for one too.
                 if (table_of(R(b)) == NULL && table_of(R(cc)) == NULL) {
                     return finish(m, chunk, LHAT_RUN_TYPE_ERROR, lhat_nil(), at);
                 }
@@ -7578,7 +7576,7 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
                 break;
             }
 
-            // 05 の 8.6改 (M5): what require^ answers is the machine's record
+            // 05 の 8.6: what require^ answers is the machine's record
             // of what a unit published. Sealed once it is built, so that a
             // requiring unit cannot add to it or write over it -- not even by
             // passing it to a p^ whose parameter is written t^{ … }, which is
@@ -7778,7 +7776,7 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
                 if (table == NULL) {
                     return finish(m, chunk, LHAT_RUN_TYPE_ERROR, lhat_nil(), at);
                 }
-                // 05 の 8.6改 (M5): the machine's own tables are written by
+                // 05 の 8.6: the machine's own tables are written by
                 // the host, not by an instruction. check.c refuses the ones it
                 // can name, but a t^{ … } parameter carries no mark of this,
                 // so the same question is asked once more where the write
@@ -7936,12 +7934,12 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
                                                   LHAT_OBJECT_ERROR)));
                 break;
 
-            // 02 の 13.11 with 03 の 5.13改: R[C] is always a type the
+            // 02 の 13.11 with 03 の 5.13: R[C] is always a type the
             // compiler lowered -- a written type, never a runtime value --
             // and lhat_value_satisfies answers, the same relation ASCAST and
             // fits_call already trust. (A fallback that read a shape off a
-            // definition table at run time was withdrawn: a value that only
-            // arrives while the program runs carries no type to ask about.)
+            // definition table at run time: a value that only arrives while
+            // the program runs carries no type to ask about.)
             case LHAT_BC_ISA: {
                 LhatValue wanted = R(cc);
                 if (!lhat_is_object_kind(wanted, LHAT_OBJECT_TYPE)) {
@@ -8028,7 +8026,7 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
                         op == LHAT_BC_CALLMETHOD && lhat_is_hostvalue(R(a + 1))
                             ? lhat_as_hostvalue_tag(R(a + 1))->width
                             : 1;
-                    // 2.2改: the stack holds no LhatValue run any more, so
+                    // 2.2: the stack holds no LhatValue run any more, so
                     // the arguments a host receives are gathered into one.
                     // 05 の 8.9: walked by slot rather than by value -- a
                     // host value argument is one argument, its head handed
@@ -8287,7 +8285,7 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
                         break;
                     }
 
-                    // 15.2改: the machine holds this itself rather than
+                    // 15.2: the machine holds this itself rather than
                     // trusting the checker to have (vm.h's opening comment).
                     // R is one fixed type now, so resume takes exactly one
                     // argument; start takes none, since nothing has been
@@ -8299,9 +8297,8 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
                         return finish(m, chunk, LHAT_RUN_ARITY, lhat_nil(), at);
                     }
 
-                    // 15.2改: start and resume now split what the first
-                    // resume used to do silently -- each has to be called on
-                    // the state that makes it meaningful.
+                    // 15.2: start and resume split the two jobs, so each has
+                    // to be called on the state that makes it meaningful.
                     if (native->kind == LHAT_NATIVE_START &&
                         co->state != LHAT_COROUTINE_FRESH) {
                         return finish(m, chunk, LHAT_RUN_COROUTINE_ALREADY_STARTED,
@@ -8419,8 +8416,8 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
                     const LhatOverload *group =
                         (const LhatOverload *)lhat_as_object(R(a));
                     size_t skip = op == LHAT_BC_CALLMETHOD ? 2 : 1;
-                    // 2.2改: fits_call reads the callee and arguments as one
-                    // LhatValue run, which the stack no longer is -- so the
+                    // 2.2: fits_call reads the callee and arguments as one
+                    // LhatValue run, which the stack is not -- so the
                     // slots are gathered once and every candidate reads the
                     // same copy.
                     LhatValue lineup[LHAT_MAX_REGISTERS + 2];
@@ -8655,14 +8652,14 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
                 }
                 goto drain;
 
-            // 04 の 11.6改: unlike a fault the machine itself raises, the
+            // 04 の 11.6: unlike a fault the machine itself raises, the
             // value is the program's own -- carried through to the host
             // exactly as lhat_run always has, rather than discarded like
             // every other finish() here discards its nil^.
             case LHAT_BC_PANIC:
                 return finish(m, chunk, LHAT_RUN_PANIC, R(a), at);
 
-            // 11.6, S27: 14.12's own runtime check (fits_call already
+            // 11.6: 14.12's own runtime check (fits_call already
             // trusts it for overload^ resolution), just asked once instead
             // of per candidate. Compile-time disjointness (check.c) already
             // ruled out what could never hold; this is what it could not
@@ -8782,10 +8779,9 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
                            lhat_is_object_kind(value, LHAT_OBJECT_TABLE)) {
                     // 16.3 with 13.8改: a loop reserved a run and the body
                     // yielded a table -- the iterator that answers pairs as
-                    // tables, from before tuples. Its positions go into the
-                    // reserved slots: the GETINDEXes the loop used to emit,
-                    // performed here instead, so the two iterator shapes
-                    // meet the same binds. A missing position is 04 の 11.3's
+                    // tables rather than tuples. Its positions go into the
+                    // reserved slots -- indexed here rather than by the loop --
+                    // so the two iterator shapes meet the same binds. A missing position is 04 の 11.3's
                     // absence, which a destructuring faults on.
                     const LhatTable *yielded =
                         (const LhatTable *)lhat_as_object(value);
@@ -8926,7 +8922,7 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
         LhatValue found = lhat_nil();
         OperatorLookup answer = operator_candidate(m, R(b), name, length, R(b),
                                                    R(cc), false, &found);
-        // 11.3改 (S39): the left carries nothing that takes this right
+        // 11.3改: the left carries nothing that takes this right
         // operand, so the right one is asked whether it was written as the
         // receiver instead. This is what lets a value join an operation whose
         // left operand is a built-in, which can carry no answer for it.
@@ -8942,7 +8938,7 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
         if (answer == OPERATOR_NO_MEMORY) {
             return finish(m, chunk, LHAT_RUN_OUT_OF_MEMORY, lhat_nil(), at);
         }
-        // 11.9 (S40): equality is answered whether or not a '<=>' was
+        // 11.9: equality is answered whether or not a '<=>' was
         // written -- 14.2 says what a table is the same as, and a type that
         // orders itself only refines that. An ordering has no such answer to
         // fall back on and faults the way it always did.
@@ -8973,7 +8969,7 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
             LhatValue answered =
                 carried_host->call(m, carried_host->context, operands, 2);
             if (derive_from != LHAT_FRAME_NO_DERIVE) {
-                // 11.9 (S40): what came back is read against zero.
+                // 11.9: what came back is read against zero.
                 bool held = false;
                 LhatRunStatus status = LHAT_RUN_OK;
                 if (derive_from == LHAT_BC_EQ || derive_from == LHAT_BC_NE) {
@@ -9013,7 +9009,7 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
         // is laid out just past where the answer goes, the way a native call
         // lays one out.
         //
-        // 11.3改 (S39): and a self^-last one needs nothing else here. Its
+        // 11.3改: and a self^-last one needs nothing else here. Its
         // parameter list is written in operand order too -- the left operand
         // first, the self^ after it -- so the same two slots hold the same two
         // values whichever side the receiver is. Only which slot the body
@@ -9036,7 +9032,7 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
         entered->returning = false;
         entered->coroutine = NULL;
         entered->disposing = false;
-        // 11.9 (S40): an ordering that reached for '<=>' wants the answer
+        // 11.9: an ordering that reached for '<=>' wants the answer
         // read against zero, not handed over as it is.
         entered->derive = derive_from;
 
@@ -9131,7 +9127,7 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
             uint8_t reserved = frame->prepared;
             const LhatValueUnion *answered_run = frame->answer_run;
             const uint8_t *answered_tags = frame->answer_tags;
-            // 02 の 11.9 (S40): the one frame whose answer is not the value of
+            // 02 の 11.9: the one frame whose answer is not the value of
             // the expression that made it. An ordering that reached for '<=>'
             // asked a number^ of it, and what was written asks which side of
             // zero that falls on.
@@ -9460,7 +9456,7 @@ const char *lhat_run_status_message(LhatRunStatus status)
         case LHAT_RUN_NO_CANDIDATE:    return "no way of calling this member takes these arguments";
         case LHAT_RUN_COROUTINE_NOT_STARTED:     return "resume needs start() first";
         case LHAT_RUN_COROUTINE_ALREADY_STARTED: return "start() only works before the first resume";
-        // 04 の 11.6改: a placeholder for a caller that only wants this
+        // 04 の 11.6: a placeholder for a caller that only wants this
         // status's own name -- the actual message is what the program
         // panicked with, in LhatRunResult.value, which this cannot see.
         case LHAT_RUN_PANIC:                     return "panic^";

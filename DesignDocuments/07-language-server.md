@@ -13,7 +13,6 @@
 
 ただし本文書が要求する情報のうち、字句解析器や構文木が持っていないものがある。
 それらは本体側の設計文書に未決事項として起票し、そちらで決める。
-現時点では [01-lexical-structure.md](01-lexical-structure.md) の Q13（コメントの保持）がそれにあたる。
 
 ## 2. 構成
 
@@ -35,6 +34,7 @@
 | 診断 | `textDocument/publishDiagnostics` | `lsp/diagnostics.c`、`lsp/worker.c` |
 | 意味的な構文強調 | `textDocument/semanticTokens/full` | `lsp/handlers/semantic_tokens.c` |
 | 文書の同期 | `textDocument/didOpen` / `didChange` / `didClose` | `lsp/handlers/text_document_sync.c` |
+| ホバー | `textDocument/hover` | 4 章。`lsp/hover.c` |
 
 検査はワーカースレッドで動く。ワークスペース内の `*.lh` はそれぞれが独立した根であり、
 1つの編集は「その根」と「最後の検査でその文書を通過した根」だけを検査し直す
@@ -43,7 +43,7 @@
 新しい要求への対応は `lsp/dispatch_table.c` に1行と `lsp/handlers/*.c` を1つ足すだけでよく、
 `dispatch.c` と `server.c` には手を入れない。
 
-## 4. ホバー［実装済み］
+## 4. ホバー
 
 名前にホバーすると、**その名前が届いた定義**を示す（`textDocument/hover`、
 `lsp/hover.c`）。示すのは次の3つ。
@@ -60,7 +60,7 @@ let^ twice = f^n:number^ -> number^ {
 二倍にする
 ```
 
-［確定］ **L6** — 1 と 2 は**両方出す**。書かれたものと、そこから導かれたものは別の話であり、
+1 と 2 は**両方出す**。書かれたものと、そこから導かれたものは別の話であり、
 注釈のない定義には 2 しかなく、注釈のある定義は書かれた形も見たい。
 
 型は 13 章の記法で書き出す（`lhat_type_write`、`src/type.c`）。
@@ -70,7 +70,6 @@ let^ twice = f^n:number^ -> number^ {
 14 章はテーブルが自分自身を含むことを許すので、**深さと要素数で打ち切る**
 （`LHAT_TYPE_WRITE_MAX_DEPTH`、`LHAT_TYPE_WRITE_MAX_ITEMS`）。
 打ち切りも、バッファに収まらない場合も、末尾を `…` にする。
-`LhatType.label` は表示用として用意されているが、どこからも設定されていないため使わない。
 
 ### 名前解決は検査器の答えを読む
 
@@ -90,13 +89,13 @@ let^ twice = f^n:number^ -> number^ {
 そこから、その位置を含む最も内側の「名前を導入する構文」（`DEFINE`、`PARAM`、
 `ERRORDEF`、`TABLE_ENTRY` など）を木から探し、その範囲の1行目を切り出す。
 
-［確定］ **L1** — **`module^` に結び付いたコメントは、その単位そのものの説明**である。
+**`module^` に結び付いたコメントは、その単位そのものの説明**である。
 `module^` は名前を宣言するもので使いはしないため解決の記録に載らない。
 位置から直に探して答える。
 
-［確定］ **L7** — **別の単位から来た名前は、モジュール名が見える。**
-これに追加の実装は要らなかった。05 章では他の単位の名前に触れる道が
-`require^` と `import^` しかなく、束縛の定義行に必ずモジュール名が現れるためである。
+**別の単位から来た名前は、モジュール名が見える。**追加の仕組みは要らない。
+05 章では他の単位の名前に触れる道が `require^` と `import^` しかなく、
+束縛の定義行に必ずモジュール名が現れるためである。
 
 ```text
 let^ other = require^ "lib/util.lh"
@@ -120,7 +119,6 @@ let^ other = require^ "lib/util.lh"
 
 | 機能 | 方法 | 備考 |
 | --- | --- | --- |
-| ホバー | `textDocument/hover` | 4 章。**実装済み** |
 | 定義へ移動 | `textDocument/definition` | 4 章の `LhatResolution` がそのまま答える |
 | 参照の検索 | `textDocument/references` | 同じ表を定義位置で引く。単位をまたぐ場合は根の逆引き（`lsp/workspace.h`） |
 | 文書シンボル | `textDocument/documentSymbol` | 構文木から直接作れる |
@@ -144,10 +142,8 @@ let^ other = require^ "lib/util.lh"
 
 ## 7. VSCode 拡張
 
-現状は言語クライアントと構文強調の文法定義のみ（`vscode-extension/package.json` の
-`contributes` は `languages` / `grammars` / `configuration` / `configurationDefaults`）。
-
-ビジュアルエディタを載せるにあたって足したもの（実装済み）。
+`contributes` は `languages` / `grammars` / `configuration` / `configurationDefaults` に加え、
+ビジュアルエディタのために次を持つ。
 
 - **カスタムエディタ** — `contributes.customEditors` に `CustomTextEditorProvider`
   として登録（`src/graphEditor.ts`）。文書はテキスト文書のままなので、
@@ -155,12 +151,12 @@ let^ other = require^ "lib/util.lh"
 - **webview** — 写像（`src/webview/map.ts`）と描画（同 `render.ts`）。
   外部への通信は行わない
 
-［確定］ **L3** — **webview は言語サーバに直接触らない。拡張本体が代行する。**
+**webview は言語サーバに直接触らない。拡張本体が代行する。**
 webview には言語クライアントも接続先も無いため、これは選択ではなく前提である。
 webview → 拡張本体は `postMessage`、拡張本体 → `lhatls` は `sendRequest("lhat/ast", …)`。
 往復は一段増えるが、6.5 の測定からしてレイアウトの方が桁違いに重く、問題にならない。
 
-［確定］ **L4** — **カスタムエディタは既定にしない**（`"priority": "option"`）。
+**カスタムエディタは既定にしない**（`"priority": "option"`）。
 `*.lh` を開けばテキストエディタが出る。グラフは `L^: Open Graph View` で横に開く。
 第1段階（06 の 3 章）が読み取り専用である以上、グラフだけが出る状態は行き止まりになる。
 
@@ -178,11 +174,12 @@ ELK.js は `elk.bundled.js` をそのまま `<script>` で読む。
 
 | 番号 | 内容 |
 | --- | --- |
-| L1 | ［決定］`module^` のコメントは単位そのものの説明（4 章） |
 | L2 | 補完に必要な誤り回復の水準 |
-| L3 | ［決定］webview は言語サーバに直接触らず、拡張本体が代行する（7 章） |
-| L4 | ［決定］カスタムエディタは既定にしない（7 章） |
 | L5 | 説明文の中の書き分け記法（`@Return` など）。当分後回し |
-| L6 | ［決定］書かれた行と推論された型を両方出す（4 章） |
-| L7 | ［決定］モジュール名は定義行に出る。追加の実装は要らなかった（4 章） |
 | L8 | メンバーへのアクセスをホバーに答えさせるか（4 章） |
+
+## 改定履歴（要約）
+
+- L1（`module^` のコメントは単位の説明）・L3（webview は拡張本体経由）・
+  L4（カスタムエディタは既定にしない）・L6（定義行と推論型を両方出す）・
+  L7（モジュール名は定義行に出る）は決定済み。本文に取り込み欠番

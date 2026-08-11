@@ -45,7 +45,7 @@ typedef enum {
     LHAT_NODE_TYPEOF,        // typeof^(expr)                (14.16)
     LHAT_NODE_SPREAD,        // expr...  as the last call argument (13.7)
     LHAT_NODE_REQUIRE,       // require^ "path"              (05 の 5 章)
-    LHAT_NODE_REQUIRE_STMT,  // require^ "path" on its own   (05 の 5.4改)
+    LHAT_NODE_REQUIRE_STMT,  // require^ "path" on its own   (05 の 5.5)
     LHAT_NODE_IMPORT,        // import^ a.b.c                (05 の 8.7)
     LHAT_NODE_IMPORT_STMT,   // import^ a.b.c on its own     (05 の 8.7)
     LHAT_NODE_UNARY,
@@ -68,7 +68,7 @@ typedef enum {
     LHAT_NODE_IF_STMT,
     LHAT_NODE_RETURN,
     LHAT_NODE_BREAK,
-    LHAT_NODE_PANIC,         // panic^ expr                 (04 の 11.6改)
+    LHAT_NODE_PANIC,         // panic^ expr                 (04 の 11.6)
     LHAT_NODE_YIELD,
     LHAT_NODE_YIELD_ALL,     // yieldall^ expr              (15.8)
     LHAT_NODE_WITH,          // with^ x = e  ... { ... }    (12 章)
@@ -140,7 +140,7 @@ typedef enum {
     LHAT_CLAUSE_FINALLY = 6
 } LhatClauseKind;
 
-// 9.3改: the clauses that are the loop's body. At least one has to be there,
+// 9.3: the clauses that are the loop's body. At least one has to be there,
 // and an unheaded statement list is an implicit main^.
 #define LHAT_CLAUSE_IS_BODY(k)                                                \
     ((k) == LHAT_CLAUSE_PRE || (k) == LHAT_CLAUSE_FIRST ||                    \
@@ -284,7 +284,7 @@ struct LhatNode {
             LhatNode *key;    // NULL for a positional entry or the template
             LhatNode *value;
             LhatDefModifier modifier;  // 14.12, def^ entries only
-            // 14.6改: the key was written '[ ... ]', so it is an expression
+            // 14.14改: the key was written '[ ... ]', so it is an expression
             // rather than the name it would otherwise be read as.
             bool computed;
             // 14.15: written 'abstract^ name : type', so `value` is a type
@@ -292,7 +292,7 @@ struct LhatNode {
             // composed onto it has to. Set on a template field too, where
             // 14.12's modifier has no place.
             bool declared;
-            // 13.7, 14.10改: MEMBER_DECL only. Written '...:type' in a
+            // 13.7, 14.10: MEMBER_DECL only. Written '...:type' in a
             // t^{ ... }, the way a parameter list writes a variadic one --
             // `value` is the element type, `key` is unused.
             bool variadic;
@@ -322,7 +322,7 @@ struct LhatNode {
             // whose last segment already exists it makes this a reassignment
             // instead of the redefinition error 8.7 would otherwise report.
             bool via_reassign_op;
-            // 7.4改. REASSIGN only, and only from 'target op= value': the
+            // 7.4. REASSIGN only, and only from 'target op= value': the
             // plain operator the compound spelling stands for (e.g. '+=' ->
             // LHAT_OP_ADD). `values` holds just the right-hand side, not the
             // expanded 'target op value' -- target is evaluated once, and
@@ -353,7 +353,7 @@ struct LhatNode {
             LhatNode *step;     // step^, absent for every kind but to^/downto^
             LhatNode *advance;  // next^ statements
             LhatNode *body;
-            // 5.2改 and 17.2: written in the form opened by ':' rather than
+            // 5.2 and 17.2: written in the form opened by ':' rather than
             // by '{', so it answers a value. Only if^ and the when^ clauses
             // have that form; the driving clauses iterate and answer nothing.
             bool is_expression;

@@ -194,7 +194,7 @@ static void test_coroutine_locals(void)
 
 static void test_boxing(void)
 {
-    LHAT_TEST("the container boxes and unboxes (Memo.md's sketch)");
+    LHAT_TEST("the container boxes and unboxes");
     {
         LhatTestRan ran = run_source(
             "import^ std.math\n"

@@ -329,7 +329,7 @@ static LhatType *hosted_table(LhatProgram *program, LhatType *owner,
                                      next) == NULL) {
                 return NULL;
             }
-            // 05 の 8.6改: what the host registered is the machine's record of
+            // 05 の 8.6: what the host registered is the machine's record of
             // it. Nothing written in L^ adds to it or writes over it -- the
             // host reaches it through this file's own API instead.
             next->v.table.sealed = true;
@@ -350,7 +350,7 @@ static LhatType *hosted_root(LhatProgram *program)
     if (program->hosted == NULL) {
         program->hosted = lhat_type_table(&program->types);
         if (program->hosted != NULL) {
-            program->hosted->v.table.sealed = true;  // 05 の 8.6改
+            program->hosted->v.table.sealed = true;  // 05 の 8.6
         }
     }
     return program->hosted;

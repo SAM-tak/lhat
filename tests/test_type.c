@@ -188,7 +188,7 @@ static void test_structures(void)
                    "a table is not a number");
     }
 
-    // 13.13 (S37): a written Self^ makes a structure hold itself, so both
+    // 13.13: a written Self^ makes a structure hold itself, so both
     // relations walk a cycle. Neither may run off the stack, and 11.3 still
     // has to say that two of them written apart are one type.
     LHAT_TEST("a structure that holds itself is comparable");
@@ -375,7 +375,7 @@ static void test_functions(void)
         LHAT_CHECK(!lhat_type_conforms(narrow, wide), "the other way does not");
     }
 
-    // 11.3改 (S39): which operand the receiver is decides which way round the
+    // 11.3改: which operand the receiver is decides which way round the
     // operator may be written, so the two spellings are not each other.
     LHAT_TEST("a left receiver and a right one are different types");
     {

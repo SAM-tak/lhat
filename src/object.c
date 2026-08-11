@@ -118,7 +118,7 @@ LhatCoroutine *lhat_coroutine_new(LhatHeap *heap, const LhatClosure *closure,
     if (coroutine == NULL) {
         return NULL;
     }
-    // 2.2改: the saved frame in the stack's own two-run shape. calloc gives
+    // 2.2: the saved frame in the stack's own two-run shape. calloc gives
     // all-zero payloads and tags, and tag zero is LHAT_VALUE_NIL -- so the
     // slots start as nil^ without a pass of their own.
     size_t width = registers ? registers : 1;
@@ -473,14 +473,12 @@ static void write_runtime_type(TypeWriter *w, const LhatRuntimeType *type)
             }
             type_put_text(w, type->hostvalue_tag->name);
             return;
-        // 13.9's three slots. NULL still prints any^ (S28's residual: a
-        // coroutine value or a yielding subroutine reflected before this
-        // was wired up carries none of the three) -- not a guess, the same
+        // 13.9's three slots. NULL still prints any^ -- not a guess, the same
         // "nothing written asks for the top type" convention as everywhere
         // else in this function.
         // 15.3改: the front half is written as the signature it always
         // described -- one resume takes R and answers Y -- which is where the
-        // kind of the body goes now that both kinds exist.
+        // kind of the body goes, both kinds being possible (15.3改).
         case LHAT_TYPE_RT_COROUTINE:
             type_put_text(w, "c^{");
             type_put_text(w, type->is_function ? "f^" : "p^");
@@ -619,7 +617,7 @@ bool lhat_runtime_type_equal(const LhatRuntimeType *a, const LhatRuntimeType *b)
         // from "inference could not say".
         case LHAT_TYPE_RT_UNKNOWN:
             return true;
-        // 13.9's three slots now carry real answers (S28), so two coroutine
+        // 13.9's three slots now carry real answers, so two coroutine
         // types are equal only when R, Y and T line up -- not just by kind.
         // 15.3改 adds the body's own kind to that: what may be done with an
         // f^ coroutine is not what may be done with a p^ one.

@@ -5,7 +5,7 @@
 //
 // 2.1: a value carries its own type. 2.2 makes that a tagged union rather
 // than NaN boxing, so a 64-bit integer fits without being put on the heap;
-// 2.2改 then split payloads from tags for bulk storage (LhatSlots below),
+// 2.2 then split payloads from tags for bulk storage (LhatSlots below),
 // which is also what 05 の 8.9's host values stand on -- consecutive payload
 // slots are plain contiguous bytes.
 //
@@ -100,7 +100,7 @@ typedef struct LhatObject {
 } LhatObject;
 
 
-// 2.2改: the payload on its own, so that bulk storage can keep payloads and
+// 2.2: the payload on its own, so that bulk storage can keep payloads and
 // tags in two parallel runs (LhatSlots below) instead of paying eight bytes
 // of padding per value for a tag that needs three bits.
 typedef union LhatValueUnion {
@@ -129,7 +129,7 @@ typedef struct {
     LhatValueTag tag;
 } LhatValue;
 
-// 2.2改: a run of values stored as two parallel arrays -- the payloads
+// 2.2: a run of values stored as two parallel arrays -- the payloads
 // aligned and dense, the tags one byte each. This is the shape every bulk
 // store takes (a table's array part; the machine's stack and a coroutine's
 // saved registers are to follow); LhatValue stays the currency handed
@@ -153,7 +153,7 @@ static inline void lhat_slots_set(LhatSlots slots, size_t i, LhatValue v)
     slots.tags[i] = (uint8_t)v.tag;
 }
 
-// 2.2改: one slot of a run, named so it can be held. What an upvalue's
+// 2.2: one slot of a run, named so it can be held. What an upvalue's
 // location is now -- the payload and tag pointers travel as a pair, and the
 // pair may aim into the machine's stack, a coroutine's saved registers, or
 // the upvalue's own closed cell, which is what 5.4's sharing and 15.4's

@@ -71,7 +71,7 @@ typedef enum {
     LHAT_CHECK_ERR_NOT_SUBSTITUTABLE,   // 14.12: override^ has to fit
     LHAT_CHECK_ERR_OVERLOAD_OVERLAPS,   // 14.12: signatures must stay apart
     LHAT_CHECK_ERR_INCOMPARABLE,        // no value inhabits both sides
-    LHAT_CHECK_ERR_AS_IMPOSSIBLE,       // 11.6, S27: as^ between two types
+    LHAT_CHECK_ERR_AS_IMPOSSIBLE,       // 11.6: as^ between two types
                                         // no value inhabits both of
     LHAT_CHECK_ERR_BAD_KEY,             // 04 の 11.3: nil^ spells absence, so
                                         // it cannot also be a key
@@ -102,7 +102,7 @@ typedef enum {
     LHAT_CHECK_ERR_PATH_IS_DEFINITION,  // 8.8: 14 章 fixes what an instance
                                         // of a def^ carries, so a member
                                         // cannot be added to one
-    LHAT_CHECK_ERR_MODULE_UNNAMED,      // 05 の 5.4改: the short form binds a
+    LHAT_CHECK_ERR_MODULE_UNNAMED,      // 05 の 5.5: the short form binds a
                                         // unit under the path it declared,
                                         // and this one declared none (3.2)
     LHAT_CHECK_ERR_NOT_HOSTED,          // 05 の 8.7: import^ reaches what the
@@ -133,7 +133,7 @@ typedef enum {
     LHAT_CHECK_ERR_COROUTINE_ESCAPES,   // 15.3改: an f^ coroutine reaching the
                                         // outside, where advancing it is what
                                         // makes the call observable
-    LHAT_CHECK_ERR_TABLE_IS_SEALED,     // 05 の 8.6改 (M5): L^, its registry
+    LHAT_CHECK_ERR_TABLE_IS_SEALED,     // 05 の 8.6: L^, its registry
                                         // and what require^/import^ answers
                                         // are the machine's own; the host
                                         // writes them through its API
@@ -176,7 +176,7 @@ typedef enum {
                                         // apart and the values answered are
                                         // not the same count. A tuple has exactly its
                                         // positions, since each one is a slot
-                                        // the caller reserved -- 14.10.s width
+                                        // the caller reserved -- 14.10's width
                                         // subtyping never applies here
     LHAT_CHECK_ERR_TUPLE_ERROR_POSITION,// 13.8改 with 04 の 8.2: the error
                                         // goes around the values, never among
@@ -264,7 +264,7 @@ typedef struct {
 
     // 05 の 3 章: the path module^ declared, written out with its dots and
     // owned by the result. NULL when the unit declared none, which 3.2
-    // allows. 5.4改 needs it to say what the short form of require^ binds.
+    // allows. 5.5 needs it to say what the short form of require^ binds.
     char *module_name;
 } LhatCheckResult;
 
@@ -279,7 +279,7 @@ const LhatResolution *lhat_check_resolution_at(const LhatCheckResult *result,
 // reports in its own terms.
 //
 // `module_name` is filled with the path 3 章 had that unit declare, or left
-// NULL when it declared none (3.2). 5.4改 binds the short form under it, so
+// NULL when it declared none (3.2). 5.5 binds the short form under it, so
 // the text has to outlive the call -- the unit owns it.
 typedef LhatType *(*LhatRequireResolver)(void *context, const char *path,
                                          size_t length,

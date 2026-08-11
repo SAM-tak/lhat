@@ -144,8 +144,8 @@ static void test_arguments(void)
 
     // A string is the one carried kind that allocates on both sides, so it is
     // what pins the copy rather than the value. A position of '...' is any^
-    // (S16), and the only thing to do with an any^ is narrow it -- 02 の
-    // 13.11's isa^ reaches a builtin name now (S33), so the far side reads the
+    //, and the only thing to do with an any^ is narrow it -- 02 の
+    // 13.11's isa^ reaches a builtin name now, so the far side reads the
     // bytes it was given rather than counting that something arrived. Joining
     // them is what pins their order as well: the two go out separately and
     // come back as one string, which they could not do if either had been

@@ -43,7 +43,7 @@ typedef enum {
 #define LHAT_NO_UNIT SIZE_MAX
 
 // `module_name` is filled with the path 3 章 had that unit declare, the way
-// check.h's resolver fills it -- 5.4改's short form needs it to know where
+// check.h's resolver fills it -- 5.5's short form needs it to know where
 // the unit it brought in goes.
 typedef size_t (*LhatUnitResolver)(void *context, const char *path,
                                    size_t length, const char **module_name);
@@ -195,11 +195,11 @@ typedef enum {
                               // waiting to be resumed
     LHAT_RUN_NO_CANDIDATE,    // 02 の 14.12: no signature of an overloaded
                               // member takes what the call handed over
-    LHAT_RUN_COROUTINE_NOT_STARTED,     // 15.2改: resumed one that has never
+    LHAT_RUN_COROUTINE_NOT_STARTED,     // 15.2: resumed one that has never
                                          // been started
-    LHAT_RUN_COROUTINE_ALREADY_STARTED, // 15.2改: started one that already
+    LHAT_RUN_COROUTINE_ALREADY_STARTED, // 15.2: started one that already
                                          // has been
-    LHAT_RUN_SEALED,          // 05 の 8.6改 (M5): wrote into a table the
+    LHAT_RUN_SEALED,          // 05 の 8.6: wrote into a table the
                               // machine owns -- L^, or what require^ answers
                               // with. check.c refuses the ones it can name;
                               // this is one reached through a parameter
@@ -218,7 +218,7 @@ typedef enum {
                               // tuple and a t^{...} are different types, so
                               // converting between them is the program's
                               // word (pack^) and never the machine's
-    LHAT_RUN_PANIC            // 04 の 11.6改: panic^, written by the program
+    LHAT_RUN_PANIC            // 04 の 11.6: panic^, written by the program
                               // itself -- `value` is what it panicked with
 } LhatRunStatus;
 

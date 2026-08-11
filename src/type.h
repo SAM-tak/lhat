@@ -110,7 +110,7 @@ typedef struct LhatTypeMember {
     // reachable through the composed type -- what each side wrote is still
     // reachable through that side.
     bool ambiguous;
-    // 02 の 8.8 (S23): introduced by a let^ path the checker walked without
+    // 02 の 8.8: introduced by a let^ path the checker walked without
     // knowing whether it runs before whatever reads the member -- inside a
     // subroutine body that may never be called, or a branch/loop that may
     // not run. The relations do not read this (conformance is unaffected);
@@ -157,7 +157,7 @@ struct LhatType {
             // would make every one of them the same type and hand a pointer
             // to the C that expects another.
             bool nominal;
-            // 05 の 8.6改: a table the machine made rather than the program --
+            // 05 の 8.6: a table the machine made rather than the program --
             // L^ itself, its module registry, and what require^ or import^
             // answers with. Nothing written in L^ may change one. The host
             // reaches these through its own API, which never goes through the
@@ -166,7 +166,7 @@ struct LhatType {
             // it records where the structure came from and takes no part in
             // conformance (11.3).
             bool sealed;
-            // 13.7's variadic collector as a table type, and 14.10改's
+            // 13.7's variadic collector as a table type, and 14.10's
             // 't^{ ...:T }': the sequence half is unbounded, every position
             // of it T. NULL everywhere else -- mirrors func.variadic below,
             // which is the same idea for a parameter list instead of members.
@@ -189,7 +189,7 @@ struct LhatType {
             // 'x.m()' passes x there without writing it. The receiver is not
             // in `params`, so an ordinary call needs no special case.
             bool takes_self;
-            // 11.3改 (S39): the self^ was written last instead, which only an
+            // 11.3改: the self^ was written last instead, which only an
             // op^ may do -- it says the receiver is the RIGHT operand, so
             // 'op^+ = f^lhs:number^, self^' answers '1 + v'. The receiver is
             // out of `params` either way; this says which side it stands on.

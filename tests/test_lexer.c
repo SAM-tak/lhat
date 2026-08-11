@@ -110,8 +110,8 @@ static void test_identifiers(void)
     LHAT_CHECK_EQ_INT(s.tokens[0].kind, LHAT_TOKEN_IDENT);
     scan_dispose(&s);
 
-    // Section 3.2: '?' and '!' are operators and terminate an identifier.
-    LHAT_TEST("question mark no longer ends an identifier");
+    // 01 の 3.2: '?' and '!' are operators and terminate an identifier.
+    LHAT_TEST("a question mark terminates an identifier");
     scan_text(&s, "foo?.bar");
     LHAT_CHECK_EQ_INT(token_count(&s), 3);
     LHAT_CHECK_EQ_STR(token_text(&s, 0), token_length(&s, 0), "foo");
@@ -120,7 +120,7 @@ static void test_identifiers(void)
     scan_dispose(&s);
 }
 
-// Section 3.4.
+// Section 3.3.
 static void test_name_literals(void)
 {
     Scan s;
@@ -279,7 +279,7 @@ static void test_lexical_hazards(void)
     LHAT_CHECK_EQ_INT(s.tokens[4].kind, LHAT_TOKEN_INT);
     scan_dispose(&s);
 
-    // Section 13.7: '...' must beat '..' at maximal munch, or a variadic
+    // Section 7.5: '...' must beat '..' at maximal munch, or a variadic
     // marker would scan as a concatenation followed by a dot.
     LHAT_TEST("13.7 ... beats ..");
     scan_text(&s, "...:number^ a..b");
@@ -298,7 +298,7 @@ static void test_lexical_hazards(void)
     LHAT_CHECK_EQ_INT(s.tokens[2].kind, LHAT_TOKEN_INT);
     scan_dispose(&s);
 
-    // Section 10.3 (Q7).
+    // Section 10.3.
     LHAT_TEST("10.3 1to^3 is rejected");
     scan_text(&s, "1to^3");
     LHAT_CHECK_EQ_INT(s.tokens[0].kind, LHAT_TOKEN_ERROR);
@@ -316,7 +316,7 @@ static void test_lexical_hazards(void)
     LHAT_CHECK_EQ_INT(s.tokens[2].kind, LHAT_TOKEN_INT);
     scan_dispose(&s);
 
-    // Section 4.5: Q7 removed the need to backtrack here, so this is an error
+    // 01 の 4.5: 10.3 removes the need to backtrack here, so this is an error
     // rather than "1" followed by "e^" followed by "3".
     LHAT_TEST("4.5 1e^3 is a malformed exponent");
     scan_text(&s, "1e^3");
@@ -471,7 +471,7 @@ static void test_interpolation(void)
     LHAT_CHECK_EQ_INT(s.tokens[1].kind, LHAT_TOKEN_INTERP_EXPR_BEGIN);
     scan_dispose(&s);
 
-    // Q4: the format specifier follows a ':' and is raw text.
+    // the format specifier follows a ':' and is raw text.
     LHAT_TEST("format specifier");
     scan_text(&s, "$\"{bar:2.4}\"");
     LHAT_CHECK_EQ_INT(token_count(&s), 6);
@@ -552,7 +552,7 @@ static void test_interpolation(void)
     LHAT_CHECK_EQ_INT(s.lexer.diagnostics[0].code, LHAT_ERR_UNTERMINATED_STRING);
     scan_dispose(&s);
 
-    // Memo.md L71: interpolation requires double quotes.
+    // 01 の 5.4: interpolation requires double quotes.
     LHAT_TEST("$'...' is rejected with a specific message");
     scan_text(&s, "$'no'");
     LHAT_CHECK_EQ_INT(s.tokens[0].kind, LHAT_TOKEN_ERROR);
@@ -572,7 +572,7 @@ static void test_comments(void)
 {
     Scan s;
 
-    // Section 6.1 (Q5).
+    // Section 6.1.
     LHAT_TEST("hash starts a line comment");
     scan_text(&s, "a # this is ignored\nb");
     LHAT_CHECK_EQ_INT(token_count(&s), 2);
@@ -613,24 +613,25 @@ static void test_operators(void)
     Scan s;
 
     LHAT_TEST("maximal munch on multi-character operators");
-    scan_text(&s, ":= -> << ** // .. ?. ?( ?[ != =/ <= >= ??");
-    LHAT_CHECK(is_op(&s.tokens[0], LHAT_OP_DEFINE), "expected :=");
+    scan_text(&s, ":= -> << >> ** // .. ?. ?( ?[ != =/ <= >= ??");
+    LHAT_CHECK(is_op(&s.tokens[0], LHAT_OP_REASSIGN), "expected :=");
     LHAT_CHECK(is_op(&s.tokens[1], LHAT_OP_ARROW), "expected ->");
-    LHAT_CHECK(is_op(&s.tokens[2], LHAT_OP_REASSIGN), "expected <<");
-    LHAT_CHECK(is_op(&s.tokens[3], LHAT_OP_POW), "expected **");
-    LHAT_CHECK(is_op(&s.tokens[4], LHAT_OP_FLOORDIV), "expected //");
-    LHAT_CHECK(is_op(&s.tokens[5], LHAT_OP_CONCAT), "expected ..");
-    LHAT_CHECK(is_op(&s.tokens[6], LHAT_OP_NIL_DOT), "expected ?.");
-    LHAT_CHECK(is_op(&s.tokens[7], LHAT_OP_NIL_CALL), "expected ?(");
-    LHAT_CHECK(is_op(&s.tokens[8], LHAT_OP_NIL_INDEX), "expected ?[");
-    LHAT_CHECK(is_op(&s.tokens[9], LHAT_OP_NE), "expected !=");
-    LHAT_CHECK(is_op(&s.tokens[10], LHAT_OP_NE), "expected =/");
-    LHAT_CHECK(is_op(&s.tokens[11], LHAT_OP_LE), "expected <=");
-    LHAT_CHECK(is_op(&s.tokens[12], LHAT_OP_GE), "expected >=");
-    LHAT_CHECK(is_op(&s.tokens[13], LHAT_OP_NIL_ELSE), "expected ??");
+    LHAT_CHECK(is_op(&s.tokens[2], LHAT_OP_LSHIFT), "expected <<");
+    LHAT_CHECK(is_op(&s.tokens[3], LHAT_OP_RSHIFT), "expected >>");
+    LHAT_CHECK(is_op(&s.tokens[4], LHAT_OP_POW), "expected **");
+    LHAT_CHECK(is_op(&s.tokens[5], LHAT_OP_FLOORDIV), "expected //");
+    LHAT_CHECK(is_op(&s.tokens[6], LHAT_OP_CONCAT), "expected ..");
+    LHAT_CHECK(is_op(&s.tokens[7], LHAT_OP_NIL_DOT), "expected ?.");
+    LHAT_CHECK(is_op(&s.tokens[8], LHAT_OP_NIL_CALL), "expected ?(");
+    LHAT_CHECK(is_op(&s.tokens[9], LHAT_OP_NIL_INDEX), "expected ?[");
+    LHAT_CHECK(is_op(&s.tokens[10], LHAT_OP_NE), "expected !=");
+    LHAT_CHECK(is_op(&s.tokens[11], LHAT_OP_NE), "expected =/");
+    LHAT_CHECK(is_op(&s.tokens[12], LHAT_OP_LE), "expected <=");
+    LHAT_CHECK(is_op(&s.tokens[13], LHAT_OP_GE), "expected >=");
+    LHAT_CHECK(is_op(&s.tokens[14], LHAT_OP_NIL_ELSE), "expected ??");
     scan_dispose(&s);
 
-    // 7.4改: each compound spelling has to precede its plain operator, or
+    // 7.4: each compound spelling has to precede its plain operator, or
     // maximal munch would take the shorter one and leave a stray '='.
     LHAT_TEST("compound assignment operators");
     scan_text(&s, "+= -= *= /= %= //= **= ..=");
@@ -658,12 +659,20 @@ static void test_operators(void)
     // '<<' must win over '<', and must not be confused with '<='.
     LHAT_TEST("<< is distinct from < and <=");
     scan_text(&s, "a << b a < b a <= b");
-    LHAT_CHECK(is_op(&s.tokens[1], LHAT_OP_REASSIGN), "expected <<");
+    LHAT_CHECK(is_op(&s.tokens[1], LHAT_OP_LSHIFT), "expected <<");
     LHAT_CHECK(is_op(&s.tokens[4], LHAT_OP_LT), "expected <");
     LHAT_CHECK(is_op(&s.tokens[7], LHAT_OP_LE), "expected <=");
     scan_dispose(&s);
 
-    // 02 の 11.9 (S40): and '<=>' must win over both of those, or the '>'
+    // '>>' must win over '>', and must not be confused with '>='.
+    LHAT_TEST(">> is distinct from > and >=");
+    scan_text(&s, "a >> b a > b a >= b");
+    LHAT_CHECK(is_op(&s.tokens[1], LHAT_OP_RSHIFT), "expected >>");
+    LHAT_CHECK(is_op(&s.tokens[4], LHAT_OP_GT), "expected >");
+    LHAT_CHECK(is_op(&s.tokens[7], LHAT_OP_GE), "expected >=");
+    scan_dispose(&s);
+
+    // 02 の 11.9: and '<=>' must win over both of those, or the '>'
     // would be left stray the way an '=' would be after a compound spelling.
     LHAT_TEST("<=> wins over <= and <");
     scan_text(&s, "a <=> b a <= b a < b");
@@ -679,7 +688,7 @@ static void test_operators(void)
     scan_text(&s, "a<-2 b << -2");
     LHAT_CHECK(is_op(&s.tokens[1], LHAT_OP_LT), "expected <");
     LHAT_CHECK(is_op(&s.tokens[2], LHAT_OP_SUB), "expected -");
-    LHAT_CHECK(is_op(&s.tokens[5], LHAT_OP_REASSIGN), "expected <<");
+    LHAT_CHECK(is_op(&s.tokens[5], LHAT_OP_LSHIFT), "expected <<");
     scan_dispose(&s);
 
     LHAT_TEST("-> separates arguments from the return value");
@@ -693,15 +702,6 @@ static void test_operators(void)
     LHAT_CHECK(is_op(&s.tokens[2], LHAT_OP_COLONCOLON), "expected ::");
     scan_dispose(&s);
 
-    // Section 7.7: the '>>' in Memo.md is a prompt, not syntax, so it is not
-    // an operator and scans as two separate '>' tokens.
-    LHAT_TEST(">> is not an operator");
-    scan_text(&s, "a >> b");
-    LHAT_CHECK_EQ_INT(token_count(&s), 4);
-    LHAT_CHECK(is_op(&s.tokens[1], LHAT_OP_GT), "expected >");
-    LHAT_CHECK(is_op(&s.tokens[2], LHAT_OP_GT), "expected >");
-    scan_dispose(&s);
-
     // Section 7.2: the preferred spellings are multi-byte UTF-8.
     LHAT_TEST("unicode comparison operators");
     scan_text(&s, "a \xE2\x89\xA0 b \xE2\x89\xA6 c \xE2\x89\xA7 d");
@@ -711,7 +711,7 @@ static void test_operators(void)
     LHAT_CHECK_EQ_INT(s.lexer.diagnostic_count, 0);
     scan_dispose(&s);
 
-    // Q10: U+2264 and U+2265 are accepted alongside U+2266 and U+2267.
+    // U+2264 and U+2265 are accepted alongside U+2266 and U+2267.
     LHAT_TEST("both unicode spellings of <= and >=");
     scan_text(&s, "a \xE2\x89\xA4 b \xE2\x89\xA5 c");
     LHAT_CHECK(is_op(&s.tokens[1], LHAT_OP_LE), "U+2264 must mean <=");
@@ -735,7 +735,7 @@ static void test_operators(void)
     LHAT_CHECK(is_op(&s.tokens[1], LHAT_OP_EQ), "expected =");
     scan_dispose(&s);
 
-    // Section 7.3 (Q2): '<-' is not a token, so this is a comparison against
+    // Section 7.3: '<-' is not a token, so this is a comparison against
     // a negative number.
     LHAT_TEST("a<-2 is a comparison, not a reassignment");
     scan_text(&s, "a<-2");
@@ -745,9 +745,16 @@ static void test_operators(void)
     LHAT_CHECK_EQ_INT(s.tokens[3].kind, LHAT_TOKEN_INT);
     scan_dispose(&s);
 
-    LHAT_TEST("reassignment");
+    LHAT_TEST("<< is a reserved operator");
     scan_text(&s, "i << i + 1");
-    LHAT_CHECK(is_op(&s.tokens[1], LHAT_OP_REASSIGN), "expected <<");
+    LHAT_CHECK_EQ_INT(token_count(&s), 5);
+    LHAT_CHECK(is_op(&s.tokens[1], LHAT_OP_LSHIFT), "expected <<");
+    scan_dispose(&s);
+
+    LHAT_TEST(">> is a reserved operator");
+    scan_text(&s, "a >> b");
+    LHAT_CHECK_EQ_INT(token_count(&s), 3);
+    LHAT_CHECK(is_op(&s.tokens[1], LHAT_OP_RSHIFT), "expected >>");
     scan_dispose(&s);
 
     // '|' is the type union operator. The lexer knows nothing of type
@@ -763,9 +770,9 @@ static void test_operators(void)
     LHAT_CHECK_EQ_INT(s.lexer.diagnostic_count, 0);
     scan_dispose(&s);
 
-    // 11.7改2 (S42): a lone '?' used to be an error of its own -- the family
-    // was '?.' '?(' '?[' and nothing was allowed to stand alone. It is the
-    // postfix "not absent" operator now, so it lexes like any other.
+    // 11.7改2: a lone '?' is the postfix "not absent" operator, so it lexes
+    // like any other. The two-character members of the family ('?.' '?(' '?[')
+    // win by longest match, which leaves the lone one only where they cannot go.
     LHAT_TEST("a lone question mark is the postfix operator");
     scan_text(&s, "a ? b");
     LHAT_CHECK(is_op(&s.tokens[1], LHAT_OP_PRESENT), "expected ?");
@@ -856,7 +863,7 @@ static void test_positions(void)
     LHAT_CHECK_EQ_INT(s.tokens[2].column, 4);
     scan_dispose(&s);
 
-    // Section 11: columns count code points, not bytes, so a Japanese comment
+    // Section 10.9: columns count code points, not bytes, so a Japanese comment
     // does not shift the reported position of what follows it.
     LHAT_TEST("columns count code points, not bytes");
     scan_text(&s, "# \xE6\x97\xA5\xE6\x9C\xAC\xE8\xAA\x9E\nx");

@@ -139,8 +139,8 @@ static void walk_qualified_path(SemCollector *out, const LhatNode *node,
     }
 }
 
-// 14.6改: a TABLE_ENTRY/MEMBER_DECL key is a property name unless `computed`
-// (written '[ expr ]', 14.6改), in which case it is an ordinary expression.
+// 14.14改: a TABLE_ENTRY/MEMBER_DECL key is a property name unless `computed`
+// (written '[ expr ]', 14.14改), in which case it is an ordinary expression.
 static void walk_table_entries(SemCollector *out, const LhatNode *entries)
 {
     for (const LhatNode *e = entries; e != NULL; e = e->next) {

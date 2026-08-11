@@ -138,7 +138,7 @@ static void reverse_entry_remove_root(LspReverseEntry *e, const char *root_path)
     }
 }
 
-// Removes `root_path` from every path it used to reach, ahead of
+// Removes `root_path` from every path it reaches, ahead of
 // re-checking it -- the check that follows rebuilds only what is still true.
 static void reverse_remove_root_everywhere(LspWorkspace *ws,
                                            const char *root_path)

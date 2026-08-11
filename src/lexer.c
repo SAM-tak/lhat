@@ -103,7 +103,7 @@ static bool is_unicode_space(uint32_t cp)
 
 // Code points that must never be swallowed into an identifier because they
 // are operators. Both the U+2264 / U+2265 and the U+2266 / U+2267 spellings
-// of the comparison operators are accepted (Q10).
+// of the comparison operators are accepted.
 static bool is_reserved_symbol(uint32_t cp)
 {
     return cp == 0x2260u || cp == 0x2264u || cp == 0x2265u ||
@@ -439,7 +439,7 @@ static LhatToken scan_identifier(LhatLexer *lexer, Mark start)
     return finish(lexer, start, LHAT_TOKEN_IDENT);
 }
 
-// Section 3.4. `a name` is a name written out in full, spaces and symbols
+// Section 3.3. `a name` is a name written out in full, spaces and symbols
 // included. A doubled backtick stands for one backtick, following the same
 // convention as the raw string in 5.2.
 //
@@ -510,7 +510,7 @@ static LhatToken scan_number(LhatLexer *lexer, Mark start)
         return finish(lexer, start, LHAT_TOKEN_ERROR);
     }
 
-    // Section 10.3 (Q7): "1to^3" is an error; a space is required. Asked
+    // Section 10.3: "1to^3" is an error; a space is required. Asked
     // before the status below, so that "0xg" is a number with a word stuck to
     // it rather than a malformed one.
     int width;
@@ -811,8 +811,8 @@ static LhatToken scan_dollar(LhatLexer *lexer, Mark start)
         return finish(lexer, start, LHAT_TOKEN_INTERP_BEGIN);
     }
 
-    // Memo.md L71 notes that interpolation requires double quotes, so $'...'
-    // is not a thing. Saying so beats letting it fail as a scope specifier.
+    // 01 の 5.4: interpolation requires double quotes, so $'...' is not a
+    // thing. Saying so beats letting it fail as a scope specifier.
     if (next == '\'') {
         report(lexer, LHAT_ERR_INTERPOLATION_NEEDS_QUOTES);
         advance(lexer);
@@ -826,9 +826,7 @@ static LhatToken scan_dollar(LhatLexer *lexer, Mark start)
     // the one scope inside it, '$$$' the one inside that. Repeating '^'
     // counts outwards from here instead.
     //
-    // Memo.md L655-695 numbered the absolute form from a global at 0, with
-    // the unit at 1. A global table was given up (8.3), so every level moved
-    // down one and '$' is the outermost there is.
+    // 01 の 8.3: there is no global scope, so '$' is the outermost there is.
     LhatScopeKind kind = LHAT_SCOPE_FILE;
     uint32_t depth = 0;
 
@@ -874,13 +872,13 @@ typedef struct {
 static const OperatorEntry operator_table[] = {
     { "...", 3, LHAT_OP_ELLIPSIS },     // must precede ".." (13.7)
 
-    // 7.4改: compound assignment. Each must precede its own plain operator
+    // 7.4: compound assignment. Each must precede its own plain operator
     // below (e.g. "//=" before "//"), or the '=' would be left stray.
     { "//=", 3, LHAT_OP_FLOORDIV_ASSIGN },
     { "**=", 3, LHAT_OP_POW_ASSIGN },
     { "..=", 3, LHAT_OP_CONCAT_ASSIGN },
 
-    // 11.9 (S40): three-way comparison. Must precede "<=" and "<" below for
+    // 11.9: three-way comparison. Must precede "<=" and "<" below for
     // the same reason the compound spellings precede theirs.
     { "<=>", 3, LHAT_OP_SPACESHIP },
 
@@ -890,10 +888,11 @@ static const OperatorEntry operator_table[] = {
     { "\xE2\x89\xA6", 3, LHAT_OP_LE },  // U+2266 LESS-THAN OVER EQUAL TO
     { "\xE2\x89\xA7", 3, LHAT_OP_GE },  // U+2267 GREATER-THAN OVER EQUAL TO
 
-    { ":=", 2, LHAT_OP_DEFINE },
-    { "<<", 2, LHAT_OP_REASSIGN },
+    { ":=", 2, LHAT_OP_REASSIGN },
+    { "<<", 2, LHAT_OP_LSHIFT },
+    { ">>", 2, LHAT_OP_RSHIFT },
     { "->", 2, LHAT_OP_ARROW },
-    { "::", 2, LHAT_OP_COLONCOLON },  // withdrawn; kept for diagnostics
+    { "::", 2, LHAT_OP_COLONCOLON },  // not in the language; for diagnostics
     { "!=", 2, LHAT_OP_NE },
     { "=/", 2, LHAT_OP_NE },
     { "<=", 2, LHAT_OP_LE },
@@ -933,7 +932,7 @@ static const OperatorEntry operator_table[] = {
     { "&", 1, LHAT_OP_INTERSECT },
     { ".", 1, LHAT_OP_DOT },
     { "@", 1, LHAT_OP_AT },
-    // 11.7改2 (S42): postfix '?'. Last of the '?' family on purpose -- the
+    // 11.7改2: postfix '?'. Last of the '?' family on purpose -- the
     // two-character spellings above are matched first, so this one is only
     // ever reached where none of them can be ('?' before '{', ':', ')', ',',
     // a newline or a word). '(t?).x' therefore needs its parentheses, which

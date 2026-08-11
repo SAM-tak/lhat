@@ -310,7 +310,7 @@ static void check_attached_once(const char *text)
 
 static void test_comments(void)
 {
-    // The lexer keeps them at all -- it used to drop them on the floor.
+    // 01 の 6.4: the lexer keeps them rather than dropping them as trivia.
     LHAT_TEST("comments are kept");
     Parse p;
     parse_text(&p, "# one\nvar^ x = 1  # two\n#[ three ]#\n");
@@ -435,7 +435,7 @@ static void test_statements(void)
     }
     parse_dispose(&p);
 
-    // 7.3 (Q2) and 8.6: reassignment puts the target first and is written
+    // 7.3 and 8.6: reassignment puts the target first and is written
     // with :=, since var^ took over making names.
     LHAT_TEST("reassignment");
     parse_text(&p, "i := i + 1");
@@ -449,7 +449,7 @@ static void test_statements(void)
     LHAT_CHECK_EQ_INT(first_statement(&p)->kind, LHAT_NODE_REASSIGN);
     parse_dispose(&p);
 
-    // 7.4改: 'a += b' is a reassignment whose value is 'a + b', built around
+    // 7.4: 'a += b' is a reassignment whose value is 'a + b', built around
     // the same target node -- read once for its type/current value, never
     // an expression compiled twice.
     LHAT_TEST("compound assignment reads as a reassignment of a + b");
@@ -492,7 +492,7 @@ static void test_statements(void)
         }
     }
 
-    // 7.4改2: several targets, each paired with the value at its own position
+    // 7.4: several targets, each paired with the value at its own position
     // -- one BINARY per pair, the way a plain ':=' takes one value per target.
     LHAT_TEST("compound assignment takes several targets");
     parse_text(&p, "a, b += 1, 2");
@@ -517,7 +517,7 @@ static void test_statements(void)
                       LHAT_PARSE_ERR_BINDING_ARITY);
     parse_dispose(&p);
 
-    // 13.8改 (S46): several names take the values of one call apart, with no
+    // 13.8改: several names take the values of one call apart, with no
     // mark at all -- 13.10 marked the table path, and both went together.
     LHAT_TEST("destructuring binding");
     parse_text(&p, "var^ q, r = divmod(7, 2)");
@@ -530,9 +530,9 @@ static void test_statements(void)
     }
     parse_dispose(&p);
 
-    // 13.8改 (S46): one value with several names parses. Whether it is a
-    // tuple being taken apart is a question about the type, so the mark 13.10
-    // used to demand is withdrawn and the checker answers instead.
+    // 13.8改: one value with several names parses. Whether it is a
+    // tuple being taken apart is a question about the type, so no mark is
+    // demanded here and the checker answers instead.
     LHAT_TEST("one value with several names parses without a mark");
     parse_text(&p, "q, r := divmod(7, 2)");
     LHAT_CHECK_EQ_INT(p.result.diagnostic_count, 0);
@@ -1040,13 +1040,6 @@ static void test_statements(void)
                       LHAT_PARSE_ERR_EQUALS_IS_COMPARISON);
     parse_dispose(&p);
 
-    LHAT_TEST("'<<' reports what replaced it");
-    parse_text(&p, "counter << 1");
-    LHAT_CHECK(p.result.diagnostic_count > 0, "expected a diagnostic");
-    LHAT_CHECK_EQ_INT(p.result.diagnostics[0].code,
-                      LHAT_PARSE_ERR_WITHDRAWN_SHIFT);
-    parse_dispose(&p);
-
     // 8.6: the enclosing construct is the introducer, so ':=' still defines
     // inside for^, with^ and a brace list.
     LHAT_TEST("an introducer keeps ':=' a definition");
@@ -1055,8 +1048,9 @@ static void test_statements(void)
     LHAT_CHECK_EQ_INT(first_statement(&p)->v.loop.focus->kind, LHAT_NODE_DEFINE);
     parse_dispose(&p);
 
-    // Q2: the postfix form was withdrawn, and the parser says so.
-    LHAT_TEST("postfix reassignment reports what replaced it");
+    // 01 の 7.3: the postfix form is not the language's, and the parser
+    // points at the prefix one.
+    LHAT_TEST("postfix reassignment reports what to write instead");
     parse_text(&p, "i + 1 -> i");
     LHAT_CHECK(p.result.diagnostic_count > 0, "expected a diagnostic");
     LHAT_CHECK_EQ_INT(p.result.diagnostics[0].code,
@@ -1526,7 +1520,7 @@ static void test_functions(void)
                "the outer procedure does not yield");
     parse_dispose(&p);
 
-    // 05 の 5.4改: a require^ standing alone is a statement of its own, so
+    // 05 の 5.5: a require^ standing alone is a statement of its own, so
     // 8.2's "a bare expression is not a statement" is untouched.
     LHAT_TEST("a require^ on its own is a statement");
     parse_text(&p, "require^ \"lib/m.lh\"");
@@ -1736,7 +1730,7 @@ static void test_types(void)
                       LHAT_NODE_TYPE_TABLE);
     parse_dispose(&p);
 
-    // 14.10改: an entry with no 'name :' in front of it is the type of the
+    // 14.10: an entry with no 'name :' in front of it is the type of the
     // next position. One token of lookahead tells the two apart.
     LHAT_TEST("types listed on their own are positions");
     parse_text(&p, "x := y as^ t^{ number^, string^ }");
@@ -1766,7 +1760,7 @@ static void test_types(void)
         3);
     parse_dispose(&p);
 
-    // 13.7, 14.10改: the sequence half may end in a variadic tail, the same
+    // 13.7, 14.10: the sequence half may end in a variadic tail, the same
     // marker a parameter list ends in.
     LHAT_TEST("a table type's tail may be variadic");
     parse_text(&p, "x := y as^ t^{ ...:number^ }");
@@ -1817,15 +1811,15 @@ static void test_types(void)
         const LhatNode *t = first_value(&p)->v.ascription.type;
         LHAT_CHECK_EQ_INT(t->kind, LHAT_NODE_TYPE_CORO);
         LHAT_CHECK(t->v.coroutine.is_function, "an f^ coroutine");
-        // 15.2改: nothing is sent to this one, which is written by leaving
+        // 15.2: nothing is sent to this one, which is written by leaving
         // the parameter list empty rather than by naming nil^.
         LHAT_CHECK(t->v.coroutine.receive == NULL, "no receive type");
         LHAT_CHECK(t->v.coroutine.produce != NULL, "produce type");
     }
     parse_dispose(&p);
 
-    // Q9: '::' was withdrawn, and the parser points at '->'.
-    LHAT_TEST(":: reports what replaced it");
+    // 01 の 7.6: '::' is not the language's, and the parser points at '->'.
+    LHAT_TEST(":: reports what to write instead");
     parse_text(&p, "x := y as^ f^number^ :: string^ ;");
     LHAT_CHECK(p.result.diagnostic_count > 0, "expected a diagnostic");
     LHAT_CHECK_EQ_INT(p.result.diagnostics[0].code,
@@ -2226,7 +2220,7 @@ static void test_loop_clauses(void)
                       LHAT_PARSE_ERR_CLAUSE_ORDER);
     parse_dispose(&p);
 
-    // 9.3改: once the braces are carved into clauses, one of them has to be
+    // 9.3: once the braces are carved into clauses, one of them has to be
     // the body. Statements written after prolog^ join it instead, which is
     // the shape this catches.
     LHAT_TEST("a loop carved into clauses needs a body among them");
@@ -2272,7 +2266,7 @@ static void test_loop_clauses(void)
 
     // 11.8: and^, or^ and '!' are the language's own logic, and 11.5's
     // comparisons decide by disjointness rather than by asking a type.
-    // 11.9 (S40): and a comparison is not written one by one -- op^<=> is
+    // 11.9: and a comparison is not written one by one -- op^<=> is
     // what answers all six, so that is what a written op^< is pointed at.
     LHAT_TEST("but a comparison is not one to define");
     parse_text(&p,
@@ -3088,7 +3082,7 @@ static void test_typeof(void)
     parse_dispose(&p);
 }
 
-// 01 の 2.3改 (S34): a second hat counts levels, and only it^/this^/self^/
+// 01 の 2.3: a second hat counts levels, and only it^/this^/self^/
 // class^ have levels to count -- everywhere else, and for every other word,
 // the extra hats are refused where they are written.
 static void test_stacked_hats(void)
@@ -3133,7 +3127,7 @@ static void test_stacked_hats(void)
                       LHAT_PARSE_ERR_HATS_DONT_STACK);
     parse_dispose(&p);
 
-    // The four that do stack pass the parser -- the reach is 01 の 2.3改's,
+    // The four that do stack pass the parser -- the reach is 01 の 2.3's,
     // and whether it compiles yet is the compiler's answer (test_vm).
     LHAT_TEST("it^^ parses, carrying its count");
     parse_text(&p, "x := it^^");
@@ -3154,7 +3148,7 @@ static void test_stacked_hats(void)
     LHAT_CHECK_EQ_INT(error_count(&p), 0);
     parse_dispose(&p);
 
-    // 13.13 (S37): the fifth word, and the one that counts written type
+    // 13.13: the fifth word, and the one that counts written type
     // literals rather than bindings or loops. A type name still does not
     // stack (above) -- this one is not a name of a type but a reach to one.
     LHAT_TEST("Self^^ stacks where a type is written");

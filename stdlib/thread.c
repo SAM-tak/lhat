@@ -483,7 +483,7 @@ bool lhatstdlib_thread_register(LhatProgram *program)
     // Naming the four carryable kinds here would read better, and would also
     // make the one call this feature exists for -- forwarding a caller's own
     // collector, 'spawn(fn, ...)' -- impossible: that collector is any^ and
-    // any^ conforms to no narrower type (S16). So the boundary is stated at
+    // any^ conforms to no narrower type (02 の 13.7). So the boundary is stated at
     // run time instead, by ThreadError.BadArgument, and the signature asks
     // only what it can ask without shutting the door on a spread.
     //

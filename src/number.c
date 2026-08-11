@@ -138,7 +138,7 @@ bool lhat_number_literal(const char *text, size_t length, bool after_dot,
             if (exponent == 'e' || exponent == 'E') {
                 size_t sign = (byte_at(&r, 1) == '+' || byte_at(&r, 1) == '-') ? 1 : 0;
                 if (!is_decimal_digit(byte_at(&r, 1 + sign))) {
-                    // Section 4.5: no backtracking. Q7 makes "1e^3" illegal
+                    // 01 の 4.5: no backtracking. 10.3 makes "1e^3" illegal
                     // anyway, so a malformed exponent is simply an error, and
                     // the 'e' stays consumed.
                     return finish(out, LHAT_NUMBER_BAD_EXPONENT, r.at + 1);

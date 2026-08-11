@@ -106,7 +106,7 @@ static void test_definition(void)
     check_dispose(&c);
 
     // The annotation as written is what shows, which is where a type comes
-    // from until 07 の L1's other half exists.
+    // from until the doc-comment half of hover exists (07 の 4).
     LHAT_TEST("an annotation shows as it was written");
     check_text(&c, "let^ n:number^ = 1\nprint(n)\n");
     text = hover_text(&c, last_offset(&c, "n"));
@@ -114,7 +114,7 @@ static void test_definition(void)
     free(text);
     check_dispose(&c);
 
-    // 07 の L6: what the checker settled on, under the line as written. A
+    // 07 の what the checker settled on, under the line as written. A
     // definition with no annotation has only this.
     LHAT_TEST("the inferred type is shown");
     check_text(&c, "let^ n = 1\nprint(n)\n");
@@ -142,7 +142,7 @@ static void test_definition(void)
     free(text);
     check_dispose(&c);
 
-    // 07 の L7: a name from another unit is bound by a require^ or import^,
+    // 07 の a name from another unit is bound by a require^ or import^,
     // and that line names the module -- so showing the definition shows where
     // the name came from, without anything extra being tracked.
     LHAT_TEST("a name from elsewhere shows the module it came from");
@@ -200,7 +200,7 @@ static void test_module(void)
 {
     Checked c;
 
-    // 07 の L1: module^ says what the unit is, so what is written against it
+    // 07 の module^ says what the unit is, so what is written against it
     // describes the unit. It declares rather than uses a name, so it is found
     // by position instead of through a resolution.
     LHAT_TEST("module^ carries the unit's own description");

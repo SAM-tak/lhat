@@ -4,8 +4,7 @@
 // side -- three f32 components living in stack slots, moved by copy,
 // compared by bytes, with no lifetime for anyone to manage. Vector3 is the
 // reference side (05 の 8.8): a container a table can hold, get() and set()
-// the unboxing and boxing between the two. The pair is Memo.md's sketch
-// made real, and the split is deliberate: arithmetic never allocates, and
+// the unboxing and boxing between the two. The split is deliberate: arithmetic never allocates, and
 // keeping a value is spelled out as boxing rather than happening by
 // accident.
 

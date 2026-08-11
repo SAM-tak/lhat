@@ -23,12 +23,12 @@ typedef enum {
     LHAT_PARSE_ERR_EXPECTED_TOKEN,
     LHAT_PARSE_ERR_BARE_EXPRESSION,        // 8.2
     LHAT_PARSE_ERR_JUXTAPOSITION,          // 2.1: 'foo 1 2 3' outside command mode
-    LHAT_PARSE_ERR_WITHDRAWN_ARROW,        // '->' as postfix reassignment (Q2)
-    LHAT_PARSE_ERR_WITHDRAWN_COLONCOLON,   // '::' as the return separator (Q9)
+    LHAT_PARSE_ERR_WITHDRAWN_ARROW,        // '->' as postfix reassignment
+    LHAT_PARSE_ERR_WITHDRAWN_COLONCOLON,   // '::' as the return separator
     LHAT_PARSE_ERR_BINDING_ARITY,             // targets and values disagree
     LHAT_PARSE_ERR_CLAUSE_ORDER,              // 9.2: clauses have a fixed order
     LHAT_PARSE_ERR_MAIN_REQUIRED,             // 9.3
-    LHAT_PARSE_ERR_NO_BODY_CLAUSE,            // 9.3改: none of first^, pre^,
+    LHAT_PARSE_ERR_NO_BODY_CLAUSE,            // 9.3: none of first^, pre^,
                                               // main^ or last^ was written
     LHAT_PARSE_ERR_PRE_IN_WALK,               // 9.10: pre^ runs before the
                                               // walk has bound anything
@@ -61,7 +61,6 @@ typedef enum {
     LHAT_PARSE_ERR_FIELD_NEEDS_TYPE,          // 04 の 2.2: a type or a default
     LHAT_PARSE_ERR_ERRORDEF_NEEDS_NAME,       // 04 の 2.4: the name is the identity
     LHAT_PARSE_ERR_ERROR_NEEDS_KIND,          // 04 の 2.5
-    LHAT_PARSE_ERR_WITHDRAWN_SHIFT,           // 8.6: '<<' replaced by ':='
     LHAT_PARSE_ERR_LET_NEEDS_VALUE,           // 8.7: no declaration without one
     LHAT_PARSE_ERR_LET_NEEDS_EQUALS,          // 8.9: let^ defines and never
                                               // reassigns, so ':=' after one
@@ -78,7 +77,7 @@ typedef enum {
     LHAT_PARSE_ERR_SPREAD_NOT_LAST,           // 13.7: '...' forwards the
                                               // whole tail, so nothing can
                                               // follow it in a call
-    LHAT_PARSE_ERR_HATS_DONT_STACK,           // 01 の 2.3改: extra hats count
+    LHAT_PARSE_ERR_HATS_DONT_STACK,           // 01 の 2.3: extra hats count
                                               // levels, and this word has no
                                               // levels to count
     LHAT_PARSE_ERR_LEXICAL                    // the lexer already reported one

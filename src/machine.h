@@ -73,7 +73,7 @@ typedef struct {
     LhatCoroutine *coroutine;
     bool disposing;  // 02 の 10.7: no yield^ while the cleanups are running
 
-    // 02 の 11.9 (S40): an ordering that had to reach for '<=>' to answer.
+    // 02 の 11.9: an ordering that had to reach for '<=>' to answer.
     // The frame carries which comparison was written, and what comes back is
     // read against zero with it rather than handed over as it is -- the one
     // place a frame's answer is not the value of the expression that made it.
@@ -92,7 +92,7 @@ _Static_assert(LHAT_MAX_TUPLE <= LHAT_HOSTVALUE_MAX_BYTES / 8,
 #define LHAT_FRAME_NO_DERIVE LHAT_BC_LOADK
 
 struct LhatMachine {
-    // 2.2改: the one shared stack, as two parallel runs -- payloads dense,
+    // 2.2: the one shared stack, as two parallel runs -- payloads dense,
     // tags one byte each -- read and written through `slots` below. 16
     // bytes a slot becomes 9, and a frame's worth of tags sits in one or
     // two cache lines.
