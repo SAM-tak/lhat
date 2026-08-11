@@ -131,6 +131,24 @@ typedef enum {
     LHAT_OP_COUNT
 } LhatOpKind;
 
+// 02 の 11.8 with 11.9: the spellings op^ may write -- '..', the seven
+// arithmetic operators and '<=>'. One list, expanded three ways: the
+// checker's member naming, the machine's candidate lookup, and the
+// membership test. They have to agree byte for byte, and one list is what
+// makes them. X(op, bc, spelling, length): `op` completes LHAT_OP_##op and
+// `bc` LHAT_BC_##bc, named apart because '//' is FLOORDIV as a token and
+// IDIV as an instruction.
+#define LHAT_OPERATOR_MEMBERS(X) \
+    X(SPACESHIP, SPACESHIP, "<=>", 3) \
+    X(CONCAT,    CONCAT,    "..",  2) \
+    X(ADD,       ADD,       "+",   1) \
+    X(SUB,       SUB,       "-",   1) \
+    X(MUL,       MUL,       "*",   1) \
+    X(DIV,       DIV,       "/",   1) \
+    X(FLOORDIV,  IDIV,      "//",  2) \
+    X(MOD,       MOD,       "%",   1) \
+    X(POW,       POW,       "**",  2)
+
 // Section 5.
 typedef enum {
     LHAT_STRING_ESCAPED,  // "..."   escapes processed, may span lines

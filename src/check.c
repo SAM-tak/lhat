@@ -1161,41 +1161,35 @@ static LhatType *require_value(Checker *c, const LhatNode *at, LhatType *type)
 // 11.8: an operator is a member whose name is the operator itself. NULL for
 // the ones no op^ may define -- 11.8 keeps and^, or^ and '!' built in, and
 // 11.5's comparisons decide by 14.12's disjointness rather than by asking.
+// The spellings are token.h's one list, which is what keeps this the same
+// string vm.c looks a candidate up by.
 static const char *operator_name(LhatOpKind op, size_t *length)
 {
     switch (op) {
-        case LHAT_OP_SPACESHIP: *length = 3; return "<=>";  // 11.9
-        case LHAT_OP_CONCAT:   *length = 2; return "..";
-        case LHAT_OP_ADD:      *length = 1; return "+";
-        case LHAT_OP_SUB:      *length = 1; return "-";
-        case LHAT_OP_MUL:      *length = 1; return "*";
-        case LHAT_OP_DIV:      *length = 1; return "/";
-        case LHAT_OP_FLOORDIV: *length = 2; return "//";
-        case LHAT_OP_MOD:      *length = 1; return "%";
-        case LHAT_OP_POW:      *length = 2; return "**";
-        default:               *length = 0; return NULL;
+#define LHAT_OPERATOR_CASE(opk, bc, spelling, len) \
+    case LHAT_OP_##opk:                            \
+        *length = (len);                           \
+        return spelling;
+        LHAT_OPERATOR_MEMBERS(LHAT_OPERATOR_CASE)
+#undef LHAT_OPERATOR_CASE
+        default:
+            *length = 0;
+            return NULL;
     }
 }
 
-// 11.8: whether this member name is an operator. The eight spellings above
-// are the ones op^ writes, and 01 の 6 章 keeps a program from writing any of
-// them as an ordinary name -- so a member of one of these names got there
+// 11.8: whether this member name is an operator. These spellings are the
+// ones op^ writes, and 01 の 6 章 keeps a program from writing any of them
+// as an ordinary name -- so a member of one of these names got there
 // through op^ and nowhere else.
 static bool is_operator_name(const char *name, size_t length)
 {
-    static const LhatOpKind written[] = {
-        LHAT_OP_SPACESHIP,  // 11.9
-        LHAT_OP_CONCAT, LHAT_OP_ADD, LHAT_OP_SUB,      LHAT_OP_MUL,
-        LHAT_OP_DIV,    LHAT_OP_MOD, LHAT_OP_FLOORDIV, LHAT_OP_POW,
-    };
-    for (size_t i = 0; i < sizeof written / sizeof written[0]; i++) {
-        size_t spelt = 0;
-        const char *text = operator_name(written[i], &spelt);
-        if (text != NULL && spelt == length &&
-            memcmp(text, name, length) == 0) {
-            return true;
-        }
+#define LHAT_OPERATOR_TEST(opk, bc, spelling, len)                   \
+    if (length == (len) && memcmp(name, spelling, (len)) == 0) {     \
+        return true;                                                 \
     }
+    LHAT_OPERATOR_MEMBERS(LHAT_OPERATOR_TEST)
+#undef LHAT_OPERATOR_TEST
     return false;
 }
 

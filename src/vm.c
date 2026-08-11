@@ -5676,17 +5676,18 @@ const char *lhat_compile_status_message(LhatCompileStatus status)
 static const char *operator_name(LhatOpcode op, size_t *length)
 {
     switch (op) {
-        case LHAT_BC_SPACESHIP: *length = 3; return "<=>";  // 02 の 11.9
-        case LHAT_BC_CONCAT: *length = 2; return "..";
-        case LHAT_BC_ADD:    *length = 1; return "+";
-        case LHAT_BC_SUB:    *length = 1; return "-";
-        case LHAT_BC_MUL:    *length = 1; return "*";
-        case LHAT_BC_DIV:    *length = 1; return "/";
-        case LHAT_BC_IDIV:   *length = 2; return "//";
-        case LHAT_BC_MOD:    *length = 1; return "%";
-        case LHAT_BC_POW:    *length = 2; return "**";
-        case LHAT_BC_ASCAST: *length = 3; return "as^";
-        default:             *length = 0; return NULL;
+#define LHAT_OPERATOR_CASE(opk, bc, spelling, len) \
+    case LHAT_BC_##bc:                             \
+        *length = (len);                           \
+        return spelling;
+        LHAT_OPERATOR_MEMBERS(LHAT_OPERATOR_CASE)
+#undef LHAT_OPERATOR_CASE
+        case LHAT_BC_ASCAST:
+            *length = 3;
+            return "as^";
+        default:
+            *length = 0;
+            return NULL;
     }
 }
 
