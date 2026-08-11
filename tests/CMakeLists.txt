@@ -91,6 +91,16 @@ endif()
 # is the whole assertion, since golden output would be brittleness of its
 # own. Named files rather than a glob, so a half-written sketch in sample/
 # does not fail the suite.
+# The installed tree, proven end to end: install into a scratch prefix,
+# then configure, build and run tests/install_smoke against it through
+# find_package. See scripts/install_smoke.cmake.
+add_test(NAME install_smoke
+         COMMAND ${CMAKE_COMMAND}
+             -DBUILD_DIR=${CMAKE_BINARY_DIR}
+             -DSOURCE_DIR=${CMAKE_SOURCE_DIR}
+             -P ${CMAKE_SOURCE_DIR}/scripts/install_smoke.cmake)
+set_tests_properties(install_smoke PROPERTIES LABELS e2e TIMEOUT 300)
+
 if(LHAT_BUILD_CLI)
     set(lhat_e2e_samples
         vector.lh

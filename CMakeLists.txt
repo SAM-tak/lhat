@@ -95,8 +95,9 @@ configure_file(include/lhat/version.h.in
 # value.h, which are too ordinary to put on someone else's include path --
 # include/lhat.h reaches them and is the only header a host names.
 target_include_directories(lhat
-    PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include
-           ${CMAKE_CURRENT_BINARY_DIR}/include
+    PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+           $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/include>
+           $<INSTALL_INTERFACE:include>
     PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src
 )
 
@@ -117,7 +118,9 @@ add_library(lhatport
     port/loader.c
 )
 
-target_include_directories(lhatport PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_include_directories(lhatport
+    PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+           $<INSTALL_INTERFACE:include>)
 
 # So that a replacement of these files, written against include/lhat.h alone,
 # compiles the same way ours does.
@@ -140,7 +143,9 @@ target_link_libraries(lhatthread PUBLIC Threads::Threads)
 
 # "port/thread.h" と書いて含める -- ヘッダ名だけを置くと stdlib/thread.h と
 # 衝突する。下の Driver セクションが stdlib/*.h に対して使っているのと同じ手。
-target_include_directories(lhatthread PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+target_include_directories(lhatthread
+    PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
+           $<INSTALL_INTERFACE:include>)
 
 # ---- Sample standard library ------------------------------------------------
 # stdlib/ の隔離は port/ と非対称: port はコアが既定でリンクする既定実装で、
@@ -163,10 +168,12 @@ if(LHAT_BUILD_STDLIB)
     # 同じ理由で、これ自体が「lhat.h だけを使って書けるサンプル」の実例
     # になっている。std.thread だけが例外で、OS スレッドは lhat.h の外なので
     # port/thread.h を足す。stdlib/*.h には現れないので PRIVATE。
-    target_include_directories(lhatstdlib PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
+    target_include_directories(lhatstdlib
+        PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+               $<INSTALL_INTERFACE:include>)
     target_link_libraries(lhatstdlib PUBLIC lhat PRIVATE lhatthread)
 
-    install(TARGETS lhatstdlib
+    install(TARGETS lhatstdlib EXPORT lhatTargets
         ARCHIVE DESTINATION lib
         LIBRARY DESTINATION lib
         RUNTIME DESTINATION bin)
@@ -246,7 +253,7 @@ if(LHAT_BUILD_LSP)
     install(TARGETS lhat_lsp RUNTIME DESTINATION bin)
 endif()
 
-install(TARGETS lhat lhatport lhatthread
+install(TARGETS lhat lhatport lhatthread EXPORT lhatTargets
     ARCHIVE DESTINATION lib
     LIBRARY DESTINATION lib
     RUNTIME DESTINATION bin
@@ -260,7 +267,11 @@ install(FILES port/thread.h DESTINATION include/port)
 # lhat.h reaches the rest by a path relative to itself, so the two directories
 # are installed keeping the shape they have here. A host still names only
 # <prefix>/include/lhat.h and puts only <prefix>/include on its path.
-install(FILES include/lhat.h DESTINATION include)
+# lhatconfig.h is found back through the include path (the internal headers
+# say "lhatconfig.h" bare), and the generated version.h as "lhat/version.h".
+install(FILES include/lhat.h include/lhatconfig.h DESTINATION include)
+install(FILES ${CMAKE_CURRENT_BINARY_DIR}/include/lhat/version.h
+    DESTINATION include/lhat)
 
 # machine.h is the inside of LhatMachine and gc.h is what reads it. vm.h keeps
 # the machine opaque on purpose, and nothing lhat.h reaches includes either of
@@ -269,6 +280,21 @@ install(DIRECTORY src/ DESTINATION src
     FILES_MATCHING PATTERN "*.h"
     PATTERN "machine.h" EXCLUDE
     PATTERN "gc.h" EXCLUDE)
+
+# The package: find_package(lhat CONFIG) answers lhat::lhat and friends.
+# tests/install_smoke is the proof the installed tree actually works --
+# nothing in the ordinary test run reads the install rules at all.
+include(CMakePackageConfigHelpers)
+install(EXPORT lhatTargets NAMESPACE lhat:: DESTINATION lib/cmake/lhat)
+configure_package_config_file(cmake/lhatConfig.cmake.in
+    ${CMAKE_CURRENT_BINARY_DIR}/lhatConfig.cmake
+    INSTALL_DESTINATION lib/cmake/lhat)
+write_basic_package_version_file(
+    ${CMAKE_CURRENT_BINARY_DIR}/lhatConfigVersion.cmake
+    COMPATIBILITY SameMajorVersion)
+install(FILES ${CMAKE_CURRENT_BINARY_DIR}/lhatConfig.cmake
+              ${CMAKE_CURRENT_BINARY_DIR}/lhatConfigVersion.cmake
+    DESTINATION lib/cmake/lhat)
 
 # ---- Tests ----------------------------------------------------------------
 if(LHAT_BUILD_TESTS)
