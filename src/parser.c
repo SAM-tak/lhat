@@ -3444,9 +3444,18 @@ static LhatNode *parse_jump(Parser *p, LhatNodeKind kind)
     // the same line. Without that, a bare `yield^` or `return^` swallows
     // whatever statement comes next, since an ordinary name begins an
     // expression just as well as it begins a statement.
+    //
+    // 5.1 and 17.2: these two begin an expression as readily as a statement,
+    // and what stands after a jump is a value -- 15.12 writes the very same
+    // if^ expression as a body, so refusing it here made one spelling of an
+    // answer unwritable. The statement form written on this line is what
+    // gives way; the next line still reads as it always did, which is where
+    // a statement after a valueless jump belongs.
+    bool begins_expression_form = check_hat(p, "if") || check_hat(p, "for");
     bool operand_follows =
         !p->current.preceded_by_newline &&
-        ((starts_expression(&p->current) && !is_statement_keyword(p)) ||
+        ((starts_expression(&p->current) &&
+          (!is_statement_keyword(p) || begins_expression_form)) ||
          check_op(p, LHAT_OP_LPAREN) || check_op(p, LHAT_OP_SUB) ||
          check_op(p, LHAT_OP_NOT) || check_op(p, LHAT_OP_LBRACE));
 

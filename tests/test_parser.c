@@ -1156,6 +1156,60 @@ static void test_statements(void)
     }
     parse_dispose(&p);
 
+    // 5.1 with 15.12: an if^ expression is what a body may answer with, so
+    // it is what a return^ may answer with. Before this the word was read as
+    // beginning a statement, and the jump came out valueless.
+    LHAT_TEST("return^ takes an if^ expression");
+    parse_text(&p, "do^{ return^ if^ n < 2: 1 el^: 2; }");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    {
+        const LhatNode *body = first_statement(&p)->v.list.items;
+        LHAT_CHECK_EQ_INT(body->kind, LHAT_NODE_RETURN);
+        LHAT_CHECK(body->v.jump.value != NULL, "return^ answered the if^");
+        if (body->v.jump.value != NULL) {
+            LHAT_CHECK_EQ_INT(body->v.jump.value->kind, LHAT_NODE_IF_EXPR);
+        }
+    }
+    parse_dispose(&p);
+
+    LHAT_TEST("and yield^ sends one");
+    parse_text(&p, "do^{ yield^ if^ n < 2: 1 el^: 2; }");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    {
+        const LhatNode *body = first_statement(&p)->v.list.items;
+        LHAT_CHECK_EQ_INT(body->kind, LHAT_NODE_YIELD);
+        LHAT_CHECK(body->v.jump.value != NULL, "yield^ sent the if^");
+        if (body->v.jump.value != NULL) {
+            LHAT_CHECK_EQ_INT(body->v.jump.value->kind, LHAT_NODE_IF_EXPR);
+        }
+    }
+    parse_dispose(&p);
+
+    // 17.2: the match expression begins with the same word a loop does, and
+    // is an expression in this position for the same reason.
+    LHAT_TEST("and a for^ match expression is an operand too");
+    parse_text(&p, "do^{ return^ for^ n: when^ 1: \"a\" other^: \"b\"; }");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    {
+        const LhatNode *body = first_statement(&p)->v.list.items;
+        LHAT_CHECK_EQ_INT(body->kind, LHAT_NODE_RETURN);
+        LHAT_CHECK(body->v.jump.value != NULL, "return^ answered the match");
+    }
+    parse_dispose(&p);
+
+    // The line rule is untouched: what follows on the next line is its own
+    // statement, if^ like anything else.
+    LHAT_TEST("an if^ on the next line is still a statement of its own");
+    parse_text(&p, "do^{ return^\nif^ x { y := 1 } }");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    {
+        const LhatNode *body = first_statement(&p)->v.list.items;
+        LHAT_CHECK_EQ_INT(body->kind, LHAT_NODE_RETURN);
+        LHAT_CHECK(body->v.jump.value == NULL, "return^ answered nothing");
+        LHAT_CHECK(body->next != NULL, "the if^ is its own statement");
+    }
+    parse_dispose(&p);
+
     LHAT_TEST("an operand on the same line is still taken");
     parse_text(&p, "do^{ return^ x\ny := 1 }");
     LHAT_CHECK_EQ_INT(error_count(&p), 0);

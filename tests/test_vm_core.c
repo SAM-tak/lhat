@@ -420,6 +420,25 @@ static void test_control(void)
     CHECK_INTEGER(&r, 7);
     run_dispose(&r);
 
+    // 5.1 with 15.12: what a body may answer with, a return^ may answer
+    // with. 15.12 writes this very expression as a body, so the two
+    // spellings of one answer have to reach the same value.
+    LHAT_TEST("and a return^ answers with one");
+    run_text(&r,
+             "var^ pick = f^ n:number^ -> number^ {\n"
+             "    return^ if^ n < 2: 7 el^: 8 ;\n"
+             "}\n"
+             "return^ pick(1) * 10 + pick(9)\n");
+    CHECK_INTEGER(&r, 78);
+    run_dispose(&r);
+
+    LHAT_TEST("a yield^ sends one the same way");
+    run_text(&r,
+             "var^ gen = p^ n:number^ { yield^ if^ n < 2: 7 el^: 8 ; }\n"
+             "return^ gen(9).start()\n");
+    CHECK_INTEGER(&r, 8);
+    run_dispose(&r);
+
     LHAT_TEST("comparisons produce bools");
     run_text(&r, "return^ 1 < 2\n");
     CHECK_BOOL(&r, true);
