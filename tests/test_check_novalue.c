@@ -343,6 +343,66 @@ static void test_no_value(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_BAD_OPERATOR);
     unit_dispose(&u);
 
+    // 11.8改: '-' is the one operator with a unary spelling, so self^ alone is
+    // its second shape. What tells the two apart is the count and nothing
+    // else, which is why the arms above are still refused.
+    LHAT_TEST("op^- written with self^ alone is the unary one");
+    check_text(&u,
+               "var^ V = def^{ self^{ n := 0 },\n"
+               "  op^- := f^self^ -> number^ { return^ 0 - self^.n } }\n"
+               "var^ r : number^ = -V.new()\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("and a type may carry both under the one name");
+    check_text(&u,
+               "var^ V = def^{ self^{ n := 0 },\n"
+               "  op^- := f^self^, o:number^ -> number^ { return^ o },\n"
+               "  overload^ op^- := f^self^ -> number^ { return^ 0 },\n"
+               "}\n"
+               "var^ a : number^ = V.new() - 1\n"
+               "var^ b : number^ = -V.new()\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // The counts do not stand in for each other: what a type wrote for one
+    // spelling says nothing about the other.
+    LHAT_TEST("a unary op^- does not answer a binary use");
+    check_text(&u,
+               "var^ V = def^{ self^{ n := 0 },\n"
+               "  op^- := f^self^ -> number^ { return^ 0 } }\n"
+               "var^ r = V.new() - 1\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_NO_OPERATOR);
+    unit_dispose(&u);
+
+    // 14.8 is what a unary '-' falls back on, so this reads as arithmetic
+    // asked of something that is not a number^ -- the same report a type
+    // carrying no '-' at all gets.
+    LHAT_TEST("nor does a binary op^- answer a unary use");
+    check_text(&u,
+               "var^ V = def^{ self^{ n := 0 },\n"
+               "  op^- := f^self^, o:number^ -> number^ { return^ o } }\n"
+               "var^ r = -V.new()\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_NOT_NUMBER);
+    unit_dispose(&u);
+
+    // Only '-' has one. The shape is refused for every other spelling exactly
+    // as it was, since there is no unary '..' for it to mean.
+    LHAT_TEST("no other operator has a unary spelling");
+    check_text(&u,
+               "var^ V = def^{ self^{},\n"
+               "  op^+ := f^self^ -> number^ { return^ 0 } }\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_BAD_OPERATOR);
+    unit_dispose(&u);
+
+    // 11.1 and 15.7改 are unchanged by the new shape: what they refuse is
+    // refused whichever count is written.
+    LHAT_TEST("a unary op^- is still a function that cannot yield^");
+    check_text(&u,
+               "var^ V = def^{ self^{}, op^- := p^self^ { } }\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_BAD_OPERATOR);
+    unit_dispose(&u);
+
     // 14.5: what a composition brings in keeps working, and 14.12's markers
     // reach an operator like any other member.
     LHAT_TEST("a composition carries an operator in");

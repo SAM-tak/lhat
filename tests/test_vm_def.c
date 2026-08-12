@@ -501,6 +501,61 @@ static void test_definitions(void)
     CHECK_INTEGER(&r, 12);
     run_dispose(&r);
 
+    // 11.8改: the unary '-'. NEG handles number^ itself and comes here for
+    // everything else, which is the same posture the binary instructions take.
+    LHAT_TEST("a unary op^- answers '-x'");
+    run_text(&r,
+             "var^ V = def^{ self^{ n := 3 },\n"
+             "  op^- := f^self^ -> number^ { return^ 0 - self^.n } }\n"
+             "return^ -V.new()\n");
+    CHECK_INTEGER(&r, -3);
+    run_dispose(&r);
+
+    // Both spellings under the one member name, told apart by the count --
+    // which is what makes the unary one need no name of its own.
+    LHAT_TEST("and stands beside the binary one");
+    run_text(&r,
+             "var^ V = def^{ self^{ n := 7 },\n"
+             "  op^- := f^self^, o:number^ -> number^ { return^ self^.n - o },\n"
+             "  overload^ op^- := f^self^ -> number^ { return^ 0 - self^.n } }\n"
+             "var^ v = V.new()\n"
+             "return^ (v - 2) * 10 + -v\n");
+    CHECK_INTEGER(&r, 43);  // 5 * 10 + (-7)
+    run_dispose(&r);
+
+    // run_text compiles straight past the checker, so these are the machine
+    // answering on its own: the counts do not stand in for each other.
+    LHAT_TEST("a unary op^- is no candidate for a binary use");
+    run_text(&r,
+             "var^ V = def^{ self^{ n := 3 },\n"
+             "  op^- := f^self^ -> number^ { return^ 0 } }\n"
+             "return^ V.new() - 1\n");
+    LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_NO_CANDIDATE);
+    run_dispose(&r);
+
+    LHAT_TEST("nor a binary one for a unary use");
+    run_text(&r,
+             "var^ V = def^{ self^{ n := 3 },\n"
+             "  op^- := f^self^, o:number^ -> number^ { return^ 0 } }\n"
+             "return^ -V.new()\n");
+    LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_NO_CANDIDATE);
+    run_dispose(&r);
+
+    // 11.3 judges structurally here too, so a '-' put on a plain table
+    // answers exactly as a written op^ does.
+    LHAT_TEST("a unary '-' reached by a computed key answers as well");
+    run_text(&r,
+             "var^ t = { [\"-\"] := f^self^ -> number^ { return^ 9 } }\n"
+             "return^ -t\n");
+    CHECK_INTEGER(&r, 9);
+    run_dispose(&r);
+
+    // A type carrying nothing for it faults the way it always did.
+    LHAT_TEST("and a table with no '-' still faults");
+    run_text(&r, "var^ t = { }\nreturn^ -t\n");
+    LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_TYPE_ERROR);
+    run_dispose(&r);
+
     // The candidates may differ in the type rather than the count, which is
     // the case a count alone could not tell apart.
     LHAT_TEST("candidates of one arity are told apart by type");

@@ -942,9 +942,17 @@ bool chk_is_operator_name(const char *name, size_t length)
 // whatever the body declared.
 // 11.9: and a '<=>' answers a number^, since the four orderings are
 // read off it by asking which side of zero the answer falls.
+//
+// 11.8改: '-' is the one operator written both ways, so it also takes the
+// shape with no argument at all -- that is the unary one. Told apart by the
+// count, which is what lets 14.12 hold both under the one name. The other
+// spellings keep refusing it: there is no unary '..' for it to mean.
 void chk_check_operator_shape(Checker *c, const LhatNode *at,
-                              const LhatType *type, bool compares)
+                              const LhatType *type, const char *name,
+                              size_t length)
 {
+    bool compares = length == 3 && memcmp(name, "<=>", 3) == 0;
+    bool may_be_unary = length == 1 && name[0] == '-';
     if (type == NULL || type->kind == LHAT_TYPE_UNKNOWN ||
         type->kind == LHAT_TYPE_PENDING) {
         return;
@@ -954,7 +962,7 @@ void chk_check_operator_shape(Checker *c, const LhatNode *at,
         // an operator on its own.
         for (const LhatTypeList *arm = type->v.composite.arms; arm != NULL;
              arm = arm->next) {
-            chk_check_operator_shape(c, at, arm->type, compares);
+            chk_check_operator_shape(c, at, arm->type, name, length);
         }
         return;
     }
@@ -972,8 +980,12 @@ void chk_check_operator_shape(Checker *c, const LhatNode *at,
     // Either way the receiver is out of `params`, so the count is the same,
     // and both spellings are operators -- the position only says which
     // operand the receiver is.
+    // 11.8改: a unary one takes self^ and nothing else. 11.3改's trailing
+    // self^ cannot arise there -- with no other parameter, the self^ is the
+    // first, and chk_self_marker_at reads that as the leading one.
+    bool shaped = params == 1 || (may_be_unary && params == 0);
     if (type->kind != LHAT_TYPE_FUNC || !type->v.func.is_function ||
-        !type->v.func.takes_self || params != 1 || type->v.func.yields) {
+        !type->v.func.takes_self || !shaped || type->v.func.yields) {
         chk_report(c, at, LHAT_CHECK_ERR_BAD_OPERATOR);
         return;
     }
@@ -2180,7 +2192,9 @@ const char *lhat_check_error_message(LhatCheckErrorCode code)
         case LHAT_CHECK_ERR_BAD_OPERATOR:
             return "an op^ is an f^ taking self^ and one argument, and it may "
                    "not yield^; the self^ is whichever operand it is written "
-                   "as -- first for the left one, last for the right";
+                   "as -- first for the left one, last for the right. Only "
+                   "op^- is also written with self^ alone, which is the unary "
+                   "one";
         case LHAT_CHECK_ERR_COMPARE_NOT_NUMBER:
             return "op^<=> answers a number^: '<' and the rest read which "
                    "side of zero the answer falls on";

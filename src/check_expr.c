@@ -41,8 +41,14 @@ void chk_expect(Checker *c, const LhatNode *at, LhatType *value,
 // forbids overlapping signatures, so at most one ever does. `self_last` picks
 // which side the arm was written for (11.3改): one written the other way round
 // describes the other order and is passed over.
+//
+// 11.8改: `count` is 1 for a binary operator and 0 for the unary '-', which
+// is the whole of what tells the two apart -- chk_signature_accepts compares
+// it against the declared parameters, so a binary arm cannot answer a unary
+// use and neither can the reverse.
 static const LhatType *operator_arm(const LhatType *carrier,
-                                    LhatType *const *args, bool self_last)
+                                    LhatType *const *args, size_t count,
+                                    bool self_last)
 {
     if (carrier == NULL) {
         return NULL;
@@ -52,7 +58,7 @@ static const LhatType *operator_arm(const LhatType *carrier,
              arm = arm->next) {
             if (arm->type != NULL && arm->type->kind == LHAT_TYPE_FUNC &&
                 arm->type->v.func.self_last == self_last &&
-                chk_signature_accepts(arm->type, args, 1, true)) {
+                chk_signature_accepts(arm->type, args, count, true)) {
                 return arm->type;
             }
         }
@@ -60,7 +66,7 @@ static const LhatType *operator_arm(const LhatType *carrier,
     }
     if (carrier->kind != LHAT_TYPE_FUNC ||
         carrier->v.func.self_last != self_last ||
-        !chk_signature_accepts(carrier, args, 1, true)) {
+        !chk_signature_accepts(carrier, args, count, true)) {
         return NULL;
     }
     return carrier;
@@ -77,13 +83,15 @@ static bool ordered_pair(Checker *c, LhatType *left, LhatType *right)
     }
     LhatType *args[1];
     args[0] = right;
-    if (operator_arm(chk_operator_member(c, left, "<=>", 3), args, false) != NULL) {
+    if (operator_arm(chk_operator_member(c, left, "<=>", 3), args, 1, false) !=
+        NULL) {
         return true;
     }
     // 11.3改: or the right operand carries one written as the receiver, which
     // is how a value joins a comparison whose left side is a built-in.
     args[0] = left;
-    return operator_arm(chk_operator_member(c, right, "<=>", 3), args, true) != NULL;
+    return operator_arm(chk_operator_member(c, right, "<=>", 3), args, 1,
+                        true) != NULL;
 }
 
 // 11.5 の (5) with 11.9: one link of a comparison, asked the same way whether
@@ -144,12 +152,32 @@ static LhatType *right_operator(Checker *c, const char *name, size_t length,
     // 'right op left', which is not what is written, so only a self^-last arm
     // will do.
     LhatType *args[1] = {left};
-    const LhatType *arm = operator_arm(carrier, args, true);
+    const LhatType *arm = operator_arm(carrier, args, 1, true);
     if (arm == NULL) {
         return NULL;
     }
     *answered = true;
     return arm->v.func.result;
+}
+
+// 11.8改: what '-x' is worth when x is not a number^. The operand carries the
+// member 11.8 names, and 14.4 puts it in self^ -- with nothing else written
+// there is no argument, which is the whole difference from the binary one.
+//
+// NULL means nothing was decided, the same as infer_operator: the caller falls
+// back on 14.8's number^ and reports against that.
+static LhatType *infer_unary_operator(Checker *c, LhatType *operand)
+{
+    // 03 の 3.5: a parameter says too little to look a member up on, and 14.8
+    // already demanded number^ of it before this is asked.
+    if (chk_operator_undecided(operand) || chk_param_var_for(c, operand) != NULL) {
+        return NULL;
+    }
+    // 11.3改 is about which operand is the receiver, and a unary one has only
+    // the one -- so the arm is asked for the leading self^ and no other.
+    const LhatType *arm =
+        operator_arm(chk_operator_member(c, operand, "-", 1), NULL, 0, false);
+    return arm != NULL ? arm->v.func.result : NULL;
 }
 
 static LhatType *infer_operator(Checker *c, const LhatNode *node, LhatOpKind op,
@@ -251,8 +279,20 @@ static LhatType *infer_operator(Checker *c, const LhatNode *node, LhatOpKind op,
     if (carrier->kind != LHAT_TYPE_FUNC) {
         return NULL;
     }
-    LhatType *wanted =
-        carrier->v.func.params != NULL ? carrier->v.func.params->type : NULL;
+    // 11.8改: a '-' written with self^ alone is the unary one, and it takes no
+    // right operand at all. Asked here the same way an arm of the wrong shape
+    // is: the right side is offered to 11.3改 first, and refused after.
+    if (carrier->v.func.params == NULL) {
+        bool answered = false;
+        LhatType *result =
+            right_operator(c, name, length, left, right, &answered);
+        if (answered) {
+            return result;
+        }
+        chk_report(c, node->v.binary.right, LHAT_CHECK_ERR_NO_OPERATOR);
+        return NULL;
+    }
+    LhatType *wanted = carrier->v.func.params->type;
     // 11.3改: this one does not take the right operand, so that side is
     // asked whether it was written as the receiver. Tried before expect so
     // that the answer is taken rather than reported -- and only when the left
@@ -2309,7 +2349,7 @@ LhatType *chk_infer_def(Checker *c, const LhatNode *node, LhatType *base)
         // copied from the base above and has been accumulating since.
         type = check_same_name(c, entry, hidden, type);
         if (chk_is_operator_name(name, length)) {
-            chk_check_operator_shape(c, entry, type, chk_name_is(name, length, "<=>"));
+            chk_check_operator_shape(c, entry, type, name, length);
         } else {
             chk_refuse_self_last(c, entry, type);
         }
@@ -2472,9 +2512,19 @@ static LhatType *infer_node(Checker *c, const LhatNode *node)
                            LHAT_CHECK_ERR_NOT_BOOL);
                 return chk_simple(c, LHAT_TYPE_BOOL);
             }
-            chk_expect(c, node, operand, chk_simple(c, LHAT_TYPE_NUMBER),
-                       LHAT_CHECK_ERR_NOT_NUMBER);
-            return chk_simple(c, LHAT_TYPE_NUMBER);
+            // 11.8改: 14.8 gives number^ the negation, and a type that wrote
+            // its own is asked only where that does not reach -- the order the
+            // machine takes, where NEG handles its own type and comes to the
+            // member for everything else.
+            LhatType *number = chk_simple(c, LHAT_TYPE_NUMBER);
+            if (!lhat_type_conforms(operand, number)) {
+                LhatType *own = infer_unary_operator(c, operand);
+                if (own != NULL) {
+                    return own;
+                }
+            }
+            chk_expect(c, node, operand, number, LHAT_CHECK_ERR_NOT_NUMBER);
+            return number;
         }
 
         case LHAT_NODE_BINARY:

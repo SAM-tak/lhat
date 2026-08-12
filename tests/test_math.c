@@ -77,6 +77,17 @@ static void test_operators(void)
         lhat_test_ran_dispose(&ran);
     }
 
+    // 02 の 11.8改: a registration for 'a - b' is no answer for '-a'. The two
+    // share the member name and are told apart by the count, and a host
+    // function reached with the wrong one would be handed an argument short.
+    // Refused where 14.8's number^ is what a unary '-' falls back on.
+    LHAT_TEST("a binary host operator does not answer a unary use");
+    LHAT_CHECK(!checks("import^ std.math\n"
+                       "let^ a = std.math.lvec3(1, 2, 3)\n"
+                       "let^ v = -a\n"
+                       "return^ 1\n"),
+               "the negation found nothing to answer it");
+
     LHAT_TEST("methods answer numbers and values alike");
     {
         // (2,0,0): the one normalized answer float represents exactly.

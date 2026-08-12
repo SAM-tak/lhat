@@ -42,6 +42,12 @@ static const char *operator_name(LhatOpcode op, size_t *length)
         return spelling;
         LHAT_OPERATOR_MEMBERS(LHAT_OPERATOR_CASE)
 #undef LHAT_OPERATOR_CASE
+        // 02 の 11.8改: the unary '-' is the same member name as the binary
+        // one, told apart by taking no argument. The table above is keyed by
+        // instruction, and NEG is not in it -- SUB holds that spelling.
+        case LHAT_BC_NEG:
+            *length = 1;
+            return "-";
         case LHAT_BC_ASCAST:
             *length = 3;
             return "as^";
@@ -869,10 +875,16 @@ typedef enum {
 // candidate is asked whether it takes the other operand -- the left's is not,
 // which keeps the ordinary path exactly as it was (the checker is what judges
 // a written one, and 03 の 3.1's relaxed leaves it to the body).
+//
+// 02 の 11.8改: `given` is 1 for a binary operator and 0 for the unary '-',
+// which share the one member name and are told apart by the count. A lone
+// candidate of the wrong count is asked here even on the left, since the two
+// shapes cannot stand in for each other the way a mistyped operand can.
 static OperatorLookup operator_candidate(Machine *m, LhatValue side,
                                          const char *name, size_t length,
                                          LhatValue receiver, LhatValue argument,
-                                         bool self_last, LhatValue *picked)
+                                         uint8_t given, bool self_last,
+                                         LhatValue *picked)
 {
     *picked = lhat_nil();
     const LhatTable *carrier = table_of(side);
@@ -909,7 +921,7 @@ static OperatorLookup operator_candidate(Machine *m, LhatValue side,
             }
             size_t skip = 1;
             shaped[0] = group->candidates[i];
-            if (fits_call(group->candidates[i], shaped, 1, true, &skip)) {
+            if (fits_call(group->candidates[i], shaped, given, true, &skip)) {
                 *picked = group->candidates[i];
                 return OPERATOR_PICKED;
             }
@@ -924,6 +936,16 @@ static OperatorLookup operator_candidate(Machine *m, LhatValue side,
         if (self_last) {
             return OPERATOR_ABSENT;
         }
+        // 11.8改: the counts have to agree here too. A registration written
+        // for 'a - b' is handed one operand by '-a' otherwise, and a host
+        // function reached with fewer arguments than it registered for is
+        // exactly what the call path refuses. 13.4 keeps self^ out of
+        // `parameters`, so the operand count is compared as it stands.
+        const LhatHost *host = (const LhatHost *)lhat_as_object(found);
+        if (host->has_variadic ? given < host->parameters
+                               : given != host->parameters) {
+            return OPERATOR_NO_CANDIDATE;
+        }
         *picked = found;
         return OPERATOR_PICKED;
     }
@@ -934,10 +956,16 @@ static OperatorLookup operator_candidate(Machine *m, LhatValue side,
     if (proto == NULL || proto->self_last != self_last) {
         return OPERATOR_ABSENT;  // it answers the other order
     }
+    // 11.8改: the counts have to agree even for a lone candidate. A '-'
+    // written with self^ alone is the unary one and holds no answer for
+    // 'a - b'; one that takes an argument holds none for '-a'.
+    if (proto->parameters != (size_t)given + (proto->takes_self ? 1 : 0)) {
+        return OPERATOR_NO_CANDIDATE;
+    }
     if (self_last) {
         size_t skip = 1;
         shaped[0] = found;
-        if (!fits_call(found, shaped, 1, true, &skip)) {
+        if (!fits_call(found, shaped, given, true, &skip)) {
             return OPERATOR_NO_CANDIDATE;
         }
     }
@@ -1699,8 +1727,11 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
             }
 
             case LHAT_BC_NEG: {
+                // 02 の 11.8改: number^ carries its own negation and pays
+                // nothing for the search, the same posture the binary
+                // instructions take. Anything else asks for the member.
                 if (!lhat_is_number(R(b))) {
-                    return finish(m, chunk, LHAT_RUN_TYPE_ERROR, lhat_nil(), at);
+                    goto call_operator;
                 }
                 // 14.8改: INT64_MIN is the one integer whose negation is not
                 // an integer, so it widens like any other overflow.
@@ -3444,19 +3475,30 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
     call_operator: {
         size_t length = 0;
         const char *name = operator_name(op, &length);
+        // 11.8改: NEG is the one instruction arriving here with a single
+        // operand. Everything below reads 'cc' only where a right operand
+        // exists, so the unary path leaves that register untouched -- NEG
+        // never wrote one.
+        bool unary = op == LHAT_BC_NEG;
+        uint8_t given = unary ? 0 : 1;
         // 14.4 makes an operator a method: the left operand is the receiver
         // and the right one the single argument.
         LhatValue found = lhat_nil();
-        OperatorLookup answer = operator_candidate(m, R(b), name, length, R(b),
-                                                   R(cc), false, &found);
+        OperatorLookup answer =
+            operator_candidate(m, R(b), name, length, R(b),
+                               unary ? lhat_nil() : R(cc), given, false, &found);
         // 11.3改: the left carries nothing that takes this right
         // operand, so the right one is asked whether it was written as the
         // receiver instead. This is what lets a value join an operation whose
         // left operand is a built-in, which can carry no answer for it.
-        if (answer == OPERATOR_ABSENT || answer == OPERATOR_NO_CANDIDATE) {
+        //
+        // 11.8改: a unary operator has no other side to ask. Its one operand
+        // is the receiver by the only reading there is.
+        if (!unary &&
+            (answer == OPERATOR_ABSENT || answer == OPERATOR_NO_CANDIDATE)) {
             LhatValue other = lhat_nil();
             OperatorLookup right = operator_candidate(
-                m, R(cc), name, length, R(cc), R(b), true, &other);
+                m, R(cc), name, length, R(cc), R(b), given, true, &other);
             if (right == OPERATOR_PICKED || right == OPERATOR_NO_MEMORY) {
                 found = other;
                 answer = right;
@@ -3490,11 +3532,13 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
             operands[0] = lhat_is_hostvalue(R(b))
                               ? hostvalue_argument(m->slots, rbase + b)
                               : R(b);
-            operands[1] = lhat_is_hostvalue(R(cc))
-                              ? hostvalue_argument(m->slots, rbase + cc)
-                              : R(cc);
-            LhatValue answered =
-                carried_host->call(m, carried_host->context, operands, 2);
+            if (!unary) {
+                operands[1] = lhat_is_hostvalue(R(cc))
+                                  ? hostvalue_argument(m->slots, rbase + cc)
+                                  : R(cc);
+            }
+            LhatValue answered = carried_host->call(m, carried_host->context,
+                                                    operands, unary ? 1 : 2);
             if (derive_from != LHAT_FRAME_NO_DERIVE) {
                 // 11.9: what came back is read against zero.
                 bool held = false;
@@ -3554,7 +3598,11 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
             return finish(m, chunk, LHAT_RUN_STACK_OVERFLOW, lhat_nil(), at);
         }
         lhat_slots_set(m->slots, next_base + (0), R(b));
-        lhat_slots_set(m->slots, next_base + (1), R(cc));
+        // 11.8改: a unary one declares self^ and nothing else, so the one
+        // slot is the whole frame.
+        if (!unary) {
+            lhat_slots_set(m->slots, next_base + (1), R(cc));
+        }
 
         frame->pc = pc;
         Frame *entered = &m->frames[m->frame_count++];

@@ -315,7 +315,8 @@ LhatType *chk_require_value(Checker *c, const LhatNode *at, LhatType *type);
 const char *chk_operator_name(LhatOpKind op, size_t *length);
 bool chk_is_operator_name(const char *name, size_t length);
 void chk_check_operator_shape(Checker *c, const LhatNode *at,
-                              const LhatType *type, bool compares);
+                              const LhatType *type, const char *name,
+                              size_t length);
 void chk_refuse_self_last(Checker *c, const LhatNode *at,
                           const LhatType *type);
 LhatType *chk_builtin_operator(Checker *c, LhatTypeKind carrier,
