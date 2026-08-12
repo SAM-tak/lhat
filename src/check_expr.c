@@ -1149,6 +1149,30 @@ LhatType *chk_without_nil_arm(Checker *c, LhatType *target)
     return bare != NULL && bare->kind != LHAT_TYPE_UNION ? bare : target;
 }
 
+// 04 の 2.3: a union every arm of which is an error. What such a union
+// answers is what every arm answers, and 2.3 gives message and cause to
+// every kind -- so a call that can fail two ways answers them from the union
+// its catch^ hands over, without the writer naming one of the ways first.
+//
+// Not a case of its own: the same reading a union of anything gets. It is
+// spelt out here because the arms are the only values whose members are not
+// on a member list to intersect.
+static bool all_error_arms(const LhatType *type)
+{
+    if (type == NULL || type->kind != LHAT_TYPE_UNION) {
+        return false;
+    }
+    for (const LhatTypeList *arm = type->v.composite.arms; arm != NULL;
+         arm = arm->next) {
+        if (arm->type == NULL || (arm->type->kind != LHAT_TYPE_ERROR &&
+                                  arm->type->kind != LHAT_TYPE_ERROR_SET &&
+                                  arm->type->kind != LHAT_TYPE_ERROR_KIND)) {
+            return false;
+        }
+    }
+    return true;
+}
+
 LhatType *chk_infer_member(Checker *c, const LhatNode *node)
 {
     LhatType *target = chk_infer(c, node->v.access.target);
@@ -1187,8 +1211,9 @@ LhatType *chk_infer_member(Checker *c, const LhatNode *node)
 
     // 04 の 2.3: every kind carries message and cause without declaring them
     // -- so they answer however much of the kind is known: a leaf, a
-    // declaration's whole set, or error^ alone (4.2's it^ can be any of the
-    // three). A declared field is the leaf's own and wants the narrowing.
+    // declaration's whole set, error^ alone, or a union of any of those
+    // (4.2's it^ is the last one wherever a call can fail two ways). A
+    // declared field is the leaf's own and wants the narrowing.
     const LhatTypeMember *members = NULL;
     if (target->kind == LHAT_TYPE_TABLE ||
         target->kind == LHAT_TYPE_HOSTVALUE) {
@@ -1197,7 +1222,7 @@ LhatType *chk_infer_member(Checker *c, const LhatNode *node)
         members = target->v.table.members;
     } else if (target->kind == LHAT_TYPE_ERROR_KIND ||
                target->kind == LHAT_TYPE_ERROR_SET ||
-               target->kind == LHAT_TYPE_ERROR) {
+               target->kind == LHAT_TYPE_ERROR || all_error_arms(target)) {
         if (chk_name_is(name, length, "message")) {
             return chk_simple(c, LHAT_TYPE_STRING);
         }
@@ -1208,8 +1233,10 @@ LhatType *chk_infer_member(Checker *c, const LhatNode *node)
         if (target->kind == LHAT_TYPE_ERROR_KIND) {
             members = target->v.error.fields;
         }
-        // ERROR and ERROR_SET carry no fields of their own; the search below
-        // finds nothing and the shared tail still answers tostring.
+        // ERROR, ERROR_SET and a union of kinds carry no fields of their own
+        // -- 2.2's are the leaf's, and reaching one is what 11.4's narrowing
+        // is for. The search below finds nothing and the shared tail still
+        // answers tostring.
     } else if (target->kind == LHAT_TYPE_CORO) {
         // 05 の 8.5: a coroutine carries these without importing anything.
         // 02 の 12.6 spells dispose(), 15.6 puts resume beside it, and 16.3

@@ -912,6 +912,45 @@ static void test_errors(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
+    // 2.3 again, where the call can fail two ways: it^ is then a union of
+    // kinds from two declarations, and what a union answers is what every
+    // arm answers -- which for message and cause is every kind there is.
+    LHAT_TEST("and answers through a union of kinds from two declarations");
+    check_text(&u,
+               "errordef^ IOError { NotFound }\n"
+               "errordef^ Memory { Out }\n"
+               "var^ f = f^ -> number^|IOError.NotFound|Memory.Out {\n"
+               "    return^ 0\n"
+               "}\n"
+               "var^ s : string^|number^ = f() catch^ it^.message\n"
+               "var^ c = f() catch^ it^.cause\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // 2.2's fields are the leaf's own, so they still want the narrowing --
+    // what every arm answers is message and cause and no more.
+    LHAT_TEST("but a leaf's field still wants narrowing to that leaf");
+    check_text(&u,
+               "errordef^ IOError { NotFound { path : string^ } }\n"
+               "errordef^ Memory { Out }\n"
+               "var^ f = f^ -> number^|IOError.NotFound|Memory.Out {\n"
+               "    return^ 0\n"
+               "}\n"
+               "var^ s = f() catch^ it^.path\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_NO_MEMBER);
+    unit_dispose(&u);
+
+    // A union with an arm that is not an error is not this reading: what
+    // every arm answers is then whatever those two have in common, which is
+    // nothing a member access reaches.
+    LHAT_TEST("and a union with a value arm answers neither");
+    check_text(&u,
+               "errordef^ IOError { NotFound }\n"
+               "var^ x : string^|IOError.NotFound = \"s\"\n"
+               "var^ s = x.message\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_NO_MEMBER);
+    unit_dispose(&u);
+
     // 11.7: ?? asks about nil^, and there is nothing in a nil^ to name --
     // it^ is catch^'s alone.
     LHAT_TEST("?? binds no it^");
