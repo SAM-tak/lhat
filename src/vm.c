@@ -762,6 +762,42 @@ typedef enum {
     COUNTED_SIZE     // a string's bytes
 } CountedKind;
 
+// 02 の 16.3改2: the two projections of a table's walk, reached the way
+// 14.18's counts are -- a member with no call written. Answers false where
+// the key is neither, and `hatted` says which spelling arrived: on a table
+// the bare words are the writer's, exactly as 14.18 has it.
+static bool walk_part_named(LhatValue key, LhatWalkPart *out, bool *hatted)
+{
+    if (!lhat_is_object_kind(key, LHAT_OBJECT_STRING)) {
+        return false;
+    }
+    const LhatString *name = (const LhatString *)lhat_as_object(key);
+    const char *word = NULL;
+    size_t word_length = 0;
+    if (name->length == 4 || name->length == 5) {
+        word = "keys";
+        word_length = 4;
+        *out = LHAT_WALK_KEYS;
+    } else if (name->length == 6 || name->length == 7) {
+        word = "values";
+        word_length = 6;
+        *out = LHAT_WALK_VALUES;
+    } else {
+        return false;
+    }
+    if (name->length == word_length + 1 && name->text[word_length] == '^' &&
+        memcmp(name->text, word, word_length) == 0) {
+        *hatted = true;
+        return true;
+    }
+    if (name->length == word_length &&
+        memcmp(name->text, word, word_length) == 0) {
+        *hatted = false;
+        return true;
+    }
+    return false;
+}
+
 static CountedKind counted_named(LhatValue key, bool *hatted)
 {
     if (!lhat_is_object_kind(key, LHAT_OBJECT_STRING)) {
@@ -1348,6 +1384,23 @@ typedef enum {
 static WalkStep step_table_walk(Machine *m, LhatCoroutine *co, WalkMode mode,
                                 size_t at, Frame *frame)
 {
+    // 16.3改2: a projection walks the whole table and hands over one half of
+    // each step, so the mode says nothing here -- there is one slot to fill
+    // whichever way the caller asked. A caller that reserved a run is refused
+    // above; this is only ever reached with a slot to write.
+    if (co->part != LHAT_WALK_PAIR) {
+        LhatValue key, value;
+        if (!lhat_table_walk(co, &key, &value)) {
+            co->state = LHAT_COROUTINE_DONE;
+            lhat_slots_set(m->slots, at, lhat_nil());
+            return WALK_ENDED;
+        }
+        co->state = LHAT_COROUTINE_SUSPENDED;
+        lhat_slots_set(m->slots, at,
+                       co->part == LHAT_WALK_KEYS ? key : value);
+        return WALK_TOOK;
+    }
+
     if (mode == WALK_AS_VALUE) {
         // Only the dense half, by index -- lhat_table_walk would go on into
         // the keyed half, which this form does not visit.
@@ -2368,6 +2421,25 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
                                       ? lhat_table_count(table)
                                       : lhat_table_length(table);
                     SET_R(a, lhat_integer((int64_t)held));
+                    break;
+                }
+
+                // 16.3改2: and the two projections of the walk 16.3 gives
+                // this table. A coroutine rather than a table of its own --
+                // 10.7 leaves nothing for a view to be, and what a walk
+                // reads it reads as it goes.
+                LhatWalkPart part = LHAT_WALK_PAIR;
+                bool part_hatted = false;
+                if (lhat_is_nil(R(a)) &&
+                    walk_part_named(R(cc), &part, &part_hatted) &&
+                    part_hatted) {
+                    LhatCoroutine *projection =
+                        lhat_table_iterator(&m->objects, table, part);
+                    if (projection == NULL) {
+                        return finish(m, chunk, LHAT_RUN_OUT_OF_MEMORY,
+                                      lhat_nil(), at);
+                    }
+                    SET_R(a, lhat_object((LhatObject *)projection));
                 }
                 break;
             }
@@ -3003,8 +3075,8 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
                             return finish(m, chunk, LHAT_RUN_NOT_CALLABLE, lhat_nil(),
                                           at);
                         }
-                        LhatCoroutine *walk =
-                            lhat_table_iterator(&m->objects, over);
+                        LhatCoroutine *walk = lhat_table_iterator(
+                            &m->objects, over, LHAT_WALK_PAIR);
                         if (walk == NULL) {
                             return finish(m, chunk, LHAT_RUN_OUT_OF_MEMORY, lhat_nil(),
                                           at);
@@ -3089,6 +3161,19 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
                             SET_R(a, lhat_nil());
                             break;
                         }
+                        unsigned room = lhat_call_prepared(cc);
+                        // 16.3改2: a projection yields one value, so one slot
+                        // is what it wants and a run has nothing to put in
+                        // the second position.
+                        if (co->part != LHAT_WALK_PAIR) {
+                            if (room > 1) {
+                                return finish(m, chunk, LHAT_RUN_TUPLE_ARITY,
+                                              lhat_nil(), at);
+                            }
+                            step_table_walk(m, co, WALK_AS_VALUE, rbase + a,
+                                            frame);
+                            break;
+                        }
                         // 16.3 with 13.8改: hand-driven start()/resume()
                         // answer the pair as the tuple every walk yields.
                         // The call's reservation says whether the run has
@@ -3096,7 +3181,6 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
                         // width (the stamp on a discarded one included),
                         // and a mismatch is refused the way 03 の 5.3
                         // refuses any tuple answer.
-                        unsigned room = lhat_call_prepared(cc);
                         if (room > 1 && room != 3) {
                             return finish(m, chunk, LHAT_RUN_TUPLE_ARITY,
                                           lhat_nil(), at);
@@ -3639,8 +3723,10 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
                 if (co->source == LHAT_COROUTINE_TABLE) {
                     // A run is two positions; a loop that reserved another
                     // width asked for something the walk does not yield.
+                    // 16.3改2: and a projection yields no pair at all, so a
+                    // loop written with two names is asking the same way.
                     if (mode == WALK_AS_RUN &&
-                        ((size_t)cc != 3 ||
+                        (co->part != LHAT_WALK_PAIR || (size_t)cc != 3 ||
                          rbase + a + 2 >= LHAT_STACK_SLOTS)) {
                         return finish(m, chunk, LHAT_RUN_TUPLE_ARITY,
                                       lhat_nil(), at);

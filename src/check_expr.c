@@ -939,7 +939,11 @@ LhatType *chk_infer_call(Checker *c, const LhatNode *node)
 // than a table: a table would cost an allocation every step. Both halves come
 // from what the table holds: 14 章 makes it a sequence and a mapping at
 // once, so a walk of one that is both hands over keys of either kind.
-LhatType *chk_table_walk_tuple(Checker *c, const LhatType *over)
+// 16.3改2: the halves on their own, which keys^ and values^ answer with and
+// the pair below is built from. Written as one walk of the members so the
+// three readings cannot drift apart.
+static void table_walk_halves(Checker *c, const LhatType *over,
+                              LhatType **out_keys, LhatType **out_values)
 {
     LhatType *keys = NULL;
     LhatType *values = NULL;
@@ -968,14 +972,20 @@ LhatType *chk_table_walk_tuple(Checker *c, const LhatType *over)
     }
 
     // 14.10 lets a table carry more than its type lists, so what is written
-    // down only ever adds to what a walk may hand over -- it never bounds
-    // it. The width is always two, whatever is known about the halves.
+    // down only ever adds to what a walk may hand over -- it never bounds it.
+    *out_keys = keys != NULL ? keys : chk_simple(c, LHAT_TYPE_UNKNOWN);
+    *out_values = values != NULL ? values : chk_simple(c, LHAT_TYPE_UNKNOWN);
+}
+
+LhatType *chk_table_walk_tuple(Checker *c, const LhatType *over)
+{
+    LhatType *keys = NULL;
+    LhatType *values = NULL;
+    table_walk_halves(c, over, &keys, &values);
+    // The width is always two, whatever is known about the halves.
     LhatType *pair = lhat_type_tuple(c->result->types);
-    lhat_type_add_position(c->result->types, pair,
-                           keys != NULL ? keys : chk_simple(c, LHAT_TYPE_UNKNOWN));
-    lhat_type_add_position(c->result->types, pair,
-                           values != NULL ? values
-                                          : chk_simple(c, LHAT_TYPE_UNKNOWN));
+    lhat_type_add_position(c->result->types, pair, keys);
+    lhat_type_add_position(c->result->types, pair, values);
     return pair;
 }
 
@@ -1333,6 +1343,21 @@ LhatType *chk_infer_member(Checker *c, const LhatNode *node)
          builtin_named(name, length, "len", true) ||
          builtin_named(name, length, "count", true))) {
         return chk_simple(c, LHAT_TYPE_NUMBER);
+    }
+
+    // 16.3改2: the two projections of the same walk, answered as the
+    // coroutine each is rather than through a call. 15.3改 makes them f^
+    // coroutines for the reason iterate^'s is one: reading a table changes
+    // nothing. The hat is not optional, as in 14.18 just above.
+    if (target->kind == LHAT_TYPE_TABLE &&
+        (builtin_named(name, length, "keys", true) ||
+         builtin_named(name, length, "values", true))) {
+        LhatType *keys = NULL;
+        LhatType *values = NULL;
+        table_walk_halves(c, target, &keys, &values);
+        return lhat_type_coro(c->result->types, chk_simple(c, LHAT_TYPE_NIL),
+                              name[0] == 'k' ? keys : values,
+                              chk_simple(c, LHAT_TYPE_NIL), true);
     }
 
     chk_report_named(c, node, LHAT_CHECK_ERR_NO_MEMBER, name, length);

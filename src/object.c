@@ -142,7 +142,8 @@ LhatCoroutine *lhat_coroutine_new(LhatHeap *heap, const LhatClosure *closure,
     return coroutine;
 }
 
-LhatCoroutine *lhat_table_iterator(LhatHeap *heap, const LhatTable *table)
+LhatCoroutine *lhat_table_iterator(LhatHeap *heap, const LhatTable *table,
+                                   LhatWalkPart part)
 {
     LhatCoroutine *walk =
         (LhatCoroutine *)lhat_object_alloc(
@@ -152,6 +153,7 @@ LhatCoroutine *lhat_table_iterator(LhatHeap *heap, const LhatTable *table)
     }
     walk->state = LHAT_COROUTINE_FRESH;
     walk->source = LHAT_COROUTINE_TABLE;
+    walk->part = part;
     walk->walking = table;
     return walk;
 }

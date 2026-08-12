@@ -1113,6 +1113,18 @@ static void check_focus(Checker *c, const LhatNode *node)
         produced = chk_simple(c, LHAT_TYPE_UNKNOWN);
         width = 0;
     }
+    // Several names take what was yielded apart, so there has to be
+    // something to take apart: a tuple above, or a table by position below
+    // (13.10). Anything else is a loop written with more names than the walk
+    // hands over -- 16.3改2's projections are the everyday way to arrive
+    // here, since a keys^ walk yields one value and never a pair.
+    if (width == 0 && count > 1 && produced != NULL &&
+        produced->kind != LHAT_TYPE_TABLE &&
+        produced->kind != LHAT_TYPE_UNKNOWN &&
+        produced->kind != LHAT_TYPE_PENDING &&
+        produced->kind != LHAT_TYPE_ANY) {
+        chk_report(c, node, LHAT_CHECK_ERR_TUPLE_ARITY);
+    }
 
     size_t position = 0;
     for (const LhatNode *e = node->v.loop.focus; e != NULL; e = e->next) {

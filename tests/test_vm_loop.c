@@ -549,6 +549,72 @@ static void test_for(void)
     CHECK_BOOL(&r, true);
     run_dispose(&r);
 
+    // 16.3改2: keys^ and values^ are the two projections of that same walk,
+    // reached without a call being written. The order is the walk's -- the
+    // dense half by index, then the keyed half -- so the nth key and the nth
+    // value are the two halves of one step.
+    LHAT_TEST("keys^ and values^ walk the whole table");
+    run_checked_text(&r,
+                     "var^ t = { 10, 20, a := 9 }\n"
+                     "var^ ks = \"\"\n"
+                     "for^ k in^ t.keys^ { ks := ks .. k.tostring^() }\n"
+                     "var^ vs = \"\"\n"
+                     "for^ v in^ t.values^ { vs := vs .. v.tostring^() }\n"
+                     "return^ ks .. \"|\" .. vs\n");
+    CHECK_STRING(&r, "12a|10209");
+    run_dispose(&r);
+
+    // The two projections step together: reading them side by side gives the
+    // pairs iterate^ would have handed over.
+    LHAT_TEST("and step in the same order");
+    run_checked_text(&r,
+                     "var^ t = { 10, 20, a := 9 }\n"
+                     "var^ vs = t.values^\n"
+                     "var^ v = vs.start()\n"
+                     "var^ out = \"\"\n"
+                     "for^ k in^ t.keys^ {\n"
+                     "  out := out .. k.tostring^() .. \"=\" ..\n"
+                     "         (v ?? 0).tostring^() .. \" \"\n"
+                     "  v := vs.resume(nil^)\n"
+                     "}\n"
+                     "return^ out\n");
+    CHECK_STRING(&r, "1=10 2=20 a=9 ");
+    run_dispose(&r);
+
+    // 16.3: the single-name loop is the sequence reading and stays what it
+    // was -- the dense half alone. values^ is the mapping reading.
+    LHAT_TEST("the single-name loop is still the dense half alone");
+    run_checked_text(&r,
+                     "var^ t = { 10, 20, a := 9 }\n"
+                     "var^ n = 0\n"
+                     "for^ v in^ t { n := n + v }\n"
+                     "return^ n\n");
+    CHECK_INTEGER(&r, 30);
+    run_dispose(&r);
+
+    LHAT_TEST("a projection over an empty table takes no turn");
+    run_checked_text(&r,
+                     "var^ t = { }\n"
+                     "var^ n = 0\n"
+                     "for^ k in^ t.keys^ { n := n + 1 }\n"
+                     "return^ n\n");
+    CHECK_INTEGER(&r, 0);
+    run_dispose(&r);
+
+    // 16.3改2 with 14.18: the hat is not optional on a table, so the bare
+    // word is a member like any other and holds nothing until written.
+    LHAT_TEST("a bare keys on a table is the writer's name");
+    run_text(&r, "var^ t = { 1 }\nreturn^ t.keys isa^ nil^\n");
+    CHECK_BOOL(&r, true);
+    run_dispose(&r);
+
+    LHAT_TEST("and a written keys^ is what answers");
+    run_text(&r,
+             "var^ t = { 1, 2, keys^ := 7 }\n"
+             "return^ t.keys^\n");
+    CHECK_INTEGER(&r, 7);
+    run_dispose(&r);
+
     LHAT_TEST("break^ leaves a walk like any other loop");
     run_text(&r,
              "var^ t = { 1, 2, 3, 4 }\n"

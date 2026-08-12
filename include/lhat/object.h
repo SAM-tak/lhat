@@ -140,11 +140,22 @@ typedef enum {
     LHAT_COROUTINE_TABLE   // walking a table's keys, built in
 } LhatCoroutineSource;
 
+// 02 の 16.3改2: which half of the walk reaches the writer. One walk of the
+// table underneath, read three ways -- iterate^ hands over the pair, and
+// keys^ and values^ are its two projections, so the nth key and the nth
+// value are the two halves of one step.
+typedef enum {
+    LHAT_WALK_PAIR,    // 16.3: (K, V), what iterate^ answers
+    LHAT_WALK_KEYS,    // 16.3改2: keys^
+    LHAT_WALK_VALUES   // 16.3改2: values^
+} LhatWalkPart;
+
 typedef struct LhatCoroutine {
     LhatObject header;
     const LhatClosure *closure;
     LhatCoroutineState state;
     LhatCoroutineSource source;
+    LhatWalkPart part;  // LHAT_COROUTINE_TABLE only
 
     // LHAT_COROUTINE_TABLE only: where the walk has reached. The dense part
     // comes first in index order, then the rest.
@@ -455,8 +466,10 @@ LhatCoroutine *lhat_coroutine_new(LhatHeap *heap, const LhatClosure *closure,
                                   size_t registers);
 
 // 02 の 16.3: the coroutine a table answers with. It has no body; resuming it
-// reads the next key and value.
-LhatCoroutine *lhat_table_iterator(LhatHeap *heap, const LhatTable *table);
+// reads the next key and value. 16.3改2: `part` says which half of that step
+// reaches the writer -- the pair, the key alone, or the value alone.
+LhatCoroutine *lhat_table_iterator(LhatHeap *heap, const LhatTable *table,
+                                   LhatWalkPart part);
 
 // Reads the next pair of a table walk, advancing it. Answers false when the
 // walk is over.

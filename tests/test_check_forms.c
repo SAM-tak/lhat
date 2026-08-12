@@ -306,6 +306,64 @@ static void test_counting(void)
     unit_dispose(&u);
 }
 
+// 02 の 16.3改2: the two projections of a table's walk. What the checker owes
+// is the type each yields -- the halves of the pair 16.3 hands over -- and
+// that a loop written with two names over one of them is refused.
+static void test_projections(void)
+{
+    Unit u;
+
+    LHAT_TEST("keys^ yields the key half and values^ the value half");
+    check_text(&u,
+               "var^ t = { 1, 2 }\n"
+               "for^ k in^ t.keys^ { var^ n : number^ = k }\n"
+               "for^ v in^ t.values^ { var^ m : number^ = v }\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // A keyed member makes the key half a union, which is what the walk
+    // hands over and so what the focus holds.
+    LHAT_TEST("a keyed member widens the key half");
+    check_text(&u,
+               "var^ t = { 1, a := 2 }\n"
+               "for^ k in^ t.keys^ { var^ n : number^ = k }\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
+    unit_dispose(&u);
+
+    // 13.8改: a projection yields one value, so two names have nothing to
+    // take apart. Caught here rather than left to the machine.
+    LHAT_TEST("two names over a projection are refused");
+    check_text(&u,
+               "var^ t = { 1, 2 }\n"
+               "for^ k, v in^ t.keys^ { }\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_TUPLE_ARITY);
+    unit_dispose(&u);
+
+    // The same refusal reaches any walk that hands over one value, which is
+    // the hole the projections made visible.
+    LHAT_TEST("and over any coroutine yielding a single value");
+    check_text(&u,
+               "var^ gen = p^ { yield^ 1 }\n"
+               "for^ a, b in^ gen() { }\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_TUPLE_ARITY);
+    unit_dispose(&u);
+
+    // 13.10: a walk yielding a table is still taken apart by position, so
+    // the refusal above must not reach it.
+    LHAT_TEST("but a walk yielding a table still comes apart");
+    check_text(&u,
+               "var^ gen = p^ { yield^ { 1, \"x\" } }\n"
+               "for^ a, b in^ gen() { var^ n : number^ = a }\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // 16.3改2 with 14.18: the hat is not optional on a table.
+    LHAT_TEST("the bare word is the writer's");
+    check_text(&u, "var^ t = { 1 }\nfor^ k in^ t.keys { }\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_NO_MEMBER);
+    unit_dispose(&u);
+}
+
 // 02 の 14.17改2: the same two signatures the other way round, on the one
 // value a number^ can be read out of.
 static void test_tonumber(void)
@@ -704,6 +762,7 @@ int main(void)
     test_scope_specifiers();
     test_tostring();
     test_counting();
+    test_projections();
     test_tonumber();
     test_variadic();
     test_for_expressions();
