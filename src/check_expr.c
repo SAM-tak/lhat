@@ -1269,13 +1269,13 @@ LhatType *chk_infer_member(Checker *c, const LhatNode *node)
             builtin_named(name, length, "tonumber", false)) {
             return builtin_tonumber(c);
         }
-        // 14.18: how long it is, and how much of it there is. Always the hat
-        // spelling -- a string^ has no names of its own to take, but the
-        // spelling is one across every value the way 14.17's is.
+        // 14.18: how long it is, and how many bytes that is. Either spelling,
+        // for the reason 14.17改 gives -- a string^ is not a value a writer
+        // can add a name to, so the bare word takes nothing from anyone.
         if (target->kind == LHAT_TYPE_STRING &&
-            (builtin_named(name, length, "length", true) ||
-             builtin_named(name, length, "len", true) ||
-             builtin_named(name, length, "size", true))) {
+            (builtin_named(name, length, "length", false) ||
+             builtin_named(name, length, "len", false) ||
+             builtin_named(name, length, "size", false))) {
             return chk_simple(c, LHAT_TYPE_NUMBER);
         }
         chk_report_named(c, node, LHAT_CHECK_ERR_NO_MEMBER, name, length);
@@ -1325,8 +1325,9 @@ LhatType *chk_infer_member(Checker *c, const LhatNode *node)
 
     // 14.18: how long the run is, and how much the table holds altogether.
     // The hat is not optional here even where 14.17改 would let the bare word
-    // through: these are the words a writer reaches for first, so on a table
-    // the bare ones stay the writer's whatever kind of table it is.
+    // through: 14 章 reserves new, tostring and dispose on a def^ and these
+    // are not among them, so on a table the bare words stay the writer's
+    // whatever kind of table it is.
     if (target->kind == LHAT_TYPE_TABLE &&
         (builtin_named(name, length, "length", true) ||
          builtin_named(name, length, "len", true) ||

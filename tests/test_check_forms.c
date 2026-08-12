@@ -257,11 +257,16 @@ static void test_counting(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    LHAT_TEST("and a string^ answers its length and its bytes");
+    // 14.18 with 14.17改: a string^ takes either spelling. Nothing can be
+    // written on one, so the bare word takes nothing from anyone.
+    LHAT_TEST("and a string^ answers its length and its bytes, either way");
     check_text(&u,
                "var^ a : number^ = \"x\".length^\n"
                "var^ b : number^ = \"x\".len^\n"
-               "var^ c : number^ = \"x\".size^\n");
+               "var^ c : number^ = \"x\".size^\n"
+               "var^ d : number^ = \"x\".length\n"
+               "var^ e : number^ = \"x\".len\n"
+               "var^ f : number^ = \"x\".size\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
@@ -277,15 +282,18 @@ static void test_counting(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_NO_MEMBER);
     unit_dispose(&u);
 
-    // 14.18: always the hat spelling, even where 14.17改 would let the bare
-    // word through. These are the words a writer reaches for first.
+    // 14.18: on a table the hat is not optional, even where 14.17改 would let
+    // the bare word through. 14 章 reserves new, tostring and dispose on a
+    // def^ and these are not among them.
     LHAT_TEST("the bare word is the writer's on a table");
     check_text(&u, "var^ t = { 1 }\nvar^ n : number^ = t.length\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_NO_MEMBER);
     unit_dispose(&u);
 
-    LHAT_TEST("and on a string^ as well, where nothing could be written");
-    check_text(&u, "var^ n : number^ = \"x\".size\n");
+    LHAT_TEST("on an instance too, where a written length would collide");
+    check_text(&u,
+               "var^ P = def^{ self^{ x := 1 } }\n"
+               "var^ n : number^ = P.new().count\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_NO_MEMBER);
     unit_dispose(&u);
 

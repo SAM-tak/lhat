@@ -803,6 +803,15 @@ static void test_counting(void)
     run_text(&r, "return^ \"\\u{3042}bc\".len^\n");
     CHECK_INTEGER(&r, 3);
     run_dispose(&r);
+
+    // 14.18 with 14.17改: nothing can be written on a string^, so the bare
+    // word is taking no name from anyone and reaches the same reading.
+    LHAT_TEST("a string^ takes either spelling");
+    run_text(&r,
+             "return^ \"\\u{3042}bc\".length * 100 + \"\\u{3042}bc\".len * 10 +\n"
+             "       \"\\u{3042}bc\".size\n");
+    CHECK_INTEGER(&r, 335);
+    run_dispose(&r);
 }
 
 // 02 の 14.17改2: tostring read backwards, and only a string^ carries it. The

@@ -751,8 +751,10 @@ static bool native_named(LhatValue key, LhatNativeKind *out, bool *hatted)
 // on purpose: that is the table of words a LhatNative is built for, and
 // nothing is built for these.
 //
-// Always the hat spelling. `length` `len` `count` `size` are the words a
-// writer reaches for first, so the bare ones stay theirs on every table.
+// `hatted` says which spelling reached here, the way native_named answers it
+// and for the same reason: on a table the bare word is the writer's, so only
+// the hat spelling is this. A string^ takes either -- nothing can be written
+// on one for the implementation to take.
 typedef enum {
     COUNTED_NONE,
     COUNTED_LENGTH,  // the run: a table's dense half, a string's code points
@@ -760,21 +762,33 @@ typedef enum {
     COUNTED_SIZE     // a string's bytes
 } CountedKind;
 
-static CountedKind counted_named(LhatValue key)
+static CountedKind counted_named(LhatValue key, bool *hatted)
 {
     if (!lhat_is_object_kind(key, LHAT_OBJECT_STRING)) {
         return COUNTED_NONE;
     }
     const LhatString *name = (const LhatString *)lhat_as_object(key);
-    if ((name->length == 7 && memcmp(name->text, "length^", 7) == 0) ||
-        (name->length == 4 && memcmp(name->text, "len^", 4) == 0)) {
-        return COUNTED_LENGTH;
-    }
-    if (name->length == 6 && memcmp(name->text, "count^", 6) == 0) {
-        return COUNTED_COUNT;
-    }
-    if (name->length == 5 && memcmp(name->text, "size^", 5) == 0) {
-        return COUNTED_SIZE;
+    static const struct {
+        const char *word;
+        size_t length;
+        CountedKind kind;
+    } words[] = {
+        { "length", 6, COUNTED_LENGTH },
+        { "len", 3, COUNTED_LENGTH },
+        { "count", 5, COUNTED_COUNT },
+        { "size", 4, COUNTED_SIZE },
+    };
+    for (size_t i = 0; i < sizeof words / sizeof *words; i++) {
+        size_t n = words[i].length;
+        if (name->length == n + 1 && name->text[n] == '^' &&
+            memcmp(name->text, words[i].word, n) == 0) {
+            *hatted = true;
+            return words[i].kind;
+        }
+        if (name->length == n && memcmp(name->text, words[i].word, n) == 0) {
+            *hatted = false;
+            return words[i].kind;
+        }
     }
     return COUNTED_NONE;
 }
@@ -2294,8 +2308,10 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
                     // 02 の 14.18: and a string^ answers how long it is,
                     // without a call being written. Two readings of the same
                     // bytes: the code points they spell, and how many there
-                    // are.
-                    CountedKind counted = counted_named(R(cc));
+                    // are. Either spelling reaches -- a string^ has no names
+                    // of its own for the bare word to be taking.
+                    bool counted_hatted = false;
+                    CountedKind counted = counted_named(R(cc), &counted_hatted);
                     if (counted != COUNTED_NONE &&
                         lhat_is_object_kind(R(b), LHAT_OBJECT_STRING)) {
                         const LhatString *text =
@@ -2332,9 +2348,17 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
 
                 // 02 の 14.18: how long the run is, and how much the table
                 // holds altogether. Same order again -- a written one wins,
-                // and 14.18 answers only where nothing was.
-                CountedKind counting = lhat_is_nil(R(a)) ? counted_named(R(cc))
-                                                         : COUNTED_NONE;
+                // and 14.18 answers only where nothing was. The hat spelling
+                // alone: on a table the bare word is the writer's, whatever
+                // kind of table it is.
+                bool counting_hatted = false;
+                CountedKind counting = COUNTED_NONE;
+                if (lhat_is_nil(R(a))) {
+                    counting = counted_named(R(cc), &counting_hatted);
+                    if (!counting_hatted) {
+                        counting = COUNTED_NONE;
+                    }
+                }
                 if (counting == COUNTED_SIZE) {
                     // Bytes are a reading of a string^, not of a table.
                     return finish(m, chunk, LHAT_RUN_TYPE_ERROR, lhat_nil(), at);
