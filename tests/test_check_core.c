@@ -912,6 +912,46 @@ static void test_errors(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
+    // 03 の 3.4改: a signature written on the binding is what the value is
+    // expected to have, so a parameter nothing was written on takes its type
+    // from there rather than waiting for the body to demand one.
+    LHAT_TEST("a written signature fills in the parameters");
+    check_text(&u,
+               "var^ f : p^string^ -> number^; = p^ x { return^ x.length }\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("and the body is checked against what it filled in");
+    check_text(&u,
+               "var^ f : p^string^ -> number^; = p^ x { return^ x + 1 }\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_NO_OPERATOR);
+    unit_dispose(&u);
+
+    // 05 の 4.3 asks that what leaves the unit not be read off a body. A
+    // signature on the binding says it as plainly as one in the parameter
+    // list, so the demand is met and the report belongs to neither.
+    LHAT_TEST("and satisfies what a public^ declaration asks for");
+    check_text(&u,
+               "public^ let^ f : p^string^ -> string^; = p^ x { return^ x }\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("but a public^ with nothing written anywhere is still refused");
+    check_text(&u, "public^ let^ f = p^ x { return^ x }\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_PUBLIC_NEEDS_TYPE);
+    unit_dispose(&u);
+
+    // The expectation is the one literal's. A body written inside it is
+    // expected by nothing, so its own parameters wait on their own demands.
+    LHAT_TEST("an expectation does not reach a body written inside");
+    check_text(&u,
+               "var^ f : p^string^ -> number^; = p^ x {\n"
+               "    var^ g = p^ y { return^ y + 1 }\n"
+               "    return^ g(1) + x.length\n"
+               "}\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
     // 2.3 again, where the call can fail two ways: it^ is then a union of
     // kinds from two declarations, and what a union answers is what every
     // arm answers -- which for message and cause is every kind there is.

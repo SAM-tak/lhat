@@ -226,6 +226,13 @@ typedef struct {
     // names. NULL anywhere else, so 14.12's marker is what makes it a name.
     LhatType *super_type;
 
+    // 03 の 3.4改: the signature a subroutine literal is expected to have, or
+    // NULL where nothing expects one. Set around the one chk_infer() that
+    // reaches the literal, the way super_type and yield_bound_type are, and
+    // read by chk_infer_func for the parameters nothing was written on.
+    // What it supplies stands exactly where a written annotation would.
+    LhatType *expected_func;
+
     // 03 の 4.3: the statement whose value the input answers with, when the
     // input is one of a session. NULL for a file, where nothing answers.
     const LhatNode *answering;

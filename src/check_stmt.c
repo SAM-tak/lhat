@@ -305,8 +305,15 @@ void chk_check_define(Checker *c, const LhatNode *node)
             // actually gave is a gap in inference, not table subtyping's
             // silence -- there is genuinely nothing here yet, so it is
             // pending^ rather than unknown^.
+            // 03 の 3.4改: a signature written on the binding is what the
+            // value is expected to have, so a parameter nothing was written
+            // on takes its type from there. Set around this one call, as the
+            // yield context above is.
+            LhatType *outer_expected = c->expected_func;
+            c->expected_func = annotated;
             actual = value != NULL ? chk_infer(c, value)
                                    : chk_simple(c, LHAT_TYPE_PENDING);
+            c->expected_func = outer_expected;
 
             if (lhat_type_tuple_width(actual) > 0) {
                 if (position == 1 && target_count > 1 && value->next == NULL) {

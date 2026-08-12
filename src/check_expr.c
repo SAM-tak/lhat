@@ -1615,6 +1615,20 @@ static LhatType *declared_signature(Checker *c, const LhatNode *node)
 
 LhatType *chk_infer_func(Checker *c, const LhatNode *node)
 {
+    // 03 の 3.4改: what expects this literal, taken here and cleared at once
+    // -- a body written inside this one is expected by nothing, and reading
+    // an outer expectation there would put a type on a parameter no one was
+    // talking about.
+    LhatType *expected_func = c->expected_func;
+    c->expected_func = NULL;
+    if (expected_func != NULL && (expected_func->kind != LHAT_TYPE_FUNC ||
+                                  expected_func->v.func.is_function !=
+                                      node->v.func.is_function)) {
+        expected_func = NULL;  // not a signature for this; nothing to take
+    }
+    const LhatTypeList *expected_param =
+        expected_func != NULL ? expected_func->v.func.params : NULL;
+
     LhatType *func = lhat_type_func(c->result->types, node->v.func.is_function);
     // 15.2: whether the body suspends is read off the body, not written.
     func->v.func.yields = node->v.func.yields;
@@ -1641,12 +1655,30 @@ LhatType *chk_infer_func(Checker *c, const LhatNode *node)
             func->v.func.self_last = marker == 2;
             continue;
         }
+        // 03 の 3.4改: what the position is expected to take, which stands
+        // where a written annotation would. The variadic one is expected by
+        // the signature's own tail; the rest walk in step, since neither
+        // list counts the receiver (14.4).
+        LhatType *expected = NULL;
+        if (expected_func != NULL) {
+            if (param->v.param.variadic) {
+                expected = expected_func->v.func.variadic;
+            } else if (expected_param != NULL) {
+                expected = expected_param->type;
+                expected_param = expected_param->next;
+            }
+        }
+
         // 05 の 4.3: what leaves the unit is not decided by reading a body.
-        if (param->v.param.type == NULL && c->exporting > 0) {
+        // An expectation is not a body -- a signature written on the binding
+        // says what leaves the unit as plainly as one written here does.
+        if (param->v.param.type == NULL && expected == NULL && c->exporting > 0) {
             chk_report(c, param, LHAT_CHECK_ERR_PUBLIC_NEEDS_TYPE);
         }
         LhatType *type = param->v.param.type != NULL
                              ? chk_resolve_type(c, param->v.param.type)
+                         : expected != NULL
+                             ? expected
                              : chk_simple(c, LHAT_TYPE_PENDING);
         // 13.4: a default is what completion and the visual editor write into
         // a call site, so it has to fit the position it will be written into.
@@ -1682,8 +1714,10 @@ LhatType *chk_infer_func(Checker *c, const LhatNode *node)
         lhat_type_add_param(c->result->types, func, type);
         // 03 の 3.4: with nothing written, the body is what decides. The
         // binding below and the signature above hold this same object, so
-        // settling it once at the end writes through to both.
-        if (param->v.param.type == NULL) {
+        // settling it once at the end writes through to both. A position an
+        // expectation filled is decided already and collects no demands --
+        // the body is checked against it, as against a written one.
+        if (param->v.param.type == NULL && expected == NULL) {
             chk_push_param_var(c, type);
         }
 
