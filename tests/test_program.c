@@ -446,6 +446,47 @@ static LhatValue host_add(LhatMachine *machine, void *context,
                         lhat_as_integer(arguments[1]));
 }
 
+// 02 の 11.8改 with 05 の 8.9: a host value carrying the unary '-'. The tag
+// is handed over through the context, since a host function is given nothing
+// else to read its own type by.
+typedef struct {
+    int64_t n;
+} Counter;
+
+static LhatValue host_counter_make(LhatMachine *machine, void *context,
+                                   const LhatValue *arguments, size_t count)
+{
+    (void)arguments;
+    if (count != 0) {
+        return lhat_nil();
+    }
+    Counter c = {7};
+    LhatValue out = lhat_nil();
+    return lhat_make_hostvalue(machine, (const LhatHostValueTag *)context, &c,
+                               &out)
+               ? out
+               : lhat_nil();
+}
+
+// f^self^ -> number^; -- one operand and no argument, which is the whole of
+// what tells a unary operator from a binary one.
+static LhatValue host_counter_negate(LhatMachine *machine, void *context,
+                                     const LhatValue *arguments, size_t count)
+{
+    (void)machine;
+    if (count != 1) {
+        return lhat_nil();
+    }
+    const void *bytes =
+        lhat_hostvalue_data(arguments[0], (const LhatHostValueTag *)context);
+    if (bytes == NULL) {
+        return lhat_nil();
+    }
+    Counter c;
+    memcpy(&c, bytes, sizeof c);
+    return lhat_integer(-c.n);
+}
+
 static bool has_check_error(const LhatUnit *unit, LhatCheckErrorCode code)
 {
     if (unit == NULL) {
@@ -1046,6 +1087,49 @@ static void test_hostvalue_escape(void)
         const LhatUnit *root = lhat_program_check(&program, "main.lh");
         LHAT_CHECK(has_check_error(root, LHAT_CHECK_ERR_HOSTVALUE_ESCAPES),
                    "the escape is refused by name");
+    }
+    lhat_program_dispose(&program);
+
+    // 02 の 11.8改: the unary '-' over a host value. call_operator's host arm
+    // builds its own operand array and counts what it hands over, so a unary
+    // one reaches C with a single argument -- the closure arm passing is no
+    // evidence for this path.
+    LHAT_TEST("a host value answers the unary '-'");
+    {
+        static const File files[] = {
+            {"main.lh",
+             "import^ test.c\n"
+             "var^ v = test.c.make()\n"
+             "return^ -v\n"},
+        };
+        program_with(&program, &disk, files, 1);
+        const LhatHostValueTag *tag =
+            lhat_register_hostvalue_type(&program, "test.c", "C",
+                                         sizeof(Counter));
+        LHAT_CHECK(tag != NULL, "the type registration took");
+        LHAT_CHECK(lhat_register_func(&program, "test.c", "make",
+                                      "f^ -> test.c.C;", host_counter_make,
+                                      (void *)tag),
+                   "the maker registration took");
+        LHAT_CHECK(lhat_register_hostvalue_member(&program, "test.c", "C", "-",
+                                                  "f^self^ -> number^;",
+                                                  host_counter_negate,
+                                                  (void *)tag),
+                   "the operator registration took");
+        const LhatUnit *root = lhat_program_check(&program, "main.lh");
+        LHAT_CHECK(root != NULL && root->checked.diagnostic_count == 0,
+                   "the program checked");
+        size_t count = 0;
+        const LhatModule *modules = lhat_program_compile(&program, &count);
+        if (modules != NULL && root != NULL) {
+            LhatMachine *machine = lhat_machine_new();
+            lhat_machine_set_modules(machine, modules, count);
+            lhat_program_install(&program, machine);
+            LhatRunResult ran = lhat_run(machine, modules[root->index].proto);
+            LHAT_CHECK_EQ_INT(ran.status, LHAT_RUN_OK);
+            LHAT_CHECK_EQ_INT(lhat_as_integer(ran.value), -7);
+            lhat_machine_dispose(machine);
+        }
     }
     lhat_program_dispose(&program);
 }
