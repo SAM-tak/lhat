@@ -196,6 +196,33 @@ static void test_definitions(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
+    // 14.4: a member that did not write self^ is static and is handed no
+    // receiver, so the name means nothing inside it. Writing p^ where
+    // p^self^ was meant is the everyday way to arrive here, and it used to
+    // read as a name in scope and fall over at compile time with nowhere to
+    // point.
+    LHAT_TEST("a static member does not see self^");
+    check_text(&u,
+               "var^ C = def^{\n"
+               "    self^{ v := 0 },\n"
+               "    read := p^ -> number^ { return^ self^.v },\n"
+               "}\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_UNDEFINED);
+    unit_dispose(&u);
+
+    // 5.4: what a body may reach, a body written inside it may reach too.
+    LHAT_TEST("but a subroutine inside a method still captures it");
+    check_text(&u,
+               "var^ C = def^{\n"
+               "    self^{ v := 0 },\n"
+               "    read := p^self^ -> number^ {\n"
+               "        var^ g = f^ -> number^ { return^ self^.v }\n"
+               "        return^ g()\n"
+               "    },\n"
+               "}\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
     // 14.4: the receiver is not written at the call, so it is not counted.
     LHAT_TEST("a method call does not pass the receiver");
     check_text(&u,

@@ -2434,6 +2434,23 @@ static bool defined_in_def(Checker *c, const LhatNode *node, const char *name,
     return false;
 }
 
+// 02 の 14.4: whether this member is a method -- one that wrote self^ among
+// its parameters, and so is handed a receiver. A member without it is
+// static, and the name self^ means nothing inside one.
+static bool declares_self(Checker *c, const LhatNode *value)
+{
+    if (value == NULL || value->kind != LHAT_NODE_FUNC) {
+        return false;
+    }
+    for (const LhatNode *param = value->v.func.params; param != NULL;
+         param = param->next) {
+        if (chk_self_marker_at(c, value->v.func.params, param) != 0) {
+            return true;
+        }
+    }
+    return false;
+}
+
 LhatType *chk_infer_def(Checker *c, const LhatNode *node, LhatType *base)
 {
     LhatType *definition = lhat_type_table(c->result->types);
@@ -2502,17 +2519,16 @@ LhatType *chk_infer_def(Checker *c, const LhatNode *node, LhatType *base)
         }
     }
 
-    // 14.4: self^ reaches the instance, class^ the definition. Bound before
-    // the members are walked so a body may use either.
+    // 14.4: class^ names the definition, and every member reaches it -- a
+    // static one included, since what it names is there before any instance
+    // is. self^ is the other way round and is bound per member below: only
+    // one that wrote it among its parameters is handed a receiver, so only
+    // there does the name mean anything.
     Scope members;
     members.bindings = NULL;
     members.tail = NULL;
     members.parent = c->scope;
-    Binding *receiver = chk_scope_add(&members, "self^", 5, instance, node->offset);
     Binding *owner = chk_scope_add(&members, "class^", 6, definition, node->offset);
-    if (receiver != NULL) {
-        receiver->reached = true;
-    }
     if (owner != NULL) {
         owner->reached = true;
     }
@@ -2609,7 +2625,27 @@ LhatType *chk_infer_def(Checker *c, const LhatNode *node, LhatType *base)
                                 ? hidden->type
                                 : declared_signature(c, entry->v.entry.value);
         }
+        // 14.4: the receiver is this member's, so it is bound around this
+        // body and nowhere else. A subroutine written inside the body still
+        // reaches it, the way any name in scope is reached (5.4's capture).
+        Scope receiver;
+        bool method = declares_self(c, entry->v.entry.value);
+        if (method) {
+            receiver.bindings = NULL;
+            receiver.tail = NULL;
+            receiver.parent = c->scope;
+            Binding *bound =
+                chk_scope_add(&receiver, "self^", 5, instance, node->offset);
+            if (bound != NULL) {
+                bound->reached = true;
+            }
+            c->scope = &receiver;
+        }
         LhatType *type = chk_infer(c, entry->v.entry.value);
+        if (method) {
+            c->scope = &members;
+            chk_scope_dispose(&receiver);
+        }
         c->super_type = outer_super;
         // 14.12: two members of one name in a single def^ need a marker too,
         // so what is already there has to include this def^'s earlier entries
