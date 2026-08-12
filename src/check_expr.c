@@ -378,6 +378,14 @@ LhatType *chk_infer_name(Checker *c, const LhatNode *node)
 
     // A few hat identifiers are values rather than names (01 の 2.2).
     if (node->kind == LHAT_NODE_HAT_IDENT) {
+        // 13.12: '_^' is written where a name would go and binds nothing, so
+        // reaching it as a value asks for what was thrown away. Every place
+        // that may write it takes it before inference is asked; arriving here
+        // means it stood in an expression.
+        if (chk_name_is(name, length, "_^")) {
+            chk_report(c, node, LHAT_CHECK_ERR_DISCARD_READ);
+            return chk_simple(c, LHAT_TYPE_UNKNOWN);
+        }
         if (chk_name_is(name, length, "true^") || chk_name_is(name, length, "false^")) {
             return chk_simple(c, LHAT_TYPE_BOOL);
         }

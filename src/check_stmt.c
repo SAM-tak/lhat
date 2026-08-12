@@ -1282,7 +1282,15 @@ static void collect_bindings(Checker *c, const LhatNode *statements)
             if (!chk_node_name(c, target_name_node(target), &name, &length)) {
                 continue;
             }
+            // 13.12: '_^' may be written as often as it likes, so a second one
+            // is not a redefinition -- it is the same place being thrown away
+            // again. Nothing reads it either way: chk_infer refuses the
+            // spelling wherever a value is wanted.
+            bool discard = chk_is_discard(c, target_name_node(target));
             Binding *already = chk_scope_find_local(c->scope, name, length);
+            if (discard && already != NULL) {
+                continue;
+            }
             if (already != NULL) {
                 // 03 の 4.3: a name an earlier input of a session bound is
                 // written again here, which is the same place written again.
@@ -1716,8 +1724,25 @@ void chk_check_statement(Checker *c, const LhatNode *node)
                 // report belongs on it rather than inside the block.
                 for (const LhatNode *b = node->v.list.items; b != NULL;
                      b = b->next) {
-                    check_disposable(c, b->v.binding.values,
-                                     chk_infer(c, b->v.binding.targets));
+                    // 13.12: a '_^' is refused wherever a value is read, and
+                    // the target here is not read -- what is wanted is the
+                    // type the binding took, which is looked up rather than
+                    // inferred. 12.6's disposal is the whole point of writing
+                    // the form with no name.
+                    const LhatNode *bound = target_name_node(b->v.binding.targets);
+                    LhatType *held = NULL;
+                    if (chk_is_discard(c, bound)) {
+                        const char *name = NULL;
+                        size_t length = 0;
+                        Binding *place =
+                            chk_node_name(c, bound, &name, &length)
+                                ? chk_scope_find(c->scope, name, length, NULL)
+                                : NULL;
+                        held = place != NULL ? place->type : NULL;
+                    } else {
+                        held = chk_infer(c, b->v.binding.targets);
+                    }
+                    check_disposable(c, b->v.binding.values, held);
                 }
                 chk_check_statement(c, node->v.list.extra);
             }

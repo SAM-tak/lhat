@@ -171,6 +171,18 @@ static bool node_name(const Compiler *c, const LhatNode *node,
     return lhat_node_name(node, c->lexer->source->text, text, length);
 }
 
+// 02 の 13.12: '_^' stands where a name would and binds nothing, so no local
+// is made for it and nothing is written back into one. The value is still
+// evaluated -- what is thrown away is the place to read it from.
+static bool node_is_discard(const Compiler *c, const LhatNode *node)
+{
+    const char *name = NULL;
+    size_t length = 0;
+    return node != NULL && node->kind == LHAT_NODE_HAT_IDENT &&
+           node_name(c, node, &name, &length) &&
+           lhat_name_is(name, length, "_^");
+}
+
 static bool name_is(const char *text, size_t length, const char *literal)
 {
     return lhat_name_is(text, length, literal);
@@ -3540,7 +3552,13 @@ static void declare_names(Compiler *c, const LhatNode *statements)
             // is the same place written again. Reusing the slot is what keeps
             // a prompt from running out of registers, and it leaves what is
             // there readable -- 'let^ x = x + 1' means the x that is there.
-            if (c->session_top && find_local(c, name, length) != NULL) {
+            //
+            // 02 の 13.12: and a '_^' is written as often as it likes, so the
+            // second one takes the same slot rather than a fresh one. Nothing
+            // reads it back, which is what makes sharing the place harmless.
+            if ((c->session_top ||
+                 node_is_discard(c, define_target_name(target))) &&
+                find_local(c, name, length) != NULL) {
                 continue;
             }
 

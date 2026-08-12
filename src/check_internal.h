@@ -284,6 +284,7 @@ bool chk_node_name(const Checker *c, const LhatNode *node,
                    const char **text, size_t *length);
 bool chk_name_is(const char *text, size_t length, const char *literal);
 bool chk_is_super_name(Checker *c, const LhatNode *node);
+bool chk_is_discard(const Checker *c, const LhatNode *node);
 Binding *chk_scope_find_local(Scope *scope, const char *name, size_t length);
 Binding *chk_scope_find(Scope *scope, const char *name, size_t length, Scope **found);
 Binding *chk_scope_find_skipping(Scope *scope, const char *name,

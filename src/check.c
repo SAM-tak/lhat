@@ -87,6 +87,18 @@ bool chk_name_is(const char *text, size_t length, const char *literal)
     return lhat_name_is(text, length, literal);
 }
 
+// 13.12: whether this is '_^', the receptacle that binds nothing. Only the
+// hatted spelling means it -- 13.12 refuses `_x` on purpose, so an ordinary
+// name beginning with an underscore is untouched.
+bool chk_is_discard(const Checker *c, const LhatNode *node)
+{
+    const char *name = NULL;
+    size_t length = 0;
+    return node != NULL && node->kind == LHAT_NODE_HAT_IDENT &&
+           chk_node_name(c, node, &name, &length) &&
+           chk_name_is(name, length, "_^");
+}
+
 // 14.12改: whether this is super^ written out. Only the hatted spelling means
 // it, so an ordinary name `super` is untouched.
 bool chk_is_super_name(Checker *c, const LhatNode *node)
@@ -2229,6 +2241,10 @@ const char *lhat_check_error_message(LhatCheckErrorCode code)
             return "override^ has to be usable where the original was";
         case LHAT_CHECK_ERR_OVERLOAD_OVERLAPS:
             return "overload^ overlaps an existing signature";
+        case LHAT_CHECK_ERR_DISCARD_READ:
+            return "'_^' throws the value away, so it is not a name and there "
+                   "is nothing here to read; write a name where the value is "
+                   "wanted";
         case LHAT_CHECK_ERR_NOT_DISPOSABLE:
             return "with^ needs a value with a dispose() that returns nothing";
         case LHAT_CHECK_ERR_FUNCTION_FALLS_OUT:

@@ -128,6 +128,76 @@ static void test_names(void)
                "var^ x : number^ = f(\"anything\")\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
+
+    // 13.12: '_^' stands where a name would and binds nothing. What 13.10's
+    // destructuring wanted it for is a position nobody needs.
+    LHAT_TEST("'_^' takes a position without naming it");
+    check_text(&u,
+               "var^ f = f^ -> (number^, number^, number^) {\n"
+               "  return^ 1, 2, 3 }\n"
+               "var^ a, _^, c = f()\n"
+               "var^ n : number^ = a + c\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // "may be written as often as it likes" -- a second one is not a
+    // redefinition, since there is nothing to read back either way.
+    LHAT_TEST("and may be written more than once in a run");
+    check_text(&u,
+               "var^ f = f^ -> (number^, number^, number^) {\n"
+               "  return^ 1, 2, 3 }\n"
+               "var^ _^, _^, c = f()\n"
+               "var^ n : number^ = c\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("reading a '_^' is refused");
+    check_text(&u, "var^ _^ = 5\nvar^ n = _^\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_DISCARD_READ);
+    unit_dispose(&u);
+
+    // 15.11's own motive: an annotation is written to say R, and a name
+    // written to carry it would hold nil^ and claim otherwise.
+    LHAT_TEST("'_^' carries an annotation without carrying a value");
+    check_text(&u,
+               "var^ gen = p^ -> number^ {\n"
+               "  var^ _^ : string^ = _yield^ 1\n"
+               "  return^ 0 }\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // 13.1: a parameter written to match a signature and not used. The
+    // annotation is still what the call is judged against.
+    LHAT_TEST("'_^' stands as a parameter");
+    check_text(&u,
+               "var^ g = f^ _^:number^, b:number^ -> number^ { return^ b }\n"
+               "var^ n : number^ = g(1, 2)\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // 16.3: the walk binds two, and one of them may be unwanted.
+    LHAT_TEST("'_^' stands as the focus of a walk");
+    check_text(&u,
+               "var^ total = 0\n"
+               "for^ _^, v in^ { 10, 20 } { total := total + v }\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // 12.5: the name is not wanted but 12.6's disposal is, which is the one
+    // place a '_^' is written for what happens rather than for a value.
+    LHAT_TEST("'_^' stands as a with^ target");
+    check_text(&u,
+               "var^ C = def^{ self^{ v := 1 }, dispose := p^self^ { } }\n"
+               "with^ _^ = C.new() { }\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // 13.12 refuses `_x` on purpose: the underscore prefix means discard in
+    // L^, and a name that merely begins with one is an ordinary name.
+    LHAT_TEST("a name beginning with '_' is an ordinary name");
+    check_text(&u, "var^ _x = 5\nvar^ n : number^ = _x\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
 }
 
 static void test_expressions(void)

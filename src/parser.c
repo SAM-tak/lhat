@@ -135,6 +135,14 @@ static bool token_is_hat(const Parser *p, const LhatToken *token, const char *wo
     return token_is_hat_stacked(p, token, word) && token->v.hats == 1;
 }
 
+// 13.12: '_^' stands where a name would and binds nothing. Every place that
+// reads a name has to admit it, since the whole point is to be written where
+// a name is expected -- the checker is what refuses it everywhere else.
+static bool at_discard(const Parser *p)
+{
+    return token_is_hat(p, &p->current, "_");
+}
+
 static void refuse_extra_hats(Parser *p, const LhatToken *token);
 static bool compound_assign_op(LhatOpKind token_op, LhatOpKind *base_op);
 
@@ -2444,7 +2452,10 @@ static LhatNode *parse_let_target(Parser *p, bool allow_path)
     bool hatted_root = p->current.kind == LHAT_TOKEN_HAT_IDENT &&
                        p->ahead.kind == LHAT_TOKEN_OP &&
                        p->ahead.v.op == LHAT_OP_DOT;
-    if (!hatted_root && p->current.kind != LHAT_TOKEN_IDENT &&
+    // 13.12: and '_^' is the other hat identifier a target may be -- a place
+    // to put a value with no name to read it back by.
+    if (!hatted_root && !at_discard(p) &&
+        p->current.kind != LHAT_TOKEN_IDENT &&
         p->current.kind != LHAT_TOKEN_NAME_LITERAL &&
         p->current.kind != LHAT_TOKEN_SCOPE) {
         return error_node(p, LHAT_PARSE_ERR_EXPECTED_NAME);
@@ -2485,7 +2496,9 @@ static LhatNode *parse_let_target(Parser *p, bool allow_path)
 // ordinary definition take -- a name, optionally typed, and nothing more.
 static LhatNode *parse_with_target(Parser *p)
 {
-    if (p->current.kind != LHAT_TOKEN_IDENT &&
+    // 13.12: '_^' is written here too -- 12.6's disposal is what the form is
+    // for, and that needs no name to reach the value by.
+    if (!at_discard(p) && p->current.kind != LHAT_TOKEN_IDENT &&
         p->current.kind != LHAT_TOKEN_NAME_LITERAL) {
         return error_node(p, LHAT_PARSE_ERR_EXPECTED_NAME);
     }

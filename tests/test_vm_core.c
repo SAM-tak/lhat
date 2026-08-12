@@ -336,6 +336,48 @@ static void test_names(void)
     run_text(&r, "return^ nowhere\n");
     LHAT_CHECK_EQ_INT(r.compiled, LHAT_COMPILE_UNDEFINED);
     run_dispose(&r);
+
+    // 02 の 13.12: '_^' takes its position out of the run and nothing reads
+    // it back, so what is pinned is that the names beside it take theirs.
+    LHAT_TEST("'_^' takes a position and the names beside it take theirs");
+    run_checked_text(&r,
+                     "var^ f = f^ -> (number^, number^, number^) {\n"
+                     "  return^ 1, 2, 3 }\n"
+                     "var^ a, _^, c = f()\n"
+                     "return^ a * 10 + c\n");
+    CHECK_INTEGER(&r, 13);
+    run_dispose(&r);
+
+    LHAT_TEST("and several of them share the one place");
+    run_checked_text(&r,
+                     "var^ f = f^ -> (number^, number^, number^) {\n"
+                     "  return^ 1, 2, 3 }\n"
+                     "var^ _^, _^, c = f()\n"
+                     "return^ c\n");
+    CHECK_INTEGER(&r, 3);
+    run_dispose(&r);
+
+    // 13.12 with 15.8: what is thrown away is the name, not the work. The
+    // call still runs, which is why 15.8's "no effect" is unaffected by
+    // writing one.
+    LHAT_TEST("the value written into a '_^' is still worked out");
+    run_checked_text(&r,
+                     "var^ n = 0\n"
+                     "var^ bump = p^ -> number^ { n := n + 1  return^ 5 }\n"
+                     "var^ _^ = bump()\n"
+                     "return^ n\n");
+    CHECK_INTEGER(&r, 1);
+    run_dispose(&r);
+
+    LHAT_TEST("'_^' stands as a parameter and as a walk's focus");
+    run_checked_text(&r,
+                     "var^ g = f^ _^:number^, b:number^ -> number^ {\n"
+                     "  return^ b }\n"
+                     "var^ total = 0\n"
+                     "for^ _^, v in^ { 10, 20 } { total := total + v }\n"
+                     "return^ g(1, 2) + total\n");
+    CHECK_INTEGER(&r, 32);
+    run_dispose(&r);
 }
 
 static void test_control(void)
