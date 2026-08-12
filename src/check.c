@@ -1366,6 +1366,15 @@ bool chk_always_exits(const LhatNode *node)
             return node->v.repeat.kind == LHAT_REPEAT_FOREVER &&
                    !breaks_out(node->v.repeat.body);
 
+        // 02 の 12.1: a with^ runs its block once and always. Nothing stands
+        // between the bindings and the body, which is why the checker walks
+        // it outside c->conditional where a loop's or an if^'s body is
+        // inside. So what the block does is what the with^ does -- and 04 の
+        // 5.1's 'with^ h = try^ open(p) { return^ … }' is a body that answers
+        // on every path, which is what it was written to be.
+        case LHAT_NODE_WITH:
+            return chk_always_exits(node->v.list.extra);
+
         default:
             return false;
     }

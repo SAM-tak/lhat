@@ -425,6 +425,40 @@ static void test_results(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_FUNCTION_FALLS_OUT);
     unit_dispose(&u);
 
+    // 02 の 12.1: a with^ runs its block once and always, so a block that
+    // answers on every path leaves the with^ answering on every path. 04 の
+    // 5.1 writes a whole subroutine in this shape.
+    LHAT_TEST("a with^ whose block always answers answers too");
+    check_text(&u,
+               "var^ C = def^{ self^{ v := 3 }, dispose := p^self^ { } }\n"
+               "var^ f = f^ -> number^ { with^ c = C.new() { return^ c.v } }\n"
+               "var^ n : number^ = f()\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("and one whose block may fall through still falls out");
+    check_text(&u,
+               "var^ C = def^{ self^{ v := 3 }, dispose := p^self^ { } }\n"
+               "var^ f = f^ b:bool^ -> number^ {\n"
+               "    with^ c = C.new() { if^ b { return^ c.v } }\n"
+               "}\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_FUNCTION_FALLS_OUT);
+    unit_dispose(&u);
+
+    // 04 の 5.1's own example: the error leaves through try^ and the value
+    // through the block, and 5.2 runs dispose() on both ways out.
+    LHAT_TEST("a with^ over a try^ answers on both ways out");
+    check_text(&u,
+               "errordef^ IOError { NotFound }\n"
+               "var^ H = def^{ self^{ v := 7 }, dispose := p^self^ { },\n"
+               "  read := f^self^ -> number^ { return^ self^.v } }\n"
+               "var^ open = f^ -> H|IOError.NotFound { return^ H.new() }\n"
+               "var^ read = f^ -> number^|IOError.NotFound {\n"
+               "    with^ h = try^ open() { return^ h.read() }\n"
+               "}\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
     // The same exit under a p^ that wrote a result which does not admit it.
     LHAT_TEST("a written result has to admit the value-less exit");
     check_text(&u,

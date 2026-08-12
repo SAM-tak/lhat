@@ -1278,6 +1278,23 @@ static void test_typeof(void)
                      "return^ log.n\n");
     CHECK_INTEGER(&r, 3);
     run_dispose(&r);
+
+    // 12.1 with 02 の 13.2: the block answers for the subroutine around it,
+    // and 12.6's disposal still runs on the way out. Written this way the
+    // whole of 04 の 5.1's shape holds together -- which the checker refused
+    // to look at until it counted a with^ among the ways a body ends.
+    LHAT_TEST("a return^ inside a with^ answers, and still disposes");
+    run_checked_text(&r,
+                     "var^ log = { n := 0 }\n"
+                     "var^ C = def^{ self^{ v := 3 },\n"
+                     "  dispose := p^self^ { log.n := 1 } }\n"
+                     "var^ f = f^ -> number^ {\n"
+                     "  with^ c = C.new() { return^ c.v }\n"
+                     "}\n"
+                     "var^ answered = f()\n"
+                     "return^ answered * 10 + log.n\n");
+    CHECK_INTEGER(&r, 31);
+    run_dispose(&r);
 }
 
 int main(void)
