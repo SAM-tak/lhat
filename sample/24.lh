@@ -45,10 +45,10 @@ let^ Reader = def^{
         used = { 0, 0, 0, 0, 0, 0, 0, 0, 0 },
     },
 
-    override^new = f^ line:string^ { self^{ text := line } },
+    override^new = f^ line { self^{ text = line } },
 
     # 空白を飛ばして今の1文字。尽きていれば ""
-    peek = p^self^ -> string^ {
+    peek = p^self^ {
         repeat^ while^ self^.at ≦ self^.text.length {
             if^ self^.text.substr(self^.at, self^.at) = " " {
                 self^.at := self^.at + 1
@@ -64,7 +64,7 @@ let^ Reader = def^{
 
     # 数字1文字、または括弧で囲んだ式。
     # 続けて書いた 12 が 12 にならないのは、ここが1文字しか取らないからである
-    factor = p^self^ -> number^ {
+    factor = p^self^ {
         let^ c = self^.peek()
         if^ c = "(" {
             self^.bump()
@@ -86,7 +86,7 @@ let^ Reader = def^{
         return^ d
     },
 
-    term = p^self^ -> number^ {
+    term = p^self^ {
         var^ value = self^.factor()
         repeat^ while^ self^.ok {
             let^ c = self^.peek()
@@ -121,7 +121,7 @@ let^ Reader = def^{
     },
 
     # 式全体。末尾に読み残しがあれば綴りの誤り
-    read = p^self^ -> number^ {
+    read = p^self^ {
         let^ value = self^.expr()
         if^ self^.peek() != "" { self^.ok := false^ }
         return^ value
@@ -129,7 +129,7 @@ let^ Reader = def^{
 }
 
 # 配った4つと使った4つが同じ多重集合か
-let^ same = f^ want:t^{ ...:number^ }, used:t^{ ...:number^ } -> bool^ {
+let^ same = f^ want, used {
     for^ i from^ 1 to^ 9 {
         if^ want[i] != used[i] { return^ false^ }
     }
@@ -137,23 +137,24 @@ let^ same = f^ want:t^{ ...:number^ }, used:t^{ ...:number^ } -> bool^ {
 }
 
 # / は実数除算なので 8/(3-8/3) は 24 ちょうどにならない。幅で見る
-let^ near24 = f^ value:number^ -> bool^ {
-    if^ value < 24: 24 - value < 0.000001 el^: value - 24 < 0.000001;
-}
+let^ near24 = f^ value { if^ value < 24: 24 - value < 0.000001 el^: value - 24 < 0.000001; }
 
-with^ rng = std.random.make(0) as^ std.random.Random {
+with^ rng = try^ std.random.make(0) {
     var^ want = { 0, 0, 0, 0, 0, 0, 0, 0, 0 }
     var^ shown = ""
     for^ i from^ 1 to^ 4 {
         let^ d = rng.range(1, 9)
-        want[d] := want[d] + 1
-        shown := shown .. " " .. d.tostring()
+        want[d] += 1
+        shown := $"{shown} {d}"
     }
     print($"Four digits:{shown}")
     print("Enter an expression using each of them once, or an empty line to stop.")
 
     repeat^ {
-        let^ line = std.io.readLine() catch^ ""
+        let^ line = std.io.readLine() catch^ p^{
+            print(it^.message)
+            return^""
+        }()
         if^ line.length = 0 { break^ }
 
         let^ r = Reader.new(line)
