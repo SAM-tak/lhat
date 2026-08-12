@@ -2610,6 +2610,12 @@ static void compile_subroutine(Compiler *c, const LhatNode *node, uint8_t into)
         return;
     }
 
+    // 05 の 8.9: the parameters are laid down first and each took its own
+    // width, so where the reserving has reached is where they end -- which is
+    // not the count once one of them is a host value. The machine reads it to
+    // know where the frame's scratch begins.
+    proto->parameter_slots = inner.next_register;
+
     // 02 の 14.16: kept the same way parameter_types is, for typeof^ to
     // reconstruct the signature without touching the checker's types (03 の
     // 4.2 -- what runs cannot depend on whether checking did).

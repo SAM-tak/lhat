@@ -1037,6 +1037,31 @@ static void reattach_upvalues(Machine *m, LhatCoroutine *co, size_t base)
 // frame goes: `next_base` is its first register and `result` the slot in the
 // caller's frame the answer lands in.
 //
+// 5.2 fixes a frame's width at compile time and gc.c's mark_roots walks all
+// of it -- it has to, since the scratch above the names is where a
+// half-finished expression keeps what it is holding. So every slot inside the
+// width is read by the collector whether or not this frame ever wrote it, and
+// one the frame below left behind still holds that frame's value.
+//
+// Which is a use-after-free waiting to happen: the value was unreachable when
+// its own frame went away and was collected, and the slot still points at it.
+// Emptying the scratch here is what keeps the walk seeing nil^ instead. Lua
+// clears a new frame's stack for the same reason.
+//
+// 05 の 8.9: where the parameters end is `parameter_slots` and not the count
+// -- a host value parameter is one parameter and several slots. 13.7's
+// collector is a parameter of its own and is inside it too, so everything the
+// caller laid down is below this and only the scratch is emptied.
+static void clear_scratch(Machine *m, size_t base, const LhatProto *proto)
+{
+    if (proto == NULL) {
+        return;
+    }
+    for (size_t r = proto->parameter_slots; r < proto->chunk.registers; r++) {
+        lhat_slots_set(m->slots, base + r, lhat_nil());
+    }
+}
+
 // The frame comes back marked `disposing`, which 10.7 needs -- a yield^ from
 // inside a cleanup has nothing to suspend into -- and set to drain rather
 // than to run: every cleanup, innermost first, and then the coroutine is
@@ -3161,6 +3186,7 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
                 if (callee->proto->has_variadic) {
                     lhat_slots_set(m->slots, next_base + (required), collected_variadic);
                 }
+                clear_scratch(m, next_base, callee->proto);
 
                 frame->pc = pc;
                 Frame *called = &m->frames[m->frame_count++];
@@ -3677,6 +3703,7 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
         if (!unary) {
             lhat_slots_set(m->slots, next_base + (1), R(cc));
         }
+        clear_scratch(m, next_base, carried->proto);
 
         frame->pc = pc;
         Frame *entered = &m->frames[m->frame_count++];
@@ -4003,6 +4030,7 @@ LhatRunResult lhat_machine_call(LhatMachine *machine, LhatValue callee,
         }
         lhat_slots_set(m->slots, next_base + (required), lhat_object((LhatObject *)collected));
     }
+    clear_scratch(m, next_base, closure->proto);
 
     Frame *called = &m->frames[m->frame_count++];
     called->closure = closure;

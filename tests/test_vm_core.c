@@ -594,6 +594,28 @@ static void test_calls(void)
     run_text(&r, "var^ f = f^ { return^ f() }\nreturn^ f()\n");
     LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_STACK_OVERFLOW);
     run_dispose(&r);
+
+    // 5.2 fixes a frame's width and gc.c walks all of it, so a slot the frame
+    // below left behind is read by the collector -- pointing at something
+    // that went away with that frame. Pushing empties the scratch to stop it,
+    // and this is the shape that found it: frames pushed and popped often
+    // enough that a collection lands between the two.
+    //
+    // It passes without the emptying too, since the freed value is only read
+    // by the walk. What tells the two apart is an asan build, where this
+    // reports heap-use-after-free -- run `ctest --preset asan`.
+    LHAT_TEST("a frame's scratch does not hold what the last one left");
+    run_text(&r,
+             "var^ sum = f^ ...:t^{ number^, number^ } -> number^ {\n"
+             "  var^ total = 0\n"
+             "  for^ t in^ ... { total := total + t[1] + t[2] }\n"
+             "  return^ total }\n"
+             "var^ total = 0\n"
+             "repeat^ 2000 { total := total + sum({ 10, 20 }) }\n"
+             "return^ total\n");
+    CHECK_INTEGER(&r, 60000);
+    LHAT_CHECK(r.ran.collected > 1000, "the loop did collect");
+    run_dispose(&r);
 }
 
 // 5.4: a capture is a place, not a copy. 02 の 8.6 is what forces it -- ':='
