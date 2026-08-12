@@ -1256,9 +1256,12 @@ static void test_hostvalue_escape(void)
     // nothing but the host holds them, so gc.c reaches them from there -- a
     // proto's live in its chunk and never face this.
     //
-    // This is a regression rather than a proof: disabling that reach does not
-    // make it fail, since the collector runs a step at a time and what would
-    // be freed is not read again inside the window a program can open here.
+    // The reach is load-bearing: with it removed, a full cycle here frees
+    // fourteen of them (counted by hand at sweep_some), and every call below
+    // then reads freed memory. What this case pins is the shape of that --
+    // it passes either way, since reading a freed descriptor happens to pick
+    // the same arm. Only a build with a memory checker would tell them apart,
+    // and there is no preset for one.
     LHAT_TEST("and the lowered signatures survive a collection");
     {
         static const File files[] = {
