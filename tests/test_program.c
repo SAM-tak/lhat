@@ -1256,12 +1256,12 @@ static void test_hostvalue_escape(void)
     // nothing but the host holds them, so gc.c reaches them from there -- a
     // proto's live in its chunk and never face this.
     //
-    // The reach is load-bearing: with it removed, a full cycle here frees
-    // fourteen of them (counted by hand at sweep_some), and every call below
-    // then reads freed memory. What this case pins is the shape of that --
-    // it passes either way, since reading a freed descriptor happens to pick
-    // the same arm. Only a build with a memory checker would tell them apart,
-    // and there is no preset for one.
+    // The reach is load-bearing: with it removed, the collections here free
+    // fourteen descriptors -- counted at sweep_some, in the asan build as
+    // well as the ordinary one. What is not settled is why AddressSanitizer
+    // says nothing about the calls that follow, which read them; both the
+    // count and its silence were measured, and they have not been reconciled.
+    // So this case passes either way, and is a regression rather than a proof.
     LHAT_TEST("and the lowered signatures survive a collection");
     {
         static const File files[] = {
