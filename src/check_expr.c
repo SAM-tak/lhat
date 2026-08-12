@@ -2456,16 +2456,14 @@ static LhatType *infer_node(Checker *c, const LhatNode *node)
             for (const LhatNode *part = node->v.list.items; part != NULL;
                  part = part->next) {
                 if (part->kind == LHAT_NODE_INTERP_HOLE) {
-                    LhatType *held =
-                        chk_require_value(c, part->v.hole.value,
-                                          chk_infer(c, part->v.hole.value));
-                    // 05 の 8.9: writing a whole host value down would go
-                    // through tostring machinery a value type does not
-                    // carry. Its fields are numbers -- write those.
-                    if (chk_is_hostvalue(held)) {
-                        chk_report(c, part->v.hole.value,
-                                   LHAT_CHECK_ERR_HOSTVALUE_ESCAPES);
-                    }
+                    // 05 の 8.9: a host value stands here like any other.
+                    // The hole reads it and keeps nothing, which is what
+                    // every other place 8.9 refuses does -- and 14.17's
+                    // tostring reaches one the same as it reaches a number^:
+                    // the library's registered one, or the built-in writing
+                    // the type's name where none was registered.
+                    chk_require_value(c, part->v.hole.value,
+                                      chk_infer(c, part->v.hole.value));
                 }
             }
             return chk_simple(c, LHAT_TYPE_STRING);

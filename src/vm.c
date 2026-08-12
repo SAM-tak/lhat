@@ -796,6 +796,38 @@ static bool builtin_member(LhatValue on, LhatValue key, LhatNativeKind *out)
             lhat_is_object_kind(on, LHAT_OBJECT_ERROR));
 }
 
+// 02 の 14.17 with 01 の 5.4: what was written answers before the built-in
+// does, and an interpolation hole asks for the hat spelling -- the one
+// 14.17改 keeps a plain table from taking off the writer. Everywhere else
+// there is no writer's namespace to protect: 14 章 reserves these names on a
+// def^, and every name on a host type is the library's (05 の 8.8, 8.9). So
+// on those the two spellings name one member, and a written bare `tostring`
+// answers a hole the way 14.17 says it does.
+//
+// The spelling that was asked for is looked for first, which keeps the bare
+// key off every path but the one where the built-in was about to answer
+// anyway. Answers nil^ where neither is written, which is that path.
+static LhatValue member_written(Machine *m, LhatValue on, LhatValue key,
+                                const LhatTable *members)
+{
+    LhatValue found = lhat_table_get(members, key);
+    if (!lhat_is_nil(found) || plain_table(on)) {
+        return found;
+    }
+    LhatNativeKind which;
+    bool hatted = false;
+    if (!native_named(key, &which, &hatted) || !hatted) {
+        return found;
+    }
+    const LhatString *name = (const LhatString *)lhat_as_object(key);
+    LhatString *bare =
+        lhat_string_new(&m->objects, name->text, name->length - 1);
+    if (bare == NULL) {
+        return found;  // the built-in is still an answer; nothing is lost here
+    }
+    return lhat_table_get(members, lhat_object((LhatObject *)bare));
+}
+
 // 02 の 14.12: whether this candidate takes what the call is handing over.
 // The receiver is not asked about -- 14.12 keeps self^ out of the judgement
 // for the same reason it keeps it out of override^'s.
@@ -2186,7 +2218,22 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
                         return finish(m, chunk, LHAT_RUN_TYPE_ERROR,
                                       lhat_nil(), at);
                     }
-                    SET_R(a, lhat_table_get(hv_members, R(cc)));
+                    SET_R(a, member_written(m, R(b), R(cc), hv_members));
+                    // 02 の 14.17: and where the library registered none, the
+                    // built-in writes the value down -- a host value has no
+                    // spelling of its own, so what it answers is its type's
+                    // name (value.c's write_value).
+                    LhatNativeKind hv_which;
+                    if (lhat_is_nil(R(a)) &&
+                        builtin_member(R(b), R(cc), &hv_which)) {
+                        LhatNative *native =
+                            lhat_native_new(&m->objects, hv_which, R(b));
+                        if (native == NULL) {
+                            return finish(m, chunk, LHAT_RUN_OUT_OF_MEMORY,
+                                          lhat_nil(), at);
+                        }
+                        SET_R(a, lhat_object((LhatObject *)native));
+                    }
                     break;
                 }
                 const LhatTable *table = readable_table(R(b));
@@ -2213,7 +2260,7 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
                     }
                     return finish(m, chunk, LHAT_RUN_TYPE_ERROR, lhat_nil(), at);
                 }
-                SET_R(a, lhat_table_get(table, R(cc)));
+                SET_R(a, member_written(m, R(b), R(cc), table));
 
                 // 16.3: a table has an iterate of its own, but only where
                 // nothing was written under that name. 14.17 gives tostring

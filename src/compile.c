@@ -2237,9 +2237,11 @@ static void compile_default_new(Compiler *c, const LhatNode *node,
 // own answers with it. A format written after ':' becomes tostring's second
 // argument, which 14.17 gives to number^ alone.
 //
-// `at` is the first of three consecutive registers the caller reserved: 5.3
+// `at` is the first of the consecutive registers the caller reserved: 5.3
 // lays a method call out as callee, receiver, then arguments, and the key is
-// read out of the third before the argument is written over it.
+// read out of the one past the receiver before the argument is written over
+// it. 05 の 8.9: a host value receiver holds its width of them, so what
+// follows it is that much further up.
 static void compile_interp_part(Compiler *c, const LhatNode *part, uint8_t at)
 {
     if (part->kind == LHAT_NODE_INTERP_TEXT) {
@@ -2248,7 +2250,7 @@ static void compile_interp_part(Compiler *c, const LhatNode *part, uint8_t at)
     }
 
     uint8_t receiver = (uint8_t)(at + 1);
-    uint8_t argument = (uint8_t)(at + 2);
+    uint8_t argument = (uint8_t)(receiver + width_of(part->v.hole.value));
     compile_expression(c, part->v.hole.value, receiver);
     // 14.17改: the hat spelling is the one that reaches the built-in on every
     // value -- a hole may hold a plain table, where the bare name is the
@@ -2274,12 +2276,14 @@ static void compile_interp(Compiler *c, const LhatNode *node, uint8_t into)
 
     for (const LhatNode *part = node->v.list.items; part != NULL;
          part = part->next) {
-        // A hole wants three slots of its own, and the first piece cannot
-        // simply take `into` and the two above it -- what those hold belongs
-        // to whoever reserved them.
-        uint8_t piece = reserve(c);
-        reserve(c);
-        reserve(c);
+        // A hole wants the piece, the receiver and the key above it, and the
+        // first piece cannot simply take `into` and what follows -- those
+        // belong to whoever reserved them. 05 の 8.9: the receiver is as wide
+        // as the checker says it is.
+        size_t held = part->kind == LHAT_NODE_INTERP_HOLE
+                          ? 1 + width_of(part->v.hole.value) + 1
+                          : 1;
+        uint8_t piece = reserve_wide(c, held);
         compile_interp_part(c, part, piece);
         if (started) {
             emit(c, lhat_encode_abc(LHAT_BC_CONCAT, into, into, piece));

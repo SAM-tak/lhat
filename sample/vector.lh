@@ -16,11 +16,14 @@ print($"c = ({landed.x}, {landed.y}, {landed.z})")
 
 # --- the value side: arithmetic with no heap in sight ---
 let^v = std.math.lvec3(3, 4, 0)
+print($"v = {v}")
 print($"length = {v.length()}")
 
 let^doubled = v * 2
 print($"doubled.x = {doubled.x}")
 print($"dot = {v.dot(doubled)}")
+print($"-doubled.x = {(-doubled).x}")
+print($"(2 * doubled).x = {(2 * doubled).x}")
 
 let^unit = v.normalized()
 print($"unit = ({unit.x}, {unit.y}, {unit.z})")

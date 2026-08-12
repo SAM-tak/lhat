@@ -296,6 +296,31 @@ static void write_value(Writer *w, LhatValue value, size_t depth)
             // is undefined for exactly the ones that do not fit.
             put_real(w, value.as.real);
             return;
+        case LHAT_VALUE_HOSTVALUE:
+            // 05 の 8.9: bytes whose meaning is the library's, so there is
+            // nothing here to write but what they are -- the type's name,
+            // in the same '<…>' the kinds below are named with. A library
+            // that wants its values written its own way registers a
+            // tostring, which 14.17 lets win over this.
+            if (value.as.hostvalue != NULL) {
+                put_text(w, "<");
+                put_text(w, value.as.hostvalue->module);
+                put_text(w, ".");
+                put_text(w, value.as.hostvalue->name);
+                put_text(w, ">");
+                return;
+            }
+            put_text(w, "<hostvalue>");
+            return;
+        case LHAT_VALUE_CONT:
+        case LHAT_VALUE_RUN:
+            // Neither is ever a value in its own right: 8.9's continuation
+            // slots are read through their head, and 13.8改 confines a run
+            // to a result the next few instructions take apart.
+            put_text(w, "<");
+            put_text(w, value.tag == LHAT_VALUE_CONT ? "cont" : "run");
+            put_text(w, ">");
+            return;
         case LHAT_VALUE_OBJECT:
             break;
     }

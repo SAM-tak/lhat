@@ -1182,6 +1182,46 @@ static void test_hostvalue_escape(void)
     }
     lhat_program_dispose(&program);
 
+    // 02 の 14.17 with 05 の 8.9: every value can be written down, a host
+    // value included. Nothing is registered under tostring here, so this is
+    // the built-in answering -- and what a value with no spelling of its own
+    // answers is what it is, the way a coroutine answers 'c^'. The library
+    // that wants better registers one, which 14.17 lets win over this.
+    LHAT_TEST("a host value with no tostring answers its type's name");
+    {
+        static const File files[] = {
+            {"main.lh",
+             "import^ test.c\n"
+             "var^ v = test.c.make()\n"
+             "if^ $\"{v}\" = \"<test.c.C>\" and^\n"
+             "   v.tostring() = \"<test.c.C>\" { return^ 1 }\n"
+             "return^ 0\n"},
+        };
+        program_with(&program, &disk, files, 1);
+        const LhatHostValueTag *tag = lhat_register_hostvalue_type(
+            &program, "test.c", "C", sizeof(Counter));
+        LHAT_CHECK(tag != NULL, "the type registration took");
+        LHAT_CHECK(lhat_register_func(&program, "test.c", "make",
+                                      "f^ -> test.c.C;", host_counter_make,
+                                      (void *)tag),
+                   "the maker registration took");
+        const LhatUnit *root = lhat_program_check(&program, "main.lh");
+        LHAT_CHECK(root != NULL && root->checked.diagnostic_count == 0,
+                   "the program checked");
+        size_t count = 0;
+        const LhatModule *modules = lhat_program_compile(&program, &count);
+        if (modules != NULL && root != NULL) {
+            LhatMachine *machine = lhat_machine_new();
+            lhat_machine_set_modules(machine, modules, count);
+            lhat_program_install(&program, machine);
+            LhatRunResult ran = lhat_run(machine, modules[root->index].proto);
+            LHAT_CHECK_EQ_INT(ran.status, LHAT_RUN_OK);
+            LHAT_CHECK_EQ_INT(lhat_as_integer(ran.value), 1);
+            lhat_machine_dispose(machine);
+        }
+    }
+    lhat_program_dispose(&program);
+
     // 02 の 14.12 with 05 の 8.7: one registered name carrying several
     // signatures. A host has no body for the compiler to read a descriptor
     // out of, so the registration lowers the one it was written with and the

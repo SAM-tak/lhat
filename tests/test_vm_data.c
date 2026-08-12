@@ -519,6 +519,27 @@ static void test_interpolation(void)
     CHECK_STRING(&r, "got P");
     run_dispose(&r);
 
+    // 14.17改: and the bare one there is the writer's, so the built-in is
+    // still what the hole gets. This is the line the search below stops at.
+    LHAT_TEST("a bare tostring on a plain table is not what a hole uses");
+    run_text(&r,
+             "var^ p = { n := 1,\n"
+             "  tostring := f^self^ -> string^ { return^ \"P\" } }\n"
+             "return^ $\"{p.tostring()}\" .. \" \" .. $\"{p}\"\n");
+    CHECK_STRING(&r, "P { n = 1, tostring = f^ }");
+    run_dispose(&r);
+
+    // 02 の 14.17 with 01 の 5.4: written first, built-in last. 14 章 reserves
+    // the name on a def^, so there the bare spelling is the type's own and the
+    // hole reaches it -- the same member '.tostring()' calls by hand.
+    LHAT_TEST("a written tostring on a def^ instance is what a hole uses");
+    run_text(&r,
+             "let^ P = def^{ self^{ x := 7 },\n"
+             "  tostring := f^self^ -> string^ { return^ \"P!\" } }\n"
+             "return^ $\"{P.new()}\"\n");
+    CHECK_STRING(&r, "P!");
+    run_dispose(&r);
+
     LHAT_TEST("a hole runs where it stands, not where the string was made");
     run_text(&r,
              "var^ n = 1\n"

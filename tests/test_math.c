@@ -4,8 +4,8 @@
 // What is pinned here is the machinery rather than the arithmetic: a host
 // value crossing every boundary it is allowed to cross (an operator, a
 // method, an L^ subroutine's parameters and result, a coroutine's own
-// locals), refusing every one it is not (a table, a capture, a yield, the
-// program's answer, an interpolation hole), equality being bytes rather
+// locals, an interpolation hole), refusing every one it is not (a table, a
+// capture, a yield, the program's answer), equality being bytes rather
 // than heads, and fields reading and writing the value in place. The
 // numbers are chosen so a wrong slot somewhere answers a wrong number here.
 
@@ -254,6 +254,47 @@ static void test_boxing(void)
     }
 }
 
+// 02 の 14.17 with 05 の 8.9: a host value is written down like any other
+// value. The library registers the spelling under the bare name -- the hat
+// is 14.17改's, and what it keeps apart is a plain table's names, which a
+// registered type has none of.
+static void test_tostring(void)
+{
+    LHAT_TEST("a host value spells itself");
+    {
+        LhatTestRan ran = run_source("import^ std.math\n"
+                                     "return^ std.math.lvec3(3, 4, 0).tostring()\n");
+        LHAT_CHECK_RAN_TEXT(ran, "{x:3.0 y:4.0 z:0.0}");
+        lhat_test_ran_dispose(&ran);
+    }
+
+    // 01 の 5.4: the hole asks for tostring^, and on a host value the two
+    // spellings are one member -- so what the registration wrote is what
+    // lands here. 05 の 8.9: the receiver is three slots wide, and the key
+    // sits past them rather than in the middle of the value.
+    LHAT_TEST("and an interpolation hole writes that same spelling");
+    {
+        LhatTestRan ran = run_source(
+            "import^ std.math\n"
+            "let^ v = std.math.lvec3(1, 2, 3)\n"
+            "return^ $\"v = {v}, -v = {-v}\"\n");
+        LHAT_CHECK_RAN_TEXT(ran,
+                            "v = {x:1.0 y:2.0 z:3.0}, -v = {x:-1.0 y:-2.0 z:-3.0}");
+        lhat_test_ran_dispose(&ran);
+    }
+
+    // 14.8: the components are numbers, so they are spelled the way a
+    // number^ is spelled anywhere else -- 3 and 3.0 apart, and no printf
+    // format of this library's own.
+    LHAT_TEST("the components read as L^ spells a number^");
+    {
+        LhatTestRan ran = run_source("import^ std.math\n"
+                                     "return^ std.math.lvec3(0.5, -2, 1e10).tostring()\n");
+        LHAT_CHECK_RAN_TEXT(ran, "{x:0.5 y:-2.0 z:1e+10}");
+        lhat_test_ran_dispose(&ran);
+    }
+}
+
 static void test_collection(void)
 {
     // 05 の 8.9: nothing here is the collector's -- a host value in a
@@ -311,12 +352,6 @@ static void test_escapes(void)
                        "return^ std.math.lvec3(1, 2, 3)\n"),
                "top-level return");
 
-    LHAT_TEST("an interpolation hole refuses a whole host value");
-    LHAT_CHECK(!checks("import^ std.math\n"
-                       "let^ v = std.math.lvec3(1, 2, 3)\n"
-                       "let^ s = $\"{v}\"\n"),
-               "interpolation hole");
-
     LHAT_TEST("a registered member is not written over");
     LHAT_CHECK(!checks("import^ std.math\n"
                        "var^ v = std.math.lvec3(1, 2, 3)\n"
@@ -348,6 +383,7 @@ int main(void)
     test_subroutines();
     test_coroutine_locals();
     test_boxing();
+    test_tostring();
     test_collection();
     test_escapes();
     return lhat_test_report("test_math");

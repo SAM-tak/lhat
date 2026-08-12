@@ -13,6 +13,7 @@
 
 #include <math.h>
 #include <stddef.h>
+#include <stdio.h>
 #include <string.h>
 
 // Threaded through as every registration's `context` (05 の 8.7) -- see
@@ -216,6 +217,53 @@ static LhatValue lvec3_normalized(LhatMachine *machine, void *context,
     return lvec3_value(machine, module, unit);
 }
 
+// tostring: f^self^ -> string^;
+//
+// 02 の 14.17: the text a reader reads. The components are spelled the way L^
+// spells a number^ -- 14.8's two representations, which lhat_value_text
+// already decides between -- rather than by a printf format of this
+// library's own, so a component reads here as it would anywhere else.
+static LhatValue lvec3_tostring(LhatMachine *machine, void *context,
+                                const LhatValue *arguments, size_t count)
+{
+    const MathModule *module = (const MathModule *)context;
+    LVec3 v;
+    if (count < 1 || !lvec3_arg(module, arguments[0], &v)) {
+        return lhat_nil();
+    }
+    const double held[3] = { (double)v.x, (double)v.y, (double)v.z };
+    static const char *const names[3] = { "x", "y", "z" };
+
+    // Three numbers, each at most a few dozen bytes of '%g' with an exponent.
+    char text[128];
+    size_t used = 0;
+    text[used++] = '{';
+    for (size_t i = 0; i < 3; i++) {
+        char spelt[64];
+        size_t length = lhat_value_text(lhat_real(held[i]), spelt, sizeof spelt);
+        if (length >= sizeof spelt) {
+            return lhat_nil();  // no number^ spells this long
+        }
+        int written = snprintf(text + used, sizeof text - used, "%s%s:%s",
+                               i == 0 ? "" : " ", names[i], spelt);
+        if (written < 0 || (size_t)written >= sizeof text - used) {
+            return lhat_nil();
+        }
+        used += (size_t)written;
+    }
+    if (used + 1 >= sizeof text) {
+        return lhat_nil();
+    }
+    text[used++] = '}';
+
+    // 14.17 gives tostring one signature and no error arm, so a heap that
+    // cannot hold the answer says nothing -- the same nil^ lvec3_value
+    // answers with when the machine has no room for a value either.
+    LhatValue out = lhat_nil();
+    return lhat_machine_make_string(machine, text, used, &out) ? out
+                                                              : lhat_nil();
+}
+
 // ---------------------------------------------------------------------------
 // std.math.Vector3 -- the container (05 の 8.8), and 8.9's boxing spelled out
 // ---------------------------------------------------------------------------
@@ -354,6 +402,13 @@ bool lhatstdlib_math_register(LhatProgram *program)
            lhat_register_hostvalue_member(
                program, "std.math", "LVector3", "normalized",
                "f^self^ -> std.math.LVector3;", lvec3_normalized, module) &&
+           // 02 の 14.17: written down the library's way rather than the
+           // machine's. The name is the bare one -- the hat is 14.17改's,
+           // and what it keeps apart is a plain table's names from the
+           // built-in's, which a registered type has none of.
+           lhat_register_hostvalue_member(program, "std.math", "LVector3",
+                                          "tostring", "f^self^ -> string^;",
+                                          lvec3_tostring, module) &&
            lhat_register_func(
                program, "std.math", "lvec3",
                "f^number^, number^, number^ -> std.math.LVector3;",
