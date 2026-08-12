@@ -121,7 +121,7 @@ static void test_definitions(void)
     run_text(&r,
              "var^ Foo = def^{\n"
              "  self^{ a := 1, b := 2 },\n"
-             "  new := f^v { return^ self^{ a := v } },\n"
+             "  override^new := f^v { return^ self^{ a := v } },\n"
              "}\n"
              "var^ f = Foo.new(8)\n"
              "return^ f.a * 10 + f.b\n");
@@ -136,11 +136,58 @@ static void test_definitions(void)
              "var^ side = f^ { log.n := log.n + 1 return^ 0 }\n"
              "var^ Foo = def^{\n"
              "  self^{ a := side() },\n"
-             "  new := f^ { return^ self^{ a := 5 } },\n"
+             "  override^new := f^ { return^ self^{ a := 5 } },\n"
              "}\n"
              "var^ f = Foo.new()\n"
              "return^ log.n\n");
     CHECK_INTEGER(&r, 0);
+    run_dispose(&r);
+
+    // 14.11改 with 14.12: the default new is a real member from the start, so
+    // an overload^ adds an arm beside it and both spellings construct. Before
+    // this, writing one took the default away.
+    LHAT_TEST("an overload^ new stands beside the default");
+    run_checked_text(&r,
+                     "var^ Foo = def^{\n"
+                     "  self^{ a := 1, b := 2 },\n"
+                     "  overload^new := f^v:number^ {\n"
+                     "    return^ self^{ a := v }\n"
+                     "  },\n"
+                     "}\n"
+                     "return^ Foo.new().a * 10 + Foo.new(7).a\n");
+    CHECK_INTEGER(&r, 17);
+    run_dispose(&r);
+
+    // 14.12改: what super^ names inside an override^ is what the name held,
+    // and 14.11改 makes that the default new -- so a constructor may build
+    // the plain instance and work from there.
+    LHAT_TEST("super^ inside an override^ new reaches the default");
+    run_checked_text(&r,
+                     "var^ Foo = def^{\n"
+                     "  self^{ a := 4 },\n"
+                     "  override^new := f^ { return^ super^() },\n"
+                     "}\n"
+                     "return^ Foo.new().a\n");
+    CHECK_INTEGER(&r, 4);
+    run_dispose(&r);
+
+    // 14.5 with 14.12: composing two written definitions rebuilds the
+    // constructor so it answers with the composed instance. Every arm is
+    // rebuilt -- an overloaded new used to lose all of them here, leaving a
+    // composition that could only be constructed with no arguments.
+    LHAT_TEST("composition keeps every arm of an overloaded new");
+    run_checked_text(&r,
+                     "var^ Left = def^{ self^{ b := 2 } }\n"
+                     "var^ Right = def^{\n"
+                     "  self^{ a := 1 },\n"
+                     "  overload^new := f^v:number^ {\n"
+                     "    return^ self^{ a := v }\n"
+                     "  },\n"
+                     "}\n"
+                     "var^ Both = Left .. Right\n"
+                     "var^ x = Both.new(5)\n"
+                     "return^ x.a * 10 + x.b\n");
+    CHECK_INTEGER(&r, 52);
     run_dispose(&r);
 
     // 14.11: an initialiser cannot see self^, which does not exist yet, but
@@ -375,7 +422,7 @@ static void test_definitions(void)
              "var^ Foo = def^{ self^{ a := 1, b := 2 } }\n"
              "var^ Bar = Foo .. def^{\n"
              "  self^{ c := 3 },\n"
-             "  new := f^v { return^ self^{ b := v } },\n"
+             "  override^new := f^v { return^ self^{ b := v } },\n"
              "}\n"
              "var^ x = Bar.new(9)\n"
              "return^ x.a * 100 + x.b * 10 + x.c\n");

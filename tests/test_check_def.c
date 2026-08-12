@@ -38,6 +38,70 @@ static void test_definitions(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
+    // 14.11改: and it is a member like any other, so writing one is 14.12's
+    // second member of that name. Unmarked, that is the collision 14.12 is
+    // about -- which is what keeps 'adding new(a, b)' from silently taking
+    // new() away.
+    LHAT_TEST("a written new wants a marker");
+    check_text(&u,
+               "var^ C = def^{\n"
+               "    self^{ v := 1 },\n"
+               "    new := f^ n:number^ { return^ self^{ v := n } },\n"
+               "}\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MEMBER_EXISTS);
+    unit_dispose(&u);
+
+    // 14.12改2: an override^ new replaces the default whole, whatever it
+    // takes -- the exemption from substitutability. This is how a definition
+    // says construction needs arguments.
+    LHAT_TEST("an override^ new may ask for arguments the default did not");
+    check_text(&u,
+               "var^ C = def^{\n"
+               "    self^{ v := 1 },\n"
+               "    override^new := f^ n:number^ { return^ self^{ v := n } },\n"
+               "}\n"
+               "var^ c = C.new(5)\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("and the default is gone once it does");
+    check_text(&u,
+               "var^ C = def^{\n"
+               "    self^{ v := 1 },\n"
+               "    override^new := f^ n:number^ { return^ self^{ v := n } },\n"
+               "}\n"
+               "var^ c = C.new()\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_ARITY);
+    unit_dispose(&u);
+
+    // 14.12: the other half. An overload^ adds a way to call it and leaves
+    // what was there, so both spellings construct.
+    LHAT_TEST("an overload^ new keeps the default beside it");
+    check_text(&u,
+               "var^ C = def^{\n"
+               "    self^{ v := 1 },\n"
+               "    overload^new := f^ n:number^ { return^ self^{ v := n } },\n"
+               "}\n"
+               "var^ a = C.new()\n"
+               "var^ b = C.new(5)\n"
+               "var^ x : number^ = a.v + b.v\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // 14.7 with 14.12: the instance type is read off what new answers, and an
+    // overloaded new answers it from every arm. Without that reading the
+    // definition's name would name nothing writable.
+    LHAT_TEST("an overloaded new still names an instance type");
+    check_text(&u,
+               "var^ C = def^{\n"
+               "    self^{ v := 1 },\n"
+               "    overload^new := f^ n:number^ { return^ self^{ v := n } },\n"
+               "}\n"
+               "var^ take = f^ c:C -> number^ { return^ c.v }\n"
+               "var^ n : number^ = take(C.new(5))\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
     LHAT_TEST("a field the definition does not declare is reported");
     check_text(&u,
                "var^ C = def^{ self^{ v := 1 } }\n"

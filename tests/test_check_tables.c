@@ -156,7 +156,7 @@ static void test_walking(void)
     check_text(&u,
                "var^ Range = def^{\n"
                "  self^{ upto := 0 },\n"
-               "  new := f^ n { return^ self^{ upto := n } },\n"
+               "  override^new := f^ n { return^ self^{ upto := n } },\n"
                "  iterate^ := f^self^ {\n"
                "    return^ p^ { yield^ 1 }()\n"
                "  },\n"

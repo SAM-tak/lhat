@@ -1779,6 +1779,28 @@ const LhatTypeMember *chk_find_member(const LhatType *table,
     return chk_members_search(table->v.table.members, name, length);
 }
 
+// 14.12's overload^ puts several signatures under one name, and 14.11's new
+// is a name like any other -- so what a definition holds there is one
+// signature or an intersection of them. Both readings below take that as
+// given: every arm answers with the same instance, since every arm is a way
+// of constructing this definition.
+static const LhatType *constructor_arm(const LhatType *held)
+{
+    if (held == NULL) {
+        return NULL;
+    }
+    if (held->kind == LHAT_TYPE_INTERSECT) {
+        for (const LhatTypeList *arm = held->v.composite.arms; arm != NULL;
+             arm = arm->next) {
+            if (arm->type != NULL && arm->type->kind == LHAT_TYPE_FUNC) {
+                return arm->type;
+            }
+        }
+        return NULL;
+    }
+    return held->kind == LHAT_TYPE_FUNC ? held : NULL;
+}
+
 // 14.11 makes new return an instance, so a definition's own structure is
 // where its instance type can be found again. Composition needs it, to carry
 // the base's fields into the derived instance.
@@ -1794,11 +1816,60 @@ LhatType *chk_instance_of(const LhatType *definition)
         return NULL;
     }
     const LhatTypeMember *constructor = chk_find_member(definition, "new", 3);
-    if (constructor == NULL || constructor->type == NULL ||
-        constructor->type->kind != LHAT_TYPE_FUNC) {
-        return NULL;
+    const LhatType *arm =
+        constructor != NULL ? constructor_arm(constructor->type) : NULL;
+    return arm != NULL ? arm->v.func.result : NULL;
+}
+
+// 14.11 with 14.5: the new a definition gets before anything is written into
+// it. The parameters come from the base -- a derived definition is built the
+// way the base was -- but the result has to be the derived instance, since
+// 14.5 composes to make something new and a constructor answering with the
+// base would defeat that. With no base, or a base that carries no signature
+// here, it is the one 14.11 gives every definition: no arguments, and the
+// template fixes every field.
+//
+// An overloaded new is rebuilt arm by arm, since each arm is one way of
+// constructing the same thing.
+static LhatType *constructor_from(Checker *c, const LhatType *inherited,
+                                  LhatType *instance)
+{
+    if (inherited != NULL && inherited->kind == LHAT_TYPE_INTERSECT) {
+        LhatType *rebuilt = NULL;
+        for (const LhatTypeList *arm = inherited->v.composite.arms; arm != NULL;
+             arm = arm->next) {
+            if (arm->type == NULL || arm->type->kind != LHAT_TYPE_FUNC) {
+                continue;
+            }
+            LhatType *one = constructor_from(c, arm->type, instance);
+            rebuilt = rebuilt == NULL
+                          ? one
+                          : lhat_type_intersect(c->result->types, rebuilt, one);
+        }
+        if (rebuilt != NULL) {
+            return rebuilt;
+        }
     }
-    return constructor->type->v.func.result;
+
+    LhatType *constructor = lhat_type_func(c->result->types, true);
+    if (inherited != NULL && inherited->kind == LHAT_TYPE_FUNC) {
+        for (const LhatTypeList *p = inherited->v.func.params; p != NULL;
+             p = p->next) {
+            lhat_type_add_param(c->result->types, constructor, p->type);
+        }
+        constructor->v.func.variadic = inherited->v.func.variadic;
+    }
+    constructor->v.func.result = instance;
+    return constructor;
+}
+
+// The same, reading the base's new off the base itself.
+static LhatType *constructor_for(Checker *c, const LhatType *base,
+                                 LhatType *instance)
+{
+    const LhatTypeMember *inherited = chk_find_member(base, "new", 3);
+    return constructor_from(c, inherited != NULL ? inherited->type : NULL,
+                            instance);
 }
 
 // Overwrites rather than appending, so a member the base already had ends up
@@ -2014,9 +2085,17 @@ static LhatType *override_one(Checker *c, const LhatNode *entry,
     return rebuilt != NULL ? rebuilt : replacement;
 }
 
+// `constructor` says this entry is 14.11's new, which 14.12改2 exempts from
+// the substitutability an override^ otherwise owes. Nothing can be written
+// that takes a definition where another definition is expected -- 05 の 2.2
+// and 14.7 make a definition's name mean its instance -- so a new that
+// narrows what it accepts leaves no caller behind. A method is the other way
+// round: an instance does stand where the base's instance is written, and
+// there the rule is holding something up. So an override^ new replaces what
+// the name held, whole.
 static LhatType *check_same_name(Checker *c, const LhatNode *entry,
                                  const LhatTypeMember *inherited,
-                                 LhatType *replacement)
+                                 LhatType *replacement, bool constructor)
 {
     LhatDefModifier modifier = entry->v.entry.modifier;
 
@@ -2051,6 +2130,11 @@ static LhatType *check_same_name(Checker *c, const LhatNode *entry,
             return replacement;
 
         case LHAT_DEF_OVERRIDE:
+            // 14.12改2: the exemption above. The whole member goes, so there
+            // is no arm to name and nothing to compare against.
+            if (constructor) {
+                return replacement;
+            }
             // 14.12: what is replaced is the one existing candidate the new
             // signature overlaps. A name that was overloaded carries several,
             // and comparing against all of them at once would refuse every
@@ -2207,22 +2291,16 @@ LhatType *chk_compose_definitions(Checker *c, const LhatNode *node,
 
     // 14.5 composes to make something new, so the constructor has to build
     // the composed instance. The parameters come from the right, which is the
-    // more derived of the two.
-    LhatType *constructor = lhat_type_func(c->result->types, true);
+    // more derived of the two -- every way of constructing it (14.12's
+    // overload^ may have put several there) rebuilt to answer with what this
+    // composition makes.
     const LhatTypeMember *inherited = chk_find_member(right, "new", 3);
     if (inherited == NULL) {
         inherited = chk_find_member(left, "new", 3);
     }
-    if (inherited != NULL && inherited->type != NULL &&
-        inherited->type->kind == LHAT_TYPE_FUNC) {
-        for (const LhatTypeList *p = inherited->type->v.func.params; p != NULL;
-             p = p->next) {
-            lhat_type_add_param(c->result->types, constructor, p->type);
-        }
-        constructor->v.func.variadic = inherited->type->v.func.variadic;
-    }
-    constructor->v.func.result = instance;
-    set_member(c, definition, "new", 3, constructor);
+    set_member(c, definition, "new", 3,
+               constructor_from(c, inherited != NULL ? inherited->type : NULL,
+                                instance));
     return definition;
 }
 
@@ -2242,6 +2320,13 @@ LhatType *chk_infer_def(Checker *c, const LhatNode *node, LhatType *base)
     // what the base already provides.
     copy_members(c, definition, base);
     copy_members(c, instance, chk_instance_of(base));
+
+    // 14.11改: the new every definition has is put here, before anything is
+    // written -- so a written one is a second member of that name and 14.12
+    // asks for its marker. It also replaces the base's, which answered with
+    // the base's instance. What it is at run time has not changed: the
+    // compiler has always written a real closure under this name.
+    set_member(c, definition, "new", 3, constructor_for(c, base, instance));
 
     // 13.13 with 14.7: writing the name of a definition asks for an instance
     // of it, so Self^ inside one names the instance as well -- the same object
@@ -2305,7 +2390,6 @@ LhatType *chk_infer_def(Checker *c, const LhatNode *node, LhatType *base)
     Scope *outer = c->scope;
     c->scope = &members;
 
-    bool has_new = false;
     for (const LhatNode *entry = node->v.list.items; entry != NULL;
          entry = entry->next) {
         const char *name = NULL;
@@ -2355,7 +2439,8 @@ LhatType *chk_infer_def(Checker *c, const LhatNode *node, LhatType *base)
         // so what is already there has to include this def^'s earlier entries
         // and not only what the base brought. `definition` is both -- it was
         // copied from the base above and has been accumulating since.
-        type = check_same_name(c, entry, hidden, type);
+        type = check_same_name(c, entry, hidden, type,
+                               chk_name_is(name, length, "new"));
         if (chk_is_operator_name(name, length)) {
             chk_check_operator_shape(c, entry, type, name, length);
         } else {
@@ -2369,34 +2454,11 @@ LhatType *chk_infer_def(Checker *c, const LhatNode *node, LhatType *base)
                        (hidden == NULL || hidden->pending);
         set_member_marked(c, definition, name, length, type, false, pending);
         set_member_marked(c, instance, name, length, type, false, pending);
-        if (chk_name_is(name, length, "new")) {
-            has_new = true;
-        }
     }
 
     c->scope = outer;
     chk_scope_dispose(&members);
 
-    // 14.11: without one written, a definition still offers a new taking no
-    // arguments, since the template already fixes every field's value.
-    //
-    // An inherited one keeps its parameters but has to build the derived
-    // instance, so it is rebuilt rather than copied: 14.5 composes to make
-    // something new, and a constructor returning the base would defeat that.
-    if (!has_new) {
-        const LhatTypeMember *inherited = chk_find_member(base, "new", 3);
-        LhatType *constructor = lhat_type_func(c->result->types, true);
-        if (inherited != NULL && inherited->type != NULL &&
-            inherited->type->kind == LHAT_TYPE_FUNC) {
-            for (const LhatTypeList *p = inherited->type->v.func.params;
-                 p != NULL; p = p->next) {
-                lhat_type_add_param(c->result->types, constructor, p->type);
-            }
-            constructor->v.func.variadic = inherited->type->v.func.variadic;
-        }
-        constructor->v.func.result = instance;
-        set_member(c, definition, "new", 3, constructor);
-    }
     c->self_link = self_here.outer;
     return definition;
 }

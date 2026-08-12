@@ -2081,7 +2081,13 @@ static void compile_def(Compiler *c, const LhatNode *node, uint8_t into)
     const DefChain *enclosing = c->building;
     c->building = &chain;
 
-    bool has_new = false;
+    // 14.11改: the new every definition has goes down first, so a written one
+    // is 14.12's second member of that name -- an overload^ adds an arm to
+    // this and an override^ replaces it. The checker seeds the same member in
+    // the same place, and the marker it asks for is what keeps the two in
+    // step.
+    compile_default_new(c, node, into);
+
     for (size_t i = 0; i < chain.count; i++) {
         // 03 の 4.3: a part read from an earlier input carries offsets into
         // that input's text, so the lexer travels with it.
@@ -2102,9 +2108,6 @@ static void compile_def(Compiler *c, const LhatNode *node, uint8_t into)
             if (!node_name(c, entry->v.entry.key, &name, &length)) {
                 fail(c, LHAT_COMPILE_UNSUPPORTED);
                 break;
-            }
-            if (name_is(name, length, "new")) {
-                has_new = true;
             }
             // 14.5改: nothing goes under a name the checker will not read.
             if (entry->v.entry.modifier == LHAT_DEF_PLAIN &&
@@ -2141,11 +2144,17 @@ static void compile_def(Compiler *c, const LhatNode *node, uint8_t into)
             // it, so the two go under one name together. Which one a call
             // means is settled when it runs, since 14.12's ban on overlapping
             // signatures leaves at most one that fits.
+            //
+            // 14.12改2: an override^ new is the exception -- it replaces the
+            // member whole rather than the arm it overlaps, since 14.11's new
+            // is exempt from the substitutability that picks one. So it takes
+            // the plain write below, which is what the checker's type says.
             LhatOpcode write = LHAT_BC_SETINDEX;
             uint8_t operand = value;
             if (entry->v.entry.modifier == LHAT_DEF_OVERLOAD) {
                 write = LHAT_BC_ADDOVERLOAD;
-            } else if (entry->v.entry.modifier == LHAT_DEF_OVERRIDE) {
+            } else if (entry->v.entry.modifier == LHAT_DEF_OVERRIDE &&
+                       !name_is(name, length, "new")) {
                 // 14.12: and an override^ over an overloaded name takes the
                 // one arm it overlaps rather than the group.
                 write = LHAT_BC_OVERRIDEINDEX;
@@ -2170,13 +2179,6 @@ static void compile_def(Compiler *c, const LhatNode *node, uint8_t into)
             c->next_register = at;
         }
         c->lexer = enclosing_lexer;
-    }
-
-    // 14.11: without a new of its own, a definition gets one that takes no
-    // arguments and returns what the template says. Written out it is
-    // 'new := f^ { return^ self^{ } }', so that is what is compiled.
-    if (!has_new && *c->status == LHAT_COMPILE_OK) {
-        compile_default_new(c, node, into);
     }
 
     c->building = enclosing;
