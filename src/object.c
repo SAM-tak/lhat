@@ -1243,3 +1243,28 @@ size_t lhat_string_characters(const LhatString *string)
     // and a property that walked the bytes on every read would not be one.
     return string == NULL ? 0 : string->characters;
 }
+
+size_t lhat_string_byte_at(const LhatString *string, size_t character)
+{
+    // 02 の 14.19: where the nth character begins, counting from 0 -- the
+    // one place a run of characters has to be turned back into bytes.
+    // Walked rather than stored: 14.19 is a call, so the work is where the
+    // parentheses are, and a table of offsets per string would cost every
+    // string for the few that are cut.
+    if (string == NULL) {
+        return 0;
+    }
+    if (character >= string->characters) {
+        return string->length;  // one past the last, which is the end
+    }
+    size_t seen = 0;
+    for (size_t i = 0; i < string->length; i++) {
+        if (((unsigned char)string->text[i] & 0xC0) != 0x80) {
+            if (seen == character) {
+                return i;
+            }
+            seen++;
+        }
+    }
+    return string->length;
+}

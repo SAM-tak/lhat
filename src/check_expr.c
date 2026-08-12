@@ -1066,6 +1066,30 @@ static LhatType *builtin_tonumber(Checker *c)
     return lhat_type_intersect(c->result->types, plain, formatted);
 }
 
+// 02 の 14.19: a run of a string^'s characters. The two forms are shaped as
+// 14.17's are and made an intersection for the same reason -- 14.12 forbids
+// them overlapping, and taking one and taking two keeps them apart without a
+// type being asked about.
+//
+// The answer is a plain string^: a range that does not stand answers the
+// empty one, so there is no nil^ arm for a caller to take apart.
+static LhatType *builtin_substring(Checker *c)
+{
+    LhatType *from = lhat_type_func(c->result->types, true);
+    from->v.func.takes_self = true;
+    lhat_type_add_param(c->result->types, from, chk_simple(c, LHAT_TYPE_NUMBER));
+    from->v.func.result = chk_simple(c, LHAT_TYPE_STRING);
+
+    LhatType *between = lhat_type_func(c->result->types, true);
+    between->v.func.takes_self = true;
+    lhat_type_add_param(c->result->types, between,
+                        chk_simple(c, LHAT_TYPE_NUMBER));
+    lhat_type_add_param(c->result->types, between,
+                        chk_simple(c, LHAT_TYPE_NUMBER));
+    between->v.func.result = chk_simple(c, LHAT_TYPE_STRING);
+    return lhat_type_intersect(c->result->types, from, between);
+}
+
 // 14.9 with 14.17改: a table nobody made with a def^. Every name on one is
 // the writer's -- vm.c's plain_table asks the same of the value, and the two
 // have to answer alike or the checker would allow what the machine refuses.
@@ -1287,6 +1311,13 @@ LhatType *chk_infer_member(Checker *c, const LhatNode *node)
              builtin_named(name, length, "len", false) ||
              builtin_named(name, length, "size", false))) {
             return chk_simple(c, LHAT_TYPE_NUMBER);
+        }
+        // 14.19: a run of its characters, under any of its three names.
+        if (target->kind == LHAT_TYPE_STRING &&
+            (builtin_named(name, length, "substring", false) ||
+             builtin_named(name, length, "substr", false) ||
+             builtin_named(name, length, "sub", false))) {
+            return builtin_substring(c);
         }
         chk_report_named(c, node, LHAT_CHECK_ERR_NO_MEMBER, name, length);
         return chk_simple(c, LHAT_TYPE_UNKNOWN);

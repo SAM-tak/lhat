@@ -326,7 +326,10 @@ typedef enum {
     // whole. Calls like it, and for the same reason -- each answers a
     // coroutine of its own, so the parentheses are where one is made.
     LHAT_NATIVE_KEYS,
-    LHAT_NATIVE_VALUES
+    LHAT_NATIVE_VALUES,
+    // 02 の 14.19: a run of a string^'s characters. substring, substr and sub
+    // are one member under three names.
+    LHAT_NATIVE_SUBSTRING
 } LhatNativeKind;
 
 typedef struct LhatNative {
@@ -611,5 +614,10 @@ size_t lhat_table_count(const LhatTable *table);
 // 02 の 14.18: the code points `text` spells, where `length` is its bytes.
 // Counted when the string was made, so this reads rather than walks.
 size_t lhat_string_characters(const LhatString *string);
+
+// 02 の 14.19: the byte the character at `character` (counting from 0)
+// begins at, or the length where there is no such character -- which makes
+// it the end of a run as well as the start of one.
+size_t lhat_string_byte_at(const LhatString *string, size_t character);
 
 #endif  // LHAT_OBJECT_H

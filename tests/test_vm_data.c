@@ -6,6 +6,7 @@
 // to be replaced by specialised ones later.
 
 #include <math.h>
+#include <stdio.h>
 #include <string.h>
 
 #include "code.h"
@@ -824,6 +825,85 @@ static void test_counting(void)
     run_dispose(&r);
 }
 
+// 02 の 14.19: a run of a string^'s characters. Ordinals start at 1 and count
+// from the end when negative, both ends are included, and a range that does
+// not stand answers the empty string rather than an error.
+static void test_substring(void)
+{
+    Run r;
+    // あいうえお throughout, so a wrong unit (bytes for characters) answers a
+    // wrong string rather than a shorter one.
+    static const char *five = "var^ s = \"\\u{3042}\\u{3044}\\u{3046}\\u{3048}\\u{304a}\"\n";
+    char text[512];
+
+    LHAT_TEST("one ordinal takes the rest of the string");
+    snprintf(text, sizeof text, "%s%s", five,
+             "return^ s.substr(1) .. \"|\" .. s.substr(3) .. \"|\" ..\n"
+             "        s.substr(-2)\n");
+    run_text(&r, text);
+    CHECK_STRING(&r, "あいうえお|うえお|えお");
+    run_dispose(&r);
+
+    LHAT_TEST("two ordinals take a run, both ends included");
+    snprintf(text, sizeof text, "%s%s", five,
+             "return^ s.substr(2, 3) .. \"|\" .. s.substr(-4, 3) .. \"|\" ..\n"
+             "        s.substr(1, -1) .. \"|\" .. s.substr(2, -2)\n");
+    run_text(&r, text);
+    CHECK_STRING(&r, "いう|いう|あいうえお|いうえ");
+    run_dispose(&r);
+
+    // 14.19: one member under three names, and a string^ takes either
+    // spelling of each (14.18's line for a value with no names of its own).
+    LHAT_TEST("the three names are one member");
+    snprintf(text, sizeof text, "%s%s", five,
+             "return^ s.substring(2, 3) .. s.substr(2, 3) .. s.sub(2, 3) ..\n"
+             "        s.sub^(2, 3)\n");
+    run_text(&r, text);
+    CHECK_STRING(&r, "いういういういう");
+    run_dispose(&r);
+
+    // 04 の 11.3's line: what is not there is not a mistake. A range that
+    // does not stand is empty, not an error and not nil^.
+    LHAT_TEST("a range that does not stand is the empty string");
+    snprintf(text, sizeof text, "%s%s", five,
+             "return^ \"[\" .. s.substr(0) .. s.substr(9) .. s.substr(3, 2) ..\n"
+             "        s.substr(1, 0) .. \"\".substr(1) .. \"]\"\n");
+    run_text(&r, text);
+    CHECK_STRING(&r, "[]");
+    run_dispose(&r);
+
+    // 14.19: a division answers a real, and an ordinal that came out of one
+    // is read rather than refused. floor(x + 0.5), so a half goes to the
+    // far end -- the one rounding that commutes with resolving a negative.
+    LHAT_TEST("a fractional ordinal is rounded, halves to the far end");
+    snprintf(text, sizeof text, "%s%s", five,
+             "return^ s.substr(2.5) .. \"|\" .. s.substr(2.4) .. \"|\" ..\n"
+             "        s.substr(-2.5)\n");
+    run_text(&r, text);
+    CHECK_STRING(&r, "うえお|いうえお|えお");
+    run_dispose(&r);
+
+    // A string never changes, so the whole of one is that one -- a copy
+    // would be a second name for the same bytes.
+    LHAT_TEST("the whole of a string is the string itself");
+    snprintf(text, sizeof text, "%s%s", five,
+             "if^ s.substr(1) is^ s and^ s.substr(1, -1) is^ s and^\n"
+             "   !(s.substr(2) is^ s) { return^ 1 }\n"
+             "return^ 0\n");
+    run_text(&r, text);
+    CHECK_INTEGER(&r, 1);
+    run_dispose(&r);
+
+    // 14.18 and 14.19 read the same unit: one character of あいうえお is one
+    // character and three bytes.
+    LHAT_TEST("the run is measured in characters, not bytes");
+    snprintf(text, sizeof text, "%s%s", five,
+             "return^ s.substr(2, 2).size * 10 + s.substr(2, 2).length\n");
+    run_text(&r, text);
+    CHECK_INTEGER(&r, 31);
+    run_dispose(&r);
+}
+
 // 02 の 14.17改2: tostring read backwards, and only a string^ carries it. The
 // argument-less form runs 01 の 10 章's own grammar, so most of these are
 // pinning that the literal grammar is what arrived rather than a second one
@@ -1073,6 +1153,7 @@ int main(void)
     test_interpolation();
     test_tostring();
     test_counting();
+    test_substring();
     test_tonumber();
     return lhat_test_report("test_vm_data");
 }

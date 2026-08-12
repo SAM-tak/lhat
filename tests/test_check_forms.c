@@ -306,6 +306,54 @@ static void test_counting(void)
     unit_dispose(&u);
 }
 
+// 02 の 14.19: a run of a string^'s characters, under three names. What the
+// checker owes is the two shapes and the answer -- a plain string^, since a
+// range that does not stand is empty rather than absent.
+static void test_substring(void)
+{
+    Unit u;
+
+    LHAT_TEST("either form answers a string^, under any of the three names");
+    check_text(&u,
+               "var^ a : string^ = \"xyz\".substring(2)\n"
+               "var^ b : string^ = \"xyz\".substr(2, 3)\n"
+               "var^ c : string^ = \"xyz\".sub(-1)\n"
+               "var^ d : string^ = \"xyz\".sub^(1, -1)\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // 14.12 tells the two apart by how many arguments arrive, so neither a
+    // third nor none at all is one of them.
+    LHAT_TEST("no ordinal at all is neither form");
+    check_text(&u, "var^ a : string^ = \"xyz\".substr()\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
+    unit_dispose(&u);
+
+    LHAT_TEST("and three is neither either");
+    check_text(&u, "var^ a : string^ = \"xyz\".substr(1, 2, 3)\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
+    unit_dispose(&u);
+
+    // An ordinal is a number^. Handing over something else is the writer's
+    // mistake, not a range that came out empty.
+    LHAT_TEST("an ordinal has to be a number^");
+    check_text(&u, "var^ a : string^ = \"xyz\".substr(\"x\")\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
+    unit_dispose(&u);
+
+    // 14.19 answers a string^ and nothing else -- there is no nil^ arm, so
+    // what comes back is usable without narrowing.
+    LHAT_TEST("the answer needs no narrowing");
+    check_text(&u, "var^ n : number^ = \"xyz\".substr(2).length\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("and nothing but a string^ carries it");
+    check_text(&u, "var^ a = { 1 }.substr(1)\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_NO_MEMBER);
+    unit_dispose(&u);
+}
+
 // 02 の 16.3改2: the two projections of a table's walk. What the checker owes
 // is the type each yields -- the halves of the pair 16.3 hands over -- and
 // that a loop written with two names over one of them is refused.
@@ -762,6 +810,7 @@ int main(void)
     test_scope_specifiers();
     test_tostring();
     test_counting();
+    test_substring();
     test_projections();
     test_tonumber();
     test_variadic();

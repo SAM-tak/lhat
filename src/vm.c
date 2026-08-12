@@ -743,6 +743,19 @@ static bool native_named(LhatValue key, LhatNativeKind *out, bool *hatted)
         *hatted = name->length == 9;
         return true;
     }
+    // 14.19: one member under three names. A string^ has no names of its own
+    // for these to take, so both spellings reach -- 14.18's line for a
+    // string^, and the same builtin_named(…, false) the checker uses.
+    if ((name->length == 9 && memcmp(name->text, "substring", 9) == 0) ||
+        (name->length == 10 && memcmp(name->text, "substring^", 10) == 0) ||
+        (name->length == 6 && memcmp(name->text, "substr", 6) == 0) ||
+        (name->length == 7 && memcmp(name->text, "substr^", 7) == 0) ||
+        (name->length == 3 && memcmp(name->text, "sub", 3) == 0) ||
+        (name->length == 4 && memcmp(name->text, "sub^", 4) == 0)) {
+        *out = LHAT_NATIVE_SUBSTRING;
+        *hatted = name->text[name->length - 1] == '^';
+        return true;
+    }
     // 16.3改2: the hat is not optional on these two (14.18's line), but the
     // bare spelling is still read here so builtin_member can refuse it by
     // name rather than by falling through to "no such member".
@@ -808,6 +821,42 @@ static CountedKind counted_named(LhatValue key, bool *hatted)
     return COUNTED_NONE;
 }
 
+// 02 の 14.19: an ordinal as written. 14.8 makes number^ one type of two
+// representations, so 3 and 3.0 name the same character -- and a value that
+// came out of a division is rounded rather than refused, since a real is the
+// ordinary answer there.
+//
+// The rounding is floor(x + 0.5) and not the round of arithmetic. A negative
+// ordinal is resolved by adding an integer, and only a rounding that
+// commutes with that gives one answer whichever order the two happen in;
+// rounding away from zero does not.
+static bool ordinal_of(LhatValue value, int64_t *out)
+{
+    if (lhat_is_integer(value)) {
+        *out = lhat_as_integer(value);
+        return true;
+    }
+    if (!lhat_is_number(value)) {
+        return false;
+    }
+    double real = lhat_number_as_real(value);
+    if (!(real > -9.0e15 && real < 9.0e15)) {
+        return false;  // past what an ordinal could name either way
+    }
+    *out = (int64_t)floor(real + 0.5);
+    return true;
+}
+
+// 14.19: a written ordinal as a position counting from 1. A negative one
+// counts from the end, so -1 is the last character.
+static int64_t resolve_ordinal(int64_t written, size_t count)
+{
+    if (written < 0) {
+        return (int64_t)count + 1 + written;
+    }
+    return written;  // 0 stays 0, which no position is, and the caller refuses
+}
+
 // 14.9: a table nobody made with a def^. Every name on one is the writer's,
 // which is what 14.17改 turns on -- a definition and an instance of it carry
 // names 14 章 reserved, and a table literal carries none.
@@ -852,8 +901,9 @@ static bool builtin_member(LhatValue on, LhatValue key, LhatNativeKind *out)
     if (*out == LHAT_NATIVE_TOSTRING) {
         return true;
     }
-    // 14.17改2: only a string^ can be read as a number^.
-    if (*out == LHAT_NATIVE_TONUMBER) {
+    // 14.17改2: only a string^ can be read as a number^. 14.19: and only one
+    // has characters to take a run of.
+    if (*out == LHAT_NATIVE_TONUMBER || *out == LHAT_NATIVE_SUBSTRING) {
         return lhat_is_object_kind(on, LHAT_OBJECT_STRING);
     }
     if (lhat_is_object_kind(on, LHAT_OBJECT_COROUTINE)) {
@@ -2339,7 +2389,8 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
                     LhatNativeKind bare;
                     if (builtin_member(R(b), R(cc), &bare) &&
                         (bare == LHAT_NATIVE_TOSTRING ||
-                         bare == LHAT_NATIVE_TONUMBER)) {
+                         bare == LHAT_NATIVE_TONUMBER ||
+                         bare == LHAT_NATIVE_SUBSTRING)) {
                         LhatNative *native =
                             lhat_native_new(&m->objects, bare, R(b));
                         if (native == NULL) {
@@ -3031,6 +3082,64 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
                                           lhat_nil(), at);
                         }
                         SET_R(a, got ? number : lhat_nil());
+                        break;
+                    }
+
+                    // 02 の 14.19: a run of the subject's characters, named
+                    // by ordinals that start at 1 and count from the end
+                    // when negative. A range that does not stand answers the
+                    // empty string -- what is not there is not an error, the
+                    // way 04 の 11.3 has a missing key answer nil^.
+                    if (native->kind == LHAT_NATIVE_SUBSTRING) {
+                        if (b < 1 || b > 2) {
+                            return finish(m, chunk, LHAT_RUN_ARITY, lhat_nil(),
+                                          at);
+                        }
+                        const LhatString *subject =
+                            (const LhatString *)lhat_as_object(native->bound);
+                        int64_t from = 0;
+                        int64_t to = 0;
+                        if (!ordinal_of(sent, &from) ||
+                            (b == 2 && !ordinal_of(R(first + 1), &to))) {
+                            // Handing over something that is not a number is
+                            // the writer's mistake, not a range that came out
+                            // empty -- 14.17改2 draws the same line.
+                            return finish(m, chunk, LHAT_RUN_TYPE_ERROR,
+                                          lhat_nil(), at);
+                        }
+                        size_t count = subject->characters;
+                        int64_t last = b == 2 ? to : (int64_t)count;
+                        int64_t start = resolve_ordinal(from, count);
+                        int64_t end = resolve_ordinal(last, count);
+                        if (start < 1 || end < start || end > (int64_t)count) {
+                            LhatString *empty =
+                                lhat_string_new(&m->objects, "", 0);
+                            if (empty == NULL) {
+                                return finish(m, chunk, LHAT_RUN_OUT_OF_MEMORY,
+                                              lhat_nil(), at);
+                            }
+                            SET_R(a, lhat_object((LhatObject *)empty));
+                            break;
+                        }
+                        // The whole of it is the string itself: nothing about
+                        // a string changes, so a copy would be a second name
+                        // for the same bytes and nothing more.
+                        if (start == 1 && end == (int64_t)count) {
+                            SET_R(a, native->bound);
+                            break;
+                        }
+                        size_t at_byte =
+                            lhat_string_byte_at(subject, (size_t)start - 1);
+                        size_t end_byte =
+                            lhat_string_byte_at(subject, (size_t)end);
+                        LhatString *cut = lhat_string_new(
+                            &m->objects, subject->text + at_byte,
+                            end_byte - at_byte);
+                        if (cut == NULL) {
+                            return finish(m, chunk, LHAT_RUN_OUT_OF_MEMORY,
+                                          lhat_nil(), at);
+                        }
+                        SET_R(a, lhat_object((LhatObject *)cut));
                         break;
                     }
 
