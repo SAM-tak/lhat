@@ -1,0 +1,178 @@
+#[
+# 24
+
+From http://rosettacode.org/wiki/24_game
+
+Write a program that randomly chooses and displays four digits, each from 1 ──► 9 (inclusive) with repetitions allowed.
+
+The program should prompt for the player to enter an arithmetic expression using just those, and all of those four digits, used exactly once each. The program should check then evaluate the expression.
+
+The goal is for the player to enter an expression that (numerically) evaluates to 24.
+
+- Only the following operators/functions are allowed: multiplication, division, addition, subtraction
+- Division should use floating point or rational arithmetic, etc, to preserve remainders.
+- Brackets are allowed, if using an infix expression evaluator.
+- Forming multiple digit numbers from the supplied digits is disallowed. (So an answer of 12+12 when given 1, 2, 2, and 1 is wrong).
+- The order of the digits when given does not have to be preserved.
+
+## Notes
+
+    The type of expression evaluator used is not mandated. An RPN evaluator is equally acceptable for example.
+    The task is not for the program to generate the expression, or test whether an expression is even possible.
+]#
+
+import^ std.io
+import^ std.random
+
+#[
+Reader は書かれた式を読みながら数える。読み位置も「どの数字を何回使ったか」も
+インスタンスの欄にあるので、持ち回るものが無い。
+
+相互再帰（expr → term → factor → expr）は self^ を通る。this^^ は
+字句上の外側を指すので兄弟のメソッドには届かない。
+
+ただし def^ のメンバは書いた順にしか見えないので、輪になっている一辺は
+14.15 の abstract^ で名前を先に立てておく（下）。
+
+読めない綴りに出会ったら ok を降ろして 0 を返す。誤りの値を作らないのは、
+これが書き手の誤りではなく入力だからである（14.19 が成り立たない範囲に
+空文字列を答えるのと同じ線）。
+]#
+let^ Reader = def^{
+    self^{
+        text = "",
+        at = 1,
+        ok = true^,
+        # 使った数字の多重集合。1..9 をそのまま添字にする
+        used = { 0, 0, 0, 0, 0, 0, 0, 0, 0 },
+    },
+
+    override^new = f^ line:string^ { self^{ text := line } },
+
+    # 14.15 の宣言。expr → term → factor → expr は輪なので、
+    # 並べ替えでは解けない——名前を先に立てておく
+    abstract^ expr : p^self^ -> number^;,
+
+    # 空白を飛ばして今の1文字。尽きていれば ""
+    peek = p^self^ -> string^ {
+        repeat^ while^ self^.at ≦ self^.text.length {
+            if^ self^.text.substr(self^.at, self^.at) = " " {
+                self^.at := self^.at + 1
+            else^:
+                break^
+            }
+        }
+        if^ self^.at > self^.text.length { return^ "" }
+        return^ self^.text.substr(self^.at, self^.at)
+    },
+
+    bump = p^self^ { self^.at := self^.at + 1 },
+
+    # 数字1文字、または括弧で囲んだ式。
+    # 続けて書いた 12 が 12 にならないのは、ここが1文字しか取らないからである
+    factor = p^self^ -> number^ {
+        let^ c = self^.peek()
+        if^ c = "(" {
+            self^.bump()
+            let^ inner = self^.expr()
+            if^ self^.peek() = ")" {
+                self^.bump()
+                return^ inner
+            }
+            self^.ok := false^
+            return^ 0
+        }
+        let^ d = c.tonumber() ?? 0
+        if^ d < 1 or^ d > 9 {
+            self^.ok := false^
+            return^ 0
+        }
+        self^.used[d] := self^.used[d] + 1
+        self^.bump()
+        return^ d
+    },
+
+    term = p^self^ -> number^ {
+        var^ value = self^.factor()
+        repeat^ while^ self^.ok {
+            let^ c = self^.peek()
+            if^ c = "*" {
+                self^.bump()
+                value := value * self^.factor()
+            elif^ c = "/":
+                self^.bump()
+                value := value / self^.factor()
+            else^:
+                break^
+            }
+        }
+        return^ value
+    },
+
+    expr = p^self^ -> number^ {
+        var^ value = self^.term()
+        repeat^ while^ self^.ok {
+            let^ c = self^.peek()
+            if^ c = "+" {
+                self^.bump()
+                value := value + self^.term()
+            elif^ c = "-":
+                self^.bump()
+                value := value - self^.term()
+            else^:
+                break^
+            }
+        }
+        return^ value
+    },
+
+    # 式全体。末尾に読み残しがあれば綴りの誤り
+    read = p^self^ -> number^ {
+        let^ value = self^.expr()
+        if^ self^.peek() != "" { self^.ok := false^ }
+        return^ value
+    },
+}
+
+# 配った4つと使った4つが同じ多重集合か
+let^ same = f^ want:t^{ ...:number^ }, used:t^{ ...:number^ } -> bool^ {
+    for^ i from^ 1 to^ 9 {
+        if^ want[i] != used[i] { return^ false^ }
+    }
+    return^ true^
+}
+
+# / は実数除算なので 8/(3-8/3) は 24 ちょうどにならない。幅で見る
+let^ near24 = f^ value:number^ -> bool^ {
+    if^ value < 24 { return^ 24 - value < 0.000001 }
+    return^ value - 24 < 0.000001
+}
+
+with^ rng = std.random.make(0) as^ std.random.Random {
+    var^ want = { 0, 0, 0, 0, 0, 0, 0, 0, 0 }
+    var^ shown = ""
+    for^ i from^ 1 to^ 4 {
+        let^ d = rng.range(1, 9)
+        want[d] := want[d] + 1
+        shown := shown .. " " .. d.tostring()
+    }
+    print($"Four digits:{shown}")
+    print("Enter an expression using each of them once, or an empty line to stop.")
+
+    repeat^ {
+        let^ line = std.io.readLine() catch^ ""
+        if^ line.length = 0 { break^ }
+
+        let^ r = Reader.new(line)
+        let^ value = r.read()
+        if^ !r.ok {
+            print("That is not an expression I can read.")
+        elif^ !same(want, r.used):
+            print("Use each of the four digits exactly once.")
+        elif^ near24(value):
+            print("Correct!")
+        else^:
+            print($"Incorrect: {value}")
+        }
+    }
+}

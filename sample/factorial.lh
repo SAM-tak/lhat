@@ -1,0 +1,1 @@
+print(f^n:number^{if^n < 2: 1 el^: n * this^(n - 1);}(10))
