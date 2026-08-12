@@ -487,6 +487,55 @@ static LhatValue host_counter_negate(LhatMachine *machine, void *context,
     return lhat_integer(-c.n);
 }
 
+// f^self^, o:number^ -> number^; -- the binary arm standing beside the unary
+// one above, told apart by what each takes.
+static LhatValue host_counter_minus(LhatMachine *machine, void *context,
+                                    const LhatValue *arguments, size_t count)
+{
+    (void)machine;
+    if (count != 2 || !lhat_is_integer(arguments[1])) {
+        return lhat_nil();
+    }
+    const void *bytes =
+        lhat_hostvalue_data(arguments[0], (const LhatHostValueTag *)context);
+    if (bytes == NULL) {
+        return lhat_nil();
+    }
+    Counter c;
+    memcpy(&c, bytes, sizeof c);
+    return lhat_integer(c.n - lhat_as_integer(arguments[1]));
+}
+
+// f^lhs:number^, self^ -> number^; -- 02 の 11.3改's trailing self^, so the
+// receiver is the operand written on the RIGHT and 'n + v' finds it.
+static LhatValue host_counter_radd(LhatMachine *machine, void *context,
+                                   const LhatValue *arguments, size_t count)
+{
+    (void)machine;
+    if (count != 2 || !lhat_is_integer(arguments[0])) {
+        return lhat_nil();
+    }
+    const void *bytes =
+        lhat_hostvalue_data(arguments[1], (const LhatHostValueTag *)context);
+    if (bytes == NULL) {
+        return lhat_nil();
+    }
+    Counter c;
+    memcpy(&c, bytes, sizeof c);
+    return lhat_integer(lhat_as_integer(arguments[0]) + c.n);
+}
+
+// f^self^, o:string^ -> number^; -- the same count as the binary '-' arm,
+// told apart by the type alone. What the counts could not settle.
+static LhatValue host_counter_tagged(LhatMachine *machine, void *context,
+                                     const LhatValue *arguments, size_t count)
+{
+    (void)machine;
+    (void)context;
+    (void)arguments;
+    return count == 2 ? lhat_integer(99) : lhat_nil();
+}
+
 static bool has_check_error(const LhatUnit *unit, LhatCheckErrorCode code)
 {
     if (unit == NULL) {
@@ -1128,6 +1177,121 @@ static void test_hostvalue_escape(void)
             LhatRunResult ran = lhat_run(machine, modules[root->index].proto);
             LHAT_CHECK_EQ_INT(ran.status, LHAT_RUN_OK);
             LHAT_CHECK_EQ_INT(lhat_as_integer(ran.value), -7);
+            lhat_machine_dispose(machine);
+        }
+    }
+    lhat_program_dispose(&program);
+
+    // 02 の 14.12 with 05 の 8.7: one registered name carrying several
+    // signatures. A host has no body for the compiler to read a descriptor
+    // out of, so the registration lowers the one it was written with and the
+    // machine's search reads that -- the same search that resolves a written
+    // overload^.
+    //
+    // Four arms over one type: '-' unary and binary (told apart by the
+    // count), '+' with a trailing self^ (11.3改, so the receiver is the right
+    // operand), and a second binary '-' taking a string^ where the first
+    // takes a number^ -- which counts alone could never tell apart.
+    LHAT_TEST("a registered name carries several signatures");
+    {
+        static const File files[] = {
+            {"main.lh",
+             "import^ test.c\n"
+             "var^ v = test.c.make()\n"
+             "return^ (0 - -v) * 1000 + (v - 2) * 100 + (10 + v) * 10 +\n"
+             "       (v - \"x\") - 99\n"},
+        };
+        program_with(&program, &disk, files, 1);
+        const LhatHostValueTag *tag = lhat_register_hostvalue_type(
+            &program, "test.c", "C", sizeof(Counter));
+        LHAT_CHECK(tag != NULL, "the type registration took");
+        lhat_register_func(&program, "test.c", "make", "f^ -> test.c.C;",
+                           host_counter_make, (void *)tag);
+        LHAT_CHECK(lhat_register_hostvalue_member(&program, "test.c", "C", "-",
+                                                  "f^self^ -> number^;",
+                                                  host_counter_negate,
+                                                  (void *)tag),
+                   "the unary arm registered");
+        LHAT_CHECK(lhat_register_hostvalue_member(
+                       &program, "test.c", "C", "-",
+                       "f^self^, number^ -> number^;", host_counter_minus,
+                       (void *)tag),
+                   "the binary arm registered beside it");
+        LHAT_CHECK(lhat_register_hostvalue_member(
+                       &program, "test.c", "C", "-",
+                       "f^self^, string^ -> number^;", host_counter_tagged,
+                       (void *)tag),
+                   "and one of the same count, told apart by type");
+        LHAT_CHECK(lhat_register_hostvalue_member(
+                       &program, "test.c", "C", "+",
+                       "f^number^, self^ -> number^;", host_counter_radd,
+                       (void *)tag),
+                   "the right-operand arm registered");
+        // 14.12 forbids arms that could take the same call, and the
+        // registration is where that is settled for a host.
+        LHAT_CHECK(!lhat_register_hostvalue_member(
+                       &program, "test.c", "C", "-",
+                       "f^self^, number^ -> number^;", host_counter_minus,
+                       (void *)tag),
+                   "an arm overlapping one already there is refused");
+        const LhatUnit *root = lhat_program_check(&program, "main.lh");
+        LHAT_CHECK(root != NULL && root->checked.diagnostic_count == 0,
+                   "the program checked");
+        size_t count = 0;
+        const LhatModule *modules = lhat_program_compile(&program, &count);
+        if (modules != NULL && root != NULL) {
+            LhatMachine *machine = lhat_machine_new();
+            lhat_machine_set_modules(machine, modules, count);
+            lhat_program_install(&program, machine);
+            LhatRunResult ran = lhat_run(machine, modules[root->index].proto);
+            LHAT_CHECK_EQ_INT(ran.status, LHAT_RUN_OK);
+            // 7000 + 500 + 170 + 99 - 99
+            LHAT_CHECK_EQ_INT(lhat_as_integer(ran.value), 7670);
+            lhat_machine_dispose(machine);
+        }
+    }
+    lhat_program_dispose(&program);
+
+    // The descriptors a registration lowered are on the machine's heap and
+    // nothing but the host holds them, so gc.c reaches them from there -- a
+    // proto's live in its chunk and never face this.
+    //
+    // This is a regression rather than a proof: disabling that reach does not
+    // make it fail, since the collector runs a step at a time and what would
+    // be freed is not read again inside the window a program can open here.
+    LHAT_TEST("and the lowered signatures survive a collection");
+    {
+        static const File files[] = {
+            {"main.lh",
+             "import^ test.c\n"
+             "var^ v = test.c.make()\n"
+             // The collector runs a step at a time (config.h), so one call is
+             // a step and not a cycle -- enough of them is what reaches the
+             // sweep an unreached descriptor would be freed by.
+             "repeat^ 200 { collectgarbage() }\n"
+             "return^ (v - 2) * 10 + (v - \"x\")\n"},
+        };
+        program_with(&program, &disk, files, 1);
+        const LhatHostValueTag *tag = lhat_register_hostvalue_type(
+            &program, "test.c", "C", sizeof(Counter));
+        lhat_register_func(&program, "test.c", "make", "f^ -> test.c.C;",
+                           host_counter_make, (void *)tag);
+        lhat_register_hostvalue_member(&program, "test.c", "C", "-",
+                                       "f^self^, number^ -> number^;",
+                                       host_counter_minus, (void *)tag);
+        lhat_register_hostvalue_member(&program, "test.c", "C", "-",
+                                       "f^self^, string^ -> number^;",
+                                       host_counter_tagged, (void *)tag);
+        const LhatUnit *root = lhat_program_check(&program, "main.lh");
+        size_t count = 0;
+        const LhatModule *modules = lhat_program_compile(&program, &count);
+        if (modules != NULL && root != NULL) {
+            LhatMachine *machine = lhat_machine_new();
+            lhat_machine_set_modules(machine, modules, count);
+            lhat_program_install(&program, machine);
+            LhatRunResult ran = lhat_run(machine, modules[root->index].proto);
+            LHAT_CHECK_EQ_INT(ran.status, LHAT_RUN_OK);
+            LHAT_CHECK_EQ_INT(lhat_as_integer(ran.value), 149);  // 5 * 10 + 99
             lhat_machine_dispose(machine);
         }
     }

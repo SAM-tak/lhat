@@ -338,6 +338,20 @@ typedef struct LhatHost {
     uint8_t parameters;
     bool has_variadic;
     bool takes_self;
+    // 02 の 11.3改: which operand the receiver is, for a member registered as
+    // an operator. A proto carries the same flag; nothing but the two
+    // operator searches reads either.
+    bool self_last;
+    // 02 の 14.12: one name may carry several registrations, and the search
+    // that resolves a call asks each candidate what it takes -- so a host
+    // carries its parameter types the way a proto does. Built by the
+    // registration from the signature it was given, since a host function has
+    // no body for the compiler to read one out of. NULL where nothing built
+    // them, which is every host registered before this and every one whose
+    // signature said nothing about a parameter.
+    //
+    // The array is this object's; the types in it are the heap's.
+    struct LhatRuntimeType **parameter_types;
 } LhatHost;
 
 // 05 の 8.8: what tells one registered type from another while running.

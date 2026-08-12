@@ -124,10 +124,27 @@ bool lhat_machine_make_table(LhatMachine *machine, LhatValue *out);
 // so the registration's signature ended in '...' and a call may write more.
 // The extra arguments reach LhatHostFn as the tail of `arguments`, uncollected
 // -- there is nothing to collect them into that a C function would want.
+// 02 の 11.3改: `self_last` says the receiver is the operand written after
+// the member, which only the two operator searches read.
+//
+// 02 の 14.12: `parameter_types` is what the search resolving an overloaded
+// call asks each candidate, one entry per declared parameter (self^ is not
+// one -- 13.4). NULL leaves the candidate judged by its counts alone, which
+// is what a registration that built none gets. The array is taken over by
+// the host and freed with it; the types in it belong to the machine.
 bool lhat_machine_make_host(LhatMachine *machine, LhatHostFn call,
                             void *context, uint8_t parameters,
-                            bool has_variadic, bool takes_self,
+                            bool has_variadic, bool takes_self, bool self_last,
+                            struct LhatRuntimeType **parameter_types,
                             LhatValue *out);
+
+// 02 の 14.16 and 14.12: one node of a runtime type, on the machine's heap.
+// A registration builds its signature out of these -- the rest of the shaping
+// (lhat_type_rt_add_part and the others) touches no heap and is in object.h.
+// The compiler builds a unit's own out of its chunk's heap instead, which is
+// why this is only here.
+struct LhatRuntimeType *lhat_machine_make_type(LhatMachine *machine,
+                                               LhatRuntimeTypeKind kind);
 
 // Puts `value` at L^.modules.<module>[.<type>].<name>, making the tables on
 // the way the way 02 の 8.8 does. `type` is NULL for a member of the module

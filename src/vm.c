@@ -802,6 +802,28 @@ static bool builtin_member(LhatValue on, LhatValue key, LhatNativeKind *out)
 static bool fits_call(LhatValue candidate, const LhatValue *at, uint8_t given,
                       bool method, size_t *skip)
 {
+    // 02 の 14.12 with 05 の 8.7: a registered function is a candidate the
+    // same way a written one is. 13.4 keeps self^ out of a host's count --
+    // unlike a proto's, which includes it -- so what a call wrote is compared
+    // as it stands, and 11.3改's trailing self^ needs no adjustment either:
+    // the receiver was never in the list to move.
+    if (lhat_is_object_kind(candidate, LHAT_OBJECT_HOST)) {
+        const LhatHost *host = (const LhatHost *)lhat_as_object(candidate);
+        if (host->has_variadic ? (size_t)given < host->parameters
+                               : (size_t)given != host->parameters) {
+            return false;
+        }
+        size_t first = method ? 2 : 1;
+        for (size_t i = 0; i < host->parameters; i++) {
+            const struct LhatRuntimeType *wanted =
+                host->parameter_types != NULL ? host->parameter_types[i] : NULL;
+            if (!lhat_value_satisfies(at[first + i], wanted)) {
+                return false;
+            }
+        }
+        *skip = method && !host->takes_self ? 2 : 1;
+        return true;
+    }
     if (!lhat_is_object_kind(candidate, LHAT_OBJECT_SUBROUTINE)) {
         return false;
     }
@@ -853,6 +875,19 @@ static const LhatProto *proto_of(LhatValue value)
         return NULL;
     }
     return ((const LhatClosure *)lhat_as_object(value))->proto;
+}
+
+// 02 の 11.3改: whether a candidate says the receiver is the operand `wanted`
+// says. A written one carries the flag on its proto and a registered one on
+// the host (05 の 8.7); anything that is neither answers no order at all.
+static bool candidate_self_last(LhatValue candidate, bool wanted)
+{
+    if (lhat_is_object_kind(candidate, LHAT_OBJECT_HOST)) {
+        return ((const LhatHost *)lhat_as_object(candidate))->self_last ==
+               wanted;
+    }
+    const LhatProto *proto = proto_of(candidate);
+    return proto != NULL && proto->self_last == wanted;
 }
 
 // 11.3改: how one side answered the operator it was asked for.
@@ -915,8 +950,11 @@ static OperatorLookup operator_candidate(Machine *m, LhatValue side,
     if (lhat_is_object_kind(found, LHAT_OBJECT_OVERLOAD)) {
         const LhatOverload *group = (const LhatOverload *)lhat_as_object(found);
         for (size_t i = 0; i < group->count; i++) {
-            if (proto_of(group->candidates[i]) == NULL ||
-                proto_of(group->candidates[i])->self_last != self_last) {
+            // 11.3改: which operand the receiver is has to match, whoever
+            // wrote the arm. A registered one carries the flag on the host
+            // rather than on a proto (05 の 8.7); everything else about the
+            // two is the same question, which fits_call asks.
+            if (!candidate_self_last(group->candidates[i], self_last)) {
                 continue;
             }
             size_t skip = 1;
@@ -930,11 +968,11 @@ static OperatorLookup operator_candidate(Machine *m, LhatValue side,
     }
 
     // 05 の 8.9: a host value's operator is a host function -- registered,
-    // never written in L^. It carries no self_last (11.3改 is a written
-    // shape), so only the left-operand ask takes it.
+    // never written in L^. 11.3改's trailing self^ is written in the
+    // signature it registered with, so it answers whichever side that said.
     if (lhat_is_object_kind(found, LHAT_OBJECT_HOST)) {
-        if (self_last) {
-            return OPERATOR_ABSENT;
+        if (!candidate_self_last(found, self_last)) {
+            return OPERATOR_ABSENT;  // it answers the other order
         }
         // 11.8改: the counts have to agree here too. A registration written
         // for 'a - b' is handed one operand by '-a' otherwise, and a host
@@ -1346,15 +1384,25 @@ bool lhat_machine_make_table(LhatMachine *machine, LhatValue *out)
 
 bool lhat_machine_make_host(LhatMachine *machine, LhatHostFn call,
                             void *context, uint8_t parameters,
-                            bool has_variadic, bool takes_self, LhatValue *out)
+                            bool has_variadic, bool takes_self, bool self_last,
+                            LhatRuntimeType **parameter_types, LhatValue *out)
 {
     LhatHost *host = lhat_host_new(&machine->objects, call, context, parameters,
                                    has_variadic, takes_self);
     if (host == NULL) {
+        lhat_free(parameter_types);
         return false;
     }
+    host->self_last = self_last;
+    host->parameter_types = parameter_types;
     *out = lhat_object((LhatObject *)host);
     return true;
+}
+
+LhatRuntimeType *lhat_machine_make_type(LhatMachine *machine,
+                                        LhatRuntimeTypeKind kind)
+{
+    return machine != NULL ? lhat_type_rt_new(&machine->objects, kind) : NULL;
 }
 
 // 05 の 8.7: the same walk the unit prologue compiles to, done in C because
@@ -1551,6 +1599,26 @@ bool lhat_machine_register(LhatMachine *machine, const char *module,
     LhatString *key = lhat_string_new(&machine->objects, name, strlen(name));
     if (key == NULL) {
         return false;
+    }
+    // 02 の 14.12: a second registration of one name is another arm, not a
+    // replacement -- the same thing OVERLOADINDEX makes of a member written
+    // twice, built here because a registration compiles to no instruction.
+    // 05 の 8.7 has already refused any pair that could take the same call.
+    LhatValue held = lhat_table_get(owner, lhat_object((LhatObject *)key));
+    if (!lhat_is_nil(held)) {
+        LhatOverload *group = NULL;
+        if (lhat_is_object_kind(held, LHAT_OBJECT_OVERLOAD)) {
+            group = (LhatOverload *)lhat_as_object(held);
+        } else {
+            group = lhat_overload_new(&machine->objects);
+            if (group == NULL || !lhat_overload_add(group, held)) {
+                return false;
+            }
+        }
+        if (!lhat_overload_add(group, value)) {
+            return false;
+        }
+        value = lhat_object((LhatObject *)group);
     }
     bool refused = false;
     return set_key(machine, owner, lhat_object((LhatObject *)key), value,
@@ -2420,6 +2488,41 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
 
             case LHAT_BC_CALL:
             case LHAT_BC_CALLMETHOD: {
+                // 14.12: at most one candidate fits, so this is a search and
+                // not a choice -- no ranking, no ambiguity to report. It ends
+                // at the first that takes what it was given.
+                //
+                // Settled before anything else looks at the callee: 05 の 8.7
+                // lets a registration be one of the arms, so what is chosen
+                // may be a host function, and every path below has to see
+                // what was chosen rather than the group it came out of.
+                if (lhat_is_object_kind(R(a), LHAT_OBJECT_OVERLOAD)) {
+                    const LhatOverload *group =
+                        (const LhatOverload *)lhat_as_object(R(a));
+                    size_t picked_skip = 1;
+                    // 2.2: fits_call reads the callee and arguments as one
+                    // LhatValue run, which the stack is not -- so the
+                    // slots are gathered once and every candidate reads the
+                    // same copy.
+                    LhatValue lineup[LHAT_MAX_REGISTERS + 2];
+                    for (size_t i = 0; i <= (size_t)b + 1; i++) {
+                        lineup[i] = R(a + i);
+                    }
+                    LhatValue chosen = lhat_nil();
+                    for (size_t i = 0; i < group->count; i++) {
+                        if (fits_call(group->candidates[i], lineup, b,
+                                      op == LHAT_BC_CALLMETHOD, &picked_skip)) {
+                            chosen = group->candidates[i];
+                            break;
+                        }
+                    }
+                    if (lhat_is_nil(chosen)) {
+                        return finish(m, chunk, LHAT_RUN_NO_CANDIDATE,
+                                      lhat_nil(), at);
+                    }
+                    SET_R(a, chosen);
+                }
+
                 // 05 の 8.7: the host wrote this one in C. 13.1 settled how
                 // many arguments there are before anything ran, so they are
                 // handed over as they lie rather than pushed one by one.
@@ -2915,35 +3018,6 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
                         SET_R(co->sent_into, sent);
                     }
                     break;
-                }
-
-                // 14.12: at most one candidate fits, so this is a search and
-                // not a choice -- no ranking, no ambiguity to report. It ends
-                // at the first that takes what it was given.
-                if (lhat_is_object_kind(R(a), LHAT_OBJECT_OVERLOAD)) {
-                    const LhatOverload *group =
-                        (const LhatOverload *)lhat_as_object(R(a));
-                    size_t skip = op == LHAT_BC_CALLMETHOD ? 2 : 1;
-                    // 2.2: fits_call reads the callee and arguments as one
-                    // LhatValue run, which the stack is not -- so the
-                    // slots are gathered once and every candidate reads the
-                    // same copy.
-                    LhatValue lineup[LHAT_MAX_REGISTERS + 2];
-                    for (size_t i = 0; i <= (size_t)b + 1; i++) {
-                        lineup[i] = R(a + i);
-                    }
-                    LhatValue chosen = lhat_nil();
-                    for (size_t i = 0; i < group->count; i++) {
-                        if (fits_call(group->candidates[i], lineup, b,
-                                      op == LHAT_BC_CALLMETHOD, &skip)) {
-                            chosen = group->candidates[i];
-                            break;
-                        }
-                    }
-                    if (lhat_is_nil(chosen)) {
-                        return finish(m, chunk, LHAT_RUN_NO_CANDIDATE, lhat_nil(), at);
-                    }
-                    SET_R(a, chosen);
                 }
 
                 if (!lhat_is_object_kind(R(a), LHAT_OBJECT_SUBROUTINE)) {

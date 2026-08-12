@@ -115,9 +115,19 @@ void lhat_gc_children(LhatObject **gray, LhatObject *object)
 
         // 05 の 8.7: `context` is the host's, and the collector cannot see
         // into it. What is reachable from here is the receiver alone.
-        case LHAT_OBJECT_HOST:
-            lhat_gc_reach(gray, ((const LhatHost *)object)->bound);
+        case LHAT_OBJECT_HOST: {
+            const LhatHost *host = (const LhatHost *)object;
+            lhat_gc_reach(gray, host->bound);
+            // 02 の 14.12: the parameter types a registration built. Nothing
+            // else holds them -- a proto's live in its chunk, but a host has
+            // no chunk, so these are on the heap and reached from here.
+            for (size_t i = 0; host->parameter_types != NULL &&
+                               i < (size_t)host->parameters;
+                 i++) {
+                reach(gray, (LhatObject *)host->parameter_types[i]);
+            }
             return;
+        }
 
         // 05 の 8.8: the same for the pointer. The members are the registered
         // type's table, which the registry holds anyway -- reached here so

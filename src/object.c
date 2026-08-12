@@ -209,6 +209,8 @@ LhatHost *lhat_host_new(LhatHeap *heap, LhatHostFn call, void *context,
     host->parameters = parameters;
     host->has_variadic = has_variadic;
     host->takes_self = takes_self;
+    host->self_last = false;
+    host->parameter_types = NULL;
     return host;
 }
 
@@ -869,6 +871,11 @@ void lhat_object_free(LhatObject *object)
             break;
         case LHAT_OBJECT_OVERLOAD:
             lhat_free(((LhatOverload *)object)->candidates);
+            break;
+        // 02 の 14.12: the array belongs to the host; the types in it are the
+        // heap's and are freed with everything else.
+        case LHAT_OBJECT_HOST:
+            lhat_free(((LhatHost *)object)->parameter_types);
             break;
         default:
             break;

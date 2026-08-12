@@ -282,6 +282,11 @@ typedef struct LhatHostEntry {
     uint8_t parameters;
     bool has_variadic;  // 13.7: the signature ended in '...' -- see LhatHost
     bool takes_self;
+    bool self_last;     // 02 の 11.3改: the receiver is the right operand
+    // 02 の 14.12: what install lowers into the descriptor the machine's
+    // overload search reads. Points into the program's type arena, which
+    // outlives every install -- nothing here is owned.
+    const LhatType *signature;
     // 05 の 8.8: the tag values of this type carry. Kept on the entry so that
     // it lives as long as the program and points at the entry's own strings.
     LhatHostDataTag *tag;
@@ -296,6 +301,8 @@ typedef struct LhatGlobalEntry {
     uint8_t parameters;
     bool has_variadic;
     bool takes_self;
+    bool self_last;
+    const LhatType *signature;  // 14.12, as on LhatHostEntry
 } LhatGlobalEntry;
 
 // The table type a dotted path names inside `owner`, made where the path does
@@ -351,7 +358,11 @@ static LhatType *hosted_root(LhatProgram *program)
 static const LhatTypeMember *hosted_member(const LhatType *table,
                                            const char *name)
 {
-    if (table == NULL || table->kind != LHAT_TYPE_TABLE) {
+    // 05 の 8.9: a host value type keeps its members in the same half of the
+    // union a table does, and 8.7 registers into one exactly as into the
+    // other -- so both are searched here.
+    if (table == NULL || (table->kind != LHAT_TYPE_TABLE &&
+                          table->kind != LHAT_TYPE_HOSTVALUE)) {
         return NULL;
     }
     size_t length = strlen(name);
@@ -362,6 +373,162 @@ static const LhatTypeMember *hosted_member(const LhatType *table,
         }
     }
     return NULL;
+}
+
+// 02 の 14.12 with 05 の 8.7: a registration's signature, built again as the
+// descriptor the machine's overload search reads. A unit's own comes out of
+// the compiler (compile.c's lower_type, over the syntax tree); a host has no
+// body to compile, so this walks the resolved type instead.
+//
+// Built through lhat_machine_make_type so that the nodes land on the
+// machine's heap where the collector sees them -- 8.7 keeps the heap to
+// vm.c, and this side only says what shape to make.
+//
+// NULL means "asks nothing", which is what a kind with no runtime spelling
+// answers as well as a genuine failure. Both are safe in the same way: a
+// parameter whose descriptor is missing is not compared, so the search falls
+// back on the counts. lower_type takes the same posture for the same reason.
+#define LOWER_MAX_DEPTH 32
+
+static LhatRuntimeType *lower_host_type(LhatMachine *machine,
+                                        const LhatType *type, int depth)
+{
+    if (machine == NULL || type == NULL || depth > LOWER_MAX_DEPTH) {
+        return NULL;
+    }
+
+    LhatRuntimeTypeKind kind;
+    switch (type->kind) {
+        case LHAT_TYPE_ANY:    kind = LHAT_TYPE_RT_ANY; break;
+        case LHAT_TYPE_NIL:    kind = LHAT_TYPE_RT_NIL; break;
+        case LHAT_TYPE_BOOL:   kind = LHAT_TYPE_RT_BOOL; break;
+        case LHAT_TYPE_NUMBER: kind = LHAT_TYPE_RT_NUMBER; break;
+        case LHAT_TYPE_STRING: kind = LHAT_TYPE_RT_STRING; break;
+        case LHAT_TYPE_ERROR:  kind = LHAT_TYPE_RT_ERROR; break;
+        case LHAT_TYPE_FUNC:   kind = LHAT_TYPE_RT_SUBROUTINE; break;
+        case LHAT_TYPE_CORO:   kind = LHAT_TYPE_RT_COROUTINE; break;
+        case LHAT_TYPE_TUPLE:  kind = LHAT_TYPE_RT_TUPLE; break;
+        case LHAT_TYPE_UNION:  kind = LHAT_TYPE_RT_UNION; break;
+        case LHAT_TYPE_INTERSECT: kind = LHAT_TYPE_RT_INTERSECT; break;
+        case LHAT_TYPE_HOSTVALUE: kind = LHAT_TYPE_RT_HOSTVALUE; break;
+        case LHAT_TYPE_TABLE:  kind = LHAT_TYPE_RT_STRUCTURE; break;
+        // 04 の 2.4: a kind's identity is the LhatErrorKind the machine made,
+        // and nothing here can reach one. Asks nothing rather than asking
+        // something weaker than what was written.
+        default:
+            return NULL;
+    }
+
+    LhatRuntimeType *out = lhat_machine_make_type(machine, kind);
+    if (out == NULL) {
+        return NULL;
+    }
+
+    switch (type->kind) {
+        case LHAT_TYPE_UNION:
+        case LHAT_TYPE_INTERSECT:
+        case LHAT_TYPE_TUPLE:
+            for (const LhatTypeList *arm = type->v.composite.arms; arm != NULL;
+                 arm = arm->next) {
+                LhatRuntimeType *part =
+                    lower_host_type(machine, arm->type, depth + 1);
+                // An arm that asks nothing takes the whole type with it: a
+                // union is only as exact as its widest arm, and one asking
+                // nothing would make the union ask nothing while still
+                // looking like a real question. Same for a tuple's position,
+                // where the width would otherwise come out wrong.
+                if (part == NULL || !lhat_type_rt_add_part(out, part)) {
+                    return NULL;
+                }
+            }
+            break;
+
+        case LHAT_TYPE_HOSTVALUE:
+            out->hostvalue_tag = type->v.table.hostvalue_tag;
+            break;
+
+        case LHAT_TYPE_TABLE:
+            for (const LhatTypeMember *m = type->v.table.members; m != NULL;
+                 m = m->next) {
+                LhatValue key = lhat_nil();
+                if (!lhat_machine_make_string(machine, m->name, m->name_length,
+                                              &key)) {
+                    return NULL;
+                }
+                // 14.10 asks that the member is there; a member whose own
+                // type asks nothing still says that much, so unlike a union's
+                // arm this one is kept with a NULL type.
+                if (!lhat_type_rt_add_member(
+                        out, (const LhatString *)lhat_as_object(key),
+                        lower_host_type(machine, m->type, depth + 1))) {
+                    return NULL;
+                }
+            }
+            out->variadic = lower_host_type(machine, type->v.table.variadic,
+                                            depth + 1);
+            // 14.16: the order a table's members come in is not the writer's,
+            // so the canonical one is settled here, once.
+            lhat_type_rt_sort_members(out);
+            break;
+
+        case LHAT_TYPE_FUNC:
+            for (const LhatTypeList *p = type->v.func.params; p != NULL;
+                 p = p->next) {
+                LhatRuntimeType *part =
+                    lower_host_type(machine, p->type, depth + 1);
+                if (part == NULL || !lhat_type_rt_add_part(out, part)) {
+                    return NULL;
+                }
+            }
+            out->result = lower_host_type(machine, type->v.func.result,
+                                          depth + 1);
+            out->variadic = lower_host_type(machine, type->v.func.variadic,
+                                            depth + 1);
+            out->is_function = type->v.func.is_function;
+            out->takes_self = type->v.func.takes_self;
+            break;
+
+        case LHAT_TYPE_CORO:
+            out->receive = lower_host_type(machine, type->v.coroutine.receive,
+                                           depth + 1);
+            out->produce = lower_host_type(machine, type->v.coroutine.produce,
+                                           depth + 1);
+            out->result = lower_host_type(machine, type->v.coroutine.result,
+                                          depth + 1);
+            out->is_function = type->v.coroutine.is_function;
+            break;
+
+        default:
+            break;
+    }
+    return out;
+}
+
+// The parameter types of one registration, in order, as the array a LhatHost
+// takes over. 13.4 keeps self^ out of the list either way, so the count here
+// is the same one keep_entry recorded.
+static LhatRuntimeType **lower_host_params(LhatMachine *machine,
+                                           const LhatType *signature,
+                                           uint8_t count)
+{
+    if (count == 0 || signature == NULL ||
+        signature->kind != LHAT_TYPE_FUNC) {
+        return NULL;
+    }
+    LhatRuntimeType **types =
+        (LhatRuntimeType **)lhat_alloc((size_t)count * sizeof *types);
+    if (types == NULL) {
+        return NULL;
+    }
+    size_t at = 0;
+    for (const LhatTypeList *p = signature->v.func.params;
+         p != NULL && at < count; p = p->next) {
+        types[at++] = lower_host_type(machine, p->type, 0);
+    }
+    while (at < count) {
+        types[at++] = NULL;
+    }
+    return types;
 }
 
 static bool keep_entry(LhatProgram *program, const char *module,
@@ -390,6 +557,10 @@ static bool keep_entry(LhatProgram *program, const char *module,
         // is what says the count is one.
         entry->has_variadic = signature->v.func.variadic != NULL;
         entry->takes_self = signature->v.func.takes_self;
+        entry->self_last = signature->v.func.self_last;
+        // 14.12: kept whole rather than reduced to counts, since install
+        // lowers it into the descriptor the overload search reads.
+        entry->signature = signature;
     }
     if (entry->module == NULL || entry->name == NULL ||
         (type != NULL && entry->type == NULL)) {
@@ -638,12 +809,47 @@ const LhatErrorKind *lhat_lookup_error_kind(const LhatProgram *program,
     return NULL;
 }
 
+// 02 の 14.12: whether two registrations of one name could take the same
+// call. Arms may stand together only where no call fits both -- which is what
+// makes the search that resolves one able to stop at the first that fits.
+//
+// Told apart by anything that decides a call: how many parameters, whether a
+// tail collects more, which operand the receiver is (11.3改), and failing all
+// of those, a parameter position where neither type admits the other's values.
+static bool host_arms_overlap(const LhatType *a, const LhatType *b)
+{
+    if (a == NULL || b == NULL || a->kind != LHAT_TYPE_FUNC ||
+        b->kind != LHAT_TYPE_FUNC) {
+        return true;  // nothing to tell them apart with
+    }
+    if (a->v.func.takes_self != b->v.func.takes_self ||
+        a->v.func.self_last != b->v.func.self_last) {
+        return false;
+    }
+    // 13.7: a variadic tail makes the count a floor, so one of those overlaps
+    // anything at or above its own count. Kept simple: two arms are told
+    // apart by their counts only where neither collects a tail.
+    if (a->v.func.variadic != NULL || b->v.func.variadic != NULL) {
+        return true;
+    }
+    const LhatTypeList *pa = a->v.func.params;
+    const LhatTypeList *pb = b->v.func.params;
+    for (;; pa = pa->next, pb = pb->next) {
+        if (pa == NULL || pb == NULL) {
+            return pa == pb;  // same length: nothing above told them apart
+        }
+        if (lhat_type_disjoint(pa->type, pb->type)) {
+            return false;
+        }
+    }
+}
+
 static bool register_into(LhatProgram *program, LhatType *owner,
                           const char *module, const char *type,
                           const char *name, const char *signature,
                           LhatHostFn call, void *context)
 {
-    if (owner == NULL || call == NULL || hosted_member(owner, name) != NULL) {
+    if (owner == NULL || call == NULL) {
         return false;
     }
     // 8.7: a signature may name the builtins and whatever was registered
@@ -654,6 +860,36 @@ static bool register_into(LhatProgram *program, LhatType *owner,
     if (written == NULL) {
         return false;
     }
+
+    // 02 の 14.12: a name already registered gains an arm rather than being
+    // refused. The type becomes the intersection of what was there and what
+    // is written now -- which is exactly what an overload^ makes of a member
+    // written twice, so a call site reads the two the same way.
+    LhatTypeMember *existing = (LhatTypeMember *)hosted_member(owner, name);
+    if (existing != NULL) {
+        if (existing->type == NULL) {
+            return false;
+        }
+        const LhatType *arms = existing->type;
+        if (arms->kind == LHAT_TYPE_INTERSECT) {
+            for (const LhatTypeList *arm = arms->v.composite.arms; arm != NULL;
+                 arm = arm->next) {
+                if (host_arms_overlap(arm->type, written)) {
+                    return false;
+                }
+            }
+        } else if (host_arms_overlap(arms, written)) {
+            return false;
+        }
+        LhatType *joined =
+            lhat_type_intersect(&program->types, existing->type, written);
+        if (joined == NULL) {
+            return false;
+        }
+        existing->type = joined;
+        return keep_entry(program, module, type, name, call, context, written);
+    }
+
     return lhat_type_add_member(&program->types, owner, name, strlen(name),
                                 written) != NULL &&
            keep_entry(program, module, type, name, call, context, written);
@@ -908,6 +1144,8 @@ bool lhat_register_global(LhatProgram *program, const char *name,
         entry->parameters = (uint8_t)count;
         entry->has_variadic = written->v.func.variadic != NULL;
         entry->takes_self = written->v.func.takes_self;
+        entry->self_last = written->v.func.self_last;
+        entry->signature = written;
     }
     if (entry->name == NULL) {
         return false;
@@ -1042,9 +1280,11 @@ bool lhat_program_install(const LhatProgram *program, LhatMachine *machine)
             if (!lhat_machine_make_table(machine, &value)) {
                 return false;
             }
-        } else if (!lhat_machine_make_host(machine, e->call, e->context,
-                                           e->parameters, e->has_variadic,
-                                           e->takes_self, &value)) {
+        } else if (!lhat_machine_make_host(
+                       machine, e->call, e->context, e->parameters,
+                       e->has_variadic, e->takes_self, e->self_last,
+                       lower_host_params(machine, e->signature, e->parameters),
+                       &value)) {
             return false;
         }
         if (!lhat_machine_register(machine, e->module, e->type, e->name,
@@ -1056,9 +1296,11 @@ bool lhat_program_install(const LhatProgram *program, LhatMachine *machine)
     for (size_t i = 0; i < program->global_count; i++) {
         const LhatGlobalEntry *e = &program->global_entries[i];
         LhatValue value = lhat_nil();
-        if (!lhat_machine_make_host(machine, e->call, e->context,
-                                    e->parameters, e->has_variadic,
-                                    e->takes_self, &value) ||
+        if (!lhat_machine_make_host(
+                machine, e->call, e->context, e->parameters, e->has_variadic,
+                e->takes_self, e->self_last,
+                lower_host_params(machine, e->signature, e->parameters),
+                &value) ||
             !lhat_machine_set_global(machine, e->name, value)) {
             return false;
         }
