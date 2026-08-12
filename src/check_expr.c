@@ -1345,19 +1345,24 @@ LhatType *chk_infer_member(Checker *c, const LhatNode *node)
         return chk_simple(c, LHAT_TYPE_NUMBER);
     }
 
-    // 16.3改2: the two projections of the same walk, answered as the
-    // coroutine each is rather than through a call. 15.3改 makes them f^
-    // coroutines for the reason iterate^'s is one: reading a table changes
-    // nothing. The hat is not optional, as in 14.18 just above.
+    // 16.3改2: the two projections of the same walk. Calls, as iterate^ is
+    // and for its reason -- each answers a coroutine of its own, so the
+    // parentheses are where one is made rather than a name that quietly
+    // makes one every time it is read. 15.3改 makes them f^ coroutines
+    // because reading a table changes nothing. The hat is not optional, as
+    // in 14.18 just above.
     if (target->kind == LHAT_TYPE_TABLE &&
         (builtin_named(name, length, "keys", true) ||
          builtin_named(name, length, "values", true))) {
         LhatType *keys = NULL;
         LhatType *values = NULL;
         table_walk_halves(c, target, &keys, &values);
-        return lhat_type_coro(c->result->types, chk_simple(c, LHAT_TYPE_NIL),
-                              name[0] == 'k' ? keys : values,
-                              chk_simple(c, LHAT_TYPE_NIL), true);
+        LhatType *walk = lhat_type_coro(
+            c->result->types, chk_simple(c, LHAT_TYPE_NIL),
+            name[0] == 'k' ? keys : values, chk_simple(c, LHAT_TYPE_NIL), true);
+        LhatType *signature = lhat_type_func(c->result->types, true);
+        signature->v.func.result = walk;
+        return signature;
     }
 
     chk_report_named(c, node, LHAT_CHECK_ERR_NO_MEMBER, name, length);

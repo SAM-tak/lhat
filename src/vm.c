@@ -743,6 +743,21 @@ static bool native_named(LhatValue key, LhatNativeKind *out, bool *hatted)
         *hatted = name->length == 9;
         return true;
     }
+    // 16.3改2: the hat is not optional on these two (14.18's line), but the
+    // bare spelling is still read here so builtin_member can refuse it by
+    // name rather than by falling through to "no such member".
+    if ((name->length == 4 && memcmp(name->text, "keys", 4) == 0) ||
+        (name->length == 5 && memcmp(name->text, "keys^", 5) == 0)) {
+        *out = LHAT_NATIVE_KEYS;
+        *hatted = name->length == 5;
+        return true;
+    }
+    if ((name->length == 6 && memcmp(name->text, "values", 6) == 0) ||
+        (name->length == 7 && memcmp(name->text, "values^", 7) == 0)) {
+        *out = LHAT_NATIVE_VALUES;
+        *hatted = name->length == 7;
+        return true;
+    }
     return false;
 }
 
@@ -761,42 +776,6 @@ typedef enum {
     COUNTED_COUNT,   // a table altogether
     COUNTED_SIZE     // a string's bytes
 } CountedKind;
-
-// 02 の 16.3改2: the two projections of a table's walk, reached the way
-// 14.18's counts are -- a member with no call written. Answers false where
-// the key is neither, and `hatted` says which spelling arrived: on a table
-// the bare words are the writer's, exactly as 14.18 has it.
-static bool walk_part_named(LhatValue key, LhatWalkPart *out, bool *hatted)
-{
-    if (!lhat_is_object_kind(key, LHAT_OBJECT_STRING)) {
-        return false;
-    }
-    const LhatString *name = (const LhatString *)lhat_as_object(key);
-    const char *word = NULL;
-    size_t word_length = 0;
-    if (name->length == 4 || name->length == 5) {
-        word = "keys";
-        word_length = 4;
-        *out = LHAT_WALK_KEYS;
-    } else if (name->length == 6 || name->length == 7) {
-        word = "values";
-        word_length = 6;
-        *out = LHAT_WALK_VALUES;
-    } else {
-        return false;
-    }
-    if (name->length == word_length + 1 && name->text[word_length] == '^' &&
-        memcmp(name->text, word, word_length) == 0) {
-        *hatted = true;
-        return true;
-    }
-    if (name->length == word_length &&
-        memcmp(name->text, word, word_length) == 0) {
-        *hatted = false;
-        return true;
-    }
-    return false;
-}
 
 static CountedKind counted_named(LhatValue key, bool *hatted)
 {
@@ -860,6 +839,12 @@ static bool builtin_member(LhatValue on, LhatValue key, LhatNativeKind *out)
     if (!native_named(key, out, &hatted)) {
         return false;
     }
+    // 16.3改2 with 14.18: these two want the hat on every table, not only a
+    // plain one -- `keys` and `values` are words a writer reaches for, and a
+    // def^ carrying its own is the ordinary case.
+    if (*out == LHAT_NATIVE_KEYS || *out == LHAT_NATIVE_VALUES) {
+        return hatted && lhat_is_object_kind(on, LHAT_OBJECT_TABLE);
+    }
     if (!hatted && plain_table(on)) {
         return false;
     }
@@ -900,6 +885,12 @@ static LhatValue member_written(Machine *m, LhatValue on, LhatValue key,
     LhatNativeKind which;
     bool hatted = false;
     if (!native_named(key, &which, &hatted) || !hatted) {
+        return found;
+    }
+    // 16.3改2 with 14.18: on a table the bare `keys` and `values` are the
+    // writer's on every kind of table, so there is nothing under them for
+    // the hat spelling to fall back to.
+    if (which == LHAT_NATIVE_KEYS || which == LHAT_NATIVE_VALUES) {
         return found;
     }
     const LhatString *name = (const LhatString *)lhat_as_object(key);
@@ -2421,25 +2412,6 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
                                       ? lhat_table_count(table)
                                       : lhat_table_length(table);
                     SET_R(a, lhat_integer((int64_t)held));
-                    break;
-                }
-
-                // 16.3改2: and the two projections of the walk 16.3 gives
-                // this table. A coroutine rather than a table of its own --
-                // 10.7 leaves nothing for a view to be, and what a walk
-                // reads it reads as it goes.
-                LhatWalkPart part = LHAT_WALK_PAIR;
-                bool part_hatted = false;
-                if (lhat_is_nil(R(a)) &&
-                    walk_part_named(R(cc), &part, &part_hatted) &&
-                    part_hatted) {
-                    LhatCoroutine *projection =
-                        lhat_table_iterator(&m->objects, table, part);
-                    if (projection == NULL) {
-                        return finish(m, chunk, LHAT_RUN_OUT_OF_MEMORY,
-                                      lhat_nil(), at);
-                    }
-                    SET_R(a, lhat_object((LhatObject *)projection));
                 }
                 break;
             }
@@ -3064,8 +3036,14 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
 
                     // 16.3: what `in^` walks. A table answers with a walk of
                     // its keys; a coroutine is already one.
-                    if (native->kind == LHAT_NATIVE_ITERATE) {
-                        if (lhat_is_object_kind(native->bound,
+                    // 16.3改2: the projections are made the same way and at
+                    // the same moment -- one call, one walk -- which is what
+                    // the parentheses are saying.
+                    if (native->kind == LHAT_NATIVE_ITERATE ||
+                        native->kind == LHAT_NATIVE_KEYS ||
+                        native->kind == LHAT_NATIVE_VALUES) {
+                        if (native->kind == LHAT_NATIVE_ITERATE &&
+                            lhat_is_object_kind(native->bound,
                                                 LHAT_OBJECT_COROUTINE)) {
                             SET_R(a, native->bound);
                             break;
@@ -3075,8 +3053,13 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
                             return finish(m, chunk, LHAT_RUN_NOT_CALLABLE, lhat_nil(),
                                           at);
                         }
-                        LhatCoroutine *walk = lhat_table_iterator(
-                            &m->objects, over, LHAT_WALK_PAIR);
+                        LhatWalkPart part =
+                            native->kind == LHAT_NATIVE_KEYS ? LHAT_WALK_KEYS
+                            : native->kind == LHAT_NATIVE_VALUES
+                                ? LHAT_WALK_VALUES
+                                : LHAT_WALK_PAIR;
+                        LhatCoroutine *walk =
+                            lhat_table_iterator(&m->objects, over, part);
                         if (walk == NULL) {
                             return finish(m, chunk, LHAT_RUN_OUT_OF_MEMORY, lhat_nil(),
                                           at);

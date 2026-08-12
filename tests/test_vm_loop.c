@@ -557,9 +557,9 @@ static void test_for(void)
     run_checked_text(&r,
                      "var^ t = { 10, 20, a := 9 }\n"
                      "var^ ks = \"\"\n"
-                     "for^ k in^ t.keys^ { ks := ks .. k.tostring^() }\n"
+                     "for^ k in^ t.keys^() { ks := ks .. k.tostring^() }\n"
                      "var^ vs = \"\"\n"
-                     "for^ v in^ t.values^ { vs := vs .. v.tostring^() }\n"
+                     "for^ v in^ t.values^() { vs := vs .. v.tostring^() }\n"
                      "return^ ks .. \"|\" .. vs\n");
     CHECK_STRING(&r, "12a|10209");
     run_dispose(&r);
@@ -569,10 +569,10 @@ static void test_for(void)
     LHAT_TEST("and step in the same order");
     run_checked_text(&r,
                      "var^ t = { 10, 20, a := 9 }\n"
-                     "var^ vs = t.values^\n"
+                     "var^ vs = t.values^()\n"
                      "var^ v = vs.start()\n"
                      "var^ out = \"\"\n"
-                     "for^ k in^ t.keys^ {\n"
+                     "for^ k in^ t.keys^() {\n"
                      "  out := out .. k.tostring^() .. \"=\" ..\n"
                      "         (v ?? 0).tostring^() .. \" \"\n"
                      "  v := vs.resume(nil^)\n"
@@ -596,7 +596,7 @@ static void test_for(void)
     run_checked_text(&r,
                      "var^ t = { }\n"
                      "var^ n = 0\n"
-                     "for^ k in^ t.keys^ { n := n + 1 }\n"
+                     "for^ k in^ t.keys^() { n := n + 1 }\n"
                      "return^ n\n");
     CHECK_INTEGER(&r, 0);
     run_dispose(&r);

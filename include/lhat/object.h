@@ -315,7 +315,12 @@ typedef enum {
     LHAT_NATIVE_TOSTRING,
     // 14.17改2: the other way round, and only a string^ carries it -- it is
     // the one value a number^ can be read out of.
-    LHAT_NATIVE_TONUMBER
+    LHAT_NATIVE_TONUMBER,
+    // 02 の 16.3改2: the two projections of the walk ITERATE hands over
+    // whole. Calls like it, and for the same reason -- each answers a
+    // coroutine of its own, so the parentheses are where one is made.
+    LHAT_NATIVE_KEYS,
+    LHAT_NATIVE_VALUES
 } LhatNativeKind;
 
 typedef struct LhatNative {

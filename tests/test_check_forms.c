@@ -316,8 +316,8 @@ static void test_projections(void)
     LHAT_TEST("keys^ yields the key half and values^ the value half");
     check_text(&u,
                "var^ t = { 1, 2 }\n"
-               "for^ k in^ t.keys^ { var^ n : number^ = k }\n"
-               "for^ v in^ t.values^ { var^ m : number^ = v }\n");
+               "for^ k in^ t.keys^() { var^ n : number^ = k }\n"
+               "for^ v in^ t.values^() { var^ m : number^ = v }\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
@@ -326,7 +326,7 @@ static void test_projections(void)
     LHAT_TEST("a keyed member widens the key half");
     check_text(&u,
                "var^ t = { 1, a := 2 }\n"
-               "for^ k in^ t.keys^ { var^ n : number^ = k }\n");
+               "for^ k in^ t.keys^() { var^ n : number^ = k }\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
@@ -335,7 +335,7 @@ static void test_projections(void)
     LHAT_TEST("two names over a projection are refused");
     check_text(&u,
                "var^ t = { 1, 2 }\n"
-               "for^ k, v in^ t.keys^ { }\n");
+               "for^ k, v in^ t.keys^() { }\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_TUPLE_ARITY);
     unit_dispose(&u);
 
