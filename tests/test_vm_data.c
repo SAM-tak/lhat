@@ -735,6 +735,76 @@ static void test_tostring(void)
     run_dispose(&r);
 }
 
+// 02 の 14.18: the three that are not calls. A count is the shape of the
+// value rather than an operation on it, so there are no parentheses to write
+// -- which is what these pin, along with which reading each spelling is.
+static void test_counting(void)
+{
+    Run r;
+
+    LHAT_TEST("a table answers how long its run is");
+    run_text(&r, "var^ t = { 1, 2, 3 }\nreturn^ t.length^ * 10 + t.len^\n");
+    CHECK_INTEGER(&r, 33);
+    run_dispose(&r);
+
+    // 14.18: the run is the dense half (03 の 2.2), and count^ is both halves.
+    LHAT_TEST("and how much it holds altogether");
+    run_text(&r,
+             "var^ t = { 1, 2, a := 9, b := 8 }\n"
+             "return^ t.length^ * 10 + t.count^\n");
+    CHECK_INTEGER(&r, 24);
+    run_dispose(&r);
+
+    LHAT_TEST("a table with keys alone has no run");
+    run_text(&r,
+             "var^ t = { a := 1 }\nreturn^ t.length^ * 10 + t.count^\n");
+    CHECK_INTEGER(&r, 1);
+    run_dispose(&r);
+
+    LHAT_TEST("and an empty one answers zero either way");
+    run_text(&r, "var^ t = { }\nreturn^ t.length^ + t.count^\n");
+    CHECK_INTEGER(&r, 0);
+    run_dispose(&r);
+
+    // 14.7: what an instance reads through its definition is shared, so it is
+    // not one of that instance's own elements.
+    LHAT_TEST("an instance counts its fields and not the members it sees");
+    run_text(&r,
+             "var^ P = def^{ self^{ x := 1, y := 2 },\n"
+             "  m := f^self^ -> number^ { return^ 1 } }\n"
+             "return^ P.new().count^\n");
+    CHECK_INTEGER(&r, 2);
+    run_dispose(&r);
+
+    // 14.18 with 14.17改: written wins, the same order tostring^ is read in.
+    LHAT_TEST("a written length^ is what answers");
+    run_text(&r, "var^ t = { 1, 2, 3, length^ := 99 }\nreturn^ t.length^\n");
+    CHECK_INTEGER(&r, 99);
+    run_dispose(&r);
+
+    // 14.18: the hat is not optional. `length` is a word a writer reaches for
+    // first, so on a table the bare one is theirs whatever kind of table it is.
+    LHAT_TEST("and a bare length is the writer's name");
+    run_text(&r, "var^ t = { 1, 2, 3 }\nreturn^ t.length isa^ nil^\n");
+    CHECK_BOOL(&r, true);
+    run_dispose(&r);
+
+    // 01 の 1 章: the source is UTF-8, so the two readings of a string^ part
+    // company the moment anything is not ASCII.
+    LHAT_TEST("a string answers its code points and its bytes apart");
+    run_text(&r,
+             "return^ \"abc\".length^ * 1000 + \"abc\".size^ * 100 +\n"
+             "       \"\\u{3042}\\u{3044}\\u{3046}\".length^ * 10 +\n"
+             "       \"\\u{3042}\\u{3044}\\u{3046}\".size^\n");
+    CHECK_INTEGER(&r, 3339);
+    run_dispose(&r);
+
+    LHAT_TEST("len^ reads a string the same way length^ does");
+    run_text(&r, "return^ \"\\u{3042}bc\".len^\n");
+    CHECK_INTEGER(&r, 3);
+    run_dispose(&r);
+}
+
 // 02 の 14.17改2: tostring read backwards, and only a string^ carries it. The
 // argument-less form runs 01 の 10 章's own grammar, so most of these are
 // pinning that the literal grammar is what arrived rather than a second one
@@ -983,6 +1053,7 @@ int main(void)
     test_tables();
     test_interpolation();
     test_tostring();
+    test_counting();
     test_tonumber();
     return lhat_test_report("test_vm_data");
 }

@@ -746,6 +746,39 @@ static bool native_named(LhatValue key, LhatNativeKind *out, bool *hatted)
     return false;
 }
 
+// 02 の 14.18: the three that are not operations at all -- a value's own
+// shape, answered as a number with no call written. Kept out of native_named
+// on purpose: that is the table of words a LhatNative is built for, and
+// nothing is built for these.
+//
+// Always the hat spelling. `length` `len` `count` `size` are the words a
+// writer reaches for first, so the bare ones stay theirs on every table.
+typedef enum {
+    COUNTED_NONE,
+    COUNTED_LENGTH,  // the run: a table's dense half, a string's code points
+    COUNTED_COUNT,   // a table altogether
+    COUNTED_SIZE     // a string's bytes
+} CountedKind;
+
+static CountedKind counted_named(LhatValue key)
+{
+    if (!lhat_is_object_kind(key, LHAT_OBJECT_STRING)) {
+        return COUNTED_NONE;
+    }
+    const LhatString *name = (const LhatString *)lhat_as_object(key);
+    if ((name->length == 7 && memcmp(name->text, "length^", 7) == 0) ||
+        (name->length == 4 && memcmp(name->text, "len^", 4) == 0)) {
+        return COUNTED_LENGTH;
+    }
+    if (name->length == 6 && memcmp(name->text, "count^", 6) == 0) {
+        return COUNTED_COUNT;
+    }
+    if (name->length == 5 && memcmp(name->text, "size^", 5) == 0) {
+        return COUNTED_SIZE;
+    }
+    return COUNTED_NONE;
+}
+
 // 14.9: a table nobody made with a def^. Every name on one is the writer's,
 // which is what 14.17改 turns on -- a definition and an instance of it carry
 // names 14 章 reserved, and a table literal carries none.
@@ -2258,6 +2291,26 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
                         SET_R(a, lhat_object((LhatObject *)native));
                         break;
                     }
+                    // 02 の 14.18: and a string^ answers how long it is,
+                    // without a call being written. Two readings of the same
+                    // bytes: the code points they spell, and how many there
+                    // are.
+                    CountedKind counted = counted_named(R(cc));
+                    if (counted != COUNTED_NONE &&
+                        lhat_is_object_kind(R(b), LHAT_OBJECT_STRING)) {
+                        const LhatString *text =
+                            (const LhatString *)lhat_as_object(R(b));
+                        if (counted == COUNTED_COUNT) {
+                            // A string is not a collection of elements.
+                            return finish(m, chunk, LHAT_RUN_TYPE_ERROR,
+                                          lhat_nil(), at);
+                        }
+                        size_t held = counted == COUNTED_SIZE
+                                          ? text->length
+                                          : lhat_string_characters(text);
+                        SET_R(a, lhat_integer((int64_t)held));
+                        break;
+                    }
                     return finish(m, chunk, LHAT_RUN_TYPE_ERROR, lhat_nil(), at);
                 }
                 SET_R(a, member_written(m, R(b), R(cc), table));
@@ -2274,6 +2327,23 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
                         return finish(m, chunk, LHAT_RUN_OUT_OF_MEMORY, lhat_nil(), at);
                     }
                     SET_R(a, lhat_object((LhatObject *)native));
+                    break;
+                }
+
+                // 02 の 14.18: how long the run is, and how much the table
+                // holds altogether. Same order again -- a written one wins,
+                // and 14.18 answers only where nothing was.
+                CountedKind counting = lhat_is_nil(R(a)) ? counted_named(R(cc))
+                                                         : COUNTED_NONE;
+                if (counting == COUNTED_SIZE) {
+                    // Bytes are a reading of a string^, not of a table.
+                    return finish(m, chunk, LHAT_RUN_TYPE_ERROR, lhat_nil(), at);
+                }
+                if (counting != COUNTED_NONE) {
+                    size_t held = counting == COUNTED_COUNT
+                                      ? lhat_table_count(table)
+                                      : lhat_table_length(table);
+                    SET_R(a, lhat_integer((int64_t)held));
                 }
                 break;
             }

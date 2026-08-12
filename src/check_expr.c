@@ -1269,6 +1269,15 @@ LhatType *chk_infer_member(Checker *c, const LhatNode *node)
             builtin_named(name, length, "tonumber", false)) {
             return builtin_tonumber(c);
         }
+        // 14.18: how long it is, and how much of it there is. Always the hat
+        // spelling -- a string^ has no names of its own to take, but the
+        // spelling is one across every value the way 14.17's is.
+        if (target->kind == LHAT_TYPE_STRING &&
+            (builtin_named(name, length, "length", true) ||
+             builtin_named(name, length, "len", true) ||
+             builtin_named(name, length, "size", true))) {
+            return chk_simple(c, LHAT_TYPE_NUMBER);
+        }
         chk_report_named(c, node, LHAT_CHECK_ERR_NO_MEMBER, name, length);
         return chk_simple(c, LHAT_TYPE_UNKNOWN);
     }
@@ -1312,6 +1321,17 @@ LhatType *chk_infer_member(Checker *c, const LhatNode *node)
     // the one that answers, and this is what a table falls back to.
     if (builtin_named(name, length, "tostring", plain_table_type(target))) {
         return builtin_tostring(c, target);
+    }
+
+    // 14.18: how long the run is, and how much the table holds altogether.
+    // The hat is not optional here even where 14.17改 would let the bare word
+    // through: these are the words a writer reaches for first, so on a table
+    // the bare ones stay the writer's whatever kind of table it is.
+    if (target->kind == LHAT_TYPE_TABLE &&
+        (builtin_named(name, length, "length", true) ||
+         builtin_named(name, length, "len", true) ||
+         builtin_named(name, length, "count", true))) {
+        return chk_simple(c, LHAT_TYPE_NUMBER);
     }
 
     chk_report_named(c, node, LHAT_CHECK_ERR_NO_MEMBER, name, length);

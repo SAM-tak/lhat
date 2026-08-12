@@ -240,6 +240,64 @@ static void test_tostring(void)
     unit_dispose(&u);
 }
 
+// 02 の 14.18: how much of a value there is, answered as a number^ with no
+// call written. What the checker owes here is the type and which value
+// carries which spelling -- the counts themselves are the machine's, and
+// test_vm_data pins those.
+static void test_counting(void)
+{
+    Unit u;
+
+    LHAT_TEST("a table answers a number^ with no call written");
+    check_text(&u,
+               "var^ t = { 1, 2 }\n"
+               "var^ a : number^ = t.length^\n"
+               "var^ b : number^ = t.len^\n"
+               "var^ c : number^ = t.count^\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("and a string^ answers its length and its bytes");
+    check_text(&u,
+               "var^ a : number^ = \"x\".length^\n"
+               "var^ b : number^ = \"x\".len^\n"
+               "var^ c : number^ = \"x\".size^\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // 14.18: each spelling is a reading of one kind of value. Bytes are a
+    // reading of a string^, and elements of a table.
+    LHAT_TEST("a table has no size^");
+    check_text(&u, "var^ t = { 1 }\nvar^ n : number^ = t.size^\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_NO_MEMBER);
+    unit_dispose(&u);
+
+    LHAT_TEST("and a string^ no count^");
+    check_text(&u, "var^ n : number^ = \"x\".count^\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_NO_MEMBER);
+    unit_dispose(&u);
+
+    // 14.18: always the hat spelling, even where 14.17改 would let the bare
+    // word through. These are the words a writer reaches for first.
+    LHAT_TEST("the bare word is the writer's on a table");
+    check_text(&u, "var^ t = { 1 }\nvar^ n : number^ = t.length\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_NO_MEMBER);
+    unit_dispose(&u);
+
+    LHAT_TEST("and on a string^ as well, where nothing could be written");
+    check_text(&u, "var^ n : number^ = \"x\".size\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_NO_MEMBER);
+    unit_dispose(&u);
+
+    // 14.17改's order again: what is written under the name is what answers.
+    LHAT_TEST("a written length^ is what the type says");
+    check_text(&u,
+               "var^ t = { 1, length^ := \"nine\" }\n"
+               "var^ s : string^ = t.length^\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+}
+
 // 02 の 14.17改2: the same two signatures the other way round, on the one
 // value a number^ can be read out of.
 static void test_tonumber(void)
@@ -637,6 +695,7 @@ int main(void)
 {
     test_scope_specifiers();
     test_tostring();
+    test_counting();
     test_tonumber();
     test_variadic();
     test_for_expressions();

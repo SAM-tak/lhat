@@ -579,4 +579,12 @@ bool lhat_table_set(LhatTable *table, LhatValue key, LhatValue value,
 // How many keys 1, 2, 3 ... the table holds without a gap.
 size_t lhat_table_length(const LhatTable *table);
 
+// 02 の 14.18: everything the table itself holds -- the run above and the
+// keyed half besides. What an instance reads through its definition is not
+// counted; those members belong to the definition (14.7).
+size_t lhat_table_count(const LhatTable *table);
+
+// 02 の 14.18: the code points `text` spells, where `length` is its bytes.
+size_t lhat_string_characters(const LhatString *string);
+
 #endif  // LHAT_OBJECT_H

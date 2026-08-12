@@ -1206,3 +1206,29 @@ size_t lhat_table_length(const LhatTable *table)
 {
     return table == NULL ? 0 : table->array_count;
 }
+
+size_t lhat_table_count(const LhatTable *table)
+{
+    // 02 の 14.18: both halves, and only this table's own. What an instance
+    // reads through `definition` (14.7) is shared rather than held here, so
+    // it is not one of this table's elements.
+    return table == NULL ? 0 : table->array_count + table->entry_count;
+}
+
+size_t lhat_string_characters(const LhatString *string)
+{
+    // 02 の 14.18: code points, counted by skipping the continuation bytes
+    // 01 の 1 章's UTF-8 spells them with. A byte sequence that is not UTF-8
+    // at all still answers -- every stray byte counts as one -- since the
+    // count is a reading of the bytes and not a judgement on them.
+    if (string == NULL) {
+        return 0;
+    }
+    size_t characters = 0;
+    for (size_t i = 0; i < string->length; i++) {
+        if (((unsigned char)string->text[i] & 0xC0) != 0x80) {
+            characters++;
+        }
+    }
+    return characters;
+}
