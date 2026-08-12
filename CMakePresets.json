@@ -55,6 +55,11 @@
       "configurePreset": "release"
     },
     {
+      "name": "asan",
+      "displayName": "Debug + sanitizers (Ninja)",
+      "configurePreset": "asan"
+    },
+    {
       "name": "vs-debug",
       "displayName": "Debug (Visual Studio)",
       "configurePreset": "vs",
