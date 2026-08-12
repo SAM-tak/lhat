@@ -93,7 +93,11 @@ typedef struct {
     LhatLexer lexer;
     LhatParseResult parsed;
     LhatProto *proto;
+    // The status on its own, which is what most cases assert, and the whole
+    // of what the compile answered beside it -- where it stopped, for the
+    // cases that pin that.
     LhatCompileStatus compiled;
+    LhatCompileResult compile_result;
     // 03 の 4.3: the machine owns what the program allocates, so the answer
     // is only good while it is. One test, one machine.
     LhatMachine *machine;

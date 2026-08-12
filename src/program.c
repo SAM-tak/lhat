@@ -1245,12 +1245,15 @@ const LhatModule *lhat_program_compile(LhatProgram *program, size_t *count)
         units.hostvalue_type_count = program->hostvalue_type_entry_count;
 
         LhatProto *proto = NULL;
-        LhatCompileStatus status =
+        LhatCompileResult compiled =
             lhat_compile_module(u->parsed.root, &u->lexer, &units, &proto);
-        if (status != LHAT_COMPILE_OK) {
+        if (compiled.status != LHAT_COMPILE_OK) {
             // Kept so the caller can say which form stopped it rather than
-            // only that something did.
-            program->compile_status = status;
+            // only that something did -- and which unit, since the position
+            // in it indexes that unit's source and no other.
+            program->compile_status = compiled.status;
+            program->compile_result = compiled;
+            program->compile_unit = u;
             lhat_modules_free(modules, total);
             lhat_free(modules);
             return NULL;
@@ -1515,6 +1518,16 @@ bool lhat_unit_ok(const LhatUnit *unit)
 LhatCompileStatus lhat_program_compile_status(const LhatProgram *program)
 {
     return program->compile_status;
+}
+
+LhatCompileResult lhat_program_compile_failure(const LhatProgram *program,
+                                               const char **path)
+{
+    if (path != NULL) {
+        *path = program->compile_unit != NULL ? program->compile_unit->path
+                                              : NULL;
+    }
+    return program->compile_result;
 }
 
 size_t lhat_program_diagnostic_count(const LhatProgram *program)

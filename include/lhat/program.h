@@ -76,6 +76,12 @@ const LhatModule *lhat_program_compile(LhatProgram *program, size_t *count);
 // having to say "something".
 LhatCompileStatus lhat_program_compile_status(const LhatProgram *program);
 
+// The same failure with where it was. The position indexes the source of the
+// unit that would not compile, which `path` names -- pass NULL for it where
+// the name is not wanted. Answers a zeroed result while nothing has failed.
+LhatCompileResult lhat_program_compile_failure(const LhatProgram *program,
+                                               const char **path);
+
 // ---------------------------------------------------------------------------
 // What a unit answers
 // ---------------------------------------------------------------------------

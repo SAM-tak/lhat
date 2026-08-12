@@ -13,6 +13,7 @@
 
 #include <stdbool.h>
 #include <stddef.h>
+#include <stdint.h>
 
 // One compiled subroutine. src/code.h completes it for the library; nothing
 // outside reads through it.
@@ -62,5 +63,27 @@ typedef enum {
 } LhatCompileStatus;
 
 const char *lhat_compile_status_message(LhatCompileStatus status);
+
+// What a compile answers: the status above and where it stopped.
+//
+// 03 の 4.2 puts the refusals in the checker, so a form that reaches the
+// compiler and will not compile is a hole in the checker rather than the
+// writer's mistake. Saying only which status was reached leaves whoever has
+// to close that hole with nothing to look at, which is what this carries.
+//
+// The fields are the ones LhatCheckDiagnostic carries, and mean the same, so
+// a driver renders either the same way. All zero where nothing failed.
+typedef struct {
+    LhatCompileStatus status;
+    uint32_t offset;
+    uint32_t line;
+    uint32_t column;
+
+    // The name it was about, for the statuses that are about one. Borrowed
+    // from the source the unit was read from, which outlives the compile,
+    // and NULL for the rest.
+    const char *name;
+    uint32_t name_length;
+} LhatCompileResult;
 
 #endif  // LHAT_MODULE_H

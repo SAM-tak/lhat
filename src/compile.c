@@ -56,7 +56,9 @@ typedef struct Compiler {
     struct Compiler *parent;
     const LhatLexer *lexer;
     LhatProto *proto;
-    LhatCompileStatus *status;  // shared, so the first failure sticks
+    // Shared, so the first failure sticks -- and carries where it was, which
+    // is what a hole in the checker has to be found by (03 の 4.2).
+    LhatCompileResult *result;
 
     Local locals[LHAT_MAX_LOCALS];
     size_t local_count;
@@ -79,7 +81,12 @@ typedef struct Compiler {
     // 04 の 11 章: the line of whatever node compile_statement/
     // compile_expression is currently under, so emit() has something to
     // give lhat_chunk_emit without every one of its callers passing it.
+    // The other two are the rest of that node's position, kept for the same
+    // reason one line down: a failure says where it was without the site
+    // that reports it holding the node.
     uint32_t line;
+    uint32_t offset;
+    uint32_t column;
 
     LoopContext *loop;  // the innermost loop being compiled, NULL outside one
 
@@ -157,10 +164,32 @@ typedef struct ErrorDecl {
     size_t kind_count;
 } ErrorDecl;
 
+// Where the compiler stands: the statement or expression it is under, which
+// compile_statement and compile_expression put here as they go. A failure
+// takes its position from this, so the 100-odd fail() sites say where they
+// are without every one of them carrying a node.
 static void fail(Compiler *c, LhatCompileStatus status)
 {
-    if (*c->status == LHAT_COMPILE_OK) {
-        *c->status = status;
+    if (c->result->status != LHAT_COMPILE_OK) {
+        return;
+    }
+    c->result->status = status;
+    c->result->offset = c->offset;
+    c->result->line = c->line;
+    c->result->column = c->column;
+}
+
+// The same, for a status that is about a name -- "no such name" is worth
+// more when it says which. The name is a span of the source the unit was
+// read from, which outlives the compile, exactly as the checker's is.
+static void fail_named(Compiler *c, LhatCompileStatus status, const char *name,
+                       size_t length)
+{
+    bool first = c->result->status == LHAT_COMPILE_OK;
+    fail(c, status);
+    if (first) {
+        c->result->name = name;
+        c->result->name_length = (uint32_t)length;
     }
 }
 
@@ -2211,7 +2240,7 @@ static void compile_default_new(Compiler *c, const LhatNode *node,
     inner.parent = c;
     inner.lexer = c->lexer;
     inner.proto = proto;
-    inner.status = c->status;
+    inner.result = c->result;
 
     uint8_t slot = reserve(&inner);
     // An empty self^{ … }: everything comes from the template.
@@ -2522,7 +2551,7 @@ static void compile_subroutine(Compiler *c, const LhatNode *node, uint8_t into)
     inner.parent = c;
     inner.lexer = c->lexer;
     inner.proto = proto;
-    inner.status = c->status;
+    inner.result = c->result;
 
     // 5.3: the parameters are the frame's first registers, in order.
     //
@@ -2785,7 +2814,7 @@ static void compile_compare_chain(Compiler *c, const LhatNode *node,
     for (const LhatNode *marker = node->v.chain.operators; marker != NULL;
          marker = marker->next) {
         operand = operand->next;
-        if (operand == NULL || *c->status != LHAT_COMPILE_OK) {
+        if (operand == NULL || c->result->status != LHAT_COMPILE_OK) {
             break;
         }
         // Every link but the last leaves a jump for a false answer to take.
@@ -2826,10 +2855,12 @@ static void compile_compare_chain(Compiler *c, const LhatNode *node,
 
 static void compile_expression(Compiler *c, const LhatNode *node, uint8_t into)
 {
-    if (node == NULL || *c->status != LHAT_COMPILE_OK) {
+    if (node == NULL || c->result->status != LHAT_COMPILE_OK) {
         return;
     }
     c->line = node->line;
+    c->offset = node->offset;
+    c->column = node->column;
 
     switch (node->kind) {
         case LHAT_NODE_INT:
@@ -3210,7 +3241,7 @@ static void compile_expression(Compiler *c, const LhatNode *node, uint8_t into)
             // initial bindings last, which is what lets a let^ of the same
             // spelling shadow one.
             if (!resolve_name(c, name, length, into)) {
-                fail(c, LHAT_COMPILE_UNDEFINED);
+                fail_named(c, LHAT_COMPILE_UNDEFINED, name, length);
             }
             return;
         }
@@ -3237,7 +3268,7 @@ static void compile_expression(Compiler *c, const LhatNode *node, uint8_t into)
                     fail(c, LHAT_COMPILE_SCOPE_TOO_FAR);
                     return;
                 case SCOPED_NONE:
-                    fail(c, LHAT_COMPILE_UNDEFINED);
+                    fail_named(c, LHAT_COMPILE_UNDEFINED, name, length);
                     return;
             }
             return;
@@ -4774,10 +4805,12 @@ static void compile_loop(Compiler *c, const LhatNode *node)
 
 static void compile_statement(Compiler *c, const LhatNode *node)
 {
-    if (node == NULL || *c->status != LHAT_COMPILE_OK) {
+    if (node == NULL || c->result->status != LHAT_COMPILE_OK) {
         return;
     }
     c->line = node->line;
+    c->offset = node->offset;
+    c->column = node->column;
 
     switch (node->kind) {
         case LHAT_NODE_DEFINE:
@@ -5339,28 +5372,30 @@ static void compile_module_register(Compiler *c, const LhatNode *statements,
     c->next_register = mark;
 }
 
-static LhatCompileStatus compile_unit(LhatCompileSession *session,
+static LhatCompileResult compile_unit(LhatCompileSession *session,
                                       const LhatNode *unit,
                                       const LhatLexer *lexer,
                                       const LhatUnits *units, LhatProto **out)
 {
+    LhatCompileResult result;
+    memset(&result, 0, sizeof result);
     *out = NULL;
     if (unit == NULL || lexer == NULL) {
-        return LHAT_COMPILE_UNSUPPORTED;
+        result.status = LHAT_COMPILE_UNSUPPORTED;
+        return result;
     }
 
     LhatProto *proto = lhat_proto_new();
     if (proto == NULL) {
-        return LHAT_COMPILE_TOO_COMPLEX;
+        result.status = LHAT_COMPILE_TOO_COMPLEX;
+        return result;
     }
-
-    LhatCompileStatus status = LHAT_COMPILE_OK;
 
     Compiler c;
     memset(&c, 0, sizeof c);
     c.lexer = lexer;
     c.proto = proto;
-    c.status = &status;
+    c.result = &result;
 
     // 03 の 4.3: what earlier inputs left is already in scope and already in
     // registers, so this one names it where it stands and numbers its own
@@ -5430,7 +5465,7 @@ static LhatCompileStatus compile_unit(LhatCompileSession *session,
     // A session hands the registries back so the next input has them; without
     // one they were the compiler's, and the kind objects they point at belong
     // to the chunk and stay either way.
-    if (session != NULL && status == LHAT_COMPILE_OK) {
+    if (session != NULL && result.status == LHAT_COMPILE_OK) {
         session->defs = c.defs;
         session->def_count = c.def_count;
         session->def_capacity = c.def_capacity;
@@ -5445,9 +5480,9 @@ static LhatCompileStatus compile_unit(LhatCompileSession *session,
         lhat_free(c.defs);
     }
 
-    if (status != LHAT_COMPILE_OK) {
+    if (result.status != LHAT_COMPILE_OK) {
         lhat_proto_free(proto);
-        return status;
+        return result;
     }
 
     // What this input declared joins the session, copied out of the source it
@@ -5472,7 +5507,8 @@ static LhatCompileStatus compile_unit(LhatCompileSession *session,
                 char *kept = (char *)lhat_alloc(c.locals[i].length + 1);
                 if (kept == NULL) {
                     lhat_proto_free(proto);
-                    return LHAT_COMPILE_TOO_COMPLEX;
+                    result.status = LHAT_COMPILE_TOO_COMPLEX;
+                    return result;
                 }
                 memcpy(kept, c.locals[i].name, c.locals[i].length);
                 kept[c.locals[i].length] = '\0';
@@ -5491,23 +5527,23 @@ static LhatCompileStatus compile_unit(LhatCompileSession *session,
     }
 
     *out = proto;
-    return status;
+    return result;
 }
 
-LhatCompileStatus lhat_compile(const LhatNode *unit, const LhatLexer *lexer,
+LhatCompileResult lhat_compile(const LhatNode *unit, const LhatLexer *lexer,
                                LhatProto **out)
 {
     return compile_unit(NULL, unit, lexer, NULL, out);
 }
 
-LhatCompileStatus lhat_compile_module(const LhatNode *unit,
+LhatCompileResult lhat_compile_module(const LhatNode *unit,
                                       const LhatLexer *lexer,
                                       const LhatUnits *units, LhatProto **out)
 {
     return compile_unit(NULL, unit, lexer, units, out);
 }
 
-LhatCompileStatus lhat_compile_next(LhatCompileSession *session,
+LhatCompileResult lhat_compile_next(LhatCompileSession *session,
                                     const LhatNode *unit,
                                     const LhatLexer *lexer, LhatProto **out)
 {

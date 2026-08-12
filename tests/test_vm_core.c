@@ -337,6 +337,36 @@ static void test_names(void)
     LHAT_CHECK_EQ_INT(r.compiled, LHAT_COMPILE_UNDEFINED);
     run_dispose(&r);
 
+    // 03 の 4.2 puts the refusals in the checker, so a compile that stops is
+    // a hole in it -- and what closes a hole is knowing where to look. The
+    // status alone said only that something somewhere would not compile.
+    LHAT_TEST("and says where, and which name");
+    run_text(&r, "var^ a = 1\nreturn^ nowhere\n");
+    LHAT_CHECK_EQ_INT(r.compile_result.status, LHAT_COMPILE_UNDEFINED);
+    LHAT_CHECK_EQ_INT(r.compile_result.line, 2);
+    LHAT_CHECK_EQ_INT(r.compile_result.column, 9);
+    LHAT_CHECK(r.compile_result.name != NULL &&
+                   r.compile_result.name_length == 7 &&
+                   memcmp(r.compile_result.name, "nowhere", 7) == 0,
+               "the name is the one that was written");
+    run_dispose(&r);
+
+    // 02 の 9.8: not every status is about a name, and those carry the
+    // position alone rather than an empty one.
+    LHAT_TEST("a status about no name carries the position alone");
+    run_text(&r, "repeat^ 3 {\n  repeat^ 3 { break^^^ }\n}\n");
+    LHAT_CHECK_EQ_INT(r.compile_result.status, LHAT_COMPILE_BREAK_TOO_FAR);
+    LHAT_CHECK_EQ_INT(r.compile_result.line, 2);
+    LHAT_CHECK(r.compile_result.name == NULL, "no name to give");
+    run_dispose(&r);
+
+    LHAT_TEST("and a compile that worked answers a clean result");
+    run_text(&r, "return^ 1\n");
+    LHAT_CHECK_EQ_INT(r.compile_result.status, LHAT_COMPILE_OK);
+    LHAT_CHECK_EQ_INT(r.compile_result.line, 0);
+    LHAT_CHECK(r.compile_result.name == NULL, "nothing failed");
+    run_dispose(&r);
+
     // 02 の 13.12: '_^' takes its position out of the run and nothing reads
     // it back, so what is pinned is that the names beside it take theirs.
     LHAT_TEST("'_^' takes a position and the names beside it take theirs");

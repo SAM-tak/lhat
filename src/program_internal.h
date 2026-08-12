@@ -60,6 +60,13 @@ struct LhatProgram {
     // LHAT_COMPILE_OK until a compile has actually failed.
     LhatCompileStatus compile_status;
 
+    // The same failure with where it was, and the unit it was in -- a
+    // position means nothing without the source it indexes. NULL until a
+    // compile has failed, and left NULL for a failure with no unit to blame
+    // (the modules array itself not fitting in memory).
+    LhatCompileResult compile_result;
+    const LhatUnit *compile_unit;
+
     // 05 の 8.7: what the host registered, as one nested table type keyed by
     // module path -- the same shape L^.modules has, since that is where it
     // ends up. import^ resolves against this and against nothing else, which

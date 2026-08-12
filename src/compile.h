@@ -72,13 +72,13 @@ typedef struct {
 // Compiles one unit into a proto, which owns the bodies written inside it.
 // The lexer has to be the one the tree came from, since names and strings are
 // spans into it. The caller frees the proto with lhat_proto_free().
-LhatCompileStatus lhat_compile(const LhatNode *unit, const LhatLexer *lexer,
+LhatCompileResult lhat_compile(const LhatNode *unit, const LhatLexer *lexer,
                                LhatProto **out);
 
 // The same, as one unit of a program: `units` says where a require^ inside it
 // leads, and what path this unit registers itself under. Passing NULL is
 // lhat_compile.
-LhatCompileStatus lhat_compile_module(const LhatNode *unit,
+LhatCompileResult lhat_compile_module(const LhatNode *unit,
                                       const LhatLexer *lexer,
                                       const LhatUnits *units, LhatProto **out);
 
@@ -118,7 +118,7 @@ void lhat_compile_session_hosted(LhatCompileSession *session,
 //
 // The proto answers where the machine has to leave the stack alone, so a run
 // of it belongs to the machine the earlier inputs ran on and no other.
-LhatCompileStatus lhat_compile_next(LhatCompileSession *session,
+LhatCompileResult lhat_compile_next(LhatCompileSession *session,
                                     const LhatNode *unit,
                                     const LhatLexer *lexer, LhatProto **out);
 

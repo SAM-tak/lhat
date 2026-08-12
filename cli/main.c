@@ -411,6 +411,37 @@ static void say_check_error(const LhatSource *source, const char *name,
     free(bigger);
 }
 
+// 03 の 4.2 puts the refusals in the checker, so a compile that stops is a
+// hole in it -- and whoever has to close that hole is told where, the same
+// way the checker's own diagnostics tell them. Falls back to the one-line
+// form where there is no source to point into: a failure before any unit was
+// read has a status and nothing else.
+static void say_compile_error(const LhatSource *source, const char *name,
+                              const LhatCompileResult *result)
+{
+    char message[256];
+    const char *text = lhat_compile_status_message(result->status);
+    if (result->name != NULL) {
+        snprintf(message, sizeof message, "%s: %.*s", text,
+                 (int)result->name_length, result->name);
+        text = message;
+    }
+
+    if (source == NULL || result->line == 0) {
+        fprintf(stderr, "%s: error: %s\n", name != NULL ? name : "lhat", text);
+        return;
+    }
+
+    LhatReport report;
+    report.kind = LHAT_REPORT_ERROR;
+    report.message = text;
+    report.offset = result->offset;
+    report.line = result->line;
+    report.column = result->column;
+    report.length = result->name_length;
+    say(&report, source, name);
+}
+
 // 04 の 11.6改: what the program wrote in panic^ EXPR, as text -- a plain
 // string prints as its own text (a message reads oddly in quotes), anything
 // else falls back to lhat_value_write's general form.
@@ -625,8 +656,13 @@ static int check_program(const char *path, bool run, bool strict)
             // A unit that would not compile says which form stopped it; only
             // a machine that could not be made has nothing more to add.
             if (program.compile_status != LHAT_COMPILE_OK) {
-                fprintf(stderr, "%s: error: %s\n", path,
-                        lhat_compile_status_message(program.compile_status));
+                const char *where = NULL;
+                LhatCompileResult failure =
+                    lhat_program_compile_failure(&program, &where);
+                say_compile_error(program.compile_unit != NULL
+                                      ? &program.compile_unit->source
+                                      : NULL,
+                                  where != NULL ? where : path, &failure);
             } else {
                 fprintf(stderr, "%s: error: the program did not compile\n",
                         path);
@@ -741,8 +777,13 @@ static int dump_bytecode(const char *path)
         const LhatModule *modules = lhat_program_compile(&program, &count);
         if (modules == NULL) {
             if (program.compile_status != LHAT_COMPILE_OK) {
-                fprintf(stderr, "%s: error: %s\n", path,
-                        lhat_compile_status_message(program.compile_status));
+                const char *where = NULL;
+                LhatCompileResult failure =
+                    lhat_program_compile_failure(&program, &where);
+                say_compile_error(program.compile_unit != NULL
+                                      ? &program.compile_unit->source
+                                      : NULL,
+                                  where != NULL ? where : path, &failure);
             }
             failed = true;
         } else {
@@ -905,11 +946,10 @@ static int repl(bool strict)
         }
 
         if (!refused) {
-            LhatCompileStatus status = lhat_compile_next(
+            LhatCompileResult compiled = lhat_compile_next(
                 compiles, in->parsed.root, &in->lexer, &in->proto);
-            if (status != LHAT_COMPILE_OK) {
-                fprintf(stderr, "error: %s\n",
-                        lhat_compile_status_message(status));
+            if (compiled.status != LHAT_COMPILE_OK) {
+                say_compile_error(&in->source, "stdin", &compiled);
                 refused = true;
             }
         }
