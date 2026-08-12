@@ -77,16 +77,46 @@ static void test_operators(void)
         lhat_test_ran_dispose(&ran);
     }
 
-    // 02 の 11.8改: a registration for 'a - b' is no answer for '-a'. The two
-    // share the member name and are told apart by the count, and a host
-    // function reached with the wrong one would be handed an argument short.
-    // Refused where 14.8's number^ is what a unary '-' falls back on.
-    LHAT_TEST("a binary host operator does not answer a unary use");
+    // 02 の 11.8改: the unary spelling of a name the type also carries as a
+    // binary one. Told apart by the count, so both arms of '-' stand together
+    // and each answers what it was written for.
+    LHAT_TEST("a host value answers the unary '-'");
+    {
+        LhatTestRan ran = run_source(
+            "import^ std.math\n"
+            "let^ v = -std.math.lvec3(1, 2, 3)\n"
+            "if^ v.x = -1.0 and^ v.y = -2.0 and^ v.z = -3.0 { return^ 1 }\n"
+            "return^ 0\n");
+        LHAT_CHECK_RAN_INTEGER(ran, 1);
+        lhat_test_ran_dispose(&ran);
+    }
+
+    // 02 の 11.3改: the arm written with a trailing self^, so the receiver is
+    // the operand on the right. Without it a number^ on the left carries no
+    // answer for a host value and '2 * v' has nowhere to go.
+    LHAT_TEST("and a scalar on the left scales it too");
+    {
+        LhatTestRan ran = run_source(
+            "import^ std.math\n"
+            "let^ v = std.math.lvec3(1, 2, 3)\n"
+            "let^ a = 2 * v\n"
+            "let^ b = v * 2\n"
+            "if^ a.x = b.x and^ a.y = b.y and^ a.z = b.z and^ a.z = 6.0 {\n"
+            "  return^ 1 }\n"
+            "return^ 0\n");
+        LHAT_CHECK_RAN_INTEGER(ran, 1);
+        lhat_test_ran_dispose(&ran);
+    }
+
+    // The counts still do not stand in for each other. A scalar on the left
+    // of '-' finds nothing: LVector3 carries the trailing self^ arm for '*'
+    // and not for '-', so 14.8's number^ is what is left to fall back on.
+    LHAT_TEST("and an arm that was not written is not invented");
     LHAT_CHECK(!checks("import^ std.math\n"
-                       "let^ a = std.math.lvec3(1, 2, 3)\n"
-                       "let^ v = -a\n"
+                       "let^ v = std.math.lvec3(1, 2, 3)\n"
+                       "let^ w = 2 - v\n"
                        "return^ 1\n"),
-               "the negation found nothing to answer it");
+               "no arm answers a scalar on the left of '-'");
 
     LHAT_TEST("methods answer numbers and values alike");
     {

@@ -109,17 +109,46 @@ static LhatValue lvec3_sub(LhatMachine *machine, void *context,
     return lvec3_value(machine, module, difference);
 }
 
-// op "*": f^self^, number^ -> std.math.LVector3;
+// op "-": f^self^ -> std.math.LVector3;
+//
+// 02 の 11.8改: the unary spelling of the same name, told apart from the
+// binary one by taking no argument. Its own function -- what it computes has
+// nothing in common with subtraction beyond the sign.
+static LhatValue lvec3_neg(LhatMachine *machine, void *context,
+                           const LhatValue *arguments, size_t count)
+{
+    const MathModule *module = (const MathModule *)context;
+    LVec3 v;
+    if (count < 1 || !lvec3_arg(module, arguments[0], &v)) {
+        return lhat_nil();
+    }
+    LVec3 negated = { -v.x, -v.y, -v.z };
+    return lvec3_value(machine, module, negated);
+}
+
+// op "*": both orders --
+//   f^self^, number^ -> std.math.LVector3;
+//   f^number^, self^ -> std.math.LVector3;
+//
+// 02 の 11.3改's trailing self^ makes the receiver the right operand, so
+// '2 * v' hands the number over first and 'v * 2' hands the vector. Scaling
+// is the same either way; only which side to unwrap differs, and the values
+// themselves say that.
 static LhatValue lvec3_scale(LhatMachine *machine, void *context,
                              const LhatValue *arguments, size_t count)
 {
     const MathModule *module = (const MathModule *)context;
-    LVec3 v;
-    if (count < 2 || !lvec3_arg(module, arguments[0], &v) ||
-        !lhat_is_number(arguments[1])) {
+    if (count < 2) {
         return lhat_nil();
     }
-    float by = (float)arg_as_real(arguments[1]);
+    size_t vector_at = lhat_is_number(arguments[0]) ? 1 : 0;
+    size_t number_at = vector_at == 0 ? 1 : 0;
+    LVec3 v;
+    if (!lvec3_arg(module, arguments[vector_at], &v) ||
+        !lhat_is_number(arguments[number_at])) {
+        return lhat_nil();
+    }
+    float by = (float)arg_as_real(arguments[number_at]);
     LVec3 scaled = { v.x * by, v.y * by, v.z * by };
     return lvec3_value(machine, module, scaled);
 }
@@ -296,9 +325,21 @@ bool lhatstdlib_math_register(LhatProgram *program)
                program, "std.math", "LVector3", "-",
                "f^self^, std.math.LVector3 -> std.math.LVector3;", lvec3_sub,
                module) &&
+           // 02 の 11.8改: the unary spelling of the same name, told apart by
+           // taking no argument. 05 の 8.7 is what lets one name carry both.
+           lhat_register_hostvalue_member(
+               program, "std.math", "LVector3", "-",
+               "f^self^ -> std.math.LVector3;", lvec3_neg, module) &&
            lhat_register_hostvalue_member(
                program, "std.math", "LVector3", "*",
                "f^self^, number^ -> std.math.LVector3;", lvec3_scale,
+               module) &&
+           // 02 の 11.3改: the self^ written last, so this is the arm '2 * v'
+           // finds -- a built-in number^ on the left carries no answer for a
+           // host value, and this is the side that does.
+           lhat_register_hostvalue_member(
+               program, "std.math", "LVector3", "*",
+               "f^number^, self^ -> std.math.LVector3;", lvec3_scale,
                module) &&
            lhat_register_hostvalue_member(
                program, "std.math", "LVector3", "dot",
