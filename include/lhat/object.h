@@ -50,6 +50,12 @@ typedef struct LhatString {
     LhatObject header;
     size_t length;
     uint32_t hash;
+    // 02 の 14.18: the code points `text` spells, counted where the string is
+    // made -- the bytes are being walked there for the hash anyway, and a
+    // string never changes afterwards, so length^ is a read rather than a
+    // scan. Sits beside the hash, in what was padding before the flexible
+    // array, so it costs nothing.
+    uint32_t characters;
     char text[];
 } LhatString;
 
@@ -603,6 +609,7 @@ size_t lhat_table_length(const LhatTable *table);
 size_t lhat_table_count(const LhatTable *table);
 
 // 02 の 14.18: the code points `text` spells, where `length` is its bytes.
+// Counted when the string was made, so this reads rather than walks.
 size_t lhat_string_characters(const LhatString *string);
 
 #endif  // LHAT_OBJECT_H

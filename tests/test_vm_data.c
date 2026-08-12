@@ -806,6 +806,16 @@ static void test_counting(void)
 
     // 14.18 with 14.17改: nothing can be written on a string^, so the bare
     // word is taking no name from anyone and reaches the same reading.
+    // 14.18: the count is fixed when the string is made, and joining two adds
+    // the two counts -- so a string built at run time answers what a literal
+    // spelling the same bytes answers.
+    LHAT_TEST("a joined string counts what its halves counted");
+    run_text(&r,
+             "var^ s = \"\\u{3042}\" .. \"bc\" .. \"\\u{3044}\"\n"
+             "return^ s.length * 100 + s.size\n");
+    CHECK_INTEGER(&r, 408);
+    run_dispose(&r);
+
     LHAT_TEST("a string^ takes either spelling");
     run_text(&r,
              "return^ \"\\u{3042}bc\".length * 100 + \"\\u{3042}bc\".len * 10 +\n"
