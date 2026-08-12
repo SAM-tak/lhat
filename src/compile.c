@@ -4356,11 +4356,19 @@ static void compile_with(Compiler *c, const LhatNode *node)
     for (size_t i = 0; i < count; i++) {
         patch_cleanup_here(c, pushes[i]);
         uint8_t mark = c->next_register;
+        // 5.3 lays a method call out as callee, receiver, then arguments.
+        // 14.4 puts the value in self^, so this is a method call and not a
+        // plain one -- a dispose() written in a def^ declares the receiver and
+        // would be an argument short otherwise. The key is read out of the
+        // third register before anything would be written over it, the same
+        // way compile_interp_part reads one.
         uint8_t callee = reserve(c);
+        uint8_t receiver = reserve(c);
         uint8_t key = reserve(c);
         load_string_bytes(c, key, "dispose", 7);
         emit(c, lhat_encode_abc(LHAT_BC_GETINDEX, callee, held[i], key));
-        emit(c, lhat_encode_abc(LHAT_BC_CALL, callee, 0, 0));
+        emit(c, lhat_encode_abc(LHAT_BC_MOVE, receiver, held[i], 0));
+        emit(c, lhat_encode_abc(LHAT_BC_CALLMETHOD, callee, 0, 0));
         c->next_register = mark;
         emit(c, lhat_encode_abc(LHAT_BC_ENDCLEANUP, 0, 0, 0));
     }

@@ -1194,6 +1194,43 @@ static void test_typeof(void)
              "return^ typeof^(t).signature\n");
     CHECK_STRING(&r, "t^{ a : t^{ v : number^ }, b : t^{ v : number^ } }");
     run_dispose(&r);
+
+    // 02 の 12.6 with 14.4: a dispose() a def^ wrote declares the receiver,
+    // so with^ calls it as a method. It used to be called plainly, which no
+    // written dispose() could answer -- the coroutine's is a native member
+    // and carries its receiver, so nothing caught this.
+    LHAT_TEST("with^ calls a written dispose() as a method");
+    run_checked_text(&r,
+                     "var^ log = { n := 0 }\n"
+                     "var^ C = def^{ self^{ v := 1 },\n"
+                     "  dispose := p^self^ { log.n := self^.v } }\n"
+                     "with^ c = C.new() { }\n"
+                     "return^ log.n\n");
+    CHECK_INTEGER(&r, 1);
+    run_dispose(&r);
+
+    // 13.4 keeps self^ out of the parameter list, so one written without it
+    // takes no receiver and is called just the same.
+    LHAT_TEST("and one written without a self^ is called too");
+    run_checked_text(&r,
+                     "var^ log = { n := 0 }\n"
+                     "var^ t = { dispose := p^ { log.n := 7 } }\n"
+                     "with^ r = t { }\n"
+                     "return^ log.n\n");
+    CHECK_INTEGER(&r, 7);
+    run_dispose(&r);
+
+    // 13.12: and the target may be a '_^', which is the shape written when
+    // 12.6's disposal is the whole reason for the form.
+    LHAT_TEST("a '_^' target is disposed the same way");
+    run_checked_text(&r,
+                     "var^ log = { n := 0 }\n"
+                     "var^ C = def^{ self^{ v := 3 },\n"
+                     "  dispose := p^self^ { log.n := self^.v } }\n"
+                     "with^ _^ = C.new() { }\n"
+                     "return^ log.n\n");
+    CHECK_INTEGER(&r, 3);
+    run_dispose(&r);
 }
 
 int main(void)

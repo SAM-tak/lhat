@@ -1189,7 +1189,12 @@ static void check_disposable(Checker *c, const LhatNode *at, LhatType *type)
             m->type->kind == LHAT_TYPE_PENDING) {
             return;
         }
-        if (m->type->kind != LHAT_TYPE_FUNC || m->type->v.func.result != NULL) {
+        // 12.5 spells the condition 'dispose()' with the parentheses: with^
+        // hands over nothing, so one asking for an argument could not be
+        // called. 13.4 keeps self^ out of the list, which is why the ordinary
+        // 'p^self^ { }' of 14.4 has an empty one.
+        if (m->type->kind != LHAT_TYPE_FUNC || m->type->v.func.result != NULL ||
+            m->type->v.func.params != NULL || m->type->v.func.variadic != NULL) {
             chk_report(c, at, LHAT_CHECK_ERR_NOT_DISPOSABLE);
         }
         return;

@@ -170,6 +170,28 @@ static void test_definitions(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_NOT_DISPOSABLE);
     unit_dispose(&u);
 
+    // 12.5 writes the condition as 'dispose()', parentheses and all: with^
+    // hands nothing over, so one asking for an argument could never be called.
+    LHAT_TEST("with^ refuses a dispose() that asks for an argument");
+    check_text(&u,
+               "var^ C = def^{\n"
+               "    self^{ v := 1 },\n"
+               "    dispose := p^self^, x:number^ { },\n"
+               "}\n"
+               "with^ c = C.new() { }\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_NOT_DISPOSABLE);
+    unit_dispose(&u);
+
+    // 13.4 keeps self^ out of the parameter list, so 14.4's ordinary shape
+    // has an empty one and is accepted -- which the case above must not have
+    // taken with it.
+    LHAT_TEST("and accepts one written without a self^ as well");
+    check_text(&u,
+               "var^ t = { dispose := p^ { } }\n"
+               "with^ r = t { }\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
     // 14.10: the structural form is what 12.5 is really asking for, so it
     // has to resolve on its own.
     LHAT_TEST("the structural form of a disposable resolves");
