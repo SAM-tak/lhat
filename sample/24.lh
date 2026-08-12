@@ -62,8 +62,8 @@ let^ Reader = def^{
                 break^
             }
         }
-        if^ self^.at > self^.text.length { return^ "" }
-        return^ self^.text.substr(self^.at, self^.at)
+        return^ if^ self^.at > self^.text.length: ""
+                el^: self^.text.substr(self^.at, self^.at);
     },
 
     bump = p^self^ { self^.at := self^.at + 1 },
