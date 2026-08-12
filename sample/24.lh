@@ -30,9 +30,7 @@ Reader は書かれた式を読みながら数える。読み位置も「どの�
 
 相互再帰（expr → term → factor → expr）は self^ を通る。this^^ は
 字句上の外側を指すので兄弟のメソッドには届かない。
-
-ただし def^ のメンバは書いた順にしか見えないので、輪になっている一辺は
-14.15 の abstract^ で名前を先に立てておく（下）。
+def^ のメンバは互いに見えるので（14.7改）、輪になっていても前方宣言は要らない。
 
 読めない綴りに出会ったら ok を降ろして 0 を返す。誤りの値を作らないのは、
 これが書き手の誤りではなく入力だからである（14.19 が成り立たない範囲に
@@ -48,10 +46,6 @@ let^ Reader = def^{
     },
 
     override^new = f^ line:string^ { self^{ text := line } },
-
-    # 14.15 の宣言。expr → term → factor → expr は輪なので、
-    # 並べ替えでは解けない——名前を先に立てておく
-    abstract^ expr : p^self^ -> number^;,
 
     # 空白を飛ばして今の1文字。尽きていれば ""
     peek = p^self^ -> string^ {
@@ -144,8 +138,7 @@ let^ same = f^ want:t^{ ...:number^ }, used:t^{ ...:number^ } -> bool^ {
 
 # / は実数除算なので 8/(3-8/3) は 24 ちょうどにならない。幅で見る
 let^ near24 = f^ value:number^ -> bool^ {
-    if^ value < 24 { return^ 24 - value < 0.000001 }
-    return^ value - 24 < 0.000001
+    if^ value < 24: 24 - value < 0.000001 el^: value - 24 < 0.000001;
 }
 
 with^ rng = std.random.make(0) as^ std.random.Random {

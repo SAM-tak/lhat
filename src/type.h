@@ -110,6 +110,13 @@ typedef struct LhatTypeMember {
     // reachable through the composed type -- what each side wrote is still
     // reachable through that side.
     bool ambiguous;
+    // 02 の 14.7改: put there by a def^'s first pass, from the signature the
+    // member was written with, so a body checked before it can reach it. The
+    // second pass writes the inferred type over it. 14.12's "a second member
+    // of this name needs a marker" reads the members to find what was already
+    // there, and one of these was not -- so that question skips them. The
+    // relations do not read this, as with the three above.
+    bool provisional;
     struct LhatTypeMember *next;
 } LhatTypeMember;
 

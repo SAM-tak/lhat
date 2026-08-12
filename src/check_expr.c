@@ -1969,6 +1969,8 @@ static void set_member_marked(Checker *c, LhatType *table, const char *name,
             m->type = type;
             m->abstract = abstract;
             m->pending = pending;
+            // 14.7改: whatever the first pass put here, this is the real one.
+            m->provisional = false;
             return;
         }
     }
@@ -1977,6 +1979,28 @@ static void set_member_marked(Checker *c, LhatType *table, const char *name,
     if (added != NULL) {
         added->abstract = abstract;
         added->pending = pending;
+    }
+}
+
+// 02 の 14.7改: the first pass's seed. Puts the name there with the signature
+// it was written with, so a body checked before it can reach it -- and leaves
+// alone anything already there, which is the base's or an earlier entry's and
+// is the real thing rather than a seed.
+static void set_member_provisional(Checker *c, LhatType *table,
+                                   const char *name, size_t length,
+                                   LhatType *type, bool abstract)
+{
+    for (const LhatTypeMember *m = table->v.table.members; m != NULL;
+         m = m->next) {
+        if (m->name_length == length && memcmp(m->name, name, length) == 0) {
+            return;
+        }
+    }
+    LhatTypeMember *added = lhat_type_add_member(c->result->types, table, name,
+                                                 length, type);
+    if (added != NULL) {
+        added->provisional = true;
+        added->abstract = abstract;
     }
 }
 
@@ -2386,6 +2410,30 @@ LhatType *chk_compose_definitions(Checker *c, const LhatNode *node,
     return definition;
 }
 
+// 02 の 14.15改2: whether this def^ also writes a value under the name, which
+// is what makes a declaration of it pointless. Read off the entries rather
+// than kept as a mark, since the question is asked only where an abstract^
+// stands and the list is a handful of members long.
+static bool defined_in_def(Checker *c, const LhatNode *node, const char *name,
+                           size_t length)
+{
+    for (const LhatNode *entry = node->v.list.items; entry != NULL;
+         entry = entry->next) {
+        if (entry->v.entry.key == NULL || entry->v.entry.declared) {
+            continue;
+        }
+        const char *other = NULL;
+        size_t other_length = 0;
+        if (!chk_node_name(c, entry->v.entry.key, &other, &other_length)) {
+            continue;
+        }
+        if (other_length == length && memcmp(other, name, length) == 0) {
+            return true;
+        }
+    }
+    return false;
+}
+
 LhatType *chk_infer_def(Checker *c, const LhatNode *node, LhatType *base)
 {
     LhatType *definition = lhat_type_table(c->result->types);
@@ -2472,6 +2520,13 @@ LhatType *chk_infer_def(Checker *c, const LhatNode *node, LhatType *base)
     Scope *outer = c->scope;
     c->scope = &members;
 
+    // 14.7改: the names first, so the members can reach each other however
+    // they are ordered -- 'expr calls term calls factor calls expr' is a ring
+    // and no ordering unties it. What can be put down here is what can be
+    // read without walking a body: a declaration's written type, and a
+    // subroutine's written signature. A member whose type only its value
+    // knows is not seeded, which is 03 の 3.4's line -- what is read before
+    // it is inferred has to have been written.
     for (const LhatNode *entry = node->v.list.items; entry != NULL;
          entry = entry->next) {
         const char *name = NULL;
@@ -2480,19 +2535,58 @@ LhatType *chk_infer_def(Checker *c, const LhatNode *node, LhatType *base)
             !chk_node_name(c, entry->v.entry.key, &name, &length)) {
             continue;
         }
+        // A declaration's type is read here and nowhere else -- reading it
+        // twice would report whatever is wrong with it twice.
+        LhatType *seed = entry->v.entry.declared
+                             ? chk_resolve_type(c, entry->v.entry.value)
+                             : declared_signature(c, entry->v.entry.value);
+        if (seed == NULL) {
+            continue;
+        }
+        set_member_provisional(c, definition, name, length, seed,
+                               entry->v.entry.declared);
+        set_member_provisional(c, instance, name, length, seed,
+                               entry->v.entry.declared);
+    }
+
+    for (const LhatNode *entry = node->v.list.items; entry != NULL;
+         entry = entry->next) {
+        const char *name = NULL;
+        size_t length = 0;
+        if (entry->v.entry.key == NULL ||
+            !chk_node_name(c, entry->v.entry.key, &name, &length)) {
+            continue;
+        }
+        // 14.12 asks what was already under this name, and a seed from the
+        // pass above was not -- it is this very entry, read ahead.
         const LhatTypeMember *hidden = chk_find_member(definition, name, length);
+        if (hidden != NULL && hidden->provisional) {
+            hidden = NULL;
+        }
 
         // 14.15: a declaration carries a type and no value, and says the
         // composition has to provide the member. It is not a definition of
         // it, so 14.12 has nothing to check here.
         if (entry->v.entry.declared) {
-            LhatType *declared = chk_resolve_type(c, entry->v.entry.value);
+            const LhatTypeMember *seeded =
+                chk_find_member(definition, name, length);
+            LhatType *declared =
+                seeded != NULL && seeded->provisional
+                    ? seeded->type
+                    : chk_resolve_type(c, entry->v.entry.value);
             if (!chk_is_operator_name(name, length)) {
                 chk_refuse_self_last(c, entry, declared);
             }
             if (hidden != NULL && !hidden->abstract) {
                 // Already provided, so the declaration asks for nothing.
                 chk_report(c, entry, LHAT_CHECK_ERR_ALREADY_PROVIDED);
+            }
+            // 14.15改2: and the composition is where it is provided. Writing
+            // the value here as well leaves the declaration saying nothing --
+            // 14.7改 already lets the members reach each other whatever the
+            // order, so there is no forward reference left to declare for.
+            if (defined_in_def(c, node, name, length)) {
+                chk_report(c, entry, LHAT_CHECK_ERR_ABSTRACT_PROVIDED_HERE);
             }
             set_member_as(c, definition, name, length, declared, true);
             set_member_as(c, instance, name, length, declared, true);

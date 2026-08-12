@@ -2225,6 +2225,11 @@ const char *lhat_check_error_message(LhatCheckErrorCode code)
         case LHAT_CHECK_ERR_ALREADY_PROVIDED:
             return "something in the chain already provides this member, so "
                    "there is nothing for an abstract^ to ask for";
+        case LHAT_CHECK_ERR_ABSTRACT_PROVIDED_HERE:
+            return "an abstract^ asks a composition for what this def^ does "
+                   "not have, and this one is written here as well; the "
+                   "members reach each other whatever the order, so drop the "
+                   "declaration";
         case LHAT_CHECK_ERR_STILL_ABSTRACT:
             return "this definition is still waiting on a composition -- a "
                    "member is declared with nothing providing it, or an "

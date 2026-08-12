@@ -69,6 +69,8 @@ typedef enum {
                                         // member nothing has provided yet
     LHAT_CHECK_ERR_ALREADY_PROVIDED,    // 14.15: abstract^ over a member that
                                         // something in the chain provides
+    LHAT_CHECK_ERR_ABSTRACT_PROVIDED_HERE, // 14.15改2: abstract^ over one this
+                                        // same def^ writes a value for
     LHAT_CHECK_ERR_NOTHING_TO_OVERRIDE, // a marker with nothing under it
     LHAT_CHECK_ERR_NOT_SUBSTITUTABLE,   // 14.12: override^ has to fit
     LHAT_CHECK_ERR_OVERLOAD_OVERLAPS,   // 14.12: signatures must stay apart

@@ -32,6 +32,69 @@ static void test_definitions(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
+    // 14.7改: the members reach each other whatever the order they are
+    // written in. A ring of them is what makes this more than a convenience:
+    // no ordering unties expr -> term -> factor -> expr.
+    LHAT_TEST("a member reaches one written after it");
+    check_text(&u,
+               "var^ A = def^{\n"
+               "    self^{ n := 0 },\n"
+               "    first := p^self^ -> number^ { return^ self^.second() },\n"
+               "    second := p^self^ -> number^ { return^ 1 },\n"
+               "}\n"
+               "var^ n : number^ = A.new().first()\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("and a ring of them needs no declaration");
+    check_text(&u,
+               "var^ R = def^{\n"
+               "    self^{ n := 0 },\n"
+               "    expr := p^self^ -> number^ { return^ self^.term() },\n"
+               "    term := p^self^ -> number^ { return^ self^.factor() },\n"
+               "    factor := p^self^ -> number^ { return^ self^.expr() },\n"
+               "}\n"
+               "var^ n : number^ = R.new().expr()\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // 14.7改 with 03 の 3.4: what the first pass can put down is what can be
+    // read without walking a body. A member whose type only its value knows
+    // is not among them, so reaching one before it is written still finds
+    // nothing -- the same line 3.4 draws for a subroutine that calls itself.
+    LHAT_TEST("but a value member is not reachable before it is written");
+    check_text(&u,
+               "var^ A = def^{\n"
+               "    self^{ n := 0 },\n"
+               "    first := p^self^ -> number^ { return^ class^.limit },\n"
+               "    limit := 10,\n"
+               "}\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_NO_MEMBER);
+    unit_dispose(&u);
+
+    // 14.12's question is what was already under the name, and a member read
+    // ahead by the first pass was not -- writing it once is not writing it
+    // twice.
+    LHAT_TEST("reading ahead does not make every member a second one");
+    check_text(&u,
+               "var^ A = def^{\n"
+               "    self^{ n := 0 },\n"
+               "    m := f^ -> number^ { return^ 1 },\n"
+               "    k := f^ -> number^ { return^ 2 },\n"
+               "}\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("and one written twice still wants its marker");
+    check_text(&u,
+               "var^ A = def^{\n"
+               "    self^{ n := 0 },\n"
+               "    m := f^ -> number^ { return^ 1 },\n"
+               "    m := f^ -> number^ { return^ 2 },\n"
+               "}\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MEMBER_EXISTS);
+    unit_dispose(&u);
+
     // 14.11: a definition without one still offers a new taking nothing.
     LHAT_TEST("new exists without being written");
     check_text(&u, "var^ C = def^{ self^{ v := 1 } }\nvar^ c = C.new()\n");
@@ -783,6 +846,28 @@ static void test_composition(void)
                "var^ Counting = def^{ self^{}, abstract^ step : f^ -> number^; }\n"
                "var^ o = Counting.new()\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_STILL_ABSTRACT);
+    unit_dispose(&u);
+
+    // 14.15改2: what an abstract^ asks for is what this def^ does not have.
+    // Writing the value here as well leaves it saying nothing -- and 14.7改
+    // took away the other reason anyone wrote one, which was to put the name
+    // in front of a body that reaches it.
+    LHAT_TEST("an abstract^ this def^ also provides is refused");
+    check_text(&u,
+               "var^ A = def^{ self^{},\n"
+               "  abstract^ m : f^ -> number^;,\n"
+               "  m := f^ -> number^ { return^ 1 },\n"
+               "}\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_ABSTRACT_PROVIDED_HERE);
+    unit_dispose(&u);
+
+    LHAT_TEST("and the other order is the same mistake");
+    check_text(&u,
+               "var^ A = def^{ self^{},\n"
+               "  m := f^ -> number^ { return^ 1 },\n"
+               "  abstract^ m : f^ -> number^;,\n"
+               "}\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_ABSTRACT_PROVIDED_HERE);
     unit_dispose(&u);
 
     // A declaration is not a definition of the member, so filling it in is
