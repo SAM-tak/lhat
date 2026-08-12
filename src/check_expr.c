@@ -673,9 +673,66 @@ bool chk_signature_accepts(const LhatType *func, LhatType *const *args,
     return true;
 }
 
+// 03 の 3.4改: a subroutine written where it is called. The call is part of
+// the same expression, so reading it leaves nothing -- 3.4's "the call sites
+// are not read" is about the ones elsewhere, which are what would make a
+// signature depend on who happens to use it (05 の 4.3 rests on that).
+//
+// Refused for the two shapes whose arguments do not line up with the
+// parameters one for one: a receiver (14.4) is written first and belongs to
+// no position, and a spread (13.7) stands for any number of them.
+static bool immediately_called(Checker *c, const LhatNode *node)
+{
+    const LhatNode *literal = node->v.access.target;
+    if (literal == NULL || literal->kind != LHAT_NODE_FUNC) {
+        return false;
+    }
+    for (const LhatNode *param = literal->v.func.params; param != NULL;
+         param = param->next) {
+        if (chk_self_marker_at(c, literal->v.func.params, param) != 0) {
+            return false;
+        }
+    }
+    for (const LhatNode *arg = node->v.access.argument; arg != NULL;
+         arg = arg->next) {
+        if (arg->kind == LHAT_NODE_SPREAD) {
+            return false;
+        }
+    }
+    return true;
+}
+
 LhatType *chk_infer_call(Checker *c, const LhatNode *node)
 {
+    // 3.4改: the arguments first where the callee is a literal, so what they
+    // are is known before the body that takes them is read. Inferred once --
+    // the loop below reads them back rather than asking again, since asking
+    // twice would report twice (the same reason 14.12's arm search keeps
+    // them).
+    LhatType *given_types[LHAT_CHECK_MAX_TRACKED_ARGS];
+    size_t given_count = 0;
+    bool seeded = immediately_called(c, node);
+    if (seeded) {
+        for (const LhatNode *arg = node->v.access.argument; arg != NULL;
+             arg = arg->next) {
+            if (given_count >= LHAT_CHECK_MAX_TRACKED_ARGS) {
+                seeded = false;  // more than worth keeping; read them as ever
+                break;
+            }
+            given_types[given_count++] = chk_infer(c, arg);
+        }
+    }
+    if (seeded) {
+        LhatType *expected = lhat_type_func(
+            c->result->types, node->v.access.target->v.func.is_function);
+        for (size_t i = 0; i < given_count; i++) {
+            lhat_type_add_param(c->result->types, expected, given_types[i]);
+        }
+        c->expected_func = expected;
+    }
+
     LhatType *callee = chk_infer(c, node->v.access.target);
+    c->expected_func = NULL;
     // 04 の 11.4: '?(' reaches through a callee that may be absent --
     // 'f?(x)' where f is (f^…)|nil^. Relaxed steps past a nil^ arm anywhere;
     // this is the written form that does it under strict too.
@@ -691,7 +748,7 @@ LhatType *chk_infer_call(Checker *c, const LhatNode *node)
 
     if (callee == NULL || callee->kind == LHAT_TYPE_UNKNOWN ||
         callee->kind == LHAT_TYPE_PENDING) {
-        for (const LhatNode *arg = node->v.access.argument; arg != NULL;
+        for (const LhatNode *arg = node->v.access.argument; arg != NULL && !seeded;
              arg = arg->next) {
             chk_infer(c, arg);
         }
@@ -844,6 +901,7 @@ LhatType *chk_infer_call(Checker *c, const LhatNode *node)
         chk_report(c, node, LHAT_CHECK_ERR_ARITY);
     }
 
+    size_t taken = 0;
     for (const LhatNode *arg = node->v.access.argument; arg != NULL;
          arg = arg->next) {
         // 13.7: checked against the element type directly, rather than
@@ -871,7 +929,10 @@ LhatType *chk_infer_call(Checker *c, const LhatNode *node)
             }
             break;
         }
-        LhatType *actual = chk_infer(c, arg);
+        // 3.4改: read back where the seeding above already inferred it.
+        LhatType *actual = seeded && taken < given_count ? given_types[taken]
+                                                        : chk_infer(c, arg);
+        taken++;
         if (skip > 0) {
             skip--;  // the receiver, whose type the call site already knows
             continue;

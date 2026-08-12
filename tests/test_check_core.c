@@ -941,6 +941,22 @@ static void test_errors(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_PUBLIC_NEEDS_TYPE);
     unit_dispose(&u);
 
+    // 03 の 3.4改: a literal called where it is written is expected by that
+    // call. Reading it leaves nothing -- the call is part of the same
+    // expression, which is what keeps 3.4's line about callers elsewhere.
+    LHAT_TEST("a literal called where it is written takes the argument's type");
+    check_text(&u,
+               "var^ n : number^ = p^ x { return^ x.length }(\"abc\")\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // An argument is inferred once. Reading it a second time to seed the
+    // parameter would report whatever is wrong with it twice.
+    LHAT_TEST("an argument is reported once");
+    check_text(&u, "var^ a = p^ x { return^ x }(nowhere)\n");
+    LHAT_CHECK_EQ_INT(u.checked.diagnostic_count, 1);
+    unit_dispose(&u);
+
     // The expectation is the one literal's. A body written inside it is
     // expected by nothing, so its own parameters wait on their own demands.
     LHAT_TEST("an expectation does not reach a body written inside");

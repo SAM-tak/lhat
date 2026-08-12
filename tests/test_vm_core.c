@@ -337,6 +337,18 @@ static void test_names(void)
     LHAT_CHECK_EQ_INT(r.compiled, LHAT_COMPILE_UNDEFINED);
     run_dispose(&r);
 
+    // 03 の 3.4改: a literal called where it is written takes its parameter
+    // types from that call, and a name called anywhere else takes nothing --
+    // which is 3.4's line, kept. Asked of the body itself, since what the
+    // parameter ended up as is what the body was checked with.
+    LHAT_TEST("a call seeds a literal's parameter, and a name's not at all");
+    run_checked_text(&r,
+                     "var^ g = p^ x { return^ typeof^(x).signature }\n"
+                     "return^ p^ y { return^ typeof^(y).signature }(5)\n"
+                     "       .. \"|\" .. g(5)\n");
+    CHECK_STRING(&r, "number^|UNKNOWN");
+    run_dispose(&r);
+
     // 03 の 4.2 puts the refusals in the checker, so a compile that stops is
     // a hole in it -- and what closes a hole is knowing where to look. The
     // status alone said only that something somewhere would not compile.
