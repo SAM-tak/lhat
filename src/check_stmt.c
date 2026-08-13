@@ -554,6 +554,7 @@ static void check_import(Checker *c, const LhatNode *node, bool binds)
         Binding *only = chk_scope_add(c->scope, name, length, module, node->offset);
         if (only != NULL) {
             only->reached = true;
+            only->import_root = true;  // 05 の 8.7, read rather than captured
         }
         return;
     }
@@ -576,6 +577,7 @@ static void check_import(Checker *c, const LhatNode *node, bool binds)
             return;
         }
         root->reached = true;
+        root->import_root = true;  // 05 の 8.7, read rather than captured
     } else if (root->type == NULL || root->type->kind == LHAT_TYPE_UNKNOWN ||
                root->type->kind == LHAT_TYPE_PENDING) {
         root->type = lhat_type_table(c->result->types);
@@ -661,6 +663,10 @@ static void check_require_stmt(Checker *c, const LhatNode *node)
                root->type->kind == LHAT_TYPE_PENDING) {
         root->type = lhat_type_table(c->result->types);
     }
+    // 05 の 8.7: what this puts under the root was made by running a unit and
+    // is in no registry to read back, so the root is captured like any other
+    // name from here on -- even if an import^ also landed on it.
+    root->import_root = false;
 
     LhatType *owner = holds_members(c, node, root->type);
     while (owner != NULL && segment[length] == '.') {
@@ -773,18 +779,25 @@ bool chk_receiver_is_own_coroutine(Checker *c, const LhatNode *receiver)
     return root != NULL && root->fresh && chk_scope_within_body(c, found_in);
 }
 
-// Whether `found_in` is the body being checked or something inside it.
-bool chk_scope_within_body(Checker *c, const Scope *found_in)
+// Whether `found_in` is at or inside `boundary` -- the outermost scope of
+// some body -- counting from where the walk stands now.
+bool chk_scope_within(Checker *c, const Scope *found_in, const Scope *boundary)
 {
     for (Scope *s = c->scope; s != NULL; s = s->parent) {
         if (s == found_in) {
             return true;
         }
-        if (s == c->body_scope) {
-            return false;  // past the body's own outermost scope
+        if (s == boundary) {
+            return false;  // past that body's own outermost scope
         }
     }
     return false;
+}
+
+// Whether `found_in` is the body being checked or something inside it.
+bool chk_scope_within_body(Checker *c, const Scope *found_in)
+{
+    return chk_scope_within(c, found_in, c->body_scope);
 }
 
 // 15.1: an f^ assigns to local variables only. 10.6 reads that twice over --

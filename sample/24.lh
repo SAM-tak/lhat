@@ -49,7 +49,7 @@ let^Reader = def^{
 
     # 空白を飛ばして今の1文字。尽きていれば ""
     peek = p^self^{
-        repeat^while^ self^.at ≦ self^.text.length {
+        repeat^while^self^.at ≦ self^.text.length {
             if^self^.text.at(self^.at) = " " {
                 self^.at += 1
             else^:

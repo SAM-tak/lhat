@@ -4,9 +4,9 @@
 // Two things are pinned here. The first is 13.7 reaching a host registration:
 // a signature ending in '...' makes the arity a floor rather than an exact
 // count, and the tail arrives at the LhatHostFn uncollected. The second is
-// what std.thread does with it -- that fn is a 'p^...' closure and nothing
-// else, and that the four kinds a value crosses machines as make the round
-// trip unchanged while everything else is refused by name.
+// what std.thread does with it -- that fn is a 15.13 'closed^p^...' closure
+// and nothing else, and that the four kinds a value crosses machines as make
+// the round trip unchanged while everything else is refused by name.
 //
 // The threads themselves are real OS threads (port/thread.h), so every one
 // started here is joined or disposed before the case ends: an unjoined one
@@ -53,9 +53,9 @@ static bool checks(const char *text)
 
 static void test_spawn_shape(void)
 {
-    LHAT_TEST("a 'p^...' closure with no upvalues is what spawn takes");
+    LHAT_TEST("a 'closed^p^...' closure is what spawn takes");
     {
-        LhatTestRan ran = run_source(WITH_SPAWN("std.thread.spawn(p^ ... "
+        LhatTestRan ran = run_source(WITH_SPAWN("std.thread.spawn(closed^p^ ... "
                                                 "{ return^ 42 })"));
         LHAT_CHECK_RAN_INTEGER(ran, 42);
         lhat_test_ran_dispose(&ran);
@@ -68,14 +68,14 @@ static void test_spawn_shape(void)
     LHAT_TEST("a closure with a parameter of its own is not a 'p^...'");
     {
         LHAT_CHECK(!checks("import^ std.thread\n"
-                           "let^ h = std.thread.spawn(p^ n:number^ { })\n"),
+                           "let^ h = std.thread.spawn(closed^p^ n:number^ { })\n"),
                    "the checker refuses it before anything runs");
     }
 
     LHAT_TEST("a closure taking nothing at all is not a 'p^...' either");
     {
         LHAT_CHECK(!checks("import^ std.thread\n"
-                           "let^ h = std.thread.spawn(p^ { })\n"),
+                           "let^ h = std.thread.spawn(closed^p^ { })\n"),
                    "13.7's floor is one slot, and it has none");
     }
 
@@ -85,30 +85,58 @@ static void test_spawn_shape(void)
     LHAT_TEST("a closure answering something that cannot cross is refused");
     {
         LHAT_CHECK(!checks("import^ std.thread\n"
-                           "let^ h = std.thread.spawn(p^ ... "
+                           "let^ h = std.thread.spawn(closed^p^ ... "
                            "{ return^ {1, 2} })\n"),
                    "a table is not one of the four that cross");
     }
 }
 
-// The checker cannot see an upvalue in a type -- a closure's type says what it
-// takes, not what it captured -- so this is spawn's own refusal at run time
-// rather than a type error, and it needs a unit of its own to define the name
-// the closure reaches for.
+// 15.13: what a body captures is decided where the body is written, so both
+// halves of this are type errors. spawn asks for a closed^ closure, and the
+// mark is what the checker holds the body to -- the run-time refusal
+// (ThreadError.NotSpawnable) is left as the backstop for a run that was
+// never checked.
 static void test_spawn_upvalue(void)
 {
-    LHAT_TEST("a closure that closes over a variable is refused at run time");
+    LHAT_TEST("a closed^ closure that closes over a variable is refused");
     {
-        LhatTestRan ran = run_source(
-            "import^ std.thread\n"
-            "let^ n = 7\n"
-            "let^ h = std.thread.spawn(p^ ... { return^ n })\n"
-            "if^ h isa^ std.thread.ThreadError.NotSpawnable {\n"
-            "    return^ \"refused\"\n"
-            "}\n"
-            "return^ \"taken\"\n");
-        LHAT_CHECK_RAN_TEXT(ran, "refused");
-        lhat_test_ran_dispose(&ran);
+        LHAT_CHECK(!checks("import^ std.thread\n"
+                           "let^ n = 7\n"
+                           "let^ h = std.thread.spawn(closed^p^ ... "
+                           "{ return^ n })\n"),
+                   "the capture is reported where the body is written");
+    }
+
+    LHAT_TEST("and an unmarked closure does not fit spawn at all");
+    {
+        LHAT_CHECK(!checks("import^ std.thread\n"
+                           "let^ h = std.thread.spawn(p^ ... { return^ 1 })\n"),
+                   "p^...; does not conform to closed^p^...;");
+    }
+
+    // The mark reaches through a body written inside the marked one: what
+    // that names from further out would be captured just the same.
+    LHAT_TEST("and a body nested in a closed^ one is inside it too");
+    {
+        LHAT_CHECK(!checks("import^ std.thread\n"
+                           "let^ n = 7\n"
+                           "let^ h = std.thread.spawn(closed^p^ ... {\n"
+                           "    let^ inner = f^ -> number^ { return^ n }\n"
+                           "    return^ inner()\n"
+                           "})\n"),
+                   "the boundary is the closed^ body, not the innermost one");
+    }
+
+    // What it may still name: an import^ root is read off L^.modules wherever
+    // it is written (05 の 8.7), so naming a module captures nothing.
+    LHAT_TEST("but the module it was written beside is not a capture");
+    {
+        LHAT_CHECK(checks("import^ std.thread\n"
+                          "let^ h = std.thread.spawn(closed^p^ ... {\n"
+                          "    std.thread.sleep(0)\n"
+                          "    return^ 1\n"
+                          "})\n"),
+                   "std.thread is reached without capturing");
     }
 }
 
@@ -120,7 +148,7 @@ static void test_arguments(void)
     LHAT_TEST("what is written past fn arrives as fn's '...'");
     {
         LhatTestRan ran = run_source(
-            WITH_SPAWN("std.thread.spawn(p^ ... {\n"
+            WITH_SPAWN("std.thread.spawn(closed^p^ ... {\n"
                        "    var^ total = 0\n"
                        "    for^ i, x in^ ... { total := total + x }\n"
                        "    return^ total\n"
@@ -132,7 +160,7 @@ static void test_arguments(void)
     LHAT_TEST("no arguments at all leaves '...' empty");
     {
         LhatTestRan ran = run_source(
-            WITH_SPAWN("std.thread.spawn(p^ ... {\n"
+            WITH_SPAWN("std.thread.spawn(closed^p^ ... {\n"
                        "    var^ total = 0\n"
                        "    for^ i, x in^ ... { total := total + 1 }\n"
                        "    return^ total\n"
@@ -152,7 +180,7 @@ static void test_arguments(void)
     LHAT_TEST("the bytes of a string cross to the thread and come back");
     {
         LhatTestRan ran = run_source(
-            WITH_SPAWN("std.thread.spawn(p^ ... {\n"
+            WITH_SPAWN("std.thread.spawn(closed^p^ ... {\n"
                        "    var^ joined = \"\"\n"
                        "    for^ i, x in^ ... {\n"
                        "        if^ x isa^ string^ { joined := joined .. x }\n"
@@ -170,7 +198,7 @@ static void test_arguments(void)
     LHAT_TEST("a nil^ argument collapses the same way an ordinary call's does");
     {
         LhatTestRan spawned = run_source(
-            WITH_SPAWN("std.thread.spawn(p^ ... {\n"
+            WITH_SPAWN("std.thread.spawn(closed^p^ ... {\n"
                        "    var^ n = 0\n"
                        "    for^ i, x in^ ... { n := n + 1 }\n"
                        "    return^ n\n"
@@ -196,7 +224,7 @@ static void test_arguments(void)
         LhatTestRan ran = run_source(
             "import^ std.thread\n"
             "let^ forward = p^ ... {\n"
-            "    return^ std.thread.spawn(p^ ... {\n"
+            "    return^ std.thread.spawn(closed^p^ ... {\n"
             "        var^ total = 0\n"
             "        for^ i, x in^ ... { total := total + x }\n"
             "        return^ total\n"
@@ -220,7 +248,7 @@ static void test_arguments(void)
     {
         LhatTestRan ran = run_source(
             "import^ std.thread\n"
-            "let^ h = std.thread.spawn(p^ ... { return^ 1 }, {1, 2})\n"
+            "let^ h = std.thread.spawn(closed^p^ ... { return^ 1 }, {1, 2})\n"
             "if^ h isa^ std.thread.ThreadError.BadArgument {\n"
             "    return^ \"refused\"\n"
             "}\n"
@@ -245,7 +273,7 @@ static void test_dispose(void)
             run_source("import^ std.thread\n"
                        "var^ started = 0\n"
                        "for^ i from^ 1 to^ 20 {\n"
-                       "    let^ h = std.thread.spawn(p^ ... { return^ 1 })\n"
+                       "    let^ h = std.thread.spawn(closed^p^ ... { return^ 1 })\n"
                        "    if^ h isa^ std.thread.ThreadHandle {\n"
                        "        started := started + 1\n"
                        "        h.dispose()\n"
@@ -260,7 +288,7 @@ static void test_dispose(void)
     {
         LhatTestRan ran =
             run_source("import^ std.thread\n"
-                       "let^ h = std.thread.spawn(p^ ... { return^ 1 })\n"
+                       "let^ h = std.thread.spawn(closed^p^ ... { return^ 1 })\n"
                        "if^ h isa^ std.thread.ThreadHandle {\n"
                        "    let^ first = h.join()\n"
                        "    let^ again = h.join()\n"
@@ -325,7 +353,7 @@ static void test_modules_reach_the_thread(void)
 {
     LHAT_TEST("a spawned body may name the module it was written beside");
     {
-        LhatTestRan ran = run_source(WITH_SPAWN("std.thread.spawn(p^ ... {\n"
+        LhatTestRan ran = run_source(WITH_SPAWN("std.thread.spawn(closed^p^ ... {\n"
                                                 "    std.thread.sleep(0.01)\n"
                                                 "    return^ 42\n"
                                                 "})"));
@@ -344,7 +372,7 @@ static void test_modules_reach_the_thread(void)
             with_io, 2, "thread_print.txt",
             "import^ std.thread\n"
             "import^ std.io\n"
-            "let^ h = std.thread.spawn(p^ ... {\n"
+            "let^ h = std.thread.spawn(closed^p^ ... {\n"
             "    std.io.print(\"in the thread\")\n"
             "    return^ 1\n"
             "})\n"

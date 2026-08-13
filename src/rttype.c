@@ -141,6 +141,7 @@ static LhatRuntimeType *rt_from_checked(LhatHeap *heap,
             rt->is_function = type->v.func.is_function;
             rt->takes_self = type->v.func.takes_self;
             rt->self_last = type->v.func.self_last;
+            rt->closed = type->v.func.closed;  // 15.13
             for (LhatTypeList *p = type->v.func.params; p != NULL; p = p->next) {
                 if (!lhat_type_rt_add_part(rt, rt_from_checked(heap, p->type, seen))) {
                     return NULL;

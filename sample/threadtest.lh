@@ -1,6 +1,13 @@
 import^std.thread
 
-let^h = std.thread.spawn(p^ ... { return^ 1 })
+let^a = "aaaaaa"
+
+# a は外の名前なので closed^ の本体では書けない。引数として渡す
+let^h = std.thread.spawn(closed^p^ ... {
+    std.thread.sleep(1)
+    for^ i, x in^ ... { print(x) }
+    return^ 1
+}, a)
 
 if^h isa^std.thread.ThreadHandle {
     let^first = h.join()

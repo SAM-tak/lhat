@@ -471,6 +471,19 @@ LhatType *chk_infer_name(Checker *c, const LhatNode *node)
             c->read_provisional = true;
         }
     }
+    // 15.13: a closed^ body promised to name nothing standing outside it, and
+    // this is where that is decided -- the same boundary test, asked of every
+    // read rather than of a host value's. An import^ root is not a capture
+    // (05 の 8.7 reads it off L^.modules wherever it is written), so it is
+    // the one name from outside that may be written here.
+    if (c->closed_scope != NULL && !b->import_root) {
+        Scope *found = NULL;
+        chk_scope_find(from, name, length, &found);
+        if (!chk_scope_within(c, found, c->closed_scope)) {
+            chk_report_named(c, node, LHAT_CHECK_ERR_CLOSED_CAPTURES, name,
+                             length);
+        }
+    }
     // 05 の 8.9: a name bound outside this body reaches the value through a
     // capture, and a capture outlives the frame the slots belong to. The
     // same boundary test 15.1 uses for writes, asked of a read here because
@@ -1727,6 +1740,9 @@ LhatType *chk_infer_func(Checker *c, const LhatNode *node)
     LhatType *func = lhat_type_func(c->result->types, node->v.func.is_function);
     // 15.2: whether the body suspends is read off the body, not written.
     func->v.func.yields = node->v.func.yields;
+    // 15.13: and whether it promises to capture nothing is written, not read
+    // -- what a caller may rely on is what the writer said.
+    func->v.func.closed = node->v.func.closed;
 
     // 03 の 3.4: where this body's own parameters begin. A body nested in
     // another leaves the enclosing one's in place behind this mark -- a demand
@@ -1855,6 +1871,7 @@ LhatType *chk_infer_func(Checker *c, const LhatNode *node)
     LhatType *outer_yield_bound_type = c->yield_bound_type;
     bool outer_in_function = c->in_function;
     Scope *outer_body_scope = c->body_scope;
+    Scope *outer_closed_scope = c->closed_scope;
 
     c->scope = &body;
     c->declared_result = declared;
@@ -1869,6 +1886,12 @@ LhatType *chk_infer_func(Checker *c, const LhatNode *node)
     c->this_link = &this_link;
     c->in_function = node->v.func.is_function;
     c->body_scope = &body;
+    // 15.13: the mark opens a boundary that reaches through every body
+    // written inside this one -- a nested literal is inside it too, and what
+    // it names from further out would be captured just the same.
+    if (node->v.func.closed && c->closed_scope == NULL) {
+        c->closed_scope = &body;
+    }
     c->deferred++;
     // 15.2: a nested p^{...} starts collecting its own Y/R from scratch, so
     // its yield^ sites never unify with the ones out here.
@@ -1996,6 +2019,7 @@ LhatType *chk_infer_func(Checker *c, const LhatNode *node)
     c->yield_bound_type = outer_yield_bound_type;
     c->in_function = outer_in_function;
     c->body_scope = outer_body_scope;
+    c->closed_scope = outer_closed_scope;
 
     chk_scope_dispose(&body);
     // The compiler reads this back instead of re-deriving the signature from

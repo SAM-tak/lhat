@@ -59,6 +59,12 @@ typedef struct Binding {
     // chose -- a with^, or the focus of a counted or walking for^. Writing
     // var^ instead is not open to them, so the diagnostic must not offer it.
     bool bound_by_form;
+    // 05 の 8.7: the root an import^ bound. A name under it is read off
+    // L^.modules wherever it is written, so naming one captures nothing --
+    // which is what 15.13 has to know to let a closed^ body write it. A
+    // require^ landing on the same root clears this, the same way
+    // compile.c's Local does.
+    bool import_root;
     struct Binding *next;
 } Binding;
 
@@ -252,6 +258,13 @@ typedef struct {
     // written inside another measures against its own.
     Scope *body_scope;
 
+    // 15.13: the same boundary for the innermost closed^ body, which a name
+    // found past may not be. NULL where no such body stands around this one
+    // -- and it is not restored the way `body_scope` is at every literal:
+    // a body written inside a closed^ one is inside it too, so the mark
+    // reaches through.
+    Scope *closed_scope;
+
     // 02 の 14.12改: what an override^ is writing over, which is what super^
     // names. NULL anywhere else, so 14.12's marker is what makes it a name.
     LhatType *super_type;
@@ -434,6 +447,7 @@ bool chk_value_is_fresh(const Checker *c, const LhatNode *value,
                         const LhatType *type);
 bool chk_receiver_is_own_coroutine(Checker *c, const LhatNode *receiver);
 bool chk_scope_within_body(Checker *c, const Scope *found_in);
+bool chk_scope_within(Checker *c, const Scope *found_in, const Scope *boundary);
 void chk_check_write_target(Checker *c, const LhatNode *target);
 void chk_check_opaque_write(Checker *c, const LhatNode *target);
 char *chk_read_module_name(const Checker *c, const LhatNode *statements);

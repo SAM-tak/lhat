@@ -450,6 +450,7 @@ int chk_self_marker_at(const Checker *c, const LhatNode *params,
 LhatType *chk_resolve_func_type(Checker *c, const LhatNode *node)
 {
     LhatType *func = lhat_type_func(c->result->types, node->v.func.is_function);
+    func->v.func.closed = node->v.func.closed;  // 15.13
     for (const LhatNode *param = node->v.func.params; param != NULL;
          param = param->next) {
         int marker = chk_self_marker_at(c, node->v.func.params, param);
@@ -2411,6 +2412,11 @@ const char *lhat_check_error_message(LhatCheckErrorCode code)
             return "Self^ names the t^ or def^ written around it, and there is "
                    "no such literal here -- or a second hat counted past the "
                    "outermost one";
+        case LHAT_CHECK_ERR_CLOSED_CAPTURES:
+            return "a closed^ body names nothing standing outside it: pass "
+                   "this as an argument instead. An import^ed module, a name "
+                   "the host bound, and L^ are reached without capturing and "
+                   "may be written here";
         case LHAT_CHECK_ERR_HOSTVALUE_ESCAPES:
             return "a host value lives on the stack and nowhere else; box it "
                    "into the container type its library provides to keep it";

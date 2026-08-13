@@ -417,6 +417,12 @@ static bool conforms_func(const LhatType *value, const LhatType *target,
     if (value->v.func.self_last != target->v.func.self_last) {
         return false;
     }
+    // 15.13: a promise, so it goes only one way. A body that names nothing
+    // outside itself stands wherever an ordinary one is written; an ordinary
+    // one where a closed^ is asked for would be a promise nobody made.
+    if (target->v.func.closed && !value->v.func.closed) {
+        return false;
+    }
 
     const LhatTypeList *a = value->v.func.params;
     const LhatTypeList *b = target->v.func.params;
@@ -1288,6 +1294,10 @@ static void write_type(TypeSink *sink, const LhatType *type, int depth)
             return;
 
         case LHAT_TYPE_FUNC: {
+            // 15.13: the mark stands before the kind, the way it is written.
+            if (type->v.func.closed) {
+                put_text(sink, "closed^");
+            }
             // 13.1's form. 13.2 writes '->' only when something is returned.
             put_text(sink, type->v.func.is_function ? "f^" : "p^");
             // 14.4: in a type the receiver is a parameter, written as the

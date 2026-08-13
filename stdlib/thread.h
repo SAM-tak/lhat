@@ -9,9 +9,11 @@
 //
 // spawn is written
 //
-//     let^ h = std.thread.spawn(p^ ... { ... }, 1, "two", true)
+//     let^ h = std.thread.spawn(closed^p^ ... { ... }, 1, "two", true)
 //
 // -- fn takes '...' and nothing else, captures nothing, and yields nothing;
+// 02 の 15.13's closed^ is what says the second of those, and the checker
+// holds the body to it where the body is written;
 // everything past it is handed to fn on the new machine. Only nil^, bool^,
 // number^ and string^ cross (a table or a closure points into the heap it was
 // made on), which is exactly why fn's parameter list is '...' rather than one

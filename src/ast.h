@@ -283,6 +283,10 @@ struct LhatNode {
             LhatNode *body;         // NULL for a type
             bool is_function;
             bool yields;            // 15.2: inferred from the body
+            // 15.13: written closed^, so the body names nothing standing
+            // outside it. Part of the type, and written rather than read off
+            // the body -- what a caller may rely on is what was promised.
+            bool closed;
         } func;
 
         // PARAM. `variadic` marks the '...' form (13.7).

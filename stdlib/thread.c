@@ -518,9 +518,15 @@ bool lhatstdlib_thread_register(LhatProgram *program)
         return false;
     }
 
-    // 13.7: fn's own '...' takes any^ underneath, so a plain 'p^ ... { }' is
+    // 13.7: fn's own '...' takes any^ underneath, so a 'closed^p^ ... { }' is
     // the closure this signature asks for (conformance on a variadic element
     // is contravariant, the same as an ordinary parameter's).
+    //
+    // 15.13: the mark is what the checker holds the body to. A capture is
+    // refused where the closure is written rather than where it is handed
+    // over, which is the whole reason for asking in the type -- an unmarked
+    // one used to reach thread_spawn and be turned away with nothing to read
+    // the refusal from unless the caller narrowed the result.
     //
     // spawn's own '...' is any^ for the same reason read the other way round.
     // Naming the four carryable kinds here would read better, and would also
@@ -535,7 +541,7 @@ bool lhatstdlib_thread_register(LhatProgram *program)
     // the checker settles it outright.
     return lhat_register_func(
                program, "std.thread", "spawn",
-               "f^p^... -> number^|bool^|string^|nil^;, ...:any^ -> "
+               "f^closed^p^... -> number^|bool^|string^|nil^;, ...:any^ -> "
                "std.thread.ThreadHandle|std.thread.ThreadError.NotSpawnable"
                "|std.thread.ThreadError.BadArgument"
                "|std.thread.ThreadError.SpawnFailed|std.error.OutOfMemory;",

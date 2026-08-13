@@ -559,6 +559,20 @@ static LhatNode *parse_type_primary(Parser *p)
     if (check_hat(p, "p")) {
         return parse_type_function(p, false);
     }
+    // 15.13: the same mark a body is written with, in the type that asks for
+    // one. What follows has to be a signature.
+    if (check_hat(p, "closed")) {
+        advance(p);
+        if (!check_hat(p, "f") && !check_hat(p, "p")) {
+            report(p, &p->current, LHAT_PARSE_ERR_CLOSED_NEEDS_BODY);
+            return NULL;
+        }
+        LhatNode *marked = parse_type_function(p, check_hat(p, "f"));
+        if (marked != NULL) {
+            marked->v.func.closed = true;
+        }
+        return marked;
+    }
     if (check_hat(p, "c")) {
         return parse_type_coroutine(p);
     }
@@ -1472,6 +1486,20 @@ static LhatNode *parse_primary(Parser *p)
             }
             if (check_hat(p, "p")) {
                 return parse_function(p, false);
+            }
+            // 15.13: the mark stands before the kind, and marks a body --
+            // so what follows has to be one.
+            if (check_hat(p, "closed")) {
+                advance(p);
+                if (!check_hat(p, "f") && !check_hat(p, "p")) {
+                    report(p, &p->current, LHAT_PARSE_ERR_CLOSED_NEEDS_BODY);
+                    return NULL;
+                }
+                LhatNode *marked = parse_function(p, check_hat(p, "f"));
+                if (marked != NULL) {
+                    marked->v.func.closed = true;
+                }
+                return marked;
             }
             if (check_hat(p, "if")) {
                 advance(p);
@@ -4206,6 +4234,8 @@ const char *lhat_parse_error_message(LhatParseErrorCode code)
             return "a def^ declares its fields once; write one self^{ ... }";
         case LHAT_PARSE_ERR_MODIFIER_ON_TEMPLATE:
             return "override^ and overload^ mark a member, not the fields";
+        case LHAT_PARSE_ERR_CLOSED_NEEDS_BODY:
+            return "closed^ marks a body: write closed^f^ ... or closed^p^ ...";
         case LHAT_PARSE_ERR_MODULE_MISPLACED:
             return "module^ goes first, and only once in a file";
         case LHAT_PARSE_ERR_PUBLIC_NEEDS_DECLARATION:

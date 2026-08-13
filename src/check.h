@@ -196,6 +196,12 @@ typedef enum {
                                         // second value back, so the rule has
                                         // to be said out loud instead. Write
                                         // '(A, B)|IOError'
+    LHAT_CHECK_ERR_CLOSED_CAPTURES,     // 15.13: a closed^ body named
+                                        // something standing outside it. The
+                                        // mark is a promise that it carries
+                                        // no captured place, which is what
+                                        // lets the value be handed to a
+                                        // machine of its own (05 の 8.7)
     LHAT_CHECK_ERR_HOSTVALUE_ESCAPES    // 05 の 8.9: a host value lives in
                                         // stack slots and nowhere else, so a
                                         // table, a capture, an any^, a yield

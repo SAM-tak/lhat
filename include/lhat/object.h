@@ -280,6 +280,7 @@ typedef struct LhatRuntimeType {
     bool is_function;                 // f^ rather than p^ (15 章)
     bool takes_self;                  // 14.4: a parameter is self^
     bool self_last;                   // 11.3改: and it is the right operand
+    bool closed;                      // 15.13: written closed^
 
     // COROUTINE only (13.9). `result` above doubles as the third slot (T);
     // these are the other two. NULL/any^ wherever nothing built them.
