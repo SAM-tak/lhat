@@ -1753,6 +1753,51 @@ void chk_settle_param_vars(Checker *c, ParamVar *mark)
 }
 
 // ---------------------------------------------------------------------------
+// 03 の 3.4改2: walking the same ground again
+// ---------------------------------------------------------------------------
+
+// Opens the loop. `count` is how many elements are being walked, which is what
+// bounds the number of walks.
+void chk_rounds_begin(Checker *c, Rounds *r, size_t count)
+{
+    r->diagnostics = c->result->diagnostic_count;
+    r->resolutions = c->result->resolution_count;
+    r->round = 0;
+    r->cap = count + 1;
+    r->changed = false;
+    r->read_provisional_outside = c->read_provisional;
+    c->read_provisional = false;
+}
+
+// Answers whether to walk again, and rolls the diagnostics back when it does.
+// The caller has just finished a walk and has said, through `r->changed`,
+// whether any answer moved.
+bool chk_rounds_next(Checker *c, Rounds *r)
+{
+    // Nothing was read ahead, so another walk reads the same things and says
+    // the same things -- or this walk answered exactly what the last one did,
+    // which is the fixpoint. Either way what it has just said stands.
+    if (!c->read_provisional || !r->changed || r->round + 1 >= r->cap) {
+        return false;
+    }
+    r->round++;
+    r->changed = false;
+    c->read_provisional = false;
+    c->result->diagnostic_count = r->diagnostics;
+    c->result->resolution_count = r->resolutions;
+    return true;
+}
+
+// Closes the loop. A def^ or a statement list inside this one ran its own
+// walks, and a seed it read may as easily have been this one's as its own --
+// the two are not told apart, so the reading is carried outward. One walk too
+// many costs a walk; one too few costs the writer an annotation.
+void chk_rounds_end(Checker *c, Rounds *r)
+{
+    c->read_provisional = r->read_provisional_outside || c->read_provisional;
+}
+
+// ---------------------------------------------------------------------------
 // Entry point
 // ---------------------------------------------------------------------------
 

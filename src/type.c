@@ -718,6 +718,37 @@ static bool has_gap_in(const LhatType *type, unsigned depth)
     return false;
 }
 
+LhatType *lhat_type_without_gaps(LhatTypeArena *arena, LhatType *type)
+{
+    if (type == NULL) {
+        return NULL;
+    }
+    // A subroutine is what a mutually recursive name usually holds, and the
+    // gap is in what it answers rather than in the name's own type. Written
+    // through the signature the last walk built: the walk about to run builds
+    // its own from the body, so what is changed here is only ever the seed.
+    if (type->kind == LHAT_TYPE_FUNC) {
+        type->v.func.result =
+            lhat_type_without_gaps(arena, type->v.func.result);
+        return type;
+    }
+    if (type->kind != LHAT_TYPE_UNION) {
+        return type;  // nothing to take an arm out of
+    }
+    LhatType *kept = NULL;
+    for (const LhatTypeList *arm = type->v.composite.arms; arm != NULL;
+         arm = arm->next) {
+        if (has_gap_in(arm->type, 0)) {
+            continue;
+        }
+        kept = kept == NULL ? arm->type : lhat_type_union(arena, kept, arm->type);
+    }
+    // Every arm was a gap, so there is nothing this says about the value.
+    // Answering with what was already there keeps the walk from narrowing on
+    // the strength of knowing nothing.
+    return kept != NULL ? kept : type;
+}
+
 bool lhat_type_has_gap(const LhatType *type)
 {
     return has_gap_in(type, 0);

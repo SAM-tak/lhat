@@ -28,6 +28,11 @@ typedef struct Binding {
     const char *name;
     size_t name_length;
     LhatType *type;
+    // 03 の 3.4改2: what the walk before this one left under the name, which
+    // is what this walk started from. NULL until a second walk is run, and
+    // read only to tell a walk that learned something from one that answered
+    // what the last one already had.
+    LhatType *seed;
     uint32_t offset;
     bool reached;  // its let^ has been walked past
     // 15.1改: bound to a table this scope's own code made -- a literal or a
@@ -98,6 +103,31 @@ typedef struct ParamVar {
     bool closed;
     struct ParamVar *next;
 } ParamVar;
+
+// 03 の 3.4改2: the bookkeeping of a walk that is one iteration of a least
+// fixpoint. Two walks are run that way -- a def^'s entries and a statement
+// list -- and what they share is only this: where to roll back to, how many
+// walks are allowed, and whether the last one changed any answer.
+//
+// What each of them seeds the next walk with, and what has to be put back
+// before it, is their own -- see chk_infer_def and chk_check_statements.
+typedef struct {
+    // 07 の 4 章: both channels are arrays that only ever grow, so a count is
+    // the whole of a mark. What a walk said is dropped when the next one
+    // starts: it walks the same ground and says all of it again.
+    size_t diagnostics;
+    size_t resolutions;
+    size_t round;
+    // One walk per element plus one: an element settles no later than the one
+    // it reads ahead of itself, so a chain of them is done in as many walks
+    // as there are elements, and one more finds nothing left to change.
+    size_t cap;
+    // Whether this walk answered anything differently from the last one.
+    bool changed;
+    // Saved across the loop, since a def^ or a statement list inside this one
+    // runs its own walks and leaves the flag talking about itself.
+    bool read_provisional_outside;
+} Rounds;
 
 typedef struct {
     // The tree points into both the source text and the lexer's decoded
@@ -226,11 +256,19 @@ typedef struct {
     // names. NULL anywhere else, so 14.12's marker is what makes it a name.
     LhatType *super_type;
 
-    // 02 の 14.7改2: a member was read before its own body was walked, so what
-    // answered was the seed rather than the inferred type. Set by the member
-    // search and read by chk_infer_def, which walks the entries again when it
-    // happened -- 03 の 3.4改2's further iterations, over a def^'s members.
+    // 03 の 3.4改2: something answered before it was inferred -- a def^ member
+    // read before its own body was walked (14.7改2's seed), or a name whose
+    // let^ this walk has not reached yet (8.7). Both say the same thing: this
+    // walk read ahead, so walking again from what it learned may answer
+    // better. Set by the member search and by the name search, read by the
+    // two round loops below.
     bool read_provisional;
+
+    // 03 の 3.4改2: this is a second or later walk over the same statements.
+    // What the first walk bound is already bound, so the statements that bind
+    // (import^) or grow a table (8.8's path) would otherwise report their own
+    // first walk as a redefinition.
+    bool rewalking;
 
     // 03 の 3.4改: the signature a subroutine literal is expected to have, or
     // NULL where nothing expects one. Set around the one chk_infer() that
@@ -352,6 +390,9 @@ void chk_constrain_member(Checker *c, LhatType *target, const char *name,
                           size_t length);
 ParamVar *chk_push_param_var(Checker *c, LhatType *slot);
 void chk_settle_param_vars(Checker *c, ParamVar *mark);
+void chk_rounds_begin(Checker *c, Rounds *r, size_t count);
+bool chk_rounds_next(Checker *c, Rounds *r);
+void chk_rounds_end(Checker *c, Rounds *r);
 void chk_expect(Checker *c, const LhatNode *at, LhatType *value,
                 LhatType *target, LhatCheckErrorCode code);
 LhatType *chk_infer_name(Checker *c, const LhatNode *node);

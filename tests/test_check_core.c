@@ -60,13 +60,10 @@ static void test_names(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // 03 の 7 章、P6: neither half is annotated, so each infers its result
-    // from its own body alone. 'a' is checked first, and its call to the
-    // not-yet-checked 'b' is unknown^ -- so 'a' infers bool^|unknown^, not
-    // plain bool^. Only that leftover unknown^ arm is what makes the
-    // mismatch below fire; before the fix, append_arms mistook it for a
-    // duplicate of the bool^ arm already there and silently dropped it,
-    // leaving 'a' looking like a clean bool^ when it was not one.
+    // 03 の 3.4改2: neither half is annotated, so the walk that reads 'b'
+    // before it was inferred is walked again from what it learned -- and what
+    // it learns is that 'a' can answer a number, since 'b' does. The
+    // annotation on the binding below is the one that is wrong.
     LHAT_TEST("mutual recursion still needs its own annotation to be checked");
     check_text(&u,
                "var^ a = f^ n:number^ {\n"
@@ -81,9 +78,26 @@ static void test_names(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
-    // The same pair, both sides telling the truth about what they return --
-    // 'b' really is number^|bool^, and saying so is what makes 'a' check.
+    // The same pair, both sides telling the truth about what they return.
     LHAT_TEST("and a correct annotation on both sides checks cleanly");
+    check_text(&u,
+               "var^ a = f^ n:number^ -> number^|bool^ {\n"
+               "  if^ n <= 0 { return^ true^ }\n"
+               "  return^ b(n - 1)\n"
+               "}\n"
+               "var^ b = f^ n:number^ -> number^|bool^ {\n"
+               "  if^ n <= 0 { return^ 999 }\n"
+               "  return^ a(n - 1)\n"
+               "}\n"
+               "var^ x : number^|bool^ = a(4)\n"
+               "var^ y : number^|bool^ = b(4)\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // 3.4改2: the second walk is what checks a forward call against what the
+    // body promised. 'a' says bool^ and hands back what 'b' answers, which is
+    // wider -- on the first walk 'b' was a mark and the return was forgiven.
+    LHAT_TEST("and a promise the forward call breaks is caught by the rewalk");
     check_text(&u,
                "var^ a = f^ n:number^ -> bool^ {\n"
                "  if^ n <= 0 { return^ true^ }\n"
@@ -92,10 +106,8 @@ static void test_names(void)
                "var^ b = f^ n:number^ -> number^|bool^ {\n"
                "  if^ n <= 0 { return^ 999 }\n"
                "  return^ a(n - 1)\n"
-               "}\n"
-               "var^ x : bool^ = a(4)\n"
-               "var^ y : number^|bool^ = b(4)\n");
-    CHECK_CLEAN(&u);
+               "}\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
     LHAT_TEST("a parameter is in scope in the body");
@@ -860,27 +872,12 @@ static void test_undecided_results(void)
 {
     Unit u;
 
-    // 3.1's own example. Whichever of the two is walked first reads a partner
-    // that has not been walked, so the union it answers carries a gap.
-    LHAT_TEST("a mutually recursive pair says its result did not come out");
+    // 03 の 3.4改2: 3.1's own example, which the second walk settles -- the
+    // one thing the first walk could not read is what the second one starts
+    // from. Nothing is written and nothing is reported.
+    LHAT_TEST("a mutually recursive pair settles without an annotation");
     check_text(&u,
                "let^ a = f^ n:number^ {\n"
-               "    if^ n <= 0 { return^ true^ }\n"
-               "    return^ b(n - 1)\n"
-               "}\n"
-               "let^ b = f^ n:number^ {\n"
-               "    if^ n <= 0 { return^ false^ }\n"
-               "    return^ a(n - 1)\n"
-               "}\n");
-    CHECK_REPORTS(&u, LHAT_CHECK_ERR_RESULT_UNDECIDED);
-    LHAT_CHECK_EQ_INT(u.checked.diagnostic_count, 2);
-    unit_dispose(&u);
-
-    // Writing one of them closes the ring: the one written no longer asks,
-    // and the other reads it rather than a gap.
-    LHAT_TEST("and writing one of the two settles both");
-    check_text(&u,
-               "let^ a = f^ n:number^ -> bool^ {\n"
                "    if^ n <= 0 { return^ true^ }\n"
                "    return^ b(n - 1)\n"
                "}\n"
@@ -890,6 +887,38 @@ static void test_undecided_results(void)
                "}\n"
                "let^ x : bool^ = a(4)\n");
     CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // What the seed drops is only a gap: an arm that really belongs is read
+    // off the body again on the walk after it. 'b' answers a string^, so 'a'
+    // answers one too, and saying bool^ of it is a mismatch.
+    LHAT_TEST("and the ring settles on what the bodies really answer");
+    check_text(&u,
+               "let^ a = f^ n:number^ {\n"
+               "    if^ n <= 0 { return^ true^ }\n"
+               "    return^ b(n - 1)\n"
+               "}\n"
+               "let^ b = f^ n:number^ {\n"
+               "    if^ n <= 0 { return^ \"x\" }\n"
+               "    return^ a(n - 1)\n"
+               "}\n"
+               "let^ x : bool^|string^ = a(4)\n"
+               "let^ y : bool^|string^ = b(4)\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // A ring whose other half never settles keeps its gap however often it is
+    // walked -- 'b' demands nothing of x, so what it answers stays undecided
+    // and so does 'a'. Reported at both definitions.
+    LHAT_TEST("a ring that cannot settle says so at both definitions");
+    check_text(&u,
+               "let^ a = f^ n:number^ {\n"
+               "    if^ n <= 0 { return^ true^ }\n"
+               "    return^ b(n)\n"
+               "}\n"
+               "let^ b = f^ x { return^ x }\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_RESULT_UNDECIDED);
+    LHAT_CHECK_EQ_INT(u.checked.diagnostic_count, 2);
     unit_dispose(&u);
 
     // 3.5: relaxed leaves an undecided type to the machine, so it says
@@ -898,22 +927,22 @@ static void test_undecided_results(void)
     check_relaxed_text(&u,
                        "let^ a = f^ n:number^ {\n"
                        "    if^ n <= 0 { return^ true^ }\n"
-                       "    return^ b(n - 1)\n"
+                       "    return^ b(n)\n"
                        "}\n"
-                       "let^ b = f^ n:number^ { return^ a(n - 1) }\n");
+                       "let^ b = f^ x { return^ x }\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // The gap is in a union arm, where lhat_type_conforms's leniency used to
+    // The gap is in a union arm, where lhat_type_conforms's leniency would
     // hide it: 'bool^|pending^' is not a bool^ where one is wanted.
     LHAT_TEST("a gap buried in a union is reported where it lands as well");
     check_text(&u,
                "let^ a = f^ n:number^ {\n"
                "    if^ n <= 0 { return^ true^ }\n"
-               "    return^ b(n - 1)\n"
+               "    return^ b(n)\n"
                "}\n"
-               "let^ b = f^ n:number^ -> bool^ { return^ a(n - 1) }\n"
-               "let^ x : bool^ = a(4)\n");
+               "let^ b = f^ x { return^ x }\n"
+               "let^ y : bool^ = a(4)\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
@@ -963,6 +992,51 @@ static void test_undecided_results(void)
                "        return^ 1\n"
                "    },\n"
                "}\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // 8.7 makes every name of a list visible throughout it wherever the list
+    // stands, so the walks are run over a body's statements the same way.
+    LHAT_TEST("a ring inside a body settles the same way");
+    check_text(&u,
+               "var^ make = p^ -> number^ {\n"
+               "    let^ up = f^ n:number^ {\n"
+               "        if^ n <= 0 { return^ 0 }\n"
+               "        return^ down(n - 1)\n"
+               "    }\n"
+               "    let^ down = f^ n:number^ { return^ up(n - 1) }\n"
+               "    return^ up(4)\n"
+               "}\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // Each walk says everything the last one said, so what the last one said
+    // is all that is kept -- one mistake inside a ring is one diagnostic.
+    LHAT_TEST("a mistake inside a ring is reported once");
+    check_text(&u,
+               "let^ a = f^ n:number^ {\n"
+               "    if^ n <= 0 { return^ nowhere }\n"
+               "    return^ b(n - 1)\n"
+               "}\n"
+               "let^ b = f^ n:number^ { return^ a(n - 1) }\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_UNDEFINED);
+    LHAT_CHECK_EQ_INT(u.checked.diagnostic_count, 1);
+    unit_dispose(&u);
+
+    // A statement binds as well as answering -- 8.8's path grows a table --
+    // and a second walk over it must not read its own first walk as a second
+    // definition.
+    LHAT_TEST("what a walk bound is not a redefinition on the next walk");
+    check_text(&u,
+               "var^ t = { }\n"
+               "var^ t.m = 1\n"
+               "let^ a = f^ n:number^ {\n"
+               "    if^ n <= 0 { return^ true^ }\n"
+               "    return^ b(n - 1)\n"
+               "}\n"
+               "let^ b = f^ n:number^ { return^ a(n - 1) }\n"
+               "let^ x : bool^ = a(4)\n"
+               "let^ y : number^ = t.m\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 }

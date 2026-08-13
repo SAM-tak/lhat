@@ -140,6 +140,21 @@ static void test_log_answers_nil(void)
                            "let^ noted : nil^ = std.debug.log(1)\n"),
                    "the checker refuses a number before anything runs");
     }
+
+    // 03 の 3.4改2: a ring of names makes the checker walk these statements
+    // again, and an import^ binds as well as answering. What its own first
+    // walk put there is not a second import of the name.
+    LHAT_TEST("an import^ survives the statements being walked again");
+    {
+        LHAT_CHECK(checks("import^ std.debug\n"
+                          "let^ a = f^ n:number^ {\n"
+                          "    if^ n <= 0 { return^ true^ }\n"
+                          "    return^ b(n - 1)\n"
+                          "}\n"
+                          "let^ b = f^ n:number^ { return^ a(n - 1) }\n"
+                          "let^ x : bool^ = a(4)\n"),
+                   "the ring settles and the import is not a redefinition");
+    }
 }
 
 int main(void)

@@ -347,6 +347,19 @@ bool lhat_type_conforms(const LhatType *value, const LhatType *target);
 // somewhere left to run.
 bool lhat_type_has_gap(const LhatType *type);
 
+// 03 の 3.4改2: the same type with the gap arms of a union taken out, for a
+// walk that is about to be run again from what the last one learned. The arm
+// a mutually recursive call left behind would otherwise never leave -- the
+// next walk reads it back and unions it in again -- so a walk seeded with
+// 'bool^' answers what it can, and the walk after that either agrees or finds
+// the arm was wider than that.
+//
+// Only for a seed. What a walk answers is built afresh each time, so nothing
+// this drops is lost: an arm that really belongs comes back on the next walk.
+// A type that is not a union, and one whose every arm is a gap (there being
+// nothing left to say), is answered unchanged.
+LhatType *lhat_type_without_gaps(LhatTypeArena *arena, LhatType *type);
+
 // 03 の 3.1・3.5: the same question, asked the way strict asks it, and
 // asymmetrically at that. A *value* with a gap in it (lhat_type_has_gap
 // above) is not forgiven here the way it is under the lenient default; strict

@@ -459,8 +459,17 @@ LhatType *chk_infer_name(Checker *c, const LhatNode *node)
     // mutual recursion work, but its value only exists once its let^ has run.
     // A subroutine body does not run where it is written, so the rule only
     // applies outside one.
-    if (!b->reached && c->deferred == 0) {
-        chk_report(c, node, LHAT_CHECK_ERR_USED_BEFORE_DEFINED);
+    if (!b->reached) {
+        if (c->deferred == 0) {
+            chk_report(c, node, LHAT_CHECK_ERR_USED_BEFORE_DEFINED);
+        } else {
+            // 03 の 3.4改2: what answered is the seed collect_bindings put
+            // there, or what an earlier walk left. Either way this walk read
+            // ahead of itself, so walking the statements again from what it
+            // learned may answer better -- the same fact a def^ member's seed
+            // reports when it is the one answering.
+            c->read_provisional = true;
+        }
     }
     // 05 の 8.9: a name bound outside this body reaches the value through a
     // capture, and a capture outlives the frame the slots belong to. The
@@ -2773,13 +2782,8 @@ LhatType *chk_infer_def(Checker *c, const LhatNode *node, LhatType *base)
     // ring of them -- expr calls term calls factor calls expr -- has at least
     // one such read whatever the order. Walking the entries again from what
     // the last walk inferred is what closes the ring, and it is walked again
-    // only while that keeps changing what they answer.
-    //
-    // An entry settles no later than the one it reads ahead, so a chain of
-    // them is done in as many walks as there are entries, and one more finds
-    // nothing left to change. That is the bound. Beyond it lies 3.4's example
-    // of a type that grows a layer per walk, which no bound settles -- and
-    // that is where 3.1・3.5 have always left it: the type is written down.
+    // only while that keeps changing what they answer. Rounds holds the
+    // bookkeeping; what is seeded and what is put back before a walk is here.
     size_t entry_count = 0;
     for (const LhatNode *entry = node->v.list.items; entry != NULL;
          entry = entry->next) {
@@ -2787,23 +2791,11 @@ LhatType *chk_infer_def(Checker *c, const LhatNode *node, LhatType *base)
     }
     SeenMember *seen =
         entry_count > 0 ? calloc(entry_count, sizeof(*seen)) : NULL;
-    size_t rounds = seen != NULL ? entry_count + 1 : 1;
-    size_t diagnostic_mark = c->result->diagnostic_count;
-    size_t resolution_mark = c->result->resolution_count;
-    bool read_provisional_outside = c->read_provisional;
+    Rounds rounds;
+    chk_rounds_begin(c, &rounds, seen != NULL ? entry_count : 0);
 
-    for (size_t round = 0; round < rounds; round++) {
-        bool changed = false;
-        c->read_provisional = false;
-        if (round > 0) {
-            // The last walk's say is dropped whole rather than merged: this
-            // one walks the same entries and says all of it again, from
-            // better types. Both channels are arrays that only ever grow, so
-            // the count is the whole of the mark.
-            c->result->diagnostic_count = diagnostic_mark;
-            c->result->resolution_count = resolution_mark;
-        }
-
+    do {
+        size_t round = rounds.round;
         size_t index = 0;
         for (const LhatNode *entry = node->v.list.items; entry != NULL;
              entry = entry->next, index++) {
@@ -2928,16 +2920,13 @@ LhatType *chk_infer_def(Checker *c, const LhatNode *node, LhatType *base)
             set_member_marked(c, instance, name, length, type, false, pending);
             if (seen != NULL) {
                 if (round == 0 || !lhat_type_equal(seen[index].inferred, type)) {
-                    changed = true;
+                    rounds.changed = true;
                 }
                 seen[index].inferred = type;
             }
         }
 
-        if (seen == NULL || !c->read_provisional || !changed) {
-            // Nothing was read ahead, so another walk reads the same seeds --
-            // or this walk answered exactly what the last one did, which is
-            // the fixpoint. Either way what it has just said stands.
+        if (!chk_rounds_next(c, &rounds)) {
             break;
         }
         // What this def^ wrote goes back to being a seed, carrying the type
@@ -2955,13 +2944,9 @@ LhatType *chk_infer_def(Checker *c, const LhatNode *node, LhatType *base)
             mark_provisional(definition, name, length);
             mark_provisional(instance, name, length);
         }
-    }
+    } while (true);
     free(seen);
-    // A def^ written inside a member body runs its own rounds, and a seed it
-    // read may as easily be this def^'s as its own -- the two are not told
-    // apart, so the reading is carried outward. One walk too many costs a
-    // walk; one too few costs the writer an annotation.
-    c->read_provisional = read_provisional_outside || c->read_provisional;
+    chk_rounds_end(c, &rounds);
 
     c->scope = outer;
     chk_scope_dispose(&members);

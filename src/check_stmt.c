@@ -195,6 +195,14 @@ static void define_path(Checker *c, const LhatNode *target, LhatType *type,
     }
     const LhatTypeMember *found = member_named(owner, name, length);
     if (found != NULL) {
+        // 03 の 3.4改2: on a later walk over these statements the member is
+        // the one this very statement made, so this walk writes over it --
+        // the walk before it is not a second definition, and what it put
+        // there is not something to hold this one to either.
+        if (c->rewalking && !upsert) {
+            ((LhatTypeMember *)found)->type = type;
+            return;
+        }
         if (!upsert) {
             chk_report_named(c, last, LHAT_CHECK_ERR_REDEFINED, name, length);
             return;
@@ -532,8 +540,14 @@ static void check_import(Checker *c, const LhatNode *node, bool binds)
         if (!chk_node_name(c, path, &name, &length)) {
             return;
         }
+        // 03 の 3.4改2: on a later walk over these statements the name is
+        // bound because this very statement bound it, which is not the
+        // collision 8.7 is about.
         if (chk_scope_find_local(c->scope, name, length) != NULL) {
-            chk_report_named(c, node, LHAT_CHECK_ERR_REDEFINED, name, length);
+            if (!c->rewalking) {
+                chk_report_named(c, node, LHAT_CHECK_ERR_REDEFINED, name,
+                                 length);
+            }
             return;
         }
         Binding *only = chk_scope_add(c->scope, name, length, module, node->offset);
@@ -574,7 +588,11 @@ static void check_import(Checker *c, const LhatNode *node, bool binds)
         return;
     }
     if (member_named(owner, name, length) != NULL) {
-        chk_report_named(c, node, LHAT_CHECK_ERR_REDEFINED, name, length);
+        // 03 の 3.4改2: on a later walk the member is there because this very
+        // import put it there, which is not a second import of the name.
+        if (!c->rewalking) {
+            chk_report_named(c, node, LHAT_CHECK_ERR_REDEFINED, name, length);
+        }
         return;
     }
     lhat_type_add_member(c->result->types, owner, name, length, module);
@@ -1445,15 +1463,69 @@ LhatType *chk_collect_exports(Checker *c, const LhatNode *statements)
 
 void chk_check_statements(Checker *c, const LhatNode *statements)
 {
+    // 8.7 collects the names once. What it reports -- a name written twice in
+    // one scope -- is about the statements as written, so a second walk over
+    // them has nothing to add to it.
+    Binding *before = c->scope != NULL ? c->scope->tail : NULL;
     collect_bindings(c, statements);
 
-    // A narrowing an if-statement leaves behind holds for the rest of this
-    // list and no further, so the list is what bounds its life.
-    Narrowing *mark = c->narrowings;
+    // 03 の 3.4改2: the walk below is one iteration of a least fixpoint, the
+    // same as a def^'s entries. 8.7 makes every name of this list visible
+    // throughout it, so a body may call one whose let^ this walk has not
+    // reached -- and what answers there is the mark collect_bindings put down
+    // rather than a type. Walking again from what the last walk inferred is
+    // what closes a ring of them.
+    size_t count = 0;
     for (const LhatNode *s = statements; s != NULL; s = s->next) {
-        chk_check_statement(c, s);
+        count++;
     }
-    chk_pop_narrowings(c, mark);
+    Rounds rounds;
+    chk_rounds_begin(c, &rounds, count);
+    bool outer_rewalking = c->rewalking;
+
+    do {
+        // A narrowing an if-statement leaves behind holds for the rest of this
+        // list and no further, so the list is what bounds its life.
+        Narrowing *mark = c->narrowings;
+        for (const LhatNode *s = statements; s != NULL; s = s->next) {
+            chk_check_statement(c, s);
+        }
+        chk_pop_narrowings(c, mark);
+
+        // What this list bound is what the next walk is seeded with, so the
+        // types are compared before they are put back -- an answer that moved
+        // is what says another walk is worth running.
+        for (Binding *b = before != NULL ? before->next
+                                         : (c->scope != NULL ? c->scope->bindings
+                                                             : NULL);
+             b != NULL; b = b->next) {
+            if (rounds.round == 0 || !lhat_type_equal(b->seed, b->type)) {
+                rounds.changed = true;
+            }
+        }
+        if (!chk_rounds_next(c, &rounds)) {
+            break;
+        }
+        c->rewalking = true;
+        for (Binding *b = before != NULL ? before->next
+                                         : (c->scope != NULL ? c->scope->bindings
+                                                             : NULL);
+             b != NULL; b = b->next) {
+            // 8.7 again from the top: which names this walk has reached is
+            // what it is about to work out a second time.
+            b->reached = false;
+            // 3.4改2: the type the last walk inferred is the seed, with the
+            // gap arms taken out. A 'bool^|pending^' read back whole would
+            // union its own gap in again and never lose it; seeded 'bool^',
+            // the walk answers what it can, and an arm that really belongs
+            // comes back from the body it is read off.
+            b->type = lhat_type_without_gaps(c->result->types, b->type);
+            b->seed = b->type;
+        }
+    } while (true);
+
+    c->rewalking = outer_rewalking;
+    chk_rounds_end(c, &rounds);
 }
 
 // The block's statements in the scope that is already open. 01 の 8 章: a
