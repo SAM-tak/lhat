@@ -1421,6 +1421,13 @@ LhatType *chk_infer_member(Checker *c, const LhatNode *node)
                                  length);
                 return chk_simple(c, LHAT_TYPE_UNKNOWN);
             }
+            // 14.7改2: what answered is a seed, not an inferred type -- the
+            // body it belongs to has not been walked yet. chk_infer_def walks
+            // the entries again when this happened, and the walk after it
+            // finds a better one here.
+            if (m->provisional) {
+                c->read_provisional = true;
+            }
             return m->type;
         }
     }
@@ -2126,6 +2133,21 @@ static void set_member_provisional(Checker *c, LhatType *table,
     }
 }
 
+// 02 の 14.7改2: the next walk's seed. What the last walk inferred stays --
+// that is what it learned -- and the mark says it is still not the answer, so
+// a body reading it is known to have read ahead again, and 14.12's "a second
+// member of this name wants a marker" does not fire on this def^'s own
+// entries the way it would against a member that is really there.
+static void mark_provisional(LhatType *table, const char *name, size_t length)
+{
+    for (LhatTypeMember *m = table->v.table.members; m != NULL; m = m->next) {
+        if (m->name_length == length && memcmp(m->name, name, length) == 0) {
+            m->provisional = true;
+            return;
+        }
+    }
+}
+
 static void set_member_as(Checker *c, LhatType *table, const char *name,
                           size_t length, LhatType *type, bool abstract)
 {
@@ -2573,6 +2595,25 @@ static bool declares_self(Checker *c, const LhatNode *value)
     return false;
 }
 
+// 02 の 14.7改2: what one entry of a def^ left behind, kept from one walk of
+// the entries to the next.
+//
+// `found` and `member` are what the first walk found under the entry's own
+// name. A later walk asks 14.12 the same question, but by then the answer has
+// been written over -- by the walk itself, and by the re-seeding that hands
+// the next walk what the last one learned -- so it is kept here rather than
+// looked up again. A copy: the member it was taken from is the one being
+// written over.
+//
+// `inferred` is the type the last walk gave the entry, which is how 03 の
+// 3.4改2 tells a walk that learned something from one that only said the same
+// again.
+typedef struct {
+    bool found;
+    LhatTypeMember member;
+    LhatType *inferred;
+} SeenMember;
+
 LhatType *chk_infer_def(Checker *c, const LhatNode *node, LhatType *base)
 {
     LhatType *definition = lhat_type_table(c->result->types);
@@ -2687,108 +2728,200 @@ LhatType *chk_infer_def(Checker *c, const LhatNode *node, LhatType *base)
                                entry->v.entry.declared);
     }
 
+    // 03 の 3.4改2: the walk below is one iteration of a least fixpoint. A
+    // member read before its own body was walked answers with a seed, and a
+    // ring of them -- expr calls term calls factor calls expr -- has at least
+    // one such read whatever the order. Walking the entries again from what
+    // the last walk inferred is what closes the ring, and it is walked again
+    // only while that keeps changing what they answer.
+    //
+    // An entry settles no later than the one it reads ahead, so a chain of
+    // them is done in as many walks as there are entries, and one more finds
+    // nothing left to change. That is the bound. Beyond it lies 3.4's example
+    // of a type that grows a layer per walk, which no bound settles -- and
+    // that is where 3.1・3.5 have always left it: the type is written down.
+    size_t entry_count = 0;
     for (const LhatNode *entry = node->v.list.items; entry != NULL;
          entry = entry->next) {
-        const char *name = NULL;
-        size_t length = 0;
-        if (entry->v.entry.key == NULL ||
-            !chk_node_name(c, entry->v.entry.key, &name, &length)) {
-            continue;
-        }
-        // 14.12 asks what was already under this name, and a seed from the
-        // pass above was not -- it is this very entry, read ahead.
-        const LhatTypeMember *hidden = chk_find_member(definition, name, length);
-        if (hidden != NULL && hidden->provisional) {
-            hidden = NULL;
-        }
-
-        // 14.15: a declaration carries a type and no value, and says the
-        // composition has to provide the member. It is not a definition of
-        // it, so 14.12 has nothing to check here.
-        if (entry->v.entry.declared) {
-            const LhatTypeMember *seeded =
-                chk_find_member(definition, name, length);
-            LhatType *declared =
-                seeded != NULL && seeded->provisional
-                    ? seeded->type
-                    : chk_resolve_type(c, entry->v.entry.value);
-            if (!chk_is_operator_name(name, length)) {
-                chk_refuse_self_last(c, entry, declared);
-            }
-            if (hidden != NULL && !hidden->abstract) {
-                // Already provided, so the declaration asks for nothing.
-                chk_report(c, entry, LHAT_CHECK_ERR_ALREADY_PROVIDED);
-            }
-            // 14.15改2: and the composition is where it is provided. Writing
-            // the value here as well leaves the declaration saying nothing --
-            // 14.7改 already lets the members reach each other whatever the
-            // order, so there is no forward reference left to declare for.
-            if (defined_in_def(c, node, name, length)) {
-                chk_report(c, entry, LHAT_CHECK_ERR_ABSTRACT_PROVIDED_HERE);
-            }
-            set_member_as(c, definition, name, length, declared, true);
-            set_member_as(c, instance, name, length, declared, true);
-            continue;
-        }
-
-        // 14.12改: super^ is a name only inside an override^, and what it
-        // names is everything that was under this name -- the whole
-        // intersection when 14.12's overload^ put several there, since the
-        // write replaces the member as a whole.
-        LhatType *outer_super = c->super_type;
-        c->super_type = NULL;
-        if (entry->v.entry.modifier == LHAT_DEF_OVERRIDE) {
-            // 14.15改: with nothing under the name yet, the shape super^ will
-            // have is the one written here. 14.12 has the replacement usable
-            // where the original was -- arguments wider, result narrower --
-            // so what is written is admissible wherever the original is, and
-            // taking it for super^ cannot promise more than the base gives.
-            c->super_type = hidden != NULL
-                                ? hidden->type
-                                : declared_signature(c, entry->v.entry.value);
-        }
-        // 14.4: the receiver is this member's, so it is bound around this
-        // body and nowhere else. A subroutine written inside the body still
-        // reaches it, the way any name in scope is reached (5.4's capture).
-        Scope receiver;
-        bool method = declares_self(c, entry->v.entry.value);
-        if (method) {
-            receiver.bindings = NULL;
-            receiver.tail = NULL;
-            receiver.parent = c->scope;
-            Binding *bound =
-                chk_scope_add(&receiver, "self^", 5, instance, node->offset);
-            if (bound != NULL) {
-                bound->reached = true;
-            }
-            c->scope = &receiver;
-        }
-        LhatType *type = chk_infer(c, entry->v.entry.value);
-        if (method) {
-            c->scope = &members;
-            chk_scope_dispose(&receiver);
-        }
-        c->super_type = outer_super;
-        // 14.12: two members of one name in a single def^ need a marker too,
-        // so what is already there has to include this def^'s earlier entries
-        // and not only what the base brought. `definition` is both -- it was
-        // copied from the base above and has been accumulating since.
-        type = check_same_name(c, entry, hidden, type,
-                               chk_name_is(name, length, "new"));
-        if (chk_is_operator_name(name, length)) {
-            chk_check_operator_shape(c, entry, type, name, length);
-        } else {
-            chk_refuse_self_last(c, entry, type);
-        }
-        // 14.15改: an override^ that found nothing waits for a composition to
-        // bring what it replaces. Until then super^ inside it points at
-        // nothing, so 14.11's new has to stay out of reach. Landing on
-        // another one that is waiting settles neither.
-        bool pending = entry->v.entry.modifier == LHAT_DEF_OVERRIDE &&
-                       (hidden == NULL || hidden->pending);
-        set_member_marked(c, definition, name, length, type, false, pending);
-        set_member_marked(c, instance, name, length, type, false, pending);
+        entry_count++;
     }
+    SeenMember *seen =
+        entry_count > 0 ? calloc(entry_count, sizeof(*seen)) : NULL;
+    size_t rounds = seen != NULL ? entry_count + 1 : 1;
+    size_t diagnostic_mark = c->result->diagnostic_count;
+    size_t resolution_mark = c->result->resolution_count;
+    bool read_provisional_outside = c->read_provisional;
+
+    for (size_t round = 0; round < rounds; round++) {
+        bool changed = false;
+        c->read_provisional = false;
+        if (round > 0) {
+            // The last walk's say is dropped whole rather than merged: this
+            // one walks the same entries and says all of it again, from
+            // better types. Both channels are arrays that only ever grow, so
+            // the count is the whole of the mark.
+            c->result->diagnostic_count = diagnostic_mark;
+            c->result->resolution_count = resolution_mark;
+        }
+
+        size_t index = 0;
+        for (const LhatNode *entry = node->v.list.items; entry != NULL;
+             entry = entry->next, index++) {
+            const char *name = NULL;
+            size_t length = 0;
+            if (entry->v.entry.key == NULL ||
+                !chk_node_name(c, entry->v.entry.key, &name, &length)) {
+                continue;
+            }
+            // 14.12 asks what was already under this name, and a seed from
+            // the pass above was not -- it is this very entry, read ahead.
+            const LhatTypeMember *hidden = NULL;
+            if (round == 0) {
+                hidden = chk_find_member(definition, name, length);
+                if (hidden != NULL && hidden->provisional) {
+                    hidden = NULL;
+                }
+                if (seen != NULL) {
+                    seen[index].found = hidden != NULL;
+                    if (hidden != NULL) {
+                        seen[index].member = *hidden;
+                    }
+                }
+            } else if (seen != NULL && seen[index].found) {
+                // 14.7改2: asking again would answer with what this very walk
+                // wrote over the name, so the first walk's answer is kept
+                // above and handed back here.
+                hidden = &seen[index].member;
+            }
+
+            // 14.15: a declaration carries a type and no value, and says the
+            // composition has to provide the member. It is not a definition
+            // of it, so 14.12 has nothing to check here.
+            if (entry->v.entry.declared) {
+                const LhatTypeMember *seeded =
+                    chk_find_member(definition, name, length);
+                LhatType *declared =
+                    seeded != NULL && seeded->provisional
+                        ? seeded->type
+                        : chk_resolve_type(c, entry->v.entry.value);
+                if (!chk_is_operator_name(name, length)) {
+                    chk_refuse_self_last(c, entry, declared);
+                }
+                if (hidden != NULL && !hidden->abstract) {
+                    // Already provided, so the declaration asks for nothing.
+                    chk_report(c, entry, LHAT_CHECK_ERR_ALREADY_PROVIDED);
+                }
+                // 14.15改2: and the composition is where it is provided.
+                // Writing the value here as well leaves the declaration
+                // saying nothing -- 14.7改 already lets the members reach
+                // each other whatever the order, so there is no forward
+                // reference left to declare for.
+                if (defined_in_def(c, node, name, length)) {
+                    chk_report(c, entry, LHAT_CHECK_ERR_ABSTRACT_PROVIDED_HERE);
+                }
+                set_member_as(c, definition, name, length, declared, true);
+                set_member_as(c, instance, name, length, declared, true);
+                continue;
+            }
+
+            // 14.12改: super^ is a name only inside an override^, and what it
+            // names is everything that was under this name -- the whole
+            // intersection when 14.12's overload^ put several there, since
+            // the write replaces the member as a whole.
+            LhatType *outer_super = c->super_type;
+            c->super_type = NULL;
+            if (entry->v.entry.modifier == LHAT_DEF_OVERRIDE) {
+                // 14.15改: with nothing under the name yet, the shape super^
+                // will have is the one written here. 14.12 has the
+                // replacement usable where the original was -- arguments
+                // wider, result narrower -- so what is written is admissible
+                // wherever the original is, and taking it for super^ cannot
+                // promise more than the base gives.
+                c->super_type =
+                    hidden != NULL
+                        ? hidden->type
+                        : declared_signature(c, entry->v.entry.value);
+            }
+            // 14.4: the receiver is this member's, so it is bound around this
+            // body and nowhere else. A subroutine written inside the body
+            // still reaches it, the way any name in scope is reached (5.4's
+            // capture).
+            Scope receiver;
+            bool method = declares_self(c, entry->v.entry.value);
+            if (method) {
+                receiver.bindings = NULL;
+                receiver.tail = NULL;
+                receiver.parent = c->scope;
+                Binding *bound = chk_scope_add(&receiver, "self^", 5, instance,
+                                               node->offset);
+                if (bound != NULL) {
+                    bound->reached = true;
+                }
+                c->scope = &receiver;
+            }
+            LhatType *type = chk_infer(c, entry->v.entry.value);
+            if (method) {
+                c->scope = &members;
+                chk_scope_dispose(&receiver);
+            }
+            c->super_type = outer_super;
+            // 14.12: two members of one name in a single def^ need a marker
+            // too, so what is already there has to include this def^'s
+            // earlier entries and not only what the base brought.
+            // `definition` is both -- it was copied from the base above and
+            // has been accumulating since.
+            type = check_same_name(c, entry, hidden, type,
+                                   chk_name_is(name, length, "new"));
+            if (chk_is_operator_name(name, length)) {
+                chk_check_operator_shape(c, entry, type, name, length);
+            } else {
+                chk_refuse_self_last(c, entry, type);
+            }
+            // 14.15改: an override^ that found nothing waits for a
+            // composition to bring what it replaces. Until then super^ inside
+            // it points at nothing, so 14.11's new has to stay out of reach.
+            // Landing on another one that is waiting settles neither.
+            bool pending = entry->v.entry.modifier == LHAT_DEF_OVERRIDE &&
+                           (hidden == NULL || hidden->pending);
+            set_member_marked(c, definition, name, length, type, false,
+                              pending);
+            set_member_marked(c, instance, name, length, type, false, pending);
+            if (seen != NULL) {
+                if (round == 0 || !lhat_type_equal(seen[index].inferred, type)) {
+                    changed = true;
+                }
+                seen[index].inferred = type;
+            }
+        }
+
+        if (seen == NULL || !c->read_provisional || !changed) {
+            // Nothing was read ahead, so another walk reads the same seeds --
+            // or this walk answered exactly what the last one did, which is
+            // the fixpoint. Either way what it has just said stands.
+            break;
+        }
+        // What this def^ wrote goes back to being a seed, carrying the type
+        // the walk just inferred -- that is what starting from what was
+        // learned amounts to. A member the base brought keeps what the walk
+        // made of it: the entry hiding it was answered from `seen` above.
+        for (const LhatNode *entry = node->v.list.items; entry != NULL;
+             entry = entry->next) {
+            const char *name = NULL;
+            size_t length = 0;
+            if (entry->v.entry.key == NULL ||
+                !chk_node_name(c, entry->v.entry.key, &name, &length)) {
+                continue;
+            }
+            mark_provisional(definition, name, length);
+            mark_provisional(instance, name, length);
+        }
+    }
+    free(seen);
+    // A def^ written inside a member body runs its own rounds, and a seed it
+    // read may as easily be this def^'s as its own -- the two are not told
+    // apart, so the reading is carried outward. One walk too many costs a
+    // walk; one too few costs the writer an annotation.
+    c->read_provisional = read_provisional_outside || c->read_provisional;
 
     c->scope = outer;
     chk_scope_dispose(&members);

@@ -58,6 +58,62 @@ static void test_definitions(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
+    // 03 の 3.4改2: nor a result type. The first walk reads the ring before
+    // the bodies it runs through were looked at; the second starts from what
+    // the first inferred, and that is where the ring closes.
+    LHAT_TEST("nor a result type on any of them");
+    check_text(&u,
+               "var^ R = def^{\n"
+               "    self^{ n := 0 },\n"
+               "    expr := p^self^ { return^ self^.term() },\n"
+               "    term := p^self^ { return^ self^.factor() },\n"
+               "    factor := p^self^ {\n"
+               "        if^ self^.n > 0 { return^ self^.expr() }\n"
+               "        return^ 1\n"
+               "    },\n"
+               "}\n"
+               "var^ n : number^ = R.new().expr()\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // The second walk says everything the first one said, so what the first
+    // one reported has to be dropped rather than added to.
+    LHAT_TEST("and what is wrong inside the ring is reported once");
+    check_text(&u,
+               "var^ R = def^{\n"
+               "    self^{ n := 0 },\n"
+               "    expr := p^self^ { return^ self^.term() },\n"
+               "    term := p^self^ { return^ self^.factor() },\n"
+               "    factor := p^self^ { return^ self^.nowhere() },\n"
+               "}\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_NO_MEMBER);
+    LHAT_CHECK_EQ_INT(u.checked.diagnostic_count, 1);
+    unit_dispose(&u);
+
+    // 03 の 3.4改2: the walks stop when one of them answers what the last one
+    // did. A member whose result is only ever its own answers the same thing
+    // from the first walk on, and no number of them settles it -- which is
+    // where 3.1 has always left it: the type is written down.
+    LHAT_TEST("but a result that is only its own still has to be written");
+    check_text(&u,
+               "var^ R = def^{\n"
+               "    self^{ n := 0 },\n"
+               "    loop := p^self^ { return^ self^.loop() },\n"
+               "}\n"
+               "var^ n : number^ = R.new().loop()\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
+    unit_dispose(&u);
+
+    LHAT_TEST("and writing it is what settles it");
+    check_text(&u,
+               "var^ R = def^{\n"
+               "    self^{ n := 0 },\n"
+               "    loop := p^self^ -> number^ { return^ self^.loop() },\n"
+               "}\n"
+               "var^ n : number^ = R.new().loop()\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
     // 14.7改 with 03 の 3.4: what the first pass can put down is what can be
     // read without walking a body. A member whose type only its value knows
     // is not among them, so reaching one before it is written still finds

@@ -226,6 +226,12 @@ typedef struct {
     // names. NULL anywhere else, so 14.12's marker is what makes it a name.
     LhatType *super_type;
 
+    // 02 の 14.7改2: a member was read before its own body was walked, so what
+    // answered was the seed rather than the inferred type. Set by the member
+    // search and read by chk_infer_def, which walks the entries again when it
+    // happened -- 03 の 3.4改2's further iterations, over a def^'s members.
+    bool read_provisional;
+
     // 03 の 3.4改: the signature a subroutine literal is expected to have, or
     // NULL where nothing expects one. Set around the one chk_infer() that
     // reaches the literal, the way super_type and yield_bound_type are, and
