@@ -781,6 +781,10 @@ bool lhat_runtime_type_equal(const LhatRuntimeType *a, const LhatRuntimeType *b)
         case LHAT_TYPE_RT_SUBROUTINE:
             if (a->is_function != b->is_function ||
                 a->takes_self != b->takes_self ||
+                // 11.3改: which operand the receiver is, is part of the shape
+                // -- the checker refuses one where the other is written
+                // (type.c's conforms_func), and the two are written apart.
+                a->self_last != b->self_last ||
                 a->part_count != b->part_count) {
                 return false;
             }

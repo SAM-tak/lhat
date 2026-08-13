@@ -1227,6 +1227,27 @@ static void test_typeof(void)
     CHECK_BOOL(&r, false);
     run_dispose(&r);
 
+    // 11.3改: which operand the receiver is says which way round the operator
+    // may be written, so two that differ in nothing else are still two types.
+    LHAT_TEST("and an operator taking the other operand is another shape");
+    run_checked_text(&r,
+             "var^ A = def^{ self^{ n := 0 },\n"
+             "  op^+ := f^self^, r:number^ -> number^ { return^ self^.n + r } }\n"
+             "var^ B = def^{ self^{ n := 0 },\n"
+             "  op^+ := f^l:number^, self^ -> number^ { return^ l + self^.n } }\n"
+             "return^ typeof^(A.new()) = typeof^(B.new())\n");
+    CHECK_BOOL(&r, false);
+    run_dispose(&r);
+
+    // 14.4 with 14.16: and the signature says which, by where self^ stands.
+    LHAT_TEST("and the signature puts the receiver where it was written");
+    run_checked_text(&r,
+             "var^ B = def^{ self^{ n := 0 },\n"
+             "  op^+ := f^l:number^, self^ -> number^ { return^ l + self^.n } }\n"
+             "return^ typeof^(B.new()).signature\n");
+    CHECK_STRING(&r, "t^{ + : f^number^, self^ -> number^;, n : number^ }");
+    run_dispose(&r);
+
     // 14.10's round trip: what typeof^(x).signature answers with has to be
     // usable as a type annotation.
     LHAT_TEST("the signature parses back as an annotation");
