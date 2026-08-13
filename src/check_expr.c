@@ -3290,6 +3290,21 @@ static LhatType *infer_node(Checker *c, const LhatNode *node)
                     !lhat_type_conforms(escaping, c->declared_result)) {
                     chk_report(c, node, LHAT_CHECK_ERR_TRY_OUTSIDE);
                 }
+            } else {
+                // 03 の 3.4: with nothing written, this is one of the exits
+                // the result is the union of -- an error leaves the body here
+                // as plainly as a value leaves it through a return^. 5.3 asks
+                // whether the written result admits it; where none was
+                // written, what leaves is what the result comes to include.
+                //
+                // 13.8改's width check is the return^ side's business: a
+                // union of a tuple with an error kind is what 04 の 3.1
+                // admits, so the arm added here is not one to measure.
+                LhatType *escaping = chk_only(c, value, error);
+                if (escaping != NULL) {
+                    c->inferred_result = lhat_type_union(
+                        c->result->types, c->inferred_result, escaping);
+                }
             }
             return chk_without(c, value, error);
         }

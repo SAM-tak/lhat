@@ -1235,6 +1235,52 @@ static void test_errors(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_TRY_OUTSIDE);
     unit_dispose(&u);
 
+    // 03 の 3.4: with no result written, a try^ is one of the exits the
+    // result is the union of -- an error leaves the body there as plainly as
+    // a value leaves it through a return^.
+    LHAT_TEST("a try^ is an exit the inferred result takes in");
+    check_text(&u,
+               "errordef^ IOError { NotFound }\n"
+               "var^ open = f^ -> number^|IOError { return^ 0 }\n"
+               "var^ read = f^ { return^ try^ open() }\n"
+               "var^ n : number^ = read() catch^ 0\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("and the arm has to be dealt with, like any other");
+    check_text(&u,
+               "errordef^ IOError { NotFound }\n"
+               "var^ open = f^ -> number^|IOError { return^ 0 }\n"
+               "var^ read = f^ { return^ try^ open() }\n"
+               "var^ n : number^ = read()\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
+    unit_dispose(&u);
+
+    // A p^ that makes no value of its own still says it may fail: 3.4 adds
+    // nil^ beside the error, since leaving without a value is the other exit.
+    LHAT_TEST("a p^ that only lets an error out says so too");
+    check_text(&u,
+               "errordef^ IOError { NotFound }\n"
+               "var^ open = f^ -> number^|IOError { return^ 0 }\n"
+               "var^ run = p^ { let^ n = try^ open() }\n"
+               "var^ x : nil^ = run() catch^ nil^\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // 04 の 4.1 with 5.3: the shape a writer reaches for when the failing
+    // work is a block rather than a call -- wrap it, call it where it stands,
+    // and catch^ what comes out.
+    LHAT_TEST("a body written and called where it stands can be caught");
+    check_text(&u,
+               "errordef^ IOError { NotFound }\n"
+               "var^ open = f^ -> number^|IOError { return^ 0 }\n"
+               "var^ r : bool^ = p^ {\n"
+               "    let^ n = try^ open()\n"
+               "    return^ true^\n"
+               "}() catch^ f^ { return^ false^ }()\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
     // 04 の 2.4: identity is the declaration, so two identical ones differ.
     LHAT_TEST("kinds from different declarations do not mix");
     check_text(&u,
