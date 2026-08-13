@@ -86,3 +86,9 @@ print(bA)
 
 let^cA = A.new()
 print(cA)
+
+let^_a = f^n{ if^n <= 0 { return^true^} return^_b(n - 1) }
+let^_b = f^n{ if^n <= 0 { return^false^} return^_a(n - 1) }
+
+print(typeof^(_a).signature)
+print(typeof^(_b).signature)

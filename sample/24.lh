@@ -1,4 +1,5 @@
-#[ 24 Game
+#[
+# 24 Game
 
 From http://rosettacode.org/wiki/24_game
 
@@ -47,23 +48,23 @@ let^Reader = def^{
     override^new = f^line { self^{ text = line } },
 
     # 空白を飛ばして今の1文字。尽きていれば ""
-    peek = p^self^ {
+    peek = p^self^{
         repeat^while^ self^.at ≦ self^.text.length {
-            if^self^.text.substr(self^.at, self^.at) = " " {
+            if^self^.text.at(self^.at) = " " {
                 self^.at += 1
             else^:
                 break^
             }
         }
         return^if^self^.at > self^.text.length: ""
-               el^: self^.text.substr(self^.at, self^.at);
+               el^: self^.text.at(self^.at);
     },
 
     bump = p^self^{ self^.at += 1 },
 
     # 数字1文字、または括弧で囲んだ式。
     # 続けて書いた 12 が 12 にならないのは、ここが1文字しか取らないからである
-    factor = p^self^ {
+    factor = p^self^{
         let^c = self^.peek()
         if^c = "(" {
             self^.bump()
@@ -85,7 +86,7 @@ let^Reader = def^{
         return^ d
     },
 
-    term = p^self^ {
+    term = p^self^{
         var^value = self^.factor()
         repeat^while^self^.ok {
             let^c = self^.peek()
@@ -102,7 +103,7 @@ let^Reader = def^{
         return^ value
     },
 
-    expr = p^self^ {
+    expr = p^self^{
         var^value = self^.term()
         repeat^while^ self^.ok {
             let^ c = self^.peek()
@@ -124,7 +125,7 @@ let^Reader = def^{
         let^value = self^.expr()
         if^self^.peek() != "" { self^.ok := false^}
         return^ value
-    },
+    }
 }
 
 # 配った4つと使った4つが同じ多重集合か
@@ -138,34 +139,38 @@ let^same = f^want, used {
 # / は実数除算なので 8/(3-8/3) は 24 ちょうどにならない。幅で見る
 let^near24 = f^value { if^value < 24: 24 - value < 0.000001 el^: value - 24 < 0.000001;}
 
-with^rng = try^std.random.make(0) {
-    var^want = { 0, 0, 0, 0, 0, 0, 0, 0, 0 }
-    var^shown = ""
-    for^i from^1 to^4 {
-        let^ d = rng.range(1, 9)
-        want[d] += 1
-        shown := $"{shown} {d}"
-    }
-    print($"Four digits:{shown}")
-    print("Enter an expression using each of them once, or an empty line to stop.")
+let^_^ = p^{
+    with^rng = try^std.random.make(0) {
+        var^want = { 0, 0, 0, 0, 0, 0, 0, 0, 0 }
+        var^shown = ""
+        for^i from^1 to^4 {
+            let^ d = rng.range(1, 9)
+            want[d] += 1
+            shown := $"{shown} {d}"
+        }
+        print($"Four digits:{shown}")
+        print("Enter an expression using each of them once, or an empty line to stop.")
 
-    repeat^{
-        let^line = std.io.readLine() catch^f^{
-            print(it^.message)
-            return^""
-        }()
-        if^line.length = 0 { break^}
+        repeat^{
+            let^line = std.io.readLine() catch^f^{
+                print(it^.message)
+                return^""
+            }()
+            if^line.length = 0 { break^}
 
-        let^r = Reader.new(line)
-        let^value = r.read()
-        if^!r.ok {
-            print("That is not an expression I can read.")
-        elif^!same(want, r.used):
-            print("Use each of the four digits exactly once.")
-        elif^near24(value):
-            print("Correct!")
-        else^:
-            print($"Incorrect: {value}")
+            let^r = Reader.new(line)
+            let^value = r.read()
+            if^!r.ok {
+                print("That is not an expression I can read.")
+            elif^!same(want, r.used):
+                print("Use each of the four digits exactly once.")
+            elif^near24(value):
+                print("Correct!")
+            else^:
+                print($"Incorrect: {value}")
+            }
         }
     }
-}
+}() catch^f^{
+    print(it^.message)
+}()
