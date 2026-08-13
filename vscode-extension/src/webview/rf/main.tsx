@@ -53,6 +53,12 @@ interface BoxData extends Record<string, unknown> {
     collapsed: boolean;
     start?: number;
     end?: number;
+    /**
+     * V17's cut, applied to the box's own div rather than carried in
+     * node.style: whatever is in node.style reaches the minimap's shapes
+     * too, where a full-scale pixel inset would swallow the tiny rect.
+     */
+    clipPath?: string;
     /** Set when this container's contents may slide (it has a stable key). */
     slideKey?: number;
     /** V18: the axis that carries no order for this node -- see toFlow. */
@@ -117,6 +123,13 @@ function toFlow(
                 type: "box",
                 position: { x, y },
                 parentId,
+                // As first-class fields, not style: the minimap decides
+                // whether a node exists to draw by nodeHasDimensions(), which
+                // reads these and never the style -- with them only in style,
+                // the canvas measures its DOM and works while the minimap
+                // draws nothing at all.
+                width: w,
+                height: h,
                 draggable: false,
                 // Not for selection itself: React Flow turns a node's
                 // pointer-events off entirely when it is neither selectable
@@ -127,8 +140,8 @@ function toFlow(
                 // events flowing.
                 selectable: true,
                 hidden,
-                style: { width: w, height: h, clipPath },
                 data: {
+                    clipPath,
                     label: c.labels?.[0]?.text ?? "",
                     depth,
                     isContainer,
@@ -205,11 +218,17 @@ function BoxNode({ data }: NodeProps<BoxNodeType>) {
     if (data.collapsed) classes.push("folded");
     else if (data.isContainer) classes.push(`container d${Math.min(data.depth, 6)}`);
     else classes.push("leaf");
+    // React Flow's pan is a native d3-zoom listener on the pane, which fires
+    // during native bubbling -- long before React's delegated handlers, so a
+    // stopPropagation here cannot reach it. Its zoom filter does honour this
+    // class, and a slide must not drag the whole canvas along with it.
+    if (data.slideKey !== undefined) classes.push("nopan");
 
     return (
         <>
             <div
                 className={classes.join(" ")}
+                style={data.clipPath ? { clipPath: data.clipPath } : undefined}
                 onPointerDown={onPointerDown}
                 onPointerMove={onPointerMove}
                 onPointerUp={onPointerUp}
