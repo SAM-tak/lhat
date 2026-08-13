@@ -17,6 +17,14 @@
 // made on), which is exactly why fn's parameter list is '...' rather than one
 // written out: stdlib/thread.c's comment on the boundary says the rest.
 //
+// The machine a spawn starts is given the registering program's own
+// registrations (lhat_program_install), so a spawned body reaches print, this
+// module and everything else the host registered -- an LhatHost is an object
+// on one machine's heap, so each machine needs its own. **What a registration
+// was handed as its `context` is shared between them**: this module's own is
+// read-only once registered, and a host whose context is not has to guard it
+// itself.
+//
 // A ThreadHandle's dispose() blocks until the spawned thread finishes if it
 // was never join()ed -- see stdlib/thread.c's thread_dispose comment for why.
 //

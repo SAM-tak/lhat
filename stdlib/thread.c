@@ -56,6 +56,10 @@
 // sample's whole use case; stdlib/random.c's module-wide state makes the same
 // trade for the same reason.
 typedef struct {
+    // 05 の 8.7: what the host registered, so that a machine started here can
+    // be given its own copies. Borrowed -- a program outlives every thread
+    // started from it (join_and_free's comment says why that is not a hope).
+    const LhatProgram *program;
     const LhatErrorKind *not_spawnable;
     const LhatErrorKind *bad_argument;
     const LhatErrorKind *spawn_failed;
@@ -91,6 +95,7 @@ typedef struct {
     const LhatProto *proto;      // borrowed; lives as long as the program
     const LhatModule *modules;   // borrowed; same
     size_t module_count;
+    const LhatProgram *program;  // borrowed; same. What thread_main installs
     // 13.7's collector, still in the form that crossed. Owned by this, and
     // given back by thread_main as soon as the new machine has its own copy.
     ThreadValue *arguments;
@@ -234,7 +239,16 @@ static int thread_main(void *raw)
 
         LhatValue fn = lhat_nil();
         LhatValue *arguments = NULL;
-        if (!lhat_machine_make_closure(machine, start->proto, &fn) ||
+        // 05 の 8.7: a registration becomes an object on the heap of the
+        // machine it is installed on, so L^ and L^.modules are empty here
+        // until this runs -- and the body was compiled against them. Reading
+        // the program is all this does; several threads may be installing at
+        // once, each onto a machine of its own.
+        //
+        // What a registration was handed as its `context` is the one thing
+        // shared between them (see thread.h).
+        if (!lhat_program_install(start->program, machine) ||
+            !lhat_machine_make_closure(machine, start->proto, &fn) ||
             !rebuild_arguments(machine, start, &arguments)) {
             handle->status = LHAT_RUN_OUT_OF_MEMORY;
         } else {
@@ -364,6 +378,7 @@ static LhatValue thread_spawn(LhatMachine *machine, void *context,
     start->proto = closure->proto;
     start->modules = modules;
     start->module_count = module_count;
+    start->program = module->program;
     start->arguments = carried;
     start->argument_count = carried_count;
     start->handle = handle;
@@ -478,6 +493,7 @@ bool lhatstdlib_thread_register(LhatProgram *program)
     if (module == NULL) {
         return false;
     }
+    module->program = program;
     module->out_of_memory = lhatstdlib_error_lookup(program, "OutOfMemory");
 
     static const char *const variants[] = {"NotSpawnable", "BadArgument",

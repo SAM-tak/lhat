@@ -18,6 +18,7 @@
 #include "stdlibutil.h"
 #include "testutil.h"
 
+#include "../stdlib/io.h"
 #include "../stdlib/thread.h"
 
 // std.thread is the module every case here registers; the run itself is
@@ -313,6 +314,53 @@ static void test_sleep(void)
     }
 }
 
+// 05 の 8.7: what a spawned body can reach. A registration is an object on
+// the heap of the machine it was installed on, so the new machine is given
+// its own copies before anything runs -- without that the body reaches a
+// nil^ where print was and faults on the call. And an import^ root is read
+// off L^.modules rather than captured, which is what lets a body name a
+// module at all: spawn refuses a closure with captures, and naming one used
+// to be a capture.
+static void test_modules_reach_the_thread(void)
+{
+    LHAT_TEST("a spawned body may name the module it was written beside");
+    {
+        LhatTestRan ran = run_source(WITH_SPAWN("std.thread.spawn(p^ ... {\n"
+                                                "    std.thread.sleep(0.01)\n"
+                                                "    return^ 42\n"
+                                                "})"));
+        LHAT_CHECK_RAN_INTEGER(ran, 42);
+        lhat_test_ran_dispose(&ran);
+    }
+
+    // A second module, named inside the body: what it reaches there is the
+    // new machine's own registration, installed before the body ran.
+    LHAT_TEST("and a module it was not spawned from writes on that machine");
+    {
+        static const LhatTestRegister with_io[] = {lhatstdlib_thread_register,
+                                                   lhatstdlib_io_register};
+        char written[64] = {0};
+        LhatTestRan ran = lhat_test_run_capturing(
+            with_io, 2, "thread_print.txt",
+            "import^ std.thread\n"
+            "import^ std.io\n"
+            "let^ h = std.thread.spawn(p^ ... {\n"
+            "    std.io.print(\"in the thread\")\n"
+            "    return^ 1\n"
+            "})\n"
+            "if^ h isa^ std.thread.ThreadHandle {\n"
+            "    let^ answer = h.join()\n"
+            "    return^ 1\n"
+            "}\n"
+            "return^ 0\n",
+            written, sizeof written);
+        LHAT_CHECK_RAN_INTEGER(ran, 1);
+        LHAT_CHECK(strcmp(written, "in the thread\n") == 0,
+                   "got \"%s\"", written);
+        lhat_test_ran_dispose(&ran);
+    }
+}
+
 int main(void)
 {
     test_spawn_shape();
@@ -320,5 +368,6 @@ int main(void)
     test_arguments();
     test_dispose();
     test_sleep();
+    test_modules_reach_the_thread();
     return lhat_test_report("test_thread");
 }

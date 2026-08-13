@@ -38,6 +38,11 @@ typedef struct {
     // stamp (or the written annotation) decided at declaration. Reading or
     // writing the name moves this many slots.
     uint8_t width;
+    // 05 の 8.7: the root an import^ bound, which a nested body reads off
+    // L^.modules rather than capturing. See resolve_name. A require^ root
+    // wearing the same name clears this: a unit's value was made by running
+    // it and is in no registry to read back.
+    bool import_root;
 } Local;
 
 typedef struct DefChain {
@@ -1312,6 +1317,7 @@ static void compile_catch_wide(Compiler *c, const LhatNode *node, uint8_t into,
         local->reg = caught;
         local->depth = c->scope_depth;  // catch^ opens no brace of its own
         local->width = 1;
+        local->import_root = false;
     }
     if (reserved > 1 && is_run_source(node->v.binary.right)) {
         compile_run_source(c, node->v.binary.right, into, reserved);
@@ -1825,6 +1831,22 @@ static const char *initial_binding_member(Compiler *c, const char *name,
     return NULL;
 }
 
+// Whether this name is a root an import^ bound in a body around this one.
+// Its own body's is an ordinary local and is read as one; only the step out
+// is what a capture would otherwise be.
+static bool import_root_outside(const Compiler *c, const char *name,
+                                size_t length)
+{
+    for (const Compiler *outer = c->parent; outer != NULL;
+         outer = outer->parent) {
+        const Local *local = find_local(outer, name, length);
+        if (local != NULL) {
+            return local->import_root;
+        }
+    }
+    return false;
+}
+
 static bool resolve_name(Compiler *c, const char *name, size_t length,
                          uint8_t into)
 {
@@ -1836,6 +1858,24 @@ static bool resolve_name(Compiler *c, const char *name, size_t length,
         // no-op here.)
         emit_move_wide(c, into, local->reg,
                        local->width > 1 ? local->width : 1);
+        return true;
+    }
+    // 05 の 8.7: an import^ root standing outside this body is read back off
+    // L^.modules rather than captured. A registration is an object on the
+    // heap of the machine it was installed on, so a capture would hand this
+    // body the maker's -- which is what a body run on another machine
+    // (std.thread's spawn) must not have, and is why that refuses a closure
+    // with captures at all. Reading it here is the same walk the import^
+    // itself made, on whichever machine is running.
+    if (import_root_outside(c, name, length)) {
+        uint8_t mark = c->next_register;
+        uint8_t key = reserve(c);
+        emit(c, lhat_encode_abc(LHAT_BC_ENV, into, 0, 0));
+        load_string_bytes(c, key, "modules", 7);
+        emit(c, lhat_encode_abc(LHAT_BC_GETINDEX, into, into, key));
+        load_string_bytes(c, key, name, length);
+        emit(c, lhat_encode_abc(LHAT_BC_GETINDEX, into, into, key));
+        c->next_register = mark;
         return true;
     }
     size_t upvalue = find_upvalue(c, name, length);
@@ -2167,6 +2207,7 @@ static void compile_def(Compiler *c, const LhatNode *node, uint8_t into)
     local->reg = into;
     local->depth = c->scope_depth;
     local->width = 1;
+    local->import_root = false;
 
     const DefChain *enclosing = c->building;
     c->building = &chain;
@@ -2227,6 +2268,7 @@ static void compile_def(Compiler *c, const LhatNode *node, uint8_t into)
                 previous->reg = hidden;
                 previous->depth = c->scope_depth;
                 previous->width = 1;
+                previous->import_root = false;
             }
 
             compile_expression(c, entry->v.entry.value, value);
@@ -3621,6 +3663,9 @@ static void declare_names(Compiler *c, const LhatNode *statements)
                 local->reg = slot;
                 local->depth = c->scope_depth;
                 local->width = 1;
+                // 05 の 8.7: what is under this root came out of L^.modules,
+                // so a nested body can read it back rather than capture it.
+                local->import_root = true;
                 continue;
             }
             module_name = required_module_name(c, s);
@@ -3628,7 +3673,12 @@ static void declare_names(Compiler *c, const LhatNode *statements)
                 continue;  // reported when the statement is compiled
             }
             size_t root = strcspn(module_name, ".");
-            if (find_local(c, module_name, root) != NULL) {
+            const Local *taken = find_local(c, module_name, root);
+            if (taken != NULL) {
+                // 05 の 5.5 landing under a root an import^ also made: what
+                // this puts there is a unit's value and is in no registry, so
+                // the root goes back to being captured like any other name.
+                ((Local *)taken)->import_root = false;
                 continue;
             }
             if (c->local_count >= LHAT_MAX_LOCALS) {
@@ -3643,6 +3693,7 @@ static void declare_names(Compiler *c, const LhatNode *statements)
             local->reg = slot;
             local->depth = c->scope_depth;
             local->width = 1;
+            local->import_root = false;
             continue;
         }
         if (s->kind != LHAT_NODE_DEFINE) {
@@ -3731,6 +3782,7 @@ static void declare_names(Compiler *c, const LhatNode *statements)
             local->reg = slot;
             local->depth = c->scope_depth;
             local->width = (uint8_t)width;
+            local->import_root = false;
         }
     }
 }
@@ -4560,6 +4612,7 @@ static void declare_targets(Compiler *c, const LhatNode *focus)
         local->reg = slot;
         local->depth = c->scope_depth;
         local->width = 1;
+        local->import_root = false;
     }
 }
 

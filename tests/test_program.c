@@ -392,6 +392,38 @@ static void test_running(void)
     }
     lhat_program_dispose(&program);
 
+    // 05 の 8.7 reads an import^ root off L^.modules inside a nested body
+    // rather than capturing it. A require^ root is not one: what a unit made
+    // was made by running it, and 8.6's registry is the machine's own. So the
+    // capture stays, and a body written around one still sees what it built.
+    LHAT_TEST("a nested body still captures a require^ root");
+    {
+        static const File captured[] = {
+            {"one.lh",
+             "module^ ns.one\n"
+             "public^ let^ v = 7\n"},
+            {"main.lh",
+             "require^ \"one.lh\"\n"
+             "var^ read = f^ -> number^ { return^ ns.one.v }\n"
+             "return^ read()\n"},
+        };
+        program_with(&program, &disk, captured, 2);
+        const LhatUnit *root = lhat_program_check(&program, "main.lh");
+        LHAT_CHECK(root != NULL && !lhat_program_has_errors(&program),
+                   "the program checked");
+        size_t count = 0;
+        const LhatModule *modules = lhat_program_compile(&program, &count);
+        if (modules != NULL && root != NULL) {
+            LhatMachine *machine = lhat_machine_new();
+            lhat_machine_set_modules(machine, modules, count);
+            LhatRunResult ran = lhat_run(machine, modules[root->index].proto);
+            LHAT_CHECK_EQ_INT(ran.status, LHAT_RUN_OK);
+            LHAT_CHECK_EQ_INT(lhat_as_integer(ran.value), 7);
+            lhat_machine_dispose(machine);
+        }
+    }
+    lhat_program_dispose(&program);
+
     // A machine that was never given the units cannot answer a require^.
     LHAT_TEST("and a machine without the units refuses");
     {
