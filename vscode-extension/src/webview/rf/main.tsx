@@ -64,7 +64,10 @@ interface BoxData extends Record<string, unknown> {
     /** V18: the axis that carries no order for this node -- see toFlow. */
     slideAxis: "x" | "y";
     onSlide: (key: number, dx: number, dy: number) => void;
-    onAct: (data: BoxData) => void;
+    /** Left click: go into a folded definition. Nothing otherwise. */
+    onEnter: (data: BoxData) => void;
+    /** Middle click: show what this was made from, in the text. */
+    onReveal: (data: BoxData) => void;
 }
 
 type BoxNodeType = Node<BoxData, "box">;
@@ -75,7 +78,8 @@ function toFlow(
     laid: ElkNode,
     slides: Slides,
     onSlide: BoxData["onSlide"],
-    onAct: BoxData["onAct"],
+    onEnter: BoxData["onEnter"],
+    onReveal: BoxData["onReveal"],
 ): BoxNodeType[] {
     const nodes: BoxNodeType[] = [];
     const dirOf = (n: ElkNode) => n.layoutOptions?.["elk.direction"] ?? "DOWN";
@@ -157,7 +161,8 @@ function toFlow(
                     // vertically.
                     slideAxis: dirOf(parent) === "RIGHT" ? "y" : "x",
                     onSlide,
-                    onAct,
+                    onEnter,
+                    onReveal,
                 },
             });
 
@@ -188,6 +193,12 @@ function BoxNode({ data }: NodeProps<BoxNodeType>) {
     // V18, the immediate half: a drag on a container slides its contents on
     // the axis that carries no order. Pointer capture keeps the gesture ours.
     const onPointerDown = (event: React.PointerEvent) => {
+        // Middle press: the browser would start its own autoscroll here, and
+        // the click that follows is what shows the text.
+        if (event.button === 1) {
+            event.preventDefault();
+            return;
+        }
         // The left button only. The middle one used to slide the contents as
         // well, which put a slide and a scroll on the same gesture.
         if (event.button !== 0) return;
@@ -215,7 +226,17 @@ function BoxNode({ data }: NodeProps<BoxNodeType>) {
         const wasDrag = drag.current.moved;
         drag.current = null;
         // A press that never moved was a click on the box, not a slide.
-        if (!wasDrag) data.onAct(data);
+        if (!wasDrag) data.onEnter(data);
+    };
+
+    // Showing the text is the middle button's. On the left it kept firing
+    // when a slide or a connection was what was meant -- the gestures start
+    // the same way, and only the one that turns out not to be a drag can be
+    // told apart, by which time the text has already been jumped to.
+    const onAuxClick = (event: React.MouseEvent) => {
+        if (event.button !== 1) return;
+        event.preventDefault();
+        data.onReveal(data);
     };
 
     const classes = ["box"];
@@ -235,6 +256,7 @@ function BoxNode({ data }: NodeProps<BoxNodeType>) {
                 onPointerDown={onPointerDown}
                 onPointerMove={onPointerMove}
                 onPointerUp={onPointerUp}
+                onAuxClick={onAuxClick}
             >
                 <div className="boxlabel">{data.label}</div>
             </div>
@@ -334,26 +356,28 @@ function App() {
         }));
     }, []);
 
-    const onAct = useCallback((data: BoxData) => {
+    // 8.2: a folded definition is a way in. Anything else does nothing on the
+    // left button, which is what leaves it free for sliding and connecting.
+    const onEnter = useCallback((data: BoxData) => {
         if (reply === undefined || data.start === undefined) return;
-        if (data.collapsed) {
-            const node = nodeAt(reply.root, data.start);
-            if (node !== undefined) {
-                const start = data.start;
-                setTrail((t) => [...t, start]);
-                return;
-            }
-        }
-        if (data.end !== undefined) {
-            vscode.postMessage({
-                type: "reveal", start: data.start, end: data.end,
-            });
+        if (!data.collapsed) return;
+        const start = data.start;
+        if (nodeAt(reply.root, start) !== undefined) {
+            setTrail((t) => [...t, start]);
         }
     }, [reply]);
 
+    const onReveal = useCallback((data: BoxData) => {
+        if (data.start === undefined || data.end === undefined) return;
+        vscode.postMessage({
+            type: "reveal", start: data.start, end: data.end,
+        });
+    }, []);
+
     const nodes = useMemo(
-        () => (laid !== undefined ? toFlow(laid, slides, onSlide, onAct) : []),
-        [laid, slides, onSlide, onAct]);
+        () => (laid !== undefined
+            ? toFlow(laid, slides, onSlide, onEnter, onReveal) : []),
+        [laid, slides, onSlide, onEnter, onReveal]);
 
     const onConnect = useCallback((connection: Connection) => {
         // Edges render in an svg layer below the nodes unless told otherwise,
