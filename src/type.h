@@ -334,19 +334,28 @@ LhatType *lhat_type_intersect(LhatTypeArena *arena, LhatType *a, LhatType *b);
 // type expression means one thing wherever it appears.
 bool lhat_type_conforms(const LhatType *value, const LhatType *target);
 
+// 03 の 3.1: is there a gap in inference here -- a pending^ the walk left
+// behind, whether the type is one or carries one? A union arm counts (a
+// mutually recursive partner answers 'bool^|pending^', which promises its
+// callers a type it does not have), and so does a tuple position.
+//
+// A subroutine's parameters and a table's members are not walked into. A
+// parameter left pending^ is a constraint nobody wrote, which 3.1 has always
+// forgiven; a member is a question about that table, asked where the table is
+// built. unknown^ is not a gap either: it covers spots with nothing to report
+// (table subtyping's silence, a computed key) rather than inference that had
+// somewhere left to run.
+bool lhat_type_has_gap(const LhatType *type);
+
 // 03 の 3.1・3.5: the same question, asked the way strict asks it, and
-// asymmetrically at that. A *value* still pending^ (a mutually recursive
-// partner not yet checked, not buried in a union either -- lhat_type_conforms
-// already refuses that case) is not forgiven here the way it is under the
-// lenient default above; strict reports it instead of leaving it for a
-// runtime check relaxed has not grown yet. A *target* left pending^ is a
-// different thing -- a constraint nobody wrote (an omitted parameter or
-// return annotation, a binding a multiple-assignment left short) -- and
-// stays forgiven, the same as any^. unknown^ itself stays forgiven on
-// either side even under strict -- it covers cases (table subtyping's
-// silence, computed keys, and other spots with nothing to report) that have
-// nothing to do with a gap strict should be closing. Checkers running
-// relaxed keep using lhat_type_conforms.
+// asymmetrically at that. A *value* with a gap in it (lhat_type_has_gap
+// above) is not forgiven here the way it is under the lenient default; strict
+// reports it instead of leaving it for a runtime check relaxed has not grown
+// yet. A *target* left pending^ is a different thing -- a constraint nobody
+// wrote (an omitted parameter or return annotation, a binding a
+// multiple-assignment left short) -- and stays forgiven, the same as any^.
+// unknown^ itself stays forgiven on either side even under strict. Checkers
+// running relaxed keep using lhat_type_conforms.
 bool lhat_type_conforms_strict(const LhatType *value, const LhatType *target);
 
 // Mutual conformance. Used to drop redundant union arms.

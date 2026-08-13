@@ -853,6 +853,120 @@ static void test_parameter_inference(void)
     unit_dispose(&u);
 }
 
+// 03 の 3.1: a result the body did not decide. The gap is reported at the
+// definition -- a result type is a promise to every caller -- and again
+// wherever it reaches a place a concrete type is wanted.
+static void test_undecided_results(void)
+{
+    Unit u;
+
+    // 3.1's own example. Whichever of the two is walked first reads a partner
+    // that has not been walked, so the union it answers carries a gap.
+    LHAT_TEST("a mutually recursive pair says its result did not come out");
+    check_text(&u,
+               "let^ a = f^ n:number^ {\n"
+               "    if^ n <= 0 { return^ true^ }\n"
+               "    return^ b(n - 1)\n"
+               "}\n"
+               "let^ b = f^ n:number^ {\n"
+               "    if^ n <= 0 { return^ false^ }\n"
+               "    return^ a(n - 1)\n"
+               "}\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_RESULT_UNDECIDED);
+    LHAT_CHECK_EQ_INT(u.checked.diagnostic_count, 2);
+    unit_dispose(&u);
+
+    // Writing one of them closes the ring: the one written no longer asks,
+    // and the other reads it rather than a gap.
+    LHAT_TEST("and writing one of the two settles both");
+    check_text(&u,
+               "let^ a = f^ n:number^ -> bool^ {\n"
+               "    if^ n <= 0 { return^ true^ }\n"
+               "    return^ b(n - 1)\n"
+               "}\n"
+               "let^ b = f^ n:number^ {\n"
+               "    if^ n <= 0 { return^ false^ }\n"
+               "    return^ a(n - 1)\n"
+               "}\n"
+               "let^ x : bool^ = a(4)\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // 3.5: relaxed leaves an undecided type to the machine, so it says
+    // nothing here -- the same program, the same types, a different setting.
+    LHAT_TEST("relaxed forgives the whole of it");
+    check_relaxed_text(&u,
+                       "let^ a = f^ n:number^ {\n"
+                       "    if^ n <= 0 { return^ true^ }\n"
+                       "    return^ b(n - 1)\n"
+                       "}\n"
+                       "let^ b = f^ n:number^ { return^ a(n - 1) }\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // The gap is in a union arm, where lhat_type_conforms's leniency used to
+    // hide it: 'bool^|pending^' is not a bool^ where one is wanted.
+    LHAT_TEST("a gap buried in a union is reported where it lands as well");
+    check_text(&u,
+               "let^ a = f^ n:number^ {\n"
+               "    if^ n <= 0 { return^ true^ }\n"
+               "    return^ b(n - 1)\n"
+               "}\n"
+               "let^ b = f^ n:number^ -> bool^ { return^ a(n - 1) }\n"
+               "let^ x : bool^ = a(4)\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
+    unit_dispose(&u);
+
+    // 02 の 13.7 and 04 の 7 章: no generic types, so a parameter handed
+    // straight back leaves the result undecided too. 3.4's own reading of
+    // this case -- the writer ends up writing any^ or a concrete type -- is
+    // what the report asks for.
+    LHAT_TEST("a parameter handed straight back leaves the result undecided");
+    check_text(&u, "var^ id = f^ x { return^ x }\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_RESULT_UNDECIDED);
+    unit_dispose(&u);
+
+    LHAT_TEST("and writing any^ is what settles it");
+    check_text(&u, "var^ id = f^ x:any^ { return^ x }\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // The parameters are not read this way. A gap there is a constraint
+    // nobody wrote, which is what any^ already means (3.1).
+    LHAT_TEST("a parameter nothing demands is not itself reported");
+    check_text(&u, "var^ f = p^ x { }\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // 03 の 3.4改: a signature written on the binding is written, wherever it
+    // stands. The body decides nothing here, so there is nothing to report.
+    LHAT_TEST("a result the binding wrote is not inferred");
+    check_text(&u,
+               "let^ a : f^number^ -> bool^; = f^ n {\n"
+               "    if^ n <= 0 { return^ true^ }\n"
+               "    return^ b(n - 1)\n"
+               "}\n"
+               "let^ b = f^ n:number^ -> bool^ { return^ a(n - 1) }\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // 03 の 3.4改2 walks a def^'s members again from what the last walk
+    // inferred, so a ring of them settles without anything being written --
+    // and the first walk's report goes with the first walk.
+    LHAT_TEST("a ring of def^ members is settled by the walks, not reported");
+    check_text(&u,
+               "var^ R = def^{\n"
+               "    self^{ n := 0 },\n"
+               "    expr := p^self^ { return^ self^.term() },\n"
+               "    term := p^self^ {\n"
+               "        if^ self^.n > 0 { return^ self^.expr() }\n"
+               "        return^ 1\n"
+               "    },\n"
+               "}\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+}
+
 // 04.
 static void test_errors(void)
 {
@@ -1405,6 +1519,7 @@ int main(void)
     test_expressions();
     test_results();
     test_parameter_inference();
+    test_undecided_results();
     test_errors();
     test_annotations();
     return lhat_test_report("test_check_core");

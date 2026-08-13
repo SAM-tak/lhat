@@ -52,6 +52,9 @@ typedef enum {
     LHAT_CHECK_ERR_TRY_OUTSIDE,         // 04 の 5.3
     LHAT_CHECK_ERR_NEVER_RETURNS,       // 03 の 3.4: every way out of the body
                                         // goes through the subroutine itself
+    LHAT_CHECK_ERR_RESULT_UNDECIDED,    // 03 の 3.1: the body did not decide
+                                        // the result type, so every caller
+                                        // would be promised a gap
     LHAT_CHECK_ERR_FUNCTION_FALLS_OUT,  // 13.2: an f^ that can reach its end
     LHAT_CHECK_ERR_FALLS_OUT_OF_RESULT, // the value-less exit does not fit the
                                         // result that was written

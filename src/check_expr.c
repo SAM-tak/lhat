@@ -1823,6 +1823,14 @@ LhatType *chk_infer_func(Checker *c, const LhatNode *node)
         c->tuple_allowed = true;  // 13.8改, as in resolve_func_type
         declared = chk_resolve_type(c, node->v.func.return_type);
     }
+    // 03 の 3.4改: a signature written on the binding says what the result is
+    // as plainly as one written here does. The parameters above are filled
+    // from it for that reason, and the result is not a different question --
+    // leaving it out would have the body infer a result that the very
+    // signature it was written under already gave.
+    if (declared == NULL && expected_func != NULL) {
+        declared = expected_func->v.func.result;
+    }
     func->v.func.result = declared;
 
     Scope *outer_scope = c->scope;
@@ -1937,6 +1945,20 @@ LhatType *chk_infer_func(Checker *c, const LhatNode *node)
             chk_report(c, node, LHAT_CHECK_ERR_NEVER_RETURNS);
         }
         func->v.func.result = c->inferred_result;
+
+        // 03 の 3.1: what the body did not decide is reported here rather
+        // than left in the signature. A result type is a promise to every
+        // caller, so a gap in one hands the gap out at every call -- and
+        // where there is no call yet, nobody would ever have asked. The
+        // parameters are not read this way (a gap there is a constraint
+        // nobody wrote, which is what any^ already means), and relaxed
+        // forgives all of it (3.5).
+        //
+        // A result 3.4改's expectation gave is written rather than inferred,
+        // so this branch is not where it lands at all.
+        if (c->strict && lhat_type_has_gap(func->v.func.result)) {
+            chk_report(c, node, LHAT_CHECK_ERR_RESULT_UNDECIDED);
+        }
     }
 
     // 15.3改: an f^ coroutine may not leave the body that made it. Reaching

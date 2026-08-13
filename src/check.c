@@ -2275,6 +2275,9 @@ const char *lhat_check_error_message(LhatCheckErrorCode code)
         case LHAT_CHECK_ERR_NEVER_RETURNS:
             return "every way out of this body calls it again, so it never "
                    "produces a value";
+        case LHAT_CHECK_ERR_RESULT_UNDECIDED:
+            return "the result type did not come out of this body, so it has "
+                   "to be written";
         case LHAT_CHECK_ERR_SCOPE_TOO_FAR:
             return "this reaches out past more scopes than are open here";
         case LHAT_CHECK_ERR_SCOPE_ON_DEFINE:

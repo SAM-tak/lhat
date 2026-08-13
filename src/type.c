@@ -681,6 +681,48 @@ bool lhat_type_conforms(const LhatType *value, const LhatType *target)
     return conforms_in(value, target, NULL);
 }
 
+// 03 の 3.1: how deep to look for a gap. A type built out of unions and
+// tuples this far down is past anything a diagnostic could point at usefully,
+// and the bound is what keeps a type holding itself from being walked forever
+// -- the same depth chk_mentions_function_coroutine stops at.
+#define GAP_MAX_DEPTH 8
+
+static bool has_gap_in(const LhatType *type, unsigned depth)
+{
+    if (type == NULL || depth > GAP_MAX_DEPTH) {
+        return false;
+    }
+    if (type->kind == LHAT_TYPE_PENDING) {
+        return true;
+    }
+    // A union promising 'bool^|pending^' promises its callers a type it does
+    // not have; a tuple with a gap in one position is the same thing said of
+    // one of several values. Nothing else is descended into -- see the header.
+    if (type->kind == LHAT_TYPE_UNION || type->kind == LHAT_TYPE_INTERSECT) {
+        for (const LhatTypeList *arm = type->v.composite.arms; arm != NULL;
+             arm = arm->next) {
+            if (has_gap_in(arm->type, depth + 1)) {
+                return true;
+            }
+        }
+        return false;
+    }
+    if (type->kind == LHAT_TYPE_TUPLE) {
+        for (const LhatTypeList *at = type->v.composite.arms; at != NULL;
+             at = at->next) {
+            if (has_gap_in(at->type, depth + 1)) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+bool lhat_type_has_gap(const LhatType *type)
+{
+    return has_gap_in(type, 0);
+}
+
 bool lhat_type_conforms_strict(const LhatType *value, const LhatType *target)
 {
     // NULL means nothing was inferred (a cascade to avoid, not a gap to
@@ -704,11 +746,13 @@ bool lhat_type_conforms_strict(const LhatType *value, const LhatType *target)
     if (target->kind == LHAT_TYPE_ANY || target->kind == LHAT_TYPE_PENDING) {
         return true;
     }
-    // 03 の 3.1・3.5、P6: a value still pending^ here -- inference that had
-    // somewhere left to run but did not -- is exactly the gap strict exists
-    // to report, unlike unknown^ (lhat_type_conforms's leniency for that one
-    // stands even here).
-    if (value->kind == LHAT_TYPE_PENDING) {
+    // 03 の 3.1・3.5、P6: a value with a gap in it -- inference that had
+    // somewhere left to run but did not -- is exactly what strict exists to
+    // report, unlike unknown^ (lhat_type_conforms's leniency for that one
+    // stands even here). Buried in a union as readily as on its own: what a
+    // mutually recursive pair answers is 'bool^|pending^', and a value whose
+    // type is partly undecided is undecided where a concrete one is wanted.
+    if (lhat_type_has_gap(value)) {
         return false;
     }
     return lhat_type_conforms(value, target);
