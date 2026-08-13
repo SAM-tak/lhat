@@ -31,7 +31,8 @@ else^:
 }
 
 let^u:number^ = 0
-if^ u = 0 {
+let^v:number^ = 0
+if^ u = 0 and^ v = 0 {
     print("sdsad")
 else^:
     print("!!!")

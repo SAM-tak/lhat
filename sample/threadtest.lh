@@ -5,6 +5,7 @@ let^a = "aaaaaa"
 # a は外の名前なので closed^ の本体では書けない。引数として渡す
 let^h = std.thread.spawn(closed^p^ ... {
     std.thread.sleep(1)
+    # print(a) # this cause error when uncomment out
     for^ i, x in^ ... { print(x) }
     return^ 1
 }, a)
@@ -12,7 +13,7 @@ let^h = std.thread.spawn(closed^p^ ... {
 if^h isa^std.thread.ThreadHandle {
     let^first = h.join()
     let^again = h.join()
-    if^ again isa^ std.thread.ThreadError.AlreadyJoined {
+    if^again isa^std.thread.ThreadError.AlreadyJoined {
         return^ 1
     }
     return^ 0

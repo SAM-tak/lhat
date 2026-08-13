@@ -109,6 +109,12 @@
             "settings": {
               "foreground": "#88888899"
             }
+          },
+          {
+            "scope": "keyword.operator.word.lhat",
+            "settings": {
+              "foreground": "#569BD2"
+            }
           }
         ]
       }
