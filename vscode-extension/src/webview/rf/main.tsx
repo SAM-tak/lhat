@@ -353,7 +353,12 @@ function App() {
         [laid, slides, onSlide, onAct]);
 
     const onConnect = useCallback((connection: Connection) => {
-        setEdges((current) => addEdge({ ...connection, animated: true }, current));
+        // Edges render in an svg layer below the nodes unless told otherwise,
+        // and a data line that runs behind the boxes it connects says nothing.
+        // Nesting gives a node z of parent+1 (depth ~13 here) and selection
+        // adds 1000, so 2000 clears everything.
+        setEdges((current) =>
+            addEdge({ ...connection, animated: true, zIndex: 2000 }, current));
     }, [setEdges]);
 
     return (

@@ -119,3 +119,10 @@ html, body, #root {
     stroke: var(--vscode-charts-blue, #58a);
     stroke-width: 1.5;
 }
+
+/* The rubber line while a connection is being dragged sits at the same
+   height as the finished edges (zIndex 2000 in onConnect) -- above every
+   box, not behind them. */
+.react-flow__connection {
+    z-index: 2000;
+}
