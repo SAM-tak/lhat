@@ -17,15 +17,13 @@
 // Section 10.9.
 typedef enum {
     LHAT_TOKEN_EOF,
+    // Section 3.1. A name written with backticks is one of these too -- the
+    // form is a way of spelling an identifier, not a different kind of name,
+    // so `a` and a are the same name and come back the same way. What tells
+    // the two apart is `v.string`, where the lexer put the spelling: the
+    // delimiters are not part of the name and a doubled backtick is one.
     LHAT_TOKEN_IDENT,
     LHAT_TOKEN_HAT_IDENT,    // identifier followed by one or more '^'
-
-    // Section 3.3. A backtick delimited name denotes one that either cannot be
-    // written as a bare identifier, or is meant as a value rather than as a
-    // reference. Deliberately a separate kind from LHAT_TOKEN_IDENT: were it
-    // the same, `a` and a would be indistinguishable and the second use would
-    // be impossible to express.
-    LHAT_TOKEN_NAME_LITERAL,
 
     LHAT_TOKEN_INT,
     LHAT_TOKEN_FLOAT,

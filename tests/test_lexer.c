@@ -132,7 +132,7 @@ static void test_name_literals(void)
     LHAT_TEST("a name may contain a question mark");
     scan_text(&s, "`foo?`");
     LHAT_CHECK_EQ_INT(token_count(&s), 1);
-    LHAT_CHECK_EQ_INT(s.tokens[0].kind, LHAT_TOKEN_NAME_LITERAL);
+    LHAT_CHECK_EQ_INT(s.tokens[0].kind, LHAT_TOKEN_IDENT);
     bytes = lhat_lexer_string(&s.lexer, &s.tokens[0], &length);
     LHAT_CHECK_EQ_STR(bytes, length, "foo?");
     LHAT_CHECK_EQ_INT(s.lexer.diagnostic_count, 0);
@@ -159,12 +159,17 @@ static void test_name_literals(void)
     LHAT_CHECK_EQ_STR(bytes, length, "\xE7\xA9\xBA\xE3\x81\x8B?");
     scan_dispose(&s);
 
-    // Distinct from LHAT_TOKEN_IDENT on purpose: `a` must not collapse into
-    // the same token as a, or a name could not be used as a value.
-    LHAT_TEST("a name literal is not an ordinary identifier");
+    // 3.1: the form is a way of spelling an identifier, so `a` and a are the
+    // same name and the same kind of token. What differs is where the
+    // spelling is: a is its own source slice, `a` was decoded.
+    LHAT_TEST("a name literal is an ordinary identifier");
     scan_text(&s, "a `a`");
     LHAT_CHECK_EQ_INT(s.tokens[0].kind, LHAT_TOKEN_IDENT);
-    LHAT_CHECK_EQ_INT(s.tokens[1].kind, LHAT_TOKEN_NAME_LITERAL);
+    LHAT_CHECK_EQ_INT(s.tokens[1].kind, LHAT_TOKEN_IDENT);
+    LHAT_CHECK(lhat_lexer_string(&s.lexer, &s.tokens[0], &length) == NULL,
+               "a bare identifier carries no decoded spelling");
+    bytes = lhat_lexer_string(&s.lexer, &s.tokens[1], &length);
+    LHAT_CHECK_EQ_STR(bytes, length, "a");
     scan_dispose(&s);
 
     LHAT_TEST("the delimiter is not part of the name");
@@ -184,14 +189,16 @@ static void test_name_literals(void)
     LHAT_TEST("a name literal terminates an identifier");
     scan_text(&s, "x`y`");
     LHAT_CHECK_EQ_INT(token_count(&s), 2);
-    LHAT_CHECK_EQ_INT(s.tokens[0].kind, LHAT_TOKEN_IDENT);
-    LHAT_CHECK_EQ_INT(s.tokens[1].kind, LHAT_TOKEN_NAME_LITERAL);
+    bytes = lhat_lexer_string(&s.lexer, &s.tokens[1], &length);
+    LHAT_CHECK_EQ_STR(bytes, length, "y");
     scan_dispose(&s);
 
     LHAT_TEST("a name literal works as a table key");
     scan_text(&s, "foo[`a b`]");
     LHAT_CHECK_EQ_INT(token_count(&s), 4);
-    LHAT_CHECK_EQ_INT(s.tokens[2].kind, LHAT_TOKEN_NAME_LITERAL);
+    LHAT_CHECK_EQ_INT(s.tokens[2].kind, LHAT_TOKEN_IDENT);
+    bytes = lhat_lexer_string(&s.lexer, &s.tokens[2], &length);
+    LHAT_CHECK_EQ_STR(bytes, length, "a b");
     scan_dispose(&s);
 
     // Unlike a string, it stops at the end of the line so a missing delimiter

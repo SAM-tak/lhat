@@ -26,6 +26,7 @@ typedef enum {
     LHAT_PARSE_ERR_WITHDRAWN_ARROW,        // '->' as postfix reassignment
     LHAT_PARSE_ERR_WITHDRAWN_COLONCOLON,   // '::' as the return separator
     LHAT_PARSE_ERR_RESERVED_SHIFT,         // '<<' and '>>' are reserved
+    LHAT_PARSE_ERR_ID_NEEDS_NAME,          // 01 の 3.3: id^ spells a name
     LHAT_PARSE_ERR_BINDING_ARITY,             // targets and values disagree
     LHAT_PARSE_ERR_CLAUSE_ORDER,              // 9.2: clauses have a fixed order
     LHAT_PARSE_ERR_MAIN_REQUIRED,             // 9.3

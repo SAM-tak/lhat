@@ -383,7 +383,7 @@ const char *lhat_node_kind_name(LhatNodeKind kind)
 // definition, because what the checker looks a member up under is the
 // string the machine will use as a key.
 bool lhat_node_name(const LhatNode *node, const char *source_text,
-                    const char **text, size_t *length)
+                    const char *strings, const char **text, size_t *length)
 {
     if (node == NULL) {
         return false;
@@ -391,9 +391,20 @@ bool lhat_node_name(const LhatNode *node, const char *source_text,
     switch (node->kind) {
         // TYPE_NAME carries a name the same way: 13.11's is^ writes a type
         // on the right, and 04 の 14.4 lets that be a qualified error kind.
+        // 3.3: id^name answers the name it was written with, which is the
+        // whole of what that form is.
         case LHAT_NODE_IDENT:
         case LHAT_NODE_HAT_IDENT:
-        case LHAT_NODE_TYPE_NAME: {
+        case LHAT_NODE_TYPE_NAME:
+        case LHAT_NODE_NAME: {
+            // 3.1: written with backticks, so the spelling is the decoded one
+            // rather than the span -- delimiters left out and a doubled
+            // backtick made one.
+            if (node->v.name.text_length > 0) {
+                *text = strings + node->v.name.text_offset;
+                *length = node->v.name.text_length;
+                return true;
+            }
             *text = source_text + node->v.name.offset;
             // The hats sit right after the word in the source, so the
             // canonical name is the span cut after the first of them.
@@ -413,8 +424,8 @@ bool lhat_node_name(const LhatNode *node, const char *source_text,
             // 01 の 8 章: the sigil says where to look, and the name is what
             // to look for -- a specifier answers with the name it is glued
             // to.
-            return lhat_node_name(node->v.scope.name, source_text, text,
-                                  length);
+            return lhat_node_name(node->v.scope.name, source_text, strings,
+                                  text, length);
         default:
             return false;
     }
@@ -426,12 +437,13 @@ bool lhat_name_is(const char *text, size_t length, const char *literal)
     return length == n && memcmp(text, literal, n) == 0;
 }
 
-bool lhat_node_is_environment(const LhatNode *node, const char *source_text)
+bool lhat_node_is_environment(const LhatNode *node, const char *source_text,
+                              const char *strings)
 {
     const char *name = NULL;
     size_t length = 0;
     return node != NULL && node->kind == LHAT_NODE_HAT_IDENT &&
-           lhat_node_name(node, source_text, &name, &length) &&
+           lhat_node_name(node, source_text, strings, &name, &length) &&
            lhat_name_is(name, length, "L^");
 }
 

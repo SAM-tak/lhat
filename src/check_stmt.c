@@ -28,7 +28,8 @@ static const LhatTypeMember *member_named(const LhatType *type,
 // ast.c's L^ test (05 の 8.6), shared with the compiler.
 static bool is_environment(const Checker *c, const LhatNode *node)
 {
-    return lhat_node_is_environment(node, c->lexer->source->text);
+    return lhat_node_is_environment(node, c->lexer->source->text,
+                                    c->lexer->strings);
 }
 
 // What L^ carries. vm.c's build_environment makes the values; the two lists

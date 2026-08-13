@@ -99,8 +99,8 @@
       ]
     },
     "name-literal": {
-      "comment": "01-lexical-structure.md 3.4: backtick-delimited, cannot span a line",
-      "name": "string.quoted.other.name-literal.lhat",
+      "comment": "01-lexical-structure.md 3.1: an identifier spelled with backticks, cannot span a line",
+      "name": "variable.other.name-literal.lhat",
       "begin": "`",
       "beginCaptures": { "0": { "name": "punctuation.definition.string.begin.lhat" } },
       "end": "`|$",
@@ -179,7 +179,7 @@
           }
         },
         {
-          "match": "\\b(typeof|width|autowidth|prolog|pre|first|main|last|epilog)(\\^+)",
+          "match": "\\b(typeof|id|width|autowidth|prolog|pre|first|main|last|epilog)(\\^+)",
           "captures": {
             "1": { "name": "support.function.lhat" },
             "2": { "name": "punctuation.definition.hat.lhat" }

@@ -12,6 +12,49 @@
 #include "code.h"
 #include "fixture.h"
 
+// 01 の 3.1 and 3.3: a name written with backticks is a name, and id^name is
+// that name's spelling as a string. The two are separate forms -- one is how
+// a name may be written, the other is how a string may be.
+static void test_names(void)
+{
+    Run r;
+
+    LHAT_TEST("a name written with backticks is a name");
+    run_text(&r, "let^ `a b` = 41\nreturn^ `a b` + 1\n");
+    CHECK_INTEGER(&r, 42);
+    run_dispose(&r);
+
+    LHAT_TEST("and the delimiters are not part of it");
+    run_text(&r, "let^ t = { `a b` = 7 }\nreturn^ t.`a b`\n");
+    CHECK_INTEGER(&r, 7);
+    run_dispose(&r);
+
+    LHAT_TEST("a doubled backtick is one, in the name it makes");
+    run_text(&r, "let^ t = { `a``b` = 5 }\nreturn^ t[\"a`b\"]\n");
+    CHECK_INTEGER(&r, 5);
+    run_dispose(&r);
+
+    // 3.3: nothing is looked up -- the form is about how the string is
+    // written, so a name that is nowhere still spells itself.
+    LHAT_TEST("id^ answers the spelling, of a name that need not exist");
+    run_text(&r, "return^ id^nowhere\n");
+    CHECK_STRING(&r, "nowhere");
+    run_dispose(&r);
+
+    LHAT_TEST("and the name may be written with backticks or a hat");
+    run_text(&r, "return^ id^`a b` .. \"|\" .. id^tostring^\n");
+    CHECK_STRING(&r, "a b|tostring^");
+    run_dispose(&r);
+
+    // 3.3's own example: the spelling answered by a match is the key.
+    LHAT_TEST("what id^ answers reads as a key");
+    run_text(&r,
+             "let^ foo = { a = f^ { return^ 1 }, b = f^ { return^ 2 } }\n"
+             "return^ foo[for^ 2: when^ 1: id^a other^: id^b;]()\n");
+    CHECK_INTEGER(&r, 2);
+    run_dispose(&r);
+}
+
 static void test_strings(void)
 {
     Run r;
@@ -1193,6 +1236,7 @@ static void test_tonumber(void)
 
 int main(void)
 {
+    test_names();
     test_strings();
     test_tables();
     test_interpolation();

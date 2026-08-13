@@ -204,11 +204,13 @@ static void fail_named(Compiler *c, LhatCompileStatus status, const char *name,
     }
 }
 
-// ast.c's canonical-name reading (01 の 2.3), against this unit's source.
+// ast.c's canonical-name reading (01 の 2.3), against this unit's source --
+// and its string storage, where 3.1's backticked names are spelled.
 static bool node_name(const Compiler *c, const LhatNode *node,
                       const char **text, size_t *length)
 {
-    return lhat_node_name(node, c->lexer->source->text, text, length);
+    return lhat_node_name(node, c->lexer->source->text, c->lexer->strings,
+                          text, length);
 }
 
 // 02 の 13.12: '_^' stands where a name would and binds nothing, so no local
@@ -1099,8 +1101,12 @@ static void compile_key(Compiler *c, const LhatNode *node, uint8_t into)
         return;
     }
     switch (key->kind) {
+        // 01 の 3.3: id^name is the name's spelling, which is a key like any
+        // other written one -- the same bytes node_name answers for the name
+        // written bare.
         case LHAT_NODE_IDENT:
-        case LHAT_NODE_HAT_IDENT: {
+        case LHAT_NODE_HAT_IDENT:
+        case LHAT_NODE_NAME: {
             const char *name = NULL;
             size_t length = 0;
             if (!node_name(c, key, &name, &length)) {
@@ -1110,9 +1116,6 @@ static void compile_key(Compiler *c, const LhatNode *node, uint8_t into)
             load_string_bytes(c, into, name, length);
             return;
         }
-        case LHAT_NODE_NAME:
-            load_string(c, into, key);
-            return;
         case LHAT_NODE_INT:
             load_constant(c, into, lhat_integer((int64_t)key->v.integer.value));
             return;
@@ -2364,9 +2367,7 @@ static void compile_table(Compiler *c, const LhatNode *node, uint8_t into)
             const LhatNode *named = entry->v.entry.key;
             const char *name = NULL;
             size_t length = 0;
-            if (named->kind == LHAT_NODE_NAME) {
-                load_string(c, key, named);
-            } else if (node_name(c, named, &name, &length)) {
+            if (node_name(c, named, &name, &length)) {
                 load_string_bytes(c, key, name, length);
             } else {
                 fail(c, LHAT_COMPILE_UNSUPPORTED);
@@ -2912,9 +2913,21 @@ static void compile_expression(Compiler *c, const LhatNode *node, uint8_t into)
             return;
 
         case LHAT_NODE_STRING:
-        case LHAT_NODE_NAME:
             load_string(c, into, node);
             return;
+
+        // 01 の 3.3: id^name is that name's spelling, and a string is what it
+        // answers -- the same bytes a key written bare compiles to.
+        case LHAT_NODE_NAME: {
+            const char *name = NULL;
+            size_t length = 0;
+            if (!node_name(c, node, &name, &length)) {
+                fail(c, LHAT_COMPILE_UNSUPPORTED);
+                return;
+            }
+            load_string_bytes(c, into, name, length);
+            return;
+        }
 
         case LHAT_NODE_INTERP:
             compile_interp(c, node, into);

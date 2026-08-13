@@ -1476,11 +1476,34 @@ static void test_literals(void)
     LHAT_CHECK_EQ_INT(error_count(&p), 0);
     parse_dispose(&p);
 
+    // 01 の 3.1: a name written with backticks is an identifier, so it is the
+    // key an identifier is -- what the delimiters buy is the spelling.
     LHAT_TEST("name literal as a key");
     parse_text(&p, "t := { `a b` := 1 }");
     LHAT_CHECK_EQ_INT(error_count(&p), 0);
     LHAT_CHECK_EQ_INT(first_value(&p)->v.list.items->v.entry.key->kind,
-                      LHAT_NODE_NAME);
+                      LHAT_NODE_IDENT);
+    parse_dispose(&p);
+
+    // 01 の 3.3: id^name is the spelling as a value, which is a leaf of its
+    // own -- nothing is looked up and nothing follows it.
+    LHAT_TEST("id^ takes a name and answers a NAME node");
+    parse_text(&p, "t := id^a");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    LHAT_CHECK_EQ_INT(first_value(&p)->kind, LHAT_NODE_NAME);
+    parse_dispose(&p);
+
+    LHAT_TEST("and the name may be written with backticks or a hat");
+    parse_text(&p, "t := id^`a b`\nu := id^tostring^");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    LHAT_CHECK_EQ_INT(first_value(&p)->kind, LHAT_NODE_NAME);
+    parse_dispose(&p);
+
+    LHAT_TEST("id^ without a name after it is reported");
+    parse_text(&p, "t := id^1");
+    LHAT_CHECK(p.result.diagnostic_count > 0, "expected a diagnostic");
+    LHAT_CHECK_EQ_INT(p.result.diagnostics[0].code,
+                      LHAT_PARSE_ERR_ID_NEEDS_NAME);
     parse_dispose(&p);
 
     // 14.14改: an entry introduces a member, and 8.6 spells introducing '='.

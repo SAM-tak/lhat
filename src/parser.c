@@ -62,6 +62,7 @@ static LhatNode *parse_clause_body(Parser *p, const LhatToken *at, bool in_loop,
 static LhatNode *access_node(Parser *p, LhatNodeKind kind, const LhatToken *at,
                              LhatNode *target, LhatNode *argument, bool nil_safe);
 static LhatNode *simple_node(Parser *p);
+static void fill_name(LhatNode *node, const LhatToken *t, LhatNodeKind kind);
 static LhatNode *parse_error_fields(Parser *p);
 static LhatNode *parse_module(Parser *p);
 static LhatNode *parse_public(Parser *p);
@@ -451,7 +452,6 @@ static LhatNode *parse_member_decls(Parser *p)
         // half is described by writing its types in order. One token of
         // lookahead separates them: only a name followed by ':' is a member.
         bool named = (p->current.kind == LHAT_TOKEN_IDENT ||
-                      p->current.kind == LHAT_TOKEN_NAME_LITERAL ||
                       p->current.kind == LHAT_TOKEN_HAT_IDENT) &&
                      is_op(&p->ahead, LHAT_OP_COLON);
         if (!named) {
@@ -465,26 +465,14 @@ static LhatNode *parse_member_decls(Parser *p)
         }
 
         if (p->current.kind == LHAT_TOKEN_IDENT ||
-            p->current.kind == LHAT_TOKEN_NAME_LITERAL ||
             p->current.kind == LHAT_TOKEN_HAT_IDENT) {
             refuse_extra_hats(p, &p->current);
-            LhatNodeKind kind = p->current.kind == LHAT_TOKEN_NAME_LITERAL
-                                    ? LHAT_NODE_NAME
-                                    : (p->current.kind == LHAT_TOKEN_HAT_IDENT
-                                           ? LHAT_NODE_HAT_IDENT
-                                           : LHAT_NODE_IDENT);
+            LhatNodeKind kind = p->current.kind == LHAT_TOKEN_HAT_IDENT
+                                    ? LHAT_NODE_HAT_IDENT
+                                    : LHAT_NODE_IDENT;
             LhatNode *name = make(p, kind, &p->current);
             if (name != NULL) {
-                if (kind == LHAT_NODE_NAME) {
-                    name->v.string.offset = p->current.v.string.offset;
-                    name->v.string.length = p->current.v.string.length;
-                } else {
-                    name->v.name.offset = p->current.offset;
-                    name->v.name.length = p->current.length;
-                    name->v.name.hats = kind == LHAT_NODE_HAT_IDENT
-                                            ? p->current.v.hats
-                                            : 0;
-                }
+                fill_name(name, &p->current, kind);
             }
             member->v.entry.key = name;
             advance(p);
@@ -683,6 +671,23 @@ static void refuse_extra_hats(Parser *p, const LhatToken *token)
     }
 }
 
+// 01 の 3.1: what a name node carries. The span is the source's, which is
+// what the language server colours by; a name written with backticks is not
+// spelled by that span (the delimiters are out and a doubled backtick is
+// one), so the lexer's decoded spelling travels beside it. A hat identifier
+// keeps the hat count in the same union member, and never carries a spelling
+// of its own -- there is no backticked form of one.
+static void fill_name(LhatNode *node, const LhatToken *t, LhatNodeKind kind)
+{
+    node->v.name.offset = t->offset;
+    node->v.name.length = t->length;
+    node->v.name.hats = kind == LHAT_NODE_HAT_IDENT ? t->v.hats : 0;
+    node->v.name.text_offset =
+        kind == LHAT_NODE_HAT_IDENT ? 0 : t->v.string.offset;
+    node->v.name.text_length =
+        kind == LHAT_NODE_HAT_IDENT ? 0 : t->v.string.length;
+}
+
 // `stackable` says whether this position may carry a stacked word at all:
 // only a value reference may (parse_primary), and only the words above.
 static LhatNode *simple_node_in(Parser *p, bool stackable)
@@ -694,7 +699,6 @@ static LhatNode *simple_node_in(Parser *p, bool stackable)
         case LHAT_TOKEN_INT:          kind = LHAT_NODE_INT; break;
         case LHAT_TOKEN_FLOAT:        kind = LHAT_NODE_FLOAT; break;
         case LHAT_TOKEN_STRING:       kind = LHAT_NODE_STRING; break;
-        case LHAT_TOKEN_NAME_LITERAL: kind = LHAT_NODE_NAME; break;
         case LHAT_TOKEN_IDENT:        kind = LHAT_NODE_IDENT; break;
         case LHAT_TOKEN_HAT_IDENT:    kind = LHAT_NODE_HAT_IDENT; break;
         default: return NULL;
@@ -719,15 +723,12 @@ static LhatNode *simple_node_in(Parser *p, bool stackable)
             node->v.real = t.v.real;
             break;
         case LHAT_NODE_STRING:
-        case LHAT_NODE_NAME:
             node->v.string.offset = t.v.string.offset;
             node->v.string.length = t.v.string.length;
             node->v.string.kind = t.v.string.kind;
             break;
         default:
-            node->v.name.offset = t.offset;
-            node->v.name.length = t.length;
-            node->v.name.hats = kind == LHAT_NODE_HAT_IDENT ? t.v.hats : 0;
+            fill_name(node, &t, kind);
             break;
     }
 
@@ -828,7 +829,6 @@ static LhatNode *parse_brace_entries(Parser *p, bool require_key)
             advance(p);
             entry->v.entry.declared = true;
             if (p->current.kind != LHAT_TOKEN_IDENT &&
-                p->current.kind != LHAT_TOKEN_NAME_LITERAL &&
                 p->current.kind != LHAT_TOKEN_HAT_IDENT) {
                 report(p, &at_marker, LHAT_PARSE_ERR_FIELD_NEEDS_NAME);
                 break;
@@ -852,7 +852,6 @@ static LhatNode *parse_brace_entries(Parser *p, bool require_key)
         // begin a name, so the brackets take it out of this test entirely --
         // and wanting a list of comparisons is rarer than wanting members.
         bool keyed = (p->current.kind == LHAT_TOKEN_IDENT ||
-                      p->current.kind == LHAT_TOKEN_NAME_LITERAL ||
                       p->current.kind == LHAT_TOKEN_HAT_IDENT) &&
                      (is_op(&p->ahead, LHAT_OP_REASSIGN) ||
                       is_op(&p->ahead, LHAT_OP_EQ));
@@ -928,8 +927,7 @@ static LhatNode *parse_self_table(Parser *p)
 // like any other qualified name in the tree.
 static LhatNode *parse_qualified_name(Parser *p)
 {
-    if (p->current.kind != LHAT_TOKEN_IDENT &&
-        p->current.kind != LHAT_TOKEN_NAME_LITERAL) {
+    if (p->current.kind != LHAT_TOKEN_IDENT) {
         return error_node(p, LHAT_PARSE_ERR_EXPECTED_NAME);
     }
 
@@ -937,13 +935,43 @@ static LhatNode *parse_qualified_name(Parser *p)
     while (check_op(p, LHAT_OP_DOT)) {
         LhatToken at = p->current;
         advance(p);
-        if (p->current.kind != LHAT_TOKEN_IDENT &&
-            p->current.kind != LHAT_TOKEN_NAME_LITERAL) {
+        if (p->current.kind != LHAT_TOKEN_IDENT) {
             report(p, &p->current, LHAT_PARSE_ERR_EXPECTED_NAME);
             break;
         }
         node = access_node(p, LHAT_NODE_MEMBER, &at, node, simple_node(p), false);
     }
+    return finish(p, node);
+}
+
+// 01 の 3.3: 'id^name' answers the spelling of `name` as a string. Nothing is
+// looked up -- 3.3 is about how the string is written, not about the name
+// being there -- so this is a leaf, and the node carries the name the way
+// every other name node does.
+//
+// A hat identifier is a name too (2.3: the hat is part of it), which is what
+// lets a member's key be written this way -- 'id^tostring^' is "tostring^".
+// A stacked spelling is not a name and is refused where it is everywhere
+// else.
+static LhatNode *parse_id(Parser *p)
+{
+    LhatToken at = p->current;
+    advance(p);  // id^
+
+    LhatNode *node = make(p, LHAT_NODE_NAME, &at);
+    if (node == NULL) {
+        return NULL;
+    }
+    if (p->current.kind != LHAT_TOKEN_IDENT &&
+        p->current.kind != LHAT_TOKEN_HAT_IDENT) {
+        report(p, &p->current, LHAT_PARSE_ERR_ID_NEEDS_NAME);
+        return finish(p, node);
+    }
+    refuse_extra_hats(p, &p->current);
+    fill_name(node, &p->current,
+              p->current.kind == LHAT_TOKEN_HAT_IDENT ? LHAT_NODE_HAT_IDENT
+                                                      : LHAT_NODE_IDENT);
+    advance(p);
     return finish(p, node);
 }
 
@@ -1081,7 +1109,6 @@ static LhatNode *parse_def(Parser *p)
                 entry->v.entry.value = parse_expression(p);
             }
         } else if (p->current.kind == LHAT_TOKEN_IDENT ||
-                   p->current.kind == LHAT_TOKEN_NAME_LITERAL ||
                    p->current.kind == LHAT_TOKEN_HAT_IDENT) {
             entry->v.entry.key = simple_node(p);
             // 14.15: an abstract^ member is written with its type, since
@@ -1136,7 +1163,6 @@ static LhatNode *parse_params(Parser *p)
                 param->v.param.type = parse_type(p);
             }
         } else if (p->current.kind == LHAT_TOKEN_IDENT ||
-                   p->current.kind == LHAT_TOKEN_NAME_LITERAL ||
                    p->current.kind == LHAT_TOKEN_HAT_IDENT) {
             param->v.param.name = simple_node(p);
             if (match_op(p, LHAT_OP_COLON)) {
@@ -1389,7 +1415,6 @@ static LhatNode *parse_primary(Parser *p)
         case LHAT_TOKEN_INT:
         case LHAT_TOKEN_FLOAT:
         case LHAT_TOKEN_STRING:
-        case LHAT_TOKEN_NAME_LITERAL:
         case LHAT_TOKEN_IDENT:
             return simple_node(p);
 
@@ -1459,9 +1484,15 @@ static LhatNode *parse_primary(Parser *p)
             // it is the supertype, which only a type position may ask for.
             if (check_hat(p, "error") &&
                 (p->ahead.kind == LHAT_TOKEN_IDENT ||
-                 p->ahead.kind == LHAT_TOKEN_NAME_LITERAL ||
                  is_op(&p->ahead, LHAT_OP_LBRACE))) {
                 return parse_error_new(p);
+            }
+            // 01 の 3.3: 'id^name' is the name's spelling as a string. The
+            // name is not looked up -- what this asks for is the way it is
+            // written, which a string literal would say just as well and
+            // would not be read as a name by anyone looking at it.
+            if (check_hat(p, "id")) {
+                return parse_id(p);
             }
             // The one position a stacked word may be written in: a value
             // reference (01 の 2.3), where it^^ means the enclosing focus.
@@ -2078,7 +2109,6 @@ static bool starts_expression(const LhatToken *token)
         case LHAT_TOKEN_INT:
         case LHAT_TOKEN_FLOAT:
         case LHAT_TOKEN_STRING:
-        case LHAT_TOKEN_NAME_LITERAL:
         case LHAT_TOKEN_IDENT:
         case LHAT_TOKEN_HAT_IDENT:
         case LHAT_TOKEN_SCOPE:
@@ -2125,7 +2155,6 @@ static bool can_begin_statement(const Parser *p)
 {
     switch (p->current.kind) {
         case LHAT_TOKEN_IDENT:
-        case LHAT_TOKEN_NAME_LITERAL:
         case LHAT_TOKEN_SCOPE:
             return true;
         case LHAT_TOKEN_HAT_IDENT:
@@ -2451,7 +2480,6 @@ static LhatNode *parse_let_target(Parser *p, bool allow_path)
     // to put a value with no name to read it back by.
     if (!hatted_root && !at_discard(p) &&
         p->current.kind != LHAT_TOKEN_IDENT &&
-        p->current.kind != LHAT_TOKEN_NAME_LITERAL &&
         p->current.kind != LHAT_TOKEN_SCOPE) {
         return error_node(p, LHAT_PARSE_ERR_EXPECTED_NAME);
     }
@@ -2493,8 +2521,7 @@ static LhatNode *parse_with_target(Parser *p)
 {
     // 13.12: '_^' is written here too -- 12.6's disposal is what the form is
     // for, and that needs no name to reach the value by.
-    if (!at_discard(p) && p->current.kind != LHAT_TOKEN_IDENT &&
-        p->current.kind != LHAT_TOKEN_NAME_LITERAL) {
+    if (!at_discard(p) && p->current.kind != LHAT_TOKEN_IDENT) {
         return error_node(p, LHAT_PARSE_ERR_EXPECTED_NAME);
     }
 
@@ -3229,8 +3256,7 @@ static LhatNode *parse_error_fields(Parser *p)
     LhatNode *tail = NULL;
 
     while (!at_eof(p) && !check_op(p, LHAT_OP_RBRACE)) {
-        if (p->current.kind != LHAT_TOKEN_IDENT &&
-            p->current.kind != LHAT_TOKEN_NAME_LITERAL) {
+        if (p->current.kind != LHAT_TOKEN_IDENT) {
             report(p, &p->current, LHAT_PARSE_ERR_EXPECTED_NAME);
             break;
         }
@@ -3277,8 +3303,7 @@ static LhatNode *parse_errordef(Parser *p)
         return NULL;
     }
 
-    if (p->current.kind == LHAT_TOKEN_IDENT ||
-        p->current.kind == LHAT_TOKEN_NAME_LITERAL) {
+    if (p->current.kind == LHAT_TOKEN_IDENT) {
         node->v.named.name = simple_node(p);
     } else {
         report(p, &p->current, LHAT_PARSE_ERR_ERRORDEF_NEEDS_NAME);
@@ -3297,8 +3322,7 @@ static LhatNode *parse_errordef(Parser *p)
             break;
         }
 
-        if (p->current.kind != LHAT_TOKEN_IDENT &&
-            p->current.kind != LHAT_TOKEN_NAME_LITERAL) {
+        if (p->current.kind != LHAT_TOKEN_IDENT) {
             report(p, &p->current, LHAT_PARSE_ERR_EXPECTED_NAME);
             break;
         }
@@ -4101,6 +4125,9 @@ const char *lhat_parse_error_message(LhatParseErrorCode code)
         case LHAT_PARSE_ERR_RESERVED_SHIFT:
             return "'<<' and '>>' are reserved and not part of the language; "
                    "a bit operation is a function";
+        case LHAT_PARSE_ERR_ID_NEEDS_NAME:
+            return "id^ answers the spelling of a name; write the name after "
+                   "it";
         case LHAT_PARSE_ERR_BINDING_ARITY:
             return "the number of targets and values does not match";
         case LHAT_PARSE_ERR_CLAUSE_ORDER:
@@ -4207,7 +4234,6 @@ static const char *found_spelling(const LhatParseDiagnostic *d)
         case LHAT_TOKEN_EOF:          return "the end of the input";
         case LHAT_TOKEN_IDENT:        return "a name";
         case LHAT_TOKEN_HAT_IDENT:    return "a word of the language";
-        case LHAT_TOKEN_NAME_LITERAL: return "a quoted name";
         case LHAT_TOKEN_INT:
         case LHAT_TOKEN_FLOAT:        return "a number";
         case LHAT_TOKEN_STRING:       return "a string";

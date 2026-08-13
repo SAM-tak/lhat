@@ -79,7 +79,8 @@ void chk_report_named(Checker *c, const LhatNode *at,
 bool chk_node_name(const Checker *c, const LhatNode *node,
                    const char **text, size_t *length)
 {
-    return lhat_node_name(node, c->lexer->source->text, text, length);
+    return lhat_node_name(node, c->lexer->source->text, c->lexer->strings,
+                          text, length);
 }
 
 bool chk_name_is(const char *text, size_t length, const char *literal)

@@ -22,7 +22,7 @@ typedef enum {
     LHAT_NODE_INT,
     LHAT_NODE_FLOAT,
     LHAT_NODE_STRING,
-    LHAT_NODE_NAME,          // `a name`
+    LHAT_NODE_NAME,          // 01 の 3.3: id^name -- the spelling as a value
     LHAT_NODE_IDENT,
     LHAT_NODE_HAT_IDENT,     // used as a value: true^, nil^, self^ ...
     // 16.2: the focus for^ introduced when no name was written. Carries no
@@ -216,19 +216,27 @@ struct LhatNode {
 
         double real;
 
-        // STRING / NAME / INTERP_TEXT: bytes live in the lexer's decoded
-        // string storage, so the lexer must outlive the tree.
+        // STRING / INTERP_TEXT: bytes live in the lexer's decoded string
+        // storage, so the lexer must outlive the tree.
         struct {
             uint32_t offset;
             uint32_t length;
             LhatStringKind kind;
         } string;
 
-        // IDENT / HAT_IDENT / TYPE_NAME: a span of the source text.
+        // IDENT / HAT_IDENT / TYPE_NAME / NAME: a span of the source text.
         struct {
             uint32_t offset;
             uint32_t length;
             uint32_t hats;
+
+            // 01 の 3.1: a name written with backticks is spelled by neither
+            // the delimiters nor a doubled backtick, so its spelling is not
+            // the span above -- the lexer decoded it into its string storage
+            // and this is where. Zero length everywhere else, which is every
+            // name that is its own source slice.
+            uint32_t text_offset;
+            uint32_t text_length;
         } name;
 
         // 01 の 8 章: the sigil is glued to a name, so the two are one node.
@@ -494,14 +502,19 @@ uint32_t lhat_node_span_start(const LhatNode *node);
 // node's offsets index into). The checker looks a member up under it and
 // the compiler uses it as a key, so one definition is what keeps the two
 // agreeing byte for byte.
+//
+// 3.1: a name written with backticks is spelled in `strings` instead -- the
+// lexer's decoded storage, since the delimiters are not part of the name.
+// Both bases are handed over and the node says which one it is spelled in.
 bool lhat_node_name(const LhatNode *node, const char *source_text,
-                    const char **text, size_t *length);
+                    const char *strings, const char **text, size_t *length);
 
 bool lhat_name_is(const char *text, size_t length, const char *literal);
 
 // 05 の 8.6: L^ names the machine's own table. Only the hatted spelling
 // means it, so an ordinary name `L` is untouched.
-bool lhat_node_is_environment(const LhatNode *node, const char *source_text);
+bool lhat_node_is_environment(const LhatNode *node, const char *source_text,
+                              const char *strings);
 
 // The name a let^ target carries, whether or not it was annotated.
 const LhatNode *lhat_define_target_name(const LhatNode *target);

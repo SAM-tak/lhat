@@ -426,9 +426,17 @@ static LhatToken scan_identifier(LhatLexer *lexer, Mark start)
     return finish(lexer, start, LHAT_TOKEN_IDENT);
 }
 
-// Section 3.3. `a name` is a name written out in full, spaces and symbols
-// included. A doubled backtick stands for one backtick, following the same
-// convention as the raw string in 5.2.
+// Section 3.1. `a name` is a name written out in full, spaces and symbols
+// included -- a way of spelling an identifier, not a different kind of name,
+// so it comes back as the LHAT_TOKEN_IDENT any other name does. A doubled
+// backtick stands for one backtick, following the same convention as the raw
+// string in 5.2.
+//
+// What tells one apart is `v.string`: the spelling is not the source slice
+// (the delimiters are not part of the name and a doubled backtick is one), so
+// it is put in the lexer's string storage and the token points at it. `finish`
+// zeroes the token, which leaves every other identifier with a zero length
+// there -- so a non-zero one is exactly this form.
 //
 // Newlines are not allowed inside: an identifier never spans lines, and
 // stopping at the end of the line keeps an unclosed delimiter from consuming
@@ -461,7 +469,7 @@ static LhatToken scan_name_literal(LhatLexer *lexer, Mark start)
         advance(lexer);
     }
 
-    LhatToken token = finish(lexer, start, LHAT_TOKEN_NAME_LITERAL);
+    LhatToken token = finish(lexer, start, LHAT_TOKEN_IDENT);
     token.v.string.kind = LHAT_STRING_RAW;
     token.v.string.offset = (uint32_t)value_offset;
     token.v.string.length = (uint32_t)(lexer->strings_length - value_offset);
@@ -1084,14 +1092,20 @@ LhatToken lhat_lexer_next(LhatLexer *lexer)
 const char *lhat_lexer_string(const LhatLexer *lexer, const LhatToken *token,
                               size_t *length)
 {
+    // 3.1: an identifier written with backticks carries its spelling here
+    // too, since the delimiters are not part of the name. Every other
+    // identifier is its own source slice and leaves this empty.
     if (token->kind != LHAT_TOKEN_STRING &&
-        token->kind != LHAT_TOKEN_NAME_LITERAL &&
+        token->kind != LHAT_TOKEN_IDENT &&
         token->kind != LHAT_TOKEN_INTERP_TEXT &&
         token->kind != LHAT_TOKEN_INTERP_FORMAT) {
         *length = 0;
         return NULL;
     }
     *length = token->v.string.length;
+    if (token->v.string.length == 0) {
+        return NULL;
+    }
     return lexer->strings + token->v.string.offset;
 }
 
