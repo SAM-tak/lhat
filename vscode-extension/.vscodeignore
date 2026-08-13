@@ -1,0 +1,24 @@
+# What stays out of the .vsix. The rule of thumb: the package carries what the
+# extension host actually loads at run time, and nothing that only the build
+# needs. `vsce` already drops devDependencies from node_modules on its own, so
+# what is listed here is the repository's own build-time material.
+
+# TypeScript sources and their build configuration. `out/` and `media/` hold
+# the emitted JavaScript, which is what `main` and the webview load.
+src/**
+tsconfig.json
+tsconfig.webview.json
+
+# Source maps point back at src/, which is not shipped. The F5 extension
+# development host runs straight from the working tree and keeps its maps
+# either way, so debugging is unaffected.
+**/*.map
+
+# Editor and repository plumbing.
+.vscode/**
+.gitignore
+.vscodeignore
+package-lock.json
+
+# Earlier packages, when one is built in place.
+*.vsix
