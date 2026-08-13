@@ -1,6 +1,7 @@
 node_modules/
 out/
 media/webview/
+media/rf/
 media/protocol.js
 media/protocol.js.map
 *.vsix

@@ -16,5 +16,8 @@
     "sourceMap": true,
     "strict": true
   },
-  "include": ["src/webview/**/*.ts", "src/protocol.ts"]
+  // src/webview/rf is the React Flow half (V14 spike): JSX, bundled by
+  // esbuild (`bundle:rf`), not emitted by tsc.
+  "include": ["src/webview/**/*.ts", "src/protocol.ts"],
+  "exclude": ["src/webview/rf"]
 }

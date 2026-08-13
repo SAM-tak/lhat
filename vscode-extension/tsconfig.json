@@ -6,7 +6,11 @@
     "outDir": "out",
     "rootDir": "src",
     "sourceMap": true,
-    "strict": true
+    "strict": true,
+    // Only these ambient type packages. Without this, tsc pulls in every
+    // @types/* under node_modules -- and @types/react-dom / @types/d3-*
+    // (React Flow's) assume the DOM lib this Node-side build does not have.
+    "types": ["node"]
   },
   // The webview half builds separately (tsconfig.webview.json): it targets a
   // browser and is emitted as ES modules, which this half is not.

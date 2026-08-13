@@ -29,7 +29,14 @@ export class LhatGraphEditorProvider implements vscode.CustomTextEditorProvider 
             enableScripts: true,
             localResourceRoots: [this.context.extensionUri],
         };
-        panel.webview.html = this.html(panel.webview);
+        // V14 is being settled between two renderers; the setting picks which
+        // one this tab gets. Both speak the same protocol to this provider.
+        const renderer = vscode.workspace
+            .getConfiguration("lhat")
+            .get<string>("graph.renderer", "reactflow");
+        panel.webview.html = renderer === "svg"
+            ? this.html(panel.webview)
+            : this.rfHtml(panel.webview);
 
         const post = (message: ToWebview) => void panel.webview.postMessage(message);
 
@@ -122,6 +129,35 @@ export class LhatGraphEditorProvider implements vscode.CustomTextEditorProvider 
 <div id="view"></div>
 <script nonce="${nonce}" src="${elk}"></script>
 <script nonce="${nonce}" type="module" src="${main}"></script>
+</body>
+</html>`;
+    }
+
+    // The React Flow variant (06 の 8.4, the V14 spike). One bundled script --
+    // React, React Flow and elkjs together, built by esbuild -- and its CSS.
+    // 'unsafe-inline' styles are what React Flow positions its nodes with.
+    private rfHtml(webview: vscode.Webview): string {
+        const asset = (...parts: string[]) =>
+            webview.asWebviewUri(vscode.Uri.joinPath(this.context.extensionUri, ...parts));
+
+        const script = asset("media", "rf", "bundle.js");
+        const bundleCss = asset("media", "rf", "bundle.css");
+        const sharedCss = asset("media", "graph.css");
+        const nonce = String(Math.random()).slice(2);
+
+        return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none';
+  style-src ${webview.cspSource} 'unsafe-inline'; script-src 'nonce-${nonce}';">
+<link href="${sharedCss}" rel="stylesheet">
+<link href="${bundleCss}" rel="stylesheet">
+<title>L^ graph</title>
+</head>
+<body>
+<div id="root"></div>
+<script nonce="${nonce}" src="${script}"></script>
 </body>
 </html>`;
     }

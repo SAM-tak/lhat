@@ -1,0 +1,103 @@
+/* L^ (lhat) -- the React Flow graph view (V14 spike). Written against the
+   editor's own theme variables, the same way graph.css is. The #bar / #trail
+   styling comes from graph.css, which the page links as well. */
+
+html, body, #root {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    height: 100%;
+}
+
+#app {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    color: var(--vscode-editor-foreground);
+    background: var(--vscode-editor-background);
+    font-family: var(--vscode-editor-font-family, monospace);
+}
+
+#flow {
+    flex: 1;
+    min-height: 0;
+}
+
+/* React Flow's own chrome, matched to the theme. */
+.react-flow__background {
+    background: var(--vscode-editor-background);
+}
+
+.react-flow__minimap {
+    background: var(--vscode-editorWidget-background);
+}
+
+.react-flow__controls button {
+    background: var(--vscode-editorWidget-background);
+    color: var(--vscode-editor-foreground);
+    border-bottom: 1px solid var(--vscode-editorWidget-border, transparent);
+}
+
+/* One box. The node wrapper carries width/height/clip-path from the layout;
+   this fills it. */
+.box {
+    width: 100%;
+    height: 100%;
+    box-sizing: border-box;
+    border: 1px solid var(--vscode-panel-border, #8888);
+    border-radius: 4px;
+    background: var(--vscode-editor-background);
+    font-size: 11px;
+    overflow: hidden;
+}
+
+.box:hover {
+    border-color: var(--vscode-focusBorder);
+}
+
+.boxlabel {
+    padding: 3px 8px;
+    white-space: nowrap;
+}
+
+.leaf .boxlabel {
+    display: flex;
+    align-items: center;
+    height: 100%;
+    padding: 0 8px;
+}
+
+/* Depth by opacity over the theme's own foreground, as graph.css does. */
+.container.d1 { background: color-mix(in srgb, var(--vscode-editor-foreground) 4%, var(--vscode-editor-background)); }
+.container.d2 { background: color-mix(in srgb, var(--vscode-editor-foreground) 7%, var(--vscode-editor-background)); }
+.container.d3 { background: color-mix(in srgb, var(--vscode-editor-foreground) 10%, var(--vscode-editor-background)); }
+.container.d4 { background: color-mix(in srgb, var(--vscode-editor-foreground) 13%, var(--vscode-editor-background)); }
+.container.d5 { background: color-mix(in srgb, var(--vscode-editor-foreground) 16%, var(--vscode-editor-background)); }
+.container.d6 { background: color-mix(in srgb, var(--vscode-editor-foreground) 19%, var(--vscode-editor-background)); }
+
+/* A folded definition (V15): a way in. */
+.folded {
+    border-color: var(--vscode-charts-green, #6a6);
+    background: color-mix(in srgb, var(--vscode-charts-green, #6a6) 8%, var(--vscode-editor-background));
+    cursor: zoom-in;
+}
+
+/* Handles for the data lines (5.5): out of the way until pointed at. */
+.react-flow__handle {
+    width: 7px;
+    height: 7px;
+    background: var(--vscode-charts-blue, #58a);
+    border: none;
+    opacity: 0;
+    transition: opacity 120ms;
+}
+
+.box:hover ~ .react-flow__handle,
+.react-flow__node:hover .react-flow__handle {
+    opacity: 1;
+}
+
+.react-flow__edge-path {
+    stroke: var(--vscode-charts-blue, #58a);
+    stroke-width: 1.5;
+}
