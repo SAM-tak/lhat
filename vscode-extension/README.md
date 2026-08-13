@@ -36,6 +36,36 @@
 4. `.lh` ファイルを開くと、保存前の編集内容がそのまま型検査され、
    `require^` で参照する同じワークスペース内の他ファイルも辿って検査される。
 
+## 普段使いの VSCode に入れる
+
+拡張開発ホスト（F5）は起動するたびに別ウィンドウが立ち上がる。
+そうではなく普段開いている VSCode 自体に入れたいときは、`.vsix` に固めて
+インストールする。
+
+```powershell
+cd vscode-extension
+npm run install-extension
+```
+
+`npm run package`（`vsce package`。`vscode:prepublish` 経由で `compile` も走る）
+で `lhat-lsp-client.vsix` を作り、`code --install-extension … --force` で
+入れ直すところまでを一度にやる。拡張を更新したいときも同じコマンドを叩けばよく、
+`--force` があるのでバージョンを上げなくても上書きされる。
+反映には **`Developer: Reload Window`**（ウィンドウの再読込）が要る。
+
+外すときは `npm run uninstall-extension`。
+
+`lhatls.exe` が PATH 上に無ければ、ここでも設定 `lhat.serverPath` に
+絶対パスを与える（`settings.json`）:
+
+```json
+"lhat.serverPath": "C:\\path\\to\\lhat\\build\\release\\lhatls.exe"
+```
+
+なお `vsce` は `.vsix` の中に LICENSE が入っていることを求めるため、
+リポジトリルートの `LICENSE`（Apache-2.0）をこのフォルダにも置いてある。
+どちらを直すときも両方を揃える。
+
 ## ホバー
 
 名前にマウスを乗せると、その名前が届いた定義が出る（07 の 4 章）。
@@ -101,11 +131,33 @@ DesignDocuments/06-visual-editor.md の写像を実装したもので、今の�
 として今も残る。両者は VSCode の「TextMate が下地、セマンティックトークンが
 上書き」という標準の2層構造で共存する。
 
+## ホスト API を教える — lhat-host.json
+
+ホストが `lhat_register_func` 等で C から登録する API（このリポジトリなら
+サンプル標準ライブラリの `std.io`・`std.thread` 等）は、そのままでは
+このサーバーから見えない。`import^std.io` が「no module of this name」に
+なるのはこのため。
+
+登録内容をテキストに落とした **`lhat-host.json`** をワークスペースの
+ルート直下に置くと、サーバーが起動時に読み込んで同じ登録を再現する
+（コールバックの実体は持たないが、検査しか行わないので困らない）。
+手書きはせず、CLI に吐かせる:
+
+```powershell
+.\build\debug\lhat.exe --dump-host-api lhat-host.json
+```
+
+CLI が実際に登録しているもの（stdlib 込み）がそのまま出る。独自の組み込み
+ホストなら、自分の登録を済ませた `LhatProgram` に対して
+`lhat_program_dump_host_api`（`include/lhat/program.h`）を呼べば同じ形式で
+書き出せる。
+
+ファイルはエディタで編集するとその場で反映される（保存前の内容で
+再検査が走る）。無ければ従来どおり `print`/`collectgarbage` の最小登録に
+フォールバックする。
+
 ## 既知の制約
 
 - 補完・定義ジャンプは無い（ホバーは実装済み）。
-- ホストが `lhat_register_func` 等で登録する独自 API は、このサーバーは知らない
-  （`print`/`collectgarbage` のみ登録済み）。独自 API を使うスクリプトは
-  「no such name in scope」の偽陽性が出る。
 - ワークスペース内の `*.lh` を毎回それぞれ独立したルートとして検査するため、
   共有される依存ファイルが多いほど検査コストが増える（`lsp/workspace.c` 参照）。

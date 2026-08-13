@@ -1004,6 +1004,7 @@ int main(int argc, char **argv)
     bool check_only = false;
     bool run_program = false;
     bool command_form = false;
+    bool dump_host_api = false;
     // 03 の 3.1: a file defaults to strict, the prompt to relaxed. Writing
     // the other one out overrides whichever default the mode below picks.
     enum { STRICTNESS_DEFAULT, STRICTNESS_STRICT, STRICTNESS_RELAXED }
@@ -1024,9 +1025,50 @@ int main(int argc, char **argv)
             strictness = STRICTNESS_STRICT;
         } else if (strcmp(argv[i], "--relaxed") == 0) {
             strictness = STRICTNESS_RELAXED;
+        } else if (strcmp(argv[i], "--dump-host-api") == 0) {
+            dump_host_api = true;
         } else {
             path = argv[i];
         }
+    }
+
+    // What this driver registers, written out for a reader that cannot run
+    // its C -- the language server. With a path the JSON goes there
+    // (lhat-host.json at a workspace root is what lhatls looks for);
+    // without one it goes to stdout.
+    if (dump_host_api) {
+        LhatProgram program;
+        lhat_program_init(&program, true, NULL, NULL);
+        if (!bind_host_names(&program)) {
+            fprintf(stderr, "lhat: out of memory\n");
+            lhat_program_dispose(&program);
+            return EXIT_FAILURE;
+        }
+        size_t needed = lhat_program_dump_host_api(&program, NULL, 0);
+        char *text = (char *)malloc(needed + 1);
+        if (text == NULL) {
+            fprintf(stderr, "lhat: out of memory\n");
+            lhat_program_dispose(&program);
+            return EXIT_FAILURE;
+        }
+        lhat_program_dump_host_api(&program, text, needed + 1);
+        lhat_program_dispose(&program);
+
+        int status = EXIT_SUCCESS;
+        if (path != NULL) {
+            FILE *file = fopen(path, "wb");
+            if (file == NULL) {
+                fprintf(stderr, "lhat: cannot write %s\n", path);
+                status = EXIT_FAILURE;
+            } else {
+                fwrite(text, 1, needed, file);
+                fclose(file);
+            }
+        } else {
+            fwrite(text, 1, needed, stdout);
+        }
+        free(text);
+        return status;
     }
 
     // 03 の 4 章: with nothing to read, read from the prompt.
@@ -1052,6 +1094,8 @@ int main(int argc, char **argv)
                                 " (03 の 3.1; default for a file)\n");
         printf("  --relaxed      leave an undecided type to a runtime check"
                                 " (03 の 3.1; default for the prompt)\n");
+        printf("  --dump-host-api [file]  write what this driver registers"
+                                " as JSON, for lhatls (05 の 8.7)\n");
         return EXIT_SUCCESS;
     }
 

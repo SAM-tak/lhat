@@ -57,18 +57,23 @@ static LhatValue lsp_stub_host_fn(LhatMachine *machine, void *context,
     return lhat_nil();
 }
 
-// The same minimum cli/main.c's bind_host_names registers -- the same
-// baseline the file/prompt defaults of 03 の 5 章 use. A script using a
-// host's own API beyond this sees an undefined name here: this server has
-// no way to learn what a real embedding registered, so anything past
-// print/collectgarbage is a known false positive for now.
+// What checking is told the host registered. With a lhat-host.json loaded
+// (lsp_workspace_load_host_config) that is the whole answer -- the dump
+// carries the host's own bindings along with everything else, so nothing
+// here needs to add to it.
 //
-// The signature is a copy of cli/main.c's same-named function rather than a
-// shared one -- rewrite print there and the same string has to be rewritten
-// here. For as long as the two differ, the editor goes on teaching the older
-// type.
-static void bind_host_names(LhatProgram *program)
+// Without one, the minimum cli/main.c's same-named function registers
+// unconditionally. A copy rather than a shared function -- rewrite print
+// there and the same string has to be rewritten here; for as long as the
+// two differ, the editor goes on teaching the older type. The way out of
+// that copy is the file: `lhat --dump-host-api lhat-host.json` writes what
+// the CLI actually registers, stdlib and all.
+static void bind_host_names(LspWorkspace *ws, LhatProgram *program)
 {
+    if (ws->host_config != NULL) {
+        lsp_host_config_apply(ws->host_config, program);
+        return;
+    }
     lhat_register_global(program, "print", "f^...->nil^;", lsp_stub_host_fn, NULL);
     lhat_bind_initial(program, "print", "L^.print");
     lhat_bind_initial(program, "collectgarbage", "L^.collectgarbage");
@@ -191,7 +196,7 @@ static void recheck_one_root(LspWorkspace *ws, LspRoot *root)
         lhat_program_dispose(&root->program);
     }
     lhat_program_init(&root->program, true, lsp_program_load, ws);
-    bind_host_names(&root->program);
+    bind_host_names(ws, &root->program);
     lhat_program_check(&root->program, root->path);
     root->checked = true;
 
@@ -302,6 +307,71 @@ void lsp_workspace_discover_roots(LspWorkspace *ws)
 }
 
 // ---------------------------------------------------------------------------
+// lhat-host.json
+// ---------------------------------------------------------------------------
+
+#define LSP_HOST_CONFIG_NAME "lhat-host.json"
+
+// root_path + "/" + LSP_HOST_CONFIG_NAME, malloc'd. NULL in single-file mode.
+static char *host_config_path(const LspWorkspace *ws)
+{
+    if (ws->root_path == NULL) {
+        return NULL;
+    }
+    size_t root_length = strlen(ws->root_path);
+    size_t name_length = strlen(LSP_HOST_CONFIG_NAME);
+    char *path = (char *)malloc(root_length + 1 + name_length + 1);
+    if (path == NULL) {
+        return NULL;
+    }
+    memcpy(path, ws->root_path, root_length);
+    path[root_length] = '/';
+    memcpy(path + root_length + 1, LSP_HOST_CONFIG_NAME, name_length + 1);
+    return path;
+}
+
+bool lsp_workspace_is_host_config_path(const LspWorkspace *ws,
+                                       const char *path)
+{
+    char *expected = host_config_path(ws);
+    bool matches = expected != NULL && strcmp(expected, path) == 0;
+    free(expected);
+    return matches;
+}
+
+bool lsp_workspace_is_unit_path(const char *path)
+{
+    return has_lh_extension(path);
+}
+
+void lsp_workspace_load_host_config(LspWorkspace *ws)
+{
+    char *path = host_config_path(ws);
+    if (path == NULL) {
+        return;
+    }
+
+    // The same two steps checking reads a unit by (lsp_program_load): the
+    // editor's unsaved text when the file is open, disk otherwise -- so an
+    // edit to the config takes effect without a save, like any other edit.
+    size_t length = 0;
+    char *text = lsp_document_store_copy(&ws->documents, path, &length);
+    if (text == NULL) {
+        text = lhat_load_file(NULL, path, &length);
+    }
+    free(path);
+
+    LspHostConfig *loaded =
+        text != NULL ? lsp_host_config_parse(text, length) : NULL;
+    lhat_free(text);
+
+    lhat_mutex_lock(&ws->lock);
+    lsp_host_config_free(ws->host_config);
+    ws->host_config = loaded;
+    lhat_mutex_unlock(&ws->lock);
+}
+
+// ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
 
@@ -311,6 +381,7 @@ void lsp_workspace_init(LspWorkspace *ws, const char *root_path)
     lsp_document_store_init(&ws->documents);
     ws->roots = NULL;
     ws->reverse = NULL;
+    ws->host_config = NULL;
     lhat_mutex_init(&ws->lock);
 }
 
@@ -341,6 +412,9 @@ void lsp_workspace_dispose(LspWorkspace *ws)
     }
     ws->reverse = NULL;
 
+    lsp_host_config_free(ws->host_config);
+    ws->host_config = NULL;
+
     lsp_document_store_dispose(&ws->documents);
     free(ws->root_path);
     lhat_mutex_destroy(&ws->lock);
@@ -348,6 +422,13 @@ void lsp_workspace_dispose(LspWorkspace *ws)
 
 void lsp_workspace_recheck_affected(LspWorkspace *ws, const char *path)
 {
+    // Only a *.lh file is a unit. Without this, opening any other file
+    // (lhat-host.json first among them) would register it as a root and
+    // read it as L^ -- syntax errors over a JSON file included.
+    if (!lsp_workspace_is_unit_path(path)) {
+        return;
+    }
+
     lhat_mutex_lock(&ws->lock);
 
     // The roots that reached `path` before this change -- collected up

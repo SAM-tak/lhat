@@ -14,6 +14,7 @@
 #include "server.h"
 #include "uri.h"
 #include "util.h"
+#include "workspace.h"
 
 static char *path_from_text_document(const cJSON *text_document)
 {
@@ -25,6 +26,16 @@ static char *path_from_text_document(const cJSON *text_document)
         return NULL;
     }
     return lsp_uri_to_absolute_path(uri->valuestring);
+}
+
+// A path worth waking the worker for: a unit, or the workspace's
+// lhat-host.json, which the worker answers by reloading the host config
+// (worker.c). Anything else the editor opens -- a README, this server's
+// own sources -- has nothing for the checker and stays out of the queue.
+static bool worth_rechecking(LspServer *server, const char *path)
+{
+    return lsp_workspace_is_unit_path(path) ||
+           lsp_workspace_is_host_config_path(&server->workspace, path);
 }
 
 void lsp_handle_did_open(LspServer *server, const cJSON *params)
@@ -48,7 +59,9 @@ void lsp_handle_did_open(LspServer *server, const cJSON *params)
         lsp_document_store_put(&server->workspace.documents, path, text,
                                strlen(text_item->valuestring), version);
     }
-    lsp_queue_mark_dirty(&server->queue, path);
+    if (worth_rechecking(server, path)) {
+        lsp_queue_mark_dirty(&server->queue, path);
+    }
     free(path);
 }
 
@@ -82,7 +95,9 @@ void lsp_handle_did_change(LspServer *server, const cJSON *params)
                                    strlen(text_item->valuestring), version);
         }
     }
-    lsp_queue_mark_dirty(&server->queue, path);
+    if (worth_rechecking(server, path)) {
+        lsp_queue_mark_dirty(&server->queue, path);
+    }
     free(path);
 }
 
@@ -99,6 +114,8 @@ void lsp_handle_did_close(LspServer *server, const cJSON *params)
     }
 
     lsp_document_store_remove(&server->workspace.documents, path);
-    lsp_queue_mark_dirty(&server->queue, path);  // re-evaluate against disk
+    if (worth_rechecking(server, path)) {
+        lsp_queue_mark_dirty(&server->queue, path);  // re-evaluate off disk
+    }
     free(path);
 }

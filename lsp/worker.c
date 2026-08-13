@@ -110,8 +110,28 @@ static int worker_main(void *arg)
         if (count == 0 && paths == NULL) {
             break;  // lsp_queue_shutdown, nothing left pending
         }
+
+        // lhat-host.json in the batch means the registrations changed under
+        // every root at once, so the batch's per-path rechecks would be
+        // stale before they finished -- reload and re-check everything
+        // instead, which subsumes them.
+        bool config_changed = false;
         for (size_t i = 0; i < count; i++) {
-            lsp_workspace_recheck_affected(&server->workspace, paths[i]);
+            if (lsp_workspace_is_host_config_path(&server->workspace,
+                                                  paths[i])) {
+                config_changed = true;
+                break;
+            }
+        }
+        if (config_changed) {
+            lsp_workspace_load_host_config(&server->workspace);
+            lsp_workspace_recheck_all(&server->workspace);
+        } else {
+            for (size_t i = 0; i < count; i++) {
+                lsp_workspace_recheck_affected(&server->workspace, paths[i]);
+            }
+        }
+        for (size_t i = 0; i < count; i++) {
             free(paths[i]);
         }
         free(paths);

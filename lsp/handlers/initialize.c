@@ -83,13 +83,14 @@ cJSON *lsp_handle_initialize(LspServer *server, const cJSON *params)
 }
 
 // Everything slow happens on the worker (worker.c), not here: this walks
-// the workspace only to find *.lh files (I/O, but no lhat_program_check).
-// The worker checks them all (lsp_workspace_recheck_all) as its first act
-// once started.
+// the workspace only to find *.lh files and read lhat-host.json (I/O, but
+// no lhat_program_check). The worker checks them all
+// (lsp_workspace_recheck_all) as its first act once started.
 void lsp_handle_initialized(LspServer *server, const cJSON *params)
 {
     (void)params;
     lsp_workspace_discover_roots(&server->workspace);
+    lsp_workspace_load_host_config(&server->workspace);
     lsp_server_start_worker(server);
 }
 

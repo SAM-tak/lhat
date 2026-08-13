@@ -10,6 +10,8 @@
 
 import * as vscode from "vscode";
 import {
+    CloseAction,
+    ErrorAction,
     LanguageClient,
     LanguageClientOptions,
     ServerOptions,
@@ -30,9 +32,18 @@ function resolveServerCommand(): string {
     return process.platform === "win32" ? "lhatls.exe" : "lhatls";
 }
 
-export function activate(context: vscode.ExtensionContext): void {
-    const command = resolveServerCommand();
+function autoRestartEnabled(): boolean {
+    // Whether this is a Marketplace/vsix install versus a self-built one
+    // sideloaded over it is not something the extension API exposes --
+    // ExtensionMode only tells the Extension Development Host (F5) apart
+    // from everything else, and ships as Production either way. So this is
+    // a setting, defaulting to the safe behaviour for a normal install.
+    return vscode.workspace
+        .getConfiguration("lhat")
+        .get<boolean>("serverAutoRestart", true);
+}
 
+function startClient(command: string): LanguageClient {
     const serverOptions: ServerOptions = {
         command,
         args: [],
@@ -40,22 +51,49 @@ export function activate(context: vscode.ExtensionContext): void {
 
     const clientOptions: LanguageClientOptions = {
         documentSelector: [{ scheme: "file", language: "lhat" }],
+        // The default ErrorHandler restarts lhatls on its own once its
+        // process closes -- the right behaviour recovering from a real
+        // crash, which is why it is the default. Turned off by
+        // "lhat.serverAutoRestart": false for a self-built lhatls.exe
+        // being iterated on: a rebuild kills the process to free the file
+        // for the linker, and left enabled the client would respawn it
+        // before the linker got a chance, LNK1104 following. "L^: Restart
+        // Language Server" (below) reconnects once the new build lands.
+        errorHandler: autoRestartEnabled()
+            ? undefined
+            : {
+                  error: () => ({ action: ErrorAction.Continue }),
+                  closed: () => ({ action: CloseAction.DoNotRestart }),
+              },
     };
 
-    client = new LanguageClient(
+    const newClient = new LanguageClient(
         "lhatLanguageServer",
         "L^ (lhat) Language Server",
         serverOptions,
         clientOptions
     );
 
-    client.start().catch((error: unknown) => {
+    newClient.start().catch((error: unknown) => {
         const reason = error instanceof Error ? error.message : String(error);
         void vscode.window.showErrorMessage(
             `Could not launch lhatls (${command}): ${reason}\n` +
             `Set "lhat.serverPath" to the path of lhatls(.exe).`
         );
     });
+
+    return newClient;
+}
+
+export function activate(context: vscode.ExtensionContext): void {
+    client = startClient(resolveServerCommand());
+
+    context.subscriptions.push(
+        vscode.commands.registerCommand("lhat.restartServer", async () => {
+            await client?.stop();
+            client = startClient(resolveServerCommand());
+        }),
+    );
 
     // 06: the graph view. Registered whether or not the server came up -- it
     // says so itself rather than being missing from the editor list.

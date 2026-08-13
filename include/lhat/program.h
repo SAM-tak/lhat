@@ -251,4 +251,24 @@ bool lhat_program_has_errors(const LhatProgram *program);
 
 const char *lhat_program_error_message(LhatProgramErrorCode code);
 
+// Writes everything the host registered -- the types, the signatures, the
+// initial bindings -- as JSON, so a tool that cannot run the host's C can
+// still be told what the checker was told. The language server is the
+// reader: `lhat --dump-host-api > lhat-host.json` at a workspace root gives
+// it the same registrations this program carries, minus the callbacks,
+// which no text can carry -- a reader that only checks (never runs) does
+// not miss them.
+//
+// Two arrays, "types" then "functions", so a reader registering in that
+// order never meets a signature naming a type it has not seen -- type
+// declarations carry no signatures, so they cannot refer to each other and
+// their relative order within the array is free. "bindings" last, for 8.2's
+// initial names.
+//
+// Follows lhat_report_write: answers how many bytes the whole thing wants,
+// not counting the terminating NUL, and fills up to `capacity` including
+// it. So measuring is a call with (NULL, 0).
+size_t lhat_program_dump_host_api(const LhatProgram *program, char *out,
+                                  size_t capacity);
+
 #endif  // LHAT_PROGRAM_H

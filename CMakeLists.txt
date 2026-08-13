@@ -233,6 +233,7 @@ if(LHAT_BUILD_LSP)
         lsp/util.c
         lsp/document_store.c
         lsp/workspace.c
+        lsp/host_config.c
         lsp/diagnostics.c
         lsp/position.c
         lsp/semantic_tokens.c

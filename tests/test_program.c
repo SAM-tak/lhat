@@ -1613,6 +1613,94 @@ static void test_host_tuple(void)
     lhat_program_dispose(&program);
 }
 
+// One registration of every kind, written back out: what the dump carries
+// is what a reader (lhatls's host_config.c) re-plays against a program of
+// its own, so each shape has to appear, spelled the way the matching
+// lhat_register_* takes it back.
+static void test_dump_host_api(void)
+{
+    LhatProgram program;
+    Disk disk;
+    int calls = 0;
+
+    LHAT_TEST("the registrations dump as lhat-host.json");
+    program_with(&program, &disk, NULL, 0);
+
+    static const char *const variants[] = {"NotFound", "Eof"};
+    LHAT_CHECK(lhat_register_error_kind(&program, "sys.io", "IOError",
+                                        variants, 2, NULL, NULL),
+               "the error kind registered");
+    LHAT_CHECK(lhat_register_hostdata_type(&program, "sys.io", "File") != NULL,
+               "the hostdata type registered");
+    LHAT_CHECK(lhat_register_hostvalue_type(&program, "sys.geo", "Vec2",
+                                            8) != NULL,
+               "the hostvalue type registered");
+    LHAT_CHECK(lhat_register_hostvalue_field(&program, "sys.geo", "Vec2", "x",
+                                             0, LHAT_HVFIELD_F32),
+               "the field registered");
+    LHAT_CHECK(lhat_register_func(&program, "sys.io", "open",
+                                  "f^string^ -> sys.io.File|sys.io.IOError.NotFound;",
+                                  host_add, &calls),
+               "the func registered");
+    LHAT_CHECK(lhat_register_member(&program, "sys.io", "File", "close",
+                                    "p^self^;", host_add, &calls),
+               "the member registered");
+    LHAT_CHECK(lhat_register_hostvalue_member(&program, "sys.geo", "Vec2",
+                                              "+",
+                                              "f^self^, sys.geo.Vec2 -> sys.geo.Vec2;",
+                                              host_add, &calls),
+               "the hostvalue member registered");
+    LHAT_CHECK(lhat_register_global(&program, "twice",
+                                    "f^number^ -> number^;", host_twice,
+                                    &calls),
+               "the global registered");
+    LHAT_CHECK(lhat_bind_initial(&program, "twice", "L^.twice"),
+               "the binding took");
+
+    size_t needed = lhat_program_dump_host_api(&program, NULL, 0);
+    LHAT_CHECK(needed > 0, "measuring answered a size");
+    char *text = (char *)malloc(needed + 1);
+    if (text != NULL) {
+        size_t written = lhat_program_dump_host_api(&program, text, needed + 1);
+        LHAT_CHECK_EQ_INT(written, needed);
+
+        static const char *const expected[] = {
+            "{\"kind\": \"errordef\", \"module\": \"sys.io\", \"name\": "
+            "\"IOError\", \"variants\": [\"NotFound\", \"Eof\"]}",
+            "{\"kind\": \"hostdata\", \"module\": \"sys.io\", \"name\": "
+            "\"File\"}",
+            "{\"kind\": \"hostvalue\", \"module\": \"sys.geo\", \"name\": "
+            "\"Vec2\", \"size\": 8, \"fields\": [{\"name\": \"x\", "
+            "\"offset\": 0, \"type\": \"f32\"}]}",
+            "{\"kind\": \"func\", \"module\": \"sys.io\", \"name\": \"open\", "
+            "\"signature\": \"f^string^ -> sys.io.File|sys.io.IOError.NotFound;\"}",
+            "{\"kind\": \"member\", \"module\": \"sys.io\", \"type\": "
+            "\"File\", \"name\": \"close\", \"signature\": \"p^self^;\"}",
+            "{\"kind\": \"hostvalue_member\", \"module\": \"sys.geo\", "
+            "\"type\": \"Vec2\", \"name\": \"+\", \"signature\": "
+            "\"f^self^, sys.geo.Vec2 -> sys.geo.Vec2;\"}",
+            "{\"kind\": \"global\", \"name\": \"twice\", \"signature\": "
+            "\"f^number^ -> number^;\"}",
+            "{\"name\": \"twice\", \"member\": \"L^.twice\"}",
+        };
+        for (size_t i = 0; i < sizeof expected / sizeof expected[0]; i++) {
+            LHAT_CHECK(strstr(text, expected[i]) != NULL,
+                       "the dump carries: %s", expected[i]);
+        }
+
+        // The two phases hold: every type declaration is written before the
+        // first signature, so a reader registering in file order never meets
+        // a name it has not seen.
+        const char *functions = strstr(text, "\"functions\"");
+        const char *hostvalue = strstr(text, "\"kind\": \"hostvalue\"");
+        LHAT_CHECK(functions != NULL && hostvalue != NULL &&
+                       hostvalue < functions,
+                   "types come before functions");
+        free(text);
+    }
+    lhat_program_dispose(&program);
+}
+
 int main(void)
 {
     // 8.9: before anything is taken, so the refusal above is about the order
@@ -1627,5 +1715,6 @@ int main(void)
     test_host_tuple();
     test_host_data();
     test_host_data_release();
+    test_dump_host_api();
     return lhat_test_report("test_program");
 }

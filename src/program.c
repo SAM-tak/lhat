@@ -2,6 +2,7 @@
 
 #include "program_internal.h"
 
+#include <stdio.h>  // snprintf: lhat_program_dump_host_api's numbers
 #include <stdlib.h>
 #include <string.h>
 
@@ -277,6 +278,14 @@ typedef struct LhatHostEntry {
     char *module;   // owned; the dotted path
     char *type;     // owned; NULL when the entry belongs to the module itself
     char *name;     // owned
+    // The signature as the registration wrote it, owned; NULL for a type
+    // declaration, which has none. `signature` below is what checking uses;
+    // this is for writing the registration back out
+    // (lhat_program_dump_host_api) -- the parsed type cannot be turned back
+    // into text without losing the names it was written with (a hostdata
+    // type prints structurally, an error kind loses its module prefix), so
+    // the text itself is what survives.
+    char *signature_text;
     LhatHostFn call;  // NULL for a type, which carries no value of its own
     void *context;
     uint8_t parameters;
@@ -296,6 +305,7 @@ typedef struct LhatHostEntry {
 // not land under L^.modules, so install puts it somewhere else.
 typedef struct LhatGlobalEntry {
     char *name;  // owned
+    char *signature_text;  // owned, as on LhatHostEntry
     LhatHostFn call;
     void *context;
     uint8_t parameters;
@@ -533,7 +543,8 @@ static LhatRuntimeType **lower_host_params(LhatMachine *machine,
 
 static bool keep_entry(LhatProgram *program, const char *module,
                        const char *type, const char *name, LhatHostFn call,
-                       void *context, const LhatType *signature)
+                       void *context, const LhatType *signature,
+                       const char *signature_text)
 {
     LHAT_GROW(program->host_entries, program->host_entry_count,
               program->host_entry_capacity, 8, return false);
@@ -543,6 +554,8 @@ static bool keep_entry(LhatProgram *program, const char *module,
     entry->module = duplicate(module);
     entry->name = duplicate(name);
     entry->type = type != NULL ? duplicate(type) : NULL;
+    entry->signature_text =
+        signature_text != NULL ? duplicate(signature_text) : NULL;
     entry->call = call;
     entry->context = context;
     if (signature != NULL && signature->kind == LHAT_TYPE_FUNC) {
@@ -563,7 +576,8 @@ static bool keep_entry(LhatProgram *program, const char *module,
         entry->signature = signature;
     }
     if (entry->module == NULL || entry->name == NULL ||
-        (type != NULL && entry->type == NULL)) {
+        (type != NULL && entry->type == NULL) ||
+        (signature_text != NULL && entry->signature_text == NULL)) {
         return false;
     }
     program->host_entry_count++;
@@ -594,7 +608,7 @@ const LhatHostDataTag *lhat_register_hostdata_type(LhatProgram *program,
     made->v.table.nominal = true;
     if (lhat_type_add_member(&program->types, table, name, strlen(name),
                              made) == NULL ||
-        !keep_entry(program, module, NULL, name, NULL, NULL, NULL)) {
+        !keep_entry(program, module, NULL, name, NULL, NULL, NULL, NULL)) {
         return NULL;
     }
 
@@ -887,12 +901,14 @@ static bool register_into(LhatProgram *program, LhatType *owner,
             return false;
         }
         existing->type = joined;
-        return keep_entry(program, module, type, name, call, context, written);
+        return keep_entry(program, module, type, name, call, context, written,
+                          signature);
     }
 
     return lhat_type_add_member(&program->types, owner, name, strlen(name),
                                 written) != NULL &&
-           keep_entry(program, module, type, name, call, context, written);
+           keep_entry(program, module, type, name, call, context, written,
+                      signature);
 }
 
 bool lhat_register_member(LhatProgram *program, const char *module,
@@ -1006,7 +1022,7 @@ const LhatHostValueTag *lhat_register_hostvalue_type(LhatProgram *program,
     if (made == NULL ||
         lhat_type_add_member(&program->types, table, name, strlen(name),
                              made) == NULL ||
-        !keep_entry(program, module, NULL, name, NULL, NULL, NULL)) {
+        !keep_entry(program, module, NULL, name, NULL, NULL, NULL, NULL)) {
         lhat_free(tag);
         return NULL;
     }
@@ -1133,6 +1149,7 @@ bool lhat_register_global(LhatProgram *program, const char *name,
     LhatGlobalEntry *entry = &program->global_entries[program->global_count];
     memset(entry, 0, sizeof *entry);
     entry->name = duplicate(name);
+    entry->signature_text = duplicate(signature);
     entry->call = call;
     entry->context = context;
     if (written->kind == LHAT_TYPE_FUNC) {
@@ -1147,7 +1164,7 @@ bool lhat_register_global(LhatProgram *program, const char *name,
         entry->self_last = written->v.func.self_last;
         entry->signature = written;
     }
-    if (entry->name == NULL) {
+    if (entry->name == NULL || entry->signature_text == NULL) {
         return false;
     }
     program->global_count++;
@@ -1377,6 +1394,7 @@ void lhat_program_dispose(LhatProgram *program)
         lhat_free(program->host_entries[i].module);
         lhat_free(program->host_entries[i].type);
         lhat_free(program->host_entries[i].name);
+        lhat_free(program->host_entries[i].signature_text);
         lhat_free(program->host_entries[i].tag);
     }
     lhat_free(program->host_entries);
@@ -1429,6 +1447,7 @@ void lhat_program_dispose(LhatProgram *program)
 
     for (size_t i = 0; i < program->global_count; i++) {
         lhat_free(program->global_entries[i].name);
+        lhat_free(program->global_entries[i].signature_text);
     }
     lhat_free(program->global_entries);
     program->global_entries = NULL;
@@ -1578,4 +1597,256 @@ const char *lhat_program_error_message(LhatProgramErrorCode code)
             return "the units require each other; move the common part out";
     }
     return "unknown error";
+}
+
+// ---------------------------------------------------------------------------
+// Dumping the registrations (lhat-host.json)
+// ---------------------------------------------------------------------------
+//
+// The JSON is written by hand rather than through a JSON library: the core
+// depends on nothing but the C library, and what has to be written is one
+// fixed shape. The same moving cursor error.c writes reports with.
+
+typedef struct {
+    char *out;
+    size_t capacity;
+    size_t used;
+} DumpWriter;
+
+static void dump_put(DumpWriter *w, const char *text, size_t length)
+{
+    for (size_t i = 0; i < length; i++) {
+        if (w->out != NULL && w->used + 1 < w->capacity) {
+            w->out[w->used] = text[i];
+        }
+        w->used++;
+    }
+}
+
+static void dump_text(DumpWriter *w, const char *text)
+{
+    dump_put(w, text, strlen(text));
+}
+
+// A JSON string literal. Signatures and names are plain ASCII in practice,
+// but '"' and '\' still have to be escaped for the output to stay JSON at
+// all, and a control character (which nothing registered should carry)
+// must not pass through raw.
+static void dump_string(DumpWriter *w, const char *text)
+{
+    dump_put(w, "\"", 1);
+    for (const char *p = text; *p != '\0'; p++) {
+        unsigned char c = (unsigned char)*p;
+        if (c == '"' || c == '\\') {
+            dump_put(w, "\\", 1);
+            dump_put(w, (const char *)p, 1);
+        } else if (c < 0x20) {
+            char hex[7];
+            snprintf(hex, sizeof hex, "\\u%04x", c);
+            dump_text(w, hex);
+        } else {
+            dump_put(w, (const char *)p, 1);
+        }
+    }
+    dump_put(w, "\"", 1);
+}
+
+static void dump_number(DumpWriter *w, size_t value)
+{
+    char digits[32];
+    snprintf(digits, sizeof digits, "%zu", value);
+    dump_text(w, digits);
+}
+
+static const char *hostvalue_field_kind_name(LhatHostValueFieldKind kind)
+{
+    switch (kind) {
+        case LHAT_HVFIELD_F32: return "f32";
+        case LHAT_HVFIELD_F64: return "f64";
+        case LHAT_HVFIELD_I8:  return "i8";
+        case LHAT_HVFIELD_I16: return "i16";
+        case LHAT_HVFIELD_I32: return "i32";
+        case LHAT_HVFIELD_I64: return "i64";
+        case LHAT_HVFIELD_U8:  return "u8";
+        case LHAT_HVFIELD_U16: return "u16";
+        case LHAT_HVFIELD_U32: return "u32";
+    }
+    return "?";
+}
+
+static const LhatHostValueTypeEntry *find_hostvalue_type(
+    const LhatProgram *program, const char *module, const char *name)
+{
+    for (size_t i = 0; i < program->hostvalue_type_entry_count; i++) {
+        const LhatHostValueTypeEntry *entry =
+            &program->hostvalue_type_entries[i];
+        if (strcmp(entry->module, module) == 0 &&
+            strcmp(entry->name, name) == 0) {
+            return entry;
+        }
+    }
+    return NULL;
+}
+
+// Writes ",\n" between array items: `first` starts true and this flips it.
+static void dump_comma(DumpWriter *w, bool *first)
+{
+    if (!*first) {
+        dump_text(w, ",\n");
+    } else {
+        dump_text(w, "\n");
+        *first = false;
+    }
+}
+
+size_t lhat_program_dump_host_api(const LhatProgram *program, char *out,
+                                  size_t capacity)
+{
+    DumpWriter w;
+    w.out = out;
+    w.capacity = capacity;
+    w.used = 0;
+
+    dump_text(&w, "{\n  \"types\": [");
+    bool first = true;
+
+    // Error kinds first: their variants are names a signature writes
+    // qualified ("std.io.IOError.Eof"), the same standing as a type's.
+    for (size_t i = 0; i < program->host_error_entry_count; i++) {
+        const LhatHostErrorKind *entry = &program->host_error_entries[i];
+        dump_comma(&w, &first);
+        dump_text(&w, "    {\"kind\": \"errordef\", \"module\": ");
+        dump_string(&w, entry->module);
+        dump_text(&w, ", \"name\": ");
+        dump_string(&w, entry->name);
+        dump_text(&w, ", \"variants\": [");
+        for (size_t v = 0; v < entry->variant_count; v++) {
+            if (v > 0) {
+                dump_text(&w, ", ");
+            }
+            dump_string(&w, entry->variant_names[v]);
+        }
+        dump_text(&w, "]}");
+    }
+
+    // Type declarations: a host entry with no call is one. Whether it was a
+    // hostdata or a hostvalue registration is what the entry's tag says --
+    // only lhat_register_hostdata_type puts one on the entry; a hostvalue
+    // type's tag lives in hostvalue_type_entries instead.
+    for (size_t i = 0; i < program->host_entry_count; i++) {
+        const LhatHostEntry *entry = &program->host_entries[i];
+        if (entry->call != NULL || entry->type != NULL) {
+            continue;
+        }
+        dump_comma(&w, &first);
+        if (entry->tag != NULL) {
+            dump_text(&w, "    {\"kind\": \"hostdata\", \"module\": ");
+            dump_string(&w, entry->module);
+            dump_text(&w, ", \"name\": ");
+            dump_string(&w, entry->name);
+            dump_text(&w, "}");
+            continue;
+        }
+        const LhatHostValueTypeEntry *value_type =
+            find_hostvalue_type(program, entry->module, entry->name);
+        if (value_type == NULL) {
+            // Unreachable today -- every call-less, type-less entry comes
+            // from one of the two type registrations -- but writing nothing
+            // beats writing a lie if a third kind ever appears.
+            dump_text(&w, "    {}");
+            continue;
+        }
+        dump_text(&w, "    {\"kind\": \"hostvalue\", \"module\": ");
+        dump_string(&w, entry->module);
+        dump_text(&w, ", \"name\": ");
+        dump_string(&w, entry->name);
+        dump_text(&w, ", \"size\": ");
+        dump_number(&w, value_type->tag->size);
+        dump_text(&w, ", \"fields\": [");
+        for (size_t f = 0; f < value_type->tag->field_count; f++) {
+            const LhatHostValueField *field = &value_type->tag->fields[f];
+            if (f > 0) {
+                dump_text(&w, ", ");
+            }
+            dump_text(&w, "{\"name\": ");
+            dump_string(&w, field->name);
+            dump_text(&w, ", \"offset\": ");
+            dump_number(&w, field->offset);
+            dump_text(&w, ", \"type\": ");
+            dump_string(&w, hostvalue_field_kind_name(field->kind));
+            dump_text(&w, "}");
+        }
+        dump_text(&w, "]}");
+    }
+    dump_text(&w, first ? "],\n" : "\n  ],\n");
+
+    dump_text(&w, "  \"functions\": [");
+    first = true;
+    for (size_t i = 0; i < program->host_entry_count; i++) {
+        const LhatHostEntry *entry = &program->host_entries[i];
+        if (entry->call == NULL) {
+            continue;
+        }
+        dump_comma(&w, &first);
+        if (entry->type == NULL) {
+            dump_text(&w, "    {\"kind\": \"func\", \"module\": ");
+            dump_string(&w, entry->module);
+        } else {
+            bool hostvalue = find_hostvalue_type(program, entry->module,
+                                                 entry->type) != NULL;
+            dump_text(&w, hostvalue
+                              ? "    {\"kind\": \"hostvalue_member\", \"module\": "
+                              : "    {\"kind\": \"member\", \"module\": ");
+            dump_string(&w, entry->module);
+            dump_text(&w, ", \"type\": ");
+            dump_string(&w, entry->type);
+        }
+        dump_text(&w, ", \"name\": ");
+        dump_string(&w, entry->name);
+        dump_text(&w, ", \"signature\": ");
+        dump_string(&w, entry->signature_text != NULL ? entry->signature_text
+                                                      : "");
+        dump_text(&w, "}");
+    }
+    for (size_t i = 0; i < program->global_count; i++) {
+        const LhatGlobalEntry *entry = &program->global_entries[i];
+        dump_comma(&w, &first);
+        dump_text(&w, "    {\"kind\": \"global\", \"name\": ");
+        dump_string(&w, entry->name);
+        dump_text(&w, ", \"signature\": ");
+        dump_string(&w, entry->signature_text != NULL ? entry->signature_text
+                                                      : "");
+        dump_text(&w, "}");
+    }
+    dump_text(&w, first ? "],\n" : "\n  ],\n");
+
+    dump_text(&w, "  \"bindings\": [");
+    first = true;
+    for (size_t i = 0; i < program->initial_count; i++) {
+        dump_comma(&w, &first);
+        dump_text(&w, "    {\"name\": ");
+        dump_string(&w, program->initial_names[i]);
+        // Written back in the spelling lhat_bind_initial takes, prefix and
+        // all, so a reader hands the string straight back to it.
+        dump_text(&w, ", \"member\": \"L^.");
+        // The stored member has the "L^." prefix already stripped
+        // (lhat_bind_initial keeps only what it reached), so it is a bare
+        // member name with nothing in it to escape beyond what dump_string
+        // handles.
+        for (const char *p = program->initial_members[i]; *p != '\0'; p++) {
+            unsigned char c = (unsigned char)*p;
+            if (c == '"' || c == '\\') {
+                dump_put(&w, "\\", 1);
+            }
+            dump_put(&w, (const char *)p, 1);
+        }
+        dump_text(&w, "\"}");
+    }
+    dump_text(&w, first ? "]\n" : "\n  ]\n");
+    dump_text(&w, "}\n");
+
+    if (w.out != NULL && w.capacity > 0) {
+        w.out[w.used < w.capacity ? w.used : w.capacity - 1] = '\0';
+    }
+    return w.used;
 }

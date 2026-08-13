@@ -6,6 +6,11 @@
   "publisher": "lhat",
   "private": true,
   "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/SAM-tak/lhat.git",
+    "directory": "vscode-extension"
+  },
   "engines": {
     "vscode": "^1.85.0"
   },
@@ -52,6 +57,11 @@
         "title": "Open Graph View",
         "category": "L^",
         "icon": "$(type-hierarchy)"
+      },
+      {
+        "command": "lhat.restartServer",
+        "title": "Restart Language Server",
+        "category": "L^"
       }
     ],
     "menus": {
@@ -78,6 +88,11 @@
           "default": "",
           "description": "Path to lhatls(.exe). If empty, looks for lhatls(.exe) on PATH."
         },
+        "lhat.serverAutoRestart": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically restart lhatls if it exits unexpectedly. Turn off only when serverPath points at a self-built lhatls.exe you rebuild often -- otherwise the client respawns it before a rebuild's linker can overwrite the file. Use \"L^: Restart Language Server\" to reconnect after such a rebuild."
+        },
         "lhat.graph.openBeside": {
           "type": "boolean",
           "default": false,
@@ -103,7 +118,10 @@
     "vscode:prepublish": "npm run compile",
     "compile": "tsc -p ./ && tsc -p ./tsconfig.webview.json",
     "watch": "tsc -watch -p ./",
-    "watch:webview": "tsc -watch -p ./tsconfig.webview.json"
+    "watch:webview": "tsc -watch -p ./tsconfig.webview.json",
+    "package": "vsce package -o lhat-lsp-client.vsix",
+    "install-extension": "npm run package && code --install-extension lhat-lsp-client.vsix --force",
+    "uninstall-extension": "code --uninstall-extension lhat.lhat-lsp-client"
   },
   "dependencies": {
     "elkjs": "^0.12.0",
@@ -112,6 +130,7 @@
   "devDependencies": {
     "@types/node": "^20.11.0",
     "@types/vscode": "^1.85.0",
+    "@vscode/vsce": "^3.9.2",
     "typescript": "^5.4.0"
   }
 }

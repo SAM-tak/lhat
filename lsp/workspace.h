@@ -25,6 +25,7 @@
 #include "program_internal.h"
 
 #include "document_store.h"
+#include "host_config.h"
 
 typedef struct LspRoot {
     char *path;  // absolute, '/'-separated -- this root's own file (uri.h)
@@ -47,12 +48,18 @@ typedef struct {
     LspDocumentStore documents;
     LspRoot *roots;
     LspReverseEntry *reverse;
-    LhatMutex lock;  // guards roots/reverse. Reached from the main thread only
-                 // once, by "initialized"'s discover_roots (handlers/
-                 // initialize.c) before the worker starts; every other
-                 // access is the worker thread's own (recheck_all/
-                 // recheck_affected/collect_diagnostics, worker.c).
-                 // didOpen/didChange touch documents and the queue, not this.
+    // lhat-host.json at root_path, parsed (host_config.h), or NULL when
+    // there is none -- then bind falls back to the print/collectgarbage
+    // minimum. Guarded by `lock` like roots/reverse: recheck_one_root
+    // applies it, and the worker reloads it when the file changes.
+    LspHostConfig *host_config;
+    LhatMutex lock;  // guards roots/reverse/host_config. Reached from the
+                 // main thread only before the worker starts
+                 // ("initialized"'s discover_roots + the first config load,
+                 // handlers/initialize.c); every other access is the worker
+                 // thread's own (recheck_all/recheck_affected/
+                 // collect_diagnostics, worker.c). didOpen/didChange touch
+                 // documents and the queue, not this.
 } LspWorkspace;
 
 // Takes ownership of nothing; `root_path` (absolute, or NULL when the client
@@ -63,6 +70,24 @@ void lsp_workspace_dispose(LspWorkspace *ws);
 // Adds every *.lh under root_path as its own root, unchecked. A no-op in
 // single-file mode (root_path == NULL).
 void lsp_workspace_discover_roots(LspWorkspace *ws);
+
+// (Re)loads lhat-host.json from under root_path -- the open document's text
+// when the editor holds it, disk otherwise, the same two steps checking
+// reads a unit by. Replaces whatever config was held before; a file that is
+// gone or will not parse leaves none, and bind falls back to the minimum.
+// A no-op in single-file mode.
+void lsp_workspace_load_host_config(LspWorkspace *ws);
+
+// Whether `path` (absolute, forward-slashed) is this workspace's
+// lhat-host.json -- the worker's cue to reload the config and re-check
+// everything rather than treat it as a unit.
+bool lsp_workspace_is_host_config_path(const LspWorkspace *ws,
+                                       const char *path);
+
+// Whether `path` is one checking can take as a root -- a *.lh file. What
+// keeps a stray non-unit file (lhat-host.json itself, or anything else the
+// editor happens to open) from being registered as a root and read as L^.
+bool lsp_workspace_is_unit_path(const char *path);
 
 // Ensures `path` (absolute) is a known root, then re-checks its own root
 // plus every root the reverse index says last reached `path`.
