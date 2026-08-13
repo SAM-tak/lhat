@@ -1151,6 +1151,19 @@ static LhatType *builtin_substring(Checker *c)
     return lhat_type_intersect(c->result->types, from, between);
 }
 
+// 02 の 14.19改: one character of a string^, which is 14.19's run with both
+// ends at the same ordinal. One shape rather than two, so no intersection --
+// and a string^ still, since there is no character type for it to answer.
+static LhatType *builtin_at(Checker *c)
+{
+    LhatType *signature = lhat_type_func(c->result->types, true);
+    signature->v.func.takes_self = true;
+    lhat_type_add_param(c->result->types, signature,
+                        chk_simple(c, LHAT_TYPE_NUMBER));
+    signature->v.func.result = chk_simple(c, LHAT_TYPE_STRING);
+    return signature;
+}
+
 // 14.9 with 14.17改: a table nobody made with a def^. Every name on one is
 // the writer's -- vm.c's plain_table asks the same of the value, and the two
 // have to answer alike or the checker would allow what the machine refuses.
@@ -1386,26 +1399,31 @@ LhatType *chk_infer_member(Checker *c, const LhatNode *node)
         if (builtin_named(name, length, "tostring", false)) {
             return builtin_tostring(c, target);
         }
-        // 14.17改2: and this is the one only a string^ answers.
+        // 14.17改2: and this is the one only a string^ answers. The bare word
+        // alone -- 14.18改: a string^ is not a value a writer can add a name
+        // to, so there is nothing here for a hat to keep a built-in off, and
+        // a second spelling of one member is all it would be.
         if (target->kind == LHAT_TYPE_STRING &&
-            builtin_named(name, length, "tonumber", false)) {
+            chk_name_is(name, length, "tonumber")) {
             return builtin_tonumber(c);
         }
-        // 14.18: how long it is, and how many bytes that is. Either spelling,
-        // for the reason 14.17改 gives -- a string^ is not a value a writer
-        // can add a name to, so the bare word takes nothing from anyone.
+        // 14.18: how long it is, and how many bytes that is.
         if (target->kind == LHAT_TYPE_STRING &&
-            (builtin_named(name, length, "length", false) ||
-             builtin_named(name, length, "len", false) ||
-             builtin_named(name, length, "size", false))) {
+            (chk_name_is(name, length, "length") ||
+             chk_name_is(name, length, "len") ||
+             chk_name_is(name, length, "size"))) {
             return chk_simple(c, LHAT_TYPE_NUMBER);
         }
         // 14.19: a run of its characters, under any of its three names.
         if (target->kind == LHAT_TYPE_STRING &&
-            (builtin_named(name, length, "substring", false) ||
-             builtin_named(name, length, "substr", false) ||
-             builtin_named(name, length, "sub", false))) {
+            (chk_name_is(name, length, "substring") ||
+             chk_name_is(name, length, "substr") ||
+             chk_name_is(name, length, "sub"))) {
             return builtin_substring(c);
+        }
+        // 14.19改: one character of it.
+        if (target->kind == LHAT_TYPE_STRING && chk_name_is(name, length, "at")) {
+            return builtin_at(c);
         }
         chk_report_named(c, node, LHAT_CHECK_ERR_NO_MEMBER, name, length);
         return chk_simple(c, LHAT_TYPE_UNKNOWN);

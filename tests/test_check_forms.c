@@ -257,17 +257,22 @@ static void test_counting(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // 14.18 with 14.17改: a string^ takes either spelling. Nothing can be
-    // written on one, so the bare word takes nothing from anyone.
-    LHAT_TEST("and a string^ answers its length and its bytes, either way");
+    // 14.18 with 14.17改: nothing can be written on a string^, so the bare
+    // word takes nothing from anyone.
+    LHAT_TEST("and a string^ answers its length and its bytes");
     check_text(&u,
-               "var^ a : number^ = \"x\".length^\n"
-               "var^ b : number^ = \"x\".len^\n"
-               "var^ c : number^ = \"x\".size^\n"
                "var^ d : number^ = \"x\".length\n"
                "var^ e : number^ = \"x\".len\n"
                "var^ f : number^ = \"x\".size\n");
     CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // 14.18改: and the hat spelling is not a second way of writing it. What
+    // the hat does is keep a built-in off a name the writer may mean for
+    // something else, which on a string^ is nothing.
+    LHAT_TEST("a string^ has no hat spelling of them");
+    check_text(&u, "var^ a : number^ = \"x\".length^\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_NO_MEMBER);
     unit_dispose(&u);
 
     // 14.18: each spelling is a reading of one kind of value. Bytes are a
@@ -318,8 +323,14 @@ static void test_substring(void)
                "var^ a : string^ = \"xyz\".substring(2)\n"
                "var^ b : string^ = \"xyz\".substr(2, 3)\n"
                "var^ c : string^ = \"xyz\".sub(-1)\n"
-               "var^ d : string^ = \"xyz\".sub^(1, -1)\n");
+               "var^ d : string^ = \"xyz\".sub(1, -1)\n");
     CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // 14.18改: three names and no hat spelling of any of them.
+    LHAT_TEST("and no fourth spelling with a hat");
+    check_text(&u, "var^ a : string^ = \"xyz\".sub^(1, -1)\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_NO_MEMBER);
     unit_dispose(&u);
 
     // 14.12 tells the two apart by how many arguments arrive, so neither a
@@ -350,6 +361,44 @@ static void test_substring(void)
 
     LHAT_TEST("and nothing but a string^ carries it");
     check_text(&u, "var^ a = { 1 }.substr(1)\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_NO_MEMBER);
+    unit_dispose(&u);
+
+    // 14.19改: one character, which is that run with both ends at the same
+    // ordinal -- so it answers a string^ too, there being no character type
+    // for it to answer instead.
+    LHAT_TEST("at takes one ordinal and answers a string^");
+    check_text(&u, "var^ a : string^ = \"xyz\".at(2)\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // One signature rather than 14.19's intersection, so a call that does not
+    // fit is short or long rather than "no arm of it".
+    LHAT_TEST("and one is the whole of its shape");
+    check_text(&u,
+               "var^ a : string^ = \"xyz\".at()\n"
+               "var^ b : string^ = \"xyz\".at(1, 2)\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_ARITY);
+    LHAT_CHECK_EQ_INT(u.checked.diagnostic_count, 2);
+    unit_dispose(&u);
+
+    LHAT_TEST("an ordinal of at has to be a number^ as well");
+    check_text(&u, "var^ a : string^ = \"xyz\".at(\"x\")\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
+    unit_dispose(&u);
+
+    // 14.19改 takes the name only where 14.19's member is. `at` is a word a
+    // writer reaches for -- sample/24.lh's reading position is one -- and on
+    // a table it stays theirs.
+    LHAT_TEST("at on a table is the writer's own");
+    check_text(&u,
+               "var^ P = def^{ self^{ at := 1 } }\n"
+               "var^ n : number^ = P.new().at\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("and absent on a table where nothing was written");
+    check_text(&u, "var^ a = { 1 }.at(1)\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_NO_MEMBER);
     unit_dispose(&u);
 }
@@ -423,9 +472,15 @@ static void test_tonumber(void)
     LHAT_TEST("a string^ answers a number^ or nil^");
     check_text(&u,
                "var^ a : number^|nil^ = \"1\".tonumber()\n"
-               "var^ b : number^|nil^ = \"ff\".tonumber(\"%x\")\n"
-               "var^ c : number^|nil^ = \"1\".tonumber^()\n");
+               "var^ b : number^|nil^ = \"ff\".tonumber(\"%x\")\n");
     CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // 14.18改: what only a string^ carries has the bare spelling and no
+    // other. Nothing can be written on one for a hat to be keeping this off.
+    LHAT_TEST("and carries no hat spelling of it");
+    check_text(&u, "var^ c : number^|nil^ = \"1\".tonumber^()\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_NO_MEMBER);
     unit_dispose(&u);
 
     LHAT_TEST("and the arm has to be dealt with");

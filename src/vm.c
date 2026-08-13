@@ -737,23 +737,25 @@ static bool native_named(LhatValue key, LhatNativeKind *out, bool *hatted)
         *hatted = name->length == 9;
         return true;
     }
-    if ((name->length == 8 && memcmp(name->text, "tonumber", 8) == 0) ||
-        (name->length == 9 && memcmp(name->text, "tonumber^", 9) == 0)) {
+    // 14.17改2 with 14.18改: what only a string^ carries has no hat spelling
+    // at all. The hat is there to keep a built-in off a name the writer may
+    // mean for something else, and nothing can be written on a string^ -- so
+    // spelling it with one would be a second way of writing one member, which
+    // is what the coroutine's start and resume never had either.
+    if (name->length == 8 && memcmp(name->text, "tonumber", 8) == 0) {
         *out = LHAT_NATIVE_TONUMBER;
-        *hatted = name->length == 9;
         return true;
     }
-    // 14.19: one member under three names. A string^ has no names of its own
-    // for these to take, so both spellings reach -- 14.18's line for a
-    // string^, and the same builtin_named(…, false) the checker uses.
+    // 14.19: one member under three names.
     if ((name->length == 9 && memcmp(name->text, "substring", 9) == 0) ||
-        (name->length == 10 && memcmp(name->text, "substring^", 10) == 0) ||
         (name->length == 6 && memcmp(name->text, "substr", 6) == 0) ||
-        (name->length == 7 && memcmp(name->text, "substr^", 7) == 0) ||
-        (name->length == 3 && memcmp(name->text, "sub", 3) == 0) ||
-        (name->length == 4 && memcmp(name->text, "sub^", 4) == 0)) {
+        (name->length == 3 && memcmp(name->text, "sub", 3) == 0)) {
         *out = LHAT_NATIVE_SUBSTRING;
-        *hatted = name->text[name->length - 1] == '^';
+        return true;
+    }
+    // 14.19改: one character of it.
+    if (name->length == 2 && memcmp(name->text, "at", 2) == 0) {
+        *out = LHAT_NATIVE_AT;
         return true;
     }
     // 16.3改2: the hat is not optional on these two (14.18's line), but the
@@ -901,9 +903,10 @@ static bool builtin_member(LhatValue on, LhatValue key, LhatNativeKind *out)
     if (*out == LHAT_NATIVE_TOSTRING) {
         return true;
     }
-    // 14.17改2: only a string^ can be read as a number^. 14.19: and only one
-    // has characters to take a run of.
-    if (*out == LHAT_NATIVE_TONUMBER || *out == LHAT_NATIVE_SUBSTRING) {
+    // 14.17改2: only a string^ can be read as a number^. 14.19 and 14.19改:
+    // and only one has characters to take a run or a single one of.
+    if (*out == LHAT_NATIVE_TONUMBER || *out == LHAT_NATIVE_SUBSTRING ||
+        *out == LHAT_NATIVE_AT) {
         return lhat_is_object_kind(on, LHAT_OBJECT_STRING);
     }
     if (lhat_is_object_kind(on, LHAT_OBJECT_COROUTINE)) {
@@ -2390,7 +2393,8 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
                     if (builtin_member(R(b), R(cc), &bare) &&
                         (bare == LHAT_NATIVE_TOSTRING ||
                          bare == LHAT_NATIVE_TONUMBER ||
-                         bare == LHAT_NATIVE_SUBSTRING)) {
+                         bare == LHAT_NATIVE_SUBSTRING ||
+                         bare == LHAT_NATIVE_AT)) {
                         LhatNative *native =
                             lhat_native_new(&m->objects, bare, R(b));
                         if (native == NULL) {
@@ -2403,11 +2407,11 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
                     // 02 の 14.18: and a string^ answers how long it is,
                     // without a call being written. Two readings of the same
                     // bytes: the code points they spell, and how many there
-                    // are. Either spelling reaches -- a string^ has no names
-                    // of its own for the bare word to be taking.
+                    // are. 14.18改: the bare word alone, since a string^ has
+                    // no names of its own for a hat to be keeping this off.
                     bool counted_hatted = false;
                     CountedKind counted = counted_named(R(cc), &counted_hatted);
-                    if (counted != COUNTED_NONE &&
+                    if (counted != COUNTED_NONE && !counted_hatted &&
                         lhat_is_object_kind(R(b), LHAT_OBJECT_STRING)) {
                         const LhatString *text =
                             (const LhatString *)lhat_as_object(R(b));
@@ -3090,8 +3094,14 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
                     // when negative. A range that does not stand answers the
                     // empty string -- what is not there is not an error, the
                     // way 04 の 11.3 has a missing key answer nil^.
-                    if (native->kind == LHAT_NATIVE_SUBSTRING) {
-                        if (b < 1 || b > 2) {
+                    //
+                    // 14.19改: at(i) is that run with both ends at i, so it
+                    // comes through here -- the ordinal is resolved, rounded
+                    // and refused in exactly the same places.
+                    if (native->kind == LHAT_NATIVE_SUBSTRING ||
+                        native->kind == LHAT_NATIVE_AT) {
+                        bool single = native->kind == LHAT_NATIVE_AT;
+                        if (b < 1 || b > (single ? 1 : 2)) {
                             return finish(m, chunk, LHAT_RUN_ARITY, lhat_nil(),
                                           at);
                         }
@@ -3108,7 +3118,11 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
                                           lhat_nil(), at);
                         }
                         size_t count = subject->characters;
-                        int64_t last = b == 2 ? to : (int64_t)count;
+                        // The one ordinal ends where it starts for at, and at
+                        // the end of the string for substring.
+                        int64_t last = single  ? from
+                                       : b == 2 ? to
+                                                : (int64_t)count;
                         int64_t start = resolve_ordinal(from, count);
                         int64_t end = resolve_ordinal(last, count);
                         if (start < 1 || end < start || end > (int64_t)count) {

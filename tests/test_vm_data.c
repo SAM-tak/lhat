@@ -794,19 +794,25 @@ static void test_counting(void)
     // company the moment anything is not ASCII.
     LHAT_TEST("a string answers its code points and its bytes apart");
     run_text(&r,
-             "return^ \"abc\".length^ * 1000 + \"abc\".size^ * 100 +\n"
-             "       \"\\u{3042}\\u{3044}\\u{3046}\".length^ * 10 +\n"
-             "       \"\\u{3042}\\u{3044}\\u{3046}\".size^\n");
+             "return^ \"abc\".length * 1000 + \"abc\".size * 100 +\n"
+             "       \"\\u{3042}\\u{3044}\\u{3046}\".length * 10 +\n"
+             "       \"\\u{3042}\\u{3044}\\u{3046}\".size\n");
     CHECK_INTEGER(&r, 3339);
     run_dispose(&r);
 
-    LHAT_TEST("len^ reads a string the same way length^ does");
-    run_text(&r, "return^ \"\\u{3042}bc\".len^\n");
+    LHAT_TEST("len reads a string the same way length does");
+    run_text(&r, "return^ \"\\u{3042}bc\".len\n");
     CHECK_INTEGER(&r, 3);
     run_dispose(&r);
 
-    // 14.18 with 14.17改: nothing can be written on a string^, so the bare
-    // word is taking no name from anyone and reaches the same reading.
+    // 14.18改: and the hat spelling is not a second way of writing it. The
+    // hat is what keeps a built-in off a name the writer may mean for
+    // something else, and nothing can be written on a string^.
+    LHAT_TEST("a string^ has no hat spelling of these");
+    run_text(&r, "return^ \"abc\".length^\n");
+    LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_TYPE_ERROR);
+    run_dispose(&r);
+
     // 14.18: the count is fixed when the string is made, and joining two adds
     // the two counts -- so a string built at run time answers what a literal
     // spelling the same bytes answers.
@@ -817,7 +823,7 @@ static void test_counting(void)
     CHECK_INTEGER(&r, 408);
     run_dispose(&r);
 
-    LHAT_TEST("a string^ takes either spelling");
+    LHAT_TEST("the three readings of a string^ are three words");
     run_text(&r,
              "return^ \"\\u{3042}bc\".length * 100 + \"\\u{3042}bc\".len * 10 +\n"
              "       \"\\u{3042}bc\".size\n");
@@ -852,14 +858,19 @@ static void test_substring(void)
     CHECK_STRING(&r, "いう|いう|あいうえお|いうえ");
     run_dispose(&r);
 
-    // 14.19: one member under three names, and a string^ takes either
-    // spelling of each (14.18's line for a value with no names of its own).
+    // 14.19: one member under three names.
     LHAT_TEST("the three names are one member");
     snprintf(text, sizeof text, "%s%s", five,
-             "return^ s.substring(2, 3) .. s.substr(2, 3) .. s.sub(2, 3) ..\n"
-             "        s.sub^(2, 3)\n");
+             "return^ s.substring(2, 3) .. s.substr(2, 3) .. s.sub(2, 3)\n");
     run_text(&r, text);
-    CHECK_STRING(&r, "いういういういう");
+    CHECK_STRING(&r, "いういういう");
+    run_dispose(&r);
+
+    // 14.18改: three names, and no hat spelling of any of them.
+    LHAT_TEST("and the hat spelling is not a fourth");
+    snprintf(text, sizeof text, "%s%s", five, "return^ s.sub^(2, 3)\n");
+    run_text(&r, text);
+    LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_TYPE_ERROR);
     run_dispose(&r);
 
     // 04 の 11.3's line: what is not there is not a mistake. A range that
@@ -901,6 +912,39 @@ static void test_substring(void)
              "return^ s.substr(2, 2).size * 10 + s.substr(2, 2).length\n");
     run_text(&r, text);
     CHECK_INTEGER(&r, 31);
+    run_dispose(&r);
+
+    // 14.19改: at(i) is substr(i, i), so every rule above is its rule too.
+    LHAT_TEST("at takes the one character the ordinal names");
+    snprintf(text, sizeof text, "%s%s", five,
+             "return^ s.at(2) .. \"|\" .. s.at(-1) .. \"|\" .. s.at(2.5) ..\n"
+             "        \"|\" .. s.at(1)\n");
+    run_text(&r, text);
+    CHECK_STRING(&r, "い|お|う|あ");
+    run_dispose(&r);
+
+    LHAT_TEST("and answers the empty string where there is no character");
+    snprintf(text, sizeof text, "%s%s", five,
+             "return^ \"[\" .. s.at(0) .. s.at(6) .. s.at(-9) ..\n"
+             "        \"\".at(1) .. \"]\"\n");
+    run_text(&r, text);
+    CHECK_STRING(&r, "[]");
+    run_dispose(&r);
+
+    LHAT_TEST("one ordinal is the whole of its shape");
+    snprintf(text, sizeof text, "%s%s", five, "return^ s.at(1, 2)\n");
+    run_text(&r, text);
+    LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_ARITY);
+    run_dispose(&r);
+
+    // 14.19改 takes the name only where 14.19's member is, so a table keeps
+    // `at` for whatever the writer put under it -- a field being the ordinary
+    // case, as sample/24.lh's reading position is.
+    LHAT_TEST("at on a table is the writer's own");
+    run_text(&r,
+             "var^ P = def^{ self^{ at := 7 } }\n"
+             "return^ P.new().at\n");
+    CHECK_INTEGER(&r, 7);
     run_dispose(&r);
 }
 
@@ -1122,11 +1166,12 @@ static void test_tonumber(void)
     LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_TYPE_ERROR);
     run_dispose(&r);
 
-    // 14.17改's table: a string^ is a value a writer cannot add names to, so
-    // both spellings reach the built-in there.
-    LHAT_TEST("the hat spelling reaches the same built-in");
+    // 14.18改: a string^ is a value a writer cannot add names to, so there is
+    // nothing here for a hat to keep the built-in off -- and what only a
+    // string^ carries has no hat spelling at all.
+    LHAT_TEST("there is no hat spelling of it");
     run_text(&r, "return^ \"7\".tonumber^()\n");
-    CHECK_INTEGER(&r, 7);
+    LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_TYPE_ERROR);
     run_dispose(&r);
 
     // Only a string^ carries it -- it is the one value a number^ can be read

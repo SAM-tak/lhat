@@ -329,7 +329,11 @@ typedef enum {
     LHAT_NATIVE_VALUES,
     // 02 の 14.19: a run of a string^'s characters. substring, substr and sub
     // are one member under three names.
-    LHAT_NATIVE_SUBSTRING
+    LHAT_NATIVE_SUBSTRING,
+    // 14.19改: one character of it, which is that run with both ends at the
+    // same ordinal. A member of its own rather than a default second argument
+    // -- substring's one-ordinal form already means "to the end".
+    LHAT_NATIVE_AT
 } LhatNativeKind;
 
 typedef struct LhatNative {
