@@ -1243,6 +1243,7 @@ static void enter_disposal_frame(Machine *m, LhatCoroutine *co,
     called->result = result;
     called->prepared = 1;  // 13.8改: a dispose answers nothing to take apart
     called->coroutine = co;
+    called->drop_answer = false;  // 5.3
     called->disposing = true;
     called->returning = true;
     called->drain_target = 0;
@@ -2752,7 +2753,18 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
             }
 
             case LHAT_BC_CALL:
-            case LHAT_BC_CALLMETHOD: {
+            case LHAT_BC_CALLMETHOD:
+            case LHAT_BC_TAILCALL:
+            case LHAT_BC_TAILCALLMETHOD: {
+                // 14.4: whether the receiver was laid out below the arguments.
+                // 5.3: and whether the call may take this frame over rather
+                // than push one -- which only the closure path below can do,
+                // so everything up to it reads the same either way.
+                bool as_method = op == LHAT_BC_CALLMETHOD ||
+                                 op == LHAT_BC_TAILCALLMETHOD;
+                bool tail = op == LHAT_BC_TAILCALL ||
+                            op == LHAT_BC_TAILCALLMETHOD;
+
                 // 14.12: at most one candidate fits, so this is a search and
                 // not a choice -- no ranking, no ambiguity to report. It ends
                 // at the first that takes what it was given.
@@ -2776,7 +2788,7 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
                     LhatValue chosen = lhat_nil();
                     for (size_t i = 0; i < group->count; i++) {
                         if (fits_call(group->candidates[i], lineup, b,
-                                      op == LHAT_BC_CALLMETHOD, &picked_skip)) {
+                                      as_method, &picked_skip)) {
                             chosen = group->candidates[i];
                             break;
                         }
@@ -2795,7 +2807,7 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
                 // one -- there is no unwinding to arrange.
                 if (lhat_is_object_kind(R(a), LHAT_OBJECT_HOST)) {
                     LhatHost *host = (LhatHost *)lhat_as_object(R(a));
-                    size_t skip = op == LHAT_BC_CALLMETHOD ? 2 : 1;
+                    size_t skip = as_method ? 2 : 1;
 
                     // 13.7: 'expr...' wrote a table in the last slot instead
                     // of an ordinary argument. The closure path below unpacks
@@ -2843,12 +2855,12 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
                     // 14.4: the receiver comes first, and sits just below the
                     // arguments the call wrote.
                     bool receiver_first =
-                        host->takes_self && op == LHAT_BC_CALLMETHOD;
+                        host->takes_self && as_method;
                     size_t given = written + (receiver_first ? 1 : 0);
                     // 05 の 8.9: a host value receiver holds its width of
                     // slots, so a skipped receiver is skipped whole.
                     size_t receiver_width =
-                        op == LHAT_BC_CALLMETHOD && lhat_is_hostvalue(R(a + 1))
+                        as_method && lhat_is_hostvalue(R(a + 1))
                             ? lhat_as_hostvalue_tag(R(a + 1))->width
                             : 1;
                     // 2.2: the stack holds no LhatValue run any more, so
@@ -2861,7 +2873,7 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
                     size_t slot = receiver_first
                                       ? (size_t)a + 1
                                       : (size_t)a +
-                                            (op == LHAT_BC_CALLMETHOD
+                                            (as_method
                                                  ? 1 + receiver_width
                                                  : 1);
                     for (size_t i = 0; i < given; i++) {
@@ -2965,7 +2977,7 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
                 if (lhat_is_object_kind(R(a), LHAT_OBJECT_NATIVE)) {
                     const LhatNative *native =
                         (const LhatNative *)lhat_as_object(R(a));
-                    size_t first = a + (op == LHAT_BC_CALLMETHOD ? 2 : 1);
+                    size_t first = a + (as_method ? 2 : 1);
                     LhatValue sent = b > 0 ? R(first) : lhat_nil();
 
                     // 05 の 8.6: the one thing a program cannot arrange for
@@ -3353,6 +3365,7 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
                     called->prepared = (uint8_t)lhat_call_prepared(cc);
                     called->coroutine = co;
                     called->disposing = false;
+                    called->drop_answer = false;  // 5.3
                     called->derive = LHAT_FRAME_NO_DERIVE;
                     called->returning = false;
                     called->cleanup_count = co->cleanup_count;
@@ -3391,7 +3404,7 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
                 // frame simply starts after the receiver.
                 size_t given = b;
                 size_t skip = 1;
-                if (op == LHAT_BC_CALLMETHOD) {
+                if (as_method) {
                     if (callee->proto->takes_self) {
                         given = (size_t)b + 1;
                     } else {
@@ -3491,7 +3504,17 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
                     break;
                 }
 
-                if (m->frame_count >= LHAT_MAX_FRAMES) {
+                // 5.3: a tail call runs in this frame rather than one above
+                // it, where the frame is free to go. It is not free while a
+                // cleanup is pending (5.5 runs those after the call, and a
+                // frame that has left cannot run them), nor when it is a
+                // coroutine's (5.11 -- the frame is that coroutine's body),
+                // nor at the top level of a session (03 の 4.3 keeps those
+                // slots for the next input).
+                bool reuse = tail && frame->cleanup_count == 0 &&
+                             frame->coroutine == NULL &&
+                             frame->closure->proto->kept == 0;
+                if (!reuse && m->frame_count >= LHAT_MAX_FRAMES) {
                     return finish(m, chunk, LHAT_RUN_STACK_OVERFLOW, lhat_nil(), at);
                 }
 
@@ -3519,6 +3542,47 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
                 }
                 clear_scratch(m, next_base, callee->proto);
 
+                // 5.3: the window the callee is about to run in has been laid
+                // out above this frame; taking the frame over is moving it
+                // down onto this frame's own registers. Nothing above is read
+                // again, and next_base is always higher than base (a callee
+                // sits at least one slot above the frame it was called from),
+                // so the move is forward and needs no care about overlap.
+                if (reuse) {
+                    // 5.4: what still points into these registers takes its
+                    // value with it first. Closing leaves the slots as they
+                    // are, so the arguments being moved down are still there
+                    // to read.
+                    close_upvalues(m, frame->base);
+                    size_t window = callee->proto->chunk.registers;
+                    for (size_t i = 0; i < window; i++) {
+                        // 05 の 8.9: a host value's continuation slots are raw
+                        // bytes, so the payload and the tag travel exactly as
+                        // they lie rather than through a value read.
+                        m->slots.values[frame->base + i] =
+                            m->slots.values[next_base + i];
+                        m->slots.tags[frame->base + i] =
+                            m->slots.tags[next_base + i];
+                    }
+                    frame->closure = callee;
+                    frame->pc = 0;
+                    frame->returning = false;
+                    // 5.3: `base`, `result` and `prepared` are the original
+                    // caller's and stay its own -- the answer still goes where
+                    // that call site reserved room for it. 11.9's `derive`
+                    // stays for the same reason: what this frame answers is
+                    // still read the way the expression that made it asks.
+                    // The drop is sticky: a body whose answer was already
+                    // being thrown away throws away whatever it goes on to
+                    // tail-call for.
+                    if ((cc & LHAT_CALL_DROP) != 0) {
+                        frame->drop_answer = true;
+                    }
+                    chunk = &callee->proto->chunk;
+                    pc = 0;
+                    break;
+                }
+
                 frame->pc = pc;
                 Frame *called = &m->frames[m->frame_count++];
                 called->closure = callee;
@@ -3531,6 +3595,7 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
                 called->coroutine = NULL;
                 called->disposing = false;
                 called->derive = LHAT_FRAME_NO_DERIVE;
+                called->drop_answer = false;  // 5.3
 
                 frame = called;
                 rbase = frame->base;
@@ -3879,6 +3944,7 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
                 called->coroutine = co;
                 called->disposing = false;
                 called->derive = LHAT_FRAME_NO_DERIVE;
+                called->drop_answer = false;  // 5.3
                 called->returning = false;
                 called->cleanup_count = co->cleanup_count;
                 for (size_t i = 0; i < co->cleanup_count; i++) {
@@ -4049,6 +4115,7 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
         entered->returning = false;
         entered->coroutine = NULL;
         entered->disposing = false;
+        entered->drop_answer = false;  // 5.3
         // 11.9: an ordering that reached for '<=>' wants the answer
         // read against zero, not handed over as it is.
         entered->derive = derive_from;
@@ -4075,7 +4142,9 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
         // 5.4: whatever still points into this frame takes its value with it,
         // since the slots are about to be reused.
         {
-            LhatValue value = frame->answer;
+            // 5.3: a tail call from a body that discards what it calls answers
+            // for that body, which answers the nil^ of falling off its end.
+            LhatValue value = frame->drop_answer ? lhat_nil() : frame->answer;
             // 5.11: the body is over, so the coroutine has nothing left to
             // resume and its cleanups have all run.
             if (frame->coroutine != NULL) {
@@ -4277,6 +4346,7 @@ LhatRunResult lhat_run(LhatMachine *m, const LhatProto *proto)
     frame->coroutine = NULL;
     frame->disposing = false;
     frame->derive = LHAT_FRAME_NO_DERIVE;
+    frame->drop_answer = false;  // 5.3
     frame->answer = lhat_nil();
 
     return run_frames(m, 0);
@@ -4378,6 +4448,7 @@ LhatRunResult lhat_machine_call(LhatMachine *machine, LhatValue callee,
     called->coroutine = NULL;
     called->disposing = false;
     called->derive = LHAT_FRAME_NO_DERIVE;
+    called->drop_answer = false;  // 5.3
     called->answer = lhat_nil();
 
     return run_frames(m, base);

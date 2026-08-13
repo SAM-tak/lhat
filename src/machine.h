@@ -73,6 +73,12 @@ typedef struct {
     LhatCoroutine *coroutine;
     bool disposing;  // 02 の 10.7: no yield^ while the cleanups are running
 
+    // 5.3: a tail call took this frame over from a body that was throwing the
+    // answer away -- a bare call standing last, where what the frame answers
+    // is the nil^ of falling off the end. Whatever runs in the frame now, that
+    // is still what its caller is owed.
+    bool drop_answer;
+
     // 02 の 11.9: an ordering that had to reach for '<=>' to answer.
     // The frame carries which comparison was written, and what comes back is
     // read against zero with it rather than handed over as it is -- the one

@@ -261,6 +261,8 @@ const char *lhat_opcode_name(LhatOpcode op)
         case LHAT_BC_ISNIL:       return "isnil";
         case LHAT_BC_NEWINSTANCE: return "newinstance";
         case LHAT_BC_CALLMETHOD:  return "callmethod";
+        case LHAT_BC_TAILCALL:    return "tailcall";
+        case LHAT_BC_TAILCALLMETHOD: return "tailcallmethod";
         case LHAT_BC_PUSHCLEANUP: return "pushcleanup";
         case LHAT_BC_POPCLEANUP:  return "popcleanup";
         case LHAT_BC_ENDCLEANUP:  return "endcleanup";
@@ -299,17 +301,22 @@ void lhat_chunk_print(const LhatChunk *chunk, size_t index, char *out,
             snprintf(out, size, "%-10s r%u p%u", name, lhat_a(i), lhat_bx(i));
             break;
         case LHAT_BC_CALL:
-        case LHAT_BC_CALLMETHOD: {
+        case LHAT_BC_CALLMETHOD:
+        case LHAT_BC_TAILCALL:
+        case LHAT_BC_TAILCALLMETHOD: {
             // 13.8改: C's high bits say how many slots the answer was given
             // room in. Shown only when it is a run, so every call written
-            // before tuples reads exactly as it did.
+            // before tuples reads exactly as it did. 5.3: a tail call that
+            // throws the answer away says so beside the count.
             unsigned prepared = lhat_call_prepared(lhat_c(i));
+            const char *dropped =
+                (lhat_c(i) & LHAT_CALL_DROP) != 0 ? ", dropped" : "";
             if (prepared > 1) {
-                snprintf(out, size, "%-10s r%u (%u args, %u slots)", name,
-                         lhat_a(i), lhat_b(i), prepared);
+                snprintf(out, size, "%-10s r%u (%u args, %u slots%s)", name,
+                         lhat_a(i), lhat_b(i), prepared, dropped);
             } else {
-                snprintf(out, size, "%-10s r%u (%u args)", name, lhat_a(i),
-                         lhat_b(i));
+                snprintf(out, size, "%-10s r%u (%u args%s)", name, lhat_a(i),
+                         lhat_b(i), dropped);
             }
             break;
         }

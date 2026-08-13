@@ -116,6 +116,17 @@ typedef struct Compiler {
     size_t cleanup_depth;
     bool in_cleanup;  // 02 の 10.5: no return^ inside a finally^
 
+    // 5.3: the one call about to be compiled stands where this frame has
+    // nothing left to do, so it may run in this frame rather than one above
+    // it. Read and cleared at the head of compile_call_wide -- an argument
+    // that is itself a call is not the one in tail position.
+    bool tail_call;
+    bool tail_drop;  // and its answer is thrown away (a bare call statement)
+    // The last statement of the body being compiled, when it is a bare call.
+    // 5.3 reads a call there as a tail call, the way it reads the value of a
+    // return^: what follows it is the end of the body.
+    const LhatNode *tail_statement;
+
     // 04 の 2.4: a kind is the place it was declared, so the compiler keeps
     // one object per kind and hands the same one to every use. They live on
     // the outermost proto: a nested body making its own copy would give the
@@ -2383,6 +2394,14 @@ static void compile_table(Compiler *c, const LhatNode *node, uint8_t into)
 static void compile_call_wide(Compiler *c, const LhatNode *node, uint8_t into,
                               size_t reserved)
 {
+    // 5.3: taken here and cleared at once. What is compiled below -- the
+    // callee, the receiver, every argument -- may hold calls of its own, and
+    // none of those is the one standing in tail position.
+    bool tail = c->tail_call;
+    bool drop = c->tail_drop;
+    c->tail_call = false;
+    c->tail_drop = false;
+
     uint8_t mark = c->next_register;
     uint8_t callee = reserve(c);
 
@@ -2509,9 +2528,17 @@ static void compile_call_wide(Compiler *c, const LhatNode *node, uint8_t into,
     while (c->next_register < callee + answer_width) {
         reserve(c);
     }
-    emit(c, lhat_encode_abc(method ? LHAT_BC_CALLMETHOD : LHAT_BC_CALL, callee,
-                            (uint8_t)count,
-                            lhat_call_operand(spread, (unsigned)reserved)));
+    // 5.3: a tail call is the same call with permission to take this frame
+    // over. The machine refuses the permission where the frame is not free to
+    // go, so what is emitted after this stands either way.
+    LhatOpcode call_op = method ? (tail ? LHAT_BC_TAILCALLMETHOD
+                                        : LHAT_BC_CALLMETHOD)
+                                : (tail ? LHAT_BC_TAILCALL : LHAT_BC_CALL);
+    uint8_t operand = lhat_call_operand(spread, (unsigned)reserved);
+    if (tail && drop) {
+        operand |= LHAT_CALL_DROP;
+    }
+    emit(c, lhat_encode_abc(call_op, callee, (uint8_t)count, operand));
     // The answer then moves to the destination the same way it was written.
     emit_move_wide(c, into, callee, answer_width);
     // where an absent callee's nil^ lands, past everything the call
@@ -2676,6 +2703,19 @@ static void compile_subroutine(Compiler *c, const LhatNode *node, uint8_t into)
             lhat_rt_from_checked(owner, checked->v.func.yield_produce);
         proto->yield_receive_type =
             lhat_rt_from_checked(owner, checked->v.func.yield_receive);
+    }
+
+    // 5.3: which statement of this body ends it, so that a bare call there is
+    // read as a tail call. Only a statement of the body itself -- one inside a
+    // block, a loop or a branch has the statements after that block to come
+    // back to. A body carrying a finally^ (10.1) has its cleanup after the
+    // call, which cleanup_depth refuses at the statement itself.
+    if (node->v.func.body != NULL &&
+        node->v.func.body->kind == LHAT_NODE_BLOCK) {
+        for (const LhatNode *s = node->v.func.body->v.list.items; s != NULL;
+             s = s->next) {
+            inner.tail_statement = s;
+        }
     }
 
     // 02 の 10.1: a p^ body is a block that may carry a finally^, which is
@@ -4868,7 +4908,16 @@ static void compile_statement(Compiler *c, const LhatNode *node)
             // 05 の 8.9: a returned host value needs its whole width here;
             // the machine reads that width off the head when the frame pops.
             uint8_t slot = reserve_for(c, node->v.jump.value);
+            // 5.3: 'return^ f(x)' is the call standing in tail position -- what
+            // it answers is what this frame answers, so the frame is free to
+            // go. Not where a cleanup is pending: 5.5 runs those after the
+            // call, and a frame that has left cannot run them.
+            if (node->v.jump.value->kind == LHAT_NODE_CALL &&
+                c->cleanup_depth == 0) {
+                c->tail_call = true;
+            }
             compile_expression(c, node->v.jump.value, slot);
+            c->tail_call = false;
             emit(c, lhat_encode_abc(LHAT_BC_RETURN, slot, 0, 0));
             c->next_register = mark;
             return;
@@ -4986,7 +5035,18 @@ static void compile_statement(Compiler *c, const LhatNode *node)
                 compile_run_source(c, value, first, width + 1);
             } else {
                 uint8_t slot = reserve(c);
+                // 5.3: a bare call standing last in a body is in tail
+                // position too -- what follows it is the end of the body,
+                // which answers nil^. So the frame is free to go, and what
+                // the call answers is thrown away the way it is here.
+                if (node == c->tail_statement && c->cleanup_depth == 0 &&
+                    value->kind == LHAT_NODE_CALL) {
+                    c->tail_call = true;
+                    c->tail_drop = true;
+                }
                 compile_expression(c, value, slot);
+                c->tail_call = false;
+                c->tail_drop = false;
             }
             c->next_register = mark;
             return;

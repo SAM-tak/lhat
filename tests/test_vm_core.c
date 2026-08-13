@@ -650,9 +650,11 @@ static void test_calls(void)
     run_dispose(&r);
 
     // Nothing bounds the recursion, so the frames run out. 5.3 wants that
-    // reported rather than reached by walking off the array.
+    // reported rather than reached by walking off the array. The call is
+    // written inside an expression on purpose: 5.3's tail call would take the
+    // frame over instead, and then nothing would run out at all.
     LHAT_TEST("frames that go too deep are reported, not walked off");
-    run_text(&r, "var^ f = f^ { return^ f() }\nreturn^ f()\n");
+    run_text(&r, "var^ f = f^ { return^ f() + 1 }\nreturn^ f()\n");
     LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_STACK_OVERFLOW);
     run_dispose(&r);
 
@@ -676,6 +678,130 @@ static void test_calls(void)
              "return^ total\n");
     CHECK_INTEGER(&r, 60000);
     LHAT_CHECK(r.ran.collected > 1000, "the loop did collect");
+    run_dispose(&r);
+}
+
+// 03 の 5.3: a call standing where its frame has nothing left to do runs in
+// that frame. Every case here goes deeper than LHAT_MAX_FRAMES, so what is
+// pinned is that the depth does not grow -- and the guards, where it must.
+static void test_tail_calls(void)
+{
+    Run r;
+
+    LHAT_TEST("a tail call does not deepen the frames");
+    run_text(&r,
+             "var^ down = f^ n:number^ -> number^ {\n"
+             "    if^ n <= 0 { return^ 0 }\n"
+             "    return^ down(n - 1)\n"
+             "}\n"
+             "return^ down(50000)\n");
+    CHECK_INTEGER(&r, 0);
+    run_dispose(&r);
+
+    // Which name is called is not the question -- the frame is free either
+    // way, and a ring of two proves the frame is reused rather than a body
+    // recognising itself.
+    LHAT_TEST("and a ring of two is the same");
+    run_text(&r,
+             "var^ isEven = f^ n:number^ -> bool^ {\n"
+             "    if^ n = 0 { return^ true^ }\n"
+             "    return^ isOdd(n - 1)\n"
+             "}\n"
+             "var^ isOdd = f^ n:number^ -> bool^ {\n"
+             "    if^ n = 0 { return^ false^ }\n"
+             "    return^ isEven(n - 1)\n"
+             "}\n"
+             "if^ isEven(50000) and^ !isEven(50001) { return^ 1 }\n"
+             "return^ 0\n");
+    CHECK_INTEGER(&r, 1);
+    run_dispose(&r);
+
+    // 14.4: the receiver is laid out below the arguments, and the window that
+    // moves down carries it.
+    LHAT_TEST("a method's tail call is one too");
+    run_text(&r,
+             "var^ C = def^{\n"
+             "    self^{ n := 0 },\n"
+             "    walk := p^self^, k:number^ -> number^ {\n"
+             "        if^ k <= 0 { return^ self^.n }\n"
+             "        self^.n := self^.n + 1\n"
+             "        return^ self^.walk(k - 1)\n"
+             "    },\n"
+             "}\n"
+             "return^ C.new().walk(50000)\n");
+    CHECK_INTEGER(&r, 50000);
+    run_dispose(&r);
+
+    // 5.3: a bare call standing last in a body is in tail position as well.
+    // What it answers is thrown away, and the body answers the nil^ of
+    // falling off its end -- which is what the drop is for.
+    LHAT_TEST("a bare call standing last is a tail call, answering nil^");
+    run_text(&r,
+             "var^ box = { n := 0 }\n"
+             "var^ step = p^ k:number^ {\n"
+             "    if^ k <= 0 { return^ }\n"
+             "    box.n := box.n + 1\n"
+             "    step(k - 1)\n"
+             "}\n"
+             "var^ answered = step(50000)\n"
+             "if^ answered? { return^ 0 }\n"
+             "return^ box.n\n");
+    CHECK_INTEGER(&r, 50000);
+    run_dispose(&r);
+
+    // 5.5: a cleanup runs after the call, so the frame is not free to go.
+    // 12.2's dispose has to run, and run once the call is done.
+    LHAT_TEST("a call under a with^ is not a tail call");
+    run_text(&r,
+             "var^ H = def^{ self^{ v := 0 },\n"
+             "  dispose := p^self^ { self^.v := 9 } }\n"
+             "var^ seen = 0\n"
+             "var^ take = f^ h -> number^ { return^ h.v }\n"
+             "var^ use = f^ -> number^ {\n"
+             "    with^ h = H.new() { return^ take(h) }\n"
+             "}\n"
+             "return^ use()\n");
+    CHECK_INTEGER(&r, 0);
+    run_dispose(&r);
+
+    // The same shape deep enough to tell: without the frame, the cleanup
+    // would have nowhere to run, so 5.5 keeps the frames and they run out.
+    LHAT_TEST("and it still runs out of frames");
+    run_text(&r,
+             "var^ H = def^{ self^{ v := 0 }, dispose := p^self^ { } }\n"
+             "var^ down = f^ n:number^ -> number^ {\n"
+             "    if^ n <= 0 { return^ 0 }\n"
+             "    with^ h = H.new() { return^ down(n - 1) }\n"
+             "}\n"
+             "return^ down(50000)\n");
+    LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_STACK_OVERFLOW);
+    run_dispose(&r);
+
+    // 5.11: a coroutine's frame is that coroutine's body. Taking it over
+    // would leave the resume with nothing to come back to.
+    LHAT_TEST("a coroutine's body keeps its frame");
+    run_text(&r,
+             "var^ inner = f^ -> number^ { return^ 7 }\n"
+             "var^ gen = p^ {\n"
+             "    yield^ 1\n"
+             "    return^ inner()\n"
+             "}\n"
+             "var^ co = gen()\n"
+             "var^ first = co.start()\n"
+             "var^ last = co.resume(nil^)\n"
+             "return^ first * 10 + last\n");
+    CHECK_INTEGER(&r, 17);
+    run_dispose(&r);
+
+    // What a host wrote is not an L^ closure, so there is no frame to take
+    // over -- the call runs as the plain call it is and the RETURN after it
+    // answers.
+    LHAT_TEST("a tail call of something else runs as an ordinary call");
+    run_text(&r, "var^ f = f^ s:string^ -> number^|nil^ {\n"
+                 "    return^ s.tonumber()\n"
+                 "}\n"
+                 "return^ f(\"41\") ?? 0\n");
+    CHECK_INTEGER(&r, 41);
     run_dispose(&r);
 }
 
@@ -1234,6 +1360,7 @@ int main(void)
     test_names();
     test_control();
     test_calls();
+    test_tail_calls();
     test_closures();
     test_stacked_hats_compile();
     test_scope_specifiers();

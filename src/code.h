@@ -154,6 +154,17 @@ typedef enum {
                           //       is the receiver and is passed only when the
                           //       callee takes self^ (14.4). C as LHAT_BC_CALL.
 
+    // 5.3: the same two calls, written where the caller has nothing left to do
+    // with its frame -- 'return^ f(x)', and a bare call standing last in a
+    // body. Operands mean what they mean above; what these add is permission
+    // to run the callee in this frame rather than one on top of it. The
+    // machine takes it only where the frame is free to go (no cleanup pending,
+    // not a coroutine's, not a session's top level) and where the callee is an
+    // L^ closure; anywhere else these run as the plain calls they are, and the
+    // RETURN written after them answers as it always did.
+    LHAT_BC_TAILCALL,
+    LHAT_BC_TAILCALLMETHOD,
+
     // 5.5: the frame holds the cleanups it has not run, and every exit drains
     // them. One instruction pushes, one drains, one ends a cleanup body -- so
     // a finally^ and a with^ are the same thing to the machine.
@@ -197,17 +208,24 @@ typedef enum {
 // LHAT_BC_CALL's C, which was a boolean with a whole byte to itself.
 #define LHAT_CALL_SPREAD 0x01u          // 13.7's 'expr...'
 #define LHAT_CALL_PREPARED_SHIFT 1      // 13.8改: slots reserved for the answer
-#define LHAT_CALL_PREPARED_MAX (0xFFu >> LHAT_CALL_PREPARED_SHIFT)
+// Six bits, which is more than the room a frame's answer can take: 13.8改's
+// head plus LHAT_MAX_TUPLE positions is 32. The top bit is the drop below.
+#define LHAT_CALL_PREPARED_MAX 0x3Fu
+// 5.3: a tail call whose answer is thrown away -- a bare call standing last in
+// a body, where what the frame answers is the nil^ of falling off the end.
+// Meaningless on the plain calls, which never discard what they answer.
+#define LHAT_CALL_DROP 0x80u
 
 static inline unsigned lhat_call_prepared(uint8_t c)
 {
-    return (unsigned)c >> LHAT_CALL_PREPARED_SHIFT;
+    return ((unsigned)c >> LHAT_CALL_PREPARED_SHIFT) & LHAT_CALL_PREPARED_MAX;
 }
 
 static inline uint8_t lhat_call_operand(bool spread, unsigned prepared)
 {
     return (uint8_t)((spread ? LHAT_CALL_SPREAD : 0u) |
-                     (prepared << LHAT_CALL_PREPARED_SHIFT));
+                     ((prepared & LHAT_CALL_PREPARED_MAX)
+                      << LHAT_CALL_PREPARED_SHIFT));
 }
 
 static inline LhatInstruction lhat_encode_abc(LhatOpcode op, uint8_t a,
