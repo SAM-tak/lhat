@@ -3039,8 +3039,17 @@ static LhatType *infer_node(Checker *c, const LhatNode *node)
 
         case LHAT_NODE_SELF_TABLE: {
             // 14.11: in the body of a def^ this declares the fields, and
-            // inside new it builds one. Either way it names the instance,
-            // which is what self^ is bound to.
+            // inside new it builds one. Either way it names the instance of
+            // the def^ it is written in -- not the receiver. 14.4 hands a
+            // receiver only to a member that wrote self^ among its
+            // parameters, and new does not; what the machine does here is
+            // NEWINSTANCE off class^ (03 の 5.10), which a static member
+            // reaches as readily as a method. So the receiver is read where
+            // there is one, and the definition being built otherwise.
+            Binding *receiver = chk_scope_find(c->scope, "self^", 5, NULL);
+            LhatType *instance = receiver != NULL      ? receiver->type
+                                 : c->self_link != NULL ? c->self_link->type
+                                                        : NULL;
             for (const LhatNode *field = node->v.list.items; field != NULL;
                  field = field->next) {
                 LhatType *value = chk_infer(c, field->v.entry.value);
@@ -3050,9 +3059,29 @@ static LhatType *infer_node(Checker *c, const LhatNode *node)
                     chk_report(c, field->v.entry.value,
                                LHAT_CHECK_ERR_HOSTVALUE_ESCAPES);
                 }
+                // 14.11: the template says what a field holds, so what is
+                // written here is held to it -- which is also where 03 の
+                // 3.4 reads the type of an unannotated parameter handed
+                // straight into a field. A name the template does not have
+                // is not a field at all: 14.7 closes an instance to members
+                // added afterwards.
+                const char *name = NULL;
+                size_t length = 0;
+                if (instance == NULL || field->v.entry.key == NULL ||
+                    !chk_node_name(c, field->v.entry.key, &name, &length)) {
+                    continue;
+                }
+                const LhatTypeMember *held =
+                    chk_find_member(instance, name, length);
+                if (held == NULL) {
+                    chk_report_named(c, field->v.entry.key,
+                                     LHAT_CHECK_ERR_NO_MEMBER, name, length);
+                    continue;
+                }
+                chk_expect(c, field->v.entry.value, value, held->type,
+                           LHAT_CHECK_ERR_MISMATCH);
             }
-            Binding *receiver = chk_scope_find(c->scope, "self^", 5, NULL);
-            return receiver != NULL ? receiver->type
+            return instance != NULL ? instance
                                     : chk_simple(c, LHAT_TYPE_UNKNOWN);
         }
 

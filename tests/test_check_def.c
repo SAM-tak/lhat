@@ -221,6 +221,62 @@ static void test_definitions(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
+    // 14.11: self^{ … } inside new is the construction notation, and what it
+    // names is the instance of the def^ it stands in. 14.4 hands a receiver
+    // only to a member that wrote self^ among its parameters, and new does
+    // not -- that is a different question from what this notation means.
+    LHAT_TEST("what a written new answers is an instance");
+    check_text(&u,
+               "var^ C = def^{\n"
+               "    self^{ v := 1 },\n"
+               "    override^new := f^ n:number^ { return^ self^{ v := n } },\n"
+               "}\n"
+               "var^ n : number^ = C.new(5).v\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // 03 の 3.4: a field is held to what the template says it holds, so a
+    // parameter handed straight into one is decided by that.
+    LHAT_TEST("a field decides the type of the parameter written into it");
+    check_text(&u,
+               "var^ C = def^{\n"
+               "    self^{ v := 1 },\n"
+               "    override^new := f^ x { return^ self^{ v := x } },\n"
+               "}\n"
+               "var^ c = C.new(\"a\")\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
+    unit_dispose(&u);
+
+    LHAT_TEST("and the same one written with a fitting value checks");
+    check_text(&u,
+               "var^ C = def^{\n"
+               "    self^{ v := 1 },\n"
+               "    override^new := f^ x { return^ self^{ v := x } },\n"
+               "}\n"
+               "var^ n : number^ = C.new(5).v\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("a value that does not fit the field is reported");
+    check_text(&u,
+               "var^ C = def^{\n"
+               "    self^{ v := 1 },\n"
+               "    override^new := f^ { return^ self^{ v := \"a\" } },\n"
+               "}\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
+    unit_dispose(&u);
+
+    // 14.7: an instance is closed to a member added afterwards, so a name the
+    // template does not declare is not a field to fill in.
+    LHAT_TEST("a field the template does not declare is not one");
+    check_text(&u,
+               "var^ C = def^{\n"
+               "    self^{ v := 1 },\n"
+               "    override^new := f^ { return^ self^{ zzz := 1 } },\n"
+               "}\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_NO_MEMBER);
+    unit_dispose(&u);
+
     LHAT_TEST("a field the definition does not declare is reported");
     check_text(&u,
                "var^ C = def^{ self^{ v := 1 } }\n"
