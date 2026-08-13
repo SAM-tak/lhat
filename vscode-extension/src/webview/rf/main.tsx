@@ -18,8 +18,8 @@ import React, {
 } from "react";
 import { createRoot } from "react-dom/client";
 import {
-    Background, Controls, Handle, MiniMap, Position, ReactFlow, addEdge,
-    useEdgesState, useReactFlow, ReactFlowProvider,
+    Background, Controls, Handle, MiniMap, PanOnScrollMode, Position,
+    ReactFlow, addEdge, useEdgesState, useReactFlow, ReactFlowProvider,
     type Connection, type Edge, type Node, type NodeProps, type NodeTypes,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
@@ -186,9 +186,11 @@ function BoxNode({ data }: NodeProps<BoxNodeType>) {
     const drag = useRef<{ x: number; y: number; moved: boolean } | null>(null);
 
     // V18, the immediate half: a drag on a container slides its contents on
-    // the axis that carries no order. Pointer capture keeps the gesture ours;
-    // stopPropagation keeps React Flow's pane from panning underneath it.
+    // the axis that carries no order. Pointer capture keeps the gesture ours.
     const onPointerDown = (event: React.PointerEvent) => {
+        // The left button only. The middle one used to slide the contents as
+        // well, which put a slide and a scroll on the same gesture.
+        if (event.button !== 0) return;
         event.stopPropagation();
         (event.target as Element).setPointerCapture(event.pointerId);
         drag.current = { x: event.clientX, y: event.clientY, moved: false };
@@ -208,9 +210,11 @@ function BoxNode({ data }: NodeProps<BoxNodeType>) {
         if (data.slideAxis === "x") data.onSlide(data.slideKey, dx / zoom, 0);
         else data.onSlide(data.slideKey, 0, dy / zoom);
     };
-    const onPointerUp = () => {
-        const wasDrag = drag.current?.moved === true;
+    const onPointerUp = (event: React.PointerEvent) => {
+        if (event.button !== 0 || drag.current === null) return;
+        const wasDrag = drag.current.moved;
         drag.current = null;
+        // A press that never moved was a click on the box, not a slide.
         if (!wasDrag) data.onAct(data);
     };
 
@@ -218,11 +222,10 @@ function BoxNode({ data }: NodeProps<BoxNodeType>) {
     if (data.collapsed) classes.push("folded");
     else if (data.isContainer) classes.push(`container d${Math.min(data.depth, 6)}`);
     else classes.push("leaf");
-    // React Flow's pan is a native d3-zoom listener on the pane, which fires
-    // during native bubbling -- long before React's delegated handlers, so a
-    // stopPropagation here cannot reach it. Its zoom filter does honour this
-    // class, and a slide must not drag the whole canvas along with it.
-    if (data.slideKey !== undefined) classes.push("nopan");
+    // No `nopan` here. It was what kept a slide from dragging the canvas with
+    // it, back when a drag could pan; with panOnDrag off there is nothing left
+    // to hold back -- and the class would cost us, since inside one React Flow
+    // stops the wheel from scrolling too.
 
     return (
         <>
@@ -402,6 +405,21 @@ function App() {
                     nodeTypes={nodeTypes}
                     fitView
                     minZoom={0.05}
+                    // The placing is always automatic (1 章), so there is
+                    // nothing to reach by shoving the canvas about: the wheel
+                    // and the overview map cover moving around. Turning drag
+                    // panning off also settles what a drag on a box means --
+                    // it slides the contents (8.3) and nothing else.
+                    panOnDrag={false}
+                    // The wheel scrolls rather than zooms. Holding the zoom
+                    // key swaps the handler for the zoom one on its own
+                    // (zoomActivationKeyCode, Control here and Meta on macOS),
+                    // so Ctrl+wheel zooms without any of it being spelled out.
+                    // Shift+wheel goes sideways, which React Flow also has.
+                    panOnScroll
+                    // Both axes: a mouse wheel only ever moves the vertical
+                    // one anyway, and a branch runs sideways (5.1).
+                    panOnScrollMode={PanOnScrollMode.Free}
                 >
                     <Background />
                     <MiniMap pannable zoomable />
