@@ -1509,11 +1509,6 @@ static LhatNode *parse_primary(Parser *p)
                 advance(p);
                 return node;
             }
-            // 11.5: '@(式)' and '@自然数' are recorded and unsupported, so
-            // the message can be about that rather than a stray character.
-            if (t.v.op == LHAT_OP_AT) {
-                return error_node(p, LHAT_PARSE_ERR_UNSUPPORTED_AT);
-            }
             // The reserved shift spellings, met where a value should begin
             // ('x = a >> 2' ends the expression at 'a' and lands here).
             if (t.v.op == LHAT_OP_LSHIFT || t.v.op == LHAT_OP_RSHIFT) {
@@ -3789,6 +3784,10 @@ static void parser_begin(Parser *p, LhatLexer *lexer, LhatParseResult *result)
     p->saw_yield = false;
     p->interactive = false;
     p->depth = 0;
+    // 15.12: no body is open yet. Left unset, this read whatever the stack
+    // held, and a value that happened to equal `depth` let 8.2's bare
+    // expression through at the top level of a unit.
+    p->bare_depth = 0;
     // Nothing has been consumed yet, so `finish` before the first advance
     // must not widen anything.
     memset(&p->previous, 0, sizeof p->previous);
@@ -4102,9 +4101,6 @@ const char *lhat_parse_error_message(LhatParseErrorCode code)
         case LHAT_PARSE_ERR_RESERVED_SHIFT:
             return "'<<' and '>>' are reserved and not part of the language; "
                    "a bit operation is a function";
-        case LHAT_PARSE_ERR_UNSUPPORTED_AT:
-            return "'@' is reserved for naming an operand position and is "
-                   "not supported yet";
         case LHAT_PARSE_ERR_BINDING_ARITY:
             return "the number of targets and values does not match";
         case LHAT_PARSE_ERR_CLAUSE_ORDER:

@@ -918,7 +918,6 @@ static const OperatorEntry operator_table[] = {
     { "|", 1, LHAT_OP_UNION },
     { "&", 1, LHAT_OP_INTERSECT },
     { ".", 1, LHAT_OP_DOT },
-    { "@", 1, LHAT_OP_AT },
     // 11.7改2: postfix '?'. Last of the '?' family on purpose -- the
     // two-character spellings above are matched first, so this one is only
     // ever reached where none of them can be ('?' before '{', ':', ')', ',',

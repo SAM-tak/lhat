@@ -881,6 +881,15 @@ static void test_positions(void)
     LHAT_CHECK_EQ_INT(s.tokens[1].kind, LHAT_TOKEN_ERROR);
     LHAT_CHECK_EQ_INT(s.lexer.diagnostics[0].code, LHAT_ERR_UNEXPECTED_CHARACTER);
     scan_dispose(&s);
+
+    // 02 の 11.5: '@' held a place for naming an intermediate value, and that
+    // notation was withdrawn -- 'for^ … do^:' says the same thing. So the
+    // character is no more a token than any other the language never took.
+    LHAT_TEST("'@' is not a token of the language");
+    scan_text(&s, "var^ x = @(1)");
+    LHAT_CHECK_EQ_INT(s.tokens[3].kind, LHAT_TOKEN_ERROR);
+    LHAT_CHECK_EQ_INT(s.lexer.diagnostics[0].code, LHAT_ERR_UNEXPECTED_CHARACTER);
+    scan_dispose(&s);
 }
 
 static void test_realistic_snippet(void)

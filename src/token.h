@@ -130,8 +130,6 @@ typedef enum {
                          // '?' family reaches through an absent value; this
                          // one asks about it and answers bool^
 
-    LHAT_OP_AT,          // @
-
     LHAT_OP_COUNT
 } LhatOpKind;
 

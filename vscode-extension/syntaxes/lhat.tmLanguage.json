@@ -212,7 +212,6 @@
         { "match": "!", "name": "keyword.operator.logical.lhat" },
         { "match": "\\|", "name": "keyword.operator.type.union.lhat" },
         { "match": "&", "name": "keyword.operator.type.intersect.lhat" },
-        { "match": "@", "name": "keyword.operator.at.lhat" },
         { "match": "\\.", "name": "punctuation.accessor.lhat" }
       ]
     },
