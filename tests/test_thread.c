@@ -274,11 +274,51 @@ static void test_dispose(void)
     }
 }
 
+// sleep is the one registration here that starts nothing. What is pinned is
+// the shape -- that it is written in seconds, takes a number^ and nothing
+// else, and comes back whatever it was handed. How long it actually waited is
+// deliberately not asserted: a wall-clock lower bound is flaky on a loaded
+// machine, and one long enough to be worth believing would make this the
+// slowest case in the suite.
+static void test_sleep(void)
+{
+    LHAT_TEST("sleep waits and the unit carries on");
+    {
+        LhatTestRan ran = run_source("import^ std.thread\n"
+                                     "std.thread.sleep(0.01)\n"
+                                     "return^ 7\n");
+        LHAT_CHECK_RAN_INTEGER(ran, 7);
+        lhat_test_ran_dispose(&ran);
+    }
+
+    // Nothing to wait for is not an error -- there is no result to read one
+    // out of, and a caller computing a delay that came out at or below zero
+    // meant "do not wait". A whole number is the same number^ either way
+    // (14.8), which is what these two are written as.
+    LHAT_TEST("and nothing to wait for returns at once");
+    {
+        LhatTestRan ran = run_source("import^ std.thread\n"
+                                     "std.thread.sleep(0)\n"
+                                     "std.thread.sleep(0 - 1)\n"
+                                     "return^ 7\n");
+        LHAT_CHECK_RAN_INTEGER(ran, 7);
+        lhat_test_ran_dispose(&ran);
+    }
+
+    LHAT_TEST("and what is not a number^ is refused by the checker");
+    {
+        LHAT_CHECK(!checks("import^ std.thread\n"
+                           "std.thread.sleep(\"x\")\n"),
+                   "a string is not a duration");
+    }
+}
+
 int main(void)
 {
     test_spawn_shape();
     test_spawn_upvalue();
     test_arguments();
     test_dispose();
+    test_sleep();
     return lhat_test_report("test_thread");
 }

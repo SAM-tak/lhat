@@ -20,6 +20,16 @@
 // A ThreadHandle's dispose() blocks until the spawned thread finishes if it
 // was never join()ed -- see stdlib/thread.c's thread_dispose comment for why.
 //
+// sleep is written
+//
+//     std.thread.sleep(0.2)
+//
+// -- **seconds**, and a real one is as good as a whole one. It stops the
+// thread that called it, so a unit that never spawns anything can reach for
+// it too; the module is where it lives because a thread is what it stops.
+// Nothing to wait for (zero, a negative, a NaN) returns at once rather than
+// answering an error, and there is no error to read: it is a p^.
+//
 // spawn/join answer a ThreadHandle, a ThreadError, or std.error.
 // OutOfMemory for the one failure this module shares with every other
 // stdlib module -- read the result with try^/catch^, or narrow with isa^

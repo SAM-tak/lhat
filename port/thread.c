@@ -57,6 +57,14 @@ void lhat_thread_join(LhatThread *thread)
     thread->started = false;
 }
 
+void lhat_thread_sleep(int milliseconds)
+{
+    if (milliseconds <= 0) {
+        return;
+    }
+    Sleep((DWORD)milliseconds);
+}
+
 void lhat_mutex_init(LhatMutex *mutex) { InitializeSRWLock(&mutex->lock); }
 
 // An SRWLOCK holds nothing that has to be given back.
@@ -133,6 +141,20 @@ void lhat_thread_join(LhatThread *thread)
     }
     pthread_join(thread->handle, NULL);
     thread->started = false;
+}
+
+void lhat_thread_sleep(int milliseconds)
+{
+    if (milliseconds <= 0) {
+        return;
+    }
+    struct timespec left;
+    left.tv_sec = milliseconds / 1000;
+    left.tv_nsec = (long)(milliseconds % 1000) * 1000000L;
+    // EINTR leaves what is still owed in `left`, so a signal shortens
+    // nothing -- the caller asked for a duration, not for one syscall.
+    while (nanosleep(&left, &left) != 0 && errno == EINTR) {
+    }
 }
 
 void lhat_mutex_init(LhatMutex *mutex)

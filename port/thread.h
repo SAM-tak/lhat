@@ -100,6 +100,11 @@ bool lhat_thread_start(LhatThread *thread, int (*entry)(void *),
 // establishes worth more than the code would be.
 void lhat_thread_join(LhatThread *thread);
 
+// Blocks the calling thread for this long, in the relative milliseconds the
+// waits above are written in. Zero or less returns at once, and a signal
+// arriving part way through does not shorten it.
+void lhat_thread_sleep(int milliseconds);
+
 void lhat_mutex_init(LhatMutex *mutex);
 void lhat_mutex_destroy(LhatMutex *mutex);
 void lhat_mutex_lock(LhatMutex *mutex);

@@ -38,6 +38,7 @@
 
 #include "port/thread.h"
 
+#include <limits.h>
 #include <stdint.h>
 #include <string.h>
 
@@ -412,6 +413,31 @@ static LhatValue thread_join(LhatMachine *machine, void *context,
     return out;
 }
 
+// The one registration here that starts no thread and holds no handle: it
+// stops the thread that called it. Written in seconds because that is what a
+// caller has in mind ('sleep(0.2)'); port/thread.h counts in milliseconds, so
+// the conversion happens here and nowhere else.
+static LhatValue thread_sleep(LhatMachine *machine, void *context,
+                              const LhatValue *arguments, size_t count)
+{
+    (void)machine;
+    (void)context;
+    (void)count;
+    double seconds = lhat_is_integer(arguments[0])
+                         ? (double)lhat_as_integer(arguments[0])
+                         : lhat_as_real(arguments[0]);
+    // Compared the way round that answers for a NaN as well: nothing to wait
+    // for is not an error, the same line 14.19 draws for a range that does
+    // not hold. The ceiling is what an int carries -- about 24 days.
+    double milliseconds = seconds * 1000.0;
+    int wait = 0;
+    if (milliseconds > 0.0) {
+        wait = milliseconds >= (double)INT_MAX ? INT_MAX : (int)milliseconds;
+    }
+    lhat_thread_sleep(wait);
+    return lhat_nil();
+}
+
 // 05 の 8.8: registering this is what makes a ThreadHandle the host's to
 // hand over and L^'s to give back. A caller that already called join()
 // leaves nothing more to wait for; one that never did makes dispose() do
@@ -498,6 +524,10 @@ bool lhatstdlib_thread_register(LhatProgram *program)
                "|std.thread.ThreadError.BadArgument"
                "|std.thread.ThreadError.SpawnFailed|std.error.OutOfMemory;",
                thread_spawn, module) &&
+           // 13.4 keeps the name out of a signature, so what the number^ is
+           // counted in is said here and in thread.h: seconds.
+           lhat_register_func(program, "std.thread", "sleep", "p^number^;",
+                              thread_sleep, NULL) &&
            lhat_register_member(
                program, "std.thread", "ThreadHandle", "join",
                "f^self^ -> (number^|bool^|string^|nil^)"
