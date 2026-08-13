@@ -32,6 +32,18 @@ html, body, #root {
     background: var(--vscode-editorWidget-background);
 }
 
+/* React Flow's defaults paint minimap nodes light grey and the mask a light
+   wash -- invisible against a light theme, wrong against a dark one. Painted
+   from the theme instead, like everything else here. */
+.react-flow__minimap-node {
+    fill: color-mix(in srgb, var(--vscode-editor-foreground) 25%, var(--vscode-editorWidget-background));
+    stroke: none;
+}
+
+.react-flow__minimap-mask {
+    fill: color-mix(in srgb, var(--vscode-editor-background) 55%, transparent);
+}
+
 .react-flow__controls button {
     background: var(--vscode-editorWidget-background);
     color: var(--vscode-editor-foreground);
@@ -52,6 +64,12 @@ html, body, #root {
 }
 
 .box:hover {
+    border-color: var(--vscode-focusBorder);
+}
+
+/* Selection exists only to keep pointer events on (see toFlow); its own
+   look stays quiet. */
+.react-flow__node.selected .box {
     border-color: var(--vscode-focusBorder);
 }
 

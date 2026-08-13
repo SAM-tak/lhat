@@ -118,7 +118,14 @@ function toFlow(
                 position: { x, y },
                 parentId,
                 draggable: false,
-                selectable: false,
+                // Not for selection itself: React Flow turns a node's
+                // pointer-events off entirely when it is neither selectable
+                // nor draggable and no node-level handlers are installed
+                // (hasPointerEvents in NodeWrapper) -- which would kill our
+                // own pointer handlers, the hover that shows the handles,
+                // and every click. Selectable is the cheapest way to keep
+                // events flowing.
+                selectable: true,
                 hidden,
                 style: { width: w, height: h, clipPath },
                 data: {
