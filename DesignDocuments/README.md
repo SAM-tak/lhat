@@ -11,7 +11,7 @@
 | [03-compilation-pipeline.md](03-compilation-pipeline.md) | 処理の構成（段階構成、実行時の値表現、型検査の厳格度、推論の範囲、バイトコード、ガベージコレクション） | P4・P6・P7・P8 が未決 |
 | [04-errors.md](04-errors.md) | 誤りの表現と伝播（`errordef^`、`catch^`、`try^`、網羅性、取りこぼしの検出） | E8（多値への `catch^`）が未決 |
 | [05-modules.md](05-modules.md) | 名前空間とモジュール（`module^`、`public^`、`require^`、型のラベル、初期束縛、ホスト API） | M2〜M4・M7 が未決 |
-| [06-visual-editor.md](06-visual-editor.md) | ビジュアルエディタ（`lhat/ast`、AST からグラフへの写像、ELK レイアウト、描画層、`*.lhl`） | V2・V7〜V14・V16〜V18 が未決 |
+| [06-visual-editor.md](06-visual-editor.md) | ビジュアルエディタ（`lhat/ast`、AST からグラフへの写像、ELK レイアウト、描画層、`*.lhl`） | V2・V7〜V13・V16・V18 が未決。描画層は React Flow に確定 |
 | [07-language-server.md](07-language-server.md) | 言語サーバとエディタ統合（`lhatls` の機能、ホバー、VSCode 拡張の構成） | L2・L5・L8 が未決 |
 
 ## Memo.md との関係

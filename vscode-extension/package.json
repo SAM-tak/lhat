@@ -97,15 +97,6 @@
           "type": "boolean",
           "default": false,
           "description": "Open the graph view in a split beside the current editor. When off, it opens as another tab in the same editor group."
-        },
-        "lhat.graph.renderer": {
-          "type": "string",
-          "enum": [
-            "reactflow",
-            "svg"
-          ],
-          "default": "reactflow",
-          "description": "How the graph view draws. \"reactflow\" is the V14 candidate under evaluation (pan/zoom, minimap, connection handles); \"svg\" is the minimal renderer it is measured against. Reopen the graph tab after changing."
         }
       }
     },
@@ -131,14 +122,14 @@
   },
   "scripts": {
     "vscode:prepublish": "npm run compile",
-    "compile": "tsc -p ./ && tsc -p ./tsconfig.webview.json && npm run bundle:rf",
+    "compile": "tsc -p ./ && npm run bundle:rf",
     "bundle:rf": "esbuild src/webview/rf/main.tsx --bundle --minify --outdir=media/rf --entry-names=bundle --jsx=automatic --sourcemap --log-level=warning",
     "check:rf": "tsc -p ./tsconfig.rf.json",
     "watch": "tsc -watch -p ./",
-    "watch:webview": "tsc -watch -p ./tsconfig.webview.json",
     "package": "vsce package -o lhat-lsp-client.vsix",
     "install-extension": "npm run package && code --install-extension lhat-lsp-client.vsix --force",
-    "uninstall-extension": "code --uninstall-extension lhat.lhat-lsp-client"
+    "uninstall-extension": "code --uninstall-extension lhat.lhat-lsp-client",
+    "watch:rf": "npm run bundle:rf -- --watch"
   },
   "dependencies": {
     "@xyflow/react": "^12.11.3",

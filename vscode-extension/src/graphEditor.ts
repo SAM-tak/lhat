@@ -29,14 +29,7 @@ export class LhatGraphEditorProvider implements vscode.CustomTextEditorProvider 
             enableScripts: true,
             localResourceRoots: [this.context.extensionUri],
         };
-        // V14 is being settled between two renderers; the setting picks which
-        // one this tab gets. Both speak the same protocol to this provider.
-        const renderer = vscode.workspace
-            .getConfiguration("lhat")
-            .get<string>("graph.renderer", "reactflow");
-        panel.webview.html = renderer === "svg"
-            ? this.html(panel.webview)
-            : this.rfHtml(panel.webview);
+        panel.webview.html = this.html(panel.webview);
 
         const post = (message: ToWebview) => void panel.webview.postMessage(message);
 
@@ -99,44 +92,11 @@ export class LhatGraphEditorProvider implements vscode.CustomTextEditorProvider 
         editor.revealRange(range, vscode.TextEditorRevealType.InCenterIfOutsideViewport);
     }
 
+    // 06 の 8.4: React Flow. One bundled script -- React, React Flow and
+    // elkjs together, built by esbuild -- and its stylesheet. Styles need
+    // 'unsafe-inline': React Flow positions its nodes by writing style
+    // attributes, which is also how the layout's own sizes reach the boxes.
     private html(webview: vscode.Webview): string {
-        const asset = (...parts: string[]) =>
-            webview.asWebviewUri(vscode.Uri.joinPath(this.context.extensionUri, ...parts));
-
-        // elkjs ships a build that needs no bundler and no worker, so it is
-        // loaded as a plain script and the extension stays on tsc alone.
-        const elk = asset("node_modules", "elkjs", "lib", "elk.bundled.js");
-        const main = asset("media", "webview", "main.js");
-        const css = asset("media", "graph.css");
-        const nonce = String(Math.random()).slice(2);
-
-        return `<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none';
-  style-src ${webview.cspSource}; script-src 'nonce-${nonce}';">
-<link href="${css}" rel="stylesheet">
-<title>L^ graph</title>
-</head>
-<body>
-<div id="bar">
-  <button id="up" type="button" title="Leave this definition">▲</button>
-  <button id="fold" type="button">fold / unfold</button>
-  <span id="status"></span>
-</div>
-<div id="trail" hidden></div>
-<div id="view"></div>
-<script nonce="${nonce}" src="${elk}"></script>
-<script nonce="${nonce}" type="module" src="${main}"></script>
-</body>
-</html>`;
-    }
-
-    // The React Flow variant (06 の 8.4, the V14 spike). One bundled script --
-    // React, React Flow and elkjs together, built by esbuild -- and its CSS.
-    // 'unsafe-inline' styles are what React Flow positions its nodes with.
-    private rfHtml(webview: vscode.Webview): string {
         const asset = (...parts: string[]) =>
             webview.asWebviewUri(vscode.Uri.joinPath(this.context.extensionUri, ...parts));
 

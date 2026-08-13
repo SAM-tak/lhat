@@ -12,8 +12,9 @@
     // (React Flow's) assume the DOM lib this Node-side build does not have.
     "types": ["node"]
   },
-  // The webview half builds separately (tsconfig.webview.json): it targets a
-  // browser and is emitted as ES modules, which this half is not.
+  // The webview half builds separately (tsconfig.rf.json to typecheck,
+  // esbuild to bundle): it targets a browser and uses JSX, neither of which
+  // this Node-side half does.
   "include": ["src/**/*.ts"],
   "exclude": ["src/webview"]
 }
