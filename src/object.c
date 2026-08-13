@@ -6,6 +6,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "code.h"  // 14.4: a proto says whether its body takes a receiver
 #include "grow.h"
 #include "lhat/port.h"
 
@@ -356,6 +357,14 @@ bool lhat_value_satisfies(LhatValue value, const LhatRuntimeType *type)
                 }
             }
             return true;
+        // 02 の 13.13: the structure this one is written inside, which the
+        // walk has already been through. Asked of a value it answers what the
+        // cycle used to be flattened to -- that it is a table -- since telling
+        // more would mean walking a value that may hold itself as well. The
+        // checker is where the shape is judged (03 の 5.11c); this is 11.6's
+        // own check, and it says no less than it did.
+        case LHAT_TYPE_RT_SELF:
+            return lhat_is_object_kind(value, LHAT_OBJECT_TABLE);
         case LHAT_TYPE_RT_STRUCTURE: {
             // 14.10: at least these members, which is what makes the judgement
             // structural rather than a question about where it came from.
@@ -426,6 +435,59 @@ static void type_put(TypeWriter *w, const char *text, size_t length)
 static void type_put_text(TypeWriter *w, const char *text)
 {
     type_put(w, text, strlen(text));
+}
+
+static void write_runtime_type(TypeWriter *w, const LhatRuntimeType *type);
+
+// 14.10's brace half, shared by the two things that wear it: a structure
+// after its 't^', and 14.7改's self^{ … } section inside a definition.
+static bool has_member_named(const LhatRuntimeType *type,
+                             const LhatString *name)
+{
+    for (size_t i = 0; i < type->member_count; i++) {
+        const LhatString *had = type->members[i].name;
+        if (had->length == name->length &&
+            memcmp(had->text, name->text, name->length) == 0) {
+            return true;
+        }
+    }
+    return false;
+}
+
+static void write_structure_body(TypeWriter *w, const LhatRuntimeType *type)
+{
+    type_put_text(w, "{");
+    bool first = true;
+    // 02 の 14.7改: what the instances carry comes before the definition's
+    // own members -- new and the static ones -- the way the def^ was written.
+    if (type->instance != NULL) {
+        type_put_text(w, " self^");
+        write_structure_body(w, type->instance);
+        first = false;
+    }
+    // 14 章: the sequence half first, in order, the way a value written down
+    // puts it (value.c's write_table) -- then the named half, sorted into a
+    // canonical order already (this is read-only from here).
+    for (size_t i = 0; i < type->part_count; i++) {
+        type_put_text(w, first ? " " : ", ");
+        first = false;
+        write_runtime_type(w, type->parts[i]);
+    }
+    for (size_t i = 0; i < type->member_count; i++) {
+        // What the section already showed is not written twice: an instance's
+        // member is reachable through the definition as well (14.4's
+        // `let^ f = A.m`), which is what the section is saying.
+        if (type->instance != NULL &&
+            has_member_named(type->instance, type->members[i].name)) {
+            continue;
+        }
+        type_put_text(w, first ? " " : ", ");
+        first = false;
+        type_put(w, type->members[i].name->text, type->members[i].name->length);
+        type_put_text(w, " : ");
+        write_runtime_type(w, type->members[i].type);
+    }
+    type_put_text(w, first ? "}" : " }");
 }
 
 static void write_runtime_type(TypeWriter *w, const LhatRuntimeType *type)
@@ -548,8 +610,18 @@ static void write_runtime_type(TypeWriter *w, const LhatRuntimeType *type)
                 write_runtime_type(w, type->parts[i]);
             }
             return;
-        case LHAT_TYPE_RT_SUBROUTINE:
+        case LHAT_TYPE_RT_SUBROUTINE: {
             type_put_text(w, type->is_function ? "f^" : "p^");
+            // 14.4: in a type the receiver is a parameter, written as the
+            // word itself -- and 11.3改 has it trail on a binary operator,
+            // where it is the right operand.
+            bool others = type->part_count > 0 || type->variadic != NULL;
+            if (type->takes_self && !type->self_last) {
+                type_put_text(w, "self^");
+                if (others) {
+                    type_put_text(w, ", ");
+                }
+            }
             for (size_t i = 0; i < type->part_count; i++) {
                 if (i > 0) {
                     type_put_text(w, ", ");
@@ -564,35 +636,30 @@ static void write_runtime_type(TypeWriter *w, const LhatRuntimeType *type)
                 type_put_text(w, "...:");
                 write_runtime_type(w, type->variadic);
             }
+            if (type->takes_self && type->self_last) {
+                if (others) {
+                    type_put_text(w, ", ");
+                }
+                type_put_text(w, "self^");
+            }
             if (type->result != NULL) {
                 type_put_text(w, " -> ");
                 write_runtime_type(w, type->result);
             }
             type_put_text(w, ";");
             return;
-        case LHAT_TYPE_RT_STRUCTURE:
-            type_put_text(w, "t^{");
-            {
-                bool first = true;
-                // 14 章: the sequence half first, in order, the way a value
-                // written down puts it (value.c's write_table) -- then the
-                // named half, sorted into a canonical order already (this is
-                // read-only from here).
-                for (size_t i = 0; i < type->part_count; i++) {
-                    type_put_text(w, first ? " " : ", ");
-                    first = false;
-                    write_runtime_type(w, type->parts[i]);
-                }
-                for (size_t i = 0; i < type->member_count; i++) {
-                    type_put_text(w, first ? " " : ", ");
-                    first = false;
-                    type_put(w, type->members[i].name->text,
-                            type->members[i].name->length);
-                    type_put_text(w, " : ");
-                    write_runtime_type(w, type->members[i].type);
-                }
-                type_put_text(w, first ? "}" : " }");
+        }
+        // 02 の 13.13: the structure this one sits inside, a hat per step out.
+        case LHAT_TYPE_RT_SELF:
+            type_put_text(w, "Self");
+            for (unsigned i = 0; i < (type->levels > 0 ? type->levels : 1);
+                 i++) {
+                type_put_text(w, "^");
             }
+            return;
+        case LHAT_TYPE_RT_STRUCTURE:
+            type_put_text(w, "t^");
+            write_structure_body(w, type);
             return;
     }
 }
@@ -756,7 +823,11 @@ bool lhat_runtime_type_equal(const LhatRuntimeType *a, const LhatRuntimeType *b)
                     return false;
                 }
             }
-            return true;
+            // 14.7改: two definitions are the same only if what they make is.
+            return lhat_runtime_type_equal(a->instance, b->instance);
+        // 13.13: the same word naming the same step out.
+        case LHAT_TYPE_RT_SELF:
+            return a->levels == b->levels;
     }
     return false;
 }
@@ -1132,6 +1203,31 @@ static void drain_into_array(LhatTable *table)
 // Reading and writing
 // ---------------------------------------------------------------------------
 
+// 02 の 14.4: whether this value is handed a receiver when it is called.
+// 14.12's overloaded name answers yes when any arm is: which arm a call means
+// is settled at the call, and fits_call refuses one that takes none.
+static bool takes_receiver(LhatValue value)
+{
+    if (lhat_is_object_kind(value, LHAT_OBJECT_SUBROUTINE)) {
+        const LhatProto *proto =
+            ((const LhatClosure *)lhat_as_object(value))->proto;
+        return proto != NULL && proto->takes_self;
+    }
+    if (lhat_is_object_kind(value, LHAT_OBJECT_HOST)) {
+        return ((const LhatHost *)lhat_as_object(value))->takes_self;
+    }
+    if (lhat_is_object_kind(value, LHAT_OBJECT_OVERLOAD)) {
+        const LhatOverload *group =
+            (const LhatOverload *)lhat_as_object(value);
+        for (size_t i = 0; i < group->count; i++) {
+            if (takes_receiver(group->candidates[i])) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
 LhatValue lhat_table_get(const LhatTable *table, LhatValue key)
 {
     if (!usable_key(key)) {
@@ -1139,14 +1235,30 @@ LhatValue lhat_table_get(const LhatTable *table, LhatValue key)
     }
     key = normalise_key(key);
 
+    // 14.7改: what an instance reaches through its definition is what takes a
+    // receiver. 14.11's new and a static member are the definition's own, and
+    // calling one with an instance before the dot would hand it a receiver it
+    // never asked for. A walk that starts at a definition is the other case
+    // -- 'A.new()', 'class^.somestatic()', and 14.5's walk up to a base --
+    // and passes everything.
+    bool restricted = table != NULL && !table->is_definition;
+
     // 14.7: an instance's own fields first, then the members its definition
     // holds. 14.2 fixes the chain when the instance is made, so this walk is
     // the one Lua's __index performs -- but written into the structure rather
     // than left to a hook that can be swapped (14.1).
-    for (; table != NULL; table = table->definition) {
+    for (bool inherited = false; table != NULL;
+         table = table->definition, inherited = true) {
         size_t index;
         if (array_index(table, key, &index)) {
-            return lhat_slots_get(table->array, index);
+            LhatValue value = lhat_slots_get(table->array, index);
+            // 04 の 11.3: nothing is there, which is what a member that was
+            // never meant to be reached this way amounts to. Calling it lands
+            // on NOT_CALLABLE rather than on a receiver going somewhere odd.
+            if (restricted && inherited && !takes_receiver(value)) {
+                return lhat_nil();
+            }
+            return value;
         }
         if (table->entry_capacity == 0) {
             continue;
@@ -1154,6 +1266,9 @@ LhatValue lhat_table_get(const LhatTable *table, LhatValue key)
         LhatTableEntry *entry =
             probe(table->entries, table->entry_capacity, key, hash_key(key));
         if (!lhat_is_nil(entry->key)) {
+            if (restricted && inherited && !takes_receiver(entry->value)) {
+                return lhat_nil();
+            }
             return entry->value;
         }
     }

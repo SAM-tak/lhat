@@ -314,21 +314,23 @@ static LhatType *builtin_type(Checker *c, const char *name, size_t length)
     return NULL;
 }
 
-static LhatType *resolve_table_type(Checker *c, const LhatNode *node)
+// The written members of one t^{ ... } or of its self^{ ... } section, read
+// into 'table'. The section itself is not a member and is passed over here --
+// resolve_table_type reads it before any of this.
+static void resolve_members_into(Checker *c, LhatType *table,
+                                 const LhatNode *items, const LhatNode *node)
 {
-    LhatType *table = lhat_type_table(c->result->types);
-    // 13.13: the structure is what Self^ inside it names, so it is bound
-    // before the members are read -- a member's type is written after the
-    // literal it belongs to has been opened, which is the whole point.
-    struct SelfLink here = { table, c->self_link };
-    c->self_link = &here;
     // 14.10: an entry with no name is the type of the next position. They
     // are counted the way a literal counts its own -- from one, in written
     // order, with the named ones taking no place in the sequence.
     size_t position = 0;
-    for (const LhatNode *m = node->v.list.items; m != NULL; m = m->next) {
+    for (const LhatNode *m = items; m != NULL; m = m->next) {
         const char *name = NULL;
         size_t length = 0;
+        if (m->v.entry.value != NULL &&
+            m->v.entry.value->kind == LHAT_NODE_SELF_TABLE) {
+            continue;
+        }
         LhatType *member = chk_resolve_type(c, m->v.entry.value);
         // 05 の 8.9: a table member is never a host value, written no more
         // than inferred.
@@ -353,6 +355,52 @@ static LhatType *resolve_table_type(Checker *c, const LhatNode *node)
         }
         lhat_type_add_member(c->result->types, table, name, length, member);
     }
+}
+
+static LhatType *resolve_table_type(Checker *c, const LhatNode *node)
+{
+    LhatType *table = lhat_type_table(c->result->types);
+    // 13.13: the structure is what Self^ inside it names, so it is bound
+    // before the members are read -- a member's type is written after the
+    // literal it belongs to has been opened, which is the whole point.
+    struct SelfLink here = { table, c->self_link };
+    c->self_link = &here;
+
+    // 14.7改: a self^{ ... } section makes this a definition, and says what
+    // its instances carry. It is read first, and from then on 13.13's Self^
+    // names the instance -- inside a def^ that is what the word means, and
+    // this is the same structure written down (14.16). The definition itself
+    // is one structure further out, Self^^.
+    const LhatNode *section = NULL;
+    for (const LhatNode *m = node->v.list.items; m != NULL; m = m->next) {
+        if (m->v.entry.value != NULL &&
+            m->v.entry.value->kind == LHAT_NODE_SELF_TABLE) {
+            section = m->v.entry.value;
+            break;
+        }
+    }
+    struct SelfLink within = { NULL, c->self_link };
+    if (section != NULL) {
+        LhatType *instance = lhat_type_table(c->result->types);
+        table->v.table.instance = instance;
+        within.type = instance;
+        c->self_link = &within;
+        resolve_members_into(c, instance, section->v.list.items, node);
+        // 14.4: a member is reached through the definition as well
+        // ('let^ f = A.m'), so it stands on both. A field does not: the
+        // template says what an instance carries, and nothing of it is on the
+        // definition. Which is which is the same question 14.7改 asks of a
+        // def^'s entries, so the written form says what a def^ builds.
+        for (const LhatTypeMember *m = instance->v.table.members; m != NULL;
+             m = m->next) {
+            if (chk_takes_receiver(m->type)) {
+                lhat_type_add_member(c->result->types, table, m->name,
+                                     m->name_length, m->type);
+            }
+        }
+    }
+
+    resolve_members_into(c, table, node->v.list.items, node);
     c->self_link = here.outer;
     return table;
 }

@@ -596,6 +596,15 @@ static bool conforms_in(const LhatType *value, const LhatType *target,
             if (target->v.table.nominal) {
                 return value == target;
             }
+            // 14.7改: what a definition's instances carry is part of what the
+            // definition is, so a written self^{ … } is asked of them the way
+            // the members are -- and only a definition has any to ask.
+            if (target->v.table.instance != NULL &&
+                (value->v.table.instance == NULL ||
+                 !conforms_in(value->v.table.instance,
+                              target->v.table.instance, seen))) {
+                return false;
+            }
             // 14.10: at least the listed members. Extra members are fine,
             // which is what lets a value with many members satisfy a small
             // structure at all.
@@ -1123,6 +1132,32 @@ static void write_members(TypeSink *sink, const LhatTypeMember *members,
     }
 }
 
+// A definition's own members: the ones the self^{ … } section did not already
+// show. An instance's member is reachable through the definition too (14.4's
+// `let^ f = A.m`), so writing it twice would only say the same thing again.
+// Each is written after a ", " of its own, since a section came before.
+static void write_own_members(TypeSink *sink, const LhatType *definition,
+                              int depth)
+{
+    const LhatType *held = definition->v.table.instance;
+    int count = 0;
+    for (const LhatTypeMember *m = definition->v.table.members; m != NULL;
+         m = m->next) {
+        if (find_member(held->v.table.members, m) != NULL) {
+            continue;
+        }
+        if (count == LHAT_TYPE_WRITE_MAX_ITEMS) {
+            put_text(sink, ", …");
+            return;
+        }
+        put_text(sink, ", ");
+        put(sink, m->name, m->name_length);
+        put_text(sink, " : ");
+        write_type(sink, m->type, depth + 1);
+        count++;
+    }
+}
+
 static void write_list(TypeSink *sink, const LhatTypeList *list, int depth,
                        const char *separator)
 {
@@ -1187,14 +1222,36 @@ static void write_type(TypeSink *sink, const LhatType *type, int depth)
 
             // 14.10: bare t^ asks for nothing in particular.
             if (type->v.table.members == NULL &&
-                type->v.table.variadic == NULL) {
+                type->v.table.variadic == NULL &&
+                type->v.table.instance == NULL) {
                 put_text(sink, "t^");
                 return;
             }
             WriteSeen here = { type, sink->seen };
             sink->seen = &here;
+            // 13.13: inside a definition Self^ is the instance, so that is
+            // what the innermost link names here -- and the definition itself
+            // becomes Self^^, one structure further out.
+            WriteSeen within = { type->v.table.instance, sink->seen };
+            if (type->v.table.instance != NULL) {
+                sink->seen = &within;
+            }
             put_text(sink, "t^{ ");
-            write_members(sink, type->v.table.members, depth);
+            // 14.7改: a definition says what its instances carry in the same
+            // self^{ … } section it was written with. Its own members follow
+            // -- new and the static ones. What the section already showed is
+            // not written twice: an instance's member is reachable through
+            // the definition (14.4's 'let^ f = A.m'), which is what the
+            // section is saying.
+            if (type->v.table.instance != NULL) {
+                const LhatType *held = type->v.table.instance;
+                put_text(sink, "self^{ ");
+                write_members(sink, held->v.table.members, depth + 1);
+                put_text(sink, " }");
+                write_own_members(sink, type, depth);
+            } else {
+                write_members(sink, type->v.table.members, depth);
+            }
             if (type->v.table.variadic != NULL) {
                 // 14.10: the sequence half, unbounded.
                 if (type->v.table.members != NULL) {
@@ -1230,9 +1287,21 @@ static void write_type(TypeSink *sink, const LhatType *type, int depth)
             put_text(sink, ")");
             return;
 
-        case LHAT_TYPE_FUNC:
+        case LHAT_TYPE_FUNC: {
             // 13.1's form. 13.2 writes '->' only when something is returned.
             put_text(sink, type->v.func.is_function ? "f^" : "p^");
+            // 14.4: in a type the receiver is a parameter, written as the
+            // word itself. Saying so is what tells a member apart from a
+            // plain subroutine of the same shape -- and 11.3改 has it trail
+            // on a binary operator, where it is the right operand.
+            bool others = type->v.func.params != NULL ||
+                          type->v.func.variadic != NULL;
+            if (type->v.func.takes_self && !type->v.func.self_last) {
+                put_text(sink, "self^");
+                if (others) {
+                    put_text(sink, ", ");
+                }
+            }
             write_list(sink, type->v.func.params, depth, ", ");
             if (type->v.func.variadic != NULL) {
                 if (type->v.func.params != NULL) {
@@ -1241,6 +1310,12 @@ static void write_type(TypeSink *sink, const LhatType *type, int depth)
                 put_text(sink, "...:");
                 write_type(sink, type->v.func.variadic, depth + 1);
             }
+            if (type->v.func.takes_self && type->v.func.self_last) {
+                if (others) {
+                    put_text(sink, ", ");
+                }
+                put_text(sink, "self^");
+            }
             if (type->v.func.result != NULL &&
                 type->v.func.result->kind != LHAT_TYPE_NONE) {
                 put_text(sink, " -> ");
@@ -1248,6 +1323,7 @@ static void write_type(TypeSink *sink, const LhatType *type, int depth)
             }
             put_text(sink, ";");
             return;
+        }
 
         case LHAT_TYPE_CORO:
             // 13.9 with 15.3改: 'c^{ f^R -> Y;, T }'.

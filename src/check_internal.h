@@ -348,6 +348,12 @@ LhatType *chk_simple(Checker *c, LhatTypeKind kind);
 int chk_self_marker_at(const Checker *c, const LhatNode *params,
                        const LhatNode *param);
 LhatType *chk_resolve_func_type(Checker *c, const LhatNode *node);
+
+// 14.7改 with 14.4: whether an instance carries a member of this type. What
+// may be reached through one is what is handed a receiver, which its signature
+// says; new, a static member and a value are the definition's alone.
+bool chk_takes_receiver(const LhatType *type);
+
 bool chk_may_stand_beside_tuple(const LhatType *type);
 bool chk_contains_error(const LhatType *type);
 

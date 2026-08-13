@@ -224,6 +224,10 @@ typedef enum {
     LHAT_TYPE_RT_UNION,      // 13.5
     LHAT_TYPE_RT_INTERSECT,  // 14.5, 14.12: an overload^ed member's arms
     LHAT_TYPE_RT_STRUCTURE,  // 14.10: at least these members
+    // 02 の 13.13: the structure this one is written inside, counted out by
+    // `levels`. A type that holds itself is written with it -- the same word
+    // the source would have put there, so what 14.16 answers reads back.
+    LHAT_TYPE_RT_SELF,
     // 13.8改: '(A, B)' -- the positions a multi-value return answers with,
     // held in `parts` the way a union holds its arms. Exactly these, in this
     // order: unlike STRUCTURE above there is no "at least", since every
@@ -274,7 +278,8 @@ typedef struct LhatRuntimeType {
     // wherever nothing built them.
     struct LhatRuntimeType *result;   // NULL when nothing is returned (13.2)
     bool is_function;                 // f^ rather than p^ (15 章)
-    bool takes_self;                  // 14.4: the first parameter is self^
+    bool takes_self;                  // 14.4: a parameter is self^
+    bool self_last;                   // 11.3改: and it is the right operand
 
     // COROUTINE only (13.9). `result` above doubles as the third slot (T);
     // these are the other two. NULL/any^ wherever nothing built them.
@@ -291,6 +296,15 @@ typedef struct LhatRuntimeType {
     // STRUCTURE. A member with no type asks only that the name is there.
     LhatRuntimeTypeMember *members;
     size_t member_count;
+
+    // 02 の 14.7改: STRUCTURE, and only where it came from a definition --
+    // what its instances carry, which 14.16 writes as the self^{ … } section.
+    // NULL on every other structure.
+    struct LhatRuntimeType *instance;
+
+    // 02 の 13.13: SELF. How many structures out the one it names is -- 1 for
+    // the innermost, and a hat per step beyond that.
+    unsigned levels;
 } LhatRuntimeType;
 
 // 02 の 14.12: one name, several signatures. 14.12 forbids them overlapping,

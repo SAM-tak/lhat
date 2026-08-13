@@ -417,17 +417,46 @@ static LhatNode *parse_type_coroutine(Parser *p)
     return finish(p, node);
 }
 
-// 'name : type, ...' up to the closing brace. Shared by t^{ ... } and by the
-// fields a kind declares (04 の 2.2), which is the same shape.
+// 'name : type, ...' up to the closing brace, and the one self^{ ... } section
+// a definition's type carries (14.7改).
 static LhatNode *parse_member_decls(Parser *p)
 {
     LhatNode *head = NULL;
     LhatNode *tail = NULL;
+    bool has_template = false;
 
     while (!at_eof(p) && !check_op(p, LHAT_OP_RBRACE)) {
         LhatNode *member = make(p, LHAT_NODE_MEMBER_DECL, &p->current);
         if (member == NULL) {
             break;
+        }
+
+        // 14.7改: a definition says what its instances carry in a self^{ ... }
+        // section, written the way the def^ itself writes its template -- it
+        // is what 14.16 puts there, and what makes a definition's signature
+        // read back as a type (05 の 8.7). Inside are member declarations,
+        // not fields with values, so the section holds this same list; the
+        // entry that carries it is told apart by what it holds.
+        if (check_hat(p, "self") && is_op(&p->ahead, LHAT_OP_LBRACE)) {
+            LhatToken start = p->current;
+            advance(p);  // self^
+            LhatNode *section = make(p, LHAT_NODE_SELF_TABLE, &start);
+            advance(p);  // {
+            if (section != NULL) {
+                section->v.list.items = parse_member_decls(p);
+            }
+            expect_op(p, LHAT_OP_RBRACE);
+            if (has_template) {
+                report(p, &start, LHAT_PARSE_ERR_DUPLICATE_TEMPLATE);
+            }
+            has_template = true;
+            member->v.entry.key = NULL;
+            member->v.entry.value = finish(p, section);
+            lhat_node_append(&head, &tail, finish(p, member));
+            if (!match_op(p, LHAT_OP_COMMA)) {
+                break;
+            }
+            continue;
         }
 
         // 13.7, 14.10: the sequence half may end in a variadic tail, the

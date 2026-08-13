@@ -2075,6 +2075,13 @@ LhatType *chk_instance_of(const LhatType *definition)
         definition->v.table.nominal) {
         return NULL;
     }
+    // 14.7改: a def^ says outright what its instances carry. Read before new
+    // is asked, since the two must not drift -- what new answers is built
+    // from this very structure.
+    if (definition != NULL && definition->kind == LHAT_TYPE_TABLE &&
+        definition->v.table.instance != NULL) {
+        return definition->v.table.instance;
+    }
     const LhatTypeMember *constructor = chk_find_member(definition, "new", 3);
     const LhatType *arm =
         constructor != NULL ? constructor_arm(constructor->type) : NULL;
@@ -2488,6 +2495,7 @@ LhatType *chk_compose_definitions(Checker *c, const LhatNode *node,
     LhatType *definition = lhat_type_table(c->result->types);
     LhatType *instance = lhat_type_table(c->result->types);
     definition->v.table.is_definition = true;
+    definition->v.table.instance = instance;  // 14.7改
     definition->v.table.from_definition = true;
     instance->v.table.from_definition = true;
 
@@ -2644,6 +2652,31 @@ static bool declares_self(Checker *c, const LhatNode *value)
     return false;
 }
 
+// 02 の 14.7改 with 14.4: whether an instance carries this member. What may be
+// reached through one is what is handed a receiver, and a signature says so --
+// 11.3改's operator form writes self^ second, which takes_self covers either
+// way. Everything else (new, a static member, a value) is the definition's.
+//
+// 14.12's overloaded name is carried when any arm takes a receiver: which arm
+// a call means is settled at the call, and an arm that takes none is not
+// reachable through an instance whatever the type says here.
+bool chk_takes_receiver(const LhatType *type)
+{
+    if (type == NULL) {
+        return false;
+    }
+    if (type->kind == LHAT_TYPE_INTERSECT) {
+        for (const LhatTypeList *arm = type->v.composite.arms; arm != NULL;
+             arm = arm->next) {
+            if (chk_takes_receiver(arm->type)) {
+                return true;
+            }
+        }
+        return false;
+    }
+    return type->kind == LHAT_TYPE_FUNC && type->v.func.takes_self;
+}
+
 // 02 の 14.7改2: what one entry of a def^ left behind, kept from one walk of
 // the entries to the next.
 //
@@ -2668,9 +2701,13 @@ LhatType *chk_infer_def(Checker *c, const LhatNode *node, LhatType *base)
     LhatType *definition = lhat_type_table(c->result->types);
     LhatType *instance = lhat_type_table(c->result->types);
     // 14.5: '..' between two definitions is composition, never a call of an
-    // op^.. one of them carries. 14.7 gives both structures the same members,
-    // so this is what tells the definition from an instance of it.
+    // op^.. one of them carries -- this is what tells a definition from an
+    // instance of it.
     definition->v.table.is_definition = true;
+    // 14.7改: and this is what its instances carry. Held on the definition so
+    // that 13.13's Self^ and the writer's self^{ … } section both read one
+    // place, rather than going through what new answers.
+    definition->v.table.instance = instance;
     // 8.8: and both sides are closed to a member being added afterwards.
     definition->v.table.from_definition = true;
     instance->v.table.from_definition = true;
@@ -2773,8 +2810,13 @@ LhatType *chk_infer_def(Checker *c, const LhatNode *node, LhatType *base)
         }
         set_member_provisional(c, definition, name, length, seed,
                                entry->v.entry.declared);
-        set_member_provisional(c, instance, name, length, seed,
-                               entry->v.entry.declared);
+        // 14.7改: an instance carries what may be reached through one, which
+        // the signature says. A declaration (14.15) is read the same way --
+        // what fills it in is held to the type written here.
+        if (chk_takes_receiver(seed)) {
+            set_member_provisional(c, instance, name, length, seed,
+                                   entry->v.entry.declared);
+        }
     }
 
     // 03 の 3.4改2: the walk below is one iteration of a least fixpoint. A
@@ -2852,7 +2894,9 @@ LhatType *chk_infer_def(Checker *c, const LhatNode *node, LhatType *base)
                     chk_report(c, entry, LHAT_CHECK_ERR_ABSTRACT_PROVIDED_HERE);
                 }
                 set_member_as(c, definition, name, length, declared, true);
-                set_member_as(c, instance, name, length, declared, true);
+                if (chk_takes_receiver(declared)) {  // 14.7改, as above
+                    set_member_as(c, instance, name, length, declared, true);
+                }
                 continue;
             }
 
@@ -2917,7 +2961,12 @@ LhatType *chk_infer_def(Checker *c, const LhatNode *node, LhatType *base)
                            (hidden == NULL || hidden->pending);
             set_member_marked(c, definition, name, length, type, false,
                               pending);
-            set_member_marked(c, instance, name, length, type, false, pending);
+            // 14.7改: only what is handed a receiver is reachable through an
+            // instance. new and a static member stay the definition's.
+            if (chk_takes_receiver(type)) {
+                set_member_marked(c, instance, name, length, type, false,
+                                  pending);
+            }
             if (seen != NULL) {
                 if (round == 0 || !lhat_type_equal(seen[index].inferred, type)) {
                     rounds.changed = true;

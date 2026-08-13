@@ -32,6 +32,80 @@ static void test_definitions(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
+    // 14.7改 with 14.4: an instance carries what takes a receiver, and 14.11's
+    // new takes none -- it is the definition's, and an instance is not another
+    // way to make one.
+    LHAT_TEST("an instance does not reach new");
+    check_text(&u,
+               "var^ C = def^{ self^{ value := 0 } }\n"
+               "var^ c = C.new().new()\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_NO_MEMBER);
+    unit_dispose(&u);
+
+    LHAT_TEST("nor a static member");
+    check_text(&u,
+               "var^ C = def^{\n"
+               "    self^{ value := 0 },\n"
+               "    tag := f^ -> number^ { return^ 1 },\n"
+               "}\n"
+               "var^ n : number^ = C.new().tag()\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_NO_MEMBER);
+    unit_dispose(&u);
+
+    LHAT_TEST("while the definition reaches both");
+    check_text(&u,
+               "var^ C = def^{\n"
+               "    self^{ value := 0 },\n"
+               "    tag := f^ -> number^ { return^ 1 },\n"
+               "    show := p^self^ { },\n"
+               "}\n"
+               "var^ n : number^ = C.tag()\n"
+               "var^ f = C.show\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // 14.9: and class^ inside a member is the definition, so a static member
+    // is reached from there the way it is from the name.
+    LHAT_TEST("and class^ reaches a static member from inside");
+    check_text(&u,
+               "var^ C = def^{\n"
+               "    self^{ value := 0 },\n"
+               "    tag := f^ -> number^ { return^ 1 },\n"
+               "    show := p^self^ -> number^ { return^ class^.tag() },\n"
+               "}\n"
+               "var^ n : number^ = C.new().show()\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // 14.16 with 05 の 8.7: what 14.16 writes out reads back as a type. The
+    // definition's carries the self^{ … } section, and 13.13's Self^ inside
+    // it is the instance -- the two annotations here are the two signatures
+    // typeof^ answers with, written by hand.
+    LHAT_TEST("a written definition type says what a def^ builds");
+    check_text(&u,
+               "var^ C = def^{\n"
+               "    self^{ a := 0 },\n"
+               "    add := f^self^, rhs:Self^ -> Self^ { return^ self^ },\n"
+               "    tag := f^ -> number^ { return^ 1 },\n"
+               "}\n"
+               "var^ definition : t^{ self^{ a : number^,\n"
+               "                            add : f^self^, Self^ -> Self^; },\n"
+               "                      new : f^ -> Self^;,\n"
+               "                      tag : f^ -> number^; } = C\n"
+               "var^ instance : t^{ a : number^,\n"
+               "                    add : f^self^, Self^ -> Self^; } = C.new()\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // The section is what an instance carries, so a plain structure does not
+    // stand where a definition is written.
+    LHAT_TEST("and an instance is not one");
+    check_text(&u,
+               "var^ C = def^{ self^{ a := 0 } }\n"
+               "var^ definition : t^{ self^{ a : number^ } } = C.new()\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
+    unit_dispose(&u);
+
     // 14.7改: the members reach each other whatever the order they are
     // written in. A ring of them is what makes this more than a convenience:
     // no ordering unties expr -> term -> factor -> expr.
@@ -833,7 +907,7 @@ static void test_composition(void)
         char text[1024];
         snprintf(text, sizeof text, "%s%s", parts,
                  "var^ D = A .. B .. def^{ self^{ z := true^ },\n"
-                 "                         c := f^ -> number^ { return^ 3 } }\n"
+                 "                         c := f^self^ -> number^ { return^ 3 } }\n"
                  "var^ o = D.new()\n"
                  "var^ p : number^ = o.x\n"
                  "var^ q : string^ = o.y\n"
@@ -858,8 +932,8 @@ static void test_composition(void)
 
     LHAT_TEST("and reading it through the composition is reported");
     check_text(&u,
-               "var^ A = def^{ self^{}, m := f^ -> number^ { return^ 1 } }\n"
-               "var^ B = def^{ self^{}, m := f^ -> number^ { return^ 2 } }\n"
+               "var^ A = def^{ self^{}, m := f^self^ -> number^ { return^ 1 } }\n"
+               "var^ B = def^{ self^{}, m := f^self^ -> number^ { return^ 2 } }\n"
                "var^ D = A .. B\n"
                "var^ r : number^ = D.new().m()\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_AMBIGUOUS_MEMBER);
@@ -882,9 +956,9 @@ static void test_composition(void)
 
     LHAT_TEST("and the names only one side carries are untouched");
     check_text(&u,
-               "var^ A = def^{ self^{}, m := f^ -> number^ { return^ 1 },\n"
-               "  only := f^ -> number^ { return^ 9 } }\n"
-               "var^ B = def^{ self^{}, m := f^ -> number^ { return^ 2 } }\n"
+               "var^ A = def^{ self^{}, m := f^self^ -> number^ { return^ 1 },\n"
+               "  only := f^self^ -> number^ { return^ 9 } }\n"
+               "var^ B = def^{ self^{}, m := f^self^ -> number^ { return^ 2 } }\n"
                "var^ D = A .. B\n"
                "var^ r : number^ = D.new().only()\n");
     CHECK_CLEAN(&u);
@@ -1068,8 +1142,8 @@ static void test_composition(void)
     // one declaring what the other provides is the point, not a collision.
     LHAT_TEST("a declaration and a definition compose by name");
     check_text(&u,
-               "var^ Need = def^{ self^{}, abstract^ m : f^ -> number^; }\n"
-               "var^ Give = def^{ self^{}, m := f^ -> number^ { return^ 7 } }\n"
+               "var^ Need = def^{ self^{}, abstract^ m : f^self^ -> number^; }\n"
+               "var^ Give = def^{ self^{}, m := f^self^ -> number^ { return^ 7 } }\n"
                "var^ D = Need .. Give\n"
                "var^ r : number^ = D.new().m()\n");
     CHECK_CLEAN(&u);

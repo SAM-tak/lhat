@@ -513,17 +513,17 @@ static void test_collection(void)
     LHAT_TEST("an overload group keeps the arms added to an old one");
     run_text(&r,
              "var^ kept = { }\n"
-             "var^ Base = def^{ self^{ }, m := f^ x:string^ { return^ 1 } }\n"
+             "var^ Base = def^{ self^{ }, m := f^self^, x:string^ { return^ 1 } }\n"
              "var^ Mid = Base .. def^{\n"
              "  self^{ },\n"
              "  overload^\n"
-             "  m := f^ x:number^ { return^ x },\n"
+             "  m := f^self^, x:number^ { return^ x },\n"
              "}\n"
              "for^ i from^ 1 to^ 500 { kept[i] := { a := i } }\n"
              "var^ Sub = Mid .. def^{\n"
              "  self^{ },\n"
              "  overload^\n"
-             "  m := f^ x:bool^ { return^ 3 },\n"
+             "  m := f^self^, x:bool^ { return^ 3 },\n"
              "}\n"
              "return^ Sub.new().m(7)\n");
     CHECK_INTEGER(&r, 7);

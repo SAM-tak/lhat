@@ -10,10 +10,10 @@
 // a fallback onto what infer_func (check.c) settled instead, not a second
 // opinion on what was written.
 //
-// A checker type may hold itself (an instance whose member is its own
-// definition), so the tables on the way in are remembered on the C stack --
-// meeting one again answers 13.7's unstructured top of tables, which is what
-// ends the walk. The same convention typeof^'s old value reflection used.
+// A checker type may hold itself (an instance whose member answers one), so
+// the structures on the way in are remembered on the C stack. Meeting one
+// again is 13.13's Self^ -- the same thing the source would have written
+// there -- and how many structures back it was is the hat count.
 typedef struct RtSeen {
     const LhatType *type;
     const struct RtSeen *outer;
@@ -27,14 +27,25 @@ static LhatRuntimeType *rt_from_checked(LhatHeap *heap,
         return NULL;
     }
     if (type->kind == LHAT_TYPE_TABLE) {
+        unsigned level = 1;
         for (const RtSeen *s = seen; s != NULL; s = s->outer) {
             if (s->type == type) {
-                return lhat_type_rt_new(heap, LHAT_TYPE_RT_TABLE);
+                LhatRuntimeType *rt =
+                    lhat_type_rt_new(heap, LHAT_TYPE_RT_SELF);
+                if (rt != NULL) {
+                    rt->levels = level;
+                }
+                return rt;
             }
+            level++;
         }
     }
+    // 13.13 counts structures and nothing else -- a signature is transparent,
+    // so only a table joins the chain the hats are counted along.
     RtSeen here = { type, seen };
-    seen = &here;
+    if (type->kind == LHAT_TYPE_TABLE) {
+        seen = &here;
+    }
     switch (type->kind) {
         // 03 の 3.4: inference did not decide this one. Asks nothing of a
         // value, the same as nothing written -- but 14.16 writes it out as
@@ -71,6 +82,17 @@ static LhatRuntimeType *rt_from_checked(LhatHeap *heap,
             LhatRuntimeType *rt = lhat_type_rt_new(heap, LHAT_TYPE_RT_STRUCTURE);
             if (rt == NULL) {
                 return NULL;
+            }
+            // 14.7改: a definition carries what its instances are, which is
+            // what 14.16 writes as the self^{ … } section. It is converted
+            // before the definition's own members so that they can point back
+            // at it as 13.13's Self^ -- inside a definition that is what the
+            // word names, and the definition itself is one step further out.
+            RtSeen within = { type->v.table.instance, seen };
+            if (type->v.table.instance != NULL) {
+                rt->instance =
+                    rt_from_checked(heap, type->v.table.instance, seen);
+                seen = &within;
             }
             // 14.10: the sequence half first, in position order, the way a
             // written t^{ ... } puts it.
@@ -118,6 +140,7 @@ static LhatRuntimeType *rt_from_checked(LhatHeap *heap,
             }
             rt->is_function = type->v.func.is_function;
             rt->takes_self = type->v.func.takes_self;
+            rt->self_last = type->v.func.self_last;
             for (LhatTypeList *p = type->v.func.params; p != NULL; p = p->next) {
                 if (!lhat_type_rt_add_part(rt, rt_from_checked(heap, p->type, seen))) {
                     return NULL;

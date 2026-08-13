@@ -1458,14 +1458,53 @@ static void compile_isa(Compiler *c, const LhatNode *node, uint8_t into)
 // an initialiser whose type is the checker's business (03 の 4.2 keeps this
 // path independent of whether checking ran). A member with no type asks only
 // that the name is there, which is what lhat_value_satisfies does with one.
+// 14.7改 with 14.4: whether an instance carries this entry of a def^. What is
+// reached through one is what is handed a receiver, which the signature says
+// -- written out where 14.15 declares the member, and in the literal's own
+// parameter list otherwise. 14.11's new and a static member are the
+// definition's, and asking a value for one of those would ask for what an
+// instance was never meant to answer.
+static bool entry_takes_receiver(Compiler *c, const LhatNode *entry)
+{
+    const LhatNode *written = entry->v.entry.value;
+    if (written == NULL || (written->kind != LHAT_NODE_FUNC &&
+                            written->kind != LHAT_NODE_TYPE_FUNC)) {
+        return false;
+    }
+    const LhatNode *params = written->v.func.params;
+    for (const LhatNode *param = params; param != NULL; param = param->next) {
+        // 11.3改: first or last, and nowhere else -- the same two places
+        // compile_func reads a receiver from.
+        if (param != params && param->next != NULL) {
+            continue;
+        }
+        const LhatNode *marker = param->v.param.name != NULL
+                                     ? param->v.param.name
+                                     : param->v.param.type;
+        const char *name = NULL;
+        size_t length = 0;
+        if (node_name(c, marker, &name, &length) &&
+            name_is(name, length, "self^")) {
+            return true;
+        }
+    }
+    return false;
+}
+
 static bool add_shape_member(Compiler *c, LhatRuntimeType *into,
-                             const LhatNode *entry)
+                             const LhatNode *entry, bool of_template)
 {
     const char *name = NULL;
     size_t length = 0;
     // 14.14改: a computed key names no member, so it asks for nothing.
     if (entry->v.entry.computed || entry->v.entry.key == NULL ||
         !node_name(c, entry->v.entry.key, &name, &length)) {
+        return true;
+    }
+    // 14.7改: the shape is what the definition promises about its instances,
+    // so a member they do not carry is not part of it. A template field is
+    // theirs whatever it holds.
+    if (!of_template && !entry_takes_receiver(c, entry)) {
         return true;
     }
 
@@ -1510,7 +1549,7 @@ static LhatRuntimeType *lower_def_chain(Compiler *c, const DefChain *chain)
         c->lexer = chain->lexers[i];
         for (const LhatNode *entry = chain->parts[i]->v.list.items;
              entry != NULL; entry = entry->next) {
-            if (!add_shape_member(c, type, entry)) {
+            if (!add_shape_member(c, type, entry, false)) {
                 c->lexer = enclosing;
                 return NULL;
             }
@@ -1518,7 +1557,7 @@ static LhatRuntimeType *lower_def_chain(Compiler *c, const DefChain *chain)
         const LhatNode *fields = template_of(chain->parts[i]);
         for (const LhatNode *field = fields != NULL ? fields->v.list.items : NULL;
              field != NULL; field = field->next) {
-            if (!add_shape_member(c, type, field)) {
+            if (!add_shape_member(c, type, field, true)) {
                 c->lexer = enclosing;
                 return NULL;
             }
@@ -1593,6 +1632,9 @@ static LhatRuntimeType *lower_type(Compiler *c, const LhatNode *node)
             return type;
         }
 
+        // The section reads as a structure of its own, which is what it is --
+        // 14.7改 has a definition carry what its instances are.
+        case LHAT_NODE_SELF_TABLE:
         case LHAT_NODE_TYPE_TABLE: {
             // 14.10: the structure asks for at least these members.
             LhatRuntimeType *type =
@@ -1604,6 +1646,11 @@ static LhatRuntimeType *lower_type(Compiler *c, const LhatNode *node)
                  member = member->next) {
                 const char *name = NULL;
                 size_t length = 0;
+                if (member->v.entry.value != NULL &&
+                    member->v.entry.value->kind == LHAT_NODE_SELF_TABLE) {
+                    type->instance = lower_type(c, member->v.entry.value);
+                    continue;
+                }
                 if (!node_name(c, member->v.entry.key, &name, &length)) {
                     continue;
                 }

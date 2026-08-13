@@ -233,6 +233,39 @@ static void test_structures(void)
         LHAT_CHECK_EQ_STR(buffer, written, "t^{ a : t^{ b : Self^^ } }");
     }
 
+    // 14.7改: a definition writes what its instances carry as the section a
+    // def^ writes it as, and 13.13's Self^ inside a definition is the
+    // instance -- new answers one, and so does the member that takes it.
+    LHAT_TEST("a definition writes its instances as a self^{ } section");
+    {
+        LhatType *instance = table1(&t, "a", simple(&t, LHAT_TYPE_NUMBER));
+        LhatType *maker = lhat_type_func(&t.arena, true);
+        maker->v.func.result = instance;
+        LhatType *definition = table1(&t, "new", maker);
+        definition->v.table.instance = instance;
+        char buffer[96];
+        size_t written = lhat_type_write(definition, buffer, sizeof buffer);
+        LHAT_CHECK_EQ_STR(buffer, written,
+                          "t^{ self^{ a : number^ }, new : f^ -> Self^; }");
+    }
+
+    // 14.4: a member is on both, and the section is where it is written --
+    // saying it twice would say the same thing twice.
+    LHAT_TEST("and a member it shares with them only once");
+    {
+        LhatType *instance = table0(&t);
+        LhatType *method = lhat_type_func(&t.arena, true);
+        method->v.func.takes_self = true;
+        method->v.func.result = instance;
+        lhat_type_add_member(&t.arena, instance, "m", 1, method);
+        LhatType *definition = table1(&t, "m", method);
+        definition->v.table.instance = instance;
+        char buffer[96];
+        size_t written = lhat_type_write(definition, buffer, sizeof buffer);
+        LHAT_CHECK_EQ_STR(buffer, written,
+                          "t^{ self^{ m : f^self^ -> Self^; } }");
+    }
+
     types_dispose(&t);
 }
 

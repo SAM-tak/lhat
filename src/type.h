@@ -134,12 +134,22 @@ struct LhatType {
         struct {
             LhatTypeMember *members;
             // 14.1: def^ is the only way to make one, and 14.5 composes two
-            // of them with '..'. A definition and an instance of it carry the
-            // same members (14.7), so nothing in the shape tells them apart
-            // -- which 11.2's operator has to, since '..' between definitions
-            // is composition and never a call. Identity is still structural
-            // (11.3): this says what made the structure, not what it is.
+            // of them with '..' -- which 11.2's operator has to tell from a
+            // call. Identity is still structural (11.3): this says what made
+            // the structure, not what it is.
             bool is_definition;
+            // 14.7改: what this definition's instances carry -- the template's
+            // fields and the members that take a receiver (14.4). NULL on
+            // everything that is not a definition, and on a definition the
+            // checker did not build one for (05 の 8.8's host types).
+            //
+            // A definition and an instance of it do not carry the same
+            // members: new and a static member are the definition's, and an
+            // instance is not a thing to construct another from or to call a
+            // receiverless member on. This is the link 13.13's Self^ means
+            // inside the definition, and what the writer puts down as the
+            // self^{ … } section of a written-out definition.
+            LhatType *instance;
             // 8.8: what a def^ says its instances carry is fixed (14 章), so
             // a member cannot be added to one. Like `is_definition` this
             // records what made the structure and takes no part in
