@@ -488,11 +488,40 @@ static void walk_value(SemCollector *out, const LhatNode *node)
             break;
         case LHAT_NODE_BINARY:
             walk_value(out, node->v.binary.left);
-            walk_value(out, node->v.binary.right);
+            // 13.11: isa^ asks whether the left may stand where the right is
+            // written, so what stands there is a type -- parse_binary reads
+            // it with parse_type (parser.c). 17.4's 'when^ isa^ T:' lowers to
+            // this same node, so naming it once here covers both.
+            if (node->v.binary.op == LHAT_OP_ISA) {
+                walk_type(out, node->v.binary.right);
+            } else {
+                walk_value(out, node->v.binary.right);
+            }
             break;
-        case LHAT_NODE_COMPARE_CHAIN:
-            walk_list(out, node->v.chain.operands);
+        // 11.5 の (5) with 13.11: a chain may hold an isa^ among the
+        // comparisons ('a < b isa^ number^ < c'), and the type it asks about
+        // does not stand where a value would. So the operands are paired
+        // with the operators rather than walked alike -- the same pairing
+        // chk_infer does (check_expr.c), and for the same reason: a type is
+        // not what the next link compares against, so it does not take that
+        // place.
+        case LHAT_NODE_COMPARE_CHAIN: {
+            const LhatNode *operand = node->v.chain.operands;
+            walk_value(out, operand);
+            for (const LhatNode *marker = node->v.chain.operators;
+                 marker != NULL && operand != NULL; marker = marker->next) {
+                operand = operand->next;
+                if (operand == NULL) {
+                    break;
+                }
+                if (marker->v.unary.op == LHAT_OP_ISA) {
+                    walk_type(out, operand);
+                } else {
+                    walk_value(out, operand);
+                }
+            }
             break;
+        }
         case LHAT_NODE_MEMBER:
             walk_value(out, node->v.access.target);
             if (node->v.access.argument != NULL &&

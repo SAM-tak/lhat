@@ -493,9 +493,67 @@ static void test_module_path_reads_the_same_everywhere(void)
     check_dispose(&c);
 }
 
+static void test_isa_asks_about_a_type(void)
+{
+    LHAT_TEST("13.11: the type isa^ asks about reads as one");
+
+    // The complaint this pins: the same word, written as an annotation and
+    // written after isa^, came back classified differently -- the first
+    // through walk_type, the second not at all, since the type node sat in
+    // a binary whose sides were both walked as values.
+    static const char *source =
+        "let^ take = p^ n:number^ {\n"
+        "    if^ n isa^ number^ { }\n"
+        "}\n";
+
+    Checked c;
+    check_text(&c, source);
+    cJSON *data = lsp_semantic_tokens_for_unit(&c.unit);
+    Tokens tokens = decode(data);
+
+    expect_token(&tokens, source, "number^ {\n", "type", false);
+    expect_token(&tokens, source, "number^ { }", "type", false);
+    // And the subject beside it is still read as a value. `parameter` marks
+    // where one is declared (walk_params); a use of it is a reference like
+    // any other, which is what the checker would have to say otherwise.
+    expect_token(&tokens, source, "n isa^", "variable", false);
+
+    free(tokens.items);
+    cJSON_Delete(data);
+    check_dispose(&c);
+}
+
+static void test_isa_within_a_comparison_chain(void)
+{
+    LHAT_TEST("11.5 の (5): an isa^ among the comparisons of one chain");
+
+    // 'a < b isa^ number^' is one chain: three operands, two operators, and
+    // only the one after isa^ is a type. Walking the operands alike would
+    // leave that one with nothing on it.
+    static const char *source =
+        "let^ a = 1\n"
+        "let^ b = 2\n"
+        "let^ yes = a < b isa^ number^\n";
+
+    Checked c;
+    check_text(&c, source);
+    cJSON *data = lsp_semantic_tokens_for_unit(&c.unit);
+    Tokens tokens = decode(data);
+
+    expect_token(&tokens, source, "a < b", "variable", false);
+    expect_token(&tokens, source, "b isa^", "variable", false);
+    expect_token(&tokens, source, "number^\n", "type", false);
+
+    free(tokens.items);
+    cJSON_Delete(data);
+    check_dispose(&c);
+}
+
 int main(void)
 {
     test_every_name_is_reached();
+    test_isa_asks_about_a_type();
+    test_isa_within_a_comparison_chain();
     test_definition_reads_as_a_type();
     test_module_path_reads_the_same_everywhere();
     test_compound_assignment_is_one_token();
