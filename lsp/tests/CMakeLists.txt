@@ -31,3 +31,7 @@ lhat_lsp_add_test(test_hover
     ${CMAKE_SOURCE_DIR}/lsp/position.c
 )
 lhat_lsp_add_test(test_host_config ${CMAKE_SOURCE_DIR}/lsp/host_config.c)
+lhat_lsp_add_test(test_semantic_tokens
+    ${CMAKE_SOURCE_DIR}/lsp/semantic_tokens.c
+    ${CMAKE_SOURCE_DIR}/lsp/position.c
+)

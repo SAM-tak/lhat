@@ -6,6 +6,12 @@
 // an identifier appearing there means: a declaration, a plain reference, a
 // call target, a type name, a parameter, a property key or a qualified
 // path segment (module^/import^/error kind names).
+//
+// That is why this cannot use ast.c's lhat_node_visit_children the way
+// hover.c and ast_json.c do: the visitor hands over every child alike, and
+// what a name means here is exactly the thing its place in the parent says.
+// The cost is that a kind added to ast.h has to be named below too, or
+// everything under it goes uncoloured -- see the `default` at the end.
 
 #include "semantic_tokens.h"
 
@@ -90,14 +96,17 @@ static void collector_add(SemCollector *c, uint32_t offset, uint32_t length,
     c->count++;
 }
 
-// IDENT / HAT_IDENT / TYPE_NAME share v.name (ast.h); this only ever runs on
-// IDENT or TYPE_NAME (callers check the kind first -- HAT_IDENT is left to
-// TextMate, and other kinds use a different union member entirely, so
-// reading v.name off one would be reading the wrong field).
+// IDENT / HAT_IDENT / TYPE_NAME are the kinds that carry v.name (ast.h).
+// Every other kind puts something else in that union, so the guard is what
+// keeps this from reading the wrong field: an errordef^'s name comes from
+// simple_node (parser.c), which answers LHAT_NODE_NAME -- v.string, not
+// v.name -- when the name was written as a backtick literal.
 static void emit_name(SemCollector *out, const LhatNode *node, uint8_t type,
                       uint8_t modifiers)
 {
-    if (node == NULL) {
+    if (node == NULL || (node->kind != LHAT_NODE_IDENT &&
+                         node->kind != LHAT_NODE_HAT_IDENT &&
+                         node->kind != LHAT_NODE_TYPE_NAME)) {
         return;
     }
     uint32_t length = node->v.name.length >= node->v.name.hats
@@ -116,17 +125,40 @@ static void walk_list(SemCollector *out, const LhatNode *list)
     }
 }
 
+// 04 の 4.5: try^{ ... catch^T: ... catch^: ... }. The items are IF_CLAUSE
+// nodes -- the first is the body and carries no condition, and each arm
+// after it holds **a written type** where an if^'s clause would hold a
+// condition (parse_try_block, parser.c). That is why these cannot go
+// through walk_value's IF_CLAUSE case, which reads the condition as a
+// value: it would walk a type as an expression and name nothing.
+static void walk_try_clauses(SemCollector *out, const LhatNode *clauses)
+{
+    for (const LhatNode *c = clauses; c != NULL; c = c->next) {
+        if (c->kind != LHAT_NODE_IF_CLAUSE) {
+            continue;
+        }
+        walk_type(out, c->v.clause.condition);  // NULL on the body and the
+                                                // bare arm, which take what
+                                                // is left
+        walk_value(out, c->v.clause.body);
+    }
+}
+
 // module^/import^/require^'s qualified path (parse_qualified_name, parser.c):
 // a chain of MEMBER nodes over a leading IDENT, e.g. "a.b.c". Every segment
 // gets `kind` -- there is no receiver/property distinction here the way
 // there is in an ordinary a.b, since the whole path names one thing.
+//
+// 04 の 14.4's qualified type name (E.Bad) has the same shape with a
+// TYPE_NAME at its root instead (parse_type_primary, parser.c), so that is
+// a leaf here too and walk_type reaches this for its MEMBER case.
 static void walk_qualified_path(SemCollector *out, const LhatNode *node,
                                 uint8_t kind)
 {
     if (node == NULL) {
         return;
     }
-    if (node->kind == LHAT_NODE_IDENT) {
+    if (node->kind == LHAT_NODE_IDENT || node->kind == LHAT_NODE_TYPE_NAME) {
         emit_name(out, node, kind, 0);
         return;
     }
@@ -162,6 +194,24 @@ static void walk_table_entries(SemCollector *out, const LhatNode *entries)
     }
 }
 
+// 04 の 2.2: the fields a kind declares. parse_error_fields (parser.c)
+// builds them as PARAM nodes rather than the MEMBER_DECL a t^{ ... } uses,
+// since 2.2 lets a field carry a default -- so walk_table_entries would
+// pass them over. What they name is read back off the error once 6.1 has
+// narrowed to the kind, which makes each a property rather than a
+// parameter.
+static void walk_error_fields(SemCollector *out, const LhatNode *fields)
+{
+    for (const LhatNode *f = fields; f != NULL; f = f->next) {
+        if (f->kind != LHAT_NODE_PARAM) {
+            continue;
+        }
+        emit_name(out, f->v.param.name, SEM_PROPERTY, SEM_MOD_DECLARATION);
+        walk_type(out, f->v.param.type);
+        walk_value(out, f->v.param.fallback);
+    }
+}
+
 // A parameter list (FUNC/TYPE_FUNC's params, PARAM.name declares it).
 static void walk_params(SemCollector *out, const LhatNode *params)
 {
@@ -185,6 +235,13 @@ static void walk_type(SemCollector *out, const LhatNode *node)
     switch (node->kind) {
         case LHAT_NODE_TYPE_NAME:
             emit_name(out, node, SEM_TYPE, 0);
+            break;
+        // 04 の 14.4: an error kind is named through the declaration that
+        // introduced it, so a type may be a qualified name -- built as a
+        // MEMBER chain over a TYPE_NAME rather than as a type node of its
+        // own (parse_type_primary, parser.c).
+        case LHAT_NODE_MEMBER:
+            walk_qualified_path(out, node, SEM_TYPE);
             break;
         case LHAT_NODE_TYPE_FUNC:
             walk_params(out, node->v.func.params);
@@ -220,6 +277,11 @@ static void walk_type(SemCollector *out, const LhatNode *node)
 // (let^/with^) -- REASSIGN's ':=' writes to a binding that already exists,
 // so its targets are references, not declarations (13.10's destructuring,
 // and 8.8改's path targets, share this same target-list shape).
+//
+// 16.3's for^ focus reads through parse_let_target too, so it arrives here
+// as well -- with the difference that 17.2's expression form puts an
+// ordinary expression where a binding would be. That is what `default`
+// answers: a position that binds nothing is still worth colouring.
 static void walk_targets(SemCollector *out, const LhatNode *targets,
                          bool is_declaration)
 {
@@ -251,12 +313,13 @@ static void walk_targets(SemCollector *out, const LhatNode *targets,
                 walk_value(out, t->v.access.target);
                 walk_value(out, t->v.access.argument);
                 break;
+            // 8.2: '$^x := 9' writes an existing outer binding, never a
+            // fresh one -- always a reference, declaration or not. Which is
+            // what `default` makes of anything else standing here: it binds
+            // no name, so it is walked as the expression it is.
             case LHAT_NODE_SCOPE:
-                // 8.2: '$^x := 9' writes an existing outer binding, never a
-                // fresh one -- always a reference, declaration or not.
-                walk_value(out, t);
-                break;
             default:
+                walk_value(out, t);
                 break;
         }
     }
@@ -323,7 +386,11 @@ static void walk_value(SemCollector *out, const LhatNode *node)
         case LHAT_NODE_REQUIRE_STMT:
         case LHAT_NODE_PACK:
         case LHAT_NODE_YIELD_ALL:
+        // 9.8 and 9.11: what these carry is the level, except where the
+        // brackets held 9.8's label form instead -- an expression, and the
+        // only thing here worth a token.
         case LHAT_NODE_BREAK:
+        case LHAT_NODE_NEXT:
         case LHAT_NODE_PANIC:
         case LHAT_NODE_CALL_STMT:
             walk_value(out, node->v.jump.value);
@@ -378,6 +445,9 @@ static void walk_value(SemCollector *out, const LhatNode *node)
         case LHAT_NODE_IF_STMT:
             walk_list(out, node->v.list.items);
             break;
+        case LHAT_NODE_TRY_BLOCK:
+            walk_try_clauses(out, node->v.list.items);
+            break;
         case LHAT_NODE_IF_CLAUSE:
             walk_value(out, node->v.clause.condition);
             walk_value(out, node->v.clause.body);
@@ -402,13 +472,11 @@ static void walk_value(SemCollector *out, const LhatNode *node)
             walk_value(out, node->v.list.extra);  // body block
             break;
         case LHAT_NODE_FOR:
-            for (const LhatNode *f = node->v.loop.focus; f != NULL; f = f->next) {
-                if (f->kind == LHAT_NODE_IDENT) {
-                    emit_name(out, f, SEM_VARIABLE, SEM_MOD_DECLARATION);
-                } else {
-                    walk_value(out, f);
-                }
-            }
+            // 16.3: parse_for_focus reads the focus through parse_let_target
+            // (parser.c), so it takes every shape a let^ target does -- a
+            // bare name, 'i:number^', a '.member' path, an index. The same
+            // walk a define's targets get, then.
+            walk_targets(out, node->v.loop.focus, true);
             walk_value(out, node->v.loop.bound);
             walk_value(out, node->v.loop.step);
             walk_list(out, node->v.loop.advance);
@@ -424,7 +492,7 @@ static void walk_value(SemCollector *out, const LhatNode *node)
             break;
         case LHAT_NODE_ERROR_KIND:
             emit_name(out, node->v.named.name, SEM_TYPE, SEM_MOD_DECLARATION);
-            walk_table_entries(out, node->v.named.members);
+            walk_error_fields(out, node->v.named.members);
             break;
         case LHAT_NODE_MODULE:
             walk_qualified_path(out, node->v.named.name, SEM_NAMESPACE);
@@ -435,6 +503,14 @@ static void walk_value(SemCollector *out, const LhatNode *node)
             // PARAM/MEMBER_DECL (reached through walk_params/
             // walk_table_entries, not here), REQUIRE (its jump.value is a
             // STRING, nothing to name), ERROR: nothing to emit.
+            //
+            // A node kind this switch has never heard of lands here too, and
+            // then everything under it goes uncoloured -- which is what a
+            // new kind added to ast.h costs until it is named above.
+            // test_semantic_tokens' first test is what says so out loud:
+            // it walks the tree through ast.c's own visitor, which does not
+            // have to be taught each kind separately, and asks that every
+            // name it finds came back with a token.
             break;
     }
 }
@@ -470,9 +546,24 @@ cJSON *lsp_semantic_tokens_for_unit(const LhatUnit *unit)
     size_t text_length = unit->source.length;
     int prev_line = 0;
     int prev_char = 0;
+    bool have_previous = false;
+    uint32_t previous_offset = 0;
 
     for (size_t i = 0; i < collector.count; i++) {
         const SemToken *token = &collector.tokens[i];
+
+        // One name written once earns one token, even where the tree holds
+        // it twice: 7.4改 expands 'a[i] += 1' into the reassignment and the
+        // 'a[i] + 1' it stands for, both carrying the same spans, while
+        // saying the target is read exactly once. Two names can never start
+        // at one offset, so a repeat here is always that -- the tree
+        // spelling something out, not the source saying it again.
+        if (have_previous && token->offset == previous_offset) {
+            continue;
+        }
+        have_previous = true;
+        previous_offset = token->offset;
+
         LspPosition start = lsp_position_at(text, text_length, token->offset);
         LspPosition end =
             lsp_position_at(text, text_length, token->offset + token->length);

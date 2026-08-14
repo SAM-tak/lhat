@@ -272,6 +272,7 @@ static void print_node(const LhatLexer *lexer, const LhatNode *node, int depth)
             print_list(lexer, "values", node->v.jump.value, depth + 1);
             break;
         case LHAT_NODE_BREAK:
+        case LHAT_NODE_NEXT:  // 9.11, and 9.8's level or label as break^ has
         case LHAT_NODE_CALL_STMT:
         case LHAT_NODE_PACK:
         case LHAT_NODE_REQUIRE:
@@ -279,6 +280,10 @@ static void print_node(const LhatLexer *lexer, const LhatNode *node, int depth)
         case LHAT_NODE_IMPORT:
         case LHAT_NODE_IMPORT_STMT:
         case LHAT_NODE_TRY:
+        case LHAT_NODE_TYPEOF:
+        case LHAT_NODE_SPREAD:
+        case LHAT_NODE_PANIC:
+        case LHAT_NODE_YIELD_ALL:
             print_node(lexer, node->v.jump.value, depth + 1);
             break;
         case LHAT_NODE_TYPE_CORO:
@@ -301,6 +306,7 @@ static void print_node(const LhatLexer *lexer, const LhatNode *node, int depth)
         case LHAT_NODE_SELF_TABLE:
         case LHAT_NODE_IF_STMT:
         case LHAT_NODE_IF_EXPR:
+        case LHAT_NODE_TRY_BLOCK:  // 04 の 4.5: the body and its arms
         case LHAT_NODE_INTERP:
         case LHAT_NODE_TYPE_TABLE:
         case LHAT_NODE_TYPE_TUPLE:  // 13.8改: the positions, in order

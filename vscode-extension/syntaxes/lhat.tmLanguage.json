@@ -137,21 +137,24 @@
       "comment": "01-lexical-structure.md 2章: '^'-suffixed words carry every keyword. The lexer treats them all alike; the groups below are a syntax-highlighting convenience, not a lexical distinction the language itself makes. Each match splits the word from its trailing '^'s so a theme can style punctuation.definition.hat.lhat (the hat itself) separately from the word.",
       "patterns": [
         {
-          "match": "\\b(if|else|elseif|elsif|elif|ei|el|for|when|other|from|to|downto|step|in|while|until|next|skip|continue|repeat|do|break|return|yield|yieldall|await|defer|with|finally|try|catch|panic)(\\^+)",
+          "comment": "15.11's _yield^ suspends nothing but types as a yield^ does, so it reads as one here.",
+          "match": "\\b(if|else|elseif|elsif|elif|ei|el|for|when|other|from|to|downto|step|in|while|until|next|skip|continue|repeat|do|break|return|yield|_yield|yieldall|await|defer|with|finally|try|catch|panic)(\\^+)",
           "captures": {
             "1": { "name": "keyword.control.lhat" },
             "2": { "name": "punctuation.definition.hat.lhat" }
           }
         },
         {
-          "match": "\\b(var|let|f|p|op|def|new|enum|unpack|module|public|require|import|override|overload|errordef)(\\^+)",
+          "comment": "abstract^ (14.15) and closed^ (15.13) mark what follows the way override^/overload^ do; pack^ is unpack^'s other half (13.8改).",
+          "match": "\\b(var|let|f|p|op|def|new|enum|pack|unpack|module|public|require|import|override|overload|abstract|closed|errordef)(\\^+)",
           "captures": {
             "1": { "name": "keyword.other.declaration.lhat" },
             "2": { "name": "punctuation.definition.hat.lhat" }
           }
         },
         {
-          "match": "\\b(number|string|bool|nil|any|t|table|type|c|error)(\\^+)",
+          "comment": "Self^ is a type and self^ a value -- 01 の 2.3 compares a hat word byte for byte, so the capital is a different name, matched here rather than below.",
+          "match": "\\b(number|string|bool|nil|any|t|table|type|c|error|Self)(\\^+)",
           "captures": {
             "1": { "name": "storage.type.lhat" },
             "2": { "name": "punctuation.definition.hat.lhat" }
@@ -172,14 +175,16 @@
           }
         },
         {
-          "match": "\\b(this|it|self|super|class)(\\^+)",
+          "comment": "05 の 8.6's L^ names the machine; these are the hat words that name a value rather than syntax.",
+          "match": "\\b(this|it|self|super|class|L)(\\^+)",
           "captures": {
             "1": { "name": "variable.language.lhat" },
             "2": { "name": "punctuation.definition.hat.lhat" }
           }
         },
         {
-          "match": "\\b(typeof|id|width|autowidth|prolog|pre|first|main|last|epilog)(\\^+)",
+          "comment": "9.2's clause words, each with the long spelling the parser also takes.",
+          "match": "\\b(typeof|id|width|autowidth|prolog|prologue|pre|premain|first|main|last|epilog|epilogue)(\\^+)",
           "captures": {
             "1": { "name": "support.function.lhat" },
             "2": { "name": "punctuation.definition.hat.lhat" }
