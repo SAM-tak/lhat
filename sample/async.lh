@@ -20,7 +20,7 @@ import^std.thread
 待てるもの = コルーチン（15.9）。`delay` は「期限を出して止まる」コルーチンを返し、
 その期限 id がスケジューラまで届く。await^ が委譲なので、何段深くても届く。
 ]#
-public^let^delay = p^seconds:number^{
+public^let^delay:p^number^-> c^{p^nil^ -> number^;, nil^}; = p^seconds {
     let^id = std.async.timer(seconds)
     yield^id
 }
@@ -30,11 +30,11 @@ public^let^delay = p^seconds:number^{
 `done()` で訊いて、まだなら少し `delay` する——**スケジューラは何も知らなくてよい**。
 待てるものを増やすのが `delay` の上に1つ書くだけで済む、というのがこの層の要点。
 ]#
-public^let^joined = p^h:std.thread.ThreadHandle ->
+public^let^joined:p^std.thread.ThreadHandle -> c^{p^nil^ -> number^;,
         number^|bool^|string^|nil^
         |std.thread.ThreadError.AlreadyJoined
         |std.thread.ThreadError.BadResult
-        |std.error.OutOfMemory {
+        |std.error.OutOfMemory }; = p^h {
     repeat^{
         if^h.done() { break^}
         await^delay(0.002)
@@ -53,8 +53,8 @@ let^Scheduler = def^{
         live  = 0,
     },
 
-    # 走らせる。start^ はまだしない——run() が最初の一歩を進める
-    add = p^self^, task -> number^{
+    # 走らせる。start はまだしない——run() が最初の一歩を進める
+    add = p^self^, task:c^{p^nil^ -> number^;, any^}-> number^{
         self^.live += 1
         self^.tasks[self^.live] := task
         self^.waits[self^.live] := 0

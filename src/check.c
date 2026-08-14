@@ -1880,13 +1880,14 @@ void chk_constrain_member(Checker *c, LhatType *target, const char *name,
     chk_constrain(c, target, shape);
 }
 
-ParamVar *chk_push_param_var(Checker *c, LhatType *slot)
+ParamVar *chk_push_param_var(Checker *c, LhatType *slot, const LhatNode *node)
 {
     ParamVar *pv = (ParamVar *)lhat_calloc(1, sizeof *pv);
     if (pv == NULL) {
         return NULL;
     }
     pv->slot = slot;
+    pv->node = node;
     pv->next = c->param_vars;
     c->param_vars = pv;
     return pv;
@@ -1920,6 +1921,13 @@ void chk_settle_param_vars(Checker *c, ParamVar *mark)
         // stricter setting.
         if (settled != NULL && settled != pv->slot) {
             *pv->slot = *settled;
+        } else if (settled == NULL && c->strict && pv->node != NULL) {
+            // 3.1③: strict leaves nothing undecided in a unit. There is no
+            // demand to read this off, and no annotation either, so the
+            // signature this parameter is part of has a hole in it that every
+            // caller would be handed. 13.7's any^ is how a writer says a
+            // position really does take anything.
+            chk_report(c, pv->node, LHAT_CHECK_ERR_PARAM_UNDECIDED);
         }
         lhat_free(pv);
     }
@@ -2417,6 +2425,9 @@ const char *lhat_check_error_message(LhatCheckErrorCode code)
         case LHAT_CHECK_ERR_AWAIT_NOT_COROUTINE:
             return "await^ waits for something that finishes, and this is not "
                    "one -- what may be awaited is a coroutine (15.14)";
+        case LHAT_CHECK_ERR_COROUTINE_MISMATCH:
+            return "the coroutine this body makes is not the one written "
+                   "here; the yield^ sites and the c^{ … } have to agree";
         case LHAT_CHECK_ERR_YIELD_NEEDS_ANNOTATION:
             return "a yield^ that is bound needs a written type there";
         case LHAT_CHECK_ERR_YIELD_TYPE_MISMATCH:
@@ -2521,14 +2532,18 @@ const char *lhat_check_error_message(LhatCheckErrorCode code)
         case LHAT_CHECK_ERR_RESULT_UNDECIDED:
             return "the result type did not come out of this body, so it has "
                    "to be written";
+        case LHAT_CHECK_ERR_PARAM_UNDECIDED:
+            return "nothing in this body says what this parameter is, so its "
+                   "type has to be written; any^ is how to say it really does "
+                   "take anything";
+        case LHAT_CHECK_ERR_TYPE_UNDECIDED:
+            return "inference did not decide what this name holds, so its "
+                   "type has to be written";
         case LHAT_CHECK_ERR_SCOPE_TOO_FAR:
             return "this reaches out past more scopes than are open here";
         case LHAT_CHECK_ERR_SCOPE_ON_DEFINE:
             return "let^ makes a name here, so it takes no scope specifier; "
                    "':=' is what writes one that is already there";
-        case LHAT_CHECK_ERR_PUBLIC_NEEDS_TYPE:
-            return "a parameter written inside a public^ declaration needs a "
-                   "type; what leaves the unit is not read off a body";
         case LHAT_CHECK_ERR_FUNCTION_WRITES_OUT:
             return "an f^ assigns to local variables only, and this name was "
                    "bound outside its body";

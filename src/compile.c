@@ -2844,12 +2844,28 @@ static void compile_subroutine(Compiler *c, const LhatNode *node, uint8_t into)
                 lhat_rt_from_checked(owner, made->v.coroutine.produce);
             proto->yield_receive_type =
                 lhat_rt_from_checked(owner, made->v.coroutine.receive);
-            // Only where nothing was written: what lower_type made above can
-            // name an error kind (04 の 2.4) and what is rebuilt from a
-            // checked type cannot, so a written result is left as it stands.
-            if (node->v.func.return_type == NULL) {
+            // What lower_type made above can name an error kind (04 の 2.4)
+            // and what is rebuilt from a checked type cannot, so anything
+            // written is lowered from where it was written rather than
+            // rebuilt. What is taken from the written form is 13.9's three
+            // types, never the c^{ … } around them: tag_type (vm.c) puts that
+            // back, so leaving it here would wrap the coroutine twice.
+            const LhatNode *written = node->v.func.return_type;
+            if (written == NULL) {
                 proto->result_type =
                     lhat_rt_from_checked(owner, made->v.coroutine.result);
+            } else if (written->kind == LHAT_NODE_TYPE_CORO) {
+                proto->result_type = lower_type(c, written->v.coroutine.result);
+                // Omitted R or Y is 13.9's nil^ default, which only the
+                // assembled type has -- so those two are left as they were.
+                if (written->v.coroutine.produce != NULL) {
+                    proto->yield_produce_type =
+                        lower_type(c, written->v.coroutine.produce);
+                }
+                if (written->v.coroutine.receive != NULL) {
+                    proto->yield_receive_type =
+                        lower_type(c, written->v.coroutine.receive);
+                }
             }
         } else {
             proto->yield_produce_type =

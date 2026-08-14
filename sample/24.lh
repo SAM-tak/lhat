@@ -128,8 +128,11 @@ let^Reader = def^{
     }
 }
 
-# 配った4つと使った4つが同じ多重集合か
-let^same = f^want, used {
+# 配った4つと使った4つが同じ多重集合か。1..9 の桁ごとの個数を並べた表を取る
+let^same = f^want:t^{number^, number^, number^, number^, number^,
+                     number^, number^, number^, number^},
+           used:t^{number^, number^, number^, number^, number^,
+                   number^, number^, number^, number^} {
     for^i from^1 to^9 {
         if^want[i] != used[i] { return^false^}
     }

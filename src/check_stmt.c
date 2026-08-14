@@ -235,21 +235,13 @@ void chk_check_define(Checker *c, const LhatNode *node)
     LhatType *tuple = NULL;
     size_t target_count = lhat_node_list_length(node->v.binding.targets);
 
-    // 05 の 4.3: everything written inside a public^ declaration has to say
-    // what its parameters take. 4.1's reason carries over -- what a unit
-    // publishes is settled by reading the declaration, not by running or
-    // checking a body -- and telling what leaves the unit from what stays
-    // would need more than the syntax to decide (4.3).
-    if (node->v.binding.exported) {
-        c->exporting++;
-        // 05 の 4 章 with 8.9: what a unit publishes is a name other units
-        // read, and 01 の 8.3 refused a global variable outright. A public^
-        // var^ would be one under another spelling -- a name a reader of
-        // another unit sees change without being able to see what changed it.
-        // A p^ that publishes an accessor is how a unit lets its state move.
-        if (!node->v.binding.immutable) {
-            chk_report(c, node, LHAT_CHECK_ERR_PUBLIC_IS_IMMUTABLE);
-        }
+    // 05 の 4 章 with 8.9: what a unit publishes is a name other units read,
+    // and 01 の 8.3 refused a global variable outright. A public^ var^ would
+    // be one under another spelling -- a name a reader of another unit sees
+    // change without being able to see what changed it. A p^ that publishes
+    // an accessor is how a unit lets its state move.
+    if (node->v.binding.exported && !node->v.binding.immutable) {
+        chk_report(c, node, LHAT_CHECK_ERR_PUBLIC_IS_IMMUTABLE);
     }
 
     for (const LhatNode *target = node->v.binding.targets; target != NULL;
@@ -376,6 +368,17 @@ void chk_check_define(Checker *c, const LhatNode *node)
         const char *name = NULL;
         size_t length = 0;
         LhatType *held = annotated != NULL ? annotated : actual;
+        // 03 の 3.1③: strict leaves nothing undecided in a unit. A gap that
+        // reached here came through whatever the value was inferred from, so
+        // this name would hold something nobody decided and hand that on to
+        // every reader of it. 3.4改2's rounds are safe to report from --
+        // chk_rounds_next rolls back everything but the last walk. The arity
+        // cases below say their own thing about a target with no value, so
+        // they are left to say it.
+        if (c->strict && annotated == NULL && tuple == NULL && value != NULL &&
+            lhat_type_has_gap(held)) {
+            chk_report(c, target, LHAT_CHECK_ERR_TYPE_UNDECIDED);
+        }
         if (target_is_path(target)) {
             // 8.8: the place is a member of a table the path reaches, not a
             // name of this scope. 8.8改: let^'s ':=' spelling asks to
@@ -433,10 +436,6 @@ void chk_check_define(Checker *c, const LhatNode *node)
     if (tuple == NULL && target_count > 1 &&
         lhat_node_list_length(node->v.binding.values) == 1) {
         chk_report(c, node, LHAT_CHECK_ERR_TUPLE_ARITY);
-    }
-
-    if (node->v.binding.exported) {
-        c->exporting--;
     }
 }
 

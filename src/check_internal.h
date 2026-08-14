@@ -94,6 +94,9 @@ typedef struct Narrowing {
 // Its slot is the member's type inside the demand its parent is collecting.
 typedef struct ParamVar {
     LhatType *slot;
+    // Where the parameter was written, so 03 の 3.1 can say which one nothing
+    // decided. NULL where there is no such place to point at.
+    const LhatNode *node;
     // What positions that always run have asked of it, and what the ones
     // under a branch have. Kept apart because 3.4 settles them differently:
     // the first is a requirement, the second is only added when it does not
@@ -184,12 +187,6 @@ typedef struct {
     // one's -- a demand made inside one still reaches an outer parameter, since
     // the value it names came from out there.
     ParamVar *param_vars;
-
-    // 05 の 4.3: inside a public^ declaration, where 3.4's inference of a
-    // parameter type is not available. A counter for the same reason
-    // `deferred` is one, though only a top-level declaration can carry the
-    // marker.
-    size_t exporting;
 
     // 8.7: inside a subroutine body nothing runs where it is written, so the
     // ordering rule does not apply. A counter rather than a flag, since
@@ -453,7 +450,7 @@ void chk_constrain(Checker *c, LhatType *value, LhatType *wanted);
 void chk_close_param_var(Checker *c, const LhatType *value);
 void chk_constrain_member(Checker *c, LhatType *target, const char *name,
                           size_t length);
-ParamVar *chk_push_param_var(Checker *c, LhatType *slot);
+ParamVar *chk_push_param_var(Checker *c, LhatType *slot, const LhatNode *node);
 void chk_settle_param_vars(Checker *c, ParamVar *mark);
 void chk_rounds_begin(Checker *c, Rounds *r, size_t count);
 bool chk_rounds_next(Checker *c, Rounds *r);

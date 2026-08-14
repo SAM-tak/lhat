@@ -55,6 +55,13 @@ typedef enum {
     LHAT_CHECK_ERR_RESULT_UNDECIDED,    // 03 の 3.1: the body did not decide
                                         // the result type, so every caller
                                         // would be promised a gap
+    LHAT_CHECK_ERR_PARAM_UNDECIDED,     // 03 の 3.1: nothing in the body
+                                        // demanded anything of this parameter,
+                                        // and nothing was written -- so its
+                                        // place in the signature is a hole
+    LHAT_CHECK_ERR_TYPE_UNDECIDED,      // 03 の 3.1: a gap reached a name
+                                        // being bound, so what that name
+                                        // holds was never decided
     LHAT_CHECK_ERR_FUNCTION_FALLS_OUT,  // 13.2: an f^ that can reach its end
     LHAT_CHECK_ERR_FALLS_OUT_OF_RESULT, // the value-less exit does not fit the
                                         // result that was written
@@ -100,6 +107,10 @@ typedef enum {
                                         // other word. What is awaited is
                                         // something that finishes, and only
                                         // a coroutine does
+    LHAT_CHECK_ERR_COROUTINE_MISMATCH,  // 13.9 with 15.2: a c^{ … } written in
+                                        // the result position says what a call
+                                        // answers, and the yield^ sites say it
+                                        // too. The two disagreed
 
     LHAT_CHECK_ERR_YIELD_NEEDS_ANNOTATION, // 15.2: a yield^ that is bound
                                             // (directly, by a let^) needs a
@@ -123,10 +134,6 @@ typedef enum {
     LHAT_CHECK_ERR_SCOPE_ON_DEFINE,     // 01 の 8 章 with 8.7: a let^ makes a
                                         // name where it is written, so there
                                         // is no other scope for one to name
-    LHAT_CHECK_ERR_PUBLIC_NEEDS_TYPE,   // 05 の 4.3: 03 の 3.4 reads an
-                                        // omitted parameter type off the body,
-                                        // and what leaves the unit may not be
-                                        // decided that way
     LHAT_CHECK_ERR_FUNCTION_WRITES_OUT,  // 15.1: an f^ assigns to local
                                          // variables only, and this name was
                                          // bound outside its body

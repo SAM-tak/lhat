@@ -1161,6 +1161,29 @@ static void test_typeof(void)
     CHECK_STRING(&r, "p^number^ -> c^{p^nil^ -> number^;, string^};");
     run_dispose(&r);
 
+    // 05 の 8.7: typeof^'s answer reads back as a type, so writing that answer
+    // into the literal has to give the same answer again. The three slots the
+    // proto carries are 13.9's three, never the c^{ … } around them -- holding
+    // the written form whole would have tag_type (vm.c) wrap it a second time.
+    LHAT_TEST("and writing that coroutine back gives the same signature");
+    run_checked_text(&r,
+                     "var^ g = p^ x:number^ -> c^{p^nil^ -> number^;, string^}\n"
+                     "    { yield^ x return^ \"z\" }\n"
+                     "return^ typeof^(g).signature\n");
+    CHECK_STRING(&r, "p^number^ -> c^{p^nil^ -> number^;, string^};");
+    run_dispose(&r);
+
+    // 04 の 2.4 sends a type mentioning an error to the instruction rather
+    // than resolving it, so this is the path that reads the proto's slots.
+    LHAT_TEST("and it holds when an error kind sends it to the instruction");
+    run_checked_text(&r,
+                     "errordef^ E { Bad }\n"
+                     "var^ g = p^ -> c^{p^nil^ -> number^;, string^|E.Bad}\n"
+                     "    { yield^ 1 return^ \"z\" }\n"
+                     "return^ typeof^(g).signature\n");
+    CHECK_STRING(&r, "p^ -> c^{p^nil^ -> number^;, string^|E.Bad};");
+    run_dispose(&r);
+
     // The two typeof^ paths (03 の 5.11b's resolved one and the instruction)
     // answer the same thing about the same value, so the coroutine a call
     // makes is written exactly as the signature promised it.

@@ -739,10 +739,12 @@ static void test_no_value(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_OVERLOAD_OVERLAPS);
     unit_dispose(&u);
 
-    // 03 の 3.5 turns what is not known into the machine's business.
+    // The operator is what this is about: a gap says nothing either way, so
+    // '..' does not refuse it. 3.1③ reports the parameter itself, which is a
+    // different sentence about a different place.
     LHAT_TEST("a gap in inference says nothing either way");
     check_text(&u, "var^ f = f^ x -> string^ { return^ x .. \"b\" }\n");
-    CHECK_CLEAN(&u);
+    CHECK_NOT_REPORTED(&u, LHAT_CHECK_ERR_NO_OPERATOR);
     unit_dispose(&u);
 
     LHAT_TEST("and 13.7's any^ is every value at once");

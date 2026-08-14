@@ -348,6 +348,56 @@ static void test_coroutines(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
+    // 15.5: the same statement about the same value, so the same reading --
+    // 13.9's "書く場所が違う" is about where it stands, not about a body that
+    // makes a coroutine meaning something else by it. 05 の 8.7 wants typeof^'s
+    // answer to read back, and it reads back in both positions.
+    LHAT_TEST("and the literal's own arrow takes that coroutine too");
+    check_text(&u,
+               "var^ g = p^ n:number^ -> c^{ p^nil^ -> number^;, string^ }\n"
+               "    { yield^ n return^ \"z\" }\n"
+               "var^ s : number^|string^ = g(1).start()\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // 15.6改: a body reaching its end puts nil^ in the third type, so writing
+    // that down is writing what is there. Before the literal's arrow was read
+    // this way the whole c^{ … } stood where the body's own result goes, and
+    // the end of the body was reported as not fitting it.
+    LHAT_TEST("a body with no return^ writes nil^ as its third type");
+    check_text(&u,
+               "var^ g = p^ n:number^ -> c^{ p^nil^ -> number^;, nil^ }\n"
+               "    { yield^ n }\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // 15.2 settles Y and R from the yield^ sites, so a written c^{ … } is a
+    // second statement about them and the two have to agree.
+    LHAT_TEST("what it yields has to be what the signature wrote");
+    check_text(&u,
+               "var^ g = p^ n:number^ -> c^{ p^nil^ -> string^;, nil^ }\n"
+               "    { yield^ n }\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_COROUTINE_MISMATCH);
+    unit_dispose(&u);
+
+    // 15.3改: and so does the kind, which decides who may advance it.
+    LHAT_TEST("and so does the kind of body it came from");
+    check_text(&u,
+               "var^ g = p^ -> c^{ f^nil^ -> number^;, nil^ } { yield^ 1 }\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_COROUTINE_MISMATCH);
+    unit_dispose(&u);
+
+    // The unwrap is for a body that makes one. A body that hands back a
+    // coroutine it got from somewhere else really does result in that type.
+    LHAT_TEST("a body answering a coroutine it did not make keeps that result");
+    check_text(&u,
+               "var^ gen = p^ { yield^ 1 }\n"
+               "var^ outer = f^ -> c^{ p^nil^ -> number^;, nil^ }"
+               " { return^ gen() }\n"
+               "var^ v : number^|nil^ = outer().start()\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
     // 15.5: the arguments belong to the call, which binds the parameters.
     // 15.4's resume carries the one value a yield^ answers with, which 13.9
     // types as the coroutine's receive type -- a different thing.

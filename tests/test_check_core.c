@@ -129,12 +129,23 @@ static void test_names(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
-    // The omitted annotation is a constraint nobody wrote, not a claim that
-    // nothing fits -- so calling through it with an ordinary argument stays
-    // clean under strict, the same as any^ would.
-    LHAT_TEST("but calling through an unannotated parameter is still fine");
+    // 03 の 3.1③: nothing in this body says what `n` is, and strict leaves no
+    // such hole in a signature -- every caller would be handed it. What is
+    // refused is the parameter, not the call through it.
+    LHAT_TEST("but an unannotated parameter nothing demands is reported");
     check_text(&u,
                "var^ f = f^ n -> number^ {\n"
+               "  return^ 1\n"
+               "}\n"
+               "var^ x : number^ = f(\"anything\")\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_PARAM_UNDECIDED);
+    unit_dispose(&u);
+
+    // 13.7: a position that really does take anything is written any^, which
+    // says it where a reader of the signature can see it.
+    LHAT_TEST("and any^ is how to say it takes anything");
+    check_text(&u,
+               "var^ f = f^ n:any^ -> number^ {\n"
                "  return^ 1\n"
                "}\n"
                "var^ x : number^ = f(\"anything\")\n");
@@ -700,23 +711,25 @@ static void test_parameter_inference(void)
     unit_dispose(&u);
 
     // 13.1: a call says what the arguments are and nothing about the rest of
-    // the signature, so it is not a demand -- see 03 の 3.4.
+    // the signature, so it is not a demand -- see 03 の 3.4. Nothing else
+    // demands anything either, so 3.1③ reports the parameter.
     LHAT_TEST("calling a parameter demands nothing");
     check_text(&u,
                "var^ f = p^ x { x() }\n"
                "f(5)\n");
-    CHECK_CLEAN(&u);
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_PARAM_UNDECIDED);
     unit_dispose(&u);
 
     // 13.11: the demand belongs to the narrowed value, not to what arrived.
-    // Counting it would undo the narrowing the writer put there.
+    // Counting it would undo the narrowing the writer put there -- so this
+    // one is undecided as well.
     LHAT_TEST("a use under a narrowing is not a demand");
     check_text(&u,
                "var^ f = p^ x {\n"
                "    if^ x isa^ number^ { var^ n : number^ = x + 1 }\n"
                "}\n"
                "f(\"a\")\n");
-    CHECK_CLEAN(&u);
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_PARAM_UNDECIDED);
     unit_dispose(&u);
 
     // 3.4: what always runs decides; a branch is added only when it agrees.
@@ -730,15 +743,16 @@ static void test_parameter_inference(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
-    // Two branches ruling each other out leave nothing decided. Reporting
-    // here would be reporting the same thing twice: each use says so itself.
+    // Two branches ruling each other out leave nothing decided, which under
+    // strict is the same answer as nothing having been demanded at all: the
+    // writer has to say which one the position takes.
     LHAT_TEST("branches that disagree decide nothing");
     check_text(&u,
                "var^ f = p^ b:bool^, x {\n"
                "    if^ b { var^ n : number^ = x + 1 else^: x.write() }\n"
                "}\n"
                "f(true^, \"a\")\n");
-    CHECK_CLEAN(&u);
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_PARAM_UNDECIDED);
     unit_dispose(&u);
 
     // Two branches that agree decide it between them.
@@ -764,7 +778,9 @@ static void test_parameter_inference(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
-    // 3.4: what the name holds after a reassignment is not what was passed in.
+    // 3.4: what the name holds after a reassignment is not what was passed in,
+    // so the demand below it says nothing about the parameter and nothing is
+    // left to decide it.
     LHAT_TEST("a reassignment ends the collection");
     check_text(&u,
                "var^ f = p^ x {\n"
@@ -772,7 +788,7 @@ static void test_parameter_inference(void)
                "    var^ n : number^ = x + 1\n"
                "}\n"
                "f(\"a\")\n");
-    CHECK_CLEAN(&u);
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_PARAM_UNDECIDED);
     unit_dispose(&u);
 
     // A demand made where the argument type is known travels the same way.
@@ -805,31 +821,43 @@ static void test_parameter_inference(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
-    // 05 の 4.3: what leaves the unit is not read off a body.
-    LHAT_TEST("a public^ subroutine has to write its parameter types");
+    // 05 の 4 章 asks nothing of a signature that 3.1③ does not ask of every
+    // signature: what a body decides is decided, published or not. A member
+    // read is a demand, so this one is decided and nothing is owed.
+    LHAT_TEST("a public^ subroutine is read the same as any other");
     check_text(&u, "public^ let^ f = p^ x { x.write() }\n");
-    CHECK_REPORTS(&u, LHAT_CHECK_ERR_PUBLIC_NEEDS_TYPE);
-    unit_dispose(&u);
-
-    LHAT_TEST("written out, the same one is fine");
-    check_text(&u,
-               "public^ let^ f = p^ x:t^{ write : p^; } { x.write() }\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // 4.3: telling what leaves the unit from what stays would take more than
-    // the syntax, so everything written inside the declaration is included.
-    LHAT_TEST("a subroutine nested in a public^ one is included");
-    check_text(&u,
-               "public^ let^ make = p^ -> number^ {\n"
-               "    var^ step = p^ y { }\n"
-               "    return^ 1\n"
-               "}\n");
-    CHECK_REPORTS(&u, LHAT_CHECK_ERR_PUBLIC_NEEDS_TYPE);
+    LHAT_TEST("and one nothing decides is reported wherever it stands");
+    check_text(&u, "public^ let^ f = p^ x { }\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_PARAM_UNDECIDED);
     unit_dispose(&u);
 
-    LHAT_TEST("and one that is not published is not");
-    check_text(&u, "var^ helper = p^ x { x.write() }\n");
+    LHAT_TEST("a signature on the binding decides it as plainly");
+    check_text(&u,
+               "public^ let^ f : p^t^{ write : p^; }; = p^ x { x.write() }\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // 13.2's form for answering nothing is what an omitted result already
+    // means where no exit produces a value, so nothing has to be written.
+    LHAT_TEST("a body answering nothing needs no result written");
+    check_text(&u, "public^ let^ f = p^ x:number^ { }\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // 15.5 with 13.9: what a call answers is the coroutine, and 15.2 settles
+    // its R and Y off the yield^ sites -- publishing it asks for no writing.
+    LHAT_TEST("nor does a yielding one have to write its coroutine");
+    check_text(&u, "public^ let^ g = p^ n:number^ { yield^ n }\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("though writing it out is still read the same way");
+    check_text(&u,
+               "public^ let^ g = p^ n:number^"
+               " -> c^{ p^nil^ -> number^;, nil^ } { yield^ n }\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
@@ -916,7 +944,8 @@ static void test_undecided_results(void)
 
     // A ring whose other half never settles keeps its gap however often it is
     // walked -- 'b' demands nothing of x, so what it answers stays undecided
-    // and so does 'a'. Reported at both definitions.
+    // and so does 'a'. Reported at both definitions, and once more at the x
+    // that started it (3.1③).
     LHAT_TEST("a ring that cannot settle says so at both definitions");
     check_text(&u,
                "let^ a = f^ n:number^ {\n"
@@ -925,7 +954,8 @@ static void test_undecided_results(void)
                "}\n"
                "let^ b = f^ x { return^ x }\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_RESULT_UNDECIDED);
-    LHAT_CHECK_EQ_INT(u.checked.diagnostic_count, 2);
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_PARAM_UNDECIDED);
+    LHAT_CHECK_EQ_INT(u.checked.diagnostic_count, 3);
     unit_dispose(&u);
 
     // 3.5: relaxed leaves an undecided type to the machine, so it says
@@ -967,10 +997,47 @@ static void test_undecided_results(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // The parameters are not read this way. A gap there is a constraint
-    // nobody wrote, which is what any^ already means (3.1).
-    LHAT_TEST("a parameter nothing demands is not itself reported");
+    // 3.1③: a parameter is read the same way a result is. Nothing demanded
+    // anything of this one and nothing was written, so its place in the
+    // signature is a hole every caller would be handed.
+    LHAT_TEST("a parameter nothing demands is reported on its own");
     check_text(&u, "var^ f = p^ x { }\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_PARAM_UNDECIDED);
+    unit_dispose(&u);
+
+    // 3.1③: a gap that survives into what a name holds is the same hole said
+    // of a binding. Every reader of the name would be handed it.
+    LHAT_TEST("a gap reaching a binding is reported at the name");
+    check_text(&u,
+               "let^ a = f^ n:number^ {\n"
+               "    if^ n <= 0 { return^ true^ }\n"
+               "    return^ b(n)\n"
+               "}\n"
+               "let^ b = f^ x { return^ x }\n"
+               "let^ y = a(4)\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_TYPE_UNDECIDED);
+    unit_dispose(&u);
+
+    // 3.5: the same ones, left to the machine. 3.2 keeps the source identical
+    // between the two settings -- only when it is said changes.
+    LHAT_TEST("and relaxed forgives that too");
+    check_relaxed_text(&u, "var^ f = p^ x { }\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("and the binding as well");
+    check_relaxed_text(&u,
+                       "let^ a = f^ n:number^ {\n"
+                       "    if^ n <= 0 { return^ true^ }\n"
+                       "    return^ b(n)\n"
+                       "}\n"
+                       "let^ b = f^ x { return^ x }\n"
+                       "let^ y = a(4)\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("and a published one is no different");
+    check_relaxed_text(&u, "public^ let^ f = p^ x { }\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
@@ -1122,18 +1189,19 @@ static void test_errors(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_NO_OPERATOR);
     unit_dispose(&u);
 
-    // 05 の 4.3 asks that what leaves the unit not be read off a body. A
-    // signature on the binding says it as plainly as one in the parameter
-    // list, so the demand is met and the report belongs to neither.
-    LHAT_TEST("and satisfies what a public^ declaration asks for");
+    // A signature on the binding decides both sides, so 3.1③ has nothing left
+    // to report -- whether or not the name is published.
+    LHAT_TEST("and a published one is decided by it just the same");
     check_text(&u,
                "public^ let^ f : p^string^ -> string^; = p^ x { return^ x }\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    LHAT_TEST("but a public^ with nothing written anywhere is still refused");
+    // 02 の 13.7 and 04 の 7 章: no generic types, so nothing decides this one
+    // wherever it stands. Publishing it neither adds to that nor takes away.
+    LHAT_TEST("and with nothing written anywhere it is undecided as ever");
     check_text(&u, "public^ let^ f = p^ x { return^ x }\n");
-    CHECK_REPORTS(&u, LHAT_CHECK_ERR_PUBLIC_NEEDS_TYPE);
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_PARAM_UNDECIDED);
     unit_dispose(&u);
 
     // 03 の 3.4改: a literal called where it is written is expected by that

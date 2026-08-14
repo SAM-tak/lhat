@@ -1865,12 +1865,6 @@ LhatType *chk_infer_func(Checker *c, const LhatNode *node)
             }
         }
 
-        // 05 の 4.3: what leaves the unit is not decided by reading a body.
-        // An expectation is not a body -- a signature written on the binding
-        // says what leaves the unit as plainly as one written here does.
-        if (param->v.param.type == NULL && expected == NULL && c->exporting > 0) {
-            chk_report(c, param, LHAT_CHECK_ERR_PUBLIC_NEEDS_TYPE);
-        }
         LhatType *type = param->v.param.type != NULL
                              ? chk_resolve_type(c, param->v.param.type)
                          : expected != NULL
@@ -1914,7 +1908,7 @@ LhatType *chk_infer_func(Checker *c, const LhatNode *node)
         // expectation filled is decided already and collects no demands --
         // the body is checked against it, as against a written one.
         if (param->v.param.type == NULL && expected == NULL) {
-            chk_push_param_var(c, type);
+            chk_push_param_var(c, type, param);
         }
 
         const char *name = NULL;
@@ -1940,14 +1934,20 @@ LhatType *chk_infer_func(Checker *c, const LhatNode *node)
     // signature it was written under already gave.
     if (declared == NULL && expected_func != NULL) {
         declared = expected_func->v.func.result;
-        // 15.5: what that signature promises a caller is the coroutine (13.9)
-        // where this body yields, and what the body itself returns is the
-        // third of its three types. Y and R stay 15.2's to settle from the
-        // yield^ sites -- only the result is being handed down here.
-        if (node->v.func.yields && declared != NULL &&
-            declared->kind == LHAT_TYPE_CORO) {
-            declared = declared->v.coroutine.result;
-        }
+    }
+    // 15.5 with 13.9: what a call to a yielding body answers is the coroutine,
+    // and what the body itself returns is the third of its three types. So a
+    // c^{ … } in the result position is unwrapped and the body handed that
+    // third type -- the coroutine around it belongs to the caller. Written on
+    // the literal or on the binding is the same statement about the same
+    // value, so both spellings are read the same way here. Y and R stay
+    // 15.2's to settle from the yield^ sites; what was written of them is
+    // checked against those below rather than handed down.
+    LhatType *written_coroutine = NULL;
+    if (node->v.func.yields && declared != NULL &&
+        declared->kind == LHAT_TYPE_CORO) {
+        written_coroutine = declared;
+        declared = declared->v.coroutine.result;
     }
     func->v.func.result = declared;
 
@@ -2098,6 +2098,17 @@ LhatType *chk_infer_func(Checker *c, const LhatNode *node)
     // read back as the annotation it looks like (05 の 8.7).
     if (node->v.func.yields) {
         func->v.func.answers = coroutine_made_by(c, func);
+        // 13.9 with 15.2: R and Y are read off the yield^ sites. Where the
+        // writer put them down as well, the two have to be the same
+        // coroutine -- a signature saying something else is not a signature,
+        // and one of the two has to move. A signature written on the binding
+        // meets the same question at the assignment, which conforms_func
+        // asks through lhat_type_call_answer; one written here has no
+        // assignment to meet, so it is asked here.
+        if (written_coroutine != NULL &&
+            !lhat_type_conforms(func->v.func.answers, written_coroutine)) {
+            chk_report(c, node, LHAT_CHECK_ERR_COROUTINE_MISMATCH);
+        }
     }
 
     // 15.3改: an f^ coroutine may not leave the body that made it. Reaching
