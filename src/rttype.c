@@ -150,7 +150,10 @@ static LhatRuntimeType *rt_from_checked(LhatHeap *heap,
             if (type->v.func.variadic != NULL) {
                 rt->variadic = rt_from_checked(heap, type->v.func.variadic, seen);
             }
-            rt->result = rt_from_checked(heap, type->v.func.result, seen);
+            // 15.5: what a call answers -- the coroutine where the body
+            // yields (13.9). 14.16's typeof^ comes through here, and what a
+            // reader wants from a signature is what a call hands back.
+            rt->result = rt_from_checked(heap, lhat_type_call_answer(type), seen);
             return rt;
         }
 
@@ -274,9 +277,12 @@ static bool mentions_error(const LhatType *type, const RtSeen *seen)
                     return true;
                 }
             }
+            // 15.5: the answer rather than the result, since that is what is
+            // about to be built -- an error inside the coroutine a yielding
+            // body makes has to send this to the instruction just the same.
             return (type->v.func.variadic != NULL &&
                     mentions_error(type->v.func.variadic, seen)) ||
-                   mentions_error(type->v.func.result, seen);
+                   mentions_error(lhat_type_call_answer(type), seen);
 
         case LHAT_TYPE_UNION:
         case LHAT_TYPE_INTERSECT:

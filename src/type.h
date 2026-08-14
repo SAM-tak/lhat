@@ -231,6 +231,17 @@ struct LhatType {
             // until inferred; meaningless unless `yields` is true.
             LhatType *yield_produce;
             LhatType *yield_receive;
+            // 15.5: what a call to this answers. A body that yields is not
+            // run by the call -- it makes a coroutine (13.9) -- so that is
+            // what the caller receives, and this is it, assembled out of the
+            // three fields above once they settle. NULL on everything else,
+            // where `result` is the answer.
+            //
+            // 13.9's T stays in `result` either way: that is what the body
+            // returns, which is what the compiler and 15.2 read. Everything
+            // that asks what a *call* is worth -- the writers, conformance,
+            // the runtime type -- reads this one first.
+            LhatType *answers;
             // 03 の 3.4: the body has a way out that produces no value -- it
             // reaches its end, or a bare return^ takes it there. False means
             // every way out carries a value, or there is no way out at all.
@@ -351,6 +362,15 @@ size_t lhat_type_tuple_arm_width(const LhatType *type);
 
 // The type at a zero-based position, or NULL when there is none.
 LhatType *lhat_type_tuple_at(const LhatType *type, size_t index);
+
+// 15.5: what a call to this signature answers -- the coroutine a yielding
+// body makes (13.9), or the result written on it. Anything asking what a call
+// is worth goes through here; reading `result` on its own answers 13.9's T,
+// which is a different question for a body that yields.
+//
+// NULL for a signature that answers nothing (13.2), and for anything that is
+// not a signature at all.
+LhatType *lhat_type_call_answer(const LhatType *type);
 
 // Builds a union or an intersection. Arms that add nothing are dropped, so
 // 'number^|number^' collapses and 'T|any^' becomes any^. A single surviving

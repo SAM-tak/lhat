@@ -575,6 +575,18 @@ static void test_for(void)
     CHECK_INTEGER(&r, 9);
     run_dispose(&r);
 
+    // 15.5: the same thing written the short way -- the member yields for
+    // itself instead of handing back a coroutine it made. Run checked, since
+    // what this pins is that the checker's answer and the machine's agree.
+    LHAT_TEST("and one that yields for itself walks the same way");
+    run_checked_text(&r,
+                     "var^ t = { iterate^ := f^self^ { yield^ 1 yield^ 2 } }\n"
+                     "var^ total = 0\n"
+                     "for^ v in^ t { total := total + v }\n"
+                     "return^ total\n");
+    CHECK_INTEGER(&r, 3);
+    run_dispose(&r);
+
     // 16.3改: what in^ asks for is the hat spelling, so a bare iterate on a
     // table the writer wrote is a member like any other and the walk is
     // still the built-in one.

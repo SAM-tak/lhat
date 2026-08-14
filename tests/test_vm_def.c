@@ -1142,6 +1142,35 @@ static void test_typeof(void)
     CHECK_STRING(&r, "p^number^;");
     run_dispose(&r);
 
+    // 15.5: calling a yielding body does not run it -- it makes the coroutine
+    // 13.9 describes, so that is what the signature answers. Reading `result`
+    // alone would print 13.9's T, which is what the body returns rather than
+    // what the caller is handed.
+    LHAT_TEST("a yielding body answers the coroutine it makes");
+    run_checked_text(&r,
+                     "var^ g = p^ x:number^ { yield^ x }\n"
+                     "return^ typeof^(g).signature\n");
+    CHECK_STRING(&r, "p^number^ -> c^{p^nil^ -> number^;, nil^};");
+    run_dispose(&r);
+
+    // 13.9's third type is what a written result says, and it stays there.
+    LHAT_TEST("and what it returns is the third of the three");
+    run_checked_text(&r,
+                     "var^ g = p^ x:number^ -> string^ { yield^ x return^ \"z\" }\n"
+                     "return^ typeof^(g).signature\n");
+    CHECK_STRING(&r, "p^number^ -> c^{p^nil^ -> number^;, string^};");
+    run_dispose(&r);
+
+    // The two typeof^ paths (03 の 5.11b's resolved one and the instruction)
+    // answer the same thing about the same value, so the coroutine a call
+    // makes is written exactly as the signature promised it.
+    LHAT_TEST("the coroutine itself reads the same as the promise");
+    run_checked_text(&r,
+                     "var^ g = p^ x:number^ -> string^ { yield^ x return^ \"z\" }\n"
+                     "return^ typeof^(g(1)).signature\n");
+    CHECK_STRING(&r, "c^{p^nil^ -> number^;, string^}");
+    run_dispose(&r);
+
     // 03 の 3.4: nothing was written, and the body decided it. 5.11b takes the
     // checker's answer here rather than walking the closure, which carries no
     // parameter types of its own beyond the written ones.

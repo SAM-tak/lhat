@@ -308,6 +308,46 @@ static void test_coroutines(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
+    // 15.5: and it may yield on its own rather than hand back a coroutine it
+    // made -- 16.3 asks that a coroutine arrive, not who wrote it. This is
+    // the shorter of the two spellings and the one anyone writes first.
+    LHAT_TEST("and one that yields for itself is the same thing");
+    check_text(&u,
+               "var^ t = { iterate^ := f^self^ { yield^ 9 } }\n"
+               "for^ v in^ t { var^ n : number^ = v }\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // 15.5 with 05 の 8.7: what a call answers is part of the signature, so
+    // the type of a coroutine-making subroutine can be written down -- and
+    // 14.16 writes exactly this form out.
+    LHAT_TEST("the type of a coroutine-making subroutine can be written");
+    check_text(&u,
+               "var^ gen = p^ n:number^ { yield^ n }\n"
+               "var^ g : p^number^ -> c^{ p^nil^ -> number^;, nil^ }; = gen\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // 13.2 with 15.5: a signature answering nothing is not one that answers a
+    // coroutine. Before the answer was part of the type this went through,
+    // and the call under it was typed as producing no value at all.
+    LHAT_TEST("and a signature answering nothing does not take one");
+    check_text(&u,
+               "var^ gen = p^ n:number^ { yield^ n }\n"
+               "var^ g : p^number^; = gen\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
+    unit_dispose(&u);
+
+    // 03 の 3.4改: a signature written on the binding says what the result is.
+    // 13.9's third type is what the body returns, so that is what the body is
+    // handed down -- the coroutine around it belongs to the caller.
+    LHAT_TEST("a written signature hands the body the third type, not the coroutine");
+    check_text(&u,
+               "var^ g : p^number^ -> c^{ p^nil^ -> number^;, string^ }; =\n"
+               "    p^ n:number^ { yield^ n return^ \"z\" }\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
     // 15.5: the arguments belong to the call, which binds the parameters.
     // 15.4's resume carries the one value a yield^ answers with, which 13.9
     // types as the coroutine's receive type -- a different thing.

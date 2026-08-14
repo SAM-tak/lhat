@@ -341,6 +341,19 @@ LhatType *lhat_type_tuple_at(const LhatType *type, size_t index)
     return p != NULL ? p->type : NULL;
 }
 
+// 15.5: a call does not run a yielding body -- it makes the coroutine 13.9
+// describes, and that is what the caller is handed. Assembled by infer_func,
+// where the three slots settle; NULL until then and on every signature that
+// does not yield, where the written result is the whole answer.
+LhatType *lhat_type_call_answer(const LhatType *type)
+{
+    if (type == NULL || type->kind != LHAT_TYPE_FUNC) {
+        return NULL;
+    }
+    return type->v.func.answers != NULL ? type->v.func.answers
+                                        : type->v.func.result;
+}
+
 // ---------------------------------------------------------------------------
 // Conformance (13.11)
 // ---------------------------------------------------------------------------
@@ -448,11 +461,18 @@ static bool conforms_func(const LhatType *value, const LhatType *target,
     }
 
     // 13.2: no result at all is not the same as returning something.
-    if ((value->v.func.result == NULL) != (target->v.func.result == NULL)) {
+    //
+    // 15.5: and what a call answers is the coroutine where the body yields
+    // (13.9), not 13.9's T -- so a signature written 'p^number^;' does not
+    // take one that makes a coroutine, and one written with the c^{ … } does.
+    // Reading `result` here would compare the two on what their bodies return,
+    // which is not what either caller receives.
+    LhatType *from = lhat_type_call_answer(value);
+    LhatType *into = lhat_type_call_answer(target);
+    if ((from == NULL) != (into == NULL)) {
         return false;
     }
-    if (value->v.func.result != NULL &&
-        !conforms_in(value->v.func.result, target->v.func.result, seen)) {
+    if (from != NULL && !conforms_in(from, into, seen)) {
         return false;
     }
     return true;
@@ -1326,10 +1346,14 @@ static void write_type(TypeSink *sink, const LhatType *type, int depth)
                 }
                 put_text(sink, "self^");
             }
-            if (type->v.func.result != NULL &&
-                type->v.func.result->kind != LHAT_TYPE_NONE) {
+            // 15.5: what a call answers, which for a yielding body is the
+            // coroutine it makes (13.9) rather than what the body returns.
+            // 05 の 8.7 has this read back as a type expression, and a caller
+            // reading it wants to know what arrives.
+            LhatType *answer = lhat_type_call_answer(type);
+            if (answer != NULL && answer->kind != LHAT_TYPE_NONE) {
                 put_text(sink, " -> ");
-                write_type(sink, type->v.func.result, depth + 1);
+                write_type(sink, answer, depth + 1);
             }
             put_text(sink, ";");
             return;

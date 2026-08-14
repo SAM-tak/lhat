@@ -658,6 +658,23 @@ static LhatRuntimeType *tag_type(LhatHeap *heap, LhatValue value)
                 return NULL;
             }
         }
+        // 15.5: a call to a yielding body does not run it -- it makes the
+        // coroutine 13.9 describes, and that is what the caller receives, so
+        // that is this signature's result. The same three slots the branch
+        // above hands back for the coroutine itself.
+        if (proto->yields) {
+            LhatRuntimeType *made =
+                lhat_type_rt_new(heap, LHAT_TYPE_RT_COROUTINE);
+            if (made == NULL) {
+                return NULL;
+            }
+            made->receive = proto->yield_receive_type;
+            made->produce = proto->yield_produce_type;
+            made->result = proto->result_type;
+            made->is_function = proto->is_function;
+            type->result = made;
+            return type;
+        }
         type->result = proto->result_type;
         return type;
     }

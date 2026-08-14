@@ -1137,12 +1137,16 @@ static LhatType *walk_produce(Checker *c, const LhatNode *at, LhatType *over,
                                   ? LHAT_TYPE_PENDING
                                   : LHAT_TYPE_UNKNOWN);
         }
-        if (answer->kind != LHAT_TYPE_FUNC || answer->v.func.result == NULL ||
-            answer->v.func.result->kind != LHAT_TYPE_CORO) {
+        // 15.5: what calling it answers -- either a body that yields (13.9),
+        // or one that hands back a coroutine it made itself. 16.3 asks only
+        // that a coroutine arrive; which of the two wrote it does not matter.
+        LhatType *walks = lhat_type_call_answer(answer);
+        if (answer->kind != LHAT_TYPE_FUNC || walks == NULL ||
+            walks->kind != LHAT_TYPE_CORO) {
             chk_report(c, at, LHAT_CHECK_ERR_NOT_COROUTINE);
             return chk_simple(c, LHAT_TYPE_UNKNOWN);
         }
-        return answer->v.func.result->v.coroutine.produce;
+        return walks->v.coroutine.produce;
     }
 
     // The built-in walk of a table. 13.8改: several names take the (K, V)

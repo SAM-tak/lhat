@@ -171,7 +171,7 @@ static LhatType *right_operator(Checker *c, const char *name, size_t length,
         return NULL;
     }
     *answered = true;
-    return arm->v.func.result;
+    return lhat_type_call_answer(arm);
 }
 
 // 11.8改: what '-x' is worth when x is not a number^. The operand carries the
@@ -191,7 +191,7 @@ static LhatType *infer_unary_operator(Checker *c, LhatType *operand)
     // the one -- so the arm is asked for the leading self^ and no other.
     const LhatType *arm =
         operator_arm(chk_operator_member(c, operand, "-", 1), NULL, 0, false);
-    return arm != NULL ? arm->v.func.result : NULL;
+    return lhat_type_call_answer(arm);
 }
 
 static LhatType *infer_operator(Checker *c, const LhatNode *node, LhatOpKind op,
@@ -273,7 +273,7 @@ static LhatType *infer_operator(Checker *c, const LhatNode *node, LhatOpKind op,
                 continue;
             }
             if (chk_signature_accepts(arm->type, args, 1, true)) {
-                return arm->type->v.func.result;
+                return lhat_type_call_answer(arm->type);
             }
         }
         // 11.3改: no arm here takes it, so the right operand is asked
@@ -329,7 +329,7 @@ static LhatType *infer_operator(Checker *c, const LhatNode *node, LhatOpKind op,
         chk_expect(c, node->v.binary.right, right, wanted,
                    LHAT_CHECK_ERR_NO_OPERATOR);
     }
-    return carrier->v.func.result;
+    return lhat_type_call_answer(carrier);
 }
 
 // 05 の 8.2: the member of L^ a host-bound name reaches, or NULL when the
@@ -799,6 +799,34 @@ static bool immediately_called(Checker *c, const LhatNode *node)
     return true;
 }
 
+// 15.5 with 13.9: the coroutine a call to this signature makes. The middle
+// two types are whatever the body's yield^/yieldall^ sites agreed on (15.2);
+// a body with no yield^ at all -- only a yieldall^ that never ran, or none
+// reached -- leaves them NULL, which nil^ fills the same way an unwritten
+// result does.
+static LhatType *coroutine_made_by(Checker *c, const LhatType *func)
+{
+    // 13.9: the third type is what the last resume receives. A body with no
+    // value-returning return^ hands nil^ back when it ends -- but a body that
+    // cannot end has no last resume at all, and putting nil^ there would make
+    // every consumer narrow away something that never arrives. NULL is how
+    // that is spelled, the same way it is for a subroutine answering nothing.
+    LhatType *ends_with = func->v.func.result;
+    if (ends_with == NULL && func->v.func.ends_without_value) {
+        ends_with = chk_simple(c, LHAT_TYPE_NIL);
+    }
+    // 15.3改: the coroutine carries the kind of the body it came from, which
+    // is what decides who may advance it (15.6改).
+    return lhat_type_coro(c->result->types,
+                          func->v.func.yield_receive != NULL
+                              ? func->v.func.yield_receive
+                              : chk_simple(c, LHAT_TYPE_NIL),
+                          func->v.func.yield_produce != NULL
+                              ? func->v.func.yield_produce
+                              : chk_simple(c, LHAT_TYPE_NIL),
+                          ends_with, func->v.func.is_function);
+}
+
 LhatType *chk_infer_call(Checker *c, const LhatNode *node)
 {
     // 3.4改: the arguments first where the callee is a literal, so what they
@@ -899,7 +927,9 @@ LhatType *chk_infer_call(Checker *c, const LhatNode *node)
                     !arm->type->v.func.yields) {
                     chk_report(c, node, LHAT_CHECK_ERR_FUNCTION_CALLS_PROCEDURE);
                 }
-                return arm->type->v.func.result;
+                // 15.5: a yielding arm answers the coroutine it makes, the
+                // same as the plain call below.
+                return lhat_type_call_answer(arm->type);
             }
         }
         chk_report(c, node, LHAT_CHECK_ERR_MISMATCH);
@@ -1052,32 +1082,12 @@ LhatType *chk_infer_call(Checker *c, const LhatNode *node)
     }
 
     // 15.5: calling a yieldable procedure answers a coroutine rather than
-    // running it. 13.9 gives that three types; the middle two come from
-    // whatever infer_func found its yield^/yieldall^ sites agreeing on
-    // (15.2). A body with no yield^ at all -- only yieldall^ that never
-    // ran, or none reached -- leaves them NULL, which nil^ fills the same
-    // way an unwritten result does.
+    // running it. infer_func puts that on the signature as it settles the
+    // three types, and every other reader takes it from there; a signature a
+    // first pass seeded has none yet, and is assembled here instead.
     if (callee->v.func.yields) {
-        // 13.9: the third type is what the last resume receives. A body
-        // with no value-returning return^ hands nil^ back when it ends --
-        // but a body that cannot end has no last resume at all, and putting
-        // nil^ there would make every consumer narrow away something that
-        // never arrives. NULL is how that is spelled, the same way it is for
-        // a subroutine that answers nothing.
-        LhatType *ends_with = callee->v.func.result;
-        if (ends_with == NULL && callee->v.func.ends_without_value) {
-            ends_with = chk_simple(c, LHAT_TYPE_NIL);
-        }
-        // 15.3改: the coroutine carries the kind of the body it came from,
-        // which is what decides who may advance it (15.6改).
-        return lhat_type_coro(c->result->types,
-                              callee->v.func.yield_receive != NULL
-                                  ? callee->v.func.yield_receive
-                                  : chk_simple(c, LHAT_TYPE_NIL),
-                              callee->v.func.yield_produce != NULL
-                                  ? callee->v.func.yield_produce
-                                  : chk_simple(c, LHAT_TYPE_NIL),
-                              ends_with, callee->v.func.is_function);
+        return callee->v.func.answers != NULL ? callee->v.func.answers
+                                              : coroutine_made_by(c, callee);
     }
     // 13.2: a signature with no result answers no value. That is not a gap in
     // inference, so it is not spelled with a NULL -- 03 の 3.4 kept it apart
@@ -1930,6 +1940,14 @@ LhatType *chk_infer_func(Checker *c, const LhatNode *node)
     // signature it was written under already gave.
     if (declared == NULL && expected_func != NULL) {
         declared = expected_func->v.func.result;
+        // 15.5: what that signature promises a caller is the coroutine (13.9)
+        // where this body yields, and what the body itself returns is the
+        // third of its three types. Y and R stay 15.2's to settle from the
+        // yield^ sites -- only the result is being handed down here.
+        if (node->v.func.yields && declared != NULL &&
+            declared->kind == LHAT_TYPE_CORO) {
+            declared = declared->v.coroutine.result;
+        }
     }
     func->v.func.result = declared;
 
@@ -2070,6 +2088,16 @@ LhatType *chk_infer_func(Checker *c, const LhatNode *node)
         if (c->strict && lhat_type_has_gap(func->v.func.result)) {
             chk_report(c, node, LHAT_CHECK_ERR_RESULT_UNDECIDED);
         }
+    }
+
+    // 15.5: what a call to this answers, settled here because this is where
+    // the three types 13.9 needs are all known. Everything that asks what a
+    // call is worth reads it from the signature rather than assembling its
+    // own -- the writers and conformance among them, which is what lets the
+    // written-out form ('p^number^ -> c^{ p^nil^ -> number^;, nil^ };') be
+    // read back as the annotation it looks like (05 の 8.7).
+    if (node->v.func.yields) {
+        func->v.func.answers = coroutine_made_by(c, func);
     }
 
     // 15.3改: an f^ coroutine may not leave the body that made it. Reaching

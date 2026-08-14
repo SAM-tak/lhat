@@ -2832,10 +2832,31 @@ static void compile_subroutine(Compiler *c, const LhatNode *node, uint8_t into)
     if (node->v.func.yields && node->checked_type != NULL) {
         const LhatType *checked = (const LhatType *)node->checked_type;
         LhatHeap *owner = &root_of(c)->proto->chunk.heap;
-        proto->yield_produce_type =
-            lhat_rt_from_checked(owner, checked->v.func.yield_produce);
-        proto->yield_receive_type =
-            lhat_rt_from_checked(owner, checked->v.func.yield_receive);
+        // 15.5: taken off the coroutine the checker assembled rather than off
+        // the three fields, so the defaults 13.9 fills in (a body producing
+        // nothing produces nil^; one that ends without a value ends with
+        // nil^) reach a value reflected at run time. Otherwise typeof^ would
+        // answer one thing where the checker resolved it and another where
+        // 04 の 2.4 sends it to the instruction instead.
+        const LhatType *made = lhat_type_call_answer(checked);
+        if (made != NULL && made->kind == LHAT_TYPE_CORO) {
+            proto->yield_produce_type =
+                lhat_rt_from_checked(owner, made->v.coroutine.produce);
+            proto->yield_receive_type =
+                lhat_rt_from_checked(owner, made->v.coroutine.receive);
+            // Only where nothing was written: what lower_type made above can
+            // name an error kind (04 の 2.4) and what is rebuilt from a
+            // checked type cannot, so a written result is left as it stands.
+            if (node->v.func.return_type == NULL) {
+                proto->result_type =
+                    lhat_rt_from_checked(owner, made->v.coroutine.result);
+            }
+        } else {
+            proto->yield_produce_type =
+                lhat_rt_from_checked(owner, checked->v.func.yield_produce);
+            proto->yield_receive_type =
+                lhat_rt_from_checked(owner, checked->v.func.yield_receive);
+        }
     }
 
     // 5.3: which statement of this body ends it, so that a bare call there is
