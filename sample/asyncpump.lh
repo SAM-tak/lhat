@@ -23,7 +23,7 @@ import^std.thread
 
 let^async = require^"async.lh"
 
-let^sched = async.make()
+let^sched = async.Scheduler.new()
 
 var^frame = 0
 

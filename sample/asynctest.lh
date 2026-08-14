@@ -11,7 +11,7 @@ import^std.io
 
 let^async = require^"async.lh"
 
-let^sched = async.make()
+let^sched = async.Scheduler.new()
 
 let^tick = p^name:string^, times:number^, gap:number^{
     for^i from^1 to^times {

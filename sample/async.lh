@@ -46,7 +46,19 @@ public^let^joined:p^std.thread.ThreadHandle -> c^{p^-> number^;,
 タスク表。走っているコルーチンと、それが待っている期限 id を並べておく。
 待っていなければ 0（`std.async.timer` は 1 から配る）。
 ]#
-let^Scheduler = def^{
+public^let^Scheduler: t^{
+    self^{
+        tasks : t^,
+        waits : t^,
+        live : number^,
+        add : p^self^, c^{ p^ -> number^;, } -> number^;,
+        step : p^self^, number^ -> bool^;,
+        wake : p^self^, number^;,
+        poll : p^self^ -> bool^;,
+        run : p^self^;
+    },
+    new : f^ -> Self^;
+} = def^{
     self^{
         tasks = { },      # コルーチン
         waits = { },      # 待っている期限 id。0 なら起きている
@@ -107,7 +119,7 @@ let^Scheduler = def^{
             let^done = std.async.wait(0)
             if^done isa^number^{ self^.wake(done) }
         }
-        return^awake > 0 or^ waiting > 0
+        return^awake > 0 or^waiting > 0
     },
 
     #[
@@ -137,5 +149,3 @@ let^Scheduler = def^{
         }
     },
 }
-
-public^let^make = p^-> Scheduler { return^Scheduler.new() }

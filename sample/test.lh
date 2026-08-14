@@ -105,3 +105,12 @@ print(t["bbb"])
 print(t.あああ)
 print(t["あああ"])
 print(t[1])
+
+let^C = p^{ yield^}
+
+print(typeof^(C).signature)
+
+let^c = C()
+
+print(typeof^(c.start).signature)
+print(typeof^(c.resume).signature)
