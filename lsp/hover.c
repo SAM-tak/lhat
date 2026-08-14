@@ -78,18 +78,75 @@ static void search_child(void *context, const char *field, bool in_list,
     search(child, (DefinitionSearch *)context);
 }
 
-// 07 の module^ says what the unit is, so a comment written against it is
-// the unit's own description. It declares rather than uses a name, so the
-// checker records no resolution for it and it is found by position instead.
-static const LhatNode *module_at(const LhatNode *root, uint32_t offset)
+// The innermost written name covering `offset`. Used to keep the search
+// below to names: a binding's span runs to the end of what it binds, and
+// answering anywhere inside that would put a definition under the cursor
+// over every space in a body pages long.
+typedef struct {
+    uint32_t wanted;
+    const LhatNode *best;
+} NameSearch;
+
+// A hat identifier is not among these. 01 の 2.1 makes it the spelling every
+// keyword takes, and no form declares one -- there is no 'let^ true^ = …' --
+// so a position on one has no declaration to find. Where a hat identifier
+// does name something bound (self^, class^), it is a use and the checker
+// answered for it already, before this fallback is reached.
+static bool is_written_name(const LhatNode *node)
 {
-    for (const LhatNode *s = root->v.list.items; s != NULL; s = s->next) {
-        if (s->kind == LHAT_NODE_MODULE &&
-            offset >= lhat_node_span_start(s) && offset < s->end) {
-            return s;
-        }
+    switch (node->kind) {
+        case LHAT_NODE_IDENT:
+        case LHAT_NODE_NAME:
+        case LHAT_NODE_TYPE_NAME:
+            return true;
+        default:
+            return false;
     }
-    return NULL;
+}
+
+static void name_child(void *context, const char *field, bool in_list,
+                       const LhatNode *child);
+
+static void name_search(const LhatNode *node, NameSearch *state)
+{
+    uint32_t start = lhat_node_span_start(node);
+    if (state->wanted < start || state->wanted >= node->end) {
+        return;
+    }
+    if (is_written_name(node)) {
+        state->best = node;
+    }
+    lhat_node_visit_children(node, name_child, state);
+}
+
+static void name_child(void *context, const char *field, bool in_list,
+                       const LhatNode *child)
+{
+    (void)field;
+    (void)in_list;
+    name_search(child, (NameSearch *)context);
+}
+
+// A declaration declares a name rather than using one, so the checker
+// records no resolution against it -- 07 の module^ is the plainest case,
+// and 'let^ x = …' or a parameter is the same. Those are found by position:
+// the innermost form that binds, around the name the cursor is actually on.
+//
+// A use is answered from the checker instead (lsp_hover_for_unit), and this
+// runs only where no resolution covers the offset, so the two never
+// disagree about the same position.
+static const LhatNode *declaration_at(const LhatNode *root, uint32_t offset,
+                                      const LhatNode **name)
+{
+    NameSearch found = {offset, NULL};
+    name_search(root, &found);
+    if (found.best == NULL) {
+        return NULL;
+    }
+    DefinitionSearch state = {lhat_node_span_start(found.best), NULL};
+    search(root, &state);
+    *name = found.best;
+    return state.best;
 }
 
 // The first line of what a node covers, so that a definition whose body runs
@@ -172,24 +229,30 @@ cJSON *lsp_hover_for_unit(const LhatUnit *unit, uint32_t offset)
         lhat_check_resolution_at(&unit->checked, offset);
 
     const LhatNode *definition = NULL;
-    if (resolved != NULL) {
+    // Where the answer is about, when it did not come from a resolution --
+    // so that the editor still underlines the name rather than guessing.
+    const LhatNode *declared_name = NULL;
+    if (resolved != NULL && resolved->has_definition) {
         DefinitionSearch state = {resolved->definition, NULL};
         search(unit->parsed.root, &state);
         definition = state.best;
-    } else {
-        // Not a name that was used. The one declaration worth showing on its
-        // own is module^.
-        definition = module_at(unit->parsed.root, offset);
+    } else if (resolved == NULL) {
+        // Not a name that was used: a declaration, which says what it is
+        // where it stands.
+        definition = declaration_at(unit->parsed.root, offset, &declared_name);
     }
-    if (definition == NULL) {
+    // A member resolves in a type rather than in a scope (14.10), so there
+    // is no place in this source to show -- and for a type from another unit
+    // or a host registration there is none anywhere. What it is is still
+    // known, and that is the answer.
+    if (definition == NULL && (resolved == NULL || resolved->type == NULL)) {
         return NULL;
     }
 
     const char *line = NULL;
     size_t line_length = 0;
-    first_line(unit, definition, &line, &line_length);
-    if (line_length == 0) {
-        return NULL;
+    if (definition != NULL) {
+        first_line(unit, definition, &line, &line_length);
     }
 
     // A fenced block for the definition, then whatever was written about it.
@@ -220,11 +283,19 @@ cJSON *lsp_hover_for_unit(const LhatUnit *unit, uint32_t offset)
     size_t used = 0;
     memcpy(fenced + used, "```lhat\n", 8);
     used += 8;
-    memcpy(fenced + used, line, line_length);
-    used += line_length;
+    if (line_length > 0) {
+        memcpy(fenced + used, line, line_length);
+        used += line_length;
+    }
     if (inferred_length > 0) {
-        memcpy(fenced + used, "\n: ", 3);
-        used += 3;
+        // The separator only where there is a line above it to separate
+        // from; a member has the type alone.
+        if (line_length > 0) {
+            memcpy(fenced + used, "\n", 1);
+            used += 1;
+        }
+        memcpy(fenced + used, ": ", 2);
+        used += 2;
         memcpy(fenced + used, inferred, inferred_length);
         used += inferred_length;
     }
@@ -233,7 +304,9 @@ cJSON *lsp_hover_for_unit(const LhatUnit *unit, uint32_t offset)
     free(fenced);
 
 #if LHAT_WITH_COMMENTS
-    append_comments(parts, unit, definition);
+    if (definition != NULL) {
+        append_comments(parts, unit, definition);
+    }
 #endif
 
     // Joined with blank lines, which is how Markdown keeps them as paragraphs.
@@ -279,16 +352,24 @@ cJSON *lsp_hover_for_unit(const LhatUnit *unit, uint32_t offset)
     free(joined);
 
     // The range of the name itself, so the editor underlines what was asked
-    // about rather than guessing a word boundary. A module^ declaration was
-    // found by position and has no such range, so it goes without one and
-    // the editor falls back to its own guess.
-    cJSON *range = resolved != NULL ? cJSON_CreateObject() : NULL;
+    // about rather than guessing a word boundary. A use has it from the
+    // resolution; a declaration from the name the search settled on.
+    uint32_t from_offset = 0;
+    uint32_t to_offset = 0;
+    if (resolved != NULL) {
+        from_offset = resolved->use;
+        to_offset = resolved->use_end;
+    } else if (declared_name != NULL) {
+        from_offset = lhat_node_span_start(declared_name);
+        to_offset = declared_name->end;
+    }
+    cJSON *range = to_offset > from_offset ? cJSON_CreateObject() : NULL;
     if (range != NULL) {
         cJSON_AddItemToObject(hover, "range", range);
         LspPosition from = lsp_position_at(unit->source.text,
-                                           unit->source.length, resolved->use);
+                                           unit->source.length, from_offset);
         LspPosition to = lsp_position_at(unit->source.text,
-                                         unit->source.length, resolved->use_end);
+                                         unit->source.length, to_offset);
         cJSON *start = cJSON_CreateObject();
         cJSON *end = cJSON_CreateObject();
         cJSON_AddItemToObject(range, "start", start);

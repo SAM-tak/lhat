@@ -170,6 +170,24 @@ struct LhatType {
             // it records where the structure came from and takes no part in
             // conformance (11.3).
             bool sealed;
+            // 05 の 8.6: a table names are reached *through* rather than one
+            // that holds a value -- L^ and its module registry, a segment of
+            // that registry, what a require^ published, the tree a host
+            // registered, and the root a dotted import^ or require^ path
+            // stands on.
+            //
+            // Separate from `sealed`, which is next to it and looks like it
+            // would do: that one says the program may not write here, and
+            // the two are not the same question. The root of an import^ path
+            // is a namespace and is *not* sealed, because the import itself
+            // writes the segment it brought in there. Like the three above
+            // it records what the structure is for and takes no part in
+            // conformance (11.3).
+            //
+            // Nothing in the language reads it. It is here so that a tool
+            // can tell a module apart from a table, which is a question the
+            // shape alone cannot answer.
+            bool is_module;
             // 13.7's variadic collector as a table type, and 14.10's
             // 't^{ ...:T }': the sequence half is unbounded, every position
             // of it T. NULL everywhere else -- mirrors func.variadic below,

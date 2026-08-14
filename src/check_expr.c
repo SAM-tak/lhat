@@ -422,6 +422,12 @@ LhatType *chk_infer_name(Checker *c, const LhatNode *node)
             chk_report(c, node, LHAT_CHECK_ERR_DISCARD_READ);
             return chk_simple(c, LHAT_TYPE_UNKNOWN);
         }
+        // 07 の 4 章: these three are the ones deliberately left unrecorded.
+        // What a resolution feeds is a reader asking what a name means, and
+        // here the spelling is already the answer -- recording it would grow
+        // the array without telling anyone anything. Every other early
+        // answer below does record, since none of them can be read off the
+        // word.
         if (chk_name_is(name, length, "true^") || chk_name_is(name, length, "false^")) {
             return chk_simple(c, LHAT_TYPE_BOOL);
         }
@@ -438,6 +444,9 @@ LhatType *chk_infer_name(Checker *c, const LhatNode *node)
             }
             // 03 の 3.4 counts it the same way a call by name is counted.
             c->saw_self_call = true;
+#if LHAT_WITH_RESOLUTIONS
+            chk_record_typed_resolution(c, node, c->this_type);
+#endif
             return c->this_type;
         }
         // 14.12改: super^ is the member an override^ is replacing. Named on
@@ -449,12 +458,21 @@ LhatType *chk_infer_name(Checker *c, const LhatNode *node)
                 chk_report(c, node, LHAT_CHECK_ERR_SUPER_OUTSIDE);
                 return chk_simple(c, LHAT_TYPE_UNKNOWN);
             }
+#if LHAT_WITH_RESOLUTIONS
+            chk_record_typed_resolution(c, node, c->super_type);
+#endif
             return c->super_type;
         }
         // 05 の 8.6: the machine's own table, there without being imported.
         if (chk_name_is(name, length, "L^")) {
             LhatType *env = chk_environment_type(c);
-            return env != NULL ? env : chk_simple(c, LHAT_TYPE_UNKNOWN);
+            if (env == NULL) {
+                return chk_simple(c, LHAT_TYPE_UNKNOWN);
+            }
+#if LHAT_WITH_RESOLUTIONS
+            chk_record_typed_resolution(c, node, env);
+#endif
+            return env;
         }
     }
 
@@ -485,6 +503,12 @@ LhatType *chk_infer_name(Checker *c, const LhatNode *node)
         // identifier out of the spellings a let^ can make.
         LhatType *bound = initial_binding_type(c, name, length);
         if (bound != NULL) {
+#if LHAT_WITH_RESOLUTIONS
+            // 07 の 4 章: nothing here declared it -- the host did, in C --
+            // so there is no place to point at, only the type it registered.
+            // Which is the whole of what a reader meeting `print` wants.
+            chk_record_typed_resolution(c, node, bound);
+#endif
             return bound;
         }
         chk_report_named(c, node, LHAT_CHECK_ERR_UNDEFINED, name, length);
@@ -531,7 +555,9 @@ LhatType *chk_infer_name(Checker *c, const LhatNode *node)
             chk_report(c, node, LHAT_CHECK_ERR_HOSTVALUE_ESCAPES);
         }
     }
+#if LHAT_WITH_RESOLUTIONS
     chk_record_resolution(c, node, b);
+#endif
     return b->type;
 }
 
@@ -3275,9 +3301,19 @@ static LhatType *infer_node(Checker *c, const LhatNode *node)
 
         case LHAT_NODE_MEMBER: {
             LhatType *narrowed = chk_narrowed_type(c, node);
-            return narrowed != NULL
-                       ? narrowed
-                       : nil_propagated(c, node, chk_infer_member(c, node));
+            LhatType *answer =
+                narrowed != NULL
+                    ? narrowed
+                    : nil_propagated(c, node, chk_infer_member(c, node));
+#if LHAT_WITH_RESOLUTIONS
+            // 07 の 4 章: recorded here rather than inside chk_infer_member,
+            // which answers from a dozen places -- the built-in members of a
+            // coroutine (15.6改), an error's own two (04 の 2.3), a
+            // definition's, a table's. What every one of them has in common
+            // is that it came back through here.
+            chk_record_typed_resolution(c, node->v.access.argument, answer);
+#endif
+            return answer;
         }
 
         case LHAT_NODE_INDEX:

@@ -52,6 +52,9 @@ LhatType *chk_environment_type(Checker *c)
     // the program's.
     env->v.table.sealed = true;
     modules_type->v.table.sealed = true;
+    // And both are reached through rather than held: L^.print, L^.modules.a.
+    env->v.table.is_module = true;
+    modules_type->v.table.is_module = true;
     // environment.h's one list -- vm.c's build_environment expands the same
     // one for the values.
 #define LHAT_ENVIRONMENT_ADD(name, value, type)                     \
@@ -148,7 +151,9 @@ static LhatType *path_table(Checker *c, const LhatNode *node)
             b->type = lhat_type_table(c->result->types);
         }
         b->reached = true;
+#if LHAT_WITH_RESOLUTIONS
         chk_record_resolution(c, node, b);
+#endif
         return holds_members(c, node, b->type);
     }
 
@@ -435,6 +440,23 @@ void chk_check_define(Checker *c, const LhatNode *node)
     }
 }
 
+// 05 の 8.6: the table a dotted import^ or require^ path stands on -- the
+// 'a' of 'import^ a.b.c'. Names are reached through it rather than held in
+// it, which is what `is_module` says.
+//
+// Not sealed, unlike the segments the walk above makes: the import^ that
+// built this root goes on to write the segment it brought in *into* it, and
+// a sealed table refuses exactly that (path_table below). The two flags ask
+// different questions, which is why they are two.
+LhatType *chk_module_root_table(Checker *c)
+{
+    LhatType *table = lhat_type_table(c->result->types);
+    if (table != NULL) {
+        table->v.table.is_module = true;
+    }
+    return table;
+}
+
 // 05 の 5.3: a require^ runs the unit, and a unit that named itself registers
 // under that name. So the type of L^.modules can say so -- what makes this
 // honest rather than a guess is that the registration is in the unit's own
@@ -478,8 +500,10 @@ void chk_register_module_type(Checker *c, const char *module_name,
                 return;
             }
             // 05 の 8.6: a segment of the registry is the machine's, the
-            // same as the registry itself.
+            // same as the registry itself -- and is named through, the same
+            // way.
             made->v.table.sealed = true;
+            made->v.table.is_module = true;
             owner = made;
         }
         segment += length + 1;
@@ -572,7 +596,7 @@ static void check_import(Checker *c, const LhatNode *node, bool binds)
     Binding *root = chk_scope_find(c->scope, name, length, NULL);
     if (root == NULL) {
         root = chk_scope_add(c->scope, name, length,
-                             lhat_type_table(c->result->types), node->offset);
+                             chk_module_root_table(c), node->offset);
         if (root == NULL) {
             return;
         }
@@ -580,7 +604,7 @@ static void check_import(Checker *c, const LhatNode *node, bool binds)
         root->import_root = true;  // 05 の 8.7, read rather than captured
     } else if (root->type == NULL || root->type->kind == LHAT_TYPE_UNKNOWN ||
                root->type->kind == LHAT_TYPE_PENDING) {
-        root->type = lhat_type_table(c->result->types);
+        root->type = chk_module_root_table(c);
     }
 
     LhatType *owner = path_table(c, path->v.access.target);
@@ -654,14 +678,14 @@ static void check_require_stmt(Checker *c, const LhatNode *node)
     Binding *root = chk_scope_find(c->scope, segment, length, NULL);
     if (root == NULL) {
         root = chk_scope_add(c->scope, segment, length,
-                             lhat_type_table(c->result->types), node->offset);
+                             chk_module_root_table(c), node->offset);
         if (root == NULL) {
             return;
         }
         root->reached = true;
     } else if (root->type == NULL || root->type->kind == LHAT_TYPE_UNKNOWN ||
                root->type->kind == LHAT_TYPE_PENDING) {
-        root->type = lhat_type_table(c->result->types);
+        root->type = chk_module_root_table(c);
     }
     // 05 の 8.7: what this puts under the root was made by running a unit and
     // is in no registry to read back, so the root is captured like any other
@@ -1467,6 +1491,7 @@ LhatType *chk_collect_exports(Checker *c, const LhatNode *statements)
                 // holds stays as mutable as it was.
                 if (table != NULL) {
                     table->v.table.sealed = true;
+                    table->v.table.is_module = true;  // named through
                 }
             }
             lhat_type_add_member(c->result->types, table, name, length, b->type);

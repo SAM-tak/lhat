@@ -16,4 +16,11 @@
 // consumers included.
 #define LHAT_WITH_COMMENTS @LHAT_WITH_COMMENTS_VALUE@
 
+// 07 の 4 章: whether the checker records what each written name resolved to.
+// Nothing in the language reads it -- compiling and running are the same
+// either way -- and it is kept for the language server, which would
+// otherwise have to work 8 章's scoping out a second time. It changes the
+// shape of LhatCheckResult, so it lives here for the reason above.
+#define LHAT_WITH_RESOLUTIONS @LHAT_WITH_RESOLUTIONS_VALUE@
+
 #endif  // LHAT_VERSION_H

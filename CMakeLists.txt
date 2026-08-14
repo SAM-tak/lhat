@@ -16,6 +16,13 @@ option(LHAT_BUILD_LSP "Build the L^ language server" ON)
 # pays for neither the table nor the walk that attaches it.
 option(LHAT_WITH_COMMENTS "Keep comments and attach them to the syntax tree" ON)
 
+# 07 の 4 章: the same bargain for what the checker learned about each name.
+# Compiling and running read none of it -- it is recorded for the language
+# server, which would otherwise resolve 8 章's scoping a second time and
+# disagree in exactly the hard cases. A host embedding the language and no
+# tooling turns this off and pays for neither the array nor the recording.
+option(LHAT_WITH_RESOLUTIONS "Record what each name resolved to, for tooling" ON)
+
 # Address (and, off MSVC, undefined-behaviour) sanitizers for the whole
 # build. A switch rather than a default: the suite runs it before the risky
 # refactors, not on every developer build.
@@ -84,6 +91,11 @@ if(LHAT_WITH_COMMENTS)
     set(LHAT_WITH_COMMENTS_VALUE 1)
 else()
     set(LHAT_WITH_COMMENTS_VALUE 0)
+endif()
+if(LHAT_WITH_RESOLUTIONS)
+    set(LHAT_WITH_RESOLUTIONS_VALUE 1)
+else()
+    set(LHAT_WITH_RESOLUTIONS_VALUE 0)
 endif()
 configure_file(include/lhat/version.h.in
     ${CMAKE_CURRENT_BINARY_DIR}/include/lhat/version.h)

@@ -1721,9 +1721,66 @@ static void test_annotations(void)
     unit_dispose(&u);
 }
 
+#if LHAT_WITH_RESOLUTIONS
+// 07 の 4 章: lhat_check_resolution_at halves its way in, so the array has
+// to be ordered by `use` with no position recorded twice. The walk itself
+// does not quite give that -- a member is recorded after the target it was
+// read from, and 14.7改's two passes over a def^ meet the same member twice
+// -- so chk_settle_resolutions makes it hold. This is that invariant, asked
+// of a source written to exercise both: nested member chains inside a def^
+// whose members read each other.
+static void test_resolutions_are_ordered(void)
+{
+    Unit u;
+
+    LHAT_TEST("07 の 4 章: resolutions come back in source order, once each");
+    check_text(&u,
+               "let^ pair = { left = 1, right = 2 }\n"
+               "let^ Box = def^{\n"
+               "    self^{ held = 0 },\n"
+               "    get = f^self^ -> number^ { return^ self^.held },\n"
+               "    twice = f^self^ -> number^ { return^ self^.get() * 2 },\n"
+               "}\n"
+               "let^ b = Box.new()\n"
+               "let^ n = b.twice() + pair.left + pair.right\n"
+               // 15.10: recorded from an early answer in chk_infer_name
+               // rather than from a binding, which is the other order the
+               // walk can produce records in.
+               "let^ fact = f^k:number^ -> number^ {\n"
+               "    if^ k < 2 { return^ 1 }\n"
+               "    return^ k * this^(k - 1)\n"
+               "}\n");
+    CHECK_CLEAN(&u);
+
+    LHAT_CHECK(u.checked.resolution_count > 0, "expected names to resolve");
+    for (size_t i = 1; i < u.checked.resolution_count; i++) {
+        uint32_t before = u.checked.resolutions[i - 1].use;
+        uint32_t here = u.checked.resolutions[i].use;
+        LHAT_CHECK(before < here,
+                   "resolution %zu is at %u, after %u -- the binary search "
+                   "in lhat_check_resolution_at reads this order",
+                   i, here, before);
+    }
+
+    // And every one of them is findable at any position within its name,
+    // which is the whole of what the lookup promises.
+    for (size_t i = 0; i < u.checked.resolution_count; i++) {
+        const LhatResolution *want = &u.checked.resolutions[i];
+        const LhatResolution *got =
+            lhat_check_resolution_at(&u.checked, want->use);
+        LHAT_CHECK(got == want, "resolution %zu was not found at its own use",
+                   i);
+    }
+    unit_dispose(&u);
+}
+#endif
+
 int main(void)
 {
     test_names();
+#if LHAT_WITH_RESOLUTIONS
+    test_resolutions_are_ordered();
+#endif
     test_expressions();
     test_results();
     test_parameter_inference();

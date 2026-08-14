@@ -122,7 +122,9 @@ typedef struct {
     // the whole of a mark. What a walk said is dropped when the next one
     // starts: it walks the same ground and says all of it again.
     size_t diagnostics;
+#if LHAT_WITH_RESOLUTIONS
     size_t resolutions;
+#endif
     size_t round;
     // One walk per element plus one: an element settles no later than the one
     // it reads ahead of itself, so a chain of them is done in as many walks
@@ -349,7 +351,14 @@ typedef struct {
 
 
 void chk_report(Checker *c, const LhatNode *at, LhatCheckErrorCode code);
+#if LHAT_WITH_RESOLUTIONS
+// 07 の 4 章: for the language server, not for the language -- see check.h's
+// LhatResolution. Every call site carries this same guard.
 void chk_record_resolution(Checker *c, const LhatNode *at, const Binding *b);
+void chk_record_typed_resolution(Checker *c, const LhatNode *at,
+                                 LhatType *type);
+void chk_settle_resolutions(LhatCheckResult *result);
+#endif
 void chk_report_named(Checker *c, const LhatNode *at,
                       LhatCheckErrorCode code, const char *name,
                       size_t length);
@@ -453,6 +462,7 @@ LhatType *chk_infer(Checker *c, const LhatNode *node);
 LhatType *chk_environment_type(Checker *c);
 LhatType *chk_typeinfo_type(Checker *c);
 void chk_check_define(Checker *c, const LhatNode *node);
+LhatType *chk_module_root_table(Checker *c);
 void chk_register_module_type(Checker *c, const char *module_name,
                               LhatType *exports);
 LhatType *chk_hosted_module(Checker *c, const LhatNode *path);

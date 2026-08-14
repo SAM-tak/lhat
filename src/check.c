@@ -26,10 +26,15 @@ void chk_report(Checker *c, const LhatNode *at, LhatCheckErrorCode code)
     d->name_length = 0;
 }
 
+#if LHAT_WITH_RESOLUTIONS
 // 07 の 4 章: what a written name turned out to mean. Kept so that a tool
 // reads the walk's own answer rather than resolving 8 章's scoping a second
 // time. Dropped rather than failing the check when there is no room -- what
 // it feeds is a convenience, and the program is no less checked without it.
+//
+// Nothing below this point is read by the language: 03 の 1.1's later stages
+// compile and run the same tree either way. The call sites carry the same
+// guard, so a build without it does not so much as make the call.
 void chk_record_resolution(Checker *c, const LhatNode *at, const Binding *b)
 {
     LhatCheckResult *r = c->result;
@@ -43,8 +48,81 @@ void chk_record_resolution(Checker *c, const LhatNode *at, const Binding *b)
     entry->use = at->offset;
     entry->use_end = at->end;
     entry->definition = b->offset;
+    entry->has_definition = true;
     entry->type = b->type;
 }
+
+// The same, for a name whose meaning has no place in this source to point
+// at. 14.10's member is found in a type rather than in a scope, and the type
+// may have come from another unit or a host registration; 05 の 8.2's
+// host-bound name was registered in C; 8.6's L^ is the machine itself;
+// 15.10's this^ and 14.12改's super^ are given by the body around them.
+// What every one of them still has is a type, which is what a reader asking
+// "what is this" wanted.
+void chk_record_typed_resolution(Checker *c, const LhatNode *at,
+                                 LhatType *type)
+{
+    LhatCheckResult *r = c->result;
+    if (at == NULL || at->end <= at->offset) {
+        return;  // no span: nothing to hover over
+    }
+    LHAT_GROW(r->resolutions, r->resolution_count, r->resolution_capacity, 64,
+              return);
+
+    LhatResolution *entry = &r->resolutions[r->resolution_count++];
+    entry->use = at->offset;
+    entry->use_end = at->end;
+    entry->definition = 0;
+    entry->has_definition = false;
+    entry->type = type;
+}
+
+static int compare_resolutions(const void *a, const void *b)
+{
+    const LhatResolution *ra = (const LhatResolution *)a;
+    const LhatResolution *rb = (const LhatResolution *)b;
+    if (ra->use != rb->use) {
+        return ra->use < rb->use ? -1 : 1;
+    }
+    return 0;
+}
+
+// lhat_check_resolution_at halves its way in, so the array has to be ordered
+// by `use`. The walk very nearly gives that for free -- names are met in
+// source order -- but not quite: a member is recorded after the target it
+// was read from, and 14.7改's two passes over a def^ meet the same member
+// twice. So the order is made rather than assumed.
+//
+// A repeat is the same name recorded again, and the later record is the one
+// to keep: the second pass over a definition writes the inferred type over
+// the provisional one the first pass left (14.7改).
+void chk_settle_resolutions(LhatCheckResult *result)
+{
+    if (result->resolution_count < 2) {
+        return;
+    }
+    qsort(result->resolutions, result->resolution_count,
+          sizeof *result->resolutions, compare_resolutions);
+
+    size_t kept = 0;
+    for (size_t i = 0; i < result->resolution_count; i++) {
+        // qsort is not stable, so "the later record" cannot be read off the
+        // order after sorting -- but a repeat is a name recorded twice with
+        // the same span, and what differs is the type. Keeping the last of
+        // an equal run is what the two-pass case wants; where nothing
+        // differs, either is the same answer.
+        bool same_as_kept = kept > 0 &&
+                            result->resolutions[kept - 1].use ==
+                                result->resolutions[i].use;
+        if (same_as_kept) {
+            result->resolutions[kept - 1] = result->resolutions[i];
+        } else {
+            result->resolutions[kept++] = result->resolutions[i];
+        }
+    }
+    result->resolution_count = kept;
+}
+#endif  // LHAT_WITH_RESOLUTIONS
 
 // The same, about a name. The text is borrowed from the source, which 6 章
 // keeps alive as long as the result -- a copy per diagnostic would be paid
@@ -1839,7 +1917,9 @@ void chk_settle_param_vars(Checker *c, ParamVar *mark)
 void chk_rounds_begin(Checker *c, Rounds *r, size_t count)
 {
     r->diagnostics = c->result->diagnostic_count;
+#if LHAT_WITH_RESOLUTIONS
     r->resolutions = c->result->resolution_count;
+#endif
     r->round = 0;
     r->cap = count + 1;
     r->changed = false;
@@ -1862,7 +1942,9 @@ bool chk_rounds_next(Checker *c, Rounds *r)
     r->changed = false;
     c->read_provisional = false;
     c->result->diagnostic_count = r->diagnostics;
+#if LHAT_WITH_RESOLUTIONS
     c->result->resolution_count = r->resolutions;
+#endif
     return true;
 }
 
@@ -1920,6 +2002,13 @@ void lhat_check_unit(const LhatNode *unit, const LhatLexer *lexer, bool strict,
     // name written late is not missed. 8.7 already makes every name visible
     // throughout the scope, so this only reads what is there.
     result->exports = chk_collect_exports(&checker, unit->v.list.items);
+
+#if LHAT_WITH_RESOLUTIONS
+    // 07 の 4 章: last, so that everything the walk recorded is in hand --
+    // what lhat_check_resolution_at's binary search needs is an order the
+    // walk itself does not quite give.
+    chk_settle_resolutions(result);
+#endif
 
     chk_scope_dispose(&scope);
 }
@@ -2133,6 +2222,10 @@ void lhat_check_next(LhatCheckSession *session, const LhatNode *unit,
     chk_check_statements(&checker, unit->v.list.items);
     result->exports = chk_collect_exports(&checker, unit->v.list.items);
 
+#if LHAT_WITH_RESOLUTIONS
+    chk_settle_resolutions(result);  // as lhat_check_unit does, and why
+#endif
+
     // What this input bound joins the session, replacing what an earlier one
     // bound under the same name. The types are in the session's arena
     // already, so only the names are copied.
@@ -2216,14 +2309,15 @@ LhatType *lhat_type_of_text(const char *text, size_t length,
     return type;
 }
 
+#if LHAT_WITH_RESOLUTIONS
 const LhatResolution *lhat_check_resolution_at(const LhatCheckResult *result,
                                                uint32_t offset)
 {
     if (result == NULL) {
         return NULL;
     }
-    // Recorded in walk order, which is source order for the names within one
-    // unit, so this can halve its way in rather than scanning.
+    // chk_settle_resolutions put these in `use` order, so this can halve its
+    // way in rather than scanning.
     size_t low = 0;
     size_t high = result->resolution_count;
     while (low < high) {
@@ -2239,6 +2333,7 @@ const LhatResolution *lhat_check_resolution_at(const LhatCheckResult *result,
     }
     return NULL;
 }
+#endif  // LHAT_WITH_RESOLUTIONS
 
 void lhat_check_result_dispose(LhatCheckResult *result)
 {
@@ -2246,10 +2341,12 @@ void lhat_check_result_dispose(LhatCheckResult *result)
     result->diagnostics = NULL;
     result->diagnostic_count = 0;
     result->diagnostic_capacity = 0;
+#if LHAT_WITH_RESOLUTIONS
     lhat_free(result->resolutions);
     result->resolutions = NULL;
     result->resolution_count = 0;
     result->resolution_capacity = 0;
+#endif
     lhat_free(result->module_name);
     result->module_name = NULL;
     // Only the arena this result made for itself; a shared one belongs to

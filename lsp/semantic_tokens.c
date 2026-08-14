@@ -19,13 +19,16 @@
 #include <stdlib.h>
 
 #include "ast.h"
+#include "check.h"  // 07 の 4 章: what each name resolved to, for refine_by_type
 #include "lexer.h"
 #include "parser.h"
+#include "type.h"
 
 #include "position.h"
 
 const char *const LSP_SEMANTIC_TOKEN_TYPES[] = {
-    "namespace", "type", "parameter", "variable", "function", "property",
+    "namespace", "type", "class", "parameter", "variable", "function",
+    "property",
 };
 const size_t LSP_SEMANTIC_TOKEN_TYPES_COUNT =
     sizeof LSP_SEMANTIC_TOKEN_TYPES / sizeof LSP_SEMANTIC_TOKEN_TYPES[0];
@@ -39,10 +42,11 @@ const size_t LSP_SEMANTIC_TOKEN_MODIFIERS_COUNT =
 enum {
     SEM_NAMESPACE = 0,
     SEM_TYPE = 1,
-    SEM_PARAMETER = 2,
-    SEM_VARIABLE = 3,
-    SEM_FUNCTION = 4,
-    SEM_PROPERTY = 5,
+    SEM_CLASS = 2,  // 14.1: what a def^ made -- a type the writer declared
+    SEM_PARAMETER = 3,
+    SEM_VARIABLE = 4,
+    SEM_FUNCTION = 5,
+    SEM_PROPERTY = 6,
 };
 
 enum {
@@ -60,13 +64,17 @@ typedef struct {
     SemToken *tokens;
     size_t count;
     size_t capacity;
+    // What the checker decided about each name, for refine_by_type below.
+    // Borrowed; the walk does not outlive the unit.
+    const LhatUnit *unit;
 } SemCollector;
 
-static void collector_init(SemCollector *c)
+static void collector_init(SemCollector *c, const LhatUnit *unit)
 {
     c->tokens = NULL;
     c->count = 0;
     c->capacity = 0;
+    c->unit = unit;
 }
 
 static void collector_dispose(SemCollector *c)
@@ -74,12 +82,64 @@ static void collector_dispose(SemCollector *c)
     free(c->tokens);
 }
 
+#if LHAT_WITH_RESOLUTIONS
+// 05 の 8.6: a table names are reached through rather than one that holds a
+// value. The checker says so itself (type.h's is_module) -- the flag beside
+// it, `sealed`, answers a different question and would be wrong here: the
+// root of an import^ path is a namespace and is not sealed, because the
+// import writes into it.
+static bool names_a_namespace(const LhatType *type)
+{
+    return type->kind == LHAT_TYPE_TABLE && type->v.table.is_module;
+}
+
+// What the checker settled on, where the syntax could only say "a name".
+// `variable` and `property` are the two the walk falls back on when the
+// place a name stands does not say what it is; every other classification
+// was read off the form it was written in, and stands.
+static uint8_t refine_by_type(const SemCollector *c, uint32_t offset,
+                              uint8_t type)
+{
+    if (c->unit == NULL || (type != SEM_VARIABLE && type != SEM_PROPERTY)) {
+        return type;
+    }
+    const LhatResolution *resolved =
+        lhat_check_resolution_at(&c->unit->checked, offset);
+    if (resolved == NULL || resolved->type == NULL) {
+        return type;
+    }
+    const LhatType *settled = resolved->type;
+
+    // A definition first: it is the more particular answer, and 14.1's
+    // is_definition and 8.6's sealed never stand together.
+    if (settled->kind == LHAT_TYPE_TABLE && settled->v.table.is_definition) {
+        return SEM_CLASS;
+    }
+    if (names_a_namespace(settled)) {
+        return SEM_NAMESPACE;
+    }
+    if (settled->kind == LHAT_TYPE_FUNC) {
+        return SEM_FUNCTION;
+    }
+    // 04 の 2.2: what an errordef^ declared, and one kind within it. Both
+    // are written where a type is.
+    if (settled->kind == LHAT_TYPE_ERROR_SET ||
+        settled->kind == LHAT_TYPE_ERROR_KIND) {
+        return SEM_TYPE;
+    }
+    return type;
+}
+#endif  // LHAT_WITH_RESOLUTIONS
+
 static void collector_add(SemCollector *c, uint32_t offset, uint32_t length,
                           uint8_t type, uint8_t modifiers)
 {
     if (length == 0) {
         return;
     }
+#if LHAT_WITH_RESOLUTIONS
+    type = refine_by_type(c, offset, type);
+#endif
     if (c->count == c->capacity) {
         size_t grown = c->capacity ? c->capacity * 2 : 64;
         SemToken *bigger = (SemToken *)realloc(c->tokens, grown * sizeof *bigger);
@@ -282,20 +342,36 @@ static void walk_type(SemCollector *out, const LhatNode *node)
 // as well -- with the difference that 17.2's expression form puts an
 // ordinary expression where a binding would be. That is what `default`
 // answers: a position that binds nothing is still worth colouring.
+// 14.1: 'let^ Reader = def^{ … }' declares a type, and the name it declares
+// should read as one. The checker records nothing against a declaration --
+// it binds a name rather than resolving one -- so refine_by_type has
+// nothing to say here, and the answer comes off the tree instead: what the
+// target is being given. 13.10 pairs targets with values by position, which
+// is what walking the two lists together follows.
+static uint8_t declared_as(const LhatNode *value, uint8_t fallback)
+{
+    return value != NULL && value->kind == LHAT_NODE_DEF ? SEM_CLASS : fallback;
+}
+
 static void walk_targets(SemCollector *out, const LhatNode *targets,
-                         bool is_declaration)
+                         const LhatNode *values, bool is_declaration)
 {
     uint8_t mod = is_declaration ? SEM_MOD_DECLARATION : 0;
+    const LhatNode *value = values;
     for (const LhatNode *t = targets; t != NULL; t = t->next) {
+        uint8_t named = declared_as(value, SEM_VARIABLE);
+        if (value != NULL) {
+            value = value->next;
+        }
         switch (t->kind) {
             case LHAT_NODE_IDENT:
-                emit_name(out, t, SEM_VARIABLE, mod);
+                emit_name(out, t, named, mod);
                 break;
             case LHAT_NODE_PARAM:
                 // A type-annotated target: 'let^ x:number^ = 1'.
                 if (t->v.param.name != NULL &&
                     t->v.param.name->kind == LHAT_NODE_IDENT) {
-                    emit_name(out, t->v.param.name, SEM_VARIABLE, mod);
+                    emit_name(out, t->v.param.name, named, mod);
                 }
                 walk_type(out, t->v.param.type);
                 walk_value(out, t->v.param.fallback);
@@ -453,11 +529,13 @@ static void walk_value(SemCollector *out, const LhatNode *node)
             walk_value(out, node->v.clause.body);
             break;
         case LHAT_NODE_DEFINE:
-            walk_targets(out, node->v.binding.targets, true);
+            walk_targets(out, node->v.binding.targets, node->v.binding.values,
+                         true);
             walk_list(out, node->v.binding.values);
             break;
         case LHAT_NODE_REASSIGN:
-            walk_targets(out, node->v.binding.targets, false);
+            walk_targets(out, node->v.binding.targets, node->v.binding.values,
+                         false);
             walk_list(out, node->v.binding.values);
             break;
         case LHAT_NODE_BLOCK:
@@ -476,7 +554,9 @@ static void walk_value(SemCollector *out, const LhatNode *node)
             // (parser.c), so it takes every shape a let^ target does -- a
             // bare name, 'i:number^', a '.member' path, an index. The same
             // walk a define's targets get, then.
-            walk_targets(out, node->v.loop.focus, true);
+            // 16.3: a focus is given its value by the clause after it, not
+            // by a list beside it, so there is nothing to pair here.
+            walk_targets(out, node->v.loop.focus, NULL, true);
             walk_value(out, node->v.loop.bound);
             walk_value(out, node->v.loop.step);
             walk_list(out, node->v.loop.advance);
@@ -528,7 +608,7 @@ static int compare_tokens(const void *a, const void *b)
 cJSON *lsp_semantic_tokens_for_unit(const LhatUnit *unit)
 {
     SemCollector collector;
-    collector_init(&collector);
+    collector_init(&collector, unit);
     walk_value(&collector, unit->parsed.root);
 
     if (collector.count > 1) {

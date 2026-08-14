@@ -249,9 +249,109 @@ static void test_nothing(void)
     check_dispose(&c);
 }
 
+/** The offset of the first occurrence, which is where a name is declared. */
+static uint32_t first_offset(const Checked *c, const char *needle)
+{
+    const char *found = strstr(c->source.text, needle);
+    return found != NULL ? (uint32_t)(found - c->source.text) : 0;
+}
+
+// 14.10: a member is looked up in a type rather than in a scope, so there is
+// no binding to point at -- and for a type from another unit or from a host
+// registration there is nothing in this source to point at either. What it
+// is is still known, and that is what a reader wanted.
+static void test_member(void)
+{
+    Checked c;
+
+    LHAT_TEST("a member answers with its type, having no line to show");
+    check_text(&c,
+               "let^ point = { x = 1 }\n"
+               "print(point.x)\n");
+    char *text = hover_text(&c, last_offset(&c, "x)"));
+    expect_contains(text, "number^");
+    free(text);
+    check_dispose(&c);
+
+    LHAT_TEST("and a member holding a subroutine shows its signature");
+    check_text(&c,
+               "let^ shape = { area = f^ -> number^ { return^ 1 } }\n"
+               "print(shape.area())\n");
+    text = hover_text(&c, last_offset(&c, "area"));
+    expect_contains(text, "f^");
+    free(text);
+    check_dispose(&c);
+}
+
+// A declaration binds a name rather than resolving one, so the checker
+// records nothing against it and the answer is found by position instead.
+static void test_declaration(void)
+{
+    Checked c;
+
+    LHAT_TEST("a hover on the name a let^ declares shows that let^");
+    check_text(&c, "let^ answer = 42\nprint(answer)\n");
+    char *text = hover_text(&c, first_offset(&c, "answer"));
+    expect_contains(text, "let^ answer = 42");
+    free(text);
+    check_dispose(&c);
+
+    LHAT_TEST("and one on a parameter shows what declared it");
+    check_text(&c,
+               "let^ twice = f^n:number^ -> number^ {\n"
+               "    return^ n * 2\n"
+               "}\n");
+    text = hover_text(&c, first_offset(&c, "n:number^"));
+    expect_contains(text, "n:number^");
+    free(text);
+    check_dispose(&c);
+
+    // The span of a definition runs to the end of what it binds. Answering
+    // anywhere inside it would put a hover over every space in a body pages
+    // long, so only the name itself is asked about.
+    LHAT_TEST("a position that is not on a name answers nothing");
+    check_text(&c, "let^ wide = f^ -> number^ {\n    return^ 1\n}\n");
+    LHAT_CHECK(lsp_hover_for_unit(&c.unit, first_offset(&c, "   return^")) ==
+                   NULL,
+               "expected no hover on the blank before a statement");
+    check_dispose(&c);
+}
+
+// A name whose meaning comes from neither a scope nor a type: 15.10's this^
+// is the subroutine running, given by the body around it. Nothing in the
+// source declares it, so the type is the whole answer -- the same shape a
+// host-bound name like print takes (05 の 8.2), which needs a registration
+// behind it and is pinned against a running server instead.
+static void test_named_by_the_form(void)
+{
+    Checked c;
+
+    LHAT_TEST("15.10: this^ answers with the signature it stands for");
+    check_text(&c,
+               "let^ fact = f^n:number^ -> number^ {\n"
+               "    if^ n < 2 { return^ 1 }\n"
+               "    return^ n * this^(n - 1)\n"
+               "}\n");
+    char *text = hover_text(&c, last_offset(&c, "this^"));
+    expect_contains(text, "f^number^ -> number^;");
+    free(text);
+    check_dispose(&c);
+
+    // 07 の 4 章: the three literals are left unrecorded on purpose -- the
+    // spelling is already the answer, so a hover would repeat the word.
+    LHAT_TEST("and a literal keyword answers nothing, being its own answer");
+    check_text(&c, "let^ yes = true^\n");
+    LHAT_CHECK(lsp_hover_for_unit(&c.unit, last_offset(&c, "true^")) == NULL,
+               "expected no hover on true^");
+    check_dispose(&c);
+}
+
 int main(void)
 {
     test_definition();
+    test_member();
+    test_declaration();
+    test_named_by_the_form();
 #if LHAT_WITH_COMMENTS
     test_comments();
     test_module();

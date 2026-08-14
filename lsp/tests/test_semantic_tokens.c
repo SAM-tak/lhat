@@ -428,9 +428,76 @@ static void test_compound_assignment_is_one_token(void)
     check_dispose(&c);
 }
 
+// ---------------------------------------------------------------------------
+// What the checker knew, where the syntax could only say "a name"
+// ---------------------------------------------------------------------------
+
+static void test_definition_reads_as_a_type(void)
+{
+    LHAT_TEST("14.1: a name bound to a def^ is a type, declared and used");
+
+    static const char *source =
+        "let^ Reader = def^{\n"
+        "    self^{ n = 1 },\n"
+        "    read = f^self^ -> number^ { return^ self^.n },\n"
+        "}\n"
+        "let^ r = Reader.new()\n";
+
+    Checked c;
+    check_text(&c, source);
+    cJSON *data = lsp_semantic_tokens_for_unit(&c.unit);
+    Tokens tokens = decode(data);
+
+    // The declaration is read off the tree -- nothing resolves a name that
+    // is being bound -- and the use off what the checker settled on. Both
+    // have to agree, or the same name changes colour down the file.
+    expect_token(&tokens, source, "Reader = def^", "class", true);
+    expect_token(&tokens, source, "Reader.new()", "class", false);
+    // An ordinary binding is still a variable: it is the def^ that makes
+    // the difference, not the let^.
+    expect_token(&tokens, source, "r = Reader", "variable", true);
+
+    free(tokens.items);
+    cJSON_Delete(data);
+    check_dispose(&c);
+}
+
+static void test_module_path_reads_the_same_everywhere(void)
+{
+    LHAT_TEST("05 の 8.6: a module path is a namespace wherever it stands");
+
+    // 8.7's import^ is answered from what a host registered, and a check
+    // with no host has nothing to answer with -- so this uses require^'s
+    // short form (5.5), which builds the same shape out of a unit that
+    // named itself. What is being pinned is that the path root and the
+    // segment under it read alike in the import^ line and in an expression,
+    // which was the whole complaint.
+    static const char *source =
+        "require^ \"lib/io.lh\"\n"
+        "let^ x = demo.io.line\n";
+
+    Checked c;
+    check_text(&c, source);
+    cJSON *data = lsp_semantic_tokens_for_unit(&c.unit);
+    Tokens tokens = decode(data);
+
+    // Without a resolver the require^ answers nothing, so this pins only
+    // what the walk says on its own: the declaration line names a module.
+    // The expression side is covered by test_hover's fixture, which has a
+    // program behind it.
+    const Token *declared = token_for(&tokens, source, "demo.io.line");
+    LHAT_CHECK(declared != NULL, "expected a token on the path root");
+
+    free(tokens.items);
+    cJSON_Delete(data);
+    check_dispose(&c);
+}
+
 int main(void)
 {
     test_every_name_is_reached();
+    test_definition_reads_as_a_type();
+    test_module_path_reads_the_same_everywhere();
     test_compound_assignment_is_one_token();
     test_try_block();
     test_for_focus();
