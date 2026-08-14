@@ -119,6 +119,32 @@ static void check_span_text(const char *text, const LhatNode *(*pick)(const Pars
     parse_dispose(&p);
 }
 
+// Every kind has to answer with a name of its own. A kind left out of
+// lhat_node_kind_name's switch falls through to "?", which says nothing and
+// is indistinguishable from every other omission -- and lsp/ast_json.c hands
+// that straight to the visual editor as the node's kind (06 の 4.1). Three
+// kinds had been missing this way, so the count is checked rather than left
+// to whoever adds the next one.
+static void test_kind_names(void)
+{
+    LHAT_TEST("every node kind names itself");
+    for (int kind = 0; kind < LHAT_NODE_KIND_COUNT; kind++) {
+        const char *name = lhat_node_kind_name((LhatNodeKind)kind);
+        LHAT_CHECK(name != NULL && strcmp(name, "?") != 0,
+                   "node kind %d has no name of its own", kind);
+    }
+
+    LHAT_TEST("no two kinds answer with the same name");
+    for (int a = 0; a < LHAT_NODE_KIND_COUNT; a++) {
+        for (int b = a + 1; b < LHAT_NODE_KIND_COUNT; b++) {
+            const char *first = lhat_node_kind_name((LhatNodeKind)a);
+            const char *second = lhat_node_kind_name((LhatNodeKind)b);
+            LHAT_CHECK(strcmp(first, second) != 0,
+                       "kinds %d and %d both answer \"%s\"", a, b, first);
+        }
+    }
+}
+
 static void test_spans(void)
 {
     // Every construct, walked. The check is structural, so one realistic
@@ -3564,6 +3590,7 @@ static void test_stacked_hats(void)
 
 int main(void)
 {
+    test_kind_names();
     test_spans();
 #if LHAT_WITH_COMMENTS
     test_comments();

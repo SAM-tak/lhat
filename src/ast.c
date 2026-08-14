@@ -334,6 +334,8 @@ const char *lhat_node_kind_name(LhatNodeKind kind)
         case LHAT_NODE_SELF_TABLE:     return "self-table";
         case LHAT_NODE_ERROR_NEW:      return "error-new";
         case LHAT_NODE_TRY:            return "try";
+        case LHAT_NODE_TYPEOF:         return "typeof";
+        case LHAT_NODE_SPREAD:         return "spread";
         case LHAT_NODE_ERRORDEF:       return "errordef";
         case LHAT_NODE_ERROR_KIND:     return "error-kind";
         case LHAT_NODE_MODULE:         return "module";
@@ -360,6 +362,7 @@ const char *lhat_node_kind_name(LhatNodeKind kind)
         case LHAT_NODE_RETURN:         return "return";
         case LHAT_NODE_BREAK:          return "break";
         case LHAT_NODE_NEXT:           return "next";
+        case LHAT_NODE_PANIC:          return "panic";
         case LHAT_NODE_YIELD:          return "yield";
         case LHAT_NODE_YIELD_ALL:      return "yieldall";
         case LHAT_NODE_WITH:           return "with";

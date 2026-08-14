@@ -21,7 +21,12 @@ const MAX_LABEL = 48;
 
 // 5.3's table, by kind.
 const STATEMENT_LIST = new Set(["block"]);
-const BRANCH = new Set(["if-stmt", "if-expr"]);
+// 04 の 4.5's try^{ } is here too: its items are if-clause nodes like an
+// if^ statement's, the first being the body and the rest the catch arms. The
+// body is not one of the alternatives, but it reads well enough at the left
+// of them, and leaving try-block out of every table is what collapsed a
+// whole try^{ } into a single leaf.
+const BRANCH = new Set(["if-stmt", "if-expr", "try-block"]);
 const ELEMENT_LIST = new Set([
     "table", "def", "self-table", "error-new", "errordef", "type-table",
 ]);
@@ -31,8 +36,8 @@ const VOICE_TURN = new Set(["func"]);
 // V6: types are not drawn -- they ride along in the label of whatever they
 // annotate. V5: the same for declaration lists.
 const NOT_DRAWN = new Set([
-    "type-name", "type-func", "type-coro", "type-table", "type-union",
-    "type-intersect", "param", "member-decl", "error-kind",
+    "type-name", "type-func", "type-coro", "type-table", "type-tuple",
+    "type-union", "type-intersect", "param", "member-decl", "error-kind",
 ]);
 
 // 5.6: the name a binding introduces and the condition a clause carries are
@@ -282,11 +287,14 @@ export function toElk(reply: AstReply, options: MapOptions = {}): ElkNode {
             };
         }
 
-        // 5.2, statements included.
+        // 5.2, statements included. The label is taken again with nothing cut
+        // out: a leaf draws none of its children, so there are no holes to
+        // leave. Cutting them here emptied the label of anything whose one
+        // child covers the whole of it -- 'print(x)' read as "call-stmt".
         if (!STATEMENT_LIST.has(kind) && !BRANCH.has(kind) &&
             !ELEMENT_LIST.has(kind) && !VOICE_TURN.has(kind) &&
             !BODY_STATEMENT.has(kind) && !holdsBranchOrBody(node)) {
-            return leaf(node, label);
+            return leaf(node, labelOf(node, source, []));
         }
 
         // Past a subroutine or definition, the way down has been walked: what

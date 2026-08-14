@@ -2797,7 +2797,11 @@ static LhatNode *parse_try_block(Parser *p)
         return finish(p, node);
     }
     body->v.clause.condition = NULL;
-    body->v.clause.body = parse_block_body(p, &brace);
+    // From after the '{', not from the brace itself. Starting both the clause
+    // and its body there would make the two spans identical, and a tool
+    // showing the clause could not tell what it is from what it does -- the
+    // same reason an el^ clause's body starts after its ':' (parse_if_body).
+    body->v.clause.body = parse_block_body(p, &p->current);
     lhat_node_append(&head, &tail, finish(p, body));
 
     // Inside these braces every catch^ is an arm, so the word alone is the
