@@ -255,6 +255,55 @@ static void test_strings(void)
     CHECK_INTEGER(&r, 1);
     run_dispose(&r);
 
+    // 11.9改: an op^= answers '=' itself rather than through zero, so what
+    // it says stands even where an ordering would disagree -- that is the
+    // whole reason a type writes one.
+    LHAT_TEST("an op^= answers equality on its own");
+    run_text(&r,
+             "var^ V = def^{\n"
+             "  self^{ n := 0 },\n"
+             "  op^= := f^self^, o:V -> bool^ "
+             "{ return^ self^.n % 10 = o.n % 10 },\n"
+             "}\n"
+             "var^ a = V.new()\n"
+             "var^ b = V.new()\n"
+             "b.n := 10\n"
+             "if^ a = b and^ !(a \xE2\x89\xA0 b) { return^ 1 }\n"
+             "return^ 0\n");
+    CHECK_INTEGER(&r, 1);
+    run_dispose(&r);
+
+    // Written both ways, '=' reads the op^= and the orderings the '<=>'.
+    // The two disagree here on purpose: only the op^= being asked first
+    // makes this answer 1.
+    LHAT_TEST("and it is asked before the op^<=>");
+    run_text(&r,
+             "var^ V = def^{\n"
+             "  self^{ n := 0 },\n"
+             "  op^= := f^self^, o:V -> bool^ { return^ true^ },\n"
+             "  op^<=> := f^self^, o:V -> number^ { return^ self^.n - o.n },\n"
+             "}\n"
+             "var^ a = V.new()\n"
+             "var^ b = V.new()\n"
+             "b.n := 7\n"
+             "if^ a = b and^ a < b { return^ 1 }\n"
+             "return^ 0\n");
+    CHECK_INTEGER(&r, 1);
+    run_dispose(&r);
+
+    // 11.3改: the right operand may carry it, the same as any other operator.
+    LHAT_TEST("and a self^-last op^= answers from the right");
+    run_text(&r,
+             "var^ V = def^{\n"
+             "  self^{ n := 3 },\n"
+             "  op^= := f^lhs:number^, self^ -> bool^ "
+             "{ return^ lhs = self^.n },\n"
+             "}\n"
+             "if^ 3 = V.new() and^ !(4 = V.new()) { return^ 1 }\n"
+             "return^ 0\n");
+    CHECK_INTEGER(&r, 1);
+    run_dispose(&r);
+
     // 11.9: number^ and string^ order their own, which is what a written
     // '"a" < "b"' had nothing to reach for before.
     LHAT_TEST("the built-in types order their own");

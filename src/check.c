@@ -1014,6 +1014,7 @@ void chk_check_operator_shape(Checker *c, const LhatNode *at,
                               size_t length)
 {
     bool compares = length == 3 && memcmp(name, "<=>", 3) == 0;
+    bool equals = length == 1 && name[0] == '=';  // 11.9改
     bool may_be_unary = length == 1 && name[0] == '-';
     if (type == NULL || type->kind == LHAT_TYPE_UNKNOWN ||
         type->kind == LHAT_TYPE_PENDING) {
@@ -1057,6 +1058,14 @@ void chk_check_operator_shape(Checker *c, const LhatNode *at,
                      !lhat_type_conforms(type->v.func.result,
                                          chk_simple(c, LHAT_TYPE_NUMBER)))) {
         chk_report(c, at, LHAT_CHECK_ERR_COMPARE_NOT_NUMBER);
+    }
+    // 11.9改: an '=' is read as it stands rather than against zero, and
+    // 5.4 makes bool^ the one thing a condition may be -- so that is what
+    // the answer has to be.
+    if (equals && (type->v.func.result == NULL ||
+                   !lhat_type_conforms(type->v.func.result,
+                                       chk_simple(c, LHAT_TYPE_BOOL)))) {
+        chk_report(c, at, LHAT_CHECK_ERR_EQUAL_NOT_BOOL);
     }
 }
 
@@ -2314,6 +2323,9 @@ const char *lhat_check_error_message(LhatCheckErrorCode code)
         case LHAT_CHECK_ERR_COMPARE_NOT_NUMBER:
             return "op^<=> answers a number^: '<' and the rest read which "
                    "side of zero the answer falls on";
+        case LHAT_CHECK_ERR_EQUAL_NOT_BOOL:
+            return "op^= answers a bool^: '=' takes it as it stands, and "
+                   "'\xE2\x89\xA0' negates it";
         case LHAT_CHECK_ERR_NOT_ORDERED:
             return "nothing here says how these compare: an ordering is read "
                    "off '<=>', and neither side carries one that takes the "

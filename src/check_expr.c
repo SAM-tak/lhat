@@ -72,26 +72,40 @@ static const LhatType *operator_arm(const LhatType *carrier,
     return carrier;
 }
 
-// 11.9: whether one of the two carries a '<=>' taking the other, which
-// is what an ordering is read off. 3.5: wherever inference has not decided,
-// this says nothing rather than reporting -- the machine asks the same
-// question of the actual values.
-static bool ordered_pair(Checker *c, LhatType *left, LhatType *right)
+// 11.9: whether one of the two carries an operator of this name taking the
+// other, which is what the comparison is read off. 3.5: wherever inference
+// has not decided, this says nothing rather than reporting -- the machine
+// asks the same question of the actual values.
+static bool compares_by(Checker *c, LhatType *left, LhatType *right,
+                        const char *name, size_t length)
 {
-    if (chk_operator_undecided(left) || chk_operator_undecided(right)) {
-        return true;
-    }
     LhatType *args[1];
     args[0] = right;
-    if (operator_arm(chk_operator_member(c, left, "<=>", 3), args, 1, false) !=
-        NULL) {
+    if (operator_arm(chk_operator_member(c, left, name, length), args, 1,
+                     false) != NULL) {
         return true;
     }
     // 11.3改: or the right operand carries one written as the receiver, which
     // is how a value joins a comparison whose left side is a built-in.
     args[0] = left;
-    return operator_arm(chk_operator_member(c, right, "<=>", 3), args, 1,
+    return operator_arm(chk_operator_member(c, right, name, length), args, 1,
                         true) != NULL;
+}
+
+// 11.9 with 11.9改: what says how these two compare. An ordering has only
+// '<=>' to read; '=' and '≠' read an op^= first and fall back on '<=>',
+// which is the same order the machine looks them up in.
+static bool related_pair(Checker *c, LhatOpKind op, LhatType *left,
+                         LhatType *right)
+{
+    if (chk_operator_undecided(left) || chk_operator_undecided(right)) {
+        return true;
+    }
+    if ((op == LHAT_OP_EQ || op == LHAT_OP_NE) &&
+        compares_by(c, left, right, "=", 1)) {
+        return true;
+    }
+    return compares_by(c, left, right, "<=>", 3);
 }
 
 // 11.5 の (5) with 11.9: one link of a comparison, asked the same way whether
@@ -100,11 +114,11 @@ static bool ordered_pair(Checker *c, LhatType *left, LhatType *right)
 static LhatType *check_comparison(Checker *c, const LhatNode *at, LhatOpKind op,
                                   LhatType *left, LhatType *right)
 {
-    // 11.9: a '<=>' taking the two is what says how they compare, and
+    // 11.9: an operator taking the two is what says how they compare, and
     // it is asked first. One written across two types -- 11.3改 lets the
     // right operand carry it -- relates a pair that 14.12 would otherwise
     // call separate, so the judgement below has to come second.
-    bool related = ordered_pair(c, left, right);
+    bool related = related_pair(c, op, left, right);
 
     // 14.12's disjointness says whether any value inhabits both. If none
     // does, and nothing says how they compare either, the answer is fixed
@@ -115,8 +129,8 @@ static LhatType *check_comparison(Checker *c, const LhatNode *at, LhatOpKind op,
     }
     // An ordering has nothing but a '<=>' to read. Equality is a different
     // matter and is left alone -- every value is the same as itself or not,
-    // whatever it is (14.2), and a '<=>' only refines that for a type that
-    // writes one.
+    // whatever it is (14.2), and an op^= or a '<=>' only refines that for a
+    // type that writes one.
     if (!related && op != LHAT_OP_EQ && op != LHAT_OP_NE && op != LHAT_OP_IS) {
         chk_report(c, at, LHAT_CHECK_ERR_NOT_ORDERED);
     }

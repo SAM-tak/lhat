@@ -2468,9 +2468,9 @@ static void test_loop_clauses(void)
 
     // 11.8: and^, or^ and '!' are the language's own logic, and 11.5's
     // comparisons decide by disjointness rather than by asking a type.
-    // 11.9: and a comparison is not written one by one -- op^<=> is
-    // what answers all six, so that is what a written op^< is pointed at.
-    LHAT_TEST("but a comparison is not one to define");
+    // 11.9: and an ordering is not written one by one -- op^<=> is
+    // what answers all four, so that is what a written op^< is pointed at.
+    LHAT_TEST("but an ordering is not one to define");
     parse_text(&p,
                "V := def^{ self^{}, op^< := f^self^, o:number^ -> bool^ { "
                "return^ true^ } }");
@@ -2486,6 +2486,27 @@ static void test_loop_clauses(void)
                "V := def^{ self^{}, op^<=> := f^self^, o:V -> number^ { "
                "return^ 0 } }");
     LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    parse_dispose(&p);
+
+    // 11.9改: and so is '=' on its own -- a type may know what equals what
+    // with no order to put its values in.
+    LHAT_TEST("and so is the equality");
+    parse_text(&p,
+               "V := def^{ self^{}, op^= := f^self^, o:V -> bool^ { "
+               "return^ true^ } }");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    parse_dispose(&p);
+
+    // '≠' is not: 11.9改 reads it off whichever of the two the type wrote.
+    LHAT_TEST("but its negation is still read off what answered");
+    parse_text(&p,
+               "V := def^{ self^{}, op^\xE2\x89\xA0 := f^self^, o:V -> bool^ { "
+               "return^ true^ } }");
+    LHAT_CHECK(p.result.diagnostic_count > 0, "expected a diagnostic");
+    if (p.result.diagnostic_count > 0) {
+        LHAT_CHECK_EQ_INT(p.result.diagnostics[0].code,
+                          LHAT_PARSE_ERR_COMPARISON_NOT_DEFINABLE);
+    }
     parse_dispose(&p);
 
     // 8.6改: nor is a compound spelling. 'a += b' is 'a := a + b', so what it

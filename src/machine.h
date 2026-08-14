@@ -85,6 +85,10 @@ typedef struct {
     // place a frame's answer is not the value of the expression that made it.
     // LHAT_FRAME_NO_DERIVE means an ordinary call, which every other frame is.
     LhatOpcode derive;
+    // 02 の 11.9改: what answered was an op^= rather than an op^<=>, so the
+    // bool^ it hands back is the judgement itself. `derive` still says which
+    // comparison was written -- '≠' negates what comes back.
+    bool derive_equal;
 } Frame;
 
 // 02 の 13.8改: the room above holds one head slot plus the positions, and a

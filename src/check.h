@@ -156,6 +156,9 @@ typedef enum {
                                         // change, which 01 の 8.3 refused
     LHAT_CHECK_ERR_COMPARE_NOT_NUMBER,  // 11.9: an op^<=> answers a number^,
                                         // which is what the orderings read
+    LHAT_CHECK_ERR_EQUAL_NOT_BOOL,      // 11.9改: an op^= answers a bool^,
+                                        // which '=' takes as it stands and
+                                        // '≠' negates
     LHAT_CHECK_ERR_NOT_ORDERED,         // 11.9: an ordering is read off '<=>',
                                         // and neither side carries one taking
                                         // the other

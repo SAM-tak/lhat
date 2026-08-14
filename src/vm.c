@@ -2034,25 +2034,18 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
                 break;
             }
 
-            // 11.9: a type saying how it compares says what equality
-            // means as well, so a table is asked before 14.2's own answer is
-            // taken. Nothing carrying a '<=>' falls back to that answer, which
-            // is what leaves every other table exactly as it was.
+            // 11.9 with 11.9改: a type saying what equals what is asked
+            // before the default answer is taken. The member is looked for
+            // as '=' first and as '<=>' second, and whatever neither answers
+            // falls back on what the value was already the same as -- 14.2's
+            // identity for a table, 05 の 8.9's bytes for a host value. That
+            // is what leaves every other value exactly as it was.
             case LHAT_BC_EQ:
             case LHAT_BC_NE:
-                // 05 の 8.9: byte equality under the same tag. Asked before
-                // the raw compare below, which would read the heads alone
-                // and call two same-typed values equal whatever their bytes.
-                if (lhat_is_hostvalue(R(b)) || lhat_is_hostvalue(R(cc))) {
-                    bool equal = lhat_is_hostvalue(R(b)) &&
-                                 hostvalue_equal(m->slots, rbase + b,
-                                                 rbase + cc);
-                    SET_R(a, lhat_bool(equal == (op == LHAT_BC_EQ)));
-                    break;
-                }
-                if (table_of(R(b)) != NULL || table_of(R(cc)) != NULL) {
+                if (table_of(R(b)) != NULL || table_of(R(cc)) != NULL ||
+                    lhat_is_hostvalue(R(b)) || lhat_is_hostvalue(R(cc))) {
                     derive_from = op;
-                    op = LHAT_BC_SPACESHIP;
+                    op = LHAT_BC_EQ;  // the name to look for; '≠' has none
                     goto call_operator;
                 }
                 SET_R(a, lhat_bool(lhat_value_equal(R(b), R(cc)) ==
@@ -3367,6 +3360,7 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
                     called->disposing = false;
                     called->drop_answer = false;  // 5.3
                     called->derive = LHAT_FRAME_NO_DERIVE;
+                    called->derive_equal = false;
                     called->returning = false;
                     called->cleanup_count = co->cleanup_count;
                     for (size_t i = 0; i < co->cleanup_count; i++) {
@@ -3595,6 +3589,7 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
                 called->coroutine = NULL;
                 called->disposing = false;
                 called->derive = LHAT_FRAME_NO_DERIVE;
+                called->derive_equal = false;
                 called->drop_answer = false;  // 5.3
 
                 frame = called;
@@ -3944,6 +3939,7 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
                 called->coroutine = co;
                 called->disposing = false;
                 called->derive = LHAT_FRAME_NO_DERIVE;
+                called->derive_equal = false;
                 called->drop_answer = false;  // 5.3
                 called->returning = false;
                 called->cleanup_count = co->cleanup_count;
@@ -3972,48 +3968,75 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
     // own types directly and come here for everything else, which is why the
     // built-in cases pay nothing for this.
     call_operator: {
-        size_t length = 0;
-        const char *name = operator_name(op, &length);
         // 11.8改: NEG is the one instruction arriving here with a single
         // operand. Everything below reads 'cc' only where a right operand
         // exists, so the unary path leaves that register untouched -- NEG
         // never wrote one.
         bool unary = op == LHAT_BC_NEG;
         uint8_t given = unary ? 0 : 1;
-        // 14.4 makes an operator a method: the left operand is the receiver
-        // and the right one the single argument.
         LhatValue found = lhat_nil();
-        OperatorLookup answer =
-            operator_candidate(m, R(b), name, length, R(b),
-                               unary ? lhat_nil() : R(cc), given, false, &found);
-        // 11.3改: the left carries nothing that takes this right
-        // operand, so the right one is asked whether it was written as the
-        // receiver instead. This is what lets a value join an operation whose
-        // left operand is a built-in, which can carry no answer for it.
-        //
-        // 11.8改: a unary operator has no other side to ask. Its one operand
-        // is the receiver by the only reading there is.
-        if (!unary &&
-            (answer == OPERATOR_ABSENT || answer == OPERATOR_NO_CANDIDATE)) {
-            LhatValue other = lhat_nil();
-            OperatorLookup right = operator_candidate(
-                m, R(cc), name, length, R(cc), R(b), given, true, &other);
-            if (right == OPERATOR_PICKED || right == OPERATOR_NO_MEMORY) {
-                found = other;
-                answer = right;
+        OperatorLookup answer = OPERATOR_ABSENT;
+        for (;;) {
+            size_t length = 0;
+            const char *name = operator_name(op, &length);
+            // 14.4 makes an operator a method: the left operand is the
+            // receiver and the right one the single argument.
+            answer = operator_candidate(m, R(b), name, length, R(b),
+                                        unary ? lhat_nil() : R(cc), given,
+                                        false, &found);
+            // 11.3改: the left carries nothing that takes this right
+            // operand, so the right one is asked whether it was written as
+            // the receiver instead. This is what lets a value join an
+            // operation whose left operand is a built-in, which can carry no
+            // answer for it.
+            //
+            // 11.8改: a unary operator has no other side to ask. Its one
+            // operand is the receiver by the only reading there is.
+            if (!unary &&
+                (answer == OPERATOR_ABSENT || answer == OPERATOR_NO_CANDIDATE)) {
+                LhatValue other = lhat_nil();
+                OperatorLookup right = operator_candidate(
+                    m, R(cc), name, length, R(cc), R(b), given, true, &other);
+                if (right == OPERATOR_PICKED || right == OPERATOR_NO_MEMORY) {
+                    found = other;
+                    answer = right;
+                }
             }
+            // 11.9改: an equality was looked for as '=' first. A type that
+            // wrote none may still have said how it orders, and 11.9 has
+            // that refine equality too -- so the other name is asked before
+            // the default is taken.
+            if (answer != OPERATOR_PICKED && op == LHAT_BC_EQ &&
+                derive_from != LHAT_FRAME_NO_DERIVE) {
+                op = LHAT_BC_SPACESHIP;
+                continue;
+            }
+            break;
         }
+        // 11.9改: which of the two answered, and so how what comes back is
+        // read -- an op^= answers the bool^ itself, a '<=>' a number^ to put
+        // beside zero.
+        bool answered_bool = op == LHAT_BC_EQ;
         if (answer == OPERATOR_NO_MEMORY) {
             return finish(m, chunk, LHAT_RUN_OUT_OF_MEMORY, lhat_nil(), at);
         }
-        // 11.9: equality is answered whether or not a '<=>' was
-        // written -- 14.2 says what a table is the same as, and a type that
-        // orders itself only refines that. An ordering has no such answer to
-        // fall back on and faults the way it always did.
+        // 11.9: equality is answered whether or not either was written --
+        // 14.2 says what a table is the same as and 05 の 8.9 what a host
+        // value is, and a type that says more only refines that. An ordering
+        // has no such answer to fall back on and faults the way it always did.
         if (answer != OPERATOR_PICKED &&
             (derive_from == LHAT_BC_EQ || derive_from == LHAT_BC_NE)) {
-            SET_R(a, lhat_bool(lhat_value_equal(R(b), R(cc)) ==
-                               (derive_from == LHAT_BC_EQ)));
+            bool equal;
+            if (lhat_is_hostvalue(R(b)) || lhat_is_hostvalue(R(cc))) {
+                // 05 の 8.9: the bytes under the same tag. Reading the heads
+                // alone would call two same-typed values equal whatever they
+                // hold.
+                equal = lhat_is_hostvalue(R(b)) &&
+                        hostvalue_equal(m->slots, rbase + b, rbase + cc);
+            } else {
+                equal = lhat_value_equal(R(b), R(cc));
+            }
+            SET_R(a, lhat_bool(equal == (derive_from == LHAT_BC_EQ)));
             continue;  // the label sits in the loop, not in the switch
         }
         if (answer == OPERATOR_NO_CANDIDATE) {
@@ -4039,10 +4062,21 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
             LhatValue answered = carried_host->call(m, carried_host->context,
                                                     operands, unary ? 1 : 2);
             if (derive_from != LHAT_FRAME_NO_DERIVE) {
-                // 11.9: what came back is read against zero.
                 bool held = false;
                 LhatRunStatus status = LHAT_RUN_OK;
-                if (derive_from == LHAT_BC_EQ || derive_from == LHAT_BC_NE) {
+                if (answered_bool) {
+                    // 11.9改: an op^= answers the judgement itself. The shape
+                    // rule asks it for a bool^, so anything else is a body
+                    // that did not keep to its signature.
+                    if (!lhat_is_bool(answered)) {
+                        return finish(m, chunk, LHAT_RUN_TYPE_ERROR,
+                                      lhat_nil(), at);
+                    }
+                    held = lhat_as_bool(answered) ==
+                           (derive_from == LHAT_BC_EQ);
+                } else if (derive_from == LHAT_BC_EQ ||
+                           derive_from == LHAT_BC_NE) {
+                    // 11.9: what came back is read against zero.
                     held = lhat_value_equal(answered, lhat_integer(0)) ==
                            (derive_from == LHAT_BC_EQ);
                 } else if (!ordering(derive_from, answered, lhat_integer(0),
@@ -4119,6 +4153,9 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
         // 11.9: an ordering that reached for '<=>' wants the answer
         // read against zero, not handed over as it is.
         entered->derive = derive_from;
+        // 11.9改: unless what answered was an op^=, whose bool^ is the
+        // judgement itself -- `derive` then says only whether to negate it.
+        entered->derive_equal = answered_bool;
 
         frame = entered;
         rbase = frame->base;
@@ -4232,6 +4269,7 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
             // asked a number^ of it, and what was written asks which side of
             // zero that falls on.
             LhatOpcode derived = frame->derive;
+            bool derived_equal = frame->derive_equal;
             frame = &m->frames[m->frame_count - 1];
             rbase = frame->base;
             chunk = &frame->closure->proto->chunk;
@@ -4239,7 +4277,16 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
             if (derived != LHAT_FRAME_NO_DERIVE) {
                 bool held = false;
                 LhatRunStatus status = LHAT_RUN_OK;
-                if (derived == LHAT_BC_EQ || derived == LHAT_BC_NE) {
+                if (derived_equal) {
+                    // 11.9改: an op^= answered, and its bool^ is the
+                    // judgement. The shape rule asks it for one, so anything
+                    // else is a body that did not keep to its signature.
+                    if (!lhat_is_bool(value)) {
+                        return finish(m, chunk, LHAT_RUN_TYPE_ERROR,
+                                      lhat_nil(), at);
+                    }
+                    held = lhat_as_bool(value) == (derived == LHAT_BC_EQ);
+                } else if (derived == LHAT_BC_EQ || derived == LHAT_BC_NE) {
                     held = lhat_value_equal(value, lhat_integer(0)) ==
                            (derived == LHAT_BC_EQ);
                 } else if (!ordering(derived, value, lhat_integer(0), &held,
@@ -4346,6 +4393,7 @@ LhatRunResult lhat_run(LhatMachine *m, const LhatProto *proto)
     frame->coroutine = NULL;
     frame->disposing = false;
     frame->derive = LHAT_FRAME_NO_DERIVE;
+    frame->derive_equal = false;
     frame->drop_answer = false;  // 5.3
     frame->answer = lhat_nil();
 
@@ -4448,6 +4496,7 @@ LhatRunResult lhat_machine_call(LhatMachine *machine, LhatValue callee,
     called->coroutine = NULL;
     called->disposing = false;
     called->derive = LHAT_FRAME_NO_DERIVE;
+    called->derive_equal = false;
     called->drop_answer = false;  // 5.3
     called->answer = lhat_nil();
 

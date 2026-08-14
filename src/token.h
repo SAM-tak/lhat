@@ -132,7 +132,11 @@ typedef enum {
 } LhatOpKind;
 
 // 02 の 11.8 with 11.9: the spellings op^ may write -- '..', the seven
-// arithmetic operators and '<=>'. One list, expanded three ways: the
+// arithmetic operators, '<=>' and '='. The last is the one comparison
+// written on its own: a type may know what equals what without knowing what
+// comes first, and 11.9 has '=' and '≠' read it before reaching for '<=>'.
+// The other four comparisons are read off '<=>' alone. One list, expanded
+// three ways: the
 // checker's member naming, the machine's candidate lookup, and the
 // membership test. They have to agree byte for byte, and one list is what
 // makes them. X(op, bc, spelling, length): `op` completes LHAT_OP_##op and
@@ -140,6 +144,7 @@ typedef enum {
 // IDIV as an instruction.
 #define LHAT_OPERATOR_MEMBERS(X) \
     X(SPACESHIP, SPACESHIP, "<=>", 3) \
+    X(EQ,        EQ,        "=",   1) \
     X(CONCAT,    CONCAT,    "..",  2) \
     X(ADD,       ADD,       "+",   1) \
     X(SUB,       SUB,       "-",   1) \

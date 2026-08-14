@@ -148,11 +148,14 @@ static void refuse_extra_hats(Parser *p, const LhatToken *token);
 static bool compound_assign_op(LhatOpKind token_op, LhatOpKind *base_op);
 
 // 11.9: the comparisons a type answers through '<=>' rather than one by
-// one. is^ and isa^ are not among them -- one asks identity and the other a
-// type, and neither is anything a value's own order decides.
+// one. '=' is not among them any more -- 11.9改 lets a type write that one
+// on its own, since knowing what equals what does not mean knowing what
+// comes first. '≠' stays derived, from whichever of the two answered.
+// is^ and isa^ are not among them either -- one asks identity and the other
+// a type, and neither is anything a value's own order decides.
 static bool is_derived_comparison(LhatOpKind op)
 {
-    return op == LHAT_OP_EQ || op == LHAT_OP_NE || op == LHAT_OP_LT ||
+    return op == LHAT_OP_NE || op == LHAT_OP_LT ||
            op == LHAT_OP_GT || op == LHAT_OP_LE || op == LHAT_OP_GE;
 }
 
@@ -1107,10 +1110,14 @@ static LhatNode *parse_def(Parser *p)
             LhatToken symbol = p->current;
             // 11.8: '..' and the arithmetic of 11.4. and^, or^ and '!' stay
             // built in, and 11.5's comparisons are not written one by one --
-            // 11.9 has '<=>' answer for all of them at once, so that is
-            // the one comparison an op^ takes.
+            // 11.9 has '<=>' answer for the orderings at once.
+            //
+            // 11.9改: '=' is the exception. A type may know what equals what
+            // with no order to put its values in, and writing a '<=>' for it
+            // would be answering a question it has no answer to.
             bool definable = symbol.kind == LHAT_TOKEN_OP &&
                              (symbol.v.op == LHAT_OP_SPACESHIP ||
+                              symbol.v.op == LHAT_OP_EQ ||
                               symbol.v.op == LHAT_OP_CONCAT ||
                               symbol.v.op == LHAT_OP_ADD ||
                               symbol.v.op == LHAT_OP_SUB ||
@@ -4223,9 +4230,12 @@ const char *lhat_parse_error_message(LhatParseErrorCode code)
                    "'a += b' is 'a := a + b', so it is op^+ that decides what "
                    "it does";
         case LHAT_PARSE_ERR_COMPARISON_NOT_DEFINABLE:
-            return "the comparisons are not written one by one: op^<=> "
-                   "answers with a number^, and '<', '>', '\xE2\x89\xA6', "
-                   "'\xE2\x89\xA7', '=' and '\xE2\x89\xA0' are all read off it";
+            return "the orderings are not written one by one: op^<=> "
+                   "answers with a number^, and '<', '>', '\xE2\x89\xA6' and "
+                   "'\xE2\x89\xA7' are all read off it. A type that knows what "
+                   "equals what but puts its values in no order writes op^= "
+                   "instead, which answers a bool^; '\xE2\x89\xA0' is read off "
+                   "whichever of the two it has";
         case LHAT_PARSE_ERR_EXPECTED_MEMBER:
             return "a def^ holds 'name := value' members and one self^{ ... }";
         case LHAT_PARSE_ERR_FIELD_NEEDS_NAME:

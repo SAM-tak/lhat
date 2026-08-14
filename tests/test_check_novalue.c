@@ -558,6 +558,55 @@ static void test_no_value(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_COMPARE_NOT_NUMBER);
     unit_dispose(&u);
 
+    // 11.9改: a type may know what equals what and put its values in no
+    // order at all. Then '=' and '≠' read the op^= it wrote, and the four
+    // orderings have nothing to read -- which is exactly what it means.
+    LHAT_TEST("an op^= answers equality on its own");
+    check_text(&u,
+               "var^ V = def^{\n"
+               "  self^{ n := 0 },\n"
+               "  op^= := f^self^, o:V -> bool^ { return^ true^ },\n"
+               "}\n"
+               "var^ a : bool^ = V.new() = V.new()\n"
+               "var^ b : bool^ = V.new() \xE2\x89\xA0 V.new()\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("and leaves the orderings with nothing to read");
+    check_text(&u,
+               "var^ V = def^{\n"
+               "  self^{ n := 0 },\n"
+               "  op^= := f^self^, o:V -> bool^ { return^ true^ },\n"
+               "}\n"
+               "var^ a = V.new() < V.new()\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_NOT_ORDERED);
+    unit_dispose(&u);
+
+    // '=' takes what an op^= answers as it stands, so it has to be a bool^ --
+    // the same rule the '<=>' above is held to, one type over.
+    LHAT_TEST("op^= answers a bool^");
+    check_text(&u,
+               "var^ V = def^{\n"
+               "  self^{ n := 0 },\n"
+               "  op^= := f^self^, o:V -> number^ { return^ 1 },\n"
+               "}\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_EQUAL_NOT_BOOL);
+    unit_dispose(&u);
+
+    // Both of them is not a contradiction: one says what equals what, the
+    // other how they order, and 11.9改 has '=' read the first.
+    LHAT_TEST("and a type may write both");
+    check_text(&u,
+               "var^ V = def^{\n"
+               "  self^{ n := 0 },\n"
+               "  op^= := f^self^, o:V -> bool^ { return^ true^ },\n"
+               "  op^<=> := f^self^, o:V -> number^ { return^ self^.n },\n"
+               "}\n"
+               "var^ a : bool^ = V.new() = V.new()\n"
+               "var^ b : bool^ = V.new() < V.new()\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
     // 11.3改: written with the self^ last it relates a pair 14.12 would
     // otherwise call separate, so the disjointness rule gives way to it.
     LHAT_TEST("a self^-last one orders against a built-in");

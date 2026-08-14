@@ -538,6 +538,20 @@ static LhatValue host_counter_minus(LhatMachine *machine, void *context,
     return lhat_integer(c.n - lhat_as_integer(arguments[1]));
 }
 
+// f^self^, o:test.c.C -> bool^; -- 02 の 11.9改's op^= for a host value.
+// It answers no to everything, including two whose bytes are the same, which
+// is what tells it apart from 05 の 8.9's default: byte equality could never
+// answer that, so a false here is the registration being asked.
+static LhatValue host_counter_never_equal(LhatMachine *machine, void *context,
+                                          const LhatValue *arguments,
+                                          size_t count)
+{
+    (void)machine;
+    (void)context;
+    (void)arguments;
+    return count == 2 ? lhat_bool(false) : lhat_nil();
+}
+
 // f^lhs:number^, self^ -> number^; -- 02 の 11.3改's trailing self^, so the
 // receiver is the operand written on the RIGHT and 'n + v' finds it.
 static LhatValue host_counter_radd(LhatMachine *machine, void *context,
@@ -1319,6 +1333,80 @@ static void test_hostvalue_escape(void)
             LHAT_CHECK_EQ_INT(ran.status, LHAT_RUN_OK);
             // 7000 + 500 + 170 + 99 - 99
             LHAT_CHECK_EQ_INT(lhat_as_integer(ran.value), 7670);
+            lhat_machine_dispose(machine);
+        }
+    }
+    lhat_program_dispose(&program);
+
+    // 05 の 8.9 with 02 の 11.9改: the bytes are what a host value answers
+    // when nothing was written, and a written op^= is not nothing. These two
+    // are byte for byte the same, so the registration is the only thing that
+    // can make '=' say no.
+    LHAT_TEST("a registered op^= decides a host value's equality");
+    {
+        static const File files[] = {
+            {"main.lh",
+             "import^ test.c\n"
+             "var^ a = test.c.make()\n"
+             "var^ b = test.c.make()\n"
+             "if^ a = b { return^ 1 }\n"
+             "if^ a \xE2\x89\xA0 b { return^ 2 }\n"
+             "return^ 0\n"},
+        };
+        program_with(&program, &disk, files, 1);
+        const LhatHostValueTag *tag = lhat_register_hostvalue_type(
+            &program, "test.c", "C", sizeof(Counter));
+        lhat_register_func(&program, "test.c", "make", "f^ -> test.c.C;",
+                           host_counter_make, (void *)tag);
+        LHAT_CHECK(lhat_register_hostvalue_member(
+                       &program, "test.c", "C", "=",
+                       "f^self^, test.c.C -> bool^;", host_counter_never_equal,
+                       (void *)tag),
+                   "the equality registration took");
+        const LhatUnit *root = lhat_program_check(&program, "main.lh");
+        LHAT_CHECK(root != NULL && root->checked.diagnostic_count == 0,
+                   "the program checked");
+        size_t count = 0;
+        const LhatModule *modules = lhat_program_compile(&program, &count);
+        if (modules != NULL && root != NULL) {
+            LhatMachine *machine = lhat_machine_new();
+            lhat_machine_set_modules(machine, modules, count);
+            lhat_program_install(&program, machine);
+            LhatRunResult ran = lhat_run(machine, modules[root->index].proto);
+            LHAT_CHECK_EQ_INT(ran.status, LHAT_RUN_OK);
+            LHAT_CHECK_EQ_INT(lhat_as_integer(ran.value), 2);
+            lhat_machine_dispose(machine);
+        }
+    }
+    lhat_program_dispose(&program);
+
+    // And with nothing written, 8.9's own answer stands -- the same two
+    // values, the same question, the other way round.
+    LHAT_TEST("and without one the bytes still answer");
+    {
+        static const File files[] = {
+            {"main.lh",
+             "import^ test.c\n"
+             "var^ a = test.c.make()\n"
+             "var^ b = test.c.make()\n"
+             "if^ a = b { return^ 1 }\n"
+             "return^ 0\n"},
+        };
+        program_with(&program, &disk, files, 1);
+        const LhatHostValueTag *tag = lhat_register_hostvalue_type(
+            &program, "test.c", "C", sizeof(Counter));
+        lhat_register_func(&program, "test.c", "make", "f^ -> test.c.C;",
+                           host_counter_make, (void *)tag);
+        const LhatUnit *root = lhat_program_check(&program, "main.lh");
+        size_t count = 0;
+        const LhatModule *modules = lhat_program_compile(&program, &count);
+        if (modules != NULL && root != NULL) {
+            LhatMachine *machine = lhat_machine_new();
+            lhat_machine_set_modules(machine, modules, count);
+            lhat_program_install(&program, machine);
+            LhatRunResult ran = lhat_run(machine, modules[root->index].proto);
+            LHAT_CHECK_EQ_INT(ran.status, LHAT_RUN_OK);
+            LHAT_CHECK_EQ_INT(lhat_as_integer(ran.value), 1);
             lhat_machine_dispose(machine);
         }
     }
