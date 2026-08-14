@@ -2836,6 +2836,37 @@ static void test_try_block(void)
     }
     parse_dispose(&p);
 
+    // 4.5: the two readings of the word cannot be told apart by looking
+    // ahead, so the block takes its own -- and says so where a fallback was
+    // written instead, since the fix is a pair of parentheses.
+    LHAT_TEST("and a fallback written in the block's list says which to write");
+    parse_text(&p,
+               "try^{\n"
+               "    var^ n = g() catch^ 0\n"
+               "    var^ v = try^ f()\n"
+               "catch^:\n"
+               "    var^ x = 1\n"
+               "}");
+    LHAT_CHECK(p.result.diagnostic_count > 0, "expected a diagnostic");
+    if (p.result.diagnostic_count > 0) {
+        LHAT_CHECK_EQ_INT(p.result.diagnostics[0].code,
+                          LHAT_PARSE_ERR_CATCH_ARM_NEEDS_TYPE);
+        // And only the one: the arms after it are read as arms.
+        LHAT_CHECK_EQ_INT(p.result.diagnostic_count, 1);
+    }
+    parse_dispose(&p);
+
+    LHAT_TEST("and parentheses are what make it the fallback");
+    parse_text(&p,
+               "try^{\n"
+               "    var^ n = (g() catch^ 0)\n"
+               "    var^ v = try^ f()\n"
+               "catch^:\n"
+               "    var^ x = 1\n"
+               "}");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    parse_dispose(&p);
+
     // The block's own list is where catch^ is spoken for; anywhere else it is
     // still 4.1's operator, including inside a body written in the block.
     LHAT_TEST("a catch^ nested deeper is still the operator");

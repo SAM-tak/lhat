@@ -41,6 +41,14 @@ typedef struct {
     // the word is spoken for. Parenthesise a fallback written there.
     // Zero outside any try^{ }.
     size_t catch_depth;
+
+    // How many expressions are open (parse_expression). A bracket, a call's
+    // arguments, a table or a hole opens one, and so does a body written
+    // inside an expression -- so the level a statement of the try^{ }'s own
+    // list runs at is recorded rather than assumed, and 4.5's word belongs
+    // to the block only at or above it.
+    size_t expr_depth;
+    size_t catch_expr_depth;
 } Parser;
 
 // Levels of 11.6, weakest first. A larger value binds tighter.
@@ -1360,12 +1368,23 @@ static bool is_else_marker(const Parser *p)
            check_hat(p, "elseif") || check_hat(p, "elsif") || check_hat(p, "elif");
 }
 
+// Whether a type could begin here. 13 章's forms all start with a name, a
+// hat identifier (t^, f^, Self^, …) or the '(' of a tuple -- so a literal or
+// a brace standing where an arm's kind belongs is 04 の 4.5's other reading
+// rather than a type that failed to parse.
+static bool starts_type(const Parser *p)
+{
+    return p->current.kind == LHAT_TOKEN_IDENT ||
+           p->current.kind == LHAT_TOKEN_HAT_IDENT ||
+           is_op(&p->current, LHAT_OP_LPAREN);
+}
+
 // 04 の 4.5: a catch^ standing in the statement list a try^{ } owns, which is
 // where the word opens an arm. Anywhere else it is 4.1's binary operator.
 static bool at_catch_arm(const Parser *p)
 {
     return p->catch_depth != 0 && p->depth == p->catch_depth &&
-           check_hat(p, "catch");
+           p->expr_depth <= p->catch_expr_depth && check_hat(p, "catch");
 }
 
 // Words that begin a statement. The lexer keeps no keyword table (01 の 2.1),
@@ -2180,7 +2199,15 @@ static LhatNode *parse_logical(Parser *p, int min_precedence)
 
 static LhatNode *parse_expression(Parser *p)
 {
-    return parse_logical(p, PREC_OR);
+    // 04 の 4.5: how deep in expressions this stands. One is the statement's
+    // own -- where a catch^ is the word the block spoke for -- and anything
+    // more is inside a bracket, a call's arguments, a table or a hole, where
+    // it is 4.1's operator again. That is what makes '(f() catch^ 0)' the
+    // way to write the fallback there.
+    p->expr_depth++;
+    LhatNode *node = parse_logical(p, PREC_OR);
+    p->expr_depth--;
+    return node;
 }
 
 // ---------------------------------------------------------------------------
@@ -2745,7 +2772,11 @@ static LhatNode *parse_try_block(Parser *p)
     // in. A try^{ } written inside another owns its own, and the outer one
     // is put back below.
     size_t enclosing_catch = p->catch_depth;
+    size_t enclosing_catch_expr = p->catch_expr_depth;
     p->catch_depth = p->depth + 1;
+    // A statement of that list opens one expression of its own; anything
+    // deeper is a bracket or a body, where the word is the operator again.
+    p->catch_expr_depth = p->expr_depth + 1;
 
     LhatNode *head = NULL;
     LhatNode *tail = NULL;
@@ -2753,6 +2784,7 @@ static LhatNode *parse_try_block(Parser *p)
     LhatNode *body = make(p, LHAT_NODE_IF_CLAUSE, &brace);
     if (body == NULL) {
         p->catch_depth = enclosing_catch;
+        p->catch_expr_depth = enclosing_catch_expr;
         return finish(p, node);
     }
     body->v.clause.condition = NULL;
@@ -2775,18 +2807,37 @@ static LhatNode *parse_try_block(Parser *p)
         if (bare) {
             report(p, &at, LHAT_PARSE_ERR_CATCH_AFTER_BARE);
         }
+        // What stands here is a kind and a ':', and what a writer may have
+        // meant instead is 4.1's fallback -- which is why the two are told
+        // apart before the type is read, rather than by letting the type
+        // fail. The message names the parentheses that separate them.
+        bool shaped = true;
         if (check_op(p, LHAT_OP_COLON)) {
             bare = true;
-        } else {
+        } else if (starts_type(p)) {
             arm->v.clause.condition = parse_type(p);
+        } else {
+            shaped = false;
         }
-        expect_op(p, LHAT_OP_COLON);
+        if (!shaped || !check_op(p, LHAT_OP_COLON)) {
+            report(p, &p->current, LHAT_PARSE_ERR_CATCH_ARM_NEEDS_TYPE);
+            // On to the next arm or the end of the block: what follows was
+            // written as arms, and reading it as loose statements would
+            // report a second time about the same mistake.
+            while (!at_eof(p) && !check_hat(p, "catch") &&
+                   !check_op(p, LHAT_OP_RBRACE)) {
+                advance(p);
+            }
+            continue;
+        }
+        advance(p);  // ':'
         // From after the ':', for the reason parse_if_body gives.
         arm->v.clause.body = parse_block_body(p, &p->current);
         lhat_node_append(&head, &tail, finish(p, arm));
     }
 
     p->catch_depth = enclosing_catch;
+    p->catch_expr_depth = enclosing_catch_expr;
     expect_op(p, LHAT_OP_RBRACE);
     node->v.list.items = head;
     return finish(p, node);
@@ -3979,6 +4030,8 @@ static void parser_begin(Parser *p, LhatLexer *lexer, LhatParseResult *result)
     // expression through at the top level of a unit.
     p->bare_depth = 0;
     p->catch_depth = 0;  // 04 の 4.5, and left unset for the same reason
+    p->expr_depth = 0;
+    p->catch_expr_depth = 0;
     // Nothing has been consumed yet, so `finish` before the first advance
     // must not widen anything.
     memset(&p->previous, 0, sizeof p->previous);
@@ -4352,6 +4405,11 @@ const char *lhat_parse_error_message(LhatParseErrorCode code)
         case LHAT_PARSE_ERR_CATCH_AFTER_BARE:
             return "a bare catch^: takes whatever is left, so nothing follows "
                    "it -- write the narrower arms first";
+        case LHAT_PARSE_ERR_CATCH_ARM_NEEDS_TYPE:
+            return "an arm of a try^{ } is written 'catch^ Kind:' or bare as "
+                   "'catch^:'. A fallback value is the other reading of the "
+                   "word and is written with parentheses here: "
+                   "'let^ n = (f() catch^ 0)'";
         case LHAT_PARSE_ERR_MODULE_MISPLACED:
             return "module^ goes first, and only once in a file";
         case LHAT_PARSE_ERR_PUBLIC_NEEDS_DECLARATION:

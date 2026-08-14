@@ -63,6 +63,10 @@ typedef enum {
     LHAT_PARSE_ERR_CLOSED_NEEDS_BODY,         // 15.13: closed^ marks an f^/p^
     LHAT_PARSE_ERR_CATCH_AFTER_BARE,          // 04 の 4.5: the bare arm takes
                                               // what is left, so it is last
+    LHAT_PARSE_ERR_CATCH_ARM_NEEDS_TYPE,      // 04 の 4.5: an arm names a
+                                              // kind and ends on ':'. The
+                                              // other reading of the word is
+                                              // 4.1's, and takes parentheses
     LHAT_PARSE_ERR_FIELD_NEEDS_TYPE,          // 04 の 2.2: a type or a default
     LHAT_PARSE_ERR_ERRORDEF_NEEDS_NAME,       // 04 の 2.4: the name is the identity
     LHAT_PARSE_ERR_ERROR_NEEDS_KIND,          // 04 の 2.5
