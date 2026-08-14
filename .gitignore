@@ -21,6 +21,9 @@ compile_commands.json
 *.exp
 *.user
 
+# VSCodeCounter
+.VSCodeCounter/
+
 # Editors / language servers
 .cache/
 
