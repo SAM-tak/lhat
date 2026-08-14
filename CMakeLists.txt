@@ -157,6 +157,7 @@ option(LHAT_BUILD_STDLIB "Build the L^ sample standard library (stdlib/)" ON)
 
 if(LHAT_BUILD_STDLIB)
     add_library(lhatstdlib
+        stdlib/async.c
         stdlib/debug.c
         stdlib/error.c
         stdlib/io.c
@@ -178,7 +179,8 @@ if(LHAT_BUILD_STDLIB)
         ARCHIVE DESTINATION lib
         LIBRARY DESTINATION lib
         RUNTIME DESTINATION bin)
-    install(FILES stdlib/debug.h stdlib/error.h stdlib/io.h stdlib/random.h
+    install(FILES stdlib/async.h stdlib/debug.h stdlib/error.h stdlib/io.h
+            stdlib/random.h
             stdlib/thread.h
         DESTINATION include/lhatstdlib)
 endif()

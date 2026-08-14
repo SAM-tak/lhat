@@ -1,0 +1,26 @@
+#[
+2つのタスクが交互に進む。並行になっている証拠は **順序** である——
+片方が 0.03 秒待っている間にもう片方が動き、待ちの短い順に起きる。
+
+    a1 b1 a2 b2 a3 b3
+
+逐次なら a1 a2 a3 b1 b2 b3 になる。
+]#
+
+import^std.io
+
+let^ async = require^ "async.lh"
+
+let^ sched = async.make()
+
+let^ tick = p^ name:string^, times:number^, gap:number^ {
+    for^ i from^ 1 to^ times {
+        std.io.print($"{name}{i}")
+        await^ async.delay(gap)
+    }
+}
+
+let^ _^ = sched.add(tick("a", 3, 0.03))
+let^ _^ = sched.add(tick("b", 3, 0.03))
+sched.run()
+std.io.print("done")

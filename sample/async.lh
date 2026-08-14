@@ -1,0 +1,88 @@
+#[
+# スケジューラ — 02 の 15.14
+
+`await^` は「中断して済んだ値を受け取る」としか言わない。誰がいつ再開するかは
+言語の外であり、これがその外側である。**L^ で書けている**ことがこの単位の主張で、
+ホストから借りているのは期限（`std.async.timer`）と待ち（`std.async.wait`）の2つだけ。
+
+    let^ a = spawn(closed^p^ ... { … await^ delay(0.1) … })
+
+走らせ方は `run()`。全部のタスクが済むまで回る。
+]#
+
+module^ async
+
+import^std.async
+
+#[
+待てるもの = コルーチン（15.9）。`delay` は「期限を出して止まる」コルーチンを返し、
+その期限 id がスケジューラまで届く。await^ が委譲なので、何段深くても届く。
+]#
+public^ let^ delay = p^ seconds:number^ {
+    let^ id = std.async.timer(seconds)
+    yield^ id
+}
+
+#[
+タスク表。走っているコルーチンと、それが待っている期限 id を並べておく。
+待っていなければ 0（`std.async.timer` は 1 から配る）。
+]#
+let^ Scheduler = def^{
+    self^{
+        tasks = { },      # コルーチン
+        waits = { },      # 待っている期限 id。0 なら起きている
+        live  = 0,
+    },
+
+    # 走らせる。start^ はまだしない——run() が最初の一歩を進める
+    add = p^self^, task -> number^ {
+        self^.live += 1
+        self^.tasks[self^.live] := task
+        self^.waits[self^.live] := 0
+        return^ self^.live
+    },
+
+    # 1つ進める。答えは「まだ生きているか」
+    step = p^self^, i:number^ -> bool^ {
+        let^ task = self^.tasks[i]
+        if^ task is^ nil^ { return^ false^ }
+
+        let^ asked = if^ task.started(): task.resume(nil^) el^: task.start() ;
+        if^ task.done() {
+            self^.tasks[i] := nil^
+            self^.waits[i] := 0
+            return^ false^
+        }
+        # 出てきたものが期限 id。次に起きるのはそれが来たとき
+        if^ asked isa^ number^ { self^.waits[i] := asked }
+        return^ true^
+    },
+
+    run = p^self^ {
+        repeat^ {
+            var^ awake = 0
+            var^ waiting = 0
+            for^ i from^ 1 to^ self^.live {
+                if^ self^.tasks[i] is^ nil^ { next^ }
+                if^ self^.waits[i] = 0 {
+                    awake += 1
+                    let^ _^ = self^.step(i)
+                else^:
+                    waiting += 1
+                }
+            }
+            if^ awake = 0 {
+                if^ waiting = 0 { break^ }
+                # 誰も起きていない。次の期限まで眠る——ここだけが止まる
+                let^ done = std.async.wait(60)
+                if^ done isa^ number^ {
+                    for^ i from^ 1 to^ self^.live {
+                        if^ self^.waits[i] = done { self^.waits[i] := 0 }
+                    }
+                }
+            }
+        }
+    },
+}
+
+public^ let^ make = p^ -> Scheduler { return^ Scheduler.new() }

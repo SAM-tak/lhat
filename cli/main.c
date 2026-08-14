@@ -20,6 +20,7 @@
 #include "program_internal.h"
 
 #ifdef LHAT_CLI_WITH_STDLIB
+#include "stdlib/async.h"
 #include "stdlib/debug.h"
 #include "stdlib/error.h"
 #include "stdlib/io.h"
@@ -581,7 +582,8 @@ static bool bind_host_names(LhatProgram *program)
         !lhatstdlib_thread_register(program) ||
         !lhatstdlib_random_register(program) ||
         !lhatstdlib_math_register(program) ||
-        !lhatstdlib_debug_register(program)) {
+        !lhatstdlib_debug_register(program) ||
+        !lhatstdlib_async_register(program)) {
         return false;
     }
 #endif

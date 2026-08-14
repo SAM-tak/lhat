@@ -35,6 +35,7 @@
 #define LHAT_PORT_THREAD_H
 
 #include <stdbool.h>
+#include <stdint.h>
 
 #ifdef _WIN32
 // The three of these keep <windows.h> to the synchronisation API and out of
@@ -104,6 +105,12 @@ void lhat_thread_join(LhatThread *thread);
 // waits above are written in. Zero or less returns at once, and a signal
 // arriving part way through does not shorten it.
 void lhat_thread_sleep(int milliseconds);
+
+// Milliseconds from an unspecified fixed point, counting forwards and never
+// backwards -- a clock to measure distances with, not to tell the time by.
+// What is built here waits for deadlines (stdlib/async.c), and a wall clock
+// that a user or NTP can wind would make one of those arrive twice or never.
+int64_t lhat_now_ms(void);
 
 void lhat_mutex_init(LhatMutex *mutex);
 void lhat_mutex_destroy(LhatMutex *mutex);

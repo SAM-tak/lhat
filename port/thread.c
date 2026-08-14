@@ -65,6 +65,14 @@ void lhat_thread_sleep(int milliseconds)
     Sleep((DWORD)milliseconds);
 }
 
+int64_t lhat_now_ms(void)
+{
+    // Counts from the last boot and never goes back, which is what a
+    // deadline needs. The 32-bit GetTickCount wraps after 49 days; this one
+    // does not wrap in any lifetime.
+    return (int64_t)GetTickCount64();
+}
+
 void lhat_mutex_init(LhatMutex *mutex) { InitializeSRWLock(&mutex->lock); }
 
 // An SRWLOCK holds nothing that has to be given back.
@@ -141,6 +149,16 @@ void lhat_thread_join(LhatThread *thread)
     }
     pthread_join(thread->handle, NULL);
     thread->started = false;
+}
+
+int64_t lhat_now_ms(void)
+{
+    // CLOCK_MONOTONIC rather than the REALTIME the condition waits are tied
+    // to: this one is only ever compared with itself, and winding the wall
+    // clock must not move a deadline.
+    struct timespec now;
+    clock_gettime(CLOCK_MONOTONIC, &now);
+    return (int64_t)now.tv_sec * 1000 + now.tv_nsec / 1000000L;
 }
 
 void lhat_thread_sleep(int milliseconds)
