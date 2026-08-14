@@ -616,9 +616,11 @@ static void test_writing_whole(void)
     LHAT_TEST("it answers how much room the type wants");
     {
         LhatType *wide = lhat_type_table(&t.arena);
+        // A member keeps the pointer rather than the bytes (type.h), so each
+        // name has to outlive the type. One static run, read a byte at a time.
+        static const char letters[] = "abcdefgh";
         for (int i = 0; i < 8; i++) {
-            char name[2] = {(char)('a' + i), '\0'};
-            lhat_type_add_member(&t.arena, wide, name, 1,
+            lhat_type_add_member(&t.arena, wide, &letters[i], 1,
                                  simple(&t, LHAT_TYPE_STRING));
         }
         size_t wanted = lhat_type_write_full(wide, NULL, 0);

@@ -352,7 +352,11 @@ typedef enum {
     // 14.19改: one character of it, which is that run with both ends at the
     // same ordinal. A member of its own rather than a default second argument
     // -- substring's one-ordinal form already means "to the end".
-    LHAT_NATIVE_AT
+    LHAT_NATIVE_AT,
+    // 02 の 14.20: the comparison '=' makes, with the error term written
+    // rather than taken from 14.8's default. Only a number^ carries it --
+    // it is the one value an arithmetic error accumulates in.
+    LHAT_NATIVE_EQ
 } LhatNativeKind;
 
 typedef struct LhatNative {

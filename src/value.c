@@ -10,6 +10,50 @@
 #include "code.h"
 #include "lhat/object.h"
 
+bool lhat_value_close(LhatValue a, LhatValue b, double tolerance)
+{
+    // 14.8: only a real carries an error term. Two integers name themselves
+    // exactly, and admitting a band around one would put a key, an index and
+    // a count inside it -- so they go the exact way, as does everything that
+    // is not a pair of numbers at all.
+    if (!lhat_is_number(a) || !lhat_is_number(b) ||
+        (lhat_is_integer(a) && lhat_is_integer(b))) {
+        return lhat_value_equal(a, b);
+    }
+
+    double x = lhat_number_as_real(a);
+    double y = lhat_number_as_real(b);
+    // An infinity is this far from itself and no distance from anything else:
+    // the difference below would be a NaN, which is under no bound at all.
+    // A NaN reaches neither this nor the bound, which is what makes it equal
+    // to nothing including itself (03 の 5.8 keeps one out of a key for that
+    // very reason).
+    if (x == y) {
+        return true;
+    }
+
+    double apart = x > y ? x - y : y - x;
+    double size = x < 0.0 ? -x : x;
+    double other = y < 0.0 ? -y : y;
+    if (other > size) {
+        size = other;
+    }
+    // An infinity that is not the same infinity, or a NaN. Scaling by one
+    // would make the bound infinite and take in every number there is, so the
+    // two are read as apart -- which for an infinity against anything finite,
+    // and for the two ends against each other, is what they are.
+    if (size - size != 0.0) {
+        return false;
+    }
+    // The floor is what lets a difference that should have cancelled reach
+    // zero. Without it the bound at zero is zero, and 'a - b = 0' would be
+    // the one comparison an error term never helps.
+    if (size < 1.0) {
+        size = 1.0;
+    }
+    return apart <= tolerance * size;
+}
+
 bool lhat_value_equal(LhatValue a, LhatValue b)
 {
     // 02 の 14.8: number^ is one type, so 1 and 1.0 are the same number even
@@ -75,13 +119,13 @@ bool lhat_value_equal(LhatValue a, LhatValue b)
 
 bool lhat_value_same(LhatValue a, LhatValue b)
 {
-    // A number has no instance apart from its value, so identity and
-    // equality coincide for it -- the same trip through 14.8's one type
-    // lhat_value_equal already makes.
-    if (lhat_is_number(a) && lhat_is_number(b)) {
-        return lhat_value_equal(a, b);
-    }
-
+    // 13.11: the same value or not, with nothing read into it. Every other
+    // question about a number goes through 14.8's one type -- '=' reads 1
+    // and 1.0 as one number and admits an error term besides, a key folds
+    // the real form into the integer one, tostring writes what the number
+    // is. This one asks what the machine is holding, which is why the tags
+    // are compared rather than the numbers: it is the only place a writer
+    // can put a comparison that no rounding reaches.
     if (a.tag != b.tag) {
         return false;
     }
@@ -91,12 +135,18 @@ bool lhat_value_same(LhatValue a, LhatValue b)
             return true;
         case LHAT_VALUE_BOOL:
             return a.as.boolean == b.as.boolean;
+        case LHAT_VALUE_INTEGER:
+            return a.as.integer == b.as.integer;
+        // Whatever C's '==' answers, which is what "no rounding reaches it"
+        // means: -0.0 is 0.0 and a NaN is nothing, this one included.
+        case LHAT_VALUE_REAL:
+            return a.as.real == b.as.real;
         case LHAT_VALUE_OBJECT:
             // 'is^' asks whether the two are the same object and nothing
             // else -- no exception for a string's bytes or a type's shape.
             return a.as.object == b.as.object;
         default:
-            return false;  // the numeric tags are handled above
+            return false;
     }
 }
 

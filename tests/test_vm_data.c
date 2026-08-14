@@ -98,6 +98,77 @@ static void test_strings(void)
     CHECK_BOOL(&r, true);
     run_dispose(&r);
 
+    // 02 の 14.8: a division lands a few units in the last place away from
+    // the number it names, and '=' reads the two as one number. This is what
+    // a writer would otherwise have written a tolerance by hand for.
+    LHAT_TEST("'=' reads two numbers a division apart as one");
+    run_checked_text(&r, "return^ 8.0 / (3.0 - 8.0 / 3.0) = 24\n");
+    CHECK_BOOL(&r, true);
+    run_dispose(&r);
+
+    // 13.11: and is^ is where that error does not reach.
+    LHAT_TEST("is^ says what the machine is holding instead");
+    run_checked_text(&r, "return^ 8.0 / (3.0 - 8.0 / 3.0) is^ 24\n");
+    CHECK_BOOL(&r, false);
+    run_dispose(&r);
+
+    LHAT_TEST("so an integer is not the real that names it");
+    run_checked_text(&r, "return^ 1 is^ 1.0\n");
+    CHECK_BOOL(&r, false);
+    run_dispose(&r);
+
+    LHAT_TEST("though '=' still reads them as one number");
+    run_checked_text(&r, "return^ 1 = 1.0\n");
+    CHECK_BOOL(&r, true);
+    run_dispose(&r);
+
+    // 11.9: the orderings are read off the same comparison, so two numbers
+    // that are one number are neither less nor greater than each other.
+    LHAT_TEST("and the orderings agree with it");
+    run_checked_text(&r,
+                     "var^ v = 8.0 / (3.0 - 8.0 / 3.0)\n"
+                     "if^ v < 24 { return^ 1 }\n"
+                     "if^ v > 24 { return^ 2 }\n"
+                     "if^ !(v <= 24) { return^ 3 }\n"
+                     "if^ !(v >= 24) { return^ 4 }\n"
+                     "return^ 0\n");
+    CHECK_INTEGER(&r, 0);
+    run_dispose(&r);
+
+    // 14.8: a key is matched exactly, so the band '=' admits is not one a
+    // table has. Two numbers '=' reads as one still reach different entries.
+    LHAT_TEST("a key is matched without that error");
+    run_checked_text(&r,
+                     "var^ t = { }\n"
+                     "t[24.0] := 100\n"
+                     "t[8.0 / (3.0 - 8.0 / 3.0)] := 200\n"
+                     "return^ t[24.0]\n");
+    CHECK_INTEGER(&r, 100);
+    run_dispose(&r);
+
+    // 14.8's own normalisation is untouched by that: 2 and 2.0 name one
+    // number exactly, so they were one key before and still are.
+    LHAT_TEST("while 2 and 2.0 are one key as they always were");
+    run_checked_text(&r, "var^ t = { }\nt[2.0] := 7\nreturn^ t[2]\n");
+    CHECK_INTEGER(&r, 7);
+    run_dispose(&r);
+
+    // 14.20: the same comparison with the distance written down rather than
+    // taken from 14.8.
+    LHAT_TEST("eq takes the error term from the writer");
+    run_checked_text(&r,
+                     "var^ v = 8.0 / (3.0 - 8.0 / 3.0)\n"
+                     "if^ v.eq(24, 0.0) { return^ 1 }\n"
+                     "if^ !v.eq(24, 0.0000000000001) { return^ 2 }\n"
+                     "return^ 0\n");
+    CHECK_INTEGER(&r, 0);
+    run_dispose(&r);
+
+    LHAT_TEST("and it wants both of them");
+    run_text(&r, "var^ v = 1.0\nreturn^ v.eq(1.0)\n");
+    LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_ARITY);
+    run_dispose(&r);
+
     // 02 の 11.2: '..' is concatenation in general; strings are the case
     // that is settled, and 14.5's composition of definitions is the other.
     LHAT_TEST("'..' joins two strings");

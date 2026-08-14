@@ -139,9 +139,6 @@ let^same = f^want:t^{number^, number^, number^, number^, number^,
     return^true^
 }
 
-# / は実数除算なので 8/(3-8/3) は 24 ちょうどにならない。幅で見る
-let^near24 = f^value { if^value < 24: 24 - value < 0.000001 el^: value - 24 < 0.000001;}
-
 try^{
     with^rng = try^std.random.make(0) {
         let^want = { 0, 0, 0, 0, 0, 0, 0, 0, 0 }
@@ -164,7 +161,10 @@ try^{
                 print("That is not an expression I can read.")
             elif^!same(want, r.used):
                 print("Use each of the four digits exactly once.")
-            elif^near24(value):
+            # / は実数除算なので 8/(3-8/3) は 24 ちょうどにならない。
+            # が、 = は実数の誤差を織り込むので、そのまま比べてよい。
+            # 幅を自分で決めたい場合はメンバメソッド eq を使う（ここでは要らない）。
+            elif^value = 24:
                 print("Correct!")
             else^:
                 print($"Incorrect: {value}")

@@ -117,6 +117,85 @@ static void test_equality(void)
                    "2^53 itself still is");
     }
 
+    // 14.8: what '=' and 11.9's orderings ask, which admits the error a real
+    // carries. lhat_value_equal above stays exact -- a key, a constant and
+    // is^ are matched by it, and none of those may sit in a band.
+    LHAT_TEST("two reals a division apart are one number");
+    {
+        double landed = 8.0 / (3.0 - 8.0 / 3.0);  // 1.07e-14 short of 24
+        LHAT_CHECK(!lhat_value_equal(lhat_real(landed), lhat_real(24.0)),
+                   "exactly, they are not");
+        LHAT_CHECK(lhat_value_close(lhat_real(landed), lhat_real(24.0),
+                                    LHAT_NUMBER_TOLERANCE),
+                   "within the error one, they are");
+    }
+
+    LHAT_TEST("and the band is relative, with a floor at one");
+    {
+        // Scaled: a distance that is nothing at 1e6 is a long way at 1.
+        LHAT_CHECK(lhat_value_close(lhat_real(1e6), lhat_real(1e6 + 1e-9),
+                                    LHAT_NUMBER_TOLERANCE),
+                   "a few units in the last place at 1e6");
+        LHAT_CHECK(!lhat_value_close(lhat_real(1.0), lhat_real(1.0 + 1e-10),
+                                     LHAT_NUMBER_TOLERANCE),
+                   "the same distance at 1 is not");
+        // The floor is what lets a difference that should have cancelled
+        // reach zero, and what puts everything well under one in one band.
+        LHAT_CHECK(lhat_value_close(lhat_real(0.0), lhat_real(1e-20),
+                                    LHAT_NUMBER_TOLERANCE),
+                   "under the floor, everything meets zero");
+        LHAT_CHECK(!lhat_value_close(lhat_real(0.0), lhat_real(1e-10),
+                                     LHAT_NUMBER_TOLERANCE),
+                   "but not far under it");
+    }
+
+    LHAT_TEST("integers keep to themselves");
+    {
+        // A key, an index and a count are integers, and a band around one
+        // would take in the next.
+        LHAT_CHECK(!lhat_value_close(lhat_integer(7), lhat_integer(8),
+                                     LHAT_NUMBER_TOLERANCE),
+                   "7 is not 8");
+        LHAT_CHECK(lhat_value_close(lhat_integer(7), lhat_integer(7),
+                                    LHAT_NUMBER_TOLERANCE),
+                   "7 is 7");
+        // One real on either side is enough for the error to be there.
+        LHAT_CHECK(lhat_value_close(lhat_integer(1), lhat_real(1.0 + 1e-17),
+                                    LHAT_NUMBER_TOLERANCE),
+                   "an integer against a real that all but names it");
+    }
+
+    LHAT_TEST("an infinity meets itself and a NaN meets nothing");
+    {
+        // Built rather than written: a compiler refuses the constant form.
+        volatile double zero = 0.0;
+        double infinite = 1.0 / zero;
+        double undefined = infinite - infinite;
+        LHAT_CHECK(lhat_value_close(lhat_real(infinite), lhat_real(infinite),
+                                    LHAT_NUMBER_TOLERANCE),
+                   "the difference would be a NaN, so the equality is read first");
+        LHAT_CHECK(!lhat_value_close(lhat_real(infinite), lhat_real(-infinite),
+                                     LHAT_NUMBER_TOLERANCE),
+                   "and the two ends are not one number");
+        LHAT_CHECK(!lhat_value_close(lhat_real(undefined), lhat_real(undefined),
+                                     LHAT_NUMBER_TOLERANCE),
+                   "a NaN is under no bound, this one included");
+    }
+
+    // 13.11: the one question with no error in it, and the one place a
+    // number^ answers for its representation.
+    LHAT_TEST("is^ reads what the machine is holding");
+    {
+        LHAT_CHECK(!lhat_value_same(lhat_integer(1), lhat_real(1.0)),
+                   "1 is not 1.0");
+        LHAT_CHECK(lhat_value_same(lhat_integer(1), lhat_integer(1)), "1 is 1");
+        LHAT_CHECK(lhat_value_same(lhat_real(1.0), lhat_real(1.0)),
+                   "1.0 is 1.0");
+        double landed = 8.0 / (3.0 - 8.0 / 3.0);
+        LHAT_CHECK(!lhat_value_same(lhat_real(landed), lhat_real(24.0)),
+                   "and no error term reaches it");
+    }
+
     LHAT_TEST("an object compares by identity");
     {
         LhatObject a;

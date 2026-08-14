@@ -338,17 +338,52 @@ static inline double lhat_number_as_real(LhatValue v)
 // Comparison
 // ---------------------------------------------------------------------------
 
+// 02 の 14.8: how far apart two reals may be and still be one number. A
+// division carries a few units in the last place away from the answer it
+// names -- '8/(3-8/3)' lands 1.07e-14 short of 24 -- and a writer comparing
+// what arithmetic produced should not have to say so at every comparison.
+//
+// Eight times what a double's mantissa can resolve (2^-52). Four times the
+// worst relative error measured across ordinary expressions, and at the size
+// of 24 about twelve units in the last place.
+#define LHAT_NUMBER_TOLERANCE (8.0 * 2.220446049250313e-16)
+
 // Equality as '=' means it (02 の 11.6). Two numbers compare as numbers even
 // when their representations differ, since 14.8 makes them one type; an
 // object compares by identity until the collector and the string table give
 // a better answer.
+//
+// **Exact.** This is what a table key, a constant pool slot and 'is^' are
+// matched by, none of which may admit an error term -- see lhat_value_close
+// for the one '=' itself uses.
 bool lhat_value_equal(LhatValue a, LhatValue b);
+
+// 02 の 14.8: the same question '=' and the four orderings ask, which admits
+// the error a real carries. Where both sides are numbers and either is a
+// real, two are one number when
+//
+//     |a - b| <= tolerance * max(|a|, |b|, 1.0)
+//
+// and otherwise this is lhat_value_equal. The floor of 1.0 is what makes a
+// difference that should have cancelled compare equal to zero; its cost is
+// that everything well under 1.0 compares equal to everything else that is.
+// A writer wanting the exact question has 'is^'; one wanting a different
+// error term has number^'s own eq.
+//
+// Integers are left alone: two of them name themselves exactly, and a key or
+// an index would not survive a band around it.
+bool lhat_value_close(LhatValue a, LhatValue b, double tolerance);
 
 // Identity as 'is^' means it (02 の 11.6改). Unlike lhat_value_equal, a
 // string is never special-cased into a content comparison and a type object
 // is never special-cased into a structural one -- every object answers only
 // to itself, on purpose, so this stays the same once '=' moves to a real
 // value comparison for tables and strings.
+//
+// 02 の 14.8 with 13.11: a number answers for its representation here and
+// nowhere else. '=' reads 1 and 1.0 as one number and admits an error term
+// besides; this reads them as what the machine is holding, so it is the one
+// question with no error in it at all.
 bool lhat_value_same(LhatValue a, LhatValue b);
 
 // 03 の 4 章: a prompt answers with a value, so something has to write one

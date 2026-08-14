@@ -188,6 +188,36 @@ static void test_tostring(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
+    // 14.20: the comparison '=' makes, with the error term written down.
+    // Only a number^ carries it -- it is the one value arithmetic error
+    // accumulates in -- and the bare word alone (14.18改).
+    LHAT_TEST("a number^ answers eq with both of its arguments");
+    check_text(&u, "var^ a : bool^ = (1).eq(1.0, 0.1)\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("and wants exactly the two");
+    check_text(&u, "var^ a : bool^ = (1).eq(1.0)\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_ARITY);
+    unit_dispose(&u);
+
+    LHAT_TEST("both of them number^");
+    check_text(&u, "var^ a : bool^ = (1).eq(1.0, \"x\")\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
+    unit_dispose(&u);
+
+    LHAT_TEST("and nothing else carries it");
+    check_text(&u, "var^ a : bool^ = \"x\".eq(1.0, 0.1)\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_NO_MEMBER);
+    unit_dispose(&u);
+
+    // 14.18改: the hat is there to keep a built-in off a name a writer may
+    // mean for something else, and nothing can be written on a number^.
+    LHAT_TEST("nor is there a hat spelling of it");
+    check_text(&u, "var^ a : bool^ = (1).eq^(1.0, 0.1)\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_NO_MEMBER);
+    unit_dispose(&u);
+
     // 11.1's reason for keeping an operator pure holds here too: writing a
     // value down changes nothing, so 15.1 lets an f^ reach it.
     LHAT_TEST("an f^ may call it");

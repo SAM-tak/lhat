@@ -221,9 +221,11 @@ static bool arithmetic(LhatOpcode op, LhatValue left, LhatValue right,
 static bool three_way(LhatValue left, LhatValue right, int *out)
 {
     if (lhat_is_number(left) && lhat_is_number(right)) {
-        // 14.8: one type over integers and reals, so the comparison is the
-        // one lhat_value_equal already makes across the two representations.
-        if (lhat_value_equal(left, right)) {
+        // 14.8: one type over integers and reals, and the same question '='
+        // asks -- so two numbers within the error a real carries order as
+        // one. Reading '=' off '<=>' the way 11.9 does then answers what '='
+        // answers, rather than 'equal' and 'less' both holding.
+        if (lhat_value_close(left, right, LHAT_NUMBER_TOLERANCE)) {
             *out = 0;
             return true;
         }
@@ -765,6 +767,13 @@ static bool native_named(LhatValue key, LhatNativeKind *out, bool *hatted)
         *out = LHAT_NATIVE_TONUMBER;
         return true;
     }
+    // 14.20: a number^'s own comparison, with the error term written down.
+    // No hat spelling, for 14.18改's reason -- nothing can be written on a
+    // number^, so there is nothing for a hat to keep it clear of.
+    if (name->length == 2 && memcmp(name->text, "eq", 2) == 0) {
+        *out = LHAT_NATIVE_EQ;
+        return true;
+    }
     // 14.19: one member under three names.
     if ((name->length == 9 && memcmp(name->text, "substring", 9) == 0) ||
         (name->length == 6 && memcmp(name->text, "substr", 6) == 0) ||
@@ -927,6 +936,10 @@ static bool builtin_member(LhatValue on, LhatValue key, LhatNativeKind *out)
     if (*out == LHAT_NATIVE_TONUMBER || *out == LHAT_NATIVE_SUBSTRING ||
         *out == LHAT_NATIVE_AT) {
         return lhat_is_object_kind(on, LHAT_OBJECT_STRING);
+    }
+    // 14.20: and only a number^ has an error term to say anything about.
+    if (*out == LHAT_NATIVE_EQ) {
+        return lhat_is_number(on);
     }
     if (lhat_is_object_kind(on, LHAT_OBJECT_COROUTINE)) {
         return true;  // every one of them applies to a coroutine
@@ -2067,8 +2080,13 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
                     op = LHAT_BC_EQ;  // the name to look for; '≠' has none
                     goto call_operator;
                 }
-                SET_R(a, lhat_bool(lhat_value_equal(R(b), R(cc)) ==
-                                   (op == LHAT_BC_EQ)));
+                // 14.8: two numbers within the error a real carries are one
+                // number here. A key, a constant and 'is^' go on asking the
+                // exact question -- lhat_value_close is only what '=' and
+                // 11.9's orderings read.
+                SET_R(a, lhat_bool(
+                    lhat_value_close(R(b), R(cc), LHAT_NUMBER_TOLERANCE) ==
+                    (op == LHAT_BC_EQ)));
                 break;
             case LHAT_BC_SAME:
                 // 05 の 8.9: a value type has no identity apart from its
@@ -2407,7 +2425,8 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
                         (bare == LHAT_NATIVE_TOSTRING ||
                          bare == LHAT_NATIVE_TONUMBER ||
                          bare == LHAT_NATIVE_SUBSTRING ||
-                         bare == LHAT_NATIVE_AT)) {
+                         bare == LHAT_NATIVE_AT ||
+                         bare == LHAT_NATIVE_EQ)) {
                         LhatNative *native =
                             lhat_native_new(&m->objects, bare, R(b));
                         if (native == NULL) {
@@ -3060,6 +3079,33 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
                                           lhat_nil(), at);
                         }
                         SET_R(a, lhat_object((LhatObject *)written));
+                        break;
+                    }
+
+                    // 02 の 14.20: the comparison '=' makes, with the error
+                    // term written down instead of taken from 14.8. The same
+                    // predicate either way, so what a writer chooses is the
+                    // width of the band and never a different question.
+                    if (native->kind == LHAT_NATIVE_EQ) {
+                        if (b != 2) {
+                            return finish(m, chunk, LHAT_RUN_ARITY, lhat_nil(),
+                                          at);
+                        }
+                        LhatValue against = sent;
+                        LhatValue width = R(first + 1);
+                        if (!lhat_is_number(against) ||
+                            !lhat_is_number(width)) {
+                            return finish(m, chunk, LHAT_RUN_TYPE_ERROR,
+                                          lhat_nil(), at);
+                        }
+                        // Written as a distance rather than as 14.8's factor:
+                        // a writer asking for one says how far apart two may
+                        // be, which is the number they have in hand. Scaled
+                        // the same way all the same, so the answer does not
+                        // change with where on the line the two sit.
+                        double allowed = lhat_number_as_real(width);
+                        SET_R(a, lhat_bool(lhat_value_close(
+                                     native->bound, against, allowed)));
                         break;
                     }
 

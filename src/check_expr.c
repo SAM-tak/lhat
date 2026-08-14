@@ -1230,6 +1230,21 @@ static LhatType *builtin_tostring(Checker *c, const LhatType *target)
     return lhat_type_intersect(c->result->types, plain, formatted);
 }
 
+// 02 の 14.20: the comparison '=' makes, with the error term written down.
+// An f^ -- comparing two numbers changes nothing. Both arguments are
+// number^: the one to compare against, and how far apart the two may be.
+static LhatType *builtin_eq(Checker *c)
+{
+    LhatType *signature = lhat_type_func(c->result->types, true);
+    signature->v.func.takes_self = true;
+    lhat_type_add_param(c->result->types, signature,
+                        chk_simple(c, LHAT_TYPE_NUMBER));
+    lhat_type_add_param(c->result->types, signature,
+                        chk_simple(c, LHAT_TYPE_NUMBER));
+    signature->v.func.result = chk_simple(c, LHAT_TYPE_BOOL);
+    return signature;
+}
+
 // 02 の 14.17改2: tostring read backwards, carried by the one value a number^
 // can be read out of. The two signatures are shaped exactly as 14.17's and
 // made an intersection for the same reason -- 14.12 forbids them overlapping,
@@ -1527,6 +1542,12 @@ LhatType *chk_infer_member(Checker *c, const LhatNode *node)
         if (target->kind == LHAT_TYPE_STRING &&
             chk_name_is(name, length, "tonumber")) {
             return builtin_tonumber(c);
+        }
+        // 14.20: and this is the one only a number^ answers. The bare word
+        // alone, for 14.18改's reason -- nothing can be written on a number^.
+        if (target->kind == LHAT_TYPE_NUMBER &&
+            chk_name_is(name, length, "eq")) {
+            return builtin_eq(c);
         }
         // 14.18: how long it is, and how many bytes that is.
         if (target->kind == LHAT_TYPE_STRING &&
