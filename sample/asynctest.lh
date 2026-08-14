@@ -9,18 +9,18 @@
 
 import^std.io
 
-let^ async = require^ "async.lh"
+let^async = require^"async.lh"
 
-let^ sched = async.make()
+let^sched = async.make()
 
-let^ tick = p^ name:string^, times:number^, gap:number^ {
-    for^ i from^ 1 to^ times {
+let^tick = p^name:string^, times:number^, gap:number^{
+    for^i from^1 to^times {
         std.io.print($"{name}{i}")
-        await^ async.delay(gap)
+        await^async.delay(gap)
     }
 }
 
-let^ _^ = sched.add(tick("a", 3, 0.03))
-let^ _^ = sched.add(tick("b", 3, 0.03))
+let^_^= sched.add(tick("a", 3, 0.03))
+let^_^= sched.add(tick("b", 3, 0.03))
 sched.run()
 std.io.print("done")

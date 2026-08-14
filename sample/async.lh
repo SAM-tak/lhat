@@ -21,8 +21,8 @@ import^std.thread
 その期限 id がスケジューラまで届く。await^ が委譲なので、何段深くても届く。
 ]#
 public^let^delay = p^seconds:number^{
-    let^ id = std.async.timer(seconds)
-    yield^ id
+    let^id = std.async.timer(seconds)
+    yield^id
 }
 
 #[
@@ -30,16 +30,16 @@ public^let^delay = p^seconds:number^{
 `done()` で訊いて、まだなら少し `delay` する——**スケジューラは何も知らなくてよい**。
 待てるものを増やすのが `delay` の上に1つ書くだけで済む、というのがこの層の要点。
 ]#
-public^let^joined = p^ h:std.thread.ThreadHandle ->
+public^let^joined = p^h:std.thread.ThreadHandle ->
         number^|bool^|string^|nil^
         |std.thread.ThreadError.AlreadyJoined
         |std.thread.ThreadError.BadResult
         |std.error.OutOfMemory {
-    repeat^ {
-        if^ h.done() { break^ }
-        await^ delay(0.002)
+    repeat^{
+        if^h.done() { break^}
+        await^delay(0.002)
     }
-    return^ h.join()
+    return^h.join()
 }
 
 #[
@@ -62,11 +62,11 @@ let^Scheduler = def^{
     },
 
     # 1つ進める。答えは「まだ生きているか」
-    step = p^self^, i:number^ -> bool^{
+    step = p^self^, i:number^-> bool^{
         let^task = self^.tasks[i]
-        if^task is^ nil^ { return^false^ }
+        if^task is^nil^{ return^false^ }
 
-        let^asked = if^ task.started(): task.resume(nil^) el^: task.start() ;
+        let^asked = if^task.started(): task.resume(nil^) el^: task.start();
         if^task.done() {
             self^.tasks[i] := nil^
             self^.waits[i] := 0
@@ -81,11 +81,11 @@ let^Scheduler = def^{
         repeat^{
             var^awake = 0
             var^waiting = 0
-            for^i from^ 1 to^ self^.live {
-                if^self^.tasks[i] is^ nil^{ next^}
+            for^i from^ 1 to^self^.live {
+                if^self^.tasks[i] is^nil^{ next^}
                 if^self^.waits[i] = 0 {
                     awake += 1
-                    let^_^ = self^.step(i)
+                    let^_^= self^.step(i)
                 else^:
                     waiting += 1
                 }

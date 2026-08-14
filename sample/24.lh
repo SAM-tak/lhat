@@ -71,10 +71,10 @@ let^Reader = def^{
             let^inner = self^.expr()
             if^self^.peek() = ")" {
                 self^.bump()
-                return^ inner
+                return^inner
             }
             self^.ok := false^
-            return^ 0
+            return^0
         }
         let^d = c.tonumber() ?? 0
         if^d < 1 or^ d > 9 {
@@ -83,7 +83,7 @@ let^Reader = def^{
         }
         self^.used[d] += 1
         self^.bump()
-        return^ d
+        return^d
     },
 
     term = p^self^{
@@ -100,7 +100,7 @@ let^Reader = def^{
                 break^
             }
         }
-        return^ value
+        return^value
     },
 
     expr = p^self^{
@@ -117,14 +117,14 @@ let^Reader = def^{
                 break^
             }
         }
-        return^ value
+        return^value
     },
 
     # 式全体。末尾に読み残しがあれば綴りの誤り
     read = p^self^{
         let^value = self^.expr()
         if^self^.peek() != "" { self^.ok := false^}
-        return^ value
+        return^value
     }
 }
 

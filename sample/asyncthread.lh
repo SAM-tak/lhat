@@ -13,19 +13,19 @@
 import^std.io
 import^std.thread
 
-let^ async = require^ "async.lh"
+let^async = require^"async.lh"
 
-let^ sched = async.make()
+let^sched = async.make()
 
-let^ work = p^ {
+let^work = p^{
     std.io.print("worker started")
-    let^ h = std.thread.spawn(closed^p^ ... {
+    let^h = std.thread.spawn(closed^p^ ... {
         std.thread.sleep(0.12)
-        return^ 42
+        return^42
     })
-    if^ h isa^ std.thread.ThreadHandle {
-        let^ answer = await^ async.joined(h)
-        if^ answer isa^ number^ {
+    if^h isa^std.thread.ThreadHandle {
+        let^answer = await^async.joined(h)
+        if^answer isa^number^{
             std.io.print($"worker said {answer}")
         else^:
             std.io.print("worker said nothing I can read")
@@ -36,14 +36,14 @@ let^ work = p^ {
     }
 }
 
-let^ tick = p^ {
-    for^ i from^ 1 to^ 4 {
+let^tick = p^{
+    for^i from^1 to^4 {
         std.io.print($"t{i}")
-        await^ async.delay(0.03)
+        await^async.delay(0.03)
     }
 }
 
-let^ _^ = sched.add(work())
-let^ _^ = sched.add(tick())
+let^_^= sched.add(work())
+let^_^= sched.add(tick())
 sched.run()
 std.io.print("done")
