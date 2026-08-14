@@ -330,6 +330,14 @@ static void walk_type(SemCollector *out, const LhatNode *node)
         case LHAT_NODE_TYPE_TABLE:
             walk_table_entries(out, node->v.list.items);
             break;
+        // 14.7改: the self^{ … } section of a written-out definition. Its
+        // items are the same MEMBER_DECLs the t^{ … } around it holds -- what
+        // an instance carries rather than what the definition does -- so they
+        // read the same way. Without this case the section falls to `default`
+        // below and everything named inside it goes uncoloured.
+        case LHAT_NODE_SELF_TABLE:
+            walk_table_entries(out, node->v.list.items);
+            break;
         case LHAT_NODE_TYPE_TUPLE:
             // 13.8改: the positions are bare types, not member declarations,
             // so they walk as types rather than through walk_table_entries.

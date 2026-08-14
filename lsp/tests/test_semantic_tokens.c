@@ -273,7 +273,13 @@ static void test_every_name_is_reached(void)
         "}\n"
         "let^ held : E.Bad = error^ E.Bad { why = \"no\" }\n"
         "let^ widened = table.key as^ number^\n"
-        "with^ resource = table { shout(\"v\") }\n";
+        "with^ resource = table { shout(\"v\") }\n"
+        // 14.7改: a definition with its type written out. The self^{ } section
+        // of a written type is a kind of its own, and it was the second thing
+        // to fall into semantic_tokens.c's `default` -- with nothing here
+        // holding one, this test had nothing to say about it.
+        "let^ Shape : t^{ self^{ side : number^ }, new : f^ -> Self^; }"
+        " = def^{ self^{ side = 1 }, }\n";
 
     Checked c;
     check_text(&c, source);
@@ -477,6 +483,42 @@ static void test_definition_reads_as_a_type(void)
     check_dispose(&c);
 }
 
+// 14.7改: the same, for a definition whose type was also written out. 8.7
+// makes the annotation what the binding holds, so the def^'s own answer never
+// reaches the name -- what says "definition" has to be on the written type,
+// and resolve_table_type is what puts it there (check.c). Until it did, a
+// name like this read as an ordinary member wherever it was used, which is
+// how sample/async.lh's Scheduler came back a property through require^.
+static void test_a_written_definition_reads_as_a_type(void)
+{
+    LHAT_TEST("14.7改: an annotated def^ reads as a type where it is used");
+
+    static const char *source =
+        "let^ Counter : t^{ self^{ n : number^ }, new : f^ -> Self^; }"
+        " = def^{\n"
+        "    self^{ n = 0 },\n"
+        "}\n"
+        "let^ made = Counter.new()\n";
+
+    Checked c;
+    check_text(&c, source);
+    cJSON *data = lsp_semantic_tokens_for_unit(&c.unit);
+    Tokens tokens = decode(data);
+
+    expect_token(&tokens, source, "Counter : t^", "class", true);
+    expect_token(&tokens, source, "Counter.new()", "class", false);
+
+    // The section itself: its members are what an instance carries, and they
+    // are written exactly as the members beside it are. walk_type had no case
+    // for the section, so everything named inside one went uncoloured.
+    expect_token(&tokens, source, "n : number^", "property", false);
+    expect_token(&tokens, source, "number^ }", "type", false);
+
+    free(tokens.items);
+    cJSON_Delete(data);
+    check_dispose(&c);
+}
+
 static void test_module_path_reads_the_same_everywhere(void)
 {
     LHAT_TEST("05 の 8.6: a module path is a namespace wherever it stands");
@@ -654,6 +696,7 @@ int main(void)
     test_isa_asks_about_a_type();
     test_isa_within_a_comparison_chain();
     test_definition_reads_as_a_type();
+    test_a_written_definition_reads_as_a_type();
     test_module_path_reads_the_same_everywhere();
     test_compound_assignment_is_one_token();
     test_try_block();

@@ -483,6 +483,20 @@ static LhatType *resolve_table_type(Checker *c, const LhatNode *node)
     struct SelfLink within = { NULL, c->self_link };
     if (section != NULL) {
         LhatType *instance = lhat_type_table(c->result->types);
+        // What the section makes this, said the same way chk_infer_def says
+        // it of a def^ -- 14.5's '..' tells a definition from an instance of
+        // one by this, and 14.9's plain_table_type asks it of a value before
+        // reading a bare name as a built-in member. Both questions have the
+        // same answer whether the definition was written out or inferred.
+        //
+        // 8.8's from_definition is not set beside it. That one closes a
+        // *value* to a member being added afterwards, and what is written
+        // here is a demand a value meets -- one a def^ made carries it
+        // already, and a plain table that happens to satisfy the shape is not
+        // closed by having been asked for. Nor does either take part in
+        // conformance (11.3), so what a name annotated with this accepts is
+        // unchanged.
+        table->v.table.is_definition = true;
         table->v.table.instance = instance;
         within.type = instance;
         c->self_link = &within;

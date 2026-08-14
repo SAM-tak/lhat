@@ -1911,6 +1911,50 @@ static void test_resolutions_say_what_bound_the_name(void)
     }
     unit_dispose(&u);
 }
+
+// 14.7改: a written-out definition is a definition. The section is what makes
+// it one, and resolve_table_type has always read the section -- it just did
+// not say what reading one meant. 14.5's '..' asks this of both operands and
+// 14.9's built-in members ask it of a value, so the fact is the language's;
+// asked here through a resolution because that is where it became visible,
+// a name annotated this way reading as an ordinary table to every tool.
+//
+// 8.7: an annotation is what the binding holds when one is written, so
+// without this the def^'s own answer never reaches the name.
+static void test_a_written_definition_is_one(void)
+{
+    Unit u;
+
+    LHAT_TEST("14.7改: a t^ with a self^ section is a definition");
+    check_text(&u,
+               "let^ Counter : t^{ self^{ n : number^ }, new : f^ -> Self^; }"
+               " = def^{\n"
+               "    self^{ n = 0 },\n"
+               "}\n"
+               "let^ made = Counter.new()\n");
+    CHECK_CLEAN(&u);
+
+    const char *use = strstr(u.source.text, "Counter.new");
+    LHAT_CHECK(use != NULL, "expected the use to be there");
+    if (use != NULL) {
+        const LhatResolution *r = lhat_check_resolution_at(
+            &u.checked, (uint32_t)(use - u.source.text));
+        LHAT_CHECK(r != NULL && r->type != NULL, "expected the name to resolve");
+        if (r != NULL && r->type != NULL) {
+            LHAT_CHECK(r->type->kind == LHAT_TYPE_TABLE &&
+                           r->type->v.table.is_definition,
+                       "the annotated name holds a definition");
+            // 8.8 is about a value, not about a demand written on a name --
+            // a plain table that meets the shape is not closed by having been
+            // asked for. Said here so that setting one is not read as
+            // forgetting the other.
+            LHAT_CHECK(r->type->kind == LHAT_TYPE_TABLE &&
+                           !r->type->v.table.from_definition,
+                       "and a written demand closes nothing");
+        }
+    }
+    unit_dispose(&u);
+}
 #endif
 
 int main(void)
@@ -1919,6 +1963,7 @@ int main(void)
 #if LHAT_WITH_RESOLUTIONS
     test_resolutions_are_ordered();
     test_resolutions_say_what_bound_the_name();
+    test_a_written_definition_is_one();
 #endif
     test_expressions();
     test_results();
