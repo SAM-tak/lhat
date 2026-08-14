@@ -1,0 +1,49 @@
+#[
+別スレッドの完了を待つ（15.14 と 05 の 8.9）。
+
+`join()` は止まってしまうので、スケジューラを持つ側は使えない。
+`async.joined` が `done()` で訊いて短く `delay` する形にしてあり、
+**待っている間ほかのタスクが進む**——それがこの出力の t1 t2 t3 である。
+
+    worker started
+    t1 t2 t3 …
+    worker said 42
+]#
+
+import^std.io
+import^std.thread
+
+let^ async = require^ "async.lh"
+
+let^ sched = async.make()
+
+let^ work = p^ {
+    std.io.print("worker started")
+    let^ h = std.thread.spawn(closed^p^ ... {
+        std.thread.sleep(0.12)
+        return^ 42
+    })
+    if^ h isa^ std.thread.ThreadHandle {
+        let^ answer = await^ async.joined(h)
+        if^ answer isa^ number^ {
+            std.io.print($"worker said {answer}")
+        else^:
+            std.io.print("worker said nothing I can read")
+        }
+        h.dispose()
+    else^:
+        std.io.print("could not spawn")
+    }
+}
+
+let^ tick = p^ {
+    for^ i from^ 1 to^ 4 {
+        std.io.print($"t{i}")
+        await^ async.delay(0.03)
+    }
+}
+
+let^ _^ = sched.add(work())
+let^ _^ = sched.add(tick())
+sched.run()
+std.io.print("done")

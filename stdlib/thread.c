@@ -113,7 +113,29 @@ typedef struct ThreadHandle {
     bool joined;
     LhatRunStatus status;
     ThreadValue result;
+    // 02 の 15.14: what a scheduler asks instead of waiting -- has the body
+    // finished. This one *is* read while the thread may still be running, so
+    // unlike the fields above it is not covered by the join's ordering and
+    // takes a lock of its own. The lock is held for a bool and nothing else.
+    LhatMutex done_lock;
+    bool finished;
 } ThreadHandle;
+
+// The last thing thread_main does, and the only thing done() reads.
+static void mark_finished(ThreadHandle *handle)
+{
+    lhat_mutex_lock(&handle->done_lock);
+    handle->finished = true;
+    lhat_mutex_unlock(&handle->done_lock);
+}
+
+static bool has_finished(ThreadHandle *handle)
+{
+    lhat_mutex_lock(&handle->done_lock);
+    bool finished = handle->finished;
+    lhat_mutex_unlock(&handle->done_lock);
+    return finished;
+}
 
 static LhatValue fail_with(LhatMachine *machine, const LhatErrorKind *kind,
                            const char *message)
@@ -268,6 +290,9 @@ static int thread_main(void *raw)
 
     free_thread_values(start->arguments, start->argument_count);
     lhat_free(start);
+    // Last of all: everything the join will read is written by now, so a
+    // done() that sees this can be followed by a join that does not wait.
+    mark_finished(handle);
     return 0;
 }
 
@@ -287,6 +312,7 @@ static void join_and_free(ThreadHandle *handle)
     if (handle->status == LHAT_RUN_OK) {
         free_thread_value(&handle->result);
     }
+    lhat_mutex_destroy(&handle->done_lock);
     lhat_free(handle);
 }
 
@@ -375,6 +401,7 @@ static LhatValue thread_spawn(LhatMachine *machine, void *context,
         lhat_free(start);
         return fail_with(machine, module->out_of_memory, "out of memory");
     }
+    lhat_mutex_init(&handle->done_lock);
     start->proto = closure->proto;
     start->modules = modules;
     start->module_count = module_count;
@@ -386,6 +413,7 @@ static LhatValue thread_spawn(LhatMachine *machine, void *context,
     if (!lhat_thread_start(&handle->os, thread_main, start)) {
         free_thread_values(carried, carried_count);
         lhat_free(start);
+        lhat_mutex_destroy(&handle->done_lock);
         lhat_free(handle);
         return fail_with(machine, module->spawn_failed,
                          "the operating system refused to start a thread");
@@ -453,6 +481,28 @@ static LhatValue thread_sleep(LhatMachine *machine, void *context,
     return lhat_nil();
 }
 
+// 02 の 15.14: the question a scheduler asks in place of waiting. join()
+// blocks, which is the one thing a loop with other tasks to run may not do --
+// so this answers whether the join would return at once, and a task awaiting
+// a thread is written as "ask, and if not, await a short delay".
+//
+// Answering true says the body has finished, and every field the join reads
+// was written before the flag was (thread_main sets it last). A false is only
+// ever "not yet as of now": the thread may finish in the next instant, which
+// is why the shape above loops rather than deciding anything on one answer.
+static LhatValue thread_done(LhatMachine *machine, void *context,
+                             const LhatValue *arguments, size_t count)
+{
+    (void)machine;
+    (void)count;
+    const ThreadModule *module = (const ThreadModule *)context;
+    ThreadHandle *handle =
+        (ThreadHandle *)lhat_hostdata_pointer(arguments[0], module->handle_tag);
+    // A handle already joined has nothing left to run, and one that is not a
+    // handle of this program answers the same way an absent member would.
+    return lhat_bool(handle != NULL && (handle->joined || has_finished(handle)));
+}
+
 // 05 の 8.8: registering this is what makes a ThreadHandle the host's to
 // hand over and L^'s to give back. A caller that already called join()
 // leaves nothing more to wait for; one that never did makes dispose() do
@@ -473,6 +523,7 @@ static LhatValue thread_dispose(LhatMachine *machine, void *context,
         if (handle->status == LHAT_RUN_OK) {
             free_thread_value(&handle->result);
         }
+        lhat_mutex_destroy(&handle->done_lock);
         lhat_free(handle);
     } else {
         join_and_free(handle);
@@ -556,6 +607,8 @@ bool lhatstdlib_thread_register(LhatProgram *program)
                "|std.thread.ThreadError.AlreadyJoined"
                "|std.thread.ThreadError.BadResult|std.error.OutOfMemory;",
                thread_join, module) &&
+           lhat_register_member(program, "std.thread", "ThreadHandle", "done",
+                                "f^self^ -> bool^;", thread_done, module) &&
            lhat_register_member(program, "std.thread", "ThreadHandle",
                                 "dispose", "p^self^;", thread_dispose,
                                 module);

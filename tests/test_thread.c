@@ -389,6 +389,48 @@ static void test_modules_reach_the_thread(void)
     }
 }
 
+// 02 の 15.14: what a scheduler asks in place of waiting. join() blocks, and
+// a loop with other tasks to run may not -- so done() answers whether the
+// join would return at once.
+static void test_done(void)
+{
+    LHAT_TEST("done() answers true once the body has finished");
+    {
+        LhatTestRan ran = run_source(
+            "import^ std.thread\n"
+            "let^ h = std.thread.spawn(closed^p^ ... { return^ 1 })\n"
+            "if^ h isa^ std.thread.ThreadHandle {\n"
+            "    let^ answer = h.join()\n"
+            "    if^ h.done() { return^ 1 }\n"
+            "    return^ 0\n"
+            "}\n"
+            "return^ 0 - 1\n");
+        LHAT_CHECK_RAN_INTEGER(ran, 1);
+        lhat_test_ran_dispose(&ran);
+    }
+
+    // A body that is still sleeping has not finished, so the answer is false
+    // -- which is what makes the ask worth making rather than always true.
+    LHAT_TEST("and false while it is still running");
+    {
+        LhatTestRan ran = run_source(
+            "import^ std.thread\n"
+            "let^ h = std.thread.spawn(closed^p^ ... {\n"
+            "    std.thread.sleep(0.25)\n"
+            "    return^ 1\n"
+            "})\n"
+            "if^ h isa^ std.thread.ThreadHandle {\n"
+            "    let^ early = h.done()\n"
+            "    let^ answer = h.join()\n"
+            "    if^ !early and^ h.done() { return^ 1 }\n"
+            "    return^ 0\n"
+            "}\n"
+            "return^ 0 - 1\n");
+        LHAT_CHECK_RAN_INTEGER(ran, 1);
+        lhat_test_ran_dispose(&ran);
+    }
+}
+
 int main(void)
 {
     test_spawn_shape();
@@ -397,5 +439,6 @@ int main(void)
     test_dispose();
     test_sleep();
     test_modules_reach_the_thread();
+    test_done();
     return lhat_test_report("test_thread");
 }
