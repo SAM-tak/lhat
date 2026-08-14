@@ -218,6 +218,30 @@ static void test_tostring(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_NO_MEMBER);
     unit_dispose(&u);
 
+    // 14.21: the three roundings, carried by a number^ for the same reasons.
+    LHAT_TEST("a number^ answers the three roundings");
+    check_text(&u,
+               "var^ a : number^ = (2.7).floor()\n"
+               "var^ b : number^ = (2.7).ceil()\n"
+               "var^ c : number^ = (2.7).round()\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("and none of them takes anything");
+    check_text(&u, "var^ a : number^ = (2.7).floor(1)\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_ARITY);
+    unit_dispose(&u);
+
+    LHAT_TEST("nothing else carries them");
+    check_text(&u, "var^ a : number^ = \"x\".round()\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_NO_MEMBER);
+    unit_dispose(&u);
+
+    LHAT_TEST("and they have no hat spelling either");
+    check_text(&u, "var^ a : number^ = (2.7).floor^()\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_NO_MEMBER);
+    unit_dispose(&u);
+
     // 11.1's reason for keeping an operator pure holds here too: writing a
     // value down changes nothing, so 15.1 lets an f^ reach it.
     LHAT_TEST("an f^ may call it");

@@ -356,7 +356,14 @@ typedef enum {
     // 02 の 14.20: the comparison '=' makes, with the error term written
     // rather than taken from 14.8's default. Only a number^ carries it --
     // it is the one value an arithmetic error accumulates in.
-    LHAT_NATIVE_EQ
+    LHAT_NATIVE_EQ,
+    // 02 の 14.21: the whole number below, above and nearest. Three members
+    // rather than one taking a direction -- 14.19's substring and at set the
+    // precedent, that a name a reader already knows beats an argument they
+    // would have to look up.
+    LHAT_NATIVE_FLOOR,
+    LHAT_NATIVE_CEIL,
+    LHAT_NATIVE_ROUND
 } LhatNativeKind;
 
 typedef struct LhatNative {

@@ -1245,6 +1245,17 @@ static LhatType *builtin_eq(Checker *c)
     return signature;
 }
 
+// 02 の 14.21: the whole number below, above or nearest. One type for the
+// three -- which of them it is was settled by the name, so nothing is taken
+// and a number^ comes back. An f^: rounding reads a value and makes another.
+static LhatType *builtin_whole(Checker *c)
+{
+    LhatType *signature = lhat_type_func(c->result->types, true);
+    signature->v.func.takes_self = true;
+    signature->v.func.result = chk_simple(c, LHAT_TYPE_NUMBER);
+    return signature;
+}
+
 // 02 の 14.17改2: tostring read backwards, carried by the one value a number^
 // can be read out of. The two signatures are shaped exactly as 14.17's and
 // made an intersection for the same reason -- 14.12 forbids them overlapping,
@@ -1548,6 +1559,13 @@ LhatType *chk_infer_member(Checker *c, const LhatNode *node)
         if (target->kind == LHAT_TYPE_NUMBER &&
             chk_name_is(name, length, "eq")) {
             return builtin_eq(c);
+        }
+        // 14.21: and so are these three, for the same reason.
+        if (target->kind == LHAT_TYPE_NUMBER &&
+            (chk_name_is(name, length, "floor") ||
+             chk_name_is(name, length, "ceil") ||
+             chk_name_is(name, length, "round"))) {
+            return builtin_whole(c);
         }
         // 14.18: how long it is, and how many bytes that is.
         if (target->kind == LHAT_TYPE_STRING &&

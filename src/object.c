@@ -1171,12 +1171,31 @@ static bool grow_entries(LhatTable *table)
 // The array part
 // ---------------------------------------------------------------------------
 
+// 02 の 14.14改: which slot of the dense half a key names, if any.
+//
+// A real names one too, rounded, the way 14.19's at reads an ordinal that came
+// out of a division -- both are a number^ used as a position, and 14.8 makes
+// the two representations one type, so the position should not depend on which
+// one the arithmetic happened to leave. The rounding is at's, floor(x + 0.5),
+// so that one spelling of "round a position" holds across the two.
+//
+// Only inside the run that is already there. Past its end a real stays an
+// ordinary key: a table meaning to be read by real keys is one whose keys were
+// never a run to begin with, and the dense half is what tells the two apart.
 static bool array_index(const LhatTable *table, LhatValue key, size_t *index)
 {
-    if (!lhat_is_integer(key)) {
+    int64_t i;
+    if (lhat_is_integer(key)) {
+        i = lhat_as_integer(key);
+    } else if (lhat_is_real(key)) {
+        double d = lhat_as_real(key);
+        if (!(d > -9.0e15 && d < 9.0e15)) {
+            return false;  // past what a position could name either way
+        }
+        i = (int64_t)floor(d + 0.5);
+    } else {
         return false;
     }
-    int64_t i = lhat_as_integer(key);
     if (i < 1 || (uint64_t)i > table->array_count) {
         return false;
     }

@@ -109,6 +109,43 @@ static void test_table_basics(void)
         LHAT_CHECK_EQ_INT(lhat_as_integer(lhat_table_get(t, lhat_real(2.0))), 21);
     }
 
+    // 14.14改: a real names a position in the dense half, rounded the way
+    // 14.19's at reads one. Both are a number^ used as a position, and which
+    // representation the arithmetic left should not decide which slot.
+    LHAT_TEST("a real reaches the run it lands in");
+    {
+        LhatTable *run = lhat_table_new(&owner);
+        for (int64_t i = 1; i <= 3; i++) {
+            lhat_table_set(run, lhat_integer(i), lhat_integer(i * 10), &refused);
+        }
+        LHAT_CHECK_EQ_INT(lhat_as_integer(lhat_table_get(run, lhat_real(2.3))), 20);
+        LHAT_CHECK_EQ_INT(lhat_as_integer(lhat_table_get(run, lhat_real(2.7))), 30);
+        // at's rounding: a half goes up, so 2.5 is the third slot.
+        LHAT_CHECK_EQ_INT(lhat_as_integer(lhat_table_get(run, lhat_real(2.5))), 30);
+        LHAT_CHECK_EQ_INT(lhat_as_integer(lhat_table_get(run, lhat_real(0.6))), 10);
+
+        // Writing lands in the same slot, so the two halves cannot disagree.
+        lhat_table_set(run, lhat_real(2.3), lhat_integer(77), &refused);
+        LHAT_CHECK_EQ_INT(lhat_as_integer(lhat_table_get(run, lhat_integer(2))), 77);
+
+        // Past the run a real is an ordinary key, and does not extend it --
+        // a table read by real keys is one whose keys were never a run.
+        LHAT_CHECK(lhat_is_nil(lhat_table_get(run, lhat_real(4.4))), "4.4 is nowhere yet");
+        lhat_table_set(run, lhat_real(4.4), lhat_integer(99), &refused);
+        LHAT_CHECK_EQ_INT(lhat_as_integer(lhat_table_get(run, lhat_real(4.4))), 99);
+        LHAT_CHECK(lhat_is_nil(lhat_table_get(run, lhat_integer(4))),
+                   "and 4 is still nowhere");
+    }
+
+    LHAT_TEST("with no run at all, a real is only ever a key");
+    {
+        LhatTable *keyed = lhat_table_new(&owner);
+        lhat_table_set(keyed, lhat_real(1.5), lhat_integer(5), &refused);
+        LHAT_CHECK_EQ_INT(lhat_as_integer(lhat_table_get(keyed, lhat_real(1.5))), 5);
+        LHAT_CHECK(lhat_is_nil(lhat_table_get(keyed, lhat_integer(2))),
+                   "nothing rounded it into a slot that is not there");
+    }
+
     LHAT_TEST("a key that is not a number keeps its own place");
     {
         lhat_table_set(t, lhat_bool(true), lhat_integer(1), &refused);

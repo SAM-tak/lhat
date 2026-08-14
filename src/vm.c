@@ -774,6 +774,20 @@ static bool native_named(LhatValue key, LhatNativeKind *out, bool *hatted)
         *out = LHAT_NATIVE_EQ;
         return true;
     }
+    // 14.21: the three roundings, under the names every other language calls
+    // them by. No hat spelling either, for the same reason as eq.
+    if (name->length == 5 && memcmp(name->text, "floor", 5) == 0) {
+        *out = LHAT_NATIVE_FLOOR;
+        return true;
+    }
+    if (name->length == 4 && memcmp(name->text, "ceil", 4) == 0) {
+        *out = LHAT_NATIVE_CEIL;
+        return true;
+    }
+    if (name->length == 5 && memcmp(name->text, "round", 5) == 0) {
+        *out = LHAT_NATIVE_ROUND;
+        return true;
+    }
     // 14.19: one member under three names.
     if ((name->length == 9 && memcmp(name->text, "substring", 9) == 0) ||
         (name->length == 6 && memcmp(name->text, "substr", 6) == 0) ||
@@ -849,6 +863,29 @@ static CountedKind counted_named(LhatValue key, bool *hatted)
         }
     }
     return COUNTED_NONE;
+}
+
+// 02 の 14.21: the whole number `toward` picks -- floor, ceil or nearbyint.
+//
+// 14.8改: an integer while it can be one. Past what an int64 names, the real
+// is already whole (every double that large is), so it answers as itself --
+// and an infinity or a NaN falls out of the same test rather than wanting one
+// of its own, since neither is inside the range.
+//
+// nearbyint reads the rounding mode, whose default is to nearest with a half
+// going to the even side. printf's "%.0f" reads the same mode, which is why
+// 14.21's round and 14.17's format agree on a half -- one setting, not two
+// implementations that happen to match.
+static LhatValue whole_of(LhatValue value, double (*toward)(double))
+{
+    if (lhat_is_integer(value)) {
+        return value;  // already the whole number it names
+    }
+    double whole = toward(lhat_as_real(value));
+    if (whole >= -9223372036854775808.0 && whole < 9223372036854775808.0) {
+        return lhat_integer((int64_t)whole);
+    }
+    return lhat_real(whole);
 }
 
 // 02 の 14.19: an ordinal as written. 14.8 makes number^ one type of two
@@ -938,7 +975,9 @@ static bool builtin_member(LhatValue on, LhatValue key, LhatNativeKind *out)
         return lhat_is_object_kind(on, LHAT_OBJECT_STRING);
     }
     // 14.20: and only a number^ has an error term to say anything about.
-    if (*out == LHAT_NATIVE_EQ) {
+    // 14.21: nor has anything else a whole number below or above it.
+    if (*out == LHAT_NATIVE_EQ || *out == LHAT_NATIVE_FLOOR ||
+        *out == LHAT_NATIVE_CEIL || *out == LHAT_NATIVE_ROUND) {
         return lhat_is_number(on);
     }
     if (lhat_is_object_kind(on, LHAT_OBJECT_COROUTINE)) {
@@ -2426,7 +2465,10 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
                          bare == LHAT_NATIVE_TONUMBER ||
                          bare == LHAT_NATIVE_SUBSTRING ||
                          bare == LHAT_NATIVE_AT ||
-                         bare == LHAT_NATIVE_EQ)) {
+                         bare == LHAT_NATIVE_EQ ||
+                         bare == LHAT_NATIVE_FLOOR ||
+                         bare == LHAT_NATIVE_CEIL ||
+                         bare == LHAT_NATIVE_ROUND)) {
                         LhatNative *native =
                             lhat_native_new(&m->objects, bare, R(b));
                         if (native == NULL) {
@@ -3106,6 +3148,25 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
                         double allowed = lhat_number_as_real(width);
                         SET_R(a, lhat_bool(lhat_value_close(
                                      native->bound, against, allowed)));
+                        break;
+                    }
+
+                    // 02 の 14.21: the whole number below, above or nearest.
+                    // Nothing to take: which of the three it is was settled
+                    // by the name the member was reached through.
+                    if (native->kind == LHAT_NATIVE_FLOOR ||
+                        native->kind == LHAT_NATIVE_CEIL ||
+                        native->kind == LHAT_NATIVE_ROUND) {
+                        if (b != 0) {
+                            return finish(m, chunk, LHAT_RUN_ARITY, lhat_nil(),
+                                          at);
+                        }
+                        SET_R(a, whole_of(native->bound,
+                                          native->kind == LHAT_NATIVE_FLOOR
+                                              ? floor
+                                          : native->kind == LHAT_NATIVE_CEIL
+                                              ? ceil
+                                              : nearbyint));
                         break;
                     }
 

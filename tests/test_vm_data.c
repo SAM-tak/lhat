@@ -169,6 +169,76 @@ static void test_strings(void)
     LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_ARITY);
     run_dispose(&r);
 
+    // 02 の 14.21: the whole number below and above.
+    LHAT_TEST("floor and ceil go down and up");
+    run_checked_text(&r,
+                     "return^ (2.7).floor() * 1000 + (2.7).ceil() * 100\n"
+                     "     + (0 - (0.0 - 2.7).floor()) * 10\n"
+                     "     + (0 - (0.0 - 2.7).ceil())\n");
+    CHECK_INTEGER(&r, 2332);  // 2, 3, -3, -2
+    run_dispose(&r);
+
+    LHAT_TEST("and leave a whole number where it is");
+    run_checked_text(&r,
+                     "return^ (2.0).floor() * 100 + (2.0).ceil() * 10 + (7).floor()\n");
+    CHECK_INTEGER(&r, 227);
+    run_dispose(&r);
+
+    // 14.21: a half goes to the even side, which is the rounding 14.17's
+    // "%.0f" already reads off the same setting. The two agree on every half.
+    LHAT_TEST("round sends a half to the even side");
+    run_checked_text(&r,
+                     "return^ (0.5).round() * 10000 + (1.5).round() * 1000\n"
+                     "     + (2.5).round() * 100 + (3.5).round() * 10\n"
+                     "     + (0 - (0.0 - 2.5).round())\n");
+    CHECK_INTEGER(&r, 2242);  // 0, 2, 2, 4, -2
+    run_dispose(&r);
+
+    LHAT_TEST("which is what the format answers too");
+    run_checked_text(&r,
+                     "var^ f = \"%.0f\"\n"
+                     "return^ (0.5).round().tostring() .. (0.5).tostring(f)\n"
+                     "     .. (1.5).round().tostring() .. (1.5).tostring(f)\n"
+                     "     .. (2.5).round().tostring() .. (2.5).tostring(f)\n"
+                     "     .. (3.5).round().tostring() .. (3.5).tostring(f)\n");
+    CHECK_STRING(&r, "00222244");  // 0.5→0 1.5→2 2.5→2 3.5→4, each written twice
+    run_dispose(&r);
+
+    // 14.8改: an integer while it can be one, which 13.11's is^ is what
+    // reads back. A whole real answers as the integer it names.
+    LHAT_TEST("the answer is an integer where one will hold it");
+    run_checked_text(&r,
+                     "if^ !((2.7).floor() is^ 2) { return^ 1 }\n"
+                     "if^ (2.7).floor() is^ 2.0 { return^ 2 }\n"
+                     "return^ 0\n");
+    CHECK_INTEGER(&r, 0);
+    run_dispose(&r);
+
+    // Past what an int64 names, the real is already whole -- every double
+    // that large is -- so it answers as itself rather than as nothing.
+    LHAT_TEST("and stays a real where one will not");
+    run_checked_text(&r,
+                     "var^ big = 1.0e300\n"
+                     "if^ !(big.floor() is^ big) { return^ 1 }\n"
+                     "if^ !(big.ceil() is^ big) { return^ 2 }\n"
+                     "if^ !(big.round() is^ big) { return^ 3 }\n"
+                     "return^ 0\n");
+    CHECK_INTEGER(&r, 0);
+    run_dispose(&r);
+
+    LHAT_TEST("an infinity is one of those");
+    run_checked_text(&r,
+                     "var^ zero = 0.0\n"
+                     "var^ endless = 1.0 / zero\n"
+                     "return^ endless.floor() is^ endless\n");
+    CHECK_BOOL(&r, true);
+    run_dispose(&r);
+
+    LHAT_TEST("and none of the three takes an argument");
+    run_text(&r, "return^ (2.7).floor(1)\n");
+    LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_ARITY);
+    run_dispose(&r);
+
     // 02 の 11.2: '..' is concatenation in general; strings are the case
     // that is settled, and 14.5's composition of definitions is the other.
     LHAT_TEST("'..' joins two strings");
