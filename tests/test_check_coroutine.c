@@ -425,6 +425,33 @@ static void test_coroutines(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
+    // 15.14: await^ is the same delegation, so the same type comes out of it
+    // -- what is awaited finishes, and its T is what the wait answers with.
+    LHAT_TEST("await^ answers what the awaited one returns");
+    check_text(&u,
+               "var^ gen = p^ -> number^ { yield^ 1 return^ 2 }\n"
+               "var^ outer = p^ { var^ n : number^ = await^ gen() }\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("and it says so in its own words when there is nothing to wait for");
+    check_text(&u,
+               "var^ plain = f^ -> number^ { return^ 1 }\n"
+               "var^ outer = p^ { var^ n = await^ plain() }\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_AWAIT_NOT_COROUTINE);
+    unit_dispose(&u);
+
+    // 15.2 with 15.5: writing await^ is what makes the body yieldable, and
+    // calling that body answers a coroutine rather than running it. No async
+    // marker is written anywhere -- 15.5's colouring never starts.
+    LHAT_TEST("a body that awaits is yieldable, and its caller is not");
+    check_text(&u,
+               "var^ gen = p^ -> number^ { yield^ 1 return^ 2 }\n"
+               "var^ task = p^ { var^ n : number^ = await^ gen() }\n"
+               "var^ plain = p^ { var^ c = task() c.dispose() }\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
     // 15.2: start() takes nothing and answers the same union resume does --
     // it is what runs a fresh coroutine from the top.
     LHAT_TEST("start() answers the same union as resume()");

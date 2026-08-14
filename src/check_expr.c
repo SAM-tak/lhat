@@ -3367,7 +3367,12 @@ static LhatType *infer_node(Checker *c, const LhatNode *node)
                                       : LHAT_TYPE_UNKNOWN);
             }
             if (inner->kind != LHAT_TYPE_CORO) {
-                chk_report(c, node, LHAT_CHECK_ERR_NOT_COROUTINE);
+                // 15.14: the same rule, said in the words of whichever
+                // spelling was written.
+                chk_report(c, node,
+                           node->v.jump.awaiting
+                               ? LHAT_CHECK_ERR_AWAIT_NOT_COROUTINE
+                               : LHAT_CHECK_ERR_NOT_COROUTINE);
                 return chk_simple(c, LHAT_TYPE_UNKNOWN);
             }
             // 15.8 with 15.3改: delegating runs the inner body -- that is what

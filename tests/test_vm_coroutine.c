@@ -795,6 +795,28 @@ static void test_coroutines(void)
     CHECK_INTEGER(&r, 123);
     run_dispose(&r);
 
+    // 15.14: await^ is that same delegation, so a request raised deep inside
+    // reaches whoever is driving the outer one -- which is what makes a
+    // scheduler possible without the language knowing about one. Here the
+    // driving is done by hand: the request comes out of start(), and the
+    // answer goes back in through resume().
+    LHAT_TEST("a request reaches the driver through await^, and the answer returns");
+    run_text(&r,
+             "var^ inner = p^ -> number^ {\n"
+             "  var^ got : number^ = yield^ 7\n"
+             "  return^ got + 1\n"
+             "}\n"
+             "var^ task = p^ -> number^ {\n"
+             "  var^ v : number^ = await^ inner()\n"
+             "  return^ v * 10\n"
+             "}\n"
+             "var^ t = task()\n"
+             "var^ asked = t.start()\n"
+             "var^ done = t.resume(41)\n"
+             "return^ asked * 1000 + done\n");
+    CHECK_INTEGER(&r, 7420);
+    run_dispose(&r);
+
     // 15.8 with 13.8改: what the inner body yields may be a tuple, and the
     // loop cannot say its width -- a yieldall^ has no count of names to read
     // one off, the way a for^ does. So the run travels through the frame's

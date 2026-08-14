@@ -2300,6 +2300,9 @@ const char *lhat_check_error_message(LhatCheckErrorCode code)
             return "this unit could not be required";
         case LHAT_CHECK_ERR_NOT_COROUTINE:
             return "this has no coroutine to walk or delegate to";
+        case LHAT_CHECK_ERR_AWAIT_NOT_COROUTINE:
+            return "await^ waits for something that finishes, and this is not "
+                   "one -- what may be awaited is a coroutine (15.14)";
         case LHAT_CHECK_ERR_YIELD_NEEDS_ANNOTATION:
             return "a yield^ that is bound needs a written type there";
         case LHAT_CHECK_ERR_YIELD_TYPE_MISMATCH:

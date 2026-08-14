@@ -432,6 +432,11 @@ struct LhatNode {
             // YIELD only. 15.11: written '_yield^', which types exactly as a
             // yield^ does and makes the body yieldable, but never suspends.
             bool phantom;
+            // YIELD_ALL only. 15.14: written 'await^', which delegates and
+            // types exactly as a yieldall^ does. Read by the diagnostics
+            // alone -- what the two words say about the code is the same
+            // thing, and only what a reader is looking for differs.
+            bool awaiting;
             // BREAK: the number of loops to leave, and never zero -- a plain
             // break^ is one.
             //

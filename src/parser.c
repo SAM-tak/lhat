@@ -1395,7 +1395,7 @@ static bool is_statement_keyword(const Parser *p)
 {
     static const char *const words[] = {
         "if", "do", "var", "let", "with", "return", "break", "panic", "yield",
-        "_yield",
+        "_yield", "yieldall", "await",  // 15.8 and 15.14: both suspend
         // 9.11: and the three spellings of the one that goes on with the loop
         "next", "skip", "continue",
         "for", "repeat", "while", "until", "when", "other", "errordef",
@@ -1864,14 +1864,21 @@ static LhatNode *parse_unary(Parser *p)
     // 02 の 15.8: delegation. A word of its own rather than a reading of
     // yield^, since the two have different types -- yield^ answers what the
     // resume sent, this answers the inner coroutine's return value.
-    if (check_hat(p, "yieldall")) {
+    //
+    // 15.14: await^ is the same delegation under the word a reader of async
+    // code knows. The node is the same one with a flag, the way _yield^ is a
+    // yield^ with one -- the type rule is 15.8's and saying it twice is how
+    // the two would drift apart.
+    if (check_hat(p, "yieldall") || check_hat(p, "await")) {
         LhatToken at = p->current;
+        bool awaiting = check_hat(p, "await");
         p->saw_yield = true;  // 15.2: delegating is suspending
         advance(p);
         LhatNode *node = make(p, LHAT_NODE_YIELD_ALL, &at);
         if (node == NULL) {
             return NULL;
         }
+        node->v.jump.awaiting = awaiting;
         node->v.jump.value = parse_unary(p);
         return finish(p, node);
     }

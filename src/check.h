@@ -96,6 +96,10 @@ typedef enum {
     LHAT_CHECK_ERR_NOT_COROUTINE,       // 15.8: yieldall^ needs one, and
                                         // 16.3: so does in^, which walks
                                         // whatever iterate() answers with
+    LHAT_CHECK_ERR_AWAIT_NOT_COROUTINE, // 15.14: the same rule under the
+                                        // other word. What is awaited is
+                                        // something that finishes, and only
+                                        // a coroutine does
 
     LHAT_CHECK_ERR_YIELD_NEEDS_ANNOTATION, // 15.2: a yield^ that is bound
                                             // (directly, by a let^) needs a
