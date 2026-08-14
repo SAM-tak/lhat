@@ -12,9 +12,12 @@ import * as vscode from "vscode";
 import {
     CloseAction,
     ErrorAction,
+    ErrorCodes,
     LanguageClient,
     LanguageClientOptions,
+    ResponseError,
     ServerOptions,
+    State,
 } from "vscode-languageclient/node";
 import { LhatGraphEditorProvider } from "./graphEditor";
 
@@ -103,6 +106,85 @@ export function activate(context: vscode.ExtensionContext): void {
             new LhatGraphEditorProvider(context, () => client),
             { webviewOptions: { retainContextWhenHidden: true } },
         ),
+    );
+
+    // 07 の 4 章: the hover shows an elided type, which reads better in a
+    // popup but is not what anyone can paste. The editor's own copy button
+    // on a hover takes the whole popup -- the line, the type, the comments --
+    // and neither that nor what it copies is ours to change. So the way to
+    // get a signature worth keeping is to ask for one.
+    //
+    // Every way this can end says something. A command reached from a menu
+    // gives no sign of having run, so one that returns quietly is
+    // indistinguishable from one that was never pressed -- and the first
+    // thing this hit in practice was an lhatls built before lhat/signature
+    // existed, which answered -32601 into a silence.
+    context.subscriptions.push(
+        vscode.commands.registerCommand("lhat.copySignature", async () => {
+            const editor = vscode.window.activeTextEditor;
+            if (editor === undefined) {
+                void vscode.window.showInformationMessage(
+                    "Open a .lh file first.");
+                return;
+            }
+            if (client === undefined || client.state !== State.Running) {
+                void vscode.window.showWarningMessage(
+                    "lhatls is not running, so there is nothing to ask. " +
+                    "Run \"L^: Restart Language Server\".");
+                return;
+            }
+
+            let reply: { signature: string } | null | undefined;
+            try {
+                reply = await client.sendRequest<{ signature: string } | null>(
+                    "lhat/signature",
+                    {
+                        textDocument:
+                            client.code2ProtocolConverter.asTextDocumentIdentifier(
+                                editor.document),
+                        position: client.code2ProtocolConverter.asPosition(
+                            editor.selection.active),
+                    },
+                );
+            } catch (error: unknown) {
+                // An lhatls older than this command: it knows every other
+                // method, so the client came up and nothing looks wrong until
+                // this one is pressed.
+                if (error instanceof ResponseError &&
+                    error.code === ErrorCodes.MethodNotFound) {
+                    void vscode.window.showErrorMessage(
+                        "This lhatls is older than Copy Signature. Rebuild it " +
+                        "(cmake --build --preset release) and run " +
+                        "\"L^: Restart Language Server\".");
+                    return;
+                }
+                const reason =
+                    error instanceof Error ? error.message : String(error);
+                void vscode.window.showErrorMessage(
+                    `Could not read the signature: ${reason}`);
+                return;
+            }
+
+            if (reply === null || reply === undefined) {
+                // The server answers null both where nothing at the position
+                // names a type and where the file is not one of the units it
+                // checked (workspace.h), so this names both rather than
+                // guessing which.
+                void vscode.window.showInformationMessage(
+                    "No type is named at the cursor -- or this file is not " +
+                    "part of the checked workspace.");
+                return;
+            }
+            await vscode.env.clipboard.writeText(reply.signature);
+            // The signature itself stays out of the message. A long type
+            // would be wrapped or cut in a notification, and a cut one ends
+            // in the same "…" the hover uses -- which would read as "what
+            // you copied was elided", the one thing this command exists to
+            // avoid. The length says it arrived whole instead.
+            void vscode.window.showInformationMessage(
+                `Copied the signature to the clipboard ` +
+                `(${reply.signature.length} characters).`);
+        }),
     );
 
     // The custom editor is registered with priority "option", so opening a

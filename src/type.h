@@ -447,13 +447,28 @@ bool lhat_type_disjoint(const LhatType *a, const LhatType *b);
 // 't^{ a : string^ }', 'f^number^ -> string^;' -- into `buffer`, always
 // NUL-terminated when `size` is not zero.
 //
-// Returns the length written, which is at most `size - 1`: a type too long
-// for the buffer is cut and ends in an ellipsis rather than being refused.
-// The same happens past LHAT_TYPE_WRITE_MAX_DEPTH, which is what stops a
-// table that holds itself (14 章) from being walked forever.
+// Follows lhat_report_write: answers how many bytes the whole thing wants,
+// not counting the terminating NUL, and fills up to `size` including it. So
+// measuring is a call with (NULL, 0). What does not fit is cut and ends in
+// an ellipsis rather than being refused, so a buffer too small still holds
+// something that reads as incomplete rather than as complete.
 //
-// For reading, not for round-tripping: 03 の 5.11b's typeof^ answers with a
-// value's own shape, while this writes what the checker inferred.
+// This one also elides past LHAT_TYPE_WRITE_MAX_DEPTH and
+// LHAT_TYPE_WRITE_MAX_ITEMS. Those are for a reader -- 07 の 4 章's hover,
+// where a shorter answer says more -- and not what makes the walk finish:
+// 14 章 lets a table hold itself, and what answers that is 13.13's Self^,
+// written wherever the walk meets a structure it is already inside.
 size_t lhat_type_write(const LhatType *type, char *buffer, size_t size);
+
+// The same, eliding nothing but a cycle. For a caller that wants the type
+// as text to keep -- 07 の 4 章's "copy the signature" -- rather than to
+// read in a popup.
+//
+// Still not a promise of round-tripping, but the two things in the way are
+// worth naming rather than leaving to be discovered. A type inference did
+// not decide is written '?' (03 の 3.1), which nothing reads back; and a
+// cycle is 'Self^', which 13.13 spells the same way but which only means
+// this type inside the definition it belongs to.
+size_t lhat_type_write_full(const LhatType *type, char *buffer, size_t size);
 
 #endif  // LHAT_TYPE_H

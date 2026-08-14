@@ -2,6 +2,7 @@
 
 #include "type.h"
 
+#include <limits.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -1143,6 +1144,17 @@ typedef struct {
     size_t written;
     // Pushed and popped around a structure as write_type descends into it.
     const WriteSeen *seen;
+    // 07 の 4 章: how much of a type to write before eliding the rest. On
+    // the sink rather than threaded through the recursion, since every
+    // writer below already has one. A caller wanting the whole thing passes
+    // INT_MAX, which no depth or count reaches, so the tests below stay as
+    // they are and there is no "unlimited" case to write twice.
+    //
+    // Neither limit is what stops the walk: 14 章 lets a table hold itself,
+    // and `seen` is what answers that -- with 13.13's Self^, the spelling
+    // the source would use in the same place.
+    int max_depth;
+    int max_items;
 } TypeSink;
 
 static void put(TypeSink *sink, const char *text, size_t length)
@@ -1168,7 +1180,7 @@ static void write_members(TypeSink *sink, const LhatTypeMember *members,
 {
     int count = 0;
     for (const LhatTypeMember *m = members; m != NULL; m = m->next) {
-        if (count == LHAT_TYPE_WRITE_MAX_ITEMS) {
+        if (count == sink->max_items) {
             put_text(sink, ", …");
             return;
         }
@@ -1196,7 +1208,7 @@ static void write_own_members(TypeSink *sink, const LhatType *definition,
         if (find_member(held->v.table.members, m) != NULL) {
             continue;
         }
-        if (count == LHAT_TYPE_WRITE_MAX_ITEMS) {
+        if (count == sink->max_items) {
             put_text(sink, ", …");
             return;
         }
@@ -1213,7 +1225,7 @@ static void write_list(TypeSink *sink, const LhatTypeList *list, int depth,
 {
     int count = 0;
     for (const LhatTypeList *item = list; item != NULL; item = item->next) {
-        if (count == LHAT_TYPE_WRITE_MAX_ITEMS) {
+        if (count == sink->max_items) {
             put_text(sink, separator);
             put_text(sink, "…");
             return;
@@ -1233,7 +1245,7 @@ static void write_type(TypeSink *sink, const LhatType *type, int depth)
         return;
     }
     // 14 章 lets a table hold itself, so the walk needs a floor of its own.
-    if (depth > LHAT_TYPE_WRITE_MAX_DEPTH) {
+    if (depth > sink->max_depth) {
         put_text(sink, "…");
         return;
     }
@@ -1433,26 +1445,50 @@ static void write_type(TypeSink *sink, const LhatType *type, int depth)
     put_text(sink, "?");
 }
 
-size_t lhat_type_write(const LhatType *type, char *buffer, size_t size)
+static size_t write_with_limits(const LhatType *type, char *buffer,
+                                size_t size, int max_depth, int max_items)
 {
-    if (buffer == NULL || size == 0) {
-        return 0;
-    }
-    // One byte held back for the terminator, so `left` running out and the
-    // string being closed are the same condition.
-    TypeSink sink = {buffer, size - 1, 0, NULL};
-    write_type(&sink, type, 0);
-    *sink.at = '\0';
+    bool filling = buffer != NULL && size > 0;
 
-    if (sink.written > size - 1) {
-        // Cut. Say so rather than leaving a type that reads as complete.
-        size_t room = size - 1;
-        const char *mark = "…";  // three bytes in UTF-8
-        size_t mark_length = strlen(mark);
-        if (room > mark_length) {
-            memcpy(buffer + room - mark_length, mark, mark_length);
+    TypeSink sink;
+    sink.at = buffer;
+    // One byte held back for the terminator, so `left` running out and the
+    // string being closed are the same condition. Measuring writes nowhere,
+    // and `written` counts either way (put).
+    sink.left = filling ? size - 1 : 0;
+    sink.written = 0;
+    sink.seen = NULL;
+    sink.max_depth = max_depth;
+    sink.max_items = max_items;
+
+    write_type(&sink, type, 0);
+
+    if (filling) {
+        *sink.at = '\0';
+        if (sink.written > size - 1) {
+            // Cut. Say so rather than leaving a type that reads as complete.
+            size_t room = size - 1;
+            const char *mark = "…";  // three bytes in UTF-8
+            size_t mark_length = strlen(mark);
+            if (room > mark_length) {
+                memcpy(buffer + room - mark_length, mark, mark_length);
+            }
         }
-        return room;
     }
     return sink.written;
+}
+
+size_t lhat_type_write(const LhatType *type, char *buffer, size_t size)
+{
+    return write_with_limits(type, buffer, size, LHAT_TYPE_WRITE_MAX_DEPTH,
+                             LHAT_TYPE_WRITE_MAX_ITEMS);
+}
+
+size_t lhat_type_write_full(const LhatType *type, char *buffer, size_t size)
+{
+    // INT_MAX rather than a flag: no depth or member count reaches it, so
+    // the elisions simply never fire and there is no second path through
+    // the writers. What still ends the walk is `seen` -- 14 章's table that
+    // holds itself comes back as 13.13's Self^.
+    return write_with_limits(type, buffer, size, INT_MAX, INT_MAX);
 }

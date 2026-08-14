@@ -59,6 +59,11 @@
         "icon": "$(type-hierarchy)"
       },
       {
+        "command": "lhat.copySignature",
+        "title": "Copy Signature",
+        "category": "L^"
+      },
+      {
         "command": "lhat.restartServer",
         "title": "Restart Language Server",
         "category": "L^"
@@ -73,9 +78,21 @@
           "group": "navigation"
         }
       ],
+      "editor/context": [
+        {
+          "comment": "Shown on any .lh rather than only where a type stands: telling those apart would mean asking the server on every cursor move to keep a context key current, which is a lot of machinery for hiding one item. Pressed where nothing is named, the command says so.",
+          "command": "lhat.copySignature",
+          "when": "resourceLangId == lhat",
+          "group": "9_cutcopypaste"
+        }
+      ],
       "commandPalette": [
         {
           "command": "lhat.openGraph",
+          "when": "resourceLangId == lhat"
+        },
+        {
+          "command": "lhat.copySignature",
           "when": "resourceLangId == lhat"
         }
       ]

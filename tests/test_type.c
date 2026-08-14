@@ -7,6 +7,7 @@
 // conflicts (14.12), and that an error kind's identity is its declaration
 // rather than its shape (04 の 2.4).
 
+#include <stdlib.h>
 #include <string.h>
 
 #include "testutil.h"
@@ -550,9 +551,106 @@ static void test_errors(void)
     types_dispose(&t);
 }
 
+// 07 の 4 章: the two ways of writing a type out. What a hover shows is
+// elided so a reader is not made to wade; what a copy takes has to be the
+// whole thing, since it is being kept rather than read once.
+static void test_writing_whole(void)
+{
+    Types t;
+    types_init(&t);
+
+    // config.h stops the ordinary walk at LHAT_TYPE_WRITE_MAX_DEPTH (3).
+    LHAT_TEST("the reading form elides past the depth a popup is helped by");
+    {
+        LhatType *deep = simple(&t, LHAT_TYPE_NUMBER);
+        for (int i = 0; i < 6; i++) {
+            deep = table1(&t, "a", deep);
+        }
+        char buffer[256];
+        lhat_type_write(deep, buffer, sizeof buffer);
+        LHAT_CHECK(strstr(buffer, "…") != NULL,
+                   "expected an ellipsis, got %s", buffer);
+
+        LHAT_TEST("and the whole form writes it out");
+        lhat_type_write_full(deep, buffer, sizeof buffer);
+        LHAT_CHECK(strstr(buffer, "…") == NULL,
+                   "expected no ellipsis, got %s", buffer);
+        LHAT_CHECK(strstr(buffer, "number^") != NULL,
+                   "expected the innermost type to be reached, got %s", buffer);
+    }
+
+    // The same for LHAT_TYPE_WRITE_MAX_ITEMS (6).
+    LHAT_TEST("a long member list is elided for reading and whole for keeping");
+    {
+        LhatType *wide = lhat_type_table(&t.arena);
+        static const char *names[] = {"a", "b", "c", "d", "e", "f", "g", "h"};
+        for (size_t i = 0; i < sizeof names / sizeof names[0]; i++) {
+            lhat_type_add_member(&t.arena, wide, names[i], 1,
+                                 simple(&t, LHAT_TYPE_NUMBER));
+        }
+        char buffer[512];
+        lhat_type_write(wide, buffer, sizeof buffer);
+        LHAT_CHECK(strstr(buffer, "…") != NULL, "expected an ellipsis, got %s",
+                   buffer);
+
+        lhat_type_write_full(wide, buffer, sizeof buffer);
+        LHAT_CHECK(strstr(buffer, "h : number^") != NULL,
+                   "expected the last member, got %s", buffer);
+    }
+
+    // Neither limit is what makes the walk finish: 14 章 lets a table hold
+    // itself, and `seen` answers that with 13.13's Self^. Without it,
+    // writing this with no limits would not return.
+    LHAT_TEST("a table that holds itself still ends, without either limit");
+    {
+        LhatType *a = table1(&t, "next", NULL);
+        a->v.table.members->type = a;
+        char buffer[64];
+        size_t written = lhat_type_write_full(a, buffer, sizeof buffer);
+        LHAT_CHECK_EQ_STR(buffer, written, "t^{ next : Self^ }");
+    }
+
+    // The convention lhat_report_write follows: ask with (NULL, 0), allocate,
+    // ask again. What comes back is what the whole thing wanted, so a caller
+    // sizing a buffer from it gets one that fits.
+    LHAT_TEST("it answers how much room the type wants");
+    {
+        LhatType *wide = lhat_type_table(&t.arena);
+        for (int i = 0; i < 8; i++) {
+            char name[2] = {(char)('a' + i), '\0'};
+            lhat_type_add_member(&t.arena, wide, name, 1,
+                                 simple(&t, LHAT_TYPE_STRING));
+        }
+        size_t wanted = lhat_type_write_full(wide, NULL, 0);
+        LHAT_CHECK(wanted > 0, "expected a length from measuring");
+
+        char *room = (char *)malloc(wanted + 1);
+        LHAT_CHECK(room != NULL, "out of memory");
+        if (room != NULL) {
+            size_t written = lhat_type_write_full(wide, room, wanted + 1);
+            LHAT_CHECK_EQ_INT(written, wanted);
+            LHAT_CHECK_EQ_INT(strlen(room), wanted);
+            LHAT_CHECK(strstr(room, "…") == NULL,
+                       "a buffer sized from the answer holds all of it: %s",
+                       room);
+            free(room);
+        }
+
+        // Too little room still says so, and says how much was wanted.
+        char small[8];
+        size_t asked = lhat_type_write_full(wide, small, sizeof small);
+        LHAT_CHECK_EQ_INT(asked, wanted);
+        LHAT_CHECK(strstr(small, "…") != NULL,
+                   "a cut type reads as cut, got %s", small);
+    }
+
+    types_dispose(&t);
+}
+
 int main(void)
 {
     test_primitives();
+    test_writing_whole();
     test_structures();
     test_composites();
     test_functions();

@@ -1,13 +1,13 @@
-// L^ (lhat) -- LSP server: textDocument/hover.
+// L^ (lhat) -- LSP server: lhat/signature (07 の 4 章).
 
-#include "hover.h"
+#include "signature.h"
 
 #include <stdlib.h>
 
-// The hover-building logic, disambiguated from this handler's own header of
-// the same basename -- a bare "hover.h" resolves to this file's neighbour
-// first, the way semantic_tokens.c already has to say.
-#include "../hover.h"
+// The answer itself, disambiguated from this handler's own header of the
+// same basename -- a bare "signature.h" resolves to this file's neighbour
+// first, the way hover.c already has to say.
+#include "../signature.h"
 
 #include "position.h"
 #include "server.h"
@@ -20,18 +20,18 @@
 typedef struct {
     int line;
     int character;
-    cJSON *result;
-} HoverRequest;
+    char *signature;  // owned; NULL when nothing there names a type
+} SignatureRequest;
 
 static void collect(void *context, const LhatUnit *unit)
 {
-    HoverRequest *request = (HoverRequest *)context;
+    SignatureRequest *request = (SignatureRequest *)context;
     uint32_t offset = lsp_offset_at(unit->source.text, unit->source.length,
                                     request->line, request->character);
-    request->result = lsp_hover_for_unit(unit, offset);
+    request->signature = lsp_signature_for_unit(unit, offset);
 }
 
-cJSON *lsp_handle_hover(LspServer *server, const cJSON *params)
+cJSON *lsp_handle_signature(LspServer *server, const cJSON *params)
 {
     if (params == NULL) {
         return NULL;
@@ -56,9 +56,15 @@ cJSON *lsp_handle_hover(LspServer *server, const cJSON *params)
         return NULL;
     }
 
-    HoverRequest request = {line->valueint, character->valueint, NULL};
+    SignatureRequest request = {line->valueint, character->valueint, NULL};
     lsp_workspace_with_unit(&server->workspace, path, collect, &request);
     free(path);
 
-    return request.result;  // NULL is a JSON null, which LSP reads as "nothing"
+    if (request.signature == NULL) {
+        return NULL;  // a JSON null: nothing is named there
+    }
+    cJSON *result = cJSON_CreateObject();
+    cJSON_AddStringToObject(result, "signature", request.signature);
+    free(request.signature);
+    return result;
 }

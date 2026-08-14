@@ -22,4 +22,10 @@ typedef struct {
 LspPosition lsp_position_at(const char *text, size_t text_length,
                             uint32_t byte_offset);
 
+// The other way: LSP gives a line and a UTF-16 character, and lhat counts
+// bytes. A position past the end of its line stops at the line's end rather
+// than running into the next.
+uint32_t lsp_offset_at(const char *text, size_t text_length, int line,
+                       int character);
+
 #endif  // LSP_POSITION_H

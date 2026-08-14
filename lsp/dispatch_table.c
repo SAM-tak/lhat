@@ -9,6 +9,7 @@
 #include "handlers/hover.h"
 #include "handlers/initialize.h"
 #include "handlers/semantic_tokens.h"
+#include "handlers/signature.h"
 #include "handlers/text_document_sync.h"
 
 const LspRequestEntry LSP_REQUEST_TABLE[] = {
@@ -18,6 +19,7 @@ const LspRequestEntry LSP_REQUEST_TABLE[] = {
     {"textDocument/hover", lsp_handle_hover},
     // 07 の 6 章: an extension of our own, so it is named under "lhat/".
     {"lhat/ast", lsp_handle_ast},
+    {"lhat/signature", lsp_handle_signature},
     {NULL, NULL},
 };
 

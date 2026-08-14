@@ -270,8 +270,16 @@ cJSON *lsp_hover_for_unit(const LhatUnit *unit, uint32_t offset)
     char inferred[LHAT_HOVER_TYPE_BUFFER];
     size_t inferred_length = 0;
     if (resolved != NULL && resolved->type != NULL) {
+        // What it answers is how much the whole type wanted, which is more
+        // than this buffer holds for a big one -- and what is *in* the
+        // buffer then is the cut form ending in an ellipsis. A hover shows
+        // the cut form (07 の 4 章: a shorter answer says more here), so
+        // what is read back out is what fits.
         inferred_length =
             lhat_type_write(resolved->type, inferred, sizeof inferred);
+        if (inferred_length > sizeof inferred - 1) {
+            inferred_length = strlen(inferred);
+        }
     }
 
     size_t room = line_length + inferred_length + 32;

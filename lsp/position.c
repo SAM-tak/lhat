@@ -40,6 +40,37 @@ static uint32_t decode_and_advance(const char *text, size_t length, size_t *at)
     return code;
 }
 
+uint32_t lsp_offset_at(const char *text, size_t text_length, int line,
+                       int character)
+{
+    size_t i = 0;
+    for (int seen = 0; seen < line && i < text_length; i++) {
+        if (text[i] == '\n') {
+            seen++;
+        }
+    }
+    int units = 0;
+    while (i < text_length && text[i] != '\n' && units < character) {
+        unsigned char lead = (unsigned char)text[i];
+        size_t sequence = 1;
+        int width = 1;
+        if (lead >= 0xF0) {
+            sequence = 4;
+            width = 2;  // beyond the BMP: a surrogate pair
+        } else if (lead >= 0xE0) {
+            sequence = 3;
+        } else if (lead >= 0xC0) {
+            sequence = 2;
+        }
+        if (i + sequence > text_length) {
+            break;
+        }
+        i += sequence;
+        units += width;
+    }
+    return (uint32_t)i;
+}
+
 LspPosition lsp_position_at(const char *text, size_t text_length,
                             uint32_t byte_offset)
 {

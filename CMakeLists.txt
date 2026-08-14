@@ -227,6 +227,18 @@ endif()
 # LSP over stdio instead of a prompt. vendor/cjson is JSON-RPC's message
 # shape; nothing about lhat's own build needs it, so it is scoped to here.
 if(LHAT_BUILD_LSP)
+    # 07 の 4 章: hover, semantic tokens and lhat/signature all answer from
+    # what the checker recorded about each name, so the server is exactly the
+    # consumer LHAT_WITH_RESOLUTIONS exists for. Turning that off and asking
+    # for a server anyway is a contradiction worth naming here rather than
+    # letting it surface as an undeclared identifier deep in lsp/.
+    if(NOT LHAT_WITH_RESOLUTIONS)
+        message(FATAL_ERROR
+            "LHAT_BUILD_LSP needs LHAT_WITH_RESOLUTIONS: the language server "
+            "answers from what the checker recorded about each name. Turn one "
+            "of the two off.")
+    endif()
+
     add_library(cjson STATIC vendor/cjson/cJSON.c)
     target_include_directories(cjson PUBLIC vendor/cjson)
     if(MSVC)
@@ -259,6 +271,8 @@ if(LHAT_BUILD_LSP)
         lsp/handlers/semantic_tokens.c
         lsp/handlers/ast.c
         lsp/handlers/hover.c
+        lsp/handlers/signature.c
+        lsp/signature.c
     )
     # The binary is a language server, not "LSP" itself, so the executable
     # is named lhatls -- but the target, lsp/ and the archive/pdb byproducts
