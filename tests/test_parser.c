@@ -2790,6 +2790,74 @@ static void test_definitions(void)
 }
 
 // 04-errors.md.
+static void test_try_block(void)
+{
+    Parse p;
+
+    // 04 の 4.5: the body and the arms live inside the one pair of braces,
+    // the way 5.2 puts an if^'s clauses there. The first clause is the body
+    // and carries no type; the bare arm carries none either and is last.
+    LHAT_TEST("try^{ } holds a body and its arms");
+    parse_text(&p,
+               "try^{\n"
+               "    var^ v = try^ f()\n"
+               "catch^ E.A:\n"
+               "    var^ x = 1\n"
+               "catch^:\n"
+               "    var^ y = 2\n"
+               "}");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    {
+        const LhatNode *block = first_statement(&p);
+        LHAT_CHECK_EQ_INT(block->kind, LHAT_NODE_TRY_BLOCK);
+        LHAT_CHECK_EQ_INT(lhat_node_list_length(block->v.list.items), 3);
+
+        const LhatNode *body = block->v.list.items;
+        LHAT_CHECK(body->v.clause.condition == NULL, "the body names no kind");
+        LHAT_CHECK(body->next->v.clause.condition != NULL, "the arm names one");
+        LHAT_CHECK(body->next->next->v.clause.condition == NULL,
+                   "and the bare arm does not");
+    }
+    parse_dispose(&p);
+
+    LHAT_TEST("and nothing follows the bare arm");
+    parse_text(&p,
+               "try^{\n"
+               "    var^ v = try^ f()\n"
+               "catch^:\n"
+               "    var^ x = 1\n"
+               "catch^ E.A:\n"
+               "    var^ y = 2\n"
+               "}");
+    LHAT_CHECK(p.result.diagnostic_count > 0, "expected a diagnostic");
+    if (p.result.diagnostic_count > 0) {
+        LHAT_CHECK_EQ_INT(p.result.diagnostics[0].code,
+                          LHAT_PARSE_ERR_CATCH_AFTER_BARE);
+    }
+    parse_dispose(&p);
+
+    // The block's own list is where catch^ is spoken for; anywhere else it is
+    // still 4.1's operator, including inside a body written in the block.
+    LHAT_TEST("a catch^ nested deeper is still the operator");
+    parse_text(&p,
+               "try^{\n"
+               "    var^ v = try^ f()\n"
+               "    if^ v > 0 {\n"
+               "        var^ n = g() catch^ 0\n"
+               "    }\n"
+               "catch^:\n"
+               "    var^ x = 1\n"
+               "}");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    parse_dispose(&p);
+
+    // And a try^ with no brace after it is the unary operator of 5 章.
+    LHAT_TEST("try^ without a brace is the operator it always was");
+    parse_text(&p, "var^ v = try^ f()\nvar^ n = g() catch^ 0\n");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    parse_dispose(&p);
+}
+
 static void test_errors(void)
 {
     Parse p;
@@ -3462,6 +3530,7 @@ int main(void)
     test_loop_clauses();
     test_definitions();
     test_errors();
+    test_try_block();
     test_incomplete();
     test_recovery();
     test_realistic();

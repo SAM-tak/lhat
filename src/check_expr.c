@@ -356,6 +356,28 @@ static LhatType *initial_binding_type(Checker *c, const char *name,
     return NULL;
 }
 
+// 04 の 5.3 with 3.4: an error on its way out of the body being checked --
+// through a try^, or through a try^{ } whose arms did not take it. Where the
+// result was written, this is where it is asked whether that admits it; where
+// none was, this is one of the exits the result is the union of.
+void chk_error_leaves(Checker *c, const LhatNode *at, LhatType *escaping)
+{
+    if (escaping == NULL) {
+        return;
+    }
+    if (c->declared_result != NULL) {
+        if (!lhat_type_conforms(escaping, c->declared_result)) {
+            chk_report(c, at, LHAT_CHECK_ERR_TRY_OUTSIDE);
+        }
+        return;
+    }
+    // 13.8改's width check is the return^ side's business: a union of a tuple
+    // with an error kind is what 04 の 3.1 admits, so the arm added here is
+    // not one to measure.
+    c->inferred_result =
+        lhat_type_union(c->result->types, c->inferred_result, escaping);
+}
+
 LhatType *chk_infer_name(Checker *c, const LhatNode *node)
 {
     const char *name = NULL;
@@ -1886,6 +1908,10 @@ LhatType *chk_infer_func(Checker *c, const LhatNode *node)
     bool outer_in_function = c->in_function;
     Scope *outer_body_scope = c->body_scope;
     Scope *outer_closed_scope = c->closed_scope;
+    // 04 の 4.5: a try^ written in this body belongs to this body, whatever
+    // block the literal itself was written inside.
+    struct CatchFrame *outer_catch_frame = c->catch_frame;
+    c->catch_frame = NULL;
 
     c->scope = &body;
     c->declared_result = declared;
@@ -2034,6 +2060,7 @@ LhatType *chk_infer_func(Checker *c, const LhatNode *node)
     c->in_function = outer_in_function;
     c->body_scope = outer_body_scope;
     c->closed_scope = outer_closed_scope;
+    c->catch_frame = outer_catch_frame;
 
     chk_scope_dispose(&body);
     // The compiler reads this back instead of re-deriving the signature from
@@ -3371,27 +3398,18 @@ static LhatType *infer_node(Checker *c, const LhatNode *node)
             LhatType *error = chk_simple(c, LHAT_TYPE_ERROR);
             if (!chk_can_be(value, error)) {
                 chk_report(c, node, LHAT_CHECK_ERR_CANNOT_FAIL);
-            } else if (c->declared_result != NULL) {
-                LhatType *escaping = chk_only(c, value, error);
-                if (escaping != NULL &&
-                    !lhat_type_conforms(escaping, c->declared_result)) {
-                    chk_report(c, node, LHAT_CHECK_ERR_TRY_OUTSIDE);
-                }
-            } else {
-                // 03 の 3.4: with nothing written, this is one of the exits
-                // the result is the union of -- an error leaves the body here
-                // as plainly as a value leaves it through a return^. 5.3 asks
-                // whether the written result admits it; where none was
-                // written, what leaves is what the result comes to include.
-                //
-                // 13.8改's width check is the return^ side's business: a
-                // union of a tuple with an error kind is what 04 の 3.1
-                // admits, so the arm added here is not one to measure.
+            } else if (c->catch_frame != NULL) {
+                // 04 の 4.5: a try^{ } stands between this and the caller.
+                // What leaves here reaches its arms, and 5.3 is asked of
+                // whatever they do not take, where the block closes.
                 LhatType *escaping = chk_only(c, value, error);
                 if (escaping != NULL) {
-                    c->inferred_result = lhat_type_union(
-                        c->result->types, c->inferred_result, escaping);
+                    c->catch_frame->caught =
+                        lhat_type_union(c->result->types,
+                                        c->catch_frame->caught, escaping);
                 }
+            } else {
+                chk_error_leaves(c, node, chk_only(c, value, error));
             }
             return chk_without(c, value, error);
         }

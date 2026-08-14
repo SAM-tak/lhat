@@ -1572,6 +1572,67 @@ static void check_block(Checker *c, const LhatNode *node)
     chk_scope_dispose(&scope);
 }
 
+// 04 の 4.5: the body is checked with a frame open, so every try^ written in
+// it hands its errors here instead of to the subroutine's result. Each arm
+// then takes what it is written for, with it^ narrowed to that (4.2), and
+// what no arm took goes on out exactly as a bare try^ would have sent it.
+static void check_try_block(Checker *c, const LhatNode *node)
+{
+    const LhatNode *body = node->v.list.items;
+    if (body == NULL) {
+        return;
+    }
+
+    struct CatchFrame frame = { NULL, c->catch_frame };
+    c->catch_frame = &frame;
+    chk_check_statement(c, body->v.clause.body);
+    c->catch_frame = frame.outer;
+
+    // 4.1's line, one construct over: catching what cannot fail says nothing.
+    if (frame.caught == NULL) {
+        chk_report(c, node, LHAT_CHECK_ERR_CATCHES_NOTHING);
+    }
+
+    LhatType *left = frame.caught;
+    for (const LhatNode *arm = body->next; arm != NULL; arm = arm->next) {
+        LhatType *want = arm->v.clause.condition != NULL
+                             ? chk_resolve_type(c, arm->v.clause.condition)
+                             : NULL;
+        // The bare arm takes everything still standing; a written one takes
+        // the arms of that which fit it, the same reading 13.11's isa^ makes.
+        LhatType *here = want != NULL ? chk_only(c, left, want) : left;
+
+        Scope scope;
+        scope.bindings = NULL;
+        scope.tail = NULL;
+        scope.parent = c->scope;
+        Scope *outer = c->scope;
+        c->scope = &scope;
+        Binding *caught =
+            chk_scope_add(&scope, "it^", 3,
+                          here != NULL ? here : chk_simple(c, LHAT_TYPE_ERROR),
+                          arm->offset);
+        if (caught != NULL) {
+            caught->reached = true;
+        }
+        // An arm is one path among several, so a let^ written in it is as
+        // uncertain as one inside an if^ clause.
+        c->conditional++;
+        chk_check_statement(c, arm->v.clause.body);
+        c->conditional--;
+        c->scope = outer;
+        chk_scope_dispose(&scope);
+
+        if (want != NULL) {
+            left = chk_without(c, left, want);
+        } else {
+            left = NULL;
+        }
+    }
+
+    chk_error_leaves(c, node, left);
+}
+
 void chk_check_statement(Checker *c, const LhatNode *node)
 {
     if (node == NULL) {
@@ -1662,6 +1723,10 @@ void chk_check_statement(Checker *c, const LhatNode *node)
             }
             break;
         }
+
+        case LHAT_NODE_TRY_BLOCK:
+            check_try_block(c, node);
+            break;
 
         case LHAT_NODE_RETURN: {
             // 03 の 3.4: a return^ that reaches the subroutine itself says

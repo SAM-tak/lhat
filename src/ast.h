@@ -70,6 +70,11 @@ typedef enum {
     LHAT_NODE_CALL_STMT,
     LHAT_NODE_BLOCK,         // do^{ ... } and any braced body
     LHAT_NODE_IF_STMT,
+    LHAT_NODE_TRY_BLOCK,     // try^{ ... catch^T: ... catch^: ... }
+                             // (04 の 4.5). The items are IF_CLAUSE nodes:
+                             // the first is the body, the rest are arms
+                             // whose `condition` is the written type -- NULL
+                             // on the bare one, which takes what is left
     LHAT_NODE_RETURN,
     LHAT_NODE_BREAK,
     LHAT_NODE_PANIC,         // panic^ expr                 (04 の 11.6)

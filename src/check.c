@@ -1416,6 +1416,21 @@ bool chk_always_exits(const LhatNode *node)
             return has_else;
         }
 
+        // 04 の 4.5: the way past a try^{ } is the body finishing with
+        // nothing raised, so a body that always leaves closes that way out.
+        // The arms are the other ways in, and what no arm took leaves the
+        // frame -- so when every arm leaves as well, nothing reaches the
+        // statement below.
+        case LHAT_NODE_TRY_BLOCK: {
+            for (const LhatNode *clause = node->v.list.items; clause != NULL;
+                 clause = clause->next) {
+                if (!chk_always_exits(clause->v.clause.body)) {
+                    return false;
+                }
+            }
+            return node->v.list.items != NULL;
+        }
+
         // 16.5: a repeat^ with no bound runs until something leaves it. With
         // no break^ of its own, nothing after it is ever reached, so it ends
         // the statements around it the way a return^ does. 03 の 3.4 counts
@@ -2424,6 +2439,9 @@ const char *lhat_check_error_message(LhatCheckErrorCode code)
             return "Self^ names the t^ or def^ written around it, and there is "
                    "no such literal here -- or a second hat counted past the "
                    "outermost one";
+        case LHAT_CHECK_ERR_CATCHES_NOTHING:
+            return "nothing in this try^{ } can fail: an error reaches the "
+                   "arms by being written try^, and none is";
         case LHAT_CHECK_ERR_CLOSED_CAPTURES:
             return "a closed^ body names nothing standing outside it: pass "
                    "this as an argument instead. An import^ed module, a name "

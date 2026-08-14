@@ -265,6 +265,15 @@ typedef struct {
     // reaches through.
     Scope *closed_scope;
 
+    // 04 の 4.5: the try^{ } being checked, if any. A try^ written inside one
+    // hands its errors here rather than to the subroutine's result -- what
+    // no arm takes is what goes on out (check_try_block). A subroutine body
+    // written inside the block clears it: a try^ there belongs to that body.
+    struct CatchFrame {
+        LhatType *caught;
+        struct CatchFrame *outer;
+    } *catch_frame;
+
     // 02 の 14.12改: what an override^ is writing over, which is what super^
     // names. NULL anywhere else, so 14.12's marker is what makes it a name.
     LhatType *super_type;
@@ -366,6 +375,10 @@ LhatType *chk_resolve_func_type(Checker *c, const LhatNode *node);
 // may be reached through one is what is handed a receiver, which its signature
 // says; new, a static member and a value are the definition's alone.
 bool chk_takes_receiver(const LhatType *type);
+
+// 04 の 5.3 with 3.4: an error leaving the body being checked, through a try^
+// or through the arms of a try^{ } that did not take it.
+void chk_error_leaves(Checker *c, const LhatNode *at, LhatType *escaping);
 
 bool chk_may_stand_beside_tuple(const LhatType *type);
 bool chk_contains_error(const LhatType *type);

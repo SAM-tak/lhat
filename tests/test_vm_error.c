@@ -263,6 +263,89 @@ static void test_catch_and_try(void)
     CHECK_STRING(&r, "gone");
     run_dispose(&r);
 
+    // 04 の 4.5: the arms are where a try^ inside the block leaves for, and
+    // an arm is chosen by 13.11's judgement -- so the kind decides which one
+    // runs, and it^ is narrowed to it there.
+    LHAT_TEST("a try^{ } arm takes the kind it names");
+    run_text(&r,
+             "errordef^ E { Missing { where : string^ }, Denied }\n"
+             "var^ fail = f^ n:number^ -> number^|E {\n"
+             "  if^ n = 1 { return^ error^E.Missing{ where = \"here\" } }\n"
+             "  if^ n = 2 { return^ error^E.Denied{ } }\n"
+             "  return^ 10\n"
+             "}\n"
+             "var^ pick = f^ n:number^ -> string^ {\n"
+             "  try^{\n"
+             "    var^ v = try^ fail(n)\n"
+             "    return^ \"ok\"\n"
+             "  catch^ E.Missing:\n"
+             "    return^ it^.where\n"
+             "  catch^:\n"
+             "    return^ \"other\"\n"
+             "  }\n"
+             "}\n"
+             "return^ pick(0) .. pick(1) .. pick(2)\n");
+    CHECK_STRING(&r, "okhereother");
+    run_dispose(&r);
+
+    // The whole point of the form: a return^ written in an arm is the
+    // enclosing subroutine's, not an escape from the block.
+    LHAT_TEST("and a return^ in an arm leaves the subroutine");
+    run_text(&r,
+             "errordef^ E { Bad }\n"
+             "var^ fail = f^ { return^ error^E.Bad{ } }\n"
+             "var^ go = f^ -> number^ {\n"
+             "  try^{\n"
+             "    var^ v = try^ fail()\n"
+             "  catch^:\n"
+             "    return^ 1\n"
+             "  }\n"
+             "  return^ 2\n"
+             "}\n"
+             "return^ go()\n");
+    CHECK_INTEGER(&r, 1);
+    run_dispose(&r);
+
+    // 4.5: what no arm takes leaves the way a bare try^ would have sent it.
+    LHAT_TEST("and what no arm takes goes on out");
+    run_text(&r,
+             "errordef^ E { A, B }\n"
+             "var^ fail = f^ { return^ error^E.B{ message := \"through\" } }\n"
+             "var^ go = f^ {\n"
+             "  try^{\n"
+             "    var^ v = try^ fail()\n"
+             "  catch^ E.A:\n"
+             "    return^ \"wrong arm\"\n"
+             "  }\n"
+             "  return^ \"no error\"\n"
+             "}\n"
+             "return^ go().message\n");
+    CHECK_STRING(&r, "through");
+    run_dispose(&r);
+
+    // Reaching an arm is a way out of the block and no further, so what the
+    // block opened is drained on the way -- 9.8's reading, one construct over.
+    LHAT_TEST("and a with^ inside the block disposes before the arm runs");
+    run_text(&r,
+             "errordef^ E { Bad }\n"
+             "var^ log = { text = \"\" }\n"
+             "var^ Res = def^{ self^{ },\n"
+             "  dispose = p^self^ { log.text := log.text .. \"d\" } }\n"
+             "var^ fail = f^ { return^ error^E.Bad{ } }\n"
+             "var^ go = f^ -> string^ {\n"
+             "  try^{\n"
+             "    with^ r = Res.new() {\n"
+             "      var^ v = try^ fail()\n"
+             "    }\n"
+             "  catch^:\n"
+             "    return^ log.text .. \"a\"\n"
+             "  }\n"
+             "  return^ \"no error\"\n"
+             "}\n"
+             "return^ go()\n");
+    CHECK_STRING(&r, "da");
+    run_dispose(&r);
+
     // 02 の 11.7: '??' is the same shape, asking about nil^.
     // The escape keeps "??'" from being read as a trigraph for '^'.
     LHAT_TEST("'?\?' supplies a value for a missing key");
