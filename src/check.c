@@ -9,7 +9,10 @@
 
 void chk_report(Checker *c, const LhatNode *at, LhatCheckErrorCode code)
 {
-    if (at == NULL) {
+    // 13.11's narrowing reads a path the caller has already inferred, so
+    // whatever is wrong with it has been said once. One mistake is one
+    // diagnostic (03 の 3.4改2 keeps a ring to one as well).
+    if (at == NULL || c->rereading > 0) {
         return;
     }
 
@@ -1609,7 +1612,13 @@ void chk_narrow_from(Checker *c, const LhatNode *condition, bool truth)
         return;
     }
 
+    // A second reading of something the caller inferred already: every call
+    // site below narrows a condition it has just walked in full, so nothing
+    // here is reached for the first time and nothing here reports.
+    c->rereading++;
     LhatType *current = chk_infer(c, path);
+    c->rereading--;
+
     LhatType *inside =
         holds ? chk_only(c, current, tested) : chk_without(c, current, tested);
 

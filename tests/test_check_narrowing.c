@@ -236,6 +236,63 @@ static void test_narrowing(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
+    // 13.11's "the right side of and^": it runs only where the left held, so
+    // what the left tested is known there. Without it the one condition has
+    // to be written as two nested if^, which is what anyone tries first.
+    LHAT_TEST("and^ narrows its own right side");
+    check_text(&u,
+               "var^ f = f^ -> number^|string^ { return^ 0 }\n"
+               "var^ r = f()\n"
+               "if^ r isa^ number^ and^ r <= 0.5 { var^ n : number^ = r }\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // The other half of the same rule: or^'s right side runs where the left
+    // failed, so what holds there is the false side.
+    LHAT_TEST("or^ narrows its right side with the false side");
+    check_text(&u,
+               "var^ t : number^|nil^ = nil^\n"
+               "if^ t = nil^ or^ t <= 0.5 { var^ b = true^ }\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // Short circuit is what carries it, so it only runs one way: the left is
+    // evaluated whatever the right says.
+    LHAT_TEST("and^ does not narrow the other way round");
+    check_text(&u,
+               "var^ f = f^ -> number^|string^ { return^ 0 }\n"
+               "var^ r = f()\n"
+               "if^ r <= 0.5 and^ r isa^ number^ { var^ b = true^ }\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_NOT_ORDERED);
+    unit_dispose(&u);
+
+    // Nothing about this belongs to if^ -- and^ is an expression, and the
+    // narrowing lives exactly as long as it does.
+    LHAT_TEST("and^ narrows outside a condition too");
+    check_text(&u,
+               "var^ f = f^ -> number^|string^ { return^ 0 }\n"
+               "var^ r = f()\n"
+               "var^ ok = r isa^ number^ and^ r <= 0.5\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("and the narrowing does not outlive the expression");
+    check_text(&u,
+               "var^ f = f^ -> number^|string^ { return^ 0 }\n"
+               "var^ r = f()\n"
+               "var^ ok = r isa^ number^ and^ r <= 0.5\n"
+               "var^ n : number^ = r\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
+    unit_dispose(&u);
+
+    // Narrowing reads the path a second time, after the condition was
+    // inferred in full. What is wrong with it was said there.
+    LHAT_TEST("a mistake in a narrowing condition is reported once");
+    check_text(&u, "if^ nowhere isa^ number^ { var^ b = true^ }\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_UNDEFINED);
+    LHAT_CHECK_EQ_INT(u.checked.diagnostic_count, 1);
+    unit_dispose(&u);
+
     // 13.11: only a name or a dot path from one, since a call may give a
     // different value the second time.
     LHAT_TEST("a call is not narrowed");

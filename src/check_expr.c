@@ -644,6 +644,28 @@ LhatType *chk_infer_binary(Checker *c, const LhatNode *node)
         return chk_simple(c, LHAT_TYPE_BOOL);
     }
 
+    // 13.11: and^'s right side runs only where the left held, and or^'s only
+    // where it did not -- so what the left established about a path is known
+    // inside the right, which is what makes 'x isa^ number^ and^ x <= 0.5'
+    // read. Popped straight after: what the whole condition tells a branch is
+    // the branch's own question, and chk_narrow_from answers it from the top.
+    //
+    // 11.5 の (5)'s chain does not come through here -- it is its own node --
+    // so "a chain does not narrow" stays as it was.
+    if (op == LHAT_OP_AND || op == LHAT_OP_OR) {
+        LhatType *boolean = chk_simple(c, LHAT_TYPE_BOOL);
+        chk_expect(c, node->v.binary.left, left, boolean,
+                   LHAT_CHECK_ERR_NOT_BOOL);
+
+        Narrowing *before = c->narrowings;
+        chk_narrow_from(c, node->v.binary.left, op == LHAT_OP_AND);
+        LhatType *other = chk_infer(c, node->v.binary.right);
+        chk_expect(c, node->v.binary.right, other, boolean,
+                   LHAT_CHECK_ERR_NOT_BOOL);
+        chk_pop_narrowings(c, before);
+        return boolean;
+    }
+
     LhatType *right = chk_infer(c, node->v.binary.right);
 
     switch (op) {
@@ -659,15 +681,6 @@ LhatType *chk_infer_binary(Checker *c, const LhatNode *node)
             // in, which leaves ordinary arithmetic exactly as it was.
             LhatType *answer = infer_operator(c, node, op, left, right);
             return answer != NULL ? answer : chk_simple(c, LHAT_TYPE_NUMBER);
-        }
-
-        case LHAT_OP_AND:
-        case LHAT_OP_OR: {
-            LhatType *boolean = chk_simple(c, LHAT_TYPE_BOOL);
-            chk_expect(c, node->v.binary.left, left, boolean, LHAT_CHECK_ERR_NOT_BOOL);
-            chk_expect(c, node->v.binary.right, right, boolean,
-                       LHAT_CHECK_ERR_NOT_BOOL);
-            return boolean;
         }
 
         // 11.9: the one comparison a type writes. Asked exactly the way

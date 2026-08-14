@@ -155,6 +155,12 @@ typedef struct {
     // is a stack rather than something scopes own.
     Narrowing *narrowings;
 
+    // 13.11: reading something that was read already, which is what
+    // chk_narrow_from does to the path a condition tested. Nothing reports
+    // while this stands, so one mistake stays one diagnostic. A counter
+    // rather than a flag, for the same reason `deferred` is one.
+    size_t rereading;
+
     // 03 の 3.4: the parameters whose types the bodies now open are deciding.
     // Innermost first, and a nested body's are pushed in front of the enclosing
     // one's -- a demand made inside one still reaches an outer parameter, since
