@@ -139,13 +139,9 @@ let^same = f^want, used {
 # / は実数除算なので 8/(3-8/3) は 24 ちょうどにならない。幅で見る
 let^near24 = f^value { if^value < 24: 24 - value < 0.000001 el^: value - 24 < 0.000001;}
 
-#[
-誤りは try^{ } で受ける（04 の 4.5）。囲いは手続きではないので、
-中の break^ は repeat^ を抜け、return^ を書けばこの単位から出る。
-]#
 try^{
     with^rng = try^std.random.make(0) {
-        var^want = { 0, 0, 0, 0, 0, 0, 0, 0, 0 }
+        let^want = { 0, 0, 0, 0, 0, 0, 0, 0, 0 }
         var^shown = ""
         for^i from^1 to^4 {
             let^d = rng.range(1, 9)
