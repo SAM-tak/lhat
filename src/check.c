@@ -52,6 +52,8 @@ void chk_record_resolution(Checker *c, const LhatNode *at, const Binding *b)
     entry->use_end = at->end;
     entry->definition = b->offset;
     entry->has_definition = true;
+    entry->is_parameter = b->is_parameter;
+    entry->immutable = b->immutable;
     entry->type = b->type;
 }
 
@@ -77,6 +79,14 @@ void chk_record_typed_resolution(Checker *c, const LhatNode *at,
     entry->use_end = at->end;
     entry->definition = 0;
     entry->has_definition = false;
+    // Neither question applies to any of these. A member is not what a
+    // signature declared, and 8.9's let^/var^ is about a name a scope holds
+    // -- what a table's member may be written through is 15.1改 and 05 の
+    // 8.6's question, asked of the table rather than of the name. Saying
+    // "immutable" here would be answering a different question with this
+    // one's word.
+    entry->is_parameter = false;
+    entry->immutable = false;
     entry->type = type;
 }
 

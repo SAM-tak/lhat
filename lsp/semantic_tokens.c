@@ -35,6 +35,7 @@ const size_t LSP_SEMANTIC_TOKEN_TYPES_COUNT =
 
 const char *const LSP_SEMANTIC_TOKEN_MODIFIERS[] = {
     "declaration",
+    "readonly",  // 8.9: bound by a let^ rather than a var^
 };
 const size_t LSP_SEMANTIC_TOKEN_MODIFIERS_COUNT =
     sizeof LSP_SEMANTIC_TOKEN_MODIFIERS / sizeof LSP_SEMANTIC_TOKEN_MODIFIERS[0];
@@ -51,6 +52,7 @@ enum {
 
 enum {
     SEM_MOD_DECLARATION = 1u << 0,
+    SEM_MOD_READONLY = 1u << 1,
 };
 
 typedef struct {
@@ -97,37 +99,55 @@ static bool names_a_namespace(const LhatType *type)
 // `variable` and `property` are the two the walk falls back on when the
 // place a name stands does not say what it is; every other classification
 // was read off the form it was written in, and stands.
-static uint8_t refine_by_type(const SemCollector *c, uint32_t offset,
-                              uint8_t type)
+//
+// `modifiers` is added to rather than replaced: 8.9's readonly is a fact
+// about the binding, not about which of the classifications above it got,
+// so it stands beside whatever the name turned out to be.
+static void refine_from_resolution(const SemCollector *c, uint32_t offset,
+                                   uint8_t *type, uint8_t *modifiers)
 {
-    if (c->unit == NULL || (type != SEM_VARIABLE && type != SEM_PROPERTY)) {
-        return type;
+    if (c->unit == NULL) {
+        return;
     }
     const LhatResolution *resolved =
         lhat_check_resolution_at(&c->unit->checked, offset);
-    if (resolved == NULL || resolved->type == NULL) {
-        return type;
+    if (resolved == NULL) {
+        return;
+    }
+
+    if (resolved->immutable) {
+        *modifiers |= SEM_MOD_READONLY;
+    }
+    if (*type != SEM_VARIABLE && *type != SEM_PROPERTY) {
+        return;  // the form already said what this is
+    }
+
+    // 13.1 before the type: a parameter holding a def^ is still a parameter
+    // -- what declared the name is the more particular answer about it than
+    // what the name happens to hold.
+    if (resolved->is_parameter) {
+        *type = SEM_PARAMETER;
+        return;
     }
     const LhatType *settled = resolved->type;
+    if (settled == NULL) {
+        return;
+    }
 
     // A definition first: it is the more particular answer, and 14.1's
     // is_definition and 8.6's sealed never stand together.
     if (settled->kind == LHAT_TYPE_TABLE && settled->v.table.is_definition) {
-        return SEM_CLASS;
+        *type = SEM_CLASS;
+    } else if (names_a_namespace(settled)) {
+        *type = SEM_NAMESPACE;
+    } else if (settled->kind == LHAT_TYPE_FUNC) {
+        *type = SEM_FUNCTION;
+    } else if (settled->kind == LHAT_TYPE_ERROR_SET ||
+               settled->kind == LHAT_TYPE_ERROR_KIND) {
+        // 04 の 2.2: what an errordef^ declared, and one kind within it.
+        // Both are written where a type is.
+        *type = SEM_TYPE;
     }
-    if (names_a_namespace(settled)) {
-        return SEM_NAMESPACE;
-    }
-    if (settled->kind == LHAT_TYPE_FUNC) {
-        return SEM_FUNCTION;
-    }
-    // 04 の 2.2: what an errordef^ declared, and one kind within it. Both
-    // are written where a type is.
-    if (settled->kind == LHAT_TYPE_ERROR_SET ||
-        settled->kind == LHAT_TYPE_ERROR_KIND) {
-        return SEM_TYPE;
-    }
-    return type;
 }
 #endif  // LHAT_WITH_RESOLUTIONS
 
@@ -138,7 +158,7 @@ static void collector_add(SemCollector *c, uint32_t offset, uint32_t length,
         return;
     }
 #if LHAT_WITH_RESOLUTIONS
-    type = refine_by_type(c, offset, type);
+    refine_from_resolution(c, offset, &type, &modifiers);
 #endif
     if (c->count == c->capacity) {
         size_t grown = c->capacity ? c->capacity * 2 : 64;
@@ -353,10 +373,14 @@ static uint8_t declared_as(const LhatNode *value, uint8_t fallback)
     return value != NULL && value->kind == LHAT_NODE_DEF ? SEM_CLASS : fallback;
 }
 
+// `mod` is what the form already said about these names: whether they are
+// being declared here, and -- 8.9 -- whether the word that declared them
+// was a let^. A use of the same name gets the second from the checker
+// instead (refine_from_resolution), and the two agree because both read
+// what 8.9 decided.
 static void walk_targets(SemCollector *out, const LhatNode *targets,
-                         const LhatNode *values, bool is_declaration)
+                         const LhatNode *values, uint8_t mod)
 {
-    uint8_t mod = is_declaration ? SEM_MOD_DECLARATION : 0;
     const LhatNode *value = values;
     for (const LhatNode *t = targets; t != NULL; t = t->next) {
         uint8_t named = declared_as(value, SEM_VARIABLE);
@@ -559,12 +583,16 @@ static void walk_value(SemCollector *out, const LhatNode *node)
             break;
         case LHAT_NODE_DEFINE:
             walk_targets(out, node->v.binding.targets, node->v.binding.values,
-                         true);
+                         SEM_MOD_DECLARATION |
+                             (node->v.binding.immutable ? SEM_MOD_READONLY : 0));
             walk_list(out, node->v.binding.values);
             break;
         case LHAT_NODE_REASSIGN:
+            // ':=' writes a name that already exists, so its targets declare
+            // nothing -- and a name it may be written to is not a readonly
+            // one, which 8.9 is what refuses.
             walk_targets(out, node->v.binding.targets, node->v.binding.values,
-                         false);
+                         0);
             walk_list(out, node->v.binding.values);
             break;
         case LHAT_NODE_BLOCK:
@@ -582,10 +610,12 @@ static void walk_value(SemCollector *out, const LhatNode *node)
             // 16.3: parse_for_focus reads the focus through parse_let_target
             // (parser.c), so it takes every shape a let^ target does -- a
             // bare name, 'i:number^', a '.member' path, an index. The same
-            // walk a define's targets get, then.
-            // 16.3: a focus is given its value by the clause after it, not
-            // by a list beside it, so there is nothing to pair here.
-            walk_targets(out, node->v.loop.focus, NULL, true);
+            // walk a define's targets get, then. A focus is given its value
+            // by the clause after it rather than by a list beside it, so
+            // there is nothing to pair here; and where the focus is itself a
+            // DEFINE (the let^/var^ forms), that node says whether 8.9 made
+            // it readonly when the walk reaches it.
+            walk_targets(out, node->v.loop.focus, NULL, SEM_MOD_DECLARATION);
             walk_value(out, node->v.loop.bound);
             walk_value(out, node->v.loop.step);
             walk_list(out, node->v.loop.advance);

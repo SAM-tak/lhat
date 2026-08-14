@@ -403,6 +403,37 @@ static void test_results(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
+    // 13.2: not writing '-> …' is what says a signature answers nothing.
+    // There is no second spelling for it -- '-> ;' is not a way to say the
+    // same thing, so a reader meets one form and typeof^ writes one form.
+    LHAT_TEST("a signature answering nothing writes no arrow");
+    check_text(&u,
+               "var^ f : p^; = p^ { }\n"
+               "var^ g : p^number^, number^; = p^ a:number^, b:number^ { }\n"
+               "var^ h : p^ -> number^; = p^ -> number^ { return^ 1 }\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("and '-> ;' is not a signature");
+    check_text(&u, "var^ f : p^ -> ; = p^ { }\n");
+    LHAT_CHECK(syntax_errors(&u) > 0, "expected a syntax error");
+    unit_dispose(&u);
+
+    LHAT_TEST("nor with arguments before it");
+    check_text(&u, "var^ f : p^number^ -> ; = p^ a:number^ { }\n");
+    LHAT_CHECK(syntax_errors(&u) > 0, "expected a syntax error");
+    unit_dispose(&u);
+
+    // 13.2: an empty argument side is not written by leaving the types out --
+    // 'p^number^;' would then be two readings of one form. 13.9's coroutine
+    // first slot is where that shape is used instead.
+    LHAT_TEST("a signature taking nothing still writes its arrow");
+    check_text(&u,
+               "var^ f : p^ -> number^; = p^ -> number^ { return^ 1 }\n"
+               "var^ n : number^ = f()\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
     // 13.2 keeps "returns nothing" apart from "returns nil^". A body that
     // returns a value on one path and falls out on another does produce a
     // value, so the missing one is nil^ (04 の 11.3).
@@ -1841,6 +1872,45 @@ static void test_resolutions_are_ordered(void)
     }
     unit_dispose(&u);
 }
+
+// 07 の 4 章: what a resolution says besides the type. 13.1's "a signature
+// declared this" and 8.9's "a let^ bound it" are both things only the
+// checker knows -- where a use stands says neither, and the type says
+// neither. A tool asking what a name is has to be told.
+static void test_resolutions_say_what_bound_the_name(void)
+{
+    Unit u;
+
+    LHAT_TEST("07 の 4 章: a resolution says a parameter is one, and which "
+              "word bound a name");
+    check_text(&u,
+               "let^ fixed = 1\n"
+               "var^ moving = 2\n"
+               "let^ take = f^ n:number^ -> number^ {\n"
+               "    return^ n + fixed + moving\n"
+               "}\n");
+    CHECK_CLEAN(&u);
+
+    // The three uses in the body, found where each stands.
+    const char *body = strstr(u.source.text, "return^ ");
+    LHAT_CHECK(body != NULL, "expected the body to be there");
+    if (body != NULL) {
+        const LhatResolution *n = lhat_check_resolution_at(
+            &u.checked, (uint32_t)(strstr(body, "n ") - u.source.text));
+        const LhatResolution *f = lhat_check_resolution_at(
+            &u.checked, (uint32_t)(strstr(body, "fixed") - u.source.text));
+        const LhatResolution *m = lhat_check_resolution_at(
+            &u.checked, (uint32_t)(strstr(body, "moving") - u.source.text));
+
+        LHAT_CHECK(n != NULL && n->is_parameter,
+                   "13.1: the parameter reads as one where it is used");
+        LHAT_CHECK(f != NULL && !f->is_parameter && f->immutable,
+                   "8.9: a let^ name is readonly and is not a parameter");
+        LHAT_CHECK(m != NULL && !m->immutable,
+                   "8.9: a var^ name is not readonly");
+    }
+    unit_dispose(&u);
+}
 #endif
 
 int main(void)
@@ -1848,6 +1918,7 @@ int main(void)
     test_names();
 #if LHAT_WITH_RESOLUTIONS
     test_resolutions_are_ordered();
+    test_resolutions_say_what_bound_the_name();
 #endif
     test_expressions();
     test_results();

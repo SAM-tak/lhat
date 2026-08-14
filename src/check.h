@@ -267,6 +267,15 @@ typedef struct {
     // source declares it. The type is still known, which is what a reader
     // asking "what is this" wants most.
     bool has_definition;
+    // 13.1: declared by a signature rather than bound by a let^ or var^.
+    // Where a use stands says only that there is a name, and the type says
+    // only what it holds -- which of the two declared it is something only
+    // the checker knows.
+    bool is_parameter;
+    // 8.9: bound by a let^ (or by a form that binds like one -- 12 章's
+    // with^, 16.3's walking focus), so nothing written after it reassigns
+    // the name.
+    bool immutable;
     // What the name holds there. Belongs to the result's type arena, so it
     // is valid for as long as the result is.
     LhatType *type;

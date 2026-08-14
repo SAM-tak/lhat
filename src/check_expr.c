@@ -1912,6 +1912,7 @@ LhatType *chk_infer_func(Checker *c, const LhatNode *node)
             Binding *b = chk_scope_add(&body, "...", 3, collected, param->offset);
             if (b != NULL) {
                 b->reached = true;
+                b->is_parameter = true;
             }
             continue;
         }
@@ -1932,6 +1933,7 @@ LhatType *chk_infer_func(Checker *c, const LhatNode *node)
                                        param->v.param.name->offset);
             if (b != NULL) {
                 b->reached = true;
+                b->is_parameter = true;
             }
         }
     }

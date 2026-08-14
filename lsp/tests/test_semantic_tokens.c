@@ -157,6 +157,21 @@ static void expect_token(const Tokens *tokens, const char *text,
                declared ? "set" : "unset", want_declaration ? "set" : "unset");
 }
 
+// 8.9's readonly, which stands beside whatever the name turned out to be
+// rather than replacing it -- so it is asked about on its own.
+static void expect_readonly(const Tokens *tokens, const char *text,
+                            const char *needle, bool want)
+{
+    const Token *token = token_for(tokens, text, needle);
+    LHAT_CHECK(token != NULL, "no token for \"%s\"", needle);
+    if (token == NULL) {
+        return;
+    }
+    bool readonly = (token->modifiers & 2u) != 0;
+    LHAT_CHECK(readonly == want, "\"%s\": readonly %s, want %s", needle,
+               readonly ? "set" : "unset", want ? "set" : "unset");
+}
+
 // ---------------------------------------------------------------------------
 // Every name the tree holds gets a token
 // ---------------------------------------------------------------------------
@@ -513,10 +528,10 @@ static void test_isa_asks_about_a_type(void)
 
     expect_token(&tokens, source, "number^ {\n", "type", false);
     expect_token(&tokens, source, "number^ { }", "type", false);
-    // And the subject beside it is still read as a value. `parameter` marks
-    // where one is declared (walk_params); a use of it is a reference like
-    // any other, which is what the checker would have to say otherwise.
-    expect_token(&tokens, source, "n isa^", "variable", false);
+    // And the subject beside it reads as the parameter it is -- what the
+    // resolution now carries, rather than the plain variable a use of one
+    // came back as before.
+    expect_token(&tokens, source, "n isa^", "parameter", false);
 
     free(tokens.items);
     cJSON_Delete(data);
@@ -549,9 +564,93 @@ static void test_isa_within_a_comparison_chain(void)
     check_dispose(&c);
 }
 
+// 13.1: what declared the name is something only the checker knows -- the
+// place a use stands says only that there is a name, and the type says only
+// what it holds. Before the resolution carried it, a use of a parameter
+// came back as an ordinary variable while its declaration read as one.
+static void test_a_parameter_reads_as_one_where_it_is_used(void)
+{
+    LHAT_TEST("13.1: a parameter is a parameter at its uses too");
+
+    static const char *source =
+        "let^ take = f^ n:number^ -> number^ {\n"
+        "    return^ n + 1\n"
+        "}\n";
+
+    Checked c;
+    check_text(&c, source);
+    cJSON *data = lsp_semantic_tokens_for_unit(&c.unit);
+    Tokens tokens = decode(data);
+
+    expect_token(&tokens, source, "n:number^", "parameter", true);
+    expect_token(&tokens, source, "n + 1", "parameter", false);
+    // And a local is still a variable, so this says something.
+    expect_token(&tokens, source, "take = f^", "variable", true);
+
+    free(tokens.items);
+    cJSON_Delete(data);
+    check_dispose(&c);
+}
+
+// 8.9: which word bound the name. The declaration reads it off the tree and
+// a use off the checker, and the two have to agree -- they are the same
+// fact asked in two places.
+static void test_let_is_readonly_and_var_is_not(void)
+{
+    LHAT_TEST("8.9: let^ marks a name readonly, var^ leaves it writable");
+
+    static const char *source =
+        "let^ fixed = 1\n"
+        "var^ moving = 2\n"
+        "moving := fixed + moving\n";
+
+    Checked c;
+    check_text(&c, source);
+    cJSON *data = lsp_semantic_tokens_for_unit(&c.unit);
+    Tokens tokens = decode(data);
+
+    expect_readonly(&tokens, source, "fixed = 1", true);
+    expect_readonly(&tokens, source, "moving = 2", false);
+    expect_readonly(&tokens, source, "fixed + moving", true);
+    expect_readonly(&tokens, source, "moving := ", false);
+
+    free(tokens.items);
+    cJSON_Delete(data);
+    check_dispose(&c);
+}
+
+// The typed resolutions say nothing about 8.9, because the question does
+// not apply to them: a member is not a name a scope holds, and what may be
+// written through a table is 15.1改's question rather than this one.
+static void test_a_member_is_not_called_readonly(void)
+{
+    LHAT_TEST("14.10: a member carries no answer about let^ or var^");
+
+    static const char *source =
+        "let^ point = { x = 1 }\n"
+        "let^ n = point.x\n";
+
+    Checked c;
+    check_text(&c, source);
+    cJSON *data = lsp_semantic_tokens_for_unit(&c.unit);
+    Tokens tokens = decode(data);
+
+    expect_readonly(&tokens, source, "x\n", false);
+    // The table the member is read from was bound by a let^, and that one
+    // does answer.
+    expect_readonly(&tokens, source, "point.x", true);
+
+    free(tokens.items);
+    cJSON_Delete(data);
+    check_dispose(&c);
+}
+
 int main(void)
 {
     test_every_name_is_reached();
+    test_a_parameter_reads_as_one_where_it_is_used();
+    test_let_is_readonly_and_var_is_not();
+    test_a_member_is_not_called_readonly();
     test_isa_asks_about_a_type();
     test_isa_within_a_comparison_chain();
     test_definition_reads_as_a_type();

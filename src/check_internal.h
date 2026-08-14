@@ -65,6 +65,11 @@ typedef struct Binding {
     // require^ landing on the same root clears this, the same way
     // compile.c's Local does.
     bool import_root;
+    // 13.1: declared by a signature rather than bound by a let^ or var^.
+    // Nothing in the checker reads it -- 07 の 4 章 does, since where a use
+    // stands says only that there is a name, and the type says only what it
+    // holds. Which of the two declared it is known here and nowhere else.
+    bool is_parameter;
     struct Binding *next;
 } Binding;
 
