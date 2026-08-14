@@ -1330,6 +1330,14 @@ static const LhatNode *path_root(const LhatNode *node)
 
 LhatType *chk_narrowed_type(Checker *c, const LhatNode *path)
 {
+    // 13.11: a write ends what a branch established about the target, so it
+    // does not answer for the target either -- what may be written is what
+    // the name holds. Only the path being written to: the prefix of one
+    // keeps its own, which is what lets 'a.b := 1' inside 'if^ a isa^ T'
+    // reach T's member at all.
+    if (c->writing_to != NULL && same_path(c, c->writing_to, path)) {
+        return NULL;
+    }
     for (const Narrowing *n = c->narrowings; n != NULL; n = n->next) {
         if (same_path(c, n->path, path)) {
             return n->type;

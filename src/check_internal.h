@@ -155,6 +155,24 @@ typedef struct {
     // is a stack rather than something scopes own.
     Narrowing *narrowings;
 
+    // 13.11: the target of the write being checked, if any. What a branch
+    // narrowed *it* to says nothing about what may be written -- the write
+    // is what ends that claim -- so the type is asked of the name itself.
+    // Set around that one reading only: the value on the right runs before
+    // the write, where the claim still holds ('x := x + 1').
+    const LhatNode *writing_to;
+
+    // 13.11 with 9.2: what a loop condition established. It holds in the
+    // clauses that run after the test -- main^, which is the block's own
+    // statements (9.3), and first^ -- and nowhere else: prolog^ and pre^ run
+    // before the test, last^ and epilog^ once the loop is over, where for a
+    // while^ the condition is what ended it. Set by the loop around the walk
+    // of its body and taken by that block on entry, so a block written inside
+    // the body does not read it.
+    struct LoopTest {
+        Narrowing *before;  // where the list is cut back to for the rest
+    } *loop_test;
+
     // 13.11: reading something that was read already, which is what
     // chk_narrow_from does to the path a condition tested. Nothing reports
     // while this stands, so one mistake stays one diagnostic. A counter

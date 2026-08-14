@@ -285,6 +285,116 @@ static void test_narrowing(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
+    // 13.11 with 9.2: a conditional loop tests before every turn, so the body
+    // runs where the condition held -- the same ground an if^ body stands on.
+    LHAT_TEST("a while^ loop narrows its body");
+    check_text(&u,
+               "var^ f = f^ -> number^|string^ { return^ 0 }\n"
+               "var^ r = f()\n"
+               "repeat^ while^ r isa^ number^ { var^ n : number^ = r }\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("an until^ loop narrows it with the false side");
+    check_text(&u,
+               "var^ f = f^ -> number^|string^ { return^ 0 }\n"
+               "var^ r = f()\n"
+               "repeat^ until^ r isa^ string^ { var^ n : number^ = r }\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("and so does the for^ form of the same loop");
+    check_text(&u,
+               "var^ f = f^ -> number^|string^ { return^ 0 }\n"
+               "var^ r = f()\n"
+               "for^ var^ i = 1 while^ r isa^ number^ next^ i := i + 1 {\n"
+               "    var^ n : number^ = r\n"
+               "}\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // 13.11: the write that ends a narrowing is not itself a mistake -- what
+    // may be written is what the name holds. 13.11's own example does this,
+    // and a loop that advances the value it tested does nothing else.
+    LHAT_TEST("the write that ends a narrowing is allowed to widen it");
+    check_text(&u,
+               "var^ f = f^ -> number^|string^ { return^ 0 }\n"
+               "var^ r = f()\n"
+               "if^ r isa^ number^ { r := f() }\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // The value stands to the right of the write, so it is read where the
+    // narrowing still holds.
+    LHAT_TEST("and the value it writes is still narrowed");
+    check_text(&u,
+               "var^ f = f^ -> number^|string^ { return^ 0 }\n"
+               "var^ r = f()\n"
+               "if^ r isa^ number^ { r := r + 1 }\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("a written member reads the same way");
+    check_text(&u,
+               "var^ f = f^ -> number^|string^ { return^ 0 }\n"
+               "var^ t = { a := f() }\n"
+               "if^ t.a isa^ number^ { t.a := f() }\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // 13.11: a loop advancing the value its own condition tested is the
+    // shape all of this has to hold up under.
+    LHAT_TEST("which is what lets a loop advance what it tested");
+    check_text(&u,
+               "var^ f = f^ -> number^|string^ { return^ 0 }\n"
+               "var^ r = f()\n"
+               "repeat^ while^ r isa^ number^ {\n"
+               "    var^ n : number^ = r + 1\n"
+               "    r := f()\n"
+               "}\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // 9.2: first^ runs after the test, so it stands where main^ does.
+    LHAT_TEST("first^ is on the far side of the test too");
+    check_text(&u,
+               "var^ f = f^ -> number^|string^ { return^ 0 }\n"
+               "var^ r = f()\n"
+               "repeat^ while^ r isa^ number^ { first^: var^ n : number^ = r }\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // 9.10: pre^ runs before the condition is tested, and runs once even
+    // where it never holds -- so the condition says nothing there.
+    LHAT_TEST("pre^ runs before the test and is not narrowed");
+    check_text(&u,
+               "var^ f = f^ -> number^|string^ { return^ 0 }\n"
+               "var^ r = f()\n"
+               "repeat^ while^ r isa^ number^ { pre^: var^ n : number^ = r }\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
+    unit_dispose(&u);
+
+    // 9.1: last^ runs once the loop is over, which for a while^ is where the
+    // condition has just failed.
+    LHAT_TEST("nor is last^, which runs once the condition failed");
+    check_text(&u,
+               "var^ f = f^ -> number^|string^ { return^ 0 }\n"
+               "var^ r = f()\n"
+               "repeat^ while^ r isa^ number^ { last^: var^ n : number^ = r }\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
+    unit_dispose(&u);
+
+    // 9.8: a break^ leaves from anywhere, so what ended the loop is not
+    // known after it.
+    LHAT_TEST("and the narrowing does not outlive the loop");
+    check_text(&u,
+               "var^ f = f^ -> number^|string^ { return^ 0 }\n"
+               "var^ r = f()\n"
+               "repeat^ while^ r isa^ number^ { var^ b = true^ }\n"
+               "var^ n : number^ = r\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
+    unit_dispose(&u);
+
     // Narrowing reads the path a second time, after the condition was
     // inferred in full. What is wrong with it was said there.
     LHAT_TEST("a mistake in a narrowing condition is reported once");

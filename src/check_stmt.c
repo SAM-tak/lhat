@@ -1023,7 +1023,15 @@ static void check_reassign(Checker *c, const LhatNode *node)
         check_immutable_write(c, target);
         chk_check_write_target(c, target);
         chk_check_opaque_write(c, target);
+        // 13.11: what may be written is what the name holds, not what a
+        // branch narrowed it to -- the write is exactly what ends that claim,
+        // and 13.11's own example writes a wider value inside a narrowed
+        // branch. The value on the right is read below, where the claim still
+        // holds, so 'x := x + 1' keeps it.
+        const LhatNode *outer_target = c->writing_to;
+        c->writing_to = target_name_node(target);
         LhatType *wanted = chk_infer(c, target_name_node(target));
+        c->writing_to = outer_target;
         // 03 の 3.4: what the name holds from here on is not what was passed
         // in, so nothing after this says anything about the parameter.
         chk_close_param_var(c, wanted);
@@ -1574,10 +1582,24 @@ void chk_check_statements(Checker *c, const LhatNode *statements)
 // or a specifier would find the parameters one step too soon.
 void chk_check_block_in_scope(Checker *c, const LhatNode *node)
 {
+    // 13.11: the enclosing loop's condition, if this block is its body. Taken
+    // here, so a block written inside the body is walked without one.
+    struct LoopTest *test = c->loop_test;
+    c->loop_test = NULL;
+
+    // 9.3: the block's own statements are main^, written or implied.
     chk_check_statements(c, node->v.list.items);
     for (const LhatNode *clause = node->v.list.extra; clause != NULL;
          clause = clause->next) {
+        // 9.2: first^ is the only other clause on the far side of the test.
+        // The rest are walked with the condition's narrowing put aside --
+        // the list is a stack, so setting the head back is the whole of it.
+        Narrowing *saved = c->narrowings;
+        if (test != NULL && clause->v.loop_clause.kind != LHAT_CLAUSE_FIRST) {
+            c->narrowings = test->before;
+        }
         chk_check_statements(c, clause->v.loop_clause.body);
+        c->narrowings = saved;
     }
 }
 
@@ -1595,6 +1617,38 @@ static void check_block(Checker *c, const LhatNode *node)
 
     c->scope = outer;
     chk_scope_dispose(&scope);
+}
+
+// 13.11 with 16.3: a conditional loop tests before every turn -- 9.10 puts
+// the form that runs its body first under pre^ rather than in the condition
+// -- so a body that runs at all runs where the condition held. That is the
+// same ground an if^ body stands on, and it narrows the same way: while^
+// where the condition is true, until^ where it is not.
+//
+// Nothing is narrowed after the loop. 9.8's break^ leaves from anywhere, so
+// what ended it is not known out there.
+static void check_loop_body(Checker *c, const LhatNode *body,
+                            const LhatNode *condition, bool tested_true)
+{
+    if (condition == NULL) {
+        chk_check_statement(c, body);  // to^, in^, do^, repeat^ n: no condition
+        return;
+    }
+
+    Narrowing *before = c->narrowings;
+    chk_narrow_from(c, condition, tested_true);
+
+    // Which clauses stand on the far side of the test is the block's own
+    // question (9.2), and this is how it is told.
+    struct LoopTest test;
+    test.before = before;
+    struct LoopTest *outer = c->loop_test;
+    c->loop_test = &test;
+
+    chk_check_statement(c, body);
+
+    c->loop_test = outer;
+    chk_pop_narrowings(c, before);
 }
 
 // 04 の 4.5: the body is checked with a frame open, so every try^ written in
@@ -1909,14 +1963,29 @@ void chk_check_statement(Checker *c, const LhatNode *node)
                 if (!always) {
                     c->conditional++;
                 }
-                chk_check_statement(c, node->v.loop.body);
+                // 13.11: the two conditional forms narrow their body. 16.4's
+                // to^ and downto^ are driven by a bound rather than tested,
+                // and in^ by what the walk answers, so neither has a
+                // condition to read -- and if^ and when^ are an if^ already.
+                bool conditional_loop = node->v.loop.kind == LHAT_FOR_WHILE ||
+                                        node->v.loop.kind == LHAT_FOR_UNTIL;
+                check_loop_body(c, node->v.loop.body,
+                                conditional_loop ? node->v.loop.bound : NULL,
+                                node->v.loop.kind == LHAT_FOR_WHILE);
                 if (!always) {
                     c->conditional--;
                 }
             } else if (node->kind == LHAT_NODE_REPEAT) {
                 chk_infer(c, node->v.repeat.bound);
                 c->conditional++;
-                chk_check_statement(c, node->v.repeat.body);
+                // 16.5: the same two forms, and repeat^ n counts rather than
+                // testing, so its bound is not a condition either.
+                bool conditional_loop =
+                    node->v.repeat.kind == LHAT_REPEAT_WHILE ||
+                    node->v.repeat.kind == LHAT_REPEAT_UNTIL;
+                check_loop_body(c, node->v.repeat.body,
+                                conditional_loop ? node->v.repeat.bound : NULL,
+                                node->v.repeat.kind == LHAT_REPEAT_WHILE);
                 c->conditional--;
             } else {
                 chk_check_statements(c, node->v.list.items);
