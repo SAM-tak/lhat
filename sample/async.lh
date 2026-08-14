@@ -77,28 +77,62 @@ let^Scheduler = def^{
         return^true^
     },
 
+    # 済んだ id を持つタスクを起こす
+    wake = p^self^, done:number^{
+        for^i from^1 to^self^.live {
+            if^self^.waits[i] = done { self^.waits[i] := 0 }
+        }
+    },
+
+    #[
+    一周だけ進めて戻る。**眠らない。**
+    ホスト（ゲームの主ループ、Godot の _process）は毎フレームこれを呼ぶ。
+
+    答えは「まだ仕事が残っているか」。false なら全部済んでいる。
+    ]#
+    poll = p^self^-> bool^{
+        var^awake = 0
+        var^waiting = 0
+        for^i from^1 to^self^.live {
+            if^self^.tasks[i] is^nil^{ next^}
+            if^self^.waits[i] = 0 {
+                awake += 1
+                let^_^= self^.step(i)
+            else^:
+                waiting += 1
+            }
+        }
+        if^awake = 0 and^ waiting > 0 {
+            # 誰も起きていない。済んでいるものだけ取る——ここでは眠らない
+            let^done = std.async.wait(0)
+            if^done isa^number^{ self^.wake(done) }
+        }
+        return^awake > 0 or^ waiting > 0
+    },
+
+    #[
+    自分でループを持つ側（CLI）のための形。`poll()` を回し、
+    誰も起きていなければ次の期限まで眠る——**眠るのはここだけ**である。
+    ]#
     run = p^self^{
         repeat^{
+            if^!self^.poll() { break^}
             var^awake = 0
             var^waiting = 0
-            for^i from^ 1 to^self^.live {
+            for^i from^1 to^self^.live {
                 if^self^.tasks[i] is^nil^{ next^}
                 if^self^.waits[i] = 0 {
                     awake += 1
-                    let^_^= self^.step(i)
                 else^:
                     waiting += 1
                 }
             }
-            if^awake = 0 {
-                if^waiting = 0 { break^}
-                # 誰も起きていない。次の期限まで眠る——ここだけが止まる
+            # 眠ってよいのは「誰も起きていない **かつ** 待っているものが在る」
+            # ときだけである。待つものが無いのに眠れば、次の poll() まで
+            # 何も起こらないまま止まる
+            if^awake = 0 and^ waiting > 0 {
                 let^done = std.async.wait(60)
-                if^done isa^number^{
-                    for^i from^1 to^self^.live {
-                        if^self^.waits[i] = done { self^.waits[i] := 0 }
-                    }
-                }
+                if^done isa^number^{ self^.wake(done) }
             }
         }
     },

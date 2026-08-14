@@ -76,6 +76,10 @@ if(LHAT_BUILD_STDLIB)
     lhat_add_test(test_thread stdlib)
     target_link_libraries(test_thread PRIVATE lhatstdlib lhatthread)
 
+    # std.async is the other one that needs the port's clock and lock.
+    lhat_add_test(test_async stdlib)
+    target_link_libraries(test_async PRIVATE lhatstdlib lhatthread)
+
     lhat_add_test(test_io stdlib)
     target_link_libraries(test_io PRIVATE lhatstdlib)
 
@@ -106,6 +110,13 @@ set_tests_properties(install_smoke PROPERTIES LABELS e2e TIMEOUT 300)
 if(LHAT_BUILD_CLI)
     set(lhat_e2e_samples
         vector.lh
+        # 02 の 15.14: the async layer end to end -- the scheduler is L^
+        # (sample/async.lh, required by each of these), so what these prove is
+        # that await^, std.async and std.thread meet where they are supposed
+        # to. None reads stdin and each finishes in a fraction of a second.
+        asynctest.lh
+        asyncpump.lh
+        asyncthread.lh
     )
     foreach(sample ${lhat_e2e_samples})
         cmake_path(GET sample STEM stem)

@@ -823,6 +823,29 @@ const LhatErrorKind *lhat_lookup_error_kind(const LhatProgram *program,
     return NULL;
 }
 
+void *lhat_lookup_host_context(const LhatProgram *program, const char *module,
+                               const char *type, const char *name)
+{
+    if (program == NULL || module == NULL || name == NULL) {
+        return NULL;
+    }
+    for (size_t i = 0; i < program->host_entry_count; i++) {
+        const LhatHostEntry *entry = &program->host_entries[i];
+        if (strcmp(entry->module, module) != 0 ||
+            strcmp(entry->name, name) != 0) {
+            continue;
+        }
+        if ((type == NULL) != (entry->type == NULL)) {
+            continue;
+        }
+        if (type != NULL && strcmp(entry->type, type) != 0) {
+            continue;
+        }
+        return entry->context;
+    }
+    return NULL;
+}
+
 // 02 の 14.12: whether two registrations of one name could take the same
 // call. Arms may stand together only where no call fits both -- which is what
 // makes the search that resolves one able to stop at the first that fits.

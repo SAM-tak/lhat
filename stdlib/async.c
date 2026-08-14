@@ -1,15 +1,19 @@
 // L^ (lhat) -- sample standard library: std.async.
 //
-// A table of deadlines and a way to be idle until one comes due. See async.h
-// for why that is all of it, and 02 の 15.14 for why a scheduler written in
-// L^ over these is the shape this is for.
+// A table of things a task may be waiting for, and the two questions a
+// scheduler asks about it: what is ready, and how long until the next one
+// could be. See async.h for the contract a host is held to, and 02 の 15.14
+// for why the scheduler itself is L^ rather than any of this.
 //
-// No lock. 05 の 8.9's own reasoning applies here: the table belongs to
-// whichever machine calls these, and the one thing this module is for -- a
-// single scheduler running one machine's tasks -- touches it from one thread.
-// A second machine (std.thread's spawn makes one) that reaches for the same
-// registration would be sharing the context every registration shares, and a
-// program doing that is on its own the way stdlib/random.c says it is.
+// Two kinds of wait live in the one table. A deadline comes due by itself,
+// and the clock decides when; an external one is due when somebody says so,
+// which is what lhatstdlib_async_complete is. Telling them apart matters
+// only for `next`: an external wait has no time to wait until.
+//
+// The table is locked. A deadline is only ever touched by the machine that
+// armed it, but a completion may arrive from any thread -- a worker that has
+// finished, a host's signal handler, an engine's loader -- and that is the
+// whole point of the external kind.
 
 #include "async.h"
 
@@ -17,15 +21,16 @@
 
 #include <stdint.h>
 
-// A deadline that has been armed and not yet handed back. `id` is what the
-// L^ side holds while it waits; 0 is never one, so it can stand for "none".
 typedef struct {
     int64_t id;
-    int64_t due_ms;
-} Deadline;
+    int64_t due_ms;  // when the clock will make it ready
+    bool timed;      // false for an external one: only a push makes it ready
+    bool ready;      // pushed, and not yet handed back
+} Waiting;
 
 typedef struct {
-    Deadline *deadlines;
+    LhatMutex lock;
+    Waiting *waits;
     size_t count;
     size_t capacity;
     int64_t next_id;
@@ -46,31 +51,123 @@ static int64_t milliseconds_of(LhatValue value)
     return ms >= (double)INT64_MAX ? INT64_MAX : (int64_t)ms;
 }
 
+// The lock is held. Answers NULL when the table could not grow.
+static Waiting *add_wait(AsyncModule *module, bool timed, int64_t due_ms)
+{
+    if (module->count == module->capacity) {
+        size_t grown = module->capacity == 0 ? 8 : module->capacity * 2;
+        Waiting *moved =
+            (Waiting *)lhat_realloc(module->waits, grown * sizeof *moved);
+        if (moved == NULL) {
+            return NULL;
+        }
+        module->waits = moved;
+        module->capacity = grown;
+    }
+    Waiting *added = &module->waits[module->count++];
+    added->id = module->next_id++;
+    added->due_ms = due_ms;
+    added->timed = timed;
+    added->ready = false;
+    return added;
+}
+
+// The lock is held. The first wait that is ready now -- pushed, or a deadline
+// the clock has passed -- taken out of the table.
+static bool take_ready(AsyncModule *module, int64_t now, int64_t *id)
+{
+    for (size_t i = 0; i < module->count; i++) {
+        Waiting *wait = &module->waits[i];
+        if (wait->ready || (wait->timed && wait->due_ms <= now)) {
+            *id = wait->id;
+            module->waits[i] = module->waits[--module->count];
+            return true;
+        }
+    }
+    return false;
+}
+
+// The lock is held. Milliseconds until the earliest deadline, or -1 when
+// nothing is waiting on the clock. An external wait answers nothing here:
+// there is no time at which it becomes ready.
+static int64_t until_next(const AsyncModule *module, int64_t now)
+{
+    int64_t soonest = -1;
+    for (size_t i = 0; i < module->count; i++) {
+        const Waiting *wait = &module->waits[i];
+        if (!wait->timed) {
+            continue;
+        }
+        int64_t left = wait->due_ms - now;
+        if (left < 0) {
+            left = 0;
+        }
+        if (soonest < 0 || left < soonest) {
+            soonest = left;
+        }
+    }
+    return soonest;
+}
+
 static LhatValue async_timer(LhatMachine *machine, void *context,
                              const LhatValue *arguments, size_t count)
 {
     (void)machine;
     (void)count;
     AsyncModule *module = (AsyncModule *)context;
-    if (module->count == module->capacity) {
-        size_t grown = module->capacity == 0 ? 8 : module->capacity * 2;
-        Deadline *moved = (Deadline *)lhat_realloc(
-            module->deadlines, grown * sizeof *moved);
-        if (moved == NULL) {
-            return lhat_nil();
-        }
-        module->deadlines = moved;
-        module->capacity = grown;
-    }
-    Deadline *armed = &module->deadlines[module->count++];
-    armed->id = module->next_id++;
-    armed->due_ms = lhat_now_ms() + milliseconds_of(arguments[0]);
-    return lhat_integer(armed->id);
+    lhat_mutex_lock(&module->lock);
+    Waiting *armed =
+        add_wait(module, true, lhat_now_ms() + milliseconds_of(arguments[0]));
+    int64_t id = armed != NULL ? armed->id : 0;
+    lhat_mutex_unlock(&module->lock);
+    // 0 is no wait at all: ids start at 1, so a table that could not grow
+    // answers something the L^ side already reads as "not waiting".
+    return lhat_integer(id);
 }
 
-// The one place a scheduler blocks. Answers the id of a deadline that has
-// come due, or nil^ when the caller's own patience ran out first -- a loop
-// with something else to watch passes a short one and keeps its turn.
+// A wait nothing but a push can end. What the host holds the id for is its
+// own business -- a signal, a loader's status, a queue of its own.
+static LhatValue async_external(LhatMachine *machine, void *context,
+                                const LhatValue *arguments, size_t count)
+{
+    (void)machine;
+    (void)arguments;
+    (void)count;
+    AsyncModule *module = (AsyncModule *)context;
+    lhat_mutex_lock(&module->lock);
+    Waiting *armed = add_wait(module, false, 0);
+    int64_t id = armed != NULL ? armed->id : 0;
+    lhat_mutex_unlock(&module->lock);
+    // 0 is no wait at all: ids start at 1, so a table that could not grow
+    // answers something the L^ side already reads as "not waiting".
+    return lhat_integer(id);
+}
+
+// Whoever armed a wait may give up on it. An external one nobody will ever
+// push would otherwise sit in the table for ever, and `pending` would never
+// reach zero -- which is what a scheduler reads to know it is finished.
+static LhatValue async_drop(LhatMachine *machine, void *context,
+                            const LhatValue *arguments, size_t count)
+{
+    (void)machine;
+    (void)count;
+    AsyncModule *module = (AsyncModule *)context;
+    int64_t id = lhat_is_integer(arguments[0]) ? lhat_as_integer(arguments[0])
+                                               : 0;
+    lhat_mutex_lock(&module->lock);
+    for (size_t i = 0; i < module->count; i++) {
+        if (module->waits[i].id == id) {
+            module->waits[i] = module->waits[--module->count];
+            break;
+        }
+    }
+    lhat_mutex_unlock(&module->lock);
+    return lhat_nil();
+}
+
+// The one call that may sleep, and only for as long as it is given. Zero is
+// the shape a host pumping its own loop uses: take what is ready and come
+// straight back.
 static LhatValue async_wait(LhatMachine *machine, void *context,
                             const LhatValue *arguments, size_t count)
 {
@@ -80,48 +177,94 @@ static LhatValue async_wait(LhatMachine *machine, void *context,
     int64_t give_up_at = lhat_now_ms() + milliseconds_of(arguments[0]);
 
     for (;;) {
-        // The earliest of what is armed, since that is the next thing that
-        // can happen. Ties go to whichever was found first; nothing here
-        // promises an order among deadlines that fall together.
-        size_t soonest = module->count;
-        for (size_t i = 0; i < module->count; i++) {
-            if (soonest == module->count ||
-                module->deadlines[i].due_ms < module->deadlines[soonest].due_ms) {
-                soonest = i;
-            }
-        }
-
+        lhat_mutex_lock(&module->lock);
         int64_t now = lhat_now_ms();
-        if (soonest < module->count && module->deadlines[soonest].due_ms <= now) {
-            int64_t id = module->deadlines[soonest].id;
-            module->deadlines[soonest] = module->deadlines[--module->count];
+        int64_t id = 0;
+        if (take_ready(module, now, &id)) {
+            lhat_mutex_unlock(&module->lock);
             return lhat_integer(id);
         }
+        int64_t soonest = until_next(module, now);
+        lhat_mutex_unlock(&module->lock);
+
         if (now >= give_up_at) {
             return lhat_nil();
         }
-
-        // Sleep to whichever comes first, and look again -- the deadline may
-        // have been armed by a task this same turn.
+        // To whichever comes first, and look again -- a wait may have been
+        // armed or pushed while this was asleep. A push from another thread
+        // is not signalled: the sleep below is short by construction (a
+        // caller with something else to watch passes a small patience), and
+        // a condition variable here would tie every host to waking it.
         int64_t until = give_up_at;
-        if (soonest < module->count && module->deadlines[soonest].due_ms < until) {
-            until = module->deadlines[soonest].due_ms;
+        if (soonest >= 0 && now + soonest < until) {
+            until = now + soonest;
         }
         int64_t nap = until - now;
+        if (nap > 20) {
+            nap = 20;  // 20ms is the longest anything waits to notice a push
+        }
         lhat_thread_sleep(nap > INT32_MAX ? INT32_MAX : (int)nap);
     }
 }
 
-// Whether anything is still armed. A scheduler with no task awake and no
-// deadline pending has nothing left to wait for, and this is how it knows.
+// Seconds until the earliest deadline, or nil^ when nothing is waiting on the
+// clock. What a host reads to decide its own sleep -- a game compares it with
+// the time left in the frame and mostly throws it away.
+static LhatValue async_next(LhatMachine *machine, void *context,
+                            const LhatValue *arguments, size_t count)
+{
+    (void)machine;
+    (void)arguments;
+    (void)count;
+    AsyncModule *module = (AsyncModule *)context;
+    lhat_mutex_lock(&module->lock);
+    int64_t left = until_next(module, lhat_now_ms());
+    lhat_mutex_unlock(&module->lock);
+    return left < 0 ? lhat_nil() : lhat_real((double)left / 1000.0);
+}
+
+// How many waits are still in the table. A scheduler with no task awake and
+// nothing pending has nothing left to do, and this is how it knows.
 static LhatValue async_pending(LhatMachine *machine, void *context,
                                const LhatValue *arguments, size_t count)
 {
     (void)machine;
     (void)arguments;
     (void)count;
-    const AsyncModule *module = (const AsyncModule *)context;
-    return lhat_integer((int64_t)module->count);
+    AsyncModule *module = (AsyncModule *)context;
+    lhat_mutex_lock(&module->lock);
+    int64_t pending = (int64_t)module->count;
+    lhat_mutex_unlock(&module->lock);
+    return lhat_integer(pending);
+}
+
+// The host's half of an external wait. Any thread may call it; the id is what
+// std.async.external answered, and nothing else is a valid one.
+bool lhatstdlib_async_complete(void *waits, int64_t id)
+{
+    AsyncModule *module = (AsyncModule *)waits;
+    if (module == NULL) {
+        return false;
+    }
+    bool found = false;
+    lhat_mutex_lock(&module->lock);
+    for (size_t i = 0; i < module->count; i++) {
+        if (module->waits[i].id == id) {
+            module->waits[i].ready = true;
+            found = true;
+            break;
+        }
+    }
+    lhat_mutex_unlock(&module->lock);
+    return found;
+}
+
+void *lhatstdlib_async_waits(LhatProgram *program)
+{
+    // 05 の 8.7: the context every registration of this module was given.
+    // Asked of the program rather than kept in a static, for the reason
+    // stdlib/io.c gives -- two programs are two tables.
+    return lhat_lookup_host_context(program, "std.async", NULL, "external");
 }
 
 bool lhatstdlib_async_register(LhatProgram *program)
@@ -130,14 +273,21 @@ bool lhatstdlib_async_register(LhatProgram *program)
     if (module == NULL) {
         return false;
     }
-    // 0 stands for no deadline on the L^ side, so ids start above it.
+    lhat_mutex_init(&module->lock);
+    // 0 stands for no wait on the L^ side, so ids start above it.
     module->next_id = 1;
 
     return lhat_register_func(program, "std.async", "timer",
                               "f^number^ -> number^;", async_timer, module) &&
+           lhat_register_func(program, "std.async", "external",
+                              "f^ -> number^;", async_external, module) &&
+           lhat_register_func(program, "std.async", "drop", "p^number^;",
+                              async_drop, module) &&
            lhat_register_func(program, "std.async", "wait",
                               "f^number^ -> number^|nil^;", async_wait,
                               module) &&
+           lhat_register_func(program, "std.async", "next",
+                              "f^ -> number^|nil^;", async_next, module) &&
            lhat_register_func(program, "std.async", "pending",
                               "f^ -> number^;", async_pending, module);
 }

@@ -1,0 +1,47 @@
+#[
+ホストが刻む形（02 の 15.14、stdlib/async.h）。
+
+`run()` はスケジューラが眠る形で、CLI のもの。ゲームや Godot に埋め込むと
+主ループはホストのもので、**埋め込まれた側は眠ってはいけない**——毎フレーム
+一周だけ進めて即返す。それが `poll()` である。
+
+ここではホストの代わりに L^ 自身がフレームを刻む。出力は
+
+    [frame 1] a1
+    [frame 1] b1
+    …
+    [frame 5] a2
+    …
+
+——タスクはフレームを跨いで進み、`poll()` は一度も眠っていない。
+眠っているのは「フレームの残り」を潰す `std.thread.sleep` のほうで、
+本物のホストではそこが描画になる。
+]#
+
+import^std.io
+import^std.thread
+
+let^async = require^"async.lh"
+
+let^sched = async.make()
+
+var^frame = 0
+
+let^tick = p^name:string^, times:number^, gap:number^{
+    for^i from^1 to^times {
+        std.io.print($"[frame {frame}] {name}{i}")
+        await^async.delay(gap)
+    }
+}
+
+let^_^= sched.add(tick("a", 3, 0.05))
+let^_^= sched.add(tick("b", 3, 0.05))
+
+# ホストの主ループ。60fps のつもりで 16ms ごとに一周する
+repeat^{
+    frame += 1
+    if^!sched.poll() { break^}
+    std.thread.sleep(0.016)
+}
+
+std.io.print($"done in {frame} frames")

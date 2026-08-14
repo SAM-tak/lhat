@@ -196,6 +196,17 @@ bool lhat_register_error_kind(LhatProgram *program, const char *module,
 // 登録済みの誤り種別を module・name・variant の完全一致で引く。variant が
 // NULL なら宣言全体(lhat_register_error_kind の out_group 相当)を返す。
 // 見つからなければ NULL。
+// 05 の 8.7: the `context` a registration was handed, found by what it was
+// registered under -- `type` is NULL for a member of the module itself. What
+// a library's own C needs when something outside a call has to reach the
+// state it registered: stdlib/async.c's completions are pushed by a host
+// holding nothing but the program.
+//
+// NULL when no such registration was made. The pointer belongs to whoever
+// registered it, and this only hands it back.
+void *lhat_lookup_host_context(const LhatProgram *program, const char *module,
+                               const char *type, const char *name);
+
 const LhatErrorKind *lhat_lookup_error_kind(const LhatProgram *program,
                                             const char *module,
                                             const char *name,
