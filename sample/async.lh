@@ -54,7 +54,7 @@ let^Scheduler = def^{
     },
 
     # 走らせる。start はまだしない——run() が最初の一歩を進める
-    add = p^self^, task:c^{p^-> number^;,nil^}-> number^{
+    add = p^self^, task:c^{p^-> number^;,}{
         self^.live += 1
         self^.tasks[self^.live] := task
         self^.waits[self^.live] := 0
@@ -62,7 +62,7 @@ let^Scheduler = def^{
     },
 
     # 1つ進める。答えは「まだ生きているか」
-    step = p^self^, i:number^-> bool^{
+    step = p^self^, i:number^{
         let^task = self^.tasks[i]
         if^task is^nil^{ return^false^ }
 

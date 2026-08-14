@@ -886,19 +886,21 @@ static void test_loop_clauses(void)
     run_dispose(&r);
 
     // 9.4: what prolog^ declares lives as long as the loop, without leaking
-    // out of it.
+    // out of it. Checked as well as run: this is 9.4's own example, and the
+    // checker used to refuse it while the machine ran it (main^ was walked
+    // before the clauses, so nothing prolog^ declared was in reach yet).
     LHAT_TEST("prolog^ runs once and its names last the whole loop");
-    run_text(&r,
-             "var^ out = 0\n"
-             "repeat^ 4 {\n"
-             "  prolog^:\n"
-             "    var^ total = 0\n"
-             "  main^:\n"
-             "    total := total + 1\n"
-             "  epilog^:\n"
-             "    out := total\n"
-             "}\n"
-             "return^ out\n");
+    run_checked_text(&r,
+                     "var^ out = 0\n"
+                     "repeat^ 4 {\n"
+                     "  prolog^:\n"
+                     "    var^ total = 0\n"
+                     "  main^:\n"
+                     "    total := total + 1\n"
+                     "  epilog^:\n"
+                     "    out := total\n"
+                     "}\n"
+                     "return^ out\n");
     CHECK_INTEGER(&r, 4);
     run_dispose(&r);
 

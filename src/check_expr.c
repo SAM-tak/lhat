@@ -582,6 +582,7 @@ LhatType *chk_infer_binary(Checker *c, const LhatNode *node)
             scope.bindings = NULL;
             scope.tail = NULL;
             scope.parent = c->scope;
+            scope.transparent = false;
 
             Scope *outer = c->scope;
             c->scope = &scope;
@@ -1851,6 +1852,7 @@ LhatType *chk_infer_func(Checker *c, const LhatNode *node)
     body.bindings = NULL;
     body.tail = NULL;
     body.parent = c->scope;
+    body.transparent = false;
 
     for (const LhatNode *param = node->v.func.params; param != NULL;
          param = param->next) {
@@ -2932,6 +2934,7 @@ LhatType *chk_infer_def(Checker *c, const LhatNode *node, LhatType *base)
     members.bindings = NULL;
     members.tail = NULL;
     members.parent = c->scope;
+    members.transparent = false;
     Binding *owner = chk_scope_add(&members, "class^", 6, definition, node->offset);
     if (owner != NULL) {
         owner->reached = true;
@@ -3083,6 +3086,7 @@ LhatType *chk_infer_def(Checker *c, const LhatNode *node, LhatType *base)
                 receiver.bindings = NULL;
                 receiver.tail = NULL;
                 receiver.parent = c->scope;
+                receiver.transparent = false;
                 Binding *bound = chk_scope_add(&receiver, "self^", 5, instance,
                                                node->offset);
                 if (bound != NULL) {
@@ -3574,6 +3578,7 @@ static LhatType *infer_node(Checker *c, const LhatNode *node)
             scope.bindings = NULL;
             scope.tail = NULL;
             scope.parent = c->scope;
+            scope.transparent = false;
 
             Scope *outer = c->scope;
             c->scope = &scope;

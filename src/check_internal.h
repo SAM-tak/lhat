@@ -72,6 +72,12 @@ typedef struct Scope {
     Binding *bindings;
     Binding *tail;
     struct Scope *parent;
+    // 02 の 9.4 with 01 の 8 章: a layer that holds names without being a '{'
+    // anyone wrote. The loop clauses lasting the whole loop (prolog^, first^)
+    // live in one of these, around the layer main^ binds into -- so a name
+    // outlives the iteration without '$^' finding an extra step on the way
+    // out. compile.c counts the same one scope for a loop body.
+    bool transparent;
 } Scope;
 
 // 13.11. What a branch knows about a value that the binding does not: inside

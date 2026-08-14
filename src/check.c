@@ -258,13 +258,19 @@ Binding *chk_scope_find_skipping(Scope *scope, const char *name,
 // begin, not where to stop, so an ancestor further out still answers.
 Scope *chk_scope_from(Scope *scope, const LhatNode *node)
 {
+    // 02 の 9.4: a transparent layer holds names without being a '{' anyone
+    // wrote, so it is stepped over rather than counted. One step out of a
+    // loop body reaches what encloses the loop, whether or not the body has
+    // clauses -- which is the one scope compile.c counts for it too.
     if (node->v.scope.kind == LHAT_SCOPE_FILE) {
         // How many scopes stand between here and the outermost, so that an
         // absolute depth can be turned into that many steps outwards.
         uint32_t open = 0;
         for (Scope *at = scope; at != NULL && at->parent != NULL;
              at = at->parent) {
-            open++;
+            if (!at->transparent) {
+                open++;
+            }
         }
         if (node->v.scope.depth > open) {
             return NULL;  // naming a scope further in than the one here
@@ -274,7 +280,9 @@ Scope *chk_scope_from(Scope *scope, const LhatNode *node)
             if (scope == NULL) {
                 return NULL;
             }
-            scope = scope->parent;
+            do {
+                scope = scope->parent;
+            } while (scope != NULL && scope->transparent);
         }
         return scope;
     }
@@ -282,7 +290,9 @@ Scope *chk_scope_from(Scope *scope, const LhatNode *node)
         if (scope == NULL) {
             return NULL;
         }
-        scope = scope->parent;
+        do {
+            scope = scope->parent;
+        } while (scope != NULL && scope->transparent);
     }
     return scope;
 }
@@ -2016,6 +2026,7 @@ void lhat_check_unit(const LhatNode *unit, const LhatLexer *lexer, bool strict,
     scope.bindings = NULL;
     scope.tail = NULL;
     scope.parent = NULL;
+    scope.transparent = false;
 
     Checker checker;
     memset(&checker, 0, sizeof checker);
@@ -2206,6 +2217,7 @@ void lhat_check_next(LhatCheckSession *session, const LhatNode *unit,
     scope.bindings = NULL;
     scope.tail = NULL;
     scope.parent = NULL;
+    scope.transparent = false;
 
     Checker checker;
     memset(&checker, 0, sizeof checker);
@@ -2308,6 +2320,7 @@ LhatType *lhat_type_of_text(const char *text, size_t length,
         scope.bindings = NULL;
         scope.tail = NULL;
         scope.parent = NULL;
+        scope.transparent = false;
 
         Checker checker;
         memset(&checker, 0, sizeof checker);

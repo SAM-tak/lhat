@@ -1583,6 +1583,42 @@ void chk_check_statements(Checker *c, const LhatNode *statements)
 // count -- and its parameters are in it, not around it. infer_func has
 // already made that scope and put them there, so this must not make another
 // or a specifier would find the parameters one step too soon.
+// 9 章: the clauses other than main^, which the parser leaves in `extra`
+// whatever order they were written in. Read by kind so the walk can follow
+// 9.2's order rather than the source's -- compile.c's clause_of is the same
+// lookup on the same list.
+static const LhatNode *clause_named(const LhatNode *node, LhatClauseKind kind)
+{
+    for (const LhatNode *clause = node->v.list.extra; clause != NULL;
+         clause = clause->next) {
+        if (clause->v.loop_clause.kind == kind) {
+            return clause->v.loop_clause.body;
+        }
+    }
+    return NULL;
+}
+
+// One clause, walked where its names belong and with what it may narrow.
+// `into` is the layer to bind into (NULL for the one already open), and
+// `with` the narrowings that hold while it runs.
+static void check_clause(Checker *c, const LhatNode *node, LhatClauseKind kind,
+                         Scope *into, Narrowing *with)
+{
+    const LhatNode *body = clause_named(node, kind);
+    if (body == NULL) {
+        return;
+    }
+    Scope *held = c->scope;
+    Narrowing *saved = c->narrowings;
+    if (into != NULL) {
+        c->scope = into;
+    }
+    c->narrowings = with;
+    chk_check_statements(c, body);
+    c->narrowings = saved;
+    c->scope = held;
+}
+
 void chk_check_block_in_scope(Checker *c, const LhatNode *node)
 {
     // 13.11: the enclosing loop's condition, if this block is its body. Taken
@@ -1590,36 +1626,72 @@ void chk_check_block_in_scope(Checker *c, const LhatNode *node)
     struct LoopTest *test = c->loop_test;
     c->loop_test = NULL;
 
-    // 9.3: the block's own statements are main^, written or implied.
-    chk_check_statements(c, node->v.list.items);
-    for (const LhatNode *clause = node->v.list.extra; clause != NULL;
-         clause = clause->next) {
-        // 9.2: first^ is the only other clause on the far side of the test.
-        // The rest are walked with the condition's narrowing put aside --
-        // the list is a stack, so setting the head back is the whole of it.
-        Narrowing *saved = c->narrowings;
-        if (test != NULL && clause->v.loop_clause.kind != LHAT_CLAUSE_FIRST) {
-            c->narrowings = test->before;
-        }
-        chk_check_statements(c, clause->v.loop_clause.body);
-        c->narrowings = saved;
+    // 9.3: the block's own statements are main^, written or implied. With no
+    // clauses beside them there is one layer and one order, which is every
+    // block that is not a loop body -- a subroutine's among them.
+    if (node->v.list.extra == NULL) {
+        chk_check_statements(c, node->v.list.items);
+        return;
     }
+
+    // 9.4: the body has two layers. prolog^ and first^ last the whole loop
+    // and bind into the layer around this one; pre^ and main^ last one
+    // iteration and bind here, so last^ and epilog^ -- walked back out there
+    // -- do not see them. 9.2 fixes the order the six run in and the walk
+    // follows it, which is what lets main^ read what prolog^ declared.
+    Scope *carried = c->scope->parent;
+    Narrowing *narrowed = c->narrowings;
+    // 9.2: main^ and first^ are the two clauses on the far side of the test,
+    // so they are the two that keep what the condition narrowed. The list is
+    // a stack, so setting the head back is the whole of putting it aside.
+    Narrowing *plain = test != NULL ? test->before : narrowed;
+
+    check_clause(c, node, LHAT_CLAUSE_PROLOG, carried, plain);
+    check_clause(c, node, LHAT_CLAUSE_PRE, NULL, plain);
+    check_clause(c, node, LHAT_CLAUSE_FIRST, carried, narrowed);
+
+    chk_check_statements(c, node->v.list.items);  // main^
+
+    check_clause(c, node, LHAT_CLAUSE_LAST, carried, plain);
+    check_clause(c, node, LHAT_CLAUSE_EPILOG, carried, plain);
+    // 10 章: a finally^ is the block's own cleanup rather than one of 9.2's
+    // six, and it runs where the block is left -- with what the body bound
+    // still in reach.
+    check_clause(c, node, LHAT_CLAUSE_FINALLY, NULL, plain);
 }
 
 static void check_block(Checker *c, const LhatNode *node)
 {
+    Scope *outer = c->scope;
+
+    // 9.4: a loop body written with clauses binds into two layers. The outer
+    // one carries what lasts the whole loop; 01 の 8 章 does not count it,
+    // since the writer put down one '{' and compile.c counts one scope too.
+    Scope carried;
+    bool layered = node->v.list.extra != NULL;
+    if (layered) {
+        carried.bindings = NULL;
+        carried.tail = NULL;
+        carried.parent = c->scope;
+        carried.transparent = true;
+        c->scope = &carried;
+    }
+
     Scope scope;
     scope.bindings = NULL;
     scope.tail = NULL;
     scope.parent = c->scope;
+    scope.transparent = false;
 
-    Scope *outer = c->scope;
     c->scope = &scope;
 
     chk_check_block_in_scope(c, node);
 
     c->scope = outer;
     chk_scope_dispose(&scope);
+    if (layered) {
+        chk_scope_dispose(&carried);
+    }
 }
 
 // 13.11 with 16.3: a conditional loop tests before every turn -- 9.10 puts

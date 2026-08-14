@@ -384,6 +384,71 @@ static void test_narrowing(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
+    // 02 の 9.4: the body has two layers of lifetime, and the walk follows
+    // 9.2's order rather than the order the parser stored the clauses in.
+    // main^ used to be walked before every clause, so nothing it read could
+    // see what prolog^ had declared -- 9.4's own example did not check.
+    LHAT_TEST("main^ sees what prolog^ declared");
+    check_text(&u,
+               "repeat^ 3 { prolog^: var^ total = 0  main^: total += 1 }\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("and what first^ declared");
+    check_text(&u,
+               "repeat^ 3 { first^: var^ total = 0  main^: total += 1 }\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // 9.4 puts pre^ and main^ in one layer, and 9.2 runs pre^ first.
+    LHAT_TEST("and what pre^ declared, which runs in the same turn");
+    check_text(&u,
+               "repeat^ 3 { pre^: var^ total = 0  main^: total += 1 }\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // 9.4: prolog^ and first^ last the whole loop, so the clauses that run
+    // once it is over still reach them.
+    LHAT_TEST("last^ and epilog^ see the whole-loop layer");
+    check_text(&u,
+               "repeat^ 3 { prolog^: var^ a = 0  first^: var^ b = 0\n"
+               "  main^: a += 1  last^: a += b  epilog^: a += b }\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // And the other half of 9.4: what main^ declares lives one iteration, so
+    // it is gone by the time last^ and epilog^ run. The compiler has always
+    // refused this; the checker used to let it through.
+    LHAT_TEST("but not what main^ declared, which lives one iteration");
+    check_text(&u,
+               "repeat^ 3 { main^: var^ a = 0  epilog^: var^ b = a }\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_UNDEFINED);
+    unit_dispose(&u);
+
+    LHAT_TEST("nor from last^");
+    check_text(&u,
+               "repeat^ 3 { main^: var^ a = 0  last^: var^ b = a }\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_UNDEFINED);
+    unit_dispose(&u);
+
+    LHAT_TEST("and pre^ is in that same one-iteration layer");
+    check_text(&u,
+               "repeat^ 3 { pre^: var^ a = 0  main^: a += 1"
+               "  epilog^: var^ b = a }\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_UNDEFINED);
+    unit_dispose(&u);
+
+    // 01 の 8 章: the writer put down one '{', so '$^' finds one step out of
+    // the body whether or not clauses were written in it. The layer holding
+    // prolog^ is not a scope anyone wrote, and compile.c counts one too.
+    LHAT_TEST("'$^' counts the body once, clauses or not");
+    check_text(&u,
+               "var^ x = 1\n"
+               "repeat^ 2 { prolog^: var^ p = 0  main^: var^ x = 2\n"
+               "  var^ n : number^ = $^x }\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
     // 9.8: a break^ leaves from anywhere, so what ended the loop is not
     // known after it.
     LHAT_TEST("and the narrowing does not outlive the loop");
