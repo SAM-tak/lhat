@@ -1396,6 +1396,8 @@ static bool is_statement_keyword(const Parser *p)
     static const char *const words[] = {
         "if", "do", "var", "let", "with", "return", "break", "panic", "yield",
         "_yield",
+        // 9.11: and the three spellings of the one that goes on with the loop
+        "next", "skip", "continue",
         "for", "repeat", "while", "until", "when", "other", "errordef",
         "prolog", "prologue", "pre", "premain", "first", "main", "last",
         "epilog", "epilogue", "finally"
@@ -3645,7 +3647,10 @@ static LhatNode *parse_jump(Parser *p, LhatNodeKind kind)
     // form says the same number, so 'break^[3]' and 'break^^^' are
     // one thing written twice. The bracket is never a bare expression, which
     // is what keeps it apart from the operand return^ and yield^ take.
-    if (kind == LHAT_NODE_BREAK) {
+    //
+    // 9.11: next^ counts the same way, over the loop it goes on with rather
+    // than the one it leaves.
+    if (kind == LHAT_NODE_BREAK || kind == LHAT_NODE_NEXT) {
         node->v.jump.level = start.v.hats > 0 ? start.v.hats : 1;
         if (match_op(p, LHAT_OP_LBRACKET)) {
             LhatNode *written = parse_expression(p);
@@ -3807,10 +3812,17 @@ static LhatNode *parse_statement(Parser *p)
         if (check_hat(p, "return")) {
             return parse_jump(p, LHAT_NODE_RETURN);
         }
-        // 9.8: break^^^ counts loops with its hats, the one keyword that
-        // stacks -- so it alone is matched by the word.
+        // 9.8: break^^^ counts loops with its hats, so the word is matched
+        // rather than the spelling. 9.11's next^ counts the same way, and
+        // 9.6 gives it two other spellings -- the loop it names is the one
+        // it goes on with.
         if (token_is_hat_stacked(p, &p->current, "break")) {
             return parse_jump(p, LHAT_NODE_BREAK);
+        }
+        if (token_is_hat_stacked(p, &p->current, "next") ||
+            token_is_hat_stacked(p, &p->current, "skip") ||
+            token_is_hat_stacked(p, &p->current, "continue")) {
+            return parse_jump(p, LHAT_NODE_NEXT);
         }
         if (check_hat(p, "panic")) {
             return parse_panic(p);

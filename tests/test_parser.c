@@ -3520,6 +3520,30 @@ static void test_stacked_hats(void)
     LHAT_CHECK_EQ_INT(error_count(&p), 0);
     parse_dispose(&p);
 
+    // 9.11: and the second, in all three of 9.6's spellings.
+    LHAT_TEST("next^ counts its loops the same way");
+    parse_text(&p,
+               "for^ 1 to^ 3 { for^ 1 to^ 3 { next^^ skip^ continue^[2] } }");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    {
+        const LhatNode *body = first_statement(&p)->v.loop.body;
+        const LhatNode *inner = body->v.list.items->v.loop.body;
+        const LhatNode *first = inner->v.list.items;
+        LHAT_CHECK_EQ_INT(first->kind, LHAT_NODE_NEXT);
+        LHAT_CHECK_EQ_INT(first->v.jump.level, 2);
+        LHAT_CHECK_EQ_INT(first->next->kind, LHAT_NODE_NEXT);
+        LHAT_CHECK_EQ_INT(first->next->v.jump.level, 1);
+        LHAT_CHECK_EQ_INT(first->next->next->v.jump.level, 2);
+    }
+    parse_dispose(&p);
+
+    // 16.3's next^ opens the update of a conditional loop, and stands before
+    // the brace -- so the two never meet.
+    LHAT_TEST("and the update clause of a loop still reads");
+    parse_text(&p, "for^ var^ i = 1 while^ i < 3 next^ i := i + 1 { next^ }");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    parse_dispose(&p);
+
     // 13.13: the fifth word, and the one that counts written type
     // literals rather than bindings or loops. A type name still does not
     // stack (above) -- this one is not a name of a type but a reach to one.

@@ -206,6 +206,105 @@ static void test_repeat(void)
     LHAT_CHECK_EQ_INT(r.compiled, LHAT_COMPILE_BREAK_TOO_FAR);
     run_dispose(&r);
 
+    // 9.11: next^ ends the turn rather than the loop, so the rest of the
+    // body is skipped and the next turn runs.
+    LHAT_TEST("next^ skips the rest of the turn");
+    run_text(&r,
+             "var^ total = 0\n"
+             "for^ i from^ 1 to^ 10 {\n"
+             "  if^ i % 2 = 1 { next^ }\n"
+             "  total := total + i\n"
+             "}\n"
+             "return^ total\n");
+    CHECK_INTEGER(&r, 30);
+    run_dispose(&r);
+
+    // And the step runs: without it the condition never moves and a loop
+    // written this way would not end at all.
+    LHAT_TEST("and the loop's own step still runs");
+    run_text(&r,
+             "var^ seen = 0\n"
+             "for^ var^ i = 1 while^ i <= 5 next^ i := i + 1 {\n"
+             "  if^ i = 3 { next^ }\n"
+             "  seen := seen + 1\n"
+             "}\n"
+             "return^ seen\n");
+    CHECK_INTEGER(&r, 4);
+    run_dispose(&r);
+
+    LHAT_TEST("a counted repeat^ counts the turn next^ ended");
+    run_text(&r,
+             "var^ n = 0\n"
+             "repeat^ 4 { next^ n := n + 100 }\n"
+             "return^ n\n");
+    CHECK_INTEGER(&r, 0);
+    run_dispose(&r);
+
+    // 9.6: three spellings, one meaning.
+    LHAT_TEST("skip^ and continue^ are the same word");
+    run_text(&r,
+             "var^ total = 0\n"
+             "for^ i from^ 1 to^ 4 {\n"
+             "  if^ i = 1 { skip^ }\n"
+             "  if^ i = 2 { continue^ }\n"
+             "  total := total + i\n"
+             "}\n"
+             "return^ total\n");
+    CHECK_INTEGER(&r, 7);
+    run_dispose(&r);
+
+    // 9.11 with 9.8: the hats count the loop to go on with, so next^^ ends
+    // the inner turn and the outer one together.
+    LHAT_TEST("next^^ advances the loop two out");
+    run_text(&r,
+             "var^ pairs = 0\n"
+             "for^ a from^ 1 to^ 3 {\n"
+             "  for^ b from^ 1 to^ 3 {\n"
+             "    if^ b = 2 { next^^ }\n"
+             "    pairs := pairs + 1\n"
+             "  }\n"
+             "  pairs := pairs + 100\n"
+             "}\n"
+             "return^ pairs\n");
+    CHECK_INTEGER(&r, 3);
+    run_dispose(&r);
+
+    LHAT_TEST("and next^[2] says the same");
+    run_text(&r,
+             "var^ pairs = 0\n"
+             "for^ a from^ 1 to^ 3 {\n"
+             "  for^ b from^ 1 to^ 3 {\n"
+             "    if^ b = 2 { next^[2] }\n"
+             "    pairs := pairs + 1\n"
+             "  }\n"
+             "  pairs := pairs + 100\n"
+             "}\n"
+             "return^ pairs\n");
+    CHECK_INTEGER(&r, 3);
+    run_dispose(&r);
+
+    LHAT_TEST("next^ outside a loop reaches too far, as break^ does");
+    run_text(&r, "next^\n");
+    LHAT_CHECK_EQ_INT(r.compiled, LHAT_COMPILE_BREAK_TOO_FAR);
+    run_dispose(&r);
+
+    // 12 章: reaching the step is a way out of the block the with^ opened,
+    // so what it holds is disposed of before the turn ends.
+    LHAT_TEST("a with^ inside the turn disposes before next^ takes it");
+    run_text(&r,
+             "var^ marks = { s := \"\" }\n"
+             "var^ Res = def^{ self^{ },\n"
+             "  dispose = p^self^ { marks.s := marks.s .. \"d\" } }\n"
+             "for^ i from^ 1 to^ 2 {\n"
+             "  with^ r = Res.new() {\n"
+             "    marks.s := marks.s .. \"i\"\n"
+             "    next^\n"
+             "  }\n"
+             "}\n"
+             "return^ marks.s\n");
+    CHECK_STRING(&r, "idid");
+    run_dispose(&r);
+
     // 9.8: the loop the level names ends the way it would have ended on its
     // own, so its epilog^ runs. The ones passed through are left rather than
     // ended, and theirs do not.
@@ -748,6 +847,31 @@ static void test_for(void)
 static void test_loop_clauses(void)
 {
     Run r;
+
+    // 9.11: which clauses a next^ meets. It ends the turn, so the next one
+    // begins at the top -- pre^ runs again (9.10 puts it at every head),
+    // first^ does not (it is the first turn's alone), and last^ and epilog^
+    // wait for the loop to actually end.
+    LHAT_TEST("next^ meets pre^ again, and not first^, last^ or epilog^");
+    run_text(&r,
+             "var^ log = { s := \"\" }\n"
+             "for^ i from^ 1 to^ 3 {\n"
+             "  pre^:\n"
+             "    log.s := log.s .. \"p\"\n"
+             "  first^:\n"
+             "    log.s := log.s .. \"f\"\n"
+             "  main^:\n"
+             "    log.s := log.s .. \"m\"\n"
+             "    if^ i = 2 { next^ }\n"
+             "    log.s := log.s .. \"x\"\n"
+             "  last^:\n"
+             "    log.s := log.s .. \"L\"\n"
+             "  epilog^:\n"
+             "    log.s := log.s .. \"E\"\n"
+             "}\n"
+             "return^ log.s\n");
+    CHECK_STRING(&r, "pfmxpmpmxpLE");
+    run_dispose(&r);
 
     // 9.4: what prolog^ declares lives as long as the loop, without leaking
     // out of it.

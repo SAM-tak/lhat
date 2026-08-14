@@ -19,6 +19,12 @@ typedef struct LoopContext {
     struct LoopContext *enclosing;
     size_t jumps[LHAT_MAX_BREAKS];
     size_t count;
+    // 9.11: and where a next^ lands -- the loop's own advance, which is what
+    // the end of the body falls into. Kept apart from the jumps above
+    // because the two are patched at different places: one past the loop,
+    // one just short of the step that ends the turn.
+    size_t nexts[LHAT_MAX_BREAKS];
+    size_t next_count;
     size_t cleanup_depth;  // what a break^ has to drain back down to
 } LoopContext;
 
@@ -4842,6 +4848,7 @@ static void compile_loop(Compiler *c, const LhatNode *node)
     LoopContext context;
     context.enclosing = c->loop;
     context.count = 0;
+    context.next_count = 0;
     context.cleanup_depth = c->cleanup_depth;
     c->loop = &context;
 
@@ -4928,6 +4935,13 @@ static void compile_loop(Compiler *c, const LhatNode *node)
     c->scope_depth++;
     compile_statements(c, body != NULL ? body->v.list.items : NULL);
     c->scope_depth--;
+
+    // 9.11: where a next^ lands. The rest of the body is what it skipped;
+    // the step below is not -- without it a counted loop would never move,
+    // and 16.4's to^ is that step written for the writer.
+    for (size_t i = 0; i < context.next_count; i++) {
+        lhat_chunk_patch_here(&c->proto->chunk, context.nexts[i]);
+    }
 
     if (advance != NULL) {
         compile_in_scope(c, advance);
@@ -5334,6 +5348,34 @@ static void compile_statement(Compiler *c, const LhatNode *node)
             // target's depth is exactly.
             emit_cleanup_drain(c, target->cleanup_depth);
             target->jumps[target->count++] = emit_jump(c, LHAT_BC_JUMP, 0);
+            return;
+        }
+
+        // 9.11: the same count over the same chain, landing at the loop's
+        // own step instead of past it. The loops it passes through are left
+        // for good, so their cleanups drain exactly as break^ drains them.
+        case LHAT_NODE_NEXT: {
+            if (node->v.jump.value != NULL || node->v.jump.level == 0) {
+                fail(c, LHAT_COMPILE_UNSUPPORTED);
+                return;
+            }
+            LoopContext *target = c->loop;
+            for (uint32_t out = 1; out < node->v.jump.level; out++) {
+                if (target == NULL) {
+                    break;
+                }
+                target = target->enclosing;
+            }
+            if (target == NULL) {
+                fail(c, LHAT_COMPILE_BREAK_TOO_FAR);
+                return;
+            }
+            if (target->next_count >= LHAT_MAX_BREAKS) {
+                fail(c, LHAT_COMPILE_TOO_COMPLEX);
+                return;
+            }
+            emit_cleanup_drain(c, target->cleanup_depth);
+            target->nexts[target->next_count++] = emit_jump(c, LHAT_BC_JUMP, 0);
             return;
         }
 
@@ -5862,7 +5904,8 @@ const char *lhat_compile_status_message(LhatCompileStatus status)
         case LHAT_COMPILE_TOO_COMPLEX: return "too many registers or constants";
         case LHAT_COMPILE_UNDEFINED:   return "no such name";
         case LHAT_COMPILE_BREAK_TOO_FAR:
-            return "this break^ leaves more loops than there are around it";
+            return "this break^ or next^ names more loops than there are "
+                   "around it";
         case LHAT_COMPILE_SCOPE_TOO_FAR:
             return "this reaches out past more scopes than are open here";
     }

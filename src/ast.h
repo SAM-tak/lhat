@@ -77,6 +77,7 @@ typedef enum {
                              // on the bare one, which takes what is left
     LHAT_NODE_RETURN,
     LHAT_NODE_BREAK,
+    LHAT_NODE_NEXT,          // next^ / skip^ / continue^          (9.11)
     LHAT_NODE_PANIC,         // panic^ expr                 (04 の 11.6)
     LHAT_NODE_YIELD,
     LHAT_NODE_YIELD_ALL,     // yieldall^ expr              (15.8)

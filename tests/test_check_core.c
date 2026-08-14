@@ -540,6 +540,13 @@ static void test_results(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_FUNCTION_FALLS_OUT);
     unit_dispose(&u);
 
+    // 9.11: a next^ is not a way out. It ends the turn and the loop goes on,
+    // so an endless one with nothing but next^ in it is still endless.
+    LHAT_TEST("but a next^ is not a way out of the loop");
+    check_text(&u, "var^ f = f^ -> number^ { repeat^ { next^ } }\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
     // A break^ of an inner loop leaves that one, not this one.
     LHAT_TEST("but a nested loop keeps its own break^");
     check_text(&u,

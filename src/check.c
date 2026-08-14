@@ -1390,6 +1390,10 @@ bool chk_always_exits(const LhatNode *node)
     switch (node->kind) {
         case LHAT_NODE_RETURN:
         case LHAT_NODE_BREAK:
+        // 9.11: a next^ leaves no more of the body to run either. It is not a
+        // way out of the loop -- breaks_out_from is where that is asked, and
+        // this one is not counted there -- but nothing after it is reached.
+        case LHAT_NODE_NEXT:
         case LHAT_NODE_PANIC:
             return true;
 
