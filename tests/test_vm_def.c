@@ -1150,7 +1150,7 @@ static void test_typeof(void)
     run_checked_text(&r,
                      "var^ g = p^ x:number^ { yield^ x }\n"
                      "return^ typeof^(g).signature\n");
-    CHECK_STRING(&r, "p^number^ -> c^{p^nil^ -> number^;, nil^};");
+    CHECK_STRING(&r, "p^number^ -> c^{p^ -> number^;,};");
     run_dispose(&r);
 
     // 13.9's third type is what a written result says, and it stays there.
@@ -1158,7 +1158,7 @@ static void test_typeof(void)
     run_checked_text(&r,
                      "var^ g = p^ x:number^ -> string^ { yield^ x return^ \"z\" }\n"
                      "return^ typeof^(g).signature\n");
-    CHECK_STRING(&r, "p^number^ -> c^{p^nil^ -> number^;, string^};");
+    CHECK_STRING(&r, "p^number^ -> c^{p^ -> number^;, string^};");
     run_dispose(&r);
 
     // 05 の 8.7: typeof^'s answer reads back as a type, so writing that answer
@@ -1167,10 +1167,42 @@ static void test_typeof(void)
     // the written form whole would have tag_type (vm.c) wrap it a second time.
     LHAT_TEST("and writing that coroutine back gives the same signature");
     run_checked_text(&r,
-                     "var^ g = p^ x:number^ -> c^{p^nil^ -> number^;, string^}\n"
+                     "var^ g = p^ x:number^ -> c^{p^ -> number^;, string^}\n"
                      "    { yield^ x return^ \"z\" }\n"
                      "return^ typeof^(g).signature\n");
-    CHECK_STRING(&r, "p^number^ -> c^{p^nil^ -> number^;, string^};");
+    CHECK_STRING(&r, "p^number^ -> c^{p^ -> number^;, string^};");
+    run_dispose(&r);
+
+    // 13.9: the three slots each say "none" in their own way, and typeof^
+    // writes each one out as what it is -- '-' for a body that cannot end,
+    // nothing at all for one that ends without a value or receives nothing.
+    // 05 の 8.7 wants every one of these to read back as the type it names.
+    LHAT_TEST("a body that cannot end writes its third slot '-'");
+    run_checked_text(&r,
+                     "var^ g = p^ { repeat^ { yield^ 1 } }\n"
+                     "return^ typeof^(g).signature\n");
+    CHECK_STRING(&r, "p^ -> c^{p^ -> number^;,-};");
+    run_dispose(&r);
+
+    LHAT_TEST("and one that ends without a value leaves it empty");
+    run_checked_text(&r,
+                     "var^ g = p^ { yield^ 1 }\n"
+                     "return^ typeof^(g).signature\n");
+    CHECK_STRING(&r, "p^ -> c^{p^ -> number^;,};");
+    run_dispose(&r);
+
+    LHAT_TEST("a yield^ with no value still hands nil^ over, so Y says so");
+    run_checked_text(&r,
+                     "var^ g = p^ { yield^ }\n"
+                     "return^ typeof^(g).signature\n");
+    CHECK_STRING(&r, "p^ -> c^{p^ -> nil^;,};");
+    run_dispose(&r);
+
+    LHAT_TEST("and a var^ receiving one is what puts a type in the first slot");
+    run_checked_text(&r,
+                     "var^ g = p^ { var^ x : string^ = yield^ 1 }\n"
+                     "return^ typeof^(g).signature\n");
+    CHECK_STRING(&r, "p^ -> c^{p^string^ -> number^;,};");
     run_dispose(&r);
 
     // 04 の 2.4 sends a type mentioning an error to the instruction rather
@@ -1178,10 +1210,10 @@ static void test_typeof(void)
     LHAT_TEST("and it holds when an error kind sends it to the instruction");
     run_checked_text(&r,
                      "errordef^ E { Bad }\n"
-                     "var^ g = p^ -> c^{p^nil^ -> number^;, string^|E.Bad}\n"
+                     "var^ g = p^ -> c^{p^ -> number^;, string^|E.Bad}\n"
                      "    { yield^ 1 return^ \"z\" }\n"
                      "return^ typeof^(g).signature\n");
-    CHECK_STRING(&r, "p^ -> c^{p^nil^ -> number^;, string^|E.Bad};");
+    CHECK_STRING(&r, "p^ -> c^{p^ -> number^;, string^|E.Bad};");
     run_dispose(&r);
 
     // The two typeof^ paths (03 の 5.11b's resolved one and the instruction)
@@ -1191,7 +1223,7 @@ static void test_typeof(void)
     run_checked_text(&r,
                      "var^ g = p^ x:number^ -> string^ { yield^ x return^ \"z\" }\n"
                      "return^ typeof^(g(1)).signature\n");
-    CHECK_STRING(&r, "c^{p^nil^ -> number^;, string^}");
+    CHECK_STRING(&r, "c^{p^ -> number^;, string^}");
     run_dispose(&r);
 
     // 03 の 3.4: nothing was written, and the body decided it. 5.11b takes the

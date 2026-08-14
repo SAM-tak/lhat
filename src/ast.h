@@ -446,11 +446,17 @@ struct LhatNode {
             uint32_t level;
         } jump;
 
-        // TYPE_CORO: the three types of 13.9.
+        // TYPE_CORO: the three types of 13.9. A NULL `receive` or `result` is
+        // an empty slot, written by leaving it out -- "nothing is sent in",
+        // "the body ends without a value". `endless` is the third slot's other
+        // absence, written '-': a body that cannot end has no last resume for
+        // a result to be the type of, which is a different statement from
+        // ending with nothing.
         struct {
             LhatNode *receive;
             LhatNode *produce;
             LhatNode *result;
+            bool endless;
             // 15.3改: which kind of body it came from, written as the front
             // half of 13.9's form ('c^{ f^R -> Y;, T }'). What may advance a
             // coroutine, and where it may be held, follows from this.

@@ -284,7 +284,7 @@ p^ save(x:number^) -> IOError|nil^;
 
 ```lhat
 f^ divmod(a:number^, b:number^) -> (number^, number^)|DivError;
-c^{ p^nil^ -> (K, V);, nil^ }     # テーブルの走査。resume は (K, V)|nil^
+c^{ f^-> (K, V);, }               # テーブルの走査。resume は (K, V)|nil^
 ```
 
 **返しうる誤りを署名に書けることが 7 章を成り立たせている。**

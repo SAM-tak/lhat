@@ -577,6 +577,7 @@ static LhatRuntimeType *tag_type(LhatHeap *heap, LhatValue value)
             type->receive = proto->yield_receive_type;
             type->produce = proto->yield_produce_type;
             type->result = proto->result_type;
+            type->endless = proto->yield_endless;  // 13.9
             // 15.3改: which kind of body this came from, which is what
             // decides who may advance it (15.6改).
             type->is_function = proto->is_function;
@@ -671,6 +672,7 @@ static LhatRuntimeType *tag_type(LhatHeap *heap, LhatValue value)
             made->receive = proto->yield_receive_type;
             made->produce = proto->yield_produce_type;
             made->result = proto->result_type;
+            made->endless = proto->yield_endless;  // 13.9
             made->is_function = proto->is_function;
             type->result = made;
             return type;
@@ -3238,14 +3240,29 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
 
                     // 15.2: the machine holds this itself rather than
                     // trusting the checker to have (vm.h's opening comment).
-                    // R is one fixed type now, so resume takes exactly one
-                    // argument; start takes none, since nothing has been
-                    // yield^ed yet to send a value to.
+                    // start takes none, since nothing has been yield^ed yet to
+                    // send a value to. 13.9: a resume takes one where R is
+                    // there and none where it is empty -- a body no var^ of
+                    // which receives a yield^ has nothing being sent in.
+                    // 16.3's built-in walk is one of those; nothing sends it
+                    // anything either.
                     if (native->kind == LHAT_NATIVE_START && b != 0) {
                         return finish(m, chunk, LHAT_RUN_ARITY, lhat_nil(), at);
                     }
-                    if (native->kind == LHAT_NATIVE_RESUME && b != 1) {
-                        return finish(m, chunk, LHAT_RUN_ARITY, lhat_nil(), at);
+                    if (native->kind == LHAT_NATIVE_RESUME) {
+                        const LhatProto *from =
+                            co->source == LHAT_COROUTINE_BODY &&
+                                    co->closure != NULL
+                                ? co->closure->proto
+                                : NULL;
+                        // 16.3's built-in walk receives nothing either, and
+                        // has no proto to say so.
+                        bool known = from == NULL || from->yield_receives_known;
+                        bool receives = from != NULL && from->yield_receives;
+                        if (known ? b != (receives ? 1 : 0) : b > 1) {
+                            return finish(m, chunk, LHAT_RUN_ARITY, lhat_nil(),
+                                          at);
+                        }
                     }
 
                     // 15.2: start and resume split the two jobs, so each has

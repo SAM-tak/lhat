@@ -2844,6 +2844,12 @@ static void compile_subroutine(Compiler *c, const LhatNode *node, uint8_t into)
                 lhat_rt_from_checked(owner, made->v.coroutine.produce);
             proto->yield_receive_type =
                 lhat_rt_from_checked(owner, made->v.coroutine.receive);
+            // 13.9: an empty R means a resume of this takes no argument, and
+            // an endless body's empty T is a different absence from one that
+            // ends without a value.
+            proto->yield_receives_known = true;
+            proto->yield_receives = made->v.coroutine.receive != NULL;
+            proto->yield_endless = made->v.coroutine.endless;
             // What lower_type made above can name an error kind (04 の 2.4)
             // and what is rebuilt from a checked type cannot, so anything
             // written is lowered from where it was written rather than

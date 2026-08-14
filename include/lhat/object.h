@@ -283,9 +283,13 @@ typedef struct LhatRuntimeType {
     bool closed;                      // 15.13: written closed^
 
     // COROUTINE only (13.9). `result` above doubles as the third slot (T);
-    // these are the other two. NULL/any^ wherever nothing built them.
+    // these are the other two. A NULL slot is an empty one -- nothing is sent
+    // in, or the body ends without a value.
     struct LhatRuntimeType *receive;  // R
     struct LhatRuntimeType *produce;  // Y
+    // 13.9: the body cannot end, written '-'. Told apart from a NULL result
+    // (which ends without a value) because what a resume answers differs.
+    bool endless;
 
     // 13.7's unbounded tail, one type throughout. STRUCTURE: the sequence
     // half beyond `parts`. SUBROUTINE: the element type of the last

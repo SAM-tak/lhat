@@ -806,25 +806,46 @@ static bool immediately_called(Checker *c, const LhatNode *node)
 // result does.
 static LhatType *coroutine_made_by(Checker *c, const LhatType *func)
 {
-    // 13.9: the third type is what the last resume receives. A body with no
-    // value-returning return^ hands nil^ back when it ends -- but a body that
-    // cannot end has no last resume at all, and putting nil^ there would make
-    // every consumer narrow away something that never arrives. NULL is how
-    // that is spelled, the same way it is for a subroutine answering nothing.
-    LhatType *ends_with = func->v.func.result;
-    if (ends_with == NULL && func->v.func.ends_without_value) {
-        ends_with = chk_simple(c, LHAT_TYPE_NIL);
-    }
+    // 13.9: the third type is what the last resume receives. Where the body
+    // ends without a value it is left empty and 15.6改's nil^ joins Y|T at
+    // the resume instead -- so the nil^ stands where it is really received
+    // rather than in the coroutine's own type. A body that cannot end has no
+    // last resume at all, which `endless` says: nothing joins Y there, since
+    // putting anything in would make every consumer narrow away a value that
+    // never arrives.
+    bool endless =
+        func->v.func.result == NULL && !func->v.func.ends_without_value;
     // 15.3改: the coroutine carries the kind of the body it came from, which
     // is what decides who may advance it (15.6改).
-    return lhat_type_coro(c->result->types,
-                          func->v.func.yield_receive != NULL
-                              ? func->v.func.yield_receive
-                              : chk_simple(c, LHAT_TYPE_NIL),
+    //
+    // R is left empty when nothing in the body received a yield^: no var^ took
+    // one, so there is no value being sent in and a resume takes no argument.
+    // Nothing unions R with anything, so there is nothing for a nil^ to be an
+    // arm of -- filling one in would be inventing a parameter. Y is not the
+    // same: a yield^ with no value really does hand nil^ to the resumer.
+    return lhat_type_coro(c->result->types, func->v.func.yield_receive,
                           func->v.func.yield_produce != NULL
                               ? func->v.func.yield_produce
                               : chk_simple(c, LHAT_TYPE_NIL),
-                          ends_with, func->v.func.is_function);
+                          func->v.func.result, endless,
+                          func->v.func.is_function);
+}
+
+// 13.9: what one turn of a coroutine answers -- Y|T, which done() is what
+// tells apart (15.6改). The third slot has two ways of being empty and they
+// answer differently: a body that cannot end never reaches a last resume, so
+// nothing joins Y; one that ends without a value reaches it and is handed
+// nil^ there, so that is where the nil^ comes in rather than in the type.
+static LhatType *coroutine_answer(Checker *c, const LhatType *coro)
+{
+    LhatType *produce = coro->v.coroutine.produce;
+    if (coro->v.coroutine.endless) {
+        return produce;
+    }
+    LhatType *ends_with = coro->v.coroutine.result != NULL
+                              ? coro->v.coroutine.result
+                              : chk_simple(c, LHAT_TYPE_NIL);
+    return lhat_type_union(c->result->types, produce, ends_with);
 }
 
 LhatType *chk_infer_call(Checker *c, const LhatNode *node)
@@ -1443,30 +1464,22 @@ LhatType *chk_infer_member(Checker *c, const LhatNode *node)
         if (chk_name_is(name, length, "start")) {
             // 15.2: runs the body from the top, for a coroutine that has
             // never been resumed. Takes nothing, since nothing has been
-            // yield^ed yet to send a value to. Answers the same union a
-            // resume does -- which is the yield type alone when the third
-            // type is absent, since a coroutine that cannot end never
-            // answers with one (13.9).
+            // yield^ed yet to send a value to. Answers what one turn answers.
             LhatType *signature = lhat_type_func(c->result->types, advances);
-            signature->v.func.result =
-                lhat_type_union(c->result->types, target->v.coroutine.produce,
-                                target->v.coroutine.result);
+            signature->v.func.result = coroutine_answer(c, target);
             return signature;
         }
         if (chk_name_is(name, length, "resume")) {
-            // 13.9: what a resume answers is the union of what the coroutine
-            // yields and what it returns -- telling the two apart is what
-            // done() does (15.6改). 15.2: R is now one fixed type, so resume
-            // takes exactly one argument of it -- start() is what a fresh
-            // coroutine is resumed with instead of a sentinel "no argument"
-            // call. An absent third type leaves the yield type alone.
-            LhatType *answer =
-                lhat_type_union(c->result->types, target->v.coroutine.produce,
-                                target->v.coroutine.result);
+            // 13.9: one resume sends R in and answers Y|T. Where R is empty
+            // there is nothing to send, so it takes no argument at all --
+            // 13.2's empty argument side, and a caller writing nil^ there is
+            // passing an argument the coroutine has no parameter for.
             LhatType *signature = lhat_type_func(c->result->types, advances);
-            lhat_type_add_param(c->result->types, signature,
-                                target->v.coroutine.receive);
-            signature->v.func.result = answer;
+            if (target->v.coroutine.receive != NULL) {
+                lhat_type_add_param(c->result->types, signature,
+                                    target->v.coroutine.receive);
+            }
+            signature->v.func.result = coroutine_answer(c, target);
             return signature;
         }
         if (chk_name_is(name, length, "dispose")) {
@@ -1569,10 +1582,9 @@ LhatType *chk_infer_member(Checker *c, const LhatNode *node)
         //
         // 15.3改: the built-in walk changes nothing, so it is an f^ coroutine
         // -- which is what lets 'for^ k, v in^ t' stand inside an f^ body.
-        LhatType *walk = lhat_type_coro(c->result->types,
-                                        chk_simple(c, LHAT_TYPE_NIL),
-                                        chk_table_walk_tuple(c, target),
-                                        chk_simple(c, LHAT_TYPE_NIL), true);
+        LhatType *walk =
+            lhat_type_coro(c->result->types, NULL,
+                           chk_table_walk_tuple(c, target), NULL, false, true);
         LhatType *signature = lhat_type_func(c->result->types, true);
         signature->v.func.result = walk;
         return signature;
@@ -1608,9 +1620,9 @@ LhatType *chk_infer_member(Checker *c, const LhatNode *node)
         LhatType *keys = NULL;
         LhatType *values = NULL;
         table_walk_halves(c, target, &keys, &values);
-        LhatType *walk = lhat_type_coro(
-            c->result->types, chk_simple(c, LHAT_TYPE_NIL),
-            name[0] == 'k' ? keys : values, chk_simple(c, LHAT_TYPE_NIL), true);
+        LhatType *walk =
+            lhat_type_coro(c->result->types, NULL,
+                           name[0] == 'k' ? keys : values, NULL, false, true);
         LhatType *signature = lhat_type_func(c->result->types, true);
         signature->v.func.result = walk;
         return signature;
@@ -3476,11 +3488,16 @@ static LhatType *infer_node(Checker *c, const LhatNode *node)
             }
             chk_unify_yield(c, node, &c->coroutine_produce, inner->v.coroutine.produce);
             chk_unify_yield(c, node, &c->coroutine_receive, inner->v.coroutine.receive);
-            // 13.9: a coroutine that cannot end has no return type, so a
-            // delegation to one never produces a value either.
+            // 13.9: a coroutine that cannot end never reaches a last resume,
+            // so a delegation to one never produces a value either. One that
+            // ends without a value does reach it, and is handed nil^ there --
+            // the same nil^ a resume of it would read.
+            if (inner->v.coroutine.endless) {
+                return chk_simple(c, LHAT_TYPE_NONE);
+            }
             return inner->v.coroutine.result != NULL
                        ? inner->v.coroutine.result
-                       : chk_simple(c, LHAT_TYPE_NONE);
+                       : chk_simple(c, LHAT_TYPE_NIL);
         }
 
         case LHAT_NODE_TRY: {

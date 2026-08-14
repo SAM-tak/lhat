@@ -64,7 +64,7 @@ static void test_coroutines(void)
                "var^ gen = p^ { yield^ 1 }\n"
                "var^ c = gen()\n"
                "var^ v = c.start()\n"
-               "var^ w = c.resume(nil^)\n"
+               "var^ w = c.resume()\n"
                "c.dispose()\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
@@ -257,7 +257,7 @@ static void test_coroutines(void)
     LHAT_TEST("and a body with only _yield^ is still a coroutine");
     check_text(&u,
                "var^ fake = p^ { _yield^ 1 }\n"
-               "var^ c : c^{ p^nil^ -> number^;, nil^ } = fake()\n"
+               "var^ c : c^{ p^-> number^;, } = fake()\n"
                "var^ d : bool^ = c.done()\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
@@ -273,7 +273,7 @@ static void test_coroutines(void)
     LHAT_TEST("and the wrong type is caught the same way");
     check_text(&u,
                "var^ fake = p^ { var^ got : string^ = _yield^ 1 }\n"
-               "var^ c : c^{ p^number^ -> number^;, nil^ } = fake()\n");
+               "var^ c : c^{ p^number^ -> number^;, } = fake()\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
@@ -324,7 +324,7 @@ static void test_coroutines(void)
     LHAT_TEST("the type of a coroutine-making subroutine can be written");
     check_text(&u,
                "var^ gen = p^ n:number^ { yield^ n }\n"
-               "var^ g : p^number^ -> c^{ p^nil^ -> number^;, nil^ }; = gen\n");
+               "var^ g : p^number^ -> c^{ p^-> number^;, }; = gen\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
@@ -343,7 +343,7 @@ static void test_coroutines(void)
     // handed down -- the coroutine around it belongs to the caller.
     LHAT_TEST("a written signature hands the body the third type, not the coroutine");
     check_text(&u,
-               "var^ g : p^number^ -> c^{ p^nil^ -> number^;, string^ }; =\n"
+               "var^ g : p^number^ -> c^{ p^-> number^;, string^ }; =\n"
                "    p^ n:number^ { yield^ n return^ \"z\" }\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
@@ -354,28 +354,93 @@ static void test_coroutines(void)
     // answer to read back, and it reads back in both positions.
     LHAT_TEST("and the literal's own arrow takes that coroutine too");
     check_text(&u,
-               "var^ g = p^ n:number^ -> c^{ p^nil^ -> number^;, string^ }\n"
+               "var^ g = p^ n:number^ -> c^{ p^-> number^;, string^ }\n"
                "    { yield^ n return^ \"z\" }\n"
                "var^ s : number^|string^ = g(1).start()\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // 15.6改: a body reaching its end puts nil^ in the third type, so writing
-    // that down is writing what is there. Before the literal's arrow was read
-    // this way the whole c^{ … } stood where the body's own result goes, and
-    // the end of the body was reported as not fitting it.
-    LHAT_TEST("a body with no return^ writes nil^ as its third type");
+    // 13.9: a body reaching its end leaves the third slot empty -- 15.6改's
+    // nil^ is what the last resume is handed, so it joins Y|T there rather
+    // than standing in the type.
+    LHAT_TEST("a body with no return^ leaves the third slot empty");
     check_text(&u,
-               "var^ g = p^ n:number^ -> c^{ p^nil^ -> number^;, nil^ }\n"
+               "var^ g = p^ n:number^ -> c^{ p^-> number^;, }\n"
                "    { yield^ n }\n");
     CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // 13.9: the three slots each have a way of saying "none", and each says
+    // something a reader can act on. Written back as an annotation they say
+    // the same thing again, which is what 05 の 8.7 asks of typeof^'s answer.
+    LHAT_TEST("each of the ways a slot can be empty is its own type");
+    check_text(&u,
+               "var^ ends    : p^ -> c^{ p^-> number^;, };         ="
+               " p^ { yield^ 1 }\n"
+               "var^ answers : p^ -> c^{ p^-> number^;, number^ }; ="
+               " p^ { yield^ 1 return^ 2 }\n"
+               "var^ never   : p^ -> c^{ p^-> number^;,- };        ="
+               " p^ { repeat^ { yield^ 1 } }\n"
+               "var^ silent  : p^ -> c^{ p^-> nil^;, };            ="
+               " p^ { yield^ }\n"
+               "var^ takes   : p^ -> c^{ p^string^ -> number^;, }; ="
+               " p^ { var^ x : string^ = yield^ 1 }\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // An empty R is not a nil^ one: 14.12 already holds arities {0} and {1}
+    // disjoint, and a resume that takes nothing is not one that takes a value.
+    LHAT_TEST("an empty receive is not a nil^ one");
+    check_text(&u,
+               "var^ g : p^ -> c^{ p^nil^ -> number^;, }; ="
+               " p^ { yield^ 1 }\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_COROUTINE_MISMATCH);
+    unit_dispose(&u);
+
+    // And '-' is not an empty third slot: one answers Y where the other
+    // answers Y|nil^, so a consumer of either would be told the wrong thing.
+    LHAT_TEST("and '-' is not an empty third slot");
+    check_text(&u,
+               "var^ g : p^ -> c^{ p^-> number^;,- }; = p^ { yield^ 1 }\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_COROUTINE_MISMATCH);
+    unit_dispose(&u);
+
+    LHAT_TEST("nor the other way round");
+    check_text(&u,
+               "var^ g : p^ -> c^{ p^-> number^;, }; ="
+               " p^ { repeat^ { yield^ 1 } }\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_COROUTINE_MISMATCH);
+    unit_dispose(&u);
+
+    // 13.9: a body that cannot end never reaches a last resume, so nothing
+    // joins Y -- putting nil^ there would have every consumer narrow away a
+    // value that never arrives.
+    LHAT_TEST("a coroutine that cannot end answers only what it yields");
+    check_text(&u,
+               "var^ g = p^ { repeat^ { yield^ 1 } }\n"
+               "var^ v : number^ = g().start()\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("while one that ends is handed nil^ at the last resume");
+    check_text(&u,
+               "var^ g = p^ { yield^ 1 }\n"
+               "var^ v : number^ = g().start()\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
+    unit_dispose(&u);
+
+    // '-' reads as "none" only where 13.9 puts it. Nothing else in the type
+    // grammar begins with it.
+    LHAT_TEST("'-' is not a type anywhere else");
+    check_text(&u, "var^ x : - = 1\n");
+    LHAT_CHECK(syntax_errors(&u) > 0, "expected a syntax error");
     unit_dispose(&u);
 
     // 15.2 settles Y and R from the yield^ sites, so a written c^{ … } is a
     // second statement about them and the two have to agree.
     LHAT_TEST("what it yields has to be what the signature wrote");
     check_text(&u,
-               "var^ g = p^ n:number^ -> c^{ p^nil^ -> string^;, nil^ }\n"
+               "var^ g = p^ n:number^ -> c^{ p^-> string^;, }\n"
                "    { yield^ n }\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_COROUTINE_MISMATCH);
     unit_dispose(&u);
@@ -383,7 +448,7 @@ static void test_coroutines(void)
     // 15.3改: and so does the kind, which decides who may advance it.
     LHAT_TEST("and so does the kind of body it came from");
     check_text(&u,
-               "var^ g = p^ -> c^{ f^nil^ -> number^;, nil^ } { yield^ 1 }\n");
+               "var^ g = p^ -> c^{ f^-> number^;, } { yield^ 1 }\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_COROUTINE_MISMATCH);
     unit_dispose(&u);
 
@@ -392,7 +457,7 @@ static void test_coroutines(void)
     LHAT_TEST("a body answering a coroutine it did not make keeps that result");
     check_text(&u,
                "var^ gen = p^ { yield^ 1 }\n"
-               "var^ outer = f^ -> c^{ p^nil^ -> number^;, nil^ }"
+               "var^ outer = f^ -> c^{ p^-> number^;, }"
                " { return^ gen() }\n"
                "var^ v : number^|nil^ = outer().start()\n");
     CHECK_CLEAN(&u);
@@ -560,18 +625,44 @@ static void test_coroutines(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_ARITY);
     unit_dispose(&u);
 
-    // 15.2: R is one fixed type now, so resume takes exactly one argument.
-    LHAT_TEST("resume needs exactly one argument, not zero");
+    // 13.9: nothing in this body receives a yield^, so R is empty and there is
+    // nothing to send -- a resume of it takes no argument at all.
+    LHAT_TEST("a resume of a coroutine nothing is sent to takes no argument");
     check_text(&u,
                "var^ gen = p^ { yield^ 1 }\n"
+               "var^ c = gen()\n"
+               "c.resume()\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("and writing nil^ there is an argument it has no parameter for");
+    check_text(&u,
+               "var^ gen = p^ { yield^ 1 }\n"
+               "var^ c = gen()\n"
+               "c.resume(nil^)\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_ARITY);
+    unit_dispose(&u);
+
+    // Where a var^ does receive one, R is that type and the resume takes it.
+    LHAT_TEST("but one that receives takes exactly one argument");
+    check_text(&u,
+               "var^ gen = p^ { var^ a : number^ = yield^ 1 }\n"
                "var^ c = gen()\n"
                "c.resume()\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_ARITY);
     unit_dispose(&u);
 
-    LHAT_TEST("resume needs exactly one argument, not two");
+    LHAT_TEST("and that one argument is of R");
     check_text(&u,
-               "var^ gen = p^ { yield^ 1 }\n"
+               "var^ gen = p^ { var^ a : number^ = yield^ 1 }\n"
+               "var^ c = gen()\n"
+               "c.resume(2)\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("resume takes no more than the one");
+    check_text(&u,
+               "var^ gen = p^ { var^ a : number^ = yield^ 1 }\n"
                "var^ c = gen()\n"
                "c.resume(1, 2)\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_ARITY);

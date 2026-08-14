@@ -20,7 +20,7 @@ import^std.thread
 待てるもの = コルーチン（15.9）。`delay` は「期限を出して止まる」コルーチンを返し、
 その期限 id がスケジューラまで届く。await^ が委譲なので、何段深くても届く。
 ]#
-public^let^delay:p^number^-> c^{p^nil^ -> number^;, nil^}; = p^seconds {
+public^let^delay:p^number^-> c^{p^-> number^;, nil^}; = p^seconds {
     let^id = std.async.timer(seconds)
     yield^id
 }
@@ -30,7 +30,7 @@ public^let^delay:p^number^-> c^{p^nil^ -> number^;, nil^}; = p^seconds {
 `done()` で訊いて、まだなら少し `delay` する——**スケジューラは何も知らなくてよい**。
 待てるものを増やすのが `delay` の上に1つ書くだけで済む、というのがこの層の要点。
 ]#
-public^let^joined:p^std.thread.ThreadHandle -> c^{p^nil^ -> number^;,
+public^let^joined:p^std.thread.ThreadHandle -> c^{p^-> number^;,
         number^|bool^|string^|nil^
         |std.thread.ThreadError.AlreadyJoined
         |std.thread.ThreadError.BadResult
@@ -54,7 +54,7 @@ let^Scheduler = def^{
     },
 
     # 走らせる。start はまだしない——run() が最初の一歩を進める
-    add = p^self^, task:c^{p^nil^ -> number^;, any^}-> number^{
+    add = p^self^, task:c^{p^-> number^;,nil^}-> number^{
         self^.live += 1
         self^.tasks[self^.live] := task
         self^.waits[self^.live] := 0
@@ -66,7 +66,7 @@ let^Scheduler = def^{
         let^task = self^.tasks[i]
         if^task is^nil^{ return^false^ }
 
-        let^asked = if^task.started(): task.resume(nil^) el^: task.start();
+        let^asked = if^task.started(): task.resume() el^: task.start();
         if^task.done() {
             self^.tasks[i] := nil^
             self^.waits[i] := 0

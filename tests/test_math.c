@@ -223,7 +223,7 @@ static void test_coroutine_locals(void)
             "}\n"
             "let^ co = gen()\n"
             "co.start()\n"
-            "let^ second = co.resume(nil^)\n"
+            "let^ second = co.resume()\n"
             "if^ second = 5.0 { return^ 1 }\n"
             "return^ 0\n");
         LHAT_CHECK_RAN_INTEGER(ran, 1);

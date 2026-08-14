@@ -610,7 +610,7 @@ static void test_for(void)
                      "var^ w = t.iterate^()\n"
                      "w.start()\n"
                      "if^ w.done() { return^ 0 }\n"
-                     "w.resume(nil^)\n"
+                     "w.resume()\n"
                      "if^ w.done() { return^ 1 }\n"
                      "return^ 2\n");
     CHECK_INTEGER(&r, 1);  // one element taken, then the walk ended
@@ -634,7 +634,7 @@ static void test_for(void)
     run_text(&r,
              "var^ t = { 10 }\n"
              "var^ w = t.iterate^()\n"
-             "w.resume(nil^)\n"
+             "w.resume()\n"
              "return^ 0\n");
     LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_COROUTINE_NOT_STARTED);
     run_dispose(&r);
@@ -686,7 +686,7 @@ static void test_for(void)
                      "for^ k in^ t.keys^() {\n"
                      "  out := out .. k.tostring^() .. \"=\" ..\n"
                      "         (v ?? 0).tostring^() .. \" \"\n"
-                     "  v := vs.resume(nil^)\n"
+                     "  v := vs.resume()\n"
                      "}\n"
                      "return^ out\n");
     CHECK_STRING(&r, "1=10 2=20 a=9 ");

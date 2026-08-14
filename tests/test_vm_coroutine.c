@@ -41,7 +41,7 @@ static void test_coroutines(void)
              "var^ made = log.s\n"
              "c.start()\n"
              "var^ first = log.s\n"
-             "c.resume(nil^)\n"
+             "c.resume()\n"
              "return^ made * 10000 + first * 100 + log.s\n");
     CHECK_INTEGER(&r, 112);  // nothing, then 1, then 12
     run_dispose(&r);
@@ -59,7 +59,7 @@ static void test_coroutines(void)
              "var^ gen = p^ { yield^ 1 yield^ 2 yield^ 3 }\n"
              "var^ c = gen()\n"
              "var^ a = c.start()\n"
-             "var^ b = c.resume(nil^)\n"
+             "var^ b = c.resume()\n"
              "return^ a * 10 + b\n");
     CHECK_INTEGER(&r, 12);
     run_dispose(&r);
@@ -96,8 +96,8 @@ static void test_coroutines(void)
              "}\n"
              "var^ c = counter()\n"
              "c.start()\n"
-             "c.resume(nil^)\n"
-             "return^ c.resume(nil^)\n");
+             "c.resume()\n"
+             "return^ c.resume()\n");
     CHECK_INTEGER(&r, 3);
     run_dispose(&r);
 
@@ -106,7 +106,7 @@ static void test_coroutines(void)
              "var^ gen = p^ { yield^ 1 return^ 9 }\n"
              "var^ c = gen()\n"
              "c.start()\n"
-             "return^ c.resume(nil^)\n");
+             "return^ c.resume()\n");
     CHECK_INTEGER(&r, 9);
     run_dispose(&r);
 
@@ -119,7 +119,7 @@ static void test_coroutines(void)
              "var^ gen = p^ { yield^ 1 }\n"
              "var^ c = gen()\n"
              "c.start()\n"
-             "return^ c.resume(nil^)\n");
+             "return^ c.resume()\n");
     LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_OK);
     LHAT_CHECK(lhat_is_nil(r.ran.value), "nil^");
     run_dispose(&r);
@@ -129,8 +129,8 @@ static void test_coroutines(void)
              "var^ gen = p^ { yield^ 1 }\n"
              "var^ c = gen()\n"
              "c.start()\n"
-             "c.resume(nil^)\n"
-             "c.resume(nil^)\n"
+             "c.resume()\n"
+             "c.resume()\n"
              "return^ 0\n");
     LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_DEAD_COROUTINE);
     run_dispose(&r);
@@ -322,7 +322,7 @@ static void test_coroutines(void)
              "var^ a = counter()\n"
              "var^ b = counter()\n"
              "a.start()\n"
-             "a.resume(nil^)\n"
+             "a.resume()\n"
              "return^ b.start()\n");
     CHECK_INTEGER(&r, 1);
     run_dispose(&r);
@@ -334,7 +334,7 @@ static void test_coroutines(void)
              "var^ gen = p^ { yield^ 1 yield^ 2 }\n"
              "var^ sum = p^ {\n"
              "  var^ c = gen()\n"
-             "  return^ c.start() + c.resume(nil^)\n"
+             "  return^ c.start() + c.resume()\n"
              "}\n"
              "return^ sum()\n");
     CHECK_INTEGER(&r, 3);
@@ -373,7 +373,7 @@ static void test_coroutines(void)
              "}\n"
              "var^ c = gen()\n"
              "c.start()\n"
-             "c.resume(nil^)\n"
+             "c.resume()\n"
              "c.dispose()\n"
              "return^ log.n\n");
     CHECK_INTEGER(&r, 1);
@@ -401,7 +401,7 @@ static void test_coroutines(void)
              "var^ c = gen()\n"
              "c.start()\n"
              "c.dispose()\n"
-             "c.resume(nil^)\n"
+             "c.resume()\n"
              "return^ 0\n");
     LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_DEAD_COROUTINE);
     run_dispose(&r);
@@ -555,7 +555,7 @@ static void test_coroutines(void)
              "var^ drop = p^ {\n"
              "  var^ c = gen()\n"
              "  c.start()\n"
-             "  c.resume(nil^)\n"
+             "  c.resume()\n"
              "}\n"
              "drop()\n"
              "L^.collectgarbage()\n"
@@ -721,7 +721,7 @@ static void test_coroutines(void)
              "co.start()\n"
              "var^ deep = p^ d {\n"
              "  if^ d > 0 { deep(d - 1) return^ 0 }\n"
-             "  co.resume(nil^)\n"
+             "  co.resume()\n"
              "  return^ 0\n"
              "}\n"
              "deep(6)\n"
@@ -749,7 +749,7 @@ static void test_coroutines(void)
              "s(50)\n"
              "var^ deep = p^ d {\n"
              "  if^ d > 0 { deep(d - 1) return^ 0 }\n"
-             "  co.resume(nil^)\n"
+             "  co.resume()\n"
              "  return^ 0\n"
              "}\n"
              "deep(4)\n"
@@ -789,8 +789,8 @@ static void test_coroutines(void)
              "var^ b = p^ { yieldall^ a() yield^ 3 }\n"
              "var^ c = b()\n"
              "var^ x = c.start()\n"
-             "var^ y = c.resume(nil^)\n"
-             "var^ z = c.resume(nil^)\n"
+             "var^ y = c.resume()\n"
+             "var^ z = c.resume()\n"
              "return^ x * 100 + y * 10 + z\n");
     CHECK_INTEGER(&r, 123);
     run_dispose(&r);
@@ -873,7 +873,7 @@ static void test_coroutines(void)
              "var^ b = p^ { var^ r = yieldall^ a() yield^ r }\n"
              "var^ c = b()\n"
              "c.start()\n"
-             "return^ c.resume(nil^)\n");
+             "return^ c.resume()\n");
     CHECK_INTEGER(&r, 9);
     run_dispose(&r);
 
@@ -898,8 +898,8 @@ static void test_coroutines(void)
              "var^ d = p^ { yieldall^ b() yield^ 3 }\n"
              "var^ c = d()\n"
              "var^ x = c.start()\n"
-             "var^ y = c.resume(nil^)\n"
-             "var^ z = c.resume(nil^)\n"
+             "var^ y = c.resume()\n"
+             "var^ z = c.resume()\n"
              "return^ x * 100 + y * 10 + z\n");
     CHECK_INTEGER(&r, 123);
     run_dispose(&r);
@@ -938,7 +938,7 @@ static void test_coroutines(void)
     run_text(&r,
              "var^ gen = p^ { yield^ 1 }\n"
              "var^ c = gen()\n"
-             "c.resume(nil^)\n"
+             "c.resume()\n"
              "return^ 0\n");
     LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_COROUTINE_NOT_STARTED);
     run_dispose(&r);
@@ -958,7 +958,7 @@ static void test_coroutines(void)
              "var^ gen = p^ { yield^ 1 }\n"
              "var^ c = gen()\n"
              "c.start()\n"
-             "c.resume(nil^)\n"
+             "c.resume()\n"
              "c.start()\n"
              "return^ 0\n");
     LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_COROUTINE_ALREADY_STARTED);
@@ -973,13 +973,38 @@ static void test_coroutines(void)
     LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_ARITY);
     run_dispose(&r);
 
-    LHAT_TEST("resume() needs exactly one argument, not zero");
+    // 13.9 with 03 の 4.2: without checking there is nothing to read R off,
+    // so the machine takes a resume either way rather than choosing a count
+    // the checker might have disagreed with. Where checking ran it is exact
+    // (test_check_coroutine.c holds that side).
+    LHAT_TEST("an unchecked resume() takes its one argument or none");
     run_text(&r,
              "var^ gen = p^ { yield^ 1 }\n"
              "var^ c = gen()\n"
              "c.start()\n"
              "c.resume()\n"
              "return^ 0\n");
+    LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_OK);
+    run_dispose(&r);
+
+    LHAT_TEST("and the same body checked takes none");
+    run_checked_text(&r,
+                     "var^ gen = p^ { yield^ 1 }\n"
+                     "var^ c = gen()\n"
+                     "c.start()\n"
+                     "c.resume()\n"
+                     "return^ 0\n");
+    LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_OK);
+    run_dispose(&r);
+
+    // Where a var^ receives one, R is there and the machine wants it.
+    LHAT_TEST("but a checked resume() of one that receives wants its argument");
+    run_checked_text(&r,
+                     "var^ gen = p^ { var^ a : number^ = yield^ 1 }\n"
+                     "var^ c = gen()\n"
+                     "c.start()\n"
+                     "c.resume()\n"
+                     "return^ 0\n");
     LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_ARITY);
     run_dispose(&r);
 
@@ -1017,7 +1042,7 @@ static void test_coroutines(void)
              "var^ gen = p^ { yield^ 1 }\n"
              "var^ c = gen()\n"
              "c.start()\n"
-             "c.resume(nil^)\n"
+             "c.resume()\n"
              "return^ c.started() and^ c.done()\n");
     CHECK_BOOL(&r, true);
     run_dispose(&r);
@@ -1032,7 +1057,7 @@ static void test_coroutines(void)
              "var^ log = { s := 0 }\n"
              "c.start()\n"
              "if^ c.done() { log.s := log.s + 1 }\n"
-             "c.resume(nil^)\n"
+             "c.resume()\n"
              "if^ c.done() { log.s := log.s + 10 }\n"
              "return^ log.s\n");
     CHECK_INTEGER(&r, 10);  // suspended, then finished
@@ -1056,7 +1081,7 @@ static void test_coroutines(void)
              "var^ gen = p^ { yield^ 1 }\n"
              "var^ c = gen()\n"
              "c.start()\n"
-             "c.resume(nil^)\n"
+             "c.resume()\n"
              "return^ c.done() and^ c.started()\n");
     CHECK_BOOL(&r, true);
     run_dispose(&r);
@@ -1088,7 +1113,7 @@ static void test_coroutines(void)
              "var^ drain = p^ c {\n"
              "  var^ n = 0\n"
              "  if^ !c.started() { c.start() n := n + 1 }\n"
-             "  repeat^ while^ !c.done() { c.resume(nil^) n := n + 1 }\n"
+             "  repeat^ while^ !c.done() { c.resume() n := n + 1 }\n"
              "  return^ n\n"
              "}\n"
              "return^ drain(gen())\n");

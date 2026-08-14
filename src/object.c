@@ -571,13 +571,25 @@ static void write_runtime_type(TypeWriter *w, const LhatRuntimeType *type)
         // described -- one resume takes R and answers Y -- which is where the
         // kind of the body goes, both kinds being possible (15.3改).
         case LHAT_TYPE_RT_COROUTINE:
+            // 13.9: an empty slot is written by leaving it out, so a NULL is
+            // not the "nothing written asks for any^" of every other position
+            // here -- it is the slot saying nothing is sent in, or that the
+            // body ends without a value. '-' is the third slot's other
+            // absence, a body that cannot end.
             type_put_text(w, "c^{");
             type_put_text(w, type->is_function ? "f^" : "p^");
-            write_runtime_type(w, type->receive);
+            if (type->receive != NULL) {
+                write_runtime_type(w, type->receive);
+            }
             type_put_text(w, " -> ");
             write_runtime_type(w, type->produce);
-            type_put_text(w, ";, ");
-            write_runtime_type(w, type->result);
+            type_put_text(w, ";,");
+            if (type->endless) {
+                type_put_text(w, "-");
+            } else if (type->result != NULL) {
+                type_put_text(w, " ");
+                write_runtime_type(w, type->result);
+            }
             type_put_text(w, "}");
             return;
         // 13.8改: '(A, B)'. The parentheses the type grammar already used for
@@ -721,6 +733,14 @@ bool lhat_runtime_type_equal(const LhatRuntimeType *a, const LhatRuntimeType *b)
         // 15.3改 adds the body's own kind to that: what may be done with an
         // f^ coroutine is not what may be done with a p^ one.
         case LHAT_TYPE_RT_COROUTINE:
+            // 13.9: an empty slot is a statement of its own, so it is told
+            // apart from every type rather than normalised to any^ the way a
+            // NULL is everywhere else here.
+            if (a->endless != b->endless ||
+                (a->receive == NULL) != (b->receive == NULL) ||
+                (a->result == NULL) != (b->result == NULL)) {
+                return false;
+            }
             return a->is_function == b->is_function &&
                    lhat_runtime_type_equal(a->receive, b->receive) &&
                    lhat_runtime_type_equal(a->produce, b->produce) &&

@@ -448,7 +448,7 @@ static void test_collection(void)
              "var^ c = gen()\n"
              "c.start()\n"
              "repeat^ 2000 { var^ waste = { a := 1 } }\n"
-             "return^ c.resume(nil^)\n");
+             "return^ c.resume()\n");
     CHECK_INTEGER(&r, 7);
     run_dispose(&r);
 
@@ -474,9 +474,9 @@ static void test_collection(void)
              "var^ next = 30\n"
              "for^ i from^ 1 to^ 2000 {\n"
              "  kept[i] := { a := i }\n"
-             "  if^ i = next { c.resume(nil^)  next := next + 30 }\n"
+             "  if^ i = next { c.resume()  next := next + 30 }\n"
              "}\n"
-             "return^ c.resume(nil^)\n");
+             "return^ c.resume()\n");
     CHECK_INTEGER(&r, 11);
     run_dispose(&r);
 

@@ -251,9 +251,18 @@ struct LhatType {
         } func;
 
         struct {
+            // 13.9. NULL means the slot is empty rather than unknown:
+            // `receive` NULL is a coroutine nothing is sent to, whose resume
+            // takes no argument; `result` NULL is a body that ends without a
+            // value, where 15.6改's nil^ joins Y|T rather than standing here.
             LhatType *receive;
             LhatType *produce;
             LhatType *result;
+            // 13.9: the body cannot end, so there is no last resume for a
+            // result to be the type of and nothing joins Y. Written '-'. A
+            // separate fact from `result` being NULL, and the two are
+            // different types -- what a resume answers differs.
+            bool endless;
             // 15.3改: the kind of the body this came from, which 13.9 writes
             // as the front half ('c^{ f^R -> Y;, T }'). Advancing a coroutine
             // runs its body, so start()/resume()/dispose() take this kind and
@@ -310,9 +319,11 @@ LhatType *lhat_type_hostvalue(LhatTypeArena *arena,
                               const struct LhatHostValueTag *tag);
 LhatType *lhat_type_func(LhatTypeArena *arena, bool is_function);
 // 15.3改: `is_function` is the kind of the body, which decides what may
-// advance the coroutine and where it may be held.
+// advance the coroutine and where it may be held. 13.9: a NULL `receive` or
+// `result` is an empty slot, and `endless` is the third slot's other absence
+// -- a body that cannot end, written '-'.
 LhatType *lhat_type_coro(LhatTypeArena *arena, LhatType *receive,
-                         LhatType *produce, LhatType *result,
+                         LhatType *produce, LhatType *result, bool endless,
                          bool is_function);
 
 // 04 の 2.2. The set is created first; each kind then points at it, which is

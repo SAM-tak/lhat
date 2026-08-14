@@ -356,6 +356,20 @@ struct LhatProto {
     // false, or the checker never settled one).
     struct LhatRuntimeType *yield_produce_type;  // Y
     struct LhatRuntimeType *yield_receive_type;  // R
+    // 13.9: whether R is there at all, which decides how many arguments a
+    // resume of this body takes. Kept apart from the type above because a
+    // NULL there means two things -- an empty slot, and a proto the checker
+    // never reached.
+    //
+    // Only `yield_receives_known` protos say which; without checking there is
+    // nothing to read R off, and 03 の 4.2 keeps the run the same either way,
+    // so the machine takes a resume of an unknown one with or without its one
+    // argument rather than picking a count the checker might disagree with.
+    bool yield_receives_known;
+    bool yield_receives;
+    // 13.9: the body cannot end, so `result_type` being NULL here says "no
+    // last resume" rather than "ends without a value". typeof^ writes it '-'.
+    bool yield_endless;
 
     // 13.7: the last parameter collects the rest into a table rather than
     // taking one argument for itself. Its element type is

@@ -910,12 +910,16 @@ LhatType *chk_resolve_type(Checker *c, const LhatNode *node)
                                        chk_resolve_type(c, node->v.binary.right));
 
         case LHAT_NODE_TYPE_CORO: {
-            // 13.9 with 15.3改: 'c^{ f^R -> Y;, T }'. An omitted R or Y is
-            // nil^ -- 13.2's absent result and an empty parameter list both
-            // mean "nothing here", and 04 の 11.3 already spells that nil^.
-            LhatType *receive = node->v.coroutine.receive != NULL
-                                    ? chk_resolve_type(c, node->v.coroutine.receive)
-                                    : chk_simple(c, LHAT_TYPE_NIL);
+            // 13.9 with 15.3改: 'c^{ f^R -> Y;, T }'. An omitted R is left
+            // empty rather than filled: 13.2 makes the empty argument side a
+            // statement of its own, and here it says nothing is sent in -- so
+            // a resume of one of these takes no argument. Y is different; a
+            // yield^ with no value really does hand nil^ to the resumer, so
+            // nothing written there is nil^.
+            LhatType *receive =
+                node->v.coroutine.receive != NULL
+                    ? chk_resolve_type(c, node->v.coroutine.receive)
+                    : NULL;
             // 13.8改: Y and T are results -- what the body yields and what it
             // finally answers -- so a tuple may be written in either. R is an
             // input and takes none: a resume sends one value.
@@ -925,7 +929,12 @@ LhatType *chk_resolve_type(Checker *c, const LhatNode *node)
                 produce = chk_resolve_type(c, node->v.coroutine.produce);
             }
             c->tuple_allowed = true;
-            LhatType *result = chk_resolve_type(c, node->v.coroutine.result);
+            // Left empty, the body ends without a value and 15.6改's nil^
+            // joins Y|T where the resume reads it. Written '-', it cannot end
+            // and nothing joins. The parser tells the two apart.
+            LhatType *result = node->v.coroutine.result != NULL
+                                   ? chk_resolve_type(c, node->v.coroutine.result)
+                                   : NULL;
             // 05 の 8.9: what crosses a suspension crosses frames, so none
             // of the three positions carries a host value -- the same rule
             // unify_yield applies to the inferred side.
@@ -934,6 +943,7 @@ LhatType *chk_resolve_type(Checker *c, const LhatNode *node)
                 chk_report(c, node, LHAT_CHECK_ERR_HOSTVALUE_ESCAPES);
             }
             return lhat_type_coro(c->result->types, receive, produce, result,
+                                  node->v.coroutine.endless,
                                   node->v.coroutine.is_function);
         }
 

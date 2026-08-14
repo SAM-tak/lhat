@@ -857,7 +857,7 @@ static void test_parameter_inference(void)
     LHAT_TEST("though writing it out is still read the same way");
     check_text(&u,
                "public^ let^ g = p^ n:number^"
-               " -> c^{ p^nil^ -> number^;, nil^ } { yield^ n }\n");
+               " -> c^{ p^-> number^;, } { yield^ n }\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 

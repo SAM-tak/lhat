@@ -306,7 +306,7 @@ static void test_multi_value_return(void)
                      "  return^ 0, \"\" }\n"
                      "var^ co = gen()\n"
                      "var^ n1, s1 = co.start()\n"
-                     "var^ n2, s2 = co.resume(nil^)\n"
+                     "var^ n2, s2 = co.resume()\n"
                      "return^ n1.tostring^() .. s1 .. n2.tostring^() .. s2\n");
     CHECK_STRING(&r, "1a2b");
     run_dispose(&r);
@@ -414,7 +414,7 @@ static void test_walk_shapes(void)
                      "var^ n = 0\n"
                      "w.start()\n"
                      "repeat^ 699 {\n"
-                     "  w.resume(nil^)\n"
+                     "  w.resume()\n"
                      "  n := n + 1\n"
                      "}\n"
                      "return^ n\n");

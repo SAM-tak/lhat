@@ -788,7 +788,7 @@ static void test_tail_calls(void)
              "}\n"
              "var^ co = gen()\n"
              "var^ first = co.start()\n"
-             "var^ last = co.resume(nil^)\n"
+             "var^ last = co.resume()\n"
              "return^ first * 10 + last\n");
     CHECK_INTEGER(&r, 17);
     run_dispose(&r);

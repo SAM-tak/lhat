@@ -117,14 +117,25 @@ LhatType *lhat_type_func(LhatTypeArena *arena, bool is_function)
 }
 
 LhatType *lhat_type_coro(LhatTypeArena *arena, LhatType *receive,
-                         LhatType *produce, LhatType *result,
+                         LhatType *produce, LhatType *result, bool endless,
                          bool is_function)
 {
     LhatType *type = new_type(arena, LHAT_TYPE_CORO);
     if (type != NULL) {
         type->v.coroutine.receive = receive;
         type->v.coroutine.produce = produce;
+        // 13.9: an empty third slot already says the last resume receives
+        // nil^ -- coroutine_answer puts it into Y|T. Writing that nil^ out as
+        // well would be a second spelling of one type, and two types that
+        // differ nowhere a program can see. Folded here, at the one place a
+        // coroutine type is built, so no reader has to know about the two.
+        // A union with nil^ in it is not this: it says the last resume may
+        // deliver something else instead.
+        if (!endless && result != NULL && result->kind == LHAT_TYPE_NIL) {
+            result = NULL;
+        }
         type->v.coroutine.result = result;
+        type->v.coroutine.endless = endless;
         type->v.coroutine.is_function = is_function;
     }
     return type;
@@ -697,8 +708,21 @@ static bool conforms_in(const LhatType *value, const LhatType *target,
                 target->v.coroutine.is_function) {
                 return false;
             }
-            // 13.9. What the coroutine receives is an input, so it varies the
-            // other way round from what it produces and returns.
+            // 13.9: an empty slot is a statement, not a gap, so it stands
+            // apart from every type rather than conforming to all of them the
+            // way conforms_in reads a NULL. A resume that takes nothing is
+            // not one that takes nil^ -- 14.12 already holds arities {0} and
+            // {1} disjoint -- and a body that cannot end answers Y where one
+            // ending without a value answers Y|nil^.
+            if (value->v.coroutine.endless != target->v.coroutine.endless ||
+                (value->v.coroutine.receive == NULL) !=
+                    (target->v.coroutine.receive == NULL) ||
+                (value->v.coroutine.result == NULL) !=
+                    (target->v.coroutine.result == NULL)) {
+                return false;
+            }
+            // What the coroutine receives is an input, so it varies the other
+            // way round from what it produces and returns.
             return conforms_in(target->v.coroutine.receive,
                                value->v.coroutine.receive, seen) &&
                    conforms_in(value->v.coroutine.produce,
@@ -1360,7 +1384,9 @@ static void write_type(TypeSink *sink, const LhatType *type, int depth)
         }
 
         case LHAT_TYPE_CORO:
-            // 13.9 with 15.3改: 'c^{ f^R -> Y;, T }'.
+            // 13.9 with 15.3改: 'c^{ f^R -> Y;, T }'. An empty slot is written
+            // by leaving it out, and '-' is the third slot's other absence --
+            // a body that cannot end. Both read back as what they say.
             put_text(sink, "c^{ ");
             put_text(sink, type->v.coroutine.is_function ? "f^" : "p^");
             if (type->v.coroutine.receive != NULL) {
@@ -1370,8 +1396,13 @@ static void write_type(TypeSink *sink, const LhatType *type, int depth)
                 put_text(sink, " -> ");
                 write_type(sink, type->v.coroutine.produce, depth + 1);
             }
-            put_text(sink, ";, ");
-            write_type(sink, type->v.coroutine.result, depth + 1);
+            put_text(sink, ";,");
+            if (type->v.coroutine.endless) {
+                put_text(sink, "-");
+            } else if (type->v.coroutine.result != NULL) {
+                put_text(sink, " ");
+                write_type(sink, type->v.coroutine.result, depth + 1);
+            }
             put_text(sink, " }");
             return;
 

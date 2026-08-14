@@ -417,8 +417,9 @@ static LhatNode *parse_type_coroutine(Parser *p)
     if (signature != NULL && signature->kind == LHAT_NODE_TYPE_FUNC) {
         node->v.coroutine.is_function = signature->v.func.is_function;
         // 15.2: one resume takes exactly one value, so the parameter list
-        // holds at most one. An absent one is what a nil^ receive is written
-        // as, the same way 13.2 writes an absent result.
+        // holds at most one. Leaving it out says nothing is sent in at all --
+        // 13.2's empty argument side, read here the way it is read anywhere.
+        // A resume of one of these takes no argument.
         node->v.coroutine.receive =
             signature->v.func.params != NULL
                 ? signature->v.func.params->v.param.type
@@ -433,7 +434,20 @@ static LhatNode *parse_type_coroutine(Parser *p)
     }
 
     expect_op(p, LHAT_OP_COMMA);
-    node->v.coroutine.result = parse_type(p);
+    // 13.9: the third slot says what the last resume receives, and has two
+    // ways of saying there is none. Left out, the body ends without a value
+    // and 15.6改's nil^ is what the last resume really gets -- so it joins
+    // Y|T there rather than standing here. Written '-', the body cannot end
+    // at all, so there is no last resume and nothing joins.
+    //
+    // The one place an operator symbol stands where a type would. It reads
+    // as "none" rather than as arithmetic because a type is all that may be
+    // here, and nothing in the type grammar begins with '-'.
+    if (match_op(p, LHAT_OP_SUB)) {
+        node->v.coroutine.endless = true;
+    } else if (!check_op(p, LHAT_OP_RBRACE)) {
+        node->v.coroutine.result = parse_type(p);
+    }
     expect_op(p, LHAT_OP_RBRACE);
     return finish(p, node);
 }

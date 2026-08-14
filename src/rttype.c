@@ -55,9 +55,15 @@ static LhatRuntimeType *rt_from_checked(LhatHeap *heap,
         case LHAT_TYPE_PENDING:
             return lhat_type_rt_new(heap, LHAT_TYPE_RT_UNKNOWN);
 
+        // 13.7: asks nothing of a value, which is also what nothing written
+        // means -- but a NULL is how 13.9's empty coroutine slot is carried,
+        // so any^ is built rather than collapsed. Both still write out as
+        // any^; what the kind buys is that a NULL now says only one thing.
         case LHAT_TYPE_ANY:
+            return lhat_type_rt_new(heap, LHAT_TYPE_RT_ANY);
+
         case LHAT_TYPE_NONE:
-            return NULL;  // asks nothing, same as nothing written (13.7)
+            return NULL;  // 13.2: no value, so there is nothing to ask of one
 
         case LHAT_TYPE_NIL:
             return lhat_type_rt_new(heap, LHAT_TYPE_RT_NIL);
@@ -162,9 +168,12 @@ static LhatRuntimeType *rt_from_checked(LhatHeap *heap,
             if (rt == NULL) {
                 return NULL;
             }
+            // 13.9: an empty slot stays empty. rt_from_checked answers NULL
+            // for a NULL, which is what the writer reads as "left out".
             rt->receive = rt_from_checked(heap, type->v.coroutine.receive, seen);
             rt->produce = rt_from_checked(heap, type->v.coroutine.produce, seen);
             rt->result = rt_from_checked(heap, type->v.coroutine.result, seen);
+            rt->endless = type->v.coroutine.endless;
             rt->is_function = type->v.coroutine.is_function;  // 15.3改
             return rt;
         }
