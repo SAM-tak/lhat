@@ -2508,6 +2508,10 @@ const char *lhat_check_error_message(LhatCheckErrorCode code)
             return "an operator is answered by what stands to its left, or by "
                    "what stands to its right when that side writes the self^ "
                    "last; neither answers this one";
+        case LHAT_CHECK_ERR_OPERATOR_ON_MAYBE_NIL:
+            return "this may be nil^, and nil^ answers no operator; '??' "
+                   "gives it a value, or bind it to a name and narrow that -- "
+                   "an index is not narrowed where it stands";
         case LHAT_CHECK_ERR_BAD_OPERATOR:
             return "an op^ is an f^ taking self^ and one argument, and it may "
                    "not yield^; the self^ is whichever operand it is written "

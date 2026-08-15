@@ -220,7 +220,7 @@ typedef enum {
                                         // no captured place, which is what
                                         // lets the value be handed to a
                                         // machine of its own (05 の 8.7)
-    LHAT_CHECK_ERR_HOSTVALUE_ESCAPES    // 05 の 8.9: a host value lives in
+    LHAT_CHECK_ERR_HOSTVALUE_ESCAPES,   // 05 の 8.9: a host value lives in
                                         // stack slots and nowhere else, so a
                                         // table, a capture, an any^, a yield
                                         // and the program's answer all refuse
@@ -229,6 +229,14 @@ typedef enum {
                                         // Refused even under relaxed: a
                                         // runtime check cannot make room
                                         // where the representation has none
+    LHAT_CHECK_ERR_OPERATOR_ON_MAYBE_NIL  // 04 の 11.3: what a key reads out
+                                        // of a table is 'T|nil^', and no
+                                        // operator is on the nil^ side.
+                                        // 11.3改's rule sends the writer
+                                        // looking for an operator to write
+                                        // when what is missing is a narrowing
+                                        // -- and 13.11 does not narrow an
+                                        // index where it stands
 } LhatCheckErrorCode;
 
 typedef struct {

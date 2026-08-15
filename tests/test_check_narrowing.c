@@ -632,6 +632,97 @@ static void test_nil_propagation(void)
     unit_dispose(&u);
 }
 
+// 04 の 11.3 makes everything a key reads out of a table a 'T|nil^', so the
+// commonest reason an operator finds nothing is the nil^ arm. What that asks
+// of the writer is a narrowing, and 11.3改's rule -- which is what the plain
+// refusal recites -- reads as a demand for an operator instead. Every entrance
+// to the refusal is pinned here, since one left saying the old thing is one
+// the writer will meet.
+static void test_operator_on_maybe_nil(void)
+{
+    Unit u;
+
+    LHAT_TEST("the receiver may be nil^");
+    check_text(&u, "var^ f = f^ -> t^{ ...:number^ } { return^ { 1 } }\n"
+                   "var^ t = f()\n"
+                   "var^ n : number^ = t[1] + 1\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_OPERATOR_ON_MAYBE_NIL);
+    unit_dispose(&u);
+
+    // 11.3改 hands this one to the right operand, which is where a built-in
+    // on the left leaves it -- the same mistake read from the other end.
+    LHAT_TEST("the argument may be nil^");
+    check_text(&u, "var^ f = f^ -> t^{ ...:number^ } { return^ { 1 } }\n"
+                   "var^ t = f()\n"
+                   "var^ n : number^ = 1 + t[1]\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_OPERATOR_ON_MAYBE_NIL);
+    unit_dispose(&u);
+
+    LHAT_TEST("an ordering says it too, rather than 'nothing orders these'");
+    check_text(&u, "var^ f = f^ -> t^{ ...:number^ } { return^ { 1 } }\n"
+                   "var^ t = f()\n"
+                   "var^ b : bool^ = t[1] < 3\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_OPERATOR_ON_MAYBE_NIL);
+    unit_dispose(&u);
+
+    LHAT_TEST("and the unary '-', rather than 'arithmetic needs number^'");
+    check_text(&u, "var^ f = f^ -> t^{ ...:number^ } { return^ { 1 } }\n"
+                   "var^ t = f()\n"
+                   "var^ n : number^ = -t[1]\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_OPERATOR_ON_MAYBE_NIL);
+    unit_dispose(&u);
+
+    // 11.2's '..' is carried by string^ rather than by 14.8's number^, so it
+    // reaches the refusal by a different road and has to be asked separately.
+    LHAT_TEST("'..' is the same mistake");
+    check_text(&u, "var^ f = f^ -> t^{ ...:string^ } { return^ { \"a\" } }\n"
+                   "var^ t = f()\n"
+                   "var^ s : string^ = t[1] .. \"a\"\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_OPERATOR_ON_MAYBE_NIL);
+    unit_dispose(&u);
+
+    // The two ways out the message names.
+    LHAT_TEST("'??' is one of them");
+    check_text(&u, "var^ f = f^ -> t^{ ...:number^ } { return^ { 1 } }\n"
+                   "var^ t = f()\n"
+                   "var^ n : number^ = (t[1] ?? 0) + 1\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("binding it to a name and narrowing that is the other");
+    check_text(&u, "var^ f = f^ -> t^{ ...:number^ } { return^ { 1 } }\n"
+                   "var^ t = f()\n"
+                   "var^ v = t[1]\n"
+                   "if^ v isa^ number^ { var^ n : number^ = v + 1 }\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // 13.11 excludes an index from what may be narrowed, which is why the
+    // message says to bind it first -- without that line a writer tries this
+    // and meets the same refusal a second time.
+    LHAT_TEST("narrowing the index where it stands does not do it");
+    check_text(&u, "var^ f = f^ -> t^{ ...:number^ } { return^ { 1 } }\n"
+                   "var^ t = f()\n"
+                   "if^ t[1] isa^ number^ { var^ n : number^ = t[1] + 1 }\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_OPERATOR_ON_MAYBE_NIL);
+    unit_dispose(&u);
+
+    // Only where dropping the nil^ is what would have made it work. An
+    // operator nobody wrote is still that, and saying "narrow it" of one
+    // would send the writer after a fix that is not there.
+    LHAT_TEST("with no nil^ in it, the plain refusal stands");
+    check_text(&u, "var^ b = true^\n"
+                   "var^ n : number^ = b + 1\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_NO_OPERATOR);
+    unit_dispose(&u);
+
+    LHAT_TEST("nor when the rest of the union has no operator either");
+    check_text(&u, "var^ f = f^ -> string^|nil^ { return^ \"a\" }\n"
+                   "var^ n : number^ = f() + 1\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_NO_OPERATOR);
+    unit_dispose(&u);
+}
+
 // 01 の 2.3: the stacked reach, typed. The checker walks the same
 // bindings the machine resolves, so it^^ carries the outer focus's type and
 // this^^ the enclosing subroutine's own.
@@ -909,6 +1000,7 @@ int main(void)
     test_narrowing();
     test_relaxed_nil_reference();
     test_nil_propagation();
+    test_operator_on_maybe_nil();
     test_stacked_hats();
     test_tuple_positions();
     return lhat_test_report("test_check_narrowing");

@@ -29,6 +29,45 @@ void chk_expect(Checker *c, const LhatNode *at, LhatType *value,
     }
 }
 
+// 04 の 11.3: a table answers nil^ for a key that is not there, so what a key
+// reads out of one is 'T|nil^' -- and no operator is on the nil^ side. Saying
+// 11.3改's rule there sends the writer looking for an operator to write, when
+// what is missing is a narrowing.
+//
+// True when this is a union carrying a nil^ arm, with `bare` set to what it is
+// without one. Each caller then asks its own question again of `bare`: only
+// where dropping the nil^ is what would have made the operator answer is that
+// advice the right advice, and 'nil^|string^ + 1' is not such a place.
+//
+// A bare nil^ is not one of these. What stands there is nil^ rather than may
+// be, and no narrowing turns it into anything else.
+static bool nil_arm_apart(Checker *c, LhatType *type, LhatType **bare)
+{
+    if (type == NULL || type->kind != LHAT_TYPE_UNION) {
+        return false;
+    }
+    bool carries = false;
+    for (const LhatTypeList *arm = type->v.composite.arms; arm != NULL;
+         arm = arm->next) {
+        if (arm->type != NULL && arm->type->kind == LHAT_TYPE_NIL) {
+            carries = true;
+            break;
+        }
+    }
+    if (!carries) {
+        return false;
+    }
+    // chk_without rather than chk_without_nil_arm: that one gives a union of
+    // three arms back unchanged, and 'number^|string^|nil^' is exactly the
+    // shape this is here to see through.
+    LhatType *without = chk_without(c, type, chk_simple(c, LHAT_TYPE_NIL));
+    if (without == NULL) {
+        return false;
+    }
+    *bare = without;
+    return true;
+}
+
 // 11.3改: the one shape every operator is judged with. The left operand is
 // asked for the member 11.8 names, 11.1 makes that a function, 14.4 puts the
 // left operand in its self^ -- so the right operand is its argument and the
@@ -132,7 +171,16 @@ static LhatType *check_comparison(Checker *c, const LhatNode *at, LhatOpKind op,
     // whatever it is (14.2), and an op^= or a '<=>' only refines that for a
     // type that writes one.
     if (!related && op != LHAT_OP_EQ && op != LHAT_OP_NE && op != LHAT_OP_IS) {
-        chk_report(c, at, LHAT_CHECK_ERR_NOT_ORDERED);
+        // Either side may be the one carrying the nil^, so both are asked --
+        // 't[1] < 3' and '3 < t[1]' are the same mistake read from the two
+        // ends. Whichever it is, what is missing is the narrowing.
+        LhatType *bare = NULL;
+        bool by_nil =
+            (nil_arm_apart(c, left, &bare) && related_pair(c, op, bare, right)) ||
+            (nil_arm_apart(c, right, &bare) && related_pair(c, op, left, bare));
+        chk_report(c, at,
+                   by_nil ? LHAT_CHECK_ERR_OPERATOR_ON_MAYBE_NIL
+                          : LHAT_CHECK_ERR_NOT_ORDERED);
     }
     return chk_simple(c, LHAT_TYPE_BOOL);
 }
@@ -194,6 +242,21 @@ static LhatType *infer_unary_operator(Checker *c, LhatType *operand)
     return lhat_type_call_answer(arm);
 }
 
+// 11.3改: the operator member this side answers with as the LEFT operand. One
+// written with its self^ last describes the other order -- it answers when its
+// owner stands on the right, so carrying it is not answering here and it reads
+// exactly as though it were absent.
+static LhatType *left_operator_member(Checker *c, LhatType *type,
+                                      const char *name, size_t length)
+{
+    LhatType *carrier = chk_operator_member(c, type, name, length);
+    if (carrier != NULL && carrier->kind == LHAT_TYPE_FUNC &&
+        carrier->v.func.self_last) {
+        return NULL;
+    }
+    return carrier;
+}
+
 static LhatType *infer_operator(Checker *c, const LhatNode *node, LhatOpKind op,
                                 LhatType *left, LhatType *right)
 {
@@ -225,14 +288,7 @@ static LhatType *infer_operator(Checker *c, const LhatNode *node, LhatOpKind op,
         return NULL;
     }
 
-    LhatType *carrier = chk_operator_member(c, left, name, length);
-    // 11.3改: a self^-last one on this side describes the other order --
-    // it answers when its owner stands on the RIGHT. Carrying it is not
-    // answering here, so the question moves on exactly as if it were absent.
-    if (carrier != NULL && carrier->kind == LHAT_TYPE_FUNC &&
-        carrier->v.func.self_last) {
-        carrier = NULL;
-    }
+    LhatType *carrier = left_operator_member(c, left, name, length);
     if (carrier == NULL) {
         // 11.3改: nothing on the left, so the right operand gets the
         // question -- it may have been written as the receiver.
@@ -242,7 +298,14 @@ static LhatType *infer_operator(Checker *c, const LhatNode *node, LhatOpKind op,
         if (answered) {
             return result;
         }
-        chk_report(c, node->v.binary.left, LHAT_CHECK_ERR_NO_OPERATOR);
+        // 04 の 11.3: a nil^ arm is why the member was not found, rather than
+        // an operator nobody wrote -- the same lookup answers without it.
+        LhatType *bare = NULL;
+        bool by_nil = nil_arm_apart(c, left, &bare) &&
+                      left_operator_member(c, bare, name, length) != NULL;
+        chk_report(c, node->v.binary.left,
+                   by_nil ? LHAT_CHECK_ERR_OPERATOR_ON_MAYBE_NIL
+                          : LHAT_CHECK_ERR_NO_OPERATOR);
         return NULL;
     }
 
@@ -284,9 +347,19 @@ static LhatType *infer_operator(Checker *c, const LhatNode *node, LhatOpKind op,
         if (answered) {
             return result;
         }
-        // The same report the single arm makes below: what is wrong is that
-        // nothing here takes this right operand.
-        chk_report(c, node->v.binary.right, LHAT_CHECK_ERR_NO_OPERATOR);
+        // 04 の 11.3: an arm does take it once the nil^ is off, so the
+        // narrowing is what is missing rather than an arm for this type.
+        LhatType *bare = NULL;
+        bool by_nil = false;
+        if (nil_arm_apart(c, right, &bare)) {
+            args[0] = bare;
+            by_nil = operator_arm(carrier, args, 1, false) != NULL;
+        }
+        // Otherwise the same report the single arm makes below: what is wrong
+        // is that nothing here takes this right operand.
+        chk_report(c, node->v.binary.right,
+                   by_nil ? LHAT_CHECK_ERR_OPERATOR_ON_MAYBE_NIL
+                          : LHAT_CHECK_ERR_NO_OPERATOR);
         return NULL;
     }
 
@@ -326,8 +399,15 @@ static LhatType *infer_operator(Checker *c, const LhatNode *node, LhatOpKind op,
     // through -- expect is what tells the two apart.
     if (wanted != NULL &&
         (chk_param_var_for(c, right) != NULL || !chk_operator_undecided(right))) {
+        // 04 の 11.3: '1 + t[i]' reaches here, and what the operator takes is
+        // met once the nil^ is off. Decided before expect so that the one
+        // report it may make is the one that says so.
+        LhatType *bare = NULL;
+        bool by_nil = nil_arm_apart(c, right, &bare) &&
+                      lhat_type_conforms(bare, wanted);
         chk_expect(c, node->v.binary.right, right, wanted,
-                   LHAT_CHECK_ERR_NO_OPERATOR);
+                   by_nil ? LHAT_CHECK_ERR_OPERATOR_ON_MAYBE_NIL
+                          : LHAT_CHECK_ERR_NO_OPERATOR);
     }
     return lhat_type_call_answer(carrier);
 }
@@ -3361,7 +3441,14 @@ static LhatType *infer_node(Checker *c, const LhatNode *node)
                     return own;
                 }
             }
-            chk_expect(c, node, operand, number, LHAT_CHECK_ERR_NOT_NUMBER);
+            // 04 の 11.3: '-t[i]' is the same mistake the binary ones make,
+            // and "arithmetic needs number^" says as little about it.
+            LhatType *bare = NULL;
+            bool by_nil = nil_arm_apart(c, operand, &bare) &&
+                          lhat_type_conforms(bare, number);
+            chk_expect(c, node, operand, number,
+                       by_nil ? LHAT_CHECK_ERR_OPERATOR_ON_MAYBE_NIL
+                              : LHAT_CHECK_ERR_NOT_NUMBER);
             return number;
         }
 

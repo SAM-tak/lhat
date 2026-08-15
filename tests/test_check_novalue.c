@@ -185,10 +185,20 @@ static void test_no_value(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_NO_OPERATOR);
     unit_dispose(&u);
 
-    // Every arm has to answer, since the value may be any of them.
+    // Every arm has to answer, since the value may be any of them. Said with
+    // the code 03 の 1 章 keeps for the nil^ arm: the rest of this union does
+    // answer '..', so what is asked for is a narrowing rather than an
+    // operator nobody wrote.
     LHAT_TEST("and a union answers only when all of it does");
     check_text(&u,
                "var^ x : string^|nil^ = \"a\"\n"
+               "var^ v = x .. \"b\"\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_OPERATOR_ON_MAYBE_NIL);
+    unit_dispose(&u);
+
+    LHAT_TEST("and when no arm of it does, the plain refusal stands");
+    check_text(&u,
+               "var^ x : number^|nil^ = 1\n"
                "var^ v = x .. \"b\"\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_NO_OPERATOR);
     unit_dispose(&u);
