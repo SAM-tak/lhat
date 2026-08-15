@@ -3,8 +3,13 @@ extends EditorScript
 
 # Open this in the script editor and run it with File > Run (Ctrl+Shift+X).
 # It answers in the Output panel, without a scene and without playing the
-# project -- which is the whole of what this demo is for while the extension
-# has nothing but these two calls in it.
+# project.
 func _run() -> void:
 	print("L^ ", LhatRuntime.version())
-	print(LhatRuntime.run_status_message(0))
+
+	# Empty means the whole graph -- hello.lh and what it requires -- read,
+	# parsed and type checked without one diagnostic.
+	print("check: ", LhatRuntime.check("res://hello.lh"))
+
+	# The same, and then runs it. What it prints goes to this same panel.
+	print("run: ", LhatRuntime.run("res://hello.lh"))

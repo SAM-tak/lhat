@@ -27,23 +27,31 @@ set(LHAT_GODOT_CPP_TAG
     "godot-cpp tag to fetch. Matches the Godot version the extension loads in."
 )
 
+# Fetching is only ever how the directory comes to exist; what is built is
+# always the checkout that is there. FetchContent would put the two cases in
+# different binary directories, and moving between them rebuilds two thousand
+# generated files for no reason.
+if(NOT EXISTS "${LHAT_GODOT_CPP_DIR}/CMakeLists.txt")
+    message(STATUS "godot-cpp: fetching ${LHAT_GODOT_CPP_TAG} into ${LHAT_GODOT_CPP_DIR}")
+    find_package(Git REQUIRED)
+    execute_process(
+        COMMAND ${GIT_EXECUTABLE} clone --depth 1 --branch ${LHAT_GODOT_CPP_TAG}
+                https://github.com/godotengine/godot-cpp.git
+                "${LHAT_GODOT_CPP_DIR}"
+        RESULT_VARIABLE fetched
+    )
+    if(NOT fetched EQUAL 0)
+        message(FATAL_ERROR
+            "could not fetch godot-cpp ${LHAT_GODOT_CPP_TAG}. Point "
+            "LHAT_GODOT_CPP_DIR at a checkout, or clone one there yourself.")
+    endif()
+endif()
+
 # An existing checkout is used as it stands -- that is what pointing
 # LHAT_GODOT_CPP_DIR somewhere else is for, and the version there is the
 # version the extension is built against, tag or no tag.
-if(EXISTS "${LHAT_GODOT_CPP_DIR}/CMakeLists.txt")
-    message(STATUS "godot-cpp: using the checkout at ${LHAT_GODOT_CPP_DIR}")
-    add_subdirectory("${LHAT_GODOT_CPP_DIR}" godot-cpp)
-else()
-    message(STATUS "godot-cpp: fetching ${LHAT_GODOT_CPP_TAG} into ${LHAT_GODOT_CPP_DIR}")
-    include(FetchContent)
-    FetchContent_Declare(godot-cpp
-        GIT_REPOSITORY https://github.com/godotengine/godot-cpp.git
-        GIT_TAG ${LHAT_GODOT_CPP_TAG}
-        GIT_SHALLOW TRUE
-        SOURCE_DIR "${LHAT_GODOT_CPP_DIR}"
-    )
-    FetchContent_MakeAvailable(godot-cpp)
-endif()
+message(STATUS "godot-cpp: building the checkout at ${LHAT_GODOT_CPP_DIR}")
+add_subdirectory("${LHAT_GODOT_CPP_DIR}" godot-cpp)
 
 # ---- What linking a static C library into a shared library asks for --------
 # Both of these are about `lhat` having been defined long before godot-cpp was

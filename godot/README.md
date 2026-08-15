@@ -4,13 +4,26 @@ Godot が実行時に読み込む共有ライブラリとして L^ を提供す�
 godot-cpp に対して書くので、ツリーの中でここだけが C++。言語本体は C11 のまま、
 `include/lhat.h` 越しに——他のホストと同じ面で——呼ばれる（05 の 8.7）。
 
-**現状はビルド設定のみ。** 登録されるクラスは `LhatRuntime` 1つ、
-持っているのは静的メソッド2つだけ:
+登録されるクラスは `LhatRuntime` 1つ。全部 static で、状態を持たない
+——1回の呼び出しがプログラムを作り、検査し、走らせ、捨てる（05 の 8.7 の順）。
 
-- `LhatRuntime.version()` — ヘッダに届いていることの確認
-- `LhatRuntime.run_status_message(status)` — ライブラリに届いていることの確認
+- `LhatRuntime.version()`
+- `LhatRuntime.run_status_message(status)`
+- `LhatRuntime.check(path) -> PackedStringArray` — `path` とそれが
+  `require^` する全部を検査。空なら診断ゼロ
+- `LhatRuntime.run(path) -> PackedStringArray` — 同じ。通れば走らせる。
+  空なら走った
 
-実行時 API（プログラムの読み込み・検査・実行）はまだ無い。
+```gdscript
+for line in LhatRuntime.run("res://hello.lh"):
+    push_error(line)
+```
+
+`print` は Godot の出力パネルへ行く（05 の 8.2 の初期束縛）。
+`res://` のパスは **`FileAccess` 経由**なので、書き出した .pck の中も読める。
+
+**単位の答えは Variant で返らない。** 値が境界を越える変換層は Script が
+要求するもので、まだ無い。非 nil^ の答えは出力パネルに書かれるだけ。
 
 ## ビルド
 
@@ -56,11 +69,17 @@ print(LhatRuntime.version())
 - **スレッド。** 言語本体は1スレッドで走る前提（`port/thread.h` 冒頭）。
   Godot 側から複数スレッドで触る話はまだ何も決めていない
 
+- **パスの scheme は言語に見せない。** 05 の 5.1 は区切りを畳んで他を
+  解釈しないので、`res://a.lh` は `res:/a.lh` になって開けなくなる。
+  境界で scheme を外し、ローダが付け直す。結果として**1つのプログラムが
+  読めるのは1つの scheme**（`res://` と `user://` は混ぜられない）
+
 ## これから
 
-- `res://` からユニットを読むローダ（既定の `port/loader.c` は stdio で
-  ファイルを読む。パッケージの中は読めない）
-- ホスト名の登録。`print` を Godot の出力へ、など（05 の 8.7）
+- `.lh` をリソースに（`ResourceFormatLoader` + `ScriptExtension`）
+- 言語として登録（`ScriptLanguageExtension` + `Engine.register_script_language`）。
+  ここで「スクリプト作成」ダイアログに L^ が出る。`_validate` は
+  `check()` の使い回し
+- ノードに付いて動く（`GDExtensionScriptInstanceInfo3`）。ここで
+  **L^ の値 ⇄ Variant** の変換層が要る
 - `stdlib/` を繋ぐか。`std.io` はゲームの中では意味が変わる
-- ノードに L^ のスクリプトを割り当てる話（`ScriptLanguageExtension`）は
-  その先

@@ -1821,6 +1821,146 @@ static void test_dump_host_api(void)
     lhat_program_dispose(&program);
 }
 
+// What the stages reported, over the graph rather than over one file --
+// program.h's own reading of it, which is what a host outside this tree has.
+static void test_diagnostics(void)
+{
+    LhatProgram program;
+    Disk disk;
+
+    LHAT_TEST("a clean graph has nothing to report");
+    {
+        static const File clean[] = {
+            {"lib/one.lh", "public^ let^ v = 1\n"},
+            {"main.lh", "var^ o = require^ \"lib/one.lh\"\nvar^ n = o.v\n"},
+        };
+        program_with(&program, &disk, clean, 2);
+        lhat_program_check(&program, "main.lh");
+        size_t total = 0;
+        for (const LhatUnit *u = lhat_program_units(&program); u != NULL;
+             u = lhat_unit_next(u)) {
+            total += lhat_unit_diagnostic_count(u);
+            LHAT_CHECK(lhat_unit_source(u) != NULL, "the source is reachable");
+        }
+        LHAT_CHECK_EQ_INT(total, 0);
+    }
+    lhat_program_dispose(&program);
+
+    // 6.2: what a host shows is the graph's, so a mistake in a required unit
+    // is found by walking rather than by asking the unit that was named.
+    LHAT_TEST("a required unit's own mistake is found by the walk");
+    {
+        static const File broken[] = {
+            {"lib/one.lh", "public^ let^ v : number^ = \"text\"\n"},
+            {"main.lh", "var^ o = require^ \"lib/one.lh\"\n"},
+        };
+        program_with(&program, &disk, broken, 2);
+        lhat_program_check(&program, "main.lh");
+
+        size_t found = 0;
+        for (const LhatUnit *u = lhat_program_units(&program); u != NULL;
+             u = lhat_unit_next(u)) {
+            size_t said = lhat_unit_diagnostic_count(u);
+            for (size_t i = 0; i < said; i++) {
+                found++;
+                LhatUnitDiagnostic d = lhat_unit_diagnostic(u, i);
+                LHAT_CHECK_EQ_INT(d.stage, LHAT_STAGE_CHECKER);
+                LHAT_CHECK(d.line == 1, "on the line it was written");
+
+                char message[256];
+                size_t needed =
+                    lhat_unit_diagnostic_message(u, i, message, sizeof message);
+                LHAT_CHECK(needed > 0 && needed < sizeof message,
+                           "the message is written and fits");
+
+                // The line a driver writes names the unit it was in, which
+                // is the whole reason the walk is over units.
+                char line[512];
+                size_t whole =
+                    lhat_unit_diagnostic_write(u, i, false, line, sizeof line);
+                LHAT_CHECK(whole > needed, "the line says more than the message");
+                LHAT_CHECK(strstr(line, "lib/one.lh") != NULL,
+                           "and says which unit: %s", line);
+                LHAT_CHECK(strstr(line, message) != NULL,
+                           "and carries the message: %s", line);
+            }
+        }
+        LHAT_CHECK_EQ_INT(found, 1);
+    }
+    lhat_program_dispose(&program);
+
+    LHAT_TEST("the lexer and the parser answer through the same reading");
+    {
+        static const File wrong[] = {{"main.lh", "var^ x = (1 + \n"}};
+        program_with(&program, &disk, wrong, 1);
+        lhat_program_check(&program, "main.lh");
+
+        const LhatUnit *unit = lhat_program_units(&program);
+        LHAT_CHECK(unit != NULL, "the unit is there");
+        size_t said = unit != NULL ? lhat_unit_diagnostic_count(unit) : 0;
+        LHAT_CHECK(said > 0, "and reported something");
+        for (size_t i = 0; i < said; i++) {
+            LhatUnitDiagnostic d = lhat_unit_diagnostic(unit, i);
+            LHAT_CHECK(d.stage == LHAT_STAGE_LEXER ||
+                           d.stage == LHAT_STAGE_PARSER,
+                       "before the checker ever ran");
+        }
+    }
+    lhat_program_dispose(&program);
+
+    // Measuring is a call with (NULL, 0), the same as everywhere else that
+    // fills a buffer -- and past the end there is nothing to measure.
+    LHAT_TEST("measuring and overrunning follow the usual convention");
+    {
+        static const File broken[] = {
+            {"main.lh", "var^ v : number^ = \"text\"\n"}};
+        program_with(&program, &disk, broken, 1);
+        lhat_program_check(&program, "main.lh");
+
+        const LhatUnit *unit = lhat_program_units(&program);
+        LHAT_CHECK_EQ_INT(lhat_unit_diagnostic_count(unit), 1);
+
+        size_t wanted = lhat_unit_diagnostic_message(unit, 0, NULL, 0);
+        char message[256];
+        size_t written =
+            lhat_unit_diagnostic_message(unit, 0, message, sizeof message);
+        LHAT_CHECK_EQ_INT(written, wanted);
+        LHAT_CHECK_EQ_INT(strlen(message), wanted);
+
+        char tiny[4];
+        LHAT_CHECK_EQ_INT(lhat_unit_diagnostic_message(unit, 0, tiny,
+                                                       sizeof tiny),
+                          wanted);
+        LHAT_CHECK(strlen(tiny) == 3, "and fills what it was given");
+
+        LhatUnitDiagnostic none = lhat_unit_diagnostic(unit, 1);
+        LHAT_CHECK(none.offset == 0 && none.line == 0 && none.length == 0,
+                   "past the end is zeroed");
+        LHAT_CHECK_EQ_INT(lhat_unit_diagnostic_message(unit, 1, NULL, 0), 0);
+    }
+    lhat_program_dispose(&program);
+
+    // A unit that was never read has no positions to index and no stage that
+    // ever ran; what stopped it is one of the program's own diagnostics.
+    LHAT_TEST("a unit that could not be read reports through the program");
+    {
+        static const File missing[] = {
+            {"main.lh", "var^ o = require^ \"lib/gone.lh\"\n"}};
+        program_with(&program, &disk, missing, 1);
+        lhat_program_check(&program, "main.lh");
+
+        LHAT_CHECK(lhat_program_diagnostic_count(&program) > 0,
+                   "the program says so");
+        for (const LhatUnit *u = lhat_program_units(&program); u != NULL;
+             u = lhat_unit_next(u)) {
+            if (lhat_unit_source(u) == NULL) {
+                LHAT_CHECK_EQ_INT(lhat_unit_diagnostic_count(u), 0);
+            }
+        }
+    }
+    lhat_program_dispose(&program);
+}
+
 int main(void)
 {
     // 8.9: before anything is taken, so the refusal above is about the order
@@ -1829,6 +1969,7 @@ int main(void)
     test_dependencies();
     test_loading();
     test_cycles();
+    test_diagnostics();
     test_running();
     test_hosting();
     test_hostvalue_escape();

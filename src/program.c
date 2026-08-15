@@ -9,6 +9,7 @@
 #include "compile.h"  // 05 の 5.3: the units are compiled here too
 #include "gc.h"  // LHAT_GC_BLACK -- host_error_heap の初期色 (04 の 12.4)
 #include "grow.h"
+#include "lhat/error.h"  // one shape for what a stage reported (03 の 1.1)
 #include "lhat/port.h"
 #include "type.h"
 #include "lhat/vm.h"
@@ -1584,6 +1585,177 @@ const LhatProgramDiagnostic *lhat_program_diagnostic(const LhatProgram *program,
 {
     return index < program->diagnostic_count ? &program->diagnostics[index]
                                              : NULL;
+}
+
+// ---------------------------------------------------------------------------
+// What the stages reported
+// ---------------------------------------------------------------------------
+
+const LhatUnit *lhat_program_units(const LhatProgram *program)
+{
+    return program != NULL ? program->units : NULL;
+}
+
+const LhatUnit *lhat_unit_next(const LhatUnit *unit)
+{
+    return unit != NULL ? unit->next : NULL;
+}
+
+const LhatSource *lhat_unit_source(const LhatUnit *unit)
+{
+    return (unit != NULL && unit->loaded) ? &unit->source : NULL;
+}
+
+size_t lhat_unit_diagnostic_count(const LhatUnit *unit)
+{
+    if (unit == NULL || !unit->loaded) {
+        return 0;
+    }
+    return unit->lexer.diagnostic_count + unit->parsed.diagnostic_count +
+           unit->checked.diagnostic_count;
+}
+
+// One index over three arrays, in the order 03 の 1.1 runs them. Answers
+// false past the end, which is what makes every entry point here one bounds
+// test rather than three.
+static bool stage_of(const LhatUnit *unit, size_t index, LhatStage *stage,
+                     size_t *within)
+{
+    if (unit == NULL || !unit->loaded) {
+        return false;
+    }
+    if (index < unit->lexer.diagnostic_count) {
+        *stage = LHAT_STAGE_LEXER;
+        *within = index;
+        return true;
+    }
+    index -= unit->lexer.diagnostic_count;
+    if (index < unit->parsed.diagnostic_count) {
+        *stage = LHAT_STAGE_PARSER;
+        *within = index;
+        return true;
+    }
+    index -= unit->parsed.diagnostic_count;
+    if (index < unit->checked.diagnostic_count) {
+        *stage = LHAT_STAGE_CHECKER;
+        *within = index;
+        return true;
+    }
+    return false;
+}
+
+LhatUnitDiagnostic lhat_unit_diagnostic(const LhatUnit *unit, size_t index)
+{
+    LhatUnitDiagnostic out;
+    memset(&out, 0, sizeof out);
+
+    LhatStage stage = LHAT_STAGE_LEXER;
+    size_t within = 0;
+    if (!stage_of(unit, index, &stage, &within)) {
+        return out;
+    }
+    out.stage = stage;
+
+    switch (stage) {
+        case LHAT_STAGE_LEXER: {
+            // The lexer points at a place: what went wrong is one byte in,
+            // and there is no name to underline.
+            const LhatDiagnostic *d = &unit->lexer.diagnostics[within];
+            out.offset = d->offset;
+            out.line = d->line;
+            out.column = d->column;
+            out.length = 0;
+            break;
+        }
+        case LHAT_STAGE_PARSER: {
+            const LhatParseDiagnostic *d = &unit->parsed.diagnostics[within];
+            out.offset = d->offset;
+            out.line = d->line;
+            out.column = d->column;
+            out.length = d->length;
+            break;
+        }
+        case LHAT_STAGE_CHECKER: {
+            // 07 の 4 章: what the checker underlines is the name it is
+            // talking about, which is why its span is spelled name_length.
+            const LhatCheckDiagnostic *d = &unit->checked.diagnostics[within];
+            out.offset = d->offset;
+            out.line = d->line;
+            out.column = d->column;
+            out.length = d->name_length;
+            break;
+        }
+    }
+    return out;
+}
+
+size_t lhat_unit_diagnostic_message(const LhatUnit *unit, size_t index,
+                                    char *out, size_t capacity)
+{
+    LhatStage stage = LHAT_STAGE_LEXER;
+    size_t within = 0;
+    if (!stage_of(unit, index, &stage, &within)) {
+        if (out != NULL && capacity > 0) {
+            out[0] = '\0';
+        }
+        return 0;
+    }
+
+    switch (stage) {
+        case LHAT_STAGE_LEXER: {
+            // A literal, so it is copied rather than written.
+            const char *text =
+                lhat_lexer_error_message(unit->lexer.diagnostics[within].code);
+            size_t length = strlen(text);
+            if (out != NULL && capacity > 0) {
+                size_t fits = length < capacity - 1 ? length : capacity - 1;
+                memcpy(out, text, fits);
+                out[fits] = '\0';
+            }
+            return length;
+        }
+        case LHAT_STAGE_PARSER:
+            return lhat_parse_message_write(&unit->parsed.diagnostics[within],
+                                            out, capacity);
+        case LHAT_STAGE_CHECKER:
+            return lhat_check_message_write(&unit->checked.diagnostics[within],
+                                            out, capacity);
+    }
+    return 0;
+}
+
+size_t lhat_unit_diagnostic_write(const LhatUnit *unit, size_t index,
+                                  bool rich, char *out, size_t capacity)
+{
+    // Wide enough for every message the stages actually write; the heap is
+    // for the rare one that names something long.
+    char room[512];
+    char *message = room;
+    size_t needed = lhat_unit_diagnostic_message(unit, index, room, sizeof room);
+    if (needed >= sizeof room) {
+        char *bigger = (char *)lhat_alloc(needed + 1);
+        if (bigger != NULL) {
+            lhat_unit_diagnostic_message(unit, index, bigger, needed + 1);
+            message = bigger;
+        }
+    }
+
+    LhatUnitDiagnostic d = lhat_unit_diagnostic(unit, index);
+    LhatReport report;
+    report.kind = LHAT_REPORT_ERROR;
+    report.message = message;
+    report.offset = d.offset;
+    report.line = d.line;
+    report.column = d.column;
+    report.length = d.length;
+
+    size_t written = lhat_report_write(&report, lhat_unit_source(unit),
+                                       lhat_unit_path(unit), rich, out,
+                                       capacity);
+    if (message != room) {
+        lhat_free(message);
+    }
+    return written;
 }
 
 const LhatUnit *lhat_program_check(LhatProgram *program, const char *path)

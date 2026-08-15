@@ -9,18 +9,22 @@
 // types its imports published.
 //
 // A program and its units are opaque here: 8.7's contract is register,
-// check, compile, run and read reports, and none of that walks a tree. The
-// library's own tools read the stages' results through program_internal.h
-// instead; a host never needs to.
+// check, compile, run and read reports. Reading reports walks the units --
+// 6.2 makes the graph the thing to show -- but never into one: what a stage
+// built stays the library's own, and its diagnostics come out as positions
+// and text. The library's own tools read the results themselves, through
+// program_internal.h; a host never needs to.
 
 #ifndef LHAT_PROGRAM_H
 #define LHAT_PROGRAM_H
 
 #include <stdbool.h>
 #include <stddef.h>
+#include <stdint.h>
 
 #include "lhat/module.h"  // what a compile answers with, and why one stopped
 #include "lhat/object.h"  // 05 の 8.7: LhatHostFn
+#include "lhat/source.h"  // what a diagnostic's position indexes
 #include "lhat/vm.h"
 
 #ifdef __cplusplus
@@ -100,12 +104,71 @@ LhatUnitState lhat_unit_state(const LhatUnit *unit);
 // stage -- the whole of what a host asks before running it.
 bool lhat_unit_ok(const LhatUnit *unit);
 
-// The program's own diagnostics (a unit that could not be read, a cycle).
-// What each unit's stages reported is rendered by the in-tree drivers;
-// a host asks lhat_unit_ok and stops there.
+// The program's own diagnostics (a unit that could not be read, a cycle),
+// as against what a unit's stages reported, which is below.
 size_t lhat_program_diagnostic_count(const LhatProgram *program);
 const LhatProgramDiagnostic *lhat_program_diagnostic(const LhatProgram *program,
                                                      size_t index);
+
+// ---------------------------------------------------------------------------
+// What the stages reported
+// ---------------------------------------------------------------------------
+//
+// 03 の 1.1 gives each stage its own codes and each unit its own results, and
+// 6.2 makes the graph the thing to show rather than one file -- a unit fails
+// on what one of its imports says as readily as on its own text. So this is
+// a walk over the units and a question to each, not one flat list keyed to
+// the path that was asked for.
+
+// The units the graph reached, in the order they were reached:
+//
+//     for (const LhatUnit *u = lhat_program_units(program); u != NULL;
+//          u = lhat_unit_next(u)) { ... }
+const LhatUnit *lhat_program_units(const LhatProgram *program);
+const LhatUnit *lhat_unit_next(const LhatUnit *unit);
+
+// What a unit's positions index, or NULL when it was never read.
+const LhatSource *lhat_unit_source(const LhatUnit *unit);
+
+// Which stage spoke. The codes stay each stage's own; what is shared is
+// where a diagnostic is and how it is written out.
+typedef enum {
+    LHAT_STAGE_LEXER,
+    LHAT_STAGE_PARSER,
+    LHAT_STAGE_CHECKER
+} LhatStage;
+
+// One thing one stage had to say about one place. The message is not here:
+// the parser's can name the token it wanted and the checker's the name it
+// could not find, so neither is a literal to borrow -- it is asked for
+// separately, into a buffer.
+typedef struct {
+    LhatStage stage;
+    uint32_t offset;
+    uint32_t line;
+    uint32_t column;
+    uint32_t length;  // the span, and zero where the stage points at a place
+} LhatUnitDiagnostic;
+
+// All three stages' together, in the order they ran. Zero for a unit that was
+// never read -- what stopped that is one of the program's own diagnostics.
+size_t lhat_unit_diagnostic_count(const LhatUnit *unit);
+
+// A zeroed diagnostic when there is no such one.
+LhatUnitDiagnostic lhat_unit_diagnostic(const LhatUnit *unit, size_t index);
+
+// Follows lhat_report_write: answers how many bytes it wants, not counting
+// the terminating NUL, and fills up to `capacity` including it. So measuring
+// is a call with (NULL, 0).
+size_t lhat_unit_diagnostic_message(const LhatUnit *unit, size_t index,
+                                    char *out, size_t capacity);
+
+// The whole line a driver writes: the message, the unit it was in and where
+// -- and with `rich`, the line it happened on and a caret beneath. The same
+// convention, and what a host wants unless it is placing the position
+// itself, as a language server does.
+size_t lhat_unit_diagnostic_write(const LhatUnit *unit, size_t index,
+                                  bool rich, char *out, size_t capacity);
 
 // ---------------------------------------------------------------------------
 // 05 の 8.7: what the host provides

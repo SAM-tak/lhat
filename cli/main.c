@@ -598,7 +598,28 @@ static bool bind_host_names(LhatProgram *program)
 }
 
 // 03 の 1.1's three stages, each with its own codes and one shape to show
-// them in. Answers how many units the graph reached.
+// them in -- program.h renders the shape, and this only decides where it
+// goes.
+static void say_unit_diagnostic(const LhatUnit *unit, size_t index)
+{
+    char room[1024];
+    size_t needed = lhat_unit_diagnostic_write(unit, index, rich_reports, room,
+                                               sizeof room);
+    if (needed < sizeof room) {
+        fprintf(stderr, "%s\n", room);
+        return;
+    }
+    char *bigger = (char *)malloc(needed + 1);
+    if (bigger == NULL) {
+        fprintf(stderr, "%s\n", room);  // truncated, but better than silence
+        return;
+    }
+    lhat_unit_diagnostic_write(unit, index, rich_reports, bigger, needed + 1);
+    fprintf(stderr, "%s\n", bigger);
+    free(bigger);
+}
+
+// Answers how many units the graph reached.
 static size_t say_unit_diagnostics(const LhatProgram *program)
 {
     for (size_t i = 0; i < program->diagnostic_count; i++) {
@@ -608,24 +629,12 @@ static size_t say_unit_diagnostics(const LhatProgram *program)
     }
 
     size_t units = 0;
-    for (const LhatUnit *unit = program->units; unit != NULL;
-         unit = unit->next) {
+    for (const LhatUnit *unit = lhat_program_units(program); unit != NULL;
+         unit = lhat_unit_next(unit)) {
         units++;
-        if (!unit->loaded) {
-            continue;
-        }
-        for (size_t i = 0; i < unit->lexer.diagnostic_count; i++) {
-            const LhatDiagnostic *d = &unit->lexer.diagnostics[i];
-            say_error(&unit->source, unit->path, d->offset, d->line, d->column,
-                      lhat_lexer_error_message(d->code));
-        }
-        for (size_t i = 0; i < unit->parsed.diagnostic_count; i++) {
-            const LhatParseDiagnostic *d = &unit->parsed.diagnostics[i];
-            say_parse_error(&unit->source, unit->path, d);
-        }
-        for (size_t i = 0; i < unit->checked.diagnostic_count; i++) {
-            const LhatCheckDiagnostic *d = &unit->checked.diagnostics[i];
-            say_check_error(&unit->source, unit->path, d);
+        size_t said = lhat_unit_diagnostic_count(unit);
+        for (size_t i = 0; i < said; i++) {
+            say_unit_diagnostic(unit, i);
         }
     }
     return units;

@@ -5,10 +5,6 @@
 #include <stdint.h>
 #include <stdlib.h>
 
-#include "check.h"
-#include "lexer.h"
-#include "parser.h"
-
 #include "position.h"
 
 static cJSON *make_position(LspPosition pos)
@@ -47,48 +43,30 @@ cJSON *lsp_diagnostics_for_unit(const LhatUnit *unit)
     if (array == NULL) {
         return NULL;
     }
-    const char *text = unit->source.text;
-    size_t text_length = unit->source.length;
-
-    for (size_t i = 0; i < unit->lexer.diagnostic_count; i++) {
-        const LhatDiagnostic *d = &unit->lexer.diagnostics[i];
-        cJSON_AddItemToArray(array, make_diagnostic(text, text_length,
-            d->offset, 0, lhat_lexer_error_message(d->code)));
+    const LhatSource *source = lhat_unit_source(unit);
+    if (source == NULL) {
+        return array;
     }
 
-    for (size_t i = 0; i < unit->parsed.diagnostic_count; i++) {
-        const LhatParseDiagnostic *d = &unit->parsed.diagnostics[i];
+    size_t count = lhat_unit_diagnostic_count(unit);
+    for (size_t i = 0; i < count; i++) {
         char room[256];
-        size_t needed = lhat_parse_message_write(d, room, sizeof room);
         char *message = room;
         char *bigger = NULL;
+        size_t needed =
+            lhat_unit_diagnostic_message(unit, i, room, sizeof room);
         if (needed >= sizeof room) {
             bigger = (char *)malloc(needed + 1);
             if (bigger != NULL) {
-                lhat_parse_message_write(d, bigger, needed + 1);
+                lhat_unit_diagnostic_message(unit, i, bigger, needed + 1);
                 message = bigger;
             }
         }
-        cJSON_AddItemToArray(array, make_diagnostic(text, text_length,
-            d->offset, d->length, message));
-        free(bigger);
-    }
 
-    for (size_t i = 0; i < unit->checked.diagnostic_count; i++) {
-        const LhatCheckDiagnostic *d = &unit->checked.diagnostics[i];
-        char room[256];
-        size_t needed = lhat_check_message_write(d, room, sizeof room);
-        char *message = room;
-        char *bigger = NULL;
-        if (needed >= sizeof room) {
-            bigger = (char *)malloc(needed + 1);
-            if (bigger != NULL) {
-                lhat_check_message_write(d, bigger, needed + 1);
-                message = bigger;
-            }
-        }
-        cJSON_AddItemToArray(array, make_diagnostic(text, text_length,
-            d->offset, d->name_length, message));
+        LhatUnitDiagnostic d = lhat_unit_diagnostic(unit, i);
+        cJSON_AddItemToArray(array,
+                             make_diagnostic(source->text, source->length,
+                                             d.offset, d.length, message));
         free(bigger);
     }
 

@@ -1,0 +1,10 @@
+# What the demo runs. `print` is bound by the extension and goes to the
+# Output panel (05 の 8.2); nothing else is registered yet.
+#
+# The require^ is here on purpose: it is what says the loader resolved a
+# path of its own against res://, rather than only the one it was handed.
+
+let^ greeting = require^"lib/greeting.lh"
+
+print(greeting.greet("Godot"))
+print(1 + 2, "and", 6 * 7)
