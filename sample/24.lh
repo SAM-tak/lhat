@@ -81,7 +81,8 @@ let^Reader = def^{
             self^.ok := false^
             return^ 0
         }
-        self^.used[d] += 1
+        self^.used[d] += 1 # if^d < 1 or^ d > 9 { が dの範囲を1~9 であることを保証してくれているので、
+        # nilチェックが不要。self^.used[d] ?+= 1 と書かなくて良い
         self^.bump()
         return^d
     },
