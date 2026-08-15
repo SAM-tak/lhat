@@ -15,6 +15,10 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 // One compiled subroutine. src/code.h completes it for the library; nothing
 // outside reads through it.
 typedef struct LhatProto LhatProto;
@@ -85,5 +89,9 @@ typedef struct {
     const char *name;
     uint32_t name_length;
 } LhatCompileResult;
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif  // LHAT_MODULE_H

@@ -23,6 +23,10 @@
 #include "lhat/object.h"  // 05 の 8.7: LhatHostFn
 #include "lhat/vm.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 typedef struct LhatProgram LhatProgram;
 typedef struct LhatUnit LhatUnit;
 
@@ -281,5 +285,9 @@ const char *lhat_program_error_message(LhatProgramErrorCode code);
 // it. So measuring is a call with (NULL, 0).
 size_t lhat_program_dump_host_api(const LhatProgram *program, char *out,
                                   size_t capacity);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif  // LHAT_PROGRAM_H

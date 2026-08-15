@@ -20,6 +20,10 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 // 2.2. Integer and real are separate tags but one type: 02 の 14.8 makes
 // number^ a single type whose representation may differ at run time.
 typedef enum {
@@ -448,5 +452,9 @@ bool lhat_number_scan(const char *text, size_t length, const char *format,
                       size_t format_length, LhatValue *out, bool *read);
 
 const char *lhat_object_kind_name(LhatObjectKind kind);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif  // LHAT_VALUE_H

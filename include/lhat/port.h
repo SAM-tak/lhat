@@ -26,6 +26,10 @@
 
 #include <stdbool.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 // ---------------------------------------------------------------------------
 // Memory
 // ---------------------------------------------------------------------------
@@ -72,5 +76,9 @@ bool lhat_set_allocator(const LhatAllocator *allocator);
 // default here**: a program is given its loader or it reads nothing, so
 // nothing embedded touches a file system without having been told to.
 char *lhat_load_file(void *context, const char *path, size_t *length);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif  // LHAT_PORT_H

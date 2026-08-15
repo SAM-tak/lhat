@@ -21,6 +21,10 @@
 #include "lhat/object.h"
 #include "lhat/value.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 typedef enum {
     LHAT_RUN_OK,
     LHAT_RUN_TYPE_ERROR,      // 5.1: an instruction was given the wrong thing
@@ -256,5 +260,9 @@ LhatRunResult lhat_machine_call(LhatMachine *machine, LhatValue callee,
                                 const LhatValue *arguments, size_t count);
 
 const char *lhat_run_status_message(LhatRunStatus status);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif  // LHAT_VM_H

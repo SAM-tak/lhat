@@ -8,6 +8,10 @@
 #include <stdbool.h>
 #include <stddef.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 typedef struct {
     char *name;    // for diagnostics; owned
     char *text;    // NUL-terminated, owned; CRLF and CR normalised to LF
@@ -25,5 +29,9 @@ bool lhat_source_init_from_string(LhatSource *src, const char *name,
 bool lhat_source_init_from_file(LhatSource *src, const char *path, char **error);
 
 void lhat_source_dispose(LhatSource *src);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif  // LHAT_SOURCE_H

@@ -21,6 +21,10 @@
 
 #include "lhat/source.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 typedef enum {
     LHAT_REPORT_ERROR,
     LHAT_REPORT_NOTE
@@ -75,5 +79,9 @@ typedef struct {
 size_t lhat_report_write(const LhatReport *report, const LhatSource *source,
                          const char *name, bool rich, char *out,
                          size_t capacity);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif  // LHAT_ERROR_H

@@ -23,6 +23,10 @@
 #include "lhat/value.h"
 #include "lhat/config.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 // Who an object belongs to. Two exist: a chunk, holding what its constants
 // name, and the machine, holding what a program makes while it runs. Only the
 // second is collected.
@@ -653,5 +657,9 @@ size_t lhat_string_characters(const LhatString *string);
 // begins at, or the length where there is no such character -- which makes
 // it the end of a run as well as the start of one.
 size_t lhat_string_byte_at(const LhatString *string, size_t character);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif  // LHAT_OBJECT_H
