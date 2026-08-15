@@ -995,11 +995,182 @@ static void test_tuple_positions(void)
     unit_dispose(&u);
 }
 
+// 13.11改: a branch knows which whole numbers a name may hold, the way it
+// knows which arms of a union it may be. 14.10 makes a table type "at least
+// these", so a key that cannot leave the declared positions cannot find
+// nothing -- and 04 の 11.3's nil^ does not come with the answer.
+//
+// Two forms say it and no others: the driven for^ and an ordering against a
+// number written out. Nothing carries a bound through arithmetic, which is
+// what keeps this a narrowing rather than an analysis of its own.
+static void test_bounded_keys(void)
+{
+    Unit u;
+
+    LHAT_TEST("a driven loop bounds its focus");
+    check_text(&u,
+               "var^ f = p^ t:t^{ number^[9] } {\n"
+               "    for^ i from^1 to^9 { var^ n : number^ = t[i] }\n"
+               "}\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("and a loop reaching past them does not");
+    check_text(&u,
+               "var^ f = p^ t:t^{ number^[3] } {\n"
+               "    for^ i from^1 to^9 { var^ n : number^ = t[i] }\n"
+               "}\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
+    unit_dispose(&u);
+
+    LHAT_TEST("nor one starting before the first position");
+    check_text(&u,
+               "var^ f = p^ t:t^{ number^[9] } {\n"
+               "    for^ i from^0 to^9 { var^ n : number^ = t[i] }\n"
+               "}\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
+    unit_dispose(&u);
+
+    LHAT_TEST("downto^ counts the same two ends");
+    check_text(&u,
+               "var^ f = p^ t:t^{ number^[9] } {\n"
+               "    for^ i from^9 downto^1 { var^ n : number^ = t[i] }\n"
+               "}\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // 11.5 の (5): the chain is the two links written as one, and the operand
+    // they share is bounded at both ends at once.
+    LHAT_TEST("a chain bounds the name between its ends");
+    check_text(&u,
+               "var^ f = p^ t:t^{ number^[9] }, d:number^ {\n"
+               "    if^ 1 <= d <= 9 { var^ n : number^ = t[d] }\n"
+               "}\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // Each half pushes one end, and what the branch knows is what both said.
+    LHAT_TEST("and two orderings joined by and^ meet in the middle");
+    check_text(&u,
+               "var^ f = p^ t:t^{ number^[9] }, d:number^ {\n"
+               "    if^ d >= 1 and^ d <= 9 { var^ n : number^ = t[d] }\n"
+               "}\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("one end alone leaves the other open");
+    check_text(&u,
+               "var^ f = p^ t:t^{ number^[9] }, d:number^ {\n"
+               "    if^ 1 <= d { var^ n : number^ = t[d] }\n"
+               "}\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
+    unit_dispose(&u);
+
+    // What an ordering denies is the ordering the other way, so both branches
+    // know something -- which is what makes the guard written as an early
+    // exit bound the rest of the body.
+    LHAT_TEST("a guard that exits bounds what it let through");
+    check_text(&u,
+               "var^ f = p^ t:t^{ number^[9] }, d:number^ {\n"
+               "    if^ d < 1 or^ d > 9 { return^ }\n"
+               "    var^ n : number^ = t[d]\n"
+               "}\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("and the else of one knows the same");
+    check_text(&u,
+               "var^ f = p^ t:t^{ number^[9] }, d:number^ {\n"
+               "    if^ d < 1 or^ d > 9 { else^: var^ n : number^ = t[d] }\n"
+               "}\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("a guard denying one end alone is not enough");
+    check_text(&u,
+               "var^ f = p^ t:t^{ number^[9] }, d:number^ {\n"
+               "    if^ d < 1 { return^ }\n"
+               "    var^ n : number^ = t[d]\n"
+               "}\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
+    unit_dispose(&u);
+
+    LHAT_TEST("what a branch knew is not known after it");
+    check_text(&u,
+               "var^ f = p^ t:t^{ number^[9] }, d:number^ {\n"
+               "    if^ 1 <= d <= 9 { }\n"
+               "    var^ n : number^ = t[d]\n"
+               "}\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
+    unit_dispose(&u);
+
+    // 13.11: a write ends what the branch established, bounds as much as
+    // arms -- chk_drop_narrowings_for reaches both by the path.
+    LHAT_TEST("nor after the name is written to");
+    check_text(&u,
+               "var^ f = p^ t:t^{ number^[9] } {\n"
+               "    var^ d = 1\n"
+               "    if^ 1 <= d <= 9 { d := 40  var^ n : number^ = t[d] }\n"
+               "}\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
+    unit_dispose(&u);
+
+    LHAT_TEST("a bound does not survive arithmetic");
+    check_text(&u,
+               "var^ f = p^ t:t^{ number^[9] } {\n"
+               "    for^ i from^1 to^8 { var^ n : number^ = t[i + 1] }\n"
+               "}\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
+    unit_dispose(&u);
+
+    // A limit read off a name says no number here. 14.10's width subtyping
+    // puts no ceiling on a length either, so there is nothing to read.
+    LHAT_TEST("and an end that is not written out is no end");
+    check_text(&u,
+               "var^ f = p^ t:t^{ number^[9] }, n:number^ {\n"
+               "    for^ i from^1 to^ n { var^ x : number^ = t[i] }\n"
+               "}\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
+    unit_dispose(&u);
+
+    // The positions keep their own types, so a bound reaching two of them
+    // answers what either may be.
+    LHAT_TEST("a bound over positions of two types answers both");
+    check_text(&u,
+               "var^ f = p^ t:t^{ number^, string^ }, d:number^ {\n"
+               "    if^ 1 <= d <= 2 { var^ n : number^|string^ = t[d] }\n"
+               "}\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // 8.6改2's spelling is what a place with a nil^ arm needs; a bounded one
+    // has none, so the plain compound assignment is written.
+    LHAT_TEST("a bounded place takes a plain compound assignment");
+    check_text(&u,
+               "var^ f = p^ t:t^{ number^[9] }, d:number^ {\n"
+               "    if^ 1 <= d <= 9 { t[d] += 1 }\n"
+               "}\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // The two readings share one list and neither hides the other.
+    LHAT_TEST("a type narrowing and a bound stand together");
+    check_text(&u,
+               "var^ f = p^ t:t^{ number^[9] }, d:number^|string^ {\n"
+               "    if^ d isa^ number^ and^ 1 <= d <= 9 {\n"
+               "        var^ n : number^ = t[d]\n"
+               "    }\n"
+               "}\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+}
+
 int main(void)
 {
     test_narrowing();
     test_relaxed_nil_reference();
     test_nil_propagation();
+    test_bounded_keys();
     test_operator_on_maybe_nil();
     test_stacked_hats();
     test_tuple_positions();

@@ -1345,6 +1345,60 @@ static bool is_nil_literal(const Checker *c, const LhatNode *node)
            chk_name_is(name, length, "nil^");
 }
 
+// 13.11改: a whole number written down, which is what makes a comparison
+// against it a bound. The literal only, for the reason the nil^ one above is
+// the literal only -- and a whole one, since a position is counted in whole
+// numbers and 14.8's one type admits reals as readily.
+bool chk_whole_literal(const LhatNode *node, int64_t *value)
+{
+    if (node == NULL || node->kind != LHAT_NODE_INT) {
+        return false;
+    }
+    *value = node->v.integer.value;
+    return true;
+}
+
+// 11.5: which way a comparison faces, and whether it takes its own limit.
+// `strict` is the '<' of '<=' -- the limit is one step further in.
+static bool ordering_op(LhatOpKind op, bool *upward, bool *strict)
+{
+    switch (op) {
+        case LHAT_OP_LT: *upward = true;  *strict = true;  return true;
+        case LHAT_OP_LE: *upward = true;  *strict = false; return true;
+        case LHAT_OP_GT: *upward = false; *strict = true;  return true;
+        case LHAT_OP_GE: *upward = false; *strict = false; return true;
+        default: return false;
+    }
+}
+
+// 13.11改: 'path < limit' and the three like it. `path_leads` says which side
+// the path stood on, since 'd <= 9' and '9 >= d' bound the same end; `holds`
+// says which branch is being read, since what an ordering denies is another
+// ordering -- '!(d < 1)' is 'd >= 1', and that is what makes the guard
+// written as an early exit bound the rest of the body.
+static void bound_from_comparison(Checker *c, const LhatNode *path,
+                                  LhatOpKind op, int64_t limit,
+                                  bool path_leads, bool holds)
+{
+    bool upward = false;
+    bool strict = false;
+    if (!ordering_op(op, &upward, &strict) || !chk_narrowable(path)) {
+        return;
+    }
+    if (!holds) {
+        upward = !upward;
+        strict = !strict;
+    }
+    if (!path_leads) {
+        upward = !upward;
+    }
+    if (upward) {
+        chk_push_bounds(c, path, INT64_MIN, strict ? limit - 1 : limit);
+    } else {
+        chk_push_bounds(c, path, strict ? limit + 1 : limit, INT64_MAX);
+    }
+}
+
 // 01 の 2.3: the canonical name cuts after the first hat, so it^ and
 // it^^ spell the same name reaching two different bindings -- a narrowing
 // recorded for one must not apply to the other, which is what comparing the
@@ -1408,12 +1462,32 @@ LhatType *chk_narrowed_type(Checker *c, const LhatNode *path)
     if (c->writing_to != NULL && same_path(c, c->writing_to, path)) {
         return NULL;
     }
+    // 13.11改: a record made of bounds says nothing about the type, so it is
+    // passed over rather than answered with -- the two readings share a list
+    // and neither hides the other.
     for (const Narrowing *n = c->narrowings; n != NULL; n = n->next) {
-        if (same_path(c, n->path, path)) {
+        if (n->type != NULL && same_path(c, n->path, path)) {
             return n->type;
         }
     }
     return NULL;
+}
+
+bool chk_narrowed_bounds(Checker *c, const LhatNode *path, int64_t *lo,
+                         int64_t *hi)
+{
+    // A write ends what a branch knew, exactly as it does of a type above.
+    if (c->writing_to != NULL && same_path(c, c->writing_to, path)) {
+        return false;
+    }
+    for (const Narrowing *n = c->narrowings; n != NULL; n = n->next) {
+        if (n->has_bounds && same_path(c, n->path, path)) {
+            *lo = n->lo;
+            *hi = n->hi;
+            return true;
+        }
+    }
+    return false;
 }
 
 static void push_narrowing(Checker *c, const LhatNode *path, LhatType *type)
@@ -1427,6 +1501,37 @@ static void push_narrowing(Checker *c, const LhatNode *path, LhatType *type)
     }
     n->path = path;
     n->type = type;
+    n->next = c->narrowings;
+    c->narrowings = n;
+}
+
+void chk_push_bounds(Checker *c, const LhatNode *path, int64_t lo, int64_t hi)
+{
+    // 13.11改: 'd >= 1 and^ d <= 9' pushes one side and then the other, so
+    // what is known here is what both sides said. The and^ of a condition
+    // narrows from each half in turn (chk_narrow_from), which is what leaves
+    // the earlier record standing to meet this one.
+    int64_t known_lo = 0;
+    int64_t known_hi = 0;
+    if (chk_narrowed_bounds(c, path, &known_lo, &known_hi)) {
+        if (known_lo > lo) {
+            lo = known_lo;
+        }
+        if (known_hi < hi) {
+            hi = known_hi;
+        }
+    }
+    if (lo > hi) {
+        return;  // nothing is both, so the branch is left as it was
+    }
+    Narrowing *n = (Narrowing *)lhat_calloc(1, sizeof *n);
+    if (n == NULL) {
+        return;
+    }
+    n->path = path;
+    n->lo = lo;
+    n->hi = hi;
+    n->has_bounds = true;
     n->next = c->narrowings;
     c->narrowings = n;
 }
@@ -1453,6 +1558,9 @@ void chk_drop_narrowings_for(Checker *c, const LhatNode *target)
     for (Narrowing *n = c->narrowings; n != NULL; n = n->next) {
         if (same_name(c, path_root(n->path), root)) {
             n->type = NULL;
+            // 13.11改: what the branch knew of the number is ended by the
+            // write as surely as what it knew of the type.
+            n->has_bounds = false;
         }
     }
 }
@@ -1653,11 +1761,57 @@ void chk_narrow_from(Checker *c, const LhatNode *condition, bool truth)
         path = condition->v.unary.operand;
         tested = chk_simple(c, LHAT_TYPE_NIL);
         holds = !truth;
+    } else if (condition->kind == LHAT_NODE_COMPARE_CHAIN) {
+        // 11.5 の (5): '1 <= d <= 9' is the two links written as one, and the
+        // operand they share is bounded on both sides at once. Each link is
+        // read the way the binary form below reads it, so a chain of any
+        // length bounds whatever whole numbers stand beside a path.
+        //
+        // The true side only. 11.9 makes a chain the and^ of its links, so
+        // denying it denies one link without saying which -- there is no
+        // single bound on the other side to record.
+        if (!truth) {
+            return;
+        }
+        const LhatNode *operand = condition->v.chain.operands;
+        for (const LhatNode *marker = condition->v.chain.operators;
+             marker != NULL && operand != NULL; marker = marker->next) {
+            const LhatNode *right = operand->next;
+            if (right == NULL) {
+                break;
+            }
+            int64_t limit = 0;
+            LhatOpKind op = marker->v.unary.op;
+            if (chk_whole_literal(right, &limit)) {
+                bound_from_comparison(c, operand, op, limit, true, true);
+            } else if (chk_whole_literal(operand, &limit)) {
+                bound_from_comparison(c, right, op, limit, false, true);
+            }
+            operand = right;
+        }
+        return;
     } else if (condition->kind == LHAT_NODE_BINARY) {
         LhatOpKind op = condition->v.binary.op;
         if ((op == LHAT_OP_AND && truth) || (op == LHAT_OP_OR && !truth)) {
             chk_narrow_from(c, condition->v.binary.left, truth);
             chk_narrow_from(c, condition->v.binary.right, truth);
+            return;
+        }
+        // 13.11改: an ordering against a whole number written down bounds the
+        // path on one side. Both branches bound it -- what an ordering denies
+        // is the ordering the other way -- so a guard written as an early
+        // exit leaves the rest of the body knowing what it let through.
+        int64_t limit = 0;
+        bool upward = false;
+        bool strict = false;
+        if (ordering_op(op, &upward, &strict)) {
+            if (chk_whole_literal(condition->v.binary.right, &limit)) {
+                bound_from_comparison(c, condition->v.binary.left, op, limit,
+                                      true, truth);
+            } else if (chk_whole_literal(condition->v.binary.left, &limit)) {
+                bound_from_comparison(c, condition->v.binary.right, op, limit,
+                                      false, truth);
+            }
             return;
         }
         if (op == LHAT_OP_ISA) {

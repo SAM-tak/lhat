@@ -92,6 +92,14 @@ typedef struct Scope {
 typedef struct Narrowing {
     const LhatNode *path;
     LhatType *type;
+    // 13.11改: what a branch knows about a whole number the type does not --
+    // 'for^ i from^ 1 to^ 9' and '1 <= d <= 9' both say which values reach
+    // the body. Both ends are always held; INT64_MIN and INT64_MAX are how a
+    // side that nothing bounded is written. A record carries this or a type,
+    // and the two readings pass over each other's.
+    int64_t lo;
+    int64_t hi;
+    bool has_bounds;
     struct Narrowing *next;
 } Narrowing;
 
@@ -459,7 +467,15 @@ LhatType *chk_operator_member(Checker *c, const LhatType *type,
                               const char *name, size_t length);
 bool chk_operator_undecided(const LhatType *type);
 bool chk_narrowable(const LhatNode *node);
+// 13.11改: a whole number written down, which is what a bound is read off.
+bool chk_whole_literal(const LhatNode *node, int64_t *value);
 LhatType *chk_narrowed_type(Checker *c, const LhatNode *path);
+// 13.11改: the whole numbers this path may hold here, or false where nothing
+// bounded it. Both ends come back, INT64_MIN and INT64_MAX standing for a
+// side nothing said anything about.
+bool chk_narrowed_bounds(Checker *c, const LhatNode *path, int64_t *lo,
+                         int64_t *hi);
+void chk_push_bounds(Checker *c, const LhatNode *path, int64_t lo, int64_t hi);
 void chk_pop_narrowings(Checker *c, Narrowing *mark);
 void chk_drop_narrowings_for(Checker *c, const LhatNode *target);
 bool chk_always_exits(const LhatNode *node);

@@ -1806,6 +1806,31 @@ static LhatType *reachable_by_key(Checker *c, const LhatType *over,
     return reachable;
 }
 
+// 13.11改 with 14.10: what the type answers for every position a bounded key
+// could name, or NULL where the key is not bounded or could leave them. The
+// positions have to run from one without a gap -- a value fitting the type
+// has each one it declares, and nothing is promised past the first it does
+// not.
+static LhatType *within_declared_positions(Checker *c, const LhatType *over,
+                                           const LhatNode *key)
+{
+    int64_t lo = 0;
+    int64_t hi = 0;
+    if (key == NULL || key->next != NULL ||
+        !chk_narrowed_bounds(c, key, &lo, &hi) || lo < 1) {
+        return NULL;
+    }
+    LhatType *reached = NULL;
+    for (int64_t at = lo; at <= hi; at++) {
+        const LhatTypeMember *m = lhat_type_member_at(over, (size_t)at);
+        if (m == NULL) {
+            return NULL;  // past what the type declares
+        }
+        reached = lhat_type_union(c->result->types, reached, m->type);
+    }
+    return reached;
+}
+
 // The '[' half of the same. Lifted out of infer's switch so that it reads
 // beside infer_member, which it now shares its nil^ handling with.
 static LhatType *infer_index(Checker *c, const LhatNode *node)
@@ -1835,6 +1860,17 @@ static LhatType *infer_index(Checker *c, const LhatNode *node)
         }
         if (found != NULL) {
             return found->type;
+        }
+    }
+    // 13.11改: a key the branch bounded, standing where the type declares
+    // every position it could reach. 14.10 makes a table type "at least
+    // these", so a declared position is one a fitting value has -- and a key
+    // that cannot leave them cannot find nothing. This is the static half of
+    // 11.3 arrived at by another road, so the answer carries no nil^.
+    if (over != NULL && over->kind == LHAT_TYPE_TABLE) {
+        LhatType *within = within_declared_positions(c, over, key);
+        if (within != NULL) {
+            return within;
         }
     }
     // 04 の 11.3: a key that did not resolve to one member still has an

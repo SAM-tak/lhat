@@ -1171,6 +1171,48 @@ static LhatType *walk_produce(Checker *c, const LhatNode *at, LhatType *over,
     return chk_simple(c, LHAT_TYPE_UNKNOWN);
 }
 
+// 13.11改 with 16.4: 'for^ i from^ 1 to^ 9' says which whole numbers reach
+// the body, so the focus carries that the way a branch's condition makes one
+// carry what it tested. Both ends have to be written out -- a limit read off
+// a length names no number here, and 14.10's width subtyping puts no ceiling
+// on one anyway.
+//
+// The step is passed over where it is written: with 'to^' the focus stays
+// between the two ends whatever a positive step skips, and a step that is not
+// positive leaves no such promise to make.
+static void bound_the_focus(Checker *c, const LhatNode *node)
+{
+    if (node->v.loop.kind != LHAT_FOR_TO &&
+        node->v.loop.kind != LHAT_FOR_DOWNTO) {
+        return;
+    }
+    const LhatNode *focus = node->v.loop.focus;
+    if (focus == NULL || focus->next != NULL ||
+        focus->kind != LHAT_NODE_DEFINE) {
+        return;
+    }
+    const LhatNode *name = focus->v.binding.targets;
+    if (name == NULL || name->next != NULL || !chk_narrowable(name)) {
+        return;
+    }
+    int64_t from = 0;
+    int64_t limit = 0;
+    if (!chk_whole_literal(focus->v.binding.values, &from) ||
+        !chk_whole_literal(node->v.loop.bound, &limit)) {
+        return;
+    }
+    int64_t step = 1;
+    if (node->v.loop.step != NULL &&
+        (!chk_whole_literal(node->v.loop.step, &step) || step <= 0)) {
+        return;
+    }
+    if (node->v.loop.kind == LHAT_FOR_TO) {
+        chk_push_bounds(c, name, from, limit);
+    } else {
+        chk_push_bounds(c, name, limit, from);
+    }
+}
+
 // 16.3: the focus of an in^ loop is bound, not evaluated, so it is checked
 // here rather than by check_statements -- which would read the names as uses
 // and find nothing in scope.
@@ -2038,6 +2080,7 @@ void chk_check_statement(Checker *c, const LhatNode *node)
                 } else {
                     chk_check_statements(c, node->v.loop.focus);
                     chk_infer(c, node->v.loop.bound);
+                    bound_the_focus(c, node);
                 }
                 chk_infer(c, node->v.loop.step);
                 chk_check_statements(c, node->v.loop.advance);

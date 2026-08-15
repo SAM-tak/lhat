@@ -81,7 +81,7 @@ let^Reader = def^{
             self^.ok := false^
             return^ 0
         }
-        self^.used[d] ?+= 1
+        self^.used[d] += 1
         self^.bump()
         return^d
     },
@@ -142,7 +142,9 @@ try^{
         var^shown = ""
         for^i from^1 to^4 {
             let^d = rng.range(1, 9)
-            want[d] ?+= 1
+            if^1 <= d <= 9 {
+                want[d] += 1
+            }
             shown := $"{shown} {d}"
         }
         print($"Four digits:{shown}")
