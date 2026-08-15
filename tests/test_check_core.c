@@ -1968,6 +1968,41 @@ static void test_resolutions_say_what_bound_the_name(void)
     unit_dispose(&u);
 }
 
+// 13.11 with 07 の 4 章: inside the branch that knows most about a name,
+// nothing was recorded about it at all -- chk_infer_name is what records one,
+// and a narrowed name answers before reaching it. So a tool asking about the
+// one place the type is sharpest got the enclosing declaration instead.
+static void test_a_narrowed_name_still_resolves(void)
+{
+    Unit u;
+
+    LHAT_TEST("13.11: a narrowed name resolves, to what the branch knows");
+    check_text(&u,
+               "let^ held : number^|string^ = 1\n"
+               "if^ held isa^ number^ {\n"
+               "    let^ doubled = held * 2\n"
+               "}\n");
+    CHECK_CLEAN(&u);
+
+    const char *narrowed = strstr(u.source.text, "held * 2");
+    LHAT_CHECK(narrowed != NULL, "expected the narrowed use to be there");
+    if (narrowed != NULL) {
+        const LhatResolution *r = lhat_check_resolution_at(
+            &u.checked, (uint32_t)(narrowed - u.source.text));
+        LHAT_CHECK(r != NULL, "expected the narrowed use to resolve");
+        if (r != NULL) {
+            // The branch's answer, not the binding's: number^, not the union.
+            LHAT_CHECK(r->type != NULL && r->type->kind == LHAT_TYPE_NUMBER,
+                       "13.11: the type is what the branch established");
+            // 8.9 and the place it was bound are the binding's to answer, and
+            // narrowing changes neither.
+            LHAT_CHECK(r->immutable, "8.9: a let^ name is readonly here too");
+            LHAT_CHECK(r->has_definition, "it still points at its let^");
+        }
+    }
+    unit_dispose(&u);
+}
+
 // 14.7改: a written-out definition is a definition. The section is what makes
 // it one, and resolve_table_type has always read the section -- it just did
 // not say what reading one meant. 14.5's '..' asks this of both operands and
@@ -2019,6 +2054,7 @@ int main(void)
 #if LHAT_WITH_RESOLUTIONS
     test_resolutions_are_ordered();
     test_resolutions_say_what_bound_the_name();
+    test_a_narrowed_name_still_resolves();
     test_a_written_definition_is_one();
 #endif
     test_expressions();

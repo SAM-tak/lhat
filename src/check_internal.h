@@ -387,6 +387,8 @@ void chk_report(Checker *c, const LhatNode *at, LhatCheckErrorCode code);
 // 07 の 4 章: for the language server, not for the language -- see check.h's
 // LhatResolution. Every call site carries this same guard.
 void chk_record_resolution(Checker *c, const LhatNode *at, const Binding *b);
+void chk_record_narrowed_resolution(Checker *c, const LhatNode *at,
+                                    const Binding *b, LhatType *type);
 void chk_record_typed_resolution(Checker *c, const LhatNode *at,
                                  LhatType *type);
 void chk_settle_resolutions(LhatCheckResult *result);

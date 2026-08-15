@@ -3365,7 +3365,35 @@ static LhatType *infer_node(Checker *c, const LhatNode *node)
         case LHAT_NODE_FOCUS: {
             // 13.11: a branch may know more about this path than the binding.
             LhatType *narrowed = chk_narrowed_type(c, node);
-            return narrowed != NULL ? narrowed : chk_infer_name(c, node);
+            if (narrowed == NULL) {
+                return chk_infer_name(c, node);
+            }
+#if LHAT_WITH_RESOLUTIONS
+            // 07 の 4 章: chk_infer_name is what records a name, and a
+            // narrowed one never reaches it -- so inside the branch that
+            // knows most about it, a name was the one thing no tool could
+            // say anything about. It is still the same binding: 8.9's word
+            // and 13.1's declaration are the binding's to answer, and only
+            // the type is the branch's.
+            //
+            // The binding is looked up rather than reported on: an
+            // undefined name has no narrowing to reach this with, since
+            // what put one here read the name first. A spelling with no
+            // binding to find -- 8.2's $^, 16.3's focus -- keeps the type
+            // and nothing else, which is what a member already does.
+            const char *name = NULL;
+            size_t length = 0;
+            Binding *b = node->kind == LHAT_NODE_IDENT &&
+                                 chk_node_name(c, node, &name, &length)
+                             ? chk_scope_find(c->scope, name, length, NULL)
+                             : NULL;
+            if (b != NULL) {
+                chk_record_narrowed_resolution(c, node, b, narrowed);
+            } else {
+                chk_record_typed_resolution(c, node, narrowed);
+            }
+#endif
+            return narrowed;
         }
 
         case LHAT_NODE_TABLE:

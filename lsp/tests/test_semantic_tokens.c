@@ -634,6 +634,37 @@ static void test_a_parameter_reads_as_one_where_it_is_used(void)
     check_dispose(&c);
 }
 
+// 13.11: a use inside a branch that narrowed the name reads like every other
+// use of it. It did not: a narrowed name answers before chk_infer_name, which
+// is what records one, so the name went unresolved exactly where the branch
+// knew most about it -- and lost the readonly its other uses carried.
+static void test_a_narrowed_use_reads_like_any_other(void)
+{
+    LHAT_TEST("13.11: a name narrowed by a branch still reads as itself");
+
+    static const char *source =
+        "let^ held : number^|string^ = 1\n"
+        "if^ held isa^ number^ {\n"
+        "    let^ doubled = held * 2\n"
+        "}\n";
+
+    Checked c;
+    check_text(&c, source);
+    cJSON *data = lsp_semantic_tokens_for_unit(&c.unit);
+    Tokens tokens = decode(data);
+
+    // The condition's use is outside the narrowing it establishes; the body's
+    // is inside it. Both name the same let^.
+    expect_token(&tokens, source, "held isa^", "variable", false);
+    expect_readonly(&tokens, source, "held isa^", true);
+    expect_token(&tokens, source, "held * 2", "variable", false);
+    expect_readonly(&tokens, source, "held * 2", true);
+
+    free(tokens.items);
+    cJSON_Delete(data);
+    check_dispose(&c);
+}
+
 // 8.9: which word bound the name. The declaration reads it off the tree and
 // a use off the checker, and the two have to agree -- they are the same
 // fact asked in two places.
@@ -692,6 +723,7 @@ int main(void)
     test_every_name_is_reached();
     test_a_parameter_reads_as_one_where_it_is_used();
     test_let_is_readonly_and_var_is_not();
+    test_a_narrowed_use_reads_like_any_other();
     test_a_member_is_not_called_readonly();
     test_isa_asks_about_a_type();
     test_isa_within_a_comparison_chain();

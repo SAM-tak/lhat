@@ -38,7 +38,8 @@ void chk_report(Checker *c, const LhatNode *at, LhatCheckErrorCode code)
 // Nothing below this point is read by the language: 03 の 1.1's later stages
 // compile and run the same tree either way. The call sites carry the same
 // guard, so a build without it does not so much as make the call.
-void chk_record_resolution(Checker *c, const LhatNode *at, const Binding *b)
+static void record_resolution(Checker *c, const LhatNode *at, const Binding *b,
+                              LhatType *type)
 {
     LhatCheckResult *r = c->result;
     if (at->end <= at->offset) {
@@ -54,7 +55,22 @@ void chk_record_resolution(Checker *c, const LhatNode *at, const Binding *b)
     entry->has_definition = true;
     entry->is_parameter = b->is_parameter;
     entry->immutable = b->immutable;
-    entry->type = b->type;
+    entry->type = type;
+}
+
+void chk_record_resolution(Checker *c, const LhatNode *at, const Binding *b)
+{
+    record_resolution(c, at, b, b->type);
+}
+
+// 13.11: inside a branch that established something about a name, what the
+// name holds is narrower than what its binding says -- and it is the same
+// name, bound by the same word in the same place. So everything else about
+// it is the binding's answer and only the type is the branch's.
+void chk_record_narrowed_resolution(Checker *c, const LhatNode *at,
+                                    const Binding *b, LhatType *type)
+{
+    record_resolution(c, at, b, type);
 }
 
 // The same, for a name whose meaning has no place in this source to point
