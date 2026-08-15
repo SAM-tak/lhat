@@ -60,6 +60,11 @@
 // its name alone. A definition already inside the walk is answered that way
 // too, whatever the depth, which is what closes a cycle.
 #define LHAT_MAX_TYPE_NESTING 8
+// 02 の 14.10改: how many positions one 'type[n]' may ask for. The count is
+// written out and the positions are made one by one, so this is what keeps a
+// single token from asking for as much of the checker's arena as it likes.
+// Far past any table a writer names position by position.
+#define LHAT_MAX_TYPE_POSITIONS 256
 // "Group.Kind" -- what typeof^ answers for an error made from an errordef^
 // (04 の 2.3). Longer than any name a writer is likely to choose.
 #define LHAT_QUALIFIED_NAME_BUFFER 256

@@ -1983,6 +1983,70 @@ static void test_types(void)
         2);
     parse_dispose(&p);
 
+    // 14.10改: 'type[n]' is n positions of that type. The entry carries the
+    // count; what makes the positions is the checker, which is where a run
+    // written out is made too.
+    LHAT_TEST("a position may say how many of it there are");
+    parse_text(&p, "x := y as^ t^{ number^[3] }");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    {
+        const LhatNode *t = first_value(&p)->v.ascription.type;
+        LHAT_CHECK_EQ_INT(lhat_node_list_length(t->v.list.items), 1);
+        LHAT_CHECK_EQ_INT(t->v.list.items->v.entry.repeat, 3);
+        LHAT_CHECK(t->v.list.items->v.entry.key == NULL, "positional");
+    }
+    parse_dispose(&p);
+
+    LHAT_TEST("one written without a count asks for one position");
+    parse_text(&p, "x := y as^ t^{ number^ }");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    LHAT_CHECK_EQ_INT(
+        first_value(&p)->v.ascription.type->v.list.items->v.entry.repeat, 1);
+    parse_dispose(&p);
+
+    LHAT_TEST("and a count of one is written the long way round");
+    parse_text(&p, "x := y as^ t^{ number^[1] }");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    LHAT_CHECK_EQ_INT(
+        first_value(&p)->v.ascription.type->v.list.items->v.entry.repeat, 1);
+    parse_dispose(&p);
+
+    LHAT_TEST("a count is a positive integer written out");
+    {
+        static const char *const refused[] = {
+            "x := y as^ t^{ number^[0] }",
+            "x := y as^ t^{ number^[n] }",
+            "x := y as^ t^{ number^[2.5] }",
+            "x := y as^ t^{ number^[-1] }",
+        };
+        for (size_t i = 0; i < sizeof refused / sizeof refused[0]; i++) {
+            parse_text(&p, refused[i]);
+            LHAT_CHECK(error_count(&p) > 0, "expected a diagnostic: %s",
+                       refused[i]);
+            if (p.result.diagnostic_count > 0) {
+                LHAT_CHECK_EQ_INT(p.result.diagnostics[0].code,
+                                  LHAT_PARSE_ERR_BAD_POSITION_COUNT);
+            }
+            parse_dispose(&p);
+        }
+    }
+
+    // 14.10 caps how many one of these may ask for, so a single token cannot
+    // ask for as much of the checker's arena as it likes.
+    LHAT_TEST("and one past the cap is refused with it");
+    parse_text(&p, "x := y as^ t^{ number^[999] }");
+    LHAT_CHECK(error_count(&p) > 0, "expected a diagnostic");
+    LHAT_CHECK_EQ_INT(p.result.diagnostics[0].code,
+                      LHAT_PARSE_ERR_BAD_POSITION_COUNT);
+    parse_dispose(&p);
+
+    LHAT_TEST("a name holds one value, so it takes no count");
+    parse_text(&p, "x := y as^ t^{ a : number^[3] }");
+    LHAT_CHECK(error_count(&p) > 0, "expected a diagnostic");
+    LHAT_CHECK_EQ_INT(p.result.diagnostics[0].code,
+                      LHAT_PARSE_ERR_NAMED_TAKES_NO_COUNT);
+    parse_dispose(&p);
+
     // 13.9 with 15.3改: the front half is the signature one resume follows,
     // and it carries the kind of the body.
     LHAT_TEST("coroutine type");

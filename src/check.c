@@ -457,8 +457,14 @@ static void resolve_members_into(Checker *c, LhatType *table,
             continue;
         }
         if (m->v.entry.key == NULL) {
-            lhat_type_add_index_member(c->result->types, table, ++position,
-                                       member);
+            // 14.10改: 'type[n]' is n positions of that type, which is what a
+            // run of them written out is. Made one by one here, so nothing
+            // downstream can tell the two spellings apart.
+            uint32_t repeat = m->v.entry.repeat > 0 ? m->v.entry.repeat : 1;
+            for (uint32_t i = 0; i < repeat; i++) {
+                lhat_type_add_index_member(c->result->types, table, ++position,
+                                           member);
+            }
             continue;
         }
         if (!chk_node_name(c, m->v.entry.key, &name, &length)) {

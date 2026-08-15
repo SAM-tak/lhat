@@ -114,3 +114,25 @@ let^c = C()
 
 print(typeof^(c.start).signature)
 print(typeof^(c.resume).signature)
+
+let^Logged = def^{
+    self^{
+        abstract^n : number^
+    },
+    override^run := p^self^{
+        self^.n += 10
+        super^()
+    }
+}
+let^AppBase = def^{
+    self^{
+        n = 0
+    },
+    run := p^self^{
+        self^.n += 1
+    }
+}
+let^App = AppBase .. Logged
+let^app = App.new()
+app.run()
+print(app.n)

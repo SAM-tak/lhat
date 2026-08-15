@@ -321,6 +321,11 @@ struct LhatNode {
             // t^{ ... }, the way a parameter list writes a variadic one --
             // `value` is the element type, `key` is unused.
             bool variadic;
+            // 14.10改: MEMBER_DECL only, and only on a positional entry.
+            // 'type[n]' is n positions of that type, which is what a run of
+            // them written out means -- so this is a count of positions to
+            // make, one without the brackets.
+            uint32_t repeat;
         } entry;
 
         // DEFINE / REASSIGN take a list of targets and a list of values;

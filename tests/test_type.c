@@ -654,14 +654,92 @@ static void test_writing_whole(void)
     LHAT_TEST("14.10: a position is written as a type and no name");
     {
         LhatType *row = lhat_type_table(&t.arena);
+        for (size_t i = 1; i <= 2; i++) {
+            lhat_type_add_index_member(&t.arena, row, i,
+                                       simple(&t, LHAT_TYPE_NUMBER));
+        }
+        char buffer[128];
+        size_t written = lhat_type_write_full(row, buffer, sizeof buffer);
+        LHAT_CHECK_EQ_STR(buffer, written, "t^{ number^, number^ }");
+    }
+
+    // 14.10改: a run of one type is 'type[n]', which is the same type written
+    // the shorter way. Two are left as they stand -- the count is no shorter
+    // than the pair, and the pair reads more directly.
+    LHAT_TEST("14.10改: three of a type are written with the count");
+    {
+        LhatType *row = lhat_type_table(&t.arena);
         for (size_t i = 1; i <= 3; i++) {
             lhat_type_add_index_member(&t.arena, row, i,
                                        simple(&t, LHAT_TYPE_NUMBER));
         }
         char buffer[128];
         size_t written = lhat_type_write_full(row, buffer, sizeof buffer);
+        LHAT_CHECK_EQ_STR(buffer, written, "t^{ number^[3] }");
+    }
+
+    LHAT_TEST("14.10改: a run ends where the type changes");
+    {
+        LhatType *row = lhat_type_table(&t.arena);
+        for (size_t i = 1; i <= 3; i++) {
+            lhat_type_add_index_member(&t.arena, row, i,
+                                       simple(&t, LHAT_TYPE_NUMBER));
+        }
+        lhat_type_add_index_member(&t.arena, row, 4,
+                                   simple(&t, LHAT_TYPE_STRING));
+        char buffer[128];
+        size_t written = lhat_type_write_full(row, buffer, sizeof buffer);
+        LHAT_CHECK_EQ_STR(buffer, written, "t^{ number^[3], string^ }");
+    }
+
+    LHAT_TEST("14.10改: and a run of two is written out");
+    {
+        LhatType *row = lhat_type_table(&t.arena);
+        for (size_t i = 1; i <= 2; i++) {
+            lhat_type_add_index_member(&t.arena, row, i,
+                                       simple(&t, LHAT_TYPE_NUMBER));
+        }
+        lhat_type_add_index_member(&t.arena, row, 3,
+                                   simple(&t, LHAT_TYPE_STRING));
+        char buffer[128];
+        size_t written = lhat_type_write_full(row, buffer, sizeof buffer);
         LHAT_CHECK_EQ_STR(buffer, written,
-                          "t^{ number^, number^, number^ }");
+                          "t^{ number^, number^, string^ }");
+    }
+
+    // A named member takes no position, so it parts one run from the next
+    // rather than joining them.
+    LHAT_TEST("14.10改: a name between them parts the runs");
+    {
+        LhatType *row = lhat_type_table(&t.arena);
+        for (size_t i = 1; i <= 3; i++) {
+            lhat_type_add_index_member(&t.arena, row, i,
+                                       simple(&t, LHAT_TYPE_NUMBER));
+        }
+        lhat_type_add_member(&t.arena, row, "seen", 4,
+                             simple(&t, LHAT_TYPE_BOOL));
+        for (size_t i = 4; i <= 6; i++) {
+            lhat_type_add_index_member(&t.arena, row, i,
+                                       simple(&t, LHAT_TYPE_NUMBER));
+        }
+        char buffer[128];
+        size_t written = lhat_type_write_full(row, buffer, sizeof buffer);
+        LHAT_CHECK_EQ_STR(buffer, written,
+                          "t^{ number^[3], seen : bool^, number^[3] }");
+    }
+
+    // The run is one item, so what a cut answer has room for is counted the
+    // way a reader sees it.
+    LHAT_TEST("14.10改: a run spends one item of a cut answer");
+    {
+        LhatType *row = lhat_type_table(&t.arena);
+        for (size_t i = 1; i <= 8; i++) {
+            lhat_type_add_index_member(&t.arena, row, i,
+                                       simple(&t, LHAT_TYPE_NUMBER));
+        }
+        char buffer[128];
+        size_t written = lhat_type_write(row, buffer, sizeof buffer);
+        LHAT_CHECK_EQ_STR(buffer, written, "t^{ number^[8] }");
     }
 
     // The named ones take no place in the sequence, so a table holding both

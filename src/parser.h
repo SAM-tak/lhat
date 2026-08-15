@@ -94,9 +94,18 @@ typedef enum {
     LHAT_PARSE_ERR_SPREAD_NOT_LAST,           // 13.7: '...' forwards the
                                               // whole tail, so nothing can
                                               // follow it in a call
-    LHAT_PARSE_ERR_HATS_DONT_STACK            // 01 の 2.3: extra hats count
+    LHAT_PARSE_ERR_HATS_DONT_STACK,           // 01 の 2.3: extra hats count
                                               // levels, and this word has no
                                               // levels to count
+    LHAT_PARSE_ERR_BAD_POSITION_COUNT,        // 14.10改: 'type[n]' makes n
+                                              // positions, so n is a positive
+                                              // integer written out -- a
+                                              // count of none would leave the
+                                              // type saying nothing
+    LHAT_PARSE_ERR_NAMED_TAKES_NO_COUNT       // 14.10改: a name holds one
+                                              // value, and 'type[n]' is how
+                                              // several positions are
+                                              // written
 } LhatParseErrorCode;
 
 typedef struct {

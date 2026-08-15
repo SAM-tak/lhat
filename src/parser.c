@@ -455,6 +455,38 @@ static LhatNode *parse_type_coroutine(Parser *p)
 
 // 'name : type, ...' up to the closing brace, and the one self^{ ... } section
 // a definition's type carries (14.7改).
+// 14.10改: 'type[n]' takes n positions rather than one, which is what writing
+// the type out n times means. Answers the count, or 1 where no '[' follows --
+// inside a t^{ … } nothing else may stand there, so the bracket is this and
+// only this.
+//
+// Read here rather than in parse_type: the count belongs to the entry, not to
+// the type, and a type standing anywhere else takes no count.
+static uint32_t parse_position_count(Parser *p)
+{
+    if (!match_op(p, LHAT_OP_LBRACKET)) {
+        return 1;
+    }
+    uint32_t count = 1;
+    if (p->current.kind == LHAT_TOKEN_INT &&
+        p->current.v.integer.value > 0 &&
+        p->current.v.integer.value <= LHAT_MAX_TYPE_POSITIONS) {
+        count = (uint32_t)p->current.v.integer.value;
+        advance(p);
+    } else {
+        report(p, &p->current, LHAT_PARSE_ERR_BAD_POSITION_COUNT);
+        // Read to the ']' so that what was written between the brackets is
+        // answered once. Whatever stands there is not a count, and reading it
+        // as anything else would report it a second time under another name.
+        while (!at_eof(p) && !check_op(p, LHAT_OP_RBRACKET) &&
+               !check_op(p, LHAT_OP_RBRACE) && !check_op(p, LHAT_OP_COMMA)) {
+            advance(p);
+        }
+    }
+    expect_op(p, LHAT_OP_RBRACKET);
+    return count;
+}
+
 static LhatNode *parse_member_decls(Parser *p)
 {
     LhatNode *head = NULL;
@@ -522,6 +554,7 @@ static LhatNode *parse_member_decls(Parser *p)
         if (!named) {
             member->v.entry.key = NULL;
             member->v.entry.value = parse_type(p);
+            member->v.entry.repeat = parse_position_count(p);
             lhat_node_append(&head, &tail, finish(p, member));
             if (!match_op(p, LHAT_OP_COMMA)) {
                 break;
@@ -549,6 +582,10 @@ static LhatNode *parse_member_decls(Parser *p)
         // 13.6 の (1): ':' ties a name to a type.
         expect_op(p, LHAT_OP_COLON);
         member->v.entry.value = parse_type(p);
+        if (check_op(p, LHAT_OP_LBRACKET)) {
+            report(p, &p->current, LHAT_PARSE_ERR_NAMED_TAKES_NO_COUNT);
+            parse_position_count(p);
+        }
         lhat_node_append(&head, &tail, finish(p, member));
 
         if (!match_op(p, LHAT_OP_COMMA)) {
@@ -4503,6 +4540,12 @@ const char *lhat_parse_error_message(LhatParseErrorCode code)
         case LHAT_PARSE_ERR_HATS_DONT_STACK:
             return "a second hat counts levels, which this word does not "
                    "take here";
+        case LHAT_PARSE_ERR_BAD_POSITION_COUNT:
+            return "'[ ... ]' after a type says how many positions it takes, "
+                   "which is a positive integer written out";
+        case LHAT_PARSE_ERR_NAMED_TAKES_NO_COUNT:
+            return "a name holds one value; '[ ... ]' says how many positions "
+                   "a type takes, so it goes on one written without a name";
         case LHAT_PARSE_ERR_FIELD_NEEDS_TYPE:
             return "a field needs a type, a default, or both";
         case LHAT_PARSE_ERR_ERRORDEF_NEEDS_NAME:

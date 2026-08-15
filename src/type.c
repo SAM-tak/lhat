@@ -1195,6 +1195,28 @@ static bool is_next_position(const LhatTypeMember *m, size_t position)
            memcmp(m->name, digits, length) == 0;
 }
 
+// 14.10改: how many positions from here on carry this same type. One run of
+// them is written 'type[n]', and that is the canonical spelling -- a run
+// written out, and one written with the count, are the same type, so what is
+// read back says it the one way.
+//
+// Two are left as they stand: 'number^, number^' is no longer than the count
+// and reads more directly.
+#define WRITE_RUN_MINIMUM 3
+
+static size_t run_of_positions(const LhatTypeMember *m, size_t position)
+{
+    size_t run = 0;
+    for (const LhatTypeMember *at = m; at != NULL; at = at->next) {
+        if (!is_next_position(at, position + run + 1) ||
+            !lhat_type_equal(at->type, m->type)) {
+            break;
+        }
+        run++;
+    }
+    return run;
+}
+
 static void write_members(TypeSink *sink, const LhatTypeMember *members,
                           int depth)
 {
@@ -1209,12 +1231,28 @@ static void write_members(TypeSink *sink, const LhatTypeMember *members,
             put_text(sink, ", ");
         }
         if (is_next_position(m, position + 1)) {
-            position++;
+            size_t run = run_of_positions(m, position);
+            write_type(sink, m->type, depth + 1);
+            if (run >= WRITE_RUN_MINIMUM) {
+                char digits[24];
+                size_t length = index_digits(run, digits, sizeof digits);
+                put_text(sink, "[");
+                put(sink, digits, length);
+                put_text(sink, "]");
+                // The run is this one item, both for the count of positions
+                // and for the budget an item spends.
+                for (size_t i = 1; i < run; i++) {
+                    m = m->next;
+                }
+                position += run;
+            } else {
+                position++;
+            }
         } else {
             put(sink, m->name, m->name_length);
             put_text(sink, " : ");
+            write_type(sink, m->type, depth + 1);
         }
-        write_type(sink, m->type, depth + 1);
         count++;
     }
 }
@@ -1307,11 +1345,12 @@ static void write_type(TypeSink *sink, const LhatType *type, int depth)
                 level++;
             }
 
-            // 14.10: bare t^ asks for nothing in particular.
+            // 14.10: the members come with the word, and the top of tables
+            // asks for none.
             if (type->v.table.members == NULL &&
                 type->v.table.variadic == NULL &&
                 type->v.table.instance == NULL) {
-                put_text(sink, "t^");
+                put_text(sink, "t^{}");
                 return;
             }
             WriteSeen here = { type, sink->seen };

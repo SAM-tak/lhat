@@ -1822,6 +1822,68 @@ static void test_annotations(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_BARE_TABLE_TYPE);
     unit_dispose(&u);
 
+    // 14.10改: 'type[n]' is n positions of that type, so it is the same type
+    // the run written out is -- 14.10's "at least these" then makes the count
+    // a floor, the way a run of positions written by hand already is.
+    LHAT_TEST("a count says how many positions the type takes");
+    check_text(&u,
+               "var^ f = p^ t:t^{ number^[3] } { }\n"
+               "f({ 1, 2, 3 })\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("fewer than the count does not fit");
+    check_text(&u,
+               "var^ f = p^ t:t^{ number^[3] } { }\n"
+               "f({ 1 })\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
+    unit_dispose(&u);
+
+    LHAT_TEST("more than it does");
+    check_text(&u,
+               "var^ f = p^ t:t^{ number^[3] } { }\n"
+               "f({ 1, 2, 3, 4 })\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("and the positions keep the type they were counted for");
+    check_text(&u,
+               "var^ f = p^ t:t^{ number^[3] } { }\n"
+               "f({ \"a\", \"b\", \"c\" })\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
+    unit_dispose(&u);
+
+    LHAT_TEST("a count follows the positions written before it");
+    check_text(&u,
+               "var^ f = p^ t:t^{ string^, number^[2] } { }\n"
+               "f({ \"a\", 1, 2 })\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // The two spellings are one type, which is what a signature written with
+    // either accepting the other says. The run may be written in parts, too:
+    // 'type[n]' is n positions, so a run split across entries is that run.
+    LHAT_TEST("the count and the run written out are one type");
+    check_text(&u,
+               "var^ q = p^ t:t^{ number^, number^, number^ } { }\n"
+               "var^ r : p^t^{ number^[3] }; = q\n"
+               "var^ s : p^t^{ number^, number^[2] }; = q\n"
+               "var^ o : p^t^{ number^[1], number^[2] }; = q\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("and one position may be written with a count of one");
+    check_text(&u,
+               "var^ f = p^ t:t^{ number^[1] } { }\n"
+               "f({ 1 })\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("13.7's tail may follow a counted run");
+    check_text(&u, "var^ f = p^ t:t^{ number^[2], ...:string^ } { }\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
     LHAT_TEST("a union annotation accepts either arm");
     check_text(&u,
                "var^ x : number^|string^ = 1\n"
