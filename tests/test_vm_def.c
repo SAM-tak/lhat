@@ -847,15 +847,8 @@ static void test_isa(void)
     CHECK_BOOL(&r, true);
     run_dispose(&r);
 
-    LHAT_TEST("table^");
-    run_text(&r, "return^ { a := 1 } isa^ table^\n");
-    CHECK_BOOL(&r, true);
-    run_dispose(&r);
-
-    // 14.10 and 14.8: the spellings the checker reads together are read
-    // together here too, or a name it accepts would fail to compile.
-    LHAT_TEST("t^ is the other spelling of table^");
-    run_text(&r, "return^ { a := 1 } isa^ t^\n");
+    LHAT_TEST("t^");
+    run_text(&r, "return^ { a := 1 } isa^ t^{}\n");
     CHECK_BOOL(&r, true);
     run_dispose(&r);
 

@@ -380,6 +380,64 @@ static size_t emit_jump(Compiler *c, LhatOpcode op, uint8_t a)
     return at;
 }
 
+// 8.6改2: '?op=' leaves an absent place as it is. The place has just been read
+// into `current`; when the '?' spelling was written, everything after this --
+// the right-hand side included -- is jumped over unless something is there.
+// Answers where that jump waits to be patched, or SIZE_MAX for the plain
+// spelling, which skips nothing.
+//
+// Shaped like 11.7改's '?.' (compile_access): the work is the branch the test
+// takes when the place is not nil^, so the right-hand side is evaluated
+// exactly as often as 'if^ a? { a op= b }' would evaluate it.
+// `carrier` is a slot the skipped arm has to leave something in -- the two-pass
+// path reserves one for the result before it branches, and both arms have to
+// leave the collector a value it can read. Negative where there is none.
+static size_t skip_when_absent(Compiler *c, bool asked, uint8_t current,
+                               int carrier)
+{
+    if (!asked) {
+        return SIZE_MAX;
+    }
+    uint8_t test = reserve(c);
+    emit(c, lhat_encode_abc(LHAT_BC_ISNIL, test, current, 0));
+    size_t to_work = emit_jump(c, LHAT_BC_JUMP_FALSE, test);
+    if (carrier >= 0) {
+        emit(c, lhat_encode_abc(LHAT_BC_LOADNIL, (uint8_t)carrier, 0, 0));
+    }
+    size_t past = emit_jump(c, LHAT_BC_JUMP, 0);
+    lhat_chunk_patch_here(&c->proto->chunk, to_work);
+    return past;
+}
+
+static void land_here(Compiler *c, size_t jump)
+{
+    if (jump != SIZE_MAX) {
+        lhat_chunk_patch_here(&c->proto->chunk, jump);
+    }
+}
+
+static void compile_expression(Compiler *c, const LhatNode *node, uint8_t into);
+
+// 8.6改2 for a place that is a name. There is no owner or key to run twice,
+// so the place is read the way the compound value would read it -- one
+// register read for a local, one GETUPVAL for a captured one -- and the test
+// is made of that before anything else is evaluated. The slot is given back
+// straight away: the branch below it is reached only after the test has been
+// made, so nothing there can see the register change under it.
+static size_t skip_name_when_absent(Compiler *c, bool asked,
+                                    const LhatNode *target)
+{
+    if (!asked) {
+        return SIZE_MAX;
+    }
+    uint8_t mark = c->next_register;
+    uint8_t now = reserve(c);
+    compile_expression(c, target, now);
+    size_t past = skip_when_absent(c, true, now, -1);
+    c->next_register = mark;
+    return past;
+}
+
 static void load_constant(Compiler *c, uint8_t into, LhatValue value)
 {
     size_t k = lhat_chunk_constant(&c->proto->chunk, value);
@@ -1585,7 +1643,7 @@ static bool add_shape_member(Compiler *c, LhatRuntimeType *into,
 static LhatRuntimeType *lower_def_chain(Compiler *c, const DefChain *chain)
 {
     LhatRuntimeType *type =
-        lhat_type_rt_new(&root_of(c)->proto->chunk.heap, LHAT_TYPE_RT_STRUCTURE);
+        lhat_type_rt_new(&root_of(c)->proto->chunk.heap, LHAT_TYPE_RT_TABLE);
     if (type == NULL) {
         return NULL;
     }
@@ -1687,7 +1745,7 @@ static LhatRuntimeType *lower_type(Compiler *c, const LhatNode *node)
         case LHAT_NODE_TYPE_TABLE: {
             // 14.10: the structure asks for at least these members.
             LhatRuntimeType *type =
-                lhat_type_rt_new(owner, LHAT_TYPE_RT_STRUCTURE);
+                lhat_type_rt_new(owner, LHAT_TYPE_RT_TABLE);
             if (type == NULL) {
                 return NULL;
             }
@@ -1778,12 +1836,6 @@ static LhatRuntimeType *lower_type(Compiler *c, const LhatNode *node)
                 simple = LHAT_TYPE_RT_BOOL;
             } else if (name_is(name, length, "nil^")) {
                 simple = LHAT_TYPE_RT_NIL;
-            } else if (name_is(name, length, "table^") ||
-                       name_is(name, length, "t^")) {
-                // 14.10: bare t^ asks for nothing in particular -- the top of
-                // tables, which is the other spelling of this one name (the
-                // pair check.c's resolve_type reads together).
-                simple = LHAT_TYPE_RT_TABLE;
             } else if (name_is(name, length, "error^")) {
                 simple = LHAT_TYPE_RT_ERROR;
             } else if (name_is(name, length, "any^")) {
@@ -4030,6 +4082,12 @@ typedef struct {
     uint8_t key;
     uint8_t value;
     bool indexed;
+    // 8.6改2: what the place held when the read pass looked, kept so the
+    // write pass can leave an absent one alone. The saved register rather
+    // than the place: 8.6改3 reads every target before writing any, so a
+    // write earlier in the second pass must not change what this one sees.
+    uint8_t current;
+    bool guarded;
 } PendingWrite;
 
 // 13.8: reads everything, then writes everything. Only reached with more than
@@ -4084,6 +4142,12 @@ static void compile_reassign_parallel(Compiler *c, const LhatNode *node)
                      target->kind == LHAT_NODE_INDEX;
         w->owner = 0;
         w->key = 0;
+        w->current = 0;
+        // 8.6改2: only a compound spelling reads its place, so only one can
+        // be asked to leave it alone. 13.10's destructuring carries no
+        // operator, which is what `tuple_call` says here.
+        w->guarded = tuple_call == NULL && node->v.binding.compound_nil_safe &&
+                     node->v.binding.has_compound_op;
 
         if (w->indexed) {
             // 05 の 8.9: a host value owner keeps its width, as in the
@@ -4108,13 +4172,20 @@ static void compile_reassign_parallel(Compiler *c, const LhatNode *node)
                     fail(c, LHAT_COMPILE_UNSUPPORTED);
                     return;
                 }
-                uint8_t current = reserve(c);
-                emit(c, lhat_encode_abc(LHAT_BC_GETINDEX, current, w->owner,
+                w->current = reserve(c);
+                emit(c, lhat_encode_abc(LHAT_BC_GETINDEX, w->current, w->owner,
                                         w->key));
                 uint8_t rhs = reserve(c);
-                compile_expression(c, value->v.binary.right, rhs);
                 w->value = reserve(c);
-                emit(c, lhat_encode_abc(opcode, w->value, current, rhs));
+                // 8.6改2: reserved before the branch so both arms leave the
+                // same slot behind. Nothing is written to an absent place,
+                // but the slot is one the collector reads, so it holds nil^
+                // rather than whatever stood there.
+                size_t past =
+                    skip_when_absent(c, w->guarded, w->current, (int)w->value);
+                compile_expression(c, value->v.binary.right, rhs);
+                emit(c, lhat_encode_abc(opcode, w->value, w->current, rhs));
+                land_here(c, past);
                 value = value->next;
                 continue;
             }
@@ -4137,15 +4208,30 @@ static void compile_reassign_parallel(Compiler *c, const LhatNode *node)
         // 05 の 8.9: sized by the checker's stamp, so a host value rides the
         // two-pass exchange whole.
         w->value = reserve_for(c, value);
+        // 8.6改2: a name is read the same way its compound value would read
+        // it, into a slot of its own so the write pass can ask the question
+        // again without reaching the place a second time.
+        size_t past = SIZE_MAX;
+        if (w->guarded) {
+            w->current = reserve(c);
+            compile_expression(c, target, w->current);
+            past = skip_when_absent(c, true, w->current, (int)w->value);
+        }
         compile_expression(c, value, w->value);
+        land_here(c, past);
         value = value->next;
     }
 
     for (size_t i = 0; i < count; i++) {
         const PendingWrite *w = &pending[i];
+        // 8.6改2: an absent place is left as it is, and only this pair is --
+        // the other targets of the same statement are written whatever this
+        // one answered.
+        size_t past = skip_when_absent(c, w->guarded, w->current, -1);
         if (w->indexed) {
             emit(c, lhat_encode_abc(LHAT_BC_SETINDEX, w->owner, w->key,
                                     w->value));
+            land_here(c, past);
             continue;
         }
 
@@ -4175,6 +4261,7 @@ static void compile_reassign_parallel(Compiler *c, const LhatNode *node)
                 emit(c, lhat_encode_abc(LHAT_BC_SETUPVAL, w->value,
                                         (uint8_t)at, 0));
             }
+            land_here(c, past);
             continue;
         }
 
@@ -4183,6 +4270,7 @@ static void compile_reassign_parallel(Compiler *c, const LhatNode *node)
             // 05 の 8.9: as wide as the name is.
             emit_move_wide(c, local->reg, w->value,
                            local->width > 1 ? local->width : 1);
+            land_here(c, past);
             continue;
         }
 
@@ -4193,6 +4281,7 @@ static void compile_reassign_parallel(Compiler *c, const LhatNode *node)
         }
         emit(c, lhat_encode_abc(LHAT_BC_SETUPVAL, w->value, (uint8_t)upvalue,
                                 0));
+        land_here(c, past);
     }
 
     c->next_register = mark;
@@ -4273,11 +4362,14 @@ static void compile_reassign(Compiler *c, const LhatNode *node)
                 }
                 uint8_t current = reserve(c);
                 emit(c, lhat_encode_abc(LHAT_BC_GETINDEX, current, into, key));
+                size_t past = skip_when_absent(
+                    c, node->v.binding.compound_nil_safe, current, -1);
                 uint8_t rhs = reserve(c);
                 compile_expression(c, value->v.binary.right, rhs);
                 uint8_t result = reserve(c);
                 emit(c, lhat_encode_abc(opcode, result, current, rhs));
                 emit(c, lhat_encode_abc(LHAT_BC_SETINDEX, into, key, result));
+                land_here(c, past);
             } else {
                 // 05 の 8.9: a table never holds a host value; the checker
                 // refused this first and this is the backstop.
@@ -4319,6 +4411,8 @@ static void compile_reassign(Compiler *c, const LhatNode *node)
                 return;
             }
             if (value != NULL) {
+                size_t past = skip_name_when_absent(
+                    c, node->v.binding.compound_nil_safe, target);
                 if (found == SCOPED_REGISTER) {
                     compile_expression(c, value, reg);
                 } else {
@@ -4329,6 +4423,7 @@ static void compile_reassign(Compiler *c, const LhatNode *node)
                                             (uint8_t)at, 0));
                     c->next_register = mark;
                 }
+                land_here(c, past);
                 value = value->next;
             }
             continue;
@@ -4337,7 +4432,10 @@ static void compile_reassign(Compiler *c, const LhatNode *node)
         const Local *local = find_local(c, name, length);
         if (local != NULL) {
             if (value != NULL) {
+                size_t past = skip_name_when_absent(
+                    c, node->v.binding.compound_nil_safe, target);
                 compile_expression(c, value, local->reg);
+                land_here(c, past);
                 value = value->next;
             }
             continue;
@@ -4357,11 +4455,14 @@ static void compile_reassign(Compiler *c, const LhatNode *node)
                 fail(c, LHAT_COMPILE_UNSUPPORTED);
                 return;
             }
+            size_t past = skip_name_when_absent(
+                c, node->v.binding.compound_nil_safe, target);
             uint8_t mark = c->next_register;
             uint8_t slot = reserve(c);
             compile_expression(c, value, slot);
             emit(c, lhat_encode_abc(LHAT_BC_SETUPVAL, slot, (uint8_t)upvalue, 0));
             c->next_register = mark;
+            land_here(c, past);
             value = value->next;
         }
     }

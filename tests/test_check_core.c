@@ -1792,21 +1792,34 @@ static void test_annotations(void)
     // the top of tables, which 13.7 notes is not the top of every value.
     LHAT_TEST("a bare table type takes any table");
     check_text(&u,
-               "var^ x : table^ = { a := 1 }\n"
-               "var^ y : t^ = { 1, 2 }\n");
+               "var^ x : t^{} = { a := 1 }\n"
+               "var^ y : t^{} = { 1, 2 }\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
     LHAT_TEST("and nothing that is not one");
-    check_text(&u, "var^ x : table^ = 5\n");
+    check_text(&u, "var^ x : t^{} = 5\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
     LHAT_TEST("a bare one joins a union like any other type");
     check_text(&u,
-               "var^ x : table^|nil^ = { a := 1 }\n"
-               "var^ y : nil^|t^ = nil^\n");
+               "var^ x : t^{}|nil^ = { a := 1 }\n"
+               "var^ y : nil^|t^{} = nil^\n");
     CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // 14.10: the members come with the word, so the braces are not optional
+    // -- a signature followed by a bare t^ would leave the '{' after it
+    // reading as the list rather than as the body.
+    LHAT_TEST("and the braces are what say it asks for none");
+    check_text(&u, "var^ x : t^ = { a := 1 }\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_BARE_TABLE_TYPE);
+    unit_dispose(&u);
+
+    LHAT_TEST("said of a bare one inside a union as well");
+    check_text(&u, "var^ y : nil^|t^ = nil^\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_BARE_TABLE_TYPE);
     unit_dispose(&u);
 
     LHAT_TEST("a union annotation accepts either arm");

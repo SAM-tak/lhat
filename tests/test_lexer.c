@@ -653,6 +653,34 @@ static void test_operators(void)
     LHAT_CHECK_EQ_INT(token_count(&s), 8);
     scan_dispose(&s);
 
+    // 8.6改2: the same eight with a '?' in front. Longer than everything they
+    // could be mistaken for, so each has to precede both its own plain
+    // compound and the '?' forms -- "?..=" before "?.", "?**=" before "?*=".
+    LHAT_TEST("nil-safe compound assignment operators");
+    scan_text(&s, "?+= ?-= ?*= ?/= ?%= ?//= ?**= ?..=");
+    LHAT_CHECK(is_op(&s.tokens[0], LHAT_OP_NIL_ADD_ASSIGN), "expected ?+=");
+    LHAT_CHECK(is_op(&s.tokens[1], LHAT_OP_NIL_SUB_ASSIGN), "expected ?-=");
+    LHAT_CHECK(is_op(&s.tokens[2], LHAT_OP_NIL_MUL_ASSIGN), "expected ?*=");
+    LHAT_CHECK(is_op(&s.tokens[3], LHAT_OP_NIL_DIV_ASSIGN), "expected ?/=");
+    LHAT_CHECK(is_op(&s.tokens[4], LHAT_OP_NIL_MOD_ASSIGN), "expected ?%%=");
+    LHAT_CHECK(is_op(&s.tokens[5], LHAT_OP_NIL_FLOORDIV_ASSIGN),
+               "expected ?//=");
+    LHAT_CHECK(is_op(&s.tokens[6], LHAT_OP_NIL_POW_ASSIGN), "expected ?**=");
+    LHAT_CHECK(is_op(&s.tokens[7], LHAT_OP_NIL_CONCAT_ASSIGN), "expected ?..=");
+    LHAT_CHECK_EQ_INT(token_count(&s), 8);
+    scan_dispose(&s);
+
+    // Written where they actually stand, against the spellings each one is a
+    // prefix of. "?.." would be a '?.' and a '.' if the order were wrong.
+    LHAT_TEST("a nil-safe compound is not its shorter neighbours");
+    scan_text(&s, "t[k] ?..= s  a?.b  t[k] ?*= 2  t[k] ?**= 2");
+    LHAT_CHECK(is_op(&s.tokens[4], LHAT_OP_NIL_CONCAT_ASSIGN), "expected ?..=");
+    LHAT_CHECK(is_op(&s.tokens[7], LHAT_OP_NIL_DOT), "expected ?.");
+    LHAT_CHECK(is_op(&s.tokens[13], LHAT_OP_NIL_MUL_ASSIGN), "expected ?*=");
+    LHAT_CHECK(is_op(&s.tokens[19], LHAT_OP_NIL_POW_ASSIGN), "expected ?**=");
+    LHAT_CHECK_EQ_INT(s.lexer.diagnostic_count, 0);
+    scan_dispose(&s);
+
     // 02 の 11.7. The one member of the '?' family that is not a postfix
     // access, so it has to stay distinct from '?.' and from a bare '?'.
     LHAT_TEST("?? is distinct from the nil-propagating accesses");

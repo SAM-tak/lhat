@@ -422,13 +422,15 @@ static void test_compound_assignment_is_one_token(void)
 {
     LHAT_TEST("7.4改: a compound assignment names its target once");
 
-    // The parser expands 'want[d] += 1' into the reassignment and the
+    // The parser expands 'want[d] ?+= 1' into the reassignment and the
     // 'want[d] + 1' standing behind it, so the tree carries both spans --
     // but the source says each name once, and 7.4改 reads the target once.
+    // 8.6改2 is how counting into a table is written, 04 の 11.3 making
+    // 'want[d]' a 'number^|nil^'.
     static const char *source =
         "var^ want = { 1, 2 }\n"
         "var^ d = 1\n"
-        "want[d] += 1\n";
+        "want[d] ?+= 1\n";
 
     Checked c;
     check_text(&c, source);
@@ -441,8 +443,8 @@ static void test_compound_assignment_is_one_token(void)
         LHAT_CHECK(!same, "two tokens at %d:%d", tokens.items[i].line,
                    tokens.items[i].character);
     }
-    expect_token(&tokens, source, "want[d] += 1", "variable", false);
-    expect_token(&tokens, source, "d] += 1", "variable", false);
+    expect_token(&tokens, source, "want[d] ?+= 1", "variable", false);
+    expect_token(&tokens, source, "d] ?+= 1", "variable", false);
 
     free(tokens.items);
     cJSON_Delete(data);

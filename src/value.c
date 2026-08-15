@@ -153,12 +153,12 @@ bool lhat_value_same(LhatValue a, LhatValue b)
 const char *lhat_object_kind_name(LhatObjectKind kind)
 {
     switch (kind) {
-        case LHAT_OBJECT_STRING:     return "string^";
-        case LHAT_OBJECT_TABLE:      return "table^";
+        case LHAT_OBJECT_STRING:     return "string";
+        case LHAT_OBJECT_TABLE:      return "table";
         case LHAT_OBJECT_SUBROUTINE: return "subroutine";
         case LHAT_OBJECT_COROUTINE:  return "coroutine";
-        case LHAT_OBJECT_ERROR:      return "error^";
-        case LHAT_OBJECT_ERROR_KIND: return "error^ kind";
+        case LHAT_OBJECT_ERROR:      return "error";
+        case LHAT_OBJECT_ERROR_KIND: return "error kind";
         case LHAT_OBJECT_NATIVE:     return "a runtime operation";
         case LHAT_OBJECT_TYPE:       return "a type";
         case LHAT_OBJECT_OVERLOAD:   return "an overloaded member";

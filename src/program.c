@@ -416,6 +416,7 @@ static LhatRuntimeType *lower_host_type(LhatMachine *machine,
         case LHAT_TYPE_BOOL:   kind = LHAT_TYPE_RT_BOOL; break;
         case LHAT_TYPE_NUMBER: kind = LHAT_TYPE_RT_NUMBER; break;
         case LHAT_TYPE_STRING: kind = LHAT_TYPE_RT_STRING; break;
+        case LHAT_TYPE_TABLE:  kind = LHAT_TYPE_RT_TABLE; break;
         case LHAT_TYPE_ERROR:  kind = LHAT_TYPE_RT_ERROR; break;
         case LHAT_TYPE_FUNC:   kind = LHAT_TYPE_RT_SUBROUTINE; break;
         case LHAT_TYPE_CORO:   kind = LHAT_TYPE_RT_COROUTINE; break;
@@ -423,7 +424,6 @@ static LhatRuntimeType *lower_host_type(LhatMachine *machine,
         case LHAT_TYPE_UNION:  kind = LHAT_TYPE_RT_UNION; break;
         case LHAT_TYPE_INTERSECT: kind = LHAT_TYPE_RT_INTERSECT; break;
         case LHAT_TYPE_HOSTVALUE: kind = LHAT_TYPE_RT_HOSTVALUE; break;
-        case LHAT_TYPE_TABLE:  kind = LHAT_TYPE_RT_STRUCTURE; break;
         // 04 の 2.4: a kind's identity is the LhatErrorKind the machine made,
         // and nothing here can reach one. Asks nothing rather than asking
         // something weaker than what was written.

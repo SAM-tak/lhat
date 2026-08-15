@@ -218,12 +218,23 @@ static void test_positions(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // 14.10 lets a table carry more than its type lists, so a position it
-    // says nothing about is unknown rather than absent.
-    LHAT_TEST("a position the type does not mention says nothing");
+    // 04 の 11.3: a position the type does not list is one it does not
+    // promise, so what comes back is what it does say the sequence half
+    // holds, or nil^. Reading is bounded by what was declared -- 't.foo' for
+    // a member the type never mentions is a static error, and a position is
+    // that same question asked with digits. 14.10's "at least these" says
+    // which values fit a type, not what may be read off one.
+    LHAT_TEST("a position the type does not mention may be absent");
     check_text(&u,
                "var^ t = { 10 }\n"
                "var^ s : string^ = t[9]\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
+    unit_dispose(&u);
+
+    LHAT_TEST("and what it does say is what the rest of it is");
+    check_text(&u,
+               "var^ t = { 10 }\n"
+               "var^ n : number^ = t[9] ?? 0\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
@@ -344,9 +355,183 @@ static void test_positions(void)
     unit_dispose(&u);
 }
 
+// 04 の 11.3: 't.foo' is the static half and answers T; 't[k]' is the dynamic
+// one and answers 'T|nil^'. What T is, is what the type says a key of that
+// kind reaches -- and which kind decides which half of 14 章's table is being
+// asked about, since a number names a position and a string names a member.
+//
+// A type that says nothing about that kind is left alone: there is no T to
+// make the union out of, and 14.10 leaves what an undeclared table holds
+// unsaid. Closing that would need a spelling for an open keyed half, which
+// 't^{ ...:T }' is not -- it describes the sequence.
+static void test_dynamic_key(void)
+{
+    Unit u;
+
+    LHAT_TEST("a dynamic key over listed positions may be absent");
+    check_text(&u,
+               "var^ t = { 10, 20, 30 }\n"
+               "var^ i = 2\n"
+               "var^ n : number^ = t[i]\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
+    unit_dispose(&u);
+
+    LHAT_TEST("and '??' is what 11.3 offers for it");
+    check_text(&u,
+               "var^ t = { 10, 20, 30 }\n"
+               "var^ i = 2\n"
+               "var^ n : number^ = t[i] ?? 0\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // The static half is untouched: a key written out that the type does
+    // list resolves to exactly that member, with no nil^ beside it.
+    LHAT_TEST("a written key the type lists still answers exactly");
+    check_text(&u,
+               "var^ t = { 10, 20, 30 }\n"
+               "var^ n : number^ = t[2]\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // 14 章: a number names a position and a string names a member, so the
+    // two halves answer separate questions.
+    LHAT_TEST("a string key reads the keyed half");
+    check_text(&u,
+               "var^ t = { a := 1 }\n"
+               "var^ s = \"a\"\n"
+               "var^ x : number^ = t[s]\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
+    unit_dispose(&u);
+
+    LHAT_TEST("a number key over a keyed-only type says nothing");
+    check_text(&u,
+               "var^ t = { a := 1 }\n"
+               "var^ i = 1\n"
+               "var^ s : string^ = t[i]\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("and a string key over a sequence-only type says nothing");
+    check_text(&u,
+               "var^ t = { 10 }\n"
+               "var^ s = \"a\"\n"
+               "var^ x : string^ = t[s]\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // 3.5: a key whose own type is not decided could be either, so both
+    // halves answer. Picking one would be claiming to know which.
+    LHAT_TEST("an undecided key reads both halves");
+    check_text(&u,
+               "var^ f = f^ k -> number^ {\n"
+               "    var^ t = { 10, a := \"x\" }\n"
+               "    var^ n : number^ = t[k]\n"
+               "    return^ 1\n"
+               "}\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
+    unit_dispose(&u);
+
+    LHAT_TEST("a table whose type says nothing is left alone");
+    check_text(&u,
+               "var^ f = f^ t:t^{}, i:number^ -> number^ { return^ t[i] }\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // 13.7's unbounded tail reached this answer already, and goes on
+    // reaching it now that one road serves both.
+    LHAT_TEST("an unbounded tail answers the same as before");
+    check_text(&u,
+               "var^ f = f^ t:t^{ ...:number^ }, i:number^ -> number^ {\n"
+               "    return^ t[i]\n"
+               "}\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
+    unit_dispose(&u);
+
+    // The answer carries a nil^ arm, so what is written around it is judged
+    // against one -- an index is not a place the checking stops.
+    LHAT_TEST("and what follows an index is judged against that answer");
+    check_text(&u,
+               "var^ f = f^ t:t^{ string^ }, i:number^ -> bool^ {\n"
+               "    return^ t[i] .. \"a\"\n"
+               "}\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_OPERATOR_ON_MAYBE_NIL);
+    unit_dispose(&u);
+}
+
+// 8.6改2. 04 の 11.3 makes what a key reads out of a table a 'T|nil^', which
+// leaves a plain compound assignment with nothing to add to -- the arm has no
+// operator on it. The '?' spelling says the write is skipped when the place is
+// absent, so the operator is asked of the rest.
+static void test_nil_safe_compound(void)
+{
+    Unit u;
+
+    LHAT_TEST("a plain compound has nothing to add to an absent place");
+    check_text(&u, "var^ f = f^ -> t^{ ...:number^ } { return^ { 1 } }\n"
+                   "var^ t = f()\n"
+                   "t[1] += 1\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_OPERATOR_ON_MAYBE_NIL);
+    unit_dispose(&u);
+
+    LHAT_TEST("and the '?' spelling is what answers that");
+    check_text(&u, "var^ f = f^ -> t^{ ...:number^ } { return^ { 1 } }\n"
+                   "var^ t = f()\n"
+                   "t[1] ?+= 1\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // The nil^ comes off the place, not off everything of that shape: what
+    // stands in the right-hand side is a read like any other.
+    LHAT_TEST("the right-hand side keeps its own nil^");
+    check_text(&u, "var^ f = f^ -> t^{ ...:number^ } { return^ { 1 } }\n"
+                   "var^ t = f()\n"
+                   "t[1] ?+= t[2] + 1\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_OPERATOR_ON_MAYBE_NIL);
+    unit_dispose(&u);
+
+    // 11.7改's posture, carried over: a '?.' whose target can never be absent
+    // is let through rather than reported, and so is this.
+    LHAT_TEST("a place that can never be absent takes it anyway");
+    check_text(&u, "var^ n = 1\n"
+                   "n ?+= 1\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // Only the nil^ is taken off. An operator the rest does not answer is
+    // still an operator the rest does not answer.
+    LHAT_TEST("what is left still has to answer the operator");
+    check_text(&u, "var^ f = f^ -> t^{ ...:string^ } { return^ { \"a\" } }\n"
+                   "var^ t = f()\n"
+                   "t[1] ?+= 1\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_NO_OPERATOR);
+    unit_dispose(&u);
+
+    LHAT_TEST("the concatenating one reaches a string the same way");
+    check_text(&u, "var^ f = f^ -> t^{ ...:string^ } { return^ { \"a\" } }\n"
+                   "var^ t = f()\n"
+                   "t[1] ?..= \"b\"\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // A name that was written optional is a place like any other.
+    LHAT_TEST("a name declared optional takes it too");
+    check_text(&u, "var^ x : number^|nil^ = 1\n"
+                   "x ?+= 1\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("and the plain spelling on that name still reports");
+    check_text(&u, "var^ x : number^|nil^ = 1\n"
+                   "x += 1\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_OPERATOR_ON_MAYBE_NIL);
+    unit_dispose(&u);
+}
+
 int main(void)
 {
     test_walking();
     test_positions();
+    test_dynamic_key();
+    test_nil_safe_compound();
     return lhat_test_report("test_check_tables");
 }

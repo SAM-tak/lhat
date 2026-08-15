@@ -311,8 +311,29 @@ bool lhat_value_satisfies(LhatValue value, const LhatRuntimeType *type)
             return lhat_is_number(value);
         case LHAT_TYPE_RT_STRING:
             return lhat_is_object_kind(value, LHAT_OBJECT_STRING);
-        case LHAT_TYPE_RT_TABLE:
-            return lhat_is_object_kind(value, LHAT_OBJECT_TABLE);
+        case LHAT_TYPE_RT_TABLE: {
+            // 14.10: at least these members, which is what makes the judgement
+            // structural rather than a question about where it came from.
+            const LhatTable *table = NULL;
+            if (lhat_is_object_kind(value, LHAT_OBJECT_TABLE)) {
+                table = (const LhatTable *)lhat_as_object(value);
+            }
+            else if (lhat_is_object_kind(value, LHAT_OBJECT_ERROR)) {
+                table = ((const LhatError *)lhat_as_object(value))->fields;
+            } else {
+                return false;
+            }
+            for (size_t i = 0; i < type->member_count; i++) {
+                LhatValue held = lhat_table_get(
+                    table, lhat_object((LhatObject *)(void *)
+                                           type->members[i]
+                                               .name));
+                if (lhat_is_nil(held) ||
+                    !lhat_value_satisfies(held, type->members[i].type)) {
+                    return false;
+                }
+            }
+            return true;
         case LHAT_TYPE_RT_SUBROUTINE:
             return lhat_is_object_kind(value, LHAT_OBJECT_SUBROUTINE);
         case LHAT_TYPE_RT_COROUTINE:
@@ -365,27 +386,6 @@ bool lhat_value_satisfies(LhatValue value, const LhatRuntimeType *type)
         // own check, and it says no less than it did.
         case LHAT_TYPE_RT_SELF:
             return lhat_is_object_kind(value, LHAT_OBJECT_TABLE);
-        case LHAT_TYPE_RT_STRUCTURE: {
-            // 14.10: at least these members, which is what makes the judgement
-            // structural rather than a question about where it came from.
-            const LhatTable *table = NULL;
-            if (lhat_is_object_kind(value, LHAT_OBJECT_TABLE)) {
-                table = (const LhatTable *)lhat_as_object(value);
-            } else if (lhat_is_object_kind(value, LHAT_OBJECT_ERROR)) {
-                table = ((const LhatError *)lhat_as_object(value))->fields;
-            } else {
-                return false;
-            }
-            for (size_t i = 0; i < type->member_count; i++) {
-                LhatValue held = lhat_table_get(
-                    table, lhat_object((LhatObject *)(void *)
-                                       type->members[i].name));
-                if (lhat_is_nil(held) ||
-                    !lhat_value_satisfies(held, type->members[i].type)) {
-                    return false;
-                }
-            }
-            return true;
         }
     }
     return false;
@@ -519,9 +519,6 @@ static void write_runtime_type(TypeWriter *w, const LhatRuntimeType *type)
             return;
         case LHAT_TYPE_RT_STRING:
             type_put_text(w, "string^");
-            return;
-        case LHAT_TYPE_RT_TABLE:
-            type_put_text(w, "table^");
             return;
         case LHAT_TYPE_RT_ERROR:
             type_put_text(w, "error^");
@@ -672,7 +669,7 @@ static void write_runtime_type(TypeWriter *w, const LhatRuntimeType *type)
                 type_put_text(w, "^");
             }
             return;
-        case LHAT_TYPE_RT_STRUCTURE:
+        case LHAT_TYPE_RT_TABLE:
             type_put_text(w, "t^");
             write_structure_body(w, type);
             return;
@@ -720,7 +717,6 @@ bool lhat_runtime_type_equal(const LhatRuntimeType *a, const LhatRuntimeType *b)
         case LHAT_TYPE_RT_BOOL:
         case LHAT_TYPE_RT_NUMBER:
         case LHAT_TYPE_RT_STRING:
-        case LHAT_TYPE_RT_TABLE:
         case LHAT_TYPE_RT_ERROR:
         // 03 の 3.4: two undecided places are the same undecided place. Not
         // equal to any^ though -- the kinds differ above, and NULL normalises
@@ -828,7 +824,7 @@ bool lhat_runtime_type_equal(const LhatRuntimeType *a, const LhatRuntimeType *b)
                 return false;
             }
             return lhat_runtime_type_equal(a->result, b->result);
-        case LHAT_TYPE_RT_STRUCTURE:
+        case LHAT_TYPE_RT_TABLE:
             // Both sides were sorted once when reflect_type built them
             // (lhat_type_rt_sort_members), so the same shape lines up
             // member-by-member without a search.

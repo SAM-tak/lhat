@@ -865,7 +865,20 @@ typedef struct {
 
 // Ordered longest first so that a linear scan implements maximal munch.
 static const OperatorEntry operator_table[] = {
+    // 8.6改2: the nil-safe compound spellings. Longest of all, and each has
+    // to precede both its own plain compound below and the '?' forms after
+    // it -- "?..=" before "?." or the spelling splits, "?**=" before "?*=".
+    { "?//=", 4, LHAT_OP_NIL_FLOORDIV_ASSIGN },
+    { "?**=", 4, LHAT_OP_NIL_POW_ASSIGN },
+    { "?..=", 4, LHAT_OP_NIL_CONCAT_ASSIGN },
+
     { "...", 3, LHAT_OP_ELLIPSIS },     // must precede ".." (13.7)
+
+    { "?+=", 3, LHAT_OP_NIL_ADD_ASSIGN },
+    { "?-=", 3, LHAT_OP_NIL_SUB_ASSIGN },
+    { "?*=", 3, LHAT_OP_NIL_MUL_ASSIGN },
+    { "?/=", 3, LHAT_OP_NIL_DIV_ASSIGN },
+    { "?%=", 3, LHAT_OP_NIL_MOD_ASSIGN },
 
     // 7.4: compound assignment. Each must precede its own plain operator
     // below (e.g. "//=" before "//"), or the '=' would be left stray.

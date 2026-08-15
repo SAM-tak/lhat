@@ -163,7 +163,8 @@ static bool at_discard(const Parser *p)
 }
 
 static void refuse_extra_hats(Parser *p, const LhatToken *token);
-static bool compound_assign_op(LhatOpKind token_op, LhatOpKind *base_op);
+static bool compound_assign_op(LhatOpKind token_op, LhatOpKind *base_op,
+                               bool *nil_safe);
 
 // 11.9: the comparisons a type answers through '<=>' rather than one by
 // one. '=' is not among them any more -- 11.9改 lets a type write that one
@@ -560,7 +561,7 @@ static LhatNode *parse_member_decls(Parser *p)
 static LhatNode *parse_type_table(Parser *p)
 {
     LhatToken start = p->current;
-    advance(p);  // t^ or table^
+    advance(p);  // t^
 
     // 14.10: bare, with no members listed, t^ asks for nothing in particular
     // -- the top of tables. That is an ordinary type name, so it is written
@@ -1165,9 +1166,13 @@ static LhatNode *parse_def(Parser *p)
                 // op^ that decides it, so there is a definition to point at
                 // rather than only a rule to state.
                 LhatOpKind base;
+                bool nil_safe = false;
                 LhatParseErrorCode why = LHAT_PARSE_ERR_OPERATOR_NOT_DEFINABLE;
                 if (symbol.kind == LHAT_TOKEN_OP &&
-                    compound_assign_op(symbol.v.op, &base)) {
+                    compound_assign_op(symbol.v.op, &base, &nil_safe)) {
+                    // 8.6改2's spellings answer here too: an 'op^?+' is no
+                    // more a definition than an 'op^+' is, and for the same
+                    // reason -- 'op^+' is what decides both.
                     why = LHAT_PARSE_ERR_COMPOUND_NOT_DEFINABLE;
                 } else if (symbol.kind == LHAT_TOKEN_OP &&
                            is_derived_comparison(symbol.v.op)) {
@@ -2499,8 +2504,15 @@ static LhatNode *parse_target(Parser *p)
 // 7.4: 'target op= value' names the plain operator it stands for. Not an
 // operator table lookup, since a compound token never reaches parse_binary --
 // is_comparison/binary_info never see one, so this is the only place asking.
-static bool compound_assign_op(LhatOpKind token_op, LhatOpKind *base_op)
+//
+// 8.6改2: `nil_safe` says which of the two spellings this was. Both stand for
+// the same plain operator and expand the same way -- what the '?' adds is that
+// an absent place is left alone, which is decided where the write happens
+// rather than in the shape read here.
+static bool compound_assign_op(LhatOpKind token_op, LhatOpKind *base_op,
+                               bool *nil_safe)
 {
+    *nil_safe = false;
     switch (token_op) {
         case LHAT_OP_ADD_ASSIGN:      *base_op = LHAT_OP_ADD;      return true;
         case LHAT_OP_SUB_ASSIGN:      *base_op = LHAT_OP_SUB;      return true;
@@ -2510,8 +2522,22 @@ static bool compound_assign_op(LhatOpKind token_op, LhatOpKind *base_op)
         case LHAT_OP_MOD_ASSIGN:      *base_op = LHAT_OP_MOD;      return true;
         case LHAT_OP_POW_ASSIGN:      *base_op = LHAT_OP_POW;      return true;
         case LHAT_OP_CONCAT_ASSIGN:   *base_op = LHAT_OP_CONCAT;   return true;
-        default: return false;
+        default: break;
     }
+    *nil_safe = true;
+    switch (token_op) {
+        case LHAT_OP_NIL_ADD_ASSIGN:      *base_op = LHAT_OP_ADD;      return true;
+        case LHAT_OP_NIL_SUB_ASSIGN:      *base_op = LHAT_OP_SUB;      return true;
+        case LHAT_OP_NIL_MUL_ASSIGN:      *base_op = LHAT_OP_MUL;      return true;
+        case LHAT_OP_NIL_DIV_ASSIGN:      *base_op = LHAT_OP_DIV;      return true;
+        case LHAT_OP_NIL_FLOORDIV_ASSIGN: *base_op = LHAT_OP_FLOORDIV; return true;
+        case LHAT_OP_NIL_MOD_ASSIGN:      *base_op = LHAT_OP_MOD;      return true;
+        case LHAT_OP_NIL_POW_ASSIGN:      *base_op = LHAT_OP_POW;      return true;
+        case LHAT_OP_NIL_CONCAT_ASSIGN:   *base_op = LHAT_OP_CONCAT;   return true;
+        default: break;
+    }
+    *nil_safe = false;
+    return false;
 }
 
 // The value list of a binding, plus the arity checks the two forms share.
@@ -3936,8 +3962,10 @@ static LhatNode *parse_statement(Parser *p)
     // position, and 13.8's "read everything, then write everything" holds
     // here as it does there.
     LhatOpKind compound_base;
+    bool compound_nil_safe = false;
     if (p->current.kind == LHAT_TOKEN_OP &&
-        compound_assign_op(p->current.v.op, &compound_base)) {
+        compound_assign_op(p->current.v.op, &compound_base,
+                           &compound_nil_safe)) {
         LhatToken at = p->current;
         advance(p);
 
@@ -3985,6 +4013,7 @@ static LhatNode *parse_statement(Parser *p)
         node->v.binding.values = values != NULL ? values : rhs_head;
         node->v.binding.has_compound_op = true;
         node->v.binding.compound_op = compound_base;
+        node->v.binding.compound_nil_safe = compound_nil_safe;
         return finish(p, node);
     }
 

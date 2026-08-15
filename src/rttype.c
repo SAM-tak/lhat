@@ -85,7 +85,7 @@ static LhatRuntimeType *rt_from_checked(LhatHeap *heap,
         }
 
         case LHAT_TYPE_TABLE: {
-            LhatRuntimeType *rt = lhat_type_rt_new(heap, LHAT_TYPE_RT_STRUCTURE);
+            LhatRuntimeType *rt = lhat_type_rt_new(heap, LHAT_TYPE_RT_TABLE);
             if (rt == NULL) {
                 return NULL;
             }

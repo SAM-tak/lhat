@@ -1211,7 +1211,7 @@ static void test_scope_specifiers(void)
              "}\n"
              "return^ D.new().m()\n");
     // 14.16: compiled without checking, typeof^ answers the tag -- so the
-    // definition reads "table^" where the outer `class` would read "number^",
+    // definition reads "t^" where the outer `class` would read "number^",
     // which is still the whole of what the specifier has to prove here.
     LHAT_CHECK_EQ_INT(r.compiled, LHAT_COMPILE_OK);
     LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_OK);
@@ -1220,7 +1220,7 @@ static void test_scope_specifiers(void)
     if (lhat_is_object_kind(r.ran.value, LHAT_OBJECT_STRING)) {
         const LhatString *s = (const LhatString *)lhat_as_object(r.ran.value);
         // The definition, not the number^ named `class` outside it.
-        LHAT_CHECK(strncmp(s->text, "table^", 6) == 0,
+        LHAT_CHECK(strncmp(s->text, "t^", 2) == 0,
                    "'$^class' reached the definition");
     }
     run_dispose(&r);

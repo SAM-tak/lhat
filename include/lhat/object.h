@@ -203,11 +203,12 @@ typedef struct LhatCoroutine {
 // type be asked about one while the program runs. Three decided features want
 // that: 02 の 13.11's is^, 03 の 3.3's relaxed checks, and 02 の 14.12's
 // overloading. The descriptor is built by the compiler and owned by the chunk.
-typedef enum {
-    LHAT_TYPE_RT_ANY,        // 13.7, and an unannotated parameter
+typedef enum
+{
+    LHAT_TYPE_RT_ANY, // 13.7, and an unannotated parameter
     LHAT_TYPE_RT_NIL,
     LHAT_TYPE_RT_BOOL,
-    LHAT_TYPE_RT_NUMBER,     // 14.8: one type, two representations
+    LHAT_TYPE_RT_NUMBER, // 14.8: one type, two representations
     LHAT_TYPE_RT_STRING,
     LHAT_TYPE_RT_TABLE,
     LHAT_TYPE_RT_SUBROUTINE,
@@ -221,9 +222,8 @@ typedef enum {
     // 05 の 8.9: a host value type -- the same nominal rule over the head
     // slot's tag instead of a heap object's.
     LHAT_TYPE_RT_HOSTVALUE,
-    LHAT_TYPE_RT_UNION,      // 13.5
-    LHAT_TYPE_RT_INTERSECT,  // 14.5, 14.12: an overload^ed member's arms
-    LHAT_TYPE_RT_STRUCTURE,  // 14.10: at least these members
+    LHAT_TYPE_RT_UNION,     // 13.5
+    LHAT_TYPE_RT_INTERSECT, // 14.5, 14.12: an overload^ed member's arms
     // 02 の 13.13: the structure this one is written inside, counted out by
     // `levels`. A type that holds itself is written with it -- the same word
     // the source would have put there, so what 14.16 answers reads back.

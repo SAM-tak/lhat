@@ -545,7 +545,7 @@ static const LhatTable *readable_table(LhatValue value)
 // 02 の 14.16: what typeof^ answers where no checked type was
 // compiled in -- the value's TAG, the dispatch information every value
 // already carries, read in O(1). It never walks a structure: a table is
-// table^ whatever it holds (the deep answer is the checker's to give, at
+// t^ whatever it holds (the deep answer is the checker's to give, at
 // compile time), and a subroutine or coroutine answers from the types its
 // proto already carries, which were made at compile time too (03 の 5.11a).
 // The one deep-looking case, an overload's arms, is bounded by the arm

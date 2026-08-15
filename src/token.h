@@ -76,6 +76,18 @@ typedef enum {
     LHAT_OP_POW_ASSIGN,      // **=
     LHAT_OP_CONCAT_ASSIGN,   // ..=
 
+    // 8.6改2: the same eight written to skip an absent place -- 'a ?op= b'
+    // is 'if^ a? { a op= b }'. The 'NIL_' reads as it does in NIL_DOT: the
+    // form steps around a nil^ rather than reaching into one.
+    LHAT_OP_NIL_ADD_ASSIGN,      // ?+=
+    LHAT_OP_NIL_SUB_ASSIGN,      // ?-=
+    LHAT_OP_NIL_MUL_ASSIGN,      // ?*=
+    LHAT_OP_NIL_DIV_ASSIGN,      // ?/=
+    LHAT_OP_NIL_FLOORDIV_ASSIGN, // ?//=
+    LHAT_OP_NIL_MOD_ASSIGN,      // ?%=
+    LHAT_OP_NIL_POW_ASSIGN,      // ?**=
+    LHAT_OP_NIL_CONCAT_ASSIGN,   // ?..=
+
     // Not part of the language; recognised so the parser can point at '->'
     // (01 の 7.6) instead of reporting a stray character.
     LHAT_OP_COLONCOLON,  // ::

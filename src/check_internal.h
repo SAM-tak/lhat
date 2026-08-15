@@ -211,6 +211,13 @@ typedef struct {
     // A counter, the same way and for the same reason as `deferred`.
     size_t conditional;
 
+    // 8.6改2: the place a '?op=' reads. It answers without its nil^ arm --
+    // the form is written to say the write is skipped when the place is
+    // absent, so what the operator is asked of is what is there. One node
+    // rather than a depth: the very same shape standing in the right-hand
+    // side is nobody's place, and goes on carrying its nil^.
+    const LhatNode *nil_safe_place;
+
     // The result type of the subroutine being checked, for 04 の 5.3 and for
     // collecting return^ when 03 の 3.4 has to infer one.
     LhatType *declared_result;

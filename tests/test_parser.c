@@ -512,6 +512,74 @@ static void test_statements(void)
                       LHAT_PARSE_ERR_BINDING_ARITY);
     parse_dispose(&p);
 
+    // 8.6改2: the '?' spellings expand exactly as the plain ones do -- what
+    // they add is decided where the write happens, not in the shape read
+    // here. So the only thing to see at this stage is the mark.
+    LHAT_TEST("a nil-safe compound expands the same way, and says so");
+    parse_text(&p, "t[i] ?+= 1");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    {
+        const LhatNode *s = first_statement(&p);
+        LHAT_CHECK_EQ_INT(s->kind, LHAT_NODE_REASSIGN);
+        LHAT_CHECK(s->v.binding.has_compound_op, "expected has_compound_op");
+        LHAT_CHECK(s->v.binding.compound_nil_safe, "expected the '?' mark");
+        LHAT_CHECK_EQ_INT(s->v.binding.compound_op, LHAT_OP_ADD);
+        const LhatNode *value = s->v.binding.values;
+        LHAT_CHECK_EQ_INT(value->kind, LHAT_NODE_BINARY);
+        LHAT_CHECK(value->v.binary.left == s->v.binding.targets,
+                   "expected the value's left to be the very target node");
+    }
+    parse_dispose(&p);
+
+    LHAT_TEST("and the plain spelling does not carry the mark");
+    parse_text(&p, "t[i] += 1");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    LHAT_CHECK(!first_statement(&p)->v.binding.compound_nil_safe, "no mark");
+    parse_dispose(&p);
+
+    LHAT_TEST("every nil-safe spelling maps to its plain operator");
+    {
+        static const struct {
+            const char *text;
+            LhatOpKind op;
+        } cases[] = {
+            { "a ?+= b", LHAT_OP_ADD },
+            { "a ?-= b", LHAT_OP_SUB },
+            { "a ?*= b", LHAT_OP_MUL },
+            { "a ?/= b", LHAT_OP_DIV },
+            { "a ?%= b", LHAT_OP_MOD },
+            { "a ?//= b", LHAT_OP_FLOORDIV },
+            { "a ?**= b", LHAT_OP_POW },
+            { "a ?..= b", LHAT_OP_CONCAT },
+        };
+        for (size_t i = 0; i < sizeof cases / sizeof cases[0]; i++) {
+            parse_text(&p, cases[i].text);
+            LHAT_CHECK_EQ_INT(error_count(&p), 0);
+            LHAT_CHECK_EQ_INT(first_statement(&p)->v.binding.compound_op,
+                              cases[i].op);
+            LHAT_CHECK(first_statement(&p)->v.binding.compound_nil_safe,
+                       "expected the '?' mark");
+            parse_dispose(&p);
+        }
+    }
+
+    LHAT_TEST("a nil-safe compound takes several targets too");
+    parse_text(&p, "a, b ?+= 1, 2");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    {
+        const LhatNode *s = first_statement(&p);
+        LHAT_CHECK(s->v.binding.compound_nil_safe, "expected the '?' mark");
+        LHAT_CHECK_EQ_INT(lhat_node_list_length(s->v.binding.values), 2);
+    }
+    parse_dispose(&p);
+
+    LHAT_TEST("and counts its two lists the same way");
+    parse_text(&p, "a, b ?+= 1");
+    LHAT_CHECK(error_count(&p) > 0, "expected a diagnostic");
+    LHAT_CHECK_EQ_INT(p.result.diagnostics[0].code,
+                      LHAT_PARSE_ERR_BINDING_ARITY);
+    parse_dispose(&p);
+
     // 13.8改: several names take the values of one call apart, with no
     // mark at all -- 13.10 marked the table path, and both went together.
     LHAT_TEST("destructuring binding");
@@ -1253,7 +1321,7 @@ static void test_statements(void)
     // 8.6: with^ is its own introducer, so '=' defines exactly as ':=' does
     // -- ':=' is the accepted spelling, not the only one.
     LHAT_TEST("with^ also accepts '=', and a type annotation");
-    parse_text(&p, "with^ h:table^ = open(\"d\")\n{ }");
+    parse_text(&p, "with^ h:t^{} = open(\"d\")\n{ }");
     LHAT_CHECK_EQ_INT(error_count(&p), 0);
     {
         const LhatNode *s = first_statement(&p);
@@ -1847,23 +1915,6 @@ static void test_types(void)
     LHAT_CHECK_EQ_INT(error_count(&p), 0);
     LHAT_CHECK_EQ_INT(first_value(&p)->v.ascription.type->kind,
                       LHAT_NODE_TYPE_NAME);
-    parse_dispose(&p);
-
-    LHAT_TEST("and table^ is the same word");
-    parse_text(&p, "x := y as^ table^");
-    LHAT_CHECK_EQ_INT(error_count(&p), 0);
-    LHAT_CHECK_EQ_INT(first_value(&p)->v.ascription.type->kind,
-                      LHAT_NODE_TYPE_NAME);
-    parse_dispose(&p);
-
-    LHAT_TEST("a bare one takes part in a union like any other name");
-    parse_text(&p, "x := y as^ table^|nil^");
-    LHAT_CHECK_EQ_INT(error_count(&p), 0);
-    {
-        const LhatNode *t = first_value(&p)->v.ascription.type;
-        LHAT_CHECK_EQ_INT(t->kind, LHAT_NODE_TYPE_UNION);
-        LHAT_CHECK_EQ_INT(t->v.binary.left->kind, LHAT_NODE_TYPE_NAME);
-    }
     parse_dispose(&p);
 
     LHAT_TEST("and a listed one is still a structure");
@@ -2542,6 +2593,19 @@ static void test_loop_clauses(void)
     LHAT_TEST("and a compound assignment has no definition of its own");
     parse_text(&p,
                "V := def^{ self^{}, op^+= := f^self^, o:number^ -> number^ { "
+               "return^ o } }");
+    LHAT_CHECK(p.result.diagnostic_count > 0, "expected a diagnostic");
+    if (p.result.diagnostic_count > 0) {
+        LHAT_CHECK_EQ_INT(p.result.diagnostics[0].code,
+                          LHAT_PARSE_ERR_COMPOUND_NOT_DEFINABLE);
+    }
+    parse_dispose(&p);
+
+    // 8.6改2: an 'op^?+' is no more a definition than an 'op^+=' is, and for
+    // the same reason -- 'op^+' is what decides all three spellings.
+    LHAT_TEST("nor does the nil-safe one");
+    parse_text(&p,
+               "V := def^{ self^{}, op^?+= := f^self^, o:number^ -> number^ { "
                "return^ o } }");
     LHAT_CHECK(p.result.diagnostic_count > 0, "expected a diagnostic");
     if (p.result.diagnostic_count > 0) {

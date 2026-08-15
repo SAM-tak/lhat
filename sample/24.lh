@@ -81,7 +81,7 @@ let^Reader = def^{
             self^.ok := false^
             return^ 0
         }
-        self^.used[d] += 1
+        self^.used[d] ?+= 1
         self^.bump()
         return^d
     },
@@ -120,7 +120,7 @@ let^Reader = def^{
         return^value
     },
 
-    # 式全体。末尾に読み残しがあれば綴りの誤り
+    # 式全体。末尾に読み残しがあればプレイヤー入力の誤り
     read = p^self^{
         let^value = self^.expr()
         if^self^.peek() != "" { self^.ok := false^}
@@ -129,12 +129,9 @@ let^Reader = def^{
 }
 
 # 配った4つと使った4つが同じ多重集合か。1..9 の桁ごとの個数を並べた表を取る
-let^same = f^want:t^{number^, number^, number^, number^, number^,
-                     number^, number^, number^, number^},
-           used:t^{number^, number^, number^, number^, number^,
-                   number^, number^, number^, number^} {
+let^same = f^want:t^{}, used:t^{}{
     for^i from^1 to^9 {
-        if^want[i] != used[i] { return^false^}
+        if^want[i] = used[i] { return^false^}
     }
     return^true^
 }
@@ -145,7 +142,7 @@ try^{
         var^shown = ""
         for^i from^1 to^4 {
             let^d = rng.range(1, 9)
-            want[d] += 1
+            want[d] ?+= 1
             shown := $"{shown} {d}"
         }
         print($"Four digits:{shown}")

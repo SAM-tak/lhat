@@ -1039,7 +1039,17 @@ static void check_reassign(Checker *c, const LhatNode *node)
             chk_expect(c, node, lhat_type_tuple_at(tuple, position - 1), wanted,
                        LHAT_CHECK_ERR_MISMATCH);
         } else if (value != NULL) {
+            // 8.6改2: the value of a '?op=' is 'target op rhs' built around
+            // this very target node, so naming it here is what lets the one
+            // read inside it answer without its nil^ arm. Set for the one
+            // inference and taken back off: the same shape written in the
+            // right-hand side is a read like any other.
+            const LhatNode *outer_place = c->nil_safe_place;
+            if (node->v.binding.compound_nil_safe) {
+                c->nil_safe_place = target;
+            }
             LhatType *given = chk_infer(c, value);
+            c->nil_safe_place = outer_place;
             // 05 の 8.9: a dotted or indexed target lands in a table, and a
             // table member is never a host value. Conformance alone would
             // let this through where the table's own typing went unknown^.

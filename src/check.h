@@ -229,7 +229,7 @@ typedef enum {
                                         // Refused even under relaxed: a
                                         // runtime check cannot make room
                                         // where the representation has none
-    LHAT_CHECK_ERR_OPERATOR_ON_MAYBE_NIL  // 04 の 11.3: what a key reads out
+    LHAT_CHECK_ERR_OPERATOR_ON_MAYBE_NIL,  // 04 の 11.3: what a key reads out
                                         // of a table is 'T|nil^', and no
                                         // operator is on the nil^ side.
                                         // 11.3改's rule sends the writer
@@ -237,6 +237,13 @@ typedef enum {
                                         // when what is missing is a narrowing
                                         // -- and 13.11 does not narrow an
                                         // index where it stands
+    LHAT_CHECK_ERR_BARE_TABLE_TYPE      // 14.10: t^ is written with the
+                                        // members it asks for, and the top of
+                                        // tables is the one asking for none
+                                        // -- 't^{}'. Bare, the '{' that
+                                        // follows a signature would be read
+                                        // as the member list rather than as
+                                        // the body
 } LhatCheckErrorCode;
 
 typedef struct {

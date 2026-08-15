@@ -673,6 +673,101 @@ static void test_tables(void)
     run_dispose(&r);
 }
 
+// 8.6改2: 'a ?op= b' is 'if^ a? { a op= b }' with the place read once. What
+// is pinned here is the run-time half of that -- the checker's half is in
+// test_check_tables.
+static void test_nil_safe_compound(void)
+{
+    Run r;
+
+    LHAT_TEST("a place that is there is added to");
+    run_text(&r, "var^ t = { 10, 20 }\nt[1] ?+= 5\nreturn^ t.1\n");
+    CHECK_INTEGER(&r, 15);
+    run_dispose(&r);
+
+    // 04 の 11.3: a key that is not there is not a failure, and here it is
+    // not a write either -- the table comes out of this untouched.
+    LHAT_TEST("a place that is not there is left alone");
+    run_text(&r,
+             "var^ t = { 10, 20 }\n"
+             "t[9] ?+= 5\n"
+             "return^ t[9] ?? -1\n");
+    CHECK_INTEGER(&r, -1);
+    run_dispose(&r);
+
+    LHAT_TEST("and the table does not grow one");
+    run_text(&r, "var^ t = { 10, 20 }\nt[9] ?+= 5\nreturn^ t.length^\n");
+    CHECK_INTEGER(&r, 2);
+    run_dispose(&r);
+
+    // The written form evaluates 'b' inside the branch, so this does too.
+    LHAT_TEST("an absent place does not evaluate the right-hand side");
+    run_text(&r,
+             "var^ runs = 0\n"
+             "var^ side = p^ -> number^ { runs += 1  return^ 1 }\n"
+             "var^ t = { 10 }\n"
+             "t[9] ?+= side()\n"
+             "t[1] ?+= side()\n"
+             "return^ runs\n");
+    CHECK_INTEGER(&r, 1);
+    run_dispose(&r);
+
+    // 8.6改's "the place is evaluated once", which the '?' spelling inherits
+    // rather than restates -- owner and key are still read a single time.
+    LHAT_TEST("the key is evaluated once, present or not");
+    run_text(&r,
+             "var^ keys = 0\n"
+             "var^ at = p^ n:number^ -> number^ { keys += 1  return^ n }\n"
+             "var^ t = { 10 }\n"
+             "t[at(1)] ?+= 1\n"
+             "t[at(9)] ?+= 1\n"
+             "return^ keys\n");
+    CHECK_INTEGER(&r, 2);
+    run_dispose(&r);
+
+    LHAT_TEST("a name is a place like any other");
+    run_text(&r, "var^ x = 3\nx ?+= 1\nreturn^ x\n");
+    CHECK_INTEGER(&r, 4);
+    run_dispose(&r);
+
+    LHAT_TEST("and an absent one keeps its nil^");
+    run_text(&r,
+             "var^ x : number^|nil^ = nil^\n"
+             "x ?+= 1\n"
+             "return^ x ?? -1\n");
+    CHECK_INTEGER(&r, -1);
+    run_dispose(&r);
+
+    // 8.6改3 reads every target before writing any, so what one pair
+    // answered cannot decide another's -- each is skipped on its own.
+    LHAT_TEST("one absent target of several does not stop the rest");
+    run_text(&r,
+             "var^ p = { 1 }\n"
+             "var^ q = { 2 }\n"
+             "p[1], q[9] ?+= 10, 10\n"
+             "return^ p.1 * 100 + (q[9] ?? 0)\n");
+    CHECK_INTEGER(&r, 1100);
+    run_dispose(&r);
+
+    LHAT_TEST("the other order works out the same");
+    run_text(&r,
+             "var^ p = { 1 }\n"
+             "var^ q = { 2 }\n"
+             "q[9], p[1] ?+= 10, 10\n"
+             "return^ p.1 * 100 + (q[9] ?? 0)\n");
+    CHECK_INTEGER(&r, 1100);
+    run_dispose(&r);
+
+    LHAT_TEST("the concatenating one reaches a string");
+    run_text(&r,
+             "var^ t = { \"a\" }\n"
+             "t[1] ?..= \"b\"\n"
+             "t[9] ?..= \"c\"\n"
+             "return^ t.1\n");
+    CHECK_STRING(&r, "ab");
+    run_dispose(&r);
+}
+
 // 01 の 5.4: the lexer and the parser have read $"..." from the start; this
 // is what it compiles to. A hole is 02 の 14.17's tostring and the pieces
 // are joined with 11.2's '..', so interpolation adds no way of building a
@@ -1429,6 +1524,7 @@ int main(void)
     test_names();
     test_strings();
     test_tables();
+    test_nil_safe_compound();
     test_interpolation();
     test_tostring();
     test_counting();

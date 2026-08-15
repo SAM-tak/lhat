@@ -1220,6 +1220,22 @@ LhatType *chk_infer_call(Checker *c, const LhatNode *node)
 // 16.3改2: the halves on their own, which keys^ and values^ answer with and
 // the pair below is built from. Written as one walk of the members so the
 // three readings cannot drift apart.
+// 14 章: the sequence half is described by members whose names are digits,
+// which 01 の 6 章 keeps a program from writing. Everything else is the keyed
+// half, reached by a name -- and by 14 章 that is the same door 't.a' uses.
+static bool member_is_positional(const LhatTypeMember *m)
+{
+    if (m == NULL || m->name_length == 0) {
+        return false;
+    }
+    for (size_t i = 0; i < m->name_length; i++) {
+        if (m->name[i] < '0' || m->name[i] > '9') {
+            return false;
+        }
+    }
+    return true;
+}
+
 static void table_walk_halves(Checker *c, const LhatType *over,
                               LhatType **out_keys, LhatType **out_values)
 {
@@ -1228,12 +1244,7 @@ static void table_walk_halves(Checker *c, const LhatType *over,
     if (over != NULL && over->kind == LHAT_TYPE_TABLE) {
         for (const LhatTypeMember *m = over->v.table.members; m != NULL;
              m = m->next) {
-            // The sequence half is described by members whose names are
-            // digits, which 01 の 6 章 keeps a program from writing.
-            bool positional = m->name_length > 0;
-            for (size_t i = 0; positional && i < m->name_length; i++) {
-                positional = m->name[i] >= '0' && m->name[i] <= '9';
-            }
+            bool positional = member_is_positional(m);
             keys = lhat_type_union(
                 c->result->types, keys,
                 chk_simple(c, positional ? LHAT_TYPE_NUMBER : LHAT_TYPE_STRING));
@@ -1280,11 +1291,7 @@ LhatType *chk_table_element_type(Checker *c, const LhatType *over)
     LhatType *values = NULL;
     for (const LhatTypeMember *m = over->v.table.members; m != NULL;
          m = m->next) {
-        bool positional = m->name_length > 0;
-        for (size_t i = 0; positional && i < m->name_length; i++) {
-            positional = m->name[i] >= '0' && m->name[i] <= '9';
-        }
-        if (positional) {
+        if (member_is_positional(m)) {
             values = lhat_type_union(c->result->types, values, m->type);
         }
     }
@@ -1760,13 +1767,52 @@ LhatType *chk_infer_member(Checker *c, const LhatNode *node)
     return chk_simple(c, LHAT_TYPE_UNKNOWN);
 }
 
+// 04 の 11.3 with 14 章: what a key of this kind reaches. A number^ names a
+// position, a string^ names a member -- and 14 章 makes that the same door
+// 't.a' goes through, so the two halves answer separate questions. A key
+// whose own type is not decided may be either, which is the safe reading
+// rather than the narrow one: 3.5 leaves a gap to the machine, and picking
+// one half here would be claiming to know which.
+//
+// NULL when the type declares nothing a key of that kind could reach. There
+// is no T for 'T|nil^' to be made of, and 14.10 leaves what an undeclared
+// table holds unsaid -- so nothing is claimed. A bool^ key lands here too:
+// what it reaches is in the hash part, which no table type describes.
+static LhatType *reachable_by_key(Checker *c, const LhatType *over,
+                                  const LhatType *key)
+{
+    // chk_operator_undecided rather than conformance: lhat_type_conforms fits
+    // unknown^ against anything, so asking it first would drop an undecided
+    // key into whichever half was tested first.
+    bool any_kind = chk_operator_undecided(key);
+    bool by_position =
+        any_kind || lhat_type_conforms(key, chk_simple(c, LHAT_TYPE_NUMBER));
+    bool by_name =
+        any_kind || lhat_type_conforms(key, chk_simple(c, LHAT_TYPE_STRING));
+
+    LhatType *reachable = NULL;
+    for (const LhatTypeMember *m = over->v.table.members; m != NULL;
+         m = m->next) {
+        if (member_is_positional(m) ? by_position : by_name) {
+            reachable = lhat_type_union(c->result->types, reachable, m->type);
+        }
+    }
+    // 13.7: an unbounded tail is more positions beyond any listed, so a key
+    // that could name a position could name one of those.
+    if (by_position && over->v.table.variadic != NULL) {
+        reachable =
+            lhat_type_union(c->result->types, reachable, over->v.table.variadic);
+    }
+    return reachable;
+}
+
 // The '[' half of the same. Lifted out of infer's switch so that it reads
 // beside infer_member, which it now shares its nil^ handling with.
 static LhatType *infer_index(Checker *c, const LhatNode *node)
 {
     LhatType *over = chk_infer(c, node->v.access.target);
-    chk_require_value(c, node->v.access.argument,
-                      chk_infer(c, node->v.access.argument));
+    LhatType *asked = chk_require_value(c, node->v.access.argument,
+                                        chk_infer(c, node->v.access.argument));
     // 04 の 11.4: as in infer_member -- relaxed steps past a nil^
     // arm, and '?[' steps past it under strict as well.
     if (!c->strict || node->v.access.nil_safe) {
@@ -1791,17 +1837,20 @@ static LhatType *infer_index(Checker *c, const LhatNode *node)
             return found->type;
         }
     }
-    // 13.7: every position of an unbounded tail is the one element
-    // type, so a key that did not resolve to one specific position
-    // above still has an answer -- unlike an ordinary table's
-    // members, which need not share one type to union with nil^.
-    if (over != NULL && over->kind == LHAT_TYPE_TABLE &&
-        over->v.table.variadic != NULL) {
-        return lhat_type_union(c->result->types, over->v.table.variadic,
-                               chk_simple(c, LHAT_TYPE_NIL));
+    // 04 の 11.3: a key that did not resolve to one member still has an
+    // answer -- what the type says a key of this kind reaches, and nil^ for
+    // the keys it says nothing about, since absence is an ordinary result
+    // rather than a failure. That union is what 11.3's 'T|nil^' names.
+    if (over != NULL && over->kind == LHAT_TYPE_TABLE) {
+        LhatType *reachable = reachable_by_key(c, over, asked);
+        if (reachable != NULL) {
+            return lhat_type_union(c->result->types, reachable,
+                                   chk_simple(c, LHAT_TYPE_NIL));
+        }
     }
-    // 04 §11.3: a dynamic key may be absent, and absence is not a
-    // failure, so nothing narrower than this is safe here.
+    // Nothing the type says is reachable this way, so there is no T to make
+    // 'T|nil^' out of -- 14.10 leaves what an undeclared table holds unsaid,
+    // and 3.5 leaves that to the machine.
     return chk_simple(c, LHAT_TYPE_UNKNOWN);
 }
 
@@ -3310,6 +3359,14 @@ static LhatType *infer_node(Checker *c, const LhatNode *node);
 LhatType *chk_infer(Checker *c, const LhatNode *node)
 {
     LhatType *type = infer_node(c, node);
+    // 8.6改2: the place a '?op=' reads answers what is there. 04 の 11.3 puts
+    // a nil^ arm on everything a key reaches, and the '?' spelling is how a
+    // writer says the write is skipped rather than that the arm is gone --
+    // so the operator above this is asked of the rest, and the compiler emits
+    // the test that makes that true.
+    if (node != NULL && node == c->nil_safe_place) {
+        type = chk_without_nil_arm(c, type);
+    }
     // 13.8改: a tuple is the other type the compiler has to size slots by --
     // a call answering one writes a run rather than a slot -- so it is
     // stamped for exactly the reason a host value is. A union carrying a

@@ -48,8 +48,8 @@ public^let^joined:p^std.thread.ThreadHandle -> c^{p^-> number^;,
 ]#
 public^let^Scheduler: t^{
     self^{
-        tasks : t^,
-        waits : t^,
+        tasks : t^{},
+        waits : t^{},
         live : number^,
         add : p^self^, c^{ p^ -> number^;, } -> number^;,
         step : p^self^, number^ -> bool^;,

@@ -422,12 +422,6 @@ static LhatType *builtin_type(Checker *c, const char *name, size_t length)
     if (chk_name_is(name, length, "error^")) {
         return chk_simple(c, LHAT_TYPE_ERROR);
     }
-    // 14.10: t^ and table^ are the same word. Bare, with no members listed,
-    // it asks for nothing in particular -- the top of tables, which 13.7
-    // notes is not the top of every value.
-    if (chk_name_is(name, length, "t^") || chk_name_is(name, length, "table^")) {
-        return lhat_type_table(c->result->types);
-    }
     return NULL;
 }
 
@@ -867,6 +861,16 @@ LhatType *chk_resolve_type(Checker *c, const LhatNode *node)
                 chk_name_is(name, length, "class^")) {
                 chk_report(c, node, LHAT_CHECK_ERR_UNKNOWN_TYPE);
                 return chk_simple(c, LHAT_TYPE_UNKNOWN);
+            }
+
+            // 14.10: the members come with the word, so a t^ standing alone
+            // is not one of these names but a t^{ … } with its list left
+            // off. What the top of tables asks for is nothing, which is
+            // 't^{}' -- said here rather than left to "no such type", since
+            // the word is right and only the braces are missing.
+            if (chk_name_is(name, length, "t^")) {
+                chk_report(c, node, LHAT_CHECK_ERR_BARE_TABLE_TYPE);
+                return lhat_type_table(c->result->types);
             }
 
             // 05 の 2.2: one environment. A name written as a type is looked
@@ -2458,6 +2462,9 @@ const char *lhat_check_error_message(LhatCheckErrorCode code)
             return "this name is already defined in this scope";
         case LHAT_CHECK_ERR_UNKNOWN_TYPE:
             return "no such type";
+        case LHAT_CHECK_ERR_BARE_TABLE_TYPE:
+            return "a t^ is written with the members it asks for, and the top "
+                   "of tables asks for none: write 't^{}'";
         case LHAT_CHECK_ERR_MISMATCH:
             return "this value does not fit where it is written";
         case LHAT_CHECK_ERR_NOT_NUMBER:
