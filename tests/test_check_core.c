@@ -60,6 +60,62 @@ static void test_names(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
+    // 8.7 exempts what a body reads of a name standing outside it, since the
+    // body runs later. A name the body itself bound is not standing outside
+    // it: once the body is called its own statements run in order, so the
+    // ordering rule holds there exactly as it does at the top level. The
+    // shape this catches is a shadow written by mistake -- the writer meant
+    // to read the parameter and named the new binding the same thing.
+    LHAT_TEST("and inside a body the ordering rule still holds");
+    check_text(&u,
+               "var^ f = f^ -> number^ {\n"
+               "  var^ a = b + 1\n"
+               "  var^ b = 2\n"
+               "  return^ a\n"
+               "}\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_USED_BEFORE_DEFINED);
+    unit_dispose(&u);
+
+    // A body's parameters and its own top-level names share one scope, so a
+    // shadow of a parameter has to be written one scope in -- which is where
+    // the mistake this catches actually gets written.
+    LHAT_TEST("through a scope opened inside one as well");
+    check_text(&u,
+               "var^ f = f^ t:t^{ ...:number^ } -> bool^ {\n"
+               "  for^ i from^1 to^2 {\n"
+               "    var^ t = t[i]\n"
+               "    print(t)\n"
+               "  }\n"
+               "  return^ true^\n"
+               "}\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_USED_BEFORE_DEFINED);
+    unit_dispose(&u);
+
+    // What the exemption is actually for, written one body further in: the
+    // two bodies read each other, and each is bound outside the one reading
+    // it. Losing this to the rule above would be losing 8.7 itself.
+    LHAT_TEST("mutual recursion written inside a body keeps working");
+    check_text(&u,
+               "var^ outer = f^ -> bool^ {\n"
+               "  var^ isEven = f^ n:number^ -> bool^ { return^ isOdd(n) }\n"
+               "  var^ isOdd = f^ n:number^ -> bool^ { return^ isEven(n) }\n"
+               "  return^ isEven(4)\n"
+               "}\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("and so does a body naming itself");
+    check_text(&u,
+               "var^ outer = f^ -> number^ {\n"
+               "  var^ down = f^ n:number^ -> number^ {\n"
+               "    if^ n <= 0 { return^ 0 }\n"
+               "    return^ down(n - 1)\n"
+               "  }\n"
+               "  return^ down(4)\n"
+               "}\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
     // 03 の 3.4改2: neither half is annotated, so the walk that reads 'b'
     // before it was inferred is walked again from what it learned -- and what
     // it learns is that 'a' can answer a number, since 'b' does. The

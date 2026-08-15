@@ -575,7 +575,11 @@ LhatType *chk_infer_name(Checker *c, const LhatNode *node)
         }
     }
 
-    Binding *b = chk_scope_find(from, name, length, NULL);
+    // Which scope answered, which three of the rules below have to know: 8.7
+    // tells a name this body bound from one still waiting further out, and
+    // 15.13 and 05 の 8.9 each measure it against a boundary of their own.
+    Scope *found_in = NULL;
+    Binding *b = chk_scope_find(from, name, length, &found_in);
     if (b == NULL) {
         // 05 の 8.2: what the host bound before anything ran. Asked after
         // every scope, so a let^ of the same spelling shadows it -- and what
@@ -597,10 +601,18 @@ LhatType *chk_infer_name(Checker *c, const LhatNode *node)
 
     // 8.7: the name is visible throughout the scope, which is what makes
     // mutual recursion work, but its value only exists once its let^ has run.
-    // A subroutine body does not run where it is written, so the rule only
-    // applies outside one.
+    // A subroutine body does not run where it is written, so a name bound
+    // outside one may still be waiting when the body reads it -- which is the
+    // whole of what "outside a deferred body" exempts.
+    //
+    // A name the body itself bound is not that. Once the body is called its
+    // own statements run in order, so 'let^ t = t[i]' standing in one reads a
+    // place holding nothing exactly as it does at the top level. Asking
+    // `deferred` alone put every body's own bindings under the exemption, and
+    // what came of it was a run-time type error where the rule already said
+    // there was a mistake to report.
     if (!b->reached) {
-        if (c->deferred == 0) {
+        if (c->deferred == 0 || chk_scope_within_body(c, found_in)) {
             chk_report(c, node, LHAT_CHECK_ERR_USED_BEFORE_DEFINED);
         } else {
             // 03 の 3.4改2: what answered is the seed collect_bindings put
@@ -617,9 +629,7 @@ LhatType *chk_infer_name(Checker *c, const LhatNode *node)
     // (05 の 8.7 reads it off L^.modules wherever it is written), so it is
     // the one name from outside that may be written here.
     if (c->closed_scope != NULL && !b->import_root) {
-        Scope *found = NULL;
-        chk_scope_find(from, name, length, &found);
-        if (!chk_scope_within(c, found, c->closed_scope)) {
+        if (!chk_scope_within(c, found_in, c->closed_scope)) {
             chk_report_named(c, node, LHAT_CHECK_ERR_CLOSED_CAPTURES, name,
                              length);
         }
@@ -629,9 +639,7 @@ LhatType *chk_infer_name(Checker *c, const LhatNode *node)
     // same boundary test 15.1 uses for writes, asked of a read here because
     // for a host value the read is what would build the upvalue.
     if (chk_is_hostvalue(b->type) && c->body_scope != NULL) {
-        Scope *found = NULL;
-        chk_scope_find(from, name, length, &found);
-        if (!chk_scope_within_body(c, found)) {
+        if (!chk_scope_within_body(c, found_in)) {
             chk_report(c, node, LHAT_CHECK_ERR_HOSTVALUE_ESCAPES);
         }
     }
