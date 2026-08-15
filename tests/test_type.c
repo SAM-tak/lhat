@@ -646,6 +646,54 @@ static void test_writing_whole(void)
                    "a cut type reads as cut, got %s", small);
     }
 
+    // 14.10: what a table literal's own positions are written as. They are
+    // held as members named by their digits (lhat_type_add_index_member), and
+    // a number is not a name the grammar takes where a member's is written --
+    // 't^{ 1 : number^ }' does not parse, so writing the digits puts down
+    // something no reader of the answer can use.
+    LHAT_TEST("14.10: a position is written as a type and no name");
+    {
+        LhatType *row = lhat_type_table(&t.arena);
+        for (size_t i = 1; i <= 3; i++) {
+            lhat_type_add_index_member(&t.arena, row, i,
+                                       simple(&t, LHAT_TYPE_NUMBER));
+        }
+        char buffer[128];
+        size_t written = lhat_type_write_full(row, buffer, sizeof buffer);
+        LHAT_CHECK_EQ_STR(buffer, written,
+                          "t^{ number^, number^, number^ }");
+    }
+
+    // The named ones take no place in the sequence, so a table holding both
+    // writes each the way it was written: the name where there is one, the
+    // position where the count reaches it.
+    LHAT_TEST("14.10: a name beside the positions keeps its name");
+    {
+        LhatType *mixed = lhat_type_table(&t.arena);
+        lhat_type_add_index_member(&t.arena, mixed, 1,
+                                   simple(&t, LHAT_TYPE_NUMBER));
+        lhat_type_add_member(&t.arena, mixed, "seen", 4,
+                             simple(&t, LHAT_TYPE_BOOL));
+        lhat_type_add_index_member(&t.arena, mixed, 2,
+                                   simple(&t, LHAT_TYPE_STRING));
+        char buffer[128];
+        size_t written = lhat_type_write_full(mixed, buffer, sizeof buffer);
+        LHAT_CHECK_EQ_STR(buffer, written,
+                          "t^{ number^, seen : bool^, string^ }");
+    }
+
+    // A member named by digits that does not stand where its own count would
+    // put it is not a position: written bare it would mean a different slot.
+    LHAT_TEST("14.10: digits out of their place keep the name");
+    {
+        LhatType *odd = lhat_type_table(&t.arena);
+        lhat_type_add_index_member(&t.arena, odd, 2,
+                                   simple(&t, LHAT_TYPE_NUMBER));
+        char buffer[128];
+        size_t written = lhat_type_write_full(odd, buffer, sizeof buffer);
+        LHAT_CHECK_EQ_STR(buffer, written, "t^{ 2 : number^ }");
+    }
+
     types_dispose(&t);
 }
 

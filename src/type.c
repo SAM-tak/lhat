@@ -1175,10 +1175,31 @@ static void put_text(TypeSink *sink, const char *text)
 
 static void write_type(TypeSink *sink, const LhatType *type, int depth);
 
+// 14.10: an entry with no name is the type of the next position, counted from
+// one in written order with the named ones taking no place in the sequence.
+// lhat_type_add_index_member holds a position as a member whose name is its
+// digits, so this is that rule read backwards: a member standing where the
+// count says its own name is one of these, and the way to write it is with no
+// name at all. 't^{ 1 : number^ }' is not a type -- the grammar takes a name
+// there, and a number is not one -- so writing the name would put down
+// something nothing can read.
+//
+// Counting rather than testing each name for digits is what keeps the two
+// rules the same one: a member named "3" standing anywhere but third is not
+// what a bare type in third place would mean, so it keeps its name.
+static bool is_next_position(const LhatTypeMember *m, size_t position)
+{
+    char digits[24];
+    size_t length = index_digits(position, digits, sizeof digits);
+    return length > 0 && m->name_length == length &&
+           memcmp(m->name, digits, length) == 0;
+}
+
 static void write_members(TypeSink *sink, const LhatTypeMember *members,
                           int depth)
 {
     int count = 0;
+    size_t position = 0;
     for (const LhatTypeMember *m = members; m != NULL; m = m->next) {
         if (count == sink->max_items) {
             put_text(sink, ", …");
@@ -1187,8 +1208,12 @@ static void write_members(TypeSink *sink, const LhatTypeMember *members,
         if (count > 0) {
             put_text(sink, ", ");
         }
-        put(sink, m->name, m->name_length);
-        put_text(sink, " : ");
+        if (is_next_position(m, position + 1)) {
+            position++;
+        } else {
+            put(sink, m->name, m->name_length);
+            put_text(sink, " : ");
+        }
         write_type(sink, m->type, depth + 1);
         count++;
     }
