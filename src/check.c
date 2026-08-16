@@ -2609,6 +2609,15 @@ void lhat_check_result_dispose(LhatCheckResult *result)
     result->types = NULL;
 }
 
+const LhatTypeMember *lhat_check_unimplemented_member(const LhatType *type)
+{
+    // The walk itself is chk_unimplemented_member's, which 14.11 already asks
+    // before letting a new through -- named here so that a reader outside the
+    // checker asks the same question rather than a second one that looks like
+    // it.
+    return chk_unimplemented_member(type);
+}
+
 const char *lhat_check_error_message(LhatCheckErrorCode code)
 {
     switch (code) {

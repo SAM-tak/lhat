@@ -451,6 +451,17 @@ void lhat_check_next(LhatCheckSession *session, const LhatNode *unit,
                      const LhatLexer *lexer, bool strict,
                      LhatCheckResult *result);
 
+// 14.15 with 14.11: the first member of `type` that nothing has provided --
+// declared by an abstract^, or left waiting by 14.15改's override^ -- or NULL
+// when every one is filled. A definition still holding one cannot be
+// instantiated, which is what makes it worth saying out loud: it is the
+// difference between a type to compose onto and a type to make one of, and
+// nothing in the written form says which.
+//
+// The rule is the checker's (this is the very predicate 14.11 refuses new
+// with), so it is asked here rather than read off the type a second time.
+const LhatTypeMember *lhat_check_unimplemented_member(const LhatType *type);
+
 const char *lhat_check_error_message(LhatCheckErrorCode code);
 
 // The message for one diagnostic, which for the codes that are about a name

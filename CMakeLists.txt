@@ -273,6 +273,7 @@ if(LHAT_BUILD_LSP)
         lsp/handlers/hover.c
         lsp/handlers/signature.c
         lsp/signature.c
+        lsp/resolution.c
     )
     # The binary is a language server, not "LSP" itself, so the executable
     # is named lhatls -- but the target, lsp/ and the archive/pdb byproducts

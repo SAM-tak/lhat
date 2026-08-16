@@ -285,6 +285,56 @@ static void test_member(void)
 
 // A declaration binds a name rather than resolving one, so the checker
 // records nothing against it and the answer is found by position instead.
+// 14.15 with 14.11: a definition still holding a member nothing has provided
+// is one to compose onto rather than one to make anything of, and 14.11
+// refuses its new. Two definitions differing only in that read the same in
+// the source until the self^{ } section is gone through line by line, so the
+// hover says which this is.
+static void test_an_abstract_definition_says_so(void)
+{
+    Checked c;
+
+    LHAT_TEST("14.15: a definition with a hole in it says so");
+    check_text(&c,
+               "let^ Base = def^{\n"
+               "    self^{ abstract^ slot : number^ },\n"
+               "}\n"
+               "let^ Filled = Base..def^{\n"
+               "    self^{ slot = 1 },\n"
+               "}\n"
+               "let^ made = Filled.new()\n");
+    // The name of the hole, which is the one 14.11's refusal names too.
+    char *text = hover_text(&c, last_offset(&c, "Base.."));
+    expect_contains(text, "*(abstract: slot)*");
+    free(text);
+
+    LHAT_TEST("and one with none says nothing");
+    text = hover_text(&c, last_offset(&c, "Filled.new()"));
+    LHAT_CHECK(text != NULL && strstr(text, "abstract") == NULL,
+               "expected no note on a filled definition, got %s",
+               text != NULL ? text : "(nothing)");
+    free(text);
+    check_dispose(&c);
+}
+
+// A declaration binds a name rather than resolving one, so nothing is
+// recorded against it -- and that is where a reader stands to ask what a name
+// is. The answer is under another key (lsp/resolution.h), which is the same
+// lookup Copy Signature makes: the two say the same thing about a position or
+// one of them is wrong.
+static void test_a_declaration_shows_its_type(void)
+{
+    Checked c;
+
+    LHAT_TEST("07 の 4 章: a declaration answers with the type as well");
+    check_text(&c, "let^ answer = 42\nprint(answer)\n");
+    char *text = hover_text(&c, first_offset(&c, "answer"));
+    expect_contains(text, "let^ answer = 42");
+    expect_contains(text, ": number^");
+    free(text);
+    check_dispose(&c);
+}
+
 static void test_declaration(void)
 {
     Checked c;
@@ -351,6 +401,8 @@ int main(void)
     test_definition();
     test_member();
     test_declaration();
+    test_a_declaration_shows_its_type();
+    test_an_abstract_definition_says_so();
     test_named_by_the_form();
 #if LHAT_WITH_COMMENTS
     test_comments();

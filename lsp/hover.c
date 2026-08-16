@@ -20,6 +20,7 @@
 #include "ast.h"
 #include "check.h"
 #include "position.h"
+#include "resolution.h"
 #include "type.h"
 
 // A type written out for one hover. Past this a reader is not helped by more,
@@ -220,6 +221,31 @@ static void append_comments(cJSON *lines, const LhatUnit *unit,
 }
 #endif
 
+// 14.15: the member that is still a hole, in italics above the block. The
+// name is the one 14.11's refusal would name (LHAT_CHECK_ERR_STILL_ABSTRACT
+// reports this same member), so a reader who goes on to write new() meets the
+// same word rather than a second account of the same fact.
+//
+// Asterisks rather than underscores: a name may begin with '_' (01 の 3.1),
+// and '_(abstract: _want)_' is not the emphasis it looks like.
+static void append_abstract_note(cJSON *parts, const LhatTypeMember *unfilled)
+{
+    static const char opening[] = "*(abstract: ";
+    static const char closing[] = ")*";
+    size_t room = sizeof opening - 1 + unfilled->name_length + sizeof closing;
+    char *note = (char *)malloc(room);
+    if (note == NULL) {
+        return;
+    }
+    size_t used = sizeof opening - 1;
+    memcpy(note, opening, used);
+    memcpy(note + used, unfilled->name, unfilled->name_length);
+    used += unfilled->name_length;
+    memcpy(note + used, closing, sizeof closing);  // the NUL comes with it
+    cJSON_AddItemToArray(parts, cJSON_CreateString(note));
+    free(note);
+}
+
 cJSON *lsp_hover_for_unit(const LhatUnit *unit, uint32_t offset)
 {
     if (unit == NULL || unit->parsed.root == NULL) {
@@ -241,11 +267,21 @@ cJSON *lsp_hover_for_unit(const LhatUnit *unit, uint32_t offset)
         // where it stands.
         definition = declaration_at(unit->parsed.root, offset, &declared_name);
     }
+    // A declaration binds a name rather than resolving one, so nothing is
+    // recorded against it -- and standing on the name a let^ introduces is
+    // where a reader asks what it is. resolution.h finds the answer under
+    // another key: a use pointing back here. Only the type is taken from it;
+    // where the name stands is still this position, which is what the range
+    // below and the line above are about.
+    const LhatResolution *typed = resolved != NULL && resolved->type != NULL
+                                      ? resolved
+                                      : lsp_resolution_at(unit, offset);
+
     // A member resolves in a type rather than in a scope (14.10), so there
     // is no place in this source to show -- and for a type from another unit
     // or a host registration there is none anywhere. What it is is still
     // known, and that is the answer.
-    if (definition == NULL && (resolved == NULL || resolved->type == NULL)) {
+    if (definition == NULL && (typed == NULL || typed->type == NULL)) {
         return NULL;
     }
 
@@ -263,20 +299,32 @@ cJSON *lsp_hover_for_unit(const LhatUnit *unit, uint32_t offset)
         return NULL;
     }
 
+    // 14.15 with 14.11: a definition still holding a member nothing has
+    // provided is one to compose onto, not one to make anything of -- and
+    // 14.11 refuses its new. The written form does not say so anywhere the
+    // reader is looking: 'Node' and 'Sprite2D' are the same three words until
+    // the self^{ } section is read line by line. Above the block rather than
+    // in it, since what is in it is L^ and this is about it.
+    const LhatTypeMember *unfilled =
+        typed != NULL ? lhat_check_unimplemented_member(typed->type) : NULL;
+    if (unfilled != NULL) {
+        append_abstract_note(parts, unfilled);
+    }
+
     // 07 の the type the checker settled on, under the line as written.
     // The two say different things -- one is what the writer put down, the
     // other what was inferred from it -- and a definition with no annotation
     // has only the second.
     char inferred[LHAT_HOVER_TYPE_BUFFER];
     size_t inferred_length = 0;
-    if (resolved != NULL && resolved->type != NULL) {
+    if (typed != NULL && typed->type != NULL) {
         // What it answers is how much the whole type wanted, which is more
         // than this buffer holds for a big one -- and what is *in* the
         // buffer then is the cut form ending in an ellipsis. A hover shows
         // the cut form (07 の 4 章: a shorter answer says more here), so
         // what is read back out is what fits.
         inferred_length =
-            lhat_type_write(resolved->type, inferred, sizeof inferred);
+            lhat_type_write(typed->type, inferred, sizeof inferred);
         if (inferred_length > sizeof inferred - 1) {
             inferred_length = strlen(inferred);
         }
