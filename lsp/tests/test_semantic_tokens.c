@@ -636,6 +636,76 @@ static void test_a_parameter_reads_as_one_where_it_is_used(void)
     check_dispose(&c);
 }
 
+// 05 の 8.8: a host type is one table for the type and for everything of it,
+// so what the checker hands back for the type's own name and for a name
+// holding one is the same type -- the spelling is the only thing that tells
+// them apart (semantic_tokens.c's names_its_own_type).
+//
+// A registration only reaches the checker through a program: lhat_check takes
+// a lexer and a tree and knows no registry, which is why this one test builds
+// the graph the server itself works on.
+static char *one_unit_load(void *context, const char *path, size_t *length)
+{
+    if (strcmp(path, "main.lh") != 0) {
+        return NULL;
+    }
+    const char *text = (const char *)context;
+    size_t size = strlen(text);
+    char *copy = (char *)malloc(size + 1);
+    if (copy != NULL) {
+        memcpy(copy, text, size + 1);
+        *length = size;
+    }
+    return copy;
+}
+
+static LhatValue never_called(LhatMachine *machine, void *context,
+                              const LhatValue *arguments, size_t count)
+{
+    (void)machine;
+    (void)context;
+    (void)arguments;
+    (void)count;
+    return lhat_nil();  // checking never calls one
+}
+
+static void test_a_host_type_reads_as_a_type(void)
+{
+    LHAT_TEST("05 の 8.8: a host type's own name is a type, a value of it is not");
+
+    static const char *source =
+        "import^ store\n"
+        "let^ made = store.Held.make()\n"
+        "let^ n = made.read()\n";
+
+    LhatProgram program;
+    lhat_program_init(&program, true, one_unit_load, (void *)source);
+    LHAT_CHECK(lhat_register_hostdata_type(&program, "store", "Held") != NULL,
+               "the type registered");
+    lhat_register_member(&program, "store", "Held", "make",
+                         "f^ -> store.Held;", never_called, NULL);
+    lhat_register_member(&program, "store", "Held", "read",
+                         "f^self^ -> number^;", never_called, NULL);
+
+    const LhatUnit *root = lhat_program_check(&program, "main.lh");
+    LHAT_CHECK(root != NULL && root->checked.diagnostic_count == 0,
+               "the unit checked");
+    if (root != NULL) {
+        cJSON *data = lsp_semantic_tokens_for_unit(root);
+        Tokens tokens = decode(data);
+
+        expect_token(&tokens, source, "Held.make()", "type", false);
+        // And what holds one is not the type: same LhatType, other spelling.
+        expect_token(&tokens, source, "made.read()", "variable", false);
+        // The path it is reached through is still the namespace it is.
+        expect_token(&tokens, source, "store.Held", "namespace", false);
+
+        free(tokens.items);
+        cJSON_Delete(data);
+    }
+    lhat_program_dispose(&program);
+}
+
 // 14.15: 'abstract^ name : type' is a declaration standing among values, and
 // the parser says so with a flag rather than with a kind of its own. Read as
 // a value, its type was walked as an expression -- and a qualified type name
@@ -762,6 +832,7 @@ int main(void)
     test_let_is_readonly_and_var_is_not();
     test_a_narrowed_use_reads_like_any_other();
     test_an_abstract_field_declares_a_type();
+    test_a_host_type_reads_as_a_type();
     test_a_member_is_not_called_readonly();
     test_isa_asks_about_a_type();
     test_isa_within_a_comparison_chain();

@@ -17,10 +17,12 @@
 
 #include <stdint.h>
 #include <stdlib.h>
+#include <string.h>
 
 #include "ast.h"
 #include "check.h"  // 07 の 4 章: what each name resolved to, for refine_by_type
 #include "lexer.h"
+#include "lhat/object.h"  // 05 の 8.8/8.9: the tags a host type is named by
 #include "parser.h"
 #include "type.h"
 
@@ -95,6 +97,37 @@ static bool names_a_namespace(const LhatType *type)
     return type->kind == LHAT_TYPE_TABLE && type->v.table.is_module;
 }
 
+// 05 の 8.8: a host type's name is a value like any other -- it is what
+// carries the receiverless members, the way a def^'s name carries new -- and
+// unlike a def^ there is one table for the type and for everything of it. So
+// what the checker hands back for `godot.Object` and for a name holding one
+// is the same type, and the type cannot say which was written.
+//
+// The spelling can. The member a registration made is the type's own name
+// under the type's own module (lhat_register_hostdata_type), and a name
+// holding a value of it is spelled something else -- std.io.stdout would hold
+// a std.io.File. So a name spelled exactly as its type registered is that
+// registration, and anything else is a value of it. What this misreads is a
+// name deliberately spelled as its own type ('let^ Object = godot.Object
+// .default()'), which reads as the type it is an instance of.
+static bool names_its_own_type(const SemCollector *c, uint32_t offset,
+                               uint32_t length, const LhatType *type)
+{
+    const char *registered = NULL;
+    if (type->kind == LHAT_TYPE_TABLE && type->v.table.hostdata_tag != NULL) {
+        registered = type->v.table.hostdata_tag->name;
+    } else if (type->kind == LHAT_TYPE_HOSTVALUE &&
+               type->v.table.hostvalue_tag != NULL) {
+        registered = type->v.table.hostvalue_tag->name;
+    }
+    if (registered == NULL || c->unit->source.text == NULL) {
+        return false;
+    }
+    size_t written = strlen(registered);
+    return written == length && offset + length <= c->unit->source.length &&
+           memcmp(c->unit->source.text + offset, registered, written) == 0;
+}
+
 // What the checker settled on, where the syntax could only say "a name".
 // `variable` and `property` are the two the walk falls back on when the
 // place a name stands does not say what it is; every other classification
@@ -104,7 +137,8 @@ static bool names_a_namespace(const LhatType *type)
 // about the binding, not about which of the classifications above it got,
 // so it stands beside whatever the name turned out to be.
 static void refine_from_resolution(const SemCollector *c, uint32_t offset,
-                                   uint8_t *type, uint8_t *modifiers)
+                                   uint32_t length, uint8_t *type,
+                                   uint8_t *modifiers)
 {
     if (c->unit == NULL) {
         return;
@@ -134,6 +168,12 @@ static void refine_from_resolution(const SemCollector *c, uint32_t offset,
         return;
     }
 
+    // 05 の 8.8's own name before any of the shape questions: a host type is
+    // a table, and asking the shape first would read it as one.
+    if (names_its_own_type(c, offset, length, settled)) {
+        *type = SEM_TYPE;
+        return;
+    }
     // A definition first: it is the more particular answer, and 14.1's
     // is_definition and 8.6's sealed never stand together.
     if (settled->kind == LHAT_TYPE_TABLE && settled->v.table.is_definition) {
@@ -158,7 +198,7 @@ static void collector_add(SemCollector *c, uint32_t offset, uint32_t length,
         return;
     }
 #if LHAT_WITH_RESOLUTIONS
-    refine_from_resolution(c, offset, &type, &modifiers);
+    refine_from_resolution(c, offset, length, &type, &modifiers);
 #endif
     if (c->count == c->capacity) {
         size_t grown = c->capacity ? c->capacity * 2 : 64;
