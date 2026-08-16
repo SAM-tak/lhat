@@ -3129,6 +3129,12 @@ LhatType *chk_infer_def(Checker *c, const LhatNode *node, LhatType *base)
             if (!chk_node_name(c, field->v.entry.key, &name, &length)) {
                 continue;
             }
+            // 02 の 18.7: an extern^ field declares a name for what is
+            // outside the language, so no field is made for it -- the same
+            // reason a member does not get one.
+            if (field->v.entry.modifier == LHAT_DEF_EXTERN) {
+                continue;
+            }
             // 14.15: a field the composition has to provide carries its type
             // and no value. 14.11 would otherwise want an initializer here.
             if (field->v.entry.declared) {

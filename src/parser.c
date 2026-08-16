@@ -946,8 +946,15 @@ static LhatNode *parse_brace_entries(Parser *p, bool require_key)
         // 14.15: a field the composition has to provide, written with its
         // type. Only a template has one -- a table literal makes a value,
         // and there is nothing there for a declaration to wait for.
-        if (require_key && check_hat(p, "abstract")) {
+        // 02 の 18.7: extern^ takes the same written-out form, and belongs
+        // here rather than beside the members when what it declares is each
+        // instance's own -- a Godot signal's connections are per node, and
+        // where it is written is what says so.
+        if (require_key && (check_hat(p, "abstract") || check_hat(p, "extern"))) {
             LhatToken at_marker = p->current;
+            entry->v.entry.modifier = check_hat(p, "extern")
+                                          ? LHAT_DEF_EXTERN
+                                          : LHAT_DEF_ABSTRACT;
             advance(p);
             entry->v.entry.declared = true;
             if (p->current.kind != LHAT_TOKEN_IDENT &&
