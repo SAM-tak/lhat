@@ -6,6 +6,7 @@
     { "include": "#comments" },
     { "include": "#strings" },
     { "include": "#numbers" },
+    { "include": "#annotations" },
     { "include": "#scope-specifiers" },
     { "include": "#hat-identifiers" },
     { "include": "#operators" },
@@ -124,6 +125,43 @@
           "name": "constant.numeric.float.lhat"
         },
         { "match": "\\b[0-9][0-9_]*\\b", "name": "constant.numeric.integer.lhat" }
+      ]
+    },
+
+    "annotations": {
+      "comment": "02-syntax.md 18章: '@' and the name glued to it are one token (18.2), written above a declaration. The '@' carries the same scope as the name rather than one of its own -- unlike the hat, which is a mark on every keyword and stays out of the way, this one is what says an annotation is here.",
+      "patterns": [
+        {
+          "comment": "18.3: only a literal may stand in the parentheses -- a number (a leading '-' allowed), a string, true^/false^, or a bare name. The name is the host's own constant, carried by its spelling and never resolved, so it reads as a constant rather than as anything this program declares.",
+          "name": "meta.annotation.lhat",
+          "begin": "(@[\\p{L}_][\\p{L}\\p{N}_]*)\\s*(\\()",
+          "beginCaptures": {
+            "1": { "name": "storage.type.annotation.lhat" },
+            "2": { "name": "punctuation.bracket.lhat" }
+          },
+          "end": "\\)",
+          "endCaptures": { "0": { "name": "punctuation.bracket.lhat" } },
+          "patterns": [
+            { "include": "#comments" },
+            { "include": "#strings" },
+            { "include": "#numbers" },
+            {
+              "match": "\\b(true|false)(\\^+)",
+              "captures": {
+                "1": { "name": "constant.language.lhat" },
+                "2": { "name": "punctuation.definition.hat.lhat" }
+              }
+            },
+            { "match": "[\\p{L}_][\\p{L}\\p{N}_]*", "name": "constant.other.lhat" },
+            { "match": "-", "name": "keyword.operator.arithmetic.lhat" },
+            { "match": ",", "name": "punctuation.separator.lhat" }
+          ]
+        },
+        {
+          "comment": "18.2: the parentheses are optional -- '@tool' takes no argument.",
+          "match": "@[\\p{L}_][\\p{L}\\p{N}_]*",
+          "name": "storage.type.annotation.lhat"
+        }
       ]
     },
 

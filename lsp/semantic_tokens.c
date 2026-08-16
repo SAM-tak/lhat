@@ -698,6 +698,15 @@ static void walk_value(SemCollector *out, const LhatNode *node)
             // walk_table_entries, not here), REQUIRE (its jump.value is a
             // STRING, nothing to name), ERROR: nothing to emit.
             //
+            // 02 の 18's annotation hangs off the declaration it was written
+            // over rather than standing among the statements, so it is not
+            // reached from here at all -- and is left that way on purpose.
+            // 18.2's name is the host's registration and 18.3 carries a name
+            // argument by its spelling without ever resolving it, so the
+            // checker settled nothing about either. The grammar file colours
+            // them, which is where a spelling with no meaning behind it
+            // belongs; test_semantic_tokens' first test says so out loud.
+            //
             // A node kind this switch has never heard of lands here too, and
             // then everything under it goes uncoloured -- which is what a
             // new kind added to ast.h costs until it is named above.

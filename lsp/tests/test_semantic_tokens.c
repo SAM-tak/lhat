@@ -194,6 +194,15 @@ static void collect_from(Names *names, const LhatNode *node)
     if (node == NULL) {
         return;
     }
+    // 02 の 18: an annotation and everything in it belongs to the host. 18.2's
+    // name is one the host registered, and 18.3 carries an argument that is a
+    // name by its spelling and never resolves it -- so there is nothing the
+    // checker settled on for either, and nothing for this walk to say. The
+    // grammar file colours them (storage.type.annotation.lhat), which is where
+    // a spelling with no meaning behind it belongs.
+    if (node->kind == LHAT_NODE_ANNOTATION) {
+        return;
+    }
     if (node->kind == LHAT_NODE_IDENT) {
         if (names->count == names->capacity) {
             size_t grown = names->capacity ? names->capacity * 2 : 32;
@@ -279,7 +288,12 @@ static void test_every_name_is_reached(void)
         // to fall into semantic_tokens.c's `default` -- with nothing here
         // holding one, this test had nothing to say about it.
         "let^ Shape : t^{ self^{ side : number^ }, new : f^ -> Self^; }"
-        " = def^{ self^{ side = 1 }, }\n";
+        " = def^{ self^{ side = 1 }, }\n"
+        // 02 の 18: a declaration wearing an annotation. What the annotation
+        // holds is skipped above, but the declaration under it is not -- an
+        // annotation must not swallow the name it was written over.
+        "@sample(1, hint)\n"
+        "let^ tuned = 1\n";
 
     Checked c;
     check_text(&c, source);
