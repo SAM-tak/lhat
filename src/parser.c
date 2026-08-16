@@ -649,7 +649,7 @@ static LhatNode *parse_type_primary(Parser *p)
     if (check_hat(p, "c")) {
         return parse_type_coroutine(p);
     }
-    if (check_hat(p, "t") || check_hat(p, "table")) {
+    if (check_hat(p, "t")) {
         return parse_type_table(p);
     }
 

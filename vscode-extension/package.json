@@ -132,6 +132,16 @@
             "settings": {
               "foreground": "#569BD2"
             }
+          },
+          {
+            "scope": [
+              "keyword.operator.concat.lhat",
+              "keyword.operator.assignment.compound.lhat"
+            ],
+            "settings": {
+              "foreground": "#D7BA7D",
+              "fontStyle": "bold"
+            }
           }
         ]
       }

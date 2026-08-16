@@ -145,16 +145,16 @@
           }
         },
         {
-          "comment": "abstract^ (14.15) and closed^ (15.13) mark what follows the way override^/overload^ do; pack^ is unpack^'s other half (13.8改).",
-          "match": "\\b(var|let|f|p|op|def|new|enum|pack|unpack|module|public|require|import|override|overload|abstract|closed|errordef)(\\^+)",
+          "comment": "abstract^ (14.15) and closed^ (15.13) mark what follows the way override^/overload^ do.",
+          "match": "\\b(var|let|f|p|op|def|enum|pack|module|public|require|import|override|overload|abstract|closed|errordef)(\\^+)",
           "captures": {
             "1": { "name": "keyword.other.declaration.lhat" },
             "2": { "name": "punctuation.definition.hat.lhat" }
           }
         },
         {
-          "comment": "Self^ is a type and self^ a value -- 01 の 2.3 compares a hat word byte for byte, so the capital is a different name, matched here rather than below.",
-          "match": "\\b(number|string|bool|nil|any|t|table|type|c|error|Self)(\\^+)",
+          "comment": "Self^ is a type and self^ a value -- 01 の 2.3 compares a hat word byte for byte, so the capital is a different name, matched here rather than below. 14.10改: 't^' is written with the members it asks for, and 'table^' went with the bare spelling.",
+          "match": "\\b(number|string|bool|nil|any|t|c|error|Self)(\\^+)",
           "captures": {
             "1": { "name": "storage.type.lhat" },
             "2": { "name": "punctuation.definition.hat.lhat" }
