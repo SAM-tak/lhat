@@ -127,6 +127,10 @@ public:
     TypedArray<Dictionary> _get_script_method_list() const override;
     TypedArray<Dictionary> _get_script_property_list() const override;
 
+    // 18.7: whether an extern^ of this name was marked @signal, and how
+    // many arguments its declared type wrote.
+    bool signal_named(const StringName &wanted, size_t *out_arguments) const;
+
     bool _has_script_signal(const StringName &signal) const override;
     TypedArray<Dictionary> _get_script_signal_list() const override;
 

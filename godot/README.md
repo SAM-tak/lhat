@@ -97,11 +97,42 @@ public^let^ Spinner = nodeLib.Sprite2D..def^{
 `public^` な名前）。基底の単位が自分だけに留めた `let^` は届かず、
 そう言う誤りが出る。
 
-**まだ無いもの**: 公開プロパティ（インスペクタに出る欄）、シグナル。
-
 `_get_reserved_words` の語は `vscode-extension/syntaxes/lhat.tmLanguage.json`
 の分類をそのまま使った。言語側は一覧を持たない——01 の 2 章 は
 ハット付きの語を一律に読み、知らない語を弾くのは意味解析である。
+
+### エンジンに渡すことは注釈で書く
+
+02 の 18 の注釈は**構文木に括り付けられて残る**ので、実行しなくても読める。
+`@export` も `@signal` も、この拡張が `lhat_register_annotation` で
+名前と引数の形を登録し、木から読み返しているだけである。言語は
+どれが何のためのものかを知らない。
+
+```lhat
+public^let^ Spinner = Godot.Sprite2D..def^{
+    self^{
+        @export_range(0, 10) speed = 1,
+        @signal extern^ died : p^string^;,
+    },
+    ...
+}
+```
+
+- **`@export`** — `self^` の欄をインスペクタに出す。`@export_range(下, 上)`
+  と `@export_multiline` はヒントを付ける。欄の現在値がそのまま出て、
+  インスペクタで変えるとその**インスタンスの** `self^` の欄が変わる
+- **`@signal`** — 18.7 の `extern^` に付けて、シグナルの宣言にする。
+  `_get_script_signal_list` に出るので `connect` も `emit_signal` も
+  エンジンの普通の道を通る。引数の数は書いた型（`p^string^;` なら1つ）から
+  取り、名前は書かれていないので `arg0`…と番号を振る（型は Variant）
+
+`@signal` が `self^{ … }` の中に書かれるのは、**接続先がノードごと**
+だからである（14.3、02 の 18.7）。`extern^` はメンバを作らないので、
+定義は `new` でき、`self^.died` は読めない。
+
+登録してあるが**まだエンジン側の意味が無い**もの: `@tool` `@icon`
+`@onready` `@rpc` `@export_enum` `@export_file`。書いても検査は通り、
+何も起きない。
 
 ## 呼び出して使う
 
@@ -247,8 +278,9 @@ godot --headless --path godot\demo
 
 ## これから
 
-- 公開プロパティ。インスタンスの `self^` の欄をインスペクタに出すには
-  「L^ で export とは何か」を決める必要がある
-- シグナル
+- 着ていないスクリプトのプロパティ一覧（`_get_script_property_list`）。
+  いまインスペクタに出るのはインスタンスの欄だけで、スクリプト自体に
+  訊く道は空を返す
+- `@tool` `@onready` `@icon` `@rpc` にエンジン側の意味を与える
 - 補完（`_complete_code`）。`lsp/` が既にあるので、そこを使い回す話になる
 - `stdlib/` を繋ぐか。`std.io` はゲームの中では意味が変わる

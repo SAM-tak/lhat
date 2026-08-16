@@ -238,6 +238,9 @@ const Godot *register_godot(LhatProgram *program)
         {"export_file", LHAT_ANNOTATION_FIELD, "p^ string^;"},
         {"export_multiline", LHAT_ANNOTATION_FIELD, nullptr},
         {"onready", LHAT_ANNOTATION_FIELD, nullptr},
+        // 18.7: written on an extern^ field, since a signal's
+        // connections are kept per node.
+        {"signal", LHAT_ANNOTATION_FIELD, nullptr},
         {"rpc", LHAT_ANNOTATION_MEMBER, "p^ string^, ...;"},
     };
     for (const auto &annotation : annotations) {

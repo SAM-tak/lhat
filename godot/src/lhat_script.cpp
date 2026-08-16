@@ -383,15 +383,87 @@ TypedArray<Dictionary> LhatScript::_get_script_property_list() const
     return TypedArray<Dictionary>();
 }
 
+// 02 の 18.7: a signal is an extern^ the writer marked @signal, and the
+// declared type is its arguments. It is written inside self^{ … } because
+// what it declares is each instance's own -- Godot keeps the connections per
+// node, and 14.3 already makes that side the instance's.
+bool LhatScript::signal_named(const StringName &wanted,
+                              size_t *out_arguments) const
+{
+    if (unit == nullptr) {
+        return false;
+    }
+    CharString klass = klass_name.utf8();
+    CharString name = String(wanted).utf8();
+    size_t count = lhat_unit_member_count(unit, klass.get_data());
+    for (size_t i = 0; i < count; i++) {
+        LhatUnitMember member = lhat_unit_member(unit, klass.get_data(), i);
+        if (!member.external || member.name == NULL) {
+            continue;
+        }
+        if (String::utf8(member.name, (int)member.name_length) !=
+            String(wanted)) {
+            continue;
+        }
+        size_t written =
+            lhat_unit_annotation_count(unit, klass.get_data(), name.get_data());
+        for (size_t a = 0; a < written; a++) {
+            LhatAnnotation at = lhat_unit_annotation(unit, klass.get_data(),
+                                                     name.get_data(), a);
+            if (String::utf8(at.name, (int)at.name_length) == "signal") {
+                if (out_arguments != nullptr) {
+                    *out_arguments = member.parameter_count;
+                }
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
 bool LhatScript::_has_script_signal(const StringName &signal) const
 {
-    (void)signal;
-    return false;
+    return signal_named(signal, nullptr);
 }
 
 TypedArray<Dictionary> LhatScript::_get_script_signal_list() const
 {
-    return TypedArray<Dictionary>();
+    TypedArray<Dictionary> out;
+    if (unit == nullptr) {
+        return out;
+    }
+    CharString klass = klass_name.utf8();
+    size_t count = lhat_unit_member_count(unit, klass.get_data());
+    for (size_t i = 0; i < count; i++) {
+        LhatUnitMember member = lhat_unit_member(unit, klass.get_data(), i);
+        if (!member.external || member.name == NULL) {
+            continue;
+        }
+        StringName name(String::utf8(member.name, (int)member.name_length));
+        size_t arguments = 0;
+        if (!signal_named(name, &arguments)) {
+            continue;
+        }
+
+        // The engine checks an emit against this, so the count has to be the
+        // one the type wrote. What each argument is called is not written
+        // there -- 18.3 keeps a type a type -- so they are numbered.
+        Array args;
+        for (size_t a = 0; a < arguments; a++) {
+            Dictionary argument;
+            argument["name"] = String("arg") + String::num_int64((int64_t)a);
+            argument["type"] = (int64_t)Variant::NIL;
+            argument["usage"] = (int64_t)PROPERTY_USAGE_NIL_IS_VARIANT;
+            args.push_back(argument);
+        }
+
+        Dictionary declared;
+        declared["name"] = name;
+        declared["args"] = args;
+        declared["flags"] = (int64_t)METHOD_FLAG_NORMAL;
+        out.push_back(declared);
+    }
+    return out;
 }
 
 bool LhatScript::_has_property_default_value(const StringName &property) const

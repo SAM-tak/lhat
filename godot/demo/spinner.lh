@@ -11,7 +11,7 @@ public^let^ Spinner = Godot.Sprite2D..def^{
 		@export_range(0, 10) speed = 1,
 		turns = 0,
 		# 18.7: 接続先はノードごとなので self^ の側に置く
-		extern^ died : p^string^;,
+		@signal extern^ died : p^string^;,
 	},
 
 	_ready = p^self^ {

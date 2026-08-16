@@ -511,6 +511,103 @@ LhatAnnotationArgument lhat_annotation_argument(LhatAnnotation annotation,
     return out;
 }
 
+
+// The entries of a definition and of its template, in written order, as one
+// run -- which is what a host asking "what does this class declare" wants.
+static const LhatNode *definition_entry_at(const LhatUnit *unit,
+                                           const LhatNode *definition,
+                                           size_t index, size_t *seen)
+{
+    if (definition == NULL) {
+        return NULL;
+    }
+    if (definition->kind == LHAT_NODE_BINARY &&
+        definition->v.binary.op == LHAT_OP_CONCAT) {
+        const LhatNode *found = definition_entry_at(
+            unit, definition->v.binary.left, index, seen);
+        return found != NULL ? found
+                             : definition_entry_at(
+                                   unit, definition->v.binary.right, index,
+                                   seen);
+    }
+    if (definition->kind != LHAT_NODE_DEF) {
+        return NULL;
+    }
+    for (const LhatNode *entry = definition->v.list.items; entry != NULL;
+         entry = entry->next) {
+        if (entry->v.entry.key != NULL) {
+            if ((*seen)++ == index) {
+                return entry;
+            }
+            continue;
+        }
+        const LhatNode *template = entry->v.entry.value;
+        if (template == NULL) {
+            continue;
+        }
+        for (const LhatNode *field = template->v.list.items; field != NULL;
+             field = field->next) {
+            if (field->v.entry.key == NULL) {
+                continue;
+            }
+            if ((*seen)++ == index) {
+                return field;
+            }
+        }
+    }
+    return NULL;
+}
+
+size_t lhat_unit_member_count(const LhatUnit *unit, const char *definition)
+{
+    const LhatNode *binding = unit_top_binding(unit, definition);
+    if (binding == NULL) {
+        return 0;
+    }
+    size_t seen = 0;
+    definition_entry_at(unit, binding->v.binding.values, (size_t)-1, &seen);
+    return seen;
+}
+
+LhatUnitMember lhat_unit_member(const LhatUnit *unit, const char *definition,
+                                size_t index)
+{
+    LhatUnitMember out;
+    memset(&out, 0, sizeof out);
+
+    const LhatNode *binding = unit_top_binding(unit, definition);
+    if (binding == NULL) {
+        return out;
+    }
+    size_t seen = 0;
+    const LhatNode *entry =
+        definition_entry_at(unit, binding->v.binding.values, index, &seen);
+    if (entry == NULL) {
+        return out;
+    }
+
+    const char *spelt = NULL;
+    size_t length = 0;
+    if (lhat_node_name(entry->v.entry.key, unit->lexer.source->text,
+                       unit->lexer.strings, &spelt, &length)) {
+        out.name = spelt;
+        out.name_length = length;
+    }
+    out.declared = entry->v.entry.declared;
+    out.external = entry->v.entry.modifier == LHAT_DEF_EXTERN;
+    // 18.7: what a declaration wrote is a type, and a signal's arguments are
+    // its parameters. Anything else has none to count.
+    const LhatNode *written = entry->v.entry.value;
+    if (out.declared && written != NULL &&
+        written->kind == LHAT_NODE_TYPE_FUNC) {
+        for (const LhatNode *at = written->v.func.params; at != NULL;
+             at = at->next) {
+            out.parameter_count++;
+        }
+    }
+    return out;
+}
+
 // ---------------------------------------------------------------------------
 // 05 の 8.7: what the host provides
 // ---------------------------------------------------------------------------

@@ -225,6 +225,30 @@ LhatAnnotation lhat_unit_annotation(const LhatUnit *unit,
 LhatAnnotationArgument lhat_annotation_argument(LhatAnnotation annotation,
                                                 size_t at);
 
+// What a definition declares, in the order it was written. An extern^ has no
+// value to find at run time (18.7), so the tree is the only place a host can
+// learn that it is there at all.
+typedef struct {
+    const char *name;  // borrowed; NULL when there is no such one
+    size_t name_length;
+    // 14.15 and 18.7: written with a type and no value.
+    bool declared;
+    // 18.7: extern^ rather than abstract^ -- what is outside the language
+    // rather than what a composition owes.
+    bool external;
+    // When the declared type is an f^ or a p^, how many parameters it wrote.
+    // A signal's arguments are read off this.
+    size_t parameter_count;
+} LhatUnitMember;
+
+// The members of the definition `definition` holds, its template's fields
+// included -- 18.4 puts an annotation on both, and a host asking what a
+// class declares does not care which it was written as.
+size_t lhat_unit_member_count(const LhatUnit *unit, const char *definition);
+LhatUnitMember lhat_unit_member(const LhatUnit *unit, const char *definition,
+                                size_t index);
+
+
 // ---------------------------------------------------------------------------
 // 05 の 8.7: what the host provides
 // ---------------------------------------------------------------------------
