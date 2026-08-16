@@ -10,6 +10,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "lhat/object.h"  // 05 の 8.8's tag, which a host type is written as
 #include "testutil.h"
 #include "type.h"
 
@@ -758,6 +759,33 @@ static void test_writing_whole(void)
         size_t written = lhat_type_write_full(mixed, buffer, sizeof buffer);
         LHAT_CHECK_EQ_STR(buffer, written,
                           "t^{ number^, seen : bool^, string^ }");
+    }
+
+    // 05 の 8.8: identity is the declaration, not the shape. Written out, the
+    // members make a wider type -- anything carrying the same names satisfies
+    // it, which is exactly what `nominal` refuses -- so the name is what says
+    // which type this is. 8.9's host value already wrote itself this way and
+    // so does the machine's own writer (object.c); this is the third.
+    LHAT_TEST("05 の 8.8: a host type is written as the name it registered");
+    {
+        static const LhatHostDataTag tag = {"std.random", "Random", NULL, NULL};
+        LhatType *held = lhat_type_table(&t.arena);
+        lhat_type_add_member(&t.arena, held, "next", 4,
+                             simple(&t, LHAT_TYPE_NUMBER));
+        held->v.table.nominal = true;
+        held->v.table.from_definition = true;
+        held->v.table.hostdata_tag = &tag;
+
+        char buffer[128];
+        size_t written = lhat_type_write_full(held, buffer, sizeof buffer);
+        LHAT_CHECK_EQ_STR(buffer, written, "std.random.Random");
+
+        // And wherever it stands inside another type, since a name is what it
+        // is rather than a shorthand the outermost call unfolds.
+        LhatType *holder = lhat_type_table(&t.arena);
+        lhat_type_add_member(&t.arena, holder, "rng", 3, held);
+        written = lhat_type_write_full(holder, buffer, sizeof buffer);
+        LHAT_CHECK_EQ_STR(buffer, written, "t^{ rng : std.random.Random }");
     }
 
     // A member named by digits that does not stand where its own count would

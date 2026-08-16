@@ -909,6 +909,27 @@ static void test_host_data(void)
             LHAT_CHECK_EQ_INT(held.live, 0);  // the dispose^ ran
             lhat_machine_dispose(machine);
         }
+#if LHAT_WITH_RESOLUTIONS
+        // 8.8: what the name holds is this declaration, so what writes a type
+        // out says the declaration. The registration above is the only place
+        // the tag comes from, which is why this is asked here rather than of
+        // a type built by hand.
+        if (root != NULL) {
+            const char *use = strstr(root->source.text, "h.read()");
+            const LhatResolution *r =
+                use != NULL
+                    ? lhat_check_resolution_at(
+                          &root->checked, (uint32_t)(use - root->source.text))
+                    : NULL;
+            LHAT_CHECK(r != NULL && r->type != NULL, "expected h to resolve");
+            if (r != NULL && r->type != NULL) {
+                char written[64];
+                size_t length = lhat_type_write_full(r->type, written,
+                                                     sizeof written);
+                LHAT_CHECK_EQ_STR(written, length, "store.Held");
+            }
+        }
+#endif
     }
     lhat_program_dispose(&program);
 

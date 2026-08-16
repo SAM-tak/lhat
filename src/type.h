@@ -198,6 +198,15 @@ struct LhatType {
             // semantics: the C reading the bytes back must never read them
             // as another type's. The tag belongs to the program.
             const struct LhatHostValueTag *hostvalue_tag;
+            // 05 の 8.8: set by lhat_register_hostdata_type, and the reason
+            // is the same as the one above -- identity is the declaration,
+            // not the shape. The kind stays LHAT_TYPE_TABLE, since what the
+            // host registered onto it is reached exactly as a table's members
+            // are and a value of one satisfies a structural demand (11.3);
+            // `nominal` is what refuses the other direction. This is here so
+            // that the type can say which declaration it is, the way the
+            // machine's own LhatRtType already does (object.h).
+            const struct LhatHostDataTag *hostdata_tag;
         } table;
 
         // 13.1. `result` is NULL when nothing is returned (13.2), and

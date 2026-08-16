@@ -1332,6 +1332,20 @@ static void write_type(TypeSink *sink, const LhatType *type, int depth)
         case LHAT_TYPE_ERROR:  put_text(sink, "error^"); return;
 
         case LHAT_TYPE_TABLE: {
+            // 05 の 8.8: a host type is named the way it was registered, the
+            // same as a host value below and as the machine's own writer
+            // already does (object.c). Its members are reachable like any
+            // table's, but they are not what it is -- written out they make a
+            // wider type, one that anything carrying the same names
+            // satisfies, while `nominal` is what refuses exactly that.
+            if (type->v.table.hostdata_tag != NULL) {
+                if (type->v.table.hostdata_tag->module != NULL) {
+                    put_text(sink, type->v.table.hostdata_tag->module);
+                    put_text(sink, ".");
+                }
+                put_text(sink, type->v.table.hostdata_tag->name);
+                return;
+            }
             // 13.13: already inside this one, so the source said Self^ here.
             unsigned level = 1;
             for (const WriteSeen *s = sink->seen; s != NULL; s = s->outer) {

@@ -644,6 +644,11 @@ const LhatHostDataTag *lhat_register_hostdata_type(LhatProgram *program,
     }
     entry->tag->module = entry->module;
     entry->tag->name = entry->name;
+    // And the checker's type says which declaration it is, so what writes a
+    // type out can name it rather than spelling the shape -- 8.8 puts
+    // identity in the declaration, and a shape written in its place is a
+    // wider type that anything of the same members satisfies.
+    made->v.table.hostdata_tag = entry->tag;
 
     // 05 の 8.8 の isa^ 版: vm.c がコンパイル時に "module.Name" から
     // 引けるよう、host_entries(非公開)とは別に vm.h の形へ薄く複製する。
