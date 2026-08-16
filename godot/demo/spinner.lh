@@ -4,9 +4,9 @@
 
 module^ demo.spinner
 
-let^ nodeLib = require^"lhat/NodeLib.lh"
+let^Godot = require^"lhat/Godot.lh"
 
-public^let^ Spinner = nodeLib.Sprite2D..def^{
+public^let^ Spinner = Godot.Sprite2D..def^{
 	self^{ turns = 0 },
 
 	_ready = p^self^ {

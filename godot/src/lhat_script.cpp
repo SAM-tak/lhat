@@ -169,10 +169,15 @@ bool LhatScript::make_instance(Object *owner, LhatValue *out, int64_t *id)
     // now, and this is what puts the real object in its place. A unit that
     // wants nothing to do with its node simply has no such field.
     if (owner != nullptr && lhat_is_object_kind(made.value, LHAT_OBJECT_TABLE)) {
+        // Spelled once: the length is taken from the name so the two cannot
+        // drift apart, which is a rename away from writing a key nothing
+        // answers to and leaving the placeholder where the object goes.
+        static const char OWNER_FIELD[] = "gdobj";
         LhatTable *fields = (LhatTable *)lhat_as_object(made.value);
         LhatValue key = lhat_nil();
         LhatValue handle = lhat_nil();
-        if (lhat_machine_make_string(machine, "node", 4, &key) &&
+        if (lhat_machine_make_string(machine, OWNER_FIELD,
+                                     sizeof OWNER_FIELD - 1, &key) &&
             !lhat_is_nil(lhat_table_get(fields, key)) &&
             host::make_object(machine, units.godot, owner, &handle)) {
             bool taken = false;

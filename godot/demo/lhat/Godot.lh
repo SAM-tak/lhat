@@ -11,7 +11,7 @@
 # ones a script actually wears fill it with godot.Object.default(), which the
 # host replaces with the node as the instance is made.
 
-module^ lhat.NodeLib
+module^ lhat.Godot
 
 import^ godot
 
