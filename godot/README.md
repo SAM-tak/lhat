@@ -172,6 +172,28 @@ liblhat.windows.template_debug.x86_64.dll
 この名前は godot-cpp が自分のライブラリに付ける接尾辞から取っている。
 `demo/lhat.gdextension` の `[libraries]` はその綴りをそのまま書いたもの。
 
+## 言語サーバーに `godot` を教える
+
+`lhat-host.json` は「ホストの C が何を登録したか」を、C を走らせられない
+道具に伝えるための唯一の口（05 の 8.7）。言語サーバーは
+**ワークスペース直下の1枚**しか読まない（`lsp/workspace.c`）。
+
+ところが全部を知っているホストが居ない — cli は stdlib を登録するが
+エンジンをリンクせず、この拡張は `godot` を登録するが stdlib 抜きで建つ。
+そこで両方に訊いて併合する:
+
+```powershell
+. .\scripts\devshell.ps1
+.\scripts\dump-host-api.ps1 -Godot D:\path	o\Godot_console.exe
+```
+
+`-Godot` を省くと cli の分だけ書く。拡張側の答えは
+`LhatRuntime.dump_host_api(path)` が出していて、
+`demo/dump_host_api.gd` がそれを呼ぶ。
+
+8.7 は同じ名前の2度目の登録を**腕の追加**とするので、違う項は両方残る。
+まったく同じ項だけが落ちる（`print` は両方が登録している）。
+
 ## デモ
 
 `godot/demo/` を Godot で開いて **F5**。または

@@ -53,6 +53,15 @@ public:
     // the call stopped.
     static Variant call_member(const String &path, const String &member,
                                const Array &arguments);
+
+    // 05 の 8.7: what this extension registers, as the JSON the language
+    // server reads (lhat-host.json). A tool that cannot run this C can still
+    // be told what the checker was told -- which is what stops `godot` being
+    // an unknown name in an editor.
+    //
+    // Answers an empty string when it was written, and what went wrong
+    // otherwise.
+    static String dump_host_api(const String &path);
 };
 
 }  // namespace godot

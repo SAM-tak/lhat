@@ -1,5 +1,6 @@
 #include "lhat_runtime.h"
 
+#include <godot_cpp/classes/file_access.hpp>
 #include <godot_cpp/core/class_db.hpp>
 #include <godot_cpp/templates/local_vector.hpp>
 #include <godot_cpp/variant/utility_functions.hpp>
@@ -39,6 +40,9 @@ void LhatRuntime::_bind_methods()
     ClassDB::bind_static_method(
         "LhatRuntime", D_METHOD("call_member", "path", "member", "arguments"),
         &LhatRuntime::call_member, DEFVAL(Array()));
+    ClassDB::bind_static_method("LhatRuntime",
+                                D_METHOD("dump_host_api", "path"),
+                                &LhatRuntime::dump_host_api);
 }
 
 String LhatRuntime::version()
@@ -214,6 +218,36 @@ Variant LhatRuntime::call_member(const String &path, const String &member,
     lhat_machine_dispose(machine);
     lhat_program_free(program);
     return answer;
+}
+
+String LhatRuntime::dump_host_api(const String &path)
+{
+    // The registrations a script gets, and no others -- what the checker is
+    // told here has to be what it is told when a unit is checked.
+    host::Units units = host::units_for(String());
+    LhatProgram *program = host::program_for(&units);
+    if (program == nullptr) {
+        return "out of memory";
+    }
+
+    size_t needed = lhat_program_dump_host_api(program, nullptr, 0);
+    char *text = (char *)lhat_alloc(needed + 1);
+    if (text == nullptr) {
+        lhat_program_free(program);
+        return "out of memory";
+    }
+    lhat_program_dump_host_api(program, text, needed + 1);
+    String written = String::utf8(text, (int)needed);
+    lhat_free(text);
+    lhat_program_free(program);
+
+    Ref<FileAccess> file = FileAccess::open(path, FileAccess::WRITE);
+    if (file.is_null()) {
+        return String("could not write ") + path;
+    }
+    file->store_string(written);
+    file->close();
+    return String();
 }
 
 }  // namespace godot
