@@ -1,0 +1,24 @@
+# A script a node can wear: a module^ unit with exactly one public^ def^.
+#
+# The members are shared with every node wearing this file; the self^ fields
+# are each node's own (02 の 14.3), which is what "one script, many nodes"
+# already means in L^.
+
+module^ demo.counter
+
+public^let^ Counter = def^{
+    self^{ ticks = 0, name = "?" },
+
+    # The engine calls these by name, the same way it calls a GDScript's.
+    _ready = p^self^ { print($"{self^.name} is ready") },
+
+    _process = p^self^, delta:number^ { self^.ticks := self^.ticks + 1 },
+
+    tick = p^self^ { self^.ticks := self^.ticks + 1 },
+
+    count = f^self^ -> number^ { return^ self^.ticks },
+
+    greet = f^self^, who:string^ -> string^ {
+        return^ $"{self^.name} greets {who}"
+    },
+}

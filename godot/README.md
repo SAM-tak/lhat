@@ -16,10 +16,41 @@ godot-cpp に対して書くので、ツリーの中でここだけが C++。言
   ゆえに何も実行しなくても誤りが出る（03 の 1.1）
 - `LhatScript : ScriptExtension` — 本文・検査結果・`reload()`
 
-**ノードには付けられない。** `_can_instantiate()` は偽を返す。ノードに付いた
-L^ が動くには L^ の値と Variant の変換層が要り、それはまだ無い。
-メンバ・メソッド・シグナルを訊かれると空で答えるのは、
-インスタンスを持たないスクリプトの正直な答えとしてそうしている。
+### ノードに着せられる
+
+**着せられる単位の条件は2つ** — `module^` であること、`public^` な `def^` が
+ちょうど1つあること。
+
+- `module^` は単位の答えを `L^.modules` に置く。これが GC の根なので、
+  エンジンがノードを持っている間、定義が回収されない
+- `def^` が1つ、は「このファイルが宣言するクラス」を命名規約なしに
+  見つけられるようにするため
+
+```lhat
+module^ demo.counter
+
+public^let^ Counter = def^{
+    self^{ ticks = 0 },
+    _ready = p^self^ { print("ready") },
+    _process = p^self^, delta:number^ { self^.ticks := self^.ticks + 1 },
+    count = f^self^ -> number^ { return^ self^.ticks },
+}
+```
+
+`_ready` も `_process` も、エンジンが GDScript を呼ぶのと同じ経路で呼ばれる。
+`_process` が毎フレーム回るのは `has_method` が真を答えるからで、
+書いていない単位は処理を有効化されない。
+
+**メンバは共有、`self^` の欄はノードごと**（02 の 14.3）。同じファイルを着た
+2つのノードは別々に数える。`.lh` 1枚につき `LhatProgram` と `LhatMachine`
+が1組、ノード1つにつきインスタンス1つ。ノードごとに機械を持つ形ではない。
+
+インスタンスは `L^.modules.godot.script.instances` の下に置かれる。
+これも根のため。ノードが消えるとそこから外れる。
+
+**まだ無いもの**: 公開プロパティ（インスペクタに出る欄）、シグナル、
+ノード自身への到達（`self^` からは自分の欄しか見えない。`Node` を
+hostdata 型にするのが次）。
 
 `_get_reserved_words` の語は `vscode-extension/syntaxes/lhat.tmLanguage.json`
 の分類をそのまま使った。言語側は一覧を持たない——01 の 2 章 は
@@ -69,10 +100,12 @@ LhatRuntime.call_member("res://lib/api.lh", "total", [[1, 2, 3, 4]])   # 10
 LhatRuntime.call_member("res://lib/api.lh", "numbers", [5])            # [1,4,9,16,25]
 ```
 
-**単位は毎回走り直す。** 前回の状態は残らない。機械を跨いで保つには
-**ホストが値を走行を跨いで保持する道**が要るが、ライブラリにまだ無い
-（src/gc.c の根は L^ とフレームと保留中の破棄だけ）。Script のインスタンスは
-それを必要とする。
+**この道では単位は毎回走り直す。** 前回の状態は残らない。状態を持たせたい
+なら上のスクリプトの道を使う——`module^` が答えを `L^.modules` に置くので、
+機械を跨いで生き続ける。
+
+（`src/gc.c` の根は `L^` とフレームと保留中の破棄だけで、ホストが C 変数で
+持っている値は根ではない。`module^` を要求しているのはこのため。）
 
 ## ビルド
 
@@ -145,7 +178,10 @@ godot --headless --path godot\demo
 
 ## これから
 
-- **ノードに付いて動く**（`GDExtensionScriptInstanceInfo3` の関数表）。
-  ここで **L^ の値 ⇄ Variant** の変換層が要る。ここが本番
+- **`Node` を hostdata 型に**（05 の 8.8）。いま `self^` から見えるのは
+  自分の欄だけで、着ているノード自身に手が届かない。ここが次の本番
+- 公開プロパティ。インスタンスの `self^` の欄をインスペクタに出すには
+  「L^ で export とは何か」を決める必要がある
+- シグナル
 - 補完（`_complete_code`）。`lsp/` が既にあるので、そこを使い回す話になる
 - `stdlib/` を繋ぐか。`std.io` はゲームの中では意味が変わる

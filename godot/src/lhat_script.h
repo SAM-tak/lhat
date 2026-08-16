@@ -1,14 +1,20 @@
 // L^ (lhat) -- a .lh file, as the engine holds it.
 //
-// A Script in Godot is a Resource that can also make instances. This is the
-// first half only: the text, whether it checks, and enough of the rest for
-// the editor to open and save it. **It instantiates nothing** -- what a node
-// with an L^ script attached would do needs values crossing between L^ and
-// Variant, and that layer is not written.
+// A Script in Godot is a Resource that can also make instances, and both
+// halves are here. Checking is 03 の 1.1 over the graph; instantiating is
+// 02 の 14.3, which already says what "one script, many nodes" means: the
+// members are shared and each instance holds its own self^ fields.
 //
-// So _can_instantiate answers false and every question about members and
-// methods answers empty. That is honest rather than provisional: an empty
-// answer is what a script with no instances has.
+// **A script a node can wear has to be a module^ unit with exactly one
+// public^ def^ in it.** Both halves of that earn their keep. module^ is what
+// puts the unit's answer in L^.modules, which is a root the collector
+// reaches -- without it the definition would be swept while the engine still
+// held nodes wearing it. And one def^ is what makes "the class this file
+// declares" a thing to find without a naming convention.
+//
+// One program and one machine per script, shared by every node wearing it.
+// The instances live in a table under L^.modules, so they are rooted for the
+// same reason the definition is.
 
 #ifndef LHAT_GODOT_SCRIPT_H
 #define LHAT_GODOT_SCRIPT_H
@@ -19,6 +25,9 @@
 #include <godot_cpp/variant/string.hpp>
 #include <godot_cpp/variant/typed_array.hpp>
 
+#include "lhat.h"
+#include "lhat_host.h"
+
 namespace godot {
 
 class LhatScript : public ScriptExtension {
@@ -28,8 +37,35 @@ class LhatScript : public ScriptExtension {
     bool checked = false;  // whether _reload has run since the text changed
     bool valid = false;
 
+    // The loader's context outlives the program, which reads through it.
+    host::Units units;
+    LhatProgram *program = nullptr;
+    LhatMachine *machine = nullptr;
+
+    // The one public^ def^, and the table the instances are rooted in. Both
+    // reachable from L^, so neither is held here for the collector's sake --
+    // only for the host's.
+    LhatValue klass = lhat_nil();
+    LhatValue instances = lhat_nil();
+    int64_t next_id = 1;
+    bool runnable = false;
+
+    void let_go();
+
 protected:
     static void _bind_methods();
+
+public:
+    ~LhatScript();
+
+    // What the instance table's functions work through. NULL until _reload
+    // has made one.
+    LhatMachine *lhat_machine() const { return machine; }
+    LhatValue lhat_class() const { return klass; }
+
+    // 14.9's `new`, and the instance put where the collector reaches it.
+    bool make_instance(LhatValue *out, int64_t *id);
+    void drop_instance(int64_t id);
 
 public:
     // 03 の 1.1 over the graph: the text is checked with the units it
@@ -45,7 +81,6 @@ public:
 
     ScriptLanguage *_get_language() const override;
 
-    // Nothing here yet -- see the head of this file.
     bool _can_instantiate() const override;
     void *_instance_create(Object *for_object) const override;
     void *_placeholder_instance_create(Object *for_object) const override;
@@ -60,6 +95,10 @@ public:
 
     bool _is_tool() const override;
     bool _is_abstract() const override;
+
+    // 14.7: what an instance sees is what its definition holds, so this is
+    // the same question the instance table's has_method asks.
+    bool has_lhat_method(const StringName &method) const;
 
     bool _has_method(const StringName &method) const override;
     bool _has_static_method(const StringName &method) const override;

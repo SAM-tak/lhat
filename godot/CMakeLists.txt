@@ -75,6 +75,7 @@ add_library(lhat_gdextension SHARED
     src/lhat_variant.cpp
     src/lhat_runtime.cpp
     src/lhat_script.cpp
+    src/lhat_instance.cpp
     src/lhat_language.cpp
     src/lhat_resource_format.cpp
 )

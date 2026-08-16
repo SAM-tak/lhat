@@ -44,4 +44,23 @@ func _ready() -> void:
 	print(LhatRuntime.call_member(api, "describe", ["L^"]))
 	print(LhatRuntime.call_member(api, "numbers", [5]))
 
+	# A node wearing an L^ script. The members are shared with every other
+	# node wearing the file and the self^ fields are each node's own
+	# (02 の 14.3), so two of them count separately.
+	var script := load("res://counter.lh")
+	var one := Node.new()
+	var two := Node.new()
+	one.set_script(script)
+	two.set_script(script)
+	add_child(one)
+	add_child(two)
+
+	# _ready is deferred to the frame the node entered on, and _process runs
+	# from then on because has_method said the unit wrote one.
+	await get_tree().process_frame
+	await get_tree().process_frame
+	one.call("tick")
+	print("one=", one.call("count"), " two=", two.call("count"))
+	print(one.call("greet", "Godot"))
+
 	get_tree().quit(0)
