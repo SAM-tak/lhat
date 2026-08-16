@@ -170,6 +170,61 @@ size_t lhat_unit_diagnostic_message(const LhatUnit *unit, size_t index,
 size_t lhat_unit_diagnostic_write(const LhatUnit *unit, size_t index,
                                   bool rich, char *out, size_t capacity);
 
+
+// ---------------------------------------------------------------------------
+// 02 の 18: what a unit wrote as annotations
+// ---------------------------------------------------------------------------
+//
+// 18.1 makes an annotation information for the host, so this is the one place
+// the language hands something back rather than being told it. What a
+// registration meant is the host's to know; what is here is what was written.
+
+// Which of 18.3's four an argument is. A name is not resolved -- it arrives
+// as its spelling, and what it means is the host's to decide.
+typedef enum {
+    LHAT_ANNOTATION_ARG_NUMBER,
+    LHAT_ANNOTATION_ARG_STRING,
+    LHAT_ANNOTATION_ARG_NAME,
+    LHAT_ANNOTATION_ARG_BOOL
+} LhatAnnotationArgumentKind;
+
+typedef struct {
+    LhatAnnotationArgumentKind kind;
+    double number;   // NUMBER, with 18.3's leading '-' already applied
+    bool boolean;    // BOOL
+    // STRING and NAME. Borrowed from the unit, which has to outlive it.
+    const char *text;
+    size_t length;
+} LhatAnnotationArgument;
+
+typedef struct {
+    const char *name;  // borrowed; the spelling without the '@'
+    size_t name_length;
+    size_t argument_count;
+    // The node it was read from and the unit it belongs to, opaque here --
+    // what makes an argument reachable without repeating the keys that found
+    // the annotation, and what its spans index.
+    const void *written;
+    const void *unit;
+} LhatAnnotation;
+
+// What was written above one thing. `definition` names a def^ a top-level
+// binding holds and `name` a member or field of it; either may be NULL:
+//
+//   (NULL, NULL)   the unit itself, written at its head
+//   (NULL, "x")    the top-level binding x
+//   ("D", NULL)    the binding that holds the definition D
+//   ("D", "hp")    the member or field hp of D
+size_t lhat_unit_annotation_count(const LhatUnit *unit, const char *definition,
+                                  const char *name);
+LhatAnnotation lhat_unit_annotation(const LhatUnit *unit,
+                                    const char *definition, const char *name,
+                                    size_t index);
+
+// A zeroed argument when there is no such one.
+LhatAnnotationArgument lhat_annotation_argument(LhatAnnotation annotation,
+                                                size_t at);
+
 // ---------------------------------------------------------------------------
 // 05 の 8.7: what the host provides
 // ---------------------------------------------------------------------------

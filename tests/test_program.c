@@ -2256,6 +2256,105 @@ static void test_annotations(void)
         LHAT_CHECK(lhat_program_has_errors(&program), "reported");
     }
     lhat_program_dispose(&program);
+    // 18.1: what the host reads back. The language never says what an
+    // annotation means, so this is the whole of what it hands over -- the
+    // name, and the literals written with it.
+    LHAT_TEST("and the host reads back what was written");
+    {
+        program_with(&program, &disk, wearing, 1);
+        lhat_register_annotation(&program, "godot", "tool",
+                                 LHAT_ANNOTATION_UNIT, NULL);
+        lhat_register_annotation(&program, "godot", "icon",
+                                 LHAT_ANNOTATION_BINDING, "p^ string^;");
+        lhat_register_annotation(&program, "godot", "export",
+                                 LHAT_ANNOTATION_FIELD,
+                                 "p^ number^, number^;");
+        lhat_register_annotation(&program, "godot", "rpc",
+                                 LHAT_ANNOTATION_MEMBER, "p^ string^;");
+        const LhatUnit *unit = lhat_program_check(&program, "main.lh");
+        LHAT_CHECK(unit != NULL && !lhat_program_has_errors(&program),
+                   "checked clean");
+
+        // The unit's own, written at its head.
+        LHAT_CHECK_EQ_INT(lhat_unit_annotation_count(unit, NULL, NULL), 1);
+        LhatAnnotation tool = lhat_unit_annotation(unit, NULL, NULL, 0);
+        LHAT_CHECK_EQ_STR(tool.name, tool.name_length, "tool");
+        LHAT_CHECK_EQ_INT(tool.argument_count, 0);
+
+        // The binding that holds the definition.
+        LhatAnnotation icon = lhat_unit_annotation(unit, "Thing", NULL, 0);
+        LHAT_CHECK_EQ_STR(icon.name, icon.name_length, "icon");
+        LHAT_CHECK_EQ_INT(icon.argument_count, 1);
+        LhatAnnotationArgument path = lhat_annotation_argument(icon, 0);
+        LHAT_CHECK_EQ_INT(path.kind, LHAT_ANNOTATION_ARG_STRING);
+        LHAT_CHECK_EQ_STR(path.text, path.length, "res://x.svg");
+
+        // A field of its template, which is where an @export goes.
+        LHAT_CHECK_EQ_INT(lhat_unit_annotation_count(unit, "Thing", "hp"), 1);
+        LhatAnnotation exported = lhat_unit_annotation(unit, "Thing", "hp", 0);
+        LHAT_CHECK_EQ_STR(exported.name, exported.name_length, "export");
+        LHAT_CHECK_EQ_INT(exported.argument_count, 2);
+        LHAT_CHECK_EQ_REAL(lhat_annotation_argument(exported, 0).number, 0.0,
+                             1e-9);
+        LHAT_CHECK_EQ_REAL(lhat_annotation_argument(exported, 1).number,
+                             100.0, 1e-9);
+
+        // And a member of the definition, which is the other place.
+        LhatAnnotation rpc = lhat_unit_annotation(unit, "Thing", "go", 0);
+        LHAT_CHECK_EQ_STR(rpc.name, rpc.name_length, "rpc");
+
+        // Nothing was written above these.
+        LHAT_CHECK_EQ_INT(lhat_unit_annotation_count(unit, "Thing", "nope"), 0);
+        LHAT_CHECK_EQ_INT(lhat_unit_annotation_count(unit, "Nope", NULL), 0);
+    }
+    lhat_program_dispose(&program);
+
+    // 18.3: the four kinds, each arriving as itself. A name is not resolved
+    // -- it is the spelling, for the host to read.
+    LHAT_TEST("every kind of argument arrives as itself");
+    {
+        static const File kinds[] = {
+            {"main.lh",
+             "module^ ns.main\n"
+             "@kinds(-1.5, \"text\", SOME_NAME, true^, false^)\n"
+             "let^ x = 1\n"},
+        };
+        program_with(&program, &disk, kinds, 1);
+        LHAT_CHECK(
+            lhat_register_annotation(
+                &program, "h", "kinds", LHAT_ANNOTATION_BINDING,
+                "p^ number^, string^, string^, bool^, bool^;"),
+            "the signature parsed");
+        const LhatUnit *unit = lhat_program_check(&program, "main.lh");
+        LHAT_CHECK(unit != NULL && !lhat_program_has_errors(&program),
+                   "checked clean");
+
+        LhatAnnotation written = lhat_unit_annotation(unit, NULL, "x", 0);
+        LHAT_CHECK_EQ_INT(written.argument_count, 5);
+
+        LhatAnnotationArgument number = lhat_annotation_argument(written, 0);
+        LHAT_CHECK_EQ_INT(number.kind, LHAT_ANNOTATION_ARG_NUMBER);
+        // 18.3's leading '-' is applied on the way out, so a host reads one
+        // number rather than the shape it was written as.
+        LHAT_CHECK_EQ_REAL(number.number, -1.5, 1e-9);
+
+        LhatAnnotationArgument text = lhat_annotation_argument(written, 1);
+        LHAT_CHECK_EQ_INT(text.kind, LHAT_ANNOTATION_ARG_STRING);
+        LHAT_CHECK_EQ_STR(text.text, text.length, "text");
+
+        LhatAnnotationArgument named = lhat_annotation_argument(written, 2);
+        LHAT_CHECK_EQ_INT(named.kind, LHAT_ANNOTATION_ARG_NAME);
+        LHAT_CHECK_EQ_STR(named.text, named.length, "SOME_NAME");
+
+        LHAT_CHECK_EQ_INT(lhat_annotation_argument(written, 3).kind,
+                          LHAT_ANNOTATION_ARG_BOOL);
+        LHAT_CHECK(lhat_annotation_argument(written, 3).boolean, "true^");
+        LHAT_CHECK(!lhat_annotation_argument(written, 4).boolean, "false^");
+
+        LHAT_CHECK_EQ_INT(lhat_annotation_argument(written, 5).kind,
+                          LHAT_ANNOTATION_ARG_NUMBER);  // zeroed past the end
+    }
+    lhat_program_dispose(&program);
 }
 
 int main(void)

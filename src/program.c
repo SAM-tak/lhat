@@ -290,6 +290,208 @@ static bool resolve_unit_body(void *context, size_t unit,
     return false;
 }
 
+
+// ---------------------------------------------------------------------------
+// 02 の 18: what a unit wrote as annotations
+// ---------------------------------------------------------------------------
+
+static bool unit_name_is(const LhatUnit *unit, const LhatNode *node,
+                         const char *name)
+{
+    const char *spelt = NULL;
+    size_t length = 0;
+    if (node == NULL || name == NULL ||
+        !lhat_node_name(node, unit->lexer.source->text, unit->lexer.strings,
+                        &spelt, &length)) {
+        return false;
+    }
+    return strlen(name) == length && memcmp(spelt, name, length) == 0;
+}
+
+// The top-level binding of `name`, or NULL. 18.4 puts an annotation on the
+// declaration, so this is where one is looked for.
+static const LhatNode *unit_top_binding(const LhatUnit *unit,
+                                        const char *name)
+{
+    if (unit == NULL || !unit->loaded || unit->parsed.root == NULL) {
+        return NULL;
+    }
+    for (const LhatNode *s = unit->parsed.root->v.list.items; s != NULL;
+         s = s->next) {
+        if (s->kind != LHAT_NODE_DEFINE || s->v.binding.targets == NULL ||
+            s->v.binding.targets->next != NULL) {
+            continue;
+        }
+        if (unit_name_is(unit, s->v.binding.targets, name)) {
+            return s;
+        }
+    }
+    return NULL;
+}
+
+// A member of the definition, or a field of its template -- 18.4 puts an
+// annotation on both, and a host asking for `hp` does not care which it is.
+static const LhatNode *definition_entry(const LhatUnit *unit,
+                                        const LhatNode *definition,
+                                        const char *name)
+{
+    if (definition == NULL || definition->kind != LHAT_NODE_DEF) {
+        return NULL;
+    }
+    for (const LhatNode *entry = definition->v.list.items; entry != NULL;
+         entry = entry->next) {
+        if (entry->v.entry.key != NULL) {
+            if (unit_name_is(unit, entry->v.entry.key, name)) {
+                return entry;
+            }
+            continue;
+        }
+        // 14.3: the one entry with no key is the template, whose own entries
+        // are the fields.
+        const LhatNode *template = entry->v.entry.value;
+        if (template == NULL) {
+            continue;
+        }
+        for (const LhatNode *field = template->v.list.items; field != NULL;
+             field = field->next) {
+            if (unit_name_is(unit, field->v.entry.key, name)) {
+                return field;
+            }
+        }
+    }
+    return NULL;
+}
+
+static const LhatNode *unit_annotations_of(const LhatUnit *unit,
+                                           const char *definition,
+                                           const char *name)
+{
+    if (unit == NULL || !unit->loaded || unit->parsed.root == NULL) {
+        return NULL;
+    }
+    if (definition == NULL && name == NULL) {
+        return unit->parsed.root->v.list.annotations;
+    }
+    if (definition == NULL) {
+        const LhatNode *binding = unit_top_binding(unit, name);
+        return binding != NULL ? binding->v.binding.annotations : NULL;
+    }
+
+    const LhatNode *binding = unit_top_binding(unit, definition);
+    if (binding == NULL) {
+        return NULL;
+    }
+    if (name == NULL) {
+        return binding->v.binding.annotations;
+    }
+    const LhatNode *entry =
+        definition_entry(unit, binding->v.binding.values, name);
+    return entry != NULL ? entry->v.entry.annotations : NULL;
+}
+
+size_t lhat_unit_annotation_count(const LhatUnit *unit, const char *definition,
+                                  const char *name)
+{
+    size_t count = 0;
+    for (const LhatNode *at = unit_annotations_of(unit, definition, name);
+         at != NULL; at = at->next) {
+        count++;
+    }
+    return count;
+}
+
+LhatAnnotation lhat_unit_annotation(const LhatUnit *unit,
+                                    const char *definition, const char *name,
+                                    size_t index)
+{
+    LhatAnnotation out;
+    memset(&out, 0, sizeof out);
+
+    const LhatNode *at = unit_annotations_of(unit, definition, name);
+    for (size_t i = 0; at != NULL && i < index; i++) {
+        at = at->next;
+    }
+    if (at == NULL) {
+        return out;
+    }
+
+    const char *spelt = NULL;
+    size_t length = 0;
+    if (lhat_node_name(at->v.named.name, unit->lexer.source->text,
+                       unit->lexer.strings, &spelt, &length)) {
+        out.name = spelt;
+        out.name_length = length;
+    }
+    for (const LhatNode *argument = at->v.named.members; argument != NULL;
+         argument = argument->next) {
+        out.argument_count++;
+    }
+    out.written = at;
+    out.unit = unit;
+    return out;
+}
+
+LhatAnnotationArgument lhat_annotation_argument(LhatAnnotation annotation,
+                                                size_t at)
+{
+    LhatAnnotationArgument out;
+    memset(&out, 0, sizeof out);
+
+    const LhatNode *node = (const LhatNode *)annotation.written;
+    const LhatUnit *unit = (const LhatUnit *)annotation.unit;
+    if (node == NULL || unit == NULL) {
+        return out;
+    }
+    const LhatNode *argument = node->v.named.members;
+    for (size_t i = 0; argument != NULL && i < at; i++) {
+        argument = argument->next;
+    }
+    if (argument == NULL) {
+        return out;
+    }
+
+    // 18.3's leading '-' is kept as the unary it is, and applied here so a
+    // host reads one number rather than a shape.
+    double sign = 1.0;
+    if (argument->kind == LHAT_NODE_UNARY) {
+        sign = -1.0;
+        argument = argument->v.unary.operand;
+        if (argument == NULL) {
+            return out;
+        }
+    }
+
+    switch (argument->kind) {
+        case LHAT_NODE_INT:
+            out.kind = LHAT_ANNOTATION_ARG_NUMBER;
+            out.number = sign * (double)argument->v.integer.value;
+            break;
+        case LHAT_NODE_FLOAT:
+            out.kind = LHAT_ANNOTATION_ARG_NUMBER;
+            out.number = sign * argument->v.real;
+            break;
+        case LHAT_NODE_STRING:
+            out.kind = LHAT_ANNOTATION_ARG_STRING;
+            out.text = unit->lexer.strings + argument->v.string.offset;
+            out.length = argument->v.string.length;
+            break;
+        case LHAT_NODE_IDENT:
+            out.kind = LHAT_ANNOTATION_ARG_NAME;
+            out.text = unit->lexer.source->text + argument->v.name.offset;
+            out.length = argument->v.name.length;
+            break;
+        case LHAT_NODE_HAT_IDENT:
+            out.kind = LHAT_ANNOTATION_ARG_BOOL;
+            out.boolean = argument->v.name.length == 5 &&
+                          memcmp(unit->lexer.source->text + argument->v.name.offset,
+                                 "true^", 5) == 0;
+            break;
+        default:
+            break;
+    }
+    return out;
+}
+
 // ---------------------------------------------------------------------------
 // 05 の 8.7: what the host provides
 // ---------------------------------------------------------------------------
