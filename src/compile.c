@@ -66,6 +66,12 @@ typedef struct {
 
 typedef struct DefChain {
     const LhatNode *parts[LHAT_MAX_DEF_CHAIN];  // base first, derived last
+    // 05 の 5.3: the unit a part was written in, when that is not this one.
+    // Its top level is where a name free in the part is looked up, and its
+    // module path is how what it published is reached while running. Both
+    // NULL for a part written here, which needs neither.
+    const LhatNode *scopes[LHAT_MAX_DEF_CHAIN];
+    const char *modules[LHAT_MAX_DEF_CHAIN];
     // 03 の 4.3: a node carries an offset into the text it was read from, so
     // reading one through another input's lexer answers a different word.
     // A chain may cross inputs -- 'A .. def^{ … }' where A came from an
@@ -185,6 +191,12 @@ typedef struct Compiler {
     // another unit published -- what a require^ brought in is found there.
     // Only the root holds it; a nested body asks through root_of.
     const LhatNode *statements;
+
+    // 05 の 5.3: set while a part written in another unit is being compiled.
+    // A name free in it is that unit's, and resolve_name reaches it the only
+    // way a body somewhere else can -- through L^.modules.
+    const LhatNode *foreign_scope;
+    const char *foreign_module;
 } Compiler;
 
 typedef struct DefDecl {
@@ -794,6 +806,9 @@ static LhatRuntimeType *lower_type(Compiler *c, const LhatNode *node);
 static bool resolve_name(Compiler *c, const char *name, size_t length,
                          uint8_t into);
 static const LhatNode *template_of(const LhatNode *def);
+static const LhatNode *unit_binding(const LhatNode *statements,
+                                    const LhatLexer *lexer, const char *name,
+                                    size_t length, bool exported_only);
 
 static void compile_import_path(Compiler *c, const LhatNode *path, uint8_t into,
                                 uint8_t key);
@@ -1654,15 +1669,21 @@ static LhatRuntimeType *lower_def_chain(Compiler *c, const DefChain *chain)
     }
 
     const LhatLexer *enclosing = c->lexer;
+    const LhatNode *enclosing_scope = c->foreign_scope;
+    const char *enclosing_module = c->foreign_module;
     for (size_t i = 0; i < chain->count; i++) {
         // 03 の 4.3: a part read from an earlier input carries offsets into
         // that input's text, so the lexer travels with it -- the same swap
         // compile_def makes to read the same names.
         c->lexer = chain->lexers[i];
+        c->foreign_scope = chain->scopes[i];
+        c->foreign_module = chain->modules[i];
         for (const LhatNode *entry = chain->parts[i]->v.list.items;
              entry != NULL; entry = entry->next) {
             if (!add_shape_member(c, type, entry, false)) {
                 c->lexer = enclosing;
+                c->foreign_scope = enclosing_scope;
+                c->foreign_module = enclosing_module;
                 return NULL;
             }
         }
@@ -1671,11 +1692,15 @@ static LhatRuntimeType *lower_def_chain(Compiler *c, const DefChain *chain)
              field != NULL; field = field->next) {
             if (!add_shape_member(c, type, field, true)) {
                 c->lexer = enclosing;
+                c->foreign_scope = enclosing_scope;
+                c->foreign_module = enclosing_module;
                 return NULL;
             }
         }
     }
     c->lexer = enclosing;
+                c->foreign_scope = enclosing_scope;
+                c->foreign_module = enclosing_module;
 
     // The order rt_from_checked leaves its own structures in, so 11.3's
     // structural comparison lines two of them up without a search.
@@ -1947,6 +1972,91 @@ static bool import_root_outside(const Compiler *c, const char *name,
     return false;
 }
 
+// L^.modules, then one key per segment of `path`, then `name` if there is
+// one. The same walk an import^ makes, which is what makes it the only walk
+// a body somewhere else can make: a registration is an object on the heap of
+// the machine it was installed on, so nothing here is captured.
+static void emit_modules_read(Compiler *c, const char *path, const char *name,
+                              size_t name_length, uint8_t into)
+{
+    uint8_t mark = c->next_register;
+    uint8_t key = reserve(c);
+    emit(c, lhat_encode_abc(LHAT_BC_ENV, into, 0, 0));
+    load_string_bytes(c, key, "modules", 7);
+    emit(c, lhat_encode_abc(LHAT_BC_GETINDEX, into, into, key));
+    for (const char *segment = path; segment != NULL;) {
+        size_t length = strcspn(segment, ".");
+        load_string_bytes(c, key, segment, length);
+        emit(c, lhat_encode_abc(LHAT_BC_GETINDEX, into, into, key));
+        segment = segment[length] == '.' ? segment + length + 1 : NULL;
+    }
+    if (name != NULL) {
+        load_string_bytes(c, key, name, name_length);
+        emit(c, lhat_encode_abc(LHAT_BC_GETINDEX, into, into, key));
+    }
+    c->next_register = mark;
+}
+
+// 05 の 8.7: an import^ that unit wrote. The root is what a name of it
+// begins with, and reaching it is the same walk here as there.
+static bool foreign_import_root(const LhatNode *statements,
+                                const LhatLexer *lexer, const char *name,
+                                size_t length)
+{
+    for (const LhatNode *s = statements; s != NULL; s = s->next) {
+        if (s->kind != LHAT_NODE_IMPORT_STMT) {
+            continue;
+        }
+        const LhatNode *root = s->v.jump.value;
+        while (root != NULL && root->kind == LHAT_NODE_MEMBER) {
+            root = root->v.access.target;
+        }
+        const char *spelt = NULL;
+        size_t spelt_length = 0;
+        if (!lhat_node_name(root, lexer->source->text, lexer->strings, &spelt,
+                            &spelt_length)) {
+            continue;
+        }
+        if (spelt_length == length && memcmp(spelt, name, length) == 0) {
+            return true;
+        }
+    }
+    return false;
+}
+
+// 05 の 5.3: a name free in a body flattened here out of another unit. What
+// can be reached is what lives under L^.modules -- what that unit published,
+// and the roots it imported. Its own top-level names are registers in a
+// frame this body does not have, and saying so is worth more than "no such
+// name" about a name that is plainly there in the other file.
+static bool resolve_foreign_name(Compiler *c, const char *name, size_t length,
+                                 uint8_t into)
+{
+    Compiler *part = c;
+    while (part != NULL && part->foreign_scope == NULL) {
+        part = part->parent;
+    }
+    if (part == NULL || part->foreign_module == NULL) {
+        return false;
+    }
+
+    if (foreign_import_root(part->foreign_scope, part->lexer, name, length)) {
+        emit_modules_read(c, NULL, name, length, into);
+        return true;
+    }
+    if (unit_binding(part->foreign_scope, part->lexer, name, length, true) !=
+        NULL) {
+        emit_modules_read(c, part->foreign_module, name, length, into);
+        return true;
+    }
+    if (unit_binding(part->foreign_scope, part->lexer, name, length, false) !=
+        NULL) {
+        fail_named(c, LHAT_COMPILE_NOT_PUBLISHED, name, length);
+        return true;  // reported; nothing more to try
+    }
+    return false;
+}
+
 static bool resolve_name(Compiler *c, const char *name, size_t length,
                          uint8_t into)
 {
@@ -1981,6 +2091,13 @@ static bool resolve_name(Compiler *c, const char *name, size_t length,
     size_t upvalue = find_upvalue(c, name, length);
     if (upvalue != SIZE_MAX) {
         emit(c, lhat_encode_abc(LHAT_BC_GETUPVAL, into, (uint8_t)upvalue, 0));
+        return true;
+    }
+    // 05 の 5.3: this body was written in another unit and flattened here
+    // (14.2), so what is free in it is that unit's. Asked before the host's
+    // initial names, since those are the last resort for a name written
+    // here and this one was not.
+    if (resolve_foreign_name(c, name, length, into)) {
         return true;
     }
     // 05 の 8.2: nothing new exists at run time for one of these -- the name
@@ -2062,8 +2179,8 @@ static const LhatNode *unit_binding(const LhatNode *statements,
 // `depth` is what stops a name bound to itself: only a def^ literal grows
 // the chain, so nothing else would.
 static bool def_chain_foreign(const LhatNode *statements,
-                              const LhatLexer *lexer, const LhatNode *node,
-                              DefChain *out, size_t depth)
+                              const LhatLexer *lexer, const char *module,
+                              const LhatNode *node, DefChain *out, size_t depth)
 {
     if (node == NULL || depth > LHAT_MAX_DEF_CHAIN) {
         return false;
@@ -2073,14 +2190,16 @@ static bool def_chain_foreign(const LhatNode *statements,
             return false;
         }
         out->lexers[out->count] = lexer;
+        out->scopes[out->count] = statements;
+        out->modules[out->count] = module;
         out->parts[out->count++] = node;
         return true;
     }
     if (node->kind == LHAT_NODE_BINARY && node->v.binary.op == LHAT_OP_CONCAT) {
-        return def_chain_foreign(statements, lexer, node->v.binary.left, out,
-                                 depth + 1) &&
-               def_chain_foreign(statements, lexer, node->v.binary.right, out,
-                                 depth + 1);
+        return def_chain_foreign(statements, lexer, module,
+                                 node->v.binary.left, out, depth + 1) &&
+               def_chain_foreign(statements, lexer, module,
+                                 node->v.binary.right, out, depth + 1);
     }
 
     const char *name = NULL;
@@ -2091,7 +2210,7 @@ static bool def_chain_foreign(const LhatNode *statements,
     }
     const LhatNode *value =
         unit_binding(statements, lexer, name, length, false);
-    return def_chain_foreign(statements, lexer, value, out, depth + 1);
+    return def_chain_foreign(statements, lexer, module, value, out, depth + 1);
 }
 
 // 05 の 5.3: 'lib.Thing' where lib is what a require^ answered. The tree is
@@ -2117,10 +2236,13 @@ static bool def_chain_across(Compiler *c, const LhatNode *node, DefChain *out)
         return false;
     }
     const LhatNode *path = required->v.jump.value;
+    const char *module = NULL;
     size_t which = c->units->resolve(
         c->units->context, root->lexer->strings + path->v.string.offset,
-        path->v.string.length, NULL);
-    if (which == LHAT_NO_UNIT) {
+        path->v.string.length, &module);
+    // 05 の 5.5: a unit that declared no path publishes nowhere, so a body of
+    // it flattened here would have no way back to what it named.
+    if (which == LHAT_NO_UNIT || module == NULL) {
         return false;
     }
 
@@ -2139,7 +2261,7 @@ static bool def_chain_across(Compiler *c, const LhatNode *node, DefChain *out)
     }
     const LhatNode *value =
         unit_binding(statements, lexer, member, member_length, true);
-    return def_chain_foreign(statements, lexer, value, out, 0);
+    return def_chain_foreign(statements, lexer, module, value, out, 0);
 }
 
 // The chain an expression stands for: a def^ literal is one link, and a
@@ -2156,6 +2278,8 @@ static bool def_chain_of(Compiler *c, const LhatNode *node, DefChain *out)
             return false;
         }
         out->lexers[out->count] = c->lexer;
+        out->scopes[out->count] = c->foreign_scope;
+        out->modules[out->count] = c->foreign_module;
         out->parts[out->count++] = node;
         return true;
     }
@@ -2183,6 +2307,8 @@ static bool def_chain_of(Compiler *c, const LhatNode *node, DefChain *out)
             return false;
         }
         out->lexers[out->count] = decl->chain.lexers[i];
+        out->scopes[out->count] = decl->chain.scopes[i];
+        out->modules[out->count] = decl->chain.modules[i];
         out->parts[out->count++] = decl->chain.parts[i];
     }
     return true;
@@ -2274,7 +2400,11 @@ static bool ambiguous_member(Compiler *c, const DefChain *chain,
     size_t plain = 0;
     for (size_t i = 0; i < chain->count; i++) {
         const LhatLexer *enclosing = c->lexer;
+    const LhatNode *enclosing_scope = c->foreign_scope;
+    const char *enclosing_module = c->foreign_module;
         c->lexer = chain->lexers[i];
+        c->foreign_scope = chain->scopes[i];
+        c->foreign_module = chain->modules[i];
         for (const LhatNode *entry = chain->parts[i]->v.list.items;
              entry != NULL; entry = entry->next) {
             const char *written = NULL;
@@ -2291,6 +2421,8 @@ static bool ambiguous_member(Compiler *c, const DefChain *chain,
             }
         }
         c->lexer = enclosing;
+                c->foreign_scope = enclosing_scope;
+                c->foreign_module = enclosing_module;
     }
     return plain > 1;
 }
@@ -2359,7 +2491,11 @@ static void compile_self_table(Compiler *c, const LhatNode *node, uint8_t into)
         // The part may have been read from an earlier input, and its offsets
         // mean nothing against this one's text.
         const LhatLexer *enclosing_lexer = c->lexer;
+        const LhatNode *enclosing_scope = c->foreign_scope;
+        const char *enclosing_module = c->foreign_module;
         c->lexer = chain->lexers[i];
+        c->foreign_scope = chain->scopes[i];
+        c->foreign_module = chain->modules[i];
         for (const LhatNode *field = fields->v.list.items; field != NULL;
              field = field->next) {
             const char *name = NULL;
@@ -2386,6 +2522,8 @@ static void compile_self_table(Compiler *c, const LhatNode *node, uint8_t into)
             c->next_register = at;
         }
         c->lexer = enclosing_lexer;
+        c->foreign_scope = enclosing_scope;
+        c->foreign_module = enclosing_module;
     }
 }
 
@@ -2444,7 +2582,11 @@ static void compile_def(Compiler *c, const LhatNode *node, uint8_t into)
         // 03 の 4.3: a part read from an earlier input carries offsets into
         // that input's text, so the lexer travels with it.
         const LhatLexer *enclosing_lexer = c->lexer;
+        const LhatNode *enclosing_scope = c->foreign_scope;
+        const char *enclosing_module = c->foreign_module;
         c->lexer = chain.lexers[i];
+        c->foreign_scope = chain.scopes[i];
+        c->foreign_module = chain.modules[i];
         for (const LhatNode *entry = chain.parts[i]->v.list.items;
              entry != NULL; entry = entry->next) {
             if (entry->v.entry.key == NULL) {
@@ -2532,6 +2674,8 @@ static void compile_def(Compiler *c, const LhatNode *node, uint8_t into)
             c->next_register = at;
         }
         c->lexer = enclosing_lexer;
+        c->foreign_scope = enclosing_scope;
+        c->foreign_module = enclosing_module;
     }
 
     c->building = enclosing;
@@ -6188,6 +6332,9 @@ const char *lhat_compile_status_message(LhatCompileStatus status)
         case LHAT_COMPILE_BREAK_TOO_FAR:
             return "this break^ or next^ names more loops than there are "
                    "around it";
+        case LHAT_COMPILE_NOT_PUBLISHED:
+            return "a definition composed from another unit may only use what "
+                   "that unit published";
         case LHAT_COMPILE_SCOPE_TOO_FAR:
             return "this reaches out past more scopes than are open here";
     }

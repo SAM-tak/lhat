@@ -4,7 +4,6 @@
 
 module^ demo.spinner
 
-import^ godot                      # 平坦化された NodeLib の本体が引く
 let^ nodeLib = require^"lhat/NodeLib.lh"
 
 public^let^ Spinner = nodeLib.Sprite2D..def^{

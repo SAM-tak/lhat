@@ -63,7 +63,13 @@ typedef enum {
     // 01 の 8 章: a '$^' counting more scopes out than are open here. The
     // same kind of miscount as BREAK_TOO_FAR, and not a form still waiting
     // on the compiler.
-    LHAT_COMPILE_SCOPE_TOO_FAR
+    LHAT_COMPILE_SCOPE_TOO_FAR,
+    // 05 の 4 章 と 02 の 14.2: a definition composed out of another unit is
+    // flattened where it is written, so what its body names has to be
+    // reachable from anywhere -- what that unit published, or an import^
+    // root, both of which live under L^.modules. A name of that unit's own
+    // top level is a register in a frame this body does not have.
+    LHAT_COMPILE_NOT_PUBLISHED
 } LhatCompileStatus;
 
 const char *lhat_compile_status_message(LhatCompileStatus status);

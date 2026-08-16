@@ -76,7 +76,6 @@ public^let^ Sprite2D = Node2D..def^{
 
 ```lhat
 module^ demo.spinner
-import^ godot                          # 下の「制約」を見よ
 let^ nodeLib = require^"lhat/NodeLib.lh"
 
 public^let^ Spinner = nodeLib.Sprite2D..def^{
@@ -93,9 +92,10 @@ public^let^ Spinner = nodeLib.Sprite2D..def^{
 `default()` / `isValid()` / `className()` / `isClass()` / `get()` / `set()` /
 `call()`。
 
-**制約**: 合成は書かれた場所で平坦化されるので、**基底の本体は合成先の
-名前空間で解決される**。基底が `import^ godot` を使うなら、合成する単位も
-`import^ godot` を書く必要がある。基底の単位の素の `let^` は届かない。
+合成先は `import^ godot` を書かなくてよい。平坦化された基底の本体は
+**自分の単位の名前空間で解決される**（その単位の `import^` の根と
+`public^` な名前）。基底の単位が自分だけに留めた `let^` は届かず、
+そう言う誤りが出る。
 
 **まだ無いもの**: 公開プロパティ（インスペクタに出る欄）、シグナル。
 
@@ -225,8 +225,6 @@ godot --headless --path godot\demo
 
 ## これから
 
-- **合成された基底の本体を、その単位の名前空間で解決する。** いまは合成先の
-  名前空間で解決されるので、上の「制約」が要る
 - 公開プロパティ。インスタンスの `self^` の欄をインスペクタに出すには
   「L^ で export とは何か」を決める必要がある
 - シグナル

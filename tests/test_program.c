@@ -2033,6 +2033,76 @@ static void test_composing_across_units(void)
     }
     lhat_program_dispose(&program);
 
+    // 05 の 5.3: a part flattened here was written elsewhere, so what is free
+    // in it is that unit's. What it can reach from here is what lives under
+    // L^.modules -- what that unit published, and the roots it imported.
+    LHAT_TEST("and its body still names what its own unit named");
+    {
+        static const File shared[] = {
+            {"lib.lh",
+             "module^ ns.lib\n"
+             "public^ let^ ten = f^ -> number^ { return^ 10 }\n"
+             "let^ hidden = f^ -> number^ { return^ 1 }\n"
+             "public^ let^ Base = def^{\n"
+             "  self^{},\n"
+             "  reach = f^self^ -> number^ { return^ ten() },\n"
+             "}\n"
+             "public^ let^ Sealed = def^{\n"
+             "  self^{},\n"
+             "  reach = f^self^ -> number^ { return^ hidden() },\n"
+             "}\n"},
+            {"main.lh",
+             "let^ lib = require^ \"lib.lh\"\n"
+             "let^ Mine = lib.Base .. def^{ self^{} }\n"
+             "return^ Mine.new().reach()\n"},
+        };
+        program_with(&program, &disk, shared, 2);
+        const LhatUnit *root = lhat_program_check(&program, "main.lh");
+        LHAT_CHECK(root != NULL && !lhat_program_has_errors(&program),
+                   "the program checked");
+        size_t count = 0;
+        const LhatModule *modules = lhat_program_compile(&program, &count);
+        LHAT_CHECK(modules != NULL, "every unit compiled");
+        if (modules != NULL && root != NULL) {
+            LhatMachine *machine = lhat_machine_new();
+            lhat_machine_set_modules(machine, modules, count);
+            LhatRunResult ran = lhat_run(machine, modules[root->index].proto);
+            LHAT_CHECK_EQ_INT(ran.status, LHAT_RUN_OK);
+            LHAT_CHECK_EQ_INT(lhat_as_integer(ran.value), 10);
+            lhat_machine_dispose(machine);
+        }
+    }
+    lhat_program_dispose(&program);
+
+    // 05 の 4 章: a name that unit kept to itself is a register in a frame
+    // this body does not have, and saying so is worth more than "no such
+    // name" about a name plainly there in the other file.
+    LHAT_TEST("but not what it kept to itself");
+    {
+        static const File kept[] = {
+            {"lib.lh",
+             "module^ ns.lib\n"
+             "let^ hidden = f^ -> number^ { return^ 1 }\n"
+             "public^ let^ Sealed = def^{\n"
+             "  self^{},\n"
+             "  reach = f^self^ -> number^ { return^ hidden() },\n"
+             "}\n"},
+            {"main.lh",
+             "let^ lib = require^ \"lib.lh\"\n"
+             "let^ Mine = lib.Sealed .. def^{ self^{} }\n"},
+        };
+        program_with(&program, &disk, kept, 2);
+        const LhatUnit *root = lhat_program_check(&program, "main.lh");
+        LHAT_CHECK(root != NULL && !lhat_program_has_errors(&program),
+                   "the checker is content");
+        size_t count = 0;
+        LHAT_CHECK(lhat_program_compile(&program, &count) == NULL,
+                   "and the compile stops");
+        LHAT_CHECK_EQ_INT(lhat_program_compile_status(&program),
+                          LHAT_COMPILE_NOT_PUBLISHED);
+    }
+    lhat_program_dispose(&program);
+
     // 03 の 4.2: a form 14.2 cannot follow to a chain is a hole to report
     // where it is written, not instructions that fault where they run. A
     // definition reached through an ordinary table is one of those.
