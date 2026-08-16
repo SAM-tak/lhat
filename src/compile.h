@@ -31,8 +31,21 @@
 typedef size_t (*LhatUnitResolver)(void *context, const char *path,
                                    size_t length, const char **module_name);
 
+// 02 の 14.2: a composition is flattened where it is written, so a chain
+// naming a definition another unit published needs that unit's tree rather
+// than the value it will have. The program already holds it -- checking put
+// it there -- and this is how the compiler asks for it.
+//
+// Answers the unit's top-level statements and the lexer their names are
+// spans into. NULL leaves a composition across units uncompilable, which is
+// what lhat_compile (no program behind it) gets.
+typedef bool (*LhatUnitBodyResolver)(void *context, size_t unit,
+                                     const LhatNode **out_statements,
+                                     const LhatLexer **out_lexer);
+
 typedef struct {
     LhatUnitResolver resolve;
+    LhatUnitBodyResolver body;
     void *context;
     // 05 の 3 章: the path this unit declared, or NULL when it declared none
     // (3.2). A unit that has one registers itself under it and answers what

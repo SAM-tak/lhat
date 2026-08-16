@@ -180,6 +180,11 @@ typedef struct Compiler {
     // 05 の 5 章: where a require^ inside this unit leads. NULL when the unit
     // is being compiled on its own, and then a require^ has nowhere to go.
     const LhatUnits *units;
+
+    // 14.2: the unit's own top level, for a composition naming a definition
+    // another unit published -- what a require^ brought in is found there.
+    // Only the root holds it; a nested body asks through root_of.
+    const LhatNode *statements;
 } Compiler;
 
 typedef struct DefDecl {
@@ -2019,6 +2024,124 @@ static const DefDecl *find_def_decl(Compiler *c, const char *name,
     return NULL;
 }
 
+// The value a unit's top level binds to `name`, read through the lexer that
+// unit's names are spans into. `exported_only` asks 05 の 4 章's question:
+// what another unit may name is what this one published.
+static const LhatNode *unit_binding(const LhatNode *statements,
+                                    const LhatLexer *lexer, const char *name,
+                                    size_t length, bool exported_only)
+{
+    for (const LhatNode *s = statements; s != NULL; s = s->next) {
+        if (s->kind != LHAT_NODE_DEFINE ||
+            (exported_only && !s->v.binding.exported)) {
+            continue;
+        }
+        const LhatNode *target = s->v.binding.targets;
+        const LhatNode *value = s->v.binding.values;
+        if (target == NULL || target->next != NULL || value == NULL) {
+            continue;
+        }
+        const char *spelt = NULL;
+        size_t spelt_length = 0;
+        if (!lhat_node_name(define_target_name(target), lexer->source->text,
+                            lexer->strings, &spelt, &spelt_length)) {
+            continue;
+        }
+        if (spelt_length == length && memcmp(spelt, name, length) == 0) {
+            return value;
+        }
+    }
+    return NULL;
+}
+
+// The same walk as def_chain_of, over another unit's tree. A name is looked
+// up in that unit's own top level; a path from there into a third unit is
+// not followed, since 5.1 resolves a require^ against the unit that wrote it
+// and the resolver here answers for the unit being compiled.
+//
+// `depth` is what stops a name bound to itself: only a def^ literal grows
+// the chain, so nothing else would.
+static bool def_chain_foreign(const LhatNode *statements,
+                              const LhatLexer *lexer, const LhatNode *node,
+                              DefChain *out, size_t depth)
+{
+    if (node == NULL || depth > LHAT_MAX_DEF_CHAIN) {
+        return false;
+    }
+    if (node->kind == LHAT_NODE_DEF) {
+        if (out->count >= LHAT_MAX_DEF_CHAIN) {
+            return false;
+        }
+        out->lexers[out->count] = lexer;
+        out->parts[out->count++] = node;
+        return true;
+    }
+    if (node->kind == LHAT_NODE_BINARY && node->v.binary.op == LHAT_OP_CONCAT) {
+        return def_chain_foreign(statements, lexer, node->v.binary.left, out,
+                                 depth + 1) &&
+               def_chain_foreign(statements, lexer, node->v.binary.right, out,
+                                 depth + 1);
+    }
+
+    const char *name = NULL;
+    size_t length = 0;
+    if (!lhat_node_name(node, lexer->source->text, lexer->strings, &name,
+                        &length)) {
+        return false;
+    }
+    const LhatNode *value =
+        unit_binding(statements, lexer, name, length, false);
+    return def_chain_foreign(statements, lexer, value, out, depth + 1);
+}
+
+// 05 の 5.3: 'lib.Thing' where lib is what a require^ answered. The tree is
+// what crosses, not the value -- so 14.2's chain is still fixed at the
+// definition and the flattening is still a compile-time one.
+static bool def_chain_across(Compiler *c, const LhatNode *node, DefChain *out)
+{
+    Compiler *root = root_of(c);
+    if (c->units == NULL || c->units->resolve == NULL ||
+        c->units->body == NULL || root->statements == NULL) {
+        return false;
+    }
+
+    const char *root_name = NULL;
+    size_t root_length = 0;
+    if (!node_name(c, node->v.access.target, &root_name, &root_length)) {
+        return false;
+    }
+    const LhatNode *required = unit_binding(root->statements, root->lexer,
+                                            root_name, root_length, false);
+    if (required == NULL || required->kind != LHAT_NODE_REQUIRE ||
+        required->v.jump.value == NULL) {
+        return false;
+    }
+    const LhatNode *path = required->v.jump.value;
+    size_t which = c->units->resolve(
+        c->units->context, root->lexer->strings + path->v.string.offset,
+        path->v.string.length, NULL);
+    if (which == LHAT_NO_UNIT) {
+        return false;
+    }
+
+    const LhatNode *statements = NULL;
+    const LhatLexer *lexer = NULL;
+    if (!c->units->body(c->units->context, which, &statements, &lexer)) {
+        return false;
+    }
+
+    // The member is written here, so its spelling is read here; what it is
+    // compared against was written there.
+    const char *member = NULL;
+    size_t member_length = 0;
+    if (!node_name(c, node->v.access.argument, &member, &member_length)) {
+        return false;
+    }
+    const LhatNode *value =
+        unit_binding(statements, lexer, member, member_length, true);
+    return def_chain_foreign(statements, lexer, value, out, 0);
+}
+
 // The chain an expression stands for: a def^ literal is one link, and a
 // composition is whatever the left names followed by the right. 14.2 makes
 // this decidable without running anything, which is the point of fixing the
@@ -2041,6 +2164,9 @@ static bool def_chain_of(Compiler *c, const LhatNode *node, DefChain *out)
     if (node->kind == LHAT_NODE_BINARY && node->v.binary.op == LHAT_OP_CONCAT) {
         return def_chain_of(c, node->v.binary.left, out) &&
                def_chain_of(c, node->v.binary.right, out);
+    }
+    if (node->kind == LHAT_NODE_MEMBER) {
+        return def_chain_across(c, node, out);
     }
 
     const char *name = NULL;
@@ -3009,6 +3135,17 @@ static void compile_binary(Compiler *c, const LhatNode *node, uint8_t into)
         chain.count = 0;
         if (def_chain_of(c, node, &chain)) {
             compile_def(c, node, into);
+            return;
+        }
+        // A def^ written on the right says composition and nothing else --
+        // 11.2's '..' is for strings and 11.8's for what carries the member,
+        // and a definition is neither. So a left this could not follow to a
+        // chain is a form 14.2 does not cover, and 03 の 4.2 makes that a
+        // hole to report where it is rather than instructions that fault
+        // where they run.
+        if (node->v.binary.right != NULL &&
+            node->v.binary.right->kind == LHAT_NODE_DEF) {
+            fail(c, LHAT_COMPILE_UNSUPPORTED);
             return;
         }
     }
@@ -5911,6 +6048,7 @@ static LhatCompileResult compile_unit(LhatCompileSession *session,
     }
 
     c.units = units;
+    c.statements = unit != NULL ? unit->v.list.items : NULL;
     const char *module_name = units != NULL ? units->module_name : NULL;
 
     // 05 の 5.3: what an earlier require^ registered is the answer, and the

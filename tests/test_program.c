@@ -1961,6 +1961,102 @@ static void test_diagnostics(void)
     lhat_program_dispose(&program);
 }
 
+// 02 の 14.2 と 05 の 5.3: composing onto a definition another unit published.
+// 14.2 fixes the chain where it is written, so this is a compile-time
+// flattening like any other -- what crosses the boundary is the tree, and
+// never a value.
+static void test_composing_across_units(void)
+{
+    LhatProgram program;
+    Disk disk;
+
+    static const File files[] = {
+        {"lib.lh",
+         "module^ ns.lib\n"
+         "public^ let^ Base = def^{\n"
+         "  self^{ abstract^ n : number^ },\n"
+         "  get = f^self^ -> number^ { return^ self^.n },\n"
+         "}\n"
+         "public^ let^ Middle = Base .. def^{\n"
+         "  self^{},\n"
+         "  twice = f^self^ -> number^ { return^ self^.get() * 2 },\n"
+         "}\n"
+         "let^ Hidden = def^{ self^{}, no = f^self^ -> number^ { return^ 0 } }\n"},
+        {"main.lh",
+         "let^ lib = require^ \"lib.lh\"\n"
+         "let^ Mine = lib.Middle .. def^{\n"
+         "  self^{ n = 21 },\n"
+         "  own = f^self^ -> number^ { return^ 1 },\n"
+         "}\n"
+         "let^ takes = f^ x:lib.Base -> number^ { return^ x.get() }\n"
+         "let^ m = Mine.new()\n"
+         "return^ m.twice() + m.own() + takes(m)\n"},
+    };
+
+    LHAT_TEST("a definition another unit published is composed onto");
+    {
+        program_with(&program, &disk, files, 2);
+        const LhatUnit *root = lhat_program_check(&program, "main.lh");
+        LHAT_CHECK(root != NULL && !lhat_program_has_errors(&program),
+                   "the program checked");
+        size_t count = 0;
+        const LhatModule *modules = lhat_program_compile(&program, &count);
+        LHAT_CHECK(modules != NULL, "every unit compiled");
+        if (modules != NULL && root != NULL) {
+            LhatMachine *machine = lhat_machine_new();
+            lhat_machine_set_modules(machine, modules, count);
+            LhatRunResult ran = lhat_run(machine, modules[root->index].proto);
+            LHAT_CHECK_EQ_INT(ran.status, LHAT_RUN_OK);
+            // 42 through the base's own member, 1 of its own, and 21 again
+            // through a parameter typed as the base -- 14.10's width
+            // subtyping is what lets the composed one land there.
+            LHAT_CHECK_EQ_INT(lhat_as_integer(ran.value), 64);
+            lhat_machine_dispose(machine);
+        }
+    }
+    lhat_program_dispose(&program);
+
+    // 05 の 4 章: what another unit may name is what this one published.
+    LHAT_TEST("but only what that unit published");
+    {
+        static const File hidden[] = {
+            {"lib.lh",
+             "module^ ns.lib\n"
+             "let^ Hidden = def^{ self^{}, no = f^self^ -> number^ { return^ 0 } }\n"},
+            {"main.lh",
+             "let^ lib = require^ \"lib.lh\"\n"
+             "let^ Mine = lib.Hidden .. def^{ self^{} }\n"},
+        };
+        program_with(&program, &disk, hidden, 2);
+        lhat_program_check(&program, "main.lh");
+        LHAT_CHECK(lhat_program_has_errors(&program), "the checker refuses it");
+    }
+    lhat_program_dispose(&program);
+
+    // 03 の 4.2: a form 14.2 cannot follow to a chain is a hole to report
+    // where it is written, not instructions that fault where they run. A
+    // definition reached through an ordinary table is one of those.
+    LHAT_TEST("and a chain that cannot be followed is reported, not emitted");
+    {
+        static const File through_table[] = {
+            {"main.lh",
+             "let^ t = { Leaf = def^{ self^{}, one = f^self^ -> number^ "
+             "{ return^ 1 } } }\n"
+             "let^ M = t.Leaf .. def^{ self^{} }\n"},
+        };
+        program_with(&program, &disk, through_table, 1);
+        const LhatUnit *root = lhat_program_check(&program, "main.lh");
+        LHAT_CHECK(root != NULL && !lhat_program_has_errors(&program),
+                   "the checker is content");
+        size_t count = 0;
+        LHAT_CHECK(lhat_program_compile(&program, &count) == NULL,
+                   "and the compile stops");
+        LHAT_CHECK_EQ_INT(lhat_program_compile_status(&program),
+                          LHAT_COMPILE_UNSUPPORTED);
+    }
+    lhat_program_dispose(&program);
+}
+
 int main(void)
 {
     // 8.9: before anything is taken, so the refusal above is about the order
@@ -1970,6 +2066,7 @@ int main(void)
     test_loading();
     test_cycles();
     test_diagnostics();
+    test_composing_across_units();
     test_running();
     test_hosting();
     test_hostvalue_escape();

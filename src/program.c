@@ -268,6 +268,26 @@ static size_t resolve_unit(void *context, const char *path, size_t length,
     return unit->index;
 }
 
+// 02 の 14.2: the tree of a unit already parsed, for a composition in another
+// unit that has to be flattened where it is written. Everything the graph
+// reached is still here -- 6.2 checked it before any of this compiled -- so
+// this only has to find it.
+static bool resolve_unit_body(void *context, size_t unit,
+                              const LhatNode **out_statements,
+                              const LhatLexer **out_lexer)
+{
+    Resolution *r = (Resolution *)context;
+    for (LhatUnit *u = r->program->units; u != NULL; u = u->next) {
+        if (!u->loaded || u->index != unit || u->parsed.root == NULL) {
+            continue;
+        }
+        *out_statements = u->parsed.root->v.list.items;
+        *out_lexer = &u->lexer;
+        return *out_statements != NULL;
+    }
+    return false;
+}
+
 // ---------------------------------------------------------------------------
 // 05 の 8.7: what the host provides
 // ---------------------------------------------------------------------------
@@ -1275,6 +1295,7 @@ const LhatModule *lhat_program_compile(LhatProgram *program, size_t *count)
 
         LhatUnits units;
         units.resolve = resolve_unit;
+        units.body = resolve_unit_body;
         units.context = &resolution;
         units.module_name = u->checked.module_name;
         units.initial_names = (const char *const *)program->initial_names;
