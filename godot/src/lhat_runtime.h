@@ -10,8 +10,10 @@
 #define LHAT_GODOT_RUNTIME_H
 
 #include <godot_cpp/classes/ref_counted.hpp>
+#include <godot_cpp/variant/array.hpp>
 #include <godot_cpp/variant/packed_string_array.hpp>
 #include <godot_cpp/variant/string.hpp>
+#include <godot_cpp/variant/variant.hpp>
 
 namespace godot {
 
@@ -34,10 +36,23 @@ public:
     static PackedStringArray check(const String &path);
 
     // The same, and then runs it. Answers what stopped it, empty when it
-    // ran; what the unit answered, if anything, is printed. What the unit
-    // answered does not come back as a Variant: a value crossing that way is
-    // the conversion layer a Script needs, and this is not it yet.
+    // ran; what the unit answered, if anything, is printed.
     static PackedStringArray run(const String &path);
+
+    // Runs the unit and calls one member of what it answered -- a unit
+    // answers a table of its public^ names (05 の 5.5), which is what makes
+    // "the members of a unit" a thing to call at all.
+    //
+    // The unit runs afresh every time, so nothing it did last call is still
+    // there. Keeping a machine between calls is what a Script instance will
+    // do, and needs a way for a host to hold a value across a run that the
+    // library does not have yet.
+    //
+    // Answers nil and pushes an error when anything went wrong: the unit did
+    // not check, there is no such member, an argument had no shape in L^, or
+    // the call stopped.
+    static Variant call_member(const String &path, const String &member,
+                               const Array &arguments);
 };
 
 }  // namespace godot

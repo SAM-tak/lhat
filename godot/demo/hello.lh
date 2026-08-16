@@ -8,3 +8,4 @@ let^ greeting = require^"lib/greeting.lh"
 
 print(greeting.greet("Godot"))
 print(1 + 2, "and", 6 * 7)
+print("日本語も通る")

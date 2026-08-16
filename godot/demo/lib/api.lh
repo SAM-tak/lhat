@@ -1,0 +1,26 @@
+module^ demo.api
+
+# What a unit answers is the table of its public^ names (05 の 5.5), which is
+# what makes "the members of a unit" something the engine can call.
+
+public^let^ greet = f^ who:string^ -> string^ { return^ $"hello, {who}" }
+
+public^let^ add = f^ a:number^, b:number^ -> number^ { return^ a + b }
+
+# Godot の Array は 1..n の表として渡ってくる
+public^let^ total = f^ xs:t^{ ...:number^ } -> number^ {
+    var^ sum = 0
+    for^ x in^ xs { sum += x }
+    return^ sum
+}
+
+# 表を答えれば Dictionary か Array になって返る
+public^let^ describe = f^ who:string^ {
+    return^ { name = who, length = who.length, ok = true^ }
+}
+
+public^let^ numbers = f^ n:number^ {
+    var^ out = {}
+    for^ i from^1 to^ n { out[i] := i * i }
+    return^ out
+}

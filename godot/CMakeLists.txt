@@ -71,7 +71,12 @@ endif()
 # ---- The extension ---------------------------------------------------------
 add_library(lhat_gdextension SHARED
     src/register_types.cpp
+    src/lhat_host.cpp
+    src/lhat_variant.cpp
     src/lhat_runtime.cpp
+    src/lhat_script.cpp
+    src/lhat_language.cpp
+    src/lhat_resource_format.cpp
 )
 
 target_link_libraries(lhat_gdextension PRIVATE lhat godot-cpp)
