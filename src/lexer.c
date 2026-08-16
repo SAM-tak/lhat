@@ -399,6 +399,36 @@ static LhatToken finish(LhatLexer *lexer, Mark start, LhatTokenKind kind)
 // Identifiers (sections 2 and 3)
 // ---------------------------------------------------------------------------
 
+// 02 の 18.2: '@' and the name glued to it. The '@' is the mark and not part
+// of the name, so what comes back spells `export` and a reader comparing
+// names never has to strip anything.
+static LhatToken scan_annotation(LhatLexer *lexer, Mark start)
+{
+    advance(lexer);  // the '@'
+    int width = 0;
+    uint32_t cp = current_cp(lexer, &width);
+    if (width == 0 || !is_ident_start(cp)) {
+        report(lexer, LHAT_ERR_BARE_AT);
+        return finish(lexer, start, LHAT_TOKEN_ERROR);
+    }
+
+    Mark name = mark(lexer);
+    for (;;) {
+        cp = current_cp(lexer, &width);
+        if (width == 0 || !is_ident_continue(cp)) {
+            break;
+        }
+        advance_n(lexer, (size_t)width);
+    }
+
+    LhatToken token = finish(lexer, start, LHAT_TOKEN_ANNOTATION);
+    // The span is the name alone: 18.2 makes the '@' a mark on the token
+    // rather than a character of what it names.
+    token.offset = (uint32_t)name.offset;
+    token.length = (uint32_t)(lexer->pos - name.offset);
+    return token;
+}
+
 static LhatToken scan_identifier(LhatLexer *lexer, Mark start)
 {
     int width;
@@ -1061,6 +1091,8 @@ LhatToken lhat_lexer_next(LhatLexer *lexer)
         token = scan_raw_string(lexer, start);
     } else if (c == '`') {
         token = scan_name_literal(lexer, start);
+    } else if (c == '@') {
+        token = scan_annotation(lexer, start);
     } else if (c == '$') {
         token = scan_dollar(lexer, start);
     } else if (is_decimal_digit(c)) {
@@ -1133,6 +1165,8 @@ const char *lhat_lexer_error_message(LhatErrorCode code)
             return "invalid UTF-8 sequence";
         case LHAT_ERR_BARE_HAT:
             return "'^' must directly follow an identifier";
+        case LHAT_ERR_BARE_AT:
+            return "'@' must be followed directly by the name of an annotation";
         case LHAT_ERR_IDENT_AFTER_NUMBER:
             return "a number must be separated from an identifier by whitespace";
         case LHAT_ERR_MALFORMED_NUMBER:

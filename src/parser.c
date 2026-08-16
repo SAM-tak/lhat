@@ -69,6 +69,8 @@ enum {
 static LhatNode *parse_expression(Parser *p);
 static LhatNode *parse_type(Parser *p);
 static LhatNode *parse_statement(Parser *p);
+static LhatNode *parse_statement_after_annotations(Parser *p);
+static LhatNode *parse_annotations(Parser *p);
 // 13.8改: '(a, b)' written as a jump's value becomes the same node the
 // comma-separated spelling makes. Used by parse_jump and by 15.12's
 // answer_with_body, which is what lets 'f^ { (0, 1) }' work.
@@ -932,10 +934,14 @@ static LhatNode *parse_brace_entries(Parser *p, bool require_key)
     LhatNode *tail = NULL;
 
     while (!at_eof(p) && !check_op(p, LHAT_OP_RBRACE)) {
+        // 02 の 18.4: a field of a self^{ … } takes one, which is where
+        // @export goes.
+        LhatNode *annotations = parse_annotations(p);
         LhatNode *entry = make(p, LHAT_NODE_TABLE_ENTRY, &p->current);
         if (entry == NULL) {
             break;
         }
+        entry->v.entry.annotations = annotations;
 
         // 14.15: a field the composition has to provide, written with its
         // type. Only a template has one -- a table literal makes a value,
@@ -1140,6 +1146,10 @@ static LhatNode *parse_def(Parser *p)
     bool seen_template = false;
 
     while (!at_eof(p) && !check_op(p, LHAT_OP_RBRACE)) {
+        // 02 の 18.4: above the member, and so above 14.12's marker too --
+        // the marker says how the member joins the group, the annotation
+        // says something about the member itself.
+        LhatNode *member_annotations = parse_annotations(p);
         LhatToken at = p->current;
         LhatDefModifier modifier = LHAT_DEF_PLAIN;
 
@@ -1159,6 +1169,7 @@ static LhatNode *parse_def(Parser *p)
             break;
         }
         entry->v.entry.modifier = modifier;
+        entry->v.entry.annotations = member_annotations;
 
         if (check_hat(p, "self") && is_op(&p->ahead, LHAT_OP_LBRACE)) {
             // 14.3: the template is the one entry that is not a member, so it
@@ -2382,6 +2393,95 @@ static int clause_index(const Parser *p)
         return LHAT_CLAUSE_FINALLY;
     }
     return -1;
+}
+
+// 02 の 18.3: an argument is a literal, so nothing here has to be run to be
+// read. A leading '-' on a number is the one shape that is not a single
+// token, and is kept as the unary it is -- what reads the tree normalises it.
+static LhatNode *parse_annotation_argument(Parser *p)
+{
+    if (check_op(p, LHAT_OP_SUB)) {
+        LhatToken at = p->current;
+        advance(p);
+        if (p->current.kind != LHAT_TOKEN_INT &&
+            p->current.kind != LHAT_TOKEN_FLOAT) {
+            report(p, &p->current, LHAT_PARSE_ERR_ANNOTATION_ARG_NOT_LITERAL);
+            return NULL;
+        }
+        LhatNode *node = make(p, LHAT_NODE_UNARY, &at);
+        if (node == NULL) {
+            return NULL;
+        }
+        node->v.unary.op = LHAT_OP_SUB;
+        node->v.unary.operand = simple_node(p);
+        return finish(p, node);
+    }
+
+    switch (p->current.kind) {
+        case LHAT_TOKEN_INT:
+        case LHAT_TOKEN_FLOAT:
+        case LHAT_TOKEN_STRING:
+        case LHAT_TOKEN_IDENT:
+        case LHAT_TOKEN_HAT_IDENT:
+            return simple_node(p);
+        default:
+            report(p, &p->current, LHAT_PARSE_ERR_ANNOTATION_ARG_NOT_LITERAL);
+            return NULL;
+    }
+}
+
+// 02 の 18: the run of annotations written above a declaration, or NULL when
+// none was. The name is the token's own span -- 18.2 makes the '@' a mark on
+// the token rather than a character of the name.
+static LhatNode *parse_annotations(Parser *p)
+{
+    LhatNode *first = NULL;
+    LhatNode *last = NULL;
+
+    while (p->current.kind == LHAT_TOKEN_ANNOTATION) {
+        LhatToken at = p->current;
+        LhatNode *node = make(p, LHAT_NODE_ANNOTATION, &at);
+        LhatNode *name = make(p, LHAT_NODE_IDENT, &at);
+        advance(p);
+        if (node == NULL || name == NULL) {
+            return first;
+        }
+        name->v.name.offset = at.offset;
+        name->v.name.length = at.length;
+        node->v.named.name = name;
+        node->v.named.members = NULL;
+
+        if (check_op(p, LHAT_OP_LPAREN) && !p->current.preceded_by_newline) {
+            advance(p);
+            LhatNode *tail = NULL;
+            while (!check_op(p, LHAT_OP_RPAREN) && !at_eof(p)) {
+                LhatNode *argument = parse_annotation_argument(p);
+                if (argument == NULL) {
+                    break;
+                }
+                if (tail == NULL) {
+                    node->v.named.members = argument;
+                } else {
+                    tail->next = argument;
+                }
+                tail = argument;
+                if (!check_op(p, LHAT_OP_COMMA)) {
+                    break;
+                }
+                advance(p);
+            }
+            expect_op(p, LHAT_OP_RPAREN);
+        }
+
+        node = finish(p, node);
+        if (last == NULL) {
+            first = node;
+        } else {
+            last->next = node;
+        }
+        last = node;
+    }
+    return first;
 }
 
 static LhatNode *parse_statement_list(Parser *p)
@@ -3866,6 +3966,25 @@ static bool is_call_statement(const LhatNode *node)
 
 static LhatNode *parse_statement(Parser *p)
 {
+    // 02 の 18.4: what is written above a declaration belongs to it. Read
+    // before anything else so that every path below reaches the statement
+    // itself with the annotations already in hand.
+    LhatNode *annotations = parse_annotations(p);
+    if (annotations != NULL) {
+        LhatToken at = p->current;
+        LhatNode *statement = parse_statement_after_annotations(p);
+        if (statement != NULL && statement->kind == LHAT_NODE_DEFINE) {
+            statement->v.binding.annotations = annotations;
+        } else if (statement != NULL) {
+            report(p, &at, LHAT_PARSE_ERR_ANNOTATION_NEEDS_DECLARATION);
+        }
+        return statement;
+    }
+    return parse_statement_after_annotations(p);
+}
+
+static LhatNode *parse_statement_after_annotations(Parser *p)
+{
     LhatToken start = p->current;
 
     if (start.kind == LHAT_TOKEN_HAT_IDENT) {
@@ -4287,7 +4406,13 @@ static void parse_unit(LhatLexer *lexer, LhatParseResult *result,
     parser.interactive = interactive;
 
     LhatToken origin = parser.current;
+    // 02 の 18.4: written at the head of the unit, before even module^, and
+    // about the unit rather than about whatever follows.
+    LhatNode *unit_annotations = parse_annotations(&parser);
     result->root = parse_block_body(&parser, &origin);
+    if (result->root != NULL) {
+        result->root->v.list.annotations = unit_annotations;
+    }
 
     // 05 の 3 章: at most one, and at the top. Checked here rather than while
     // parsing, because "the first statement of the unit" is a fact about the
@@ -4546,6 +4671,12 @@ const char *lhat_parse_error_message(LhatParseErrorCode code)
         case LHAT_PARSE_ERR_NAMED_TAKES_NO_COUNT:
             return "a name holds one value; '[ ... ]' says how many positions "
                    "a type takes, so it goes on one written without a name";
+        case LHAT_PARSE_ERR_ANNOTATION_NEEDS_DECLARATION:
+            return "an annotation is written above a declaration -- a let^, a "
+                   "var^, a field, a member, or the unit itself";
+        case LHAT_PARSE_ERR_ANNOTATION_ARG_NOT_LITERAL:
+            return "an annotation never runs, so an argument of one is a "
+                   "number, a string, a name or a boolean written out";
         case LHAT_PARSE_ERR_FIELD_NEEDS_TYPE:
             return "a field needs a type, a default, or both";
         case LHAT_PARSE_ERR_ERRORDEF_NEEDS_NAME:

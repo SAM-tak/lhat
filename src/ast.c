@@ -339,6 +339,7 @@ const char *lhat_node_kind_name(LhatNodeKind kind)
         case LHAT_NODE_ERRORDEF:       return "errordef";
         case LHAT_NODE_ERROR_KIND:     return "error-kind";
         case LHAT_NODE_MODULE:         return "module";
+        case LHAT_NODE_ANNOTATION:     return "annotation";
         case LHAT_NODE_REQUIRE:        return "require";
         case LHAT_NODE_REQUIRE_STMT:   return "require-stmt";
         case LHAT_NODE_IMPORT:         return "import";

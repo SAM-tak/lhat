@@ -102,6 +102,11 @@ typedef enum {
                                               // integer written out -- a
                                               // count of none would leave the
                                               // type saying nothing
+    // 02 の 18.4: an annotation is written above a declaration, and there is
+    // nothing else for one to be about.
+    LHAT_PARSE_ERR_ANNOTATION_NEEDS_DECLARATION,
+    // 02 の 18.3: an argument is a literal, since an annotation never runs.
+    LHAT_PARSE_ERR_ANNOTATION_ARG_NOT_LITERAL,
     LHAT_PARSE_ERR_NAMED_TAKES_NO_COUNT       // 14.10改: a name holds one
                                               // value, and 'type[n]' is how
                                               // several positions are

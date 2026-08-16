@@ -917,13 +917,23 @@ static void test_positions(void)
     LHAT_CHECK_EQ_INT(s.lexer.diagnostics[0].code, LHAT_ERR_UNEXPECTED_CHARACTER);
     scan_dispose(&s);
 
-    // 02 の 11.5: '@' held a place for naming an intermediate value, and that
-    // notation was withdrawn -- 'for^ … do^:' says the same thing. So the
-    // character is no more a token than any other the language never took.
-    LHAT_TEST("'@' is not a token of the language");
-    scan_text(&s, "var^ x = @(1)");
+    // 02 の 18.2: '@' and the name glued to it are one token, and the '@' is
+    // a mark on it rather than a character of the name -- so what comes back
+    // spells the name alone and a reader never strips anything.
+    LHAT_TEST("'@name' is one token spelling the name");
+    scan_text(&s, "@export");
+    LHAT_CHECK_EQ_INT(s.tokens[0].kind, LHAT_TOKEN_ANNOTATION);
+    LHAT_CHECK_EQ_STR(s.lexer.source->text + s.tokens[0].offset,
+                      s.tokens[0].length, "export");
+    LHAT_CHECK_EQ_INT(s.lexer.diagnostic_count, 0);
+    scan_dispose(&s);
+
+    // The name has to be glued to it: 18.2 makes them one token, and one
+    // token is not written with a space in the middle.
+    LHAT_TEST("and '@' on its own is not");
+    scan_text(&s, "var^ x = @ 1");
     LHAT_CHECK_EQ_INT(s.tokens[3].kind, LHAT_TOKEN_ERROR);
-    LHAT_CHECK_EQ_INT(s.lexer.diagnostics[0].code, LHAT_ERR_UNEXPECTED_CHARACTER);
+    LHAT_CHECK_EQ_INT(s.lexer.diagnostics[0].code, LHAT_ERR_BARE_AT);
     scan_dispose(&s);
 }
 

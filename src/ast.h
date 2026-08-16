@@ -88,6 +88,10 @@ typedef enum {
     LHAT_NODE_ERRORDEF,      // errordef^ Name { ... }      (04 の 2.2)
     LHAT_NODE_ERROR_KIND,    // one kind inside an errordef^
     LHAT_NODE_MODULE,        // module^ a.b.c               (05 の 3 章)
+    // 02 の 18: '@name' or '@name(a, b)'. `v.named.name` is the name it was
+    // written with, `v.named.members` the arguments -- literals only, so
+    // nothing here has to be run to be read.
+    LHAT_NODE_ANNOTATION,
 
     // ---- pieces ----
     LHAT_NODE_IF_CLAUSE,     // condition (may be absent) plus a body
@@ -326,6 +330,8 @@ struct LhatNode {
             // them written out means -- so this is a count of positions to
             // make, one without the brackets.
             uint32_t repeat;
+            // 02 の 18.4: a def^ member and a self^{ … } field both take one.
+            LhatNode *annotations;
         } entry;
 
         // DEFINE / REASSIGN take a list of targets and a list of values;
@@ -366,6 +372,9 @@ struct LhatNode {
             // spellings differ only in what happens when the place answers
             // nil^, so nothing else here has to tell them apart.
             bool compound_nil_safe;
+            // 02 の 18.4: what was written above this declaration. NULL when
+            // nothing was. A list of LHAT_NODE_ANNOTATION.
+            LhatNode *annotations;
         } binding;
 
         // Statement or expression lists: BLOCK, TABLE, IF_STMT, IF_EXPR,
@@ -378,6 +387,9 @@ struct LhatNode {
         struct {
             LhatNode *items;
             LhatNode *extra;  // WITH: body. BLOCK: clause list.
+            // 02 の 18.4: the unit's own, written at its head. Only the root
+            // block of a unit ever carries these.
+            LhatNode *annotations;
         } list;
 
         // 16.3. `focus` is a list: bindings, destructuring targets, or one

@@ -250,11 +250,15 @@ static void print_node(const LhatLexer *lexer, const LhatNode *node, int depth)
             break;
         case LHAT_NODE_TABLE_ENTRY:
         case LHAT_NODE_MEMBER_DECL:
+            print_list(lexer, "annotations", node->v.entry.annotations,
+                       depth + 1);
             print_node(lexer, node->v.entry.key, depth + 1);
             print_node(lexer, node->v.entry.value, depth + 1);
             break;
         case LHAT_NODE_DEFINE:
         case LHAT_NODE_REASSIGN:
+            print_list(lexer, "annotations", node->v.binding.annotations,
+                       depth + 1);
             print_list(lexer, "targets", node->v.binding.targets, depth + 1);
             print_list(lexer, "values", node->v.binding.values, depth + 1);
             break;
@@ -295,6 +299,7 @@ static void print_node(const LhatLexer *lexer, const LhatNode *node, int depth)
             print_list(lexer, "items", node->v.list.items, depth + 1);
             print_list(lexer, "clauses", node->v.list.extra, depth + 1);
             break;
+        case LHAT_NODE_ANNOTATION:
         case LHAT_NODE_MODULE:
         case LHAT_NODE_ERROR_KIND:
         case LHAT_NODE_ERROR_NEW:

@@ -24,6 +24,10 @@ typedef enum {
     // delimiters are not part of the name and a doubled backtick is one.
     LHAT_TOKEN_IDENT,
     LHAT_TOKEN_HAT_IDENT,    // identifier followed by one or more '^'
+    // 02 の 18.2: '@' glued to an identifier. One token, so '@ export' is
+    // not one -- the spelling carries the name without the '@', the way a
+    // hat identifier's carries the hats separately.
+    LHAT_TOKEN_ANNOTATION,
 
     LHAT_TOKEN_INT,
     LHAT_TOKEN_FLOAT,
