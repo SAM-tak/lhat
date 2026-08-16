@@ -222,6 +222,33 @@ const Godot *register_godot(LhatProgram *program)
         {"call", "f^self^, string^, ... -> any^;", godot_call},
         {"dispose", "p^self^;", godot_dispose},
     };
+    // 02 の 18: what a script may write above a declaration. The engine acts
+    // on these; L^ only carries them (18.1), which is why registering them is
+    // all the language needs to know.
+    struct {
+        const char *name;
+        uint32_t targets;
+        const char *signature;
+    } annotations[] = {
+        {"tool", LHAT_ANNOTATION_UNIT, nullptr},
+        {"icon", LHAT_ANNOTATION_BINDING, "p^ string^;"},
+        {"export", LHAT_ANNOTATION_FIELD, nullptr},
+        {"export_range", LHAT_ANNOTATION_FIELD, "p^ number^, number^, ...;"},
+        {"export_enum", LHAT_ANNOTATION_FIELD, "p^ string^, ...;"},
+        {"export_file", LHAT_ANNOTATION_FIELD, "p^ string^;"},
+        {"export_multiline", LHAT_ANNOTATION_FIELD, nullptr},
+        {"onready", LHAT_ANNOTATION_FIELD, nullptr},
+        {"rpc", LHAT_ANNOTATION_MEMBER, "p^ string^, ...;"},
+    };
+    for (const auto &annotation : annotations) {
+        if (!lhat_register_annotation(program, "godot", annotation.name,
+                                      annotation.targets,
+                                      annotation.signature)) {
+            memdelete(module);
+            return nullptr;
+        }
+    }
+
     for (const auto &member : members) {
         if (!lhat_register_member(program, "godot", "Object", member.name,
                                   member.signature, member.call, module)) {

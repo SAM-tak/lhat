@@ -2334,6 +2334,30 @@ size_t lhat_program_dump_host_api(const LhatProgram *program, char *out,
     }
     dump_text(&w, first ? "],\n" : "\n  ],\n");
 
+    // 02 の 18.5: what a program may write as an annotation. The language
+    // server has no way to run this host's C, so what it registered is told
+    // here the way its types and functions are.
+    dump_text(&w, "  \"annotations\": [");
+    first = true;
+    for (size_t i = 0; i < program->annotation_count; i++) {
+        const LhatAnnotationDecl *decl = &program->annotations[i];
+        dump_comma(&w, &first);
+        dump_text(&w, "    {\"module\": ");
+        dump_string(&w, decl->module);
+        dump_text(&w, ", \"name\": ");
+        dump_string(&w, decl->name);
+        dump_text(&w, ", \"targets\": ");
+        char targets[16];
+        snprintf(targets, sizeof targets, "%u", (unsigned)decl->targets);
+        dump_text(&w, targets);
+        if (program->annotation_signatures[i] != NULL) {
+            dump_text(&w, ", \"signature\": ");
+            dump_string(&w, program->annotation_signatures[i]);
+        }
+        dump_text(&w, "}");
+    }
+    dump_text(&w, first ? "],\n" : "\n  ],\n");
+
     dump_text(&w, "  \"bindings\": [");
     first = true;
     for (size_t i = 0; i < program->initial_count; i++) {

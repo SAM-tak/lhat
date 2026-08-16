@@ -196,6 +196,23 @@ void lsp_host_config_apply(const LspHostConfig *config, LhatProgram *program)
         apply_function(entry, program);
     }
 
+    // 02 の 18.5: without these every @name a unit writes is one the checker
+    // has never heard of, which is a red line under correct code.
+    const cJSON *annotations =
+        cJSON_GetObjectItemCaseSensitive(config->root, "annotations");
+    cJSON_ArrayForEach(entry, annotations) {
+        const char *module = string_of(entry, "module");
+        const char *name = string_of(entry, "name");
+        const char *signature = string_of(entry, "signature");
+        const cJSON *targets =
+            cJSON_GetObjectItemCaseSensitive(entry, "targets");
+        if (module != NULL && name != NULL && cJSON_IsNumber(targets)) {
+            lhat_register_annotation(program, module, name,
+                                     (uint32_t)targets->valuedouble,
+                                     signature);
+        }
+    }
+
     const cJSON *bindings =
         cJSON_GetObjectItemCaseSensitive(config->root, "bindings");
     cJSON_ArrayForEach(entry, bindings) {

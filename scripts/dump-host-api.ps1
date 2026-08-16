@@ -56,6 +56,7 @@ if ($Godot -ne "") {
 $types = [ordered]@{}
 $functions = [ordered]@{}
 $bindings = [ordered]@{}
+$annotations = [ordered]@{}
 
 foreach ($half in $halves) {
     $parsed = Get-Content -LiteralPath $half -Raw -Encoding utf8 | ConvertFrom-Json
@@ -68,14 +69,18 @@ foreach ($half in $halves) {
     foreach ($entry in $parsed.bindings) {
         $bindings[($entry | ConvertTo-Json -Compress -Depth 5)] = $entry
     }
+    foreach ($entry in $parsed.annotations) {
+        $annotations[($entry | ConvertTo-Json -Compress -Depth 5)] = $entry
+    }
 }
 
 $merged = [ordered]@{
-    types     = @($types.Values)
-    functions = @($functions.Values)
-    bindings  = @($bindings.Values)
+    types       = @($types.Values)
+    functions   = @($functions.Values)
+    annotations = @($annotations.Values)
+    bindings    = @($bindings.Values)
 }
 $merged | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $Out -Encoding utf8
 
 Remove-Item -LiteralPath $fromCli -ErrorAction SilentlyContinue
-"$Out : $($merged.types.Count) types, $($merged.functions.Count) functions, $($merged.bindings.Count) bindings"
+"$Out : $($merged.types.Count) types, $($merged.functions.Count) functions, $($merged.annotations.Count) annotations, $($merged.bindings.Count) bindings"
