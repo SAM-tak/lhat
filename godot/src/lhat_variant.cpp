@@ -1,8 +1,11 @@
 #include "lhat_variant.h"
 
 #include <godot_cpp/variant/array.hpp>
+#include <godot_cpp/classes/object.hpp>
 #include <godot_cpp/variant/dictionary.hpp>
 #include <godot_cpp/variant/string.hpp>
+
+#include "lhat_godot_module.h"
 
 namespace godot {
 namespace host {
@@ -14,9 +17,9 @@ namespace {
 // value worth handing to the engine ever gets.
 const int MAX_DEPTH = 32;
 
-Variant to_variant_at(LhatValue value, int depth);
-bool from_variant_at(LhatMachine *machine, const Variant &value, int depth,
-                     LhatValue *out);
+Variant to_variant_at(LhatValue value, const Godot *module, int depth);
+bool from_variant_at(LhatMachine *machine, const Variant &value,
+                     const Godot *module, int depth, LhatValue *out);
 
 // 02 の 14: one structure serves as both a sequence and a mapping, and Godot
 // has two. A table whose keys are exactly 1..n is the sequence -- which
@@ -26,7 +29,8 @@ bool is_sequence(const LhatTable *table)
     return lhat_table_length(table) == lhat_table_count(table);
 }
 
-Variant table_to_variant(const LhatTable *table, int depth)
+Variant table_to_variant(const LhatTable *table, const Godot *module,
+                         int depth)
 {
     size_t length = lhat_table_length(table);
     if (is_sequence(table)) {
@@ -34,7 +38,7 @@ Variant table_to_variant(const LhatTable *table, int depth)
         for (size_t i = 1; i <= length; i++) {
             out.push_back(
                 to_variant_at(lhat_table_get(table, lhat_integer((int64_t)i)),
-                              depth + 1));
+                              module, depth + 1));
         }
         return out;
     }
@@ -42,7 +46,7 @@ Variant table_to_variant(const LhatTable *table, int depth)
     Dictionary out;
     for (size_t i = 0; i < table->array_count; i++) {
         LhatValue held = lhat_slots_get(table->array, i);
-        out[(int64_t)(i + 1)] = to_variant_at(held, depth + 1);
+        out[(int64_t)(i + 1)] = to_variant_at(held, module, depth + 1);
     }
     // An entry is live when its key is not nil^ -- free and tombstone alike
     // carry a nil^ key (object.h, at LhatTable).
@@ -51,13 +55,13 @@ Variant table_to_variant(const LhatTable *table, int depth)
         if (lhat_is_nil(entry->key)) {
             continue;
         }
-        out[to_variant_at(entry->key, depth + 1)] =
-            to_variant_at(entry->value, depth + 1);
+        out[to_variant_at(entry->key, module, depth + 1)] =
+            to_variant_at(entry->value, module, depth + 1);
     }
     return out;
 }
 
-Variant to_variant_at(LhatValue value, int depth)
+Variant to_variant_at(LhatValue value, const Godot *module, int depth)
 {
     if (depth > MAX_DEPTH) {
         return Variant();
@@ -77,14 +81,20 @@ Variant to_variant_at(LhatValue value, int depth)
     }
     if (lhat_is_object_kind(value, LHAT_OBJECT_TABLE)) {
         return table_to_variant((const LhatTable *)lhat_as_object(value),
-                                depth);
+                                module, depth);
+    }
+    // 05 の 8.8: a handle crosses back as the object it stands for, when
+    // there is a registration to read it against.
+    Object *object = object_of(value, module);
+    if (object != nullptr) {
+        return object;
     }
     // nil^, and everything with nowhere to land.
     return Variant();
 }
 
-bool make_table_from(LhatMachine *machine, const Array &items, int depth,
-                     LhatValue *out)
+bool make_table_from(LhatMachine *machine, const Array &items,
+                     const Godot *module, int depth, LhatValue *out)
 {
     if (!lhat_machine_make_table(machine, out)) {
         return false;
@@ -92,7 +102,7 @@ bool make_table_from(LhatMachine *machine, const Array &items, int depth,
     LhatTable *table = (LhatTable *)lhat_as_object(*out);
     for (int i = 0; i < items.size(); i++) {
         LhatValue held = lhat_nil();
-        if (!from_variant_at(machine, items[i], depth + 1, &held)) {
+        if (!from_variant_at(machine, items[i], module, depth + 1, &held)) {
             return false;
         }
         // 02 の 14.1: the keys of a sequence start at one.
@@ -106,8 +116,8 @@ bool make_table_from(LhatMachine *machine, const Array &items, int depth,
     return true;
 }
 
-bool make_table_from(LhatMachine *machine, const Dictionary &pairs, int depth,
-                     LhatValue *out)
+bool make_table_from(LhatMachine *machine, const Dictionary &pairs,
+                     const Godot *module, int depth, LhatValue *out)
 {
     if (!lhat_machine_make_table(machine, out)) {
         return false;
@@ -117,8 +127,9 @@ bool make_table_from(LhatMachine *machine, const Dictionary &pairs, int depth,
     for (int i = 0; i < keys.size(); i++) {
         LhatValue key = lhat_nil();
         LhatValue held = lhat_nil();
-        if (!from_variant_at(machine, keys[i], depth + 1, &key) ||
-            !from_variant_at(machine, pairs[keys[i]], depth + 1, &held)) {
+        if (!from_variant_at(machine, keys[i], module, depth + 1, &key) ||
+            !from_variant_at(machine, pairs[keys[i]], module, depth + 1,
+                             &held)) {
             return false;
         }
         // 04 の 11.3: nil^ means "not there", so it cannot also be a key.
@@ -130,8 +141,8 @@ bool make_table_from(LhatMachine *machine, const Dictionary &pairs, int depth,
     return true;
 }
 
-bool from_variant_at(LhatMachine *machine, const Variant &value, int depth,
-                     LhatValue *out)
+bool from_variant_at(LhatMachine *machine, const Variant &value,
+                     const Godot *module, int depth, LhatValue *out)
 {
     if (depth > MAX_DEPTH) {
         return false;
@@ -157,9 +168,14 @@ bool from_variant_at(LhatMachine *machine, const Variant &value, int depth,
                                             (size_t)text.length(), out);
         }
         case Variant::ARRAY:
-            return make_table_from(machine, (Array)value, depth, out);
+            return make_table_from(machine, (Array)value, module, depth, out);
         case Variant::DICTIONARY:
-            return make_table_from(machine, (Dictionary)value, depth, out);
+            return make_table_from(machine, (Dictionary)value, module, depth,
+                                   out);
+        case Variant::OBJECT:
+            // 05 の 8.8: one host type carries every engine object, and the
+            // hierarchy is written in L^ instead (lhat_godot_module.h).
+            return make_object(machine, module, (Object *)value, out);
         default:
             // 05 の 8.8 and 8.9 are where an Object and a Vector2 will land,
             // once there is a registered type for each to be.
@@ -169,14 +185,15 @@ bool from_variant_at(LhatMachine *machine, const Variant &value, int depth,
 
 }  // namespace
 
-Variant to_variant(LhatValue value)
+Variant to_variant(LhatValue value, const Godot *module)
 {
-    return to_variant_at(value, 0);
+    return to_variant_at(value, module, 0);
 }
 
-bool from_variant(LhatMachine *machine, const Variant &value, LhatValue *out)
+bool from_variant(LhatMachine *machine, const Variant &value,
+                  LhatValue *out, const Godot *module)
 {
-    return from_variant_at(machine, value, 0, out);
+    return from_variant_at(machine, value, module, 0, out);
 }
 
 }  // namespace host

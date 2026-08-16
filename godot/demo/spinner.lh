@@ -1,0 +1,25 @@
+# A script a node wears, written against the wrapper library rather than
+# against godot.Object directly. The `..` is the engine's inheritance: this
+# is a Sprite2D, so everything Node2D, Node and Object declare is here too.
+
+module^ demo.spinner
+
+import^ godot                      # 平坦化された NodeLib の本体が引く
+let^ nodeLib = require^"lhat/NodeLib.lh"
+
+public^let^ Spinner = nodeLib.Sprite2D..def^{
+    self^{ turns = 0 },
+
+    _ready = p^self^ {
+        print($"spinner on a {self^.className()}, named {self^.getName()}")
+    },
+
+    _process = p^self^, delta:number^ {
+        self^.setRotation(self^.getRotation() + delta)
+        self^.turns := self^.turns + 1
+    },
+
+    report = f^self^ -> string^ {
+        return^ $"{self^.turns} frames, rotation {self^.getRotation()}"
+    },
+}

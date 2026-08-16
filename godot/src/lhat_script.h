@@ -64,7 +64,10 @@ public:
     LhatValue lhat_class() const { return klass; }
 
     // 14.9's `new`, and the instance put where the collector reaches it.
-    bool make_instance(LhatValue *out, int64_t *id);
+    bool make_instance(Object *owner, LhatValue *out, int64_t *id);
+
+    // What the conversions need to carry a handle across.
+    const host::Godot *godot() const { return units.godot; }
     void drop_instance(int64_t id);
 
 public:

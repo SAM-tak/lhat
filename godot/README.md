@@ -48,9 +48,56 @@ public^let^ Counter = def^{
 インスタンスは `L^.modules.godot.script.instances` の下に置かれる。
 これも根のため。ノードが消えるとそこから外れる。
 
-**まだ無いもの**: 公開プロパティ（インスペクタに出る欄）、シグナル、
-ノード自身への到達（`self^` からは自分の欄しか見えない。`Node` を
-hostdata 型にするのが次）。
+### エンジンのクラス木は L^ 側に書く
+
+05 の 8.8 のホスト型は**名前的**で、適合は同一性のみ（`src/type.c` の
+`return value == target;`）。Godot の 971 クラス・深さ8 の継承木を
+971 個のホスト型にしても互いに無関係になり、`add_child(Node)` に
+`Sprite2D` を渡せない。
+
+だから **hostdata 型は `godot.Object` 1つだけ**にして、木は L^ 側に
+`def^` の連鎖として書く。14.10 の幅部分型が正しい向きに効くので、
+`CharacterBody3D` のラッパーは `Node3D` が要る所にそのまま通る。
+
+```lhat
+module^ lhat.NodeLib
+import^ godot
+
+public^let^ Node2D = Node..def^{
+    self^{ abstract^ node : godot.Object },
+    getRotation = f^self^ -> number^ { return^ self^.node.get("rotation") as^ number^ },
+}
+
+# 着られるクラスは場を埋める。new() の直後にホストが本物を差し込む
+public^let^ Sprite2D = Node2D..def^{
+    self^{ node = godot.Object.default() },
+}
+```
+
+```lhat
+module^ demo.spinner
+import^ godot                          # 下の「制約」を見よ
+let^ nodeLib = require^"lhat/NodeLib.lh"
+
+public^let^ Spinner = nodeLib.Sprite2D..def^{
+    self^{ turns = 0 },
+    _process = p^self^, delta:number^ {
+        self^.setRotation(self^.getRotation() + delta)
+    },
+}
+```
+
+`godot.Object` が持つのは**ポインタではなく `ObjectID`**。解放済みなら
+`instance_from_id` が空を返すので、ダングリングしない。`RefCounted` の
+ときだけ `Ref<>` を併せ持つ（それ以外に生かすものが無いため）。メンバは
+`default()` / `isValid()` / `className()` / `isClass()` / `get()` / `set()` /
+`call()`。
+
+**制約**: 合成は書かれた場所で平坦化されるので、**基底の本体は合成先の
+名前空間で解決される**。基底が `import^ godot` を使うなら、合成する単位も
+`import^ godot` を書く必要がある。基底の単位の素の `let^` は届かない。
+
+**まだ無いもの**: 公開プロパティ（インスペクタに出る欄）、シグナル。
 
 `_get_reserved_words` の語は `vscode-extension/syntaxes/lhat.tmLanguage.json`
 の分類をそのまま使った。言語側は一覧を持たない——01 の 2 章 は
@@ -178,8 +225,8 @@ godot --headless --path godot\demo
 
 ## これから
 
-- **`Node` を hostdata 型に**（05 の 8.8）。いま `self^` から見えるのは
-  自分の欄だけで、着ているノード自身に手が届かない。ここが次の本番
+- **合成された基底の本体を、その単位の名前空間で解決する。** いまは合成先の
+  名前空間で解決されるので、上の「制約」が要る
 - 公開プロパティ。インスタンスの `self^` の欄をインスペクタに出すには
   「L^ で export とは何か」を決める必要がある
 - シグナル

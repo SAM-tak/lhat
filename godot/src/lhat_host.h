@@ -32,6 +32,11 @@ struct Units {
     String path;      // the entry unit, with the scheme taken off
     CharString held;  // what to answer for `path` instead of reading it
     bool holding;
+
+    // What program_for registered, for the conversions that carry a handle.
+    // 05 の 7.3 makes a host type its declaration, so this belongs to the one
+    // program and a value of it never crosses to another.
+    const struct Godot *godot;
 };
 
 // The entry, split. `hold` makes it answer text the editor has rather than

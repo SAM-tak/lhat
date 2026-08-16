@@ -4,6 +4,7 @@
 #include <godot_cpp/variant/utility_functions.hpp>
 
 #include "lhat.h"
+#include "lhat_godot_module.h"
 #include "lhat_host.h"
 #include "lhat_instance.h"
 #include "lhat_language.h"
@@ -150,7 +151,7 @@ Error LhatScript::_reload(bool keep_state)
 
 // 14.9's `new` is an ordinary member of the definition and takes no self^,
 // so it is called through the definition the way a written `Enemy.new()` is.
-bool LhatScript::make_instance(LhatValue *out, int64_t *id)
+bool LhatScript::make_instance(Object *owner, LhatValue *out, int64_t *id)
 {
     if (!runnable) {
         return false;
@@ -161,6 +162,22 @@ bool LhatScript::make_instance(LhatValue *out, int64_t *id)
         UtilityFunctions::push_error(
             host::problem(get_path(), lhat_run_status_message(made.status)));
         return false;
+    }
+
+    // The field the wrapper library declares abstract^ and a concrete class
+    // fills with godot.Object.default() -- 14.11 ran that initialiser just
+    // now, and this is what puts the real object in its place. A unit that
+    // wants nothing to do with its node simply has no such field.
+    if (owner != nullptr && lhat_is_object_kind(made.value, LHAT_OBJECT_TABLE)) {
+        LhatTable *fields = (LhatTable *)lhat_as_object(made.value);
+        LhatValue key = lhat_nil();
+        LhatValue handle = lhat_nil();
+        if (lhat_machine_make_string(machine, "node", 4, &key) &&
+            !lhat_is_nil(lhat_table_get(fields, key)) &&
+            host::make_object(machine, units.godot, owner, &handle)) {
+            bool taken = false;
+            lhat_table_set(fields, key, handle, &taken);
+        }
     }
 
     LhatTable *table = (LhatTable *)lhat_as_object(instances);

@@ -1,5 +1,7 @@
 #include "lhat_host.h"
 
+#include "lhat_godot_module.h"
+
 #include <string.h>
 
 #include <godot_cpp/classes/file_access.hpp>
@@ -70,6 +72,7 @@ Units units_for(const String &path)
 {
     Units units;
     units.holding = false;
+    units.godot = nullptr;
 
     static const char *const schemes[] = {"res://", "user://"};
     for (const char *scheme : schemes) {
@@ -101,6 +104,13 @@ LhatProgram *program_for(Units *units)
                               nullptr) ||
         !lhat_bind_initial(program, "print", "L^.print") ||
         !lhat_bind_initial(program, "collectgarbage", "L^.collectgarbage")) {
+        lhat_program_free(program);
+        return nullptr;
+    }
+    // 05 の 8.7: every registration belongs before the check, since the
+    // checker has to know what a signature says.
+    units->godot = register_godot(program);
+    if (units->godot == nullptr) {
         lhat_program_free(program);
         return nullptr;
     }

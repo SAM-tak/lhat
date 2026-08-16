@@ -66,7 +66,8 @@ GDExtensionBool instance_set(GDExtensionScriptInstanceDataPtr data,
         return false;
     }
     if (!host::from_variant(machine,
-                            *reinterpret_cast<const Variant *>(value), &held)) {
+                            *reinterpret_cast<const Variant *>(value), &held,
+                            it->script->godot())) {
         return false;
     }
     bool refused = false;
@@ -94,7 +95,7 @@ GDExtensionBool instance_get(GDExtensionScriptInstanceDataPtr data,
     if (lhat_is_nil(held)) {
         return false;
     }
-    *reinterpret_cast<Variant *>(answer) = host::to_variant(held);
+    *reinterpret_cast<Variant *>(answer) = host::to_variant(held, it->script->godot());
     return true;
 }
 
@@ -226,7 +227,7 @@ void instance_call(GDExtensionScriptInstanceDataPtr data,
         LhatValue held = lhat_nil();
         if (!host::from_variant(
                 machine, *reinterpret_cast<const Variant *>(arguments[i]),
-                &held)) {
+                &held, it->script->godot())) {
             error->error = GDEXTENSION_CALL_ERROR_INVALID_ARGUMENT;
             error->argument = (int32_t)i;
             error->expected = 0;
@@ -261,7 +262,7 @@ void instance_call(GDExtensionScriptInstanceDataPtr data,
     }
 
     error->error = GDEXTENSION_CALL_OK;
-    *reinterpret_cast<Variant *>(answer) = host::to_variant(ran.value);
+    *reinterpret_cast<Variant *>(answer) = host::to_variant(ran.value, it->script->godot());
 }
 
 // 02 の 8.8: a notification is a number the engine sends, and L^ has no form
@@ -383,7 +384,7 @@ void *lhat_instance_create(LhatScript *script, Object *owner)
     }
     LhatValue self = lhat_nil();
     int64_t id = 0;
-    if (!script->make_instance(&self, &id)) {
+    if (!script->make_instance(owner, &self, &id)) {
         return nullptr;
     }
 

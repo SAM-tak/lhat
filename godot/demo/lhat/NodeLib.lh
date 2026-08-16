@@ -1,0 +1,53 @@
+# The engine's class tree, written as L^ definitions.
+#
+# 05 の 8.8 makes a host type nominal, so 971 engine classes could never be
+# 971 host types that relate to each other. One host type carries every
+# object (godot.Object) and the hierarchy is written here instead: a def^ per
+# class, composed with `..`. 14.10's width subtyping then relates them the
+# right way round -- a CharacterBody3D wrapper is a Node3D wherever one is
+# asked for, because it holds everything Node3D holds and more.
+#
+# A class that is only ever composed onto declares the field abstract^; the
+# ones a script actually wears fill it with godot.Object.default(), which the
+# host replaces with the node as the instance is made.
+
+module^ lhat.NodeLib
+
+import^ godot
+
+public^let^ Object = def^{
+    self^{ abstract^ node : godot.Object },
+
+    isValid = f^self^ -> bool^ { return^ self^.node.isValid() },
+    className = f^self^ -> string^ { return^ self^.node.className() },
+    isClass = f^self^, name:string^ -> bool^ {
+        return^ self^.node.isClass(name)
+    },
+}
+
+public^let^ Node = Object..def^{
+    self^{ abstract^ node : godot.Object },
+
+    getName = f^self^ -> string^ { return^ self^.node.get("name") as^ string^ },
+    addChild = p^self^, child:godot.Object { self^.node.call("add_child", child) },
+    queueFree = p^self^ { self^.node.call("queue_free") },
+}
+
+public^let^ Node2D = Node..def^{
+    self^{ abstract^ node : godot.Object },
+
+    getRotation = f^self^ -> number^ {
+        return^ self^.node.get("rotation") as^ number^
+    },
+    setRotation = p^self^, radians:number^ {
+        self^.node.set("rotation", radians)
+    },
+}
+
+# A class a script may wear: the field is filled, so new() works.
+public^let^ Sprite2D = Node2D..def^{
+    self^{ node = godot.Object.default() },
+
+    getFlipH = f^self^ -> bool^ { return^ self^.node.get("flip_h") as^ bool^ },
+    setFlipH = p^self^, flipped:bool^ { self^.node.set("flip_h", flipped) },
+}

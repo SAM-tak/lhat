@@ -16,15 +16,22 @@
 namespace godot {
 namespace host {
 
+struct Godot;
+
 // What L^ answered, as the engine holds it. A subroutine, a coroutine, an
 // error and a host value have nothing to land in and answer nil -- as does
 // anything nested deeper than a conversion will follow.
-Variant to_variant(LhatValue value);
+//
+// `module` is what lets a godot.Object cross: without it a handle is one
+// more thing with nowhere to land, which is right for a caller that has no
+// registration to read it against.
+Variant to_variant(LhatValue value, const Godot *module = nullptr);
 
 // The other way. False when the Variant has no shape in L^ (a Callable, a
 // Node, a Vector2 -- 05 の 8.8 and 8.9 are where those will land) or when
 // the machine ran out of memory.
-bool from_variant(LhatMachine *machine, const Variant &value, LhatValue *out);
+bool from_variant(LhatMachine *machine, const Variant &value, LhatValue *out,
+                  const Godot *module = nullptr);
 
 }  // namespace host
 }  // namespace godot
