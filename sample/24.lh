@@ -106,7 +106,7 @@ let^Reader = def^{
 
     expr = p^self^{
         var^value = self^.term()
-        repeat^while^ self^.ok {
+        repeat^while^self^.ok {
             let^ c = self^.peek()
             if^ c = "+" {
                 self^.bump()
@@ -170,6 +170,7 @@ try^{
             # / は実数除算なので 8/(3-8/3) は 24 ちょうどにならない。
             # が、 = は実数の誤差を織り込むので、そのまま比べてよい。
             # 幅を自分で決めたい場合はメンバメソッド eq を使う（ここでは要らない）。
+            # value.round() として明示的に整数に丸めても良い。
             elif^value = 24:
                 print("Correct!")
             else^:

@@ -119,7 +119,7 @@ let^Logged = def^{
     self^{
         abstract^n : number^
     },
-    override^run := p^self^{
+    override^run = p^self^{
         self^.n += 10
         super^()
     }
@@ -128,11 +128,20 @@ let^AppBase = def^{
     self^{
         n = 0
     },
-    run := p^self^{
+    run = p^self^{
         self^.n += 1
     }
 }
-let^App = AppBase .. Logged
+let^App = AppBase..Logged
 let^app = App.new()
 app.run()
 print(app.n)
+
+let^isEven = f^x {
+    for^x % 2:
+        when^0: true^
+        other^: false^ # when^1を書いてもother^が必要。これ具合悪いね
+    ;
+}
+print(isEven(6))
+print(isEven(9))
