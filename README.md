@@ -1,5 +1,7 @@
 # The Programming Language L^
 
+![L^ Logo](lhat-logo.svg)
+
 `L^` (elhat) — a new glue programming language experiment.
 
 A bytecode-interpreted language in the spirit of Lua, written in C11 and built
@@ -11,15 +13,20 @@ Meant to be embedded. The language builds as a library that reaches its
 surroundings through a handful of functions a host can replace, and a host
 registers what it provides by writing the type out in C.
 
-Sample:
+## Samples
 
-```lhat
-import^std.io
-let^print=std.io.print
+### Factorial
 
-let^factorial = f^n:number^{ if^ n < 2: 1 el^: n * this^(n - 1); }
-print($"{factorial(10)}")
-```
+![import^std.io — let^print=std.io.print — let^factorial = f^n:number^{ if^ n < 2: 1 el^: n * this^(n - 1); } — print($"{factorial(10)}")](readme-example.svg)
+
+### 24 Game
+
+[Rosetta Code's 24 game](http://rosettacode.org/wiki/24_game): four digits are
+dealt, and the player writes an expression using each of them once that comes
+to 24. The source is [sample/24.lh](sample/24.lh).
+
+![sample/24.lh — a recursive-descent reader written as a def^, and the loop that deals four digits and checks what the player typed](readme-24game.svg)
+
 
 ## Requirements
 
