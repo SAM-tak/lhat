@@ -1278,63 +1278,10 @@ static void test_typeof(void)
 }
 
 
-// 02 の 18.7: extern^ declares a name and a type and says nothing about a
-// value -- what answers to it is outside the language. So a definition
-// carrying one is instantiable, unlike 14.15's abstract^, and the name
-// reaches nothing, which is what keeps the written type honest.
-static void test_extern(void)
-{
-    Unit u;
-
-    LHAT_TEST("an extern^ does not keep a definition from being made");
-    check_text(&u,
-               "let^ D = def^{\n"
-               "  self^{ n = 1 },\n"
-               "  extern^ died : p^string^;,\n"
-               "  go = f^self^ -> number^ { return^ self^.n },\n"
-               "}\n"
-               "let^ d = D.new()\n");
-    CHECK_CLEAN(&u);
-    unit_dispose(&u);
-
-    // 14.15 is the contrast: that one waits, and waiting is what stops it.
-    LHAT_TEST("where an abstract^ does");
-    check_text(&u,
-               "let^ D = def^{\n"
-               "  self^{},\n"
-               "  abstract^ later : p^string^;,\n"
-               "}\n"
-               "let^ d = D.new()\n");
-    LHAT_CHECK(u.checked.diagnostic_count > 0, "reported");
-    unit_dispose(&u);
-
-    LHAT_TEST("and the name reaches nothing");
-    check_text(&u,
-               "let^ D = def^{\n"
-               "  self^{},\n"
-               "  extern^ died : p^string^;,\n"
-               "  go = p^self^ { print(self^.died) },\n"
-               "}\n");
-    CHECK_REPORTS(&u, LHAT_CHECK_ERR_NO_MEMBER);
-    unit_dispose(&u);
-
-    // 18.1: what the declaration is for is written above it, and the language
-    // reads none of it. Here it is only asked to carry it.
-    LHAT_TEST("an annotation may say what it is for");
-    check_text(&u,
-               "let^ D = def^{\n"
-               "  self^{},\n"
-               "  extern^ died : p^string^;,\n"
-               "}\n");
-    CHECK_CLEAN(&u);
-    unit_dispose(&u);
-}
-
 int main(void)
 {
     test_definitions();
     test_composition();
     test_typeof();
-    test_extern();
     return lhat_test_report("test_check_def");
 }

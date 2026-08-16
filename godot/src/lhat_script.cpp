@@ -150,6 +150,7 @@ Error LhatScript::_reload(bool keep_state)
 
     klass_name = name;
     runnable = true;
+    warn_about_signals();
     return OK;
 }
 
@@ -383,12 +384,10 @@ TypedArray<Dictionary> LhatScript::_get_script_property_list() const
     return TypedArray<Dictionary>();
 }
 
-// 02 の 18.7: a signal is an extern^ the writer marked @signal, and the
-// declared type is its arguments. It is written inside self^{ … } because
-// what it declares is each instance's own -- Godot keeps the connections per
-// node, and 14.3 already makes that side the instance's.
-bool LhatScript::signal_named(const StringName &wanted,
-                              size_t *out_arguments) const
+// 02 の 18: a signal is a member the writer marked @signal. The member's own
+// parameters are its arguments -- one declaration, read once, so what a
+// caller writes and what the engine checks an emit against cannot disagree.
+bool LhatScript::signal_member(const StringName &wanted, size_t *out_at) const
 {
     if (unit == nullptr) {
         return false;
@@ -398,11 +397,9 @@ bool LhatScript::signal_named(const StringName &wanted,
     size_t count = lhat_unit_member_count(unit, klass.get_data());
     for (size_t i = 0; i < count; i++) {
         LhatUnitMember member = lhat_unit_member(unit, klass.get_data(), i);
-        if (!member.external || member.name == NULL) {
-            continue;
-        }
-        if (String::utf8(member.name, (int)member.name_length) !=
-            String(wanted)) {
+        if (member.name == NULL ||
+            String::utf8(member.name, (int)member.name_length) !=
+                String(wanted)) {
             continue;
         }
         size_t written =
@@ -411,20 +408,41 @@ bool LhatScript::signal_named(const StringName &wanted,
             LhatAnnotation at = lhat_unit_annotation(unit, klass.get_data(),
                                                      name.get_data(), a);
             if (String::utf8(at.name, (int)at.name_length) == "signal") {
-                if (out_arguments != nullptr) {
-                    *out_arguments = member.parameter_count;
+                if (out_at != nullptr) {
+                    *out_at = i;
                 }
                 return true;
             }
         }
+        return false;  // the name is this member's, and it is not a signal
     }
     return false;
 }
 
 bool LhatScript::_has_script_signal(const StringName &signal) const
 {
-    return signal_named(signal, nullptr);
+    return signal_member(signal, nullptr);
 }
+
+namespace {
+
+// What Godot shows a reader in the connection dialog. A type it has no
+// reading for is left a Variant rather than guessed at.
+Variant::Type variant_type_of(LhatUnitTypeKind kind)
+{
+    switch (kind) {
+        case LHAT_UNIT_TYPE_NUMBER:
+            return Variant::FLOAT;
+        case LHAT_UNIT_TYPE_STRING:
+            return Variant::STRING;
+        case LHAT_UNIT_TYPE_BOOL:
+            return Variant::BOOL;
+        default:
+            return Variant::NIL;
+    }
+}
+
+}  // namespace
 
 TypedArray<Dictionary> LhatScript::_get_script_signal_list() const
 {
@@ -436,24 +454,31 @@ TypedArray<Dictionary> LhatScript::_get_script_signal_list() const
     size_t count = lhat_unit_member_count(unit, klass.get_data());
     for (size_t i = 0; i < count; i++) {
         LhatUnitMember member = lhat_unit_member(unit, klass.get_data(), i);
-        if (!member.external || member.name == NULL) {
+        if (member.name == NULL) {
             continue;
         }
         StringName name(String::utf8(member.name, (int)member.name_length));
-        size_t arguments = 0;
-        if (!signal_named(name, &arguments)) {
+        if (!signal_member(name, nullptr)) {
             continue;
         }
 
-        // The engine checks an emit against this, so the count has to be the
-        // one the type wrote. What each argument is called is not written
-        // there -- 18.3 keeps a type a type -- so they are numbered.
+        // 13.4 leaves self^ out of the count, which is what makes this the
+        // list a caller writes -- and the parameters carry their own names,
+        // so nothing here has to be numbered.
         Array args;
-        for (size_t a = 0; a < arguments; a++) {
+        for (size_t a = 0; a < member.parameter_count; a++) {
+            LhatUnitParameter param =
+                lhat_unit_member_parameter(unit, klass.get_data(), i, a);
+            Variant::Type type = variant_type_of(param.type);
             Dictionary argument;
-            argument["name"] = String("arg") + String::num_int64((int64_t)a);
-            argument["type"] = (int64_t)Variant::NIL;
-            argument["usage"] = (int64_t)PROPERTY_USAGE_NIL_IS_VARIANT;
+            argument["name"] =
+                param.name != NULL
+                    ? String::utf8(param.name, (int)param.name_length)
+                    : String("arg") + String::num_int64((int64_t)a);
+            argument["type"] = (int64_t)type;
+            argument["usage"] = type == Variant::NIL
+                                    ? (int64_t)PROPERTY_USAGE_NIL_IS_VARIANT
+                                    : (int64_t)PROPERTY_USAGE_DEFAULT;
             args.push_back(argument);
         }
 
@@ -464,6 +489,45 @@ TypedArray<Dictionary> LhatScript::_get_script_signal_list() const
         out.push_back(declared);
     }
     return out;
+}
+
+// 18.1 leaves what an annotation means entirely to the host, so the checker
+// cannot say a body disagrees with it. This is where it is said: a member
+// marked @signal that never writes its own name as a call argument is
+// emitting something else, or nothing, and either way the declaration and the
+// body have drifted apart.
+void LhatScript::warn_about_signals() const
+{
+    if (unit == nullptr) {
+        return;
+    }
+    CharString klass = klass_name.utf8();
+    size_t count = lhat_unit_member_count(unit, klass.get_data());
+    for (size_t i = 0; i < count; i++) {
+        LhatUnitMember member = lhat_unit_member(unit, klass.get_data(), i);
+        if (member.name == NULL) {
+            continue;
+        }
+        String spelt = String::utf8(member.name, (int)member.name_length);
+        if (!signal_member(StringName(spelt), nullptr)) {
+            continue;
+        }
+
+        bool named = false;
+        size_t written =
+            lhat_unit_member_written_name_count(unit, klass.get_data(), i);
+        for (size_t a = 0; a < written && !named; a++) {
+            LhatUnitText wrote =
+                lhat_unit_member_written_name(unit, klass.get_data(), i, a);
+            named = wrote.text != NULL &&
+                    String::utf8(wrote.text, (int)wrote.length) == spelt;
+        }
+        if (!named) {
+            UtilityFunctions::push_warning(
+                get_path() + String(": @signal ") + spelt +
+                String(" is never emitted by name in its own body"));
+        }
+    }
 }
 
 bool LhatScript::_has_property_default_value(const StringName &property) const

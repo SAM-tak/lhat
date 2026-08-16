@@ -184,7 +184,7 @@
         },
         {
           "comment": "abstract^ (14.15) and closed^ (15.13) mark what follows the way override^/overload^ do.",
-          "match": "\\b(var|let|f|p|op|def|enum|pack|module|public|require|import|override|overload|abstract|closed|errordef|extern)(\\^+)",
+          "match": "\\b(var|let|f|p|op|def|enum|pack|module|public|require|import|override|overload|abstract|closed|errordef)(\\^+)",
           "captures": {
             "1": { "name": "keyword.other.declaration.lhat" },
             "2": { "name": "punctuation.definition.hat.lhat" }

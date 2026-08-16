@@ -141,12 +141,7 @@ typedef enum {
     LHAT_DEF_PLAIN,
     LHAT_DEF_OVERRIDE,
     LHAT_DEF_OVERLOAD,
-    LHAT_DEF_ABSTRACT,  // 14.15: declared, and left for a composition to give
-    // 02 の 18.7: declared, and left to whatever is outside L^. Unlike
-    // abstract^ nothing here waits to be filled -- the value is not the
-    // language's to have, so a definition carrying one is instantiable and
-    // the name is not readable.
-    LHAT_DEF_EXTERN
+    LHAT_DEF_ABSTRACT  // 14.15: declared, and left for a composition to give
 } LhatDefModifier;
 
 // 9.2, in the order they must be written -- which is also the order they run

@@ -10,8 +10,10 @@ public^let^ Spinner = Godot.Sprite2D..def^{
 	self^{
 		@export_range(0, 10) speed = 1,
 		turns = 0,
-		# 18.7: 接続先はノードごとなので self^ の側に置く
-		@signal extern^ died : p^string^;,
+	},
+
+	@signal died = p^self^, message:string^ {
+		self^.gdobj.emit(id^died, message)
 	},
 
 	_ready = p^self^ {
@@ -20,10 +22,13 @@ public^let^ Spinner = Godot.Sprite2D..def^{
 
 	_process = p^self^, delta:number^ {
 		self^.setRotation(self^.getRotation() + delta * self^.speed)
-		self^.turns := self^.turns + 1
+		self^.turns += 1
+		if^ self^.turns > 1000 {
+			self^.died("死にました")
+		}
 	},
 
-	on_timeout = p^self^ { self^.turns := self^.turns + 100 },
+	on_timeout = p^self^ { self^.turns += 100 },
 
 	report = f^self^ -> string^ {
 		return^ $"{self^.turns} frames, rotation {self^.getRotation()}"

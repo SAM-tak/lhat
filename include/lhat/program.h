@@ -225,19 +225,16 @@ LhatAnnotation lhat_unit_annotation(const LhatUnit *unit,
 LhatAnnotationArgument lhat_annotation_argument(LhatAnnotation annotation,
                                                 size_t at);
 
-// What a definition declares, in the order it was written. An extern^ has no
-// value to find at run time (18.7), so the tree is the only place a host can
-// learn that it is there at all.
+// What a definition declares, in the order it was written. An annotation says
+// what a member is for (18.1), and acting on that takes knowing its shape --
+// which the tree holds whether or not the member has a value at run time.
 typedef struct {
     const char *name;  // borrowed; NULL when there is no such one
     size_t name_length;
-    // 14.15 and 18.7: written with a type and no value.
-    bool declared;
-    // 18.7: extern^ rather than abstract^ -- what is outside the language
-    // rather than what a composition owes.
-    bool external;
-    // When the declared type is an f^ or a p^, how many parameters it wrote.
-    // A signal's arguments are read off this.
+    bool declared;  // 14.15: written with a type and no value
+    // How many parameters it wrote, read off a written signature or off the
+    // f^ / p^ the member holds. 13.4 makes self^ none of them, so a receiver
+    // is not counted -- what is here is what a call writes.
     size_t parameter_count;
 } LhatUnitMember;
 
@@ -247,6 +244,51 @@ typedef struct {
 size_t lhat_unit_member_count(const LhatUnit *unit, const char *definition);
 LhatUnitMember lhat_unit_member(const LhatUnit *unit, const char *definition,
                                 size_t index);
+
+// As much of a written type as a host can act on. Nothing else in a host's
+// world is shaped like L^'s types, so this is the same coarse reading 18.3
+// gives an annotation's arguments rather than a second type system.
+typedef enum {
+    LHAT_UNIT_TYPE_OTHER,
+    LHAT_UNIT_TYPE_NUMBER,
+    LHAT_UNIT_TYPE_STRING,
+    LHAT_UNIT_TYPE_BOOL
+} LhatUnitTypeKind;
+
+// One parameter of the member at `member`, as it was written. The name is
+// what a host shows a reader -- an editor's argument list, a signal's
+// connection dialog -- and is why this is asked of the tree at all: a type
+// alone would have to number them.
+typedef struct {
+    const char *name;  // borrowed; NULL when it was written without one
+    size_t name_length;
+    LhatUnitTypeKind type;
+    bool variadic;  // 13.7's '...' tail
+} LhatUnitParameter;
+
+LhatUnitParameter lhat_unit_member_parameter(const LhatUnit *unit,
+                                             const char *definition,
+                                             size_t member, size_t at);
+
+// The plain names the member's body writes as a call argument, in written
+// order. A string and an id^ (01 の 3.3) are the same thing here, and an
+// argument the call works out is not one at all.
+//
+// This is what lets a host check a body against the meaning it gave the
+// member: 18.1 leaves that meaning entirely to the host, so the language
+// cannot say a body disagrees with it -- but it can hand over the names the
+// body wrote and let the host say so.
+typedef struct {
+    const char *text;  // borrowed; NULL when there is no such one
+    size_t length;
+} LhatUnitText;
+
+size_t lhat_unit_member_written_name_count(const LhatUnit *unit,
+                                           const char *definition,
+                                           size_t member);
+LhatUnitText lhat_unit_member_written_name(const LhatUnit *unit,
+                                           const char *definition,
+                                           size_t member, size_t at);
 
 
 // ---------------------------------------------------------------------------

@@ -100,6 +100,25 @@ GDExtensionBool instance_get(GDExtensionScriptInstanceDataPtr data,
     return true;
 }
 
+// The arguments as one comma-joined string, which is the shape Godot reads a
+// hint in. A name (18.3) is spelt out the same as a string: what it meant was
+// never the language's to say.
+String joined(LhatAnnotation at)
+{
+    String out;
+    for (size_t i = 0; i < at.argument_count; i++) {
+        LhatAnnotationArgument argument = lhat_annotation_argument(at, i);
+        if (argument.text == NULL) {
+            continue;
+        }
+        if (!out.is_empty()) {
+            out += String(",");
+        }
+        out += String::utf8(argument.text, (int)argument.length);
+    }
+    return out;
+}
+
 // 02 の 18: a field the writer marked. What @export means is Godot's, and
 // the language only carried it here -- so this is where the meaning is put
 // back on, and nowhere else.
@@ -135,6 +154,20 @@ bool exported_as(const LhatScript *script, const String &field,
         if (spelt == "export_multiline") {
             *hint = PROPERTY_HINT_MULTILINE_TEXT;
             *hint_string = String();
+            return true;
+        }
+        // Both of these are a comma-joined list to the engine, and both take
+        // their pieces as written -- 18.3 keeps an argument a literal, so
+        // there is nothing to resolve on the way.
+        if (spelt == "export_enum" && at.argument_count >= 1) {
+            *hint = PROPERTY_HINT_ENUM;
+            *hint_string = joined(at);
+            return true;
+        }
+        if (spelt == "export_file") {
+            // No filter means any file, which is what an empty hint says.
+            *hint = PROPERTY_HINT_FILE;
+            *hint_string = joined(at);
             return true;
         }
     }

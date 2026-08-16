@@ -558,6 +558,126 @@ static const LhatNode *definition_entry_at(const LhatUnit *unit,
     return NULL;
 }
 
+// The entry a member index names, which every question about that member
+// starts from.
+static const LhatNode *member_entry(const LhatUnit *unit,
+                                    const char *definition, size_t index)
+{
+    const LhatNode *binding = unit_top_binding(unit, definition);
+    if (binding == NULL) {
+        return NULL;
+    }
+    size_t seen = 0;
+    return definition_entry_at(unit, binding->v.binding.values, index, &seen);
+}
+
+// The parameters a member wrote, whether it wrote a signature (14.15) or the
+// f^ / p^ itself. 13.4: self^ is a mark saying a call hands the receiver
+// over, not a parameter a call writes -- so it is not one here either.
+static const LhatNode *member_params(const LhatUnit *unit,
+                                     const LhatNode *entry)
+{
+    if (entry == NULL) {
+        return NULL;
+    }
+    const LhatNode *written = entry->v.entry.value;
+    if (written == NULL || (written->kind != LHAT_NODE_TYPE_FUNC &&
+                            written->kind != LHAT_NODE_FUNC)) {
+        return NULL;
+    }
+    const LhatNode *param = written->v.func.params;
+    const char *spelt = NULL;
+    size_t length = 0;
+    if (param != NULL &&
+        lhat_node_name(param->v.param.name, unit->lexer.source->text,
+                       unit->lexer.strings, &spelt, &length) &&
+        length == 5 && memcmp(spelt, "self^", 5) == 0) {
+        param = param->next;
+    }
+    return param;
+}
+
+// A declaration has none, which is what makes it a declaration.
+static const LhatNode *member_body(const LhatNode *entry)
+{
+    if (entry == NULL || entry->v.entry.value == NULL ||
+        entry->v.entry.value->kind != LHAT_NODE_FUNC) {
+        return NULL;
+    }
+    return entry->v.entry.value->v.func.body;
+}
+
+static LhatUnitTypeKind written_type_kind(const LhatUnit *unit,
+                                          const LhatNode *type)
+{
+    const char *spelt = NULL;
+    size_t length = 0;
+    if (type == NULL || type->kind != LHAT_NODE_TYPE_NAME ||
+        !lhat_node_name(type, unit->lexer.source->text, unit->lexer.strings,
+                        &spelt, &length)) {
+        return LHAT_UNIT_TYPE_OTHER;
+    }
+    if (length == 7 && memcmp(spelt, "number^", 7) == 0) {
+        return LHAT_UNIT_TYPE_NUMBER;
+    }
+    if (length == 7 && memcmp(spelt, "string^", 7) == 0) {
+        return LHAT_UNIT_TYPE_STRING;
+    }
+    if (length == 5 && memcmp(spelt, "bool^", 5) == 0) {
+        return LHAT_UNIT_TYPE_BOOL;
+    }
+    return LHAT_UNIT_TYPE_OTHER;
+}
+
+// One pass answers both the count and the one at an index, since neither is
+// worth an array the unit would have to keep.
+typedef struct {
+    const LhatUnit *unit;
+    size_t wanted;
+    size_t seen;
+    LhatUnitText found;
+} NameWalk;
+
+static void walk_written_names(NameWalk *walk, const LhatNode *node);
+
+static void written_names_child(void *context, const char *field, bool in_list,
+                                const LhatNode *child)
+{
+    (void)field;
+    (void)in_list;
+    walk_written_names((NameWalk *)context, child);
+}
+
+static void walk_written_names(NameWalk *walk, const LhatNode *node)
+{
+    if (node == NULL) {
+        return;
+    }
+    if (node->kind == LHAT_NODE_CALL) {
+        for (const LhatNode *at = node->v.access.argument; at != NULL;
+             at = at->next) {
+            LhatUnitText text;
+            text.text = NULL;
+            text.length = 0;
+            // 01 の 3.3: id^name and "name" answer the same bytes, and which
+            // one was written is the reader's business rather than a host's.
+            if (at->kind == LHAT_NODE_STRING) {
+                text.text = walk->unit->lexer.strings + at->v.string.offset;
+                text.length = at->v.string.length;
+            } else if (at->kind != LHAT_NODE_NAME ||
+                       !lhat_node_name(at, walk->unit->lexer.source->text,
+                                       walk->unit->lexer.strings, &text.text,
+                                       &text.length)) {
+                continue;
+            }
+            if (walk->seen++ == walk->wanted) {
+                walk->found = text;
+            }
+        }
+    }
+    lhat_node_visit_children(node, written_names_child, walk);
+}
+
 size_t lhat_unit_member_count(const LhatUnit *unit, const char *definition)
 {
     const LhatNode *binding = unit_top_binding(unit, definition);
@@ -575,13 +695,7 @@ LhatUnitMember lhat_unit_member(const LhatUnit *unit, const char *definition,
     LhatUnitMember out;
     memset(&out, 0, sizeof out);
 
-    const LhatNode *binding = unit_top_binding(unit, definition);
-    if (binding == NULL) {
-        return out;
-    }
-    size_t seen = 0;
-    const LhatNode *entry =
-        definition_entry_at(unit, binding->v.binding.values, index, &seen);
+    const LhatNode *entry = member_entry(unit, definition, index);
     if (entry == NULL) {
         return out;
     }
@@ -594,18 +708,70 @@ LhatUnitMember lhat_unit_member(const LhatUnit *unit, const char *definition,
         out.name_length = length;
     }
     out.declared = entry->v.entry.declared;
-    out.external = entry->v.entry.modifier == LHAT_DEF_EXTERN;
-    // 18.7: what a declaration wrote is a type, and a signal's arguments are
-    // its parameters. Anything else has none to count.
-    const LhatNode *written = entry->v.entry.value;
-    if (out.declared && written != NULL &&
-        written->kind == LHAT_NODE_TYPE_FUNC) {
-        for (const LhatNode *at = written->v.func.params; at != NULL;
-             at = at->next) {
-            out.parameter_count++;
-        }
+    for (const LhatNode *at = member_params(unit, entry); at != NULL;
+         at = at->next) {
+        out.parameter_count++;
     }
     return out;
+}
+
+LhatUnitParameter lhat_unit_member_parameter(const LhatUnit *unit,
+                                             const char *definition,
+                                             size_t member, size_t at)
+{
+    LhatUnitParameter out;
+    memset(&out, 0, sizeof out);
+
+    const LhatNode *entry = member_entry(unit, definition, member);
+    if (entry == NULL) {
+        return out;
+    }
+    const LhatNode *param = member_params(unit, entry);
+    for (size_t i = 0; param != NULL && i < at; i++) {
+        param = param->next;
+    }
+    if (param == NULL) {
+        return out;
+    }
+
+    const char *spelt = NULL;
+    size_t length = 0;
+    if (lhat_node_name(param->v.param.name, unit->lexer.source->text,
+                       unit->lexer.strings, &spelt, &length)) {
+        out.name = spelt;
+        out.name_length = length;
+    }
+    out.variadic = param->v.param.variadic;
+    out.type = written_type_kind(unit, param->v.param.type);
+    return out;
+}
+
+size_t lhat_unit_member_written_name_count(const LhatUnit *unit,
+                                           const char *definition,
+                                           size_t member)
+{
+    NameWalk walk;
+    walk.unit = unit;
+    walk.wanted = (size_t)-1;
+    walk.seen = 0;
+    memset(&walk.found, 0, sizeof walk.found);
+    const LhatNode *entry = member_entry(unit, definition, member);
+    walk_written_names(&walk, member_body(entry));
+    return walk.seen;
+}
+
+LhatUnitText lhat_unit_member_written_name(const LhatUnit *unit,
+                                           const char *definition,
+                                           size_t member, size_t at)
+{
+    NameWalk walk;
+    walk.unit = unit;
+    walk.wanted = at;
+    walk.seen = 0;
+    memset(&walk.found, 0, sizeof walk.found);
+    const LhatNode *entry = member_entry(unit, definition, member);
+    walk_written_names(&walk, member_body(entry));
+    return walk.found;
 }
 
 // ---------------------------------------------------------------------------

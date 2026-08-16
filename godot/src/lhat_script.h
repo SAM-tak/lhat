@@ -127,9 +127,13 @@ public:
     TypedArray<Dictionary> _get_script_method_list() const override;
     TypedArray<Dictionary> _get_script_property_list() const override;
 
-    // 18.7: whether an extern^ of this name was marked @signal, and how
-    // many arguments its declared type wrote.
-    bool signal_named(const StringName &wanted, size_t *out_arguments) const;
+    // 02 の 18: whether the member of this name was marked @signal, and
+    // where in the definition it was written.
+    bool signal_member(const StringName &wanted, size_t *out_at) const;
+
+    // Said once per _reload: what the host can see about a body that the
+    // checker cannot, since only the host knows what @signal meant.
+    void warn_about_signals() const;
 
     bool _has_script_signal(const StringName &signal) const override;
     TypedArray<Dictionary> _get_script_signal_list() const override;

@@ -90,7 +90,7 @@ public^let^ Spinner = nodeLib.Sprite2D..def^{
 `instance_from_id` が空を返すので、ダングリングしない。`RefCounted` の
 ときだけ `Ref<>` を併せ持つ（それ以外に生かすものが無いため）。メンバは
 `default()` / `isValid()` / `className()` / `isClass()` / `get()` / `set()` /
-`call()`。
+`call()` / `emit()`。
 
 合成先は `import^ godot` を書かなくてよい。平坦化された基底の本体は
 **自分の単位の名前空間で解決される**（その単位の `import^` の根と
@@ -112,27 +112,56 @@ public^let^ Spinner = nodeLib.Sprite2D..def^{
 public^let^ Spinner = Godot.Sprite2D..def^{
     self^{
         @export_range(0, 10) speed = 1,
-        @signal extern^ died : p^string^;,
+    },
+
+    @signal died = p^self^, message:string^ {
+        self^.gdobj.emit(id^died, message)
     },
     ...
 }
 ```
 
-- **`@export`** — `self^` の欄をインスペクタに出す。`@export_range(下, 上)`
-  と `@export_multiline` はヒントを付ける。欄の現在値がそのまま出て、
-  インスペクタで変えるとその**インスタンスの** `self^` の欄が変わる
-- **`@signal`** — 18.7 の `extern^` に付けて、シグナルの宣言にする。
-  `_get_script_signal_list` に出るので `connect` も `emit_signal` も
-  エンジンの普通の道を通る。引数の数は書いた型（`p^string^;` なら1つ）から
-  取り、名前は書かれていないので `arg0`…と番号を振る（型は Variant）
+- **`@export`** — `self^` の欄をインスペクタに出す。欄の現在値がそのまま
+  出て、インスペクタで変えるとその**インスタンスの** `self^` の欄が変わる。
+  ヒントを付ける形が4つ:
 
-`@signal` が `self^{ … }` の中に書かれるのは、**接続先がノードごと**
-だからである（14.3、02 の 18.7）。`extern^` はメンバを作らないので、
-定義は `new` でき、`self^.died` は読めない。
+  | 書き方 | 出るもの |
+  | --- | --- |
+  | `@export_range(下, 上)` | スライダ。3つ目以降は Godot の追加引数そのまま |
+  | `@export_enum("赤", "緑")` | 選択肢。1つ以上 |
+  | `@export_file("*.png")` | ファイル選択。絞りは0個以上 |
+  | `@export_multiline` | 複数行の入力欄 |
 
-登録してあるが**まだエンジン側の意味が無い**もの: `@tool` `@icon`
-`@onready` `@rpc` `@export_enum` `@export_file`。書いても検査は通り、
-何も起きない。
+- **`@signal`** — メンバをシグナルの宣言にする。**メンバの引数欄がそのまま
+  シグナルの引数欄**で、13.4 が `self^` を外すので呼び手が書く欄と一致する。
+  名前も型も書かれているから、接続ダイアログにも `arg0` ではなく
+  `message : String` と出る
+
+発火するのは本体である。ホストが値を差し替えるわけではないので、
+`self^.died("…")` は**普通のメンバ呼び出し**として型検査を通り、走ると
+`emit_signal` に届く。Godot は**同名のメソッドとシグナルを同居させる**ので、
+`connect` した先も `call("died", …)` も両方が期待どおりに動く。
+
+**本体が自分の名前を発火しているかは拡張が見る。** 02 の 18.7 のとおり、
+`@signal` が何を意味するかを知っているのは言語ではなくホストなので、
+検査器はここに口を出せない。`_reload` のたびに本体の書かれた名前を見て、
+自分の名前が無ければ警告する:
+
+```text
+res://spinner.lh: @signal died is never emitted by name in its own body
+```
+
+計算して得た名前（`emit(names[i], …)`）は「書かれていない」側に落ちる。
+
+登録してあるが**まだエンジン側の意味が無い**もの: `@tool` `@icon` `@rpc`。
+書いても検査は通り、何も起きない。
+
+**`@onready` は登録していない。** GDScript のそれは初期化式を `_ready` まで
+遅らせるものだが、14.11 は `self^` の欄の初期化式を `new` の中で走らせ、
+欄ごとの入口を残さない。あとから1欄だけ走らせ直す道が実行時に無い以上、
+名前だけ受けても何も起こせない——**書けて何も起きない注釈は嘘**なので、
+`no host registered an annotation of this name` と言わせる。
+木が要るものは `_ready` に書けばよい。
 
 ## 呼び出して使う
 
@@ -281,6 +310,8 @@ godot --headless --path godot\demo
 - 着ていないスクリプトのプロパティ一覧（`_get_script_property_list`）。
   いまインスペクタに出るのはインスタンスの欄だけで、スクリプト自体に
   訊く道は空を返す
-- `@tool` `@onready` `@icon` `@rpc` にエンジン側の意味を与える
+- `@tool` `@icon` `@rpc` にエンジン側の意味を与える。`@icon` は
+  スクリプトがグローバルクラス名を持たないと出ないので、
+  `_get_global_name` に何を答えるかを先に決める必要がある
 - 補完（`_complete_code`）。`lsp/` が既にあるので、そこを使い回す話になる
 - `stdlib/` を繋ぐか。`std.io` はゲームの中では意味が変わる

@@ -946,15 +946,9 @@ static LhatNode *parse_brace_entries(Parser *p, bool require_key)
         // 14.15: a field the composition has to provide, written with its
         // type. Only a template has one -- a table literal makes a value,
         // and there is nothing there for a declaration to wait for.
-        // 02 の 18.7: extern^ takes the same written-out form, and belongs
-        // here rather than beside the members when what it declares is each
-        // instance's own -- a Godot signal's connections are per node, and
-        // where it is written is what says so.
-        if (require_key && (check_hat(p, "abstract") || check_hat(p, "extern"))) {
+        if (require_key && check_hat(p, "abstract")) {
             LhatToken at_marker = p->current;
-            entry->v.entry.modifier = check_hat(p, "extern")
-                                          ? LHAT_DEF_EXTERN
-                                          : LHAT_DEF_ABSTRACT;
+            entry->v.entry.modifier = LHAT_DEF_ABSTRACT;
             advance(p);
             entry->v.entry.declared = true;
             if (p->current.kind != LHAT_TOKEN_IDENT &&
@@ -1169,10 +1163,6 @@ static LhatNode *parse_def(Parser *p)
             // 14.15: a third marker in the same place, since what it says is
             // about the member as a whole the way the other two are.
             modifier = LHAT_DEF_ABSTRACT;
-        } else if (match_hat(p, "extern")) {
-            // 02 の 18.7: the fourth marker in the same place. What it says
-            // is about the member as a whole, the way the other three are.
-            modifier = LHAT_DEF_EXTERN;
         }
 
         LhatNode *entry = make(p, LHAT_NODE_TABLE_ENTRY, &at);
@@ -1260,8 +1250,7 @@ static LhatNode *parse_def(Parser *p)
             // 14.15: an abstract^ member is written with its type, since
             // there is no value to read it from. 14.10 spells a member's
             // type the same way, so the two agree.
-            if (modifier == LHAT_DEF_ABSTRACT ||
-                modifier == LHAT_DEF_EXTERN) {
+            if (modifier == LHAT_DEF_ABSTRACT) {
                 entry->v.entry.declared = true;
                 if (expect_op(p, LHAT_OP_COLON)) {
                     entry->v.entry.value = parse_type(p);

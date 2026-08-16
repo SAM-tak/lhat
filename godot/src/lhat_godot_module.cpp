@@ -178,6 +178,34 @@ LhatValue godot_call(LhatMachine *machine, void *context,
     return made;
 }
 
+// The same shape as call, and separate because emitting is not calling: the
+// name reaches every connection rather than one method. What a body marked
+// @signal is written around.
+LhatValue godot_emit(LhatMachine *machine, void *context,
+                     const LhatValue *arguments, size_t count)
+{
+    (void)machine;
+    const Godot *module = module_of(context);
+    Object *object = receiver(arguments, count, context);
+    String name;
+    if (object == nullptr) {
+        return gone("emit", arguments[0], module);
+    }
+    if (count < 2 || !text_of(arguments[1], &name)) {
+        return lhat_nil();
+    }
+
+    Array passed;
+    for (size_t i = 2; i < count; i++) {
+        passed.push_back(to_variant(arguments[i], module));
+    }
+    // emit_signal is variadic where callv is not, so the arguments go through
+    // as one call rather than being spread here.
+    passed.push_front(name);
+    object->callv("emit_signal", passed);
+    return lhat_nil();
+}
+
 // 05 の 8.8: registering this is what makes the box the host's to hand over
 // and L^'s to give back.
 LhatValue godot_dispose(LhatMachine *machine, void *context,
@@ -220,6 +248,7 @@ const Godot *register_godot(LhatProgram *program)
         {"get", "f^self^, string^ -> any^;", godot_get},
         {"set", "p^self^, string^, any^;", godot_set},
         {"call", "f^self^, string^, ... -> any^;", godot_call},
+        {"emit", "p^self^, string^, ...;", godot_emit},
         {"dispose", "p^self^;", godot_dispose},
     };
     // 02 の 18: what a script may write above a declaration. The engine acts
@@ -234,13 +263,14 @@ const Godot *register_godot(LhatProgram *program)
         {"icon", LHAT_ANNOTATION_BINDING, "p^ string^;"},
         {"export", LHAT_ANNOTATION_FIELD, nullptr},
         {"export_range", LHAT_ANNOTATION_FIELD, "p^ number^, number^, ...;"},
-        {"export_enum", LHAT_ANNOTATION_FIELD, "p^ string^, ...;"},
-        {"export_file", LHAT_ANNOTATION_FIELD, "p^ string^;"},
+        // An enum wants at least one name; a file filter is optional and
+        // there may be several, which is what a bare variadic says.
+        {"export_enum", LHAT_ANNOTATION_FIELD, "p^ string^, ...:string^;"},
+        {"export_file", LHAT_ANNOTATION_FIELD, "p^ ...:string^;"},
         {"export_multiline", LHAT_ANNOTATION_FIELD, nullptr},
-        {"onready", LHAT_ANNOTATION_FIELD, nullptr},
-        // 18.7: written on an extern^ field, since a signal's
-        // connections are kept per node.
-        {"signal", LHAT_ANNOTATION_FIELD, nullptr},
+        // Written on the member that emits it: what the engine has to be
+        // told is a name and an argument list, and a member already is one.
+        {"signal", LHAT_ANNOTATION_MEMBER, nullptr},
         {"rpc", LHAT_ANNOTATION_MEMBER, "p^ string^, ...;"},
     };
     for (const auto &annotation : annotations) {
