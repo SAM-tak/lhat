@@ -7,18 +7,18 @@ module^ demo.spinner
 let^ nodeLib = require^"lhat/NodeLib.lh"
 
 public^let^ Spinner = nodeLib.Sprite2D..def^{
-    self^{ turns = 0 },
+	self^{ turns = 0 },
 
-    _ready = p^self^ {
-        print($"spinner on a {self^.className()}, named {self^.getName()}")
-    },
+	_ready = p^self^ {
+		print($"spinner on a {self^.className()}, named {self^.getName()}")
+	},
 
-    _process = p^self^, delta:number^ {
-        self^.setRotation(self^.getRotation() + delta)
-        self^.turns := self^.turns + 1
-    },
+	_process = p^self^, delta:number^ {
+		self^.setRotation(self^.getRotation() + delta)
+		self^.turns := self^.turns + 1
+	},
 
-    report = f^self^ -> string^ {
-        return^ $"{self^.turns} frames, rotation {self^.getRotation()}"
-    },
+	report = f^self^ -> string^ {
+		return^ $"{self^.turns} frames, rotation {self^.getRotation()}"
+	},
 }
