@@ -82,6 +82,9 @@ typedef struct LhatTable {
     size_t array_count;
     size_t array_capacity;
 
+    // An entry is live when its key is not nil^: a free slot and a tombstone
+    // both carry a nil^ key, which is what lets a reader walk `entries`
+    // without knowing how a removal is marked.
     LhatTableEntry *entries;  // capacity is a power of two, or zero
     size_t entry_count;       // live entries, tombstones not counted
     size_t entry_capacity;

@@ -598,9 +598,175 @@ static void test_collection(void)
     run_dispose(&r);
 }
 
+// 02 の 14.4 の host 版: an instance's members are shared and take self^, so
+// without this a host holding an object of the language's could call nothing
+// on it. What is pinned here is that the receiver arrives where the member
+// asked for it.
+static LhatValue member_of(const LhatValue owner, const char *name)
+{
+    const LhatTable *table = (const LhatTable *)lhat_as_object(owner);
+    LhatValue found = lhat_nil();
+    for (size_t i = 0; i < table->entry_capacity; i++) {
+        const LhatTableEntry *entry = &table->entries[i];
+        if (lhat_is_nil(entry->key) ||
+            !lhat_is_object_kind(entry->key, LHAT_OBJECT_STRING)) {
+            continue;
+        }
+        const LhatString *key = (const LhatString *)lhat_as_object(entry->key);
+        if (strcmp(key->text, name) == 0) {
+            found = entry->value;
+        }
+    }
+    return found;
+}
+
+static void test_call_member(void)
+{
+    Run r;
+
+    // The whole of what a host embedding the language does with an object:
+    // make one through the definition's `new`, then call its members.
+    LHAT_TEST("a method is handed the instance it was reached through");
+    run_text(&r,
+             "return^ def^{\n"
+             "  self^{ n = 7 },\n"
+             "  get = f^self^ -> number^ { return^ self^.n },\n"
+             "  add = f^self^, by:number^ -> number^ { return^ self^.n + by },\n"
+             "  bump = p^self^, by:number^ { self^.n := self^.n + by },\n"
+             "  plain = f^ -> number^ { return^ 99 },\n"
+             "  total = f^self^, ... -> number^ {\n"
+             "    var^ sum = self^.n\n"
+             "    for^ i, x in^ ... { sum += x }\n"
+             "    return^ sum\n"
+             "  },\n"
+             "}\n");
+    LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_OK);
+    {
+        // 05 の 8.6: nothing roots what a run answered once its frame is
+        // gone, so the definition goes into L^ before anything else runs.
+        LHAT_CHECK(lhat_machine_set_global(r.machine, "Held", r.ran.value),
+                   "the definition is rooted");
+        // 14.9's `new` is an ordinary closure the definition carries, so the
+        // plain entry point reaches it and nothing new is needed for that.
+        LhatValue make = member_of(r.ran.value, "new");
+        LhatRunResult made = lhat_machine_call(r.machine, make, NULL, 0);
+        LHAT_CHECK_EQ_INT(made.status, LHAT_RUN_OK);
+        LhatValue instance = made.value;
+        // The same rooting again, and for the same reason: every call below
+        // runs L^ code, and a collection reaches only L^, the open frames and
+        // the pending disposals -- a host's own C variable is not a root.
+        LHAT_CHECK(lhat_machine_set_global(r.machine, "It", instance),
+                   "the instance is rooted");
+
+        LhatRunResult got = lhat_machine_call_member(r.machine, instance,
+                                                     "get", 3, NULL, 0);
+        LHAT_CHECK_EQ_INT(got.status, LHAT_RUN_OK);
+        LHAT_CHECK_EQ_INT(lhat_as_integer(got.value), 7);
+
+        LhatValue by = lhat_integer(5);
+        LhatRunResult sum = lhat_machine_call_member(r.machine, instance,
+                                                     "add", 3, &by, 1);
+        LHAT_CHECK_EQ_INT(sum.status, LHAT_RUN_OK);
+        LHAT_CHECK_EQ_INT(lhat_as_integer(sum.value), 12);
+
+        // A p^ writing through self^ reaches the instance the host holds.
+        LhatRunResult wrote = lhat_machine_call_member(r.machine, instance,
+                                                       "bump", 4, &by, 1);
+        LHAT_CHECK_EQ_INT(wrote.status, LHAT_RUN_OK);
+        got = lhat_machine_call_member(r.machine, instance, "get", 3, NULL, 0);
+        LHAT_CHECK_EQ_INT(lhat_as_integer(got.value), 12);
+
+        // 14.4: a member that takes no self^ is a static one -- it belongs to
+        // the definition, and an instance does not see it. `d.plain()` is a
+        // type error written in L^, and this is the same refusal reached
+        // from C.
+        LhatRunResult plain = lhat_machine_call_member(r.machine, instance,
+                                                       "plain", 5, NULL, 0);
+        LHAT_CHECK_EQ_INT(plain.status, LHAT_RUN_NOT_CALLABLE);
+
+        // 13.7: the tail collects the same way a compiled call collects it,
+        // with the receiver not counted among what was written.
+        LhatValue rest[3] = {lhat_integer(1), lhat_integer(2), lhat_integer(3)};
+        LhatRunResult all = lhat_machine_call_member(r.machine, instance,
+                                                     "total", 5, rest, 3);
+        LHAT_CHECK_EQ_INT(all.status, LHAT_RUN_OK);
+        LHAT_CHECK_EQ_INT(lhat_as_integer(all.value), 18);
+
+        // Reached through the definition it is an ordinary call, and the
+        // receiver goes unused because the member asked for none.
+        LhatRunResult through = lhat_machine_call_member(
+            r.machine, r.ran.value, "plain", 5, NULL, 0);
+        LHAT_CHECK_EQ_INT(through.status, LHAT_RUN_OK);
+        LHAT_CHECK_EQ_INT(lhat_as_integer(through.value), 99);
+
+        // 14.7: what an instance does see through its definition is the
+        // shared member it reaches with self^ -- which every call above is.
+
+        LHAT_TEST("and what it refuses, it refuses the way an instruction does");
+        LhatRunResult wrong = lhat_machine_call_member(r.machine, instance,
+                                                       "add", 3, NULL, 0);
+        LHAT_CHECK_EQ_INT(wrong.status, LHAT_RUN_ARITY);
+
+        // 04 の 11.3: a key that is not there answers nil^, and nil^ is not
+        // callable.
+        LhatRunResult missing = lhat_machine_call_member(r.machine, instance,
+                                                         "nope", 4, NULL, 0);
+        LHAT_CHECK_EQ_INT(missing.status, LHAT_RUN_NOT_CALLABLE);
+
+        LhatRunResult flat = lhat_machine_call_member(
+            r.machine, lhat_integer(1), "get", 3, NULL, 0);
+        LHAT_CHECK_EQ_INT(flat.status, LHAT_RUN_TYPE_ERROR);
+    }
+    run_dispose(&r);
+
+    // 02 の 14.12: one name, several signatures -- the search a call site
+    // makes is the search this makes.
+    LHAT_TEST("an overloaded member picks the arm that fits");
+    run_text(&r,
+             "var^ Foo = def^{\n"
+             "  self^{ n = 2 },\n"
+             "  scale = f^self^, by:number^ -> number^ { return^ self^.n * by },\n"
+             "}\n"
+             "var^ Bar = Foo .. def^{\n"
+             "  overload^ scale := f^self^, by:string^ -> string^ { return^ by },\n"
+             "}\n"
+             "return^ Bar\n");
+    LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_OK);
+    {
+        LHAT_CHECK(lhat_machine_set_global(r.machine, "Held", r.ran.value),
+                   "the definition is rooted");
+        LhatValue make = member_of(r.ran.value, "new");
+        LhatValue instance = lhat_machine_call(r.machine, make, NULL, 0).value;
+        LHAT_CHECK(lhat_machine_set_global(r.machine, "It", instance),
+                   "the instance is rooted");
+
+        LhatValue number = lhat_integer(4);
+        LhatRunResult by_number = lhat_machine_call_member(
+            r.machine, instance, "scale", 5, &number, 1);
+        LHAT_CHECK_EQ_INT(by_number.status, LHAT_RUN_OK);
+        LHAT_CHECK_EQ_INT(lhat_as_integer(by_number.value), 8);
+
+        LhatValue text = lhat_nil();
+        LHAT_CHECK(lhat_machine_make_string(r.machine, "hi", 2, &text),
+                   "a string to hand over");
+        LhatRunResult by_text = lhat_machine_call_member(r.machine, instance,
+                                                         "scale", 5, &text, 1);
+        LHAT_CHECK_EQ_INT(by_text.status, LHAT_RUN_OK);
+        LHAT_CHECK(lhat_is_object_kind(by_text.value, LHAT_OBJECT_STRING),
+                   "the string arm ran");
+
+        LhatValue neither = lhat_bool(true);
+        LhatRunResult none = lhat_machine_call_member(r.machine, instance,
+                                                      "scale", 5, &neither, 1);
+        LHAT_CHECK_EQ_INT(none.status, LHAT_RUN_NO_CANDIDATE);
+    }
+    run_dispose(&r);
+}
+
 int main(void)
 {
     test_machine();
+    test_call_member();
     test_collection();
     return lhat_test_report("test_vm_machine");
 }

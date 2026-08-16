@@ -259,6 +259,30 @@ LhatRunResult lhat_run(LhatMachine *machine, const LhatProto *proto);
 LhatRunResult lhat_machine_call(LhatMachine *machine, LhatValue callee,
                                 const LhatValue *arguments, size_t count);
 
+// 02 の 14.4: the same, for a member reached through a receiver -- what a
+// compiled `x.m(a, b)` does, for a host that has the receiver and the name.
+// Without this a host can hold an object of the language's and call nothing
+// on it: an instance's members are shared and take self^, so there is no way
+// to arrange the receiver from outside.
+//
+// 14.7's search is the one lhat_table_get already makes, so an instance
+// reaches its definition's members here as it does anywhere. 14.12's
+// overloads are resolved the way a call site resolves them, and 11.3改's
+// self^-last op^ is handed its receiver in the slot it asked for. A member
+// that takes no self^ is a static one and is simply called, receiver unused.
+//
+// Same limits as above: the callee has to end up a plain L^ subroutine, so a
+// member the host registered in C (LHAT_OBJECT_HOST) and a built-in
+// (LHAT_OBJECT_NATIVE) both answer LHAT_RUN_NOT_CALLABLE for now. A receiver
+// that is not a table answers LHAT_RUN_TYPE_ERROR, and a name that reaches
+// nothing answers LHAT_RUN_NOT_CALLABLE -- 11.3 makes an absent key nil^,
+// and nil^ is not callable.
+LhatRunResult lhat_machine_call_member(LhatMachine *machine,
+                                       LhatValue receiver, const char *name,
+                                       size_t length,
+                                       const LhatValue *arguments,
+                                       size_t count);
+
 const char *lhat_run_status_message(LhatRunStatus status);
 
 #ifdef __cplusplus

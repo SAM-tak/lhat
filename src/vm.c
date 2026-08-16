@@ -4558,16 +4558,19 @@ static LhatRunResult call_fault(Machine *m, LhatRunStatus status)
     return result;
 }
 
-LhatRunResult lhat_machine_call(LhatMachine *machine, LhatValue callee,
-                                const LhatValue *arguments, size_t count)
+// The body of both host entry points below. `receiver` means something only
+// when `as_method`, and then the callee is a member reached through it
+// (14.4) -- which is the whole of the difference between them.
+static LhatRunResult host_call(Machine *m, LhatValue callee, LhatValue receiver,
+                               bool as_method, const LhatValue *arguments,
+                               size_t count)
 {
-    Machine *m = (Machine *)machine;
     size_t base = m->frame_count;
     m->tuple_scratch_count = 0;  // 13.8改, as in lhat_run
 
-    // 05 の 8.7's LhatHostFn has no shape for a receiver or a spread; a host
-    // calling back in already has its arguments as a flat array, so this is
-    // the plain-call subset of what LHAT_BC_CALL does (vm.c's CALL case).
+    // 05 の 8.7's LhatHostFn has no shape for a spread; a host calling back in
+    // already has its arguments as a flat array, so this is the plain-call
+    // subset of what LHAT_BC_CALL does (vm.c's CALL case).
     if (!lhat_is_object_kind(callee, LHAT_OBJECT_SUBROUTINE)) {
         return call_fault(m, LHAT_RUN_NOT_CALLABLE);
     }
@@ -4579,11 +4582,20 @@ LhatRunResult lhat_machine_call(LhatMachine *machine, LhatValue callee,
         return call_fault(m, LHAT_RUN_NOT_CALLABLE);
     }
 
+    // 14.4: a member that takes self^ is handed the receiver in a slot of its
+    // own, and one that does not is a static member -- the receiver is then
+    // simply not passed, the same way LHAT_BC_CALLMETHOD steps over it.
+    bool pass_self = as_method && closure->proto->takes_self;
+
     size_t declared_slots = closure->proto->parameters;
     size_t required =
         closure->proto->has_variadic ? declared_slots - 1 : declared_slots;
-    if (closure->proto->has_variadic ? count < required
-                                     : count != declared_slots) {
+    // 13.4 keeps self^ out of the parameter list a call writes, and
+    // proto->parameters counts the slot it occupies -- so what the host
+    // handed over is compared after the receiver is added back in.
+    size_t written = count + (pass_self ? 1 : 0);
+    if (closure->proto->has_variadic ? written < required
+                                     : written != declared_slots) {
         return call_fault(m, LHAT_RUN_ARITY);
     }
 
@@ -4604,18 +4616,28 @@ LhatRunResult lhat_machine_call(LhatMachine *machine, LhatValue callee,
         return call_fault(m, LHAT_RUN_STACK_OVERFLOW);
     }
 
+    // 02 の 11.3改: an op^ may write self^ last instead, which says the right
+    // operand is the receiver. The slot it occupies moves with it, so where
+    // the receiver lands is read off the proto rather than assumed.
+    size_t self_at =
+        pass_self && closure->proto->self_last && required > 0 ? required - 1
+                                                               : 0;
+    size_t next = 0;
     for (size_t i = 0; i < required; i++) {
-        lhat_slots_set(m->slots, next_base + (i), arguments[i]);
+        if (pass_self && i == self_at) {
+            lhat_slots_set(m->slots, next_base + (i), receiver);
+            continue;
+        }
+        lhat_slots_set(m->slots, next_base + (i), arguments[next++]);
     }
     if (closure->proto->has_variadic) {
         LhatTable *collected = lhat_table_new(&m->objects);
         if (collected == NULL) {
             return call_fault(m, LHAT_RUN_OUT_OF_MEMORY);
         }
-        for (size_t i = required; i < count; i++) {
+        for (size_t i = next; i < count; i++) {
             bool refused = false;
-            if (!set_key(m, collected,
-                         lhat_integer((int64_t)(i - required + 1)),
+            if (!set_key(m, collected, lhat_integer((int64_t)(i - next + 1)),
                          arguments[i], &refused)) {
                 return call_fault(m, LHAT_RUN_OUT_OF_MEMORY);
             }
@@ -4642,6 +4664,67 @@ LhatRunResult lhat_machine_call(LhatMachine *machine, LhatValue callee,
     called->answer = lhat_nil();
 
     return run_frames(m, base);
+}
+
+LhatRunResult lhat_machine_call(LhatMachine *machine, LhatValue callee,
+                                const LhatValue *arguments, size_t count)
+{
+    return host_call((Machine *)machine, callee, lhat_nil(), false, arguments,
+                     count);
+}
+
+LhatRunResult lhat_machine_call_member(LhatMachine *machine,
+                                       LhatValue receiver, const char *name,
+                                       size_t length,
+                                       const LhatValue *arguments,
+                                       size_t count)
+{
+    Machine *m = (Machine *)machine;
+    if (name == NULL || count > LHAT_MAX_REGISTERS) {
+        return call_fault(m, LHAT_RUN_TYPE_ERROR);
+    }
+    // 14.4 reaches a member through a table; a value that is not one has no
+    // members to reach, which is the same refusal an instruction makes.
+    const LhatTable *table = table_of(receiver);
+    if (table == NULL) {
+        return call_fault(m, LHAT_RUN_TYPE_ERROR);
+    }
+
+    LhatString *key = lhat_string_new(&m->objects, name, length);
+    if (key == NULL) {
+        return call_fault(m, LHAT_RUN_OUT_OF_MEMORY);
+    }
+    // 14.7: an instance sees its definition's members too, and lhat_table_get
+    // is what already walks that.
+    LhatValue member = lhat_table_get(table, lhat_object((LhatObject *)key));
+
+    // 14.12: at most one candidate fits, so this is a search and not a
+    // choice. The lineup is what an instruction has lying in its registers:
+    // the callee, the receiver, then what the call wrote.
+    if (lhat_is_object_kind(member, LHAT_OBJECT_OVERLOAD)) {
+        const LhatOverload *group = (const LhatOverload *)lhat_as_object(member);
+        LhatValue lineup[LHAT_MAX_REGISTERS + 2];
+        lineup[0] = member;
+        lineup[1] = receiver;
+        for (size_t i = 0; i < count; i++) {
+            lineup[i + 2] = arguments[i];
+        }
+        size_t picked_skip = 1;
+        LhatValue chosen = lhat_nil();
+        for (size_t i = 0; i < group->count; i++) {
+            if (fits_call(group->candidates[i], lineup, (uint8_t)count, true,
+                          &picked_skip)) {
+                chosen = group->candidates[i];
+                break;
+            }
+        }
+        if (lhat_is_nil(chosen)) {
+            return call_fault(m, LHAT_RUN_NO_CANDIDATE);
+        }
+        member = chosen;
+    }
+
+    return host_call(m, member, receiver, true, arguments, count);
 }
 
 bool lhat_machine_make_string(LhatMachine *machine, const char *text,
