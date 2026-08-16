@@ -91,6 +91,96 @@ JIT
 
 AOT
 
+## Godot組み込み
+
+### L^ 側のラッパーライブラリ
+
+HostData としては GodotObject 一種のみ。
+
+```lhat/NodeLib.lh
+module^ lhat.NodeLib
+
+import^ godot
+
+public^let^ Node2D = def^{
+    self^{ abstract^node:godot.Node },
+
+    getPosition = f^self^ {
+        return^self^.node.getVec2("position")
+    },
+
+    setPosition = p^self^, position {
+        return^self^.node.setVec2("position", position)
+    },
+    ...
+}
+
+public^let^ Node3D = def^{
+    self^{ abstract^node:godot.Node },
+
+    getPosition = f^self^ {
+        return^self^.node.getVec3("position")
+    },
+
+    setPosition = p^self^, position {
+        return^self^.node.setVec3("position", position)
+    },
+    ...
+}
+
+public^let^ Sprite2D = Node2D..def^{ # 連結してもまだ抽象定義、は許されたっけ…？newはできない、だと思っていたが
+    self^{ abstract^node:godot.Node },
+
+    getTexture = f^self^ {
+        return^self^.node.getResource("texture")
+    },
+
+    setTexture = p^self^, texture {
+        return^self^.node.setResource("texture", texture)
+    },
+    ...
+}
+
+...
+
+public^let^ CharacterBody3D = PhysicsBody3D..def^{
+    self^{ abstract^node:godot.Node },
+
+    getMotionMode = f^self^ {
+        return^self^.node.getResource("motion_mode")
+    },
+
+    setMotionMode = p^self^, motion_mode {
+        return^self^.node.setResource("motion_mode", motion_mode)
+    },
+
+    moveAndSlide = p^self^ { self^.node.call("move_and_slide") }
+    ...
+}
+```
+
+ユーザーノードスクリプト側
+
+```lhat
+module^ demo.player
+
+import^ godot
+let^nodeLib = require^"lhat/NodeLib.lh"
+
+public^let^ Player = nodeLib.CharacterBody3D..def^{
+    self^{ node = godot.Node.default() }, # godot.Node.defaultはプレースホルダオブジェクトを返す。実際にはアタッチしたノードで上書きされる
+
+    _ready = p^self^ {
+        print(self^.node.className())        # "CharacterBody3D"
+        self^.setPosition(godot.Vec3.new(0, 1, 0))
+    },
+
+    _process = p^self^, delta:number^ {
+        self^.moveAndSlide()
+    },
+}
+```
+
 ## L^ Visual Editor
 
 グラフィカルにL^ スクリプトを編集する専用エディター
