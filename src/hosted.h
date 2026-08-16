@@ -8,6 +8,7 @@
 
 #include <stdbool.h>
 #include <stddef.h>
+#include <stdint.h>
 
 #include "lhat/object.h"
 
@@ -23,6 +24,20 @@ typedef struct LhatHostErrorKind {
     const LhatErrorKind *const *variants;  // variant_names と対応
     size_t variant_count;
 } LhatHostErrorKind;
+
+// 02 の 18.5: one annotation lhat_register_annotation (program.h) registered.
+// The checker reads these -- an annotation the host did not register is not
+// one a program may write, and where it may be written is what `targets`
+// says. Nothing at run time reads them: 18.1 makes an annotation information
+// for the host, and the host asks the unit for it after checking.
+typedef struct LhatAnnotationDecl {
+    const char *module;
+    const char *name;
+    uint32_t targets;   // LhatAnnotationTarget, or-ed
+    // What the arguments have to look like, in 13 章's grammar, parsed. NULL
+    // when the registration wrote none, which asks nothing of them.
+    const struct LhatType *signature;
+} LhatAnnotationDecl;
 
 // 05 の 8.8 の isa^ 版: one hostdata type lhat_register_hostdata_type
 // (program.h) registered. resolve_isa_type (compile.c) reads these to

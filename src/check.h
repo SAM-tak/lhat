@@ -19,6 +19,7 @@
 
 #include "ast.h"
 #include "lexer.h"
+#include "hosted.h"
 #include "type.h"
 
 typedef enum {
@@ -237,6 +238,12 @@ typedef enum {
                                         // when what is missing is a narrowing
                                         // -- and 13.11 does not narrow an
                                         // index where it stands
+    // 02 の 18.5: an annotation the host did not register, one written where
+    // its registration does not allow, and arguments that do not fit what it
+    // declared. Three failures rather than one: what to change differs.
+    LHAT_CHECK_ERR_NO_SUCH_ANNOTATION,
+    LHAT_CHECK_ERR_ANNOTATION_MISPLACED,
+    LHAT_CHECK_ERR_ANNOTATION_ARGUMENTS,
     LHAT_CHECK_ERR_BARE_TABLE_TYPE      // 14.10: t^ is written with the
                                         // members it asks for, and the top of
                                         // tables is the one asking for none
@@ -384,6 +391,12 @@ typedef struct {
     const char *const *initial_names;
     const char *const *initial_members;
     size_t initial_count;
+
+    // 02 の 18.5: the annotations the host registered, which are the only
+    // ones a program may write. NULL/0 when it registered none, and then
+    // every annotation written is one the checker refuses.
+    const LhatAnnotationDecl *annotations;
+    size_t annotation_count;
 } LhatRequire;
 
 // 03 の 3.1. `strict` is a setting of the compilation unit, not a dialect:

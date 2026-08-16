@@ -420,6 +420,16 @@ typedef struct LhatHost {
     struct LhatRuntimeType **parameter_types;
 } LhatHost;
 
+// 02 の 18.5: where an annotation may be written. A registration says which
+// of these it takes, and the checker refuses it anywhere else -- the same
+// job Java's @Target and C#'s AttributeUsage do.
+typedef enum {
+    LHAT_ANNOTATION_UNIT = 1u << 0,     // at the head of a unit
+    LHAT_ANNOTATION_BINDING = 1u << 1,  // a top-level let^ or var^
+    LHAT_ANNOTATION_FIELD = 1u << 2,    // a field of a self^{ ... }
+    LHAT_ANNOTATION_MEMBER = 1u << 3    // a member of a def^
+} LhatAnnotationTarget;
+
 // 05 の 8.8: what tells one registered type from another while running.
 // Compared by identity alone -- 7.3's rule made into an object, and the one
 // thing standing between a Texture and the C code that expects a Sound. The

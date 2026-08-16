@@ -236,6 +236,8 @@ static LhatUnit *check_path(LhatProgram *program, char *path)
     require.initial_names = (const char *const *)program->initial_names;
     require.initial_members = (const char *const *)program->initial_members;
     require.initial_count = program->initial_count;  // 05 の 8.2
+    require.annotations = program->annotations;  // 02 の 18.5
+    require.annotation_count = program->annotation_count;
 
     // The recursion is what puts the graph in dependency order (6.2): the
     // required unit finishes before this one's checking gets past the
@@ -996,6 +998,79 @@ bool lhat_register_member(LhatProgram *program, const char *module,
     return true;
 }
 
+// 02 の 18.5: an annotation is checked and never installed, so this records
+// only what the checker asks -- where it may be written, and what shape its
+// arguments have. No LhatHostEntry: there is no value to build for a machine.
+bool lhat_register_annotation(LhatProgram *program, const char *module,
+                              const char *name, uint32_t targets,
+                              const char *signature)
+{
+    if (program == NULL || module == NULL || name == NULL || targets == 0) {
+        return false;
+    }
+    // 8.7: one name, one thing. Unlike a member, a second registration is not
+    // another arm -- 18.2 keeps the namespace flat, and two hosts wanting the
+    // same spelling is a collision to report rather than to merge.
+    for (size_t i = 0; i < program->annotation_count; i++) {
+        if (strcmp(program->annotations[i].name, name) == 0) {
+            return false;
+        }
+    }
+
+    const LhatType *written = NULL;
+    if (signature != NULL) {
+        written = lhat_type_of_text(signature, strlen(signature),
+                                    &program->types, program->hosted);
+        if (written == NULL) {
+            return false;
+        }
+    }
+
+    char *kept_module = duplicate(module);
+    char *kept_name = duplicate(name);
+    char *kept_text = signature != NULL ? duplicate(signature) : NULL;
+    if (kept_module == NULL || kept_name == NULL ||
+        (signature != NULL && kept_text == NULL)) {
+        lhat_free(kept_module);
+        lhat_free(kept_name);
+        lhat_free(kept_text);
+        return false;
+    }
+
+    // The text grows alongside the declarations, so a refusal leaves the two
+    // the same length.
+    size_t at = program->annotation_count;
+    if (at == program->annotation_capacity) {
+        size_t grown = program->annotation_capacity
+                           ? program->annotation_capacity * 2 : 4;
+        LhatAnnotationDecl *decls = (LhatAnnotationDecl *)lhat_realloc(
+            program->annotations, grown * sizeof *decls);
+        char **texts = (char **)lhat_realloc(program->annotation_signatures,
+                                             grown * sizeof *texts);
+        if (decls != NULL) {
+            program->annotations = decls;
+        }
+        if (texts != NULL) {
+            program->annotation_signatures = texts;
+        }
+        if (decls == NULL || texts == NULL) {
+            lhat_free(kept_module);
+            lhat_free(kept_name);
+            lhat_free(kept_text);
+            return false;
+        }
+        program->annotation_capacity = grown;
+    }
+
+    program->annotations[at].module = kept_module;
+    program->annotations[at].name = kept_name;
+    program->annotations[at].targets = targets;
+    program->annotations[at].signature = written;
+    program->annotation_signatures[at] = kept_text;
+    program->annotation_count++;
+    return true;
+}
+
 bool lhat_register_func(LhatProgram *program, const char *module,
                         const char *name, const char *signature,
                         LhatHostFn call, void *context)
@@ -1453,6 +1528,20 @@ void lhat_program_dispose(LhatProgram *program)
     program->host_entries = NULL;
     program->host_entry_count = 0;
     program->host_entry_capacity = 0;
+
+    // 02 の 18.5: the declaration owns the two names it points at, and the
+    // text sits beside it.
+    for (size_t i = 0; i < program->annotation_count; i++) {
+        lhat_free((void *)program->annotations[i].module);
+        lhat_free((void *)program->annotations[i].name);
+        lhat_free(program->annotation_signatures[i]);
+    }
+    lhat_free(program->annotations);
+    lhat_free(program->annotation_signatures);
+    program->annotations = NULL;
+    program->annotation_signatures = NULL;
+    program->annotation_count = 0;
+    program->annotation_capacity = 0;
 
     // host_type_entries[i] の module/name/tag は上の host_entries[i] が
     // 所有する同じポインタを指すだけなので、ここでは配列自体だけを解放

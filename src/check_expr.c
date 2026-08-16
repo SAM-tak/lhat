@@ -3122,6 +3122,10 @@ LhatType *chk_infer_def(Checker *c, const LhatNode *node, LhatType *base)
              field = field->next) {
             const char *name = NULL;
             size_t length = 0;
+            // 02 の 18.4: a field of a self^{ … } takes one, which is where
+            // an @export-shaped annotation goes.
+            chk_check_annotations(c, field->v.entry.annotations,
+                                  LHAT_ANNOTATION_FIELD);
             if (!chk_node_name(c, field->v.entry.key, &name, &length)) {
                 continue;
             }
@@ -3168,6 +3172,9 @@ LhatType *chk_infer_def(Checker *c, const LhatNode *node, LhatType *base)
          entry = entry->next) {
         const char *name = NULL;
         size_t length = 0;
+        // 02 の 18.4: a member of a def^ takes one.
+        chk_check_annotations(c, entry->v.entry.annotations,
+                              LHAT_ANNOTATION_MEMBER);
         if (entry->v.entry.key == NULL ||
             !chk_node_name(c, entry->v.entry.key, &name, &length)) {
             continue;

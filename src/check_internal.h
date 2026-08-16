@@ -425,6 +425,10 @@ Binding *chk_scope_add(Scope *scope, const char *name, size_t length,
                        LhatType *type, uint32_t offset);
 void chk_scope_dispose(Scope *scope);
 LhatType *chk_simple(Checker *c, LhatTypeKind kind);
+
+// 02 の 18.5: what a run of annotations is asked, where `target` is the one
+// LhatAnnotationTarget the place they were written is.
+void chk_check_annotations(Checker *c, const LhatNode *list, uint32_t target);
 int chk_self_marker_at(const Checker *c, const LhatNode *params,
                        const LhatNode *param);
 LhatType *chk_resolve_func_type(Checker *c, const LhatNode *node);

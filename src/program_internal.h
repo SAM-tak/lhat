@@ -76,6 +76,18 @@ struct LhatProgram {
     size_t host_entry_count;
     size_t host_entry_capacity;
 
+    // 02 の 18.5: what lhat_register_annotation recorded. Only the checker
+    // reads these -- an annotation never runs, so nothing is installed into
+    // a machine for one. The strings are owned here.
+    // The module and name strings are owned here, through the declaration
+    // that points at them; the signature text is kept beside it because the
+    // declaration carries the parsed type and not the words it was written
+    // with (the same reason LhatHostEntry keeps both).
+    LhatAnnotationDecl *annotations;
+    char **annotation_signatures;
+    size_t annotation_count;
+    size_t annotation_capacity;
+
     // 05 の 8.7 の誤り版、04 の 12.4: lhat_register_error_kind が作る実行時
     // オブジェクト専用のヒープ。どの machine の GC サイクルにも属さず、
     // program 自身と同じだけ生きる -- chunk->heap (code.h) と同じ理屈

@@ -2207,6 +2207,109 @@ void chk_rounds_end(Checker *c, Rounds *r)
 }
 
 // ---------------------------------------------------------------------------
+// 02 の 18.3: the kind an argument stands for. A bare name arrives as a
+// string^ -- what the name means is the host's to decide, and the checker
+// has nothing to resolve it against.
+static LhatType *annotation_argument_type(Checker *c, const LhatNode *node)
+{
+    if (node == NULL) {
+        return NULL;
+    }
+    switch (node->kind) {
+        case LHAT_NODE_INT:
+        case LHAT_NODE_FLOAT:
+            return chk_simple(c, LHAT_TYPE_NUMBER);
+        case LHAT_NODE_UNARY:  // 18.3's leading '-', which only a number takes
+            return chk_simple(c, LHAT_TYPE_NUMBER);
+        case LHAT_NODE_STRING:
+        case LHAT_NODE_IDENT:
+            return chk_simple(c, LHAT_TYPE_STRING);
+        case LHAT_NODE_HAT_IDENT:
+            return chk_simple(c, LHAT_TYPE_BOOL);
+        default:
+            return NULL;
+    }
+}
+
+// 13.7's floor and 13.1's exact count, over a list the parser already kept
+// to literals -- so this asks the kinds and nothing else.
+static bool chk_annotation_arguments_fit(Checker *c, const LhatNode *at,
+                                         const LhatType *signature)
+{
+    if (signature->kind != LHAT_TYPE_FUNC) {
+        return false;
+    }
+    const LhatTypeList *want = signature->v.func.params;
+    const LhatNode *given = at->v.named.members;
+
+    for (; want != NULL; want = want->next) {
+        if (given == NULL) {
+            return false;
+        }
+        LhatType *is = annotation_argument_type(c, given);
+        if (is == NULL || !lhat_type_conforms(is, want->type)) {
+            return false;
+        }
+        given = given->next;
+    }
+    if (given != NULL && signature->v.func.variadic == NULL) {
+        return false;
+    }
+    for (; given != NULL; given = given->next) {
+        LhatType *is = annotation_argument_type(c, given);
+        if (is == NULL ||
+            !lhat_type_conforms(is, signature->v.func.variadic)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+// 02 の 18.5: an annotation is only what the host registered, only where the
+// registration allows, and only with the arguments it declared. The three
+// are separate refusals because what a writer changes differs.
+void chk_check_annotations(Checker *c, const LhatNode *list, uint32_t target)
+{
+    for (const LhatNode *at = list; at != NULL; at = at->next) {
+        const char *name = NULL;
+        size_t length = 0;
+        if (!chk_node_name(c, at->v.named.name, &name, &length)) {
+            continue;
+        }
+
+        const LhatAnnotationDecl *found = NULL;
+        for (size_t i = 0; i < c->require.annotation_count; i++) {
+            const LhatAnnotationDecl *decl = &c->require.annotations[i];
+            if (strlen(decl->name) == length &&
+                memcmp(decl->name, name, length) == 0) {
+                found = decl;
+                break;
+            }
+        }
+        if (found == NULL) {
+            chk_report_named(c, at->v.named.name,
+                             LHAT_CHECK_ERR_NO_SUCH_ANNOTATION, name, length);
+            continue;
+        }
+        if ((found->targets & target) == 0) {
+            chk_report_named(c, at->v.named.name,
+                             LHAT_CHECK_ERR_ANNOTATION_MISPLACED, name,
+                             length);
+            continue;
+        }
+
+        // 18.3 keeps every argument a literal, so what is asked of them is a
+        // count and a kind -- the same question a call asks, over a list the
+        // parser already refused anything else into.
+        if (found->signature != NULL &&
+            !chk_annotation_arguments_fit(c, at, found->signature)) {
+            chk_report_named(c, at->v.named.name,
+                             LHAT_CHECK_ERR_ANNOTATION_ARGUMENTS, name,
+                             length);
+        }
+    }
+}
+
 // Entry point
 // ---------------------------------------------------------------------------
 
@@ -2245,6 +2348,10 @@ void lhat_check_unit(const LhatNode *unit, const LhatLexer *lexer, bool strict,
     // 05 の 3 章: read before the statements, so a diagnostic about the path
     // does not wait behind the body.
     result->module_name = chk_read_module_name(&checker, unit->v.list.items);
+
+    // 02 の 18.4: the unit's own, written at its head.
+    chk_check_annotations(&checker, unit->v.list.annotations,
+                          LHAT_ANNOTATION_UNIT);
 
     chk_check_statements(&checker, unit->v.list.items);
 
@@ -2631,6 +2738,14 @@ const char *lhat_check_error_message(LhatCheckErrorCode code)
             return "this name is already defined in this scope";
         case LHAT_CHECK_ERR_UNKNOWN_TYPE:
             return "no such type";
+        case LHAT_CHECK_ERR_NO_SUCH_ANNOTATION:
+            return "no host registered an annotation of this name";
+        case LHAT_CHECK_ERR_ANNOTATION_MISPLACED:
+            return "this annotation was not registered for what it is "
+                   "written above";
+        case LHAT_CHECK_ERR_ANNOTATION_ARGUMENTS:
+            return "these are not the arguments the annotation was "
+                   "registered with";
         case LHAT_CHECK_ERR_BARE_TABLE_TYPE:
             return "a t^ is written with the members it asks for, and the top "
                    "of tables asks for none: write 't^{}'";

@@ -1847,6 +1847,10 @@ void chk_check_statement(Checker *c, const LhatNode *node)
 
     switch (node->kind) {
         case LHAT_NODE_DEFINE:
+            // 02 の 18.4: a binding takes one. The unit's own were read where
+            // the unit was, and a field's and a member's where the def^ is.
+            chk_check_annotations(c, node->v.binding.annotations,
+                                  LHAT_ANNOTATION_BINDING);
             chk_check_define(c, node);
             break;
 

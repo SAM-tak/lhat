@@ -2148,6 +2148,116 @@ static void test_composing_across_units(void)
     lhat_program_dispose(&program);
 }
 
+// 02 の 18: an annotation is what the host registered and nothing else. The
+// language never reads what one means -- what is pinned here is that it is
+// carried, and that the three ways of writing one wrongly are all refused.
+static void test_annotations(void)
+{
+    LhatProgram program;
+    Disk disk;
+
+    static const File wearing[] = {
+        {"main.lh",
+         "@tool\n"
+         "module^ ns.main\n"
+         "@icon(\"res://x.svg\")\n"
+         "public^ let^ Thing = def^{\n"
+         "  self^{ @export(0, 100) hp = 5 },\n"
+         "  @rpc(\"any_peer\") go = p^self^ { },\n"
+         "}\n"},
+    };
+
+    LHAT_TEST("what the host registered is written and carried");
+    {
+        program_with(&program, &disk, wearing, 1);
+        LHAT_CHECK(lhat_register_annotation(&program, "godot", "tool",
+                                            LHAT_ANNOTATION_UNIT, NULL),
+                   "tool");
+        LHAT_CHECK(lhat_register_annotation(&program, "godot", "icon",
+                                            LHAT_ANNOTATION_BINDING,
+                                            "p^ string^;"),
+                   "icon");
+        LHAT_CHECK(lhat_register_annotation(&program, "godot", "export",
+                                            LHAT_ANNOTATION_FIELD,
+                                            "p^ number^, number^;"),
+                   "export");
+        LHAT_CHECK(lhat_register_annotation(&program, "godot", "rpc",
+                                            LHAT_ANNOTATION_MEMBER,
+                                            "p^ string^;"),
+                   "rpc");
+        const LhatUnit *root = lhat_program_check(&program, "main.lh");
+        LHAT_CHECK(root != NULL, "the unit loaded");
+        LHAT_CHECK(!lhat_program_has_errors(&program), "and checked clean");
+    }
+    lhat_program_dispose(&program);
+
+    // 18.2 keeps the namespace flat, so a second registration of one name is
+    // a collision rather than another arm -- unlike a member (14.12).
+    LHAT_TEST("and a name is registered once");
+    {
+        program_with(&program, &disk, wearing, 1);
+        LHAT_CHECK(lhat_register_annotation(&program, "a", "tool",
+                                            LHAT_ANNOTATION_UNIT, NULL),
+                   "the first takes");
+        LHAT_CHECK(!lhat_register_annotation(&program, "b", "tool",
+                                             LHAT_ANNOTATION_UNIT, NULL),
+                   "the second is refused");
+    }
+    lhat_program_dispose(&program);
+
+    LHAT_TEST("an unregistered name is refused");
+    {
+        static const File unknown[] = {{"main.lh", "@nosuch\nlet^ x = 1\n"}};
+        program_with(&program, &disk, unknown, 1);
+        lhat_program_check(&program, "main.lh");
+        LHAT_CHECK(lhat_program_has_errors(&program), "reported");
+    }
+    lhat_program_dispose(&program);
+
+    // 18.5: where it may be written is what the registration says.
+    LHAT_TEST("and so is one written where it was not registered for");
+    {
+        static const File misplaced[] = {
+            {"main.lh", "@onlyfields\nlet^ x = 1\n"}};
+        program_with(&program, &disk, misplaced, 1);
+        lhat_register_annotation(&program, "h", "onlyfields",
+                                 LHAT_ANNOTATION_FIELD, NULL);
+        lhat_program_check(&program, "main.lh");
+        LHAT_CHECK(lhat_program_has_errors(&program), "reported");
+    }
+    lhat_program_dispose(&program);
+
+    // 18.3: an argument is a literal, and a bare name arrives as a string^ --
+    // what the name means is the host's to decide.
+    LHAT_TEST("arguments are asked what the registration said");
+    {
+        static const File args[] = {
+            {"main.lh", "@ranged(0, -50, PROPERTY_HINT_ENUM)\nlet^ x = 1\n"}};
+        program_with(&program, &disk, args, 1);
+        LHAT_CHECK(lhat_register_annotation(&program, "h", "ranged",
+                                            LHAT_ANNOTATION_UNIT,
+                                            "p^ number^, number^, string^;"),
+                   "the signature parsed");
+        lhat_program_check(&program, "main.lh");
+        LHAT_CHECK(!lhat_program_has_errors(&program),
+                   "a name stands where a string^ was asked for");
+    }
+    lhat_program_dispose(&program);
+
+    LHAT_TEST("and refused when they do not fit");
+    {
+        static const File wrong[] = {
+            {"main.lh", "@ranged(\"no\")\nlet^ x = 1\n"}};
+        program_with(&program, &disk, wrong, 1);
+        lhat_register_annotation(&program, "h", "ranged",
+                                 LHAT_ANNOTATION_UNIT,
+                                 "p^ number^, number^;");
+        lhat_program_check(&program, "main.lh");
+        LHAT_CHECK(lhat_program_has_errors(&program), "reported");
+    }
+    lhat_program_dispose(&program);
+}
+
 int main(void)
 {
     // 8.9: before anything is taken, so the refusal above is about the order
@@ -2158,6 +2268,7 @@ int main(void)
     test_cycles();
     test_diagnostics();
     test_composing_across_units();
+    test_annotations();
     test_running();
     test_hosting();
     test_hostvalue_escape();

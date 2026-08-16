@@ -237,6 +237,21 @@ bool lhat_register_hostvalue_field(LhatProgram *program, const char *module,
                                    const char *type, const char *field,
                                    size_t offset, LhatHostValueFieldKind kind);
 
+// 02 の 18: an annotation the host understands. A program may write no
+// others -- 18.5 makes an unregistered name an error rather than something
+// carried in silence, since a misspelling that vanishes costs more than it
+// saves.
+//
+// `signature` is written in 13 章's grammar as a p^ -- the arguments are
+// what it takes and there is nothing for it to answer. NULL asks nothing of
+// them. 18.3 keeps an argument a literal, and a bare name arrives as a
+// string^: what the name means is the host's to decide.
+//
+// Belongs before lhat_program_check, with every other registration (8.7).
+bool lhat_register_annotation(LhatProgram *program, const char *module,
+                              const char *name, uint32_t targets,
+                              const char *signature);
+
 // A subroutine of the module itself.
 bool lhat_register_func(LhatProgram *program, const char *module,
                         const char *name, const char *signature,

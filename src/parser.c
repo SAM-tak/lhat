@@ -4410,6 +4410,8 @@ static void parse_unit(LhatLexer *lexer, LhatParseResult *result,
     // about the unit rather than about whatever follows.
     LhatNode *unit_annotations = parse_annotations(&parser);
     result->root = parse_block_body(&parser, &origin);
+    // 02 の 18.4: what stands at the very head is about the unit. A
+    // declaration's own are read where the declaration is.
     if (result->root != NULL) {
         result->root->v.list.annotations = unit_annotations;
     }
