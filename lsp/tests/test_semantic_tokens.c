@@ -636,6 +636,41 @@ static void test_a_parameter_reads_as_one_where_it_is_used(void)
     check_dispose(&c);
 }
 
+// 14.15: 'abstract^ name : type' is a declaration standing among values, and
+// the parser says so with a flag rather than with a kind of its own. Read as
+// a value, its type was walked as an expression -- and a qualified type name
+// is rooted at a TYPE_NAME, which no expression holds, so the root of one
+// came back with nothing on it at all.
+static void test_an_abstract_field_declares_a_type(void)
+{
+    LHAT_TEST("14.15: an abstract^ field's type reads as a type");
+
+    static const char *source =
+        "errordef^ E { Bad }\n"
+        "let^ Holder = def^{\n"
+        "    self^{ abstract^ held : number^, abstract^ why : E.Bad },\n"
+        "}\n";
+
+    Checked c;
+    check_text(&c, source);
+    cJSON *data = lsp_semantic_tokens_for_unit(&c.unit);
+    Tokens tokens = decode(data);
+
+    expect_token(&tokens, source, "held : number^", "property", false);
+    expect_token(&tokens, source, "number^, abstract^", "type", false);
+    // 04 の 14.4: the qualified form is the one that went uncoloured -- both
+    // segments name the kind, and the root is a TYPE_NAME rather than a name
+    // an expression could hold.
+    expect_token(&tokens, source, "E.Bad },", "type", false);
+    // The kind's own declaration is the other "Bad }" in this source, so the
+    // needle carries the comma that only the use has.
+    expect_token(&tokens, source, "Bad },", "type", false);
+
+    free(tokens.items);
+    cJSON_Delete(data);
+    check_dispose(&c);
+}
+
 // 13.11: a use inside a branch that narrowed the name reads like every other
 // use of it. It did not: a narrowed name answers before chk_infer_name, which
 // is what records one, so the name went unresolved exactly where the branch
@@ -726,6 +761,7 @@ int main(void)
     test_a_parameter_reads_as_one_where_it_is_used();
     test_let_is_readonly_and_var_is_not();
     test_a_narrowed_use_reads_like_any_other();
+    test_an_abstract_field_declares_a_type();
     test_a_member_is_not_called_readonly();
     test_isa_asks_about_a_type();
     test_isa_within_a_comparison_chain();

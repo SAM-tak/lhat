@@ -266,7 +266,14 @@ static void walk_table_entries(SemCollector *out, const LhatNode *entries)
                 emit_name(out, e->v.entry.key, SEM_PROPERTY, 0);
             }
         }
-        if (e->kind == LHAT_NODE_MEMBER_DECL) {
+        // 14.15's 'abstract^ name : type' stands in a def^ or its self^{ … }
+        // section, where every other entry is a value -- so the parser builds
+        // it as a TABLE_ENTRY like the rest and says which it is with
+        // `declared` (ast.h). Walking it as a value walks a written type as
+        // an expression, and a qualified one is rooted at a TYPE_NAME, which
+        // walk_value has no case for: the root of 'godot.Object' came back
+        // with no token at all and the segment after it as a property.
+        if (e->kind == LHAT_NODE_MEMBER_DECL || e->v.entry.declared) {
             walk_type(out, e->v.entry.value);  // t^{ name : type }
         } else {
             walk_value(out, e->v.entry.value);
