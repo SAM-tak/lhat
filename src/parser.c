@@ -1162,6 +1162,10 @@ static LhatNode *parse_def(Parser *p)
             // 14.15: a third marker in the same place, since what it says is
             // about the member as a whole the way the other two are.
             modifier = LHAT_DEF_ABSTRACT;
+        } else if (match_hat(p, "extern")) {
+            // 02 の 18.7: the fourth marker in the same place. What it says
+            // is about the member as a whole, the way the other three are.
+            modifier = LHAT_DEF_EXTERN;
         }
 
         LhatNode *entry = make(p, LHAT_NODE_TABLE_ENTRY, &at);
@@ -1249,7 +1253,8 @@ static LhatNode *parse_def(Parser *p)
             // 14.15: an abstract^ member is written with its type, since
             // there is no value to read it from. 14.10 spells a member's
             // type the same way, so the two agree.
-            if (modifier == LHAT_DEF_ABSTRACT) {
+            if (modifier == LHAT_DEF_ABSTRACT ||
+                modifier == LHAT_DEF_EXTERN) {
                 entry->v.entry.declared = true;
                 if (expect_op(p, LHAT_OP_COLON)) {
                     entry->v.entry.value = parse_type(p);

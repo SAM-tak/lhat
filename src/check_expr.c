@@ -3175,6 +3175,14 @@ LhatType *chk_infer_def(Checker *c, const LhatNode *node, LhatType *base)
         // 02 の 18.4: a member of a def^ takes one.
         chk_check_annotations(c, entry->v.entry.annotations,
                               LHAT_ANNOTATION_MEMBER);
+        // 02 の 18.7: an extern^ declares a name and a type for whatever is
+        // outside the language to read, and the language provides nothing
+        // for it. So no member is seeded: nothing waits to be composed in
+        // (unlike 14.15), and reading the name finds nothing -- which is
+        // what keeps the written type from being a claim about a value.
+        if (entry->v.entry.modifier == LHAT_DEF_EXTERN) {
+            continue;
+        }
         if (entry->v.entry.key == NULL ||
             !chk_node_name(c, entry->v.entry.key, &name, &length)) {
             continue;
@@ -3247,6 +3255,10 @@ LhatType *chk_infer_def(Checker *c, const LhatNode *node, LhatType *base)
                 hidden = &seen[index].member;
             }
 
+            // 18.7: an extern^ is read by the host and by nothing here.
+            if (entry->v.entry.modifier == LHAT_DEF_EXTERN) {
+                continue;
+            }
             // 14.15: a declaration carries a type and no value, and says the
             // composition has to provide the member. It is not a definition
             // of it, so 14.12 has nothing to check here.

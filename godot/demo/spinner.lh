@@ -12,6 +12,8 @@ public^let^ Spinner = Godot.Sprite2D..def^{
 		turns = 0,
 	},
 
+	abstract^died:p^string^;,
+
 	_ready = p^self^ {
 		print($"spinner on a {self^.className()}, named {self^.getName()}")
 	},
@@ -20,6 +22,8 @@ public^let^ Spinner = Godot.Sprite2D..def^{
 		self^.setRotation(self^.getRotation() + delta * self^.speed)
 		self^.turns := self^.turns + 1
 	},
+
+	on_timeout = p^self^ { self^.turns := self^.turns + 100 },
 
 	report = f^self^ -> string^ {
 		return^ $"{self^.turns} frames, rotation {self^.getRotation()}"
