@@ -321,6 +321,22 @@ StringName LhatScript::_get_instance_base_type() const
     return runnable ? StringName("Object") : StringName();
 }
 
+StringName LhatScript::_get_doc_class_name() const
+{
+    return StringName();
+}
+
+String LhatScript::_get_class_icon_path() const
+{
+    return String();
+}
+
+int32_t LhatScript::_get_member_line(const StringName &member) const
+{
+    (void)member;
+    return -1;
+}
+
 bool LhatScript::_is_tool() const
 {
     return false;

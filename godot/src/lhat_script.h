@@ -103,6 +103,15 @@ public:
     bool _inherits_script(const Ref<Script> &script) const override;
     StringName _get_instance_base_type() const override;
 
+    // The engine asks for these before it will show a script at all, so
+    // leaving them to a default is an error at every call rather than a
+    // silence. L^ has no documentation form and no class icon, and a member's
+    // line is what a jump-to would use -- none of the three has an answer
+    // here yet, and each says so in its own empty way.
+    StringName _get_doc_class_name() const override;
+    String _get_class_icon_path() const override;
+    int32_t _get_member_line(const StringName &member) const override;
+
     bool _is_tool() const override;
     bool _is_abstract() const override;
 

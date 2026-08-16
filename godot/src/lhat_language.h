@@ -100,6 +100,7 @@ public:
     void _thread_exit() override;
     void _frame() override;
     void _reload_all_scripts() override;
+    void _reload_scripts(const Array &scripts, bool soft_reload) override;
     void _reload_tool_script(const Ref<Script> &script,
                              bool soft_reload) override;
     TypedArray<Dictionary> _get_public_functions() const override;
@@ -108,6 +109,10 @@ public:
     void _profiling_start() override;
     void _profiling_stop() override;
     void _profiling_set_save_native_calls(bool enable) override;
+    int32_t _profiling_get_accumulated_data(
+        ScriptLanguageExtensionProfilingInfo *info, int32_t max) override;
+    int32_t _profiling_get_frame_data(
+        ScriptLanguageExtensionProfilingInfo *info, int32_t max) override;
     String _debug_get_error() const override;
     int32_t _debug_get_stack_level_count() const override;
     int32_t _debug_get_stack_level_line(int32_t level) const override;

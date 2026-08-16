@@ -1,6 +1,7 @@
 #include "lhat_language.h"
 
 #include <godot_cpp/core/class_db.hpp>
+#include <godot_cpp/classes/script_language_extension_profiling_info.hpp>
 #include <godot_cpp/core/memory.hpp>
 
 #include "lhat.h"
@@ -340,6 +341,12 @@ void LhatLanguage::_reload_all_scripts()
 {
 }
 
+void LhatLanguage::_reload_scripts(const Array &scripts, bool soft_reload)
+{
+    (void)scripts;
+    (void)soft_reload;
+}
+
 void LhatLanguage::_reload_tool_script(const Ref<Script> &script,
                                        bool soft_reload)
 {
@@ -373,6 +380,22 @@ void LhatLanguage::_profiling_stop()
 void LhatLanguage::_profiling_set_save_native_calls(bool enable)
 {
     (void)enable;
+}
+
+int32_t LhatLanguage::_profiling_get_accumulated_data(
+    ScriptLanguageExtensionProfilingInfo *info, int32_t max)
+{
+    (void)info;
+    (void)max;
+    return 0;
+}
+
+int32_t LhatLanguage::_profiling_get_frame_data(
+    ScriptLanguageExtensionProfilingInfo *info, int32_t max)
+{
+    (void)info;
+    (void)max;
+    return 0;
 }
 
 String LhatLanguage::_debug_get_error() const
