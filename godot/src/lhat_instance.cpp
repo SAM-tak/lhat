@@ -4,6 +4,7 @@
 #include <godot_cpp/core/memory.hpp>
 #include <godot_cpp/godot.hpp>
 #include <godot_cpp/templates/local_vector.hpp>
+#include <godot_cpp/core/property_info.hpp>
 #include <godot_cpp/variant/string_name.hpp>
 #include <godot_cpp/variant/utility_functions.hpp>
 #include <godot_cpp/variant/variant.hpp>
@@ -99,15 +100,100 @@ GDExtensionBool instance_get(GDExtensionScriptInstanceDataPtr data,
     return true;
 }
 
+// 02 の 18: a field the writer marked. What @export means is Godot's, and
+// the language only carried it here -- so this is where the meaning is put
+// back on, and nowhere else.
+bool exported_as(const LhatScript *script, const String &field,
+                 String *hint_string, uint32_t *hint)
+{
+    const LhatUnit *unit = script->lhat_unit();
+    if (unit == nullptr) {
+        return false;
+    }
+    CharString klass = script->lhat_class_name().utf8();
+    CharString name = field.utf8();
+    size_t written =
+        lhat_unit_annotation_count(unit, klass.get_data(), name.get_data());
+
+    for (size_t i = 0; i < written; i++) {
+        LhatAnnotation at = lhat_unit_annotation(unit, klass.get_data(),
+                                                 name.get_data(), i);
+        String spelt = String::utf8(at.name, (int)at.name_length);
+        if (spelt == "export") {
+            *hint = PROPERTY_HINT_NONE;
+            *hint_string = String();
+            return true;
+        }
+        if (spelt == "export_range" && at.argument_count >= 2) {
+            *hint = PROPERTY_HINT_RANGE;
+            *hint_string =
+                String::num(lhat_annotation_argument(at, 0).number) +
+                String(",") +
+                String::num(lhat_annotation_argument(at, 1).number);
+            return true;
+        }
+        if (spelt == "export_multiline") {
+            *hint = PROPERTY_HINT_MULTILINE_TEXT;
+            *hint_string = String();
+            return true;
+        }
+    }
+    return false;
+}
+
 const GDExtensionPropertyInfo *instance_property_list(
     GDExtensionScriptInstanceDataPtr data, uint32_t *count)
 {
-    (void)data;
-    // 14.3's fields are not declared to the engine yet: what an exported
-    // property is in L^ is a question 05 の 8.7 has no answer for, and a
-    // list of guesses would show up in the inspector as though it did.
+    Instance *it = of(data);
     *count = 0;
-    return nullptr;
+    if (!lhat_is_object_kind(it->self, LHAT_OBJECT_TABLE)) {
+        return nullptr;
+    }
+
+    // 14.3 fixes an instance's fields when it is made, so walking the
+    // instance is walking what the writer declared -- and 18 says which of
+    // them the engine is to show.
+    const LhatTable *fields = (const LhatTable *)lhat_as_object(it->self);
+    LocalVector<GDExtensionPropertyInfo> found;
+    for (size_t i = 0; i < fields->entry_capacity; i++) {
+        const LhatTableEntry *entry = &fields->entries[i];
+        if (lhat_is_nil(entry->key) ||
+            !lhat_is_object_kind(entry->key, LHAT_OBJECT_STRING)) {
+            continue;
+        }
+        const LhatString *key = (const LhatString *)lhat_as_object(entry->key);
+        String name = String::utf8(key->text, (int)key->length);
+
+        String hint_string;
+        uint32_t hint = PROPERTY_HINT_NONE;
+        if (!exported_as(it->script.ptr(), name, &hint_string, &hint)) {
+            continue;
+        }
+
+        // The type is what the field holds now: 14.11 ran its initialiser,
+        // so there is always a value to read one off.
+        Variant held = host::to_variant(entry->value, it->script->godot());
+
+        GDExtensionPropertyInfo info;
+        info.type = (GDExtensionVariantType)held.get_type();
+        info.name = memnew(StringName(name));
+        info.class_name = memnew(StringName());
+        info.hint = hint;
+        info.hint_string = memnew(String(hint_string));
+        info.usage = PROPERTY_USAGE_DEFAULT | PROPERTY_USAGE_SCRIPT_VARIABLE;
+        found.push_back(info);
+    }
+    if (found.is_empty()) {
+        return nullptr;
+    }
+
+    GDExtensionPropertyInfo *list = memnew_arr(GDExtensionPropertyInfo,
+                                               found.size());
+    for (uint32_t i = 0; i < found.size(); i++) {
+        list[i] = found[i];
+    }
+    *count = (uint32_t)found.size();
+    return list;
 }
 
 void instance_free_property_list(GDExtensionScriptInstanceDataPtr data,
@@ -115,8 +201,15 @@ void instance_free_property_list(GDExtensionScriptInstanceDataPtr data,
                                  uint32_t count)
 {
     (void)data;
-    (void)list;
-    (void)count;
+    if (list == NULL) {
+        return;
+    }
+    for (uint32_t i = 0; i < count; i++) {
+        memdelete((StringName *)list[i].name);
+        memdelete((StringName *)list[i].class_name);
+        memdelete((String *)list[i].hint_string);
+    }
+    memdelete_arr((GDExtensionPropertyInfo *)list);
 }
 
 GDExtensionVariantType instance_property_type(

@@ -335,7 +335,26 @@ static const LhatNode *definition_entry(const LhatUnit *unit,
                                         const LhatNode *definition,
                                         const char *name)
 {
-    if (definition == NULL || definition->kind != LHAT_NODE_DEF) {
+    if (definition == NULL) {
+        return NULL;
+    }
+    // 14.5: a definition is often written as a composition, and what a host
+    // asks about may have been written in any part of it. The right side is
+    // what overrides, so it is asked first.
+    if (definition->kind == LHAT_NODE_BINARY &&
+        definition->v.binary.op == LHAT_OP_CONCAT) {
+        const LhatNode *found =
+            definition_entry(unit, definition->v.binary.right, name);
+        return found != NULL
+                   ? found
+                   : definition_entry(unit, definition->v.binary.left, name);
+    }
+    // A name standing for a definition written elsewhere in this unit.
+    if (definition->kind == LHAT_NODE_IDENT ||
+        definition->kind == LHAT_NODE_MEMBER) {
+        return NULL;  // 5.3: another unit's tree is not this one's to walk
+    }
+    if (definition->kind != LHAT_NODE_DEF) {
         return NULL;
     }
     for (const LhatNode *entry = definition->v.list.items; entry != NULL;

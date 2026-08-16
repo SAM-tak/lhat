@@ -47,6 +47,11 @@ class LhatScript : public ScriptExtension {
     // only for the host's.
     LhatValue klass = lhat_nil();
     LhatValue instances = lhat_nil();
+    // 02 の 18: an annotation is read off the tree, which the program still
+    // holds -- so what a field was written with is asked for by name, and
+    // these two are what names it.
+    const LhatUnit *unit = nullptr;
+    String klass_name;
     int64_t next_id = 1;
     bool runnable = false;
 
@@ -62,6 +67,8 @@ public:
     // has made one.
     LhatMachine *lhat_machine() const { return machine; }
     LhatValue lhat_class() const { return klass; }
+    const LhatUnit *lhat_unit() const { return unit; }
+    const String &lhat_class_name() const { return klass_name; }
 
     // 14.9's `new`, and the instance put where the collector reaches it.
     bool make_instance(Object *owner, LhatValue *out, int64_t *id);

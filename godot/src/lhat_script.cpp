@@ -67,6 +67,8 @@ void LhatScript::let_go()
     }
     klass = lhat_nil();
     instances = lhat_nil();
+    unit = nullptr;
+    klass_name = String();
     runnable = false;
 }
 
@@ -125,6 +127,7 @@ Error LhatScript::_reload(bool keep_state)
         return OK;
     }
 
+    unit = root;
     String name;
     if (!sole_definition(ran.value, &klass, &name)) {
         // Not an error: a unit that declares no class is a library, and
@@ -145,6 +148,7 @@ Error LhatScript::_reload(bool keep_state)
         return OK;
     }
 
+    klass_name = name;
     runnable = true;
     return OK;
 }
