@@ -56,6 +56,41 @@ static const char *string_of(const cJSON *object, const char *key)
     return cJSON_IsString(item) ? item->valuestring : NULL;
 }
 
+// 02 の 18.5's places, as lhat_program_dump_host_api writes them: an object
+// keyed by name rather than a mask, since nothing outside C holds the enum.
+//
+// A name written false is passed over, and so is one this does not know --
+// a dump from a later build, naming a place added since, still reads as far
+// as it goes rather than being refused whole.
+static uint32_t targets_of(const cJSON *object)
+{
+    static const struct {
+        const char *name;
+        uint32_t bit;
+    } places[] = {
+        {"unit", LHAT_ANNOTATION_UNIT},
+        {"binding", LHAT_ANNOTATION_BINDING},
+        {"field", LHAT_ANNOTATION_FIELD},
+        {"member", LHAT_ANNOTATION_MEMBER},
+        {"public", LHAT_ANNOTATION_PUBLIC},
+    };
+
+    uint32_t targets = 0;
+    const cJSON *at = NULL;
+    cJSON_ArrayForEach(at, object) {
+        if (at->string == NULL || !cJSON_IsTrue(at)) {
+            continue;
+        }
+        for (size_t i = 0; i < sizeof places / sizeof places[0]; i++) {
+            if (strcmp(at->string, places[i].name) == 0) {
+                targets |= places[i].bit;
+                break;
+            }
+        }
+    }
+    return targets;
+}
+
 static bool field_kind_of(const char *name, LhatHostValueFieldKind *out)
 {
     static const struct {
@@ -206,10 +241,9 @@ void lsp_host_config_apply(const LspHostConfig *config, LhatProgram *program)
         const char *signature = string_of(entry, "signature");
         const cJSON *targets =
             cJSON_GetObjectItemCaseSensitive(entry, "targets");
-        if (module != NULL && name != NULL && cJSON_IsNumber(targets)) {
+        if (module != NULL && name != NULL && cJSON_IsObject(targets)) {
             lhat_register_annotation(program, module, name,
-                                     (uint32_t)targets->valuedouble,
-                                     signature);
+                                     targets_of(targets), signature);
         }
     }
 

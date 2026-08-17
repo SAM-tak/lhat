@@ -484,6 +484,14 @@ const char *lhat_program_error_message(LhatProgramErrorCode code);
 // their relative order within the array is free. "bindings" last, for 8.2's
 // initial names.
 //
+// An annotation's places (18.5) are written as an object keyed by name --
+// {"field": true, "public": true} -- rather than as the mask this API takes
+// them as. A mask reads as a mask only to something holding the same enum,
+// and the reader is a tool that cannot run this C and does not have one. The
+// names are LhatAnnotationTarget's tails, lowercased. Only what is set is
+// written; a reader takes a name written false, and one it does not know,
+// and passes over both.
+//
 // Follows lhat_report_write: answers how many bytes the whole thing wants,
 // not counting the terminating NUL, and fills up to `capacity` including
 // it. So measuring is a call with (NULL, 0).

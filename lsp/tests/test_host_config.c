@@ -70,6 +70,13 @@ static const char *const CONFIG =
     "    {\"kind\": \"global\", \"name\": \"print\","
     " \"signature\": \"f^...->nil^;\"}\n"
     "  ],\n"
+    // 18.5's places, by name. The two extra keys are the ones a reader has
+    // to pass over: a place written false, and a place it has never heard of
+    // -- which is what a dump from a later build would carry.
+    "  \"annotations\": [\n"
+    "    {\"module\": \"h\", \"name\": \"badge\", \"targets\":"
+    " {\"field\": true, \"binding\": false, \"nonesuch\": true}}\n"
+    "  ],\n"
     "  \"bindings\": [\n"
     "    {\"name\": \"print\", \"member\": \"L^.print\"}\n"
     "  ]\n"
@@ -106,6 +113,34 @@ static void check_clean(const char *label, const char *source)
     lsp_host_config_free(config);
 }
 
+// The same, for a source that has to be refused. Half the point of a place
+// is what it keeps out, and a reader that took every name it saw would pass
+// the tests above without ever having read one.
+static void check_refused(const char *label, const char *source)
+{
+    static const File files[1] = {{"main.lh", NULL}};
+    File file = files[0];
+    file.text = source;
+    Disk disk;
+    disk.files = &file;
+    disk.count = 1;
+
+    LspHostConfig *config = lsp_host_config_parse(CONFIG, strlen(CONFIG));
+    LHAT_CHECK(config != NULL, "%s: the config parsed", label);
+    if (config == NULL) {
+        return;
+    }
+
+    LhatProgram program;
+    lhat_program_init(&program, true, disk_load, &disk);
+    lsp_host_config_apply(config, &program);
+    lhat_program_check(&program, "main.lh");
+    LHAT_CHECK(lhat_program_has_errors(&program), "%s: refused", label);
+
+    lhat_program_dispose(&program);
+    lsp_host_config_free(config);
+}
+
 static void test_round_trip(void)
 {
     LHAT_TEST("an import^ of a configured module checks clean");
@@ -127,6 +162,19 @@ static void test_round_trip(void)
 
     LHAT_TEST("a configured binding is written unqualified");
     check_clean("binding", "print(\"hi\")\n");
+
+    // 18.5's places arrive as names rather than as a mask, so what the reader
+    // made of them is only visible in where the annotation is taken.
+    LHAT_TEST("an annotation is taken where its named place says");
+    check_clean("annotation",
+                "let^ D = def^{\n"
+                "    self^{ @badge hp = 1 },\n"
+                "}\n");
+
+    LHAT_TEST("and refused where a place was written false");
+    check_refused("annotation false",
+                  "@badge\n"
+                  "let^ x = 1\n");
 }
 
 static void test_without_config(void)

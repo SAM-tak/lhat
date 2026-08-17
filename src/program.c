@@ -2542,6 +2542,46 @@ static void dump_comma(DumpWriter *w, bool *first)
     }
 }
 
+// 02 の 18.5's places, spelled. Has to be kept in step with
+// LhatAnnotationTarget in lhat/object.h -- this is the only place a new one
+// would have to be named, so it is the only place that would notice.
+static const struct {
+    uint32_t bit;
+    const char *name;
+} annotation_targets[] = {
+    {LHAT_ANNOTATION_UNIT, "unit"},
+    {LHAT_ANNOTATION_BINDING, "binding"},
+    {LHAT_ANNOTATION_FIELD, "field"},
+    {LHAT_ANNOTATION_MEMBER, "member"},
+    {LHAT_ANNOTATION_PUBLIC, "public"},
+};
+
+// A mask reads as a mask only to something holding the same enum, and the
+// reader is a language server that holds none of C's. So the places are
+// written out: the ones that are set, each true, and nothing for the rest.
+//
+// A reader takes `false` too and passes over it, and passes over a name it
+// does not know -- so a file written by a later dump, with a place this one
+// never heard of, still reads as far as it goes.
+static void dump_targets(DumpWriter *w, uint32_t targets)
+{
+    dump_text(w, "{");
+    bool first = true;
+    for (size_t i = 0;
+         i < sizeof annotation_targets / sizeof annotation_targets[0]; i++) {
+        if ((targets & annotation_targets[i].bit) == 0) {
+            continue;
+        }
+        if (!first) {
+            dump_text(w, ", ");
+        }
+        first = false;
+        dump_string(w, annotation_targets[i].name);
+        dump_text(w, ": true");
+    }
+    dump_text(w, "}");
+}
+
 size_t lhat_program_dump_host_api(const LhatProgram *program, char *out,
                                   size_t capacity)
 {
@@ -2676,9 +2716,7 @@ size_t lhat_program_dump_host_api(const LhatProgram *program, char *out,
         dump_text(&w, ", \"name\": ");
         dump_string(&w, decl->name);
         dump_text(&w, ", \"targets\": ");
-        char targets[16];
-        snprintf(targets, sizeof targets, "%u", (unsigned)decl->targets);
-        dump_text(&w, targets);
+        dump_targets(&w, decl->targets);
         if (program->annotation_signatures[i] != NULL) {
             dump_text(&w, ", \"signature\": ");
             dump_string(&w, program->annotation_signatures[i]);

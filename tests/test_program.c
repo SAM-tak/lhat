@@ -1797,6 +1797,18 @@ static void test_dump_host_api(void)
                "the global registered");
     LHAT_CHECK(lhat_bind_initial(&program, "twice", "L^.twice"),
                "the binding took");
+    // 18.5's places go out by name rather than as the mask they arrive as:
+    // the reader holds no C enum to read one against. Two are set here so
+    // that the shape between them is pinned as well as the names.
+    LHAT_CHECK(lhat_register_annotation(&program, "h", "badge",
+                                        LHAT_ANNOTATION_FIELD |
+                                            LHAT_ANNOTATION_PUBLIC,
+                                        NULL),
+               "the annotation registered");
+    // One place alone, and one that is a place no other test writes.
+    LHAT_CHECK(lhat_register_annotation(&program, "h", "atop",
+                                        LHAT_ANNOTATION_UNIT, NULL),
+               "the unit annotation registered");
 
     size_t needed = lhat_program_dump_host_api(&program, NULL, 0);
     LHAT_CHECK(needed > 0, "measuring answered a size");
@@ -1822,6 +1834,10 @@ static void test_dump_host_api(void)
             "\"f^self^, sys.geo.Vec2 -> sys.geo.Vec2;\"}",
             "{\"kind\": \"global\", \"name\": \"twice\", \"signature\": "
             "\"f^number^ -> number^;\"}",
+            "{\"module\": \"h\", \"name\": \"badge\", \"targets\": "
+            "{\"field\": true, \"public\": true}}",
+            "{\"module\": \"h\", \"name\": \"atop\", \"targets\": "
+            "{\"unit\": true}}",
             "{\"name\": \"twice\", \"member\": \"L^.twice\"}",
         };
         for (size_t i = 0; i < sizeof expected / sizeof expected[0]; i++) {
