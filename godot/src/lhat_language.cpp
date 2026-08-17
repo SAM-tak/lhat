@@ -18,6 +18,18 @@ namespace {
 // same way, which is the one place that already had to make this call. The
 // language itself keeps no such list: 01 の 2 章 scans every hatted word
 // alike and it is the checker that refuses the ones it does not know.
+//
+// Written with the hat, handed over without it. The editor's CodeHighlighter
+// ends a word at the first character that is not one an identifier is made of,
+// and '^' is not one -- so a keyword spelled with it is compared against a
+// word that can never contain it and never matches. Measured: 'def^'
+// registered against the line 'def^ x' colours nothing, 'def' colours the
+// three characters before the hat.
+//
+// So the word is coloured and the hat beside it takes the symbol colour. What
+// that costs is a bare 'def' -- 01 の 2.3 makes it a different name, and a
+// legal one -- coloured as though it were the keyword. Colour is all it is,
+// and the alternative on offer is no colour at all.
 const char *const control_flow_words[] = {
     "if^",     "else^", "elseif^", "elsif^",  "elif^",  "ei^",
     "el^",     "for^",  "when^",   "other^",  "from^",  "to^",
@@ -41,6 +53,15 @@ const char *const other_words[] = {
     "prolog^",   "prologue^", "pre^",    "premain^",  "first^",
     "main^",     "last^",    "epilog^",  "epilogue^",
 };
+
+// The word an editor can match: the spelling above without its hat. 01 の 2.3
+// makes the hat part of the name, so this is not the name -- it is the run of
+// characters the highlighter will have in hand when it reaches one.
+String unhatted(const char *word)
+{
+    String spelt = String::utf8(word);
+    return spelt.ends_with("^") ? spelt.substr(0, spelt.length() - 1) : spelt;
+}
 
 }  // namespace
 
@@ -171,18 +192,19 @@ PackedStringArray LhatLanguage::_get_reserved_words() const
 {
     PackedStringArray out;
     for (const char *word : control_flow_words) {
-        out.push_back(word);
+        out.push_back(unhatted(word));
     }
     for (const char *word : other_words) {
-        out.push_back(word);
+        out.push_back(unhatted(word));
     }
     return out;
 }
 
+// Asked of what the list above answered, so it is asked without the hat too.
 bool LhatLanguage::_is_control_flow_keyword(const String &keyword) const
 {
     for (const char *word : control_flow_words) {
-        if (keyword == word) {
+        if (keyword == unhatted(word)) {
             return true;
         }
     }
@@ -205,8 +227,14 @@ PackedStringArray LhatLanguage::_get_doc_comment_delimiters() const
 PackedStringArray LhatLanguage::_get_string_delimiters() const
 {
     PackedStringArray out;
+    // 01 の 5.3: '"""' runs to the end of the line and writes no terminator,
+    // so the end is empty. Measured: the editor takes the longest opening it
+    // finds whatever order these arrive in, so this does not have to lead.
+    out.push_back("\"\"\" ");
     out.push_back("\" \"");
     out.push_back("' '");
+    // 01 の 3.1: a name written in backticks. Not a string, but delimited the
+    // same way and worth telling from the code around it.
     out.push_back("` `");
     return out;
 }
@@ -251,13 +279,26 @@ ScriptLanguage::ScriptNameCasing LhatLanguage::_preferred_file_name_casing()
     return ScriptLanguage::SCRIPT_NAME_CASING_SNAKE_CASE;
 }
 
+// Both of these answer a dictionary the engine takes apart, and the key it
+// reads first is "result". An empty one is not "nothing to offer" but a
+// malformed answer: script_language_extension.h refuses it and logs, which
+// the editor does on every keystroke a completion could follow.
+//
+// So the shape is written out, with the answer being that nothing was found.
+// 07 の lsp/ already knows how to complete a name; _complete_code is where
+// that would be hooked up, and until it is this is what "no" looks like.
 Dictionary LhatLanguage::_complete_code(const String &code, const String &path,
                                         Object *owner) const
 {
     (void)code;
     (void)path;
     (void)owner;
-    return Dictionary();
+    Dictionary out;
+    out["result"] = (int)OK;
+    out["force"] = false;
+    out["call_hint"] = String();
+    out["options"] = Array();
+    return out;
 }
 
 Dictionary LhatLanguage::_lookup_code(const String &code, const String &symbol,
@@ -267,7 +308,9 @@ Dictionary LhatLanguage::_lookup_code(const String &code, const String &symbol,
     (void)symbol;
     (void)path;
     (void)owner;
-    return Dictionary();
+    Dictionary out;
+    out["result"] = (int)ERR_UNAVAILABLE;  // nothing to jump to, not an error
+    return out;
 }
 
 String LhatLanguage::_auto_indent_code(const String &code, int32_t from_line,
