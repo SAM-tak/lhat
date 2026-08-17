@@ -49,10 +49,14 @@ bool marked_prime(const LhatUnit *unit, const String &name)
 // private is refused where it is written rather than passed over here.
 //
 // Answers false when nothing is wearable, with `said` set where a writer has
-// something to fix.
+// something to fix. `when_worn` tells the two kinds of trouble apart: a file
+// contradicting itself is wrong however it is used, while a file that has not
+// said which class a node wears is only a file that does not answer that
+// question -- which is what every library looks like.
 bool prime_definition(const LhatUnit *unit, LhatValue answered, LhatValue *out,
-                      String *name, String *said)
+                      String *name, String *said, bool *when_worn)
 {
+    *when_worn = false;
     if (!lhat_is_object_kind(answered, LHAT_OBJECT_TABLE)) {
         return false;
     }
@@ -97,8 +101,15 @@ bool prime_definition(const LhatUnit *unit, LhatValue answered, LhatValue *out,
     }
 
     if (primes == 0 && definitions > 1) {
+        // Not said at load. Godot reads every .lh in the project as a script
+        // resource, so this would fire on a library nobody is wearing --
+        // 05 の 5.5 has a unit answer its public names, and answering several
+        // classes is what a library of them looks like. Measured: the engine
+        // does not screen the list a node's Script field offers either, and a
+        // GDScript that cannot be worn is found out the same way.
         *said = String("this unit publishes more than one def^, so which one "
                        "a node wears has to be written: put @prime above it");
+        *when_worn = true;
         return false;
     }
     if (definitions == 0) {
@@ -130,6 +141,7 @@ void LhatScript::let_go()
     instances = lhat_nil();
     unit = nullptr;
     klass_name = String();
+    unwearable = String();
     runnable = false;
 }
 
@@ -191,11 +203,15 @@ Error LhatScript::_reload(bool keep_state)
     unit = root;
     String name;
     String said;
-    if (!prime_definition(unit, ran.value, &klass, &name, &said)) {
+    bool when_worn = false;
+    if (!prime_definition(unit, ran.value, &klass, &name, &said, &when_worn)) {
         // A unit that declares no class is a library, and require^ is what
         // reaches it -- not an error, only unwearable. `said` is set where
-        // the writer has something to fix instead.
-        if (!said.is_empty()) {
+        // the writer has something to fix instead, and `when_worn` where that
+        // is only true of somebody trying to wear it.
+        if (when_worn) {
+            unwearable = said;
+        } else if (!said.is_empty()) {
             UtilityFunctions::push_error(host::problem(get_path(), said));
         }
         klass = lhat_nil();
@@ -337,6 +353,12 @@ bool LhatScript::_can_instantiate() const
 
 void *LhatScript::_instance_create(Object *for_object) const
 {
+    // Somebody is wearing this file, which is the first moment a question
+    // only wearers ask is worth answering. Held rather than said at load
+    // because every .lh in the project is read then, wearer or not.
+    if (!unwearable.is_empty()) {
+        UtilityFunctions::push_error(host::problem(get_path(), unwearable));
+    }
     // const because the engine asks it that way; making an instance writes
     // to the table this script owns, which is what the cast is for.
     return lhat_instance_create(const_cast<LhatScript *>(this), for_object);

@@ -55,6 +55,13 @@ class LhatScript : public ScriptExtension {
     int64_t next_id = 1;
     bool runnable = false;
 
+    // What to say if somebody wears this file, and nothing if nobody does.
+    // Godot reads every .lh in the project as a script resource, so a
+    // complaint about which class a node would wear does not belong at load:
+    // a library answering several classes (05 の 5.5) is not doing anything
+    // wrong until it is put on a node.
+    String unwearable;
+
     void let_go();
 
 protected:
