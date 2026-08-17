@@ -147,12 +147,27 @@ static bool related_pair(Checker *c, LhatOpKind op, LhatType *left,
     return compares_by(c, left, right, "<=>", 3);
 }
 
+// Answers false when it has said everything there is to say, which is the one
+// case where the ordinary judgement below would only repeat it.
+static bool demand_ordering(Checker *c, const LhatNode *at, LhatType *left,
+                            LhatType *right);
+
 // 11.5 の (5) with 11.9: one link of a comparison, asked the same way whether
 // it stands alone or in a chain. Always answers bool^ -- what may be wrong is
 // the pair, never the shape of the answer.
 static LhatType *check_comparison(Checker *c, const LhatNode *at, LhatOpKind op,
                                   LhatType *left, LhatType *right)
 {
+    // 03 の 3.4改3: an ordering asks the pair to be related by a '<=>', so a
+    // parameter standing in one is demanded what could carry it. 11.9 leaves
+    // '=' and '≠' out: equality answers without a '<=>' at all (14.2 gives
+    // every table its identity), so what they ask is that the two are not
+    // disjoint -- and that is not a type to demand.
+    if (op != LHAT_OP_EQ && op != LHAT_OP_NE && op != LHAT_OP_IS &&
+        !demand_ordering(c, at, left, right)) {
+        return chk_simple(c, LHAT_TYPE_BOOL);
+    }
+
     // 11.9: an operator taking the two is what says how they compare, and
     // it is asked first. One written across two types -- 11.3改 lets the
     // right operand carry it -- relates a pair that 14.12 would otherwise
@@ -278,41 +293,52 @@ static LhatType *left_operator_member(Checker *c, LhatType *type,
     return carrier;
 }
 
-// 03 の 3.4改: what an operator of this name may be written on, here. 11.8's
-// number^ carries the arithmetic and is always a candidate; every def^ this
-// unit binds to a name and writes an op^ of the name on is another. The
-// receiver is what the left operand has to be, so their union is the demand.
-//
-// Held by name (check.c's carriers), so the type is read through the scope on
-// every walk -- a def^'s is remade on each of them (03 の 3.4改2). Reading one
-// this walk has not settled yet asks for another round, which is what lets a
-// body written above the def^ answer the same as one written below it (8.7).
+// 03 の 3.4改3: what an operator of this name may be written on, here. Each
+// position's union is what a parameter standing there may be.
 typedef struct {
     LhatType *left;    // what may stand on the left
     LhatType *right;   // what may stand on the right
     LhatType *answer;  // what any of them answers
-    size_t count;      // how many carriers, the built-in included
+    size_t count;      // how many arms survived, over every carrier
 } Candidates;
 
-// One carrier's arms folded into the three unions. 11.3改: an arm written
-// with the self^ last describes the other order, so its receiver is what may
-// stand on the RIGHT and its parameter what may stand on the left.
-static void fold_arm(Checker *c, Candidates *into, const LhatType *arm,
-                     LhatType *receiver)
+// What the walk knows about the operand that is not the parameter, when it
+// knows anything. An arm that could not take it is no candidate, which is
+// what keeps 'x < 1' from demanding string^ as well (11.9 gives '<=>' to
+// both built-ins) -- and what makes it demand number^ alone.
+typedef struct {
+    LhatType *type;   // NULL when that side is undecided too
+    bool on_right;    // which side it stands on
+} Known;
+
+// One arm folded into the three unions. 11.3改: an arm written with the self^
+// last describes the other order, so its receiver is what may stand on the
+// RIGHT and its parameter what may stand on the left.
+static void fold_arm(Checker *c, Candidates *into, const Known *known,
+                     const LhatType *arm, LhatType *receiver)
 {
     if (arm == NULL || arm->kind != LHAT_TYPE_FUNC) {
         return;
     }
     LhatType *operand =
         arm->v.func.params != NULL ? arm->v.func.params->type : NULL;
-    LhatType *mine = arm->v.func.self_last ? operand : receiver;
-    LhatType *theirs = arm->v.func.self_last ? receiver : operand;
-    LhatTypeArena *types = c->result->types;
-    if (mine != NULL) {
-        into->left = lhat_type_union(types, into->left, mine);
+    LhatType *on_left = arm->v.func.self_last ? operand : receiver;
+    LhatType *on_right = arm->v.func.self_last ? receiver : operand;
+
+    if (known->type != NULL) {
+        LhatType *wanted = known->on_right ? on_right : on_left;
+        if (wanted == NULL || !lhat_type_conforms(known->type, wanted)) {
+            return;
+        }
     }
-    if (theirs != NULL) {
-        into->right = lhat_type_union(types, into->right, theirs);
+
+    LhatTypeArena *types = c->result->types;
+    into->count++;
+    if (on_left != NULL) {
+        into->left = lhat_type_union(types, into->left, on_left);
+    }
+    if (on_right != NULL) {
+        into->right = lhat_type_union(types, into->right, on_right);
     }
     LhatType *answered = lhat_type_call_answer((LhatType *)arm);
     if (answered != NULL) {
@@ -320,25 +346,49 @@ static void fold_arm(Checker *c, Candidates *into, const LhatType *arm,
     }
 }
 
-// 03 の 3.4改: what an operator of this name may be written on, here. 11.8's
-// number^ carries the arithmetic and is always a candidate; every def^ this
-// unit binds to a name and writes an op^ of the name on is another. Each
-// position's union is what a parameter standing there may be.
+static void fold_member(Checker *c, Candidates *into, const Known *known,
+                        LhatType *member, LhatType *receiver)
+{
+    if (member == NULL) {
+        return;
+    }
+    if (member->kind == LHAT_TYPE_INTERSECT) {
+        for (const LhatTypeList *arm = member->v.composite.arms; arm != NULL;
+             arm = arm->next) {
+            fold_arm(c, into, known, arm->type, receiver);
+        }
+        return;
+    }
+    fold_arm(c, into, known, member, receiver);
+}
+
+// 03 の 3.4改3: the candidates. 11.8's built-ins carry what the checker knows
+// they carry -- number^ the arithmetic, string^ the '..', both the one
+// comparison (11.9) -- and every def^ this unit binds to a name and writes an
+// op^ of the name on is another.
 //
-// Held by name (check.c's carriers), so the type is read through the scope on
-// every walk -- a def^'s is remade on each of them (03 の 3.4改2). Reading one
-// this walk has not settled yet asks for another round, which is what lets a
-// body written above the def^ answer the same as one written below it (8.7).
+// The carriers are held by name (check.c), so the type is read through the
+// scope on every walk -- a def^'s is remade on each of them (03 の 3.4改2).
+// Reading one this walk has not settled yet asks for another round, which is
+// what lets a body written above the def^ answer as one written below it does
+// (8.7).
 static Candidates operator_candidates(Checker *c, const char *name,
-                                      size_t length)
+                                      size_t length, const Known *known)
 {
     Candidates found;
-    // 11.8: the built-in, which every arithmetic name has and nothing can
-    // take away.
-    found.left = chk_simple(c, LHAT_TYPE_NUMBER);
-    found.right = chk_simple(c, LHAT_TYPE_NUMBER);
-    found.answer = chk_simple(c, LHAT_TYPE_NUMBER);
-    found.count = 1;
+    found.left = NULL;
+    found.right = NULL;
+    found.answer = NULL;
+    found.count = 0;
+
+    // 11.8: what the checker carries for the built-in types, asked of each so
+    // that the answer is the operator's rather than one name's.
+    static const LhatTypeKind builtins[] = {
+        LHAT_TYPE_NUMBER, LHAT_TYPE_STRING, LHAT_TYPE_BOOL};
+    for (size_t i = 0; i < sizeof builtins / sizeof builtins[0]; i++) {
+        LhatType *carried = chk_builtin_operator(c, builtins[i], name, length);
+        fold_member(c, &found, known, carried, chk_simple(c, builtins[i]));
+    }
 
     uint16_t bit = chk_operator_bit(name, length);
     if (bit == 0 || (c->unit_operators & bit) == 0) {
@@ -363,21 +413,51 @@ static Candidates operator_candidates(Checker *c, const char *name,
         if (instance == NULL) {
             continue;
         }
-        LhatType *member = chk_operator_member(c, instance, name, length);
-        if (member == NULL) {
-            continue;  // the seed has no members yet; the next round will
-        }
-        found.count++;
-        if (member->kind == LHAT_TYPE_INTERSECT) {
-            for (const LhatTypeList *arm = member->v.composite.arms;
-                 arm != NULL; arm = arm->next) {
-                fold_arm(c, &found, arm->type, instance);
-            }
-        } else {
-            fold_arm(c, &found, member, instance);
-        }
+        // The seed has no members yet; the next round will have them.
+        fold_member(c, &found, known,
+                    chk_operator_member(c, instance, name, length), instance);
     }
     return found;
+}
+
+// 03 の 3.4改3: what an ordering demands of a parameter standing in it. 11.9
+// makes '<=>' the one comparison a type writes, so the candidates are its --
+// which is also what keeps 11.9改's op^=-only type out of an ordering: it
+// carries '=' and not '<=>', and the carriers are held per name.
+static bool demand_ordering(Checker *c, const LhatNode *at, LhatType *left,
+                            LhatType *right)
+{
+    ParamVar *left_var = chk_param_var_for(c, left);
+    ParamVar *right_var = chk_param_var_for(c, right);
+    if (left_var == NULL && right_var == NULL) {
+        return true;  // nothing here to decide; the judgement below stands
+    }
+
+    Known known;
+    known.on_right = left_var != NULL;
+    LhatType *other = left_var != NULL ? right : left;
+    known.type = (chk_operator_undecided(other) ||
+                  chk_param_var_for(c, other) != NULL)
+                     ? NULL
+                     : other;
+
+    Candidates found = operator_candidates(c, "<=>", 3, &known);
+    if (found.count == 0) {
+        return true;  // nothing orders these; the report below says so
+    }
+    if (left_var != NULL) {
+        chk_constrain(c, left, found.left);
+    }
+    if (right_var != NULL) {
+        chk_constrain(c, right, found.right);
+    }
+    if (found.count > 1) {
+        // As an arithmetic use of the same shape: the demands name the
+        // candidates, and the writer picks one by annotating or narrowing.
+        chk_report(c, at, LHAT_CHECK_ERR_OPERATOR_UNSETTLED);
+        return false;
+    }
+    return true;
 }
 
 static LhatType *infer_operator(Checker *c, const LhatNode *node, LhatOpKind op,
@@ -404,7 +484,18 @@ static LhatType *infer_operator(Checker *c, const LhatNode *node, LhatOpKind op,
         if (name[0] == '.') {
             return NULL;
         }
-        Candidates found = operator_candidates(c, name, length);
+        // 3.4改3: the right operand narrows the field where it is settled --
+        // 'x * 2' asks only for arms that take a number^.
+        Known known;
+        known.on_right = true;
+        known.type = (chk_operator_undecided(right) ||
+                      chk_param_var_for(c, right) != NULL)
+                         ? NULL
+                         : right;
+        Candidates found = operator_candidates(c, name, length, &known);
+        if (found.count == 0) {
+            return NULL;  // nothing takes it; the reports below say so
+        }
         chk_constrain(c, left, found.left);
         if (found.count > 1) {
             // Several could be meant and nothing here says which. The demands

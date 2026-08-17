@@ -898,6 +898,95 @@ static void test_operator_candidates(void)
                "}\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
+
+    // 11.9: '<=>' is the one comparison a type writes, and both built-ins
+    // carry it -- so an ordering's candidates start as two. The other operand
+    // is what tells them apart.
+    LHAT_TEST("an ordering is decided by what it is compared against");
+    check_text(&u,
+               "var^ f = f^ x -> bool^ { return^ x < 1 }\n"
+               "var^ a : bool^ = f(2)\n"
+               "var^ b = f(\"s\")\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
+    unit_dispose(&u);
+
+    LHAT_TEST("and string^ carries it just as well");
+    check_text(&u,
+               "var^ f = f^ x -> bool^ { return^ x < \"s\" }\n"
+               "var^ a : bool^ = f(\"t\")\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("but neither side written leaves the candidates open");
+    check_text(&u, "var^ f = f^ x, y -> bool^ { return^ x < y }\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_OPERATOR_UNSETTLED);
+    unit_dispose(&u);
+
+    // 11.9 with 14.2: equality answers without a '<=>' at all, so what it
+    // asks is that the two are not disjoint -- which is not a type to demand.
+    LHAT_TEST("equality demands nothing");
+    check_text(&u, "var^ f = f^ x -> bool^ { return^ x = 1 }\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_PARAM_UNDECIDED);
+    unit_dispose(&u);
+
+    // 11.9改: a type writing op^= says how it compares for equality and
+    // nothing about order. The carriers are held per operator name, so it is
+    // no candidate for '<'.
+    LHAT_TEST("an op^= alone is no candidate for an ordering");
+    check_text(&u,
+               "var^ S = def^{\n"
+               "  self^{ n := 0 },\n"
+               "  op^= := f^self^, o:Self^ -> bool^ { return^ true^ },\n"
+               "}\n"
+               "var^ f = f^ x -> bool^ { return^ x < 1 }\n"
+               "var^ a : bool^ = f(2)\n"
+               "var^ b = f(S.new())\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
+    CHECK_NOT_REPORTED(&u, LHAT_CHECK_ERR_OPERATOR_UNSETTLED);
+    unit_dispose(&u);
+
+    LHAT_TEST("and ordering two of them is still refused");
+    check_text(&u,
+               "var^ S = def^{\n"
+               "  self^{ n := 0 },\n"
+               "  op^= := f^self^, o:Self^ -> bool^ { return^ true^ },\n"
+               "}\n"
+               "var^ r = S.new() < S.new()\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_NOT_ORDERED);
+    unit_dispose(&u);
+
+    LHAT_TEST("a written op^<=> is a candidate for an ordering");
+    check_text(&u,
+               "var^ V = def^{\n"
+               "  self^{ n := 0 },\n"
+               "  op^<=> := f^self^, o:Self^ -> number^ { return^ 0 },\n"
+               "}\n"
+               "var^ f = f^ x -> bool^ { return^ x < V.new() }\n"
+               "var^ a : bool^ = f(V.new())\n"
+               "var^ b = f(2)\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
+    unit_dispose(&u);
+
+    // 11.9 gives '<=>' to string^ too, which the built-in seed left out.
+    LHAT_TEST("'<=>' written directly reaches string^ as well");
+    check_text(&u,
+               "var^ f = f^ x -> number^ { return^ x <=> \"s\" }\n"
+               "var^ n : number^ = f(\"t\")\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // The same narrowing on the arithmetic side: an arm that could not take
+    // the operand is no candidate, so one carrier is left and no union forms.
+    LHAT_TEST("the other operand narrows an arithmetic field too");
+    check_text(&u,
+               "var^ W = def^{\n"
+               "  self^{ n := 0 },\n"
+               "  op^* := f^self^, r:string^ -> number^ { return^ 0 },\n"
+               "}\n"
+               "var^ f = f^ x -> number^ { return^ x * 2 }\n"
+               "var^ n : number^ = f(3)\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
 }
 
 static void test_parameter_inference(void)
