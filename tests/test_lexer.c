@@ -8,10 +8,10 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "lexer.h"
+#include "lhat/lexer.h"
 #include "lhat/source.h"
 #include "testutil.h"
-#include "token.h"
+#include "lhat/token.h"
 
 #define MAX_TOKENS 128
 

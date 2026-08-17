@@ -11,7 +11,7 @@
 
 #include "check.h"
 #include "hosted.h"
-#include "lexer.h"
+#include "lhat/lexer.h"
 #include "parser.h"
 #include "lhat/program.h"
 #include "lhat/source.h"

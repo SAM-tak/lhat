@@ -100,9 +100,10 @@ endif()
 configure_file(include/lhat/version.h.in
     ${CMAKE_CURRENT_BINARY_DIR}/include/lhat/version.h)
 
-# A host gets include/ and nothing else. src/ holds names like source.h and
-# value.h, which are too ordinary to put on someone else's include path --
-# include/lhat.h reaches them and is the only header a host names.
+# A host gets include/ and nothing else. src/ holds names like parser.h and
+# type.h, which are too ordinary to put on someone else's include path --
+# include/lhat.h reaches what a host runs with, and lhat/lexer.h is the one
+# other header it may name (07 の 4 章: colouring an editor).
 target_include_directories(lhat
     PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
            $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/include>
@@ -315,9 +316,14 @@ install(FILES port/thread.h DESTINATION include/port)
 
 # What ships is what a host may name: lhat.h and the headers under lhat/,
 # in the shape they already have here. Nothing in src/ is installed -- the
-# tokens, the tree, the checker, the instruction set and the collector are
-# the library's own, and install_smoke is what proves lhat.h no longer
-# reaches any of them (it builds a host against this tree alone).
+# tree, the checker, the instruction set and the collector are the library's
+# own, and install_smoke is what proves lhat.h no longer reaches any of them
+# (it builds a host against this tree alone).
+#
+# lhat/lexer.h and lhat/token.h ship too, and lhat.h does not reach them: a
+# host that colours L^ in an editor names the lexer itself, and one that only
+# runs bytecode never sees it. That is why install_smoke still says what it
+# says -- it builds against lhat.h, which is the running half.
 install(FILES include/lhat.h DESTINATION include)
 install(DIRECTORY include/lhat/ DESTINATION include/lhat
     FILES_MATCHING PATTERN "*.h")

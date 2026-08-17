@@ -12,7 +12,7 @@
 #define LHAT_PARSER_H
 
 #include "ast.h"
-#include "lexer.h"
+#include "lhat/lexer.h"
 
 typedef enum {
     LHAT_PARSE_ERR_NONE,

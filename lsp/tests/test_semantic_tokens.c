@@ -17,7 +17,7 @@
 
 #include "ast.h"
 #include "check.h"
-#include "lexer.h"
+#include "lhat/lexer.h"
 #include "parser.h"
 #include "lhat/source.h"
 

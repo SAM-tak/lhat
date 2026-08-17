@@ -2,6 +2,11 @@
 //
 // See DesignDocuments/01-lexical-structure.md for the specification these
 // definitions follow. Section numbers in the comments refer to that document.
+//
+// Public, with lhat/lexer.h: a host that reads L^ rather than runs it -- one
+// colouring a script editor, say -- needs to know what a token is. Not
+// reached by lhat.h, which is the header for running; this one is named by
+// whoever wants it (07 の 4 章).
 
 #ifndef LHAT_TOKEN_H
 #define LHAT_TOKEN_H
@@ -13,6 +18,10 @@
 // LHAT_WITH_COMMENTS changes the shape of LhatLexer and LhatNode, so it
 // comes from the generated header rather than a compile definition.
 #include "lhat/version.h"
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 // Section 10.9.
 typedef enum {
@@ -147,29 +156,6 @@ typedef enum {
     LHAT_OP_COUNT
 } LhatOpKind;
 
-// 02 の 11.8 with 11.9: the spellings op^ may write -- '..', the seven
-// arithmetic operators, '<=>' and '='. The last is the one comparison
-// written on its own: a type may know what equals what without knowing what
-// comes first, and 11.9 has '=' and '≠' read it before reaching for '<=>'.
-// The other four comparisons are read off '<=>' alone. One list, expanded
-// three ways: the
-// checker's member naming, the machine's candidate lookup, and the
-// membership test. They have to agree byte for byte, and one list is what
-// makes them. X(op, bc, spelling, length): `op` completes LHAT_OP_##op and
-// `bc` LHAT_BC_##bc, named apart because '//' is FLOORDIV as a token and
-// IDIV as an instruction.
-#define LHAT_OPERATOR_MEMBERS(X) \
-    X(SPACESHIP, SPACESHIP, "<=>", 3) \
-    X(EQ,        EQ,        "=",   1) \
-    X(CONCAT,    CONCAT,    "..",  2) \
-    X(ADD,       ADD,       "+",   1) \
-    X(SUB,       SUB,       "-",   1) \
-    X(MUL,       MUL,       "*",   1) \
-    X(DIV,       DIV,       "/",   1) \
-    X(FLOORDIV,  IDIV,      "//",  2) \
-    X(MOD,       MOD,       "%",   1) \
-    X(POW,       POW,       "**",  2)
-
 // Section 5.
 typedef enum {
     LHAT_STRING_ESCAPED,  // "..."   escapes processed, may span lines
@@ -257,5 +243,9 @@ const char *lhat_token_kind_name(LhatTokenKind kind);
 const char *lhat_op_name(LhatOpKind op);
 const char *lhat_string_kind_name(LhatStringKind kind);
 const char *lhat_scope_kind_name(LhatScopeKind kind);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif  // LHAT_TOKEN_H

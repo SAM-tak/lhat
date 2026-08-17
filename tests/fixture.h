@@ -17,7 +17,7 @@
 
 #include "check.h"
 #include "compile.h"
-#include "lexer.h"
+#include "lhat/lexer.h"
 #include "lhat/object.h"
 #include "parser.h"
 #include "lhat/source.h"

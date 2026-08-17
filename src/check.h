@@ -18,7 +18,7 @@
 #include <stdint.h>
 
 #include "ast.h"
-#include "lexer.h"
+#include "lhat/lexer.h"
 #include "hosted.h"
 #include "type.h"
 

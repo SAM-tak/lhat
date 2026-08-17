@@ -1,6 +1,6 @@
 // L^ (lhat) -- lexical analyser.
 
-#include "lexer.h"
+#include "lhat/lexer.h"
 
 #include <stdlib.h>
 #include <string.h>

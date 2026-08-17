@@ -6,9 +6,16 @@
 //     #include "lhat.h"
 //
 // and has the language. What is not here is not a host's business -- the
-// tokens, the tree, the checker's types, the instruction set and the
-// collector all live in src/ and ship nowhere (05 の 8.7, and 02 の
-// 14.17改2's build that runs bytecode with no front end at all).
+// tree, the checker's types, the instruction set and the collector all live
+// in src/ and ship nowhere (05 の 8.7, and 02 の 14.17改2's build that runs
+// bytecode with no front end at all).
+//
+// This is the header for running a program. There is one other, not reached
+// from here: lhat/lexer.h, for reading one. A host colouring a script editor
+// has to know where a word begins and ends, and 01 の 2.3's hat, 6.2's nested
+// comments and 5.2's doubled quotes put that out of reach of anything but the
+// lexer itself (07 の 4 章). Named by whoever wants it, so that a host which
+// only runs bytecode carries none of it.
 //
 // The order a host works in is 05 の 8.7 and 5.3:
 //

@@ -15,7 +15,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "token.h"
+#include "lhat/token.h"
 
 typedef enum {
     // ---- expressions ----

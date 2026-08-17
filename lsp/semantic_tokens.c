@@ -21,7 +21,7 @@
 
 #include "ast.h"
 #include "check.h"  // 07 の 4 章: what each name resolved to, for refine_by_type
-#include "lexer.h"
+#include "lhat/lexer.h"
 #include "lhat/object.h"  // 05 の 8.8/8.9: the tags a host type is named by
 #include "parser.h"
 #include "type.h"

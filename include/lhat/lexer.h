@@ -5,13 +5,32 @@
 // The lexer deliberately has no keyword table. A '^'-suffixed identifier is
 // always returned as LHAT_TOKEN_HAT_IDENT and the parser decides whether it
 // is a keyword, a type name or a meta property (section 2.1).
+//
+// Public, and the one part of the front end that is. Where a word begins and
+// ends cannot be worked out from outside: 2.3 makes the hat part of the name,
+// 6.2's block comments nest, 5.2's raw strings write a quote by doubling it,
+// 5.4's interpolations hold code. A host that colours L^ in an editor has to
+// read it the way the compiler does, and this is that reading (07 の 4 章).
+//
+// What it does not answer is which spellings the language knows -- 2.1
+// reserves none, and a host drawing `def^` apart from a member somebody named
+// `tostring^` is guessing from the spelling. The tree, the checker's types
+// and the instruction set stay in src/: past the words, a host is better
+// served by the checker's answers than by the parser's.
+//
+// Not reached by lhat.h, which is the header for running a program. This one
+// is named by whoever wants it.
 
 #ifndef LHAT_LEXER_H
 #define LHAT_LEXER_H
 
 #include "lhat/config.h"
 #include "lhat/source.h"
-#include "token.h"
+#include "lhat/token.h"
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 typedef enum {
     LHAT_ERR_NONE,
@@ -93,5 +112,9 @@ const char *lhat_lexer_string(const LhatLexer *lexer, const LhatToken *token,
                               size_t *length);
 
 const char *lhat_lexer_error_message(LhatErrorCode code);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif  // LHAT_LEXER_H

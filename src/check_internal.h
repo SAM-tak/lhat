@@ -15,6 +15,7 @@
 #include "environment.h"
 #include "lhat/config.h"
 #include "grow.h"
+#include "operators.h"
 #include "lhat/port.h"
 
 // 05 の 8.7: a host writes a type out as text, so the checker reads the type

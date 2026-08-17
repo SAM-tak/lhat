@@ -1,6 +1,6 @@
 // L^ (lhat) -- token name tables, used by diagnostics and tests.
 
-#include "token.h"
+#include "lhat/token.h"
 
 const char *lhat_token_kind_name(LhatTokenKind kind)
 {

@@ -15,7 +15,7 @@
 #include "ast.h"
 #include "code.h"
 #include "hosted.h"
-#include "lexer.h"
+#include "lhat/lexer.h"
 #include "lhat/module.h"  // LhatCompileStatus, and what a compile answers
 
 // 05 の 5 章. The compile-time twin of check.h's LhatRequireResolver: asked
