@@ -315,6 +315,23 @@ static void test_an_abstract_definition_says_so(void)
                text != NULL ? text : "(nothing)");
     free(text);
     check_dispose(&c);
+
+    // 14.15改3: a written new gives a template field its value too, so a
+    // definition built that way has no hole to say anything about. The note
+    // is the same predicate 14.11's refusal asks, so the two agree here.
+    LHAT_TEST("and a field the written new writes is not a hole");
+    check_text(&c,
+               "let^ Held = def^{\n"
+               "    self^{ abstract^ slot : number^ },\n"
+               "    override^new = f^v:number^ { self^{ slot = v } },\n"
+               "}\n"
+               "let^ made = Held.new(1)\n");
+    text = hover_text(&c, last_offset(&c, "Held.new(1)"));
+    LHAT_CHECK(text != NULL && strstr(text, "abstract") == NULL,
+               "expected no note where the new writes the field, got %s",
+               text != NULL ? text : "(nothing)");
+    free(text);
+    check_dispose(&c);
 }
 
 // A declaration binds a name rather than resolving one, so nothing is

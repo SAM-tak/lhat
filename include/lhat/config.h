@@ -49,6 +49,10 @@
 #define LHAT_MAX_UPVALUES 256
 // How many break^ targets a nesting of loops may leave open at once.
 #define LHAT_MAX_BREAKS 64
+// 02 の 11.7改2: how many '?' one postfix run may carry. Each is a jump that
+// stays open until the run ends, and a run is written in one line of source
+// -- 'a?.b?[i]?(x)' is three, and nothing readable goes far past that.
+#define LHAT_MAX_NIL_CHAIN 16
 // 02 の 14.2: the chain of delegation is settled when the definition is
 // written, and 14.2 says the checker can decide the parts of any expression.
 // So the compiler resolves composition rather than the machine: what a def^

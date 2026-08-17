@@ -157,6 +157,17 @@ typedef struct Compiler {
     // that is itself a call is not the one in tail position.
     bool tail_call;
     bool tail_drop;  // and its answer is thrown away (a bare call statement)
+
+    // 02 の 11.7改2: a guarded postfix run answers nil^ from wherever its
+    // first '?' found one, so every guard in the run writes the same
+    // destination and jumps to the same place -- the end of the run, which is
+    // the node the parser marked. Opened by that node before it compiles
+    // itself and closed after, so a run written inside an argument opens one
+    // of its own.
+    uint8_t chain_into;
+    size_t chain_jumps[LHAT_MAX_NIL_CHAIN];
+    size_t chain_jump_count;
+    bool in_chain;
     // The last statement of the body being compiled, when it is a bare call.
     // 5.3 reads a call there as a tail call, the way it reads the value of a
     // return^: what follows it is the end of the body.
@@ -435,6 +446,72 @@ static void land_here(Compiler *c, size_t jump)
     if (jump != SIZE_MAX) {
         lhat_chunk_patch_here(&c->proto->chunk, jump);
     }
+}
+
+// 02 の 11.7改2: what a guarded link does instead of landing its own jump.
+// Every '?' in the run answers the same nil^ from the same place, so the jump
+// waits until the run's last access has been emitted.
+typedef struct {
+    uint8_t into;
+    size_t jumps[LHAT_MAX_NIL_CHAIN];
+    size_t count;
+    bool outer;  // whether a run was already open around this one
+    bool open;   // whether this node opened one, so this frame has to be put back
+} ChainFrame;
+
+// Only the node the parser marked opens one. A link inside the run leaves the
+// frame alone -- saving and putting back around one would discard the guard it
+// just pushed, since the guard belongs to the run and not to the link.
+static void chain_open(Compiler *c, const LhatNode *node, uint8_t into,
+                       ChainFrame *saved)
+{
+    saved->open = false;
+    if (!node->v.access.nil_chain_end) {
+        return;
+    }
+    saved->open = true;
+    saved->into = c->chain_into;
+    saved->count = c->chain_jump_count;
+    saved->outer = c->in_chain;
+    memcpy(saved->jumps, c->chain_jumps, sizeof saved->jumps);
+    c->chain_into = into;
+    c->chain_jump_count = 0;
+    c->in_chain = true;
+}
+
+// Lands every guard the run left open, then puts back whatever run this one
+// was written inside of.
+static void chain_close(Compiler *c, ChainFrame *saved)
+{
+    if (!saved->open) {
+        return;
+    }
+    for (size_t i = 0; i < c->chain_jump_count; i++) {
+        lhat_chunk_patch_here(&c->proto->chunk, c->chain_jumps[i]);
+    }
+    c->chain_into = saved->into;
+    c->chain_jump_count = saved->count;
+    c->in_chain = saved->outer;
+    memcpy(c->chain_jumps, saved->jumps, sizeof saved->jumps);
+}
+
+// The guard one '?' emits: nil^ into the run's destination, then a jump that
+// the run's end will land. Answers false when the run has no room left, which
+// is a program past LHAT_MAX_NIL_CHAIN and is reported as too complex.
+static bool chain_guard(Compiler *c, uint8_t target)
+{
+    if (!c->in_chain || c->chain_jump_count == LHAT_MAX_NIL_CHAIN) {
+        return false;
+    }
+    uint8_t test = c->next_register;
+    (void)reserve(c);
+    emit(c, lhat_encode_abc(LHAT_BC_ISNIL, test, target, 0));
+    size_t to_access = emit_jump(c, LHAT_BC_JUMP_FALSE, test);
+    c->next_register = test;
+    emit(c, lhat_encode_abc(LHAT_BC_LOADNIL, c->chain_into, 0, 0));
+    c->chain_jumps[c->chain_jump_count++] = emit_jump(c, LHAT_BC_JUMP, 0);
+    lhat_chunk_patch_here(&c->proto->chunk, to_access);
+    return true;
 }
 
 static void compile_expression(Compiler *c, const LhatNode *node, uint8_t into);
@@ -2889,6 +2966,10 @@ static void compile_call_wide(Compiler *c, const LhatNode *node, uint8_t into,
     c->tail_drop = false;
 
     uint8_t mark = c->next_register;
+    // 11.7改2: the run this call ends, if it ends one. Opened before anything
+    // is compiled, since the receiver's guard belongs inside it.
+    ChainFrame chain;
+    chain_open(c, node, into, &chain);
     uint8_t callee = reserve(c);
 
     // 14.4: 'x.m()' hands x to a method as its self^, and 'm(x)' on the same
@@ -2908,6 +2989,14 @@ static void compile_call_wide(Compiler *c, const LhatNode *node, uint8_t into,
         size_t receiver_width = width_of(target->v.access.target);
         uint8_t receiver = reserve_wide(c, receiver_width);
         compile_expression(c, target->v.access.target, receiver);
+        // 11.7改2: the member node is absorbed here rather than compiled, so
+        // its own '?' has to be emitted here too -- 'a?.b(x)' reads the member
+        // off a, and a nil^ a never gets that far. The jump lands where the
+        // call's does, which is what makes the whole run one guard.
+        if (target->v.access.nil_safe && !chain_guard(c, receiver)) {
+            fail(c, LHAT_COMPILE_TOO_COMPLEX);
+            return;
+        }
         uint8_t key = c->next_register;
         if (key >= LHAT_MAX_REGISTERS) {
             fail(c, LHAT_COMPILE_TOO_COMPLEX);
@@ -2938,16 +3027,9 @@ static void compile_call_wide(Compiler *c, const LhatNode *node, uint8_t into,
     // key. The receiver of a method form is already in its slot above; it
     // was going to be evaluated either way, since it is what the callee was
     // read out of.
-    size_t past_call = SIZE_MAX;
-    if (node->v.access.nil_safe) {
-        uint8_t test = c->next_register;
-        (void)reserve(c);
-        emit(c, lhat_encode_abc(LHAT_BC_ISNIL, test, callee, 0));
-        size_t to_call = emit_jump(c, LHAT_BC_JUMP_FALSE, test);
-        c->next_register = test;
-        emit(c, lhat_encode_abc(LHAT_BC_LOADNIL, into, 0, 0));
-        past_call = emit_jump(c, LHAT_BC_JUMP, 0);
-        lhat_chunk_patch_here(&c->proto->chunk, to_call);
+    if (node->v.access.nil_safe && !chain_guard(c, callee)) {
+        fail(c, LHAT_COMPILE_TOO_COMPLEX);
+        return;
     }
 
     size_t count = 0;
@@ -3027,11 +3109,9 @@ static void compile_call_wide(Compiler *c, const LhatNode *node, uint8_t into,
     emit(c, lhat_encode_abc(call_op, callee, (uint8_t)count, operand));
     // The answer then moves to the destination the same way it was written.
     emit_move_wide(c, into, callee, answer_width);
-    // where an absent callee's nil^ lands, past everything the call
-    // itself does.
-    if (past_call != SIZE_MAX) {
-        lhat_chunk_patch_here(&c->proto->chunk, past_call);
-    }
+    // 11.7改2: where every '?' of the run lands, past everything the call
+    // itself does. An absent one anywhere in the run left nil^ in `into`.
+    chain_close(c, &chain);
     c->next_register = mark;
 }
 
@@ -3709,6 +3789,11 @@ static void compile_expression(Compiler *c, const LhatNode *node, uint8_t into)
         case LHAT_NODE_MEMBER:
         case LHAT_NODE_INDEX: {
             uint8_t mark = c->next_register;
+            // 11.7改2: the run this access is the end of, if it is one. Opened
+            // before the target is compiled, since the guards are inside it.
+            ChainFrame chain;
+            chain_open(c, node, into, &chain);
+
             // 05 の 8.9: a host value target takes its width of slots, or
             // the key would land inside its bytes.
             uint8_t target = reserve_for(c, node->v.access.target);
@@ -3719,24 +3804,18 @@ static void compile_expression(Compiler *c, const LhatNode *node, uint8_t into)
             // compiled inside the branch, so an absent target does not
             // evaluate it -- what a reader expects of a form written to skip
             // the access, and what the other optional-chaining languages do.
-            size_t past = SIZE_MAX;
-            if (node->v.access.nil_safe) {
-                uint8_t test = c->next_register;
-                (void)reserve(c);
-                emit(c, lhat_encode_abc(LHAT_BC_ISNIL, test, target, 0));
-                size_t to_access = emit_jump(c, LHAT_BC_JUMP_FALSE, test);
-                c->next_register = (uint8_t)(target + 1);
-                emit(c, lhat_encode_abc(LHAT_BC_LOADNIL, into, 0, 0));
-                past = emit_jump(c, LHAT_BC_JUMP, 0);
-                lhat_chunk_patch_here(&c->proto->chunk, to_access);
+            //
+            // 11.7改2: the jump waits for the end of the run rather than the
+            // end of this access, so everything after the '?' is skipped too.
+            if (node->v.access.nil_safe && !chain_guard(c, target)) {
+                fail(c, LHAT_COMPILE_TOO_COMPLEX);
+                return;
             }
 
             uint8_t key = reserve(c);
             compile_key(c, node, key);
             emit(c, lhat_encode_abc(LHAT_BC_GETINDEX, into, target, key));
-            if (past != SIZE_MAX) {
-                lhat_chunk_patch_here(&c->proto->chunk, past);
-            }
+            chain_close(c, &chain);
             c->next_register = mark;
             return;
         }

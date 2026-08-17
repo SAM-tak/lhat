@@ -1131,11 +1131,13 @@ static void test_composition(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
+    // 14.15改3 names a field's own way out, so it is told apart from a
+    // member's -- a written new could have given it a value, and none was.
     LHAT_TEST("and one left unfilled stops the construction too");
     check_text(&u,
                "var^ Greet = def^{ self^{ abstract^ n : number^ } }\n"
                "var^ o = Greet.new()\n");
-    CHECK_REPORTS(&u, LHAT_CHECK_ERR_STILL_ABSTRACT);
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_FIELD_UNPROVIDED);
     unit_dispose(&u);
 
     // 14.5: the two sides of a composition by name pair up the same way --
@@ -1337,11 +1339,129 @@ static void test_field_types(void)
     unit_dispose(&u);
 }
 
+// 14.15改3: a template field is one an instance holds, and 14.11 builds an
+// instance in a written new -- so a new that writes the field gives it a
+// value, exactly as a composition's initialiser would. 14.12改2 leaves an
+// override^ new the only way to build one, which is what makes reading it
+// enough.
+static void test_new_fills_fields(void)
+{
+    Unit u;
+
+    LHAT_TEST("an override^ new writing the field is what provides it");
+    check_text(&u,
+               "let^ D = def^{\n"
+               "  self^{ abstract^ slot : number^ },\n"
+               "  override^new = f^v:number^ { self^{ slot = v } },\n"
+               "  read = f^self^ -> number^ { return^ self^.slot },\n"
+               "}\n"
+               "let^ n : number^ = D.new(1).read()\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("and what is composed onto it is built the same way");
+    check_text(&u,
+               "let^ D = def^{\n"
+               "  self^{ abstract^ slot : number^ },\n"
+               "  override^new = f^v:number^ { self^{ slot = v } },\n"
+               "}\n"
+               "let^ E = D..def^{\n"
+               "  self^{ extra = 0 },\n"
+               "  twice = f^self^ -> number^ { return^ self^.slot * 2 },\n"
+               "}\n"
+               "let^ n : number^ = E.new(21).twice()\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // The hole this closes was open in both directions before: the field went
+    // unwritten and nothing said so.
+    LHAT_TEST("but a new that does not write it leaves the hole");
+    check_text(&u,
+               "let^ D = def^{\n"
+               "  self^{ abstract^ slot : number^ },\n"
+               "  override^new = f^ { self^{} },\n"
+               "}\n"
+               "let^ d = D.new()\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_FIELD_UNPROVIDED);
+    unit_dispose(&u);
+
+    // 14.12改2 exempts only override^. An overload^ keeps the default new()
+    // beside the written one, and that arm writes nothing.
+    LHAT_TEST("and an overload^ leaves the default arm to leave it too");
+    check_text(&u,
+               "let^ D = def^{\n"
+               "  self^{ abstract^ slot : number^ },\n"
+               "  overload^new = f^v:number^ { self^{ slot = v } },\n"
+               "}\n"
+               "let^ d = D.new(1)\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_FIELD_UNPROVIDED);
+    unit_dispose(&u);
+
+    // 14.15's own case is untouched: new cannot define a member, so only a
+    // composition settles one.
+    LHAT_TEST("a member's declaration is still a composition's to fill");
+    check_text(&u,
+               "let^ D = def^{\n"
+               "  self^{},\n"
+               "  abstract^ step : f^ -> number^;,\n"
+               "  override^new = f^ { self^{} },\n"
+               "}\n"
+               "let^ d = D.new()\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_STILL_ABSTRACT);
+    unit_dispose(&u);
+
+    // 14.15改's wait is for super^'s other half, not for a value.
+    LHAT_TEST("nor does it settle an override^ with nothing to replace");
+    check_text(&u,
+               "let^ D = def^{\n"
+               "  self^{ n = 0 },\n"
+               "  override^run = p^self^ { self^.n += 1 },\n"
+               "  override^new = f^ { self^{ n = 1 } },\n"
+               "}\n"
+               "let^ d = D.new()\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_STILL_ABSTRACT);
+    unit_dispose(&u);
+
+    // Any of the self^{ … } written may be the one that runs, so a field is
+    // provided only where every one of them writes it.
+    LHAT_TEST("a field written on one path only is not provided");
+    check_text(&u,
+               "let^ D = def^{\n"
+               "  self^{ abstract^ x : number^, abstract^ y : number^ },\n"
+               "  override^new = f^ v:number^ {\n"
+               "    if^ v > 0 { return^ self^{ x = v, y = v } }\n"
+               "    return^ self^{ x = 0 }\n"
+               "  },\n"
+               "}\n"
+               "let^ d = D.new(1)\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_FIELD_UNPROVIDED);
+    unit_dispose(&u);
+
+    // A self^{ … } inside a def^ written in the body builds that one's
+    // instance, and says nothing about this one's fields.
+    LHAT_TEST("and a self^{ } belonging to some other def^ does not count");
+    check_text(&u,
+               "let^ D = def^{\n"
+               "  self^{ abstract^ slot : number^ },\n"
+               "  override^new = f^ {\n"
+               "    let^ Inner = def^{\n"
+               "      self^{ slot = 0 },\n"
+               "      override^new = f^ { self^{ slot = 1 } },\n"
+               "    }\n"
+               "    return^ self^{}\n"
+               "  },\n"
+               "}\n"
+               "let^ d = D.new()\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_FIELD_UNPROVIDED);
+    unit_dispose(&u);
+}
+
 int main(void)
 {
     test_definitions();
     test_composition();
     test_typeof();
     test_field_types();
+    test_new_fills_fields();
     return lhat_test_report("test_check_def");
 }

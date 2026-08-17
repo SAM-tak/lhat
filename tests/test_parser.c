@@ -1504,6 +1504,45 @@ static void test_postfix(void)
     }
     parse_dispose(&p);
 
+    // 11.7改2: the run's last access carries the mark, and it alone -- what
+    // the checker puts the nil^ arm on and what the compiler lands the
+    // guards at.
+    LHAT_TEST("the end of a guarded run is marked");
+    parse_text(&p, "x := a?.b.c(1)");
+    {
+        const LhatNode *call = first_value(&p);
+        LHAT_CHECK_EQ_INT(call->kind, LHAT_NODE_CALL);
+        LHAT_CHECK(call->v.access.nil_chain_end, "the call ends the run");
+        const LhatNode *outer = call->v.access.target;
+        LHAT_CHECK(!outer->v.access.nil_chain_end, "'.c' is not the end");
+        LHAT_CHECK(!outer->v.access.nil_safe, "'.c' was written plain");
+        LHAT_CHECK(outer->v.access.target->v.access.nil_safe,
+                   "'?.b' is where the guard is");
+    }
+    parse_dispose(&p);
+
+    // A run with no '?' in it marks nothing, so nothing gains an arm.
+    LHAT_TEST("and an unguarded run is not marked");
+    parse_text(&p, "x := a.b.c(1)");
+    {
+        const LhatNode *call = first_value(&p);
+        LHAT_CHECK(!call->v.access.nil_chain_end, "nothing guarded this run");
+    }
+    parse_dispose(&p);
+
+    // '(' makes no node, so grouping cannot cut a run in two: '(a?.b).c' is
+    // the tree 'a?.b.c' is, and the mark ends up on '.c' either way.
+    LHAT_TEST("a bracket does not end a run");
+    parse_text(&p, "x := (a?.b).c");
+    {
+        const LhatNode *member = first_value(&p);
+        LHAT_CHECK_EQ_INT(member->kind, LHAT_NODE_MEMBER);
+        LHAT_CHECK(member->v.access.nil_chain_end, "'.c' ends the run");
+        LHAT_CHECK(!member->v.access.target->v.access.nil_chain_end,
+                   "the bracketed access gave the mark up");
+    }
+    parse_dispose(&p);
+
     // 01 の 10.9: a '(' after a newline starts a statement.
     LHAT_TEST("a call paren must sit on the same line");
     parse_text(&p, "update()\n(f or^ g)()");

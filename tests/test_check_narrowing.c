@@ -602,15 +602,47 @@ static void test_nil_propagation(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // Per link, not per chain (Kotlin reads the same way): 'a?.b' is still a
-    // T|nil^, and 11.4 refuses to reach through one, so every link carries
-    // its own '?'. Nothing has to know where a chain begins or ends.
-    LHAT_TEST("a chain marks every link");
+    // 11.7改2: the first '?' guards the rest of the run, so the links after
+    // it are written plain. The nil^ arm goes on once, at the end.
+    LHAT_TEST("one '?' guards the rest of the chain");
     check_text(&u,
                "var^ f = f^ -> t^{ a : t^{ b : number^ } }|nil^ { return^ nil^ }\n"
                "var^ t = f()\n"
                "var^ n : number^ = t?.a.b ?? 0\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // A call belongs to the run the same way a member does, which is what
+    // makes 'a?.b()' enough: the member it reached is always there, and the
+    // one nil^ in play is the one the '?' already accounted for.
+    LHAT_TEST("and a call written on it needs no '?' of its own");
+    check_text(&u,
+               "var^ f = f^ -> t^{ a : (f^ -> number^;) }|nil^ { return^ nil^ }\n"
+               "var^ t = f()\n"
+               "var^ n : number^ = t?.a() ?? 0\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // What the guard covers is the nil^ it was written for. One the writer's
+    // own type carries is met further in and still wants a '?' of its own.
+    LHAT_TEST("but a nil^ met further in is refused as ever");
+    check_text(&u,
+               "var^ f = f^ -> t^{ a : t^{ b : number^ }|nil^ }|nil^ "
+               "{ return^ nil^ }\n"
+               "var^ t = f()\n"
+               "var^ n : number^ = t?.a.b ?? 0\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_NO_MEMBER);
+    unit_dispose(&u);
+
+    // '(' makes no node of its own, so a bracket a writer put there to group
+    // is not a place a chain ends -- unlike JavaScript, where '(a?.b).c' is a
+    // second reading of the same text.
+    LHAT_TEST("and a bracket does not end the chain");
+    check_text(&u,
+               "var^ f = f^ -> t^{ a : t^{ b : number^ } }|nil^ { return^ nil^ }\n"
+               "var^ t = f()\n"
+               "var^ n : number^ = (t?.a).b ?? 0\n");
+    CHECK_CLEAN(&u);
     unit_dispose(&u);
 
     LHAT_TEST("and marking every link is accepted");

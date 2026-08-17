@@ -523,6 +523,7 @@ const LhatTypeMember *chk_find_member(const LhatType *table,
                                       const char *name, size_t length);
 LhatType *chk_instance_of(const LhatType *definition);
 const LhatTypeMember *chk_unimplemented_member(const LhatType *definition);
+const LhatTypeMember *chk_hole_of(const LhatType *definition, bool *field);
 LhatType *chk_compose_definitions(Checker *c, const LhatNode *node,
                                   LhatType *left, LhatType *right);
 LhatType *chk_infer_def(Checker *c, const LhatNode *node, LhatType *base);

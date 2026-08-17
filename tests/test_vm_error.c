@@ -419,6 +419,66 @@ static void test_catch_and_try(void)
     CHECK_INTEGER(&r, 0);
     run_dispose(&r);
 
+    // 11.7改2: the run is one guard, so a call written on a guarded access is
+    // skipped with it. The callee here is read *out of* the absent target,
+    // which is the shape the per-link reading could not express.
+    LHAT_TEST("a call on a guarded access is skipped with it");
+    run_text(&r,
+             "var^ a : t^{ b : (f^ -> number^;) }|nil^ = nil^\n"
+             "return^ a?.b() ?? 7\n");
+    CHECK_INTEGER(&r, 7);
+    run_dispose(&r);
+
+    LHAT_TEST("and runs when the target is there");
+    run_text(&r,
+             "var^ a : t^{ b : (f^ -> number^;) }|nil^ ="
+             " { b = f^ -> number^ { return^ 3 } }\n"
+             "return^ a?.b() ?? 7\n");
+    CHECK_INTEGER(&r, 3);
+    run_dispose(&r);
+
+    LHAT_TEST("its arguments are skipped too");
+    run_text(&r,
+             "var^ log = { ran = 0 }\n"
+             "var^ a : t^{ b : (f^number^ -> number^;) }|nil^ = nil^\n"
+             "var^ side = p^ -> number^ { log.ran := 1 return^ 5 }\n"
+             "a?.b(side())\n"
+             "return^ log.ran\n");
+    CHECK_INTEGER(&r, 0);
+    run_dispose(&r);
+
+    // Every link after the guard, not only the one next to it.
+    LHAT_TEST("and a member further along the run is skipped as well");
+    run_text(&r,
+             "var^ t : t^{ x : t^{ y : number^ } }|nil^ = nil^\n"
+             "return^ t?.x.y ?? 5\n");
+    CHECK_INTEGER(&r, 5);
+    run_dispose(&r);
+
+    LHAT_TEST("reaching the end of the run when the target is there");
+    run_text(&r,
+             "var^ t : t^{ x : t^{ y : number^ } }|nil^ = { x = { y = 11 } }\n"
+             "return^ t?.x.y ?? 5\n");
+    CHECK_INTEGER(&r, 11);
+    run_dispose(&r);
+
+    // '(' makes no node, so grouping cannot cut a run in half -- which is the
+    // one place the chain-wide reading bites in JavaScript.
+    LHAT_TEST("a bracket does not cut the run");
+    run_text(&r,
+             "var^ t : t^{ x : t^{ y : number^ } }|nil^ = nil^\n"
+             "return^ (t?.x).y ?? 5\n");
+    CHECK_INTEGER(&r, 5);
+    run_dispose(&r);
+
+    // '?[' is guarded the same way, and a call on it belongs to the same run.
+    LHAT_TEST("'?[' followed by a call is one guard too");
+    run_text(&r,
+             "var^ t : t^{ (f^ -> number^;) }|nil^ = nil^\n"
+             "return^ t?[1]() ?? 7\n");
+    CHECK_INTEGER(&r, 7);
+    run_dispose(&r);
+
     // 11.7改2: the postfix form asks about absence instead of reaching
     // through it, so it answers bool^ and the '?' family is complete.
     LHAT_TEST("'?' answers false for an absent value");

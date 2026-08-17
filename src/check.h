@@ -78,6 +78,9 @@ typedef enum {
                                         // composition reaches no one answer
     LHAT_CHECK_ERR_STILL_ABSTRACT,      // 14.15: new on a definition with a
                                         // member nothing has provided yet
+    LHAT_CHECK_ERR_FIELD_UNPROVIDED,    // 14.15改3: the same for a template
+                                        // field, which a written new may also
+                                        // give a value to
     LHAT_CHECK_ERR_ALREADY_PROVIDED,    // 14.15: abstract^ over a member that
                                         // something in the chain provides
     LHAT_CHECK_ERR_ABSTRACT_PROVIDED_HERE, // 14.15改2: abstract^ over one this

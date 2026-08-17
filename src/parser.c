@@ -1819,9 +1819,32 @@ static LhatNode *parse_arguments(Parser *p)
     return head;
 }
 
+static bool is_access_node(const LhatNode *node)
+{
+    return node != NULL &&
+           (node->kind == LHAT_NODE_MEMBER || node->kind == LHAT_NODE_INDEX ||
+            node->kind == LHAT_NODE_CALL);
+}
+
 static LhatNode *parse_postfix(Parser *p)
 {
     LhatNode *node = parse_primary(p);
+
+    // 11.7改2: the first '?' guards the rest of the run, and the nil^ arm is
+    // put on once, at the end. Which access that is only this loop knows --
+    // it is the one nothing else was appended to.
+    //
+    // A run may begin on a node that already ended a guarded chain: '(' makes
+    // no node of its own (parse_primary answers the inner expression), so
+    // '(a?.b).c' arrives here as the same tree 'a?.b.c' does. Taking the mark
+    // back and going on is what keeps the two reading alike -- the bracket a
+    // writer put there to group is not a place to end a chain.
+    bool guarded = is_access_node(node) && node->v.access.nil_chain_end;
+    LhatNode *last_access = NULL;
+    if (guarded) {
+        node->v.access.nil_chain_end = false;
+        last_access = node;
+    }
 
     for (;;) {
         LhatToken at = p->current;
@@ -1836,6 +1859,8 @@ static LhatNode *parse_postfix(Parser *p)
                 return node;
             }
             node = access_node(p, LHAT_NODE_MEMBER, &at, node, name, nil_safe);
+            guarded = guarded || nil_safe;
+            last_access = node;
             continue;
         }
 
@@ -1845,6 +1870,8 @@ static LhatNode *parse_postfix(Parser *p)
             LhatNode *index = parse_expression(p);
             expect_op(p, LHAT_OP_RBRACKET);
             node = access_node(p, LHAT_NODE_INDEX, &at, node, index, nil_safe);
+            guarded = guarded || nil_safe;
+            last_access = node;
             continue;
         }
 
@@ -1854,12 +1881,15 @@ static LhatNode *parse_postfix(Parser *p)
             advance(p);
             node = access_node(p, LHAT_NODE_CALL, &at, node,
                                parse_arguments(p), false);
+            last_access = node;
             continue;
         }
         if (check_op(p, LHAT_OP_NIL_CALL)) {
             advance(p);
             node = access_node(p, LHAT_NODE_CALL, &at, node,
                                parse_arguments(p), true);
+            guarded = true;
+            last_access = node;
             continue;
         }
 
@@ -1880,6 +1910,12 @@ static LhatNode *parse_postfix(Parser *p)
         }
 
         break;
+    }
+    // 11.7改2: the run is over, so this is the access the nil^ arm goes on.
+    // A postfix '?' above it (11.7改2's own form) asks about the value the
+    // chain answers, so it is not the end -- the access under it is.
+    if (guarded && last_access != NULL) {
+        last_access->v.access.nil_chain_end = true;
     }
     return node;
 }

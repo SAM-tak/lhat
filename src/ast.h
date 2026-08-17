@@ -279,6 +279,11 @@ struct LhatNode {
             LhatNode *target;
             LhatNode *argument;  // member name, index expression, or arg list
             bool nil_safe;
+            // 11.7改2: the last access of a postfix run that a '?' guarded.
+            // What the run answers gains the nil^ arm here and nowhere else,
+            // so an arm met before this one came from the writer's own type
+            // and is refused as ever.
+            bool nil_chain_end;
         } access;
 
         struct {

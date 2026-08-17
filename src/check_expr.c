@@ -1010,6 +1010,34 @@ LhatType *chk_infer_call(Checker *c, const LhatNode *node)
                               : LHAT_TYPE_UNKNOWN);
     }
 
+    // 14.15: an instance carries a value under every name its definition
+    // holds, so one still only declared has nothing to make. Reported where
+    // the construction is written, which is what the writer has to change.
+    //
+    // Asked before the callee's kind is looked at, so that a definition whose
+    // new was written with an overload^ -- an intersection, which the branch
+    // below answers and returns from -- is asked the same question.
+    if (node->v.access.target != NULL &&
+        node->v.access.target->kind == LHAT_NODE_MEMBER) {
+        const char *called = NULL;
+        size_t called_length = 0;
+        if (chk_node_name(c, node->v.access.target->v.access.argument, &called,
+                          &called_length) &&
+                chk_name_is(called, called_length, "new")) {
+            LhatType *owner = chk_infer(c, node->v.access.target->v.access.target);
+            bool field = false;
+            const LhatTypeMember *hole = chk_hole_of(owner, &field);
+            if (hole != NULL) {
+                // 14.15改3: a field has two ways to be given a value and a
+                // member has one, so the two are not told the same thing.
+                chk_report_named(c, node,
+                                 field ? LHAT_CHECK_ERR_FIELD_UNPROVIDED
+                                       : LHAT_CHECK_ERR_STILL_ABSTRACT,
+                                 hole->name, hole->name_length);
+            }
+        }
+    }
+
     // 14.12: an overloaded member is the intersection of its signatures, so
     // calling one means finding the arm that fits. Arguments are inferred
     // once here, since inferring them again would report twice.
@@ -1076,25 +1104,6 @@ LhatType *chk_infer_call(Checker *c, const LhatNode *node)
     if (c->in_function && !callee->v.func.is_function &&
         !callee->v.func.yields) {
         chk_report(c, node, LHAT_CHECK_ERR_FUNCTION_CALLS_PROCEDURE);
-    }
-
-    // 14.15: an instance carries a value under every name its definition
-    // holds, so one still only declared has nothing to make. Reported where
-    // the construction is written, which is what the writer has to change.
-    if (node->v.access.target != NULL &&
-        node->v.access.target->kind == LHAT_NODE_MEMBER) {
-        const char *called = NULL;
-        size_t called_length = 0;
-        if (chk_node_name(c, node->v.access.target->v.access.argument, &called,
-                          &called_length) &&
-                chk_name_is(called, called_length, "new")) {
-            LhatType *owner = chk_infer(c, node->v.access.target->v.access.target);
-            const LhatTypeMember *hole = chk_unimplemented_member(owner);
-            if (hole != NULL) {
-                chk_report_named(c, node, LHAT_CHECK_ERR_STILL_ABSTRACT, hole->name,
-                                 hole->name_length);
-            }
-        }
     }
 
     const LhatTypeList *param = callee->v.func.params;
@@ -1457,17 +1466,21 @@ static bool builtin_named(const char *name, size_t length, const char *word,
 // comes back gains one, since a nil^ target answers nil^ rather than a
 // member, a position or a call.
 //
-// Per link, not per chain: 'a?.b.c' leaves 'a?.b' a T|nil^, which 11.4
-// refuses to reach through under strict -- so the writer marks every link,
-// 'a?.b?.c'. Kotlin reads the same way. Nothing here has to know where a
-// chain begins or ends.
+// 11.7改2: the two halves are not both per link. The strip is -- it belongs
+// to the '?' that was written -- but the arm goes on once, at the end of the
+// run the parser marked, so the first '?' guards everything after it.
+//
+// That is also what keeps a nil^ arriving from somewhere else refused. An
+// intermediate link gains nothing here, so an arm seen at one came from the
+// member's own written type ('a?.b.c' where b is C|nil^), and reaching
+// through it still wants a '?' of its own.
 //
 // A p^ call answers nothing (13.2), and nothing unions with nil^ into
 // something -- a nil-safe call of one produces no value either way.
 static LhatType *nil_propagated(Checker *c, const LhatNode *node,
                                 LhatType *answer)
 {
-    if (!node->v.access.nil_safe || answer == NULL ||
+    if (!node->v.access.nil_chain_end || answer == NULL ||
         answer->kind == LHAT_TYPE_NONE) {
         return answer;
     }
@@ -2618,8 +2631,15 @@ static void mark_ambiguous(LhatType *table, const char *name, size_t length)
 // new is what this stands in the way of -- an abstract^ would leave a name
 // with nothing under it, and 14.15改's pending override^ would leave a super^
 // pointing at nothing.
-const LhatTypeMember *chk_unimplemented_member(const LhatType *definition)
+//
+// `field` answers which of the two lists the hole is in, since 14.15改3 gives
+// the two different ways out: a member is a composition's to provide, and a
+// field is that or a written new's to write.
+const LhatTypeMember *chk_hole_of(const LhatType *definition, bool *field)
 {
+    if (field != NULL) {
+        *field = false;
+    }
     if (definition == NULL || definition->kind != LHAT_TYPE_TABLE) {
         return NULL;
     }
@@ -2636,10 +2656,18 @@ const LhatTypeMember *chk_unimplemented_member(const LhatType *definition)
     for (const LhatTypeMember *m = instance->v.table.members; m != NULL;
          m = m->next) {
         if (m->abstract || m->pending) {
+            if (field != NULL) {
+                *field = !m->pending;  // a wait is 14.15改's, not a field's
+            }
             return m;
         }
     }
     return NULL;
+}
+
+const LhatTypeMember *chk_unimplemented_member(const LhatType *definition)
+{
+    return chk_hole_of(definition, NULL);
 }
 
 static void copy_members(Checker *c, LhatType *into, const LhatType *from)
@@ -2654,6 +2682,97 @@ static void copy_members(Checker *c, LhatType *into, const LhatType *from)
         set_member_marked(c, into, m->name, m->name_length, m->type,
                           m->abstract, m->pending);
     }
+}
+
+// 14.15改3: which fields a written new gives a value to.
+//
+// 14.11 builds an instance with `self^{ … }`, and 14.15's declaration on a
+// template field is a field with no initialiser -- so a new that writes one is
+// what an instance of that definition gets it from. Reading which names it
+// writes is what tells the hole from the filled field, and the tree is where
+// that is: the walk over the fields (the SELF_TABLE case) asks of each written
+// field whether the template has it, which is the other direction.
+//
+// Every self^{ … } in the body has to write the name, since any of them may be
+// the one that runs -- so several are intersected rather than unioned.
+typedef struct {
+    Checker *c;
+    const char *names[LHAT_CHECK_MAX_TRACKED_ARGS];
+    size_t lengths[LHAT_CHECK_MAX_TRACKED_ARGS];
+    size_t count;
+    bool seen_one;   // whether a first self^{ … } has been met to intersect with
+    bool overflowed; // more written fields than there is room to track
+} WrittenFields;
+
+static void collect_written_fields(WrittenFields *w, const LhatNode *node);
+
+static void written_fields_child(void *context, const char *field, bool in_list,
+                                 const LhatNode *child)
+{
+    (void)field;
+    (void)in_list;
+    collect_written_fields((WrittenFields *)context, child);
+}
+
+// Keeps only the names this one also writes, which is the intersection two
+// branches of a new agree on.
+static void intersect_written(WrittenFields *w, const LhatNode *table)
+{
+    size_t kept = 0;
+    for (size_t i = 0; i < w->count; i++) {
+        bool here = false;
+        for (const LhatNode *field = table->v.list.items;
+             field != NULL && !here; field = field->next) {
+            const char *name = NULL;
+            size_t length = 0;
+            if (chk_node_name(w->c, field->v.entry.key, &name, &length)) {
+                here = length == w->lengths[i] &&
+                       memcmp(name, w->names[i], length) == 0;
+            }
+        }
+        if (here) {
+            w->names[kept] = w->names[i];
+            w->lengths[kept] = w->lengths[i];
+            kept++;
+        }
+    }
+    w->count = kept;
+}
+
+static void collect_written_fields(WrittenFields *w, const LhatNode *node)
+{
+    if (node == NULL) {
+        return;
+    }
+    // A body written inside this one builds some other definition's instance,
+    // and its self^{ … } says nothing about this one's fields.
+    if (node->kind == LHAT_NODE_FUNC || node->kind == LHAT_NODE_DEF) {
+        return;
+    }
+    if (node->kind == LHAT_NODE_SELF_TABLE) {
+        if (w->seen_one) {
+            intersect_written(w, node);
+            return;
+        }
+        w->seen_one = true;
+        for (const LhatNode *field = node->v.list.items; field != NULL;
+             field = field->next) {
+            const char *name = NULL;
+            size_t length = 0;
+            if (!chk_node_name(w->c, field->v.entry.key, &name, &length)) {
+                continue;
+            }
+            if (w->count == LHAT_CHECK_MAX_TRACKED_ARGS) {
+                w->overflowed = true;
+                break;
+            }
+            w->names[w->count] = name;
+            w->lengths[w->count] = length;
+            w->count++;
+        }
+        return;
+    }
+    lhat_node_visit_children(node, written_fields_child, w);
 }
 
 // 14.12's overlap test, applied to two signatures: is there an argument count
@@ -3406,6 +3525,50 @@ LhatType *chk_infer_def(Checker *c, const LhatNode *node, LhatType *base)
 
     c->scope = outer;
     chk_scope_dispose(&members);
+
+    // 14.15改3: a template field the written new gives a value to is provided,
+    // the same as one a composition fills. 14.12改2 makes an override^ new
+    // replace the default whole, so that new is the only way to build one and
+    // what it writes is what every instance has. An overload^ leaves the
+    // default arm standing, and that one writes nothing -- so it settles
+    // nothing here.
+    for (const LhatNode *entry = node->v.list.items; entry != NULL;
+         entry = entry->next) {
+        const char *name = NULL;
+        size_t length = 0;
+        if (entry->v.entry.modifier != LHAT_DEF_OVERRIDE ||
+            entry->v.entry.key == NULL ||
+            !chk_node_name(c, entry->v.entry.key, &name, &length) ||
+            !chk_name_is(name, length, "new")) {
+            continue;
+        }
+        // The body, not the f^ itself: collect_written_fields stops at a
+        // subroutine, which is what keeps a nested one's self^{ … } out.
+        const LhatNode *made = entry->v.entry.value;
+        if (made == NULL || made->kind != LHAT_NODE_FUNC) {
+            break;
+        }
+        WrittenFields written;
+        written.c = c;
+        written.count = 0;
+        written.seen_one = false;
+        written.overflowed = false;
+        collect_written_fields(&written, made->v.func.body);
+        if (written.overflowed) {
+            break;  // more than can be tracked; leave every hole as it was
+        }
+        for (size_t i = 0; i < written.count; i++) {
+            for (LhatTypeMember *m = instance->v.table.members; m != NULL;
+                 m = m->next) {
+                if (m->abstract && m->name_length == written.lengths[i] &&
+                    memcmp(m->name, written.names[i], m->name_length) == 0) {
+                    m->abstract = false;
+                    break;
+                }
+            }
+        }
+        break;  // 14.12 allows one entry of the name, so there is one to read
+    }
 
     c->self_link = self_here.outer;
     return definition;

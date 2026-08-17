@@ -386,6 +386,7 @@ LhatType *chk_compose_definitions(Checker *c, const LhatNode *node,
                                   LhatType *left, LhatType *right);
 LhatType *chk_instance_of(const LhatType *definition);
 const LhatTypeMember *chk_unimplemented_member(const LhatType *definition);
+const LhatTypeMember *chk_hole_of(const LhatType *definition, bool *field);
 const LhatTypeMember *chk_find_member(const LhatType *table, const char *name,
                                       size_t length);
 LhatType *chk_only(Checker *c, LhatType *type, LhatType *wanted);
@@ -2855,6 +2856,10 @@ const char *lhat_check_error_message(LhatCheckErrorCode code)
             return "this definition is still waiting on a composition -- a "
                    "member is declared with nothing providing it, or an "
                    "override^ has met nothing to replace";
+        case LHAT_CHECK_ERR_FIELD_UNPROVIDED:
+            return "this field is declared with no value, so an instance "
+                   "would hold nothing under it; a composition has to give it "
+                   "one, or an override^ new has to write it";
         case LHAT_CHECK_ERR_AMBIGUOUS_MEMBER:
             return "both sides of the composition carry this name, so it "
                    "reaches no one answer; name the side you mean";
