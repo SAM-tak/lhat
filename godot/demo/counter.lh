@@ -7,18 +7,18 @@
 module^ demo.counter
 
 public^let^ Counter = def^{
-    self^{ ticks = 0, name = "?" },
+	self^{ ticks = 0, name = "?" },
 
-    # The engine calls these by name, the same way it calls a GDScript's.
-    _ready = p^self^ { print($"{self^.name} is ready") },
+	# The engine calls these by name, the same way it calls a GDScript's.
+	_ready = p^self^ { print($"{self^.name} is ready") },
 
-    _process = p^self^, delta:number^ { self^.ticks := self^.ticks + 1 },
+	_process = p^self^, delta:number^ { self^.ticks := self^.ticks + 1 },
 
-    tick = p^self^ { self^.ticks := self^.ticks + 1 },
+	tick = p^self^ { self^.ticks := self^.ticks + 1 },
 
-    count = f^self^ -> number^ { return^ self^.ticks },
+	count = f^self^ -> number^ { return^ self^.ticks },
 
-    greet = f^self^, who:string^ -> string^ {
-        return^ $"{self^.name} greets {who}"
-    },
+	greet = f^self^, who:string^ -> string^ {
+		return^ $"{self^.name} greets {who}"
+	},
 }

@@ -23,36 +23,36 @@ module^ lhat.Godot
 import^ godot
 
 public^let^ Object = def^{
-    self^{ abstract^gdobj : godot.Object },
+	self^{ abstract^gdobj : godot.Object },
 
-    override^new = f^obj:godot.Object {
-        self^{ gdobj = obj }
-    },
+	override^new = f^obj:godot.Object {
+		self^{ gdobj = obj }
+	},
 
-    isValid = f^self^ -> bool^ { return^ self^.gdobj.isValid() },
-    className = f^self^ -> string^ { return^ self^.gdobj.className() },
-    isClass = f^self^, name:string^ -> bool^ {
-        return^ self^.gdobj.isClass(name)
-    },
-    emit = p^self^, name:string^, ...:any^ { self^.gdobj.emit(name, ...) }
+	isValid = f^self^ -> bool^ { return^ self^.gdobj.isValid() },
+	className = f^self^ -> string^ { return^ self^.gdobj.className() },
+	isClass = f^self^, name:string^ -> bool^ {
+		return^ self^.gdobj.isClass(name)
+	},
+	emit = p^self^, name:string^, ... { self^.gdobj.emit(name, ...) }
 }
 
 public^let^ Node = Object..def^{
-    getName = f^self^ -> string^ { return^ self^.gdobj.get("name") as^ string^ },
-    addChild = p^self^, child:godot.Object { self^.gdobj.call("add_child", child) },
-    queueFree = p^self^ { self^.gdobj.call("queue_free") },
+	getName = f^self^ -> string^ { return^ self^.gdobj.get("name") as^ string^ },
+	addChild = p^self^, child:godot.Object { self^.gdobj.call("add_child", child) },
+	queueFree = p^self^ { self^.gdobj.call("queue_free") },
 }
 
 public^let^ Node2D = Node..def^{
-    getRotation = f^self^ -> number^ {
-        return^ self^.gdobj.get("rotation") as^ number^
-    },
-    setRotation = p^self^, radians:number^ {
-        self^.gdobj.set("rotation", radians)
-    },
+	getRotation = f^self^ -> number^ {
+		return^ self^.gdobj.get("rotation") as^ number^
+	},
+	setRotation = p^self^, radians:number^ {
+		self^.gdobj.set("rotation", radians)
+	},
 }
 
 public^let^ Sprite2D = Node2D..def^{
-    getFlipH = f^self^ -> bool^ { return^ self^.gdobj.get("flip_h") as^ bool^ },
-    setFlipH = p^self^, flipped:bool^ { self^.gdobj.set("flip_h", flipped) },
+	getFlipH = f^self^ -> bool^ { return^ self^.gdobj.get("flip_h") as^ bool^ },
+	setFlipH = p^self^, flipped:bool^ { self^.gdobj.set("flip_h", flipped) },
 }
