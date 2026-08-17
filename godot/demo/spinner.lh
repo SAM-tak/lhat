@@ -6,7 +6,7 @@ module^demo.spinner
 
 let^Godot = require^"lhat/Godot.lh"
 
-@prime
+@game
 public^let^Spinner = Godot.Sprite2D..def^{
 	self^{
 		@export_range(0, 10) speed = 1,
