@@ -246,6 +246,27 @@ static LhatType *infer_unary_operator(Checker *c, LhatType *operand)
 // written with its self^ last describes the other order -- it answers when its
 // owner stands on the right, so carrying it is not answering here and it reads
 // exactly as though it were absent.
+// 11.3改: the arms of a group written for this order -- the self^-last ones
+// describe the other and are never candidates here -- when there is exactly
+// one. A group may hold several signatures and still leave one choice, which
+// is what lets 03 の 3.4 read a demand off it.
+static LhatType *sole_forward_arm(const LhatType *group)
+{
+    LhatType *only = NULL;
+    for (const LhatTypeList *arm = group->v.composite.arms; arm != NULL;
+         arm = arm->next) {
+        if (arm->type == NULL || arm->type->kind != LHAT_TYPE_FUNC ||
+            arm->type->v.func.self_last) {
+            continue;
+        }
+        if (only != NULL) {
+            return NULL;  // two to choose between, and nothing to choose by
+        }
+        only = arm->type;
+    }
+    return only;
+}
+
 static LhatType *left_operator_member(Checker *c, LhatType *type,
                                       const char *name, size_t length)
 {
@@ -255,6 +276,108 @@ static LhatType *left_operator_member(Checker *c, LhatType *type,
         return NULL;
     }
     return carrier;
+}
+
+// 03 の 3.4改: what an operator of this name may be written on, here. 11.8's
+// number^ carries the arithmetic and is always a candidate; every def^ this
+// unit binds to a name and writes an op^ of the name on is another. The
+// receiver is what the left operand has to be, so their union is the demand.
+//
+// Held by name (check.c's carriers), so the type is read through the scope on
+// every walk -- a def^'s is remade on each of them (03 の 3.4改2). Reading one
+// this walk has not settled yet asks for another round, which is what lets a
+// body written above the def^ answer the same as one written below it (8.7).
+typedef struct {
+    LhatType *left;    // what may stand on the left
+    LhatType *right;   // what may stand on the right
+    LhatType *answer;  // what any of them answers
+    size_t count;      // how many carriers, the built-in included
+} Candidates;
+
+// One carrier's arms folded into the three unions. 11.3改: an arm written
+// with the self^ last describes the other order, so its receiver is what may
+// stand on the RIGHT and its parameter what may stand on the left.
+static void fold_arm(Checker *c, Candidates *into, const LhatType *arm,
+                     LhatType *receiver)
+{
+    if (arm == NULL || arm->kind != LHAT_TYPE_FUNC) {
+        return;
+    }
+    LhatType *operand =
+        arm->v.func.params != NULL ? arm->v.func.params->type : NULL;
+    LhatType *mine = arm->v.func.self_last ? operand : receiver;
+    LhatType *theirs = arm->v.func.self_last ? receiver : operand;
+    LhatTypeArena *types = c->result->types;
+    if (mine != NULL) {
+        into->left = lhat_type_union(types, into->left, mine);
+    }
+    if (theirs != NULL) {
+        into->right = lhat_type_union(types, into->right, theirs);
+    }
+    LhatType *answered = lhat_type_call_answer((LhatType *)arm);
+    if (answered != NULL) {
+        into->answer = lhat_type_union(types, into->answer, answered);
+    }
+}
+
+// 03 の 3.4改: what an operator of this name may be written on, here. 11.8's
+// number^ carries the arithmetic and is always a candidate; every def^ this
+// unit binds to a name and writes an op^ of the name on is another. Each
+// position's union is what a parameter standing there may be.
+//
+// Held by name (check.c's carriers), so the type is read through the scope on
+// every walk -- a def^'s is remade on each of them (03 の 3.4改2). Reading one
+// this walk has not settled yet asks for another round, which is what lets a
+// body written above the def^ answer the same as one written below it (8.7).
+static Candidates operator_candidates(Checker *c, const char *name,
+                                      size_t length)
+{
+    Candidates found;
+    // 11.8: the built-in, which every arithmetic name has and nothing can
+    // take away.
+    found.left = chk_simple(c, LHAT_TYPE_NUMBER);
+    found.right = chk_simple(c, LHAT_TYPE_NUMBER);
+    found.answer = chk_simple(c, LHAT_TYPE_NUMBER);
+    found.count = 1;
+
+    uint16_t bit = chk_operator_bit(name, length);
+    if (bit == 0 || (c->unit_operators & bit) == 0) {
+        return found;
+    }
+    for (size_t i = 0; i < c->operator_carrier_count; i++) {
+        const OperatorCarrier *carrier = &c->operator_carriers[i];
+        if ((carrier->operators & bit) == 0) {
+            continue;
+        }
+        Binding *b = chk_scope_find(c->scope, carrier->name,
+                                    carrier->name_length, NULL);
+        if (b == NULL) {
+            continue;
+        }
+        if (!b->reached) {
+            // 3.4改2: answered from the seed, so this walk read ahead of
+            // itself and another one may answer better.
+            c->read_provisional = true;
+        }
+        LhatType *instance = chk_instance_of(b->type);
+        if (instance == NULL) {
+            continue;
+        }
+        LhatType *member = chk_operator_member(c, instance, name, length);
+        if (member == NULL) {
+            continue;  // the seed has no members yet; the next round will
+        }
+        found.count++;
+        if (member->kind == LHAT_TYPE_INTERSECT) {
+            for (const LhatTypeList *arm = member->v.composite.arms;
+                 arm != NULL; arm = arm->next) {
+                fold_arm(c, &found, arm->type, instance);
+            }
+        } else {
+            fold_arm(c, &found, member, instance);
+        }
+    }
+    return found;
 }
 
 static LhatType *infer_operator(Checker *c, const LhatNode *node, LhatOpKind op,
@@ -267,21 +390,32 @@ static LhatType *infer_operator(Checker *c, const LhatNode *node, LhatOpKind op,
     }
 
     // 03 の 3.4: the left operand is the receiver (14.4), so an operator used
-    // on a parameter is a demand on it. 14.8 makes number^ the one type
-    // carrying the arithmetic, which is what makes this readable -- '..' is
-    // the one name here that more than one type answers (11.2), so it demands
-    // nothing. builtin_operator reads the same distinction the same way.
+    // on a parameter is a demand on it -- and what it demands is what may
+    // carry the operator here. '..' is the one name that demands nothing
+    // (11.2 gives it composition as well as concatenation, and only one of
+    // the two is an op^ to count).
     //
-    // Once demanded, the rest reads as though number^ had been written: the
-    // right operand is asked for what number^'s operator takes, which is a
-    // demand of its own when that side is a parameter too ('x + y').
+    // 3.4改: with 11.8's built-in the only candidate the demand is number^,
+    // which is what it has always been. Where the unit writes an op^ of this
+    // name the demand is the union, and the body below then says the operator
+    // is not settled -- but the signature names the candidates, so a writer
+    // can annotate one or narrow to it (13.11).
     if (chk_param_var_for(c, left) != NULL) {
         if (name[0] == '.') {
             return NULL;
         }
-        LhatType *number = chk_simple(c, LHAT_TYPE_NUMBER);
-        chk_constrain(c, left, number);
-        left = number;
+        Candidates found = operator_candidates(c, name, length);
+        chk_constrain(c, left, found.left);
+        if (found.count > 1) {
+            // Several could be meant and nothing here says which. The demands
+            // still go on, so the signature names them and a writer can pick
+            // one -- by annotating, or by narrowing to it in the body (13.11)
+            // -- and the answer is what any of them would give.
+            chk_constrain(c, right, found.right);
+            chk_report(c, node, LHAT_CHECK_ERR_OPERATOR_UNSETTLED);
+            return found.answer;
+        }
+        left = found.left;
     }
 
     if (chk_operator_undecided(left)) {
@@ -319,13 +453,21 @@ static LhatType *infer_operator(Checker *c, const LhatNode *node, LhatOpKind op,
     // Answering NULL here instead would fall back on 14.8's number^ (the
     // caller's), which is not what the arm says and not what the machine
     // returns -- call_operator has always searched these.
-    if (carrier->kind == LHAT_TYPE_INTERSECT) {
-        // 3.5: with nothing decided about the right operand there is nothing
-        // to choose by. The demand a single arm would make cannot be made
-        // either, since the arms disagree about what they want.
-        if (chk_operator_undecided(right) || chk_param_var_for(c, right) != NULL) {
+    // 03 の 3.4: with nothing decided about the right operand there is nothing
+    // to choose an arm by -- but a group may still leave only one choice, and
+    // then what that arm takes is a demand on this side exactly as a lone
+    // signature's is. 'f^ x:A, y { x * y }' is the case: A writes both orders,
+    // and only one of them is this one.
+    if (carrier->kind == LHAT_TYPE_INTERSECT &&
+        (chk_operator_undecided(right) || chk_param_var_for(c, right) != NULL)) {
+        LhatType *only = sole_forward_arm(carrier);
+        if (only == NULL) {
             return NULL;
         }
+        carrier = only;
+    }
+
+    if (carrier->kind == LHAT_TYPE_INTERSECT) {
         LhatType *args[1] = { right };
         for (const LhatTypeList *arm = carrier->v.composite.arms; arm != NULL;
              arm = arm->next) {

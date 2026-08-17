@@ -766,6 +766,140 @@ static void test_results(void)
 // it. Not unification -- the demands are collected and intersected, which is
 // why 11.3's structural reading is what makes this work rather than what makes
 // it hard.
+// 03 の 3.4改3: what an operator demands of a parameter is the union of the
+// types that could carry it -- 11.8's built-in, and whatever this unit wrote
+// an op^ of the name on. With the built-in alone the demand is number^, which
+// is what it has always been; the cases above are all of that kind.
+static void test_operator_candidates(void)
+{
+    Unit u;
+
+    // 11.3改: A writes both orders, but only one of them is this one, so
+    // there is one arm to read the right operand's type off.
+    LHAT_TEST("one side written settles the other");
+    check_text(&u,
+               "var^ A = def^{\n"
+               "  self^{ a := 0 },\n"
+               "  op^* := f^self^, r:number^ -> Self^ { return^ self^ },\n"
+               "  overload^op^* := f^l:number^, self^ -> Self^ { return^ self^ },\n"
+               "}\n"
+               "var^ f = f^ x:A, y { return^ x * y }\n"
+               "var^ r = f(A.new(), 2)\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("and the other side is checked against what that arm takes");
+    check_text(&u,
+               "var^ A = def^{\n"
+               "  self^{ a := 0 },\n"
+               "  op^* := f^self^, r:number^ -> Self^ { return^ self^ },\n"
+               "  overload^op^* := f^l:number^, self^ -> Self^ { return^ self^ },\n"
+               "}\n"
+               "var^ f = f^ x:A, y { return^ x * y }\n"
+               "var^ r = f(A.new(), \"s\")\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
+    unit_dispose(&u);
+
+    // Two arms for this same order disagree about what they take, so there is
+    // nothing to read a demand off.
+    LHAT_TEST("but two arms of one order settle nothing");
+    check_text(&u,
+               "var^ B = def^{\n"
+               "  self^{ b := 0 },\n"
+               "  op^* := f^self^, r:number^ -> number^ { return^ r },\n"
+               "  overload^op^* := f^self^, r:string^ -> number^ "
+               "{ return^ 0 },\n"
+               "}\n"
+               "var^ f = f^ x:B, y { return^ x * y }\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_PARAM_UNDECIDED);
+    unit_dispose(&u);
+
+    // With neither side written the demand is the union, and the body says
+    // that nothing here picks between them.
+    LHAT_TEST("neither side written demands the candidates");
+    check_text(&u,
+               "var^ A = def^{\n"
+               "  self^{ a := 0 },\n"
+               "  op^* := f^self^, r:number^ -> Self^ { return^ self^ },\n"
+               "  overload^op^* := f^l:number^, self^ -> Self^ { return^ self^ },\n"
+               "}\n"
+               "var^ f = f^ x, y { return^ x * y }\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_OPERATOR_UNSETTLED);
+    unit_dispose(&u);
+
+    // The union is what the parameters hold, which is the whole point of
+    // making it: a call may hand over either candidate, on either side.
+    LHAT_TEST("and the union is what the parameters take");
+    check_text(&u,
+               "var^ A = def^{\n"
+               "  self^{ a := 0 },\n"
+               "  op^* := f^self^, r:number^ -> Self^ { return^ self^ },\n"
+               "  overload^op^* := f^l:number^, self^ -> Self^ { return^ self^ },\n"
+               "}\n"
+               "var^ f = f^ x, y { return^ x * y }\n"
+               "var^ a = f(A.new(), 2)\n"
+               "var^ b = f(2, A.new())\n");
+    CHECK_NOT_REPORTED(&u, LHAT_CHECK_ERR_MISMATCH);
+    unit_dispose(&u);
+
+    LHAT_TEST("while what carries neither is still refused");
+    check_text(&u,
+               "var^ A = def^{\n"
+               "  self^{ a := 0 },\n"
+               "  op^* := f^self^, r:number^ -> Self^ { return^ self^ },\n"
+               "  overload^op^* := f^l:number^, self^ -> Self^ { return^ self^ },\n"
+               "}\n"
+               "var^ f = f^ x, y { return^ x * y }\n"
+               "var^ a = f(\"s\", 2)\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
+    unit_dispose(&u);
+
+    // Per operator name, not per unit: writing op^* says nothing about '+'.
+    LHAT_TEST("a name nobody wrote is the built-in alone");
+    check_text(&u,
+               "var^ A = def^{\n"
+               "  self^{ a := 0 },\n"
+               "  op^* := f^self^, r:number^ -> Self^ { return^ self^ },\n"
+               "  overload^op^* := f^l:number^, self^ -> Self^ { return^ self^ },\n"
+               "}\n"
+               "var^ f = f^ x, y -> number^ { return^ x + y }\n"
+               "var^ n : number^ = f(1, \"a\")\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
+    CHECK_NOT_REPORTED(&u, LHAT_CHECK_ERR_OPERATOR_UNSETTLED);
+    unit_dispose(&u);
+
+    // 8.7 makes the name visible over the whole unit, so a body written above
+    // the def^ has to read the same candidates one written below it does.
+    LHAT_TEST("where the def^ stands does not change the answer");
+    check_text(&u,
+               "var^ f = f^ x, y { return^ x * y }\n"
+               "var^ A = def^{\n"
+               "  self^{ a := 0 },\n"
+               "  op^* := f^self^, r:number^ -> Self^ { return^ self^ },\n"
+               "  overload^op^* := f^l:number^, self^ -> Self^ { return^ self^ },\n"
+               "}\n"
+               "var^ a = f(A.new(), 2)\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_OPERATOR_UNSETTLED);
+    CHECK_NOT_REPORTED(&u, LHAT_CHECK_ERR_MISMATCH);
+    unit_dispose(&u);
+
+    // 13.11: the other way out. The union is written down and the body picks
+    // an arm by narrowing to it, which is what the signature was naming.
+    LHAT_TEST("narrowing the union picks an arm");
+    check_text(&u,
+               "var^ A = def^{\n"
+               "  self^{ a := 0 },\n"
+               "  op^* := f^self^, r:number^ -> Self^ { return^ self^ },\n"
+               "  overload^op^* := f^l:number^, self^ -> Self^ { return^ self^ },\n"
+               "}\n"
+               "var^ f = f^ x:A|number^ -> number^ {\n"
+               "  if^ x isa^ A { return^ 1 }\n"
+               "  return^ x * 2\n"
+               "}\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+}
+
 static void test_parameter_inference(void)
 {
     Unit u;
@@ -2150,6 +2284,7 @@ int main(void)
     test_expressions();
     test_results();
     test_parameter_inference();
+    test_operator_candidates();
     test_undecided_results();
     test_errors();
     test_annotations();

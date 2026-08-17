@@ -1148,6 +1148,22 @@ bool chk_is_operator_name(const char *name, size_t length)
     return false;
 }
 
+// 03 の 3.4改: the same list read as a bit each, so "does this unit write an
+// op^ of this name" is one test. Zero for a name no operator wears.
+uint16_t chk_operator_bit(const char *name, size_t length)
+{
+    uint16_t at = 0;
+#define LHAT_OPERATOR_BIT(opk, bc, spelling, len)                    \
+    if (length == (len) && memcmp(name, spelling, (len)) == 0) {     \
+        return (uint16_t)(1u << at);                                 \
+    }                                                                \
+    at++;
+    LHAT_OPERATOR_MEMBERS(LHAT_OPERATOR_BIT)
+#undef LHAT_OPERATOR_BIT
+    (void)at;
+    return 0;
+}
+
 // 11.8: an operator is an f^ that takes self^ and one argument. 11.1 makes it
 // a function -- a p^ could carry side effects into an operator -- and 14.4
 // puts the left operand in self^, which leaves the right one as the single
@@ -1306,6 +1322,97 @@ bool chk_operator_undecided(const LhatType *type)
 {
     return type == NULL || type->kind == LHAT_TYPE_UNKNOWN ||
            type->kind == LHAT_TYPE_PENDING || type->kind == LHAT_TYPE_ANY;
+}
+
+// ---------------------------------------------------------------------------
+// 03 の 3.4改: the operators this unit writes
+// ---------------------------------------------------------------------------
+
+// Which operators one def^ writes, following 14.5's '..' so that a chain
+// carries what its parts wrote. Composing is settled at the definition
+// (14.2), so the parts are here to read.
+static uint16_t operators_written(Checker *c, const LhatNode *definition)
+{
+    if (definition == NULL) {
+        return 0;
+    }
+    if (definition->kind == LHAT_NODE_BINARY &&
+        definition->v.binary.op == LHAT_OP_CONCAT) {
+        return (uint16_t)(operators_written(c, definition->v.binary.left) |
+                          operators_written(c, definition->v.binary.right));
+    }
+    if (definition->kind != LHAT_NODE_DEF) {
+        return 0;
+    }
+    uint16_t written = 0;
+    for (const LhatNode *entry = definition->v.list.items; entry != NULL;
+         entry = entry->next) {
+        const char *name = NULL;
+        size_t length = 0;
+        if (entry->v.entry.key != NULL &&
+            chk_node_name(c, entry->v.entry.key, &name, &length)) {
+            written |= chk_operator_bit(name, length);
+        }
+    }
+    return written;
+}
+
+// 03 の 3.4改: read before anything is walked. 8.7 makes a name visible over
+// the whole unit, so a body using an operator has to see the same candidates
+// wherever the def^ carrying one stands relative to it -- which is why this
+// is a pass of its own rather than something the walk accumulates.
+//
+// Only the top level, and only this unit. A def^ made inside a body is not a
+// name any other body here can write, and 05 の 5.3's require^ reaches
+// another unit -- a signature written here should be readable from here.
+void chk_collect_operator_carriers(Checker *c, const LhatNode *statements)
+{
+    size_t capacity = 0;
+    for (const LhatNode *s = statements; s != NULL; s = s->next) {
+        if (s->kind == LHAT_NODE_DEFINE) {
+            capacity++;
+        }
+    }
+    if (capacity == 0) {
+        return;
+    }
+    c->operator_carriers =
+        (OperatorCarrier *)lhat_alloc(capacity * sizeof *c->operator_carriers);
+    if (c->operator_carriers == NULL) {
+        return;  // 03 の 4.2: no room to know, so the built-in answers alone
+    }
+
+    for (const LhatNode *s = statements; s != NULL; s = s->next) {
+        if (s->kind != LHAT_NODE_DEFINE || s->v.binding.values == NULL) {
+            continue;
+        }
+        uint16_t written = operators_written(c, s->v.binding.values);
+        if (written == 0) {
+            continue;
+        }
+        const LhatNode *target = s->v.binding.targets;
+        const char *name = NULL;
+        size_t length = 0;
+        if (target == NULL || target->next != NULL ||
+            !chk_node_name(c, lhat_define_target_name(target), &name,
+                           &length)) {
+            continue;  // 13.10's several names take a run apart, not a def^
+        }
+        OperatorCarrier *at =
+            &c->operator_carriers[c->operator_carrier_count++];
+        at->name = name;
+        at->name_length = length;
+        at->operators = written;
+        c->unit_operators |= written;
+    }
+}
+
+void chk_dispose_operator_carriers(Checker *c)
+{
+    lhat_free(c->operator_carriers);
+    c->operator_carriers = NULL;
+    c->operator_carrier_count = 0;
+    c->unit_operators = 0;
 }
 
 // ---------------------------------------------------------------------------
@@ -2354,6 +2461,11 @@ void lhat_check_unit(const LhatNode *unit, const LhatLexer *lexer, bool strict,
     chk_check_annotations(&checker, unit->v.list.annotations,
                           LHAT_ANNOTATION_UNIT);
 
+    // 03 の 3.4改: read before the walk, since what an operator demands of a
+    // parameter depends on it and 8.7 puts every name of the unit in reach of
+    // every body.
+    chk_collect_operator_carriers(&checker, unit->v.list.items);
+
     chk_check_statements(&checker, unit->v.list.items);
 
     // 05 の 4 章: gathered once the whole unit has been checked, so a public^
@@ -2368,6 +2480,7 @@ void lhat_check_unit(const LhatNode *unit, const LhatLexer *lexer, bool strict,
     chk_settle_resolutions(result);
 #endif
 
+    chk_dispose_operator_carriers(&checker);
     chk_scope_dispose(&scope);
 }
 
@@ -2578,6 +2691,11 @@ void lhat_check_next(LhatCheckSession *session, const LhatNode *unit,
         }
     }
 
+    // 03 の 3.4改: this input's own, as a unit's are. What an earlier input
+    // bound is not read here -- a prompt's answer stays what the line in
+    // front of the writer says.
+    chk_collect_operator_carriers(&checker, unit->v.list.items);
+
     chk_check_statements(&checker, unit->v.list.items);
     result->exports = chk_collect_exports(&checker, unit->v.list.items);
 
@@ -2594,6 +2712,7 @@ void lhat_check_next(LhatCheckSession *session, const LhatNode *unit,
     session->environment = checker.environment;
     session->typeinfo_type = checker.typeinfo_type;
 
+    chk_dispose_operator_carriers(&checker);
     chk_scope_dispose(&scope);
 }
 
@@ -2895,6 +3014,10 @@ const char *lhat_check_error_message(LhatCheckErrorCode code)
         case LHAT_CHECK_ERR_RESULT_UNDECIDED:
             return "the result type did not come out of this body, so it has "
                    "to be written";
+        case LHAT_CHECK_ERR_OPERATOR_UNSETTLED:
+            return "several types here carry this operator and nothing says "
+                   "which is meant; write one of the types the signature "
+                   "names, or narrow to it with isa^";
         case LHAT_CHECK_ERR_PARAM_UNDECIDED:
             return "nothing in this body says what this parameter is, so its "
                    "type has to be written; any^ is how to say it really does "

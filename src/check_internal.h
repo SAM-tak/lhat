@@ -111,6 +111,17 @@ typedef struct Narrowing {
 // A member reached off such a parameter gets one of these too, so that
 // 'x.foo(1)' can demand t^{ foo : p^number^; } rather than only the name.
 // Its slot is the member's type inside the demand its parent is collecting.
+// 03 の 3.4改: a top-level name this unit binds to a def^ that writes an op^.
+// Held by name rather than by type, since a def^'s type is made afresh on
+// every walk -- the name is looked up through the scope where the demand is
+// wanted, which is also what makes a walk that reads it too early ask for
+// another round.
+typedef struct {
+    const char *name;
+    size_t name_length;
+    uint16_t operators;  // one bit per LHAT_OPERATOR_MEMBERS entry, in order
+} OperatorCarrier;
+
 typedef struct ParamVar {
     LhatType *slot;
     // Where the parameter was written, so 03 の 3.1 can say which one nothing
@@ -206,6 +217,19 @@ typedef struct {
     // one's -- a demand made inside one still reaches an outer parameter, since
     // the value it names came from out there.
     ParamVar *param_vars;
+
+    // 03 の 3.4改: what this unit writes an op^ for, so that an operator used
+    // on a parameter demands the candidates rather than 11.8's built-in
+    // alone. Read off the syntax before anything is walked -- 8.7 makes a
+    // name visible over the whole unit, so where the def^ stands relative to
+    // the body using the operator cannot matter.
+    //
+    // The types are not kept: a def^'s is rebuilt on every walk (03 の
+    // 3.4改2), so what is held is the name to look up and which operators it
+    // writes, one bit per LHAT_OPERATOR_MEMBERS entry.
+    OperatorCarrier *operator_carriers;
+    size_t operator_carrier_count;
+    uint16_t unit_operators;  // the union of the bits below, to test in one go
 
     // 8.7: inside a subroutine body nothing runs where it is written, so the
     // ordering rule does not apply. A counter rather than a flag, since
@@ -468,6 +492,9 @@ bool chk_can_be(const LhatType *type, const LhatType *wanted);
 LhatType *chk_require_value(Checker *c, const LhatNode *at, LhatType *type);
 const char *chk_operator_name(LhatOpKind op, size_t *length);
 bool chk_is_operator_name(const char *name, size_t length);
+uint16_t chk_operator_bit(const char *name, size_t length);
+void chk_collect_operator_carriers(Checker *c, const LhatNode *statements);
+void chk_dispose_operator_carriers(Checker *c);
 void chk_check_operator_shape(Checker *c, const LhatNode *at,
                               const LhatType *type, const char *name,
                               size_t length);
