@@ -2790,6 +2790,16 @@ static bool signatures_overlap(const LhatType *a, const LhatType *b)
         return true;  // nothing here can tell them apart
     }
 
+    // 11.3改: which side the receiver stands on is a position too, and the
+    // one a call fixes first. An operator written 'f^self^, rhs' answers a
+    // use with its owner on the left and 'f^lhs, self^' one with it on the
+    // right; 11.3改's order asks the left operand first and only then the
+    // right, so no use ever reaches both. The two are different types
+    // (type.h) and operator_arm already picks between them by this alone.
+    if (a->v.func.self_last != b->v.func.self_last) {
+        return false;
+    }
+
     size_t count_a = 0;
     size_t count_b = 0;
     for (const LhatTypeList *p = a->v.func.params; p != NULL; p = p->next) {

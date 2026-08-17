@@ -686,6 +686,36 @@ static void test_no_value(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
+    // 14.12 with 11.3改: and the two orders are apart even where the operand
+    // is the same type on both sides, which is the ordinary case -- 'v * 2'
+    // and '2 * v'. Which side the receiver stands on is a position too, and
+    // the one 11.3's order settles before any other is looked at.
+    LHAT_TEST("both orders of one operand type are not an overlap");
+    check_text(&u,
+               "var^ V = def^{\n"
+               "  self^{ n := 0 },\n"
+               "  op^* := f^self^, r:number^ -> number^ { return^ self^.n * r },\n"
+               "  overload^ op^* := f^lhs:number^, self^ -> number^ "
+               "{ return^ lhs * self^.n },\n"
+               "}\n"
+               "var^ a : number^ = V.new() * 2\n"
+               "var^ b : number^ = 2 * V.new()\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // The receiver's side is what separates them, so two written for the same
+    // side still collide however the operands are spelled.
+    LHAT_TEST("but two written for one order still overlap");
+    check_text(&u,
+               "var^ V = def^{\n"
+               "  self^{ n := 0 },\n"
+               "  op^* := f^self^, r:number^ -> number^ { return^ r },\n"
+               "  overload^ op^* := f^self^, o:number^ -> number^ "
+               "{ return^ self^.n },\n"
+               "}\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_OVERLOAD_OVERLAPS);
+    unit_dispose(&u);
+
     // 14.4: everywhere else the receiver is what stands before the dot, so a
     // member saying it is the last argument says nothing that can be acted on.
     LHAT_TEST("only an op^ writes its self^ last");
