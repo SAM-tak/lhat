@@ -9701,9 +9701,9 @@ other^:             →  else^
 何が起きるかを決めるのは常にホストであって言語ではない。
 
 ```lhat
-@tool
 module^ demo.player
 
+@tool
 public^let^ Player = def^{
     self^{
         @export(0, 100) hp = 50,
@@ -9788,10 +9788,10 @@ Java の annotation、Go の struct tag と同じ側で、**情報を運ぶだ�
 私有の束縛に書いても届くものが無い。
 
 ```lhat
-@prime
+@game
 public^let^ Spinner = …      # 通る
 
-@prime
+@game
 let^ Hidden = …              # 誤り。ホストはこの値に手が届かない
 ```
 

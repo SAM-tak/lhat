@@ -629,6 +629,47 @@ static LhatUnitTypeKind written_type_kind(const LhatUnit *unit,
     return LHAT_UNIT_TYPE_OTHER;
 }
 
+// What a value is written as, for a field given one instead of a type. 14.6
+// lets 'speed = 1' stand without saying number^, and a host putting a widget
+// on that field has nothing else to read: this runs before anything has, so
+// there is no value to look at, only the way one was spelt.
+//
+// Only a literal answers. Anything worked out is the checker's to know, and
+// what a host does with the answer -- pick a spin box or a text field -- is
+// not worth being wrong about.
+static LhatUnitTypeKind value_type_kind(const LhatUnit *unit,
+                                        const LhatNode *value)
+{
+    if (value == NULL) {
+        return LHAT_UNIT_TYPE_OTHER;
+    }
+    switch (value->kind) {
+        case LHAT_NODE_INT:
+        case LHAT_NODE_FLOAT:
+            return LHAT_UNIT_TYPE_NUMBER;
+        // 01 の 5.4: an interpolation is a string however many holes it has.
+        case LHAT_NODE_STRING:
+        case LHAT_NODE_INTERP:
+            return LHAT_UNIT_TYPE_STRING;
+        case LHAT_NODE_HAT_IDENT:
+            break;  // true^ and false^ arrive as these
+        default:
+            return LHAT_UNIT_TYPE_OTHER;
+    }
+
+    const char *spelt = NULL;
+    size_t length = 0;
+    if (!lhat_node_name(value, unit->lexer.source->text, unit->lexer.strings,
+                        &spelt, &length)) {
+        return LHAT_UNIT_TYPE_OTHER;
+    }
+    if ((length == 5 && memcmp(spelt, "true^", 5) == 0) ||
+        (length == 6 && memcmp(spelt, "false^", 6) == 0)) {
+        return LHAT_UNIT_TYPE_BOOL;
+    }
+    return LHAT_UNIT_TYPE_OTHER;
+}
+
 // One pass answers both the count and the one at an index, since neither is
 // worth an array the unit would have to keep.
 typedef struct {
@@ -708,6 +749,12 @@ LhatUnitMember lhat_unit_member(const LhatUnit *unit, const char *definition,
         out.name_length = length;
     }
     out.declared = entry->v.entry.declared;
+    // The written type first: 14.6's 'name : type = value' says it outright.
+    // Where only a value was written, the way it was spelt is what is left.
+    out.type = written_type_kind(unit, entry->v.entry.type);
+    if (out.type == LHAT_UNIT_TYPE_OTHER) {
+        out.type = value_type_kind(unit, entry->v.entry.value);
+    }
     for (const LhatNode *at = member_params(unit, entry); at != NULL;
          at = at->next) {
         out.parameter_count++;

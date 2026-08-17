@@ -54,6 +54,21 @@ class LhatScript : public ScriptExtension {
     String klass_name;
     int64_t next_id = 1;
     bool runnable = false;
+    // 02 の 18: whether the class a node wears carried @tool rather than
+    // @game. Read once when the class is found, since _is_tool is const and
+    // asked often -- walking the tree each time would be walking it per frame.
+    bool tool_script = false;
+
+    // Which machine the instances belong to. _reload disposes the one they
+    // were made on, and a node goes on holding its script instance across
+    // that -- so what it holds is a value out of freed memory, and the check
+    // that it still looks like a table would be reading that memory to ask.
+    //
+    // Counted rather than chased: the script would otherwise have to keep a
+    // list of live instances and reach into each, and an instance that
+    // outlives its machine has nothing worth saying anyway. One number tells
+    // it it is from the machine before.
+    uint64_t generation = 1;
 
     // What to say if somebody wears this file, and nothing if nobody does.
     // Godot reads every .lh in the project as a script resource, so a
@@ -73,6 +88,10 @@ public:
     // What the instance table's functions work through. NULL until _reload
     // has made one.
     LhatMachine *lhat_machine() const { return machine; }
+    // Which machine the caller's value came from. An instance keeps the
+    // number it was made under and stops touching what it holds once the two
+    // part company (see `generation` above).
+    uint64_t lhat_generation() const { return generation; }
     LhatValue lhat_class() const { return klass; }
     const LhatUnit *lhat_unit() const { return unit; }
     const String &lhat_class_name() const { return klass_name; }

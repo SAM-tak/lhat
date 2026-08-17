@@ -225,6 +225,16 @@ LhatAnnotation lhat_unit_annotation(const LhatUnit *unit,
 LhatAnnotationArgument lhat_annotation_argument(LhatAnnotation annotation,
                                                 size_t at);
 
+// As much of a written type as a host can act on. Nothing else in a host's
+// world is shaped like L^'s types, so this is the same coarse reading 18.3
+// gives an annotation's arguments rather than a second type system.
+typedef enum {
+    LHAT_UNIT_TYPE_OTHER,
+    LHAT_UNIT_TYPE_NUMBER,
+    LHAT_UNIT_TYPE_STRING,
+    LHAT_UNIT_TYPE_BOOL
+} LhatUnitTypeKind;
+
 // What a definition declares, in the order it was written. An annotation says
 // what a member is for (18.1), and acting on that takes knowing its shape --
 // which the tree holds whether or not the member has a value at run time.
@@ -236,6 +246,11 @@ typedef struct {
     // f^ / p^ the member holds. 13.4 makes self^ none of them, so a receiver
     // is not counted -- what is here is what a call writes.
     size_t parameter_count;
+    // 14.6: the type of 'name : type = value', and where only a value was
+    // written, what that value is written as. A host showing a field in an
+    // editor has to put a widget on it before anything has run, and the tree
+    // is all there is to go on then.
+    LhatUnitTypeKind type;
 } LhatUnitMember;
 
 // The members of the definition `definition` holds, its template's fields
@@ -244,16 +259,6 @@ typedef struct {
 size_t lhat_unit_member_count(const LhatUnit *unit, const char *definition);
 LhatUnitMember lhat_unit_member(const LhatUnit *unit, const char *definition,
                                 size_t index);
-
-// As much of a written type as a host can act on. Nothing else in a host's
-// world is shaped like L^'s types, so this is the same coarse reading 18.3
-// gives an annotation's arguments rather than a second type system.
-typedef enum {
-    LHAT_UNIT_TYPE_OTHER,
-    LHAT_UNIT_TYPE_NUMBER,
-    LHAT_UNIT_TYPE_STRING,
-    LHAT_UNIT_TYPE_BOOL
-} LhatUnitTypeKind;
 
 // One parameter of the member at `member`, as it was written. The name is
 // what a host shows a reader -- an editor's argument list, a signal's

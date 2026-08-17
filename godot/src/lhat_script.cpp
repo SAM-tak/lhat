@@ -1,5 +1,6 @@
 #include "lhat_script.h"
 
+#include <godot_cpp/classes/engine.hpp>
 #include <godot_cpp/core/class_db.hpp>
 #include <godot_cpp/variant/utility_functions.hpp>
 
@@ -17,8 +18,8 @@ void LhatScript::_bind_methods()
 
 namespace {
 
-// 02 の 18: whether the binding of this name was written with @prime.
-bool marked_prime(const LhatUnit *unit, const String &name)
+// 02 の 18: whether the binding of this name carries this mark.
+bool marked_with(const LhatUnit *unit, const String &name, const char *mark)
 {
     CharString spelt = name.utf8();
     size_t written = lhat_unit_annotation_count(unit, spelt.get_data(), NULL);
@@ -26,7 +27,7 @@ bool marked_prime(const LhatUnit *unit, const String &name)
         LhatAnnotation at =
             lhat_unit_annotation(unit, spelt.get_data(), NULL, i);
         if (at.name != NULL &&
-            String::utf8(at.name, (int)at.name_length) == "prime") {
+            String::utf8(at.name, (int)at.name_length) == mark) {
             return true;
         }
     }
@@ -36,16 +37,22 @@ bool marked_prime(const LhatUnit *unit, const String &name)
 // 05 の 5.5: what a module^ unit answers is the table of its public^ names,
 // and 14.9 marks a table a def^ made -- so the classes a unit publishes are
 // there to find without a naming convention. Which of them a node wears is
-// what @prime says.
+// what @game and @tool say, and which of the two says it is when it runs.
 //
-// A unit publishing one class need not say it. That is not a second rule so
-// much as the first one asked of a shorter list: with one candidate there is
-// nothing to choose. Saying it where there are several is what the engine
+// Two marks, one question. @tool is @game plus the editor (Unity spells the
+// same thing [ExecuteAlways]), so a class is one or the other and never both.
+// Splitting them into "which class" and "when" instead would have every
+// wearable file carry two marks, and the second would mean nothing anywhere
+// but on the class the first picked.
+//
+// A unit publishing one class need name neither. That is not a further rule
+// so much as the first one asked of a shorter list: with one candidate there
+// is nothing to choose. Saying it where there are several is what the engine
 // could not otherwise know, and 18.1 is where a host's question belongs --
 // "the one public^ def^" was a rule the language had no part in, and it made
 // publishing a second class cost the file its script.
 //
-// 18.4改 registers @prime for a published binding only, so a mark on one kept
+// 18.4改 registers both for a published binding only, so a mark on one kept
 // private is refused where it is written rather than passed over here.
 //
 // Answers false when nothing is wearable, with `said` set where a writer has
@@ -53,18 +60,20 @@ bool marked_prime(const LhatUnit *unit, const String &name)
 // contradicting itself is wrong however it is used, while a file that has not
 // said which class a node wears is only a file that does not answer that
 // question -- which is what every library looks like.
-bool prime_definition(const LhatUnit *unit, LhatValue answered, LhatValue *out,
-                      String *name, String *said, bool *when_worn)
+bool worn_definition(const LhatUnit *unit, LhatValue answered, LhatValue *out,
+                     String *name, bool *tool, String *said, bool *when_worn)
 {
     *when_worn = false;
+    *tool = false;
     if (!lhat_is_object_kind(answered, LHAT_OBJECT_TABLE)) {
         return false;
     }
     const LhatTable *table = (const LhatTable *)lhat_as_object(answered);
     size_t definitions = 0;
-    size_t primes = 0;
+    size_t marks = 0;
     LhatValue only = lhat_nil();
     String only_name;
+    bool only_tool = false;
 
     for (size_t i = 0; i < table->entry_capacity; i++) {
         const LhatTableEntry *entry = &table->entries[i];
@@ -81,34 +90,41 @@ bool prime_definition(const LhatUnit *unit, LhatValue answered, LhatValue *out,
         String spelt = String::utf8(key->text, (int)key->length);
 
         definitions++;
-        if (marked_prime(unit, spelt)) {
-            primes++;
-            if (primes > 1) {
-                *said = String("more than one @prime here: a node wears one "
-                               "class, so one binding may carry it");
+        bool as_tool = marked_with(unit, spelt, "tool");
+        // Counted together: they are two answers to one question, so a second
+        // of either is a second answer.
+        if (as_tool || marked_with(unit, spelt, "game")) {
+            marks++;
+            if (marks > 1) {
+                *said = String(
+                    "more than one @game or @tool here: a node wears one "
+                    "class, so one binding may carry one of them");
                 return false;
             }
             only = entry->value;
             only_name = spelt;
+            only_tool = as_tool;
             continue;
         }
         // Kept in case nothing is marked and this turns out to be the only
         // one. A marked one already found is not written over.
-        if (primes == 0) {
+        if (marks == 0) {
             only = entry->value;
             only_name = spelt;
         }
     }
 
-    if (primes == 0 && definitions > 1) {
+    if (marks == 0 && definitions > 1) {
         // Not said at load. Godot reads every .lh in the project as a script
         // resource, so this would fire on a library nobody is wearing --
         // 05 の 5.5 has a unit answer its public names, and answering several
         // classes is what a library of them looks like. Measured: the engine
         // does not screen the list a node's Script field offers either, and a
         // GDScript that cannot be worn is found out the same way.
-        *said = String("this unit publishes more than one def^, so which one "
-                       "a node wears has to be written: put @prime above it");
+        *said = String(
+            "this unit publishes more than one def^, so which one a node "
+            "wears has to be written: put @game above it, or @tool for one "
+            "that runs while the scene is being edited too");
         *when_worn = true;
         return false;
     }
@@ -117,6 +133,9 @@ bool prime_definition(const LhatUnit *unit, LhatValue answered, LhatValue *out,
     }
     *out = only;
     *name = only_name;
+    // Unmarked is @game: what runs while somebody is editing their scene is
+    // chosen out loud, never fallen into.
+    *tool = only_tool;
     return true;
 }
 
@@ -130,6 +149,11 @@ LhatScript::~LhatScript()
 void LhatScript::let_go()
 {
     if (machine != nullptr) {
+        // Every instance made on it is now holding freed memory. Nothing here
+        // can reach them -- a node owns its script instance -- so instead the
+        // number they were made under stops matching, and each finds that out
+        // before touching what it holds.
+        generation++;
         lhat_machine_dispose(machine);
         machine = nullptr;
     }
@@ -143,6 +167,7 @@ void LhatScript::let_go()
     klass_name = String();
     unwearable = String();
     runnable = false;
+    tool_script = false;
 }
 
 Error LhatScript::_reload(bool keep_state)
@@ -204,7 +229,8 @@ Error LhatScript::_reload(bool keep_state)
     String name;
     String said;
     bool when_worn = false;
-    if (!prime_definition(unit, ran.value, &klass, &name, &said, &when_worn)) {
+    if (!worn_definition(unit, ran.value, &klass, &name, &tool_script, &said,
+                         &when_worn)) {
         // A unit that declares no class is a library, and require^ is what
         // reaches it -- not an error, only unwearable. `said` is set where
         // the writer has something to fix instead, and `when_worn` where that
@@ -346,9 +372,24 @@ ScriptLanguage *LhatScript::_get_language() const
     return LhatLanguage::get_singleton();
 }
 
+// The line GDScript draws, drawn the same way: `valid && (tool ||
+// ScriptServer::is_scripting_enabled())`. What runs in the editor is what
+// said it should, and everything else is given a placeholder instead.
+//
+// Without this every .lh was a tool script -- a writer's _process ran in the
+// 2D view of a scene they were only editing, which is the whole of what @tool
+// exists to keep from happening.
 bool LhatScript::_can_instantiate() const
 {
-    return runnable;
+    if (!runnable) {
+        return false;
+    }
+    // True in the editor alone; a game launched from it answers false, so
+    // running the scene runs everything as it should.
+    if (Engine::get_singleton()->is_editor_hint()) {
+        return tool_script;
+    }
+    return true;
 }
 
 void *LhatScript::_instance_create(Object *for_object) const
@@ -359,6 +400,14 @@ void *LhatScript::_instance_create(Object *for_object) const
     if (!unwearable.is_empty()) {
         UtilityFunctions::push_error(host::problem(get_path(), unwearable));
     }
+    // Asked of every path the engine reaches an instance by, rather than
+    // trusting it to ask _can_instantiate first: a @game class getting a real
+    // instance in the editor is exactly the thing being stopped, and it is
+    // cheaper to be sure here than to be right about which door was used.
+    if (!_can_instantiate()) {
+        return lhat_placeholder_create(const_cast<LhatScript *>(this),
+                                       for_object);
+    }
     // const because the engine asks it that way; making an instance writes
     // to the table this script owns, which is what the cast is for.
     return lhat_instance_create(const_cast<LhatScript *>(this), for_object);
@@ -366,8 +415,7 @@ void *LhatScript::_instance_create(Object *for_object) const
 
 void *LhatScript::_placeholder_instance_create(Object *for_object) const
 {
-    (void)for_object;
-    return nullptr;
+    return lhat_placeholder_create(const_cast<LhatScript *>(this), for_object);
 }
 
 bool LhatScript::_instance_has(Object *object) const
@@ -428,9 +476,13 @@ int32_t LhatScript::_get_member_line(const StringName &member) const
     return -1;
 }
 
+// 02 の 18: @tool on the class a node wears. Additive rather than exclusive,
+// the way Unity's [ExecuteAlways] is -- a @tool class runs while the scene is
+// being edited *and* when the game runs. @game is the same class without the
+// first half, and is what an unmarked one is.
 bool LhatScript::_is_tool() const
 {
-    return false;
+    return tool_script;
 }
 
 bool LhatScript::_is_abstract() const

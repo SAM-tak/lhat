@@ -2234,9 +2234,9 @@ static void test_annotations(void)
     LHAT_TEST("a public-only annotation is refused on a private binding");
     {
         static const File hidden[] = {
-            {"main.lh", "module^ m\n@prime\nlet^ x = 1\n"}};
+            {"main.lh", "module^ m\n@badge\nlet^ x = 1\n"}};
         program_with(&program, &disk, hidden, 1);
-        lhat_register_annotation(&program, "h", "prime",
+        lhat_register_annotation(&program, "h", "badge",
                                  LHAT_ANNOTATION_PUBLIC, NULL);
         lhat_program_check(&program, "main.lh");
         LHAT_CHECK(lhat_program_has_errors(&program), "reported");
@@ -2246,9 +2246,9 @@ static void test_annotations(void)
     LHAT_TEST("and taken on a published one");
     {
         static const File shown[] = {
-            {"main.lh", "module^ m\n@prime\npublic^let^ x = 1\n"}};
+            {"main.lh", "module^ m\n@badge\npublic^let^ x = 1\n"}};
         program_with(&program, &disk, shown, 1);
-        lhat_register_annotation(&program, "h", "prime",
+        lhat_register_annotation(&program, "h", "badge",
                                  LHAT_ANNOTATION_PUBLIC, NULL);
         lhat_program_check(&program, "main.lh");
         LHAT_CHECK(!lhat_program_has_errors(&program), "clean");

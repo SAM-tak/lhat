@@ -37,29 +37,31 @@ public^let^ Counter = def^{
 }
 ```
 
-#### 公開クラスが2つ以上なら `@prime` で指す
-
-どれを着るかは `@prime` が言う。1つしか無ければ書かなくてよい
-——選ぶものが無いので。
+#### どれを着るかは `@game` か `@tool` が言う
 
 ```lhat
-@prime
+@game
 public^let^ Spinner = Godot.Sprite2D..def^{ … }
 
 public^let^ Helper = def^{ … }      # 同じファイルで公開してよい
 ```
 
-**2つ以上あって印が無ければ誤り**（どれか分からない）。**印が2つでも誤り**
-（ノードが着るのは1つ）。どちらも `_reload` の位置で言う。
+公開クラスが1つなら**どちらも書かなくてよい**——選ぶものが無いので。
 
-**`@prime` は公開された束縛にしか書けない**（02 の 18.4改 の的）。私有の
-`def^` は単位の答えに載らないので、印を付けてもエンジンは値に手が届かない
+**印は単位を通して多くて1つ。** `@game` と `@tool` は跨いで数える。2つ以上は
+誤りで、`_reload` の位置で言う。公開クラスが2つ以上あって印が無い場合は、
+**着せようとした時に**言う——`require^` されるだけのライブラリなら、どれを
+着るかを答えないのは何も間違っていないので（05 の 5.5 のとおり、複数のクラスを
+答えるのがクラスのライブラリの姿）。
+
+**どちらも公開された束縛にしか書けない**（02 の 18.4改 の的）。私有の `def^` は
+単位の答えに載らないので、印を付けてもエンジンは値に手が届かない
 ——書けてしまうと黙って効かないため、検査器がその場で弾く。
 
 ```lhat
-@prime
+@game
 let^ Hidden = …    # error: this annotation was not registered for what it
-                   #        is written above: prime
+                   #        is written above: game
 ```
 
 ［補足］ 私有の `def^` は元から何個でも書けた。単位の答えに載るのは `public^` な
@@ -69,6 +71,35 @@ let^ Hidden = …    # error: this annotation was not registered for what it
 関与していない規約**であり、2つ目のクラスを公開した瞬間にそのファイルが
 スクリプトでなくなる、という代償を払っていた。18.1 のとおり
 「どれが何のためか」を言うのは注釈の仕事である。
+
+#### `@tool` は編集中「も」動く
+
+`@game` と `@tool` の違いは**いつ動くか**だけである。
+
+- 無し / `@game` — ゲーム実行時に動く。シーン編集中は動かない
+- `@tool` — ゲーム実行時に動き、**シーン編集中も動く**
+
+`@tool` は加算であって「エディタ専用」ではない。Unity の `[ExecuteAlways]` と
+同じもので、`@game` にエディタを足したものである。だから両方は書けない
+——一つの問いに二つの答えがあるだけで、問いが二つあるのではない。
+
+編集中は、`@game` のクラスを着たノードには**実体が作られない**。代わりに
+エンジンの placeholder が入り、`@export` の欄はインスペクタに出るが
+`_ready` も `_process` も走らない。書き手が意図しないコードがシーンを開いた
+だけで走らないための線であり、GDScript が引いているのと同じ線である。
+
+［補足］ placeholder が出す欄の初期値は**型の零**（`0` / `""` / `false`）で、
+書かれた初期化式ではない。14.11 が初期化式を `new` の中で走らせる以上、
+実体を作らずに読む道が無いため。ゲームを走らせれば書いたとおりの値になる。
+
+`@tool` を書いた側では、編集中かどうかを訊けたほうがよいことが多い。
+
+```lhat
+_process = p^self^, delta:number^ {
+    if^ godot.isEditorHint() { return^ }
+    self^.setRotation(self^.getRotation() + delta)
+},
+```
 
 `_ready` も `_process` も、エンジンが GDScript を呼ぶのと同じ経路で呼ばれる。
 `_process` が毎フレーム回るのは `has_method` が真を答えるからで、
@@ -169,7 +200,7 @@ public^let^ Spinner = Godot.Sprite2D..def^{
 どれが何のためのものかを知らない。
 
 ```lhat
-@prime
+@game
 public^let^ Spinner = Godot.Sprite2D..def^{
     self^{
         @export_range(0, 10) speed = 1,
@@ -182,8 +213,9 @@ public^let^ Spinner = Godot.Sprite2D..def^{
 }
 ```
 
-- **`@prime`** — その `public^` な `def^` がノードの着るクラスであると言う。
-  公開クラスが1つしか無ければ書かなくてよい。上の「ノードに着せられる」を見る
+- **`@game`** / **`@tool`** — その `public^` な `def^` がノードの着るクラスで
+  あると言う。違いは編集中も動くかどうか。公開クラスが1つしか無ければどちらも
+  書かなくてよい。上の「ノードに着せられる」を見る
 
 - **`@export`** — `self^` の欄をインスペクタに出す。欄の現在値がそのまま
   出て、インスペクタで変えるとその**インスタンスの** `self^` の欄が変わる。
@@ -217,7 +249,7 @@ res://spinner.lh: @signal died is never emitted by name in its own body
 
 計算して得た名前（`emit(names[i], …)`）は「書かれていない」側に落ちる。
 
-登録してあるが**まだエンジン側の意味が無い**もの: `@tool` `@icon` `@rpc`。
+登録してあるが**まだエンジン側の意味が無い**もの: `@icon` `@rpc`。
 書いても検査は通り、何も起きない。
 
 **`@onready` は登録していない。** GDScript のそれは初期化式を `_ready` まで
@@ -374,7 +406,7 @@ godot --headless --path godot\demo
 - 着ていないスクリプトのプロパティ一覧（`_get_script_property_list`）。
   いまインスペクタに出るのはインスタンスの欄だけで、スクリプト自体に
   訊く道は空を返す
-- `@tool` `@icon` `@rpc` にエンジン側の意味を与える。`@icon` は
+- `@icon` `@rpc` にエンジン側の意味を与える。`@icon` は
   スクリプトがグローバルクラス名を持たないと出ないので、
   `_get_global_name` に何を答えるかを先に決める必要がある
 - 補完（`_complete_code`）。`lsp/` が既にあるので、そこを使い回す話になる

@@ -1,5 +1,6 @@
 #include "lhat_godot_module.h"
 
+#include <godot_cpp/classes/engine.hpp>
 #include <godot_cpp/classes/ref_counted.hpp>
 #include <godot_cpp/core/memory.hpp>
 #include <godot_cpp/variant/array.hpp>
@@ -211,6 +212,19 @@ LhatValue godot_dispose(LhatMachine *machine, void *context,
     return lhat_nil();
 }
 
+// True in the editor and false in a game, including one launched from it.
+// What a @tool class asks when it wants to do one thing while a scene is
+// being edited and another while it is played.
+LhatValue godot_is_editor_hint(LhatMachine *machine, void *context,
+                               const LhatValue *arguments, size_t count)
+{
+    (void)machine;
+    (void)context;
+    (void)arguments;
+    (void)count;
+    return lhat_bool(Engine::get_singleton()->is_editor_hint());
+}
+
 }  // namespace
 
 const Godot *register_godot(LhatProgram *program)
@@ -250,16 +264,22 @@ const Godot *register_godot(LhatProgram *program)
         uint32_t targets;
         const char *signature;
     } annotations[] = {
-        // Which def^ of this unit a node wears. Without it the engine would
-        // need a rule of its own -- "the one public^ def^" was that rule, and
-        // it made a unit publishing a second class unwearable for no reason
-        // the language has.
+        // Which def^ of this unit a node wears, and when it runs. Without a
+        // mark the engine would need a rule of its own -- "the one public^
+        // def^" was that rule, and it made a unit publishing a second class
+        // unwearable for no reason the language has.
+        //
+        // Two marks rather than one because there are two answers, not
+        // because there are two questions: @tool is @game plus the editor.
+        // A unit writes at most one of them, and a unit publishing a single
+        // class need write neither -- with one candidate there is nothing to
+        // choose, and running in the editor is always chosen out loud.
         //
         // Public only: the engine reaches the class through the table the
         // unit answers with (05 の 5.5), so one kept private is not something
         // a node could wear however it is marked.
-        {"prime", LHAT_ANNOTATION_PUBLIC, nullptr},
-        {"tool", LHAT_ANNOTATION_UNIT, nullptr},
+        {"game", LHAT_ANNOTATION_PUBLIC, nullptr},
+        {"tool", LHAT_ANNOTATION_PUBLIC, nullptr},
         {"icon", LHAT_ANNOTATION_BINDING, "p^ string^;"},
         {"export", LHAT_ANNOTATION_FIELD, nullptr},
         {"export_range", LHAT_ANNOTATION_FIELD, "p^ number^, number^, ...;"},
@@ -288,6 +308,17 @@ const Godot *register_godot(LhatProgram *program)
             memdelete(module);
             return nullptr;
         }
+    }
+
+    // 02 の 18: @tool is additive -- a class marked with it runs while a scene
+    // is being edited *and* when the game runs. So a writer needs to be able
+    // to tell the two apart, the way GDScript's `if Engine.is_editor_hint():`
+    // does. A subroutine of the module rather than a member of Object: it is
+    // not about any object.
+    if (!lhat_register_func(program, "godot", "isEditorHint", "f^ -> bool^;",
+                            godot_is_editor_hint, module)) {
+        memdelete(module);
+        return nullptr;
     }
     return module;
 }

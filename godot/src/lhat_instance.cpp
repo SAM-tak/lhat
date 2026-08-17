@@ -27,11 +27,31 @@ struct Instance {
     Ref<LhatScript> script;
     LhatValue self = lhat_nil();
     int64_t id = 0;
+    // Which of the script's machines `self` came from. _reload disposes it,
+    // and the node holding this goes on living -- so past that point `self`
+    // points into freed memory.
+    uint64_t born = 0;
 };
 
 Instance *of(GDExtensionScriptInstanceDataPtr data)
 {
     return (Instance *)data;
+}
+
+// Whether `self` is still worth reading. Asked before anything looks at it,
+// including the "is it a table" check, because that check reads the memory it
+// is asking about -- once the machine is gone, so is the right to look.
+//
+// A node whose script was reloaded under it answers nothing rather than
+// answering wrongly. It is not made to work again: 03 の 5.3 has a compile
+// answer fresh modules, and the fields this instance was holding were the old
+// ones. Godot builds a new instance when the scene is reloaded, which is the
+// moment the node is meant to come back.
+bool living(const Instance *it)
+{
+    return it->script.is_valid() && it->script->lhat_machine() != nullptr &&
+           it->script->lhat_generation() == it->born &&
+           lhat_is_object_kind(it->self, LHAT_OBJECT_TABLE);
 }
 
 const StringName &name_of(GDExtensionConstStringNamePtr from)
@@ -47,10 +67,10 @@ GDExtensionBool instance_set(GDExtensionScriptInstanceDataPtr data,
                              GDExtensionConstVariantPtr value)
 {
     Instance *it = of(data);
-    LhatMachine *machine = it->script->lhat_machine();
-    if (machine == nullptr || !lhat_is_object_kind(it->self, LHAT_OBJECT_TABLE)) {
+    if (!living(it)) {
         return false;
     }
+    LhatMachine *machine = it->script->lhat_machine();
 
     CharString spelt = String(name_of(name)).utf8();
     LhatValue key = lhat_nil();
@@ -80,10 +100,10 @@ GDExtensionBool instance_get(GDExtensionScriptInstanceDataPtr data,
                              GDExtensionVariantPtr answer)
 {
     Instance *it = of(data);
-    LhatMachine *machine = it->script->lhat_machine();
-    if (machine == nullptr || !lhat_is_object_kind(it->self, LHAT_OBJECT_TABLE)) {
+    if (!living(it)) {
         return false;
     }
+    LhatMachine *machine = it->script->lhat_machine();
 
     CharString spelt = String(name_of(name)).utf8();
     LhatValue key = lhat_nil();
@@ -179,7 +199,7 @@ const GDExtensionPropertyInfo *instance_property_list(
 {
     Instance *it = of(data);
     *count = 0;
-    if (!lhat_is_object_kind(it->self, LHAT_OBJECT_TABLE)) {
+    if (!living(it)) {
         return nullptr;
     }
 
@@ -315,7 +335,10 @@ void instance_free_method_list(GDExtensionScriptInstanceDataPtr data,
 GDExtensionBool instance_has_method(GDExtensionScriptInstanceDataPtr data,
                                     GDExtensionConstStringNamePtr name)
 {
-    return of(data)->script->has_lhat_method(name_of(name));
+    const Instance *it = of(data);
+    // Answering yes here is what turns processing on, so an instance left
+    // behind by a reload says no and is called no further.
+    return living(it) && it->script->has_lhat_method(name_of(name));
 }
 
 GDExtensionInt instance_method_argument_count(
@@ -337,13 +360,13 @@ void instance_call(GDExtensionScriptInstanceDataPtr data,
                    GDExtensionCallError *error)
 {
     Instance *it = of(data);
-    LhatMachine *machine = it->script->lhat_machine();
     *reinterpret_cast<Variant *>(answer) = Variant();
 
-    if (machine == nullptr || !it->script->has_lhat_method(name_of(method))) {
+    if (!living(it) || !it->script->has_lhat_method(name_of(method))) {
         error->error = GDEXTENSION_CALL_ERROR_INVALID_METHOD;
         return;
     }
+    LhatMachine *machine = it->script->lhat_machine();
 
     // Every argument is converted before anything runs: a collection happens
     // inside the interpreter loop, and what is built here is reachable only
@@ -453,7 +476,11 @@ GDExtensionBool instance_is_placeholder(GDExtensionScriptInstanceDataPtr data)
 void instance_free(GDExtensionScriptInstanceDataPtr data)
 {
     Instance *it = of(data);
-    if (it->script.is_valid()) {
+    // Only from the table this instance was actually rooted in. The ids start
+    // again with each machine, so unrooting after a reload would take out
+    // whichever live instance had been given the same number.
+    if (it->script.is_valid() &&
+        it->script->lhat_generation() == it->born) {
         it->script->drop_instance(it->id);
     }
     memdelete(it);
@@ -519,9 +546,105 @@ void *lhat_instance_create(LhatScript *script, Object *owner)
     it->script = Ref<LhatScript>(script);
     it->self = self;
     it->id = id;
+    it->born = script->lhat_generation();
 
     return internal::gdextension_interface_script_instance_create3(
         &instance_info, it);
+}
+
+namespace {
+
+// What Godot draws a field with. Coarse on purpose -- 18.3 gives a host this
+// much of a type and no more, and picking a spin box from a text field is all
+// that rides on it here.
+void typed_as(LhatUnitTypeKind kind, Dictionary *info)
+{
+    switch (kind) {
+        case LHAT_UNIT_TYPE_NUMBER:
+            (*info)["type"] = Variant::FLOAT;
+            return;
+        case LHAT_UNIT_TYPE_STRING:
+            (*info)["type"] = Variant::STRING;
+            return;
+        case LHAT_UNIT_TYPE_BOOL:
+            (*info)["type"] = Variant::BOOL;
+            return;
+        default:
+            break;
+    }
+    // Anything else is shown as it comes. NIL alone would read as "no
+    // property"; the usage bit is what makes it "any value".
+    (*info)["type"] = Variant::NIL;
+    (*info)["usage"] = PROPERTY_USAGE_DEFAULT | PROPERTY_USAGE_SCRIPT_VARIABLE |
+                       PROPERTY_USAGE_NIL_IS_VARIANT;
+}
+
+// What a field starts as, for a placeholder to show where the scene stored
+// nothing. The written initialiser is not reachable here -- 14.11 runs it
+// inside `new`, and not making one is the point -- so the type's own zero
+// stands in until the game runs.
+Variant blank_of(LhatUnitTypeKind kind)
+{
+    switch (kind) {
+        case LHAT_UNIT_TYPE_NUMBER: return Variant(0.0);
+        case LHAT_UNIT_TYPE_STRING: return Variant(String());
+        case LHAT_UNIT_TYPE_BOOL:   return Variant(false);
+        default:                    return Variant();
+    }
+}
+
+}  // namespace
+
+void *lhat_placeholder_create(LhatScript *script, Object *owner)
+{
+    LhatLanguage *language = LhatLanguage::get_singleton();
+    if (script == nullptr || owner == nullptr || language == nullptr) {
+        return nullptr;
+    }
+    void *made =
+        internal::gdextension_interface_placeholder_script_instance_create(
+            language->_owner, script->_owner, owner->_owner);
+    if (made == nullptr) {
+        return nullptr;
+    }
+
+    const LhatUnit *unit = script->lhat_unit();
+    if (unit == nullptr) {
+        return made;  // nothing checked, so nothing to say it declares
+    }
+    CharString klass = script->lhat_class_name().utf8();
+
+    Array properties;
+    Dictionary values;
+    size_t count = lhat_unit_member_count(unit, klass.get_data());
+    for (size_t i = 0; i < count; i++) {
+        LhatUnitMember member = lhat_unit_member(unit, klass.get_data(), i);
+        if (member.name == NULL) {
+            continue;
+        }
+        String name = String::utf8(member.name, (int)member.name_length);
+
+        String hint_string;
+        uint32_t hint = PROPERTY_HINT_NONE;
+        if (!exported_as(script, name, &hint_string, &hint)) {
+            continue;
+        }
+
+        Dictionary info;
+        info["name"] = name;
+        info["class_name"] = StringName();
+        info["hint"] = hint;
+        info["hint_string"] = hint_string;
+        info["usage"] =
+            PROPERTY_USAGE_DEFAULT | PROPERTY_USAGE_SCRIPT_VARIABLE;
+        typed_as(member.type, &info);
+        properties.push_back(info);
+        values[name] = blank_of(member.type);
+    }
+
+    internal::gdextension_interface_placeholder_script_instance_update(
+        made, &properties, &values);
+    return made;
 }
 
 }  // namespace godot
