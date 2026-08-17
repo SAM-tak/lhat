@@ -979,6 +979,15 @@ static LhatNode *parse_brace_entries(Parser *p, bool require_key)
                      (is_op(&p->ahead, LHAT_OP_REASSIGN) ||
                       is_op(&p->ahead, LHAT_OP_EQ));
 
+        // 14.6: a field may say what it holds as well as what it starts as,
+        // the way a let^ target does -- 'hp : number^ = 50'. Only a template
+        // reads it this way: a ':' inside a table literal is not this, and
+        // 14.14改 leaves that spelling to mean what it already means there.
+        bool typed = require_key &&
+                     (p->current.kind == LHAT_TOKEN_IDENT ||
+                      p->current.kind == LHAT_TOKEN_HAT_IDENT) &&
+                     is_op(&p->ahead, LHAT_OP_COLON);
+
         // 14.14改: '[ ... ] =' gives the key as an expression, for the keys
         // 01 の 6 章 leaves unwritable as names. Nothing else can begin with
         // '[' here -- it does not start an expression -- so no lookahead is
@@ -995,6 +1004,11 @@ static LhatNode *parse_brace_entries(Parser *p, bool require_key)
             if (require_key) {
                 report(p, &at_bracket, LHAT_PARSE_ERR_FIELD_NEEDS_NAME);
             }
+        } else if (typed) {
+            entry->v.entry.key = simple_node(p);
+            advance(p);  // ':'
+            entry->v.entry.type = parse_type(p);
+            expect_introduces(p);
         } else if (keyed) {
             entry->v.entry.key = simple_node(p);
             advance(p);  // '=' or ':='

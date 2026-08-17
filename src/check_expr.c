@@ -3136,10 +3136,23 @@ LhatType *chk_infer_def(Checker *c, const LhatNode *node, LhatType *base)
                               chk_resolve_type(c, field->v.entry.value), true);
                 continue;
             }
-            // 14.11: an initializer, evaluated at each construction. Its type
-            // is what the field holds.
+            // 14.6: a type written alongside the value is what the field
+            // holds, and the value is measured against it -- the same reading
+            // 8.6's 'let^ x : T = v' has, and for the same reason: what a
+            // reader may rely on is what was written, not what the first
+            // value happened to be.
+            LhatType *written = chk_resolve_type(c, field->v.entry.type);
+            LhatType *outer_expected = c->expected_func;
+            c->expected_func = written;
+            LhatType *actual = chk_infer(c, field->v.entry.value);
+            c->expected_func = outer_expected;
+            if (written != NULL) {
+                chk_expect(c, field->v.entry.value, actual, written,
+                           LHAT_CHECK_ERR_MISMATCH);
+            }
+            // 14.11: an initializer, evaluated at each construction.
             set_member(c, instance, name, length,
-                       chk_infer(c, field->v.entry.value));
+                       written != NULL ? written : actual);
         }
     }
 

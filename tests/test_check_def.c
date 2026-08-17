@@ -1278,10 +1278,70 @@ static void test_typeof(void)
 }
 
 
+// 14.6 with 8.6: a template field may write its type as well as its value.
+// What it holds is then what was written -- the same reading a let^ target
+// has, and the reason is the same: a reader relies on what was written, not
+// on what the first value happened to be.
+static void test_field_types(void)
+{
+    Unit u;
+
+    LHAT_TEST("a field may be written with a type and a value");
+    check_text(&u,
+               "let^ D = def^{\n"
+               "  self^{ hp : number^ = 50, name : string^ = \"\" },\n"
+               "}\n"
+               "let^ d = D.new()\n"
+               "let^ n : number^ = d.hp\n"
+               "let^ s : string^ = d.name\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("the written type is what the field holds, not the value's");
+    check_text(&u,
+               "let^ D = def^{\n"
+               "  self^{ slot : any^ = 1 },\n"
+               "  widen = p^self^ { self^.slot := \"text\" },\n"
+               "}\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // Without one the field is as narrow as its initialiser, which is what
+    // makes the annotation worth writing.
+    LHAT_TEST("where an unwritten one is as narrow as its value");
+    check_text(&u,
+               "let^ D = def^{\n"
+               "  self^{ slot = 1 },\n"
+               "  widen = p^self^ { self^.slot := \"text\" },\n"
+               "}\n");
+    LHAT_CHECK(u.checked.diagnostic_count > 0, "reported");
+    unit_dispose(&u);
+
+    LHAT_TEST("and the value has to fit it");
+    check_text(&u,
+               "let^ D = def^{\n"
+               "  self^{ hp : string^ = 50 },\n"
+               "}\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
+    unit_dispose(&u);
+
+    // 14.15 is the other half: a type and no value at all, which says the
+    // composition owes one rather than saying what this one holds.
+    LHAT_TEST("abstract^ is still the form with no value");
+    check_text(&u,
+               "let^ D = def^{\n"
+               "  self^{ abstract^ hp : number^ },\n"
+               "}\n"
+               "let^ d = D.new()\n");
+    LHAT_CHECK(u.checked.diagnostic_count > 0, "reported");
+    unit_dispose(&u);
+}
+
 int main(void)
 {
     test_definitions();
     test_composition();
     test_typeof();
+    test_field_types();
     return lhat_test_report("test_check_def");
 }

@@ -156,6 +156,7 @@ void lhat_node_visit_children(const LhatNode *node, LhatNodeVisitor visit,
         case LHAT_NODE_TABLE_ENTRY:
         case LHAT_NODE_MEMBER_DECL:
             visit_one("key", node->v.entry.key, visit, context);
+            visit_one("type", node->v.entry.type, visit, context);
             visit_one("value", node->v.entry.value, visit, context);
             break;
 

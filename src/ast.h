@@ -321,6 +321,11 @@ struct LhatNode {
             // composed onto it has to. Set on a template field too, where
             // 14.12's modifier has no place.
             bool declared;
+            // 14.6 with 8.6: a template field written 'name : type = value'.
+            // The type is what the field holds; the value is what 14.11 puts
+            // there at each construction. NULL when only a value was written,
+            // which is every other entry.
+            LhatNode *type;
             // 13.7, 14.10: MEMBER_DECL only. Written '...:type' in a
             // t^{ ... }, the way a parameter list writes a variadic one --
             // `value` is the element type, `key` is unused.

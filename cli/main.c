@@ -253,6 +253,7 @@ static void print_node(const LhatLexer *lexer, const LhatNode *node, int depth)
             print_list(lexer, "annotations", node->v.entry.annotations,
                        depth + 1);
             print_node(lexer, node->v.entry.key, depth + 1);
+            print_node(lexer, node->v.entry.type, depth + 1);
             print_node(lexer, node->v.entry.value, depth + 1);
             break;
         case LHAT_NODE_DEFINE:

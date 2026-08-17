@@ -313,6 +313,9 @@ static void walk_table_entries(SemCollector *out, const LhatNode *entries)
         // an expression, and a qualified one is rooted at a TYPE_NAME, which
         // walk_value has no case for: the root of 'godot.Object' came back
         // with no token at all and the segment after it as a property.
+        // 14.6: a template field may write both, in which case each half is
+        // walked as what it is.
+        walk_type(out, e->v.entry.type);
         if (e->kind == LHAT_NODE_MEMBER_DECL || e->v.entry.declared) {
             walk_type(out, e->v.entry.value);  // t^{ name : type }
         } else {
