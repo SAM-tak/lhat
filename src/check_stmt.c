@@ -1867,8 +1867,17 @@ void chk_check_statement(Checker *c, const LhatNode *node)
         case LHAT_NODE_DEFINE:
             // 02 の 18.4: a binding takes one. The unit's own were read where
             // the unit was, and a field's and a member's where the def^ is.
-            chk_check_annotations(c, node->v.binding.annotations,
-                                  LHAT_ANNOTATION_BINDING);
+            //
+            // 18.4改: whether it is published is part of the place. A host
+            // reaches a value through the table the unit answers with (05 の
+            // 5.5), so an annotation about the value has no hold on a name
+            // kept private -- and saying so here is what keeps it from being
+            // written and quietly doing nothing.
+            chk_check_annotations(
+                c, node->v.binding.annotations,
+                node->v.binding.exported
+                    ? (LHAT_ANNOTATION_BINDING | LHAT_ANNOTATION_PUBLIC)
+                    : LHAT_ANNOTATION_BINDING);
             chk_check_define(c, node);
             break;
 

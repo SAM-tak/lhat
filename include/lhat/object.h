@@ -427,7 +427,13 @@ typedef enum {
     LHAT_ANNOTATION_UNIT = 1u << 0,     // at the head of a unit
     LHAT_ANNOTATION_BINDING = 1u << 1,  // a top-level let^ or var^
     LHAT_ANNOTATION_FIELD = 1u << 2,    // a field of a self^{ ... }
-    LHAT_ANNOTATION_MEMBER = 1u << 3    // a member of a def^
+    LHAT_ANNOTATION_MEMBER = 1u << 3,   // a member of a def^
+    // 05 の 4 章: the binding is published, so what it holds is in the table
+    // the unit answers with. A host reaching a value reaches it there and
+    // nowhere else, so an annotation about a value -- rather than about the
+    // name -- registers for this and is refused on a binding kept private.
+    // Registering for LHAT_ANNOTATION_BINDING alone admits both.
+    LHAT_ANNOTATION_PUBLIC = 1u << 4
 } LhatAnnotationTarget;
 
 // 05 の 8.8: what tells one registered type from another while running.

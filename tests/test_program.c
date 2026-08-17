@@ -2227,6 +2227,48 @@ static void test_annotations(void)
     }
     lhat_program_dispose(&program);
 
+    // 18.4改: whether the binding is published is part of the place. A host
+    // reaches a value through the table the unit answers with (05 の 5.5), so
+    // an annotation about the value has no hold on a private name -- writing
+    // one there would be a mark that quietly does nothing.
+    LHAT_TEST("a public-only annotation is refused on a private binding");
+    {
+        static const File hidden[] = {
+            {"main.lh", "module^ m\n@prime\nlet^ x = 1\n"}};
+        program_with(&program, &disk, hidden, 1);
+        lhat_register_annotation(&program, "h", "prime",
+                                 LHAT_ANNOTATION_PUBLIC, NULL);
+        lhat_program_check(&program, "main.lh");
+        LHAT_CHECK(lhat_program_has_errors(&program), "reported");
+    }
+    lhat_program_dispose(&program);
+
+    LHAT_TEST("and taken on a published one");
+    {
+        static const File shown[] = {
+            {"main.lh", "module^ m\n@prime\npublic^let^ x = 1\n"}};
+        program_with(&program, &disk, shown, 1);
+        lhat_register_annotation(&program, "h", "prime",
+                                 LHAT_ANNOTATION_PUBLIC, NULL);
+        lhat_program_check(&program, "main.lh");
+        LHAT_CHECK(!lhat_program_has_errors(&program), "clean");
+    }
+    lhat_program_dispose(&program);
+
+    // Registering for the binding alone keeps admitting both -- the name is
+    // what such an annotation is about, not the value.
+    LHAT_TEST("while a plain binding annotation takes either");
+    {
+        static const File both[] = {
+            {"main.lh", "module^ m\n@icon\nlet^ a = 1\n@icon\npublic^let^ b = 2\n"}};
+        program_with(&program, &disk, both, 1);
+        lhat_register_annotation(&program, "h", "icon",
+                                 LHAT_ANNOTATION_BINDING, NULL);
+        lhat_program_check(&program, "main.lh");
+        LHAT_CHECK(!lhat_program_has_errors(&program), "clean");
+    }
+    lhat_program_dispose(&program);
+
     // 18.3: an argument is a literal, and a bare name arrives as a string^ --
     // what the name means is the host's to decide.
     LHAT_TEST("arguments are asked what the registration said");
