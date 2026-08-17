@@ -10,6 +10,7 @@
 #include <godot_cpp/classes/text_edit.hpp>
 
 #include "lhat.h"
+#include "lhat_host.h"
 #include "lhat_language.h"
 
 // Where a word begins and ends is the lexer's answer and nobody else's: 01 の
@@ -160,6 +161,20 @@ void LhatHighlighter::_update_cache()
     palette.value =
         themed("member_variable_color", Color(0.736f, 0.88f, 1.0f));
     palette.clause = themed("function_color", Color(0.34f, 0.7f, 1.0f));
+    // The second layer. A class the writer declared is Godot's user type; a
+    // module reached through is drawn as a type is, which is what VSCode
+    // settles on for the same name.
+    palette.klass = themed("user_type_color", Color(0.78f, 1.0f, 0.93f));
+    palette.space = palette.type;
+    palette.function = palette.clause;
+    palette.property =
+        themed("member_variable_color", Color(0.736f, 0.88f, 1.0f));
+    // The editor names no colour for a parameter, and GDScript draws one in
+    // the plain text colour -- godot-proposals#6428 and godot#16799 are both
+    // open asking for local names to be drawn apart, which is what says they
+    // are not. So this is the text colour on purpose rather than by falling
+    // through, and a .lh reads as a .gd does.
+    palette.parameter = palette.plain;
     palette.number = themed("number_color", Color(0.63f, 1.0f, 0.88f));
     palette.string = themed("string_color", Color(1.0f, 0.93f, 0.63f));
     palette.comment = themed("comment_color", Color(0.8f, 0.81f, 0.83f, 0.5f));
@@ -267,6 +282,79 @@ void LhatHighlighter::refresh(const String &text) const
         }
         spans.write[j] = moving;
     }
+
+    read_meanings(text);
+}
+
+// 07 の 4 章: the second layer. What the checker resolved each name to,
+// which is the only thing that tells `Godot.Sprite2D` from `self^.ticks`.
+//
+// Checked here rather than borrowed from the LhatScript: a highlighter is
+// handed a TextEdit and nothing else, and what it is drawing is the buffer
+// rather than what was last saved. The path is asked of the script editor
+// because a require^ resolves against it -- without one, `Godot` names
+// nothing and the layer comes back empty, which is what an unsaved file gets.
+//
+// The same check _validate already runs on every edit. Measured before
+// sharing one: a script-sized unit is not where an editor spends its time.
+void LhatHighlighter::read_meanings(const String &text) const
+{
+    meanings.clear();
+    if (!Engine::get_singleton()->is_editor_hint()) {
+        return;
+    }
+    EditorInterface *editor = EditorInterface::get_singleton();
+    ScriptEditor *scripts = editor != nullptr ? editor->get_script_editor()
+                                              : nullptr;
+    if (scripts == nullptr) {
+        return;
+    }
+    // Whichever is on screen, which is the one being drawn. A highlighter
+    // belongs to one editor and only the visible one asks for lines.
+    Ref<Script> showing = scripts->get_current_script();
+    if (showing.is_null()) {
+        return;
+    }
+
+    host::Units units = host::units_for(showing->get_path());
+    host::hold(&units, text);
+    LhatProgram *program = host::program_for(&units);
+    if (program == nullptr) {
+        return;
+    }
+    const LhatUnit *root =
+        lhat_program_check(program, units.path.utf8().get_data());
+    if (root != nullptr) {
+        // 03 の 3.1: a unit that did not check still resolved what it could,
+        // and half a colouring beats none while somebody is mid-word.
+        size_t count = lhat_unit_semantic_names(root, nullptr, 0);
+        if (count > 0) {
+            meanings.resize((int64_t)count);
+            lhat_unit_semantic_names(root, meanings.ptrw(), count);
+        }
+    }
+    lhat_program_free(program);
+}
+
+// Answered in offset order, so this halves its way in rather than scanning
+// once per span on every redraw.
+const LhatSemanticName *LhatHighlighter::meaning_at(int64_t offset) const
+{
+    int64_t low = 0;
+    int64_t high = meanings.size() - 1;
+    while (low <= high) {
+        int64_t mid = low + (high - low) / 2;
+        int64_t at = (int64_t)meanings[mid].offset;
+        if (at == offset) {
+            return &meanings[mid];
+        }
+        if (at < offset) {
+            low = mid + 1;
+        } else {
+            high = mid - 1;
+        }
+    }
+    return nullptr;
 }
 
 // A span's offset is a byte into the text; the editor's columns count
@@ -292,8 +380,8 @@ int32_t LhatHighlighter::column_of(const char *text, int64_t line_start,
 // `word` is the whole span as written, which for a name is the whole word --
 // the line it falls on has not been taken into account yet, and must not be:
 // what a word is decides its colour, and half a word decides nothing.
-Color LhatHighlighter::colour_of(int kind, const char *word,
-                                 size_t length) const
+Color LhatHighlighter::colour_of(int kind, const char *word, size_t length,
+                                 int64_t offset) const
 {
     switch ((SpanKind)kind) {
         case SPAN_NUMBER:     return palette.number;
@@ -308,13 +396,37 @@ Color LhatHighlighter::colour_of(int kind, const char *word,
     // 01 の 2.1 reserves no word, so the scan calls every name a name and the
     // guess about which spellings are the language's is made here. See
     // lhat_language.h for what that guess costs.
+    //
+    // Asked before the checker's answer, not after: a hat word is what it is
+    // however it resolved, and letting the second layer repaint self^ would
+    // make the colouring move about as a file came in and out of checking.
     switch (lhat_word_kind(word, length)) {
         case LHAT_WORD_CONTROL: return palette.control;
         case LHAT_WORD_DECLARE: return palette.keyword;
         case LHAT_WORD_TYPE:    return palette.type;
         case LHAT_WORD_VALUE:   return palette.value;
         case LHAT_WORD_CLAUSE:  return palette.clause;
-        default:                return palette.plain;
+        default:                break;
+    }
+
+    // What the spelling could not say. 14.1's classes, 8.6's modules and a
+    // name that turned out to be called all read as plain names until the
+    // unit checks.
+    const LhatSemanticName *meant = meaning_at(offset);
+    if (meant == nullptr) {
+        return palette.plain;
+    }
+    switch (meant->kind) {
+        case LHAT_SEMANTIC_NAMESPACE: return palette.space;
+        case LHAT_SEMANTIC_TYPE:      return palette.type;
+        case LHAT_SEMANTIC_CLASS:     return palette.klass;
+        case LHAT_SEMANTIC_FUNCTION:  return palette.function;
+        case LHAT_SEMANTIC_PROPERTY:  return palette.property;
+        case LHAT_SEMANTIC_PARAMETER: return palette.parameter;
+        // A plain name is what LHAT_SEMANTIC_VARIABLE falls back to when the
+        // place it stands says nothing, so almost every ordinary name is one
+        // -- drawing it apart would be drawing the whole file apart.
+        default:                      return palette.plain;
     }
 }
 
@@ -358,8 +470,8 @@ Dictionary LhatHighlighter::_get_line_syntax_highlighting(int32_t line) const
         // Settled from the whole span, before the clipping below cuts it to
         // this line. A name never crosses a newline, but reading the colour
         // off a clipped `begin` would be true only by accident.
-        Color drawn =
-            colour_of(spans[i].kind, text + begin, (size_t)(end - begin));
+        Color drawn = colour_of(spans[i].kind, text + begin,
+                                (size_t)(end - begin), begin);
 
         // 01 の 2.3: the hat is part of the name, which is why the scan
         // answers one span. What a reader wants of it is the other half of

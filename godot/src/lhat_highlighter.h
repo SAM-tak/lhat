@@ -22,6 +22,9 @@
 #include <godot_cpp/variant/color.hpp>
 #include <godot_cpp/templates/vector.hpp>
 #include <godot_cpp/variant/dictionary.hpp>
+
+#include "lhat/semantic.h"
+
 #include <godot_cpp/variant/packed_int64_array.hpp>
 #include <godot_cpp/variant/packed_string_array.hpp>
 #include <godot_cpp/variant/string.hpp>
@@ -43,6 +46,16 @@ class LhatHighlighter : public EditorSyntaxHighlighter {
         Color type;
         Color value;
         Color clause;
+        // 07 の 4 章's layer: what only a check can tell apart. A class the
+        // writer declared, a module reached through, a name that turned out
+        // to be called.
+        Color klass;
+        Color space;
+        Color function;
+        Color property;
+        // 13.4's parameters. Made from the text colour rather than read from
+        // a key: the editor names no colour for one.
+        Color parameter;
         Color number;
         Color string;
         Color comment;
@@ -73,8 +86,18 @@ private:
     mutable Vector<Span> spans;
     mutable PackedInt64Array line_starts;  // byte offset of each line
 
+    // 07 の 4 章: what the checker made of each name, in offset order. The
+    // second layer -- `Godot.Sprite2D` is spelled exactly as `self^.ticks`,
+    // and only a check tells them apart. Empty while the buffer does not
+    // check, which is most of the time somebody is typing, and the lexical
+    // layer carries the colouring alone until it does.
+    mutable Vector<LhatSemanticName> meanings;
+
     void refresh(const String &text) const;
-    Color colour_of(int kind, const char *word, size_t length) const;
+    void read_meanings(const String &text) const;
+    const LhatSemanticName *meaning_at(int64_t offset) const;
+    Color colour_of(int kind, const char *word, size_t length,
+                    int64_t offset) const;
     static int32_t column_of(const char *text, int64_t line_start, int64_t at);
 
 protected:
