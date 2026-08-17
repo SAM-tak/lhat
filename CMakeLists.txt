@@ -71,6 +71,7 @@ add_library(lhat
     src/check.c
     src/check_expr.c
     src/check_stmt.c
+    src/semantic.c
     src/program.c
     src/code.c
     src/compile.c

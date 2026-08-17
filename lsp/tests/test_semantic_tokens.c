@@ -499,6 +499,34 @@ static void test_definition_reads_as_a_type(void)
     check_dispose(&c);
 }
 
+// 14.13: the tree spells 'Base..def^{ … }' as the '..' operator with the
+// def^ on its right, so a declaration reading the value has to look through
+// one -- or the class a writer inherits into reads as an ordinary name.
+static void test_an_inherited_definition_is_a_type(void)
+{
+    LHAT_TEST("14.13: a name bound to Base..def^ is a type too");
+
+    static const char *source =
+        "let^ Base = def^{ self^{ n = 1 } }\n"
+        "let^ Sub = Base..def^{ self^{ m = 2 } }\n"
+        "let^ joined = \"a\" .. \"b\"\n";
+
+    Checked c;
+    check_text(&c, source);
+    cJSON *data = lsp_semantic_tokens_for_unit(&c.unit);
+    Tokens tokens = decode(data);
+
+    expect_token(&tokens, source, "Base = def^", "class", true);
+    expect_token(&tokens, source, "Sub = Base", "class", true);
+    // Concatenation wears the same spelling and declares nothing of the
+    // sort, which is what makes looking through '..' safe.
+    expect_token(&tokens, source, "joined = ", "variable", true);
+
+    free(tokens.items);
+    cJSON_Delete(data);
+    check_dispose(&c);
+}
+
 // 14.7改: the same, for a definition whose type was also written out. 8.7
 // makes the annotation what the binding holds, so the def^'s own answer never
 // reaches the name -- what says "definition" has to be on the written type,
@@ -851,6 +879,7 @@ int main(void)
     test_isa_asks_about_a_type();
     test_isa_within_a_comparison_chain();
     test_definition_reads_as_a_type();
+    test_an_inherited_definition_is_a_type();
     test_a_written_definition_reads_as_a_type();
     test_module_path_reads_the_same_everywhere();
     test_compound_assignment_is_one_token();
