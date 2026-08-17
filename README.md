@@ -27,7 +27,6 @@ to 24. The source is [sample/24.lh](sample/24.lh).
 
 ![sample/24.lh — a recursive-descent reader written as a def^, and the loop that deals four digits and checks what the player typed](readme-24game.svg)
 
-
 ## Requirements
 
 - CMake 3.25 or later

@@ -75,6 +75,8 @@ let^A = def^{
     overload^new = f^a, b { self^{ a := a, b := b } },
     overload^new = f^a { self^{ a := a, b := a } },
     add = f^self^, rhs:Self^ -> Self^ { self^ },
+    op^* = f^self^, rhs:number^{ class^.new(self^.a * rhs, self^.b * rhs) },
+    overload^op^* = f^lhs:number^, self^{ class^.new(lhs * self^.a, lhs * self^.b) },
     somestatic = p^{ print("aaa") }
 }
 print(typeof^(A).signature)
@@ -88,6 +90,24 @@ print(bA)
 
 let^cA = A.new()
 print(cA)
+
+let^ATest = f^x:A, y { x * y }
+print(ATest(aA, 3))
+
+# let^ATest2 = f^x, y { x * y } # 期待通りエラー
+# several types here carry this operator and nothing says which is meant;
+# write one of the types the signature names, or narrow to it with isa^
+# let^ATest2 = f^x, y {
+#     if^x isa^A: x * y el^: x * y;
+# } # 残念これは通らない
+# let^ATest2 = f^x, y {
+#     if^x isa^A: x * y el^x isa^number^: x * y el^: A.new();
+# } # 残念これも通らない
+let^ATest2 = f^x:A|number^, y { # これは行ける。まぁ許容範囲かな。
+    if^x isa^A: x * y el^: x * y;
+}
+print(ATest2(aA, 3))
+print(ATest2(4, 3))
 
 let^_a = f^n{ if^n <= 0 { return^true^} return^_b(n - 1) }
 let^_b = f^n{ if^n <= 0 { return^false^} return^_a(n - 1) }
@@ -138,6 +158,7 @@ app.run()
 print(app.n)
 
 let^isEven = f^x {
+    for^let^x:number^ = x
     for^x % 2:
         when^0: true^
         other^: false^ # when^1を書いてもother^が必要。これ具合悪いね
@@ -145,3 +166,24 @@ let^isEven = f^x {
 }
 print(isEven(6))
 print(isEven(9))
+
+let^match = p^x:string^{
+    for^x {
+    when^"aaa", "bbb":
+        print($"{it^}")
+    }
+    print($"end")
+}
+match("aaa")
+match("bbb")
+match("ccc")
+
+let^yy = p^x:number^{
+    do^{
+        var^x = x.tostring()
+        return^ x
+    }
+    return^ ""
+}
+
+print(yy(2))
