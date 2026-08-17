@@ -76,17 +76,32 @@ static void test_names(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_USED_BEFORE_DEFINED);
     unit_dispose(&u);
 
-    // A body's parameters and its own top-level names share one scope, so a
-    // shadow of a parameter has to be written one scope in -- which is where
-    // the mistake this catches actually gets written.
-    LHAT_TEST("through a scope opened inside one as well");
+    // 8.7改: a shadow written one scope in reads the name it shadows. A
+    // body's parameters and its own top-level names share one scope, so this
+    // is where a shadow of a parameter has to be written -- and what it is
+    // written for is exactly this: the new name starts from the old one.
+    LHAT_TEST("and a shadow one scope in reads what it shadows");
     check_text(&u,
-               "var^ f = f^ t:t^{ ...:number^ } -> bool^ {\n"
+               "var^ f = f^ t:t^{ ...:number^ } -> number^ {\n"
+               "  var^ total = 0\n"
                "  for^ i from^1 to^2 {\n"
-               "    var^ t = t[i]\n"
-               "    print(t)\n"
+               "    var^ t = t[i] ?? 0\n"
+               "    total := total + t\n"
                "  }\n"
-               "  return^ true^\n"
+               "  return^ total\n"
+               "}\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // With nothing outside answering, the read is still the one 8.7 refuses.
+    LHAT_TEST("but nothing outside to shadow is still a read too early");
+    check_text(&u,
+               "var^ f = f^ -> number^ {\n"
+               "  do^{\n"
+               "    var^ q = q + 1\n"
+               "    return^ q\n"
+               "  }\n"
+               "  return^ 0\n"
                "}\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_USED_BEFORE_DEFINED);
     unit_dispose(&u);

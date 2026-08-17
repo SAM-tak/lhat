@@ -142,6 +142,10 @@ typedef struct Compiler {
     // earlier input made would see the new binding. Zero outside a session.
     size_t session_locals;
 
+    // 02 の 8.7改: the local whose own initialiser is being compiled, which
+    // find_local passes over. NULL everywhere else.
+    const Local *defining_local;
+
     // 5.5: how many cleanups are pending here. The compiler tracks it so that
     // an exit knows how far to drain; the machine holds the cleanups.
     size_t cleanup_depth;
@@ -472,6 +476,33 @@ static const Local *find_local(const Compiler *c, const char *name,
     // as 02 の 8.6 intends.
     for (size_t i = c->local_count; i > 0; i--) {
         const Local *local = &c->locals[i - 1];
+        if (local->length == length && memcmp(local->name, name, length) == 0) {
+            return local;
+        }
+    }
+    return NULL;
+}
+
+// 02 の 8.7改: the same search, for a name written as a value to read. A
+// binding does not stand in its own initialiser, so this one runs past it and
+// finds whatever the name meant outside -- which is what the checker resolved
+// the read to, and the two have to agree or the read lands in the wrong slot.
+//
+// Only reads. The other questions find_local answers -- which slot a
+// definition writes into, whether a name is a module root, whether a path
+// starts at a local -- are about the binding itself and want it found.
+//
+// A body written in the initialiser is compiled by a compiler of its own and
+// reaches this one through find_upvalue, which does not come here: that is
+// what leaves 15.10's named recursion alone.
+static const Local *find_local_to_read(const Compiler *c, const char *name,
+                                       size_t length)
+{
+    for (size_t i = c->local_count; i > 0; i--) {
+        const Local *local = &c->locals[i - 1];
+        if (local == c->defining_local) {
+            continue;
+        }
         if (local->length == length && memcmp(local->name, name, length) == 0) {
             return local;
         }
@@ -2060,7 +2091,7 @@ static bool resolve_foreign_name(Compiler *c, const char *name, size_t length,
 static bool resolve_name(Compiler *c, const char *name, size_t length,
                          uint8_t into)
 {
-    const Local *local = find_local(c, name, length);
+    const Local *local = find_local_to_read(c, name, length);
     if (local != NULL) {
         // 05 の 8.9: a host value name moves as its width of slots. The
         // destination was sized by the same checker stamp, so the two
@@ -4343,11 +4374,25 @@ static void compile_define(Compiler *c, const LhatNode *node)
         // it here is what keeps a redefinition to another type from making
         // an earlier closure's result type a lie; ':=' writes the same
         // binding and so goes on sharing it.
-        if ((size_t)(local - c->locals) < c->session_locals) {
+        bool from_session = (size_t)(local - c->locals) < c->session_locals;
+        if (from_session) {
             emit(c, lhat_encode_abc(LHAT_BC_CLOSEONE, local->reg, 0, 0));
         }
         if (value != NULL) {
+            // 8.7改: found first, then hidden -- the destination is this
+            // local, and only the value is compiled without it in scope.
+            //
+            // 03 の 4.3 is the exception, and the same one 8.7 already makes:
+            // a name an earlier input bound, written again, is that place
+            // written again rather than a new one beside it. 'var^ x = x + 1'
+            // at a prompt reads what the slot holds, which is the whole of
+            // what a prompt is for.
+            const Local *outer_defining = c->defining_local;
+            if (!from_session) {
+                c->defining_local = local;
+            }
             compile_expression(c, value, local->reg);
+            c->defining_local = outer_defining;
             value = value->next;
         }
     }

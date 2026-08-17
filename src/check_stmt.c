@@ -264,6 +264,23 @@ void chk_check_define(Checker *c, const LhatNode *node)
         chk_node_name(c, target_name_node(target), &c->defining_name,
                       &c->defining_length);
 
+        // 8.7改: and which binding it is, so a read of the same name in the
+        // value passes over it. Saved rather than cleared: a let^ written
+        // inside this one's value is the one being defined while its own
+        // value is walked, and this one again after.
+        //
+        // 03 の 4.3 is the exception 8.7 already makes: a name an earlier
+        // input bound, written again, is that place written again rather
+        // than a new one beside it, so 'var^ x = x + 1' at a prompt reads
+        // what is there.
+        Binding *outer_defining = c->defining_binding;
+        if (!target_is_path(target) && c->defining_name != NULL) {
+            Binding *being = chk_scope_find_local(c->scope, c->defining_name,
+                                                  c->defining_length);
+            c->defining_binding =
+                being != NULL && being->from_session ? NULL : being;
+        }
+
         // 15.2: a let^ that binds a yield^ directly is where R gets fixed --
         // it is the only place a yield^'s own annotation can be written. The
         // context is only good for the one chk_infer() call it is set around.
@@ -354,6 +371,7 @@ void chk_check_define(Checker *c, const LhatNode *node)
 
         c->defining_name = outer_name;
         c->defining_length = outer_length;
+        c->defining_binding = outer_defining;
 
         if (annotated != NULL && value != NULL) {
             chk_expect(c, value, actual, annotated, LHAT_CHECK_ERR_MISMATCH);

@@ -580,6 +580,20 @@ LhatType *chk_infer_name(Checker *c, const LhatNode *node)
     // 15.13 and 05 の 8.9 each measure it against a boundary of their own.
     Scope *found_in = NULL;
     Binding *b = chk_scope_find(from, name, length, &found_in);
+    // 8.7改: a binding does not stand in its own initialiser. What it holds
+    // is being worked out right here, so the name still means what it meant
+    // outside -- and where nothing outside answers, the read falls through to
+    // the report below, which is the same one it always got.
+    if (b != NULL && b == c->defining_binding && found_in != NULL &&
+        (c->deferred == 0 || chk_scope_within_body(c, found_in))) {
+        Scope *outer = NULL;
+        Binding *shadowed =
+            chk_scope_find(found_in->parent, name, length, &outer);
+        if (shadowed != NULL) {
+            b = shadowed;
+            found_in = outer;
+        }
+    }
     if (b == NULL) {
         // 05 の 8.2: what the host bound before anything ran. Asked after
         // every scope, so a let^ of the same spelling shadows it -- and what

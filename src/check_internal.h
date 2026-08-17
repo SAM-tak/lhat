@@ -375,6 +375,14 @@ typedef struct {
     const char *defining_name;
     size_t defining_length;
 
+    // 8.7改: the binding whose own initialiser is being walked. A name read
+    // there is read before this binding holds anything, so it means whatever
+    // it meant just outside -- 'do^{ var^ x = x.tostring() }' is the same x
+    // the enclosing body bound. Only this one binding is passed over, and
+    // only while its own value is being walked; a body written there runs
+    // later and sees it, which is what leaves 15.10's named recursion alone.
+    Binding *defining_binding;
+
     // 15.2: what the yield^/yieldall^ sites seen so far in this body agree
     // on. infer_func saves and resets these around a nested body the same
     // way it does declared_result/inferred_result, so a nested p^{...} does
