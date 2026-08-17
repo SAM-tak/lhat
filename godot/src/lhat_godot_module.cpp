@@ -74,19 +74,6 @@ LhatValue gone(const char *what, LhatValue self, const Godot *module)
 
 // ---------------------------------------------------------------------------
 
-// The value a field starts at, before the host writes the real one in
-// (14.11 runs an initialiser per instance). It stands for nothing, and
-// isValid^ answers false for it.
-LhatValue godot_default(LhatMachine *machine, void *context,
-                        const LhatValue *arguments, size_t count)
-{
-    (void)arguments;
-    (void)count;
-    LhatValue made = lhat_nil();
-    make_object(machine, module_of(context), nullptr, &made);
-    return made;
-}
-
 LhatValue godot_is_valid(LhatMachine *machine, void *context,
                          const LhatValue *arguments, size_t count)
 {
@@ -241,7 +228,11 @@ const Godot *register_godot(LhatProgram *program)
         const char *signature;
         LhatHostFn call;
     } members[] = {
-        {"default", "f^ -> godot.Object;", godot_default},
+        // 02 の 14.15 with 14.11改: no way to make one out of nothing. Every
+        // godot.Object here stands for an object the engine made, and the one
+        // an override^ new is handed is where they all come from -- a value
+        // meaning "no object" would be a wrapper whose isValid() is false by
+        // construction, which is nothing a program has a use for.
         {"isValid", "f^self^ -> bool^;", godot_is_valid},
         {"className", "f^self^ -> string^;", godot_class_name},
         {"isClass", "f^self^, string^ -> bool^;", godot_is_class},

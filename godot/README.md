@@ -108,8 +108,16 @@ public^let^ Spinner = Godot.Sprite2D..def^{
 `godot.Object` が持つのは**ポインタではなく `ObjectID`**。解放済みなら
 `instance_from_id` が空を返すので、ダングリングしない。`RefCounted` の
 ときだけ `Ref<>` を併せ持つ（それ以外に生かすものが無いため）。メンバは
-`default()` / `isValid()` / `className()` / `isClass()` / `get()` / `set()` /
+`isValid()` / `className()` / `isClass()` / `get()` / `set()` /
 `call()` / `emit()`。
+
+**無から作る道は無い。** ここの `godot.Object` はどれもエンジンが作った
+オブジェクトを指しており、その出どころは `override^ new` に渡ってくる1つだけ
+である。「オブジェクトが無い」を表す値を置けば、`isValid()` が構造上必ず
+偽になるラッパを作れてしまい、それに使い道が無い。
+
+［補足］ `isValid()` は残る。ノードが解放されれば `ObjectID` の世代が合わなく
+なるので、**在ったものが無くなる**問いは今も要る。
 
 合成先は `import^ godot` を書かなくてよい。平坦化された基底の本体は
 **自分の単位の名前空間で解決される**（その単位の `import^` の根と
