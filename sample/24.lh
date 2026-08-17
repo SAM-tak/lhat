@@ -3,51 +3,56 @@
 
 From http://rosettacode.org/wiki/24_game
 
-Write a program that randomly chooses and displays four digits, each from 1 ──► 9 (inclusive) with repetitions allowed.
+Write a program that randomly chooses and displays four digits, each from
+1 ──► 9 (inclusive) with repetitions allowed.
 
-The program should prompt for the player to enter an arithmetic expression using just those, and all of those four digits, used exactly once each. The program should check then evaluate the expression.
+The program should prompt for the player to enter an arithmetic expression
+using just those, and all of those four digits, used exactly once each. The
+program should check then evaluate the expression.
 
-The goal is for the player to enter an expression that (numerically) evaluates to 24.
+The goal is for the player to enter an expression that (numerically)
+evaluates to 24.
 
-- Only the following operators/functions are allowed: multiplication, division, addition, subtraction
-- Division should use floating point or rational arithmetic, etc, to preserve remainders.
+- Only the following operators/functions are allowed: multiplication,
+  division, addition, subtraction
+- Division should use floating point or rational arithmetic, etc, to
+  preserve remainders.
 - Brackets are allowed, if using an infix expression evaluator.
-- Forming multiple digit numbers from the supplied digits is disallowed. (So an answer of 12+12 when given 1, 2, 2, and 1 is wrong).
+- Forming multiple digit numbers from the supplied digits is disallowed.
+  (So an answer of 12+12 when given 1, 2, 2, and 1 is wrong).
 - The order of the digits when given does not have to be preserved.
-
-## Notes
-
-    The type of expression evaluator used is not mandated. An RPN evaluator is equally acceptable for example.
-    The task is not for the program to generate the expression, or test whether an expression is even possible.
 ]#
 
 import^std.io
 import^std.random
 
 #[
-Reader は書かれた式を読みながら数える。読み位置も「どの数字を何回使ったか」も
-インスタンスの欄にあるので、持ち回るものが無い。
+Reader reads the written expression and counts as it goes. Both the position
+and "how many times each digit was used" are fields of the instance, so there
+is nothing to carry around.
 
-相互再帰（expr → term → factor → expr）は self^ を通る。this^^ は
-字句上の外側を指すので兄弟のメソッドには届かない。
-def^ のメンバは互いに見えるので（14.7改）、輪になっていても前方宣言は要らない。
+The mutual recursion (expr -> term -> factor -> expr) goes through self^.
+this^^ names the enclosing literal, not a sibling member, so it does not
+reach one. A def^'s members see each other (14.7改), so a ring of them needs
+no forward declaration.
 
-読めない綴りに出会ったら ok を降ろして 0 を返す。誤りの値を作らないのは、
-これが書き手の誤りではなく入力だからである（14.19 が成り立たない範囲に
-空文字列を答えるのと同じ線）。
+Meeting a spelling it cannot read, it lowers ok and answers 0. No error value
+is made, because this is the input's mistake and not the writer's -- the same
+line 14.19 draws when it answers an empty string outside the range it holds
+for.
 ]#
 let^Reader = def^{
     self^{
         text = "",
         at = 1,
         ok = true^,
-        # 使った数字の多重集合。1..9 をそのまま添字にする
+        # The multiset of digits used. 1..9 index it directly
         used = { 0, 0, 0, 0, 0, 0, 0, 0, 0 },
     },
 
     override^new = f^line { self^{ text = line } },
 
-    # 空白を飛ばして今の1文字。尽きていれば ""
+    # The character here, spaces skipped. "" once the text is spent
     peek = p^self^{
         repeat^while^self^.at ≦ self^.text.length {
             if^self^.text.at(self^.at) = " " {
@@ -62,8 +67,8 @@ let^Reader = def^{
 
     bump = p^self^{ self^.at += 1 },
 
-    # 数字1文字、または括弧で囲んだ式。
-    # 続けて書いた 12 が 12 にならないのは、ここが1文字しか取らないからである
+    # One digit, or an expression in brackets.
+    # A written 12 does not become 12 because this takes one character only
     factor = p^self^{
         let^c = self^.peek()
         if^c = "(" {
@@ -81,8 +86,8 @@ let^Reader = def^{
             self^.ok := false^
             return^ 0
         }
-        self^.used[d] += 1 # if^d < 1 or^ d > 9 { が dの範囲を1~9 であることを保証してくれているので、
-        # nilチェックが不要。self^.used[d] ?+= 1 と書かなくて良い
+        self^.used[d] += 1 # the if^d < 1 or^ d > 9 { above holds d to 1..9, so
+        # there is no nil check to make: this need not be self^.used[d] ?+= 1
         self^.bump()
         return^d
     },
@@ -121,7 +126,7 @@ let^Reader = def^{
         return^value
     },
 
-    # 式全体。末尾に読み残しがあればプレイヤー入力の誤り
+    # The whole expression. Anything left unread is the player's mistake
     read = p^self^{
         let^value = self^.expr()
         if^self^.peek() != "" { self^.ok := false^}
@@ -129,7 +134,9 @@ let^Reader = def^{
     }
 }
 
-# 配った4つと使った4つが同じ多重集合か。1..9 の桁ごとの個数を並べた表を取る
+# Whether the four dealt and the four used are the same multiset. Each takes a
+# table of counts, one per digit of 1..9
+# This function needs a type annotation. But this function only in this file.
 let^same = f^want:t^{ number^[9] }, used:t^{ number^[9] } {
     for^i from^1 to^9 {
         if^want[i] != used[i] { return^false^}
@@ -143,15 +150,15 @@ try^{
         var^shown = ""
         for^i from^1 to^4 {
             let^d = rng.range(1, 9)
-            if^1 <= d <= 9 { # このように範囲を狭めることで nil チェックが不要になる
+            if^1 <= d <= 9 { # narrowing the range is what removes the nil check
                 want[d] += 1
-                # 残念ながら L^ は rng.range(1, 9) から d の範囲が1~9であることを認識できないので
-                # if^1 <= d <= 9 {} で囲う必要がある。
+                # L^ cannot tell from rng.range(1, 9) that d is within 1..9,
+                # so the if^1 <= d <= 9 {} around it is what says so.
             }
-            # 範囲を狭めない場合、この様に書く必要がある。
+            # Without the narrowing it has to be written this way:
             # want[d] ?+= 1
-            # こっちのほうが簡便だが、実際には存在しないnil^参照の可能性を示唆する書き方になってしまう。
-            # また、認識していない値のnil^化を黙って見過ごす・握りつぶす可能性のある書き方でもある。
+            # which is shorter, and says a nil^ may be reached where none ever
+            # is -- and would swallow one that arrived from somewhere unnoticed.
             shown := $"{shown} {d}"
         }
         print($"Four digits:{shown}")
@@ -167,10 +174,10 @@ try^{
                 print("That is not an expression I can read.")
             elif^!same(want, r.used):
                 print("Use each of the four digits exactly once.")
-            # / は実数除算なので 8/(3-8/3) は 24 ちょうどにならない。
-            # が、 = は実数の誤差を織り込むので、そのまま比べてよい。
-            # 幅を自分で決めたい場合はメンバメソッド eq を使う（ここでは要らない）。
-            # value.round() として明示的に整数に丸めても良い。
+            # / is real division, so 8/(3-8/3) does not land on exactly 24.
+            # But = takes the error of a real into account, so comparing
+            # directly is fine. To pick the width yourself there is the member
+            # eq (not needed here), or round it with value.round().
             elif^value = 24:
                 print("Correct!")
             else^:
