@@ -579,10 +579,9 @@ void typed_as(LhatUnitTypeKind kind, Dictionary *info)
                        PROPERTY_USAGE_NIL_IS_VARIANT;
 }
 
-// What a field starts as, for a placeholder to show where the scene stored
-// nothing. The written initialiser is not reachable here -- 14.11 runs it
-// inside `new`, and not making one is the point -- so the type's own zero
-// stands in until the game runs.
+// Where a fresh instance could not be made -- a new of the writer's own that
+// reaches through the node it was not given -- the type's own zero stands in,
+// so the field is at least shown and at least the right shape.
 Variant blank_of(LhatUnitTypeKind kind)
 {
     switch (kind) {
@@ -616,6 +615,22 @@ void *lhat_placeholder_create(LhatScript *script, Object *owner)
 
     Array properties;
     Dictionary values;
+    lhat_exported_properties(script, &properties, &values);
+    internal::gdextension_interface_placeholder_script_instance_update(
+        made, &properties, &values);
+    return made;
+}
+
+void lhat_exported_properties(const LhatScript *script, Array *properties,
+                              Dictionary *values)
+{
+    const LhatUnit *unit = script != nullptr ? script->lhat_unit() : nullptr;
+    if (unit == nullptr) {
+        return;  // nothing checked, so nothing to say it declares
+    }
+    CharString klass = script->lhat_class_name().utf8();
+    const Dictionary &defaults = script->lhat_defaults();
+
     size_t count = lhat_unit_member_count(unit, klass.get_data());
     for (size_t i = 0; i < count; i++) {
         LhatUnitMember member = lhat_unit_member(unit, klass.get_data(), i);
@@ -637,14 +652,26 @@ void *lhat_placeholder_create(LhatScript *script, Object *owner)
         info["hint_string"] = hint_string;
         info["usage"] =
             PROPERTY_USAGE_DEFAULT | PROPERTY_USAGE_SCRIPT_VARIABLE;
-        typed_as(member.type, &info);
-        properties.push_back(info);
-        values[name] = blank_of(member.type);
-    }
 
-    internal::gdextension_interface_placeholder_script_instance_update(
-        made, &properties, &values);
-    return made;
+        // What a fresh instance holds says both what the field starts as and
+        // what shape it is -- 14.11 ran the initialiser, so the value is the
+        // written one. The tree answers only where no instance could be made.
+        if (defaults.has(name)) {
+            Variant held = defaults[name];
+            info["type"] = held.get_type();
+            if (values != nullptr) {
+                (*values)[name] = held;
+            }
+        } else {
+            typed_as(member.type, &info);
+            if (values != nullptr) {
+                (*values)[name] = blank_of(member.type);
+            }
+        }
+        if (properties != nullptr) {
+            properties->push_back(info);
+        }
+    }
 }
 
 }  // namespace godot

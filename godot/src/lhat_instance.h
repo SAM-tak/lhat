@@ -35,6 +35,14 @@ void *lhat_instance_create(LhatScript *script, Object *owner);
 // and program.h's LhatUnitMember what each is called and shaped like.
 void *lhat_placeholder_create(LhatScript *script, Object *owner);
 
+// 02 の 18's exported fields, in the shape the engine reads a property list:
+// what the class declares (from the tree) with what a fresh instance holds
+// (from the script's defaults). Answered without an instance, since both
+// callers -- the placeholder above and _get_script_property_list -- ask where
+// there is none. Either output may be NULL.
+void lhat_exported_properties(const LhatScript *script, Array *properties,
+                              Dictionary *values);
+
 }  // namespace godot
 
 #endif  // LHAT_GODOT_INSTANCE_H

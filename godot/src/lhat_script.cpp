@@ -9,6 +9,7 @@
 #include "lhat_host.h"
 #include "lhat_instance.h"
 #include "lhat_language.h"
+#include "lhat_variant.h"
 
 namespace godot {
 
@@ -173,6 +174,7 @@ void LhatScript::let_go()
     unwearable = String();
     runnable = false;
     tool_script = false;
+    defaults.clear();
 }
 
 Error LhatScript::_reload(bool keep_state)
@@ -263,8 +265,44 @@ Error LhatScript::_reload(bool keep_state)
 
     klass_name = name;
     runnable = true;
+    read_defaults();
     warn_about_signals();
     return OK;
+}
+
+// One instance, made and thrown away, so that what a fresh one holds can be
+// answered without making one each time it is asked.
+//
+// Made with no node behind it. The engine has not built an Object yet -- this
+// runs when the file is read -- so the handle points at nothing, and a new of
+// the writer's own that reaches through it fails. That failure is swallowed:
+// a file being read is not the moment to complain, and answering no defaults
+// costs a revert arrow rather than anything a game does.
+void LhatScript::read_defaults()
+{
+    defaults.clear();
+    LhatValue self = lhat_nil();
+    int64_t id = 0;
+    if (!make_instance(nullptr, &self, &id, true)) {
+        return;
+    }
+    if (lhat_is_object_kind(self, LHAT_OBJECT_TABLE)) {
+        const LhatTable *fields = (const LhatTable *)lhat_as_object(self);
+        for (size_t i = 0; i < fields->entry_capacity; i++) {
+            const LhatTableEntry *entry = &fields->entries[i];
+            if (lhat_is_nil(entry->key) ||
+                !lhat_is_object_kind(entry->key, LHAT_OBJECT_STRING)) {
+                continue;
+            }
+            const LhatString *key =
+                (const LhatString *)lhat_as_object(entry->key);
+            defaults[String::utf8(key->text, (int)key->length)] =
+                host::to_variant(entry->value, units.godot);
+        }
+    }
+    // Unrooted at once: it was made to be read, and a table nothing points at
+    // is what the collector is for.
+    drop_instance(id);
 }
 
 // 14.9's `new` is an ordinary member of the definition and takes no self^,
@@ -279,16 +317,20 @@ Error LhatScript::_reload(bool keep_state)
 //
 // A unit that wears a node without wrapping one keeps 14.11's default `new`
 // and takes nothing, so the call is tried both ways.
-bool LhatScript::make_instance(Object *owner, LhatValue *out, int64_t *id)
+bool LhatScript::make_instance(Object *owner, LhatValue *out, int64_t *id,
+                               bool quiet)
 {
     if (!runnable) {
         return false;
     }
 
+    // A handle is made even for no node: read_defaults wants one built
+    // without the engine having made an Object yet, and a class wrapping a
+    // node still takes the argument. What it points at is nothing, which is
+    // what a node that is not there should look like from L^.
     LhatValue handle = lhat_nil();
     size_t count = 0;
-    if (owner != nullptr &&
-        host::make_object(machine, units.godot, owner, &handle)) {
+    if (host::make_object(machine, units.godot, owner, &handle)) {
         count = 1;
     }
     LhatRunResult made =
@@ -300,8 +342,13 @@ bool LhatScript::make_instance(Object *owner, LhatValue *out, int64_t *id)
         made = lhat_machine_call_member(machine, klass, "new", 3, nullptr, 0);
     }
     if (made.status != LHAT_RUN_OK) {
-        UtilityFunctions::push_error(
-            host::problem(get_path(), lhat_run_status_message(made.status)));
+        // Quiet for the one made to be read rather than worn: a file being
+        // opened is not the moment to complain that a constructor wanted the
+        // node it has not been given.
+        if (!quiet) {
+            UtilityFunctions::push_error(host::problem(
+                get_path(), lhat_run_status_message(made.status)));
+        }
         return false;
     }
 
@@ -526,9 +573,18 @@ TypedArray<Dictionary> LhatScript::_get_script_method_list() const
     return TypedArray<Dictionary>();
 }
 
+// What the class declares, asked of the script rather than of a node wearing
+// it -- the inspector reads this for a .lh that is not on anything, and the
+// scene's saved values are compared against it.
 TypedArray<Dictionary> LhatScript::_get_script_property_list() const
 {
-    return TypedArray<Dictionary>();
+    Array found;
+    lhat_exported_properties(this, &found, nullptr);
+    TypedArray<Dictionary> out;
+    for (int64_t i = 0; i < found.size(); i++) {
+        out.push_back(found[i]);
+    }
+    return out;
 }
 
 // 02 の 18: a signal is a member the writer marked @signal. The member's own
@@ -677,17 +733,19 @@ void LhatScript::warn_about_signals() const
     }
 }
 
+// What a fresh instance holds, which is what the inspector's revert arrow
+// means by "back to the default". Read once at load (read_defaults); a field
+// missing from it is one no instance could be made to show, and answering
+// false is what keeps the arrow from offering a value nothing would give.
 bool LhatScript::_has_property_default_value(const StringName &property) const
 {
-    (void)property;
-    return false;
+    return defaults.has(String(property));
 }
 
 Variant LhatScript::_get_property_default_value(
     const StringName &property) const
 {
-    (void)property;
-    return Variant();
+    return defaults.get(String(property), Variant());
 }
 
 void LhatScript::_update_exports()

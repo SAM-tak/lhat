@@ -54,6 +54,21 @@ class LhatScript : public ScriptExtension {
     String klass_name;
     int64_t next_id = 1;
     bool runnable = false;
+
+    // What a fresh instance's @export fields hold, by name. Read once, from
+    // one instance made and thrown away when the class is found.
+    //
+    // 14.11 runs the self^ initialisers inside new, so what is written in
+    // self^{ … } exists as a value nowhere else -- a definition carries no
+    // template a host could read (14.2 keeps `definition` a line to the
+    // shared members, not a prototype holding fields). Making one is the only
+    // way to see them.
+    //
+    // What a new of the writer's own put there counts as the default too: a
+    // class deriving godot.Object has exactly one new that matters, the
+    // engine only ever calls that one, and "what a fresh one holds" is what
+    // the inspector's revert arrow means.
+    Dictionary defaults;
     // 02 の 18: whether the class a node wears carried @tool rather than
     // @game. Read once when the class is found, since _is_tool is const and
     // asked often -- walking the tree each time would be walking it per frame.
@@ -97,11 +112,19 @@ public:
     const String &lhat_class_name() const { return klass_name; }
 
     // 14.9's `new`, and the instance put where the collector reaches it.
-    bool make_instance(Object *owner, LhatValue *out, int64_t *id);
+    // `quiet` for the one read_defaults makes and throws away: a constructor
+    // that wanted the node it was not given is not something to report while
+    // a file is only being opened.
+    bool make_instance(Object *owner, LhatValue *out, int64_t *id,
+                       bool quiet = false);
 
     // What the conversions need to carry a handle across.
     const host::Godot *godot() const { return units.godot; }
+    // What a fresh instance's fields hold, by name. Empty where one could
+    // not be made.
+    const Dictionary &lhat_defaults() const { return defaults; }
     void drop_instance(int64_t id);
+    void read_defaults();
 
 public:
     // 03 の 1.1 over the graph: the text is checked with the units it
