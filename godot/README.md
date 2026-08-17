@@ -18,13 +18,13 @@ godot-cpp に対して書くので、ツリーの中でここだけが C++。言
 
 ### ノードに着せられる
 
-**着せられる単位の条件は2つ** — `module^` であること、`public^` な `def^` が
-ちょうど1つあること。
+**着せられる単位の条件は2つ** — `module^` であること、着るクラスが
+`public^` な `def^` として在ること。
 
 - `module^` は単位の答えを `L^.modules` に置く。これが GC の根なので、
   エンジンがノードを持っている間、定義が回収されない
-- `def^` が1つ、は「このファイルが宣言するクラス」を命名規約なしに
-  見つけられるようにするため
+- `public^` は 05 の 5.5 のとおり単位の答えに載る条件であり、
+  ホストが値に手を届かせる唯一の道である
 
 ```lhat
 module^ demo.counter
@@ -36,6 +36,39 @@ public^let^ Counter = def^{
     count = f^self^ -> number^ { return^ self^.ticks },
 }
 ```
+
+#### 公開クラスが2つ以上なら `@prime` で指す
+
+どれを着るかは `@prime` が言う。1つしか無ければ書かなくてよい
+——選ぶものが無いので。
+
+```lhat
+@prime
+public^let^ Spinner = Godot.Sprite2D..def^{ … }
+
+public^let^ Helper = def^{ … }      # 同じファイルで公開してよい
+```
+
+**2つ以上あって印が無ければ誤り**（どれか分からない）。**印が2つでも誤り**
+（ノードが着るのは1つ）。どちらも `_reload` の位置で言う。
+
+**`@prime` は公開された束縛にしか書けない**（02 の 18.4改 の的）。私有の
+`def^` は単位の答えに載らないので、印を付けてもエンジンは値に手が届かない
+——書けてしまうと黙って効かないため、検査器がその場で弾く。
+
+```lhat
+@prime
+let^ Hidden = …    # error: this annotation was not registered for what it
+                   #        is written above: prime
+```
+
+［補足］ 私有の `def^` は元から何個でも書けた。単位の答えに載るのは `public^` な
+名前だけなので、制限は公開したいときにだけ掛かっていた。
+
+以前は「`public^` な `def^` がちょうど1つ」という規則だった。**それは言語が
+関与していない規約**であり、2つ目のクラスを公開した瞬間にそのファイルが
+スクリプトでなくなる、という代償を払っていた。18.1 のとおり
+「どれが何のためか」を言うのは注釈の仕事である。
 
 `_ready` も `_process` も、エンジンが GDScript を呼ぶのと同じ経路で呼ばれる。
 `_process` が毎フレーム回るのは `has_method` が真を答えるからで、
@@ -136,6 +169,7 @@ public^let^ Spinner = Godot.Sprite2D..def^{
 どれが何のためのものかを知らない。
 
 ```lhat
+@prime
 public^let^ Spinner = Godot.Sprite2D..def^{
     self^{
         @export_range(0, 10) speed = 1,
@@ -147,6 +181,9 @@ public^let^ Spinner = Godot.Sprite2D..def^{
     ...
 }
 ```
+
+- **`@prime`** — その `public^` な `def^` がノードの着るクラスであると言う。
+  公開クラスが1つしか無ければ書かなくてよい。上の「ノードに着せられる」を見る
 
 - **`@export`** — `self^` の欄をインスペクタに出す。欄の現在値がそのまま
   出て、インスペクタで変えるとその**インスタンスの** `self^` の欄が変わる。

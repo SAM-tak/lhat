@@ -250,6 +250,15 @@ const Godot *register_godot(LhatProgram *program)
         uint32_t targets;
         const char *signature;
     } annotations[] = {
+        // Which def^ of this unit a node wears. Without it the engine would
+        // need a rule of its own -- "the one public^ def^" was that rule, and
+        // it made a unit publishing a second class unwearable for no reason
+        // the language has.
+        //
+        // Public only: the engine reaches the class through the table the
+        // unit answers with (05 の 5.5), so one kept private is not something
+        // a node could wear however it is marked.
+        {"prime", LHAT_ANNOTATION_PUBLIC, nullptr},
         {"tool", LHAT_ANNOTATION_UNIT, nullptr},
         {"icon", LHAT_ANNOTATION_BINDING, "p^ string^;"},
         {"export", LHAT_ANNOTATION_FIELD, nullptr},

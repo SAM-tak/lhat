@@ -17,35 +17,96 @@ void LhatScript::_bind_methods()
 
 namespace {
 
-// 05 の 5.5: what a module^ unit answers is the table of its public^ names.
-// The one that is a definition is the class this file declares -- 14.9 marks
-// a table a def^ made, so no naming convention is needed to find it.
-bool sole_definition(LhatValue answered, LhatValue *out, String *name)
+// 02 の 18: whether the binding of this name was written with @prime.
+bool marked_prime(const LhatUnit *unit, const String &name)
+{
+    CharString spelt = name.utf8();
+    size_t written = lhat_unit_annotation_count(unit, spelt.get_data(), NULL);
+    for (size_t i = 0; i < written; i++) {
+        LhatAnnotation at =
+            lhat_unit_annotation(unit, spelt.get_data(), NULL, i);
+        if (at.name != NULL &&
+            String::utf8(at.name, (int)at.name_length) == "prime") {
+            return true;
+        }
+    }
+    return false;
+}
+
+// 05 の 5.5: what a module^ unit answers is the table of its public^ names,
+// and 14.9 marks a table a def^ made -- so the classes a unit publishes are
+// there to find without a naming convention. Which of them a node wears is
+// what @prime says.
+//
+// A unit publishing one class need not say it. That is not a second rule so
+// much as the first one asked of a shorter list: with one candidate there is
+// nothing to choose. Saying it where there are several is what the engine
+// could not otherwise know, and 18.1 is where a host's question belongs --
+// "the one public^ def^" was a rule the language had no part in, and it made
+// publishing a second class cost the file its script.
+//
+// 18.4改 registers @prime for a published binding only, so a mark on one kept
+// private is refused where it is written rather than passed over here.
+//
+// Answers false when nothing is wearable, with `said` set where a writer has
+// something to fix.
+bool prime_definition(const LhatUnit *unit, LhatValue answered, LhatValue *out,
+                      String *name, String *said)
 {
     if (!lhat_is_object_kind(answered, LHAT_OBJECT_TABLE)) {
         return false;
     }
     const LhatTable *table = (const LhatTable *)lhat_as_object(answered);
-    size_t found = 0;
+    size_t definitions = 0;
+    size_t primes = 0;
+    LhatValue only = lhat_nil();
+    String only_name;
+
     for (size_t i = 0; i < table->entry_capacity; i++) {
         const LhatTableEntry *entry = &table->entries[i];
         if (lhat_is_nil(entry->key) ||
-            !lhat_is_object_kind(entry->value, LHAT_OBJECT_TABLE)) {
+            !lhat_is_object_kind(entry->value, LHAT_OBJECT_TABLE) ||
+            !lhat_is_object_kind(entry->key, LHAT_OBJECT_STRING)) {
             continue;
         }
         const LhatTable *held = (const LhatTable *)lhat_as_object(entry->value);
         if (!held->is_definition) {
             continue;
         }
-        found++;
-        *out = entry->value;
-        if (lhat_is_object_kind(entry->key, LHAT_OBJECT_STRING)) {
-            const LhatString *key =
-                (const LhatString *)lhat_as_object(entry->key);
-            *name = String::utf8(key->text, (int)key->length);
+        const LhatString *key = (const LhatString *)lhat_as_object(entry->key);
+        String spelt = String::utf8(key->text, (int)key->length);
+
+        definitions++;
+        if (marked_prime(unit, spelt)) {
+            primes++;
+            if (primes > 1) {
+                *said = String("more than one @prime here: a node wears one "
+                               "class, so one binding may carry it");
+                return false;
+            }
+            only = entry->value;
+            only_name = spelt;
+            continue;
+        }
+        // Kept in case nothing is marked and this turns out to be the only
+        // one. A marked one already found is not written over.
+        if (primes == 0) {
+            only = entry->value;
+            only_name = spelt;
         }
     }
-    return found == 1;
+
+    if (primes == 0 && definitions > 1) {
+        *said = String("this unit publishes more than one def^, so which one "
+                       "a node wears has to be written: put @prime above it");
+        return false;
+    }
+    if (definitions == 0) {
+        return false;  // a library, not a script. Not an error (see _reload)
+    }
+    *out = only;
+    *name = only_name;
+    return true;
 }
 
 }  // namespace
@@ -129,9 +190,14 @@ Error LhatScript::_reload(bool keep_state)
 
     unit = root;
     String name;
-    if (!sole_definition(ran.value, &klass, &name)) {
-        // Not an error: a unit that declares no class is a library, and
-        // require^ is what reaches it. Only wearing it is out.
+    String said;
+    if (!prime_definition(unit, ran.value, &klass, &name, &said)) {
+        // A unit that declares no class is a library, and require^ is what
+        // reaches it -- not an error, only unwearable. `said` is set where
+        // the writer has something to fix instead.
+        if (!said.is_empty()) {
+            UtilityFunctions::push_error(host::problem(get_path(), said));
+        }
         klass = lhat_nil();
         return OK;
     }
