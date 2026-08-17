@@ -2406,6 +2406,22 @@ void chk_check_annotations(Checker *c, const LhatNode *list, uint32_t target)
             continue;
         }
 
+        // 18.5: written once in a file. Counted per registration rather than
+        // between them, so two names both registered this way are each once
+        // and not once together -- a host wanting them to be one choice is
+        // the one that knows they are.
+        if ((found->targets & LHAT_ANNOTATION_FILEUNIQUE) != 0 &&
+            c->annotation_seen != NULL) {
+            size_t which = (size_t)(found - c->require.annotations);
+            if (c->annotation_seen[which]) {
+                chk_report_named(c, at->v.named.name,
+                                 LHAT_CHECK_ERR_ANNOTATION_REPEATED, name,
+                                 length);
+                continue;
+            }
+            c->annotation_seen[which] = true;
+        }
+
         // 18.3 keeps every argument a literal, so what is asked of them is a
         // count and a kind -- the same question a call asks, over a list the
         // parser already refused anything else into.
@@ -2452,6 +2468,19 @@ void lhat_check_unit(const LhatNode *unit, const LhatLexer *lexer, bool strict,
     if (require != NULL) {
         checker.require = *require;
     }
+    // 02 の 18.5: one flag per registration, for the ones written once in a
+    // file. Dropped rather than failing the check when there is no room --
+    // what is lost is a repeat going unreported, and refusing to check a unit
+    // over that would cost more than it saves.
+    if (checker.require.annotation_count > 0) {
+        checker.annotation_seen = (bool *)lhat_alloc(
+            checker.require.annotation_count * sizeof *checker.annotation_seen);
+        if (checker.annotation_seen != NULL) {
+            memset(checker.annotation_seen, 0,
+                   checker.require.annotation_count *
+                       sizeof *checker.annotation_seen);
+        }
+    }
 
     // 05 の 3 章: read before the statements, so a diagnostic about the path
     // does not wait behind the body.
@@ -2481,6 +2510,7 @@ void lhat_check_unit(const LhatNode *unit, const LhatLexer *lexer, bool strict,
 #endif
 
     chk_dispose_operator_carriers(&checker);
+    lhat_free(checker.annotation_seen);
     chk_scope_dispose(&scope);
 }
 
@@ -2863,6 +2893,9 @@ const char *lhat_check_error_message(LhatCheckErrorCode code)
         case LHAT_CHECK_ERR_ANNOTATION_MISPLACED:
             return "this annotation was not registered for what it is "
                    "written above";
+        case LHAT_CHECK_ERR_ANNOTATION_REPEATED:
+            return "this annotation may be written once in a file, and "
+                   "already was";
         case LHAT_CHECK_ERR_ANNOTATION_ARGUMENTS:
             return "these are not the arguments the annotation was "
                    "registered with";

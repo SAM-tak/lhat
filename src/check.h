@@ -249,6 +249,8 @@ typedef enum {
     LHAT_CHECK_ERR_NO_SUCH_ANNOTATION,
     LHAT_CHECK_ERR_ANNOTATION_MISPLACED,
     LHAT_CHECK_ERR_ANNOTATION_ARGUMENTS,
+    LHAT_CHECK_ERR_ANNOTATION_REPEATED, // 18.5: registered FILEUNIQUE, and
+                                        // the file already had one
     LHAT_CHECK_ERR_BARE_TABLE_TYPE      // 14.10: t^ is written with the
                                         // members it asks for, and the top of
                                         // tables is the one asking for none

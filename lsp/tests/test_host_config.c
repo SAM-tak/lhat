@@ -75,7 +75,8 @@ static const char *const CONFIG =
     // -- which is what a dump from a later build would carry.
     "  \"annotations\": [\n"
     "    {\"module\": \"h\", \"name\": \"badge\", \"targets\":"
-    " {\"field\": true, \"binding\": false, \"nonesuch\": true}}\n"
+    " {\"field\": true, \"fileunique\": true,"
+    " \"binding\": false, \"nonesuch\": true}}\n"
     "  ],\n"
     "  \"bindings\": [\n"
     "    {\"name\": \"print\", \"member\": \"L^.print\"}\n"
@@ -175,6 +176,14 @@ static void test_round_trip(void)
     check_refused("annotation false",
                   "@badge\n"
                   "let^ x = 1\n");
+
+    // 18.5's count travels the same way its places do, and only a second
+    // occurrence shows whether it arrived.
+    LHAT_TEST("a file-unique annotation is refused a second time");
+    check_refused("annotation twice",
+                  "let^ D = def^{\n"
+                  "    self^{ @badge hp = 1, @badge mp = 2 },\n"
+                  "}\n");
 }
 
 static void test_without_config(void)

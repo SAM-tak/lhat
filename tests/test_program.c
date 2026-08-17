@@ -1802,7 +1802,8 @@ static void test_dump_host_api(void)
     // that the shape between them is pinned as well as the names.
     LHAT_CHECK(lhat_register_annotation(&program, "h", "badge",
                                         LHAT_ANNOTATION_FIELD |
-                                            LHAT_ANNOTATION_PUBLIC,
+                                            LHAT_ANNOTATION_PUBLIC |
+                                            LHAT_ANNOTATION_FILEUNIQUE,
                                         NULL),
                "the annotation registered");
     // One place alone, and one that is a place no other test writes.
@@ -1835,7 +1836,7 @@ static void test_dump_host_api(void)
             "{\"kind\": \"global\", \"name\": \"twice\", \"signature\": "
             "\"f^number^ -> number^;\"}",
             "{\"module\": \"h\", \"name\": \"badge\", \"targets\": "
-            "{\"field\": true, \"public\": true}}",
+            "{\"field\": true, \"public\": true, \"fileunique\": true}}",
             "{\"module\": \"h\", \"name\": \"atop\", \"targets\": "
             "{\"unit\": true}}",
             "{\"name\": \"twice\", \"member\": \"L^.twice\"}",
@@ -2266,6 +2267,59 @@ static void test_annotations(void)
         program_with(&program, &disk, shown, 1);
         lhat_register_annotation(&program, "h", "badge",
                                  LHAT_ANNOTATION_PUBLIC, NULL);
+        lhat_program_check(&program, "main.lh");
+        LHAT_CHECK(!lhat_program_has_errors(&program), "clean");
+    }
+    lhat_program_dispose(&program);
+
+    // 18.5: FILEUNIQUE is a count rather than a place. The one just above
+    // shows the same name twice being fine without it, which is what makes
+    // this pair say something.
+    LHAT_TEST("a file-unique annotation is refused a second time");
+    {
+        static const File twice[] = {
+            {"main.lh",
+             "module^ m\n@only\npublic^let^ a = 1\n@only\npublic^let^ b = 2\n"}};
+        program_with(&program, &disk, twice, 1);
+        lhat_register_annotation(&program, "h", "only",
+                                 LHAT_ANNOTATION_PUBLIC |
+                                     LHAT_ANNOTATION_FILEUNIQUE,
+                                 NULL);
+        lhat_program_check(&program, "main.lh");
+        LHAT_CHECK(lhat_program_has_errors(&program), "reported");
+    }
+    lhat_program_dispose(&program);
+
+    LHAT_TEST("and taken once");
+    {
+        static const File once[] = {
+            {"main.lh", "module^ m\n@only\npublic^let^ a = 1\n"}};
+        program_with(&program, &disk, once, 1);
+        lhat_register_annotation(&program, "h", "only",
+                                 LHAT_ANNOTATION_PUBLIC |
+                                     LHAT_ANNOTATION_FILEUNIQUE,
+                                 NULL);
+        lhat_program_check(&program, "main.lh");
+        LHAT_CHECK(!lhat_program_has_errors(&program), "clean");
+    }
+    lhat_program_dispose(&program);
+
+    // Counted per registration, not between them: a host wanting two names to
+    // be one choice is the one that knows they are, and counts them itself.
+    LHAT_TEST("two file-unique annotations do not exclude each other");
+    {
+        static const File pair[] = {
+            {"main.lh",
+             "module^ m\n@one\npublic^let^ a = 1\n@two\npublic^let^ b = 2\n"}};
+        program_with(&program, &disk, pair, 1);
+        lhat_register_annotation(&program, "h", "one",
+                                 LHAT_ANNOTATION_PUBLIC |
+                                     LHAT_ANNOTATION_FILEUNIQUE,
+                                 NULL);
+        lhat_register_annotation(&program, "h", "two",
+                                 LHAT_ANNOTATION_PUBLIC |
+                                     LHAT_ANNOTATION_FILEUNIQUE,
+                                 NULL);
         lhat_program_check(&program, "main.lh");
         LHAT_CHECK(!lhat_program_has_errors(&program), "clean");
     }

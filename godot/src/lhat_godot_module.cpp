@@ -278,8 +278,14 @@ const Godot *register_godot(LhatProgram *program)
         // Public only: the engine reaches the class through the table the
         // unit answers with (05 の 5.5), so one kept private is not something
         // a node could wear however it is marked.
-        {"game", LHAT_ANNOTATION_PUBLIC, nullptr},
-        {"tool", LHAT_ANNOTATION_PUBLIC, nullptr},
+        //
+        // FILEUNIQUE counts per name, so the checker catches a second @game
+        // and a second @tool where each stands. One of each is the case it
+        // cannot see -- a flag saying otherwise would make every annotation
+        // bearing it exclude every other -- so worn_definition counts the
+        // two together and that one is caught when the file is read.
+        {"game", LHAT_ANNOTATION_PUBLIC | LHAT_ANNOTATION_FILEUNIQUE, nullptr},
+        {"tool", LHAT_ANNOTATION_PUBLIC | LHAT_ANNOTATION_FILEUNIQUE, nullptr},
         {"icon", LHAT_ANNOTATION_BINDING, "p^ string^;"},
         {"export", LHAT_ANNOTATION_FIELD, nullptr},
         {"export_range", LHAT_ANNOTATION_FIELD, "p^ number^, number^, ...;"},

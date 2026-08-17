@@ -73,6 +73,7 @@ static uint32_t targets_of(const cJSON *object)
         {"field", LHAT_ANNOTATION_FIELD},
         {"member", LHAT_ANNOTATION_MEMBER},
         {"public", LHAT_ANNOTATION_PUBLIC},
+        {"fileunique", LHAT_ANNOTATION_FILEUNIQUE},  // a count, not a place
     };
 
     uint32_t targets = 0;

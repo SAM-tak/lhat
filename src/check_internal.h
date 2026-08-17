@@ -182,6 +182,14 @@ typedef struct {
     // its own, in which case a require^ cannot be followed.
     LhatRequire require;
 
+    // 02 の 18.5: which of the registered annotations this file has already
+    // used, for the ones registered LHAT_ANNOTATION_FILEUNIQUE. One flag per
+    // registration, indexed the way `require.annotations` is -- annotations
+    // are checked at the unit's head, at each binding and inside each def^,
+    // so counting them takes something that outlives one list. NULL when
+    // nothing was registered, or when there was no room.
+    bool *annotation_seen;
+
     Scope *scope;
     // 05 の 2.2: one environment. A name means a value, a type, or both.
 

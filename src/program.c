@@ -2554,6 +2554,7 @@ static const struct {
     {LHAT_ANNOTATION_FIELD, "field"},
     {LHAT_ANNOTATION_MEMBER, "member"},
     {LHAT_ANNOTATION_PUBLIC, "public"},
+    {LHAT_ANNOTATION_FILEUNIQUE, "fileunique"},  // a count, not a place
 };
 
 // A mask reads as a mask only to something holding the same enum, and the

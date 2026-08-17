@@ -420,9 +420,13 @@ typedef struct LhatHost {
     struct LhatRuntimeType **parameter_types;
 } LhatHost;
 
-// 02 の 18.5: where an annotation may be written. A registration says which
-// of these it takes, and the checker refuses it anywhere else -- the same
-// job Java's @Target and C#'s AttributeUsage do.
+// 02 の 18.5: where an annotation may be written, and how many times. A
+// registration says which of these it takes, and the checker refuses it
+// anywhere else -- the same job Java's @Target and C#'s AttributeUsage do.
+//
+// All but the last name a place. FILEUNIQUE names none: it is a count, and
+// sits here because a registration carries one mask and asking for a second
+// parameter would buy nothing.
 typedef enum {
     LHAT_ANNOTATION_UNIT = 1u << 0,     // at the head of a unit
     LHAT_ANNOTATION_BINDING = 1u << 1,  // a top-level let^ or var^
@@ -433,7 +437,13 @@ typedef enum {
     // nowhere else, so an annotation about a value -- rather than about the
     // name -- registers for this and is refused on a binding kept private.
     // Registering for LHAT_ANNOTATION_BINDING alone admits both.
-    LHAT_ANNOTATION_PUBLIC = 1u << 4
+    LHAT_ANNOTATION_PUBLIC = 1u << 4,
+    // Written once in a file or not at all -- a second one is refused where
+    // it stands. Counted per name: two registrations both carrying this are
+    // each unique, not unique between them. A host wanting two names to be
+    // one choice counts them itself, since a flag saying otherwise would
+    // make every annotation bearing it exclude every other.
+    LHAT_ANNOTATION_FILEUNIQUE = 1u << 5
 } LhatAnnotationTarget;
 
 // 05 の 8.8: what tells one registered type from another while running.
