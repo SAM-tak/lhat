@@ -7,16 +7,27 @@
 # right way round -- a CharacterBody3D wrapper is a Node3D wherever one is
 # asked for, because it holds everything Node3D holds and more.
 #
-# A class that is only ever composed onto declares the field abstract^; the
-# ones a script actually wears fill it with godot.Object.default(), which the
-# host replaces with the node as the instance is made.
+# The node arrives as new()'s argument, so every class down the chain has one
+# from its first line -- 14.11 runs the self^ initialisers inside new, and a
+# field written in from outside afterwards would not be there yet for any of
+# them.
+#
+# That is also what lets the field stay abstract^. 14.15 refuses to make an
+# instance because the default new() has no value to put there, and 14.11改's
+# override^ leaves no default new() to refuse: the one way to build one of
+# these fills the field, so there is no placeholder to write and none of the
+# classes below needs to fill it either.
 
 module^ lhat.Godot
 
 import^ godot
 
 public^let^ Object = def^{
-    self^{ abstract^ gdobj : godot.Object },
+    self^{ abstract^gdobj : godot.Object },
+
+    override^new = f^obj:godot.Object {
+        self^{ gdobj = obj }
+    },
 
     isValid = f^self^ -> bool^ { return^ self^.gdobj.isValid() },
     className = f^self^ -> string^ { return^ self^.gdobj.className() },
@@ -40,10 +51,7 @@ public^let^ Node2D = Node..def^{
     },
 }
 
-# A class a script may wear: the field is filled, so new() works.
 public^let^ Sprite2D = Node2D..def^{
-    self^{ gdobj = godot.Object.default() },
-
     getFlipH = f^self^ -> bool^ { return^ self^.gdobj.get("flip_h") as^ bool^ },
     setFlipH = p^self^, flipped:bool^ { self^.gdobj.set("flip_h", flipped) },
 }

@@ -60,25 +60,44 @@ public^let^ Counter = def^{
 `CharacterBody3D` のラッパーは `Node3D` が要る所にそのまま通る。
 
 ```lhat
-module^ lhat.NodeLib
+module^ lhat.Godot
 import^ godot
 
-public^let^ Node2D = Node..def^{
-    self^{ abstract^ node : godot.Object },
-    getRotation = f^self^ -> number^ { return^ self^.node.get("rotation") as^ number^ },
+public^let^ Object = def^{
+    self^{ abstract^ gdobj : godot.Object },
+
+    # ノードは new() の引数で届く
+    override^new = f^obj:godot.Object { self^{ gdobj = obj } },
+
+    className = f^self^ -> string^ { return^ self^.gdobj.className() },
 }
 
-# 着られるクラスは場を埋める。new() の直後にホストが本物を差し込む
-public^let^ Sprite2D = Node2D..def^{
-    self^{ node = godot.Object.default() },
+public^let^ Node2D = Object..def^{
+    getRotation = f^self^ -> number^ { return^ self^.gdobj.get("rotation") as^ number^ },
 }
+
+public^let^ Sprite2D = Node2D..def^{ … }
 ```
+
+**ノードは `new()` の引数として渡る。** `_instance_create(Object *for_object)`
+の時点でエンジンは既にオブジェクトを作り終えているので、`new` を呼ぶ前に
+本物が手元にある。14.11 が `self^` の初期化式を `new` の中で走らせる以上、
+**構成子がノードを触れるのはこの順序だけ**である——返ってから欄に書き込む形
+では、初期化式も `override^new` の本体も無効なハンドルしか見られない。
+
+だから場は `abstract^` のままでよい。14.15 が生成を拒むのは既定の `new()` が
+入れる値を持たないからで、14.11改 の `override^` はその既定を消す。
+作る道が場を埋める道しか無くなるので、置き場所用の仮値が要らない。
+
+ラッパを使わない素の `def^` も着られる（`demo/counter.lh`）。そちらは既定の
+`new()` のままなので、ホストは `new(obj)` を試して引数数で外れたら `new()`
+に落ちる。
 
 ```lhat
 module^ demo.spinner
-let^ nodeLib = require^"lhat/NodeLib.lh"
+let^ Godot = require^"lhat/Godot.lh"
 
-public^let^ Spinner = nodeLib.Sprite2D..def^{
+public^let^ Spinner = Godot.Sprite2D..def^{
     self^{ turns = 0 },
     _process = p^self^, delta:number^ {
         self^.setRotation(self^.getRotation() + delta)

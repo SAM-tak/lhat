@@ -156,38 +156,40 @@ Error LhatScript::_reload(bool keep_state)
 
 // 14.9's `new` is an ordinary member of the definition and takes no self^,
 // so it is called through the definition the way a written `Enemy.new()` is.
+//
+// The node is handed to it rather than written in afterwards. The engine
+// builds the Object first and only then asks the script for an instance
+// (_instance_create takes it), so the real thing is in hand before anything
+// runs -- and 14.11 runs the self^ initialisers inside `new`, which is
+// exactly where a constructor that wants its node would look. Filling the
+// field on the way out would leave every one of them reading a placeholder.
+//
+// A unit that wears a node without wrapping one keeps 14.11's default `new`
+// and takes nothing, so the call is tried both ways.
 bool LhatScript::make_instance(Object *owner, LhatValue *out, int64_t *id)
 {
     if (!runnable) {
         return false;
     }
+
+    LhatValue handle = lhat_nil();
+    size_t count = 0;
+    if (owner != nullptr &&
+        host::make_object(machine, units.godot, owner, &handle)) {
+        count = 1;
+    }
     LhatRunResult made =
-        lhat_machine_call_member(machine, klass, "new", 3, nullptr, 0);
+        lhat_machine_call_member(machine, klass, "new", 3, &handle, count);
+    // 14.11改: `new(obj)` is written with override^ or overload^, and a unit
+    // that wrote neither answers the arity rather than a fault of its own.
+    if (count == 1 && (made.status == LHAT_RUN_ARITY ||
+                       made.status == LHAT_RUN_NO_CANDIDATE)) {
+        made = lhat_machine_call_member(machine, klass, "new", 3, nullptr, 0);
+    }
     if (made.status != LHAT_RUN_OK) {
         UtilityFunctions::push_error(
             host::problem(get_path(), lhat_run_status_message(made.status)));
         return false;
-    }
-
-    // The field the wrapper library declares abstract^ and a concrete class
-    // fills with godot.Object.default() -- 14.11 ran that initialiser just
-    // now, and this is what puts the real object in its place. A unit that
-    // wants nothing to do with its node simply has no such field.
-    if (owner != nullptr && lhat_is_object_kind(made.value, LHAT_OBJECT_TABLE)) {
-        // Spelled once: the length is taken from the name so the two cannot
-        // drift apart, which is a rename away from writing a key nothing
-        // answers to and leaving the placeholder where the object goes.
-        static const char OWNER_FIELD[] = "gdobj";
-        LhatTable *fields = (LhatTable *)lhat_as_object(made.value);
-        LhatValue key = lhat_nil();
-        LhatValue handle = lhat_nil();
-        if (lhat_machine_make_string(machine, OWNER_FIELD,
-                                     sizeof OWNER_FIELD - 1, &key) &&
-            !lhat_is_nil(lhat_table_get(fields, key)) &&
-            host::make_object(machine, units.godot, owner, &handle)) {
-            bool taken = false;
-            lhat_table_set(fields, key, handle, &taken);
-        }
     }
 
     LhatTable *table = (LhatTable *)lhat_as_object(instances);
