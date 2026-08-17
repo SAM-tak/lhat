@@ -20,6 +20,33 @@
 
 namespace godot {
 
+// Which hatted spellings this host draws apart, and the one table saying so.
+//
+// A guess, and knowingly one. 01 の 2.1 reserves no word: lhat_scan answers
+// every hatted word as a name because the language settles nothing about the
+// spelling, and a member somebody called `main^` really is a member. What is
+// left is that `def^` almost always is the def^, and colour is all that rides
+// on it. Both the things wanting the guess are here -- the reserved-word list
+// the editor asks for, and lhat_highlighter.cpp's colours -- so it is made
+// once rather than in each.
+enum LhatWordKind {
+    LHAT_WORD_NONE,     // 14.17's tostring^ and the like: the writer's own
+    LHAT_WORD_CONTROL,  // 02 の 9/10 章: the ones that branch or leave
+    LHAT_WORD_DECLARE,  // what declares, and the operators spelled as words
+    LHAT_WORD_TYPE,     // number^, string^, t^, Self^ ...
+    LHAT_WORD_VALUE,    // self^, this^, L^ ...: a hat word naming a value
+    LHAT_WORD_CLAUSE    // 02 の 9.2's clause words: main^, id^, typeof^ ...
+};
+
+// `text` is the word as written, hat and all. 01 の 2.3: a spelling with more
+// than one hat is that same name reached further out, so the hats are folded
+// to one before the comparison.
+LhatWordKind lhat_word_kind(const char *text, size_t length);
+
+// The spellings of one kind, NULL terminated, for a caller that has to name
+// them rather than recognise them.
+const char *const *lhat_words_of(LhatWordKind kind);
+
 class LhatLanguage : public ScriptLanguageExtension {
     GDCLASS(LhatLanguage, ScriptLanguageExtension)
 

@@ -1,5 +1,7 @@
 #include "lhat_language.h"
 
+#include <string.h>
+
 #include <godot_cpp/core/class_db.hpp>
 #include <godot_cpp/classes/script_language_extension_profiling_info.hpp>
 #include <godot_cpp/core/memory.hpp>
@@ -14,49 +16,76 @@ LhatLanguage *LhatLanguage::singleton = nullptr;
 
 namespace {
 
-// The spellings vscode-extension/syntaxes/lhat.tmLanguage.json groups the
-// same way, which is the one place that already had to make this call. The
-// language itself keeps no such list: 01 の 2 章 scans every hatted word
-// alike and it is the checker that refuses the ones it does not know.
-//
-// Written with the hat, handed over without it. The editor's CodeHighlighter
-// ends a word at the first character that is not one an identifier is made of,
-// and '^' is not one -- so a keyword spelled with it is compared against a
-// word that can never contain it and never matches. Measured: 'def^'
-// registered against the line 'def^ x' colours nothing, 'def' colours the
-// three characters before the hat.
-//
-// So the word is coloured and the hat beside it takes the symbol colour. What
-// that costs is a bare 'def' -- 01 の 2.3 makes it a different name, and a
-// legal one -- coloured as though it were the keyword. Colour is all it is,
-// and the alternative on offer is no colour at all.
+// The groups vscode-extension/syntaxes/lhat.tmLanguage.json already sorts
+// these into, kept alike so the two editors read alike. Written with the hat,
+// since that is the spelling: what strips it is unhatted() below, and only
+// for the one caller that needs it stripped.
 const char *const control_flow_words[] = {
     "if^",     "else^", "elseif^", "elsif^",  "elif^",  "ei^",
     "el^",     "for^",  "when^",   "other^",  "from^",  "to^",
     "downto^", "step^", "in^",     "while^",  "until^", "next^",
     "skip^",   "continue^", "repeat^", "do^", "break^", "return^",
     "yield^",  "yieldall^", "await^", "defer^", "with^", "finally^",
-    "try^",    "catch^", "panic^",
+    "try^",    "catch^", "panic^",  nullptr,
 };
 
-const char *const other_words[] = {
+// What declares, and the operators 01 の 7 章 spells as words. true^ and
+// false^ are here rather than among the values below: they are constants, and
+// a theme telling the two apart draws a constant with its keywords.
+//
+// type^ appears in no design document. Left where it has always been rather
+// than moved on a guess about what it would be.
+const char *const declaring_words[] = {
     "var^",      "let^",     "f^",       "p^",        "op^",
     "def^",      "enum^",    "pack^",    "unpack^",   "module^",
     "public^",   "require^", "import^",  "override^", "overload^",
     "abstract^", "closed^",  "errordef^",
-    "number^",   "string^",  "bool^",    "nil^",      "any^",
-    "t^",        "type^",    "c^",       "error^",    "Self^",
     "true^",     "false^",
-    "and^",      "or^",      "is^",      "isa^",      "as^",
-    "this^",     "it^",      "self^",    "super^",    "class^",  "L^",
-    "typeof^",   "id^",      "width^",   "autowidth^",
-    "prolog^",   "prologue^", "pre^",    "premain^",  "first^",
-    "main^",     "last^",    "epilog^",  "epilogue^",
+    "and^",      "or^",      "is^",      "isa^",      "as^",     nullptr,
 };
 
-// The word an editor can match: the spelling above without its hat. 01 の 2.3
-// makes the hat part of the name, so this is not the name -- it is the run of
-// characters the highlighter will have in hand when it reaches one.
+// Self^ is a type where self^ is a value: 01 の 2.3 compares a hat word byte
+// for byte, so the capital is a different name and belongs to another list.
+const char *const type_words[] = {
+    "number^", "string^", "bool^",  "nil^",  "any^",
+    "t^",      "c^",      "error^", "Self^", nullptr,
+};
+
+// The hat words that name a value rather than syntax. 05 の 8.6's L^ names
+// the machine; the rest name what the definition around them is applied to.
+const char *const value_words[] = {
+    "this^", "it^", "self^", "super^", "class^", "L^", nullptr,
+};
+
+// 02 の 9.2's clause words, each with the long spelling the parser also takes.
+const char *const clause_words[] = {
+    "typeof^",   "id^",      "width^",   "autowidth^", "prolog^",
+    "prologue^", "pre^",     "premain^", "first^",     "main^",
+    "last^",     "epilog^",  "epilogue^", nullptr,
+};
+
+bool word_among(const char *const *list, const char *text, size_t length)
+{
+    for (size_t i = 0; list[i] != nullptr; i++) {
+        if (strlen(list[i]) == length && memcmp(list[i], text, length) == 0) {
+            return true;
+        }
+    }
+    return false;
+}
+
+// The word the editor's own CodeHighlighter can match: the spelling above
+// without its hat. That highlighter ends a word at the first character an
+// identifier is not made of, and '^' is not one -- so a word registered with
+// the hat is compared against text that can never contain it and never
+// matches. Measured: 'def^' registered against the line 'def^ x' colours
+// nothing, 'def' colours the three characters before the hat.
+//
+// 01 の 2.3 makes the hat part of the name, so this is not the name; it is
+// the run of characters that highlighter will have in hand. What it costs is
+// a bare 'def' -- a different name, and a legal one -- coloured as the
+// keyword. Only the fallback pays it: LhatHighlighter reads whole words and
+// does not go through here.
 String unhatted(const char *word)
 {
     String spelt = String::utf8(word);
@@ -64,6 +93,43 @@ String unhatted(const char *word)
 }
 
 }  // namespace
+
+const char *const *lhat_words_of(LhatWordKind kind)
+{
+    switch (kind) {
+        case LHAT_WORD_CONTROL: return control_flow_words;
+        case LHAT_WORD_DECLARE: return declaring_words;
+        case LHAT_WORD_TYPE:    return type_words;
+        case LHAT_WORD_VALUE:   return value_words;
+        case LHAT_WORD_CLAUSE:  return clause_words;
+        default:                return nullptr;
+    }
+}
+
+LhatWordKind lhat_word_kind(const char *text, size_t length)
+{
+    // 01 の 2.3: the hat is part of the name, and a spelling with more than
+    // one is that same name reached further out -- so the word to compare is
+    // the letters plus a single hat.
+    size_t hats = 0;
+    while (hats < length && text[length - 1 - hats] == '^') {
+        hats++;
+    }
+    if (hats == 0) {
+        return LHAT_WORD_NONE;  // no hat, so none of these
+    }
+    size_t canonical = length - hats + 1;
+
+    static const LhatWordKind kinds[] = {LHAT_WORD_CONTROL, LHAT_WORD_DECLARE,
+                                         LHAT_WORD_TYPE, LHAT_WORD_VALUE,
+                                         LHAT_WORD_CLAUSE};
+    for (LhatWordKind kind : kinds) {
+        if (word_among(lhat_words_of(kind), text, canonical)) {
+            return kind;
+        }
+    }
+    return LHAT_WORD_NONE;
+}
 
 LhatLanguage::LhatLanguage()
 {
@@ -190,12 +256,15 @@ bool LhatLanguage::_is_using_templates()
 
 PackedStringArray LhatLanguage::_get_reserved_words() const
 {
+    static const LhatWordKind kinds[] = {LHAT_WORD_CONTROL, LHAT_WORD_DECLARE,
+                                         LHAT_WORD_TYPE, LHAT_WORD_VALUE,
+                                         LHAT_WORD_CLAUSE};
     PackedStringArray out;
-    for (const char *word : control_flow_words) {
-        out.push_back(unhatted(word));
-    }
-    for (const char *word : other_words) {
-        out.push_back(unhatted(word));
+    for (LhatWordKind kind : kinds) {
+        for (const char *const *word = lhat_words_of(kind); *word != nullptr;
+             word++) {
+            out.push_back(unhatted(*word));
+        }
     }
     return out;
 }
@@ -203,8 +272,9 @@ PackedStringArray LhatLanguage::_get_reserved_words() const
 // Asked of what the list above answered, so it is asked without the hat too.
 bool LhatLanguage::_is_control_flow_keyword(const String &keyword) const
 {
-    for (const char *word : control_flow_words) {
-        if (keyword == unhatted(word)) {
+    for (const char *const *word = lhat_words_of(LHAT_WORD_CONTROL);
+         *word != nullptr; word++) {
+        if (keyword == unhatted(*word)) {
             return true;
         }
     }
@@ -310,6 +380,9 @@ Dictionary LhatLanguage::_lookup_code(const String &code, const String &symbol,
     (void)owner;
     Dictionary out;
     out["result"] = (int)ERR_UNAVAILABLE;  // nothing to jump to, not an error
+    // Read whether the result said anything was found, so it has to be there
+    // even when nothing was.
+    out["type"] = (int)LOOKUP_RESULT_MAX;
     return out;
 }
 

@@ -183,8 +183,11 @@ TypedArray<Dictionary> diagnostics_as_errors(const LhatProgram *program,
         const LhatProgramDiagnostic *d = lhat_program_diagnostic(program, i);
         Dictionary error;
         error["path"] = String::utf8(d->path);
-        error["line"] = 0;
-        error["column"] = 0;
+        // 05 の 6.2: this half is about a unit rather than a place inside
+        // one, so there is no line to give. The editor counts from one and
+        // subtracts, so saying zero puts the mark one line above the file.
+        error["line"] = 1;
+        error["column"] = 1;
         error["message"] = String::utf8(lhat_program_error_message(d->code));
         errors.push_back(error);
     }

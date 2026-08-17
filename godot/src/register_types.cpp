@@ -2,14 +2,17 @@
 
 #include <gdextension_interface.h>
 
+#include <godot_cpp/classes/editor_plugin_registration.hpp>
 #include <godot_cpp/classes/engine.hpp>
 #include <godot_cpp/classes/resource_loader.hpp>
 #include <godot_cpp/classes/resource_saver.hpp>
+#include <godot_cpp/classes/script.hpp>  // editor_plugin.hpp holds Ref<Script>
 #include <godot_cpp/core/class_db.hpp>
 #include <godot_cpp/core/defs.hpp>
 #include <godot_cpp/core/memory.hpp>
 #include <godot_cpp/godot.hpp>
 
+#include "lhat_highlighter.h"
 #include "lhat_language.h"
 #include "lhat_resource_format.h"
 #include "lhat_runtime.h"
@@ -33,6 +36,20 @@ Ref<LhatScriptSaver> saver;
 // an editor-only class.
 void lhat_initialise_module(ModuleInitializationLevel level)
 {
+    // 07 の 4 章: what colours a .lh file. The level is reached while the
+    // editor is still being built -- the ScriptEditor a highlighter is
+    // registered with does not exist yet -- so what is registered here is a
+    // plugin, and the plugin does the registering once it is in the tree.
+    //
+    // The level is also reached where there is no editor at all: a game
+    // started from the command line passes through it. Nothing here asks for
+    // one, so nothing has to guard against that.
+    if (level == MODULE_INITIALIZATION_LEVEL_EDITOR) {
+        GDREGISTER_CLASS(LhatHighlighter);
+        GDREGISTER_CLASS(LhatEditorPlugin);
+        EditorPlugins::add_by_type<LhatEditorPlugin>();
+        return;
+    }
     if (level != MODULE_INITIALIZATION_LEVEL_SCENE) {
         return;
     }
@@ -57,6 +74,12 @@ void lhat_initialise_module(ModuleInitializationLevel level)
 
 void lhat_uninitialise_module(ModuleInitializationLevel level)
 {
+    if (level == MODULE_INITIALIZATION_LEVEL_EDITOR) {
+        // The plugin took the highlighter out of the script editor when it
+        // left the tree; what is left is the class registration.
+        EditorPlugins::remove_by_type<LhatEditorPlugin>();
+        return;
+    }
     if (level != MODULE_INITIALIZATION_LEVEL_SCENE) {
         return;
     }
