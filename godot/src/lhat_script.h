@@ -170,9 +170,11 @@ public:
 
     // The engine asks for these before it will show a script at all, so
     // leaving them to a default is an error at every call rather than a
-    // silence. A member's line is what a jump-to lands on and is answered off
-    // the text; the other two belong to a documentation form, which L^ has
-    // none of -- so those two are empty on purpose and say so.
+    // silence. A member's line is what a jump-to lands on, read off the
+    // text; the doc class name is the one the class is known by, and is what
+    // the editor files a help page under. Only the icon is empty, and it is
+    // empty on purpose -- @icon is answered through the language's
+    // _get_global_class_name, which is the door the editor knocks on first.
     StringName _get_doc_class_name() const override;
     String _get_class_icon_path() const override;
     int32_t _get_member_line(const StringName &member) const override;
@@ -211,6 +213,10 @@ public:
     Dictionary _get_constants() const override;
     TypedArray<StringName> _get_members() const override;
     Variant _get_rpc_config() const override;
+
+    // 01 の 6.4: the comment block above a thing is what it says about it,
+    // and this is that put in the shape DocData reads. Only the editor asks
+    // -- a headless run never does (EditorNode::is_cmdline_mode).
     TypedArray<Dictionary> _get_documentation() const override;
 };
 

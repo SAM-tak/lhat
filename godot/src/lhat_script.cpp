@@ -618,11 +618,18 @@ StringName LhatScript::_get_instance_base_type() const
     return StringName(base_class.is_empty() ? String("Object") : base_class);
 }
 
+// Under which name the editor files what _get_documentation answers, and
+// what it looks a member's description up by -- the inspector's tooltips
+// reach the docs through this name. The same one the class is known by
+// across the project; a file nothing wears has no docs to file.
 StringName LhatScript::_get_doc_class_name() const
 {
-    return StringName();
+    return _get_global_name();
 }
 
+// The icon is answered through the language's _get_global_class_name, which
+// is what the editor asks before it has loaded anything (18: @icon). This
+// second door would say the same thing later, so it stays shut.
 String LhatScript::_get_class_icon_path() const
 {
     return String();
@@ -966,8 +973,23 @@ Variant LhatScript::_get_property_default_value(
     return defaults.get(String(property), Variant());
 }
 
+// What the script editor calls once the text it holds has changed: the
+// buffer is the script's now, and everything read off the tree -- 14.3's
+// members, 18's annotations, 6.4's descriptions, the @export fields -- would
+// otherwise still be the tree from before the edit. GDScript re-parses here
+// for the same reason.
+//
+// _reload is the check, so a text already checked is already current and
+// costs nothing. Nor is the cost loose: the editor calls this on a save, and
+// otherwise only where _validate has just said the text is sound and the
+// script is not a @tool one (script_text_editor.cpp) -- so nothing is
+// rebuilt from a text that would not compile, and no tool script is reloaded
+// under a writer mid-keystroke.
 void LhatScript::_update_exports()
 {
+    if (!checked) {
+        _reload(true);
+    }
 }
 
 // 02 の 14.7改 calls a value member of a definition a static constant, and
@@ -1032,9 +1054,137 @@ Variant LhatScript::_get_rpc_config() const
     return Variant();
 }
 
+namespace {
+
+// 01 の 6.4: the comment block written above one thing, as prose. Asked of
+// the tree, so it is there whether or not anything ran.
+String documentation_of(const LhatUnit *unit, const char *definition,
+                        const char *name)
+{
+    if (unit == nullptr) {
+        return String();
+    }
+    size_t needed = lhat_unit_documentation(unit, definition, name, NULL, 0);
+    if (needed == 0) {
+        return String();
+    }
+    CharString said;
+    said.resize((int64_t)needed + 1);
+    lhat_unit_documentation(unit, definition, name, said.ptrw(), needed + 1);
+    return String::utf8(said.get_data(), (int)needed);
+}
+
+// What Godot shows where a whole description will not fit -- a class list,
+// a member row. 6.4 leaves the block one piece, so the first line is what
+// stands for it.
+String brief_of(const String &whole)
+{
+    int64_t stop = whole.find("\n");
+    return stop < 0 ? whole : whole.substr(0, stop);
+}
+
+}  // namespace
+
+// 01 の 6.4: what a class and its members say about themselves, in the shape
+// DocData::ClassDoc::from_dict reads. This is what the editor's help page
+// shows (F1) and where the inspector finds a field's tooltip.
+//
+// One class: the one a node wears. 05 の 5.5 lets a unit publish more, but
+// only the worn one has a name the engine can look a page up by, so a second
+// entry would be filed where nothing asks.
 TypedArray<Dictionary> LhatScript::_get_documentation() const
 {
-    return TypedArray<Dictionary>();
+    TypedArray<Dictionary> out;
+    StringName filed = _get_doc_class_name();
+    if (unit == nullptr || String(filed).is_empty()) {
+        return out;
+    }
+    CharString klass = klass_name.utf8();
+
+    // What was written above the class, and failing that above the file --
+    // a unit holding one class often says what it is at the head instead of
+    // over the binding.
+    String whole = documentation_of(unit, klass.get_data(), NULL);
+    if (whole.is_empty()) {
+        whole = documentation_of(unit, NULL, NULL);
+    }
+
+    Dictionary said;
+    said["name"] = String(filed);
+    said["inherits"] = base_class.is_empty() ? String("Object") : base_class;
+    said["brief_description"] = brief_of(whole);
+    said["description"] = whole;
+    said["is_script_doc"] = true;
+    said["script_path"] = get_path();
+
+    // The lists are the ones the editor already gets elsewhere, with each
+    // member's own block put on it. Written once here rather than walked
+    // again: what a class declares is one question (14.3).
+    Array methods;
+    TypedArray<Dictionary> declared = _get_script_method_list();
+    for (int64_t i = 0; i < declared.size(); i++) {
+        Dictionary one = declared[i];
+        CharString member = String(one["name"]).utf8();
+        one["description"] =
+            documentation_of(unit, klass.get_data(), member.get_data());
+        one["return_type"] = String("Variant");
+        methods.push_back(one);
+    }
+    said["methods"] = methods;
+
+    Array signals;
+    TypedArray<Dictionary> emitted = _get_script_signal_list();
+    for (int64_t i = 0; i < emitted.size(); i++) {
+        Dictionary one = emitted[i];
+        CharString member = String(one["name"]).utf8();
+        one["description"] =
+            documentation_of(unit, klass.get_data(), member.get_data());
+        signals.push_back(one);
+    }
+    said["signals"] = signals;
+
+    Array shown;
+    TypedArray<Dictionary> exported = _get_script_property_list();
+    for (int64_t i = 0; i < exported.size(); i++) {
+        Dictionary field = exported[i];
+        // The list opens with the class's own category (lhat_instance.cpp),
+        // which is a header and not a field.
+        if ((int64_t)field.get("usage", 0) & PROPERTY_USAGE_CATEGORY) {
+            continue;
+        }
+        String name = field["name"];
+        CharString member = name.utf8();
+        Dictionary one;
+        one["name"] = name;
+        one["type"] = Variant::get_type_name(
+            (Variant::Type)(int)field.get("type", Variant::NIL));
+        one["description"] =
+            documentation_of(unit, klass.get_data(), member.get_data());
+        if (defaults.has(name)) {
+            one["default_value"] = String(defaults[name]);
+        }
+        shown.push_back(one);
+    }
+    said["properties"] = shown;
+
+    Array held;
+    Dictionary constants = _get_constants();
+    Array named = constants.keys();
+    for (int64_t i = 0; i < named.size(); i++) {
+        String name = named[i];
+        CharString member = name.utf8();
+        Dictionary one;
+        one["name"] = name;
+        one["value"] = String(constants[name]);
+        one["is_value_valid"] = true;
+        one["description"] =
+            documentation_of(unit, klass.get_data(), member.get_data());
+        held.push_back(one);
+    }
+    said["constants"] = held;
+
+    out.push_back(said);
+    return out;
 }
 
 }  // namespace godot

@@ -330,9 +330,13 @@ bool LhatLanguage::_supports_builtin_mode() const
     return false;
 }
 
+// 01 の 6.4: L^ has no spelling for a description -- every comment is kept
+// alike and the block above a thing is what it says about it, the way Go has
+// it. So there is documentation to show, and this is the gate: a language
+// answering false is never asked for any.
 bool LhatLanguage::_supports_documentation() const
 {
-    return false;
+    return true;
 }
 
 // Asked before the editor will use _get_global_class_name at all: a language

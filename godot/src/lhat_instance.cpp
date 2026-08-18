@@ -621,12 +621,47 @@ void *lhat_placeholder_create(LhatScript *script, Object *owner)
     return made;
 }
 
+namespace {
+
+// The header the inspector draws above a script's own fields, and -- less
+// obviously -- what tells it which class those fields belong to: doc_name is
+// read off this, and every row under it looks its documentation up under
+// that name (editor_inspector.cpp's update_tree).
+//
+// Object::get_property_list does not push one; the instance does. A real
+// instance is given it by godot-cpp, but a placeholder's list is handed over
+// whole (PlaceHolderScriptInstance::get_property_list), so without this the
+// rows would be filed under whatever engine class came before and the
+// tooltips would find nothing. GDScript pushes it in each of the three
+// lists for the same reason.
+//
+// Shaped as Script::get_class_category does it: the name is what the header
+// reads, and the path is what the editor loads to find the class behind it.
+Dictionary class_category(const LhatScript *script)
+{
+    String path = script->get_path();
+    String named = script->get_name();
+    Dictionary out;
+    out["name"] = named.is_empty() ? path.get_file() : named;
+    out["class_name"] = StringName();
+    out["type"] = Variant::NIL;
+    out["hint"] = PROPERTY_HINT_NONE;
+    out["hint_string"] = path;
+    out["usage"] = PROPERTY_USAGE_CATEGORY;
+    return out;
+}
+
+}  // namespace
+
 void lhat_exported_properties(const LhatScript *script, Array *properties,
                               Dictionary *values)
 {
     const LhatUnit *unit = script != nullptr ? script->lhat_unit() : nullptr;
     if (unit == nullptr) {
         return;  // nothing checked, so nothing to say it declares
+    }
+    if (properties != nullptr) {
+        properties->push_back(class_category(script));
     }
     CharString klass = script->lhat_class_name().utf8();
     const Dictionary &defaults = script->lhat_defaults();
