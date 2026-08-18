@@ -690,6 +690,21 @@ LhatString *lhat_string_concat(LhatHeap *heap, const LhatString *left,
                                const LhatString *right);
 
 // ---------------------------------------------------------------------------
+// Calling
+// ---------------------------------------------------------------------------
+
+// 02 の 14.4: whether this value is handed a receiver when it is called --
+// which is what tells a definition's static member (14.7's A.somestatic())
+// from one an instance can call. A host holding a member value has no other
+// way to ask: what a body took lives on its proto, and a proto is the
+// compiler's, not published here.
+//
+// 14.12's overloaded name answers yes when any arm is -- which arm a call
+// means is settled at the call, and the search that resolves it refuses one
+// taking none. Anything that cannot be called at all answers no.
+bool lhat_takes_receiver(LhatValue value);
+
+// ---------------------------------------------------------------------------
 // Tables
 // ---------------------------------------------------------------------------
 

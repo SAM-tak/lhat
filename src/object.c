@@ -1274,10 +1274,9 @@ static void drain_into_array(LhatTable *table)
 // Reading and writing
 // ---------------------------------------------------------------------------
 
-// 02 の 14.4: whether this value is handed a receiver when it is called.
-// 14.12's overloaded name answers yes when any arm is: which arm a call means
-// is settled at the call, and fits_call refuses one that takes none.
-static bool takes_receiver(LhatValue value)
+// What object.h publishes. The search it speaks of is vm.c's fits_call,
+// which refuses a candidate taking no receiver where one was handed over.
+bool lhat_takes_receiver(LhatValue value)
 {
     if (lhat_is_object_kind(value, LHAT_OBJECT_SUBROUTINE)) {
         const LhatProto *proto =
@@ -1291,7 +1290,7 @@ static bool takes_receiver(LhatValue value)
         const LhatOverload *group =
             (const LhatOverload *)lhat_as_object(value);
         for (size_t i = 0; i < group->count; i++) {
-            if (takes_receiver(group->candidates[i])) {
+            if (lhat_takes_receiver(group->candidates[i])) {
                 return true;
             }
         }
@@ -1326,7 +1325,7 @@ LhatValue lhat_table_get(const LhatTable *table, LhatValue key)
             // 04 の 11.3: nothing is there, which is what a member that was
             // never meant to be reached this way amounts to. Calling it lands
             // on NOT_CALLABLE rather than on a receiver going somewhere odd.
-            if (restricted && inherited && !takes_receiver(value)) {
+            if (restricted && inherited && !lhat_takes_receiver(value)) {
                 return lhat_nil();
             }
             return value;
@@ -1337,7 +1336,7 @@ LhatValue lhat_table_get(const LhatTable *table, LhatValue key)
         LhatTableEntry *entry =
             probe(table->entries, table->entry_capacity, key, hash_key(key));
         if (!lhat_is_nil(entry->key)) {
-            if (restricted && inherited && !takes_receiver(entry->value)) {
+            if (restricted && inherited && !lhat_takes_receiver(entry->value)) {
                 return lhat_nil();
             }
             return entry->value;

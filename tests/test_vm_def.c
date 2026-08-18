@@ -1582,10 +1582,89 @@ static void test_typeof(void)
     run_dispose(&r);
 }
 
+// The member a program answered, asked whether calling it hands it a
+// receiver.
+#define CHECK_TAKES_RECEIVER(r, expected)                                     \
+    do {                                                                      \
+        LHAT_CHECK_EQ_INT((r)->compiled, LHAT_COMPILE_OK);                    \
+        LHAT_CHECK_EQ_INT((r)->ran.status, LHAT_RUN_OK);                      \
+        LHAT_CHECK_EQ_INT(lhat_takes_receiver((r)->ran.value), (expected));   \
+    } while (0)
+
+// 02 の 14.7: what an instance may call and what belongs to the definition
+// alone are told apart by one thing -- whether the member takes a receiver.
+// A host reads the same answer through lhat_takes_receiver, which is what
+// lets it say which members are static.
+static void test_takes_receiver(void)
+{
+    Run r;
+
+    LHAT_TEST("a member taking self^ is one an instance calls");
+    run_text(&r,
+             "var^ Foo = def^{ self^{ n := 0 },\n"
+             "  add := f^self^, x:number^ -> number^ { return^ x } }\n"
+             "return^ Foo.add\n");
+    CHECK_TAKES_RECEIVER(&r, true);
+    run_dispose(&r);
+
+    LHAT_TEST("a member taking none is the definition's own");
+    run_text(&r,
+             "var^ Foo = def^{ self^{ n := 0 },\n"
+             "  somestatic := p^{ } }\n"
+             "return^ Foo.somestatic\n");
+    LHAT_CHECK(lhat_is_object_kind(r.ran.value, LHAT_OBJECT_SUBROUTINE),
+               "expected the member itself, not a missing key");
+    CHECK_TAKES_RECEIVER(&r, false);
+    run_dispose(&r);
+
+    // 14.11: the new a definition gets when it writes none takes nothing,
+    // so it falls on the same side as a static member.
+    LHAT_TEST("the default new takes no receiver");
+    run_text(&r,
+             "var^ Foo = def^{ self^{ n := 0 } }\n"
+             "return^ Foo.new\n");
+    LHAT_CHECK(lhat_is_object_kind(r.ran.value, LHAT_OBJECT_SUBROUTINE),
+               "expected the default new itself");
+    CHECK_TAKES_RECEIVER(&r, false);
+    run_dispose(&r);
+
+    // 11.3改: an op^ may write its self^ last, which says the RIGHT operand
+    // is the receiver. It is still a receiver.
+    LHAT_TEST("a self^-last op^ takes one all the same");
+    run_text(&r,
+             "var^ V = def^{ self^{ n := 0 },\n"
+             "  op^+ := f^lhs:number^, self^ -> number^ {\n"
+             "    return^ lhs + self^.n } }\n"
+             "return^ V[\"+\"]\n");
+    CHECK_TAKES_RECEIVER(&r, true);
+    run_dispose(&r);
+
+    // 14.12: which arm a call means is settled at the call, so a group
+    // answers for the call that would need a receiver arranged.
+    LHAT_TEST("an overload^ group answers for any arm that takes one");
+    run_text(&r,
+             "var^ Foo = def^{ self^{ n := 0 },\n"
+             "  m := p^{ },\n"
+             "  overload^ m := p^self^, x:number^ { } }\n"
+             "return^ Foo.m\n");
+    CHECK_TAKES_RECEIVER(&r, true);
+    run_dispose(&r);
+
+    LHAT_TEST("nothing that cannot be called takes a receiver");
+    run_text(&r, "return^ 1\n");
+    CHECK_TAKES_RECEIVER(&r, false);
+    run_dispose(&r);
+
+    run_text(&r, "return^ { a := 1 }\n");
+    CHECK_TAKES_RECEIVER(&r, false);
+    run_dispose(&r);
+}
+
 int main(void)
 {
     test_definitions();
     test_isa();
     test_typeof();
+    test_takes_receiver();
     return lhat_test_report("test_vm_def");
 }
