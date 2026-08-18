@@ -2821,68 +2821,6 @@ static void test_loop_clauses(void)
 
 // 02 の 3.1: a REPL has to tell these two apart.
 // 14 章.
-// 14.13: ':' ends the body at the end of the file instead of at a '}'. The
-// same definition either way, which is the whole of the claim -- so what is
-// pinned here is that the two spellings answer the same tree.
-static void test_definition_to_end_of_file(void)
-{
-    Parse p;
-
-    LHAT_TEST("14.13: def^: holds the rest of the file");
-    parse_text(&p,
-               "let^ D = def^:\n"
-               "    self^{ n := 0 },\n"
-               "    m := p^self^ { print(self^.n) },\n");
-    LHAT_CHECK_EQ_INT(error_count(&p), 0);
-    {
-        const LhatNode *def = first_value(&p);
-        LHAT_CHECK_EQ_INT(def->kind, LHAT_NODE_DEF);
-        LHAT_CHECK_EQ_INT(lhat_node_list_length(def->v.list.items), 2);
-        const LhatNode *tmpl = def->v.list.items;
-        LHAT_CHECK(tmpl->v.entry.key == NULL, "the template has no key");
-        LHAT_CHECK_EQ_INT(tmpl->v.entry.value->kind, LHAT_NODE_SELF_TABLE);
-    }
-    parse_dispose(&p);
-
-    // The trailing comma above is what a host appending a member writes, and
-    // 14.13 already allowed one. Without it the body still ends at the file.
-    LHAT_TEST("and does not need the comma its members are separated by");
-    parse_text(&p, "let^ D = def^:\n    a := 1\n");
-    LHAT_CHECK_EQ_INT(error_count(&p), 0);
-    LHAT_CHECK_EQ_INT(lhat_node_list_length(first_value(&p)->v.list.items), 1);
-    parse_dispose(&p);
-
-    LHAT_TEST("a def^: with nothing in it is a definition with no members");
-    parse_text(&p, "let^ D = def^:\n");
-    LHAT_CHECK_EQ_INT(error_count(&p), 0);
-    LHAT_CHECK_EQ_INT(first_value(&p)->kind, LHAT_NODE_DEF);
-    LHAT_CHECK_EQ_INT(lhat_node_list_length(first_value(&p)->v.list.items), 0);
-    parse_dispose(&p);
-
-    // 14.5's composition is an ordinary expression, so nothing about it reads
-    // which spelling closed the def^.
-    LHAT_TEST("and composes with .. as the braced form does");
-    parse_text(&p, "let^ B = A..def^:\n    a := 1,\n");
-    LHAT_CHECK_EQ_INT(error_count(&p), 0);
-    {
-        const LhatNode *joined = first_value(&p);
-        LHAT_CHECK_EQ_INT(joined->kind, LHAT_NODE_BINARY);
-        LHAT_CHECK_EQ_INT(joined->v.binary.op, LHAT_OP_CONCAT);
-        LHAT_CHECK_EQ_INT(joined->v.binary.right->kind, LHAT_NODE_DEF);
-    }
-    parse_dispose(&p);
-
-    // The one misuse that would otherwise parse: the inner one eats the rest
-    // of the file and the outer ends holding nothing. Anything left open
-    // around a def^: fails at EOF asking for its own closer instead.
-    LHAT_TEST("and is refused inside another def^");
-    parse_text(&p, "let^ A = def^{ Inner := def^: }");
-    LHAT_CHECK(p.result.diagnostic_count > 0, "expected a diagnostic");
-    LHAT_CHECK_EQ_INT(p.result.diagnostics[0].code,
-                      LHAT_PARSE_ERR_DEF_COLON_NESTED);
-    parse_dispose(&p);
-}
-
 static void test_definitions(void)
 {
     Parse p;
@@ -3840,7 +3778,6 @@ int main(void)
     test_repeat();
     test_loop_clauses();
     test_definitions();
-    test_definition_to_end_of_file();
     test_errors();
     test_try_block();
     test_incomplete();

@@ -49,10 +49,6 @@ typedef enum {
                                               // so the header takes neither an
                                               // introducer nor a bare ':='
     LHAT_PARSE_ERR_EXPECTED_MEMBER,           // 14 章: def^ holds members
-    LHAT_PARSE_ERR_DEF_COLON_NESTED,          // 14.13: def^: runs to the end
-                                              // of the file, so one inside
-                                              // another def^ would eat the
-                                              // rest of that one's body
     LHAT_PARSE_ERR_OPERATOR_NOT_DEFINABLE,    // 11.4: only '..' has an op^
                                               // definition so far
     LHAT_PARSE_ERR_COMPOUND_NOT_DEFINABLE,    // 8.6改: 'a += b' is
