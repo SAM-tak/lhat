@@ -131,6 +131,10 @@ protected:
     static void _bind_methods();
 
 public:
+    // The editor theme's icon for a .lh, named after the resource type the
+    // loader answers. Called again whenever the theme is rebuilt.
+    void hang_the_icon();
+
     void _enter_tree() override;
     void _exit_tree() override;
 };

@@ -69,6 +69,15 @@ if(MSVC)
 endif()
 
 # ---- The extension ---------------------------------------------------------
+# The icon goes into the binary rather than beside it: what names a .lh in the
+# editor has to be there in any project the extension is added to, and a path
+# into one project's files would not be. Read at configure time, so touching
+# the drawing means reconfiguring -- which is what CONFIGURE_DEPENDS says.
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+    "${CMAKE_CURRENT_SOURCE_DIR}/lhat-script.svg")
+file(READ "${CMAKE_CURRENT_SOURCE_DIR}/lhat-script.svg" LHAT_SCRIPT_ICON_SVG)
+configure_file(src/lhat_icon.h.in "${CMAKE_CURRENT_BINARY_DIR}/lhat_icon.h" @ONLY)
+
 add_library(lhat_gdextension SHARED
     src/register_types.cpp
     src/lhat_host.cpp
@@ -83,6 +92,8 @@ add_library(lhat_gdextension SHARED
 )
 
 target_link_libraries(lhat_gdextension PRIVATE lhat godot-cpp)
+# Where the generated lhat_icon.h lands.
+target_include_directories(lhat_gdextension PRIVATE "${CMAKE_CURRENT_BINARY_DIR}")
 
 # LhatString ends in a flexible array member, which C has and C++ does not --
 # every compiler here takes it, and each has its own way of being asked to stop
