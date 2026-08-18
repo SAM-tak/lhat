@@ -251,6 +251,23 @@ LhatHostData *lhat_hostdata_new(LhatHeap *heap, const LhatHostDataTag *tag,
     return data;
 }
 
+LhatHostValueBox *lhat_hostvalue_box_new(LhatHeap *heap,
+                                         const LhatHostValueTag *tag)
+{
+    if (tag == NULL) {
+        return NULL;
+    }
+    LhatHostValueBox *box = (LhatHostValueBox *)lhat_object_alloc(
+        heap, sizeof(LhatHostValueBox) + tag->width * sizeof(LhatValueUnion),
+        LHAT_OBJECT_HOSTVALUE_BOX);
+    if (box != NULL) {
+        // lhat_object_alloc zeroes, so the tail padding byte equality relies
+        // on is already in place; only the head needs its tag.
+        box->run[0].hostvalue = tag;
+    }
+    return box;
+}
+
 LhatRuntimeType *lhat_type_rt_new(LhatHeap *heap, LhatRuntimeTypeKind kind)
 {
     LhatRuntimeType *type =
@@ -355,6 +372,12 @@ bool lhat_value_satisfies(LhatValue value, const LhatRuntimeType *type)
         case LHAT_TYPE_RT_HOSTVALUE:
             return lhat_is_hostvalue(value) &&
                    lhat_as_hostvalue_tag(value) == type->hostvalue_tag;
+        // 05 の 8.9: the same tag, read off the box's own head slot.
+        case LHAT_TYPE_RT_HOSTVALUE_BOX:
+            return lhat_is_object_kind(value, LHAT_OBJECT_HOSTVALUE_BOX) &&
+                   lhat_hostvalue_box_tag(
+                       (const LhatHostValueBox *)lhat_as_object(value)) ==
+                       type->hostvalue_tag;
         // 13.8改: no value satisfies a tuple. One is never a value in hand --
         // it lives in the slots a call reserved and is taken apart there,
         // which is why the checker refuses it everywhere a name could hold
@@ -549,8 +572,9 @@ static void write_runtime_type(TypeWriter *w, const LhatRuntimeType *type)
             type_put_text(w, type->hostdata_tag->name);
             return;
 
-        // 05 の 8.9: named the same qualified way.
+        // 05 の 8.9: named the same qualified way; the box adds its own word.
         case LHAT_TYPE_RT_HOSTVALUE:
+        case LHAT_TYPE_RT_HOSTVALUE_BOX:
             if (type->hostvalue_tag == NULL) {
                 type_put_text(w, "UNKNOWN");
                 return;
@@ -560,6 +584,9 @@ static void write_runtime_type(TypeWriter *w, const LhatRuntimeType *type)
                 type_put_text(w, ".");
             }
             type_put_text(w, type->hostvalue_tag->name);
+            if (type->kind == LHAT_TYPE_RT_HOSTVALUE_BOX) {
+                type_put_text(w, ".Box^");
+            }
             return;
         // 13.9's three slots. NULL still prints any^ -- not a guess, the same
         // "nothing written asks for the top type" convention as everywhere
@@ -750,6 +777,7 @@ bool lhat_runtime_type_equal(const LhatRuntimeType *a, const LhatRuntimeType *b)
             return a->hostdata_tag == b->hostdata_tag;
         // 05 の 8.9: the same.
         case LHAT_TYPE_RT_HOSTVALUE:
+        case LHAT_TYPE_RT_HOSTVALUE_BOX:
             return a->hostvalue_tag == b->hostvalue_tag;
         // 11.3's structural identity for a union or an intersection asks the
         // same of both sides without caring about the order the arms were

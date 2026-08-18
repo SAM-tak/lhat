@@ -83,6 +83,15 @@ static LhatRuntimeType *rt_from_checked(LhatHeap *heap,
             }
             return rt;
         }
+        // And the box under it, told apart by kind alone.
+        case LHAT_TYPE_HOSTVALUE_BOX: {
+            LhatRuntimeType *rt =
+                lhat_type_rt_new(heap, LHAT_TYPE_RT_HOSTVALUE_BOX);
+            if (rt != NULL) {
+                rt->hostvalue_tag = type->v.table.hostvalue_tag;
+            }
+            return rt;
+        }
 
         case LHAT_TYPE_TABLE: {
             LhatRuntimeType *rt = lhat_type_rt_new(heap, LHAT_TYPE_RT_TABLE);

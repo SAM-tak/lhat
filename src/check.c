@@ -676,6 +676,14 @@ static LhatType *resolve_qualified_type(Checker *c, const LhatNode *node)
         return chk_simple(c, LHAT_TYPE_UNKNOWN);
     }
 
+    // 05 の 8.9: the box the language hangs under a host value type. The
+    // name is the type's own -- `std.math.Vector3.Box^` -- so it resolves
+    // here, off the type the path reached.
+    if (outer->kind == LHAT_TYPE_HOSTVALUE &&
+        chk_name_is(name, length, "Box^")) {
+        return lhat_type_hostvalue_box(c->result->types, outer);
+    }
+
     // 05 の 6.1: what require^ yields is a structure, so reaching a type out
     // of it is the same member access a value uses. 04 の 14.4 already made a
     // qualified name writable as a type; this is that form over a unit.
@@ -3018,6 +3026,9 @@ const char *lhat_check_error_message(LhatCheckErrorCode code)
             return "a definition's self^ is the prototype every instance "
                    "starts as; it is read here and written by no one -- a "
                    "default is settled where the field is written";
+        case LHAT_CHECK_ERR_NOT_BOXABLE:
+            return "box^ takes a host value; everything else already lives "
+                   "on the heap and needs no box";
         case LHAT_CHECK_ERR_STILL_ABSTRACT:
             return "this definition is still waiting on a composition -- a "
                    "member is declared with nothing providing it, or an "

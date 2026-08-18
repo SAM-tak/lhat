@@ -1918,6 +1918,28 @@ static LhatRuntimeType *lower_type(Compiler *c, const LhatNode *node)
 
         case LHAT_NODE_MEMBER:
         case LHAT_NODE_TYPE_NAME: {
+            // 05 の 8.9: the box under a host value type -- `T.Box^`. The
+            // path in front names the value type; the word makes it the box.
+            if (node->kind == LHAT_NODE_MEMBER) {
+                const char *last = NULL;
+                size_t last_length = 0;
+                if (node_name(c, node->v.access.argument, &last,
+                              &last_length) &&
+                    name_is(last, last_length, "Box^")) {
+                    const LhatHostValueTag *held =
+                        resolve_hostvalue_type_tag(c, node->v.access.target);
+                    if (held == NULL) {
+                        return NULL;  // asks nothing, not the wrong thing
+                    }
+                    LhatRuntimeType *type =
+                        lhat_type_rt_new(owner, LHAT_TYPE_RT_HOSTVALUE_BOX);
+                    if (type != NULL) {
+                        type->hostvalue_tag = held;
+                    }
+                    return type;
+                }
+            }
+
             // 04 の 2.4: a kind is the object its declaration made, so a
             // qualified name resolves to that rather than to any structure.
             const LhatNode *unused = NULL;
@@ -4193,6 +4215,24 @@ static void compile_expression(Compiler *c, const LhatNode *node, uint8_t into)
                                     (uint8_t)positions, 0));
             emit(c, lhat_encode_abc(LHAT_BC_PACK, head, (uint8_t)positions, 0));
             emit(c, lhat_encode_abc(LHAT_BC_MOVE, into, head, 0));
+            c->next_register = mark;
+            return;
+        }
+
+        // 05 の 8.9: 'box^ expr' -- the host value laid out whole, then one
+        // instruction to box it. The width is the type's, which only a
+        // checked compile knows -- the line every wide form draws.
+        case LHAT_NODE_BOX: {
+            const LhatNode *held = node->v.jump.value;
+            const LhatHostValueTag *tag = hostvalue_of(held);
+            if (tag == NULL) {
+                fail(c, LHAT_COMPILE_UNSUPPORTED);
+                return;
+            }
+            uint8_t mark = c->next_register;
+            uint8_t slot = reserve_wide(c, tag->width);
+            compile_expression(c, held, slot);
+            emit(c, lhat_encode_abc(LHAT_BC_BOX, into, slot, 0));
             c->next_register = mark;
             return;
         }

@@ -978,6 +978,9 @@ static LhatRuntimeType *lower_host_type(LhatMachine *machine,
         case LHAT_TYPE_UNION:  kind = LHAT_TYPE_RT_UNION; break;
         case LHAT_TYPE_INTERSECT: kind = LHAT_TYPE_RT_INTERSECT; break;
         case LHAT_TYPE_HOSTVALUE: kind = LHAT_TYPE_RT_HOSTVALUE; break;
+        case LHAT_TYPE_HOSTVALUE_BOX:
+            kind = LHAT_TYPE_RT_HOSTVALUE_BOX;
+            break;
         // 04 の 2.4: a kind's identity is the LhatErrorKind the machine made,
         // and nothing here can reach one. Asks nothing rather than asking
         // something weaker than what was written.
@@ -1010,6 +1013,7 @@ static LhatRuntimeType *lower_host_type(LhatMachine *machine,
             break;
 
         case LHAT_TYPE_HOSTVALUE:
+        case LHAT_TYPE_HOSTVALUE_BOX:
             out->hostvalue_tag = type->v.table.hostvalue_tag;
             break;
 

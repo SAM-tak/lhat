@@ -1807,6 +1807,34 @@ LhatType *chk_infer_member(Checker *c, const LhatNode *node)
         return target->v.table.instance;
     }
 
+    // 05 の 8.9: the box's two members, the language's own. get answers the
+    // value whole -- the registered type, fields and members included, which
+    // rides on the box type as `instance`. set writes one of the same tag
+    // over the bytes: an effect, so it is a p^ and an f^ body cannot call it
+    // (15.1).
+    if (target->kind == LHAT_TYPE_HOSTVALUE_BOX) {
+        LhatType *held = target->v.table.instance != NULL
+                             ? target->v.table.instance
+                             : lhat_type_hostvalue(
+                                   c->result->types,
+                                   target->v.table.hostvalue_tag);
+        if (chk_name_is(name, length, "get")) {
+            LhatType *signature = lhat_type_func(c->result->types, true);
+            if (signature != NULL) {
+                signature->v.func.result = held;
+            }
+            return signature;
+        }
+        if (chk_name_is(name, length, "set")) {
+            LhatType *signature = lhat_type_func(c->result->types, false);
+            if (signature != NULL) {
+                lhat_type_add_param(c->result->types, signature, held);
+            }
+            return signature;
+        }
+        // Anything else falls to the built-ins every value answers.
+    }
+
     const LhatTypeMember *members = NULL;
     if (target->kind == LHAT_TYPE_TABLE ||
         target->kind == LHAT_TYPE_HOSTVALUE) {
@@ -2824,6 +2852,10 @@ static bool immutable_default_type(const LhatType *type)
             return true;
         case LHAT_TYPE_TABLE:
             return type->v.table.is_definition;
+        // 05 の 8.9: a box is a copyable node -- bake and construction copy
+        // its bytes, so a default shares nothing.
+        case LHAT_TYPE_HOSTVALUE_BOX:
+            return true;
         case LHAT_TYPE_UNION:
         case LHAT_TYPE_INTERSECT:
             for (const LhatTypeList *arm = type->v.composite.arms; arm != NULL;
@@ -4596,6 +4628,23 @@ static LhatType *infer_node(Checker *c, const LhatNode *node)
                                            lhat_type_tuple_at(source, i));
             }
             return packed;
+        }
+
+        // 05 の 8.9: box^ puts a host value in the box the heap can hold.
+        // What it takes is exactly a host value -- everything else already
+        // lives on the heap and needs no box.
+        case LHAT_NODE_BOX: {
+            LhatType *held = chk_infer(c, node->v.jump.value);
+            if (held == NULL || held->kind != LHAT_TYPE_HOSTVALUE) {
+                // A gap stays quiet -- the mistake was reported where the
+                // value came from, and one report per mistake is the rule.
+                if (held != NULL && held->kind != LHAT_TYPE_UNKNOWN &&
+                    held->kind != LHAT_TYPE_PENDING) {
+                    chk_report(c, node, LHAT_CHECK_ERR_NOT_BOXABLE);
+                }
+                return chk_simple(c, LHAT_TYPE_UNKNOWN);
+            }
+            return lhat_type_hostvalue_box(c->result->types, held);
         }
 
         default:

@@ -108,6 +108,22 @@ LhatType *lhat_type_hostvalue(LhatTypeArena *arena,
     return type;
 }
 
+LhatType *lhat_type_hostvalue_box(LhatTypeArena *arena, LhatType *held)
+{
+    LhatType *type = new_type(arena, LHAT_TYPE_HOSTVALUE_BOX);
+    if (type != NULL && held != NULL) {
+        // 05 の 8.9: the same payload arrangement as the value it holds --
+        // identity is the tag either way. The value type rides along under
+        // `instance` so get() answers the registered type whole, fields and
+        // members included, rather than a bare tag.
+        type->v.table.nominal = true;
+        type->v.table.from_definition = true;
+        type->v.table.hostvalue_tag = held->v.table.hostvalue_tag;
+        type->v.table.instance = held;
+    }
+    return type;
+}
+
 LhatType *lhat_type_func(LhatTypeArena *arena, bool is_function)
 {
     LhatType *type = new_type(arena, LHAT_TYPE_FUNC);
@@ -626,6 +642,14 @@ static bool conforms_in(const LhatType *value, const LhatType *target,
     }
 
     switch (target->kind) {
+        // 05 の 8.9: a box fits exactly its own type -- identity is the tag,
+        // as it is for the value it holds. Unlike that value it is an
+        // ordinary heap object, so the union and any^ arms above have
+        // already had their say.
+        case LHAT_TYPE_HOSTVALUE_BOX:
+            return value->v.table.hostvalue_tag ==
+                   target->v.table.hostvalue_tag;
+
         case LHAT_TYPE_TABLE:
             // 05 の 8.8: a host type is the one thing 11.3 does not judge by
             // shape. Asked for one, only that one will do -- there is nothing
@@ -1415,6 +1439,18 @@ static void write_type(TypeSink *sink, const LhatType *type, int depth)
                 put_text(sink, type->v.table.hostvalue_tag->name);
             } else {
                 put_text(sink, "hostvalue");
+            }
+            return;
+
+        case LHAT_TYPE_HOSTVALUE_BOX:
+            // 05 の 8.9: the box under that name.
+            if (type->v.table.hostvalue_tag != NULL) {
+                put_text(sink, type->v.table.hostvalue_tag->module);
+                put_text(sink, ".");
+                put_text(sink, type->v.table.hostvalue_tag->name);
+                put_text(sink, ".Box^");
+            } else {
+                put_text(sink, "hostvalue box");
             }
             return;
 

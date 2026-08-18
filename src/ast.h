@@ -61,6 +61,8 @@ typedef enum {
     LHAT_NODE_AS,            // expr as^ Type
     LHAT_NODE_PACK,          // pack^ expr            (13.8改): the one bridge
                              // from a tuple to a table a name can hold
+    LHAT_NODE_BOX,           // box^ expr             (05 の 8.9): a host value
+                             // put in the box the heap can hold
     LHAT_NODE_FUNC,          // f^... { ... } / p^... { ... }
     LHAT_NODE_IF_EXPR,       // if^c: e el^c: e el^: e ;
 

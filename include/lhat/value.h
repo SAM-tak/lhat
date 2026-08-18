@@ -80,9 +80,12 @@ typedef enum {
     LHAT_OBJECT_HOST,        // 05 の 8.7: a subroutine the host wrote in C.
                              // 04 の 12.8 makes an error a value, so it
                              // answers one rather than unwinding
-    LHAT_OBJECT_HOSTDATA     // 05 の 8.8: something the host made and holds,
+    LHAT_OBJECT_HOSTDATA,    // 05 の 8.8: something the host made and holds,
                              // reached through a pointer the collector does
                              // not look into
+    LHAT_OBJECT_HOSTVALUE_BOX // 05 の 8.9: a host value put in the box the
+                              // heap can hold -- the bytes inline, no
+                              // references, so the collector never looks in
 } LhatObjectKind;
 
 typedef struct LhatObject {

@@ -229,6 +229,10 @@ typedef enum
     // 05 の 8.9: a host value type -- the same nominal rule over the head
     // slot's tag instead of a heap object's.
     LHAT_TYPE_RT_HOSTVALUE,
+    // 05 の 8.9: the box the language hangs under a host value type
+    // (`T.Box^`). Nominal by the same tag; a different type from the value
+    // it holds, since one lives on the heap and the other in a frame.
+    LHAT_TYPE_RT_HOSTVALUE_BOX,
     LHAT_TYPE_RT_UNION,     // 13.5
     LHAT_TYPE_RT_INTERSECT, // 14.5, 14.12: an overload^ed member's arms
     // 02 の 13.13: the structure this one is written inside, counted out by
@@ -370,7 +374,12 @@ typedef enum {
     // would have to look up.
     LHAT_NATIVE_FLOOR,
     LHAT_NATIVE_CEIL,
-    LHAT_NATIVE_ROUND
+    LHAT_NATIVE_ROUND,
+    // 05 の 8.9: the two members every host value box carries. get answers
+    // the value onto the stack, whole; set writes a value of the same tag
+    // over the bytes.
+    LHAT_NATIVE_BOX_GET,
+    LHAT_NATIVE_BOX_SET
 } LhatNativeKind;
 
 typedef struct LhatNative {
@@ -506,6 +515,28 @@ typedef struct LhatHostValueTag {
     size_t index;
 } LhatHostValueTag;
 
+// 05 の 8.9: a host value put in the box the heap can hold -- the language's
+// own container, one per registered value type (`T.Box^`), made by `box^`.
+// The run inside is head-shaped exactly as lhat_make_hostvalue fills one --
+// run[0] names the tag, the payload slots follow, tail zero-padded -- so
+// get() answers through the same placement a host's answer takes. The
+// payload is bytes with no references (every registered field kind is
+// numeric), so the collector treats a box as a leaf.
+typedef struct LhatHostValueBox {
+    LhatObject header;
+    // 02 の 14.11: a prototype's box takes no set(); construction hands each
+    // instance an unsealed copy.
+    bool sealed;
+    LhatValueUnion run[];  // tag->width slots
+} LhatHostValueBox;
+
+// The tag the box was made for, off its own head slot.
+static inline const struct LhatHostValueTag *lhat_hostvalue_box_tag(
+    const LhatHostValueBox *box)
+{
+    return (const struct LhatHostValueTag *)box->run[0].hostvalue;
+}
+
 // Something the host made. The pointer is the host's and the collector never
 // looks into it; what is reachable from here is the table of members the
 // registered type carries, which is where 't.width()' lands.
@@ -565,6 +596,11 @@ LhatHost *lhat_host_new(LhatHeap *heap, LhatHostFn call, void *context,
 
 LhatHostData *lhat_hostdata_new(LhatHeap *heap, const LhatHostDataTag *tag,
                                 void *pointer, LhatTable *members);
+
+// 05 の 8.9: an empty box for the tag -- run[0] set, payload zeroed. The
+// caller fills the payload; the zero tail is what byte equality relies on.
+LhatHostValueBox *lhat_hostvalue_box_new(LhatHeap *heap,
+                                         const LhatHostValueTag *tag);
 
 LhatRuntimeType *lhat_type_rt_new(LhatHeap *heap, LhatRuntimeTypeKind kind);
 

@@ -95,6 +95,9 @@ typedef enum {
                                         // return^ of its own
     LHAT_CHECK_ERR_PROTOTYPE_SEALED,    // 14.11: the prototype is read
                                         // through self^ and written by no one
+    LHAT_CHECK_ERR_NOT_BOXABLE,         // 05 の 8.9: box^ takes a host value
+                                        // -- everything else already lives
+                                        // on the heap and needs no box
     LHAT_CHECK_ERR_NOTHING_TO_OVERRIDE, // a marker with nothing under it
     LHAT_CHECK_ERR_NOT_SUBSTITUTABLE,   // 14.12: override^ has to fit
     LHAT_CHECK_ERR_OVERLOAD_OVERLAPS,   // 14.12: signatures must stay apart

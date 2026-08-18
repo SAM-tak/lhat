@@ -541,6 +541,7 @@ static void walk_value(SemCollector *out, const LhatNode *node)
         case LHAT_NODE_SPREAD:
         case LHAT_NODE_REQUIRE_STMT:
         case LHAT_NODE_PACK:
+        case LHAT_NODE_BOX:
         case LHAT_NODE_YIELD_ALL:
         // 9.8 and 9.11: what these carry is the level, except where the
         // brackets held 9.8's label form instead -- an expression, and the

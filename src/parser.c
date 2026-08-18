@@ -715,11 +715,14 @@ static LhatNode *parse_type_primary(Parser *p)
         advance(p);
 
         // 04 の 14.4: an error kind is named through the declaration that
-        // introduced it, so a type may be a qualified name.
+        // introduced it, so a type may be a qualified name. A hat identifier
+        // is a segment too -- 05 の 8.9 hangs a host value's box under the
+        // type as `T.Box^`, and the checker judges the word.
         while (check_op(p, LHAT_OP_DOT)) {
             LhatToken at = p->current;
             advance(p);
-            if (p->current.kind != LHAT_TOKEN_IDENT) {
+            if (p->current.kind != LHAT_TOKEN_IDENT &&
+                p->current.kind != LHAT_TOKEN_HAT_IDENT) {
                 report(p, &p->current, LHAT_PARSE_ERR_EXPECTED_NAME);
                 break;
             }
@@ -2074,6 +2077,20 @@ static LhatNode *parse_unary(Parser *p)
         LhatToken at = p->current;
         advance(p);
         LhatNode *node = make(p, LHAT_NODE_PACK, &at);
+        if (node == NULL) {
+            return NULL;
+        }
+        node->v.jump.value = parse_unary(p);
+        return finish(p, node);
+    }
+
+    // 05 の 8.9: 'box^ expr' puts a host value in the box the heap can hold.
+    // At the unary level for pack^'s reason -- what it takes is the whole
+    // value, and nothing tighter reads differently.
+    if (check_hat(p, "box")) {
+        LhatToken at = p->current;
+        advance(p);
+        LhatNode *node = make(p, LHAT_NODE_BOX, &at);
         if (node == NULL) {
             return NULL;
         }

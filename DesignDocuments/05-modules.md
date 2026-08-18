@@ -1170,7 +1170,7 @@ Lua や Python のように解放を別のフェーズへ回す機構は設け�
 slot i   : payload = LhatHostValueTag*   tag = HOSTVALUE   … head
 slot i+1 : payload = 生バイト            tag = CONT
 …
-幅 = 1 + ceil(size / 8)     例: f32×3 の LVector3(12B) → 3 スロット
+幅 = 1 + ceil(size / 8)     例: f32×3 の Vector3(12B) → 3 スロット
 ```
 
 head が自己記述する（タグから型と幅が引ける）ので、一括コピー・退避・
@@ -1193,10 +1193,31 @@ GCの走査は幅を知らずに正しく動く -- CONT はオブジェクトで
 表現に無い場所を作れないからである（03 の 3.5 の例外）。コンパイラも
 同じ拒否を持ち、検査なしのコンパイルの背止めになる。
 
-保持したければ**箱に入れる**。箱はライブラリの仕事であり、言語機構では
-ない -- std.math は `Vector3`（8.8 のホストデータ）を箱として提供し、
-`get()` が unboxing、`set()` が boxing である。何かを保持することが
-綴りとして見えるのは意図であって不便ではない。
+保持したければ**箱に入れる**。箱は言語が型ごとに1つ用意する --
+ホスト値型 `T` を登録すると **`T.Box^`** が付いてくる。
+`box^値` が箱を作り、`get()` が unboxing、`set(値)` が boxing である。
+何かを保持することが綴りとして見えるのは意図であって不便ではない
+——見えない変換は、C# の struct が黙って複製へ書き捨てる罠と、
+気づかないうちに boxing が積み上がる罠の両方を持ち込むので採らない。
+
+```lhat
+let^ b = box^std.math.vec3(1, 2, 3)   # std.math.Vector3.Box^
+let^ t = { held = b }                  # 普通のヒープ値。テーブルにも
+var^ m : std.math.Vector3.Box^|nil^   # 合併にも any^ にも入る
+let^ v = b.get()                       # 取り出しは常に複製（値意味論）
+b.set(v * 2)                           # 同じ型の値でバイト列を上書き
+```
+
+箱の性質は次で全部である。
+
+- **普通のヒープオブジェクト**。上の escape 一覧のどこにでも住める。
+  `=` / `is^` は容器の同一性で、中身の比較は `a.get() = b.get()` と綴る
+- **中身はインラインのバイト列**（登録フィールドは全数値）。参照を含まないので
+  コレクタの葉であり、**dispose は無い**
+- `box^` の失敗は機械停止（テーブルリテラルと同格）。合併も try^ も要らない
+- 02 の 14.11 の既定値になれる**複製されるノード**である —
+  焼き込みが封印コピーを持ち、生成が各インスタンスに未封印コピーを配る
+- `typeof^` は `T.Box^` を答える。箱と中身は別の型である
 
 #### 検査と幅
 
@@ -1232,9 +1253,9 @@ head だけ比べて「同型なら等しい」と誤答する道は塞いであ
 順序を持たない型なら `op^=` だけを登録すればよい。
 
 ```c
-lhat_register_hostvalue_member(program, "std.math", "LVector3", "<=>",
-                               "f^self^, o:LVector3 -> number^;",
-                               lvec3_compare, module);
+lhat_register_hostvalue_member(program, "std.math", "Vector3", "<=>",
+                               "f^self^, o:Vector3 -> number^;",
+                               vec3_compare, module);
 
 lhat_register_hostvalue_member(program, "m", "Handle", "=",
                                "f^self^, o:Handle -> bool^;",
@@ -1263,8 +1284,8 @@ lhat_register_hostvalue_member(program, "m", "Handle", "=",
 02 の 14.17 は **どの値も `tostring` を持つ** と定めており、ホスト値も外れない。
 
 ```c
-lhat_register_hostvalue_member(program, "std.math", "LVector3", "tostring",
-                               "f^self^ -> string^;", lvec3_tostring, module);
+lhat_register_hostvalue_member(program, "std.math", "Vector3", "tostring",
+                               "f^self^ -> string^;", vec3_tostring, module);
 ```
 
 **名前は裸の `tostring`** である。ハットが要るのは 14.17改 の素のテーブル
@@ -1275,7 +1296,7 @@ lhat_register_hostvalue_member(program, "std.math", "LVector3", "tostring",
 **登録が無ければ組込みが型の名前を書く。**
 
 ```lhat
-$"{v}"            # "<std.math.LVector3>"    tostring 未登録
+$"{v}"            # "<std.math.Vector3>"    tostring 未登録
 $"{v}"            # "{x:3.0 y:4.0 z:0.0}"    std.math が登録したもの
 ```
 
@@ -1336,8 +1357,10 @@ size_t position_count;        // 単値の答えなら 0
 - 可変長引数を持つ署名・yield する本体は、幅つき引数と併用できない
   （値番号でスロットを数える2箇所を守るための拒否）
 - コルーチン境界の値（yield/receive/produce/答え）は不可。**本体内の
-  ローカルは可** -- 退避と復帰はスロットの盲写しなので安全である
-- 単項 `-` は未対応（`v * -1` か登録メソッドで書く）
+  ローカルは可** -- 退避と復帰はスロットの盲写しなので安全である。
+  境界を越えたければ `T.Box^` に入れる
+- 箱はフィールドの直アクセスを持たない（`b.x` は無く、`b.get().x` と綴る）。
+  演算子の委譲も無い -- 箱は容器であって値の別名ではない
 - 16 バイト境界を要求する型（`__m128` 等）は対象外。整列は 8 バイト
 
 ### 8.10 継ぎ目は2つある
@@ -1472,6 +1495,15 @@ cli/            コマンドライン      → lhat.exe
 - ホスト値（8.9）の文字列化を追加。裸の `tostring` を登録し、
   無ければ組込みが型の名前 `<module.Name>` を書く。補間の穴は「スタックの外」ではない
 - 公開する引数の型は束縛の側に書いてもよいことを明記（4.3、03 の 3.4改）
+- ホスト値の箱（8.9）は当初「ライブラリの仕事であり、言語機構ではない」
+  — std.math が値型 LVector3 とは別に箱型 Vector3（8.8 のホストデータ）を
+  手書きで提供していた — だったが、型ごとに約70行の同文と手動の寿命管理・
+  OOM 合併を利用側へ波及させると判明し、言語が `T.Box^` を型ごとに1つ
+  用意する形に反転。可視・明示（`box^`/get/set）はそのまま — 見えない
+  自動変換は C# の struct 複製罠と気づかない boxing の積み上がりを招くため
+  採らない。手書きの箱は削除され、値型が Vector3 の名を持つ
+  （L は箱と名前を分けるための接頭辞だった）。単項 `-` は実装済みとなり
+  制限の列挙から外れた
 - 定義名を型として書いたときに要求するものを、02 の 14.7 の見直しに合わせた（2.2）。
   インスタンスが持つのは雛形の欄と受け手を取るメンバである
 - `import^` が束縛した名前は、入れ子の本体では捕捉せず `L^.modules` を

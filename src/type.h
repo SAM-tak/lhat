@@ -64,6 +64,12 @@ typedef enum {
     // must never leave a frame. The payload shares v.table so the member
     // machinery (registration, lookup) reads it unchanged.
     LHAT_TYPE_HOSTVALUE,
+    // 05 の 8.9: the box the language hangs under a host value type --
+    // `T.Box^`, an ordinary heap object holding one value of T. Nominal by
+    // the same tag (payload shares v.table the way HOSTVALUE does), and
+    // free to live anywhere a value lives: the escape rules are HOSTVALUE's
+    // alone.
+    LHAT_TYPE_HOSTVALUE_BOX,
 
     LHAT_TYPE_ERROR,       // error^ (04 の 2.3): the supertype of every kind
     LHAT_TYPE_ERROR_SET,   // what one errordef^ declares (04 の 2.2)
@@ -326,6 +332,11 @@ LhatType *lhat_type_table(LhatTypeArena *arena);
 // which conformance and the checker enforce off the kind.
 LhatType *lhat_type_hostvalue(LhatTypeArena *arena,
                               const struct LhatHostValueTag *tag);
+// 05 の 8.9: the box under a host value type (`T.Box^`). Nominal by the same
+// tag; an ordinary heap value otherwise. `held` is the value type itself --
+// the registered one, fields and members included -- kept so get() can
+// answer it whole.
+LhatType *lhat_type_hostvalue_box(LhatTypeArena *arena, LhatType *held);
 LhatType *lhat_type_func(LhatTypeArena *arena, bool is_function);
 // 15.3改: `is_function` is the kind of the body, which decides what may
 // advance the coroutine and where it may be held. 13.9: a NULL `receive` or

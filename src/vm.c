@@ -708,9 +708,38 @@ static LhatRuntimeType *tag_type(LhatHeap *heap, LhatValue value)
         }
         return type;
     }
+    // 05 の 8.9: and the box, off its own head slot.
+    if (lhat_is_object_kind(value, LHAT_OBJECT_HOSTVALUE_BOX)) {
+        LhatRuntimeType *type =
+            lhat_type_rt_new(heap, LHAT_TYPE_RT_HOSTVALUE_BOX);
+        if (type != NULL) {
+            type->hostvalue_tag = lhat_hostvalue_box_tag(
+                (const LhatHostValueBox *)lhat_as_object(value));
+        }
+        return type;
+    }
     // A type-info value itself, a runtime operation, … -- nothing more to
     // say than that a value is there.
     return lhat_type_rt_new(heap, LHAT_TYPE_RT_ANY);
+}
+
+// 05 の 8.9: which of the box's two members a key names. get answers the
+// value whole; set writes one of the same tag over the bytes.
+static bool box_member_named(LhatValue key, LhatNativeKind *out)
+{
+    if (!lhat_is_object_kind(key, LHAT_OBJECT_STRING)) {
+        return false;
+    }
+    const LhatString *name = (const LhatString *)lhat_as_object(key);
+    if (name->length == 3 && memcmp(name->text, "get", 3) == 0) {
+        *out = LHAT_NATIVE_BOX_GET;
+        return true;
+    }
+    if (name->length == 3 && memcmp(name->text, "set", 3) == 0) {
+        *out = LHAT_NATIVE_BOX_SET;
+        return true;
+    }
+    return false;
 }
 
 // The operations 02 の 12.6 and 15.6 give a coroutine, and 14.17's tostring,
@@ -1416,6 +1445,21 @@ static bool immutable_default(LhatValue value)
 static bool bake_default(Machine *m, LhatValue held, LhatValue *out,
                          size_t depth, bool *refused_value)
 {
+    // 05 の 8.9: a box is a copyable node of depth nought -- bytes, no
+    // references -- so the prototype takes a sealed copy of its own.
+    if (lhat_is_object_kind(held, LHAT_OBJECT_HOSTVALUE_BOX)) {
+        const LhatHostValueBox *source =
+            (const LhatHostValueBox *)lhat_as_object(held);
+        const LhatHostValueTag *tag = lhat_hostvalue_box_tag(source);
+        LhatHostValueBox *copy = lhat_hostvalue_box_new(&m->objects, tag);
+        if (copy == NULL) {
+            return false;
+        }
+        memcpy(copy->run, source->run, tag->width * sizeof(LhatValueUnion));
+        copy->sealed = true;
+        *out = lhat_object((LhatObject *)copy);
+        return true;
+    }
     if (lhat_is_object_kind(held, LHAT_OBJECT_TABLE)) {
         const LhatTable *table = (const LhatTable *)lhat_as_object(held);
         if (table->is_definition) {
@@ -1484,6 +1528,20 @@ static bool clone_default(Machine *m, LhatValue held, LhatValue *out,
             *out = lhat_object((LhatObject *)copy);
             return true;
         }
+    }
+    // 05 の 8.9: a box is copied by its bytes, unsealed -- each instance's
+    // own to set().
+    if (lhat_is_object_kind(held, LHAT_OBJECT_HOSTVALUE_BOX)) {
+        const LhatHostValueBox *source =
+            (const LhatHostValueBox *)lhat_as_object(held);
+        const LhatHostValueTag *tag = lhat_hostvalue_box_tag(source);
+        LhatHostValueBox *copy = lhat_hostvalue_box_new(&m->objects, tag);
+        if (copy == NULL) {
+            return false;
+        }
+        memcpy(copy->run, source->run, tag->width * sizeof(LhatValueUnion));
+        *out = lhat_object((LhatObject *)copy);
+        return true;
     }
     *out = held;
     return true;
@@ -2608,6 +2666,22 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
                     }
                     break;
                 }
+                // 05 の 8.9: a box answers its two members, bound the way
+                // 14.17's tostring is; any other name falls through to the
+                // built-ins every value answers.
+                if (lhat_is_object_kind(R(b), LHAT_OBJECT_HOSTVALUE_BOX)) {
+                    LhatNativeKind which;
+                    if (box_member_named(R(cc), &which)) {
+                        LhatNative *native =
+                            lhat_native_new(&m->objects, which, R(b));
+                        if (native == NULL) {
+                            return finish(m, chunk, LHAT_RUN_OUT_OF_MEMORY,
+                                          lhat_nil(), at);
+                        }
+                        SET_R(a, lhat_object((LhatObject *)native));
+                        break;
+                    }
+                }
                 const LhatTable *table = readable_table(R(b));
                 if (table == NULL) {
                     // 02 の 14.17: nil^, bool^, number^ and string^ hold no
@@ -3058,6 +3132,27 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
                 break;
             }
 
+            // 05 の 8.9: the host value at R[B..], boxed. The head slot
+            // carries the tag, and the tag the width, so the copy is the
+            // whole run.
+            case LHAT_BC_BOX: {
+                if (!lhat_is_hostvalue(R(b))) {
+                    return finish(m, chunk, LHAT_RUN_TYPE_ERROR, lhat_nil(), at);
+                }
+                const LhatHostValueTag *tag = lhat_as_hostvalue_tag(R(b));
+                LhatHostValueBox *box =
+                    lhat_hostvalue_box_new(&m->objects, tag);
+                if (box == NULL) {
+                    return finish(m, chunk, LHAT_RUN_OUT_OF_MEMORY, lhat_nil(),
+                                  at);
+                }
+                for (size_t i = 0; i < tag->width; i++) {
+                    box->run[i] = m->slots.values[rbase + b + i];
+                }
+                SET_R(a, lhat_object((LhatObject *)box));
+                break;
+            }
+
             case LHAT_BC_CALL:
             case LHAT_BC_CALLMETHOD:
             case LHAT_BC_TAILCALL:
@@ -3293,6 +3388,52 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
                             return finish(m, chunk, LHAT_RUN_ARITY, lhat_nil(), at);
                         }
                         lhat_gc_collect(m);
+                        SET_R(a, lhat_nil());
+                        break;
+                    }
+
+                    // 05 の 8.9: the box's two members. get answers the value
+                    // whole -- the box's run is head-shaped, so the placement
+                    // a host's answer takes lays it down unchanged. set
+                    // writes a value of the same tag over the bytes.
+                    if (native->kind == LHAT_NATIVE_BOX_GET ||
+                        native->kind == LHAT_NATIVE_BOX_SET) {
+                        LhatHostValueBox *box =
+                            (LhatHostValueBox *)lhat_as_object(native->bound);
+                        const LhatHostValueTag *box_tag =
+                            lhat_hostvalue_box_tag(box);
+                        if (native->kind == LHAT_NATIVE_BOX_GET) {
+                            if (b != 0) {
+                                return finish(m, chunk, LHAT_RUN_ARITY,
+                                              lhat_nil(), at);
+                            }
+                            LhatValue answered;
+                            answered.tag = LHAT_VALUE_HOSTVALUE;
+                            answered.as.hostvalue_run = box->run;
+                            if (!place_hostvalue_answer(m, rbase + a,
+                                                        answered)) {
+                                return finish(m, chunk, LHAT_RUN_TYPE_ERROR,
+                                              lhat_nil(), at);
+                            }
+                            break;
+                        }
+                        if (b != 1) {
+                            return finish(m, chunk, LHAT_RUN_ARITY, lhat_nil(),
+                                          at);
+                        }
+                        if (!lhat_is_hostvalue(sent) ||
+                            lhat_as_hostvalue_tag(sent) != box_tag) {
+                            return finish(m, chunk, LHAT_RUN_TYPE_ERROR,
+                                          lhat_nil(), at);
+                        }
+                        // 14.11: a prototype's box takes no writes.
+                        if (box->sealed) {
+                            return finish(m, chunk, LHAT_RUN_SEALED,
+                                          lhat_nil(), at);
+                        }
+                        for (size_t i = 1; i < box_tag->width; i++) {
+                            box->run[i] = m->slots.values[rbase + first + i];
+                        }
                         SET_R(a, lhat_nil());
                         break;
                     }

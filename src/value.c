@@ -167,6 +167,7 @@ const char *lhat_object_kind_name(LhatObjectKind kind)
         // Neither has anything to show past what it is.
         case LHAT_OBJECT_HOST:       return "a host subroutine";
         case LHAT_OBJECT_HOSTDATA:   return "host data";
+        case LHAT_OBJECT_HOSTVALUE_BOX: return "a boxed host value";
     }
     return "?";
 }
@@ -423,6 +424,19 @@ static void write_value(Writer *w, LhatValue value, size_t depth)
             if (kind->name != NULL) {
                 put(w, kind->name->text, kind->name->length);
             }
+            return;
+        }
+        // 05 の 8.9: the box written as what it is -- its type's name, the
+        // way the value inside would write itself.
+        case LHAT_OBJECT_HOSTVALUE_BOX: {
+            const LhatHostValueBox *box = (const LhatHostValueBox *)object;
+            const LhatHostValueTag *tag = lhat_hostvalue_box_tag(box);
+            if (tag != NULL && tag->module != NULL) {
+                put_text(w, tag->module);
+                put_text(w, ".");
+            }
+            put_text(w, tag != NULL ? tag->name : "?");
+            put_text(w, ".Box^");
             return;
         }
         default:

@@ -348,7 +348,7 @@ const LhatHostValueTag *lhat_register_hostvalue_type(LhatProgram *program,
 
 // A member of a host value type: an operator ("+", "-", ...) or a method.
 // `signature` names the value type by its full written path
-// ("std.math.LVector3"); a first parameter of self^ is the receiver (14.4).
+// ("std.math.Vector3"); a first parameter of self^ is the receiver (14.4).
 bool lhat_register_hostvalue_member(LhatProgram *program, const char *module,
                                     const char *type, const char *name,
                                     const char *signature, LhatHostFn call,

@@ -47,6 +47,11 @@ void lhat_gc_children(LhatObject **gray, LhatObject *object)
         case LHAT_OBJECT_STRING:
             return;
 
+        // 05 の 8.9: a box is bytes -- every registered field kind is
+        // numeric, so there is nothing in one for the collector to follow.
+        case LHAT_OBJECT_HOSTVALUE_BOX:
+            return;
+
         case LHAT_OBJECT_TABLE: {
             const LhatTable *table = (const LhatTable *)object;
             for (size_t i = 0; i < table->array_count; i++) {
