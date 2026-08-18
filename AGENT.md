@@ -21,3 +21,19 @@ Lua風の、C言語でコンパイル可能なバイトコードインタプリ�
 
 設計文書への参照（`02 の 14.17`、`13.7` など）は既存コメントの書き方をそのまま使う
 — 英文の中に日本語の節番号が混じる形はこのリポジトリの既定。
+
+## その他のリソース
+
+### lhat-svg-tools
+
+L^ソースをシンタックスハイライト済みのSVGに変換するツール
+
+@../lhat-svg-tools/
+
+### godot
+
+godot エンジンのソース
+
+> `git clone --filter=blob:none --depth 1 --branch 4.7.1-stable git@github.com:godotengine/godot.git`
+
+@../godot/

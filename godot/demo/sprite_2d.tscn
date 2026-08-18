@@ -11,5 +11,6 @@ position = Vector2(600, 306)
 rotation = 1179.4459
 texture = SubResource("NoiseTexture2D_f7cmv")
 script = ExtResource("1_f7cmv")
+speed = 3
 
 [connection signal="script_changed" from="Sprite2D" to="Sprite2D" method="_on_script_changed"]

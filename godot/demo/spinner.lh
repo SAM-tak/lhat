@@ -6,35 +6,39 @@ module^demo.spinner
 
 let^Godot = require^"lhat/Godot.lh"
 
+# くるくる回る
+#
+# くるくる回るだけ
 @game
-public^let^Spinner = Godot.Sprite2D..def^:
-self^{
-	@export_range(0, 10) speed = 1,
-	turns = 0,
-},
+public^let^Spinner = Godot.Sprite2D..def^{
+	self^{
+		# 回転速度
+		@export_range(0, 10) speed = 1,
+		turns = 0,
+	},
 
-@signal died = p^self^, message:string^{
-	self^.emit(id^died, message)
-},
+	@signal died = p^self^, message:string^{
+		self^.emit(id^died, message)
+	},
 
-_ready = p^self^{
-	print($"spinner on a {self^.className()}, named {self^.getName()}")
-},
+	_ready = p^self^{
+		print($"spinner on a {self^.className()}, named {self^.getName()}")
+	},
 
-_process = p^self^, delta:number^{
-	self^.setRotation(self^.getRotation() + delta * self^.speed)
-	self^.turns += 1
-	if^self^.turns > 1000 {
-		self^.died("死にました")
-	}
-},
+	_process = p^self^, delta:number^{
+		self^.setRotation(self^.getRotation() + delta * self^.speed)
+		self^.turns += 1
+		if^self^.turns > 1000 {
+			self^.died("死にました")
+		}
+	},
 
-on_timeout = p^self^{ self^.turns += 100 },
+	on_timeout = p^self^{ self^.turns += 100 },
 
-report = f^self^ -> string^{
-	return^ $"{self^.turns} frames, rotation {self^.getRotation()}"
-},
-
-_on_script_changed = p^self^ {
-	
-},
+	report = f^self^ -> string^{
+		return^ $"{self^.turns} frames, rotation {self^.getRotation()}"
+	},
+	_on_script_changed = p^self^ {
+		
+	},
+}
