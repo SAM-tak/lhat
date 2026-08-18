@@ -27,6 +27,12 @@ typedef struct {
     bool interactive;
     size_t depth;
 
+    // 14.13: how many def^ bodies are open. `depth` above cannot answer it --
+    // it counts statement lists, and a member's value is an expression, so
+    // 'def^{ Inner = def^: … }' never raises it. Only def^: reads this, to
+    // refuse being written inside another definition.
+    size_t def_depth;
+
     // 15.12: the depth of the statement list a subroutine body owns, where a
     // bare expression is read and the last one becomes the answer. Zero
     // outside any body -- 8.2's rule holds everywhere else, nested blocks of
@@ -1152,7 +1158,24 @@ static LhatNode *parse_def(Parser *p)
     if (node == NULL) {
         return NULL;
     }
-    if (!expect_op(p, LHAT_OP_LBRACE)) {
+
+    // 14.13: ':' ends the body at the end of the file rather than at a '}'.
+    // The same definition either way, so nothing below and nothing
+    // downstream reads the two apart.
+    //
+    // Refused inside another def^'s body: the inner one would eat the rest of
+    // the file and the outer would end holding nothing, which is the one
+    // misuse that parses. Anything left open around it fails at EOF asking
+    // for its own closer, which says enough.
+    bool to_eof = false;
+    if (check_op(p, LHAT_OP_COLON)) {
+        if (p->def_depth > 0) {
+            report(p, &p->current, LHAT_PARSE_ERR_DEF_COLON_NESTED);
+            return node;
+        }
+        advance(p);
+        to_eof = true;
+    } else if (!expect_op(p, LHAT_OP_LBRACE)) {
         return node;
     }
 
@@ -1160,7 +1183,8 @@ static LhatNode *parse_def(Parser *p)
     LhatNode *tail = NULL;
     bool seen_template = false;
 
-    while (!at_eof(p) && !check_op(p, LHAT_OP_RBRACE)) {
+    p->def_depth++;
+    while (!at_eof(p) && (to_eof || !check_op(p, LHAT_OP_RBRACE))) {
         // 02 の 18.4: above the member, and so above 14.12's marker too --
         // the marker says how the member joins the group, the annotation
         // says something about the member itself.
@@ -1283,9 +1307,12 @@ static LhatNode *parse_def(Parser *p)
             break;
         }
     }
+    p->def_depth--;
 
     node->v.list.items = head;
-    expect_op(p, LHAT_OP_RBRACE);
+    if (!to_eof) {
+        expect_op(p, LHAT_OP_RBRACE);
+    }
     return finish(p, node);
 }
 
@@ -4298,6 +4325,7 @@ static void parser_begin(Parser *p, LhatLexer *lexer, LhatParseResult *result)
     p->saw_yield = false;
     p->interactive = false;
     p->depth = 0;
+    p->def_depth = 0;  // 14.13, and left unset for the same reason as below
     // 15.12: no body is open yet. Left unset, this read whatever the stack
     // held, and a value that happened to equal `depth` let 8.2's bare
     // expression through at the top level of a unit.
@@ -4675,6 +4703,9 @@ const char *lhat_parse_error_message(LhatParseErrorCode code)
                    "whichever of the two it has";
         case LHAT_PARSE_ERR_EXPECTED_MEMBER:
             return "a def^ holds 'name := value' members and one self^{ ... }";
+        case LHAT_PARSE_ERR_DEF_COLON_NESTED:
+            return "a def^: runs to the end of the file, so it cannot stand "
+                   "inside another def^ -- write def^{ ... } here";
         case LHAT_PARSE_ERR_FIELD_NEEDS_NAME:
             return "every field of self^{ ... } needs a name and a value";
         case LHAT_PARSE_ERR_DUPLICATE_TEMPLATE:
