@@ -123,6 +123,10 @@ public:
     // What a fresh instance's fields hold, by name. Empty where one could
     // not be made.
     const Dictionary &lhat_defaults() const { return defaults; }
+    // 02 の 18: what @icon named on the worn binding, or empty. Read by the
+    // language's _get_global_class_name, which is what the editor asks
+    // before it has loaded anything.
+    String lhat_icon_path() const;
     void drop_instance(int64_t id);
     void read_defaults();
 

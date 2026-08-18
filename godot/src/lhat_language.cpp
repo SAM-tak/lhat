@@ -2,6 +2,7 @@
 
 #include <string.h>
 
+#include <godot_cpp/classes/file_access.hpp>
 #include <godot_cpp/core/class_db.hpp>
 #include <godot_cpp/classes/script_language_extension_profiling_info.hpp>
 #include <godot_cpp/core/memory.hpp>
@@ -331,16 +332,54 @@ bool LhatLanguage::_supports_documentation() const
     return false;
 }
 
+// Asked before the editor will use _get_global_class_name at all: a language
+// answering false is never scanned for the names it declares. The type is
+// the base a caller is asking about, and what is answered is about this
+// language rather than about that type -- a .lh names a class the same way
+// whatever it is asked in aid of.
 bool LhatLanguage::_handles_global_class_type(const String &type) const
 {
-    (void)type;
-    return false;
+    return type == _get_type();
 }
 
+// Asked of a path rather than of a loaded script: the editor scans the
+// project for what each file declares before it opens any of them, and this
+// is what puts a class in the Create Node dialog and hangs @icon's icon on
+// it.
+//
+// A .lh has to be read and run to answer, since 05 の 5.5 has the classes a
+// unit publishes come from the table it answers with -- there is no reading
+// the tree for them. So one script is made, reloaded and thrown away. That
+// is what GDScript's own scan costs too, a parse per file.
 Dictionary LhatLanguage::_get_global_class_name(const String &path) const
 {
-    (void)path;
-    return Dictionary();
+    Dictionary out;
+    Ref<FileAccess> reading = FileAccess::open(path, FileAccess::READ);
+    if (reading.is_null()) {
+        return out;
+    }
+
+    Ref<LhatScript> probe;
+    probe.instantiate();
+    // The path before the source: a require^ resolves against it, and the
+    // reload below is what follows one. Written past the resource cache --
+    // set_path would claim a path the real script may already hold, and two
+    // resources answering one path is what that refusal is for.
+    probe->set_path_cache(path);
+    probe->_set_source_code(reading->get_as_text());
+    probe->_reload(false);
+
+    StringName named = probe->_get_global_name();
+    if (named == StringName()) {
+        return out;  // a library, or a name the engine already has
+    }
+    out["name"] = named;
+    out["base_type"] = probe->_get_instance_base_type();
+    String icon = probe->lhat_icon_path();
+    if (!icon.is_empty()) {
+        out["icon_path"] = icon;
+    }
+    return out;
 }
 
 ScriptLanguage::ScriptNameCasing LhatLanguage::_preferred_file_name_casing()

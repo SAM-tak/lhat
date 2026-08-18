@@ -493,9 +493,48 @@ Ref<Script> LhatScript::_get_base_script() const
     return Ref<Script>();
 }
 
+// The name the class is known by across the project, which is what an icon
+// and a Create Node entry hang on. The binding's own name: Godot's registry
+// is one flat namespace with no nesting, so a module^ path handed to it
+// would not be read as one -- it would be a name with dots in it, which
+// GDScript could not write as a type.
+//
+// Nothing here makes it unique. Two files publishing a Spinner both claim it,
+// the way two GDScripts writing `class_name Spinner` do; the engine's own
+// names are the one collision worth refusing, since taking Node from under
+// the editor breaks more than a name.
 StringName LhatScript::_get_global_name() const
 {
-    return StringName();
+    if (!runnable || klass_name.is_empty() ||
+        ClassDB::class_exists(klass_name)) {
+        return StringName();
+    }
+    return StringName(klass_name);
+}
+
+// 02 の 18: @icon on the same binding, as written. What the path means is
+// Godot's -- 18.3 keeps an argument a literal, so what arrives is the
+// spelling and nothing has resolved it.
+String LhatScript::lhat_icon_path() const
+{
+    if (unit == nullptr || klass_name.is_empty()) {
+        return String();
+    }
+    CharString spelt = klass_name.utf8();
+    size_t written = lhat_unit_annotation_count(unit, spelt.get_data(), NULL);
+    for (size_t i = 0; i < written; i++) {
+        LhatAnnotation at =
+            lhat_unit_annotation(unit, spelt.get_data(), NULL, i);
+        if (at.name == NULL ||
+            String::utf8(at.name, (int)at.name_length) != "icon") {
+            continue;
+        }
+        LhatAnnotationArgument said = lhat_annotation_argument(at, 0);
+        if (said.text != NULL) {
+            return String::utf8(said.text, (int)said.length);
+        }
+    }
+    return String();
 }
 
 bool LhatScript::_inherits_script(const Ref<Script> &script) const
