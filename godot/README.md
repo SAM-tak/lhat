@@ -90,9 +90,10 @@ let^ Hidden = …    # error: this annotation was not registered for what it
 `_ready` も `_process` も走らない。書き手が意図しないコードがシーンを開いた
 だけで走らないための線であり、GDScript が引いているのと同じ線である。
 
-［補足］ placeholder が出す欄の初期値は**型の零**（`0` / `""` / `false`）で、
-書かれた初期化式ではない。14.11 が初期化式を `new` の中で走らせる以上、
-実体を作らずに読む道が無いため。ゲームを走らせれば書いたとおりの値になる。
+［補足］ placeholder が出す欄の初期値は **14.11 のプロトタイプの値**である。
+定義は自分の雛形を `self^` にぶら下げており、初期化式は定義を組むところで
+一度だけ走っている——だから実体を作らずに読める。14.15 の `abstract^` な欄
+だけはプロトタイプにキーが無く、そこは型の零（`0` / `""` / `false`）に落ちる。
 
 `@tool` を書いた側では、編集中かどうかを訊けたほうがよいことが多い。
 
@@ -113,6 +114,35 @@ _process = p^self^, delta:number^ {
 
 インスタンスは `L^.modules.godot.script.instances` の下に置かれる。
 これも根のため。ノードが消えるとそこから外れる。
+
+#### 定義のものは定義から読む
+
+02 の 14.7 は、インスタンスが呼べるのは**受け手を取るメンバだけ**だと定める。
+残りは定義のものである——`new`（14.11）と、受け手を取らない静的メンバと、
+値のメンバ（14.7改 の言う「静的な定数」）。エンジンにも同じ線で答える。
+
+- **`self^` の欄** → スクリプトの members。ゲームを走らせている間、
+  リモートインスペクタの `Members/` に並ぶ
+- **値のメンバ** → スクリプトの constants。同じく `Constants/` に並び、
+  GDScript からは `get_script_constant_map()` で読める。継承の鎖は畳まれて
+  いるので、`Godot.Sprite2D..def^` を継いだクラスの `gdBaseClass` も出る
+- **受け手を取らないメンバ** → 静的メソッド。`has_method` が真を答える
+
+```gdscript
+var Probe := load("res://probe.lh")
+Probe.get_script_constant_map()      # { "limit": 7, "gdBaseClass": "Sprite2D" }
+Probe.has_method("twice")            # true
+Probe.call_static("twice", [21])     # 42
+```
+
+`ScriptExtension` にはスクリプト資源そのものへの呼び出しの口が無い
+（`Object::callp` は ClassDB までしか行かず、言語には訊かない）。だから
+**呼ぶ道は `call_static` ただ一つ**である。
+
+**`new` はそこに載せない。** エンジンには既に実体を作る道がある
+——スクリプトをノードに着せれば `_instance_create` が走る——ので、
+`has_method("new")` は偽を答え、`call_static("new", …)` は理由を言って断る。
+二つ目の扉から作ったインスタンスはノードを持たず、`instances` にも載らない。
 
 ### プロジェクト全体で名乗る
 
@@ -380,6 +410,9 @@ LhatRuntime.call_member("res://lib/api.lh", "numbers", [5])            # [1,4,9,
 なら上のスクリプトの道を使う——`module^` が答えを `L^.modules` に置くので、
 機械を跨いで生き続ける。
 
+着せてあるスクリプトの静的メンバを呼びたいなら、上の `call_static` の方である
+——あちらは既に読み込まれている機械と定義をそのまま使い、走らせ直さない。
+
 （`src/gc.c` の根は `L^` とフレームと保留中の破棄だけで、ホストが C 変数で
 持っている値は根ではない。`module^` を要求しているのはこのため。）
 
@@ -498,6 +531,3 @@ godot --headless --path godot\demo
 - ハイライタが打鍵ごとに検査していて、`_validate` の分と合わせて2回になる。
   目に見えて重ければ、本文をキーにした共有を `LhatLanguage` に置く
   ——先に仕組みを作らず、測ってから
-- `@export` の欄の既定値は、包みの `new` が届かない定義では型の零に落ちる。
-  ノードを渡さずに作った仮インスタンスで読んでいるので、`new` がその
-  ノードに手を伸ばしていると作れない

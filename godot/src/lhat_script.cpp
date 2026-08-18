@@ -2,6 +2,7 @@
 
 #include <godot_cpp/classes/engine.hpp>
 #include <godot_cpp/core/class_db.hpp>
+#include <godot_cpp/templates/local_vector.hpp>
 #include <godot_cpp/variant/utility_functions.hpp>
 
 #include "lhat.h"
@@ -13,8 +14,12 @@
 
 namespace godot {
 
+// 02 の 14.7's static members, reachable from GDScript. Bound here because
+// the engine has no path of its own to them (see call_static).
 void LhatScript::_bind_methods()
 {
+    ClassDB::bind_method(D_METHOD("call_static", "member", "arguments"),
+                         &LhatScript::call_static, DEFVAL(Array()));
 }
 
 namespace {
@@ -33,6 +38,17 @@ bool marked_with(const LhatUnit *unit, const String &name, const char *mark)
         }
     }
     return false;
+}
+
+// Whether a call could reach this value. 14.12's overload^ puts a group in
+// the table rather than a subroutine, so a member with two arms is callable
+// without being one -- which is the case a kind test written out by hand
+// keeps missing.
+bool callable(LhatValue value)
+{
+    return lhat_is_object_kind(value, LHAT_OBJECT_SUBROUTINE) ||
+           lhat_is_object_kind(value, LHAT_OBJECT_OVERLOAD) ||
+           lhat_is_object_kind(value, LHAT_OBJECT_HOST);
 }
 
 // 05 の 5.5: what a module^ unit answers is the table of its public^ names,
@@ -407,20 +423,31 @@ void LhatScript::drop_instance(int64_t id)
     lhat_table_set(table, lhat_integer(id), lhat_nil(), &refused);
 }
 
-bool LhatScript::has_lhat_method(const StringName &method) const
+// What the definition holds under this name, or nil^ where it holds nothing.
+// Asked of the definition rather than of an instance on purpose: 14.7改 has
+// the search through an instance answer only the members taking a receiver,
+// and a static one is exactly what that would hide.
+//
+// The table is the flattened chain (compile_def), so what a base wrote is
+// here too -- which is why this reads the value rather than the tree, whose
+// members are only the ones this file wrote.
+LhatValue LhatScript::member_named(const StringName &name) const
 {
     if (!runnable) {
-        return false;
+        return lhat_nil();
     }
-    CharString name = String(method).utf8();
+    CharString spelt = String(name).utf8();
     LhatValue key = lhat_nil();
-    if (!lhat_machine_make_string(machine, name.get_data(),
-                                  (size_t)name.length(), &key)) {
-        return false;
+    if (!lhat_machine_make_string(machine, spelt.get_data(),
+                                  (size_t)spelt.length(), &key)) {
+        return lhat_nil();
     }
-    const LhatTable *table = (const LhatTable *)lhat_as_object(klass);
-    return lhat_is_object_kind(lhat_table_get(table, key),
-                               LHAT_OBJECT_SUBROUTINE);
+    return lhat_table_get((const LhatTable *)lhat_as_object(klass), key);
+}
+
+bool LhatScript::has_lhat_method(const StringName &method) const
+{
+    return callable(member_named(method));
 }
 
 bool LhatScript::_has_source_code() const
@@ -634,10 +661,70 @@ bool LhatScript::_has_method(const StringName &method) const
     return has_lhat_method(method);
 }
 
+// 02 の 14.7: a member taking no receiver belongs to the definition and not
+// to an instance -- `A.somestatic()` in the language, and a static method
+// here. What Object::has_method answers when it is asked of the script
+// resource rather than of a node wearing it.
+//
+// 14.11's `new` is left out. The engine has its own way to make an instance
+// of a script -- putting it on a node, which is what _instance_create is for
+// -- and an instance made through a second door would hold no node and sit
+// in no instance table. call_static refuses the name for the same reason.
 bool LhatScript::_has_static_method(const StringName &method) const
 {
-    (void)method;
-    return false;
+    if (method == StringName("new")) {
+        return false;
+    }
+    LhatValue held = member_named(method);
+    return callable(held) && !lhat_takes_receiver(held);
+}
+
+// The other half of the answer above. ScriptExtension is given no door for a
+// call made on the script resource itself -- Object::callp reaches ClassDB
+// and never asks the language -- so saying a static member is there and
+// leaving no way to reach it would be half an answer. This is the way.
+//
+// 14.7's search is the one lhat_machine_call_member makes, which is what a
+// compiled `A.somestatic()` makes too: an overload^ group is resolved the way
+// a call site resolves it, and a member taking no receiver is simply called.
+Variant LhatScript::call_static(const StringName &member,
+                                const Array &arguments)
+{
+    if (!_has_static_method(member)) {
+        UtilityFunctions::push_error(host::problem(
+            get_path(),
+            member == StringName("new")
+                ? String("new is not called this way -- an instance is made "
+                         "by putting the script on a node")
+                : String("there is no static member ") + String(member)));
+        return Variant();
+    }
+
+    // Nothing runs from here until the call, which is what keeps the values
+    // built below reachable -- see lhat_variant.h.
+    LocalVector<LhatValue> converted;
+    for (int64_t i = 0; i < arguments.size(); i++) {
+        LhatValue held = lhat_nil();
+        if (!host::from_variant(machine, arguments[i], &held, units.godot)) {
+            UtilityFunctions::push_error(host::problem(
+                get_path(), String("argument ") + String::num_int64(i + 1) +
+                                String(" has no shape in L^")));
+            return Variant();
+        }
+        converted.push_back(held);
+    }
+
+    CharString name = String(member).utf8();
+    LhatRunResult called = lhat_machine_call_member(
+        machine, klass, name.get_data(), (size_t)name.length(),
+        converted.ptr(), converted.size());
+    if (called.status != LHAT_RUN_OK) {
+        UtilityFunctions::push_error(
+            host::problem(get_path() + String(".") + String(member),
+                          lhat_run_status_message(called.status)));
+        return Variant();
+    }
+    return host::to_variant(called.value, units.godot);
 }
 
 Dictionary LhatScript::_get_method_info(const StringName &method) const
@@ -883,14 +970,61 @@ void LhatScript::_update_exports()
 {
 }
 
+// 02 の 14.7改 calls a value member of a definition a static constant, and
+// that is what this answers -- everything the definition holds that is
+// neither its prototype nor something to call. `gdBaseClass` is one, and a
+// derived class shows the one it inherited, since the table is flattened.
+//
+// Read when asked rather than kept: the callers are few and none is per
+// frame -- the remote inspector's Constants section while a game runs, and
+// Script.get_script_constant_map() from GDScript.
 Dictionary LhatScript::_get_constants() const
 {
-    return Dictionary();
+    Dictionary out;
+    if (!lhat_is_object_kind(klass, LHAT_OBJECT_TABLE)) {
+        return out;
+    }
+    const LhatTable *table = (const LhatTable *)lhat_as_object(klass);
+    for (size_t i = 0; i < table->entry_capacity; i++) {
+        const LhatTableEntry *entry = &table->entries[i];
+        if (lhat_is_nil(entry->key) ||
+            !lhat_is_object_kind(entry->key, LHAT_OBJECT_STRING) ||
+            callable(entry->value)) {
+            continue;
+        }
+        const LhatString *name =
+            (const LhatString *)lhat_as_object(entry->key);
+        String spelt = String::utf8(name->text, (int)name->length);
+        if (spelt == String("self^")) {
+            continue;  // 14.11's prototype, which _get_members reads instead
+        }
+        // A value with nowhere to land in a Variant answers nil, and a
+        // constant the engine cannot show is not one worth naming.
+        Variant held = host::to_variant(entry->value, units.godot);
+        if (held.get_type() == Variant::NIL && !lhat_is_nil(entry->value)) {
+            continue;
+        }
+        out[spelt] = held;
+    }
+    return out;
 }
 
+// The fields an instance carries, which 14.11 fixes at the prototype -- so
+// the names are the ones read_defaults already read off it. What the remote
+// inspector lists under Members while a game runs, reading each off the
+// object by name (lhat_instance.cpp's instance_get).
+//
+// 14.15's abstract^ fields have no key on the prototype and so none here.
+// They hold whatever `new` wrote, which is a thing to ask an instance and
+// not the definition.
 TypedArray<StringName> LhatScript::_get_members() const
 {
-    return TypedArray<StringName>();
+    TypedArray<StringName> out;
+    Array named = defaults.keys();
+    for (int64_t i = 0; i < named.size(); i++) {
+        out.push_back(StringName(String(named[i])));
+    }
+    return out;
 }
 
 Variant LhatScript::_get_rpc_config() const

@@ -127,8 +127,16 @@ public:
     // before it has loaded anything.
     String lhat_icon_path() const;
 
+    // 02 の 14.7: a static member called from GDScript, since the engine
+    // reaches none of its own on a script resource. Bound as a method of
+    // this class. `new` is refused -- an instance is made by putting the
+    // script on a node.
+    Variant call_static(const StringName &member, const Array &arguments);
+
 private:
     void read_base_class();
+    // What the definition holds under a name, nil^ where it holds nothing.
+    LhatValue member_named(const StringName &name) const;
 
 public:
     void drop_instance(int64_t id);
@@ -162,9 +170,9 @@ public:
 
     // The engine asks for these before it will show a script at all, so
     // leaving them to a default is an error at every call rather than a
-    // silence. L^ has no documentation form and no class icon, and a member's
-    // line is what a jump-to would use -- none of the three has an answer
-    // here yet, and each says so in its own empty way.
+    // silence. A member's line is what a jump-to lands on and is answered off
+    // the text; the other two belong to a documentation form, which L^ has
+    // none of -- so those two are empty on purpose and say so.
     StringName _get_doc_class_name() const override;
     String _get_class_icon_path() const override;
     int32_t _get_member_line(const StringName &member) const override;
