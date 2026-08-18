@@ -3,13 +3,14 @@
 // Section numbers refer to DesignDocuments/03-compilation-pipeline.md unless
 // prefixed.
 //
-// This is the loop that follows 1.1's fourth stage (compile.h). 5.1 has
-// every instruction check what it is given, so the machine does not rely on
-// the checker having run -- which is also what makes relaxed (3.5) work
-// without a second machine. Nothing here reaches the front end: a unit
-// already compiled to bytecode needs no lexer, no parser and no checker
-// (02 の 14.17改2), and this header is what keeps that true at the include
-// level.
+// This is the loop that follows 1.1's fourth stage (compile.h). Safety is
+// strict's static checking; 5.1 starts every instruction generic, checking
+// what it is given so a wrong value stops the run instead of corrupting the
+// machine -- which is also what lets relaxed (3.5) run on this same machine,
+// and what specialisation later removes where strict settled the types.
+// Nothing here reaches the front end: a unit already compiled to bytecode
+// needs no lexer, no parser and no checker (02 の 14.17改2), and this header
+// is what keeps that true at the include level.
 
 #ifndef LHAT_VM_H
 #define LHAT_VM_H
@@ -49,6 +50,12 @@ typedef enum {
                               // machine owns -- L^, or what require^ answers
                               // with. check.c refuses the ones it can name;
                               // this is one reached through a parameter
+    LHAT_RUN_MUTABLE_DEFAULT, // 02 の 14.11: a definition's prototype took a
+                              // value nothing may share -- a coroutine, a
+                              // host object -- or a default tree deeper than
+                              // the machine follows. The checker refuses
+                              // these where it ran; this is the same question
+                              // asked where the values actually are
     LHAT_RUN_NO_SUCH_UNIT,    // 05 の 5.3: a require^ reached for a unit the
                               // machine was not given
     LHAT_RUN_TUPLE_ARITY,     // 02 の 13.8改: a call reserved slots for one

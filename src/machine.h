@@ -141,6 +141,12 @@ struct LhatMachine {
     // is made with the machine and rooted by it rather than by any frame.
     LhatTable *environment;
 
+    // 02 の 14.11: the key a definition's prototype sits under. Construction
+    // reads it on every NEWINSTANCE, so the machine keeps the one string
+    // rather than making it each time. A root of its own -- no frame holds
+    // it (gc.c's mark_roots).
+    LhatString *self_key;
+
     // 05 の 5.3: the units a require^ can reach, in the order the program
     // compiled them. Borrowed -- the program owns them and outlives the run.
     const LhatModule *modules;

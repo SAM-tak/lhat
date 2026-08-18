@@ -260,6 +260,7 @@ const char *lhat_opcode_name(LhatOpcode op)
         case LHAT_BC_ISA:         return "isa";
         case LHAT_BC_ISNIL:       return "isnil";
         case LHAT_BC_NEWINSTANCE: return "newinstance";
+        case LHAT_BC_SETPROTO:    return "setproto";
         case LHAT_BC_CALLMETHOD:  return "callmethod";
         case LHAT_BC_TAILCALL:    return "tailcall";
         case LHAT_BC_TAILCALLMETHOD: return "tailcallmethod";
@@ -359,6 +360,7 @@ void lhat_chunk_print(const LhatChunk *chunk, size_t index, char *out,
         case LHAT_BC_ISERROR:
         case LHAT_BC_ISNIL:
         case LHAT_BC_NEWINSTANCE:
+        case LHAT_BC_SETPROTO:
         case LHAT_BC_RESUME:
         case LHAT_BC_ISDONE:
             snprintf(out, size, "%-10s r%u r%u", name, lhat_a(i), lhat_b(i));

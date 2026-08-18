@@ -85,6 +85,16 @@ typedef enum {
                                         // something in the chain provides
     LHAT_CHECK_ERR_ABSTRACT_PROVIDED_HERE, // 14.15改2: abstract^ over one this
                                         // same def^ writes a value for
+    LHAT_CHECK_ERR_MUTABLE_DEFAULT,     // 14.11: a template initialiser's
+                                        // value sits on the prototype and is
+                                        // shared by every instance, so it has
+                                        // to be immutable -- a mutable one is
+                                        // made inside new
+    LHAT_CHECK_ERR_NEW_RETURNS,         // 14.11: construction answers the
+                                        // copy, so a new body has no
+                                        // return^ of its own
+    LHAT_CHECK_ERR_PROTOTYPE_SEALED,    // 14.11: the prototype is read
+                                        // through self^ and written by no one
     LHAT_CHECK_ERR_NOTHING_TO_OVERRIDE, // a marker with nothing under it
     LHAT_CHECK_ERR_NOT_SUBSTITUTABLE,   // 14.12: override^ has to fit
     LHAT_CHECK_ERR_OVERLOAD_OVERLAPS,   // 14.12: signatures must stay apart

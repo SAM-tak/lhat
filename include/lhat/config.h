@@ -58,6 +58,12 @@
 // So the compiler resolves composition rather than the machine: what a def^
 // composes onto is a def^ it can already see.
 #define LHAT_MAX_DEF_CHAIN 8
+// 02 の 14.11: how deep the tree a field's default may be. The checker keeps
+// one to what a literal spells, which never goes far -- this bound is the
+// machine's own C-stack guard: baking and copying a tree recurse, and the
+// recursion must stop while the stack is whole. A cycle cannot be written as
+// a literal tree, so no correct program ever sees this limit.
+#define LHAT_MAX_PROTOTYPE_DEPTH 32
 // 02 の 13.11 with 14.9: a def^ name written as a type lowers to the shape it
 // stands for, and 14.15 lets a field of that shape be annotated with another
 // definition -- so the walk nests. How far it may, before a member is left as

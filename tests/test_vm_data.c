@@ -1039,11 +1039,13 @@ static void test_tostring(void)
 
     // 14.9: the definition itself is a table nothing points at as one, so it
     // carries a mark of its own -- without it this would read as plain.
+    // 14.11: and what it holds includes the prototype under self^, so the
+    // structure an instance starts as is right there to read.
     LHAT_TEST("and so does the definition it came from");
     run_text(&r,
              "var^ P = def^{ self^{ x := 7 } }\n"
              "return^ P.tostring()\n");
-    CHECK_STRING(&r, "{ new = f^ }");
+    CHECK_STRING(&r, "{ new = f^, self^ = { x = 7 } }");
     run_dispose(&r);
 
     // 01 の 2.3: the hat is part of the name, which is the whole of what

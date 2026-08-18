@@ -174,6 +174,9 @@ static void mark_roots(Machine *m)
     // 05 の 8.6: L^ is reachable from anywhere without being held anywhere,
     // so the machine is what keeps it and what it carries alive.
     lhat_gc_reach(&m->gray, lhat_object((LhatObject *)m->environment));
+    // 02 の 14.11: the machine's own key to a definition's prototype. No
+    // frame holds it, so the machine is its root too.
+    lhat_gc_reach(&m->gray, lhat_object((LhatObject *)m->self_key));
     for (size_t i = 0; i < m->frame_count; i++) {
         Frame *frame = &m->frames[i];
         lhat_gc_reach(&m->gray,

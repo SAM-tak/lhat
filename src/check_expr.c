@@ -1798,6 +1798,15 @@ LhatType *chk_infer_member(Checker *c, const LhatNode *node)
     // declaration's whole set, error^ alone, or a union of any of those
     // (4.2's it^ is the last one wherever a call can fail two ways). A
     // declared field is the leaf's own and wants the narrowing.
+    // 14.11: the prototype a definition hangs under self^ -- one canonical
+    // instance every construction copies, so its type is the instance type
+    // itself. The definition's alone: an instance reading the name finds
+    // nothing, exactly as 14.7改 keeps a value member out of its reach.
+    if (target->kind == LHAT_TYPE_TABLE && target->v.table.is_definition &&
+        target->v.table.instance != NULL && chk_name_is(name, length, "self^")) {
+        return target->v.table.instance;
+    }
+
     const LhatTypeMember *members = NULL;
     if (target->kind == LHAT_TYPE_TABLE ||
         target->kind == LHAT_TYPE_HOSTVALUE) {
@@ -2458,6 +2467,13 @@ LhatType *chk_infer_func(Checker *c, const LhatNode *node)
     struct CatchFrame *outer_catch_frame = c->catch_frame;
     c->catch_frame = NULL;
 
+    // 02 の 14.11: whether this literal is the written new being walked. Only
+    // its own statements are a constructor's -- a literal nested inside it is
+    // an ordinary body again, which the save/restore below arranges.
+    bool constructor = node == c->new_func;
+    bool outer_in_new_body = c->in_new_body;
+    c->in_new_body = constructor;
+
     c->scope = &body;
     c->declared_result = declared;
     c->inferred_result = NULL;
@@ -2522,7 +2538,9 @@ LhatType *chk_infer_func(Checker *c, const LhatNode *node)
     // the coroutine (13.9 puts that in the third type); it is not the
     // function failing to answer. So 13.2 is already satisfied here.
     if (leaves_without_value && node->v.func.is_function &&
-        !node->v.func.yields) {
+        !node->v.func.yields && !constructor) {
+        // 14.11: a new body is exempt -- it never answers for itself, so
+        // reaching its end is the ordinary way out.
         chk_report(c, node, LHAT_CHECK_ERR_FUNCTION_FALLS_OUT);
     } else if (leaves_without_value && declared != NULL &&
                !lhat_type_conforms(chk_simple(c, LHAT_TYPE_NIL), declared)) {
@@ -2599,6 +2617,13 @@ LhatType *chk_infer_func(Checker *c, const LhatNode *node)
         }
     }
 
+    // 14.11: whatever the body does, the member answers the copy the machine
+    // made -- so the signature says so, whichever branch above wrote it.
+    if (constructor) {
+        func->v.func.result = c->self_link != NULL ? c->self_link->type : NULL;
+        func->v.func.ends_without_value = false;
+    }
+
     // 15.3改: an f^ coroutine may not leave the body that made it. Reaching
     // the outside is what would make advancing it observable from there, and
     // it reaches out through a table member or a nested signature as readily
@@ -2611,6 +2636,7 @@ LhatType *chk_infer_func(Checker *c, const LhatNode *node)
     }
 
     c->deferred--;
+    c->in_new_body = outer_in_new_body;
     c->scope = outer_scope;
     c->declared_result = outer_declared;
     c->inferred_result = outer_inferred;
@@ -2768,6 +2794,122 @@ static LhatType *constructor_for(Checker *c, const LhatType *base,
     const LhatTypeMember *inherited = chk_find_member(base, "new", 3);
     return constructor_from(c, inherited != NULL ? inherited->type : NULL,
                             instance);
+}
+
+// 02 の 14.11: the leaves a template initialiser may leave on the prototype
+// by type alone. Construction copies the prototype, so a value anything
+// could write through -- a coroutine, a host object -- would be one place
+// shared by all of them. Immutable values pass: a subroutine's captured
+// places are its own affair, the way a definition's shared members already
+// are, and an error kind is an identity. So does a definition -- a public
+// identity every instance already shares by name, which a field adds no
+// sharing to. any^ could smuggle a mutable one past this, so it is refused;
+// what inference left open is let through, since the machine checks the
+// values themselves (SETPROTO). A plain table is not a leaf -- what admits
+// one is the literal-tree reading below.
+static bool immutable_default_type(const LhatType *type)
+{
+    if (type == NULL) {
+        return true;
+    }
+    switch (type->kind) {
+        case LHAT_TYPE_UNKNOWN:
+        case LHAT_TYPE_PENDING:
+        case LHAT_TYPE_NIL:
+        case LHAT_TYPE_BOOL:
+        case LHAT_TYPE_NUMBER:
+        case LHAT_TYPE_STRING:
+        case LHAT_TYPE_FUNC:
+        case LHAT_TYPE_ERROR_KIND:
+            return true;
+        case LHAT_TYPE_TABLE:
+            return type->v.table.is_definition;
+        case LHAT_TYPE_UNION:
+        case LHAT_TYPE_INTERSECT:
+            for (const LhatTypeList *arm = type->v.composite.arms; arm != NULL;
+                 arm = arm->next) {
+                if (!immutable_default_type(arm->type)) {
+                    return false;
+                }
+            }
+            return true;
+        default:
+            return false;
+    }
+}
+
+// 02 の 14.11: whether this initialiser may sit on the prototype. A table
+// only as a literal tree -- table literals nested in table literals, each
+// level born fresh at this very expression, so the copies construction hands
+// out share nothing and cycle nowhere, and the whole of what every instance
+// starts with is right there in the source. A table that arrived any other
+// way -- a name, a call's answer -- is an identity from somewhere else,
+// which is what new is for. The entry types are read off the literal's own
+// inferred type, walked in parallel with the tree.
+static bool immutable_default_value(Checker *c, const LhatNode *node,
+                                    const LhatType *type)
+{
+    if (node != NULL && node->kind == LHAT_NODE_TABLE) {
+        size_t position = 0;
+        for (const LhatNode *entry = node->v.list.items; entry != NULL;
+             entry = entry->next) {
+            // A computed key is a value of its own; the names and numbers a
+            // literal writes out are the keys a default takes.
+            if (entry->v.entry.computed) {
+                return false;
+            }
+            const LhatTypeMember *member = NULL;
+            const char *name = NULL;
+            size_t length = 0;
+            if (entry->v.entry.key != NULL) {
+                if (chk_node_name(c, entry->v.entry.key, &name, &length)) {
+                    member = chk_find_member(type, name, length);
+                }
+            } else {
+                member = lhat_type_member_at(type, ++position);
+            }
+            if (!immutable_default_value(c, entry->v.entry.value,
+                                         member != NULL ? member->type
+                                                        : NULL)) {
+                return false;
+            }
+        }
+        return true;
+    }
+    return immutable_default_type(type);
+}
+
+// 02 の 14.12改 with 14.11: what super^ names inside a written new -- the
+// hook of the new standing before it, run against the same receiver. It
+// takes what that new took and answers nothing: the instance is already in
+// the caller's hands, so there is nothing for the chain to pass back.
+static LhatType *hook_signature(Checker *c, const LhatType *from)
+{
+    if (from != NULL && from->kind == LHAT_TYPE_INTERSECT) {
+        LhatType *rebuilt = NULL;
+        for (const LhatTypeList *arm = from->v.composite.arms; arm != NULL;
+             arm = arm->next) {
+            if (arm->type == NULL || arm->type->kind != LHAT_TYPE_FUNC) {
+                continue;
+            }
+            LhatType *one = hook_signature(c, arm->type);
+            rebuilt = rebuilt == NULL
+                          ? one
+                          : lhat_type_intersect(c->result->types, rebuilt, one);
+        }
+        if (rebuilt != NULL) {
+            return rebuilt;
+        }
+    }
+    LhatType *hook = lhat_type_func(c->result->types, true);
+    if (from != NULL && from->kind == LHAT_TYPE_FUNC) {
+        for (const LhatTypeList *p = from->v.func.params; p != NULL;
+             p = p->next) {
+            lhat_type_add_param(c->result->types, hook, p->type);
+        }
+        hook->v.func.variadic = from->v.func.variadic;
+    }
+    return hook;
 }
 
 // Overwrites rather than appending, so a member the base already had ends up
@@ -3492,46 +3634,6 @@ LhatType *chk_infer_def(Checker *c, const LhatNode *node, LhatType *base)
         }
     }
 
-    // The fields first, so a method body sees them through self^.
-    if (template != NULL) {
-        for (const LhatNode *field = template->v.list.items; field != NULL;
-             field = field->next) {
-            const char *name = NULL;
-            size_t length = 0;
-            // 02 の 18.4: a field of a self^{ … } takes one, which is where
-            // an @export-shaped annotation goes.
-            chk_check_annotations(c, field->v.entry.annotations,
-                                  LHAT_ANNOTATION_FIELD);
-            if (!chk_node_name(c, field->v.entry.key, &name, &length)) {
-                continue;
-            }
-            // 14.15: a field the composition has to provide carries its type
-            // and no value. 14.11 would otherwise want an initializer here.
-            if (field->v.entry.declared) {
-                set_member_as(c, instance, name, length,
-                              chk_resolve_type(c, field->v.entry.value), true);
-                continue;
-            }
-            // 14.6: a type written alongside the value is what the field
-            // holds, and the value is measured against it -- the same reading
-            // 8.6's 'let^ x : T = v' has, and for the same reason: what a
-            // reader may rely on is what was written, not what the first
-            // value happened to be.
-            LhatType *written = chk_resolve_type(c, field->v.entry.type);
-            LhatType *outer_expected = c->expected_func;
-            c->expected_func = written;
-            LhatType *actual = chk_infer(c, field->v.entry.value);
-            c->expected_func = outer_expected;
-            if (written != NULL) {
-                chk_expect(c, field->v.entry.value, actual, written,
-                           LHAT_CHECK_ERR_MISMATCH);
-            }
-            // 14.11: an initializer, evaluated at each construction.
-            set_member(c, instance, name, length,
-                       written != NULL ? written : actual);
-        }
-    }
-
     // 14.4: class^ names the definition, and every member reaches it -- a
     // static one included, since what it names is there before any instance
     // is. self^ is the other way round and is bound per member below: only
@@ -3584,6 +3686,59 @@ LhatType *chk_infer_def(Checker *c, const LhatNode *node, LhatType *base)
         if (chk_takes_receiver(seed)) {
             set_member_provisional(c, instance, name, length, seed,
                                    entry->v.entry.declared);
+        }
+    }
+
+    // The fields next, so a member body sees them through self^. Inside the
+    // members scope: 14.11 evaluates an initialiser once, as the definition
+    // is built, where class^ and every member are in place -- self^ is not,
+    // since no instance exists yet, and the scope holds no such name.
+    if (template != NULL) {
+        for (const LhatNode *field = template->v.list.items; field != NULL;
+             field = field->next) {
+            const char *name = NULL;
+            size_t length = 0;
+            // 02 の 18.4: a field of a self^{ … } takes one, which is where
+            // an @export-shaped annotation goes.
+            chk_check_annotations(c, field->v.entry.annotations,
+                                  LHAT_ANNOTATION_FIELD);
+            if (!chk_node_name(c, field->v.entry.key, &name, &length)) {
+                continue;
+            }
+            // 14.15: a field the composition has to provide carries its type
+            // and no value -- and so no key on the prototype.
+            if (field->v.entry.declared) {
+                set_member_as(c, instance, name, length,
+                              chk_resolve_type(c, field->v.entry.value), true);
+                continue;
+            }
+            // 14.6: a type written alongside the value is what the field
+            // holds, and the value is measured against it -- the same reading
+            // 8.6's 'let^ x : T = v' has, and for the same reason: what a
+            // reader may rely on is what was written, not what the first
+            // value happened to be.
+            LhatType *written = chk_resolve_type(c, field->v.entry.type);
+            LhatType *outer_expected = c->expected_func;
+            c->expected_func = written;
+            LhatType *actual = chk_infer(c, field->v.entry.value);
+            c->expected_func = outer_expected;
+            if (written != NULL) {
+                chk_expect(c, field->v.entry.value, actual, written,
+                           LHAT_CHECK_ERR_MISMATCH);
+            }
+            // 14.11: the value goes on the prototype and every instance
+            // starts as a copy of it, so it has to be a leaf nothing can
+            // write through or a literal tree the copy owns. The value's own
+            // type and spelling are what is judged -- 'slot : any^ = 1'
+            // shares a number, however wide the field is. The machine asks
+            // the same question of the values themselves (SETPROTO), for the
+            // code checking never saw.
+            if (!immutable_default_value(c, field->v.entry.value, actual)) {
+                chk_report_named(c, field->v.entry.value,
+                                 LHAT_CHECK_ERR_MUTABLE_DEFAULT, name, length);
+            }
+            set_member(c, instance, name, length,
+                       written != NULL ? written : actual);
         }
     }
 
@@ -3668,6 +3823,16 @@ LhatType *chk_infer_def(Checker *c, const LhatNode *node, LhatType *base)
                 continue;
             }
 
+            // 14.11: a member spelled new and written as a body is the
+            // constructor. The machine makes the instance and the body only
+            // adjusts it -- so self^ is bound around it the way a method's
+            // is, and chk_infer_func reads c->new_func to open the body as
+            // one.
+            bool constructor_entry =
+                chk_name_is(name, length, "new") &&
+                entry->v.entry.value != NULL &&
+                entry->v.entry.value->kind == LHAT_NODE_FUNC;
+
             // 14.12改: super^ is a name only inside an override^, and what it
             // names is everything that was under this name -- the whole
             // intersection when 14.12's overload^ put several there, since
@@ -3685,13 +3850,20 @@ LhatType *chk_infer_def(Checker *c, const LhatNode *node, LhatType *base)
                     hidden != NULL
                         ? hidden->type
                         : declared_signature(c, entry->v.entry.value);
+                // 14.11: inside a new the name means the hook of the new
+                // before it -- the same arguments run against the same
+                // receiver, with nothing to answer.
+                if (constructor_entry) {
+                    c->super_type = hook_signature(c, c->super_type);
+                }
             }
             // 14.4: the receiver is this member's, so it is bound around this
             // body and nowhere else. A subroutine written inside the body
             // still reaches it, the way any name in scope is reached (5.4's
             // capture).
             Scope receiver;
-            bool method = declares_self(c, entry->v.entry.value);
+            bool method = declares_self(c, entry->v.entry.value) ||
+                          constructor_entry;
             if (method) {
                 receiver.bindings = NULL;
                 receiver.tail = NULL;
@@ -3704,7 +3876,12 @@ LhatType *chk_infer_def(Checker *c, const LhatNode *node, LhatType *base)
                 }
                 c->scope = &receiver;
             }
+            const LhatNode *outer_new = c->new_func;
+            if (constructor_entry) {
+                c->new_func = entry->v.entry.value;
+            }
             LhatType *type = chk_infer(c, entry->v.entry.value);
+            c->new_func = outer_new;
             if (method) {
                 c->scope = &members;
                 chk_scope_dispose(&receiver);

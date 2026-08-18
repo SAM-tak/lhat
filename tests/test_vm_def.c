@@ -38,12 +38,79 @@ static void test_definitions(void)
     CHECK_INTEGER(&r, 0);
     run_dispose(&r);
 
-    // 14.11: an initialiser is an expression evaluated at each construction,
-    // so a mutable initial value is not shared. Python's mutable default
-    // argument has no counterpart here.
-    LHAT_TEST("a mutable initial value is not shared between instances");
+    // 14.11: a table written out as a literal is a tree of the instance's
+    // own -- construction copies it, so two instances never share one.
+    // Python's mutable default argument has no counterpart here.
+    LHAT_TEST("a literal table default is each instance's own");
     run_text(&r,
              "var^ Foo = def^{ self^{ items := { } } }\n"
+             "var^ a = Foo.new()\n"
+             "var^ b = Foo.new()\n"
+             "a.items[1] := 9\n"
+             "return^ b.items[1] ?? 0\n");
+    CHECK_INTEGER(&r, 0);
+    run_dispose(&r);
+
+    LHAT_TEST("and a nested one is copied all the way down");
+    run_text(&r,
+             "var^ Foo = def^{ self^{ grid := { { 0 }, { 0 } } } }\n"
+             "var^ a = Foo.new()\n"
+             "var^ b = Foo.new()\n"
+             "a.grid[1][1] := 9\n"
+             "return^ b.grid[1][1] ?? 0\n");
+    CHECK_INTEGER(&r, 0);
+    run_dispose(&r);
+
+    // 14.11: a definition among the defaults is a public identity, not
+    // per-instance data -- the copy leaves it shared.
+    LHAT_TEST("a definition among the defaults is shared, not copied");
+    run_text(&r,
+             "var^ S = def^{ tag := f^ { return^ 1 } }\n"
+             "var^ Foo = def^{ self^{ strategy := S } }\n"
+             "var^ a = Foo.new()\n"
+             "var^ b = Foo.new()\n"
+             "return^ a.strategy is^ b.strategy\n");
+    CHECK_BOOL(&r, true);
+    run_dispose(&r);
+
+    // 14.11: a value nothing may share -- a coroutine here -- is refused
+    // where the values land (SETPROTO).
+    LHAT_TEST("a default nothing may share is refused");
+    run_text(&r,
+             "var^ C = p^ { yield^ }\n"
+             "var^ Foo = def^{ self^{ w := C() } }\n"
+             "return^ 0\n");
+    LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_MUTABLE_DEFAULT);
+    run_dispose(&r);
+
+    // 14.11: the seal reaches the whole tree, not only the top table.
+    LHAT_TEST("the prototype's inner tables take no writes either");
+    run_text(&r,
+             "var^ Foo = def^{ self^{ used := { 0, 0 } } }\n"
+             "Foo.self^.used[1] := 9\n"
+             "return^ 0\n");
+    LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_SEALED);
+    run_dispose(&r);
+
+    // 14.11: baking copies -- a table an initialiser handed over becomes the
+    // prototype's own tree, and the original stays the writer's, unsealed.
+    LHAT_TEST("what the prototype holds is its own copy");
+    run_text(&r,
+             "var^ shared = { 5 }\n"
+             "var^ Foo = def^{ self^{ items := shared } }\n"
+             "shared[1] := 7\n"
+             "return^ Foo.new().items[1] * 10 + shared[1]\n");
+    CHECK_INTEGER(&r, 57);
+    run_dispose(&r);
+
+    // 14.11: the spelling for one -- declare the field and make the value
+    // inside new, where it is made per construction.
+    LHAT_TEST("a table made inside new is each instance's own");
+    run_text(&r,
+             "var^ Foo = def^{\n"
+             "  self^{ abstract^items : t^{} },\n"
+             "  override^new := f^ { self^{ items := { } } },\n"
+             "}\n"
              "var^ a = Foo.new()\n"
              "var^ b = Foo.new()\n"
              "a.items[1] := 9\n"
@@ -140,31 +207,33 @@ static void test_definitions(void)
     LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_NOT_CALLABLE);
     run_dispose(&r);
 
-    // 14.11: new may fill some fields and leave the rest to the template.
-    LHAT_TEST("new fills what it names and the template the rest");
+    // 14.11: new overwrites what it names; the rest keep the copy's defaults.
+    LHAT_TEST("new fills what it names and the copy keeps the rest");
     run_text(&r,
              "var^ Foo = def^{\n"
              "  self^{ a := 1, b := 2 },\n"
-             "  override^new := f^v { return^ self^{ a := v } },\n"
+             "  override^new := f^v { self^{ a := v } },\n"
              "}\n"
              "var^ f = Foo.new(8)\n"
              "return^ f.a * 10 + f.b\n");
     CHECK_INTEGER(&r, 82);
     run_dispose(&r);
 
-    // 14.11: producing a value only to overwrite it is not something an
-    // initialiser should be made to do.
-    LHAT_TEST("the initialiser of a field new named is not evaluated");
+    // 14.11: an initialiser runs once, as the definition is built -- its
+    // value is baked onto the prototype, and construction copies rather
+    // than evaluates.
+    LHAT_TEST("an initialiser runs once, at the definition");
     run_text(&r,
              "var^ log = { n := 0 }\n"
              "var^ side = f^ { log.n := log.n + 1 return^ 0 }\n"
              "var^ Foo = def^{\n"
              "  self^{ a := side() },\n"
-             "  override^new := f^ { return^ self^{ a := 5 } },\n"
+             "  override^new := f^ { self^{ a := 5 } },\n"
              "}\n"
              "var^ f = Foo.new()\n"
+             "var^ g = Foo.new()\n"
              "return^ log.n\n");
-    CHECK_INTEGER(&r, 0);
+    CHECK_INTEGER(&r, 1);
     run_dispose(&r);
 
     // 14.11改 with 14.12: the default new is a real member from the start, so
@@ -175,24 +244,49 @@ static void test_definitions(void)
                      "var^ Foo = def^{\n"
                      "  self^{ a := 1, b := 2 },\n"
                      "  overload^new := f^v:number^ {\n"
-                     "    return^ self^{ a := v }\n"
+                     "    self^{ a := v }\n"
                      "  },\n"
                      "}\n"
                      "return^ Foo.new().a * 10 + Foo.new(7).a\n");
     CHECK_INTEGER(&r, 17);
     run_dispose(&r);
 
-    // 14.12改: what super^ names inside an override^ is what the name held,
-    // and 14.11改 makes that the default new -- so a constructor may build
-    // the plain instance and work from there.
-    LHAT_TEST("super^ inside an override^ new reaches the default");
+    // 14.12改 with 14.11: super^ inside an override^ new is the hook of the
+    // new written before it, run against the same instance. With none
+    // written it does nothing, and the copy is what the body starts from.
+    LHAT_TEST("super^ inside an override^ new reaches the default hook");
     run_checked_text(&r,
                      "var^ Foo = def^{\n"
                      "  self^{ a := 4 },\n"
-                     "  override^new := f^ { return^ super^() },\n"
+                     "  override^new := f^ { super^() },\n"
                      "}\n"
                      "return^ Foo.new().a\n");
     CHECK_INTEGER(&r, 4);
+    run_dispose(&r);
+
+    // 14.12改: and down a composition it is the previous part's new, so a
+    // derived new runs the base's adjustments before its own -- against the
+    // one instance the machine made.
+    LHAT_TEST("super^ chains the hooks against one instance");
+    run_checked_text(&r,
+                     "var^ A = def^{\n"
+                     "  self^{ trail := \"\" },\n"
+                     "  override^new := f^ { self^{ trail := \"a\" } },\n"
+                     "}\n"
+                     "var^ B = A..def^{\n"
+                     "  override^new := f^ {\n"
+                     "    super^()\n"
+                     "    self^{ trail := self^.trail .. \"b\" }\n"
+                     "  },\n"
+                     "}\n"
+                     "var^ C = B..def^{\n"
+                     "  override^new := f^ {\n"
+                     "    super^()\n"
+                     "    self^{ trail := self^.trail .. \"c\" }\n"
+                     "  },\n"
+                     "}\n"
+                     "return^ C.new().trail\n");
+    CHECK_STRING(&r, "abc");
     run_dispose(&r);
 
     // 14.5 with 14.12: composing two written definitions rebuilds the
@@ -205,13 +299,51 @@ static void test_definitions(void)
                      "var^ Right = def^{\n"
                      "  self^{ a := 1 },\n"
                      "  overload^new := f^v:number^ {\n"
-                     "    return^ self^{ a := v }\n"
+                     "    self^{ a := v }\n"
                      "  },\n"
                      "}\n"
                      "var^ Both = Left .. Right\n"
                      "var^ x = Both.new(5)\n"
                      "return^ x.a * 10 + x.b\n");
     CHECK_INTEGER(&r, 52);
+    run_dispose(&r);
+
+    // 14.11: the prototype is a member like any other -- App.self^ reads it,
+    // an instance does not (14.7改: it takes no receiver), and writing it
+    // meets the seal.
+    LHAT_TEST("a definition's self^ is the prototype, readable");
+    run_text(&r,
+             "var^ Foo = def^{ self^{ a := 1, b := 2 } }\n"
+             "return^ Foo.self^.a * 10 + Foo.self^.b\n");
+    CHECK_INTEGER(&r, 12);
+    run_dispose(&r);
+
+    LHAT_TEST("an instance does not see self^ through the link");
+    run_text(&r,
+             "var^ Foo = def^{ self^{ a := 1 } }\n"
+             "return^ Foo.new().self^ is^ nil^\n");
+    CHECK_BOOL(&r, true);
+    run_dispose(&r);
+
+    LHAT_TEST("the prototype takes no writes");
+    run_text(&r,
+             "var^ Foo = def^{ self^{ a := 1 } }\n"
+             "Foo.self^.a := 5\n"
+             "return^ 0\n");
+    LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_SEALED);
+    run_dispose(&r);
+
+    // 14.11: a written new adjusts the copy; the prototype it was copied
+    // from keeps its defaults.
+    LHAT_TEST("what new writes lands on the copy, not the prototype");
+    run_text(&r,
+             "var^ Foo = def^{\n"
+             "  self^{ a := 1 },\n"
+             "  override^new := f^v { self^{ a := v } },\n"
+             "}\n"
+             "var^ f = Foo.new(9)\n"
+             "return^ Foo.self^.a * 10 + f.a\n");
+    CHECK_INTEGER(&r, 19);
     run_dispose(&r);
 
     // 14.11: an initialiser cannot see self^, which does not exist yet, but
@@ -446,7 +578,7 @@ static void test_definitions(void)
              "var^ Foo = def^{ self^{ a := 1, b := 2 } }\n"
              "var^ Bar = Foo .. def^{\n"
              "  self^{ c := 3 },\n"
-             "  override^new := f^v { return^ self^{ b := v } },\n"
+             "  override^new := f^v { self^{ b := v } },\n"
              "}\n"
              "var^ x = Bar.new(9)\n"
              "return^ x.a * 100 + x.b * 10 + x.c\n");
@@ -1361,13 +1493,28 @@ static void test_typeof(void)
 
     LHAT_TEST("and between two instances of the same definition");
     run_checked_text(&r,
-             "var^ Node = def^{ self^{ next := { } } }\n"
+             "var^ Node = def^{\n"
+             "  self^{ abstract^next : t^{} },\n"
+             "  override^new := f^ { self^{ next := { } } },\n"
+             "}\n"
              "var^ a = Node.new()\n"
              "var^ b = Node.new()\n"
              "a.next := b\n"
              "b.next := a\n"
              "return^ typeof^(a).signature\n");
     CHECK_STRING(&r, "t^{ next : t^{} }");
+    run_dispose(&r);
+
+    // 14.16 with 14.7改: a definition's type carries its instances in the
+    // self^{ … } section, so a plain table that happens to spell the same
+    // members is not the same type -- what an instance would be is part of
+    // what a definition is.
+    LHAT_TEST("a definition is not the shape of its members alone");
+    run_checked_text(&r,
+             "var^ D = def^{ self^{ n := 0 }, run := p^self^ { } }\n"
+             "var^ fake = { new := f^ -> number^ { return^ 0 }, run := p^ { } }\n"
+             "return^ typeof^(D) = typeof^(fake)\n");
+    CHECK_BOOL(&r, false);
     run_dispose(&r);
 
     // A value reached twice without a cycle -- shared, not circular -- is not

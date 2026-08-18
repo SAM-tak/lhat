@@ -310,39 +310,38 @@ void LhatScript::read_base_class()
     }
 }
 
-// One instance, made and thrown away, so that what a fresh one holds can be
-// answered without making one each time it is asked.
-//
-// Made with no node behind it. The engine has not built an Object yet -- this
-// runs when the file is read -- so the handle points at nothing, and a new of
-// the writer's own that reaches through it fails. That failure is swallowed:
-// a file being read is not the moment to complain, and answering no defaults
-// costs a revert arrow rather than anything a game does.
+// 02 の 14.11: a definition hangs its prototype under self^ -- the table
+// every instance starts as a copy of, with each field's default already a
+// value. What a fresh one holds is read straight off it, with nothing made
+// and nothing run. A field new fills (14.15) has no key there and so no
+// default, which is exactly what the editor should say about it.
 void LhatScript::read_defaults()
 {
     defaults.clear();
-    LhatValue self = lhat_nil();
-    int64_t id = 0;
-    if (!make_instance(nullptr, &self, &id, true)) {
+    if (!lhat_is_object_kind(klass, LHAT_OBJECT_TABLE)) {
         return;
     }
-    if (lhat_is_object_kind(self, LHAT_OBJECT_TABLE)) {
-        const LhatTable *fields = (const LhatTable *)lhat_as_object(self);
-        for (size_t i = 0; i < fields->entry_capacity; i++) {
-            const LhatTableEntry *entry = &fields->entries[i];
-            if (lhat_is_nil(entry->key) ||
-                !lhat_is_object_kind(entry->key, LHAT_OBJECT_STRING)) {
-                continue;
-            }
-            const LhatString *key =
-                (const LhatString *)lhat_as_object(entry->key);
-            defaults[String::utf8(key->text, (int)key->length)] =
-                host::to_variant(entry->value, units.godot);
-        }
+    LhatValue key = lhat_nil();
+    if (!lhat_machine_make_string(machine, "self^", strlen("self^"), &key)) {
+        return;
     }
-    // Unrooted at once: it was made to be read, and a table nothing points at
-    // is what the collector is for.
-    drop_instance(id);
+    LhatValue held =
+        lhat_table_get((const LhatTable *)lhat_as_object(klass), key);
+    if (!lhat_is_object_kind(held, LHAT_OBJECT_TABLE)) {
+        return;
+    }
+    const LhatTable *fields = (const LhatTable *)lhat_as_object(held);
+    for (size_t i = 0; i < fields->entry_capacity; i++) {
+        const LhatTableEntry *entry = &fields->entries[i];
+        if (lhat_is_nil(entry->key) ||
+            !lhat_is_object_kind(entry->key, LHAT_OBJECT_STRING)) {
+            continue;
+        }
+        const LhatString *field =
+            (const LhatString *)lhat_as_object(entry->key);
+        defaults[String::utf8(field->text, (int)field->length)] =
+            host::to_variant(entry->value, units.godot);
+    }
 }
 
 // 14.9's `new` is an ordinary member of the definition and takes no self^,
@@ -351,23 +350,22 @@ void LhatScript::read_defaults()
 // The node is handed to it rather than written in afterwards. The engine
 // builds the Object first and only then asks the script for an instance
 // (_instance_create takes it), so the real thing is in hand before anything
-// runs -- and 14.11 runs the self^ initialisers inside `new`, which is
-// exactly where a constructor that wants its node would look. Filling the
-// field on the way out would leave every one of them reading a placeholder.
+// runs -- construction copies the prototype and the new body writes the
+// node onto the copy (14.11), which is exactly where a constructor that
+// wants its node would look. Filling the field on the way out would leave
+// every one of them reading a placeholder.
 //
 // A unit that wears a node without wrapping one keeps 14.11's default `new`
 // and takes nothing, so the call is tried both ways.
-bool LhatScript::make_instance(Object *owner, LhatValue *out, int64_t *id,
-                               bool quiet)
+bool LhatScript::make_instance(Object *owner, LhatValue *out, int64_t *id)
 {
     if (!runnable) {
         return false;
     }
 
-    // A handle is made even for no node: read_defaults wants one built
-    // without the engine having made an Object yet, and a class wrapping a
-    // node still takes the argument. What it points at is nothing, which is
-    // what a node that is not there should look like from L^.
+    // A class wrapping a node takes the handle as new's argument. The engine
+    // has built the Object before it asks (_instance_create), so the real
+    // thing is in hand here.
     LhatValue handle = lhat_nil();
     size_t count = 0;
     if (host::make_object(machine, units.godot, owner, &handle)) {
@@ -382,13 +380,8 @@ bool LhatScript::make_instance(Object *owner, LhatValue *out, int64_t *id,
         made = lhat_machine_call_member(machine, klass, "new", 3, nullptr, 0);
     }
     if (made.status != LHAT_RUN_OK) {
-        // Quiet for the one made to be read rather than worn: a file being
-        // opened is not the moment to complain that a constructor wanted the
-        // node it has not been given.
-        if (!quiet) {
-            UtilityFunctions::push_error(host::problem(
-                get_path(), lhat_run_status_message(made.status)));
-        }
+        UtilityFunctions::push_error(host::problem(
+            get_path(), lhat_run_status_message(made.status)));
         return false;
     }
 

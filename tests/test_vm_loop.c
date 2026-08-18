@@ -554,7 +554,7 @@ static void test_for(void)
     run_text(&r,
              "var^ Range = def^{\n"
              "  self^{ upto := 0 },\n"
-             "  override^new := f^ n { return^ self^{ upto := n } },\n"
+             "  override^new := f^ n { self^{ upto := n } },\n"
              "  iterate^ := f^self^ {\n"
              "    var^ limit = self^.upto\n"
              "    return^ p^ { for^ i from^ 1 to^ limit { yield^ i } }()\n"

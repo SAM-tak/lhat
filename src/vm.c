@@ -1378,6 +1378,157 @@ static bool set_key(Machine *m, LhatTable *table, LhatValue key,
     return true;
 }
 
+// 02 の 14.11: the leaves that may sit in a definition's prototype as they
+// are. Immutable values -- a subroutine's captured places are its own
+// affair, an error kind and a type are identities -- which sharing cannot
+// betray. A table is not one: bake_default below copies it into the
+// prototype's own sealed tree, and a definition among the values stays
+// shared on purpose (a public identity, not per-instance data).
+static bool immutable_default(LhatValue value)
+{
+    if (!lhat_is_object(value)) {
+        // nil^, bool^, number^. A host value is bytes on the stack and
+        // never a table's to hold, but the answer here is no either way.
+        return !lhat_is_hostvalue(value) && value.tag != LHAT_VALUE_CONT &&
+               value.tag != LHAT_VALUE_RUN;
+    }
+    switch (lhat_as_object(value)->kind) {
+        case LHAT_OBJECT_STRING:
+        case LHAT_OBJECT_SUBROUTINE:
+        case LHAT_OBJECT_HOST:
+        case LHAT_OBJECT_NATIVE:
+        case LHAT_OBJECT_OVERLOAD:
+        case LHAT_OBJECT_TYPE:
+        case LHAT_OBJECT_ERROR_KIND:
+            return true;
+        default:
+            return false;
+    }
+}
+
+// 02 の 14.11: a field's value on its way onto the prototype (SETPROTO).
+// A table that is not a definition becomes the prototype's own: a sealed
+// structural copy, so what every instance starts from belongs to the
+// definition alone, whatever expression the initialiser was. Leaves pass
+// through; a value nothing may share is refused. The depth cap is the
+// C-stack guard config.h describes -- a cycle cannot be a literal tree, so
+// it lands here and is refused rather than followed.
+static bool bake_default(Machine *m, LhatValue held, LhatValue *out,
+                         size_t depth, bool *refused_value)
+{
+    if (lhat_is_object_kind(held, LHAT_OBJECT_TABLE)) {
+        const LhatTable *table = (const LhatTable *)lhat_as_object(held);
+        if (table->is_definition) {
+            *out = held;
+            return true;
+        }
+        if (depth > LHAT_MAX_PROTOTYPE_DEPTH) {
+            *refused_value = true;
+            return false;
+        }
+        LhatTable *copy = lhat_table_new(&m->objects);
+        if (copy == NULL) {
+            return false;
+        }
+        bool key_refused = false;
+        for (size_t i = 0; i < table->array_count; i++) {
+            LhatValue baked = lhat_nil();
+            if (!bake_default(m, lhat_slots_get(table->array, i), &baked,
+                              depth + 1, refused_value) ||
+                !set_key(m, copy, lhat_integer((int64_t)i + 1), baked,
+                         &key_refused)) {
+                return false;
+            }
+        }
+        for (size_t i = 0; i < table->entry_capacity; i++) {
+            const LhatTableEntry *entry = &table->entries[i];
+            if (lhat_is_nil(entry->key)) {
+                continue;  // free, or a tombstone
+            }
+            LhatValue baked = lhat_nil();
+            if (!bake_default(m, entry->value, &baked, depth + 1,
+                              refused_value) ||
+                !set_key(m, copy, entry->key, baked, &key_refused)) {
+                return false;
+            }
+        }
+        copy->sealed = true;
+        *out = lhat_object((LhatObject *)copy);
+        return true;
+    }
+    if (!immutable_default(held)) {
+        *refused_value = true;
+        return false;
+    }
+    *out = held;
+    return true;
+}
+
+static LhatTable *clone_table(Machine *m, const LhatTable *source,
+                              size_t depth, bool *too_deep);
+
+// A field's value on its way into a copy. A table that is not a definition
+// is a tree of the instance's own (14.11's literal trees), so it is copied
+// too; everything else -- the immutable leaves, and a definition, which is a
+// shared identity -- travels as it is.
+static bool clone_default(Machine *m, LhatValue held, LhatValue *out,
+                          size_t depth, bool *too_deep)
+{
+    if (lhat_is_object_kind(held, LHAT_OBJECT_TABLE)) {
+        const LhatTable *table = (const LhatTable *)lhat_as_object(held);
+        if (!table->is_definition) {
+            LhatTable *copy = clone_table(m, table, depth + 1, too_deep);
+            if (copy == NULL) {
+                return false;
+            }
+            *out = lhat_object((LhatObject *)copy);
+            return true;
+        }
+    }
+    *out = held;
+    return true;
+}
+
+// 02 の 14.11: the copy construction makes -- the table's own two halves,
+// value by value, a held table copied as its own tree. The link and the seal
+// are the caller's to set; a fresh table has neither. The baking (SETPROTO)
+// already refused a cycle, so the depth cap only keeps the recursion off the
+// C stack's limits for a table that never went through it. NULL when out of
+// memory, or with *too_deep set when the cap refused it.
+static LhatTable *clone_table(Machine *m, const LhatTable *source,
+                              size_t depth, bool *too_deep)
+{
+    if (depth > LHAT_MAX_PROTOTYPE_DEPTH) {
+        *too_deep = true;
+        return NULL;
+    }
+    LhatTable *clone = lhat_table_new(&m->objects);
+    if (clone == NULL) {
+        return NULL;
+    }
+    bool refused = false;
+    for (size_t i = 0; i < source->array_count; i++) {
+        LhatValue held = lhat_nil();
+        if (!clone_default(m, lhat_slots_get(source->array, i), &held, depth,
+                           too_deep) ||
+            !set_key(m, clone, lhat_integer((int64_t)i + 1), held, &refused)) {
+            return NULL;
+        }
+    }
+    for (size_t i = 0; i < source->entry_capacity; i++) {
+        const LhatTableEntry *entry = &source->entries[i];
+        if (lhat_is_nil(entry->key)) {
+            continue;  // free, or a tombstone
+        }
+        LhatValue held = lhat_nil();
+        if (!clone_default(m, entry->value, &held, depth, too_deep) ||
+            !set_key(m, clone, entry->key, held, &refused)) {
+            return NULL;
+        }
+    }
+    return clone;
+}
+
 // Carrying a shared place into the upvalue itself: the value moves into the
 // closed cell and location aims there, the same dereference as before.
 static void close_into_cell(Machine *m, LhatUpvalue *upvalue)
@@ -1630,6 +1781,12 @@ LhatMachine *lhat_machine_new(void)
     m->slots.tags = m->stack_tags;
     m->threshold = LHAT_GC_INITIAL_THRESHOLD;
     if (!build_environment(m)) {
+        lhat_machine_dispose(m);
+        return NULL;
+    }
+    // 02 の 14.11: the key every construction reads the prototype through.
+    m->self_key = lhat_string_new(&m->objects, "self^", 5);
+    if (m->self_key == NULL) {
         lhat_machine_dispose(m);
         return NULL;
     }
@@ -2809,20 +2966,95 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
                 SET_R(a, lhat_bool(lhat_is_nil(R(b))));
                 break;
 
-            // 14.3 and 14.7: the instance holds its own fields and reads the
-            // shared members through this link. 14.2 fixes it here and gives
-            // no way to change it afterwards.
+            // 14.11: construction is the machine's -- a copy of the
+            // prototype the definition's self^ holds, which is where every
+            // field starts as its default. A table held in a field is
+            // copied as its own tree; a definition among the values is
+            // shared. 14.3 and 14.7: the copy holds its own fields and
+            // reads the shared members through the link; 14.2 fixes it
+            // here and gives no way to change it afterwards.
             case LHAT_BC_NEWINSTANCE: {
                 if (!lhat_is_object_kind(R(b), LHAT_OBJECT_TABLE)) {
                     return finish(m, chunk, LHAT_RUN_TYPE_ERROR, lhat_nil(), at);
                 }
-                LhatTable *instance = lhat_table_new(&m->objects);
-                if (instance == NULL) {
-                    return finish(m, chunk, LHAT_RUN_OUT_OF_MEMORY, lhat_nil(), at);
-                }
-                instance->definition =
+                const LhatTable *definition =
                     (const LhatTable *)lhat_as_object(R(b));
+                LhatValue held = lhat_table_get(
+                    definition, lhat_object((LhatObject *)m->self_key));
+                LhatTable *instance;
+                bool too_deep = false;
+                if (lhat_is_object_kind(held, LHAT_OBJECT_TABLE)) {
+                    instance = clone_table(
+                        m, (const LhatTable *)lhat_as_object(held), 0,
+                        &too_deep);
+                } else {
+                    // A table wearing the definition mark without a
+                    // prototype -- a host built it. Empty, with the link.
+                    instance = lhat_table_new(&m->objects);
+                }
+                if (instance == NULL) {
+                    return finish(m, chunk,
+                                  too_deep ? LHAT_RUN_MUTABLE_DEFAULT
+                                           : LHAT_RUN_OUT_OF_MEMORY,
+                                  lhat_nil(), at);
+                }
+                instance->definition = definition;
                 SET_R(a, lhat_object((LhatObject *)instance));
+                break;
+            }
+
+            // 14.11: the prototype goes under the definition's self^, sealed
+            // -- what it holds is every instance's starting point, and 8.8
+            // closes a definition to writes -- and linked, so its own reads
+            // reach the members the way any instance's do. The values are
+            // baked here because this is where they actually are: a table
+            // becomes the prototype's own sealed tree, whatever expression
+            // produced it, and what nothing may share is refused -- the same
+            // answer the checker gives where it ran.
+            case LHAT_BC_SETPROTO: {
+                LhatTable *table = table_of(R(a));
+                LhatTable *proto = table_of(R(b));
+                if (table == NULL || proto == NULL) {
+                    return finish(m, chunk, LHAT_RUN_TYPE_ERROR, lhat_nil(), at);
+                }
+                for (size_t i = 0; i < proto->array_count; i++) {
+                    LhatValue baked = lhat_nil();
+                    bool bad = false;
+                    if (!bake_default(m, lhat_slots_get(proto->array, i),
+                                      &baked, 0, &bad)) {
+                        return finish(m, chunk,
+                                      bad ? LHAT_RUN_MUTABLE_DEFAULT
+                                          : LHAT_RUN_OUT_OF_MEMORY,
+                                      lhat_nil(), at);
+                    }
+                    lhat_slots_set(proto->array, i, baked);
+                    lhat_gc_barrier_back(m, (LhatObject *)proto, baked);
+                }
+                for (size_t i = 0; i < proto->entry_capacity; i++) {
+                    LhatTableEntry *entry = &proto->entries[i];
+                    if (lhat_is_nil(entry->key)) {
+                        continue;
+                    }
+                    LhatValue baked = lhat_nil();
+                    bool bad = false;
+                    if (!bake_default(m, entry->value, &baked, 0, &bad)) {
+                        return finish(m, chunk,
+                                      bad ? LHAT_RUN_MUTABLE_DEFAULT
+                                          : LHAT_RUN_OUT_OF_MEMORY,
+                                      lhat_nil(), at);
+                    }
+                    entry->value = baked;
+                    lhat_gc_barrier_back(m, (LhatObject *)proto, baked);
+                }
+                proto->definition = table;
+                proto->sealed = true;
+                bool refused = false;
+                if (!set_key(m, table,
+                             lhat_object((LhatObject *)m->self_key),
+                             lhat_object((LhatObject *)proto), &refused)) {
+                    return finish(m, chunk, LHAT_RUN_OUT_OF_MEMORY, lhat_nil(),
+                                  at);
+                }
                 break;
             }
 
@@ -3501,6 +3733,10 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
                     called->coroutine = co;
                     called->disposing = false;
                     called->drop_answer = false;  // 5.3
+                    // The room is a root while the frame lives (mark_roots),
+                    // so it starts empty rather than as whatever the slot
+                    // held before.
+                    called->answer = lhat_nil();
                     called->derive = LHAT_FRAME_NO_DERIVE;
                     called->derive_equal = false;
                     called->returning = false;
@@ -3733,6 +3969,10 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
                 called->derive = LHAT_FRAME_NO_DERIVE;
                 called->derive_equal = false;
                 called->drop_answer = false;  // 5.3
+                // The room is a root while the frame lives (mark_roots), so
+                // it starts empty rather than as whatever the slot held
+                // before.
+                called->answer = lhat_nil();
 
                 frame = called;
                 rbase = frame->base;
@@ -4083,6 +4323,10 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
                 called->derive = LHAT_FRAME_NO_DERIVE;
                 called->derive_equal = false;
                 called->drop_answer = false;  // 5.3
+                // The room is a root while the frame lives (mark_roots), so
+                // it starts empty rather than as whatever the slot held
+                // before.
+                called->answer = lhat_nil();
                 called->returning = false;
                 called->cleanup_count = co->cleanup_count;
                 for (size_t i = 0; i < co->cleanup_count; i++) {
@@ -4292,6 +4536,9 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
         entered->coroutine = NULL;
         entered->disposing = false;
         entered->drop_answer = false;  // 5.3
+        // The room is a root while the frame lives (mark_roots), so it
+        // starts empty rather than as whatever the slot held before.
+        entered->answer = lhat_nil();
         // 11.9: an ordering that reached for '<=>' wants the answer
         // read against zero, not handed over as it is.
         entered->derive = derive_from;
@@ -4828,6 +5075,12 @@ const char *lhat_run_status_message(LhatRunStatus status)
         case LHAT_RUN_SEALED:
             return "this table belongs to the machine; what it holds is "
                    "written by the host, not from here";
+        // 02 の 14.11
+        case LHAT_RUN_MUTABLE_DEFAULT:
+            return "a field's default lives on the prototype: an immutable "
+                   "value, a table of its own (each instance is given a "
+                   "copy), or a definition; what something else made is "
+                   "given inside new";
         case LHAT_RUN_BAD_FORMAT:
             return "a number^ is written through one numeric conversion; "
                    "write '%d' or '%g' and no length of your own";

@@ -181,15 +181,22 @@ typedef struct Compiler {
     size_t error_count;
     size_t error_capacity;
 
-    // The def^ bound to each name, so that '..' and a self^{ … } inside new
+    // The def^ bound to each name, so that '..' and a definition's prototype
     // can be resolved without running anything (14.2).
     struct DefDecl *defs;
     size_t def_count;
     size_t def_capacity;
 
-    // The definition being compiled, which is what a self^{ … } inside its
-    // new builds and what class^ names.
+    // The definition being compiled, whose members the entries write and
+    // whose prototype the template builds; class^ names it.
     const DefChain *building;
+
+    // 02 の 14.11: this body is a written new's, and the slot is the copy it
+    // is adjusting. Every return^ in it answers that slot -- construction
+    // answers the copy, whatever the body wrote (15.12's sole expression
+    // included).
+    bool in_constructor;
+    uint8_t constructor_self;
 
     // 14.9: the definitions lower_def_chain is inside right now, kept on the
     // root the way `defs` is. A def^ reached again while its own shape is
@@ -2479,22 +2486,6 @@ static const LhatNode *template_of(const LhatNode *def)
     return NULL;
 }
 
-static bool entry_named(Compiler *c, const LhatNode *entries, const char *name,
-                        size_t length)
-{
-    for (const LhatNode *entry = entries; entry != NULL; entry = entry->next) {
-        const char *written = NULL;
-        size_t written_length = 0;
-        if (entry->v.entry.key != NULL &&
-            node_name(c, entry->v.entry.key, &written, &written_length) &&
-            written_length == length &&
-            memcmp(written, name, length) == 0) {
-            return true;
-        }
-    }
-    return false;
-}
-
 // 14.5改: whether two parts of the chain both write this name with no marker
 // between them. The checker calls that ambiguous and refuses to read it
 // through the composition, so nothing is written under it -- a table holding
@@ -2535,42 +2526,40 @@ static bool ambiguous_member(Compiler *c, const DefChain *chain,
     return plain > 1;
 }
 
-// 14.11: self^{ … } inside new makes the instance. The fields it names are
-// filled from what it wrote; the rest come from the template's initialisers,
-// which 14.11 makes expressions evaluated at each construction rather than
-// values stored anywhere -- so they are compiled here, at the construction.
-//
-// 14.11 also settles what an initialiser can see: not self^, which does not
-// exist yet, but class^, which does.
-static void compile_self_table(Compiler *c, const LhatNode *node, uint8_t into)
+// 02 の 14.11: which body compile_subroutine_as is making. A written new is
+// compiled twice -- once as the constructor the definition holds, whose
+// frame the machine's construction opens, and once as the hook super^ names
+// (14.12改), which runs the same body against a receiver it is handed
+// instead of making one.
+typedef enum {
+    LHAT_BODY_ORDINARY,
+    LHAT_BODY_CONSTRUCTOR,
+    LHAT_BODY_NEW_HOOK
+} BodyKind;
+
+static void compile_subroutine_as(Compiler *c, const LhatNode *node,
+                                  uint8_t into, BodyKind kind);
+
+// 14.11: 'self^{ … }' in a body that holds a self^ -- new, or a method --
+// writes the named fields onto it, one assignment per field, and stands for
+// the receiver it wrote. Construction is not here: the machine copies the
+// definition's prototype (NEWINSTANCE), and this is how a body adjusts the
+// copy.
+static void compile_self_assign(Compiler *c, const LhatNode *node,
+                                uint8_t into)
 {
-    const DefChain *chain = NULL;
-    for (Compiler *at = c; at != NULL; at = at->parent) {
-        if (at->building != NULL) {
-            chain = at->building;
-            break;
-        }
-    }
-    if (chain == NULL) {
+    uint8_t mark = c->next_register;
+    uint8_t self = reserve(c);
+    // 14.11: outside a body that holds a receiver the spelling means nothing.
+    if (!resolve_name(c, "self^", 5, self)) {
         fail(c, LHAT_COMPILE_UNSUPPORTED);
         return;
     }
-
-    uint8_t mark = c->next_register;
-    uint8_t definition = reserve(c);
-    if (!resolve_name(c, "class^", 6, definition)) {
-        fail(c, LHAT_COMPILE_UNDEFINED);
-        return;
-    }
-    emit(c, lhat_encode_abc(LHAT_BC_NEWINSTANCE, into, definition, 0));
-    c->next_register = mark;
-
     for (const LhatNode *entry = node->v.list.items; entry != NULL;
          entry = entry->next) {
         const char *name = NULL;
         size_t length = 0;
-        // 14.15: a field left for the composition to fill has no initializer
-        // to run. Whichever part provides it writes one here instead.
+        // 14.15: a declaration carries no value to write.
         if (entry->v.entry.declared) {
             continue;
         }
@@ -2584,50 +2573,92 @@ static void compile_self_table(Compiler *c, const LhatNode *node, uint8_t into)
         uint8_t value = reserve(c);
         load_string_bytes(c, key, name, length);
         compile_expression(c, entry->v.entry.value, value);
-        emit(c, lhat_encode_abc(LHAT_BC_SETINDEX, into, key, value));
+        emit(c, lhat_encode_abc(LHAT_BC_SETINDEX, self, key, value));
         c->next_register = at;
     }
+    emit_move_wide(c, into, self, 1);
+    c->next_register = mark;
+}
 
-    // 14.11: in the order they were written, base first, and a field new
-    // named is not initialised twice -- producing a value to be overwritten
-    // is not something an initialiser should be made to do.
-    for (size_t i = 0; i < chain->count; i++) {
-        const LhatNode *fields = template_of(chain->parts[i]);
-        if (fields == NULL) {
-            continue;
-        }
-        // The part may have been read from an earlier input, and its offsets
-        // mean nothing against this one's text.
+// 14.12改: what super^ means inside an override^ new -- the hook of the new
+// written before it, run against the same receiver. Every written new ahead
+// of `stop_entry` in the chain is compiled once more as a hook (the same
+// body without the construction), each bound over the one before it, so the
+// name reads newest-first the way locals do. The chain starts on a hook that
+// does nothing: the default new has nothing to run but the construction.
+static void bind_new_hooks(Compiler *c, const DefChain *chain,
+                           size_t stop_part, const LhatNode *stop_entry)
+{
+    LhatProto *idle = lhat_proto_new();
+    if (idle == NULL) {
+        fail(c, LHAT_COMPILE_TOO_COMPLEX);
+        return;
+    }
+    idle->is_function = true;
+    idle->takes_self = true;
+    idle->parameters = 1;
+    idle->parameter_slots = 1;
+    size_t index = lhat_proto_add(c->proto, idle);
+    if (index == SIZE_MAX) {
+        lhat_proto_free(idle);
+        fail(c, LHAT_COMPILE_TOO_COMPLEX);
+        return;
+    }
+    if (lhat_chunk_emit(&idle->chunk,
+                        lhat_encode_abc(LHAT_BC_RETURN_NIL, 0, 0, 0),
+                        c->line) == SIZE_MAX) {
+        fail(c, LHAT_COMPILE_TOO_COMPLEX);
+        return;
+    }
+    uint8_t hook = reserve(c);
+    emit(c, lhat_encode_abx(LHAT_BC_CLOSURE, hook, (uint16_t)index));
+    if (c->local_count >= LHAT_MAX_LOCALS) {
+        fail(c, LHAT_COMPILE_TOO_COMPLEX);
+        return;
+    }
+    Local *bound = &c->locals[c->local_count++];
+    bound->name = "super^";
+    bound->length = 6;
+    bound->reg = hook;
+    bound->depth = c->scope_depth;
+    bound->width = 1;
+    bound->import_root = false;
+
+    for (size_t i = 0; i <= stop_part && i < chain->count; i++) {
         const LhatLexer *enclosing_lexer = c->lexer;
         const LhatNode *enclosing_scope = c->foreign_scope;
         const char *enclosing_module = c->foreign_module;
         c->lexer = chain->lexers[i];
         c->foreign_scope = chain->scopes[i];
         c->foreign_module = chain->modules[i];
-        for (const LhatNode *field = fields->v.list.items; field != NULL;
-             field = field->next) {
+        for (const LhatNode *entry = chain->parts[i]->v.list.items;
+             entry != NULL; entry = entry->next) {
+            if (i == stop_part && entry == stop_entry) {
+                break;
+            }
             const char *name = NULL;
             size_t length = 0;
-            // 14.15: nothing to initialise, and a later part of the chain
-            // carries the one that does.
-            if (field->v.entry.declared) {
+            if (entry->v.entry.key == NULL || entry->v.entry.declared ||
+                !node_name(c, entry->v.entry.key, &name, &length) ||
+                !name_is(name, length, "new") ||
+                entry->v.entry.value == NULL ||
+                entry->v.entry.value->kind != LHAT_NODE_FUNC) {
                 continue;
             }
-            if (field->v.entry.key == NULL ||
-                !node_name(c, field->v.entry.key, &name, &length)) {
-                fail(c, LHAT_COMPILE_UNSUPPORTED);
-                return;
+            hook = reserve(c);
+            compile_subroutine_as(c, entry->v.entry.value, hook,
+                                  LHAT_BODY_NEW_HOOK);
+            if (c->local_count >= LHAT_MAX_LOCALS) {
+                fail(c, LHAT_COMPILE_TOO_COMPLEX);
+                break;
             }
-            if (entry_named(c, node->v.list.items, name, length)) {
-                continue;
-            }
-            uint8_t at = c->next_register;
-            uint8_t key = reserve(c);
-            uint8_t value = reserve(c);
-            load_string_bytes(c, key, name, length);
-            compile_expression(c, field->v.entry.value, value);
-            emit(c, lhat_encode_abc(LHAT_BC_SETINDEX, into, key, value));
-            c->next_register = at;
+            bound = &c->locals[c->local_count++];
+            bound->name = "super^";
+            bound->length = 6;
+            bound->reg = hook;
+            bound->depth = c->scope_depth;
+            bound->width = 1;
+            bound->import_root = false;
         }
         c->lexer = enclosing_lexer;
         c->foreign_scope = enclosing_scope;
@@ -2636,8 +2667,9 @@ static void compile_self_table(Compiler *c, const LhatNode *node, uint8_t into)
 }
 
 // 14.1 and 14.3: a definition is a table of the members every instance
-// shares. The template is not among them -- it belongs to the instances, and
-// 14.11 keeps it in the compiler as initialisers rather than as any value.
+// shares, plus the prototype its self^ member holds (14.11) -- the template,
+// with every initialiser evaluated once, here at the definition. An instance
+// is a copy of that prototype.
 //
 // The chain is flattened here, which is what 14.2 permits by settling
 // delegation at the definition: a later part's member simply overwrites an
@@ -2716,6 +2748,14 @@ static void compile_def(Compiler *c, const LhatNode *node, uint8_t into)
                 ambiguous_member(c, &chain, name, length)) {
                 continue;
             }
+            // 14.11: a member spelled new and written as a body is the
+            // constructor. Compiled as one (compile_subroutine_as), so that
+            // construction stays the machine's and the body only adjusts
+            // the copy.
+            bool constructor = name_is(name, length, "new") &&
+                               entry->v.entry.value != NULL &&
+                               entry->v.entry.value->kind == LHAT_NODE_FUNC;
+
             uint8_t at = c->next_register;
             size_t entry_mark = c->local_count;
             uint8_t key = reserve(c);
@@ -2729,8 +2769,14 @@ static void compile_def(Compiler *c, const LhatNode *node, uint8_t into)
             // It is an ordinary local, so a body reaches it through the
             // capture of 5.4 the way it reaches class^. Bound before the
             // value is compiled, since that is when the capture is made.
-            if (entry->v.entry.modifier == LHAT_DEF_OVERRIDE &&
-                c->local_count < LHAT_MAX_LOCALS) {
+            //
+            // For new the name means the hook chain instead: what was under
+            // the key is a constructor, and a constructor run from inside
+            // one would make a second instance.
+            if (entry->v.entry.modifier == LHAT_DEF_OVERRIDE && constructor) {
+                bind_new_hooks(c, &chain, i, entry);
+            } else if (entry->v.entry.modifier == LHAT_DEF_OVERRIDE &&
+                       c->local_count < LHAT_MAX_LOCALS) {
                 uint8_t hidden = reserve(c);
                 emit(c, lhat_encode_abc(LHAT_BC_GETINDEX, hidden, into, key));
                 Local *previous = &c->locals[c->local_count++];
@@ -2742,7 +2788,12 @@ static void compile_def(Compiler *c, const LhatNode *node, uint8_t into)
                 previous->import_root = false;
             }
 
-            compile_expression(c, entry->v.entry.value, value);
+            if (constructor) {
+                compile_subroutine_as(c, entry->v.entry.value, value,
+                                      LHAT_BODY_CONSTRUCTOR);
+            } else {
+                compile_expression(c, entry->v.entry.value, value);
+            }
             // 14.12: overload^ keeps what was there and adds a way to call
             // it, so the two go under one name together. Which one a call
             // means is settled when it runs, since 14.12's ban on overlapping
@@ -2786,14 +2837,65 @@ static void compile_def(Compiler *c, const LhatNode *node, uint8_t into)
         c->foreign_module = enclosing_module;
     }
 
+    // 14.11: the prototype, built last so an initialiser reads class^ with
+    // every member in place. Base first, in the order the fields were
+    // written; a later part's initialiser for a field the base also defaults
+    // simply overwrites (14.5). A declared field (14.15) has no initialiser
+    // and so no key here. SETPROTO then hangs the table under self^, sealed,
+    // refusing any mutable value it holds.
+    uint8_t proto_mark = c->next_register;
+    uint8_t prototype = reserve(c);
+    emit(c, lhat_encode_abc(LHAT_BC_NEWTABLE, prototype, 0, 0));
+    for (size_t i = 0; i < chain.count; i++) {
+        const LhatNode *fields = template_of(chain.parts[i]);
+        if (fields == NULL) {
+            continue;
+        }
+        // 03 の 4.3: the part may have been read from an earlier input, and
+        // its offsets mean nothing against this one's text.
+        const LhatLexer *enclosing_lexer = c->lexer;
+        const LhatNode *enclosing_scope = c->foreign_scope;
+        const char *enclosing_module = c->foreign_module;
+        c->lexer = chain.lexers[i];
+        c->foreign_scope = chain.scopes[i];
+        c->foreign_module = chain.modules[i];
+        for (const LhatNode *field = fields->v.list.items; field != NULL;
+             field = field->next) {
+            const char *name = NULL;
+            size_t length = 0;
+            if (field->v.entry.declared) {
+                continue;
+            }
+            if (field->v.entry.key == NULL ||
+                !node_name(c, field->v.entry.key, &name, &length)) {
+                fail(c, LHAT_COMPILE_UNSUPPORTED);
+                break;
+            }
+            uint8_t at = c->next_register;
+            uint8_t key = reserve(c);
+            uint8_t value = reserve(c);
+            load_string_bytes(c, key, name, length);
+            compile_expression(c, field->v.entry.value, value);
+            emit(c, lhat_encode_abc(LHAT_BC_SETINDEX, prototype, key, value));
+            c->next_register = at;
+        }
+        c->lexer = enclosing_lexer;
+        c->foreign_scope = enclosing_scope;
+        c->foreign_module = enclosing_module;
+    }
+    emit(c, lhat_encode_abc(LHAT_BC_SETPROTO, into, prototype, 0));
+    c->next_register = proto_mark;
+
     c->building = enclosing;
     c->local_count = local_mark;
     c->scope_depth--;
 }
 
 // The new of 14.11 that a definition gets when it declares none: a function
-// of no arguments answering what the template says. It is compiled as a body
-// of its own so that it is an ordinary member, callable like any other.
+// of no arguments answering a fresh copy of the prototype -- which is all
+// construction is (NEWINSTANCE does the copying), so the default has nothing
+// to add. It is compiled as a body of its own so that it is an ordinary
+// member, callable like any other.
 static void compile_default_new(Compiler *c, const LhatNode *node,
                                 uint8_t definition)
 {
@@ -2818,15 +2920,16 @@ static void compile_default_new(Compiler *c, const LhatNode *node,
     inner.proto = proto;
     inner.result = c->result;
 
+    (void)node;
     uint8_t slot = reserve(&inner);
-    // An empty self^{ … }: everything comes from the template.
-    LhatNode empty;
-    memset(&empty, 0, sizeof empty);
-    empty.kind = LHAT_NODE_SELF_TABLE;
-    empty.offset = node->offset;
-    empty.line = node->line;
-    empty.column = node->column;
-    compile_self_table(&inner, &empty, slot);
+    uint8_t inner_mark = inner.next_register;
+    uint8_t owner = reserve(&inner);
+    if (!resolve_name(&inner, "class^", 6, owner)) {
+        fail(&inner, LHAT_COMPILE_UNDEFINED);
+        return;
+    }
+    emit(&inner, lhat_encode_abc(LHAT_BC_NEWINSTANCE, slot, owner, 0));
+    inner.next_register = inner_mark;
     emit(&inner, lhat_encode_abc(LHAT_BC_RETURN, slot, 0, 0));
 
     uint8_t mark = c->next_register;
@@ -3122,7 +3225,14 @@ static void compile_call(Compiler *c, const LhatNode *node, uint8_t into)
 
 // 02 の 15 章: f^ and p^ are both compiled the same way here; the difference
 // they carry is for the checker, and 5.1 keeps the machine out of it.
-static void compile_subroutine(Compiler *c, const LhatNode *node, uint8_t into)
+//
+// 02 の 14.11: `kind` says whether this body is a written new. A constructor
+// opens on the machine's construction -- NEWINSTANCE copies the definition's
+// prototype -- binds the copy as self^, and answers it whatever the body
+// does. A hook (14.12改's super^) is the same body run against a receiver it
+// is handed instead, the way any method is. Neither may yield.
+static void compile_subroutine_as(Compiler *c, const LhatNode *node,
+                                  uint8_t into, BodyKind kind)
 {
     LhatProto *proto = lhat_proto_new();
     if (proto == NULL) {
@@ -3131,6 +3241,14 @@ static void compile_subroutine(Compiler *c, const LhatNode *node, uint8_t into)
     }
     proto->is_function = node->v.func.is_function;
     proto->yields = node->v.func.yields;
+    if (kind != LHAT_BODY_ORDINARY) {
+        proto->is_function = true;  // 14.11: new is an f^
+        if (node->v.func.yields) {
+            lhat_proto_free(proto);
+            fail(c, LHAT_COMPILE_UNSUPPORTED);
+            return;
+        }
+    }
 
     size_t index = lhat_proto_add(c->proto, proto);
     if (index == SIZE_MAX) {
@@ -3145,6 +3263,36 @@ static void compile_subroutine(Compiler *c, const LhatNode *node, uint8_t into)
     inner.lexer = c->lexer;
     inner.proto = proto;
     inner.result = c->result;
+
+    // 14.12改: a hook takes the instance under construction as its receiver,
+    // the way any method does (14.4) -- the parameter is the machine's, not
+    // one the body wrote, so it is laid down ahead of the written ones.
+    uint8_t self_slot = 0;
+    if (kind == LHAT_BODY_NEW_HOOK) {
+        proto->takes_self = true;
+        struct LhatRuntimeType **receiver_types =
+            (struct LhatRuntimeType **)lhat_realloc(NULL,
+                                                    sizeof *receiver_types);
+        if (receiver_types == NULL) {
+            fail(c, LHAT_COMPILE_TOO_COMPLEX);
+            return;
+        }
+        receiver_types[0] = NULL;
+        proto->parameter_types = receiver_types;
+        proto->parameters = 1;
+        self_slot = reserve(&inner);
+        if (inner.local_count >= LHAT_MAX_LOCALS) {
+            fail(c, LHAT_COMPILE_TOO_COMPLEX);
+            return;
+        }
+        Local *receiver = &inner.locals[inner.local_count++];
+        receiver->name = "self^";
+        receiver->length = 5;
+        receiver->reg = self_slot;
+        receiver->depth = inner.scope_depth;
+        receiver->width = 1;
+        receiver->import_root = false;
+    }
 
     // 5.3: the parameters are the frame's first registers, in order.
     //
@@ -3171,12 +3319,13 @@ static void compile_subroutine(Compiler *c, const LhatNode *node, uint8_t into)
             return;
         }
         // 14.4: a first parameter written self^ is what marks a method. No
-        // modifier says so; the shape of the signature does.
+        // modifier says so; the shape of the signature does. A new body has
+        // no written receiver (14.11) -- the machine provides one.
         //
         // 11.3改: written last it marks one too, and says the receiver
         // is the RIGHT operand -- check.c refuses that on anything but an
         // op^, so reading it here is reading a shape already judged.
-        if (name_is(name, length, "self^")) {
+        if (kind == LHAT_BODY_ORDINARY && name_is(name, length, "self^")) {
             if (param == node->v.func.params) {
                 proto->takes_self = true;
             } else if (param->next == NULL) {
@@ -3244,11 +3393,41 @@ static void compile_subroutine(Compiler *c, const LhatNode *node, uint8_t into)
     // know where the frame's scratch begins.
     proto->parameter_slots = inner.next_register;
 
+    // 14.11: construction first -- the machine copies the definition's
+    // prototype, and the body below only adjusts the copy. The slot is what
+    // every self^ in the body names, and what the member answers whatever
+    // the body does.
+    if (kind == LHAT_BODY_CONSTRUCTOR) {
+        self_slot = reserve(&inner);
+        uint8_t owner_mark = inner.next_register;
+        uint8_t owner = reserve(&inner);
+        if (!resolve_name(&inner, "class^", 6, owner)) {
+            fail(&inner, LHAT_COMPILE_UNDEFINED);
+            return;
+        }
+        emit(&inner, lhat_encode_abc(LHAT_BC_NEWINSTANCE, self_slot, owner, 0));
+        inner.next_register = owner_mark;
+        if (inner.local_count >= LHAT_MAX_LOCALS) {
+            fail(c, LHAT_COMPILE_TOO_COMPLEX);
+            return;
+        }
+        Local *receiver = &inner.locals[inner.local_count++];
+        receiver->name = "self^";
+        receiver->length = 5;
+        receiver->reg = self_slot;
+        receiver->depth = inner.scope_depth;
+        receiver->width = 1;
+        receiver->import_root = false;
+        inner.in_constructor = true;
+        inner.constructor_self = self_slot;
+    }
+
     // 02 の 14.16: kept the same way parameter_types is, for typeof^ to
     // reconstruct the signature without touching the checker's types (03 の
     // 4.2 -- what runs cannot depend on whether checking did).
     proto->result_type = lower_type(c, node->v.func.return_type);
-    if (node->v.func.return_type == NULL && node->checked_type != NULL) {
+    if (node->v.func.return_type == NULL && node->checked_type != NULL &&
+        kind != LHAT_BODY_NEW_HOOK) {
         // Nothing was written, so lower_type had nothing to read -- but
         // infer_func (check.c) already settled what the body actually
         // answers (03 の 3.4). Reaching for that only when checking ran
@@ -3318,8 +3497,10 @@ static void compile_subroutine(Compiler *c, const LhatNode *node, uint8_t into)
     // read as a tail call. Only a statement of the body itself -- one inside a
     // block, a loop or a branch has the statements after that block to come
     // back to. A body carrying a finally^ (10.1) has its cleanup after the
-    // call, which cleanup_depth refuses at the statement itself.
-    if (node->v.func.body != NULL &&
+    // call, which cleanup_depth refuses at the statement itself. A new body
+    // keeps its frame (14.11): the constructor still owes the instance after
+    // its last statement, so nothing in it stands in tail position.
+    if (kind == LHAT_BODY_ORDINARY && node->v.func.body != NULL &&
         node->v.func.body->kind == LHAT_NODE_BLOCK) {
         for (const LhatNode *s = node->v.func.body->v.list.items; s != NULL;
              s = s->next) {
@@ -3330,13 +3511,21 @@ static void compile_subroutine(Compiler *c, const LhatNode *node, uint8_t into)
     // 02 の 10.1: a p^ body is a block that may carry a finally^, which is
     // where resources are handled and so where it is most wanted.
     compile_block_in_scope(&inner, node->v.func.body);
-    if (lhat_chunk_emit(&proto->chunk,
-                        lhat_encode_abc(LHAT_BC_RETURN_NIL, 0, 0, 0),
-                        inner.line) == SIZE_MAX) {
+    // 14.11: a constructor answers the copy; nothing else has a last word.
+    LhatInstruction last =
+        kind == LHAT_BODY_CONSTRUCTOR
+            ? lhat_encode_abc(LHAT_BC_RETURN, self_slot, 0, 0)
+            : lhat_encode_abc(LHAT_BC_RETURN_NIL, 0, 0, 0);
+    if (lhat_chunk_emit(&proto->chunk, last, inner.line) == SIZE_MAX) {
         fail(c, LHAT_COMPILE_TOO_COMPLEX);
     }
 
     emit(c, lhat_encode_abx(LHAT_BC_CLOSURE, into, (uint16_t)index));
+}
+
+static void compile_subroutine(Compiler *c, const LhatNode *node, uint8_t into)
+{
+    compile_subroutine_as(c, node, into, LHAT_BODY_ORDINARY);
 }
 
 static bool binary_opcode(LhatOpKind op, LhatOpcode *out)
@@ -3581,7 +3770,7 @@ static void compile_expression(Compiler *c, const LhatNode *node, uint8_t into)
         // stands. Reaching it as an expression means the one inside new;
         // compile_def takes the template before anything gets here.
         case LHAT_NODE_SELF_TABLE:
-            compile_self_table(c, node, into);
+            compile_self_assign(c, node, into);
             return;
 
         case LHAT_NODE_TRY:
@@ -5587,6 +5776,23 @@ static void compile_statement(Compiler *c, const LhatNode *node)
             // return one. Java allows it and it is a known trap; C# refuses.
             if (c->in_cleanup) {
                 fail(c, LHAT_COMPILE_UNSUPPORTED);
+                return;
+            }
+            // 14.11: a constructor answers the copy whatever its statements
+            // say -- the value (15.12's sole expression included) still runs
+            // for its effects, and a bare return^ is an early finish.
+            if (c->in_constructor) {
+                if (node->v.jump.value != NULL) {
+                    uint8_t effect_mark = c->next_register;
+                    for (const LhatNode *item = node->v.jump.value;
+                         item != NULL; item = item->next) {
+                        uint8_t slot = reserve_for(c, item);
+                        compile_expression(c, item, slot);
+                    }
+                    c->next_register = effect_mark;
+                }
+                emit(c, lhat_encode_abc(LHAT_BC_RETURN, c->constructor_self,
+                                        0, 0));
                 return;
             }
             // The frame drains what it has pending on the way out (5.5), so

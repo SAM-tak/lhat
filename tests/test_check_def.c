@@ -239,7 +239,7 @@ static void test_definitions(void)
     check_text(&u,
                "var^ C = def^{\n"
                "    self^{ v := 1 },\n"
-               "    new := f^ n:number^ { return^ self^{ v := n } },\n"
+               "    new := f^ n:number^ { self^{ v := n } },\n"
                "}\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MEMBER_EXISTS);
     unit_dispose(&u);
@@ -251,7 +251,7 @@ static void test_definitions(void)
     check_text(&u,
                "var^ C = def^{\n"
                "    self^{ v := 1 },\n"
-               "    override^new := f^ n:number^ { return^ self^{ v := n } },\n"
+               "    override^new := f^ n:number^ { self^{ v := n } },\n"
                "}\n"
                "var^ c = C.new(5)\n");
     CHECK_CLEAN(&u);
@@ -261,7 +261,7 @@ static void test_definitions(void)
     check_text(&u,
                "var^ C = def^{\n"
                "    self^{ v := 1 },\n"
-               "    override^new := f^ n:number^ { return^ self^{ v := n } },\n"
+               "    override^new := f^ n:number^ { self^{ v := n } },\n"
                "}\n"
                "var^ c = C.new()\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_ARITY);
@@ -273,7 +273,7 @@ static void test_definitions(void)
     check_text(&u,
                "var^ C = def^{\n"
                "    self^{ v := 1 },\n"
-               "    overload^new := f^ n:number^ { return^ self^{ v := n } },\n"
+               "    overload^new := f^ n:number^ { self^{ v := n } },\n"
                "}\n"
                "var^ a = C.new()\n"
                "var^ b = C.new(5)\n"
@@ -288,7 +288,7 @@ static void test_definitions(void)
     check_text(&u,
                "var^ C = def^{\n"
                "    self^{ v := 1 },\n"
-               "    overload^new := f^ n:number^ { return^ self^{ v := n } },\n"
+               "    overload^new := f^ n:number^ { self^{ v := n } },\n"
                "}\n"
                "var^ take = f^ c:C -> number^ { return^ c.v }\n"
                "var^ n : number^ = take(C.new(5))\n");
@@ -303,7 +303,7 @@ static void test_definitions(void)
     check_text(&u,
                "var^ C = def^{\n"
                "    self^{ v := 1 },\n"
-               "    override^new := f^ n:number^ { return^ self^{ v := n } },\n"
+               "    override^new := f^ n:number^ { self^{ v := n } },\n"
                "}\n"
                "var^ n : number^ = C.new(5).v\n");
     CHECK_CLEAN(&u);
@@ -315,7 +315,7 @@ static void test_definitions(void)
     check_text(&u,
                "var^ C = def^{\n"
                "    self^{ v := 1 },\n"
-               "    override^new := f^ x { return^ self^{ v := x } },\n"
+               "    override^new := f^ x { self^{ v := x } },\n"
                "}\n"
                "var^ c = C.new(\"a\")\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
@@ -325,7 +325,7 @@ static void test_definitions(void)
     check_text(&u,
                "var^ C = def^{\n"
                "    self^{ v := 1 },\n"
-               "    override^new := f^ x { return^ self^{ v := x } },\n"
+               "    override^new := f^ x { self^{ v := x } },\n"
                "}\n"
                "var^ n : number^ = C.new(5).v\n");
     CHECK_CLEAN(&u);
@@ -335,7 +335,7 @@ static void test_definitions(void)
     check_text(&u,
                "var^ C = def^{\n"
                "    self^{ v := 1 },\n"
-               "    override^new := f^ { return^ self^{ v := \"a\" } },\n"
+               "    override^new := f^ { self^{ v := \"a\" } },\n"
                "}\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
@@ -346,7 +346,7 @@ static void test_definitions(void)
     check_text(&u,
                "var^ C = def^{\n"
                "    self^{ v := 1 },\n"
-               "    override^new := f^ { return^ self^{ zzz := 1 } },\n"
+               "    override^new := f^ { self^{ zzz := 1 } },\n"
                "}\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_NO_MEMBER);
     unit_dispose(&u);
@@ -1429,8 +1429,8 @@ static void test_new_fills_fields(void)
                "let^ D = def^{\n"
                "  self^{ abstract^ x : number^, abstract^ y : number^ },\n"
                "  override^new = f^ v:number^ {\n"
-               "    if^ v > 0 { return^ self^{ x = v, y = v } }\n"
-               "    return^ self^{ x = 0 }\n"
+               "    self^{ x = 0 }\n"
+               "    if^ v > 0 { self^{ x = v, y = v } }\n"
                "  },\n"
                "}\n"
                "let^ d = D.new(1)\n");
@@ -1448,11 +1448,142 @@ static void test_new_fills_fields(void)
                "      self^{ slot = 0 },\n"
                "      override^new = f^ { self^{ slot = 1 } },\n"
                "    }\n"
-               "    return^ self^{}\n"
+               "    self^{}\n"
                "  },\n"
                "}\n"
                "let^ d = D.new()\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_FIELD_UNPROVIDED);
+    unit_dispose(&u);
+}
+
+// 14.11: the prototype is a value -- the table a definition hangs under
+// self^, holding every field's default, evaluated once as the definition is
+// built. Construction copies it shallowly, which is what the rules here
+// protect: only immutable defaults may sit on it, nothing writes through it,
+// and a new body answers nothing of its own.
+static void test_prototype(void)
+{
+    Unit u;
+
+    // A table default is a literal tree: each level born fresh at this very
+    // expression, so the copies construction hands out share nothing.
+    LHAT_TEST("a table literal default is each instance's own");
+    check_text(&u,
+               "let^ D = def^{ self^{ items = { } } }\n"
+               "let^ d = D.new()\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("a nested literal tree checks clean");
+    check_text(&u,
+               "let^ D = def^{ self^{ grid = { { 0, 0 }, { 0, 0 } } } }\n"
+               "let^ d = D.new()\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // A table that arrived any other way is an identity from somewhere
+    // else, which is what new is for.
+    LHAT_TEST("a name standing where a default goes is refused");
+    check_text(&u,
+               "let^ shared = { }\n"
+               "let^ D = def^{ self^{ items = shared } }\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MUTABLE_DEFAULT);
+    unit_dispose(&u);
+
+    LHAT_TEST("and so is a call's answer inside a literal");
+    check_text(&u,
+               "let^ make = f^ -> t^{} { return^ { } }\n"
+               "let^ D = def^{ self^{ box = { inner = make() } } }\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MUTABLE_DEFAULT);
+    unit_dispose(&u);
+
+    LHAT_TEST("a definition is a shared leaf");
+    check_text(&u,
+               "let^ S = def^{ tag = f^ -> number^ { return^ 1 } }\n"
+               "let^ D = def^{ self^{ strategy = S } }\n"
+               "let^ d = D.new()\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("and so is a call answering one");
+    check_text(&u,
+               "let^ make = f^ -> t^{} { return^ { } }\n"
+               "let^ D = def^{ self^{ items = make() } }\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MUTABLE_DEFAULT);
+    unit_dispose(&u);
+
+    // The value's own type is what is judged, not the field's width.
+    LHAT_TEST("an immutable value under a wide type is fine");
+    check_text(&u,
+               "let^ D = def^{ self^{ slot : any^ = 1 } }\n"
+               "let^ d = D.new()\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("a call answering a number is a value like any other");
+    check_text(&u,
+               "let^ pick = f^ -> number^ { return^ 3 }\n"
+               "let^ D = def^{ self^{ n = pick() } }\n"
+               "let^ x : number^ = D.new().n\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("a return^ in a new body is refused");
+    check_text(&u,
+               "let^ D = def^{\n"
+               "  self^{ n = 0 },\n"
+               "  override^new = f^ {\n"
+               "    self^{ n = 1 }\n"
+               "    return^ self^\n"
+               "  },\n"
+               "}\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_NEW_RETURNS);
+    unit_dispose(&u);
+
+    LHAT_TEST("the prototype takes no writes");
+    check_text(&u,
+               "let^ D = def^{ self^{ n = 0 } }\n"
+               "D.self^.n := 5\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_PROTOTYPE_SEALED);
+    unit_dispose(&u);
+
+    LHAT_TEST("and is not replaced whole either");
+    check_text(&u,
+               "let^ D = def^{ self^{ n = 0 } }\n"
+               "D.self^ := { n = 1 }\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_PROTOTYPE_SEALED);
+    unit_dispose(&u);
+
+    // However deep the path goes, and through an index as well as a member.
+    LHAT_TEST("nothing inside it is written through it either");
+    check_text(&u,
+               "let^ D = def^{ self^{ used = { 0, 0 } } }\n"
+               "D.self^.used[1] := 9\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_PROTOTYPE_SEALED);
+    unit_dispose(&u);
+
+    // 14.7改: the member is the definition's own; what it answers is the
+    // instance type, since the prototype is one canonical instance.
+    LHAT_TEST("reading it is reading an instance");
+    check_text(&u,
+               "let^ D = def^{ self^{ n = 0 } }\n"
+               "let^ x : number^ = D.self^.n\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // 15.1's exception: the copy is the body's own -- nothing outside holds
+    // it yet -- so an f^ new writes it directly as well as through the
+    // batch form.
+    LHAT_TEST("a new body writes self^ from inside an f^");
+    check_text(&u,
+               "let^ D = def^{\n"
+               "  self^{ n = 0 },\n"
+               "  override^new = f^ {\n"
+               "    self^.n := 5\n"
+               "  },\n"
+               "}\n"
+               "let^ d = D.new()\n");
+    CHECK_CLEAN(&u);
     unit_dispose(&u);
 }
 
@@ -1463,5 +1594,6 @@ int main(void)
     test_typeof();
     test_field_types();
     test_new_fills_fields();
+    test_prototype();
     return lhat_test_report("test_check_def");
 }

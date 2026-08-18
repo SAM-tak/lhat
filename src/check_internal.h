@@ -360,6 +360,15 @@ typedef struct {
     // names. NULL anywhere else, so 14.12's marker is what makes it a name.
     LhatType *super_type;
 
+    // 02 の 14.11: the written new whose literal chk_infer_def is walking.
+    // chk_infer_func reads it to know the body it opens is a constructor's:
+    // the machine makes the instance, the body only adjusts it.
+    const LhatNode *new_func;
+    // And true exactly while that body's own statements are walked -- a
+    // literal nested inside it is an ordinary body again. return^ (refused
+    // there) and 15.1's write rules (self^ is the body's to write) read it.
+    bool in_new_body;
+
     // 03 の 3.4改2: something answered before it was inferred -- a def^ member
     // read before its own body was walked (14.7改2's seed), or a name whose
     // let^ this walk has not reached yet (8.7). Both say the same thing: this

@@ -855,6 +855,20 @@ void chk_check_write_target(Checker *c, const LhatNode *target)
     }
 
     if (target_is_path(target)) {
+        // 02 の 14.11: a new body adjusts the copy the machine just made --
+        // the one table an f^ may change, since nothing outside holds it
+        // yet. Only the immediate body: a literal nested inside it is an
+        // ordinary one again.
+        if (c->in_new_body) {
+            const LhatNode *root = target_root(target);
+            const char *root_name = NULL;
+            size_t root_length = 0;
+            if (root != NULL &&
+                chk_node_name(c, root, &root_name, &root_length) &&
+                chk_name_is(root_name, root_length, "self^")) {
+                return;
+            }
+        }
         Scope *found_in = NULL;
         Binding *root = path_root_binding(c, target, &found_in);
         // A root that is no binding at all is nothing this body made: L^ is
@@ -985,9 +999,43 @@ static const LhatType *path_type_of(Checker *c, const LhatNode *node)
     return m != NULL ? m->type : NULL;
 }
 
+// 02 の 14.11: whether this path reads self^ off a definition anywhere along
+// the way. That member is the prototype every instance starts as -- read by
+// anyone, written by no one, and nothing inside it is written through it
+// either, however deep the path goes and whether the steps are members or
+// indices.
+static bool path_through_prototype(Checker *c, const LhatNode *node)
+{
+    while (node != NULL &&
+           (node->kind == LHAT_NODE_MEMBER || node->kind == LHAT_NODE_INDEX)) {
+        const char *name = NULL;
+        size_t length = 0;
+        if (node->kind == LHAT_NODE_MEMBER &&
+            chk_node_name(c, node->v.access.argument, &name, &length) &&
+            chk_name_is(name, length, "self^")) {
+            const LhatType *owner = path_type_of(c, node->v.access.target);
+            if (owner != NULL && owner->kind == LHAT_TYPE_TABLE &&
+                owner->v.table.is_definition) {
+                return true;
+            }
+        }
+        node = node->v.access.target;
+    }
+    return false;
+}
+
 void chk_check_opaque_write(Checker *c, const LhatNode *target)
 {
     const LhatNode *last = target_name_node(target);
+    if (last->kind != LHAT_NODE_MEMBER && last->kind != LHAT_NODE_INDEX) {
+        return;
+    }
+    if (path_through_prototype(c, last)) {
+        chk_report(c, last, LHAT_CHECK_ERR_PROTOTYPE_SEALED);
+        return;
+    }
+    // What follows reads the owner of a member; an index writes an element,
+    // which 8.8 leaves to the table itself.
     if (last->kind != LHAT_NODE_MEMBER) {
         return;
     }
@@ -1966,6 +2014,24 @@ void chk_check_statement(Checker *c, const LhatNode *node)
             break;
 
         case LHAT_NODE_RETURN: {
+            // 02 の 14.11: construction answers the instance itself, so a
+            // new body has nothing to return^ -- what it writes through
+            // self^ is already on what the caller gets. A literal nested
+            // inside the body is an ordinary one again (in_new_body is the
+            // immediate body's alone), and a body that is one expression
+            // (15.12) wrote no return^ to refuse. Either way the values
+            // still run, so they are read here -- and nothing about the
+            // result is, since the signature never asks the body.
+            if (c->in_new_body) {
+                if (!node->v.jump.implicit) {
+                    chk_report(c, node, LHAT_CHECK_ERR_NEW_RETURNS);
+                }
+                for (const LhatNode *item = node->v.jump.value; item != NULL;
+                     item = item->next) {
+                    chk_infer(c, item);
+                }
+                break;
+            }
             // 03 の 3.4: a return^ that reaches the subroutine itself says
             // nothing about the result -- its type is the one being worked
             // out. The others determine it between them.

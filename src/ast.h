@@ -327,8 +327,8 @@ struct LhatNode {
             // 14.12's modifier has no place.
             bool declared;
             // 14.6 with 8.6: a template field written 'name : type = value'.
-            // The type is what the field holds; the value is what 14.11 puts
-            // there at each construction. NULL when only a value was written,
+            // The type is what the field holds; the value is what 14.11
+            // bakes onto the prototype. NULL when only a value was written,
             // which is every other entry.
             LhatNode *type;
             // 13.7, 14.10: MEMBER_DECL only. Written '...:type' in a
@@ -477,6 +477,11 @@ struct LhatNode {
             // several are. They hang off `value` as a list. 0 and 1 both mean
             // one, which is every return^ and yield^ written before tuples.
             uint32_t level;
+            // RETURN only. 15.12: made by the parser out of a body that is
+            // one expression, rather than written return^. 02 の 14.11 reads
+            // it: a new body answers nothing of its own, so a written
+            // return^ is refused there -- and a sole expression is not one.
+            bool implicit;
         } jump;
 
         // TYPE_CORO: the three types of 13.9. A NULL `receive` or `result` is

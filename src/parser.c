@@ -1387,6 +1387,7 @@ static void answer_with_body(Parser *p, LhatNode *body)
         // turn, and says so better than falling out did.
         if (only->kind == LHAT_NODE_CALL_STMT) {
             only->kind = LHAT_NODE_RETURN;
+            only->v.jump.implicit = true;
             // 13.8改: 'f^ { (0, 1) }' answers a tuple, and folding it here is
             // what makes that the very node 'return^ 0, 1' produces.
             fold_tuple_answer(only);
@@ -4025,6 +4026,12 @@ static bool is_call_statement(const LhatNode *node)
             return true;
         }
         if (node->kind == LHAT_NODE_YIELD_ALL) {
+            return true;
+        }
+        // 02 の 14.11: 'self^{ … }' is a batch of field writes, which does
+        // something standing alone the way a call does -- the form a new or
+        // a method adjusts its receiver with.
+        if (node->kind == LHAT_NODE_SELF_TABLE) {
             return true;
         }
         if (node->kind == LHAT_NODE_TRY) {

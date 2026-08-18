@@ -7,9 +7,10 @@
 // shift and a mask, and a jump target is an instruction count rather than a
 // byte offset, because every instruction is the same size.
 //
-// 5.1: every instruction here checks the types of what it is given. The
-// specialised forms that skip the check come later, once the generic ones
-// have settled, so nothing in this file assumes the checker ran.
+// 5.1: every instruction here starts generic, checking the types of what it
+// is given so a wrong value stops the run rather than corrupting the
+// machine. Safety is strict's static checking; the specialised forms that
+// skip the check come later, replacing these where strict settled the types.
 
 #ifndef LHAT_CODE_H
 #define LHAT_CODE_H
@@ -147,9 +148,17 @@ typedef enum {
     LHAT_BC_ISA,        // A B C R[A] = R[B] isa^ R[C]
     LHAT_BC_ISNIL,      // A B   R[A] = R[B] is nil^   (02 の 11.7)
 
-    // 02 の 14 章. A definition is a table of shared members; an instance is
-    // a table that reads them through a link fixed when it was made (14.2).
+    // 02 の 14 章. A definition is a table of shared members plus the
+    // prototype its self^ member holds (14.11); an instance is a copy of
+    // that prototype -- a table in a field copied as its own tree, a
+    // definition among the values shared -- reading the shared members
+    // through a link fixed when it was made (14.2).
     LHAT_BC_NEWINSTANCE,  // A B   R[A] = an instance of the definition R[B]
+    // 14.11: hangs R[B] under R[A]'s self^ as the prototype construction
+    // copies, sealing it and linking it to the definition first. Refuses a
+    // value nothing may share (LHAT_RUN_MUTABLE_DEFAULT) -- a coroutine, a
+    // host object. Emitted once per def^, after the members.
+    LHAT_BC_SETPROTO,     // A B   R[A].self^ = R[B], sealed
     LHAT_BC_CALLMETHOD,   // A B C R[A] = R[A](R[A+1] .. R[A+B]), where R[A+1]
                           //       is the receiver and is passed only when the
                           //       callee takes self^ (14.4). C as LHAT_BC_CALL.

@@ -55,19 +55,12 @@ class LhatScript : public ScriptExtension {
     int64_t next_id = 1;
     bool runnable = false;
 
-    // What a fresh instance's @export fields hold, by name. Read once, from
-    // one instance made and thrown away when the class is found.
-    //
-    // 14.11 runs the self^ initialisers inside new, so what is written in
-    // self^{ … } exists as a value nowhere else -- a definition carries no
-    // template a host could read (14.2 keeps `definition` a line to the
-    // shared members, not a prototype holding fields). Making one is the only
-    // way to see them.
-    //
-    // What a new of the writer's own put there counts as the default too: a
-    // class deriving godot.Object has exactly one new that matters, the
-    // engine only ever calls that one, and "what a fresh one holds" is what
-    // the inspector's revert arrow means.
+    // What a fresh instance's @export fields hold, by name. Read once, off
+    // the prototype the definition hangs under self^ (02 の 14.11) when the
+    // class is found -- every default is already a value there, so nothing
+    // is made and nothing runs. A field the writer's new fills has no key on
+    // the prototype and so no default, which is what the inspector's revert
+    // arrow should mean for it.
     Dictionary defaults;
 
     // 14.12's gdBaseClass, where the definition wrote one: the least engine
@@ -122,11 +115,7 @@ public:
     const String &lhat_class_name() const { return klass_name; }
 
     // 14.9's `new`, and the instance put where the collector reaches it.
-    // `quiet` for the one read_defaults makes and throws away: a constructor
-    // that wanted the node it was not given is not something to report while
-    // a file is only being opened.
-    bool make_instance(Object *owner, LhatValue *out, int64_t *id,
-                       bool quiet = false);
+    bool make_instance(Object *owner, LhatValue *out, int64_t *id);
 
     // What the conversions need to carry a handle across.
     const host::Godot *godot() const { return units.godot; }

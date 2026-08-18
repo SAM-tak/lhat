@@ -3004,6 +3004,20 @@ const char *lhat_check_error_message(LhatCheckErrorCode code)
                    "not have, and this one is written here as well; the "
                    "members reach each other whatever the order, so drop the "
                    "declaration";
+        case LHAT_CHECK_ERR_MUTABLE_DEFAULT:
+            return "a field's default lives on the prototype: an immutable "
+                   "value, a table written out as a literal (each instance "
+                   "is given its own copy), or a definition (shared by "
+                   "design); what something else made -- a name, a call's "
+                   "answer -- is given inside new";
+        case LHAT_CHECK_ERR_NEW_RETURNS:
+            return "construction answers the instance itself, so a new body "
+                   "has no return^; what it writes through self^ is already "
+                   "on what the caller gets";
+        case LHAT_CHECK_ERR_PROTOTYPE_SEALED:
+            return "a definition's self^ is the prototype every instance "
+                   "starts as; it is read here and written by no one -- a "
+                   "default is settled where the field is written";
         case LHAT_CHECK_ERR_STILL_ABSTRACT:
             return "this definition is still waiting on a composition -- a "
                    "member is declared with nothing providing it, or an "
