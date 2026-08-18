@@ -135,6 +135,15 @@ public:
     // loader answers. Called again whenever the theme is rebuilt.
     void hang_the_icon();
 
+    // 18.7's connect dialog asks the editor to make a receiver, and every
+    // language's request comes through one signal on the editor. The first
+    // answers by putting it at the end of the file; this one answers after,
+    // and writes it into the body instead (lhat_receiver.h).
+    void asked_for_receiver(Object *object, const String &function,
+                            const PackedStringArray &arguments);
+    void write_receiver(const Ref<Script> &script, const String &function,
+                        const PackedStringArray &arguments);
+
     void _enter_tree() override;
     void _exit_tree() override;
 };
