@@ -2,6 +2,9 @@
 
 #include <string.h>
 
+#include <godot_cpp/classes/editor_interface.hpp>
+#include <godot_cpp/classes/editor_settings.hpp>
+#include <godot_cpp/classes/engine.hpp>
 #include <godot_cpp/classes/file_access.hpp>
 #include <godot_cpp/core/class_db.hpp>
 #include <godot_cpp/classes/script_language_extension_profiling_info.hpp>
@@ -433,12 +436,63 @@ String LhatLanguage::_auto_indent_code(const String &code, int32_t from_line,
     return code;
 }
 
+// Which line writes this member, 1-based, or -1. A member of a def^ is a
+// name bound to a p^ or an f^ (14.3), so what is looked for is the name at
+// the head of a line with a '=' after it -- the same shape _make_function
+// writes. Read off the text rather than the tree: the editor asks while a
+// buffer is being typed into, and it asks often.
 int32_t LhatLanguage::_find_function(const String &function,
                                      const String &code) const
 {
-    (void)function;
-    (void)code;
+    PackedStringArray lines = code.split("\n");
+    for (int64_t i = 0; i < lines.size(); i++) {
+        String bare = lines[i].strip_edges();
+        if (!bare.begins_with(function)) {
+            continue;
+        }
+        String after = bare.substr(function.length()).strip_edges();
+        if (after.begins_with("=")) {
+            return (int32_t)(i + 1);
+        }
+    }
     return -1;
+}
+
+// One level of indentation, as the editor is set to write one.
+static String indentation()
+{
+    EditorInterface *editor = Engine::get_singleton()->is_editor_hint()
+                                  ? EditorInterface::get_singleton()
+                                  : nullptr;
+    Ref<EditorSettings> settings =
+        editor != nullptr ? editor->get_editor_settings() : Ref<EditorSettings>();
+    if (settings.is_null()) {
+        return "\t";
+    }
+    // 0 is Tabs, 1 is Spaces -- the enum the setting is declared with.
+    if ((int)settings->get_setting("text_editor/behavior/indent/type") == 0) {
+        return "\t";
+    }
+    int wide = (int)settings->get_setting("text_editor/behavior/indent/size");
+    return String(" ").repeat(wide > 0 ? wide : 4);
+}
+
+// An argument arrives as "name:Type" -- Godot's type, which is not L^'s. The
+// three the two share are carried over and everything else is any^: 03 の 3.1
+// has the checker act on what is written, so a name L^ knows nothing about
+// would have to be deleted before the file checked.
+static String lhat_type_of(const String &godot_type)
+{
+    if (godot_type == "int" || godot_type == "float") {
+        return "number^";
+    }
+    if (godot_type == "String" || godot_type == "StringName") {
+        return "string^";
+    }
+    if (godot_type == "bool") {
+        return "bool^";
+    }
+    return "any^";
 }
 
 String LhatLanguage::_make_function(const String &class_name,
@@ -446,14 +500,28 @@ String LhatLanguage::_make_function(const String &class_name,
                                     const PackedStringArray &args) const
 {
     (void)class_name;
-    (void)function_name;
-    (void)args;
-    return String();
+    // 14.3: a member of the def^, written as one -- a name bound to a p^,
+    // and the comma that separates it from the next. At the margin, where
+    // 14.13's def^: has its members.
+    String out = "\n" + function_name + " = p^self^";
+    for (int64_t i = 0; i < args.size(); i++) {
+        String named = args[i].get_slice(":", 0);
+        String typed = args[i].get_slice_count(":") > 1
+                           ? args[i].get_slice(":", 1)
+                           : String();
+        out += ", " + named;
+        if (!typed.is_empty()) {
+            out += ":" + lhat_type_of(typed);
+        }
+    }
+    // A line in for the body, so the caret lands where the writing goes.
+    out += " {\n" + indentation() + "\n},\n";
+    return out;
 }
 
 bool LhatLanguage::_can_make_function() const
 {
-    return false;
+    return true;
 }
 
 bool LhatLanguage::_overrides_external_editor()

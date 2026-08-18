@@ -302,6 +302,24 @@ res://spinner.lh: @signal died is never emitted by name in its own body
 
 計算して得た名前（`emit(names[i], …)`）は「書かれていない」側に落ちる。
 
+**接続ダイアログは受け手の雛形を書く。** シグナルをメソッドに繋ぐとき、Godot が
+`_on_… = p^self^, … { }` を作って挿入する。引数の型は Godot のもので L^ のもの
+ではないので、共有している3つ（`int`/`float` → `number^`、`String` → `string^`、
+`bool` → `bool^`）だけ移し、残りは `any^` にする——知らない綴りを書くと検査が
+通らなくなり、消してから書き直す羽目になるため。
+
+**挿入先はファイルの末尾**で、そこは Godot の決めることである。`def^{ … }` で
+書いていると閉じ括弧の外に落ちるので、**`def^:`（02 の 14.13）で書けばそのまま
+収まる**——末尾が本体の終わりになる形である。
+
+```lhat
+@game
+public^let^ Spinner = Godot.Sprite2D..def^:
+    self^{ speed = 1 },
+    _ready = p^self^ { … },
+    # ダイアログが作るものはこの下に入る
+```
+
 登録してあるが**まだエンジン側の意味が無い**もの: `@rpc`。
 書いても検査は通り、何も起きない。
 
