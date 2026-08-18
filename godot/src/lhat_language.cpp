@@ -436,26 +436,35 @@ String LhatLanguage::_auto_indent_code(const String &code, int32_t from_line,
     return code;
 }
 
-// Which line writes this member, 1-based, or -1. A member of a def^ is a
-// name bound to a p^ or an f^ (14.3), so what is looked for is the name at
-// the head of a line with a '=' after it -- the same shape _make_function
-// writes. Read off the text rather than the tree: the editor asks while a
-// buffer is being typed into, and it asks often.
-int32_t LhatLanguage::_find_function(const String &function,
-                                     const String &code) const
+// Which line writes this member, 1-based, or -1. A member of a def^ is a name
+// bound to a p^ or an f^ (14.3), so what is looked for is the name at the
+// head of a line with a '=' after it -- the same shape _make_function writes.
+//
+// Read off the text rather than the tree: the line numbers have to agree with
+// the buffer being shown, and it is asked of a script that may not have
+// checked.
+int32_t lhat_member_line(const String &code, const String &member)
 {
     PackedStringArray lines = code.split("\n");
     for (int64_t i = 0; i < lines.size(); i++) {
         String bare = lines[i].strip_edges();
-        if (!bare.begins_with(function)) {
+        if (!bare.begins_with(member)) {
             continue;
         }
-        String after = bare.substr(function.length()).strip_edges();
-        if (after.begins_with("=")) {
+        String after = bare.substr(member.length()).strip_edges();
+        // 8.6 の 14.14改2: '=' is the recommended spelling and ':=' reads the
+        // same, so a member written either way is found.
+        if (after.begins_with("=") || after.begins_with(":=")) {
             return (int32_t)(i + 1);
         }
     }
     return -1;
+}
+
+int32_t LhatLanguage::_find_function(const String &function,
+                                     const String &code) const
+{
+    return lhat_member_line(code, function);
 }
 
 // One level of indentation, as the editor is set to write one.

@@ -608,10 +608,16 @@ String LhatScript::_get_class_icon_path() const
     return String();
 }
 
+// Where to put the caret when somebody asks to be taken to a member -- what
+// double-clicking a connection in the Node dock's signal list does.
+//
+// 14.3 writes a member as a name bound to a value, so what is looked for is
+// the name at the head of a line with an '=' after it. Read off the text
+// rather than the tree: the buffer being shown is what the line numbers have
+// to agree with, and it is asked of a script that may not have checked.
 int32_t LhatScript::_get_member_line(const StringName &member) const
 {
-    (void)member;
-    return -1;
+    return lhat_member_line(source, String(member));
 }
 
 // 02 の 18: @tool on the class a node wears. Additive rather than exclusive,
@@ -654,9 +660,55 @@ Variant LhatScript::_get_script_method_argument_count(
     return Variant();
 }
 
+// What the class declares that can be called, asked of the script rather than
+// of a node wearing it. The connect dialog reads it to offer the receivers a
+// signal could go to, and the Node dock to say which of them exist.
+//
+// From the tree: 14.3 has a member declared whether or not anything ran, and
+// this is asked of a script that has only been read. A member holding a p^ or
+// an f^ is what a caller can reach -- program.h's LhatUnitMember counts the
+// parameters a call writes, 13.4 having left self^ out of them.
 TypedArray<Dictionary> LhatScript::_get_script_method_list() const
 {
-    return TypedArray<Dictionary>();
+    TypedArray<Dictionary> out;
+    if (unit == nullptr || klass_name.is_empty()) {
+        return out;
+    }
+    CharString klass = klass_name.utf8();
+    size_t count = lhat_unit_member_count(unit, klass.get_data());
+    for (size_t i = 0; i < count; i++) {
+        LhatUnitMember member = lhat_unit_member(unit, klass.get_data(), i);
+        if (member.name == NULL) {
+            continue;
+        }
+        String name = String::utf8(member.name, (int)member.name_length);
+        if (!has_lhat_method(StringName(name))) {
+            continue;  // a field, not something to call
+        }
+
+        Array taken;
+        for (size_t at = 0; at < member.parameter_count; at++) {
+            LhatUnitParameter said =
+                lhat_unit_member_parameter(unit, klass.get_data(), i, at);
+            Dictionary one;
+            one["name"] = said.name != NULL
+                              ? String::utf8(said.name, (int)said.name_length)
+                              : String("arg") + String::num_int64((int64_t)at);
+            one["class_name"] = StringName();
+            one["type"] = Variant::NIL;
+            one["hint"] = PROPERTY_HINT_NONE;
+            one["hint_string"] = String();
+            one["usage"] = PROPERTY_USAGE_NIL_IS_VARIANT;
+            taken.push_back(one);
+        }
+
+        Dictionary info;
+        info["name"] = name;
+        info["args"] = taken;
+        info["flags"] = METHOD_FLAG_NORMAL;
+        out.push_back(info);
+    }
+    return out;
 }
 
 // What the class declares, asked of the script rather than of a node wearing

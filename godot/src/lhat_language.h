@@ -43,6 +43,11 @@ enum LhatWordKind {
 // to one before the comparison.
 LhatWordKind lhat_word_kind(const char *text, size_t length);
 
+// Which line of `code` writes the member `member`, 1-based, or -1. What a
+// jump-to-member lands on, and what the editor asks when it looks for a
+// function by name.
+int32_t lhat_member_line(const String &code, const String &member);
+
 // The spellings of one kind, NULL terminated, for a caller that has to name
 // them rather than recognise them.
 const char *const *lhat_words_of(LhatWordKind kind);
