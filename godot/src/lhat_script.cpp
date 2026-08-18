@@ -175,6 +175,7 @@ void LhatScript::let_go()
     runnable = false;
     tool_script = false;
     defaults.clear();
+    base_class = String();
 }
 
 Error LhatScript::_reload(bool keep_state)
@@ -265,9 +266,48 @@ Error LhatScript::_reload(bool keep_state)
 
     klass_name = name;
     runnable = true;
+    read_base_class();
     read_defaults();
     warn_about_signals();
     return OK;
+}
+
+// What engine class a node must be for this script to fit: the least one,
+// not the exact one. A class wrapping a Sprite2D goes on an
+// AnimatedSprite2D too, and Godot reads the answer as a floor.
+//
+// Written on the definition rather than read out of `Godot.Sprite2D..def^`:
+// the spelling is a name in L^ and says nothing about the engine, and only
+// the wrapper knows which class it stands for. 14.12 has a derived one write
+// override^ to replace it, and compile_def flattens the chain into one
+// table, so what is read here is the nearest one written.
+//
+// Empty for a definition carrying none -- one that wraps nothing -- and
+// _get_instance_base_type falls back to Object, which is every object and
+// so refuses nothing.
+void LhatScript::read_base_class()
+{
+    base_class = String();
+    if (!lhat_is_object_kind(klass, LHAT_OBJECT_TABLE)) {
+        return;
+    }
+    LhatValue key = lhat_nil();
+    if (!lhat_machine_make_string(machine, "gdBaseClass",
+                                  strlen("gdBaseClass"), &key)) {
+        return;
+    }
+    LhatValue said =
+        lhat_table_get((const LhatTable *)lhat_as_object(klass), key);
+    if (!lhat_is_object_kind(said, LHAT_OBJECT_STRING)) {
+        return;
+    }
+    const LhatString *text = (const LhatString *)lhat_as_object(said);
+    String named = String::utf8(text->text, (int)text->length);
+    // A name the engine does not have is worse than none: the editor would
+    // refuse the script everywhere rather than allow it anywhere.
+    if (ClassDB::class_exists(named)) {
+        base_class = named;
+    }
 }
 
 // One instance, made and thrown away, so that what a fresh one holds can be
@@ -543,12 +583,19 @@ bool LhatScript::_inherits_script(const Ref<Script> &script) const
     return false;
 }
 
-// 05 の 5.5 gives a unit no base to inherit from, so a script says nothing
-// about what it may be worn by. Object is every object, which is the honest
-// answer until a unit has a way to name what it is a script for.
+// What the definition said it wraps (read_base_class), which is what puts a
+// class in the Create Node dialog: that list is what derives from Node, and
+// a script answering Object is not a node however it is written.
+//
+// Object where nothing said. 05 の 5.5 gives a unit no base to inherit from,
+// so a definition wrapping nothing says nothing about what may wear it, and
+// every object is the honest floor.
 StringName LhatScript::_get_instance_base_type() const
 {
-    return runnable ? StringName("Object") : StringName();
+    if (!runnable) {
+        return StringName();
+    }
+    return StringName(base_class.is_empty() ? String("Object") : base_class);
 }
 
 StringName LhatScript::_get_doc_class_name() const

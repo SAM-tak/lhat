@@ -69,6 +69,16 @@ class LhatScript : public ScriptExtension {
     // engine only ever calls that one, and "what a fresh one holds" is what
     // the inspector's revert arrow means.
     Dictionary defaults;
+
+    // 14.12's gdBaseClass, where the definition wrote one: the least engine
+    // class a node must be for this script to fit. Empty for a definition
+    // wrapping nothing, and _get_instance_base_type answers Object then.
+    //
+    // Not the same question className() answers. That one says what a node
+    // actually is -- an AnimatedSprite2D wearing a class written for a
+    // Sprite2D answers the former -- and this one is the floor it has to
+    // clear.
+    String base_class;
     // 02 の 18: whether the class a node wears carried @tool rather than
     // @game. Read once when the class is found, since _is_tool is const and
     // asked often -- walking the tree each time would be walking it per frame.
@@ -127,6 +137,11 @@ public:
     // language's _get_global_class_name, which is what the editor asks
     // before it has loaded anything.
     String lhat_icon_path() const;
+
+private:
+    void read_base_class();
+
+public:
     void drop_instance(int64_t id);
     void read_defaults();
 

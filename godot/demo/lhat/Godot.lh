@@ -29,21 +29,23 @@ public^let^ Object = def^{
 		self^{ gdobj = obj }
 	},
 
-	isValid = f^self^ -> bool^ { return^ self^.gdobj.isValid() },
-	className = f^self^ -> string^ { return^ self^.gdobj.className() },
-	isClass = f^self^, name:string^ -> bool^ {
-		return^ self^.gdobj.isClass(name)
-	},
+	gdBaseClass = "Object",
+
+	isValid = f^self^ -> bool^ { self^.gdobj.isValid() },
+	className = f^self^ -> string^ { self^.gdobj.className() },
+	isClass = f^self^, name:string^ -> bool^ { self^.gdobj.isClass(name) },
 	emit = p^self^, name:string^, ... { self^.gdobj.emit(name, ...) }
 }
 
 public^let^ Node = Object..def^{
+	override^gdBaseClass = "Node",
 	getName = f^self^ -> string^ { return^ self^.gdobj.get("name") as^ string^ },
 	addChild = p^self^, child:godot.Object { self^.gdobj.call("add_child", child) },
 	queueFree = p^self^ { self^.gdobj.call("queue_free") },
 }
 
 public^let^ Node2D = Node..def^{
+	override^gdBaseClass = "Node2D",
 	getRotation = f^self^ -> number^ {
 		return^ self^.gdobj.get("rotation") as^ number^
 	},
@@ -53,6 +55,7 @@ public^let^ Node2D = Node..def^{
 }
 
 public^let^ Sprite2D = Node2D..def^{
+	override^gdBaseClass = "Sprite2D",
 	getFlipH = f^self^ -> bool^ { return^ self^.gdobj.get("flip_h") as^ bool^ },
 	setFlipH = p^self^, flipped:bool^ { self^.gdobj.set("flip_h", flipped) },
 }
