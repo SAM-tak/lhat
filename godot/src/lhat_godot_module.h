@@ -17,6 +17,9 @@
 #define LHAT_GODOT_MODULE_H
 
 #include <godot_cpp/classes/object.hpp>
+#include <godot_cpp/templates/list.hpp>
+#include <godot_cpp/variant/char_string.hpp>
+#include <godot_cpp/variant/variant.hpp>
 
 #include "lhat.h"
 
@@ -27,6 +30,17 @@ namespace host {
 // long as it does.
 struct Godot {
     const LhatHostDataTag *object_tag;
+
+    // A registered name is borrowed rather than copied
+    // (lhat_type_add_member keeps the pointer it is given), and the names
+    // and signatures of the value types are built rather than written out.
+    // So they are kept here, where they live as long as the program does.
+    List<CharString> texts;
+
+    // 05 の 8.9: one tag per value type, kept under the Variant kind it
+    // stands for -- so a host that has read a Variant can find the tag from
+    // the type it found. NULL where nothing was registered.
+    const LhatHostValueTag *value_tags[Variant::VARIANT_MAX] = {};
 };
 
 // Registers the module into `program`, before any checking (05 の 8.7).

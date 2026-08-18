@@ -267,6 +267,78 @@ public^let^ Spinner = Godot.Sprite2D..def^{
 の分類をそのまま使った。言語側は一覧を持たない——01 の 2 章 は
 ハット付きの語を一律に読み、知らない語を弾くのは意味解析である。
 
+### 数学の型は値である
+
+`Vector2` は数が2つ並んだだけのもので、ポインタも参照も、回収器が覗く必要の
+あるものも入っていない。**05 の 8.9 のホスト値**はまさにその形である
+——バイト列がそのまま機械のスタックに乗り、`v.x` はホスト呼び出しなしに
+読み書きし、算術はヒープを触らない。
+
+16 種すべてが在る:
+
+```lhat
+import^godot
+
+let^v = godot.vector2(3, 4)
+print($"{v} x={v.x}")            # (3.0, 4.0) x=3.0
+print($"{v + godot.vector2(1, 1)}  {v * 2}  {2 * v}  {-v}")
+
+let^r = godot.rect2(v, godot.vector2(30, 40))
+print($"{r.position()} {r.size()}")
+
+let^b = godot.basis(godot.vector3(1, 0, 0), godot.vector3(0, 1, 0), godot.vector3(0, 0, 1))
+print($"{b * godot.vector3(4, 5, 6)}")   # 基底をベクトルに適用
+```
+
+- **素の欄**（`Vector2` の `x`、`Color` の `r`、`Plane` の `d`）は
+  **直に読み書きできる**。8.9 の欄はバイト列への直アクセスで、呼び出しが挟まらない
+- **入れ子の部分**（`Rect2` の `position`、`Transform3D` の `basis`）は
+  **読むだけ**のメンバ（`r.position()`）。ホスト関数が受け取るのはバイト列の
+  控えなので、そこへ書いても呼び手には届かない。**変えるときは作り直す**
+  ——値型とはそういうものである
+- **等価はバイトで比べる**（`hostvalue_equal`）。`op^=` は要らない
+- 演算子はエンジンが持っているものだけ。回転（`Quaternion`）や変換
+  （`Transform2D` `Transform3D` `Basis` `Projection`）の `*` は成分ごとの積
+  ではなく、それぞれの意味の積である
+
+#### 持ち回るときは箱に入れる
+
+8.9 はホスト値を**表の要素・捕捉・`any^`・合併・`...`・`def^` のメンバ**から
+締め出す。フレームより長生きする場所には置けない。入るのは箱の方で、
+言語が型ごとに自動で与える（`godot.Vector2.Box^`）。
+
+```lhat
+@game
+public^let^Mover = Godot.Node2D..def^{
+    self^{ velocity = box^godot.vector2(0, 0) },
+
+    _process = p^self^, delta:number^{
+        let^v = self^.velocity.get()
+        self^.velocity.set(v * 0.99)
+    },
+}
+```
+
+#### ノードの欄は型ごとに読み書きする
+
+`get` / `set` は `any^` を運ぶので、ホスト値は運べない。だから型ごとに1組ある。
+
+```lhat
+let^at = self^.gdobj.getVector2("position")
+self^.gdobj.setVector2("position", at + godot.vector2(10, 0))
+self^.gdobj.setColor("modulate", godot.color(0, 1, 0, 1))
+```
+
+型がそこで決まるので、`Color` の欄を `Vector2` として読む間違いは**検査が
+その場で捕まえる**。別の型の欄を読めばエンジン自身の変換が答える
+（`Vector2` を `Vector3` として読めば z が 0 になる）。
+
+［補足］ **`call()` の可変長引数には入らない。** 8.9 が `...` から締め出す
+ので、値を引数に取るメソッドを `call` から呼ぶ道はまだ無い。
+
+［補足］ `RID`・`Callable`・`Signal`・`Packed*Array` はまだ無い。後の三者は
+内に参照を持つので、8.9 の値ではなく 8.8 のデータになる。
+
 ### エンジンに渡すことは注釈で書く
 
 02 の 18 の注釈は**構文木に括り付けられて残る**ので、実行しなくても読める。

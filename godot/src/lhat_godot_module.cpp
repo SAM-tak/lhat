@@ -8,6 +8,7 @@
 #include <godot_cpp/variant/utility_functions.hpp>
 #include <godot_cpp/variant/variant.hpp>
 
+#include "lhat_godot_values.h"
 #include "lhat_variant.h"
 
 namespace godot {
@@ -323,6 +324,13 @@ const Godot *register_godot(LhatProgram *program)
     // not about any object.
     if (!lhat_register_func(program, "godot", "isEditorHint", "f^ -> bool^;",
                             godot_is_editor_hint, module)) {
+        memdelete(module);
+        return nullptr;
+    }
+
+    // 05 の 8.9: the mathematical types, which are values rather than objects
+    // and so nothing the one hostdata type above could stand for.
+    if (!register_values(program, module)) {
         memdelete(module);
         return nullptr;
     }
