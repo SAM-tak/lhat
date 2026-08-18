@@ -77,10 +77,24 @@ let^A = def^{
     add = f^self^, rhs:Self^ -> Self^ { self^ },
     op^* = f^self^, rhs:number^{ class^.new(self^.a * rhs, self^.b * rhs) },
     overload^op^* = f^lhs:number^, self^{ class^.new(lhs * self^.a, lhs * self^.b) },
-    somestatic = p^{ print("aaa") }
+    somestatic = p^{ print("aaa") },
+    name = "A"
+}
+let^B = A..def^{
+    override^name = "B"
 }
 print(typeof^(A).signature)
-
+#[
+t^{
+    self^{
+        * : f^self^, number^ -> Self^; & f^number^, self^ -> Self^;,
+        a : number^, add : f^self^, Self^ -> Self^;,
+        b : number^
+    },
+    new : f^ -> Self^; & f^number^, number^ -> Self^; & f^number^ -> Self^;,
+    somestatic : p^;
+}
+]#
 let^aA = A.new(1, 3)
 print(typeof^(aA).signature)
 print(aA)
@@ -91,9 +105,11 @@ print(bA)
 let^cA = A.new()
 print(cA)
 
+let^aB = B.new()
+print("aB", aB)
+
 let^ATest = f^x:A, y { x * y }
 print(ATest(aA, 3))
-
 # let^ATest2 = f^x, y { x * y } # 期待通りエラー
 # several types here carry this operator and nothing says which is meant;
 # write one of the types the signature names, or narrow to it with isa^
@@ -156,6 +172,8 @@ let^App = AppBase..Logged
 let^app = App.new()
 app.run()
 print(app.n)
+print(App)
+print(typeof^(App).signature)
 
 let^isEven = f^x {
     for^let^x:number^ = x
