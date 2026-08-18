@@ -1,0 +1,15 @@
+[gd_scene format=3 uid="uid://b7cov227dboj4"]
+
+[ext_resource type="Script" uid="uid://dfrc5hayanig4" path="res://spinner.lh" id="1_f7cmv"]
+
+[sub_resource type="NoiseTexture2D" id="NoiseTexture2D_f7cmv"]
+
+[node name="Node2D" type="Node2D" unique_id=1504794398]
+
+[node name="Sprite2D" type="Sprite2D" parent="." unique_id=1416661047]
+position = Vector2(600, 306)
+rotation = 1179.4459
+texture = SubResource("NoiseTexture2D_f7cmv")
+script = ExtResource("1_f7cmv")
+
+[connection signal="script_changed" from="Sprite2D" to="Sprite2D" method="_on_script_changed"]

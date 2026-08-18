@@ -1,16 +1,6 @@
 [gd_scene format=3 uid="uid://bhi5i33lxjfy7"]
 
 [ext_resource type="Script" uid="uid://272pojjce8ag" path="res://main.gd" id="1_main"]
-[ext_resource type="Script" uid="uid://dfrc5hayanig4" path="res://spinner.lh" id="2_0xm2m"]
-
-[sub_resource type="NoiseTexture2D" id="NoiseTexture2D_ra2i3"]
 
 [node name="Main" type="Node" unique_id=640066778]
 script = ExtResource("1_main")
-
-[node name="Sprite2D" type="Sprite2D" parent="." unique_id=1910842124]
-position = Vector2(600, 306)
-rotation = 356.47543
-texture = SubResource("NoiseTexture2D_ra2i3")
-script = ExtResource("2_0xm2m")
-speed = 1
