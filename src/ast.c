@@ -315,6 +315,162 @@ uint32_t lhat_node_span_start(const LhatNode *node)
     return least;
 }
 
+#if LHAT_WITH_COMMENTS
+// The same moving cursor error.c writes with: `used` keeps growing past the
+// buffer so the caller can measure with a NULL one and ask again.
+typedef struct {
+    char *out;
+    size_t capacity;
+    size_t used;
+} DocWriter;
+
+static void doc_put(DocWriter *w, const char *text, size_t length)
+{
+    for (size_t i = 0; i < length; i++) {
+        if (w->out != NULL && w->used + 1 < w->capacity) {
+            w->out[w->used] = text[i];
+        }
+        w->used++;
+    }
+}
+
+// 01 の 6.4: whether a blank line stands between two places, which is what
+// ends a block. Go draws the line there and 6.4 names Go.
+//
+// A line has to be empty to be one. Counting newlines alone would take
+// 18.4's annotation for a gap: it is written between the block and what the
+// block is about, and lhat_node_visit_children does not walk one, so the
+// span begins under it and the '@' line stands in between.
+static bool blank_line_between(const char *source, uint32_t from, uint32_t to)
+{
+    bool after_newline = false;
+    bool empty = true;
+    for (uint32_t at = from; at < to; at++) {
+        char c = source[at];
+        if (c == '\n') {
+            if (after_newline && empty) {
+                return true;
+            }
+            after_newline = true;
+            empty = true;
+            continue;
+        }
+        if (c != ' ' && c != '\t' && c != '\r') {
+            empty = false;
+        }
+    }
+    return false;
+}
+
+// One comment as prose: '#[' … ']#' or '#' … end of line, with the markers
+// and the space around the text taken off. Answers false for one that says
+// nothing once stripped.
+static bool comment_text(const LhatComment *c, const char *source,
+                         size_t source_length, const char **out,
+                         size_t *out_length)
+{
+    if (c->end > source_length || c->offset >= c->end) {
+        return false;
+    }
+    const char *from = source + c->offset;
+    size_t span = c->end - c->offset;
+    if (span >= 2 && from[0] == '#' && from[1] == '[') {
+        from += 2;
+        span -= (span >= 4 ? 4 : 2);
+    } else if (span >= 1 && from[0] == '#') {
+        from += 1;
+        span -= 1;
+    }
+    while (span > 0 && (*from == ' ' || *from == '\t')) {
+        from++;
+        span--;
+    }
+    while (span > 0 && (from[span - 1] == ' ' || from[span - 1] == '\r' ||
+                        from[span - 1] == '\n')) {
+        span--;
+    }
+    *out = from;
+    *out_length = span;
+    return span > 0;
+}
+#endif  // LHAT_WITH_COMMENTS
+
+size_t lhat_node_documentation(const LhatNode *node, const char *source,
+                               size_t source_length, char *out,
+                               size_t capacity)
+{
+#if LHAT_WITH_COMMENTS
+    DocWriter w;
+    w.out = out;
+    w.capacity = capacity;
+    w.used = 0;
+
+    if (node == NULL || source == NULL) {
+        if (out != NULL && capacity > 0) {
+            out[0] = '\0';
+        }
+        return 0;
+    }
+
+    // Where the construct begins rather than where the node does: what was
+    // written above it is what stands before that.
+    uint32_t head = lhat_node_span_start(node);
+
+    // The run at the bottom, found on the way down -- a blank line starts
+    // the search over, so what is left when the walk reaches the node is the
+    // block directly above it.
+    const LhatComment *start = NULL;
+    const LhatComment *last = NULL;
+    for (const LhatComment *c = node->comments; c != NULL;
+         c = c->next_for_node) {
+        if (c->end > head) {
+            break;  // written after the construct began: a trailing one
+        }
+        if (last == NULL || blank_line_between(source, last->end, c->offset)) {
+            start = c;
+        }
+        last = c;
+    }
+    // A block with a blank line under it is not this thing's description --
+    // it was written about whatever came before the gap.
+    if (start == NULL || blank_line_between(source, last->end, head)) {
+        if (out != NULL && capacity > 0) {
+            out[0] = '\0';
+        }
+        return 0;
+    }
+
+    bool first = true;
+    for (const LhatComment *c = start; c != NULL; c = c->next_for_node) {
+        const char *text = NULL;
+        size_t length = 0;
+        if (comment_text(c, source, source_length, &text, &length)) {
+            if (!first) {
+                doc_put(&w, "\n", 1);
+            }
+            doc_put(&w, text, length);
+            first = false;
+        }
+        if (c == last) {
+            break;
+        }
+    }
+
+    if (w.out != NULL && w.capacity > 0) {
+        w.out[w.used < w.capacity ? w.used : w.capacity - 1] = '\0';
+    }
+    return w.used;
+#else
+    (void)node;
+    (void)source;
+    (void)source_length;
+    if (out != NULL && capacity > 0) {
+        out[0] = '\0';
+    }
+    return 0;
+#endif
+}
+
 const char *lhat_node_kind_name(LhatNodeKind kind)
 {
     switch (kind) {

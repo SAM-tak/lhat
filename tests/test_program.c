@@ -2469,6 +2469,143 @@ static void test_annotations(void)
     lhat_program_dispose(&program);
 }
 
+#if LHAT_WITH_COMMENTS
+// Asked twice: once to measure with no buffer and once to fill one, which is
+// the convention and has to answer the same either way.
+static void expect_documentation(const LhatUnit *unit, const char *definition,
+                                 const char *name, const char *want)
+{
+    char buffer[256];
+    size_t needed = lhat_unit_documentation(unit, definition, name, NULL, 0);
+    size_t filled =
+        lhat_unit_documentation(unit, definition, name, buffer, sizeof buffer);
+    LHAT_CHECK(needed == filled, "measured %zu, filled %zu", needed, filled);
+    LHAT_CHECK(needed == strlen(want), "wanted %zu bytes for \"%s\", said %zu",
+               strlen(want), want, needed);
+    LHAT_CHECK(strcmp(buffer, want) == 0, "got \"%s\", want \"%s\"", buffer,
+               want);
+}
+
+// 01 の 6.4: L^ has no spelling for a description -- the comment block
+// written directly above a thing is what it says about it, the way Go has
+// it. These are the four addresses a host reads one at, and the two rules
+// that say where a block begins and ends.
+static void test_documentation(void)
+{
+    LhatProgram program;
+    Disk disk;
+
+    static const File said[] = {
+        {"main.lh",
+         "# 在庫を扱う単位\n"
+         "# 二行目もその続き\n"
+         "module^ ns.main\n"
+         "\n"
+         "# 数えるもの\n"
+         "public^ let^ Thing = def^{\n"
+         "  self^{\n"
+         "    # 残り\n"
+         "    hp = 5,\n"
+         "  },\n"
+         "\n"
+         "  # ここから下は後で消す\n"
+         "\n"
+         "  # 進める\n"
+         "  go = p^self^ { },   # 行末の覚え書き\n"
+         "\n"
+         "  quiet = p^self^ { },\n"
+         "}\n"
+         "\n"
+         "#[ 上限 ]#\n"
+         "let^ cap = 9\n"},
+    };
+
+    LHAT_TEST("the block above a thing is what it says about itself");
+    {
+        program_with(&program, &disk, said, 1);
+        const LhatUnit *root = lhat_program_check(&program, "main.lh");
+        LHAT_CHECK(root != NULL, "the unit loaded");
+        LHAT_CHECK(!lhat_program_has_errors(&program), "and checked clean");
+
+        // The head of the file. attach_comments hands what stands before the
+        // first statement to that statement, so this is the module^ line's
+        // block and the unit's alike -- written once, at the head.
+        expect_documentation(root, NULL, NULL,
+                             "在庫を扱う単位\n二行目もその続き");
+
+        expect_documentation(root, "Thing", NULL, "数えるもの");
+        expect_documentation(root, "Thing", "hp", "残り");
+        expect_documentation(root, NULL, "cap", "上限");
+
+        // A blank line ends a block: the note two lines up was written about
+        // nothing that follows it, and the one left at the end of the line
+        // is a remark on that line rather than a description.
+        expect_documentation(root, "Thing", "go", "進める");
+
+        // And what has nothing above it says nothing -- the trailing comment
+        // belongs to the member whose line it ends.
+        expect_documentation(root, "Thing", "quiet", "");
+
+        // An address that names nothing answers the same way.
+        expect_documentation(root, "Thing", "nosuch", "");
+        expect_documentation(root, "Nosuch", NULL, "");
+    }
+    lhat_program_dispose(&program);
+
+
+    // 18.4 writes an annotation between the block and the thing it is about,
+    // and lhat_node_visit_children does not walk one -- so the span begins
+    // after it. What stands between is not a blank line for all that.
+    LHAT_TEST("an annotation between does not cut the block off");
+    {
+        static const File marked[] = {
+            {"main.lh",
+             "module^ ns.main\n"
+             "\n"
+             "# 回るスプライト\n"
+             "@game\n"
+             "public^ let^ Probe = def^{\n"
+             "  self^{\n"
+             "    # 一秒あたりの回転\n"
+             "    @export_range(0, 10) speed = 1,\n"
+             "  },\n"
+             "}\n"},
+        };
+        program_with(&program, &disk, marked, 1);
+        LHAT_CHECK(lhat_register_annotation(&program, "godot", "game",
+                                            LHAT_ANNOTATION_PUBLIC, NULL),
+                   "game");
+        LHAT_CHECK(lhat_register_annotation(&program, "godot", "export_range",
+                                            LHAT_ANNOTATION_FIELD,
+                                            "p^ number^, number^;"),
+                   "export_range");
+        const LhatUnit *root = lhat_program_check(&program, "main.lh");
+        LHAT_CHECK(root != NULL, "the unit loaded");
+        LHAT_CHECK(!lhat_program_has_errors(&program), "and checked clean");
+
+        expect_documentation(root, "Probe", NULL, "回るスプライト");
+        expect_documentation(root, "Probe", "speed", "一秒あたりの回転");
+    }
+    lhat_program_dispose(&program);
+
+    LHAT_TEST("and a buffer too small is filled as far as it goes");
+    {
+        program_with(&program, &disk, said, 1);
+        const LhatUnit *root = lhat_program_check(&program, "main.lh");
+        LHAT_CHECK(root != NULL, "the unit loaded");
+
+        char small[7];
+        size_t needed =
+            lhat_unit_documentation(root, "Thing", NULL, small, sizeof small);
+        LHAT_CHECK(needed == strlen("数えるもの"), "the whole length is said");
+        LHAT_CHECK(strlen(small) == sizeof small - 1, "and it is terminated");
+        LHAT_CHECK(memcmp(small, "数えるもの", sizeof small - 1) == 0,
+                   "with what fit");
+    }
+    lhat_program_dispose(&program);
+}
+#endif  // LHAT_WITH_COMMENTS
+
 int main(void)
 {
     // 8.9: before anything is taken, so the refusal above is about the order
@@ -2480,6 +2617,9 @@ int main(void)
     test_diagnostics();
     test_composing_across_units();
     test_annotations();
+#if LHAT_WITH_COMMENTS
+    test_documentation();
+#endif
     test_running();
     test_hosting();
     test_hostvalue_escape();

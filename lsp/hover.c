@@ -175,51 +175,26 @@ static void first_line(const LhatUnit *unit, const LhatNode *node,
     *length = span;
 }
 
-#if LHAT_WITH_COMMENTS
 // 01 の 6.4: the comment block written above a definition is what it says
-// about itself. The markers are stripped so the text reads as prose.
-static void append_comments(cJSON *lines, const LhatUnit *unit,
-                            const LhatNode *node)
+// about itself. There is one reading of it (ast.c), so what a hover shows and
+// what a host reads through lhat_unit_documentation cannot drift apart.
+static void append_documentation(cJSON *parts, const LhatUnit *unit,
+                                 const LhatNode *node)
 {
-    for (const LhatComment *c = node->comments; c != NULL;
-         c = c->next_for_node) {
-        uint32_t start = c->offset;
-        uint32_t end = c->end;
-        if (end > unit->source.length || start >= end) {
-            continue;
-        }
-        const char *from = unit->source.text + start;
-        size_t span = end - start;
-        // '#[' … ']#' or '#' … end of line.
-        if (span >= 2 && from[0] == '#' && from[1] == '[') {
-            from += 2;
-            span -= (span >= 4 ? 4 : 2);
-        } else if (span >= 1 && from[0] == '#') {
-            from += 1;
-            span -= 1;
-        }
-        while (span > 0 && (*from == ' ' || *from == '\t')) {
-            from++;
-            span--;
-        }
-        while (span > 0 && (from[span - 1] == ' ' || from[span - 1] == '\r' ||
-                            from[span - 1] == '\n')) {
-            span--;
-        }
-        if (span == 0) {
-            continue;
-        }
-        char *copy = (char *)malloc(span + 1);
-        if (copy == NULL) {
-            return;
-        }
-        memcpy(copy, from, span);
-        copy[span] = '\0';
-        cJSON_AddItemToArray(lines, cJSON_CreateString(copy));
-        free(copy);
+    size_t needed = lhat_node_documentation(node, unit->source.text,
+                                            unit->source.length, NULL, 0);
+    if (needed == 0) {
+        return;
     }
+    char *said = (char *)malloc(needed + 1);
+    if (said == NULL) {
+        return;
+    }
+    lhat_node_documentation(node, unit->source.text, unit->source.length, said,
+                            needed + 1);
+    cJSON_AddItemToArray(parts, cJSON_CreateString(said));
+    free(said);
 }
-#endif
 
 // 14.15: the member that is still a hole, in italics above the block. The
 // name is the one 14.11's refusal would name (LHAT_CHECK_ERR_STILL_ABSTRACT
@@ -359,11 +334,9 @@ cJSON *lsp_hover_for_unit(const LhatUnit *unit, uint32_t offset)
     cJSON_AddItemToArray(parts, cJSON_CreateString(fenced));
     free(fenced);
 
-#if LHAT_WITH_COMMENTS
     if (definition != NULL) {
-        append_comments(parts, unit, definition);
+        append_documentation(parts, unit, definition);
     }
-#endif
 
     // Joined with blank lines, which is how Markdown keeps them as paragraphs.
     size_t total = 0;

@@ -295,6 +295,31 @@ LhatUnitText lhat_unit_member_written_name(const LhatUnit *unit,
                                            const char *definition,
                                            size_t member, size_t at);
 
+// ---------------------------------------------------------------------------
+// 01 の 6.4: what a unit says about itself
+// ---------------------------------------------------------------------------
+
+// The comment block written directly above one thing, as prose. 6.4 settles
+// that L^ has no spelling for a description -- every comment is kept alike,
+// and the block above a thing is what it says about it, the way Go has it.
+// So this is where a host reads one, and there is nothing to write.
+//
+// `definition` and `name` address the same four things annotations do:
+//
+//   (NULL, NULL)   the unit itself -- the block at the head of the file
+//   (NULL, "x")    the top-level binding x
+//   ("D", NULL)    the binding that holds the definition D
+//   ("D", "hp")    the member or field hp of D
+//
+// A blank line ends a block, so a note left further up belongs to whatever
+// it was written under and not to what follows it.
+//
+// Follows lhat_report_write: answers how many bytes it wants, not counting
+// the terminating NUL, and fills up to `capacity` including it. So measuring
+// is a call with (NULL, 0).
+size_t lhat_unit_documentation(const LhatUnit *unit, const char *definition,
+                               const char *name, char *out, size_t capacity);
+
 
 // ---------------------------------------------------------------------------
 // 05 の 8.7: what the host provides

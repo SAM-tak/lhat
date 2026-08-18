@@ -511,6 +511,50 @@ LhatAnnotationArgument lhat_annotation_argument(LhatAnnotation annotation,
     return out;
 }
 
+// ---------------------------------------------------------------------------
+// 01 の 6.4: what a unit says about itself
+// ---------------------------------------------------------------------------
+
+// The node a description is read off, for the same four addresses the
+// annotation reader takes. Only the unit's own differs from that reader:
+// attach_comments hands what stands before the first statement to that
+// statement rather than to the root, so the block at the head of the file is
+// found there.
+static const LhatNode *unit_documented_node(const LhatUnit *unit,
+                                            const char *definition,
+                                            const char *name)
+{
+    if (unit == NULL || !unit->loaded || unit->parsed.root == NULL) {
+        return NULL;
+    }
+    if (definition == NULL && name == NULL) {
+        return unit->parsed.root->v.list.items;
+    }
+    if (definition == NULL) {
+        return unit_top_binding(unit, name);
+    }
+
+    const LhatNode *binding = unit_top_binding(unit, definition);
+    if (binding == NULL || name == NULL) {
+        return binding;
+    }
+    return definition_entry(unit, binding->v.binding.values, name);
+}
+
+size_t lhat_unit_documentation(const LhatUnit *unit, const char *definition,
+                               const char *name, char *out, size_t capacity)
+{
+    const LhatNode *node = unit_documented_node(unit, definition, name);
+    if (node == NULL) {
+        if (out != NULL && capacity > 0) {
+            out[0] = '\0';
+        }
+        return 0;
+    }
+    return lhat_node_documentation(node, unit->lexer.source->text,
+                                   unit->lexer.source->length, out, capacity);
+}
+
 
 // The entries of a definition and of its template, in written order, as one
 // run -- which is what a host asking "what does this class declare" wants.

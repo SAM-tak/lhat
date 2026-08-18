@@ -554,6 +554,24 @@ void lhat_node_visit_children(const LhatNode *node, LhatNodeVisitor visit,
 // construct while [n->offset, n->end) is only the part from the operator on.
 uint32_t lhat_node_span_start(const LhatNode *node);
 
+// 01 の 6.4: the comment block written directly above this node -- what the
+// language calls the thing's description, with the markers stripped so it
+// reads as prose and the lines joined by newlines.
+//
+// A blank line ends the block, which is Go's rule and the one 6.4 names: a
+// comment with a gap under it was written about whatever came before the
+// gap. A comment left at the end of the construct's own last line is not
+// part of it either -- split_comments hands a node both, and only what
+// stands above lhat_node_span_start is what it says about itself.
+//
+// Follows lhat_report_write: answers how many bytes it wants, not counting
+// the terminating NUL, and fills up to `capacity` including it. So measuring
+// is a call with (NULL, 0). Answers 0 where comments were not kept
+// (LHAT_WITH_COMMENTS), so no caller has to ask whether they were.
+size_t lhat_node_documentation(const LhatNode *node, const char *source,
+                               size_t source_length, char *out,
+                               size_t capacity);
+
 // 01 の 2.3: the hat is part of the name. A hat identifier's name is the
 // word plus one hat -- 'self^' is a different name from 'self' -- and a
 // spelling with more hats than one is that same name reached further out:
