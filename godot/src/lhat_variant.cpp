@@ -130,8 +130,9 @@ bool make_table_from(LhatMachine *machine, const Array &items,
         }
         // 02 の 14.1: the keys of a sequence start at one.
         bool refused = false;
-        if (!lhat_table_set(table, lhat_integer((int64_t)i + 1), held,
-                            &refused) ||
+        if (!lhat_machine_table_set(machine, table,
+                                    lhat_integer((int64_t)i + 1), held,
+                                    &refused) ||
             refused) {
             return false;
         }
@@ -157,7 +158,8 @@ bool make_table_from(LhatMachine *machine, const Dictionary &pairs,
         }
         // 04 の 11.3: nil^ means "not there", so it cannot also be a key.
         bool refused = false;
-        if (!lhat_table_set(table, key, held, &refused) || refused) {
+        if (!lhat_machine_table_set(machine, table, key, held, &refused) ||
+            refused) {
             return false;
         }
     }

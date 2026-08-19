@@ -468,7 +468,8 @@ bool LhatScript::make_instance(Object *owner, LhatValue *out, int64_t *id)
 
     LhatTable *table = (LhatTable *)lhat_as_object(instances);
     bool refused = false;
-    if (!lhat_table_set(table, lhat_integer(next_id), made.value, &refused) ||
+    if (!lhat_machine_table_set(machine, table, lhat_integer(next_id),
+                                made.value, &refused) ||
         refused) {
         return false;
     }
@@ -485,7 +486,8 @@ void LhatScript::drop_instance(int64_t id)
     // 04 の 11.3: storing nil^ is how a key stops being there.
     LhatTable *table = (LhatTable *)lhat_as_object(instances);
     bool refused = false;
-    lhat_table_set(table, lhat_integer(id), lhat_nil(), &refused);
+    lhat_machine_table_set(machine, table, lhat_integer(id), lhat_nil(),
+                           &refused);
 }
 
 // What the definition holds under this name, or nil^ where it holds nothing.

@@ -131,6 +131,21 @@ void lhat_machine_set_modules(LhatMachine *machine, const LhatModule *modules,
 // values belong to the machine and the collector has to see them.
 bool lhat_machine_make_table(LhatMachine *machine, LhatValue *out);
 
+// object.h's lhat_table_set with 5.12's barrier around it, which is what a
+// host writing into a table the machine already holds has to go through.
+//
+// The collector runs between instructions and no further, so a cycle can be
+// left half done when a run ends -- and a table that was marked before it
+// ended is black. A white value written into one of those with no barrier is
+// unreachable as far as the next step can see, and is swept while live. The
+// barrier is nothing at all when the table is young or no cycle is under way,
+// so there is no call site that has to know which it has.
+//
+// A table the host has just made and not handed over yet is the one case
+// that does not need this, and using it there costs nothing either.
+bool lhat_machine_table_set(LhatMachine *machine, LhatTable *table,
+                            LhatValue key, LhatValue value, bool *refused);
+
 // 13.7: `has_variadic` makes `parameters` a floor rather than an exact count,
 // so the registration's signature ended in '...' and a call may write more.
 // The extra arguments reach LhatHostFn as the tail of `arguments`, uncollected

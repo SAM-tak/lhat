@@ -1871,6 +1871,17 @@ bool lhat_machine_make_table(LhatMachine *machine, LhatValue *out)
     return true;
 }
 
+bool lhat_machine_table_set(LhatMachine *machine, LhatTable *table,
+                            LhatValue key, LhatValue value, bool *refused)
+{
+    bool ignored = false;
+    if (machine == NULL || table == NULL) {
+        return false;
+    }
+    return set_key(machine, table, key, value,
+                   refused != NULL ? refused : &ignored);
+}
+
 bool lhat_machine_make_host(LhatMachine *machine, LhatHostFn call,
                             void *context, uint8_t parameters,
                             bool has_variadic, bool takes_self, bool self_last,

@@ -101,7 +101,8 @@ GDExtensionBool instance_set(GDExtensionScriptInstanceDataPtr data,
         return false;
     }
     bool refused = false;
-    return lhat_table_set(table, key, held, &refused) && !refused;
+    return lhat_machine_table_set(machine, table, key, held, &refused) &&
+           !refused;
 }
 
 GDExtensionBool instance_get(GDExtensionScriptInstanceDataPtr data,

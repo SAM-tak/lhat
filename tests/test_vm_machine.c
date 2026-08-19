@@ -763,10 +763,91 @@ static void test_call_member(void)
     run_dispose(&r);
 }
 
+
+// 5.12: a host writing into a table the machine already holds is the one
+// write the collector never sees coming. A cycle only steps inside the
+// interpreter loop, so a run can end with the marking half done -- and a
+// table marked before it ended is black. object.h's lhat_table_set knows
+// nothing of a machine and can lay no barrier, which is why vm.h has its
+// own.
+static void test_host_table_write(void)
+{
+    Run r;
+
+    LHAT_TEST("5.12: what a host writes into a live table survives");
+    // A big enough heap that the collector has been round several times,
+    // which is the shape a host meets. Which phase a run happens to end in
+    // is nothing a caller can choose from out here -- so what this pins is
+    // the contract rather than the timing, and the invariant check
+    // LHAT_GC_PARANOID makes on every step is what would say the barrier had
+    // gone missing.
+    run_text(&r,
+             "var^ kept = { }\n"
+             "for^ i from^ 1 to^ 2000 { kept[i] := { a := i } }\n"
+             "return^ { held := kept, check := f^ {\n"
+             "  L^.collectgarbage()\n"
+             "  return^ kept[5000]\n"
+             "} }\n");
+    LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_OK);
+    {
+        LHAT_CHECK(lhat_machine_set_global(r.machine, "Held", r.ran.value),
+                   "the pair is rooted");
+        LhatValue held = member_of(r.ran.value, "held");
+        LHAT_CHECK(lhat_is_object_kind(held, LHAT_OBJECT_TABLE),
+                   "and the table is in it");
+
+        // Nothing but the table will hold this, so it is exactly what a
+        // missing barrier loses.
+        LhatValue mark = lhat_nil();
+        LHAT_CHECK(lhat_machine_make_string(r.machine, "the host wrote this",
+                                            19, &mark),
+                   "a value made outside any instruction");
+        bool refused = false;
+        LHAT_CHECK(lhat_machine_table_set(r.machine,
+                                          (LhatTable *)lhat_as_object(held),
+                                          lhat_integer(5000), mark, &refused),
+                   "written");
+        LHAT_CHECK(!refused, "and taken");
+
+        // Finishes the half-run cycle and then runs one from a standing
+        // start, which is where an unreached value would have been swept.
+        LhatRunResult after = lhat_machine_call(
+            r.machine, member_of(r.ran.value, "check"), NULL, 0);
+        LHAT_CHECK_EQ_INT(after.status, LHAT_RUN_OK);
+        LHAT_CHECK(lhat_is_object_kind(after.value, LHAT_OBJECT_STRING),
+                   "and it is still there afterwards");
+        if (lhat_is_object_kind(after.value, LHAT_OBJECT_STRING)) {
+            const LhatString *text =
+                (const LhatString *)lhat_as_object(after.value);
+            LHAT_CHECK_EQ_STR(text->text, text->length, "the host wrote this");
+        }
+    }
+    run_dispose(&r);
+
+    LHAT_TEST("and what it will not write");
+    run_text(&r, "return^ { }\n");
+    LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_OK);
+    {
+        LHAT_CHECK(lhat_machine_set_global(r.machine, "Held", r.ran.value),
+                   "rooted");
+        LhatTable *table = (LhatTable *)lhat_as_object(r.ran.value);
+        bool refused = false;
+        // 04 の 11.3: nil^ means "not there", so it cannot also be a key.
+        LHAT_CHECK(lhat_machine_table_set(r.machine, table, lhat_nil(),
+                                          lhat_integer(1), &refused),
+                   "a nil^ key is refused rather than failed");
+        LHAT_CHECK(refused, "and says so");
+        LHAT_CHECK(!lhat_machine_table_set(r.machine, NULL, lhat_integer(1),
+                                           lhat_integer(1), &refused),
+                   "and no table at all is a failure");
+    }
+    run_dispose(&r);
+}
 int main(void)
 {
     test_machine();
     test_call_member();
     test_collection();
+    test_host_table_write();
     return lhat_test_report("test_vm_machine");
 }

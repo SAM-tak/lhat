@@ -718,6 +718,10 @@ LhatValue lhat_table_get(const LhatTable *table, LhatValue key);
 // Storing nil^ removes the key, which is what keeps "absent" and "nil^" the
 // one answer 11.3 describes. Returns false only when out of memory; a key
 // that cannot be a key (nil^, or a NaN) is refused with `refused` set.
+//
+// No collector barrier: this file knows nothing of a machine. A host writing
+// into a table a machine holds goes through lhat_machine_table_set (vm.h)
+// instead, which is this with 5.12's barrier around it.
 bool lhat_table_set(LhatTable *table, LhatValue key, LhatValue value,
                     bool *refused);
 
