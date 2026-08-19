@@ -72,7 +72,7 @@ public^let^Request = def^{
         method = "",
         path = "",
         user : string^|nil^ = "",
-        body = {
+        body : Body = {
             total = 0,
         },
     }
