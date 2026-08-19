@@ -4181,10 +4181,19 @@ static LhatNode *parse_statement_after_annotations(Parser *p)
         lhat_node_append(&head, &tail, parse_target(p));
     }
 
-    if (check_op(p, LHAT_OP_REASSIGN)) {
+    // 8.6.4: '?:=' is the same statement with one more thing said about it,
+    // so it is read here rather than beside the compound spellings below --
+    // it stands for no operator, and everything the plain form allows (13.8's
+    // one value across several targets included) it allows too.
+    if (check_op(p, LHAT_OP_REASSIGN) || check_op(p, LHAT_OP_NIL_REASSIGN)) {
+        bool guarded = p->current.v.op == LHAT_OP_NIL_REASSIGN;
         LhatToken at = p->current;
         advance(p);
-        return parse_binding(p, LHAT_NODE_REASSIGN, &at, head);
+        LhatNode *node = parse_binding(p, LHAT_NODE_REASSIGN, &at, head);
+        if (node != NULL) {
+            node->v.binding.compound_nil_safe = guarded;
+        }
+        return node;
     }
 
     // 7.4: 'target op= value' is 'target := target op value' with target

@@ -768,6 +768,95 @@ static void test_nil_safe_compound(void)
     run_dispose(&r);
 }
 
+
+// 8.6.4's ninth spelling: 'a ?:= b' is 'if^ a? { a := b }'. Everything the
+// eight are pinned for above is asked of it again, since what changed is
+// only that no operator stands between the place and the value.
+static void test_nil_safe_assign(void)
+{
+    Run r;
+
+    LHAT_TEST("a place that is there is written");
+    run_text(&r, "var^ t = { 10, 20 }\nt[1] ?:= 5\nreturn^ t.1\n");
+    CHECK_INTEGER(&r, 5);
+    run_dispose(&r);
+
+    // The hole ':=' cannot answer: a plain write makes the key. This is the
+    // spelling that says "only what is already there".
+    LHAT_TEST("and one that is not there is not made");
+    run_text(&r,
+             "var^ t = { 10, 20 }\n"
+             "t[9] ?:= 5\n"
+             "return^ t.length^\n");
+    CHECK_INTEGER(&r, 2);
+    run_dispose(&r);
+
+    LHAT_TEST("a name is written the same way");
+    run_text(&r, "var^ x = 3\nx ?:= 7\nreturn^ x\n");
+    CHECK_INTEGER(&r, 7);
+    run_dispose(&r);
+
+    // 'b' is not evaluated where the place is absent -- the whole point of
+    // the branch being around the right-hand side rather than around the
+    // write alone.
+    LHAT_TEST("the right-hand side is not evaluated for an absent place");
+    run_text(&r,
+             "var^ log = { n = 0 }\n"
+             "var^ side = p^ -> number^ { log.n := log.n + 1  return^ 99 }\n"
+             "var^ t = { 10 }\n"
+             "t[9] ?:= side()\n"
+             "t[1] ?:= side()\n"
+             "return^ log.n\n");
+    CHECK_INTEGER(&r, 1);
+    run_dispose(&r);
+
+    // 8.6改's rule: the owner and the key are evaluated once, before the
+    // place is asked whether it is there.
+    LHAT_TEST("the key is evaluated once whether or not the place is there");
+    run_text(&r,
+             "var^ log = { n = 0 }\n"
+             "var^ at = p^ i:number^ -> number^ { log.n := log.n + 1  return^ i }\n"
+             "var^ t = { 10 }\n"
+             "t[at(1)] ?:= 5\n"
+             "t[at(9)] ?:= 5\n"
+             "return^ log.n\n");
+    CHECK_INTEGER(&r, 2);
+    run_dispose(&r);
+
+    LHAT_TEST("several targets are decided pair by pair");
+    run_text(&r,
+             "var^ p = { 1 }\n"
+             "var^ q = { }\n"
+             "p[1], q[9] ?:= 5, 5\n"
+             "return^ p[1] + q.length^\n");
+    CHECK_INTEGER(&r, 5);
+    run_dispose(&r);
+
+    // 13.8改: one value across several targets, which the eight refuse and
+    // this takes -- a plain assignment reads nothing of the place it writes.
+    LHAT_TEST("and a destructuring is decided position by position");
+    // 13.8改 sizes the run off the checker's stamp, so the tuple path is
+    // reached only by a program that was checked.
+    run_checked_text(&r,
+                     "var^ pair = p^ -> (number^, number^) { return^ 7, 8 }\n"
+                     "var^ a = { 1 }\n"
+                     "var^ b = { }\n"
+                     "a[1], b[9] ?:= pair()\n"
+                     "return^ a[1] + b.length^\n");
+    CHECK_INTEGER(&r, 7);
+    run_dispose(&r);
+
+    LHAT_TEST("with names taking both positions when both are there");
+    run_checked_text(&r,
+                     "var^ pair = p^ -> (number^, number^) { return^ 7, 8 }\n"
+                     "var^ c = 1\n"
+                     "var^ d = 2\n"
+                     "c, d ?:= pair()\n"
+                     "return^ c * 10 + d\n");
+    CHECK_INTEGER(&r, 78);
+    run_dispose(&r);
+}
+
 // 01 の 5.4: the lexer and the parser have read $"..." from the start; this
 // is what it compiles to. A hole is 02 の 14.17's tostring and the pieces
 // are joined with 11.2's '..', so interpolation adds no way of building a
@@ -1527,6 +1616,7 @@ int main(void)
     test_strings();
     test_tables();
     test_nil_safe_compound();
+    test_nil_safe_assign();
     test_interpolation();
     test_tostring();
     test_counting();

@@ -378,11 +378,13 @@ struct LhatNode {
             // concern, not a parse-time expansion.
             bool has_compound_op;
             LhatOpKind compound_op;
-            // 8.6改2. The '?' spellings: an absent place is left as it is,
-            // and the right-hand side is not evaluated either. Which plain
-            // operator it stands for is `compound_op` above -- the two
-            // spellings differ only in what happens when the place answers
-            // nil^, so nothing else here has to tell them apart.
+            // 8.6.4. The '?' spellings: an absent place is left as it is,
+            // and the right-hand side is not evaluated either. Set on '?:='
+            // too, where `has_compound_op` above is false -- a plain
+            // assignment stands for no operator, and what the '?' adds is
+            // the same thing it adds to the eight. Whether the place is
+            // written is all the two forms share, so nothing else here has
+            // to tell them apart.
             bool compound_nil_safe;
             // 02 の 18.4: what was written above this declaration. NULL when
             // nothing was. A list of LHAT_NODE_ANNOTATION.

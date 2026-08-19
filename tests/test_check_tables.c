@@ -525,6 +525,39 @@ static void test_nil_safe_compound(void)
                    "x += 1\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_OPERATOR_ON_MAYBE_NIL);
     unit_dispose(&u);
+
+    // 8.6.4's '?:=' asks nothing of the place -- it writes rather than reads,
+    // so there is no operator to be short of and nothing here to report. What
+    // it changes is which places get written, which only the machine sees.
+    LHAT_TEST("the plain nil-safe assignment checks like ':='");
+    check_text(&u, "var^ f = f^ -> t^{ ...:number^ } { return^ { 1 } }\n"
+                   "var^ t = f()\n"
+                   "t[1] ?:= 2\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("and takes a place that can never be absent, as the eight do");
+    check_text(&u, "var^ n = 1\n"
+                   "n ?:= 2\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // The value is held to what the place was declared to hold, exactly as a
+    // ':=' would be -- the '?' says when the write happens, not what fits.
+    LHAT_TEST("and the value still has to fit the place");
+    check_text(&u, "var^ f = f^ -> t^{ ...:number^ } { return^ { 1 } }\n"
+                   "var^ t = f()\n"
+                   "t[1] ?:= \"text\"\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
+    unit_dispose(&u);
+
+    // 8.9: a let^ binds a name nothing may write again, whichever spelling
+    // asks.
+    LHAT_TEST("and a let^ name refuses it the way it refuses ':='");
+    check_text(&u, "let^ n = 1\n"
+                   "n ?:= 2\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_ASSIGN_TO_LET);
+    unit_dispose(&u);
 }
 
 int main(void)

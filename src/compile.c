@@ -4724,6 +4724,21 @@ typedef struct {
     bool guarded;
 } PendingWrite;
 
+// 8.6.4: the place, read into a slot of its own for the test alone. An
+// indexed target reads back through the owner and key already evaluated --
+// compiling the target again would run both a second time, which is the very
+// thing 'a is read once' keeps from happening.
+static void read_place(Compiler *c, PendingWrite *w, const LhatNode *target)
+{
+    w->current = reserve(c);
+    if (w->indexed) {
+        emit(c,
+             lhat_encode_abc(LHAT_BC_GETINDEX, w->current, w->owner, w->key));
+        return;
+    }
+    compile_expression(c, target, w->current);
+}
+
 // 13.8: reads everything, then writes everything. Only reached with more than
 // one target -- see compile_reassign.
 static void compile_reassign_parallel(Compiler *c, const LhatNode *node)
@@ -4777,11 +4792,11 @@ static void compile_reassign_parallel(Compiler *c, const LhatNode *node)
         w->owner = 0;
         w->key = 0;
         w->current = 0;
-        // 8.6改2: only a compound spelling reads its place, so only one can
-        // be asked to leave it alone. 13.10's destructuring carries no
-        // operator, which is what `tuple_call` says here.
-        w->guarded = tuple_call == NULL && node->v.binding.compound_nil_safe &&
-                     node->v.binding.has_compound_op;
+        // 8.6.4: what the '?' says, whichever of the nine spellings carried
+        // it. The place is read for the test even where no operator wanted
+        // it read, 13.10's destructuring included -- '?:=' asks the same
+        // question of a target taking its value out of a tuple.
+        w->guarded = node->v.binding.compound_nil_safe;
 
         if (w->indexed) {
             // 05 の 8.9: a host value owner keeps its width, as in the
@@ -4826,11 +4841,17 @@ static void compile_reassign_parallel(Compiler *c, const LhatNode *node)
         }
 
         // 13.8改: the position sits in the run already, so the write pass
-        // reads it straight out -- no move of its own.
+        // reads it straight out -- no move of its own. There is nothing to
+        // skip evaluating here (the one call answered every position at
+        // once), so a '?:=' over a destructuring only reads its place and
+        // lets the write pass ask.
         if (tuple_call != NULL) {
             if (position > tuple_positions) {
                 fail(c, LHAT_COMPILE_TOO_COMPLEX);
                 return;
+            }
+            if (w->guarded) {
+                read_place(c, w, target);
             }
             w->value = (uint8_t)(run_head + position);
             continue;
@@ -4842,13 +4863,14 @@ static void compile_reassign_parallel(Compiler *c, const LhatNode *node)
         // 05 の 8.9: sized by the checker's stamp, so a host value rides the
         // two-pass exchange whole.
         w->value = reserve_for(c, value);
-        // 8.6改2: a name is read the same way its compound value would read
-        // it, into a slot of its own so the write pass can ask the question
-        // again without reaching the place a second time.
+        // 8.6.4: the place is read into a slot of its own so the write pass
+        // can ask the question again without reaching it a second time. An
+        // indexed target arrives here only from '?:=' -- the compound
+        // spellings were answered above, where the operator needed the same
+        // read.
         size_t past = SIZE_MAX;
         if (w->guarded) {
-            w->current = reserve(c);
-            compile_expression(c, target, w->current);
+            read_place(c, w, target);
             past = skip_when_absent(c, true, w->current, (int)w->value);
         }
         compile_expression(c, value, w->value);
@@ -5012,9 +5034,20 @@ static void compile_reassign(Compiler *c, const LhatNode *node)
                     c->next_register = mark;
                     return;
                 }
+                // 8.6.4: '?:=' reads the place through the owner and key
+                // just evaluated, for the test alone -- nothing here wants
+                // the value itself, which is what makes it not a compound.
+                size_t past = SIZE_MAX;
+                if (node->v.binding.compound_nil_safe) {
+                    uint8_t current = reserve(c);
+                    emit(c, lhat_encode_abc(LHAT_BC_GETINDEX, current, into,
+                                            key));
+                    past = skip_when_absent(c, true, current, -1);
+                }
                 uint8_t slot = reserve(c);
                 compile_expression(c, value, slot);
                 emit(c, lhat_encode_abc(LHAT_BC_SETINDEX, into, key, slot));
+                land_here(c, past);
             }
             c->next_register = mark;
             value = value->next;

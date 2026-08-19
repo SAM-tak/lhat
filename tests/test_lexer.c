@@ -653,7 +653,25 @@ static void test_operators(void)
     LHAT_CHECK_EQ_INT(token_count(&s), 8);
     scan_dispose(&s);
 
-    // 8.6改2: the same eight with a '?' in front. Longer than everything they
+    // 8.6.4: ':=' with a '?' in front, which is one token and not two. The
+    // table is longest-first, so the three characters win over the two.
+    LHAT_TEST("the nil-safe plain assignment is one token");
+    scan_text(&s, "t[k] ?:= 1  a := 2  x ? : y");
+    LHAT_CHECK(is_op(&s.tokens[4], LHAT_OP_NIL_REASSIGN), "expected ?:=");
+    LHAT_CHECK(is_op(&s.tokens[7], LHAT_OP_REASSIGN), "expected :=");
+    // The pieces still stand apart where they were written apart.
+    LHAT_CHECK(is_op(&s.tokens[10], LHAT_OP_PRESENT), "expected ?");
+    LHAT_CHECK(is_op(&s.tokens[11], LHAT_OP_COLON), "expected :");
+    LHAT_CHECK_EQ_INT(s.lexer.diagnostic_count, 0);
+    scan_dispose(&s);
+
+    LHAT_TEST("and reads the same written without spaces");
+    scan_text(&s, "a?:=b");
+    LHAT_CHECK(is_op(&s.tokens[1], LHAT_OP_NIL_REASSIGN), "expected ?:=");
+    LHAT_CHECK_EQ_INT(token_count(&s), 3);
+    scan_dispose(&s);
+
+    // 8.6.4: the same eight with a '?' in front. Longer than everything they
     // could be mistaken for, so each has to precede both its own plain
     // compound and the '?' forms -- "?..=" before "?.", "?**=" before "?*=".
     LHAT_TEST("nil-safe compound assignment operators");

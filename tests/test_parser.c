@@ -580,6 +580,51 @@ static void test_statements(void)
                       LHAT_PARSE_ERR_BINDING_ARITY);
     parse_dispose(&p);
 
+
+    // 8.6.4: '?:=' is the plain reassignment with the mark on it. There is no
+    // operator behind it, so the value stays the right-hand side as written
+    // -- which is what tells it from the eight above.
+    LHAT_TEST("the nil-safe plain assignment carries the mark and no operator");
+    parse_text(&p, "t[i] ?:= 1");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    {
+        const LhatNode *s = first_statement(&p);
+        LHAT_CHECK_EQ_INT(s->kind, LHAT_NODE_REASSIGN);
+        LHAT_CHECK(s->v.binding.compound_nil_safe, "expected the '?' mark");
+        LHAT_CHECK(!s->v.binding.has_compound_op, "and no operator behind it");
+        LHAT_CHECK_EQ_INT(s->v.binding.values->kind, LHAT_NODE_INT);
+    }
+    parse_dispose(&p);
+
+    LHAT_TEST("and ':=' does not carry it");
+    parse_text(&p, "t[i] := 1");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    LHAT_CHECK(!first_statement(&p)->v.binding.compound_nil_safe, "no mark");
+    parse_dispose(&p);
+
+    LHAT_TEST("it takes several targets");
+    parse_text(&p, "a, b ?:= 1, 2");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    {
+        const LhatNode *s = first_statement(&p);
+        LHAT_CHECK(s->v.binding.compound_nil_safe, "expected the '?' mark");
+        LHAT_CHECK_EQ_INT(lhat_node_list_length(s->v.binding.values), 2);
+    }
+    parse_dispose(&p);
+
+    // Unlike the eight: a compound reads the target it writes to, so a value
+    // it never saw cannot stand for one. A plain assignment reads nothing, so
+    // 13.8's one value across several targets is open to it.
+    LHAT_TEST("and one value across several targets, as ':=' does");
+    parse_text(&p, "a, b ?:= pair()");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    {
+        const LhatNode *s = first_statement(&p);
+        LHAT_CHECK(s->v.binding.compound_nil_safe, "expected the '?' mark");
+        LHAT_CHECK_EQ_INT(lhat_node_list_length(s->v.binding.targets), 2);
+        LHAT_CHECK_EQ_INT(lhat_node_list_length(s->v.binding.values), 1);
+    }
+    parse_dispose(&p);
     // 13.8改: several names take the values of one call apart, with no
     // mark at all -- 13.10 marked the table path, and both went together.
     LHAT_TEST("destructuring binding");
@@ -2714,6 +2759,19 @@ static void test_loop_clauses(void)
     if (p.result.diagnostic_count > 0) {
         LHAT_CHECK_EQ_INT(p.result.diagnostics[0].code,
                           LHAT_PARSE_ERR_COMPOUND_NOT_DEFINABLE);
+    }
+    parse_dispose(&p);
+
+    // 8.6.4: and 'op^?:=' has not even that much to point at -- assignment
+    // is not an operator, so it answers the way 'op^:=' does.
+    LHAT_TEST("and the plain nil-safe one is not an operator at all");
+    parse_text(&p,
+               "V := def^{ self^{}, op^?:= := f^self^, o:number^ -> number^ { "
+               "return^ o } }");
+    LHAT_CHECK(p.result.diagnostic_count > 0, "expected a diagnostic");
+    if (p.result.diagnostic_count > 0) {
+        LHAT_CHECK_EQ_INT(p.result.diagnostics[0].code,
+                          LHAT_PARSE_ERR_OPERATOR_NOT_DEFINABLE);
     }
     parse_dispose(&p);
 
