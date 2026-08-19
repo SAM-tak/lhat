@@ -2781,6 +2781,161 @@ static void test_annotation_exclusion(void)
     lhat_program_dispose(&program);
 }
 
+// 02 の 18.5.2: a name the host registered as half of something. Read on the
+// declaration the annotation is written above, which is what tells it from
+// the exclusion above -- that one is a file's to answer, this one a
+// declaration's.
+static void test_annotation_requisite(void)
+{
+    LhatProgram program;
+    Disk disk;
+
+    // 18.4改's target for both, so what varies between the cases below is
+    // only which of them is written and where.
+    static const File both[] = {
+        {"main.lh",
+         "module^ ns.main\n"
+         "@icon(\"res://x.svg\")\n"
+         "@class_name\n"
+         "public^ let^ A = def^{ }\n"}};
+
+    LHAT_TEST("18.5.2: a mark that needs another is taken beside it");
+    {
+        program_with(&program, &disk, both, 1);
+        LHAT_CHECK(registered_with(&program, "godot", "icon",
+                                   LHAT_ANNOTATION_PUBLIC, "p^ string^;"),
+                   "icon");
+        LHAT_CHECK(lhat_register_annotation(&program, "godot", "class_name",
+                                            LHAT_ANNOTATION_PUBLIC),
+                   "class_name");
+        LHAT_CHECK(lhat_register_annotation_requisite(&program, "icon",
+                                                      "class_name"),
+                   "icon needs class_name");
+        const LhatUnit *root = lhat_program_check(&program, "main.lh");
+        LHAT_CHECK(root != NULL && root->checked.diagnostic_count == 0,
+                   "checked clean");
+    }
+    lhat_program_dispose(&program);
+
+    LHAT_TEST("and refused without it");
+    {
+        static const File alone[] = {
+            {"main.lh",
+             "module^ ns.main\n"
+             "@icon(\"res://x.svg\")\n"
+             "public^ let^ A = def^{ }\n"}};
+        program_with(&program, &disk, alone, 1);
+        registered_with(&program, "godot", "icon", LHAT_ANNOTATION_PUBLIC,
+                        "p^ string^;");
+        lhat_register_annotation(&program, "godot", "class_name",
+                                 LHAT_ANNOTATION_PUBLIC);
+        lhat_register_annotation_requisite(&program, "icon", "class_name");
+        const LhatUnit *root = lhat_program_check(&program, "main.lh");
+        LHAT_CHECK(has_check_error(root, LHAT_CHECK_ERR_ANNOTATION_REQUISITE),
+                   "reported");
+        // The name the diagnostic carries is the one that is missing: the
+        // caret is already on what was written, and what a reader is short
+        // of is the other one.
+        LHAT_CHECK(root != NULL && root->checked.diagnostic_count == 1 &&
+                       root->checked.diagnostics[0].name_length == 10 &&
+                       memcmp(root->checked.diagnostics[0].name, "class_name",
+                              10) == 0,
+                   "and names what would have done");
+        LHAT_CHECK(root != NULL && root->checked.diagnostics[0].line == 2,
+                   "at the mark that was written");
+    }
+    lhat_program_dispose(&program);
+
+    // The point of reading the declaration rather than the file. Both marks
+    // are in the unit, and neither is beside the other.
+    LHAT_TEST("and the other half has to be on the same declaration");
+    {
+        static const File apart[] = {
+            {"main.lh",
+             "module^ ns.main\n"
+             "@icon(\"res://x.svg\")\n"
+             "public^ let^ A = def^{ }\n"
+             "@class_name\n"
+             "public^ let^ B = def^{ }\n"}};
+        program_with(&program, &disk, apart, 1);
+        registered_with(&program, "godot", "icon", LHAT_ANNOTATION_PUBLIC,
+                        "p^ string^;");
+        lhat_register_annotation(&program, "godot", "class_name",
+                                 LHAT_ANNOTATION_PUBLIC);
+        lhat_register_annotation_requisite(&program, "icon", "class_name");
+        const LhatUnit *root = lhat_program_check(&program, "main.lh");
+        LHAT_CHECK(has_check_error(root, LHAT_CHECK_ERR_ANNOTATION_REQUISITE),
+                   "reported, though both are in the file");
+    }
+    lhat_program_dispose(&program);
+
+    // One way only: what needs the other is the one refused. class_name on
+    // its own says something complete.
+    LHAT_TEST("and the one it needs does not need it back");
+    {
+        static const File named[] = {
+            {"main.lh",
+             "module^ ns.main\n"
+             "@class_name\n"
+             "public^ let^ A = def^{ }\n"}};
+        program_with(&program, &disk, named, 1);
+        registered_with(&program, "godot", "icon", LHAT_ANNOTATION_PUBLIC,
+                        "p^ string^;");
+        lhat_register_annotation(&program, "godot", "class_name",
+                                 LHAT_ANNOTATION_PUBLIC);
+        lhat_register_annotation_requisite(&program, "icon", "class_name");
+        const LhatUnit *root = lhat_program_check(&program, "main.lh");
+        LHAT_CHECK(root != NULL && root->checked.diagnostic_count == 0,
+                   "checked clean");
+    }
+    lhat_program_dispose(&program);
+
+    // Several may be said, and any one of them does. A host naming two ways
+    // to be complete is naming what would do, not a list to write out.
+    LHAT_TEST("and any one of several is enough");
+    {
+        static const File either[] = {
+            {"main.lh",
+             "module^ ns.main\n"
+             "@icon(\"res://x.svg\")\n"
+             "@global\n"
+             "public^ let^ A = def^{ }\n"}};
+        program_with(&program, &disk, either, 1);
+        registered_with(&program, "godot", "icon", LHAT_ANNOTATION_PUBLIC,
+                        "p^ string^;");
+        lhat_register_annotation(&program, "godot", "class_name",
+                                 LHAT_ANNOTATION_PUBLIC);
+        lhat_register_annotation(&program, "godot", "global",
+                                 LHAT_ANNOTATION_PUBLIC);
+        lhat_register_annotation_requisite(&program, "icon", "class_name");
+        lhat_register_annotation_requisite(&program, "icon", "global");
+        const LhatUnit *root = lhat_program_check(&program, "main.lh");
+        LHAT_CHECK(root != NULL && root->checked.diagnostic_count == 0,
+                   "the second one did");
+    }
+    lhat_program_dispose(&program);
+
+    LHAT_TEST("what the registration will and will not take");
+    {
+        program_with(&program, &disk, NULL, 0);
+        lhat_register_annotation(&program, "h", "one", LHAT_ANNOTATION_UNIT);
+        LHAT_CHECK(!lhat_register_annotation_requisite(&program, "nosuch",
+                                                       "one"),
+                   "a name that was never registered says nothing");
+        LHAT_CHECK(!lhat_register_annotation_requisite(&program, "one", "one"),
+                   "and nothing is its own other half");
+        // 18.2 keeps the namespace flat, so the other side is a name rather
+        // than a registration -- another host may be the one to bring it.
+        LHAT_CHECK(lhat_register_annotation_requisite(&program, "one",
+                                                      "unheard"),
+                   "but the other side need not be registered yet");
+        LHAT_CHECK(lhat_register_annotation_requisite(&program, "one",
+                                                      "unheard"),
+                   "and saying it twice is saying it once");
+    }
+    lhat_program_dispose(&program);
+}
+
 
 // 02 の 18.7改: which members a host may put its own value under. What is
 // written is an ordinary member with an ordinary signature -- the body is
@@ -2896,6 +3051,7 @@ int main(void)
     test_composing_across_units();
     test_annotations();
     test_annotation_exclusion();
+    test_annotation_requisite();
     test_empty_body();
 #if LHAT_WITH_COMMENTS
     test_documentation();

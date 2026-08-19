@@ -261,6 +261,15 @@ void lsp_host_config_apply(const LspHostConfig *config, LhatProgram *program)
                                                    other->valuestring);
             }
         }
+        // 18.5.2: and the names one of which has to stand beside it.
+        const cJSON *requisites =
+            cJSON_GetObjectItemCaseSensitive(entry, "requisites");
+        cJSON_ArrayForEach(other, requisites) {
+            if (cJSON_IsString(other) && other->valuestring != NULL) {
+                lhat_register_annotation_requisite(program, name,
+                                                   other->valuestring);
+            }
+        }
     }
 
     const cJSON *bindings =

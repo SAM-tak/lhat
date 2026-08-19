@@ -43,6 +43,13 @@ typedef struct LhatAnnotationDecl {
     // The names are the program's, and need not be registered themselves.
     const char **exclusives;
     size_t exclusive_count;
+    // 18.5.2: the names one of which has to stand beside this one, on the
+    // same declaration. The other side of the pair above: that one says two
+    // marks are one choice, this one says a mark is half of something.
+    // Written together is written together, so a name found elsewhere in the
+    // file is not one of these.
+    const char **requisites;
+    size_t requisite_count;
 } LhatAnnotationDecl;
 
 // 05 の 8.8 の isa^ 版: one hostdata type lhat_register_hostdata_type

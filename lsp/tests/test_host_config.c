@@ -82,7 +82,10 @@ static const char *const CONFIG =
     "    {\"module\": \"h\", \"name\": \"here\","
     " \"targets\": {\"binding\": true}},\n"
     "    {\"module\": \"h\", \"name\": \"there\","
-    " \"targets\": {\"binding\": true}, \"exclusives\": [\"here\"]}\n"
+    " \"targets\": {\"binding\": true}, \"exclusives\": [\"here\"]},\n"
+    // 18.5.2: half of something, and the other half is the one above.
+    "    {\"module\": \"h\", \"name\": \"half\","
+    " \"targets\": {\"binding\": true}, \"requisites\": [\"here\"]}\n"
     "  ],\n"
     "  \"bindings\": [\n"
     "    {\"name\": \"print\", \"member\": \"L^.print\"}\n"
@@ -204,6 +207,21 @@ static void test_round_trip(void)
     LHAT_TEST("and one of the pair on its own is what the pair is for");
     check_clean("annotation one of a pair",
                 "module^ m\n"
+                "@here\n"
+                "let^ x = 1\n");
+
+    // 18.5.2: the other column, and the other scope -- what a requisite asks
+    // is on the declaration, so this only shows up written together or not.
+    LHAT_TEST("a mark the dump said needs another is refused alone");
+    check_refused("annotation requisite",
+                  "module^ m\n"
+                  "@half\n"
+                  "let^ x = 1\n");
+
+    LHAT_TEST("and taken with it");
+    check_clean("annotation requisite met",
+                "module^ m\n"
+                "@half\n"
                 "@here\n"
                 "let^ x = 1\n");
 }

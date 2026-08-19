@@ -2420,6 +2420,37 @@ static bool chk_annotation_excluded(Checker *c,
     return false;
 }
 
+
+// 18.5.2: whether one of the names the host said this needs is written on
+// the same declaration. `list` is that declaration's annotations, which is
+// the whole of what "beside" means -- a name found elsewhere in the file is
+// somewhere else.
+//
+// Answers which one was wanted where none is there, so the diagnostic can
+// name it: the caret is already on what was written, and what a reader is
+// short of is the other one. Several may be said and any one of them does,
+// so the first is the one named.
+static const char *chk_annotation_missing(const LhatAnnotationDecl *found,
+                                          const LhatNode *list,
+                                          Checker *c)
+{
+    if (found->requisite_count == 0) {
+        return NULL;
+    }
+    for (size_t k = 0; k < found->requisite_count; k++) {
+        size_t wanted = strlen(found->requisites[k]);
+        for (const LhatNode *at = list; at != NULL; at = at->next) {
+            const char *name = NULL;
+            size_t length = 0;
+            if (chk_node_name(c, at->v.named.name, &name, &length) &&
+                length == wanted &&
+                memcmp(found->requisites[k], name, length) == 0) {
+                return NULL;
+            }
+        }
+    }
+    return found->requisites[0];
+}
 // 02 の 18.5: an annotation is only what the host registered, only where the
 // registration allows, and only with the arguments it declared. The three
 // are separate refusals because what a writer changes differs.
@@ -2478,6 +2509,18 @@ void chk_check_annotations(Checker *c, const LhatNode *list, uint32_t target)
             chk_report_named(c, at->v.named.name,
                              LHAT_CHECK_ERR_ANNOTATION_EXCLUSIVE, name,
                              length);
+            continue;
+        }
+
+        // 18.5.2: and what it has to stand beside. On this declaration --
+        // the list being walked is this declaration's -- so a mark that only
+        // works with another is refused where it was written rather than
+        // where its other half is not.
+        const char *missing = chk_annotation_missing(found, list, c);
+        if (missing != NULL) {
+            chk_report_named(c, at->v.named.name,
+                             LHAT_CHECK_ERR_ANNOTATION_REQUISITE, missing,
+                             strlen(missing));
             continue;
         }
 
@@ -2959,6 +3002,9 @@ const char *lhat_check_error_message(LhatCheckErrorCode code)
             return "this annotation and another written in this file are two "
                    "answers to one question: write whichever one applies, "
                    "not both";
+        case LHAT_CHECK_ERR_ANNOTATION_REQUISITE:
+            return "this annotation means nothing on its own, and the one it "
+                   "has to stand beside is missing";
         case LHAT_CHECK_ERR_ANNOTATION_ARGUMENTS:
             return "these are not the arguments the annotation was "
                    "registered with";

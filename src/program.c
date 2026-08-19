@@ -1713,6 +1713,35 @@ bool lhat_register_annotation_exclusive(LhatProgram *program,
     return true;
 }
 
+bool lhat_register_annotation_requisite(LhatProgram *program,
+                                        const char *name, const char *other)
+{
+    LhatAnnotationDecl *decl = annotation_named(program, name, NULL);
+    if (decl == NULL || other == NULL || strcmp(name, other) == 0) {
+        return false;  // nothing is its own other half
+    }
+    for (size_t i = 0; i < decl->requisite_count; i++) {
+        if (strcmp(decl->requisites[i], other) == 0) {
+            return true;  // said twice is said once
+        }
+    }
+
+    char *kept = duplicate(other);
+    const char **grown = (const char **)lhat_realloc(
+        (void *)decl->requisites,
+        (decl->requisite_count + 1) * sizeof *decl->requisites);
+    if (kept == NULL || grown == NULL) {
+        lhat_free(kept);
+        if (grown != NULL) {
+            decl->requisites = grown;
+        }
+        return false;
+    }
+    decl->requisites = grown;
+    decl->requisites[decl->requisite_count++] = kept;
+    return true;
+}
+
 bool lhat_register_func(LhatProgram *program, const char *module,
                         const char *name, const char *signature,
                         LhatHostFn call, void *context)
@@ -2181,6 +2210,10 @@ void lhat_program_dispose(LhatProgram *program)
             lhat_free((void *)program->annotations[i].exclusives[k]);
         }
         lhat_free((void *)program->annotations[i].exclusives);
+        for (size_t k = 0; k < program->annotations[i].requisite_count; k++) {
+            lhat_free((void *)program->annotations[i].requisites[k]);
+        }
+        lhat_free((void *)program->annotations[i].requisites);
     }
     lhat_free(program->annotations);
     lhat_free(program->annotation_signatures);
@@ -2847,6 +2880,19 @@ size_t lhat_program_dump_host_api(const LhatProgram *program, char *out,
                     dump_text(&w, ", ");
                 }
                 dump_string(&w, decl->exclusives[k]);
+            }
+            dump_text(&w, "]");
+        }
+        // 18.5.2: the same, and read back the same way. Both columns are
+        // left out where nothing was said, so a registration that has only
+        // targets to give writes only targets.
+        if (decl->requisite_count > 0) {
+            dump_text(&w, ", \"requisites\": [");
+            for (size_t k = 0; k < decl->requisite_count; k++) {
+                if (k > 0) {
+                    dump_text(&w, ", ");
+                }
+                dump_string(&w, decl->requisites[k]);
             }
             dump_text(&w, "]");
         }
