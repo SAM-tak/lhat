@@ -9,7 +9,7 @@ let^Godot = require^"lhat/Godot.lh"
 # くるくる回る
 #
 # 横滑りしながらくるくる回るだけ
-@game
+@game @export_class
 public^let^Spinner = Godot.Sprite2D..def^{
 	self^{
 		# 回転速度

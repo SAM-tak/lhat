@@ -50,3 +50,22 @@ public^let^ Sprite2D = Node2D..def^{
 	getFlipH = f^self^ -> bool^ { return^ self^.gdobj.get("flip_h") as^ bool^ },
 	setFlipH = p^self^, flipped:bool^ { self^.gdobj.set("flip_h", flipped) },
 }
+
+public^let^ Node3D = Node..def^{
+	override^gdBaseClass = "Node3D",
+	getRotation = f^self^ -> godot.Quaternion {
+		self^.gdobj.getQuaternion("rotation") as^ godot.Quaternion
+	},
+	setRotation = p^self^, radians:godot.Quaternion {
+		self^.gdobj.setQuaternion("rotation", radians)
+	},
+	getPosition = f^self^ -> godot.Vector3 {
+		self^.gdobj.getVector3("position")
+	},
+	setPosition = p^self^, at:godot.Vector3 {
+		self^.gdobj.setVector3("position", at)
+	},
+	getGlobalTransform = f^self^ -> godot.Transform3D {
+		self^.gdobj.getTransform3D("global_transform")
+	},
+}

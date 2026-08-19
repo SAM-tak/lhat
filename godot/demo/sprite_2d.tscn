@@ -5,12 +5,13 @@
 
 [node name="Node2D" type="Node2D" unique_id=1504794398]
 
-[node name="Sprite2D" type="Sprite2D" parent="." unique_id=1416661047]
-position = Vector2(600, 306)
+[node name="Spinner" type="Sprite2D" parent="." unique_id=1707680982]
+position = Vector2(551, 270)
 texture = ExtResource("1_mehiu")
 script = ExtResource("1_f7cmv")
-speed = 2
+speed = 3
 slideSpeed = 300
+metadata/_custom_type_script = "uid://dfrc5hayanig4"
 
-[connection signal="died" from="Sprite2D" to="Sprite2D" method="_on_died"]
-[connection signal="script_changed" from="Sprite2D" to="Sprite2D" method="_on_script_changed"]
+[connection signal="died" from="Spinner" to="Spinner" method="_on_died"]
+[connection signal="script_changed" from="Spinner" to="Spinner" method="_on_script_changed"]
