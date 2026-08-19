@@ -194,11 +194,17 @@ Dictionary LhatLanguage::_validate(const String &script, const String &path,
                                    bool validate_warnings,
                                    bool validate_safe_lines) const
 {
-    (void)validate_functions;
     (void)validate_warnings;
     (void)validate_safe_lines;
 
     Dictionary out;
+    // The members overview beside the code. Read off the text, so it is the
+    // buffer's lines that are listed -- and answered whether or not what
+    // follows finds the unit sound, since ScriptTextEditor::get_functions
+    // takes the list only when the whole answer says valid anyway.
+    if (validate_functions) {
+        out["functions"] = lhat_subroutine_lines(script);
+    }
 
     // The text, not the file -- the editor asks while the buffer is unsaved,
     // and for a script whose file does not exist yet.
@@ -442,29 +448,137 @@ String LhatLanguage::_auto_indent_code(const String &code, int32_t from_line,
     return code;
 }
 
-// Which line writes this member, 1-based, or -1. A member of a def^ is a name
-// bound to a p^ or an f^ (14.3), so what is looked for is the name at the
-// head of a line with a '=' after it -- the same shape _make_function writes.
+namespace {
+
+// The name a line binds, and what it binds it to. One pass over the text,
+// which is what both the outline and the jump-to-member want.
 //
-// Read off the text rather than the tree: the line numbers have to agree with
-// the buffer being shown, and it is asked of a script that may not have
-// checked.
+// Read off the text rather than the tree, for two reasons. The line numbers
+// have to agree with the buffer being shown, which the tree's do not while a
+// unit is being edited; and the editor asks with the buffer in hand rather
+// than the file, sometimes for a script that has never checked.
+struct Bound {
+    String name;
+    String value;  // what stands after the '=' or ':=', stripped
+    bool found = false;
+};
+
+// 8.6 and 14.12: what may lead a name before it is the name. The introducers
+// take a space or none (01 の 2.3 makes the hat part of the word, so
+// `public^let^Spinner` is three words with nothing between them), and the
+// three markers of 14.12 stand in the same place on a member.
+const char *const leading[] = {"public^",   "let^",      "var^",
+                               "override^", "overload^", "abstract^"};
+
+// Where the name ends. 01 の 2.3 keeps the hat in, and everything else that
+// can follow a name closes it.
+bool ends_name(char32_t c)
+{
+    return c == ' ' || c == '\t' || c == '=' || c == ':' || c == ',' ||
+           c == '(' || c == '{' || c == '#';
+}
+
+Bound bound_on(const String &line)
+{
+    Bound out;
+    String bare = line.strip_edges();
+    // 02 の 18.6: an annotation is written above the declaration it is about,
+    // and "above" is as often the same line. It is not the name, so it comes
+    // off -- with its arguments, which 18.3 keeps to literals and so to one
+    // pair of brackets.
+    while (bare.begins_with("@")) {
+        int at = 1;
+        while (at < bare.length() && !ends_name(bare[at])) {
+            at++;
+        }
+        if (at < bare.length() && bare[at] == '(') {
+            int depth = 0;
+            while (at < bare.length()) {
+                if (bare[at] == '(') {
+                    depth++;
+                } else if (bare[at] == ')' && --depth == 0) {
+                    at++;
+                    break;
+                }
+                at++;
+            }
+        }
+        String left = bare.substr(at).strip_edges();
+        if (left == bare) {
+            return out;  // nothing came off; an annotation and nothing else
+        }
+        bare = left;
+    }
+    bool again = true;
+    while (again) {
+        again = false;
+        for (const char *word : leading) {
+            if (bare.begins_with(word)) {
+                bare = bare.substr((int)strlen(word)).strip_edges();
+                again = true;
+                break;
+            }
+        }
+    }
+
+    int at = 0;
+    while (at < bare.length() && !ends_name(bare[at])) {
+        at++;
+    }
+    if (at == 0) {
+        return out;
+    }
+    String name = bare.substr(0, at);
+    String after = bare.substr(at).strip_edges();
+    // 14.14改2: '=' is the recommended spelling and ':=' reads the same.
+    if (after.begins_with(":=")) {
+        out.value = after.substr(2).strip_edges();
+    } else if (after.begins_with("=")) {
+        out.value = after.substr(1).strip_edges();
+    } else {
+        return out;
+    }
+    out.name = name;
+    out.found = true;
+    return out;
+}
+
+}  // namespace
+
+// Which line writes this member, 1-based, or -1. What a jump-to-member lands
+// on, and what the editor asks when it looks for a function by name.
 int32_t lhat_member_line(const String &code, const String &member)
 {
     PackedStringArray lines = code.split("\n");
     for (int64_t i = 0; i < lines.size(); i++) {
-        String bare = lines[i].strip_edges();
-        if (!bare.begins_with(member)) {
-            continue;
-        }
-        String after = bare.substr(member.length()).strip_edges();
-        // 8.6 の 14.14改2: '=' is the recommended spelling and ':=' reads the
-        // same, so a member written either way is found.
-        if (after.begins_with("=") || after.begins_with(":=")) {
+        Bound said = bound_on(lines[i]);
+        if (said.found && said.name == member) {
             return (int32_t)(i + 1);
         }
     }
     return -1;
+}
+
+// What the script editor lists down the side of the code (its members
+// overview), as "name:line" with the line 1-based -- the shape
+// ScriptLanguageExtension::validate reads out of the "functions" key.
+//
+// Subroutines only, which is the same choice GDScript makes: its outline is
+// the file's func declarations. A def^ member bound to anything else is a
+// field or a static constant (14.7改), and the inspector is where those are
+// read.
+PackedStringArray lhat_subroutine_lines(const String &code)
+{
+    PackedStringArray out;
+    PackedStringArray lines = code.split("\n");
+    for (int64_t i = 0; i < lines.size(); i++) {
+        Bound said = bound_on(lines[i]);
+        if (said.found &&
+            (said.value.begins_with("p^") || said.value.begins_with("f^"))) {
+            out.push_back(said.name + ":" + String::num_int64(i + 1));
+        }
+    }
+    return out;
 }
 
 int32_t LhatLanguage::_find_function(const String &function,

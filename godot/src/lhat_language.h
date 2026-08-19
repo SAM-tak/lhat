@@ -48,6 +48,10 @@ LhatWordKind lhat_word_kind(const char *text, size_t length);
 // function by name.
 int32_t lhat_member_line(const String &code, const String &member);
 
+// Every subroutine the text binds, as "name:line" with the line 1-based --
+// what the script editor lists down the side of the code.
+PackedStringArray lhat_subroutine_lines(const String &code);
+
 // The spellings of one kind, NULL terminated, for a caller that has to name
 // them rather than recognise them.
 const char *const *lhat_words_of(LhatWordKind kind);
