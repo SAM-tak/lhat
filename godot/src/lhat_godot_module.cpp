@@ -197,6 +197,54 @@ LhatValue godot_emit(LhatMachine *machine, void *context,
     return lhat_nil();
 }
 
+// 02 の 18.7改: the engine object a receiver stands for. A godot.Object
+// answers for itself; anything else is an instance of a class composed onto
+// Godot.Object, and 14.15's declared field is where that class keeps the
+// object -- the same `self^.gdobj` a hand-written body reaches through.
+Object *engine_object_of(LhatMachine *machine, LhatValue self,
+                         const Godot *module)
+{
+    Object *direct = object_of(self, module);
+    if (direct != nullptr || !lhat_is_object_kind(self, LHAT_OBJECT_TABLE)) {
+        return direct;
+    }
+    // Made per call, the way instance_get and instance_set make theirs: a
+    // key kept between calls would be a value with no root, and the
+    // collector reaches nothing a host holds.
+    LhatValue key = lhat_nil();
+    if (!lhat_machine_make_string(machine, "gdobj", 5, &key)) {
+        return nullptr;
+    }
+    const LhatTable *table = (const LhatTable *)lhat_as_object(self);
+    return object_of(lhat_table_get(table, key), module);
+}
+
+// What an empty-bodied @signal member is filled with. The same road
+// godot_emit takes, with the name coming from the registration rather than
+// from an argument -- which is the whole of what writing the body did.
+LhatValue signal_emit(LhatMachine *machine, void *context,
+                      const LhatValue *arguments, size_t count)
+{
+    const SignalEmitter *emitter = (const SignalEmitter *)context;
+    if (emitter == nullptr || count == 0) {
+        return lhat_nil();
+    }
+    Object *object = engine_object_of(machine, arguments[0], emitter->module);
+    if (object == nullptr) {
+        return gone("emit", arguments[0], emitter->module);
+    }
+
+    // 13.4 leaves self^ out of what a caller writes, and arguments[0] is it,
+    // so the signal's arguments are the rest.
+    Array passed;
+    passed.push_back(emitter->name);
+    for (size_t i = 1; i < count; i++) {
+        passed.push_back(to_variant(arguments[i], emitter->module));
+    }
+    object->callv("emit_signal", passed);
+    return lhat_nil();
+}
+
 // 05 の 8.8: registering this is what makes the box the host's to hand over
 // and L^'s to give back.
 LhatValue godot_dispose(LhatMachine *machine, void *context,
@@ -386,6 +434,21 @@ Object *object_of(LhatValue value, const Godot *module)
     }
     return resolve(
         (const Handle *)lhat_hostdata_pointer(value, module->object_tag));
+}
+
+bool make_signal_emitter(LhatMachine *machine, const SignalEmitter *emitter,
+                         uint8_t parameters, bool variadic, LhatValue *out)
+{
+    if (machine == nullptr || emitter == nullptr) {
+        return false;
+    }
+    // 14.4: reached through an instance, so it is handed a receiver -- which
+    // is what makes it stand in for the member it replaces rather than for a
+    // static one. Nothing is registered under an overloaded name here, so the
+    // parameter types a search would ask for are left unbuilt (14.12).
+    return lhat_machine_make_host(machine, signal_emit, (void *)emitter,
+                                  parameters, variadic, /*takes_self=*/true,
+                                  /*self_last=*/false, nullptr, out);
 }
 
 }  // namespace host

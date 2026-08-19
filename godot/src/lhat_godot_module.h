@@ -19,6 +19,7 @@
 #include <godot_cpp/classes/object.hpp>
 #include <godot_cpp/templates/list.hpp>
 #include <godot_cpp/variant/char_string.hpp>
+#include <godot_cpp/variant/string_name.hpp>
 #include <godot_cpp/variant/variant.hpp>
 
 #include "lhat.h"
@@ -62,6 +63,26 @@ bool make_object(LhatMachine *machine, const Godot *module, Object *object,
 // The object a value of godot.Object stands for, or NULL when the value is
 // not one of ours, stands for nothing, or names something already freed.
 Object *object_of(LhatValue value, const Godot *module);
+
+// 02 の 18.7改: what a member marked @signal with an empty body is filled
+// with. The name it emits and the module it converts arguments through --
+// one of these per such member, made when a script is read and living as
+// long as the machine holding the value that points at it.
+struct SignalEmitter {
+    const Godot *module = nullptr;
+    StringName name;
+};
+
+// The value to put under that member's name: called like the member it
+// replaces (`parameters` is what a caller writes, self^ not among them --
+// 13.4), it emits `emitter`'s name off the receiver with whatever it was
+// handed. The receiver is an instance of a class composed onto Godot.Object,
+// so the engine object comes off its gdobj field.
+//
+// `emitter` is borrowed and has to outlive the value. False only when the
+// machine ran out of memory.
+bool make_signal_emitter(LhatMachine *machine, const SignalEmitter *emitter,
+                         uint8_t parameters, bool variadic, LhatValue *out);
 
 }  // namespace host
 }  // namespace godot

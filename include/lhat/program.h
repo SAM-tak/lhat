@@ -242,6 +242,13 @@ typedef struct {
     const char *name;  // borrowed; NULL when there is no such one
     size_t name_length;
     bool declared;  // 14.15: written with a type and no value
+    // 18.7改: written as an f^ or p^ whose body holds no statement. Not a
+    // declaration -- there is a value, and its type is read off the
+    // signature the same way as any other member's. It is the one spelling a
+    // writer has for "there is nothing here for the language to run", which
+    // is what lets a host put its own value under the name without any of
+    // what was written going quietly unrun.
+    bool empty_body;
     // How many parameters it wrote, read off a written signature or off the
     // f^ / p^ the member holds. 13.4 makes self^ none of them, so a receiver
     // is not counted -- what is here is what a call writes.

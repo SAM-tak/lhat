@@ -2781,6 +2781,109 @@ static void test_annotation_exclusion(void)
     lhat_program_dispose(&program);
 }
 
+
+// 02 の 18.7改: which members a host may put its own value under. What is
+// written is an ordinary member with an ordinary signature -- the body is
+// where it says there is nothing to run.
+static void test_empty_body(void)
+{
+    LhatProgram program;
+    Disk disk;
+
+    static const File shapes[] = {
+        {"main.lh",
+         "module^ ns.main\n"
+         "public^ let^ Thing = def^{\n"
+         "  self^{ hp = 1 },\n"
+         "  hollow = p^self^, message:string^ { },\n"
+         "  written = p^self^, message:string^ { self^.hp := 1 },\n"
+         "  abstract^ waiting : p^string^;,\n"
+         "  plain = 5,\n"
+         "}\n"}};
+
+    LHAT_TEST("18.7改: an empty body is what the tree says about it");
+    {
+        program_with(&program, &disk, shapes, 1);
+        const LhatUnit *unit = lhat_program_check(&program, "main.lh");
+        LHAT_CHECK(unit != NULL && !lhat_program_has_errors(&program),
+                   "checked clean");
+
+        size_t count = lhat_unit_member_count(unit, "Thing");
+        bool saw_hollow = false;
+        bool saw_written = false;
+        bool saw_waiting = false;
+        bool saw_plain = false;
+        for (size_t i = 0; i < count; i++) {
+            LhatUnitMember member = lhat_unit_member(unit, "Thing", i);
+            if (member.name == NULL) {
+                continue;
+            }
+            if (member.name_length == 6 &&
+                memcmp(member.name, "hollow", 6) == 0) {
+                saw_hollow = true;
+                LHAT_CHECK(member.empty_body, "the empty one is said to be");
+                LHAT_CHECK(!member.declared,
+                           "and is not a declaration -- it has a value");
+                // The signature is read the way any member's is, which is
+                // the whole point of writing it as one.
+                LHAT_CHECK_EQ_INT(member.parameter_count, 1);
+                LhatUnitParameter said =
+                    lhat_unit_member_parameter(unit, "Thing", i, 0);
+                LHAT_CHECK_EQ_STR(said.name, said.name_length, "message");
+                LHAT_CHECK_EQ_INT(said.type, LHAT_UNIT_TYPE_STRING);
+            } else if (member.name_length == 7 &&
+                       memcmp(member.name, "written", 7) == 0) {
+                saw_written = true;
+                LHAT_CHECK(!member.empty_body, "a body of one statement is a "
+                                               "body");
+            } else if (member.name_length == 7 &&
+                       memcmp(member.name, "waiting", 7) == 0) {
+                saw_waiting = true;
+                // 14.15 has no value at all, so there is no body to be empty.
+                LHAT_CHECK(member.declared, "the declaration is one");
+                LHAT_CHECK(!member.empty_body, "and is not this");
+            } else if (member.name_length == 5 &&
+                       memcmp(member.name, "plain", 5) == 0) {
+                saw_plain = true;
+                LHAT_CHECK(!member.empty_body,
+                           "and neither is a member holding a value");
+            }
+        }
+        LHAT_CHECK(saw_hollow && saw_written && saw_waiting && saw_plain,
+                   "all four were walked");
+    }
+    lhat_program_dispose(&program);
+
+    // 10.1 lets a body outside a loop carry finally^, and one written there
+    // is written -- so both halves of the list are asked.
+    LHAT_TEST("and a body carrying only a clause is not empty");
+    {
+        static const File clause[] = {
+            {"main.lh",
+             "module^ ns.main\n"
+             "public^ let^ Thing = def^{\n"
+             "  self^{ hp = 1 },\n"
+             "  guarded = p^self^ { finally^: self^.hp := 2 },\n"
+             "}\n"}};
+        program_with(&program, &disk, clause, 1);
+        const LhatUnit *unit = lhat_program_check(&program, "main.lh");
+        LHAT_CHECK(unit != NULL && !lhat_program_has_errors(&program),
+                   "checked clean");
+        size_t count = lhat_unit_member_count(unit, "Thing");
+        bool saw = false;
+        for (size_t i = 0; i < count; i++) {
+            LhatUnitMember member = lhat_unit_member(unit, "Thing", i);
+            if (member.name != NULL && member.name_length == 7 &&
+                memcmp(member.name, "guarded", 7) == 0) {
+                saw = true;
+                LHAT_CHECK(!member.empty_body, "the clause is a body");
+            }
+        }
+        LHAT_CHECK(saw, "the member was walked");
+    }
+    lhat_program_dispose(&program);
+}
+
 int main(void)
 {
     // 8.9: before anything is taken, so the refusal above is about the order
@@ -2793,6 +2896,7 @@ int main(void)
     test_composing_across_units();
     test_annotations();
     test_annotation_exclusion();
+    test_empty_body();
 #if LHAT_WITH_COMMENTS
     test_documentation();
 #endif

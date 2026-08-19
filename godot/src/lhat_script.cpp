@@ -255,6 +255,71 @@ void LhatScript::let_go()
     tool_script = false;
     defaults.clear();
     base_class = String();
+    // 18.7改: the values pointing at these died with the machine above.
+    for (host::SignalEmitter *emitter : emitters) {
+        memdelete(emitter);
+    }
+    emitters.clear();
+}
+
+// 02 の 18.7改: a member marked @signal whose body is empty says there is
+// nothing here for the language to run, and this is the host taking it up.
+// What goes under the name emits the member's own name off the receiver,
+// with the arguments the member declares -- which is the one line every such
+// body was written as, and the one line every such body could get wrong.
+//
+// A member that wrote a body keeps it. What replaces a value has to be what
+// nothing was written for, or a reader would be looking at code that does
+// not run.
+void LhatScript::fill_signals()
+{
+    if (unit == nullptr || !lhat_is_object_kind(klass, LHAT_OBJECT_TABLE)) {
+        return;
+    }
+    CharString spelt = klass_name.utf8();
+    LhatTable *table = (LhatTable *)lhat_as_object(klass);
+    size_t count = lhat_unit_member_count(unit, spelt.get_data());
+    for (size_t i = 0; i < count; i++) {
+        LhatUnitMember member = lhat_unit_member(unit, spelt.get_data(), i);
+        if (member.name == NULL || !member.empty_body) {
+            continue;
+        }
+        StringName name(String::utf8(member.name, (int)member.name_length));
+        if (!signal_member(name, nullptr)) {
+            continue;  // an empty body says nothing on its own
+        }
+
+        // 13.7: a '...' tail makes the count a floor rather than an exact
+        // number, the same way a registration's signature would.
+        bool variadic = false;
+        for (size_t a = 0; a < member.parameter_count; a++) {
+            variadic = variadic || lhat_unit_member_parameter(
+                                       unit, spelt.get_data(), i, a)
+                                       .variadic;
+        }
+
+        host::SignalEmitter *emitter = memnew(host::SignalEmitter);
+        emitter->module = units.godot;
+        emitter->name = name;
+
+        LhatValue emit = lhat_nil();
+        bool refused = false;
+        LhatValue key = lhat_nil();
+        if (!host::make_signal_emitter(machine, emitter,
+                                       (uint8_t)member.parameter_count,
+                                       variadic, &emit) ||
+            !lhat_machine_make_string(machine, member.name, member.name_length,
+                                      &key) ||
+            !lhat_machine_table_set(machine, table, key, emit, &refused) ||
+            refused) {
+            memdelete(emitter);
+            UtilityFunctions::push_error(
+                host::problem(get_path(), String("could not fill @signal ") +
+                                              String(name)));
+            return;
+        }
+        emitters.push_back(emitter);
+    }
 }
 
 Error LhatScript::_reload(bool keep_state)
@@ -346,6 +411,7 @@ Error LhatScript::_reload(bool keep_state)
     klass_name = name;
     runnable = true;
     read_base_class();
+    fill_signals();
     read_defaults();
     warn_about_signals();
     // The editor is showing a list built from the text before this one.
@@ -1009,6 +1075,11 @@ void LhatScript::warn_about_signals() const
     for (size_t i = 0; i < count; i++) {
         LhatUnitMember member = lhat_unit_member(unit, klass.get_data(), i);
         if (member.name == NULL) {
+            continue;
+        }
+        // 18.7改: an empty body is fill_signals' to fill, so there is no
+        // body left to have drifted from anything.
+        if (member.empty_body) {
             continue;
         }
         String spelt = String::utf8(member.name, (int)member.name_length);

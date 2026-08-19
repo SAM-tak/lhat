@@ -28,6 +28,7 @@
 #include <godot_cpp/variant/typed_array.hpp>
 
 #include "lhat.h"
+#include "lhat_godot_module.h"  // SignalEmitter, one per filled-in @signal
 #include "lhat_host.h"
 
 namespace godot {
@@ -113,7 +114,14 @@ class LhatScript : public ScriptExtension {
     // there is nothing in it that reads the script again.
     LocalVector<void *> placeholders;
 
+    // 02 の 18.7改: one per @signal member this script filled in, holding the
+    // name that member emits. The value in the definition table points at
+    // one of these, so they live exactly as long as the machine does --
+    // let_go frees them where it disposes it.
+    LocalVector<host::SignalEmitter *> emitters;
+
     void let_go();
+    void fill_signals();
 
 protected:
     static void _bind_methods();
