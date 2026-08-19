@@ -4055,7 +4055,7 @@ static LhatType *infer_node(Checker *c, const LhatNode *node);
 LhatType *chk_infer(Checker *c, const LhatNode *node)
 {
     LhatType *type = infer_node(c, node);
-    // 8.6改2: the place a '?op=' reads answers what is there. 04 の 11.3 puts
+    // 8.6.4: the place a '?op=' reads answers what is there. 04 の 11.3 puts
     // a nil^ arm on everything a key reaches, and the '?' spelling is how a
     // writer says the write is skipped rather than that the arm is gone --
     // so the operator above this is asked of the rest, and the compiler emits

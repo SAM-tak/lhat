@@ -673,7 +673,7 @@ static void test_tables(void)
     run_dispose(&r);
 }
 
-// 8.6改2: 'a ?op= b' is 'if^ a? { a op= b }' with the place read once. What
+// 8.6.4: 'a ?op= b' is 'if^ a? { a op= b }' with the place read once. What
 // is pinned here is the run-time half of that -- the checker's half is in
 // test_check_tables.
 static void test_nil_safe_compound(void)

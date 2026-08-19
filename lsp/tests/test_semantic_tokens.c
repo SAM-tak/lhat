@@ -439,7 +439,7 @@ static void test_compound_assignment_is_one_token(void)
     // The parser expands 'want[d] ?+= 1' into the reassignment and the
     // 'want[d] + 1' standing behind it, so the tree carries both spans --
     // but the source says each name once, and 7.4改 reads the target once.
-    // 8.6改2 is how counting into a table is written, 04 の 11.3 making
+    // 8.6.4 is how counting into a table is written, 04 の 11.3 making
     // 'want[d]' a 'number^|nil^'.
     static const char *source =
         "var^ want = { 1, 2 }\n"

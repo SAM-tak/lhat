@@ -1236,7 +1236,7 @@ static LhatNode *parse_def(Parser *p)
                 LhatParseErrorCode why = LHAT_PARSE_ERR_OPERATOR_NOT_DEFINABLE;
                 if (symbol.kind == LHAT_TOKEN_OP &&
                     compound_assign_op(symbol.v.op, &base, &nil_safe)) {
-                    // 8.6改2's spellings answer here too: an 'op^?+' is no
+                    // 8.6.4's spellings answer here too: an 'op^?+' is no
                     // more a definition than an 'op^+' is, and for the same
                     // reason -- 'op^+' is what decides both.
                     why = LHAT_PARSE_ERR_COMPOUND_NOT_DEFINABLE;
@@ -2711,7 +2711,7 @@ static LhatNode *parse_target(Parser *p)
 // operator table lookup, since a compound token never reaches parse_binary --
 // is_comparison/binary_info never see one, so this is the only place asking.
 //
-// 8.6改2: `nil_safe` says which of the two spellings this was. Both stand for
+// 8.6.4: `nil_safe` says which of the two spellings this was. Both stand for
 // the same plain operator and expand the same way -- what the '?' adds is that
 // an absent place is left alone, which is decided where the write happens
 // rather than in the shape read here.

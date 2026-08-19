@@ -419,7 +419,7 @@ static size_t emit_jump(Compiler *c, LhatOpcode op, uint8_t a)
     return at;
 }
 
-// 8.6改2: '?op=' leaves an absent place as it is. The place has just been read
+// 8.6.4: '?op=' leaves an absent place as it is. The place has just been read
 // into `current`; when the '?' spelling was written, everything after this --
 // the right-hand side included -- is jumped over unless something is there.
 // Answers where that jump waits to be patched, or SIZE_MAX for the plain
@@ -523,7 +523,7 @@ static bool chain_guard(Compiler *c, uint8_t target)
 
 static void compile_expression(Compiler *c, const LhatNode *node, uint8_t into);
 
-// 8.6改2 for a place that is a name. There is no owner or key to run twice,
+// 8.6.4 for a place that is a name. There is no owner or key to run twice,
 // so the place is read the way the compound value would read it -- one
 // register read for a local, one GETUPVAL for a captured one -- and the test
 // is made of that before anything else is evaluated. The slot is given back
@@ -4716,7 +4716,7 @@ typedef struct {
     uint8_t key;
     uint8_t value;
     bool indexed;
-    // 8.6改2: what the place held when the read pass looked, kept so the
+    // 8.6.4: what the place held when the read pass looked, kept so the
     // write pass can leave an absent one alone. The saved register rather
     // than the place: 8.6改3 reads every target before writing any, so a
     // write earlier in the second pass must not change what this one sees.
@@ -4811,7 +4811,7 @@ static void compile_reassign_parallel(Compiler *c, const LhatNode *node)
                                         w->key));
                 uint8_t rhs = reserve(c);
                 w->value = reserve(c);
-                // 8.6改2: reserved before the branch so both arms leave the
+                // 8.6.4: reserved before the branch so both arms leave the
                 // same slot behind. Nothing is written to an absent place,
                 // but the slot is one the collector reads, so it holds nil^
                 // rather than whatever stood there.
@@ -4858,7 +4858,7 @@ static void compile_reassign_parallel(Compiler *c, const LhatNode *node)
 
     for (size_t i = 0; i < count; i++) {
         const PendingWrite *w = &pending[i];
-        // 8.6改2: an absent place is left as it is, and only this pair is --
+        // 8.6.4: an absent place is left as it is, and only this pair is --
         // the other targets of the same statement are written whatever this
         // one answered.
         size_t past = skip_when_absent(c, w->guarded, w->current, -1);

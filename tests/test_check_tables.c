@@ -458,7 +458,7 @@ static void test_dynamic_key(void)
     unit_dispose(&u);
 }
 
-// 8.6改2. 04 の 11.3 makes what a key reads out of a table a 'T|nil^', which
+// 8.6.4. 04 の 11.3 makes what a key reads out of a table a 'T|nil^', which
 // leaves a plain compound assignment with nothing to add to -- the arm has no
 // operator on it. The '?' spelling says the write is skipped when the place is
 // absent, so the operator is asked of the rest.

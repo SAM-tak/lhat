@@ -1175,7 +1175,7 @@ static void test_bounded_keys(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // 8.6改2's spelling is what a place with a nil^ arm needs; a bounded one
+    // 8.6.4's spelling is what a place with a nil^ arm needs; a bounded one
     // has none, so the plain compound assignment is written.
     LHAT_TEST("a bounded place takes a plain compound assignment");
     check_text(&u,

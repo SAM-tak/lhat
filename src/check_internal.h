@@ -252,7 +252,7 @@ typedef struct {
     // A counter, the same way and for the same reason as `deferred`.
     size_t conditional;
 
-    // 8.6改2: the place a '?op=' reads. It answers without its nil^ arm --
+    // 8.6.4: the place a '?op=' reads. It answers without its nil^ arm --
     // the form is written to say the write is skipped when the place is
     // absent, so what the operator is asked of is what is there. One node
     // rather than a depth: the very same shape standing in the right-hand

@@ -512,7 +512,7 @@ static void test_statements(void)
                       LHAT_PARSE_ERR_BINDING_ARITY);
     parse_dispose(&p);
 
-    // 8.6改2: the '?' spellings expand exactly as the plain ones do -- what
+    // 8.6.4: the '?' spellings expand exactly as the plain ones do -- what
     // they add is decided where the write happens, not in the shape read
     // here. So the only thing to see at this stage is the mark.
     LHAT_TEST("a nil-safe compound expands the same way, and says so");
@@ -2704,7 +2704,7 @@ static void test_loop_clauses(void)
     }
     parse_dispose(&p);
 
-    // 8.6改2: an 'op^?+' is no more a definition than an 'op^+=' is, and for
+    // 8.6.4: an 'op^?+' is no more a definition than an 'op^+=' is, and for
     // the same reason -- 'op^+' is what decides all three spellings.
     LHAT_TEST("nor does the nil-safe one");
     parse_text(&p,
