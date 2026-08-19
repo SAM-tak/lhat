@@ -111,7 +111,7 @@ bool worn_definition(const LhatUnit *unit, LhatValue answered, LhatValue *out,
         bool as_tool = marked_with(unit, spelt, "tool");
         // Counted together, since they are two answers to one question. That
         // there is never more than one of them is the checker's to say now
-        // (18.5改's exclusion, registered in lhat_godot_module.cpp), and it
+        // (18.5.1's exclusion, registered in lhat_godot_module.cpp), and it
         // has said it before this runs -- so counting here only picks the
         // class.
         if (as_tool || marked_with(unit, spelt, "game")) {
@@ -811,19 +811,29 @@ Ref<Script> LhatScript::_get_base_script() const
 }
 
 // The name the class is known by across the project, which is what an icon
-// and a Create Node entry hang on. The binding's own name: Godot's registry
-// is one flat namespace with no nesting, so a module^ path handed to it
-// would not be read as one -- it would be a name with dots in it, which
-// GDScript could not write as a type.
+// and a Create Node entry hang on -- and nothing at all unless the class
+// asked for one.
 //
-// Nothing here makes it unique. Two files publishing a Spinner both claim it,
+// 05 の 3.2 put the two kinds of .lh side by side, and this is the same
+// posture GDScript takes within one of them: a script is anonymous unless it
+// writes class_name, and is worn by path either way. A name is what a writer
+// puts into the project's one flat namespace, and taking a room in it is not
+// something to fall into by having written a binding.
+//
+// The binding's own name, and no argument to say otherwise: Godot's registry
+// has no nesting, so a module^ path handed to it would be a name with dots
+// in it that GDScript could not write as a type -- and a second spelling
+// would be a name that can disagree with itself.
+//
+// Nothing here makes it unique. Two files marking a Spinner both claim it,
 // the way two GDScripts writing `class_name Spinner` do; the engine's own
 // names are the one collision worth refusing, since taking Node from under
 // the editor breaks more than a name.
 StringName LhatScript::_get_global_name() const
 {
-    if (!runnable || klass_name.is_empty() ||
-        ClassDB::class_exists(klass_name)) {
+    if (!runnable || unit == nullptr || klass_name.is_empty() ||
+        ClassDB::class_exists(klass_name) ||
+        !marked_with(unit, klass_name, "class_name")) {
         return StringName();
     }
     return StringName(klass_name);

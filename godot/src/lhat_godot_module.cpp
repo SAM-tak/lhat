@@ -315,6 +315,7 @@ const Godot *register_godot(LhatProgram *program)
         uint32_t targets;
         const char *signature;
         const char *excludes;
+        const char *needs;
     } annotations[] = {
         // Which def^ of this unit a node wears, and when it runs. Without a
         // mark the engine would need a rule of its own -- "the one public^
@@ -332,27 +333,40 @@ const Godot *register_godot(LhatProgram *program)
         // a node could wear however it is marked.
         //
         // FILEUNIQUE counts each name on its own, which catches a second
-        // @game and a second @tool. That the two are one choice is 18.5改's
-        // exclusion, said here from both sides -- either would do, and both
-        // is how the pair reads as a pair.
+        // @game and a second @tool. That the two are one choice is 18.5.1's
+        // exclusion, said here from both sides -- either would do,
+        // and both is how the pair reads as a pair.
         {"game", LHAT_ANNOTATION_PUBLIC | LHAT_ANNOTATION_FILEUNIQUE, nullptr,
-         "tool"},
+         "tool", nullptr},
         {"tool", LHAT_ANNOTATION_PUBLIC | LHAT_ANNOTATION_FILEUNIQUE, nullptr,
-         "game"},
-        {"icon", LHAT_ANNOTATION_BINDING, "p^ string^;", nullptr},
-        {"export", LHAT_ANNOTATION_FIELD, nullptr, nullptr},
+         "game", nullptr},
+        // 05 の 3.2's opposite number: GDScript is anonymous unless it writes
+        // class_name, and so is a .lh unless it writes this. What the project
+        // registers is the binding's own name -- there is no argument,
+        // because a name written twice is a name that can disagree with
+        // itself. One per file, which is all the engine keeps per path.
+        {"class_name", LHAT_ANNOTATION_PUBLIC | LHAT_ANNOTATION_FILEUNIQUE,
+         nullptr, nullptr, nullptr},
+        // 18.5.2: an icon hangs on a global class name, so on the mark that
+        // asks for one. Without it there is nothing for the engine to hang
+        // it on and the mark would sit there doing nothing.
+        {"icon", LHAT_ANNOTATION_BINDING, "p^ string^;", nullptr,
+         "class_name"},
+        {"export", LHAT_ANNOTATION_FIELD, nullptr, nullptr, nullptr},
         {"export_range", LHAT_ANNOTATION_FIELD, "p^ number^, number^, ...;",
-         nullptr},
+         nullptr, nullptr},
         // An enum wants at least one name; a file filter is optional and
         // there may be several, which is what a bare variadic says.
         {"export_enum", LHAT_ANNOTATION_FIELD, "p^ string^, ...:string^;",
+         nullptr, nullptr},
+        {"export_file", LHAT_ANNOTATION_FIELD, "p^ ...:string^;", nullptr,
          nullptr},
-        {"export_file", LHAT_ANNOTATION_FIELD, "p^ ...:string^;", nullptr},
-        {"export_multiline", LHAT_ANNOTATION_FIELD, nullptr, nullptr},
+        {"export_multiline", LHAT_ANNOTATION_FIELD, nullptr, nullptr,
+         nullptr},
         // Written on the member that emits it: what the engine has to be
         // told is a name and an argument list, and a member already is one.
-        {"signal", LHAT_ANNOTATION_MEMBER, nullptr, nullptr},
-        {"rpc", LHAT_ANNOTATION_MEMBER, "p^ string^, ...;", nullptr},
+        {"signal", LHAT_ANNOTATION_MEMBER, nullptr, nullptr, nullptr},
+        {"rpc", LHAT_ANNOTATION_MEMBER, "p^ string^, ...;", nullptr, nullptr},
     };
     for (const auto &annotation : annotations) {
         if (!lhat_register_annotation(program, "godot", annotation.name,
@@ -362,7 +376,10 @@ const Godot *register_godot(LhatProgram *program)
                                                  annotation.signature)) ||
             (annotation.excludes != nullptr &&
              !lhat_register_annotation_exclusive(program, annotation.name,
-                                                 annotation.excludes))) {
+                                                 annotation.excludes)) ||
+            (annotation.needs != nullptr &&
+             !lhat_register_annotation_requisite(program, annotation.name,
+                                                 annotation.needs))) {
             memdelete(module);
             return nullptr;
         }

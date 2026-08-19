@@ -206,15 +206,29 @@ Probe.call_static("twice", [21])     # 42
 `has_method("new")` は偽を答え、`call_static("new", …)` は理由を言って断る。
 二つ目の扉から作ったインスタンスはノードを持たず、`instances` にも載らない。
 
-### プロジェクト全体で名乗る
+### プロジェクト全体で名乗るのは `@class_name` を書いたときだけ
 
-着るクラスは**束縛の名前でプロジェクト全体に登録される**。`spinner.lh` の
-`Spinner` なら `Spinner`。これがあってはじめて `@icon` のアイコンが付き、
-GDScript から `var s: Spinner` と書け、Create Node に並ぶ。
+**既定は無名である。** GDScript が `class_name` を書かなければ無名なのと同じ
+側に立つ——書かなくてもスクリプトは普通に動き、ノードにも着せられ、参照は
+パスで行う。Create Node にもヘルプのクラス一覧にも出ないだけである。
 
-`module^` の綴りは混ぜない。**Godot の登録は入れ子の無い平坦な1つの名前空間**
-なので、`demo.spinner.Spinner` を渡しても名前空間としては読まれず、ドットを
-含む1つの名前になるだけ——GDScript から型として書けなくなる。
+```lhat
+@game
+@class_name
+public^let^ Spinner = Godot.Sprite2D..def^{ … }
+```
+
+これがあってはじめて `@icon` のアイコンが付き、GDScript から
+`var s: Spinner` と書け、Create Node に並ぶ。
+
+**名乗る名前は束縛の名前**で、注釈は引数を取らない。名前を2箇所に書けると
+食い違えるためである。`module^` の綴りも混ぜない——**Godot の登録は入れ子の
+無い平坦な1つの名前空間**なので、`demo.spinner.Spinner` を渡しても名前空間
+としては読まれず、ドットを含む1つの名前になるだけで、GDScript から型として
+書けなくなる。
+
+**1ファイルに1つ**（`FILEUNIQUE`）。エンジンが覚えるのも「パス1つに名前1つ」
+である。
 
 一意性は保証されない。2つの `.lh` が `Spinner` を名乗れば両方主張する。
 GDScript の `class_name Spinner` と同じ状況である。**エンジン自身の名前
@@ -224,6 +238,9 @@ GDScript の `class_name Spinner` と同じ状況である。**エンジン自�
 ［補足］ L^ 側に名前が戻ってくることはない。エンジンが持つのは「名前 →
 パス」の対応で、パスはスクリプト資源、資源は定義そのものを握っている。
 `L^.modules.…` を名前から引き直す場面が無いので、対応表も要らない。
+
+［補足］ エディタは走査した結果を `.godot/global_script_class_cache.cfg` に
+覚える。印を外しても、走査が回り直すまでは一覧に残って見える。
 
 #### `gdBaseClass` が「どのエンジンクラスを包むか」を言う
 
@@ -545,14 +562,28 @@ public^let^ Spinner = Godot.Sprite2D..def^{
   あると言う。違いは編集中も動くかどうか。公開クラスが1つしか無ければどちらも
   書かなくてよい。上の「ノードに着せられる」を見る
 
+- **`@class_name`** — そのクラスがプロジェクト全体で名乗る。名前は束縛の
+  名前で、引数は取らない。**書かなければ無名**であり、それが既定である。
+  上の「プロジェクト全体で名乗るのは `@class_name` を書いたときだけ」を見る
+
 - **`@icon`** — そのクラスのアイコン。シーンツリー、Create Node、ファイル
-  一覧に出る。**グローバルクラス名を持つクラスにしか付かない**ので、下の
-  「プロジェクト全体で名乗る」を先に見る
+  一覧に出る。**アイコンはグローバルクラス名に掛かる**ので、`@class_name`
+  と併記しなければならない——02 の 18.5.2 の併記必須として登録してあるので、
+  片方だけ書けば検査器がその場で弾く（行番号付き）
+
+  ```lhat
+  @game
+  @class_name
+  @icon("res://lhat/lhat-logo-small.svg")
+  public^let^ Spinner = Godot.Sprite2D..def^{ … }
+  ```
 
   ```lhat
   @game
   @icon("res://lhat/lhat-logo-small.svg")
-  public^let^ Spinner = Godot.Sprite2D..def^{ … }
+  public^let^ Spinner = …
+  # error: this annotation means nothing on its own, and the one it has to
+  #        stand beside is missing: class_name
   ```
 
 - **`@export`** — `self^` の欄をインスペクタに出す。欄の現在値がそのまま
