@@ -1,5 +1,7 @@
 #include "lhat_language.h"
 
+#include <godot_cpp/templates/local_vector.hpp>
+
 #include <string.h>
 
 #include <godot_cpp/classes/editor_interface.hpp>
@@ -535,21 +537,43 @@ void LhatLanguage::_frame()
 {
 }
 
+// The three ways the engine asks for a reload. Script::reload_from_file no
+// longer reads the file itself -- it hands the question here -- so reading
+// it is part of the answer (lhat_script.cpp's reload_from_disk).
+
+// A .lh changed on disk while nothing named it. Every one this program holds
+// is asked, since there is no telling which the change was.
 void LhatLanguage::_reload_all_scripts()
 {
+    LocalVector<Ref<Script>> held;
+    for (LhatScript *const &script : LhatScript::all()) {
+        held.push_back(Ref<Script>(script));
+    }
+    for (const Ref<Script> &script : held) {
+        Object::cast_to<LhatScript>(script.ptr())->reload_from_disk(false);
+    }
 }
 
 void LhatLanguage::_reload_scripts(const Array &scripts, bool soft_reload)
 {
-    (void)scripts;
-    (void)soft_reload;
+    for (int64_t i = 0; i < scripts.size(); i++) {
+        Ref<Script> held = scripts[i];
+        LhatScript *ours = Object::cast_to<LhatScript>(held.ptr());
+        if (ours != nullptr) {
+            ours->reload_from_disk(soft_reload);
+        }
+    }
 }
 
+// 02 の 18: what a @tool class carries is that it runs while a scene is being
+// edited, so this is the same question asked while it is running.
 void LhatLanguage::_reload_tool_script(const Ref<Script> &script,
                                        bool soft_reload)
 {
-    (void)script;
-    (void)soft_reload;
+    LhatScript *ours = Object::cast_to<LhatScript>(script.ptr());
+    if (ours != nullptr) {
+        ours->reload_from_disk(soft_reload);
+    }
 }
 
 TypedArray<Dictionary> LhatLanguage::_get_public_functions() const

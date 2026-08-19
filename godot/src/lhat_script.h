@@ -21,6 +21,8 @@
 
 #include <godot_cpp/classes/script_extension.hpp>
 #include <godot_cpp/classes/script_language.hpp>  // _get_language answers one
+#include <godot_cpp/templates/hash_set.hpp>
+#include <godot_cpp/templates/local_vector.hpp>
 #include <godot_cpp/variant/dictionary.hpp>
 #include <godot_cpp/variant/string.hpp>
 #include <godot_cpp/variant/typed_array.hpp>
@@ -95,12 +97,29 @@ class LhatScript : public ScriptExtension {
     // wrong until it is put on a node.
     String unwearable;
 
+    // Which objects are wearing this script, by id. Kept so a reload can put
+    // it back on them: 14.3 fixes an instance's fields when it is made, and
+    // _reload makes a new machine, so what was worn before the reload is not
+    // a thing to keep -- the object has to be given the script again.
+    //
+    // A set rather than a list with a matching removal: an object that has
+    // gone away leaves an id that answers nothing, and pruning it where it is
+    // found is cheaper than a hook on every way an instance can end.
+    HashSet<uint64_t> worn_by;
+
+    // The placeholders this script made, so a reload can hand each the list
+    // it should be showing. The editor builds one of these for a class it is
+    // not to run (@game), and what it shows is whatever it was last given --
+    // there is nothing in it that reads the script again.
+    LocalVector<void *> placeholders;
+
     void let_go();
 
 protected:
     static void _bind_methods();
 
 public:
+    LhatScript();
     ~LhatScript();
 
     // What the instance table's functions work through. NULL until _reload
@@ -116,6 +135,24 @@ public:
 
     // 14.9's `new`, and the instance put where the collector reaches it.
     bool make_instance(Object *owner, LhatValue *out, int64_t *id);
+
+    // That this object is wearing the script, so a reload can put it back.
+    // Said by both ways of wearing one -- a real instance and the editor's
+    // placeholder -- since both are built out of what a reload replaces.
+    void worn_by_object(Object *owner);
+
+    // The editor's placeholders, which have to be handed a new list of
+    // fields whenever the text they were built from changed.
+    void placeholder_made(void *placeholder);
+    const LocalVector<void *> &placeholder_list() const { return placeholders; }
+
+    // Reads the file again and checks it, then gives the script back to
+    // every object that was wearing it. What the engine asks for when a .lh
+    // changed outside the editor (Script::reload_from_file).
+    void reload_from_disk(bool keep_state);
+
+    // Every script this program has loaded, for the reload that names none.
+    static const HashSet<LhatScript *> &all();
 
     // What the conversions need to carry a handle across.
     const host::Godot *godot() const { return units.godot; }

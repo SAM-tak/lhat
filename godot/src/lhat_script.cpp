@@ -1,6 +1,7 @@
 #include "lhat_script.h"
 
 #include <godot_cpp/classes/engine.hpp>
+#include <godot_cpp/classes/file_access.hpp>
 #include <godot_cpp/core/class_db.hpp>
 #include <godot_cpp/templates/local_vector.hpp>
 #include <godot_cpp/variant/utility_functions.hpp>
@@ -163,8 +164,78 @@ bool worn_definition(const LhatUnit *unit, LhatValue answered, LhatValue *out,
 
 }  // namespace
 
+
+// Every script this program has loaded. A file changed on disk names the
+// scripts to reload where it can (Script::reload_from_file), but the reload
+// that names none has to be able to find them.
+namespace {
+HashSet<LhatScript *> loaded;
+}  // namespace
+
+const HashSet<LhatScript *> &LhatScript::all()
+{
+    return loaded;
+}
+
+LhatScript::LhatScript()
+{
+    loaded.insert(this);
+}
+
+void LhatScript::worn_by_object(Object *owner)
+{
+    if (owner != nullptr) {
+        worn_by.insert((uint64_t)owner->get_instance_id());
+    }
+}
+
+void LhatScript::placeholder_made(void *placeholder)
+{
+    if (placeholder != nullptr) {
+        placeholders.push_back(placeholder);
+    }
+}
+
+// 14.3 fixes an instance's fields when it is made, and a reload makes a new
+// machine -- so nothing worn from before survives it. The script is given
+// back to each object instead, which is what builds a fresh instance (or a
+// fresh placeholder, in the editor) out of the text just read.
+//
+// Object::set_script answers nothing when the script is the one already
+// there, so it is cleared first. GDScript does the same for the same reason.
+void LhatScript::reload_from_disk(bool keep_state)
+{
+    String path = get_path();
+    if (path.is_empty() || path.contains("::")) {
+        return;  // built into a scene: there is no file to read
+    }
+    if (!FileAccess::file_exists(path)) {
+        return;  // removed under us; what is held is better than nothing
+    }
+    set_source_code(FileAccess::get_file_as_string(path));
+
+    LocalVector<uint64_t> wearers;
+    for (const uint64_t &id : worn_by) {
+        wearers.push_back(id);
+    }
+    worn_by.clear();
+
+    _reload(keep_state);
+
+    Ref<Script> self(this);
+    for (const uint64_t &id : wearers) {
+        Object *object = ObjectDB::get_instance(ObjectID(id));
+        if (object == nullptr) {
+            continue;  // gone since it put the script on
+        }
+        object->set_script(Variant());
+        object->set_script(self);
+    }
+}
+
 LhatScript::~LhatScript()
 {
+    loaded.erase(this);
     let_go();
 }
 
@@ -285,6 +356,8 @@ Error LhatScript::_reload(bool keep_state)
     read_base_class();
     read_defaults();
     warn_about_signals();
+    // The editor is showing a list built from the text before this one.
+    lhat_refresh_placeholders(this);
     return OK;
 }
 
@@ -536,9 +609,17 @@ bool LhatScript::_instance_has(Object *object) const
     return false;
 }
 
+// The editor is done with one. Forgotten here rather than left to be found
+// dead later: what is kept is a bare pointer, and asking a freed one for
+// anything is the mistake this hook exists to prevent.
 void LhatScript::_placeholder_erased(void *placeholder)
 {
-    (void)placeholder;
+    for (uint32_t i = 0; i < placeholders.size(); i++) {
+        if (placeholders[i] == placeholder) {
+            placeholders.remove_at(i);
+            return;
+        }
+    }
 }
 
 bool LhatScript::_is_placeholder_fallback_enabled() const

@@ -43,10 +43,11 @@ Instance *of(GDExtensionScriptInstanceDataPtr data)
 // is asking about -- once the machine is gone, so is the right to look.
 //
 // A node whose script was reloaded under it answers nothing rather than
-// answering wrongly. It is not made to work again: 03 の 5.3 has a compile
+// answering wrongly. It is not mended in place: 03 の 5.3 has a compile
 // answer fresh modules, and the fields this instance was holding were the old
-// ones. Godot builds a new instance when the scene is reloaded, which is the
-// moment the node is meant to come back.
+// ones. What brings the node back is being given the script again, which
+// reload_from_disk does for everything wearing it -- and where a reload came
+// from somewhere else, opening the scene again.
 bool living(const Instance *it)
 {
     return it->script.is_valid() && it->script->lhat_machine() != nullptr &&
@@ -547,6 +548,7 @@ void *lhat_instance_create(LhatScript *script, Object *owner)
     it->self = self;
     it->id = id;
     it->born = script->lhat_generation();
+    script->worn_by_object(owner);
 
     return internal::gdextension_interface_script_instance_create3(
         &instance_info, it);
@@ -606,6 +608,8 @@ void *lhat_placeholder_create(LhatScript *script, Object *owner)
     if (made == nullptr) {
         return nullptr;
     }
+    script->worn_by_object(owner);
+    script->placeholder_made(made);
 
     const LhatUnit *unit = script->lhat_unit();
     if (unit == nullptr) {
@@ -652,6 +656,25 @@ Dictionary class_category(const LhatScript *script)
 }
 
 }  // namespace
+
+
+// What the editor is showing for a class it does not run, brought up to date.
+// A placeholder holds the list it was last given and reads the script for
+// nothing, so after a reload it would go on showing fields the text no longer
+// has -- with the values of whichever ones it kept. Every reload ends here.
+void lhat_refresh_placeholders(LhatScript *script)
+{
+    if (script == nullptr || script->placeholder_list().is_empty()) {
+        return;
+    }
+    Array properties;
+    Dictionary values;
+    lhat_exported_properties(script, &properties, &values);
+    for (void *const &placeholder : script->placeholder_list()) {
+        internal::gdextension_interface_placeholder_script_instance_update(
+            placeholder, &properties, &values);
+    }
+}
 
 void lhat_exported_properties(const LhatScript *script, Array *properties,
                               Dictionary *values)

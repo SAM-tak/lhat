@@ -43,6 +43,10 @@ void *lhat_placeholder_create(LhatScript *script, Object *owner);
 void lhat_exported_properties(const LhatScript *script, Array *properties,
                               Dictionary *values);
 
+// Hands every placeholder this script made the list it should be showing.
+// Called at the end of every reload: a placeholder reads nothing on its own.
+void lhat_refresh_placeholders(LhatScript *script);
+
 }  // namespace godot
 
 #endif  // LHAT_GODOT_INSTANCE_H
