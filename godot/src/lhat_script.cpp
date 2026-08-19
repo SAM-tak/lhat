@@ -769,6 +769,33 @@ void *LhatScript::_instance_create(Object *for_object) const
         return lhat_placeholder_create(const_cast<LhatScript *>(this),
                                        for_object);
     }
+
+    // The floor _get_instance_base_type answers was never checked against
+    // whoever is standing on it: a class wrapping a Sprite2D went onto a
+    // Bone2D and ran until it reached a call the node does not have.
+    //
+    // GDScript draws the same line in the same place (gdscript.cpp's
+    // instance_create), and the place is the point -- the editor screens
+    // nothing when a script is dropped onto a node, so an instance being
+    // asked for is the first and only moment anybody looks. Below the
+    // placeholder branch on purpose: a @game class gets a placeholder while
+    // the scene is being edited, and GDScript stays quiet then too.
+    StringName least = _get_instance_base_type();
+    String worn = for_object != nullptr ? for_object->get_class() : String();
+    if (!String(least).is_empty() && !worn.is_empty() &&
+        !ClassDB::is_parent_class(worn, least)) {
+        // 05 の 3.2: an editor script is not something a node wears at all,
+        // so naming EditorScript as what it wraps would read as a riddle.
+        String said =
+            editor_script
+                ? "this file names no module^, so it is an editor script: a " +
+                      worn + " does not wear one, and File > Run is what " +
+                      "runs it"
+                : "this class wraps a " + String(least) + ", so a " + worn +
+                      " cannot wear it";
+        UtilityFunctions::push_error(host::problem(get_path(), said));
+        return nullptr;
+    }
     // const because the engine asks it that way; making an instance writes
     // to the table this script owns, which is what the cast is for.
     return lhat_instance_create(const_cast<LhatScript *>(this), for_object);
