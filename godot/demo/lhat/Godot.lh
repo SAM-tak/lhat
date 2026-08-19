@@ -29,10 +29,19 @@ public^let^ Node = Object..def^{
 public^let^ Node2D = Node..def^{
 	override^gdBaseClass = "Node2D",
 	getRotation = f^self^ -> number^ {
-		return^ self^.gdobj.get("rotation") as^ number^
+		self^.gdobj.get("rotation") as^ number^
 	},
 	setRotation = p^self^, radians:number^ {
 		self^.gdobj.set("rotation", radians)
+	},
+	getPosition = f^self^ -> godot.Vector2 {
+		self^.gdobj.getVector2("position")
+	},
+	setPosition = p^self^, at:godot.Vector2 {
+		self^.gdobj.setVector2("position", at)
+	},
+	getGlobalTransform = f^self^ -> godot.Transform2D {
+		self^.gdobj.getTransform2D("global_transform")
 	},
 }
 
