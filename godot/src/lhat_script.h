@@ -136,6 +136,25 @@ class LhatScript : public ScriptExtension {
 
     void let_go();
     void fill_signals();
+    // What _reload does before the wearers are dealt with. Split off so the
+    // dealing happens whatever the reading answered -- a text that no longer
+    // checks leaves nodes holding instances of a machine that is gone.
+    Error reload_now(bool keep_state);
+    // 14.3 fixes an instance's fields when it is made and _reload makes a new
+    // machine, so nothing worn from before survives one. Every object wearing
+    // this is given it again, which is what builds a fresh instance -- or the
+    // editor's placeholder, where the class is not one it may run.
+    //
+    // `keep_state` is what the engine always asks for: the fields are read off
+    // each wearer first and written back after, so a save does not throw away
+    // what the inspector put in them. Which is why it is two halves -- the
+    // reading has to happen while the instances are still on the machine that
+    // made them.
+    void take_off(bool keep_state, LocalVector<uint64_t> *wearers,
+                  LocalVector<Dictionary> *held);
+    void put_back(const LocalVector<uint64_t> &wearers,
+                  const LocalVector<Dictionary> &held);
+    bool reloading = false;  // put_back writes scripts; one pass is enough
 
 protected:
     static void _bind_methods();

@@ -188,13 +188,10 @@ void LhatScript::placeholder_made(void *placeholder)
     }
 }
 
-// 14.3 fixes an instance's fields when it is made, and a reload makes a new
-// machine -- so nothing worn from before survives it. The script is given
-// back to each object instead, which is what builds a fresh instance (or a
-// fresh placeholder, in the editor) out of the text just read.
-//
-// Object::set_script answers nothing when the script is the one already
-// there, so it is cleared first. GDScript does the same for the same reason.
+// The file changed under us, which the editor is told about and passes on
+// (Script::reload_from_file). What is held is the text, so it is read again
+// and the reload below does the rest -- putting the script back on whatever
+// was wearing it included.
 void LhatScript::reload_from_disk(bool keep_state)
 {
     String path = get_path();
@@ -205,23 +202,65 @@ void LhatScript::reload_from_disk(bool keep_state)
         return;  // removed under us; what is held is better than nothing
     }
     set_source_code(FileAccess::get_file_as_string(path));
+    _reload(keep_state);  // which puts the script back on its wearers
+}
 
-    LocalVector<uint64_t> wearers;
+// Read while the instances are still on the machine that made them: once
+// reload_now has let it go, an instance answers nothing and there would be
+// nothing left to keep.
+//
+// Off the object rather than out of L^ -- the wearer may be holding a
+// placeholder, whose values are the editor's and live nowhere else.
+void LhatScript::take_off(bool keep_state, LocalVector<uint64_t> *wearers,
+                          LocalVector<Dictionary> *held)
+{
     for (const uint64_t &id : worn_by) {
-        wearers.push_back(id);
+        wearers->push_back(id);
     }
     worn_by.clear();
 
-    _reload(keep_state);
-
-    Ref<Script> self(this);
-    for (const uint64_t &id : wearers) {
+    for (const uint64_t &id : *wearers) {
+        Dictionary was;
         Object *object = ObjectDB::get_instance(ObjectID(id));
+        if (object != nullptr && keep_state) {
+            TypedArray<Dictionary> said = object->get_property_list();
+            for (int i = 0; i < said.size(); i++) {
+                Dictionary one = said[i];
+                if (((int64_t)one["usage"] & PROPERTY_USAGE_SCRIPT_VARIABLE) !=
+                    0) {
+                    StringName name = one["name"];
+                    was[name] = object->get(name);
+                }
+            }
+        }
+        held->push_back(was);
+    }
+}
+
+void LhatScript::put_back(const LocalVector<uint64_t> &wearers,
+                          const LocalVector<Dictionary> &held)
+{
+    Ref<Script> self(this);
+    for (uint32_t at = 0; at < wearers.size(); at++) {
+        Object *object = ObjectDB::get_instance(ObjectID(wearers[at]));
         if (object == nullptr) {
             continue;  // gone since it put the script on
         }
+        // Taken off first: Object::set_script answers nothing when handed the
+        // script that is already there, and this is the same resource with a
+        // new machine behind it.
         object->set_script(Variant());
         object->set_script(self);
+
+        // 14.3 again: a field the new text no longer declares is not this
+        // instance's to take, and instance_set answers false for it rather
+        // than making one. So every name is offered and the ones that went
+        // away are refused where they land.
+        const Dictionary &was = held[at];
+        Array names = was.keys();
+        for (int i = 0; i < names.size(); i++) {
+            object->set(names[i], was[names[i]]);
+        }
     }
 }
 
@@ -324,7 +363,36 @@ void LhatScript::fill_signals()
     }
 }
 
+// What the engine asks for whenever the text may have changed: the editor
+// on every save, run_editor_script before it runs anything, and
+// reload_from_disk for a file that changed underneath.
+//
+// Reading is one half and the wearers are the other. A reload makes a new
+// machine, so every instance made on the last one is holding freed memory
+// and every placeholder is showing a list built from text that is gone --
+// and whether a node should have an instance at all can change with the
+// same edit, since that is what @game and @tool decide.
+//
+// So the wearers are taken off first -- while their fields can still be read
+// -- then the text is read, then they are put back. The middle one answers,
+// and the other two happen whatever it answered: a text that no longer
+// checks still leaves nodes holding instances of a machine that is gone.
 Error LhatScript::_reload(bool keep_state)
+{
+    if (reloading) {
+        return OK;  // put_back writes scripts, and a write can ask again
+    }
+    reloading = true;
+    LocalVector<uint64_t> wearers;
+    LocalVector<Dictionary> held;
+    take_off(keep_state, &wearers, &held);
+    Error said = reload_now(keep_state);
+    put_back(wearers, held);
+    reloading = false;
+    return said;
+}
+
+Error LhatScript::reload_now(bool keep_state)
 {
     (void)keep_state;
     checked = true;
