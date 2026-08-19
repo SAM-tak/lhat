@@ -372,6 +372,20 @@ void instance_call(GDExtensionScriptInstanceDataPtr data,
     Instance *it = of(data);
     *reinterpret_cast<Variant *>(answer) = Variant();
 
+    // 05 の 3.2: EditorScript::run reaches an instance by the name _run, and
+    // for a unit that named no module^ the body is what that stands for.
+    // Asked before living(), which wants a self^ this instance has none of.
+    if (it->script.is_valid() && it->script->is_editor_script()) {
+        if (name_of(method) != StringName("_run")) {
+            error->error = GDEXTENSION_CALL_ERROR_INVALID_METHOD;
+            return;
+        }
+        error->error = it->script->run_body()
+                           ? GDEXTENSION_CALL_OK
+                           : GDEXTENSION_CALL_ERROR_INVALID_METHOD;
+        return;
+    }
+
     if (!living(it) || !it->script->has_lhat_method(name_of(method))) {
         error->error = GDEXTENSION_CALL_ERROR_INVALID_METHOD;
         return;
@@ -547,7 +561,13 @@ void *lhat_instance_create(LhatScript *script, Object *owner)
     }
     LhatValue self = lhat_nil();
     int64_t id = 0;
-    if (!script->make_instance(owner, &self, &id)) {
+    // 05 の 3.2: an editor script declares no class, so there is no `new` to
+    // call and no self^ for it to answer with. What the editor puts this on
+    // is its own throwaway EditorScript, and the one thing it asks for is
+    // _run -- which instance_call answers off the script rather than off a
+    // receiver that does not exist.
+    if (!script->is_editor_script() &&
+        !script->make_instance(owner, &self, &id)) {
         return nullptr;
     }
 

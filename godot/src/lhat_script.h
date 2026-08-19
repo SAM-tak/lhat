@@ -58,6 +58,20 @@ class LhatScript : public ScriptExtension {
     int64_t next_id = 1;
     bool runnable = false;
 
+    // 05 の 3.2: the unit named no module^, so it is a run of statements
+    // rather than a place that declares a class. Godot's nearest thing is an
+    // EditorScript -- a script the editor runs on being asked to and puts on
+    // nothing -- so that is what this answers to be, and File > Run runs the
+    // body. A unit that named one keeps every other answer it had.
+    //
+    // 02 の 8.2 lets a top-level statement do anything, so reading one of
+    // these must not run it: the engine loads every .lh in the project as a
+    // script resource, and reloads it whenever it is saved or asked about.
+    bool editor_script = false;
+    // The body, for when File > Run asks. Belongs to `program` and is let go
+    // with it.
+    const LhatProto *entry = nullptr;
+
     // What a fresh instance's @export fields hold, by name. Read once, off
     // the prototype the definition hangs under self^ (02 の 14.11) when the
     // class is found -- every default is already a value there, so nothing
@@ -138,6 +152,13 @@ public:
     // part company (see `generation` above).
     uint64_t lhat_generation() const { return generation; }
     LhatValue lhat_class() const { return klass; }
+    // 05 の 3.2: whether this file is a run of statements rather than a
+    // declaration of a class, which is what the instance side has to know to
+    // answer _run with the body.
+    bool is_editor_script() const { return editor_script; }
+    // Runs the body once. What File > Run reaches, through the _run of the
+    // instance the editor puts on its throwaway EditorScript.
+    bool run_body();
     const LhatUnit *lhat_unit() const { return unit; }
     const String &lhat_class_name() const { return klass_name; }
 

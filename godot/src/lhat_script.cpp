@@ -253,6 +253,8 @@ void LhatScript::let_go()
     unwearable = String();
     runnable = false;
     tool_script = false;
+    editor_script = false;
+    entry = nullptr;  // the program it belonged to is gone
     defaults.clear();
     base_class = String();
     // 18.7改: the values pointing at these died with the machine above.
@@ -368,6 +370,19 @@ Error LhatScript::_reload(bool keep_state)
     }
     lhat_machine_set_modules(machine, modules, count);
     lhat_program_install(program, machine);
+
+    // 05 の 3.2: a unit that named no module^ registers nothing and declares
+    // no class -- its body is a run of statements. Running one here would run
+    // it on every load and every save, since the engine reads every .lh in
+    // the project as a script resource; what asks for it instead is File >
+    // Run, through _run below. The unit is kept, so the editor still shows
+    // what the checker said about it.
+    if (modules[lhat_unit_index(root)].module_name == NULL) {
+        editor_script = true;
+        entry = modules[lhat_unit_index(root)].proto;
+        unit = root;
+        return OK;
+    }
 
     LhatRunResult ran =
         lhat_run(machine, modules[lhat_unit_index(root)].proto);
@@ -489,6 +504,31 @@ void LhatScript::read_defaults()
         defaults[String::utf8(field->text, (int)field->length)] =
             host::to_variant(entry->value, units.godot);
     }
+}
+
+// 05 の 3.2: the body of a unit that named no module^, run once. This is the
+// whole of what File > Run does to one -- there is no _run to write, since
+// the statements at the top are already what a writer meant by "run this".
+//
+// EditorNode::run_editor_script hard-reloads before it asks, so the machine
+// this runs on was made a moment ago and nothing has run on it yet.
+bool LhatScript::run_body()
+{
+    if (!editor_script || machine == nullptr || entry == nullptr) {
+        return false;
+    }
+    LhatRunResult ran = lhat_run(machine, entry);
+    if (ran.status == LHAT_RUN_OK) {
+        return true;
+    }
+    // 04 の 11.6改: a panic carries what it was written with, and the status
+    // alone would drop the part that says anything.
+    String said = String::utf8(lhat_run_status_message(ran.status));
+    if (ran.status == LHAT_RUN_PANIC) {
+        said += ": " + host::text_of(ran.value);
+    }
+    UtilityFunctions::push_error(host::problem(get_path(), said));
+    return false;
 }
 
 // 14.9's `new` is an ordinary member of the definition and takes no self^,
@@ -626,6 +666,14 @@ ScriptLanguage *LhatScript::_get_language() const
 // exists to keep from happening.
 bool LhatScript::_can_instantiate() const
 {
+    // 05 の 3.2: File > Run makes an EditorScript and puts this on it
+    // (EditorNode::run_editor_script), and Object::set_script asks this
+    // first -- answering false there would get a placeholder instead, which
+    // has no _run to call. Only in the editor: EditorScript is an editor
+    // class and a game has no such object to put one on.
+    if (editor_script) {
+        return Engine::get_singleton()->is_editor_hint();
+    }
     if (!runnable) {
         return false;
     }
@@ -753,6 +801,13 @@ bool LhatScript::_inherits_script(const Ref<Script> &script) const
 // every object is the honest floor.
 StringName LhatScript::_get_instance_base_type() const
 {
+    // 05 の 3.2: what File > Run asks before it will run anything
+    // (is_parent_class(this, "EditorScript")). A unit that named no module^
+    // is a run of statements, and an EditorScript is the engine's word for
+    // one -- a script it runs on being asked to and puts on no node.
+    if (editor_script) {
+        return StringName("EditorScript");
+    }
     if (!runnable) {
         return StringName();
     }
@@ -794,7 +849,9 @@ int32_t LhatScript::_get_member_line(const StringName &member) const
 // first half, and is what an unmarked one is.
 bool LhatScript::_is_tool() const
 {
-    return tool_script;
+    // 05 の 3.2: the other half of what File > Run asks. An editor script is
+    // a tool script by what it is -- the editor is the only place it runs.
+    return editor_script || tool_script;
 }
 
 bool LhatScript::_is_abstract() const
@@ -806,6 +863,13 @@ bool LhatScript::_is_abstract() const
 // that declares _process gets one, and one that does not costs nothing.
 bool LhatScript::_has_method(const StringName &method) const
 {
+    // 05 の 3.2: EditorScript::run is GDVIRTUAL_CALL(_run), which reaches the
+    // instance by that name. The writer wrote no such member -- the body is
+    // what it stands for -- so the one method an editor script has is said
+    // here rather than looked for in a definition it does not have.
+    if (editor_script) {
+        return method == StringName("_run");
+    }
     return has_lhat_method(method);
 }
 
@@ -899,6 +963,16 @@ Variant LhatScript::_get_script_method_argument_count(
 TypedArray<Dictionary> LhatScript::_get_script_method_list() const
 {
     TypedArray<Dictionary> out;
+    // 05 の 3.2: the one method an editor script has, and the writer wrote
+    // none of it -- _has_method above says the same thing.
+    if (editor_script) {
+        Dictionary run;
+        run["name"] = StringName("_run");
+        run["args"] = Array();
+        run["flags"] = (int64_t)METHOD_FLAG_NORMAL;
+        out.push_back(run);
+        return out;
+    }
     if (unit == nullptr || klass_name.is_empty()) {
         return out;
     }
