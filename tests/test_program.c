@@ -2615,7 +2615,7 @@ static void test_documentation(void)
 #endif  // LHAT_WITH_COMMENTS
 
 
-// 02 の 18.5改: two names the host registered as one choice. FILEUNIQUE counts
+// 02 の 18.5.1: two names the host registered as one choice. FILEUNIQUE counts
 // each registration on its own, so the pair is what only the host can say --
 // and having said it, the checker is the one that says where.
 static void test_annotation_exclusion(void)
@@ -2634,7 +2634,7 @@ static void test_annotation_exclusion(void)
          "@tool\n"
          "public^ let^ B = def^{ }\n"}};
 
-    LHAT_TEST("18.5改: two answers to one question are refused together");
+    LHAT_TEST("18.5.1: two answers to one question are refused together");
     {
         program_with(&program, &disk, apart, 1);
         LHAT_CHECK(lhat_register_annotation(&program, "godot", "game",

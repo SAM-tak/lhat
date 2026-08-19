@@ -267,7 +267,7 @@ typedef enum {
     LHAT_CHECK_ERR_NO_SUCH_ANNOTATION,
     LHAT_CHECK_ERR_ANNOTATION_MISPLACED,
     LHAT_CHECK_ERR_ANNOTATION_ARGUMENTS,
-    LHAT_CHECK_ERR_ANNOTATION_EXCLUSIVE,// 18.5改: registered as one of two
+    LHAT_CHECK_ERR_ANNOTATION_EXCLUSIVE,// 18.5.1: registered as one of two
                                         // answers to one question, and the
                                         // other is in this file already
     LHAT_CHECK_ERR_ANNOTATION_REPEATED, // 18.5: registered FILEUNIQUE, and

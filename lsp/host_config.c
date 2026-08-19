@@ -250,7 +250,7 @@ void lsp_host_config_apply(const LspHostConfig *config, LhatProgram *program)
         if (signature != NULL) {
             lhat_register_annotation_signature(program, name, signature);
         }
-        // 18.5改: the names it was registered as an alternative to, handed
+        // 18.5.1: the names it was registered as an alternative to, handed
         // back one at a time -- the same way they were said.
         const cJSON *exclusives =
             cJSON_GetObjectItemCaseSensitive(entry, "exclusives");

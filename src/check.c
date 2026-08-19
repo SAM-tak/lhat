@@ -2392,7 +2392,7 @@ static bool chk_annotation_arguments_fit(Checker *c, const LhatNode *at,
     return true;
 }
 
-// 18.5改: whether this one and something already written in the file were
+// 18.5.1: whether this one and something already written in the file were
 // registered as two answers to one question. Read from both sides -- what is
 // written now naming what is there, and what is there naming it -- so a host
 // that said it once has said it, and the order the two were written in is
@@ -2469,7 +2469,7 @@ void chk_check_annotations(Checker *c, const LhatNode *list, uint32_t target)
             c->annotation_seen[which] = true;
         }
 
-        // 18.5改: and what it may not stand beside. Read both ways -- this
+        // 18.5.1: and what it may not stand beside. Read both ways -- this
         // one naming what is already there, or what is already there naming
         // this one -- so which of a pair was written first changes nothing,
         // and a host saying it from one side is enough.

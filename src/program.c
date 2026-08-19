@@ -2837,7 +2837,7 @@ size_t lhat_program_dump_host_api(const LhatProgram *program, char *out,
             dump_text(&w, ", \"signature\": ");
             dump_string(&w, program->annotation_signatures[i]);
         }
-        // 18.5改: written as the names themselves rather than as anything
+        // 18.5.1: written as the names themselves rather than as anything
         // resolved, since that is how the registration said them and a
         // reader hands them back the same way.
         if (decl->exclusive_count > 0) {

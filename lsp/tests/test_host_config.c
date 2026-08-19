@@ -77,7 +77,7 @@ static const char *const CONFIG =
     "    {\"module\": \"h\", \"name\": \"badge\", \"targets\":"
     " {\"field\": true, \"fileunique\": true,"
     " \"binding\": false, \"nonesuch\": true}},\n"
-    // 18.5改: one of a pair, and only one side of the dump says so. The
+    // 18.5.1: one of a pair, and only one side of the dump says so. The
     // checker reads it both ways, so carrying it once is enough.
     "    {\"module\": \"h\", \"name\": \"here\","
     " \"targets\": {\"binding\": true}},\n"
@@ -191,7 +191,7 @@ static void test_round_trip(void)
                   "    self^{ @badge hp = 1, @badge mp = 2 },\n"
                   "}\n");
 
-    // 18.5改: the pair, whose whole point is that neither name is written
+    // 18.5.1: the pair, whose whole point is that neither name is written
     // twice -- so nothing but the exclusion the dump carried can refuse it.
     LHAT_TEST("and two names the dump made one choice are refused together");
     check_refused("annotation exclusive",

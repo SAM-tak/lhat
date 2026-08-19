@@ -417,7 +417,7 @@ bool lhat_register_annotation_signature(LhatProgram *program,
                                         const char *name,
                                         const char *signature);
 
-// 18.5改: two names that are two answers to one question -- @game and @tool
+// 18.5.1: two names that are two answers to one question -- @game and @tool
 // on a Godot class, where one says a node wears it and the other says the
 // same and that it runs while a scene is being edited. A file carries one of
 // them or the other and never both.
