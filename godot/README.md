@@ -262,7 +262,8 @@ public^let^ Sprite2D = Node2D..def^{ override^gdBaseClass = "Sprite2D", … }
 ——あちらは「実際に何に貼られたか」で、ずれるのはまさにこの場合。
 
 **下限を満たさないノードは着られない。** `Sprite2D` を包むクラスを `Bone2D`
-に着せようとすると、実体を作る所で拒まれてエラーになり、スクリプトは着かない。
+に着せようとすると、実体を作る所で拒まれてエラーになる。ゲームでは、その
+ノードはスクリプトの着いていないノードになる。
 
 `module^` の無い `.lh` も同じ所で拒まれる——包んでいるのは `EditorScript`
 で、ノードはそれではない。
@@ -274,6 +275,22 @@ public^let^ Sprite2D = Node2D..def^{ override^gdBaseClass = "Sprite2D", … }
 `@game` は**編集中は黙っている**。編集中のそれは placeholder で、実体では
 ないからである。エラーはゲームを実行した瞬間に出る。`@tool` なら編集中に
 実体を作るので、着せたその場で出る。これも GDScript と同じ線である。
+
+**編集中に拒んだときは placeholder を返す。ここだけ GDScript より親切。**
+実体を作れなかったノードは `script` に nil を答えるので、そのまま保存すると
+**`.tscn` から `script` 行も `@export` の値も消える**——シーンを開いて保存
+しただけで消える。土台を書き換えてしまうのは編集中に起きることで、そこで
+作業が消えるのは高すぎる。実測:
+
+```text
+@tool の GDScript を着せた Bone2D のシーンを開いて pack し直す
+  → [node name="Bone" type="Bone2D"]              script 行ごと消える
+同じことを @tool の L^ で
+  → script = ExtResource(…) / mark = 7            残る
+```
+
+ゲームでは placeholder を返さない。placeholder は何の呼び出しにも答えず
+`self^` も持たないので、黙って着ているノードは着ていないノードより悪い。
 
 書かない定義（包みを継承していない `def^`）は `Object` に落ちる。あらゆる
 オブジェクトなので何も拒まないが、Create Node にも出ない。

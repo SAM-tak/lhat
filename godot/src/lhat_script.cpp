@@ -794,6 +794,20 @@ void *LhatScript::_instance_create(Object *for_object) const
                 : "this class wraps a " + String(least) + ", so a " + worn +
                       " cannot wear it";
         UtilityFunctions::push_error(host::problem(get_path(), said));
+        // In the editor, a refusal hands back a placeholder rather than
+        // nothing. Measured: a node whose script would not instance answers
+        // nil to `script`, and that is the value a re-save writes -- the
+        // ExtResource line and every @export value in the scene file go with
+        // it, from opening the scene and saving it. GDScript loses them the
+        // same way; this does not. The writer is told once and keeps the
+        // work, which is the whole of what a placeholder is for.
+        //
+        // Not in a game. Placeholders answer no call and hold no self^, and
+        // a node quietly wearing one is worse than a node wearing nothing.
+        if (Engine::get_singleton()->is_editor_hint()) {
+            return lhat_placeholder_create(const_cast<LhatScript *>(this),
+                                           for_object);
+        }
         return nullptr;
     }
     // const because the engine asks it that way; making an instance writes
