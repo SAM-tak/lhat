@@ -2,6 +2,8 @@
 # 分岐の入れ子・テーブルリテラル・関数・ループを一通り含む。
 module^shop.inventory
 
+import^std.io
+
 errordef^StockError {
     OutOfStock { sku = "", wanted = 0 },
     UnknownSku { sku = "" },
@@ -62,7 +64,7 @@ let^classify = f^n {
     if^n = 0: "none" el^n < 5: "low" el^n < 20: "some" el^: "many" ;
 }
 
-let^report = p^items {
+let^report = p^items:t^{...:Item} {
     for^it in^items {
         let^kind = classify(it.count)
         if^kind = "none" {
@@ -84,22 +86,37 @@ let^total = f^items:t^{...:Item} {
     return^ sum
 }
 
-let^priceOf = f^sku {
+let^priceOf = f^sku:string^{
     for^i from^0 to^15 {
-        if^prices[i] > 0 {
-            if^sku = i {
-                return^prices[i]
-            }
+        let^price = prices[i]
+        if^price? and^price > 0 and^sku.tonumber() = i {
+            return^price
         }
     }
     return^error^StockError.UnknownSku{ sku = sku }
 }
 
-let^main = p^{
+let^notify = p^sku:string^{}
+let^openLog = f^name:string^{
+    if^name = "inventory" {
+        return^{
+            write = p^value:string^{},
+            dispose = p^{}
+        }
+    }
+    return^error^std.io.IOError.NotFound{}
+}
+let^readRows = f^{{
+    { sku = "1", name = "", n = 3 },
+    { sku = "2", name = "", n = 3 },
+    { sku = "1", name = "", n = 1 },
+}}
+
+public^let^main = p^{
     let^items = {}
     with^log = try^openLog("inventory") {
         for^row in^readRows() {
-            let^ it = Item.new(row.sku, row.name, row.n)
+            let^it = Item.new(row.sku, row.name, row.n)
             items[it.sku] := it
         }
         report(items)

@@ -13,14 +13,6 @@ p^; と p^->nil^; は**全く一緒**である。
 しかし、**p^; と p^nil^; は違う**。p(nil^) は p() と違って実際に nil^ をつむ。
 p()は実際に積まない。実行時に「引数の型が違う」と言われて落ちるので、呼び出し側は区別する必要がある。
 
-### 根本的に足りてない（入れ忘れ）
-
-hash^ ユーザー定義のハッシュ。これがないと値比較でテーブルのキーにすることができないだろう、けど、
-自動化できないか？
-
-静的無限ループを検知してエラーにする
-  脱出条件のないrepeat、等
-
 ### サイレント実装漏れ
 
 enum^
@@ -39,12 +31,6 @@ let^t = {width^3:
 }
 print(t[1, 2])
 
-### 指示漏れ
-
-~~`...^` # ^ で終わるユーザー識別子は、ユーザーはどうあっても作れないようにすべきでは？いやそうでもない？~~
-そんな制限はいらない、はず。ソースに直に^つきで現れなければ混乱することはない。tostring^と書けることがどうか、は、
-後で実装に聞いてみること。
-
 ### 検討項目
 
 > 文面は「添字」を含んでいるのに、実装は ( しか見ていない（parser.c:1827 にだけ !at.preceded_by_newline があり、その直前の [ の枝には無い）。
@@ -61,6 +47,12 @@ print(a)          # → 10
 が、これが実害をもたらすのは本当にC#風の[属性]を入れたときや、[]をリストリテラルにした時、
 なので放置でいいか…？
 
+hash^ ユーザー定義のハッシュ。これがないと値比較でテーブルのキーにすることができないだろう、けど、
+自動化できないか？
+
+静的無限ループを検知してエラーにする
+  脱出条件のないrepeat、等
+
 ### 気になるところ（後で調べること）
 
 relaxed では let^ と var^ に差がない、とすることで実行時の情報をケチれる、ということはないか？
@@ -74,8 +66,6 @@ OutOfMemoryならたしかにその挙動でいいのだが…その他のエラ
 他言語にあるからきっと必要なんだろう、程度の理由で存在しているが。
 
 ### もしかしたら今後やりたいこと
-
-HostData <-> HostValue 間の自動boxing/unboxing
 
 public^のシグネチャ明示。
 考えが足らなかったので一旦取り下げたが、やはり将来的には必要かも。
@@ -96,14 +86,10 @@ def^も、def^本体の方ではなく、構造式を型アノテーションに
 
 VMのみビルド
 
-import/requireしたクラスを合成するといちいち import/require 先のファイル全体を再コンパイルするのを
-やめさせたい。moduleは構文木を捨てずに取っておけば、可能？
-
-文字列領域の確保最適化。
-  将来的には文字列だけと言わずテーブルとホストデータにも広げたいが、とりあえず文字列は静的に
-  寿命を検知しやすいだろうから、関数・手続き・ファイル内で寿命が尽きることがわかっているものは
+オブジェクトの寿命を静的に検知して可能ならGCAllocしない
+  文字列、テーブル、ホストデータ、Box^の寿命を静的に検知し、
+  関数・手続き・ファイル内で寿命が尽きることがわかっているものは
   GCに載せずファイナライザで解放するようにしたい。
-  文字列だけと言わず、静的に寿命が確定しているものはGCAllocせずにmalloc/freeするようにしたい。
 
 定数畳み込み
 
@@ -149,91 +135,13 @@ AOT
 
 ### L^ 側のラッパーライブラリ
 
-HostData としては GodotObject 一種のみ。
+いま、なにかスクリプトの確保に関して非効率なことをやっているらしい。
+godot\demo\lhat\Godot.lh にズラズラブリッジクラスの定義を増やしていくと、Node2D..def^ で一個触っただけで
+全体の再読み込みになる…らしい？
 
-```lhat/Godot.lh
-module^ lhat.Godot
-
-import^ godot
-
-public^let^ Node2D = def^{
-    self^{ abstract^gdobj:godot.Node },
-
-    getPosition = f^self^ {
-        return^self^.gdobj.getVec2("position")
-    },
-
-    setPosition = p^self^, position {
-        return^self^.gdobj.setVec2("position", position)
-    },
-    ...
-}
-
-public^let^ Node3D = def^{
-    self^{ abstract^gdobj:godot.Node },
-
-    getPosition = f^self^ {
-        return^self^.gdobj.getVec3("position")
-    },
-
-    setPosition = p^self^, position {
-        return^self^.gdobj.setVec3("position", position)
-    },
-    ...
-}
-
-public^let^ Sprite2D = Node2D..def^{ # 連結してもまだ抽象定義、は許されたっけ…？newはできない、だと思っていたが
-    self^{ abstract^gdobj:godot.Node },
-
-    getTexture = f^self^ {
-        return^self^.gdobj.getResource("texture")
-    },
-
-    setTexture = p^self^, texture {
-        return^self^.gdobj.setResource("texture", texture)
-    },
-    ...
-}
-
-...
-
-public^let^ CharacterBody3D = PhysicsBody3D..def^{
-    self^{ abstract^gdobj:godot.Node },
-
-    getMotionMode = f^self^ {
-        return^self^.gdobj.getResource("motion_mode")
-    },
-
-    setMotionMode = p^self^, motion_mode {
-        return^self^.gdobj.setResource("motion_mode", motion_mode)
-    },
-
-    moveAndSlide = p^self^ { self^.gdobj.call("move_and_slide") }
-    ...
-}
-```
-
-ユーザーノードスクリプト側
-
-```lhat
-module^ demo.player
-
-import^ godot
-let^Godot = require^"lhat/Godot.lh"
-
-public^let^ Player = Godot.CharacterBody3D..def^{
-    self^{ gdobj = godot.Object.default() }, # godot.Object.defaultはプレースホルダオブジェクトを返す。実際にはアタッチしたノードで上書きされる
-
-    _ready = p^self^ {
-        print(self^.gdobj.className())        # "CharacterBody3D"
-        self^.setPosition(godot.Vec3.new(0, 1, 0))
-    },
-
-    _process = p^self^, delta:number^ {
-        self^.moveAndSlide()
-    },
-}
-```
+node.call は返り値が any^ なのでホスト値を詰めない。
+    型ごとの呼び口 — callVector2(name, ...) -> godot.Vector2。getVector2 と同じ形で、静的に型が決まる。17本増える
+これをやればいい。が、今のところ不要なのでやってない。
 
 ## L^ Visual Editor
 

@@ -19,9 +19,7 @@ public^let^Spinner = Godot.Sprite2D..def^{
 		turns = 0,
 	},
 
-	@signal died = p^self^, message:string^{
-		self^.emit(id^died, message)
-	},
+	@signal died = p^self^, message:string^{}, # 空なら勝手に埋めてくれる
 
 	_ready = p^self^{
 		print($"spinner on a {self^.className()}, named {self^.getName()}")
@@ -33,7 +31,7 @@ public^let^Spinner = Godot.Sprite2D..def^{
 		self^.setPosition(self^.getPosition() + xAxis * delta * self^.slideSpeed)
 		self^.setRotation(self^.getRotation() + delta * self^.speed)
 		self^.turns += 1
-		if^self^.turns > 1000 {
+		if^self^.turns = 10 {
 			self^.died("死にました")
 		}
 	},
@@ -43,7 +41,11 @@ public^let^Spinner = Godot.Sprite2D..def^{
 	report = f^self^ -> string^{
 		return^ $"{self^.turns} frames, rotation {self^.getRotation()}"
 	},
+
 	_on_script_changed = p^self^ {
-		
+		print("script changed")
+	},
+	_on_died = p^self^, message:any^ {
+		print(id^_on_died, message)
 	},
 }

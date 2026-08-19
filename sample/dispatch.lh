@@ -1,9 +1,9 @@
-module^ shop.dispatch
+module^shop.dispatch
 
 # 分岐を重くした題材。if 文の節が横に並ぶ規則が、
 # 節の数と入れ子でどこまで幅を食うかを見るためのもの。
 
-let^ route = p^req {
+let^route = p^req:Request {
     if^ req.method = "GET" {
         if^ req.path = "/" {
             render("index")
@@ -56,3 +56,34 @@ let^ describe = f^kind:string^, n:number^ -> string^ {
         return^ "不明"
     }
 }
+
+######
+# Mock
+######
+
+public^let^Body = def^{
+    self^{
+        total = 0,
+    }
+}
+
+public^let^Request = def^{
+    self^{
+        method = "",
+        path = "",
+        user : string^|nil^ = "",
+        body = {
+            total = 0,
+        },
+    }
+}
+
+let^render = p^name:string^{}
+let^addToCart = p^body:Body {}
+let^redirect = p^name:string^{}
+let^reject = p^name:string^{}
+let^notFound = p^{}
+let^charge = p^name:string^, amount:number^ {}
+let^update = p^name:string^, body:Body {}
+let^remove = p^name:string^{}
+let^methodNotAllowed = p^{}
