@@ -109,21 +109,13 @@ bool worn_definition(const LhatUnit *unit, LhatValue answered, LhatValue *out,
 
         definitions++;
         bool as_tool = marked_with(unit, spelt, "tool");
-        // Counted together: they are two answers to one question, so a second
-        // of either is a second answer.
+        // Counted together, since they are two answers to one question. That
+        // there is never more than one of them is the checker's to say now
+        // (18.5改's exclusion, registered in lhat_godot_module.cpp), and it
+        // has said it before this runs -- so counting here only picks the
+        // class.
         if (as_tool || marked_with(unit, spelt, "game")) {
             marks++;
-            if (marks > 1) {
-                // In practice this is @game and @tool together: 18.5's
-                // FILEUNIQUE counts each name on its own, so the checker has
-                // already refused a second of either where it stands. What
-                // is left is the pair, which no flag on one of them can see.
-                *said = String(
-                    "@game and @tool are two answers to one question: a node "
-                    "wears one class, so write whichever of them says when "
-                    "it runs and not both");
-                return false;
-            }
             only = entry->value;
             only_name = spelt;
             only_tool = as_tool;

@@ -266,6 +266,7 @@ const Godot *register_godot(LhatProgram *program)
         const char *name;
         uint32_t targets;
         const char *signature;
+        const char *excludes;
     } annotations[] = {
         // Which def^ of this unit a node wears, and when it runs. Without a
         // mark the engine would need a rule of its own -- "the one public^
@@ -282,30 +283,38 @@ const Godot *register_godot(LhatProgram *program)
         // unit answers with (05 の 5.5), so one kept private is not something
         // a node could wear however it is marked.
         //
-        // FILEUNIQUE counts per name, so the checker catches a second @game
-        // and a second @tool where each stands. One of each is the case it
-        // cannot see -- a flag saying otherwise would make every annotation
-        // bearing it exclude every other -- so worn_definition counts the
-        // two together and that one is caught when the file is read.
-        {"game", LHAT_ANNOTATION_PUBLIC | LHAT_ANNOTATION_FILEUNIQUE, nullptr},
-        {"tool", LHAT_ANNOTATION_PUBLIC | LHAT_ANNOTATION_FILEUNIQUE, nullptr},
-        {"icon", LHAT_ANNOTATION_BINDING, "p^ string^;"},
-        {"export", LHAT_ANNOTATION_FIELD, nullptr},
-        {"export_range", LHAT_ANNOTATION_FIELD, "p^ number^, number^, ...;"},
+        // FILEUNIQUE counts each name on its own, which catches a second
+        // @game and a second @tool. That the two are one choice is 18.5改's
+        // exclusion, said here from both sides -- either would do, and both
+        // is how the pair reads as a pair.
+        {"game", LHAT_ANNOTATION_PUBLIC | LHAT_ANNOTATION_FILEUNIQUE, nullptr,
+         "tool"},
+        {"tool", LHAT_ANNOTATION_PUBLIC | LHAT_ANNOTATION_FILEUNIQUE, nullptr,
+         "game"},
+        {"icon", LHAT_ANNOTATION_BINDING, "p^ string^;", nullptr},
+        {"export", LHAT_ANNOTATION_FIELD, nullptr, nullptr},
+        {"export_range", LHAT_ANNOTATION_FIELD, "p^ number^, number^, ...;",
+         nullptr},
         // An enum wants at least one name; a file filter is optional and
         // there may be several, which is what a bare variadic says.
-        {"export_enum", LHAT_ANNOTATION_FIELD, "p^ string^, ...:string^;"},
-        {"export_file", LHAT_ANNOTATION_FIELD, "p^ ...:string^;"},
-        {"export_multiline", LHAT_ANNOTATION_FIELD, nullptr},
+        {"export_enum", LHAT_ANNOTATION_FIELD, "p^ string^, ...:string^;",
+         nullptr},
+        {"export_file", LHAT_ANNOTATION_FIELD, "p^ ...:string^;", nullptr},
+        {"export_multiline", LHAT_ANNOTATION_FIELD, nullptr, nullptr},
         // Written on the member that emits it: what the engine has to be
         // told is a name and an argument list, and a member already is one.
-        {"signal", LHAT_ANNOTATION_MEMBER, nullptr},
-        {"rpc", LHAT_ANNOTATION_MEMBER, "p^ string^, ...;"},
+        {"signal", LHAT_ANNOTATION_MEMBER, nullptr, nullptr},
+        {"rpc", LHAT_ANNOTATION_MEMBER, "p^ string^, ...;", nullptr},
     };
     for (const auto &annotation : annotations) {
         if (!lhat_register_annotation(program, "godot", annotation.name,
-                                      annotation.targets,
-                                      annotation.signature)) {
+                                      annotation.targets) ||
+            (annotation.signature != nullptr &&
+             !lhat_register_annotation_signature(program, annotation.name,
+                                                 annotation.signature)) ||
+            (annotation.excludes != nullptr &&
+             !lhat_register_annotation_exclusive(program, annotation.name,
+                                                 annotation.excludes))) {
             memdelete(module);
             return nullptr;
         }
