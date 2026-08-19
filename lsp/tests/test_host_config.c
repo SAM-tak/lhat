@@ -76,7 +76,13 @@ static const char *const CONFIG =
     "  \"annotations\": [\n"
     "    {\"module\": \"h\", \"name\": \"badge\", \"targets\":"
     " {\"field\": true, \"fileunique\": true,"
-    " \"binding\": false, \"nonesuch\": true}}\n"
+    " \"binding\": false, \"nonesuch\": true}},\n"
+    // 18.5改: one of a pair, and only one side of the dump says so. The
+    // checker reads it both ways, so carrying it once is enough.
+    "    {\"module\": \"h\", \"name\": \"here\","
+    " \"targets\": {\"binding\": true}},\n"
+    "    {\"module\": \"h\", \"name\": \"there\","
+    " \"targets\": {\"binding\": true}, \"exclusives\": [\"here\"]}\n"
     "  ],\n"
     "  \"bindings\": [\n"
     "    {\"name\": \"print\", \"member\": \"L^.print\"}\n"
@@ -184,6 +190,22 @@ static void test_round_trip(void)
                   "let^ D = def^{\n"
                   "    self^{ @badge hp = 1, @badge mp = 2 },\n"
                   "}\n");
+
+    // 18.5改: the pair, whose whole point is that neither name is written
+    // twice -- so nothing but the exclusion the dump carried can refuse it.
+    LHAT_TEST("and two names the dump made one choice are refused together");
+    check_refused("annotation exclusive",
+                  "module^ m\n"
+                  "@here\n"
+                  "let^ x = 1\n"
+                  "@there\n"
+                  "let^ y = 2\n");
+
+    LHAT_TEST("and one of the pair on its own is what the pair is for");
+    check_clean("annotation one of a pair",
+                "module^ m\n"
+                "@here\n"
+                "let^ x = 1\n");
 }
 
 static void test_without_config(void)

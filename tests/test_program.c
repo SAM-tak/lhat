@@ -1803,12 +1803,11 @@ static void test_dump_host_api(void)
     LHAT_CHECK(lhat_register_annotation(&program, "h", "badge",
                                         LHAT_ANNOTATION_FIELD |
                                             LHAT_ANNOTATION_PUBLIC |
-                                            LHAT_ANNOTATION_FILEUNIQUE,
-                                        NULL),
+                                            LHAT_ANNOTATION_FILEUNIQUE),
                "the annotation registered");
     // One place alone, and one that is a place no other test writes.
     LHAT_CHECK(lhat_register_annotation(&program, "h", "atop",
-                                        LHAT_ANNOTATION_UNIT, NULL),
+                                        LHAT_ANNOTATION_UNIT),
                "the unit annotation registered");
 
     size_t needed = lhat_program_dump_host_api(&program, NULL, 0);
@@ -2168,6 +2167,19 @@ static void test_composing_across_units(void)
 // 02 の 18: an annotation is what the host registered and nothing else. The
 // language never reads what one means -- what is pinned here is that it is
 // carried, and that the three ways of writing one wrongly are all refused.
+// 02 の 18.5: the registration and the shape of its arguments, which the
+// tests below say together because almost every one of them has both to say.
+// Two calls under one name rather than a parameter: what a registration can
+// carry grows, and program.h gives each part its own way in.
+static bool registered_with(LhatProgram *program, const char *module,
+                            const char *name, uint32_t targets,
+                            const char *signature)
+{
+    return lhat_register_annotation(program, module, name, targets) &&
+           (signature == NULL ||
+            lhat_register_annotation_signature(program, name, signature));
+}
+
 static void test_annotations(void)
 {
     LhatProgram program;
@@ -2188,19 +2200,19 @@ static void test_annotations(void)
     {
         program_with(&program, &disk, wearing, 1);
         LHAT_CHECK(lhat_register_annotation(&program, "godot", "tool",
-                                            LHAT_ANNOTATION_UNIT, NULL),
+                                            LHAT_ANNOTATION_UNIT),
                    "tool");
-        LHAT_CHECK(lhat_register_annotation(&program, "godot", "icon",
-                                            LHAT_ANNOTATION_BINDING,
-                                            "p^ string^;"),
+        LHAT_CHECK(registered_with(&program, "godot", "icon",
+                                   LHAT_ANNOTATION_BINDING,
+                                   "p^ string^;"),
                    "icon");
-        LHAT_CHECK(lhat_register_annotation(&program, "godot", "export",
-                                            LHAT_ANNOTATION_FIELD,
-                                            "p^ number^, number^;"),
+        LHAT_CHECK(registered_with(&program, "godot", "export",
+                                   LHAT_ANNOTATION_FIELD,
+                                   "p^ number^, number^;"),
                    "export");
-        LHAT_CHECK(lhat_register_annotation(&program, "godot", "rpc",
-                                            LHAT_ANNOTATION_MEMBER,
-                                            "p^ string^;"),
+        LHAT_CHECK(registered_with(&program, "godot", "rpc",
+                                   LHAT_ANNOTATION_MEMBER,
+                                   "p^ string^;"),
                    "rpc");
         const LhatUnit *root = lhat_program_check(&program, "main.lh");
         LHAT_CHECK(root != NULL, "the unit loaded");
@@ -2214,10 +2226,10 @@ static void test_annotations(void)
     {
         program_with(&program, &disk, wearing, 1);
         LHAT_CHECK(lhat_register_annotation(&program, "a", "tool",
-                                            LHAT_ANNOTATION_UNIT, NULL),
+                                            LHAT_ANNOTATION_UNIT),
                    "the first takes");
         LHAT_CHECK(!lhat_register_annotation(&program, "b", "tool",
-                                             LHAT_ANNOTATION_UNIT, NULL),
+                                             LHAT_ANNOTATION_UNIT),
                    "the second is refused");
     }
     lhat_program_dispose(&program);
@@ -2238,7 +2250,7 @@ static void test_annotations(void)
             {"main.lh", "@onlyfields\nlet^ x = 1\n"}};
         program_with(&program, &disk, misplaced, 1);
         lhat_register_annotation(&program, "h", "onlyfields",
-                                 LHAT_ANNOTATION_FIELD, NULL);
+                                 LHAT_ANNOTATION_FIELD);
         lhat_program_check(&program, "main.lh");
         LHAT_CHECK(lhat_program_has_errors(&program), "reported");
     }
@@ -2254,7 +2266,7 @@ static void test_annotations(void)
             {"main.lh", "module^ m\n@badge\nlet^ x = 1\n"}};
         program_with(&program, &disk, hidden, 1);
         lhat_register_annotation(&program, "h", "badge",
-                                 LHAT_ANNOTATION_PUBLIC, NULL);
+                                 LHAT_ANNOTATION_PUBLIC);
         lhat_program_check(&program, "main.lh");
         LHAT_CHECK(lhat_program_has_errors(&program), "reported");
     }
@@ -2266,7 +2278,7 @@ static void test_annotations(void)
             {"main.lh", "module^ m\n@badge\npublic^let^ x = 1\n"}};
         program_with(&program, &disk, shown, 1);
         lhat_register_annotation(&program, "h", "badge",
-                                 LHAT_ANNOTATION_PUBLIC, NULL);
+                                 LHAT_ANNOTATION_PUBLIC);
         lhat_program_check(&program, "main.lh");
         LHAT_CHECK(!lhat_program_has_errors(&program), "clean");
     }
@@ -2283,8 +2295,7 @@ static void test_annotations(void)
         program_with(&program, &disk, twice, 1);
         lhat_register_annotation(&program, "h", "only",
                                  LHAT_ANNOTATION_PUBLIC |
-                                     LHAT_ANNOTATION_FILEUNIQUE,
-                                 NULL);
+                                     LHAT_ANNOTATION_FILEUNIQUE);
         lhat_program_check(&program, "main.lh");
         LHAT_CHECK(lhat_program_has_errors(&program), "reported");
     }
@@ -2297,8 +2308,7 @@ static void test_annotations(void)
         program_with(&program, &disk, once, 1);
         lhat_register_annotation(&program, "h", "only",
                                  LHAT_ANNOTATION_PUBLIC |
-                                     LHAT_ANNOTATION_FILEUNIQUE,
-                                 NULL);
+                                     LHAT_ANNOTATION_FILEUNIQUE);
         lhat_program_check(&program, "main.lh");
         LHAT_CHECK(!lhat_program_has_errors(&program), "clean");
     }
@@ -2314,12 +2324,10 @@ static void test_annotations(void)
         program_with(&program, &disk, pair, 1);
         lhat_register_annotation(&program, "h", "one",
                                  LHAT_ANNOTATION_PUBLIC |
-                                     LHAT_ANNOTATION_FILEUNIQUE,
-                                 NULL);
+                                     LHAT_ANNOTATION_FILEUNIQUE);
         lhat_register_annotation(&program, "h", "two",
                                  LHAT_ANNOTATION_PUBLIC |
-                                     LHAT_ANNOTATION_FILEUNIQUE,
-                                 NULL);
+                                     LHAT_ANNOTATION_FILEUNIQUE);
         lhat_program_check(&program, "main.lh");
         LHAT_CHECK(!lhat_program_has_errors(&program), "clean");
     }
@@ -2333,7 +2341,7 @@ static void test_annotations(void)
             {"main.lh", "module^ m\n@icon\nlet^ a = 1\n@icon\npublic^let^ b = 2\n"}};
         program_with(&program, &disk, both, 1);
         lhat_register_annotation(&program, "h", "icon",
-                                 LHAT_ANNOTATION_BINDING, NULL);
+                                 LHAT_ANNOTATION_BINDING);
         lhat_program_check(&program, "main.lh");
         LHAT_CHECK(!lhat_program_has_errors(&program), "clean");
     }
@@ -2346,9 +2354,9 @@ static void test_annotations(void)
         static const File args[] = {
             {"main.lh", "@ranged(0, -50, PROPERTY_HINT_ENUM)\nlet^ x = 1\n"}};
         program_with(&program, &disk, args, 1);
-        LHAT_CHECK(lhat_register_annotation(&program, "h", "ranged",
-                                            LHAT_ANNOTATION_UNIT,
-                                            "p^ number^, number^, string^;"),
+        LHAT_CHECK(registered_with(&program, "h", "ranged",
+                                   LHAT_ANNOTATION_UNIT,
+                                   "p^ number^, number^, string^;"),
                    "the signature parsed");
         lhat_program_check(&program, "main.lh");
         LHAT_CHECK(!lhat_program_has_errors(&program),
@@ -2361,9 +2369,9 @@ static void test_annotations(void)
         static const File wrong[] = {
             {"main.lh", "@ranged(\"no\")\nlet^ x = 1\n"}};
         program_with(&program, &disk, wrong, 1);
-        lhat_register_annotation(&program, "h", "ranged",
-                                 LHAT_ANNOTATION_UNIT,
-                                 "p^ number^, number^;");
+        registered_with(&program, "h", "ranged",
+                        LHAT_ANNOTATION_UNIT,
+                        "p^ number^, number^;");
         lhat_program_check(&program, "main.lh");
         LHAT_CHECK(lhat_program_has_errors(&program), "reported");
     }
@@ -2375,14 +2383,14 @@ static void test_annotations(void)
     {
         program_with(&program, &disk, wearing, 1);
         lhat_register_annotation(&program, "godot", "tool",
-                                 LHAT_ANNOTATION_UNIT, NULL);
-        lhat_register_annotation(&program, "godot", "icon",
-                                 LHAT_ANNOTATION_BINDING, "p^ string^;");
-        lhat_register_annotation(&program, "godot", "export",
-                                 LHAT_ANNOTATION_FIELD,
-                                 "p^ number^, number^;");
-        lhat_register_annotation(&program, "godot", "rpc",
-                                 LHAT_ANNOTATION_MEMBER, "p^ string^;");
+                                 LHAT_ANNOTATION_UNIT);
+        registered_with(&program, "godot", "icon",
+                        LHAT_ANNOTATION_BINDING, "p^ string^;");
+        registered_with(&program, "godot", "export",
+                        LHAT_ANNOTATION_FIELD,
+                        "p^ number^, number^;");
+        registered_with(&program, "godot", "rpc",
+                        LHAT_ANNOTATION_MEMBER, "p^ string^;");
         const LhatUnit *unit = lhat_program_check(&program, "main.lh");
         LHAT_CHECK(unit != NULL && !lhat_program_has_errors(&program),
                    "checked clean");
@@ -2433,7 +2441,7 @@ static void test_annotations(void)
         };
         program_with(&program, &disk, kinds, 1);
         LHAT_CHECK(
-            lhat_register_annotation(
+            registered_with(
                 &program, "h", "kinds", LHAT_ANNOTATION_BINDING,
                 "p^ number^, string^, string^, bool^, bool^;"),
             "the signature parsed");
@@ -2573,11 +2581,11 @@ static void test_documentation(void)
         };
         program_with(&program, &disk, marked, 1);
         LHAT_CHECK(lhat_register_annotation(&program, "godot", "game",
-                                            LHAT_ANNOTATION_PUBLIC, NULL),
+                                            LHAT_ANNOTATION_PUBLIC),
                    "game");
-        LHAT_CHECK(lhat_register_annotation(&program, "godot", "export_range",
-                                            LHAT_ANNOTATION_FIELD,
-                                            "p^ number^, number^;"),
+        LHAT_CHECK(registered_with(&program, "godot", "export_range",
+                                   LHAT_ANNOTATION_FIELD,
+                                   "p^ number^, number^;"),
                    "export_range");
         const LhatUnit *root = lhat_program_check(&program, "main.lh");
         LHAT_CHECK(root != NULL, "the unit loaded");
@@ -2606,6 +2614,173 @@ static void test_documentation(void)
 }
 #endif  // LHAT_WITH_COMMENTS
 
+
+// 02 の 18.5改: two names the host registered as one choice. FILEUNIQUE counts
+// each registration on its own, so the pair is what only the host can say --
+// and having said it, the checker is the one that says where.
+static void test_annotation_exclusion(void)
+{
+    LhatProgram program;
+    Disk disk;
+
+    // Above two different declarations, which is the shape FILEUNIQUE cannot
+    // see: each name is written once, so each is within its own count. The
+    // second one is on line 4.
+    static const File apart[] = {
+        {"main.lh",
+         "module^ ns.main\n"
+         "@game\n"
+         "public^ let^ A = def^{ }\n"
+         "@tool\n"
+         "public^ let^ B = def^{ }\n"}};
+
+    LHAT_TEST("18.5改: two answers to one question are refused together");
+    {
+        program_with(&program, &disk, apart, 1);
+        LHAT_CHECK(lhat_register_annotation(&program, "godot", "game",
+                                            LHAT_ANNOTATION_PUBLIC |
+                                                LHAT_ANNOTATION_FILEUNIQUE),
+                   "game");
+        LHAT_CHECK(lhat_register_annotation(&program, "godot", "tool",
+                                            LHAT_ANNOTATION_PUBLIC |
+                                                LHAT_ANNOTATION_FILEUNIQUE),
+                   "tool");
+        LHAT_CHECK(lhat_register_annotation_exclusive(&program, "game", "tool"),
+                   "game excludes tool");
+        LHAT_CHECK(lhat_register_annotation_exclusive(&program, "tool", "game"),
+                   "and tool excludes game");
+        const LhatUnit *root = lhat_program_check(&program, "main.lh");
+        LHAT_CHECK(has_check_error(root, LHAT_CHECK_ERR_ANNOTATION_EXCLUSIVE),
+                   "reported as an exclusion");
+        LHAT_CHECK(!has_check_error(root, LHAT_CHECK_ERR_ANNOTATION_REPEATED),
+                   "rather than as a repeat, which neither name is");
+        // What moving this off the host was for: a place to jump to.
+        LHAT_CHECK(root != NULL && root->checked.diagnostic_count == 1 &&
+                       root->checked.diagnostics[0].line == 4,
+                   "at the second of the two");
+    }
+    lhat_program_dispose(&program);
+
+    // Said from one side only. The checker reads it both ways, so which of
+    // the two a file writes first is nothing the answer turns on.
+    LHAT_TEST("and one side saying it is enough");
+    {
+        program_with(&program, &disk, apart, 1);
+        lhat_register_annotation(&program, "godot", "game",
+                                 LHAT_ANNOTATION_PUBLIC);
+        lhat_register_annotation(&program, "godot", "tool",
+                                 LHAT_ANNOTATION_PUBLIC);
+        LHAT_CHECK(lhat_register_annotation_exclusive(&program, "tool", "game"),
+                   "only the one written second says it");
+        const LhatUnit *root = lhat_program_check(&program, "main.lh");
+        LHAT_CHECK(has_check_error(root, LHAT_CHECK_ERR_ANNOTATION_EXCLUSIVE),
+                   "reported");
+    }
+    lhat_program_dispose(&program);
+
+    LHAT_TEST("whichever of the two comes first");
+    {
+        static const File reversed[] = {
+            {"main.lh",
+             "module^ ns.main\n"
+             "@tool\n"
+             "public^ let^ A = def^{ }\n"
+             "@game\n"
+             "public^ let^ B = def^{ }\n"}};
+        program_with(&program, &disk, reversed, 1);
+        lhat_register_annotation(&program, "godot", "game",
+                                 LHAT_ANNOTATION_PUBLIC);
+        lhat_register_annotation(&program, "godot", "tool",
+                                 LHAT_ANNOTATION_PUBLIC);
+        // The one that says it is now the one written first, so the report
+        // has to come off the other name.
+        lhat_register_annotation_exclusive(&program, "tool", "game");
+        const LhatUnit *root = lhat_program_check(&program, "main.lh");
+        LHAT_CHECK(has_check_error(root, LHAT_CHECK_ERR_ANNOTATION_EXCLUSIVE),
+                   "reported the other way round");
+    }
+    lhat_program_dispose(&program);
+
+    LHAT_TEST("and both above one declaration is the same refusal");
+    {
+        static const File together[] = {
+            {"main.lh",
+             "module^ ns.main\n"
+             "@game\n"
+             "@tool\n"
+             "public^ let^ A = def^{ }\n"}};
+        program_with(&program, &disk, together, 1);
+        lhat_register_annotation(&program, "godot", "game",
+                                 LHAT_ANNOTATION_PUBLIC);
+        lhat_register_annotation(&program, "godot", "tool",
+                                 LHAT_ANNOTATION_PUBLIC);
+        lhat_register_annotation_exclusive(&program, "game", "tool");
+        const LhatUnit *root = lhat_program_check(&program, "main.lh");
+        LHAT_CHECK(has_check_error(root, LHAT_CHECK_ERR_ANNOTATION_EXCLUSIVE),
+                   "reported");
+    }
+    lhat_program_dispose(&program);
+
+    LHAT_TEST("a file writing one of them is what the pair is for");
+    {
+        static const File alone[] = {
+            {"main.lh",
+             "module^ ns.main\n"
+             "@game\n"
+             "public^ let^ A = def^{ }\n"
+             "public^ let^ B = def^{ }\n"}};
+        program_with(&program, &disk, alone, 1);
+        lhat_register_annotation(&program, "godot", "game",
+                                 LHAT_ANNOTATION_PUBLIC);
+        lhat_register_annotation(&program, "godot", "tool",
+                                 LHAT_ANNOTATION_PUBLIC);
+        lhat_register_annotation_exclusive(&program, "game", "tool");
+        lhat_register_annotation_exclusive(&program, "tool", "game");
+        const LhatUnit *root = lhat_program_check(&program, "main.lh");
+        LHAT_CHECK(root != NULL && root->checked.diagnostic_count == 0,
+                   "checked clean");
+    }
+    lhat_program_dispose(&program);
+
+    LHAT_TEST("what the registration will and will not take");
+    {
+        program_with(&program, &disk, NULL, 0);
+        lhat_register_annotation(&program, "h", "one", LHAT_ANNOTATION_UNIT);
+        LHAT_CHECK(!lhat_register_annotation_exclusive(&program, "nosuch",
+                                                       "one"),
+                   "a name that was never registered says nothing");
+        LHAT_CHECK(!lhat_register_annotation_exclusive(&program, "one", "one"),
+                   "and nothing excludes itself");
+        // 18.2 keeps the namespace flat, so the other side is a name rather
+        // than a registration -- and another host may be the one to bring it.
+        LHAT_CHECK(lhat_register_annotation_exclusive(&program, "one",
+                                                      "unheard"),
+                   "but the other side need not be registered yet");
+        LHAT_CHECK(lhat_register_annotation_exclusive(&program, "one",
+                                                      "unheard"),
+                   "and saying it twice is saying it once");
+    }
+    lhat_program_dispose(&program);
+
+    // 18.3, now that the signature is said in its own call rather than beside
+    // the targets.
+    LHAT_TEST("a signature is said once");
+    {
+        program_with(&program, &disk, NULL, 0);
+        lhat_register_annotation(&program, "h", "one", LHAT_ANNOTATION_UNIT);
+        LHAT_CHECK(lhat_register_annotation_signature(&program, "one",
+                                                      "p^ number^;"),
+                   "the first takes");
+        LHAT_CHECK(!lhat_register_annotation_signature(&program, "one",
+                                                       "p^ string^;"),
+                   "the second is refused");
+        LHAT_CHECK(!lhat_register_annotation_signature(&program, "nosuch",
+                                                       "p^;"),
+                   "and so is one for a name that was never registered");
+    }
+    lhat_program_dispose(&program);
+}
+
 int main(void)
 {
     // 8.9: before anything is taken, so the refusal above is about the order
@@ -2617,6 +2792,7 @@ int main(void)
     test_diagnostics();
     test_composing_across_units();
     test_annotations();
+    test_annotation_exclusion();
 #if LHAT_WITH_COMMENTS
     test_documentation();
 #endif

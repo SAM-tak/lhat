@@ -2381,6 +2381,34 @@ static bool chk_annotation_arguments_fit(Checker *c, const LhatNode *at,
     return true;
 }
 
+// 18.5改: whether this one and something already written in the file were
+// registered as two answers to one question. Read from both sides -- what is
+// written now naming what is there, and what is there naming it -- so a host
+// that said it once has said it, and the order the two were written in is
+// nothing the answer turns on.
+static bool chk_annotation_excluded(Checker *c,
+                                    const LhatAnnotationDecl *found,
+                                    size_t which)
+{
+    for (size_t i = 0; i < c->require.annotation_count; i++) {
+        if (i == which || !c->annotation_seen[i]) {
+            continue;
+        }
+        const LhatAnnotationDecl *other = &c->require.annotations[i];
+        for (size_t k = 0; k < found->exclusive_count; k++) {
+            if (strcmp(found->exclusives[k], other->name) == 0) {
+                return true;
+            }
+        }
+        for (size_t k = 0; k < other->exclusive_count; k++) {
+            if (strcmp(other->exclusives[k], found->name) == 0) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
 // 02 の 18.5: an annotation is only what the host registered, only where the
 // registration allows, and only with the arguments it declared. The three
 // are separate refusals because what a writer changes differs.
@@ -2416,18 +2444,30 @@ void chk_check_annotations(Checker *c, const LhatNode *list, uint32_t target)
 
         // 18.5: written once in a file. Counted per registration rather than
         // between them, so two names both registered this way are each once
-        // and not once together -- a host wanting them to be one choice is
-        // the one that knows they are.
-        if ((found->targets & LHAT_ANNOTATION_FILEUNIQUE) != 0 &&
-            c->annotation_seen != NULL) {
-            size_t which = (size_t)(found - c->require.annotations);
-            if (c->annotation_seen[which]) {
+        // and not once together -- what makes two of them one choice is the
+        // exclusion below, which the host is the one to say.
+        size_t which = (size_t)(found - c->require.annotations);
+        if (c->annotation_seen != NULL) {
+            if ((found->targets & LHAT_ANNOTATION_FILEUNIQUE) != 0 &&
+                c->annotation_seen[which]) {
                 chk_report_named(c, at->v.named.name,
                                  LHAT_CHECK_ERR_ANNOTATION_REPEATED, name,
                                  length);
                 continue;
             }
             c->annotation_seen[which] = true;
+        }
+
+        // 18.5改: and what it may not stand beside. Read both ways -- this
+        // one naming what is already there, or what is already there naming
+        // this one -- so which of a pair was written first changes nothing,
+        // and a host saying it from one side is enough.
+        if (c->annotation_seen != NULL &&
+            chk_annotation_excluded(c, found, which)) {
+            chk_report_named(c, at->v.named.name,
+                             LHAT_CHECK_ERR_ANNOTATION_EXCLUSIVE, name,
+                             length);
+            continue;
         }
 
         // 18.3 keeps every argument a literal, so what is asked of them is a
@@ -2904,6 +2944,10 @@ const char *lhat_check_error_message(LhatCheckErrorCode code)
         case LHAT_CHECK_ERR_ANNOTATION_REPEATED:
             return "this annotation may be written once in a file, and "
                    "already was";
+        case LHAT_CHECK_ERR_ANNOTATION_EXCLUSIVE:
+            return "this annotation and another written in this file are two "
+                   "answers to one question: write whichever one applies, "
+                   "not both";
         case LHAT_CHECK_ERR_ANNOTATION_ARGUMENTS:
             return "these are not the arguments the annotation was "
                    "registered with";

@@ -391,17 +391,44 @@ bool lhat_register_hostvalue_field(LhatProgram *program, const char *module,
 // 02 の 18: an annotation the host understands. A program may write no
 // others -- 18.5 makes an unregistered name an error rather than something
 // carried in silence, since a misspelling that vanishes costs more than it
-// saves.
+// saves. `targets` is where it may be written and how many times.
 //
-// `signature` is written in 13 章's grammar as a p^ -- the arguments are
-// what it takes and there is nothing for it to answer. NULL asks nothing of
-// them. 18.3 keeps an argument a literal, and a bare name arrives as a
-// string^: what the name means is the host's to decide.
+// What else a registration has to say is said by the two below, one thing
+// each. A registration gains parts as hosts want more of them, and a call
+// that grew a parameter for every one would make every caller carry the
+// ones it has no use for.
 //
 // Belongs before lhat_program_check, with every other registration (8.7).
 bool lhat_register_annotation(LhatProgram *program, const char *module,
-                              const char *name, uint32_t targets,
-                              const char *signature);
+                              const char *name, uint32_t targets);
+
+// 18.3: what the arguments have to look like, written in 13 章's grammar as
+// a p^ -- they are what it takes and there is nothing for it to answer.
+// Without this nothing is asked of them. 18.3 keeps an argument a literal,
+// and a bare name arrives as a string^: what the name means is the host's.
+bool lhat_register_annotation_signature(LhatProgram *program,
+                                        const char *name,
+                                        const char *signature);
+
+// 18.5改: two names that are two answers to one question -- @game and @tool
+// on a Godot class, where one says a node wears it and the other says the
+// same and that it runs while a scene is being edited. A file carries one of
+// them or the other and never both.
+//
+// FILEUNIQUE cannot say this: it counts each registration on its own, so two
+// names each written once are each within their count and the pair is what
+// nothing sees. Only the host knows the two are one choice, so this is the
+// host saying it.
+//
+// Said from either side -- the checker looks both ways, so which of the pair
+// was written first changes nothing. Saying it from both is how the pair
+// reads as a pair to somebody looking at the registrations.
+//
+// Neither of the two takes a module: 18.2 keeps the annotation namespace
+// flat, so a name is the whole of an address and a second registration of
+// one is refused whatever module asked for it.
+bool lhat_register_annotation_exclusive(LhatProgram *program,
+                                        const char *name, const char *other);
 
 // A subroutine of the module itself.
 bool lhat_register_func(LhatProgram *program, const char *module,

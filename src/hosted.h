@@ -37,6 +37,12 @@ typedef struct LhatAnnotationDecl {
     // What the arguments have to look like, in 13 章's grammar, parsed. NULL
     // when the registration wrote none, which asks nothing of them.
     const struct LhatType *signature;
+    // 18.5改: the names this one is an alternative to, as the host said
+    // them. A file carries this or one of those and never both -- which is
+    // the one thing FILEUNIQUE cannot say, counting each name on its own.
+    // The names are the program's, and need not be registered themselves.
+    const char **exclusives;
+    size_t exclusive_count;
 } LhatAnnotationDecl;
 
 // 05 の 8.8 の isa^ 版: one hostdata type lhat_register_hostdata_type

@@ -1581,8 +1581,7 @@ bool lhat_register_member(LhatProgram *program, const char *module,
 // only what the checker asks -- where it may be written, and what shape its
 // arguments have. No LhatHostEntry: there is no value to build for a machine.
 bool lhat_register_annotation(LhatProgram *program, const char *module,
-                              const char *name, uint32_t targets,
-                              const char *signature)
+                              const char *name, uint32_t targets)
 {
     if (program == NULL || module == NULL || name == NULL || targets == 0) {
         return false;
@@ -1596,23 +1595,11 @@ bool lhat_register_annotation(LhatProgram *program, const char *module,
         }
     }
 
-    const LhatType *written = NULL;
-    if (signature != NULL) {
-        written = lhat_type_of_text(signature, strlen(signature),
-                                    &program->types, program->hosted);
-        if (written == NULL) {
-            return false;
-        }
-    }
-
     char *kept_module = duplicate(module);
     char *kept_name = duplicate(name);
-    char *kept_text = signature != NULL ? duplicate(signature) : NULL;
-    if (kept_module == NULL || kept_name == NULL ||
-        (signature != NULL && kept_text == NULL)) {
+    if (kept_module == NULL || kept_name == NULL) {
         lhat_free(kept_module);
         lhat_free(kept_name);
-        lhat_free(kept_text);
         return false;
     }
 
@@ -1635,18 +1622,88 @@ bool lhat_register_annotation(LhatProgram *program, const char *module,
         if (decls == NULL || texts == NULL) {
             lhat_free(kept_module);
             lhat_free(kept_name);
-            lhat_free(kept_text);
             return false;
         }
         program->annotation_capacity = grown;
     }
 
+    memset(&program->annotations[at], 0, sizeof program->annotations[at]);
     program->annotations[at].module = kept_module;
     program->annotations[at].name = kept_name;
     program->annotations[at].targets = targets;
-    program->annotations[at].signature = written;
-    program->annotation_signatures[at] = kept_text;
+    program->annotation_signatures[at] = NULL;
     program->annotation_count++;
+    return true;
+}
+
+// The registration of `name`, or NULL. 18.2's flat namespace is what lets the
+// name alone find it.
+static LhatAnnotationDecl *annotation_named(LhatProgram *program,
+                                            const char *name, size_t *at)
+{
+    if (program == NULL || name == NULL) {
+        return NULL;
+    }
+    for (size_t i = 0; i < program->annotation_count; i++) {
+        if (strcmp(program->annotations[i].name, name) == 0) {
+            if (at != NULL) {
+                *at = i;
+            }
+            return &program->annotations[i];
+        }
+    }
+    return NULL;
+}
+
+bool lhat_register_annotation_signature(LhatProgram *program,
+                                        const char *name,
+                                        const char *signature)
+{
+    size_t at = 0;
+    LhatAnnotationDecl *decl = annotation_named(program, name, &at);
+    if (decl == NULL || signature == NULL || decl->signature != NULL) {
+        return false;  // no such name, nothing said, or said once already
+    }
+
+    const LhatType *written = lhat_type_of_text(signature, strlen(signature),
+                                                &program->types,
+                                                program->hosted);
+    char *kept = written != NULL ? duplicate(signature) : NULL;
+    if (written == NULL || kept == NULL) {
+        lhat_free(kept);
+        return false;
+    }
+    decl->signature = written;
+    program->annotation_signatures[at] = kept;
+    return true;
+}
+
+bool lhat_register_annotation_exclusive(LhatProgram *program,
+                                        const char *name, const char *other)
+{
+    LhatAnnotationDecl *decl = annotation_named(program, name, NULL);
+    if (decl == NULL || other == NULL || strcmp(name, other) == 0) {
+        return false;  // nothing excludes itself
+    }
+    for (size_t i = 0; i < decl->exclusive_count; i++) {
+        if (strcmp(decl->exclusives[i], other) == 0) {
+            return true;  // said twice is said once
+        }
+    }
+
+    char *kept = duplicate(other);
+    const char **grown = (const char **)lhat_realloc(
+        (void *)decl->exclusives,
+        (decl->exclusive_count + 1) * sizeof *decl->exclusives);
+    if (kept == NULL || grown == NULL) {
+        lhat_free(kept);
+        if (grown != NULL) {
+            decl->exclusives = grown;
+        }
+        return false;
+    }
+    decl->exclusives = grown;
+    decl->exclusives[decl->exclusive_count++] = kept;
     return true;
 }
 
@@ -2114,6 +2171,10 @@ void lhat_program_dispose(LhatProgram *program)
         lhat_free((void *)program->annotations[i].module);
         lhat_free((void *)program->annotations[i].name);
         lhat_free(program->annotation_signatures[i]);
+        for (size_t k = 0; k < program->annotations[i].exclusive_count; k++) {
+            lhat_free((void *)program->annotations[i].exclusives[k]);
+        }
+        lhat_free((void *)program->annotations[i].exclusives);
     }
     lhat_free(program->annotations);
     lhat_free(program->annotation_signatures);
@@ -2769,6 +2830,19 @@ size_t lhat_program_dump_host_api(const LhatProgram *program, char *out,
         if (program->annotation_signatures[i] != NULL) {
             dump_text(&w, ", \"signature\": ");
             dump_string(&w, program->annotation_signatures[i]);
+        }
+        // 18.5改: written as the names themselves rather than as anything
+        // resolved, since that is how the registration said them and a
+        // reader hands them back the same way.
+        if (decl->exclusive_count > 0) {
+            dump_text(&w, ", \"exclusives\": [");
+            for (size_t k = 0; k < decl->exclusive_count; k++) {
+                if (k > 0) {
+                    dump_text(&w, ", ");
+                }
+                dump_string(&w, decl->exclusives[k]);
+            }
+            dump_text(&w, "]");
         }
         dump_text(&w, "}");
     }

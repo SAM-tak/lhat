@@ -242,9 +242,24 @@ void lsp_host_config_apply(const LspHostConfig *config, LhatProgram *program)
         const char *signature = string_of(entry, "signature");
         const cJSON *targets =
             cJSON_GetObjectItemCaseSensitive(entry, "targets");
-        if (module != NULL && name != NULL && cJSON_IsObject(targets)) {
-            lhat_register_annotation(program, module, name,
-                                     targets_of(targets), signature);
+        if (module == NULL || name == NULL || !cJSON_IsObject(targets) ||
+            !lhat_register_annotation(program, module, name,
+                                      targets_of(targets))) {
+            continue;
+        }
+        if (signature != NULL) {
+            lhat_register_annotation_signature(program, name, signature);
+        }
+        // 18.5改: the names it was registered as an alternative to, handed
+        // back one at a time -- the same way they were said.
+        const cJSON *exclusives =
+            cJSON_GetObjectItemCaseSensitive(entry, "exclusives");
+        const cJSON *other = NULL;
+        cJSON_ArrayForEach(other, exclusives) {
+            if (cJSON_IsString(other) && other->valuestring != NULL) {
+                lhat_register_annotation_exclusive(program, name,
+                                                   other->valuestring);
+            }
         }
     }
 
