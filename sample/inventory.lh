@@ -1,0 +1,108 @@
+# 在庫を扱う。ビジュアルエディタの写像を実測するための題材で、
+# 分岐の入れ子・テーブルリテラル・関数・ループを一通り含む。
+module^shop.inventory
+
+errordef^StockError {
+    OutOfStock { sku = "", wanted = 0 },
+    UnknownSku { sku = "" },
+}
+
+let^TAX = 0.1
+
+# 単価表。要素リストの折り返しを見るために長くしてある。
+let^prices = {
+    10, 12, 15, 18, 20, 24, 30, 36,
+    40, 48, 60, 72, 90, 120, 150, 180
+}
+
+let^Item = def^{
+    self^{
+        sku = "",
+        name = "",
+        count = 0,
+    },
+
+    override^new = f^sku, name, count{
+        self^{
+            sku = sku,
+            name = name,
+            count = count
+        }
+    },
+
+    op^<=> = f^self^, rhs:Self^{
+        for^let^d = self^.sku <=> rhs.sku if^d != 0 { return^d }
+        for^let^d = self^.name <=> rhs.name if^d != 0 { return^d }
+        return^self^.count <=> rhs.count
+    },
+
+    restock = p^self^, n {
+        self^.count += n
+    },
+
+    take = p^self^, n {
+        if^n > self^.count {
+            return^error^StockError.OutOfStock{ sku = self^.sku, wanted = n }
+        el^:
+            self^.count -= n
+        }
+    },
+
+    label = f^self^{
+        return^$"{self^.name} ({self^.sku}) x{self^.count}"
+    },
+}
+
+# 税込み価格。if 式の腕が縦に並ぶかを見る。
+let^gross = f^net {
+    if^net < 0: 0 el^net = 0: 0 el^: net * (1 + TAX) ;
+}
+
+let^classify = f^n {
+    if^n = 0: "none" el^n < 5: "low" el^n < 20: "some" el^: "many" ;
+}
+
+let^report = p^items {
+    for^it in^items {
+        let^kind = classify(it.count)
+        if^kind = "none" {
+            print($"{it.label()}: 切らしている")
+        el^kind = "low":
+            print($"{it.label()}: 残りわずか")
+            notify(it.sku)
+        el^:
+            print(it.label())
+        }
+    }
+}
+
+let^total = f^items:t^{...:Item} {
+    var^sum = 0
+    for^it in^items {
+        sum += gross(try^priceOf(it.sku)) * it.count
+    }
+    return^ sum
+}
+
+let^priceOf = f^sku {
+    for^i from^0 to^15 {
+        if^prices[i] > 0 {
+            if^sku = i {
+                return^prices[i]
+            }
+        }
+    }
+    return^error^StockError.UnknownSku{ sku = sku }
+}
+
+let^main = p^{
+    let^items = {}
+    with^log = try^openLog("inventory") {
+        for^row in^readRows() {
+            let^ it = Item.new(row.sku, row.name, row.n)
+            items[it.sku] := it
+        }
+        report(items)
+        log.write($"合計 {total(items)}")
+    }
+}

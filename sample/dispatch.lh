@@ -1,0 +1,58 @@
+module^ shop.dispatch
+
+# 分岐を重くした題材。if 文の節が横に並ぶ規則が、
+# 節の数と入れ子でどこまで幅を食うかを見るためのもの。
+
+let^ route = p^req {
+    if^ req.method = "GET" {
+        if^ req.path = "/" {
+            render("index")
+        el^ req.path = "/items":
+            render("items")
+        el^ req.path = "/cart":
+            render("cart")
+        el^:
+            notFound()
+        }
+    el^ req.method = "POST":
+        if^ req.path = "/cart" {
+            addToCart(req.body)
+        el^ req.path = "/checkout":
+            if^ req.user = nil^ {
+                redirect("/login")
+            el^ req.body.total ≦ 0:
+                reject("empty")
+            el^:
+                charge(req.user, req.body.total)
+            }
+        el^:
+            notFound()
+        }
+    el^ req.method = "PUT":
+        update(req.path, req.body)
+    el^ req.method = "DELETE":
+        remove(req.path)
+    el^:
+        methodNotAllowed()
+    }
+}
+
+let^ grade = f^score:number^ -> string^ {
+    if^ score ≧ 90: "A"
+    el^ score ≧ 80: "B"
+    el^ score ≧ 70: "C"
+    el^ score ≧ 60: "D"
+    el^: "F" ;
+}
+
+let^ describe = f^kind:string^, n:number^ -> string^ {
+    if^ kind = "item" {
+        return^ $"品目 {n}"
+    el^ kind = "box":
+        return^ $"箱 {n}"
+    el^ kind = "pallet":
+        return^ $"パレット {n}"
+    el^:
+        return^ "不明"
+    }
+}
