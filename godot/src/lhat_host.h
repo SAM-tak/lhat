@@ -64,6 +64,10 @@ String text_of(LhatValue value);
 // wrote reads like a line a stage wrote.
 String problem(const String &where, const String &what);
 
+// One level of indentation, as the editor is set to write one. A tab
+// wherever there is no editor to ask.
+String indentation();
+
 // 03 の 4.2 puts the refusals in the checker, so a compile that stops is a
 // hole in it -- and says where, so whoever closes the hole is told.
 String compile_failure(const LhatProgram *program, const String &path);

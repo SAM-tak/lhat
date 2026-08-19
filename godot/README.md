@@ -78,6 +78,53 @@ func _run() -> void:
 拒否の文言もエンジンが出す——`EditorScript` を継承していない、`@tool` でない、
 の2つ。クラスを走らせたければノードに着せる。
 
+### 新規スクリプトのテンプレートは3つ
+
+「スクリプトをアタッチ」「新規スクリプト」ダイアログの **Template** 欄に、
+`.lh` の3種が並ぶ。上の2種類がそのまま3つになっている——着るもの、
+引かれるもの、走らせるもの。
+
+| 紐付け | 名前 | 中身 |
+| --- | --- | --- |
+| `Node` | Node script | `module^` ＋ `@game` ＋ 包みを継承した `def^` 1つ |
+| `Object` | Module | `module^` ＋ `public^let^` の関数。`def^` 無し |
+| `EditorScript` | Editor script | `module^` 無し。親クラスの指定は使わない |
+
+**並ぶのは親クラスに合うものだけ**である。エディタは親クラスの継承鎖を辿って
+集めるので、`Sprite2D` のノードに着せる流れでは `Node` と `Object` の2つが出て、
+`EditorScript` は出ない。GDScript も同じ仕組みで、あちらの10個のうち
+`CharacterBody2D` 用や `EditorPlugin` 用が普段見えないのはこのためである。
+
+置換される綴りは GDScript と同じ4つ——`_BASE_`（親クラス名）、`_CLASS_`、
+`_CLASS_SNAKE_CASE_`、`_TS_`（字下げ1段）。**新しい綴りを足していない**ので、
+GDScript 用に書いた雛形の書き方がそのまま通じる。
+
+```lhat
+module^spinner
+
+# 包みはプロジェクトのもの。Godot.Sprite2D が無ければ書き足す。
+let^Godot = require^"lhat/Godot.lh"
+
+@game
+public^let^Spinner = Godot.Sprite2D..def^{
+	self^{
+		@export speed = 1,
+	},
+	…
+}
+```
+
+**`module^` の名前はファイル名から来る。** ダイアログが渡すのは basename
+だけでパスは渡らないので、`spinner.lh` なら `module^spinner` にしかならない。
+入れ子の名前（`demo.spinner`）にしたければ書き直す。
+
+`@tool` 版は無い。`@game` を1語書き換えるだけなので、GDScript も持っていない。
+
+［補足］ 利用者の雛形も効く。`res://script_templates/<クラス名>/*.lh` に置くと
+一覧の「Project」に出る。名前と説明は最初の行に `# meta-name:`
+`# meta-description:` で書く——エディタが読むのは言語の拡張子と、空白を含まない
+最初のコメント綴り（L^ では `#`）である。
+
 ### ノードに着せられる
 
 **着せられる単位の条件は2つ** — `module^` であること、着るクラスが

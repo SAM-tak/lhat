@@ -4,6 +4,9 @@
 
 #include <string.h>
 
+#include <godot_cpp/classes/editor_interface.hpp>
+#include <godot_cpp/classes/editor_settings.hpp>
+#include <godot_cpp/classes/engine.hpp>
 #include <godot_cpp/classes/file_access.hpp>
 #include <godot_cpp/variant/packed_byte_array.hpp>
 #include <godot_cpp/variant/utility_functions.hpp>
@@ -133,6 +136,25 @@ String text_of(LhatValue value)
 String problem(const String &where, const String &what)
 {
     return where + String(": error: ") + what;
+}
+
+String indentation()
+{
+    EditorInterface *editor = Engine::get_singleton()->is_editor_hint()
+                                  ? EditorInterface::get_singleton()
+                                  : nullptr;
+    Ref<EditorSettings> settings = editor != nullptr
+                                       ? editor->get_editor_settings()
+                                       : Ref<EditorSettings>();
+    if (settings.is_null()) {
+        return "\t";
+    }
+    // 0 is Tabs, 1 is Spaces -- the enum the setting is declared with.
+    if ((int)settings->get_setting("text_editor/behavior/indent/type") == 0) {
+        return "\t";
+    }
+    int wide = (int)settings->get_setting("text_editor/behavior/indent/size");
+    return String(" ").repeat(wide > 0 ? wide : 4);
 }
 
 // 05 の 6.2: the graph, not the one path that was asked for -- a unit fails

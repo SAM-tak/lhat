@@ -4,38 +4,17 @@
 
 #include <godot_cpp/classes/code_edit.hpp>
 #include <godot_cpp/classes/editor_interface.hpp>
-#include <godot_cpp/classes/editor_settings.hpp>
-#include <godot_cpp/classes/engine.hpp>
 #include <godot_cpp/classes/script_editor.hpp>
 #include <godot_cpp/classes/script_editor_base.hpp>
 
 #include "lhat/lexer.h"
 #include "lhat/source.h"
 #include "lhat/token.h"
+#include "lhat_host.h"
 #include "lhat_script.h"
 
 namespace godot {
 namespace {
-
-// One level of indentation, as the editor is set to write one.
-String indentation()
-{
-    EditorInterface *editor = Engine::get_singleton()->is_editor_hint()
-                                  ? EditorInterface::get_singleton()
-                                  : nullptr;
-    Ref<EditorSettings> settings = editor != nullptr
-                                       ? editor->get_editor_settings()
-                                       : Ref<EditorSettings>();
-    if (settings.is_null()) {
-        return "\t";
-    }
-    // 0 is Tabs, 1 is Spaces -- the enum the setting is declared with.
-    if ((int)settings->get_setting("text_editor/behavior/indent/type") == 0) {
-        return "\t";
-    }
-    int wide = (int)settings->get_setting("text_editor/behavior/indent/size");
-    return String(" ").repeat(wide > 0 ? wide : 4);
-}
 
 // An argument arrives as "name:Type" -- Godot's type, which is not L^'s. The
 // three the two share are carried over and everything else is any^: 03 の 3.1
@@ -105,7 +84,7 @@ void place_of(const char *text, size_t length, uint32_t offset, int *line,
 String lhat_receiver_text(const String &function,
                           const PackedStringArray &args)
 {
-    String tab = indentation();
+    String tab = host::indentation();
     String out = tab + function + " = p^self^";
     for (int64_t i = 0; i < args.size(); i++) {
         String named = args[i].get_slice(":", 0);
@@ -251,7 +230,7 @@ void lhat_receiver_write(LhatScript *script, const String &function,
     // The body is the second of the three lines written, and the caret goes
     // where the writing does.
     editor->edit_script(Ref<Script>(script), line + 2,
-                        (int)indentation().length() * 2);
+                        (int)host::indentation().length() * 2);
 }
 
 }  // namespace godot

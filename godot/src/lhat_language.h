@@ -89,6 +89,8 @@ public:
     Object *_create_script() const override;
     Ref<Script> _make_template(const String &tmpl, const String &class_name,
                                const String &base_class_name) const override;
+    TypedArray<Dictionary> _get_built_in_templates(
+        const StringName &object) const override;
     bool _is_using_templates() override;
 
     // 02 の 2 章: every keyword is a word with a hat on it, and the lexer

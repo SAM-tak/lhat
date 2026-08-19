@@ -241,29 +241,128 @@ Object *LhatLanguage::_create_script() const
     return memnew(LhatScript);
 }
 
+namespace {
+
+// What the Create Script dialog offers. Godot asks per class and walks the
+// chosen base's inheritance chain (script_create_dialog.cpp's
+// _update_template_menu), so a row kept under Object is offered for every
+// base and a row kept under Node for every node.
+//
+// Three, because a .lh is one of two things (05 の 3.2) and the one with a
+// module^ is written two ways: worn by a node, or reached by require^.
+struct BuiltInTemplate {
+    const char *inherit;
+    const char *name;
+    const char *description;
+    const char *content;
+};
+
+const char *const node_template =
+    "module^_CLASS_SNAKE_CASE_\n"
+    "\n"
+    "# The wrapper is the project's own, and inheriting from it is what says\n"
+    "# which engine class a node has to be. Add Godot._BASE_ to it if it is\n"
+    "# not there yet.\n"
+    "let^Godot = require^\"lhat/Godot.lh\"\n"
+    "\n"
+    "@game\n"
+    "public^let^_CLASS_ = Godot._BASE_..def^{\n"
+    "_TS_self^{\n"
+    "_TS__TS_@export speed = 1,\n"
+    "_TS_},\n"
+    "\n"
+    "_TS_# Once, when the node enters the tree.\n"
+    "_TS__ready = p^self^{\n"
+    "_TS_},\n"
+    "\n"
+    "_TS_# Every frame. `delta` is how long the last one took, in seconds.\n"
+    "_TS__process = p^self^, delta:number^{\n"
+    "_TS_},\n"
+    "}\n";
+
+const char *const module_template =
+    "module^_CLASS_SNAKE_CASE_\n"
+    "\n"
+    "# Nothing wears this one: require^ is what reaches it, and only the\n"
+    "# public^ names are answered (05 の 5.5).\n"
+    "\n"
+    "public^let^greet = f^name:string^ -> string^ {\n"
+    "_TS_return^ $\"hello, {name}\"\n"
+    "}\n";
+
+const char *const editor_script_template =
+    "# No module^, so this is an editor script (05 の 3.2): the body runs on\n"
+    "# File > Run and nothing runs it when the project is read. The class the\n"
+    "# dialog was opened with is not used -- nothing wears this.\n"
+    "\n"
+    "print(\"hello from L^\")\n";
+
+const BuiltInTemplate built_in_templates[] = {
+    {"Node", "Node script", "A class a node wears, and the marks that say so",
+     node_template},
+    {"Object", "Module", "A unit require^ reaches. Nothing wears it",
+     module_template},
+    {"EditorScript", "Editor script", "Statements File > Run runs, once",
+     editor_script_template},
+};
+
+}  // namespace
+
+// The four spellings GDScript replaces (gdscript_editor.cpp's make_template),
+// and no fifth: a template written for one language then reads in the other.
+//
+// _CLASS_SNAKE_CASE_ is what the module^ is named. The dialog hands over the
+// file's basename and no path at all (script_create_dialog.cpp), so a name of
+// one part is as much as can honestly be written -- 05 の 5.3 has the writer
+// spell out the rest.
+//
+// An empty template is the writer having turned templates off, and an empty
+// .lh is an editor script with nothing in it. GDScript answers the same way.
 Ref<Script> LhatLanguage::_make_template(const String &tmpl,
                                          const String &class_name,
                                          const String &base_class_name) const
 {
-    (void)tmpl;
-    (void)class_name;
-    (void)base_class_name;
-
     Ref<LhatScript> script;
     script.instantiate();
-    // String::utf8, not String: the one-argument constructor reads its bytes
-    // as Latin-1, and a section number written 05 の 5.5 comes out mangled.
-    script->set_source_code(String::utf8(
-        "# A unit is a body, not a class (05 の 5.5): what is written here\n"
-        "# runs top to bottom when the unit is run.\n"
-        "\n"
-        "print(\"hello from L^\")\n"));
+    // _CLASS_SNAKE_CASE_ before _CLASS_, or the longer one is never seen.
+    String written = tmpl.replace("_BASE_", base_class_name)
+                         .replace("_CLASS_SNAKE_CASE_", class_name.to_snake_case())
+                         .replace("_CLASS_", class_name.to_pascal_case())
+                         .replace("_TS_", host::indentation());
+    script->set_source_code(written);
     return script;
+}
+
+// Every one of the six keys has to be there: script_language_extension.h
+// drops a row that is missing any of them, and says nothing about it.
+// `id` is the dialog's own numbering and is written over; `origin` is 0,
+// TemplateLocation::TEMPLATE_BUILT_IN.
+TypedArray<Dictionary> LhatLanguage::_get_built_in_templates(
+    const StringName &object) const
+{
+    TypedArray<Dictionary> out;
+    for (const BuiltInTemplate &one : built_in_templates) {
+        if (String(object) != String(one.inherit)) {
+            continue;
+        }
+        Dictionary row;
+        row["inherit"] = String(one.inherit);
+        row["name"] = String(one.name);
+        row["description"] = String(one.description);
+        // String::utf8, not String: the one-argument constructor reads its
+        // bytes as Latin-1, and a section number written 05 の 3.2 comes out
+        // mangled.
+        row["content"] = String::utf8(one.content);
+        row["id"] = 0;
+        row["origin"] = 0;
+        out.push_back(row);
+    }
+    return out;
 }
 
 bool LhatLanguage::_is_using_templates()
 {
-    return false;
+    return true;
 }
 
 PackedStringArray LhatLanguage::_get_reserved_words() const
