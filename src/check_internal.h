@@ -564,6 +564,12 @@ void chk_unify_yield(Checker *c, const LhatNode *at, LhatType **slot,
 LhatType *chk_infer_func(Checker *c, const LhatNode *node);
 const LhatTypeMember *chk_members_search(const LhatTypeMember *members,
                                          const char *name, size_t length);
+// 04 の 2.3: the kind this errordef^ declares under `name`, or NULL. Asked
+// from the type side, where it is the answer, and from the value side, where
+// finding one is what tells a type written in the wrong place from a name
+// nothing declares.
+LhatType *chk_kind_of_set(const LhatType *set, const char *name,
+                          size_t length);
 const LhatTypeMember *chk_find_member(const LhatType *table,
                                       const char *name, size_t length);
 LhatType *chk_instance_of(const LhatType *definition);

@@ -1452,6 +1452,35 @@ static void test_errors(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
+    // 2.3: types and no values, so a kind standing where a value was wanted
+    // is a type written in the wrong place. It reads as a member access --
+    // the set is a name in scope -- which is why saying "no such member"
+    // would send a writer hunting for a spelling mistake instead of for the
+    // error^ 2.5 puts in front.
+    LHAT_TEST("2.3: a kind written as a value says which it is");
+    check_text(&u,
+               "errordef^ IOError { NotFound, Denied }\n"
+               "var^ e = IOError.NotFound\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_KIND_AS_VALUE);
+    unit_dispose(&u);
+
+    LHAT_TEST("and a name the set never declared is still no such member");
+    check_text(&u,
+               "errordef^ IOError { NotFound, Denied }\n"
+               "var^ e = IOError.Nosuch\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_NO_MEMBER);
+    unit_dispose(&u);
+
+    // The two the set does answer (2.3's table) are reached through a value,
+    // and reaching them through the set itself is not this.
+    LHAT_TEST("and message and cause are untouched");
+    check_text(&u,
+               "errordef^ IOError { NotFound, Denied }\n"
+               "var^ e = error^IOError.NotFound{ }\n"
+               "var^ s : string^ = e.message\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
     // 04 の 8.1: the whole detection mechanism for an unhandled error is
     // ordinary conformance.
     LHAT_TEST("an unhandled error cannot be used as the value");

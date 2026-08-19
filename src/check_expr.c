@@ -1854,6 +1854,17 @@ LhatType *chk_infer_member(Checker *c, const LhatNode *node)
         if (target->kind == LHAT_TYPE_ERROR_KIND) {
             members = target->v.error.fields;
         }
+        // 04 の 2.3: the declaration makes types and no values, so a kind of
+        // it standing here is a type written where a value was wanted. The
+        // name resolves, which is why it reads as a member access at all --
+        // and "no such member" would send the writer looking for a spelling
+        // mistake instead of for the error^ that 2.5 puts in front.
+        if (target->kind == LHAT_TYPE_ERROR_SET &&
+            chk_kind_of_set(target, name, length) != NULL) {
+            chk_report_named(c, node, LHAT_CHECK_ERR_KIND_AS_VALUE, name,
+                             length);
+            return chk_simple(c, LHAT_TYPE_UNKNOWN);
+        }
         // ERROR, ERROR_SET and a union of kinds carry no fields of their own
         // -- 2.2's are the leaf's, and reaching one is what 11.4's narrowing
         // is for. The search below finds nothing and the shared tail still

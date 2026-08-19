@@ -47,6 +47,11 @@ typedef enum {
                                         // variadic tail, and this callee has
                                         // none
     LHAT_CHECK_ERR_NO_MEMBER,           // 14.10: the structure lacks it
+    LHAT_CHECK_ERR_KIND_AS_VALUE,       // 04 の 2.3: a kind of the errordef^
+                                        // written where a value was wanted.
+                                        // The declaration makes types and no
+                                        // values, so 2.5's error^ is the only
+                                        // way to one
 
     LHAT_CHECK_ERR_CANNOT_FAIL,         // 04 の 4.1: catch^ on what cannot fail
     LHAT_CHECK_ERR_CANNOT_BE_NIL,       // 11.7, the same for '??'

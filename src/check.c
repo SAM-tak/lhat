@@ -654,6 +654,20 @@ static bool names_a_type(const LhatType *bound)
     }
 }
 
+LhatType *chk_kind_of_set(const LhatType *set, const char *name, size_t length)
+{
+    if (set == NULL || set->kind != LHAT_TYPE_ERROR_SET) {
+        return NULL;
+    }
+    for (const LhatTypeList *k = set->v.error.kinds; k != NULL; k = k->next) {
+        if (k->type->v.error.name_length == length &&
+            memcmp(k->type->v.error.name, name, length) == 0) {
+            return k->type;
+        }
+    }
+    return NULL;
+}
+
 static LhatType *resolve_qualified_type(Checker *c, const LhatNode *node)
 {
     LhatType *outer = chk_resolve_type(c, node->v.access.target);
@@ -665,12 +679,9 @@ static LhatType *resolve_qualified_type(Checker *c, const LhatNode *node)
     }
 
     if (outer->kind == LHAT_TYPE_ERROR_SET) {
-        for (const LhatTypeList *k = outer->v.error.kinds; k != NULL;
-             k = k->next) {
-            if (k->type->v.error.name_length == length &&
-                memcmp(k->type->v.error.name, name, length) == 0) {
-                return k->type;
-            }
+        LhatType *kind = chk_kind_of_set(outer, name, length);
+        if (kind != NULL) {
+            return kind;
         }
         chk_report(c, node, LHAT_CHECK_ERR_UNKNOWN_TYPE);
         return chk_simple(c, LHAT_TYPE_UNKNOWN);
@@ -2971,6 +2982,9 @@ const char *lhat_check_error_message(LhatCheckErrorCode code)
                    "takes none";
         case LHAT_CHECK_ERR_NO_MEMBER:
             return "this value has no such member";
+        case LHAT_CHECK_ERR_KIND_AS_VALUE:
+            return "a kind is a type, not a value; error^Kind{ ... } is what "
+                   "makes one";
         case LHAT_CHECK_ERR_CANNOT_FAIL:
             return "the left of catch^ or try^ cannot return an error";
         case LHAT_CHECK_ERR_CANNOT_BE_NIL:
