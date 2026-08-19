@@ -518,13 +518,13 @@ Go と同じ形で、`##` のような専用の綴りは無い。
 # 回るスプライト。エディタのヘルプページに出るのはこれ。
 @game
 public^let^Spinner = Godot.Sprite2D..def^{
-	self^{
-		# 一秒あたりの回転。インスペクタの欄のツールチップに出る。
-		@export_range(0, 10) speed = 1,
-	},
+    self^{
+        # 一秒あたりの回転。インスペクタの欄のツールチップに出る。
+        @export_range(0, 10) speed = 1,
+    },
 
-	# 死んだときに鳴る。
-	@signal died = p^self^, message:string^{ … },
+    # 死んだときに鳴る。
+    @signal died = p^self^, message:string^{ … },
 }
 ```
 
@@ -631,7 +631,7 @@ liblhat.windows.template_debug.x86_64.dll
 
 ```powershell
 . .\scripts\devshell.ps1
-.\scripts\dump-host-api.ps1 -Godot D:\path	o\Godot_console.exe
+.\scripts\dump-host-api.ps1 -Godot D:\path\of\Godot_console.exe
 ```
 
 `-Godot` を省くと cli の分だけ書く。拡張側の答えは

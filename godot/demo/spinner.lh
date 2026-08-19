@@ -8,12 +8,14 @@ let^Godot = require^"lhat/Godot.lh"
 
 # くるくる回る
 #
-# くるくる回るだけ
+# 横滑りしながらくるくる回るだけ
 @game
 public^let^Spinner = Godot.Sprite2D..def^{
 	self^{
 		# 回転速度
 		@export_range(0, 10) speed = 1,
+		# スライド速度
+		@export_range(0, 5000) slideSpeed = 500,
 		turns = 0,
 	},
 
@@ -26,6 +28,9 @@ public^let^Spinner = Godot.Sprite2D..def^{
 	},
 
 	_process = p^self^, delta:number^{
+		let^world = self^.getGlobalTransform()
+		let^xAxis = world.x() # ワールドの X 軸
+		self^.setPosition(self^.getPosition() + xAxis * delta * self^.slideSpeed)
 		self^.setRotation(self^.getRotation() + delta * self^.speed)
 		self^.turns += 1
 		if^self^.turns > 1000 {
