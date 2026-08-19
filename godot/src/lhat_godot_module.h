@@ -30,6 +30,13 @@ namespace host {
 // long as it does.
 struct Godot {
     const LhatHostDataTag *object_tag;
+    // 05 の 8.8: a Callable and a Signal hold references rather than bytes,
+    // so neither is one of 8.9's values (lhat_godot_handles.h).
+    const LhatHostDataTag *callable_tag = nullptr;
+    const LhatHostDataTag *signal_tag = nullptr;
+    // 05 の 8.8: one tag per packed array, kept under the Variant kind it
+    // stands for (lhat_godot_packed.h).
+    const LhatHostDataTag *packed_tags[Variant::VARIANT_MAX] = {};
 
     // A registered name is borrowed rather than copied
     // (lhat_type_add_member keeps the pointer it is given), and the names

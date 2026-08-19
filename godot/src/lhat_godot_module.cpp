@@ -8,6 +8,8 @@
 #include <godot_cpp/variant/utility_functions.hpp>
 #include <godot_cpp/variant/variant.hpp>
 
+#include "lhat_godot_handles.h"
+#include "lhat_godot_packed.h"
 #include "lhat_godot_values.h"
 #include "lhat_variant.h"
 
@@ -331,6 +333,14 @@ const Godot *register_godot(LhatProgram *program)
     // 05 の 8.9: the mathematical types, which are values rather than objects
     // and so nothing the one hostdata type above could stand for.
     if (!register_values(program, module)) {
+        memdelete(module);
+        return nullptr;
+    }
+
+    // 05 の 8.8: the two that look like values and are not, and the ten runs
+    // of them that are copied on write.
+    if (!register_handles(program, module) ||
+        !register_packed(program, module)) {
         memdelete(module);
         return nullptr;
     }

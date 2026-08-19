@@ -5,6 +5,8 @@
 #include <godot_cpp/variant/dictionary.hpp>
 #include <godot_cpp/variant/string.hpp>
 
+#include "lhat_godot_handles.h"
+#include "lhat_godot_packed.h"
 #include "lhat_godot_module.h"
 
 namespace godot {
@@ -83,11 +85,24 @@ Variant to_variant_at(LhatValue value, const Godot *module, int depth)
         return table_to_variant((const LhatTable *)lhat_as_object(value),
                                 module, depth);
     }
-    // 05 の 8.8: a handle crosses back as the object it stands for, when
-    // there is a registration to read it against.
+    // 05 の 8.8: a handle crosses back as what it stands for, when there is a
+    // registration to read it against.
     Object *object = object_of(value, module);
     if (object != nullptr) {
         return object;
+    }
+    const Callable *callable = callable_of(value, module);
+    if (callable != nullptr) {
+        return *callable;
+    }
+    const Signal *signal = signal_of(value, module);
+    if (signal != nullptr) {
+        return *signal;
+    }
+    bool packed = false;
+    Variant run = packed_variant(value, module, &packed);
+    if (packed) {
+        return run;
     }
     // nil^, and everything with nowhere to land.
     return Variant();
@@ -176,6 +191,25 @@ bool from_variant_at(LhatMachine *machine, const Variant &value,
             // 05 の 8.8: one host type carries every engine object, and the
             // hierarchy is written in L^ instead (lhat_godot_module.h).
             return make_object(machine, module, (Object *)value, out);
+        // Both hold references rather than bytes, so both are 8.8's data
+        // rather than 8.9's values (lhat_godot_handles.h).
+        case Variant::CALLABLE:
+            return make_callable(machine, module, (Callable)value, out);
+        case Variant::SIGNAL:
+            return make_signal(machine, module, (Signal)value, out);
+        // 8.8 again: copied on write, counted by reference, and four of the
+        // ten hold values a table could not (lhat_godot_packed.h).
+        case Variant::PACKED_BYTE_ARRAY:
+        case Variant::PACKED_INT32_ARRAY:
+        case Variant::PACKED_INT64_ARRAY:
+        case Variant::PACKED_FLOAT32_ARRAY:
+        case Variant::PACKED_FLOAT64_ARRAY:
+        case Variant::PACKED_STRING_ARRAY:
+        case Variant::PACKED_VECTOR2_ARRAY:
+        case Variant::PACKED_VECTOR3_ARRAY:
+        case Variant::PACKED_VECTOR4_ARRAY:
+        case Variant::PACKED_COLOR_ARRAY:
+            return make_packed(machine, module, value, out);
         default:
             // 05 の 8.8 and 8.9 are where an Object and a Vector2 will land,
             // once there is a registered type for each to be.

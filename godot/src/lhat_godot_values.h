@@ -19,6 +19,11 @@
 #ifndef LHAT_GODOT_VALUES_H
 #define LHAT_GODOT_VALUES_H
 
+#include <godot_cpp/variant/color.hpp>
+#include <godot_cpp/variant/vector2.hpp>
+#include <godot_cpp/variant/vector3.hpp>
+#include <godot_cpp/variant/vector4.hpp>
+
 #include "lhat.h"
 
 namespace godot {
@@ -31,6 +36,23 @@ struct Godot;
 // function that makes one. Belongs before any checking, with every other
 // registration (05 の 8.7).
 bool register_values(LhatProgram *program, Godot *module);
+
+// 05 の 8.9: one of the value types as an L^ value, and the bytes back.
+// Only the four a Packed*Array holds -- the rest are reached through their
+// own members. Overloaded rather than templated so a caller needs no traits
+// of its own.
+LhatValue value_answer(LhatMachine *machine, const Godot *module,
+                       const Vector2 &value);
+LhatValue value_answer(LhatMachine *machine, const Godot *module,
+                       const Vector3 &value);
+LhatValue value_answer(LhatMachine *machine, const Godot *module,
+                       const Vector4 &value);
+LhatValue value_answer(LhatMachine *machine, const Godot *module,
+                       const Color &value);
+bool value_taken(LhatValue held, const Godot *module, Vector2 *out);
+bool value_taken(LhatValue held, const Godot *module, Vector3 *out);
+bool value_taken(LhatValue held, const Godot *module, Vector4 *out);
+bool value_taken(LhatValue held, const Godot *module, Color *out);
 
 }  // namespace host
 }  // namespace godot

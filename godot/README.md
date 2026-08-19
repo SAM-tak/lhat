@@ -297,6 +297,26 @@ print($"{b * godot.vector3(4, 5, 6)}")   # 基底をベクトルに適用
   控えなので、そこへ書いても呼び手には届かない。**変えるときは作り直す**
   ——値型とはそういうものである
 - **等価はバイトで比べる**（`hostvalue_equal`）。`op^=` は要らない
+- **メソッドはエンジンのものをそのまま**。名前だけ L^ の綴りに直してある
+  （`length_squared` → `lengthSquared`）:
+
+  | 型 | 答えるもの |
+  | --- | --- |
+  | `Vector2` `Vector3` `Vector4` | `length` `lengthSquared` `normalized` `dot` `distanceTo` `lerp` |
+  | `Vector2` だけ | `angle` `angleTo` `cross`（数）`rotated` |
+  | `Vector3` だけ | `cross`（ベクトル） |
+  | `Vector2i` `Vector3i` `Vector4i` | `length` `lengthSquared`（単位ベクトルは整数に無い） |
+  | `Color` | `inverted` `luminance` `lerp` |
+  | `Quaternion` | `length` `normalized` `dot` `inverse` `slerp` |
+  | `Plane` | `normalized` `distanceTo` `hasPoint` |
+  | `Rect2` | `hasPoint` `intersects` `center` `merged` |
+  | `Rect2i` `AABB` | `hasPoint`（`AABB` は `center` も） |
+  | `Transform2D` | `affineInverse` `rotation` `scale` `basisXform` `rotated` |
+  | `Basis` | `inverse` `transposed` `determinant` |
+  | `Transform3D` `Projection` | `affineInverse` / `inverse` |
+
+  **回転の向きに三角関数は要らない。** `Transform2D` の列が基底そのものなので、
+  ワールドの X 軸は `t.x()`、Y 軸は `t.y()` である
 - 演算子はエンジンが持っているものだけ。回転（`Quaternion`）や変換
   （`Transform2D` `Transform3D` `Basis` `Projection`）の `*` は成分ごとの積
   ではなく、それぞれの意味の積である
@@ -336,8 +356,59 @@ self^.gdobj.setColor("modulate", godot.color(0, 1, 0, 1))
 ［補足］ **`call()` の可変長引数には入らない。** 8.9 が `...` から締め出す
 ので、値を引数に取るメソッドを `call` から呼ぶ道はまだ無い。
 
-［補足］ `RID`・`Callable`・`Signal`・`Packed*Array` はまだ無い。後の三者は
-内に参照を持つので、8.9 の値ではなく 8.8 のデータになる。
+#### 値に見えて値でないもの — `Callable` と `Signal`
+
+どちらも中に参照を持つ。8.9 のホスト値は**回収器が覗かない生バイト**でなければ
+ならないので、この2つは値になれない。**8.8 のデータ**として、ポインタの向こうに
+置き、`dispose` で返す（02 の 12.5）。
+
+代わりに得るものがある——**表にも `any^` にも入る**。`get` / `set` / `call` が
+そのまま運ぶ。
+
+```lhat
+let^me = self^.gdobj
+let^to = godot.callable(me, "onFired")     # 自分のメンバを指す
+let^sig = godot.signal(me, "fired")
+
+sig.connect(to)
+sig.emit("hello")                          # onFired が走る
+sig.disconnect(to)
+```
+
+**無から作る道は無い。** `Callable` はオブジェクトとメソッド名から、`Signal` は
+オブジェクトとシグナル名から作る。それ以外の作り方は無い——`godot.Object` が
+同じ理由で `override^new` の引数からしか来ないのと同じである（14.15）。
+
+`Callable` は `isValid()` `getMethod()` `getObject()` `call(…)`、
+`Signal` は `getName()` `getObject()` `isNull()` `connect()` `disconnect()`
+`isConnected()` `emit(…)`。
+
+［補足］ `RID` は値の側にいる。8バイトの不透明な番号で、参照を持たない
+——指し示す先はサーバのもので、L^ が生かすものではない。読めるのは
+`getId()` だけである。
+
+#### `Packed*Array` の10種も 8.8 のデータ
+
+エンジンの側では書き込み時複製・参照計数なので 8.9 の値ではない。かといって
+**L^ の表にも書き出せない**——10種のうち4種（`Vector2` `Vector3` `Vector4`
+`Color` の配列）は要素がホスト値で、8.9 がそれを表から締め出しているためである。
+
+だから10種とも同じ形にした。**長さと添字を持つ不透明な構造**である。
+
+```lhat
+let^points = godot.packedVector2Array()
+points.append(godot.vector2(1, 2))
+points.append(godot.vector2(3, 4))
+print($"{points.size()} 点、2番目は {points.at(2)}")
+points.set(1, godot.vector2(9, 9))
+self^.gdobj.set("polygon", points)
+```
+
+`size()` `at(i)` `set(i, v)` `append(v)` `clear()` `dispose`。添字は 1 から
+（02 の 14 の並びと同じ）で、無い添字は要素の零を答える——表と同じ読み方である。
+
+**写し取らない。** 千要素の配列を読むのは呼び出し千回であって、千要素の表を
+作ることではない。`get()` / `set()` / `call()` はそのまま運ぶ。
 
 ### エンジンに渡すことは注釈で書く
 
@@ -511,8 +582,9 @@ for line in LhatRuntime.run("res://hello.lh"):
 | それ以外の表 | `Dictionary` |
 
 逆向きも同じ対応。`String`/`StringName`/`NodePath` はすべて `string^` に、
-`Array` は 1..n の表になる。**それ以外は拒む**——`Callable` も `Node` も
-`Vector2` も、L^ 側に居場所がまだ無い（05 の 8.8 / 8.9 がその居場所）。
+`Array` は 1..n の表になる。**`Node`・`Callable`・`Signal`・`Packed*Array` は
+8.8 のデータとして渡り**、数学の型は 8.9 の値なので `any^` に入れず、この道
+（`call_member` の引数と答え）には乗らない。残りは拒む。
 
 ```gdscript
 LhatRuntime.call_member("res://lib/api.lh", "total", [[1, 2, 3, 4]])   # 10
