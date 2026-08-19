@@ -438,13 +438,13 @@ bool lhat_register_annotation_exclusive(LhatProgram *program,
                                         const char *name, const char *other);
 
 // 18.5.2: a name that means nothing on its own -- @icon on a Godot class,
-// which the engine hangs on a global class name and so on the @class_name
+// which the engine hangs on a global class name and so on the @export_class
 // that asks for one. Writing it without that one is writing a mark that
 // quietly does nothing, which is the loss 18.4改 refused.
 //
 // Read on the declaration the annotation is written above, not over the
 // file: standing beside something is standing beside it, and an @icon over
-// one class with the @class_name over another are not beside each other.
+// one class with the @export_class over another are not beside each other.
 // That is what tells this from the exclusion above, which is a file's to
 // answer because two answers to one question can be written anywhere in it.
 //

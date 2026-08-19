@@ -206,7 +206,7 @@ Probe.call_static("twice", [21])     # 42
 `has_method("new")` は偽を答え、`call_static("new", …)` は理由を言って断る。
 二つ目の扉から作ったインスタンスはノードを持たず、`instances` にも載らない。
 
-### プロジェクト全体で名乗るのは `@class_name` を書いたときだけ
+### プロジェクト全体で名乗るのは `@export_class` を書いたときだけ
 
 **既定は無名である。** GDScript が `class_name` を書かなければ無名なのと同じ
 側に立つ——書かなくてもスクリプトは普通に動き、ノードにも着せられ、参照は
@@ -214,7 +214,7 @@ Probe.call_static("twice", [21])     # 42
 
 ```lhat
 @game
-@class_name
+@export_class
 public^let^ Spinner = Godot.Sprite2D..def^{ … }
 ```
 
@@ -562,18 +562,20 @@ public^let^ Spinner = Godot.Sprite2D..def^{
   あると言う。違いは編集中も動くかどうか。公開クラスが1つしか無ければどちらも
   書かなくてよい。上の「ノードに着せられる」を見る
 
-- **`@class_name`** — そのクラスがプロジェクト全体で名乗る。名前は束縛の
+- **`@export_class`** — そのクラスがプロジェクト全体で名乗る。名前は束縛の
   名前で、引数は取らない。**書かなければ無名**であり、それが既定である。
-  上の「プロジェクト全体で名乗るのは `@class_name` を書いたときだけ」を見る
+  上の「プロジェクト全体で名乗るのは `@export_class` を書いたときだけ」を見る
 
 - **`@icon`** — そのクラスのアイコン。シーンツリー、Create Node、ファイル
-  一覧に出る。**アイコンはグローバルクラス名に掛かる**ので、`@class_name`
+  一覧に出る。**アイコンはグローバルクラス名に掛かる**ので、`@export_class`
   と併記しなければならない——02 の 18.5.2 の併記必須として登録してあるので、
-  片方だけ書けば検査器がその場で弾く（行番号付き）
+  片方だけ書けば検査器がその場で弾く（行番号付き）。的も `@export_class` と
+  同じ（`PUBLIC` と `FILEUNIQUE`）で、理由も同じ——私有のクラスは名前を持て
+  ないし、1ファイルが登録する名前は1つなので、着けるアイコンも1つである
 
   ```lhat
   @game
-  @class_name
+  @export_class
   @icon("res://lhat/lhat-logo-small.svg")
   public^let^ Spinner = Godot.Sprite2D..def^{ … }
   ```
@@ -583,7 +585,7 @@ public^let^ Spinner = Godot.Sprite2D..def^{
   @icon("res://lhat/lhat-logo-small.svg")
   public^let^ Spinner = …
   # error: this annotation means nothing on its own, and the one it has to
-  #        stand beside is missing: class_name
+  #        stand beside is missing: export_class
   ```
 
 - **`@export`** — `self^` の欄をインスペクタに出す。欄の現在値がそのまま

@@ -2796,7 +2796,7 @@ static void test_annotation_requisite(void)
         {"main.lh",
          "module^ ns.main\n"
          "@icon(\"res://x.svg\")\n"
-         "@class_name\n"
+         "@export_class\n"
          "public^ let^ A = def^{ }\n"}};
 
     LHAT_TEST("18.5.2: a mark that needs another is taken beside it");
@@ -2805,12 +2805,12 @@ static void test_annotation_requisite(void)
         LHAT_CHECK(registered_with(&program, "godot", "icon",
                                    LHAT_ANNOTATION_PUBLIC, "p^ string^;"),
                    "icon");
-        LHAT_CHECK(lhat_register_annotation(&program, "godot", "class_name",
+        LHAT_CHECK(lhat_register_annotation(&program, "godot", "export_class",
                                             LHAT_ANNOTATION_PUBLIC),
-                   "class_name");
+                   "export_class");
         LHAT_CHECK(lhat_register_annotation_requisite(&program, "icon",
-                                                      "class_name"),
-                   "icon needs class_name");
+                                                      "export_class"),
+                   "icon needs export_class");
         const LhatUnit *root = lhat_program_check(&program, "main.lh");
         LHAT_CHECK(root != NULL && root->checked.diagnostic_count == 0,
                    "checked clean");
@@ -2827,9 +2827,9 @@ static void test_annotation_requisite(void)
         program_with(&program, &disk, alone, 1);
         registered_with(&program, "godot", "icon", LHAT_ANNOTATION_PUBLIC,
                         "p^ string^;");
-        lhat_register_annotation(&program, "godot", "class_name",
+        lhat_register_annotation(&program, "godot", "export_class",
                                  LHAT_ANNOTATION_PUBLIC);
-        lhat_register_annotation_requisite(&program, "icon", "class_name");
+        lhat_register_annotation_requisite(&program, "icon", "export_class");
         const LhatUnit *root = lhat_program_check(&program, "main.lh");
         LHAT_CHECK(has_check_error(root, LHAT_CHECK_ERR_ANNOTATION_REQUISITE),
                    "reported");
@@ -2837,9 +2837,9 @@ static void test_annotation_requisite(void)
         // caret is already on what was written, and what a reader is short
         // of is the other one.
         LHAT_CHECK(root != NULL && root->checked.diagnostic_count == 1 &&
-                       root->checked.diagnostics[0].name_length == 10 &&
-                       memcmp(root->checked.diagnostics[0].name, "class_name",
-                              10) == 0,
+                       root->checked.diagnostics[0].name_length == 12 &&
+                       memcmp(root->checked.diagnostics[0].name, "export_class",
+                              12) == 0,
                    "and names what would have done");
         LHAT_CHECK(root != NULL && root->checked.diagnostics[0].line == 2,
                    "at the mark that was written");
@@ -2855,35 +2855,35 @@ static void test_annotation_requisite(void)
              "module^ ns.main\n"
              "@icon(\"res://x.svg\")\n"
              "public^ let^ A = def^{ }\n"
-             "@class_name\n"
+             "@export_class\n"
              "public^ let^ B = def^{ }\n"}};
         program_with(&program, &disk, apart, 1);
         registered_with(&program, "godot", "icon", LHAT_ANNOTATION_PUBLIC,
                         "p^ string^;");
-        lhat_register_annotation(&program, "godot", "class_name",
+        lhat_register_annotation(&program, "godot", "export_class",
                                  LHAT_ANNOTATION_PUBLIC);
-        lhat_register_annotation_requisite(&program, "icon", "class_name");
+        lhat_register_annotation_requisite(&program, "icon", "export_class");
         const LhatUnit *root = lhat_program_check(&program, "main.lh");
         LHAT_CHECK(has_check_error(root, LHAT_CHECK_ERR_ANNOTATION_REQUISITE),
                    "reported, though both are in the file");
     }
     lhat_program_dispose(&program);
 
-    // One way only: what needs the other is the one refused. class_name on
+    // One way only: what needs the other is the one refused. export_class on
     // its own says something complete.
     LHAT_TEST("and the one it needs does not need it back");
     {
         static const File named[] = {
             {"main.lh",
              "module^ ns.main\n"
-             "@class_name\n"
+             "@export_class\n"
              "public^ let^ A = def^{ }\n"}};
         program_with(&program, &disk, named, 1);
         registered_with(&program, "godot", "icon", LHAT_ANNOTATION_PUBLIC,
                         "p^ string^;");
-        lhat_register_annotation(&program, "godot", "class_name",
+        lhat_register_annotation(&program, "godot", "export_class",
                                  LHAT_ANNOTATION_PUBLIC);
-        lhat_register_annotation_requisite(&program, "icon", "class_name");
+        lhat_register_annotation_requisite(&program, "icon", "export_class");
         const LhatUnit *root = lhat_program_check(&program, "main.lh");
         LHAT_CHECK(root != NULL && root->checked.diagnostic_count == 0,
                    "checked clean");
@@ -2903,11 +2903,11 @@ static void test_annotation_requisite(void)
         program_with(&program, &disk, either, 1);
         registered_with(&program, "godot", "icon", LHAT_ANNOTATION_PUBLIC,
                         "p^ string^;");
-        lhat_register_annotation(&program, "godot", "class_name",
+        lhat_register_annotation(&program, "godot", "export_class",
                                  LHAT_ANNOTATION_PUBLIC);
         lhat_register_annotation(&program, "godot", "global",
                                  LHAT_ANNOTATION_PUBLIC);
-        lhat_register_annotation_requisite(&program, "icon", "class_name");
+        lhat_register_annotation_requisite(&program, "icon", "export_class");
         lhat_register_annotation_requisite(&program, "icon", "global");
         const LhatUnit *root = lhat_program_check(&program, "main.lh");
         LHAT_CHECK(root != NULL && root->checked.diagnostic_count == 0,

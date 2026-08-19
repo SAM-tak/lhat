@@ -341,17 +341,22 @@ const Godot *register_godot(LhatProgram *program)
         {"tool", LHAT_ANNOTATION_PUBLIC | LHAT_ANNOTATION_FILEUNIQUE, nullptr,
          "game", nullptr},
         // 05 の 3.2's opposite number: GDScript is anonymous unless it writes
-        // class_name, and so is a .lh unless it writes this. What the project
-        // registers is the binding's own name -- there is no argument,
-        // because a name written twice is a name that can disagree with
-        // itself. One per file, which is all the engine keeps per path.
-        {"class_name", LHAT_ANNOTATION_PUBLIC | LHAT_ANNOTATION_FILEUNIQUE,
+        // class_name, and so is a .lh unless it writes this. Spelt with the
+        // rest of the @export family, since what it does is what they do --
+        // hand something of the writer's over to the engine, where nothing
+        // unmarked goes.
+        //
+        // What the project registers is the binding's own name; there is no
+        // argument, because a name written twice is a name that can disagree
+        // with itself. One per file, which is all the engine keeps per path.
+        {"export_class", LHAT_ANNOTATION_PUBLIC | LHAT_ANNOTATION_FILEUNIQUE,
          nullptr, nullptr, nullptr},
         // 18.5.2: an icon hangs on a global class name, so on the mark that
-        // asks for one. Without it there is nothing for the engine to hang
-        // it on and the mark would sit there doing nothing.
-        {"icon", LHAT_ANNOTATION_BINDING, "p^ string^;", nullptr,
-         "class_name"},
+        // asks for one. Its targets are that mark's for the same reason --
+        // a class kept private can never have a name for an icon to hang on,
+        // and one file registers one name and so wears one icon.
+        {"icon", LHAT_ANNOTATION_PUBLIC | LHAT_ANNOTATION_FILEUNIQUE,
+         "p^ string^;", nullptr, "export_class"},
         {"export", LHAT_ANNOTATION_FIELD, nullptr, nullptr, nullptr},
         {"export_range", LHAT_ANNOTATION_FIELD, "p^ number^, number^, ...;",
          nullptr, nullptr},

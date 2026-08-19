@@ -833,7 +833,7 @@ StringName LhatScript::_get_global_name() const
 {
     if (!runnable || unit == nullptr || klass_name.is_empty() ||
         ClassDB::class_exists(klass_name) ||
-        !marked_with(unit, klass_name, "class_name")) {
+        !marked_with(unit, klass_name, "export_class")) {
         return StringName();
     }
     return StringName(klass_name);
