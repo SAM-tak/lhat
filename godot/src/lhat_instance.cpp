@@ -13,6 +13,7 @@
 #include "lhat_host.h"
 #include "lhat_language.h"
 #include "lhat_script.h"
+#include "lhat_godot_values.h"
 #include "lhat_variant.h"
 
 namespace godot {
@@ -87,9 +88,16 @@ GDExtensionBool instance_set(GDExtensionScriptInstanceDataPtr data,
     if (lhat_is_nil(lhat_table_get(table, key))) {
         return false;
     }
-    if (!host::from_variant(machine,
-                            *reinterpret_cast<const Variant *>(value), &held,
-                            it->script->godot())) {
+    // 05 の 8.9: a field holding a box is written through the box rather
+    // than over it -- the box is the thing the field holds, and what changes
+    // is the bytes inside. Nothing here could make a new one anyway: the
+    // heap is the machine's and box^ is the spelling that reaches it.
+    const Variant &given = *reinterpret_cast<const Variant *>(value);
+    LhatValue standing = lhat_table_get(table, key);
+    if (host::box_takes_variant(standing, it->script->godot(), given)) {
+        return true;
+    }
+    if (!host::from_variant(machine, given, &held, it->script->godot())) {
         return false;
     }
     bool refused = false;

@@ -7,6 +7,7 @@
 
 #include "lhat_godot_handles.h"
 #include "lhat_godot_packed.h"
+#include "lhat_godot_values.h"
 #include "lhat_godot_module.h"
 
 namespace godot {
@@ -103,6 +104,13 @@ Variant to_variant_at(LhatValue value, const Godot *module, int depth)
     Variant run = packed_variant(value, module, &packed);
     if (packed) {
         return run;
+    }
+    // 05 の 8.9: a value type reaches anything that outlives a frame in its
+    // box, so a box is what arrives wherever the engine is handed one.
+    bool boxed = false;
+    Variant held = boxed_variant(value, module, &boxed);
+    if (boxed) {
+        return held;
     }
     // nil^, and everything with nowhere to land.
     return Variant();

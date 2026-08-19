@@ -20,6 +20,7 @@
 #define LHAT_GODOT_VALUES_H
 
 #include <godot_cpp/variant/color.hpp>
+#include <godot_cpp/variant/variant.hpp>
 #include <godot_cpp/variant/vector2.hpp>
 #include <godot_cpp/variant/vector3.hpp>
 #include <godot_cpp/variant/vector4.hpp>
@@ -53,6 +54,23 @@ bool value_taken(LhatValue held, const Godot *module, Vector2 *out);
 bool value_taken(LhatValue held, const Godot *module, Vector3 *out);
 bool value_taken(LhatValue held, const Godot *module, Vector4 *out);
 bool value_taken(LhatValue held, const Godot *module, Color *out);
+
+// 05 の 8.9: what a box of one of the value types holds, as a Variant, and
+// the other way. `found` says whether the value was a box of one of ours.
+//
+// A box is where a host value goes when it has to outlive the frame -- a
+// table's element, an any^, the tail of a call -- so it is what arrives
+// wherever the engine is handed one. Reading it is the whole of crossing;
+// there is no making one from here, since the box is a heap object and the
+// heap is the machine's (box^ is the spelling that makes one, and 8.9 wants
+// keeping something to be visible in the spelling).
+Variant boxed_variant(LhatValue value, const Godot *module, bool *found);
+
+// Writes a Variant of the matching kind over what a box holds. False where
+// the value is not a box of ours, the Variant is of another kind, or the box
+// is the sealed one a definition keeps (14.11).
+bool box_takes_variant(LhatValue value, const Godot *module,
+                       const Variant &held);
 
 }  // namespace host
 }  // namespace godot

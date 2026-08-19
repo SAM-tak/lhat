@@ -965,6 +965,44 @@ bool real_vector(LhatProgram *program, Godot *module)
            blend<T, v_lerp<T>>(program, module, "lerp");
 }
 
+// 05 の 8.9: run[0] names the tag and the payload follows, which is the same
+// placement lhat_make_hostvalue fills -- so reading one is a copy out of
+// run[1] and writing one is a copy in.
+template <typename T>
+Variant out_of_box(const LhatHostValueBox *box)
+{
+    T held;
+    memcpy(&held, &box->run[1], sizeof(T));
+    return held;
+}
+
+template <typename T>
+void into_box(LhatHostValueBox *box, const Variant &held)
+{
+    T value = (T)held;
+    memcpy(&box->run[1], &value, sizeof(T));
+}
+
+// The box, and which of the value types it was made for -- or NULL and
+// VARIANT_MAX where it is neither a box nor one of ours.
+LhatHostValueBox *box_of(LhatValue value, const Godot *module,
+                         Variant::Type *kind)
+{
+    *kind = Variant::VARIANT_MAX;
+    if (module == nullptr ||
+        !lhat_is_object_kind(value, LHAT_OBJECT_HOSTVALUE_BOX)) {
+        return nullptr;
+    }
+    LhatHostValueBox *box = (LhatHostValueBox *)lhat_as_object(value);
+    const LhatHostValueTag *tag = lhat_hostvalue_box_tag(box);
+    for (int at = 0; at < Variant::VARIANT_MAX; at++) {
+        if (module->value_tags[at] == tag) {
+            *kind = (Variant::Type)at;
+            return box;
+        }
+    }
+    return nullptr;
+}
 }  // namespace
 
 bool register_values(LhatProgram *program, Godot *module)
@@ -1255,6 +1293,87 @@ bool value_taken(LhatValue held, const Godot *module, Color *out)
 {
     return taken(held, module, out);
 }
+
+// The seventeen, read out of a box or written into one. A switch rather than
+// a template list: what the box holds is known only at run time, and this is
+// the one place that has to turn a tag back into a type.
+#define LHAT_GODOT_BOX(K_, T_)              \
+    case K_:                                \
+        return out_of_box<T_>(box)
+
+Variant boxed_variant(LhatValue value, const Godot *module, bool *found)
+{
+    Variant::Type kind = Variant::VARIANT_MAX;
+    const LhatHostValueBox *box = box_of(value, module, &kind);
+    *found = box != nullptr;
+    if (box == nullptr) {
+        return Variant();
+    }
+    switch (kind) {
+        LHAT_GODOT_BOX(Variant::VECTOR2, Vector2);
+        LHAT_GODOT_BOX(Variant::VECTOR2I, Vector2i);
+        LHAT_GODOT_BOX(Variant::VECTOR3, Vector3);
+        LHAT_GODOT_BOX(Variant::VECTOR3I, Vector3i);
+        LHAT_GODOT_BOX(Variant::VECTOR4, Vector4);
+        LHAT_GODOT_BOX(Variant::VECTOR4I, Vector4i);
+        LHAT_GODOT_BOX(Variant::COLOR, Color);
+        LHAT_GODOT_BOX(Variant::QUATERNION, Quaternion);
+        LHAT_GODOT_BOX(Variant::RECT2, Rect2);
+        LHAT_GODOT_BOX(Variant::RECT2I, Rect2i);
+        LHAT_GODOT_BOX(Variant::AABB, AABB);
+        LHAT_GODOT_BOX(Variant::PLANE, Plane);
+        LHAT_GODOT_BOX(Variant::TRANSFORM2D, Transform2D);
+        LHAT_GODOT_BOX(Variant::BASIS, Basis);
+        LHAT_GODOT_BOX(Variant::TRANSFORM3D, Transform3D);
+        LHAT_GODOT_BOX(Variant::PROJECTION, Projection);
+        LHAT_GODOT_BOX(Variant::RID, RID);
+        default:
+            *found = false;
+            return Variant();
+    }
+}
+
+#undef LHAT_GODOT_BOX
+
+#define LHAT_GODOT_UNBOX(K_, T_)            \
+    case K_:                                \
+        into_box<T_>(box, held);            \
+        return true
+
+bool box_takes_variant(LhatValue value, const Godot *module,
+                       const Variant &held)
+{
+    Variant::Type kind = Variant::VARIANT_MAX;
+    LhatHostValueBox *box = box_of(value, module, &kind);
+    // 14.11: a definition's own box is sealed, and what is written through a
+    // node is an instance's copy -- so a sealed one is not this to write.
+    if (box == nullptr || box->sealed || held.get_type() != kind) {
+        return false;
+    }
+    switch (kind) {
+        LHAT_GODOT_UNBOX(Variant::VECTOR2, Vector2);
+        LHAT_GODOT_UNBOX(Variant::VECTOR2I, Vector2i);
+        LHAT_GODOT_UNBOX(Variant::VECTOR3, Vector3);
+        LHAT_GODOT_UNBOX(Variant::VECTOR3I, Vector3i);
+        LHAT_GODOT_UNBOX(Variant::VECTOR4, Vector4);
+        LHAT_GODOT_UNBOX(Variant::VECTOR4I, Vector4i);
+        LHAT_GODOT_UNBOX(Variant::COLOR, Color);
+        LHAT_GODOT_UNBOX(Variant::QUATERNION, Quaternion);
+        LHAT_GODOT_UNBOX(Variant::RECT2, Rect2);
+        LHAT_GODOT_UNBOX(Variant::RECT2I, Rect2i);
+        LHAT_GODOT_UNBOX(Variant::AABB, AABB);
+        LHAT_GODOT_UNBOX(Variant::PLANE, Plane);
+        LHAT_GODOT_UNBOX(Variant::TRANSFORM2D, Transform2D);
+        LHAT_GODOT_UNBOX(Variant::BASIS, Basis);
+        LHAT_GODOT_UNBOX(Variant::TRANSFORM3D, Transform3D);
+        LHAT_GODOT_UNBOX(Variant::PROJECTION, Projection);
+        LHAT_GODOT_UNBOX(Variant::RID, RID);
+        default:
+            return false;
+    }
+}
+
+#undef LHAT_GODOT_UNBOX
 
 }  // namespace host
 }  // namespace godot

@@ -353,8 +353,24 @@ self^.gdobj.setColor("modulate", godot.color(0, 1, 0, 1))
 その場で捕まえる**。別の型の欄を読めばエンジン自身の変換が答える
 （`Vector2` を `Vector3` として読めば z が 0 になる）。
 
-［補足］ **`call()` の可変長引数には入らない。** 8.9 が `...` から締め出す
-ので、値を引数に取るメソッドを `call` から呼ぶ道はまだ無い。
+**`call()` に渡すときは箱に入れる。** 8.9 が `...` からホスト値を締め出すので、
+そのままは書けない——`box^` で包めばよく、箱は解かれて渡る。
+
+```lhat
+self^.gdobj.call("set_position", box^godot.vector2(7, 8))
+```
+
+同じ理由で、`self^` の欄に箱を持たせておけば**インスペクタから読み書きできる**。
+エンジンが書いた値は箱の中身に上書きされる——箱そのものは差し替わらない。値型を
+`@export` するときはこの形になる。
+
+```lhat
+self^{ @export where = box^godot.vector2(0, 0) },
+```
+
+［補足］ 逆向き——Variant から箱を**作る**道は無い。箱はヒープの物であり、
+ヒープは機械のものだからで、`box^` が唯一の作り手である（8.9 が「持ち回るなら
+綴りに出せ」と言っているのと同じこと）。
 
 #### 値に見えて値でないもの — `Callable` と `Signal`
 
@@ -602,8 +618,8 @@ for line in LhatRuntime.run("res://hello.lh"):
 
 逆向きも同じ対応。`String`/`StringName`/`NodePath` はすべて `string^` に、
 `Array` は 1..n の表になる。**`Node`・`Callable`・`Signal`・`Packed*Array` は
-8.8 のデータとして渡り**、数学の型は 8.9 の値なので `any^` に入れず、この道
-（`call_member` の引数と答え）には乗らない。残りは拒む。
+8.8 のデータとして渡る**。数学の型は 8.9 の値なので `any^` に入れないが、
+`box^` に入れれば渡る。残りは拒む。
 
 ```gdscript
 LhatRuntime.call_member("res://lib/api.lh", "total", [[1, 2, 3, 4]])   # 10
