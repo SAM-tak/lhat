@@ -1621,6 +1621,61 @@ static void test_tonumber(void)
     run_dispose(&r);
 }
 
+// 14.4: the self^ receiver in a plain table literal's methods -- the
+// compile and the machine were general already (self^ is a parameter,
+// CALLMETHOD is proto-driven); this pins the whole road end to end.
+static void test_table_methods(void)
+{
+    Run r;
+
+    LHAT_TEST("a plain table's method reaches itself through self^");
+    run_checked_text(&r,
+                     "let^ u = {\n"
+                     "    hidden = 42,\n"
+                     "    read^ = f^self^ -> number^ { return^ self^.hidden }\n"
+                     "}\n"
+                     "return^ u.read^()\n");
+    CHECK_INTEGER(&r, 42);
+    run_dispose(&r);
+
+    // 16.3: a written iterate^ makes the literal walkable, its own body
+    // walking the raw table through keys^() -- and yields three, which the
+    // loop's three names take apart.
+    LHAT_TEST("a self-walking iterate^ drives for^ in^");
+    run_checked_text(&r,
+                     "let^ t = {\n"
+                     "    a = 1,\n"
+                     "    b = 2,\n"
+                     "    iterate^ = f^self^{\n"
+                     "        var^ n = 0\n"
+                     "        for^k in^self^.keys^() {\n"
+                     "            n += 1\n"
+                     "            yield^ k, self^[k], n\n"
+                     "        }\n"
+                     "    }\n"
+                     "}\n"
+                     "var^ walked = 0\n"
+                     "for^k, v, n in^t {\n"
+                     "    walked := walked + n\n"
+                     "}\n"
+                     "return^ walked\n");
+    // Three members (a, b, iterate^ itself), so n runs 1+2+3.
+    CHECK_INTEGER(&r, 6);
+    run_dispose(&r);
+
+    LHAT_TEST("and a p^ method writes through self^");
+    run_checked_text(&r,
+                     "let^ u = {\n"
+                     "    n = 0,\n"
+                     "    bump = p^self^ { self^.n := self^.n + 1 }\n"
+                     "}\n"
+                     "u.bump()\n"
+                     "u.bump()\n"
+                     "return^ u.n\n");
+    CHECK_INTEGER(&r, 2);
+    run_dispose(&r);
+}
+
 int main(void)
 {
     test_names();
@@ -1633,5 +1688,6 @@ int main(void)
     test_counting();
     test_substring();
     test_tonumber();
+    test_table_methods();
     return lhat_test_report("test_vm_data");
 }

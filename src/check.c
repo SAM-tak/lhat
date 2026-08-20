@@ -3137,6 +3137,10 @@ const char *lhat_check_error_message(LhatCheckErrorCode code)
             return "construction answers the instance itself, so a new body "
                    "has no return^; what it writes through self^ is already "
                    "on what the caller gets";
+        case LHAT_CHECK_ERR_SELF_TABLE_OUTSIDE_NEW:
+            return "self^{ ... } is the construction notation, which only a "
+                   "written new runs; a method writes its receiver one "
+                   "field at a time, through self^.name";
         case LHAT_CHECK_ERR_PROTOTYPE_SEALED:
             return "a definition's self^ is the prototype every instance "
                    "starts as; it is read here and written by no one -- a "

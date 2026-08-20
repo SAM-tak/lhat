@@ -299,6 +299,27 @@ static void test_definitions(void)
     // names is the instance of the def^ it stands in. 14.4 hands a receiver
     // only to a member that wrote self^ among its parameters, and new does
     // not -- that is a different question from what this notation means.
+    // 14.11: and only a written new runs it. A method has a receiver, but
+    // someone else already holds that table -- it adjusts it one field at a
+    // time, through self^.name, where 14.4's rules see each write.
+    LHAT_TEST("a method body does not take the construction notation");
+    check_text(&u,
+               "var^ C = def^{\n"
+               "    self^{ v := 1 },\n"
+               "    m := p^self^ { self^{ v := 2 } },\n"
+               "}\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_SELF_TABLE_OUTSIDE_NEW);
+    unit_dispose(&u);
+
+    LHAT_TEST("nor does a static member");
+    check_text(&u,
+               "var^ C = def^{\n"
+               "    self^{ v := 1 },\n"
+               "    s := p^ { self^{ v := 2 } },\n"
+               "}\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_SELF_TABLE_OUTSIDE_NEW);
+    unit_dispose(&u);
+
     LHAT_TEST("what a written new answers is an instance");
     check_text(&u,
                "var^ C = def^{\n"

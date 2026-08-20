@@ -2315,15 +2315,61 @@ static void test_loops(void)
 
     // 16.3: this form does not iterate at all.
     LHAT_TEST("for^ ... if^ ... scopes definitions to a condition");
-    parse_text(&p, "for^ var^ i = 1, var^ j = 2 if^ i + j < 10 { print(i) else^: print(j) }");
+    parse_text(&p,
+               "for^ var^ i = 1\n"
+               "for^ var^ j = 2 if^ i + j < 10 { print(i) else^: print(j) }");
     LHAT_CHECK_EQ_INT(error_count(&p), 0);
-    {
-        const LhatNode *s = first_statement(&p);
-        LHAT_CHECK_EQ_INT(s->v.loop.kind, LHAT_FOR_IF);
-        LHAT_CHECK_EQ_INT(lhat_node_list_length(s->v.loop.focus), 2);
-        LHAT_CHECK_EQ_INT(s->v.loop.body->kind, LHAT_NODE_IF_STMT);
-        LHAT_CHECK_EQ_INT(lhat_node_list_length(s->v.loop.body->v.list.items), 2);
-    }
+    parse_dispose(&p);
+
+    // 16.3 with 8.6: a focus binding reads a value list the way any let^
+    // does, so 'c, d = ",", 1' is the multiple definition it is anywhere.
+    LHAT_TEST("a focus binding takes a value list");
+    parse_text(&p, "for^ let^ c, d = \",\", 1 if^ true^ { print(c, d) }");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    parse_dispose(&p);
+
+    // 14.11 with 16.1: in a header expression the '{' that follows is the
+    // body, so a bare self^-table is not read there -- which is what lets a
+    // method write 'for^ k, v in^self^ { ... }'.
+    LHAT_TEST("self^ before a body's brace is not the literal");
+    parse_text(&p,
+               "var^ t = { f = f^self^{\n"
+               "    for^k in^self^ { print(k) }\n"
+               "} }\n");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    parse_dispose(&p);
+
+    // ...and only in a header: at a statement, 'self^ {' with a space is
+    // still the literal, the shape a written new adjusts its instance with.
+    LHAT_TEST("a spaced self^ { at a statement is still the literal");
+    parse_text(&p,
+               "let^ A = def^{\n"
+               "    self^{ t = {} },\n"
+               "    override^new = f^u:t^{} {\n"
+               "        self^ {\n"
+               "            t = u\n"
+               "        }\n"
+               "    },\n"
+               "}\n");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    parse_dispose(&p);
+
+    // A bracketed context inside a header reads plainly again, so a literal
+    // wanted there is written in parentheses.
+    LHAT_TEST("parentheses restore the literal inside a header");
+    parse_text(&p,
+               "var^ t = { f = f^self^{\n"
+               "    for^k in^(self^{ a = 1 }) { print(k) }\n"
+               "} }\n");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    parse_dispose(&p);
+
+    // 16.3: what a comma cannot start is another binding -- one for^
+    // introduces one, and the next takes a for^ of its own (the C
+    // for-header's comma chain of bindings is gone).
+    LHAT_TEST("a comma cannot chain a second binding onto a focus");
+    parse_text(&p, "for^ var^ i = 1, var^ j = 2 if^ i + j < 10 { print(i) }");
+    LHAT_CHECK(error_count(&p) > 0, "expected the one-binding report");
     parse_dispose(&p);
 
     LHAT_TEST("for^ needs a driving clause");

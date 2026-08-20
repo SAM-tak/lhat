@@ -71,6 +71,9 @@ typedef enum {
     LHAT_PARSE_ERR_ERRORDEF_NEEDS_NAME,       // 04 の 2.4: the name is the identity
     LHAT_PARSE_ERR_ERROR_NEEDS_KIND,          // 04 の 2.5
     LHAT_PARSE_ERR_LET_NEEDS_VALUE,           // 8.7: no declaration without one
+    LHAT_PARSE_ERR_FOCUS_TAKES_ONE,           // 16.3: one binding per for^ --
+                                              // the next takes a for^ of its
+                                              // own, never a comma
     LHAT_PARSE_ERR_LET_NEEDS_EQUALS,          // 8.9: let^ defines and never
                                               // reassigns, so ':=' after one
                                               // says two opposite things

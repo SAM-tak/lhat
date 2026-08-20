@@ -98,6 +98,9 @@ typedef enum {
     LHAT_CHECK_ERR_NEW_RETURNS,         // 14.11: construction answers the
                                         // copy, so a new body has no
                                         // return^ of its own
+    LHAT_CHECK_ERR_SELF_TABLE_OUTSIDE_NEW,  // 14.11: self^{ … } is the
+                                        // construction notation, and only a
+                                        // written new constructs
     LHAT_CHECK_ERR_PROTOTYPE_SEALED,    // 14.11: the prototype is read
                                         // through self^ and written by no one
     LHAT_CHECK_ERR_NOT_BOXABLE,         // 05 の 8.9: box^ takes a host value

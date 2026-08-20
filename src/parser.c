@@ -20,6 +20,12 @@ typedef struct {
     LhatParseResult *result;
     bool panicking;   // suppress the cascade after a reported error
     bool saw_yield;   // 15.2: set while parsing a body that contains yield^
+    // 14.11 with 16.1: set while reading a header expression -- one whose
+    // own '{' is the body that follows (a for^'s bound, an if^'s
+    // condition). A bare self^-table is not read there, so
+    // 'in^self^ { ... }' walks the receiver; parentheses (or any bracket)
+    // restore the literal, exactly as Go reads its composite literals.
+    bool brace_is_body;
 
     // 02 の 8.2: a bare expression is a statement at the top level of
     // interactive input and nowhere else. `depth` counts the statement lists
@@ -954,6 +960,9 @@ static LhatNode *parse_brace_entries(Parser *p, bool require_key)
 {
     LhatNode *head = NULL;
     LhatNode *tail = NULL;
+    // Inside the braces the header is over (see parse_header_expression).
+    bool outer_header = p->brace_is_body;
+    p->brace_is_body = false;
 
     while (!at_eof(p) && !check_op(p, LHAT_OP_RBRACE)) {
         // 02 の 18.4: a field of a self^{ … } takes one, which is where
@@ -1045,6 +1054,7 @@ static LhatNode *parse_brace_entries(Parser *p, bool require_key)
             break;
         }
     }
+    p->brace_is_body = outer_header;
     return head;
 }
 
@@ -1067,6 +1077,19 @@ static LhatNode *parse_table(Parser *p)
 // the body of a def^ it declares the fields an instance gets; inside new it
 // fills them in. Both name the fields of an instance, so the parser keeps
 // them as one node and lets the position speak.
+// 14.11 with 16.1: a header expression -- one whose own '{' is the body
+// that follows it (a for^'s bound, an if^'s condition, a with^'s value).
+// A bare self^-table is not read while one is open; any bracketed context
+// inside it reads plainly again (see the resets at the brackets).
+static LhatNode *parse_header_expression(Parser *p)
+{
+    bool outer = p->brace_is_body;
+    p->brace_is_body = true;
+    LhatNode *node = parse_expression(p);
+    p->brace_is_body = outer;
+    return node;
+}
+
 static LhatNode *parse_self_table(Parser *p)
 {
     LhatToken start = p->current;
@@ -1685,7 +1708,12 @@ static LhatNode *parse_primary(Parser *p)
             // only a '{' immediately after it makes the form of 14.6. The
             // parameter list of 14.4 never reaches here: it takes the name
             // directly, and its '{' opens the body.
-            if (check_hat(p, "self") && is_op(&p->ahead, LHAT_OP_LBRACE)) {
+            // 14.11: except in a header expression, where the '{' that
+            // follows is the body -- 'for^ k, v in^self^ { ... }' reads the
+            // receiver and then its block, and a literal wanted there is
+            // written in parentheses.
+            if (check_hat(p, "self") && is_op(&p->ahead, LHAT_OP_LBRACE) &&
+                !p->brace_is_body) {
                 return parse_self_table(p);
             }
             // 04 の 14.5: 'error^' followed by a name constructs; on its own
@@ -1709,12 +1737,17 @@ static LhatNode *parse_primary(Parser *p)
         case LHAT_TOKEN_OP:
             if (t.v.op == LHAT_OP_LPAREN) {
                 advance(p);
+                // Inside brackets the header is over -- a self^-table
+                // wanted in a condition is written '( self^{ ... } )'.
+                bool outer_header = p->brace_is_body;
+                p->brace_is_body = false;
                 LhatNode *inner = parse_expression(p);
                 if (!check_op(p, LHAT_OP_COMMA)) {
                     // Grouping, as it always was. 13.8改 leaves this reading
                     // untouched, which is what makes a one-position tuple
                     // unwritable on the value side too: '(x)' was taken.
                     expect_op(p, LHAT_OP_RPAREN);
+                    p->brace_is_body = outer_header;
                     return inner;
                 }
 
@@ -1723,6 +1756,7 @@ static LhatNode *parse_primary(Parser *p)
                 // value side and the type side read '(' alike.
                 LhatNode *node = make(p, LHAT_NODE_TUPLE, &t);
                 if (node == NULL) {
+                    p->brace_is_body = outer_header;
                     return NULL;
                 }
                 LhatNode *head = NULL;
@@ -1733,6 +1767,7 @@ static LhatNode *parse_primary(Parser *p)
                 }
                 node->v.list.items = head;
                 expect_op(p, LHAT_OP_RPAREN);
+                p->brace_is_body = outer_header;
                 return finish(p, node);
             }
             if (t.v.op == LHAT_OP_LBRACE) {
@@ -1781,6 +1816,10 @@ static LhatNode *parse_arguments(Parser *p)
 {
     LhatNode *head = NULL;
     LhatNode *tail = NULL;
+    // Inside the call's parentheses the header is over (see
+    // parse_header_expression).
+    bool outer_header = p->brace_is_body;
+    p->brace_is_body = false;
 
     while (!at_eof(p) && !check_op(p, LHAT_OP_RPAREN)) {
         LhatNode *argument;
@@ -1839,6 +1878,7 @@ static LhatNode *parse_arguments(Parser *p)
         }
     }
     expect_op(p, LHAT_OP_RPAREN);
+    p->brace_is_body = outer_header;
     return head;
 }
 
@@ -1890,7 +1930,12 @@ static LhatNode *parse_postfix(Parser *p)
         if (check_op(p, LHAT_OP_LBRACKET) || check_op(p, LHAT_OP_NIL_INDEX)) {
             bool nil_safe = at.v.op == LHAT_OP_NIL_INDEX;
             advance(p);
+            // A bracket closes over its expression the way a paren does, so
+            // the header restriction does not reach inside it.
+            bool outer_header = p->brace_is_body;
+            p->brace_is_body = false;
             LhatNode *index = parse_expression(p);
+            p->brace_is_body = outer_header;
             expect_op(p, LHAT_OP_RBRACKET);
             node = access_node(p, LHAT_NODE_INDEX, &at, node, index, nil_safe);
             guarded = guarded || nil_safe;
@@ -2719,7 +2764,12 @@ static LhatNode *parse_braced_block(Parser *p, bool in_loop, bool walks)
     if (!expect_op(p, LHAT_OP_LBRACE)) {
         return NULL;
     }
+    // The body has begun -- what is read inside it is ordinary again
+    // (see parse_header_expression).
+    bool outer_header = p->brace_is_body;
+    p->brace_is_body = false;
     LhatNode *block = parse_clause_body(p, &brace, in_loop, walks);
+    p->brace_is_body = outer_header;
     expect_op(p, LHAT_OP_RBRACE);
     // The closing brace belongs to the block, and parse_clause_body ends
     // before reading it.
@@ -3191,6 +3241,26 @@ static bool opens_when_clauses(const Parser *p)
            token_is_hat(p, &p->ahead, "else");
 }
 
+// 16.3 with 8.6: a focus binding reads its values the way any let^ does --
+// a comma-separated list, so 'for^let^c, d = ",", 1' is the multiple
+// definition it is anywhere. What a comma cannot start here is another
+// binding: one for^ introduces one, and the next takes a for^ of its own
+// (the C for-header's comma chain of bindings is gone).
+static LhatNode *parse_focus_values(Parser *p)
+{
+    LhatNode *head = NULL;
+    LhatNode *tail = NULL;
+    lhat_node_append(&head, &tail, parse_header_expression(p));
+    while (match_op(p, LHAT_OP_COMMA)) {
+        if (check_hat(p, "let") || check_hat(p, "var")) {
+            report(p, &p->current, LHAT_PARSE_ERR_FOCUS_TAKES_ONE);
+            break;
+        }
+        lhat_node_append(&head, &tail, parse_header_expression(p));
+    }
+    return head;
+}
+
 // The three flags answer which spelling the focus used, so that
 // parse_for can judge it against the form -- which is not known until the
 // clause after the focus has been read (16.3改2).
@@ -3256,7 +3326,7 @@ static LhatNode *parse_for_focus(Parser *p, bool *saw_from, bool *saw_word,
             // which is the shape of the type annotation of 16.3. What
             // follows the ':' tells them apart, and one token of lookahead
             // is enough.
-            target = parse_expression(p);
+            target = parse_header_expression(p);
             // 8.6: with no introducer, 'i = 0' is read whole, as a
             // comparison, before a bare ':=' ever gets a look-in -- caught
             // the same way a top-level 'x = 1' statement already is (8.2),
@@ -3298,7 +3368,7 @@ static LhatNode *parse_for_focus(Parser *p, bool *saw_from, bool *saw_word,
                     break;
                 }
                 binding->v.binding.targets = target;
-                binding->v.binding.values = parse_expression(p);
+                binding->v.binding.values = parse_focus_values(p);
                 binding->v.binding.immutable = immutable;
                 target = finish(p, binding);
             }
@@ -3319,7 +3389,7 @@ static LhatNode *parse_for_focus(Parser *p, bool *saw_from, bool *saw_word,
                 break;
             }
             binding->v.binding.targets = target;
-            binding->v.binding.values = parse_expression(p);
+            binding->v.binding.values = parse_header_expression(p);
             binding->v.binding.immutable = true;
             binding->v.binding.bound_by_form = true;
             target = finish(p, binding);
@@ -3332,7 +3402,7 @@ static LhatNode *parse_for_focus(Parser *p, bool *saw_from, bool *saw_word,
                 break;
             }
             binding->v.binding.targets = target;
-            binding->v.binding.values = parse_expression(p);
+            binding->v.binding.values = parse_focus_values(p);
             target = finish(p, binding);
         } else if (check_op(p, LHAT_OP_EQ)) {
             // 8.6: '=' with no introducer reads as a comparison -- the same
@@ -3361,6 +3431,15 @@ static LhatNode *parse_for_focus(Parser *p, bool *saw_from, bool *saw_word,
         }
 
         lhat_node_append(&head, &tail, target);
+        // A binding read its whole value list above, and one for^
+        // introduces one binding -- so the focus is over. The comma that
+        // continues one is the bare-name comma of 'for^ k, v in^ t', where
+        // nothing was introduced and the walk binds the names itself.
+        if (target != NULL && (target->kind == LHAT_NODE_DEFINE ||
+                               target->kind == LHAT_NODE_REASSIGN ||
+                               target->kind == LHAT_NODE_ERROR)) {
+            break;
+        }
         if (!match_op(p, LHAT_OP_COMMA)) {
             break;
         }
@@ -3542,9 +3621,14 @@ static LhatNode *parse_advance(Parser *p)
     LhatNode *head = NULL;
     LhatNode *tail = NULL;
 
+    // The update runs before the body opens, so its expressions are
+    // header ones too (see parse_header_expression).
+    bool outer_header = p->brace_is_body;
+    p->brace_is_body = true;
     do {
         lhat_node_append(&head, &tail, parse_statement(p));
     } while (match_op(p, LHAT_OP_COMMA));
+    p->brace_is_body = outer_header;
 
     return head;
 }
@@ -3592,23 +3676,23 @@ static LhatNode *parse_for(Parser *p)
     bool is_loop = true;
     if (match_hat(p, "to")) {
         node->v.loop.kind = LHAT_FOR_TO;
-        node->v.loop.bound = parse_expression(p);
+        node->v.loop.bound = parse_header_expression(p);
         if (match_hat(p, "step")) {
-            node->v.loop.step = parse_expression(p);
+            node->v.loop.step = parse_header_expression(p);
         }
     } else if (match_hat(p, "downto")) {
         node->v.loop.kind = LHAT_FOR_DOWNTO;
-        node->v.loop.bound = parse_expression(p);
+        node->v.loop.bound = parse_header_expression(p);
         if (match_hat(p, "step")) {
-            node->v.loop.step = parse_expression(p);
+            node->v.loop.step = parse_header_expression(p);
         }
     } else if (match_hat(p, "in")) {
         node->v.loop.kind = LHAT_FOR_IN;
-        node->v.loop.bound = parse_expression(p);
+        node->v.loop.bound = parse_header_expression(p);
     } else if (check_hat(p, "while") || check_hat(p, "until")) {
         node->v.loop.kind = check_hat(p, "while") ? LHAT_FOR_WHILE : LHAT_FOR_UNTIL;
         advance(p);
-        node->v.loop.bound = parse_expression(p);
+        node->v.loop.bound = parse_header_expression(p);
         if (match_hat(p, "next")) {
             node->v.loop.advance = parse_advance(p);
         }
@@ -3618,7 +3702,7 @@ static LhatNode *parse_for(Parser *p)
         LhatToken at = p->current;
         advance(p);
         node->v.loop.kind = LHAT_FOR_IF;
-        node->v.loop.bound = parse_expression(p);
+        node->v.loop.bound = parse_header_expression(p);
         // 5.2: '{' opens the statement form and ':' the expression one,
         // here as anywhere. The focus still does not leave -- only the value
         // built from it does, which is what an expression is.
@@ -3731,15 +3815,15 @@ static LhatNode *parse_repeat(Parser *p)
 
     if (match_hat(p, "while")) {
         node->v.repeat.kind = LHAT_REPEAT_WHILE;
-        node->v.repeat.bound = parse_expression(p);
+        node->v.repeat.bound = parse_header_expression(p);
     } else if (match_hat(p, "until")) {
         node->v.repeat.kind = LHAT_REPEAT_UNTIL;
-        node->v.repeat.bound = parse_expression(p);
+        node->v.repeat.bound = parse_header_expression(p);
     } else if (check_op(p, LHAT_OP_LBRACE)) {
         node->v.repeat.kind = LHAT_REPEAT_FOREVER;
     } else {
         node->v.repeat.kind = LHAT_REPEAT_COUNT;
-        node->v.repeat.bound = parse_expression(p);
+        node->v.repeat.bound = parse_header_expression(p);
     }
 
     if (check_hat(p, "next")) {
@@ -3895,7 +3979,7 @@ static LhatNode *parse_with(Parser *p)
             if (via_reassign_op) {
                 report(p, &op, LHAT_PARSE_ERR_LET_NEEDS_EQUALS);
             }
-            binding->v.binding.values = parse_expression(p);
+            binding->v.binding.values = parse_header_expression(p);
         }
         binding->v.binding.immutable = true;
         binding->v.binding.bound_by_form = true;
@@ -4058,8 +4142,8 @@ static bool is_call_statement(const LhatNode *node)
             return true;
         }
         // 02 の 14.11: 'self^{ … }' is a batch of field writes, which does
-        // something standing alone the way a call does -- the form a new or
-        // a method adjusts its receiver with.
+        // something standing alone the way a call does -- the form a written
+        // new adjusts its instance with.
         if (node->kind == LHAT_NODE_SELF_TABLE) {
             return true;
         }
@@ -4185,7 +4269,7 @@ static LhatNode *parse_statement_after_annotations(Parser *p)
         // other, rather than being refused for wanting a brace.
         if (check_hat(p, "if")) {
             advance(p);
-            LhatNode *condition = parse_expression(p);
+            LhatNode *condition = parse_header_expression(p);
             if (check_op(p, LHAT_OP_COLON)) {
                 return expression_as_statement(
                     p, start, parse_if_expression_from(p, start, condition));
@@ -4368,6 +4452,7 @@ static void parser_begin(Parser *p, LhatLexer *lexer, LhatParseResult *result)
     p->result = result;
     p->panicking = false;
     p->saw_yield = false;
+    p->brace_is_body = false;
     p->interactive = false;
     p->depth = 0;
     // 15.12: no body is open yet. Left unset, this read whatever the stack
@@ -4810,6 +4895,9 @@ const char *lhat_parse_error_message(LhatParseErrorCode code)
             return "write the kind, as in error^IOError.NotFound{ ... }";
         case LHAT_PARSE_ERR_LET_NEEDS_VALUE:
             return "a definition needs a value; write 'var^ x = 0'";
+        case LHAT_PARSE_ERR_FOCUS_TAKES_ONE:
+            return "a for^ introduces one binding; write another for^ for "
+                   "the next one";
         case LHAT_PARSE_ERR_LET_NEEDS_EQUALS:
             return "let^ defines and never reassigns; write 'let^ x = 0', or "
                    "'var^ x = 0' for a name that may be reassigned";

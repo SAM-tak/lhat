@@ -2269,17 +2269,66 @@ static LhatType *infer_index(Checker *c, const LhatNode *node)
     return chk_simple(c, LHAT_TYPE_UNKNOWN);
 }
 
+static bool declares_self(Checker *c, const LhatNode *value);
+static LhatType *declared_signature(Checker *c, const LhatNode *value);
+
 static LhatType *infer_table(Checker *c, const LhatNode *node)
 {
     LhatType *table = lhat_type_table(c->result->types);
+
+    // 14.4: a method written in the literal reaches the table through its
+    // self^ receiver, the same receiver a def^'s method takes -- 8.7改 took
+    // the bound name out of the initialiser, and this is the door that
+    // stays. The named signatures go in first, annotations only, so a body
+    // walked below can call a method declared after it. (The full fixpoint
+    // stays def^'s, 14.7改: a member whose type only its body knows is not
+    // seeded here, and reading it ahead is what a def^ is for.)
+    for (const LhatNode *entry = node->v.list.items; entry != NULL;
+         entry = entry->next) {
+        const char *seeded = NULL;
+        size_t seeded_length = 0;
+        if (entry->v.entry.computed || entry->v.entry.value == NULL ||
+            entry->v.entry.value->kind != LHAT_NODE_FUNC ||
+            !chk_node_name(c, entry->v.entry.key, &seeded, &seeded_length)) {
+            continue;
+        }
+        LhatType *seed = declared_signature(c, entry->v.entry.value);
+        if (seed != NULL) {
+            lhat_type_add_member(c->result->types, table, seeded,
+                                 seeded_length, seed);
+        }
+    }
+
     // 02 §14 makes a table a sequence as well as a mapping. The keyed
     // half is described by name; the sequence half by position, counted the
     // way the machine lays it out -- one-based, in the order written.
     size_t position = 0;
     for (const LhatNode *entry = node->v.list.items; entry != NULL;
          entry = entry->next) {
+        // The receiver scope, exactly as chk_infer_def pushes it: self^ is
+        // the literal's own type, which is still growing but is the one
+        // object -- by the time anything calls the method, it is whole.
+        Scope *outer = c->scope;
+        Scope receiver;
+        bool method = declares_self(c, entry->v.entry.value);
+        if (method) {
+            receiver.bindings = NULL;
+            receiver.tail = NULL;
+            receiver.parent = outer;
+            receiver.transparent = false;
+            Binding *bound =
+                chk_scope_add(&receiver, "self^", 5, table, node->offset);
+            if (bound != NULL) {
+                bound->reached = true;
+            }
+            c->scope = &receiver;
+        }
         LhatType *value = chk_require_value(c, entry->v.entry.value,
                                             chk_infer(c, entry->v.entry.value));
+        if (method) {
+            c->scope = outer;
+            chk_scope_dispose(&receiver);
+        }
 
         // 05 の 8.9: a table lives on the heap and a host value does not
         // leave the stack, so no member of one is ever a host value.
@@ -2324,7 +2373,16 @@ static LhatType *infer_table(Checker *c, const LhatNode *node)
         const char *name = NULL;
         size_t length = 0;
         if (chk_node_name(c, entry->v.entry.key, &name, &length)) {
-            lhat_type_add_member(c->result->types, table, name, length, value);
+            // A seeded signature is written over with what the body turned
+            // out to be -- one member, never two of one name.
+            const LhatTypeMember *already =
+                chk_find_member(table, name, length);
+            if (already != NULL) {
+                ((LhatTypeMember *)already)->type = value;
+            } else {
+                lhat_type_add_member(c->result->types, table, name, length,
+                                     value);
+            }
             continue;
         }
         if (entry->v.entry.key == NULL) {
@@ -2406,6 +2464,19 @@ static LhatType *declared_signature(Checker *c, const LhatNode *node)
     if (node->v.func.return_type != NULL) {
         c->tuple_allowed = true;  // 13.8改, as above
         func->v.func.result = chk_resolve_type(c, node->v.func.return_type);
+    }
+    // 15.5: a yieldable's call answers a coroutine, and the seed says so
+    // too -- a walk written against a member seeded here asks no more.
+    // What it yields only the body knows, so with nothing written the
+    // answer is a coroutine of unknowns.
+    if (node->v.func.yields && func->v.func.answers == NULL) {
+        LhatType *written = func->v.func.result;
+        func->v.func.answers =
+            written != NULL && written->kind == LHAT_TYPE_CORO
+                ? written
+                : lhat_type_coro(c->result->types, NULL,
+                                 chk_simple(c, LHAT_TYPE_UNKNOWN), NULL,
+                                 false, node->v.func.is_function);
     }
     return func;
 }
@@ -4227,14 +4298,18 @@ static LhatType *infer_node(Checker *c, const LhatNode *node)
             return chk_infer_def(c, node, NULL);
 
         case LHAT_NODE_SELF_TABLE: {
-            // 14.11: in the body of a def^ this declares the fields, and
-            // inside new it builds one. Either way it names the instance of
-            // the def^ it is written in -- not the receiver. 14.4 hands a
-            // receiver only to a member that wrote self^ among its
-            // parameters, and new does not; what the machine does here is
-            // NEWINSTANCE off class^ (03 の 5.10), which a static member
-            // reaches as readily as a method. So the receiver is read where
-            // there is one, and the definition being built otherwise.
+            // 14.11: reached as an expression this is the construction
+            // notation, and construction is a written new's alone -- the
+            // machine has just made the copy and nothing else holds it yet.
+            // A method that wants to change its receiver writes the fields
+            // one at a time, where 14.4's rules can see each write.
+            if (!c->in_new_body) {
+                chk_report(c, node, LHAT_CHECK_ERR_SELF_TABLE_OUTSIDE_NEW);
+            }
+            // The fields are checked against the instance either way. new
+            // is bound over self^ (chk_infer_def does this for the
+            // constructor entry); the self_link arm keeps a refused stray
+            // measured against the definition it sits in.
             Binding *receiver = chk_scope_find(c->scope, "self^", 5, NULL);
             LhatType *instance = receiver != NULL      ? receiver->type
                                  : c->self_link != NULL ? c->self_link->type

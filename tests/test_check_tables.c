@@ -594,6 +594,82 @@ static void test_not_indexable(void)
     unit_dispose(&u);
 }
 
+// 14.4: the self^ receiver works in a plain table literal's methods too --
+// 8.7改 took the bound name out of the initialiser, and this is the door
+// that stays. self^'s type is the literal's own.
+static void test_table_methods(void)
+{
+    Unit u;
+
+    LHAT_TEST("a plain table's method reads itself through self^");
+    check_text(&u,
+               "let^ u = {\n"
+               "    hidden = 42,\n"
+               "    read^ = f^self^ -> number^ { return^ self^.hidden }\n"
+               "}\n"
+               "var^ n : number^ = u.read^()\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // The named signatures are seeded first, annotations only, so a body
+    // can call a method declared after it.
+    LHAT_TEST("and calls a method declared after it, when annotated");
+    check_text(&u,
+               "let^ u = {\n"
+               "    first = f^self^ -> number^ { return^ self^.second() },\n"
+               "    second = f^self^ -> number^ { return^ 2 }\n"
+               "}\n"
+               "var^ n : number^ = u.first()\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // 16.3: a written iterate^ makes the literal walkable, and its own body
+    // reaches the raw walk through the projections.
+    LHAT_TEST("a written iterate^ walks itself through keys^()");
+    check_text(&u,
+               "let^ t = {\n"
+               "    a = 1,\n"
+               "    iterate^ = f^self^{\n"
+               "        for^k in^self^.keys^() { yield^k }\n"
+               "    }\n"
+               "}\n"
+               "for^k in^t { }\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // 15.1改: a table-literal method's self^ meets the same write rule a
+    // def^ method's does -- an f^ may not change the table it was handed.
+    LHAT_TEST("an f^ method may not write through self^");
+    check_text(&u,
+               "let^ u = {\n"
+               "    n = 0,\n"
+               "    bump = f^self^ { self^.n := 1 }\n"
+               "}\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_FUNCTION_CHANGES_TABLE);
+    unit_dispose(&u);
+
+    LHAT_TEST("and a p^ method may");
+    check_text(&u,
+               "let^ u = {\n"
+               "    n = 0,\n"
+               "    bump = p^self^ { self^.n := 1 }\n"
+               "}\n"
+               "u.bump()\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // 14.11: the construction notation belongs to a written new, and a
+    // plain table has none -- its methods write one field at a time.
+    LHAT_TEST("but not with the construction notation");
+    check_text(&u,
+               "let^ u = {\n"
+               "    n = 0,\n"
+               "    bump = p^self^ { self^{ n = 1 } }\n"
+               "}\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_SELF_TABLE_OUTSIDE_NEW);
+    unit_dispose(&u);
+}
+
 int main(void)
 {
     test_walking();
@@ -601,5 +677,6 @@ int main(void)
     test_dynamic_key();
     test_nil_safe_compound();
     test_not_indexable();
+    test_table_methods();
     return lhat_test_report("test_check_tables");
 }

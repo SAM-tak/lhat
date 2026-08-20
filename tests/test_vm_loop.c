@@ -764,9 +764,20 @@ static void test_for(void)
     LHAT_TEST("if^ uses the focus once and does not repeat");
     run_text(&r,
              "var^ x = 0\n"
-             "for^ var^ i := 1, var^ j := 2 if^ i + j < 10 { x := i + j }\n"
+             "for^ var^ i := 1\n"
+             "for^ var^ j := 2 if^ i + j < 10 { x := i + j }\n"
              "return^ x\n");
     CHECK_INTEGER(&r, 3);
+    run_dispose(&r);
+
+    // 16.3 with 8.6: a focus binding reads a value list the way any let^
+    // does -- one binding, several names, several values.
+    LHAT_TEST("a focus binding takes a value list");
+    run_text(&r,
+             "var^ x = 0\n"
+             "for^ let^ i, j = 1, 2 if^ i + j < 10 { x := i * 10 + j }\n"
+             "return^ x\n");
+    CHECK_INTEGER(&r, 12);
     run_dispose(&r);
 
     LHAT_TEST("and its focus does not escape either");
@@ -778,7 +789,8 @@ static void test_for(void)
     // anywhere -- 16.1 has for^ take the form its clause does.
     LHAT_TEST("and it answers a value when written with ':'");
     run_text(&r,
-             "var^ x = for^ var^ i := 1, var^ j := 2 if^ i + j < 10: i + j el^: 0 ;\n"
+             "var^ x = for^ var^ i := 1\n"
+             "         for^ var^ j := 2 if^ i + j < 10: i + j el^: 0 ;\n"
              "return^ x\n");
     CHECK_INTEGER(&r, 3);
     run_dispose(&r);

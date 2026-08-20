@@ -2575,11 +2575,12 @@ typedef enum {
 static void compile_subroutine_as(Compiler *c, const LhatNode *node,
                                   uint8_t into, BodyKind kind);
 
-// 14.11: 'self^{ … }' in a body that holds a self^ -- new, or a method --
-// writes the named fields onto it, one assignment per field, and stands for
-// the receiver it wrote. Construction is not here: the machine copies the
-// definition's prototype (NEWINSTANCE), and this is how a body adjusts the
-// copy.
+// 14.11: 'self^{ … }' writes the named fields onto the self^ in scope, one
+// assignment per field, and stands for what it wrote. Construction is not
+// here: the machine copies the definition's prototype (NEWINSTANCE), and
+// this is how a written new adjusts the copy. The checker holds the notation
+// to new bodies (SELF_TABLE_OUTSIDE_NEW); what compiles is general, the way
+// every instruction is.
 static void compile_self_assign(Compiler *c, const LhatNode *node,
                                 uint8_t into)
 {
