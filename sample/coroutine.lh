@@ -1,3 +1,5 @@
+import^std.math
+
 let^y = f^x:number^{
     print(x)
     x += 1
@@ -93,4 +95,20 @@ pre^:
     print(a, b)
 main^:
     a, b := co.resume(c..a, b ?? 0 + d)
+}
+
+let^positions = {
+    a = box^std.math.vec3(1, 2, 3),
+    b = box^std.math.vec3(10, 20, 30),
+    c = box^std.math.vec3(0, 0, 0)
+}
+
+let^vco = f^{
+    for^i in^positions.values^() {
+        yield^i
+    }
+}()
+for^var^a = vco.start() until^vco.done() next^a := vco.resume() {
+pre^:
+    print(a)
 }

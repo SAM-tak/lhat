@@ -1,3 +1,5 @@
+import^std.math
+
 let^t = {
     a = 1,
     b = 2,
@@ -24,7 +26,7 @@ let^A = def^{
     },
     iterate = f^self^{
         var^c = 1
-        for^k, v in^self^.t{
+        for^k:string^, v:number^ in^self^.t{
             yield^k, v, c
             c += 1
         }
