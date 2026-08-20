@@ -890,10 +890,47 @@ static void test_folded_answer(void)
     unit_dispose(&u);
 }
 
+// A conditional loop's condition is a condition -- bool^, as an if^'s is.
+// 'until^ c.done' reads the member without calling it, and a signature is
+// not a bool^; the machine used to be the one to say so.
+static void test_loop_condition(void)
+{
+    Unit u;
+
+    LHAT_TEST("an uncalled done is not a condition");
+    check_text(&u,
+               "var^ gen = p^ { yield^ 1 }\n"
+               "var^ c = gen()\n"
+               "c.start()\n"
+               "repeat^until^c.done {\n"
+               "    c.resume()\n"
+               "}\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_NOT_BOOL);
+    unit_dispose(&u);
+
+    LHAT_TEST("and the called one is");
+    check_text(&u,
+               "var^ gen = p^ { yield^ 1 }\n"
+               "var^ c = gen()\n"
+               "c.start()\n"
+               "repeat^until^c.done() {\n"
+               "    c.resume()\n"
+               "}\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("a for^ while^ condition is held to bool^ too");
+    check_text(&u,
+               "for^ var^ i = 0 while^ i next^ i := i + 1 { }\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_NOT_BOOL);
+    unit_dispose(&u);
+}
+
 int main(void)
 {
     test_coroutines();
     test_multi_value_receive();
     test_folded_answer();
+    test_loop_condition();
     return lhat_test_report("test_check_coroutine");
 }

@@ -3060,6 +3060,9 @@ const char *lhat_check_error_message(LhatCheckErrorCode code)
         case LHAT_CHECK_ERR_PHANTOM_YIELD_BINDS:
             return "a _yield^ never runs, so nothing arrives here; bind _^ "
                    "-- the annotations are all this statement says";
+        case LHAT_CHECK_ERR_NOT_INDEXABLE:
+            return "this is not a table, so a key reaches nothing; a "
+                   "string^'s characters answer at(i)";
         case LHAT_CHECK_ERR_PATH_NOT_TABLE:
             return "this holds the name written after it, so it has to be a "
                    "table";

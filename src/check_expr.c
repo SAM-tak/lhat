@@ -2198,6 +2198,30 @@ static LhatType *infer_index(Checker *c, const LhatNode *node)
     if (!c->strict || node->v.access.nil_safe) {
         over = chk_without_nil_arm(c, over);
     }
+    // 04 の 11.3: only a table holds keys. A settled type that is not one
+    // answers a key with nothing -- the machine refuses it, so the checker
+    // says so first. Unions and undecided types stay with the machine.
+    if (over != NULL) {
+        switch (over->kind) {
+            case LHAT_TYPE_NIL:
+            case LHAT_TYPE_BOOL:
+            case LHAT_TYPE_NUMBER:
+            case LHAT_TYPE_STRING:
+            case LHAT_TYPE_FUNC:
+            case LHAT_TYPE_CORO:
+            case LHAT_TYPE_TUPLE:
+            case LHAT_TYPE_NONE:
+            case LHAT_TYPE_ERROR:
+            case LHAT_TYPE_ERROR_SET:
+            case LHAT_TYPE_ERROR_KIND:
+            case LHAT_TYPE_HOSTVALUE:
+            case LHAT_TYPE_HOSTVALUE_BOX:
+                chk_report(c, node, LHAT_CHECK_ERR_NOT_INDEXABLE);
+                return chk_simple(c, LHAT_TYPE_UNKNOWN);
+            default:
+                break;
+        }
+    }
     // A key written out names one position or one member, so the
     // table says what is there. 04 の 11.3: a key that is not there
     // answers nil^ -- but a written one that the type does not

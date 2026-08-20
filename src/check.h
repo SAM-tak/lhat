@@ -143,6 +143,9 @@ typedef enum {
     LHAT_CHECK_ERR_PHANTOM_YIELD_BINDS,    // 15.11: a _yield^ never runs, so
                                            // a name cannot take its answer --
                                            // only _^ stands on the left
+    LHAT_CHECK_ERR_NOT_INDEXABLE,          // 04 の 11.3: only a table holds
+                                           // keys -- a string^'s characters
+                                           // answer at(i) instead
                                             // in one body disagree on Y or R
 
     LHAT_CHECK_ERR_PATH_NOT_TABLE,      // 8.8: everything before the last

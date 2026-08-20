@@ -2289,11 +2289,12 @@ void chk_check_statement(Checker *c, const LhatNode *node)
             if (node->kind == LHAT_NODE_FOR) {
                 // 16.3: in^ binds its focus each turn from what the walk
                 // yields, so the names are defined here rather than read.
+                LhatType *bound_type = NULL;
                 if (node->v.loop.kind == LHAT_FOR_IN) {
                     check_focus(c, node);
                 } else {
                     chk_check_statements(c, node->v.loop.focus);
-                    chk_infer(c, node->v.loop.bound);
+                    bound_type = chk_infer(c, node->v.loop.bound);
                     bound_the_focus(c, node);
                 }
                 chk_infer(c, node->v.loop.step);
@@ -2311,6 +2312,12 @@ void chk_check_statement(Checker *c, const LhatNode *node)
                 // condition to read -- and if^ and when^ are an if^ already.
                 bool conditional_loop = node->v.loop.kind == LHAT_FOR_WHILE ||
                                         node->v.loop.kind == LHAT_FOR_UNTIL;
+                // The condition is a condition -- bool^, as an if^'s is.
+                if (conditional_loop && bound_type != NULL) {
+                    chk_expect(c, node->v.loop.bound, bound_type,
+                               chk_simple(c, LHAT_TYPE_BOOL),
+                               LHAT_CHECK_ERR_NOT_BOOL);
+                }
                 check_loop_body(c, node->v.loop.body,
                                 conditional_loop ? node->v.loop.bound : NULL,
                                 node->v.loop.kind == LHAT_FOR_WHILE);
@@ -2318,13 +2325,21 @@ void chk_check_statement(Checker *c, const LhatNode *node)
                     c->conditional--;
                 }
             } else if (node->kind == LHAT_NODE_REPEAT) {
-                chk_infer(c, node->v.repeat.bound);
-                c->conditional++;
                 // 16.5: the same two forms, and repeat^ n counts rather than
                 // testing, so its bound is not a condition either.
                 bool conditional_loop =
                     node->v.repeat.kind == LHAT_REPEAT_WHILE ||
                     node->v.repeat.kind == LHAT_REPEAT_UNTIL;
+                // The condition is a condition -- bool^, as an if^'s is.
+                if (conditional_loop && node->v.repeat.bound != NULL) {
+                    chk_expect(c, node->v.repeat.bound,
+                               chk_infer(c, node->v.repeat.bound),
+                               chk_simple(c, LHAT_TYPE_BOOL),
+                               LHAT_CHECK_ERR_NOT_BOOL);
+                } else {
+                    chk_infer(c, node->v.repeat.bound);
+                }
+                c->conditional++;
                 check_loop_body(c, node->v.repeat.body,
                                 conditional_loop ? node->v.repeat.bound : NULL,
                                 node->v.repeat.kind == LHAT_REPEAT_WHILE);

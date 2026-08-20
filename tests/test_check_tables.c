@@ -560,11 +560,46 @@ static void test_nil_safe_compound(void)
     unit_dispose(&u);
 }
 
+// 04 の 11.3: only a table holds keys. A settled type that is not one
+// answers a key with nothing -- the machine refuses it, so the checker says
+// so first.
+static void test_not_indexable(void)
+{
+    Unit u;
+
+    LHAT_TEST("a string^ takes no key -- its characters answer at(i)");
+    check_text(&u,
+               "let^ s = \"abc\"\n"
+               "var^ ch = s[2]\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_NOT_INDEXABLE);
+    unit_dispose(&u);
+
+    LHAT_TEST("nor does a number^ or a subroutine");
+    check_text(&u, "var^ x = (1)[1]\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_NOT_INDEXABLE);
+    unit_dispose(&u);
+
+    check_text(&u,
+               "let^ f = f^ -> number^ { return^ 1 }\n"
+               "var^ x = f[1]\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_NOT_INDEXABLE);
+    unit_dispose(&u);
+
+    LHAT_TEST("a table still does, and an undecided target stays quiet");
+    check_text(&u,
+               "let^ t = { 10, 20 }\n"
+               "var^ x = t[1]\n"
+               "let^ g = f^ v { return^ v[1] }\n");
+    CHECK_NOT_REPORTED(&u, LHAT_CHECK_ERR_NOT_INDEXABLE);
+    unit_dispose(&u);
+}
+
 int main(void)
 {
     test_walking();
     test_positions();
     test_dynamic_key();
     test_nil_safe_compound();
+    test_not_indexable();
     return lhat_test_report("test_check_tables");
 }
