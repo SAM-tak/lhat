@@ -17,6 +17,10 @@ print(
     do^:h(x, y, z);
 )
 
+var^xxa, xxb = 1, 2
+xxa, xxb := xxb, xxa
+print("swap", xxa, xxb)
+
 print("spread", f()...)
 print("pack", pack^f())
 print(typeof^(f))
@@ -190,7 +194,7 @@ let^match = p^x:string^{
     when^"aaa", "bbb":
         print($"{it^}")
     }
-    print($"end")
+    print($"{x} end")
 }
 match("aaa")
 match("bbb")
@@ -205,3 +209,7 @@ let^yy = p^x:number^{
 }
 
 print(yy(2))
+
+let^s = "あいうえお"
+# print(s[2])
+print(s.at(2))

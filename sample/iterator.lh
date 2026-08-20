@@ -1,0 +1,66 @@
+let^t = {
+    a = 1,
+    b = 2,
+    c = 3,
+    d = 4,
+    e = 5,
+    iterate = 3, # これがイテレーターと解釈されることはない。意図通り。
+    # iterate^ = 3 # これは in^t でちゃんとエラーになる。意図通り。
+}
+
+print("ex. 1")
+for^k, v in^t {
+    print(k, v)
+}
+
+let^A = def^{
+    self^{
+        t = {}
+    },
+    override^new = f^t:t^{} {
+        self^ {
+            t = t
+        }
+    },
+    iterate = f^self^{
+        var^c = 1
+        for^k, v in^self^.t{
+            yield^k, v, c
+            c += 1
+        }
+    }
+}
+
+let^a = A.new(t)
+print("ex. 2")
+for^k, v, c in^a {
+    print(k, v, c)
+}
+
+var^_ii = a.iterate()
+
+print("ex. 3")
+let^t0 = { "a", "b", "c", "d", "e" }
+for^i in^t0 {
+    print(i)
+}
+
+let^t2 = {
+    a = 1,
+    b = 2,
+    c = 3,
+    d = 4,
+    e = 5,
+    iterate^ = f^self^{
+        var^c = 1
+        for^k in^self^.keys^() {
+            yield^k, self^[k], c
+            c += 1
+        }
+    },
+}
+
+print("ex. 4")
+for^k, v, c in^t2 {
+    print(k, v, c)
+}

@@ -23,33 +23,33 @@ let^ny = f^x:number^{
 
 do^ {
     print("ex. 1")
-    let^c = y(1)
-    var^a, b = c.start()
+    let^co = y(1)
+    var^a, b = co.start()
     print(a, b)
-    repeat^until^c.done() {
-        a, b := c.resume(a, b ?? 0)
+    repeat^until^co.done() {
+        a, b := co.resume(a, b ?? 0)
         print(a, b)
     }
 }
 
 do^ {
     print("ex. 2")
-    let^c = ny(1)
-    var^a, b = c.start()
+    let^co = ny(1)
+    var^a, b = co.start()
     print(a, b)
-    repeat^until^c.done() {
-        a, b := c.resume(a, b ?? 0)
+    repeat^until^co.done() {
+        a, b := co.resume(a, b ?? 0)
         print(a, b)
     }
 }
 
 do^ {
     print("ex. 3")
-    let^c = y(1)
-    var^a, b = c.start()
+    let^co = y(1)
+    var^a, b = co.start()
     print(a, b)
-    repeat^until^c.done() {
-        let^a, b = c.resume(a, b ?? 0)
+    repeat^until^co.done() {
+        let^a, b = co.resume(a, b ?? 0)
         print(a, b)
     }
 }
@@ -76,7 +76,21 @@ do^ {
 # }
 
 print("ex. 6")
-for^let^c = y(1)
-for^var^a, b = c.start() until^c.done() next^a, b := c.resume(a, b ?? 0) {
+for^let^co = y(1)
+for^let^c, d = ",", 1
+for^var^a, b = co.start()
+until^co.done() next^a, b := co.resume(c..a, b ?? 0 + d) {
+pre^: # 最後の入力を拾いたい場合これが必須に。
     print(a, b)
+}
+
+print("ex. 7") # どっちが初等的かな
+for^let^co = y(1)
+for^let^c, d = ",", 1
+for^var^a, b = co.start()
+until^co.done() {
+pre^:
+    print(a, b)
+main^:
+    a, b := co.resume(c..a, b ?? 0 + d)
 }
