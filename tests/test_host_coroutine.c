@@ -867,6 +867,167 @@ static void test_walk_yields_host_values(void)
     lhat_program_dispose(&program);
 }
 
+// ---------------------------------------------------------------------------
+// 8.9改2: the C boundary passes host values whole -- resume's answers as the
+// pointer form aimed at the machine's scratch (the tuple positions'
+// lifetime), and resume's sends expanded into the suspended frame.
+
+static const LhatHostValueTag *vec_other_tag;
+
+static float float_at(const void *data)
+{
+    float f;
+    memcpy(&f, data, sizeof f);
+    return f;
+}
+
+static LhatValue vec_mk(LhatMachine *machine, void *context,
+                        const LhatValue *arguments, size_t count)
+{
+    (void)context;
+    (void)count;
+    Vec v;
+    v.x = lhat_is_real(arguments[0])
+              ? (float)lhat_as_real(arguments[0])
+              : (float)lhat_as_integer(arguments[0]);
+    LhatValue out = lhat_nil();
+    return lhat_make_hostvalue(machine, vec_tag, &v, &out) ? out : lhat_nil();
+}
+
+static void test_boundary_host_values(void)
+{
+    LhatProgram program;
+    Disk disk;
+
+    LHAT_TEST("a yield^'s host value crosses to the C caller whole");
+    {
+        static const File files[] = {
+            {"main.lh",
+             "import^ seq\n"
+             "let^ gen = f^ -> c^{f^ -> seq.Vec;, seq.Vec} {\n"
+             "    yield^ seq.mk(1.5)\n"
+             "    return^ seq.mk(2.5)\n"
+             "}\n"
+             "return^ gen\n"},
+        };
+        program_with(&program, &disk, files, 1);
+        vec_tag = lhat_register_hostvalue_type(&program, "seq", "Vec",
+                                               sizeof(Vec));
+        LHAT_CHECK(lhat_register_hostvalue_field(&program, "seq", "Vec", "x",
+                                                 offsetof(Vec, x),
+                                                 LHAT_HVFIELD_F32),
+                   "the field registered");
+        LHAT_CHECK(lhat_register_func(&program, "seq", "mk",
+                                      "f^number^ -> seq.Vec;", vec_mk, NULL),
+                   "the maker registered");
+        LhatMachine *machine = NULL;
+        LhatRunResult ran = run_program(&program, &machine);
+        LHAT_CHECK_EQ_INT(ran.status, LHAT_RUN_OK);
+        LhatRunResult made =
+            lhat_machine_call(machine, ran.value, NULL, 0);
+        LhatValue co = made.value;
+
+        LhatRunResult one = lhat_machine_resume(machine, co, NULL, 0);
+        LHAT_CHECK_EQ_INT(one.status, LHAT_RUN_OK);
+        const void *first = lhat_hostvalue_data(one.value, vec_tag);
+        LHAT_CHECK(first != NULL, "the yield's value came over whole");
+        LHAT_CHECK(first == NULL || float_at(first) == 1.5f, "its bytes");
+        LHAT_CHECK(!lhat_machine_coroutine_done(co), "still suspended");
+
+        // 13.9: the return's T crosses the same way, done() telling it
+        // apart. The scratch is one room -- the earlier pointer now reads
+        // the later value, which is the "copy it out to keep it" contract
+        // the tuple positions already have.
+        LhatRunResult two = lhat_machine_resume(machine, co, NULL, 0);
+        LHAT_CHECK_EQ_INT(two.status, LHAT_RUN_OK);
+        const void *second = lhat_hostvalue_data(two.value, vec_tag);
+        LHAT_CHECK(second != NULL, "the return's value came over whole");
+        LHAT_CHECK(second == NULL || float_at(second) == 2.5f, "its bytes");
+        LHAT_CHECK(lhat_machine_coroutine_done(co), "the return ended it");
+        LHAT_CHECK(first == second, "one scratch, not a copy per answer");
+        lhat_machine_dispose(machine);
+    }
+    lhat_program_dispose(&program);
+
+    LHAT_TEST("and a resume's send arrives at the yield^ whole");
+    {
+        static const File files[] = {
+            {"main.lh",
+             "import^ seq\n"
+             "let^ echo = f^ -> c^{f^seq.Vec -> number^;, } {\n"
+             "    var^ got : seq.Vec = yield^ 0\n"
+             "    yield^ got.x\n"
+             "}\n"
+             "return^ echo\n"},
+        };
+        program_with(&program, &disk, files, 1);
+        vec_tag = lhat_register_hostvalue_type(&program, "seq", "Vec",
+                                               sizeof(Vec));
+        vec_other_tag = lhat_register_hostvalue_type(&program, "seq", "Other",
+                                                     sizeof(Vec));
+        LHAT_CHECK(lhat_register_hostvalue_field(&program, "seq", "Vec", "x",
+                                                 offsetof(Vec, x),
+                                                 LHAT_HVFIELD_F32),
+                   "the field registered");
+        LhatMachine *machine = NULL;
+        LhatRunResult ran = run_program(&program, &machine);
+        LHAT_CHECK_EQ_INT(ran.status, LHAT_RUN_OK);
+        LhatValue co =
+            lhat_machine_call(machine, ran.value, NULL, 0).value;
+        lhat_machine_resume(machine, co, NULL, 0);  // to the first yield^
+
+        Vec v;
+        v.x = 4.5f;
+        LhatValue sent = lhat_nil();
+        LHAT_CHECK(lhat_make_hostvalue(machine, vec_tag, &v, &sent),
+                   "the send was made");
+        LhatRunResult got = lhat_machine_resume(machine, co, &sent, 1);
+        LHAT_CHECK_EQ_INT(got.status, LHAT_RUN_OK);
+        LHAT_CHECK(lhat_is_real(got.value) &&
+                       lhat_as_real(got.value) == 4.5,
+                   "the body read the sent value's field");
+
+        // The R's own tag holds the send: another registration's value is
+        // refused, and so is one mixed into a run.
+        LhatValue wrong = lhat_nil();
+        LHAT_CHECK(lhat_make_hostvalue(machine, vec_other_tag, &v, &wrong),
+                   "the stranger was made");
+        LhatRunResult refused = lhat_machine_resume(machine, co, &wrong, 1);
+        LHAT_CHECK_EQ_INT(refused.status, LHAT_RUN_TYPE_ERROR);
+        LhatValue mixed[2];
+        LHAT_CHECK(lhat_make_hostvalue(machine, vec_tag, &v, &mixed[0]),
+                   "the mixed one was made");
+        mixed[1] = lhat_integer(1);
+        LhatRunResult two_seats =
+            lhat_machine_resume(machine, co, mixed, 2);
+        LHAT_CHECK_EQ_INT(two_seats.status, LHAT_RUN_TYPE_ERROR);
+        lhat_machine_dispose(machine);
+    }
+    lhat_program_dispose(&program);
+
+    LHAT_TEST("and a host walk's value passes straight through");
+    {
+        static const File files[] = {
+            {"main.lh", "import^ seq\nreturn^ 0\n"},
+        };
+        program_with(&program, &disk, files, 1);
+        vec_tag = lhat_register_hostvalue_type(&program, "seq", "Vec",
+                                               sizeof(Vec));
+        LhatMachine *machine = NULL;
+        LhatRunResult ran = run_program(&program, &machine);
+        LHAT_CHECK_EQ_INT(ran.status, LHAT_RUN_OK);
+        walk_releases = 0;
+        LhatValue walk = vec_iterate_with(machine, lhat_nil(), false);
+        LhatRunResult step = lhat_machine_resume(machine, walk, NULL, 0);
+        LHAT_CHECK_EQ_INT(step.status, LHAT_RUN_OK);
+        const void *bytes = lhat_hostvalue_data(step.value, vec_tag);
+        LHAT_CHECK(bytes != NULL, "the step's value came over whole");
+        LHAT_CHECK(bytes == NULL || float_at(bytes) == 10.0f, "its bytes");
+        lhat_machine_dispose(machine);
+    }
+    lhat_program_dispose(&program);
+}
+
 int main(void)
 {
     test_walks_hostdata();
@@ -875,5 +1036,6 @@ int main(void)
     test_yieldable_call();
     test_call_member_hostdata();
     test_walk_yields_host_values();
+    test_boundary_host_values();
     return lhat_test_report("test_host_coroutine");
 }

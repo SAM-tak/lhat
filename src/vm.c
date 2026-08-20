@@ -337,6 +337,25 @@ static bool place_hostvalue_answer(Machine *m, size_t at, LhatValue answered)
     return true;
 }
 
+// 05 の 8.9改2: the value a host receives from a yield^ or a return^ at the
+// base of a run -- the bytes moved into the machine's scratch (the frame
+// that held them is going) and the head re-aimed there. Alive until the
+// next call that runs the machine, which is the tuple positions' contract;
+// a host that keeps it longer copies the bytes out (lhat_hostvalue_data).
+static LhatValue hand_hostvalue_out(Machine *m, LhatValue value)
+{
+    const LhatValueUnion *run = value.as.hostvalue_run;
+    const LhatHostValueTag *tag = run != NULL ? run[0].hostvalue : NULL;
+    if (tag == NULL) {
+        return lhat_nil();
+    }
+    for (size_t i = 0; i < tag->width; i++) {
+        m->hostvalue_scratch[i] = run[i];
+    }
+    value.as.hostvalue_run = m->hostvalue_scratch;
+    return value;
+}
+
 // 02 の 13.8改: the several values a host answered with, laid down at `at`
 // as the run every other producer makes -- head slot naming the width, the
 // positions after it. `reserved` is what the call site left room for (CALL's
@@ -4514,10 +4533,8 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
                 // return crossing a suspension was refused by the checker;
                 // this is the backstop.
                 if (op == LHAT_BC_RETURN && lhat_is_hostvalue(R(a))) {
-                    if (m->frame_count <= base_depth + 1) {
-                        return finish(m, chunk, LHAT_RUN_TYPE_ERROR,
-                                      lhat_nil(), at);
-                    }
+                    // 8.9改2: the base is no exception any more -- the drain
+                    // hands the value to the host whole, off this same room.
                     const LhatHostValueTag *tag = lhat_as_hostvalue_tag(R(a));
                     for (size_t i = 0; i < tag->width; i++) {
                         frame->answer_run[i] = m->slots.values[rbase + a + i];
@@ -4685,8 +4702,11 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
                 // value, or the positions copied into the machine's room.
                 if (m->frame_count == base_depth + 1) {
                     m->frame_count--;
+                    // 05 の 8.9改2: the host receives the value whole, as
+                    // the pointer form aimed at the machine's scratch.
                     if (lhat_is_hostvalue(value)) {
-                        value = lhat_nil();  // as at a return's base
+                        return finish(m, chunk, LHAT_RUN_OK,
+                                      hand_hostvalue_out(m, value), at);
                     }
                     if (lhat_is_run(value)) {
                         size_t positions = lhat_run_width(value);
@@ -5238,11 +5258,14 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
             m->frame_count--;
 
             if (m->frame_count == base_depth) {
-                // 05 の 8.9: the checker refused a host value as the
-                // program's answer; a relaxed run that got here anyway has
-                // nothing meaningful to hand the host.
+                // 05 の 8.9改2: a coroutine's return^ hands its T to the
+                // host whole, the same pointer form a yield^'s produce
+                // takes. (The checker still refuses one as the program's
+                // own answer; a relaxed run that wrote one gets it too --
+                // the bytes are real either way.)
                 if (lhat_is_hostvalue(value)) {
-                    value = lhat_nil();
+                    return finish(m, chunk, LHAT_RUN_OK,
+                                  hand_hostvalue_out(m, value), at);
                 }
                 // 02 の 13.8改: several values do cross. The positions rode
                 // the frame's own room through the drain; they are copied
@@ -5791,11 +5814,9 @@ LhatRunResult lhat_machine_resume(LhatMachine *machine, LhatValue coroutine,
             return call_fault(m, LHAT_RUN_OK);
         }
         co->state = LHAT_COROUTINE_SUSPENDED;
-        // 05 の 8.9: a host value cannot cross the boundary, as at a
-        // return's base.
-        if (lhat_is_hostvalue(out)) {
-            out = lhat_nil();
-        }
+        // 05 の 8.9改2: a host value passes through whole -- the step wrote
+        // it into the machine's scratch itself (lhat_make_hostvalue), which
+        // is exactly where the caller reads the pointer form.
         LhatRunResult made = call_fault(m, LHAT_RUN_OK);
         if (lhat_is_run(out)) {
             size_t positions = lhat_run_width(out);
@@ -5824,10 +5845,13 @@ LhatRunResult lhat_machine_resume(LhatMachine *machine, LhatValue coroutine,
     // never reached, and the same stop for a run that would not fit the
     // suspended frame. A fresh body's first send is discarded, so any count
     // passes there.
-    // 05 の 8.9: the C API's LhatValue cannot carry a host value across --
-    // the boundary stays closed in both directions (the answer side nils).
+    // 05 の 8.9改2: a host value rides the send whole -- the pointer form
+    // the host already holds (lhat_make_hostvalue's scratch, or an argument
+    // echoed back), one seat, never mixed into a run. The lay-down side
+    // expands it (enter_resume_frame), and unlike a compiled resume the
+    // pointer never aims into the registers about to be restored over.
     for (size_t i = 0; i < sent_count; i++) {
-        if (lhat_is_hostvalue(sent[i])) {
+        if (lhat_is_hostvalue(sent[i]) && sent_count > 1) {
             return call_fault(m, LHAT_RUN_TYPE_ERROR);
         }
     }
@@ -5843,6 +5867,22 @@ LhatRunResult lhat_machine_resume(LhatMachine *machine, LhatValue coroutine,
         if (sent_count > 1 &&
             (size_t)co->sent_into + sent_count >= co->register_count) {
             return call_fault(m, LHAT_RUN_ARITY);
+        }
+        if (sent_count == 1 && lhat_is_hostvalue(sent[0])) {
+            const LhatValueUnion *srun = sent[0].as.hostvalue_run;
+            const LhatHostValueTag *stag =
+                srun != NULL ? srun[0].hostvalue : NULL;
+            // The lowered R is what the body reserved its slots by, so a
+            // checked body holds the send to its own tag -- stronger than
+            // the count check alone. An unchecked one still gets the room
+            // checked.
+            const struct LhatRuntimeType *wants = from->yield_receive_type;
+            if (stag == NULL ||
+                (wants != NULL && (wants->kind != LHAT_TYPE_RT_HOSTVALUE ||
+                                   wants->hostvalue_tag != stag)) ||
+                (size_t)co->sent_into + stag->width > co->register_count) {
+                return call_fault(m, LHAT_RUN_TYPE_ERROR);
+            }
         }
     }
     size_t base = m->frame_count;
