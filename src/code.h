@@ -162,7 +162,9 @@ typedef enum {
     // 05 の 8.9: box^ -- the host value whose head sits at R[B], put in the
     // box the heap can hold. The width travels with the head slot's tag, so
     // one operand names the whole run.
-    LHAT_BC_BOX,          // A B   R[A] = a box holding the value at R[B..]
+    LHAT_BC_BOX,          // A B C R[A] = a box holding the value at R[B..];
+                          //       C bit 0 seals it (constbox^), bit 1 reads
+                          //       R[B] as a box to copy
     LHAT_BC_CALLMETHOD,   // A B C R[A] = R[A](R[A+1] .. R[A+B]), where R[A+1]
                           //       is the receiver and is passed only when the
                           //       callee takes self^ (14.4). C as LHAT_BC_CALL.
@@ -191,7 +193,17 @@ typedef enum {
     // follow. What comes back is one value in R[A], or, when the resume
     // sent several, a run -- R[A] its head and the positions after it; the
     // yield^'s own binding reserved the width and takes it apart.
-    LHAT_BC_YIELD,      // A B   yield R[A]; R[A..] = what the resume sent
+// 05 の 8.9: the B that says a yield carries one host value laid out whole
+// rather than B run positions. Out of every run width (LHAT_MAX_TUPLE is 31).
+#define LHAT_YIELD_HOSTVALUE 0xFF
+// And RESUME's C for the one-name loop whose focus is a host value: the low
+// bits carry the width the loop reserved, and the walk modes still read the
+// step as one value.
+#define LHAT_RESUME_WIDE 0x80
+
+    LHAT_BC_YIELD,      // A B   yield R[A]; R[A..] = what the resume sent.
+                        //       B = LHAT_YIELD_HOSTVALUE: R[A..] is one host
+                        //       value laid out whole (05 の 8.9)
 
     // 02 の 15.8: delegation, which compiles to the loop 5.7 writes out.
     // A run sitting in R[A] (a several-send arriving through this frame's

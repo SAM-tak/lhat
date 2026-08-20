@@ -111,6 +111,38 @@ bool lhat_value_equal(LhatValue a, LhatValue b)
                     (const LhatRuntimeType *)a.as.object,
                     (const LhatRuntimeType *)b.as.object);
             }
+            // 05 の 8.9改: a box is its bytes, as the value it holds is on
+            // the stack -- same tag, same bytes, whatever `sealed` says (the
+            // prototype's sealed box equals its unsealed copies). is^ still
+            // asks for the object itself.
+            if (a.as.object != b.as.object && a.as.object != NULL &&
+                b.as.object != NULL &&
+                a.as.object->kind == LHAT_OBJECT_HOSTVALUE_BOX &&
+                b.as.object->kind == LHAT_OBJECT_HOSTVALUE_BOX) {
+                const LhatHostValueBox *left =
+                    (const LhatHostValueBox *)a.as.object;
+                const LhatHostValueBox *right =
+                    (const LhatHostValueBox *)b.as.object;
+                const LhatHostValueTag *tag = lhat_hostvalue_box_tag(left);
+                return tag != NULL && tag == lhat_hostvalue_box_tag(right) &&
+                       memcmp(left->run + 1, right->run + 1,
+                              (tag->width - 1) * sizeof(LhatValueUnion)) == 0;
+            }
+            // 05 の 8.8: a hostdata stands for what the host made, so two
+            // wrappers of one host object are equal -- the tag first, since
+            // 7.3 is what makes the pointers comparable at all. Never after
+            // a release: the pointer may have been given back and reused,
+            // and a wrapper whose object is gone is equal only to itself.
+            if (a.as.object != b.as.object && a.as.object != NULL &&
+                b.as.object != NULL &&
+                a.as.object->kind == LHAT_OBJECT_HOSTDATA &&
+                b.as.object->kind == LHAT_OBJECT_HOSTDATA) {
+                const LhatHostData *left = (const LhatHostData *)a.as.object;
+                const LhatHostData *right = (const LhatHostData *)b.as.object;
+                return left->tag != NULL && left->tag == right->tag &&
+                       !left->released && !right->released &&
+                       left->pointer == right->pointer;
+            }
             return a.as.object == b.as.object;
         default:
             return false;  // the numeric tags are handled above
@@ -258,6 +290,34 @@ static void put_quoted(Writer *w, const LhatString *string)
 
 static void write_value(Writer *w, LhatValue value, size_t depth);
 
+// 05 の 8.9: 'module.Name(1, 2, 3)' -- the registered fields in their
+// registration order, decoded off the data run. The name alone when no
+// field was registered; the bytes have no other reading.
+static void write_hostvalue_content(Writer *w, const LhatHostValueTag *tag,
+                                    const LhatValueUnion *data,
+                                    const char *suffix, size_t depth)
+{
+    if (tag->module != NULL) {
+        put_text(w, tag->module);
+        put_text(w, ".");
+    }
+    put_text(w, tag->name != NULL ? tag->name : "?");
+    put_text(w, suffix);
+    if (tag->field_count == 0) {
+        return;
+    }
+    put_text(w, "(");
+    for (size_t i = 0; i < tag->field_count; i++) {
+        if (i > 0) {
+            put_text(w, ", ");
+        }
+        write_value(w, lhat_hostvalue_field_value(data, &tag->fields[i]),
+                    depth);
+    }
+    put_text(w, ")");
+}
+
+
 // 14.14: a key written as a name is the same key written as a string, so one
 // that spells an identifier is written back in the shorter form.
 //
@@ -348,17 +408,18 @@ static void write_value(Writer *w, LhatValue value, size_t depth)
             put_real(w, value.as.real);
             return;
         case LHAT_VALUE_HOSTVALUE:
-            // 05 の 8.9: bytes whose meaning is the library's, so there is
-            // nothing here to write but what they are -- the type's name,
-            // in the same '<…>' the kinds below are named with. A library
-            // that wants its values written its own way registers a
-            // tostring, which 14.17 lets win over this.
-            if (value.as.hostvalue != NULL) {
-                put_text(w, "<");
-                put_text(w, value.as.hostvalue->module);
-                put_text(w, ".");
-                put_text(w, value.as.hostvalue->name);
-                put_text(w, ">");
+            // 05 の 8.9: outside the stack an LhatValue host value is the
+            // pointer form -- a host's argument aiming at the run (the head
+            // form never leaves the machine; vm.c's tostring writes its
+            // name itself). The spelling is the type's name over the field
+            // values, read straight off the bytes. A library that wants its
+            // values written its own way registers a tostring, which 14.17
+            // lets win over this.
+            if (value.as.hostvalue_run != NULL &&
+                value.as.hostvalue_run[0].hostvalue != NULL) {
+                const LhatValueUnion *run = value.as.hostvalue_run;
+                write_hostvalue_content(w, run[0].hostvalue, run + 1, "",
+                                        depth + 1);
                 return;
             }
             put_text(w, "<hostvalue>");
@@ -426,17 +487,18 @@ static void write_value(Writer *w, LhatValue value, size_t depth)
             }
             return;
         }
-        // 05 の 8.9: the box written as what it is -- its type's name, the
-        // way the value inside would write itself.
+        // 05 の 8.9: the box written as what it holds -- its type's name,
+        // which flavour of box it is, and the field values off the bytes.
         case LHAT_OBJECT_HOSTVALUE_BOX: {
             const LhatHostValueBox *box = (const LhatHostValueBox *)object;
             const LhatHostValueTag *tag = lhat_hostvalue_box_tag(box);
-            if (tag != NULL && tag->module != NULL) {
-                put_text(w, tag->module);
-                put_text(w, ".");
+            if (tag == NULL) {
+                put_text(w, "?.Box^");
+                return;
             }
-            put_text(w, tag != NULL ? tag->name : "?");
-            put_text(w, ".Box^");
+            write_hostvalue_content(w, tag, box->run + 1,
+                                    box->sealed ? ".ConstBox^" : ".Box^",
+                                    depth + 1);
             return;
         }
         default:

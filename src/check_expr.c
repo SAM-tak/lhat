@@ -1437,6 +1437,12 @@ LhatType *chk_infer_call(Checker *c, const LhatNode *node)
             chk_report(c, arg, LHAT_CHECK_ERR_TUPLE_MISPLACED);
         }
         LhatType *wanted = param != NULL ? param->type : callee->v.func.variadic;
+        // 05 の 8.9: the variadic tail collects into a table for an L^ body
+        // and erases the width for a host's -- either way the seat cannot
+        // say a host value's type, so one is boxed to ride it.
+        if (param == NULL && chk_is_hostvalue(actual)) {
+            chk_report(c, arg, LHAT_CHECK_ERR_HOSTVALUE_ESCAPES);
+        }
         if (wanted != NULL) {
             chk_expect(c, arg, actual, wanted, LHAT_CHECK_ERR_MISMATCH);
         }
@@ -1844,12 +1850,25 @@ LhatType *chk_infer_member(Checker *c, const LhatNode *node)
             }
             return signature;
         }
-        if (chk_name_is(name, length, "set")) {
+        // ConstBox^ is the get-only reading, so set is not a member of it
+        // at all -- the sealed box's runtime refusal backs the unchecked run.
+        if (!target->v.table.sealed && chk_name_is(name, length, "set")) {
             LhatType *signature = lhat_type_func(c->result->types, false);
             if (signature != NULL) {
                 lhat_type_add_param(c->result->types, signature, held);
             }
             return signature;
+        }
+        // 05 の 8.9改: a registered field reads straight off the box's
+        // bytes, as it does off a stack value's -- the read only. A write
+        // goes through set(), where the sealed box and 15.1 keep their say.
+        const LhatTypeMember *field = chk_find_member(held, name, length);
+        if (field != NULL && field->type != NULL &&
+            field->type->kind != LHAT_TYPE_FUNC) {
+            if (c->writing_to == node) {
+                chk_report(c, node, LHAT_CHECK_ERR_BOX_FIELD_WRITE);
+            }
+            return field->type;
         }
         // Anything else falls to the built-ins every value answers.
     }
@@ -2193,6 +2212,20 @@ static LhatType *infer_index(Checker *c, const LhatNode *node)
     LhatType *over = chk_infer(c, node->v.access.target);
     LhatType *asked = chk_require_value(c, node->v.access.argument,
                                         chk_infer(c, node->v.access.argument));
+    // 05 の 8.9改: a box's key hash is its bytes, and only a sealed box
+    // keeps them still -- so storing a key asks for constbox^. A lookup may
+    // ask with a live box, or with the bare value itself: both read the
+    // bytes of the moment, and everything the table holds is sealed. Only
+    // storing asks for the sealed box -- a bare value cannot BE a stored
+    // key at all, its width not fitting the entry's one slot.
+    if (asked != NULL && asked->kind == LHAT_TYPE_HOSTVALUE_BOX &&
+        !asked->v.table.sealed && c->writing_to == node) {
+        chk_report(c, node->v.access.argument, LHAT_CHECK_ERR_MUTABLE_KEY);
+    }
+    if (chk_is_hostvalue(asked) && c->writing_to == node) {
+        chk_report(c, node->v.access.argument,
+                   LHAT_CHECK_ERR_HOSTVALUE_ESCAPES);
+    }
     // 04 の 11.4: as in infer_member -- relaxed steps past a nil^
     // arm, and '?[' steps past it under strict as well.
     if (!c->strict || node->v.access.nil_safe) {
@@ -2359,6 +2392,16 @@ static LhatType *infer_table(Checker *c, const LhatNode *node)
                 lhat_type_conforms(asked, chk_simple(c, LHAT_TYPE_NIL))) {
                 chk_report(c, key, LHAT_CHECK_ERR_BAD_KEY);
             }
+            // 05 の 8.9改: a literal's key is stored, so only a sealed box
+            // holds its hash still -- and a bare host value does not fit a
+            // key's one slot at all.
+            if (asked != NULL && asked->kind == LHAT_TYPE_HOSTVALUE_BOX &&
+                !asked->v.table.sealed) {
+                chk_report(c, key, LHAT_CHECK_ERR_MUTABLE_KEY);
+            }
+            if (chk_is_hostvalue(asked)) {
+                chk_report(c, key, LHAT_CHECK_ERR_HOSTVALUE_ESCAPES);
+            }
             if (key != NULL && key->kind == LHAT_NODE_INT) {
                 lhat_type_add_index_member(c->result->types, table,
                                            (size_t)key->v.integer.value, value);
@@ -2405,14 +2448,10 @@ void chk_unify_yield(Checker *c, const LhatNode *at, LhatType **slot,
         // agree or disagree with.
         return;
     }
-    // 05 の 8.9: what a yield^ carries crosses the frame boundary -- it lands
-    // in the resumer's slot, and the suspended registers may be walked over
-    // -- so a host value does not ride one. Its locals inside the body are
-    // fine: suspension copies every register blindly.
-    if (chk_is_hostvalue(candidate)) {
-        chk_report(c, at, LHAT_CHECK_ERR_HOSTVALUE_ESCAPES);
-        return;
-    }
+    // 05 の 8.9改: a host value rides a yield^ whole -- one seat, its full
+    // width, never mixed into a run (the tuple-position rule keeps that).
+    // The machine carries it through the frame's answer room the way a
+    // wide return^ travels, so nothing is refused here any more.
     if (*slot == NULL) {
         *slot = candidate;
         return;
@@ -4792,6 +4831,17 @@ static LhatType *infer_node(Checker *c, const LhatNode *node)
         // lives on the heap and needs no box.
         case LHAT_NODE_BOX: {
             LhatType *held = chk_infer(c, node->v.jump.value);
+            // 05 の 8.9: 'constbox^' off a box of either kind is a sealed
+            // copy -- the way a keyable box is made from a live one.
+            if (node->v.jump.sealing && held != NULL &&
+                held->kind == LHAT_TYPE_HOSTVALUE_BOX) {
+                LhatType *inner =
+                    held->v.table.instance != NULL
+                        ? held->v.table.instance
+                        : lhat_type_hostvalue(c->result->types,
+                                              held->v.table.hostvalue_tag);
+                return lhat_type_hostvalue_box(c->result->types, inner, true);
+            }
             if (held == NULL || held->kind != LHAT_TYPE_HOSTVALUE) {
                 // A gap stays quiet -- the mistake was reported where the
                 // value came from, and one report per mistake is the rule.
@@ -4801,7 +4851,8 @@ static LhatType *infer_node(Checker *c, const LhatNode *node)
                 }
                 return chk_simple(c, LHAT_TYPE_UNKNOWN);
             }
-            return lhat_type_hostvalue_box(c->result->types, held);
+            return lhat_type_hostvalue_box(c->result->types, held,
+                                           node->v.jump.sealing);
         }
 
         default:

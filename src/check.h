@@ -103,6 +103,12 @@ typedef enum {
                                         // written new constructs
     LHAT_CHECK_ERR_PROTOTYPE_SEALED,    // 14.11: the prototype is read
                                         // through self^ and written by no one
+    LHAT_CHECK_ERR_MUTABLE_KEY,         // 05 の 8.9改: a key hashes its
+                                        // bytes, so only a sealed box
+                                        // (constbox^) may be one
+    LHAT_CHECK_ERR_BOX_FIELD_WRITE,     // 05 の 8.9改: a box's field is read
+                                        // off the bytes; writing goes
+                                        // through set()
     LHAT_CHECK_ERR_NOT_BOXABLE,         // 05 の 8.9: box^ takes a host value
                                         // -- everything else already lives
                                         // on the heap and needs no box

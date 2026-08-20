@@ -1,6 +1,7 @@
 # 05 の 8.9: host values, end to end. Vector3 lives on the stack;
 # Vector3.Box^ is the box the heap can hold, made with box^.
 import^std.math
+import^std.io
 
 # --- the boxed side: boxes in a table, get/set as unboxing/boxing ---
 let^positions = {
@@ -42,3 +43,28 @@ let^blend = f^p:std.math.Vector3, q:std.math.Vector3 -> std.math.Vector3 {
 }
 let^mid = blend(v, doubled)
 print($"mid = ({mid.x}, {mid.y}, {mid.z})")
+
+# a stored key has to hold its bytes still, so it is a constbox^ -- a
+# sealed, get-only copy. Lookups key by content and may ask with the live
+# box itself.
+let^vtos = {
+    [constbox^positions.a] = "a",
+    [constbox^positions.b] = "b",
+    [constbox^positions.c] = "c",
+}
+print(vtos[positions.a.get()])
+print(vtos[positions.b])
+print(vtos[positions.c])
+
+# the key writes itself with its content, so the box goes to print whole
+# (a bare host value cannot ride the variadic seat -- box it, or print
+# fields: k.get().x)
+for^k, v in^vtos {
+    print(k.get(), v)
+}
+
+let^fd = try^std.io.open("sample/test.lh", "r")
+let^fdtos = {
+    [fd] = "sample/test.lh"
+}
+print(fdtos[fd])

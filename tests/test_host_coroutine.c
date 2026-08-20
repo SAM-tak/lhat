@@ -10,6 +10,7 @@
 // once whichever way the walk ends -- its natural end, an explicit
 // dispose(), or the machine going away.
 
+#include <stddef.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -703,6 +704,169 @@ static void test_call_member_hostdata(void)
     lhat_program_dispose(&program);
 }
 
+// ---------------------------------------------------------------------------
+// 8.9 meets 8.8: a walk whose steps answer host values. Each is written out
+// whole into the focus, so two elements alive at once cannot share the one
+// scratch the boundary owns -- which is exactly what this pins.
+
+typedef struct {
+    float x;
+} Vec;
+
+typedef struct {
+    int64_t at;   // 1-origin
+    int64_t to;
+    bool pair;    // yield (ordinal, value) -- refused by the checker
+} VecWalk;
+
+static const LhatHostValueTag *vec_tag;
+
+static bool vec_step(LhatMachine *machine, void *context, LhatValue sent,
+                     LhatValue *out)
+{
+    (void)sent;
+    VecWalk *walk = (VecWalk *)context;
+    if (walk->at > walk->to) {
+        return false;
+    }
+    Vec v;
+    v.x = (float)(walk->at * 10);
+    walk->at++;
+    LhatValue value = lhat_nil();
+    if (!lhat_make_hostvalue(machine, vec_tag, &v, &value)) {
+        return false;
+    }
+    if (walk->pair) {
+        LhatValue both[2] = {lhat_integer(walk->at - 1), value};
+        return lhat_make_tuple(machine, both, 2, out);
+    }
+    *out = value;
+    return true;
+}
+
+static LhatValue vec_iterate_with(LhatMachine *machine, LhatValue over,
+                                  bool pair)
+{
+    VecWalk *walk = (VecWalk *)malloc(sizeof *walk);
+    if (walk == NULL) {
+        return lhat_nil();
+    }
+    walk->at = 1;
+    walk->to = 3;
+    walk->pair = pair;
+    LhatValue out = lhat_nil();
+    if (!lhat_machine_make_coroutine(machine, vec_step, walk, walk_release,
+                                     over, &out)) {
+        free(walk);
+        return lhat_nil();
+    }
+    return out;
+}
+
+static LhatValue vec_iterate(LhatMachine *machine, void *context,
+                             const LhatValue *arguments, size_t count)
+{
+    (void)context;
+    (void)count;
+    return vec_iterate_with(machine, arguments[0], false);
+}
+
+static LhatValue vec_pair_iterate(LhatMachine *machine, void *context,
+                                  const LhatValue *arguments, size_t count)
+{
+    (void)context;
+    (void)count;
+    return vec_iterate_with(machine, arguments[0], true);
+}
+
+static LhatValue vec_seq_make(LhatMachine *machine, void *context,
+                              const LhatValue *arguments, size_t count)
+{
+    (void)context;
+    (void)arguments;
+    (void)count;
+    range_value.from = 1;
+    range_value.to = 3;
+    LhatValue out = lhat_nil();
+    return lhat_machine_make_hostdata(machine, range_tag, &range_value, &out)
+               ? out
+               : lhat_nil();
+}
+
+static void test_walk_yields_host_values(void)
+{
+    LhatProgram program;
+    Disk disk;
+
+    LHAT_TEST("a walk hands each host value over whole");
+    {
+        // Three elements, summed off the focus: were the focus still a
+        // pointer into the boundary's scratch, every turn would read the
+        // value the latest step wrote and the sum would be 3 * 30.
+        static const File files[] = {
+            {"main.lh",
+             "import^ seq\n"
+             "var^ r = seq.vecs()\n"
+             "var^ total = 0\n"
+             "for^ v in^ r { total := total + v.x }\n"
+             "return^ total\n"},
+        };
+        program_with(&program, &disk, files, 1);
+        walk_releases = 0;
+        range_tag = lhat_register_hostdata_type(&program, "seq", "Vecs");
+        LHAT_CHECK(range_tag != NULL, "the hostdata type registered");
+        vec_tag = lhat_register_hostvalue_type(&program, "seq", "Vec",
+                                               sizeof(Vec));
+        LHAT_CHECK(vec_tag != NULL, "the value type registered");
+        LHAT_CHECK(lhat_register_hostvalue_field(&program, "seq", "Vec", "x",
+                                                 offsetof(Vec, x),
+                                                 LHAT_HVFIELD_F32),
+                   "the field registered");
+        LHAT_CHECK(lhat_register_member(&program, "seq", "Vecs", "iterate",
+                                        "f^self^ -> c^{p^ -> seq.Vec;, };",
+                                        vec_iterate, NULL),
+                   "the iterate registered");
+        LHAT_CHECK(lhat_register_func(&program, "seq", "vecs",
+                                      "f^ -> seq.Vecs;", vec_seq_make, NULL),
+                   "the maker registered");
+        LhatRunResult ran = run_program(&program, NULL);
+        LHAT_CHECK_EQ_INT(ran.status, LHAT_RUN_OK);
+        // 10 + 20 + 30, not 30 + 30 + 30.
+        LHAT_CHECK_EQ_INT((int64_t)lhat_as_real(ran.value), 60);
+        LHAT_CHECK_EQ_INT(walk_releases, 1);
+    }
+    lhat_program_dispose(&program);
+
+    LHAT_TEST("a host value in a tuple position is refused as an escape");
+    {
+        // 8.9: a tuple crosses as copied values, and a host value among them
+        // would arrive as a pointer into scratch the next step overwrites.
+        static const File files[] = {
+            {"main.lh",
+             "import^ seq\n"
+             "var^ r = seq.vecs()\n"
+             "for^ i, v in^ r { }\n"
+             "return^ 0\n"},
+        };
+        program_with(&program, &disk, files, 1);
+        range_tag = lhat_register_hostdata_type(&program, "seq", "Vecs");
+        vec_tag = lhat_register_hostvalue_type(&program, "seq", "Vec",
+                                               sizeof(Vec));
+        LHAT_CHECK(lhat_register_member(
+                       &program, "seq", "Vecs", "iterate",
+                       "f^self^ -> c^{p^ -> (number^, seq.Vec);, };",
+                       vec_pair_iterate, NULL),
+                   "the pair iterate registered");
+        LHAT_CHECK(lhat_register_func(&program, "seq", "vecs",
+                                      "f^ -> seq.Vecs;", vec_seq_make, NULL),
+                   "the maker registered");
+        const LhatUnit *root = lhat_program_check(&program, "main.lh");
+        LHAT_CHECK(has_check_error(root, LHAT_CHECK_ERR_HOSTVALUE_ESCAPES),
+                   "the escape is refused");
+    }
+    lhat_program_dispose(&program);
+}
+
 int main(void)
 {
     test_walks_hostdata();
@@ -710,5 +874,6 @@ int main(void)
     test_driven_from_c();
     test_yieldable_call();
     test_call_member_hostdata();
+    test_walk_yields_host_values();
     return lhat_test_report("test_host_coroutine");
 }

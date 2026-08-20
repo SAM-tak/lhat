@@ -336,7 +336,8 @@ LhatType *lhat_type_hostvalue(LhatTypeArena *arena,
 // tag; an ordinary heap value otherwise. `held` is the value type itself --
 // the registered one, fields and members included -- kept so get() can
 // answer it whole.
-LhatType *lhat_type_hostvalue_box(LhatTypeArena *arena, LhatType *held);
+LhatType *lhat_type_hostvalue_box(LhatTypeArena *arena, LhatType *held,
+                                  bool sealed);
 LhatType *lhat_type_func(LhatTypeArena *arena, bool is_function);
 // 15.3改: `is_function` is the kind of the body, which decides what may
 // advance the coroutine and where it may be held. 13.9: a NULL `receive` or

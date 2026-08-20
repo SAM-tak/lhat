@@ -403,6 +403,13 @@ void chk_check_define(Checker *c, const LhatNode *node)
                 chk_report(c, value, LHAT_CHECK_ERR_TUPLE_MISPLACED);
             }
         }
+        // 05 の 8.9: a tuple crosses as one value per slot, so a host value
+        // among its positions arrives as a pointer into scratch the next
+        // crossing overwrites -- the refusal check_focus makes for a walk's
+        // focus, made here for a registered signature's answer.
+        if (tuple != NULL && chk_is_hostvalue(actual)) {
+            chk_report(c, target, LHAT_CHECK_ERR_HOSTVALUE_ESCAPES);
+        }
 
         c->yield_context = outer_yctx;
         c->yield_bound_type = outer_ybound;
@@ -1189,8 +1196,13 @@ static void check_reassign(Checker *c, const LhatNode *node)
         chk_close_param_var(c, wanted);
         if (tuple != NULL) {
             // 13.8改: the positions of what the one value answered with.
-            chk_expect(c, node, lhat_type_tuple_at(tuple, position - 1), wanted,
-                       LHAT_CHECK_ERR_MISMATCH);
+            LhatType *piece = lhat_type_tuple_at(tuple, position - 1);
+            // 05 の 8.9: a host value among the positions arrives as a
+            // pointer into scratch -- refused as at a define's destructure.
+            if (chk_is_hostvalue(piece)) {
+                chk_report(c, target, LHAT_CHECK_ERR_HOSTVALUE_ESCAPES);
+            }
+            chk_expect(c, node, piece, wanted, LHAT_CHECK_ERR_MISMATCH);
         } else if (value != NULL) {
             // 8.6.4: the value of a '?op=' is 'target op rhs' built around
             // this very target node, so naming it here is what lets the one
@@ -1465,6 +1477,19 @@ static void check_focus(Checker *c, const LhatNode *node)
             chk_expect(c, element, taken, annotated, LHAT_CHECK_ERR_MISMATCH);
             type = annotated;
         }
+
+        // 05 の 8.9: a tuple crosses the host boundary as copied values, and
+        // a host value among them would arrive as a pointer into scratch the
+        // next step overwrites -- the same escape every other tuple position
+        // refuses.
+        if (count > 1 && chk_is_hostvalue(type)) {
+            chk_report(c, element, LHAT_CHECK_ERR_HOSTVALUE_ESCAPES);
+        }
+        // Stamped so the compiler can size the focus: width_of reads this,
+        // and it is the one channel a host value's width travels by. On the
+        // name node, which is the one the compiler's target_of answers for
+        // a bare name and an annotated one alike.
+        ((LhatNode *)target_name_node(element))->checked_type = type;
 
         const char *name = NULL;
         size_t length = 0;

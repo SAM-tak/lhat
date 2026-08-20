@@ -866,6 +866,18 @@ static LhatValue other_make(LhatMachine *machine, void *context,
                                                                   : lhat_nil();
 }
 
+// The very pointer held_make wraps, under the other tag.
+static LhatValue other_make_same(LhatMachine *machine, void *context,
+                                 const LhatValue *arguments, size_t count)
+{
+    (void)arguments;
+    (void)count;
+    LhatValue out = lhat_nil();
+    return lhat_machine_make_hostdata(machine, other_tag, context, &out)
+               ? out
+               : lhat_nil();
+}
+
 static void test_host_data(void)
 {
     LhatProgram program;
@@ -1064,6 +1076,123 @@ static void with_cells(const char *text, int *live_after_run, int *freed_total)
         lhat_machine_dispose(machine);
     }
     *freed_total = cells_freed;
+    lhat_program_dispose(&program);
+}
+
+// Check, compile, install, and run main.lh, as test_host_coroutine does.
+static LhatRunResult run_main(LhatProgram *program)
+{
+    LhatRunResult failed;
+    memset(&failed, 0, sizeof failed);
+    failed.status = LHAT_RUN_TYPE_ERROR;
+    const LhatUnit *root = lhat_program_check(program, "main.lh");
+    LHAT_CHECK(root != NULL && root->checked.diagnostic_count == 0,
+               "the program checked");
+    size_t count = 0;
+    const LhatModule *modules = lhat_program_compile(program, &count);
+    if (modules == NULL || root == NULL) {
+        LHAT_CHECK(false, "the program compiled");
+        return failed;
+    }
+    LhatMachine *machine = lhat_machine_new();
+    lhat_machine_set_modules(machine, modules, count);
+    lhat_program_install(program, machine);
+    LhatRunResult ran = lhat_run(machine, modules[root->index].proto);
+    lhat_machine_dispose(machine);
+    return ran;
+}
+
+// 05 の 8.8: a hostdata stands for what the host made, so two wrappers of
+// one host object are equal and key one table entry between them. is^ still
+// asks for the wrapper itself, and a released wrapper is equal only to
+// itself -- its pointer may already name something else.
+static void test_host_data_identity(void)
+{
+    LhatProgram program;
+    Disk disk;
+    Held held = {42, 0};
+
+    LHAT_TEST("two wrappers of one host object are equal");
+    {
+        static const File files[] = {
+            {"main.lh",
+             "import^ store\n"
+             "var^ a = store.make()\n"
+             "var^ b = store.make()\n"
+             "var^ t = { [a] = 1 }\n"
+             "var^ r = 0\n"
+             "if^ a = b { r := r + 1 }\n"
+             "if^ a is^ b { r := r + 10 }\n"
+             "if^ t[b] = 1 { r := r + 100 }\n"
+             "return^ r\n"},
+        };
+        program_with(&program, &disk, files, 1);
+        held_tag = lhat_register_hostdata_type(&program, "store", "Held");
+        lhat_register_member(&program, "store", "Held", "read",
+                             "f^self^ -> number^;", held_read, NULL);
+        lhat_register_func(&program, "store", "make", "f^ -> store.Held;",
+                           held_make, &held);
+        LhatRunResult ran = run_main(&program);
+        LHAT_CHECK_EQ_INT(ran.status, LHAT_RUN_OK);
+        // Equal, not the same wrapper, and one key between them.
+        LHAT_CHECK_EQ_INT(lhat_as_integer(ran.value), 101);
+    }
+    lhat_program_dispose(&program);
+
+    LHAT_TEST("a released wrapper is equal only to itself");
+    {
+        static const File files[] = {
+            {"main.lh",
+             "import^ store\n"
+             "var^ a = store.make()\n"
+             "var^ b = store.make()\n"
+             "a.dispose()\n"
+             "var^ r = 0\n"
+             "if^ a = b { r := r + 1 }\n"
+             "if^ a = a { r := r + 10 }\n"
+             "return^ r\n"},
+        };
+        program_with(&program, &disk, files, 1);
+        held_tag = lhat_register_hostdata_type(&program, "store", "Held");
+        lhat_register_member(&program, "store", "Held", "read",
+                             "f^self^ -> number^;", held_read, NULL);
+        lhat_register_member(&program, "store", "Held", "dispose", "p^self^;",
+                             held_dispose, NULL);
+        lhat_register_func(&program, "store", "make", "f^ -> store.Held;",
+                           held_make, &held);
+        LhatRunResult ran = run_main(&program);
+        LHAT_CHECK_EQ_INT(ran.status, LHAT_RUN_OK);
+        LHAT_CHECK_EQ_INT(lhat_as_integer(ran.value), 10);
+    }
+    lhat_program_dispose(&program);
+
+    LHAT_TEST("wrappers of two types never equal, whatever the pointer");
+    {
+        static const File files[] = {
+            {"main.lh",
+             "import^ store\n"
+             "var^ h = store.make()\n"
+             "var^ o = store.makeSame()\n"
+             "var^ r = 0\n"
+             "if^ h = o { r := r + 1 }\n"
+             "return^ r\n"},
+        };
+        program_with(&program, &disk, files, 1);
+        held_tag = lhat_register_hostdata_type(&program, "store", "Held");
+        other_tag = lhat_register_hostdata_type(&program, "store", "Other");
+        lhat_register_member(&program, "store", "Held", "read",
+                             "f^self^ -> number^;", held_read, NULL);
+        lhat_register_member(&program, "store", "Other", "read",
+                             "f^self^ -> number^;", held_read, NULL);
+        lhat_register_func(&program, "store", "make", "f^ -> store.Held;",
+                           held_make, &held);
+        // The same pointer under another tag: 7.3 keeps them apart.
+        lhat_register_func(&program, "store", "makeSame", "f^ -> store.Other;",
+                           other_make_same, &held);
+        LhatRunResult ran = run_main(&program);
+        LHAT_CHECK_EQ_INT(ran.status, LHAT_RUN_OK);
+        LHAT_CHECK_EQ_INT(lhat_as_integer(ran.value), 0);
+    }
     lhat_program_dispose(&program);
 }
 
@@ -1735,21 +1864,28 @@ static void test_host_tuple(void)
     lhat_program_dispose(&program);
 
     // 05 の 8.9 with 13.8改: a position is one slot, and a host value is as
-    // wide as its tag says. Refused where the signature is read, which is
-    // the asymmetry closing this opened.
-    LHAT_TEST("a host value written as a position is refused");
+    // wide as its tag says. The signature registers -- it only describes
+    // what the host answers -- and the refusal lands where L^ takes the
+    // tuple apart, in the reader's own source.
+    LHAT_TEST("a host value written as a position refuses at the use");
     {
         static const File files[] = {
-            {"main.lh", "import^ test.w\nreturn^ 1\n"},
+            {"main.lh",
+             "import^ test.w\n"
+             "var^ a, b = test.w.bad()\n"
+             "return^ 1\n"},
         };
         program_with(&program, &disk, files, 1);
         LHAT_CHECK(lhat_register_hostvalue_type(&program, "test.w", "W", 8) !=
                        NULL,
                    "the type registration took");
-        LHAT_CHECK(!lhat_register_func(&program, "test.w", "bad",
-                                       "f^ -> (number^, test.w.W);",
-                                       host_answers_one, NULL),
-                   "a host value cannot be a position");
+        LHAT_CHECK(lhat_register_func(&program, "test.w", "bad",
+                                      "f^ -> (number^, test.w.W);",
+                                      host_answers_one, NULL),
+                   "the signature registration took");
+        const LhatUnit *root = lhat_program_check(&program, "main.lh");
+        LHAT_CHECK(has_check_error(root, LHAT_CHECK_ERR_HOSTVALUE_ESCAPES),
+                   "the escape is refused where the tuple is taken apart");
     }
     lhat_program_dispose(&program);
 }
@@ -3061,6 +3197,7 @@ int main(void)
     test_hostvalue_escape();
     test_host_tuple();
     test_host_data();
+    test_host_data_identity();
     test_host_data_release();
     test_dump_host_api();
     return lhat_test_report("test_program");

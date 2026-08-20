@@ -687,12 +687,14 @@ static LhatType *resolve_qualified_type(Checker *c, const LhatNode *node)
         return chk_simple(c, LHAT_TYPE_UNKNOWN);
     }
 
-    // 05 の 8.9: the box the language hangs under a host value type. The
-    // name is the type's own -- `std.math.Vector3.Box^` -- so it resolves
-    // here, off the type the path reached.
-    if (outer->kind == LHAT_TYPE_HOSTVALUE &&
-        chk_name_is(name, length, "Box^")) {
-        return lhat_type_hostvalue_box(c->result->types, outer);
+    // 05 の 8.9: the boxes the language hangs under a host value type. The
+    // names are the type's own -- `std.math.Vector3.Box^` and the get-only
+    // `.ConstBox^` -- so they resolve here, off the type the path reached.
+    if (outer->kind == LHAT_TYPE_HOSTVALUE) {
+        bool sealed = chk_name_is(name, length, "ConstBox^");
+        if (sealed || chk_name_is(name, length, "Box^")) {
+            return lhat_type_hostvalue_box(c->result->types, outer, sealed);
+        }
     }
 
     // 05 の 6.1: what require^ yields is a structure, so reaching a type out
@@ -762,7 +764,12 @@ void chk_check_tuple_position(Checker *c, const LhatNode *at,
     // 05 の 8.9: a host value is as wide as its tag says, and a position is
     // one slot. A frame's answer room carries one of the two, never a
     // mixture.
-    if (chk_is_hostvalue(position)) {
+    // A registered host signature is exempt: it only describes what the
+    // host hands over, and the refusal lands where L^ takes the tuple
+    // apart (check_focus and the other destructure sites) -- a failed
+    // registration would surface as a missing member, telling the reader
+    // nothing.
+    if (!c->hosted_signature && chk_is_hostvalue(position)) {
         chk_report(c, at, LHAT_CHECK_ERR_HOSTVALUE_ESCAPES);
     }
 }
@@ -1020,13 +1027,11 @@ LhatType *chk_resolve_type(Checker *c, const LhatNode *node)
             LhatType *result = node->v.coroutine.result != NULL
                                    ? chk_resolve_type(c, node->v.coroutine.result)
                                    : NULL;
-            // 05 の 8.9: what crosses a suspension crosses frames, so none
-            // of the three positions carries a host value -- the same rule
-            // unify_yield applies to the inferred side.
-            if (chk_is_hostvalue(receive) || chk_is_hostvalue(produce) ||
-                chk_is_hostvalue(result)) {
-                chk_report(c, node, LHAT_CHECK_ERR_HOSTVALUE_ESCAPES);
-            }
+            // 05 の 8.9: a host value may be written in any of the three
+            // positions -- the type describes an interface, and a host walk
+            // hands one over whole (step_host_walk). What cannot carry one
+            // refuses at its own site: an L^ body's yield^ (chk_unify_yield),
+            // a tuple position (chk_check_tuple_position), a destructure.
             return lhat_type_coro(c->result->types, receive, produce, result,
                                   node->v.coroutine.endless,
                                   node->v.coroutine.is_function);
@@ -2895,6 +2900,7 @@ LhatType *lhat_type_of_text(const char *text, size_t length,
         checker.lexer = &lexer;
         checker.result = &result;
         checker.strict = true;
+        checker.hosted_signature = true;
         checker.scope = &scope;
 
         if (named != NULL && named->kind == LHAT_TYPE_TABLE) {
@@ -3145,6 +3151,12 @@ const char *lhat_check_error_message(LhatCheckErrorCode code)
             return "a definition's self^ is the prototype every instance "
                    "starts as; it is read here and written by no one -- a "
                    "default is settled where the field is written";
+        case LHAT_CHECK_ERR_MUTABLE_KEY:
+            return "a key's hash is the box's bytes, and only a sealed box "
+                   "keeps them still; write constbox^ to make one";
+        case LHAT_CHECK_ERR_BOX_FIELD_WRITE:
+            return "a box's field is read straight off its bytes; writing "
+                   "goes through set(...), which a ConstBox^ does not have";
         case LHAT_CHECK_ERR_NOT_BOXABLE:
             return "box^ takes a host value; everything else already lives "
                    "on the heap and needs no box";

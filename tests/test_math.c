@@ -285,6 +285,147 @@ static void test_boxing(void)
         lhat_test_ran_dispose(&ran);
     }
 
+    // 8.9改: '=' is the bytes under the same tag, as it is on the stack;
+    // is^ still asks for the very box.
+    LHAT_TEST("two boxes of the same bytes are equal, not the same");
+    {
+        LhatTestRan ran = run_source(
+            "import^ std.math\n"
+            "let^ a = box^std.math.vec3(1, 2, 3)\n"
+            "let^ b = box^std.math.vec3(1, 2, 3)\n"
+            "let^ c = box^std.math.vec3(9, 9, 9)\n"
+            "var^ r = 0\n"
+            "if^ a = b { r := r + 1 }\n"
+            "if^ a is^ b { r := r + 10 }\n"
+            "if^ a = c { r := r + 100 }\n"
+            "return^ r\n");
+        LHAT_CHECK_RAN_INTEGER(ran, 1);
+        lhat_test_ran_dispose(&ran);
+    }
+
+    // 8.9改: constbox^ makes the sealed, get-only box -- off a value or as
+    // a copy of a live box -- and only that one may be a key. Lookups key
+    // by content, so a fresh copy finds the entry.
+    LHAT_TEST("a constbox^ keys a table by its bytes");
+    {
+        LhatTestRan ran = run_source(
+            "import^ std.math\n"
+            "let^ live = box^std.math.vec3(4, 5, 6)\n"
+            "let^ t = {\n"
+            "    [constbox^std.math.vec3(1, 2, 3)] = 7,\n"
+            "    [constbox^live] = 8,\n"
+            "}\n"
+            "var^ r = 0\n"
+            "if^ t[constbox^std.math.vec3(1, 2, 3)] = 7 { r := r + 1 }\n"
+            "if^ t[constbox^live] = 8 { r := r + 10 }\n"
+            "return^ r\n");
+        LHAT_CHECK_RAN_INTEGER(ran, 11);
+        lhat_test_ran_dispose(&ran);
+    }
+
+    LHAT_TEST("a mutable box is refused where a key is stored");
+    LHAT_CHECK(!checks("import^ std.math\n"
+                       "let^ b = box^std.math.vec3(1, 2, 3)\n"
+                       "let^ t = { [b] = 1 }\n"),
+               "a literal key has to be sealed");
+    LHAT_CHECK(!checks("import^ std.math\n"
+                       "let^ b = box^std.math.vec3(1, 2, 3)\n"
+                       "var^ t = { [constbox^b] = 1 }\n"
+                       "t[b] := 2\n"),
+               "a stored index key has to be sealed");
+
+    // A lookup reads the bytes of the moment, and everything the table
+    // holds is sealed -- so a live box asks fine, and tracks its set().
+    LHAT_TEST("a lookup may ask with a live box");
+    {
+        LhatTestRan ran = run_source(
+            "import^ std.math\n"
+            "let^ b = box^std.math.vec3(1, 2, 3)\n"
+            "let^ t = {\n"
+            "    [constbox^b] = 7,\n"
+            "    [constbox^std.math.vec3(9, 9, 9)] = 8,\n"
+            "}\n"
+            "var^ r = 0\n"
+            "if^ t[b] = 7 { r := r + 1 }\n"
+            "b.set(std.math.vec3(9, 9, 9))\n"
+            "if^ t[b] = 8 { r := r + 10 }\n"
+            "return^ r\n");
+        LHAT_CHECK_RAN_INTEGER(ran, 11);
+        lhat_test_ran_dispose(&ran);
+    }
+
+    LHAT_TEST("a bare host value is never stored as a key");
+    LHAT_CHECK(!checks("import^ std.math\n"
+                       "let^ v = std.math.vec3(1, 2, 3)\n"
+                       "let^ t = { [v] = 1 }\n"),
+               "a literal key is one slot");
+    LHAT_CHECK(!checks("import^ std.math\n"
+                       "var^ t = { [constbox^std.math.vec3(1, 2, 3)] = 1 }\n"
+                       "let^ v = std.math.vec3(1, 2, 3)\n"
+                       "t[v] := 2\n"),
+               "a stored index key is one slot");
+
+    // ...but a lookup may ask with one: the bytes of the moment against the
+    // sealed keys the table holds -- b.get() is what the box compare reads
+    // anyway.
+    LHAT_TEST("a lookup may ask with the bare value");
+    {
+        LhatTestRan ran = run_source(
+            "import^ std.math\n"
+            "let^ t = {\n"
+            "    [constbox^std.math.vec3(1, 2, 3)] = 7,\n"
+            "}\n"
+            "let^ b = box^std.math.vec3(1, 2, 3)\n"
+            "var^ r = 0\n"
+            "if^ t[std.math.vec3(1, 2, 3)] = 7 { r := r + 1 }\n"
+            "if^ t[b.get()] = 7 { r := r + 10 }\n"
+            "if^ t[std.math.vec3(9, 9, 9)] = nil^ { r := r + 100 }\n"
+            "return^ r\n");
+        LHAT_CHECK_RAN_INTEGER(ran, 111);
+        lhat_test_ran_dispose(&ran);
+    }
+
+    LHAT_TEST("a ConstBox^ has no set");
+    LHAT_CHECK(!checks("import^ std.math\n"
+                       "let^ b = constbox^std.math.vec3(1, 2, 3)\n"
+                       "b.set(std.math.vec3(4, 5, 6))\n"),
+               "the sealed box is get-only");
+
+    // 8.9改: a Box^ fits a ConstBox^ seat -- the get-only view -- and never
+    // the other way around, where set() would be a lie.
+    LHAT_TEST("a Box^ fits a ConstBox^ seat and not the reverse");
+    LHAT_CHECK(checks("import^ std.math\n"
+                      "let^ read = f^b:std.math.Vector3.ConstBox^ -> number^ {\n"
+                      "    return^ b.get().x\n"
+                      "}\n"
+                      "let^ live = box^std.math.vec3(1, 2, 3)\n"
+                      "let^ x = read(live)\n"),
+               "the view takes the live box");
+    LHAT_CHECK(!checks("import^ std.math\n"
+                       "let^ write = p^b:std.math.Vector3.Box^ {\n"
+                       "    b.set(std.math.vec3(0, 0, 0))\n"
+                       "}\n"
+                       "let^ sealed = constbox^std.math.vec3(1, 2, 3)\n"
+                       "write(sealed)\n"),
+               "the sealed box stays out of a set seat");
+
+    // 8.9改: a field reads straight off the box's bytes; a write still goes
+    // through set().
+    LHAT_TEST("a field reads off the box and never writes");
+    {
+        LhatTestRan ran = run_source(
+            "import^ std.math\n"
+            "let^ b = constbox^std.math.vec3(1, 2, 3)\n"
+            "if^ b.y = 2.0 { return^ 1 }\n"
+            "return^ 0\n");
+        LHAT_CHECK_RAN_INTEGER(ran, 1);
+        lhat_test_ran_dispose(&ran);
+    }
+    LHAT_CHECK(!checks("import^ std.math\n"
+                       "let^ b = box^std.math.vec3(1, 2, 3)\n"
+                       "b.y := 9\n"),
+               "the field is not a place to write");
+
     LHAT_TEST("set takes exactly the value the box was made for");
     LHAT_CHECK(!checks("import^ std.math\n"
                        "let^ b = box^std.math.vec3(1, 2, 3)\n"
@@ -295,6 +436,43 @@ static void test_boxing(void)
     LHAT_CHECK(!checks("import^ std.math\n"
                        "let^ b = box^7\n"),
                "a number needs no box");
+
+    // 8.9改: a box writes itself as its flavour over its bytes, so a
+    // printed key reads as a value rather than as an opaque handle.
+    LHAT_TEST("a box writes its flavour and its content");
+    {
+        LhatTestRan ran = run_source(
+            "import^ std.math\n"
+            "let^ b = constbox^std.math.vec3(1, 2, 3)\n"
+            "return^ $\"{b}\"\n");
+        LHAT_CHECK_RAN_TEXT(ran, "std.math.Vector3.ConstBox^(1.0, 2.0, 3.0)");
+        lhat_test_ran_dispose(&ran);
+    }
+
+    // 8.9改: the variadic tail cannot say a host value's type, so a bare
+    // one is boxed to ride it -- print(v) is the everyday arrival.
+    LHAT_TEST("a variadic seat refuses a bare host value");
+    LHAT_CHECK(!checks("import^ std.math\n"
+                       "let^ f = f^... -> nil^ { return^ nil^ }\n"
+                       "let^ x = f(std.math.vec3(1, 2, 3))\n"),
+               "box it to pass it");
+
+    // 8.9改: a table of computed keys types its walk focus loosely (the
+    // dictionary type is still an open design), so the checker cannot see
+    // the host value k.get() answers -- the placement refuses the width at
+    // run time instead of overwriting the neighbouring slots.
+    LHAT_TEST("an untyped seat refuses a wide answer at run time");
+    {
+        LhatTestRan ran = run_source(
+            "import^ std.math\n"
+            "let^ t = { [constbox^std.math.vec3(1, 2, 3)] = \"a\" }\n"
+            "var^ r = 0\n"
+            "for^ k, v in^ t { let^ g = k.get() r := r + 1 }\n"
+            "return^ r\n");
+        LHAT_CHECK((ran).ok, "the program ran");
+        LHAT_CHECK_EQ_INT((ran).status, LHAT_RUN_TYPE_ERROR);
+        lhat_test_ran_dispose(&ran);
+    }
 
     // typeof^ answers the box's own name; isa^ tells box and value apart.
     LHAT_TEST("the box's type is its own");
@@ -424,10 +602,71 @@ static void test_escapes(void)
                        "let^ f = f^ -> number^ { return^ v.x }\n"),
                "capture");
 
-    LHAT_TEST("a yield^ refuses a host value");
+    // 8.9改: a yield^ carries a host value whole -- one seat, full width.
+    // Only the mixed forms stay refused: a run's positions are single
+    // slots, so a host value never rides among them.
+    LHAT_TEST("a yield^ carries a host value whole");
+    {
+        LhatTestRan ran = run_source(
+            "import^ std.math\n"
+            "let^ gen = f^ -> c^{f^ -> std.math.Vector3;, } {\n"
+            "    yield^ std.math.vec3(1, 2, 3)\n"
+            "    yield^ std.math.vec3(4, 5, 6)\n"
+            "}\n"
+            "var^ total = 0\n"
+            "for^ v in^ gen() { total := total + v.x }\n"
+            "if^ total = 5.0 { return^ 1 }\n"
+            "return^ 0\n");
+        LHAT_CHECK_RAN_INTEGER(ran, 1);
+        lhat_test_ran_dispose(&ran);
+    }
+
+    LHAT_TEST("and a resume sends one whole");
+    {
+        LhatTestRan ran = run_source(
+            "import^ std.math\n"
+            "let^ gen = f^ -> c^{f^std.math.Vector3 -> number^;, } {\n"
+            "    var^ got : std.math.Vector3 = yield^ 0\n"
+            "    got := yield^ got.x\n"
+            "    yield^ got.y\n"
+            "}\n"
+            "let^ c = gen()\n"
+            "c.start()\n"
+            "let^ a = c.resume(std.math.vec3(7, 8, 9))\n"
+            "let^ b = c.resume(std.math.vec3(1, 2, 3))\n"
+            "if^ (a ?? 0) + (b ?? 0) = 9.0 { return^ 1 }\n"
+            "return^ 0\n");
+        LHAT_CHECK_RAN_INTEGER(ran, 1);
+        lhat_test_ran_dispose(&ran);
+    }
+
+    // Y and T are the one type here -- 8.9 still keeps a host value out of
+    // a union, so a mixed union(Y, T) cannot carry one; same-typed they
+    // fold to the value itself.
+    LHAT_TEST("a coroutine may return one, and a wide parameter crosses");
+    {
+        LhatTestRan ran = run_source(
+            "import^ std.math\n"
+            "let^ gen = f^p:std.math.Vector3 -> "
+            "c^{f^ -> std.math.Vector3;, std.math.Vector3} {\n"
+            "    yield^ p\n"
+            "    return^ p + p\n"
+            "}\n"
+            "let^ c = gen(std.math.vec3(2, 3, 4))\n"
+            "let^ first = c.start()\n"
+            "let^ last = c.resume()\n"
+            "if^ first.x = 2.0 and^ last.y = 6.0 { return^ 1 }\n"
+            "return^ -1\n");
+        LHAT_CHECK_RAN_INTEGER(ran, 1);
+        lhat_test_ran_dispose(&ran);
+    }
+
+    LHAT_TEST("a host value still stays out of a yielded run");
     LHAT_CHECK(!checks("import^ std.math\n"
-                       "let^ gen = p^ { yield^ std.math.vec3(1, 2, 3) }\n"),
-               "yield value");
+                       "let^ gen = p^ {\n"
+                       "    yield^ 1, std.math.vec3(1, 2, 3)\n"
+                       "}\n"),
+               "a run position is one slot");
 
     LHAT_TEST("the program's answer refuses a host value");
     LHAT_CHECK(!checks("import^ std.math\n"

@@ -469,6 +469,9 @@ struct LhatNode {
             // YIELD only. 15.11: written '_yield^', which types exactly as a
             // yield^ does and makes the body yieldable, but never suspends.
             bool phantom;
+            // BOX only. 05 の 8.9改: written 'constbox^', which makes the
+            // sealed, get-only box -- the keyable one.
+            bool sealing;
             // YIELD_ALL only. 15.14: written 'await^', which delegates and
             // types exactly as a yieldall^ does. Read by the diagnostics
             // alone -- what the two words say about the code is the same

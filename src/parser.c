@@ -2144,14 +2144,18 @@ static LhatNode *parse_unary(Parser *p)
 
     // 05 の 8.9: 'box^ expr' puts a host value in the box the heap can hold.
     // At the unary level for pack^'s reason -- what it takes is the whole
-    // value, and nothing tighter reads differently.
-    if (check_hat(p, "box")) {
+    // value, and nothing tighter reads differently. 8.9改: 'constbox^ expr'
+    // makes the sealed, get-only box -- off a host value, or off a box of
+    // either kind as a copy.
+    if (check_hat(p, "box") || check_hat(p, "constbox")) {
+        bool sealing = check_hat(p, "constbox");
         LhatToken at = p->current;
         advance(p);
         LhatNode *node = make(p, LHAT_NODE_BOX, &at);
         if (node == NULL) {
             return NULL;
         }
+        node->v.jump.sealing = sealing;
         node->v.jump.value = parse_unary(p);
         return finish(p, node);
     }

@@ -375,6 +375,21 @@ static LhatValue hostvalue_argument(LhatSlots slots, size_t slot)
     return v;
 }
 
+// A resume's sent host value, moved into the machine's scratch before the
+// suspension's registers are restored over the very slots that hold it --
+// the pointer form has to aim somewhere the restore cannot reach.
+static LhatValue stash_sent_hostvalue(Machine *m, size_t slot)
+{
+    const LhatHostValueTag *tag = m->slots.values[slot].hostvalue;
+    for (size_t i = 0; i < tag->width; i++) {
+        m->hostvalue_scratch[i] = m->slots.values[slot + i];
+    }
+    LhatValue v;
+    v.tag = LHAT_VALUE_HOSTVALUE;
+    v.as.hostvalue_run = m->hostvalue_scratch;
+    return v;
+}
+
 // The registered field a string key names, or NULL.
 static const LhatHostValueField *hostvalue_field_named(
     const LhatHostValueTag *tag, LhatValue key)
@@ -393,8 +408,9 @@ static const LhatHostValueField *hostvalue_field_named(
 }
 
 // 'v.x' as a number^, off the data run that follows a head. Offsets were
-// checked against the registered size when the field was.
-static LhatValue hostvalue_field_get(const LhatValueUnion *data,
+// checked against the registered size when the field was. Public so the
+// value writer spells a host value's content with it (value.c).
+LhatValue lhat_hostvalue_field_value(const LhatValueUnion *data,
                                      const LhatHostValueField *field)
 {
     const uint8_t *bytes = (const uint8_t *)data + field->offset;
@@ -1775,7 +1791,8 @@ static WalkStep step_table_walk(Machine *m, LhatCoroutine *co, WalkMode mode,
 // call rather than a frame, so this is step_table_walk's twin with the value
 // already picked by the host. `sent` is what the resume handed in (nil^ from
 // the loops, which send nothing). `expected` is the positions a WALK_AS_RUN
-// caller reserved; the other modes ignore it. A step that answers a shape
+// caller reserved, or the slots a WALK_AS_VALUE caller reserved for a wide
+// value (0 when it could only be one). A step that answers a shape
 // the call site did not reserve puts the mismatch in *fault, LHAT_RUN_OK
 // otherwise -- the same refusals a yield^'s placement makes.
 static WalkStep step_host_walk(Machine *m, LhatCoroutine *co, WalkMode mode,
@@ -1797,6 +1814,27 @@ static WalkStep step_host_walk(Machine *m, LhatCoroutine *co, WalkMode mode,
     co->state = LHAT_COROUTINE_SUSPENDED;
 
     if (!lhat_is_run(out)) {
+        // 05 の 8.9: a host value is written out whole on the spot, exactly
+        // as a host call's answer is -- the scratch it lives in belongs to
+        // whoever crosses the boundary next, and the next step is exactly
+        // such a crossing. Only into room its width fits, whichever mode
+        // said it: a run reservation is expected+1 slots, a wide value
+        // reservation rides `expected` too, and a site that could not know
+        // the type reserved one slot and is refused rather than overwritten
+        // past (the delegation loop's slot among them).
+        if (lhat_is_hostvalue(out)) {
+            const LhatValueUnion *orun = out.as.hostvalue_run;
+            size_t room = mode == WALK_AS_RUN ? expected + 1
+                          : expected > 0      ? expected
+                                              : 1;
+            if (orun == NULL || orun[0].hostvalue == NULL ||
+                room < orun[0].hostvalue->width ||
+                !place_hostvalue_answer(m, at, out)) {
+                *fault = LHAT_RUN_TYPE_ERROR;
+                return WALK_ENDED;
+            }
+            return WALK_TOOK;
+        }
         if (mode == WALK_AS_RUN) {
             // The loop reserved a run and one value came out.
             *fault = LHAT_RUN_TUPLE_ARITY;
@@ -1891,6 +1929,11 @@ static Frame *enter_resume_frame(Machine *m, LhatCoroutine *co,
                 lhat_slots_set(m->slots, next_base + co->sent_into + 1 + i,
                                sent[i]);
             }
+        } else if (sent_count == 1 && lhat_is_hostvalue(sent[0])) {
+            // 05 の 8.9: the pointer form the gather built, written out
+            // whole where the yield^ receives -- the callers checked the
+            // width against the frame already.
+            place_hostvalue_answer(m, next_base + co->sent_into, sent[0]);
         } else {
             lhat_slots_set(m->slots, next_base + co->sent_into,
                            sent_count == 1 ? sent[0] : lhat_nil());
@@ -2776,7 +2819,7 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
                     const LhatHostValueField *field =
                         hostvalue_field_named(hv_tag, R(cc));
                     if (field != NULL) {
-                        SET_R(a, hostvalue_field_get(
+                        SET_R(a, lhat_hostvalue_field_value(
                                      m->slots.values + rbase + b + 1, field));
                         break;
                     }
@@ -2806,8 +2849,18 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
                 }
                 // 05 の 8.9: a box answers its two members, bound the way
                 // 14.17's tostring is; any other name falls through to the
-                // built-ins every value answers.
+                // built-ins every value answers. 8.9改: a registered field
+                // reads straight off the box's bytes first, as it does off
+                // a stack value's.
                 if (lhat_is_object_kind(R(b), LHAT_OBJECT_HOSTVALUE_BOX)) {
+                    const LhatHostValueBox *box =
+                        (const LhatHostValueBox *)lhat_as_object(R(b));
+                    const LhatHostValueField *field = hostvalue_field_named(
+                        lhat_hostvalue_box_tag(box), R(cc));
+                    if (field != NULL) {
+                        SET_R(a, lhat_hostvalue_field_value(box->run + 1, field));
+                        break;
+                    }
                     LhatNativeKind which;
                     if (box_member_named(R(cc), &which)) {
                         LhatNative *native =
@@ -2871,6 +2924,15 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
                         break;
                     }
                     return finish(m, chunk, LHAT_RUN_TYPE_ERROR, lhat_nil(), at);
+                }
+                // 05 の 8.9改: a bare host value asks by its bytes of the
+                // moment -- the stored keys are sealed boxes, and content
+                // is what a box key means.
+                if (lhat_is_hostvalue(R(cc))) {
+                    SET_R(a, lhat_table_get_by_value(
+                                 table, lhat_as_hostvalue_tag(R(cc)),
+                                 m->slots.values + rbase + cc + 1));
+                    break;
                 }
                 SET_R(a, member_written(m, R(b), R(cc), table));
 
@@ -3306,10 +3368,27 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
             // carries the tag, and the tag the width, so the copy is the
             // whole run.
             case LHAT_BC_BOX: {
-                if (!lhat_is_hostvalue(R(b))) {
-                    return finish(m, chunk, LHAT_RUN_TYPE_ERROR, lhat_nil(), at);
+                // 8.9改: C bit 0 seals the box (constbox^); bit 1 reads
+                // R[B] as a box to copy rather than a value laid out.
+                const LhatValueUnion *from;
+                const LhatHostValueTag *tag;
+                if ((cc & 2) != 0) {
+                    if (!lhat_is_object_kind(R(b), LHAT_OBJECT_HOSTVALUE_BOX)) {
+                        return finish(m, chunk, LHAT_RUN_TYPE_ERROR,
+                                      lhat_nil(), at);
+                    }
+                    const LhatHostValueBox *source =
+                        (const LhatHostValueBox *)lhat_as_object(R(b));
+                    tag = lhat_hostvalue_box_tag(source);
+                    from = source->run;
+                } else {
+                    if (!lhat_is_hostvalue(R(b))) {
+                        return finish(m, chunk, LHAT_RUN_TYPE_ERROR,
+                                      lhat_nil(), at);
+                    }
+                    tag = lhat_as_hostvalue_tag(R(b));
+                    from = m->slots.values + rbase + b;
                 }
-                const LhatHostValueTag *tag = lhat_as_hostvalue_tag(R(b));
                 LhatHostValueBox *box =
                     lhat_hostvalue_box_new(&m->objects, tag);
                 if (box == NULL) {
@@ -3317,8 +3396,9 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
                                   at);
                 }
                 for (size_t i = 0; i < tag->width; i++) {
-                    box->run[i] = m->slots.values[rbase + b + i];
+                    box->run[i] = from[i];
                 }
+                box->sealed = (cc & 1) != 0;
                 SET_R(a, lhat_object((LhatObject *)box));
                 break;
             }
@@ -3509,7 +3589,16 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
                     // before anything else can touch the scratch it may live
                     // in.
                     if (lhat_is_hostvalue(answered)) {
-                        if (!place_hostvalue_answer(m, rbase + a, answered)) {
+                        // 05 の 8.9: the call site said the width it made
+                        // room for (compile's prepared); a site that could
+                        // not know the type reserved one slot, and writing
+                        // past it would eat the neighbours -- refused, as
+                        // every width the types never settled is.
+                        const LhatValueUnion *arun = answered.as.hostvalue_run;
+                        if (arun == NULL || arun[0].hostvalue == NULL ||
+                            lhat_call_prepared(cc) <
+                                arun[0].hostvalue->width ||
+                            !place_hostvalue_answer(m, rbase + a, answered)) {
                             return finish(m, chunk, LHAT_RUN_TYPE_ERROR,
                                           lhat_nil(), at);
                         }
@@ -3580,7 +3669,10 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
                             LhatValue answered;
                             answered.tag = LHAT_VALUE_HOSTVALUE;
                             answered.as.hostvalue_run = box->run;
-                            if (!place_hostvalue_answer(m, rbase + a,
+                            // As at a host call's answer: the site has to
+                            // have reserved the width.
+                            if (lhat_call_prepared(cc) < box_tag->width ||
+                                !place_hostvalue_answer(m, rbase + a,
                                                         answered)) {
                                 return finish(m, chunk, LHAT_RUN_TYPE_ERROR,
                                               lhat_nil(), at);
@@ -3649,6 +3741,36 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
                                                spelt->length, text, needed + 1,
                                                &needed);
                         } else {
+                            // 05 の 8.9: a bound host value is the head
+                            // alone -- the tag, no bytes -- so the name is
+                            // all there is to write. lhat_value_text reads
+                            // the pointer form (a host's argument) and must
+                            // not see this one.
+                            if (lhat_is_hostvalue(native->bound)) {
+                                const LhatHostValueTag *bound_tag =
+                                    lhat_as_hostvalue_tag(native->bound);
+                                size_t module_len = strlen(bound_tag->module);
+                                size_t name_len = strlen(bound_tag->name);
+                                needed = module_len + name_len + 3;
+                                text = (char *)lhat_alloc(needed + 1);
+                                if (text == NULL) {
+                                    return finish(m, chunk,
+                                                  LHAT_RUN_OUT_OF_MEMORY,
+                                                  lhat_nil(), at);
+                                }
+                                snprintf(text, needed + 1, "<%s.%s>",
+                                         bound_tag->module, bound_tag->name);
+                                LhatString *spelt_name = lhat_string_new(
+                                    &m->objects, text, needed);
+                                lhat_free(text);
+                                if (spelt_name == NULL) {
+                                    return finish(m, chunk,
+                                                  LHAT_RUN_OUT_OF_MEMORY,
+                                                  lhat_nil(), at);
+                                }
+                                SET_R(a, lhat_object((LhatObject *)spelt_name));
+                                break;
+                            }
                             needed = lhat_value_text(native->bound, NULL, 0);
                             text = (char *)lhat_alloc(needed + 1);
                             if (text == NULL) {
@@ -4042,8 +4164,9 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
                         step_host_walk(m, co,
                                        room > 1 ? WALK_AS_RUN : WALK_AS_VALUE,
                                        rbase + a,
-                                       room > 1 ? (size_t)room - 1 : 0, frame,
-                                       sent, &fault);
+                                       room > 1 ? (size_t)room - 1
+                                                : (size_t)room,
+                                       frame, sent, &fault);
                         if (fault != LHAT_RUN_OK) {
                             return finish(m, chunk, fault, lhat_nil(), at);
                         }
@@ -4083,6 +4206,27 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
                     for (size_t i = 0; i < (size_t)b && i < LHAT_MAX_TUPLE;
                          i++) {
                         sent_run[sent_count++] = R(first + i);
+                    }
+                    // 05 の 8.9: a host value argument goes over whole, as
+                    // the pointer form, and rides alone -- a run's positions
+                    // are single slots, so it mixes with nothing.
+                    if (sent_count == 1 && lhat_is_hostvalue(sent_run[0])) {
+                        sent_run[0] =
+                            stash_sent_hostvalue(m, rbase + first);
+                        const LhatHostValueTag *sent_tag =
+                            sent_run[0].as.hostvalue_run[0].hostvalue;
+                        if ((size_t)co->sent_into + sent_tag->width >
+                            co->register_count) {
+                            return finish(m, chunk, LHAT_RUN_TUPLE_ARITY,
+                                          lhat_nil(), at);
+                        }
+                    } else {
+                        for (size_t i = 0; i < sent_count; i++) {
+                            if (lhat_is_hostvalue(sent_run[i])) {
+                                return finish(m, chunk, LHAT_RUN_TYPE_ERROR,
+                                              lhat_nil(), at);
+                            }
+                        }
                     }
                     frame = enter_resume_frame(
                         m, co, next_base, a, (uint8_t)lhat_call_prepared(cc),
@@ -4173,6 +4317,13 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
                                                    spread_table, spread_run,
                                                    before_spread,
                                                    i);
+                        // 05 の 8.9: the collection is a table, and a table
+                        // member is never a host value -- the checker said
+                        // so at the call; this is the unchecked backstop.
+                        if (lhat_is_hostvalue(value)) {
+                            return finish(m, chunk, LHAT_RUN_TYPE_ERROR,
+                                          lhat_nil(), at);
+                        }
                         if (!set_key(m, collected,
                                      lhat_integer((int64_t)(i - required + 1)),
                                      value, &refused)) {
@@ -4194,12 +4345,30 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
                     if (co == NULL) {
                         return finish(m, chunk, LHAT_RUN_OUT_OF_MEMORY, lhat_nil(), at);
                     }
-                    size_t fixed = callee->proto->has_variadic ? required : given;
-                    for (size_t i = 0; i < fixed; i++) {
-                        lhat_slots_set(co->registers, i,
-                                       call_arg(m->slots, rbase, a, skip,
-                                                spread_table, spread_run,
-                                                before_spread, i));
+                    // 05 の 8.9: without a spread the arguments sit in their
+                    // laid-out slots, widths included, so the copy is
+                    // slot-blind -- what lets a wide parameter cross. A
+                    // spread re-indexes by value, and never mixes with a
+                    // wide argument (the compiler refused that pair, and
+                    // wide with variadic likewise).
+                    if (spread_table == NULL && spread_run == SIZE_MAX &&
+                        !callee->proto->has_variadic) {
+                        for (size_t i = 0; i < callee->proto->parameter_slots;
+                             i++) {
+                            lhat_slots_set(
+                                co->registers, i,
+                                lhat_slots_get(m->slots,
+                                               rbase + a + skip + i));
+                        }
+                    } else {
+                        size_t fixed =
+                            callee->proto->has_variadic ? required : given;
+                        for (size_t i = 0; i < fixed; i++) {
+                            lhat_slots_set(co->registers, i,
+                                           call_arg(m->slots, rbase, a, skip,
+                                                    spread_table, spread_run,
+                                                    before_spread, i));
+                        }
                     }
                     if (callee->proto->has_variadic) {
                         lhat_slots_set(co->registers, required, collected_variadic);
@@ -4345,8 +4514,7 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
                 // return crossing a suspension was refused by the checker;
                 // this is the backstop.
                 if (op == LHAT_BC_RETURN && lhat_is_hostvalue(R(a))) {
-                    if (frame->coroutine != NULL ||
-                        m->frame_count <= base_depth + 1) {
+                    if (m->frame_count <= base_depth + 1) {
                         return finish(m, chunk, LHAT_RUN_TYPE_ERROR,
                                       lhat_nil(), at);
                     }
@@ -4422,7 +4590,22 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
                 // or by the inner body's own yield collating into it -- so
                 // there is nothing to fill and the head goes out as it
                 // stands.
-                if (b != 0) {
+                // 05 の 8.9: b == LHAT_YIELD_HOSTVALUE says R[A..] is a host
+                // value laid out whole. It rides the frame's own room the
+                // way a return's does -- the window is about to be left
+                // behind -- and goes out as the pointer form the placement
+                // reads.
+                if (b == LHAT_YIELD_HOSTVALUE) {
+                    if (!lhat_is_hostvalue(value)) {
+                        return finish(m, chunk, LHAT_RUN_TYPE_ERROR,
+                                      lhat_nil(), at);
+                    }
+                    const LhatHostValueTag *tag = lhat_as_hostvalue_tag(value);
+                    for (size_t i = 0; i < tag->width; i++) {
+                        frame->answer_run[i] = m->slots.values[rbase + a + i];
+                    }
+                    value.as.hostvalue_run = frame->answer_run;
+                } else if (b != 0) {
                     if ((size_t)b > LHAT_MAX_TUPLE) {
                         return finish(m, chunk, LHAT_RUN_TUPLE_ARITY,
                                       lhat_nil(), at);
@@ -4434,6 +4617,16 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
                             m->slots.tags[rbase + a + i];
                     }
                     value = lhat_run_head((size_t)b);
+                } else if (lhat_is_hostvalue(value)) {
+                    // b == 0 forwards what a delegation was handed. A host
+                    // value arrives re-aimed at this frame's own room (see
+                    // the hand-back below), so anything aimed anywhere else
+                    // was never one of ours -- refused before the tag is
+                    // ever read through it.
+                    if (value.as.hostvalue_run != frame->answer_run) {
+                        return finish(m, chunk, LHAT_RUN_TYPE_ERROR,
+                                      lhat_nil(), at);
+                    }
                 }
 
                 for (size_t i = 0; i < co->register_count; i++) {
@@ -4518,7 +4711,30 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
                 rbase = frame->base;
                 chunk = &frame->closure->proto->chunk;
                 pc = frame->pc;
-                if (lhat_is_run(value) && reserved == 0) {
+                if (lhat_is_hostvalue(value) && reserved == 0) {
+                    // 15.8: the delegation loop forwards the value. The
+                    // bytes move into the resumer's own room -- the popped
+                    // frame's entry would be taken over by the next push --
+                    // and the head is re-aimed there, keeping the invariant
+                    // the YIELD above checks.
+                    const LhatValueUnion *from = value.as.hostvalue_run;
+                    const LhatHostValueTag *tag = from[0].hostvalue;
+                    for (size_t i = 0; i < tag->width; i++) {
+                        frame->answer_run[i] = from[i];
+                    }
+                    value.as.hostvalue_run = frame->answer_run;
+                    lhat_slots_set(m->slots, rbase + into, value);
+                } else if (lhat_is_hostvalue(value)) {
+                    // 05 の 8.9: written out whole at the resume's slot, as
+                    // a call's answer is at its own -- the call said the
+                    // width it made room for (compile's prepared).
+                    if ((size_t)reserved <
+                            value.as.hostvalue_run[0].hostvalue->width ||
+                        !place_hostvalue_answer(m, rbase + into, value)) {
+                        return finish(m, chunk, LHAT_RUN_TYPE_ERROR,
+                                      lhat_nil(), at);
+                    }
+                } else if (lhat_is_run(value) && reserved == 0) {
                     // 15.8: the resumer is a delegation loop, which reserved
                     // one slot because it could not know this width (see
                     // RESUME). The head goes in that slot and the positions
@@ -4625,9 +4841,10 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
                 // 0 (and 1) is 15.8's delegation loop, the one emitter of a
                 // RESUME with no width: the pair rides the answer room and
                 // the YIELD after it forwards the run as it stands.
-                WalkMode mode = cc >= 3   ? WALK_AS_RUN
-                                : cc == 2 ? WALK_AS_VALUE
-                                          : WALK_AS_ANSWER;
+                WalkMode mode = (cc & LHAT_RESUME_WIDE) != 0 ? WALK_AS_VALUE
+                                : cc >= 3                    ? WALK_AS_RUN
+                                : cc == 2                    ? WALK_AS_VALUE
+                                                             : WALK_AS_ANSWER;
 
                 // 16.3: a table's walk has no body to enter, so resuming it
                 // is one step and nothing more.
@@ -4656,7 +4873,11 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
                     }
                     LhatRunStatus fault = LHAT_RUN_OK;
                     step_host_walk(m, co, mode, rbase + a,
-                                   mode == WALK_AS_RUN ? (size_t)cc - 1 : 0,
+                                   mode == WALK_AS_RUN
+                                       ? (size_t)cc - 1
+                                       : (cc & LHAT_RESUME_WIDE) != 0
+                                             ? (size_t)(cc & ~LHAT_RESUME_WIDE)
+                                             : 0,
                                    frame,
                                    mode == WALK_AS_ANSWER ? R(a) : lhat_nil(),
                                    &fault);
@@ -4671,7 +4892,11 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
                 // 13.8改: the frame goes above the slots the loop reserved
                 // for the answer, or the callee's window would overlap the
                 // run about to be written back into this one.
-                size_t next_base = rbase + (a) + (cc >= 3 ? (size_t)cc : 1);
+                size_t next_base =
+                    rbase + (a) +
+                    ((cc & LHAT_RESUME_WIDE) != 0
+                         ? (size_t)(cc & ~LHAT_RESUME_WIDE)
+                         : cc >= 3 ? (size_t)cc : 1);
                 if (next_base + LHAT_MAX_REGISTERS >= LHAT_STACK_SLOTS) {
                     return finish(m, chunk, LHAT_RUN_STACK_OVERFLOW, lhat_nil(), at);
                 }
@@ -4683,7 +4908,20 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
                 LhatValue sent_run[LHAT_MAX_TUPLE];
                 size_t sent_count = 1;
                 sent_run[0] = R(a);
-                if (lhat_is_run(R(a))) {
+                if (lhat_is_hostvalue(R(a))) {
+                    // 05 の 8.9: the outer resume laid the value out whole
+                    // at this slot; it goes on as the pointer form, its
+                    // bytes stashed clear of the restore.
+                    sent_run[0] = stash_sent_hostvalue(m, rbase + a);
+                    const LhatHostValueTag *sent_tag =
+                        sent_run[0].as.hostvalue_run[0].hostvalue;
+                    if (co->state == LHAT_COROUTINE_SUSPENDED &&
+                        (size_t)co->sent_into + sent_tag->width >
+                            co->register_count) {
+                        return finish(m, chunk, LHAT_RUN_TUPLE_ARITY,
+                                      lhat_nil(), at);
+                    }
+                } else if (lhat_is_run(R(a))) {
                     size_t width = lhat_run_width(R(a));
                     if (width > LHAT_MAX_TUPLE ||
                         rbase + a + width >= LHAT_STACK_SLOTS) {
@@ -4718,7 +4956,10 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
                 // than through slots it never reserved.
                 frame = enter_resume_frame(
                     m, co, next_base, a,
-                    cc >= 3 ? cc : (cc == 0 ? 0 : 1), sent_run, sent_count);
+                    (cc & LHAT_RESUME_WIDE) != 0
+                        ? (uint8_t)(cc & ~LHAT_RESUME_WIDE)
+                        : cc >= 3 ? cc : (cc == 0 ? 0 : 1),
+                    sent_run, sent_count);
                 rbase = frame->base;
                 chunk = &co->closure->proto->chunk;
                 pc = frame->pc;
@@ -5101,6 +5342,17 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
                     held.tag = (LhatValueTag)answered_tags[i + 1];
                     lhat_slots_set(m->slots, rbase + into + 1 + i, held);
                 }
+            } else if (lhat_is_hostvalue(value)) {
+                // 05 の 8.9: before the run-reservation reading -- a call
+                // that answers a host value declared its width as prepared,
+                // and the whole value is what belongs at the slot. A site
+                // that could not know the type reserved one slot, and is
+                // refused rather than overwritten past.
+                if ((size_t)reserved < value.as.hostvalue_run[0].hostvalue->width ||
+                    !place_hostvalue_answer(m, rbase + into, value)) {
+                    return finish(m, chunk, LHAT_RUN_TYPE_ERROR, lhat_nil(),
+                                  at);
+                }
             } else if (reserved > 1) {
                 // 13.8改 with 04 の 3.1: the call site reserved a run and one
                 // value came back. Not a fault by itself -- '(A, B)|SomeError'
@@ -5109,11 +5361,6 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
                 // apart from a callee that simply answered wrong is CHECKRUN,
                 // emitted on the path past the error.
                 SET_R(into, value);
-            } else if (lhat_is_hostvalue(value)) {
-                if (!place_hostvalue_answer(m, rbase + into, value)) {
-                    return finish(m, chunk, LHAT_RUN_TYPE_ERROR, lhat_nil(),
-                                  at);
-                }
             } else {
                 SET_R(into, value);
             }
@@ -5324,6 +5571,10 @@ static LhatRunResult host_call(Machine *m, LhatValue callee, LhatValue receiver,
             }
             for (size_t i = taken; i < count; i++) {
                 bool refused = false;
+                // As at the compiled call: the collection is a table.
+                if (lhat_is_hostvalue(arguments[i])) {
+                    return call_fault(m, LHAT_RUN_TYPE_ERROR);
+                }
                 if (!set_key(m, collected,
                              lhat_integer((int64_t)(i - taken + 1)),
                              arguments[i], &refused)) {
@@ -5573,6 +5824,13 @@ LhatRunResult lhat_machine_resume(LhatMachine *machine, LhatValue coroutine,
     // never reached, and the same stop for a run that would not fit the
     // suspended frame. A fresh body's first send is discarded, so any count
     // passes there.
+    // 05 の 8.9: the C API's LhatValue cannot carry a host value across --
+    // the boundary stays closed in both directions (the answer side nils).
+    for (size_t i = 0; i < sent_count; i++) {
+        if (lhat_is_hostvalue(sent[i])) {
+            return call_fault(m, LHAT_RUN_TYPE_ERROR);
+        }
+    }
     if (co->state == LHAT_COROUTINE_SUSPENDED) {
         const LhatProto *from = co->closure->proto;
         // As at the natives' resume: an unknown proto keeps the old ceiling

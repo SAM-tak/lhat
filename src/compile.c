@@ -3245,7 +3245,14 @@ static void compile_call_wide(Compiler *c, const LhatNode *node, uint8_t into,
     LhatOpcode call_op = method ? (tail ? LHAT_BC_TAILCALLMETHOD
                                         : LHAT_BC_CALLMETHOD)
                                 : (tail ? LHAT_BC_TAILCALL : LHAT_BC_CALL);
-    uint8_t operand = lhat_call_operand(spread, (unsigned)reserved);
+    // 05 の 8.9: a call that answers a host value says the width it made
+    // room for, so the yield hand-back can tell this consumer from the
+    // delegation loop's unreserved slot (both would otherwise read 0).
+    size_t prepared = reserved;
+    if (answer_width > 1 && width_of(node) > 1 && answer_width > prepared) {
+        prepared = answer_width;
+    }
+    uint8_t operand = lhat_call_operand(spread, (unsigned)prepared);
     if (tail && drop) {
         operand |= LHAT_CALL_DROP;
     }
@@ -3385,14 +3392,13 @@ static void compile_subroutine_as(Compiler *c, const LhatNode *node,
             resolve_hostvalue_type_tag(&inner, param->v.param.type);
         size_t param_width = param_hostvalue != NULL ? param_hostvalue->width
                                                      : 1;
-        // The two places that still count arguments by value index rather
-        // than by slot: a variadic collection, and a yielding body's copy
-        // of its arguments into the coroutine's registers. Both are refused
-        // with a wide parameter rather than silently read out of step.
-        // ('...' comes last, so has_variadic is checked again after the
-        // loop for the parameters that preceded it.)
-        if (param_width > 1 &&
-            (node->v.func.yields || param->v.param.variadic)) {
+        // A variadic collection still counts arguments by value index, so a
+        // wide parameter is refused beside one rather than silently read
+        // out of step. (A yielding body's construction copy went slot-blind
+        // -- vm.c's spread-free path -- so that half of the old refusal is
+        // gone.) '...' comes last, so has_variadic is checked again after
+        // the loop for the parameters that preceded it.
+        if (param_width > 1 && param->v.param.variadic) {
             fail(c, LHAT_COMPILE_UNSUPPORTED);
             return;
         }
@@ -4019,10 +4025,24 @@ static void compile_expression(Compiler *c, const LhatNode *node, uint8_t into)
             }
             if (node->v.jump.value == NULL) {
                 emit(c, lhat_encode_abc(LHAT_BC_LOADNIL, into, 0, 0));
-            } else {
-                compile_expression(c, node->v.jump.value, into);
+                emit(c, lhat_encode_abc(LHAT_BC_YIELD, into, 0, 0));
+                return;
             }
-            emit(c, lhat_encode_abc(LHAT_BC_YIELD, into, 0, 0));
+            {
+                // 05 の 8.9: a host value goes out whole and comes back
+                // whole, so the slot takes the wider of the two widths --
+                // the same reading compile_yield_wide's single case makes.
+                size_t out_width = width_of(node->v.jump.value);
+                size_t in_width = width_of(node);
+                size_t need = out_width > in_width ? out_width : in_width;
+                while (c->next_register < into + need) {
+                    reserve(c);
+                }
+                compile_expression(c, node->v.jump.value, into);
+                emit(c, lhat_encode_abc(
+                            LHAT_BC_YIELD, into,
+                            out_width > 1 ? LHAT_YIELD_HOSTVALUE : 0, 0));
+            }
             return;
 
         // 04 の 11.3: 't.foo' is resolved statically and 't[k]' is not, but
@@ -4054,7 +4074,9 @@ static void compile_expression(Compiler *c, const LhatNode *node, uint8_t into)
                 return;
             }
 
-            uint8_t key = reserve(c);
+            // 05 の 8.9: a host value key takes its width of slots, so the
+            // bytes it asks by sit whole beside the head.
+            uint8_t key = reserve_for(c, node->v.access.argument);
             compile_key(c, node, key);
             emit(c, lhat_encode_abc(LHAT_BC_GETINDEX, into, target, key));
             chain_close(c, &chain);
@@ -4252,18 +4274,30 @@ static void compile_expression(Compiler *c, const LhatNode *node, uint8_t into)
 
         // 05 の 8.9: 'box^ expr' -- the host value laid out whole, then one
         // instruction to box it. The width is the type's, which only a
-        // checked compile knows -- the line every wide form draws.
+        // checked compile knows -- the line every wide form draws. 8.9改:
+        // C says what BOX makes and takes -- bit 0 seals (constbox^), bit 1
+        // says R[B] is a box to copy rather than a value laid out, which is
+        // how constbox^ off a box compiles (the machine's kind check has
+        // the last word on an unchecked run).
         case LHAT_NODE_BOX: {
             const LhatNode *held = node->v.jump.value;
             const LhatHostValueTag *tag = hostvalue_of(held);
+            uint8_t seal = node->v.jump.sealing ? 1 : 0;
+            uint8_t mark = c->next_register;
             if (tag == NULL) {
-                fail(c, LHAT_COMPILE_UNSUPPORTED);
+                if (!node->v.jump.sealing) {
+                    fail(c, LHAT_COMPILE_UNSUPPORTED);
+                    return;
+                }
+                uint8_t slot = reserve(c);
+                compile_expression(c, held, slot);
+                emit(c, lhat_encode_abc(LHAT_BC_BOX, into, slot, seal | 2));
+                c->next_register = mark;
                 return;
             }
-            uint8_t mark = c->next_register;
             uint8_t slot = reserve_wide(c, tag->width);
             compile_expression(c, held, slot);
-            emit(c, lhat_encode_abc(LHAT_BC_BOX, into, slot, 0));
+            emit(c, lhat_encode_abc(LHAT_BC_BOX, into, slot, seal));
             c->next_register = mark;
             return;
         }
@@ -4643,10 +4677,22 @@ static void compile_yield_wide(Compiler *c, const LhatNode *node, uint8_t into,
     }
     if (node->v.jump.value == NULL) {
         emit(c, lhat_encode_abc(LHAT_BC_LOADNIL, into, 0, 0));
-    } else {
-        compile_expression(c, node->v.jump.value, into);
+        emit(c, lhat_encode_abc(LHAT_BC_YIELD, into, 0, 0));
+        return;
     }
-    emit(c, lhat_encode_abc(LHAT_BC_YIELD, into, 0, 0));
+    // 05 の 8.9: a host value goes out whole and comes back whole, so the
+    // slot takes the wider of the two widths. `into` sits at the top of the
+    // scratch wherever a yield^ compiles (reserve_for read the receive
+    // width), so growing the reservation stays contiguous.
+    size_t out_width = width_of(node->v.jump.value);
+    size_t in_width = width_of(node);
+    size_t need = out_width > in_width ? out_width : in_width;
+    while (c->next_register < into + need) {
+        reserve(c);
+    }
+    compile_expression(c, node->v.jump.value, into);
+    emit(c, lhat_encode_abc(LHAT_BC_YIELD, into,
+                            out_width > 1 ? LHAT_YIELD_HOSTVALUE : 0, 0));
 }
 
 static void compile_tuple_define(Compiler *c, const LhatNode *node,
@@ -5575,14 +5621,22 @@ static void declare_targets(Compiler *c, const LhatNode *focus)
             fail(c, LHAT_COMPILE_TOO_COMPLEX);
             return;
         }
-        uint8_t slot = reserve(c);
-        emit(c, lhat_encode_abc(LHAT_BC_LOADNIL, slot, 0, 0));
+        // 05 の 8.9: a host value focus holds its width of slots, sized by
+        // the checker's stamp the way any binding's is (declare_names). An
+        // unchecked compile sees width 1 and the walk faults at run time
+        // rather than laying out a run nobody reserved.
+        size_t width = width_of(target_of(element));
+        uint8_t slot = reserve_wide(c, width);
+        for (size_t i = 0; i < width; i++) {
+            emit(c, lhat_encode_abc(LHAT_BC_LOADNIL, (uint8_t)(slot + i), 0,
+                                    0));
+        }
         Local *local = &c->locals[c->local_count++];
         local->name = name;
         local->length = length;
         local->reg = slot;
         local->depth = c->scope_depth;
-        local->width = 1;
+        local->width = (uint8_t)width;
         local->import_root = false;
         local->being_defined = false;
     }
@@ -5595,8 +5649,11 @@ static void bind_targets(Compiler *c, const LhatNode *focus, size_t local_mark,
                          size_t count, uint8_t from)
 {
     if (count == 1) {
-        emit(c, lhat_encode_abc(LHAT_BC_MOVE, c->locals[local_mark].reg, from,
-                                0));
+        // 05 の 8.9: a host value focus moves as its width of slots, the
+        // same slot-for-slot copy resolve_name makes.
+        const Local *local = &c->locals[local_mark];
+        emit_move_wide(c, local->reg, from,
+                       local->width > 1 ? local->width : 1);
         return;
     }
     // 16.3 with 13.8改: several names read the run the walk laid at `from` --
@@ -5704,8 +5761,13 @@ static void compile_loop(Compiler *c, const LhatNode *node)
         // each -- and one name takes one value, so the answer's room is
         // sized by the count. The count is syntax, which is what lets an
         // unchecked compile reserve the same slots a checked one does.
-        taken = focus_locals > 1 ? reserve_wide(c, focus_locals + 1)
-                                 : reserve(c);
+        // 05 の 8.9: one name holding a host value takes its width instead,
+        // which the focus local was just sized by.
+        taken = focus_locals > 1
+                    ? reserve_wide(c, focus_locals + 1)
+                    : reserve_wide(c, focus_locals == 1
+                                          ? c->locals[local_mark].width
+                                          : 1);
     }
 
     // 16.4: the bound and the step^ of to^/downto^ are both read once, before
@@ -5808,9 +5870,17 @@ static void compile_loop(Compiler *c, const LhatNode *node)
         // sequence values; a body's yield unchanged). 03 の 5.3's shape:
         // the two sides tell each other, and a mismatch faults rather than
         // being papered over.
+        // 05 の 8.9: a host value focus says its width under
+        // LHAT_RESUME_WIDE, so the hand-back knows the whole value fits
+        // here while the walk modes still read the step as one value.
+        uint8_t one_step = 2;
+        if (focus_locals == 1 && c->locals[local_mark].width > 1) {
+            one_step = (uint8_t)(LHAT_RESUME_WIDE |
+                                 c->locals[local_mark].width);
+        }
         emit(c, lhat_encode_abc(LHAT_BC_RESUME, taken, walk,
                                 focus_locals > 1 ? (uint8_t)(focus_locals + 1)
-                                                 : 2));
+                                                 : one_step));
         emit(c, lhat_encode_abc(LHAT_BC_ISDONE, test, walk, 0));
         emit(c, lhat_encode_abc(LHAT_BC_NOT, test, test, 0));
         leaving = emit_jump(c, LHAT_BC_JUMP_FALSE, test);

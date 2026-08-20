@@ -754,6 +754,18 @@ bool lhat_takes_receiver(LhatValue value);
 // among the instance's own fields is looked for there.
 LhatValue lhat_table_get(const LhatTable *table, LhatValue key);
 
+// 05 の 8.9: a registered field decoded off a host value's data run -- the
+// bytes after the head. What 'v.x' answers, and what the value writer
+// spells a content with.
+LhatValue lhat_hostvalue_field_value(const LhatValueUnion *data,
+                                     const struct LhatHostValueField *field);
+
+// 05 の 8.9改: the lookup a bare host value makes -- by its tag and bytes,
+// meeting the sealed box keys stored under the same content hash.
+LhatValue lhat_table_get_by_value(const LhatTable *table,
+                                  const struct LhatHostValueTag *tag,
+                                  const LhatValueUnion *data);
+
 // Storing nil^ removes the key, which is what keeps "absent" and "nil^" the
 // one answer 11.3 describes. Returns false only when out of memory; a key
 // that cannot be a key (nil^, or a NaN) is refused with `refused` set.

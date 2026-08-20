@@ -1124,7 +1124,24 @@ static bool usable_key(LhatValue key)
     if (lhat_is_real(key) && lhat_as_real(key) != lhat_as_real(key)) {
         return false;
     }
+    // 05 の 8.9改: a bare host value is never a stored key -- its width does
+    // not fit the entry's one slot -- and the generic get cannot read one
+    // either (a head slot alone names no bytes); lookups by value go through
+    // lhat_table_get_by_value instead.
+    if (key.tag == LHAT_VALUE_HOSTVALUE) {
+        return false;
+    }
     return true;
+}
+
+// 05 の 8.9改: what a box's bytes hash to, shared with the lookup that asks
+// with a bare value -- the two have to collide for content keying to work.
+static uint32_t content_key_hash(const LhatHostValueTag *tag,
+                                 const LhatValueUnion *data)
+{
+    uint32_t hash = lhat_string_hash((const char *)data,
+                                     (tag->width - 1) * sizeof(LhatValueUnion));
+    return hash ^ (uint32_t)((uintptr_t)tag >> 4);
 }
 
 static uint32_t hash_key(LhatValue key)
@@ -1146,6 +1163,28 @@ static uint32_t hash_key(LhatValue key)
             const LhatObject *object = lhat_as_object(key);
             if (object != NULL && object->kind == LHAT_OBJECT_STRING) {
                 return ((const LhatString *)object)->hash;
+            }
+            // 05 の 8.9改: a sealed box keys by its bytes and its tag --
+            // computed on demand, since a sealed box never changes and the
+            // runs are a few slots. The same formula answers for a bare
+            // value asking at a lookup (lhat_table_get_by_value).
+            if (object != NULL && object->kind == LHAT_OBJECT_HOSTVALUE_BOX) {
+                const LhatHostValueBox *box = (const LhatHostValueBox *)object;
+                const LhatHostValueTag *tag = lhat_hostvalue_box_tag(box);
+                if (tag != NULL) {
+                    return content_key_hash(tag, box->run + 1);
+                }
+            }
+            // 05 の 8.8: two wrappers of one host object are equal, so they
+            // have to hash alike -- off the tag and the host's pointer, the
+            // pair equality reads. Not switched on `released`: a key stored
+            // in a table has to keep its hash, and the pointer is only ever
+            // compared as a value, never followed.
+            if (object != NULL && object->kind == LHAT_OBJECT_HOSTDATA) {
+                const LhatHostData *data = (const LhatHostData *)object;
+                uintptr_t bits = (uintptr_t)data->pointer ^
+                                 ((uintptr_t)data->tag << 16);
+                return (uint32_t)(bits ^ (bits >> 32));
             }
             uintptr_t address = (uintptr_t)object;
             return (uint32_t)(address ^ (address >> 32));
@@ -1383,11 +1422,54 @@ LhatValue lhat_table_get(const LhatTable *table, LhatValue key)
     return lhat_nil();
 }
 
+// 05 の 8.9改: a lookup asking with the bare value -- `t[vec]`. Everything
+// a table stores under a box key is sealed, so comparing the bytes of the
+// moment against them is exact; only the hash part can hold one, since a
+// box never normalises to an array index.
+LhatValue lhat_table_get_by_value(const LhatTable *table,
+                                  const struct LhatHostValueTag *tag,
+                                  const LhatValueUnion *data)
+{
+    if (table == NULL || tag == NULL || table->entry_capacity == 0) {
+        return lhat_nil();
+    }
+    size_t width = (tag->width - 1) * sizeof(LhatValueUnion);
+    size_t index = (size_t)content_key_hash(tag, data) &
+                   (table->entry_capacity - 1);
+    for (;;) {
+        const LhatTableEntry *entry = &table->entries[index];
+        if (entry_is_free(entry)) {
+            return lhat_nil();
+        }
+        if (!entry_is_tombstone(entry) &&
+            lhat_is_object_kind(entry->key, LHAT_OBJECT_HOSTVALUE_BOX)) {
+            const LhatHostValueBox *box =
+                (const LhatHostValueBox *)lhat_as_object(entry->key);
+            if (lhat_hostvalue_box_tag(box) == tag &&
+                memcmp(box->run + 1, data, width) == 0) {
+                return entry->value;
+            }
+        }
+        index = (index + 1) & (table->entry_capacity - 1);
+    }
+}
+
 bool lhat_table_set(LhatTable *table, LhatValue key, LhatValue value,
                     bool *refused)
 {
     *refused = false;
     if (table == NULL || !usable_key(key)) {
+        *refused = true;
+        return true;
+    }
+    // 05 の 8.9改: a box keys by its bytes, so only a sealed one -- whose
+    // bytes hold still -- may be *stored* as a key. constbox^ is how one is
+    // made; the checker says so first (MUTABLE_KEY), and this is the
+    // unchecked run's backstop. A lookup is free to ask with a live box:
+    // it reads the bytes of the moment, and everything the table holds is
+    // sealed, so nothing can go stale.
+    if (lhat_is_object_kind(key, LHAT_OBJECT_HOSTVALUE_BOX) &&
+        !((const LhatHostValueBox *)lhat_as_object(key))->sealed) {
         *refused = true;
         return true;
     }

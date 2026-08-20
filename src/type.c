@@ -108,18 +108,21 @@ LhatType *lhat_type_hostvalue(LhatTypeArena *arena,
     return type;
 }
 
-LhatType *lhat_type_hostvalue_box(LhatTypeArena *arena, LhatType *held)
+LhatType *lhat_type_hostvalue_box(LhatTypeArena *arena, LhatType *held,
+                                  bool sealed)
 {
     LhatType *type = new_type(arena, LHAT_TYPE_HOSTVALUE_BOX);
     if (type != NULL && held != NULL) {
         // 05 の 8.9: the same payload arrangement as the value it holds --
         // identity is the tag either way. The value type rides along under
         // `instance` so get() answers the registered type whole, fields and
-        // members included, rather than a bare tag.
+        // members included, rather than a bare tag. `sealed` is ConstBox^:
+        // the get-only reading of the same box.
         type->v.table.nominal = true;
         type->v.table.from_definition = true;
         type->v.table.hostvalue_tag = held->v.table.hostvalue_tag;
         type->v.table.instance = held;
+        type->v.table.sealed = sealed;
     }
     return type;
 }
@@ -645,10 +648,14 @@ static bool conforms_in(const LhatType *value, const LhatType *target,
         // 05 の 8.9: a box fits exactly its own type -- identity is the tag,
         // as it is for the value it holds. Unlike that value it is an
         // ordinary heap object, so the union and any^ arms above have
-        // already had their say.
+        // already had their say. ConstBox^ is the get-only reading, so a
+        // Box^ fits where one is asked for -- handing a mutable box to a
+        // reader promises nothing false -- while a ConstBox^ never fits a
+        // Box^ seat, where set() would be a lie.
         case LHAT_TYPE_HOSTVALUE_BOX:
             return value->v.table.hostvalue_tag ==
-                   target->v.table.hostvalue_tag;
+                       target->v.table.hostvalue_tag &&
+                   (!value->v.table.sealed || target->v.table.sealed);
 
         case LHAT_TYPE_TABLE:
             // 05 の 8.8: a host type is the one thing 11.3 does not judge by
@@ -986,6 +993,12 @@ static bool disjoint_in(const LhatType *a, const LhatType *b,
     // when they are the same registration. There is no structure to combine
     // the way two tables below might.
     if (a->kind == LHAT_TYPE_HOSTVALUE) {
+        return a->v.table.hostvalue_tag != b->v.table.hostvalue_tag;
+    }
+
+    // 05 の 8.9: and the box around one is told apart the same way -- '=' on
+    // boxes of two registrations is settled already, whatever the bytes.
+    if (a->kind == LHAT_TYPE_HOSTVALUE_BOX) {
         return a->v.table.hostvalue_tag != b->v.table.hostvalue_tag;
     }
 
@@ -1516,7 +1529,7 @@ static void write_type(TypeSink *sink, const LhatType *type, int depth)
                 put_text(sink, type->v.table.hostvalue_tag->module);
                 put_text(sink, ".");
                 put_text(sink, type->v.table.hostvalue_tag->name);
-                put_text(sink, ".Box^");
+                put_text(sink, type->v.table.sealed ? ".ConstBox^" : ".Box^");
             } else {
                 put_text(sink, "hostvalue box");
             }

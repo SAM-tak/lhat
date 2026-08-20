@@ -184,6 +184,11 @@ typedef struct {
     LhatCheckResult *result;
     bool strict;
 
+    // 05 の 8.3: resolving a registered host signature (lhat_type_of_text).
+    // Such a type only describes what the host hands over, so the written
+    // tuple-position escape is judged where L^ consumes it instead.
+    bool hosted_signature;
+
     // 05 の 6.1: how an import is answered. Absent when a unit is checked on
     // its own, in which case a require^ cannot be followed.
     LhatRequire require;
