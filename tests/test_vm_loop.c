@@ -587,6 +587,19 @@ static void test_for(void)
     CHECK_INTEGER(&r, 3);
     run_dispose(&r);
 
+    // 16.3 with 03 の 3.1③: an annotated focus -- the form strict asks for
+    // where the walk cannot say the type itself. What this pins is that the
+    // annotation compiles: the PARAM wrapping the name is unwrapped, not
+    // refused as an unsupported form.
+    LHAT_TEST("an annotated focus compiles and walks");
+    run_checked_text(&r,
+                     "var^ t = { 10, 20, 30 }\n"
+                     "var^ total = 0\n"
+                     "for^ v:number^ in^ t { total := total + v }\n"
+                     "return^ total\n");
+    CHECK_INTEGER(&r, 60);
+    run_dispose(&r);
+
     // 16.3改: what in^ asks for is the hat spelling, so a bare iterate on a
     // table the writer wrote is a member like any other and the walk is
     // still the built-in one.

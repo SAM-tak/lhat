@@ -5602,7 +5602,10 @@ static const LhatNode *target_of(const LhatNode *element)
     if (element->kind == LHAT_NODE_DEFINE &&
         element->v.binding.targets != NULL &&
         element->v.binding.targets->kind == LHAT_NODE_FOCUS) {
-        return element->v.binding.values;
+        // An annotated focus ('for^ p:T in^ ...') wraps the name in a PARAM,
+        // and define_target_name is the unwrap either way -- the same node
+        // the checker stamps the element type on (check_focus).
+        return define_target_name(element->v.binding.values);
     }
     return define_target_name(element);
 }
