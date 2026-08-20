@@ -6,13 +6,13 @@ let^y = f^x:number^{
     var^a:string^, b:number^ = yield^"aaa", x
     print(a, b)
     x += 1
-    a, b := yield^"bbb", x
+    a, b := yield^a.."bbb", x
     # a, b := yield^"bbb", x, 2 # 異型は書けない。ちゃんとエラーになる。
     # どんどん型を合併していけば異型yield^は可能だが、そんなものを人間は制御できないので
     # 禁じている。
     print(a, b)
     x += 1
-    a, b := yield^"ccc", x
+    a, b := yield^a.."ccc", x
     print(a, b)
     return^"done"
 }
@@ -81,20 +81,9 @@ print("ex. 6")
 for^let^co = y(1)
 for^let^c, d = ",", 1
 for^var^a, b = co.start()
-until^co.done() next^a, b := co.resume(c..a, b ?? 0 + d) {
+until^co.done() next^a, b := co.resume(a..c, b ?? 0 + d) {
 pre^: # 最後の入力を拾いたい場合これが必須に。
     print(a, b)
-}
-
-print("ex. 7") # どっちが初等的かな
-for^let^co = y(1)
-for^let^c, d = ",", 1
-for^var^a, b = co.start()
-until^co.done() {
-pre^:
-    print(a, b)
-main^:
-    a, b := co.resume(c..a, b ?? 0 + d)
 }
 
 let^positions = {
