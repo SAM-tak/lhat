@@ -577,8 +577,26 @@ points.set(1, godot.vector2(9, 9))
 self^.gdobj.set("polygon", points)
 ```
 
-`size()` `at(i)` `set(i, v)` `append(v)` `clear()` `dispose`。添字は 1 から
-（02 の 14 の並びと同じ）で、無い添字は要素の零を答える——表と同じ読み方である。
+`size()` `at(i)` `set(i, v)` `append(v)` `clear()` `dispose` `iterate`。添字は
+1 から（02 の 14 の並びと同じ）で、無い添字は要素の零を答える——表と同じ
+読み方である。
+
+**`for^` で歩ける**（05 の 8.8 の `iterate` 登録）。出すのは要素だけ——
+Packed\* は列であり、1名の走査が列の値を受けるのは表の密部と同じ読み方。
+添字も要るなら従来どおり `for^ i from^ 1 to^ a.size()` と数える。
+`Vector2` などホスト値の要素も焦点へ丸ごと渡る（8.9改）。
+
+```lhat
+for^ p in^ points {
+	total := total + p.x
+}
+```
+
+`get()` で受け取った配列は `any^` なので、strict では焦点に型を書く
+（03 の 3.1③）——`for^ p:godot.Vector2 in^ points { … }`。
+
+走査中の `append` は見える（歩みは毎歩長さを引き直す）。走査中の `dispose`
+は `at()` 後の `dispose` と同じく書き手の誤りである（02 の 10.7）。
 
 **写し取らない。** 千要素の配列を読むのは呼び出し千回であって、千要素の表を
 作ることではない。`get()` / `set()` / `call()` はそのまま運ぶ。

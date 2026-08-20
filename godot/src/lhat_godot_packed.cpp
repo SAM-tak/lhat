@@ -285,6 +285,75 @@ LhatValue packed_dispose(LhatMachine *machine, void *context,
     return lhat_nil();
 }
 
+// 02 の 16.3 with 05 の 8.8: the walk `for^ x in^ a` runs. One walk of one
+// array, made per iterate() call and freed by the release; the array rides
+// as the coroutine's `held`, which is what keeps the hostdata alive for the
+// walk's whole life. The cursor re-reads the array each step, so an append
+// mid-walk is seen -- and a dispose mid-walk is the writer's own 10.7
+// error, exactly as it is at at().
+template <typename P>
+struct PackedWalk {
+    const Godot *module;
+    LhatValue over;  // the hostdata, re-read via held_packed each step
+    int64_t at;      // 1-origin, the next element to hand over
+};
+
+template <typename P>
+bool packed_step(LhatMachine *machine, void *context, LhatValue sent,
+                 LhatValue *out)
+{
+    using E = typename Packed<P>::Element;
+    (void)sent;  // the loops send nothing in
+    PackedWalk<P> *walk = (PackedWalk<P> *)context;
+    const P *held = held_packed<P>(walk->over, walk->module);
+    if (held == nullptr || walk->at > held->size()) {
+        return false;
+    }
+    // The four value-element arrays answer 8.9's pointer form here, and the
+    // machine writes it out whole into the focus -- the same crossing a
+    // host call's answer makes.
+    *out = element_out<E>(machine, walk->module, (*held)[walk->at - 1]);
+    walk->at++;
+    return true;
+}
+
+// Under the dispose^ contract: once, and never reaching into the L^ API --
+// the sweep may be the caller.
+template <typename P>
+LhatValue packed_walk_release(LhatMachine *machine, void *context,
+                              const LhatValue *arguments, size_t count)
+{
+    (void)machine;
+    (void)arguments;
+    (void)count;
+    memdelete((PackedWalk<P> *)context);
+    return lhat_nil();
+}
+
+template <typename P>
+LhatValue packed_iterate(LhatMachine *machine, void *context,
+                         const LhatValue *arguments, size_t count)
+{
+    const Godot *module = module_of(context);
+    const P *held =
+        count > 0 ? held_packed<P>(arguments[0], module) : nullptr;
+    if (held == nullptr) {
+        return lhat_nil();
+    }
+    PackedWalk<P> *walk = memnew(PackedWalk<P>);
+    walk->module = module;
+    walk->over = arguments[0];
+    walk->at = 1;
+    LhatValue out = lhat_nil();
+    if (!lhat_machine_make_coroutine(machine, packed_step<P>, walk,
+                                     packed_walk_release<P>, arguments[0],
+                                     &out)) {
+        memdelete(walk);
+        return lhat_nil();
+    }
+    return out;
+}
+
 template <typename P>
 bool answer_packed(LhatMachine *machine, const Godot *module, const P &from,
                    LhatValue *out)
@@ -337,6 +406,11 @@ bool declare_packed(LhatProgram *program, Godot *module, const char *maker)
          packed_append<P>},
         {"clear", kept(module, "p^self^;"), packed_clear<P>},
         {"dispose", kept(module, "p^self^;"), packed_dispose<P>},
+        // Bare `iterate`: on a host type the two spellings name one member
+        // (14.17改), and every name here is the library's.
+        {"iterate",
+         kept(module, String("f^self^ -> c^{p^ -> ") + element + ";, };"),
+         packed_iterate<P>},
     };
     for (const auto &member : members) {
         if (!lhat_register_member(program, "godot", name, member.name,
