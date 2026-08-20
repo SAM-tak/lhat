@@ -1,0 +1,82 @@
+let^y = f^x:number^{
+    print(x)
+    x += 1
+    var^a:string^, b:number^ = yield^"aaa", x
+    print(a, b)
+    x += 1
+    a, b := yield^"bbb", x
+    # a, b := yield^"bbb", x, 2 # 異型は書けない。ちゃんとエラーになる。
+    # どんどん型を合併していけば異型yield^は可能だが、そんなものを人間は制御できないので
+    # 禁じている。
+    print(a, b)
+    x += 1
+    a, b := yield^"bbb", x
+    print(a, b)
+    return^"done"
+}
+
+let^ny = f^x:number^{
+    print(x)
+    var^_^:string^,_^:number^ = _yield^"aaa", x
+    return^"done"
+}
+
+do^ {
+    print("ex. 1")
+    let^c = y(1)
+    var^a, b = c.start()
+    print(a, b)
+    repeat^until^c.done() {
+        a, b := c.resume(a, b ?? 0)
+        print(a, b)
+    }
+}
+
+do^ {
+    print("ex. 2")
+    let^c = ny(1)
+    var^a, b = c.start()
+    print(a, b)
+    repeat^until^c.done() {
+        a, b := c.resume(a, b ?? 0)
+        print(a, b)
+    }
+}
+
+do^ {
+    print("ex. 3")
+    let^c = y(1)
+    var^a, b = c.start()
+    print(a, b)
+    repeat^until^c.done() {
+        let^a, b = c.resume(a, b ?? 0)
+        print(a, b)
+    }
+}
+
+do^ {
+    print("ex. 4")
+    let^co = y(1)
+    let^a, b = co.start()
+    repeat^until^co.done() {
+        # let^c, d = a, b # これは書けない。このスコープに新しい a bが導入されるので
+        let^a, b = co.resume(a, b ?? 0)
+        let^c, d = a, b
+        print("new", a, b)
+        print("new", c, d)
+    }
+}
+
+# print("ex. 5")
+# for^let^c = y(1)
+# for^var^a, b = c.start()
+# repeat^until^c.done() { # これは書けなくてもいいか…
+#     print(a, b)
+#     a, b := c.resume(a, b)
+# }
+
+print("ex. 6")
+for^let^c = y(1)
+for^var^a, b = c.start() until^c.done() next^a, b := c.resume(a, b ?? 0) {
+    print(a, b)
+}
