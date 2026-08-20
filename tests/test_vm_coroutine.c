@@ -285,9 +285,10 @@ static void test_coroutines(void)
     CHECK_INTEGER(&r, 1);
     run_dispose(&r);
 
-    // What it would have sent is still worked out -- only the suspending is
-    // dropped, so an expression written there still does what it does.
-    LHAT_TEST("what it would have sent is still evaluated");
+    // 15.11: a _yield^ never runs -- not the suspending and not its value
+    // either. The statement compiles to nothing, so an expression written
+    // there does nothing at all.
+    LHAT_TEST("what it would have sent is not evaluated");
     run_text(&r,
              "var^ log = { n := 0 }\n"
              "var^ bump = f^ -> number^ { log.n := log.n + 1  return^ log.n }\n"
@@ -295,6 +296,21 @@ static void test_coroutines(void)
              "var^ c = fake()\n"
              "c.start()\n"
              "return^ log.n\n");
+    CHECK_INTEGER(&r, 0);
+    run_dispose(&r);
+
+    // And the several-names form with _^ reaches its end untouched -- the
+    // shape that used to fault at the take-apart (nothing ever arrived).
+    LHAT_TEST("a _^ binding of a _yield^ runs straight through");
+    run_checked_text(&r,
+                     "let^ fake = f^x:number^ {\n"
+                     "    let^_^:string^, _^:number^ = _yield^ (\"a\", x)\n"
+                     "    return^ \"done\"\n"
+                     "}\n"
+                     "let^ c = fake(1)\n"
+                     "var^ s, n = c.start()\n"
+                     "if^ s = \"done\" { return^ 1 }\n"
+                     "return^ 0\n");
     CHECK_INTEGER(&r, 1);
     run_dispose(&r);
 

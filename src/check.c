@@ -3057,6 +3057,9 @@ const char *lhat_check_error_message(LhatCheckErrorCode code)
         case LHAT_CHECK_ERR_YIELD_TYPE_MISMATCH:
             return "every yield^ in one body has to agree on what it sends "
                    "and what it answers";
+        case LHAT_CHECK_ERR_PHANTOM_YIELD_BINDS:
+            return "a _yield^ never runs, so nothing arrives here; bind _^ "
+                   "-- the annotations are all this statement says";
         case LHAT_CHECK_ERR_PATH_NOT_TABLE:
             return "this holds the name written after it, so it has to be a "
                    "table";

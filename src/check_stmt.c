@@ -274,6 +274,19 @@ void chk_check_define(Checker *c, const LhatNode *node)
         chk_report(c, node, LHAT_CHECK_ERR_PUBLIC_IS_IMMUTABLE);
     }
 
+    // 15.11: a _yield^ answers nothing at run time -- the whole statement
+    // is the type's alone and compiles to nothing, so only _^ may stand on
+    // the left. A name would hold a value that never arrives.
+    if (value != NULL && value->next == NULL &&
+        value->kind == LHAT_NODE_YIELD && value->v.jump.phantom) {
+        for (const LhatNode *target = node->v.binding.targets;
+             target != NULL; target = target->next) {
+            if (!chk_is_discard(c, target_name_node(target))) {
+                chk_report(c, target, LHAT_CHECK_ERR_PHANTOM_YIELD_BINDS);
+            }
+        }
+    }
+
     // 8.7改: every name this statement binds is unreadable from its own
     // value -- the whole right side reads the old world, a deferred body
     // included (recursion by the bound name went with this; this^ is the
@@ -1122,6 +1135,13 @@ static void check_reassign(Checker *c, const LhatNode *node)
     size_t position = 0;
     LhatType *tuple = NULL;  // 13.8改, as in check_define
     size_t target_count = lhat_node_list_length(node->v.binding.targets);
+
+    // 15.11: a _yield^ answers nothing at run time, and a reassignment's
+    // left side is always a name -- there is nothing to write.
+    if (value != NULL && value->next == NULL &&
+        value->kind == LHAT_NODE_YIELD && value->v.jump.phantom) {
+        chk_report(c, node, LHAT_CHECK_ERR_PHANTOM_YIELD_BINDS);
+    }
 
     // 15.2 with 13.8改: a reassignment binding a yield^ directly fixes R
     // too -- off what the names already hold, so no annotation is written.

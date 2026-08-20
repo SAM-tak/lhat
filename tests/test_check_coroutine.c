@@ -246,11 +246,44 @@ static void test_coroutines(void)
                "  return^ 9\n"
                "}\n"
                "var^ fake = p^ -> number^ {\n"
-               "  var^ got : string^ = _yield^ 1\n"
+               "  var^ _^ : string^ = _yield^ 1\n"
                "  return^ 9\n"
                "}\n"
                "var^ a : c^{ p^string^ -> number^;, number^ } = real()\n"
                "var^ b : c^{ p^string^ -> number^;, number^ } = fake()\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // 15.11: a _yield^ never runs, so a name cannot take what it would
+    // have answered -- only _^ stands on the left, the annotation being
+    // all the statement says.
+    LHAT_TEST("a _yield^ bound to a name is refused");
+    check_text(&u,
+               "var^ fake = p^ -> number^ {\n"
+               "  var^ got : string^ = _yield^ 1\n"
+               "  return^ 9\n"
+               "}\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_PHANTOM_YIELD_BINDS);
+    unit_dispose(&u);
+
+    LHAT_TEST("and so is one reassigned into a name");
+    check_text(&u,
+               "var^ fake = p^ -> number^ {\n"
+               "  var^ got : string^ = \"\"\n"
+               "  got := _yield^ 1\n"
+               "  return^ 9\n"
+               "}\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_PHANTOM_YIELD_BINDS);
+    unit_dispose(&u);
+
+    LHAT_TEST("several _^ fix a tuple R off a _yield^");
+    check_text(&u,
+               "var^ fake = p^ {\n"
+               "  var^ _^:string^, _^:number^ = _yield^ (\"a\", 1)\n"
+               "}\n"
+               "var^ c = fake()\n"
+               "c.start()\n"
+               "c.resume(\"x\", 2)\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 

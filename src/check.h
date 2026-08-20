@@ -140,6 +140,9 @@ typedef enum {
                                             // (directly, by a let^) needs a
                                             // written type there to fix R
     LHAT_CHECK_ERR_YIELD_TYPE_MISMATCH,    // 15.2: two yield^/yieldall^ sites
+    LHAT_CHECK_ERR_PHANTOM_YIELD_BINDS,    // 15.11: a _yield^ never runs, so
+                                           // a name cannot take its answer --
+                                           // only _^ stands on the left
                                             // in one body disagree on Y or R
 
     LHAT_CHECK_ERR_PATH_NOT_TABLE,      // 8.8: everything before the last

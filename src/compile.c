@@ -3982,6 +3982,14 @@ static void compile_expression(Compiler *c, const LhatNode *node, uint8_t into)
         // (The several-names binding of one goes through compile_yield_wide
         // instead, where the send comes back as a run.)
         case LHAT_NODE_YIELD:
+            // 15.11: a _yield^ never runs -- not the suspension and not its
+            // value either. It compiles to nil^ wherever it stands; the
+            // statement and binding forms above it compile to nothing at
+            // all, which is where the checker sends every written one.
+            if (node->v.jump.phantom) {
+                emit(c, lhat_encode_abc(LHAT_BC_LOADNIL, into, 0, 0));
+                return;
+            }
             // 13.8改: 'yield^ a, b' answers a tuple -- the positions go in
             // consecutive slots and YIELD carries how many, the same shape
             // return^ uses. The head is the machine's, put down in the
@@ -4002,10 +4010,8 @@ static void compile_expression(Compiler *c, const LhatNode *node, uint8_t into)
                     compile_expression(c, item, at);
                     at++;
                 }
-                if (!node->v.jump.phantom) {  // 15.11
-                    emit(c, lhat_encode_abc(LHAT_BC_YIELD, first,
-                                            (uint8_t)positions, 0));
-                }
+                emit(c, lhat_encode_abc(LHAT_BC_YIELD, first,
+                                        (uint8_t)positions, 0));
                 emit(c, lhat_encode_abc(LHAT_BC_LOADNIL, into, 0, 0));
                 c->next_register = mark;
                 return;
@@ -4014,13 +4020,6 @@ static void compile_expression(Compiler *c, const LhatNode *node, uint8_t into)
                 emit(c, lhat_encode_abc(LHAT_BC_LOADNIL, into, 0, 0));
             } else {
                 compile_expression(c, node->v.jump.value, into);
-            }
-            // 15.11: '_yield^' still works out what it would have sent, since
-            // that expression may do something. What it does not do is
-            // suspend -- and with nobody resuming it, nothing comes back.
-            if (node->v.jump.phantom) {
-                emit(c, lhat_encode_abc(LHAT_BC_LOADNIL, into, 0, 0));
-                return;
             }
             emit(c, lhat_encode_abc(LHAT_BC_YIELD, into, 0, 0));
             return;
@@ -4638,12 +4637,6 @@ static void compile_yield_wide(Compiler *c, const LhatNode *node, uint8_t into,
             compile_expression(c, item, at);
             at++;
         }
-        if (node->v.jump.phantom) {
-            // 15.11: no suspend, so nothing comes back -- the head slot
-            // holds nil^ and the CHECKRUN after this says so.
-            emit(c, lhat_encode_abc(LHAT_BC_LOADNIL, into, 0, 0));
-            return;
-        }
         emit(c, lhat_encode_abc(LHAT_BC_YIELD, into, (uint8_t)positions, 0));
         return;
     }
@@ -4651,10 +4644,6 @@ static void compile_yield_wide(Compiler *c, const LhatNode *node, uint8_t into,
         emit(c, lhat_encode_abc(LHAT_BC_LOADNIL, into, 0, 0));
     } else {
         compile_expression(c, node->v.jump.value, into);
-    }
-    if (node->v.jump.phantom) {
-        emit(c, lhat_encode_abc(LHAT_BC_LOADNIL, into, 0, 0));
-        return;
     }
     emit(c, lhat_encode_abc(LHAT_BC_YIELD, into, 0, 0));
 }
@@ -4733,6 +4722,13 @@ static void compile_tuple_define(Compiler *c, const LhatNode *node,
 static void compile_define(Compiler *c, const LhatNode *node)
 {
     const LhatNode *value = node->v.binding.values;
+    // 15.11: a _yield^ never runs -- the whole statement is the type's and
+    // compiles to nothing, its value included. The checker held the left
+    // side to _^, so no slot is waiting for anything here.
+    if (value != NULL && value->next == NULL &&
+        value->kind == LHAT_NODE_YIELD && value->v.jump.phantom) {
+        return;
+    }
     // 13.8改: several values on the right and several names on the left, with
     // no word between them -- what the type says is what tells this from
     // 8.6's multiple definition, and the parser already told them apart by
@@ -6208,6 +6204,11 @@ static void compile_statement(Compiler *c, const LhatNode *node)
         case LHAT_NODE_CALL_STMT:
         case LHAT_NODE_YIELD_ALL:
         case LHAT_NODE_YIELD: {
+            // 15.11: a _yield^ statement is the type's and compiles to
+            // nothing, its value included.
+            if (node->kind == LHAT_NODE_YIELD && node->v.jump.phantom) {
+                return;
+            }
             // 02 の 8.2: a call may stand alone, and its value is discarded.
             // A yield^ written for its effect alone is the same shape.
             uint8_t mark = c->next_register;
