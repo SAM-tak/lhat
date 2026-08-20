@@ -93,9 +93,68 @@ static void test_surrogate_pair_position(void)
     }
 }
 
+// The compile stage's own refusal reaches the editor too -- it reports
+// through lhat_program_compile_failure rather than the unit's diagnostics,
+// and used to be invisible in the editor while the CLI showed it.
+static void test_compile_failure(void)
+{
+    LHAT_TEST("a compile refusal becomes a diagnostic");
+
+    LhatSource source;
+    const char *text = "var^ s = 1\n";
+    lhat_source_init_from_string(&source, "test.lh", text, strlen(text));
+    LhatLexer lexer;
+    lhat_lexer_init(&lexer, &source);
+    LhatParseResult parsed;
+    lhat_parse(&lexer, &parsed);
+    LhatCheckResult checked;
+    lhat_check(parsed.root, &lexer, true, &checked);
+
+    LhatUnit unit;
+    memset(&unit, 0, sizeof unit);
+    unit.path = (char *)"test.lh";
+    unit.loaded = true;
+    unit.source = source;
+    unit.lexer = lexer;
+    unit.parsed = parsed;
+    unit.checked = checked;
+
+    cJSON *diags = lsp_diagnostics_for_unit(&unit);
+    LHAT_CHECK(diags != NULL && cJSON_GetArraySize(diags) == 0,
+               "a clean unit reports nothing");
+
+    LhatCompileResult failure;
+    memset(&failure, 0, sizeof failure);
+    failure.status = LHAT_COMPILE_UNSUPPORTED;
+    failure.offset = 5;
+    failure.line = 1;
+    failure.column = 6;
+    lsp_diagnostics_add_compile_failure(diags, &unit, failure);
+    LHAT_CHECK_EQ_INT(cJSON_GetArraySize(diags), 1);
+    if (cJSON_GetArraySize(diags) == 1) {
+        cJSON *first = cJSON_GetArrayItem(diags, 0);
+        const char *message =
+            cJSON_GetObjectItemCaseSensitive(first, "message")->valuestring;
+        LHAT_CHECK(strstr(message, "does not compile") != NULL,
+                   "the compiler's own words");
+    }
+
+    // And LHAT_COMPILE_OK appends nothing.
+    memset(&failure, 0, sizeof failure);
+    lsp_diagnostics_add_compile_failure(diags, &unit, failure);
+    LHAT_CHECK_EQ_INT(cJSON_GetArraySize(diags), 1);
+
+    cJSON_Delete(diags);
+    lhat_check_result_dispose(&checked);
+    lhat_parse_result_dispose(&parsed);
+    lhat_lexer_dispose(&lexer);
+    lhat_source_dispose(&source);
+}
+
 int main(void)
 {
     test_ascii_position();
     test_surrogate_pair_position();
+    test_compile_failure();
     return lhat_test_report("test_lsp_diagnostics");
 }

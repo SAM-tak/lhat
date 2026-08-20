@@ -19,4 +19,13 @@
 // empty when there is nothing to report; NULL only on allocation failure.
 cJSON *lsp_diagnostics_for_unit(const LhatUnit *unit);
 
+// The compile stage's one refusal ("this form does not compile yet" and
+// friends), appended to `array`. The three stages above report through
+// lhat_unit_diagnostic; the compiler reports through
+// lhat_program_compile_failure instead, and without this the editor never
+// sees it. Appends nothing while `failure` says LHAT_COMPILE_OK. The
+// message is composed the way the CLI's say_compile_error composes it.
+void lsp_diagnostics_add_compile_failure(cJSON *array, const LhatUnit *unit,
+                                         LhatCompileResult failure);
+
 #endif  // LSP_DIAGNOSTICS_H

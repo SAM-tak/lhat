@@ -198,6 +198,21 @@ static void recheck_one_root(LspWorkspace *ws, LspRoot *root)
     lhat_program_init(&root->program, true, lsp_program_load, ws);
     bind_host_names(ws, &root->program);
     lhat_program_check(&root->program, root->path);
+    // The compile stage refuses forms the checker admits ("this form does
+    // not compile yet"), and reports through lhat_program_compile_failure
+    // rather than the unit's diagnostics -- run it here so that one refusal
+    // reaches the editor too. Only when the check itself was clean, as the
+    // CLI orders it: a compile fault under type errors would say less than
+    // the errors already do.
+    bool clean = true;
+    for (const LhatUnit *unit = root->program.units; clean && unit != NULL;
+         unit = unit->next) {
+        clean = lhat_unit_diagnostic_count(unit) == 0;
+    }
+    if (clean) {
+        size_t module_count = 0;
+        (void)lhat_program_compile(&root->program, &module_count);
+    }
     root->checked = true;
 
     // Every unit this root's check reached -- 05 の 6.2 walks require^
@@ -513,6 +528,13 @@ void lsp_workspace_collect_diagnostics(LspWorkspace *ws,
             seen[seen_count++] = unit->path;  // borrowed; lives as long as r
 
             cJSON *diags = lsp_diagnostics_for_unit(unit);
+            // The compiler's one refusal, when it lies in this unit.
+            const char *failed_in = NULL;
+            LhatCompileResult failure =
+                lhat_program_compile_failure(&r->program, &failed_in);
+            if (failed_in != NULL && strcmp(failed_in, unit->path) == 0) {
+                lsp_diagnostics_add_compile_failure(diags, unit, failure);
+            }
             sink(context, unit->path, diags);
         }
     }

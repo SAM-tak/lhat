@@ -3,6 +3,7 @@
 #include "diagnostics.h"
 
 #include <stdint.h>
+#include <stdio.h>
 #include <stdlib.h>
 
 #include "position.h"
@@ -71,4 +72,27 @@ cJSON *lsp_diagnostics_for_unit(const LhatUnit *unit)
     }
 
     return array;
+}
+
+void lsp_diagnostics_add_compile_failure(cJSON *array, const LhatUnit *unit,
+                                         LhatCompileResult failure)
+{
+    if (array == NULL || failure.status == LHAT_COMPILE_OK) {
+        return;
+    }
+    const LhatSource *source = lhat_unit_source(unit);
+    if (source == NULL) {
+        return;
+    }
+    char room[256];
+    const char *message = lhat_compile_status_message(failure.status);
+    if (failure.name != NULL) {
+        snprintf(room, sizeof room, "%s: %.*s", message,
+                 (int)failure.name_length, failure.name);
+        message = room;
+    }
+    cJSON_AddItemToArray(array,
+                         make_diagnostic(source->text, source->length,
+                                         failure.offset, failure.name_length,
+                                         message));
 }
