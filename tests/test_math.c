@@ -457,22 +457,22 @@ static void test_boxing(void)
                        "let^ x = f(std.math.vec3(1, 2, 3))\n"),
                "box it to pass it");
 
-    // 8.9改: a table of computed keys types its walk focus loosely (the
-    // dictionary type is still an open design), so the checker cannot see
-    // the host value k.get() answers -- the placement refuses the width at
-    // run time instead of overwriting the neighbouring slots.
-    LHAT_TEST("an untyped seat refuses a wide answer at run time");
-    {
-        LhatTestRan ran = run_source(
-            "import^ std.math\n"
-            "let^ t = { [constbox^std.math.vec3(1, 2, 3)] = \"a\" }\n"
-            "var^ r = 0\n"
-            "for^ k, v in^ t { let^ g = k.get() r := r + 1 }\n"
-            "return^ r\n");
-        LHAT_CHECK((ran).ok, "the program ran");
-        LHAT_CHECK_EQ_INT((ran).status, LHAT_RUN_TYPE_ERROR);
-        lhat_test_ran_dispose(&ran);
-    }
+    // 8.9改 with 03 の 3.1③: a table of computed keys cannot say its walk's
+    // K and V (the dictionary type is still an open design), so strict asks
+    // the focus for annotations -- which is what keeps the host value
+    // k.get() answers visible to every later rule. The width guard at the
+    // placements stays as the unchecked run's backstop.
+    LHAT_TEST("an undescribed walk cannot hide a wide answer");
+    LHAT_CHECK(!checks("import^ std.math\n"
+                       "let^ t = { [constbox^std.math.vec3(1, 2, 3)] = \"a\" }\n"
+                       "for^ k, v in^ t { let^ g = k.get() }\n"),
+               "the focus asks for annotations first");
+    LHAT_CHECK(!checks("import^ std.math\n"
+                       "let^ t = { [constbox^std.math.vec3(1, 2, 3)] = \"a\" }\n"
+                       "for^ k:std.math.Vector3.ConstBox^, v:string^ in^ t {\n"
+                       "    print(k.get(), v)\n"
+                       "}\n"),
+               "and the annotated focus meets the variadic rule");
 
     // typeof^ answers the box's own name; isa^ tells box and value apart.
     LHAT_TEST("the box's type is its own");

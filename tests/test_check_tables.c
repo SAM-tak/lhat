@@ -601,6 +601,32 @@ static void test_table_methods(void)
 {
     Unit u;
 
+    // 03 の 3.1③ at the focus: a walk the table's type cannot describe
+    // (computed keys -- the dictionary type is still unwritten) leaves the
+    // names undecided, so strict asks the focus to say them.
+    LHAT_TEST("an undescribed walk asks the focus for annotations");
+    check_text(&u,
+               "var^ t = { [1 + 1] = \"a\" }\n"
+               "for^ k, v in^ t { }\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_TYPE_UNDECIDED);
+    unit_dispose(&u);
+
+    LHAT_TEST("and the annotations settle it");
+    check_text(&u,
+               "var^ t = { [1 + 1] = \"a\" }\n"
+               "var^ all = \"\"\n"
+               "for^ k:number^, v:string^ in^ t { all := all .. v }\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("a described walk still needs none");
+    check_text(&u,
+               "var^ t = { a = 1, b = 2 }\n"
+               "var^ n = 0\n"
+               "for^ k, v in^ t { n := n + v }\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
     LHAT_TEST("a plain table's method reads itself through self^");
     check_text(&u,
                "let^ u = {\n"

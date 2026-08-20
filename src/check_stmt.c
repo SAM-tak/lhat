@@ -1418,6 +1418,10 @@ static void check_focus(Checker *c, const LhatNode *node)
         count++;
     }
 
+    // Counted around walk_produce so the annotation demand below stays
+    // quiet when the walk itself was already refused -- one report per
+    // mistake.
+    size_t already = c->result->diagnostic_count;
     LhatType *produced = walk_produce(c, node->v.loop.bound,
                                       chk_infer(c, node->v.loop.bound), count);
 
@@ -1476,6 +1480,18 @@ static void check_focus(Checker *c, const LhatNode *node)
         if (annotated != NULL) {
             chk_expect(c, element, taken, annotated, LHAT_CHECK_ERR_MISMATCH);
             type = annotated;
+        } else if (c->strict &&
+                   (type == NULL || type->kind == LHAT_TYPE_UNKNOWN ||
+                    lhat_type_has_gap(type)) &&
+                   c->result->diagnostic_count == already) {
+            // 03 の 3.1③: strict leaves nothing undecided, and a walk the
+            // table's type cannot describe (computed keys -- the dictionary
+            // type is still unwritten) leaves the focus exactly that. An
+            // annotation is the way to say it: 'for^ k:K, v:V in^ t'.
+            // The same guard a define's name has (check_define); unknown^
+            // is included here because the table walk answers it for the
+            // halves it cannot name, with nothing else reported.
+            chk_report(c, element, LHAT_CHECK_ERR_TYPE_UNDECIDED);
         }
 
         // 05 の 8.9: a tuple crosses the host boundary as copied values, and

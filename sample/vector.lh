@@ -56,11 +56,15 @@ print(vtos[positions.a.get()])
 print(vtos[positions.b])
 print(vtos[positions.c])
 
+# let^cv = constbox^positions.c
+# cv.set(positions.a.get() + positions.b.get()) # 正しくエラーになる
+
 # the key writes itself with its content, so the box goes to print whole
 # (a bare host value cannot ride the variadic seat -- box it, or print
-# fields: k.get().x)
-for^k, v in^vtos {
-    print(k.get(), v)
+# fields: k.get().x). The table type cannot say K and V for computed keys
+# yet, so strict asks the focus to say them.
+for^k:std.math.Vector3.ConstBox^, v:string^ in^vtos {
+    print(k, v)
 }
 
 let^fd = try^std.io.open("sample/test.lh", "r")
