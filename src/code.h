@@ -185,13 +185,17 @@ typedef enum {
     LHAT_BC_POPCLEANUP,   // A   run the cleanups above depth A, innermost first
     LHAT_BC_ENDCLEANUP,   //     the end of a cleanup body
 
-    // 02 の 15.4: bidirectional. The value goes out and the one the resume
-    // supplies comes back into the same register. 13.8改: B != 0 means what
-    // goes out is a tuple -- R[A] is its head and B positions follow. What
-    // comes back is still one value, since a resume sends one.
-    LHAT_BC_YIELD,      // A B   yield R[A]; R[A] = what the resume sent
+    // 02 の 15.4: bidirectional. The value goes out and what the resume
+    // supplies comes back starting at the same register. 13.8改: B != 0
+    // means what goes out is a tuple -- R[A] is its head and B positions
+    // follow. What comes back is one value in R[A], or, when the resume
+    // sent several, a run -- R[A] its head and the positions after it; the
+    // yield^'s own binding reserved the width and takes it apart.
+    LHAT_BC_YIELD,      // A B   yield R[A]; R[A..] = what the resume sent
 
     // 02 の 15.8: delegation, which compiles to the loop 5.7 writes out.
+    // A run sitting in R[A] (a several-send arriving through this frame's
+    // own suspension) is forwarded whole, positions and all.
     LHAT_BC_RESUME,     // A B   R[A] = resume the coroutine R[B], sending R[A]
     LHAT_BC_ISDONE,     // A B   R[A] = the coroutine R[B] has finished
 
@@ -369,17 +373,19 @@ struct LhatProto {
     // false, or the checker never settled one).
     struct LhatRuntimeType *yield_produce_type;  // Y
     struct LhatRuntimeType *yield_receive_type;  // R
-    // 13.9: whether R is there at all, which decides how many arguments a
-    // resume of this body takes. Kept apart from the type above because a
-    // NULL there means two things -- an empty slot, and a proto the checker
-    // never reached.
+    // 13.9 with 13.8改: how many arguments a resume of this body sends --
+    // 0 when R is empty, 1 for a single R, and the tuple's width when the
+    // yield^'s binding takes several apart. Kept apart from the type above
+    // because a NULL there means two things -- an empty slot, and a proto
+    // the checker never reached.
     //
-    // Only `yield_receives_known` protos say which; without checking there is
-    // nothing to read R off, and 03 の 4.2 keeps the run the same either way,
-    // so the machine takes a resume of an unknown one with or without its one
-    // argument rather than picking a count the checker might disagree with.
+    // Only `yield_receives_known` protos say which; without checking there
+    // is nothing to read R off, and 03 の 4.2 keeps the run the same either
+    // way, so the machine takes a resume of an unknown one with any count a
+    // tuple could carry rather than picking one the checker might disagree
+    // with.
     bool yield_receives_known;
-    bool yield_receives;
+    uint8_t yield_receive_count;
     // 13.9: the body cannot end, so `result_type` being NULL here says "no
     // last resume" rather than "ends without a value". typeof^ writes it '-'.
     bool yield_endless;

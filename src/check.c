@@ -996,13 +996,18 @@ LhatType *chk_resolve_type(Checker *c, const LhatNode *node)
             // a resume of one of these takes no argument. Y is different; a
             // yield^ with no value really does hand nil^ to the resumer, so
             // nothing written there is nil^.
-            LhatType *receive =
-                node->v.coroutine.receive != NULL
-                    ? chk_resolve_type(c, node->v.coroutine.receive)
-                    : NULL;
+            //
+            // 13.8改: R may be a tuple -- several parameters written in the
+            // signature, sent by one resume(a, b) and taken apart by the
+            // yield^'s own binding. The positions are checked by the TUPLE
+            // arm above, host values included.
+            LhatType *receive = NULL;
+            if (node->v.coroutine.receive != NULL) {
+                c->tuple_allowed = true;
+                receive = chk_resolve_type(c, node->v.coroutine.receive);
+            }
             // 13.8改: Y and T are results -- what the body yields and what it
-            // finally answers -- so a tuple may be written in either. R is an
-            // input and takes none: a resume sends one value.
+            // finally answers -- so a tuple may be written in either.
             LhatType *produce = chk_simple(c, LHAT_TYPE_NIL);
             if (node->v.coroutine.produce != NULL) {
                 c->tuple_allowed = true;

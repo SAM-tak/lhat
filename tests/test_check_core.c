@@ -106,6 +106,44 @@ static void test_names(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_USED_BEFORE_DEFINED);
     unit_dispose(&u);
 
+    // 8.7改: every name the statement binds reads the old world -- all of
+    // them, not only the one whose position is being inferred.
+    LHAT_TEST("several names shadowing read what they shadow");
+    check_text(&u,
+               "var^ pair = f^ a:number^, b:number^ -> (number^, number^)\n"
+               "    { return^ a, b }\n"
+               "var^ a = 1\n"
+               "var^ b = 2\n"
+               "do^{\n"
+               "    let^ a, b = pair(a, b)\n"
+               "    var^ n : number^ = a + b\n"
+               "}\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // 8.7改: a deferred body written in the initialiser reads the old world
+    // too -- the binding being made is unreadable anywhere in its own value,
+    // so the capture is of what the name meant outside.
+    LHAT_TEST("a body in the initialiser captures what it shadows");
+    check_text(&u,
+               "var^ f = 21\n"
+               "do^{\n"
+               "    let^ f = f^ -> number^ { return^ f * 2 }\n"
+               "    var^ n : number^ = f()\n"
+               "}\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // And with nothing outside, a body naming its own binding is the same
+    // read-too-early -- recursion is this^ (15.10), not the bound name.
+    LHAT_TEST("a body naming its own binding with nothing outside is refused");
+    check_text(&u,
+               "do^{\n"
+               "    let^ g = f^ -> number^ { return^ g() }\n"
+               "}\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_USED_BEFORE_DEFINED);
+    unit_dispose(&u);
+
     // What the exemption is actually for, written one body further in: the
     // two bodies read each other, and each is bound outside the one reading
     // it. Losing this to the rule above would be losing 8.7 itself.
@@ -124,7 +162,7 @@ static void test_names(void)
                "var^ outer = f^ -> number^ {\n"
                "  var^ down = f^ n:number^ -> number^ {\n"
                "    if^ n <= 0 { return^ 0 }\n"
-               "    return^ down(n - 1)\n"
+               "    return^ this^(n - 1)\n"
                "  }\n"
                "  return^ down(4)\n"
                "}\n");
@@ -418,7 +456,7 @@ static void test_results(void)
     check_text(&u,
                "var^ fact = f^ n:number^ {\n"
                "    if^ n <= 1 { return^ 1 }\n"
-               "    return^ n * fact(n - 1)\n"
+               "    return^ n * this^(n - 1)\n"
                "}\n"
                "var^ n : number^ = fact(5)\n");
     CHECK_CLEAN(&u);
@@ -428,7 +466,7 @@ static void test_results(void)
     check_text(&u,
                "var^ fact = f^ n:number^ {\n"
                "    if^ n <= 1 { return^ 1 }\n"
-               "    return^ fact(n - 1)\n"
+               "    return^ this^(n - 1)\n"
                "}\n"
                "var^ s : string^ = fact(5)\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
@@ -441,7 +479,7 @@ static void test_results(void)
     check_text(&u,
                "var^ tag = f^ v:any^ -> string^ { return^ \"t\" }\n"
                "var^ f = f^ x:number^ {\n"
-               "    if^ x > 1 { return^ tag(f(x - 1)) }\n"
+               "    if^ x > 1 { return^ tag(this^(x - 1)) }\n"
                "    return^ 1\n"
                "}\n"
                "var^ v : number^|string^ = f(3)\n");
@@ -452,7 +490,7 @@ static void test_results(void)
     check_text(&u,
                "var^ tag = f^ v:any^ -> string^ { return^ \"t\" }\n"
                "var^ f = f^ x:number^ {\n"
-               "    if^ x > 1 { return^ tag(f(x - 1)) }\n"
+               "    if^ x > 1 { return^ tag(this^(x - 1)) }\n"
                "    return^ 1\n"
                "}\n"
                "var^ v : number^ = f(3)\n");
@@ -462,14 +500,14 @@ static void test_results(void)
     // 12.8 and 03 の 5.6 leave no other way out, so a body every exit of
     // which calls itself can never produce a value.
     LHAT_TEST("a body whose every exit is recursive is reported");
-    check_text(&u, "var^ f = f^ n:number^ { return^ f(n) }\n");
+    check_text(&u, "var^ f = f^ n:number^ { return^ this^(n) }\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_NEVER_RETURNS);
     unit_dispose(&u);
 
     LHAT_TEST("falling out of the body is an exit, so this one is not that");
     check_text(&u,
                "var^ f = p^ n:number^ {\n"
-               "    if^ n > 0 { return^ f(n - 1) }\n"
+               "    if^ n > 0 { return^ this^(n - 1) }\n"
                "}\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
@@ -757,7 +795,7 @@ static void test_results(void)
     unit_dispose(&u);
 
     LHAT_TEST("with the result written, recursion is fine");
-    check_text(&u, "var^ f = f^ n:number^ -> number^ { return^ f(n) }\n");
+    check_text(&u, "var^ f = f^ n:number^ -> number^ { return^ this^(n) }\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 }

@@ -585,16 +585,61 @@ static void test_calls(void)
     CHECK_INTEGER(&r, 4);
     run_dispose(&r);
 
-    // 02 の 8.7: a name is visible across its whole scope, so a body may call
+    // 02 の 8.7: a name is visible across its whole scope, so a body reaches
     // itself without anything declared ahead of it.
-    LHAT_TEST("a subroutine reaches its own name");
+    LHAT_TEST("a subroutine reaches itself through this^");
     run_text(&r,
              "var^ fact = f^n {\n"
              "  if^ n <= 1 { return^ 1 }\n"
-             "  return^ n * fact(n - 1)\n"
+             "  return^ n * this^(n - 1)\n"
              "}\n"
              "return^ fact(5)\n");
     CHECK_INTEGER(&r, 120);
+    run_dispose(&r);
+
+    // 02 の 8.7改: the right side of a let^ reads the old world -- a shadow
+    // starts from what it shadows.
+    LHAT_TEST("a shadow's initialiser reads the shadowed value");
+    run_text(&r,
+             "var^ x = 10\n"
+             "var^ got = 0\n"
+             "do^{\n"
+             "  let^ x = x + 32\n"
+             "  got := x\n"
+             "}\n"
+             "return^ got * 100 + x\n");
+    CHECK_INTEGER(&r, 4210);
+    run_dispose(&r);
+
+    // 8.7改: and so does a body written there -- the capture is of what the
+    // name meant outside, never of the binding being made.
+    LHAT_TEST("a body in the initialiser captures the shadowed binding");
+    run_text(&r,
+             "var^ f = 21\n"
+             "var^ got = 0\n"
+             "do^{\n"
+             "  let^ f = f^ { return^ f * 2 }\n"
+             "  got := f()\n"
+             "}\n"
+             "return^ got\n");
+    CHECK_INTEGER(&r, 42);
+    run_dispose(&r);
+
+    // 8.7改: every name the statement binds reads the old world, the whole
+    // right side over -- one value taken apart included.
+    LHAT_TEST("several shadowing names all read the old world");
+    run_checked_text(&r,
+                     "var^ pair = f^ a:number^, b:number^ ->"
+                     " (number^, number^) { return^ a, b }\n"
+                     "var^ a = 1\n"
+                     "var^ b = 2\n"
+                     "var^ got = 0\n"
+                     "do^{\n"
+                     "  let^ a, b = pair(b, a)\n"
+                     "  got := a * 10 + b\n"
+                     "}\n"
+                     "return^ got\n");
+    CHECK_INTEGER(&r, 21);
     run_dispose(&r);
 
     // 02 の 15.10: a body with no name still has one way to reach itself.
@@ -654,7 +699,7 @@ static void test_calls(void)
     // written inside an expression on purpose: 5.3's tail call would take the
     // frame over instead, and then nothing would run out at all.
     LHAT_TEST("frames that go too deep are reported, not walked off");
-    run_text(&r, "var^ f = f^ { return^ f() + 1 }\nreturn^ f()\n");
+    run_text(&r, "var^ f = f^ { return^ this^() + 1 }\nreturn^ f()\n");
     LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_STACK_OVERFLOW);
     run_dispose(&r);
 
@@ -692,7 +737,7 @@ static void test_tail_calls(void)
     run_text(&r,
              "var^ down = f^ n:number^ -> number^ {\n"
              "    if^ n <= 0 { return^ 0 }\n"
-             "    return^ down(n - 1)\n"
+             "    return^ this^(n - 1)\n"
              "}\n"
              "return^ down(50000)\n");
     CHECK_INTEGER(&r, 0);
@@ -741,7 +786,7 @@ static void test_tail_calls(void)
              "var^ step = p^ k:number^ {\n"
              "    if^ k <= 0 { return^ }\n"
              "    box.n := box.n + 1\n"
-             "    step(k - 1)\n"
+             "    this^(k - 1)\n"
              "}\n"
              "var^ answered = step(50000)\n"
              "if^ answered? { return^ 0 }\n"
@@ -771,7 +816,7 @@ static void test_tail_calls(void)
              "var^ H = def^{ self^{ v := 0 }, dispose := p^self^ { } }\n"
              "var^ down = f^ n:number^ -> number^ {\n"
              "    if^ n <= 0 { return^ 0 }\n"
-             "    with^ h = H.new() { return^ down(n - 1) }\n"
+             "    with^ h = H.new() { return^ this^(n - 1) }\n"
              "}\n"
              "return^ down(50000)\n");
     LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_STACK_OVERFLOW);

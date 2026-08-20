@@ -720,7 +720,7 @@ static void test_coroutines(void)
              "var^ co = gen()\n"
              "co.start()\n"
              "var^ deep = p^ d {\n"
-             "  if^ d > 0 { deep(d - 1) return^ 0 }\n"
+             "  if^ d > 0 { this^(d - 1) return^ 0 }\n"
              "  co.resume()\n"
              "  return^ 0\n"
              "}\n"
@@ -748,7 +748,7 @@ static void test_coroutines(void)
              "var^ s = setter ?? p^ v:number^ { }\n"
              "s(50)\n"
              "var^ deep = p^ d {\n"
-             "  if^ d > 0 { deep(d - 1) return^ 0 }\n"
+             "  if^ d > 0 { this^(d - 1) return^ 0 }\n"
              "  co.resume()\n"
              "  return^ 0\n"
              "}\n"
@@ -1133,8 +1133,164 @@ static void test_coroutines(void)
     run_dispose(&r);
 }
 
+// 15.4 with 13.8改: a resume may send several values -- as many as the R
+// tuple carries -- and the yield^'s own binding takes them apart.
+static void test_multi_value_send(void)
+{
+    Run r;
+
+    LHAT_TEST("resume(a, b) arrives at 'let^ a, b = yield^'");
+    run_checked_text(&r,
+                     "var^ gen = p^ from:number^ {\n"
+                     "    let^ a:number^, b:number^ = yield^ from\n"
+                     "    return^ a * 100 + b\n"
+                     "}\n"
+                     "var^ c = gen(7)\n"
+                     "var^ first = c.start()\n"
+                     "var^ got = c.resume(1, 2)\n"
+                     "return^ first * 1000 + got\n");
+    CHECK_INTEGER(&r, 7102);  // start answered 7; resume(1, 2) answered 102
+    run_dispose(&r);
+
+    // Only a checked body has reserved the run's slots for the yield^'s
+    // binding, so an unchecked proto keeps the old ceiling of one -- a run
+    // laid where nothing reserved it would write over the frame's locals.
+    LHAT_TEST("an unchecked body refuses a several-send");
+    run_text(&r,
+             "var^ gen = p^ from {\n"
+             "    let^ a, b = yield^ from\n"
+             "    return^ a\n"
+             "}\n"
+             "var^ c = gen(7)\n"
+             "c.start()\n"
+             "return^ c.resume(1, 2)\n");
+    LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_ARITY);
+    run_dispose(&r);
+
+    // 13.9: the count a resume sends is the R's, held by the machine where
+    // the checker settled it (5.1's stop, not a wider promise).
+    LHAT_TEST("a checked body refuses the wrong count at run time");
+    run_checked_text(&r,
+                     "var^ gen = p^ {\n"
+                     "    let^ a:number^, b:number^ = yield^ 0\n"
+                     "    return^ a + b\n"
+                     "}\n"
+                     "var^ c = gen()\n"
+                     "c.start()\n"
+                     "return^ c.resume(1)\n");
+    LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_ARITY);
+    run_dispose(&r);
+
+    // 15.8: the delegation loop forwards the send whole -- the outer
+    // resume's run reaches the inner yield^'s binding.
+    LHAT_TEST("a several-send crosses a yieldall^");
+    run_checked_text(&r,
+                     "var^ inner = p^ {\n"
+                     "    let^ a:number^, b:number^ = yield^ 10\n"
+                     "    yield^ a * 100 + b\n"
+                     "}\n"
+                     "var^ outer = p^ {\n"
+                     "    yieldall^ inner()\n"
+                     "}\n"
+                     "var^ c = outer()\n"
+                     "var^ first = c.start()\n"
+                     "var^ second = c.resume(3, 4)\n"
+                     "return^ first * 1000 + second\n");
+    CHECK_INTEGER(&r, 10304);  // first 10, then a=3 b=4 -> 304
+    run_dispose(&r);
+
+    // 13.8改: 'yield^ (a, b)' sends the tuple from binding position -- the
+    // same fold return^ makes of its parenthesised spelling -- so one
+    // yield^ sends several and receives several. And a reassignment reads
+    // R off what the names already hold, no annotation written.
+    // 13.8改: the commas after a yield^ are its own, as return^'s are --
+    // the bare spelling and the parenthesised one send the same pair.
+    LHAT_TEST("yield^ x, y reads its commas as return^ does");
+    run_checked_text(&r,
+                     "let^ y = f^x:number^ {\n"
+                     "    var^ a:string^, b:number^ = yield^ \"aaa\", x\n"
+                     "    return^ a, b\n"
+                     "}\n"
+                     "let^ c = y(5)\n"
+                     "var^ a, b = c.start()\n"
+                     "a, b := c.resume(\"in\", 37)\n"
+                     "return^ b\n");
+    CHECK_INTEGER(&r, 37);
+    run_dispose(&r);
+
+    LHAT_TEST("yield^ (a, b) sends and receives in one binding");
+    run_checked_text(&r,
+                     "let^ y = f^x:number^ {\n"
+                     "    var^ n = x\n"
+                     "    var^ a:string^, b:number^ = yield^ (\"aaa\", n)\n"
+                     "    a, b := yield^ (a, b + n)\n"
+                     "    return^ (a, b)\n"
+                     "}\n"
+                     "let^ c = y(1)\n"
+                     "var^ a, b = c.start()\n"
+                     "a, b := c.resume(\"in\", 5)\n"
+                     "a, b := c.resume(\"fin\", 9)\n"
+                     "return^ b\n");
+    CHECK_INTEGER(&r, 9);
+    run_dispose(&r);
+
+    // 13.8改: a single-value T pads to the folded width -- the last resume
+    // answers ("done", nil^) where Y was a pair, so the same take-apart
+    // receives every turn.
+    LHAT_TEST("a single T pads at the take-apart");
+    run_checked_text(&r,
+                     "let^ y = f^x:number^ {\n"
+                     "    var^ a:string^, b:number^ = yield^ \"aaa\", x\n"
+                     "    return^ \"done\"\n"
+                     "}\n"
+                     "let^ c = y(5)\n"
+                     "var^ a, b = c.start()\n"
+                     "var^ p, q = c.resume(a, b ?? 0)\n"
+                     "if^ q = nil^ { return^ b ?? 0 }\n"
+                     "return^ 0 - 1\n");
+    CHECK_INTEGER(&r, 5);
+    run_dispose(&r);
+
+    // 02 の 8.7改: the let^ shape of a drive loop -- its right side reads
+    // the names outside the loop, so every turn sends the same pair (:= is
+    // what advances one). Pinned that it checks and runs.
+    LHAT_TEST("a let^ in the loop reads the outer names");
+    run_checked_text(&r,
+                     "let^ y = f^x:number^ {\n"
+                     "    var^ a:string^, b:number^ = yield^ \"aaa\", x\n"
+                     "    a, b := yield^ a, b + 1\n"
+                     "    return^ a, b\n"
+                     "}\n"
+                     "let^ c = y(1)\n"
+                     "var^ a, b = c.start()\n"
+                     "var^ sum = 0\n"
+                     "repeat^until^c.done() {\n"
+                     "    let^ a, b = c.resume(a, b)\n"
+                     "    sum := sum * 100 + b\n"
+                     "}\n"
+                     "return^ sum\n");
+    CHECK_INTEGER(&r, 201);  // sends the outer pair both turns
+    run_dispose(&r);
+
+    // 13.8改: the two spellings of a tuple R name one type, so a written
+    // c^ annotation matches a body receiving several either way.
+    LHAT_TEST("a written c^ with a tuple R matches the body");
+    run_checked_text(&r,
+                     "var^ gen = p^ -> c^{p^number^, number^ -> number^;,"
+                     " number^} {\n"
+                     "    let^ a:number^, b:number^ = yield^ 0\n"
+                     "    return^ a + b\n"
+                     "}\n"
+                     "var^ c = gen()\n"
+                     "c.start()\n"
+                     "return^ c.resume(20, 22)\n");
+    CHECK_INTEGER(&r, 42);
+    run_dispose(&r);
+}
+
 int main(void)
 {
     test_coroutines();
+    test_multi_value_send();
     return lhat_test_report("test_vm_coroutine");
 }

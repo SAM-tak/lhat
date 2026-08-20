@@ -111,6 +111,9 @@ void lhat_gc_children(LhatObject **gray, LhatObject *object)
             }
             reach(gray, (LhatObject *)(void *)co->closure);
             reach(gray, (LhatObject *)(void *)co->walking);
+            // 05 の 8.8: what a host's walk asked kept -- the hostdata being
+            // walked, usually. nil^ on every other source.
+            lhat_gc_reach(gray, co->held);
             return;
         }
 
@@ -373,8 +376,10 @@ static size_t sweep_some(Machine *m, size_t budget)
         }
         *m->sweep = object->next;
         // 05 の 8.8: what the host made is the host's to free, and this is
-        // 10.7's last resort for one nothing disposed of by hand.
+        // 10.7's last resort for one nothing disposed of by hand. A host
+        // walk's state goes back the same way.
         lhat_hostdata_release(object, m);
+        lhat_coroutine_release(object, m);
         lhat_object_free(object);
         m->objects.count--;
         m->collected++;

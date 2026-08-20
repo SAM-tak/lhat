@@ -958,6 +958,17 @@ static void test_interpolation(void)
     CHECK_STRING(&r, "P!");
     run_dispose(&r);
 
+    // 14.17改: and the crossover runs both ways -- everywhere but a plain
+    // table the two spellings are one member, so a written tostring^
+    // answers the bare call too.
+    LHAT_TEST("a written tostring^ on a def^ answers the bare call");
+    run_text(&r,
+             "let^ P = def^{ self^{ x := 7 },\n"
+             "  tostring^ := f^self^ -> string^ { return^ \"hat!\" } }\n"
+             "return^ P.new().tostring()\n");
+    CHECK_STRING(&r, "hat!");
+    run_dispose(&r);
+
     LHAT_TEST("a hole runs where it stands, not where the string was made");
     run_text(&r,
              "var^ n = 1\n"

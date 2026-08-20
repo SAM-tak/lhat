@@ -270,10 +270,15 @@ LhatRunResult lhat_run(LhatMachine *machine, const LhatProto *proto);
 // its own to run first -- for a host that already holds a callable value
 // (05 の 8.7's `LhatHostFn` has no way to call back into L^ on its own, since
 // a call site is normally compiled). `callee` has to be a plain subroutine
-// (LHAT_OBJECT_SUBROUTINE, not a member, not an overload^ group); arity is
-// checked the same way a CALL instruction checks it, variadics collect the
-// same way, but there is no self^ and no 'expr...' spread -- a host handing
-// values over already has them as a flat array.
+// (LHAT_OBJECT_SUBROUTINE) or a function the host registered
+// (LHAT_OBJECT_HOST) -- not an overload^ group; arity is checked the same
+// way a CALL instruction checks it, variadics collect the same way, but
+// there is no self^ and no 'expr...' spread -- a host handing values over
+// already has them as a flat array.
+//
+// 02 の 15.5: a yieldable procedure answers its coroutine rather than
+// running, exactly as a compiled call does -- lua_newthread's shape at this
+// boundary. lhat_machine_resume below is what drives it.
 //
 // May be called on a fresh machine (nothing run on it yet) or nested inside
 // a running one -- what a call already on the stack looks like from here is
@@ -293,17 +298,66 @@ LhatRunResult lhat_machine_call(LhatMachine *machine, LhatValue callee,
 // self^-last op^ is handed its receiver in the slot it asked for. A member
 // that takes no self^ is a static one and is simply called, receiver unused.
 //
-// Same limits as above: the callee has to end up a plain L^ subroutine, so a
-// member the host registered in C (LHAT_OBJECT_HOST) and a built-in
-// (LHAT_OBJECT_NATIVE) both answer LHAT_RUN_NOT_CALLABLE for now. A receiver
-// that is not a table answers LHAT_RUN_TYPE_ERROR, and a name that reaches
-// nothing answers LHAT_RUN_NOT_CALLABLE -- 11.3 makes an absent key nil^,
-// and nil^ is not callable.
+// The callee may end up a plain L^ subroutine or a member the host itself
+// registered in C (LHAT_OBJECT_HOST) -- 05 の 8.8's hostdata members are all
+// the second kind, so `packed.at(3)` works from here the way it does from a
+// compiled call. A built-in (LHAT_OBJECT_NATIVE) still answers
+// LHAT_RUN_NOT_CALLABLE -- a coroutine is driven with lhat_machine_resume
+// below instead. A receiver with no members to reach answers
+// LHAT_RUN_TYPE_ERROR, and a name that reaches nothing answers
+// LHAT_RUN_NOT_CALLABLE -- 11.3 makes an absent key nil^, and nil^ is not
+// callable.
 LhatRunResult lhat_machine_call_member(LhatMachine *machine,
                                        LhatValue receiver, const char *name,
                                        size_t length,
                                        const LhatValue *arguments,
                                        size_t count);
+
+// ---------------------------------------------------------------------------
+// Coroutines at the host boundary (05 の 8.8)
+// ---------------------------------------------------------------------------
+//
+// The three calls that put a host on the same footing as a compiled body:
+// make a coroutine whose body is C, drive any coroutine from C, and ask
+// whether one is finished. Lua's lua_newthread / lua_resume / lua_status,
+// re-cut for a machine with one stack: a resumed body runs on the machine's
+// own frames, so these nest anywhere lhat_machine_call does.
+
+// A coroutine whose body is `step`, called once per resume -- what a host's
+// iterate^ answers so that `for^ x in^ value` can walk something the host
+// holds. No frame, no registers: the walk's state is `context`, which
+// `release` (may be NULL) is handed back when the walk ends or is collected,
+// under the dispose^ contract -- once, and never reaching back into the L^
+// API, since the sweep may be the caller. `held` is one value kept reachable
+// for the walk's sake -- the hostdata being walked, usually -- and nil^ when
+// nothing needs holding. `step` fills *out (which may be lhat_make_tuple's
+// answer, for a `for^ k, v` walk) and answers true, or answers false when
+// the walk is over. False here only when a pointer is missing or memory is.
+bool lhat_machine_make_coroutine(LhatMachine *machine, LhatHostStepFn step,
+                                 void *context, LhatHostFn release,
+                                 LhatValue held, LhatValue *out);
+
+// One resume, from C -- lua_resume's shape, so resume subsumes start: a
+// fresh body runs from the top, and that first send is discarded (there is
+// no yield^ awaiting it yet; none is the idiom). On a suspended body the
+// send arrives where the yield^ waits, exactly as resume(...) sends it:
+// `sent`/`sent_count` carry none, one, or 13.8改's several -- as many as
+// the body's R takes, a tuple R being taken apart by the yield^'s own
+// binding. NULL with 0 sends nothing.
+//
+// The answer is what the body yielded or returned -- 13.9's union(Y, T),
+// told apart with lhat_machine_coroutine_done below, the same line 15.6改
+// draws. A tuple crosses as `positions`, as any tuple crosses this
+// boundary. Resuming a finished or currently-running coroutine answers
+// LHAT_RUN_DEAD_COROUTINE. A walk with no body -- a table's, or
+// lhat_machine_make_coroutine's above -- takes one step, no frame entered
+// (a host step reads sent[0], or nil^ when nothing was sent).
+LhatRunResult lhat_machine_resume(LhatMachine *machine, LhatValue coroutine,
+                                  const LhatValue *sent, size_t sent_count);
+
+// 15.6改's done(), askable from C: whether the body has run to its end.
+// False for any value that is not a coroutine.
+bool lhat_machine_coroutine_done(LhatValue coroutine);
 
 const char *lhat_run_status_message(LhatRunStatus status);
 

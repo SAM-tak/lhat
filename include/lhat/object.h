@@ -150,7 +150,8 @@ typedef enum {
 // kind of iterator.
 typedef enum {
     LHAT_COROUTINE_BODY,   // a yieldable p^ (15.5)
-    LHAT_COROUTINE_TABLE   // walking a table's keys, built in
+    LHAT_COROUTINE_TABLE,  // walking a table's keys, built in
+    LHAT_COROUTINE_HOST    // 05 の 8.8: a walk the host wrote in C
 } LhatCoroutineSource;
 
 // 02 の 16.3改2: which half of the walk reaches the writer. One walk of the
@@ -162,6 +163,26 @@ typedef enum {
     LHAT_WALK_KEYS,    // 16.3改2: keys^
     LHAT_WALK_VALUES   // 16.3改2: values^
 } LhatWalkPart;
+
+struct LhatMachine;
+
+// 05 の 8.7: a subroutine the host wrote in C. The arguments are handed over
+// as an array rather than pushed one at a time -- 13.1 settles how many
+// there are and what they are before anything runs, so the counting a
+// dynamic language does at the boundary has nothing to do here.
+//
+// 04 の 12.8 makes an error a value, so this answers one. There is no
+// unwinding to arrange and nothing to catch.
+typedef LhatValue (*LhatHostFn)(struct LhatMachine *machine, void *context,
+                                const LhatValue *arguments, size_t count);
+
+// 05 の 8.8: the host's walk, one call per resume -- lhat_table_walk's shape
+// with the value already picked. Fills *out with the next value (which may be
+// lhat_make_tuple's answer, for a `for^ k, v` walk) and answers true, or
+// answers false when the walk is over. `sent` is what resume(v) handed in;
+// the built-in loops send nothing, so it is nil^ there.
+typedef bool (*LhatHostStepFn)(struct LhatMachine *machine, void *context,
+                               LhatValue sent, LhatValue *out);
 
 typedef struct LhatCoroutine {
     LhatObject header;
@@ -175,6 +196,19 @@ typedef struct LhatCoroutine {
     const LhatTable *walking;
     size_t at_array;
     size_t at_entry;
+
+    // LHAT_COROUTINE_HOST only -- `walking`'s shape for a walk the host
+    // wrote. `step` is called once per resume; `host_release` is handed
+    // `host_state` back when the walk ends or the coroutine is collected,
+    // under the same contract as a hostdata dispose^ (once, and never
+    // reaching back into the L^ API -- the sweep may be the caller). `held`
+    // is one value kept reachable for the walk's sake -- the hostdata being
+    // walked, usually -- and nil^ where nothing needs holding.
+    LhatHostStepFn step;
+    void *host_state;
+    LhatHostFn host_release;
+    bool host_released;
+    LhatValue held;
 
     // 2.2: the saved frame, as wide as the body needs, in the same two-run
     // shape the stack keeps -- what a yield^'s copy and a capture's
@@ -388,18 +422,8 @@ typedef struct LhatNative {
     LhatValue bound;  // what it was reached through
 } LhatNative;
 
-// 05 の 8.7: a subroutine the host wrote in C. The arguments are handed over
-// as an array rather than pushed one at a time -- 13.1 settles how many
-// there are and what they are before anything runs, so the counting a
-// dynamic language does at the boundary has nothing to do here.
-//
-// 04 の 12.8 makes an error a value, so this answers one. There is no
-// unwinding to arrange and nothing to catch.
-struct LhatMachine;
-
-typedef LhatValue (*LhatHostFn)(struct LhatMachine *machine, void *context,
-                                const LhatValue *arguments, size_t count);
-
+// 05 の 8.7: a subroutine the host wrote in C -- LhatHostFn, declared above
+// next to the coroutine that also carries one.
 typedef struct LhatHost {
     LhatObject header;
     LhatHostFn call;
@@ -587,6 +611,15 @@ LhatCoroutine *lhat_table_iterator(LhatHeap *heap, const LhatTable *table,
 // walk is over.
 bool lhat_table_walk(LhatCoroutine *walk, LhatValue *key, LhatValue *value);
 
+// 05 の 8.8: the coroutine a host's iterate^ answers with -- a walk whose
+// body is `step`, called once per resume. It has no frame; like a table's
+// walk, one step is the whole of resuming it. `release` (may be NULL) is
+// handed `context` back when the walk ends or is collected; `held` is one
+// value kept reachable for the walk -- see the fields on LhatCoroutine.
+LhatCoroutine *lhat_host_iterator(LhatHeap *heap, LhatHostStepFn step,
+                                  void *context, LhatHostFn release,
+                                  LhatValue held);
+
 LhatNative *lhat_native_new(LhatHeap *heap, LhatNativeKind kind,
                             LhatValue bound);
 
@@ -665,6 +698,12 @@ LhatOverload *lhat_overload_replacing(LhatHeap *heap,
 // pointer out of it. It must not reach into the L^ API: the sweep calls this
 // from the middle of a collection, where the heap is half swept.
 bool lhat_hostdata_release(LhatObject *object, struct LhatMachine *machine);
+
+// The same, for a host walk's state (lhat_host_iterator's `context`): hands
+// it back to the registered release, once, under the same contract -- the
+// sweep may be the caller, so the release must not reach into the L^ API.
+// Does nothing for a coroutine of any other source or one released already.
+bool lhat_coroutine_release(LhatObject *object, struct LhatMachine *machine);
 
 // Frees one object and whatever it owns, but not what it refers to.
 void lhat_object_free(LhatObject *object);

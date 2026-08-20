@@ -1113,6 +1113,47 @@ static LhatType *build_composite(LhatTypeArena *arena, LhatTypeKind kind,
     return node;
 }
 
+// 13.8改: whether this arm stands beside a tuple as itself rather than
+// folding into its positions. nil^ and the error kinds are the arms a
+// construct discriminates off the head slot (?? / ISNIL, try^ / ISERROR);
+// the opaque kinds carry nothing to fold. Everything else -- a plain value,
+// a table, a narrower tuple -- folds, padded with nil^ where it is short.
+static bool stands_beside_tuple(const LhatType *type)
+{
+    if (type == NULL) {
+        return true;
+    }
+    switch (type->kind) {
+        case LHAT_TYPE_NIL:
+        case LHAT_TYPE_ERROR:
+        case LHAT_TYPE_ERROR_SET:
+        case LHAT_TYPE_ERROR_KIND:
+        case LHAT_TYPE_UNKNOWN:
+        case LHAT_TYPE_PENDING:
+        case LHAT_TYPE_ANY:
+        case LHAT_TYPE_NONE:
+        case LHAT_TYPE_UNION:
+        case LHAT_TYPE_INTERSECT:
+        case LHAT_TYPE_HOSTVALUE:
+            return true;
+        default:
+            return false;
+    }
+}
+
+// The type at position `i` of one side of a widened fold: a tuple answers
+// its position, a single value is a tuple of one, and past either end the
+// position was never written -- 04 の 11.3's absence, nil^.
+static LhatType *fold_side_at(LhatTypeArena *arena, LhatType *side,
+                              size_t width, size_t i)
+{
+    if (width > 0) {
+        LhatType *at = lhat_type_tuple_at(side, i);
+        return at != NULL ? at : lhat_type_simple(arena, LHAT_TYPE_NIL);
+    }
+    return i == 0 ? side : lhat_type_simple(arena, LHAT_TYPE_NIL);
+}
+
 LhatType *lhat_type_union(LhatTypeArena *arena, LhatType *a, LhatType *b)
 {
     // 13.8改: two tuples of the same width fold position by position --
@@ -1135,6 +1176,33 @@ LhatType *lhat_type_union(LhatTypeArena *arena, LhatType *a, LhatType *b)
                 build_composite(arena, LHAT_TYPE_UNION,
                                 lhat_type_tuple_at(a, i),
                                 lhat_type_tuple_at(b, i)));
+        }
+        return folded;
+    }
+
+    // 13.8改: and widths that differ fold too, the short side padded with
+    // nil^ -- '(A, B)|C' is '(A|C, B|nil^)', with a single value standing
+    // as a tuple of one. This is what a coroutine's union(Y, T) and a
+    // body returning different widths become: one shape, every position a
+    // slot the caller reserves, the missing ones really nil^ at run time
+    // (CHECKRUN pads them). Only an arm a construct discriminates -- an
+    // error, nil^ -- or one with nothing to fold stands beside the tuple
+    // as itself, which is what keeps '(K, V)|nil^' drivable by '??' and
+    // '(A, B)|SomeError' by try^.
+    size_t width_b = lhat_type_tuple_width(b);
+    if ((width > 0 || width_b > 0) && !stands_beside_tuple(a) &&
+        !stands_beside_tuple(b)) {
+        size_t folded_width =
+            (width > 0 ? width : 1) > (width_b > 0 ? width_b : 1)
+                ? (width > 0 ? width : 1)
+                : (width_b > 0 ? width_b : 1);
+        LhatType *folded = lhat_type_tuple(arena);
+        for (size_t i = 0; i < folded_width; i++) {
+            lhat_type_add_position(
+                arena, folded,
+                build_composite(arena, LHAT_TYPE_UNION,
+                                fold_side_at(arena, a, width, i),
+                                fold_side_at(arena, b, width_b, i)));
         }
         return folded;
     }

@@ -71,6 +71,12 @@ typedef struct Binding {
     // stands says only that there is a name, and the type says only what it
     // holds. Which of the two declared it is known here and nowhere else.
     bool is_parameter;
+    // 8.7改: its own let^'s value is being walked right now. A name read
+    // there -- anywhere there, a deferred body included -- resolves past
+    // this binding to whatever the name meant outside; the binding itself
+    // is unreadable from its own initialiser. Set and cleared around the
+    // one walk by chk_check_define, never true between statements.
+    bool being_defined;
     struct Binding *next;
 } Binding;
 
@@ -411,19 +417,6 @@ typedef struct {
     // object -- kept here and handed forward by a session the way
     // `environment` is.
     LhatType *typeinfo_type;
-
-    // The name the subroutine currently being checked is being bound to, so
-    // that a call to it inside its own body can be spotted (03 の 3.4).
-    const char *defining_name;
-    size_t defining_length;
-
-    // 8.7改: the binding whose own initialiser is being walked. A name read
-    // there is read before this binding holds anything, so it means whatever
-    // it meant just outside -- 'do^{ var^ x = x.tostring() }' is the same x
-    // the enclosing body bound. Only this one binding is passed over, and
-    // only while its own value is being walked; a body written there runs
-    // later and sees it, which is what leaves 15.10's named recursion alone.
-    Binding *defining_binding;
 
     // 15.2: what the yield^/yieldall^ sites seen so far in this body agree
     // on. infer_func saves and resets these around a nested body the same

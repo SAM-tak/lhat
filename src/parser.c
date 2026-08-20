@@ -419,19 +419,38 @@ static LhatNode *parse_type_coroutine(Parser *p)
     LhatNode *signature = parse_type(p);
     if (signature != NULL && signature->kind == LHAT_NODE_TYPE_FUNC) {
         node->v.coroutine.is_function = signature->v.func.is_function;
-        // 15.2: one resume takes exactly one value, so the parameter list
-        // holds at most one. Leaving it out says nothing is sent in at all --
-        // 13.2's empty argument side, read here the way it is read anywhere.
-        // A resume of one of these takes no argument.
-        node->v.coroutine.receive =
-            signature->v.func.params != NULL
-                ? signature->v.func.params->v.param.type
-                : NULL;
-        node->v.coroutine.produce = signature->v.func.return_type;
-        if (signature->v.func.params != NULL &&
-            signature->v.func.params->next != NULL) {
-            report(p, &start, LHAT_PARSE_ERR_EXPECTED_TYPE);
+        // 15.2 with 13.8改: the parameters are what one resume sends --
+        // resume(a, b) writes as many arguments as stand here. Leaving them
+        // out says nothing is sent in at all -- 13.2's empty argument side,
+        // read here the way it is read anywhere; a resume of one of these
+        // takes no argument. Several parameters are carried as the tuple the
+        // yield^ takes apart, so 'p^A, B -> Y' and 'p^(A, B) -> Y' name the
+        // same R. A '...' has no meaning here: a resume's count is the
+        // signature's, exactly.
+        LhatNode *params = signature->v.func.params;
+        if (params == NULL) {
+            node->v.coroutine.receive = NULL;
+        } else if (params->next == NULL && !params->v.param.variadic) {
+            node->v.coroutine.receive = params->v.param.type;
+        } else {
+            LhatNode *tuple = make(p, LHAT_NODE_TYPE_TUPLE, &start);
+            if (tuple == NULL) {
+                return NULL;
+            }
+            LhatNode *items = NULL;
+            LhatNode *items_tail = NULL;
+            for (LhatNode *param = params; param != NULL;
+                 param = param->next) {
+                if (param->v.param.variadic || param->v.param.type == NULL) {
+                    report(p, &start, LHAT_PARSE_ERR_EXPECTED_TYPE);
+                    break;
+                }
+                lhat_node_append(&items, &items_tail, param->v.param.type);
+            }
+            tuple->v.list.items = items;
+            node->v.coroutine.receive = finish(p, tuple);
         }
+        node->v.coroutine.produce = signature->v.func.return_type;
     } else if (signature != NULL) {
         report(p, &start, LHAT_PARSE_ERR_EXPECTED_TYPE);
     }
@@ -2022,10 +2041,31 @@ static LhatNode *parse_unary(Parser *p)
             return NULL;
         }
         node->v.jump.phantom = phantom_yield;
-        // 01 の 10.9 again: what it sends has to be on its own line.
-        if (!p->current.preceded_by_newline && starts_expression(&p->current) &&
+        // 01 の 10.9 again: what it sends has to be on its own line. A '('
+        // is admitted besides starts_expression's list, for the
+        // parenthesised tuple spelling below.
+        if (!p->current.preceded_by_newline &&
+            (starts_expression(&p->current) ||
+             (p->current.kind == LHAT_TOKEN_OP &&
+              p->current.v.op == LHAT_OP_LPAREN)) &&
             !is_statement_keyword(p)) {
             node->v.jump.value = parse_expression(p);
+            // 13.8改: the commas after a yield^ are its own, exactly as
+            // return^ reads them -- 'var^ a, b = yield^ x, y' sends the
+            // pair and the binding takes the answer apart. A binding
+            // meaning a two-value list of its own writes '(yield^ x), y'.
+            // 'yield^ (x, y)' says the same tuple through return^'s
+            // parenthesised fold.
+            if (check_op(p, LHAT_OP_COMMA)) {
+                LhatNode *head = node->v.jump.value;
+                LhatNode *tail = head;
+                while (match_op(p, LHAT_OP_COMMA)) {
+                    lhat_node_append(&head, &tail, parse_expression(p));
+                }
+                node->v.jump.value = head;
+                node->v.jump.level = (uint32_t)lhat_node_list_length(head);
+            }
+            fold_tuple_answer(node);
         }
         return finish(p, node);
     }
@@ -3962,11 +4002,10 @@ static LhatNode *parse_jump(Parser *p, LhatNodeKind kind)
         // 'return^ { a, b }' is untouched, and still answers a table -- the
         // two forms are told apart by what is written, which is why nothing
         // has to ask whether a table escapes.
-        // yield^ takes the same form as a statement. As an expression it does
-        // not: there the ',' would be the value list of the binding around it
-        // ('var^ x = yield^ a, b' could be either reading), and that other
-        // path is parsed elsewhere. A yield^ answering several values and
-        // receiving one is written as a statement.
+        // yield^ reads the same list in both of its positions -- the
+        // expression form (parse_unary) makes the same greedy read, so
+        // 'var^ a, b = yield^ x, y' sends the pair. The commas after either
+        // word are its own.
         if ((kind == LHAT_NODE_RETURN || kind == LHAT_NODE_YIELD) &&
             check_op(p, LHAT_OP_COMMA)) {
             LhatNode *head = node->v.jump.value;

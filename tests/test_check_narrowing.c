@@ -895,10 +895,20 @@ static void test_tuple_positions(void)
     CHECK_NOT_REPORTED(&u, LHAT_CHECK_ERR_TUPLE_MISPLACED);
     unit_dispose(&u);
 
-    LHAT_TEST("but a resume sends one value");
+    // 13.8改: and R may be a tuple too -- resume(a, b) sends that many, and
+    // the yield^'s own binding takes them apart. Both spellings of R name
+    // the same type: '(A, B)' as one parameter, or the parameters written
+    // out.
+    LHAT_TEST("and a resume may send several -- a tuple R");
     check_text(&u,
                "var^ c : c^{ p^(number^, string^) -> number^;, number^ } = 0\n");
-    CHECK_REPORTS(&u, LHAT_CHECK_ERR_TUPLE_MISPLACED);
+    CHECK_NOT_REPORTED(&u, LHAT_CHECK_ERR_TUPLE_MISPLACED);
+    unit_dispose(&u);
+
+    LHAT_TEST("written either as a tuple or as the parameter list");
+    check_text(&u,
+               "var^ c : c^{ p^number^, string^ -> number^;, number^ } = 0\n");
+    CHECK_NOT_REPORTED(&u, LHAT_CHECK_ERR_TUPLE_MISPLACED);
     unit_dispose(&u);
 
     // 04 の 4.1: catch^'s right side is one expression, and 13.8改 leaves no

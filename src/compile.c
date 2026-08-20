@@ -62,6 +62,12 @@ typedef struct {
     // wearing the same name clears this: a unit's value was made by running
     // it and is in no registry to read back.
     bool import_root;
+    // 02 の 8.7改: its own let^'s value is being compiled right now. A name
+    // read there -- a nested body's capture included -- resolves past this
+    // local to whatever the name meant outside, mirroring the checker's
+    // Binding.being_defined. Set and cleared around the one value by
+    // compile_define/compile_tuple_define, never true between statements.
+    bool being_defined;
 } Local;
 
 typedef struct DefChain {
@@ -141,10 +147,6 @@ typedef struct Compiler {
     // -- so 5.4's sharing of it has to be severed there, or a closure an
     // earlier input made would see the new binding. Zero outside a session.
     size_t session_locals;
-
-    // 02 の 8.7改: the local whose own initialiser is being compiled, which
-    // find_local passes over. NULL everywhere else.
-    const Local *defining_local;
 
     // 5.5: how many cleanups are pending here. The compiler tracks it so that
     // an exit knows how far to drain; the machine holds the cleanups.
@@ -568,23 +570,20 @@ static const Local *find_local(const Compiler *c, const char *name,
 }
 
 // 02 の 8.7改: the same search, for a name written as a value to read. A
-// binding does not stand in its own initialiser, so this one runs past it and
-// finds whatever the name meant outside -- which is what the checker resolved
-// the read to, and the two have to agree or the read lands in the wrong slot.
+// binding does not stand in its own initialiser -- anywhere in it, a nested
+// body's capture included -- so this one runs past it and finds whatever the
+// name meant outside, which is what the checker resolved the read to, and
+// the two have to agree or the read lands in the wrong slot.
 //
 // Only reads. The other questions find_local answers -- which slot a
 // definition writes into, whether a name is a module root, whether a path
 // starts at a local -- are about the binding itself and want it found.
-//
-// A body written in the initialiser is compiled by a compiler of its own and
-// reaches this one through find_upvalue, which does not come here: that is
-// what leaves 15.10's named recursion alone.
 static const Local *find_local_to_read(const Compiler *c, const char *name,
                                        size_t length)
 {
     for (size_t i = c->local_count; i > 0; i--) {
         const Local *local = &c->locals[i - 1];
-        if (local == c->defining_local) {
+        if (local->being_defined) {
             continue;
         }
         if (local->length == length && memcmp(local->name, name, length) == 0) {
@@ -603,11 +602,19 @@ static const Local *find_local_to_read(const Compiler *c, const char *name,
 // `*skip` bindings of the name -- 01 の 2.3's stacked reach, where it^^
 // means the it^ one binding out. What was not consumed stays in `*skip`, so
 // the search may continue into an enclosing body.
+//
+// 02 の 8.7改: a being-defined local is passed over here too -- this is the
+// road a nested body's capture takes (find_upvalue), and a body written in
+// an initialiser must not capture the very binding being made; it captures
+// what the name meant outside, as any other read there does.
 static const Local *find_local_skipping(const Compiler *c, const char *name,
                                         size_t length, size_t *skip)
 {
     for (size_t i = c->local_count; i > 0; i--) {
         const Local *local = &c->locals[i - 1];
+        if (local->being_defined) {
+            continue;
+        }
         if (local->length == length && memcmp(local->name, name, length) == 0) {
             if (*skip == 0) {
                 return local;
@@ -883,14 +890,19 @@ static void compile_nil_else_wide(Compiler *c, const LhatNode *node,
                                   uint8_t into, size_t reserved);
 static void compile_tuple_literal(Compiler *c, const LhatNode *node,
                                   uint8_t into, size_t positions);
+static void compile_yield_wide(Compiler *c, const LhatNode *node, uint8_t into,
+                               size_t reserved);
 
 // Lays a tuple answer into the run at `into`. Only called where is_run_source
-// said yes.
+// said yes -- or, for a yield^, where compile_define found several names
+// binding one (13.8改: the resume's send comes back as a run there).
 static void compile_run_source(Compiler *c, const LhatNode *node, uint8_t into,
                                size_t reserved)
 {
     if (node->kind == LHAT_NODE_TRY) {
         compile_try_wide(c, node, into, reserved);
+    } else if (node->kind == LHAT_NODE_YIELD) {
+        compile_yield_wide(c, node, into, reserved);
     } else if (node->kind == LHAT_NODE_TUPLE) {
         compile_tuple_literal(c, node, into, reserved > 0 ? reserved - 1 : 0);
     } else if (node->kind == LHAT_NODE_BINARY) {
@@ -1554,6 +1566,7 @@ static void compile_catch_wide(Compiler *c, const LhatNode *node, uint8_t into,
         local->depth = c->scope_depth;  // catch^ opens no brace of its own
         local->width = 1;
         local->import_root = false;
+        local->being_defined = false;
     }
     if (reserved > 1 && is_run_source(node->v.binary.right)) {
         compile_run_source(c, node->v.binary.right, into, reserved);
@@ -2645,6 +2658,7 @@ static void bind_new_hooks(Compiler *c, const DefChain *chain,
     bound->depth = c->scope_depth;
     bound->width = 1;
     bound->import_root = false;
+    bound->being_defined = false;
 
     for (size_t i = 0; i <= stop_part && i < chain->count; i++) {
         const LhatLexer *enclosing_lexer = c->lexer;
@@ -2681,6 +2695,7 @@ static void bind_new_hooks(Compiler *c, const DefChain *chain,
             bound->depth = c->scope_depth;
             bound->width = 1;
             bound->import_root = false;
+            bound->being_defined = false;
         }
         c->lexer = enclosing_lexer;
         c->foreign_scope = enclosing_scope;
@@ -2729,6 +2744,7 @@ static void compile_def(Compiler *c, const LhatNode *node, uint8_t into)
     local->depth = c->scope_depth;
     local->width = 1;
     local->import_root = false;
+    local->being_defined = false;
 
     const DefChain *enclosing = c->building;
     c->building = &chain;
@@ -2808,6 +2824,7 @@ static void compile_def(Compiler *c, const LhatNode *node, uint8_t into)
                 previous->depth = c->scope_depth;
                 previous->width = 1;
                 previous->import_root = false;
+                previous->being_defined = false;
             }
 
             if (constructor) {
@@ -3314,6 +3331,7 @@ static void compile_subroutine_as(Compiler *c, const LhatNode *node,
         receiver->depth = inner.scope_depth;
         receiver->width = 1;
         receiver->import_root = false;
+        receiver->being_defined = false;
     }
 
     // 5.3: the parameters are the frame's first registers, in order.
@@ -3440,6 +3458,7 @@ static void compile_subroutine_as(Compiler *c, const LhatNode *node,
         receiver->depth = inner.scope_depth;
         receiver->width = 1;
         receiver->import_root = false;
+        receiver->being_defined = false;
         inner.in_constructor = true;
         inner.constructor_self = self_slot;
     }
@@ -3478,11 +3497,17 @@ static void compile_subroutine_as(Compiler *c, const LhatNode *node,
                 lhat_rt_from_checked(owner, made->v.coroutine.produce);
             proto->yield_receive_type =
                 lhat_rt_from_checked(owner, made->v.coroutine.receive);
-            // 13.9: an empty R means a resume of this takes no argument, and
-            // an endless body's empty T is a different absence from one that
-            // ends without a value.
+            // 13.9: an empty R means a resume of this takes no argument;
+            // 13.8改 makes a tuple R that many arguments. An endless body's
+            // empty T is a different absence from one that ends without a
+            // value.
             proto->yield_receives_known = true;
-            proto->yield_receives = made->v.coroutine.receive != NULL;
+            size_t receive_width =
+                lhat_type_tuple_width(made->v.coroutine.receive);
+            proto->yield_receive_count =
+                receive_width > 0
+                    ? (uint8_t)receive_width
+                    : (made->v.coroutine.receive != NULL ? 1 : 0);
             proto->yield_endless = made->v.coroutine.endless;
             // What lower_type made above can name an error kind (04 の 2.4)
             // and what is rebuilt from a checked type cannot, so anything
@@ -3919,7 +3944,11 @@ static void compile_expression(Compiler *c, const LhatNode *node, uint8_t into)
         case LHAT_NODE_YIELD_ALL: {
             uint8_t mark = c->next_register;
             uint8_t co = reserve(c);
-            uint8_t sent = reserve(c);
+            // 13.8改: what the outer resume sends may be a run -- the inner
+            // R is the outer R (15.8), and its width is not known to an
+            // unchecked compile -- so the send slot is wide enough for any
+            // tuple. The head lands in `sent` and the positions after it.
+            uint8_t sent = reserve_wide(c, LHAT_MAX_TUPLE + 1);
             uint8_t test = reserve(c);
             compile_expression(c, node->v.jump.value, co);
             emit(c, lhat_encode_abc(LHAT_BC_LOADNIL, sent, 0, 0));
@@ -3950,6 +3979,8 @@ static void compile_expression(Compiler *c, const LhatNode *node, uint8_t into)
 
         // 02 の 15.4: an expression, not a statement -- what it answers is
         // what the resume sent, so one register carries both directions.
+        // (The several-names binding of one goes through compile_yield_wide
+        // instead, where the send comes back as a run.)
         case LHAT_NODE_YIELD:
             // 13.8改: 'yield^ a, b' answers a tuple -- the positions go in
             // consecutive slots and YIELD carries how many, the same shape
@@ -4424,6 +4455,7 @@ static void declare_names(Compiler *c, const LhatNode *statements)
                 // 05 の 8.7: what is under this root came out of L^.modules,
                 // so a nested body can read it back rather than capture it.
                 local->import_root = true;
+                local->being_defined = false;
                 continue;
             }
             module_name = required_module_name(c, s);
@@ -4452,6 +4484,7 @@ static void declare_names(Compiler *c, const LhatNode *statements)
             local->depth = c->scope_depth;
             local->width = 1;
             local->import_root = false;
+            local->being_defined = false;
             continue;
         }
         if (s->kind != LHAT_NODE_DEFINE) {
@@ -4541,6 +4574,7 @@ static void declare_names(Compiler *c, const LhatNode *statements)
             local->depth = c->scope_depth;
             local->width = (uint8_t)width;
             local->import_root = false;
+            local->being_defined = false;
         }
     }
 }
@@ -4553,6 +4587,78 @@ static void declare_names(Compiler *c, const LhatNode *statements)
 // Reaching here at all means the checker settled the width (tuple_width_of
 // reads its stamp), and the two sides are reconciled by the machine at the
 // pop, where a callee compiled separately is caught.
+// 02 の 8.7改: marks (or unmarks) every scope name this define binds, so
+// reads inside the value resolve past them to what the names meant outside
+// -- the checker's Binding.being_defined, mirrored. A session's names stay
+// readable (03 の 4.3) and a path target binds no scope name, so neither is
+// marked.
+static void mark_being_defined(Compiler *c, const LhatNode *targets, bool on)
+{
+    for (const LhatNode *target = targets; target != NULL;
+         target = target->next) {
+        if (define_target_is_path(target)) {
+            continue;
+        }
+        const char *name = NULL;
+        size_t length = 0;
+        if (!node_name(c, define_target_name(target), &name, &length)) {
+            continue;
+        }
+        Local *local = (Local *)find_local(c, name, length);
+        if (local == NULL ||
+            (size_t)(local - c->locals) < c->session_locals) {
+            continue;
+        }
+        local->being_defined = on;
+    }
+}
+
+// 15.4 with 13.8改: a yield^ several names take apart. What goes out is the
+// one-slot form's value or its own run of positions, laid from `into`; what
+// the resume sends comes back as a run -- head in `into`, positions in the
+// slots the binding reserved after it (`reserved` sized them, and the
+// CHECKRUN after this call is what refuses a mismatched send).
+static void compile_yield_wide(Compiler *c, const LhatNode *node, uint8_t into,
+                               size_t reserved)
+{
+    if (node->v.jump.level > 1) {
+        size_t positions = node->v.jump.level;
+        if (positions > LHAT_MAX_TUPLE) {
+            fail(c, LHAT_COMPILE_TOO_COMPLEX);
+            return;
+        }
+        // The out run is contiguous with the binding's reservation --
+        // reserve_wide grows the same run when the out side is the wider.
+        if (positions > reserved) {
+            reserve_wide(c, positions - reserved);
+        }
+        uint8_t at = into;
+        for (const LhatNode *item = node->v.jump.value; item != NULL;
+             item = item->next) {
+            compile_expression(c, item, at);
+            at++;
+        }
+        if (node->v.jump.phantom) {
+            // 15.11: no suspend, so nothing comes back -- the head slot
+            // holds nil^ and the CHECKRUN after this says so.
+            emit(c, lhat_encode_abc(LHAT_BC_LOADNIL, into, 0, 0));
+            return;
+        }
+        emit(c, lhat_encode_abc(LHAT_BC_YIELD, into, (uint8_t)positions, 0));
+        return;
+    }
+    if (node->v.jump.value == NULL) {
+        emit(c, lhat_encode_abc(LHAT_BC_LOADNIL, into, 0, 0));
+    } else {
+        compile_expression(c, node->v.jump.value, into);
+    }
+    if (node->v.jump.phantom) {
+        emit(c, lhat_encode_abc(LHAT_BC_LOADNIL, into, 0, 0));
+        return;
+    }
+    emit(c, lhat_encode_abc(LHAT_BC_YIELD, into, 0, 0));
+}
+
 static void compile_tuple_define(Compiler *c, const LhatNode *node,
                                  size_t positions)
 {
@@ -4562,7 +4668,10 @@ static void compile_tuple_define(Compiler *c, const LhatNode *node,
     }
     uint8_t mark = c->next_register;
     uint8_t head = reserve_wide(c, positions + 1);
+    // 8.7改: the whole right side reads the old world.
+    mark_being_defined(c, node->v.binding.targets, true);
     compile_run_source(c, node->v.binding.values, head, positions + 1);
+    mark_being_defined(c, node->v.binding.targets, false);
     // 13.8改: what stands between a value that is not a run and the slots
     // after it being read as positions nobody wrote. The type settled this
     // wherever the checker ran; a separately compiled callee is what lands
@@ -4627,14 +4736,20 @@ static void compile_define(Compiler *c, const LhatNode *node)
     // 13.8改: several values on the right and several names on the left, with
     // no word between them -- what the type says is what tells this from
     // 8.6's multiple definition, and the parser already told them apart by
-    // how many values were written.
+    // how many values were written. 15.4: a yield^ is the other run source
+    // here -- what a resume sends comes back as the run these names take
+    // apart.
     if (value != NULL && value->next == NULL &&
-        is_run_source(value) && tuple_width_of(value) > 1 &&
+        (is_run_source(value) || value->kind == LHAT_NODE_YIELD) &&
+        tuple_width_of(value) > 1 &&
         node->v.binding.targets != NULL &&
         node->v.binding.targets->next != NULL) {
         compile_tuple_define(c, node, tuple_width_of(value));
         return;
     }
+    // 8.7改: the whole right side reads the old world -- every name this
+    // statement binds is passed over while any of its values compiles.
+    mark_being_defined(c, node->v.binding.targets, true);
     for (const LhatNode *target = node->v.binding.targets; target != NULL;
          target = target->next) {
         // 8.8: the place is a member of a table the path reaches. Everything
@@ -4646,6 +4761,7 @@ static void compile_define(Compiler *c, const LhatNode *node)
             // 05 の 8.9: a path lands in a table, and a table never holds a
             // host value; the checker refused this first.
             if (width_of(value) > 1) {
+                mark_being_defined(c, node->v.binding.targets, false);
                 fail(c, LHAT_COMPILE_UNSUPPORTED);
                 return;
             }
@@ -4666,11 +4782,13 @@ static void compile_define(Compiler *c, const LhatNode *node)
         const char *name = NULL;
         size_t length = 0;
         if (!node_name(c, define_target_name(target), &name, &length)) {
+            mark_being_defined(c, node->v.binding.targets, false);
             fail(c, LHAT_COMPILE_UNSUPPORTED);
             return;
         }
         const Local *local = find_local(c, name, length);
         if (local == NULL) {
+            mark_being_defined(c, node->v.binding.targets, false);
             fail(c, LHAT_COMPILE_UNDEFINED);
             return;
         }
@@ -4688,22 +4806,21 @@ static void compile_define(Compiler *c, const LhatNode *node)
         }
         if (value != NULL) {
             // 8.7改: found first, then hidden -- the destination is this
-            // local, and only the value is compiled without it in scope.
+            // local, and the whole statement's names were marked
+            // being_defined before this loop, so the value reads what they
+            // meant outside.
             //
             // 03 の 4.3 is the exception, and the same one 8.7 already makes:
             // a name an earlier input bound, written again, is that place
             // written again rather than a new one beside it. 'var^ x = x + 1'
             // at a prompt reads what the slot holds, which is the whole of
-            // what a prompt is for.
-            const Local *outer_defining = c->defining_local;
-            if (!from_session) {
-                c->defining_local = local;
-            }
+            // what a prompt is for -- mark_being_defined leaves session
+            // names alone.
             compile_expression(c, value, local->reg);
-            c->defining_local = outer_defining;
             value = value->next;
         }
     }
+    mark_being_defined(c, node->v.binding.targets, false);
 }
 
 // One target of a multiple assignment, carried from the pass that reads to the
@@ -4759,8 +4876,11 @@ static void compile_reassign_parallel(Compiler *c, const LhatNode *node)
     const LhatNode *tuple_call = NULL;
     size_t tuple_positions = 0;
     uint8_t run_head = 0;
+    // 15.4: a yield^ is a run source here exactly as at a define -- what the
+    // resume sends comes back as the run these targets take apart.
     if (value != NULL && value->next == NULL &&
-        is_run_source(value) && tuple_width_of(value) > 1 &&
+        (is_run_source(value) || value->kind == LHAT_NODE_YIELD) &&
+        tuple_width_of(value) > 1 &&
         node->v.binding.targets != NULL &&
         node->v.binding.targets->next != NULL) {
         tuple_positions = tuple_width_of(value);
@@ -5467,6 +5587,7 @@ static void declare_targets(Compiler *c, const LhatNode *focus)
         local->depth = c->scope_depth;
         local->width = 1;
         local->import_root = false;
+        local->being_defined = false;
     }
 }
 
@@ -6010,6 +6131,7 @@ static void compile_statement(Compiler *c, const LhatNode *node)
                     local->depth = c->scope_depth;
                     local->width = 1;
                     local->import_root = false;
+                    local->being_defined = false;
                 }
                 compile_statement(c, arm->v.clause.body);
                 c->local_count = local_mark;

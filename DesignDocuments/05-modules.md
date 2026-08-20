@@ -1150,6 +1150,95 @@ Lua や Python のように解放を別のフェーズへ回す機構は設け�
 コルーチンの `finally^`（10.7）は L^ のコードなので事情が違うが、
 そちらが要求するまで待つ。
 
+#### `for^ in^` で歩けるようにする — `iterate^` の登録
+
+ホストデータ型に `iterate^` を登録すれば、02 の 16.3 がテーブルに
+与えているのと同じ足場に乗る——`for^ x in^ value` が登録した歩みを回す。
+登録しなければ `in^` に渡すのは検査の誤りである（16.3）。
+ホストデータはメンバの引き方だけがテーブルであり、裏に歩けるテーブルは
+無いからである。
+
+登録は普通のメンバである。コルーチンを答える署名を書く:
+
+```c
+lhat_register_member(&program, "godot", "PackedFloat32Array", "iterate^",
+                     "f^self^ -> c^{p^ -> number^;, };",
+                     packed_iterate, NULL);
+```
+
+本体は、歩みの状態を確保して `lhat_machine_make_coroutine` に step と
+release を渡すだけである:
+
+```c
+// One step per resume: fill *out and answer true, or answer false when
+// the walk is over.
+static bool packed_step(LhatMachine *machine, void *context,
+                        LhatValue sent, LhatValue *out)
+{
+    PackedWalk *walk = (PackedWalk *)context;
+    if (walk->at >= walk->size) {
+        return false;
+    }
+    *out = lhat_real(walk->data[walk->at++]);
+    return true;
+}
+
+static LhatValue packed_iterate(LhatMachine *machine, void *context,
+                                const LhatValue *arguments, size_t count)
+{
+    PackedWalk *walk = /* allocate; read the array off arguments[0] */;
+    LhatValue out = lhat_nil();
+    if (!lhat_machine_make_coroutine(machine, packed_step, walk,
+                                     packed_release, arguments[0], &out)) {
+        /* free walk */
+        return lhat_nil();
+    }
+    return out;
+}
+```
+
+- `held` に渡した `arguments[0]`（歩く対象）は、歩みが生きている間
+  収集器から到達可能に保たれる
+- `release` は上の解放関数と同じ契約——**一度だけ**、掃除の途中から
+  呼ばれうるので **L^ の API に触れない**。歩みが尽きても、明示の
+  `dispose()` でも、機械の破棄でも、どの終わり方でも走る
+- 鍵と値の組を出す歩みは、step が `lhat_make_tuple` の答えを `*out` に
+  書く。署名は `c^{p^ -> (number^, T);, }`、ループは
+  `for^ k, v in^ value` になる
+- 歩みは本体を持たないコルーチンである。テーブルの走査（02 の 16.3）と
+  同じ第3の出自であり、`start()` / `resume()` / `dispose()` / `done()` も
+  手駆動もそのまま効く
+
+#### ホスト境界のコルーチン API
+
+Lua の `lua_newthread` / `lua_resume` / `lua_status` に相当する3つで、
+ホストは書かれた本体と同じ足場に立つ。
+
+- `lhat_machine_make_coroutine(machine, step, context, release, held, &out)`
+  ——本体が C であるコルーチン。上の `iterate^` が答えるものそのもの
+- `lhat_machine_resume(machine, coroutine, sent, sent_count)` ——どの
+  コルーチンでも C から1歩進める。**start は無く、resume が兼ねる**
+  （`lua_resume` と同型）: 未開始の本体は頭から走り、最初の送りは
+  捨てられる——受ける `yield^` がまだ無いからで、慣用は `NULL, 0`。
+  送りは配列で、個数は `R` の幅（02 の 13.9——タプルの `R` はその幅の
+  引数）。答えは 13.9 の union(Y, T) であり、区別は `done()` に訊く
+  （02 の 15.6改 と同じ線）。多値の答えはこの境界を `positions` として
+  渡る（8.7）
+- `lhat_machine_coroutine_done(coroutine)` ——15.6改 の `done()` を C から
+
+書かれた yieldable な手続きを `lhat_machine_call` で呼ぶと、実行されずに
+コルーチンが返る——コンパイルされた呼び出しと同じ 02 の 15.5 の形が、
+この境界でもそのまま成り立つ（`lua_newthread` の位置）。本体は機械自身の
+フレームで走るので、これらは `lhat_machine_call` が入れ子にできる場所
+ならどこでも入れ子にできる。
+
+##### `lua_yieldk` 相当は設けない
+
+Lua の `yieldk` が継続 k で解いているもの——「C 関数の途中で止まり、
+後で続きから」——は、ここでは step コールバックそのものである。歩みの
+状態は `context` に置かれ、resume ごとに step が1回呼ばれる。継続が
+可視で単純な等価物として最初からあるので、別の機構は足さない。
+
 ### 8.9 ホストの値
 
 > **ホストは参照だけでなく値も定義できる。8.8 のホストデータが「ホストが
@@ -1502,6 +1591,19 @@ cli/            コマンドライン      → lhat.exe
   用意する形に反転。可視・明示（`box^`/get/set）はそのまま — 見えない
   自動変換は C# の struct 複製罠と気づかない boxing の積み上がりを招くため
   採らない。手書きの箱は削除され、値型が Vector3 の名を持つ
+- ホスト境界のコルーチン API（8.8）を追加。当初ホストは yieldable を
+  呼べず（NOT_CALLABLE）、コルーチンを作る・進める手段も無かった——
+  Godot の Packed*Array を写像した際、`iterate^` を C で実装できず
+  `for^ in^` に渡せないことで露呈。`lhat_machine_make_coroutine`（本体が
+  C の歩み、テーブル走査と同じ「本体なし」の第3の出自）・
+  `lhat_machine_resume`（start は resume が兼ねる、`lua_resume` と同型。
+  送りは配列+個数で、02 の 13.9 のタプル `R` をその幅の引数として運ぶ）・
+  `lhat_machine_coroutine_done` の3つと、yieldable 呼び出しが
+  コルーチンを答える形（15.5 をこの境界へ）を追加。`lua_yieldk` 相当は
+  step コールバックが継続の可視な等価物なので設けない。あわせて
+  `iterate` 未登録のホストデータ型を `in^` へ渡す誤りを検査が言うように
+  し（従来は黙って空のテーブル走査になっていた）、
+  `lhat_machine_call_member` がホストデータの登録メンバに届くようにした
   （L は箱と名前を分けるための接頭辞だった）。単項 `-` は実装済みとなり
   制限の列挙から外れた
 - 定義名を型として書いたときに要求するものを、02 の 14.7 の見直しに合わせた（2.2）。

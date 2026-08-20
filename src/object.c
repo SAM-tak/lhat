@@ -178,6 +178,25 @@ LhatCoroutine *lhat_table_iterator(LhatHeap *heap, const LhatTable *table,
     return walk;
 }
 
+LhatCoroutine *lhat_host_iterator(LhatHeap *heap, LhatHostStepFn step,
+                                  void *context, LhatHostFn release,
+                                  LhatValue held)
+{
+    LhatCoroutine *walk =
+        (LhatCoroutine *)lhat_object_alloc(
+            heap, sizeof(LhatCoroutine), LHAT_OBJECT_COROUTINE);
+    if (walk == NULL) {
+        return NULL;
+    }
+    walk->state = LHAT_COROUTINE_FRESH;
+    walk->source = LHAT_COROUTINE_HOST;
+    walk->step = step;
+    walk->host_state = context;
+    walk->host_release = release;
+    walk->held = held;
+    return walk;
+}
+
 bool lhat_table_walk(LhatCoroutine *walk, LhatValue *key, LhatValue *value)
 {
     const LhatTable *table = walk->walking;
@@ -986,6 +1005,25 @@ bool lhat_hostdata_release(LhatObject *object, struct LhatMachine *machine)
     // the way any other member of the type would.
     LhatValue self = lhat_object(object);
     data->tag->release(machine, data->tag->release_context, &self, 1);
+    return true;
+}
+
+bool lhat_coroutine_release(LhatObject *object, struct LhatMachine *machine)
+{
+    if (object == NULL || object->kind != LHAT_OBJECT_COROUTINE) {
+        return false;
+    }
+    LhatCoroutine *walk = (LhatCoroutine *)object;
+    if (walk->source != LHAT_COROUTINE_HOST || walk->host_released ||
+        walk->host_release == NULL) {
+        return false;
+    }
+    // Marked before the call, so a release that somehow arrives here twice
+    // gives the state back once (02 の 10.7) -- lhat_hostdata_release's rule.
+    walk->host_released = true;
+
+    LhatValue self = lhat_object(object);
+    walk->host_release(machine, walk->host_state, &self, 1);
     return true;
 }
 

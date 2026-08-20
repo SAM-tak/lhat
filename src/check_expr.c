@@ -789,14 +789,6 @@ LhatType *chk_infer_name(Checker *c, const LhatNode *node)
         }
     }
 
-    // 03 の 3.4: a subroutine calling itself cannot have its result inferred,
-    // since the answer would depend on itself.
-    if (c->defining_name != NULL && c->deferred > 0 &&
-        length == c->defining_length &&
-        memcmp(name, c->defining_name, length) == 0) {
-        c->saw_self_call = true;
-    }
-
     // 01 の 8 章: a specifier says which scope to start the search in.
     // Without one it starts here, which is every other name.
     Scope *from = c->scope;
@@ -813,12 +805,14 @@ LhatType *chk_infer_name(Checker *c, const LhatNode *node)
     // 15.13 and 05 の 8.9 each measure it against a boundary of their own.
     Scope *found_in = NULL;
     Binding *b = chk_scope_find(from, name, length, &found_in);
-    // 8.7改: a binding does not stand in its own initialiser. What it holds
-    // is being worked out right here, so the name still means what it meant
-    // outside -- and where nothing outside answers, the read falls through to
-    // the report below, which is the same one it always got.
-    if (b != NULL && b == c->defining_binding && found_in != NULL &&
-        (c->deferred == 0 || chk_scope_within_body(c, found_in))) {
+    // 8.7改: a binding does not stand in its own initialiser -- anywhere in
+    // it, a deferred body included. What it holds is being worked out right
+    // here, so the name still means what it meant outside; recursion by the
+    // bound name went with this (15.10: this^ is the one spelling, and the
+    // stronger one -- it carries the literal's own signature where the name
+    // held only a seed). Where nothing outside answers, the read falls
+    // through to the report below, which is the same one it always got.
+    if (b != NULL && b->being_defined && found_in != NULL) {
         Scope *outer = NULL;
         Binding *shadowed =
             chk_scope_find(found_in->parent, name, length, &outer);
@@ -859,7 +853,11 @@ LhatType *chk_infer_name(Checker *c, const LhatNode *node)
     // what came of it was a run-time type error where the rule already said
     // there was a mistake to report.
     if (!b->reached) {
-        if (c->deferred == 0 || chk_scope_within_body(c, found_in)) {
+        // 8.7改: a being-defined binding nothing outer shadows reports
+        // outright wherever it is read -- its own value cannot answer, and
+        // the ring could never improve on that.
+        if (b->being_defined || c->deferred == 0 ||
+            chk_scope_within_body(c, found_in)) {
             chk_report(c, node, LHAT_CHECK_ERR_USED_BEFORE_DEFINED);
         } else {
             // 03 の 3.4改2: what answered is the seed collect_bindings put
@@ -1679,6 +1677,27 @@ static bool plain_table_type(const LhatType *type)
            !type->v.table.is_definition && !type->v.table.from_definition;
 }
 
+// 14.17改: everywhere but a plain table the two spellings of tostring and
+// iterate name one member -- these are the only two words with two
+// spellings at all (keys^ and values^ are hat-only, 14.18's line). The
+// machine's member_written makes the same crossover.
+static const char *other_spelling(const char *name, size_t length)
+{
+    if (chk_name_is(name, length, "iterate")) {
+        return "iterate^";
+    }
+    if (chk_name_is(name, length, "iterate^")) {
+        return "iterate";
+    }
+    if (chk_name_is(name, length, "tostring")) {
+        return "tostring^";
+    }
+    if (chk_name_is(name, length, "tostring^")) {
+        return "tostring";
+    }
+    return NULL;
+}
+
 // 14.17改, 16.3改: the hat spelling always reaches the built-in. The bare one
 // does too, except where the names are the writer's -- there it is an
 // ordinary member like any other, and absent unless something was written
@@ -1904,10 +1923,18 @@ LhatType *chk_infer_member(Checker *c, const LhatNode *node)
             // there is nothing to send, so it takes no argument at all --
             // 13.2's empty argument side, and a caller writing nil^ there is
             // passing an argument the coroutine has no parameter for.
+            // 13.8改: a tuple R is sent as that many arguments --
+            // resume(a, b) -- and the yield^'s binding takes them apart.
             LhatType *signature = lhat_type_func(c->result->types, advances);
-            if (target->v.coroutine.receive != NULL) {
-                lhat_type_add_param(c->result->types, signature,
-                                    target->v.coroutine.receive);
+            LhatType *receive = target->v.coroutine.receive;
+            size_t sent_width = lhat_type_tuple_width(receive);
+            if (sent_width > 0) {
+                for (size_t i = 0; i < sent_width; i++) {
+                    lhat_type_add_param(c->result->types, signature,
+                                        lhat_type_tuple_at(receive, i));
+                }
+            } else if (receive != NULL) {
+                lhat_type_add_param(c->result->types, signature, receive);
             }
             signature->v.func.result = coroutine_answer(c, target);
             return signature;
@@ -1992,32 +2019,52 @@ LhatType *chk_infer_member(Checker *c, const LhatNode *node)
         return chk_simple(c, LHAT_TYPE_UNKNOWN);
     }
 
-    for (const LhatTypeMember *m = members; m != NULL; m = m->next) {
-        if (m->name_length == length && memcmp(m->name, name, length) == 0) {
-            // 14.5改: carried by both sides of a composition, so reading it
-            // here would be picking one of two for the writer. 14.4's
-            // 'let^ f = A.m' is how the side is named.
-            if (m->ambiguous) {
-                chk_report_named(c, node, LHAT_CHECK_ERR_AMBIGUOUS_MEMBER, name,
-                                 length);
-                return chk_simple(c, LHAT_TYPE_UNKNOWN);
+    // 14.17改: everywhere but a plain table the two spellings of tostring
+    // and iterate are one member, so where the written one misses, the other
+    // spelling is searched before any built-in answers -- what was written
+    // wins under either spelling.
+    const char *look = name;
+    size_t look_length = length;
+    for (int pass = 0; pass < 2; pass++) {
+        for (const LhatTypeMember *m = members; m != NULL; m = m->next) {
+            if (m->name_length == look_length &&
+                memcmp(m->name, look, look_length) == 0) {
+                // 14.5改: carried by both sides of a composition, so reading
+                // it here would be picking one of two for the writer. 14.4's
+                // 'let^ f = A.m' is how the side is named.
+                if (m->ambiguous) {
+                    chk_report_named(c, node, LHAT_CHECK_ERR_AMBIGUOUS_MEMBER,
+                                     name, length);
+                    return chk_simple(c, LHAT_TYPE_UNKNOWN);
+                }
+                // 14.7改2: what answered is a seed, not an inferred type --
+                // the body it belongs to has not been walked yet.
+                // chk_infer_def walks the entries again when this happened,
+                // and the walk after it finds a better one here.
+                if (m->provisional) {
+                    c->read_provisional = true;
+                }
+                return m->type;
             }
-            // 14.7改2: what answered is a seed, not an inferred type -- the
-            // body it belongs to has not been walked yet. chk_infer_def walks
-            // the entries again when this happened, and the walk after it
-            // finds a better one here.
-            if (m->provisional) {
-                c->read_provisional = true;
-            }
-            return m->type;
         }
+        const char *second =
+            plain_table_type(target) ? NULL : other_spelling(name, length);
+        if (second == NULL) {
+            break;
+        }
+        look = second;
+        look_length = strlen(second);
     }
 
     // 16.3: `in^ e` asks e for the coroutine to walk, and a table answers
     // with one over its keys without anything being written. This comes
     // after the search, not before it, because 16.3 lets a written iterate
-    // win -- the same order the machine reads it in.
-    if (builtin_named(name, length, "iterate", plain_table_type(target))) {
+    // win -- the same order the machine reads it in. A host type (05 の 8.8)
+    // is a table only in how its members are reached -- there is nothing of
+    // a table's own behind it to walk, so with none registered there is no
+    // built-in to fall back on either.
+    if (!(target->kind == LHAT_TYPE_TABLE && target->v.table.nominal) &&
+        builtin_named(name, length, "iterate", plain_table_type(target))) {
         // 13.8改: the pair is the tuple (K, V). The walk sends nothing in
         // and ends without a value, which 04 の 11.3 spells nil^ -- so what
         // resume() answers is (K, V)|nil^, the union 13.8改 admits beside

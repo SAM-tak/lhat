@@ -322,19 +322,33 @@ static void test_multi_value_return(void)
     LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_TUPLE_UNEXPECTED);
     run_dispose(&r);
 
-    // 03 の 5.3: both sides declare and the machine collates -- a mismatch
-    // is dropped, never reconciled. The annotation promises three positions,
-    // so the checked call site reserves three; the body answers two. The
-    // checker reports the lie, and compiling goes ahead regardless here,
-    // which is what leaves the machine to refuse it a second time.
-    LHAT_TEST("a run answering fewer positions than reserved is refused");
+    // 13.8改 (widened fold): a narrower run pads with nil^ where the
+    // binding takes it apart -- the missing positions are 04 の 11.3's
+    // absence, which is what the folded type says of them. The checker
+    // still reports the annotation's lie; the machine no longer refuses a
+    // meaning the type system now has.
+    LHAT_TEST("a run answering fewer positions pads with nil^");
     run_checked_text(&r,
                      "var^ both : f^ -> (number^, number^, number^); ="
                      " f^ { return^ 1, 2 }\n"
                      "var^ a, b, c = both()\n"
-                     "return^ 0\n");
+                     "return^ a * 10 + b\n");
     LHAT_CHECK_EQ_INT(r.compiled, LHAT_COMPILE_OK);
-    LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_TUPLE_ARITY);
+    CHECK_INTEGER(&r, 12);
+    run_dispose(&r);
+
+    // 13.8改: a body answering two widths folds them -- '(A, B)|C' is
+    // '(A|C, B|nil^)', the short side really nil^ at run time.
+    LHAT_TEST("a body returning two widths folds and pads");
+    run_checked_text(&r,
+                     "var^ f = f^ n:number^ {\n"
+                     "    if^ n > 0 { return^ 1, 2 }\n"
+                     "    return^ 7\n"
+                     "}\n"
+                     "var^ a, b = f(0)\n"
+                     "var^ c, d = f(1)\n"
+                     "return^ a * 1000 + (b ?? 100) + c * 10 + (d ?? 0)\n");
+    CHECK_INTEGER(&r, 7112);
     run_dispose(&r);
 }
 

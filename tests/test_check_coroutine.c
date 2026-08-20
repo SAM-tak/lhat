@@ -700,13 +700,25 @@ static void test_coroutines(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_YIELD_NEEDS_ANNOTATION);
     unit_dispose(&u);
 
-    LHAT_TEST("a reassigned yield^ has nowhere to write the annotation");
+    // 15.4: a reassigned yield^ needs no annotation -- the name already
+    // holds its type, and that is what fixes R.
+    LHAT_TEST("a reassigned yield^ reads R off what the name holds");
     check_text(&u,
                "var^ p = p^ {\n"
                "    var^ a:number^ = 0\n"
                "    a := yield^ 1\n"
                "}\n");
-    CHECK_REPORTS(&u, LHAT_CHECK_ERR_YIELD_NEEDS_ANNOTATION);
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("and a disagreeing reassignment is the usual mismatch");
+    check_text(&u,
+               "var^ p = p^ {\n"
+               "    var^ a:number^ = 0\n"
+               "    var^ s:string^ = yield^ 1\n"
+               "    a := yield^ 2\n"
+               "}\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_YIELD_TYPE_MISMATCH);
     unit_dispose(&u);
 
     LHAT_TEST("a yield^ buried in an expression has nowhere to write it either");
@@ -728,8 +740,127 @@ static void test_coroutines(void)
     unit_dispose(&u);
 }
 
+// 15.4 with 13.8改: a tuple R -- several names binding one yield^ fix it,
+// and resume() takes that many arguments.
+static void test_multi_value_receive(void)
+{
+    Unit u;
+
+    LHAT_TEST("several annotated names fix a tuple R");
+    check_text(&u,
+               "var^ gen = p^ {\n"
+               "    let^ a:number^, b:string^ = yield^ 0\n"
+               "    return^ a\n"
+               "}\n"
+               "var^ c = gen()\n"
+               "c.start()\n"
+               "var^ got = c.resume(1, \"x\")\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("and the resume's own arity is the tuple's width");
+    check_text(&u,
+               "var^ gen = p^ {\n"
+               "    let^ a:number^, b:string^ = yield^ 0\n"
+               "    return^ a\n"
+               "}\n"
+               "var^ c = gen()\n"
+               "c.start()\n"
+               "c.resume(1)\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_ARITY);
+    unit_dispose(&u);
+
+    LHAT_TEST("a name with no annotation still needs one");
+    check_text(&u,
+               "var^ gen = p^ {\n"
+               "    let^ a:number^, b = yield^ 0\n"
+               "    return^ a\n"
+               "}\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_YIELD_NEEDS_ANNOTATION);
+    unit_dispose(&u);
+
+    LHAT_TEST("a written c^ has to agree with the taking-apart");
+    check_text(&u,
+               "var^ gen = p^ -> c^{p^number^ -> number^;, number^} {\n"
+               "    let^ a:number^, b:number^ = yield^ 0\n"
+               "    return^ a + b\n"
+               "}\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_COROUTINE_MISMATCH);
+    unit_dispose(&u);
+
+    LHAT_TEST("and matches when it spells the same tuple");
+    check_text(&u,
+               "var^ gen = p^ -> c^{p^number^, number^ -> number^;,"
+               " number^} {\n"
+               "    let^ a:number^, b:number^ = yield^ 0\n"
+               "    return^ a + b\n"
+               "}\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // 15.8: the inner R is the outer R, tuple or not.
+    LHAT_TEST("a yieldall^ carries a tuple R outwards");
+    check_text(&u,
+               "var^ inner = p^ {\n"
+               "    let^ a:number^, b:number^ = yield^ 1\n"
+               "    yield^ a + b\n"
+               "}\n"
+               "var^ outer = p^ {\n"
+               "    yieldall^ inner()\n"
+               "}\n"
+               "var^ c = outer()\n"
+               "c.start()\n"
+               "c.resume(1, 2)\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+}
+
+// 13.8改: union(Y, T) with differing widths folds, the short side padded
+// with nil^ -- '(string^, number^)|string^' is '(string^, number^|nil^)',
+// a type a binding can take apart.
+static void test_folded_answer(void)
+{
+    Unit u;
+
+    LHAT_TEST("a tuple Y and a single T fold into one tuple");
+    check_text(&u,
+               "var^ gen = p^ {\n"
+               "    yield^ \"a\", 1\n"
+               "    return^ \"done\"\n"
+               "}\n"
+               "var^ c = gen()\n"
+               "let^ s, n = c.start()\n"
+               "var^ picked : number^ = n ?? 0\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("and the other way round");
+    check_text(&u,
+               "var^ gen = p^ {\n"
+               "    yield^ 1\n"
+               "    return^ \"done\", 2\n"
+               "}\n"
+               "var^ c = gen()\n"
+               "let^ v, w = c.start()\n"
+               "var^ picked : number^ = w ?? 0\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // 16.3: the walk's '(K, V)|nil^' does not fold -- nil^ is the arm the
+    // '??' discriminates, and folding it away would break the drive.
+    LHAT_TEST("a walk's nil^ arm stays beside the tuple");
+    check_text(&u,
+               "let^ t = { 10, 20 }\n"
+               "var^ w = t.iterate^()\n"
+               "var^ k, v = w.start() ?? (nil^, nil^)\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+}
+
 int main(void)
 {
     test_coroutines();
+    test_multi_value_receive();
+    test_folded_answer();
     return lhat_test_report("test_check_coroutine");
 }

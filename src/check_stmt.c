@@ -235,6 +235,36 @@ void chk_check_define(Checker *c, const LhatNode *node)
     LhatType *tuple = NULL;
     size_t target_count = lhat_node_list_length(node->v.binding.targets);
 
+    // 15.2 with 13.8改: several names binding one yield^ directly is where a
+    // tuple R gets fixed -- resume(a, b) sends what these annotations spell,
+    // and the binding takes it apart. Built before the walk so the one
+    // chk_infer of the value sees the whole tuple; a name with no annotation
+    // leaves it NULL, which the yield^ reports as needing one.
+    // Only where the yield^ is the sole value: 'a, b = yield^ x, y' parses
+    // as two values (the comma is the binding's -- 13.9), and there the
+    // yield^ binds one name, as before.
+    LhatType *yield_bound = NULL;
+    if (value != NULL && value->kind == LHAT_NODE_YIELD &&
+        value->next == NULL && target_count > 1) {
+        LhatType *sent = lhat_type_tuple(c->result->types);
+        bool spelt = sent != NULL;
+        for (const LhatNode *target = node->v.binding.targets;
+             spelt && target != NULL; target = target->next) {
+            LhatType *piece = target->kind == LHAT_NODE_PARAM
+                                  ? chk_resolve_type(c, target->v.param.type)
+                                  : NULL;
+            if (piece == NULL) {
+                spelt = false;
+                break;
+            }
+            // The same three a position has to satisfy anywhere (13.8改,
+            // 05 の 8.9).
+            chk_check_tuple_position(c, target, piece);
+            lhat_type_add_position(c->result->types, sent, piece);
+        }
+        yield_bound = spelt ? sent : NULL;
+    }
+
     // 05 の 4 章 with 8.9: what a unit publishes is a name other units read,
     // and 01 の 8.3 refused a global variable outright. A public^ var^ would
     // be one under another spelling -- a name a reader of another unit sees
@@ -242,6 +272,27 @@ void chk_check_define(Checker *c, const LhatNode *node)
     // an accessor is how a unit lets its state move.
     if (node->v.binding.exported && !node->v.binding.immutable) {
         chk_report(c, node, LHAT_CHECK_ERR_PUBLIC_IS_IMMUTABLE);
+    }
+
+    // 8.7改: every name this statement binds is unreadable from its own
+    // value -- the whole right side reads the old world, a deferred body
+    // included (recursion by the bound name went with this; this^ is the
+    // spelling). Marked before the walk, cleared at the end of this
+    // function. A session's names stay readable (03 の 4.3), and a path
+    // target binds no scope name to mark.
+    for (const LhatNode *target = node->v.binding.targets; target != NULL;
+         target = target->next) {
+        const char *marked = NULL;
+        size_t marked_length = 0;
+        if (target_is_path(target) ||
+            !chk_node_name(c, target_name_node(target), &marked,
+                           &marked_length)) {
+            continue;
+        }
+        Binding *being = chk_scope_find_local(c->scope, marked, marked_length);
+        if (being != NULL && !being->from_session) {
+            being->being_defined = true;
+        }
     }
 
     for (const LhatNode *target = node->v.binding.targets; target != NULL;
@@ -257,30 +308,6 @@ void chk_check_define(Checker *c, const LhatNode *node)
                                   ? chk_resolve_type(c, target->v.param.type)
                                   : NULL;
 
-        // Tell infer_func which name this subroutine is being given, so a
-        // call to it inside its own body is recognised (03 の 3.4).
-        const char *outer_name = c->defining_name;
-        size_t outer_length = c->defining_length;
-        chk_node_name(c, target_name_node(target), &c->defining_name,
-                      &c->defining_length);
-
-        // 8.7改: and which binding it is, so a read of the same name in the
-        // value passes over it. Saved rather than cleared: a let^ written
-        // inside this one's value is the one being defined while its own
-        // value is walked, and this one again after.
-        //
-        // 03 の 4.3 is the exception 8.7 already makes: a name an earlier
-        // input bound, written again, is that place written again rather
-        // than a new one beside it, so 'var^ x = x + 1' at a prompt reads
-        // what is there.
-        Binding *outer_defining = c->defining_binding;
-        if (!target_is_path(target) && c->defining_name != NULL) {
-            Binding *being = chk_scope_find_local(c->scope, c->defining_name,
-                                                  c->defining_length);
-            c->defining_binding =
-                being != NULL && being->from_session ? NULL : being;
-        }
-
         // 15.2: a let^ that binds a yield^ directly is where R gets fixed --
         // it is the only place a yield^'s own annotation can be written. The
         // context is only good for the one chk_infer() call it is set around.
@@ -288,7 +315,9 @@ void chk_check_define(Checker *c, const LhatNode *node)
         LhatType *outer_ybound = c->yield_bound_type;
         c->yield_context = (value != NULL && value->kind == LHAT_NODE_YIELD)
                                 ? YIELD_CTX_BOUND : YIELD_CTX_NONE;
-        c->yield_bound_type = annotated;
+        // 13.8改: several names read R as the tuple built above; one name
+        // reads its own annotation, as before.
+        c->yield_bound_type = target_count > 1 ? yield_bound : annotated;
 
         // 14.9: a def^ landing in a name may be written against that name
         // from inside itself. 14.5 composes with '..' and the definition is
@@ -368,10 +397,6 @@ void chk_check_define(Checker *c, const LhatNode *node)
         if (defining) {
             c->def_link = def_here.outer;
         }
-
-        c->defining_name = outer_name;
-        c->defining_length = outer_length;
-        c->defining_binding = outer_defining;
 
         if (annotated != NULL && value != NULL) {
             chk_expect(c, value, actual, annotated, LHAT_CHECK_ERR_MISMATCH);
@@ -454,6 +479,22 @@ void chk_check_define(Checker *c, const LhatNode *node)
     if (tuple == NULL && target_count > 1 &&
         lhat_node_list_length(node->v.binding.values) == 1) {
         chk_report(c, node, LHAT_CHECK_ERR_TUPLE_ARITY);
+    }
+
+    // 8.7改: the statement is over; its names stand readable from here on.
+    for (const LhatNode *target = node->v.binding.targets; target != NULL;
+         target = target->next) {
+        const char *marked = NULL;
+        size_t marked_length = 0;
+        if (target_is_path(target) ||
+            !chk_node_name(c, target_name_node(target), &marked,
+                           &marked_length)) {
+            continue;
+        }
+        Binding *being = chk_scope_find_local(c->scope, marked, marked_length);
+        if (being != NULL) {
+            being->being_defined = false;
+        }
     }
 }
 
@@ -1082,6 +1123,32 @@ static void check_reassign(Checker *c, const LhatNode *node)
     LhatType *tuple = NULL;  // 13.8改, as in check_define
     size_t target_count = lhat_node_list_length(node->v.binding.targets);
 
+    // 15.2 with 13.8改: a reassignment binding a yield^ directly fixes R
+    // too -- off what the names already hold, so no annotation is written.
+    // Several names make the tuple, as at a define; one name reads its own
+    // held type in the loop below.
+    LhatType *yield_bound = NULL;
+    if (value != NULL && value->kind == LHAT_NODE_YIELD &&
+        value->next == NULL && target_count > 1) {
+        LhatType *sent = lhat_type_tuple(c->result->types);
+        bool spelt = sent != NULL;
+        for (const LhatNode *target = node->v.binding.targets;
+             spelt && target != NULL; target = target->next) {
+            const LhatNode *outer_target = c->writing_to;
+            c->writing_to = target_name_node(target);
+            LhatType *held = chk_infer(c, target_name_node(target));
+            c->writing_to = outer_target;
+            if (held == NULL || held->kind == LHAT_TYPE_UNKNOWN ||
+                held->kind == LHAT_TYPE_PENDING) {
+                spelt = false;
+                break;
+            }
+            chk_check_tuple_position(c, target, held);
+            lhat_type_add_position(c->result->types, sent, held);
+        }
+        yield_bound = spelt ? sent : NULL;
+    }
+
     for (const LhatNode *target = node->v.binding.targets; target != NULL;
          target = target->next) {
         position++;
@@ -1114,7 +1181,19 @@ static void check_reassign(Checker *c, const LhatNode *node)
             if (node->v.binding.compound_nil_safe) {
                 c->nil_safe_place = target;
             }
+            // 15.2: the yield^'s R is what this place already holds -- the
+            // tuple built above for several names, this target's own type
+            // for one. Set around the one chk_infer, as at a define.
+            enum YieldContext outer_yctx = c->yield_context;
+            LhatType *outer_ybound = c->yield_bound_type;
+            if (value->kind == LHAT_NODE_YIELD && value->next == NULL) {
+                c->yield_context = YIELD_CTX_BOUND;
+                c->yield_bound_type =
+                    target_count > 1 ? yield_bound : wanted;
+            }
             LhatType *given = chk_infer(c, value);
+            c->yield_context = outer_yctx;
+            c->yield_bound_type = outer_ybound;
             c->nil_safe_place = outer_place;
             // 05 の 8.9: a dotted or indexed target lands in a table, and a
             // table member is never a host value. Conformance alone would
@@ -1202,6 +1281,15 @@ static LhatType *walk_produce(Checker *c, const LhatNode *at, LhatType *over,
     }
 
     const LhatTypeMember *written = member_named(over, "iterate^", 8);
+    if (written == NULL &&
+        !(over->kind == LHAT_TYPE_TABLE && !over->v.table.is_definition &&
+          !over->v.table.from_definition && !over->v.table.nominal)) {
+        // 14.17改: everywhere but a plain table the two spellings name one
+        // member, so a bare `iterate` written on a def^ or registered on a
+        // host type is the same declaration -- the runtime's member_written
+        // makes the same crossover.
+        written = member_named(over, "iterate", 7);
+    }
     if (written != NULL) {
         // 16.3 lets a written iterate win, so this comes before the built-in.
         LhatType *answer = written->type;
@@ -1222,6 +1310,15 @@ static LhatType *walk_produce(Checker *c, const LhatNode *at, LhatType *over,
             return chk_simple(c, LHAT_TYPE_UNKNOWN);
         }
         return walks->v.coroutine.produce;
+    }
+
+    // 05 の 8.8: a host type is a table only in how its members are reached
+    // -- there is nothing of a table's own behind it to walk, so one that
+    // registered no iterate is refused here rather than silently walked as
+    // an empty table at run time.
+    if (over->kind == LHAT_TYPE_TABLE && over->v.table.nominal) {
+        chk_report(c, at, LHAT_CHECK_ERR_NOT_COROUTINE);
+        return chk_simple(c, LHAT_TYPE_UNKNOWN);
     }
 
     // The built-in walk of a table. 13.8改: several names take the (K, V)

@@ -1026,9 +1026,11 @@ static bool builtin_member(LhatValue on, LhatValue key, LhatNativeKind *out)
 // on those the two spellings name one member, and a written bare `tostring`
 // answers a hole the way 14.17 says it does.
 //
-// The spelling that was asked for is looked for first, which keeps the bare
-// key off every path but the one where the built-in was about to answer
-// anyway. Answers nil^ where neither is written, which is that path.
+// The spelling that was asked for is looked for first; the two words that
+// have two spellings at all (tostring and iterate -- keys^ and values^ are
+// hat-only on every table, 16.3改2 with 14.18) are then looked for under the
+// other one. Answers nil^ where neither is written, which is the path the
+// built-in answers on.
 static LhatValue member_written(Machine *m, LhatValue on, LhatValue key,
                                 const LhatTable *members)
 {
@@ -1038,22 +1040,18 @@ static LhatValue member_written(Machine *m, LhatValue on, LhatValue key,
     }
     LhatNativeKind which;
     bool hatted = false;
-    if (!native_named(key, &which, &hatted) || !hatted) {
+    if (!native_named(key, &which, &hatted) ||
+        (which != LHAT_NATIVE_ITERATE && which != LHAT_NATIVE_TOSTRING)) {
         return found;
     }
-    // 16.3改2 with 14.18: on a table the bare `keys` and `values` are the
-    // writer's on every kind of table, so there is nothing under them for
-    // the hat spelling to fall back to.
-    if (which == LHAT_NATIVE_KEYS || which == LHAT_NATIVE_VALUES) {
-        return found;
-    }
-    const LhatString *name = (const LhatString *)lhat_as_object(key);
-    LhatString *bare =
-        lhat_string_new(&m->objects, name->text, name->length - 1);
-    if (bare == NULL) {
+    const char *other = which == LHAT_NATIVE_ITERATE
+                            ? (hatted ? "iterate" : "iterate^")
+                            : (hatted ? "tostring" : "tostring^");
+    LhatString *spelt = lhat_string_new(&m->objects, other, strlen(other));
+    if (spelt == NULL) {
         return found;  // the built-in is still an answer; nothing is lost here
     }
-    return lhat_table_get(members, lhat_object((LhatObject *)bare));
+    return lhat_table_get(members, lhat_object((LhatObject *)spelt));
 }
 
 // 02 の 14.12: whether this candidate takes what the call is handing over.
@@ -1773,6 +1771,134 @@ static WalkStep step_table_walk(Machine *m, LhatCoroutine *co, WalkMode mode,
     return WALK_TOOK;
 }
 
+// 05 の 8.8: the same step for a walk the host wrote -- its body is one C
+// call rather than a frame, so this is step_table_walk's twin with the value
+// already picked by the host. `sent` is what the resume handed in (nil^ from
+// the loops, which send nothing). `expected` is the positions a WALK_AS_RUN
+// caller reserved; the other modes ignore it. A step that answers a shape
+// the call site did not reserve puts the mismatch in *fault, LHAT_RUN_OK
+// otherwise -- the same refusals a yield^'s placement makes.
+static WalkStep step_host_walk(Machine *m, LhatCoroutine *co, WalkMode mode,
+                               size_t at, size_t expected, Frame *frame,
+                               LhatValue sent, LhatRunStatus *fault)
+{
+    *fault = LHAT_RUN_OK;
+    LhatValue out = lhat_nil();
+    co->state = LHAT_COROUTINE_RUNNING;
+    bool more = co->step(m, co->host_state, sent, &out);
+    if (!more) {
+        // 02 の 10.7: the walk is over, so its state goes back now rather
+        // than waiting on a collection.
+        co->state = LHAT_COROUTINE_DONE;
+        lhat_coroutine_release((LhatObject *)co, m);
+        lhat_slots_set(m->slots, at, lhat_nil());
+        return WALK_ENDED;
+    }
+    co->state = LHAT_COROUTINE_SUSPENDED;
+
+    if (!lhat_is_run(out)) {
+        if (mode == WALK_AS_RUN) {
+            // The loop reserved a run and one value came out.
+            *fault = LHAT_RUN_TUPLE_ARITY;
+            return WALK_ENDED;
+        }
+        lhat_slots_set(m->slots, at, out);
+        return WALK_TOOK;
+    }
+
+    // lhat_make_tuple's answer: the positions sit in the machine's own room,
+    // put there by the host before it returned.
+    size_t positions = lhat_run_width(out);
+    if (positions != m->tuple_scratch_count) {
+        *fault = LHAT_RUN_TUPLE_ARITY;
+        return WALK_ENDED;
+    }
+    if (mode == WALK_AS_VALUE) {
+        // One slot reserved and a tuple came out -- 13.8改's refusal.
+        *fault = LHAT_RUN_TUPLE_UNEXPECTED;
+        return WALK_ENDED;
+    }
+    if (mode == WALK_AS_RUN) {
+        if (positions != expected) {
+            *fault = LHAT_RUN_TUPLE_ARITY;
+            return WALK_ENDED;
+        }
+        lhat_slots_set(m->slots, at, out);
+        for (size_t i = 0; i < positions; i++) {
+            lhat_slots_set(m->slots, at + 1 + i, m->tuple_scratch[i]);
+        }
+        return WALK_TOOK;
+    }
+
+    // WALK_AS_ANSWER, as above: head in the slot, positions in the frame's
+    // answer room for the YIELD forwarding them. They stay reachable through
+    // the machine's tuple room, whose count stands until the next host
+    // boundary -- and the delegation loop reaches its YIELD without one.
+    for (size_t i = 0; i < positions; i++) {
+        frame->answer_run[i + 1] = m->tuple_scratch[i].as;
+        frame->answer_tags[i + 1] = (uint8_t)m->tuple_scratch[i].tag;
+    }
+    lhat_slots_set(m->slots, at, out);
+    return WALK_TOOK;
+}
+
+// 5.11: one frame, put back where it left off -- shared by the natives'
+// resume, LHAT_BC_RESUME and the host boundary (lhat_machine_resume), which
+// all restore a BODY coroutine the same way. `prepared` is what the call
+// site reserved for the answer (13.8改) and `result_slot` is where it lands
+// in the resumer's window. `sent`/`sent_count` is what the resume sends --
+// none, one, or 13.8改's several. The caller has checked the frame and slot
+// bounds (a several-send against sent_into included) and saved its own pc.
+static Frame *enter_resume_frame(Machine *m, LhatCoroutine *co,
+                                 size_t next_base, uint8_t result_slot,
+                                 uint8_t prepared, const LhatValue *sent,
+                                 size_t sent_count)
+{
+    bool resuming = co->state == LHAT_COROUTINE_SUSPENDED;
+    for (size_t i = 0; i < co->register_count; i++) {
+        lhat_slots_set(m->slots, next_base + (i),
+                       lhat_slots_get(co->registers, i));
+    }
+    reattach_upvalues(m, co, next_base);
+    Frame *called = &m->frames[m->frame_count++];
+    called->closure = co->closure;
+    called->pc = co->pc;
+    called->base = next_base;
+    called->result = result_slot;
+    called->prepared = prepared;
+    called->coroutine = co;
+    called->disposing = false;
+    called->drop_answer = false;  // 5.3
+    // The room is a root while the frame lives (mark_roots), so it starts
+    // empty rather than as whatever the slot held before.
+    called->answer = lhat_nil();
+    called->derive = LHAT_FRAME_NO_DERIVE;
+    called->derive_equal = false;
+    called->returning = false;
+    called->cleanup_count = co->cleanup_count;
+    for (size_t i = 0; i < co->cleanup_count; i++) {
+        called->cleanups[i] = co->cleanups[i];
+    }
+    co->state = LHAT_COROUTINE_RUNNING;
+    if (resuming) {
+        // 15.4: what the resume sent arrives where the yield^ put out what
+        // it sent. 13.8改: several arrive as a run -- head in that slot and
+        // the positions after it, which the yield^'s own binding reserved.
+        if (sent_count > 1) {
+            lhat_slots_set(m->slots, next_base + co->sent_into,
+                           lhat_run_head(sent_count));
+            for (size_t i = 0; i < sent_count; i++) {
+                lhat_slots_set(m->slots, next_base + co->sent_into + 1 + i,
+                               sent[i]);
+            }
+        } else {
+            lhat_slots_set(m->slots, next_base + co->sent_into,
+                           sent_count == 1 ? sent[0] : lhat_nil());
+        }
+    }
+    return called;
+}
+
 // 05 の 8.6: L^ is the one name that is there without being imported, so what
 // it answers is made with the machine. A member is added here and its type in
 // check.c's environment_type -- the two lists have to say the same thing.
@@ -2149,6 +2275,7 @@ void lhat_machine_dispose(LhatMachine *machine)
     for (LhatObject *object = machine->objects.objects; object != NULL;
          object = object->next) {
         lhat_hostdata_release(object, machine);
+        lhat_coroutine_release(object, machine);
     }
     lhat_object_free_all(&machine->objects);
     // 05 の 8.9: the tables were the heap's (freed just above); the array
@@ -2799,14 +2926,46 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
             // arriving where a run was expected and the slots after it being
             // read as positions that were never written.
             case LHAT_BC_CHECKRUN: {
-                if (!lhat_is_run(R(a))) {
+                LhatValue head = R(a);
+                // 13.8改: the short side of a widened fold arrives narrow --
+                // one value, or a run of fewer positions -- and the missing
+                // positions are nil^, which is exactly what the folded type
+                // said of them ('(A, B)|C' is '(A|C, B|nil^)'). They are
+                // padded here, into the slots the binding reserved. An arm a
+                // construct discriminates -- nil^, an error -- never folds,
+                // so meeting one here is the mismatch it always was; a run
+                // wider than the reservation stays one too.
+                if (!lhat_is_run(head)) {
+                    if (lhat_is_nil(head) ||
+                        lhat_is_object_kind(head, LHAT_OBJECT_ERROR) ||
+                        lhat_is_hostvalue(head)) {
+                        return finish(m, chunk, LHAT_RUN_TUPLE_ARITY,
+                                      lhat_nil(), at);
+                    }
+                    if (rbase + a + (size_t)b >= LHAT_STACK_SLOTS) {
+                        return finish(m, chunk, LHAT_RUN_STACK_OVERFLOW,
+                                      lhat_nil(), at);
+                    }
+                    SET_R(a + 1, head);
+                    for (size_t i = 2; i <= (size_t)b; i++) {
+                        SET_R(a + i, lhat_nil());
+                    }
+                    SET_R(a, lhat_run_head((size_t)b));
+                    break;
+                }
+                size_t width = lhat_run_width(head);
+                if (width == (size_t)b) {
+                    break;
+                }
+                if (width > (size_t)b ||
+                    rbase + a + (size_t)b >= LHAT_STACK_SLOTS) {
                     return finish(m, chunk, LHAT_RUN_TUPLE_ARITY, lhat_nil(),
                                   at);
                 }
-                if (lhat_run_width(R(a)) != (size_t)b) {
-                    return finish(m, chunk, LHAT_RUN_TUPLE_ARITY, lhat_nil(),
-                                  at);
+                for (size_t i = width + 1; i <= (size_t)b; i++) {
+                    SET_R(a + i, lhat_nil());
                 }
+                SET_R(a, lhat_run_head((size_t)b));
                 break;
             }
 
@@ -3748,10 +3907,23 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
                                 ? co->closure->proto
                                 : NULL;
                         // 16.3's built-in walk receives nothing either, and
-                        // has no proto to say so.
+                        // has no proto to say so. 13.8改: a tuple R takes
+                        // that many arguments -- but only a checked body has
+                        // reserved the run's slots for the yield^'s binding,
+                        // so an unknown proto keeps the old ceiling of one:
+                        // a run laid where nothing reserved it would write
+                        // over the frame's own locals.
                         bool known = from == NULL || from->yield_receives_known;
-                        bool receives = from != NULL && from->yield_receives;
-                        if (known ? b != (receives ? 1 : 0) : b > 1) {
+                        uint8_t wants =
+                            from != NULL ? from->yield_receive_count : 0;
+                        if (known ? b != wants : b > 1) {
+                            return finish(m, chunk, LHAT_RUN_ARITY, lhat_nil(),
+                                          at);
+                        }
+                        // And the run still has to fit the suspended frame
+                        // (5.1's stop, never a scribble past it).
+                        if (b > 1 && co->state == LHAT_COROUTINE_SUSPENDED &&
+                            (size_t)co->sent_into + b >= co->register_count) {
                             return finish(m, chunk, LHAT_RUN_ARITY, lhat_nil(),
                                           at);
                         }
@@ -3778,6 +3950,9 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
                         (dispose && co->state == LHAT_COROUTINE_FRESH)) {
                         if (dispose) {
                             co->state = LHAT_COROUTINE_DONE;
+                            // 05 の 8.8: a host walk's state goes back with
+                            // the disposal. Nothing on any other source.
+                            lhat_coroutine_release((LhatObject *)co, m);
                             SET_R(a, lhat_nil());
                             break;
                         }
@@ -3846,6 +4021,35 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
                                       lhat_nil(), at);
                     }
 
+                    // 05 の 8.8: a host's walk is the same shape -- no body,
+                    // no frame, one step per call. The step itself says what
+                    // shape it yields, so the reservation is judged inside
+                    // rather than up front the way a table's part allows.
+                    if (co->source == LHAT_COROUTINE_HOST) {
+                        if (dispose) {
+                            co->state = LHAT_COROUTINE_DONE;
+                            lhat_coroutine_release((LhatObject *)co, m);
+                            SET_R(a, lhat_nil());
+                            break;
+                        }
+                        unsigned room = lhat_call_prepared(cc);
+                        if (room > 1 &&
+                            rbase + a + room - 1 >= LHAT_STACK_SLOTS) {
+                            return finish(m, chunk, LHAT_RUN_STACK_OVERFLOW,
+                                          lhat_nil(), at);
+                        }
+                        LhatRunStatus fault = LHAT_RUN_OK;
+                        step_host_walk(m, co,
+                                       room > 1 ? WALK_AS_RUN : WALK_AS_VALUE,
+                                       rbase + a,
+                                       room > 1 ? (size_t)room - 1 : 0, frame,
+                                       sent, &fault);
+                        if (fault != LHAT_RUN_OK) {
+                            return finish(m, chunk, fault, lhat_nil(), at);
+                        }
+                        break;
+                    }
+
                     if (m->frame_count >= LHAT_MAX_FRAMES) {
                         return finish(m, chunk, LHAT_RUN_STACK_OVERFLOW, lhat_nil(), at);
                     }
@@ -3869,47 +4073,23 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
                         goto drain;
                     }
 
-                    // 5.11: one frame, put back where it left off.
-                    for (size_t i = 0; i < co->register_count; i++) {
-                        lhat_slots_set(m->slots, next_base + (i), lhat_slots_get(co->registers, i));
+                    // 5.11: one frame, put back where it left off. 13.8改:
+                    // `prepared` carries what the call site reserved, so the
+                    // callee can tell whether a run is wanted here -- and
+                    // the resume's arguments go over as they were written,
+                    // however many the R takes.
+                    LhatValue sent_run[LHAT_MAX_TUPLE];
+                    size_t sent_count = 0;
+                    for (size_t i = 0; i < (size_t)b && i < LHAT_MAX_TUPLE;
+                         i++) {
+                        sent_run[sent_count++] = R(first + i);
                     }
-                    reattach_upvalues(m, co, next_base);
-                    Frame *called = &m->frames[m->frame_count++];
-                    called->closure = co->closure;
-                    called->pc = co->pc;
-                    called->base = next_base;
-                    called->result = a;
-                    // 13.8改: what the call site reserved, carried so the
-                    // callee can tell whether a run is wanted here.
-                    called->prepared = (uint8_t)lhat_call_prepared(cc);
-                    called->coroutine = co;
-                    called->disposing = false;
-                    called->drop_answer = false;  // 5.3
-                    // The room is a root while the frame lives (mark_roots),
-                    // so it starts empty rather than as whatever the slot
-                    // held before.
-                    called->answer = lhat_nil();
-                    called->derive = LHAT_FRAME_NO_DERIVE;
-                    called->derive_equal = false;
-                    called->returning = false;
-                    called->cleanup_count = co->cleanup_count;
-                    for (size_t i = 0; i < co->cleanup_count; i++) {
-                        called->cleanups[i] = co->cleanups[i];
-                    }
-
-                    bool resuming = co->state == LHAT_COROUTINE_SUSPENDED;
-                    co->state = LHAT_COROUTINE_RUNNING;
-
-                    frame = called;
+                    frame = enter_resume_frame(
+                        m, co, next_base, a, (uint8_t)lhat_call_prepared(cc),
+                        sent_run, sent_count);
                     rbase = frame->base;
                     chunk = &co->closure->proto->chunk;
                     pc = frame->pc;
-
-                    if (resuming) {
-                        // 15.4: the value the resume sent arrives where the
-                        // yield^ put the one it sent out.
-                        SET_R(co->sent_into, sent);
-                    }
                     break;
                 }
 
@@ -4304,6 +4484,35 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
                 uint8_t reserved = frame->prepared;
                 const LhatValueUnion *out_run = frame->answer_run;
                 const uint8_t *out_tags = frame->answer_tags;
+                // 05 の 8.8: no resumer below -- the host resumed this
+                // coroutine at the base of this run (lhat_machine_resume),
+                // so the yield leaves run_frames the way a return does, the
+                // coroutine staying suspended for the next resume. The
+                // answer crosses the boundary the way a return's does: one
+                // value, or the positions copied into the machine's room.
+                if (m->frame_count == base_depth + 1) {
+                    m->frame_count--;
+                    if (lhat_is_hostvalue(value)) {
+                        value = lhat_nil();  // as at a return's base
+                    }
+                    if (lhat_is_run(value)) {
+                        size_t positions = lhat_run_width(value);
+                        if (positions > LHAT_MAX_TUPLE) {
+                            return finish(m, chunk, LHAT_RUN_TUPLE_ARITY,
+                                          lhat_nil(), at);
+                        }
+                        for (size_t i = 0; i < positions; i++) {
+                            LhatValue held;
+                            held.as = out_run[i + 1];
+                            held.tag = (LhatValueTag)out_tags[i + 1];
+                            m->tuple_scratch[i] = held;
+                        }
+                        m->tuple_scratch_count = positions;
+                        value =
+                            positions > 0 ? m->tuple_scratch[0] : lhat_nil();
+                    }
+                    return finish(m, chunk, LHAT_RUN_OK, value, at);
+                }
                 m->frame_count--;
                 frame = &m->frames[m->frame_count - 1];
                 rbase = frame->base;
@@ -4338,9 +4547,11 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
                     // 13.8改: laid out as a head slot naming the width plus
                     // the positions, exactly as a returned tuple is. 13.9's
                     // 'union(Y, T)' is what the resumer holds, and the head's
-                    // tag is what tells the two apart there.
+                    // tag is what tells the two apart there. A narrower run
+                    // (the short side of a widened fold) lands as it is --
+                    // CHECKRUN pads it where the binding takes it apart.
                     size_t positions = lhat_run_width(value);
-                    if ((size_t)reserved != positions + 1 ||
+                    if ((size_t)reserved < positions + 1 ||
                         rbase + into + positions >= LHAT_STACK_SLOTS) {
                         return finish(m, chunk, LHAT_RUN_TUPLE_ARITY,
                                       lhat_nil(), at);
@@ -4434,6 +4645,26 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
                     step_table_walk(m, co, mode, rbase + a, frame);
                     break;
                 }
+                // 05 の 8.8: and so is a host's -- one C call. The loops
+                // send nothing in; the delegation loop forwards R(a), which
+                // is what a BODY's resume writes into sent_into below.
+                if (co->source == LHAT_COROUTINE_HOST) {
+                    if (mode == WALK_AS_RUN &&
+                        rbase + a + (size_t)cc - 1 >= LHAT_STACK_SLOTS) {
+                        return finish(m, chunk, LHAT_RUN_STACK_OVERFLOW,
+                                      lhat_nil(), at);
+                    }
+                    LhatRunStatus fault = LHAT_RUN_OK;
+                    step_host_walk(m, co, mode, rbase + a,
+                                   mode == WALK_AS_RUN ? (size_t)cc - 1 : 0,
+                                   frame,
+                                   mode == WALK_AS_ANSWER ? R(a) : lhat_nil(),
+                                   &fault);
+                    if (fault != LHAT_RUN_OK) {
+                        return finish(m, chunk, fault, lhat_nil(), at);
+                    }
+                    break;
+                }
                 if (m->frame_count >= LHAT_MAX_FRAMES) {
                     return finish(m, chunk, LHAT_RUN_STACK_OVERFLOW, lhat_nil(), at);
                 }
@@ -4445,18 +4676,34 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
                     return finish(m, chunk, LHAT_RUN_STACK_OVERFLOW, lhat_nil(), at);
                 }
 
-                LhatValue sent = R(a);
-                bool resuming = co->state == LHAT_COROUTINE_SUSPENDED;
-                for (size_t i = 0; i < co->register_count; i++) {
-                    lhat_slots_set(m->slots, next_base + (i), lhat_slots_get(co->registers, i));
+                // 15.8 with 13.8改: the delegation loop forwards what the
+                // outer resume sent, which may itself be a run -- laid at
+                // R(a) by this frame's own suspension, head plus positions.
+                // A for^ loop sends nil^, which is never one.
+                LhatValue sent_run[LHAT_MAX_TUPLE];
+                size_t sent_count = 1;
+                sent_run[0] = R(a);
+                if (lhat_is_run(R(a))) {
+                    size_t width = lhat_run_width(R(a));
+                    if (width > LHAT_MAX_TUPLE ||
+                        rbase + a + width >= LHAT_STACK_SLOTS) {
+                        return finish(m, chunk, LHAT_RUN_TUPLE_ARITY,
+                                      lhat_nil(), at);
+                    }
+                    for (size_t i = 0; i < width; i++) {
+                        sent_run[i] = R(a + 1 + i);
+                    }
+                    sent_count = width;
                 }
-                reattach_upvalues(m, co, next_base);
+                // As at the natives' resume: the run has to fit the
+                // suspended frame (5.1's stop for an unchecked proto).
+                if (sent_count > 1 &&
+                    co->state == LHAT_COROUTINE_SUSPENDED &&
+                    (size_t)co->sent_into + sent_count >= co->register_count) {
+                    return finish(m, chunk, LHAT_RUN_TUPLE_ARITY, lhat_nil(),
+                                  at);
+                }
                 frame->pc = pc;
-                Frame *called = &m->frames[m->frame_count++];
-                called->closure = co->closure;
-                called->pc = co->pc;
-                called->base = next_base;
-                called->result = a;
                 // 13.8改: what the resume reserved for the answer -- a loop
                 // driving a tuple-yielding body says its width here, and the
                 // yield's placement reads it (15.4).
@@ -4469,30 +4716,12 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
                 // width is settled where it is known -- at the yield -- and
                 // the run travels through this frame's answer room rather
                 // than through slots it never reserved.
-                called->prepared = cc >= 3 ? cc : (cc == 0 ? 0 : 1);
-                called->coroutine = co;
-                called->disposing = false;
-                called->derive = LHAT_FRAME_NO_DERIVE;
-                called->derive_equal = false;
-                called->drop_answer = false;  // 5.3
-                // The room is a root while the frame lives (mark_roots), so
-                // it starts empty rather than as whatever the slot held
-                // before.
-                called->answer = lhat_nil();
-                called->returning = false;
-                called->cleanup_count = co->cleanup_count;
-                for (size_t i = 0; i < co->cleanup_count; i++) {
-                    called->cleanups[i] = co->cleanups[i];
-                }
-                co->state = LHAT_COROUTINE_RUNNING;
-
-                frame = called;
+                frame = enter_resume_frame(
+                    m, co, next_base, a,
+                    cc >= 3 ? cc : (cc == 0 ? 0 : 1), sent_run, sent_count);
                 rbase = frame->base;
                 chunk = &co->closure->proto->chunk;
                 pc = frame->pc;
-                if (resuming) {
-                    SET_R(co->sent_into, sent);
-                }
                 break;
             }
 
@@ -4856,7 +5085,11 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
                     return finish(m, chunk, LHAT_RUN_TUPLE_UNEXPECTED,
                                   lhat_nil(), at);
                 }
-                if ((size_t)reserved != positions + 1 ||
+                // 13.8改: a narrower run is the short side of a widened
+                // fold and lands as it is -- CHECKRUN pads the missing
+                // positions with nil^ where the binding takes it apart.
+                // Only a wider run than the reservation is the mismatch.
+                if ((size_t)reserved < positions + 1 ||
                     rbase + into + positions >= LHAT_STACK_SLOTS) {
                     return finish(m, chunk, LHAT_RUN_TUPLE_ARITY, lhat_nil(),
                                   at);
@@ -4949,6 +5182,8 @@ static LhatRunResult call_fault(Machine *m, LhatRunStatus status)
     LhatRunResult result;
     result.status = status;
     result.value = lhat_nil();
+    result.positions = NULL;
+    result.position_count = 0;
     result.at = 0;
     result.line = 0;
     result.op_name = NULL;
@@ -4968,6 +5203,65 @@ static LhatRunResult host_call(Machine *m, LhatValue callee, LhatValue receiver,
     size_t base = m->frame_count;
     m->tuple_scratch_count = 0;  // 13.8改, as in lhat_run
 
+    // 05 の 8.7: a member the host registered in C, called back the way an
+    // instruction calls one -- flat arguments, no spread. Without this a
+    // host holding a hostdata value could call nothing on it, since 8.8
+    // registers every member of one this way.
+    if (lhat_is_object_kind(callee, LHAT_OBJECT_HOST)) {
+        const LhatHost *host = (const LhatHost *)lhat_as_object(callee);
+        // 13.4 keeps self^ out of the count, as at a compiled call site.
+        if (host->has_variadic ? count < host->parameters
+                               : count != host->parameters) {
+            return call_fault(m, LHAT_RUN_ARITY);
+        }
+        bool receiver_first = host->takes_self && as_method;
+        size_t given = count + (receiver_first ? 1 : 0);
+        LhatValue gathered[LHAT_MAX_REGISTERS + 2];
+        if (given > LHAT_MAX_REGISTERS + 2) {
+            return call_fault(m, LHAT_RUN_ARITY);
+        }
+        size_t into = 0;
+        if (receiver_first) {
+            gathered[into++] = receiver;
+        }
+        for (size_t i = 0; i < count; i++) {
+            gathered[into++] = arguments[i];
+        }
+        // 05 の 8.8: a dispose^ called by hand is the same giving-back the
+        // collection would do, so it is marked here and 10.7 keeps the
+        // sweep from doing it again -- as at a compiled call site.
+        if (receiver_first &&
+            lhat_is_object_kind(gathered[0], LHAT_OBJECT_HOSTDATA)) {
+            LhatHostData *data = (LhatHostData *)lhat_as_object(gathered[0]);
+            if (data->tag != NULL && data->tag->release == host->call) {
+                data->released = true;
+            }
+        }
+        LhatValue answered = host->call(m, host->context, gathered, given);
+        // 05 の 8.9: a host value cannot cross this boundary -- its bytes
+        // live in slots the boundary does not have -- so it goes the way a
+        // return's base already sends one.
+        if (lhat_is_hostvalue(answered)) {
+            answered = lhat_nil();
+        }
+        LhatRunResult made = call_fault(m, LHAT_RUN_OK);
+        if (lhat_is_run(answered)) {
+            // 02 の 13.8改: the positions already sit in the machine's room
+            // (lhat_make_tuple), which is where the result aims anyway.
+            size_t positions = lhat_run_width(answered);
+            if (positions != m->tuple_scratch_count) {
+                return call_fault(m, LHAT_RUN_TUPLE_ARITY);
+            }
+            made.positions = m->tuple_scratch;
+            made.position_count = positions;
+            made.value = positions > 0 ? m->tuple_scratch[0] : lhat_nil();
+        } else {
+            m->tuple_scratch_count = 0;
+            made.value = answered;
+        }
+        return made;
+    }
+
     // 05 の 8.7's LhatHostFn has no shape for a spread; a host calling back in
     // already has its arguments as a flat array, so this is the plain-call
     // subset of what LHAT_BC_CALL does (vm.c's CALL case).
@@ -4975,10 +5269,7 @@ static LhatRunResult host_call(Machine *m, LhatValue callee, LhatValue receiver,
         return call_fault(m, LHAT_RUN_NOT_CALLABLE);
     }
     const LhatClosure *closure = (const LhatClosure *)lhat_as_object(callee);
-    // 02 の 15.5: a yieldable subroutine answers a coroutine rather than
-    // running -- there is nowhere here to hand that back as a distinct kind
-    // of success, so a host reaching for one of these gets NOT_CALLABLE.
-    if (closure->proto == NULL || closure->proto->yields) {
+    if (closure->proto == NULL) {
         return call_fault(m, LHAT_RUN_NOT_CALLABLE);
     }
 
@@ -4999,6 +5290,55 @@ static LhatRunResult host_call(Machine *m, LhatValue callee, LhatValue receiver,
         return call_fault(m, LHAT_RUN_ARITY);
     }
 
+    // 02 の 11.3改: an op^ may write self^ last instead, which says the right
+    // operand is the receiver. The slot it occupies moves with it, so where
+    // the receiver lands is read off the proto rather than assumed.
+    size_t self_at =
+        pass_self && closure->proto->self_last && required > 0 ? required - 1
+                                                               : 0;
+
+    // 02 の 15.5: calling a yieldable procedure does not suspend the caller.
+    // It answers a coroutine, the body not started -- exactly what a
+    // compiled CALL answers, handed across this boundary instead. The
+    // arguments go into the coroutine's saved registers, where the first
+    // resume (lhat_machine_resume) finds them laid out as a frame's. No
+    // frame is pushed, so the stack is not asked for room.
+    if (closure->proto->yields) {
+        LhatCoroutine *co = lhat_coroutine_new(
+            &m->objects, closure, closure->proto->chunk.registers);
+        if (co == NULL) {
+            return call_fault(m, LHAT_RUN_OUT_OF_MEMORY);
+        }
+        size_t taken = 0;
+        for (size_t i = 0; i < required; i++) {
+            if (pass_self && i == self_at) {
+                lhat_slots_set(co->registers, i, receiver);
+                continue;
+            }
+            lhat_slots_set(co->registers, i, arguments[taken++]);
+        }
+        if (closure->proto->has_variadic) {
+            LhatTable *collected = lhat_table_new(&m->objects);
+            if (collected == NULL) {
+                return call_fault(m, LHAT_RUN_OUT_OF_MEMORY);
+            }
+            for (size_t i = taken; i < count; i++) {
+                bool refused = false;
+                if (!set_key(m, collected,
+                             lhat_integer((int64_t)(i - taken + 1)),
+                             arguments[i], &refused)) {
+                    return call_fault(m, LHAT_RUN_OUT_OF_MEMORY);
+                }
+            }
+            lhat_slots_set(co->registers, required,
+                           lhat_object((LhatObject *)collected));
+        }
+        // call_fault fills the empty result; only the value differs.
+        LhatRunResult made = call_fault(m, LHAT_RUN_OK);
+        made.value = lhat_object((LhatObject *)co);
+        return made;
+    }
+
     if (base >= LHAT_MAX_FRAMES) {
         return call_fault(m, LHAT_RUN_STACK_OVERFLOW);
     }
@@ -5016,12 +5356,6 @@ static LhatRunResult host_call(Machine *m, LhatValue callee, LhatValue receiver,
         return call_fault(m, LHAT_RUN_STACK_OVERFLOW);
     }
 
-    // 02 の 11.3改: an op^ may write self^ last instead, which says the right
-    // operand is the receiver. The slot it occupies moves with it, so where
-    // the receiver lands is read off the proto rather than assumed.
-    size_t self_at =
-        pass_self && closure->proto->self_last && required > 0 ? required - 1
-                                                               : 0;
     size_t next = 0;
     for (size_t i = 0; i < required; i++) {
         if (pass_self && i == self_at) {
@@ -5085,7 +5419,10 @@ LhatRunResult lhat_machine_call_member(LhatMachine *machine,
     }
     // 14.4 reaches a member through a table; a value that is not one has no
     // members to reach, which is the same refusal an instruction makes.
-    const LhatTable *table = table_of(receiver);
+    // 05 の 8.8: a hostdata value reads its members through the registered
+    // type's table, exactly as an instruction's read does -- which is why
+    // this is readable_table rather than table_of.
+    const LhatTable *table = readable_table(receiver);
     if (table == NULL) {
         return call_fault(m, LHAT_RUN_TYPE_ERROR);
     }
@@ -5125,6 +5462,153 @@ LhatRunResult lhat_machine_call_member(LhatMachine *machine,
     }
 
     return host_call(m, member, receiver, true, arguments, count);
+}
+
+bool lhat_machine_make_coroutine(LhatMachine *machine, LhatHostStepFn step,
+                                 void *context, LhatHostFn release,
+                                 LhatValue held, LhatValue *out)
+{
+    Machine *m = (Machine *)machine;
+    if (m == NULL || step == NULL || out == NULL) {
+        return false;
+    }
+    LhatCoroutine *walk =
+        lhat_host_iterator(&m->objects, step, context, release, held);
+    if (walk == NULL) {
+        return false;
+    }
+    *out = lhat_object((LhatObject *)walk);
+    return true;
+}
+
+LhatRunResult lhat_machine_resume(LhatMachine *machine, LhatValue coroutine,
+                                  const LhatValue *sent, size_t sent_count)
+{
+    Machine *m = (Machine *)machine;
+    m->tuple_scratch_count = 0;  // 13.8改, as in host_call
+    if (sent == NULL) {
+        sent_count = 0;
+    }
+    if (!lhat_is_object_kind(coroutine, LHAT_OBJECT_COROUTINE) ||
+        sent_count > LHAT_MAX_TUPLE) {
+        return call_fault(m, LHAT_RUN_TYPE_ERROR);
+    }
+    LhatCoroutine *co = (LhatCoroutine *)lhat_as_object(coroutine);
+    // 15.2's guards as the instructions make them -- resume subsumes start
+    // here (lua_resume's shape): a fresh body runs from the top, and that
+    // first `sent` is discarded, since no yield^ awaits it yet.
+    if (co->state == LHAT_COROUTINE_DONE ||
+        co->state == LHAT_COROUTINE_RUNNING) {
+        return call_fault(m, LHAT_RUN_DEAD_COROUTINE);
+    }
+
+    // 16.3: a table's walk has no body, so one step is the whole of the
+    // resume -- no frame entered. The pair crosses the boundary as the
+    // positions of a tuple (13.8改), the way any tuple crosses it.
+    if (co->source == LHAT_COROUTINE_TABLE) {
+        LhatValue key, value;
+        if (!lhat_table_walk(co, &key, &value)) {
+            co->state = LHAT_COROUTINE_DONE;
+            return call_fault(m, LHAT_RUN_OK);
+        }
+        co->state = LHAT_COROUTINE_SUSPENDED;
+        LhatRunResult made = call_fault(m, LHAT_RUN_OK);
+        if (co->part != LHAT_WALK_PAIR) {
+            made.value = co->part == LHAT_WALK_KEYS ? key : value;
+            return made;
+        }
+        m->tuple_scratch[0] = key;
+        m->tuple_scratch[1] = value;
+        m->tuple_scratch_count = 2;
+        made.value = key;
+        made.positions = m->tuple_scratch;
+        made.position_count = 2;
+        return made;
+    }
+
+    // 05 の 8.8: and a host's walk is one step of its own C body. RUNNING
+    // above already refuses a step resuming its own coroutine. The step
+    // takes one value, so a several-send hands over its first.
+    if (co->source == LHAT_COROUTINE_HOST) {
+        LhatValue out = lhat_nil();
+        co->state = LHAT_COROUTINE_RUNNING;
+        bool more = co->step(machine, co->host_state,
+                             sent_count > 0 ? sent[0] : lhat_nil(), &out);
+        if (!more) {
+            co->state = LHAT_COROUTINE_DONE;
+            lhat_coroutine_release((LhatObject *)co, machine);
+            return call_fault(m, LHAT_RUN_OK);
+        }
+        co->state = LHAT_COROUTINE_SUSPENDED;
+        // 05 の 8.9: a host value cannot cross the boundary, as at a
+        // return's base.
+        if (lhat_is_hostvalue(out)) {
+            out = lhat_nil();
+        }
+        LhatRunResult made = call_fault(m, LHAT_RUN_OK);
+        if (lhat_is_run(out)) {
+            size_t positions = lhat_run_width(out);
+            if (positions != m->tuple_scratch_count) {
+                return call_fault(m, LHAT_RUN_TUPLE_ARITY);
+            }
+            made.positions = m->tuple_scratch;
+            made.position_count = positions;
+            made.value = positions > 0 ? m->tuple_scratch[0] : lhat_nil();
+        } else {
+            made.value = out;
+        }
+        return made;
+    }
+
+    // A body: the frame goes back on at the base of a run of its own --
+    // host_call's placement, re-entered where the yield^ left off, or at
+    // the top when the body has not started. The yield that suspends it
+    // again leaves through LHAT_BC_YIELD's base case, the way a return
+    // leaves through its own.
+    if (co->closure == NULL || co->closure->proto == NULL) {
+        return call_fault(m, LHAT_RUN_NOT_CALLABLE);
+    }
+    // 13.8改: the count a resume sends is the R's -- checked here the way
+    // the natives check it, with the same tolerance for a proto the checker
+    // never reached, and the same stop for a run that would not fit the
+    // suspended frame. A fresh body's first send is discarded, so any count
+    // passes there.
+    if (co->state == LHAT_COROUTINE_SUSPENDED) {
+        const LhatProto *from = co->closure->proto;
+        // As at the natives' resume: an unknown proto keeps the old ceiling
+        // of one, since only a checked body has reserved the run's slots.
+        if (from->yield_receives_known
+                ? sent_count != from->yield_receive_count
+                : sent_count > 1) {
+            return call_fault(m, LHAT_RUN_ARITY);
+        }
+        if (sent_count > 1 &&
+            (size_t)co->sent_into + sent_count >= co->register_count) {
+            return call_fault(m, LHAT_RUN_ARITY);
+        }
+    }
+    size_t base = m->frame_count;
+    if (base >= LHAT_MAX_FRAMES) {
+        return call_fault(m, LHAT_RUN_STACK_OVERFLOW);
+    }
+    size_t next_base =
+        base == 0 ? 0
+                  : m->frames[base - 1].base +
+                        m->frames[base - 1].closure->proto->chunk.registers;
+    if (next_base + LHAT_MAX_REGISTERS >= LHAT_STACK_SLOTS) {
+        return call_fault(m, LHAT_RUN_STACK_OVERFLOW);
+    }
+    // prepared = 1: the host boundary takes one value, as host_call says.
+    // The result slot is never read -- the base cases return instead.
+    enter_resume_frame(m, co, next_base, 0, 1, sent, sent_count);
+    return run_frames(m, base);
+}
+
+bool lhat_machine_coroutine_done(LhatValue coroutine)
+{
+    return lhat_is_object_kind(coroutine, LHAT_OBJECT_COROUTINE) &&
+           ((const LhatCoroutine *)lhat_as_object(coroutine))->state ==
+               LHAT_COROUTINE_DONE;
 }
 
 bool lhat_machine_make_string(LhatMachine *machine, const char *text,

@@ -1116,6 +1116,9 @@ static LhatRuntimeType *lower_host_type(LhatMachine *machine,
             out->result = lower_host_type(machine, type->v.coroutine.result,
                                           depth + 1);
             out->is_function = type->v.coroutine.is_function;
+            // 13.9: '-' is told apart from a NULL result, so it carries over
+            // -- what a resume answers differs.
+            out->endless = type->v.coroutine.endless;
             break;
 
         default:

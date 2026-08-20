@@ -753,7 +753,7 @@ f^ -> number^ { repeat^ { break^ } }     # 誤り。break^ の後は末尾
 ```lhat
 let^ fact = f^ n:number^ {
     if^ n <= 1 { return^ 1 }        # → number^
-    return^ n * fact(n - 1)         # 型は求めようとしているもの → 数えない
+    return^ n * this^(n - 1)        # 型は求めようとしているもの → 数えない
 }
 ```
 
@@ -766,12 +766,12 @@ let^ fact = f^ n:number^ {
 
 ```lhat
 let^ f = f^ x:number^ {
-    if^ x > 1 { return^ "a" .. f(x - 1).to_s() }   # 型は string^
+    if^ x > 1 { return^ "a" .. this^(x - 1).to_s() }   # 型は string^
     return^ 1                                       # 型は number^
 }
 ```
 
-`f` を含んでいても、**この脱出の型は `f` の返り値型に依存していない**。
+`this^` を含んでいても、**この脱出の型は自分の返り値型に依存していない**。
 `"a" .. …` は何を連結しても `string^` である。
 落としてしまうと `number^` になり、**`string^` を返す経路が型から消える**。
 
@@ -785,7 +785,7 @@ let^ f = f^ x:number^ {
 ##### 脱出がすべて再帰なら誤り
 
 ```lhat
-let^ f = f^ n:number^ { return^ f(n - 1) }
+let^ f = f^ n:number^ { return^ this^(n - 1) }
 ```
 
 **この本体は値を作れない。** 誤りとする。
@@ -805,7 +805,7 @@ let^ f = f^ n:number^ { return^ f(n - 1) }
 
 ```lhat
 let^ f = f^ x:number^ {
-    if^ x > 1 { return^ { value := f(x - 1) } }
+    if^ x > 1 { return^ { value := this^(x - 1) } }
     return^ 1
 }
 ```
