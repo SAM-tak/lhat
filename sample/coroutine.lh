@@ -12,7 +12,7 @@ let^y = f^x:number^{
     # 禁じている。
     print(a, b)
     x += 1
-    a, b := yield^"bbb", x
+    a, b := yield^"ccc", x
     print(a, b)
     return^"done"
 }
@@ -109,6 +109,5 @@ let^vco = f^{
     }
 }()
 for^var^a = vco.start() until^vco.done() next^a := vco.resume() {
-pre^:
     print(a)
 }
