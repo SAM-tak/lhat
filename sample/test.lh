@@ -76,8 +76,8 @@ print(iii)
 
 let^A = def^{
     self^{ a = 0, b = 0, },
-    overload^new = f^a, b { self^{ a := a, b := b } },
-    overload^new = f^a { self^{ a := a, b := a } },
+    overload^new = f^a, b { self^{ a = a, b = b } },
+    overload^new = f^a { self^{ a = a, b = a } },
     add = f^self^, rhs:Self^ -> Self^ { self^ },
     op^* = f^self^, rhs:number^{ class^.new(self^.a * rhs, self^.b * rhs) },
     overload^op^* = f^lhs:number^, self^{ class^.new(lhs * self^.a, lhs * self^.b) },

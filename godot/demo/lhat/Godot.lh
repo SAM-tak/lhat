@@ -54,10 +54,10 @@ public^let^ Sprite2D = Node2D..def^{
 public^let^ Node3D = Node..def^{
 	override^gdBaseClass = "Node3D",
 	getRotation = f^self^ -> godot.Quaternion {
-		self^.gdobj.getQuaternion("rotation") as^ godot.Quaternion
+		self^.gdobj.getQuaternion("rotation")
 	},
-	setRotation = p^self^, radians:godot.Quaternion {
-		self^.gdobj.setQuaternion("rotation", radians)
+	setRotation = p^self^, rotation:godot.Quaternion {
+		self^.gdobj.setQuaternion("rotation", rotation)
 	},
 	getPosition = f^self^ -> godot.Vector3 {
 		self^.gdobj.getVector3("position")

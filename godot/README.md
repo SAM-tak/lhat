@@ -799,7 +799,6 @@ res://net.lh: error: @rpc and @signal say different things about the same member
 （`scene_rpc_interface.cpp` の `_parse_rpc_config`）ので、両端が同じ綴りを
 持っていれば ID は自然に一致する。
 
-
 **`@onready` は登録していない。** GDScript のそれは初期化式を `_ready` まで
 遅らせるものだが、14.11 は `self^` の欄の初期化式を `new` の中で走らせ、
 欄ごとの入口を残さない。あとから1欄だけ走らせ直す道が実行時に無い以上、
