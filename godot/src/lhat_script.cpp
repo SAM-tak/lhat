@@ -595,7 +595,7 @@ Error LhatScript::reload_now(bool keep_state)
         lhat_run(machine, modules[lhat_unit_index(root)].proto);
     if (ran.status != LHAT_RUN_OK) {
         UtilityFunctions::push_error(
-            host::problem(get_path(), lhat_run_status_message(ran.status)));
+            host::run_problem(machine, get_path(), ran));
         return OK;
     }
 
@@ -729,13 +729,8 @@ bool LhatScript::run_body()
     if (ran.status == LHAT_RUN_OK) {
         return true;
     }
-    // 04 の 11.6改: a panic carries what it was written with, and the status
-    // alone would drop the part that says anything.
-    String said = String::utf8(lhat_run_status_message(ran.status));
-    if (ran.status == LHAT_RUN_PANIC) {
-        said += ": " + host::text_of(ran.value);
-    }
-    UtilityFunctions::push_error(host::problem(get_path(), said));
+    // 04 の 11.6改: line, panic value, and the frames still standing.
+    UtilityFunctions::push_error(host::run_problem(machine, get_path(), ran));
     return false;
 }
 
@@ -775,8 +770,8 @@ bool LhatScript::make_instance(Object *owner, LhatValue *out, int64_t *id)
         made = lhat_machine_call_member(machine, klass, "new", 3, nullptr, 0);
     }
     if (made.status != LHAT_RUN_OK) {
-        UtilityFunctions::push_error(host::problem(
-            get_path(), lhat_run_status_message(made.status)));
+        UtilityFunctions::push_error(
+            host::run_problem(machine, get_path(), made));
         return false;
     }
 
@@ -1190,9 +1185,8 @@ Variant LhatScript::call_static(const StringName &member,
         machine, klass, name.get_data(), (size_t)name.length(),
         converted.ptr(), converted.size());
     if (called.status != LHAT_RUN_OK) {
-        UtilityFunctions::push_error(
-            host::problem(get_path() + String(".") + String(member),
-                          lhat_run_status_message(called.status)));
+        UtilityFunctions::push_error(host::run_problem(
+            machine, get_path() + String(".") + String(member), called));
         return Variant();
     }
     return host::to_variant(called.value, units.godot);

@@ -113,6 +113,10 @@ typedef struct ThreadHandle {
     bool joined;
     LhatRunStatus status;
     ThreadValue result;
+    // 04 の 11.6改: the worker's frames, rendered before its machine went
+    // -- the joiner's error message carries them. NULL when the run was
+    // clean or nothing was standing. Owned here, freed with the handle.
+    char *traceback;
     // 02 の 15.14: what a scheduler asks instead of waiting -- has the body
     // finished. This one *is* read while the thread may still be running, so
     // unlike the fields above it is not covered by the join's ordering and
@@ -283,6 +287,17 @@ static int thread_main(void *raw)
                 !to_thread_value(ran.value, &handle->result)) {
                 handle->status = LHAT_RUN_TYPE_ERROR;  // 表現できない戻り値
             }
+            // 04 の 11.6改: the frames are about to go with the machine, so
+            // the text is made now for the join to carry.
+            if (ran.status != LHAT_RUN_OK &&
+                lhat_machine_fault_depth(machine) >= 2) {
+                size_t needed = lhat_machine_traceback(machine, NULL, 0);
+                handle->traceback = (char *)lhat_alloc(needed + 1);
+                if (handle->traceback != NULL) {
+                    lhat_machine_traceback(machine, handle->traceback,
+                                           needed + 1);
+                }
+            }
         }
         lhat_free(arguments);
         lhat_machine_dispose(machine);
@@ -313,6 +328,7 @@ static void join_and_free(ThreadHandle *handle)
         free_thread_value(&handle->result);
     }
     lhat_mutex_destroy(&handle->done_lock);
+    lhat_free(handle->traceback);
     lhat_free(handle);
 }
 
@@ -397,6 +413,7 @@ static LhatValue thread_spawn(LhatMachine *machine, void *context,
     ThreadStart *start = (ThreadStart *)lhat_alloc(sizeof *start);
     if (handle == NULL || start == NULL) {
         free_thread_values(carried, carried_count);
+        lhat_free(handle->traceback);
         lhat_free(handle);
         lhat_free(start);
         return fail_with(machine, module->out_of_memory, "out of memory");
@@ -414,6 +431,7 @@ static LhatValue thread_spawn(LhatMachine *machine, void *context,
         free_thread_values(carried, carried_count);
         lhat_free(start);
         lhat_mutex_destroy(&handle->done_lock);
+        lhat_free(handle->traceback);
         lhat_free(handle);
         return fail_with(machine, module->spawn_failed,
                          "the operating system refused to start a thread");
@@ -446,8 +464,26 @@ static LhatValue thread_join(LhatMachine *machine, void *context,
     handle->joined = true;
 
     if (handle->status != LHAT_RUN_OK) {
-        return fail_with(machine, module->bad_result,
-                         lhat_run_status_message(handle->status));
+        // 04 の 11.6改: the worker's own frames ride the message -- the one
+        // channel that crosses machines here.
+        const char *said = lhat_run_status_message(handle->status);
+        if (handle->traceback != NULL) {
+            size_t said_length = strlen(said);
+            size_t trace_length = strlen(handle->traceback);
+            char *joined_text =
+                (char *)lhat_alloc(said_length + 1 + trace_length + 1);
+            if (joined_text != NULL) {
+                memcpy(joined_text, said, said_length);
+                joined_text[said_length] = '\n';
+                memcpy(joined_text + said_length + 1, handle->traceback,
+                       trace_length + 1);
+                LhatValue answered =
+                    fail_with(machine, module->bad_result, joined_text);
+                lhat_free(joined_text);
+                return answered;
+            }
+        }
+        return fail_with(machine, module->bad_result, said);
     }
     LhatValue out = lhat_nil();
     if (!from_thread_value(machine, &handle->result, &out)) {
@@ -524,6 +560,7 @@ static LhatValue thread_dispose(LhatMachine *machine, void *context,
             free_thread_value(&handle->result);
         }
         lhat_mutex_destroy(&handle->done_lock);
+        lhat_free(handle->traceback);
         lhat_free(handle);
     } else {
         join_and_free(handle);

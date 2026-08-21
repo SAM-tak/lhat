@@ -63,6 +63,8 @@ String text_of(LhatValue value);
 // One shape for what this side has to say, so that a line the extension
 // wrote reads like a line a stage wrote.
 String problem(const String &where, const String &what);
+String run_problem(LhatMachine *machine, const String &where,
+                   const LhatRunResult &ran);
 
 // One level of indentation, as the editor is set to write one. A tab
 // wherever there is no editor to ask.

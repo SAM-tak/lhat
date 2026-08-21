@@ -333,6 +333,14 @@ typedef struct {
 struct LhatProto {
     LhatChunk chunk;
 
+    // 04 の 11.6改: what a traceback prints for a frame of this body. Debug
+    // labels only -- 14.9 stands: neither takes any part in typing or in
+    // identity. `debug_name` is the binding or member the body was written
+    // under (NULL for a bare f^), `source_name` the unit's path (NULL for a
+    // session's input). Each proto owns its copies.
+    char *debug_name;
+    char *source_name;
+
     // 03 の 4.3: how many registers already hold values when this unit
     // starts. Zero everywhere but the second and later inputs of a REPL,
     // where the top-level names of the earlier ones are still in them.

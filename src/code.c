@@ -51,6 +51,8 @@ void lhat_proto_free(LhatProto *proto)
     for (size_t i = 0; i < proto->proto_count; i++) {
         lhat_proto_free(proto->protos[i]);
     }
+    lhat_free(proto->debug_name);
+    lhat_free(proto->source_name);
     lhat_free(proto->protos);
     lhat_free(proto->upvalues);
     lhat_free(proto->parameter_types);

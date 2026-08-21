@@ -1254,6 +1254,10 @@ Lua の `lua_newthread` / `lua_resume` / `lua_status` に相当する3つで、
   `R` の**タグと照合**し、違う登録の値は届く前に拒む——値数しか見ない
   従来の境界検査より強い
 - `lhat_machine_coroutine_done(coroutine)` ——15.6改 の `done()` を C から
+- `lhat_machine_fault_depth / _fault_frame / _traceback` ——04 の 11.6改 の
+  トレースバック。fault の後（次の実行/破棄まで）に読む。fault が無ければ
+  「いま立っているフレーム」を答えるので、ホスト関数の中から
+  「どこで呼ばれたか」も訊ける
 
 書かれた yieldable な手続きを `lhat_machine_call` で呼ぶと、実行されずに
 コルーチンが返る——コンパイルされた呼び出しと同じ 02 の 15.5 の形が、
@@ -1638,6 +1642,11 @@ cli/            コマンドライン      → lhat.exe
 ---
 
 ## 改定履歴（要約）
+
+- **std.debug.traceback（2026-08-20）**: 04 の 11.6改 のトレースバックを
+  L^ から `f^ -> string^;` で。読むだけで観測可能な変化を残さないので
+  log と同じく f^。std.thread の join は worker の fault に worker 側で
+  描いたトレースバックを message へ連結して返すようになった
 
 - **8.8改・8.9改（2026-08-20）: ホスト製の値の可用性を引き上げた。**
   LOVE2D バインドの弱参照要求を掘ると同根の欠落が3つあった

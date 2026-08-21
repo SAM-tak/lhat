@@ -112,6 +112,16 @@ struct LhatMachine {
     Frame frames[LHAT_MAX_FRAMES];
     size_t frame_count;
 
+    // 04 の 11.6改: where the running span of frames begins -- run_frames'
+    // base_depth, kept here so a fault can say which frames were this
+    // run's. And the fault itself: the span [fault_base, fault_depth) plus
+    // the faulting instruction, recorded by finish() and readable through
+    // lhat_machine_fault_* until the next run resets the frames.
+    size_t run_base;
+    size_t fault_base;
+    size_t fault_depth;
+    size_t fault_at;
+
     // Everything allocated while running. What the answer cannot reach is
     // freed as the program runs; the rest passes to the caller at the end.
     LhatHeap objects;

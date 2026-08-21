@@ -2017,6 +2017,24 @@ bool lhat_bind_initial(LhatProgram *program, const char *name,
 // Public interface
 // ---------------------------------------------------------------------------
 
+// 04 の 11.6改: the unit's path, stamped onto every proto of its tree so a
+// traceback can name the file a frame belongs to. Debug only -- a copy per
+// proto, freed with it.
+static void stamp_source(LhatProto *proto, const char *path)
+{
+    if (proto == NULL || path == NULL) {
+        return;
+    }
+    size_t length = strlen(path);
+    proto->source_name = (char *)lhat_alloc(length + 1);
+    if (proto->source_name != NULL) {
+        memcpy(proto->source_name, path, length + 1);
+    }
+    for (size_t i = 0; i < proto->proto_count; i++) {
+        stamp_source(proto->protos[i], path);
+    }
+}
+
 const LhatModule *lhat_program_compile(LhatProgram *program, size_t *count)
 {
     if (count != NULL) {
@@ -2077,6 +2095,7 @@ const LhatModule *lhat_program_compile(LhatProgram *program, size_t *count)
             return NULL;
         }
         modules[u->index].proto = proto;
+        stamp_source(proto, u->path);
         if (u->checked.module_name != NULL) {
             modules[u->index].module_name = duplicate(u->checked.module_name);
         }

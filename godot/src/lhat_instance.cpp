@@ -420,16 +420,11 @@ void instance_call(GDExtensionScriptInstanceDataPtr data,
         return;
     }
     if (ran.status != LHAT_RUN_OK) {
-        // 04 の 11.6改: a panic carries what it was written with, and the
-        // status alone would drop the part that says anything.
-        String said = String::utf8(lhat_run_status_message(ran.status));
-        if (ran.status == LHAT_RUN_PANIC) {
-            said += ": " + host::text_of(ran.value);
-        }
-        UtilityFunctions::push_error(
-            host::problem(it->script->get_path() + String(".") +
-                              String(name_of(method)),
-                          said));
+        // 04 の 11.6改: line, panic value, and the frames still standing.
+        UtilityFunctions::push_error(host::run_problem(
+            machine, it->script->get_path() + String(".") +
+                         String(name_of(method)),
+            ran));
         error->error = GDEXTENSION_CALL_ERROR_INVALID_METHOD;
         return;
     }

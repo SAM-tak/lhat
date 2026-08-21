@@ -1684,6 +1684,16 @@ static LhatRunResult finish(Machine *m, const LhatChunk *chunk,
     result.positions = m->tuple_scratch_count > 0 ? m->tuple_scratch : NULL;
     result.position_count = m->tuple_scratch_count;
     result.at = at;
+    // 04 の 11.6改: the frames of this run are still standing (nothing
+    // here unwinds), so remember which they were and where the top one
+    // stopped -- lhat_machine_fault_* walks them until the next run.
+    if (status != LHAT_RUN_OK) {
+        m->fault_base = m->run_base;
+        m->fault_depth = m->frame_count;
+        m->fault_at = at;
+    } else {
+        m->fault_depth = m->fault_base = 0;
+    }
     // 04 の 11 章: named from the chunk's own line table (03 の 5.11a-style
     // parallel array) and 02 の 11.8's operator names -- both silently
     // answer nothing usable when `at` is out of range, which only happens
@@ -2360,6 +2370,7 @@ void lhat_machine_dispose(LhatMachine *machine)
 
 static LhatRunResult run_frames(Machine *m, size_t base_depth)
 {
+    m->run_base = base_depth;  // 04 の 11.6改: so finish can bound a fault
     Frame *frame = &m->frames[m->frame_count - 1];
     const LhatChunk *chunk = &frame->closure->proto->chunk;
     size_t rbase = frame->base;
@@ -5449,6 +5460,12 @@ LhatRunResult lhat_run(LhatMachine *m, const LhatProto *proto)
 // empty the way finish() already leaves them for `at` out of range.
 static LhatRunResult call_fault(Machine *m, LhatRunStatus status)
 {
+    // 04 の 11.6改: a boundary fault happened before any frame went on, so
+    // the recorded span is empty -- lhat_machine_fault_depth answers 0.
+    if (status != LHAT_RUN_OK) {
+        m->fault_base = m->fault_depth = m->frame_count;
+        m->fault_at = 0;
+    }
     LhatRunResult result;
     result.status = status;
     result.value = lhat_nil();
@@ -5994,6 +6011,135 @@ bool lhat_machine_make_error(LhatMachine *machine, const LhatErrorKind *kind,
     }
     *out = lhat_object((LhatObject *)error);
     return true;
+}
+
+// 04 の 11.6改: which span of frames the walkers read -- the recorded
+// fault's, or, when none is recorded, the frames standing right now.
+static void frame_span(const Machine *m, size_t *base, size_t *depth,
+                       bool *have_at)
+{
+    if (m->fault_depth > m->fault_base) {
+        *base = m->fault_base;
+        *depth = m->fault_depth;
+        *have_at = true;
+        return;
+    }
+    *base = 0;
+    *depth = m->frame_count;
+    *have_at = false;
+}
+
+size_t lhat_machine_fault_depth(const LhatMachine *machine)
+{
+    const Machine *m = (const Machine *)machine;
+    size_t base, depth;
+    bool have_at;
+    frame_span(m, &base, &depth, &have_at);
+    return depth - base;
+}
+
+bool lhat_machine_fault_frame(const LhatMachine *machine, size_t level,
+                              LhatFrameInfo *out)
+{
+    const Machine *m = (const Machine *)machine;
+    size_t base, depth;
+    bool have_at;
+    frame_span(m, &base, &depth, &have_at);
+    if (out == NULL || level >= depth - base) {
+        return false;
+    }
+    const Frame *frame = &m->frames[depth - 1 - level];
+    const LhatProto *proto =
+        frame->closure != NULL ? frame->closure->proto : NULL;
+    out->source = proto != NULL ? proto->source_name : NULL;
+    out->name = proto != NULL ? proto->debug_name : NULL;
+    // The top frame stopped at the recorded instruction; every caller's
+    // saved pc points one past its call, so its line is at pc - 1. A
+    // frame that never ran an instruction has no line to name.
+    size_t pc_at = 0;
+    bool placed = false;
+    if (level == 0 && have_at) {
+        pc_at = m->fault_at;
+        placed = true;
+    } else if (frame->pc > 0) {
+        pc_at = frame->pc - 1;
+        placed = true;
+    }
+    out->line = placed && proto != NULL && pc_at < proto->chunk.count
+                    ? proto->chunk.lines[pc_at]
+                    : 0;
+    out->top_level = false;
+    for (size_t i = 0; i < m->module_count; i++) {
+        if (m->modules[i].proto == proto) {
+            out->top_level = true;
+            break;
+        }
+    }
+    out->coroutine = frame->coroutine != NULL;
+    out->disposing = frame->disposing;
+    return true;
+}
+
+// The bounded writer the renderer fills -- lhat_value_text's shape.
+typedef struct {
+    char *out;
+    size_t capacity;
+    size_t used;
+} TraceText;
+
+static void trace_put(TraceText *w, const char *text)
+{
+    size_t length = strlen(text);
+    if (w->out != NULL && w->used < w->capacity) {
+        size_t room = w->capacity - 1 - w->used;
+        size_t take = length < room ? length : room;
+        memcpy(w->out + w->used, text, take);
+    }
+    w->used += length;
+}
+
+size_t lhat_machine_traceback(const LhatMachine *machine, char *out,
+                              size_t capacity)
+{
+    TraceText w;
+    w.out = capacity > 0 ? out : NULL;
+    w.capacity = capacity;
+    w.used = 0;
+    size_t count = lhat_machine_fault_depth(machine);
+    if (count > 0) {
+        trace_put(&w, "traceback:");
+        for (size_t level = 0; level < count; level++) {
+            LhatFrameInfo info;
+            if (!lhat_machine_fault_frame(machine, level, &info)) {
+                break;
+            }
+            trace_put(&w, "\n  ");
+            trace_put(&w, info.source != NULL ? info.source : "?");
+            if (info.line > 0) {
+                char spelt[16];
+                snprintf(spelt, sizeof spelt, ":%u", info.line);
+                trace_put(&w, spelt);
+            }
+            trace_put(&w, info.name != NULL
+                              ? ": in "
+                              : (info.top_level ? ": at the top level"
+                                                : ": in f^"));
+            if (info.name != NULL) {
+                trace_put(&w, info.name);
+            }
+            if (info.coroutine) {
+                trace_put(&w, " (coroutine)");
+            }
+            if (info.disposing) {
+                trace_put(&w, " (finally^)");
+            }
+        }
+    }
+    if (w.out != NULL) {
+        size_t end = w.used < w.capacity - 1 ? w.used : w.capacity - 1;
+        w.out[end] = '\0';
+    }
+    return w.used;
 }
 
 const char *lhat_run_status_message(LhatRunStatus status)

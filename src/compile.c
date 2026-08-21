@@ -124,6 +124,14 @@ typedef struct Compiler {
     uint32_t offset;
     uint32_t column;
 
+    // 04 の 11.6改: the label a traceback prints for the next body -- the
+    // binding or member a FUNC value is being written under. Set just
+    // before that value compiles, consumed (and cleared) by
+    // compile_subroutine_as. Debug only; 14.9 keeps names out of what a
+    // proto is.
+    const char *pending_name;
+    size_t pending_name_length;
+
     LoopContext *loop;  // the innermost loop being compiled, NULL outside one
     TryContext *trying;  // 04 の 4.5: and the innermost try^{ }
 
@@ -2828,6 +2836,10 @@ static void compile_def(Compiler *c, const LhatNode *node, uint8_t into)
                 previous->being_defined = false;
             }
 
+            if (entry->v.entry.value->kind == LHAT_NODE_FUNC) {
+                c->pending_name = name;
+                c->pending_name_length = length;
+            }
             if (constructor) {
                 compile_subroutine_as(c, entry->v.entry.value, value,
                                       LHAT_BODY_CONSTRUCTOR);
@@ -3074,6 +3086,10 @@ static void compile_table(Compiler *c, const LhatNode *node, uint8_t into)
             size_t length = 0;
             if (node_name(c, named, &name, &length)) {
                 load_string_bytes(c, key, name, length);
+                if (entry->v.entry.value->kind == LHAT_NODE_FUNC) {
+                    c->pending_name = name;
+                    c->pending_name_length = length;
+                }
             } else {
                 fail(c, LHAT_COMPILE_UNSUPPORTED);
                 return;
@@ -3286,6 +3302,18 @@ static void compile_subroutine_as(Compiler *c, const LhatNode *node,
         fail(c, LHAT_COMPILE_TOO_COMPLEX);
         return;
     }
+    // 04 の 11.6改: the debug label, when the site said one. Cleared either
+    // way, so a body written inside this one never inherits it.
+    if (c->pending_name != NULL) {
+        proto->debug_name = (char *)lhat_alloc(c->pending_name_length + 1);
+        if (proto->debug_name != NULL) {
+            memcpy(proto->debug_name, c->pending_name,
+                   c->pending_name_length);
+            proto->debug_name[c->pending_name_length] = '\0';
+        }
+    }
+    c->pending_name = NULL;
+    c->pending_name_length = 0;
     proto->is_function = node->v.func.is_function;
     proto->yields = node->v.func.yields;
     if (kind != LHAT_BODY_ORDINARY) {
@@ -4859,6 +4887,10 @@ static void compile_define(Compiler *c, const LhatNode *node)
             // at a prompt reads what the slot holds, which is the whole of
             // what a prompt is for -- mark_being_defined leaves session
             // names alone.
+            if (value->kind == LHAT_NODE_FUNC) {
+                c->pending_name = name;
+                c->pending_name_length = length;
+            }
             compile_expression(c, value, local->reg);
             value = value->next;
         }

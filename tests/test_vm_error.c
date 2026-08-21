@@ -6,6 +6,7 @@
 // to be replaced by specialised ones later.
 
 #include <math.h>
+#include <stdlib.h>  // malloc: the rendered traceback
 #include <string.h>
 
 #include "code.h"
@@ -152,6 +153,81 @@ static void test_errors(void)
 }
 
 // 04 の 4 章 and 5 章, and 02 の 11.7.
+// 04 の 11.6改: a fault leaves its frames standing, and the machine answers
+// them until the next run -- lhat_machine_fault_depth/_frame, and the text
+// lhat_machine_traceback spells. run_text compiles without a program, so
+// `source` stays NULL here; the stamped path is the program tests'.
+static void test_traceback(void)
+{
+    Run r;
+
+    // The statements after each call keep the calls out of tail position --
+    // a tail call reuses the frame, and the folded caller leaves no trace
+    // (5.3; Lua elides them the same way).
+    LHAT_TEST("a fault leaves its frames readable");
+    run_text(&r,
+             "var^ inner = p^ { panic^ \"boom\" }\n"
+             "var^ outer = p^ {\n"
+             "    inner()\n"
+             "    var^ after = 1\n"
+             "}\n"
+             "outer()\n"
+             "var^ ending = 1\n");
+    LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_PANIC);
+    LHAT_CHECK_EQ_INT(lhat_machine_fault_depth(r.machine), 3);
+    LhatFrameInfo info;
+    LHAT_CHECK(lhat_machine_fault_frame(r.machine, 0, &info), "level 0");
+    LHAT_CHECK(info.name != NULL && strcmp(info.name, "inner") == 0,
+               "the innermost frame is the binding's name");
+    LHAT_CHECK_EQ_INT(info.line, 1);
+    LHAT_CHECK(!info.top_level, "a body, not the unit");
+    LHAT_CHECK(lhat_machine_fault_frame(r.machine, 1, &info), "level 1");
+    LHAT_CHECK(info.name != NULL && strcmp(info.name, "outer") == 0,
+               "the caller under its own name");
+    LHAT_CHECK_EQ_INT(info.line, 3);
+    LHAT_CHECK(lhat_machine_fault_frame(r.machine, 2, &info), "level 2");
+    LHAT_CHECK(info.name == NULL, "the unit's frame has no binding name");
+    LHAT_CHECK_EQ_INT(info.line, 6);
+    LHAT_CHECK(!lhat_machine_fault_frame(r.machine, 3, &info),
+               "nothing past the top level");
+
+    LHAT_TEST("and the rendered text names them innermost first");
+    {
+        size_t needed = lhat_machine_traceback(r.machine, NULL, 0);
+        char *text = (char *)malloc(needed + 1);
+        LHAT_CHECK(text != NULL, "room for the text");
+        if (text != NULL) {
+            lhat_machine_traceback(r.machine, text, needed + 1);
+            LHAT_CHECK(strstr(text, "in inner") != NULL, "the fault's frame");
+            LHAT_CHECK(strstr(text, "in outer") != NULL, "its caller");
+            const char *first = strstr(text, "in inner");
+            const char *second = strstr(text, "in outer");
+            LHAT_CHECK(first != NULL && second != NULL && first < second,
+                       "innermost first");
+            free(text);
+        }
+    }
+    run_dispose(&r);
+
+    LHAT_TEST("a coroutine's frame says so");
+    run_text(&r,
+             "var^ gen = p^ { panic^ 1 yield^ 2 }\n"
+             "var^ c = gen()\n"
+             "c.start()\n"
+             "var^ ending = 1\n");
+    LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_PANIC);
+    LHAT_CHECK(lhat_machine_fault_frame(r.machine, 0, &info), "level 0");
+    LHAT_CHECK(info.coroutine, "the body's frame is the coroutine's");
+    run_dispose(&r);
+
+    LHAT_TEST("a clean run leaves nothing to trace");
+    run_text(&r, "return^ 1\n");
+    LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_OK);
+    LHAT_CHECK_EQ_INT(lhat_machine_fault_depth(r.machine), 0);
+    LHAT_CHECK_EQ_INT(lhat_machine_traceback(r.machine, NULL, 0), 0);
+    run_dispose(&r);
+}
+
 static void test_catch_and_try(void)
 {
     Run r;
@@ -524,6 +600,40 @@ static void test_cleanups(void)
 {
     Run r;
 
+    // 04 の 11.6改2: and the one exit it does not run for. A panic is the
+    // fatal layer -- what catch^ cannot take, the language does not tidy up
+    // after either; the frames stay standing for the traceback to read, and
+    // the host's own resources come back through 05 の 8.8's three
+    // occasions rather than through this.
+    LHAT_TEST("a panic^ leaves finally^ unrun");
+    run_text(&r,
+             "var^ log = { n := 0 }\n"
+             "var^ go = p^ {\n"
+             "  do^{\n"
+             "    panic^ 1\n"
+             "  finally^:\n"
+             "    log.n := 7\n"
+             "  }\n"
+             "}\n"
+             "go()\n"
+             "var^ ending = 1\n");
+    LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_PANIC);
+    LHAT_CHECK_EQ_INT(lhat_machine_fault_depth(r.machine), 2);
+    run_dispose(&r);
+
+    LHAT_TEST("and so does a fault the machine itself raises");
+    run_text(&r,
+             "var^ log = { n := 0 }\n"
+             "var^ t : t^{ x : number^ }|nil^ = nil^\n"
+             "do^{\n"
+             "  var^ read = t.x\n"
+             "finally^:\n"
+             "  log.n := 7\n"
+             "}\n"
+             "var^ ending = 1\n");
+    LHAT_CHECK(r.ran.status != LHAT_RUN_OK, "the read faulted");
+    run_dispose(&r);
+
     LHAT_TEST("finally^ runs when the block ends");
     run_text(&r,
              "var^ log = { n := 0 }\n"
@@ -764,6 +874,7 @@ static void test_cleanups(void)
 int main(void)
 {
     test_errors();
+    test_traceback();
     test_catch_and_try();
     test_cleanups();
     return lhat_test_report("test_vm_error");

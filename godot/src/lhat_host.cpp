@@ -138,6 +138,31 @@ String problem(const String &where, const String &what)
     return where + String(": error: ") + what;
 }
 
+// 04 の 11.6改: a runtime fault said as much as the machine knows -- the
+// line, the panic's own value, and the frames still standing (read before
+// the machine is disposed or run again).
+String run_problem(LhatMachine *machine, const String &where,
+                   const LhatRunResult &ran)
+{
+    String text = String::utf8(lhat_run_status_message(ran.status));
+    if (ran.status == LHAT_RUN_PANIC) {
+        text += ": " + text_of(ran.value);
+    }
+    if (ran.line > 0) {
+        text = String("line ") + String::num_int64(ran.line) + ": " + text;
+    }
+    if (machine != nullptr && lhat_machine_fault_depth(machine) >= 2) {
+        size_t needed = lhat_machine_traceback(machine, nullptr, 0);
+        char *spelt = (char *)lhat_alloc(needed + 1);
+        if (spelt != nullptr) {
+            lhat_machine_traceback(machine, spelt, needed + 1);
+            text += String("\n") + String::utf8(spelt, (int)needed);
+            lhat_free(spelt);
+        }
+    }
+    return problem(where, text);
+}
+
 String indentation()
 {
     EditorInterface *editor = Engine::get_singleton()->is_editor_hint()

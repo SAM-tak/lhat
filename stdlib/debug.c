@@ -19,6 +19,7 @@
 #include "debug.h"
 
 #include <stdio.h>
+#include <stdlib.h>  // malloc for the traceback text
 
 // 一切状態を持たないので context は NULL -- io/thread/random が
 // LhatErrorKind や LhatHostDataTag を持ち回るために module 構造体を
@@ -38,10 +39,35 @@ static LhatValue debug_log(LhatMachine *machine, void *context,
     return lhat_nil();
 }
 
+// 04 の 11.6改: where the caller stands, as the text a log line wants. A
+// host function runs with the frames of its callers still on the machine,
+// so this is lhat_machine_traceback over the live stack -- reading it
+// changes nothing the program can observe, which is what lets it be an f^
+// like log above.
+static LhatValue debug_traceback(LhatMachine *machine, void *context,
+                                 const LhatValue *arguments, size_t count)
+{
+    (void)context;
+    (void)arguments;
+    (void)count;
+    size_t needed = lhat_machine_traceback(machine, NULL, 0);
+    char *text = (char *)malloc(needed + 1);
+    if (text == NULL) {
+        return lhat_nil();
+    }
+    lhat_machine_traceback(machine, text, needed + 1);
+    LhatValue out = lhat_nil();
+    bool made = lhat_machine_make_string(machine, text, needed, &out);
+    free(text);
+    return made ? out : lhat_nil();
+}
+
 bool lhatstdlib_debug_register(LhatProgram *program)
 {
     // std.error にも他のどのモジュールにも依存しない -- 書き出すだけの
     // f^ に失敗する経路がないので、返す誤りもない。
     return lhat_register_func(program, "std.debug", "log",
-                              "f^string^ -> nil^;", debug_log, NULL);
+                              "f^string^ -> nil^;", debug_log, NULL) &&
+           lhat_register_func(program, "std.debug", "traceback",
+                              "f^ -> string^;", debug_traceback, NULL);
 }

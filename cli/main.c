@@ -478,6 +478,24 @@ static void say_panic_value(LhatValue value)
 // one, the operator -- both from LhatRunResult, not the richer source-offset
 // diagnostics the checker/parser give (those need a source and a token; a
 // fault only ever has a line).
+// 04 の 11.6改: the frames a fault left standing, written out under the
+// one-line report. Only when there is more than one -- a single frame says
+// nothing say_run_error's line did not.
+static void say_traceback(LhatMachine *machine)
+{
+    if (lhat_machine_fault_depth(machine) < 2) {
+        return;
+    }
+    size_t needed = lhat_machine_traceback(machine, NULL, 0);
+    char *text = (char *)malloc(needed + 1);
+    if (text == NULL) {
+        return;
+    }
+    lhat_machine_traceback(machine, text, needed + 1);
+    fprintf(stderr, "%s\n", text);
+    free(text);
+}
+
 static void say_run_error(const char *path, LhatRunResult ran)
 {
     if (path != NULL) {
@@ -698,6 +716,7 @@ static int check_program(const char *path, bool run, bool strict)
             LhatRunResult ran = lhat_run(machine, modules[root->index].proto);
             if (ran.status != LHAT_RUN_OK) {
                 say_run_error(path, ran);
+                say_traceback(machine);
                 failed = true;
             } else if (!lhat_is_nil(ran.value)) {
                 size_t needed = lhat_value_write(ran.value, NULL, 0);
@@ -990,6 +1009,7 @@ static int repl(bool strict)
         held++;
         if (ran.status != LHAT_RUN_OK) {
             say_run_error(NULL, ran);
+            say_traceback(machine);
             continue;
         }
         if (!lhat_is_nil(ran.value)) {

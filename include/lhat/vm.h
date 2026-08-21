@@ -361,6 +361,44 @@ bool lhat_machine_coroutine_done(LhatValue coroutine);
 
 const char *lhat_run_status_message(LhatRunStatus status);
 
+// 04 の 11.6改: one frame of a traceback. `source` is the unit's path and
+// `name` the binding or member the body was written under -- both debug
+// labels stamped at compile time (02 の 14.9 stands: neither is part of
+// what a proto is), and either may be NULL (a session's input, a bare f^).
+// `line` stays at 11.6's file:line granularity; 0 when unknown.
+typedef struct {
+    const char *source;
+    const char *name;
+    uint32_t line;
+    bool top_level;   // the unit's own top-level frame
+    bool coroutine;   // a coroutine's body
+    bool disposing;   // running 10.7's finally^ cleanups
+} LhatFrameInfo;
+
+// The frames a fault left standing -- nothing unwinds on one, so they stay
+// readable until the next lhat_run / lhat_machine_call / lhat_machine_resume
+// or the machine's disposal, whichever comes first. A host function that
+// saw a nested call fault reads them before returning. With no fault
+// recorded the walk answers the frames standing right now, which is what a
+// host asking "where am I" wants (std.debug.traceback rides this).
+//
+// `level` counts from the innermost frame (0 = where it stopped).
+size_t lhat_machine_fault_depth(const LhatMachine *machine);
+bool lhat_machine_fault_frame(const LhatMachine *machine, size_t level,
+                              LhatFrameInfo *out);
+
+// The same frames written out as text, one line each, innermost first:
+//
+//   traceback:
+//     main.lh:12: in gen
+//     main.lh:40: at the top level
+//
+// Fills up to `capacity` bytes (NUL-terminated when capacity > 0) and
+// answers the length the whole text needs, lhat_value_text's convention.
+// Empty (0) when there is nothing to trace.
+size_t lhat_machine_traceback(const LhatMachine *machine, char *out,
+                              size_t capacity);
+
 #ifdef __cplusplus
 }
 #endif

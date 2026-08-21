@@ -13,15 +13,12 @@ namespace godot {
 
 namespace {
 
-// 04 の 11.6改: a panic carries what the program wrote it with, and the
-// status alone would drop exactly the part that says anything.
-String run_failure(const String &path, const LhatRunResult &ran)
+// 04 の 11.6改: the shared spelling -- line, panic value, and the frames
+// still standing (host::run_problem).
+String run_failure(LhatMachine *machine, const String &path,
+                   const LhatRunResult &ran)
 {
-    String text = String::utf8(lhat_run_status_message(ran.status));
-    if (ran.status == LHAT_RUN_PANIC) {
-        text += ": " + host::text_of(ran.value);
-    }
-    return host::problem(path, text);
+    return host::run_problem(machine, path, ran);
 }
 
 }  // namespace
@@ -117,7 +114,7 @@ PackedStringArray LhatRuntime::run(const String &path)
     LhatRunResult ran =
         lhat_run(machine, modules[lhat_unit_index(root)].proto);
     if (ran.status != LHAT_RUN_OK) {
-        said.push_back(run_failure(path, ran));
+        said.push_back(run_failure(machine, path, ran));
     } else if (!lhat_is_nil(ran.value)) {
         UtilityFunctions::print(host::text_of(ran.value));
     }
@@ -166,8 +163,7 @@ Variant LhatRuntime::call_member(const String &path, const String &member,
     LhatRunResult ran =
         lhat_run(machine, modules[lhat_unit_index(root)].proto);
     if (ran.status != LHAT_RUN_OK) {
-        UtilityFunctions::push_error(
-            host::problem(path, lhat_run_status_message(ran.status)));
+        UtilityFunctions::push_error(host::run_problem(machine, path, ran));
     } else if (!lhat_is_object_kind(ran.value, LHAT_OBJECT_TABLE)) {
         UtilityFunctions::push_error(host::problem(
             path, "this unit answers no table, so it has no members to call"));
@@ -206,9 +202,8 @@ Variant LhatRuntime::call_member(const String &path, const String &member,
             LhatRunResult called = lhat_machine_call(
                 machine, callee, converted.ptr(), converted.size());
             if (called.status != LHAT_RUN_OK) {
-                UtilityFunctions::push_error(host::problem(
-                    path + String(".") + member,
-                    lhat_run_status_message(called.status)));
+                UtilityFunctions::push_error(host::run_problem(
+                    machine, path + String(".") + member, called));
             } else {
                 answer = host::to_variant(called.value);
             }

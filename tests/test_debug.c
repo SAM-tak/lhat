@@ -162,5 +162,27 @@ int main(void)
     test_log_writes();
     test_log_inside_a_pure_function();
     test_log_answers_nil();
+    LHAT_TEST("std.debug.traceback answers where the caller stands");
+    {
+        char written[16];
+        LhatTestRan ran = run_capturing(
+            "import^ std.debug\n"
+            "let^ inner = f^ -> string^ { return^ std.debug.traceback() }\n"
+            "let^ outer = f^ -> string^ {\n"
+            "    let^ t = inner()\n"
+            "    return^ t\n"
+            "}\n"
+            "let^ said = outer()\n"
+            "return^ said\n",
+            written, sizeof written);
+        LHAT_CHECK(ran.ok, "the program ran");
+        LHAT_CHECK_EQ_INT(ran.status, LHAT_RUN_OK);
+        LHAT_CHECK(ran.text != NULL && strstr(ran.text, "in inner") != NULL,
+                   "the asking frame is named");
+        LHAT_CHECK(ran.text != NULL && strstr(ran.text, "in outer") != NULL,
+                   "and its caller");
+        lhat_test_ran_dispose(&ran);
+    }
+
     return lhat_test_report("test_debug");
 }
