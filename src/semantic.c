@@ -203,6 +203,32 @@ static void collector_add(SemCollector *c, uint32_t offset, uint32_t length,
     c->count++;
 }
 
+// 13 章: a name standing where a type is written names a type only if there
+// is one. The place says nothing about that -- the parser reads `n : number`
+// into exactly the node `n : number^` gives it, and the hat is the whole
+// difference -- so a walk that reads the form alone paints a misspelling in
+// the colour of the thing it was meant to be. That is how a forgotten hat
+// hides: the diagnostic is under the name, and the name looks right.
+//
+// What resolved is the checker's answer, and check.c records it for a written
+// type name (record_type_name) so that this can ask. A unit with nothing
+// recorded at all was never checked -- one an editor opened from outside the
+// workspace, or a build with LHAT_WITH_RESOLUTIONS off -- and there the form's
+// word stands rather than every type name going grey.
+static bool resolved_as_a_type(const SemCollector *c, uint32_t offset)
+{
+#if LHAT_WITH_RESOLUTIONS
+    if (c->unit == NULL || c->unit->checked.resolution_count == 0) {
+        return true;
+    }
+    return lhat_check_resolution_at(&c->unit->checked, offset) != NULL;
+#else
+    (void)c;
+    (void)offset;
+    return true;
+#endif
+}
+
 // IDENT / HAT_IDENT / TYPE_NAME are the kinds that carry v.name (ast.h).
 // Every other kind puts something else in that union, so the guard is what
 // keeps this from reading the wrong field: an errordef^'s name comes from
@@ -266,13 +292,18 @@ static void walk_qualified_path(SemCollector *out, const LhatNode *node,
         return;
     }
     if (node->kind == LHAT_NODE_IDENT || node->kind == LHAT_NODE_TYPE_NAME) {
-        emit_name(out, node, kind, 0);
+        if (kind != SEM_TYPE || resolved_as_a_type(out, node->v.name.offset)) {
+            emit_name(out, node, kind, 0);
+        }
         return;
     }
     if (node->kind == LHAT_NODE_MEMBER) {
         walk_qualified_path(out, node->v.access.target, kind);
         if (node->v.access.argument != NULL &&
-            node->v.access.argument->kind == LHAT_NODE_IDENT) {
+            node->v.access.argument->kind == LHAT_NODE_IDENT &&
+            (kind != SEM_TYPE ||
+             resolved_as_a_type(out,
+                                node->v.access.argument->v.name.offset))) {
             emit_name(out, node->v.access.argument, kind, 0);
         }
     }
@@ -351,7 +382,9 @@ static void walk_type(SemCollector *out, const LhatNode *node)
     }
     switch (node->kind) {
         case LHAT_NODE_TYPE_NAME:
-            emit_name(out, node, SEM_TYPE, 0);
+            if (resolved_as_a_type(out, node->v.name.offset)) {
+                emit_name(out, node, SEM_TYPE, 0);
+            }
             break;
         // 04 の 14.4: an error kind is named through the declaration that
         // introduced it, so a type may be a qualified name -- built as a

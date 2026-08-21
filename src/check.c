@@ -668,6 +668,25 @@ LhatType *chk_kind_of_set(const LhatType *set, const char *name, size_t length)
     return NULL;
 }
 
+// 07 の 4 章: what a written type name turned out to name. 13 章 resolves one
+// here rather than through 8 章's scoping, so nothing else records it -- and a
+// tool that colours a name by the place it stands in cannot tell 'number^'
+// from the 'number' somebody meant to write that way. What resolves is a
+// type; what does not is a misspelling, and being able to say which is the
+// whole use of this.
+static void record_type_name(Checker *c, const LhatNode *at, LhatType *type)
+{
+#if LHAT_WITH_RESOLUTIONS
+    if (at != NULL && type != NULL) {
+        chk_record_typed_resolution(c, at, type);
+    }
+#else
+    (void)c;
+    (void)at;
+    (void)type;
+#endif
+}
+
 static LhatType *resolve_qualified_type(Checker *c, const LhatNode *node)
 {
     LhatType *outer = chk_resolve_type(c, node->v.access.target);
@@ -681,6 +700,7 @@ static LhatType *resolve_qualified_type(Checker *c, const LhatNode *node)
     if (outer->kind == LHAT_TYPE_ERROR_SET) {
         LhatType *kind = chk_kind_of_set(outer, name, length);
         if (kind != NULL) {
+            record_type_name(c, node->v.access.argument, kind);
             return kind;
         }
         chk_report(c, node, LHAT_CHECK_ERR_UNKNOWN_TYPE);
@@ -693,7 +713,10 @@ static LhatType *resolve_qualified_type(Checker *c, const LhatNode *node)
     if (outer->kind == LHAT_TYPE_HOSTVALUE) {
         bool sealed = chk_name_is(name, length, "ConstBox^");
         if (sealed || chk_name_is(name, length, "Box^")) {
-            return lhat_type_hostvalue_box(c->result->types, outer, sealed);
+            LhatType *box =
+                lhat_type_hostvalue_box(c->result->types, outer, sealed);
+            record_type_name(c, node->v.access.argument, box);
+            return box;
         }
     }
 
@@ -705,7 +728,9 @@ static LhatType *resolve_qualified_type(Checker *c, const LhatNode *node)
         // 2.2 again: a unit publishes values as well as types, and only the
         // types among them may be written here.
         if (member != NULL && names_a_type(member->type)) {
-            return as_written_type(member->type);
+            LhatType *written = as_written_type(member->type);
+            record_type_name(c, node->v.access.argument, written);
+            return written;
         }
     }
 
@@ -851,6 +876,7 @@ LhatType *chk_resolve_type(Checker *c, const LhatNode *node)
             }
             LhatType *builtin = builtin_type(c, name, length);
             if (builtin != NULL) {
+                record_type_name(c, node, builtin);
                 return builtin;
             }
 
@@ -876,6 +902,7 @@ LhatType *chk_resolve_type(Checker *c, const LhatNode *node)
                     chk_report(c, node, LHAT_CHECK_ERR_SELF_TYPE_OUTSIDE);
                     return chk_simple(c, LHAT_TYPE_UNKNOWN);
                 }
+                record_type_name(c, node, link->type);
                 return link->type;
             }
 
@@ -924,6 +951,7 @@ LhatType *chk_resolve_type(Checker *c, const LhatNode *node)
             for (const struct DefLink *d = c->def_link; d != NULL;
                  d = d->outer) {
                 if (d->binding == declared && d->instance != NULL) {
+                    record_type_name(c, node, d->instance);
                     return d->instance;
                 }
             }
@@ -935,7 +963,9 @@ LhatType *chk_resolve_type(Checker *c, const LhatNode *node)
                 return chk_simple(c, LHAT_TYPE_UNKNOWN);
             }
 
-            return as_written_type(declared->type);
+            LhatType *written = as_written_type(declared->type);
+            record_type_name(c, node, written);
+            return written;
         }
 
         case LHAT_NODE_MEMBER:

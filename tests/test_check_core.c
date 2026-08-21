@@ -2482,6 +2482,44 @@ static void test_a_narrowed_name_still_resolves(void)
 //
 // 8.7: an annotation is what the binding holds when one is written, so
 // without this the def^'s own answer never reaches the name.
+// 13 章 with 07 の 4 章: a written type name is resolved here rather than
+// through 8 章's scoping, and until this was recorded nothing outside the
+// checker could tell 'number^' from the 'number' somebody meant to write. The
+// place they stand in is the same one: the parser reads both into a type-name
+// node, and the hat is the whole difference.
+static void test_a_written_type_name_resolves(void)
+{
+    Unit u;
+
+    LHAT_TEST("13 章: a type name that names a type is recorded as one");
+    check_text(&u, "let^ twice = f^ n:number^ -> number^ { return^ n * 2 }\n");
+    CHECK_CLEAN(&u);
+    const char *written = strstr(u.source.text, "number^");
+    LHAT_CHECK(written != NULL, "expected the annotation to be there");
+    if (written != NULL) {
+        const LhatResolution *r = lhat_check_resolution_at(
+            &u.checked, (uint32_t)(written - u.source.text));
+        LHAT_CHECK(r != NULL && r->type != NULL &&
+                       r->type->kind == LHAT_TYPE_NUMBER,
+                   "expected number^ to resolve to number^");
+    }
+    unit_dispose(&u);
+
+    // And the hat forgotten: 2.1 reserves no word, so this is a name like any
+    // other and there is no type under it. Nothing recorded is what says so.
+    LHAT_TEST("and one that names nothing is not");
+    check_text(&u, "let^ twice = f^ n:number -> number^ { return^ 2 }\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_UNKNOWN_TYPE);
+    written = strstr(u.source.text, "number -");
+    LHAT_CHECK(written != NULL, "expected the misspelling to be there");
+    if (written != NULL) {
+        LHAT_CHECK(lhat_check_resolution_at(
+                       &u.checked, (uint32_t)(written - u.source.text)) == NULL,
+                   "expected nothing recorded where no type was named");
+    }
+    unit_dispose(&u);
+}
+
 static void test_a_written_definition_is_one(void)
 {
     Unit u;
@@ -2525,6 +2563,7 @@ int main(void)
     test_resolutions_are_ordered();
     test_resolutions_say_what_bound_the_name();
     test_a_narrowed_name_still_resolves();
+    test_a_written_type_name_resolves();
     test_a_written_definition_is_one();
 #endif
     test_expressions();

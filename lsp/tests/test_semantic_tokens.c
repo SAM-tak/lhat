@@ -867,6 +867,42 @@ static void test_a_member_is_not_called_readonly(void)
     check_dispose(&c);
 }
 
+// 13 章: what makes a type name a type is that it names one. The place does
+// not: `n:number` and `n:number^` are the same node with the same span, and
+// painting the first like the second is how a forgotten hat stays hidden --
+// the squiggle is under a word that looks right.
+static void test_a_type_name_is_coloured_only_where_it_names_a_type(void)
+{
+    LHAT_TEST("13 章: a misspelled type name is not painted as a type");
+
+    static const char *source =
+        "errordef^ E { Bad }\n"
+        "let^ good = f^ n:number^ -> number^ { return^ n }\n"
+        "let^ typo = f^ n:number -> number^ { return^ 1 }\n"
+        "let^ held : E.Bda = error^ E.Bad { }\n";
+
+    Checked c;
+    check_text(&c, source);
+    cJSON *data = lsp_semantic_tokens_for_unit(&c.unit);
+    Tokens tokens = decode(data);
+
+    expect_token(&tokens, source, "number^ -> number^", "type", false);
+    LHAT_CHECK(token_for(&tokens, source, "number -> ") == NULL,
+               "expected no token where the hat was forgotten");
+
+    // 04 の 14.4's qualified form, one segment at a time: the root names the
+    // errordef^ and stands, and the kind under it does not exist.
+    expect_token(&tokens, source, "E.Bda", "type", false);
+    LHAT_CHECK(token_for(&tokens, source, "Bda") == NULL,
+               "expected no token on a kind the set does not declare");
+    // The same spelling written correctly on the same line still answers.
+    expect_token(&tokens, source, "Bad { }", "type", false);
+
+    free(tokens.items);
+    cJSON_Delete(data);
+    check_dispose(&c);
+}
+
 int main(void)
 {
     test_every_name_is_reached();
@@ -886,6 +922,7 @@ int main(void)
     test_try_block();
     test_for_focus();
     test_qualified_type_name();
+    test_a_type_name_is_coloured_only_where_it_names_a_type();
     test_declaration_and_reference();
     return lhat_test_report("test_lsp_semantic_tokens");
 }
