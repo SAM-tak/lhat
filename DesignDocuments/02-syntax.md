@@ -4224,6 +4224,13 @@ var^ a:string^, b:number^ = yield^ "aaa", n   # 出し (string^, number^)、
 束縛の2値リストのほう（`a = yield^ x`、`b = y` の複数定義）を書きたい
 稀な場合は、括弧で `yield^` を閉じる: `var^ a, b = (yield^ x), y`。
 
+**出しの幅と受けの幅は別々に決まる。** 13.9 が `R` と `Y` を別の席に
+置いているとおりで、対を出して単値を受けるのも同じ規則である。
+
+```lhat
+let^ got:number^ = yield^ 1, "a"   # 出し (number^, string^)、受け number^
+```
+
 `yield^ (x, y)` も同じ対を送る——`return^ (a, b)` が `return^ a, b` に
 畳まれるのと同じ読みである。
 

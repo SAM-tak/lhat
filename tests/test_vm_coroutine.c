@@ -881,6 +881,47 @@ static void test_coroutines(void)
     CHECK_INTEGER(&r, 6);
     run_dispose(&r);
 
+    // 15.4 with 13.9: R and Y are their own seats, so a pair may go out and
+    // one value come back. Before this the compiler read a wide yield^ as a
+    // statement's and loaded nil^ where the send belongs.
+    LHAT_TEST("a name bound to a wide yield^ receives what the resume sent");
+    run_checked_text(&r,
+                     "var^ g = p^ -> c^{p^number^ -> number^, number^ -> "
+                     "number^} {\n"
+                     "  let^ got:number^ = yield^ 1, 2\n"
+                     "  yield^ got, 0\n"
+                     "  return^ 0\n"
+                     "}\n"
+                     "var^ c = g()\n"
+                     "var^ a, b = c.start()\n"
+                     "var^ x, y = c.resume(7)\n"
+                     // 13.8改: T is one value, so the second position of the
+                     // fold carries the nil^ of the round T answers in.
+                     "return^ a * 1000 + (b ?? 0) * 100 + x\n");
+    CHECK_INTEGER(&r, 1207);
+    run_dispose(&r);
+
+    // The out positions go to scratch rather than to the place the name
+    // holds: a reassignment names a live local, and the slots behind it are
+    // other live locals' -- laying a pair from there would overwrite them.
+    LHAT_TEST("a reassignment receives it, and the locals behind stand");
+    run_checked_text(&r,
+                     "var^ g = p^ -> c^{p^number^ -> number^, number^ -> "
+                     "number^} {\n"
+                     "  var^ got = 0\n"
+                     "  var^ near = 7\n"
+                     "  var^ far = 9\n"
+                     "  got := yield^ 1, 2\n"
+                     "  yield^ got * 100 + near * 10 + far, 0\n"
+                     "  return^ 0\n"
+                     "}\n"
+                     "var^ c = g()\n"
+                     "var^ a, b = c.start()\n"
+                     "var^ x, y = c.resume(5)\n"
+                     "return^ a * 10000 + (b ?? 0) * 1000 + x\n");
+    CHECK_INTEGER(&r, 10000 + 2000 + 579);
+    run_dispose(&r);
+
     // 15.8: the value of the delegation is the inner one's return value, the
     // shape PEP 380 gave a generator's return.
     LHAT_TEST("the value of await^ is the inner return");

@@ -4531,8 +4531,9 @@ static LhatType *infer_node(Checker *c, const LhatNode *node)
             c->yield_bound_type = NULL;
 
             // 13.8改: 'yield^ a, b' answers a tuple, exactly as a return^ of
-            // several values does. Only written as a statement, so nothing
-            // receives what comes back here.
+            // several values does. What comes back is R, sized on its own
+            // (13.9 seats R and Y apart), so the binding below reads it the
+            // same way it reads a one-value yield^'s.
             LhatType *produced;
             if (node->v.jump.level > 1) {
                 LhatType *tuple = lhat_type_tuple(c->result->types);

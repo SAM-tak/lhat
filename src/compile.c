@@ -4034,17 +4034,26 @@ static void compile_expression(Compiler *c, const LhatNode *node, uint8_t into)
             // 13.8改: 'yield^ a, b' answers a tuple -- the positions go in
             // consecutive slots and YIELD carries how many, the same shape
             // return^ uses. The head is the machine's, put down in the
-            // resumer's frame. Only written as a statement, so what the
-            // resume sends lands in the first position's slot and nothing
-            // here reads it back.
+            // resumer's frame.
+            //
+            // 15.4: what goes out and what comes back are sized apart -- R
+            // and Y are their own seats (13.9) -- so a pair may go out and
+            // one value come back. The send lands in the first position's
+            // slot, which is why the run is scratch and not `into`: `into`
+            // is a place a reassignment names, and the slots behind it
+            // belong to whatever locals live there.
             if (node->v.jump.level > 1) {
                 size_t positions = node->v.jump.level;
                 if (positions > LHAT_MAX_TUPLE) {
                     fail(c, LHAT_COMPILE_TOO_COMPLEX);
                     return;
                 }
+                // 05 の 8.9: the send may be a host value, and it arrives
+                // whole -- the run holds the wider of the two.
+                size_t receive = width_of(node);
+                size_t need = positions > receive ? positions : receive;
                 uint8_t mark = c->next_register;
-                uint8_t first = reserve_wide(c, positions);
+                uint8_t first = reserve_wide(c, need);
                 uint8_t at = first;
                 for (const LhatNode *item = node->v.jump.value; item != NULL;
                      item = item->next) {
@@ -4053,7 +4062,7 @@ static void compile_expression(Compiler *c, const LhatNode *node, uint8_t into)
                 }
                 emit(c, lhat_encode_abc(LHAT_BC_YIELD, first,
                                         (uint8_t)positions, 0));
-                emit(c, lhat_encode_abc(LHAT_BC_LOADNIL, into, 0, 0));
+                emit_move_wide(c, into, first, receive);
                 c->next_register = mark;
                 return;
             }

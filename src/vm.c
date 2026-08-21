@@ -4615,9 +4615,10 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
                 // the frame's own room the way a return^'s do -- the window
                 // is about to be copied into the coroutine and then left
                 // behind, so no register survives to be read from the
-                // resumer's side. What the resume sends still comes back as
-                // one value, into the first position's slot (co->sent_into
-                // below), since a resume sends one.
+                // resumer's side. What the resume sends comes back into the
+                // first position's slot (co->sent_into below) whatever its
+                // own width is -- one value, a host value laid out whole, or
+                // 13.8改's several as a run head with the positions after.
                 //
                 // b == 0 with a run head in the slot is 15.8's delegation
                 // loop forwarding what it was handed: the positions are
