@@ -59,7 +59,7 @@ GDScript は最上位に文を書けないので、同じことを3つ書いて�
 extends EditorScript
 
 func _run() -> void:
-	print("hello")
+    print("hello")
 ```
 
 `.lh` はどれも要らない。`module^` を書かないことが「これは走らせるもの」と
@@ -107,10 +107,10 @@ let^Godot = require^"lhat/Godot.lh"
 
 @game
 public^let^Spinner = Godot.Sprite2D..def^{
-	self^{
-		@export speed = 1,
-	},
-	…
+    self^{
+        @export speed = 1,
+    },
+    …
 }
 ```
 
@@ -588,7 +588,7 @@ Packed\* は列であり、1名の走査が列の値を受けるのは表の密�
 
 ```lhat
 for^ p in^ points {
-	total := total + p.x
+    total := total + p.x
 }
 ```
 
@@ -699,6 +699,8 @@ public^let^ Spinner = Godot.Sprite2D..def^{
   シグナルの引数欄**で、13.4 が `self^` を外すので呼び手が書く欄と一致する。
   名前も型も書かれているから、接続ダイアログにも `arg0` ではなく
   `message : String` と出る
+- **`@rpc`** — メンバをネットワーク越しに呼べるものにする。語彙は GDScript の
+  もので、何も書かなければ authority・reliable・call_remote になる
 
 `self^.died("…")` は**普通のメンバ呼び出し**として型検査を通り、走ると
 `emit_signal` に届く。Godot は**同名のメソッドとシグナルを同居させる**ので、
@@ -752,8 +754,51 @@ res://spinner.lh: @signal died is never emitted by name in its own body
 ［補足］ `_can_make_function` は真のままにしてある。偽にすると接続ダイアログが
 「受け手は自動生成されません」と出すが、生成しているので嘘になる。
 
-登録してあるが**まだエンジン側の意味が無い**もの: `@rpc`。
-書いても検査は通り、何も起きない。
+#### `@rpc` はネットワーク越しに呼べると言う
+
+書いたメンバがエンジンの RPC 表に載る。**語彙は GDScript のものをそのまま
+採る**ので、あちらで書いてきたものがそのまま読める。
+
+```lhat
+@rpc
+fire = p^self^ { … },                                    # 既定のまま
+
+@rpc("any_peer", "call_local", "unreliable", 3)
+move = p^self^, x:number^, y:number^ { … },              # 全部書いた形
+```
+
+| 語 | 言うこと | 既定 |
+| --- | --- | --- |
+| `"call_local"` / `"call_remote"` | 呼んだ側でも本体を走らせるか | `call_remote` |
+| `"any_peer"` / `"authority"` | 誰が呼べるか | `authority` |
+| `"reliable"` / `"unreliable"` / `"unreliable_ordered"` | どう届けるか | `reliable` |
+| 数 | チャンネル | `0` |
+
+**何も書かなくてよい。** 4つとも既定があるので、`@rpc` だけで
+「authority が呼べて、確実に届いて、呼んだ側では走らない」になる。
+
+GDScript より緩いところが2つある。
+
+- **数はどこに書いてもチャンネル**。GDScript は4番目の位置にあるものだけを
+  チャンネルとして読むが（`gdscript_parser.cpp` の `if (i == 3)`）、位置に
+  意味を持たせる理由が無い。`@rpc(3)` も `@rpc("any_peer", 3)` も通る
+- **裸の名前も書ける**。`@rpc(any_peer)` は `@rpc("any_peer")` と同じ。
+  18.3 が名前を綴りのまま渡し、意味の判断をホストに任せているため
+
+**語を判じるのはホストである**（18.1）。検査器は引数がリテラルだと知って
+いるだけなので、知らない語・同じ区分を2度・`@signal` との併記は、
+`_reload` のときに拡張が言う:
+
+```text
+res://net.lh: error: @rpc does not know this word on fire: whenever -- one of …
+res://net.lh: error: @rpc says who may call it twice on move
+res://net.lh: error: @rpc and @signal say different things about the same member: fired
+```
+
+［補足］ エンジンは名前を昇順に並べて ID を振る
+（`scene_rpc_interface.cpp` の `_parse_rpc_config`）ので、両端が同じ綴りを
+持っていれば ID は自然に一致する。
+
 
 **`@onready` は登録していない。** GDScript のそれは初期化式を `_ready` まで
 遅らせるものだが、14.11 は `self^` の欄の初期化式を `new` の中で走らせ、
@@ -958,7 +1003,6 @@ godot --headless --path godot\demo
 
 ## これから
 
-- `@rpc` にエンジン側の意味を与える
 - 補完（`_complete_code`）。`lsp/` が既にあるので、そこを使い回す話になる。
   意味層は `lhat/semantic.h` として公開済みなので、補完も同じ筋で降ろせる
   かもしれない

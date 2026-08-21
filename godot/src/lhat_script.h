@@ -80,6 +80,12 @@ class LhatScript : public ScriptExtension {
     // arrow should mean for it.
     Dictionary defaults;
 
+    // 02 の 18: what @rpc says, as the engine wants it -- a Dictionary of
+    // member name to the configuration for that member. Read once when the
+    // class is found, so the vocabulary is judged in one place; the engine
+    // asks for the whole of it (_get_rpc_config) rather than per member.
+    Dictionary rpc_config;
+
     // 14.12's gdBaseClass, where the definition wrote one: the least engine
     // class a node must be for this script to fit. Empty for a definition
     // wrapping nothing, and _get_instance_base_type answers Object then.
@@ -136,6 +142,7 @@ class LhatScript : public ScriptExtension {
 
     void let_go();
     void fill_signals();
+    void fill_rpc();
     // What _reload does before the wearers are dealt with. Split off so the
     // dealing happens whatever the reading answered -- a text that no longer
     // checks leaves nodes holding instances of a machine that is gone.

@@ -2,6 +2,8 @@
 
 #include <godot_cpp/classes/engine.hpp>
 #include <godot_cpp/classes/file_access.hpp>
+#include <godot_cpp/classes/multiplayer_api.hpp>
+#include <godot_cpp/classes/multiplayer_peer.hpp>
 #include <godot_cpp/core/class_db.hpp>
 #include <godot_cpp/templates/local_vector.hpp>
 #include <godot_cpp/variant/utility_functions.hpp>
@@ -295,6 +297,7 @@ void LhatScript::let_go()
     editor_script = false;
     entry = nullptr;  // the program it belonged to is gone
     defaults.clear();
+    rpc_config.clear();
     base_class = String();
     // 18.7改: the values pointing at these died with the machine above.
     for (host::SignalEmitter *emitter : emitters) {
@@ -360,6 +363,142 @@ void LhatScript::fill_signals()
             return;
         }
         emitters.push_back(emitter);
+    }
+}
+
+// 02 の 18 with the engine's multiplayer: what @rpc says, in the shape
+// SceneRPCInterface::_parse_rpc_config reads -- a Dictionary of member name
+// to that member's configuration. Built once here rather than answered per
+// ask, so the vocabulary is judged in one place and a mistake is said once.
+//
+// The words are GDScript's, so what a writer already knows moves over
+// (gdscript_parser.cpp's rpc_annotation). Two things are looser on purpose:
+// a number is the channel wherever it stands rather than only in the fourth
+// place, and every part may be left out -- including all of them.
+void LhatScript::fill_rpc()
+{
+    rpc_config = Dictionary();
+    if (unit == nullptr || klass_name.is_empty()) {
+        return;
+    }
+    CharString klass = klass_name.utf8();
+    size_t count = lhat_unit_member_count(unit, klass.get_data());
+    for (size_t i = 0; i < count; i++) {
+        LhatUnitMember member = lhat_unit_member(unit, klass.get_data(), i);
+        if (member.name == NULL) {
+            continue;
+        }
+        String spelt = String::utf8(member.name, (int)member.name_length);
+        CharString name = spelt.utf8();
+
+        size_t written =
+            lhat_unit_annotation_count(unit, klass.get_data(), name.get_data());
+        bool marked = false;
+        bool signalled = false;
+        Dictionary config;
+        // Always written: the engine drops an entry that does not carry one
+        // (_parse_rpc_config's ERR_CONTINUE). The rest is left out where
+        // nothing was written, so the engine's own defaults stand.
+        config["rpc_mode"] = (int64_t)MultiplayerAPI::RPC_MODE_AUTHORITY;
+        int locality = 0;
+        int permission = 0;
+        int transfer = 0;
+        bool refused = false;
+
+        for (size_t a = 0; a < written; a++) {
+            LhatAnnotation at = lhat_unit_annotation(unit, klass.get_data(),
+                                                     name.get_data(), a);
+            String said = String::utf8(at.name, (int)at.name_length);
+            if (said == "signal") {
+                signalled = true;
+                continue;
+            }
+            if (said != "rpc") {
+                continue;
+            }
+            marked = true;
+            for (size_t g = 0; g < at.argument_count; g++) {
+                LhatAnnotationArgument argument =
+                    lhat_annotation_argument(at, g);
+                // 18.3's number, wherever it stands.
+                if (argument.kind == LHAT_ANNOTATION_ARG_NUMBER) {
+                    config["channel"] = (int64_t)argument.number;
+                    continue;
+                }
+                // A string or a bare name -- 18.3 hands a name over as its
+                // spelling and leaves the meaning to the host, so both read
+                // the same here.
+                if (argument.kind != LHAT_ANNOTATION_ARG_STRING &&
+                    argument.kind != LHAT_ANNOTATION_ARG_NAME) {
+                    refused = true;
+                    UtilityFunctions::push_error(host::problem(
+                        get_path(),
+                        String("@rpc takes the words and the channel: ") +
+                            spelt));
+                    continue;
+                }
+                String word =
+                    String::utf8(argument.text, (int)argument.length);
+                if (word == "call_local" || word == "call_remote") {
+                    locality++;
+                    config["call_local"] = word == "call_local";
+                } else if (word == "any_peer" || word == "authority") {
+                    permission++;
+                    config["rpc_mode"] =
+                        (int64_t)(word == "any_peer"
+                                      ? MultiplayerAPI::RPC_MODE_ANY_PEER
+                                      : MultiplayerAPI::RPC_MODE_AUTHORITY);
+                } else if (word == "reliable") {
+                    transfer++;
+                    config["transfer_mode"] =
+                        (int64_t)MultiplayerPeer::TRANSFER_MODE_RELIABLE;
+                } else if (word == "unreliable") {
+                    transfer++;
+                    config["transfer_mode"] =
+                        (int64_t)MultiplayerPeer::TRANSFER_MODE_UNRELIABLE;
+                } else if (word == "unreliable_ordered") {
+                    transfer++;
+                    config["transfer_mode"] = (int64_t)
+                        MultiplayerPeer::TRANSFER_MODE_UNRELIABLE_ORDERED;
+                } else {
+                    refused = true;
+                    UtilityFunctions::push_error(host::problem(
+                        get_path(),
+                        String("@rpc does not know this word on ") + spelt +
+                            String(": ") + word +
+                            String(" -- one of call_local/call_remote, "
+                                   "any_peer/authority, "
+                                   "reliable/unreliable/unreliable_ordered, "
+                                   "or a channel number")));
+                }
+            }
+        }
+        if (!marked) {
+            continue;
+        }
+        // 18.1 leaves what an annotation means to the host, so these are the
+        // host's to say -- the checker knows the arguments are literals and
+        // nothing more.
+        if (signalled) {
+            UtilityFunctions::push_error(host::problem(
+                get_path(), String("@rpc and @signal say different things "
+                                   "about the same member: ") +
+                                spelt));
+            continue;
+        }
+        if (locality > 1 || permission > 1 || transfer > 1) {
+            const char *twice = locality > 1  ? "where it is called"
+                                : permission > 1 ? "who may call it"
+                                                 : "how it travels";
+            UtilityFunctions::push_error(host::problem(
+                get_path(), String("@rpc says ") + String(twice) +
+                                String(" twice on ") + spelt));
+            continue;
+        }
+        if (refused) {
+            continue;  // said already, and a half-read configuration is worse
+        }
+        rpc_config[spelt] = config;
     }
 }
 
@@ -495,6 +634,7 @@ Error LhatScript::reload_now(bool keep_state)
     runnable = true;
     read_base_class();
     fill_signals();
+    fill_rpc();
     read_defaults();
     warn_about_signals();
     // The editor is showing a list built from the text before this one.
@@ -1388,9 +1528,12 @@ TypedArray<StringName> LhatScript::_get_members() const
     return out;
 }
 
+// What the multiplayer interface reads off the script when it builds a
+// node's RPC id table (scene_rpc_interface.cpp's _parse_rpc_config). Read at
+// reload, so this is the answer whether or not anything has run.
 Variant LhatScript::_get_rpc_config() const
 {
-    return Variant();
+    return rpc_config;
 }
 
 namespace {

@@ -371,7 +371,10 @@ const Godot *register_godot(LhatProgram *program)
         // Written on the member that emits it: what the engine has to be
         // told is a name and an argument list, and a member already is one.
         {"signal", LHAT_ANNOTATION_MEMBER, nullptr, nullptr, nullptr},
-        {"rpc", LHAT_ANNOTATION_MEMBER, "p^ string^, ...;", nullptr, nullptr},
+        // The words are strings and the channel is a number, so the tail
+        // takes no type -- and none of them is required, since every part of
+        // the configuration has a default (_get_rpc_config).
+        {"rpc", LHAT_ANNOTATION_MEMBER, "p^ ...;", nullptr, nullptr},
     };
     for (const auto &annotation : annotations) {
         if (!lhat_register_annotation(program, "godot", annotation.name,
