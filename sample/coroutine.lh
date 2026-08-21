@@ -23,6 +23,12 @@ let^ny = f^x:number^{
     return^"done"
 }
 
+let^ny2 = f^x:number^->c^{f^string^, number^-> string^, number^ -> string^} {
+    print(x)
+    var^_^:string^,_^:number^ = _yield^"aaa", x # これを省略できるようにしたい
+    return^"done"
+}
+
 do^ {
     print("ex. 1")
     let^co = y(1)

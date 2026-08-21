@@ -103,7 +103,7 @@ typedef enum {
     // ---- types (13 章) ----
     LHAT_NODE_TYPE_NAME,     // number^, FooBar
     LHAT_NODE_TYPE_FUNC,     // f^A, B -> C;
-    LHAT_NODE_TYPE_CORO,     // c^{ f^recv -> yield;, ret }  (13.9, 15.3改)
+    LHAT_NODE_TYPE_CORO,     // c^{ f^recv -> yield -> ret }  (13.9, 15.3改)
     LHAT_NODE_TYPE_TABLE,    // t^{ member : type }
     LHAT_NODE_TYPE_TUPLE,    // (A, B)  (13.8改). Two positions or more: '(T)'
                              // is the grouping the type grammar already had
@@ -503,7 +503,7 @@ struct LhatNode {
             LhatNode *result;
             bool endless;
             // 15.3改: which kind of body it came from, written as the front
-            // half of 13.9's form ('c^{ f^R -> Y;, T }'). What may advance a
+            // half of 13.9's form ('c^{ f^R -> Y -> T }'). What may advance a
             // coroutine, and where it may be held, follows from this.
             bool is_function;
         } coroutine;

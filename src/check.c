@@ -997,7 +997,7 @@ LhatType *chk_resolve_type(Checker *c, const LhatNode *node)
                                        chk_resolve_type(c, node->v.binary.right));
 
         case LHAT_NODE_TYPE_CORO: {
-            // 13.9 with 15.3改: 'c^{ f^R -> Y;, T }'. An omitted R is left
+            // 13.9 with 15.3改: 'c^{ f^R -> Y -> T }'. An omitted R is left
             // empty rather than filled: 13.2 makes the empty argument side a
             // statement of its own, and here it says nothing is sent in -- so
             // a resume of one of these takes no argument. Y is different; a

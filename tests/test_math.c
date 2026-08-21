@@ -609,7 +609,7 @@ static void test_escapes(void)
     {
         LhatTestRan ran = run_source(
             "import^ std.math\n"
-            "let^ gen = f^ -> c^{f^ -> std.math.Vector3;, } {\n"
+            "let^ gen = f^ -> c^{f^ -> std.math.Vector3} {\n"
             "    yield^ std.math.vec3(1, 2, 3)\n"
             "    yield^ std.math.vec3(4, 5, 6)\n"
             "}\n"
@@ -625,7 +625,7 @@ static void test_escapes(void)
     {
         LhatTestRan ran = run_source(
             "import^ std.math\n"
-            "let^ gen = f^ -> c^{f^std.math.Vector3 -> number^;, } {\n"
+            "let^ gen = f^ -> c^{f^std.math.Vector3 -> number^} {\n"
             "    var^ got : std.math.Vector3 = yield^ 0\n"
             "    got := yield^ got.x\n"
             "    yield^ got.y\n"
@@ -648,7 +648,7 @@ static void test_escapes(void)
         LhatTestRan ran = run_source(
             "import^ std.math\n"
             "let^ gen = f^p:std.math.Vector3 -> "
-            "c^{f^ -> std.math.Vector3;, std.math.Vector3} {\n"
+            "c^{f^ -> std.math.Vector3 -> std.math.Vector3} {\n"
             "    yield^ p\n"
             "    return^ p + p\n"
             "}\n"

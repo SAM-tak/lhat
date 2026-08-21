@@ -1292,7 +1292,7 @@ static void test_multi_value_send(void)
     // c^ annotation matches a body receiving several either way.
     LHAT_TEST("a written c^ with a tuple R matches the body");
     run_checked_text(&r,
-                     "var^ gen = p^ -> c^{p^number^, number^ -> number^;,"
+                     "var^ gen = p^ -> c^{p^number^, number^ -> number^ ->"
                      " number^} {\n"
                      "    let^ a:number^, b:number^ = yield^ 0\n"
                      "    return^ a + b\n"

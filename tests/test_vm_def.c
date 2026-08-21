@@ -1275,7 +1275,7 @@ static void test_typeof(void)
     run_checked_text(&r,
                      "var^ g = p^ x:number^ { yield^ x }\n"
                      "return^ typeof^(g).signature\n");
-    CHECK_STRING(&r, "p^number^ -> c^{p^ -> number^;,};");
+    CHECK_STRING(&r, "p^number^ -> c^{p^ -> number^};");
     run_dispose(&r);
 
     // 13.9's third type is what a written result says, and it stays there.
@@ -1283,7 +1283,71 @@ static void test_typeof(void)
     run_checked_text(&r,
                      "var^ g = p^ x:number^ -> string^ { yield^ x return^ \"z\" }\n"
                      "return^ typeof^(g).signature\n");
-    CHECK_STRING(&r, "p^number^ -> c^{p^ -> number^;, string^};");
+    CHECK_STRING(&r, "p^number^ -> c^{p^ -> number^ -> string^};");
+    run_dispose(&r);
+
+    // 13.8改2: a tuple in a result position is written bare -- the same
+    // reading the parameter side has always had, and the one the coroutine's
+    // R already accepted. The parentheses are left to say the one thing they
+    // still have to: that a union covers the whole tuple.
+    LHAT_TEST("a tuple result is written without parentheses");
+    run_checked_text(&r,
+                     "var^ ny = f^ x:number^ {\n"
+                     "    var^ _^:string^, _^:number^ = _yield^ \"a\", x\n"
+                     "    return^ \"done\"\n"
+                     "}\n"
+                     "return^ typeof^(ny).signature\n");
+    CHECK_STRING(&r,
+                 "f^number^ -> c^{f^string^, number^ -> string^, number^ -> "
+                 "string^};");
+    run_dispose(&r);
+
+    LHAT_TEST("and its resume says the same about what it sends and answers");
+    run_checked_text(&r,
+                     "var^ ny = f^ x:number^ {\n"
+                     "    var^ _^:string^, _^:number^ = _yield^ \"a\", x\n"
+                     "    return^ \"done\"\n"
+                     "}\n"
+                     "var^ c = ny(1)\n"
+                     "return^ typeof^(c.resume).signature\n");
+    CHECK_STRING(&r, "f^string^, number^ -> string^, number^|nil^;");
+    run_dispose(&r);
+
+    // 13.8改 with 04 の 8.2: an error stands beside a tuple rather than
+    // folding into its positions, so the union is over the whole of it --
+    // which is exactly what the parentheses say. Without them the text would
+    // read as a union in the last position alone.
+    LHAT_TEST("a union over the whole tuple keeps its parentheses");
+    run_checked_text(&r,
+                     "errordef^ E { Bad }\n"
+                     "var^ risky = f^ -> (string^, number^)|E.Bad {\n"
+                     "    return^ error^E.Bad{}\n"
+                     "}\n"
+                     "return^ typeof^(risky).signature\n");
+    CHECK_STRING(&r, "f^ -> (string^, number^)|E.Bad;");
+    run_dispose(&r);
+
+    LHAT_TEST("and one over the last position alone does not");
+    run_checked_text(&r,
+                     "var^ loose = f^ -> string^, number^|nil^ {\n"
+                     "    return^ \"a\", nil^\n"
+                     "}\n"
+                     "return^ typeof^(loose).signature\n");
+    CHECK_STRING(&r, "f^ -> string^, number^|nil^;");
+    run_dispose(&r);
+
+    // 05 の 8.7: and the bare spelling reads back as the type it names.
+    LHAT_TEST("the bare spelling round-trips as an annotation");
+    run_checked_text(&r,
+                     "var^ ny = f^ x:number^ {\n"
+                     "    var^ _^:string^, _^:number^ = _yield^ \"a\", x\n"
+                     "    return^ \"done\"\n"
+                     "}\n"
+                     "var^ held : c^{f^string^, number^ -> string^, "
+                     "number^ -> string^} = ny(1)\n"
+                     "return^ typeof^(held).signature\n");
+    CHECK_STRING(&r,
+                 "c^{f^string^, number^ -> string^, number^ -> string^}");
     run_dispose(&r);
 
     // 05 の 8.7: typeof^'s answer reads back as a type, so writing that answer
@@ -1292,10 +1356,10 @@ static void test_typeof(void)
     // the written form whole would have tag_type (vm.c) wrap it a second time.
     LHAT_TEST("and writing that coroutine back gives the same signature");
     run_checked_text(&r,
-                     "var^ g = p^ x:number^ -> c^{p^ -> number^;, string^}\n"
+                     "var^ g = p^ x:number^ -> c^{p^ -> number^ -> string^}\n"
                      "    { yield^ x return^ \"z\" }\n"
                      "return^ typeof^(g).signature\n");
-    CHECK_STRING(&r, "p^number^ -> c^{p^ -> number^;, string^};");
+    CHECK_STRING(&r, "p^number^ -> c^{p^ -> number^ -> string^};");
     run_dispose(&r);
 
     // 13.9: the three slots each say "none" in their own way, and typeof^
@@ -1306,28 +1370,28 @@ static void test_typeof(void)
     run_checked_text(&r,
                      "var^ g = p^ { repeat^ { yield^ 1 } }\n"
                      "return^ typeof^(g).signature\n");
-    CHECK_STRING(&r, "p^ -> c^{p^ -> number^;,-};");
+    CHECK_STRING(&r, "p^ -> c^{p^ -> number^ -> -};");
     run_dispose(&r);
 
     LHAT_TEST("and one that ends without a value leaves it empty");
     run_checked_text(&r,
                      "var^ g = p^ { yield^ 1 }\n"
                      "return^ typeof^(g).signature\n");
-    CHECK_STRING(&r, "p^ -> c^{p^ -> number^;,};");
+    CHECK_STRING(&r, "p^ -> c^{p^ -> number^};");
     run_dispose(&r);
 
     LHAT_TEST("a yield^ with no value still hands nil^ over, so Y says so");
     run_checked_text(&r,
                      "var^ g = p^ { yield^ }\n"
                      "return^ typeof^(g).signature\n");
-    CHECK_STRING(&r, "p^ -> c^{p^ -> nil^;,};");
+    CHECK_STRING(&r, "p^ -> c^{p^ -> nil^};");
     run_dispose(&r);
 
     LHAT_TEST("and a var^ receiving one is what puts a type in the first slot");
     run_checked_text(&r,
                      "var^ g = p^ { var^ x : string^ = yield^ 1 }\n"
                      "return^ typeof^(g).signature\n");
-    CHECK_STRING(&r, "p^ -> c^{p^string^ -> number^;,};");
+    CHECK_STRING(&r, "p^ -> c^{p^string^ -> number^};");
     run_dispose(&r);
 
     // 04 の 2.4 sends a type mentioning an error to the instruction rather
@@ -1335,10 +1399,10 @@ static void test_typeof(void)
     LHAT_TEST("and it holds when an error kind sends it to the instruction");
     run_checked_text(&r,
                      "errordef^ E { Bad }\n"
-                     "var^ g = p^ -> c^{p^ -> number^;, string^|E.Bad}\n"
+                     "var^ g = p^ -> c^{p^ -> number^ -> string^|E.Bad}\n"
                      "    { yield^ 1 return^ \"z\" }\n"
                      "return^ typeof^(g).signature\n");
-    CHECK_STRING(&r, "p^ -> c^{p^ -> number^;, string^|E.Bad};");
+    CHECK_STRING(&r, "p^ -> c^{p^ -> number^ -> string^|E.Bad};");
     run_dispose(&r);
 
     // The two typeof^ paths (03 の 5.11b's resolved one and the instruction)
@@ -1348,7 +1412,7 @@ static void test_typeof(void)
     run_checked_text(&r,
                      "var^ g = p^ x:number^ -> string^ { yield^ x return^ \"z\" }\n"
                      "return^ typeof^(g(1)).signature\n");
-    CHECK_STRING(&r, "c^{p^ -> number^;, string^}");
+    CHECK_STRING(&r, "c^{p^ -> number^ -> string^}");
     run_dispose(&r);
 
     // 03 の 3.4: nothing was written, and the body decided it. 5.11b takes the

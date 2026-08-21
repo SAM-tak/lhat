@@ -1183,7 +1183,7 @@ Lua や Python のように解放を別のフェーズへ回す機構は設け�
 
 ```c
 lhat_register_member(&program, "godot", "PackedFloat32Array", "iterate^",
-                     "f^self^ -> c^{p^ -> number^;, };",
+                     "f^self^ -> c^{p^ -> number^};",
                      packed_iterate, NULL);
 ```
 
@@ -1224,7 +1224,7 @@ static LhatValue packed_iterate(LhatMachine *machine, void *context,
   呼ばれうるので **L^ の API に触れない**。歩みが尽きても、明示の
   `dispose()` でも、機械の破棄でも、どの終わり方でも走る
 - 鍵と値の組を出す歩みは、step が `lhat_make_tuple` の答えを `*out` に
-  書く。署名は `c^{p^ -> (number^, T);, }`、ループは
+  書く。署名は `c^{p^ -> (number^, T)}`、ループは
   `for^ k, v in^ value` になる
 - 歩みは本体を持たないコルーチンである。テーブルの走査（02 の 16.3）と
   同じ第3の出自であり、`start()` / `resume()` / `dispose()` / `done()` も

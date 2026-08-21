@@ -2820,7 +2820,7 @@ LhatType *chk_infer_func(Checker *c, const LhatNode *node)
     // the three types 13.9 needs are all known. Everything that asks what a
     // call is worth reads it from the signature rather than assembling its
     // own -- the writers and conformance among them, which is what lets the
-    // written-out form ('p^number^ -> c^{ p^nil^ -> number^;, nil^ };') be
+    // written-out form ('p^number^ -> c^{ p^nil^ -> number^ -> nil^ };') be
     // read back as the annotation it looks like (05 の 8.7).
     if (node->v.func.yields) {
         func->v.func.answers = coroutine_made_by(c, func);

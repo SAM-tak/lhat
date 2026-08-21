@@ -469,6 +469,59 @@ static void test_functions(void)
 }
 
 // 04 の 2.3, 2.4, 2.6.
+// 13.8改2: the writer parenthesises a tuple only where a bare ',' would be
+// read as something else's -- so a result stands bare, and a union covering
+// the whole tuple keeps the parentheses that say so. 11.5's '&' binds
+// tighter than '|', which is the other place the grouping has to come back.
+static void test_writing_parentheses(void)
+{
+    Types t;
+    types_init(&t);
+
+    LHAT_TEST("a tuple result is written bare");
+    {
+        LhatType *pair = lhat_type_tuple(&t.arena);
+        lhat_type_add_position(&t.arena, pair, simple(&t, LHAT_TYPE_STRING));
+        lhat_type_add_position(&t.arena, pair, simple(&t, LHAT_TYPE_NUMBER));
+        LhatType *answers = lhat_type_func(&t.arena, true);
+        answers->v.func.result = pair;
+        char buffer[96];
+        size_t written = lhat_type_write_full(answers, buffer, sizeof buffer);
+        LHAT_CHECK_EQ_STR(buffer, written, "f^ -> string^, number^;");
+    }
+
+    LHAT_TEST("and keeps its parentheses as an arm of a union");
+    {
+        LhatType *pair = lhat_type_tuple(&t.arena);
+        lhat_type_add_position(&t.arena, pair, simple(&t, LHAT_TYPE_STRING));
+        lhat_type_add_position(&t.arena, pair, simple(&t, LHAT_TYPE_NUMBER));
+        // An opaque arm stands beside a tuple rather than folding into its
+        // positions (13.8改), which is the shape the parentheses are for.
+        LhatType *either =
+            lhat_type_union(&t.arena, pair, simple(&t, LHAT_TYPE_ERROR));
+        LhatType *answers = lhat_type_func(&t.arena, true);
+        answers->v.func.result = either;
+        char buffer[96];
+        size_t written = lhat_type_write_full(answers, buffer, sizeof buffer);
+        LHAT_CHECK_EQ_STR(buffer, written,
+                          "f^ -> (string^, number^)|error^;");
+    }
+
+    LHAT_TEST("a union inside an intersection is grouped");
+    {
+        LhatType *either =
+            lhat_type_union(&t.arena, simple(&t, LHAT_TYPE_NUMBER),
+                            simple(&t, LHAT_TYPE_STRING));
+        LhatType *both =
+            lhat_type_intersect(&t.arena, simple(&t, LHAT_TYPE_BOOL), either);
+        char buffer[96];
+        size_t written = lhat_type_write_full(both, buffer, sizeof buffer);
+        LHAT_CHECK_EQ_STR(buffer, written, "bool^ & (number^|string^)");
+    }
+
+    types_dispose(&t);
+}
+
 static void test_errors(void)
 {
     Types t;
@@ -810,6 +863,7 @@ int main(void)
     test_structures();
     test_composites();
     test_functions();
+    test_writing_parentheses();
     test_errors();
     return lhat_test_report("test_type");
 }

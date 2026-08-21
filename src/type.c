@@ -1279,6 +1279,7 @@ static void put_text(TypeSink *sink, const char *text)
 }
 
 static void write_type(TypeSink *sink, const LhatType *type, int depth);
+static void write_result(TypeSink *sink, const LhatType *type, int depth);
 
 // 14.10: an entry with no name is the type of the next position, counted from
 // one in written order with the named ones taking no place in the sequence.
@@ -1388,8 +1389,11 @@ static void write_own_members(TypeSink *sink, const LhatType *definition,
     }
 }
 
+// `paren_union` is for the one separator that binds tighter than what an arm
+// may be: 11.5 makes '&' tighter than '|', so a union arm of an intersection
+// needs the grouping parentheses back or the text reads as '(A & B) | C'.
 static void write_list(TypeSink *sink, const LhatTypeList *list, int depth,
-                       const char *separator)
+                       const char *separator, bool paren_union)
 {
     int count = 0;
     for (const LhatTypeList *item = list; item != NULL; item = item->next) {
@@ -1401,9 +1405,30 @@ static void write_list(TypeSink *sink, const LhatTypeList *list, int depth,
         if (count > 0) {
             put_text(sink, separator);
         }
+        bool wrap = paren_union && item->type != NULL &&
+                    item->type->kind == LHAT_TYPE_UNION;
+        if (wrap) {
+            put_text(sink, "(");
+        }
         write_type(sink, item->type, depth + 1);
+        if (wrap) {
+            put_text(sink, ")");
+        }
         count++;
     }
+}
+
+// 13.8改2: a result position takes a tuple bare -- the parentheses say
+// "the union covers the whole of this", and nothing else. Everywhere a
+// tuple cannot stand bare (a union's arm, and the top level, where the
+// text may be read back as an annotation) write_type keeps them.
+static void write_result(TypeSink *sink, const LhatType *type, int depth)
+{
+    if (type != NULL && type->kind == LHAT_TYPE_TUPLE) {
+        write_list(sink, type->v.composite.arms, depth, ", ", false);
+        return;
+    }
+    write_type(sink, type, depth);
 }
 
 static void write_type(TypeSink *sink, const LhatType *type, int depth)
@@ -1538,9 +1563,11 @@ static void write_type(TypeSink *sink, const LhatType *type, int depth)
         case LHAT_TYPE_TUPLE:
             // 13.8改: '(A, B)'. The grouping parentheses 13.1's grammar
             // already had are what leave a one-position form unwritable, so
-            // there is no '(T,)' to spell here.
+            // there is no '(T,)' to spell here. 13.8改2: reached here the
+            // tuple is somewhere a bare ',' would be read as something
+            // else's -- a result position goes through write_result.
             put_text(sink, "(");
-            write_list(sink, type->v.composite.arms, depth, ", ");
+            write_list(sink, type->v.composite.arms, depth, ", ", false);
             put_text(sink, ")");
             return;
 
@@ -1563,7 +1590,7 @@ static void write_type(TypeSink *sink, const LhatType *type, int depth)
                     put_text(sink, ", ");
                 }
             }
-            write_list(sink, type->v.func.params, depth, ", ");
+            write_list(sink, type->v.func.params, depth, ", ", false);
             if (type->v.func.variadic != NULL) {
                 if (type->v.func.params != NULL) {
                     put_text(sink, ", ");
@@ -1584,34 +1611,43 @@ static void write_type(TypeSink *sink, const LhatType *type, int depth)
             LhatType *answer = lhat_type_call_answer(type);
             if (answer != NULL && answer->kind != LHAT_TYPE_NONE) {
                 put_text(sink, " -> ");
-                write_type(sink, answer, depth + 1);
+                write_result(sink, answer, depth + 1);
             }
             put_text(sink, ";");
             return;
         }
 
-        case LHAT_TYPE_CORO:
-            // 13.9 with 15.3改: 'c^{ f^R -> Y;, T }'. An empty slot is written
-            // by leaving it out, and '-' is the third slot's other absence --
-            // a body that cannot end. Both read back as what they say.
-            put_text(sink, "c^{ ");
+        case LHAT_TYPE_CORO: {
+            // 13.9改: 'c^{ f^R -> Y -> T }', the three slots in the order a
+            // coroutine lives them. An empty slot is written by leaving it
+            // out, and how many arrows are written is how many slots were --
+            // so a third slot that is there at all needs the second arrow,
+            // even where Y is empty. '-' is the third slot's other absence:
+            // a body that cannot end. All of it reads back as what it says.
+            put_text(sink, "c^{");
             put_text(sink, type->v.coroutine.is_function ? "f^" : "p^");
             if (type->v.coroutine.receive != NULL) {
-                write_type(sink, type->v.coroutine.receive, depth + 1);
+                write_result(sink, type->v.coroutine.receive, depth + 1);
             }
-            if (type->v.coroutine.produce != NULL) {
+            bool ends = type->v.coroutine.endless ||
+                        type->v.coroutine.result != NULL;
+            if (type->v.coroutine.produce != NULL || ends) {
                 put_text(sink, " -> ");
-                write_type(sink, type->v.coroutine.produce, depth + 1);
+                if (type->v.coroutine.produce != NULL) {
+                    write_result(sink, type->v.coroutine.produce, depth + 1);
+                }
             }
-            put_text(sink, ";,");
-            if (type->v.coroutine.endless) {
-                put_text(sink, "-");
-            } else if (type->v.coroutine.result != NULL) {
-                put_text(sink, " ");
-                write_type(sink, type->v.coroutine.result, depth + 1);
+            if (ends) {
+                put_text(sink, " -> ");
+                if (type->v.coroutine.endless) {
+                    put_text(sink, "-");
+                } else {
+                    write_result(sink, type->v.coroutine.result, depth + 1);
+                }
             }
-            put_text(sink, " }");
+            put_text(sink, "}");
             return;
+        }
 
         case LHAT_TYPE_ERROR_SET:
             put(sink, type->v.error.name, type->v.error.name_length);
@@ -1628,10 +1664,10 @@ static void write_type(TypeSink *sink, const LhatType *type, int depth)
             return;
 
         case LHAT_TYPE_UNION:
-            write_list(sink, type->v.composite.arms, depth, " | ");
+            write_list(sink, type->v.composite.arms, depth, "|", false);
             return;
         case LHAT_TYPE_INTERSECT:
-            write_list(sink, type->v.composite.arms, depth, " & ");
+            write_list(sink, type->v.composite.arms, depth, " & ", true);
             return;
 
         case LHAT_TYPE_KIND_COUNT:

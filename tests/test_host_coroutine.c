@@ -257,7 +257,7 @@ static void test_walks_hostdata(void)
         range_tag = lhat_register_hostdata_type(&program, "seq", "Range");
         LHAT_CHECK(range_tag != NULL, "the type registered");
         lhat_register_member(&program, "seq", "Range", "iterate^",
-                             "f^self^ -> c^{p^ -> number^;, };",
+                             "f^self^ -> c^{p^ -> number^};",
                              range_iterate, NULL);
         lhat_register_func(&program, "seq", "make",
                            "f^number^, number^ -> seq.Range;", range_make,
@@ -287,7 +287,7 @@ static void test_walks_hostdata(void)
         walk_releases = 0;
         range_tag = lhat_register_hostdata_type(&program, "seq", "Range");
         lhat_register_member(&program, "seq", "Range", "iterate",
-                             "f^self^ -> c^{p^ -> number^;, };",
+                             "f^self^ -> c^{p^ -> number^};",
                              range_iterate, NULL);
         lhat_register_func(&program, "seq", "make",
                            "f^number^, number^ -> seq.Range;", range_make,
@@ -319,7 +319,7 @@ static void test_walks_hostdata(void)
         walk_releases = 0;
         pairs_tag = lhat_register_hostdata_type(&program, "seq", "Pairs");
         lhat_register_member(&program, "seq", "Pairs", "iterate^",
-                             "f^self^ -> c^{p^ -> (number^, number^);, };",
+                             "f^self^ -> c^{p^ -> (number^, number^)};",
                              pairs_iterate, NULL);
         lhat_register_func(&program, "seq", "make",
                            "f^number^, number^ -> seq.Pairs;", pairs_make,
@@ -348,7 +348,7 @@ static void test_walks_hostdata(void)
         walk_releases = 0;
         range_tag = lhat_register_hostdata_type(&program, "seq", "Range");
         lhat_register_member(&program, "seq", "Range", "iterate^",
-                             "f^self^ -> c^{p^ -> number^;, };",
+                             "f^self^ -> c^{p^ -> number^};",
                              range_iterate, NULL);
         lhat_register_func(&program, "seq", "make",
                            "f^number^, number^ -> seq.Range;", range_make,
@@ -407,7 +407,7 @@ static void test_release_once(void)
         walk_releases = 0;
         range_tag = lhat_register_hostdata_type(&program, "seq", "Range");
         lhat_register_member(&program, "seq", "Range", "iterate^",
-                             "f^self^ -> c^{p^ -> number^;, };",
+                             "f^self^ -> c^{p^ -> number^};",
                              range_iterate, NULL);
         lhat_register_func(&program, "seq", "make",
                            "f^number^, number^ -> seq.Range;", range_make,
@@ -823,7 +823,7 @@ static void test_walk_yields_host_values(void)
                                                  LHAT_HVFIELD_F32),
                    "the field registered");
         LHAT_CHECK(lhat_register_member(&program, "seq", "Vecs", "iterate",
-                                        "f^self^ -> c^{p^ -> seq.Vec;, };",
+                                        "f^self^ -> c^{p^ -> seq.Vec};",
                                         vec_iterate, NULL),
                    "the iterate registered");
         LHAT_CHECK(lhat_register_func(&program, "seq", "vecs",
@@ -854,7 +854,7 @@ static void test_walk_yields_host_values(void)
                                                sizeof(Vec));
         LHAT_CHECK(lhat_register_member(
                        &program, "seq", "Vecs", "iterate",
-                       "f^self^ -> c^{p^ -> (number^, seq.Vec);, };",
+                       "f^self^ -> c^{p^ -> (number^, seq.Vec)};",
                        vec_pair_iterate, NULL),
                    "the pair iterate registered");
         LHAT_CHECK(lhat_register_func(&program, "seq", "vecs",
@@ -904,7 +904,7 @@ static void test_boundary_host_values(void)
         static const File files[] = {
             {"main.lh",
              "import^ seq\n"
-             "let^ gen = f^ -> c^{f^ -> seq.Vec;, seq.Vec} {\n"
+             "let^ gen = f^ -> c^{f^ -> seq.Vec -> seq.Vec} {\n"
              "    yield^ seq.mk(1.5)\n"
              "    return^ seq.mk(2.5)\n"
              "}\n"
@@ -954,7 +954,7 @@ static void test_boundary_host_values(void)
         static const File files[] = {
             {"main.lh",
              "import^ seq\n"
-             "let^ echo = f^ -> c^{f^seq.Vec -> number^;, } {\n"
+             "let^ echo = f^ -> c^{f^seq.Vec -> number^} {\n"
              "    var^ got : seq.Vec = yield^ 0\n"
              "    yield^ got.x\n"
              "}\n"

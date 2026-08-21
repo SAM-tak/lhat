@@ -279,7 +279,7 @@ struct LhatType {
             // different types -- what a resume answers differs.
             bool endless;
             // 15.3改: the kind of the body this came from, which 13.9 writes
-            // as the front half ('c^{ f^R -> Y;, T }'). Advancing a coroutine
+            // as the front half ('c^{ f^R -> Y -> T }'). Advancing a coroutine
             // runs its body, so start()/resume()/dispose() take this kind and
             // 15.1's calling rule does the rest -- an f^ reaching for a p^
             // coroutine is an f^ calling a p^, caught where every other one

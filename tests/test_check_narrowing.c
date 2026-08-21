@@ -890,7 +890,7 @@ static void test_tuple_positions(void)
     // 13.9 with 15.3改: Y and T are results, R is an input.
     LHAT_TEST("a coroutine yields and answers tuples");
     check_text(&u,
-               "var^ c : c^{ p^number^ -> (number^, string^);, "
+               "var^ c : c^{ p^number^ -> (number^, string^) -> "
                "(bool^, number^) } = 0\n");
     CHECK_NOT_REPORTED(&u, LHAT_CHECK_ERR_TUPLE_MISPLACED);
     unit_dispose(&u);
@@ -901,13 +901,13 @@ static void test_tuple_positions(void)
     // out.
     LHAT_TEST("and a resume may send several -- a tuple R");
     check_text(&u,
-               "var^ c : c^{ p^(number^, string^) -> number^;, number^ } = 0\n");
+               "var^ c : c^{ p^(number^, string^) -> number^ -> number^ } = 0\n");
     CHECK_NOT_REPORTED(&u, LHAT_CHECK_ERR_TUPLE_MISPLACED);
     unit_dispose(&u);
 
     LHAT_TEST("written either as a tuple or as the parameter list");
     check_text(&u,
-               "var^ c : c^{ p^number^, string^ -> number^;, number^ } = 0\n");
+               "var^ c : c^{ p^number^, string^ -> number^ -> number^ } = 0\n");
     CHECK_NOT_REPORTED(&u, LHAT_CHECK_ERR_TUPLE_MISPLACED);
     unit_dispose(&u);
 

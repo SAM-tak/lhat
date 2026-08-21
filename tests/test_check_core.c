@@ -1220,7 +1220,7 @@ static void test_parameter_inference(void)
     LHAT_TEST("though writing it out is still read the same way");
     check_text(&u,
                "public^ let^ g = p^ n:number^"
-               " -> c^{ p^-> number^;, } { yield^ n }\n");
+               " -> c^{ p^-> number^} { yield^ n }\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
@@ -2063,7 +2063,7 @@ static void test_annotations(void)
     unit_dispose(&u);
 
     LHAT_TEST("and a c^ on its own binds none either");
-    check_text(&u, "var^ c : c^{ p^nil^ -> Self^;, nil^ } = 1\n");
+    check_text(&u, "var^ c : c^{ p^nil^ -> Self^ -> nil^ } = 1\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_SELF_TYPE_OUTSIDE);
     unit_dispose(&u);
 

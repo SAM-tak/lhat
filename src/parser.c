@@ -380,6 +380,34 @@ static LhatNode *parse_type_params(Parser *p)
     return head;
 }
 
+// 13.8改2: a result position reads a bare tuple -- a top-level ',' there is
+// the tuple's, and '|' binds tighter, so 'A, B|nil^' is '(A, (B|nil^))' and
+// a union over the whole tuple keeps its parentheses ('(A, B)|SomeError').
+// Safe without lookahead because every result is closed: a signature by 13.3's
+// ';' (which is there to settle exactly this comma), a coroutine's T by '}'.
+// One type is that type, never a one-position tuple (the reading 13.8改 left
+// to the grouping parentheses).
+static LhatNode *parse_type_result(Parser *p)
+{
+    LhatToken start = p->current;
+    LhatNode *first = parse_type(p);
+    if (!check_op(p, LHAT_OP_COMMA)) {
+        return first;
+    }
+    LhatNode *node = make(p, LHAT_NODE_TYPE_TUPLE, &start);
+    if (node == NULL) {
+        return first;
+    }
+    LhatNode *head = NULL;
+    LhatNode *tail = NULL;
+    lhat_node_append(&head, &tail, first);
+    while (match_op(p, LHAT_OP_COMMA)) {
+        lhat_node_append(&head, &tail, parse_type(p));
+    }
+    node->v.list.items = head;
+    return finish(p, node);
+}
+
 static LhatNode *parse_type_function(Parser *p, bool is_function)
 {
     LhatToken start = p->current;
@@ -397,8 +425,9 @@ static LhatNode *parse_type_function(Parser *p, bool is_function)
         advance(p);
         node->v.func.return_type = parse_type(p);
     } else if (match_op(p, LHAT_OP_ARROW)) {
-        // 13.2: '->' is present only when something is returned.
-        node->v.func.return_type = parse_type(p);
+        // 13.2: '->' is present only when something is returned. 13.8改2:
+        // and several, written bare, are the tuple that one result is.
+        node->v.func.return_type = parse_type_result(p);
     }
 
     expect_op(p, LHAT_OP_SEMICOLON);
@@ -417,64 +446,50 @@ static LhatNode *parse_type_coroutine(Parser *p)
 
     expect_op(p, LHAT_OP_LBRACE);
 
-    // 13.9 with 15.3改: the front half is written as the signature one resume
-    // follows -- 'f^R -> Y;' or 'p^R -> Y;' -- which is where the kind of the
-    // body goes, both kinds being possible (15.3改). Read with parse_type so that 13.1's
-    // own grammar applies unchanged, including 'f^ -> Y;' for a coroutine
-    // nothing is sent to.
-    LhatNode *signature = parse_type(p);
-    if (signature != NULL && signature->kind == LHAT_NODE_TYPE_FUNC) {
-        node->v.coroutine.is_function = signature->v.func.is_function;
-        // 15.2 with 13.8改: the parameters are what one resume sends --
-        // resume(a, b) writes as many arguments as stand here. Leaving them
-        // out says nothing is sent in at all -- 13.2's empty argument side,
-        // read here the way it is read anywhere; a resume of one of these
-        // takes no argument. Several parameters are carried as the tuple the
-        // yield^ takes apart, so 'p^A, B -> Y' and 'p^(A, B) -> Y' name the
-        // same R. A '...' has no meaning here: a resume's count is the
-        // signature's, exactly.
-        LhatNode *params = signature->v.func.params;
-        if (params == NULL) {
-            node->v.coroutine.receive = NULL;
-        } else if (params->next == NULL && !params->v.param.variadic) {
-            node->v.coroutine.receive = params->v.param.type;
-        } else {
-            LhatNode *tuple = make(p, LHAT_NODE_TYPE_TUPLE, &start);
-            if (tuple == NULL) {
-                return NULL;
-            }
-            LhatNode *items = NULL;
-            LhatNode *items_tail = NULL;
-            for (LhatNode *param = params; param != NULL;
-                 param = param->next) {
-                if (param->v.param.variadic || param->v.param.type == NULL) {
-                    report(p, &start, LHAT_PARSE_ERR_EXPECTED_TYPE);
-                    break;
-                }
-                lhat_node_append(&items, &items_tail, param->v.param.type);
-            }
-            tuple->v.list.items = items;
-            node->v.coroutine.receive = finish(p, tuple);
-        }
-        node->v.coroutine.produce = signature->v.func.return_type;
-    } else if (signature != NULL) {
-        report(p, &start, LHAT_PARSE_ERR_EXPECTED_TYPE);
+    // 13.9改: the three slots in the order a coroutine lives them --
+    // 'c^{ p^R -> Y -> T }' reads as "receives R, yields Y, ends with T".
+    // The kind of the body (15.3改) is the word in front, and how many
+    // arrows are written is how many slots were. A signature's ';' is not
+    // wanted here: '{' opened this and '}' closes it, so nothing has to be
+    // told apart from an enclosing list (13.3's reason for the ';' is about
+    // a signature nested in a parameter list, which this is not).
+    if (match_hat(p, "f")) {
+        node->v.coroutine.is_function = true;
+    } else if (!match_hat(p, "p")) {
+        report(p, &p->current, LHAT_PARSE_ERR_EXPECTED_TYPE);
     }
 
-    expect_op(p, LHAT_OP_COMMA);
-    // 13.9: the third slot says what the last resume receives, and has two
-    // ways of saying there is none. Left out, the body ends without a value
-    // and 15.6改's nil^ is what the last resume really gets -- so it joins
-    // Y|T there rather than standing here. Written '-', the body cannot end
-    // at all, so there is no last resume and nothing joins.
-    //
-    // The one place an operator symbol stands where a type would. It reads
-    // as "none" rather than as arithmetic because a type is all that may be
-    // here, and nothing in the type grammar begins with '-'.
-    if (match_op(p, LHAT_OP_SUB)) {
-        node->v.coroutine.endless = true;
-    } else if (!check_op(p, LHAT_OP_RBRACE)) {
-        node->v.coroutine.result = parse_type(p);
+    // 15.2 with 13.8改: R is what one resume sends -- resume(a, b) writes as
+    // many arguments as stand here, and several are the tuple the yield^'s
+    // binding takes apart. Left out, nothing is sent in at all and a resume
+    // takes no argument.
+    if (!check_op(p, LHAT_OP_RBRACE) && !check_op(p, LHAT_OP_ARROW)) {
+        node->v.coroutine.receive = parse_type_result(p);
+    }
+    if (match_op(p, LHAT_OP_ARROW)) {
+        // Y. A yield^ with no value really does hand nil^ to the resumer, so
+        // an empty Y here says that rather than saying nothing happens.
+        if (!check_op(p, LHAT_OP_RBRACE) && !check_op(p, LHAT_OP_ARROW)) {
+            node->v.coroutine.produce = parse_type_result(p);
+        }
+        if (match_op(p, LHAT_OP_ARROW)) {
+            // 13.9: the third slot says what the last resume receives, and
+            // has two ways of saying there is none. Left out -- no second
+            // arrow at all -- the body ends without a value and 15.6改's
+            // nil^ is what the last resume really gets, so it joins Y|T
+            // there rather than standing here. Written '-', the body cannot
+            // end at all, so there is no last resume and nothing joins.
+            //
+            // The one place an operator symbol stands where a type would. It
+            // reads as "none" rather than as arithmetic because a type is
+            // all that may be here, and nothing in the type grammar begins
+            // with '-'.
+            if (match_op(p, LHAT_OP_SUB)) {
+                node->v.coroutine.endless = true;
+            } else if (!check_op(p, LHAT_OP_RBRACE)) {
+                node->v.coroutine.result = parse_type_result(p);  // 13.8改2
+            }
+        }
     }
     expect_op(p, LHAT_OP_RBRACE);
     return finish(p, node);
@@ -1450,7 +1465,10 @@ static LhatNode *parse_function(Parser *p, bool is_function)
         advance(p);
         node->v.func.return_type = parse_type(p);
     } else if (match_op(p, LHAT_OP_ARROW)) {
-        node->v.func.return_type = parse_type(p);
+        // 13.8改2: as in a written signature -- several written bare are the
+        // tuple that one result is. The body's '{' closes the reading here,
+        // where a signature's ';' does.
+        node->v.func.return_type = parse_type_result(p);
     }
 
     // 15.2: yield^ in the body is what makes a procedure yieldable, so the

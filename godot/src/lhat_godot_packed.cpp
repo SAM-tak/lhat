@@ -409,7 +409,7 @@ bool declare_packed(LhatProgram *program, Godot *module, const char *maker)
         // Bare `iterate`: on a host type the two spellings name one member
         // (14.17改), and every name here is the library's.
         {"iterate",
-         kept(module, String("f^self^ -> c^{p^ -> ") + element + ";, };"),
+         kept(module, String("f^self^ -> c^{p^ -> ") + element + "};"),
          packed_iterate<P>},
     };
     for (const auto &member : members) {

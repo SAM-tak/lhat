@@ -173,7 +173,7 @@ static void test_purity(void)
     // which is the one thing 15.3改 allows without letting it be advanced.
     LHAT_TEST("an f^ coroutine may be taken as an argument");
     check_text(&u,
-               "var^ hold = f^ co:c^{ f^nil^ -> number^;, nil^ } -> number^ {\n"
+               "var^ hold = f^ co:c^{ f^nil^ -> number^ -> nil^ } -> number^ {\n"
                "    return^ 0\n"
                "}\n");
     CHECK_CLEAN(&u);
@@ -181,7 +181,7 @@ static void test_purity(void)
 
     LHAT_TEST("but not advanced, since the caller shares its state");
     check_text(&u,
-               "var^ take = f^ co:c^{ f^nil^ -> number^;, nil^ } -> number^ {\n"
+               "var^ take = f^ co:c^{ f^nil^ -> number^ -> nil^ } -> number^ {\n"
                "    var^ a = co.start()\n"
                "    return^ 0\n"
                "}\n");
@@ -192,7 +192,7 @@ static void test_purity(void)
     check_text(&u,
                "var^ gen = f^ { yield^ 1 }\n"
                "var^ f = f^ -> number^ {\n"
-               "    var^ c : c^{ p^nil^ -> number^;, nil^ } = gen()\n"
+               "    var^ c : c^{ p^nil^ -> number^ -> nil^ } = gen()\n"
                "    return^ 0\n"
                "}\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
@@ -228,7 +228,7 @@ static void test_purity(void)
 
     LHAT_TEST("delegating to one that arrived is refused too");
     check_text(&u,
-               "var^ f = f^ co:c^{ f^nil^ -> number^;, nil^ } "
+               "var^ f = f^ co:c^{ f^nil^ -> number^ -> nil^ } "
                "{ yieldall^ co }\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_ADVANCES_OUTSIDE);
     unit_dispose(&u);

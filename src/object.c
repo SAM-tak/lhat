@@ -532,6 +532,25 @@ static void write_structure_body(TypeWriter *w, const LhatRuntimeType *type)
     type_put_text(w, first ? "}" : " }");
 }
 
+// 13.8改2: a result position takes a tuple bare -- a top-level ',' there is
+// the tuple's, and the parentheses are left to say "the union covers the
+// whole of this" ('(A, B)|SomeError'). This text is read back as a type
+// (02 の 14.16's `.signature`), so it spells what the parser accepts:
+// a signature's result, closed by 13.3's ';', and a coroutine's slots.
+static void write_runtime_result(TypeWriter *w, const LhatRuntimeType *type)
+{
+    if (type != NULL && type->kind == LHAT_TYPE_RT_TUPLE) {
+        for (size_t i = 0; i < type->part_count; i++) {
+            if (i > 0) {
+                type_put_text(w, ", ");
+            }
+            write_runtime_type(w, type->parts[i]);
+        }
+        return;
+    }
+    write_runtime_type(w, type);
+}
+
 static void write_runtime_type(TypeWriter *w, const LhatRuntimeType *type)
 {
     if (type == NULL) {
@@ -613,30 +632,42 @@ static void write_runtime_type(TypeWriter *w, const LhatRuntimeType *type)
         // 15.3改: the front half is written as the signature it always
         // described -- one resume takes R and answers Y -- which is where the
         // kind of the body goes, both kinds being possible (15.3改).
-        case LHAT_TYPE_RT_COROUTINE:
-            // 13.9: an empty slot is written by leaving it out, so a NULL is
-            // not the "nothing written asks for any^" of every other position
-            // here -- it is the slot saying nothing is sent in, or that the
-            // body ends without a value. '-' is the third slot's other
-            // absence, a body that cannot end.
+        case LHAT_TYPE_RT_COROUTINE: {
+            // 13.9改: 'c^{f^R -> Y -> T}'. An empty slot is written by
+            // leaving it out, so a NULL is not the "nothing written asks for
+            // any^" of every other position here -- it is the slot saying
+            // nothing is sent in, or that the body ends without a value. How
+            // many arrows are written is how many slots were, so a third
+            // slot needs the second arrow even where Y is empty. '-' is the
+            // third slot's other absence, a body that cannot end.
             type_put_text(w, "c^{");
             type_put_text(w, type->is_function ? "f^" : "p^");
             if (type->receive != NULL) {
-                write_runtime_type(w, type->receive);
+                write_runtime_result(w, type->receive);
             }
-            type_put_text(w, " -> ");
-            write_runtime_type(w, type->produce);
-            type_put_text(w, ";,");
-            if (type->endless) {
-                type_put_text(w, "-");
-            } else if (type->result != NULL) {
-                type_put_text(w, " ");
-                write_runtime_type(w, type->result);
+            bool ends = type->endless || type->result != NULL;
+            if (type->produce != NULL || ends) {
+                type_put_text(w, " -> ");
+                if (type->produce != NULL) {
+                    write_runtime_result(w, type->produce);
+                }
+            }
+            if (ends) {
+                type_put_text(w, " -> ");
+                if (type->endless) {
+                    type_put_text(w, "-");
+                } else {
+                    write_runtime_result(w, type->result);
+                }
             }
             type_put_text(w, "}");
             return;
+        }
         // 13.8改: '(A, B)'. The parentheses the type grammar already used for
         // grouping, which is why there is no one-position form to write.
+        // 13.8改2: reached here the tuple stands where a bare ',' would be
+        // read as something else's -- a result goes through
+        // write_runtime_result instead.
         case LHAT_TYPE_RT_TUPLE:
             type_put_text(w, "(");
             for (size_t i = 0; i < type->part_count; i++) {
@@ -662,7 +693,18 @@ static void write_runtime_type(TypeWriter *w, const LhatRuntimeType *type)
                 if (i > 0) {
                     type_put_text(w, " & ");
                 }
+                // 11.5: '&' binds tighter than '|', so a union arm needs the
+                // grouping parentheses back -- without them the text reads
+                // as '(A & B) | C', which is a different type.
+                bool wrap = type->parts[i] != NULL &&
+                            type->parts[i]->kind == LHAT_TYPE_RT_UNION;
+                if (wrap) {
+                    type_put_text(w, "(");
+                }
                 write_runtime_type(w, type->parts[i]);
+                if (wrap) {
+                    type_put_text(w, ")");
+                }
             }
             return;
         case LHAT_TYPE_RT_SUBROUTINE: {
@@ -702,7 +744,7 @@ static void write_runtime_type(TypeWriter *w, const LhatRuntimeType *type)
             }
             if (type->result != NULL) {
                 type_put_text(w, " -> ");
-                write_runtime_type(w, type->result);
+                write_runtime_result(w, type->result);
             }
             type_put_text(w, ";");
             return;

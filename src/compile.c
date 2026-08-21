@@ -2066,7 +2066,7 @@ static LhatRuntimeType *lower_type(Compiler *c, const LhatNode *node)
 
         case LHAT_NODE_TYPE_FUNC:
             return lhat_type_rt_new(owner, LHAT_TYPE_RT_SUBROUTINE);
-        // 13.9 with 15.3改: a written 'c^{ f^R -> Y;, T }' names its three
+        // 13.9 with 15.3改: a written 'c^{ f^R -> Y -> T }' names its three
         // slots and the kind of the body -- read each rather than leaving the
         // bare tag alone.
         case LHAT_NODE_TYPE_CORO: {

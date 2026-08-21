@@ -170,7 +170,7 @@ static void test_spans(void)
     check_spans_enclose("do^ { var^ i = 0\ni += 1 }\n");
     check_spans_enclose("let^ g = p^ { yield^ 1 }\n");
     check_spans_enclose("let^ ty = x as^ f^number^ -> string^ ;\n");
-    check_spans_enclose("let^ co = x as^ c^{ f^number^ -> string^;, nil^ }\n");
+    check_spans_enclose("let^ co = x as^ c^{ f^number^ -> string^ -> nil^ }\n");
 
     // The whole of a construct, closing token included.
     LHAT_TEST("a span reaches the token that closes the construct");
@@ -1963,6 +1963,152 @@ static void test_types(void)
         lhat_node_list_length(first_value(&p)->v.ascription.type->v.func.params), 3);
     parse_dispose(&p);
 
+    // 13.8改2: a result position reads a bare tuple, the same way the
+    // parameter side has always read its comma list. 13.3's ';' is what
+    // makes it safe -- it closes the result before the enclosing list's
+    // comma can be reached, which is the very reason 13.3 requires it.
+    LHAT_TEST("a bare tuple result");
+    parse_text(&p, "x := y as^ f^number^ -> string^, number^;");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    {
+        const LhatNode *t = first_value(&p)->v.ascription.type;
+        LHAT_CHECK_EQ_INT(t->v.func.return_type->kind, LHAT_NODE_TYPE_TUPLE);
+        LHAT_CHECK_EQ_INT(
+            lhat_node_list_length(t->v.func.return_type->v.list.items), 2);
+        LHAT_CHECK_EQ_INT(lhat_node_list_length(t->v.func.params), 1);
+    }
+    parse_dispose(&p);
+
+    LHAT_TEST("and the parenthesised spelling names the same type");
+    parse_text(&p, "x := y as^ f^number^ -> (string^, number^);");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    {
+        const LhatNode *t = first_value(&p)->v.ascription.type;
+        LHAT_CHECK_EQ_INT(t->v.func.return_type->kind, LHAT_NODE_TYPE_TUPLE);
+        LHAT_CHECK_EQ_INT(
+            lhat_node_list_length(t->v.func.return_type->v.list.items), 2);
+    }
+    parse_dispose(&p);
+
+    // '|' binds tighter than the tuple's ',', so the two spellings say
+    // different things -- which is the whole of what the parentheses are
+    // still for.
+    LHAT_TEST("a union binds tighter than the tuple's comma");
+    parse_text(&p, "x := y as^ f^ -> string^, number^|nil^;");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    {
+        const LhatNode *t = first_value(&p)->v.ascription.type;
+        const LhatNode *result = t->v.func.return_type;
+        LHAT_CHECK_EQ_INT(result->kind, LHAT_NODE_TYPE_TUPLE);
+        const LhatNode *last = result->v.list.items->next;
+        LHAT_CHECK_EQ_INT(last->kind, LHAT_NODE_TYPE_UNION);
+    }
+    parse_dispose(&p);
+
+    LHAT_TEST("and the parentheses put the union over the whole tuple");
+    parse_text(&p, "x := y as^ f^ -> (string^, number^)|nil^;");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    {
+        const LhatNode *t = first_value(&p)->v.ascription.type;
+        const LhatNode *result = t->v.func.return_type;
+        LHAT_CHECK_EQ_INT(result->kind, LHAT_NODE_TYPE_UNION);
+        LHAT_CHECK_EQ_INT(result->v.binary.left->kind, LHAT_NODE_TYPE_TUPLE);
+    }
+    parse_dispose(&p);
+
+    // 13.9改: the three slots are separated by '->' and nothing else -- how
+    // many arrows are written is how many slots were. The '{' that opened
+    // this closes it, so no ';' is wanted: 13.3's reason for one is about a
+    // signature nested in a parameter list, which this is not.
+    LHAT_TEST("the three slots are read off the arrows");
+    parse_text(&p, "x := y as^ c^{f^number^ -> string^ -> bool^}");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    {
+        const LhatNode *t = first_value(&p)->v.ascription.type;
+        LHAT_CHECK_EQ_INT(t->kind, LHAT_NODE_TYPE_CORO);
+        LHAT_CHECK(t->v.coroutine.is_function, "the word in front is the kind");
+        LHAT_CHECK(t->v.coroutine.receive != NULL, "R");
+        LHAT_CHECK(t->v.coroutine.produce != NULL, "Y");
+        LHAT_CHECK(t->v.coroutine.result != NULL, "T");
+        LHAT_CHECK(!t->v.coroutine.endless, "it ends");
+    }
+    parse_dispose(&p);
+
+    LHAT_TEST("and a slot left out is left out of the arrows too");
+    parse_text(&p, "x := y as^ c^{p^number^ -> string^}");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    {
+        const LhatNode *t = first_value(&p)->v.ascription.type;
+        LHAT_CHECK(t->v.coroutine.receive != NULL, "R");
+        LHAT_CHECK(t->v.coroutine.produce != NULL, "Y");
+        LHAT_CHECK(t->v.coroutine.result == NULL, "no T");
+    }
+    parse_dispose(&p);
+
+    LHAT_TEST("nothing at all is the whole of it");
+    parse_text(&p, "x := y as^ c^{p^}");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    {
+        const LhatNode *t = first_value(&p)->v.ascription.type;
+        LHAT_CHECK_EQ_INT(t->kind, LHAT_NODE_TYPE_CORO);
+        LHAT_CHECK(!t->v.coroutine.is_function, "p^");
+        LHAT_CHECK(t->v.coroutine.receive == NULL, "no R");
+        LHAT_CHECK(t->v.coroutine.produce == NULL, "no Y");
+        LHAT_CHECK(t->v.coroutine.result == NULL, "no T");
+    }
+    parse_dispose(&p);
+
+    // A slot in the middle is left empty rather than dropped, since the
+    // arrows are what count the positions.
+    LHAT_TEST("an empty Y still takes its arrow when a T follows");
+    parse_text(&p, "x := y as^ c^{p^ -> -> number^}");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    {
+        const LhatNode *t = first_value(&p)->v.ascription.type;
+        LHAT_CHECK(t->v.coroutine.receive == NULL, "no R");
+        LHAT_CHECK(t->v.coroutine.produce == NULL, "no Y");
+        LHAT_CHECK(t->v.coroutine.result != NULL, "T");
+    }
+    parse_dispose(&p);
+
+    // 13.9: the third slot's other absence -- a body that cannot end, which
+    // answers Y alone where an omitted T answers Y|nil^.
+    LHAT_TEST("'-' in the third slot says the body cannot end");
+    parse_text(&p, "x := y as^ c^{p^ -> number^ -> -}");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    {
+        const LhatNode *t = first_value(&p)->v.ascription.type;
+        LHAT_CHECK(t->v.coroutine.endless, "endless");
+        LHAT_CHECK(t->v.coroutine.result == NULL, "and no T beside it");
+    }
+    parse_dispose(&p);
+
+    // The old spelling is gone -- 13.9改 took the ';' and its ',' away.
+    LHAT_TEST("the ';, ' spelling is no longer read");
+    parse_text(&p, "x := y as^ c^{p^ -> number^;, string^}");
+    LHAT_CHECK(error_count(&p) > 0, "expected the old shape to be refused");
+    parse_dispose(&p);
+
+    LHAT_TEST("a coroutine's T reads a bare tuple too");
+    parse_text(&p, "x := y as^ c^{f^ -> number^ -> string^, number^}");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    {
+        const LhatNode *t = first_value(&p)->v.ascription.type;
+        LHAT_CHECK_EQ_INT(t->kind, LHAT_NODE_TYPE_CORO);
+        LHAT_CHECK_EQ_INT(t->v.coroutine.result->kind, LHAT_NODE_TYPE_TUPLE);
+    }
+    parse_dispose(&p);
+
+    // A nested signature is still closed before the outer list's comma is
+    // reached -- 13.3's own argument, now carrying the bare result.
+    LHAT_TEST("a bare result nested in a parameter list");
+    parse_text(&p, "x := y as^ p^p^ -> number^, string^;, bool^ -> nil^;");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    LHAT_CHECK_EQ_INT(
+        lhat_node_list_length(first_value(&p)->v.ascription.type->v.func.params),
+        2);
+    parse_dispose(&p);
+
     // 11.5 の (3): '|' is the union, and it only appears in a type.
     LHAT_TEST("union type");
     parse_text(&p, "x := y as^ number^|nil^");
@@ -2134,7 +2280,7 @@ static void test_types(void)
     // 13.9 with 15.3改: the front half is the signature one resume follows,
     // and it carries the kind of the body.
     LHAT_TEST("coroutine type");
-    parse_text(&p, "x := y as^ c^{ p^number^ -> string^;, nil^ }");
+    parse_text(&p, "x := y as^ c^{ p^number^ -> string^ -> nil^ }");
     LHAT_CHECK_EQ_INT(error_count(&p), 0);
     {
         const LhatNode *t = first_value(&p)->v.ascription.type;
@@ -2147,7 +2293,7 @@ static void test_types(void)
     parse_dispose(&p);
 
     LHAT_TEST("and an f^ one says so");
-    parse_text(&p, "x := y as^ c^{ f^ -> string^;, nil^ }");
+    parse_text(&p, "x := y as^ c^{ f^ -> string^ -> nil^ }");
     LHAT_CHECK_EQ_INT(error_count(&p), 0);
     {
         const LhatNode *t = first_value(&p)->v.ascription.type;
