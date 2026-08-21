@@ -213,3 +213,6 @@ print(yy(2))
 let^s = "あいうえお"
 # print(s[2])
 print(s.at(2))
+
+let^p = p^{}
+p()

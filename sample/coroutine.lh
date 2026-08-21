@@ -86,8 +86,7 @@ do^ {
 print("ex. 6")
 for^let^co = y(1)
 for^let^c, d = ",", 1
-for^var^a, b = co.start()
-until^co.done() next^a, b := co.resume(a..c, b ?? 0 + d) {
+for^var^a, b = co.start() until^co.done() next^a, b := co.resume(a..c, b ?? 0 + d) {
 pre^: # 最後の入力を拾いたい場合これが必須に。
     print(a, b)
 }
@@ -103,6 +102,9 @@ let^vco = f^{
         yield^i
     }
 }()
-for^var^a = vco.start() until^vco.done() next^a := vco.resume() {
-    print(a)
+for^var^i = vco.start() until^vco.done() next^i := vco.resume() {
+    print(i)
+    # if^i? { print(i.get()) }
+    # print(i.get())
+    # print(i?.get())
 }
