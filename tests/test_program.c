@@ -3235,6 +3235,74 @@ static void test_empty_body(void)
     lhat_program_dispose(&program);
 }
 
+// 07 の 4 章 with 05 の 6.1: a unit publishes a type, and a member of it was
+// written in the unit that published it -- so a reader standing on the member
+// in another unit has somewhere to be sent, and it is not this file. The
+// same-unit half is in lsp/tests/test_definition.c, where no program is
+// needed.
+#if LHAT_WITH_RESOLUTIONS
+static void test_where_a_published_member_was_written(void)
+{
+    LhatProgram program;
+    Disk disk;
+
+    LHAT_TEST("05 の 6.1: a member reached across units names the unit it "
+              "was written in");
+    static const File files[] = {
+        {"lib.lh",
+             "module^ store\n"
+             "\n"
+             "public^let^ Held = def^{\n"
+             "    self^{ count = 0 },\n"
+             "    read = f^self^ -> number^ { return^ self^.count },\n"
+             "}\n"},
+        {"main.lh",
+             "require^ \"lib.lh\"\n"
+             "let^ made = store.Held.new()\n"
+             "let^ value = made.read()\n"},
+    };
+    program_with(&program, &disk, files, 2);
+
+    const LhatUnit *root = lhat_program_check(&program, "main.lh");
+    LHAT_CHECK(root != NULL && root->checked.diagnostic_count == 0,
+               "the program checked");
+    if (root != NULL) {
+        const char *use = strstr(root->source.text, "Held.new()");
+        LHAT_CHECK(use != NULL, "expected the member use to be there");
+        if (use != NULL) {
+            const LhatResolution *r = lhat_check_resolution_at(
+                &root->checked, (uint32_t)(use - root->source.text));
+            LHAT_CHECK(r != NULL && r->has_definition,
+                       "expected the published member to say where it is");
+            if (r != NULL && r->has_definition) {
+                LHAT_CHECK(r->definition_path != NULL &&
+                               strcmp(r->definition_path, "lib.lh") == 0,
+                           "expected lib.lh, got %s",
+                           r->definition_path != NULL ? r->definition_path
+                                                      : "(nothing)");
+                // 05 の 4 章 publishes names, so the place is the public^let^
+                // that wrote this one.
+                const LhatUnit *lib = program.units;
+                while (lib != NULL && strcmp(lib->path, "lib.lh") != 0) {
+                    lib = lib->next;
+                }
+                LHAT_CHECK(lib != NULL, "expected lib.lh to be in the graph");
+                if (lib != NULL) {
+                    const char *declared = strstr(lib->source.text, "Held =");
+                    LHAT_CHECK(declared != NULL, "expected the declaration");
+                    if (declared != NULL) {
+                        LHAT_CHECK_EQ_INT(
+                            r->definition,
+                            (uint32_t)(declared - lib->source.text));
+                    }
+                }
+            }
+        }
+    }
+    lhat_program_dispose(&program);
+}
+#endif
+
 int main(void)
 {
     // 8.9: before anything is taken, so the refusal above is about the order
@@ -3260,5 +3328,8 @@ int main(void)
     test_host_data_identity();
     test_host_data_release();
     test_dump_host_api();
+#if LHAT_WITH_RESOLUTIONS
+    test_where_a_published_member_was_written();
+#endif
     return lhat_test_report("test_program");
 }

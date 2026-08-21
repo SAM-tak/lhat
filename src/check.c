@@ -29,6 +29,27 @@ void chk_report(Checker *c, const LhatNode *at, LhatCheckErrorCode code)
     d->name_length = 0;
 }
 
+void chk_member_declared_at(Checker *c, LhatTypeMember *member,
+                           const LhatNode *at)
+{
+#if LHAT_WITH_RESOLUTIONS
+    if (member == NULL || at == NULL) {
+        return;
+    }
+    member->declared_at = at->offset;
+    // program.c names a source by the path it loaded, and the unit owns both
+    // for as long as the program does -- so the member may borrow it and a
+    // reader of the type still knows which file to open.
+    member->declared_in = c->lexer != NULL && c->lexer->source != NULL
+                              ? c->lexer->source->name
+                              : NULL;
+#else
+    (void)c;
+    (void)member;
+    (void)at;
+#endif
+}
+
 #if LHAT_WITH_RESOLUTIONS
 // 07 の 4 章: what a written name turned out to mean. Kept so that a tool
 // reads the walk's own answer rather than resolving 8 章's scoping a second
@@ -55,6 +76,7 @@ static void record_resolution(Checker *c, const LhatNode *at, const Binding *b,
     entry->has_definition = true;
     entry->is_parameter = b->is_parameter;
     entry->immutable = b->immutable;
+    entry->definition_path = NULL;  // bound in this unit, by this scope
     entry->type = type;
 }
 
@@ -83,6 +105,14 @@ void chk_record_narrowed_resolution(Checker *c, const LhatNode *at,
 void chk_record_typed_resolution(Checker *c, const LhatNode *at,
                                  LhatType *type)
 {
+    chk_record_member_resolution(c, at, type, NULL);
+}
+
+
+void chk_record_member_resolution(Checker *c, const LhatNode *at,
+                                  LhatType *type,
+                                  const LhatTypeMember *member)
+{
     LhatCheckResult *r = c->result;
     if (at == NULL || at->end <= at->offset) {
         return;  // no span: nothing to hover over
@@ -95,6 +125,7 @@ void chk_record_typed_resolution(Checker *c, const LhatNode *at,
     entry->use_end = at->end;
     entry->definition = 0;
     entry->has_definition = false;
+    entry->definition_path = NULL;
     // Neither question applies to any of these. A member is not what a
     // signature declared, and 8.9's let^/var^ is about a name a scope holds
     // -- what a table's member may be written through is 15.1改 and 05 の
@@ -103,6 +134,15 @@ void chk_record_typed_resolution(Checker *c, const LhatNode *at,
     // one's word.
     entry->is_parameter = false;
     entry->immutable = false;
+    // 14.10 looks a member up in a type, and the type says where it was
+    // written -- in this unit or in the one that published it (05 の 6.1).
+    // Nobody wrote a host registration or a built-in, and those keep the
+    // "no place to point at" the paragraph above describes.
+    if (member != NULL && member->declared_in != NULL) {
+        entry->definition = member->declared_at;
+        entry->has_definition = true;
+        entry->definition_path = member->declared_in;
+    }
     entry->type = type;
 }
 
@@ -471,7 +511,10 @@ static void resolve_members_into(Checker *c, LhatType *table,
         if (!chk_node_name(c, m->v.entry.key, &name, &length)) {
             continue;
         }
-        lhat_type_add_member(c->result->types, table, name, length, member);
+        chk_member_declared_at(
+            c, lhat_type_add_member(c->result->types, table, name, length,
+                                    member),
+            m->v.entry.key);
     }
 }
 
@@ -964,7 +1007,15 @@ LhatType *chk_resolve_type(Checker *c, const LhatNode *node)
             }
 
             LhatType *written = as_written_type(declared->type);
+#if LHAT_WITH_RESOLUTIONS
+            // 14.9: what this names was bound by a let^ in some scope, and
+            // that is a place to point at -- so the record carries the
+            // binding rather than the type alone, and 'x : Reader' answers
+            // where the Reader in an expression does.
+            chk_record_narrowed_resolution(c, node, declared, written);
+#else
             record_type_name(c, node, written);
+#endif
             return written;
         }
 

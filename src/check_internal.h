@@ -436,6 +436,15 @@ typedef struct {
     // statement. Left at NONE everywhere else, including inside whatever
     // chk_infer() recurses into to produce a yield^'s own value -- that value is
     // never itself the direct target of a binding.
+#if LHAT_WITH_RESOLUTIONS
+    // 07 の 4 章: the member chk_infer_member answered from, for the record it
+    // makes on the way back out. Held here rather than handed back: that
+    // function returns from thirty-odd places and only two of them have a
+    // member record in hand. Cleared as it is entered and read immediately
+    // after it returns, so the one that mattered is the last one written --
+    // the target of a member access is inferred before its own lookup runs.
+    const LhatTypeMember *resolved_member;
+#endif
     enum YieldContext {
         YIELD_CTX_NONE,
         YIELD_CTX_DISCARD,
@@ -454,8 +463,23 @@ void chk_record_narrowed_resolution(Checker *c, const LhatNode *at,
                                     const Binding *b, LhatType *type);
 void chk_record_typed_resolution(Checker *c, const LhatNode *at,
                                  LhatType *type);
+// The same, for a member: 14.10 finds one in a type rather than in a
+// scope, and the type knows where it was written (type.h's declared_at).
+// `member` may be NULL, which is the typed record above.
+void chk_record_member_resolution(Checker *c, const LhatNode *at,
+                                  LhatType *type,
+                                  const LhatTypeMember *member);
+
 void chk_settle_resolutions(LhatCheckResult *result);
 #endif
+// Marks where `member` was written, for the record above to point at.
+// Outside the guard and a no-op without it: the sites that call this hold a
+// written node either way, and wrapping every one of them in its own #if
+// would say the same thing a dozen times. A no-op without a member or a
+// node too -- the sites that add a member the writer did not write (a host
+// registration, a built-in) simply have none to pass.
+void chk_member_declared_at(Checker *c, LhatTypeMember *member,
+                           const LhatNode *at);
 void chk_report_named(Checker *c, const LhatNode *at,
                       LhatCheckErrorCode code, const char *name,
                       size_t length);

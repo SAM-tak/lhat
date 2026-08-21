@@ -275,6 +275,8 @@ if(LHAT_BUILD_LSP)
         lsp/handlers/hover.c
         lsp/handlers/signature.c
         lsp/signature.c
+        lsp/handlers/definition.c
+        lsp/definition.c
         lsp/resolution.c
     )
     # The binary is a language server, not "LSP" itself, so the executable

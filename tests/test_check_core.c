@@ -2487,6 +2487,60 @@ static void test_a_narrowed_name_still_resolves(void)
 // checker could tell 'number^' from the 'number' somebody meant to write. The
 // place they stand in is the same one: the parser reads both into a type-name
 // node, and the hat is the whole difference.
+// 14.10 with 07 の 4 章: a member is looked up in a type rather than in a
+// scope, so the place it was written is the type's to know -- and a use of
+// one had nothing to point at until it did. What a name a scope holds gets
+// from its binding, a member gets from the member record (type.h).
+static void test_a_member_use_says_where_it_was_written(void)
+{
+    Unit u;
+
+    LHAT_TEST("14.10: a member use points at the entry that wrote it");
+    check_text(&u,
+               "let^ Reader = def^{\n"
+               "    self^{ at = 1 },\n"
+               "    peek = f^self^ -> number^ { return^ self^.at },\n"
+               "}\n"
+               "let^ r = Reader.new()\n"
+               "let^ n = r.peek()\n");
+    CHECK_CLEAN(&u);
+
+    const char *use = strstr(u.source.text, "peek()");
+    const char *wrote = strstr(u.source.text, "peek = f^self^");
+    LHAT_CHECK(use != NULL && wrote != NULL, "expected both to be there");
+    if (use != NULL && wrote != NULL) {
+        const LhatResolution *r = lhat_check_resolution_at(
+            &u.checked, (uint32_t)(use - u.source.text));
+        LHAT_CHECK(r != NULL && r->has_definition,
+                   "expected the member use to say where it was written");
+        if (r != NULL && r->has_definition) {
+            LHAT_CHECK_EQ_INT(r->definition,
+                              (uint32_t)(wrote - u.source.text));
+            // The unit that wrote it, which for a member of this unit's own
+            // def^ is this one -- the field is what a member from another
+            // unit fills differently (05 の 6.1).
+            LHAT_CHECK(r->definition_path != NULL,
+                       "expected the member to name the unit it was in");
+        }
+    }
+    unit_dispose(&u);
+
+    // 05 の 8.7: what the host registered was declared in C, and 14.19's
+    // built-ins by the language. Neither has a place in any source, and
+    // saying so is the answer rather than a missing one.
+    LHAT_TEST("and a built-in member has no place to point at");
+    check_text(&u, "let^ n = ""text"".length\n");
+    const char *builtin = strstr(u.source.text, "length");
+    LHAT_CHECK(builtin != NULL, "expected the member to be there");
+    if (builtin != NULL) {
+        const LhatResolution *r = lhat_check_resolution_at(
+            &u.checked, (uint32_t)(builtin - u.source.text));
+        LHAT_CHECK(r != NULL && !r->has_definition,
+                   "expected nothing to point at for a built-in");
+    }
+    unit_dispose(&u);
+}
+
 static void test_a_written_type_name_resolves(void)
 {
     Unit u;
@@ -2563,6 +2617,7 @@ int main(void)
     test_resolutions_are_ordered();
     test_resolutions_say_what_bound_the_name();
     test_a_narrowed_name_still_resolves();
+    test_a_member_use_says_where_it_was_written();
     test_a_written_type_name_resolves();
     test_a_written_definition_is_one();
 #endif

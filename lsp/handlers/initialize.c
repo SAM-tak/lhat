@@ -73,6 +73,9 @@ cJSON *lsp_handle_initialize(LspServer *server, const cJSON *params)
 
     // 07 の 4 章: the definition a name reaches, and what was written about it.
     cJSON_AddBoolToObject(capabilities, "hoverProvider", true);
+    // 07 の 4 章: the checker recorded where every name it resolved was
+    // declared, which is the whole of what going to one needs.
+    cJSON_AddBoolToObject(capabilities, "definitionProvider", true);
 
     cJSON_AddItemToObject(result, "capabilities", capabilities);
 

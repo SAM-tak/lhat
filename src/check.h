@@ -348,6 +348,12 @@ typedef struct {
     // source declares it. The type is still known, which is what a reader
     // asking "what is this" wants most.
     bool has_definition;
+    // Which unit `definition` is an offset into: NULL for the one this
+    // resolution belongs to, and a borrowed path (the member's declared_in,
+    // type.h) for a name whose meaning was written somewhere else -- 05 の
+    // 6.1 publishes a type, and a member of it was written in the unit that
+    // published it.
+    const char *definition_path;
     // 13.1: declared by a signature rather than bound by a let^ or var^.
     // Where a use stands says only that there is a name, and the type says
     // only what it holds -- which of the two declared it is something only

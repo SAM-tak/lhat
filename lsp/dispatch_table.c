@@ -6,6 +6,7 @@
 #include "dispatch.h"
 
 #include "handlers/ast.h"
+#include "handlers/definition.h"
 #include "handlers/hover.h"
 #include "handlers/initialize.h"
 #include "handlers/semantic_tokens.h"
@@ -17,6 +18,7 @@ const LspRequestEntry LSP_REQUEST_TABLE[] = {
     {"shutdown", lsp_handle_shutdown},
     {"textDocument/semanticTokens/full", lsp_handle_semantic_tokens_full},
     {"textDocument/hover", lsp_handle_hover},
+    {"textDocument/definition", lsp_handle_definition},
     // 07 の 6 章: an extension of our own, so it is named under "lhat/".
     {"lhat/ast", lsp_handle_ast},
     {"lhat/signature", lsp_handle_signature},

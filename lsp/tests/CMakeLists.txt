@@ -32,6 +32,7 @@ lhat_lsp_add_test(test_hover
     ${CMAKE_SOURCE_DIR}/lsp/resolution.c
 )
 lhat_lsp_add_test(test_host_config ${CMAKE_SOURCE_DIR}/lsp/host_config.c)
+lhat_lsp_add_test(test_definition ${CMAKE_SOURCE_DIR}/lsp/definition.c)
 lhat_lsp_add_test(test_signature
     ${CMAKE_SOURCE_DIR}/lsp/signature.c
     ${CMAKE_SOURCE_DIR}/lsp/resolution.c

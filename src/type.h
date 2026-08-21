@@ -15,6 +15,13 @@
 
 #include <stdbool.h>
 #include <stddef.h>
+#include <stdint.h>
+
+// The build's own knobs, LHAT_WITH_RESOLUTIONS among them. Named here rather
+// than left to whoever includes this first: a member's size depends on it, so
+// a translation unit that reached this header without the answer would build
+// a different LhatTypeMember from the one beside it.
+#include "lhat/version.h"
 
 // 05 の 8.9: declared in object.h; the checker only ever compares the
 // address, so the shape is not needed here.
@@ -123,6 +130,18 @@ typedef struct LhatTypeMember {
     // there, and one of these was not -- so that question skips them. The
     // relations do not read this, as with the three above.
     bool provisional;
+#if LHAT_WITH_RESOLUTIONS
+    // 07 の 4 章: where this member was written, and in which unit -- 14.10
+    // looks a member up in a type rather than in a scope, so nothing else
+    // knows the place, and a tool asked to go to it has nowhere to point.
+    // `declared_in` borrows the source's name (LhatSource, which the unit
+    // owns and the program outlives), and is NULL together with a zero
+    // `declared_at` wherever nobody wrote the member: a host registration
+    // (05 の 8.7), the machine's own tables (8.6), a built-in of a coroutine
+    // (15.6改). Like the marks above, nothing in the relations reads it.
+    uint32_t declared_at;
+    const char *declared_in;
+#endif
     struct LhatTypeMember *next;
 } LhatTypeMember;
 

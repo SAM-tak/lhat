@@ -1798,6 +1798,12 @@ static bool all_error_arms(const LhatType *type)
 
 LhatType *chk_infer_member(Checker *c, const LhatNode *node)
 {
+#if LHAT_WITH_RESOLUTIONS
+    // 07 の 4 章: only the two answers below have a member record to point at,
+    // and the target's own inference runs before either -- so what is left
+    // here when this returns is this access's member, or nothing.
+    c->resolved_member = NULL;
+#endif
     LhatType *target = chk_infer(c, node->v.access.target);
     const char *name = NULL;
     size_t length = 0;
@@ -1882,6 +1888,9 @@ LhatType *chk_infer_member(Checker *c, const LhatNode *node)
             if (c->writing_to == node) {
                 chk_report(c, node, LHAT_CHECK_ERR_BOX_FIELD_WRITE);
             }
+#if LHAT_WITH_RESOLUTIONS
+            c->resolved_member = field;
+#endif
             return field->type;
         }
         // Anything else falls to the built-ins every value answers.
@@ -2077,6 +2086,9 @@ LhatType *chk_infer_member(Checker *c, const LhatNode *node)
                 if (m->provisional) {
                     c->read_provisional = true;
                 }
+#if LHAT_WITH_RESOLUTIONS
+                c->resolved_member = m;
+#endif
                 return m->type;
             }
         }
@@ -3161,9 +3173,13 @@ static LhatType *hook_signature(Checker *c, const LhatType *from)
 // 14.15: `abstract` travels with the type, so writing over a declaration with
 // a real one is what fills the hole -- and writing a declaration over a
 // declaration leaves it open.
-static void set_member_marked(Checker *c, LhatType *table, const char *name,
-                              size_t length, LhatType *type, bool abstract,
-                              bool pending)
+// Answers the member it settled -- the one already there, or the one it
+// added -- so that a caller holding the key it was written under can say
+// where that key stands (07 の 4 章, chk_member_declared_at).
+static LhatTypeMember *set_member_marked(Checker *c, LhatType *table,
+                                         const char *name, size_t length,
+                                         LhatType *type, bool abstract,
+                                         bool pending)
 {
     for (LhatTypeMember *m = table->v.table.members; m != NULL; m = m->next) {
         if (m->name_length == length && memcmp(m->name, name, length) == 0) {
@@ -3172,7 +3188,7 @@ static void set_member_marked(Checker *c, LhatType *table, const char *name,
             m->pending = pending;
             // 14.7改: whatever the first pass put here, this is the real one.
             m->provisional = false;
-            return;
+            return m;
         }
     }
     LhatTypeMember *added = lhat_type_add_member(c->result->types, table, name,
@@ -3181,20 +3197,20 @@ static void set_member_marked(Checker *c, LhatType *table, const char *name,
         added->abstract = abstract;
         added->pending = pending;
     }
+    return added;
 }
 
 // 02 の 14.7改: the first pass's seed. Puts the name there with the signature
 // it was written with, so a body checked before it can reach it -- and leaves
 // alone anything already there, which is the base's or an earlier entry's and
 // is the real thing rather than a seed.
-static void set_member_provisional(Checker *c, LhatType *table,
-                                   const char *name, size_t length,
-                                   LhatType *type, bool abstract)
+static LhatTypeMember *set_member_provisional(Checker *c, LhatType *table,
+                                              const char *name, size_t length,
+                                              LhatType *type, bool abstract)
 {
-    for (const LhatTypeMember *m = table->v.table.members; m != NULL;
-         m = m->next) {
+    for (LhatTypeMember *m = table->v.table.members; m != NULL; m = m->next) {
         if (m->name_length == length && memcmp(m->name, name, length) == 0) {
-            return;
+            return m;
         }
     }
     LhatTypeMember *added = lhat_type_add_member(c->result->types, table, name,
@@ -3203,6 +3219,7 @@ static void set_member_provisional(Checker *c, LhatType *table,
         added->provisional = true;
         added->abstract = abstract;
     }
+    return added;
 }
 
 // 02 の 14.7改2: the next walk's seed. What the last walk inferred stays --
@@ -3220,16 +3237,18 @@ static void mark_provisional(LhatType *table, const char *name, size_t length)
     }
 }
 
-static void set_member_as(Checker *c, LhatType *table, const char *name,
-                          size_t length, LhatType *type, bool abstract)
+static LhatTypeMember *set_member_as(Checker *c, LhatType *table,
+                                     const char *name, size_t length,
+                                     LhatType *type, bool abstract)
 {
-    set_member_marked(c, table, name, length, type, abstract, false);
+    return set_member_marked(c, table, name, length, type, abstract, false);
 }
 
-static void set_member(Checker *c, LhatType *table, const char *name,
-                       size_t length, LhatType *type)
+static LhatTypeMember *set_member(Checker *c, LhatType *table,
+                                  const char *name, size_t length,
+                                  LhatType *type)
 {
-    set_member_marked(c, table, name, length, type, false, false);
+    return set_member_marked(c, table, name, length, type, false, false);
 }
 
 // 14.5改: the name is carried by both sides of a composition and reaches no
@@ -3921,14 +3940,20 @@ LhatType *chk_infer_def(Checker *c, const LhatNode *node, LhatType *base)
         if (seed == NULL) {
             continue;
         }
-        set_member_provisional(c, definition, name, length, seed,
-                               entry->v.entry.declared);
+        chk_member_declared_at(
+            c,
+            set_member_provisional(c, definition, name, length, seed,
+                                   entry->v.entry.declared),
+            entry->v.entry.key);
         // 14.7改: an instance carries what may be reached through one, which
         // the signature says. A declaration (14.15) is read the same way --
         // what fills it in is held to the type written here.
         if (chk_takes_receiver(seed)) {
-            set_member_provisional(c, instance, name, length, seed,
-                                   entry->v.entry.declared);
+            chk_member_declared_at(
+                c,
+                set_member_provisional(c, instance, name, length, seed,
+                                       entry->v.entry.declared),
+                entry->v.entry.key);
         }
     }
 
@@ -3951,8 +3976,12 @@ LhatType *chk_infer_def(Checker *c, const LhatNode *node, LhatType *base)
             // 14.15: a field the composition has to provide carries its type
             // and no value -- and so no key on the prototype.
             if (field->v.entry.declared) {
-                set_member_as(c, instance, name, length,
-                              chk_resolve_type(c, field->v.entry.value), true);
+                chk_member_declared_at(
+                    c,
+                    set_member_as(c, instance, name, length,
+                                  chk_resolve_type(c, field->v.entry.value),
+                                  true),
+                    field->v.entry.key);
                 continue;
             }
             // 14.6: a type written alongside the value is what the field
@@ -3980,8 +4009,11 @@ LhatType *chk_infer_def(Checker *c, const LhatNode *node, LhatType *base)
                 chk_report_named(c, field->v.entry.value,
                                  LHAT_CHECK_ERR_MUTABLE_DEFAULT, name, length);
             }
-            set_member(c, instance, name, length,
-                       written != NULL ? written : actual);
+            chk_member_declared_at(
+                c,
+                set_member(c, instance, name, length,
+                           written != NULL ? written : actual),
+                field->v.entry.key);
         }
     }
 
@@ -4059,9 +4091,16 @@ LhatType *chk_infer_def(Checker *c, const LhatNode *node, LhatType *base)
                 if (defined_in_def(c, node, name, length)) {
                     chk_report(c, entry, LHAT_CHECK_ERR_ABSTRACT_PROVIDED_HERE);
                 }
-                set_member_as(c, definition, name, length, declared, true);
+                chk_member_declared_at(
+                    c,
+                    set_member_as(c, definition, name, length, declared, true),
+                    entry->v.entry.key);
                 if (chk_takes_receiver(declared)) {  // 14.7改, as above
-                    set_member_as(c, instance, name, length, declared, true);
+                    chk_member_declared_at(
+                        c,
+                        set_member_as(c, instance, name, length, declared,
+                                      true),
+                        entry->v.entry.key);
                 }
                 continue;
             }
@@ -4148,13 +4187,19 @@ LhatType *chk_infer_def(Checker *c, const LhatNode *node, LhatType *base)
             // Landing on another one that is waiting settles neither.
             bool pending = entry->v.entry.modifier == LHAT_DEF_OVERRIDE &&
                            (hidden == NULL || hidden->pending);
-            set_member_marked(c, definition, name, length, type, false,
-                              pending);
+            chk_member_declared_at(
+                c,
+                set_member_marked(c, definition, name, length, type, false,
+                                  pending),
+                entry->v.entry.key);
             // 14.7改: only what is handed a receiver is reachable through an
             // instance. new and a static member stay the definition's.
             if (chk_takes_receiver(type)) {
-                set_member_marked(c, instance, name, length, type, false,
-                                  pending);
+                chk_member_declared_at(
+                    c,
+                    set_member_marked(c, instance, name, length, type, false,
+                                      pending),
+                    entry->v.entry.key);
             }
             if (seen != NULL) {
                 if (round == 0 || !lhat_type_equal(seen[index].inferred, type)) {
@@ -4508,7 +4553,11 @@ static LhatType *infer_node(Checker *c, const LhatNode *node)
             // coroutine (15.6改), an error's own two (04 の 2.3), a
             // definition's, a table's. What every one of them has in common
             // is that it came back through here.
-            chk_record_typed_resolution(c, node->v.access.argument, answer);
+            // A narrowed path answered without a lookup (13.11), so the
+            // member left over is whatever ran before it -- not this one.
+            chk_record_member_resolution(c, node->v.access.argument, answer,
+                                         narrowed != NULL ? NULL
+                                                          : c->resolved_member);
 #endif
             return answer;
         }

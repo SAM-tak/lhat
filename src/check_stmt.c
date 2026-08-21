@@ -1613,6 +1613,7 @@ static void check_errordef(Checker *c, const LhatNode *node)
             if (member != NULL) {
                 member->optional = field->v.param.fallback != NULL;
             }
+            chk_member_declared_at(c, member, field->v.param.name);
         }
     }
 }
@@ -1787,7 +1788,12 @@ LhatType *chk_collect_exports(Checker *c, const LhatNode *statements)
                     table->v.table.is_module = true;  // named through
                 }
             }
-            lhat_type_add_member(c->result->types, table, name, length, b->type);
+            // 05 の 6.1: a reader of the published type is in another unit,
+            // and the place to point at is the declaration here.
+            chk_member_declared_at(
+                c, lhat_type_add_member(c->result->types, table, name, length,
+                                        b->type),
+                target_name_node(named));
         }
     }
     return table;
