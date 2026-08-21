@@ -988,6 +988,16 @@ LhatType *chk_resolve_type(Checker *c, const LhatNode *node)
                  !chk_may_stand_beside_tuple(left))) {
                 chk_report(c, node, LHAT_CHECK_ERR_TUPLE_UNION);
             }
+            // 05 の 8.9改: a host value is wide the same way, and stands in a
+            // union under the same condition -- the head slot says which arm
+            // turned up, so the others have to be the ones it tells apart.
+            // This is also what keeps one out of an any^: the union of the
+            // two would be any^ alone, and the host value would have escaped
+            // by being written rather than by being put anywhere.
+            if ((chk_is_hostvalue(left) && !chk_may_stand_beside_tuple(right)) ||
+                (chk_is_hostvalue(right) && !chk_may_stand_beside_tuple(left))) {
+                chk_report(c, node, LHAT_CHECK_ERR_HOSTVALUE_UNION);
+            }
             return lhat_type_union(c->result->types, left, right);
         }
 
@@ -3266,6 +3276,10 @@ const char *lhat_check_error_message(LhatCheckErrorCode code)
                    "written nowhere else -- not as an argument, a name, a "
                    "table member, or a position of another tuple; pack^ makes "
                    "a t^{ A, B } of one";
+        case LHAT_CHECK_ERR_HOSTVALUE_UNION:
+            return "a host value takes several slots, so what stands beside "
+                   "it in a union has to be told apart by the first of them "
+                   "-- nil^ or an error, the same as beside (A, B)";
         case LHAT_CHECK_ERR_TUPLE_UNION:
             return "the only thing (A, B) may be written in a union with is "
                    "an error";

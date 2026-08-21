@@ -232,6 +232,11 @@ typedef enum {
     LHAT_CHECK_ERR_TUPLE_UNION,         // 13.8改 with 04 の 3.1: the only
                                         // thing a tuple may be written in a
                                         // union with is an error
+    LHAT_CHECK_ERR_HOSTVALUE_UNION,     // 05 の 8.9改: a host value takes
+                                        // several slots, so what stands
+                                        // beside it in a union has to be
+                                        // told apart by the head slot --
+                                        // the family 13.8改 gives a tuple
     LHAT_CHECK_ERR_TUPLE_ARITY,         // 13.8改: the names taking the values
                                         // apart and the values answered are
                                         // not the same count. A tuple has exactly its
@@ -261,8 +266,14 @@ typedef enum {
                                         // machine of its own (05 の 8.7)
     LHAT_CHECK_ERR_HOSTVALUE_ESCAPES,   // 05 の 8.9: a host value lives in
                                         // stack slots and nowhere else, so a
-                                        // table, a capture, an any^, a yield
-                                        // and the program's answer all refuse
+                                        // table, a capture, an any^, a
+                                        // tuple's position and the program's
+                                        // answer all refuse one. 8.9改: what
+                                        // each of them refuses is the width,
+                                        // so a union carrying one is refused
+                                        // there too -- while the union
+                                        // itself is written freely, beside
+                                        // the arms the head slot tells apart
                                         // one -- box it into the hostdata
                                         // container its library provides.
                                         // Refused even under relaxed: a

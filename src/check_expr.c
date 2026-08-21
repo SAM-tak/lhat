@@ -4218,10 +4218,15 @@ LhatType *chk_infer_def(Checker *c, const LhatNode *node, LhatType *base)
     return definition;
 }
 
-// 05 の 8.9: the one question every escape rule asks.
+// 05 の 8.9: the one question every escape rule asks. 8.9改: through a
+// union's arms as well -- every one of those rules is about the width a
+// place has room for, and 'Vector3|nil^' is as wide as the Vector3 in it
+// whichever arm is live. The narrower question (is this type itself a host
+// value) is asked by kind where it is really about identity: what members
+// hang off it, what box^ takes, what a field write reaches.
 bool chk_is_hostvalue(const LhatType *type)
 {
-    return type != NULL && type->kind == LHAT_TYPE_HOSTVALUE;
+    return lhat_type_hostvalue_arm(type) != NULL;
 }
 
 static LhatType *infer_node(Checker *c, const LhatNode *node);
@@ -4249,8 +4254,11 @@ LhatType *chk_infer(Checker *c, const LhatNode *node)
     // stamped for exactly the reason a host value is. A union carrying a
     // tuple arm ('(K, V)|nil^', a walk's resume) is stamped too: even a
     // discarded call has to reserve the arm's width for the run to land in.
-    // Its kind is no more a FUNC or a TYPEOF than HOSTVALUE is, so those
-    // stamps stay untouched.
+    // 8.9改: and a union carrying a host value arm for the same reason --
+    // 'Vector3|nil^' takes the Vector3's slots whichever arm turns up, since
+    // the room has to be there before anyone knows which did. Its kind is no
+    // more a FUNC or a TYPEOF than HOSTVALUE is, so those stamps stay
+    // untouched.
     if (node != NULL &&
         (chk_is_hostvalue(type) || lhat_type_tuple_arm_width(type) > 0)) {
         ((LhatNode *)node)->checked_type = type;

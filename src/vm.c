@@ -3651,10 +3651,18 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
                     // Whatever the host may have staged, it did not answer
                     // with it, so the room is free again.
                     m->tuple_scratch_count = 0;
-                    if (room > 1) {
-                        // The call site reserved a run and one value came
-                        // back: a host registered as answering several and
-                        // written to answer one.
+                    // 13.8改 with 04 の 3.1, and 05 の 8.9改: room past one
+                    // slot says the site reserved for something wide -- a
+                    // run ('-> (A, B)'), or a host value's own width
+                    // ('-> Vector3|nil^'). One value coming back fills it
+                    // only when that value is the arm the head slot tells
+                    // apart: an error for a try^ to find, or a nil^ for a
+                    // '??'. Anything else is a registration promising a
+                    // shape its C never answers with, and the promise is
+                    // the host's own -- so it faults here rather than
+                    // leaving the slots behind the head as they were.
+                    if (room > 1 && !lhat_is_nil(answered) &&
+                        !lhat_is_object_kind(answered, LHAT_OBJECT_ERROR)) {
                         return finish(m, chunk, LHAT_RUN_TUPLE_ARITY,
                                       lhat_nil(), at);
                     }

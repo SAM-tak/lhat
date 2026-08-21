@@ -681,6 +681,75 @@ static void test_escapes(void)
                        "}\n"),
                "member overwrite");
 
+    // 8.9改: every rule above is about the width a place has room for, not
+    // about the kind's identity -- so a union carrying a host value is as
+    // wide as the value in it and lands in none of those places either.
+    // These are the same refusals written with a '|nil^' on, and they are
+    // what says the lift below opened no hole.
+    LHAT_TEST("and a union carrying one is refused in the same places");
+    LHAT_CHECK(!checks("import^ std.math\n"
+                       "let^ v = std.math.vec3(1, 2, 3)\n"
+                       "let^ t = { held = if^ true^: v el^: nil^ ; }\n"),
+               "a table member");
+    LHAT_CHECK(!checks("import^ std.math\n"
+                       "let^ f = f^t:t^{ v : std.math.Vector3|nil^ } {\n"
+                       "    return^ nil^\n"
+                       "}\n"),
+               "a written member type");
+    LHAT_CHECK(!checks("import^ std.math\n"
+                       "var^ m : std.math.Vector3|nil^ = nil^\n"
+                       "let^ f = f^ -> nil^ { let^ held = m return^ nil^ }\n"),
+               "a capture");
+    LHAT_CHECK(!checks("import^ std.math\n"
+                       "var^ m : std.math.Vector3|nil^ = nil^\n"
+                       "print(m)\n"),
+               "the variadic seat -- what '?.' used to slip through");
+    LHAT_CHECK(!checks("import^ std.math\n"
+                       "var^ m : std.math.Vector3|nil^ = nil^\n"
+                       "return^ m\n"),
+               "the program's answer");
+    LHAT_CHECK(!checks("import^ std.math\n"
+                       "let^ gen = p^ {\n"
+                       "    var^ m : std.math.Vector3|nil^ = nil^\n"
+                       "    yield^ 1, m\n"
+                       "}\n"),
+               "a run's position");
+
+    // 8.9改: what the lift opens. A host value stands in a union whose other
+    // arms the head slot's tag tells apart, so the room one reservation
+    // makes serves both -- the value writes its width, the nil^ writes the
+    // head and leaves the rest untouched.
+    LHAT_TEST("a host value stands beside a nil^");
+    LHAT_CHECK(checks("import^ std.math\n"
+                      "let^ f = f^ -> std.math.Vector3|nil^ { return^ nil^ }\n"
+                      "var^ m = f()\n"
+                      "if^ m? { let^ x = m.x }\n"
+                      "let^ y = (m ?? std.math.vec3(0, 0, 0)).x\n"
+                      "let^ known = m isa^ std.math.Vector3\n"),
+               "written, narrowed, defaulted and asked about");
+
+    LHAT_TEST("and beside an error");
+    LHAT_CHECK(checks("import^ std.math\n"
+                      "errordef^ E { Bad }\n"
+                      "let^ f = f^ -> std.math.Vector3|E.Bad {\n"
+                      "    return^ error^E.Bad{}\n"
+                      "}\n"
+                      "let^ v = try^ f()\n"
+                      "return^ v.x\n"),
+               "try^ tells the arms apart");
+
+    // The arms it may not stand beside: any^ has no head to read, and a
+    // second wide arm would want a second reading of the one head.
+    LHAT_TEST("but not beside an any^ or a second wide arm");
+    LHAT_CHECK(!checks("import^ std.math\n"
+                       "let^ f = f^ -> std.math.Vector3|any^ { return^ nil^ }\n"),
+               "any^ would be the escape written out");
+    LHAT_CHECK(!checks("import^ std.math\n"
+                       "let^ f = f^ -> std.math.Vector3|string^ {\n"
+                       "    return^ \"a\"\n"
+                       "}\n"),
+               "no construct tells these apart");
+
     // The doors that stay open, pinned so a rule tightening by accident is
     // seen here: fields write, parameters and results pass.
     LHAT_TEST("what must keep checking still checks");

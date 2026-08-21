@@ -392,6 +392,12 @@ size_t lhat_type_tuple_width(const LhatType *type);
 // it -- '(K, V)|nil^' answers 2. 0 when no arm is a tuple.
 size_t lhat_type_tuple_arm_width(const LhatType *type);
 
+// 05 の 8.9改: the host value this type is, or the one arm of it a union
+// carries -- 'Vector3|nil^' answers the Vector3. NULL when there is none.
+// A union has at most one: two wide arms could not be told apart by the one
+// head slot, which is the same reading lhat_type_tuple_arm_width makes.
+const LhatType *lhat_type_hostvalue_arm(const LhatType *type);
+
 // The type at a zero-based position, or NULL when there is none.
 LhatType *lhat_type_tuple_at(const LhatType *type, size_t index);
 

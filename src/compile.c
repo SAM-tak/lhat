@@ -322,13 +322,19 @@ static uint8_t reserve(Compiler *c)
 // is otherwise type-blind; this is the one channel a width arrives through,
 // so compiling without checking simply never sees one -- and the checker's
 // escape rules have already refused every place a width could go wrong.
+//
+// 8.9改: read through a union's arms, since 'Vector3|nil^' needs the
+// Vector3's room reserved whichever arm turns up -- the nil^ writes the head
+// slot and leaves the rest untouched, which is what makes one reservation
+// serve both. The arms a union may carry beside a wide one are exactly the
+// ones the head slot's tag tells apart (13.8改's family), so at most one arm
+// is ever wide.
 static const struct LhatHostValueTag *hostvalue_of(const LhatNode *node)
 {
     const LhatType *checked =
         node != NULL ? (const LhatType *)node->checked_type : NULL;
-    return checked != NULL && checked->kind == LHAT_TYPE_HOSTVALUE
-               ? checked->v.table.hostvalue_tag
-               : NULL;
+    const LhatType *arm = lhat_type_hostvalue_arm(checked);
+    return arm != NULL ? arm->v.table.hostvalue_tag : NULL;
 }
 
 static size_t width_of(const LhatNode *node)

@@ -485,6 +485,24 @@ typedef struct {
     int64_t n;
 } Counter;
 
+// 05 の 8.9改: a host registered '-> T|nil^'. A positive argument answers
+// the value arm, anything else the nil^ one -- which lands in the head slot
+// of the room the width reserved, where ISNIL reads for it.
+static LhatValue host_counter_maybe(LhatMachine *machine, void *context,
+                                    const LhatValue *arguments, size_t count)
+{
+    if (count != 1 || !lhat_is_number(arguments[0]) ||
+        lhat_as_real(arguments[0]) <= 0) {
+        return lhat_nil();
+    }
+    Counter c = {7};
+    LhatValue out = lhat_nil();
+    return lhat_make_hostvalue(machine, (const LhatHostValueTag *)context, &c,
+                               &out)
+               ? out
+               : lhat_nil();
+}
+
 static LhatValue host_counter_make(LhatMachine *machine, void *context,
                                    const LhatValue *arguments, size_t count)
 {
@@ -1373,6 +1391,48 @@ static void test_hostvalue_escape(void)
             LhatRunResult ran = lhat_run(machine, modules[root->index].proto);
             LHAT_CHECK_EQ_INT(ran.status, LHAT_RUN_OK);
             LHAT_CHECK_EQ_INT(lhat_as_integer(ran.value), -7);
+            lhat_machine_dispose(machine);
+        }
+    }
+    lhat_program_dispose(&program);
+
+    // 05 の 8.9改: a host value stands in a union whose other arms the head
+    // slot's tag tells apart, so a registration may answer 'T|nil^'. The
+    // width is reserved either way; the nil^ writes the head and leaves the
+    // slots behind it as they were, which is exactly what ISNIL reads.
+    LHAT_TEST("a host value may be answered beside a nil^");
+    {
+        static const File files[] = {
+            {"main.lh",
+             "import^ test.c\n"
+             "var^ some = test.c.maybe(1)\n"
+             "var^ none = test.c.maybe(0)\n"
+             "var^ seen = 0\n"
+             "if^ some? { seen := seen + 1 }\n"
+             "if^ none? { seen := seen + 10 }\n"
+             "return^ seen\n"},
+        };
+        program_with(&program, &disk, files, 1);
+        const LhatHostValueTag *tag = lhat_register_hostvalue_type(
+            &program, "test.c", "C", sizeof(Counter));
+        LHAT_CHECK(tag != NULL, "the type registration took");
+        LHAT_CHECK(lhat_register_func(&program, "test.c", "maybe",
+                                      "f^number^ -> test.c.C|nil^;",
+                                      host_counter_maybe, (void *)tag),
+                   "a union answer registers");
+        const LhatUnit *root = lhat_program_check(&program, "main.lh");
+        LHAT_CHECK(root != NULL && root->checked.diagnostic_count == 0,
+                   "the program checked");
+        size_t count = 0;
+        const LhatModule *modules = lhat_program_compile(&program, &count);
+        if (modules != NULL && root != NULL) {
+            LhatMachine *machine = lhat_machine_new();
+            lhat_machine_set_modules(machine, modules, count);
+            lhat_program_install(&program, machine);
+            LhatRunResult ran = lhat_run(machine, modules[root->index].proto);
+            LHAT_CHECK_EQ_INT(ran.status, LHAT_RUN_OK);
+            // Only the value arm was present.
+            LHAT_CHECK_EQ_INT(lhat_as_integer(ran.value), 1);
             lhat_machine_dispose(machine);
         }
     }

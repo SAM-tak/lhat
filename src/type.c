@@ -360,6 +360,29 @@ size_t lhat_type_tuple_arm_width(const LhatType *type)
     return 0;
 }
 
+const LhatType *lhat_type_hostvalue_arm(const LhatType *type)
+{
+    if (type == NULL) {
+        return NULL;
+    }
+    if (type->kind == LHAT_TYPE_HOSTVALUE) {
+        return type;
+    }
+    if (type->kind == LHAT_TYPE_UNION) {
+        // 05 の 8.9改: at most one arm is a host value -- two wide arms could
+        // not be told apart by the head slot -- so the first found is the
+        // answer, exactly as the tuple's arm is read above.
+        for (const LhatTypeList *p = type->v.composite.arms; p != NULL;
+             p = p->next) {
+            const LhatType *found = lhat_type_hostvalue_arm(p->type);
+            if (found != NULL) {
+                return found;
+            }
+        }
+    }
+    return NULL;
+}
+
 LhatType *lhat_type_tuple_at(const LhatType *type, size_t index)
 {
     if (type == NULL || type->kind != LHAT_TYPE_TUPLE) {
@@ -439,6 +462,56 @@ typedef struct Assumed {
     const LhatType *target;
     const struct Assumed *outer;
 } Assumed;
+
+// 05 の 8.9改 with 13.8改: whether a union may carry something wide. Only one
+// arm may be, and every other arm has to be a single slot the head's tag
+// tells apart -- nil^ and the error kinds, which '??' and 'try^' are the
+// constructs for. Anything else (any^, a second wide arm, a plain value with
+// no construct to discriminate it) would leave two readings of one head.
+static bool tells_apart_by_head(const LhatType *type)
+{
+    if (type == NULL) {
+        return false;
+    }
+    switch (type->kind) {
+        case LHAT_TYPE_NIL:
+        case LHAT_TYPE_ERROR:
+        case LHAT_TYPE_ERROR_SET:
+        case LHAT_TYPE_ERROR_KIND:
+            return true;
+        case LHAT_TYPE_UNION:
+            for (const LhatTypeList *arm = type->v.composite.arms;
+                 arm != NULL; arm = arm->next) {
+                if (!tells_apart_by_head(arm->type)) {
+                    return false;
+                }
+            }
+            return true;
+        default:
+            return false;
+    }
+}
+
+// And whether this union is one a wide value may stand in: exactly one arm
+// is the wide one, and the rest are told apart by the head.
+static bool admits_a_wide_arm(const LhatType *type)
+{
+    if (type == NULL || type->kind != LHAT_TYPE_UNION) {
+        return false;
+    }
+    size_t wide = 0;
+    for (const LhatTypeList *arm = type->v.composite.arms; arm != NULL;
+         arm = arm->next) {
+        if (arm->type != NULL && arm->type->kind == LHAT_TYPE_HOSTVALUE) {
+            wide++;
+            continue;
+        }
+        if (!tells_apart_by_head(arm->type)) {
+            return false;
+        }
+    }
+    return wide == 1;
+}
 
 static bool conforms_in(const LhatType *value, const LhatType *target,
                         const Assumed *seen);
@@ -545,12 +618,20 @@ static bool conforms_in(const LhatType *value, const LhatType *target,
     // 05 の 8.9: a host value fits exactly its own type and nothing wider.
     // Checked before any^'s shortcut on purpose: any^ is the top of every
     // value that can live anywhere a value lives, and a host value cannot
-    // leave its frame -- letting it under any^ (or into a union, checked
-    // below by falling out of this early return) would be the first step of
+    // leave its frame -- letting it under any^ would be the first step of
     // every escape the kind exists to refuse. Identity is the tag, for
     // 8.8's reason sharpened by value semantics.
-    if (value->kind == LHAT_TYPE_HOSTVALUE ||
-        target->kind == LHAT_TYPE_HOSTVALUE) {
+    //
+    // 8.9改: a union is the exception, and only when its other arms are the
+    // ones the head slot's tag tells apart -- 'Vector3|nil^' is a Vector3's
+    // slots with the head saying which arm turned up, which is the very
+    // reading 13.8改 gives a tuple standing beside a nil^. The union arm
+    // below is what admits it; everything else still stops here.
+    if (value->kind == LHAT_TYPE_HOSTVALUE &&
+        target->kind == LHAT_TYPE_UNION && admits_a_wide_arm(target)) {
+        // Fall through to the union arm.
+    } else if (value->kind == LHAT_TYPE_HOSTVALUE ||
+               target->kind == LHAT_TYPE_HOSTVALUE) {
         return value->kind == target->kind &&
                value->v.table.hostvalue_tag == target->v.table.hostvalue_tag;
     }
