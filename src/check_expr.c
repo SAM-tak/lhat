@@ -1420,9 +1420,24 @@ LhatType *chk_infer_call(Checker *c, const LhatNode *node)
             }
             break;
         }
+        // 3.4改: what this position takes, read before the argument rather
+        // than after -- a subroutine literal written here has the callee's
+        // written signature standing beside it, and takes the parameters it
+        // has none written on from there. The receiver's position is not one
+        // of these (14.4), so nothing is expected there.
+        LhatType *wanted =
+            skip > 0 ? NULL
+                     : (param != NULL ? param->type : callee->v.func.variadic);
         // 3.4改: read back where the seeding above already inferred it.
-        LhatType *actual = seeded && taken < given_count ? given_types[taken]
-                                                        : chk_infer(c, arg);
+        LhatType *actual;
+        if (seeded && taken < given_count) {
+            actual = given_types[taken];
+        } else {
+            LhatType *outer_expected = c->expected_func;
+            c->expected_func = wanted;
+            actual = chk_infer(c, arg);
+            c->expected_func = outer_expected;
+        }
         taken++;
         if (skip > 0) {
             skip--;  // the receiver, whose type the call site already knows
@@ -1436,7 +1451,6 @@ LhatType *chk_infer_call(Checker *c, const LhatNode *node)
         if (lhat_type_tuple_width(actual) > 0) {
             chk_report(c, arg, LHAT_CHECK_ERR_TUPLE_MISPLACED);
         }
-        LhatType *wanted = param != NULL ? param->type : callee->v.func.variadic;
         // 05 の 8.9: the variadic tail collects into a table for an L^ body
         // and erases the width for a host's -- either way the seat cannot
         // say a host value's type, so one is boxed to ride it.
@@ -2595,7 +2609,12 @@ LhatType *chk_infer_func(Checker *c, const LhatNode *node)
         // pending^, and 03 の 3.4 leaves what settles it to the body's demands;
         // a default is not one of them (it is a value the call carries, not a
         // use the body makes).
+        // 3.4改: the written type stands beside the default the same way it
+        // stands beside an argument, so a literal default takes it too.
+        LhatType *outer_expected = c->expected_func;
+        c->expected_func = param->v.param.type != NULL ? type : NULL;
         LhatType *fallback = chk_infer(c, param->v.param.fallback);
+        c->expected_func = outer_expected;
         if (fallback != NULL && param->v.param.type != NULL) {
             chk_expect(c, param->v.param.fallback, fallback, type,
                        LHAT_CHECK_ERR_MISMATCH);

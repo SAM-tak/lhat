@@ -1612,6 +1612,96 @@ static void test_errors(void)
     LHAT_CHECK_EQ_INT(u.checked.diagnostic_count, 1);
     unit_dispose(&u);
 
+    // 03 の 3.4改: the callee's written signature stands beside an argument,
+    // so a literal written there takes the parameters nothing was written on
+    // from the position it is going into. What decides them is the callee's
+    // own signature, not a caller elsewhere -- 3.4's line is about the other
+    // direction.
+    LHAT_TEST("a literal argument takes its parameters from the position");
+    check_text(&u,
+               "let^ ff = f^ a:number^, b:string^, g:f^number^, string^ -> "
+               "bool^; -> bool^ { g(a, b) }\n"
+               "var^ r = ff(1, \"s\", f^ c, d { c > 0 })\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("and the body is checked against what the position filled in");
+    check_text(&u,
+               "let^ ff = f^ g:f^number^ -> bool^; -> bool^ { g(1) }\n"
+               "var^ r = ff(f^ x { x .. \"s\" })\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_NO_OPERATOR);
+    unit_dispose(&u);
+
+    // 14.4: a member call hands the receiver over without writing it, and
+    // the parameters line up after it.
+    LHAT_TEST("a member call fills in a literal argument too");
+    check_text(&u,
+               "let^ D = def^ {\n"
+               "    run = f^ self^, g:f^number^ -> bool^; -> bool^ { g(1) },\n"
+               "}\n"
+               "var^ d = D.new()\n"
+               "var^ r = d.run(f^ x { true^ })\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // 14.4: written out, the receiver takes the first position and the
+    // parameters follow it. The shift is one, and it is read off the way the
+    // call is written -- so what comes after still lines up.
+    LHAT_TEST("and so does one whose receiver is written out");
+    check_text(&u,
+               "let^ D = def^ {\n"
+               "    run = f^ self^, g:f^number^ -> bool^; -> bool^ { g(1) },\n"
+               "}\n"
+               "var^ d = D.new()\n"
+               "let^ m = D.run\n"
+               "var^ r = m(d, f^ x { true^ })\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // 14.12: an overloaded member is an intersection, and which arm a call
+    // means is settled by the arguments' own types -- so there is no one
+    // position to read an expectation off of. The annotation is still owed
+    // here, which is what this pins.
+    LHAT_TEST("but an overloaded one has no one position to read");
+    check_text(&u,
+               "let^ D = def^ {\n"
+               "    run = f^ self^, g:f^number^ -> bool^; -> bool^ { g(1) },\n"
+               "    overload^run := f^ self^, s:string^ -> bool^ "
+               "{ s.length > 0 },\n"
+               "}\n"
+               "var^ d = D.new()\n"
+               "var^ r = d.run(f^ x { true^ })\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_PARAM_UNDECIDED);
+    unit_dispose(&u);
+
+    // 13.2: a written result stands beside the value the same way, so a
+    // literal returned into it is filled in as an argument is.
+    LHAT_TEST("a written result fills in a literal returned into it");
+    check_text(&u,
+               "let^ mk = f^ -> f^number^ -> bool^; { return^ f^ x { x > 0 } }\n"
+               "var^ r = mk()(3)\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // 8.6: and what a name already holds says it at a reassignment, which is
+    // the define's own rule read from the other side.
+    LHAT_TEST("and what a name holds fills in a reassigned literal");
+    check_text(&u,
+               "var^ cb : f^number^ -> bool^; = f^ n { n > 0 }\n"
+               "cb := f^ y { true^ }\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // 13.4: a default is written into a call site, so the position it will
+    // be written into is what it is expected to fit.
+    LHAT_TEST("and a written parameter type fills in its own default");
+    check_text(&u,
+               "let^ take = f^ g:f^number^ -> bool^; = f^ z { true^ } "
+               "-> bool^ { g(1) }\n"
+               "var^ r = take(f^ w { w > 100 })\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
     // The expectation is the one literal's. A body written inside it is
     // expected by nothing, so its own parameters wait on their own demands.
     LHAT_TEST("an expectation does not reach a body written inside");

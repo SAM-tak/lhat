@@ -1223,7 +1223,13 @@ static void check_reassign(Checker *c, const LhatNode *node)
                 c->yield_bound_type =
                     target_count > 1 ? yield_bound : wanted;
             }
+            // 03 の 3.4改: what the place holds says what is expected here,
+            // as a signature written on a define does -- so a literal
+            // written on the right takes its parameters from it.
+            LhatType *outer_expected = c->expected_func;
+            c->expected_func = target_count > 1 ? NULL : wanted;
             LhatType *given = chk_infer(c, value);
+            c->expected_func = outer_expected;
             c->yield_context = outer_yctx;
             c->yield_bound_type = outer_ybound;
             c->nil_safe_place = outer_place;
@@ -2216,7 +2222,13 @@ void chk_check_statement(Checker *c, const LhatNode *node)
                 }
                 value = tuple;
             } else {
+                // 03 の 3.4改: a written result type is what this value is
+                // expected to have, so a literal returned here takes the
+                // parameters nothing was written on from it.
+                LhatType *outer_expected = c->expected_func;
+                c->expected_func = c->declared_result;
                 value = chk_infer(c, node->v.jump.value);
+                c->expected_func = outer_expected;
             }
             bool recursive = c->saw_self_call;
             c->saw_self_call = enclosing_self_call || recursive;
