@@ -41,8 +41,11 @@ typedef struct {
 
     // 5.5: the cleanups this frame has entered and not yet run, innermost
     // last. A finally^ and a with^ are both just a stretch of code to run.
-    size_t cleanups[LHAT_MAX_CLEANUPS];
-    size_t cleanup_count;
+    // An instruction index is a Bx (code.h's lhat_bx), so 16 bits hold every
+    // one a jump could reach -- and a frame array this wide is most of what
+    // a machine weighs.
+    uint16_t cleanups[LHAT_MAX_CLEANUPS];
+    uint8_t cleanup_count;
 
     // Draining state. `target` is the depth to stop at; `resume` is where to
     // carry on afterwards, unless the drain is a return^ carrying `answer`.
@@ -90,6 +93,18 @@ typedef struct {
     // comparison was written -- '≠' negates what comes back.
     bool derive_equal;
 } Frame;
+
+// 5.5: a cleanup is remembered as the Bx of the PUSHCLEANUP that entered it,
+// so the room it is kept in is tied to how wide a Bx is -- both here and in
+// the coroutine a suspended frame hands them to (02 の 10.7).
+_Static_assert(sizeof(((Frame *)0)->cleanups[0]) >=
+                   sizeof(lhat_bx((LhatInstruction)0)),
+               "a cleanup has to hold a Bx");
+_Static_assert(sizeof(((LhatCoroutine *)0)->cleanups[0]) >=
+                   sizeof(((Frame *)0)->cleanups[0]),
+               "a coroutine has to hold what a frame hands it");
+_Static_assert(LHAT_MAX_CLEANUPS <= UINT8_MAX,
+               "cleanup_count has to count them");
 
 // 02 の 13.8改: the room above holds one head slot plus the positions, and a
 // tuple shares it with 05 の 8.9's host values. Keeping the two limits tied

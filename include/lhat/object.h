@@ -218,9 +218,13 @@ typedef struct LhatCoroutine {
     size_t pc;
     uint8_t sent_into;     // the register a resume's value arrives in
 
-    // 02 の 10.7: what a discarded coroutine still has to run.
-    size_t cleanups[LHAT_COROUTINE_CLEANUPS];
-    size_t cleanup_count;
+    // 02 の 10.7: what a discarded coroutine still has to run. Each is an
+    // instruction index, which is a Bx and so 16 bits wide wherever it is
+    // written down (code.h's lhat_bx) -- a jump could not reach past that
+    // anyway. Most coroutines carry none of these, so the room the array
+    // costs whether or not it is used is worth keeping small.
+    uint16_t cleanups[LHAT_COROUTINE_CLEANUPS];
+    uint8_t cleanup_count;
 
     // 02 の 10.7: the collector is the last place a discarded coroutine's
     // cleanups can be reached from, so one found unreachable with some still
