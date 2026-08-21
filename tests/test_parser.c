@@ -1213,15 +1213,6 @@ static void test_statements(void)
     LHAT_CHECK_EQ_INT(first_statement(&p)->v.loop.focus->kind, LHAT_NODE_DEFINE);
     parse_dispose(&p);
 
-    // 01 の 7.3: the postfix form is not the language's, and the parser
-    // points at the prefix one.
-    LHAT_TEST("postfix reassignment reports what to write instead");
-    parse_text(&p, "i + 1 -> i");
-    LHAT_CHECK(p.result.diagnostic_count > 0, "expected a diagnostic");
-    LHAT_CHECK_EQ_INT(p.result.diagnostics[0].code,
-                      LHAT_PARSE_ERR_WITHDRAWN_ARROW);
-    parse_dispose(&p);
-
     LHAT_TEST("'<<' after a target reports that it is reserved");
     parse_text(&p, "a << b");
     LHAT_CHECK(p.result.diagnostic_count > 0, "expected a diagnostic");
@@ -2304,14 +2295,6 @@ static void test_types(void)
         LHAT_CHECK(t->v.coroutine.receive == NULL, "no receive type");
         LHAT_CHECK(t->v.coroutine.produce != NULL, "produce type");
     }
-    parse_dispose(&p);
-
-    // 01 の 7.6: '::' is not the language's, and the parser points at '->'.
-    LHAT_TEST(":: reports what to write instead");
-    parse_text(&p, "x := y as^ f^number^ :: string^ ;");
-    LHAT_CHECK(p.result.diagnostic_count > 0, "expected a diagnostic");
-    LHAT_CHECK_EQ_INT(p.result.diagnostics[0].code,
-                      LHAT_PARSE_ERR_WITHDRAWN_COLONCOLON);
     parse_dispose(&p);
 }
 

@@ -40,7 +40,6 @@ const char *lhat_op_name(LhatOpKind op)
         case LHAT_OP_SEMICOLON:  return ";";
         case LHAT_OP_COLON:      return ":";
         case LHAT_OP_REASSIGN:   return ":=";
-        case LHAT_OP_COLONCOLON: return "::";
         case LHAT_OP_LSHIFT:     return "<<";
         case LHAT_OP_RSHIFT:     return ">>";
         case LHAT_OP_ARROW:      return "->";

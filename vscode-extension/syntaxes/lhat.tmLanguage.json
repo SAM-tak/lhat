@@ -176,7 +176,7 @@
       "patterns": [
         {
           "comment": "15.11's _yield^ suspends nothing but types as a yield^ does, so it reads as one here.",
-          "match": "\\b(if|else|elseif|elsif|elif|ei|el|for|when|other|from|to|downto|step|in|while|until|next|skip|continue|repeat|do|break|return|yield|_yield|yieldall|await|defer|with|finally|try|catch|panic|tostring|tonumber|iterate|length|keys|values)(\\^+)",
+          "match": "\\b(if|else|elseif|elsif|elif|ei|el|for|when|other|from|to|downto|step|in|while|until|next|skip|continue|repeat|do|break|return|yield|_yield|await|defer|with|finally|try|catch|panic|tostring|tonumber|iterate|length|keys|values)(\\^+)",
           "captures": {
             "1": { "name": "keyword.control.lhat" },
             "2": { "name": "punctuation.definition.hat.lhat" }

@@ -3094,7 +3094,7 @@ const char *lhat_check_error_message(LhatCheckErrorCode code)
                    "with require^ \"path\"";
         case LHAT_CHECK_ERR_COROUTINE_DROPPED:
             return "this call makes a coroutine and runs none of the body; "
-                   "write yieldall^ to delegate, or let^ to keep it";
+                   "write await^ to delegate, or let^ to keep it";
         case LHAT_CHECK_ERR_MISSING_FIELD:
             return "this field has no default, so it has to be written";
         case LHAT_CHECK_ERR_INCOMPARABLE:

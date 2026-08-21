@@ -2304,7 +2304,7 @@ void chk_check_statement(Checker *c, const LhatNode *node)
             break;
         }
 
-        case LHAT_NODE_YIELD_ALL:
+        case LHAT_NODE_AWAIT:
             chk_infer(c, node);
             break;
 

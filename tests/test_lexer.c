@@ -749,12 +749,6 @@ static void test_operators(void)
     LHAT_CHECK(is_op(&s.tokens[2], LHAT_OP_ARROW), "expected ->");
     scan_dispose(&s);
 
-    // Withdrawn, but still scanned so the parser can explain the change.
-    LHAT_TEST(":: is still recognised as one token");
-    scan_text(&s, "f^number^ :: string^;");
-    LHAT_CHECK(is_op(&s.tokens[2], LHAT_OP_COLONCOLON), "expected ::");
-    scan_dispose(&s);
-
     // Section 7.2: the preferred spellings are multi-byte UTF-8.
     LHAT_TEST("unicode comparison operators");
     scan_text(&s, "a \xE2\x89\xA0 b \xE2\x89\xA6 c \xE2\x89\xA7 d");

@@ -932,7 +932,6 @@ static const OperatorEntry operator_table[] = {
     { "<<", 2, LHAT_OP_LSHIFT },
     { ">>", 2, LHAT_OP_RSHIFT },
     { "->", 2, LHAT_OP_ARROW },
-    { "::", 2, LHAT_OP_COLONCOLON },  // not in the language; for diagnostics
     { "!=", 2, LHAT_OP_NE },
     { "=/", 2, LHAT_OP_NE },
     { "<=", 2, LHAT_OP_LE },

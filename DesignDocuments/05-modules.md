@@ -1554,7 +1554,7 @@ size_t position_count;        // 単値の答えなら 0
 ホスト値は **yield^/resume/コルーチンの答えを丸ごと渡る**。1席に1値 --
 産出も送りも答えも、その席の全幅で運ばれる（YIELD は幅の札
 `LHAT_YIELD_HOSTVALUE`、resume は送りをスクラッチ経由の pointer 形で、
-受けは席へ全幅展開）。yieldall^ の委譲も転送する。
+受けは席へ全幅展開）。await^ の委譲も転送する。
 
 残る制限（設計によるもの）:
 

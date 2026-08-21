@@ -23,8 +23,6 @@ typedef enum {
     LHAT_PARSE_ERR_EXPECTED_TOKEN,
     LHAT_PARSE_ERR_BARE_EXPRESSION,        // 8.2
     LHAT_PARSE_ERR_JUXTAPOSITION,          // 2.1: 'foo 1 2 3' outside command mode
-    LHAT_PARSE_ERR_WITHDRAWN_ARROW,        // '->' as postfix reassignment
-    LHAT_PARSE_ERR_WITHDRAWN_COLONCOLON,   // '::' as the return separator
     LHAT_PARSE_ERR_RESERVED_SHIFT,         // '<<' and '>>' are reserved
     LHAT_PARSE_ERR_ID_NEEDS_NAME,          // 01 の 3.3: id^ spells a name
     LHAT_PARSE_ERR_BINDING_ARITY,             // targets and values disagree

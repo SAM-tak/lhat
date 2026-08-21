@@ -166,7 +166,7 @@ static void test_walking(void)
     unit_dispose(&u);
 
     // 16.3: what in^ walks has to answer with a coroutine, the same demand
-    // 15.8 makes of yieldall^.
+    // 15.8 makes of await^.
     LHAT_TEST("walking something with no iterate is reported");
     check_text(&u, "for^ x in^ 5 { var^ n = x }\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_NOT_COROUTINE);

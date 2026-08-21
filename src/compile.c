@@ -3982,7 +3982,7 @@ static void compile_expression(Compiler *c, const LhatNode *node, uint8_t into)
             return;
         }
 
-        case LHAT_NODE_YIELD_ALL: {
+        case LHAT_NODE_AWAIT: {
             uint8_t mark = c->next_register;
             uint8_t co = reserve(c);
             // 13.8改: what the outer resume sends may be a run -- the inner
@@ -6314,7 +6314,7 @@ static void compile_statement(Compiler *c, const LhatNode *node)
         }
 
         case LHAT_NODE_CALL_STMT:
-        case LHAT_NODE_YIELD_ALL:
+        case LHAT_NODE_AWAIT:
         case LHAT_NODE_YIELD: {
             // 15.11: a _yield^ statement is the type's and compiles to
             // nothing, its value included.

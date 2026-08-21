@@ -288,7 +288,7 @@ static void print_node(const LhatLexer *lexer, const LhatNode *node, int depth)
         case LHAT_NODE_TYPEOF:
         case LHAT_NODE_SPREAD:
         case LHAT_NODE_PANIC:
-        case LHAT_NODE_YIELD_ALL:
+        case LHAT_NODE_AWAIT:
             print_node(lexer, node->v.jump.value, depth + 1);
             break;
         case LHAT_NODE_TYPE_CORO:

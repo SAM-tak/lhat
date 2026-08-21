@@ -201,18 +201,18 @@ static void test_purity(void)
     // 15.8 with 15.3改: delegating runs the inner body, which is what makes
     // its yield^ reach out here -- so it advances, and the same two questions
     // apply. No start()/resume() is written for 15.1 to catch, so the rule
-    // reaches through yieldall^ itself.
-    LHAT_TEST("yieldall^ to a p^ coroutine is an f^ running a p^");
+    // reaches through await^ itself.
+    LHAT_TEST("await^ to a p^ coroutine is an f^ running a p^");
     check_text(&u,
                "var^ gen = p^ { yield^ 1 }\n"
-               "var^ f = f^ { yieldall^ gen() }\n");
+               "var^ f = f^ { await^ gen() }\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_FUNCTION_CALLS_PROCEDURE);
     unit_dispose(&u);
 
     LHAT_TEST("but to one this body made it is fine");
     check_text(&u,
                "var^ gen = f^ { yield^ 1 }\n"
-               "var^ f = f^ { yieldall^ gen() }\n");
+               "var^ f = f^ { await^ gen() }\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
@@ -221,7 +221,7 @@ static void test_purity(void)
                "var^ gen = f^ { yield^ 1 }\n"
                "var^ f = f^ {\n"
                "    var^ co = gen()\n"
-               "    yieldall^ co\n"
+               "    await^ co\n"
                "}\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
@@ -229,14 +229,14 @@ static void test_purity(void)
     LHAT_TEST("delegating to one that arrived is refused too");
     check_text(&u,
                "var^ f = f^ co:c^{ f^nil^ -> number^ -> nil^ } "
-               "{ yieldall^ co }\n");
+               "{ await^ co }\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_ADVANCES_OUTSIDE);
     unit_dispose(&u);
 
     LHAT_TEST("a p^ delegates to either kind");
     check_text(&u,
                "var^ gen = f^ { yield^ 1 }\n"
-               "var^ g = p^ { yieldall^ gen() }\n");
+               "var^ g = p^ { await^ gen() }\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 

@@ -82,7 +82,7 @@ typedef enum {
     LHAT_NODE_NEXT,          // next^ / skip^ / continue^          (9.11)
     LHAT_NODE_PANIC,         // panic^ expr                 (04 の 11.6)
     LHAT_NODE_YIELD,
-    LHAT_NODE_YIELD_ALL,     // yieldall^ expr              (15.8)
+    LHAT_NODE_AWAIT,         // await^ expr                  (15.8, 15.14)
     LHAT_NODE_WITH,          // with^ x = e  ... { ... }    (12 章)
     LHAT_NODE_FOR,           // for^ ...                    (16 章)
     LHAT_NODE_REPEAT,        // repeat^ ...                 (16.5)
@@ -472,11 +472,6 @@ struct LhatNode {
             // BOX only. 05 の 8.9改: written 'constbox^', which makes the
             // sealed, get-only box -- the keyable one.
             bool sealing;
-            // YIELD_ALL only. 15.14: written 'await^', which delegates and
-            // types exactly as a yieldall^ does. Read by the diagnostics
-            // alone -- what the two words say about the code is the same
-            // thing, and only what a reader is looking for differs.
-            bool awaiting;
             // BREAK: the number of loops to leave, and never zero -- a plain
             // break^ is one.
             //

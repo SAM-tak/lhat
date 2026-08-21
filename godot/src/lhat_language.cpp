@@ -31,7 +31,7 @@ const char *const control_flow_words[] = {
     "el^",     "for^",  "when^",   "other^",  "from^",  "to^",
     "downto^", "step^", "in^",     "while^",  "until^", "next^",
     "skip^",   "continue^", "repeat^", "do^", "break^", "return^",
-    "yield^",  "yieldall^", "await^", "defer^", "with^", "finally^",
+    "yield^",  "await^", "defer^", "with^", "finally^",
     "try^",    "catch^", "panic^",  nullptr,
 };
 

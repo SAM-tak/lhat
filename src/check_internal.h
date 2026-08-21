@@ -423,7 +423,7 @@ typedef struct {
     // `environment` is.
     LhatType *typeinfo_type;
 
-    // 15.2: what the yield^/yieldall^ sites seen so far in this body agree
+    // 15.2: what the yield^/await^ sites seen so far in this body agree
     // on. infer_func saves and resets these around a nested body the same
     // way it does declared_result/inferred_result, so a nested p^{...} does
     // not pollute the enclosing one.

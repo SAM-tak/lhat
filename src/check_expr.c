@@ -1134,8 +1134,8 @@ static bool immediately_called(Checker *c, const LhatNode *node)
 }
 
 // 15.5 with 13.9: the coroutine a call to this signature makes. The middle
-// two types are whatever the body's yield^/yieldall^ sites agreed on (15.2);
-// a body with no yield^ at all -- only a yieldall^ that never ran, or none
+// two types are whatever the body's yield^/await^ sites agreed on (15.2);
+// a body with no yield^ at all -- only a await^ that never ran, or none
 // reached -- leaves them NULL, which nil^ fills the same way an unwritten
 // result does.
 static LhatType *coroutine_made_by(Checker *c, const LhatType *func)
@@ -2436,7 +2436,7 @@ static LhatType *infer_table(Checker *c, const LhatNode *node)
     return table;
 }
 
-// 15.2: folds one more yield^/yieldall^ site into the body's running Y or R.
+// 15.2: folds one more yield^/await^ site into the body's running Y or R.
 // The first site fixes it; every later one has to agree, or the body is
 // mixing yields the way 13.9 does not allow.
 void chk_unify_yield(Checker *c, const LhatNode *at, LhatType **slot,
@@ -4569,24 +4569,19 @@ static LhatType *infer_node(Checker *c, const LhatNode *node)
         // right side has to be a coroutine -- there is nothing else to
         // delegate to. 15.2: whatever it yields passes through as this
         // body's own Y/R, same as a yield^ written directly here would.
-        case LHAT_NODE_YIELD_ALL: {
+        case LHAT_NODE_AWAIT: {
             LhatType *inner = chk_infer(c, node->v.jump.value);
             if (inner == NULL || inner->kind == LHAT_TYPE_UNKNOWN ||
                 inner->kind == LHAT_TYPE_PENDING) {
                 // 03 の 3.1・3.5、P6: delegating to a still-pending^ inner
-                // expression makes this yieldall^ pending^ too.
+                // expression makes this await^ pending^ too.
                 return chk_simple(c, inner != NULL &&
                                           inner->kind == LHAT_TYPE_PENDING
                                       ? LHAT_TYPE_PENDING
                                       : LHAT_TYPE_UNKNOWN);
             }
             if (inner->kind != LHAT_TYPE_CORO) {
-                // 15.14: the same rule, said in the words of whichever
-                // spelling was written.
-                chk_report(c, node,
-                           node->v.jump.awaiting
-                               ? LHAT_CHECK_ERR_AWAIT_NOT_COROUTINE
-                               : LHAT_CHECK_ERR_NOT_COROUTINE);
+                chk_report(c, node, LHAT_CHECK_ERR_AWAIT_NOT_COROUTINE);
                 return chk_simple(c, LHAT_TYPE_UNKNOWN);
             }
             // 15.8 with 15.3改: delegating runs the inner body -- that is what

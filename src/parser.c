@@ -420,11 +420,7 @@ static LhatNode *parse_type_function(Parser *p, bool is_function)
     node->v.func.is_function = is_function;
     node->v.func.params = parse_type_params(p);
 
-    if (check_op(p, LHAT_OP_COLONCOLON)) {
-        report(p, &p->current, LHAT_PARSE_ERR_WITHDRAWN_COLONCOLON);
-        advance(p);
-        node->v.func.return_type = parse_type(p);
-    } else if (match_op(p, LHAT_OP_ARROW)) {
+    if (match_op(p, LHAT_OP_ARROW)) {
         // 13.2: '->' is present only when something is returned. 13.8改2:
         // and several, written bare, are the tuple that one result is.
         node->v.func.return_type = parse_type_result(p);
@@ -1361,7 +1357,7 @@ static LhatNode *parse_params(Parser *p)
     LhatNode *tail = NULL;
 
     while (!at_eof(p) && !check_op(p, LHAT_OP_LBRACE) &&
-           !check_op(p, LHAT_OP_ARROW) && !check_op(p, LHAT_OP_COLONCOLON)) {
+           !check_op(p, LHAT_OP_ARROW)) {
         LhatNode *param = make(p, LHAT_NODE_PARAM, &p->current);
         if (param == NULL) {
             break;
@@ -1460,11 +1456,7 @@ static LhatNode *parse_function(Parser *p, bool is_function)
     node->v.func.is_function = is_function;
     node->v.func.params = parse_params(p);
 
-    if (check_op(p, LHAT_OP_COLONCOLON)) {
-        report(p, &p->current, LHAT_PARSE_ERR_WITHDRAWN_COLONCOLON);
-        advance(p);
-        node->v.func.return_type = parse_type(p);
-    } else if (match_op(p, LHAT_OP_ARROW)) {
+    if (match_op(p, LHAT_OP_ARROW)) {
         // 13.8改2: as in a written signature -- several written bare are the
         // tuple that one result is. The body's '{' closes the reading here,
         // where a signature's ';' does.
@@ -1541,7 +1533,7 @@ static bool is_statement_keyword(const Parser *p)
 {
     static const char *const words[] = {
         "if", "do", "var", "let", "with", "return", "break", "panic", "yield",
-        "_yield", "yieldall", "await",  // 15.8 and 15.14: both suspend
+        "_yield", "await",  // 15.8 with 15.14: delegating suspends too
         // 9.11: and the three spellings of the one that goes on with the loop
         "next", "skip", "continue",
         "for", "repeat", "while", "until", "when", "other", "errordef",
@@ -2069,20 +2061,17 @@ static LhatNode *parse_unary(Parser *p)
     // yield^, since the two have different types -- yield^ answers what the
     // resume sent, this answers the inner coroutine's return value.
     //
-    // 15.14: await^ is the same delegation under the word a reader of async
-    // code knows. The node is the same one with a flag, the way _yield^ is a
-    // yield^ with one -- the type rule is 15.8's and saying it twice is how
-    // the two would drift apart.
-    if (check_hat(p, "yieldall") || check_hat(p, "await")) {
+    // 15.14: the word a reader of async code knows is the word the language
+    // uses. Delegation and awaiting were the same thing said twice -- same
+    // type rule, same instructions -- so there is one spelling for it.
+    if (check_hat(p, "await")) {
         LhatToken at = p->current;
-        bool awaiting = check_hat(p, "await");
         p->saw_yield = true;  // 15.2: delegating is suspending
         advance(p);
-        LhatNode *node = make(p, LHAT_NODE_YIELD_ALL, &at);
+        LhatNode *node = make(p, LHAT_NODE_AWAIT, &at);
         if (node == NULL) {
             return NULL;
         }
-        node->v.jump.awaiting = awaiting;
         node->v.jump.value = parse_unary(p);
         return finish(p, node);
     }
@@ -4146,7 +4135,7 @@ static LhatNode *parse_panic(Parser *p)
 // with a failure -- so `try^ save(x)` and `save(x) catch^ nil^` are
 // statements too. `??` is included on the same footing as catch^ (11.7).
 //
-// 15.8: yieldall^ stands alone as well. Its value may be wanted or not, and
+// 15.8: await^ stands alone as well. Its value may be wanted or not, and
 // what it does -- running the inner coroutine to its end -- happens either
 // way. A plain call of a yieldable procedure is what does nothing.
 static bool is_binary_op(const LhatNode *node, LhatOpKind op)
@@ -4160,7 +4149,7 @@ static bool is_call_statement(const LhatNode *node)
         if (node->kind == LHAT_NODE_CALL) {
             return true;
         }
-        if (node->kind == LHAT_NODE_YIELD_ALL) {
+        if (node->kind == LHAT_NODE_AWAIT) {
             return true;
         }
         // 02 の 14.11: 'self^{ … }' is a batch of field writes, which does
@@ -4402,13 +4391,6 @@ static LhatNode *parse_statement_after_annotations(Parser *p)
         return finish(p, node);
     }
 
-    // 02 の 8.4: the postfix form of reassignment, which the language has not.
-    if (check_op(p, LHAT_OP_ARROW)) {
-        report(p, &p->current, LHAT_PARSE_ERR_WITHDRAWN_ARROW);
-        advance(p);
-        parse_expression(p);
-        return make(p, LHAT_NODE_ERROR, &start);
-    }
 
     // '<<' and '>>' are reserved. Met after a target they read as an
     // operator that does not exist; 01 の 7 章 makes bit operations
@@ -4797,11 +4779,6 @@ const char *lhat_parse_error_message(LhatParseErrorCode code)
         case LHAT_PARSE_ERR_JUXTAPOSITION:
             return "arguments without parentheses are only accepted in command "
                    "mode; did you mean foo(1, 2, 3)?";
-        case LHAT_PARSE_ERR_WITHDRAWN_ARROW:
-            return "reassignment puts the target first; write 'target := value'";
-        case LHAT_PARSE_ERR_WITHDRAWN_COLONCOLON:
-            return "'::' is not part of the language; write '->' before the "
-                   "return type";
         case LHAT_PARSE_ERR_RESERVED_SHIFT:
             return "'<<' and '>>' are reserved and not part of the language; "
                    "a bit operation is a function";

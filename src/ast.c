@@ -186,7 +186,7 @@ void lhat_node_visit_children(const LhatNode *node, LhatNodeVisitor visit,
         case LHAT_NODE_BREAK:
         case LHAT_NODE_NEXT:
         case LHAT_NODE_PANIC:
-        case LHAT_NODE_YIELD_ALL:
+        case LHAT_NODE_AWAIT:
             visit_one("value", node->v.jump.value, visit, context);
             break;
 
@@ -524,7 +524,7 @@ const char *lhat_node_kind_name(LhatNodeKind kind)
         case LHAT_NODE_NEXT:           return "next";
         case LHAT_NODE_PANIC:          return "panic";
         case LHAT_NODE_YIELD:          return "yield";
-        case LHAT_NODE_YIELD_ALL:      return "yieldall";
+        case LHAT_NODE_AWAIT:      return "await";
         case LHAT_NODE_WITH:           return "with";
         case LHAT_NODE_FOR:            return "for";
         case LHAT_NODE_REPEAT:         return "repeat";

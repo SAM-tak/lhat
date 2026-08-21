@@ -133,13 +133,15 @@ typedef enum {
     LHAT_CHECK_ERR_REQUIRE_FAILED,      // 05 の 6 章: the unit could not be had
     LHAT_CHECK_ERR_COROUTINE_DROPPED,   // 15.8: a call that makes a coroutine
                                         // and does nothing with it
-    LHAT_CHECK_ERR_NOT_COROUTINE,       // 15.8: yieldall^ needs one, and
-                                        // 16.3: so does in^, which walks
-                                        // whatever iterate() answers with
-    LHAT_CHECK_ERR_AWAIT_NOT_COROUTINE, // 15.14: the same rule under the
-                                        // other word. What is awaited is
-                                        // something that finishes, and only
-                                        // a coroutine does
+    LHAT_CHECK_ERR_NOT_COROUTINE,       // 16.3: in^ walks whatever
+                                        // iterate() answers with, and this
+                                        // is what it says when that is not
+                                        // a coroutine
+    LHAT_CHECK_ERR_AWAIT_NOT_COROUTINE, // 15.8 with 15.14: what is awaited
+                                        // is something that finishes, and
+                                        // only a coroutine does -- which is
+                                        // also the whole of what delegating
+                                        // asks of it
     LHAT_CHECK_ERR_COROUTINE_MISMATCH,  // 13.9 with 15.2: a c^{ … } written in
                                         // the result position says what a call
                                         // answers, and the yield^ sites say it
@@ -148,7 +150,7 @@ typedef enum {
     LHAT_CHECK_ERR_YIELD_NEEDS_ANNOTATION, // 15.2: a yield^ that is bound
                                             // (directly, by a let^) needs a
                                             // written type there to fix R
-    LHAT_CHECK_ERR_YIELD_TYPE_MISMATCH,    // 15.2: two yield^/yieldall^ sites
+    LHAT_CHECK_ERR_YIELD_TYPE_MISMATCH,    // 15.2: two yield^/await^ sites
     LHAT_CHECK_ERR_PHANTOM_YIELD_BINDS,    // 15.11: a _yield^ never runs, so
                                            // a name cannot take its answer --
                                            // only _^ stands on the left

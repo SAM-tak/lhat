@@ -4988,7 +4988,7 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
                 // 15.8: zero is the delegation loop, and means "whatever
                 // width comes, forward it". It cannot say a width: unlike a
                 // for^, whose count of names is syntax (03 の 4.2), a
-                // yieldall^ would have to read the inner body's type to know
+                // await^ would have to read the inner body's type to know
                 // one, and an unchecked compile has no type to read. So the
                 // width is settled where it is known -- at the yield -- and
                 // the run travels through this frame's answer room rather

@@ -234,7 +234,7 @@ struct LhatType {
             // written on the left of one cannot be written on the left of the
             // other.
             bool self_last;
-            // 15.2: the body contains yield^ or yieldall^, so calling it answers
+            // 15.2: the body contains yield^ or await^, so calling it answers
             // a coroutine rather than running anything (15.5)
             bool yields;
             // 15.13: written closed^ -- the body names nothing standing
@@ -242,7 +242,7 @@ struct LhatType {
             // one stands where an unmarked signature is written; the other
             // way round is what conforms_func refuses.
             bool closed;
-            // 15.2: what the body's yield^/yieldall^ sites agree on. Both NULL
+            // 15.2: what the body's yield^/await^ sites agree on. Both NULL
             // until inferred; meaningless unless `yields` is true.
             LhatType *yield_produce;
             LhatType *yield_receive;

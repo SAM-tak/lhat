@@ -123,7 +123,7 @@ static void test_no_value(void)
     LHAT_TEST("delegating to a coroutine that cannot end produces nothing");
     check_text(&u,
                "var^ g = p^ { repeat^ { yield^ 1 } }\n"
-               "var^ o = p^ { var^ v = yieldall^ g() }\n");
+               "var^ o = p^ { var^ v = await^ g() }\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 

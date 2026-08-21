@@ -37,7 +37,7 @@ static void test_coroutines(void)
     LHAT_TEST("delegating to it is not");
     check_text(&u,
                "var^ gen = p^ { yield^ 1 }\n"
-               "var^ outer = p^ { yieldall^ gen() }\n");
+               "var^ outer = p^ { await^ gen() }\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
@@ -591,25 +591,28 @@ static void test_coroutines(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    LHAT_TEST("yieldall^ needs a coroutine");
+    // 15.14: the one spelling has the one message, and it says what await^
+    // is for. NOT_COROUTINE stays the walk's (for^ in^ over something with
+    // no iterate^).
+    LHAT_TEST("await^ needs a coroutine");
     check_text(&u,
                "var^ plain = f^ -> number^ { return^ 1 }\n"
-               "var^ outer = p^ { yieldall^ plain() }\n");
-    CHECK_REPORTS(&u, LHAT_CHECK_ERR_NOT_COROUTINE);
+               "var^ outer = p^ { await^ plain() }\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_AWAIT_NOT_COROUTINE);
     unit_dispose(&u);
 
     // 15.8: the value of a delegation is the inner one's return value.
-    LHAT_TEST("the value of yieldall^ is the inner return type");
+    LHAT_TEST("the value of await^ is the inner return type");
     check_text(&u,
                "var^ gen = p^ -> number^ { yield^ 1 return^ 2 }\n"
-               "var^ outer = p^ { var^ n : number^ = yieldall^ gen() }\n");
+               "var^ outer = p^ { var^ n : number^ = await^ gen() }\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
     LHAT_TEST("and it is not the type it yields");
     check_text(&u,
                "var^ gen = p^ -> number^ { yield^ 1 return^ 2 }\n"
-               "var^ outer = p^ { var^ s : string^ = yieldall^ gen() }\n");
+               "var^ outer = p^ { var^ s : string^ = await^ gen() }\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
@@ -760,14 +763,14 @@ static void test_coroutines(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_YIELD_NEEDS_ANNOTATION);
     unit_dispose(&u);
 
-    // 15.8: yieldall^ passes the inner coroutine's Y/R through as this
+    // 15.8: await^ passes the inner coroutine's Y/R through as this
     // body's own, exactly as if a yield^ had been written here directly.
-    LHAT_TEST("yieldall^ can disagree with this body's own yield^ on R");
+    LHAT_TEST("await^ can disagree with this body's own yield^ on R");
     check_text(&u,
                "var^ inner = p^ { var^ a:number^ = yield^ 1 }\n"
                "var^ outer = p^ {\n"
                "    var^ b:string^ = yield^ \"x\"\n"
-               "    yieldall^ inner()\n"
+               "    await^ inner()\n"
                "}\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_YIELD_TYPE_MISMATCH);
     unit_dispose(&u);
@@ -832,14 +835,14 @@ static void test_multi_value_receive(void)
     unit_dispose(&u);
 
     // 15.8: the inner R is the outer R, tuple or not.
-    LHAT_TEST("a yieldall^ carries a tuple R outwards");
+    LHAT_TEST("a await^ carries a tuple R outwards");
     check_text(&u,
                "var^ inner = p^ {\n"
                "    let^ a:number^, b:number^ = yield^ 1\n"
                "    yield^ a + b\n"
                "}\n"
                "var^ outer = p^ {\n"
-               "    yieldall^ inner()\n"
+               "    await^ inner()\n"
                "}\n"
                "var^ c = outer()\n"
                "c.start()\n"

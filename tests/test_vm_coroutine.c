@@ -797,12 +797,12 @@ static void test_coroutines(void)
     CHECK_INTEGER(&r, 7);
     run_dispose(&r);
 
-    // 02 の 15.8: what a plain call does not do, yieldall^ does. The inner
+    // 02 の 15.8: what a plain call does not do, await^ does. The inner
     // one's yields reach the outer one's resumer.
-    LHAT_TEST("yieldall^ forwards the inner one's yields");
+    LHAT_TEST("await^ forwards the inner one's yields");
     run_text(&r,
              "var^ a = p^ { yield^ 1 yield^ 2 }\n"
-             "var^ b = p^ { yieldall^ a() yield^ 3 }\n"
+             "var^ b = p^ { await^ a() yield^ 3 }\n"
              "var^ c = b()\n"
              "var^ x = c.start()\n"
              "var^ y = c.resume()\n"
@@ -834,15 +834,15 @@ static void test_coroutines(void)
     run_dispose(&r);
 
     // 15.8 with 13.8改: what the inner body yields may be a tuple, and the
-    // loop cannot say its width -- a yieldall^ has no count of names to read
+    // loop cannot say its width -- a await^ has no count of names to read
     // one off, the way a for^ does. So the run travels through the frame's
     // answer room and the loop forwards it whole. Before this it was
     // refused: the checker took the inner's produce type as its own, and
     // then the machine faulted on a width nobody had reserved.
-    LHAT_TEST("yieldall^ forwards a tuple the inner body yields");
+    LHAT_TEST("await^ forwards a tuple the inner body yields");
     run_checked_text(&r,
                      "var^ g = p^ { yield^ 1, 2  yield^ 3, 4 }\n"
-                     "var^ d = p^ { yieldall^ g() }\n"
+                     "var^ d = p^ { await^ g() }\n"
                      "var^ total = 0\n"
                      "for^ a, b in^ d() { total := total + a * 10 + b }\n"
                      "return^ total\n");
@@ -852,7 +852,7 @@ static void test_coroutines(void)
     LHAT_TEST("and goes on yielding tuples of its own afterwards");
     run_checked_text(&r,
                      "var^ g = p^ { yield^ 1, 2  yield^ 3, 4 }\n"
-                     "var^ d = p^ { yieldall^ g()  yield^ 5, 6 }\n"
+                     "var^ d = p^ { await^ g()  yield^ 5, 6 }\n"
                      "var^ total = 0\n"
                      "for^ a, b in^ d() { total := total + a * 10 + b }\n"
                      "return^ total\n");
@@ -864,8 +864,8 @@ static void test_coroutines(void)
     LHAT_TEST("a chain of delegations forwards it too");
     run_checked_text(&r,
                      "var^ g = p^ { yield^ 1, 2  yield^ 3, 4 }\n"
-                     "var^ m = p^ { yieldall^ g() }\n"
-                     "var^ d = p^ { yieldall^ m() }\n"
+                     "var^ m = p^ { await^ g() }\n"
+                     "var^ d = p^ { await^ m() }\n"
                      "var^ total = 0\n"
                      "for^ a, b in^ d() { total := total + a * 10 + b }\n"
                      "return^ total\n");
@@ -875,7 +875,7 @@ static void test_coroutines(void)
     LHAT_TEST("the width is whatever the inner body said, not two");
     run_checked_text(&r,
                      "var^ g = p^ { yield^ 1, 2, 3 }\n"
-                     "var^ d = p^ { yieldall^ g() }\n"
+                     "var^ d = p^ { await^ g() }\n"
                      "for^ a, b, c in^ d() { return^ a + b + c }\n"
                      "return^ 0\n");
     CHECK_INTEGER(&r, 6);
@@ -883,10 +883,10 @@ static void test_coroutines(void)
 
     // 15.8: the value of the delegation is the inner one's return value, the
     // shape PEP 380 gave a generator's return.
-    LHAT_TEST("the value of yieldall^ is the inner return");
+    LHAT_TEST("the value of await^ is the inner return");
     run_text(&r,
              "var^ a = p^ { yield^ 1 return^ 9 }\n"
-             "var^ b = p^ { var^ r = yieldall^ a() yield^ r }\n"
+             "var^ b = p^ { var^ r = await^ a() yield^ r }\n"
              "var^ c = b()\n"
              "c.start()\n"
              "return^ c.resume()\n");
@@ -900,7 +900,7 @@ static void test_coroutines(void)
              "  var^ got = yield^ 0\n"
              "  return^ got + 1\n"
              "}\n"
-             "var^ b = p^ { var^ r = yieldall^ a() yield^ r }\n"
+             "var^ b = p^ { var^ r = await^ a() yield^ r }\n"
              "var^ c = b()\n"
              "c.start()\n"
              "return^ c.resume(41)\n");
@@ -910,8 +910,8 @@ static void test_coroutines(void)
     LHAT_TEST("delegations nest");
     run_text(&r,
              "var^ a = p^ { yield^ 1 }\n"
-             "var^ b = p^ { yieldall^ a() yield^ 2 }\n"
-             "var^ d = p^ { yieldall^ b() yield^ 3 }\n"
+             "var^ b = p^ { await^ a() yield^ 2 }\n"
+             "var^ d = p^ { await^ b() yield^ 3 }\n"
              "var^ c = d()\n"
              "var^ x = c.start()\n"
              "var^ y = c.resume()\n"
@@ -923,7 +923,7 @@ static void test_coroutines(void)
     LHAT_TEST("a body that only delegates is still yieldable");
     run_text(&r,
              "var^ a = p^ { yield^ 5 }\n"
-             "var^ b = p^ { yieldall^ a() }\n"
+             "var^ b = p^ { await^ a() }\n"
              "var^ c = b()\n"
              "return^ c.start()\n");
     CHECK_INTEGER(&r, 5);
@@ -1136,13 +1136,13 @@ static void test_coroutines(void)
     CHECK_INTEGER(&r, 4);  // three yields, then the end
     run_dispose(&r);
 
-    // yieldall^ drives a freshly made coroutine on its own, with no start()
+    // await^ drives a freshly made coroutine on its own, with no start()
     // written anywhere -- 15.8's whole point is that the delegation handles
     // this by itself.
-    LHAT_TEST("yieldall^ still starts a fresh coroutine on its own");
+    LHAT_TEST("await^ still starts a fresh coroutine on its own");
     run_text(&r,
              "var^ a = p^ { yield^ 1 }\n"
-             "var^ b = p^ { yieldall^ a() }\n"
+             "var^ b = p^ { await^ a() }\n"
              "var^ c = b()\n"
              "return^ c.start()\n");
     CHECK_INTEGER(&r, 1);
@@ -1199,14 +1199,14 @@ static void test_multi_value_send(void)
 
     // 15.8: the delegation loop forwards the send whole -- the outer
     // resume's run reaches the inner yield^'s binding.
-    LHAT_TEST("a several-send crosses a yieldall^");
+    LHAT_TEST("a several-send crosses a await^");
     run_checked_text(&r,
                      "var^ inner = p^ {\n"
                      "    let^ a:number^, b:number^ = yield^ 10\n"
                      "    yield^ a * 100 + b\n"
                      "}\n"
                      "var^ outer = p^ {\n"
-                     "    yieldall^ inner()\n"
+                     "    await^ inner()\n"
                      "}\n"
                      "var^ c = outer()\n"
                      "var^ first = c.start()\n"

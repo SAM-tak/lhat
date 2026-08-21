@@ -105,7 +105,6 @@ typedef enum {
 
     // Not part of the language; recognised so the parser can point at '->'
     // (01 の 7.6) instead of reporting a stray character.
-    LHAT_OP_COLONCOLON,  // ::
 
     LHAT_OP_LSHIFT,      // <<   reserved
     LHAT_OP_RSHIFT,      // >>   reserved
