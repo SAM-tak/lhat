@@ -87,6 +87,39 @@ bool lhat_program_compile(LhatProgram *program);
 // having to say "something".
 LhatCompileStatus lhat_program_compile_status(const LhatProgram *program);
 
+// 05 の 5.6: a script brought in while the program runs -- what std.load
+// is built on. The text is checked and compiled as a unit of its own and
+// then forgotten: what it requires joins the program as any unit does
+// (checked, compiled, registered once it first runs), but the script itself
+// enters no list and no registry, and a second load of the same text is a
+// second compile. The proto answered is the caller's -- lhat_proto_free,
+// or lhat_machine_adopt_script to have a machine own it.
+//
+// A script (no module^) compiles to 'p^...' (3.2) and answers its return^;
+// a module^ unit compiles without 5.3's guard and registry write and
+// answers its public^ table to whoever calls it -- so loading one twice
+// makes two tables, and import^ sees neither.
+//
+// `name` is what diagnostics call it and what a require^ inside it is
+// relative to (5.1). `_file` reads through the program's loader
+// (lhat_program_new), and answers CANNOT_READ when there is none or it has
+// nothing for the path. REJECTED leaves what the checker or the compiler
+// said in lhat_program_load_failure: every diagnostic the load raised, one
+// per line, the way the CLI writes them.
+typedef enum {
+    LHAT_LOAD_OK,
+    LHAT_LOAD_CANNOT_READ,
+    LHAT_LOAD_REJECTED,
+    LHAT_LOAD_OUT_OF_MEMORY
+} LhatLoadStatus;
+
+LhatLoadStatus lhat_program_load_text(LhatProgram *program, const char *name,
+                                      const char *text, size_t length,
+                                      LhatProto **out);
+LhatLoadStatus lhat_program_load_file(LhatProgram *program, const char *path,
+                                      LhatProto **out);
+const char *lhat_program_load_failure(const LhatProgram *program);
+
 // The same failure with where it was. The position indexes the source of the
 // unit that would not compile, which `path` names -- pass NULL for it where
 // the name is not wanted. Answers a zeroed result while nothing has failed.

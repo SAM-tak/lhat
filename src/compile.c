@@ -6739,6 +6739,8 @@ static void compile_exports(Compiler *c, const LhatNode *statements,
 // registry under the declared path, and is the unit's answer. 02 の 8.8's
 // rule for the tables on the way holds here too, which is why this reads
 // like the code that form compiles to.
+// `path` NULL (05 の 5.6: a loaded unit) builds and answers the table
+// without putting it in the registry.
 static void compile_module_register(Compiler *c, const LhatNode *statements,
                                     const char *path)
 {
@@ -6752,6 +6754,11 @@ static void compile_module_register(Compiler *c, const LhatNode *statements,
     // it. Before the registry gets it, since what goes into the registry is
     // the same object every requirer is handed.
     emit(c, lhat_encode_abc(LHAT_BC_SEAL, exports, 0, 0));
+    if (path == NULL) {
+        emit(c, lhat_encode_abc(LHAT_BC_RETURN, exports, 0, 0));
+        c->next_register = mark;
+        return;
+    }
 
     emit(c, lhat_encode_abc(LHAT_BC_ENV, owner, 0, 0));
     load_string_bytes(c, key, "modules", 7);
@@ -6842,10 +6849,12 @@ static LhatCompileResult compile_unit(LhatCompileSession *session,
     c.statements = unit != NULL ? unit->v.list.items : NULL;
     proto->is_unit = true;
     const char *module_name = units != NULL ? units->module_name : NULL;
+    bool registers = units != NULL && units->registers;
 
     // 05 の 5.3: what an earlier require^ registered is the answer, and the
-    // body below runs only when there is none.
-    if (module_name != NULL) {
+    // body below runs only when there is none. 5.6: a loaded module^ unit
+    // keeps no registry and has no guard -- every call runs it anew.
+    if (module_name != NULL && registers) {
         compile_module_guard(&c, module_name);
     }
 
@@ -6862,7 +6871,8 @@ static LhatCompileResult compile_unit(LhatCompileSession *session,
         for (const LhatNode *s = unit->v.list.items; s != NULL; s = s->next) {
             compile_statement(&c, s);
         }
-        compile_module_register(&c, unit->v.list.items, module_name);
+        compile_module_register(&c, unit->v.list.items,
+                                registers ? module_name : NULL);
     } else {
         // 02 の 13.7 with 05 の 3.2: a script's '...' is its one parameter,
         // register 0 -- laid down by whatever runs it, the way a body's is

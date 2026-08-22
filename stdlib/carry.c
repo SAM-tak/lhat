@@ -252,6 +252,11 @@ static bool carry_closure(Carrier *c, LhatValue closure, size_t *index)
     if (proto == NULL) {
         return refuse(c, "not a closure");
     }
+    // 05 の 5.6: a loaded script's body is its machine's heap's, not the
+    // program's, so the proto a copy would share goes with that machine.
+    if (lhat_proto_is_owned(proto)) {
+        return refuse(c, "a loaded script's body stays on its machine");
+    }
     size_t count = lhat_closure_capture_count(closure);
     if (!add_node(c, NODE_CLOSURE, index) ||
         !memo_put(&c->memo, identity, *index)) {

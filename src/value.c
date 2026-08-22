@@ -200,6 +200,7 @@ const char *lhat_object_kind_name(LhatObjectKind kind)
         case LHAT_OBJECT_HOST:       return "a host subroutine";
         case LHAT_OBJECT_HOSTDATA:   return "host data";
         case LHAT_OBJECT_HOSTVALUE_BOX: return "a boxed host value";
+        case LHAT_OBJECT_SCRIPT:     return "a loaded script";
     }
     return "?";
 }

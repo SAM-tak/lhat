@@ -27,6 +27,7 @@
 #include "stdlib/math.h"
 #include "stdlib/random.h"
 #include "stdlib/regex.h"
+#include "stdlib/load.h"
 #include "stdlib/thread.h"
 #endif
 
@@ -613,6 +614,7 @@ static bool bind_host_names(LhatProgram *program)
         !lhatstdlib_thread_register(program) ||
         !lhatstdlib_random_register(program) ||
         !lhatstdlib_regex_register(program) ||
+        !lhatstdlib_load_register(program) ||
         !lhatstdlib_math_register(program) ||
         !lhatstdlib_debug_register(program) ||
         !lhatstdlib_async_register(program)) {

@@ -258,6 +258,14 @@ bool lhat_machine_make_closure(LhatMachine *machine, const LhatProto *proto,
 // closed cell holding a value (its contents may be written later through
 // lhat_upvalue_closed_ref, value.h, which is how a cycle through a closure
 // is tied up), and this takes them. `count` has to be the proto's own.
+// 05 の 5.6: a closure of a proto the machine takes ownership of -- what
+// lhat_program_load_* answered. The proto (the whole tree under it) is freed
+// when the last closure of any body in it is collected; a program's own
+// units never go this way. The proto must capture nothing, as a unit's top
+// level does not.
+bool lhat_machine_adopt_script(LhatMachine *machine, LhatProto *proto,
+                               LhatValue *out);
+
 bool lhat_machine_make_cell(LhatMachine *machine, LhatValue held,
                             LhatUpvalue **out);
 bool lhat_machine_make_closure_with(LhatMachine *machine,

@@ -73,6 +73,10 @@ struct LhatProgram {
     LhatCompileResult compile_result;
     const LhatUnit *compile_unit;
 
+    // 05 の 5.6: why the last lhat_program_load_* answered false, rendered
+    // (every diagnostic, one per line). Owned; NULL until one has failed.
+    char *load_failure;
+
     // 05 の 8.7: what the host registered, as one nested table type keyed by
     // module path -- the same shape L^.modules has, since that is where it
     // ends up. import^ resolves against this and against nothing else, which

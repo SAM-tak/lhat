@@ -30,6 +30,8 @@
 //   a host value or hostdata     a pointer's ownership (dispose^) is the
 //                                host's contract, not settled here
 //   a host subroutine            installed per machine, not carried
+//   a loaded script's closure    its body belongs to the machine that
+//                                loaded it (05 の 5.6)
 //   an error value, a module     later, if wanted
 //
 // std.thread carries spawn's arguments and join's answer this way; a host's

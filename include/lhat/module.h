@@ -34,6 +34,10 @@ bool lhat_proto_yields(const LhatProto *proto);
 size_t lhat_proto_upvalue_count(const LhatProto *proto);
 size_t lhat_proto_parameters(const LhatProto *proto);
 bool lhat_proto_has_variadic(const LhatProto *proto);
+// 05 の 5.6: whether a machine owns the body (lhat_machine_adopt_script)
+// rather than a program -- then it goes with that machine's heap, and a
+// closure of it cannot be handed to another.
+bool lhat_proto_is_owned(const LhatProto *proto);
 
 // Why a compile stopped. lhat_program_compile answers NULL and leaves the
 // reason here (lhat_program_compile_status), since it compiles unit by unit

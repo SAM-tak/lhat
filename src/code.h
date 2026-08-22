@@ -347,6 +347,11 @@ struct LhatProto {
     // See LhatUnitTable. NULL for a body no program compiled (lhat_compile,
     // a session's input), where a require^ has nowhere to go anyway.
     const LhatUnitTable *units;
+    // 05 の 5.6: the heap object that owns this tree, when a machine does
+    // (lhat_machine_adopt_script) rather than a program. NULL otherwise.
+    // Set on every proto of the tree, since a closure of any of them is
+    // what keeps the whole alive.
+    struct LhatObject *owner;
     // The top level of a unit -- what owns `units`, and what a traceback
     // calls "the top level".
     bool is_unit;

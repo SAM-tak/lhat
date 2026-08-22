@@ -51,6 +51,10 @@ typedef struct {
     // (3.2). A unit that has one registers itself under it and answers what
     // an earlier require^ registered, which is how 5.3 loads it once.
     const char *module_name;
+    // 05 の 5.3's guard and registry write, for a unit that has a module
+    // name. Off for a script std.load brought in (5.6): it answers its
+    // table to whoever called it and enters no registry.
+    bool registers;
 
     // 05 の 8.2: the names the host bound before anything ran, each to a
     // member of L^ (8.6). A name no scope holds is one of these, and compiles

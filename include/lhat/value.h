@@ -83,9 +83,13 @@ typedef enum {
     LHAT_OBJECT_HOSTDATA,    // 05 の 8.8: something the host made and holds,
                              // reached through a pointer the collector does
                              // not look into
-    LHAT_OBJECT_HOSTVALUE_BOX // 05 の 8.9: a host value put in the box the
+    LHAT_OBJECT_HOSTVALUE_BOX, // 05 の 8.9: a host value put in the box the
                               // heap can hold -- the bytes inline, no
                               // references, so the collector never looks in
+    LHAT_OBJECT_SCRIPT        // 05 の 5.6: the body of a script std.load
+                              // brought in, owned by the heap -- reached
+                              // from every closure of it, freed with the
+                              // last of them. Never a value
 } LhatObjectKind;
 
 typedef struct LhatObject {

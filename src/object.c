@@ -1085,6 +1085,9 @@ void lhat_object_free(LhatObject *object)
         case LHAT_OBJECT_SUBROUTINE:
             lhat_free(((LhatClosure *)object)->upvalues);
             break;
+        case LHAT_OBJECT_SCRIPT:
+            lhat_proto_free(((LhatLoadedScript *)object)->root);
+            break;
         case LHAT_OBJECT_COROUTINE:
             lhat_free(((LhatCoroutine *)object)->registers.values);
             lhat_free(((LhatCoroutine *)object)->registers.tags);

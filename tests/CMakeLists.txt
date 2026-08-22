@@ -89,6 +89,8 @@ if(LHAT_BUILD_STDLIB)
 
     lhat_add_test(test_regex stdlib)
     target_link_libraries(test_regex PRIVATE lhatstdlib)
+    lhat_add_test(test_load stdlib)
+    target_link_libraries(test_load PRIVATE lhatstdlib)
 
     lhat_add_test(test_math stdlib)
     target_link_libraries(test_math PRIVATE lhatstdlib)

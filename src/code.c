@@ -38,6 +38,11 @@ size_t lhat_proto_parameters(const LhatProto *proto)
     return proto->parameters;
 }
 
+bool lhat_proto_is_owned(const LhatProto *proto)
+{
+    return proto->owner != NULL;
+}
+
 bool lhat_proto_has_variadic(const LhatProto *proto)
 {
     return proto->has_variadic;

@@ -86,8 +86,14 @@ void lhat_gc_children(LhatObject **gray, LhatObject *object)
             for (size_t i = 0; i < closure->upvalue_count; i++) {
                 reach(gray, (LhatObject *)closure->upvalues[i]);
             }
+            // 05 の 5.6: a loaded script's body lives as long as a closure
+            // of it does. NULL for a program's unit, which outlives the heap.
+            reach(gray, (LhatObject *)closure->proto->owner);
             return;
         }
+
+        case LHAT_OBJECT_SCRIPT:
+            return;  // owns bytes only; nothing on the heap hangs off it
 
         case LHAT_OBJECT_UPVALUE: {
             // 5.4: while it is open the place is a stack slot, and the stack

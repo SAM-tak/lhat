@@ -7115,6 +7115,33 @@ bool lhat_machine_make_closure(LhatMachine *machine, const LhatProto *proto,
     return true;
 }
 
+static void own_tree(LhatProto *proto, LhatObject *owner)
+{
+    proto->owner = owner;
+    for (size_t i = 0; i < proto->proto_count; i++) {
+        own_tree(proto->protos[i], owner);
+    }
+}
+
+bool lhat_machine_adopt_script(LhatMachine *machine, LhatProto *proto,
+                               LhatValue *out)
+{
+    Machine *m = (Machine *)machine;
+    if (m == NULL || proto == NULL || proto->upvalue_count != 0) {
+        return false;
+    }
+    LhatLoadedScript *script = (LhatLoadedScript *)lhat_object_alloc(
+        &m->objects, sizeof *script, LHAT_OBJECT_SCRIPT);
+    if (script == NULL) {
+        return false;
+    }
+    script->root = proto;
+    own_tree(proto, (LhatObject *)script);
+    // The collector runs between instructions and no further, so the script
+    // is still there when the closure that reaches it is made.
+    return lhat_machine_make_closure(machine, proto, out);
+}
+
 bool lhat_machine_make_cell(LhatMachine *machine, LhatValue held,
                             LhatUpvalue **out)
 {

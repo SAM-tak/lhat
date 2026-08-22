@@ -593,6 +593,16 @@ static inline const struct LhatHostValueTag *lhat_hostvalue_box_tag(
     return (const struct LhatHostValueTag *)box->run[0].hostvalue;
 }
 
+// 05 の 5.6: a script std.load brought in. A unit's proto normally belongs
+// to the program and outlives every machine, but a loaded one is made at
+// run time and is nobody's but its closures' -- so this owns it, every
+// proto of the tree points back here (LhatProto.owner), and a closure's
+// marking reaches it. When the last closure goes, so does the body.
+typedef struct LhatLoadedScript {
+    LhatObject header;
+    struct LhatProto *root;
+} LhatLoadedScript;
+
 // Something the host made. The pointer is the host's and the collector never
 // looks into it; what is reachable from here is the table of members the
 // registered type carries, which is where 't.width()' lands.

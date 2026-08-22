@@ -146,6 +146,8 @@ static LhatUnit *find_unit(LhatProgram *program, const char *path)
 }
 
 static LhatUnit *check_path(LhatProgram *program, char *path);
+static void check_parsed(LhatProgram *program, LhatUnit *unit,
+                         LhatTypeArena *arena);
 
 // What the checker asks when it meets a require^ (05 の 6.1).
 typedef struct {
@@ -220,9 +222,21 @@ static LhatUnit *check_path(LhatProgram *program, char *path)
 
     lhat_source_init_from_string(&unit->source, unit->path, text, length);
     lhat_free(text);
+    check_parsed(program, unit, &program->types);
+    return unit;
+}
+
+// Lexes, parses and checks a unit whose source is in place. `arena` is the
+// program's for a unit of the program (6 章: what it publishes has to
+// outlive it) and NULL for a loaded script (5.6), whose types nobody else
+// will point at -- the result then owns them.
+static void check_parsed(LhatProgram *program, LhatUnit *unit,
+                         LhatTypeArena *arena)
+{
     lhat_lexer_init(&unit->lexer, &unit->source);
     lhat_parse(&unit->lexer, &unit->parsed);
     unit->loaded = true;
+    unit->state = LHAT_UNIT_CHECKING;
 
     Resolution resolution;
     resolution.program = program;
@@ -242,11 +256,10 @@ static LhatUnit *check_path(LhatProgram *program, char *path)
     // The recursion is what puts the graph in dependency order (6.2): the
     // required unit finishes before this one's checking gets past the
     // require^ that asked for it.
-    lhat_check_unit(unit->parsed.root, &unit->lexer, program->strict,
-                    &program->types, &require, &unit->checked);
+    lhat_check_unit(unit->parsed.root, &unit->lexer, program->strict, arena,
+                    &require, &unit->checked);
 
     unit->state = LHAT_UNIT_DONE;
-    return unit;
 }
 
 // 05 の 5 章: the compile-time twin of resolve_require. The unit is already
@@ -2074,22 +2087,22 @@ static bool fill_unit_table(LhatUnit *u)
     return true;
 }
 
-bool lhat_program_compile(LhatProgram *program)
+// Compiles one checked unit into u->proto. `registers` is 5.3's guard and
+// registry write for a module^ unit -- off for a loaded one (5.6), which
+// answers its table to whoever called it and enters no registry. False
+// leaves the failure where lhat_program_compile_failure reads it.
+static bool compile_one(LhatProgram *program, LhatUnit *u, bool registers)
 {
-    bool ok = true;
-    for (LhatUnit *u = program->units; u != NULL; u = u->next) {
-        if (!u->loaded || u->state != LHAT_UNIT_DONE || u->proto != NULL) {
-            continue;  // failed to check, or compiled by an earlier call
-        }
-        Resolution resolution;
-        resolution.program = program;
-        resolution.requiring = u;
+    Resolution resolution;
+    resolution.program = program;
+    resolution.requiring = u;
 
-        LhatUnits units;
-        units.resolve = resolve_unit;
-        units.body = resolve_unit_body;
-        units.context = &resolution;
-        units.module_name = u->checked.module_name;
+    LhatUnits units;
+    units.resolve = resolve_unit;
+    units.body = resolve_unit_body;
+    units.context = &resolution;
+    units.module_name = u->checked.module_name;
+    units.registers = registers;
         units.initial_names = (const char *const *)program->initial_names;
         units.initial_members = (const char *const *)program->initial_members;
         units.initial_count = program->initial_count;  // 05 の 8.2
@@ -2100,23 +2113,36 @@ bool lhat_program_compile(LhatProgram *program)
         units.hostvalue_types = program->hostvalue_type_entries;  // 05 の 8.9
         units.hostvalue_type_count = program->hostvalue_type_entry_count;
 
-        lhat_free(u->referenced);
-        u->referenced = NULL;
-        u->referenced_count = 0;
-        u->referenced_capacity = 0;
-        LhatCompileResult compiled =
-            lhat_compile_module(u->parsed.root, &u->lexer, &units, &u->proto);
-        if (compiled.status != LHAT_COMPILE_OK) {
-            // Kept so the caller can say which form stopped it rather than
-            // only that something did -- and which unit, since the position
-            // in it indexes that unit's source and no other.
-            program->compile_status = compiled.status;
-            program->compile_result = compiled;
-            program->compile_unit = u;
+    lhat_free(u->referenced);
+    u->referenced = NULL;
+    u->referenced_count = 0;
+    u->referenced_capacity = 0;
+    LhatCompileResult compiled =
+        lhat_compile_module(u->parsed.root, &u->lexer, &units, &u->proto);
+    if (compiled.status != LHAT_COMPILE_OK) {
+        // Kept so the caller can say which form stopped it rather than
+        // only that something did -- and which unit, since the position
+        // in it indexes that unit's source and no other.
+        program->compile_status = compiled.status;
+        program->compile_result = compiled;
+        program->compile_unit = u;
+        return false;
+    }
+    stamp_source(u->proto, u->path);
+    return true;
+}
+
+bool lhat_program_compile(LhatProgram *program)
+{
+    bool ok = true;
+    for (LhatUnit *u = program->units; u != NULL; u = u->next) {
+        if (!u->loaded || u->state != LHAT_UNIT_DONE || u->proto != NULL) {
+            continue;  // failed to check, or compiled by an earlier call
+        }
+        if (!compile_one(program, u, true)) {
             ok = false;
             break;
         }
-        stamp_source(u->proto, u->path);
     }
     // What compiled gets its table either way: a unit the first pass made
     // is runnable on its own, and a host that stops at `false` loses
@@ -2225,8 +2251,175 @@ void lhat_program_init(LhatProgram *program, bool strict,
     program->host_error_heap.white = LHAT_GC_BLACK;
 }
 
+// ---------------------------------------------------------------------------
+// 05 の 5.6: loading a script at run time
+// ---------------------------------------------------------------------------
+
+static void unit_dispose_contents(LhatUnit *unit)
+{
+    if (unit->loaded) {
+        lhat_check_result_dispose(&unit->checked);
+        lhat_parse_result_dispose(&unit->parsed);
+        lhat_lexer_dispose(&unit->lexer);
+        lhat_source_dispose(&unit->source);
+    }
+    lhat_proto_free(unit->proto);
+    lhat_free(unit->referenced);
+    lhat_free(unit->path);
+}
+
+// A growing text, for the failure a load answers with.
+typedef struct {
+    char *text;
+    size_t length;
+    size_t capacity;
+} Said;
+
+static void say(Said *s, const char *text, size_t length)
+{
+    if (s->length + length + 1 > s->capacity) {
+        size_t wanted = (s->length + length + 1) * 2;
+        char *bigger = (char *)lhat_realloc(s->text, wanted);
+        if (bigger == NULL) {
+            return;
+        }
+        s->text = bigger;
+        s->capacity = wanted;
+    }
+    memcpy(s->text + s->length, text, length);
+    s->length += length;
+    s->text[s->length] = '\0';
+}
+
+static void say_unit(Said *s, const LhatUnit *unit)
+{
+    size_t count = lhat_unit_diagnostic_count(unit);
+    for (size_t i = 0; i < count; i++) {
+        size_t needed = lhat_unit_diagnostic_write(unit, i, false, NULL, 0);
+        char *line = (char *)lhat_alloc(needed + 1);
+        if (line == NULL) {
+            return;
+        }
+        lhat_unit_diagnostic_write(unit, i, false, line, needed + 1);
+        if (s->length > 0) {
+            say(s, "\n", 1);
+        }
+        say(s, line, needed);
+        lhat_free(line);
+    }
+}
+
+// Takes the unit's source as already placed. What it requires joins the
+// program as any unit does (checked into the program's arena, compiled by
+// lhat_program_compile, registered when it first runs); the unit itself is
+// checked into an arena of its own, compiled without 5.3's guard and
+// registry write, and forgotten -- the proto is the caller's.
+static LhatLoadStatus load_placed(LhatProgram *program, LhatUnit *unit,
+                                  LhatProto **out)
+{
+    *out = NULL;
+
+    LhatUnit *before = program->units;
+    size_t reported_before = program->diagnostic_count;
+    check_parsed(program, unit, NULL);
+
+    Said said;
+    memset(&said, 0, sizeof said);
+    // The program's own diagnostics this load added (a unit that could not
+    // be read, a cycle), then what the stages said of the unit and of
+    // every unit the load reached.
+    for (size_t i = reported_before; i < program->diagnostic_count; i++) {
+        const LhatProgramDiagnostic *d = &program->diagnostics[i];
+        const char *message = lhat_program_error_message(d->code);
+        if (said.length > 0) {
+            say(&said, "\n", 1);
+        }
+        say(&said, d->path, strlen(d->path));
+        say(&said, ": error: ", 9);
+        say(&said, message, strlen(message));
+    }
+    say_unit(&said, unit);
+    for (const LhatUnit *u = program->units; u != before; u = u->next) {
+        say_unit(&said, u);
+    }
+
+    LhatLoadStatus status = LHAT_LOAD_OK;
+    if (said.length > 0) {
+        status = LHAT_LOAD_REJECTED;
+    } else if (!lhat_program_compile(program) ||
+               !compile_one(program, unit, false) ||
+               !fill_unit_table(unit)) {
+        const char *message =
+            lhat_compile_status_message(program->compile_status);
+        say(&said, unit->path, strlen(unit->path));
+        say(&said, ": error: ", 9);
+        say(&said, message, strlen(message));
+        status = LHAT_LOAD_REJECTED;
+    }
+    if (status == LHAT_LOAD_OK) {
+        *out = unit->proto;
+        unit->proto = NULL;
+    } else if (said.text == NULL) {
+        status = LHAT_LOAD_OUT_OF_MEMORY;  // the text itself did not fit
+    }
+    program->load_failure = said.text;
+    unit_dispose_contents(unit);
+    lhat_free(unit);
+    return status;
+}
+
+LhatLoadStatus lhat_program_load_text(LhatProgram *program, const char *name,
+                                      const char *text, size_t length,
+                                      LhatProto **out)
+{
+    *out = NULL;
+    lhat_free(program->load_failure);
+    program->load_failure = NULL;
+    LhatUnit *unit = (LhatUnit *)lhat_calloc(1, sizeof *unit);
+    if (unit == NULL) {
+        return LHAT_LOAD_OUT_OF_MEMORY;
+    }
+    unit->path = normalise_path(name);
+    if (unit->path == NULL) {
+        lhat_free(unit);
+        return LHAT_LOAD_OUT_OF_MEMORY;
+    }
+    lhat_source_init_from_string(&unit->source, unit->path, text, length);
+    return load_placed(program, unit, out);
+}
+
+LhatLoadStatus lhat_program_load_file(LhatProgram *program, const char *path,
+                                      LhatProto **out)
+{
+    *out = NULL;
+    lhat_free(program->load_failure);
+    program->load_failure = NULL;
+    char *resolved = normalise_path(path);
+    if (resolved == NULL) {
+        return LHAT_LOAD_OUT_OF_MEMORY;
+    }
+    size_t length = 0;
+    char *text = program->load != NULL
+                     ? program->load(program->loader_context, resolved, &length)
+                     : NULL;
+    LhatLoadStatus status = LHAT_LOAD_CANNOT_READ;
+    if (text != NULL) {
+        status = lhat_program_load_text(program, resolved, text, length, out);
+        lhat_free(text);
+    }
+    lhat_free(resolved);
+    return status;
+}
+
+const char *lhat_program_load_failure(const LhatProgram *program)
+{
+    return program->load_failure != NULL ? program->load_failure : "";
+}
+
 void lhat_program_dispose(LhatProgram *program)
 {
+    lhat_free(program->load_failure);
+    program->load_failure = NULL;
     for (size_t i = 0; i < program->host_entry_count; i++) {
         lhat_free(program->host_entries[i].module);
         lhat_free(program->host_entries[i].type);
@@ -2327,15 +2520,7 @@ void lhat_program_dispose(LhatProgram *program)
     LhatUnit *unit = program->units;
     while (unit != NULL) {
         LhatUnit *next = unit->next;
-        if (unit->loaded) {
-            lhat_check_result_dispose(&unit->checked);
-            lhat_parse_result_dispose(&unit->parsed);
-            lhat_lexer_dispose(&unit->lexer);
-            lhat_source_dispose(&unit->source);
-        }
-        lhat_proto_free(unit->proto);
-        lhat_free(unit->referenced);
-        lhat_free(unit->path);
+        unit_dispose_contents(unit);
         lhat_free(unit);
         unit = next;
     }
