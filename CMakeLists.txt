@@ -176,6 +176,7 @@ if(LHAT_BUILD_STDLIB)
         stdlib/debug.c
         stdlib/error.c
         stdlib/io.c
+        stdlib/math.c
         stdlib/mathvector3.c
         stdlib/random.c
         stdlib/regex.c
@@ -198,7 +199,7 @@ if(LHAT_BUILD_STDLIB)
         LIBRARY DESTINATION lib
         RUNTIME DESTINATION bin)
     install(FILES stdlib/async.h stdlib/carry.h stdlib/debug.h stdlib/error.h stdlib/io.h
-            stdlib/mathvector3.h stdlib/random.h stdlib/regex.h stdlib/load.h
+            stdlib/math.h stdlib/mathvector3.h stdlib/random.h stdlib/regex.h stdlib/load.h
             stdlib/thread.h
         DESTINATION include/lhatstdlib)
 endif()

@@ -2,6 +2,7 @@
 
 #include "lhat/value.h"
 
+#include <math.h>
 #include <limits.h>
 #include <stdarg.h>
 #include <stdio.h>
@@ -251,6 +252,12 @@ static void put_number(Writer *w, const char *format, ...)
 // made of digits and a sign alone.
 static void put_real(Writer *w, double real)
 {
+    // One spelling for every NaN: a C library may write the sign and a
+    // payload ("-nan(ind)"), which says nothing a reader wants.
+    if (isnan(real)) {
+        put_text(w, "nan");
+        return;
+    }
     char buffer[64];
     int written = snprintf(buffer, sizeof buffer, "%g", real);
     if (written <= 0) {

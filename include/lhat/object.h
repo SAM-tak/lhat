@@ -422,6 +422,12 @@ typedef enum {
     LHAT_NATIVE_FLOOR,
     LHAT_NATIVE_CEIL,
     LHAT_NATIVE_ROUND,
+    // 02 の 14.21改: the three more a number^ answers about itself --
+    // its distance from zero, which side of zero it is on, and itself held
+    // inside two bounds.
+    LHAT_NATIVE_ABS,
+    LHAT_NATIVE_SIGN,
+    LHAT_NATIVE_CLAMP,
     // 05 の 8.9: the two members every host value box carries. get answers
     // the value onto the stack, whole; set writes a value of the same tag
     // over the bytes.

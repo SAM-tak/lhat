@@ -1981,6 +1981,25 @@ LhatType *chk_infer_member(Checker *c, const LhatNode *node)
     // here when this returns is this access's member, or nothing.
     c->resolved_member = NULL;
 #endif
+    // 02 の 14.8改2: number^ carries a few static members -- the constants.
+    // The word is no value of its own (a bare number^ stays an unknown
+    // name), so this is read off the tree before the target is inferred.
+    const LhatNode *on = node->v.access.target;
+    const char *on_name = NULL;
+    size_t on_length = 0;
+    if (on != NULL && on->kind == LHAT_NODE_HAT_IDENT &&
+        chk_node_name(c, on, &on_name, &on_length) &&
+        chk_name_is(on_name, on_length, "number^")) {
+        const char *constant = NULL;
+        size_t constant_length = 0;
+        if (chk_node_name(c, node->v.access.argument, &constant,
+                          &constant_length) &&
+            lhat_number_constant(constant, constant_length) != NULL) {
+            return chk_simple(c, LHAT_TYPE_NUMBER);
+        }
+        chk_report(c, node, LHAT_CHECK_ERR_NO_MEMBER);
+        return chk_simple(c, LHAT_TYPE_UNKNOWN);
+    }
     LhatType *target = chk_infer(c, node->v.access.target);
     const char *name = NULL;
     size_t length = 0;
@@ -2210,11 +2229,23 @@ LhatType *chk_infer_member(Checker *c, const LhatNode *node)
             return builtin_eq(c);
         }
         // 14.21: and so are these three, for the same reason.
+        // 14.21改: abs and sign have the same shape; clamp takes its bounds.
         if (target->kind == LHAT_TYPE_NUMBER &&
             (chk_name_is(name, length, "floor") ||
              chk_name_is(name, length, "ceil") ||
-             chk_name_is(name, length, "round"))) {
+             chk_name_is(name, length, "round") ||
+             chk_name_is(name, length, "abs") ||
+             chk_name_is(name, length, "sign"))) {
             return builtin_whole(c);
+        }
+        if (target->kind == LHAT_TYPE_NUMBER &&
+            chk_name_is(name, length, "clamp")) {
+            LhatType *signature = builtin_whole(c);
+            lhat_type_add_param(c->result->types, signature,
+                                chk_simple(c, LHAT_TYPE_NUMBER));
+            lhat_type_add_param(c->result->types, signature,
+                                chk_simple(c, LHAT_TYPE_NUMBER));
+            return signature;
         }
         // 14.18: how long it is, and how many bytes that is.
         if (target->kind == LHAT_TYPE_STRING &&

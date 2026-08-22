@@ -186,28 +186,12 @@ static bool arithmetic(LhatOpcode op, LhatValue left, LhatValue right,
                                       : lhat_real(a - floored * b);
             return true;
         }
-        case LHAT_BC_POW: {
-            double r = 1.0;
-            *out = lhat_real(r);
-            double base = a;
-            double exponent = b;
-            // Kept out of libm so the core has no maths dependency yet; only
-            // whole exponents are wanted before the standard library lands.
-            int64_t times = (int64_t)exponent;
-            if ((double)times != exponent) {
-                *status = LHAT_RUN_TYPE_ERROR;
-                return false;
-            }
-            bool invert = times < 0;
-            if (invert) {
-                times = -times;
-            }
-            for (int64_t i = 0; i < times; i++) {
-                r *= base;
-            }
-            *out = lhat_real(invert ? 1.0 / r : r);
+        case LHAT_BC_POW:
+            // 14.8改: always a real, whatever the operands' representation.
+            // A negative base under a fractional exponent is NaN -- not a
+            // fault, the same line 04 の 11.2 draws for a zero divisor.
+            *out = lhat_real(pow(a, b));
             return true;
-        }
         default:
             *status = LHAT_RUN_TYPE_ERROR;
             return false;
@@ -853,6 +837,19 @@ static bool native_named(LhatValue key, LhatNativeKind *out, bool *hatted)
         *out = LHAT_NATIVE_ROUND;
         return true;
     }
+    // 14.21改: and the three more, the same way.
+    if (name->length == 3 && memcmp(name->text, "abs", 3) == 0) {
+        *out = LHAT_NATIVE_ABS;
+        return true;
+    }
+    if (name->length == 4 && memcmp(name->text, "sign", 4) == 0) {
+        *out = LHAT_NATIVE_SIGN;
+        return true;
+    }
+    if (name->length == 5 && memcmp(name->text, "clamp", 5) == 0) {
+        *out = LHAT_NATIVE_CLAMP;
+        return true;
+    }
     // 14.19: one member under three names.
     if ((name->length == 9 && memcmp(name->text, "substring", 9) == 0) ||
         (name->length == 6 && memcmp(name->text, "substr", 6) == 0) ||
@@ -1113,7 +1110,9 @@ static bool builtin_member(LhatValue on, LhatValue key, LhatNativeKind *out)
     // 14.20: and only a number^ has an error term to say anything about.
     // 14.21: nor has anything else a whole number below or above it.
     if (*out == LHAT_NATIVE_EQ || *out == LHAT_NATIVE_FLOOR ||
-        *out == LHAT_NATIVE_CEIL || *out == LHAT_NATIVE_ROUND) {
+        *out == LHAT_NATIVE_CEIL || *out == LHAT_NATIVE_ROUND ||
+        *out == LHAT_NATIVE_ABS || *out == LHAT_NATIVE_SIGN ||
+        *out == LHAT_NATIVE_CLAMP) {
         return lhat_is_number(on);
     }
     if (lhat_is_object_kind(on, LHAT_OBJECT_COROUTINE)) {
@@ -3715,7 +3714,10 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
                          bare == LHAT_NATIVE_EQ ||
                          bare == LHAT_NATIVE_FLOOR ||
                          bare == LHAT_NATIVE_CEIL ||
-                         bare == LHAT_NATIVE_ROUND)) {
+                         bare == LHAT_NATIVE_ROUND ||
+                         bare == LHAT_NATIVE_ABS ||
+                         bare == LHAT_NATIVE_SIGN ||
+                         bare == LHAT_NATIVE_CLAMP)) {
                         LhatNative *native =
                             lhat_native_new(&m->objects, bare, R(b));
                         if (native == NULL) {
@@ -4700,6 +4702,50 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
                                           : native->kind == LHAT_NATIVE_CEIL
                                               ? ceil
                                               : nearbyint));
+                        break;
+                    }
+
+                    // 02 の 14.21改: abs and sign take nothing; clamp takes
+                    // its two bounds. An integer stays an integer (14.8改)
+                    // -- only the one integer with no negative widens.
+                    if (native->kind == LHAT_NATIVE_ABS ||
+                        native->kind == LHAT_NATIVE_SIGN) {
+                        if (b != 0) {
+                            return finish(m, chunk, LHAT_RUN_ARITY, lhat_nil(),
+                                          at);
+                        }
+                        LhatValue self = native->bound;
+                        if (native->kind == LHAT_NATIVE_SIGN) {
+                            double d = lhat_number_as_real(self);
+                            SET_R(a, lhat_integer(d > 0 ? 1 : d < 0 ? -1 : 0));
+                        } else if (lhat_is_integer(self)) {
+                            int64_t i = lhat_as_integer(self);
+                            SET_R(a, i == INT64_MIN
+                                         ? lhat_real(-(double)i)
+                                         : lhat_integer(i < 0 ? -i : i));
+                        } else {
+                            SET_R(a, lhat_real(fabs(lhat_as_real(self))));
+                        }
+                        break;
+                    }
+                    if (native->kind == LHAT_NATIVE_CLAMP) {
+                        if (b != 2) {
+                            return finish(m, chunk, LHAT_RUN_ARITY, lhat_nil(),
+                                          at);
+                        }
+                        LhatValue low = sent;
+                        LhatValue high = R(first + 1);
+                        if (!lhat_is_number(low) || !lhat_is_number(high)) {
+                            return finish(m, chunk, LHAT_RUN_TYPE_ERROR,
+                                          lhat_nil(), at);
+                        }
+                        // The answer is one of the three as handed over, so
+                        // an integer bound keeps its representation.
+                        LhatValue self = native->bound;
+                        double d = lhat_number_as_real(self);
+                        SET_R(a, d < lhat_number_as_real(low)    ? low
+                                 : d > lhat_number_as_real(high) ? high
+                                                                 : self);
                         break;
                     }
 

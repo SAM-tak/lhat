@@ -3,6 +3,7 @@
 
 #include "ast.h"
 
+#include <math.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -602,6 +603,24 @@ bool lhat_name_is(const char *text, size_t length, const char *literal)
 {
     size_t n = strlen(literal);
     return length == n && memcmp(text, literal, n) == 0;
+}
+
+// 02 の 14.8改2: the constants number^ carries as static members. One
+// table read by the checker (the name is a member) and the compiler (its
+// value), so the two cannot disagree.
+const double *lhat_number_constant(const char *name, size_t length)
+{
+    static const double pi = 3.14159265358979323846;
+    static const double tau = 6.28318530717958647692;
+    static const double e = 2.71828182845904523536;
+    static const double inf = HUGE_VAL;
+    static const double nan = NAN;
+    if (lhat_name_is(name, length, "pi")) return &pi;
+    if (lhat_name_is(name, length, "tau")) return &tau;
+    if (lhat_name_is(name, length, "e")) return &e;
+    if (lhat_name_is(name, length, "inf")) return &inf;
+    if (lhat_name_is(name, length, "nan")) return &nan;
+    return NULL;
 }
 
 bool lhat_node_is_environment(const LhatNode *node, const char *source_text,

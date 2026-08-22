@@ -4093,6 +4093,29 @@ static void compile_expression(Compiler *c, const LhatNode *node, uint8_t into)
         // knowledge out of the instruction set until specialisation.
         case LHAT_NODE_MEMBER:
         case LHAT_NODE_INDEX: {
+            // 02 の 14.8改2: number^.pi and the rest are constants, loaded
+            // as such -- the checker already refused any other name there.
+            const LhatNode *on = node->v.access.target;
+            const char *on_name = NULL;
+            size_t on_length = 0;
+            if (node->kind == LHAT_NODE_MEMBER && on != NULL &&
+                on->kind == LHAT_NODE_HAT_IDENT &&
+                node_name(c, on, &on_name, &on_length) &&
+                name_is(on_name, on_length, "number^")) {
+                const char *constant = NULL;
+                size_t constant_length = 0;
+                const double *held =
+                    node_name(c, node->v.access.argument, &constant,
+                              &constant_length)
+                        ? lhat_number_constant(constant, constant_length)
+                        : NULL;
+                if (held == NULL) {
+                    fail(c, LHAT_COMPILE_UNDEFINED);
+                    return;
+                }
+                load_constant(c, into, lhat_real(*held));
+                return;
+            }
             uint8_t mark = c->next_register;
             // 11.7改2: the run this access is the end of, if it is one. Opened
             // before the target is compiled, since the guards are inside it.
