@@ -547,6 +547,12 @@ static bool conforms_func(const LhatType *value, const LhatType *target,
     if (value->v.func.mutable_self && !target->v.func.mutable_self) {
         return false;
     }
+    // 15.1改3: a promise, closed^'s way round. One that answers something
+    // new stands wherever; where newness was promised, one that promised
+    // nothing may not stand.
+    if (target->v.func.answers_fresh && !value->v.func.answers_fresh) {
+        return false;
+    }
 
     const LhatTypeList *a = value->v.func.params;
     const LhatTypeList *b = target->v.func.params;
@@ -1709,6 +1715,9 @@ static void write_type(TypeSink *sink, const LhatType *type, int depth)
             LhatType *answer = lhat_type_call_answer(type);
             if (answer != NULL && answer->kind != LHAT_TYPE_NONE) {
                 put_text(sink, " -> ");
+                if (type->v.func.answers_fresh) {
+                    put_text(sink, "fresh^");  // 15.1改3
+                }
                 write_result(sink, answer, depth + 1);
             }
             put_text(sink, ";");

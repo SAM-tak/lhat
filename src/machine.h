@@ -1,3 +1,11 @@
+// 02 の 14.22: one link of the chain Machine.native_hold heads. Declared
+// here, defined by the built-in that pushes it -- on its own C stack frame,
+// which outlives exactly the window the root is needed for.
+typedef struct LhatNativeHold {
+    LhatValue held;
+    struct LhatNativeHold *outer;
+} LhatNativeHold;
+
 // L^ (lhat) -- what a running machine is made of.
 //
 // Section numbers refer to DesignDocuments/03-compilation-pipeline.md unless
@@ -204,12 +212,14 @@ struct LhatMachine {
     LhatValue tuple_scratch[LHAT_MAX_TUPLE];
     size_t tuple_scratch_count;  // 0 when nothing is being carried
 
-    // 02 の 14.22: the auxiliary table a sort is reading from while the
-    // comparator (arbitrary L^ code, which may allocate and collect) runs.
-    // A root for that window alone -- nil^ otherwise. A comparator that
-    // itself sorts saves and restores it C-stack fashion, so one slot is
-    // enough at any depth.
-    LhatValue sort_hold;
+    // 02 の 14.22: the tables built-ins are holding onto while written L^
+    // code runs inside them -- a sort's aux while the comparator runs, a
+    // clone under construction while the policy does. Either may allocate
+    // and collect, so each is a root for its window. A chain, not one
+    // slot: a clone's policy may itself clone ('x.clone^(this^)'), and
+    // every level's table has to stay reachable, not just the innermost.
+    // The nodes live on the C stack of the built-in that pushed them.
+    struct LhatNativeHold *native_hold;
 };
 
 typedef struct LhatMachine Machine;

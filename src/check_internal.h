@@ -386,6 +386,10 @@ typedef struct {
     // literal, as in_new_body above is.
     bool receiver_mutable;
 
+    // 15.1改3: the body being walked wrote '-> fresh^T', so every exit owes
+    // a value this body made. Saved and restored the same way.
+    bool must_answer_fresh;
+
     // 03 の 3.4改2: something answered before it was inferred -- a def^ member
     // read before its own body was walked (14.7改2's seed), or a name whose
     // let^ this walk has not reached yet (8.7). Both say the same thing: this

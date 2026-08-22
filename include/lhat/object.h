@@ -425,6 +425,8 @@ typedef enum {
     LHAT_NATIVE_INDEXOF,    // where a value stands, or nil^
     LHAT_NATIVE_CONTAINS,   // whether it stands anywhere
     LHAT_NATIVE_SLICE,      // a fresh table of a range, shallow
+    LHAT_NATIVE_CLONE,      // a fresh table of the whole, shallow -- or each
+                            // value through a written policy (14.22)
     LHAT_NATIVE_INSERT,     // put a value at a position, shifting up
     LHAT_NATIVE_PUSH,       // put a value at the end
     LHAT_NATIVE_EXTEND,     // append another table's sequence half

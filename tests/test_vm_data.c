@@ -626,6 +626,58 @@ static void test_strings(void)
     CHECK_STRING(&r, "11235");
     run_dispose(&r);
 
+    // 14.22: clone^ -- the shallow copy shares elements and separates the
+    // holder; a policy decides each value, and its own recursion is how a
+    // deep copy is written.
+    LHAT_TEST("a shallow clone shares elements and separates holders");
+    run_checked_text(&r,
+                     "var^ inner = { w = 7 }\n"
+                     "var^ t = { 9, inner, name = \"x\" }\n"
+                     "var^ sh = t.clone^()\n"
+                     "inner.w := 8\n"
+                     "sh.push^(99)\n"
+                     "return^ (sh[2].w ?? 0) * 100 + sh.count^ * 10 + "
+                     "t.count^\n");
+    CHECK_INTEGER(&r, 800 + 40 + 3);
+    run_dispose(&r);
+
+    LHAT_TEST("a policy sees every value, both halves");
+    run_checked_text(&r,
+                     "var^ t = { 1, 2, bonus = 10 }\n"
+                     "var^ dbl = t.clone^(f^ x {\n"
+                     "    return^ for^x:\n"
+                     "    when^ isa^ number^: x * 2\n"
+                     "    other^: x\n"
+                     "    ;\n"
+                     "})\n"
+                     "return^ (dbl[1] ?? 0) + (dbl[2] ?? 0) + "
+                     "(dbl.bonus ?? 0)\n");
+    CHECK_INTEGER(&r, 2 + 4 + 20);
+    run_dispose(&r);
+
+    LHAT_TEST("a policy recurses by handing itself down");
+    run_checked_text(&r,
+                     "var^ inner = { w = 7 }\n"
+                     "var^ t = { inner }\n"
+                     "var^ dp = t.clone^(f^ x {\n"
+                     "    return^ for^x:\n"
+                     "    when^ isa^ t^{}: x.clone^(this^)\n"
+                     "    other^: x\n"
+                     "    ;\n"
+                     "})\n"
+                     "inner.w := 100\n"
+                     "return^ dp[1].w ?? 0\n");
+    CHECK_INTEGER(&r, 7);
+    run_dispose(&r);
+
+    LHAT_TEST("a policy's fault leaves through the clone");
+    run_text(&r,
+             "var^ t = {1}\n"
+             "t.clone^(f^ x:number^ -> number^ { return^ x .. \"s\" })\n"
+             "return^ 0\n");
+    LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_TYPE_ERROR);
+    run_dispose(&r);
+
     LHAT_TEST("clear^ empties both halves");
     run_checked_text(&r,
                      "var^ t = { a := 1, 10, 20 }\n"

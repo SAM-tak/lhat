@@ -892,6 +892,7 @@ static bool native_named(LhatValue key, LhatNativeKind *out, bool *hatted)
             { "indexof", LHAT_NATIVE_INDEXOF },
             { "contains", LHAT_NATIVE_CONTAINS },
             { "slice", LHAT_NATIVE_SLICE },
+            { "clone", LHAT_NATIVE_CLONE },
             { "insert", LHAT_NATIVE_INSERT },
             { "push", LHAT_NATIVE_PUSH },
             { "extend", LHAT_NATIVE_EXTEND },
@@ -1746,7 +1747,7 @@ static LhatRunStatus sort_compare(Machine *m, LhatValue cmp, LhatValue x,
 // Merge sort, bottom up, for both spellings -- stable, which sort^ simply
 // does not promise. Every pass reads the whole of `from` and writes the
 // whole of `into`, so at any moment every element is in one rooted table:
-// t is a register's, and the aux rides m->sort_hold while the comparator
+// t is a register's, and the aux rides m->native_hold while the comparator
 // (which may allocate and collect) runs. A comparator that faults leaves
 // the order unspecified, but every element still present.
 static LhatRunStatus table_sort(Machine *m, LhatTable *t, LhatValue cmp)
@@ -1766,8 +1767,10 @@ static LhatRunStatus table_sort(Machine *m, LhatTable *t, LhatValue cmp)
             return LHAT_RUN_OUT_OF_MEMORY;
         }
     }
-    LhatValue outer_hold = m->sort_hold;
-    m->sort_hold = lhat_object((LhatObject *)aux);
+    LhatNativeHold hold;
+    hold.held = lhat_object((LhatObject *)aux);
+    hold.outer = m->native_hold;
+    m->native_hold = &hold;
     LhatTable *from = aux;
     LhatTable *into = t;
     LhatRunStatus status = LHAT_RUN_OK;
@@ -1814,7 +1817,7 @@ static LhatRunStatus table_sort(Machine *m, LhatTable *t, LhatValue cmp)
             lhat_gc_barrier_back(m, (LhatObject *)t, moved);
         }
     }
-    m->sort_hold = outer_hold;
+    m->native_hold = hold.outer;
     return status;
 }
 
@@ -1898,6 +1901,67 @@ static LhatRunStatus table_blockmove(Machine *m, LhatTable *dst,
         }
     }
     return LHAT_RUN_OK;
+}
+
+// 14.22: one value through the clone's written policy -- arbitrary L^ code,
+// nested the way a sort's comparator is.
+static LhatRunStatus clone_policy(Machine *m, LhatValue policy,
+                                  LhatValue held, LhatValue *out)
+{
+    LhatRunResult ran = lhat_machine_call(m, policy, &held, 1);
+    if (ran.status != LHAT_RUN_OK) {
+        return ran.status;
+    }
+    *out = ran.value;
+    return LHAT_RUN_OK;
+}
+
+// 14.22: the shallow copy, or each value through the policy. The copy under
+// construction rides m->native_hold while the policy runs, the way a sort's
+// aux table does -- the policy may allocate and collect. The keys are
+// carried as they are; only the values are asked about.
+static LhatRunStatus table_clone(Machine *m, const LhatTable *t,
+                                 LhatValue policy, LhatValue *answer)
+{
+    LhatTable *copy = lhat_table_new(&m->objects);
+    if (copy == NULL) {
+        return LHAT_RUN_OUT_OF_MEMORY;
+    }
+    LhatNativeHold hold;
+    hold.held = lhat_object((LhatObject *)copy);
+    hold.outer = m->native_hold;
+    m->native_hold = &hold;
+    LhatRunStatus status = LHAT_RUN_OK;
+    bool refused = false;
+    for (size_t i = 0; i < t->array_count && status == LHAT_RUN_OK; i++) {
+        LhatValue held = lhat_slots_get(t->array, i);
+        if (!lhat_is_nil(policy)) {
+            status = clone_policy(m, policy, held, &held);
+        }
+        if (status == LHAT_RUN_OK &&
+            !set_key(m, copy, lhat_integer((int64_t)i + 1), held, &refused)) {
+            status = LHAT_RUN_OUT_OF_MEMORY;
+        }
+    }
+    for (size_t i = 0; i < t->entry_capacity && status == LHAT_RUN_OK; i++) {
+        const LhatTableEntry *entry = &t->entries[i];
+        if (lhat_is_nil(entry->key)) {
+            continue;  // free, or a tombstone
+        }
+        LhatValue held = entry->value;
+        if (!lhat_is_nil(policy)) {
+            status = clone_policy(m, policy, held, &held);
+        }
+        if (status == LHAT_RUN_OK &&
+            !set_key(m, copy, entry->key, held, &refused)) {
+            status = LHAT_RUN_OUT_OF_MEMORY;
+        }
+    }
+    m->native_hold = hold.outer;
+    if (status == LHAT_RUN_OK) {
+        *answer = lhat_object((LhatObject *)copy);
+    }
+    return status;
 }
 
 // The one door for all of 14.22. `args` were copied out of the caller's
@@ -2082,6 +2146,14 @@ static LhatRunStatus table_native(Machine *m, const LhatNative *native,
                 return LHAT_RUN_OUT_OF_MEMORY;
             }
             return LHAT_RUN_OK;
+        }
+
+        case LHAT_NATIVE_CLONE: {
+            if (count > 1) {
+                return LHAT_RUN_ARITY;
+            }
+            return table_clone(m, t, count == 1 ? args[0] : lhat_nil(),
+                               answer);
         }
 
         case LHAT_NATIVE_SORT:

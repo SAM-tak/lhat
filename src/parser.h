@@ -47,6 +47,8 @@ typedef enum {
                                               // so the header takes neither an
                                               // introducer nor a bare ':='
     LHAT_PARSE_ERR_EXPECTED_MEMBER,           // 14 章: def^ holds members
+    LHAT_PARSE_ERR_FRESH_TUPLE,               // 15.1改3: fresh^ covers one
+                                              // result, and a tuple is several
     LHAT_PARSE_ERR_OPERATOR_NOT_DEFINABLE,    // 11.4: only '..' has an op^
                                               // definition so far
     LHAT_PARSE_ERR_COMPOUND_NOT_DEFINABLE,    // 8.6改: 'a += b' is

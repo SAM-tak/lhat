@@ -267,6 +267,10 @@ struct LhatType {
             // one stands where an unmarked signature is written; the other
             // way round is what conforms_func refuses.
             bool closed;
+            // 15.1改3: written '-> fresh^T' -- what a call answers is new,
+            // nothing could reach it before the call. A promise like
+            // closed^, so it flows the same one way in conforms_func.
+            bool answers_fresh;
             // 15.2: what the body's yield^/await^ sites agree on. Both NULL
             // until inferred; meaningless unless `yields` is true.
             LhatType *yield_produce;

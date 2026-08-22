@@ -548,6 +548,59 @@ static void test_purity(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
+    // 15.1改3: '-> fresh^T' promises the answer is new, and the body is
+    // held to it -- every exit has to answer something this body made.
+    LHAT_TEST("a fresh^ body answering its own table checks clean");
+    check_text(&u,
+               "var^ pair = f^ a:number^ -> fresh^t^{ ...:number^ } {\n"
+               "    return^ {a, a}\n"
+               "}\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("and one answering its argument is refused");
+    check_text(&u,
+               "var^ echo = f^ t:t^{ ...:number^ } -> "
+               "fresh^t^{ ...:number^ } {\n"
+               "    return^ t\n"
+               "}\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_ANSWER_NOT_FRESH);
+    unit_dispose(&u);
+
+    LHAT_TEST("a fresh^ answer counts as the caller's own");
+    check_text(&u,
+               "var^ pair = f^ a:number^ -> fresh^t^{ ...:number^ } {\n"
+               "    return^ {a, a}\n"
+               "}\n"
+               "var^ f = f^ -> number^ {\n"
+               "    var^ mine = pair(1)\n"
+               "    mine.push^(2)\n"
+               "    return^ mine.count^\n"
+               "}\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // The promise flows closed^'s way round: written where none was
+    // promised is fine, missing where one was is not.
+    LHAT_TEST("a fresh^ method does not owe a plain seat anything");
+    check_text(&u,
+               "var^ pair = f^ a:number^ -> fresh^t^{ ...:number^ } {\n"
+               "    return^ {a, a}\n"
+               "}\n"
+               "var^ seat : f^number^ -> t^{ ...:number^ }; = pair\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("but a plain one may not stand where fresh^ was promised");
+    check_text(&u,
+               "var^ echo = f^ t:t^{ ...:number^ } -> t^{ ...:number^ } {\n"
+               "    return^ t\n"
+               "}\n"
+               "var^ seat : f^t^{ ...:number^ } -> "
+               "fresh^t^{ ...:number^ }; = echo\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
+    unit_dispose(&u);
+
     LHAT_TEST("a p^ changes whatever it is given");
     check_text(&u,
                "var^ g = p^ t:t^{ x:number^ } { t.x := 1 }\n");

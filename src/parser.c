@@ -427,9 +427,18 @@ static LhatNode *parse_type_function(Parser *p, bool is_function)
     node->v.func.params = parse_type_params(p);
 
     if (match_op(p, LHAT_OP_ARROW)) {
+        // 15.1改3: 'fresh^' on the result's seat promises the answer is new.
+        if (match_hat(p, "fresh")) {
+            node->v.func.answers_fresh = true;
+        }
         // 13.2: '->' is present only when something is returned. 13.8改2:
         // and several, written bare, are the tuple that one result is.
         node->v.func.return_type = parse_type_result(p);
+        if (node->v.func.answers_fresh &&
+            node->v.func.return_type != NULL &&
+            node->v.func.return_type->kind == LHAT_NODE_TYPE_TUPLE) {
+            report(p, &p->current, LHAT_PARSE_ERR_FRESH_TUPLE);
+        }
     }
 
     expect_op(p, LHAT_OP_SEMICOLON);
@@ -1471,10 +1480,19 @@ static LhatNode *parse_function(Parser *p, bool is_function)
     node->v.func.params = parse_params(p);
 
     if (match_op(p, LHAT_OP_ARROW)) {
+        // 15.1改3: as in a written signature.
+        if (match_hat(p, "fresh")) {
+            node->v.func.answers_fresh = true;
+        }
         // 13.8改2: as in a written signature -- several written bare are the
         // tuple that one result is. The body's '{' closes the reading here,
         // where a signature's ';' does.
         node->v.func.return_type = parse_type_result(p);
+        if (node->v.func.answers_fresh &&
+            node->v.func.return_type != NULL &&
+            node->v.func.return_type->kind == LHAT_NODE_TYPE_TUPLE) {
+            report(p, &p->current, LHAT_PARSE_ERR_FRESH_TUPLE);
+        }
     }
 
     // 15.2: yield^ in the body is what makes a procedure yieldable, so the
@@ -3491,6 +3509,22 @@ static LhatNode *subject_reference(Parser *p, const LhatNode *focus,
     if (name != NULL && name->kind == LHAT_NODE_PARAM) {
         name = name->v.param.name;
     }
+    // 17.2 with 13.11: a subject that is a bare name is referenced by that
+    // name, so the arms narrow what the writer reads back -- 'for^x:' tests
+    // x the way the if^-chain it desugars to would. A subject that is a
+    // wider expression stays the focus, and the arms narrow it^.
+    if (name != NULL && name->kind == LHAT_NODE_FOCUS) {
+        const LhatNode *held = focus != NULL &&
+                               (focus->kind == LHAT_NODE_DEFINE ||
+                                focus->kind == LHAT_NODE_REASSIGN)
+                                   ? focus->v.binding.values
+                                   : NULL;
+        if (held != NULL && held->next == NULL &&
+            (held->kind == LHAT_NODE_IDENT ||
+             held->kind == LHAT_NODE_HAT_IDENT)) {
+            name = held;
+        }
+    }
     if (name == NULL) {
         return NULL;
     }
@@ -4843,6 +4877,9 @@ const char *lhat_parse_error_message(LhatParseErrorCode code)
                    "equals what but puts its values in no order writes op^= "
                    "instead, which answers a bool^; '\xE2\x89\xA0' is read off "
                    "whichever of the two it has";
+        case LHAT_PARSE_ERR_FRESH_TUPLE:
+            return "fresh^ promises one new answer; a tuple result cannot "
+                   "carry it";
         case LHAT_PARSE_ERR_EXPECTED_MEMBER:
             return "a def^ holds 'name := value' members and one self^{ ... }";
         case LHAT_PARSE_ERR_FIELD_NEEDS_NAME:

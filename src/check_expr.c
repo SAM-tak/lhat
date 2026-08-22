@@ -1470,6 +1470,9 @@ LhatType *chk_infer_call(Checker *c, const LhatNode *node)
                     chk_report(c, node, LHAT_CHECK_ERR_FUNCTION_CALLS_PROCEDURE);
                 }
                 check_mutable_receiver(c, node, arm->type);  // 15.1改2
+                if (arm->type->v.func.answers_fresh) {
+                    ((LhatNode *)node)->call_answers_fresh = true;  // 15.1改3
+                }
                 // 15.5: a yielding arm answers the coroutine it makes, the
                 // same as the plain call below.
                 return lhat_type_call_answer(arm->type);
@@ -1497,6 +1500,9 @@ LhatType *chk_infer_call(Checker *c, const LhatNode *node)
         chk_report(c, node, LHAT_CHECK_ERR_FUNCTION_CALLS_PROCEDURE);
     }
     check_mutable_receiver(c, node, callee);  // 15.1改2
+    if (callee->v.func.answers_fresh) {
+        ((LhatNode *)node)->call_answers_fresh = true;  // 15.1改3
+    }
 
     const LhatTypeList *param = callee->v.func.params;
 
@@ -2377,11 +2383,36 @@ LhatType *chk_infer_member(Checker *c, const LhatNode *node)
             LhatType *from = lhat_type_func(c->result->types, true);
             lhat_type_add_param(c->result->types, from, number);
             from->v.func.result = cut;
+            from->v.func.answers_fresh = true;  // 15.1改3
             LhatType *range = lhat_type_func(c->result->types, true);
             lhat_type_add_param(c->result->types, range, number);
             lhat_type_add_param(c->result->types, range, number);
             range->v.func.result = cut;
+            range->v.func.answers_fresh = true;
             return lhat_type_intersect(c->result->types, from, range);
+        }
+        // clone^ -- the shallow copy by name, or each value through a
+        // written policy (14.22). The policy is f^any^ -> any^; on purpose,
+        // not f^V -> V;: it decides the depth itself, and the V one level
+        // down is not the V up here -- 'x.clone^(this^)' has to fit its own
+        // signature at every level, which without generics only any^ can
+        // say. Inside, 13.11's narrowing is how a policy tells its cases
+        // apart, which is what a policy is. Both arms promise a fresh
+        // answer (15.1改3) -- an f^ clones what arrived, then mends its own
+        // copy.
+        if (builtin_named(name, length, "clone", true)) {
+            LhatType *any = chk_simple(c, LHAT_TYPE_ANY);
+            LhatType *bare = lhat_type_func(c->result->types, true);
+            bare->v.func.result = self_type;
+            bare->v.func.answers_fresh = true;
+            LhatType *policy = lhat_type_func(c->result->types, true);
+            lhat_type_add_param(c->result->types, policy, any);
+            policy->v.func.result = any;
+            LhatType *with_policy = lhat_type_func(c->result->types, true);
+            lhat_type_add_param(c->result->types, with_policy, policy);
+            with_policy->v.func.result = self_type;
+            with_policy->v.func.answers_fresh = true;
+            return lhat_type_intersect(c->result->types, bare, with_policy);
         }
         // 15.1改2: the mutating half write through the receiver alone, so
         // they are f^mutable^self^ -- an f^ body calls them on what it made
@@ -2811,6 +2842,7 @@ static LhatType *declared_signature(Checker *c, const LhatNode *node)
     }
     LhatType *func = lhat_type_func(c->result->types, node->v.func.is_function);
     func->v.func.yields = node->v.func.yields;
+    func->v.func.answers_fresh = node->v.func.answers_fresh;  // 15.1改3
     for (const LhatNode *param = node->v.func.params; param != NULL;
          param = param->next) {
         int marker = chk_self_marker_at(c, node->v.func.params, param);
@@ -2881,6 +2913,8 @@ LhatType *chk_infer_func(Checker *c, const LhatNode *node)
     // 15.13: and whether it promises to capture nothing is written, not read
     // -- what a caller may rely on is what the writer said.
     func->v.func.closed = node->v.func.closed;
+    // 15.1改3: as is whether the answer is promised new.
+    func->v.func.answers_fresh = node->v.func.answers_fresh;
 
     // 03 の 3.4: where this body's own parameters begin. A body nested in
     // another leaves the enclosing one's in place behind this mark -- a demand
@@ -3045,6 +3079,9 @@ LhatType *chk_infer_func(Checker *c, const LhatNode *node)
     // 15.1改2: whether this body's own receiver seat is mutable.
     bool outer_receiver_mutable = c->receiver_mutable;
     c->receiver_mutable = func->v.func.mutable_self;
+    // 15.1改3: whether every exit of this body owes something new.
+    bool outer_must_answer_fresh = c->must_answer_fresh;
+    c->must_answer_fresh = func->v.func.answers_fresh;
 
     c->scope = &body;
     c->declared_result = declared;
@@ -3210,6 +3247,7 @@ LhatType *chk_infer_func(Checker *c, const LhatNode *node)
     c->deferred--;
     c->in_new_body = outer_in_new_body;
     c->receiver_mutable = outer_receiver_mutable;
+    c->must_answer_fresh = outer_must_answer_fresh;
     c->scope = outer_scope;
     c->declared_result = outer_declared;
     c->inferred_result = outer_inferred;

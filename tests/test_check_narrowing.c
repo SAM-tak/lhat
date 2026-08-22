@@ -1207,9 +1207,55 @@ static void test_bounded_keys(void)
     unit_dispose(&u);
 }
 
+// 17.2 with 13.11: a match arm is the if-chain it desugars to, so an isa^
+// pattern narrows what the arm reads -- the bare-name subject by its own
+// name, a wider subject through it^. (Neither narrowed at all before this
+// was pinned: the desugar tested a FOCUS node the narrowing machinery did
+// not know, and a bare name was wrapped in one besides.)
+static void test_match_arm_narrowing(void)
+{
+    Unit u;
+
+    LHAT_TEST("a match arm narrows its bare-name subject");
+    check_text(&u,
+               "let^ g = f^ x:number^|t^{ ...:number^ } -> number^ {\n"
+               "    return^ for^x:\n"
+               "    when^ isa^ t^{}: x.count^\n"
+               "    other^: 0\n"
+               "    ;\n"
+               "}\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("and in the statement form too");
+    check_text(&u,
+               "let^ g = f^ x:number^|t^{ ...:number^ } -> number^ {\n"
+               "    for^x {\n"
+               "    when^ isa^ t^{}:\n"
+               "        return^ x.count^\n"
+               "    }\n"
+               "    return^ 0\n"
+               "}\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("a wider subject narrows through it^");
+    check_text(&u,
+               "let^ pick = f^ -> number^|t^{ ...:number^ } { return^ 4 }\n"
+               "let^ g = f^ -> number^ {\n"
+               "    return^ for^ pick():\n"
+               "    when^ isa^ t^{}: it^.count^\n"
+               "    other^: 0\n"
+               "    ;\n"
+               "}\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+}
+
 int main(void)
 {
     test_narrowing();
+    test_match_arm_narrowing();
     test_relaxed_nil_reference();
     test_nil_propagation();
     test_bounded_keys();

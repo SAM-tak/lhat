@@ -626,6 +626,7 @@ LhatType *chk_resolve_func_type(Checker *c, const LhatNode *node)
 {
     LhatType *func = lhat_type_func(c->result->types, node->v.func.is_function);
     func->v.func.closed = node->v.func.closed;  // 15.13
+    func->v.func.answers_fresh = node->v.func.answers_fresh;  // 15.1改3
     for (const LhatNode *param = node->v.func.params; param != NULL;
          param = param->next) {
         int marker = chk_self_marker_at(c, node->v.func.params, param);
@@ -1557,6 +1558,10 @@ bool chk_narrowable(const LhatNode *node)
         case LHAT_NODE_IDENT:
         case LHAT_NODE_HAT_IDENT:
         case LHAT_NODE_SCOPE:
+        // 17.2: a match's subject with no name of its own is the focus, and
+        // the desugared arms test exactly that node -- 'when^ isa^ T:' has
+        // to narrow what it^ names or the arm knows nothing.
+        case LHAT_NODE_FOCUS:
             return true;
         case LHAT_NODE_MEMBER:
             return !node->v.access.nil_safe && chk_narrowable(node->v.access.target);
@@ -1666,7 +1671,18 @@ static bool same_name(const Checker *c, const LhatNode *a, const LhatNode *b)
 
 static bool same_path(const Checker *c, const LhatNode *a, const LhatNode *b)
 {
-    if (a == NULL || b == NULL || a->kind != b->kind) {
+    if (a == NULL || b == NULL) {
+        return false;
+    }
+    // 17.2: the focus node is it^ without the word appearing, so a written
+    // it^ read in an arm is the same path as the FOCUS the desugar tested.
+    // same_name reads "it^" off both, so only the kind gate has to give.
+    if (a->kind != b->kind &&
+        a->kind != LHAT_NODE_FOCUS && b->kind != LHAT_NODE_FOCUS) {
+        return false;
+    }
+    if (a->kind != b->kind &&
+        (a->kind == LHAT_NODE_MEMBER || b->kind == LHAT_NODE_MEMBER)) {
         return false;
     }
     if (a->kind == LHAT_NODE_MEMBER) {
@@ -3333,6 +3349,9 @@ const char *lhat_check_error_message(LhatCheckErrorCode code)
         case LHAT_CHECK_ERR_MUTATES_OUTSIDE:
             return "an f^ may write through mutable^self^ only into a table "
                    "its own body made; this one came from somewhere else";
+        case LHAT_CHECK_ERR_ANSWER_NOT_FRESH:
+            return "a fresh^ answer has to be made by this body -- a "
+                   "literal, a new(), or another fresh^ call's answer";
         case LHAT_CHECK_ERR_COROUTINE_ESCAPES:
             return "an f^ coroutine may not leave the body that made it";
         case LHAT_CHECK_ERR_TABLE_IS_SEALED:

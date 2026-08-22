@@ -828,6 +828,11 @@ bool chk_value_is_fresh(const Checker *c, const LhatNode *value,
             return true;
 
         case LHAT_NODE_CALL: {
+            // 15.1改3: the resolved callee promised '-> fresh^T', so the
+            // answer is new by the signature's own word.
+            if (value->call_answers_fresh) {
+                return true;
+            }
             // 15.5: calling a yieldable subroutine builds a coroutine, and
             // builds a new one every time -- the call is what makes it, so
             // 15.3改 counts it the way 14.11's new is counted below.
@@ -2267,6 +2272,20 @@ void chk_check_statement(Checker *c, const LhatNode *node)
             }
             bool recursive = c->saw_self_call;
             c->saw_self_call = enclosing_self_call || recursive;
+
+            // 15.1改3: a '-> fresh^T' body owes every exit something this
+            // body made -- a literal, a new(), the answer of another fresh^
+            // call ('return^ this^(…)' among them, since the signature
+            // already carries the promise), or a name this body bound to
+            // one of those (the origin question 15.1改2 asks of a
+            // receiver). In an f^ the reading is tight -- nothing this body
+            // made can have leaked out; in a p^ it is closer to a
+            // declaration, since a p^ could also have stored it somewhere.
+            if (c->must_answer_fresh &&
+                (node->v.jump.value == NULL || node->v.jump.level > 1 ||
+                 !chk_receiver_is_own_table(c, node->v.jump.value))) {
+                chk_report(c, node, LHAT_CHECK_ERR_ANSWER_NOT_FRESH);
+            }
 
             // 05 の 8.9: at the top level of a unit this is the program's
             // answer, which leaves through a single value slot the host

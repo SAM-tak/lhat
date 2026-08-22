@@ -195,6 +195,9 @@ typedef enum {
     LHAT_CHECK_ERR_MUTATES_OUTSIDE,     // 15.1改2: an f^ calling a
                                         // mutable^self^ method on a table
                                         // its own body did not make
+    LHAT_CHECK_ERR_ANSWER_NOT_FRESH,    // 15.1改3: a '-> fresh^T' body
+                                        // returning something it did not
+                                        // make on the spot
     LHAT_CHECK_ERR_COROUTINE_ESCAPES,   // 15.3改: an f^ coroutine reaching the
                                         // outside, where advancing it is what
                                         // makes the call observable

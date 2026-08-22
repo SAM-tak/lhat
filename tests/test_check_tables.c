@@ -775,6 +775,36 @@ static void test_builtin_operations(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_NO_MEMBER);
     unit_dispose(&u);
 
+    // 15.1改3: clone^ and slice^ answer '-> fresh^…', so what they answer
+    // is the body's own -- an f^ clones what arrived and mends the copy.
+    LHAT_TEST("an f^ mends its own clone of what arrived");
+    check_text(&u,
+               "let^ mend = f^ src:t^{ ...:number^ } -> t^{ ...:number^ } {\n"
+               "    var^ mine = src.clone^()\n"
+               "    mine.sort^()\n"
+               "    return^ mine\n"
+               "}\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("and may chain straight off the fresh answer");
+    check_text(&u,
+               "let^ g = f^ src:t^{ ...:number^ } -> number^ {\n"
+               "    return^ src.clone^().pop^() ?? -1\n"
+               "}\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("a slice is the body's own the same way");
+    check_text(&u,
+               "let^ g = f^ src:t^{ ...:number^ } -> number^ {\n"
+               "    var^ cut = src.slice^(1, 2)\n"
+               "    cut.push^(9)\n"
+               "    return^ cut.count^\n"
+               "}\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
     LHAT_TEST("and the bare spelling stays the writer's");
     check_text(&u,
                "var^ t = {1}\n"

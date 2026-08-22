@@ -219,6 +219,11 @@ struct LhatNode {
     // strictness -- it decides the shape of the group rather than how a call
     // reads one, and 03 の 4.2 keeps that the same either way.
     uint16_t checked_arm;
+    // 15.1改3: this CALL's resolved callee promised '-> fresh^T', so what
+    // it answers is something nobody held before -- which is what lets the
+    // origin rules (15.1改2, 15.3改) count the answer as the body's own.
+    // Stamped by the checker beside checked_arm.
+    bool call_answers_fresh;
 
     union {
         struct {
@@ -304,6 +309,10 @@ struct LhatNode {
             // outside it. Part of the type, and written rather than read off
             // the body -- what a caller may rely on is what was promised.
             bool closed;
+            // 15.1改3: written '-> fresh^T', so what a call answers is new
+            // -- nothing could reach it before the call. A promise like
+            // closed^, written on the result's seat.
+            bool answers_fresh;
         } func;
 
         // PARAM. `variadic` marks the '...' form (13.7).
