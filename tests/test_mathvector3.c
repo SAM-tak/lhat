@@ -1,4 +1,4 @@
-// L^ (lhat) -- tests for std.math, which is the proving ground for 05 の
+// L^ (lhat) -- tests for std.math.vector3, which is the proving ground for 05 の
 // 8.9's host values.
 //
 // What is pinned here is the machinery rather than the arithmetic: a host
@@ -12,9 +12,9 @@
 #include "stdlibutil.h"
 #include "testutil.h"
 
-#include "../stdlib/math.h"
+#include "../stdlib/mathvector3.h"
 
-static const LhatTestRegister regs[] = {lhatstdlib_math_register};
+static const LhatTestRegister regs[] = {lhatstdlib_mathvector3_register};
 
 static LhatTestRan run_source(const char *text)
 {
@@ -35,8 +35,8 @@ static void test_fields(void)
     LHAT_TEST("fields read the bytes back");
     {
         LhatTestRan ran = run_source(
-            "import^ std.math\n"
-            "let^ v = std.math.vec3(3, 4, 12)\n"
+            "import^ std.math.vector3\n"
+            "let^ v = std.math.vector3.new(3, 4, 12)\n"
             "if^ v.x = 3.0 and^ v.y = 4.0 and^ v.z = 12.0 { return^ 1 }\n"
             "return^ 0\n");
         LHAT_CHECK_RAN_INTEGER(ran, 1);
@@ -46,8 +46,8 @@ static void test_fields(void)
     LHAT_TEST("fields write the value in place, and only this copy");
     {
         LhatTestRan ran = run_source(
-            "import^ std.math\n"
-            "var^ a = std.math.vec3(1, 2, 3)\n"
+            "import^ std.math.vector3\n"
+            "var^ a = std.math.vector3.new(1, 2, 3)\n"
             "let^ b = a\n"
             "a.x := 7\n"
             "a.z := a.x + 2\n"
@@ -67,9 +67,9 @@ static void test_operators(void)
         // ((a + b) * 2 - a).dot(unit x) = (2*1+2*10-1) = 21 when a=(1,2,3),
         // b=(10,20,30): x of (a+b)*2-a is 21.
         LhatTestRan ran = run_source(
-            "import^ std.math\n"
-            "let^ a = std.math.vec3(1, 2, 3)\n"
-            "let^ b = std.math.vec3(10, 20, 30)\n"
+            "import^ std.math.vector3\n"
+            "let^ a = std.math.vector3.new(1, 2, 3)\n"
+            "let^ b = std.math.vector3.new(10, 20, 30)\n"
             "let^ v = (a + b) * 2 - a\n"
             "if^ v.x = 21.0 and^ v.y = 42.0 and^ v.z = 63.0 { return^ 1 }\n"
             "return^ 0\n");
@@ -83,8 +83,8 @@ static void test_operators(void)
     LHAT_TEST("a host value answers the unary '-'");
     {
         LhatTestRan ran = run_source(
-            "import^ std.math\n"
-            "let^ v = -std.math.vec3(1, 2, 3)\n"
+            "import^ std.math.vector3\n"
+            "let^ v = -std.math.vector3.new(1, 2, 3)\n"
             "if^ v.x = -1.0 and^ v.y = -2.0 and^ v.z = -3.0 { return^ 1 }\n"
             "return^ 0\n");
         LHAT_CHECK_RAN_INTEGER(ran, 1);
@@ -97,8 +97,8 @@ static void test_operators(void)
     LHAT_TEST("and a scalar on the left scales it too");
     {
         LhatTestRan ran = run_source(
-            "import^ std.math\n"
-            "let^ v = std.math.vec3(1, 2, 3)\n"
+            "import^ std.math.vector3\n"
+            "let^ v = std.math.vector3.new(1, 2, 3)\n"
             "let^ a = 2 * v\n"
             "let^ b = v * 2\n"
             "if^ a.x = b.x and^ a.y = b.y and^ a.z = b.z and^ a.z = 6.0 {\n"
@@ -112,8 +112,8 @@ static void test_operators(void)
     // of '-' finds nothing: Vector3 carries the trailing self^ arm for '*'
     // and not for '-', so 14.8's number^ is what is left to fall back on.
     LHAT_TEST("and an arm that was not written is not invented");
-    LHAT_CHECK(!checks("import^ std.math\n"
-                       "let^ v = std.math.vec3(1, 2, 3)\n"
+    LHAT_CHECK(!checks("import^ std.math.vector3\n"
+                       "let^ v = std.math.vector3.new(1, 2, 3)\n"
                        "let^ w = 2 - v\n"
                        "return^ 1\n"),
                "no arm answers a scalar on the left of '-'");
@@ -122,9 +122,9 @@ static void test_operators(void)
     {
         // (2,0,0): the one normalized answer float represents exactly.
         LhatTestRan ran = run_source(
-            "import^ std.math\n"
-            "let^ v = std.math.vec3(3, 4, 0)\n"
-            "let^ u = std.math.vec3(2, 0, 0).normalized()\n"
+            "import^ std.math.vector3\n"
+            "let^ v = std.math.vector3.new(3, 4, 0)\n"
+            "let^ u = std.math.vector3.new(2, 0, 0).normalized()\n"
             "if^ v.length() = 5.0 and^ v.dot(v) = 25.0 and^ u.x = 1.0 {\n"
             "    return^ 1\n"
             "}\n"
@@ -141,10 +141,10 @@ static void test_equality(void)
     LHAT_TEST("equality is bytes, not heads");
     {
         LhatTestRan ran = run_source(
-            "import^ std.math\n"
-            "let^ a = std.math.vec3(1, 2, 3)\n"
-            "let^ b = std.math.vec3(1, 2, 3)\n"
-            "let^ c = std.math.vec3(1, 2, 4)\n"
+            "import^ std.math.vector3\n"
+            "let^ a = std.math.vector3.new(1, 2, 3)\n"
+            "let^ b = std.math.vector3.new(1, 2, 3)\n"
+            "let^ c = std.math.vector3.new(1, 2, 4)\n"
             "if^ a = b and^ !(a = c) and^ a != c { return^ 1 }\n"
             "return^ 0\n");
         LHAT_CHECK_RAN_INTEGER(ran, 1);
@@ -157,9 +157,9 @@ static void test_narrowing(void)
     LHAT_TEST("isa^ answers against the registered type");
     {
         LhatTestRan ran = run_source(
-            "import^ std.math\n"
-            "let^ v = std.math.vec3(1, 2, 3)\n"
-            "if^ v isa^ std.math.Vector3 { return^ 1 }\n"
+            "import^ std.math.vector3\n"
+            "let^ v = std.math.vector3.new(1, 2, 3)\n"
+            "if^ v isa^ std.math.vector3.Vector3 { return^ 1 }\n"
             "return^ 0\n");
         LHAT_CHECK_RAN_INTEGER(ran, 1);
         lhat_test_ran_dispose(&ran);
@@ -171,13 +171,13 @@ static void test_subroutines(void)
     LHAT_TEST("host values pass through an L^ subroutine whole");
     {
         LhatTestRan ran = run_source(
-            "import^ std.math\n"
-            "let^ blend = f^p:std.math.Vector3, q:std.math.Vector3"
-            " -> std.math.Vector3 {\n"
+            "import^ std.math.vector3\n"
+            "let^ blend = f^p:std.math.vector3.Vector3, q:std.math.vector3.Vector3"
+            " -> std.math.vector3.Vector3 {\n"
             "    return^ (p + q) * 0.5\n"
             "}\n"
-            "let^ mid = blend(std.math.vec3(2, 4, 6),"
-            " std.math.vec3(4, 8, 10))\n"
+            "let^ mid = blend(std.math.vector3.new(2, 4, 6),"
+            " std.math.vector3.new(4, 8, 10))\n"
             "if^ mid.x = 3.0 and^ mid.y = 6.0 and^ mid.z = 8.0 {\n"
             "    return^ 1\n"
             "}\n"
@@ -191,11 +191,11 @@ static void test_subroutines(void)
         // The RETURN wrote the whole width into the caller's slot before the
         // drain; the cleanup writing its own registers over must not tear it.
         LhatTestRan ran = run_source(
-            "import^ std.math\n"
+            "import^ std.math.vector3\n"
             "var^ log = { n := 0 }\n"
-            "let^ make = p^ -> std.math.Vector3 {\n"
+            "let^ make = p^ -> std.math.vector3.Vector3 {\n"
             "    do^{\n"
-            "        return^ std.math.vec3(5, 6, 7)\n"
+            "        return^ std.math.vector3.new(5, 6, 7)\n"
             "    finally^:\n"
             "        log.n := 1\n"
             "    }\n"
@@ -215,9 +215,9 @@ static void test_coroutine_locals(void)
     LHAT_TEST("a coroutine's own host value locals survive suspension");
     {
         LhatTestRan ran = run_source(
-            "import^ std.math\n"
+            "import^ std.math.vector3\n"
             "let^ gen = p^ {\n"
-            "    let^ held = std.math.vec3(4, 5, 6)\n"
+            "    let^ held = std.math.vector3.new(4, 5, 6)\n"
             "    yield^ 1\n"
             "    yield^ held.y\n"
             "}\n"
@@ -238,10 +238,10 @@ static void test_boxing(void)
     LHAT_TEST("box^ boxes and get/set unbox and write");
     {
         LhatTestRan ran = run_source(
-            "import^ std.math\n"
-            "let^ a = box^std.math.vec3(1, 2, 3)\n"
-            "let^ b = box^std.math.vec3(10, 20, 30)\n"
-            "let^ c = box^std.math.vec3(0, 0, 0)\n"
+            "import^ std.math.vector3\n"
+            "let^ a = box^std.math.vector3.new(1, 2, 3)\n"
+            "let^ b = box^std.math.vector3.new(10, 20, 30)\n"
+            "let^ c = box^std.math.vector3.new(0, 0, 0)\n"
             "c.set(a.get() + b.get())\n"
             "let^ landed = c.get()\n"
             "if^ landed.x = 11.0 and^ landed.y = 22.0 and^ landed.z = 33.0 {\n"
@@ -255,11 +255,11 @@ static void test_boxing(void)
     LHAT_TEST("a box is an ordinary heap value");
     {
         LhatTestRan ran = run_source(
-            "import^ std.math\n"
-            "let^ t = { held = box^std.math.vec3(1, 2, 3) }\n"
-            "var^ maybe : std.math.Vector3.Box^|nil^ = nil^\n"
+            "import^ std.math.vector3\n"
+            "let^ t = { held = box^std.math.vector3.new(1, 2, 3) }\n"
+            "var^ maybe : std.math.vector3.Vector3.Box^|nil^ = nil^\n"
             "maybe := t.held\n"
-            "let^ read = f^b:std.math.Vector3.Box^ -> number^ {\n"
+            "let^ read = f^b:std.math.vector3.Vector3.Box^ -> number^ {\n"
             "    return^ b.get().y\n"
             "}\n"
             "if^ read(maybe ?? t.held) = 2.0 { return^ 1 }\n"
@@ -273,8 +273,8 @@ static void test_boxing(void)
     LHAT_TEST("a box has value semantics at both ends");
     {
         LhatTestRan ran = run_source(
-            "import^ std.math\n"
-            "var^ v = std.math.vec3(1, 1, 1)\n"
+            "import^ std.math.vector3\n"
+            "var^ v = std.math.vector3.new(1, 1, 1)\n"
             "let^ b = box^v\n"
             "v.x := 9\n"
             "var^ w = b.get()\n"
@@ -290,10 +290,10 @@ static void test_boxing(void)
     LHAT_TEST("two boxes of the same bytes are equal, not the same");
     {
         LhatTestRan ran = run_source(
-            "import^ std.math\n"
-            "let^ a = box^std.math.vec3(1, 2, 3)\n"
-            "let^ b = box^std.math.vec3(1, 2, 3)\n"
-            "let^ c = box^std.math.vec3(9, 9, 9)\n"
+            "import^ std.math.vector3\n"
+            "let^ a = box^std.math.vector3.new(1, 2, 3)\n"
+            "let^ b = box^std.math.vector3.new(1, 2, 3)\n"
+            "let^ c = box^std.math.vector3.new(9, 9, 9)\n"
             "var^ r = 0\n"
             "if^ a = b { r := r + 1 }\n"
             "if^ a is^ b { r := r + 10 }\n"
@@ -309,14 +309,14 @@ static void test_boxing(void)
     LHAT_TEST("a constbox^ keys a table by its bytes");
     {
         LhatTestRan ran = run_source(
-            "import^ std.math\n"
-            "let^ live = box^std.math.vec3(4, 5, 6)\n"
+            "import^ std.math.vector3\n"
+            "let^ live = box^std.math.vector3.new(4, 5, 6)\n"
             "let^ t = {\n"
-            "    [constbox^std.math.vec3(1, 2, 3)] = 7,\n"
+            "    [constbox^std.math.vector3.new(1, 2, 3)] = 7,\n"
             "    [constbox^live] = 8,\n"
             "}\n"
             "var^ r = 0\n"
-            "if^ t[constbox^std.math.vec3(1, 2, 3)] = 7 { r := r + 1 }\n"
+            "if^ t[constbox^std.math.vector3.new(1, 2, 3)] = 7 { r := r + 1 }\n"
             "if^ t[constbox^live] = 8 { r := r + 10 }\n"
             "return^ r\n");
         LHAT_CHECK_RAN_INTEGER(ran, 11);
@@ -324,12 +324,12 @@ static void test_boxing(void)
     }
 
     LHAT_TEST("a mutable box is refused where a key is stored");
-    LHAT_CHECK(!checks("import^ std.math\n"
-                       "let^ b = box^std.math.vec3(1, 2, 3)\n"
+    LHAT_CHECK(!checks("import^ std.math.vector3\n"
+                       "let^ b = box^std.math.vector3.new(1, 2, 3)\n"
                        "let^ t = { [b] = 1 }\n"),
                "a literal key has to be sealed");
-    LHAT_CHECK(!checks("import^ std.math\n"
-                       "let^ b = box^std.math.vec3(1, 2, 3)\n"
+    LHAT_CHECK(!checks("import^ std.math.vector3\n"
+                       "let^ b = box^std.math.vector3.new(1, 2, 3)\n"
                        "var^ t = { [constbox^b] = 1 }\n"
                        "t[b] := 2\n"),
                "a stored index key has to be sealed");
@@ -339,15 +339,15 @@ static void test_boxing(void)
     LHAT_TEST("a lookup may ask with a live box");
     {
         LhatTestRan ran = run_source(
-            "import^ std.math\n"
-            "let^ b = box^std.math.vec3(1, 2, 3)\n"
+            "import^ std.math.vector3\n"
+            "let^ b = box^std.math.vector3.new(1, 2, 3)\n"
             "let^ t = {\n"
             "    [constbox^b] = 7,\n"
-            "    [constbox^std.math.vec3(9, 9, 9)] = 8,\n"
+            "    [constbox^std.math.vector3.new(9, 9, 9)] = 8,\n"
             "}\n"
             "var^ r = 0\n"
             "if^ t[b] = 7 { r := r + 1 }\n"
-            "b.set(std.math.vec3(9, 9, 9))\n"
+            "b.set(std.math.vector3.new(9, 9, 9))\n"
             "if^ t[b] = 8 { r := r + 10 }\n"
             "return^ r\n");
         LHAT_CHECK_RAN_INTEGER(ran, 11);
@@ -355,13 +355,13 @@ static void test_boxing(void)
     }
 
     LHAT_TEST("a bare host value is never stored as a key");
-    LHAT_CHECK(!checks("import^ std.math\n"
-                       "let^ v = std.math.vec3(1, 2, 3)\n"
+    LHAT_CHECK(!checks("import^ std.math.vector3\n"
+                       "let^ v = std.math.vector3.new(1, 2, 3)\n"
                        "let^ t = { [v] = 1 }\n"),
                "a literal key is one slot");
-    LHAT_CHECK(!checks("import^ std.math\n"
-                       "var^ t = { [constbox^std.math.vec3(1, 2, 3)] = 1 }\n"
-                       "let^ v = std.math.vec3(1, 2, 3)\n"
+    LHAT_CHECK(!checks("import^ std.math.vector3\n"
+                       "var^ t = { [constbox^std.math.vector3.new(1, 2, 3)] = 1 }\n"
+                       "let^ v = std.math.vector3.new(1, 2, 3)\n"
                        "t[v] := 2\n"),
                "a stored index key is one slot");
 
@@ -371,41 +371,41 @@ static void test_boxing(void)
     LHAT_TEST("a lookup may ask with the bare value");
     {
         LhatTestRan ran = run_source(
-            "import^ std.math\n"
+            "import^ std.math.vector3\n"
             "let^ t = {\n"
-            "    [constbox^std.math.vec3(1, 2, 3)] = 7,\n"
+            "    [constbox^std.math.vector3.new(1, 2, 3)] = 7,\n"
             "}\n"
-            "let^ b = box^std.math.vec3(1, 2, 3)\n"
+            "let^ b = box^std.math.vector3.new(1, 2, 3)\n"
             "var^ r = 0\n"
-            "if^ t[std.math.vec3(1, 2, 3)] = 7 { r := r + 1 }\n"
+            "if^ t[std.math.vector3.new(1, 2, 3)] = 7 { r := r + 1 }\n"
             "if^ t[b.get()] = 7 { r := r + 10 }\n"
-            "if^ t[std.math.vec3(9, 9, 9)] = nil^ { r := r + 100 }\n"
+            "if^ t[std.math.vector3.new(9, 9, 9)] = nil^ { r := r + 100 }\n"
             "return^ r\n");
         LHAT_CHECK_RAN_INTEGER(ran, 111);
         lhat_test_ran_dispose(&ran);
     }
 
     LHAT_TEST("a ConstBox^ has no set");
-    LHAT_CHECK(!checks("import^ std.math\n"
-                       "let^ b = constbox^std.math.vec3(1, 2, 3)\n"
-                       "b.set(std.math.vec3(4, 5, 6))\n"),
+    LHAT_CHECK(!checks("import^ std.math.vector3\n"
+                       "let^ b = constbox^std.math.vector3.new(1, 2, 3)\n"
+                       "b.set(std.math.vector3.new(4, 5, 6))\n"),
                "the sealed box is get-only");
 
     // 8.9改: a Box^ fits a ConstBox^ seat -- the get-only view -- and never
     // the other way around, where set() would be a lie.
     LHAT_TEST("a Box^ fits a ConstBox^ seat and not the reverse");
-    LHAT_CHECK(checks("import^ std.math\n"
-                      "let^ read = f^b:std.math.Vector3.ConstBox^ -> number^ {\n"
+    LHAT_CHECK(checks("import^ std.math.vector3\n"
+                      "let^ read = f^b:std.math.vector3.Vector3.ConstBox^ -> number^ {\n"
                       "    return^ b.get().x\n"
                       "}\n"
-                      "let^ live = box^std.math.vec3(1, 2, 3)\n"
+                      "let^ live = box^std.math.vector3.new(1, 2, 3)\n"
                       "let^ x = read(live)\n"),
                "the view takes the live box");
-    LHAT_CHECK(!checks("import^ std.math\n"
-                       "let^ write = p^b:std.math.Vector3.Box^ {\n"
-                       "    b.set(std.math.vec3(0, 0, 0))\n"
+    LHAT_CHECK(!checks("import^ std.math.vector3\n"
+                       "let^ write = p^b:std.math.vector3.Vector3.Box^ {\n"
+                       "    b.set(std.math.vector3.new(0, 0, 0))\n"
                        "}\n"
-                       "let^ sealed = constbox^std.math.vec3(1, 2, 3)\n"
+                       "let^ sealed = constbox^std.math.vector3.new(1, 2, 3)\n"
                        "write(sealed)\n"),
                "the sealed box stays out of a set seat");
 
@@ -414,26 +414,26 @@ static void test_boxing(void)
     LHAT_TEST("a field reads off the box and never writes");
     {
         LhatTestRan ran = run_source(
-            "import^ std.math\n"
-            "let^ b = constbox^std.math.vec3(1, 2, 3)\n"
+            "import^ std.math.vector3\n"
+            "let^ b = constbox^std.math.vector3.new(1, 2, 3)\n"
             "if^ b.y = 2.0 { return^ 1 }\n"
             "return^ 0\n");
         LHAT_CHECK_RAN_INTEGER(ran, 1);
         lhat_test_ran_dispose(&ran);
     }
-    LHAT_CHECK(!checks("import^ std.math\n"
-                       "let^ b = box^std.math.vec3(1, 2, 3)\n"
+    LHAT_CHECK(!checks("import^ std.math.vector3\n"
+                       "let^ b = box^std.math.vector3.new(1, 2, 3)\n"
                        "b.y := 9\n"),
                "the field is not a place to write");
 
     LHAT_TEST("set takes exactly the value the box was made for");
-    LHAT_CHECK(!checks("import^ std.math\n"
-                       "let^ b = box^std.math.vec3(1, 2, 3)\n"
+    LHAT_CHECK(!checks("import^ std.math.vector3\n"
+                       "let^ b = box^std.math.vector3.new(1, 2, 3)\n"
                        "b.set(4)\n"),
                "a number is not the boxed type");
 
     LHAT_TEST("and box^ takes exactly a host value");
-    LHAT_CHECK(!checks("import^ std.math\n"
+    LHAT_CHECK(!checks("import^ std.math.vector3\n"
                        "let^ b = box^7\n"),
                "a number needs no box");
 
@@ -442,19 +442,19 @@ static void test_boxing(void)
     LHAT_TEST("a box writes its flavour and its content");
     {
         LhatTestRan ran = run_source(
-            "import^ std.math\n"
-            "let^ b = constbox^std.math.vec3(1, 2, 3)\n"
+            "import^ std.math.vector3\n"
+            "let^ b = constbox^std.math.vector3.new(1, 2, 3)\n"
             "return^ $\"{b}\"\n");
-        LHAT_CHECK_RAN_TEXT(ran, "std.math.Vector3.ConstBox^(1.0, 2.0, 3.0)");
+        LHAT_CHECK_RAN_TEXT(ran, "std.math.vector3.Vector3.ConstBox^(1.0, 2.0, 3.0)");
         lhat_test_ran_dispose(&ran);
     }
 
     // 8.9改: the variadic tail cannot say a host value's type, so a bare
     // one is boxed to ride it -- print(v) is the everyday arrival.
     LHAT_TEST("a variadic seat refuses a bare host value");
-    LHAT_CHECK(!checks("import^ std.math\n"
+    LHAT_CHECK(!checks("import^ std.math.vector3\n"
                        "let^ f = f^... -> nil^ { return^ nil^ }\n"
-                       "let^ x = f(std.math.vec3(1, 2, 3))\n"),
+                       "let^ x = f(std.math.vector3.new(1, 2, 3))\n"),
                "box it to pass it");
 
     // 8.9改 with 03 の 3.1③: a table of computed keys cannot say its walk's
@@ -463,13 +463,13 @@ static void test_boxing(void)
     // k.get() answers visible to every later rule. The width guard at the
     // placements stays as the unchecked run's backstop.
     LHAT_TEST("an undescribed walk cannot hide a wide answer");
-    LHAT_CHECK(!checks("import^ std.math\n"
-                       "let^ t = { [constbox^std.math.vec3(1, 2, 3)] = \"a\" }\n"
+    LHAT_CHECK(!checks("import^ std.math.vector3\n"
+                       "let^ t = { [constbox^std.math.vector3.new(1, 2, 3)] = \"a\" }\n"
                        "for^ k, v in^ t { let^ g = k.get() }\n"),
                "the focus asks for annotations first");
-    LHAT_CHECK(!checks("import^ std.math\n"
-                       "let^ t = { [constbox^std.math.vec3(1, 2, 3)] = \"a\" }\n"
-                       "for^ k:std.math.Vector3.ConstBox^, v:string^ in^ t {\n"
+    LHAT_CHECK(!checks("import^ std.math.vector3\n"
+                       "let^ t = { [constbox^std.math.vector3.new(1, 2, 3)] = \"a\" }\n"
+                       "for^ k:std.math.vector3.Vector3.ConstBox^, v:string^ in^ t {\n"
                        "    print(k.get(), v)\n"
                        "}\n"),
                "and the annotated focus meets the variadic rule");
@@ -478,10 +478,10 @@ static void test_boxing(void)
     LHAT_TEST("the box's type is its own");
     {
         LhatTestRan ran = run_source(
-            "import^ std.math\n"
-            "let^ b = box^std.math.vec3(1, 2, 3)\n"
+            "import^ std.math.vector3\n"
+            "let^ b = box^std.math.vector3.new(1, 2, 3)\n"
             "return^ typeof^(b).signature\n");
-        LHAT_CHECK_RAN_TEXT(ran, "std.math.Vector3.Box^");
+        LHAT_CHECK_RAN_TEXT(ran, "std.math.vector3.Vector3.Box^");
         lhat_test_ran_dispose(&ran);
     }
 
@@ -490,11 +490,11 @@ static void test_boxing(void)
     LHAT_TEST("a box may be a field's default");
     {
         LhatTestRan ran = run_source(
-            "import^ std.math\n"
-            "let^ D = def^{ self^{ pos = box^std.math.vec3(1, 2, 3) } }\n"
+            "import^ std.math.vector3\n"
+            "let^ D = def^{ self^{ pos = box^std.math.vector3.new(1, 2, 3) } }\n"
             "let^ a = D.new()\n"
             "let^ b = D.new()\n"
-            "a.pos.set(std.math.vec3(9, 9, 9))\n"
+            "a.pos.set(std.math.vector3.new(9, 9, 9))\n"
             "if^ b.pos.get().x = 1.0 and^ a.pos.get().x = 9.0 { return^ 1 }\n"
             "return^ 0\n");
         LHAT_CHECK_RAN_INTEGER(ran, 1);
@@ -504,9 +504,9 @@ static void test_boxing(void)
     LHAT_TEST("and the prototype's own box takes no set");
     {
         LhatTestRan ran = run_source(
-            "import^ std.math\n"
-            "let^ D = def^{ self^{ pos = box^std.math.vec3(1, 2, 3) } }\n"
-            "D.self^.pos.set(std.math.vec3(0, 0, 0))\n"
+            "import^ std.math.vector3\n"
+            "let^ D = def^{ self^{ pos = box^std.math.vector3.new(1, 2, 3) } }\n"
+            "D.self^.pos.set(std.math.vector3.new(0, 0, 0))\n"
             "return^ 0\n");
         LHAT_CHECK(ran.ok, "the program ran");
         LHAT_CHECK_EQ_INT(ran.status, LHAT_RUN_SEALED);
@@ -522,8 +522,8 @@ static void test_tostring(void)
 {
     LHAT_TEST("a host value spells itself");
     {
-        LhatTestRan ran = run_source("import^ std.math\n"
-                                     "return^ std.math.vec3(3, 4, 0).tostring()\n");
+        LhatTestRan ran = run_source("import^ std.math.vector3\n"
+                                     "return^ std.math.vector3.new(3, 4, 0).tostring()\n");
         LHAT_CHECK_RAN_TEXT(ran, "{x:3.0 y:4.0 z:0.0}");
         lhat_test_ran_dispose(&ran);
     }
@@ -535,8 +535,8 @@ static void test_tostring(void)
     LHAT_TEST("and an interpolation hole writes that same spelling");
     {
         LhatTestRan ran = run_source(
-            "import^ std.math\n"
-            "let^ v = std.math.vec3(1, 2, 3)\n"
+            "import^ std.math.vector3\n"
+            "let^ v = std.math.vector3.new(1, 2, 3)\n"
             "return^ $\"v = {v}, -v = {-v}\"\n");
         LHAT_CHECK_RAN_TEXT(ran,
                             "v = {x:1.0 y:2.0 z:3.0}, -v = {x:-1.0 y:-2.0 z:-3.0}");
@@ -548,8 +548,8 @@ static void test_tostring(void)
     // format of this library's own.
     LHAT_TEST("the components read as L^ spells a number^");
     {
-        LhatTestRan ran = run_source("import^ std.math\n"
-                                     "return^ std.math.vec3(0.5, -2, 1e10).tostring()\n");
+        LhatTestRan ran = run_source("import^ std.math.vector3\n"
+                                     "return^ std.math.vector3.new(0.5, -2, 1e10).tostring()\n");
         LHAT_CHECK_RAN_TEXT(ran, "{x:0.5 y:-2.0 z:1e+10}");
         lhat_test_ran_dispose(&ran);
     }
@@ -563,11 +563,11 @@ static void test_collection(void)
     LHAT_TEST("a collection walks past host values in registers");
     {
         LhatTestRan ran = run_source(
-            "import^ std.math\n"
-            "let^ v = std.math.vec3(9, 8, 7)\n"
+            "import^ std.math.vector3\n"
+            "let^ v = std.math.vector3.new(9, 8, 7)\n"
             "var^ n = 0\n"
             "for^ i from^ 1 to^ 64 {\n"
-            "    let^ w = v + std.math.vec3(i, 0, 0)\n"
+            "    let^ w = v + std.math.vector3.new(i, 0, 0)\n"
             "    n := n + w.y\n"
             "}\n"
             "L^.collectgarbage()\n"
@@ -585,20 +585,20 @@ static void test_collection(void)
 static void test_escapes(void)
 {
     LHAT_TEST("a table member refuses a host value");
-    LHAT_CHECK(!checks("import^ std.math\n"
-                       "let^ t = { v := std.math.vec3(1, 2, 3) }\n"),
+    LHAT_CHECK(!checks("import^ std.math.vector3\n"
+                       "let^ t = { v := std.math.vector3.new(1, 2, 3) }\n"),
                "table literal");
 
     LHAT_TEST("a written table type refuses one too");
-    LHAT_CHECK(!checks("import^ std.math\n"
-                       "let^ f = f^t:t^{ v : std.math.Vector3 } -> number^ {\n"
+    LHAT_CHECK(!checks("import^ std.math.vector3\n"
+                       "let^ f = f^t:t^{ v : std.math.vector3.Vector3 } -> number^ {\n"
                        "    return^ 1\n"
                        "}\n"),
                "written member type");
 
     LHAT_TEST("a capture refuses a host value");
-    LHAT_CHECK(!checks("import^ std.math\n"
-                       "let^ v = std.math.vec3(1, 2, 3)\n"
+    LHAT_CHECK(!checks("import^ std.math.vector3\n"
+                       "let^ v = std.math.vector3.new(1, 2, 3)\n"
                        "let^ f = f^ -> number^ { return^ v.x }\n"),
                "capture");
 
@@ -608,10 +608,10 @@ static void test_escapes(void)
     LHAT_TEST("a yield^ carries a host value whole");
     {
         LhatTestRan ran = run_source(
-            "import^ std.math\n"
-            "let^ gen = f^ -> c^{f^ -> std.math.Vector3} {\n"
-            "    yield^ std.math.vec3(1, 2, 3)\n"
-            "    yield^ std.math.vec3(4, 5, 6)\n"
+            "import^ std.math.vector3\n"
+            "let^ gen = f^ -> c^{f^ -> std.math.vector3.Vector3} {\n"
+            "    yield^ std.math.vector3.new(1, 2, 3)\n"
+            "    yield^ std.math.vector3.new(4, 5, 6)\n"
             "}\n"
             "var^ total = 0\n"
             "for^ v in^ gen() { total := total + v.x }\n"
@@ -624,16 +624,16 @@ static void test_escapes(void)
     LHAT_TEST("and a resume sends one whole");
     {
         LhatTestRan ran = run_source(
-            "import^ std.math\n"
-            "let^ gen = f^ -> c^{f^std.math.Vector3 -> number^} {\n"
-            "    var^ got : std.math.Vector3 = yield^ 0\n"
+            "import^ std.math.vector3\n"
+            "let^ gen = f^ -> c^{f^std.math.vector3.Vector3 -> number^} {\n"
+            "    var^ got : std.math.vector3.Vector3 = yield^ 0\n"
             "    got := yield^ got.x\n"
             "    yield^ got.y\n"
             "}\n"
             "let^ c = gen()\n"
             "c.start()\n"
-            "let^ a = c.resume(std.math.vec3(7, 8, 9))\n"
-            "let^ b = c.resume(std.math.vec3(1, 2, 3))\n"
+            "let^ a = c.resume(std.math.vector3.new(7, 8, 9))\n"
+            "let^ b = c.resume(std.math.vector3.new(1, 2, 3))\n"
             "if^ (a ?? 0) + (b ?? 0) = 9.0 { return^ 1 }\n"
             "return^ 0\n");
         LHAT_CHECK_RAN_INTEGER(ran, 1);
@@ -646,13 +646,13 @@ static void test_escapes(void)
     LHAT_TEST("a coroutine may return one, and a wide parameter crosses");
     {
         LhatTestRan ran = run_source(
-            "import^ std.math\n"
-            "let^ gen = f^p:std.math.Vector3 -> "
-            "c^{f^ -> std.math.Vector3 -> std.math.Vector3} {\n"
+            "import^ std.math.vector3\n"
+            "let^ gen = f^p:std.math.vector3.Vector3 -> "
+            "c^{f^ -> std.math.vector3.Vector3 -> std.math.vector3.Vector3} {\n"
             "    yield^ p\n"
             "    return^ p + p\n"
             "}\n"
-            "let^ c = gen(std.math.vec3(2, 3, 4))\n"
+            "let^ c = gen(std.math.vector3.new(2, 3, 4))\n"
             "let^ first = c.start()\n"
             "let^ last = c.resume()\n"
             "if^ first.x = 2.0 and^ last.y = 6.0 { return^ 1 }\n"
@@ -662,21 +662,21 @@ static void test_escapes(void)
     }
 
     LHAT_TEST("a host value still stays out of a yielded run");
-    LHAT_CHECK(!checks("import^ std.math\n"
+    LHAT_CHECK(!checks("import^ std.math.vector3\n"
                        "let^ gen = p^ {\n"
-                       "    yield^ 1, std.math.vec3(1, 2, 3)\n"
+                       "    yield^ 1, std.math.vector3.new(1, 2, 3)\n"
                        "}\n"),
                "a run position is one slot");
 
     LHAT_TEST("the program's answer refuses a host value");
-    LHAT_CHECK(!checks("import^ std.math\n"
-                       "return^ std.math.vec3(1, 2, 3)\n"),
+    LHAT_CHECK(!checks("import^ std.math.vector3\n"
+                       "return^ std.math.vector3.new(1, 2, 3)\n"),
                "top-level return");
 
     LHAT_TEST("a registered member is not written over");
-    LHAT_CHECK(!checks("import^ std.math\n"
-                       "var^ v = std.math.vec3(1, 2, 3)\n"
-                       "v.dot := f^self^, o:std.math.Vector3 -> number^ {\n"
+    LHAT_CHECK(!checks("import^ std.math.vector3\n"
+                       "var^ v = std.math.vector3.new(1, 2, 3)\n"
+                       "v.dot := f^self^, o:std.math.vector3.Vector3 -> number^ {\n"
                        "    return^ 0\n"
                        "}\n"),
                "member overwrite");
@@ -687,30 +687,30 @@ static void test_escapes(void)
     // These are the same refusals written with a '|nil^' on, and they are
     // what says the lift below opened no hole.
     LHAT_TEST("and a union carrying one is refused in the same places");
-    LHAT_CHECK(!checks("import^ std.math\n"
-                       "let^ v = std.math.vec3(1, 2, 3)\n"
+    LHAT_CHECK(!checks("import^ std.math.vector3\n"
+                       "let^ v = std.math.vector3.new(1, 2, 3)\n"
                        "let^ t = { held = if^ true^: v el^: nil^ ; }\n"),
                "a table member");
-    LHAT_CHECK(!checks("import^ std.math\n"
-                       "let^ f = f^t:t^{ v : std.math.Vector3|nil^ } {\n"
+    LHAT_CHECK(!checks("import^ std.math.vector3\n"
+                       "let^ f = f^t:t^{ v : std.math.vector3.Vector3|nil^ } {\n"
                        "    return^ nil^\n"
                        "}\n"),
                "a written member type");
-    LHAT_CHECK(!checks("import^ std.math\n"
-                       "var^ m : std.math.Vector3|nil^ = nil^\n"
+    LHAT_CHECK(!checks("import^ std.math.vector3\n"
+                       "var^ m : std.math.vector3.Vector3|nil^ = nil^\n"
                        "let^ f = f^ -> nil^ { let^ held = m return^ nil^ }\n"),
                "a capture");
-    LHAT_CHECK(!checks("import^ std.math\n"
-                       "var^ m : std.math.Vector3|nil^ = nil^\n"
+    LHAT_CHECK(!checks("import^ std.math.vector3\n"
+                       "var^ m : std.math.vector3.Vector3|nil^ = nil^\n"
                        "print(m)\n"),
                "the variadic seat -- what '?.' used to slip through");
-    LHAT_CHECK(!checks("import^ std.math\n"
-                       "var^ m : std.math.Vector3|nil^ = nil^\n"
+    LHAT_CHECK(!checks("import^ std.math.vector3\n"
+                       "var^ m : std.math.vector3.Vector3|nil^ = nil^\n"
                        "return^ m\n"),
                "the program's answer");
-    LHAT_CHECK(!checks("import^ std.math\n"
+    LHAT_CHECK(!checks("import^ std.math.vector3\n"
                        "let^ gen = p^ {\n"
-                       "    var^ m : std.math.Vector3|nil^ = nil^\n"
+                       "    var^ m : std.math.vector3.Vector3|nil^ = nil^\n"
                        "    yield^ 1, m\n"
                        "}\n"),
                "a run's position");
@@ -720,18 +720,18 @@ static void test_escapes(void)
     // makes serves both -- the value writes its width, the nil^ writes the
     // head and leaves the rest untouched.
     LHAT_TEST("a host value stands beside a nil^");
-    LHAT_CHECK(checks("import^ std.math\n"
-                      "let^ f = f^ -> std.math.Vector3|nil^ { return^ nil^ }\n"
+    LHAT_CHECK(checks("import^ std.math.vector3\n"
+                      "let^ f = f^ -> std.math.vector3.Vector3|nil^ { return^ nil^ }\n"
                       "var^ m = f()\n"
                       "if^ m? { let^ x = m.x }\n"
-                      "let^ y = (m ?? std.math.vec3(0, 0, 0)).x\n"
-                      "let^ known = m isa^ std.math.Vector3\n"),
+                      "let^ y = (m ?? std.math.vector3.new(0, 0, 0)).x\n"
+                      "let^ known = m isa^ std.math.vector3.Vector3\n"),
                "written, narrowed, defaulted and asked about");
 
     LHAT_TEST("and beside an error");
-    LHAT_CHECK(checks("import^ std.math\n"
+    LHAT_CHECK(checks("import^ std.math.vector3\n"
                       "errordef^ E { Bad }\n"
-                      "let^ f = f^ -> std.math.Vector3|E.Bad {\n"
+                      "let^ f = f^ -> std.math.vector3.Vector3|E.Bad {\n"
                       "    return^ error^E.Bad{}\n"
                       "}\n"
                       "let^ v = try^ f()\n"
@@ -741,11 +741,11 @@ static void test_escapes(void)
     // The arms it may not stand beside: any^ has no head to read, and a
     // second wide arm would want a second reading of the one head.
     LHAT_TEST("but not beside an any^ or a second wide arm");
-    LHAT_CHECK(!checks("import^ std.math\n"
-                       "let^ f = f^ -> std.math.Vector3|any^ { return^ nil^ }\n"),
+    LHAT_CHECK(!checks("import^ std.math.vector3\n"
+                       "let^ f = f^ -> std.math.vector3.Vector3|any^ { return^ nil^ }\n"),
                "any^ would be the escape written out");
-    LHAT_CHECK(!checks("import^ std.math\n"
-                       "let^ f = f^ -> std.math.Vector3|string^ {\n"
+    LHAT_CHECK(!checks("import^ std.math.vector3\n"
+                       "let^ f = f^ -> std.math.vector3.Vector3|string^ {\n"
                        "    return^ \"a\"\n"
                        "}\n"),
                "no construct tells these apart");
@@ -753,10 +753,10 @@ static void test_escapes(void)
     // The doors that stay open, pinned so a rule tightening by accident is
     // seen here: fields write, parameters and results pass.
     LHAT_TEST("what must keep checking still checks");
-    LHAT_CHECK(checks("import^ std.math\n"
-                      "var^ v = std.math.vec3(1, 2, 3)\n"
+    LHAT_CHECK(checks("import^ std.math.vector3\n"
+                      "var^ v = std.math.vector3.new(1, 2, 3)\n"
                       "v.x := 9\n"
-                      "let^ f = f^p:std.math.Vector3 -> std.math.Vector3 {\n"
+                      "let^ f = f^p:std.math.vector3.Vector3 -> std.math.vector3.Vector3 {\n"
                       "    return^ p + p\n"
                       "}\n"
                       "let^ w = f(v)\n"
@@ -776,5 +776,5 @@ int main(void)
     test_tostring();
     test_collection();
     test_escapes();
-    return lhat_test_report("test_math");
+    return lhat_test_report("test_mathvector3");
 }

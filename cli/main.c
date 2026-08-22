@@ -24,7 +24,7 @@
 #include "stdlib/debug.h"
 #include "stdlib/error.h"
 #include "stdlib/io.h"
-#include "stdlib/math.h"
+#include "stdlib/mathvector3.h"
 #include "stdlib/random.h"
 #include "stdlib/regex.h"
 #include "stdlib/load.h"
@@ -615,7 +615,7 @@ static bool bind_host_names(LhatProgram *program)
         !lhatstdlib_random_register(program) ||
         !lhatstdlib_regex_register(program) ||
         !lhatstdlib_load_register(program) ||
-        !lhatstdlib_math_register(program) ||
+        !lhatstdlib_mathvector3_register(program) ||
         !lhatstdlib_debug_register(program) ||
         !lhatstdlib_async_register(program)) {
         return false;

@@ -1,4 +1,4 @@
-import^std.math
+import^std.math.vector3
 
 let^t = {
     a = 1,

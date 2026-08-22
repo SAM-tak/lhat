@@ -1503,11 +1503,11 @@ GCの走査は幅を知らずに正しく動く -- CONT はオブジェクトで
 だけ）——`nil^` と誤りの種別。
 
 ```lhat
-let^ pick = f^ n:number^ -> std.math.Vector3|nil^ { … }
+let^ pick = f^ n:number^ -> std.math.vector3.Vector3|nil^ { … }
 var^ m = pick(1)
 if^ m? { print(m.x) }                     # narrow して読む
-let^ y = (m ?? std.math.vec3(0, 0, 0)).x  # 既定を与える
-let^ known = m isa^ std.math.Vector3      # 訊く
+let^ y = (m ?? std.math.vector3.new(0, 0, 0)).x  # 既定を与える
+let^ known = m isa^ std.math.vector3.Vector3      # 訊く
 ```
 
 席の予約は幅のほうに合わせる。値の腕はその幅を書き、`nil^` の腕は頭
@@ -1534,11 +1534,11 @@ let^ known = m isa^ std.math.Vector3      # 訊く
 気づかないうちに boxing が積み上がる罠の両方を持ち込むので採らない。
 
 ```lhat
-let^ b = box^std.math.vec3(1, 2, 3)   # std.math.Vector3.Box^
+let^ b = box^std.math.vector3.new(1, 2, 3)   # std.math.vector3.Vector3.Box^
 let^ t = { held = b }                  # 普通のヒープ値。テーブルにも
-var^ m : std.math.Vector3.Box^|nil^   # 合併にも any^ にも入る
+var^ m : std.math.vector3.Vector3.Box^|nil^   # 合併にも any^ にも入る
                                        # （8.9改: 値のまま合併に立てるなら
-                                       #  std.math.Vector3|nil^ でよい。
+                                       #  std.math.vector3.Vector3|nil^ でよい。
                                        #  箱が要るのは保持のためである）
 let^ v = b.get()                       # 取り出しは常に複製（値意味論）
 b.set(v * 2)                           # 同じ型の値でバイト列を上書き
@@ -1609,9 +1609,9 @@ head だけ比べて「同型なら等しい」と誤答する道は塞いであ
 順序を持たない型なら `op^=` だけを登録すればよい。
 
 ```c
-lhat_register_hostvalue_member(program, "std.math", "Vector3", "<=>",
-                               "f^self^, o:Vector3 -> number^;",
-                               vec3_compare, module);
+lhat_register_hostvalue_member(program, "geo", "Vec2", "<=>",
+                               "f^self^, o:Vec2 -> number^;",
+                               vec2_compare, module);
 
 lhat_register_hostvalue_member(program, "m", "Handle", "=",
                                "f^self^, o:Handle -> bool^;",
@@ -1640,7 +1640,7 @@ lhat_register_hostvalue_member(program, "m", "Handle", "=",
 02 の 14.17 は **どの値も `tostring` を持つ** と定めており、ホスト値も外れない。
 
 ```c
-lhat_register_hostvalue_member(program, "std.math", "Vector3", "tostring",
+lhat_register_hostvalue_member(program, "std.math.vector3", "Vector3", "tostring",
                                "f^self^ -> string^;", vec3_tostring, module);
 ```
 
@@ -1655,13 +1655,13 @@ lhat_register_hostvalue_member(program, "std.math", "Vector3", "tostring",
 `lhat_value_write` に**引数（pointer 形）**を渡した場合は、登録フィールドを
 バイト列から読んで `module.Name(1.0, 2.0, 3.0)` と内容ごと書く——
 ホスト側の値には常にバイト列が付いているので、書けるものは全部書く。
-箱も同じ綴りで、種別を挟んで `std.math.Vector3.ConstBox^(1.0, 2.0, 3.0)`
+箱も同じ綴りで、種別を挟んで `std.math.vector3.Vector3.ConstBox^(1.0, 2.0, 3.0)`
 と書く（封印の別は表示に出る）。
 
 ```lhat
-$"{v}"            # "<std.math.Vector3>"    tostring 未登録（L^ 内・タグのみ）
-$"{v}"            # "{x:3.0 y:4.0 z:0.0}"    std.math が登録したもの
-$"{b}"            # "std.math.Vector3.ConstBox^(1.0, 2.0, 3.0)"  箱は常に内容
+$"{v}"            # "<std.math.vector3.Vector3>"    tostring 未登録（L^ 内・タグのみ）
+$"{v}"            # "{x:3.0 y:4.0 z:0.0}"    std.math.vector3 が登録したもの
+$"{b}"            # "std.math.vector3.Vector3.ConstBox^(1.0, 2.0, 3.0)"  箱は常に内容
 ```
 
 `<…>` は 14.17 が `c^{ … }` や `f^` に与えている「それが何であるかを示す

@@ -1,4 +1,4 @@
-// L^ (lhat) -- sample standard library: std.math.
+// L^ (lhat) -- sample standard library: std.math.vector3.
 //
 // The proving library for 05 の 8.9's host values. Vector3 is the value --
 // three f32 components living in stack slots, moved by copy, compared by
@@ -7,7 +7,7 @@
 // and holding a value is spelled out rather than happening by accident.
 
 #include "error.h"
-#include "math.h"
+#include "mathvector3.h"
 
 #include <math.h>
 #include <stddef.h>
@@ -19,7 +19,7 @@
 // Holding one is what the language asks: 8.9's box (`Vector3.Box^`) is the
 // machine's own, so the library registers the value type alone.
 typedef struct {
-    const LhatHostValueTag *vec3;   // std.math.Vector3 (the value)
+    const LhatHostValueTag *vec3;   // std.math.vector3.Vector3 (the value)
 } MathModule;
 
 typedef struct {
@@ -55,8 +55,8 @@ static LhatValue vec3_value(LhatMachine *machine, const MathModule *module,
                                                                  : lhat_nil();
 }
 
-// f^number^, number^, number^ -> std.math.Vector3;
-static LhatValue math_vec3(LhatMachine *machine, void *context,
+// f^number^, number^, number^ -> std.math.vector3.Vector3;
+static LhatValue vector3_new(LhatMachine *machine, void *context,
                             const LhatValue *arguments, size_t count)
 {
     const MathModule *module = (const MathModule *)context;
@@ -70,7 +70,7 @@ static LhatValue math_vec3(LhatMachine *machine, void *context,
     return vec3_value(machine, module, v);
 }
 
-// op "+": f^self^, std.math.Vector3 -> std.math.Vector3;
+// op "+": f^self^, std.math.vector3.Vector3 -> std.math.vector3.Vector3;
 static LhatValue vec3_add(LhatMachine *machine, void *context,
                            const LhatValue *arguments, size_t count)
 {
@@ -84,7 +84,7 @@ static LhatValue vec3_add(LhatMachine *machine, void *context,
     return vec3_value(machine, module, sum);
 }
 
-// op "-": f^self^, std.math.Vector3 -> std.math.Vector3;
+// op "-": f^self^, std.math.vector3.Vector3 -> std.math.vector3.Vector3;
 static LhatValue vec3_sub(LhatMachine *machine, void *context,
                            const LhatValue *arguments, size_t count)
 {
@@ -99,7 +99,7 @@ static LhatValue vec3_sub(LhatMachine *machine, void *context,
     return vec3_value(machine, module, difference);
 }
 
-// op "-": f^self^ -> std.math.Vector3;
+// op "-": f^self^ -> std.math.vector3.Vector3;
 //
 // 02 の 11.8改: the unary spelling of the same name, told apart from the
 // binary one by taking no argument. Its own function -- what it computes has
@@ -117,8 +117,8 @@ static LhatValue vec3_neg(LhatMachine *machine, void *context,
 }
 
 // op "*": both orders --
-//   f^self^, number^ -> std.math.Vector3;
-//   f^number^, self^ -> std.math.Vector3;
+//   f^self^, number^ -> std.math.vector3.Vector3;
+//   f^number^, self^ -> std.math.vector3.Vector3;
 //
 // 02 の 11.3改's trailing self^ makes the receiver the right operand, so
 // '2 * v' hands the number over first and 'v * 2' hands the vector. Scaling
@@ -143,7 +143,7 @@ static LhatValue vec3_scale(LhatMachine *machine, void *context,
     return vec3_value(machine, module, scaled);
 }
 
-// f^self^, std.math.Vector3 -> number^;
+// f^self^, std.math.vector3.Vector3 -> number^;
 static LhatValue vec3_dot(LhatMachine *machine, void *context,
                            const LhatValue *arguments, size_t count)
 {
@@ -158,7 +158,7 @@ static LhatValue vec3_dot(LhatMachine *machine, void *context,
                      (double)left.z * right.z);
 }
 
-// f^self^, std.math.Vector3 -> std.math.Vector3;
+// f^self^, std.math.vector3.Vector3 -> std.math.vector3.Vector3;
 static LhatValue vec3_cross(LhatMachine *machine, void *context,
                              const LhatValue *arguments, size_t count)
 {
@@ -187,7 +187,7 @@ static LhatValue vec3_length(LhatMachine *machine, void *context,
                           (double)v.z * v.z));
 }
 
-// f^self^ -> std.math.Vector3;
+// f^self^ -> std.math.vector3.Vector3;
 static LhatValue vec3_normalized(LhatMachine *machine, void *context,
                                   const LhatValue *arguments, size_t count)
 {
@@ -253,75 +253,75 @@ static LhatValue vec3_tostring(LhatMachine *machine, void *context,
                                                               : lhat_nil();
 }
 
-bool lhatstdlib_math_register(LhatProgram *program)
+bool lhatstdlib_mathvector3_register(LhatProgram *program)
 {
     MathModule *module = (MathModule *)lhat_calloc(1, sizeof *module);
     if (module == NULL) {
         return false;
     }
 
-    module->vec3 = lhat_register_hostvalue_type(program, "std.math",
+    module->vec3 = lhat_register_hostvalue_type(program, "std.math.vector3",
                                                  "Vector3", sizeof(Vec3));
     if (module->vec3 == NULL) {
         lhat_free(module);
         return false;
     }
 
-    return lhat_register_hostvalue_field(program, "std.math", "Vector3", "x",
+    return lhat_register_hostvalue_field(program, "std.math.vector3", "Vector3", "x",
                                          offsetof(Vec3, x),
                                          LHAT_HVFIELD_F32) &&
-           lhat_register_hostvalue_field(program, "std.math", "Vector3", "y",
+           lhat_register_hostvalue_field(program, "std.math.vector3", "Vector3", "y",
                                          offsetof(Vec3, y),
                                          LHAT_HVFIELD_F32) &&
-           lhat_register_hostvalue_field(program, "std.math", "Vector3", "z",
+           lhat_register_hostvalue_field(program, "std.math.vector3", "Vector3", "z",
                                          offsetof(Vec3, z),
                                          LHAT_HVFIELD_F32) &&
            lhat_register_hostvalue_member(
-               program, "std.math", "Vector3", "+",
-               "f^self^, std.math.Vector3 -> std.math.Vector3;", vec3_add,
+               program, "std.math.vector3", "Vector3", "+",
+               "f^self^, std.math.vector3.Vector3 -> std.math.vector3.Vector3;", vec3_add,
                module) &&
            lhat_register_hostvalue_member(
-               program, "std.math", "Vector3", "-",
-               "f^self^, std.math.Vector3 -> std.math.Vector3;", vec3_sub,
+               program, "std.math.vector3", "Vector3", "-",
+               "f^self^, std.math.vector3.Vector3 -> std.math.vector3.Vector3;", vec3_sub,
                module) &&
            // 02 の 11.8改: the unary spelling of the same name, told apart by
            // taking no argument. 05 の 8.7 is what lets one name carry both.
            lhat_register_hostvalue_member(
-               program, "std.math", "Vector3", "-",
-               "f^self^ -> std.math.Vector3;", vec3_neg, module) &&
+               program, "std.math.vector3", "Vector3", "-",
+               "f^self^ -> std.math.vector3.Vector3;", vec3_neg, module) &&
            lhat_register_hostvalue_member(
-               program, "std.math", "Vector3", "*",
-               "f^self^, number^ -> std.math.Vector3;", vec3_scale,
+               program, "std.math.vector3", "Vector3", "*",
+               "f^self^, number^ -> std.math.vector3.Vector3;", vec3_scale,
                module) &&
            // 02 の 11.3改: the self^ written last, so this is the arm '2 * v'
            // finds -- a built-in number^ on the left carries no answer for a
            // host value, and this is the side that does.
            lhat_register_hostvalue_member(
-               program, "std.math", "Vector3", "*",
-               "f^number^, self^ -> std.math.Vector3;", vec3_scale,
+               program, "std.math.vector3", "Vector3", "*",
+               "f^number^, self^ -> std.math.vector3.Vector3;", vec3_scale,
                module) &&
            lhat_register_hostvalue_member(
-               program, "std.math", "Vector3", "dot",
-               "f^self^, std.math.Vector3 -> number^;", vec3_dot, module) &&
+               program, "std.math.vector3", "Vector3", "dot",
+               "f^self^, std.math.vector3.Vector3 -> number^;", vec3_dot, module) &&
            lhat_register_hostvalue_member(
-               program, "std.math", "Vector3", "cross",
-               "f^self^, std.math.Vector3 -> std.math.Vector3;",
+               program, "std.math.vector3", "Vector3", "cross",
+               "f^self^, std.math.vector3.Vector3 -> std.math.vector3.Vector3;",
                vec3_cross, module) &&
-           lhat_register_hostvalue_member(program, "std.math", "Vector3",
+           lhat_register_hostvalue_member(program, "std.math.vector3", "Vector3",
                                           "length", "f^self^ -> number^;",
                                           vec3_length, module) &&
            lhat_register_hostvalue_member(
-               program, "std.math", "Vector3", "normalized",
-               "f^self^ -> std.math.Vector3;", vec3_normalized, module) &&
+               program, "std.math.vector3", "Vector3", "normalized",
+               "f^self^ -> std.math.vector3.Vector3;", vec3_normalized, module) &&
            // 02 の 14.17: written down the library's way rather than the
            // machine's. The name is the bare one -- the hat is 14.17改's,
            // and what it keeps apart is a plain table's names from the
            // built-in's, which a registered type has none of.
-           lhat_register_hostvalue_member(program, "std.math", "Vector3",
+           lhat_register_hostvalue_member(program, "std.math.vector3", "Vector3",
                                           "tostring", "f^self^ -> string^;",
                                           vec3_tostring, module) &&
            lhat_register_func(
-               program, "std.math", "vec3",
-               "f^number^, number^, number^ -> std.math.Vector3;",
-               math_vec3, module);
+               program, "std.math.vector3", "new",
+               "f^number^, number^, number^ -> std.math.vector3.Vector3;",
+               vector3_new, module);
 }
