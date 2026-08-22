@@ -203,6 +203,13 @@ struct LhatMachine {
     // same reason a frame's answer room is walked.
     LhatValue tuple_scratch[LHAT_MAX_TUPLE];
     size_t tuple_scratch_count;  // 0 when nothing is being carried
+
+    // 02 の 14.22: the auxiliary table a sort is reading from while the
+    // comparator (arbitrary L^ code, which may allocate and collect) runs.
+    // A root for that window alone -- nil^ otherwise. A comparator that
+    // itself sorts saves and restores it C-stack fashion, so one slot is
+    // enough at any depth.
+    LhatValue sort_hold;
 };
 
 typedef struct LhatMachine Machine;

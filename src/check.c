@@ -3262,6 +3262,9 @@ const char *lhat_check_error_message(LhatCheckErrorCode code)
         case LHAT_CHECK_ERR_AMBIGUOUS_MEMBER:
             return "both sides of the composition carry this name, so it "
                    "reaches no one answer; name the side you mean";
+        case LHAT_CHECK_ERR_CONCAT_COLLIDES:
+            return "both tables carry this key, so the concatenation holds "
+                   "no one value for it";
         case LHAT_CHECK_ERR_COMPOSE_COLLIDES:
             return "both definitions carry a member of this name, and a "
                    "marker can only be written inside a def^";

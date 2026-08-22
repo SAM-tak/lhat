@@ -880,6 +880,42 @@ static bool native_named(LhatValue key, LhatNativeKind *out, bool *hatted)
         *hatted = name->length == 7;
         return true;
     }
+    // 02 の 14.22: the table's own operations. The bare spellings are read
+    // here so builtin_member can refuse them by name -- on a plain table the
+    // hat is what keeps a built-in off a word the writer may mean.
+    {
+        static const struct {
+            const char *word;
+            LhatNativeKind kind;
+        } table_words[] = {
+            { "join", LHAT_NATIVE_JOIN },
+            { "indexof", LHAT_NATIVE_INDEXOF },
+            { "contains", LHAT_NATIVE_CONTAINS },
+            { "slice", LHAT_NATIVE_SLICE },
+            { "insert", LHAT_NATIVE_INSERT },
+            { "push", LHAT_NATIVE_PUSH },
+            { "extend", LHAT_NATIVE_EXTEND },
+            { "remove", LHAT_NATIVE_REMOVE },
+            { "pop", LHAT_NATIVE_POP },
+            { "sort", LHAT_NATIVE_SORT },
+            { "stablesort", LHAT_NATIVE_STABLESORT },
+            { "move", LHAT_NATIVE_MOVE },
+            { "reverse", LHAT_NATIVE_REVERSE },
+            { "clear", LHAT_NATIVE_CLEAR },
+        };
+        for (size_t i = 0; i < sizeof table_words / sizeof table_words[0];
+             i++) {
+            size_t n = strlen(table_words[i].word);
+            if ((name->length == n &&
+                 memcmp(name->text, table_words[i].word, n) == 0) ||
+                (name->length == n + 1 && name->text[n] == '^' &&
+                 memcmp(name->text, table_words[i].word, n) == 0)) {
+                *out = table_words[i].kind;
+                *hatted = name->length == n + 1;
+                return true;
+            }
+        }
+    }
     return false;
 }
 
@@ -1028,6 +1064,12 @@ static bool builtin_member(LhatValue on, LhatValue key, LhatNativeKind *out)
     }
     if (!hatted && plain_table(on)) {
         return false;
+    }
+    // 02 の 14.22: the table's own operations belong to a plain table alone
+    // -- a def^'s names are the writer's, a host type's the library's. The
+    // hat rule just above already refused the bare spelling there.
+    if (*out >= LHAT_NATIVE_JOIN && *out <= LHAT_NATIVE_CLEAR) {
+        return plain_table(on);
     }
     // 02 の 14.17: whatever the value is, it can be written down.
     if (*out == LHAT_NATIVE_TOSTRING) {
@@ -1618,6 +1660,522 @@ static LhatTable *clone_table(Machine *m, const LhatTable *source,
         }
     }
     return clone;
+}
+
+// 02 の 11.2改: '..' between two plain tables concatenates into a new table.
+// The sequence halves go in order -- the left's positions and then the
+// right's, renumbered after them -- and the named keys come from both sides.
+// The copy is shallow: the elements are shared, only the holder is new.
+//
+// A key both sides carry answers NULL through *collided (14.5改's rule read
+// for values: neither side was written against the other, so neither is the
+// answer -- and unlike a composed definition's method there is no qualified
+// spelling left to reach one through, so it is refused outright).
+static LhatTable *concat_tables(Machine *m, const LhatTable *left,
+                                const LhatTable *right, bool *collided)
+{
+    *collided = false;
+    LhatTable *joined = lhat_table_new(&m->objects);
+    if (joined == NULL) {
+        return NULL;
+    }
+    bool refused = false;
+    size_t position = 0;
+    const LhatTable *sides[2] = { left, right };
+    for (size_t s = 0; s < 2; s++) {
+        for (size_t i = 0; i < sides[s]->array_count; i++) {
+            if (!set_key(m, joined, lhat_integer((int64_t)++position),
+                         lhat_slots_get(sides[s]->array, i), &refused)) {
+                return NULL;
+            }
+        }
+    }
+    for (size_t s = 0; s < 2; s++) {
+        for (size_t i = 0; i < sides[s]->entry_capacity; i++) {
+            const LhatTableEntry *entry = &sides[s]->entries[i];
+            if (lhat_is_nil(entry->key)) {
+                continue;  // free, or a tombstone
+            }
+            // An integer key past the dense part stays what it was: the two
+            // sequences were renumbered above, and a sparse index was never
+            // part of either sequence, so it is carried as a named key is.
+            // Asked of both sides, not just the right: a sparse index may
+            // land where the renumbering put someone's position, and that
+            // is a collision like any other.
+            if (!lhat_is_nil(lhat_table_get(joined, entry->key))) {
+                *collided = true;
+                return NULL;
+            }
+            if (!set_key(m, joined, entry->key, entry->value, &refused)) {
+                return NULL;
+            }
+        }
+    }
+    return joined;
+}
+
+// ---------------------------------------------------------------------------
+// 02 の 14.22: the table's own operations
+// ---------------------------------------------------------------------------
+
+// One comparison, three-way. `cmp` is the written comparator or nil^ for the
+// built-in ordering -- 11.9's own, numbers and strings.
+static LhatRunStatus sort_compare(Machine *m, LhatValue cmp, LhatValue x,
+                                  LhatValue y, int *out)
+{
+    if (lhat_is_nil(cmp)) {
+        return three_way(x, y, out) ? LHAT_RUN_OK : LHAT_RUN_TYPE_ERROR;
+    }
+    LhatValue pair[2];
+    pair[0] = x;
+    pair[1] = y;
+    // Nested on purpose -- vm.h says a call may be made inside a running
+    // machine, and the comparator is arbitrary L^ code.
+    LhatRunResult ran = lhat_machine_call(m, cmp, pair, 2);
+    if (ran.status != LHAT_RUN_OK) {
+        return ran.status;
+    }
+    if (!lhat_is_number(ran.value)) {
+        return LHAT_RUN_TYPE_ERROR;
+    }
+    double answer = lhat_number_as_real(ran.value);
+    *out = answer < 0 ? -1 : answer > 0 ? 1 : 0;
+    return LHAT_RUN_OK;
+}
+
+// Merge sort, bottom up, for both spellings -- stable, which sort^ simply
+// does not promise. Every pass reads the whole of `from` and writes the
+// whole of `into`, so at any moment every element is in one rooted table:
+// t is a register's, and the aux rides m->sort_hold while the comparator
+// (which may allocate and collect) runs. A comparator that faults leaves
+// the order unspecified, but every element still present.
+static LhatRunStatus table_sort(Machine *m, LhatTable *t, LhatValue cmp)
+{
+    size_t count = t->array_count;
+    if (count < 2) {
+        return LHAT_RUN_OK;
+    }
+    LhatTable *aux = lhat_table_new(&m->objects);
+    if (aux == NULL) {
+        return LHAT_RUN_OUT_OF_MEMORY;
+    }
+    bool refused = false;
+    for (size_t i = 0; i < count; i++) {
+        if (!set_key(m, aux, lhat_integer((int64_t)i + 1),
+                     lhat_slots_get(t->array, i), &refused)) {
+            return LHAT_RUN_OUT_OF_MEMORY;
+        }
+    }
+    LhatValue outer_hold = m->sort_hold;
+    m->sort_hold = lhat_object((LhatObject *)aux);
+    LhatTable *from = aux;
+    LhatTable *into = t;
+    LhatRunStatus status = LHAT_RUN_OK;
+    for (size_t width = 1; width < count && status == LHAT_RUN_OK;
+         width *= 2) {
+        for (size_t lo = 0; lo < count && status == LHAT_RUN_OK;
+             lo += 2 * width) {
+            size_t mid = lo + width < count ? lo + width : count;
+            size_t hi = lo + 2 * width < count ? lo + 2 * width : count;
+            size_t i = lo;
+            size_t j = mid;
+            for (size_t k = lo; k < hi; k++) {
+                bool take_left;
+                if (i >= mid) {
+                    take_left = false;
+                } else if (j >= hi) {
+                    take_left = true;
+                } else {
+                    int outcome = 0;
+                    status = sort_compare(m, cmp,
+                                          lhat_slots_get(from->array, i),
+                                          lhat_slots_get(from->array, j),
+                                          &outcome);
+                    if (status != LHAT_RUN_OK) {
+                        break;
+                    }
+                    take_left = outcome <= 0;  // equals keep their order
+                }
+                LhatValue moved =
+                    lhat_slots_get(from->array, take_left ? i++ : j++);
+                lhat_slots_set(into->array, k, moved);
+                lhat_gc_barrier_back(m, (LhatObject *)into, moved);
+            }
+        }
+        LhatTable *turned = from;
+        from = into;
+        into = turned;
+    }
+    // The passes end with the ordered run in `from`.
+    if (status == LHAT_RUN_OK && from != t) {
+        for (size_t i = 0; i < count; i++) {
+            LhatValue moved = lhat_slots_get(from->array, i);
+            lhat_slots_set(t->array, i, moved);
+            lhat_gc_barrier_back(m, (LhatObject *)t, moved);
+        }
+    }
+    m->sort_hold = outer_hold;
+    return status;
+}
+
+// One string out of the sequence half. Lua's line: a string is itself, a
+// number is written the way tostring writes it, anything else is refused.
+static LhatRunStatus table_join(Machine *m, const LhatTable *t,
+                                const char *sep, size_t sep_length,
+                                LhatValue *answer)
+{
+    size_t count = t->array_count;
+    size_t total = 0;
+    for (size_t i = 0; i < count; i++) {
+        LhatValue held = lhat_slots_get(t->array, i);
+        if (lhat_is_object_kind(held, LHAT_OBJECT_STRING)) {
+            total += ((const LhatString *)lhat_as_object(held))->length;
+        } else if (lhat_is_number(held)) {
+            total += lhat_value_text(held, NULL, 0);
+        } else {
+            return LHAT_RUN_TYPE_ERROR;
+        }
+        if (i + 1 < count) {
+            total += sep_length;
+        }
+    }
+    char *text = (char *)lhat_alloc(total + 1);
+    if (text == NULL) {
+        return LHAT_RUN_OUT_OF_MEMORY;
+    }
+    size_t at = 0;
+    for (size_t i = 0; i < count; i++) {
+        LhatValue held = lhat_slots_get(t->array, i);
+        if (lhat_is_object_kind(held, LHAT_OBJECT_STRING)) {
+            const LhatString *piece =
+                (const LhatString *)lhat_as_object(held);
+            memcpy(text + at, piece->text, piece->length);
+            at += piece->length;
+        } else {
+            at += lhat_value_text(held, text + at, total + 1 - at);
+        }
+        if (i + 1 < count && sep_length > 0) {
+            memcpy(text + at, sep, sep_length);
+            at += sep_length;
+        }
+    }
+    LhatString *joined = lhat_string_new(&m->objects, text, at);
+    lhat_free(text);
+    if (joined == NULL) {
+        return LHAT_RUN_OUT_OF_MEMORY;
+    }
+    *answer = lhat_object((LhatObject *)joined);
+    return LHAT_RUN_OK;
+}
+
+// The block copy Lua's table.move makes: dst[to .. to+(last-from)] =
+// src[from .. last], through get/set so a sparse landing works, backwards
+// when the ranges overlap that way round. The caller checked the bounds.
+static LhatRunStatus table_blockmove(Machine *m, LhatTable *dst,
+                                     const LhatTable *src, int64_t from,
+                                     int64_t last, int64_t to)
+{
+    if (last < from) {
+        return LHAT_RUN_OK;  // an empty block moves nothing
+    }
+    bool refused = false;
+    int64_t span = last - from;
+    if (dst == src && to > from) {
+        for (int64_t k = span; k >= 0; k--) {
+            if (!set_key(m, dst, lhat_integer(to + k),
+                         lhat_table_get(src, lhat_integer(from + k)),
+                         &refused)) {
+                return LHAT_RUN_OUT_OF_MEMORY;
+            }
+        }
+    } else {
+        for (int64_t k = 0; k <= span; k++) {
+            if (!set_key(m, dst, lhat_integer(to + k),
+                         lhat_table_get(src, lhat_integer(from + k)),
+                         &refused)) {
+                return LHAT_RUN_OUT_OF_MEMORY;
+            }
+        }
+    }
+    return LHAT_RUN_OK;
+}
+
+// The one door for all of 14.22. `args` were copied out of the caller's
+// window, so a nested comparator call cannot disturb them; what lands over
+// the call goes through *answer.
+static LhatRunStatus table_native(Machine *m, const LhatNative *native,
+                                  const LhatValue *args, size_t count,
+                                  LhatValue *answer)
+{
+    LhatTable *t = (LhatTable *)lhat_as_object(native->bound);
+    size_t n = t->array_count;
+    bool refused = false;
+    // The mutating half answer the receiver, for chaining; the readers
+    // write their own answer over this.
+    *answer = native->bound;
+
+    // 05 の 8.6: the machine's own tables are read-only, natives included.
+    bool mutates = native->kind == LHAT_NATIVE_INSERT ||
+                   native->kind == LHAT_NATIVE_PUSH ||
+                   native->kind == LHAT_NATIVE_EXTEND ||
+                   native->kind == LHAT_NATIVE_REMOVE ||
+                   native->kind == LHAT_NATIVE_POP ||
+                   native->kind == LHAT_NATIVE_SORT ||
+                   native->kind == LHAT_NATIVE_STABLESORT ||
+                   native->kind == LHAT_NATIVE_MOVE ||
+                   native->kind == LHAT_NATIVE_REVERSE ||
+                   native->kind == LHAT_NATIVE_CLEAR;
+    if (mutates && t->sealed) {
+        return LHAT_RUN_SEALED;
+    }
+
+    switch (native->kind) {
+        case LHAT_NATIVE_JOIN: {
+            if (count > 1) {
+                return LHAT_RUN_ARITY;
+            }
+            const char *sep = "";
+            size_t sep_length = 0;
+            if (count == 1) {
+                if (!lhat_is_object_kind(args[0], LHAT_OBJECT_STRING)) {
+                    return LHAT_RUN_TYPE_ERROR;
+                }
+                const LhatString *written =
+                    (const LhatString *)lhat_as_object(args[0]);
+                sep = written->text;
+                sep_length = written->length;
+            }
+            return table_join(m, t, sep, sep_length, answer);
+        }
+
+        case LHAT_NATIVE_INDEXOF:
+        case LHAT_NATIVE_CONTAINS: {
+            if (count != 1) {
+                return LHAT_RUN_ARITY;
+            }
+            bool asking = native->kind == LHAT_NATIVE_CONTAINS;
+            *answer = asking ? lhat_bool(false) : lhat_nil();
+            for (size_t i = 0; i < n; i++) {
+                if (lhat_value_equal(args[0], lhat_slots_get(t->array, i))) {
+                    *answer = asking ? lhat_bool(true)
+                                     : lhat_integer((int64_t)i + 1);
+                    break;
+                }
+            }
+            return LHAT_RUN_OK;
+        }
+
+        case LHAT_NATIVE_SLICE: {
+            if (count < 1 || count > 2) {
+                return LHAT_RUN_ARITY;
+            }
+            int64_t from = 0;
+            int64_t to = 0;
+            if (!ordinal_of(args[0], &from) ||
+                (count == 2 && !ordinal_of(args[1], &to))) {
+                return LHAT_RUN_TYPE_ERROR;
+            }
+            // 14.19's reading: one ordinal runs to the end, a negative one
+            // counts from it, and a range that does not stand answers empty.
+            int64_t start = resolve_ordinal(from, n);
+            int64_t end = resolve_ordinal(count == 2 ? to : (int64_t)n, n);
+            LhatTable *cut = lhat_table_new(&m->objects);
+            if (cut == NULL) {
+                return LHAT_RUN_OUT_OF_MEMORY;
+            }
+            if (start >= 1 && start <= end && end <= (int64_t)n) {
+                for (int64_t k = start; k <= end; k++) {
+                    if (!set_key(m, cut, lhat_integer(k - start + 1),
+                                 lhat_slots_get(t->array, (size_t)k - 1),
+                                 &refused)) {
+                        return LHAT_RUN_OUT_OF_MEMORY;
+                    }
+                }
+            }
+            *answer = lhat_object((LhatObject *)cut);
+            return LHAT_RUN_OK;
+        }
+
+        case LHAT_NATIVE_INSERT: {
+            if (count != 2) {
+                return LHAT_RUN_ARITY;
+            }
+            int64_t at_pos = 0;
+            if (!ordinal_of(args[0], &at_pos)) {
+                return LHAT_RUN_TYPE_ERROR;
+            }
+            if (at_pos < 1 || at_pos > (int64_t)n + 1) {
+                return LHAT_RUN_BAD_KEY;
+            }
+            for (int64_t k = (int64_t)n; k >= at_pos; k--) {
+                if (!set_key(m, t, lhat_integer(k + 1),
+                             lhat_slots_get(t->array, (size_t)k - 1),
+                             &refused)) {
+                    return LHAT_RUN_OUT_OF_MEMORY;
+                }
+            }
+            if (!set_key(m, t, lhat_integer(at_pos), args[1], &refused)) {
+                return LHAT_RUN_OUT_OF_MEMORY;
+            }
+            return LHAT_RUN_OK;
+        }
+
+        case LHAT_NATIVE_PUSH: {
+            if (count != 1) {
+                return LHAT_RUN_ARITY;
+            }
+            if (!set_key(m, t, lhat_integer((int64_t)n + 1), args[0],
+                         &refused)) {
+                return LHAT_RUN_OUT_OF_MEMORY;
+            }
+            return LHAT_RUN_OK;
+        }
+
+        case LHAT_NATIVE_EXTEND: {
+            if (count != 1) {
+                return LHAT_RUN_ARITY;
+            }
+            if (!lhat_is_object_kind(args[0], LHAT_OBJECT_TABLE)) {
+                return LHAT_RUN_TYPE_ERROR;
+            }
+            const LhatTable *more =
+                (const LhatTable *)lhat_as_object(args[0]);
+            // The count is read once, so extending a table with itself
+            // appends what it held when the call was made.
+            size_t held = more->array_count;
+            for (size_t i = 0; i < held; i++) {
+                if (!set_key(m, t, lhat_integer((int64_t)(n + i) + 1),
+                             lhat_slots_get(more->array, i), &refused)) {
+                    return LHAT_RUN_OUT_OF_MEMORY;
+                }
+            }
+            return LHAT_RUN_OK;
+        }
+
+        case LHAT_NATIVE_REMOVE:
+        case LHAT_NATIVE_POP: {
+            int64_t at_pos = (int64_t)n;
+            if (native->kind == LHAT_NATIVE_REMOVE) {
+                if (count != 1) {
+                    return LHAT_RUN_ARITY;
+                }
+                if (!ordinal_of(args[0], &at_pos)) {
+                    return LHAT_RUN_TYPE_ERROR;
+                }
+                at_pos = resolve_ordinal(at_pos, n);
+            } else if (count != 0) {
+                return LHAT_RUN_ARITY;
+            }
+            // 04 の 11.3's line: what is not there is not an error. An empty
+            // table's pop and an out-of-range remove both answer nil^.
+            if (at_pos < 1 || at_pos > (int64_t)n) {
+                *answer = lhat_nil();
+                return LHAT_RUN_OK;
+            }
+            *answer = lhat_slots_get(t->array, (size_t)at_pos - 1);
+            for (int64_t k = at_pos; k < (int64_t)n; k++) {
+                lhat_slots_set(t->array, (size_t)k - 1,
+                               lhat_slots_get(t->array, (size_t)k));
+            }
+            if (!set_key(m, t, lhat_integer((int64_t)n), lhat_nil(),
+                         &refused)) {
+                return LHAT_RUN_OUT_OF_MEMORY;
+            }
+            return LHAT_RUN_OK;
+        }
+
+        case LHAT_NATIVE_SORT:
+        case LHAT_NATIVE_STABLESORT: {
+            if (count > 1) {
+                return LHAT_RUN_ARITY;
+            }
+            return table_sort(m, t, count == 1 ? args[0] : lhat_nil());
+        }
+
+        case LHAT_NATIVE_MOVE: {
+            bool cross = count >= 1 &&
+                         lhat_is_object_kind(args[0], LHAT_OBJECT_TABLE);
+            const LhatTable *source =
+                cross ? (const LhatTable *)lhat_as_object(args[0]) : t;
+            size_t shift = cross ? 1 : 0;
+            if (count - shift < 2 || count - shift > 3) {
+                return LHAT_RUN_ARITY;
+            }
+            int64_t from = 0;
+            int64_t last = 0;
+            int64_t to = 0;
+            bool block = count - shift == 3;
+            if (!ordinal_of(args[shift], &from) ||
+                (block && !ordinal_of(args[shift + 1], &last)) ||
+                !ordinal_of(args[count - 1], &to)) {
+                return LHAT_RUN_TYPE_ERROR;
+            }
+            if (!block) {
+                last = from;
+            }
+            if (!cross && !block) {
+                // 14.22: the two-ordinal form of self relocates one element,
+                // the others shifting to close and open the gap.
+                if (from < 1 || from > (int64_t)n || to < 1 ||
+                    to > (int64_t)n) {
+                    return LHAT_RUN_BAD_KEY;
+                }
+                LhatValue moved =
+                    lhat_slots_get(t->array, (size_t)from - 1);
+                if (from < to) {
+                    for (int64_t k = from; k < to; k++) {
+                        lhat_slots_set(t->array, (size_t)k - 1,
+                                       lhat_slots_get(t->array, (size_t)k));
+                    }
+                } else {
+                    for (int64_t k = from; k > to; k--) {
+                        lhat_slots_set(
+                            t->array, (size_t)k - 1,
+                            lhat_slots_get(t->array, (size_t)k - 2));
+                    }
+                }
+                lhat_slots_set(t->array, (size_t)to - 1, moved);
+                return LHAT_RUN_OK;
+            }
+            if (last >= from &&
+                (from < 1 || last > (int64_t)source->array_count || to < 1)) {
+                return LHAT_RUN_BAD_KEY;
+            }
+            return table_blockmove(m, t, source, from, last, to);
+        }
+
+        case LHAT_NATIVE_REVERSE: {
+            if (count != 0) {
+                return LHAT_RUN_ARITY;
+            }
+            for (size_t i = 0; i * 2 + 1 < n; i++) {
+                LhatValue held = lhat_slots_get(t->array, i);
+                lhat_slots_set(t->array, i,
+                               lhat_slots_get(t->array, n - 1 - i));
+                lhat_slots_set(t->array, n - 1 - i, held);
+            }
+            return LHAT_RUN_OK;
+        }
+
+        case LHAT_NATIVE_CLEAR: {
+            if (count != 0) {
+                return LHAT_RUN_ARITY;
+            }
+            for (size_t i = 0; i < t->array_count; i++) {
+                lhat_slots_set(t->array, i, lhat_nil());
+            }
+            t->array_count = 0;
+            for (size_t i = 0; i < t->entry_capacity; i++) {
+                t->entries[i].key = lhat_nil();
+                t->entries[i].value = lhat_nil();
+            }
+            t->entry_count = 0;
+            return LHAT_RUN_OK;
+        }
+
+        default:
+            return LHAT_RUN_TYPE_ERROR;  // never reached; the range was asked
+    }
 }
 
 // Carrying a shared place into the upvalue itself: the value moves into the
@@ -2715,6 +3273,26 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
                     break;
                 }
 
+                // 02 の 11.2改: two plain tables concatenate, built in the
+                // way two strings do. A definition never comes through here
+                // (14.2 settles composition at compile time), and a table
+                // that carries an op^.. of its own is not plain -- it is an
+                // instance, and falls through to the search below.
+                if (plain_table(R(b)) && plain_table(R(cc))) {
+                    bool collided = false;
+                    LhatTable *joined = concat_tables(
+                        m, (const LhatTable *)lhat_as_object(R(b)),
+                        (const LhatTable *)lhat_as_object(R(cc)), &collided);
+                    if (joined == NULL) {
+                        return finish(m, chunk,
+                                      collided ? LHAT_RUN_BAD_KEY
+                                               : LHAT_RUN_OUT_OF_MEMORY,
+                                      lhat_nil(), at);
+                    }
+                    SET_R(a, lhat_object((LhatObject *)joined));
+                    break;
+                }
+
                 // 02 の 11.3: a string answers above, built in. Anything else
                 // answers with the member 11.8 names, or not at all -- and
                 // 11.3改 reads the right operand for one too.
@@ -3693,6 +4271,31 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
                     // whole -- the box's run is head-shaped, so the placement
                     // a host's answer takes lays it down unchanged. set
                     // writes a value of the same tag over the bytes.
+                    // 02 の 14.22: the table operations, through one door.
+                    // The arguments are copied out of the window first -- a
+                    // sort's comparator runs nested L^ code over this frame
+                    // -- and the answer lands over R(a) afterwards.
+                    if (native->kind >= LHAT_NATIVE_JOIN &&
+                        native->kind <= LHAT_NATIVE_CLEAR) {
+                        LhatValue held[4];
+                        if (b > 4) {
+                            return finish(m, chunk, LHAT_RUN_ARITY,
+                                          lhat_nil(), at);
+                        }
+                        for (size_t i = 0; i < (size_t)b; i++) {
+                            held[i] = R(first + i);
+                        }
+                        LhatValue answered = lhat_nil();
+                        LhatRunStatus asked = table_native(m, native, held,
+                                                           (size_t)b,
+                                                           &answered);
+                        if (asked != LHAT_RUN_OK) {
+                            return finish(m, chunk, asked, lhat_nil(), at);
+                        }
+                        SET_R(a, answered);
+                        break;
+                    }
+
                     if (native->kind == LHAT_NATIVE_BOX_GET ||
                         native->kind == LHAT_NATIVE_BOX_SET) {
                         LhatHostValueBox *box =

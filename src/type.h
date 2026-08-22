@@ -391,6 +391,11 @@ LhatTypeMember *lhat_type_add_index_member(LhatTypeArena *arena,
 // nothing about it.
 const LhatTypeMember *lhat_type_member_at(const LhatType *table, size_t index);
 
+// 14.10 read backwards: whether this member is the sequence's next position
+// -- its name is the digits of `position`, which only means "position" when
+// it stands where the walk's own count says so. The caller carries the count.
+bool lhat_type_member_position(const LhatTypeMember *m, size_t position);
+
 // Appends to a parameter list or to a set's kinds.
 bool lhat_type_add_param(LhatTypeArena *arena, LhatType *func, LhatType *param);
 

@@ -257,11 +257,14 @@ static void test_no_value(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_NO_OPERATOR);
     unit_dispose(&u);
 
-    LHAT_TEST("a structure with no op^ does not answer at all");
+    // 11.2改: two plain tables concatenate, built in -- but a name both
+    // sides carry reaches no one value, and a table put beside itself
+    // carries every name twice.
+    LHAT_TEST("a name both sides of a '..' carry is refused");
     check_text(&u,
                "var^ t = { a := 1 }\n"
                "var^ v = t .. t\n");
-    CHECK_REPORTS(&u, LHAT_CHECK_ERR_NO_OPERATOR);
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_CONCAT_COLLIDES);
     unit_dispose(&u);
 
     // 11.4: the arithmetic operators ask the same question, so a written

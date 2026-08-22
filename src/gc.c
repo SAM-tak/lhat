@@ -221,6 +221,9 @@ static void mark_roots(Machine *m)
     // A host may allocate in between -- build a table, call back into L^ --
     // so these are roots for as long as the count says they are there. The
     // host-value scratch beside them needs nothing: it is bytes.
+    // 02 の 14.22: what a running sort is reading from while its comparator
+    // runs; nil^ outside that window.
+    lhat_gc_reach(&m->gray, m->sort_hold);
     for (size_t at = 0; at < m->tuple_scratch_count; at++) {
         lhat_gc_reach(&m->gray, m->tuple_scratch[at]);
     }

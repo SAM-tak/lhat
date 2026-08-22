@@ -894,6 +894,69 @@ LhatType *chk_infer_name(Checker *c, const LhatNode *node)
     return b->type;
 }
 
+// 02 の 11.2改: the table 14 章 does not reach -- a plain one, made by a
+// literal rather than a def^ and registered by no host. The kinds a
+// definition made keep 14.5's composition and 11.8's op^.. instead.
+static bool concatenable_table(const LhatType *type)
+{
+    return type != NULL && type->kind == LHAT_TYPE_TABLE &&
+           !type->v.table.is_definition && !type->v.table.from_definition &&
+           !type->v.table.nominal && type->v.table.hostvalue_tag == NULL;
+}
+
+// 02 の 11.2改: what '..' between two plain tables answers. The sequence
+// halves in order -- the left's positions, then the right's renumbered after
+// them -- and the named keys from both sides, a name both carry reported
+// (14.5改's rule, without the qualified spelling that saves a method there).
+// An unbounded left ('t^{ ...:T }') leaves the right's positions nowhere to
+// be counted, so everything past it folds into one unbounded element type.
+static LhatType *concat_table_types(Checker *c, const LhatNode *node,
+                                    const LhatType *left,
+                                    const LhatType *right)
+{
+    LhatType *joined = lhat_type_table(c->result->types);
+    bool fold = left->v.table.variadic != NULL;
+    LhatType *element = NULL;
+    size_t position = 0;
+    const LhatType *sides[2] = { left, right };
+    for (size_t s = 0; s < 2; s++) {
+        size_t own = 0;
+        for (const LhatTypeMember *m = sides[s]->v.table.members; m != NULL;
+             m = m->next) {
+            if (lhat_type_member_position(m, own + 1)) {
+                own++;
+                if (fold) {
+                    element = element == NULL
+                                  ? m->type
+                                  : lhat_type_union(c->result->types, element,
+                                                    m->type);
+                } else {
+                    lhat_type_add_index_member(c->result->types, joined,
+                                               ++position, m->type);
+                }
+                continue;
+            }
+            // A named key, or a digits name standing off its position --
+            // carried as it is, the way the machine carries a sparse index.
+            if (chk_find_member(joined, m->name, m->name_length) != NULL) {
+                chk_report(c, node, LHAT_CHECK_ERR_CONCAT_COLLIDES);
+                continue;
+            }
+            lhat_type_add_member(c->result->types, joined, m->name,
+                                 m->name_length, m->type);
+        }
+        if (sides[s]->v.table.variadic != NULL) {
+            fold = true;
+            element = element == NULL
+                          ? sides[s]->v.table.variadic
+                          : lhat_type_union(c->result->types, element,
+                                            sides[s]->v.table.variadic);
+        }
+    }
+    joined->v.table.variadic = element;
+    return joined;
+}
+
 LhatType *chk_infer_binary(Checker *c, const LhatNode *node)
 {
     LhatOpKind op = node->v.binary.op;
@@ -1052,6 +1115,12 @@ LhatType *chk_infer_binary(Checker *c, const LhatNode *node)
                 right->kind == LHAT_TYPE_TABLE &&
                 right->v.table.is_definition) {
                 return chk_compose_definitions(c, node, left, right);
+            }
+
+            // 11.2改: two plain tables concatenate, built in the way two
+            // strings are -- the machine's own answer, never an op^.. .
+            if (concatenable_table(left) && concatenable_table(right)) {
+                return concat_table_types(c, node, left, right);
             }
 
             LhatType *joined = infer_operator(c, node, op, left, right);
@@ -1273,11 +1342,64 @@ LhatType *chk_infer_call(Checker *c, const LhatNode *node)
     // calling one means finding the arm that fits. Arguments are inferred
     // once here, since inferring them again would report twice.
     if (callee->kind == LHAT_TYPE_INTERSECT) {
+        bool through_member =
+            node->v.access.target->kind == LHAT_NODE_MEMBER;
+
+        // 3.4改 with 14.12: which arm is meant is settled by the arguments'
+        // own types, so in general there is no one position to read an
+        // expectation off of. But when one arm alone takes this many
+        // arguments, the count has already settled it -- and then a literal
+        // argument takes its parameters from that arm the way it would from
+        // an unoverloaded signature. The full answer is still searched for
+        // below; this only decides what a literal with nothing written may
+        // read.
+        const LhatType *by_arity = NULL;
+        for (const LhatTypeList *arm = callee->v.composite.arms; arm != NULL;
+             arm = arm->next) {
+            if (arm->type == NULL || arm->type->kind != LHAT_TYPE_FUNC) {
+                continue;
+            }
+            size_t declared = 0;
+            for (const LhatTypeList *p = arm->type->v.func.params; p != NULL;
+                 p = p->next) {
+                declared++;
+            }
+            if (arm->type->v.func.takes_self && !through_member) {
+                declared++;
+            }
+            if (given == declared ||
+                (given > declared && arm->type->v.func.variadic != NULL)) {
+                if (by_arity != NULL) {
+                    by_arity = NULL;
+                    break;
+                }
+                by_arity = arm->type;
+            }
+        }
+        const LhatTypeList *expect_param =
+            by_arity != NULL ? by_arity->v.func.params : NULL;
+        size_t expect_skip =
+            by_arity != NULL && by_arity->v.func.takes_self && !through_member
+                ? 1
+                : 0;
+
         LhatType *args[LHAT_CHECK_MAX_TRACKED_ARGS];
         size_t tracked = 0;
         for (const LhatNode *arg = node->v.access.argument; arg != NULL;
              arg = arg->next) {
+            LhatType *outer_expected = c->expected_func;
+            if (expect_skip > 0) {
+                expect_skip--;
+            } else if (by_arity != NULL) {
+                c->expected_func = expect_param != NULL
+                                       ? expect_param->type
+                                       : by_arity->v.func.variadic;
+                if (expect_param != NULL) {
+                    expect_param = expect_param->next;
+                }
+            }
             LhatType *type = chk_infer(c, arg);
+            c->expected_func = outer_expected;
             if (tracked < LHAT_CHECK_MAX_TRACKED_ARGS) {
                 args[tracked++] = type;
             }
@@ -1285,9 +1407,6 @@ LhatType *chk_infer_call(Checker *c, const LhatNode *node)
         if (tracked < given) {
             return chk_simple(c, LHAT_TYPE_UNKNOWN);  // more than worth tracking
         }
-
-        bool through_member =
-            node->v.access.target->kind == LHAT_NODE_MEMBER;
         size_t position = 0;
         for (const LhatTypeList *arm = callee->v.composite.arms; arm != NULL;
              arm = arm->next, position++) {
@@ -2161,6 +2280,143 @@ LhatType *chk_infer_member(Checker *c, const LhatNode *node)
         LhatType *signature = lhat_type_func(c->result->types, true);
         signature->v.func.result = walk;
         return signature;
+    }
+
+    // 14.22: the table's own operations, on a plain table alone -- a def^'s
+    // names are the writer's and a host type's are the library's. The hat is
+    // not optional, as in 14.18. E is the sequence half's element type
+    // (chk_table_element_type), which is what makes 't.sort^(f^ a, b { … })'
+    // read its parameters off the receiver through 3.4改's expectation.
+    if (plain_table_type(target) && !target->v.table.nominal) {
+        LhatType *element = chk_table_element_type(c, target);
+        LhatType *self_type = target;
+        LhatType *elem_or_nil = lhat_type_union(
+            c->result->types, element, chk_simple(c, LHAT_TYPE_NIL));
+        LhatType *number = chk_simple(c, LHAT_TYPE_NUMBER);
+
+        // join^ -- 11.2's word already means "one string out of pieces".
+        if (builtin_named(name, length, "join", true)) {
+            LhatType *bare = lhat_type_func(c->result->types, true);
+            bare->v.func.result = chk_simple(c, LHAT_TYPE_STRING);
+            LhatType *with_sep = lhat_type_func(c->result->types, true);
+            lhat_type_add_param(c->result->types, with_sep,
+                                chk_simple(c, LHAT_TYPE_STRING));
+            with_sep->v.func.result = chk_simple(c, LHAT_TYPE_STRING);
+            return lhat_type_intersect(c->result->types, bare, with_sep);
+        }
+        if (builtin_named(name, length, "indexof", true)) {
+            LhatType *signature = lhat_type_func(c->result->types, true);
+            lhat_type_add_param(c->result->types, signature, element);
+            signature->v.func.result = lhat_type_union(
+                c->result->types, number, chk_simple(c, LHAT_TYPE_NIL));
+            return signature;
+        }
+        if (builtin_named(name, length, "contains", true)) {
+            LhatType *signature = lhat_type_func(c->result->types, true);
+            lhat_type_add_param(c->result->types, signature, element);
+            signature->v.func.result = chk_simple(c, LHAT_TYPE_BOOL);
+            return signature;
+        }
+        // slice^ answers a fresh run of the same elements; the count is the
+        // range's, which the type does not say (14.10's unbounded tail).
+        if (builtin_named(name, length, "slice", true)) {
+            LhatType *cut = lhat_type_table(c->result->types);
+            cut->v.table.variadic = element;
+            LhatType *from = lhat_type_func(c->result->types, true);
+            lhat_type_add_param(c->result->types, from, number);
+            from->v.func.result = cut;
+            LhatType *range = lhat_type_func(c->result->types, true);
+            lhat_type_add_param(c->result->types, range, number);
+            lhat_type_add_param(c->result->types, range, number);
+            range->v.func.result = cut;
+            return lhat_type_intersect(c->result->types, from, range);
+        }
+        // The mutating half are p^ -- 15.1 keeps them out of an f^ body,
+        // which is the blunt reading of 15.1改 until the origin rule learns
+        // to see through a method call.
+        if (builtin_named(name, length, "push", true)) {
+            LhatType *signature = lhat_type_func(c->result->types, false);
+            lhat_type_add_param(c->result->types, signature, element);
+            signature->v.func.result = self_type;
+            return signature;
+        }
+        if (builtin_named(name, length, "insert", true)) {
+            LhatType *signature = lhat_type_func(c->result->types, false);
+            lhat_type_add_param(c->result->types, signature, number);
+            lhat_type_add_param(c->result->types, signature, element);
+            signature->v.func.result = self_type;
+            return signature;
+        }
+        if (builtin_named(name, length, "extend", true)) {
+            LhatType *more = lhat_type_table(c->result->types);
+            more->v.table.variadic = element;
+            LhatType *signature = lhat_type_func(c->result->types, false);
+            lhat_type_add_param(c->result->types, signature, more);
+            signature->v.func.result = self_type;
+            return signature;
+        }
+        if (builtin_named(name, length, "remove", true)) {
+            LhatType *signature = lhat_type_func(c->result->types, false);
+            lhat_type_add_param(c->result->types, signature, number);
+            signature->v.func.result = elem_or_nil;
+            return signature;
+        }
+        if (builtin_named(name, length, "pop", true)) {
+            LhatType *signature = lhat_type_func(c->result->types, false);
+            signature->v.func.result = elem_or_nil;
+            return signature;
+        }
+        // 11.9's three-way answer is the comparison's shape here too.
+        if (builtin_named(name, length, "sort", true) ||
+            builtin_named(name, length, "stablesort", true)) {
+            LhatType *bare = lhat_type_func(c->result->types, false);
+            bare->v.func.result = self_type;
+            LhatType *cmp = lhat_type_func(c->result->types, true);
+            lhat_type_add_param(c->result->types, cmp, element);
+            lhat_type_add_param(c->result->types, cmp, element);
+            cmp->v.func.result = number;
+            LhatType *with_cmp = lhat_type_func(c->result->types, false);
+            lhat_type_add_param(c->result->types, with_cmp, cmp);
+            with_cmp->v.func.result = self_type;
+            return lhat_type_intersect(c->result->types, bare, with_cmp);
+        }
+        // move^: one element relocated, a block copied within self, or a
+        // block copied in from another table -- told apart by arity and by
+        // what stands first.
+        if (builtin_named(name, length, "move", true)) {
+            LhatType *more = lhat_type_table(c->result->types);
+            more->v.table.variadic = element;
+            LhatType *one = lhat_type_func(c->result->types, false);
+            lhat_type_add_param(c->result->types, one, number);
+            lhat_type_add_param(c->result->types, one, number);
+            one->v.func.result = self_type;
+            LhatType *block = lhat_type_func(c->result->types, false);
+            lhat_type_add_param(c->result->types, block, number);
+            lhat_type_add_param(c->result->types, block, number);
+            lhat_type_add_param(c->result->types, block, number);
+            block->v.func.result = self_type;
+            LhatType *from_one = lhat_type_func(c->result->types, false);
+            lhat_type_add_param(c->result->types, from_one, more);
+            lhat_type_add_param(c->result->types, from_one, number);
+            lhat_type_add_param(c->result->types, from_one, number);
+            from_one->v.func.result = self_type;
+            LhatType *from_block = lhat_type_func(c->result->types, false);
+            lhat_type_add_param(c->result->types, from_block, more);
+            lhat_type_add_param(c->result->types, from_block, number);
+            lhat_type_add_param(c->result->types, from_block, number);
+            lhat_type_add_param(c->result->types, from_block, number);
+            from_block->v.func.result = self_type;
+            return lhat_type_intersect(
+                c->result->types,
+                lhat_type_intersect(c->result->types, one, block),
+                lhat_type_intersect(c->result->types, from_one, from_block));
+        }
+        if (builtin_named(name, length, "reverse", true) ||
+            builtin_named(name, length, "clear", true)) {
+            LhatType *signature = lhat_type_func(c->result->types, false);
+            signature->v.func.result = self_type;
+            return signature;
+        }
     }
 
     chk_report_named(c, node, LHAT_CHECK_ERR_NO_MEMBER, name, length);

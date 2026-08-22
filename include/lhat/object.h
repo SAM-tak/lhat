@@ -417,7 +417,24 @@ typedef enum {
     // the value onto the stack, whole; set writes a value of the same tag
     // over the bytes.
     LHAT_NATIVE_BOX_GET,
-    LHAT_NATIVE_BOX_SET
+    LHAT_NATIVE_BOX_SET,
+    // 02 の 14.22: the table's own operations, on a plain table alone. Kept
+    // contiguous -- the dispatch asks for the range, JOIN first and CLEAR
+    // last, so a new one goes between those two.
+    LHAT_NATIVE_JOIN,       // one string out of the sequence half
+    LHAT_NATIVE_INDEXOF,    // where a value stands, or nil^
+    LHAT_NATIVE_CONTAINS,   // whether it stands anywhere
+    LHAT_NATIVE_SLICE,      // a fresh table of a range, shallow
+    LHAT_NATIVE_INSERT,     // put a value at a position, shifting up
+    LHAT_NATIVE_PUSH,       // put a value at the end
+    LHAT_NATIVE_EXTEND,     // append another table's sequence half
+    LHAT_NATIVE_REMOVE,     // take the value at a position out, shifting down
+    LHAT_NATIVE_POP,        // take the last value out
+    LHAT_NATIVE_SORT,       // order the sequence half (no promise of stability)
+    LHAT_NATIVE_STABLESORT, // order it keeping equal elements as written
+    LHAT_NATIVE_MOVE,       // relocate one element, or copy a block
+    LHAT_NATIVE_REVERSE,    // the sequence half, back to front
+    LHAT_NATIVE_CLEAR       // empty the table, both halves
 } LhatNativeKind;
 
 typedef struct LhatNative {

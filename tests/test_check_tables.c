@@ -696,6 +696,85 @@ static void test_table_methods(void)
     unit_dispose(&u);
 }
 
+// 02 の 14.22: the table's own operations, as the checker reads them. The
+// machine's side is test_vm_data's.
+static void test_builtin_operations(void)
+{
+    Unit u;
+
+    // 3.4改 with 14.12: sort^'s two arms differ in arity alone, so the one
+    // this call fits is settled by the count -- and the comparator literal
+    // reads its parameters off the receiver's element type through it.
+    LHAT_TEST("a comparator's parameters come from the element type");
+    check_text(&u,
+               "var^ t = {3, 1, 2}\n"
+               "t.sort^(f^ a, b { a <=> b })\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("and the body is checked against what they were filled with");
+    check_text(&u,
+               "var^ t = {3, 1, 2}\n"
+               "t.sort^(f^ a, b { a .. b })\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_NO_OPERATOR);
+    unit_dispose(&u);
+
+    LHAT_TEST("a push against a written element type is measured");
+    check_text(&u,
+               "var^ t : t^{ ...:number^ } = {1}\n"
+               "t.push^(\"s\")\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
+    unit_dispose(&u);
+
+    // 04 の 11.3's line: an empty table's pop is not an error, so the
+    // answer carries the nil^ arm and a narrowing is owed.
+    LHAT_TEST("pop^ answers the element type beside nil^");
+    check_text(&u,
+               "var^ t = {1, 2}\n"
+               "var^ v : number^ = t.pop^()\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
+    unit_dispose(&u);
+
+    // 15.1's blunt reading: the mutating half are p^, so an f^ body may
+    // not call them -- even on a table of its own, until 15.1改 learns to
+    // see through a method call.
+    LHAT_TEST("the mutating half are procedures");
+    check_text(&u,
+               "let^ f = f^ -> number^ {\n"
+               "    var^ t = {2, 1}\n"
+               "    t.sort^()\n"
+               "    return^ t[1] ?? 0\n"
+               "}\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_FUNCTION_CALLS_PROCEDURE);
+    unit_dispose(&u);
+
+    // And the reading half are f^, callable anywhere.
+    LHAT_TEST("the reading half are functions");
+    check_text(&u,
+               "let^ f = f^ t:t^{ ...:number^ } -> string^ {\n"
+               "    return^ t.slice^(1, 2).join^(\",\")\n"
+               "}\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // 14.22 belongs to a plain table alone -- a def^'s names are the
+    // writer's, and the hat is what keeps the built-in off the bare word.
+    LHAT_TEST("a definition's instance carries none of them");
+    check_text(&u,
+               "let^ D = def^{ self^{ n = 0 } }\n"
+               "var^ d = D.new()\n"
+               "d.push^(1)\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_NO_MEMBER);
+    unit_dispose(&u);
+
+    LHAT_TEST("and the bare spelling stays the writer's");
+    check_text(&u,
+               "var^ t = {1}\n"
+               "t.push(2)\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_NO_MEMBER);
+    unit_dispose(&u);
+}
+
 int main(void)
 {
     test_walking();
@@ -704,5 +783,6 @@ int main(void)
     test_nil_safe_compound();
     test_not_indexable();
     test_table_methods();
+    test_builtin_operations();
     return lhat_test_report("test_check_tables");
 }

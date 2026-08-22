@@ -499,12 +499,139 @@ static void test_strings(void)
     LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_TYPE_ERROR);
     run_dispose(&r);
 
-    LHAT_TEST("a structure with no '..' cannot answer");
+    // 11.2改: two plain tables concatenate, built in the way two strings
+    // do -- positions in order, named keys from both sides.
+    LHAT_TEST("two plain tables concatenate");
+    run_text(&r,
+             "var^ t = { a := 1, 10 }\n"
+             "var^ u = { b := 2, 20 }\n"
+             "var^ j = t .. u\n"
+             "return^ j[1] * 1000 + j[2] * 10 + j.a + j.b\n");
+    CHECK_INTEGER(&r, 10203);
+    run_dispose(&r);
+
+    LHAT_TEST("and a key both sides carry faults");
     run_text(&r,
              "var^ t = { a := 1 }\n"
-             "var^ u = { b := 2 }\n"
-             "return^ t .. u\n");
+             "return^ t .. t\n");
+    LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_BAD_KEY);
+    run_dispose(&r);
+
+    // 14.22: the table's own operations, a run through the whole set.
+    LHAT_TEST("push, pop, insert and remove reshape the sequence");
+    run_checked_text(&r,
+                     "var^ t = {3, 1, 2}\n"
+                     "t.push^(9)\n"
+                     "var^ popped = t.pop^() ?? 0\n"
+                     "t.insert^(1, 7)\n"
+                     "var^ removed = t.remove^(1) ?? 0\n"
+                     "return^ popped * 100 + removed * 10 + t.count^\n");
+    CHECK_INTEGER(&r, 900 + 70 + 3);
+    run_dispose(&r);
+
+    LHAT_TEST("pop of an empty table answers nil^, not a fault");
+    run_checked_text(&r,
+                     "var^ t:t^{...:number^} = {}\n"
+                     "return^ t.pop^() ?? -1\n");
+    CHECK_INTEGER(&r, -1);
+    run_dispose(&r);
+
+    LHAT_TEST("indexof^ says where, contains^ whether");
+    run_checked_text(&r,
+                     "var^ t = {\"a\", \"b\", \"c\"}\n"
+                     "var^ where = t.indexof^(\"b\") ?? 0\n"
+                     "var^ absent = t.indexof^(\"z\") ?? -1\n"
+                     "return^ where * 10 + (if^ t.contains^(\"c\"): 1 "
+                     "el^: 0 ;) + absent\n");
+    CHECK_INTEGER(&r, 20 + 1 - 1);
+    run_dispose(&r);
+
+    LHAT_TEST("slice^ answers a fresh table sharing the elements");
+    run_checked_text(&r,
+                     "var^ inner = { v = 5 }\n"
+                     "var^ t = {inner, inner}\n"
+                     "var^ cut = t.slice^(2)\n"
+                     "inner.v := 6\n"
+                     "return^ cut.count^ * 10 + (cut[1].v ?? 0)\n");
+    CHECK_INTEGER(&r, 16);
+    run_dispose(&r);
+
+    LHAT_TEST("extend^ appends, reverse^ turns, join^ writes");
+    run_checked_text(&r,
+                     "var^ t = {\"c\"}\n"
+                     "t.extend^({\"b\", \"a\"})\n"
+                     "t.reverse^()\n"
+                     "return^ t.join^(\"-\")\n");
+    CHECK_STRING(&r, "a-b-c");
+    run_dispose(&r);
+
+    LHAT_TEST("join^ writes numbers the way tostring does");
+    run_checked_text(&r,
+                     "return^ {1, 2.5, \"x\"}.join^(\",\")\n");
+    CHECK_STRING(&r, "1,2.5,x");
+    run_dispose(&r);
+
+    // 3.4改 with 14.12: the comparator's parameters are read off the
+    // receiver's element type through the one arm this arity fits.
+    LHAT_TEST("sort^ orders, with and without a comparator");
+    run_checked_text(&r,
+                     "var^ t = {3, 1, 2}\n"
+                     "t.sort^()\n"
+                     "var^ rising = t.join^(\"\")\n"
+                     "t.sort^(f^ a, b { b <=> a })\n"
+                     "return^ rising .. \"/\" .. t.join^(\"\")\n");
+    CHECK_STRING(&r, "123/321");
+    run_dispose(&r);
+
+    LHAT_TEST("stablesort^ keeps equal elements as written");
+    run_checked_text(&r,
+                     "var^ t = {\"bb\", \"aa\", \"c\", \"dd\"}\n"
+                     "t.stablesort^(f^ a, b { a.length <=> b.length })\n"
+                     "return^ t.join^(\",\")\n");
+    CHECK_STRING(&r, "c,bb,aa,dd");
+    run_dispose(&r);
+
+    LHAT_TEST("a comparator's fault leaves the sort as its own");
+    run_text(&r,
+             "var^ t = {1, 2}\n"
+             "t.sort^(f^ a:number^, b:number^ { a .. b })\n"
+             "return^ 0\n");
     LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_TYPE_ERROR);
+    run_dispose(&r);
+
+    LHAT_TEST("a default sort over unordered values is refused");
+    run_text(&r,
+             "var^ t = { {}, {} }\n"
+             "t.sort^()\n"
+             "return^ 0\n");
+    LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_TYPE_ERROR);
+    run_dispose(&r);
+
+    LHAT_TEST("move^ relocates one, copies a block, reads another table");
+    run_checked_text(&r,
+                     "var^ t = {1, 2, 3, 4}\n"
+                     "t.move^(1, 3)\n"
+                     "var^ turned = t.join^(\"\")\n"
+                     "var^ u = {9, 8}\n"
+                     "t.move^(u, 1, 2, 1)\n"
+                     "return^ turned .. \"/\" .. t.join^(\"\")\n");
+    CHECK_STRING(&r, "2314/9814");
+    run_dispose(&r);
+
+    LHAT_TEST("an overlapping block move copies, not smears");
+    run_checked_text(&r,
+                     "var^ t = {1, 2, 3, 4, 5}\n"
+                     "t.move^(1, 3, 2)\n"
+                     "return^ t.join^(\"\")\n");
+    CHECK_STRING(&r, "11235");
+    run_dispose(&r);
+
+    LHAT_TEST("clear^ empties both halves");
+    run_checked_text(&r,
+                     "var^ t = { a := 1, 10, 20 }\n"
+                     "t.clear^()\n"
+                     "return^ t.count^ + (t.a ?? 0)\n");
+    CHECK_INTEGER(&r, 0);
     run_dispose(&r);
 
     // 11.3 leaves the rest to the operator's own definition, which needs

@@ -1382,6 +1382,14 @@ static bool is_next_position(const LhatTypeMember *m, size_t position)
            memcmp(m->name, digits, length) == 0;
 }
 
+// The rule above, exported: a walk elsewhere carrying its own count asks it
+// of each member in order (14.10 makes the count part of the meaning, so a
+// name lookup cannot stand in for this).
+bool lhat_type_member_position(const LhatTypeMember *m, size_t position)
+{
+    return is_next_position(m, position);
+}
+
 // 14.10改: how many positions from here on carry this same type. One run of
 // them is written 'type[n]', and that is the canonical spelling -- a run
 // written out, and one written with the count, are the same type, so what is
