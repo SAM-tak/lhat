@@ -246,6 +246,34 @@ public^ let^ bump = p^ { count := count + 1 }
 public^ let^ current = f^ -> number^ { return^ count }
 ```
 
+### 4.5 公開した名前の型はホストから読める
+
+> **ホストは検査の後、単位が公開した名前とその型を C から読み、
+> 書いた型への適合を訊ける。**
+
+ゲームのループがスクリプトの `update` を毎フレーム呼ぶとき、`update` が
+`p^number^;` でなければ最初の呼び出しで型誤りになる——それを**起動時**に、
+単位が実際に書いた型を添えて言いたい。検査器は既に答えを持っている
+（4.3: 公開されたものの型に穴は無い）ので、それを渡すだけでよい。
+
+```c
+const LhatUnit *unit = lhat_program_check(program, "game.lh");
+if (!lhat_unit_export_conforms(unit, "update", "p^number^;")) {
+    char spelt[128];
+    lhat_unit_export_type(unit, "update", spelt, sizeof spelt);
+    // "game.lh: update is p^string^;, and the game asks for p^number^;"
+}
+```
+
+- `lhat_unit_export_count` / `lhat_unit_export_name` —— 公開した名前の一覧
+- `lhat_unit_export_type` —— 02 の 14.10 の綴り（`typeof^(x).signature` と
+  同じ文）。無い名前は `SIZE_MAX`
+- `lhat_unit_export_conforms` —— 02 の 13.5 の適合。書く型は 8.7 の登録の
+  署名と同じに読まれるので、ホストが登録した型も名指せる
+
+`module^` の無いスクリプトは何も公開しない（3.2）——答えは `return^` の値で、
+この口の相手ではない。
+
 これは 9 章の M7（機械の印を「所有単位だけが書ける」へ広げるか）とは
 別の話である。M7 が問うているのは **テーブルのメンバ** を誰が書けるかで、
 本節が言っているのは **名前** を誰が書けるかである（02 の 8.9）。
@@ -1851,6 +1879,12 @@ cli/            コマンドライン      → lhat.exe
 ---
 
 ## 改定履歴（要約）
+
+- **4.5（2026-08-23）: 公開した名前の型はホストから読める。**
+  `lhat_unit_export_count/_name/_type/_conforms`。LOVE2D バインドの
+  「update の型違いを起動時に弾きたい」に対し、検査器の exports 表を
+  そのまま C に見せた（従来の `lhat_unit_member` は木の粗い読みで、
+  def^ のメンバ向け）
 
 - **8.7改2（2026-08-22）: ホストは `panic^` を書ける。** `lhat_machine_panic`
   /`_panic_text`。LOVE2D バインドで「プログラマの誤りを `|love.Error` の

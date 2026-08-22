@@ -760,6 +760,50 @@ static void test_hosting(void)
     }
     lhat_program_dispose(&program);
 
+    // 05 の 4.5: what a unit published, asked as types -- the contract a
+    // host holds (update is 'p^number^;') checked before anything runs.
+    LHAT_TEST("a unit's exports answer their types, and whether they conform");
+    {
+        static const File files[] = {
+            {"game.lh",
+             "module^ game\n"
+             "public^ let^ update = p^ dt:number^ { }\n"
+             "public^ let^ title = \"x\"\n"
+             "let^ hidden = 1\n"},
+        };
+        program_with(&program, &disk, files, 1);
+        const LhatUnit *root = lhat_program_check(&program, "game.lh");
+        LHAT_CHECK(root != NULL && !lhat_program_has_errors(&program),
+                   "the program checked");
+        LHAT_CHECK_EQ_INT(lhat_unit_export_count(root), 2);
+        LhatUnitText first = lhat_unit_export_name(root, 0);
+        LHAT_CHECK(first.text != NULL && first.length == 6 &&
+                       memcmp(first.text, "update", 6) == 0,
+                   "the first export is update");
+        LHAT_CHECK(lhat_unit_export_name(root, 2).text == NULL,
+                   "and there is no third");
+        char spelt[64];
+        size_t needed = lhat_unit_export_type(root, "update", spelt,
+                                              sizeof spelt);
+        LHAT_CHECK(needed < sizeof spelt && strcmp(spelt, "p^number^;") == 0,
+                   "update is spelt p^number^; -- got %s", spelt);
+        LHAT_CHECK(lhat_unit_export_type(root, "hidden", NULL, 0) == SIZE_MAX,
+                   "a private name is not an export");
+        LHAT_CHECK(lhat_unit_export_conforms(root, "update", "p^number^;"),
+                   "update keeps the contract");
+        LHAT_CHECK(lhat_unit_export_conforms(root, "title", "string^"),
+                   "and title is a string");
+        LHAT_CHECK(!lhat_unit_export_conforms(root, "update", "p^string^;"),
+                   "a different parameter does not conform");
+        LHAT_CHECK(!lhat_unit_export_conforms(root, "update", "f^number^;"),
+                   "nor does an f^ stand for a p^");
+        LHAT_CHECK(!lhat_unit_export_conforms(root, "nothere", "number^"),
+                   "an export that is not there conforms to nothing");
+        LHAT_CHECK(!lhat_unit_export_conforms(root, "title", "not a type"),
+                   "text that is no type conforms to nothing");
+    }
+    lhat_program_dispose(&program);
+
     // 05 の 8.2: a host may bind a name so that a program writes it with no
     // qualification. 8.1 is unchanged -- the language hands out nothing, and
     // a host that binds none leaves a program seeing nothing.

@@ -20,6 +20,9 @@
 struct LhatUnit {
     char *path;  // resolved and normalised; the key 5.3 loads once against
     bool loaded;
+    // The program this is a unit of -- what lhat_unit_export_conforms reads
+    // a written type against (its arena and its registrations).
+    struct LhatProgram *program;
 
     LhatSource source;
     LhatLexer lexer;

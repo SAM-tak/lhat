@@ -203,6 +203,7 @@ static LhatUnit *check_path(LhatProgram *program, char *path)
         return NULL;
     }
     unit->path = path;
+    unit->program = program;
     unit->state = LHAT_UNIT_CHECKING;
     unit->next = program->units;
     program->units = unit;
@@ -894,6 +895,87 @@ LhatUnitText lhat_unit_member_written_name(const LhatUnit *unit,
     const LhatNode *entry = member_entry(unit, definition, member);
     walk_written_names(&walk, member_body(entry));
     return walk.found;
+}
+
+// ---------------------------------------------------------------------------
+// 05 の 4.5: what the unit published, as types
+// ---------------------------------------------------------------------------
+
+static const LhatTypeMember *export_named(const LhatUnit *unit,
+                                          const char *name)
+{
+    if (unit == NULL || !unit->loaded || unit->checked.exports == NULL ||
+        name == NULL) {
+        return NULL;
+    }
+    size_t length = strlen(name);
+    for (const LhatTypeMember *m = unit->checked.exports->v.table.members;
+         m != NULL; m = m->next) {
+        if (m->name_length == length && memcmp(m->name, name, length) == 0) {
+            return m;
+        }
+    }
+    return NULL;
+}
+
+size_t lhat_unit_export_count(const LhatUnit *unit)
+{
+    size_t count = 0;
+    if (unit != NULL && unit->loaded && unit->checked.exports != NULL) {
+        for (const LhatTypeMember *m = unit->checked.exports->v.table.members;
+             m != NULL; m = m->next) {
+            count++;
+        }
+    }
+    return count;
+}
+
+LhatUnitText lhat_unit_export_name(const LhatUnit *unit, size_t index)
+{
+    LhatUnitText text;
+    text.text = NULL;
+    text.length = 0;
+    if (unit == NULL || !unit->loaded || unit->checked.exports == NULL) {
+        return text;
+    }
+    for (const LhatTypeMember *m = unit->checked.exports->v.table.members;
+         m != NULL; m = m->next, index--) {
+        if (index == 0) {
+            text.text = m->name;
+            text.length = m->name_length;
+            return text;
+        }
+    }
+    return text;
+}
+
+size_t lhat_unit_export_type(const LhatUnit *unit, const char *name,
+                             char *out, size_t capacity)
+{
+    const LhatTypeMember *m = export_named(unit, name);
+    if (m == NULL) {
+        if (out != NULL && capacity > 0) {
+            out[0] = '\0';
+        }
+        return SIZE_MAX;
+    }
+    return lhat_type_write_full(m->type, out, capacity);
+}
+
+bool lhat_unit_export_conforms(const LhatUnit *unit, const char *name,
+                               const char *signature)
+{
+    const LhatTypeMember *m = export_named(unit, name);
+    if (m == NULL || signature == NULL || unit->program == NULL) {
+        return false;
+    }
+    // 8.7: read the way a registration's signature is, against what the
+    // program registered -- so a host type may be named.
+    LhatProgram *program = unit->program;
+    const LhatType *wanted = lhat_type_of_text(signature, strlen(signature),
+                                               &program->types,
+                                               program->hosted);
+    return wanted != NULL && lhat_type_conforms(m->type, wanted);
 }
 
 // ---------------------------------------------------------------------------
@@ -2384,6 +2466,7 @@ LhatLoadStatus lhat_program_load_text(LhatProgram *program, const char *name,
         lhat_free(unit);
         return LHAT_LOAD_OUT_OF_MEMORY;
     }
+    unit->program = program;
     lhat_source_init_from_string(&unit->source, unit->path, text, length);
     return load_placed(program, unit, out);
 }

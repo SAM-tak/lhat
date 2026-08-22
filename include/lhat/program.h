@@ -343,6 +343,30 @@ LhatUnitText lhat_unit_member_written_name(const LhatUnit *unit,
                                            const char *definition,
                                            size_t member, size_t at);
 
+// 05 の 4.5: what the unit published (public^), as the checker settled it
+// -- not the coarse reading above, the type itself. For a host holding a
+// contract the unit is meant to keep -- a game's update is 'p^number^;' --
+// and wanting the break found before the first frame, with what the unit
+// actually wrote in the message. Empty for a unit that is not a module^,
+// or did not check.
+size_t lhat_unit_export_count(const LhatUnit *unit);
+LhatUnitText lhat_unit_export_name(const LhatUnit *unit, size_t index);
+
+// The export's type in 02 の 14.10's spelling -- what typeof^(x).signature
+// answers. lhat_report_write's convention: measures with (NULL, 0), fills
+// up to `capacity` including the NUL. SIZE_MAX when nothing of that name
+// was published.
+size_t lhat_unit_export_type(const LhatUnit *unit, const char *name,
+                             char *out, size_t capacity);
+
+// Whether the export conforms to `signature` -- 02 の 13.5's conformance,
+// the question a call asks of its argument. The text may name what the
+// program registered before the check, as a registration's own may (8.7).
+// False when nothing of that name was published, or the text does not read
+// as a type.
+bool lhat_unit_export_conforms(const LhatUnit *unit, const char *name,
+                               const char *signature);
+
 // ---------------------------------------------------------------------------
 // 01 の 6.4: what a unit says about itself
 // ---------------------------------------------------------------------------
