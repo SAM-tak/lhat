@@ -10,6 +10,7 @@
 //   r.gmatch(s)                 -> an f^ walk of (ordinal, match) pairs
 //   r.gsub(s, "…$1…")           -> string^ | Error.Exhausted
 //   r.gsub(s, f^m, at, caps {}) -> the same, each match through the function
+//   r.split(s)                  -> the pieces between the matches, empties kept
 //   std.regex.match/gmatch/gsub(p, s, …)   -- the convenience forms; they
 //       compile every call, so a hot path holds a new() of its own
 //

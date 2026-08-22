@@ -300,6 +300,58 @@ static LhatValue do_gsub(LhatMachine *machine, const RegexModule *module,
     return ok ? made : lhat_nil();
 }
 
+// The pieces between the matches, empties kept -- 02 の 14.19改3's law read
+// with a pattern for the separator (Python's re.split).
+static LhatValue do_split(LhatMachine *machine, const RegexModule *module,
+                          const LhatRegex *compiled, const LhatString *text)
+{
+    LhatValue table = lhat_nil();
+    if (!lhat_machine_make_table(machine, &table)) {
+        return lhat_nil();
+    }
+    LhatTable *pieces = (LhatTable *)lhat_as_object(table);
+    size_t from = 0;
+    int64_t position = 0;
+    for (;;) {
+        LhatRegexSpan spans[LHAT_REGEX_MAX_GROUPS];
+        bool blown = false;
+        if (!lhat_regex_search(compiled, text->text, text->length, from,
+                               spans, &blown)) {
+            if (blown) {
+                return fail_with(machine, module->exhausted,
+                                 "the pattern ran past the matching budget");
+            }
+            break;
+        }
+        if (spans[0].end == spans[0].begin) {
+            // An empty separator separates nothing; step past a character
+            // or the loop stands still.
+            if (spans[0].begin >= text->length) {
+                break;
+            }
+            from = spans[0].end +
+                   step_width(text->text, text->length, spans[0].end);
+            continue;
+        }
+        LhatValue piece = lhat_nil();
+        if (!lhat_machine_make_string(machine, text->text + from,
+                                      spans[0].begin - from, &piece) ||
+            !lhat_machine_table_set(machine, pieces,
+                                    lhat_integer(++position), piece, NULL)) {
+            return lhat_nil();
+        }
+        from = spans[0].end;
+    }
+    LhatValue tail = lhat_nil();
+    if (!lhat_machine_make_string(machine, text->text + from,
+                                  text->length - from, &tail) ||
+        !lhat_machine_table_set(machine, pieces, lhat_integer(++position),
+                                tail, NULL)) {
+        return lhat_nil();
+    }
+    return table;
+}
+
 // ---------------------------------------------------------------------------
 // The gmatch walk
 // ---------------------------------------------------------------------------
@@ -492,6 +544,19 @@ static LhatValue regex_gsub(LhatMachine *machine, void *context,
     return do_gsub(machine, module, self->compiled, text, arguments[2]);
 }
 
+static LhatValue regex_split(LhatMachine *machine, void *context,
+                             const LhatValue *arguments, size_t count)
+{
+    (void)count;
+    const RegexModule *module = (const RegexModule *)context;
+    Regex *self = self_regex(module, arguments[0]);
+    const LhatString *text = arg_string(arguments[1]);
+    if (self == NULL || text == NULL) {
+        return lhat_nil();
+    }
+    return do_split(machine, module, self->compiled, text);
+}
+
 static LhatValue regex_dispose(LhatMachine *machine, void *context,
                                const LhatValue *arguments, size_t count)
 {
@@ -630,6 +695,11 @@ bool lhatstdlib_regex_register(LhatProgram *program)
                "string^|f^string^, number^, t^{...:string^} -> string^|nil^; "
                "-> string^|std.regex.Error.Exhausted;",
                regex_gsub, module) &&
+           lhat_register_member(
+               program, "std.regex", "Regex", "split",
+               "f^self^, string^ -> "
+               "t^{...:string^}|std.regex.Error.Exhausted;",
+               regex_split, module) &&
            lhat_register_member(program, "std.regex", "Regex", "dispose",
                                 "p^self^;", regex_dispose, module) &&
            lhat_register_func(

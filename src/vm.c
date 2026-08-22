@@ -878,6 +878,18 @@ static bool native_named(LhatValue key, LhatNativeKind *out, bool *hatted)
         *out = LHAT_NATIVE_REPLACE;
         return true;
     }
+    if (name->length == 5 && memcmp(name->text, "split", 5) == 0) {
+        *out = LHAT_NATIVE_SPLIT;
+        return true;
+    }
+    if (name->length == 7 && memcmp(name->text, "toupper", 7) == 0) {
+        *out = LHAT_NATIVE_TOUPPER;
+        return true;
+    }
+    if (name->length == 7 && memcmp(name->text, "tolower", 7) == 0) {
+        *out = LHAT_NATIVE_TOLOWER;
+        return true;
+    }
     // 16.3改2: the hat is not optional on these two (14.18's line), but the
     // bare spelling is still read here so builtin_member can refuse it by
     // name rather than by falling through to "no such member".
@@ -1093,7 +1105,9 @@ static bool builtin_member(LhatValue on, LhatValue key, LhatNativeKind *out)
     // and only one has characters to take a run or a single one of.
     if (*out == LHAT_NATIVE_TONUMBER || *out == LHAT_NATIVE_SUBSTRING ||
         *out == LHAT_NATIVE_AT || *out == LHAT_NATIVE_FIND ||
-        *out == LHAT_NATIVE_FINDALL || *out == LHAT_NATIVE_REPLACE) {
+        *out == LHAT_NATIVE_FINDALL || *out == LHAT_NATIVE_REPLACE ||
+        *out == LHAT_NATIVE_SPLIT || *out == LHAT_NATIVE_TOUPPER ||
+        *out == LHAT_NATIVE_TOLOWER) {
         return lhat_is_object_kind(on, LHAT_OBJECT_STRING);
     }
     // 14.20: and only a number^ has an error term to say anything about.
@@ -3676,6 +3690,9 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
                          bare == LHAT_NATIVE_FIND ||
                          bare == LHAT_NATIVE_FINDALL ||
                          bare == LHAT_NATIVE_REPLACE ||
+                         bare == LHAT_NATIVE_SPLIT ||
+                         bare == LHAT_NATIVE_TOUPPER ||
+                         bare == LHAT_NATIVE_TOLOWER ||
                          bare == LHAT_NATIVE_EQ ||
                          bare == LHAT_NATIVE_FLOOR ||
                          bare == LHAT_NATIVE_CEIL ||
@@ -4786,6 +4803,170 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
                                           lhat_nil(), at);
                         }
                         SET_R(a, lhat_object((LhatObject *)cut));
+                        break;
+                    }
+
+                    // 02 の 14.19改3: the ASCII case swaps. The rest of the
+                    // bytes pass through as they are -- no Unicode case
+                    // tables -- and a string nothing changed in answers
+                    // itself, substring's whole-of-it economy.
+                    if (native->kind == LHAT_NATIVE_TOUPPER ||
+                        native->kind == LHAT_NATIVE_TOLOWER) {
+                        if (b != 0) {
+                            return finish(m, chunk, LHAT_RUN_ARITY,
+                                          lhat_nil(), at);
+                        }
+                        const LhatString *subject =
+                            (const LhatString *)lhat_as_object(native->bound);
+                        bool up = native->kind == LHAT_NATIVE_TOUPPER;
+                        size_t changed = 0;
+                        for (size_t i = 0; i < subject->length; i++) {
+                            char head = subject->text[i];
+                            if (up ? (head >= 'a' && head <= 'z')
+                                   : (head >= 'A' && head <= 'Z')) {
+                                changed++;
+                            }
+                        }
+                        if (changed == 0) {
+                            SET_R(a, native->bound);
+                            break;
+                        }
+                        char *text = (char *)lhat_alloc(subject->length + 1);
+                        if (text == NULL) {
+                            return finish(m, chunk, LHAT_RUN_OUT_OF_MEMORY,
+                                          lhat_nil(), at);
+                        }
+                        for (size_t i = 0; i < subject->length; i++) {
+                            char head = subject->text[i];
+                            if (up && head >= 'a' && head <= 'z') {
+                                head = (char)(head - 'a' + 'A');
+                            } else if (!up && head >= 'A' && head <= 'Z') {
+                                head = (char)(head - 'A' + 'a');
+                            }
+                            text[i] = head;
+                        }
+                        LhatString *swapped = lhat_string_new(
+                            &m->objects, text, subject->length);
+                        lhat_free(text);
+                        if (swapped == NULL) {
+                            return finish(m, chunk, LHAT_RUN_OUT_OF_MEMORY,
+                                          lhat_nil(), at);
+                        }
+                        SET_R(a, lhat_object((LhatObject *)swapped));
+                        break;
+                    }
+
+                    // 02 の 14.19改3: join^'s inverse, so the law decides
+                    // the details -- s.split(sep).join^(sep) = s, which is
+                    // what keeps every empty piece. The 0-argument form is
+                    // the other reading, "the words": runs of whitespace
+                    // split it and nothing empty is kept.
+                    if (native->kind == LHAT_NATIVE_SPLIT) {
+                        if (b > 1 ||
+                            (b == 1 &&
+                             !lhat_is_object_kind(sent, LHAT_OBJECT_STRING))) {
+                            return finish(m, chunk,
+                                          b > 1 ? LHAT_RUN_ARITY
+                                                : LHAT_RUN_TYPE_ERROR,
+                                          lhat_nil(), at);
+                        }
+                        const LhatString *subject =
+                            (const LhatString *)lhat_as_object(native->bound);
+                        LhatTable *pieces = lhat_table_new(&m->objects);
+                        if (pieces == NULL) {
+                            return finish(m, chunk, LHAT_RUN_OUT_OF_MEMORY,
+                                          lhat_nil(), at);
+                        }
+                        // The table under construction is a root while the
+                        // strings are made (14.22's chain).
+                        LhatNativeHold hold;
+                        hold.held = lhat_object((LhatObject *)pieces);
+                        hold.outer = m->native_hold;
+                        m->native_hold = &hold;
+                        bool refused = false;
+                        bool ok = true;
+                        int64_t position = 0;
+                        if (b == 0) {
+                            // The words: whitespace runs split, empties drop.
+                            size_t i = 0;
+                            while (ok && i < subject->length) {
+                                while (i < subject->length &&
+                                       ((unsigned char)subject->text[i] <=
+                                        ' ')) {
+                                    i++;
+                                }
+                                size_t begin = i;
+                                while (i < subject->length &&
+                                       ((unsigned char)subject->text[i] >
+                                        ' ')) {
+                                    i++;
+                                }
+                                if (i == begin) {
+                                    break;
+                                }
+                                LhatString *piece = lhat_string_new(
+                                    &m->objects, subject->text + begin,
+                                    i - begin);
+                                ok = piece != NULL &&
+                                     set_key(m, pieces,
+                                             lhat_integer(++position),
+                                             lhat_object((LhatObject *)piece),
+                                             &refused);
+                            }
+                        } else {
+                            const LhatString *sep =
+                                (const LhatString *)lhat_as_object(sent);
+                            size_t from = 0;
+                            while (ok) {
+                                size_t found = 0;
+                                bool hit = false;
+                                size_t end;
+                                if (sep->length == 0) {
+                                    // One character per piece -- and the
+                                    // round trip with join^("") holds.
+                                    if (from >= subject->length) {
+                                        break;
+                                    }
+                                    end = from + 1;
+                                    while (end < subject->length &&
+                                           ((unsigned char)subject
+                                                    ->text[end] &
+                                            0xC0) == 0x80) {
+                                        end++;
+                                    }
+                                } else {
+                                    hit = find_bytes(subject->text,
+                                                     subject->length, from,
+                                                     sep->text, sep->length,
+                                                     &found);
+                                    end = hit ? found : subject->length;
+                                }
+                                LhatString *piece = lhat_string_new(
+                                    &m->objects, subject->text + from,
+                                    end - from);
+                                ok = piece != NULL &&
+                                     set_key(m, pieces,
+                                             lhat_integer(++position),
+                                             lhat_object((LhatObject *)piece),
+                                             &refused);
+                                if (!ok) {
+                                    break;
+                                }
+                                if (sep->length == 0) {
+                                    from = end;
+                                } else if (!hit) {
+                                    break;  // the tail piece went in
+                                } else {
+                                    from = found + sep->length;
+                                }
+                            }
+                        }
+                        m->native_hold = hold.outer;
+                        if (!ok) {
+                            return finish(m, chunk, LHAT_RUN_OUT_OF_MEMORY,
+                                          lhat_nil(), at);
+                        }
+                        SET_R(a, lhat_object((LhatObject *)pieces));
                         break;
                     }
 

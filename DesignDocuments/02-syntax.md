@@ -7782,7 +7782,28 @@ find    : f^string^ -> number^|nil^;             # 最初の開始序数、無�
         | f^string^, number^ -> number^|nil^;    # from 付き（substring の序数の読み）
 findall : f^string^ -> c^{f^ -> number^ -> nil^};  # 非重複の開始序数を歩く f^ コルーチン
 replace : f^string^, string^ -> string^;           # 全置換
+split   : f^ -> fresh^t^{...:string^};             # 語の読み: 空白で割り、空は落とす
+        | f^string^ -> fresh^t^{...:string^};      # sep で割る — join^ の逆
+toupper : f^ -> string^;                           # ASCII の英字だけ、他はそのまま
+tolower : f^ -> string^;
 ```
+
+#### split は join^ の逆 — 法則が細部を決める
+
+> **`s.split(sep).join^(sep) = s` が恒等。**
+
+これが「対」の定義そのもので、決まるものが全部決まる: **空の断片は保持**
+（`"a,,b".split(",")` → `{"a", "", "b"}`。Ruby の末尾だけ落とす読みも
+C# のフラグも、往復が壊れるので採らない）、`"".split(",")` → `{""}`、
+そして **`split("")` は1文字ずつ**（コードポイント単位 — `{"か","な"}` を
+`join^("")` すれば元に戻る）。トリムはしない。
+
+無引数の `split()` だけが別の読みで、**語に分ける**: 空白の連なりで割り、
+空を落とす（Python の裸 `split()`、Go の `Fields`）。こちらは往復しない。
+
+`toupper`/`tolower` は **ASCII のみ** — Unicode の大小文字表は持たない
+（Lua の upper/lower と同じ実効範囲）。変わるものが無ければ元の文字列を
+そのまま答える。答えが新しいのは split だけで、印のとおり（15.1改3）。
 
 綴りはハット無し（14.18改 — string^ には書き手の名前が無い）。序数は
 substring と同じ**文字数**（UTF-8 コードポイント）で、バイトで探して序数で
@@ -10628,6 +10649,13 @@ Godot のシグナルがその形である。
 ---
 
 ## 改定履歴（要約）
+
+- **14.19改3補（2026-08-22）: `split`・`toupper`・`tolower` を追加。**
+  split は **join^ の逆** — `s.split(sep).join^(sep) = s` の恒等が仕様で、
+  空の断片の保持も `split("")` の1文字割りもここから決まる。無引数形だけ
+  「語の読み」（空白で割り空を落とす、Python の裸 split / Go の Fields）。
+  答えは fresh^。大小文字は ASCII のみ（Unicode の表は持たない）。
+  std.regex にも対称の `Regex.split`（re.split の形、空を保持）
 
 - **14.19改3（2026-08-22）: 文字列の素朴な検索と std.regex。** `find`
   （number^|nil^ — 番兵は採らない）・`findall`（序数を歩く f^ コルーチン）・

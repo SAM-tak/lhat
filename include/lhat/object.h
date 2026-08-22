@@ -407,6 +407,10 @@ typedef enum {
     LHAT_NATIVE_FIND,     // first ordinal the needle stands at, or nil^
     LHAT_NATIVE_FINDALL,  // an f^ walk of every non-overlapping ordinal
     LHAT_NATIVE_REPLACE,  // every occurrence swapped for another string
+    LHAT_NATIVE_SPLIT,    // the pieces between the separator's stands --
+                          // join^'s inverse, so the empties are kept
+    LHAT_NATIVE_TOUPPER,  // the ASCII letters upper-cased, the rest as they are
+    LHAT_NATIVE_TOLOWER,  // and the other way
     // 02 の 14.20: the comparison '=' makes, with the error term written
     // rather than taken from 14.8's default. Only a number^ carries it --
     // it is the one value an arithmetic error accumulates in.

@@ -176,6 +176,38 @@ static void test_gsub(void)
     }
 }
 
+static void test_split(void)
+{
+    LHAT_TEST("split keeps the pieces between the matches, empties too");
+    {
+        LhatTestRan ran = run_source(WITH_REGEX(
+            "\"\\\\s*,\\\\s*\"",
+            "    let^ parts = r.split(\"a , b,,c\")\n"
+            "    r.dispose()\n"
+            "    if^ parts isa^ t^{} {\n"
+            "        return^ \"[\" .. parts.join^(\"|\") .. \"]\"\n"
+            "    }\n"
+            "    return^ \"?\"\n"));
+        LHAT_CHECK_RAN_TEXT(ran, "[a|b||c]");
+        lhat_test_ran_dispose(&ran);
+    }
+
+    LHAT_TEST("a subject with no match answers itself whole");
+    {
+        LhatTestRan ran = run_source(WITH_REGEX(
+            "\",\"",
+            "    let^ parts = r.split(\"abc\")\n"
+            "    r.dispose()\n"
+            "    if^ parts isa^ t^{} {\n"
+            "        return^ parts.join^(\"|\") .. \"#\" .. "
+            "parts.count^.tostring()\n"
+            "    }\n"
+            "    return^ \"?\"\n"));
+        LHAT_CHECK_RAN_TEXT(ran, "abc#1");
+        lhat_test_ran_dispose(&ran);
+    }
+}
+
 static void test_module_forms(void)
 {
     LHAT_TEST("the convenience forms compile on the spot");
@@ -220,6 +252,7 @@ int main(void)
     test_match();
     test_gmatch();
     test_gsub();
+    test_split();
     test_module_forms();
     return lhat_test_report("test_regex");
 }

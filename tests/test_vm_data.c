@@ -678,6 +678,51 @@ static void test_strings(void)
     LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_TYPE_ERROR);
     run_dispose(&r);
 
+    // 14.19改3: split is join^'s inverse, and the law is the pin --
+    // s.split(sep).join^(sep) = s, which is what keeps every empty piece.
+    LHAT_TEST("split and join^ round-trip, empties kept");
+    run_checked_text(&r,
+                     "let^ trip = f^ s:string^, sep:string^ -> number^ {\n"
+                     "    return^ if^ s.split(sep).join^(sep) = s: 1 "
+                     "el^: 0 ;\n"
+                     "}\n"
+                     "return^ trip(\"a,,b\", \",\") + trip(\"\", \",\") +\n"
+                     "        trip(\"--x--\", \"--\") + "
+                     "trip(\"かなカナ\", \"\")\n");
+    CHECK_INTEGER(&r, 4);
+    run_dispose(&r);
+
+    LHAT_TEST("the separator splits by characters when empty");
+    run_checked_text(&r,
+                     "return^ \"かな\".split(\"\").join^(\"|\")\n");
+    CHECK_STRING(&r, "か|な");
+    run_dispose(&r);
+
+    LHAT_TEST("the bare split reads the words, empties dropped");
+    run_checked_text(&r,
+                     "return^ \"  one   two  three \".split().join^(\"/\")\n");
+    CHECK_STRING(&r, "one/two/three");
+    run_dispose(&r);
+
+    // 15.1改3: the pieces are fresh, so an f^ splits and mends its own.
+    LHAT_TEST("an f^ sorts what it split");
+    run_checked_text(&r,
+                     "let^ mend = f^ s:string^ -> string^ {\n"
+                     "    var^ parts = s.split(\",\")\n"
+                     "    parts.sort^()\n"
+                     "    return^ parts.join^(\",\")\n"
+                     "}\n"
+                     "return^ mend(\"c,a,b\")\n");
+    CHECK_STRING(&r, "a,b,c");
+    run_dispose(&r);
+
+    LHAT_TEST("toupper and tolower swap the ASCII letters alone");
+    run_checked_text(&r,
+                     "return^ \"HeLLo こんにちは 42\".toupper() .. \"/\" .. "
+                     "\"HeLLo こんにちは 42\".tolower()\n");
+    CHECK_STRING(&r, "HELLO こんにちは 42/hello こんにちは 42");
+    run_dispose(&r);
+
     LHAT_TEST("clear^ empties both halves");
     run_checked_text(&r,
                      "var^ t = { a := 1, 10, 20 }\n"

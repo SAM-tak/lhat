@@ -2267,6 +2267,31 @@ LhatType *chk_infer_member(Checker *c, const LhatNode *node)
             signature->v.func.result = walk;
             return signature;
         }
+        // 14.19改3: join^'s inverse (with the separator) and the words
+        // reading (without). A fresh answer either way -- the caller splits
+        // and then mends its own pieces.
+        if (target->kind == LHAT_TYPE_STRING &&
+            chk_name_is(name, length, "split")) {
+            LhatType *pieces = lhat_type_table(c->result->types);
+            pieces->v.table.variadic = chk_simple(c, LHAT_TYPE_STRING);
+            LhatType *words = lhat_type_func(c->result->types, true);
+            words->v.func.result = pieces;
+            words->v.func.answers_fresh = true;
+            LhatType *by_sep = lhat_type_func(c->result->types, true);
+            lhat_type_add_param(c->result->types, by_sep,
+                                chk_simple(c, LHAT_TYPE_STRING));
+            by_sep->v.func.result = pieces;
+            by_sep->v.func.answers_fresh = true;
+            return lhat_type_intersect(c->result->types, words, by_sep);
+        }
+        // 14.19改3: the ASCII case swaps.
+        if (target->kind == LHAT_TYPE_STRING &&
+            (chk_name_is(name, length, "toupper") ||
+             chk_name_is(name, length, "tolower"))) {
+            LhatType *signature = lhat_type_func(c->result->types, true);
+            signature->v.func.result = chk_simple(c, LHAT_TYPE_STRING);
+            return signature;
+        }
         if (target->kind == LHAT_TYPE_STRING &&
             chk_name_is(name, length, "replace")) {
             LhatType *signature = lhat_type_func(c->result->types, true);
