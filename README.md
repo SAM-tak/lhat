@@ -2,7 +2,7 @@
 
 ![L^ Logo](lhat-logo.svg)
 
-`L^` (elhat) — a new glue programming language experiment.
+`L^` (elhat) — Modern & Better Lua with Visual Programming.
 
 A bytecode-interpreted language in the spirit of Lua, written in C11 and built
 with CMake — with a static type checker between the parser and the code

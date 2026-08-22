@@ -4,6 +4,8 @@
 
 ## プロジェクト概要
 
+L^ is Modern & Better Lua with visual programming.
+
 Lua風の、C言語でコンパイル可能なバイトコードインタプリタ型のグルー言語・プログラミング言語 `L^`(lhat)を制作しようとしてる
 
 使用言語 C11
@@ -35,3 +37,15 @@ godot エンジンのソース
 > `git clone --filter=blob:none --depth 1 --branch 4.7.1-stable git@github.com:godotengine/godot.git`
 
 @../godot/
+
+### Lua 5.5.1
+
+Lua 5.5.1のソース
+
+@../lua-5.5.1/
+
+### Luau
+
+Luau のソース
+
+@../luau/

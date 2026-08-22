@@ -1,5 +1,15 @@
 # L^ メモ
 
+## 目標
+
+Modern & Better Lua with Visual Programming.
+
+型システムが後付のLuauよりも良いものになってほしい。
+
+## 影響を受けた言語
+
+Lua / Zig / TypeScript / Python / Luau / Ruby
+
 ## 言語コア
 
 「変数はすべて参照」は撤回。指す値の型によっていかようにも変容する。
@@ -34,7 +44,7 @@ let^p = p^t:^t{} { var^t.blah = 1 }
 こういうのはいくらでもできちゃいますけどね、現状。f^ であれば拒否れるので、十分という判断。
 
 ```lhat
-let^p = p^mut^t:^t{} { var^t.blah = 1 }
+let^p = p^mutable^t:^t{} { var^t.blah = 1 }
 ```
 
 と明示できる、これがなかったらtへの書き込みアクセスは拒否（f^に準ずる）、はありかもだな。
@@ -78,6 +88,113 @@ hash^ ユーザー定義のハッシュ。これがないと値比較でテー�
 
 静的無限ループを検知してエラーにする
   脱出条件のないrepeat、等
+
+#### sync^構文
+
+同期的にその場でコルーチンを回すイディオムを毎回書くのだるいから、`sync^`を追加しても良いかも。
+が、具体的にどういう構文になる？ 受け取る結果は T 型のみでいいが、 R Y があるコルーチンの場合は？
+`sync^`一語では済まない。L^ にマクロかジェネリクスがあればユーザー定義で同じ事ができるかもしれないが、
+現状無いのでできない。
+
+> sync^(coroutine, awaiter:f|p^Y -> R;)
+
+```lhat
+let^r = sync^(co, f^a, b { # start/resume の返り値を引数に受け取り（そしてこれは流石に推論してほしい）
+    print(a)
+    return^b + 1 # 次のresume に渡す値を返す
+})
+```
+
+この構文で良さそうだが、もうちと練る。（が、Fable先生によると必要ないらしい…？）
+たしかに。Unityで async/await使っているとasync関数を呼び出すトップの姿を見たことがないわけだが
+Unity内部やUniTaskの中で見えないだけで、そういうもの（スケジューラー）は存在する。
+スケジューラーをユーザーに書かせるかホストが提供するかはホストアプリケーションの判断。
+どっちにしろ、ユーザーサイドでコルーチンの自前回しは基本しない、と考えて良い。
+
+#### 異型 yield は、実は今でも書ける
+
+let^ g = p^ -> c^{p^ -> number^|string^ -> nil^} {
+  yield^ 1 as^ number^|string^      # 通る
+  yield^ "a" as^ number^|string^
+}
+as^ を外すと落ちる。理由は chk_unify_yield が lhat_type_equal（厳密一致） で照合しているから — 合併を書いてあっても各サイトが合併型そのものでないと通らない。
+
+ここを「Y が書かれているときは適合で照合する」に変えれば as^ が消える。 検査器1箇所。「全部 await する」を現実的にする最小の一手はこれ。推論で勝手に合併を作らない（15.2 の「異種の yield^ を型で見分けさせない」）方針は保ったまま、書いた合併だけは効くという線になる。
+
+「どうしても同型にできない」場合も、アダプタは普通の p^ で書ける — 内側を回して外側の形で yield し直すだけ。マクロは要らない。
+
+let^ adapt = p^ inner:c^{…} -> c^{外の形} {
+  var^ y = inner.start()
+  ... 外の形に変換して yield^、返ってきた R を inner.resume() に渡す
+}
+呼ぶ側は await^ adapt(inner)。
+
+##### まとめると
+
+専用構文もマクロも要らない。要るのは (a) Y を「要求型」1つに決める設計判断、(b) 書かれた Y の照合を適合に緩める検査器の1箇所
+f^ 内での駆動は諦める。作る側が f^、回す側が p^ かホスト、で分業する
+Godot は _ready start /_process resume。エンジン側の await と同じ構造なので違和感も出ない
+(b) は小さい変更で効果が大きい。やるなら着手する。
+
+これは良いが、なるとなると c^{} のシグネチャの手書きが増えるのが嫌。
+
+gen.Return などとしてその返り値型にアクセスできて、
+
+f^->gen.Return {}
+
+と書けるなら良いかもしれない。が、そうなると合併されてた時の書き分け、引数にも同様なのが欲しい、となる…
+
+```lhat
+func = f^a:number^, b:string^ -> (number^|string^, number^|nil^)|Error|nil^;
+
+func.Argument        # (number^, string^)
+func.Argument[1]     # number^
+func.Argument[2]     # string^
+func.Return          # (number^|string^, number^|nil^)|Error|nil^
+func.Return[1]       # (number^|string^, number^|nil^)
+func.Return[2]       # Error
+func.Return[3]       # nil^
+func.Return[1][1]    # number^|string^
+func.Return[1,1]     # number^|string^ これはこう書けなくても良いかな…
+func.Return[1][1][1] # number^
+func.Return[1][1][2] # string^
+
+gen = f^a:number^, b:string^->c^{f^number^,number^->string^,string^->File|Error|nil^};
+
+gen.Return          # c^{f^number^,number^->string^,string^->File|Error|nil^}
+gen.Return[1]       # c^{f^number^,number^->string^,string^->File|Error|nil^}
+gen.Return[1][1]    # (number^,number^) こう、か？つまり R項
+gen.Return[1][2]    # (string^,string^) つまり Y項
+gen.Return[1][3]    # File|Error|nil^ つまり T項
+gen.Return[1][3][1] # File
+gen.Return[1][3][1] # Error
+
+c^{}はそれ以上分解できない、でいい気はする
+```
+
+typeof^() は？あれは何？
+
+あと、現状の as^ はまずい。キャスト失敗＝panicは乱暴すぎる。
+
+考えられる解決は、 as^ T は T|Error.CastFailure で T への解決はしない、というものでは。
+
+#### マクロ
+
+定義
+
+```lhat
+macro^time(stats){
+    let^start_time = time.now()
+    stats
+    print($"Time elapsed: {time.now()-start_time}s")
+}
+```
+
+使用
+
+```lhat
+time! foo() # > Time elapsed: 0.0002s
+```
 
 ### 気になるところ（後で調べること）
 
