@@ -2422,8 +2422,12 @@ static LhatRunResult finish(Machine *m, const LhatChunk *chunk,
         m->fault_base = m->run_base;
         m->fault_depth = m->frame_count;
         m->fault_at = at;
+        m->fault_status = status;
+        m->fault_value = value;
     } else {
         m->fault_depth = m->fault_base = 0;
+        m->fault_status = LHAT_RUN_OK;
+        m->fault_value = lhat_nil();
     }
     // 04 の 11 章: named from the chunk's own line table (03 の 5.11a-style
     // parallel array) and 02 の 11.8's operator names -- both silently
@@ -4365,9 +4369,23 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
                             data->released = true;
                         }
                     }
+                    size_t frames_before = m->frame_count;
                     LhatValue answered =
                         host->call(m, host->context, arguments, given);
                     lhat_free(packed);
+                    // 05 の 8.7 with 04 の 11.6改: the host may have called
+                    // back in, and a nested run that faulted leaves its
+                    // frames standing -- nothing unwinds. Running on from
+                    // here would stack the outer frame's own calls over
+                    // them, so the outer run ends with the same fault, and
+                    // the traceback keeps the whole chain.
+                    if (m->frame_count > frames_before) {
+                        return finish(m, chunk,
+                                      m->fault_status != LHAT_RUN_OK
+                                          ? m->fault_status
+                                          : LHAT_RUN_TYPE_ERROR,
+                                      m->fault_value, at);
+                    }
                     // 05 の 8.9: a host value answer arrives as a
                     // head-shaped run and is written out whole on the spot,
                     // before anything else can touch the scratch it may live

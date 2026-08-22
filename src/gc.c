@@ -221,6 +221,9 @@ static void mark_roots(Machine *m)
     // A host may allocate in between -- build a table, call back into L^ --
     // so these are roots for as long as the count says they are there. The
     // host-value scratch beside them needs nothing: it is bytes.
+    // 04 の 11.6改: what the last fault carried, held until the next run
+    // resets it -- a host may still be routing it out.
+    lhat_gc_reach(&m->gray, m->fault_value);
     // 02 の 14.22: what running built-ins are holding while written L^ code
     // runs inside them -- every level of the chain, since a clone's policy
     // may itself be cloning.

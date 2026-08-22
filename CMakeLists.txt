@@ -177,6 +177,8 @@ if(LHAT_BUILD_STDLIB)
         stdlib/io.c
         stdlib/math.c
         stdlib/random.c
+        stdlib/regex.c
+        stdlib/regex_engine.c
         stdlib/thread.c
     )
     # lhat.h is the whole of what it needs (no private path into src/) --
@@ -194,7 +196,7 @@ if(LHAT_BUILD_STDLIB)
         LIBRARY DESTINATION lib
         RUNTIME DESTINATION bin)
     install(FILES stdlib/async.h stdlib/debug.h stdlib/error.h stdlib/io.h
-            stdlib/random.h
+            stdlib/random.h stdlib/regex.h
             stdlib/thread.h
         DESTINATION include/lhatstdlib)
 endif()

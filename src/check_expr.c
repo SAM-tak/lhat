@@ -2942,6 +2942,23 @@ LhatType *chk_infer_func(Checker *c, const LhatNode *node)
     // talking about.
     LhatType *expected_func = c->expected_func;
     c->expected_func = NULL;
+    // 3.4改: a seat written 'f^…;|nil^' -- or gsub's 'string^|f^…;' -- still
+    // says which signature a literal there is expected to have. The one
+    // func arm is the expectation; the other arms are other values' to fill.
+    if (expected_func != NULL && expected_func->kind == LHAT_TYPE_UNION) {
+        LhatType *only_func = NULL;
+        for (const LhatTypeList *arm = expected_func->v.composite.arms;
+             arm != NULL; arm = arm->next) {
+            if (arm->type != NULL && arm->type->kind == LHAT_TYPE_FUNC) {
+                if (only_func != NULL) {
+                    only_func = NULL;  // two candidates say nothing
+                    break;
+                }
+                only_func = arm->type;
+            }
+        }
+        expected_func = only_func;
+    }
     if (expected_func != NULL && (expected_func->kind != LHAT_TYPE_FUNC ||
                                   expected_func->v.func.is_function !=
                                       node->v.func.is_function)) {
@@ -3392,6 +3409,14 @@ LhatType *chk_instance_of(const LhatType *definition)
     if (definition != NULL && definition->kind == LHAT_TYPE_TABLE &&
         definition->v.table.instance != NULL) {
         return definition->v.table.instance;
+    }
+    // 14.11 is a def^'s mechanism and no one else's. A module -- hosted, or
+    // what require^ answers -- may carry an ordinary function under the
+    // name (std.regex.new, say), and reading its result as "the instance
+    // type" here made the module's own name unresolvable as a path.
+    if (definition == NULL || definition->kind != LHAT_TYPE_TABLE ||
+        !definition->v.table.is_definition) {
+        return NULL;
     }
     const LhatTypeMember *constructor = chk_find_member(definition, "new", 3);
     const LhatType *arm =

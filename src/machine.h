@@ -31,6 +31,7 @@ typedef struct LhatNativeHold {
 #include "lhat/config.h"
 #include "lhat/object.h"
 #include "lhat/value.h"
+#include "lhat/vm.h"
 
 typedef struct {
     const LhatClosure *closure;
@@ -211,6 +212,14 @@ struct LhatMachine {
     // same reason a frame's answer room is walked.
     LhatValue tuple_scratch[LHAT_MAX_TUPLE];
     size_t tuple_scratch_count;  // 0 when nothing is being carried
+
+    // 04 の 11.6改 with 05 の 8.7: what the last fault was. Set beside
+    // fault_depth so that a host function whose nested lhat_machine_call
+    // faulted -- leaving those frames standing -- can be seen from the
+    // instruction that called the host, and the outer run ended with the
+    // same status rather than running on over dead frames.
+    LhatRunStatus fault_status;
+    LhatValue fault_value;  // what a PANIC carried; nil^ for the rest
 
     // 02 の 14.22: the tables built-ins are holding onto while written L^
     // code runs inside them -- a sort's aux while the comparator runs, a
