@@ -436,6 +436,118 @@ static void test_purity(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_FUNCTION_CHANGES_TABLE);
     unit_dispose(&u);
 
+    // 15.1改: an indexed write reaches the table exactly as a member write
+    // does. (This once slipped through -- the path test read only the '.'
+    // spelling.)
+    LHAT_TEST("an indexed write is the same change");
+    check_text(&u,
+               "var^ f = f^ t:t^{ ...:number^ } -> number^ {\n"
+               "    t[1] := 5\n"
+               "    return^ 0\n"
+               "}\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_FUNCTION_CHANGES_TABLE);
+    unit_dispose(&u);
+
+    // 15.1改2: a receiver seat written mutable^self^ is the one thing the
+    // body may write through -- and staying an f^ elsewhere is the point.
+    LHAT_TEST("a mutable^self^ body writes through its receiver");
+    check_text(&u,
+               "var^ P = def^{\n"
+               "    self^{ x := 0, log = {} },\n"
+               "    bump := f^mutable^self^ -> number^ {\n"
+               "        self^.x := 1\n"
+               "        self^.log.push^(1)\n"
+               "        return^ self^.x\n"
+               "    },\n"
+               "}\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("and everything else outside stays refused there");
+    check_text(&u,
+               "var^ shared = { x := 0 }\n"
+               "var^ P = def^{\n"
+               "    self^{ x := 0 },\n"
+               "    bump := f^mutable^self^ -> number^ {\n"
+               "        shared.x := 1\n"
+               "        return^ 0\n"
+               "    },\n"
+               "}\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_FUNCTION_CHANGES_TABLE);
+    unit_dispose(&u);
+
+    LHAT_TEST("an f^ calls a mutable method on an instance it made");
+    check_text(&u,
+               "var^ P = def^{\n"
+               "    self^{ x := 0 },\n"
+               "    bump := f^mutable^self^ -> number^ "
+               "{ self^.x := 1 return^ 0 },\n"
+               "}\n"
+               "var^ f = f^ -> number^ {\n"
+               "    var^ mine = P.new()\n"
+               "    mine.bump()\n"
+               "    return^ mine.x\n"
+               "}\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("but not on one that arrived");
+    check_text(&u,
+               "var^ P = def^{\n"
+               "    self^{ x := 0 },\n"
+               "    bump := f^mutable^self^ -> number^ "
+               "{ self^.x := 1 return^ 0 },\n"
+               "}\n"
+               "var^ f = f^ o:P -> number^ {\n"
+               "    o.bump()\n"
+               "    return^ o.x\n"
+               "}\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MUTATES_OUTSIDE);
+    unit_dispose(&u);
+
+    // 14.4: written out, the receiver is the first argument, and the same
+    // question is asked of it.
+    LHAT_TEST("the written-out receiver is measured the same way");
+    check_text(&u,
+               "var^ P = def^{\n"
+               "    self^{ x := 0 },\n"
+               "    bump := f^mutable^self^ -> number^ "
+               "{ self^.x := 1 return^ 0 },\n"
+               "}\n"
+               "var^ f = f^ o:P -> number^ {\n"
+               "    let^ m = P.bump\n"
+               "    var^ mine = P.new()\n"
+               "    m(mine)\n"
+               "    m(o)\n"
+               "    return^ 0\n"
+               "}\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MUTATES_OUTSIDE);
+    unit_dispose(&u);
+
+    // 15.1改2: a permission goes one way. A body that never writes stands
+    // where writing was allowed for; one that writes may not stand where
+    // none was.
+    LHAT_TEST("a mutable method does not fit a non-mutable seat");
+    check_text(&u,
+               "var^ P = def^{\n"
+               "    self^{ n = 0 },\n"
+               "    loud = f^mutable^self^ -> number^ "
+               "{ self^.n += 1 return^ self^.n },\n"
+               "}\n"
+               "var^ seat : f^self^ -> number^; = P.loud\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
+    unit_dispose(&u);
+
+    LHAT_TEST("and a quiet one fits a mutable seat");
+    check_text(&u,
+               "var^ P = def^{\n"
+               "    self^{ n = 0 },\n"
+               "    quiet = f^self^ -> number^ { return^ self^.n },\n"
+               "}\n"
+               "var^ seat : f^mutable^self^ -> number^; = P.quiet\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
     LHAT_TEST("a p^ changes whatever it is given");
     check_text(&u,
                "var^ g = p^ t:t^{ x:number^ } { t.x := 1 }\n");

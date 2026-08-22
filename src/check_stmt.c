@@ -12,14 +12,24 @@ static const LhatNode *target_name_node(const LhatNode *target)
     return lhat_define_target_name(target);
 }
 
+// Wider than ast.c's lhat_define_target_root on purpose: a define target's
+// grammar never holds an index, but a reassignment's does -- 't[k] := v'
+// changes the table exactly as 't.x := v' does, so every question asked of
+// a path here has to see both spellings. (This is where 15.1改's origin rule
+// once let an indexed write through unasked.)
 static const LhatNode *target_root(const LhatNode *target)
 {
-    return lhat_define_target_root(target);
+    const LhatNode *node = lhat_define_target_name(target);
+    while (node->kind == LHAT_NODE_MEMBER || node->kind == LHAT_NODE_INDEX) {
+        node = node->v.access.target;
+    }
+    return node;
 }
 
 static bool target_is_path(const LhatNode *target)
 {
-    return lhat_define_target_is_path(target);
+    const LhatNode *name = lhat_define_target_name(target);
+    return name->kind == LHAT_NODE_MEMBER || name->kind == LHAT_NODE_INDEX;
 }
 
 static const LhatTypeMember *member_named(const LhatType *type,
@@ -881,6 +891,23 @@ bool chk_receiver_is_own_coroutine(Checker *c, const LhatNode *receiver)
     return root != NULL && root->fresh && chk_scope_within_body(c, found_in);
 }
 
+// 15.1改2: the same question of a table -- whether the receiver of a
+// mutable^self^ call is something this body made. A literal or a new() is
+// made on the spot; a name answers by the binding's origin, exactly as the
+// write rule below reads it.
+bool chk_receiver_is_own_table(Checker *c, const LhatNode *receiver)
+{
+    if (receiver == NULL) {
+        return false;
+    }
+    if (chk_value_is_fresh(c, receiver, NULL)) {
+        return true;
+    }
+    Scope *found_in = NULL;
+    Binding *root = path_root_binding(c, receiver, &found_in);
+    return root != NULL && root->fresh && chk_scope_within_body(c, found_in);
+}
+
 // Whether `found_in` is at or inside `boundary` -- the outermost scope of
 // some body -- counting from where the walk stands now.
 bool chk_scope_within(Checker *c, const Scope *found_in, const Scope *boundary)
@@ -920,7 +947,9 @@ void chk_check_write_target(Checker *c, const LhatNode *target)
         // the one table an f^ may change, since nothing outside holds it
         // yet. Only the immediate body: a literal nested inside it is an
         // ordinary one again.
-        if (c->in_new_body) {
+        // 15.1改2: and a mutable^self^ body writes through its receiver by
+        // its own signature's word -- the same one root, the same one body.
+        if (c->in_new_body || c->receiver_mutable) {
             const LhatNode *root = target_root(target);
             const char *root_name = NULL;
             size_t root_length = 0;

@@ -735,17 +735,25 @@ static void test_builtin_operations(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
-    // 15.1's blunt reading: the mutating half are p^, so an f^ body may
-    // not call them -- even on a table of its own, until 15.1改 learns to
-    // see through a method call.
-    LHAT_TEST("the mutating half are procedures");
+    // 15.1改2: the mutating half write through the receiver alone, so an
+    // f^ body may call them on a table it made itself.
+    LHAT_TEST("an f^ sorts a table its own body made");
     check_text(&u,
                "let^ f = f^ -> number^ {\n"
                "    var^ t = {2, 1}\n"
                "    t.sort^()\n"
+               "    return^ t[1]\n"
+               "}\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("but not one that arrived as an argument");
+    check_text(&u,
+               "let^ f = f^ t:t^{ ...:number^ } -> number^ {\n"
+               "    t.sort^()\n"
                "    return^ t[1] ?? 0\n"
                "}\n");
-    CHECK_REPORTS(&u, LHAT_CHECK_ERR_FUNCTION_CALLS_PROCEDURE);
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MUTATES_OUTSIDE);
     unit_dispose(&u);
 
     // And the reading half are f^, callable anywhere.

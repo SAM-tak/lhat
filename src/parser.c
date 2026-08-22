@@ -368,6 +368,12 @@ static LhatNode *parse_type_params(Parser *p)
                 param->v.param.type = parse_type(p);
             }
         } else {
+            // 15.1改2: the marker, exactly as parse_params reads it.
+            if (check_hat(p, "mutable") &&
+                token_is_hat(p, &p->ahead, "self")) {
+                param->v.param.mutable_receiver = true;
+                advance(p);
+            }
             param->v.param.type = parse_type(p);
         }
 
@@ -1370,6 +1376,14 @@ static LhatNode *parse_params(Parser *p)
             }
         } else if (p->current.kind == LHAT_TOKEN_IDENT ||
                    p->current.kind == LHAT_TOKEN_HAT_IDENT) {
+            // 15.1改2: 'mutable^self^' -- the marker on the receiver's seat.
+            // Only that two-word run is the spelling; 'mutable^' anywhere
+            // else stays an ordinary name of the writer's.
+            if (check_hat(p, "mutable") &&
+                token_is_hat(p, &p->ahead, "self")) {
+                param->v.param.mutable_receiver = true;
+                advance(p);
+            }
             param->v.param.name = simple_node(p);
             if (match_op(p, LHAT_OP_COLON)) {
                 param->v.param.type = parse_type(p);

@@ -192,6 +192,9 @@ typedef enum {
     LHAT_CHECK_ERR_ADVANCES_OUTSIDE,    // 15.3改: an f^ advancing a coroutine
                                         // its own body did not make, whose
                                         // progress the caller can see
+    LHAT_CHECK_ERR_MUTATES_OUTSIDE,     // 15.1改2: an f^ calling a
+                                        // mutable^self^ method on a table
+                                        // its own body did not make
     LHAT_CHECK_ERR_COROUTINE_ESCAPES,   // 15.3改: an f^ coroutine reaching the
                                         // outside, where advancing it is what
                                         // makes the call observable

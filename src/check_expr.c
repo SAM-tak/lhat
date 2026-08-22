@@ -1251,6 +1251,46 @@ static LhatType *coroutine_answer(Checker *c, const LhatType *coro)
     return lhat_type_union(c->result->types, produce, ends_with);
 }
 
+// 15.1改2: an f^ whose receiver seat is mutable writes through it, so an f^
+// body may call one only on what it made itself -- 15.3改's rule for a
+// coroutine, reached through a call instead of a resume. Inside a
+// mutable^self^ body, self^ is the one receiver the signature already
+// vouches for, so mutable methods chain through it unasked.
+static void check_mutable_receiver(Checker *c, const LhatNode *node,
+                                   const LhatType *callee)
+{
+    if (!c->in_function || callee == NULL ||
+        callee->kind != LHAT_TYPE_FUNC || !callee->v.func.is_function ||
+        !callee->v.func.mutable_self) {
+        return;
+    }
+    const LhatNode *receiver = NULL;
+    if (node->v.access.target->kind == LHAT_NODE_MEMBER) {
+        receiver = node->v.access.target->v.access.target;
+    } else if (callee->v.func.takes_self && !callee->v.func.self_last) {
+        // 14.4: written out, the receiver is the first argument.
+        receiver = node->v.access.argument;
+    }
+    if (receiver != NULL && c->receiver_mutable) {
+        // The root of the chain, so 'self^.log.push^(v)' is seen the way
+        // the write rule sees 'self^.log[k] := v' -- one root, one body.
+        const LhatNode *root = receiver;
+        while (root != NULL && (root->kind == LHAT_NODE_MEMBER ||
+                                root->kind == LHAT_NODE_INDEX)) {
+            root = root->v.access.target;
+        }
+        const char *name = NULL;
+        size_t length = 0;
+        if (chk_node_name(c, root, &name, &length) &&
+            chk_name_is(name, length, "self^")) {
+            return;
+        }
+    }
+    if (receiver == NULL || !chk_receiver_is_own_table(c, receiver)) {
+        chk_report(c, node, LHAT_CHECK_ERR_MUTATES_OUTSIDE);
+    }
+}
+
 LhatType *chk_infer_call(Checker *c, const LhatNode *node)
 {
     // 3.4改: the arguments first where the callee is a literal, so what they
@@ -1429,6 +1469,7 @@ LhatType *chk_infer_call(Checker *c, const LhatNode *node)
                     !arm->type->v.func.yields) {
                     chk_report(c, node, LHAT_CHECK_ERR_FUNCTION_CALLS_PROCEDURE);
                 }
+                check_mutable_receiver(c, node, arm->type);  // 15.1改2
                 // 15.5: a yielding arm answers the coroutine it makes, the
                 // same as the plain call below.
                 return lhat_type_call_answer(arm->type);
@@ -1455,6 +1496,7 @@ LhatType *chk_infer_call(Checker *c, const LhatNode *node)
         !callee->v.func.yields) {
         chk_report(c, node, LHAT_CHECK_ERR_FUNCTION_CALLS_PROCEDURE);
     }
+    check_mutable_receiver(c, node, callee);  // 15.1改2
 
     const LhatTypeList *param = callee->v.func.params;
 
@@ -1804,6 +1846,16 @@ static LhatType *builtin_at(Checker *c)
     lhat_type_add_param(c->result->types, signature,
                         chk_simple(c, LHAT_TYPE_NUMBER));
     signature->v.func.result = chk_simple(c, LHAT_TYPE_STRING);
+    return signature;
+}
+
+// 15.1改2: what the mutating half of 14.22 are -- an f^ that writes through
+// its receiver and nothing else. A p^ calls one anywhere; an f^ only on a
+// table its own body made.
+static LhatType *mutable_method(Checker *c)
+{
+    LhatType *signature = lhat_type_func(c->result->types, true);
+    signature->v.func.mutable_self = true;
     return signature;
 }
 
@@ -2331,17 +2383,17 @@ LhatType *chk_infer_member(Checker *c, const LhatNode *node)
             range->v.func.result = cut;
             return lhat_type_intersect(c->result->types, from, range);
         }
-        // The mutating half are p^ -- 15.1 keeps them out of an f^ body,
-        // which is the blunt reading of 15.1改 until the origin rule learns
-        // to see through a method call.
+        // 15.1改2: the mutating half write through the receiver alone, so
+        // they are f^mutable^self^ -- an f^ body calls them on what it made
+        // itself, a p^ anywhere.
         if (builtin_named(name, length, "push", true)) {
-            LhatType *signature = lhat_type_func(c->result->types, false);
+            LhatType *signature = mutable_method(c);
             lhat_type_add_param(c->result->types, signature, element);
             signature->v.func.result = self_type;
             return signature;
         }
         if (builtin_named(name, length, "insert", true)) {
-            LhatType *signature = lhat_type_func(c->result->types, false);
+            LhatType *signature = mutable_method(c);
             lhat_type_add_param(c->result->types, signature, number);
             lhat_type_add_param(c->result->types, signature, element);
             signature->v.func.result = self_type;
@@ -2350,32 +2402,32 @@ LhatType *chk_infer_member(Checker *c, const LhatNode *node)
         if (builtin_named(name, length, "extend", true)) {
             LhatType *more = lhat_type_table(c->result->types);
             more->v.table.variadic = element;
-            LhatType *signature = lhat_type_func(c->result->types, false);
+            LhatType *signature = mutable_method(c);
             lhat_type_add_param(c->result->types, signature, more);
             signature->v.func.result = self_type;
             return signature;
         }
         if (builtin_named(name, length, "remove", true)) {
-            LhatType *signature = lhat_type_func(c->result->types, false);
+            LhatType *signature = mutable_method(c);
             lhat_type_add_param(c->result->types, signature, number);
             signature->v.func.result = elem_or_nil;
             return signature;
         }
         if (builtin_named(name, length, "pop", true)) {
-            LhatType *signature = lhat_type_func(c->result->types, false);
+            LhatType *signature = mutable_method(c);
             signature->v.func.result = elem_or_nil;
             return signature;
         }
         // 11.9's three-way answer is the comparison's shape here too.
         if (builtin_named(name, length, "sort", true) ||
             builtin_named(name, length, "stablesort", true)) {
-            LhatType *bare = lhat_type_func(c->result->types, false);
+            LhatType *bare = mutable_method(c);
             bare->v.func.result = self_type;
             LhatType *cmp = lhat_type_func(c->result->types, true);
             lhat_type_add_param(c->result->types, cmp, element);
             lhat_type_add_param(c->result->types, cmp, element);
             cmp->v.func.result = number;
-            LhatType *with_cmp = lhat_type_func(c->result->types, false);
+            LhatType *with_cmp = mutable_method(c);
             lhat_type_add_param(c->result->types, with_cmp, cmp);
             with_cmp->v.func.result = self_type;
             return lhat_type_intersect(c->result->types, bare, with_cmp);
@@ -2386,21 +2438,21 @@ LhatType *chk_infer_member(Checker *c, const LhatNode *node)
         if (builtin_named(name, length, "move", true)) {
             LhatType *more = lhat_type_table(c->result->types);
             more->v.table.variadic = element;
-            LhatType *one = lhat_type_func(c->result->types, false);
+            LhatType *one = mutable_method(c);
             lhat_type_add_param(c->result->types, one, number);
             lhat_type_add_param(c->result->types, one, number);
             one->v.func.result = self_type;
-            LhatType *block = lhat_type_func(c->result->types, false);
+            LhatType *block = mutable_method(c);
             lhat_type_add_param(c->result->types, block, number);
             lhat_type_add_param(c->result->types, block, number);
             lhat_type_add_param(c->result->types, block, number);
             block->v.func.result = self_type;
-            LhatType *from_one = lhat_type_func(c->result->types, false);
+            LhatType *from_one = mutable_method(c);
             lhat_type_add_param(c->result->types, from_one, more);
             lhat_type_add_param(c->result->types, from_one, number);
             lhat_type_add_param(c->result->types, from_one, number);
             from_one->v.func.result = self_type;
-            LhatType *from_block = lhat_type_func(c->result->types, false);
+            LhatType *from_block = mutable_method(c);
             lhat_type_add_param(c->result->types, from_block, more);
             lhat_type_add_param(c->result->types, from_block, number);
             lhat_type_add_param(c->result->types, from_block, number);
@@ -2413,7 +2465,7 @@ LhatType *chk_infer_member(Checker *c, const LhatNode *node)
         }
         if (builtin_named(name, length, "reverse", true) ||
             builtin_named(name, length, "clear", true)) {
-            LhatType *signature = lhat_type_func(c->result->types, false);
+            LhatType *signature = mutable_method(c);
             signature->v.func.result = self_type;
             return signature;
         }
@@ -2765,6 +2817,11 @@ static LhatType *declared_signature(Checker *c, const LhatNode *node)
         if (marker != 0) {
             func->v.func.takes_self = true;
             func->v.func.self_last = marker == 2;
+            // 15.1改2: the marker travels with the seat. On a p^ it says
+            // nothing a p^ could not already do, so it is not recorded.
+            if (param->v.param.mutable_receiver && func->v.func.is_function) {
+                func->v.func.mutable_self = true;
+            }
             continue;
         }
         LhatType *type = param->v.param.type != NULL
@@ -2846,6 +2903,11 @@ LhatType *chk_infer_func(Checker *c, const LhatNode *node)
         if (marker != 0) {
             func->v.func.takes_self = true;
             func->v.func.self_last = marker == 2;
+            // 15.1改2: the marker travels with the seat. On a p^ it says
+            // nothing a p^ could not already do, so it is not recorded.
+            if (param->v.param.mutable_receiver && func->v.func.is_function) {
+                func->v.func.mutable_self = true;
+            }
             continue;
         }
         // 03 の 3.4改: what the position is expected to take, which stands
@@ -2980,6 +3042,9 @@ LhatType *chk_infer_func(Checker *c, const LhatNode *node)
     bool constructor = node == c->new_func;
     bool outer_in_new_body = c->in_new_body;
     c->in_new_body = constructor;
+    // 15.1改2: whether this body's own receiver seat is mutable.
+    bool outer_receiver_mutable = c->receiver_mutable;
+    c->receiver_mutable = func->v.func.mutable_self;
 
     c->scope = &body;
     c->declared_result = declared;
@@ -3144,6 +3209,7 @@ LhatType *chk_infer_func(Checker *c, const LhatNode *node)
 
     c->deferred--;
     c->in_new_body = outer_in_new_body;
+    c->receiver_mutable = outer_receiver_mutable;
     c->scope = outer_scope;
     c->declared_result = outer_declared;
     c->inferred_result = outer_inferred;

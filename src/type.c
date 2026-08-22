@@ -540,6 +540,13 @@ static bool conforms_func(const LhatType *value, const LhatType *target,
     if (target->v.func.closed && !value->v.func.closed) {
         return false;
     }
+    // 15.1改2: a permission, so it goes the other way round. A body that
+    // never writes its receiver stands where writing was allowed for; one
+    // that writes, standing where none was, would mutate through a seat
+    // that promised not to.
+    if (value->v.func.mutable_self && !target->v.func.mutable_self) {
+        return false;
+    }
 
     const LhatTypeList *a = value->v.func.params;
     const LhatTypeList *b = target->v.func.params;
@@ -1674,7 +1681,8 @@ static void write_type(TypeSink *sink, const LhatType *type, int depth)
             bool others = type->v.func.params != NULL ||
                           type->v.func.variadic != NULL;
             if (type->v.func.takes_self && !type->v.func.self_last) {
-                put_text(sink, "self^");
+                put_text(sink, type->v.func.mutable_self ? "mutable^self^"
+                                                         : "self^");
                 if (others) {
                     put_text(sink, ", ");
                 }
@@ -1691,7 +1699,8 @@ static void write_type(TypeSink *sink, const LhatType *type, int depth)
                 if (others) {
                     put_text(sink, ", ");
                 }
-                put_text(sink, "self^");
+                put_text(sink, type->v.func.mutable_self ? "mutable^self^"
+                                                         : "self^");
             }
             // 15.5: what a call answers, which for a yielding body is the
             // coroutine it makes (13.9) rather than what the body returns.

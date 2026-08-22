@@ -7895,7 +7895,7 @@ Lua の `table.*` にあたるものを、名前空間の関数ではなく**テ
 同じ理由で、素のテーブルの裸の名前は全部書き手のものだからである。
 
 E はその列の要素型（数えられる位置の合併、`t^{...:E}` の E）。読みは `f^`、
-変異は `p^` である。
+変異は `f^mutable^self^`（15.1改2 — 受け手にだけ書く f^）である。
 
 ```lhat
 # 読み（f^）
@@ -7904,20 +7904,23 @@ indexof^  : f^E -> number^|nil^;                            # 最初に立つ位
 contains^ : f^E -> bool^;
 slice^    : f^number^ -> t^{...:E}; | f^number^, number^ -> t^{...:E};
 
-# 変異（p^）— 答えは自分自身（連鎖のため）、pop^/remove^ だけ取り出した値
-insert^     : p^number^, E -> Self^;      # 位置に差し込み、後ろを送る
-push^       : p^E -> Self^;               # 末尾に
-extend^     : p^t^{...:E} -> Self^;       # 相手の列を末尾に（in-place の一括追加）
-remove^     : p^number^ -> E|nil^;        # 位置の値を取り出し、後ろを詰める
-pop^        : p^ -> E|nil^;               # 末尾を取り出す。空なら nil^
-sort^       : p^ -> Self^; | p^f^E, E -> number^; -> Self^;
-stablesort^ : p^ -> Self^; | p^f^E, E -> number^; -> Self^;
-move^       : p^number^, number^ -> Self^;                       # 1要素を from から to へ
-            | p^number^, number^, number^ -> Self^;              # 自分の中の塊コピー
-            | p^t^{...:E}, number^, number^ -> Self^;            # 相手の1要素を to へ
-            | p^t^{...:E}, number^, number^, number^ -> Self^;   # 相手の塊を to へ
-reverse^    : p^ -> Self^;
-clear^      : p^ -> Self^;                # 配列部もハッシュ部も空に
+# 変異（f^mutable^self^、15.1改2）— 答えは自分自身（連鎖のため）、
+# pop^/remove^ だけ取り出した値
+insert^     : f^mutable^self^, number^, E -> Self^;   # 位置に差し込み、後ろを送る
+push^       : f^mutable^self^, E -> Self^;            # 末尾に
+extend^     : f^mutable^self^, t^{...:E} -> Self^;    # 相手の列を末尾に（in-place の一括追加）
+remove^     : f^mutable^self^, number^ -> E|nil^;     # 位置の値を取り出し、後ろを詰める
+pop^        : f^mutable^self^ -> E|nil^;              # 末尾を取り出す。空なら nil^
+sort^       : f^mutable^self^ -> Self^;
+            | f^mutable^self^, f^E, E -> number^; -> Self^;
+stablesort^ : f^mutable^self^ -> Self^;
+            | f^mutable^self^, f^E, E -> number^; -> Self^;
+move^       : f^mutable^self^, number^, number^ -> Self^;            # 1要素を from から to へ
+            | f^mutable^self^, number^, number^, number^ -> Self^;   # 自分の中の塊コピー
+            | f^mutable^self^, t^{...:E}, number^, number^ -> Self^; # 相手の1要素を to へ
+            | f^mutable^self^, t^{...:E}, number^, number^, number^ -> Self^;
+reverse^    : f^mutable^self^ -> Self^;
+clear^      : f^mutable^self^ -> Self^;               # 配列部もハッシュ部も空に
 ```
 
 #### 規則
@@ -7940,9 +7943,9 @@ clear^      : p^ -> Self^;                # 配列部もハッシュ部も空に
 - **`move^`** — 2引数形だけが「移動」（間が詰まって開く）。3・4引数と
   相手付きは Lua の `table.move` の塊コピーで、重なりは正しく写る
 - **`extend^`** — 自分自身を渡すと、呼んだ時点の列がもう一度付く
-- 変異の8つは `p^` なので、**f^ の本体からは呼べない**（15.1）。これは
-  15.1改 の出自規則がメソッド呼び出し越しを見るようになるまでの、粗い側に
-  倒した読みである。f^ の中では `..`（11.2改）と `slice^` が純粋な代替になる
+- 変異の10種は `f^mutable^self^`（15.1改2）— 書くのは受け手だけなので、
+  **p^ からはどこでも、f^ からは自分が作ったテーブルにだけ**呼べる。
+  届いたテーブルを変えずに使うなら `..`（11.2改）と `slice^` が純粋な側の道
 
 #### pack と unpack は置かない
 
@@ -8098,6 +8101,75 @@ let^ make = fresh^ f^ -> t^{ x:number^ } { return^ { x := 0 } }
 > **誰が書けるか**（可変性）は値に付く性質で、実行時にも意味を持つ。
 > **どこから書けるか**（この規則）は式の由来に付く性質で、静的にしか意味を持たない。
 > 両方が満たされて初めて書ける。
+
+#### 15.1改2 レシーバだけ変異する f^ — `mutable^self^`
+
+> **受け手の席に `mutable^self^` と書いた f^ は、その受け手にだけ書き込める。
+> f^ の本体からは、自分が作ったものにだけ呼べる。**
+
+```lhat
+let^ Counter = def^{
+    self^{ n = 0, log = {} },
+    bump = f^mutable^self^, by:number^ -> Self^ {
+        self^.n += by            # 受け手への書き — 署名が言ったとおり
+        self^.log.push^(by)      # self^ を根とする連鎖も同じ1つの根
+        return^ self^
+    },
+}
+```
+
+15.1改 は「f^ は自分が作ったテーブルなら書き換えてよい」と定めた。この節は
+同じ規則を **メソッド呼び出し越し** に届かせる。呼ぶ側の判定は 15.1改 の
+出自判定そのもので、15.3改 が「f^ は自分が作ったコルーチンなら advance
+できる」に使うのと同じ形である。
+
+```lhat
+let^ use = f^ -> number^ {
+    var^ mine = Counter.new()
+    mine.bump(2)          # 通る。この本体が作った
+    return^ mine.n
+}
+let^ leak = f^ c:Counter -> number^ {
+    c.bump(1)             # 誤り。届いたものは呼び出し側のもの
+    return^ c.n
+}
+```
+
+D 言語の weakly pure（引数だけ変異できる純粋関数）と Rust の `&mut self` の
+交点にあたり、どちらにも実績がある。
+
+##### mutable^self^ どうしは self^ 経由で連鎖する
+
+本体の中では、**自分の self^ が書けることは署名が保証済み** である。
+したがって self^（と、self^ を根とする経路）をレシーバとする
+`mutable^self^` 呼び出しは、出自を問わずに通る。上の `self^.log.push^(by)`
+がそれである。
+
+##### 印は f^ にだけ意味を持つ
+
+`p^` はもとより何にでも書けるので、`p^` の受け手に書いた `mutable^` は
+何も言っていない — 記録されない。`mutable^` の語は変数宣言の役からは退役
+済みで（可変性は var^/let^ と 15.1改 が担う）、ここでの復活は
+**署名の席に付く印** という別の役である。
+
+##### 適合は一方通行
+
+許可なので、閉じ込め（`closed^`）と逆向きに流れる。
+
+- 書かない f^ は、書いてよい席（`f^mutable^self^`）に立てる
+- 書く f^ は、書かない席（`f^self^`）には立てない
+- `p^` の席には従来どおり `p^` だけ（15.1）
+
+`override^` での置き換えもこの適合がそのまま判定する — `f^self^` を
+`f^mutable^self^` で置き換えることはできない。
+
+##### 連鎖呼び出しは f^ の中では書けない［制限］
+
+`mine.bump(2).bump(3)` の2つ目のレシーバは **呼び出しの答え** であり、
+それが受け手自身である保証は型に無い（`-> Self^` は同じ型としか言って
+いない）。コルーチンに同じ制限が無いのは、15.3改 が「f^ コルーチンは
+本体から出られない」で穴を塞いでいるからで、テーブルにその規則は無い。
+f^ の中では2文に分けて書く。`p^` の中では従来どおり連鎖できる。
 
 ### 15.2 yieldable かどうかは推論する
 
@@ -10488,6 +10560,19 @@ Godot のシグナルがその形である。
 ---
 
 ## 改定履歴（要約）
+
+- **15.1改2（2026-08-22）: `mutable^self^` — レシーバだけ変異する f^。**
+  14.22 の変異メソッドを p^ 一律にすると、f^ が自作のテーブルすら sort
+  できなかった（ユーザー指摘）。15.1改 の出自規則をメソッド呼び出し越しに
+  届かせ、受け手の席の印 `f^mutable^self^, …` で「書くのは受け手だけ」を
+  署名に言わせる。D の weakly pure と Rust の `&mut self` の交点、判定は
+  15.3改 のコルーチン版と同じ形。適合は closed^ と逆向きの一方通行。
+  mutable^ の語は変数宣言の役から退役済みで、席の印は別役。
+  あわせて **15.1改 の穴を塞いだ** — インデックス書き（`t[k] := v`）が
+  経路判定（`.` 綴りのみ）を素通りし、f^ が引数・捕捉のテーブルへ添字で
+  書けてしまっていた。連鎖呼び出し（`.bump().bump()`）は f^ 内では不可の
+  制限を明記 — 答えが受け手自身である保証が型に無く、コルーチンと違って
+  脱出禁止の規則で塞がれてもいない
 
 - **14.22（2026-08-22）: テーブルの操作を組込みメンバとして備えた。**
   Lua の `table.*` を整理して、`join^`（`table.concat` の役、綴りは JS/Ruby/

@@ -380,6 +380,12 @@ typedef struct {
     // there) and 15.1's write rules (self^ is the body's to write) read it.
     bool in_new_body;
 
+    // 15.1改2: the body being walked is an f^ whose receiver is mutable, so
+    // a write through self^ -- direct, or another mutable^self^ call on it
+    // -- is what its own signature promised. Saved and restored around each
+    // literal, as in_new_body above is.
+    bool receiver_mutable;
+
     // 03 の 3.4改2: something answered before it was inferred -- a def^ member
     // read before its own body was walked (14.7改2's seed), or a name whose
     // let^ this walk has not reached yet (8.7). Both say the same thing: this
@@ -612,6 +618,7 @@ LhatType *chk_hosted_module(Checker *c, const LhatNode *path);
 bool chk_value_is_fresh(const Checker *c, const LhatNode *value,
                         const LhatType *type);
 bool chk_receiver_is_own_coroutine(Checker *c, const LhatNode *receiver);
+bool chk_receiver_is_own_table(Checker *c, const LhatNode *receiver);
 bool chk_scope_within_body(Checker *c, const Scope *found_in);
 bool chk_scope_within(Checker *c, const Scope *found_in, const Scope *boundary);
 void chk_check_write_target(Checker *c, const LhatNode *target);

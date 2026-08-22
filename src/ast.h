@@ -312,6 +312,10 @@ struct LhatNode {
             LhatNode *type;     // NULL when not annotated
             LhatNode *fallback; // default value, NULL when absent
             bool variadic;
+            // 15.1改2: written 'mutable^self^' -- the one parameter this may
+            // decorate is the receiver marker, and it says the body writes
+            // through it.
+            bool mutable_receiver;
         } param;
 
         // TABLE_ENTRY / MEMBER_DECL. Inside a def^ the key is NULL when the

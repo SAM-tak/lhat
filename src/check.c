@@ -632,6 +632,11 @@ LhatType *chk_resolve_func_type(Checker *c, const LhatNode *node)
         if (marker != 0) {
             func->v.func.takes_self = true;
             func->v.func.self_last = marker == 2;
+            // 15.1改2: the marker travels with the seat. On a p^ it says
+            // nothing a p^ could not already do, so it is not recorded.
+            if (param->v.param.mutable_receiver && func->v.func.is_function) {
+                func->v.func.mutable_self = true;
+            }
             continue;
         }
         if (param->v.param.variadic) {
@@ -3325,6 +3330,9 @@ const char *lhat_check_error_message(LhatCheckErrorCode code)
         case LHAT_CHECK_ERR_ADVANCES_OUTSIDE:
             return "an f^ may advance only a coroutine its own body made; "
                    "this one came from somewhere else";
+        case LHAT_CHECK_ERR_MUTATES_OUTSIDE:
+            return "an f^ may write through mutable^self^ only into a table "
+                   "its own body made; this one came from somewhere else";
         case LHAT_CHECK_ERR_COROUTINE_ESCAPES:
             return "an f^ coroutine may not leave the body that made it";
         case LHAT_CHECK_ERR_TABLE_IS_SEALED:

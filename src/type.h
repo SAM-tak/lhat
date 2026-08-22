@@ -253,6 +253,12 @@ struct LhatType {
             // written on the left of one cannot be written on the left of the
             // other.
             bool self_last;
+            // 15.1改2: written 'mutable^self^' -- an f^ whose body writes
+            // through its receiver and nothing else outside it. Callable
+            // from an f^ only on what that body made (the origin rule,
+            // reached through a call). Meaningless beside is_function ==
+            // false: a p^ never needed permission.
+            bool mutable_self;
             // 15.2: the body contains yield^ or await^, so calling it answers
             // a coroutine rather than running anything (15.5)
             bool yields;
