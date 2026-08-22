@@ -56,19 +56,33 @@ void lhat_proto_free(LhatProto *proto)
     lhat_free(proto->protos);
     lhat_free(proto->upvalues);
     lhat_free(proto->parameter_types);
+    if (proto->is_unit && proto->units != NULL) {
+        lhat_free((void *)proto->units->protos);
+        lhat_free((void *)proto->units);
+    }
     lhat_chunk_dispose(&proto->chunk);
     lhat_free(proto);
 }
 
-void lhat_modules_free(LhatModule *modules, size_t count)
+static void point_at_units(LhatProto *proto, const LhatUnitTable *table)
 {
-    if (modules == NULL) {
-        return;
+    proto->units = table;
+    for (size_t i = 0; i < proto->proto_count; i++) {
+        point_at_units(proto->protos[i], table);
     }
-    for (size_t i = 0; i < count; i++) {
-        lhat_proto_free(modules[i].proto);
-        lhat_free(modules[i].module_name);
+}
+
+bool lhat_proto_give_units(LhatProto *unit, const LhatProto **protos,
+                           size_t count)
+{
+    LhatUnitTable *table = (LhatUnitTable *)lhat_alloc(sizeof *table);
+    if (table == NULL) {
+        return false;
     }
+    table->protos = protos;
+    table->count = count;
+    point_at_units(unit, table);
+    return true;
 }
 
 size_t lhat_proto_add(LhatProto *parent, LhatProto *child)

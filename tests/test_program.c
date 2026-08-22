@@ -317,13 +317,11 @@ static void test_running(void)
         const LhatUnit *root = lhat_program_check(&program, "main.lh");
         LHAT_CHECK(root != NULL && !lhat_program_has_errors(&program),
                    "the program checked");
-        size_t count = 0;
-        const LhatModule *modules = lhat_program_compile(&program, &count);
-        LHAT_CHECK(modules != NULL, "every unit compiled");
-        if (modules != NULL && root != NULL) {
+        bool compiled = lhat_program_compile(&program);
+        LHAT_CHECK(compiled, "every unit compiled");
+        if (compiled && root != NULL) {
             LhatMachine *machine = lhat_machine_new();
-            lhat_machine_set_modules(machine, modules, count);
-            LhatRunResult ran = lhat_run(machine, modules[root->index].proto);
+            LhatRunResult ran = lhat_run(machine, lhat_unit_proto(root));
             LHAT_CHECK_EQ_INT(ran.status, LHAT_RUN_OK);
             // 1 for the side effect, and the same table read through both.
             LHAT_CHECK_EQ_INT(lhat_as_integer(ran.value), 11);
@@ -352,12 +350,10 @@ static void test_running(void)
         const LhatUnit *root = lhat_program_check(&program, "main.lh");
         LHAT_CHECK(root != NULL && !lhat_program_has_errors(&program),
                    "the program checked");
-        size_t count = 0;
-        const LhatModule *modules = lhat_program_compile(&program, &count);
-        if (modules != NULL && root != NULL) {
+        bool compiled = lhat_program_compile(&program);
+        if (compiled && root != NULL) {
             LhatMachine *machine = lhat_machine_new();
-            lhat_machine_set_modules(machine, modules, count);
-            LhatRunResult ran = lhat_run(machine, modules[root->index].proto);
+            LhatRunResult ran = lhat_run(machine, lhat_unit_proto(root));
             LHAT_CHECK_EQ_INT(ran.status, LHAT_RUN_SEALED);
             lhat_machine_dispose(machine);
         }
@@ -379,12 +375,10 @@ static void test_running(void)
         const LhatUnit *root = lhat_program_check(&program, "main.lh");
         LHAT_CHECK(root != NULL && !lhat_program_has_errors(&program),
                    "the program checked");
-        size_t count = 0;
-        const LhatModule *modules = lhat_program_compile(&program, &count);
-        if (modules != NULL && root != NULL) {
+        bool compiled = lhat_program_compile(&program);
+        if (compiled && root != NULL) {
             LhatMachine *machine = lhat_machine_new();
-            lhat_machine_set_modules(machine, modules, count);
-            LhatRunResult ran = lhat_run(machine, modules[root->index].proto);
+            LhatRunResult ran = lhat_run(machine, lhat_unit_proto(root));
             LHAT_CHECK_EQ_INT(ran.status, LHAT_RUN_OK);
             LHAT_CHECK_EQ_INT(lhat_as_integer(ran.value), 7);
             lhat_machine_dispose(machine);
@@ -411,12 +405,10 @@ static void test_running(void)
         const LhatUnit *root = lhat_program_check(&program, "main.lh");
         LHAT_CHECK(root != NULL && !lhat_program_has_errors(&program),
                    "the program checked");
-        size_t count = 0;
-        const LhatModule *modules = lhat_program_compile(&program, &count);
-        if (modules != NULL && root != NULL) {
+        bool compiled = lhat_program_compile(&program);
+        if (compiled && root != NULL) {
             LhatMachine *machine = lhat_machine_new();
-            lhat_machine_set_modules(machine, modules, count);
-            LhatRunResult ran = lhat_run(machine, modules[root->index].proto);
+            LhatRunResult ran = lhat_run(machine, lhat_unit_proto(root));
             LHAT_CHECK_EQ_INT(ran.status, LHAT_RUN_OK);
             LHAT_CHECK_EQ_INT(lhat_as_integer(ran.value), 7);
             lhat_machine_dispose(machine);
@@ -424,23 +416,66 @@ static void test_running(void)
     }
     lhat_program_dispose(&program);
 
-    // A machine that was never given the units cannot answer a require^.
-    LHAT_TEST("and a machine without the units refuses");
+    // A require^ of a unit that never compiled -- a host that ran in spite
+    // of what the checker said -- is refused where it runs, not before.
+    LHAT_TEST("and a unit that never compiled is refused at the require^");
     {
         static const File pair[] = {
-            {"one.lh", "module^ ns.one\npublic^ let^ v = 1\n"},
-            {"main.lh", "require^ \"one.lh\"\nreturn^ ns.one.v\n"},
+            {"one.lh", "module^ ns.one\npublic^ let^ v = (\n"},
+            {"main.lh", "require^ \"one.lh\"\nreturn^ 1\n"},
         };
         program_with(&program, &disk, pair, 2);
         const LhatUnit *root = lhat_program_check(&program, "main.lh");
-        size_t count = 0;
-        const LhatModule *modules = lhat_program_compile(&program, &count);
-        if (modules != NULL && root != NULL) {
+        LHAT_CHECK(lhat_program_has_errors(&program), "one.lh does not parse");
+        lhat_program_compile(&program);
+        if (root != NULL && lhat_unit_proto(root) != NULL) {
             LhatMachine *machine = lhat_machine_new();
-            LhatRunResult ran = lhat_run(machine, modules[root->index].proto);
+            LhatRunResult ran = lhat_run(machine, lhat_unit_proto(root));
             LHAT_CHECK_EQ_INT(ran.status, LHAT_RUN_NO_SUCH_UNIT);
             lhat_machine_dispose(machine);
         }
+    }
+    lhat_program_dispose(&program);
+
+    // 05 の 5.3: a program grows under a machine already running. The
+    // second unit is checked and compiled after the first ran, reaches one
+    // the first batch compiled and one of its own, and the registry on the
+    // machine is what makes the shared one load once.
+    LHAT_TEST("a unit checked after a compile compiles with the next call");
+    {
+        static const File later[] = {
+            {"shared.lh",
+             "module^ ns.shared\n"
+             "var^ loads = 0\n"
+             "loads := loads + 1\n"
+             "public^ let^ count = loads\n"},
+            {"extra.lh", "module^ ns.extra\npublic^ let^ v = 10\n"},
+            {"first.lh", "require^ \"shared.lh\"\nreturn^ ns.shared.count\n"},
+            {"second.lh",
+             "require^ \"shared.lh\"\n"
+             "require^ \"extra.lh\"\n"
+             "return^ ns.shared.count * 100 + ns.extra.v\n"},
+        };
+        program_with(&program, &disk, later, 4);
+        const LhatUnit *first = lhat_program_check(&program, "first.lh");
+        LHAT_CHECK(lhat_program_compile(&program), "the first batch compiled");
+        LhatMachine *machine = lhat_machine_new();
+        if (first != NULL && lhat_unit_proto(first) != NULL) {
+            LhatRunResult ran = lhat_run(machine, lhat_unit_proto(first));
+            LHAT_CHECK_EQ_INT(ran.status, LHAT_RUN_OK);
+            LHAT_CHECK_EQ_INT(lhat_as_integer(ran.value), 1);
+        }
+        const LhatUnit *second = lhat_program_check(&program, "second.lh");
+        LHAT_CHECK(second != NULL && !lhat_program_has_errors(&program),
+                   "the second unit checked");
+        LHAT_CHECK(lhat_program_compile(&program), "the second batch compiled");
+        if (second != NULL && lhat_unit_proto(second) != NULL) {
+            LhatRunResult ran = lhat_run(machine, lhat_unit_proto(second));
+            LHAT_CHECK_EQ_INT(ran.status, LHAT_RUN_OK);
+            // shared.lh ran once, on the first run; extra.lh is new.
+            LHAT_CHECK_EQ_INT(lhat_as_integer(ran.value), 110);
+        }
+        lhat_machine_dispose(machine);
     }
     lhat_program_dispose(&program);
 }
@@ -635,14 +670,12 @@ static void test_hosting(void)
         LHAT_CHECK(root != NULL && !lhat_program_has_errors(&program) &&
                        root->checked.diagnostic_count == 0,
                    "the program checked");
-        size_t count = 0;
-        const LhatModule *modules = lhat_program_compile(&program, &count);
-        if (modules != NULL && root != NULL) {
+        bool compiled = lhat_program_compile(&program);
+        if (compiled && root != NULL) {
             LhatMachine *machine = lhat_machine_new();
-            lhat_machine_set_modules(machine, modules, count);
             LHAT_CHECK(lhat_program_install(&program, machine),
                        "what was registered went into L^.modules");
-            LhatRunResult ran = lhat_run(machine, modules[root->index].proto);
+            LhatRunResult ran = lhat_run(machine, lhat_unit_proto(root));
             LHAT_CHECK_EQ_INT(ran.status, LHAT_RUN_OK);
             LHAT_CHECK_EQ_INT(lhat_as_integer(ran.value), 5);
             LHAT_CHECK_EQ_INT(calls, 1);
@@ -670,14 +703,12 @@ static void test_hosting(void)
         LHAT_CHECK(root != NULL && !lhat_program_has_errors(&program) &&
                        root->checked.diagnostic_count == 0,
                    "the program checked");
-        size_t count = 0;
-        const LhatModule *modules = lhat_program_compile(&program, &count);
-        if (modules != NULL && root != NULL) {
+        bool compiled = lhat_program_compile(&program);
+        if (compiled && root != NULL) {
             LhatMachine *machine = lhat_machine_new();
-            lhat_machine_set_modules(machine, modules, count);
             LHAT_CHECK(lhat_program_install(&program, machine),
                        "what was registered reached L^");
-            LhatRunResult ran = lhat_run(machine, modules[root->index].proto);
+            LhatRunResult ran = lhat_run(machine, lhat_unit_proto(root));
             LHAT_CHECK_EQ_INT(ran.status, LHAT_RUN_OK);
             LHAT_CHECK_EQ_INT(lhat_as_integer(ran.value), 42);
             lhat_machine_dispose(machine);
@@ -702,13 +733,11 @@ static void test_hosting(void)
         LHAT_CHECK(root != NULL && !lhat_program_has_errors(&program) &&
                        root->checked.diagnostic_count == 0,
                    "the program checked");
-        size_t count = 0;
-        const LhatModule *modules = lhat_program_compile(&program, &count);
-        if (modules != NULL && root != NULL) {
+        bool compiled = lhat_program_compile(&program);
+        if (compiled && root != NULL) {
             LhatMachine *machine = lhat_machine_new();
-            lhat_machine_set_modules(machine, modules, count);
             lhat_program_install(&program, machine);
-            LhatRunResult ran = lhat_run(machine, modules[root->index].proto);
+            LhatRunResult ran = lhat_run(machine, lhat_unit_proto(root));
             LHAT_CHECK_EQ_INT(ran.status, LHAT_RUN_OK);
             LHAT_CHECK_EQ_INT(lhat_as_integer(ran.value), 41);
             lhat_machine_dispose(machine);
@@ -742,13 +771,11 @@ static void test_hosting(void)
         lhat_register_func(&program, "system.gfx", "add",
                            "f^number^, number^ -> number^;", host_add, NULL);
         const LhatUnit *root = lhat_program_check(&program, "main.lh");
-        size_t count = 0;
-        const LhatModule *modules = lhat_program_compile(&program, &count);
-        if (modules != NULL && root != NULL) {
+        bool compiled = lhat_program_compile(&program);
+        if (compiled && root != NULL) {
             LhatMachine *machine = lhat_machine_new();
-            lhat_machine_set_modules(machine, modules, count);
             lhat_program_install(&program, machine);
-            LhatRunResult ran = lhat_run(machine, modules[root->index].proto);
+            LhatRunResult ran = lhat_run(machine, lhat_unit_proto(root));
             LHAT_CHECK_EQ_INT(ran.status, LHAT_RUN_OK);
             LHAT_CHECK_EQ_INT(lhat_as_integer(ran.value), 42);
             lhat_machine_dispose(machine);
@@ -927,13 +954,11 @@ static void test_host_data(void)
         const LhatUnit *root = lhat_program_check(&program, "main.lh");
         LHAT_CHECK(root != NULL && root->checked.diagnostic_count == 0,
                    "the program checked");
-        size_t count = 0;
-        const LhatModule *modules = lhat_program_compile(&program, &count);
-        if (modules != NULL && root != NULL) {
+        bool compiled = lhat_program_compile(&program);
+        if (compiled && root != NULL) {
             LhatMachine *machine = lhat_machine_new();
-            lhat_machine_set_modules(machine, modules, count);
             lhat_program_install(&program, machine);
-            LhatRunResult ran = lhat_run(machine, modules[root->index].proto);
+            LhatRunResult ran = lhat_run(machine, lhat_unit_proto(root));
             LHAT_CHECK_EQ_INT(ran.status, LHAT_RUN_OK);
             LHAT_CHECK_EQ_INT(lhat_as_integer(ran.value), 42);
             LHAT_CHECK_EQ_INT(held.live, 0);  // the dispose^ ran
@@ -988,13 +1013,11 @@ static void test_host_data(void)
                            other_make, NULL);
 
         const LhatUnit *root = lhat_program_check(&program, "main.lh");
-        size_t count = 0;
-        const LhatModule *modules = lhat_program_compile(&program, &count);
-        if (modules != NULL && root != NULL) {
+        bool compiled = lhat_program_compile(&program);
+        if (compiled && root != NULL) {
             LhatMachine *machine = lhat_machine_new();
-            lhat_machine_set_modules(machine, modules, count);
             lhat_program_install(&program, machine);
-            LhatRunResult ran = lhat_run(machine, modules[root->index].proto);
+            LhatRunResult ran = lhat_run(machine, lhat_unit_proto(root));
             LHAT_CHECK_EQ_INT(ran.status, LHAT_RUN_OK);
             LHAT_CHECK_EQ_INT(wrong_type_reached, 1);
             lhat_machine_dispose(machine);
@@ -1083,13 +1106,11 @@ static void with_cells(const char *text, int *live_after_run, int *freed_total)
                        cell_make, NULL);
 
     const LhatUnit *root = lhat_program_check(&program, "main.lh");
-    size_t count = 0;
-    const LhatModule *modules = lhat_program_compile(&program, &count);
-    if (modules != NULL && root != NULL) {
+    bool compiled = lhat_program_compile(&program);
+    if (compiled && root != NULL) {
         LhatMachine *machine = lhat_machine_new();
-        lhat_machine_set_modules(machine, modules, count);
         lhat_program_install(&program, machine);
-        lhat_run(machine, modules[root->index].proto);
+        lhat_run(machine, lhat_unit_proto(root));
         *live_after_run = cells_live;
         lhat_machine_dispose(machine);
     }
@@ -1106,16 +1127,13 @@ static LhatRunResult run_main(LhatProgram *program)
     const LhatUnit *root = lhat_program_check(program, "main.lh");
     LHAT_CHECK(root != NULL && root->checked.diagnostic_count == 0,
                "the program checked");
-    size_t count = 0;
-    const LhatModule *modules = lhat_program_compile(program, &count);
-    if (modules == NULL || root == NULL) {
+    if (!lhat_program_compile(program) || root == NULL) {
         LHAT_CHECK(false, "the program compiled");
         return failed;
     }
     LhatMachine *machine = lhat_machine_new();
-    lhat_machine_set_modules(machine, modules, count);
     lhat_program_install(program, machine);
-    LhatRunResult ran = lhat_run(machine, modules[root->index].proto);
+    LhatRunResult ran = lhat_run(machine, lhat_unit_proto(root));
     lhat_machine_dispose(machine);
     return ran;
 }
@@ -1382,13 +1400,11 @@ static void test_hostvalue_escape(void)
         const LhatUnit *root = lhat_program_check(&program, "main.lh");
         LHAT_CHECK(root != NULL && root->checked.diagnostic_count == 0,
                    "the program checked");
-        size_t count = 0;
-        const LhatModule *modules = lhat_program_compile(&program, &count);
-        if (modules != NULL && root != NULL) {
+        bool compiled = lhat_program_compile(&program);
+        if (compiled && root != NULL) {
             LhatMachine *machine = lhat_machine_new();
-            lhat_machine_set_modules(machine, modules, count);
             lhat_program_install(&program, machine);
-            LhatRunResult ran = lhat_run(machine, modules[root->index].proto);
+            LhatRunResult ran = lhat_run(machine, lhat_unit_proto(root));
             LHAT_CHECK_EQ_INT(ran.status, LHAT_RUN_OK);
             LHAT_CHECK_EQ_INT(lhat_as_integer(ran.value), -7);
             lhat_machine_dispose(machine);
@@ -1423,13 +1439,11 @@ static void test_hostvalue_escape(void)
         const LhatUnit *root = lhat_program_check(&program, "main.lh");
         LHAT_CHECK(root != NULL && root->checked.diagnostic_count == 0,
                    "the program checked");
-        size_t count = 0;
-        const LhatModule *modules = lhat_program_compile(&program, &count);
-        if (modules != NULL && root != NULL) {
+        bool compiled = lhat_program_compile(&program);
+        if (compiled && root != NULL) {
             LhatMachine *machine = lhat_machine_new();
-            lhat_machine_set_modules(machine, modules, count);
             lhat_program_install(&program, machine);
-            LhatRunResult ran = lhat_run(machine, modules[root->index].proto);
+            LhatRunResult ran = lhat_run(machine, lhat_unit_proto(root));
             LHAT_CHECK_EQ_INT(ran.status, LHAT_RUN_OK);
             // Only the value arm was present.
             LHAT_CHECK_EQ_INT(lhat_as_integer(ran.value), 1);
@@ -1464,13 +1478,11 @@ static void test_hostvalue_escape(void)
         const LhatUnit *root = lhat_program_check(&program, "main.lh");
         LHAT_CHECK(root != NULL && root->checked.diagnostic_count == 0,
                    "the program checked");
-        size_t count = 0;
-        const LhatModule *modules = lhat_program_compile(&program, &count);
-        if (modules != NULL && root != NULL) {
+        bool compiled = lhat_program_compile(&program);
+        if (compiled && root != NULL) {
             LhatMachine *machine = lhat_machine_new();
-            lhat_machine_set_modules(machine, modules, count);
             lhat_program_install(&program, machine);
-            LhatRunResult ran = lhat_run(machine, modules[root->index].proto);
+            LhatRunResult ran = lhat_run(machine, lhat_unit_proto(root));
             LHAT_CHECK_EQ_INT(ran.status, LHAT_RUN_OK);
             LHAT_CHECK_EQ_INT(lhat_as_integer(ran.value), 1);
             lhat_machine_dispose(machine);
@@ -1533,13 +1545,11 @@ static void test_hostvalue_escape(void)
         const LhatUnit *root = lhat_program_check(&program, "main.lh");
         LHAT_CHECK(root != NULL && root->checked.diagnostic_count == 0,
                    "the program checked");
-        size_t count = 0;
-        const LhatModule *modules = lhat_program_compile(&program, &count);
-        if (modules != NULL && root != NULL) {
+        bool compiled = lhat_program_compile(&program);
+        if (compiled && root != NULL) {
             LhatMachine *machine = lhat_machine_new();
-            lhat_machine_set_modules(machine, modules, count);
             lhat_program_install(&program, machine);
-            LhatRunResult ran = lhat_run(machine, modules[root->index].proto);
+            LhatRunResult ran = lhat_run(machine, lhat_unit_proto(root));
             LHAT_CHECK_EQ_INT(ran.status, LHAT_RUN_OK);
             // 7000 + 500 + 170 + 99 - 99
             LHAT_CHECK_EQ_INT(lhat_as_integer(ran.value), 7670);
@@ -1576,13 +1586,11 @@ static void test_hostvalue_escape(void)
         const LhatUnit *root = lhat_program_check(&program, "main.lh");
         LHAT_CHECK(root != NULL && root->checked.diagnostic_count == 0,
                    "the program checked");
-        size_t count = 0;
-        const LhatModule *modules = lhat_program_compile(&program, &count);
-        if (modules != NULL && root != NULL) {
+        bool compiled = lhat_program_compile(&program);
+        if (compiled && root != NULL) {
             LhatMachine *machine = lhat_machine_new();
-            lhat_machine_set_modules(machine, modules, count);
             lhat_program_install(&program, machine);
-            LhatRunResult ran = lhat_run(machine, modules[root->index].proto);
+            LhatRunResult ran = lhat_run(machine, lhat_unit_proto(root));
             LHAT_CHECK_EQ_INT(ran.status, LHAT_RUN_OK);
             LHAT_CHECK_EQ_INT(lhat_as_integer(ran.value), 2);
             lhat_machine_dispose(machine);
@@ -1608,13 +1616,11 @@ static void test_hostvalue_escape(void)
         lhat_register_func(&program, "test.c", "make", "f^ -> test.c.C;",
                            host_counter_make, (void *)tag);
         const LhatUnit *root = lhat_program_check(&program, "main.lh");
-        size_t count = 0;
-        const LhatModule *modules = lhat_program_compile(&program, &count);
-        if (modules != NULL && root != NULL) {
+        bool compiled = lhat_program_compile(&program);
+        if (compiled && root != NULL) {
             LhatMachine *machine = lhat_machine_new();
-            lhat_machine_set_modules(machine, modules, count);
             lhat_program_install(&program, machine);
-            LhatRunResult ran = lhat_run(machine, modules[root->index].proto);
+            LhatRunResult ran = lhat_run(machine, lhat_unit_proto(root));
             LHAT_CHECK_EQ_INT(ran.status, LHAT_RUN_OK);
             LHAT_CHECK_EQ_INT(lhat_as_integer(ran.value), 1);
             lhat_machine_dispose(machine);
@@ -1656,13 +1662,11 @@ static void test_hostvalue_escape(void)
                                        "f^self^, string^ -> number^;",
                                        host_counter_tagged, (void *)tag);
         const LhatUnit *root = lhat_program_check(&program, "main.lh");
-        size_t count = 0;
-        const LhatModule *modules = lhat_program_compile(&program, &count);
-        if (modules != NULL && root != NULL) {
+        bool compiled = lhat_program_compile(&program);
+        if (compiled && root != NULL) {
             LhatMachine *machine = lhat_machine_new();
-            lhat_machine_set_modules(machine, modules, count);
             lhat_program_install(&program, machine);
-            LhatRunResult ran = lhat_run(machine, modules[root->index].proto);
+            LhatRunResult ran = lhat_run(machine, lhat_unit_proto(root));
             LHAT_CHECK_EQ_INT(ran.status, LHAT_RUN_OK);
             LHAT_CHECK_EQ_INT(lhat_as_integer(ran.value), 149);  // 5 * 10 + 99
             lhat_machine_dispose(machine);
@@ -1761,13 +1765,11 @@ static void test_host_tuple(void)
         const LhatUnit *root = lhat_program_check(&program, "main.lh");
         LHAT_CHECK(root != NULL && root->checked.diagnostic_count == 0,
                    "the program checked");
-        size_t count = 0;
-        const LhatModule *modules = lhat_program_compile(&program, &count);
-        if (modules != NULL && root != NULL) {
+        bool compiled = lhat_program_compile(&program);
+        if (compiled && root != NULL) {
             LhatMachine *machine = lhat_machine_new();
-            lhat_machine_set_modules(machine, modules, count);
             LHAT_CHECK(lhat_program_install(&program, machine), "installed");
-            LhatRunResult ran = lhat_run(machine, modules[root->index].proto);
+            LhatRunResult ran = lhat_run(machine, lhat_unit_proto(root));
             LHAT_CHECK_EQ_INT(ran.status, LHAT_RUN_OK);
             LHAT_CHECK_EQ_INT(lhat_as_integer(ran.value), 31);
             lhat_machine_dispose(machine);
@@ -1790,13 +1792,11 @@ static void test_host_tuple(void)
                            "f^number^, number^ -> (number^, number^);",
                            host_divmod_then_allocate, NULL);
         const LhatUnit *root = lhat_program_check(&program, "main.lh");
-        size_t count = 0;
-        const LhatModule *modules = lhat_program_compile(&program, &count);
-        if (modules != NULL && root != NULL) {
+        bool compiled = lhat_program_compile(&program);
+        if (compiled && root != NULL) {
             LhatMachine *machine = lhat_machine_new();
-            lhat_machine_set_modules(machine, modules, count);
             lhat_program_install(&program, machine);
-            LhatRunResult ran = lhat_run(machine, modules[root->index].proto);
+            LhatRunResult ran = lhat_run(machine, lhat_unit_proto(root));
             LHAT_CHECK_EQ_INT(ran.status, LHAT_RUN_OK);
             LHAT_CHECK_EQ_INT(lhat_as_integer(ran.value), 31);
             lhat_machine_dispose(machine);
@@ -1820,13 +1820,11 @@ static void test_host_tuple(void)
                            "f^number^, number^ -> (number^, number^);",
                            host_answers_one, NULL);
         const LhatUnit *root = lhat_program_check(&program, "main.lh");
-        size_t count = 0;
-        const LhatModule *modules = lhat_program_compile(&program, &count);
-        if (modules != NULL && root != NULL) {
+        bool compiled = lhat_program_compile(&program);
+        if (compiled && root != NULL) {
             LhatMachine *machine = lhat_machine_new();
-            lhat_machine_set_modules(machine, modules, count);
             lhat_program_install(&program, machine);
-            LhatRunResult ran = lhat_run(machine, modules[root->index].proto);
+            LhatRunResult ran = lhat_run(machine, lhat_unit_proto(root));
             LHAT_CHECK_EQ_INT(ran.status, LHAT_RUN_TUPLE_ARITY);
             lhat_machine_dispose(machine);
         }
@@ -1847,12 +1845,10 @@ static void test_host_tuple(void)
         };
         program_with(&program, &disk, files, 1);
         const LhatUnit *root = lhat_program_check(&program, "main.lh");
-        size_t count = 0;
-        const LhatModule *modules = lhat_program_compile(&program, &count);
-        if (modules != NULL && root != NULL) {
+        bool compiled = lhat_program_compile(&program);
+        if (compiled && root != NULL) {
             LhatMachine *machine = lhat_machine_new();
-            lhat_machine_set_modules(machine, modules, count);
-            LhatRunResult ran = lhat_run(machine, modules[root->index].proto);
+            LhatRunResult ran = lhat_run(machine, lhat_unit_proto(root));
             LHAT_CHECK_EQ_INT(ran.status, LHAT_RUN_OK);
             LHAT_CHECK_EQ_INT(ran.position_count, 2);
             if (ran.position_count == 2) {
@@ -1875,12 +1871,10 @@ static void test_host_tuple(void)
         };
         program_with(&program, &disk, files, 1);
         const LhatUnit *root = lhat_program_check(&program, "main.lh");
-        size_t count = 0;
-        const LhatModule *modules = lhat_program_compile(&program, &count);
-        if (modules != NULL && root != NULL) {
+        bool compiled = lhat_program_compile(&program);
+        if (compiled && root != NULL) {
             LhatMachine *machine = lhat_machine_new();
-            lhat_machine_set_modules(machine, modules, count);
-            LhatRunResult ran = lhat_run(machine, modules[root->index].proto);
+            LhatRunResult ran = lhat_run(machine, lhat_unit_proto(root));
             LHAT_CHECK_EQ_INT(ran.status, LHAT_RUN_OK);
             LHAT_CHECK_EQ_INT(ran.position_count, 0);
             LHAT_CHECK(ran.positions == NULL, "nothing to point at");
@@ -1909,13 +1903,11 @@ static void test_host_tuple(void)
         const LhatUnit *root = lhat_program_check(&program, "main.lh");
         LHAT_CHECK(root != NULL && root->checked.diagnostic_count == 0,
                    "the program checked");
-        size_t count = 0;
-        const LhatModule *modules = lhat_program_compile(&program, &count);
-        if (modules != NULL && root != NULL) {
+        bool compiled = lhat_program_compile(&program);
+        if (compiled && root != NULL) {
             LhatMachine *machine = lhat_machine_new();
-            lhat_machine_set_modules(machine, modules, count);
             lhat_program_install(&program, machine);
-            LhatRunResult ran = lhat_run(machine, modules[root->index].proto);
+            LhatRunResult ran = lhat_run(machine, lhat_unit_proto(root));
             LHAT_CHECK_EQ_INT(ran.status, LHAT_RUN_OK);
             LHAT_CHECK_EQ_INT(lhat_as_integer(ran.value), 31);
             lhat_machine_dispose(machine);
@@ -2232,13 +2224,11 @@ static void test_composing_across_units(void)
         const LhatUnit *root = lhat_program_check(&program, "main.lh");
         LHAT_CHECK(root != NULL && !lhat_program_has_errors(&program),
                    "the program checked");
-        size_t count = 0;
-        const LhatModule *modules = lhat_program_compile(&program, &count);
-        LHAT_CHECK(modules != NULL, "every unit compiled");
-        if (modules != NULL && root != NULL) {
+        bool compiled = lhat_program_compile(&program);
+        LHAT_CHECK(compiled, "every unit compiled");
+        if (compiled && root != NULL) {
             LhatMachine *machine = lhat_machine_new();
-            lhat_machine_set_modules(machine, modules, count);
-            LhatRunResult ran = lhat_run(machine, modules[root->index].proto);
+            LhatRunResult ran = lhat_run(machine, lhat_unit_proto(root));
             LHAT_CHECK_EQ_INT(ran.status, LHAT_RUN_OK);
             // 42 through the base's own member, 1 of its own, and 21 again
             // through a parameter typed as the base -- 14.10's width
@@ -2293,13 +2283,11 @@ static void test_composing_across_units(void)
         const LhatUnit *root = lhat_program_check(&program, "main.lh");
         LHAT_CHECK(root != NULL && !lhat_program_has_errors(&program),
                    "the program checked");
-        size_t count = 0;
-        const LhatModule *modules = lhat_program_compile(&program, &count);
-        LHAT_CHECK(modules != NULL, "every unit compiled");
-        if (modules != NULL && root != NULL) {
+        bool compiled = lhat_program_compile(&program);
+        LHAT_CHECK(compiled, "every unit compiled");
+        if (compiled && root != NULL) {
             LhatMachine *machine = lhat_machine_new();
-            lhat_machine_set_modules(machine, modules, count);
-            LhatRunResult ran = lhat_run(machine, modules[root->index].proto);
+            LhatRunResult ran = lhat_run(machine, lhat_unit_proto(root));
             LHAT_CHECK_EQ_INT(ran.status, LHAT_RUN_OK);
             LHAT_CHECK_EQ_INT(lhat_as_integer(ran.value), 10);
             lhat_machine_dispose(machine);
@@ -2328,8 +2316,7 @@ static void test_composing_across_units(void)
         const LhatUnit *root = lhat_program_check(&program, "main.lh");
         LHAT_CHECK(root != NULL && !lhat_program_has_errors(&program),
                    "the checker is content");
-        size_t count = 0;
-        LHAT_CHECK(lhat_program_compile(&program, &count) == NULL,
+        LHAT_CHECK(!lhat_program_compile(&program),
                    "and the compile stops");
         LHAT_CHECK_EQ_INT(lhat_program_compile_status(&program),
                           LHAT_COMPILE_NOT_PUBLISHED);
@@ -2351,8 +2338,7 @@ static void test_composing_across_units(void)
         const LhatUnit *root = lhat_program_check(&program, "main.lh");
         LHAT_CHECK(root != NULL && !lhat_program_has_errors(&program),
                    "the checker is content");
-        size_t count = 0;
-        LHAT_CHECK(lhat_program_compile(&program, &count) == NULL,
+        LHAT_CHECK(!lhat_program_compile(&program),
                    "and the compile stops");
         LHAT_CHECK_EQ_INT(lhat_program_compile_status(&program),
                           LHAT_COMPILE_UNSUPPORTED);

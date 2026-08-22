@@ -24,13 +24,11 @@
 //     lhat_register_func(&program, "system.io", "print", "p^string^;", fn, ctx);
 //
 //     const LhatUnit *root = lhat_program_check(&program, "main.lh");
-//     size_t count = 0;
-//     const LhatModule *modules = lhat_program_compile(&program, &count);
+//     lhat_program_compile(&program);
 //
 //     LhatMachine *machine = lhat_machine_new();
-//     lhat_machine_set_modules(machine, modules, count);
 //     lhat_program_install(&program, machine);   // only with registrations
-//     lhat_run(machine, modules[root->index].proto);
+//     lhat_run(machine, lhat_unit_proto(root));
 //
 // Registering comes before checking, because the checker has to know what a
 // signature says. Installing comes before running, because that is when what

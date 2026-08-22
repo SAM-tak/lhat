@@ -52,16 +52,14 @@ int main(void)
         return 1;
     }
 
-    size_t count = 0;
-    const LhatModule *modules = lhat_program_compile(program, &count);
-    LhatMachine *machine = modules != NULL ? lhat_machine_new() : NULL;
+    LhatMachine *machine =
+        lhat_program_compile(program) ? lhat_machine_new() : NULL;
     if (machine == NULL) {
         fprintf(stderr, "compile failed\n");
         return 1;
     }
-    lhat_machine_set_modules(machine, modules, count);
     lhat_program_install(program, machine);
-    LhatRunResult ran = lhat_run(machine, modules[lhat_unit_index(root)].proto);
+    LhatRunResult ran = lhat_run(machine, lhat_unit_proto(root));
 
     int status = 1;
     if (ran.status == LHAT_RUN_OK && lhat_is_integer(ran.value) &&

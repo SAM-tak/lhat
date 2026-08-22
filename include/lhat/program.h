@@ -71,15 +71,18 @@ void lhat_program_free(LhatProgram *program);
 // Returns NULL when the unit itself could not be read.
 const LhatUnit *lhat_program_check(LhatProgram *program, const char *path);
 
-// 05 の 5.3: compiles every unit checked so far and answers the array a
-// machine is given with lhat_machine_set_modules. The program owns it; a
-// second call answers the same one. NULL when a unit would not compile.
+// 05 の 5.3: compiles every checked unit that is not compiled yet. The
+// program owns what it makes, and each unit's proto carries its own table of
+// the units its require^s reach -- so a machine is given nothing, and this
+// may be called again after a later lhat_program_check, under machines
+// already running, to bring the units that check reached in. False when a
+// unit would not compile; what did compile is still usable.
 //
-// The unit to run is the one lhat_program_check returned: its index says
-// which proto of the array is it.
-const LhatModule *lhat_program_compile(LhatProgram *program, size_t *count);
+// The unit to run is the one lhat_program_check returned, through
+// lhat_unit_proto.
+bool lhat_program_compile(LhatProgram *program);
 
-// Why that answered NULL. LHAT_COMPILE_OK until a compile has actually
+// Why that answered false. LHAT_COMPILE_OK until a compile has actually
 // failed, so a caller with a diagnostic to write asks this rather than
 // having to say "something".
 LhatCompileStatus lhat_program_compile_status(const LhatProgram *program);
@@ -94,8 +97,13 @@ LhatCompileResult lhat_program_compile_failure(const LhatProgram *program,
 // What a unit answers
 // ---------------------------------------------------------------------------
 
-// Where the unit sits in what lhat_program_compile answered.
-size_t lhat_unit_index(const LhatUnit *unit);
+// What lhat_program_compile made of the unit -- what lhat_run takes. NULL
+// until that ran, or when the unit would not compile.
+const LhatProto *lhat_unit_proto(const LhatUnit *unit);
+
+// 05 の 3 章: the path the unit declared with module^, or NULL when it
+// declared none (3.2) -- a script, whose body is a run of statements.
+const char *lhat_unit_module_name(const LhatUnit *unit);
 
 const char *lhat_unit_path(const LhatUnit *unit);
 LhatUnitState lhat_unit_state(const LhatUnit *unit);
@@ -514,7 +522,7 @@ bool lhat_bind_initial(LhatProgram *program, const char *name,
                        const char *member);
 
 // Puts what was registered into the machine's L^.modules, so that an import^
-// finds it. Belongs after lhat_machine_set_modules and before the run.
+// finds it. Belongs before the run.
 bool lhat_program_install(const LhatProgram *program, LhatMachine *machine);
 
 // 03 の 4.3: the same for a prompt, which has no program of its own driving

@@ -2798,16 +2798,6 @@ LhatMachine *lhat_machine_new(void)
     return m;
 }
 
-void lhat_machine_set_modules(LhatMachine *machine, const LhatModule *modules,
-                              size_t count)
-{
-    if (machine == NULL) {
-        return;
-    }
-    machine->modules = modules;
-    machine->module_count = count;
-}
-
 bool lhat_machine_make_table(LhatMachine *machine, LhatValue *out)
 {
     LhatTable *table = lhat_table_new(&machine->objects);
@@ -3517,8 +3507,13 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
             // making a closure of it and calling that. What makes it load
             // once is the guard the unit itself begins with, not this.
             case LHAT_BC_UNIT: {
+                // The number indexes the table of the unit this body was
+                // written in (LhatUnitTable), not anything of the machine's
+                // -- which is what lets a program grow under it.
                 size_t which = lhat_bx(instruction);
-                if (which >= m->module_count) {
+                const LhatUnitTable *units = frame->closure->proto->units;
+                if (units == NULL || which >= units->count ||
+                    units->protos[which] == NULL) {
                     return finish(m, chunk, LHAT_RUN_NO_SUCH_UNIT, lhat_nil(), at);
                 }
                 LhatClosure *closure = (LhatClosure *)lhat_object_alloc(
@@ -3526,7 +3521,7 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
                 if (closure == NULL) {
                     return finish(m, chunk, LHAT_RUN_OUT_OF_MEMORY, lhat_nil(), at);
                 }
-                closure->proto = m->modules[which].proto;
+                closure->proto = units->protos[which];
                 closure->upvalues = NULL;
                 closure->upvalue_count = 0;
                 SET_R(a, lhat_object((LhatObject *)closure));
@@ -7182,19 +7177,6 @@ const void *lhat_closure_capture_id(LhatValue closure, size_t index)
     return index < held->upvalue_count ? held->upvalues[index] : NULL;
 }
 
-void lhat_machine_modules(const LhatMachine *machine,
-                          const LhatModule **out_modules, size_t *out_count)
-{
-    const Machine *m = (const Machine *)machine;
-    if (m == NULL) {
-        if (out_modules != NULL) *out_modules = NULL;
-        if (out_count != NULL) *out_count = 0;
-        return;
-    }
-    if (out_modules != NULL) *out_modules = m->modules;
-    if (out_count != NULL) *out_count = m->module_count;
-}
-
 bool lhat_machine_make_error(LhatMachine *machine, const LhatErrorKind *kind,
                              const char *message, LhatValue cause,
                              LhatValue *out)
@@ -7293,13 +7275,7 @@ bool lhat_machine_fault_frame(const LhatMachine *machine, size_t level,
     out->line = placed && proto != NULL && pc_at < proto->chunk.count
                     ? proto->chunk.lines[pc_at]
                     : 0;
-    out->top_level = false;
-    for (size_t i = 0; i < m->module_count; i++) {
-        if (m->modules[i].proto == proto) {
-            out->top_level = true;
-            break;
-        }
-    }
+    out->top_level = proto != NULL && proto->is_unit;
     out->coroutine = frame->coroutine != NULL;
     out->disposing = frame->disposing;
     return true;

@@ -73,9 +73,8 @@ typedef struct {
     // places arrive as copies -- so a closure that closes over something
     // crosses too, as a snapshot of what it closed over.
     LhatCarried *fn;
-    const LhatModule *modules;   // borrowed; lives as long as the program
-    size_t module_count;
-    const LhatProgram *program;  // borrowed; same. What thread_main installs
+    const LhatProgram *program;  // borrowed; lives as long as the program
+                                 // does. What thread_main installs
     // 13.7's collector, still in the form that crossed. Owned by this, and
     // given back by thread_main as soon as the new machine has its own copy.
     LhatCarried **arguments;
@@ -172,8 +171,6 @@ static int thread_main(void *raw)
     if (machine == NULL) {
         handle->status = LHAT_RUN_OUT_OF_MEMORY;
     } else {
-        lhat_machine_set_modules(machine, start->modules, start->module_count);
-
         LhatValue fn = lhat_nil();
         LhatValue *arguments = NULL;
         // 05 の 8.7: a registration becomes an object on the heap of the
@@ -229,7 +226,7 @@ static int thread_main(void *raw)
 //
 // detach してすぐ忘れる形は採らない: 呼び出し元がこの ThreadHandle を
 // dispose した直後に program/machine を破棄すると、まだ走っている
-// thread_main は start->modules/proto の指す chunk(program が所有)を
+// thread_main は fn の proto の指す chunk(program が所有)を
 // 読み続けており、use-after-free になる。「dispose はブロックしない」
 // という利便性より、この安全性を優先する -- 実際 20 スレッドを join
 // せず spawn→dispose するだけのテストで検証済みの実クラッシュだった。
@@ -321,10 +318,6 @@ static LhatValue thread_spawn(LhatMachine *machine, void *context,
                    : fail_with(machine, module->out_of_memory, "out of memory");
     }
 
-    const LhatModule *modules = NULL;
-    size_t module_count = 0;
-    lhat_machine_modules(machine, &modules, &module_count);
-
     ThreadHandle *handle = (ThreadHandle *)lhat_calloc(1, sizeof *handle);
     ThreadStart *start = (ThreadStart *)lhat_alloc(sizeof *start);
     if (handle == NULL || start == NULL) {
@@ -336,8 +329,6 @@ static LhatValue thread_spawn(LhatMachine *machine, void *context,
     }
     lhat_mutex_init(&handle->done_lock);
     start->fn = fn;
-    start->modules = modules;
-    start->module_count = module_count;
     start->program = module->program;
     start->arguments = carried;
     start->argument_count = carried_count;

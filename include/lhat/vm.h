@@ -121,11 +121,6 @@ LhatMachine *lhat_machine_new(void);
 // outlives this call.
 void lhat_machine_dispose(LhatMachine *machine);
 
-// 05 の 5.3: the units a require^ in what runs next may reach. The caller
-// keeps them -- a program owns its units and outlives the runs of them.
-void lhat_machine_set_modules(LhatMachine *machine, const LhatModule *modules,
-                              size_t count);
-
 // 05 の 8.7: the three steps a host registration takes at run time. Kept here
 // rather than in program.c because only this file may touch the heap -- the
 // values belong to the machine and the collector has to see them.
@@ -279,13 +274,6 @@ const LhatProto *lhat_closure_proto(LhatValue closure);
 size_t lhat_closure_capture_count(LhatValue closure);
 LhatValue lhat_closure_capture(LhatValue closure, size_t index);
 const void *lhat_closure_capture_id(LhatValue closure, size_t index);
-
-// The modules `machine` was given by lhat_machine_set_modules, borrowed back
-// out. A proto is shared, unwritten data once compiled (same comment as
-// above), so handing the same array to a second machine -- another OS thread
-// -- is safe without copying anything.
-void lhat_machine_modules(const LhatMachine *machine,
-                          const LhatModule **out_modules, size_t *out_count);
 
 // Runs `proto` on `machine`. What the run allocates belongs to the machine,
 // so the answer is good until the machine is disposed or run again -- there

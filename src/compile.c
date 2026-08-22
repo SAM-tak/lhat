@@ -6840,6 +6840,7 @@ static LhatCompileResult compile_unit(LhatCompileSession *session,
 
     c.units = units;
     c.statements = unit != NULL ? unit->v.list.items : NULL;
+    proto->is_unit = true;
     const char *module_name = units != NULL ? units->module_name : NULL;
 
     // 05 の 5.3: what an earlier require^ registered is the answer, and the

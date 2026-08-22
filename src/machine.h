@@ -181,11 +181,6 @@ struct LhatMachine {
     // it (gc.c's mark_roots).
     LhatString *self_key;
 
-    // 05 の 5.3: the units a require^ can reach, in the order the program
-    // compiled them. Borrowed -- the program owns them and outlives the run.
-    const LhatModule *modules;
-    size_t module_count;
-
     // 05 の 8.9: one members table per registered host value type, indexed
     // by tag->index -- what a member call on a host value answers through,
     // since the value itself has no heap half to carry one. The tables live

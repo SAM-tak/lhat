@@ -210,8 +210,7 @@ static void recheck_one_root(LspWorkspace *ws, LspRoot *root)
         clean = lhat_unit_diagnostic_count(unit) == 0;
     }
     if (clean) {
-        size_t module_count = 0;
-        (void)lhat_program_compile(&root->program, &module_count);
+        (void)lhat_program_compile(&root->program);
     }
     root->checked = true;
 

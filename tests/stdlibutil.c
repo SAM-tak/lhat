@@ -85,21 +85,18 @@ LhatTestRan lhat_test_run(const LhatTestRegister *regs, size_t count,
         return out;
     }
     const LhatUnit *root = NULL;
-    const LhatModule *modules = NULL;
-    size_t module_count = 0;
+    bool compiled = false;
     if (register_all(program, regs, count)) {
         root = lhat_program_check(program, "main.lh");
     }
     if (root != NULL && !lhat_program_has_errors(program) &&
         lhat_unit_ok(root)) {
-        modules = lhat_program_compile(program, &module_count);
+        compiled = lhat_program_compile(program);
     }
-    if (modules != NULL) {
+    if (compiled) {
         LhatMachine *machine = lhat_machine_new();
-        lhat_machine_set_modules(machine, modules, module_count);
         if (lhat_program_install(program, machine)) {
-            LhatRunResult ran =
-                lhat_run(machine, modules[lhat_unit_index(root)].proto);
+            LhatRunResult ran = lhat_run(machine, lhat_unit_proto(root));
             out.ok = true;
             out.status = ran.status;
             if (lhat_is_integer(ran.value)) {

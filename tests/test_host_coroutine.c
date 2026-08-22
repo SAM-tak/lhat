@@ -216,16 +216,13 @@ static LhatRunResult run_program(LhatProgram *program, LhatMachine **keep)
     const LhatUnit *root = lhat_program_check(program, "main.lh");
     LHAT_CHECK(root != NULL && root->checked.diagnostic_count == 0,
                "the program checked");
-    size_t count = 0;
-    const LhatModule *modules = lhat_program_compile(program, &count);
-    if (modules == NULL || root == NULL) {
+    if (!lhat_program_compile(program) || root == NULL) {
         LHAT_CHECK(false, "the program compiled");
         return failed;
     }
     LhatMachine *machine = lhat_machine_new();
-    lhat_machine_set_modules(machine, modules, count);
     lhat_program_install(program, machine);
-    LhatRunResult ran = lhat_run(machine, modules[root->index].proto);
+    LhatRunResult ran = lhat_run(machine, lhat_unit_proto(root));
     if (keep != NULL) {
         *keep = machine;
     } else {

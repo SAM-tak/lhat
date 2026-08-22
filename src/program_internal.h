@@ -28,9 +28,18 @@ struct LhatUnit {
 
     LhatUnitState state;
 
-    // 05 の 5.3: where this unit sits in what lhat_program_compile built, so
-    // a require^ of it names it by number. Only meaningful after that ran.
-    size_t index;
+    // What lhat_program_compile made of it, owned here. NULL until that ran
+    // -- or while it will not compile.
+    LhatProto *proto;
+
+    // 05 の 5.3: the units this one's require^s named, in the order its
+    // compile met them -- the number in each UNIT instruction is a position
+    // here. Held only between the compile of this unit and the filling of
+    // its table (lhat_program_compile's second pass), since a unit named
+    // here may not have compiled yet when this one does.
+    struct LhatUnit **referenced;
+    size_t referenced_count;
+    size_t referenced_capacity;
 
     struct LhatUnit *next;
 };
@@ -50,20 +59,17 @@ struct LhatProgram {
     size_t diagnostic_count;
     size_t diagnostic_capacity;
 
-    // 05 の 5.3: what lhat_program_compile built, owned here.
-    LhatModule *modules;
-    size_t module_count;
-
-    // Why that answered NULL, for a caller with a diagnostic to write. It
-    // compiles unit by unit and stops at the first that will not, so what a
-    // reader has to be told is that one status rather than "something".
+    // Why lhat_program_compile answered false, for a caller with a
+    // diagnostic to write. It compiles unit by unit and stops at the first
+    // that will not, so what a reader has to be told is that one status
+    // rather than "something".
     // LHAT_COMPILE_OK until a compile has actually failed.
     LhatCompileStatus compile_status;
 
     // The same failure with where it was, and the unit it was in -- a
     // position means nothing without the source it indexes. NULL until a
     // compile has failed, and left NULL for a failure with no unit to blame
-    // (the modules array itself not fitting in memory).
+    // (a table not fitting in memory).
     LhatCompileResult compile_result;
     const LhatUnit *compile_unit;
 

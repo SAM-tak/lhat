@@ -93,26 +93,22 @@ PackedStringArray LhatRuntime::run(const String &path)
         return said;
     }
 
-    // 05 の 5.3: every unit compiles, and the machine is given the lot, so a
-    // require^ inside one reaches another.
-    size_t count = 0;
-    const LhatModule *modules = lhat_program_compile(program, &count);
-    LhatMachine *machine = modules != nullptr ? lhat_machine_new() : nullptr;
+    // 05 の 5.3: every unit compiles, each carrying the units its require^s
+    // reach, so the machine is given nothing.
+    bool compiled = lhat_program_compile(program);
+    LhatMachine *machine = compiled ? lhat_machine_new() : nullptr;
     if (machine == nullptr) {
-        said.push_back(modules == nullptr
-                           ? host::compile_failure(program, path)
-                           : host::problem(path, "out of memory"));
+        said.push_back(!compiled ? host::compile_failure(program, path)
+                                 : host::problem(path, "out of memory"));
         lhat_program_free(program);
         return said;
     }
 
-    lhat_machine_set_modules(machine, modules, count);
     // 05 の 8.7: what was registered reaches the machine here, which is what
     // makes the names bound above answer something.
     lhat_program_install(program, machine);
 
-    LhatRunResult ran =
-        lhat_run(machine, modules[lhat_unit_index(root)].proto);
+    LhatRunResult ran = lhat_run(machine, lhat_unit_proto(root));
     if (ran.status != LHAT_RUN_OK) {
         said.push_back(run_failure(machine, path, ran));
     } else if (!lhat_is_nil(ran.value)) {
@@ -146,22 +142,19 @@ Variant LhatRuntime::call_member(const String &path, const String &member,
         return Variant();
     }
 
-    size_t count = 0;
-    const LhatModule *modules = lhat_program_compile(program, &count);
-    LhatMachine *machine = modules != nullptr ? lhat_machine_new() : nullptr;
+    bool compiled = lhat_program_compile(program);
+    LhatMachine *machine = compiled ? lhat_machine_new() : nullptr;
     if (machine == nullptr) {
-        UtilityFunctions::push_error(
-            modules == nullptr ? host::compile_failure(program, path)
-                               : host::problem(path, "out of memory"));
+        UtilityFunctions::push_error(!compiled
+                                         ? host::compile_failure(program, path)
+                                         : host::problem(path, "out of memory"));
         lhat_program_free(program);
         return Variant();
     }
-    lhat_machine_set_modules(machine, modules, count);
     lhat_program_install(program, machine);
 
     Variant answer;
-    LhatRunResult ran =
-        lhat_run(machine, modules[lhat_unit_index(root)].proto);
+    LhatRunResult ran = lhat_run(machine, lhat_unit_proto(root));
     if (ran.status != LHAT_RUN_OK) {
         UtilityFunctions::push_error(host::run_problem(machine, path, ran));
     } else if (!lhat_is_object_kind(ran.value, LHAT_OBJECT_TABLE)) {

@@ -566,16 +566,14 @@ Error LhatScript::reload_now(bool keep_state)
     // it is what makes it wearable, and a script that checks but declares no
     // class is still a fine thing to have open in the editor -- so what
     // follows only decides `runnable`.
-    size_t count = 0;
-    const LhatModule *modules = lhat_program_compile(program, &count);
-    machine = modules != nullptr ? lhat_machine_new() : nullptr;
+    bool compiled = lhat_program_compile(program);
+    machine = compiled ? lhat_machine_new() : nullptr;
     if (machine == nullptr) {
         UtilityFunctions::push_error(
-            modules == nullptr ? host::compile_failure(program, get_path())
-                               : host::problem(get_path(), "out of memory"));
+            !compiled ? host::compile_failure(program, get_path())
+                      : host::problem(get_path(), "out of memory"));
         return OK;
     }
-    lhat_machine_set_modules(machine, modules, count);
     lhat_program_install(program, machine);
 
     // 05 の 3.2: a unit that named no module^ registers nothing and declares
@@ -584,15 +582,14 @@ Error LhatScript::reload_now(bool keep_state)
     // the project as a script resource; what asks for it instead is File >
     // Run, through _run below. The unit is kept, so the editor still shows
     // what the checker said about it.
-    if (modules[lhat_unit_index(root)].module_name == NULL) {
+    if (lhat_unit_module_name(root) == NULL) {
         editor_script = true;
-        entry = modules[lhat_unit_index(root)].proto;
+        entry = lhat_unit_proto(root);
         unit = root;
         return OK;
     }
 
-    LhatRunResult ran =
-        lhat_run(machine, modules[lhat_unit_index(root)].proto);
+    LhatRunResult ran = lhat_run(machine, lhat_unit_proto(root));
     if (ran.status != LHAT_RUN_OK) {
         UtilityFunctions::push_error(
             host::run_problem(machine, get_path(), ran));

@@ -688,12 +688,11 @@ static int check_program(const char *path, bool run, bool strict)
                units == 1 ? "" : "s");
     }
 
-    // 05 の 5.3: every unit compiles, and the machine is given the lot so a
-    // require^ inside one can reach another.
+    // 05 の 5.3: every unit compiles, each carrying the units its require^s
+    // reach, so the machine is given nothing.
     if (!failed && run) {
-        size_t count = 0;
-        const LhatModule *modules = lhat_program_compile(&program, &count);
-        LhatMachine *machine = modules != NULL ? lhat_machine_new() : NULL;
+        LhatMachine *machine =
+            lhat_program_compile(&program) ? lhat_machine_new() : NULL;
         if (machine == NULL) {
             // A unit that would not compile says which form stopped it; only
             // a machine that could not be made has nothing more to add.
@@ -711,11 +710,10 @@ static int check_program(const char *path, bool run, bool strict)
             }
             failed = true;
         } else {
-            lhat_machine_set_modules(machine, modules, count);
             // 05 の 8.7: what was registered reaches the machine here, which
             // is what makes the names bound above answer something.
             lhat_program_install(&program, machine);
-            LhatRunResult ran = lhat_run(machine, modules[root->index].proto);
+            LhatRunResult ran = lhat_run(machine, lhat_unit_proto(root));
             if (ran.status != LHAT_RUN_OK) {
                 say_run_error(path, ran);
                 say_traceback(machine);
@@ -816,9 +814,7 @@ static int dump_bytecode(const char *path)
 
     bool failed = root == NULL || lhat_program_has_errors(&program);
     if (!failed) {
-        size_t count = 0;
-        const LhatModule *modules = lhat_program_compile(&program, &count);
-        if (modules == NULL) {
+        if (!lhat_program_compile(&program)) {
             if (program.compile_status != LHAT_COMPILE_OK) {
                 const char *where = NULL;
                 LhatCompileResult failure =
@@ -830,11 +826,11 @@ static int dump_bytecode(const char *path)
             }
             failed = true;
         } else {
-            for (size_t i = 0; i < count; i++) {
-                printf("%s\n", modules[i].module_name != NULL
-                                   ? modules[i].module_name
-                                   : path);
-                print_proto(modules[i].proto, 0, 0);
+            for (const LhatUnit *u = lhat_program_units(&program); u != NULL;
+                 u = lhat_unit_next(u)) {
+                const char *name = lhat_unit_module_name(u);
+                printf("%s\n", name != NULL ? name : lhat_unit_path(u));
+                print_proto(lhat_unit_proto(u), 0, 0);
             }
         }
     }

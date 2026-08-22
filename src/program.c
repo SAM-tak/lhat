@@ -267,7 +267,18 @@ static size_t resolve_unit(void *context, const char *path, size_t length,
     if (module_name != NULL) {
         *module_name = unit->checked.module_name;
     }
-    return unit->index;
+    // The number is the requiring unit's own -- a position in its table
+    // (LhatUnitTable), which this list becomes once everything compiled.
+    LhatUnit *requiring = r->requiring;
+    for (size_t i = 0; i < requiring->referenced_count; i++) {
+        if (requiring->referenced[i] == unit) {
+            return i;
+        }
+    }
+    LHAT_GROW(requiring->referenced, requiring->referenced_count,
+              requiring->referenced_capacity, 4, return LHAT_NO_UNIT);
+    requiring->referenced[requiring->referenced_count] = unit;
+    return requiring->referenced_count++;
 }
 
 // 02 の 14.2: the tree of a unit already parsed, for a composition in another
@@ -279,15 +290,16 @@ static bool resolve_unit_body(void *context, size_t unit,
                               const LhatLexer **out_lexer)
 {
     Resolution *r = (Resolution *)context;
-    for (LhatUnit *u = r->program->units; u != NULL; u = u->next) {
-        if (!u->loaded || u->index != unit || u->parsed.root == NULL) {
-            continue;
-        }
-        *out_statements = u->parsed.root->v.list.items;
-        *out_lexer = &u->lexer;
-        return *out_statements != NULL;
+    if (unit >= r->requiring->referenced_count) {
+        return false;
     }
-    return false;
+    const LhatUnit *u = r->requiring->referenced[unit];
+    if (!u->loaded || u->parsed.root == NULL) {
+        return false;
+    }
+    *out_statements = u->parsed.root->v.list.items;
+    *out_lexer = &u->lexer;
+    return *out_statements != NULL;
 }
 
 
@@ -2035,31 +2047,39 @@ static void stamp_source(LhatProto *proto, const char *path)
     }
 }
 
-const LhatModule *lhat_program_compile(LhatProgram *program, size_t *count)
+// The second pass: a unit's table is filled once every unit of the batch
+// has its proto, since the list is in the order the units were reached and
+// not in dependency order. Takes the list the first pass built.
+static bool fill_unit_table(LhatUnit *u)
 {
-    if (count != NULL) {
-        *count = program->module_count;
+    const LhatProto **protos = NULL;
+    if (u->referenced_count > 0) {
+        protos = (const LhatProto **)lhat_alloc(u->referenced_count *
+                                                sizeof *protos);
+        if (protos == NULL) {
+            return false;
+        }
+        for (size_t i = 0; i < u->referenced_count; i++) {
+            protos[i] = u->referenced[i]->proto;  // NULL where it never compiled
+        }
     }
-    if (program->modules != NULL) {
-        return program->modules;
+    if (!lhat_proto_give_units(u->proto, protos, u->referenced_count)) {
+        lhat_free((void *)protos);
+        return false;
     }
+    lhat_free(u->referenced);
+    u->referenced = NULL;
+    u->referenced_count = 0;
+    u->referenced_capacity = 0;
+    return true;
+}
 
-    size_t total = 0;
+bool lhat_program_compile(LhatProgram *program)
+{
+    bool ok = true;
     for (LhatUnit *u = program->units; u != NULL; u = u->next) {
-        u->index = total++;
-    }
-    if (total == 0) {
-        return NULL;
-    }
-
-    LhatModule *modules = (LhatModule *)lhat_calloc(total, sizeof *modules);
-    if (modules == NULL) {
-        return NULL;
-    }
-
-    for (LhatUnit *u = program->units; u != NULL; u = u->next) {
-        if (!u->loaded || u->state != LHAT_UNIT_DONE) {
-            continue;  // a unit that failed to check has nothing to compile
+        if (!u->loaded || u->state != LHAT_UNIT_DONE || u->proto != NULL) {
+            continue;  // failed to check, or compiled by an earlier call
         }
         Resolution resolution;
         resolution.program = program;
@@ -2080,9 +2100,12 @@ const LhatModule *lhat_program_compile(LhatProgram *program, size_t *count)
         units.hostvalue_types = program->hostvalue_type_entries;  // 05 の 8.9
         units.hostvalue_type_count = program->hostvalue_type_entry_count;
 
-        LhatProto *proto = NULL;
+        lhat_free(u->referenced);
+        u->referenced = NULL;
+        u->referenced_count = 0;
+        u->referenced_capacity = 0;
         LhatCompileResult compiled =
-            lhat_compile_module(u->parsed.root, &u->lexer, &units, &proto);
+            lhat_compile_module(u->parsed.root, &u->lexer, &units, &u->proto);
         if (compiled.status != LHAT_COMPILE_OK) {
             // Kept so the caller can say which form stopped it rather than
             // only that something did -- and which unit, since the position
@@ -2090,23 +2113,22 @@ const LhatModule *lhat_program_compile(LhatProgram *program, size_t *count)
             program->compile_status = compiled.status;
             program->compile_result = compiled;
             program->compile_unit = u;
-            lhat_modules_free(modules, total);
-            lhat_free(modules);
-            return NULL;
+            ok = false;
+            break;
         }
-        modules[u->index].proto = proto;
-        stamp_source(proto, u->path);
-        if (u->checked.module_name != NULL) {
-            modules[u->index].module_name = duplicate(u->checked.module_name);
+        stamp_source(u->proto, u->path);
+    }
+    // What compiled gets its table either way: a unit the first pass made
+    // is runnable on its own, and a host that stops at `false` loses
+    // nothing by it.
+    for (LhatUnit *u = program->units; u != NULL; u = u->next) {
+        if (u->proto != NULL && u->proto->units == NULL &&
+            !fill_unit_table(u)) {
+            program->compile_status = LHAT_COMPILE_TOO_COMPLEX;
+            ok = false;
         }
     }
-
-    program->modules = modules;
-    program->module_count = total;
-    if (count != NULL) {
-        *count = total;
-    }
-    return modules;
+    return ok;
 }
 
 bool lhat_program_install(const LhatProgram *program, LhatMachine *machine)
@@ -2205,11 +2227,6 @@ void lhat_program_init(LhatProgram *program, bool strict,
 
 void lhat_program_dispose(LhatProgram *program)
 {
-    lhat_modules_free(program->modules, program->module_count);
-    lhat_free(program->modules);
-    program->modules = NULL;
-    program->module_count = 0;
-
     for (size_t i = 0; i < program->host_entry_count; i++) {
         lhat_free(program->host_entries[i].module);
         lhat_free(program->host_entries[i].type);
@@ -2316,6 +2333,8 @@ void lhat_program_dispose(LhatProgram *program)
             lhat_lexer_dispose(&unit->lexer);
             lhat_source_dispose(&unit->source);
         }
+        lhat_proto_free(unit->proto);
+        lhat_free(unit->referenced);
         lhat_free(unit->path);
         lhat_free(unit);
         unit = next;
@@ -2353,9 +2372,14 @@ void lhat_program_free(LhatProgram *program)
     }
 }
 
-size_t lhat_unit_index(const LhatUnit *unit)
+const LhatProto *lhat_unit_proto(const LhatUnit *unit)
 {
-    return unit->index;
+    return unit->proto;
+}
+
+const char *lhat_unit_module_name(const LhatUnit *unit)
+{
+    return unit->loaded ? unit->checked.module_name : NULL;
 }
 
 const char *lhat_unit_path(const LhatUnit *unit)

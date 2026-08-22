@@ -330,8 +330,26 @@ typedef struct {
 // what it captures. 02 の 14.9 keeps the name out of this; a proto is the
 // shape of a body, not a named thing. Declared in lhat/module.h, where a
 // host meets it as a handle; completed here.
+// 05 の 5.3: what a unit's require^s reach, by the number the compiler
+// wrote into each UNIT instruction. One table per unit, owned by the unit's
+// own proto and pointed at by every body written inside it -- so a machine
+// carries no list of units, and a program may grow (lhat_program_compile
+// again, or std.load) under machines already running, each proto knowing
+// its own units. An entry is NULL where the unit it names never compiled.
+typedef struct {
+    const struct LhatProto **protos;
+    size_t count;
+} LhatUnitTable;
+
 struct LhatProto {
     LhatChunk chunk;
+
+    // See LhatUnitTable. NULL for a body no program compiled (lhat_compile,
+    // a session's input), where a require^ has nowhere to go anyway.
+    const LhatUnitTable *units;
+    // The top level of a unit -- what owns `units`, and what a traceback
+    // calls "the top level".
+    bool is_unit;
 
     // 04 の 11.6改: what a traceback prints for a frame of this body. Debug
     // labels only -- 14.9 stands: neither takes any part in typing or in
@@ -424,6 +442,13 @@ LhatProto *lhat_proto_new(void);
 size_t lhat_proto_add(LhatProto *parent, LhatProto *child);
 size_t lhat_proto_add_upvalue(LhatProto *proto, LhatUpvalueSource source,
                               uint8_t index);
+
+// Hands a unit its table (see LhatUnitTable): every body inside `unit`
+// comes to point at it, and `protos` -- the caller's array, taken over --
+// is freed with the unit. False when out of memory, and then `protos` is
+// still the caller's.
+bool lhat_proto_give_units(LhatProto *unit, const LhatProto **protos,
+                           size_t count);
 
 void lhat_chunk_init(LhatChunk *chunk);
 void lhat_chunk_dispose(LhatChunk *chunk);

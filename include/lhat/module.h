@@ -35,18 +35,6 @@ size_t lhat_proto_upvalue_count(const LhatProto *proto);
 size_t lhat_proto_parameters(const LhatProto *proto);
 bool lhat_proto_has_variadic(const LhatProto *proto);
 
-// 05 の 5.3: one unit, compiled. The path 3 章 had it declare is kept beside
-// the body, since that is where the unit registers itself and what a
-// diagnostic names it by. NULL when the unit declared none (3.2), and then
-// nothing registers it -- 5.5 already refused the short form for it.
-typedef struct {
-    LhatProto *proto;
-    char *module_name;  // owned
-} LhatModule;
-
-// Frees the protos and the names. The array itself belongs to the caller.
-void lhat_modules_free(LhatModule *modules, size_t count);
-
 // Why a compile stopped. lhat_program_compile answers NULL and leaves the
 // reason here (lhat_program_compile_status), since it compiles unit by unit
 // and stops at the first that will not -- so what a reader has to be told is
