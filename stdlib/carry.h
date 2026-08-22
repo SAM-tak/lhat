@@ -42,6 +42,10 @@
 
 #include "lhat.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 typedef struct LhatCarried LhatCarried;
 
 // Takes `value` apart. Answers false with *refused aimed at a static reason
@@ -58,5 +62,9 @@ bool lhat_uncarry(LhatMachine *machine, const LhatCarried *carried,
                   LhatValue *out);
 
 void lhat_carried_free(LhatCarried *carried);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif  // LHATSTDLIB_CARRY_H

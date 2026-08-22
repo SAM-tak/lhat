@@ -18,6 +18,14 @@
 
 #include "lhat.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 bool lhatstdlib_math_register(LhatProgram *program);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif  // LHATSTDLIB_MATH_H

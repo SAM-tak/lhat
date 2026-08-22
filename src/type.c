@@ -209,10 +209,18 @@ LhatTypeMember *lhat_type_add_member(LhatTypeArena *arena, LhatType *owner,
                                 : &owner->v.table.members;
 
     LhatTypeMember *member = (LhatTypeMember *)arena_alloc(arena, sizeof *member);
-    if (member == NULL) {
+    // The name is the arena's own copy: what it was read from -- a unit's
+    // source, a host's signature text (lhat_type_of_text) -- need not
+    // outlive the type.
+    char *owned = name_length > 0 ? (char *)arena_alloc(arena, name_length)
+                                  : NULL;
+    if (member == NULL || (name_length > 0 && owned == NULL)) {
         return NULL;
     }
-    member->name = name;
+    if (name_length > 0) {
+        memcpy(owned, name, name_length);
+    }
+    member->name = owned;
     member->name_length = name_length;
     member->type = type;
 
@@ -253,12 +261,7 @@ LhatTypeMember *lhat_type_add_index_member(LhatTypeArena *arena,
     if (length == 0) {
         return NULL;
     }
-    char *name = (char *)arena_alloc(arena, length);
-    if (name == NULL) {
-        return NULL;
-    }
-    memcpy(name, digits, length);
-    return lhat_type_add_member(arena, owner, name, length, type);
+    return lhat_type_add_member(arena, owner, digits, length, type);
 }
 
 const LhatTypeMember *lhat_type_member_at(const LhatType *table, size_t index)

@@ -198,7 +198,7 @@ if(LHAT_BUILD_STDLIB)
         LIBRARY DESTINATION lib
         RUNTIME DESTINATION bin)
     install(FILES stdlib/async.h stdlib/carry.h stdlib/debug.h stdlib/error.h stdlib/io.h
-            stdlib/random.h stdlib/regex.h stdlib/load.h
+            stdlib/math.h stdlib/random.h stdlib/regex.h stdlib/load.h
             stdlib/thread.h
         DESTINATION include/lhatstdlib)
 endif()

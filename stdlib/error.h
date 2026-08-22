@@ -19,11 +19,19 @@
 
 #include "lhat.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 bool lhatstdlib_error_register(LhatProgram *program);
 
 // The kind std.error.<variant> was registered under, or NULL if
 // lhatstdlib_error_register was never called (or has no such variant).
 const LhatErrorKind *lhatstdlib_error_lookup(const LhatProgram *program,
                                              const char *variant);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif  // LHATSTDLIB_ERROR_H

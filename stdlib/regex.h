@@ -23,6 +23,14 @@
 
 #include "lhat.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 bool lhatstdlib_regex_register(LhatProgram *program);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif  // LHATSTDLIB_REGEX_H

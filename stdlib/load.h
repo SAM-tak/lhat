@@ -38,6 +38,14 @@
 
 #include "lhat.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 bool lhatstdlib_load_register(LhatProgram *program);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif  // LHATSTDLIB_LOAD_H

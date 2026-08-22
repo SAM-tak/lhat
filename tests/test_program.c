@@ -497,6 +497,27 @@ static LhatValue host_twice(LhatMachine *machine, void *context,
     return lhat_integer(lhat_as_integer(arguments[0]) * 2);
 }
 
+// Reads x and y off a table -- the signature above names them.
+static LhatValue host_sum_xy(LhatMachine *machine, void *context,
+                          const LhatValue *arguments, size_t count)
+{
+    (void)context;
+    LhatValue kx = lhat_nil();
+    LhatValue ky = lhat_nil();
+    if (count != 1 || !lhat_is_object_kind(arguments[0], LHAT_OBJECT_TABLE) ||
+        !lhat_machine_make_string(machine, "x", 1, &kx) ||
+        !lhat_machine_make_string(machine, "y", 1, &ky)) {
+        return lhat_nil();
+    }
+    const LhatTable *table = (const LhatTable *)lhat_as_object(arguments[0]);
+    LhatValue x = lhat_table_get(table, kx);
+    LhatValue y = lhat_table_get(table, ky);
+    if (!lhat_is_integer(x) || !lhat_is_integer(y)) {
+        return lhat_nil();
+    }
+    return lhat_integer(lhat_as_integer(x) + lhat_as_integer(y));
+}
+
 static LhatValue host_add(LhatMachine *machine, void *context,
                           const LhatValue *arguments, size_t count)
 {
@@ -679,6 +700,39 @@ static void test_hosting(void)
             LHAT_CHECK_EQ_INT(ran.status, LHAT_RUN_OK);
             LHAT_CHECK_EQ_INT(lhat_as_integer(ran.value), 5);
             LHAT_CHECK_EQ_INT(calls, 1);
+            lhat_machine_dispose(machine);
+        }
+    }
+    lhat_program_dispose(&program);
+
+    // A structural type in a signature names members, and the signature's
+    // text is gone once lhat_type_of_text has read it -- the names have to
+    // be the arena's own, or the checker reads freed memory when it later
+    // matches a written table against them (ASan caught this in a host).
+    LHAT_TEST("a signature's member names outlive the signature's text");
+    {
+        static const File files[] = {
+            {"main.lh",
+             "import^ system.gfx\n"
+             "let^ p = { x = 2, y = 3 }\n"
+             "return^ system.gfx.sum(p) + system.gfx.sum({ x = 1, y = 1 })\n"},
+        };
+        program_with(&program, &disk, files, 1);
+        LHAT_CHECK(lhat_register_func(&program, "system.gfx", "sum",
+                                      "f^t^{ x: number^, y: number^ } "
+                                      "-> number^;",
+                                      host_sum_xy, &calls),
+                   "the registration took");
+        const LhatUnit *root = lhat_program_check(&program, "main.lh");
+        LHAT_CHECK(root != NULL && !lhat_program_has_errors(&program),
+                   "the program checked against the member names");
+        bool compiled = lhat_program_compile(&program);
+        if (compiled && root != NULL) {
+            LhatMachine *machine = lhat_machine_new();
+            lhat_program_install(&program, machine);
+            LhatRunResult ran = lhat_run(machine, lhat_unit_proto(root));
+            LHAT_CHECK_EQ_INT(ran.status, LHAT_RUN_OK);
+            LHAT_CHECK_EQ_INT(lhat_as_integer(ran.value), 7);
             lhat_machine_dispose(machine);
         }
     }

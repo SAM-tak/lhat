@@ -15,6 +15,14 @@
 
 #include "lhat.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 bool lhatstdlib_debug_register(LhatProgram *program);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif  // LHATSTDLIB_DEBUG_H

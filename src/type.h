@@ -98,8 +98,9 @@ typedef enum {
 
 typedef struct LhatType LhatType;
 
-// A named member of a table or the fields a kind declares. The name points
-// into the source text, which therefore has to outlive the types.
+// A named member of a table or the fields a kind declares. The name is the
+// arena's own copy (lhat_type_add_member), so the text it was read from
+// may go before the type does -- a host's signature text does.
 typedef struct LhatTypeMember {
     const char *name;
     size_t name_length;

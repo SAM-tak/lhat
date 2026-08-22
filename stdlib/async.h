@@ -45,9 +45,13 @@
 #ifndef LHATSTDLIB_ASYNC_H
 #define LHATSTDLIB_ASYNC_H
 
+#include <stdint.h>
+
 #include "lhat.h"
 
-#include <stdint.h>
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 bool lhatstdlib_async_register(LhatProgram *program);
 
@@ -60,5 +64,9 @@ void *lhatstdlib_async_waits(LhatProgram *program);
 // names no wait that is still outstanding -- one already taken, one dropped,
 // or one that was never handed out.
 bool lhatstdlib_async_complete(void *waits, int64_t id);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif  // LHATSTDLIB_ASYNC_H
