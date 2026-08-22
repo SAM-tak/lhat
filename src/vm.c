@@ -2413,6 +2413,30 @@ static void close_one_upvalue(Machine *m, size_t slot)
     }
 }
 
+// What a host function left behind when it returned, read by the three
+// places one is called from. 05 の 8.7改: a nested lhat_machine_call that
+// faulted leaves its frames standing (nothing unwinds), so frames past
+// `frames_before` mean the outer run ends with the same fault. 8.7改2: and
+// lhat_machine_panic asks for the same end with a value of the host's own.
+// True when the run is over, with what to end it with.
+static bool host_faulted(Machine *m, size_t frames_before,
+                         LhatRunStatus *status, LhatValue *value)
+{
+    if (m->host_panicked) {
+        m->host_panicked = false;
+        *status = LHAT_RUN_PANIC;
+        *value = m->fault_value;
+        return true;
+    }
+    if (m->frame_count > frames_before) {
+        *status = m->fault_status != LHAT_RUN_OK ? m->fault_status
+                                                 : LHAT_RUN_TYPE_ERROR;
+        *value = m->fault_value;
+        return true;
+    }
+    return false;
+}
+
 static LhatRunResult finish(Machine *m, const LhatChunk *chunk,
                             LhatRunStatus status, LhatValue value, size_t at)
 {
@@ -4385,18 +4409,14 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
                     LhatValue answered =
                         host->call(m, host->context, arguments, given);
                     lhat_free(packed);
-                    // 05 の 8.7 with 04 の 11.6改: the host may have called
-                    // back in, and a nested run that faulted leaves its
-                    // frames standing -- nothing unwinds. Running on from
-                    // here would stack the outer frame's own calls over
-                    // them, so the outer run ends with the same fault, and
-                    // the traceback keeps the whole chain.
-                    if (m->frame_count > frames_before) {
-                        return finish(m, chunk,
-                                      m->fault_status != LHAT_RUN_OK
-                                          ? m->fault_status
-                                          : LHAT_RUN_TYPE_ERROR,
-                                      m->fault_value, at);
+                    // 05 の 8.7改 and 8.7改2: a nested run that faulted, or
+                    // a panic the host asked for, ends this run here --
+                    // running on would stack this frame's own calls over
+                    // the standing ones, and the traceback keeps the chain.
+                    LhatRunStatus left = LHAT_RUN_OK;
+                    LhatValue left_with = lhat_nil();
+                    if (host_faulted(m, frames_before, &left, &left_with)) {
+                        return finish(m, chunk, left, left_with, at);
                     }
                     // 05 の 8.9: a host value answer arrives as a
                     // head-shaped run and is written out whole on the spot,
@@ -6228,8 +6248,14 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
                                   ? hostvalue_argument(m->slots, rbase + cc)
                                   : R(cc);
             }
+            size_t frames_before = m->frame_count;
             LhatValue answered = carried_host->call(m, carried_host->context,
                                                     operands, unary ? 1 : 2);
+            LhatRunStatus left = LHAT_RUN_OK;
+            LhatValue left_with = lhat_nil();
+            if (host_faulted(m, frames_before, &left, &left_with)) {
+                return finish(m, chunk, left, left_with, at);
+            }
             if (derive_from != LHAT_FRAME_NO_DERIVE) {
                 bool held = false;
                 LhatRunStatus status = LHAT_RUN_OK;
@@ -6541,6 +6567,8 @@ LhatRunResult lhat_run_arguments(LhatMachine *m, const LhatProto *proto,
 
     // 02 の 13.8改: whatever the last answer left in the room is not this
     // run.s, and holding it would keep those values from being collected.
+    // 8.7改2: a panic asked for outside any host call belongs to no run.
+    m->host_panicked = false;
     m->tuple_scratch_count = 0;
 
     // 5.4 and 5.2: the frames and the registers belong to the run, so each
@@ -6682,7 +6710,18 @@ static LhatRunResult host_call(Machine *m, LhatValue callee, LhatValue receiver,
                 data->released = true;
             }
         }
+        size_t frames_before = m->frame_count;
         LhatValue answered = host->call(m, host->context, gathered, given);
+        // 05 の 8.7改2: the host's own fault comes back to the host that
+        // called it, as it would to an instruction. The span is empty
+        // (call_fault) -- no frame of this machine's was involved.
+        LhatRunStatus left = LHAT_RUN_OK;
+        LhatValue left_with = lhat_nil();
+        if (host_faulted(m, frames_before, &left, &left_with)) {
+            LhatRunResult faulted = call_fault(m, left);
+            faulted.value = left_with;
+            return faulted;
+        }
         // 05 の 8.9: a host value cannot cross this boundary -- its bytes
         // live in slots the boundary does not have -- so it goes the way a
         // return's base already sends one.
@@ -7140,6 +7179,28 @@ bool lhat_machine_adopt_script(LhatMachine *machine, LhatProto *proto,
     // The collector runs between instructions and no further, so the script
     // is still there when the closure that reaches it is made.
     return lhat_machine_make_closure(machine, proto, out);
+}
+
+void lhat_machine_panic(LhatMachine *machine, LhatValue value)
+{
+    Machine *m = (Machine *)machine;
+    if (m == NULL) {
+        return;
+    }
+    // Rooted the way a fault's value is (gc.c), and read back by
+    // host_faulted when the host function returns.
+    m->fault_value = value;
+    m->host_panicked = true;
+}
+
+bool lhat_machine_panic_text(LhatMachine *machine, const char *text)
+{
+    LhatValue message = lhat_nil();
+    if (!lhat_machine_make_string(machine, text, strlen(text), &message)) {
+        return false;
+    }
+    lhat_machine_panic(machine, message);
+    return true;
 }
 
 bool lhat_machine_make_cell(LhatMachine *machine, LhatValue held,

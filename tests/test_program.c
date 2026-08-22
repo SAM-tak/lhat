@@ -576,6 +576,28 @@ static LhatValue host_counter_make(LhatMachine *machine, void *context,
 
 // f^self^ -> number^; -- one operand and no argument, which is the whole of
 // what tells a unary operator from a binary one.
+// 05 の 8.7改2: a host function that panics rather than answering.
+static LhatValue host_refuse(LhatMachine *machine, void *context,
+                             const LhatValue *arguments, size_t count)
+{
+    (void)context;
+    (void)arguments;
+    (void)count;
+    lhat_machine_panic_text(machine, "width must not be negative");
+    return lhat_integer(99);  // dropped
+}
+
+// The same, as a host value's unary '-'.
+static LhatValue host_counter_refuse(LhatMachine *machine, void *context,
+                                     const LhatValue *arguments, size_t count)
+{
+    (void)context;
+    (void)arguments;
+    (void)count;
+    lhat_machine_panic_text(machine, "no negative of this");
+    return lhat_integer(99);
+}
+
 static LhatValue host_counter_negate(LhatMachine *machine, void *context,
                                      const LhatValue *arguments, size_t count)
 {
@@ -1461,6 +1483,121 @@ static void test_hostvalue_escape(void)
             LhatRunResult ran = lhat_run(machine, lhat_unit_proto(root));
             LHAT_CHECK_EQ_INT(ran.status, LHAT_RUN_OK);
             LHAT_CHECK_EQ_INT(lhat_as_integer(ran.value), -7);
+            lhat_machine_dispose(machine);
+        }
+    }
+    lhat_program_dispose(&program);
+
+    // 05 の 8.7改2: a host function asks for a panic and returns; the run
+    // ends at the call with the host's value, the traceback standing there.
+    LHAT_TEST("a host function's panic ends the run at the call, with its message");
+    {
+        static const File files[] = {
+            {"main.lh",
+             "import^ test.c\n"
+             "let^ draw = f^ w:number^ -> number^ {\n"
+             "    let^ r = test.c.refuse(w)\n"  // no tail call: the frame stays
+             "    return^ r\n"
+             "}\n"
+             "let^ got = draw(-1)\n"
+             "return^ got\n"},
+        };
+        program_with(&program, &disk, files, 1);
+        LHAT_CHECK(lhat_register_func(&program, "test.c", "refuse",
+                                      "f^number^ -> number^;", host_refuse,
+                                      NULL),
+                   "the registration took");
+        const LhatUnit *root = lhat_program_check(&program, "main.lh");
+        LHAT_CHECK(root != NULL && root->checked.diagnostic_count == 0,
+                   "the program checked");
+        bool compiled = lhat_program_compile(&program);
+        if (compiled && root != NULL) {
+            LhatMachine *machine = lhat_machine_new();
+            lhat_program_install(&program, machine);
+            LhatRunResult ran = lhat_run(machine, lhat_unit_proto(root));
+            LHAT_CHECK_EQ_INT(ran.status, LHAT_RUN_PANIC);
+            LHAT_CHECK(lhat_is_object_kind(ran.value, LHAT_OBJECT_STRING),
+                       "the message is the value");
+            if (lhat_is_object_kind(ran.value, LHAT_OBJECT_STRING)) {
+                const LhatString *s =
+                    (const LhatString *)lhat_as_object(ran.value);
+                LHAT_CHECK(strcmp(s->text, "width must not be negative") == 0,
+                           "got %s", s->text);
+            }
+            LHAT_CHECK_EQ_INT(ran.line, 3);
+            // The frames stand: draw's frame at the call, the unit's below.
+            LHAT_CHECK_EQ_INT(lhat_machine_fault_depth(machine), 2);
+            LhatFrameInfo info;
+            LHAT_CHECK(lhat_machine_fault_frame(machine, 0, &info) &&
+                           info.line == 3 && !info.top_level,
+                       "the top frame is the call to the host");
+            LHAT_CHECK(lhat_machine_fault_frame(machine, 1, &info) &&
+                           info.line == 6 && info.top_level,
+                       "and the unit's frame is under it");
+            lhat_machine_dispose(machine);
+        }
+    }
+    lhat_program_dispose(&program);
+
+    LHAT_TEST("and so does a panic from a host value's operator");
+    {
+        static const File files[] = {
+            {"main.lh",
+             "import^ test.c\n"
+             "var^ v = test.c.make()\n"
+             "return^ -v\n"},
+        };
+        program_with(&program, &disk, files, 1);
+        const LhatHostValueTag *tag =
+            lhat_register_hostvalue_type(&program, "test.c", "C",
+                                         sizeof(Counter));
+        LHAT_CHECK(lhat_register_func(&program, "test.c", "make",
+                                      "f^ -> test.c.C;", host_counter_make,
+                                      (void *)tag),
+                   "the maker registration took");
+        LHAT_CHECK(lhat_register_hostvalue_member(&program, "test.c", "C", "-",
+                                                  "f^self^ -> number^;",
+                                                  host_counter_refuse,
+                                                  (void *)tag),
+                   "the operator registration took");
+        const LhatUnit *root = lhat_program_check(&program, "main.lh");
+        bool compiled = lhat_program_compile(&program);
+        if (compiled && root != NULL) {
+            LhatMachine *machine = lhat_machine_new();
+            lhat_program_install(&program, machine);
+            LhatRunResult ran = lhat_run(machine, lhat_unit_proto(root));
+            LHAT_CHECK_EQ_INT(ran.status, LHAT_RUN_PANIC);
+            LHAT_CHECK_EQ_INT(ran.line, 3);
+            lhat_machine_dispose(machine);
+        }
+    }
+    lhat_program_dispose(&program);
+
+    // And across the host boundary itself: a host calling a host function
+    // through lhat_machine_call gets the panic as the call's result.
+    LHAT_TEST("and a host calling the host function gets the panic back");
+    {
+        static const File files[] = {
+            {"main.lh", "import^ test.c\nreturn^ test.c.refuse\n"},
+        };
+        program_with(&program, &disk, files, 1);
+        lhat_register_func(&program, "test.c", "refuse", "f^number^ -> number^;",
+                           host_refuse, NULL);
+        const LhatUnit *root = lhat_program_check(&program, "main.lh");
+        bool compiled = lhat_program_compile(&program);
+        if (compiled && root != NULL) {
+            LhatMachine *machine = lhat_machine_new();
+            lhat_program_install(&program, machine);
+            LhatRunResult ran = lhat_run(machine, lhat_unit_proto(root));
+            LHAT_CHECK_EQ_INT(ran.status, LHAT_RUN_OK);
+            LhatValue argument = lhat_integer(-1);
+            LhatRunResult called =
+                lhat_machine_call(machine, ran.value, &argument, 1);
+            LHAT_CHECK_EQ_INT(called.status, LHAT_RUN_PANIC);
+            LHAT_CHECK(lhat_is_object_kind(called.value, LHAT_OBJECT_STRING),
+                       "the message came across the boundary");
+            // No frame of the machine's was involved, so the span is empty.
+            LHAT_CHECK_EQ_INT(lhat_machine_fault_depth(machine), 0);
             lhat_machine_dispose(machine);
         }
     }

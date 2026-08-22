@@ -258,6 +258,19 @@ bool lhat_machine_make_closure(LhatMachine *machine, const LhatProto *proto,
 // closed cell holding a value (its contents may be written later through
 // lhat_upvalue_closed_ref, value.h, which is how a cycle through a closure
 // is tied up), and this takes them. `count` has to be the proto's own.
+// 05 の 8.7改2: what a host function does instead of answering, when what
+// it was asked is a programmer's mistake -- love.graphics.draw handed a
+// width of -1, say -- and not a failure a caller is meant to write a
+// catch^ for. Call it inside the host function and return anything (the
+// answer is dropped): when the function returns, the run ends exactly as if
+// the call site had written 'panic^ value' -- LHAT_RUN_PANIC, `value` in
+// LhatRunResult.value, the traceback standing at the call. An f^
+// registration may panic as well as a p^: purity is the checker's
+// concern, and a panic is the end of the run, not an effect within it.
+// `_text` makes the string first; false when that did not fit.
+void lhat_machine_panic(LhatMachine *machine, LhatValue value);
+bool lhat_machine_panic_text(LhatMachine *machine, const char *text);
+
 // 05 の 5.6: a closure of a proto the machine takes ownership of -- what
 // lhat_program_load_* answered. The proto (the whole tree under it) is freed
 // when the last closure of any body in it is collected; a program's own

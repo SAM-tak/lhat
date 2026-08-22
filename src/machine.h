@@ -216,6 +216,11 @@ struct LhatMachine {
     LhatRunStatus fault_status;
     LhatValue fault_value;  // what a PANIC carried; nil^ for the rest
 
+    // 05 の 8.7改2: lhat_machine_panic was called inside a host function
+    // that has not returned yet -- the value is in fault_value, and the
+    // instruction that called the host ends the run with it (host_faulted).
+    bool host_panicked;
+
     // 02 の 14.22: the tables built-ins are holding onto while written L^
     // code runs inside them -- a sort's aux while the comparator runs, a
     // clone under construction while the policy does. Either may allocate
