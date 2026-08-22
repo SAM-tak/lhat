@@ -79,23 +79,21 @@ static void test_spawn_shape(void)
                    "13.7's floor is one slot, and it has none");
     }
 
-    // The result is the one half of the boundary the checker settles outright
-    // -- it is copied back rather than forwarded, so nothing has to fit
-    // through a variadic slot and the four kinds can be named.
-    LHAT_TEST("a closure answering something that cannot cross is refused");
+    // carry.h: a table crosses now, as a deep copy -- the checker has
+    // nothing to refuse here, and join hands the copy back.
+    LHAT_TEST("a closure answering a table checks clean");
     {
-        LHAT_CHECK(!checks("import^ std.thread\n"
-                           "let^ h = std.thread.spawn(closed^p^ ... "
-                           "{ return^ {1, 2} })\n"),
-                   "a table is not one of the four that cross");
+        LHAT_CHECK(checks("import^ std.thread\n"
+                          "let^ h = std.thread.spawn(closed^p^ ... "
+                          "{ return^ {1, 2} })\n"),
+                   "a table crosses as a copy");
     }
 }
 
-// 15.13: what a body captures is decided where the body is written, so both
-// halves of this are type errors. spawn asks for a closed^ closure, and the
-// mark is what the checker holds the body to -- the run-time refusal
-// (ThreadError.NotSpawnable) is left as the backstop for a run that was
-// never checked.
+// 15.13: a closed^ closure still holds its body to capturing nothing, and
+// still fits spawn (promising more than is asked). What spawn asks for is
+// now a plain 'p^...': carry.h takes what a closure closes over across as a
+// snapshot, so the mark is no longer the price of a thread.
 static void test_spawn_upvalue(void)
 {
     LHAT_TEST("a closed^ closure that closes over a variable is refused");
@@ -107,11 +105,93 @@ static void test_spawn_upvalue(void)
                    "the capture is reported where the body is written");
     }
 
-    LHAT_TEST("and an unmarked closure does not fit spawn at all");
+    LHAT_TEST("and an unmarked closure fits spawn");
     {
-        LHAT_CHECK(!checks("import^ std.thread\n"
-                           "let^ h = std.thread.spawn(p^ ... { return^ 1 })\n"),
-                   "p^...; does not conform to closed^p^...;");
+        LHAT_CHECK(checks("import^ std.thread\n"
+                          "let^ h = std.thread.spawn(p^ ... { return^ 1 })\n"),
+                   "p^...; is what spawn asks for now");
+    }
+
+    // carry.h: the capture crosses as a snapshot. The thread sees 7, and
+    // what it does to its own copy never reaches back.
+    LHAT_TEST("a closure that closes over a variable carries a snapshot");
+    {
+        LhatTestRan ran = run_source(
+            "import^ std.thread\n"
+            "var^ n = 7\n"
+            "let^ h = std.thread.spawn(p^ ... { n := n + 1 return^ n })\n"
+            "if^ h isa^ std.thread.ThreadHandle {\n"
+            "    let^ answered = h.join()\n"
+            "    h.dispose()\n"
+            "    if^ answered isa^ number^ {\n"
+            "        return^ answered * 100 + n\n"
+            "    }\n"
+            "}\n"
+            "return^ -1\n");
+        LHAT_CHECK_RAN_INTEGER(ran, 800 + 7);
+        lhat_test_ran_dispose(&ran);
+    }
+
+    // A cycle survives the trip both ways, and the copy over there is its
+    // own: a push^ on it leaves the original at three.
+    LHAT_TEST("a table crosses with its cycles, and comes back the same way");
+    {
+        LhatTestRan ran = run_source(
+            "import^ std.thread\n"
+            "var^ ring = { name = \"a\" }\n"
+            "var^ ring.me := ring\n"
+            "var^ items = {1, 2, 3}\n"
+            "let^ h = std.thread.spawn(p^ ... {\n"
+            "    let^ got = ...[1]\n"
+            "    let^ list = ...[2]\n"
+            "    var^ cyclic = 0\n"
+            "    if^ got isa^ t^{} {\n"
+            "        if^ got[\"me\"] is^ got { cyclic := 1000 }\n"
+            "    }\n"
+            "    if^ list isa^ t^{...:number^} { list.push^(4) }\n"
+            "    return^ { cyclic, list }\n"
+            "}, ring, items)\n"
+            "if^ h isa^ std.thread.ThreadHandle {\n"
+            "    let^ back = h.join()\n"
+            "    h.dispose()\n"
+            "    if^ back isa^ t^{} {\n"
+            "        let^ c = back[1]\n"
+            "        let^ l = back[2]\n"
+            "        if^ c isa^ number^ {\n"
+            "            if^ l isa^ t^{} {\n"
+            "                return^ c + l.count^ * 10 + items.count^\n"
+            "            }\n"
+            "        }\n"
+            "    }\n"
+            "}\n"
+            "return^ -1\n");
+        LHAT_CHECK_RAN_INTEGER(ran, 1000 + 40 + 3);
+        lhat_test_ran_dispose(&ran);
+    }
+
+    // Two closures that captured one place keep sharing it over there.
+    LHAT_TEST("closures sharing a place share it again on the far side");
+    {
+        LhatTestRan ran = run_source(
+            "import^ std.thread\n"
+            "var^ shared = 0\n"
+            "let^ bump = p^ { shared := shared + 1 }\n"
+            "let^ read = f^ -> number^ { return^ shared }\n"
+            "let^ h = std.thread.spawn(p^ ... {\n"
+            "    bump()\n"
+            "    bump()\n"
+            "    return^ read()\n"
+            "})\n"
+            "if^ h isa^ std.thread.ThreadHandle {\n"
+            "    let^ answered = h.join()\n"
+            "    h.dispose()\n"
+            "    if^ answered isa^ number^ {\n"
+            "        return^ answered * 10 + shared\n"
+            "    }\n"
+            "}\n"
+            "return^ -1\n");
+        LHAT_CHECK_RAN_INTEGER(ran, 20);
+        lhat_test_ran_dispose(&ran);
     }
 
     // The mark reaches through a body written inside the marked one: what
@@ -244,11 +324,12 @@ static void test_arguments(void)
     // Only the four kinds cross, and spawn's own '...' is any^ so that a
     // forwarded collector fits (see the registration) -- which puts this
     // refusal at run time, by name, rather than in the checker.
-    LHAT_TEST("a table is not an argument spawn can carry");
+    LHAT_TEST("a coroutine is not an argument spawn can carry");
     {
         LhatTestRan ran = run_source(
             "import^ std.thread\n"
-            "let^ h = std.thread.spawn(closed^p^ ... { return^ 1 }, {1, 2})\n"
+            "let^ gen = p^ { yield^ 1 }\n"
+            "let^ h = std.thread.spawn(closed^p^ ... { return^ 1 }, gen())\n"
             "if^ h isa^ std.thread.ThreadError.BadArgument {\n"
             "    return^ \"refused\"\n"
             "}\n"

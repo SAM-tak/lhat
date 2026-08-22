@@ -7092,6 +7092,96 @@ bool lhat_machine_make_closure(LhatMachine *machine, const LhatProto *proto,
     return true;
 }
 
+bool lhat_machine_make_cell(LhatMachine *machine, LhatValue held,
+                            LhatUpvalue **out)
+{
+    Machine *m = (Machine *)machine;
+    if (m == NULL || out == NULL) {
+        return false;
+    }
+    LhatUpvalue *cell = (LhatUpvalue *)lhat_object_alloc(
+        &m->objects, sizeof *cell, LHAT_OBJECT_UPVALUE);
+    if (cell == NULL) {
+        return false;
+    }
+    lhat_ref_set(lhat_upvalue_closed_ref(cell), held);
+    cell->location = lhat_upvalue_closed_ref(cell);
+    cell->next_open = NULL;
+    *out = cell;
+    return true;
+}
+
+bool lhat_machine_make_closure_with(LhatMachine *machine,
+                                    const LhatProto *proto,
+                                    LhatUpvalue *const *cells, size_t count,
+                                    LhatValue *out)
+{
+    Machine *m = (Machine *)machine;
+    if (m == NULL || proto == NULL || out == NULL ||
+        proto->upvalue_count != count || (count > 0 && cells == NULL)) {
+        return false;
+    }
+    LhatClosure *closure = (LhatClosure *)lhat_object_alloc(
+        &m->objects, sizeof *closure, LHAT_OBJECT_SUBROUTINE);
+    if (closure == NULL) {
+        return false;
+    }
+    closure->proto = proto;
+    closure->upvalue_count = count;
+    if (count > 0) {
+        closure->upvalues =
+            (LhatUpvalue **)lhat_calloc(count, sizeof *closure->upvalues);
+        if (closure->upvalues == NULL) {
+            return false;
+        }
+        for (size_t i = 0; i < count; i++) {
+            if (cells[i] == NULL) {
+                return false;
+            }
+            closure->upvalues[i] = cells[i];
+        }
+    }
+    *out = lhat_object((LhatObject *)closure);
+    return true;
+}
+
+const LhatProto *lhat_closure_proto(LhatValue closure)
+{
+    if (!lhat_is_object_kind(closure, LHAT_OBJECT_SUBROUTINE)) {
+        return NULL;
+    }
+    return ((const LhatClosure *)lhat_as_object(closure))->proto;
+}
+
+size_t lhat_closure_capture_count(LhatValue closure)
+{
+    if (!lhat_is_object_kind(closure, LHAT_OBJECT_SUBROUTINE)) {
+        return 0;
+    }
+    return ((const LhatClosure *)lhat_as_object(closure))->upvalue_count;
+}
+
+LhatValue lhat_closure_capture(LhatValue closure, size_t index)
+{
+    if (!lhat_is_object_kind(closure, LHAT_OBJECT_SUBROUTINE)) {
+        return lhat_nil();
+    }
+    const LhatClosure *held = (const LhatClosure *)lhat_as_object(closure);
+    if (index >= held->upvalue_count || held->upvalues[index] == NULL) {
+        return lhat_nil();
+    }
+    return lhat_ref_get(held->upvalues[index]->location);
+}
+
+const void *lhat_closure_capture_id(LhatValue closure, size_t index)
+{
+    if (!lhat_is_object_kind(closure, LHAT_OBJECT_SUBROUTINE)) {
+        return NULL;
+    }
+    const LhatClosure *held = (const LhatClosure *)lhat_as_object(closure);
+    return index < held->upvalue_count ? held->upvalues[index] : NULL;
+}
+
 void lhat_machine_modules(const LhatMachine *machine,
                           const LhatModule **out_modules, size_t *out_count)
 {

@@ -9,15 +9,18 @@
 //
 // spawn is written
 //
-//     let^ h = std.thread.spawn(closed^p^ ... { ... }, 1, "two", true)
+//     let^ h = std.thread.spawn(p^ ... { ... }, 1, "two", true)
 //
-// -- fn takes '...' and nothing else, captures nothing, and yields nothing;
-// 02 の 15.13's closed^ is what says the second of those, and the checker
-// holds the body to it where the body is written;
-// everything past it is handed to fn on the new machine. Only nil^, bool^,
-// number^ and string^ cross (a table or a closure points into the heap it was
-// made on), which is exactly why fn's parameter list is '...' rather than one
-// written out: stdlib/thread.c's comment on the boundary says the rest.
+// -- fn takes '...' and nothing else and yields nothing; everything past it
+// is handed to fn on the new machine. What crosses is what carry.h carries:
+// the primitives, tables (a deep copy, cycles kept), and closures as their
+// shared proto plus a snapshot of what they closed over -- fn itself goes
+// that way, so it may close over things, and sees its own copies of them
+// over there. Coroutines, def^ instances and a host's values do not cross;
+// spawn answers BadArgument (or NotSpawnable, for fn) with carry's reason.
+// fn's parameter list is '...' rather than one written out because the
+// collector's any^ is the one shape every carried value conforms to:
+// stdlib/thread.c's comment on the boundary says the rest.
 //
 // The machine a spawn starts is given the registering program's own
 // registrations (lhat_program_install), so a spawned body reaches print, this

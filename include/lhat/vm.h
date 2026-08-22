@@ -254,6 +254,32 @@ bool lhat_machine_make_string(LhatMachine *machine, const char *text,
 bool lhat_machine_make_closure(LhatMachine *machine, const LhatProto *proto,
                                LhatValue *out);
 
+// The same with the captures carried in -- what stdlib/carry needs to
+// rebuild a closure on another machine. The proto is shared (see above);
+// the cells are made here, one per upvalue the proto declares, and handed
+// over already holding their values. Two closures that captured the one
+// place on the other side are rebuilt sharing one cell, which is why the
+// cells are made apart from the closure: lhat_machine_make_cell makes a
+// closed cell holding a value (its contents may be written later through
+// lhat_upvalue_closed_ref, value.h, which is how a cycle through a closure
+// is tied up), and this takes them. `count` has to be the proto's own.
+bool lhat_machine_make_cell(LhatMachine *machine, LhatValue held,
+                            LhatUpvalue **out);
+bool lhat_machine_make_closure_with(LhatMachine *machine,
+                                    const LhatProto *proto,
+                                    LhatUpvalue *const *cells, size_t count,
+                                    LhatValue *out);
+
+// Reading a closure back out: its proto, how many places it captured, each
+// captured place's current value (an open cell reads through to the stack,
+// a closed one from itself -- the machine's own dereference), and the
+// place's identity -- an opaque token equal for two captures of the one
+// place, which is what a copy needs to keep sharing shared.
+const LhatProto *lhat_closure_proto(LhatValue closure);
+size_t lhat_closure_capture_count(LhatValue closure);
+LhatValue lhat_closure_capture(LhatValue closure, size_t index);
+const void *lhat_closure_capture_id(LhatValue closure, size_t index);
+
 // The modules `machine` was given by lhat_machine_set_modules, borrowed back
 // out. A proto is shared, unwritten data once compiled (same comment as
 // above), so handing the same array to a second machine -- another OS thread
