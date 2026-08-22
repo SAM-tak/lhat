@@ -402,6 +402,11 @@ typedef enum {
     // same ordinal. A member of its own rather than a default second argument
     // -- substring's one-ordinal form already means "to the end".
     LHAT_NATIVE_AT,
+    // 14.19改3: the plain searches -- a literal needle, no pattern. What a
+    // pattern would ask for lives in std.regex, behind a compiled object.
+    LHAT_NATIVE_FIND,     // first ordinal the needle stands at, or nil^
+    LHAT_NATIVE_FINDALL,  // an f^ walk of every non-overlapping ordinal
+    LHAT_NATIVE_REPLACE,  // every occurrence swapped for another string
     // 02 の 14.20: the comparison '=' makes, with the error term written
     // rather than taken from 14.8's default. Only a number^ carries it --
     // it is the one value an arithmetic error accumulates in.

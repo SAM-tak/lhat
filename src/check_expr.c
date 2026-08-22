@@ -2234,6 +2234,49 @@ LhatType *chk_infer_member(Checker *c, const LhatNode *node)
         if (target->kind == LHAT_TYPE_STRING && chk_name_is(name, length, "at")) {
             return builtin_at(c);
         }
+        // 14.19改3: the plain searches. What is not there answers nil^
+        // (04 の 11.3) -- never a sentinel -- and the pattern vocabulary
+        // lives in std.regex.
+        if (target->kind == LHAT_TYPE_STRING &&
+            chk_name_is(name, length, "find")) {
+            LhatType *found = lhat_type_union(
+                c->result->types, chk_simple(c, LHAT_TYPE_NUMBER),
+                chk_simple(c, LHAT_TYPE_NIL));
+            LhatType *bare = lhat_type_func(c->result->types, true);
+            lhat_type_add_param(c->result->types, bare,
+                                chk_simple(c, LHAT_TYPE_STRING));
+            bare->v.func.result = found;
+            LhatType *from = lhat_type_func(c->result->types, true);
+            lhat_type_add_param(c->result->types, from,
+                                chk_simple(c, LHAT_TYPE_STRING));
+            lhat_type_add_param(c->result->types, from,
+                                chk_simple(c, LHAT_TYPE_NUMBER));
+            from->v.func.result = found;
+            return lhat_type_intersect(c->result->types, bare, from);
+        }
+        if (target->kind == LHAT_TYPE_STRING &&
+            chk_name_is(name, length, "findall")) {
+            // 15.3改: reading a string changes nothing, so the walk is an
+            // f^ coroutine, exactly as a table's keys^ is.
+            LhatType *walk = lhat_type_coro(
+                c->result->types, NULL, chk_simple(c, LHAT_TYPE_NUMBER),
+                NULL, false, true);
+            LhatType *signature = lhat_type_func(c->result->types, true);
+            lhat_type_add_param(c->result->types, signature,
+                                chk_simple(c, LHAT_TYPE_STRING));
+            signature->v.func.result = walk;
+            return signature;
+        }
+        if (target->kind == LHAT_TYPE_STRING &&
+            chk_name_is(name, length, "replace")) {
+            LhatType *signature = lhat_type_func(c->result->types, true);
+            lhat_type_add_param(c->result->types, signature,
+                                chk_simple(c, LHAT_TYPE_STRING));
+            lhat_type_add_param(c->result->types, signature,
+                                chk_simple(c, LHAT_TYPE_STRING));
+            signature->v.func.result = chk_simple(c, LHAT_TYPE_STRING);
+            return signature;
+        }
         chk_report_named(c, node, LHAT_CHECK_ERR_NO_MEMBER, name, length);
         return chk_simple(c, LHAT_TYPE_UNKNOWN);
     }

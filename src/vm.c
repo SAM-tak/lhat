@@ -865,6 +865,19 @@ static bool native_named(LhatValue key, LhatNativeKind *out, bool *hatted)
         *out = LHAT_NATIVE_AT;
         return true;
     }
+    // 14.19改3: the plain searches, bare for 14.18改's reason.
+    if (name->length == 4 && memcmp(name->text, "find", 4) == 0) {
+        *out = LHAT_NATIVE_FIND;
+        return true;
+    }
+    if (name->length == 7 && memcmp(name->text, "findall", 7) == 0) {
+        *out = LHAT_NATIVE_FINDALL;
+        return true;
+    }
+    if (name->length == 7 && memcmp(name->text, "replace", 7) == 0) {
+        *out = LHAT_NATIVE_REPLACE;
+        return true;
+    }
     // 16.3改2: the hat is not optional on these two (14.18's line), but the
     // bare spelling is still read here so builtin_member can refuse it by
     // name rather than by falling through to "no such member".
@@ -1079,7 +1092,8 @@ static bool builtin_member(LhatValue on, LhatValue key, LhatNativeKind *out)
     // 14.17改2: only a string^ can be read as a number^. 14.19 and 14.19改:
     // and only one has characters to take a run or a single one of.
     if (*out == LHAT_NATIVE_TONUMBER || *out == LHAT_NATIVE_SUBSTRING ||
-        *out == LHAT_NATIVE_AT) {
+        *out == LHAT_NATIVE_AT || *out == LHAT_NATIVE_FIND ||
+        *out == LHAT_NATIVE_FINDALL || *out == LHAT_NATIVE_REPLACE) {
         return lhat_is_object_kind(on, LHAT_OBJECT_STRING);
     }
     // 14.20: and only a number^ has an error term to say anything about.
@@ -1901,6 +1915,93 @@ static LhatRunStatus table_blockmove(Machine *m, LhatTable *dst,
         }
     }
     return LHAT_RUN_OK;
+}
+
+// ---------------------------------------------------------------------------
+// 02 の 14.19改3: the plain string searches
+// ---------------------------------------------------------------------------
+
+// The needle's first stand at or after `from`, byte positions both ways.
+// A well-formed UTF-8 needle begins with a lead byte and lead bytes never
+// continue anything, so a hit always lands on a character boundary.
+static bool find_bytes(const char *text, size_t length, size_t from,
+                       const char *needle, size_t needle_length, size_t *at)
+{
+    if (needle_length == 0) {
+        *at = from <= length ? from : length;
+        return from <= length;
+    }
+    for (size_t i = from; i + needle_length <= length; i++) {
+        if (text[i] == needle[0] &&
+            memcmp(text + i, needle, needle_length) == 0) {
+            *at = i;
+            return true;
+        }
+    }
+    return false;
+}
+
+// How many characters begin inside [0, until) -- continuation bytes carry
+// no ordinal of their own.
+static size_t characters_before(const char *text, size_t until)
+{
+    size_t count = 0;
+    for (size_t i = 0; i < until; i++) {
+        if (((unsigned char)text[i] & 0xC0) != 0x80) {
+            count++;
+        }
+    }
+    return count;
+}
+
+// The walk findall answers: every non-overlapping stand of the needle, as
+// 1-based character ordinals. The haystack rides the coroutine's `held`;
+// this state owns its copy of the needle.
+typedef struct {
+    const LhatString *subject;  // kept alive by `held`
+    size_t next_byte;
+    size_t chars_before;        // characters before next_byte
+    size_t needle_length;
+    char needle[];
+} FindWalk;
+
+static bool findall_step(struct LhatMachine *machine, void *context,
+                         LhatValue sent, LhatValue *out)
+{
+    (void)machine;
+    (void)sent;
+    FindWalk *walk = (FindWalk *)context;
+    if (walk->needle_length == 0) {
+        return false;  // nowhere to stand; an empty needle walks nothing
+    }
+    size_t at = 0;
+    if (!find_bytes(walk->subject->text, walk->subject->length,
+                    walk->next_byte, walk->needle, walk->needle_length,
+                    &at)) {
+        return false;
+    }
+    size_t ordinal = walk->chars_before +
+                     characters_before(walk->subject->text + walk->next_byte,
+                                       at - walk->next_byte) +
+                     1;
+    // The next search starts past this stand, and the ordinal count moves
+    // with it -- counted over the span walked, never from the top again.
+    size_t past = at + walk->needle_length;
+    walk->chars_before =
+        ordinal - 1 + characters_before(walk->subject->text + at, past - at);
+    walk->next_byte = past;
+    *out = lhat_integer((int64_t)ordinal);
+    return true;
+}
+
+static LhatValue findall_release(struct LhatMachine *machine, void *context,
+                                 const LhatValue *arguments, size_t count)
+{
+    (void)machine;
+    (void)arguments;
+    (void)count;
+    lhat_free(context);
+    return lhat_nil();
 }
 
 // 14.22: one value through the clone's written policy -- arbitrary L^ code,
@@ -3568,6 +3669,9 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
                          bare == LHAT_NATIVE_TONUMBER ||
                          bare == LHAT_NATIVE_SUBSTRING ||
                          bare == LHAT_NATIVE_AT ||
+                         bare == LHAT_NATIVE_FIND ||
+                         bare == LHAT_NATIVE_FINDALL ||
+                         bare == LHAT_NATIVE_REPLACE ||
                          bare == LHAT_NATIVE_EQ ||
                          bare == LHAT_NATIVE_FLOOR ||
                          bare == LHAT_NATIVE_CEIL ||
@@ -4664,6 +4768,154 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
                                           lhat_nil(), at);
                         }
                         SET_R(a, lhat_object((LhatObject *)cut));
+                        break;
+                    }
+
+                    // 02 の 14.19改3: the plain searches. The needle is a
+                    // literal string -- what a pattern would ask for lives
+                    // in std.regex -- and what is not there answers nil^
+                    // (04 の 11.3), never a sentinel.
+                    if (native->kind == LHAT_NATIVE_FIND ||
+                        native->kind == LHAT_NATIVE_FINDALL ||
+                        native->kind == LHAT_NATIVE_REPLACE) {
+                        const LhatString *subject =
+                            (const LhatString *)lhat_as_object(native->bound);
+                        if (b < 1 ||
+                            !lhat_is_object_kind(sent, LHAT_OBJECT_STRING)) {
+                            return finish(m, chunk,
+                                          b < 1 ? LHAT_RUN_ARITY
+                                                : LHAT_RUN_TYPE_ERROR,
+                                          lhat_nil(), at);
+                        }
+                        const LhatString *needle =
+                            (const LhatString *)lhat_as_object(sent);
+
+                        if (native->kind == LHAT_NATIVE_FIND) {
+                            if (b > 2) {
+                                return finish(m, chunk, LHAT_RUN_ARITY,
+                                              lhat_nil(), at);
+                            }
+                            // The optional second ordinal reads as
+                            // substring's does -- 1-based, negative from
+                            // the end.
+                            int64_t from = 1;
+                            if (b == 2 && !ordinal_of(R(first + 1), &from)) {
+                                return finish(m, chunk, LHAT_RUN_TYPE_ERROR,
+                                              lhat_nil(), at);
+                            }
+                            from = resolve_ordinal(from, subject->characters);
+                            if (from < 1) {
+                                from = 1;
+                            }
+                            size_t start_byte =
+                                (size_t)from - 1 <= subject->characters
+                                    ? lhat_string_byte_at(subject,
+                                                          (size_t)from - 1)
+                                    : subject->length;
+                            size_t found = 0;
+                            if (!find_bytes(subject->text, subject->length,
+                                            start_byte, needle->text,
+                                            needle->length, &found)) {
+                                SET_R(a, lhat_nil());
+                                break;
+                            }
+                            SET_R(a, lhat_integer(
+                                          (int64_t)characters_before(
+                                              subject->text, found) +
+                                          1));
+                            break;
+                        }
+
+                        if (native->kind == LHAT_NATIVE_FINDALL) {
+                            if (b != 1) {
+                                return finish(m, chunk, LHAT_RUN_ARITY,
+                                              lhat_nil(), at);
+                            }
+                            FindWalk *walk = (FindWalk *)lhat_alloc(
+                                sizeof *walk + needle->length);
+                            if (walk == NULL) {
+                                return finish(m, chunk,
+                                              LHAT_RUN_OUT_OF_MEMORY,
+                                              lhat_nil(), at);
+                            }
+                            walk->subject = subject;
+                            walk->next_byte = 0;
+                            walk->chars_before = 0;
+                            walk->needle_length = needle->length;
+                            memcpy(walk->needle, needle->text,
+                                   needle->length);
+                            LhatCoroutine *made = lhat_host_iterator(
+                                &m->objects, findall_step, walk,
+                                findall_release, native->bound);
+                            if (made == NULL) {
+                                lhat_free(walk);
+                                return finish(m, chunk,
+                                              LHAT_RUN_OUT_OF_MEMORY,
+                                              lhat_nil(), at);
+                            }
+                            SET_R(a, lhat_object((LhatObject *)made));
+                            break;
+                        }
+
+                        // REPLACE: every stand, non-overlapping, no
+                        // callback -- that vocabulary is std.regex's.
+                        if (b != 2 ||
+                            !lhat_is_object_kind(R(first + 1),
+                                                 LHAT_OBJECT_STRING)) {
+                            return finish(m, chunk,
+                                          b != 2 ? LHAT_RUN_ARITY
+                                                 : LHAT_RUN_TYPE_ERROR,
+                                          lhat_nil(), at);
+                        }
+                        const LhatString *with =
+                            (const LhatString *)lhat_as_object(R(first + 1));
+                        if (needle->length == 0) {
+                            SET_R(a, native->bound);  // nowhere to stand
+                            break;
+                        }
+                        size_t stands = 0;
+                        for (size_t i = 0;
+                             find_bytes(subject->text, subject->length, i,
+                                        needle->text, needle->length, &i);
+                             i += needle->length) {
+                            stands++;
+                        }
+                        if (stands == 0) {
+                            SET_R(a, native->bound);
+                            break;
+                        }
+                        size_t total = subject->length +
+                                       stands * with->length -
+                                       stands * needle->length;
+                        char *text = (char *)lhat_alloc(total + 1);
+                        if (text == NULL) {
+                            return finish(m, chunk, LHAT_RUN_OUT_OF_MEMORY,
+                                          lhat_nil(), at);
+                        }
+                        size_t out_at = 0;
+                        size_t in_at = 0;
+                        size_t found = 0;
+                        while (find_bytes(subject->text, subject->length,
+                                          in_at, needle->text,
+                                          needle->length, &found)) {
+                            memcpy(text + out_at, subject->text + in_at,
+                                   found - in_at);
+                            out_at += found - in_at;
+                            memcpy(text + out_at, with->text, with->length);
+                            out_at += with->length;
+                            in_at = found + needle->length;
+                        }
+                        memcpy(text + out_at, subject->text + in_at,
+                               subject->length - in_at);
+                        out_at += subject->length - in_at;
+                        LhatString *swapped =
+                            lhat_string_new(&m->objects, text, out_at);
+                        lhat_free(text);
+                        if (swapped == NULL) {
+                            return finish(m, chunk, LHAT_RUN_OUT_OF_MEMORY,
+                                          lhat_nil(), at);
+                        }
+                        SET_R(a, lhat_object((LhatObject *)swapped));
                         break;
                     }
 
