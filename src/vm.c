@@ -6534,7 +6534,8 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
     return finish(m, chunk, LHAT_RUN_OK, lhat_nil(), chunk->count);
 }
 
-LhatRunResult lhat_run(LhatMachine *m, const LhatProto *proto)
+LhatRunResult lhat_run_arguments(LhatMachine *m, const LhatProto *proto,
+                                 const LhatValue *arguments, size_t count)
 {
     const LhatChunk *chunk = &proto->chunk;
 
@@ -6582,7 +6583,34 @@ LhatRunResult lhat_run(LhatMachine *m, const LhatProto *proto)
     frame->drop_answer = false;  // 5.3
     frame->answer = lhat_nil();
 
+    // 02 の 13.7 with 05 の 3.2: a script's '...' is register 0, and what was
+    // handed over is collected into it the way a CALL collects. A module^
+    // unit (or a session's input) has no '...' to take anything.
+    if (proto->has_variadic) {
+        LhatTable *collected = lhat_table_new(&m->objects);
+        if (collected == NULL) {
+            return finish(m, chunk, LHAT_RUN_OUT_OF_MEMORY, lhat_nil(), 0);
+        }
+        for (size_t i = 0; i < count; i++) {
+            bool refused = false;
+            if (lhat_is_hostvalue(arguments[i]) ||
+                !set_key(m, collected, lhat_integer((int64_t)i + 1),
+                         arguments[i], &refused)) {
+                return finish(m, chunk, LHAT_RUN_TYPE_ERROR, lhat_nil(), 0);
+            }
+        }
+        lhat_slots_set(m->slots, proto->reserved,
+                       lhat_object((LhatObject *)collected));
+    } else if (count > 0) {
+        return finish(m, chunk, LHAT_RUN_ARITY, lhat_nil(), 0);
+    }
+
     return run_frames(m, 0);
+}
+
+LhatRunResult lhat_run(LhatMachine *m, const LhatProto *proto)
+{
+    return lhat_run_arguments(m, proto, NULL, 0);
 }
 
 // A LhatRunResult for a call that never got as far as pushing a frame -- no

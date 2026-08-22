@@ -278,6 +278,13 @@ const void *lhat_closure_capture_id(LhatValue closure, size_t index);
 // Runs `proto` on `machine`. What the run allocates belongs to the machine,
 // so the answer is good until the machine is disposed or run again -- there
 // is nothing in the result to free.
+//
+// 02 の 13.7 with 05 の 3.2: a script's top level is 'p^...', and
+// `arguments` is what its '...' collects -- a command line, say. A module^
+// unit takes none (LHAT_RUN_ARITY if given any). lhat_run is the same with
+// nothing handed over.
+LhatRunResult lhat_run_arguments(LhatMachine *machine, const LhatProto *proto,
+                                 const LhatValue *arguments, size_t count);
 LhatRunResult lhat_run(LhatMachine *machine, const LhatProto *proto);
 
 // Calls an ordinary L^ value the way an instruction would, without a proto of

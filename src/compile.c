@@ -6864,6 +6864,18 @@ static LhatCompileResult compile_unit(LhatCompileSession *session,
         }
         compile_module_register(&c, unit->v.list.items, module_name);
     } else {
+        // 02 の 13.7 with 05 の 3.2: a script's '...' is its one parameter,
+        // register 0 -- laid down by whatever runs it, the way a body's is
+        // (lhat_run builds the collector; a require^'s CALL collects).
+        Local *local = &c.locals[c.local_count++];
+        local->name = "...";
+        local->length = 3;
+        local->reg = reserve(&c);
+        local->depth = c.scope_depth;
+        local->width = 1;
+        proto->parameters = 1;
+        proto->parameter_slots = 1;
+        proto->has_variadic = true;
         compile_statements(&c, unit->v.list.items);
     }
     emit(&c, lhat_encode_abc(LHAT_BC_RETURN_NIL, 0, 0, 0));

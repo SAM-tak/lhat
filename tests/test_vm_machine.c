@@ -53,6 +53,30 @@ static void test_machine(void)
         compiled_dispose(&text);
     }
 
+    // 02 の 13.7 with 05 の 3.2: a script's top level is 'p^...', and what
+    // lhat_run_arguments hands over is its '...'. With nothing handed over
+    // the collector is there and empty.
+    LHAT_TEST("a script's top level collects what it is run with");
+    {
+        LhatMachine *m = lhat_machine_new();
+        Run text;
+        compile_text(&text,
+                     "let^ args = ...\n"
+                     "var^ sum = 0\n"
+                     "for^ a in^ args { if^ a isa^ number^ { sum := sum + a } }\n"
+                     "return^ args.count^ * 100 + sum\n");
+        LhatValue handed[3] = {lhat_integer(5), lhat_integer(7), lhat_nil()};
+        handed[2] = lhat_integer(9);
+        LhatRunResult with = lhat_run_arguments(m, text.proto, handed, 3);
+        LHAT_CHECK_EQ_INT(with.status, LHAT_RUN_OK);
+        LHAT_CHECK_EQ_INT(lhat_as_integer(with.value), 300 + 21);
+        LhatRunResult without = lhat_run(m, text.proto);
+        LHAT_CHECK_EQ_INT(without.status, LHAT_RUN_OK);
+        LHAT_CHECK_EQ_INT(lhat_as_integer(without.value), 0);
+        lhat_machine_dispose(m);
+        compiled_dispose(&text);
+    }
+
     // 03 の 4.3: the top-level names of one input are still there for the
     // next, which is what a session is for.
     LHAT_TEST("a session carries top-level names between inputs");

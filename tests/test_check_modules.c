@@ -113,6 +113,26 @@ static void test_modules(void)
     LHAT_CHECK(lib.provider.checked.module_name == NULL, "3.2 allows none");
     check_against_dispose(&u, &lib);
 
+    // 02 の 13.7 with 05 の 3.2: a script's top level is 'p^...'; a module^
+    // unit is brought in by require^ and takes nothing, so '...' is no name
+    // there.
+    LHAT_TEST("a script has '...' at its top level and a module^ unit has not");
+    memset(&lib, 0, sizeof lib);
+    lib.expected_path = "lib/plain.lh";
+    check_against(&u, &lib, "public^ let^ thing = 1\n",
+                  "let^ args = ...\n"
+                  "var^ n : number^ = args.count^\n"
+                  "var^ first : any^ = args[1]\n");
+    CHECK_CLEAN(&u);
+    check_against_dispose(&u, &lib);
+    memset(&lib, 0, sizeof lib);
+    lib.expected_path = "lib/geometry.lh";
+    check_against(&u, &lib, "module^ ns.geometry\npublic^ let^ n = ...\n",
+                  "var^ g = require^ \"lib/geometry.lh\"\n");
+    LHAT_CHECK(lib.provider.checked.diagnostic_count > 0,
+               "the module^ unit's '...' is an unknown name");
+    check_against_dispose(&u, &lib);
+
     // 05 の 8.6: what require^ answers is the machine's record of what
     // the unit published, not a table the requiring unit adds to.
     LHAT_TEST("a module table is the machine's own");

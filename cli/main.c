@@ -669,7 +669,10 @@ static size_t say_unit_diagnostics(const LhatProgram *program)
 // 03 の 1.1's third stage, over the unit graph of 05 の 6.2: a unit cannot be
 // checked before the units it requires, so the whole graph is walked rather
 // than the one file named on the command line.
-static int check_program(const char *path, bool run, bool strict)
+// `arguments` is what follows the path on the command line: 02 の 13.7 with
+// 05 の 3.2 make a script's top level 'p^...', and these are its '...'.
+static int check_program(const char *path, bool run, bool strict,
+                         char **arguments, size_t argument_count)
 {
     LhatProgram program;
     lhat_program_init(&program, strict, lhat_load_file, NULL);
@@ -713,7 +716,23 @@ static int check_program(const char *path, bool run, bool strict)
             // 05 の 8.7: what was registered reaches the machine here, which
             // is what makes the names bound above answer something.
             lhat_program_install(&program, machine);
-            LhatRunResult ran = lhat_run(machine, lhat_unit_proto(root));
+            LhatValue *handed = argument_count > 0
+                                    ? (LhatValue *)malloc(argument_count *
+                                                          sizeof *handed)
+                                    : NULL;
+            size_t made = 0;
+            while (handed != NULL && made < argument_count &&
+                   lhat_machine_make_string(machine, arguments[made],
+                                            strlen(arguments[made]),
+                                            &handed[made])) {
+                made++;
+            }
+            LhatRunResult ran =
+                made == argument_count
+                    ? lhat_run_arguments(machine, lhat_unit_proto(root),
+                                         handed, made)
+                    : (LhatRunResult){.status = LHAT_RUN_OUT_OF_MEMORY};
+            free(handed);
             if (ran.status != LHAT_RUN_OK) {
                 say_run_error(path, ran);
                 say_traceback(machine);
@@ -1040,6 +1059,8 @@ static int repl(bool strict)
 int main(int argc, char **argv)
 {
     const char *path = NULL;
+    char **arguments = NULL;
+    size_t argument_count = 0;
     bool tokens_only = false;
     bool bytecode_only = false;
     bool check_only = false;
@@ -1068,8 +1089,15 @@ int main(int argc, char **argv)
             strictness = STRICTNESS_RELAXED;
         } else if (strcmp(argv[i], "--dump-host-api") == 0) {
             dump_host_api = true;
-        } else {
+        } else if (path == NULL) {
             path = argv[i];
+        } else {
+            // The first bare argument is the file; the rest are the
+            // script's (02 の 13.7 with 05 の 3.2), and the options are
+            // read from among them no further.
+            arguments = &argv[i];
+            argument_count = (size_t)(argc - i);
+            break;
         }
     }
 
@@ -1120,10 +1148,11 @@ int main(int argc, char **argv)
 
     if (path == NULL) {
         printf("L^ (lhat) %s\n", LHAT_VERSION);
-        printf("usage: lhat [option] <file>\n");
+        printf("usage: lhat [option] <file> [argument...]\n");
         printf("  no file        read from a prompt (03 の 4 章)\n");
         printf("  --run          check the whole program and run it"
-                                " (05 の 5.3)\n");
+                                " (05 の 5.3); what follows the file is"
+                                " its '...'\n");
         printf("  --check        type check and report, without running\n");
         printf("  default        print the syntax tree\n");
         printf("  --tokens       print the token stream instead\n");
@@ -1145,7 +1174,8 @@ int main(int argc, char **argv)
     // the same graph, so it reads its own input the same way.
     if (check_only || run_program) {
         return check_program(path, run_program,
-                             strictness != STRICTNESS_RELAXED);
+                             strictness != STRICTNESS_RELAXED, arguments,
+                             argument_count);
     }
     if (bytecode_only) {
         return dump_bytecode(path);

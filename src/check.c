@@ -2710,6 +2710,21 @@ void lhat_check_unit(const LhatNode *unit, const LhatLexer *lexer, bool strict,
     // does not wait behind the body.
     result->module_name = chk_read_module_name(&checker, unit->v.list.items);
 
+    // 02 の 13.7 with 05 の 3.2: a script's top level is 'p^...' -- whatever
+    // runs it (lhat_run, a require^, std.load) hands it arguments, and '...'
+    // is the collector, any^ throughout. A module^ unit takes nothing.
+    if (result->module_name == NULL) {
+        LhatType *collected = lhat_type_table(result->types);
+        if (collected != NULL) {
+            collected->v.table.variadic = chk_simple(&checker, LHAT_TYPE_ANY);
+            Binding *b = chk_scope_add(&scope, "...", 3, collected, 0);
+            if (b != NULL) {
+                b->reached = true;
+                b->is_parameter = true;
+            }
+        }
+    }
+
     // 02 の 18.4: the unit's own, written at its head.
     chk_check_annotations(&checker, unit->v.list.annotations,
                           LHAT_ANNOTATION_UNIT);
