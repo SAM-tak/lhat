@@ -219,6 +219,22 @@ let^vtos = {
 > 辞書型（t^{ [K] : V } 相当）。用途は具体化済み（箱キー・hostdata キー・レジストリ）
 これのついでで、現在不定長の型アノテーションが `t^{...:number^}` 等であるのを `t^{number^[]}` にしたい。
 
+vector.lhの末尾に
+
+```lhat
+let^f = f^ { (1, 2) }
+let^g = f^x, y { x + y }
+let^h = f^x, y, z { x + y + z }
+
+print(
+    for^let^x, y = f()
+    for^let^z = g(x, y)
+    do^:h(x, y, z);
+)
+```
+
+を追加しても、g h の引数はnumber^に同定されてしまう。Vector3 の二項演算も存在してるはずなのに。
+
 ### もしかしたら今後やりたいこと
 
 public^のシグネチャ明示。
