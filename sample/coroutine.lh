@@ -1,4 +1,4 @@
-import^std.math
+import^std.math.vector3
 
 let^y = f^x:number^{
     print(x)
@@ -92,9 +92,9 @@ pre^: # 最後の入力を拾いたい場合これが必須に。
 }
 
 let^positions = {
-    a = box^std.math.vec3(1, 2, 3),
-    b = box^std.math.vec3(10, 20, 30),
-    c = box^std.math.vec3(0, 0, 0)
+    a = box^std.math.vector3.new(1, 2, 3),
+    b = box^std.math.vector3.new(10, 20, 30),
+    c = box^std.math.vector3.new(0, 0, 0)
 }
 
 let^vco = f^{

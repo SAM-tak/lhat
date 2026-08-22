@@ -1,20 +1,20 @@
 # 05 の 8.9: host values, end to end. Vector3 lives on the stack;
 # Vector3.Box^ is the box the heap can hold, made with box^.
-import^std.math
+import^std.math.vector3
 import^std.io
 
 # --- the boxed side: boxes in a table, get/set as unboxing/boxing ---
 let^positions = {
-    a = box^std.math.vec3(1, 2, 3),
-    b = box^std.math.vec3(10, 20, 30),
-    c = box^std.math.vec3(0, 0, 0)
+    a = box^std.math.vector3.new(1, 2, 3),
+    b = box^std.math.vector3.new(10, 20, 30),
+    c = box^std.math.vector3.new(0, 0, 0)
 }
 positions.c.set(positions.a.get() + positions.b.get())
 let^landed = positions.c.get()
 print($"c = ({landed.x}, {landed.y}, {landed.z})")
 
 # --- the value side: arithmetic with no heap in sight ---
-let^v = std.math.vec3(3, 4, 0)
+let^v = std.math.vector3.new(3, 4, 0)
 print($"v = {v}")
 print($"length = {v.length()}")
 
@@ -28,17 +28,17 @@ let^unit = v.normalized()
 print($"unit = ({unit.x}, {unit.y}, {unit.z})")
 
 # fields write in place -- a value type, so only this copy changes
-var^m = std.math.vec3(0, 0, 0)
+var^m = std.math.vector3.new(0, 0, 0)
 m.x := 7
 m.y := m.x + 1
 print($"m = ({m.x}, {m.y}, {m.z})")
 
 # equality is bytes under the same type
-print($"v = vec3(3,4,0): {v = std.math.vec3(3, 4, 0)}")
+print($"v = vec3(3,4,0): {v = std.math.vector3.new(3, 4, 0)}")
 print($"v = doubled: {v = doubled}")
 
 # host values pass through L^ subroutines whole
-let^blend = f^p:std.math.Vector3, q:std.math.Vector3 -> std.math.Vector3 {
+let^blend = f^p:std.math.vector3.Vector3, q:std.math.vector3.Vector3 -> std.math.vector3.Vector3 {
     return^ (p + q) * 0.5
 }
 let^mid = blend(v, doubled)
@@ -63,7 +63,7 @@ print(vtos[positions.c])
 # (a bare host value cannot ride the variadic seat -- box it, or print
 # fields: k.get().x). The table type cannot say K and V for computed keys
 # yet, so strict asks the focus to say them.
-for^k:std.math.Vector3.ConstBox^, v:string^ in^vtos {
+for^k:std.math.vector3.Vector3.ConstBox^, v:string^ in^vtos {
     print(k, v)
 }
 
