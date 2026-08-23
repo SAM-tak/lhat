@@ -94,6 +94,20 @@ static LhatRuntimeType *rt_from_checked(LhatHeap *heap,
         }
 
         case LHAT_TYPE_TABLE: {
+            // 05 の 8.8: a registered type is its declaration and nothing
+            // else -- the machine asks a value for the tag (object.c's
+            // satisfies), never for the members. Converting those would also
+            // walk every type they name, and a library whose types name each
+            // other (a physics world's bodies, shapes and joints) made
+            // millions of nodes that way for a few dozen registrations.
+            if (type->v.table.hostdata_tag != NULL) {
+                LhatRuntimeType *rt =
+                    lhat_type_rt_new(heap, LHAT_TYPE_RT_HOSTDATA);
+                if (rt != NULL) {
+                    rt->hostdata_tag = type->v.table.hostdata_tag;
+                }
+                return rt;
+            }
             LhatRuntimeType *rt = lhat_type_rt_new(heap, LHAT_TYPE_RT_TABLE);
             if (rt == NULL) {
                 return NULL;

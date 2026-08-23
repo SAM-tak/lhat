@@ -4843,8 +4843,15 @@ static LhatType *infer_node(Checker *c, const LhatNode *node)
                     // tostring reaches one the same as it reaches a number^:
                     // the library's registered one, or the built-in writing
                     // the type's name where none was registered.
-                    chk_require_value(c, part->v.hole.value,
-                                      chk_infer(c, part->v.hole.value));
+                    LhatType *held = chk_require_value(
+                        c, part->v.hole.value, chk_infer(c, part->v.hole.value));
+                    // 13.8改: a hole is one value, as an argument is. A
+                    // tuple here has nowhere to put its positions, and the
+                    // machine would only refuse it as it ran.
+                    if (lhat_type_tuple_width(held) > 0) {
+                        chk_report(c, part->v.hole.value,
+                                   LHAT_CHECK_ERR_TUPLE_MISPLACED);
+                    }
                 }
             }
             return chk_simple(c, LHAT_TYPE_STRING);

@@ -757,6 +757,15 @@ static void test_variadic(void)
                "}\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_TUPLE_MISPLACED);
     unit_dispose(&u);
+
+    // An interpolation hole is one value too: the machine used to be the
+    // first to say so, as a fault.
+    LHAT_TEST("nor into an interpolation hole");
+    check_text(&u,
+               "var^ pair = f^ -> (number^, number^) { return^ 1, 2 }\n"
+               "var^ s = $\"both: {pair()}\"\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_TUPLE_MISPLACED);
+    unit_dispose(&u);
 }
 
 // 16.3: the forms of for^ that answer with a value rather than iterate.

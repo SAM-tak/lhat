@@ -5,6 +5,7 @@
 // dependency order of 6.2, the single load of 5.3 and the refusal of 6.3 —
 // rather than anything about a file system.
 
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -1115,6 +1116,50 @@ static void test_host_data(void)
             LhatRunResult ran = lhat_run(machine, lhat_unit_proto(root));
             LHAT_CHECK_EQ_INT(ran.status, LHAT_RUN_OK);
             LHAT_CHECK_EQ_INT(lhat_as_integer(ran.value), 42);
+            lhat_machine_dispose(machine);
+        }
+    }
+    lhat_program_dispose(&program);
+
+    // 05 の 8.8: a registered type is its tag. Lowering a registration's
+    // signature used to convert the type's members, and through them every
+    // type they named -- five types naming each other eight ways held six
+    // million nodes (a LOVE2D binding's physics). A nominal leaf holds one.
+    LHAT_TEST("types naming each other install as a handful of nodes");
+    {
+        static const File files[] = {
+            {"main.lh", "return^ 1\n"},
+        };
+        program_with(&program, &disk, files, 1);
+        static const char *const names[] = {"A", "B", "C", "D", "E"};
+        for (size_t t = 0; t < 5; t++) {
+            LHAT_CHECK(lhat_register_hostdata_type(&program, "m", names[t]) !=
+                           NULL,
+                       "the type registered");
+        }
+        char member[8];
+        char signature[64];
+        for (size_t t = 0; t < 5; t++) {
+            for (size_t i = 0; i < 8; i++) {
+                snprintf(member, sizeof member, "m%zu", i);
+                snprintf(signature, sizeof signature,
+                         "p^self^, m.%s -> m.%s;", names[(t + i + 1) % 5],
+                         names[(t + i + 2) % 5]);
+                LHAT_CHECK(lhat_register_member(&program, "m", names[t],
+                                                member, signature, host_self,
+                                                NULL),
+                           "the member registered");
+            }
+        }
+        const LhatUnit *root = lhat_program_check(&program, "main.lh");
+        bool compiled = lhat_program_compile(&program);
+        if (compiled && root != NULL) {
+            LhatMachine *machine = lhat_machine_new();
+            LHAT_CHECK(lhat_program_install(&program, machine), "installed");
+            LhatRunResult ran = lhat_run(machine, lhat_unit_proto(root));
+            LHAT_CHECK_EQ_INT(ran.status, LHAT_RUN_OK);
+            LHAT_CHECK(ran.live < 1000, "live objects after install: %zu",
+                       ran.live);
             lhat_machine_dispose(machine);
         }
     }
