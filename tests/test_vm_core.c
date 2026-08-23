@@ -183,7 +183,7 @@ static void test_arithmetic(void)
     // 02 の 11.5 の (2): '**' binds tighter than a unary minus.
     LHAT_TEST("'-2 ** 2' is minus four");
     run_text(&r, "return^ -2 ** 2\n");
-    CHECK_REAL(&r, -4.0);
+    CHECK_INTEGER(&r, -4);
     run_dispose(&r);
 
     // 5.1: the generic instruction checks what it was given.
@@ -236,7 +236,11 @@ static void test_names(void)
     run_dispose(&r);
 
     run_text(&r, "var^ x = 2\nx **= 5\nreturn^ x\n");
-    CHECK_REAL(&r, 32.0);
+    CHECK_INTEGER(&r, 32);
+    run_dispose(&r);
+
+    run_text(&r, "var^ x = 4\nx **= -1\nreturn^ x\n");
+    CHECK_REAL(&r, 0.25);
     run_dispose(&r);
 
     run_text(&r, "var^ x = \"ab\"\nx ..= \"cd\"\nreturn^ x = \"abcd\"\n");

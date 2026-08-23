@@ -188,7 +188,46 @@ static bool arithmetic(LhatOpcode op, LhatValue left, LhatValue right,
             return true;
         }
         case LHAT_BC_POW:
-            // 14.8改: always a real, whatever the operands' representation.
+            if (lhat_is_integer(right)) {
+                // small interger exponent specified hand loop
+                int64_t times = lhat_as_integer(right);
+                if (times == 0) {
+                    *out = lhat_integer(1);
+                    return true;
+                }
+                // small positive interger exponent specified hand loop
+                if (lhat_is_integer(left) && times > 0 && times <= 100) {
+                    int64_t r = 1;
+                    int64_t base = lhat_as_integer(left);
+                    if(base == 0) {
+                        *out = lhat_integer(0);
+                        return true;
+                    }
+                    for (int64_t i = 0; i < times; i++) {
+                        r *= base;
+                    }
+                    *out = lhat_integer(r);
+                    return true;
+                }
+                // generic small interger exponent hand loop
+                if(fabs(a) > 0.00000001 && times <= 100 && times >= -100) {
+                    double r = 1.0;
+                    double base = a;
+                    // Kept out of libm so the core has no maths dependency yet; only
+                    // whole exponents are wanted before the standard library lands.
+                    bool invert = times < 0;
+                    if (invert)
+                    {
+                        times = -times;
+                    }
+                    for (int64_t i = 0; i < times; i++)
+                    {
+                        r *= base;
+                    }
+                    *out = lhat_real(invert ? 1.0 / r : r);
+                    return true;
+                }
+            }
             // A negative base under a fractional exponent is NaN -- not a
             // fault, the same line 04 の 11.2 draws for a zero divisor.
             *out = lhat_real(pow(a, b));
