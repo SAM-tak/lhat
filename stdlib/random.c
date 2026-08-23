@@ -1,6 +1,6 @@
 // L^ (lhat) -- sample standard library: std.random.
 //
-// std.random.make(seed) answers a std.random.Random hostdata (05 の 8.8),
+// std.random.new(seed) answers a std.random.Random hostdata (05 の 8.8),
 // one xorshift64* stream per instance. No module-wide mutable state here,
 // so no lock either -- a program sharing one Random across std.thread
 // spawns is on its own for keeping next()/range()/reseed() from racing on
@@ -10,7 +10,7 @@
 // xorshift64* (Marsaglia/Vigna): small, dependency-free, good enough for the
 // games and tools this is a sample for. Not cryptographic.
 //
-// std.random.make answers std.random.Random|std.error.OutOfMemory -- read
+// std.random.new answers std.random.Random|std.error.OutOfMemory -- read
 // it with try^/catch^, or narrow with isa^ against std.random.Random
 // (05 の 8.8's hostdata path). See error.h for why OutOfMemory lives in
 // std.error rather than a std.random.RandomError of its own.
@@ -67,8 +67,8 @@ static uint64_t next_raw(Random *r)
 // seed == 0 asks for one seeded from the clock, so a caller that does not
 // care still gets a different sequence each run without writing time(NULL)
 // itself -- std/ has no clock module of its own to reach for that.
-static LhatValue random_make(LhatMachine *machine, void *context,
-                             const LhatValue *arguments, size_t count)
+static LhatValue random_new(LhatMachine *machine, void *context,
+                            const LhatValue *arguments, size_t count)
 {
     (void)count;
     const RandomModule *module = (const RandomModule *)context;
@@ -169,9 +169,9 @@ bool lhatstdlib_random_register(LhatProgram *program)
     }
 
     return lhat_register_func(
-               program, "std.random", "make",
+               program, "std.random", "new",
                "f^number^ -> std.random.Random|std.error.OutOfMemory;",
-               random_make, module) &&
+               random_new, module) &&
            lhat_register_member(program, "std.random", "Random", "reseed",
                                 "p^self^, number^;", random_reseed, module) &&
            lhat_register_member(program, "std.random", "Random", "next",

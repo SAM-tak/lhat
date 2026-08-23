@@ -31,21 +31,21 @@ static LhatTestRan run_source(const char *text)
 // `body` names it `r` and answers 1 for a pass.
 #define WITH_RANDOM(seed, body)                     \
     "import^ std.random\n"                          \
-    "let^ r = std.random.make(" seed ")\n"          \
+    "let^ r = std.random.new(" seed ")\n"           \
     "if^ r isa^ std.random.Random {\n" body         \
     "}\n"                                           \
     "return^ 0 - 1\n"
 
 // Two generators of the same seed, for the cases that ask whether two streams
 // agree. `body` names them `a` and `b`.
-#define WITH_TWO(first, second, body)               \
-    "import^ std.random\n"                          \
-    "let^ a = std.random.make(" first ")\n"         \
-    "let^ b = std.random.make(" second ")\n"        \
-    "if^ a isa^ std.random.Random {\n"              \
-    "    if^ b isa^ std.random.Random {\n" body     \
-    "    }\n"                                       \
-    "}\n"                                           \
+#define WITH_TWO(first, second, body)           \
+    "import^ std.random\n"                      \
+    "let^ a = std.random.new(" first ")\n"      \
+    "let^ b = std.random.new(" second ")\n"     \
+    "if^ a isa^ std.random.Random {\n"          \
+    "    if^ b isa^ std.random.Random {\n" body \
+    "    }\n"                                   \
+    "}\n"                                       \
     "return^ 0 - 1\n"
 
 static void test_make(void)
