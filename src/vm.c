@@ -22,7 +22,6 @@
 // machine carries it without carrying a front end.
 #include "number.h"
 #include "lhat/port.h"
-#include "rttype.h"
 #include "type.h"
 
 // ---------------------------------------------------------------------------
@@ -2897,13 +2896,6 @@ bool lhat_machine_make_host(LhatMachine *machine, LhatHostFn call,
     host->parameter_types = parameter_types;
     *out = lhat_object((LhatObject *)host);
     return true;
-}
-
-LhatRuntimeType *lhat_machine_rt_from_checked(LhatMachine *machine,
-                                              const LhatType *type)
-{
-    return machine != NULL ? lhat_rt_from_checked(&machine->objects, type)
-                           : NULL;
 }
 
 // 05 の 8.7: the same walk the unit prologue compiles to, done in C because

@@ -101,12 +101,15 @@ struct LhatProgram {
     size_t annotation_count;
     size_t annotation_capacity;
 
-    // 05 の 8.7 の誤り版、04 の 12.4: lhat_register_error_kind が作る実行時
-    // オブジェクト専用のヒープ。どの machine の GC サイクルにも属さず、
-    // program 自身と同じだけ生きる -- chunk->heap (code.h) と同じ理屈
-    // (lhat_proto_new のコメント参照)。host_error_entries は
-    // lhat_compile_module に渡す LhatUnits.host_errors の元になる登録簿。
-    LhatHeap host_error_heap;
+    // 05 の 8.7: the run-time objects a registration makes -- 04 の 12.4's
+    // error kinds, and 02 の 14.12's descriptors of every registered
+    // signature. On a heap of the program's own, born black, so they belong
+    // to no machine's collection and live as long as the program: the same
+    // reason chunk->heap (code.h) holds a unit's (lhat_proto_new's comment).
+    // A machine is handed pointers into it at install and builds nothing.
+    // host_error_entries is what lhat_compile_module is given as
+    // LhatUnits.host_errors.
+    LhatHeap host_heap;
     LhatHostErrorKind *host_error_entries;
     size_t host_error_entry_count;
     size_t host_error_entry_capacity;

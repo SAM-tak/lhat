@@ -7,7 +7,7 @@
 #include <string.h>
 
 #include "compile.h"  // 05 の 5.3: the units are compiled here too
-#include "gc.h"  // LHAT_GC_BLACK -- host_error_heap の初期色 (04 の 12.4)
+#include "gc.h"  // LHAT_GC_BLACK -- host_heap の初期色 (04 の 12.4)
 #include "grow.h"
 #include "lhat/error.h"  // one shape for what a stage reported (03 の 1.1)
 #include "lhat/port.h"
@@ -1004,10 +1004,11 @@ typedef struct LhatHostEntry {
     bool has_variadic;  // 13.7: the signature ended in '...' -- see LhatHost
     bool takes_self;
     bool self_last;     // 02 の 11.3改: the receiver is the right operand
-    // 02 の 14.12: what install lowers into the descriptor the machine's
-    // overload search reads. Points into the program's type arena, which
-    // outlives every install -- nothing here is owned.
-    const LhatType *signature;
+    // 02 の 14.12: the descriptor the machine's overload search reads, one
+    // per parameter, lowered once at registration onto host_heap (the
+    // nodes) -- install hands every machine the same ones. The array is
+    // owned; NULL where there is nothing to compare.
+    LhatRuntimeType **parameter_types;
     // 05 の 8.8: the tag values of this type carry. Kept on the entry so that
     // it lives as long as the program and points at the entry's own strings.
     LhatHostDataTag *tag;
@@ -1024,7 +1025,7 @@ typedef struct LhatGlobalEntry {
     bool has_variadic;
     bool takes_self;
     bool self_last;
-    const LhatType *signature;  // 14.12, as on LhatHostEntry
+    LhatRuntimeType **parameter_types;  // 14.12, as on LhatHostEntry
 } LhatGlobalEntry;
 
 // The table type a dotted path names inside `owner`, made where the path does
@@ -1099,16 +1100,13 @@ static const LhatTypeMember *hosted_member(const LhatType *table,
     return NULL;
 }
 
-// 02 の 14.12 with 05 の 8.7: a registration's signature, built again as the
-// descriptor the machine's overload search reads -- rttype.c's conversion,
-// onto the machine's heap where the collector sees it. A parameter whose
+// 02 の 14.12 with 05 の 8.7: a registration's signature as the descriptors
+// the machine's overload search reads -- rttype.c's conversion, onto the
+// program's own heap (host_heap), once, at registration. A parameter whose
 // descriptor comes back NULL is not compared, so the search falls back on
-// the counts.
-
-// The parameter types of one registration, in order, as the array a LhatHost
-// takes over. 13.4 keeps self^ out of the list either way, so the count here
-// is the same one keep_entry recorded.
-static LhatRuntimeType **lower_host_params(LhatMachine *machine,
+// the counts. 13.4 keeps self^ out of the list either way, so the count is
+// the same one the entry recorded.
+static LhatRuntimeType **lower_host_params(LhatProgram *program,
                                            const LhatType *signature,
                                            uint8_t count)
 {
@@ -1124,12 +1122,28 @@ static LhatRuntimeType **lower_host_params(LhatMachine *machine,
     size_t at = 0;
     for (const LhatTypeList *p = signature->v.func.params;
          p != NULL && at < count; p = p->next) {
-        types[at++] = lhat_machine_rt_from_checked(machine, p->type);
+        types[at++] = lhat_rt_from_checked(&program->host_heap, p->type);
     }
     while (at < count) {
         types[at++] = NULL;
     }
     return types;
+}
+
+// What a machine's LhatHost takes over: its own copy of the pointers, since
+// the host frees the array with itself, while the nodes stay the program's.
+static LhatRuntimeType **borrowed_params(const LhatRuntimeType *const *types,
+                                         uint8_t count)
+{
+    if (types == NULL || count == 0) {
+        return NULL;
+    }
+    LhatRuntimeType **copy =
+        (LhatRuntimeType **)lhat_alloc((size_t)count * sizeof *copy);
+    if (copy != NULL) {
+        memcpy(copy, types, (size_t)count * sizeof *copy);
+    }
+    return copy;
 }
 
 static bool keep_entry(LhatProgram *program, const char *module,
@@ -1162,13 +1176,13 @@ static bool keep_entry(LhatProgram *program, const char *module,
         entry->has_variadic = signature->v.func.variadic != NULL;
         entry->takes_self = signature->v.func.takes_self;
         entry->self_last = signature->v.func.self_last;
-        // 14.12: kept whole rather than reduced to counts, since install
-        // lowers it into the descriptor the overload search reads.
-        entry->signature = signature;
+        entry->parameter_types =
+            lower_host_params(program, signature, entry->parameters);
     }
     if (entry->module == NULL || entry->name == NULL ||
         (type != NULL && entry->type == NULL) ||
-        (signature_text != NULL && entry->signature_text == NULL)) {
+        (signature_text != NULL && entry->signature_text == NULL) ||
+        (entry->parameters > 0 && entry->parameter_types == NULL)) {
         return false;
     }
     program->host_entry_count++;
@@ -1269,7 +1283,7 @@ static void free_variant_arrays(char **variant_copies,
 // lhat_register_hostdata_type と同じ hosted_table/hosted_member を通る;
 // 実行時側は check.c の check_errordef / vm.c の declare_error が unit の
 // ASTから作るのと同じ2つの呼び出し(lhat_type_error_set/error_kind、
-// lhat_error_kind_new)を、program->host_error_heap に対して行う。
+// lhat_error_kind_new)を、program->host_heap に対して行う。
 bool lhat_register_error_kind(LhatProgram *program, const char *module,
                               const char *name,
                               const char *const *variant_names,
@@ -1303,10 +1317,10 @@ bool lhat_register_error_kind(LhatProgram *program, const char *module,
     // chunk の定数と同じ扱いで lhat_program_dispose がまとめて解放する --
     // 明示的に取り消さない。
     LhatString *group_name =
-        lhat_string_new(&program->host_error_heap, name, strlen(name));
+        lhat_string_new(&program->host_heap, name, strlen(name));
     LhatErrorKind *group =
         group_name != NULL
-            ? lhat_error_kind_new(&program->host_error_heap, NULL, group_name)
+            ? lhat_error_kind_new(&program->host_heap, NULL, group_name)
             : NULL;
     if (group == NULL) {
         return false;
@@ -1337,11 +1351,11 @@ bool lhat_register_error_kind(LhatProgram *program, const char *module,
             qualified[name_length] = '.';
             memcpy(qualified + name_length + 1, variant_names[i],
                   variant_length);
-            text = lhat_string_new(&program->host_error_heap, qualified, total);
+            text = lhat_string_new(&program->host_heap, qualified, total);
         }
         LhatErrorKind *kind =
             text != NULL
-                ? lhat_error_kind_new(&program->host_error_heap, group, text)
+                ? lhat_error_kind_new(&program->host_heap, group, text)
                 : NULL;
         variant_copies[i] = kind != NULL ? duplicate(variant_names[i]) : NULL;
         if (kind == NULL || variant_copies[i] == NULL) {
@@ -1952,9 +1966,11 @@ bool lhat_register_global(LhatProgram *program, const char *name,
         entry->has_variadic = written->v.func.variadic != NULL;
         entry->takes_self = written->v.func.takes_self;
         entry->self_last = written->v.func.self_last;
-        entry->signature = written;
+        entry->parameter_types =
+            lower_host_params(program, written, entry->parameters);
     }
-    if (entry->name == NULL || entry->signature_text == NULL) {
+    if (entry->name == NULL || entry->signature_text == NULL ||
+        (entry->parameters > 0 && entry->parameter_types == NULL)) {
         return false;
     }
     program->global_count++;
@@ -2136,7 +2152,9 @@ bool lhat_program_install(const LhatProgram *program, LhatMachine *machine)
         } else if (!lhat_machine_make_host(
                        machine, e->call, e->context, e->parameters,
                        e->has_variadic, e->takes_self, e->self_last,
-                       lower_host_params(machine, e->signature, e->parameters),
+                       borrowed_params((const LhatRuntimeType *const *)
+                                           e->parameter_types,
+                                       e->parameters),
                        &value)) {
             return false;
         }
@@ -2152,7 +2170,9 @@ bool lhat_program_install(const LhatProgram *program, LhatMachine *machine)
         if (!lhat_machine_make_host(
                 machine, e->call, e->context, e->parameters, e->has_variadic,
                 e->takes_self, e->self_last,
-                lower_host_params(machine, e->signature, e->parameters),
+                borrowed_params((const LhatRuntimeType *const *)
+                                    e->parameter_types,
+                                e->parameters),
                 &value) ||
             !lhat_machine_set_global(machine, e->name, value)) {
             return false;
@@ -2211,9 +2231,9 @@ void lhat_program_init(LhatProgram *program, bool strict,
     program->load = load;
     program->loader_context = context;
     // See lhat_proto_new's comment: born black so a machine reading a
-    // host-registered error kind never writes into program->host_error_heap
+    // host-registered error kind never writes into program->host_heap
     // -- required once more than one machine (std.thread) can read it.
-    program->host_error_heap.white = LHAT_GC_BLACK;
+    program->host_heap.white = LHAT_GC_BLACK;
 }
 
 // ---------------------------------------------------------------------------
@@ -2389,6 +2409,7 @@ void lhat_program_dispose(LhatProgram *program)
     for (size_t i = 0; i < program->host_entry_count; i++) {
         lhat_free(program->host_entries[i].module);
         lhat_free(program->host_entries[i].type);
+        lhat_free(program->host_entries[i].parameter_types);
         lhat_free(program->host_entries[i].name);
         lhat_free(program->host_entries[i].signature_text);
         lhat_free(program->host_entries[i].tag);
@@ -2461,11 +2482,12 @@ void lhat_program_dispose(LhatProgram *program)
     // 04 の 12.4: この program が登録した誤り種別のオブジェクト自身
     // (LhatErrorKind/LhatString)。chunk->heap と同じ扱いで、program の
     // 寿命が尽きるここでまとめて解放する。
-    lhat_object_free_all(&program->host_error_heap);
+    lhat_object_free_all(&program->host_heap);
 
     for (size_t i = 0; i < program->global_count; i++) {
         lhat_free(program->global_entries[i].name);
         lhat_free(program->global_entries[i].signature_text);
+        lhat_free(program->global_entries[i].parameter_types);
     }
     lhat_free(program->global_entries);
     program->global_entries = NULL;
