@@ -56,8 +56,8 @@ static LhatValue vec3_value(LhatMachine *machine, const MathModule *module,
 }
 
 // f^number^, number^, number^ -> std.math.vector3.Vector3;
-static LhatValue vector3_new(LhatMachine *machine, void *context,
-                            const LhatValue *arguments, size_t count)
+static LhatValue vec3_new(LhatMachine *machine, void *context,
+                          const LhatValue *arguments, size_t count)
 {
     const MathModule *module = (const MathModule *)context;
     if (count < 3) {
@@ -323,5 +323,5 @@ bool lhatstdlib_mathvector3_register(LhatProgram *program)
            lhat_register_func(
                program, "std.math.vector3", "new",
                "f^number^, number^, number^ -> std.math.vector3.Vector3;",
-               vector3_new, module);
+               vec3_new, module);
 }
