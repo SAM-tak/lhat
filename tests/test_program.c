@@ -518,6 +518,22 @@ static LhatValue host_sum_xy(LhatMachine *machine, void *context,
     return lhat_integer(lhat_as_integer(x) + lhat_as_integer(y));
 }
 
+// Defined with the variadic tests below; an arm above wants it too.
+static LhatValue host_sum(LhatMachine *machine, void *context,
+                          const LhatValue *arguments, size_t count);
+
+// Answers 1 whatever it was given -- an arm that only has to be the one
+// picked.
+static LhatValue host_one(LhatMachine *machine, void *context,
+                          const LhatValue *arguments, size_t count)
+{
+    (void)machine;
+    (void)context;
+    (void)arguments;
+    (void)count;
+    return lhat_integer(1);
+}
+
 static LhatValue host_add(LhatMachine *machine, void *context,
                           const LhatValue *arguments, size_t count)
 {
@@ -1043,11 +1059,66 @@ static LhatValue other_make_same(LhatMachine *machine, void *context,
                : lhat_nil();
 }
 
+// Answers its receiver -- a member whose type names its own.
+static LhatValue host_self(LhatMachine *machine, void *context,
+                           const LhatValue *arguments, size_t count)
+{
+    (void)machine;
+    (void)context;
+    return count >= 1 ? arguments[0] : lhat_nil();
+}
+
 static void test_host_data(void)
 {
     LhatProgram program;
     Disk disk;
     Held held = {42, 0};
+
+    // A type whose members answer and take the type itself is a cycle in
+    // the checker's types. The install lowers every registration's
+    // signature to the machine's descriptors, and a walk that did not
+    // remember where it was ran for 3^32 steps here (a LOVE2D binding's
+    // Transform: translate answers one, apply takes one).
+    LHAT_TEST("a host type that answers and takes itself installs");
+    {
+        static const File files[] = {
+            {"main.lh",
+             "import^ store\n"
+             "let^ h = store.make()\n"
+             "let^ t = h.twin()\n"
+             "return^ h.with(t).read()\n"},
+        };
+        program_with(&program, &disk, files, 1);
+        held_tag = lhat_register_hostdata_type(&program, "store", "Held");
+        LHAT_CHECK(held_tag != NULL, "the type registration took");
+        LHAT_CHECK(lhat_register_func(&program, "store", "make",
+                                      "f^ -> store.Held;", held_make, &held) &&
+                       lhat_register_member(&program, "store", "Held", "read",
+                                            "f^self^ -> number^;", held_read,
+                                            NULL) &&
+                       lhat_register_member(&program, "store", "Held", "twin",
+                                            "f^self^ -> store.Held;",
+                                            host_self, NULL) &&
+                       // 13.13: the type a member is registered on is Self^
+                       // in its signature, the long spelling beside it.
+                       lhat_register_member(&program, "store", "Held", "with",
+                                            "f^self^, Self^ -> store.Held;",
+                                            host_self, NULL),
+                   "the registrations took");
+        const LhatUnit *root = lhat_program_check(&program, "main.lh");
+        LHAT_CHECK(root != NULL && !lhat_program_has_errors(&program),
+                   "the program checked");
+        bool compiled = lhat_program_compile(&program);
+        if (compiled && root != NULL) {
+            LhatMachine *machine = lhat_machine_new();
+            LHAT_CHECK(lhat_program_install(&program, machine), "installed");
+            LhatRunResult ran = lhat_run(machine, lhat_unit_proto(root));
+            LHAT_CHECK_EQ_INT(ran.status, LHAT_RUN_OK);
+            LHAT_CHECK_EQ_INT(lhat_as_integer(ran.value), 42);
+            lhat_machine_dispose(machine);
+        }
+    }
+    lhat_program_dispose(&program);
 
     LHAT_TEST("a host value carries a pointer and answers its own members");
     {
@@ -1788,6 +1859,60 @@ static void test_hostvalue_escape(void)
             LHAT_CHECK_EQ_INT(ran.status, LHAT_RUN_OK);
             // 7000 + 500 + 170 + 99 - 99
             LHAT_CHECK_EQ_INT(lhat_as_integer(ran.value), 7670);
+            lhat_machine_dispose(machine);
+        }
+    }
+    lhat_program_dispose(&program);
+
+    // 13.7 with 14.12: a variadic arm is told apart from another exactly
+    // where the machine's search can tell them apart -- a written position
+    // the two disagree on, or an argument one arm has no place for. The
+    // tail itself compares nothing (a LOVE2D binding's newSoundData(path)
+    // beside newSoundData(samples, ...)).
+    LHAT_TEST("a variadic arm stands beside one it parts from at a written position");
+    {
+        static const File files[] = {
+            {"main.lh",
+             "import^ test.c\n"
+             "return^ test.c.pick(\"s\") * 100 + test.c.pick(1, 2, 3) * 10 +\n"
+             "       test.c.pick(7)\n"},
+        };
+        program_with(&program, &disk, files, 1);
+        LHAT_CHECK(lhat_register_func(&program, "test.c", "pick",
+                                      "f^string^ -> number^;", host_one,
+                                      NULL),
+                   "the string arm registered");
+        LHAT_CHECK(lhat_register_func(&program, "test.c", "pick",
+                                      "f^number^, number^, ...:number^ -> "
+                                      "number^;",
+                                      host_sum, NULL),
+                   "the number arm with a tail registered beside it");
+        LHAT_CHECK(lhat_register_func(&program, "test.c", "pick",
+                                      "f^number^ -> number^;", host_twice,
+                                      NULL),
+                   "and one number alone, which the tailed arm's count "
+                   "does not reach");
+        LHAT_CHECK(!lhat_register_func(&program, "test.c", "pick",
+                                       "f^number^, number^, string^, "
+                                       "...:string^ -> number^;",
+                                       host_sum, NULL),
+                   "but a call of two numbers would fit this and the tailed "
+                   "arm both");
+        LHAT_CHECK(!lhat_register_func(&program, "test.c", "pick",
+                                       "f^ ...:string^ -> number^;", host_sum,
+                                       NULL),
+                   "and a bare tail takes the one-string call too");
+        const LhatUnit *root = lhat_program_check(&program, "main.lh");
+        LHAT_CHECK(root != NULL && root->checked.diagnostic_count == 0,
+                   "the program checked");
+        bool compiled = lhat_program_compile(&program);
+        if (compiled && root != NULL) {
+            LhatMachine *machine = lhat_machine_new();
+            lhat_program_install(&program, machine);
+            LhatRunResult ran = lhat_run(machine, lhat_unit_proto(root));
+            LHAT_CHECK_EQ_INT(ran.status, LHAT_RUN_OK);
+            // 1 * 100 + (1+2+3) * 10 + 7 * 2
+            LHAT_CHECK_EQ_INT(lhat_as_integer(ran.value), 100 + 60 + 14);
             lhat_machine_dispose(machine);
         }
     }

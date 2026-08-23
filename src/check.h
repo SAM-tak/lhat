@@ -386,8 +386,14 @@ typedef struct {
 //
 // Answers NULL when the text is not a type, or names something `named` does
 // not hold. The type belongs to `arena`.
+//
+// `self` is what 13.13's Self^ names in the text -- the type a member is
+// being registered on (05 の 8.7), so 'f^self^, Self^ -> Self^;' reads as
+// the long spelling would. NULL leaves Self^ an error, as outside any
+// structure.
 LhatType *lhat_type_of_text(const char *text, size_t length,
-                            LhatTypeArena *arena, LhatType *named);
+                            LhatTypeArena *arena, LhatType *named,
+                            LhatType *self);
 
 // 05 の 6 章: a unit's exports are types that the units requiring it hold on
 // to, so the arena has to outlive any one result. The caller may pass its own

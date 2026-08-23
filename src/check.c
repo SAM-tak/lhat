@@ -2808,7 +2808,8 @@ bool lhat_check_session_global(LhatCheckSession *session, const char *name,
         }
     }
     LhatType *written =
-        lhat_type_of_text(signature, strlen(signature), &session->types, NULL);
+        lhat_type_of_text(signature, strlen(signature), &session->types, NULL,
+                          NULL);
     return written != NULL &&
            lhat_type_add_member(&session->types, session->globals, name,
                                 strlen(name), written) != NULL;
@@ -2996,7 +2997,8 @@ void lhat_check(const LhatNode *unit, const LhatLexer *lexer, bool strict,
 // members are seeded into one -- which is how a registration names a type an
 // earlier one made, and why nothing else is reachable from here.
 LhatType *lhat_type_of_text(const char *text, size_t length,
-                            LhatTypeArena *arena, LhatType *named)
+                            LhatTypeArena *arena, LhatType *named,
+                            LhatType *self)
 {
     LhatSource source;
     if (!lhat_source_init_from_string(&source, "<signature>", text, length)) {
@@ -3029,6 +3031,11 @@ LhatType *lhat_type_of_text(const char *text, size_t length,
         checker.strict = true;
         checker.hosted_signature = true;
         checker.scope = &scope;
+        // 13.13: the owner is the structure the text is written inside.
+        struct SelfLink owner = { self, NULL };
+        if (self != NULL) {
+            checker.self_link = &owner;
+        }
 
         if (named != NULL && named->kind == LHAT_TYPE_TABLE) {
             for (const LhatTypeMember *m = named->v.table.members; m != NULL;
