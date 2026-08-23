@@ -1116,6 +1116,20 @@ static bool disjoint_in(const LhatType *a, const LhatType *b,
     }
 
     if (a->kind == LHAT_TYPE_TABLE) {
+        // 05 の 8.8: a registered type is judged by its declaration and not
+        // by its shape -- conforms_in asks a nominal target for the type
+        // itself -- so nothing inhabits two of them. The dual of that rule,
+        // and what lets one registration take a File where another takes a
+        // FileData: the two share member names, and structure alone would
+        // call them overlapping.
+        if (a->v.table.nominal || b->v.table.nominal) {
+            if (a->v.table.nominal && b->v.table.nominal) {
+                return a != b;
+            }
+            // One nominal and one written shape: a value of the registered
+            // type carries members like any other, so the shape below is
+            // what decides.
+        }
         // Two structures are separate only when a name they share is declared
         // with types that nothing satisfies at once. Sharing no name at all
         // leaves them overlapping, since a value may carry both sets of

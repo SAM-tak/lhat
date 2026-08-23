@@ -627,6 +627,60 @@ LhatType *chk_hosted_module(Checker *c, const LhatNode *path)
     return found != NULL ? found->type : NULL;
 }
 
+// 05 の 8.7: the table the segments before the last name reach, made where
+// the path does not reach one. The same walk 8.8 does over a written path,
+// with what import^ has of its own: a table the machine holds is entered
+// rather than refused -- these are the machine's tables (8.6) and this is
+// the machine filling them, which is exactly what path_table, the writer's
+// walk, has to say no to.
+static LhatType *import_owner(Checker *c, const LhatNode *node, LhatType *root)
+{
+    if (node->kind != LHAT_NODE_MEMBER) {
+        return root;  // the root binding, which the caller resolved
+    }
+    LhatType *owner = import_owner(c, node->v.access.target, root);
+    const char *name = NULL;
+    size_t length = 0;
+    if (owner == NULL || owner->kind != LHAT_TYPE_TABLE ||
+        !chk_node_name(c, node->v.access.argument, &name, &length)) {
+        return NULL;
+    }
+    const LhatTypeMember *found = member_named(owner, name, length);
+    if (found != NULL) {
+        return found->type != NULL && found->type->kind == LHAT_TYPE_TABLE
+                   ? found->type
+                   : NULL;
+    }
+    LhatType *made = chk_module_root_table(c);
+    if (made == NULL || lhat_type_add_member(c->result->types, owner, name,
+                                             length, made) == NULL) {
+        return NULL;
+    }
+    return made;
+}
+
+// 05 の 8.7: whether `module` offers everything `standing` already does,
+// under the same names and as the same types. What an import^ of a child
+// path leaves behind is a table holding that child (and no more), so the
+// import of its parent -- the host's own table, which holds the child among
+// the rest -- may take its place. Anything else there is a real collision.
+static bool import_subsumes(const LhatType *module, const LhatType *standing)
+{
+    if (module == NULL || standing == NULL ||
+        module->kind != LHAT_TYPE_TABLE || standing->kind != LHAT_TYPE_TABLE) {
+        return false;
+    }
+    for (const LhatTypeMember *m = standing->v.table.members; m != NULL;
+         m = m->next) {
+        const LhatTypeMember *offered =
+            member_named(module, m->name, m->name_length);
+        if (offered == NULL || offered->type != m->type) {
+            return false;
+        }
+    }
+    return true;
+}
+
 // The last segment of a written path, which is the name an import^ standing
 // alone binds -- the rest are the tables it sits in.
 static void check_import(Checker *c, const LhatNode *node, bool binds)
@@ -656,8 +710,19 @@ static void check_import(Checker *c, const LhatNode *node, bool binds)
         // 03 の 3.4改2: on a later walk over these statements the name is
         // bound because this very statement bound it, which is not the
         // collision 8.7 is about.
-        if (chk_scope_find_local(c->scope, name, length) != NULL) {
-            if (!c->rewalking) {
+        Binding *standing = chk_scope_find_local(c->scope, name, length);
+        if (standing != NULL) {
+            // 8.7: and an import^ of a child path put a table here holding
+            // that child. The module named now is the host's own, which
+            // holds the child too -- so it takes the place of the stand-in
+            // and both are reachable. This is what lets 'import^ love' and
+            // 'import^ love.graphics' stand in one scope, in either order.
+            if (standing->import_root && standing->type != module &&
+                import_subsumes(module, standing->type)) {
+                standing->type = module;
+                return;
+            }
+            if (!c->rewalking && standing->type != module) {
                 chk_report_named(c, node, LHAT_CHECK_ERR_REDEFINED, name,
                                  length);
             }
@@ -694,15 +759,36 @@ static void check_import(Checker *c, const LhatNode *node, bool binds)
                root->type->kind == LHAT_TYPE_PENDING) {
         root->type = chk_module_root_table(c);
     }
+    // 8.7: the name is a place from here on, whichever import made it --
+    // path_table said so while it was the walk below, and the walk below is
+    // import^'s own now.
+    root->reached = true;
 
-    LhatType *owner = path_table(c, path->v.access.target);
+    // 8.7: the tables an import^ builds are the machine's own (8.6), and
+    // this walk is what fills them -- path_table is the writer's, and
+    // refuses a table the machine holds, which the host's own registry
+    // tables are.
+    LhatType *owner = import_owner(c, path->v.access.target, root->type);
     if (owner == NULL) {
         return;
     }
     if (!chk_node_name(c, path->v.access.argument, &name, &length)) {
         return;
     }
-    if (member_named(owner, name, length) != NULL) {
+    const LhatTypeMember *found = member_named(owner, name, length);
+    if (found != NULL) {
+        // Already reaching what this import names -- the parent's own table
+        // holds it (8.7's registry is one nested table), or an earlier
+        // import of this very path put it there. Nothing to bind.
+        if (found->type == module) {
+            return;
+        }
+        // A stand-in an earlier import of a child left behind, the same as
+        // in the root branch above.
+        if (import_subsumes(module, found->type)) {
+            ((LhatTypeMember *)found)->type = module;
+            return;
+        }
         // 03 の 3.4改2: on a later walk the member is there because this very
         // import put it there, which is not a second import of the name.
         if (!c->rewalking) {

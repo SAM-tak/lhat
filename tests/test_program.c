@@ -535,6 +535,18 @@ static LhatValue host_one(LhatMachine *machine, void *context,
     return lhat_integer(1);
 }
 
+// The same, answering something else -- so which arm ran can be read off
+// the answer.
+static LhatValue host_two(LhatMachine *machine, void *context,
+                          const LhatValue *arguments, size_t count)
+{
+    (void)machine;
+    (void)context;
+    (void)arguments;
+    (void)count;
+    return lhat_integer(2);
+}
+
 static LhatValue host_add(LhatMachine *machine, void *context,
                           const LhatValue *arguments, size_t count)
 {
@@ -824,6 +836,68 @@ static void test_hosting(void)
     // 05 の 8.2: a host may bind a name so that a program writes it with no
     // qualification. 8.1 is unchanged -- the language hands out nothing, and
     // a host that binds none leaves a program seeing nothing.
+    // 05 の 8.7: a namespace and something under it are one registry, so
+    // importing both into one scope is importing one tree twice -- the
+    // parent's own table holds the child. Either order (a LOVE2D binding's
+    // love.getVersion beside love.graphics).
+    LHAT_TEST("a module and one under it are imported into one scope");
+    {
+        static const File parent_first[] = {
+            {"main.lh",
+             "import^ lib\n"
+             "import^ lib.draw\n"
+             "var^ a : number^ = lib.version()\n"
+             "var^ b : number^ = lib.draw.line()\n"},
+        };
+        program_with(&program, &disk, parent_first, 1);
+        lhat_register_func(&program, "lib", "version", "f^ -> number^;",
+                           host_one, NULL);
+        lhat_register_func(&program, "lib.draw", "line", "f^ -> number^;",
+                           host_one, NULL);
+        const LhatUnit *root = lhat_program_check(&program, "main.lh");
+        LHAT_CHECK(root != NULL && !lhat_program_has_errors(&program),
+                   "the parent first");
+    }
+    lhat_program_dispose(&program);
+    {
+        static const File child_first[] = {
+            {"main.lh",
+             "import^ lib.draw\n"
+             "import^ lib\n"
+             "var^ a : number^ = lib.version()\n"
+             "var^ b : number^ = lib.draw.line()\n"},
+        };
+        program_with(&program, &disk, child_first, 1);
+        lhat_register_func(&program, "lib", "version", "f^ -> number^;",
+                           host_one, NULL);
+        lhat_register_func(&program, "lib.draw", "line", "f^ -> number^;",
+                           host_one, NULL);
+        const LhatUnit *root = lhat_program_check(&program, "main.lh");
+        LHAT_CHECK(root != NULL && !lhat_program_has_errors(&program),
+                   "and the child first");
+    }
+    lhat_program_dispose(&program);
+
+    // What was not imported is still out of reach: importing the child
+    // leaves a stand-in holding that child and nothing else.
+    LHAT_TEST("and importing the child alone brings none of the parent");
+    {
+        static const File child_only[] = {
+            {"main.lh",
+             "import^ lib.draw\n"
+             "var^ a : number^ = lib.version()\n"},
+        };
+        program_with(&program, &disk, child_only, 1);
+        lhat_register_func(&program, "lib", "version", "f^ -> number^;",
+                           host_one, NULL);
+        lhat_register_func(&program, "lib.draw", "line", "f^ -> number^;",
+                           host_one, NULL);
+        const LhatUnit *root = lhat_program_check(&program, "main.lh");
+        LHAT_CHECK(root != NULL && lhat_program_has_errors(&program),
+                   "version is not reachable through the stand-in");
+    }
+    lhat_program_dispose(&program);
+
     LHAT_TEST("a host-bound name is written without any qualification");
     {
         static const File files[] = {
@@ -1438,13 +1512,17 @@ static void test_host_data_identity(void)
     }
     lhat_program_dispose(&program);
 
+    // 14.12 with 8.8: two registrations are disjoint, so where the checker
+    // knows both it settles the comparison instead of leaving it to the run
+    // (chk_infer's "these can never be equal"). The values meet through any^
+    // here, which is where 7.3's rule is what answers.
     LHAT_TEST("wrappers of two types never equal, whatever the pointer");
     {
         static const File files[] = {
             {"main.lh",
              "import^ store\n"
-             "var^ h = store.make()\n"
-             "var^ o = store.makeSame()\n"
+             "var^ h : any^ = store.make()\n"
+             "var^ o : any^ = store.makeSame()\n"
              "var^ r = 0\n"
              "if^ h = o { r := r + 1 }\n"
              "return^ r\n"},
@@ -1914,6 +1992,51 @@ static void test_hostvalue_escape(void)
     // the two disagree on, or an argument one arm has no place for. The
     // tail itself compares nothing (a LOVE2D binding's newSoundData(path)
     // beside newSoundData(samples, ...)).
+    // 05 の 8.8 with 14.12: two registered types are two declarations, so
+    // one arm may take each -- even where the two carry the same member
+    // names, which is all a structural reading would have to go on (a
+    // LOVE2D binding's File and FileData both answer getSize).
+    LHAT_TEST("arms taking two registered types stand beside each other");
+    {
+        static const File files[] = {
+            {"main.lh",
+             "import^ store\n"
+             "return^ store.take(store.make()) * 10 + "
+             "store.take(store.makeOther())\n"},
+        };
+        static Held held = {7, 0};
+        program_with(&program, &disk, files, 1);
+        held_tag = lhat_register_hostdata_type(&program, "store", "Held");
+        other_tag = lhat_register_hostdata_type(&program, "store", "Other");
+        // The same member names on both -- what made the two overlap.
+        lhat_register_member(&program, "store", "Held", "read",
+                             "f^self^ -> number^;", held_read, NULL);
+        lhat_register_member(&program, "store", "Other", "read",
+                             "f^self^ -> number^;", held_read, NULL);
+        lhat_register_func(&program, "store", "make", "f^ -> store.Held;",
+                           held_make, &held);
+        lhat_register_func(&program, "store", "makeOther",
+                           "f^ -> store.Other;", other_make, &held);
+        LHAT_CHECK(lhat_register_func(&program, "store", "take",
+                                      "f^store.Held -> number^;", host_one,
+                                      NULL),
+                   "the first arm registered");
+        LHAT_CHECK(lhat_register_func(&program, "store", "take",
+                                      "f^store.Other -> number^;", host_two,
+                                      NULL),
+                   "and the arm taking the other type beside it");
+        LHAT_CHECK(!lhat_register_func(&program, "store", "take",
+                                       "f^store.Held -> number^;", host_one,
+                                       NULL),
+                   "while the same type twice is still refused");
+        LhatRunResult ran = run_main(&program);
+        LHAT_CHECK_EQ_INT(ran.status, LHAT_RUN_OK);
+        // take(Held) ran host_one and take(Other) host_two: the arms are
+        // told apart by the tag, at check time and at run time.
+        LHAT_CHECK_EQ_INT(lhat_as_integer(ran.value), 12);
+    }
+    lhat_program_dispose(&program);
+
     LHAT_TEST("a variadic arm stands beside one it parts from at a written position");
     {
         static const File files[] = {
