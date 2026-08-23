@@ -145,7 +145,7 @@ let^same = f^want:t^{ number^[9] }, used:t^{ number^[9] } {
 }
 
 try^{
-    with^rng = try^std.random.make(0) {
+    with^rng = try^std.random.new(0) {
         let^want = { 0, 0, 0, 0, 0, 0, 0, 0, 0 }
         var^shown = ""
         for^i from^1 to^4 {

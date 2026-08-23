@@ -178,6 +178,48 @@ typeof^() は？あれは何？
 
 考えられる解決は、 as^ T は T|Error.CastFailure で T への解決はしない、というものでは。
 
+---
+
+では std.task の答え。
+
+今できるか
+
+スレッド版は既にある: std.thread.spawn(p^ ... { … }) ＋ h.join() が Elixir の Task.async/Task.await そのもの。呼ぶ側は yield^ も await^ も書かない。代償は別機械——引数と答えは carry の写し、hostdata・コルーチンは渡らない
+同一機械版は部品だけある: std.async（timer/external/wait）＋ sample/async.lh の Scheduler。非 yieldable な関数からも Scheduler.new() → add(p^{ r := await^ co }()) → run() で「その場で回す」は書けるが、結果の受け渡しが手作業で、提案の見た目には程遠い
+障害は1つだけ、しかも決定的: 「C のスレッドプールがコルーチンを回す」は不可能。コルーチンは機械のフレームそのもので、機械は1スレッド1台、carry も拒む。よって同一機械の std.task はバックグラウンドで何も進めない——進むのは async()・await() の呼び出しの中だけ。
+
+ただし Elixir の絵は大部分残る。バックグラウンドにあるのは I/O であって L^ のコードではない:
+
+std.task.async(co) がその場で co を最初の中断まで進める → HTTP 要求なりタイマーなりが出る（std.async の id）
+「他の処理」の間、ホスト側の I/O は勝手に進む
+std.task.await(t) が t が済むまでここで回す（済んだ id を持つ他のタスクも進める）。ホスト関数からの入れ子 resume は 8.8 の API が既に許している → 呼ぶ側は赤くならない
+CPU バウンドの「裏で計算」は同一機械では原理的に無理で、それは std.thread の仕事（写しで渡す）。二つは別物として並ぶ。
+
+設計案（stdlib/task.c、std.async の上）
+
+std.task.async : p^any^ -> std.task.Task|std.task.Error; — コルーチン以外は Error.NotATask。登録して最初の中断まで進める。initialize は不要（状態は機械ごと、std.async と同じ）
+std.task.await : p^std.task.Task -> any^|std.task.Error; — 済むまで回す。タスクが yield^ したものが std.async の id でなければ Error.Unawaitable（async.lh の joined のようにスレッド待ちも id に変換して差し出す）
+答えは any^。ホスト登録の署名は T を運べないので isa^ で絞る——join() と同じ線。ここが見た目との唯一の差で、T を通したければ言語側の組込み（コルーチンのメンバ）になるが、Memo の結論「専用構文は要らない」に反する
+埋め込み先の注意: await は眠る。Godot の _process や LÖVE の update の中で呼ぶとフレームが止まる。そこでは従来どおり poll 形（毎フレーム一周して返す）で、await は CLI・ツール・worker スレッドの中向け。std.task.poll() も同じ表から出せる
+着手するなら上の形で計画に落とす。any^ の答えで良いかだけ決めてほしい。
+
+---
+
+ちょっとガッカリの返答だ。
+
+> スレッド版は既にある: std.thread.spawn(p^ ... { … }) ＋ h.join() が Elixir の Task.async/Task.await そのもの。呼ぶ側は yield^ も await^ も書かない。代償は別機械——引数と答えは carry の写し、hostdata・コルーチンは渡らない
+
+そんな訳はない。Elixir の Task.async がいちいち新規スレッドを立てているわけがない。
+
+> std.task.await(t) が t が済むまでここで回す（済んだ id を持つ他のタスクも進める）。ホスト関数からの入れ子 resume は 8.8 の API が既に許している → 呼ぶ側は赤くならない
+
+t1 = std.task.async(gen1())
+t2 = std.task.async(gen2())
+std.task.await(t1)
+std.task.await(t2)
+
+この std.task.await(t1) の間、t2は一切先に進まない、というのは望まれた挙動ではない。
+
 #### マクロ
 
 定義
