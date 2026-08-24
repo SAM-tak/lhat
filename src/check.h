@@ -363,6 +363,12 @@ typedef struct {
     // 6.1 publishes a type, and a member of it was written in the unit that
     // published it.
     const char *definition_path;
+    // 14.19 and 14.17改 with 15.6改: the language answered this member
+    // itself. Nothing wrote it and no host registered it -- `length` on a
+    // string, `resume` on a coroutine, `message` on an error -- so a reader
+    // asking where it is gets nothing, and an editor drawing it wants to
+    // draw it as the library's rather than as the program's.
+    bool builtin;
     // 13.1: declared by a signature rather than bound by a let^ or var^.
     // Where a use stands says only that there is a name, and the type says
     // only what it holds -- which of the two declared it is something only

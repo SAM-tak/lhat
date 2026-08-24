@@ -476,9 +476,11 @@ void chk_record_typed_resolution(Checker *c, const LhatNode *at,
 // The same, for a member: 14.10 finds one in a type rather than in a
 // scope, and the type knows where it was written (type.h's declared_at).
 // `member` may be NULL, which is the typed record above.
+// `builtin` says the language answered rather than anything written or
+// registered -- see check.h's LhatResolution.
 void chk_record_member_resolution(Checker *c, const LhatNode *at,
                                   LhatType *type,
-                                  const LhatTypeMember *member);
+                                  const LhatTypeMember *member, bool builtin);
 
 void chk_settle_resolutions(LhatCheckResult *result);
 #endif

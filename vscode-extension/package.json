@@ -118,6 +118,14 @@
       }
     },
     "configurationDefaults": {
+      "editor.semanticTokenColorCustomizations": {
+        "rules": {
+          "*.defaultLibrary": {
+            "_comment": "14.19 and 14.17改: what the language answers itself -- a string's length, a table's push, a coroutine's resume. The server marks them defaultLibrary, which is the spec's own word for it, and not every theme paints that on its own.",
+            "foreground": "#4EC9B0"
+          }
+        }
+      },
       "editor.tokenColorCustomizations": {
         "textMateRules": [
           {

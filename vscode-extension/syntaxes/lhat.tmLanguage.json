@@ -175,8 +175,8 @@
       "comment": "01-lexical-structure.md 2章: '^'-suffixed words carry every keyword. The lexer treats them all alike; the groups below are a syntax-highlighting convenience, not a lexical distinction the language itself makes. Each match splits the word from its trailing '^'s so a theme can style punctuation.definition.hat.lhat (the hat itself) separately from the word.",
       "patterns": [
         {
-          "comment": "15.11's _yield^ suspends nothing but types as a yield^ does, so it reads as one here.",
-          "match": "\\b(if|else|elseif|elsif|elif|ei|el|for|when|other|from|to|downto|step|in|while|until|next|skip|continue|repeat|do|break|return|yield|_yield|await|defer|with|finally|try|catch|panic|tostring|tonumber|iterate|length|keys|values)(\\^+)",
+          "comment": "15.11's _yield^ suspends nothing but types as a yield^ does, so it reads as one here. The built-in members of a string, a table and a number were listed here once and are not any more: the checker knows every one of them and says so in a semantic token (defaultLibrary), where a list here could only go stale -- it already had.",
+          "match": "\\b(if|else|elseif|elsif|elif|ei|el|for|when|other|from|to|downto|step|in|while|until|next|skip|continue|repeat|do|break|return|yield|_yield|await|defer|with|finally|try|catch|panic)(\\^+)",
           "captures": {
             "1": { "name": "keyword.control.lhat" },
             "2": { "name": "punctuation.definition.hat.lhat" }

@@ -1975,12 +1975,6 @@ static bool all_error_arms(const LhatType *type)
 
 LhatType *chk_infer_member(Checker *c, const LhatNode *node)
 {
-#if LHAT_WITH_RESOLUTIONS
-    // 07 の 4 章: only the two answers below have a member record to point at,
-    // and the target's own inference runs before either -- so what is left
-    // here when this returns is this access's member, or nothing.
-    c->resolved_member = NULL;
-#endif
     // 02 の 14.8改2: number^ carries a few static members -- the constants.
     // The word is no value of its own (a bare number^ stays an unknown
     // name), so this is read off the tree before the target is inferred.
@@ -2001,6 +1995,14 @@ LhatType *chk_infer_member(Checker *c, const LhatNode *node)
         return chk_simple(c, LHAT_TYPE_UNKNOWN);
     }
     LhatType *target = chk_infer(c, node->v.access.target);
+#if LHAT_WITH_RESOLUTIONS
+    // 07 の 4 章: only the two answers below have a member record to point
+    // at, so what is left here when this returns is this access's member or
+    // nothing. Cleared after the target rather than before: 'a.b.c' infers
+    // a.b through this same function, and clearing on the way in would leave
+    // b's record standing where c's was asked for.
+    c->resolved_member = NULL;
+#endif
     const char *name = NULL;
     size_t length = 0;
     if (!chk_node_name(c, node->v.access.argument, &name, &length)) {
@@ -5046,9 +5048,19 @@ static LhatType *infer_node(Checker *c, const LhatNode *node)
             // is that it came back through here.
             // A narrowed path answered without a lookup (13.11), so the
             // member left over is whatever ran before it -- not this one.
+            const LhatTypeMember *found =
+                narrowed != NULL ? NULL : c->resolved_member;
+            // 14.19, 14.17改, 15.6改: an answer with no member record behind
+            // it is the language's own -- a host registration leaves a real
+            // member (with nothing written for declared_in), and a def^ or a
+            // t^{ … } leaves one that says where it stands. A miss answers
+            // unknown^ and is nobody's.
+            bool builtin = narrowed == NULL && found == NULL &&
+                           answer != NULL &&
+                           answer->kind != LHAT_TYPE_UNKNOWN &&
+                           answer->kind != LHAT_TYPE_PENDING;
             chk_record_member_resolution(c, node->v.access.argument, answer,
-                                         narrowed != NULL ? NULL
-                                                          : c->resolved_member);
+                                         found, builtin);
 #endif
             return answer;
         }

@@ -54,6 +54,13 @@ typedef struct {
     // Where the name was introduced rather than used.
     bool declaration;
     bool readonly;  // 02 の 8.9: bound by a let^ rather than a var^
+    // 02 の 14.19, 14.17改, 15.6改: the language answered this name itself --
+    // `length` on a string, `resume` on a coroutine, `message` on an error.
+    // Nothing in the source wrote it and no host registered it, so an editor
+    // drawing it draws the library's rather than the program's. Both
+    // spellings answer alike: 14.17改 has the hatted one always reach the
+    // built-in, and the bare one reach it everywhere but a plain table.
+    bool builtin;
 } LhatSemanticName;
 
 // Fills `into` in offset order and answers how many the unit has. A count

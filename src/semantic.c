@@ -42,6 +42,8 @@ enum {
 enum {
     SEM_MOD_DECLARATION = 1u << 0,
     SEM_MOD_READONLY = 1u << 1,
+    // 14.19, 14.17改, 15.6改: the language answered this name itself.
+    SEM_MOD_BUILTIN = 1u << 2,
 };
 
 typedef struct {
@@ -138,6 +140,12 @@ static void refine_from_resolution(const SemCollector *c, uint32_t offset,
 
     if (resolved->immutable) {
         *modifiers |= SEM_MOD_READONLY;
+    }
+    // Beside whatever it turned out to be, for the same reason readonly is:
+    // 14.19's `length` is a property and 14.17改's `tostring` a function, and
+    // what this adds is that neither is the program's own.
+    if (resolved->builtin) {
+        *modifiers |= SEM_MOD_BUILTIN;
     }
     if (*type != SEM_VARIABLE && *type != SEM_PROPERTY) {
         return;  // the form already said what this is
@@ -246,6 +254,16 @@ static void emit_name(SemCollector *out, const LhatNode *node, uint8_t type,
                           ? node->v.name.length - node->v.name.hats
                           : node->v.name.length;
     collector_add(out, node->v.name.offset, length, type, modifiers);
+}
+
+// 14.17改: a member may be written with a hat -- the spelling that always
+// reaches a built-in, where the bare one reaches what a plain table wrote.
+// Both are the same member, so both are named here; emit_name puts the token
+// on the word and leaves the hat to the grammar, as every hat word is drawn.
+static bool names_a_member(const LhatNode *node)
+{
+    return node != NULL && (node->kind == LHAT_NODE_IDENT ||
+                            node->kind == LHAT_NODE_HAT_IDENT);
 }
 
 static void walk_value(SemCollector *out, const LhatNode *node);
@@ -493,8 +511,7 @@ static void walk_targets(SemCollector *out, const LhatNode *targets,
                 // A path target ('let^ a.b = v', 8.8): not a fresh
                 // declaration -- b is a property of the existing table a.
                 walk_value(out, t->v.access.target);
-                if (t->v.access.argument != NULL &&
-                    t->v.access.argument->kind == LHAT_NODE_IDENT) {
+                if (names_a_member(t->v.access.argument)) {
                     emit_name(out, t->v.access.argument, SEM_PROPERTY, 0);
                 }
                 break;
@@ -528,8 +545,7 @@ static void walk_call_target(SemCollector *out, const LhatNode *node)
     }
     if (node->kind == LHAT_NODE_MEMBER) {
         walk_value(out, node->v.access.target);
-        if (node->v.access.argument != NULL &&
-            node->v.access.argument->kind == LHAT_NODE_IDENT) {
+        if (names_a_member(node->v.access.argument)) {
             emit_name(out, node->v.access.argument, SEM_FUNCTION, 0);
         }
         return;
@@ -638,8 +654,7 @@ static void walk_value(SemCollector *out, const LhatNode *node)
         }
         case LHAT_NODE_MEMBER:
             walk_value(out, node->v.access.target);
-            if (node->v.access.argument != NULL &&
-                node->v.access.argument->kind == LHAT_NODE_IDENT) {
+            if (names_a_member(node->v.access.argument)) {
                 emit_name(out, node->v.access.argument, SEM_PROPERTY, 0);
             }
             break;
@@ -806,6 +821,8 @@ size_t lhat_unit_semantic_names(const LhatUnit *unit, LhatSemanticName *into,
                 (token->modifiers & SEM_MOD_DECLARATION) != 0;
             into[answered].readonly =
                 (token->modifiers & SEM_MOD_READONLY) != 0;
+            into[answered].builtin =
+                (token->modifiers & SEM_MOD_BUILTIN) != 0;
         }
         answered++;
     }

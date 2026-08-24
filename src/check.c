@@ -76,6 +76,7 @@ static void record_resolution(Checker *c, const LhatNode *at, const Binding *b,
     entry->has_definition = true;
     entry->is_parameter = b->is_parameter;
     entry->immutable = b->immutable;
+    entry->builtin = false;  // a name a scope holds is the program's own
     entry->definition_path = NULL;  // bound in this unit, by this scope
     entry->type = type;
 }
@@ -105,13 +106,13 @@ void chk_record_narrowed_resolution(Checker *c, const LhatNode *at,
 void chk_record_typed_resolution(Checker *c, const LhatNode *at,
                                  LhatType *type)
 {
-    chk_record_member_resolution(c, at, type, NULL);
+    chk_record_member_resolution(c, at, type, NULL, false);
 }
 
 
 void chk_record_member_resolution(Checker *c, const LhatNode *at,
                                   LhatType *type,
-                                  const LhatTypeMember *member)
+                                  const LhatTypeMember *member, bool builtin)
 {
     LhatCheckResult *r = c->result;
     if (at == NULL || at->end <= at->offset) {
@@ -134,6 +135,7 @@ void chk_record_member_resolution(Checker *c, const LhatNode *at,
     // one's word.
     entry->is_parameter = false;
     entry->immutable = false;
+    entry->builtin = builtin;
     // 14.10 looks a member up in a type, and the type says where it was
     // written -- in this unit or in the one that published it (05 の 6.1).
     // Nobody wrote a host registration or a built-in, and those keep the

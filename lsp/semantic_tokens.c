@@ -29,6 +29,9 @@ const size_t LSP_SEMANTIC_TOKEN_TYPES_COUNT =
 const char *const LSP_SEMANTIC_TOKEN_MODIFIERS[] = {
     "declaration",
     "readonly",  // 8.9: bound by a let^ rather than a var^
+    // The spec's own word for a name the standard library provides, which is
+    // what 14.19's members are here -- the language answers them itself.
+    "defaultLibrary",
 };
 const size_t LSP_SEMANTIC_TOKEN_MODIFIERS_COUNT =
     sizeof LSP_SEMANTIC_TOKEN_MODIFIERS / sizeof LSP_SEMANTIC_TOKEN_MODIFIERS[0];
@@ -36,6 +39,7 @@ const size_t LSP_SEMANTIC_TOKEN_MODIFIERS_COUNT =
 enum {
     SEM_MOD_DECLARATION = 1u << 0,
     SEM_MOD_READONLY = 1u << 1,
+    SEM_MOD_BUILTIN = 1u << 2,
 };
 
 cJSON *lsp_semantic_tokens_for_unit(const LhatUnit *unit)
@@ -75,7 +79,8 @@ cJSON *lsp_semantic_tokens_for_unit(const LhatUnit *unit)
         int delta_char =
             delta_line == 0 ? start.character - prev_char : start.character;
         int modifiers = (name->declaration ? SEM_MOD_DECLARATION : 0) |
-                        (name->readonly ? SEM_MOD_READONLY : 0);
+                        (name->readonly ? SEM_MOD_READONLY : 0) |
+                        (name->builtin ? SEM_MOD_BUILTIN : 0);
 
         cJSON_AddItemToArray(data, cJSON_CreateNumber(delta_line));
         cJSON_AddItemToArray(data, cJSON_CreateNumber(delta_char));

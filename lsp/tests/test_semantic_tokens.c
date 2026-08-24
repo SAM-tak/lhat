@@ -172,6 +172,22 @@ static void expect_readonly(const Tokens *tokens, const char *text,
                readonly ? "set" : "unset", want ? "set" : "unset");
 }
 
+// 14.19's defaultLibrary, asked on its own for the same reason readonly is:
+// it stands beside whatever the name turned out to be rather than replacing
+// it.
+static void expect_builtin(const Tokens *tokens, const char *text,
+                           const char *needle, bool want)
+{
+    const Token *token = token_for(tokens, text, needle);
+    LHAT_CHECK(token != NULL, "no token for \"%s\"", needle);
+    if (token == NULL) {
+        return;
+    }
+    bool builtin = (token->modifiers & 4u) != 0;
+    LHAT_CHECK(builtin == want, "\"%s\": defaultLibrary %s, want %s", needle,
+               builtin ? "set" : "unset", want ? "set" : "unset");
+}
+
 // ---------------------------------------------------------------------------
 // Every name the tree holds gets a token
 // ---------------------------------------------------------------------------
@@ -903,6 +919,47 @@ static void test_a_type_name_is_coloured_only_where_it_names_a_type(void)
     check_dispose(&c);
 }
 
+// 14.19 and 14.17改: a member the language answers itself is not the
+// program's, and an editor wants to draw it as the library's. It was drawn
+// from a list of names in the grammar file, which is a copy of what the
+// checker knows and had already gone stale -- and which coloured only the
+// hatted spelling, so the same built-in read two ways.
+static void test_a_builtin_member_says_it_is_one(void)
+{
+    LHAT_TEST("14.19: a built-in member is marked, in either spelling");
+
+    static const char *source =
+        "let^ Reader = def^{\n"
+        "    self^{ text = \"\" },\n"
+        "    peek = f^self^ -> string^ { return^ self^.text },\n"
+        "}\n"
+        "let^ r = Reader.new()\n"
+        "let^ bare = r.text.length\n"
+        "let^ hatted = r.text.tostring^()\n"
+        "let^ own = r.peek()\n";
+
+    Checked c;
+    check_text(&c, source);
+    cJSON *data = lsp_semantic_tokens_for_unit(&c.unit);
+    Tokens tokens = decode(data);
+
+    // 14.17改: the hat always reaches the built-in, and the bare spelling
+    // reaches it everywhere but a plain table. Both are the same member.
+    expect_builtin(&tokens, source, "length", true);
+    expect_builtin(&tokens, source, "tostring^", true);
+    // What the def^ wrote is the program's own, and so is the field.
+    expect_builtin(&tokens, source, "peek()", false);
+    expect_builtin(&tokens, source, "text.length", false);
+
+    // The hatted one is a token at all now -- the walk used to name a member
+    // only where it was spelled without one.
+    expect_token(&tokens, source, "tostring^", "function", false);
+
+    free(tokens.items);
+    cJSON_Delete(data);
+    check_dispose(&c);
+}
+
 int main(void)
 {
     test_every_name_is_reached();
@@ -911,6 +968,7 @@ int main(void)
     test_a_narrowed_use_reads_like_any_other();
     test_an_abstract_field_declares_a_type();
     test_a_host_type_reads_as_a_type();
+    test_a_builtin_member_says_it_is_one();
     test_a_member_is_not_called_readonly();
     test_isa_asks_about_a_type();
     test_isa_within_a_comparison_chain();
