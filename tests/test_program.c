@@ -2534,6 +2534,7 @@ static void test_dump_host_api(void)
         LHAT_CHECK_EQ_INT(written, needed);
 
         static const char *const expected[] = {
+            "{\n  \"strict\": true,\n  \"types\"",
             "{\"kind\": \"errordef\", \"module\": \"sys.io\", \"name\": "
             "\"IOError\", \"variants\": [\"NotFound\", \"Eof\"]}",
             "{\"kind\": \"hostdata\", \"module\": \"sys.io\", \"name\": "
@@ -2572,6 +2573,27 @@ static void test_dump_host_api(void)
         free(text);
     }
     lhat_program_dispose(&program);
+
+    // 03 の 3.1: the dump names the value this program was made with, not
+    // always true -- lsp/host_config.c reads it back for lsp/diagnostics.c.
+    LHAT_TEST("and it names a relaxed program too");
+    {
+        Disk relaxed_disk;
+        relaxed_disk.files = NULL;
+        relaxed_disk.count = 0;
+        relaxed_disk.reads = 0;
+        LhatProgram relaxed;
+        lhat_program_init(&relaxed, false, disk_load, &relaxed_disk);
+        size_t bytes = lhat_program_dump_host_api(&relaxed, NULL, 0);
+        char *dumped = (char *)malloc(bytes + 1);
+        if (dumped != NULL) {
+            lhat_program_dump_host_api(&relaxed, dumped, bytes + 1);
+            LHAT_CHECK(strstr(dumped, "\"strict\": false") != NULL,
+                       "got %s", dumped);
+            free(dumped);
+        }
+        lhat_program_dispose(&relaxed);
+    }
 }
 
 // What the stages reported, over the graph rather than over one file --
@@ -2712,6 +2734,34 @@ static void test_diagnostics(void)
         }
     }
     lhat_program_dispose(&program);
+
+    // 03 の 3.1: exactly the three strict-only gap codes answer true --
+    // an ordinary mismatch, found the same way under both, answers false.
+    LHAT_TEST("lhat_unit_diagnostic_relaxed_ok answers only the strict-only gaps");
+    {
+        static const File gap[] = {
+            {"main.lh", "let^ f = f^ n -> number^ { return^ 1 }\n"
+                        "return^ f(1)\n"},
+        };
+        program_with(&program, &disk, gap, 1);
+        const LhatUnit *root = lhat_program_check(&program, "main.lh");
+        LHAT_CHECK_EQ_INT(lhat_unit_diagnostic_count(root), 1);
+        LHAT_CHECK(lhat_unit_diagnostic_relaxed_ok(root, 0),
+                   "an unannotated parameter with no requirement on it");
+    }
+    lhat_program_dispose(&program);
+    {
+        static const File mismatch[] = {
+            {"main.lh", "var^ x : number^ = \"s\"\n"},
+        };
+        program_with(&program, &disk, mismatch, 1);
+        const LhatUnit *root = lhat_program_check(&program, "main.lh");
+        LHAT_CHECK_EQ_INT(lhat_unit_diagnostic_count(root), 1);
+        LHAT_CHECK(!lhat_unit_diagnostic_relaxed_ok(root, 0),
+                   "a real mismatch is not one of the three");
+    }
+    lhat_program_dispose(&program);
+    LHAT_CHECK(!lhat_unit_diagnostic_relaxed_ok(NULL, 0), "no unit answers false");
 }
 
 // 02 の 14.2 と 05 の 5.3: composing onto a definition another unit published.

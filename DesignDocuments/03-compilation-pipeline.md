@@ -448,6 +448,13 @@ REPL の既定は relaxed、ソースファイルの既定は strict とする�
 > ファイル実行（`--check`/`--run`）は既定 strict、プロンプトは既定 relaxed。
 > `--strict`/`--relaxed` を書けばどちらのモードでも既定を上書きできる。
 
+ソースに書く場所は無い（3.2）——厳格度は単位の性質ではなく、`lhat_program_init`
+を呼ぶ**ホストの選択**である。単位をまたぐ合成で片方だけ厳格度を変える手段が無く、
+それでよい。ツールに伝える口は `lhat_program_dump_host_api` の書き出す
+`"strict"`（program.h）——lhatls はこれを読んで、自分自身は常に strict で
+検査したまま、strict だけが報告する3つ（次項）の severity を relaxed 宣言の
+ホストでは Warning に下げる（`lhat_unit_diagnostic_relaxed_ok`）。
+
 #### strict が報告する範囲［実装済み］
 
 3.4 の推論には、まだ埋まっていない箇所（相互再帰で相手側が未検査のまま

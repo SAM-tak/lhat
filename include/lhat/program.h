@@ -211,6 +211,15 @@ size_t lhat_unit_diagnostic_message(const LhatUnit *unit, size_t index,
 size_t lhat_unit_diagnostic_write(const LhatUnit *unit, size_t index,
                                   bool rich, char *out, size_t capacity);
 
+// 03 の 3.1: true when this is one of the three the checker reports only
+// under strict -- a gap inference left in a result, a parameter, or a
+// binding, reaching a place with nothing else to say about it. relaxed
+// would not have reported it at all, since it treats the gap as dynamic
+// and waves it through (03 の 3.5) -- so a host that builds this unit
+// relaxed will not stop on it either. For a tool showing both what strict
+// would say and what the host actually builds with (a language server,
+// say): this is the one it may show as advisory rather than fatal.
+bool lhat_unit_diagnostic_relaxed_ok(const LhatUnit *unit, size_t index);
 
 // ---------------------------------------------------------------------------
 // 02 の 18: what a unit wrote as annotations
@@ -623,6 +632,14 @@ const char *lhat_program_error_message(LhatProgramErrorCode code);
 // declarations carry no signatures, so they cannot refer to each other and
 // their relative order within the array is free. "bindings" last, for 8.2's
 // initial names.
+//
+// A top-level "strict" boolean names the value this program was made with
+// (03 の 3.1) -- what this host actually passes to lhat_program_init or
+// lhat_check_unit when it is not a tool reading the dump. A reader checking
+// the same units for a different purpose (a language server, wanting the
+// most it can say) may check strict regardless and use this only to soften
+// what lhat_unit_diagnostic_relaxed_ok marks: a host that builds relaxed
+// will not stop on those.
 //
 // An annotation's places (18.5) are written as an object keyed by name --
 // {"field": true, "public": true} -- rather than as the mask this API takes

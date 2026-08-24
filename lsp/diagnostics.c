@@ -16,10 +16,14 @@ static cJSON *make_position(LspPosition pos)
     return obj;
 }
 
+// LSP's DiagnosticSeverity: 1 Error, 2 Warning.
+#define LSP_SEVERITY_ERROR 1
+#define LSP_SEVERITY_WARNING 2
+
 // `span` is in bytes, and zero marks one character rather than a span --
 // the same convention error.h's LhatReport uses.
 static cJSON *make_diagnostic(const char *text, size_t text_length,
-                              uint32_t offset, uint32_t span,
+                              uint32_t offset, uint32_t span, int severity,
                               const char *message)
 {
     uint32_t marked = span > 0 ? span : 1;
@@ -32,13 +36,13 @@ static cJSON *make_diagnostic(const char *text, size_t text_length,
 
     cJSON *diag = cJSON_CreateObject();
     cJSON_AddItemToObject(diag, "range", range);
-    cJSON_AddNumberToObject(diag, "severity", 1);  // Error; lhat has no other severity today
+    cJSON_AddNumberToObject(diag, "severity", severity);
     cJSON_AddStringToObject(diag, "source", "lhat");
     cJSON_AddStringToObject(diag, "message", message);
     return diag;
 }
 
-cJSON *lsp_diagnostics_for_unit(const LhatUnit *unit)
+cJSON *lsp_diagnostics_for_unit(const LhatUnit *unit, bool project_relaxed)
 {
     cJSON *array = cJSON_CreateArray();
     if (array == NULL) {
@@ -65,9 +69,16 @@ cJSON *lsp_diagnostics_for_unit(const LhatUnit *unit)
         }
 
         LhatUnitDiagnostic d = lhat_unit_diagnostic(unit, i);
+        // 03 の 3.1: a relaxed host would not have stopped on the three
+        // strict-only gap diagnostics -- advisory there, fatal everywhere
+        // else, and fatal everywhere when the host is not declared relaxed.
+        int severity = project_relaxed && lhat_unit_diagnostic_relaxed_ok(unit, i)
+                           ? LSP_SEVERITY_WARNING
+                           : LSP_SEVERITY_ERROR;
         cJSON_AddItemToArray(array,
                              make_diagnostic(source->text, source->length,
-                                             d.offset, d.length, message));
+                                             d.offset, d.length, severity,
+                                             message));
         free(bigger);
     }
 
@@ -91,8 +102,9 @@ void lsp_diagnostics_add_compile_failure(cJSON *array, const LhatUnit *unit,
                  (int)failure.name_length, failure.name);
         message = room;
     }
+    // A compile refusal stops every host, strict or relaxed -- always Error.
     cJSON_AddItemToArray(array,
                          make_diagnostic(source->text, source->length,
                                          failure.offset, failure.name_length,
-                                         message));
+                                         LSP_SEVERITY_ERROR, message));
 }

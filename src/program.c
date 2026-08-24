@@ -2702,6 +2702,27 @@ LhatUnitDiagnostic lhat_unit_diagnostic(const LhatUnit *unit, size_t index)
     return out;
 }
 
+bool lhat_unit_diagnostic_relaxed_ok(const LhatUnit *unit, size_t index)
+{
+    LhatStage stage = LHAT_STAGE_LEXER;
+    size_t within = 0;
+    if (!stage_of(unit, index, &stage, &within) || stage != LHAT_STAGE_CHECKER) {
+        return false;
+    }
+    // 03 の 3.1's three: a gap left in a result, a parameter or a binding,
+    // reaching a place with nothing else to say about it. The only codes
+    // check.c reports behind `c->strict &&` -- everything else is reported
+    // the same under both, so relaxed would not have waved it through.
+    switch (unit->checked.diagnostics[within].code) {
+        case LHAT_CHECK_ERR_RESULT_UNDECIDED:
+        case LHAT_CHECK_ERR_PARAM_UNDECIDED:
+        case LHAT_CHECK_ERR_TYPE_UNDECIDED:
+            return true;
+        default:
+            return false;
+    }
+}
+
 size_t lhat_unit_diagnostic_message(const LhatUnit *unit, size_t index,
                                     char *out, size_t capacity)
 {
@@ -2958,7 +2979,9 @@ size_t lhat_program_dump_host_api(const LhatProgram *program, char *out,
     w.capacity = capacity;
     w.used = 0;
 
-    dump_text(&w, "{\n  \"types\": [");
+    dump_text(&w, "{\n  \"strict\": ");
+    dump_text(&w, program->strict ? "true" : "false");
+    dump_text(&w, ",\n  \"types\": [");
     bool first = true;
 
     // Error kinds first: their variants are names a signature writes

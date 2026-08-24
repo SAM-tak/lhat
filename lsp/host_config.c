@@ -56,6 +56,15 @@ static const char *string_of(const cJSON *object, const char *key)
     return cJSON_IsString(item) ? item->valuestring : NULL;
 }
 
+bool lsp_host_config_strict(const LspHostConfig *config, bool fallback)
+{
+    if (config == NULL) {
+        return fallback;
+    }
+    const cJSON *item = cJSON_GetObjectItemCaseSensitive(config->root, "strict");
+    return cJSON_IsBool(item) ? cJSON_IsTrue(item) : fallback;
+}
+
 // 02 の 18.5's places, as lhat_program_dump_host_api writes them: an object
 // keyed by name rather than a mask, since nothing outside C holds the enum.
 //

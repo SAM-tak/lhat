@@ -282,10 +282,48 @@ static void test_malformed(void)
     }
 }
 
+// 03 の 3.1: the "strict" lhat_program_dump_host_api writes (test_program.c
+// pins the writer's side), read back by the one thing that cares --
+// lsp/diagnostics.c's severity choice.
+static void test_strict_field(void)
+{
+    LHAT_TEST("strict: true reads as strict");
+    {
+        static const char *const text = "{\"strict\": true}";
+        LspHostConfig *config = lsp_host_config_parse(text, strlen(text));
+        LHAT_CHECK(config != NULL, "the config parsed");
+        LHAT_CHECK(lsp_host_config_strict(config, false),
+                   "true came back true");
+        lsp_host_config_free(config);
+    }
+
+    LHAT_TEST("strict: false reads as relaxed");
+    {
+        static const char *const text = "{\"strict\": false}";
+        LspHostConfig *config = lsp_host_config_parse(text, strlen(text));
+        LHAT_CHECK(config != NULL, "the config parsed");
+        LHAT_CHECK(!lsp_host_config_strict(config, true),
+                   "false came back false");
+        lsp_host_config_free(config);
+    }
+
+    LHAT_TEST("no config, and a config that predates the field, fall back");
+    LHAT_CHECK(lsp_host_config_strict(NULL, true), "NULL falls back to true");
+    {
+        static const char *const text = "{\"types\": []}";
+        LspHostConfig *config = lsp_host_config_parse(text, strlen(text));
+        LHAT_CHECK(config != NULL, "the config parsed");
+        LHAT_CHECK(lsp_host_config_strict(config, true),
+                   "an absent field falls back too");
+        lsp_host_config_free(config);
+    }
+}
+
 int main(void)
 {
     test_round_trip();
     test_without_config();
     test_malformed();
+    test_strict_field();
     return lhat_test_report("test_host_config");
 }

@@ -10,6 +10,8 @@
 #ifndef LSP_DIAGNOSTICS_H
 #define LSP_DIAGNOSTICS_H
 
+#include <stdbool.h>
+
 #include "cJSON.h"
 #include "program_internal.h"
 
@@ -17,7 +19,15 @@
 // checker diagnostic `unit` carries -- 03 の 1.3's "the stage is its own,
 // the rendering is shared" read onto JSON instead of text. Always an array,
 // empty when there is nothing to report; NULL only on allocation failure.
-cJSON *lsp_diagnostics_for_unit(const LhatUnit *unit);
+//
+// `project_relaxed` is host_config.h's lsp_host_config_strict, inverted --
+// whether the host this unit is written for builds relaxed (03 の 3.1).
+// lhatls checks every unit strict regardless, so this changes nothing about
+// which diagnostics appear, only how one class of them is shown: a
+// diagnostic lhat_unit_diagnostic_relaxed_ok answers true for is severity
+// Warning under a relaxed host and Error otherwise, since a relaxed build
+// would not stop on it. Every other diagnostic is Error either way.
+cJSON *lsp_diagnostics_for_unit(const LhatUnit *unit, bool project_relaxed);
 
 // The compile stage's one refusal ("this form does not compile yet" and
 // friends), appended to `array`. The three stages above report through

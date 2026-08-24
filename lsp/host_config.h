@@ -32,6 +32,12 @@ LspHostConfig *lsp_host_config_parse(const char *text, size_t length);
 
 void lsp_host_config_free(LspHostConfig *config);
 
+// 03-compilation-pipeline.md の 3.1: the "strict" lhat_program_dump_host_api
+// wrote, or `fallback` when there is no config (NULL) or the file predates
+// the field. lhatls checks strict regardless of this -- what it changes is
+// how the diagnostics it finds should be shown.
+bool lsp_host_config_strict(const LspHostConfig *config, bool fallback);
+
 // Re-plays the registrations into `program`, types first, then signatures,
 // then bindings -- the order lhat_program_dump_host_api writes them in and
 // the one that keeps every name a signature mentions already registered.

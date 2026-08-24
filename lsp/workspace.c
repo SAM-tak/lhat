@@ -526,7 +526,11 @@ void lsp_workspace_collect_diagnostics(LspWorkspace *ws,
             }
             seen[seen_count++] = unit->path;  // borrowed; lives as long as r
 
-            cJSON *diags = lsp_diagnostics_for_unit(unit);
+            // 03 の 3.1: no config, or one that predates the field, reads
+            // as strict -- the safer default (a diagnostic stays Error
+            // when the host's own mode is unknown).
+            bool relaxed = !lsp_host_config_strict(ws->host_config, true);
+            cJSON *diags = lsp_diagnostics_for_unit(unit, relaxed);
             // The compiler's one refusal, when it lies in this unit.
             const char *failed_in = NULL;
             LhatCompileResult failure =
