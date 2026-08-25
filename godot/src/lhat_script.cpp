@@ -215,7 +215,9 @@ void LhatScript::placeholder_made(void *placeholder)
 // (Script::reload_from_file). What is held is the text, so it is read again
 // and the reload below does the rest -- putting the script back on whatever
 // was wearing it included.
-void LhatScript::reload_from_disk(bool keep_state)
+// The text again, without the world being made again. The language reads
+// every script it is about to rebuild for, and one rebuild follows them all.
+void LhatScript::read_source_from_disk()
 {
     String path = get_path();
     if (path.is_empty() || path.contains("::")) {
@@ -225,6 +227,11 @@ void LhatScript::reload_from_disk(bool keep_state)
         return;  // removed under us; what is held is better than nothing
     }
     set_source_code(FileAccess::get_file_as_string(path));
+}
+
+void LhatScript::reload_from_disk(bool keep_state)
+{
+    read_source_from_disk();
     _reload(keep_state);  // which puts the script back on its wearers
 }
 
@@ -234,7 +241,13 @@ void LhatScript::reload_from_disk(bool keep_state)
 //
 // Off the object rather than out of L^ -- the wearer may be holding a
 // placeholder, whose values are the editor's and live nowhere else.
-void LhatScript::take_off(bool keep_state, LocalVector<uint64_t> *wearers,
+//
+// Always kept. The engine's keep_state says whether the instances are being
+// taken off at all, not whether what they hold is worth keeping -- GDScript
+// reads it the same way (reload_scripts saves and restores on every path
+// that removes a script). Threading it through to here made one script's
+// reload throw away every other script's fields.
+void LhatScript::take_off(LocalVector<uint64_t> *wearers,
                           LocalVector<Dictionary> *held)
 {
     for (const uint64_t &id : worn_by) {
@@ -245,7 +258,7 @@ void LhatScript::take_off(bool keep_state, LocalVector<uint64_t> *wearers,
     for (const uint64_t &id : *wearers) {
         Dictionary was;
         Object *object = ObjectDB::get_instance(ObjectID(id));
-        if (object != nullptr && keep_state) {
+        if (object != nullptr) {
             TypedArray<Dictionary> said = object->get_property_list();
             for (int i = 0; i < said.size(); i++) {
                 Dictionary one = said[i];

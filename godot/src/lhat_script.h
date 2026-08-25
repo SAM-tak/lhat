@@ -163,7 +163,7 @@ class LhatScript : public ScriptExtension {
     // what the inspector put in them. Which is why it is two halves -- the
     // reading has to happen while the instances are still on the machine that
     // made them.
-    void take_off(bool keep_state, LocalVector<uint64_t> *wearers,
+    void take_off(LocalVector<uint64_t> *wearers,
                   LocalVector<Dictionary> *held);
     void put_back(const LocalVector<uint64_t> &wearers,
                   const LocalVector<Dictionary> &held);
@@ -210,6 +210,7 @@ public:
     // Reads the file again and checks it, then gives the script back to
     // every object that was wearing it. What the engine asks for when a .lh
     // changed outside the editor (Script::reload_from_file).
+    void read_source_from_disk();
     void reload_from_disk(bool keep_state);
 
     // Every script this program has loaded, for the reload that names none.

@@ -236,7 +236,7 @@ Error LhatLanguage::rebuild_world(bool keep_state)
     fields.resize(held.size());
     for (uint32_t i = 0; i < held.size(); i++) {
         Object::cast_to<LhatScript>(held[i].ptr())
-            ->take_off(keep_state, &wearers[i], &fields[i]);
+            ->take_off(&wearers[i], &fields[i]);
     }
 
     // Every instance made on the old machine is now holding freed memory.
@@ -863,6 +863,10 @@ void LhatLanguage::_frame()
 
 // A .lh changed on disk while nothing named it. Every one this program holds
 // is asked, since there is no telling which the change was.
+// One rebuild, not one per script. Reading the text is per file; making the
+// world again is not, so the sources are taken first and the world once --
+// otherwise asking for twenty scripts would build twenty worlds and throw
+// away nineteen.
 void LhatLanguage::_reload_all_scripts()
 {
     LocalVector<Ref<Script>> held;
@@ -870,19 +874,22 @@ void LhatLanguage::_reload_all_scripts()
         held.push_back(Ref<Script>(script));
     }
     for (const Ref<Script> &script : held) {
-        Object::cast_to<LhatScript>(script.ptr())->reload_from_disk(false);
+        Object::cast_to<LhatScript>(script.ptr())->read_source_from_disk();
     }
+    rebuild_world(true);
 }
 
 void LhatLanguage::_reload_scripts(const Array &scripts, bool soft_reload)
 {
+    (void)soft_reload;
     for (int64_t i = 0; i < scripts.size(); i++) {
         Ref<Script> held = scripts[i];
         LhatScript *ours = Object::cast_to<LhatScript>(held.ptr());
         if (ours != nullptr) {
-            ours->reload_from_disk(soft_reload);
+            ours->read_source_from_disk();
         }
     }
+    rebuild_world(true);
 }
 
 // 02 の 18: what a @tool class carries is that it runs while a scene is being
