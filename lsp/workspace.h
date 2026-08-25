@@ -1,12 +1,14 @@
 // L^ (lhat) -- LSP server: the workspace's roots, checked and re-checked.
 //
-// program.h has no way to invalidate one unit inside an already-checked
-// LhatProgram -- program.c's check_path reuses anything LHAT_UNIT_DONE
-// outright (program.c:188-200) -- so the unit of re-checking here is a
-// whole LhatProgram. Every *.lh file under the workspace root is its own
-// root and gets its own LhatProgram; a file several roots require gets
-// re-parsed once per root that reaches it. That duplication is the cost
-// this design pays for not needing a cache inside program.h itself.
+// The unit of re-checking here is a whole LhatProgram. Every *.lh file
+// under the workspace root is its own root and gets its own LhatProgram; a
+// file several roots require gets re-parsed once per root that reaches it.
+// That duplication is the cost this design pays for not needing a cache
+// inside program.h itself.
+//
+// 05 の 5.7 has since given program.h a way to invalidate one unit inside an
+// already-checked program, which would make the re-check here incremental.
+// Not taken yet.
 //
 // A reverse index (path -> the roots whose last check reached it) keeps a
 // single edit from re-checking the whole workspace: changing one file

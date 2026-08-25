@@ -150,6 +150,27 @@ static LhatUnit *check_path(LhatProgram *program, char *path);
 static void check_parsed(LhatProgram *program, LhatUnit *unit,
                          LhatTypeArena *arena);
 
+// 05 の 5.3: `from` require^s `to`. Answers the position in `from`'s list,
+// which is the number the compiler writes into a UNIT instruction, or
+// LHAT_NO_UNIT when there is no room.
+//
+// 5.7 reads these backwards to find every unit a changed one reaches, and
+// that is why the checker records them too rather than only the compiler:
+// a unit the checker rejected never compiles, so its edges would never be
+// known -- and an editor's units are rejected all day.
+static size_t remember_edge(LhatUnit *from, LhatUnit *to)
+{
+    for (size_t i = 0; i < from->referenced_count; i++) {
+        if (from->referenced[i] == to) {
+            return i;
+        }
+    }
+    LHAT_GROW(from->referenced, from->referenced_count,
+              from->referenced_capacity, 4, return LHAT_NO_UNIT);
+    from->referenced[from->referenced_count] = to;
+    return from->referenced_count++;
+}
+
 // What the checker asks when it meets a require^ (05 の 6.1).
 typedef struct {
     LhatProgram *program;
@@ -166,7 +187,14 @@ static LhatType *resolve_require(void *context, const char *path, size_t length,
     }
 
     LhatUnit *unit = check_path(r->program, resolved);  // takes `resolved`
-    if (unit == NULL || unit->state != LHAT_UNIT_DONE) {
+    if (unit == NULL) {
+        return NULL;
+    }
+    // 5.7: recorded before the state is judged. A require^ that reached a
+    // unit which would not read is still an edge -- when that file appears
+    // and is invalidated, this unit is what has to be checked again.
+    (void)remember_edge(r->requiring, unit);
+    if (unit->state != LHAT_UNIT_DONE) {
         return NULL;
     }
     // 05 の 3 章: the unit outlives this program's checking, so handing the
@@ -181,6 +209,48 @@ static LhatType *resolve_require(void *context, const char *path, size_t length,
                : lhat_type_table(&r->program->types);
 }
 
+// 05 の 5.7: FNV-1a over a unit's text, so that a save which changed nothing
+// can be told from one that did. Not a security question -- a collision costs
+// a reload that was not needed, or misses one that was, and the host may
+// always invalidate a path it knows changed.
+static uint64_t hash_text(const char *text, size_t length)
+{
+    uint64_t hash = 1469598103934665603u;
+    for (size_t i = 0; i < length; i++) {
+        hash ^= (uint8_t)text[i];
+        hash *= 1099511628211u;
+    }
+    // Zero is "nothing was read yet", so a text that hashes there takes the
+    // next value along rather than looking unread.
+    return hash != 0 ? hash : 1u;
+}
+
+// Reads the unit's text through the program's loader and takes it as far as
+// checking. Shared by a unit met for the first time and by one 5.7 made
+// stale, which is the whole reason it stands apart from check_path.
+static void load_into(LhatProgram *program, LhatUnit *unit)
+{
+    unit->state = LHAT_UNIT_CHECKING;
+
+    // 05 の 8.9: no loader is not an error of the program's -- it is a host
+    // that never handed one over, and then nothing can be read.
+    size_t length = 0;
+    char *text = program->load != NULL
+                     ? program->load(program->loader_context, unit->path,
+                                     &length)
+                     : NULL;
+    if (text == NULL) {
+        report(program, LHAT_PROGRAM_ERR_CANNOT_READ, unit->path);
+        unit->state = LHAT_UNIT_FAILED;
+        return;
+    }
+
+    unit->source_hash = hash_text(text, length);
+    lhat_source_init_from_string(&unit->source, unit->path, text, length);
+    lhat_free(text);
+    check_parsed(program, unit, &program->types);
+}
+
 // Takes ownership of `path`.
 static LhatUnit *check_path(LhatProgram *program, char *path)
 {
@@ -193,8 +263,14 @@ static LhatUnit *check_path(LhatProgram *program, char *path)
             lhat_free(path);
             return NULL;
         }
-        // 5.3: loaded once. A second require^ gets the same unit.
         lhat_free(path);
+        // 05 の 5.7: an invalidated unit is read again here -- the shell is
+        // the same one the host may be holding, and only what was made of it
+        // went. Every other state is 5.3's "loaded once": a second require^
+        // gets the same unit.
+        if (existing->state == LHAT_UNIT_STALE) {
+            load_into(program, existing);
+        }
         return existing;
     }
 
@@ -209,22 +285,7 @@ static LhatUnit *check_path(LhatProgram *program, char *path)
     unit->next = program->units;
     program->units = unit;
 
-    // 05 の 8.9: no loader is not an error of the program's -- it is a host
-    // that never handed one over, and then nothing can be read.
-    size_t length = 0;
-    char *text = program->load != NULL
-                     ? program->load(program->loader_context, unit->path,
-                                     &length)
-                     : NULL;
-    if (text == NULL) {
-        report(program, LHAT_PROGRAM_ERR_CANNOT_READ, unit->path);
-        unit->state = LHAT_UNIT_FAILED;
-        return unit;
-    }
-
-    lhat_source_init_from_string(&unit->source, unit->path, text, length);
-    lhat_free(text);
-    check_parsed(program, unit, &program->types);
+    load_into(program, unit);
     return unit;
 }
 
@@ -261,6 +322,14 @@ static void check_parsed(LhatProgram *program, LhatUnit *unit,
     lhat_check_unit(unit->parsed.root, &unit->lexer, program->strict, arena,
                     &require, &unit->checked);
 
+    // 05 の 5.7: kept past the check that read it, since an invalidation
+    // throws the check away and the name is what a machine holds the unit
+    // under. A second check of the same unit may read a different one.
+    lhat_free(unit->module_name);
+    unit->module_name = unit->checked.module_name != NULL
+                            ? duplicate(unit->checked.module_name)
+                            : NULL;
+
     unit->state = LHAT_UNIT_DONE;
 }
 
@@ -284,16 +353,7 @@ static size_t resolve_unit(void *context, const char *path, size_t length,
     }
     // The number is the requiring unit's own -- a position in its table
     // (LhatUnitTable), which this list becomes once everything compiled.
-    LhatUnit *requiring = r->requiring;
-    for (size_t i = 0; i < requiring->referenced_count; i++) {
-        if (requiring->referenced[i] == unit) {
-            return i;
-        }
-    }
-    LHAT_GROW(requiring->referenced, requiring->referenced_count,
-              requiring->referenced_capacity, 4, return LHAT_NO_UNIT);
-    requiring->referenced[requiring->referenced_count] = unit;
-    return requiring->referenced_count++;
+    return remember_edge(r->requiring, unit);
 }
 
 // 02 の 14.2: the tree of a unit already parsed, for a composition in another
@@ -1045,9 +1105,9 @@ static LhatType *hosted_table(LhatProgram *program, LhatType *owner,
             }
         }
         if (next == NULL) {
-            next = lhat_type_table(&program->types);
+            next = lhat_type_table(&program->hosted_types);
             if (next == NULL ||
-                lhat_type_add_member(&program->types, owner, segment, length,
+                lhat_type_add_member(&program->hosted_types, owner, segment, length,
                                      next) == NULL) {
                 return NULL;
             }
@@ -1071,7 +1131,7 @@ static LhatType *hosted_table(LhatProgram *program, LhatType *owner,
 static LhatType *hosted_root(LhatProgram *program)
 {
     if (program->hosted == NULL) {
-        program->hosted = lhat_type_table(&program->types);
+        program->hosted = lhat_type_table(&program->hosted_types);
         if (program->hosted != NULL) {
             program->hosted->v.table.sealed = true;  // 05 の 8.6
             program->hosted->v.table.is_module = true;
@@ -1205,13 +1265,13 @@ const LhatHostDataTag *lhat_register_hostdata_type(LhatProgram *program,
     // 05 の 7.3's shape: what makes it its own type is the declaration, not
     // the members, so two host types that look alike stay apart. 02 の 8.8's
     // mark keeps a member from being added to it afterwards.
-    LhatType *made = lhat_type_table(&program->types);
+    LhatType *made = lhat_type_table(&program->hosted_types);
     if (made == NULL) {
         return NULL;
     }
     made->v.table.from_definition = true;
     made->v.table.nominal = true;
-    if (lhat_type_add_member(&program->types, table, name, strlen(name),
+    if (lhat_type_add_member(&program->hosted_types, table, name, strlen(name),
                              made) == NULL ||
         !keep_entry(program, module, NULL, name, NULL, NULL, NULL, NULL)) {
         return NULL;
@@ -1300,14 +1360,14 @@ bool lhat_register_error_kind(LhatProgram *program, const char *module,
         return false;  // 8.7: one name, one thing
     }
 
-    LhatType *set = lhat_type_error_set(&program->types, name, strlen(name));
+    LhatType *set = lhat_type_error_set(&program->hosted_types, name, strlen(name));
     if (set == NULL ||
-        lhat_type_add_member(&program->types, table, name, strlen(name),
+        lhat_type_add_member(&program->hosted_types, table, name, strlen(name),
                              set) == NULL) {
         return false;
     }
     for (size_t i = 0; i < variant_count; i++) {
-        if (lhat_type_error_kind(&program->types, set, variant_names[i],
+        if (lhat_type_error_kind(&program->hosted_types, set, variant_names[i],
                                  strlen(variant_names[i])) == NULL) {
             return false;
         }
@@ -1513,7 +1573,7 @@ static bool register_into(LhatProgram *program, LhatType *owner,
     // back at the mercy of the order units are checked in. A member's may
     // write the type it is registered on as 13.13's Self^.
     LhatType *written = lhat_type_of_text(signature, strlen(signature),
-                                          &program->types, program->hosted,
+                                          &program->hosted_types, program->hosted,
                                           type != NULL ? owner : NULL);
     if (written == NULL) {
         return false;
@@ -1540,7 +1600,7 @@ static bool register_into(LhatProgram *program, LhatType *owner,
             return false;
         }
         LhatType *joined =
-            lhat_type_intersect(&program->types, existing->type, written);
+            lhat_type_intersect(&program->hosted_types, existing->type, written);
         if (joined == NULL) {
             return false;
         }
@@ -1549,7 +1609,7 @@ static bool register_into(LhatProgram *program, LhatType *owner,
                           signature);
     }
 
-    return lhat_type_add_member(&program->types, owner, name, strlen(name),
+    return lhat_type_add_member(&program->hosted_types, owner, name, strlen(name),
                                 written) != NULL &&
            keep_entry(program, module, type, name, call, context, written,
                       signature);
@@ -1678,7 +1738,7 @@ bool lhat_register_annotation_signature(LhatProgram *program,
     }
 
     const LhatType *written = lhat_type_of_text(signature, strlen(signature),
-                                                &program->types,
+                                                &program->hosted_types,
                                                 program->hosted, NULL);
     char *kept = written != NULL ? duplicate(signature) : NULL;
     if (written == NULL || kept == NULL) {
@@ -1821,9 +1881,9 @@ const LhatHostValueTag *lhat_register_hostvalue_type(LhatProgram *program,
     tag->width = 1 + (size + 7) / 8;  // one head slot, then the bytes
     tag->index = program->hostvalue_type_entry_count;
 
-    LhatType *made = lhat_type_hostvalue(&program->types, tag);
+    LhatType *made = lhat_type_hostvalue(&program->hosted_types, tag);
     if (made == NULL ||
-        lhat_type_add_member(&program->types, table, name, strlen(name),
+        lhat_type_add_member(&program->hosted_types, table, name, strlen(name),
                              made) == NULL ||
         !keep_entry(program, module, NULL, name, NULL, NULL, NULL, NULL)) {
         lhat_free(tag);
@@ -1904,10 +1964,10 @@ bool lhat_register_hostvalue_field(LhatProgram *program, const char *module,
         tag->fields = grown;
     }
     LhatType *number = copy != NULL && grown != NULL
-                           ? lhat_type_simple(&program->types, LHAT_TYPE_NUMBER)
+                           ? lhat_type_simple(&program->hosted_types, LHAT_TYPE_NUMBER)
                            : NULL;
     if (number == NULL ||
-        lhat_type_add_member(&program->types, found->type, copy, strlen(copy),
+        lhat_type_add_member(&program->hosted_types, found->type, copy, strlen(copy),
                              number) == NULL) {
         lhat_free(copy);
         return false;
@@ -1931,7 +1991,7 @@ bool lhat_register_global(LhatProgram *program, const char *name,
         return false;
     }
     if (program->globals == NULL) {
-        program->globals = lhat_type_table(&program->types);
+        program->globals = lhat_type_table(&program->hosted_types);
         if (program->globals == NULL) {
             return false;
         }
@@ -1940,10 +2000,10 @@ bool lhat_register_global(LhatProgram *program, const char *name,
         return false;  // 8.7: one name, one thing
     }
     LhatType *written = lhat_type_of_text(signature, strlen(signature),
-                                          &program->types, program->hosted,
+                                          &program->hosted_types, program->hosted,
                                           NULL);
     if (written == NULL ||
-        lhat_type_add_member(&program->types, program->globals, name,
+        lhat_type_add_member(&program->hosted_types, program->globals, name,
                              strlen(name), written) == NULL) {
         return false;
     }
@@ -2061,10 +2121,9 @@ static bool fill_unit_table(LhatUnit *u)
         lhat_free((void *)protos);
         return false;
     }
-    lhat_free(u->referenced);
-    u->referenced = NULL;
-    u->referenced_count = 0;
-    u->referenced_capacity = 0;
+    // 05 の 5.7: the list stays. It is the only record of which way the
+    // graph runs, and lhat_program_invalidate reads it backwards to find
+    // every unit a changed one reaches.
     return true;
 }
 
@@ -2227,6 +2286,7 @@ void lhat_program_init(LhatProgram *program, bool strict,
 {
     memset(program, 0, sizeof *program);
     lhat_type_arena_init(&program->types);
+    lhat_type_arena_init(&program->hosted_types);
     program->strict = strict;
     program->load = load;
     program->loader_context = context;
@@ -2240,16 +2300,38 @@ void lhat_program_init(LhatProgram *program, bool strict,
 // 05 の 5.6: loading a script at run time
 // ---------------------------------------------------------------------------
 
-static void unit_dispose_contents(LhatUnit *unit)
+// Everything the four stages made, leaving the shell -- its path, its module
+// name and its place in the list -- standing. 05 の 5.7 invalidates a unit
+// with this; unit_dispose_contents below finishes the job for a unit that is
+// going altogether.
+//
+// The proto is not touched: an invalidation retires it and a disposal frees
+// it, and only the caller knows which this is.
+static void unit_clear_stages(LhatUnit *unit)
 {
     if (unit->loaded) {
         lhat_check_result_dispose(&unit->checked);
         lhat_parse_result_dispose(&unit->parsed);
         lhat_lexer_dispose(&unit->lexer);
         lhat_source_dispose(&unit->source);
+        memset(&unit->checked, 0, sizeof unit->checked);
+        memset(&unit->parsed, 0, sizeof unit->parsed);
+        memset(&unit->lexer, 0, sizeof unit->lexer);
+        memset(&unit->source, 0, sizeof unit->source);
+        unit->loaded = false;
     }
-    lhat_proto_free(unit->proto);
     lhat_free(unit->referenced);
+    unit->referenced = NULL;
+    unit->referenced_count = 0;
+    unit->referenced_capacity = 0;
+}
+
+static void unit_dispose_contents(LhatUnit *unit)
+{
+    unit_clear_stages(unit);
+    lhat_proto_free(unit->proto);
+    unit->proto = NULL;
+    lhat_free(unit->module_name);
     lhat_free(unit->path);
 }
 
@@ -2514,6 +2596,11 @@ void lhat_program_dispose(LhatProgram *program)
     }
     program->units = NULL;
 
+    // 05 の 5.7: what invalidations retired and the host never discarded.
+    // The program outlives every machine that could hold a closure of one,
+    // so here it is safe whether the host took a pass or not.
+    lhat_program_discard_retired(program);
+
     for (size_t i = 0; i < program->diagnostic_count; i++) {
         lhat_free(program->diagnostics[i].path);
     }
@@ -2523,6 +2610,7 @@ void lhat_program_dispose(LhatProgram *program)
     program->diagnostic_capacity = 0;
 
     lhat_type_arena_dispose(&program->types);
+    lhat_type_arena_dispose(&program->hosted_types);
 }
 
 // The opaque forms a host uses (program.h): the by-value pair above wrapped
@@ -2552,7 +2640,10 @@ const LhatProto *lhat_unit_proto(const LhatUnit *unit)
 
 const char *lhat_unit_module_name(const LhatUnit *unit)
 {
-    return unit->loaded ? unit->checked.module_name : NULL;
+    // 05 の 5.7: the unit's own copy, so that this still answers after an
+    // invalidation -- which is exactly when a host needs it, to tell each
+    // machine to forget what the unit registered.
+    return unit->module_name;
 }
 
 const char *lhat_unit_path(const LhatUnit *unit)
@@ -2598,6 +2689,227 @@ const LhatProgramDiagnostic *lhat_program_diagnostic(const LhatProgram *program,
 {
     return index < program->diagnostic_count ? &program->diagnostics[index]
                                              : NULL;
+}
+
+// ---------------------------------------------------------------------------
+// 05 の 5.7: a unit changed under the program
+// ---------------------------------------------------------------------------
+
+static bool among(LhatUnit *const *set, size_t count, const LhatUnit *unit)
+{
+    for (size_t i = 0; i < count; i++) {
+        if (set[i] == unit) {
+            return true;
+        }
+    }
+    return false;
+}
+
+// `start` and every unit whose require^s reach it, however far around. Walks
+// the graph backwards, which is what LhatUnit.referenced is kept for.
+//
+// A fixed point over the list rather than a traversal: the edges run the
+// wrong way for one, a require^ graph may hold a cycle the checker reported
+// and carried on past (6.3), and a project's units are few enough that the
+// difference is nothing. `set` has room for every unit.
+static size_t reaching(LhatProgram *program, LhatUnit *start, LhatUnit **set)
+{
+    set[0] = start;
+    size_t count = 1;
+    for (bool grew = true; grew;) {
+        grew = false;
+        for (LhatUnit *u = program->units; u != NULL; u = u->next) {
+            if (among(set, count, u)) {
+                continue;
+            }
+            for (size_t i = 0; i < u->referenced_count; i++) {
+                if (among(set, count, u->referenced[i])) {
+                    set[count++] = u;
+                    grew = true;
+                    break;
+                }
+            }
+        }
+    }
+    return count;
+}
+
+// Whether the text at the unit's path still reads as it did. A path that
+// cannot be read answers false: a deleted file has to stop being what the
+// program compiled.
+static bool text_unchanged(LhatProgram *program, const LhatUnit *unit)
+{
+    if (program->load == NULL || unit->source_hash == 0) {
+        return false;  // nothing to compare against
+    }
+    size_t length = 0;
+    char *text = program->load(program->loader_context, unit->path, &length);
+    if (text == NULL) {
+        return false;
+    }
+    uint64_t now = hash_text(text, length);
+    lhat_free(text);
+    return now == unit->source_hash;
+}
+
+// Retires the bodies of every unit in `set`, clears what was made of them,
+// and takes back what they were blamed for. Answers `count`, or SIZE_MAX
+// when there was no room -- in which case nothing was touched.
+//
+// Shared by the two invalidations, which differ only in how the set is
+// chosen: one unit and what reaches it, or all of them.
+static size_t retire_set(LhatProgram *program, LhatUnit **set, size_t count)
+{
+    // Room for every body about to be retired, taken before anything is
+    // touched. A half-done invalidation would leave some units stale and
+    // others holding bodies nothing points at any more, so the one place
+    // this can fail is made to fail first.
+    size_t wanted = program->retired_count + count;
+    if (wanted > program->retired_capacity) {
+        LhatProto **bigger = (LhatProto **)lhat_realloc(program->retired,
+                                                        wanted * sizeof *bigger);
+        if (bigger == NULL) {
+            return SIZE_MAX;
+        }
+        program->retired = bigger;
+        program->retired_capacity = wanted;
+    }
+
+    for (size_t i = 0; i < count; i++) {
+        LhatUnit *u = set[i];
+        // The body is retired, not freed: a closure made before now still
+        // points into it, and so does the unit table of every other retired
+        // body that required this one. Both worlds stay whole.
+        if (u->proto != NULL) {
+            program->retired[program->retired_count++] = u->proto;
+            u->proto = NULL;
+        }
+        unit_clear_stages(u);
+        u->state = LHAT_UNIT_STALE;
+        u->source_hash = 0;
+    }
+
+    // What these units drew is about text that is gone. Left standing it
+    // would outlive every fix -- lhat_program_has_errors reads the list, so
+    // one require^ that once could not be read would make the program wrong
+    // for ever, however the file was mended.
+    size_t kept = 0;
+    for (size_t i = 0; i < program->diagnostic_count; i++) {
+        bool retired = false;
+        for (size_t k = 0; k < count && !retired; k++) {
+            retired = strcmp(program->diagnostics[i].path, set[k]->path) == 0;
+        }
+        if (retired) {
+            lhat_free(program->diagnostics[i].path);
+        } else {
+            program->diagnostics[kept++] = program->diagnostics[i];
+        }
+    }
+    program->diagnostic_count = kept;
+
+    // And the same for the one compile failure the program remembers: its
+    // position indexes a source this call just threw away.
+    if (program->compile_unit != NULL &&
+        among(set, count, program->compile_unit)) {
+        program->compile_status = LHAT_COMPILE_OK;
+        memset(&program->compile_result, 0, sizeof program->compile_result);
+        program->compile_unit = NULL;
+    }
+    return count;
+}
+
+static size_t unit_total(const LhatProgram *program)
+{
+    size_t total = 0;
+    for (const LhatUnit *u = program->units; u != NULL; u = u->next) {
+        total++;
+    }
+    return total;
+}
+
+size_t lhat_program_invalidate(LhatProgram *program, const char *path)
+{
+    if (program == NULL || path == NULL) {
+        return SIZE_MAX;
+    }
+    char *resolved = normalise_path(path);
+    if (resolved == NULL) {
+        return SIZE_MAX;
+    }
+    LhatUnit *start = find_unit(program, resolved);
+    lhat_free(resolved);
+    if (start == NULL) {
+        return SIZE_MAX;
+    }
+    // Already stale: the cascade ran and nothing has read it back yet.
+    if (start->state == LHAT_UNIT_STALE) {
+        return 0;
+    }
+    if (text_unchanged(program, start)) {
+        return 0;
+    }
+
+    LhatUnit **set = (LhatUnit **)lhat_alloc(unit_total(program) * sizeof *set);
+    if (set == NULL) {
+        return SIZE_MAX;
+    }
+    size_t count = retire_set(program, set, reaching(program, start, set));
+    lhat_free(set);
+    return count;
+}
+
+size_t lhat_program_invalidate_all(LhatProgram *program)
+{
+    if (program == NULL || program->units == NULL) {
+        return 0;
+    }
+    LhatUnit **set = (LhatUnit **)lhat_alloc(unit_total(program) * sizeof *set);
+    if (set == NULL) {
+        return SIZE_MAX;
+    }
+    size_t count = 0;
+    for (LhatUnit *u = program->units; u != NULL; u = u->next) {
+        set[count++] = u;
+    }
+    // No hash and no cascade: the caller said all of them, and the reason is
+    // usually something no unit's text would show -- a registration that
+    // changed, a rescan that starts over.
+    count = retire_set(program, set, count);
+    lhat_free(set);
+    if (count == SIZE_MAX) {
+        return count;
+    }
+
+    // And now the types, which the one-unit form cannot do. Every unit's
+    // check went with retire_set above, so nothing points into this arena
+    // any more -- and a program reloaded over and over would otherwise
+    // carry every check it ever made (6 章 keeps types for as long as the
+    // units that name them, which here is no longer).
+    //
+    // hosted_types is untouched: 7.3's identity lives there, and keeping it
+    // is the whole difference between this and making a second program.
+    lhat_type_arena_dispose(&program->types);
+    lhat_type_arena_init(&program->types);
+    return count;
+}
+
+void lhat_program_discard_retired(LhatProgram *program)
+{
+    if (program == NULL) {
+        return;
+    }
+    for (size_t i = 0; i < program->retired_count; i++) {
+        lhat_proto_free(program->retired[i]);
+    }
+    lhat_free(program->retired);
+    program->retired = NULL;
+    program->retired_count = 0;
+    program->retired_capacity = 0;
+}
+
+size_t lhat_program_retired_count(const LhatProgram *program)
+{
+    return program != NULL ? program->retired_count : 0;
 }
 
 // ---------------------------------------------------------------------------

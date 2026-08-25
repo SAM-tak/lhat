@@ -3065,6 +3065,63 @@ bool lhat_machine_bind_hostvalues(LhatMachine *machine,
     return true;
 }
 
+// 05 の 5.7: the read-only half of reach_table -- walk to what is there and
+// answer NULL where nothing is, making nothing on the way. A path that does
+// not reach a table is a path with nothing to forget.
+static LhatTable *table_at(Machine *m, LhatTable *owner, const char *segment,
+                           size_t length)
+{
+    LhatString *key = lhat_string_new(&m->objects, segment, length);
+    if (key == NULL) {
+        return NULL;
+    }
+    return table_of(lhat_table_get(owner, lhat_object((LhatObject *)key)));
+}
+
+bool lhat_machine_forget_unit(LhatMachine *machine, const char *module)
+{
+    if (machine == NULL || machine->environment == NULL || module == NULL ||
+        *module == '\0') {
+        return false;
+    }
+    LhatString *modules_key = lhat_string_new(&machine->objects, "modules", 7);
+    if (modules_key == NULL) {
+        return false;
+    }
+    LhatTable *owner = table_of(lhat_table_get(
+        machine->environment, lhat_object((LhatObject *)modules_key)));
+    if (owner == NULL) {
+        return false;
+    }
+
+    // Down to the table the last segment sits in. The ones above it stay:
+    // other modules live under them, and 5.3's guard tests each step for
+    // nil^ anyway, so an empty table left behind means the same as no table.
+    const char *segment = module;
+    size_t length = strcspn(segment, ".");
+    while (segment[length] == '.') {
+        owner = table_at(machine, owner, segment, length);
+        if (owner == NULL) {
+            return false;
+        }
+        segment += length + 1;
+        length = strcspn(segment, ".");
+    }
+
+    LhatString *last = lhat_string_new(&machine->objects, segment, length);
+    if (last == NULL) {
+        return false;
+    }
+    LhatValue key = lhat_object((LhatObject *)last);
+    if (lhat_is_nil(lhat_table_get(owner, key))) {
+        return false;  // nothing stood there
+    }
+    // 04 の 11.3 spells "not there" nil^, which is exactly what 5.3's guard
+    // tests -- so storing nil^ is the whole of forgetting.
+    bool refused = false;
+    return set_key(machine, owner, key, lhat_nil(), &refused) && !refused;
+}
+
 bool lhat_machine_register(LhatMachine *machine, const char *module,
                            const char *type, const char *name, LhatValue value)
 {

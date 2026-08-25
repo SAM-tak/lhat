@@ -47,7 +47,12 @@ typedef struct {
 typedef enum {
     LHAT_UNIT_CHECKING,  // 6.3: meeting it again while in this state is a cycle
     LHAT_UNIT_DONE,
-    LHAT_UNIT_FAILED
+    LHAT_UNIT_FAILED,
+    // 05 の 5.7: lhat_program_invalidate retired what was made of it. The
+    // unit is still the program's -- the path it stands for has not gone --
+    // but nothing of it is checked or compiled, and the next
+    // lhat_program_check reads it again.
+    LHAT_UNIT_STALE
 } LhatUnitState;
 
 // How a unit's text is obtained. Returns NULL when there is no such unit,
@@ -86,6 +91,71 @@ bool lhat_program_compile(LhatProgram *program);
 // failed, so a caller with a diagnostic to write asks this rather than
 // having to say "something".
 LhatCompileStatus lhat_program_compile_status(const LhatProgram *program);
+
+// ---------------------------------------------------------------------------
+// 05 の 5.7: a unit changed under the program
+// ---------------------------------------------------------------------------
+
+// The text at `path` may have changed. Retires what was checked and compiled
+// of that unit and of every unit whose require^s reach it, so that the next
+// lhat_program_check reads them all again and lhat_program_compile makes
+// them again.
+//
+// Answers how many units it retired: 0 when the text still reads exactly as
+// it did (an editor saving an unchanged buffer costs nothing), and SIZE_MAX
+// when the program has no unit at that path. A path that can no longer be
+// read is retired rather than kept -- a deleted file has to stop being what
+// the program compiled.
+//
+// The cascade is why this reaches further than the one unit: a requirer's
+// checked types come from what the required unit publishes, and a requirer's
+// compiled body holds a table of the very protos its require^s answer.
+//
+// NOTHING IS FREED HERE. A closure made before this call keeps running the
+// body it was made from, and the unit table that body reads still names the
+// bodies it was compiled against -- the old world stays whole beside the new
+// one. lhat_program_discard_retired is where the old one goes.
+size_t lhat_program_invalidate(LhatProgram *program, const char *path);
+
+// The same for every unit at once, whatever their text says now -- what a
+// host takes when it is starting a whole project over rather than following
+// one save. Answers how many it retired, or SIZE_MAX when there was no room
+// (and then nothing was touched).
+//
+// Neither the hash nor the cascade applies: the caller said all of them, and
+// the reason is usually something no unit's text would show -- a
+// registration that changed, a rescan that begins again.
+//
+// THIS IS NOT lhat_program_free FOLLOWED BY lhat_program_new. What survives
+// here is everything the host registered: the types, the error kinds, and
+// the tags whose addresses are 7.3's identity. Units read again afterwards
+// come back into the same world. Making a second program registers a second
+// set of tags, and then its godot.Object is not the first one's godot.Object
+// however alike they are spelt -- which is exactly the trouble a program per
+// unit runs into the moment two of them share a machine.
+//
+// This is also the one call that gives the types back. A checked type lives
+// as long as the units that may name it (6 章), so the one-unit form can
+// only add to what the program holds; here every unit went at once, so the
+// arena they were in is emptied. A host reloading a project over and over
+// does not carry every check it ever made -- and what it registered is in an
+// arena of its own, untouched.
+//
+// The unit shells stay in the list, stale, so a host holding a
+// const LhatUnit * still has the unit for that path. One whose file is gone
+// simply never reads again.
+size_t lhat_program_invalidate_all(LhatProgram *program);
+
+// Frees every retired body. The host says when, because only the host knows:
+// no machine may be running one, and nothing on any machine's heap may still
+// hold a closure of one. Getting that wrong is a use-after-free, which is
+// why this is not done for you.
+//
+// lhat_program_free does this too, for a host that never calls it.
+void lhat_program_discard_retired(LhatProgram *program);
+
+// How many are waiting, so a host can tell whether a pass is worth taking.
+size_t lhat_program_retired_count(const LhatProgram *program);
 
 // 05 の 5.6: a script brought in while the program runs -- what std.load
 // is built on. The text is checked and compiled as a unit of its own and

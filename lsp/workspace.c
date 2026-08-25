@@ -184,10 +184,12 @@ static LspRoot *root_find_or_add(LspWorkspace *ws, const char *path)
     return r;
 }
 
-// Re-checks `root` from scratch: a fresh LhatProgram (program.h has no way
-// to invalidate one unit inside an existing one -- program.c's check_path
-// reuses anything LHAT_UNIT_DONE outright), then rebuilds the reverse index
-// entries this root contributes.
+// Re-checks `root` from scratch: a fresh LhatProgram, then rebuilds the
+// reverse index entries this root contributes.
+//
+// 05 の 5.7's lhat_program_invalidate would do this without throwing the
+// whole program away -- and a server, which runs nothing, could discard the
+// retired bodies on the spot. Worth taking; not taken yet.
 static void recheck_one_root(LspWorkspace *ws, LspRoot *root)
 {
     reverse_remove_root_everywhere(ws, root->path);

@@ -166,6 +166,22 @@ bool lhat_machine_register(LhatMachine *machine, const char *module,
                            const char *type, const char *name,
                            LhatValue value);
 
+// 05 の 5.7: takes L^.modules.<module> away again, so that running a unit
+// registered under that path registers it afresh.
+//
+// A unit loads once because its own body begins by asking the registry for
+// itself and answering what is there (5.3) -- so a program that retired a
+// unit and compiled it again has to say so here, or the new body will find
+// the old table and hand that back instead. Once per machine the program was
+// installed on; the program does not know its machines (a machine is given
+// nothing) and cannot do it for you.
+//
+// `module` is the dotted path the unit declared with module^, which
+// lhat_unit_module_name answers with. The tables above it stay -- other
+// modules live under them. False when nothing stood there, which is also
+// what a script (3.2) answers, since one registers nothing.
+bool lhat_machine_forget_unit(LhatMachine *machine, const char *module);
+
 // 05 の 8.6: a member of L^ itself. Writes through the machine rather than
 // through an instruction, which is why 8.6改's seal does not refuse it.
 bool lhat_machine_set_global(LhatMachine *machine, const char *name,

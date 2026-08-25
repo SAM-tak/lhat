@@ -31,29 +31,68 @@ struct LhatUnit {
 
     LhatUnitState state;
 
+    // 05 の 5.7: what module^ the last check of this unit read, copied here
+    // rather than left in `checked`. An invalidation throws the check away,
+    // and the name is exactly what the host needs afterwards -- it is the
+    // key a machine's L^.modules holds the unit under, which
+    // lhat_machine_forget_unit has to be handed. NULL for a script (3.2).
+    char *module_name;
+
     // What lhat_program_compile made of it, owned here. NULL until that ran
     // -- or while it will not compile.
     LhatProto *proto;
 
     // 05 の 5.3: the units this one's require^s named, in the order its
     // compile met them -- the number in each UNIT instruction is a position
-    // here. Held only between the compile of this unit and the filling of
+    // here. Filled by the compile of this unit and read by the filling of
     // its table (lhat_program_compile's second pass), since a unit named
     // here may not have compiled yet when this one does.
+    //
+    // 5.7: kept afterwards rather than freed, because it is the only record
+    // of which way the graph runs. lhat_program_invalidate walks it backwards
+    // to find every unit a changed one reaches.
     struct LhatUnit **referenced;
     size_t referenced_count;
     size_t referenced_capacity;
+
+    // 05 の 5.7: the text this unit was last read from, hashed, so that
+    // lhat_program_invalidate can tell a save that changed something from a
+    // save that changed nothing. Zero before anything was read.
+    uint64_t source_hash;
 
     struct LhatUnit *next;
 };
 
 struct LhatProgram {
     // 6 章: shared, so the types one unit publishes stay valid in the units
-    // that require it.
+    // that require it. 05 の 5.7 empties this one and no other: everything
+    // in it came from checking a unit, and an invalidation of all of them
+    // leaves nothing pointing here.
     LhatTypeArena types;
+
+    // 05 の 8.7: what the registrations made -- `hosted`, `globals`, and
+    // everything hanging off them. Kept apart from the arena above because
+    // it must survive a wholesale invalidation: 7.3 makes the tag's address
+    // the identity, so a program that threw its registrations away and made
+    // them again would not be the same world any more.
+    //
+    // The split is sound because the pointers only run one way. A unit's
+    // types may name a registered one (that is what import^ is for), and a
+    // registration's signature may name only the builtins and what was
+    // registered before it -- never anything a require^ brings in, which
+    // 8.7 refuses for its own reasons (see lhat_register_member).
+    LhatTypeArena hosted_types;
 
     LhatUnit *units;
     bool strict;
+
+    // 05 の 5.7: bodies lhat_program_invalidate took off their units and did
+    // not free. A closure made before the invalidation still points into one,
+    // so they wait here until lhat_program_discard_retired -- or until the
+    // program goes, which outlives every machine that could hold one.
+    LhatProto **retired;
+    size_t retired_count;
+    size_t retired_capacity;
 
     LhatProgramLoader load;
     void *loader_context;

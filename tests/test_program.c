@@ -74,6 +74,16 @@ static size_t unit_count(const LhatProgram *program)
     return n;
 }
 
+static const LhatUnit *unit_at(const LhatProgram *program, const char *path)
+{
+    for (const LhatUnit *u = program->units; u != NULL; u = u->next) {
+        if (strcmp(lhat_unit_path(u), path) == 0) {
+            return u;
+        }
+    }
+    return NULL;
+}
+
 static void test_dependencies(void)
 {
     LhatProgram program;
@@ -292,6 +302,268 @@ static void test_cycles(void)
 // require^ inside one can reach another. What is pinned here is that the
 // unit runs once however many times it is required, and that both requirers
 // see the very thing it made.
+// 05 の 5.7: a unit changes under a program that has already been compiled
+// and run. What is pinned here is the whole exchange -- the cascade, the
+// save that changed nothing, the machine's registry, and the old bodies
+// staying whole -- because each half is useless without the others.
+static void test_reloading(void)
+{
+    LhatProgram program;
+    Disk disk;
+
+    // Not const: a reload is a file whose text is no longer what it was.
+    static File files[] = {
+        {"leaf.lh",
+         "module^ ns.leaf\n"
+         "public^ let^ n = 1\n"},
+        {"mid.lh",
+         "module^ ns.mid\n"
+         "require^ \"leaf.lh\"\n"
+         "public^ let^ n = ns.leaf.n * 10\n"},
+        {"main.lh",
+         "require^ \"mid.lh\"\n"
+         "return^ ns.mid.n\n"},
+    };
+    static const char *const leaf_was = "module^ ns.leaf\npublic^ let^ n = 1\n";
+    static const char *const leaf_now = "module^ ns.leaf\npublic^ let^ n = 2\n";
+
+    LHAT_TEST("a save that changed nothing retires nothing");
+    {
+        files[0].text = leaf_was;
+        program_with(&program, &disk, files, 3);
+        LHAT_CHECK(lhat_program_check(&program, "main.lh") != NULL &&
+                       lhat_program_compile(&program),
+                   "the program checked and compiled");
+        LHAT_CHECK_EQ_INT(lhat_program_invalidate(&program, "leaf.lh"), 0);
+        LHAT_CHECK_EQ_INT(lhat_program_retired_count(&program), 0);
+        // And the unit is untouched: still done, still carrying its body.
+        const LhatUnit *leaf = unit_at(&program, "leaf.lh");
+        LHAT_CHECK(leaf != NULL && lhat_unit_state(leaf) == LHAT_UNIT_DONE &&
+                       lhat_unit_proto(leaf) != NULL,
+                   "the unit kept what was made of it");
+    }
+    lhat_program_dispose(&program);
+
+    LHAT_TEST("a path the program never checked answers SIZE_MAX");
+    {
+        files[0].text = leaf_was;
+        program_with(&program, &disk, files, 3);
+        LHAT_CHECK(lhat_program_check(&program, "main.lh") != NULL,
+                   "the program checked");
+        LHAT_CHECK(lhat_program_invalidate(&program, "nowhere.lh") == SIZE_MAX,
+                   "no such unit");
+    }
+    lhat_program_dispose(&program);
+
+    // The cascade: a requirer's checked types come from what the required
+    // unit publishes, and its compiled body holds a table of the very protos
+    // its require^s answer. Changing the leaf reaches all three.
+    LHAT_TEST("an invalidation reaches every unit that requires the one that changed");
+    {
+        files[0].text = leaf_was;
+        program_with(&program, &disk, files, 3);
+        LHAT_CHECK(lhat_program_check(&program, "main.lh") != NULL &&
+                       lhat_program_compile(&program),
+                   "the program checked and compiled");
+
+        files[0].text = leaf_now;
+        LHAT_CHECK_EQ_INT(lhat_program_invalidate(&program, "leaf.lh"), 3);
+        LHAT_CHECK_EQ_INT(lhat_program_retired_count(&program), 3);
+        LHAT_CHECK_EQ_INT(unit_count(&program), 3);  // the shells stayed
+
+        for (const LhatUnit *u = program.units; u != NULL; u = u->next) {
+            LHAT_CHECK(lhat_unit_state(u) == LHAT_UNIT_STALE,
+                       "%s went stale", lhat_unit_path(u));
+            LHAT_CHECK(lhat_unit_proto(u) == NULL, "and gave up its body");
+        }
+        // 5.7: the module name outlives the check that read it, since it is
+        // what the host has to hand every machine next.
+        const LhatUnit *leaf = unit_at(&program, "leaf.lh");
+        LHAT_CHECK(leaf != NULL &&
+                       strcmp(lhat_unit_module_name(leaf), "ns.leaf") == 0,
+                   "a stale unit still says what it registered as");
+
+        lhat_program_discard_retired(&program);
+        LHAT_CHECK_EQ_INT(lhat_program_retired_count(&program), 0);
+    }
+    lhat_program_dispose(&program);
+
+    // A program-level diagnostic outlives the check that raised it, so an
+    // invalidation has to take back the ones about text it just threw away
+    // -- otherwise one unreadable require^ makes the program wrong for ever.
+    LHAT_TEST("an invalidation takes back what the retired units were blamed for");
+    {
+        static File mending[] = {
+            {"main.lh",
+             "require^ \"gone.lh\"\n"
+             "return^ 1\n"},
+            {"gone.lh",
+             "module^ ns.gone\n"
+             "public^ let^ n = 5\n"},
+        };
+        // One file to begin with: the require^ reaches nothing.
+        program_with(&program, &disk, mending, 1);
+        LHAT_CHECK(lhat_program_check(&program, "main.lh") != NULL,
+                   "the root itself read");
+        LHAT_CHECK(has_program_error(&program, LHAT_PROGRAM_ERR_CANNOT_READ),
+                   "and the missing unit was reported");
+
+        // The file appears. Invalidating it reaches the unit that required
+        // it -- an edge the checker recorded, since nothing here ever
+        // compiled and the compiler is the other place edges come from.
+        disk.count = 2;
+        mending[0].text =
+            "require^ \"gone.lh\"\n"
+            "return^ ns.gone.n\n";
+        LHAT_CHECK_EQ_INT(lhat_program_invalidate(&program, "gone.lh"), 2);
+        LHAT_CHECK(!has_program_error(&program, LHAT_PROGRAM_ERR_CANNOT_READ),
+                   "and the report about it went with it");
+
+        LHAT_CHECK(lhat_program_check(&program, "main.lh") != NULL &&
+                       !lhat_program_has_errors(&program),
+                   "the mended program has nothing against it");
+    }
+    lhat_program_dispose(&program);
+
+    // The common way round for a host that reloads a project rather than a
+    // file: everything goes, and the program -- with everything registered
+    // on it -- stays.
+    LHAT_TEST("every unit at once, however the text reads");
+    {
+        files[0].text = leaf_was;
+        program_with(&program, &disk, files, 3);
+        LHAT_CHECK(lhat_program_check(&program, "main.lh") != NULL &&
+                       lhat_program_compile(&program),
+                   "the program checked and compiled");
+
+        // Nothing changed on disk, which is what the one-unit form takes as
+        // "no need" -- this form does not ask.
+        LHAT_CHECK_EQ_INT(lhat_program_invalidate(&program, "leaf.lh"), 0);
+        LHAT_CHECK_EQ_INT(lhat_program_invalidate_all(&program), 3);
+        LHAT_CHECK_EQ_INT(lhat_program_retired_count(&program), 3);
+        LHAT_CHECK_EQ_INT(unit_count(&program), 3);
+        for (const LhatUnit *u = program.units; u != NULL; u = u->next) {
+            LHAT_CHECK(lhat_unit_state(u) == LHAT_UNIT_STALE &&
+                           lhat_unit_proto(u) == NULL,
+                       "%s went stale", lhat_unit_path(u));
+        }
+
+        // And they read back into the same program, on the same shells.
+        const LhatUnit *before = unit_at(&program, "leaf.lh");
+        const LhatUnit *root = lhat_program_check(&program, "main.lh");
+        LHAT_CHECK(root != NULL && !lhat_program_has_errors(&program) &&
+                       lhat_program_compile(&program),
+                   "everything read and compiled again");
+        LHAT_CHECK_EQ_PTR(unit_at(&program, "leaf.lh"), before);
+        LHAT_CHECK_EQ_INT(unit_count(&program), 3);
+
+        // A second sweep with nothing checked in between is still every
+        // unit -- it never asks whether anything changed.
+        LHAT_CHECK_EQ_INT(lhat_program_invalidate_all(&program), 3);
+        lhat_program_discard_retired(&program);
+    }
+    lhat_program_dispose(&program);
+
+    LHAT_TEST("a program with no units has none to retire");
+    {
+        lhat_program_init(&program, true, NULL, NULL);
+        LHAT_CHECK_EQ_INT(lhat_program_invalidate_all(&program), 0);
+    }
+    lhat_program_dispose(&program);
+
+    // The whole point, on one machine: without forgetting what the units
+    // registered, a recompiled body finds the old table at its own guard
+    // (vm.c's UNIT) and hands that back -- so the new text never runs.
+    LHAT_TEST("a reloaded unit runs its new body only once the machine forgets the old");
+    {
+        files[0].text = leaf_was;
+        program_with(&program, &disk, files, 3);
+        const LhatUnit *root = lhat_program_check(&program, "main.lh");
+        LHAT_CHECK(root != NULL && lhat_program_compile(&program),
+                   "the program checked and compiled");
+
+        LhatMachine *machine = lhat_machine_new();
+        LhatRunResult ran = lhat_run(machine, lhat_unit_proto(root));
+        LHAT_CHECK_EQ_INT(ran.status, LHAT_RUN_OK);
+        LHAT_CHECK_EQ_INT(lhat_as_integer(ran.value), 10);
+
+        files[0].text = leaf_now;
+        LHAT_CHECK_EQ_INT(lhat_program_invalidate(&program, "leaf.lh"), 3);
+        root = lhat_program_check(&program, "main.lh");
+        LHAT_CHECK(root != NULL && !lhat_program_has_errors(&program) &&
+                       lhat_program_compile(&program),
+                   "the program read the units again and compiled them");
+        LHAT_CHECK(lhat_unit_proto(root) != NULL, "a new body for the root");
+
+        // The new bodies, run against a machine that still holds the old
+        // registry: every guard hits and nothing of the new text takes.
+        ran = lhat_run(machine, lhat_unit_proto(root));
+        LHAT_CHECK_EQ_INT(ran.status, LHAT_RUN_OK);
+        LHAT_CHECK_EQ_INT(lhat_as_integer(ran.value), 10);
+
+        LHAT_CHECK(lhat_machine_forget_unit(machine, "ns.leaf"),
+                   "the machine forgot the leaf");
+        LHAT_CHECK(lhat_machine_forget_unit(machine, "ns.mid"),
+                   "and the unit that published from it");
+        LHAT_CHECK(!lhat_machine_forget_unit(machine, "ns.leaf"),
+                   "forgetting twice says there was nothing there");
+        LHAT_CHECK(!lhat_machine_forget_unit(machine, "ns.never"),
+                   "and so does a name nothing registered under");
+
+        ran = lhat_run(machine, lhat_unit_proto(root));
+        LHAT_CHECK_EQ_INT(ran.status, LHAT_RUN_OK);
+        LHAT_CHECK_EQ_INT(lhat_as_integer(ran.value), 20);
+
+        lhat_machine_dispose(machine);
+    }
+    lhat_program_dispose(&program);
+
+    // Nothing is freed by an invalidation, so a closure made before one
+    // keeps running the body it was made from. Under asan this is what says
+    // the old world is whole rather than merely unvisited.
+    LHAT_TEST("a body retired under a live closure still runs");
+    {
+        static File live[] = {
+            {"lib.lh",
+             "module^ ns.lib\n"
+             "public^ let^ answer = f^ -> number^ { return^ 1 }\n"},
+            {"main.lh",
+             "require^ \"lib.lh\"\n"
+             "return^ ns.lib.answer\n"},
+        };
+        live[0].text =
+            "module^ ns.lib\n"
+            "public^ let^ answer = f^ -> number^ { return^ 1 }\n";
+        program_with(&program, &disk, live, 2);
+        const LhatUnit *root = lhat_program_check(&program, "main.lh");
+        LHAT_CHECK(root != NULL && lhat_program_compile(&program),
+                   "the program checked and compiled");
+
+        LhatMachine *machine = lhat_machine_new();
+        LhatRunResult ran = lhat_run(machine, lhat_unit_proto(root));
+        LHAT_CHECK_EQ_INT(ran.status, LHAT_RUN_OK);
+        LhatValue held = ran.value;  // rooted through L^.modules.ns.lib
+
+        live[0].text =
+            "module^ ns.lib\n"
+            "public^ let^ answer = f^ -> number^ { return^ 2 }\n";
+        LHAT_CHECK_EQ_INT(lhat_program_invalidate(&program, "lib.lh"), 2);
+        LHAT_CHECK_EQ_INT(lhat_program_retired_count(&program), 2);
+
+        LhatRunResult called = lhat_machine_call(machine, held, NULL, 0);
+        LHAT_CHECK_EQ_INT(called.status, LHAT_RUN_OK);
+        LHAT_CHECK_EQ_INT(lhat_as_integer(called.value), 1);
+
+        // The closure is still on the machine, so the retired bodies stay:
+        // discarding them here is exactly the use-after-free the host is
+        // told to avoid. The machine goes first.
+        lhat_machine_dispose(machine);
+        lhat_program_discard_retired(&program);
+        LHAT_CHECK_EQ_INT(lhat_program_retired_count(&program), 0);
+    }
+    lhat_program_dispose(&program);
+}
+
 static void test_running(void)
 {
     LhatProgram program;
@@ -1522,6 +1794,62 @@ static LhatRunResult run_main(LhatProgram *program)
 // one host object are equal and key one table entry between them. is^ still
 // asks for the wrapper itself, and a released wrapper is equal only to
 // itself -- its pointer may already name something else.
+// 05 の 5.7: the reason lhat_program_invalidate_all is not
+// lhat_program_free followed by lhat_program_new. What a host registered has
+// to come through untouched -- 7.3 makes the tag's address the identity, so
+// a program that made its registrations again would be a different world
+// wearing the same names.
+static void test_reloading_keeps_registrations(void)
+{
+    LhatProgram program;
+    Disk disk;
+    Held held = {42, 0};
+
+    LHAT_TEST("what the host registered survives a wholesale invalidation");
+    {
+        static const File files[] = {
+            {"main.lh",
+             "import^ store\n"
+             "var^ a = store.make()\n"
+             "return^ a.read()\n"},
+        };
+        program_with(&program, &disk, files, 1);
+        const LhatHostDataTag *tag =
+            lhat_register_hostdata_type(&program, "store", "Held");
+        lhat_register_member(&program, "store", "Held", "read",
+                             "f^self^ -> number^;", held_read, NULL);
+        lhat_register_func(&program, "store", "make", "f^ -> store.Held;",
+                           held_make, &held);
+        held_tag = tag;
+
+        LhatRunResult ran = run_main(&program);
+        LHAT_CHECK_EQ_INT(ran.status, LHAT_RUN_OK);
+        LHAT_CHECK_EQ_INT(lhat_as_integer(ran.value), 42);
+
+        // Everything checked goes, and the arena it was in with it.
+        LHAT_CHECK(program.types.type_count > 0, "the check made types");
+        LHAT_CHECK_EQ_INT(lhat_program_invalidate_all(&program), 1);
+        LHAT_CHECK_EQ_INT(program.types.type_count, 0);
+        LHAT_CHECK(program.hosted_types.type_count > 0,
+                   "and the registrations' own arena is untouched");
+
+        // The tag is the same object, so a value made now is the same type
+        // as one made before -- which is the whole point.
+        LHAT_CHECK_EQ_PTR(lhat_register_hostdata_type(&program, "store",
+                                                      "Held"),
+                          NULL);  // 8.7: one name, one thing -- still taken
+        lhat_program_discard_retired(&program);
+
+        // And the units read back into that same world.
+        ran = run_main(&program);
+        LHAT_CHECK_EQ_INT(ran.status, LHAT_RUN_OK);
+        LHAT_CHECK_EQ_INT(lhat_as_integer(ran.value), 42);
+        LHAT_CHECK_EQ_PTR(held_tag, tag);
+        LHAT_CHECK(program.types.type_count > 0, "on types made afresh");
+    }
+    lhat_program_dispose(&program);
+}
+
 static void test_host_data_identity(void)
 {
     LhatProgram program;
@@ -3955,11 +4283,13 @@ int main(void)
     test_documentation();
 #endif
     test_running();
+    test_reloading();
     test_hosting();
     test_hostvalue_escape();
     test_host_tuple();
     test_host_data();
     test_host_data_identity();
+    test_reloading_keeps_registrations();
     test_host_data_release();
     test_dump_host_api();
 #if LHAT_WITH_RESOLUTIONS
