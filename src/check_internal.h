@@ -126,6 +126,11 @@ typedef struct Narrowing {
 typedef struct {
     const char *name;
     size_t name_length;
+    // 05 の 8.7: a host registration is the other kind of carrier, and its
+    // type is the program's rather than this walk's -- built once at
+    // registration and never remade -- so it is held directly. NULL for a
+    // def^ of this unit, which is looked up by the name above.
+    const LhatType *type;
     uint16_t operators;  // one bit per LHAT_OPERATOR_MEMBERS entry, in order
 } OperatorCarrier;
 
@@ -249,6 +254,7 @@ typedef struct {
     // writes, one bit per LHAT_OPERATOR_MEMBERS entry.
     OperatorCarrier *operator_carriers;
     size_t operator_carrier_count;
+    size_t operator_carrier_capacity;
     uint16_t unit_operators;  // the union of the bits below, to test in one go
 
     // 8.7: inside a subroutine body nothing runs where it is written, so the

@@ -836,6 +836,76 @@ static void test_hosting(void)
     // 05 の 8.2: a host may bind a name so that a program writes it with no
     // qualification. 8.1 is unchanged -- the language hands out nothing, and
     // a host that binds none leaves a program seeing nothing.
+    // 03 の 3.4改3 with 05 の 8.7: what an operator demands of an
+    // unannotated parameter is the union of the types that carry it, and a
+    // registered type carries one as readily as a def^ written here. Before
+    // this the registry was not looked at, so '+' fell to number^ alone
+    // however many host types carried it.
+    LHAT_TEST("a registered operator is a candidate for an unwritten parameter");
+    {
+        static const File uses[] = {
+            {"main.lh",
+             "import^ test.c\n"
+             "let^ add = f^ x, y { return^ x + y }\n"},
+        };
+        program_with(&program, &disk, uses, 1);
+        const LhatHostValueTag *tag = lhat_register_hostvalue_type(
+            &program, "test.c", "C", sizeof(Counter));
+        LHAT_CHECK(tag != NULL, "the type registration took");
+        LHAT_CHECK(lhat_register_hostvalue_member(
+                       &program, "test.c", "C", "+",
+                       "f^self^, number^ -> number^;", host_counter_minus,
+                       (void *)tag),
+                   "the operator registered");
+        const LhatUnit *root = lhat_program_check(&program, "main.lh");
+        LHAT_CHECK(root != NULL && has_check_error(
+                                       root, LHAT_CHECK_ERR_OPERATOR_UNSETTLED),
+                   "number^ and test.c.C both carry '+', so nothing picks");
+    }
+    lhat_program_dispose(&program);
+
+    // 3.4改3's first way out: name one of the candidates. The other side
+    // follows from the arm that one picks.
+    LHAT_TEST("and writing one of them settles it");
+    {
+        static const File written[] = {
+            {"main.lh",
+             "import^ test.c\n"
+             "let^ add = f^ x:number^, y { return^ x + y }\n"},
+        };
+        program_with(&program, &disk, written, 1);
+        const LhatHostValueTag *tag = lhat_register_hostvalue_type(
+            &program, "test.c", "C", sizeof(Counter));
+        lhat_register_hostvalue_member(&program, "test.c", "C", "+",
+                                       "f^self^, number^ -> number^;",
+                                       host_counter_minus, (void *)tag);
+        const LhatUnit *root = lhat_program_check(&program, "main.lh");
+        LHAT_CHECK(root != NULL && !lhat_program_has_errors(&program),
+                   "the written side decides");
+    }
+    lhat_program_dispose(&program);
+
+    // 05 の 8.1: what a unit did not import it cannot see, so a registration
+    // it never named must not make its arithmetic ambiguous. This is the
+    // guard on the whole change -- without it every unit in a program would
+    // pay for a type one other unit imports.
+    LHAT_TEST("but a registration this unit did not import is no candidate");
+    {
+        static const File apart[] = {
+            {"main.lh", "let^ add = f^ x, y { return^ x + y }\n"},
+        };
+        program_with(&program, &disk, apart, 1);
+        const LhatHostValueTag *tag = lhat_register_hostvalue_type(
+            &program, "test.c", "C", sizeof(Counter));
+        lhat_register_hostvalue_member(&program, "test.c", "C", "+",
+                                       "f^self^, number^ -> number^;",
+                                       host_counter_minus, (void *)tag);
+        const LhatUnit *root = lhat_program_check(&program, "main.lh");
+        LHAT_CHECK(root != NULL && !lhat_program_has_errors(&program),
+                   "the built-in answers alone, as it always did");
+    }
+    lhat_program_dispose(&program);
+
     // 05 の 8.7: a namespace and something under it are one registry, so
     // importing both into one scope is importing one tree twice -- the
     // parent's own table holds the child. Either order (a LOVE2D binding's

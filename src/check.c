@@ -1485,32 +1485,104 @@ static uint16_t operators_written(Checker *c, const LhatNode *definition)
     return written;
 }
 
+// 05 の 8.7: the operators one registered type carries. A host value keeps
+// them in the same member list a table keeps 11.8's (8.9), and a hostdata
+// type is a nominal table, so both are read the same way.
+static uint16_t operators_registered(Checker *c, const LhatType *type)
+{
+    (void)c;
+    if (type == NULL ||
+        (type->kind != LHAT_TYPE_HOSTVALUE &&
+         !(type->kind == LHAT_TYPE_TABLE && type->v.table.nominal))) {
+        return 0;
+    }
+    uint16_t written = 0;
+    for (const LhatTypeMember *m = type->v.table.members; m != NULL;
+         m = m->next) {
+        written |= chk_operator_bit(m->name, m->name_length);
+    }
+    return written;
+}
+
+// One carrier, however it is to be found again later.
+static void keep_carrier(Checker *c, const char *name, size_t length,
+                         const LhatType *type, uint16_t operators)
+{
+    LHAT_GROW(c->operator_carriers, c->operator_carrier_count,
+              c->operator_carrier_capacity, 8, return);
+    OperatorCarrier *at = &c->operator_carriers[c->operator_carrier_count++];
+    at->name = name;
+    at->name_length = length;
+    at->type = type;
+    at->operators = operators;
+    c->unit_operators |= operators;
+}
+
+// 05 の 8.7: what an import^ brought within reach. The registry is one
+// nested table, so a module holds its types beside the modules under it --
+// both are walked, since 'import^ std.math' puts std.math.vector3.Vector3
+// in reach as surely as 'import^ std.math.vector3' does.
+//
+// The depth bound is the same posture 03 の 4.2 takes elsewhere: a registry
+// deeper than this says nothing useful about an operator, and the walk has
+// to finish.
+#define CARRIER_MAX_DEPTH 8
+
+static void collect_registered_carriers(Checker *c, const LhatType *module,
+                                        unsigned depth)
+{
+    if (module == NULL || module->kind != LHAT_TYPE_TABLE ||
+        depth > CARRIER_MAX_DEPTH) {
+        return;
+    }
+    for (const LhatTypeMember *m = module->v.table.members; m != NULL;
+         m = m->next) {
+        uint16_t written = operators_registered(c, m->type);
+        if (written != 0) {
+            keep_carrier(c, m->name, m->name_length, m->type, written);
+        }
+        // A segment of the registry, rather than a type registered in it.
+        if (m->type != NULL && m->type->kind == LHAT_TYPE_TABLE &&
+            m->type->v.table.is_module) {
+            collect_registered_carriers(c, m->type, depth + 1);
+        }
+    }
+}
+
+// The path an import^ statement names, in either of its two spellings --
+// 'import^ a.b' on its own, and 'let^ m = import^ a.b'.
+static const LhatNode *imported_path(const LhatNode *statement)
+{
+    if (statement->kind == LHAT_NODE_IMPORT_STMT) {
+        return statement->v.jump.value;
+    }
+    if (statement->kind == LHAT_NODE_DEFINE &&
+        statement->v.binding.values != NULL &&
+        statement->v.binding.values->kind == LHAT_NODE_IMPORT) {
+        return statement->v.binding.values->v.jump.value;
+    }
+    return NULL;
+}
+
 // 03 の 3.4改: read before anything is walked. 8.7 makes a name visible over
 // the whole unit, so a body using an operator has to see the same candidates
 // wherever the def^ carrying one stands relative to it -- which is why this
 // is a pass of its own rather than something the walk accumulates.
 //
-// Only the top level, and only this unit. A def^ made inside a body is not a
-// name any other body here can write, and 05 の 5.3's require^ reaches
-// another unit -- a signature written here should be readable from here.
+// Only the top level, and only what this unit can name. A def^ made inside a
+// body is not a name any other body here can write, and 05 の 5.3's require^
+// reaches another unit -- a signature written here should be readable from
+// here. 8.7's registry is on the other side of that line: what an import^
+// brought in is written in this very unit, and the registry does not move
+// with the order units are checked in (05 の 8.7), so it counts.
 void chk_collect_operator_carriers(Checker *c, const LhatNode *statements)
 {
-    size_t capacity = 0;
     for (const LhatNode *s = statements; s != NULL; s = s->next) {
-        if (s->kind == LHAT_NODE_DEFINE) {
-            capacity++;
+        const LhatNode *path = imported_path(s);
+        if (path != NULL) {
+            collect_registered_carriers(c, chk_hosted_module(c, path), 0);
+            continue;
         }
-    }
-    if (capacity == 0) {
-        return;
-    }
-    c->operator_carriers =
-        (OperatorCarrier *)lhat_alloc(capacity * sizeof *c->operator_carriers);
-    if (c->operator_carriers == NULL) {
-        return;  // 03 の 4.2: no room to know, so the built-in answers alone
-    }
-
-    for (const LhatNode *s = statements; s != NULL; s = s->next) {
         if (s->kind != LHAT_NODE_DEFINE || s->v.binding.values == NULL) {
             continue;
         }
@@ -1526,12 +1598,7 @@ void chk_collect_operator_carriers(Checker *c, const LhatNode *statements)
                            &length)) {
             continue;  // 13.10's several names take a run apart, not a def^
         }
-        OperatorCarrier *at =
-            &c->operator_carriers[c->operator_carrier_count++];
-        at->name = name;
-        at->name_length = length;
-        at->operators = written;
-        c->unit_operators |= written;
+        keep_carrier(c, name, length, NULL, written);
     }
 }
 
@@ -1540,6 +1607,7 @@ void chk_dispose_operator_carriers(Checker *c)
     lhat_free(c->operator_carriers);
     c->operator_carriers = NULL;
     c->operator_carrier_count = 0;
+    c->operator_carrier_capacity = 0;
     c->unit_operators = 0;
 }
 

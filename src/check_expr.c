@@ -399,6 +399,17 @@ static Candidates operator_candidates(Checker *c, const char *name,
         if ((carrier->operators & bit) == 0) {
             continue;
         }
+        // 05 の 8.7: a registered type is the program's, built once and never
+        // remade, so it is the carrier itself -- no name to look up, no
+        // round to ask for, and no instance half to reach through
+        // (chk_instance_of answers NULL for both a host value and a
+        // nominal table, which is what a registered type is).
+        if (carrier->type != NULL) {
+            fold_member(c, &found, known,
+                        chk_operator_member(c, carrier->type, name, length),
+                        (LhatType *)carrier->type);
+            continue;
+        }
         Binding *b = chk_scope_find(c->scope, carrier->name,
                                     carrier->name_length, NULL);
         if (b == NULL) {
