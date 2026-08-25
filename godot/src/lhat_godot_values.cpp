@@ -667,17 +667,8 @@ Projection proj_inverse(const Projection &p) { return p.inverse(); }
 // Registration
 
 // The signatures are the same shape for every type and differ only in the
-// name, so they are built rather than written out sixteen times.
-// A registered member borrows the name it was given rather than copying it
-// (lhat_type_add_member), so a name built here has to outlive the call that
-// built it. The module is where it goes: it lives as long as the program.
-// The signatures are kept beside them for the same reason and no other -- one
-// rule is easier to keep than two.
-const char *kept(Godot *module, const String &text)
-{
-    module->texts.push_back(text.utf8());
-    return module->texts.back()->get().get_data();
-}
+// name, so they are built rather than written out sixteen times. Where a
+// built one is kept is lhat_godot_module.h's kept().
 
 struct Signatures {
     const char *paired;

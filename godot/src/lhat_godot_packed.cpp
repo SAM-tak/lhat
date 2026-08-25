@@ -32,15 +32,6 @@ const Godot *module_of(void *context)
     return (const Godot *)context;
 }
 
-// A registered name is borrowed rather than copied (lhat_type_add_member),
-// and these are built -- so the module keeps them, as it does the value
-// types' (lhat_godot_values.cpp says the same thing at more length).
-const char *kept(Godot *module, const String &text)
-{
-    module->texts.push_back(text.utf8());
-    return module->texts.back()->get().get_data();
-}
-
 // ---------------------------------------------------------------------------
 // What each of the ten is called, and what its elements are
 

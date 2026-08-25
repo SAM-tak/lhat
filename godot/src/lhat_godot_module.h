@@ -17,6 +17,7 @@
 #define LHAT_GODOT_MODULE_H
 
 #include <godot_cpp/classes/object.hpp>
+#include <godot_cpp/templates/hash_map.hpp>
 #include <godot_cpp/templates/list.hpp>
 #include <godot_cpp/variant/char_string.hpp>
 #include <godot_cpp/variant/string_name.hpp>
@@ -42,8 +43,14 @@ struct Godot {
     // A registered name is borrowed rather than copied
     // (lhat_type_add_member keeps the pointer it is given), and the names
     // and signatures of the value types are built rather than written out.
-    // So they are kept here, where they live as long as the program does.
+    // So they are kept here -- and since this module is the process's, they
+    // outlive every program that borrows them.
+    //
+    // The index is what makes a second registration cost nothing: the same
+    // spelling hands back the same pointer, so registering into a fresh
+    // program builds no string it built before.
     List<CharString> texts;
+    HashMap<String, const char *> index;
 
     // 05 の 8.9: one tag per value type, kept under the Variant kind it
     // stands for -- so a host that has read a Variant can find the tag from
@@ -53,7 +60,26 @@ struct Godot {
 
 // Registers the module into `program`, before any checking (05 の 8.7).
 // NULL when there was no memory or a name was taken.
+//
+// One module for the process. 05 の 8.7 makes a registration a declaration
+// and interns what it declares, so a second program comes away with the very
+// tags the first did -- there is nothing per-program in here to rebuild.
+// What each program does keep is the checker's side of the registration,
+// which is why the calls are made again for each; the strings they borrow
+// are the ones built the first time.
 const Godot *register_godot(LhatProgram *program);
+
+// A registered name is borrowed rather than copied (lhat_type_add_member
+// keeps the pointer it is given), and the value types' names and signatures
+// are built rather than written out. This is where a built one goes: the
+// module outlives every program, and the same spelling asked for twice hands
+// back the one pointer, so registering into a second program builds nothing.
+const char *kept(Godot *module, const String &text);
+
+// Gives the module back. Only when no LhatProgram still borrows its strings,
+// which means after every program is free -- the same window
+// lhat_registry_dispose asks for, and the call belongs just before it.
+void dispose_godot();
 
 // A value of godot.Object standing for `object`, or the one standing for
 // nothing when it is NULL. False only when the machine ran out of memory.

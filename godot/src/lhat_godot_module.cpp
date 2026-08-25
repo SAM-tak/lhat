@@ -276,15 +276,43 @@ LhatValue godot_is_editor_hint(LhatMachine *machine, void *context,
     return lhat_bool(Engine::get_singleton()->is_editor_hint());
 }
 
+
+// One module for the process, made on the first registration and given back
+// by dispose_godot. Nothing in it is a program's: 05 の 8.7 interns what a
+// registration declares, so the tags are the same whichever program asked,
+// and the strings below are borrowed by every program that ever registers.
+Godot *shared = nullptr;
+
 }  // namespace
+
+const char *kept(Godot *module, const String &text)
+{
+    if (const char *const *found = module->index.getptr(text)) {
+        return *found;
+    }
+    module->texts.push_back(text.utf8());
+    const char *held = module->texts.back()->get().get_data();
+    module->index.insert(text, held);
+    return held;
+}
+
+void dispose_godot()
+{
+    if (shared != nullptr) {
+        memdelete(shared);
+        shared = nullptr;
+    }
+}
 
 const Godot *register_godot(LhatProgram *program)
 {
-    Godot *module = memnew(Godot);
+    if (shared == nullptr) {
+        shared = memnew(Godot);
+    }
+    Godot *module = shared;
     module->object_tag =
         lhat_register_hostdata_type(program, "godot", "Object");
     if (module->object_tag == nullptr) {
-        memdelete(module);
         return nullptr;
     }
 
@@ -388,7 +416,6 @@ const Godot *register_godot(LhatProgram *program)
             (annotation.needs != nullptr &&
              !lhat_register_annotation_requisite(program, annotation.name,
                                                  annotation.needs))) {
-            memdelete(module);
             return nullptr;
         }
     }
@@ -396,7 +423,6 @@ const Godot *register_godot(LhatProgram *program)
     for (const auto &member : members) {
         if (!lhat_register_member(program, "godot", "Object", member.name,
                                   member.signature, member.call, module)) {
-            memdelete(module);
             return nullptr;
         }
     }
@@ -408,14 +434,12 @@ const Godot *register_godot(LhatProgram *program)
     // not about any object.
     if (!lhat_register_func(program, "godot", "isEditorHint", "f^ -> bool^;",
                             godot_is_editor_hint, module)) {
-        memdelete(module);
         return nullptr;
     }
 
     // 05 の 8.9: the mathematical types, which are values rather than objects
     // and so nothing the one hostdata type above could stand for.
     if (!register_values(program, module)) {
-        memdelete(module);
         return nullptr;
     }
 
@@ -423,7 +447,6 @@ const Godot *register_godot(LhatProgram *program)
     // of them that are copied on write.
     if (!register_handles(program, module) ||
         !register_packed(program, module)) {
-        memdelete(module);
         return nullptr;
     }
     return module;
