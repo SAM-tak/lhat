@@ -458,9 +458,14 @@ static LhatValue thread_dispose(LhatMachine *machine, void *context,
 {
     (void)machine;
     (void)count;
-    const ThreadModule *module = (const ThreadModule *)context;
+    // 05 の 8.8: registered with the tag itself as its context rather than
+    // with the module. The tag belongs to the process while this module
+    // belongs to a program, and a type has one way of handing a value back
+    // however many programs declared it -- so what a dispose^ is handed has
+    // to be something they all agree on. It is also all this needs.
+    const LhatHostDataTag *tag = (const LhatHostDataTag *)context;
     ThreadHandle *handle =
-        (ThreadHandle *)lhat_hostdata_pointer(arguments[0], module->handle_tag);
+        (ThreadHandle *)lhat_hostdata_pointer(arguments[0], tag);
     if (handle == NULL) {
         return lhat_nil();
     }
@@ -557,5 +562,5 @@ bool lhatstdlib_thread_register(LhatProgram *program)
                                 "f^self^ -> bool^;", thread_done, module) &&
            lhat_register_member(program, "std.thread", "ThreadHandle",
                                 "dispose", "p^self^;", thread_dispose,
-                                module);
+                                (void *)module->handle_tag);
 }

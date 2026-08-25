@@ -73,6 +73,7 @@ add_library(lhat
     src/check_stmt.c
     src/semantic.c
     src/program.c
+    src/registry.c
     src/code.c
     src/compile.c
     src/rttype.c

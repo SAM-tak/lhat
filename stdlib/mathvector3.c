@@ -255,16 +255,13 @@ static LhatValue vec3_tostring(LhatMachine *machine, void *context,
 
 bool lhatstdlib_mathvector3_register(LhatProgram *program)
 {
-    MathModule *module = (MathModule *)lhat_calloc(1, sizeof *module);
-    if (module == NULL) {
-        return false;
-    }
-    // 05 の 8.7: the program gives this back when it goes -- a register
-    // that answers bool hands its caller no handle to free it with.
-    if (!lhat_program_on_dispose(program, lhat_free, module)) {
-        lhat_free(module);
-        return false;
-    }
+    // 05 の 8.7: every field of this is an identity, and an identity
+    // belongs to the process rather than to a program -- one declaration,
+    // one tag and one error kind, however many programs declare them. So
+    // one of these serves them all, and a second registration writes the
+    // same answers back into it.
+    static MathModule shared;
+    MathModule *module = &shared;
 
     module->vec3 = lhat_register_hostvalue_type(program, "std.math.vector3",
                                                  "Vector3", sizeof(Vec3));

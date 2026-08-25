@@ -647,16 +647,13 @@ static LhatValue module_gsub(LhatMachine *machine, void *context,
 
 bool lhatstdlib_regex_register(LhatProgram *program)
 {
-    RegexModule *module = (RegexModule *)lhat_calloc(1, sizeof *module);
-    if (module == NULL) {
-        return false;
-    }
-    // 05 の 8.7: the program gives this back when it goes -- a register
-    // that answers bool hands its caller no handle to free it with.
-    if (!lhat_program_on_dispose(program, lhat_free, module)) {
-        lhat_free(module);
-        return false;
-    }
+    // 05 の 8.7: every field of this is an identity, and an identity
+    // belongs to the process rather than to a program -- one declaration,
+    // one tag and one error kind, however many programs declare them. So
+    // one of these serves them all, and a second registration writes the
+    // same answers back into it.
+    static RegexModule shared;
+    RegexModule *module = &shared;
     static const char *const variants[] = { "BadPattern", "Exhausted" };
     if (!lhat_register_error_kind(program, "std.regex", "Error", variants, 2,
                                   NULL, NULL)) {

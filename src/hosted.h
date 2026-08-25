@@ -80,6 +80,6 @@ typedef struct LhatHostValueTypeEntry {
 struct LhatMachine;
 bool lhat_machine_bind_hostvalues(struct LhatMachine *machine,
                                   const LhatHostValueTypeEntry *entries,
-                                  size_t count);
+                                  size_t count, size_t slots);
 
 #endif  // LHAT_HOSTED_H

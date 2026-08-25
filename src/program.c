@@ -1,6 +1,7 @@
 // L^ (lhat) -- a program: one unit and everything it requires.
 
 #include "program_internal.h"
+#include "registry.h"
 
 #include <stdio.h>  // snprintf: lhat_program_dump_host_api's numbers
 #include <stdlib.h>
@@ -1277,15 +1278,16 @@ const LhatHostDataTag *lhat_register_hostdata_type(LhatProgram *program,
         return NULL;
     }
 
-    // 8.8: the tag is identity and nothing else, so it is made here where
-    // there is exactly one per registration.
+    // 8.8: the tag is identity and nothing else, so there is exactly one per
+    // DECLARATION -- and the declaration is this C call, however many
+    // programs make it. The registry (registry.h) is where the one lives; a
+    // second program registering std.io.File comes away with the same tag,
+    // which is what lets the two agree at run time about what a value is.
     LhatHostEntry *entry = &program->host_entries[program->host_entry_count - 1];
-    entry->tag = (LhatHostDataTag *)lhat_calloc(1, sizeof *entry->tag);
+    entry->tag = (LhatHostDataTag *)lhat_registry_hostdata(module, name);
     if (entry->tag == NULL) {
         return NULL;
     }
-    entry->tag->module = entry->module;
-    entry->tag->name = entry->name;
     // And the checker's type says which declaration it is, so what writes a
     // type out can name it rather than spelling the shape -- 8.8 puts
     // identity in the declaration, and a shape written in its place is a
@@ -1373,19 +1375,11 @@ bool lhat_register_error_kind(LhatProgram *program, const char *module,
         }
     }
 
-    // 04 の 2.3 と同じ形。途中で確保に失敗しても、既にヒープへ繋いだ分は
-    // chunk の定数と同じ扱いで lhat_program_dispose がまとめて解放する --
-    // 明示的に取り消さない。
-    LhatString *group_name =
-        lhat_string_new(&program->host_heap, name, strlen(name));
-    LhatErrorKind *group =
-        group_name != NULL
-            ? lhat_error_kind_new(&program->host_heap, NULL, group_name)
-            : NULL;
-    if (group == NULL) {
-        return false;
-    }
-
+    // 04 の 2.4: a kind is the declaration it came from, and the declaration
+    // is this C call -- so the kinds are the registry's (registry.h) and a
+    // second program declaring the same ones comes away with the very same
+    // objects. A declaration of the same name with a different list of
+    // variants is refused there: two lists are two declarations.
     LhatErrorKind **variants = NULL;
     char **variant_copies = NULL;
     if (variant_count > 0) {
@@ -1398,31 +1392,19 @@ bool lhat_register_error_kind(LhatProgram *program, const char *module,
             return false;
         }
     }
+    const LhatErrorKind *group = NULL;
+    if (!lhat_registry_error_kind(module, name, variant_names, variant_count,
+                                  &group,
+                                  (const LhatErrorKind **)variants)) {
+        free_variant_arrays(variant_copies, variants, 0);
+        return false;
+    }
     for (size_t i = 0; i < variant_count; i++) {
-        size_t name_length = strlen(name);
-        size_t variant_length = strlen(variant_names[i]);
-        char qualified[LHAT_QUALIFIED_NAME_BUFFER];
-        size_t total = name_length + 1 + variant_length;
-        LhatString *text = NULL;
-        if (total < sizeof qualified) {
-            // "IOError.NotFound" -- declare_error (vm.c) が typeof^ 用に
-            // 作るのと同じ綴り。module は含まない。
-            memcpy(qualified, name, name_length);
-            qualified[name_length] = '.';
-            memcpy(qualified + name_length + 1, variant_names[i],
-                  variant_length);
-            text = lhat_string_new(&program->host_heap, qualified, total);
-        }
-        LhatErrorKind *kind =
-            text != NULL
-                ? lhat_error_kind_new(&program->host_heap, group, text)
-                : NULL;
-        variant_copies[i] = kind != NULL ? duplicate(variant_names[i]) : NULL;
-        if (kind == NULL || variant_copies[i] == NULL) {
-            free_variant_arrays(variant_copies, variants, i + 1);
+        variant_copies[i] = duplicate(variant_names[i]);
+        if (variant_copies[i] == NULL) {
+            free_variant_arrays(variant_copies, variants, i);
             return false;
         }
-        variants[i] = kind;
     }
 
     if (program->host_error_entry_count == program->host_error_entry_capacity) {
@@ -1634,15 +1616,18 @@ bool lhat_register_member(LhatProgram *program, const char *module,
     // dispose^, so registering one is what makes the value the host's to
     // take back. The tag carries it, since that is what a value still has
     // when a collection reaches it.
+    //
+    // The tag is the process's (registry.h), so a second program declaring
+    // the same dispose^ is that one declaration made twice and settles on
+    // the same answer. A different one would be two ways of handing back
+    // one type, which is refused.
     if (strcmp(name, "dispose") == 0) {
         for (size_t i = 0; i < program->host_entry_count; i++) {
             LhatHostEntry *entry = &program->host_entries[i];
             if (entry->tag != NULL && entry->type == NULL &&
                 strcmp(entry->module, module) == 0 &&
                 strcmp(entry->name, type) == 0) {
-                entry->tag->release = call;
-                entry->tag->release_context = context;
-                break;
+                return lhat_registry_set_release(entry->tag, call, context);
             }
         }
     }
@@ -1869,24 +1854,22 @@ const LhatHostValueTag *lhat_register_hostvalue_type(LhatProgram *program,
         program->hostvalue_type_entry_capacity = grown_count;
     }
 
-    // 8.9: the tag is identity, made here where there is exactly one per
-    // registration. Unlike a hostdata tag it is owned by
-    // hostvalue_type_entries rather than by a host entry, since the entry's
-    // tag field is the hostdata-shaped one.
-    LhatHostValueTag *tag = (LhatHostValueTag *)lhat_calloc(1, sizeof *tag);
+    // 8.9: the tag is identity, and there is one per DECLARATION rather than
+    // one per program -- the registry (registry.h) keeps it, and a second
+    // program declaring the same type comes away with the same one. A
+    // declaration of the same name at a different size is refused there:
+    // the width is what every frame holding one was laid out against.
+    LhatHostValueTag *tag =
+        (LhatHostValueTag *)lhat_registry_hostvalue(module, name, size);
     if (tag == NULL) {
         return NULL;
     }
-    tag->size = size;
-    tag->width = 1 + (size + 7) / 8;  // one head slot, then the bytes
-    tag->index = program->hostvalue_type_entry_count;
 
     LhatType *made = lhat_type_hostvalue(&program->types, tag);
     if (made == NULL ||
         lhat_type_add_member(&program->types, table, name, strlen(name),
                              made) == NULL ||
         !keep_entry(program, module, NULL, name, NULL, NULL, NULL, NULL)) {
-        lhat_free(tag);
         return NULL;
     }
     // keep_entry has install make an empty table under the type's name in
@@ -1894,8 +1877,6 @@ const LhatHostValueTag *lhat_register_hostvalue_type(LhatProgram *program,
     // registered members land, and what the machine reads back as the
     // type's members table.
     LhatHostEntry *entry = &program->host_entries[program->host_entry_count - 1];
-    tag->module = entry->module;
-    tag->name = entry->name;
 
     LhatHostValueTypeEntry *type_entry =
         &program->hostvalue_type_entries[program->hostvalue_type_entry_count++];
@@ -1957,26 +1938,21 @@ bool lhat_register_hostvalue_field(LhatProgram *program, const char *module,
         return false;
     }
 
-    char *copy = duplicate(field);
-    LhatHostValueField *grown = (LhatHostValueField *)lhat_realloc(
-        tag->fields, (tag->field_count + 1) * sizeof *grown);
-    if (grown != NULL) {
-        tag->fields = grown;
-    }
-    LhatType *number = copy != NULL && grown != NULL
-                           ? lhat_type_simple(&program->types, LHAT_TYPE_NUMBER)
-                           : NULL;
-    if (number == NULL ||
-        lhat_type_add_member(&program->types, found->type, copy, strlen(copy),
-                             number) == NULL) {
-        lhat_free(copy);
+    // The field belongs to the tag, and the tag to the process (registry.h)
+    // -- so a second program declaring the same field settles on the one
+    // that is there, and one that declares it at a different offset or of a
+    // different kind is refused.
+    if (!lhat_registry_hostvalue_field(tag, field, offset, kind)) {
         return false;
     }
-
-    LhatHostValueField *made = &tag->fields[tag->field_count++];
-    made->name = copy;
-    made->offset = offset;
-    made->kind = kind;
+    // The checker's side is this program's, and is added whether the field
+    // was already declared or not.
+    LhatType *number = lhat_type_simple(&program->types, LHAT_TYPE_NUMBER);
+    if (number == NULL ||
+        lhat_type_add_member(&program->types, found->type, field,
+                             strlen(field), number) == NULL) {
+        return false;
+    }
     return true;
 }
 
@@ -2256,10 +2232,16 @@ bool lhat_program_install(const LhatProgram *program, LhatMachine *machine)
     // index. The tables themselves are the ones the entry loop above put
     // under L^.modules -- reachable from the environment, so the collector
     // needs nothing new.
+    //
+    // 5.7 with registry.h: the index is the process's, so the array is taken
+    // to the width every declared type reaches rather than to how many this
+    // program declared -- otherwise a program declaring the second of two
+    // types would index past its own array.
     if (program->hostvalue_type_entry_count > 0 &&
         !lhat_machine_bind_hostvalues(machine,
                                       program->hostvalue_type_entries,
-                                      program->hostvalue_type_entry_count)) {
+                                      program->hostvalue_type_entry_count,
+                                      lhat_registry_hostvalue_count())) {
         return false;
     }
     return true;
@@ -2524,7 +2506,8 @@ void lhat_program_dispose(LhatProgram *program)
         lhat_free(program->host_entries[i].parameter_types);
         lhat_free(program->host_entries[i].name);
         lhat_free(program->host_entries[i].signature_text);
-        lhat_free(program->host_entries[i].tag);
+        // 8.8: the tag is not the program's -- one declaration, one tag,
+        // for the process (registry.h).
     }
     lhat_free(program->host_entries);
     program->host_entries = NULL;
@@ -2561,17 +2544,9 @@ void lhat_program_dispose(LhatProgram *program)
     program->host_type_entry_count = 0;
     program->host_type_entry_capacity = 0;
 
-    // 05 の 8.9: unlike the two registries above, this one owns its tags and
-    // their field arrays (the strings are host_entries', freed above).
-    for (size_t i = 0; i < program->hostvalue_type_entry_count; i++) {
-        LhatHostValueTag *tag =
-            (LhatHostValueTag *)program->hostvalue_type_entries[i].tag;
-        for (size_t f = 0; f < tag->field_count; f++) {
-            lhat_free((void *)tag->fields[f].name);
-        }
-        lhat_free(tag->fields);
-        lhat_free(tag);
-    }
+    // 05 の 8.9: the tags and their fields belong to the process, not to
+    // this program -- one declaration, one tag (registry.h). Only the array
+    // of entries is the program's.
     lhat_free(program->hostvalue_type_entries);
     program->hostvalue_type_entries = NULL;
     program->hostvalue_type_entry_count = 0;

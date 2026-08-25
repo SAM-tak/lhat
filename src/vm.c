@@ -3025,13 +3025,17 @@ bool lhat_make_tuple(LhatMachine *machine, const LhatValue *values,
 
 bool lhat_machine_bind_hostvalues(LhatMachine *machine,
                                   const LhatHostValueTypeEntry *entries,
-                                  size_t count)
+                                  size_t count, size_t slots)
 {
-    if (machine == NULL || entries == NULL || count == 0) {
+    if (machine == NULL || entries == NULL || count == 0 || slots == 0) {
         return false;
     }
-    LhatTable **tables =
-        (LhatTable **)lhat_calloc(count, sizeof *tables);
+    // 05 の 8.9: a tag's index is the process's and not this program's
+    // (registry.h), so a program declaring only some of the host value types
+    // leaves gaps. The array is taken to the width the indices reach rather
+    // than to how many this program declared, and a gap stays NULL -- no
+    // value of a type this program never declared can reach a machine of it.
+    LhatTable **tables = (LhatTable **)lhat_calloc(slots, sizeof *tables);
     if (tables == NULL) {
         return false;
     }
@@ -3053,7 +3057,7 @@ bool lhat_machine_bind_hostvalues(LhatMachine *machine,
         LhatTable *members =
             module != NULL ? reach_table(machine, module, entries[i].tag->name)
                            : NULL;
-        if (members == NULL || entries[i].tag->index >= count) {
+        if (members == NULL || entries[i].tag->index >= slots) {
             lhat_free(tables);
             return false;
         }
@@ -3061,7 +3065,7 @@ bool lhat_machine_bind_hostvalues(LhatMachine *machine,
     }
     lhat_free(machine->hostvalue_members);  // a second install replaces
     machine->hostvalue_members = tables;
-    machine->hostvalue_member_count = count;
+    machine->hostvalue_member_count = slots;
     return true;
 }
 

@@ -244,34 +244,47 @@ int main(void)
     LHAT_TEST("the counting allocator takes, before anything else has");
     LHAT_CHECK(lhat_set_allocator(&counting), "registered");
 
-    LHAT_TEST("a program and a machine give everything back");
+    // 05 の 8.7: what the first round leaves behind is what the process
+    // keeps, not what a round leaks -- the identities a declaration makes
+    // belong to the process (registry.h) and are made once however many
+    // programs declare them. So the first round sets the mark, and what
+    // matters is that every round after it comes back to that same mark.
+    // That is the difference between a one-time cost and a cost per reload.
+    LHAT_TEST("a program and a machine give back everything but the declarations");
     one_round();
     LHAT_CHECK(taken_blocks > 100, "the round really allocated: %zu",
                taken_blocks);
-    LHAT_CHECK_EQ_INT(live_blocks, 0);
-    LHAT_CHECK_EQ_INT(live_bytes, 0);
+    size_t declared_blocks = live_blocks;
+    size_t declared_bytes = live_bytes;
+    LHAT_CHECK(declared_blocks > 0,
+               "the declarations are what is left: %zu blocks, %zu bytes",
+               declared_blocks, declared_bytes);
 
-    // A host reloading a project builds the whole thing again. Whatever one
-    // round leaves behind is what it leaves behind every time, so the second
-    // round has to end where the first did.
-    LHAT_TEST("and so does the next one, and the one after");
+    LHAT_TEST("and every round after it comes back to the same mark");
     one_round();
+    LHAT_CHECK_EQ_INT(live_blocks, declared_blocks);
+    LHAT_CHECK_EQ_INT(live_bytes, declared_bytes);
     one_round();
+    LHAT_CHECK_EQ_INT(live_blocks, declared_blocks);
+    LHAT_CHECK_EQ_INT(live_bytes, declared_bytes);
+
+    LHAT_TEST("and the declarations themselves go when the process is done");
+    lhat_registry_dispose();
     LHAT_CHECK_EQ_INT(live_blocks, 0);
     LHAT_CHECK_EQ_INT(live_bytes, 0);
 
 #if LHAT_LEAK_WITH_STDLIB
-    // 05 の 8.7: a registration may keep something of its own for as long as
-    // the program does -- every one of these modules holds the error kinds
-    // and tags its functions read, which are the program's and cannot be
-    // shared between two. A host registering the library on every reload
-    // pays for that every time, and only the program can give it back:
-    // lhatstdlib_*_register hands the caller no handle to free.
-    LHAT_TEST("and a program that registered the sample library gives that back too");
+    // The sample library, the same way round: the modules that hold only
+    // identities are static now, and what a round of registering costs the
+    // second time is nothing.
+    LHAT_TEST("registering the sample library costs the same twice");
     {
-        LhatProgram *program = lhat_program_new(true, load, NULL);
-        LHAT_CHECK(program != NULL, "the program was made");
-        if (program != NULL) {
+        for (int round = 0; round < 3; round++) {
+            LhatProgram *program = lhat_program_new(true, load, NULL);
+            LHAT_CHECK(program != NULL, "the program was made");
+            if (program == NULL) {
+                break;
+            }
             LHAT_CHECK(lhatstdlib_io_register(program) &&
                            lhatstdlib_random_register(program) &&
                            lhatstdlib_regex_register(program) &&
@@ -281,7 +294,15 @@ int main(void)
                            lhatstdlib_debug_register(program),
                        "the library registered");
             lhat_program_free(program);
+            if (round == 0) {
+                declared_blocks = live_blocks;
+                declared_bytes = live_bytes;
+            } else {
+                LHAT_CHECK_EQ_INT(live_blocks, declared_blocks);
+                LHAT_CHECK_EQ_INT(live_bytes, declared_bytes);
+            }
         }
+        lhat_registry_dispose();
         LHAT_CHECK_EQ_INT(live_blocks, 0);
         LHAT_CHECK_EQ_INT(live_bytes, 0);
     }

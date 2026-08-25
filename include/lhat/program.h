@@ -669,6 +669,37 @@ typedef void (*LhatProgramDisposeFn)(void *context);
 bool lhat_program_on_dispose(LhatProgram *program, LhatProgramDisposeFn call,
                              void *context);
 
+// ---------------------------------------------------------------------------
+// 05 の 8.7: what a declaration is, is the C call that makes it
+// ---------------------------------------------------------------------------
+//
+// 7.3 makes a registered type its own type by its declaration and not by its
+// members, and 04 の 2.4 says the same of an error kind. That declaration is
+// the register call itself -- so registering std.io.File into two programs
+// is one declaration made twice, and both come away with the SAME identity.
+// The run time compares tags by address, and a second tag would make one
+// host type into two that agree about everything except the one thing that
+// decides.
+//
+// So lhat_register_hostdata_type, lhat_register_hostvalue_type and
+// lhat_register_error_kind answer what a previous program already declared,
+// and a declaration that DISAGREES is refused: a host value type of another
+// size, an error kind with another list of variants, a dispose^ that is
+// another function. Everything else a registration makes -- the types the
+// checker reads, and the context a host function is handed -- stays the
+// program's, which is why std.load can keep the program in its own.
+//
+// The identities live for as long as the process, which is what makes them
+// cost nothing per reload. lhat_registry_dispose gives them back, and may be
+// called only when NO LhatProgram exists: what is here is what every
+// program's registrations point at. A host that runs to exit needs it only
+// to leave a clean heap for a leak check; one loaded and unloaded as a
+// plugin wants it on the way out.
+//
+// Not thread safe, and not meant to be: registration belongs before anything
+// runs, which is before std.thread has started a thread.
+void lhat_registry_dispose(void);
+
 bool lhat_program_install(const LhatProgram *program, LhatMachine *machine);
 
 // 03 の 4.3: the same for a prompt, which has no program of its own driving

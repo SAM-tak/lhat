@@ -156,16 +156,13 @@ bool lhatstdlib_random_register(LhatProgram *program)
         return false;
     }
 
-    RandomModule *module = (RandomModule *)lhat_calloc(1, sizeof *module);
-    if (module == NULL) {
-        return false;
-    }
-    // 05 の 8.7: the program gives this back when it goes -- a register
-    // that answers bool hands its caller no handle to free it with.
-    if (!lhat_program_on_dispose(program, lhat_free, module)) {
-        lhat_free(module);
-        return false;
-    }
+    // 05 の 8.7: every field of this is an identity, and an identity
+    // belongs to the process rather than to a program -- one declaration,
+    // one tag and one error kind, however many programs declare them. So
+    // one of these serves them all, and a second registration writes the
+    // same answers back into it.
+    static RandomModule shared;
+    RandomModule *module = &shared;
     module->out_of_memory = lhatstdlib_error_lookup(program, "OutOfMemory");
 
     module->tag = lhat_register_hostdata_type(program, "std.random", "Random");

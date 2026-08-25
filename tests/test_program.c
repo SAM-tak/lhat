@@ -1921,6 +1921,131 @@ static LhatRunResult run_main(LhatProgram *program)
 // nothing else. What the host registered has to come through untouched --
 // 7.3 makes the tag's address the identity, so a value made after a reload
 // has to be the same type as one made before it.
+
+// 05 の 8.7 with 7.3: what a declaration is, is the C call that makes it --
+// so making it twice, from two programs, comes away with one identity. The
+// run time compares tags by address, and a second tag would make one host
+// type into two that agree about everything except the one thing that
+// decides. This is the root of what a program per script ran into.
+static void test_declarations_are_the_process_s(void)
+{
+    LhatProgram a;
+    LhatProgram b;
+    Disk disk_a;
+    Disk disk_b;
+    static const File none[] = {{"main.lh", "return^ 1\n"}};
+
+    LHAT_TEST("two programs declaring one type come away with one tag");
+    {
+        program_with(&a, &disk_a, none, 1);
+        program_with(&b, &disk_b, none, 1);
+        const LhatHostDataTag *first =
+            lhat_register_hostdata_type(&a, "shared", "Thing");
+        const LhatHostDataTag *second =
+            lhat_register_hostdata_type(&b, "shared", "Thing");
+        LHAT_CHECK(first != NULL, "the first declaration made one");
+        LHAT_CHECK_EQ_PTR(second, first);
+
+        // 8.7 still refuses a second one inside ONE program: that is a name
+        // used twice, not a declaration made twice.
+        LHAT_CHECK_EQ_PTR(lhat_register_hostdata_type(&a, "shared", "Thing"),
+                          NULL);
+    }
+    lhat_program_dispose(&a);
+    lhat_program_dispose(&b);
+
+    LHAT_TEST("and one error declaration makes one set of kinds");
+    {
+        program_with(&a, &disk_a, none, 1);
+        program_with(&b, &disk_b, none, 1);
+        static const char *const variants[] = {"Torn", "Bent"};
+        const LhatErrorKind *group_a = NULL;
+        const LhatErrorKind *group_b = NULL;
+        const LhatErrorKind *kinds_a[2];
+        const LhatErrorKind *kinds_b[2];
+        LHAT_CHECK(lhat_register_error_kind(&a, "shared", "Broken", variants,
+                                            2, &group_a, kinds_a),
+                   "the first declaration");
+        LHAT_CHECK(lhat_register_error_kind(&b, "shared", "Broken", variants,
+                                            2, &group_b, kinds_b),
+                   "and the second is the same one made again");
+        LHAT_CHECK_EQ_PTR(group_b, group_a);
+        LHAT_CHECK_EQ_PTR(kinds_b[0], kinds_a[0]);
+        LHAT_CHECK_EQ_PTR(kinds_b[1], kinds_a[1]);
+
+        // 04 の 2.4: two lists are two declarations, and one name cannot be
+        // both.
+        static const char *const others[] = {"Torn"};
+        LHAT_CHECK(!lhat_register_error_kind(&b, "shared", "Broken", others, 1,
+                                             NULL, NULL),
+                   "a different list under the same name is refused");
+    }
+    lhat_program_dispose(&a);
+    lhat_program_dispose(&b);
+
+    // 8.9: the same for a host value type, where the width is what every
+    // frame holding one was laid out against -- so a second declaration at
+    // another size is not the same type and cannot be allowed to look like
+    // it.
+    LHAT_TEST("a host value type is one declaration too, at one size");
+    {
+        program_with(&a, &disk_a, none, 1);
+        program_with(&b, &disk_b, none, 1);
+        const LhatHostValueTag *first =
+            lhat_register_hostvalue_type(&a, "shared", "Pair", 8);
+        const LhatHostValueTag *second =
+            lhat_register_hostvalue_type(&b, "shared", "Pair", 8);
+        LHAT_CHECK(first != NULL, "the first declaration made one");
+        LHAT_CHECK_EQ_PTR(second, first);
+        LHAT_CHECK_EQ_INT(second->index, first->index);
+        LHAT_CHECK_EQ_INT(second->width, first->width);
+
+        LhatProgram c;
+        Disk disk_c;
+        program_with(&c, &disk_c, none, 1);
+        LHAT_CHECK_EQ_PTR(
+            lhat_register_hostvalue_type(&c, "shared", "Pair", 16), NULL);
+        lhat_program_dispose(&c);
+
+        // A field declared twice is the same field; one that disagrees is
+        // refused.
+        LHAT_CHECK(lhat_register_hostvalue_field(&a, "shared", "Pair", "x", 0,
+                                                 LHAT_HVFIELD_F32),
+                   "the field declared");
+        LHAT_CHECK(lhat_register_hostvalue_field(&b, "shared", "Pair", "x", 0,
+                                                 LHAT_HVFIELD_F32),
+                   "and declared again, the same way");
+        LHAT_CHECK(!lhat_register_hostvalue_field(&b, "shared", "Pair", "x", 4,
+                                                  LHAT_HVFIELD_F32),
+                   "the same name at another offset is two fields, refused");
+    }
+    lhat_program_dispose(&a);
+    lhat_program_dispose(&b);
+
+    // 8.9 with registry.h: a tag's index is the process's, so a program that
+    // declares only the later of two types has an index past its own count.
+    // The machine's array of members tables is taken to the width the
+    // indices reach, not to how many this program declared.
+    LHAT_TEST("a program declaring only the later type still installs");
+    {
+        program_with(&a, &disk_a, none, 1);
+        LHAT_CHECK(lhat_register_hostvalue_type(&a, "gap", "First", 8) != NULL,
+                   "the first type, declared by this program alone");
+        lhat_program_dispose(&a);
+
+        program_with(&b, &disk_b, none, 1);
+        const LhatHostValueTag *later =
+            lhat_register_hostvalue_type(&b, "gap", "Second", 8);
+        LHAT_CHECK(later != NULL && later->index > 0,
+                   "the second type's index is past this program's count");
+        LhatMachine *machine = lhat_machine_new();
+        LHAT_CHECK(machine != NULL && lhat_program_install(&b, machine),
+                   "and the install still finds room for it");
+        lhat_machine_dispose(machine);
+    }
+    lhat_program_dispose(&b);
+}
+
 static void test_reloading_keeps_registrations(void)
 {
     LhatProgram program;
@@ -4417,6 +4542,7 @@ int main(void)
     test_host_data();
     test_host_data_identity();
     test_reloading_keeps_registrations();
+    test_declarations_are_the_process_s();
     test_host_data_release();
     test_dump_host_api();
 #if LHAT_WITH_RESOLUTIONS
