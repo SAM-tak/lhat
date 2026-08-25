@@ -10,6 +10,8 @@
 
 #include <godot_cpp/variant/dictionary.hpp>
 #include <godot_cpp/variant/packed_string_array.hpp>
+#include <godot_cpp/templates/hash_map.hpp>
+#include <godot_cpp/variant/char_string.hpp>
 #include <godot_cpp/variant/string.hpp>
 #include <godot_cpp/variant/typed_array.hpp>
 
@@ -30,8 +32,10 @@ namespace host {
 struct Units {
     String base;      // "res://" or "user://"
     String path;      // the entry unit, with the scheme taken off
-    CharString held;  // what to answer for `path` instead of reading it
-    bool holding;
+    // What to answer for a path instead of reading it. A map rather than one
+    // slot: the world is shared, so several tabs may hold text the file does
+    // not have yet, and each unit has to read its own.
+    HashMap<String, CharString> held;
 
     // What program_for registered, for the conversions that carry a handle.
     // 05 の 7.3 makes a host type its declaration, so this belongs to the one
@@ -39,11 +43,18 @@ struct Units {
     const struct Godot *godot;
 };
 
-// The entry, split. `hold` makes it answer text the editor has rather than
-// what is on disk -- which is the whole of what validating an unsaved buffer
-// needs, and works for a path with no file behind it at all.
+
+// The entry, split. `hold` makes a path answer the text the editor has rather
+// than what is on disk -- which is the whole of what validating an unsaved
+// buffer needs, and works for a path with no file behind it at all. The path
+// is the engine's, scheme and all; what is kept is the stripped form the
+// language asks for.
+// What the language calls a path the engine spelt: the scheme taken off, so
+// a require^ resolves in 5.1's flat space.
+String unit_path(const Units &units, const String &path);
+
 Units units_for(const String &path);
-void hold(Units *units, const String &text);
+void hold(Units *units, const String &path, const String &text);
 
 // A program reading through `units`, with 8.2's initial names bound. NULL
 // when there was no memory. `units` has to outlive it.

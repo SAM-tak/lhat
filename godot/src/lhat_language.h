@@ -18,6 +18,9 @@
 #include <godot_cpp/variant/string.hpp>
 #include <godot_cpp/variant/typed_array.hpp>
 
+#include "lhat.h"
+#include "lhat_host.h"
+
 namespace godot {
 
 // Which hatted spellings this host draws apart, and the one table saying so.
@@ -61,6 +64,26 @@ class LhatLanguage : public ScriptLanguageExtension {
 
     static LhatLanguage *singleton;
 
+    // 05 の 5.3 with 8.6: the world this process runs in -- one program, one
+    // machine, and every .lh a unit of it. What made this one rather than a
+    // set of them is not the cost of the set (measured: a save is milli-
+    // seconds either way) but what a set cannot do: values live on a
+    // machine's heap, so two scripts on two machines can never hand each
+    // other a table, however alike their types are spelt.
+    //
+    // A game runs in a process of its own (the editor spawns it), so the
+    // editor's world and a game's world never meet and one of these is
+    // always enough.
+    host::Units units;
+    LhatProgram *program = nullptr;
+    LhatMachine *machine = nullptr;
+
+    // 14.3 fixes an instance's fields when it is made, so an instance made
+    // before a rebuild is not this world's. Bumped where the machine goes,
+    // and an instance carries the number it was born under.
+    uint64_t generation = 1;
+    bool rebuilding = false;  // put_back writes scripts, and a write asks again
+
 protected:
     static void _bind_methods();
 
@@ -70,6 +93,18 @@ public:
 
     // The one the engine registered, for a script asked which language it is.
     static LhatLanguage *get_singleton();
+
+    // The world, made on the first ask. NULL when there was no memory.
+    LhatProgram *world_program();
+    LhatMachine *world_machine() const { return machine; }
+    host::Units *world_units() { return &units; }
+    uint64_t world_generation() const { return generation; }
+
+    // Everything a reload does, for every script at once. One .lh saved
+    // retires the whole world, because a unit compiled against another's
+    // published names is compiled against the text that published them --
+    // so the scripts come off, the world is made again, and they go back on.
+    Error rebuild_world(bool keep_state);
 
     String _get_name() const override;
     String _get_type() const override;

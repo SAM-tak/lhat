@@ -171,6 +171,27 @@ const HashSet<LhatScript *> &LhatScript::all()
     return loaded;
 }
 
+// 05 の 5.3: the world is the language's. A script that asks before one has
+// been made gets nothing rather than making one behind the language's back --
+// reload_now is where a world comes into being, and everything else reads it.
+LhatMachine *LhatScript::lhat_machine() const
+{
+    LhatLanguage *language = LhatLanguage::get_singleton();
+    return language != nullptr ? language->world_machine() : nullptr;
+}
+
+uint64_t LhatScript::lhat_generation() const
+{
+    LhatLanguage *language = LhatLanguage::get_singleton();
+    return language != nullptr ? language->world_generation() : 0;
+}
+
+const host::Godot *LhatScript::godot() const
+{
+    LhatLanguage *language = LhatLanguage::get_singleton();
+    return language != nullptr ? language->world_units()->godot : nullptr;
+}
+
 LhatScript::LhatScript()
 {
     loaded.insert(this);
@@ -272,21 +293,11 @@ LhatScript::~LhatScript()
     let_go();
 }
 
+// What this .lh read off the world, given up. The world itself is the
+// language's and outlives this -- what is dropped here is only the part that
+// named a unit of it, which a rebuild has made stale.
 void LhatScript::let_go()
 {
-    if (machine != nullptr) {
-        // Every instance made on it is now holding freed memory. Nothing here
-        // can reach them -- a node owns its script instance -- so instead the
-        // number they were made under stops matching, and each finds that out
-        // before touching what it holds.
-        generation++;
-        lhat_machine_dispose(machine);
-        machine = nullptr;
-    }
-    if (program != nullptr) {
-        lhat_program_free(program);
-        program = nullptr;
-    }
     klass = lhat_nil();
     instances = lhat_nil();
     unit = nullptr;
@@ -295,11 +306,11 @@ void LhatScript::let_go()
     runnable = false;
     tool_script = false;
     editor_script = false;
-    entry = nullptr;  // the program it belonged to is gone
+    entry = nullptr;  // the proto it named belongs to a program now gone
     defaults.clear();
     rpc_config.clear();
     base_class = String();
-    // 18.7改: the values pointing at these died with the machine above.
+    // 18.7改: the values pointing at these died with the machine.
     for (host::SignalEmitter *emitter : emitters) {
         memdelete(emitter);
     }
@@ -317,6 +328,7 @@ void LhatScript::let_go()
 // not run.
 void LhatScript::fill_signals()
 {
+    LhatMachine *machine = lhat_machine();
     if (unit == nullptr || !lhat_is_object_kind(klass, LHAT_OBJECT_TABLE)) {
         return;
     }
@@ -343,7 +355,7 @@ void LhatScript::fill_signals()
         }
 
         host::SignalEmitter *emitter = memnew(host::SignalEmitter);
-        emitter->module = units.godot;
+        emitter->module = godot();
         emitter->name = name;
 
         LhatValue emit = lhat_nil();
@@ -516,21 +528,24 @@ void LhatScript::fill_rpc()
 // -- then the text is read, then they are put back. The middle one answers,
 // and the other two happen whatever it answered: a text that no longer
 // checks still leaves nodes holding instances of a machine that is gone.
+//
+// 05 の 5.3: and it is every script, not this one. A unit compiled
+// against another's published names was compiled against the text that
+// published them, so there is no such thing as reloading one of them alone
+// -- rebuild_world takes every script off, makes the world again, and puts
+// them all back.
 Error LhatScript::_reload(bool keep_state)
 {
-    if (reloading) {
-        return OK;  // put_back writes scripts, and a write can ask again
+    LhatLanguage *language = LhatLanguage::get_singleton();
+    if (language == nullptr) {
+        return ERR_UNAVAILABLE;
     }
-    reloading = true;
-    LocalVector<uint64_t> wearers;
-    LocalVector<Dictionary> held;
-    take_off(keep_state, &wearers, &held);
-    Error said = reload_now(keep_state);
-    put_back(wearers, held);
-    reloading = false;
-    return said;
+    return language->rebuild_world(keep_state);
 }
 
+// What this .lh is, read off the world. The world itself is made once and
+// rebuilt by the language (rebuild_world); what happens here is this unit's
+// share of it -- check, compile, run, and take what it published.
 Error LhatScript::reload_now(bool keep_state)
 {
     (void)keep_state;
@@ -538,20 +553,23 @@ Error LhatScript::reload_now(bool keep_state)
     valid = false;
     let_go();
 
-    // The text as it stands, not the file: the editor reloads while the
-    // buffer is unsaved, which is exactly when the answer matters.
-    units = host::units_for(get_path());
-    host::hold(&units, source);
-
-    program = host::program_for(&units);
-    if (program == nullptr) {
-        UtilityFunctions::push_error(
-            host::problem(get_path(), "out of memory"));
-        return ERR_OUT_OF_MEMORY;
+    LhatLanguage *language = LhatLanguage::get_singleton();
+    LhatProgram *program =
+        language != nullptr ? language->world_program() : nullptr;
+    LhatMachine *machine =
+        language != nullptr ? language->world_machine() : nullptr;
+    if (program == nullptr || machine == nullptr) {
+        return ERR_OUT_OF_MEMORY;  // said where the world could not be made
     }
 
-    const LhatUnit *root =
-        lhat_program_check(program, units.path.utf8().get_data());
+    // The text as it stands, not the file: the editor reloads while the
+    // buffer is unsaved, which is exactly when the answer matters. One world
+    // means one loader, so what is held is held under this path.
+    host::Units *units = language->world_units();
+    host::hold(units, get_path(), source);
+    CharString path = host::unit_path(*units, get_path()).utf8();
+
+    const LhatUnit *root = lhat_program_check(program, path.get_data());
     valid = root != nullptr && !lhat_program_has_errors(program);
     if (!valid) {
         PackedStringArray said;
@@ -566,16 +584,11 @@ Error LhatScript::reload_now(bool keep_state)
     // it is what makes it wearable, and a script that checks but declares no
     // class is still a fine thing to have open in the editor -- so what
     // follows only decides `runnable`.
-    bool compiled = lhat_program_compile(program);
-    machine = compiled ? lhat_machine_new() : nullptr;
-    if (machine == nullptr) {
+    if (!lhat_program_compile(program)) {
         UtilityFunctions::push_error(
-            !compiled ? host::compile_failure(program, get_path())
-                      : host::problem(get_path(), "out of memory"));
+            host::compile_failure(program, get_path()));
         return OK;
     }
-    lhat_program_install(program, machine);
-
     // 05 の 3.2: a unit that named no module^ registers nothing and declares
     // no class -- its body is a run of statements. Running one here would run
     // it on every load and every save, since the engine reads every .lh in
@@ -617,10 +630,13 @@ Error LhatScript::reload_now(bool keep_state)
 
     // 05 の 8.6: the instances go where the collector reaches them. Under
     // L^.modules rather than in L^ itself, so nothing a script writes can
-    // name it by accident.
+    // name it by accident. One table per script, filed under its own path:
+    // the machine is the world's now, so a single name would have the last
+    // script to load take the root away from every other one.
+    CharString under = get_path().utf8();
     if (!lhat_machine_make_table(machine, &instances) ||
-        !lhat_machine_register(machine, "godot.script", nullptr, "instances",
-                               instances)) {
+        !lhat_machine_register(machine, "godot.script", "instances",
+                               under.get_data(), instances)) {
         UtilityFunctions::push_error(
             host::problem(get_path(), "out of memory"));
         instances = lhat_nil();
@@ -654,6 +670,7 @@ Error LhatScript::reload_now(bool keep_state)
 // so refuses nothing.
 void LhatScript::read_base_class()
 {
+    LhatMachine *machine = lhat_machine();
     base_class = String();
     if (!lhat_is_object_kind(klass, LHAT_OBJECT_TABLE)) {
         return;
@@ -684,6 +701,7 @@ void LhatScript::read_base_class()
 // default, which is exactly what the editor should say about it.
 void LhatScript::read_defaults()
 {
+    LhatMachine *machine = lhat_machine();
     defaults.clear();
     if (!lhat_is_object_kind(klass, LHAT_OBJECT_TABLE)) {
         return;
@@ -707,7 +725,7 @@ void LhatScript::read_defaults()
         const LhatString *field =
             (const LhatString *)lhat_as_object(entry->key);
         defaults[String::utf8(field->text, (int)field->length)] =
-            host::to_variant(entry->value, units.godot);
+            host::to_variant(entry->value, godot());
     }
 }
 
@@ -719,6 +737,7 @@ void LhatScript::read_defaults()
 // this runs on was made a moment ago and nothing has run on it yet.
 bool LhatScript::run_body()
 {
+    LhatMachine *machine = lhat_machine();
     if (!editor_script || machine == nullptr || entry == nullptr) {
         return false;
     }
@@ -746,7 +765,8 @@ bool LhatScript::run_body()
 // and takes nothing, so the call is tried both ways.
 bool LhatScript::make_instance(Object *owner, LhatValue *out, int64_t *id)
 {
-    if (!runnable) {
+    LhatMachine *machine = lhat_machine();
+    if (!runnable || machine == nullptr) {
         return false;
     }
 
@@ -755,7 +775,7 @@ bool LhatScript::make_instance(Object *owner, LhatValue *out, int64_t *id)
     // thing is in hand here.
     LhatValue handle = lhat_nil();
     size_t count = 0;
-    if (host::make_object(machine, units.godot, owner, &handle)) {
+    if (host::make_object(machine, godot(), owner, &handle)) {
         count = 1;
     }
     LhatRunResult made =
@@ -786,6 +806,7 @@ bool LhatScript::make_instance(Object *owner, LhatValue *out, int64_t *id)
 
 void LhatScript::drop_instance(int64_t id)
 {
+    LhatMachine *machine = lhat_machine();
     if (lhat_is_nil(instances)) {
         return;
     }
@@ -806,7 +827,8 @@ void LhatScript::drop_instance(int64_t id)
 // members are only the ones this file wrote.
 LhatValue LhatScript::member_named(const StringName &name) const
 {
-    if (!runnable) {
+    LhatMachine *machine = lhat_machine();
+    if (!runnable || machine == nullptr) {
         return lhat_nil();
     }
     CharString spelt = String(name).utf8();
@@ -1153,6 +1175,7 @@ bool LhatScript::_has_static_method(const StringName &method) const
 Variant LhatScript::call_static(const StringName &member,
                                 const Array &arguments)
 {
+    LhatMachine *machine = lhat_machine();
     if (!_has_static_method(member)) {
         UtilityFunctions::push_error(host::problem(
             get_path(),
@@ -1168,7 +1191,7 @@ Variant LhatScript::call_static(const StringName &member,
     LocalVector<LhatValue> converted;
     for (int64_t i = 0; i < arguments.size(); i++) {
         LhatValue held = lhat_nil();
-        if (!host::from_variant(machine, arguments[i], &held, units.godot)) {
+        if (!host::from_variant(machine, arguments[i], &held, godot())) {
             UtilityFunctions::push_error(host::problem(
                 get_path(), String("argument ") + String::num_int64(i + 1) +
                                 String(" has no shape in L^")));
@@ -1186,7 +1209,7 @@ Variant LhatScript::call_static(const StringName &member,
             machine, get_path() + String(".") + String(member), called));
         return Variant();
     }
-    return host::to_variant(called.value, units.godot);
+    return host::to_variant(called.value, godot());
 }
 
 Dictionary LhatScript::_get_method_info(const StringName &method) const
@@ -1492,7 +1515,7 @@ Dictionary LhatScript::_get_constants() const
         }
         // A value with nowhere to land in a Variant answers nil, and a
         // constant the engine cannot show is not one worth naming.
-        Variant held = host::to_variant(entry->value, units.godot);
+        Variant held = host::to_variant(entry->value, godot());
         if (held.get_type() == Variant::NIL && !lhat_is_nil(entry->value)) {
             continue;
         }

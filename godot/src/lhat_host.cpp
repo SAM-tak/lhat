@@ -37,9 +37,8 @@ char *copy_of(const char *text, size_t size, size_t *length)
 char *load_unit(void *context, const char *path, size_t *length)
 {
     const Units *units = (const Units *)context;
-    if (units->holding && units->path == String::utf8(path)) {
-        const char *text = units->held.get_data();
-        return copy_of(text, strlen(text), length);
+    if (const CharString *text = units->held.getptr(String::utf8(path))) {
+        return copy_of(text->get_data(), (size_t)text->length(), length);
     }
 
     String full = units->base + String::utf8(path);
@@ -71,10 +70,15 @@ LhatValue host_print(LhatMachine *machine, void *context,
 
 }  // namespace
 
+String unit_path(const Units &units, const String &path)
+{
+    return path.begins_with(units.base) ? path.substr(units.base.length())
+                                        : path;
+}
+
 Units units_for(const String &path)
 {
     Units units;
-    units.holding = false;
     units.godot = nullptr;
 
     static const char *const schemes[] = {"res://", "user://"};
@@ -90,10 +94,18 @@ Units units_for(const String &path)
     return units;
 }
 
-void hold(Units *units, const String &text)
+// The scheme comes off here for the same reason it does in units_for: what
+// the language asks the loader for is the stripped path, so that is the key.
+void hold(Units *units, const String &path, const String &text)
 {
-    units->held = text.utf8();
-    units->holding = true;
+    String named = path;
+    for (const char *scheme : {"res://", "user://"}) {
+        if (named.begins_with(scheme)) {
+            named = named.substr((int)strlen(scheme));
+            break;
+        }
+    }
+    units->held[named] = text.utf8();
 }
 
 LhatProgram *program_for(Units *units)

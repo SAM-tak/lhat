@@ -1,6 +1,7 @@
 #include "lhat_language.h"
 
 #include <godot_cpp/templates/local_vector.hpp>
+#include <godot_cpp/variant/utility_functions.hpp>
 
 #include <string.h>
 
@@ -13,6 +14,7 @@
 #include <godot_cpp/core/memory.hpp>
 
 #include "lhat.h"
+#include "lhat_godot_module.h"
 #include "lhat_host.h"
 #include "lhat_script.h"
 
@@ -180,12 +182,117 @@ PackedStringArray LhatLanguage::_get_recognized_extensions() const
     return out;
 }
 
+// 05 の 5.3: one program for the process, made on the first ask. Every .lh is
+// a unit of it, so a require^ from one script reaches the very unit another
+// script's require^ reached -- one table, one definition, one set of types.
+LhatProgram *LhatLanguage::world_program()
+{
+    if (program != nullptr) {
+        return program;
+    }
+    units = host::units_for("res://");
+    program = host::program_for(&units);
+    if (program == nullptr) {
+        UtilityFunctions::push_error(
+            String("L^: out of memory making the program"));
+        return nullptr;
+    }
+    machine = lhat_machine_new();
+    if (machine == nullptr) {
+        lhat_program_free(program);
+        program = nullptr;
+        UtilityFunctions::push_error(
+            String("L^: out of memory making the machine"));
+        return nullptr;
+    }
+    // 05 の 8.7: what was registered reaches the machine here, which is what
+    // makes the names bound above answer something.
+    lhat_program_install(program, machine);
+    return program;
+}
+
+// The whole world goes and is made again. 05 の 5.7 has a finer way -- retire
+// one unit, forget it, keep the rest -- and it is the right one for a live
+// edit, where a running game's state has to survive. This is the other case:
+// the editor, where nothing is running that a rebuild would lose, and where
+// starting over is both simpler and cheaper than tracking what a save reaches
+// (measured: the whole of a twenty-script project is milliseconds).
+Error LhatLanguage::rebuild_world(bool keep_state)
+{
+    if (rebuilding) {
+        return OK;  // put_back writes scripts, and a write can ask again
+    }
+    rebuilding = true;
+
+    // Held first, since put_back writes to the set the loop below reads.
+    LocalVector<Ref<Script>> held;
+    for (LhatScript *const &script : LhatScript::all()) {
+        held.push_back(Ref<Script>(script));
+    }
+
+    LocalVector<LocalVector<uint64_t>> wearers;
+    LocalVector<LocalVector<Dictionary>> fields;
+    wearers.resize(held.size());
+    fields.resize(held.size());
+    for (uint32_t i = 0; i < held.size(); i++) {
+        Object::cast_to<LhatScript>(held[i].ptr())
+            ->take_off(keep_state, &wearers[i], &fields[i]);
+    }
+
+    // Every instance made on the old machine is now holding freed memory.
+    // Nothing here can reach them -- a node owns its script instance -- so
+    // instead the number they were made under stops matching, and each finds
+    // that out before touching what it holds.
+    generation++;
+    if (machine != nullptr) {
+        lhat_machine_dispose(machine);
+        machine = nullptr;
+    }
+    if (program != nullptr) {
+        lhat_program_free(program);
+        program = nullptr;
+    }
+    units.held.clear();
+
+    Error said = OK;
+    for (const Ref<Script> &script : held) {
+        Error one = Object::cast_to<LhatScript>(script.ptr())->reload_now(
+            keep_state);
+        if (one != OK) {
+            said = one;
+        }
+    }
+    for (uint32_t i = 0; i < held.size(); i++) {
+        Object::cast_to<LhatScript>(held[i].ptr())
+            ->put_back(wearers[i], fields[i]);
+    }
+
+    rebuilding = false;
+    return said;
+}
+
 void LhatLanguage::_init()
 {
 }
 
+// 05 の 8.7: the identities a registration declares live for the process, and
+// so does the module that holds the strings every program borrowed. Both go
+// back here, in this order -- the registry is what every program's
+// registrations point at, so it is last, and it may only go when no program
+// is left. Nothing holds one by now: a script frees its own with the machine
+// it made (let_go), and the editor is on its way out.
 void LhatLanguage::_finish()
 {
+    if (machine != nullptr) {
+        lhat_machine_dispose(machine);
+        machine = nullptr;
+    }
+    if (program != nullptr) {
+        lhat_program_free(program);
+        program = nullptr;
+    }
+    host::dispose_godot();
+    lhat_registry_dispose();
 }
 
 Dictionary LhatLanguage::_validate(const String &script, const String &path,
@@ -209,7 +316,7 @@ Dictionary LhatLanguage::_validate(const String &script, const String &path,
     // The text, not the file -- the editor asks while the buffer is unsaved,
     // and for a script whose file does not exist yet.
     host::Units units = host::units_for(path);
-    host::hold(&units, script);
+    host::hold(&units, path, script);
 
     LhatProgram *program = host::program_for(&units);
     if (program == nullptr) {

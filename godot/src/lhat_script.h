@@ -36,14 +36,19 @@ namespace godot {
 class LhatScript : public ScriptExtension {
     GDCLASS(LhatScript, ScriptExtension)
 
+    // 05 の 5.3: the world is the language's, and a rebuild is its to drive
+    // -- it takes every script off, makes the world again, and puts them all
+    // back. The three below are the halves of that, and nobody else's.
+    friend class LhatLanguage;
+
     String source;
     bool checked = false;  // whether _reload has run since the text changed
     bool valid = false;
 
-    // The loader's context outlives the program, which reads through it.
-    host::Units units;
-    LhatProgram *program = nullptr;
-    LhatMachine *machine = nullptr;
+    // 05 の 5.3: the program, the machine and the loader's context all
+    // belong to the language now -- one world for the process, so that two
+    // scripts can hand each other a value. What is left here is what this
+    // one .lh is: its unit of that program, and what was read off it.
 
     // The one public^ def^, and the table the instances are rooted in. Both
     // reachable from L^, so neither is held here for the collector's sake --
@@ -109,7 +114,8 @@ class LhatScript : public ScriptExtension {
     // list of live instances and reach into each, and an instance that
     // outlives its machine has nothing worth saying anyway. One number tells
     // it it is from the machine before.
-    uint64_t generation = 1;
+    // The world's, not this script's: one machine means one number, and
+    // every instance of every script is from the same rebuild.
 
     // What to say if somebody wears this file, and nothing if nobody does.
     // Godot reads every .lh in the project as a script resource, so a
@@ -161,7 +167,6 @@ class LhatScript : public ScriptExtension {
                   LocalVector<Dictionary> *held);
     void put_back(const LocalVector<uint64_t> &wearers,
                   const LocalVector<Dictionary> &held);
-    bool reloading = false;  // put_back writes scripts; one pass is enough
 
 protected:
     static void _bind_methods();
@@ -172,11 +177,12 @@ public:
 
     // What the instance table's functions work through. NULL until _reload
     // has made one.
-    LhatMachine *lhat_machine() const { return machine; }
-    // Which machine the caller's value came from. An instance keeps the
-    // number it was made under and stops touching what it holds once the two
-    // part company (see `generation` above).
-    uint64_t lhat_generation() const { return generation; }
+    LhatMachine *lhat_machine() const;
+    // Which world the caller's value came from. An instance keeps the number
+    // it was made under and stops touching what it holds once the two part
+    // company -- 14.3 fixes its fields when it is made, and a rebuild makes
+    // a machine that knows nothing of them.
+    uint64_t lhat_generation() const;
     LhatValue lhat_class() const { return klass; }
     // 05 の 3.2: whether this file is a run of statements rather than a
     // declaration of a class, which is what the instance side has to know to
@@ -210,7 +216,7 @@ public:
     static const HashSet<LhatScript *> &all();
 
     // What the conversions need to carry a handle across.
-    const host::Godot *godot() const { return units.godot; }
+    const host::Godot *godot() const;
     // What a fresh instance's fields hold, by name. Empty where one could
     // not be made.
     const Dictionary &lhat_defaults() const { return defaults; }

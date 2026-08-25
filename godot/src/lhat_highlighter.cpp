@@ -324,7 +324,7 @@ void LhatHighlighter::read_meanings(const String &text) const
     }
 
     host::Units units = host::units_for(showing->get_path());
-    host::hold(&units, text);
+    host::hold(&units, showing->get_path(), text);
     LhatProgram *program = host::program_for(&units);
     if (program == nullptr) {
         return;
