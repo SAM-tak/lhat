@@ -267,6 +267,17 @@ void *lhatstdlib_async_waits(LhatProgram *program)
     return lhat_lookup_host_context(program, "std.async", NULL, "external");
 }
 
+// 05 の 8.7: what this module leaves with the program. Unlike the other
+// modules' this one owns more than itself -- the waits it is holding and the
+// lock over them.
+static void dispose_async(void *context)
+{
+    AsyncModule *module = (AsyncModule *)context;
+    lhat_mutex_destroy(&module->lock);
+    lhat_free(module->waits);
+    lhat_free(module);
+}
+
 bool lhatstdlib_async_register(LhatProgram *program)
 {
     AsyncModule *module = (AsyncModule *)lhat_calloc(1, sizeof *module);
@@ -274,6 +285,10 @@ bool lhatstdlib_async_register(LhatProgram *program)
         return false;
     }
     lhat_mutex_init(&module->lock);
+    if (!lhat_program_on_dispose(program, dispose_async, module)) {
+        dispose_async(module);
+        return false;
+    }
     // 0 stands for no wait on the L^ side, so ids start above it.
     module->next_id = 1;
 

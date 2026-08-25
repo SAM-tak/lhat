@@ -425,51 +425,6 @@ static void test_reloading(void)
     }
     lhat_program_dispose(&program);
 
-    // The common way round for a host that reloads a project rather than a
-    // file: everything goes, and the program -- with everything registered
-    // on it -- stays.
-    LHAT_TEST("every unit at once, however the text reads");
-    {
-        files[0].text = leaf_was;
-        program_with(&program, &disk, files, 3);
-        LHAT_CHECK(lhat_program_check(&program, "main.lh") != NULL &&
-                       lhat_program_compile(&program),
-                   "the program checked and compiled");
-
-        // Nothing changed on disk, which is what the one-unit form takes as
-        // "no need" -- this form does not ask.
-        LHAT_CHECK_EQ_INT(lhat_program_invalidate(&program, "leaf.lh"), 0);
-        LHAT_CHECK_EQ_INT(lhat_program_invalidate_all(&program), 3);
-        LHAT_CHECK_EQ_INT(lhat_program_retired_count(&program), 3);
-        LHAT_CHECK_EQ_INT(unit_count(&program), 3);
-        for (const LhatUnit *u = program.units; u != NULL; u = u->next) {
-            LHAT_CHECK(lhat_unit_state(u) == LHAT_UNIT_STALE &&
-                           lhat_unit_proto(u) == NULL,
-                       "%s went stale", lhat_unit_path(u));
-        }
-
-        // And they read back into the same program, on the same shells.
-        const LhatUnit *before = unit_at(&program, "leaf.lh");
-        const LhatUnit *root = lhat_program_check(&program, "main.lh");
-        LHAT_CHECK(root != NULL && !lhat_program_has_errors(&program) &&
-                       lhat_program_compile(&program),
-                   "everything read and compiled again");
-        LHAT_CHECK_EQ_PTR(unit_at(&program, "leaf.lh"), before);
-        LHAT_CHECK_EQ_INT(unit_count(&program), 3);
-
-        // A second sweep with nothing checked in between is still every
-        // unit -- it never asks whether anything changed.
-        LHAT_CHECK_EQ_INT(lhat_program_invalidate_all(&program), 3);
-        lhat_program_discard_retired(&program);
-    }
-    lhat_program_dispose(&program);
-
-    LHAT_TEST("a program with no units has none to retire");
-    {
-        lhat_program_init(&program, true, NULL, NULL);
-        LHAT_CHECK_EQ_INT(lhat_program_invalidate_all(&program), 0);
-    }
-    lhat_program_dispose(&program);
 
     // The whole point, on one machine: without forgetting what the units
     // registered, a recompiled body finds the old table at its own guard
@@ -634,7 +589,7 @@ static void test_reloading_with_a_pending_cleanup(void)
             "}\n"
             "public^ let^ held = made()\n"
             "held.start()\n";
-        LHAT_CHECK_EQ_INT(lhat_program_invalidate_all(&program), 2);
+        LHAT_CHECK_EQ_INT(lhat_program_invalidate(&program, "gen.lh"), 2);
         root = lhat_program_check(&program, "main.lh");
         LHAT_CHECK(root != NULL && !lhat_program_has_errors(&program) &&
                        lhat_program_compile(&program),
@@ -699,7 +654,18 @@ static void test_reloading_with_a_pending_cleanup(void)
         LHAT_CHECK_EQ_INT(lhat_run(machine, lhat_unit_proto(root)).status,
                           LHAT_RUN_OK);
 
-        LHAT_CHECK_EQ_INT(lhat_program_invalidate_all(&program), 2);
+        files[0].text =
+            "module^ ns.gen\n"
+            "let^ made = p^ {\n"
+            "  do^{\n"
+            "    yield^ 2\n"
+            "  finally^:\n"
+            "    panic^ \"from a cleanup\"\n"
+            "  }\n"
+            "}\n"
+            "public^ let^ held = made()\n"
+            "held.start()\n";
+        LHAT_CHECK_EQ_INT(lhat_program_invalidate(&program, "gen.lh"), 2);
         root = lhat_program_check(&program, "main.lh");
         LHAT_CHECK(root != NULL && lhat_program_compile(&program),
                    "the units read and compiled again");
@@ -1951,25 +1917,28 @@ static LhatRunResult run_main(LhatProgram *program)
 // one host object are equal and key one table entry between them. is^ still
 // asks for the wrapper itself, and a released wrapper is equal only to
 // itself -- its pointer may already name something else.
-// 05 の 5.7: the reason lhat_program_invalidate_all is not
-// lhat_program_free followed by lhat_program_new. What a host registered has
-// to come through untouched -- 7.3 makes the tag's address the identity, so
-// a program that made its registrations again would be a different world
-// wearing the same names.
+// 05 の 5.7: an invalidation takes back what a unit was made into and
+// nothing else. What the host registered has to come through untouched --
+// 7.3 makes the tag's address the identity, so a value made after a reload
+// has to be the same type as one made before it.
 static void test_reloading_keeps_registrations(void)
 {
     LhatProgram program;
     Disk disk;
     Held held = {42, 0};
 
-    LHAT_TEST("what the host registered survives a wholesale invalidation");
+    LHAT_TEST("what the host registered survives an invalidation");
     {
-        static const File files[] = {
+        static File files[] = {
             {"main.lh",
              "import^ store\n"
              "var^ a = store.make()\n"
              "return^ a.read()\n"},
         };
+        files[0].text =
+            "import^ store\n"
+            "var^ a = store.make()\n"
+            "return^ a.read()\n";
         program_with(&program, &disk, files, 1);
         const LhatHostDataTag *tag =
             lhat_register_hostdata_type(&program, "store", "Held");
@@ -1983,26 +1952,26 @@ static void test_reloading_keeps_registrations(void)
         LHAT_CHECK_EQ_INT(ran.status, LHAT_RUN_OK);
         LHAT_CHECK_EQ_INT(lhat_as_integer(ran.value), 42);
 
-        // Everything checked goes, and the arena it was in with it.
-        LHAT_CHECK(program.types.type_count > 0, "the check made types");
-        LHAT_CHECK_EQ_INT(lhat_program_invalidate_all(&program), 1);
-        LHAT_CHECK_EQ_INT(program.types.type_count, 0);
-        LHAT_CHECK(program.hosted_types.type_count > 0,
-                   "and the registrations' own arena is untouched");
+        files[0].text =
+            "import^ store\n"
+            "var^ a = store.make()\n"
+            "var^ b = store.make()\n"
+            "return^ a.read() + b.read() - 42\n";
+        LHAT_CHECK_EQ_INT(lhat_program_invalidate(&program, "main.lh"), 1);
 
-        // The tag is the same object, so a value made now is the same type
-        // as one made before -- which is the whole point.
+        // 8.7: one name, one thing -- the registration is still standing, so
+        // a second one of the same name is still refused.
         LHAT_CHECK_EQ_PTR(lhat_register_hostdata_type(&program, "store",
                                                       "Held"),
-                          NULL);  // 8.7: one name, one thing -- still taken
+                          NULL);
         lhat_program_discard_retired(&program);
 
-        // And the units read back into that same world.
+        // And the unit reads back into that same world: the tag a value is
+        // made with now is the one it was made with before.
         ran = run_main(&program);
         LHAT_CHECK_EQ_INT(ran.status, LHAT_RUN_OK);
         LHAT_CHECK_EQ_INT(lhat_as_integer(ran.value), 42);
         LHAT_CHECK_EQ_PTR(held_tag, tag);
-        LHAT_CHECK(program.types.type_count > 0, "on types made afresh");
     }
     lhat_program_dispose(&program);
 }

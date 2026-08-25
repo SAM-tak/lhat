@@ -651,10 +651,15 @@ bool lhatstdlib_regex_register(LhatProgram *program)
     if (module == NULL) {
         return false;
     }
+    // 05 の 8.7: the program gives this back when it goes -- a register
+    // that answers bool hands its caller no handle to free it with.
+    if (!lhat_program_on_dispose(program, lhat_free, module)) {
+        lhat_free(module);
+        return false;
+    }
     static const char *const variants[] = { "BadPattern", "Exhausted" };
     if (!lhat_register_error_kind(program, "std.regex", "Error", variants, 2,
                                   NULL, NULL)) {
-        lhat_free(module);
         return false;
     }
     module->bad_pattern =
@@ -664,7 +669,6 @@ bool lhatstdlib_regex_register(LhatProgram *program)
 
     module->tag = lhat_register_hostdata_type(program, "std.regex", "Regex");
     if (module->tag == NULL) {
-        lhat_free(module);
         return false;
     }
 

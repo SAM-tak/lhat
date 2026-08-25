@@ -65,23 +65,10 @@ struct LhatUnit {
 
 struct LhatProgram {
     // 6 章: shared, so the types one unit publishes stay valid in the units
-    // that require it. 05 の 5.7 empties this one and no other: everything
-    // in it came from checking a unit, and an invalidation of all of them
-    // leaves nothing pointing here.
+    // that require it. Never emptied while the program lives: 05 の 5.7's
+    // invalidation cannot free what it retired, since a unit it did not
+    // touch may still be naming it.
     LhatTypeArena types;
-
-    // 05 の 8.7: what the registrations made -- `hosted`, `globals`, and
-    // everything hanging off them. Kept apart from the arena above because
-    // it must survive a wholesale invalidation: 7.3 makes the tag's address
-    // the identity, so a program that threw its registrations away and made
-    // them again would not be the same world any more.
-    //
-    // The split is sound because the pointers only run one way. A unit's
-    // types may name a registered one (that is what import^ is for), and a
-    // registration's signature may name only the builtins and what was
-    // registered before it -- never anything a require^ brings in, which
-    // 8.7 refuses for its own reasons (see lhat_register_member).
-    LhatTypeArena hosted_types;
 
     LhatUnit *units;
     bool strict;
@@ -178,6 +165,16 @@ struct LhatProgram {
     LhatHostValueTypeEntry *hostvalue_type_entries;
     size_t hostvalue_type_entry_count;
     size_t hostvalue_type_entry_capacity;
+
+    // 05 の 8.7: what lhat_program_on_dispose recorded -- what a
+    // registration made and the program gives back. Run in reverse order at
+    // dispose, before anything of the program's own goes.
+    struct LhatProgramDisposal {
+        LhatProgramDisposeFn call;
+        void *context;
+    } *disposals;
+    size_t disposal_count;
+    size_t disposal_capacity;
 
     // 05 の 8.6: what the host put in L^ itself, as the type side of it. The
     // checker's own L^ carries these on top of what 8.6 lists.

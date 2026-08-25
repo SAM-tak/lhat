@@ -490,6 +490,12 @@ bool lhatstdlib_thread_register(LhatProgram *program)
     if (module == NULL) {
         return false;
     }
+    // 05 の 8.7: the program gives this back when it goes -- a register
+    // that answers bool hands its caller no handle to free it with.
+    if (!lhat_program_on_dispose(program, lhat_free, module)) {
+        lhat_free(module);
+        return false;
+    }
     module->program = program;
     module->out_of_memory = lhatstdlib_error_lookup(program, "OutOfMemory");
 
@@ -499,7 +505,6 @@ bool lhatstdlib_thread_register(LhatProgram *program)
     const LhatErrorKind *kinds[5];
     if (!lhat_register_error_kind(program, "std.thread", "ThreadError",
                                   variants, 5, NULL, kinds)) {
-        lhat_free(module);
         return false;
     }
     module->not_spawnable = kinds[0];
@@ -511,7 +516,6 @@ bool lhatstdlib_thread_register(LhatProgram *program)
     module->handle_tag =
         lhat_register_hostdata_type(program, "std.thread", "ThreadHandle");
     if (module->handle_tag == NULL) {
-        lhat_free(module);
         return false;
     }
 

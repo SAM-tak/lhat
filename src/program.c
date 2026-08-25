@@ -1105,9 +1105,9 @@ static LhatType *hosted_table(LhatProgram *program, LhatType *owner,
             }
         }
         if (next == NULL) {
-            next = lhat_type_table(&program->hosted_types);
+            next = lhat_type_table(&program->types);
             if (next == NULL ||
-                lhat_type_add_member(&program->hosted_types, owner, segment, length,
+                lhat_type_add_member(&program->types, owner, segment, length,
                                      next) == NULL) {
                 return NULL;
             }
@@ -1131,7 +1131,7 @@ static LhatType *hosted_table(LhatProgram *program, LhatType *owner,
 static LhatType *hosted_root(LhatProgram *program)
 {
     if (program->hosted == NULL) {
-        program->hosted = lhat_type_table(&program->hosted_types);
+        program->hosted = lhat_type_table(&program->types);
         if (program->hosted != NULL) {
             program->hosted->v.table.sealed = true;  // 05 の 8.6
             program->hosted->v.table.is_module = true;
@@ -1265,13 +1265,13 @@ const LhatHostDataTag *lhat_register_hostdata_type(LhatProgram *program,
     // 05 の 7.3's shape: what makes it its own type is the declaration, not
     // the members, so two host types that look alike stay apart. 02 の 8.8's
     // mark keeps a member from being added to it afterwards.
-    LhatType *made = lhat_type_table(&program->hosted_types);
+    LhatType *made = lhat_type_table(&program->types);
     if (made == NULL) {
         return NULL;
     }
     made->v.table.from_definition = true;
     made->v.table.nominal = true;
-    if (lhat_type_add_member(&program->hosted_types, table, name, strlen(name),
+    if (lhat_type_add_member(&program->types, table, name, strlen(name),
                              made) == NULL ||
         !keep_entry(program, module, NULL, name, NULL, NULL, NULL, NULL)) {
         return NULL;
@@ -1360,14 +1360,14 @@ bool lhat_register_error_kind(LhatProgram *program, const char *module,
         return false;  // 8.7: one name, one thing
     }
 
-    LhatType *set = lhat_type_error_set(&program->hosted_types, name, strlen(name));
+    LhatType *set = lhat_type_error_set(&program->types, name, strlen(name));
     if (set == NULL ||
-        lhat_type_add_member(&program->hosted_types, table, name, strlen(name),
+        lhat_type_add_member(&program->types, table, name, strlen(name),
                              set) == NULL) {
         return false;
     }
     for (size_t i = 0; i < variant_count; i++) {
-        if (lhat_type_error_kind(&program->hosted_types, set, variant_names[i],
+        if (lhat_type_error_kind(&program->types, set, variant_names[i],
                                  strlen(variant_names[i])) == NULL) {
             return false;
         }
@@ -1573,7 +1573,7 @@ static bool register_into(LhatProgram *program, LhatType *owner,
     // back at the mercy of the order units are checked in. A member's may
     // write the type it is registered on as 13.13's Self^.
     LhatType *written = lhat_type_of_text(signature, strlen(signature),
-                                          &program->hosted_types, program->hosted,
+                                          &program->types, program->hosted,
                                           type != NULL ? owner : NULL);
     if (written == NULL) {
         return false;
@@ -1600,7 +1600,7 @@ static bool register_into(LhatProgram *program, LhatType *owner,
             return false;
         }
         LhatType *joined =
-            lhat_type_intersect(&program->hosted_types, existing->type, written);
+            lhat_type_intersect(&program->types, existing->type, written);
         if (joined == NULL) {
             return false;
         }
@@ -1609,7 +1609,7 @@ static bool register_into(LhatProgram *program, LhatType *owner,
                           signature);
     }
 
-    return lhat_type_add_member(&program->hosted_types, owner, name, strlen(name),
+    return lhat_type_add_member(&program->types, owner, name, strlen(name),
                                 written) != NULL &&
            keep_entry(program, module, type, name, call, context, written,
                       signature);
@@ -1738,7 +1738,7 @@ bool lhat_register_annotation_signature(LhatProgram *program,
     }
 
     const LhatType *written = lhat_type_of_text(signature, strlen(signature),
-                                                &program->hosted_types,
+                                                &program->types,
                                                 program->hosted, NULL);
     char *kept = written != NULL ? duplicate(signature) : NULL;
     if (written == NULL || kept == NULL) {
@@ -1881,9 +1881,9 @@ const LhatHostValueTag *lhat_register_hostvalue_type(LhatProgram *program,
     tag->width = 1 + (size + 7) / 8;  // one head slot, then the bytes
     tag->index = program->hostvalue_type_entry_count;
 
-    LhatType *made = lhat_type_hostvalue(&program->hosted_types, tag);
+    LhatType *made = lhat_type_hostvalue(&program->types, tag);
     if (made == NULL ||
-        lhat_type_add_member(&program->hosted_types, table, name, strlen(name),
+        lhat_type_add_member(&program->types, table, name, strlen(name),
                              made) == NULL ||
         !keep_entry(program, module, NULL, name, NULL, NULL, NULL, NULL)) {
         lhat_free(tag);
@@ -1964,10 +1964,10 @@ bool lhat_register_hostvalue_field(LhatProgram *program, const char *module,
         tag->fields = grown;
     }
     LhatType *number = copy != NULL && grown != NULL
-                           ? lhat_type_simple(&program->hosted_types, LHAT_TYPE_NUMBER)
+                           ? lhat_type_simple(&program->types, LHAT_TYPE_NUMBER)
                            : NULL;
     if (number == NULL ||
-        lhat_type_add_member(&program->hosted_types, found->type, copy, strlen(copy),
+        lhat_type_add_member(&program->types, found->type, copy, strlen(copy),
                              number) == NULL) {
         lhat_free(copy);
         return false;
@@ -1991,7 +1991,7 @@ bool lhat_register_global(LhatProgram *program, const char *name,
         return false;
     }
     if (program->globals == NULL) {
-        program->globals = lhat_type_table(&program->hosted_types);
+        program->globals = lhat_type_table(&program->types);
         if (program->globals == NULL) {
             return false;
         }
@@ -2000,10 +2000,10 @@ bool lhat_register_global(LhatProgram *program, const char *name,
         return false;  // 8.7: one name, one thing
     }
     LhatType *written = lhat_type_of_text(signature, strlen(signature),
-                                          &program->hosted_types, program->hosted,
+                                          &program->types, program->hosted,
                                           NULL);
     if (written == NULL ||
-        lhat_type_add_member(&program->hosted_types, program->globals, name,
+        lhat_type_add_member(&program->types, program->globals, name,
                              strlen(name), written) == NULL) {
         return false;
     }
@@ -2197,6 +2197,20 @@ bool lhat_program_compile(LhatProgram *program)
     return ok;
 }
 
+bool lhat_program_on_dispose(LhatProgram *program, LhatProgramDisposeFn call,
+                             void *context)
+{
+    if (program == NULL || call == NULL) {
+        return false;
+    }
+    LHAT_GROW(program->disposals, program->disposal_count,
+              program->disposal_capacity, 4, return false);
+    program->disposals[program->disposal_count].call = call;
+    program->disposals[program->disposal_count].context = context;
+    program->disposal_count++;
+    return true;
+}
+
 bool lhat_program_install(const LhatProgram *program, LhatMachine *machine)
 {
     for (size_t i = 0; i < program->host_entry_count; i++) {
@@ -2286,7 +2300,6 @@ void lhat_program_init(LhatProgram *program, bool strict,
 {
     memset(program, 0, sizeof *program);
     lhat_type_arena_init(&program->types);
-    lhat_type_arena_init(&program->hosted_types);
     program->strict = strict;
     program->load = load;
     program->loader_context = context;
@@ -2490,6 +2503,19 @@ const char *lhat_program_load_failure(const LhatProgram *program)
 
 void lhat_program_dispose(LhatProgram *program)
 {
+    // 05 の 8.7: what the registrations left with the program, first and in
+    // reverse -- everything of the program's own is still standing here, so
+    // a disposal may read whatever it was written against, and a module may
+    // undo what one it built on top of has not undone yet.
+    while (program->disposal_count > 0) {
+        struct LhatProgramDisposal *at =
+            &program->disposals[--program->disposal_count];
+        at->call(at->context);
+    }
+    lhat_free(program->disposals);
+    program->disposals = NULL;
+    program->disposal_capacity = 0;
+
     lhat_free(program->load_failure);
     program->load_failure = NULL;
     for (size_t i = 0; i < program->host_entry_count; i++) {
@@ -2618,7 +2644,6 @@ void lhat_program_dispose(LhatProgram *program)
     program->diagnostic_capacity = 0;
 
     lhat_type_arena_dispose(&program->types);
-    lhat_type_arena_dispose(&program->hosted_types);
 }
 
 // The opaque forms a host uses (program.h): the by-value pair above wrapped
@@ -2863,41 +2888,6 @@ size_t lhat_program_invalidate(LhatProgram *program, const char *path)
     }
     size_t count = retire_set(program, set, reaching(program, start, set));
     lhat_free(set);
-    return count;
-}
-
-size_t lhat_program_invalidate_all(LhatProgram *program)
-{
-    if (program == NULL || program->units == NULL) {
-        return 0;
-    }
-    LhatUnit **set = (LhatUnit **)lhat_alloc(unit_total(program) * sizeof *set);
-    if (set == NULL) {
-        return SIZE_MAX;
-    }
-    size_t count = 0;
-    for (LhatUnit *u = program->units; u != NULL; u = u->next) {
-        set[count++] = u;
-    }
-    // No hash and no cascade: the caller said all of them, and the reason is
-    // usually something no unit's text would show -- a registration that
-    // changed, a rescan that starts over.
-    count = retire_set(program, set, count);
-    lhat_free(set);
-    if (count == SIZE_MAX) {
-        return count;
-    }
-
-    // And now the types, which the one-unit form cannot do. Every unit's
-    // check went with retire_set above, so nothing points into this arena
-    // any more -- and a program reloaded over and over would otherwise
-    // carry every check it ever made (6 章 keeps types for as long as the
-    // units that name them, which here is no longer).
-    //
-    // hosted_types is untouched: 7.3's identity lives there, and keeping it
-    // is the whole difference between this and making a second program.
-    lhat_type_arena_dispose(&program->types);
-    lhat_type_arena_init(&program->types);
     return count;
 }
 

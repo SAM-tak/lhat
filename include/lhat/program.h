@@ -117,35 +117,6 @@ LhatCompileStatus lhat_program_compile_status(const LhatProgram *program);
 // one. lhat_program_discard_retired is where the old one goes.
 size_t lhat_program_invalidate(LhatProgram *program, const char *path);
 
-// The same for every unit at once, whatever their text says now -- what a
-// host takes when it is starting a whole project over rather than following
-// one save. Answers how many it retired, or SIZE_MAX when there was no room
-// (and then nothing was touched).
-//
-// Neither the hash nor the cascade applies: the caller said all of them, and
-// the reason is usually something no unit's text would show -- a
-// registration that changed, a rescan that begins again.
-//
-// THIS IS NOT lhat_program_free FOLLOWED BY lhat_program_new. What survives
-// here is everything the host registered: the types, the error kinds, and
-// the tags whose addresses are 7.3's identity. Units read again afterwards
-// come back into the same world. Making a second program registers a second
-// set of tags, and then its godot.Object is not the first one's godot.Object
-// however alike they are spelt -- which is exactly the trouble a program per
-// unit runs into the moment two of them share a machine.
-//
-// This is also the one call that gives the types back. A checked type lives
-// as long as the units that may name it (6 章), so the one-unit form can
-// only add to what the program holds; here every unit went at once, so the
-// arena they were in is emptied. A host reloading a project over and over
-// does not carry every check it ever made -- and what it registered is in an
-// arena of its own, untouched.
-//
-// The unit shells stay in the list, stale, so a host holding a
-// const LhatUnit * still has the unit for that path. One whose file is gone
-// simply never reads again.
-size_t lhat_program_invalidate_all(LhatProgram *program);
-
 // Frees the code of every retired body. The host says when, because only the
 // host knows: no machine may be running one, and nothing on any machine's
 // heap may still hold a closure of one. Getting that wrong is a
@@ -676,6 +647,28 @@ bool lhat_bind_initial(LhatProgram *program, const char *name,
 
 // Puts what was registered into the machine's L^.modules, so that an import^
 // finds it. Belongs before the run.
+// 05 の 8.7: something a registration made, given back when the program is.
+//
+// A module that registers functions almost always keeps a little state of
+// its own beside them -- the error kinds and tags its functions read, which
+// belong to this program and cannot be shared with another. That state has
+// to live as long as the program and go when it goes, and a registering
+// function that answers `bool` hands its caller no handle to free. So it
+// says here what to call instead.
+//
+// Called when the program is disposed, before anything of the program's own
+// is torn down, in the reverse of the order registered -- so a module may
+// undo what a module it built on top of has not undone yet. False when out
+// of memory, and then nothing was recorded.
+//
+// This is for state a registration handed to the program. A host that keeps
+// its own handle to what it made needs nothing here: it frees the program
+// and frees its own thing, in whichever order it likes.
+typedef void (*LhatProgramDisposeFn)(void *context);
+
+bool lhat_program_on_dispose(LhatProgram *program, LhatProgramDisposeFn call,
+                             void *context);
+
 bool lhat_program_install(const LhatProgram *program, LhatMachine *machine);
 
 // 03 の 4.3: the same for a prompt, which has no program of its own driving

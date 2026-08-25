@@ -259,11 +259,16 @@ bool lhatstdlib_mathvector3_register(LhatProgram *program)
     if (module == NULL) {
         return false;
     }
+    // 05 の 8.7: the program gives this back when it goes -- a register
+    // that answers bool hands its caller no handle to free it with.
+    if (!lhat_program_on_dispose(program, lhat_free, module)) {
+        lhat_free(module);
+        return false;
+    }
 
     module->vec3 = lhat_register_hostvalue_type(program, "std.math.vector3",
                                                  "Vector3", sizeof(Vec3));
     if (module->vec3 == NULL) {
-        lhat_free(module);
         return false;
     }
 

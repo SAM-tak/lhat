@@ -116,11 +116,16 @@ bool lhatstdlib_load_register(LhatProgram *program)
     if (module == NULL) {
         return false;
     }
+    // 05 の 8.7: the program gives this back when it goes -- a register
+    // that answers bool hands its caller no handle to free it with.
+    if (!lhat_program_on_dispose(program, lhat_free, module)) {
+        lhat_free(module);
+        return false;
+    }
     module->program = program;
     static const char *const variants[] = { "CannotRead", "Rejected" };
     if (!lhat_register_error_kind(program, "std.load", "Error", variants, 2,
                                   NULL, NULL)) {
-        lhat_free(module);
         return false;
     }
     module->cannot_read =

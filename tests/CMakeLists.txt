@@ -44,6 +44,7 @@ lhat_add_test(test_type core)
 lhat_add_test(test_value core)
 lhat_add_test(test_object core)
 lhat_add_test(test_program core)
+lhat_add_test(test_leak core)
 
 # The checker suite, split by topic; each file is one executable.
 lhat_add_test(test_check_core check)
@@ -99,6 +100,13 @@ if(LHAT_BUILD_STDLIB)
 
     lhat_add_test(test_debug stdlib)
     target_link_libraries(test_debug PRIVATE lhatstdlib)
+
+    # 05 の 8.7: what a registration keeps for as long as the program does is
+    # part of what a host pays on every reload, so the leak test covers the
+    # sample library too where there is one to cover.
+    target_link_libraries(test_leak PRIVATE lhatstdlib)
+    target_compile_definitions(test_leak PRIVATE LHAT_LEAK_WITH_STDLIB=1)
+    target_include_directories(test_leak PRIVATE ${CMAKE_SOURCE_DIR}/stdlib)
 endif()
 
 # End to end: the cli checks and runs each committed sample; the exit code
