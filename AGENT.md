@@ -32,6 +32,8 @@ L^ソースをシンタックスハイライト済みのSVGに変換するツー
 
 ### lhat-gdextension
 
+L^ のGodotエンジン向けバインディング
+
 @../lhat-gdextension/
 
 ### lhatove
