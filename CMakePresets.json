@@ -36,36 +36,6 @@
       "cacheVariables": { "LHAT_SANITIZE": "ON" }
     },
     {
-      "name": "godot-base",
-      "hidden": true,
-      "inherits": "ninja-base",
-      "cacheVariables": {
-        "LHAT_BUILD_GDEXTENSION": "ON",
-        "LHAT_BUILD_TESTS": "OFF",
-        "LHAT_BUILD_CLI": "OFF",
-        "LHAT_BUILD_LSP": "OFF",
-        "LHAT_BUILD_STDLIB": "OFF"
-      }
-    },
-    {
-      "name": "godot-debug",
-      "displayName": "Godot GDExtension, debug template (Ninja)",
-      "inherits": "godot-base",
-      "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Debug",
-        "GODOTCPP_TARGET": "template_debug"
-      }
-    },
-    {
-      "name": "godot-release",
-      "displayName": "Godot GDExtension, release template (Ninja)",
-      "inherits": "godot-base",
-      "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Release",
-        "GODOTCPP_TARGET": "template_release"
-      }
-    },
-    {
       "name": "vs",
       "displayName": "Visual Studio (multi-config)",
       "inherits": "base",
@@ -88,16 +58,6 @@
       "name": "asan",
       "displayName": "Debug + sanitizers (Ninja)",
       "configurePreset": "asan"
-    },
-    {
-      "name": "godot-debug",
-      "displayName": "Godot GDExtension, debug template (Ninja)",
-      "configurePreset": "godot-debug"
-    },
-    {
-      "name": "godot-release",
-      "displayName": "Godot GDExtension, release template (Ninja)",
-      "configurePreset": "godot-release"
     },
     {
       "name": "vs-debug",

@@ -30,13 +30,15 @@ L^ソースをシンタックスハイライト済みのSVGに変換するツー
 
 @../lhat-svg-tools/
 
-### godot
+### lhat-gdextension
 
-godot エンジンのソース
+@../lhat-gdextension/
 
-> `git clone --filter=blob:none --depth 1 --branch 4.7.1-stable git@github.com:godotengine/godot.git`
+### lhatove
 
-@../godot/
+Love2D の L^ 使用版プロジェクト
+
+@../lhatove/
 
 ### Lua 5.5.1
 

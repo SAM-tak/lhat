@@ -300,18 +300,6 @@ if(LHAT_BUILD_LSP)
     install(TARGETS lhat_lsp RUNTIME DESTINATION bin)
 endif()
 
-# ---- Godot ------------------------------------------------------------------
-# A third consumer of the library, beside the CLI and the server, and the only
-# one that is neither an executable nor written in C: godot/ builds a
-# GDExtension, which the engine loads at run time. It is off by default because
-# it enables C++ and fetches godot-cpp, and an ordinary build of the language
-# should do neither. The godot-* presets turn it on, alone in a tree of its own.
-option(LHAT_BUILD_GDEXTENSION "Build the Godot GDExtension (godot/)" OFF)
-
-if(LHAT_BUILD_GDEXTENSION)
-    add_subdirectory(godot)
-endif()
-
 install(TARGETS lhat lhatport lhatthread EXPORT lhatTargets
     ARCHIVE DESTINATION lib
     LIBRARY DESTINATION lib

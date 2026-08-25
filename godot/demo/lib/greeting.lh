@@ -1,3 +1,0 @@
-module^ demo.greeting
-
-public^let^ greet = f^ who:string^ { return^ $"hello, {who}" }

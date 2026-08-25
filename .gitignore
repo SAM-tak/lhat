@@ -21,11 +21,6 @@ compile_commands.json
 *.exp
 *.user
 
-# Godot: where the built extension lands, and what the editor writes beside
-# the demo project once it has opened it.
-godot/demo/bin/
-godot/demo/.godot/
-
 # VSCodeCounter
 .VSCodeCounter/
 
