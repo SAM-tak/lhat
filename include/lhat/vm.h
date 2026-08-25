@@ -121,6 +121,34 @@ LhatMachine *lhat_machine_new(void);
 // outlives this call.
 void lhat_machine_dispose(LhatMachine *machine);
 
+// 05 の 8.6: what L^.collectgarbage() is, for a host that has a machine and
+// no L^ code it wants to run to reach one. A whole cycle, now: what the
+// machine cannot reach when this is called has been freed when it answers.
+// It is the only thing that gives a pause the size of the heap, which is why
+// it has to be asked for by name.
+//
+// Answers how many objects are still live -- the same count
+// LhatRunResult.live carries. Objects, not bytes: a heap counts what it
+// holds and not how large each one is, so this is a figure to watch rather
+// than one to report as memory.
+//
+// May be called from inside a host function of a running machine: every
+// frame's registers are roots for as long as the frame is there.
+//
+// WHAT A HOST IS HOLDING IS NOT A ROOT. The machine reaches L^ itself (and
+// so everything under L^.modules), every frame's closure, coroutine and
+// registers, the places closures share, the room a host is answering
+// through, and the last fault -- and nothing else. A value made with
+// lhat_machine_make_* and not yet written anywhere the machine can reach is
+// unreachable by that account, and this call is exactly what takes it. Put
+// it somewhere first, or collect before making it rather than after.
+//
+// 02 の 10.7: a coroutine dropped with cleanups still pending does not run
+// them here. It is kept alive and queued, and its finally^ runs at an
+// instruction boundary the next time the machine runs L^ code -- there is no
+// interpreter loop under this call to run one in.
+size_t lhat_machine_collectgarbage(LhatMachine *machine);
+
 // 05 の 8.7: the three steps a host registration takes at run time. Kept here
 // rather than in program.c because only this file may touch the heap -- the
 // values belong to the machine and the collector has to see them.

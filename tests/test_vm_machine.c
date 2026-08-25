@@ -620,6 +620,46 @@ static void test_collection(void)
              "return^ last.get()\n");
     CHECK_INTEGER(&r, 0);
     run_dispose(&r);
+
+    // 05 の 8.6 の host 版: lhat_machine_collectgarbage is the same cycle
+    // asked for from C, for a host that has a machine and no L^ code it
+    // wants to run to reach one.
+    //
+    // A run that ended holds nothing: frame_count is back to zero, so the
+    // registers that were the only way to `kept` are no longer roots. This
+    // is the whole of what a host has to know before calling -- what the
+    // machine can reach is L^ and what is on the frames, and after a run
+    // there are no frames.
+    LHAT_TEST("a host may ask for the cycle itself");
+    run_text(&r,
+             "var^ kept = { }\n"
+             "for^ i from^ 1 to^ 2000 { kept[i] := { a := i } }\n"
+             "return^ 1\n");
+    CHECK_INTEGER(&r, 1);
+    LHAT_CHECK(r.ran.live > 2000, "the run ended holding every table");
+    {
+        size_t after = lhat_machine_collectgarbage(r.machine);
+        LHAT_CHECK(after < 500, "and the host's cycle reclaimed them: %zu",
+                   after);
+        // The same count LhatRunResult.live carries, and nothing was
+        // allocated in between, so asking again answers the same.
+        LHAT_CHECK_EQ_INT(lhat_machine_collectgarbage(r.machine), after);
+    }
+    run_dispose(&r);
+
+    // L^ itself is a root, so a machine that has run nothing still has what
+    // 8.6 built -- and collecting it is not an error.
+    LHAT_TEST("a machine that ran nothing keeps what L^ carries");
+    {
+        LhatMachine *m = lhat_machine_new();
+        size_t live = lhat_machine_collectgarbage(m);
+        LHAT_CHECK(live > 0, "L^ and its members are still there: %zu", live);
+        LHAT_CHECK_EQ_INT(lhat_machine_collectgarbage(m), live);
+        lhat_machine_dispose(m);
+    }
+
+    LHAT_TEST("no machine is nothing to collect");
+    LHAT_CHECK_EQ_INT(lhat_machine_collectgarbage(NULL), 0);
 }
 
 // 02 の 14.4 の host 版: an instance's members are shared and take self^, so

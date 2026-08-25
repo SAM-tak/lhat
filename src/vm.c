@@ -3208,6 +3208,17 @@ void lhat_machine_dispose(LhatMachine *machine)
     lhat_free(machine);
 }
 
+// 05 の 8.6: the same cycle L^.collectgarbage() asks for, from C. vm.h says
+// what a host has to have put away first.
+size_t lhat_machine_collectgarbage(LhatMachine *machine)
+{
+    if (machine == NULL) {
+        return 0;
+    }
+    lhat_gc_collect(machine);
+    return machine->objects.count;
+}
+
 // The run loop itself, shared by lhat_run (base_depth == 0, a fresh unit
 // entered through its own wrapper closure) and lhat_machine_call
 // (base_depth == m->frame_count at the time of the call, a value already
