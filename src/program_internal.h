@@ -94,6 +94,14 @@ struct LhatProgram {
     size_t retired_count;
     size_t retired_capacity;
 
+    // 05 の 5.7: what those bodies' constants named, taken off them when
+    // they were freed. A chunk's objects were always meant to outlive every
+    // machine, and a machine goes on holding them after the body is gone --
+    // L^.modules is keyed by the strings a unit's own prologue loads. So
+    // discarding a retired body frees its code and hands these here, where
+    // they stay until the program does. See lhat_proto_give_objects.
+    LhatHeap retired_objects;
+
     LhatProgramLoader load;
     void *loader_context;
 

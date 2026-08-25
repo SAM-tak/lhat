@@ -143,11 +143,29 @@ void lhat_machine_dispose(LhatMachine *machine);
 // unreachable by that account, and this call is exactly what takes it. Put
 // it somewhere first, or collect before making it rather than after.
 //
-// 02 の 10.7: a coroutine dropped with cleanups still pending does not run
-// them here. It is kept alive and queued, and its finally^ runs at an
-// instruction boundary the next time the machine runs L^ code -- there is no
-// interpreter loop under this call to run one in.
+// 02 の 10.7: a coroutine dropped with cleanups still pending has them run
+// here, as L^.collectgarbage() does -- so this runs L^ code, and a finally^
+// or a with^ of a dropped coroutine is what it runs. Only what the cycle
+// above found: a cleanup that drops another coroutine leaves that one for the
+// next call, so this cannot be made to go on for ever.
+//
+// It is what makes the heap settled when this answers, and a host retiring
+// compiled bodies needs that: until its cleanups have run, a dropped
+// coroutine still holds the closure it was suspended in, and so the body
+// that closure was made from. See lhat_program_discard_retired.
+//
+// Some cannot be run, and then they keep: one whose cleanup faulted (read
+// lhat_machine_fault_* for it), one waiting while a disposal is already
+// under way -- this call refuses to interleave two unwindings, as the
+// interpreter does -- and one there is no frame or stack room for.
+// lhat_machine_pending_disposals below is how a host tells.
 size_t lhat_machine_collectgarbage(LhatMachine *machine);
+
+// 02 の 10.7: how many dropped coroutines are still waiting to have their
+// cleanups run. Zero after an ordinary lhat_machine_collectgarbage, which is
+// what a host wants to see before it frees anything those cleanups would
+// run: a waiting one still holds the closure it was suspended in.
+size_t lhat_machine_pending_disposals(const LhatMachine *machine);
 
 // 05 の 8.7: the three steps a host registration takes at run time. Kept here
 // rather than in program.c because only this file may touch the heap -- the

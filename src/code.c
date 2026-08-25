@@ -48,6 +48,35 @@ bool lhat_proto_has_variadic(const LhatProto *proto)
     return proto->has_variadic;
 }
 
+// Moves every object one heap holds onto another, leaving the first with
+// nothing to free.
+static void give_heap(LhatHeap *from, LhatHeap *into)
+{
+    if (from->objects == NULL) {
+        return;
+    }
+    LhatObject *last = from->objects;
+    while (last->next != NULL) {
+        last = last->next;
+    }
+    last->next = into->objects;
+    into->objects = from->objects;
+    into->count += from->count;
+    from->objects = NULL;
+    from->count = 0;
+}
+
+void lhat_proto_give_objects(LhatProto *proto, LhatHeap *into)
+{
+    if (proto == NULL) {
+        return;
+    }
+    for (size_t i = 0; i < proto->proto_count; i++) {
+        lhat_proto_give_objects(proto->protos[i], into);
+    }
+    give_heap(&proto->chunk.heap, into);
+}
+
 void lhat_proto_free(LhatProto *proto)
 {
     if (proto == NULL) {

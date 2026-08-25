@@ -3208,17 +3208,6 @@ void lhat_machine_dispose(LhatMachine *machine)
     lhat_free(machine);
 }
 
-// 05 の 8.6: the same cycle L^.collectgarbage() asks for, from C. vm.h says
-// what a host has to have put away first.
-size_t lhat_machine_collectgarbage(LhatMachine *machine)
-{
-    if (machine == NULL) {
-        return 0;
-    }
-    lhat_gc_collect(machine);
-    return machine->objects.count;
-}
-
 // The run loop itself, shared by lhat_run (base_depth == 0, a fresh unit
 // entered through its own wrapper closure) and lhat_machine_call
 // (base_depth == m->frame_count at the time of the call, a value already
@@ -3231,7 +3220,12 @@ size_t lhat_machine_collectgarbage(LhatMachine *machine)
 #define R(i) lhat_slots_get(m->slots, rbase + (size_t)(i))
 #define SET_R(i, v) lhat_slots_set(m->slots, rbase + (size_t)(i), (v))
 
-static LhatRunResult run_frames(Machine *m, size_t base_depth)
+// `draining` enters at the drain rather than at the frame's pc: the frame on
+// top is a disposal one (enter_disposal_frame), which has no instructions of
+// its own to run -- only cleanups to walk. It is what the loop's own
+// `goto drain` does for a disposal it entered itself, said from outside so
+// that a host can start one (lhat_machine_collectgarbage).
+static LhatRunResult run_frames(Machine *m, size_t base_depth, bool draining)
 {
     m->run_base = base_depth;  // 04 の 11.6改: so finish can bound a fault
     Frame *frame = &m->frames[m->frame_count - 1];
@@ -3242,10 +3236,14 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
     // 02 の 10.7: the last collection of the run, and what it found. See the
     // drain, which is where both are decided. `at` is hoisted out of the
     // loop only so that `ending` can jump to the drain without stepping over
-    // its initialiser.
+    // its initialiser -- which is what lets `draining` jump there too.
     bool end_swept = false;
     bool ending = false;
     size_t at = 0;
+
+    if (draining) {
+        goto drain;
+    }
 
     while (pc < chunk->count) {
         // Between instructions, where every live value is in a register, a
@@ -6788,7 +6786,7 @@ LhatRunResult lhat_run_arguments(LhatMachine *m, const LhatProto *proto,
         return finish(m, chunk, LHAT_RUN_ARITY, lhat_nil(), 0);
     }
 
-    return run_frames(m, 0);
+    return run_frames(m, 0, false);
 }
 
 LhatRunResult lhat_run(LhatMachine *m, const LhatProto *proto)
@@ -7040,7 +7038,7 @@ static LhatRunResult host_call(Machine *m, LhatValue callee, LhatValue receiver,
     called->drop_answer = false;  // 5.3
     called->answer = lhat_nil();
 
-    return run_frames(m, base);
+    return run_frames(m, base, false);
 }
 
 LhatRunResult lhat_machine_call(LhatMachine *machine, LhatValue callee,
@@ -7048,6 +7046,125 @@ LhatRunResult lhat_machine_call(LhatMachine *machine, LhatValue callee,
 {
     return host_call((Machine *)machine, callee, lhat_nil(), false, arguments,
                      count);
+}
+
+static size_t waiting_disposals(const Machine *m)
+{
+    size_t waiting = 0;
+    for (const LhatCoroutine *co = m->pending_dispose; co != NULL;
+         co = co->next_pending) {
+        waiting++;
+    }
+    return waiting;
+}
+
+// 02 の 10.7: runs the cleanups of one dropped coroutine, from C. The frame
+// goes just past whatever is on top -- the same measure host_call takes, and
+// base == 0 (nothing running) is as good a case as any -- and the loop is
+// entered at the drain, since a disposal frame has no instructions of its
+// own to run.
+//
+// False when there was nothing waiting or nowhere to put the frame. What the
+// cleanups answered comes back in `status`.
+static bool run_one_disposal(Machine *m, LhatRunStatus *status)
+{
+    size_t base = m->frame_count;
+    if (m->pending_dispose == NULL || base >= LHAT_MAX_FRAMES) {
+        return false;
+    }
+    size_t next_base =
+        base == 0 ? 0
+                  : m->frames[base - 1].base +
+                        m->frames[base - 1].closure->proto->chunk.registers;
+    if (next_base + LHAT_MAX_REGISTERS >= LHAT_STACK_SLOTS) {
+        return false;
+    }
+
+    // gc.c only ever holds back a suspended BODY coroutine with cleanups
+    // left, so the closure and the proto this reads through are there.
+    LhatCoroutine *co = lhat_gc_take_pending(m);
+    Frame *frame = NULL;
+    size_t rbase = 0;
+    const LhatChunk *chunk = NULL;
+    size_t pc = 0;
+    enter_disposal_frame(m, co, next_base, 0, &frame, &rbase, &chunk, &pc);
+    // 15.4: same as an explicit dispose -- the slot a yield^ answers into
+    // gets nil^, since nothing sent anything in.
+    lhat_slots_set(m->slots, rbase + co->sent_into, lhat_nil());
+    *status = run_frames(m, base, true).status;
+
+    // 04 の 11.6改: a fault leaves its frames standing so that a traceback
+    // can be read off them. There is no caller here to read one -- the
+    // machine was tidying up after itself, and the run that dropped this
+    // coroutine is long over -- and leaving them would be worse than
+    // useless. The frames hold the closure this coroutine was suspended in,
+    // and so a body a host may be about to free, while
+    // lhat_machine_pending_disposals -- which is what it asks before freeing
+    // -- would read zero. So the cleanup is abandoned and its frames go.
+    //
+    // 5.4: closed first, or a place captured inside the cleanup would be
+    // left pointing at slots the next call reuses.
+    if (*status != LHAT_RUN_OK) {
+        close_upvalues(m, next_base);
+        m->frame_count = base;
+        m->fault_base = 0;
+        m->fault_depth = 0;
+    }
+    return true;
+}
+
+size_t lhat_machine_collectgarbage(LhatMachine *machine)
+{
+    Machine *m = (Machine *)machine;
+    if (m == NULL) {
+        return 0;
+    }
+    lhat_gc_collect(m);
+
+    // 02 の 10.7: and here the cleanups the collection held back get to run,
+    // which inside a run is what an instruction boundary does for them. A
+    // host calling this has no loop under it to do that, and the difference
+    // matters: until they have run, a dropped coroutine still holds the
+    // closure it was suspended in.
+    //
+    // Never on top of a disposal already under way -- two unwindings that
+    // have nothing to do with each other must not interleave, which is the
+    // same refusal the run loop makes.
+    if (m->frame_count > 0 && m->frames[m->frame_count - 1].disposing) {
+        return m->objects.count;
+    }
+
+    // Only what is queued now. A cleanup that drops another coroutine leaves
+    // it for the next call -- the bound the run loop's `end_swept` puts on
+    // the end of a run, for the same reason: this must not be something a
+    // program can go on extending.
+    size_t waiting = waiting_disposals(m);
+    bool ran_any = false;
+    for (size_t i = 0; i < waiting; i++) {
+        LhatRunStatus status = LHAT_RUN_OK;
+        if (!run_one_disposal(m, &status)) {
+            break;
+        }
+        ran_any = true;
+        // A cleanup that faulted stops the drain: the rest keep, and
+        // lhat_machine_fault_* says what happened to this one.
+        if (status != LHAT_RUN_OK) {
+            break;
+        }
+    }
+
+    // Their bodies have finished now, so they are DONE with no cleanups left
+    // and gc.c will not hold them back again -- this is the cycle that
+    // actually reclaims them.
+    if (ran_any) {
+        lhat_gc_collect(m);
+    }
+    return m->objects.count;
+}
+
+size_t lhat_machine_pending_disposals(const LhatMachine *machine)
+{
+    return machine != NULL ? waiting_disposals((const Machine *)machine) : 0;
 }
 
 LhatRunResult lhat_machine_call_member(LhatMachine *machine,
@@ -7268,7 +7385,7 @@ LhatRunResult lhat_machine_resume(LhatMachine *machine, LhatValue coroutine,
     // prepared = 1: the host boundary takes one value, as host_call says.
     // The result slot is never read -- the base cases return instead.
     enter_resume_frame(m, co, next_base, 0, 1, sent, sent_count);
-    return run_frames(m, base);
+    return run_frames(m, base, false);
 }
 
 bool lhat_machine_coroutine_done(LhatValue coroutine)

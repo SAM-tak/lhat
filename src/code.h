@@ -458,6 +458,19 @@ size_t lhat_proto_add_upvalue(LhatProto *proto, LhatUpvalueSource source,
 bool lhat_proto_give_units(LhatProto *unit, const LhatProto **protos,
                            size_t count);
 
+// 05 の 5.7: hands every object the bodies of this tree hold over to `into`,
+// leaving their chunks with nothing to free.
+//
+// A chunk's objects are born black because they were meant to outlive every
+// machine (lhat_chunk_init), and a program's units always did. Retiring a
+// body does not change what a machine may be holding: a string constant is
+// what LOADK puts in a register, and what a program then stores as a table
+// key -- L^.modules is keyed by the very strings the unit prologue loads --
+// so the objects are reachable from the machine's own tables long after the
+// body that named them is gone. The code may be freed. These may not, until
+// the program itself goes.
+void lhat_proto_give_objects(LhatProto *proto, LhatHeap *into);
+
 void lhat_chunk_init(LhatChunk *chunk);
 void lhat_chunk_dispose(LhatChunk *chunk);
 

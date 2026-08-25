@@ -660,6 +660,84 @@ static void test_collection(void)
 
     LHAT_TEST("no machine is nothing to collect");
     LHAT_CHECK_EQ_INT(lhat_machine_collectgarbage(NULL), 0);
+    LHAT_CHECK_EQ_INT(lhat_machine_pending_disposals(NULL), 0);
+
+    // 02 の 10.7 の host 版. A coroutine still suspended when the run ends
+    // was reachable from the frame that was leaving, so the run's own last
+    // collection did not hold it back. Once the frame has gone nothing
+    // reaches it -- and a collection asked for from C is then the one that
+    // finds it, with no interpreter loop under it to run what it holds back.
+    //
+    // Until those cleanups have run the coroutine goes on holding the
+    // closure it was suspended in, and so the body that closure was made
+    // from -- which is exactly what a host retiring compiled bodies is about
+    // to free. So the cycle runs them itself.
+    //
+    // 10.7 keeps a dropped coroutine alive until its cleanups have run, so
+    // what says they ran is that it is gone: nothing is left waiting, and
+    // the machine is back to what one that ran nothing carries.
+    LHAT_TEST("a host's cycle runs the cleanups the collection held back");
+    run_text(&r,
+             "var^ log = { n := 0 }\n"
+             "var^ gen = p^ {\n"
+             "  do^{\n"
+             "    yield^ 1\n"
+             "  finally^:\n"
+             "    log.n := 5\n"
+             "  }\n"
+             "}\n"
+             "var^ c = gen()\n"
+             "c.start()\n"
+             "return^ 1\n");
+    CHECK_INTEGER(&r, 1);
+    LHAT_CHECK_EQ_INT(lhat_machine_pending_disposals(r.machine), 0);
+    {
+        size_t live = lhat_machine_collectgarbage(r.machine);
+        LHAT_CHECK_EQ_INT(lhat_machine_pending_disposals(r.machine), 0);
+        LHAT_CHECK_EQ_INT(lhat_machine_fault_depth(r.machine), 0);
+        // The coroutine, its closure and the table its cleanup wrote into
+        // all went in the cycle that follows the drain. Held back, they
+        // could not have.
+        LhatMachine *empty = lhat_machine_new();
+        size_t bare = lhat_machine_collectgarbage(empty);
+        LHAT_CHECK(live <= bare, "only L^ is left: %zu against %zu", live,
+                   bare);
+        lhat_machine_dispose(empty);
+    }
+    run_dispose(&r);
+
+    // A cleanup that faults has no caller to fault to -- the run that
+    // dropped the coroutine is long over. So it is abandoned, and what
+    // matters is that it is abandoned cleanly: no frames left standing
+    // holding the closure it was suspended in, nothing left waiting, and a
+    // machine that still works. Leaving the frames (which is what a fault
+    // does everywhere else) would make lhat_machine_pending_disposals say
+    // "safe to free the body" while a frame still pointed into it.
+    LHAT_TEST("a cleanup that faults is abandoned without leaving frames");
+    run_text(&r,
+             "var^ gen = p^ {\n"
+             "  do^{\n"
+             "    yield^ 1\n"
+             "  finally^:\n"
+             "    var^ nothing = nil^\n"
+             "    nothing.boom()\n"
+             "  }\n"
+             "}\n"
+             "var^ c = gen()\n"
+             "c.start()\n"
+             "return^ 1\n");
+    CHECK_INTEGER(&r, 1);
+    {
+        size_t live = lhat_machine_collectgarbage(r.machine);
+        LHAT_CHECK_EQ_INT(lhat_machine_pending_disposals(r.machine), 0);
+        LHAT_CHECK_EQ_INT(lhat_machine_fault_depth(r.machine), 0);
+        LhatMachine *empty = lhat_machine_new();
+        size_t bare = lhat_machine_collectgarbage(empty);
+        LHAT_CHECK(live <= bare, "nothing of it was left: %zu against %zu",
+                   live, bare);
+        lhat_machine_dispose(empty);
+    }
+    run_dispose(&r);
 }
 
 // 02 の 14.4 の host 版: an instance's members are shared and take self^, so

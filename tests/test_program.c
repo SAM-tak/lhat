@@ -564,6 +564,163 @@ static void test_reloading(void)
     lhat_program_dispose(&program);
 }
 
+// 05 の 5.7 with 02 の 10.7: the one order that has to hold when a host
+// reloads a program under a machine that has been running it. A coroutine
+// suspended inside a do^ … finally^ holds the closure it stopped in, and so
+// the body that closure was made from. Retire that body, drop the coroutine,
+// and until its cleanup has run there is still something pointing into what
+// lhat_program_discard_retired is about to free.
+//
+// The whole of the answer is that lhat_machine_collectgarbage runs those
+// cleanups itself, so lhat_machine_pending_disposals reads zero and the host
+// has a question it can actually ask. Worth running under asan: without the
+// drain this is a use-after-free the next time anything runs.
+static void test_reloading_with_a_pending_cleanup(void)
+{
+    LhatProgram program;
+    Disk disk;
+
+    static File files[] = {
+        {"gen.lh",
+         "module^ ns.gen\n"
+         "let^ made = p^ {\n"
+         "  do^{\n"
+         "    yield^ 1\n"
+         "  finally^:\n"
+         "    var^ t = { a := 1 }\n"
+         "  }\n"
+         "}\n"
+         "public^ let^ held = made()\n"
+         "held.start()\n"},
+        {"main.lh",
+         "require^ \"gen.lh\"\n"
+         "return^ 1\n"},
+    };
+
+    LHAT_TEST("a suspended cleanup is run before its body may be discarded");
+    {
+        files[0].text =
+            "module^ ns.gen\n"
+            "let^ made = p^ {\n"
+            "  do^{\n"
+            "    yield^ 1\n"
+            "  finally^:\n"
+            "    var^ t = { a := 1 }\n"
+            "  }\n"
+            "}\n"
+            "public^ let^ held = made()\n"
+            "held.start()\n";
+        program_with(&program, &disk, files, 2);
+        const LhatUnit *root = lhat_program_check(&program, "main.lh");
+        LHAT_CHECK(root != NULL && !lhat_program_has_errors(&program) &&
+                       lhat_program_compile(&program),
+                   "the program checked and compiled");
+
+        LhatMachine *machine = lhat_machine_new();
+        lhat_program_install(&program, machine);
+        LhatRunResult ran = lhat_run(machine, lhat_unit_proto(root));
+        LHAT_CHECK_EQ_INT(ran.status, LHAT_RUN_OK);
+
+        // The reload. The bodies are retired, not freed -- the coroutine
+        // suspended in one of them is still holding it.
+        files[0].text =
+            "module^ ns.gen\n"
+            "let^ made = p^ {\n"
+            "  do^{\n"
+            "    yield^ 2\n"
+            "  finally^:\n"
+            "    var^ t = { a := 2 }\n"
+            "  }\n"
+            "}\n"
+            "public^ let^ held = made()\n"
+            "held.start()\n";
+        LHAT_CHECK_EQ_INT(lhat_program_invalidate_all(&program), 2);
+        root = lhat_program_check(&program, "main.lh");
+        LHAT_CHECK(root != NULL && !lhat_program_has_errors(&program) &&
+                       lhat_program_compile(&program),
+                   "the units read and compiled again");
+
+        // 5.3: what still holds the old coroutine is the module table the
+        // machine registered, so forgetting the unit is also what drops it.
+        LHAT_CHECK(lhat_machine_forget_unit(machine, "ns.gen"),
+                   "the machine forgot what the old unit registered");
+
+        // And here is the whole point: the cycle finds the coroutine and
+        // runs its finally^ -- against the old body, which is still there
+        // because nothing has been discarded yet.
+        lhat_machine_collectgarbage(machine);
+        LHAT_CHECK_EQ_INT(lhat_machine_pending_disposals(machine), 0);
+
+        // Only now may the old bodies go.
+        lhat_program_discard_retired(&program);
+        LHAT_CHECK_EQ_INT(lhat_program_retired_count(&program), 0);
+
+        // The new ones run, and nothing reaches into what was freed.
+        ran = lhat_run(machine, lhat_unit_proto(root));
+        LHAT_CHECK_EQ_INT(ran.status, LHAT_RUN_OK);
+        lhat_machine_collectgarbage(machine);
+        LHAT_CHECK_EQ_INT(lhat_machine_pending_disposals(machine), 0);
+
+        lhat_machine_dispose(machine);
+    }
+    lhat_program_dispose(&program);
+
+    // The same again where the cleanup panics. A fault leaves its frames
+    // standing everywhere else, and here that would be the very trap this
+    // test is about: the frames hold the closure the coroutine was
+    // suspended in, so a host asking pending_disposals before discarding
+    // would be told "nothing waiting" while a frame still pointed into the
+    // body it is about to free. The cleanup is abandoned and its frames go.
+    LHAT_TEST("and a cleanup that panics leaves nothing pointing into the body");
+    {
+        files[0].text =
+            "module^ ns.gen\n"
+            "let^ made = p^ {\n"
+            "  do^{\n"
+            "    yield^ 1\n"
+            "  finally^:\n"
+            "    panic^ \"from a cleanup\"\n"
+            "  }\n"
+            "}\n"
+            "public^ let^ held = made()\n"
+            "held.start()\n";
+        program_with(&program, &disk, files, 2);
+        const LhatUnit *root = lhat_program_check(&program, "main.lh");
+        LHAT_CHECK(root != NULL && !lhat_program_has_errors(&program) &&
+                       lhat_program_compile(&program),
+                   "the program checked and compiled");
+        if (root == NULL || lhat_unit_proto(root) == NULL) {
+            lhat_program_dispose(&program);
+            return;
+        }
+
+        LhatMachine *machine = lhat_machine_new();
+        lhat_program_install(&program, machine);
+        LHAT_CHECK_EQ_INT(lhat_run(machine, lhat_unit_proto(root)).status,
+                          LHAT_RUN_OK);
+
+        LHAT_CHECK_EQ_INT(lhat_program_invalidate_all(&program), 2);
+        root = lhat_program_check(&program, "main.lh");
+        LHAT_CHECK(root != NULL && lhat_program_compile(&program),
+                   "the units read and compiled again");
+        LHAT_CHECK(lhat_machine_forget_unit(machine, "ns.gen"),
+                   "the machine forgot what the old unit registered");
+
+        lhat_machine_collectgarbage(machine);
+        LHAT_CHECK_EQ_INT(lhat_machine_pending_disposals(machine), 0);
+        // No frames of the abandoned cleanup left to walk, and so none
+        // holding the body about to go.
+        LHAT_CHECK_EQ_INT(lhat_machine_fault_depth(machine), 0);
+
+        lhat_program_discard_retired(&program);
+        LHAT_CHECK_EQ_INT(lhat_run(machine, lhat_unit_proto(root)).status,
+                          LHAT_RUN_OK);
+        lhat_machine_collectgarbage(machine);
+        lhat_machine_dispose(machine);
+    }
+    lhat_program_dispose(&program);
+}
+
 static void test_running(void)
 {
     LhatProgram program;
@@ -4284,6 +4441,7 @@ int main(void)
 #endif
     test_running();
     test_reloading();
+    test_reloading_with_a_pending_cleanup();
     test_hosting();
     test_hostvalue_escape();
     test_host_tuple();

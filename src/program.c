@@ -2294,6 +2294,10 @@ void lhat_program_init(LhatProgram *program, bool strict,
     // host-registered error kind never writes into program->host_heap
     // -- required once more than one machine (std.thread) can read it.
     program->host_heap.white = LHAT_GC_BLACK;
+    // 5.7: what discarded bodies leave behind. Black for the same reason --
+    // they came off chunk heaps that were born black, and no machine's
+    // collection may write into them.
+    program->retired_objects.white = LHAT_GC_BLACK;
 }
 
 // ---------------------------------------------------------------------------
@@ -2600,6 +2604,10 @@ void lhat_program_dispose(LhatProgram *program)
     // The program outlives every machine that could hold a closure of one,
     // so here it is safe whether the host took a pass or not.
     lhat_program_discard_retired(program);
+    // And what earlier discards handed over: the objects those bodies'
+    // constants named, which a machine may have been holding. The machines
+    // are gone by the time a program is, so this is where they end.
+    lhat_object_free_all(&program->retired_objects);
 
     for (size_t i = 0; i < program->diagnostic_count; i++) {
         lhat_free(program->diagnostics[i].path);
@@ -2899,6 +2907,11 @@ void lhat_program_discard_retired(LhatProgram *program)
         return;
     }
     for (size_t i = 0; i < program->retired_count; i++) {
+        // The code goes; what its constants named does not. A machine may
+        // still be holding one -- L^.modules is keyed by the strings a
+        // unit's prologue loads, and those are the chunk's -- and a chunk's
+        // objects were always meant to outlive every machine.
+        lhat_proto_give_objects(program->retired[i], &program->retired_objects);
         lhat_proto_free(program->retired[i]);
     }
     lhat_free(program->retired);

@@ -146,10 +146,27 @@ size_t lhat_program_invalidate(LhatProgram *program, const char *path);
 // simply never reads again.
 size_t lhat_program_invalidate_all(LhatProgram *program);
 
-// Frees every retired body. The host says when, because only the host knows:
-// no machine may be running one, and nothing on any machine's heap may still
-// hold a closure of one. Getting that wrong is a use-after-free, which is
-// why this is not done for you.
+// Frees the code of every retired body. The host says when, because only the
+// host knows: no machine may be running one, and nothing on any machine's
+// heap may still hold a closure of one. Getting that wrong is a
+// use-after-free, which is why this is not done for you.
+//
+// What a body's constants named is not freed here but kept until the program
+// is. Those objects were always meant to outlive every machine, and a machine
+// goes on holding them after the body has gone: a string constant is what
+// LOADK puts in a register and what the program then stores as a table key,
+// and L^.modules is keyed by the very strings a unit's own prologue loads.
+// There is no way for a host to know which escaped, so none are freed.
+//
+// How to know, per machine the program was installed on: drop what held the
+// old bodies (in an editor, dress everything in the new ones), then
+// lhat_machine_collectgarbage, and then check
+// lhat_machine_pending_disposals is zero. The collection is what takes the
+// closures nothing holds any more; the second is the one thing a collection
+// cannot finish on its own -- 02 の 10.7 keeps a dropped coroutine alive
+// until its finally^ has run, and that coroutine holds the closure it was
+// suspended in. Free a body under one of those and the cleanup runs freed
+// bytecode the next time the machine runs anything.
 //
 // lhat_program_free does this too, for a host that never calls it.
 void lhat_program_discard_retired(LhatProgram *program);
