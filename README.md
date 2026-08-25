@@ -13,6 +13,13 @@ Meant to be embedded. The language builds as a library that reaches its
 surroundings through a handful of functions a host can replace, and a host
 registers what it provides by writing the type out in C.
 
+## Main Features
+
+- Gradual Typing
+- Bidirectional Type inference
+- Small Footprints & Less Depenencies
+- Visual Scripting (WIP)
+
 ## Samples
 
 ### Factorial
