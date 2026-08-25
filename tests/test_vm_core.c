@@ -193,6 +193,64 @@ static void test_arithmetic(void)
     run_dispose(&r);
 }
 
+// 02 の 11.6 with 11.6改2: the two casts, told apart by what they do with a
+// value that does not fit. Both ask lhat_value_satisfies the same question.
+static void test_casts(void)
+{
+    Run r;
+
+    LHAT_TEST("as^ answers the value where it fits");
+    run_checked_text(&r,
+                     "let^ f = f^ -> any^ { return^ 7 }\n"
+                     "return^ f() as^ number^\n");
+    CHECK_INTEGER(&r, 7);
+    run_dispose(&r);
+
+    // The whole of what makes as^ an assertion rather than a question: a
+    // value that does not fit stops the run rather than answering something.
+    LHAT_TEST("and stops the run where it does not");
+    run_checked_text(&r,
+                     "let^ f = f^ -> any^ { return^ \"t\" }\n"
+                     "return^ f() as^ number^\n");
+    LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_TYPE_ERROR);
+    run_dispose(&r);
+
+    // 11.6改2: written without parentheses -- as^ binds tighter than '??',
+    // so the default is around the cast. This is the pairing the safe form
+    // exists for, and the reason the two levels sit in this order.
+    LHAT_TEST("as^? answers the value where it fits");
+    run_checked_text(&r,
+                     "let^ f = f^ -> any^ { return^ 7 }\n"
+                     "return^ f() as^? number^ ?? 0\n");
+    CHECK_INTEGER(&r, 7);
+    run_dispose(&r);
+
+    // 11.6改2: and nil^ where it does not, so '??' picks the default up and
+    // the run goes on.
+    LHAT_TEST("and nil^ where it does not, which ?? picks up");
+    run_checked_text(&r,
+                     "let^ f = f^ -> any^ { return^ \"t\" }\n"
+                     "return^ f() as^? number^ ?? 0\n");
+    CHECK_INTEGER(&r, 0);
+    run_dispose(&r);
+
+    // 11.6: as^ stays stronger than the binary operators too, so the sum is
+    // around the cast rather than the cast around the sum.
+    LHAT_TEST("and as^ still binds tighter than a binary operator");
+    run_checked_text(&r,
+                     "let^ f = f^ -> any^ { return^ 7 }\n"
+                     "return^ 1 + f() as^ number^\n");
+    CHECK_INTEGER(&r, 8);
+    run_dispose(&r);
+
+    LHAT_TEST("the nil^ it answers is a nil^ like any other");
+    run_checked_text(&r,
+                     "let^ f = f^ -> any^ { return^ \"t\" }\n"
+                     "return^ (f() as^? number^) is^ nil^\n");
+    CHECK_BOOL(&r, true);
+    run_dispose(&r);
+}
+
 static void test_names(void)
 {
     Run r;
@@ -1406,6 +1464,7 @@ int main(void)
 {
     test_encoding();
     test_arithmetic();
+    test_casts();
     test_names();
     test_control();
     test_calls();

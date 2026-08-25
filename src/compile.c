@@ -3936,7 +3936,10 @@ static void compile_expression(Compiler *c, const LhatNode *node, uint8_t into)
             uint8_t mark = c->next_register;
             uint8_t type_slot = reserve(c);
             load_constant(c, type_slot, lhat_object((LhatObject *)wanted));
-            emit(c, lhat_encode_abc(LHAT_BC_ASCAST, into, type_slot, 0));
+            // 11.6改2: C says what happens when the value does not fit --
+            // set for 'as^?', which answers nil^ instead of stopping.
+            emit(c, lhat_encode_abc(LHAT_BC_ASCAST, into, type_slot,
+                                    node->v.ascription.nil_safe ? 1 : 0));
             c->next_register = mark;
             return;
         }

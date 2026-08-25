@@ -516,6 +516,32 @@ static void test_narrowing(void)
                "var^ s = n as^ string^\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_AS_IMPOSSIBLE);
     unit_dispose(&u);
+
+    // 11.6改2: the safe form answers T|nil^, so what it hands back has the
+    // nil^ arm to deal with -- '??' is the spelling, as for every other
+    // T|nil^ (11.7).
+    LHAT_TEST("as^? answers T|nil^");
+    check_text(&u,
+               "var^ f = f^ -> any^ { return^ 1 }\n"
+               "var^ n : number^ = f() as^? number^ ?? 0\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("and the nil^ arm is not skipped");
+    check_text(&u,
+               "var^ f = f^ -> any^ { return^ 1 }\n"
+               "var^ n : number^ = f() as^? number^\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
+    unit_dispose(&u);
+
+    // Disjoint is disjoint either way: the safe form written there always
+    // answers nil^, which is as dead as the stopping form is impossible.
+    LHAT_TEST("as^? between disjoint types is refused too");
+    check_text(&u,
+               "var^ n = 1\n"
+               "var^ s = n as^? string^\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_AS_IMPOSSIBLE);
+    unit_dispose(&u);
 }
 
 // 04 の 11.4 with 03 の 3.5: relaxed steps past nil^ in a union and lets

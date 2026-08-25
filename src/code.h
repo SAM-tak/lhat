@@ -224,8 +224,11 @@ typedef enum {
     // require^ answers with -- what a table holds is written before this,
     // and nothing writes into it afterwards.
     LHAT_BC_SEAL,       // A     R[A] accepts no further writes
-    LHAT_BC_ASCAST,     // A B   panic unless R[A] satisfies the type in
-                        //       R[B]; R[A] is unchanged either way (11.6)
+    LHAT_BC_ASCAST,     // A B C panic unless R[A] satisfies the type in
+                        //       R[B]; R[A] is unchanged either way (11.6).
+                        //       11.6改2: with C set, a value that does not
+                        //       fit writes nil^ into R[A] and the run goes
+                        //       on -- 'as^? T', which answers T|nil^
 
     LHAT_BC_COUNT
 } LhatOpcode;

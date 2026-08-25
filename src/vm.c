@@ -5816,6 +5816,14 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth)
                 const LhatRuntimeType *wanted =
                     (const LhatRuntimeType *)lhat_as_object(R(b));
                 if (!lhat_value_satisfies(R(a), wanted)) {
+                    // 02 の 11.6改2: 'as^?' answers nil^ where the value
+                    // does not fit, so the run goes on and the writer's
+                    // own '??' or isa^ decides what to do about it. The
+                    // stopping form is the one that promised the type.
+                    if (cc != 0) {
+                        SET_R(a, lhat_nil());
+                        break;
+                    }
                     return finish(m, chunk, LHAT_RUN_TYPE_ERROR, lhat_nil(), at);
                 }
                 break;

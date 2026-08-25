@@ -2213,13 +2213,41 @@ static LhatNode *parse_unary(Parser *p)
     return parse_power(p);
 }
 
+static LhatNode *parse_ascription(Parser *p)
+{
+    LhatNode *left = parse_unary(p);
+    while (check_hat(p, "as")) {
+        LhatToken at = p->current;
+        advance(p);
+        // 11.6改2: 'as^? T' -- the safe form. A type never starts with '?',
+        // so the mark is unambiguous here and costs the lexer nothing.
+        bool nil_safe = check_op(p, LHAT_OP_PRESENT);
+        if (nil_safe) {
+            advance(p);
+        }
+        LhatNode *node = make(p, LHAT_NODE_AS, &at);
+        if (node == NULL) {
+            return left;
+        }
+        node->v.ascription.value = left;
+        node->v.ascription.nil_safe = nil_safe;
+        node->v.ascription.type = parse_type(p);
+        left = finish(p, node);
+    }
+    return left;
+}
+
 // 04 の 4 章 and 11.7. Both drop one arm of a union and put a value in its
 // place; only the arm differs, so they share a level, a shape and a side of
 // the tree. Binding tighter than the binary operators is what makes
 // 'base + t[k] ?? 0' default around t[k] rather than around the sum.
+//
+// 11.6改2: and looser than as^, so 'x as^? T ?? 0' defaults around the cast
+// -- the pairing the safe form exists for. Kotlin's 'as? T ?: d' and Swift's
+// 'as? T ?? d' put the two in the same order.
 static LhatNode *parse_fallback(Parser *p)
 {
-    LhatNode *left = parse_unary(p);
+    LhatNode *left = parse_ascription(p);
 
     for (;;) {
         // 04 の 4.5: not the one that opens an arm -- there the word belongs
@@ -2238,28 +2266,12 @@ static LhatNode *parse_fallback(Parser *p)
         }
         node->v.binary.op = catching ? LHAT_OP_CATCH : LHAT_OP_NIL_ELSE;
         node->v.binary.left = left;
-        node->v.binary.right = parse_unary(p);
+        node->v.binary.right = parse_ascription(p);
         left = finish(p, node);
     }
     return left;
 }
 
-static LhatNode *parse_ascription(Parser *p)
-{
-    LhatNode *left = parse_fallback(p);
-    while (check_hat(p, "as")) {
-        LhatToken at = p->current;
-        advance(p);
-        LhatNode *node = make(p, LHAT_NODE_AS, &at);
-        if (node == NULL) {
-            return left;
-        }
-        node->v.ascription.value = left;
-        node->v.ascription.type = parse_type(p);
-        left = finish(p, node);
-    }
-    return left;
-}
 
 static bool binary_info(const Parser *p, LhatOpKind *op, int *precedence,
                         bool *right_associative)
@@ -2347,7 +2359,7 @@ static bool is_comparison(const Parser *p, LhatOpKind *op)
 
 static LhatNode *parse_binary(Parser *p, int min_precedence)
 {
-    LhatNode *left = parse_ascription(p);
+    LhatNode *left = parse_fallback(p);
 
     for (;;) {
         LhatOpKind op;
