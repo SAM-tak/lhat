@@ -407,6 +407,79 @@ LhatType *chk_simple(Checker *c, LhatTypeKind kind)
     return lhat_type_simple(c->result->types, kind);
 }
 
+// 04 の 2.7: what the operators mean by "an error". The two tops are
+// disjoint, so neither alone stands for both -- catch^ removing error^ from
+// 'T|CastFailure' would remove nothing and then say the left cannot fail.
+LhatType *chk_any_error(Checker *c)
+{
+    return lhat_type_union(c->result->types,
+                           lhat_type_error_top(c->result->types, false),
+                           lhat_type_error_top(c->result->types, true));
+}
+
+// 04 の 2.7改. The rule is that a localerror^ may not be in what a caller
+// receives, so this is asked of a result type and of a yield type.
+//
+// A NOMINAL TYPE IS AN ATOM. Walking into a def^'s or an error kind's
+// declared fields would find `cause`, which 2.3 widened to take either
+// family -- and then every error kind on earth would answer true here and
+// nothing could be returned at all. What closes that hole is the written
+// side instead: 2.7改 refuses localerror^ as a declared field's type, so
+// there is nothing inside a nominal type for this walk to have missed.
+// A structure may hold itself, so the walk is bounded the way
+// chk_mentions_function_coroutine's is and for the same reason.
+bool chk_type_touches_local(const LhatType *type, unsigned depth)
+{
+    if (type == NULL || depth > 8) {
+        return false;
+    }
+    if (lhat_type_is_local_error(type)) {
+        return true;
+    }
+    switch (type->kind) {
+        case LHAT_TYPE_UNION:
+        case LHAT_TYPE_INTERSECT:
+        case LHAT_TYPE_TUPLE:
+            for (const LhatTypeList *arm = type->v.composite.arms; arm != NULL;
+                 arm = arm->next) {
+                if (chk_type_touches_local(arm->type, depth + 1)) {
+                    return true;
+                }
+            }
+            return false;
+
+        case LHAT_TYPE_TABLE:
+            // A structural table only. 14.1's def^ and 05 の 8.8's host type
+            // share this payload and are the atoms above; `nominal` and
+            // `is_definition` are what tell them apart.
+            if (type->v.table.nominal || type->v.table.is_definition) {
+                return false;
+            }
+            for (const LhatTypeMember *m = type->v.table.members; m != NULL;
+                 m = m->next) {
+                if (chk_type_touches_local(m->type, depth + 1)) {
+                    return true;
+                }
+            }
+            return chk_type_touches_local(type->v.table.variadic, depth + 1);
+
+        // 15.5: what a call to one of these is worth is what a caller
+        // receives, so a signature carrying one out is caught here too.
+        case LHAT_TYPE_FUNC:
+            return chk_type_touches_local(type->v.func.answers != NULL
+                                              ? type->v.func.answers
+                                              : type->v.func.result,
+                                          depth + 1);
+
+        case LHAT_TYPE_CORO:
+            return chk_type_touches_local(type->v.coroutine.produce, depth + 1) ||
+                   chk_type_touches_local(type->v.coroutine.result, depth + 1);
+
+        default:
+            return false;
+    }
+}
+
 LhatType *chk_resolve_type(Checker *c, const LhatNode *node);
 LhatType *chk_infer(Checker *c, const LhatNode *node);
 LhatType *chk_environment_type(Checker *c);  // 05 の 8.6
@@ -462,8 +535,14 @@ static LhatType *builtin_type(Checker *c, const char *name, size_t length)
     if (chk_name_is(name, length, "any^")) {
         return chk_simple(c, LHAT_TYPE_ANY);
     }
+    // 04 の 2.7: the two tops. Disjoint families rather than one above the
+    // other, which is what keeps error^ writable in a result type now that a
+    // family which cannot be returned exists.
     if (chk_name_is(name, length, "error^")) {
-        return chk_simple(c, LHAT_TYPE_ERROR);
+        return lhat_type_error_top(c->result->types, false);
+    }
+    if (chk_name_is(name, length, "localerror^")) {
+        return lhat_type_error_top(c->result->types, true);
     }
     return NULL;
 }
@@ -3280,6 +3359,14 @@ const char *lhat_check_error_message(LhatCheckErrorCode code)
             return "the left of ?? cannot be nil^";
         case LHAT_CHECK_ERR_TRY_OUTSIDE:
             return "try^ would return an error this subroutine cannot return";
+        case LHAT_CHECK_ERR_LOCAL_ERROR_ESCAPES:
+            return "this error has to be resolved here: a localerror^ is not "
+                   "one a subroutine may return. Write catch^, or wrap the "
+                   "statements in try^{ } with an arm that takes it";
+        case LHAT_CHECK_ERR_LOCAL_ERROR_WRITTEN:
+            return "a localerror^ cannot be written where a caller would "
+                   "receive it -- not in a result, a yield, or a declared "
+                   "field";
         case LHAT_CHECK_ERR_REQUIRE_FAILED:
             return "this unit could not be required";
         case LHAT_CHECK_ERR_NOT_COROUTINE:

@@ -318,14 +318,22 @@ struct LhatType {
             bool is_function;
         } coroutine;
 
-        // ERROR_SET and ERROR_KIND. A kind points back at the set that
-        // declared it, and that pointer is the identity (04 の 2.4).
+        // ERROR, ERROR_SET and ERROR_KIND. A kind points back at the set
+        // that declared it, and that pointer is the identity (04 の 2.4).
         struct {
             const char *name;
             size_t name_length;
             LhatType *set;           // ERROR_KIND only
             LhatTypeMember *fields;  // ERROR_KIND only; NULL when it declares none
             LhatTypeList *kinds;     // ERROR_SET only
+            // 04 の 2.7: which of the two tops this belongs under --
+            // localerror^ rather than error^, declared with localerrordef^.
+            // The two are disjoint, so this is part of what the type IS and
+            // not a mark on it: an error^ and a localerror^ never meet.
+            //
+            // Read on ERROR as well, where it tells the two tops apart.
+            // Nothing else in the payload is set there.
+            bool local;
         } error;
 
         struct {
@@ -379,10 +387,22 @@ LhatType *lhat_type_coro(LhatTypeArena *arena, LhatType *receive,
 
 // 04 の 2.2. The set is created first; each kind then points at it, which is
 // what makes two identically written declarations different types.
+// `local` is 2.7's family: false for errordef^, true for localerrordef^.
 LhatType *lhat_type_error_set(LhatTypeArena *arena, const char *name,
-                              size_t name_length);
+                              size_t name_length, bool local);
+// The family comes from the set, so a kind never disagrees with what
+// declared it.
 LhatType *lhat_type_error_kind(LhatTypeArena *arena, LhatType *set,
                                const char *name, size_t name_length);
+
+// 04 の 2.7: `error^` and `localerror^`, the two tops. A simple type either
+// way -- lhat_type_simple would answer the first of them, and this is how
+// the second is asked for.
+LhatType *lhat_type_error_top(LhatTypeArena *arena, bool local);
+
+// Which family an ERROR, ERROR_SET or ERROR_KIND belongs to. False for
+// everything else, so a caller may ask it of any type.
+bool lhat_type_is_local_error(const LhatType *type);
 
 // Appends and returns the member, or NULL when out of memory. Works on a
 // TABLE and on an ERROR_KIND's fields.

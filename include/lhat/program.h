@@ -638,6 +638,21 @@ bool lhat_register_error_kind(LhatProgram *program, const char *module,
                               const LhatErrorKind **out_group,
                               const LhatErrorKind **out_variants);
 
+// 04 の 2.7: the same, under the other top -- what localerrordef^ declares.
+// A caller of one of these may not return it, so the checker refuses a try^
+// that would and refuses a signature written to admit one: what a host
+// registers here is a failure the calling code has to settle where it is.
+//
+// Registering the same module/name under a different top than an earlier
+// program did is refused, as a different variant list is (05 の 8.7改): one
+// name stands for one declaration across the process.
+bool lhat_register_local_error_kind(LhatProgram *program, const char *module,
+                                    const char *name,
+                                    const char *const *variant_names,
+                                    size_t variant_count,
+                                    const LhatErrorKind **out_group,
+                                    const LhatErrorKind **out_variants);
+
 // 登録済みの誤り種別を module・name・variant の完全一致で引く。variant が
 // NULL なら宣言全体(lhat_register_error_kind の out_group 相当)を返す。
 // 見つからなければ NULL。

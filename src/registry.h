@@ -73,9 +73,12 @@ size_t lhat_registry_hostvalue_count(void);
 //
 // A second declaration with a different list of variant names is refused:
 // the kinds are the declaration, and two lists are two declarations.
+// `local` is 04 の 2.7's family: a name declared under one top is not the
+// same declaration as the same name under the other, so it takes part in the
+// agreement check the way the variant list does.
 bool lhat_registry_error_kind(const char *module, const char *name,
                               const char *const *variant_names,
-                              size_t variant_count,
+                              size_t variant_count, bool local,
                               const LhatErrorKind **out_group,
                               const LhatErrorKind **out_variants);
 

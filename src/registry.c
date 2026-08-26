@@ -262,7 +262,7 @@ static void free_declared(struct Declared *at, size_t filled)
 
 bool lhat_registry_error_kind(const char *module, const char *name,
                               const char *const *variant_names,
-                              size_t variant_count,
+                              size_t variant_count, bool local,
                               const LhatErrorKind **out_group,
                               const LhatErrorKind **out_variants)
 {
@@ -277,6 +277,11 @@ bool lhat_registry_error_kind(const char *module, const char *name,
         if (!variants_match(was, variant_names, variant_count)) {
             return false;  // 2.4: a different list is a different declaration
         }
+        // 04 の 2.7: and so is the same list under the other top. What a name
+        // stands for has to be one thing across the process, family included.
+        if (was->group->local != local) {
+            return false;
+        }
         answer_with(was, out_group, out_variants);
         return true;
     }
@@ -284,7 +289,7 @@ bool lhat_registry_error_kind(const char *module, const char *name,
     LhatHeap *heap = registry_heap();
     LhatString *group_name = lhat_string_new(heap, name, strlen(name));
     LhatErrorKind *group =
-        group_name != NULL ? lhat_error_kind_new(heap, NULL, group_name) : NULL;
+        group_name != NULL ? lhat_error_kind_new(heap, NULL, local, group_name) : NULL;
     if (group == NULL) {
         return false;
     }
@@ -326,7 +331,7 @@ bool lhat_registry_error_kind(const char *module, const char *name,
             text = lhat_string_new(heap, qualified, total);
         }
         LhatErrorKind *kind =
-            text != NULL ? lhat_error_kind_new(heap, group, text) : NULL;
+            text != NULL ? lhat_error_kind_new(heap, group, false, text) : NULL;
         made.variant_names[i] = kind != NULL ? duplicate(variant_names[i]) : NULL;
         if (kind == NULL || made.variant_names[i] == NULL) {
             // The kinds already on the heap stay -- it is freed whole, the

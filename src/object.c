@@ -105,7 +105,7 @@ LhatTable *lhat_table_new(LhatHeap *heap)
 }
 
 LhatErrorKind *lhat_error_kind_new(LhatHeap *heap,
-                                   const LhatErrorKind *group,
+                                   const LhatErrorKind *group, bool local,
                                    const LhatString *name)
 {
     LhatErrorKind *kind = (LhatErrorKind *)lhat_object_alloc(
@@ -115,6 +115,9 @@ LhatErrorKind *lhat_error_kind_new(LhatHeap *heap,
     }
     kind->group = group;
     kind->name = name;
+    // 04 の 2.7: a kind is of the family its declaration is, so the group
+    // decides for every kind under it and nothing can be told two things.
+    kind->local = group != NULL ? group->local : local;
     return kind;
 }
 

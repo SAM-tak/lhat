@@ -689,6 +689,19 @@ void chk_error_leaves(Checker *c, const LhatNode *at, LhatType *escaping)
     if (escaping == NULL) {
         return;
     }
+    // 04 の 2.7改: before asking whether this subroutine's result admits the
+    // error, ask whether any result could. A localerror^ has to be resolved
+    // in the frame that raised it, so widening the signature is not the fix
+    // it is for 5.3 -- 2.7改 refuses that spelling as well. Reported here
+    // rather than at the caller, for 5.3's reason: the try^ is what is
+    // trying to return it.
+    //
+    // This is also the inference path (below), which is where a body with no
+    // written result would otherwise have laundered it into one.
+    if (chk_type_touches_local(escaping, 0)) {
+        chk_report(c, at, LHAT_CHECK_ERR_LOCAL_ERROR_ESCAPES);
+        return;
+    }
     if (c->declared_result != NULL) {
         if (!lhat_type_conforms(escaping, c->declared_result)) {
             chk_report(c, at, LHAT_CHECK_ERR_TRY_OUTSIDE);
@@ -975,8 +988,10 @@ LhatType *chk_infer_binary(Checker *c, const LhatNode *node)
     // 04 の 4.1 and 11.7: both drop one arm and put a value in its place.
     if (op == LHAT_OP_CATCH || op == LHAT_OP_NIL_ELSE) {
         LhatType *left = chk_infer(c, node->v.binary.left);
-        LhatType *unwanted = chk_simple(c, op == LHAT_OP_CATCH ? LHAT_TYPE_ERROR
-                                                           : LHAT_TYPE_NIL);
+        // 04 の 2.7: "an error" is either family here. catch^ resolves one
+        // where it stands, which is exactly what a localerror^ asks for.
+        LhatType *unwanted = op == LHAT_OP_CATCH ? chk_any_error(c)
+                                                 : chk_simple(c, LHAT_TYPE_NIL);
 
         // 04 の 4.2: catch^ names the error it^ inside its right side, so the
         // right side is inferred under a scope holding it -- typed as the
@@ -2117,8 +2132,13 @@ LhatType *chk_infer_member(Checker *c, const LhatNode *node)
         if (chk_name_is(name, length, "message")) {
             return chk_simple(c, LHAT_TYPE_STRING);
         }
+        // 04 の 2.7: either family may be a cause. Wrapping what could not be
+        // returned inside one's own error IS resolving it here, and it is the
+        // one sanctioned way the thing that failed survives the frame -- so
+        // refusing a localerror^ a place in the chain would leave a writer
+        // copying the message across by hand.
         if (chk_name_is(name, length, "cause")) {
-            return lhat_type_union(c->result->types, chk_simple(c, LHAT_TYPE_ERROR),
+            return lhat_type_union(c->result->types, chk_any_error(c),
                                    chk_simple(c, LHAT_TYPE_NIL));
         }
         if (target->kind == LHAT_TYPE_ERROR_KIND) {
@@ -3371,6 +3391,19 @@ LhatType *chk_infer_func(Checker *c, const LhatNode *node)
     if (node->v.func.is_function &&
         chk_mentions_function_coroutine(func->v.func.result, 0)) {
         chk_report(c, node, LHAT_CHECK_ERR_COROUTINE_ESCAPES);
+    }
+
+    // 04 の 2.7改, and the same shape of rule as the one above: a localerror^
+    // may not be what a caller receives. Reading the whole settled signature
+    // rather than its outermost shape catches it inside a table or a nested
+    // one, and reaches a coroutine's Y as well as its T (chk_type_touches_local
+    // asks `answers` first).
+    //
+    // A body that tried to let one past through try^ was already refused at
+    // the try^ itself, and chk_error_leaves keeps it out of what it infers --
+    // so what this finds is a result somebody WROTE.
+    if (chk_type_touches_local(func, 0)) {
+        chk_report(c, node, LHAT_CHECK_ERR_LOCAL_ERROR_WRITTEN);
     }
 
     c->deferred--;
@@ -5210,7 +5243,9 @@ static LhatType *infer_node(Checker *c, const LhatNode *node)
             // enclosing subroutine may return, and the report belongs here
             // rather than at the caller.
             LhatType *value = chk_infer(c, node->v.jump.value);
-            LhatType *error = chk_simple(c, LHAT_TYPE_ERROR);
+            // 2.7: either family is an error to try^. Telling them apart is
+            // chk_error_leaves's job, and only to refuse one.
+            LhatType *error = chk_any_error(c);
             if (!chk_can_be(value, error)) {
                 chk_report(c, node, LHAT_CHECK_ERR_CANNOT_FAIL);
             } else if (c->catch_frame != NULL) {

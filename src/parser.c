@@ -1568,7 +1568,8 @@ static bool is_statement_keyword(const Parser *p)
         "_yield", "await",  // 15.8 with 15.14: delegating suspends too
         // 9.11: and the three spellings of the one that goes on with the loop
         "next", "skip", "continue",
-        "for", "repeat", "while", "until", "when", "other", "errordef",
+        "for", "repeat", "while", "until", "when", "other",
+        "errordef", "localerrordef",  // 04 の 2.7: two tops, one form
         "prolog", "prologue", "pre", "premain", "first", "main", "last",
         "epilog", "epilogue", "finally"
     };
@@ -3957,15 +3958,19 @@ static LhatNode *parse_error_fields(Parser *p)
 // name the identity: a name that is only a label can be taken from a binding
 // the way def^ does (14.9), but one the type is made of belongs in the
 // declaration. So there is no way to write an anonymous one.
-static LhatNode *parse_errordef(Parser *p)
+// 04 の 2.7: `local` is what localerrordef^ read. The two spellings share
+// everything below -- variants, fields, defaults -- and differ only in which
+// top what they declare sits under.
+static LhatNode *parse_errordef(Parser *p, bool local)
 {
     LhatToken start = p->current;
-    advance(p);  // errordef^
+    advance(p);  // errordef^ / localerrordef^
 
     LhatNode *node = make(p, LHAT_NODE_ERRORDEF, &start);
     if (node == NULL) {
         return NULL;
     }
+    node->v.named.local = local;
 
     if (p->current.kind == LHAT_TOKEN_IDENT) {
         node->v.named.name = simple_node(p);
@@ -4348,7 +4353,11 @@ static LhatNode *parse_statement_after_annotations(Parser *p)
             return parse_if_body(p, start, condition);
         }
         if (check_hat(p, "errordef")) {
-            return parse_errordef(p);
+            return parse_errordef(p, false);
+        }
+        // 04 の 2.7: the same declaration under the other top.
+        if (check_hat(p, "localerrordef")) {
+            return parse_errordef(p, true);
         }
         // 8.9: the two introducers of a name. var^ is 8.6's, unchanged; let^
         // is the same form binding a name nothing may reassign.

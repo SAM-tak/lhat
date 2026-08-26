@@ -1699,7 +1699,10 @@ static void check_errordef(Checker *c, const LhatNode *node)
         return;
     }
 
-    LhatType *set = lhat_type_error_set(c->result->types, name, length);
+    // 04 の 2.7: which top, from which word declared it. The kinds read it
+    // off the set, so nothing below has to be told twice.
+    LhatType *set = lhat_type_error_set(c->result->types, name, length,
+                                        node->v.named.local);
     chk_scope_add(c->scope, name, length, set, node->offset)->reached = true;
 
     for (const LhatNode *kind = node->v.named.members; kind != NULL;
@@ -1726,6 +1729,13 @@ static void check_errordef(Checker *c, const LhatNode *node)
             if (declared != NULL && fallback != NULL) {
                 chk_expect(c, field->v.param.fallback, fallback, declared,
                            LHAT_CHECK_ERR_MISMATCH);
+            }
+            // 04 の 2.7改: a kind is nominal, so chk_type_touches_local stops
+            // at it and never sees this field -- which is the whole reason
+            // that walk can stop there (2.3's `cause` takes either family).
+            // The hole is closed on the written side instead, here.
+            if (chk_type_touches_local(declared != NULL ? declared : fallback, 0)) {
+                chk_report(c, field, LHAT_CHECK_ERR_LOCAL_ERROR_WRITTEN);
             }
             LhatTypeMember *member = lhat_type_add_member(
                 c->result->types, type, field_name, field_length,
@@ -2172,8 +2182,7 @@ static void check_try_block(Checker *c, const LhatNode *node)
         c->scope = &scope;
         Binding *caught =
             chk_scope_add(&scope, "it^", 3,
-                          here != NULL ? here : chk_simple(c, LHAT_TYPE_ERROR),
-                          arm->offset);
+                          here != NULL ? here : chk_any_error(c), arm->offset);
         if (caught != NULL) {
             caught->reached = true;
         }

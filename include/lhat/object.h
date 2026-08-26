@@ -123,6 +123,15 @@ typedef struct LhatErrorKind {
     LhatObject header;
     const struct LhatErrorKind *group;  // NULL when this object is the group
     const LhatString *name;             // "IOError" or "IOError.NotFound"
+    // 04 の 2.7: declared with localerrordef^, so this sits under localerror^
+    // rather than under error^. The two tops are disjoint, and a group's
+    // kinds are all of the group's family -- so what is read here never
+    // disagrees with `group`.
+    //
+    // The checker is what enforces 2.7改's "may not leave the frame"; this is
+    // here so that isa^ localerror^ can answer at run time, and so that a
+    // host asking what it registered gets the same answer the language does.
+    bool local;
 } LhatErrorKind;
 
 // 04 の 2.3: a kind, plus the fields the construction gave it. message and
@@ -636,9 +645,10 @@ LhatString *lhat_string_new(LhatHeap *heap, const char *text, size_t length);
 LhatTable *lhat_table_new(LhatHeap *heap);
 
 // `group` is NULL to make the object standing for a whole errordef^, and the
-// group's object to make one of its kinds.
+// group's object to make one of its kinds. 04 の 2.7's family comes from the
+// group where there is one, so `local` is read only when making a group.
 LhatErrorKind *lhat_error_kind_new(LhatHeap *heap,
-                                   const LhatErrorKind *group,
+                                   const LhatErrorKind *group, bool local,
                                    const LhatString *name);
 
 // Makes the error and the table its fields live in.

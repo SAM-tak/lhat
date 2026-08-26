@@ -456,6 +456,11 @@ struct LhatNode {
             LhatNode *name;
             LhatNode *members;  // NULL when a kind declares no fields
             bool exported;      // 05 の 4 章: written public^
+            // 04 の 2.7: ERRORDEF only -- written localerrordef^, so what it
+            // declares is under localerror^ rather than under error^. The
+            // declaration is the unit, not the kind: the two tops are
+            // disjoint, and one set's kinds cannot span both.
+            bool local;
         } named;
 
         // IF_CLAUSE. `condition` is NULL for the final else.

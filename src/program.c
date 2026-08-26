@@ -1353,12 +1353,14 @@ static void free_variant_arrays(char **variant_copies,
 // 実行時側は check.c の check_errordef / vm.c の declare_error が unit の
 // ASTから作るのと同じ2つの呼び出し(lhat_type_error_set/error_kind、
 // lhat_error_kind_new)を、program->host_heap に対して行う。
-bool lhat_register_error_kind(LhatProgram *program, const char *module,
-                              const char *name,
-                              const char *const *variant_names,
-                              size_t variant_count,
-                              const LhatErrorKind **out_group,
-                              const LhatErrorKind **out_variants)
+// 04 の 2.7: `local` is which top, the C side of errordef^ / localerrordef^.
+// The two public entries below are this with that decided.
+static bool register_error_kind(LhatProgram *program, const char *module,
+                                const char *name,
+                                const char *const *variant_names,
+                                size_t variant_count, bool local,
+                                const LhatErrorKind **out_group,
+                                const LhatErrorKind **out_variants)
 {
     if (program == NULL || module == NULL || name == NULL) {
         return false;
@@ -1369,7 +1371,8 @@ bool lhat_register_error_kind(LhatProgram *program, const char *module,
         return false;  // 8.7: one name, one thing
     }
 
-    LhatType *set = lhat_type_error_set(&program->types, name, strlen(name));
+    LhatType *set =
+        lhat_type_error_set(&program->types, name, strlen(name), local);
     if (set == NULL ||
         lhat_type_add_member(&program->types, table, name, strlen(name),
                              set) == NULL) {
@@ -1401,7 +1404,7 @@ bool lhat_register_error_kind(LhatProgram *program, const char *module,
     }
     const LhatErrorKind *group = NULL;
     if (!lhat_registry_error_kind(module, name, variant_names, variant_count,
-                                  &group,
+                                  local, &group,
                                   (const LhatErrorKind **)variants)) {
         free_variant_arrays(variant_copies, variants, 0);
         return false;
@@ -1453,6 +1456,28 @@ bool lhat_register_error_kind(LhatProgram *program, const char *module,
         }
     }
     return true;
+}
+
+bool lhat_register_error_kind(LhatProgram *program, const char *module,
+                              const char *name,
+                              const char *const *variant_names,
+                              size_t variant_count,
+                              const LhatErrorKind **out_group,
+                              const LhatErrorKind **out_variants)
+{
+    return register_error_kind(program, module, name, variant_names,
+                               variant_count, false, out_group, out_variants);
+}
+
+bool lhat_register_local_error_kind(LhatProgram *program, const char *module,
+                                    const char *name,
+                                    const char *const *variant_names,
+                                    size_t variant_count,
+                                    const LhatErrorKind **out_group,
+                                    const LhatErrorKind **out_variants)
+{
+    return register_error_kind(program, module, name, variant_names,
+                               variant_count, true, out_group, out_variants);
 }
 
 const LhatErrorKind *lhat_lookup_error_kind(const LhatProgram *program,

@@ -161,13 +161,31 @@ LhatType *lhat_type_coro(LhatTypeArena *arena, LhatType *receive,
     return type;
 }
 
+LhatType *lhat_type_error_top(LhatTypeArena *arena, bool local)
+{
+    LhatType *type = new_type(arena, LHAT_TYPE_ERROR);
+    if (type != NULL) {
+        type->v.error.local = local;
+    }
+    return type;
+}
+
+bool lhat_type_is_local_error(const LhatType *type)
+{
+    return type != NULL &&
+           (type->kind == LHAT_TYPE_ERROR || type->kind == LHAT_TYPE_ERROR_SET ||
+            type->kind == LHAT_TYPE_ERROR_KIND) &&
+           type->v.error.local;
+}
+
 LhatType *lhat_type_error_set(LhatTypeArena *arena, const char *name,
-                              size_t name_length)
+                              size_t name_length, bool local)
 {
     LhatType *type = new_type(arena, LHAT_TYPE_ERROR_SET);
     if (type != NULL) {
         type->v.error.name = name;
         type->v.error.name_length = name_length;
+        type->v.error.local = local;
     }
     return type;
 }
@@ -182,6 +200,9 @@ LhatType *lhat_type_error_kind(LhatTypeArena *arena, LhatType *set,
     type->v.error.set = set;
     type->v.error.name = name;
     type->v.error.name_length = name_length;
+    // 2.7: a kind is of the family its declaration is. Reading it here
+    // rather than through the set keeps every asker one dereference away.
+    type->v.error.local = set != NULL && set->v.error.local;
 
     if (set != NULL) {
         LhatTypeList *link = (LhatTypeList *)arena_alloc(arena, sizeof *link);
@@ -725,6 +746,13 @@ static bool conforms_in(const LhatType *value, const LhatType *target,
 
     // 04 の 2.3: every kind is below error^, and a kind is below its set.
     if (is_error_type(value) && is_error_type(target)) {
+        // 2.7: two tops, and they are disjoint. Nothing under localerror^
+        // reaches error^ or the other way round, which is what keeps
+        // 'p^ … -> T|error^' writable after a family that cannot be
+        // returned exists at all.
+        if (value->v.error.local != target->v.error.local) {
+            return false;
+        }
         if (target->kind == LHAT_TYPE_ERROR) {
             return true;
         }
@@ -1071,6 +1099,11 @@ static bool disjoint_in(const LhatType *a, const LhatType *b,
     // the same declaration.
     if (is_error_type(a) || is_error_type(b)) {
         if (!is_error_type(a) || !is_error_type(b)) {
+            return true;
+        }
+        // 2.7: the two families never meet, so a top overlaps only what is
+        // under it. This is the row 2.6's table gains.
+        if (a->v.error.local != b->v.error.local) {
             return true;
         }
         if (a->kind == LHAT_TYPE_ERROR || b->kind == LHAT_TYPE_ERROR) {
@@ -1578,7 +1611,11 @@ static void write_type(TypeSink *sink, const LhatType *type, int depth)
         case LHAT_TYPE_BOOL:   put_text(sink, "bool^"); return;
         case LHAT_TYPE_NUMBER: put_text(sink, "number^"); return;
         case LHAT_TYPE_STRING: put_text(sink, "string^"); return;
-        case LHAT_TYPE_ERROR:  put_text(sink, "error^"); return;
+        // 04 の 2.7: two tops, so the writer has to say which (14.16 wants
+        // what it writes to read back as the same type).
+        case LHAT_TYPE_ERROR:
+            put_text(sink, type->v.error.local ? "localerror^" : "error^");
+            return;
 
         case LHAT_TYPE_TABLE: {
             // 05 の 8.8: a host type is named the way it was registered, the

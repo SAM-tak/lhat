@@ -1021,7 +1021,7 @@ static void declare_error(Compiler *c, const LhatNode *node)
         (const LhatErrorKind **)lhat_calloc(kind_count ? kind_count : 1,
                                        sizeof *kinds);
     LhatErrorKind *group =
-        lhat_error_kind_new(&chunk->heap, NULL, group_name);
+        lhat_error_kind_new(&chunk->heap, NULL, node->v.named.local, group_name);
     if (group_name == NULL || group == NULL || kinds == NULL) {
         lhat_free(kinds);
         fail(c, LHAT_COMPILE_TOO_COMPLEX);
@@ -1052,7 +1052,7 @@ static void declare_error(Compiler *c, const LhatNode *node)
 
         LhatString *text = lhat_string_new(&chunk->heap, qualified, total);
         LhatErrorKind *kind =
-            text != NULL ? lhat_error_kind_new(&chunk->heap, group, text)
+            text != NULL ? lhat_error_kind_new(&chunk->heap, group, false, text)
                          : NULL;
         if (kind == NULL) {
             lhat_free(kinds);

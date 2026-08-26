@@ -516,6 +516,17 @@ Binding *chk_scope_add(Scope *scope, const char *name, size_t length,
 void chk_scope_dispose(Scope *scope);
 LhatType *chk_simple(Checker *c, LhatTypeKind kind);
 
+// 04 の 2.7: 'error^|localerror^' -- what the operators mean by "an error"
+// now that there are two disjoint families. catch^ takes either, and so does
+// a bare catch^: arm; only try^ tells them apart, by refusing one.
+LhatType *chk_any_error(Checker *c);
+
+// 04 の 2.7改: does this type touch localerror^ anywhere a caller could see
+// it? Walks unions, tuple positions, t^{} members and a subroutine's result,
+// and treats a nominal type (def^, an error kind, a host type) as an atom --
+// see the comment on the definition for why the atom matters.
+bool chk_type_touches_local(const LhatType *type, unsigned depth);
+
 // 02 の 18.5: what a run of annotations is asked, where `target` is the one
 // LhatAnnotationTarget the place they were written is.
 void chk_check_annotations(Checker *c, const LhatNode *list, uint32_t target);

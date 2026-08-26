@@ -56,6 +56,7 @@ lhat_add_test(test_check_coroutine check)
 lhat_add_test(test_check_purity check)
 lhat_add_test(test_check_tables check)
 lhat_add_test(test_check_novalue check)
+lhat_add_test(test_error_local check)
 
 # The machine suite, the same way.
 lhat_add_test(test_vm_core vm)

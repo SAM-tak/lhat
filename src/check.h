@@ -56,6 +56,10 @@ typedef enum {
     LHAT_CHECK_ERR_CANNOT_FAIL,         // 04 の 4.1: catch^ on what cannot fail
     LHAT_CHECK_ERR_CANNOT_BE_NIL,       // 11.7, the same for '??'
     LHAT_CHECK_ERR_TRY_OUTSIDE,         // 04 の 5.3
+    LHAT_CHECK_ERR_LOCAL_ERROR_ESCAPES, // 04 の 2.7改: a localerror^ on its
+                                        // way out of the frame that raised it
+    LHAT_CHECK_ERR_LOCAL_ERROR_WRITTEN, // 2.7改: localerror^ written where a
+                                        // caller would receive it
     LHAT_CHECK_ERR_NEVER_RETURNS,       // 03 の 3.4: every way out of the body
                                         // goes through the subroutine itself
     LHAT_CHECK_ERR_RESULT_UNDECIDED,    // 03 の 3.1: the body did not decide

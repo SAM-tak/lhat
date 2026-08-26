@@ -527,13 +527,13 @@ static void test_errors(void)
     Types t;
     types_init(&t);
 
-    LhatType *io = lhat_type_error_set(&t.arena, "IOError", 7);
+    LhatType *io = lhat_type_error_set(&t.arena, "IOError", 7, false);
     LhatType *not_found = lhat_type_error_kind(&t.arena, io, "NotFound", 8);
     LhatType *denied = lhat_type_error_kind(&t.arena, io, "Denied", 6);
 
     // 2.4: two declarations written the same way are different types. This is
     // the one place identity is not structural.
-    LhatType *user = lhat_type_error_set(&t.arena, "UserError", 9);
+    LhatType *user = lhat_type_error_set(&t.arena, "UserError", 9, false);
     LhatType *user_not_found = lhat_type_error_kind(&t.arena, user, "NotFound", 8);
 
     LHAT_TEST("a kind is below its set and below error^");
@@ -592,7 +592,7 @@ static void test_errors(void)
     // 2.5 with 6.1: narrowing is what makes a declared field visible.
     LHAT_TEST("a kind may declare fields");
     {
-        LhatType *parse = lhat_type_error_set(&t.arena, "ParseError", 10);
+        LhatType *parse = lhat_type_error_set(&t.arena, "ParseError", 10, false);
         LhatType *syntax = lhat_type_error_kind(&t.arena, parse, "Syntax", 6);
         lhat_type_add_member(&t.arena, syntax, "line", 4,
                              simple(&t, LHAT_TYPE_NUMBER));
