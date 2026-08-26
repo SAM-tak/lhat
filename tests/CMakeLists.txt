@@ -85,6 +85,9 @@ if(LHAT_BUILD_STDLIB)
     lhat_add_test(test_io stdlib)
     target_link_libraries(test_io PRIVATE lhatstdlib)
 
+    lhat_add_test(test_json stdlib)
+    target_link_libraries(test_json PRIVATE lhatstdlib)
+
     lhat_add_test(test_random stdlib)
     target_link_libraries(test_random PRIVATE lhatstdlib)
 

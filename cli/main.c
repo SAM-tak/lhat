@@ -24,6 +24,7 @@
 #include "stdlib/debug.h"
 #include "stdlib/error.h"
 #include "stdlib/io.h"
+#include "stdlib/json.h"
 #include "stdlib/math.h"
 #include "stdlib/mathvector3.h"
 #include "stdlib/random.h"
@@ -612,6 +613,7 @@ static bool bind_host_names(LhatProgram *program)
 
 #ifdef LHAT_CLI_WITH_STDLIB
     if (!lhatstdlib_io_register(program) ||
+        !lhatstdlib_json_register(program) ||
         !lhatstdlib_thread_register(program) ||
         !lhatstdlib_random_register(program) ||
         !lhatstdlib_regex_register(program) ||

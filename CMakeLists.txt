@@ -177,6 +177,7 @@ if(LHAT_BUILD_STDLIB)
         stdlib/debug.c
         stdlib/error.c
         stdlib/io.c
+        stdlib/json.c
         stdlib/math.c
         stdlib/mathvector3.c
         stdlib/random.c
@@ -199,7 +200,7 @@ if(LHAT_BUILD_STDLIB)
         ARCHIVE DESTINATION lib
         LIBRARY DESTINATION lib
         RUNTIME DESTINATION bin)
-    install(FILES stdlib/async.h stdlib/carry.h stdlib/debug.h stdlib/error.h stdlib/io.h
+    install(FILES stdlib/async.h stdlib/carry.h stdlib/debug.h stdlib/error.h stdlib/io.h stdlib/json.h
             stdlib/math.h stdlib/mathvector3.h stdlib/random.h stdlib/regex.h stdlib/load.h
             stdlib/thread.h
         DESTINATION include/lhatstdlib)
