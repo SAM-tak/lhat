@@ -18,6 +18,7 @@
 #include "lhat/vm.h"     // LhatMachine, LhatHostFn's shape
 
 #include "diagnostics.h"
+#include "lton.h"
 #include "util.h"
 
 // ---------------------------------------------------------------------------
@@ -37,11 +38,26 @@
 static char *lsp_program_load(void *context, const char *path, size_t *length)
 {
     LspWorkspace *ws = (LspWorkspace *)context;
-    char *overlay = lsp_document_store_copy(&ws->documents, path, length);
-    if (overlay != NULL) {
-        return overlay;
+    char *text = lsp_document_store_copy(&ws->documents, path, length);
+    if (text == NULL) {
+        text = lhat_load_file(NULL, path, length);
     }
-    return lhat_load_file(NULL, path, length);
+    // 08-lton.md: an LTON file is the inside of a table literal, so the front
+    // end has nothing to read until it is wrapped -- the same wrapping
+    // stdlib/lton.c does to read one (lsp/lton.h). Here, at the one place a
+    // unit's bytes arrive, so that everything past it reads a unit and only
+    // the positions handed back have to know (position.h).
+    if (text != NULL && lsp_lton_is_path(path)) {
+        size_t whole = 0;
+        char *wrapped = lsp_lton_wrap(text, *length, &whole);
+        lhat_free(text);
+        if (wrapped == NULL) {
+            return NULL;
+        }
+        *length = whole;
+        return wrapped;
+    }
+    return text;
 }
 
 // 05 の 8.2/8.7: the checker has to know a host's names before it checks
@@ -239,6 +255,14 @@ static bool has_lh_extension(const char *path)
     return length > 3 && strcmp(path + length - 3, ".lh") == 0;
 }
 
+// What checking may be pointed at: a unit, or an LTON file -- which is not a
+// unit and is never require^d, but is checked all the same so that what is
+// written in one is answered for (08-lton.md).
+static bool is_checkable(const char *path)
+{
+    return has_lh_extension(path) || lsp_lton_is_path(path);
+}
+
 static void add_lh_file(LspWorkspace *ws, const char *absolute_path)
 {
     root_find_or_add(ws, absolute_path);
@@ -275,7 +299,7 @@ static void scan_dir(LspWorkspace *ws, const char *dir)
         }
         if (data.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
             scan_dir(ws, child);
-        } else if (has_lh_extension(child)) {
+        } else if (is_checkable(child)) {
             add_lh_file(ws, child);
         }
     } while (FindNextFileA(handle, &data));
@@ -304,7 +328,7 @@ static void scan_dir(LspWorkspace *ws, const char *dir)
         }
         if (S_ISDIR(st.st_mode)) {
             scan_dir(ws, child);
-        } else if (has_lh_extension(child)) {
+        } else if (is_checkable(child)) {
             add_lh_file(ws, child);
         }
     }
@@ -357,7 +381,7 @@ bool lsp_workspace_is_host_config_path(const LspWorkspace *ws,
 
 bool lsp_workspace_is_unit_path(const char *path)
 {
-    return has_lh_extension(path);
+    return is_checkable(path);
 }
 
 LspHostConfigOutcome lsp_workspace_load_host_config(LspWorkspace *ws,

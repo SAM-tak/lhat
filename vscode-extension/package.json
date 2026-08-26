@@ -30,6 +30,18 @@
           "lhat"
         ],
         "configuration": "./language-configuration.json"
+      },
+      {
+        "comment": "DesignDocuments/08-lton.md: L^ Table Object Notation -- a file that is the inside of a table literal, so that a configuration is written as data rather than as a chunk that answers data. Its own language id rather than another extension on L^: the status bar then names what the file is, and an editor setting can be made for one without touching the other. The brackets and comments are L^'s, so the configuration is too.",
+        "id": "lton",
+        "extensions": [
+          ".lton"
+        ],
+        "aliases": [
+          "LTON",
+          "lton"
+        ],
+        "configuration": "./language-configuration.json"
       }
     ],
     "grammars": [
@@ -37,6 +49,11 @@
         "language": "lhat",
         "scopeName": "source.lhat",
         "path": "./syntaxes/lhat.tmLanguage.json"
+      },
+      {
+        "language": "lton",
+        "scopeName": "source.lton",
+        "path": "./syntaxes/lton.tmLanguage.json"
       }
     ],
     "customEditors": [

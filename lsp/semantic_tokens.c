@@ -60,17 +60,15 @@ cJSON *lsp_semantic_tokens_for_unit(const LhatUnit *unit)
     }
     lhat_unit_semantic_names(unit, names, count);
 
-    const char *text = unit->source.text;
-    size_t text_length = unit->source.length;
     int prev_line = 0;
     int prev_char = 0;
 
     for (size_t i = 0; i < count; i++) {
         const LhatSemanticName *name = &names[i];
 
-        LspPosition start = lsp_position_at(text, text_length, name->offset);
+        LspPosition start = lsp_unit_position_at(unit, name->offset);
         LspPosition end =
-            lsp_position_at(text, text_length, name->offset + name->length);
+            lsp_unit_position_at(unit, name->offset + name->length);
         if (end.line != start.line) {
             continue;  // an identifier never spans a line; be safe anyway
         }

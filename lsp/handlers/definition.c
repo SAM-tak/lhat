@@ -33,8 +33,8 @@ typedef struct {
 static void locate(void *context, const LhatUnit *unit)
 {
     DefinitionRequest *request = (DefinitionRequest *)context;
-    uint32_t offset = lsp_offset_at(unit->source.text, unit->source.length,
-                                    request->line, request->character);
+    uint32_t offset =
+        lsp_unit_offset_at(unit, request->line, request->character);
     LspDefinitionSite site;
     if (!lsp_definition_for_unit(unit, offset, &site)) {
         return;
@@ -58,9 +58,8 @@ static void measure(void *context, const LhatUnit *unit)
     RangeRequest *range = (RangeRequest *)context;
     uint32_t end = lsp_definition_name_end(unit->source.text,
                                            unit->source.length, range->offset);
-    range->start =
-        lsp_position_at(unit->source.text, unit->source.length, range->offset);
-    range->end = lsp_position_at(unit->source.text, unit->source.length, end);
+    range->start = lsp_unit_position_at(unit, range->offset);
+    range->end = lsp_unit_position_at(unit, end);
     range->ready = true;
 }
 

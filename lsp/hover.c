@@ -395,10 +395,8 @@ cJSON *lsp_hover_for_unit(const LhatUnit *unit, uint32_t offset)
     cJSON *range = to_offset > from_offset ? cJSON_CreateObject() : NULL;
     if (range != NULL) {
         cJSON_AddItemToObject(hover, "range", range);
-        LspPosition from = lsp_position_at(unit->source.text,
-                                           unit->source.length, from_offset);
-        LspPosition to = lsp_position_at(unit->source.text,
-                                         unit->source.length, to_offset);
+        LspPosition from = lsp_unit_position_at(unit, from_offset);
+        LspPosition to = lsp_unit_position_at(unit, to_offset);
         cJSON *start = cJSON_CreateObject();
         cJSON *end = cJSON_CreateObject();
         cJSON_AddItemToObject(range, "start", start);

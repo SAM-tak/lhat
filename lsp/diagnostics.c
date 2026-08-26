@@ -22,13 +22,15 @@ static cJSON *make_position(LspPosition pos)
 
 // `span` is in bytes, and zero marks one character rather than a span --
 // the same convention error.h's LhatReport uses.
-static cJSON *make_diagnostic(const char *text, size_t text_length,
-                              uint32_t offset, uint32_t span, int severity,
+static cJSON *make_diagnostic(const LhatUnit *unit, uint32_t offset,
+                              uint32_t span, int severity,
                               const char *message)
 {
     uint32_t marked = span > 0 ? span : 1;
-    LspPosition start = lsp_position_at(text, text_length, offset);
-    LspPosition end = lsp_position_at(text, text_length, offset + marked);
+    // 08-lton.md: a .lton's text is the file's own inside a wrapper, so what
+    // is marked is the file's position and not the wrapped text's.
+    LspPosition start = lsp_unit_position_at(unit, offset);
+    LspPosition end = lsp_unit_position_at(unit, offset + marked);
 
     cJSON *range = cJSON_CreateObject();
     cJSON_AddItemToObject(range, "start", make_position(start));
@@ -76,9 +78,8 @@ cJSON *lsp_diagnostics_for_unit(const LhatUnit *unit, bool project_relaxed)
                            ? LSP_SEVERITY_WARNING
                            : LSP_SEVERITY_ERROR;
         cJSON_AddItemToArray(array,
-                             make_diagnostic(source->text, source->length,
-                                             d.offset, d.length, severity,
-                                             message));
+                             make_diagnostic(unit, d.offset, d.length,
+                                             severity, message));
         free(bigger);
     }
 
@@ -104,7 +105,7 @@ void lsp_diagnostics_add_compile_failure(cJSON *array, const LhatUnit *unit,
     }
     // A compile refusal stops every host, strict or relaxed -- always Error.
     cJSON_AddItemToArray(array,
-                         make_diagnostic(source->text, source->length,
-                                         failure.offset, failure.name_length,
+                         make_diagnostic(unit, failure.offset,
+                                         failure.name_length,
                                          LSP_SEVERITY_ERROR, message));
 }

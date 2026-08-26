@@ -1,0 +1,11 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "LTON",
+  "scopeName": "source.lton",
+  "patterns": [
+    {
+      "comment": "DesignDocuments/08-lton.md: an LTON file is the inside of a table literal and nothing else -- the elements of 02 の 14.14, separated by ','. Every one of them is written in L^: the comments, the string escapes and the shapes of a number are the language's own because the same lexer reads them (08 の 3). So the whole grammar is L^'s, included rather than copied, and a change to 01 reaches LTON by itself.",
+      "include": "source.lhat"
+    }
+  ]
+}

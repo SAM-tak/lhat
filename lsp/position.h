@@ -13,6 +13,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "program_internal.h"
+
 typedef struct {
     int line;       // 0-based
     int character;  // 0-based, UTF-16 code units
@@ -27,5 +29,13 @@ LspPosition lsp_position_at(const char *text, size_t text_length,
 // than running into the next.
 uint32_t lsp_offset_at(const char *text, size_t text_length, int line,
                        int character);
+
+// The same two, asked of a unit rather than of a text -- which is what every
+// caller actually has, and what a .lton needs: its text is the file's own
+// wrapped (lsp/lton.h), so a position in the text and a position in the file
+// are not the same thing. Every position the server hands out goes through
+// the first, and every one an editor hands in comes back through the second.
+LspPosition lsp_unit_position_at(const LhatUnit *unit, uint32_t byte_offset);
+uint32_t lsp_unit_offset_at(const LhatUnit *unit, int line, int character);
 
 #endif  // LSP_POSITION_H

@@ -285,6 +285,7 @@ if(LHAT_BUILD_LSP)
         lsp/signature.c
         lsp/handlers/definition.c
         lsp/definition.c
+        lsp/lton.c
         lsp/resolution.c
     )
     # The binary is a language server, not "LSP" itself, so the executable
@@ -295,7 +296,11 @@ if(LHAT_BUILD_LSP)
         RUNTIME_OUTPUT_NAME lhatls
     )
     target_link_libraries(lhat_lsp PRIVATE lhat cjson lhatthread)
+    # The repository root as well: lsp/lton.c names stdlib/lton.h for the
+    # wrapper an LTON file is read inside (08-lton.md). A header and no
+    # more -- the server still does not link the sample library.
     target_include_directories(lhat_lsp PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}
         ${CMAKE_CURRENT_SOURCE_DIR}/src
         ${CMAKE_CURRENT_SOURCE_DIR}/lsp
     )

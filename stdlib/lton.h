@@ -45,6 +45,23 @@
 extern "C" {
 #endif
 
+// THE WRAPPER. What the text is put inside before the front end sees it: an
+// f^ that answers a table, called at once. 05 の 3.2 makes a script's top
+// level a p^, which may call an f^ -- and inside the f^ is where 15.1 holds,
+// which is what an LTON text is held to.
+//
+// The prologue has to stay on one line. What follows it is the file's own
+// bytes laid down verbatim, so every line of the file after the first keeps
+// the number it has in the file; starting the text on a line of its own
+// would shift all of them, and a diagnostic naming the wrong line is worse
+// than one naming the wrong column of the first.
+//
+// Named here rather than kept inside lton.c because the language server
+// wraps the same way to check a .lton the editor has open (lsp/lton.c) --
+// two spellings of one convention would be two formats.
+#define LHATSTDLIB_LTON_PROLOGUE "return^ (f^ -> t^{} { return^ {"
+#define LHATSTDLIB_LTON_EPILOGUE "\n} })()\n"
+
 bool lhatstdlib_lton_register(LhatProgram *program);
 
 // ---------------------------------------------------------------------------

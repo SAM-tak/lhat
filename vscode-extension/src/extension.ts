@@ -53,7 +53,13 @@ function startClient(command: string): LanguageClient {
     };
 
     const clientOptions: LanguageClientOptions = {
-        documentSelector: [{ scheme: "file", language: "lhat" }],
+        // 08-lton.md: an LTON file is not a unit, but it is checked -- the
+        // server wraps it as the table literal it is (lsp/lton.c) -- so the
+        // same diagnostics, tokens and hovers are wanted over one.
+        documentSelector: [
+            { scheme: "file", language: "lhat" },
+            { scheme: "file", language: "lton" },
+        ],
         // The default ErrorHandler restarts lhatls on its own once its
         // process closes -- the right behaviour recovering from a real
         // crash, which is why it is the default. Turned off by

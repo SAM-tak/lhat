@@ -26,8 +26,8 @@ typedef struct {
 static void collect(void *context, const LhatUnit *unit)
 {
     HoverRequest *request = (HoverRequest *)context;
-    uint32_t offset = lsp_offset_at(unit->source.text, unit->source.length,
-                                    request->line, request->character);
+    uint32_t offset =
+        lsp_unit_offset_at(unit, request->line, request->character);
     request->result = lsp_hover_for_unit(unit, offset);
 }
 

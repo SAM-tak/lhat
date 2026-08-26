@@ -30,16 +30,10 @@ typedef struct {
     const LhatErrorKind *out_of_memory;  // std.error.OutOfMemory -- error.h
 } LtonModule;
 
-// The wrapper. It has to fit on one line: what follows it is the LTON text
-// laid down verbatim, so every line of that text after the first keeps the
-// line number it had. Starting the text on a line of its own instead would
-// shift all of them by one, and a diagnostic that names the wrong line is
-// worse than one that names the wrong column of the first.
-//
-// 05 の 3.2 makes a script's top level a p^, which may call an f^; inside
-// the f^ is where 15.1 holds, and that is the LTON text.
-#define LTON_PROLOGUE "return^ (f^ -> t^{} { return^ {"
-#define LTON_EPILOGUE "\n} })()\n"
+// The wrapper is stdlib/lton.h's, named there rather than here so that the
+// language server wraps a .lton the same way (lsp/lton.c).
+#define LTON_PROLOGUE LHATSTDLIB_LTON_PROLOGUE
+#define LTON_EPILOGUE LHATSTDLIB_LTON_EPILOGUE
 
 static LhatValue fail_with(LhatMachine *machine, const LhatErrorKind *kind,
                            const char *message)
