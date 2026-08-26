@@ -13,7 +13,7 @@
 | [05-modules.md](05-modules.md) | 名前空間とモジュール（`module^`、`public^`、`require^`、型のラベル、初期束縛、ホスト API） | M2〜M4・M7 が未決 |
 | [06-visual-editor.md](06-visual-editor.md) | ビジュアルエディタ（`lhat/ast`、AST からグラフへの写像、ELK レイアウト、描画層、`*.lhl`） | V2・V7〜V13・V16・V18 が未決。描画層は React Flow に確定 |
 | [07-language-server.md](07-language-server.md) | 言語サーバとエディタ統合（`lhatls` の機能、ホバー、VSCode 拡張の構成） | L2・L5・L8 が未決 |
-| [08-lton.md](08-lton.md) | LTON（L^ のテーブルをテキストで書く綴り、`std.lton`、読み込み） | T1〜T3 が未決 |
+| [08-lton.md](08-lton.md) | LTON（L^ のテーブルをテキストで書く綴り、`std.lton`、読み込み、ホストからの入口） | T1〜T3 が未決 |
 
 ## Memo.md との関係
 

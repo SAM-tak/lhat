@@ -75,8 +75,16 @@
 
 #include <stdbool.h>
 
-#include "lhat/program.h"
+#include "lhat.h"
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 bool lhatstdlib_json_register(LhatProgram *program);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif  // LHATSTDLIB_JSON_H

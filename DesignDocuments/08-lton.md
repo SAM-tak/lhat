@@ -140,7 +140,61 @@ print(conf["window"]["width"])       # conf.window は 03 の 3.1 が拒む
 本文は1行に収まる前置きの直後に置かれる。したがって **2行目以降の行番号は
 書き手の見ている行と一致する**。1行目だけ桁がずれる。
 
-## 8. ［未決 T3］書き出し
+## 8. ホストから直接読む
+
+同じ2つの読みは C からも名指せる（`stdlib/lton.h`）。設定はデータで
+あって、それを読むためにホストが「テーブルを返す単位」を書いて走らせる、
+というのは回り道である。
+
+```c
+LhatLtonStatus lhatstdlib_lton_parse(LhatMachine *machine, LhatProgram *program,
+                                     const char *name, const char *text,
+                                     size_t length, LhatValue *out);
+LhatLtonStatus lhatstdlib_lton_load(LhatMachine *machine, LhatProgram *program,
+                                    const char *path, LhatValue *out);
+```
+
+```cpp
+LhatValue conf;
+if (lhatstdlib_lton_load(machine, program, "conf.lton", &conf) == LHAT_LTON_OK) {
+    settings.identity = fieldString(machine, conf, "identity", settings.identity);
+    settings.console  = fieldBool(machine, conf, "console", settings.console);
+}
+```
+
+**登録は要らない。** program を明示的に受け取るので、設定を読みたいだけの
+ホストが `std.lton` をスクリプトから見える所に置く必要はない。単位として
+検査していない program でも、`lhat_program_install` していない machine でも
+通る——LTON の本文は外の名前を一つも名指さないからである（5 節）。
+
+［補足］T1 が入って呼び出し側が `import^` を渡せるようになれば、その
+モジュールが届いている machine であることが前提に加わる。
+
+### 失敗は3つに割れる
+
+L^ 側の `LtonError` は2つだが、C 側は**読み先が違うので**分ける。
+
+- `LHAT_LTON_CANNOT_READ` — loader が何も返さなかった
+- `LHAT_LTON_REJECTED` — 検査・コンパイルが拒んだ。`p^` を呼んだ本文が
+  来るのもここ → `lhat_program_load_failure(program)`
+- `LHAT_LTON_FAULTED` — 読めて走って、止まった →
+  `lhat_machine_traceback(machine, ...)`
+- `LHAT_LTON_OUT_OF_MEMORY`
+
+L^ 側では `REJECTED` と `FAULTED` がどちらも `LtonError.Rejected` になる。
+違うのは本文だけで、7 節の署名は動かない。
+
+### 返るテーブルの寿命［補足］
+
+vm.h の「WHAT A HOST IS HOLDING IS NOT A ROOT」がここでも効く。ただし
+**回収が進むのは解釈器のループの中と `lhat_machine_collectgarbage` だけ**
+なので、`lhat_machine_make_string` で鍵を作って `lhat_table_get` で引く、
+という読み出しの最中に回収は起きない。**読み切ってから次を走らせる**、
+だけで足りる。
+
+またぐなら機械の届く所へ置く（`lhat_machine_set_global`）。
+
+## 9. ［未決 T3］書き出し
 
 LTON を直列化形式にするには書き出す側が要る。std.json で判ったことがそのまま
 効く: **テーブルの走査順はハッシュの順であって書き手の順ではない**ので、
@@ -154,4 +208,4 @@ LTON を直列化形式にするには書き出す側が要る。std.json で判
 
 - **T1 — 呼び出し側が名前を渡せる形**（5 節）
 - **T2 — `initial_bindings` を他の入口にも及ぼすか**（5 節）
-- **T3 — 書き出し**（8 節）
+- **T3 — 書き出し**（9 節）

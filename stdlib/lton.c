@@ -1,6 +1,11 @@
 // L^ (lhat) -- sample standard library: std.lton. What LTON is, and what may
 // be written in one, is lton.h; this is how the text becomes a table.
 //
+// The reading is written as the C entries lton.h names, and the two host
+// functions are those with the status turned into an L^ error. A host that
+// only wants to read its own configuration calls the C ones and never
+// registers the module.
+//
 // The text is wrapped and handed to the program's own front end rather than
 // parsed here. That is what makes the spelling L^'s -- the comments, the
 // escapes, the shapes of a number -- and what makes 02 の 15.1 do the
@@ -80,17 +85,24 @@ static char *wrapped(const char *text, size_t length, size_t *out_length)
     return made;
 }
 
-// The half both calls share once the text is in hand: wrap it, have the
-// program check and compile it as data, give the body to the machine and
-// run it. What comes back is the table -- unlike std.load, which answers
-// the closure and leaves the running to its caller.
-static LhatValue read_text(LhatMachine *machine, const LtonModule *module,
-                           const char *name, const char *text, size_t length)
+// ---------------------------------------------------------------------------
+// The reading itself, which is what a host names too (lton.h)
+// ---------------------------------------------------------------------------
+
+// Wrap the text, have the program check and compile it as data, give the
+// body to the machine and run it. What comes back is the table -- unlike
+// std.load, which answers the closure and leaves the running to its caller.
+LhatLtonStatus lhatstdlib_lton_parse(LhatMachine *machine,
+                                     LhatProgram *program, const char *name,
+                                     const char *text, size_t length,
+                                     LhatValue *out)
 {
+    *out = lhat_nil();
+
     size_t whole = 0;
     char *source = wrapped(text, length, &whole);
     if (source == NULL) {
-        return fail_with(machine, module->out_of_memory, "out of memory");
+        return LHAT_LTON_OUT_OF_MEMORY;
     }
 
     // 05 の 8.2: as data, so the host's initial bindings are not in scope.
@@ -98,36 +110,84 @@ static LhatValue read_text(LhatMachine *machine, const LtonModule *module,
     options.initial_bindings = false;
 
     LhatProto *proto = NULL;
-    LhatLoadStatus status = lhat_program_load_text_with(
-        module->program, name, source, whole, &options, &proto);
+    LhatLoadStatus status =
+        lhat_program_load_text_with(program, name != NULL ? name : "(lton)",
+                                    source, whole, &options, &proto);
     lhat_free(source);
 
     switch (status) {
         case LHAT_LOAD_OK:
             break;
+        // Not reachable from here -- the text is already in hand, and only
+        // reading one through the loader can fail to find it. lton_load's
+        // half below is where it comes from.
         case LHAT_LOAD_CANNOT_READ:
-            return fail_with(machine, module->cannot_read,
-                             "this text could not be read");
+            return LHAT_LTON_CANNOT_READ;
         case LHAT_LOAD_REJECTED:
-            // The checker's own diagnostics, which is where "an f^ may not
-            // call a p^" arrives when a text tried to have an effect.
-            return fail_with(machine, module->rejected,
-                             lhat_program_load_failure(module->program));
+            return LHAT_LTON_REJECTED;
         case LHAT_LOAD_OUT_OF_MEMORY:
-            return fail_with(machine, module->out_of_memory, "out of memory");
+            return LHAT_LTON_OUT_OF_MEMORY;
     }
 
     LhatValue closure = lhat_nil();
     if (!lhat_machine_adopt_script(machine, proto, &closure)) {
         lhat_proto_free(proto);
-        return fail_with(machine, module->out_of_memory, "out of memory");
+        return LHAT_LTON_OUT_OF_MEMORY;
     }
     LhatRunResult ran = lhat_machine_call(machine, closure, NULL, 0);
     if (ran.status != LHAT_RUN_OK) {
-        return fail_with(machine, module->rejected,
-                         "this text did not finish");
+        return LHAT_LTON_FAULTED;
     }
-    return ran.value;
+    *out = ran.value;
+    return LHAT_LTON_OK;
+}
+
+LhatLtonStatus lhatstdlib_lton_load(LhatMachine *machine, LhatProgram *program,
+                                    const char *path, LhatValue *out)
+{
+    *out = lhat_nil();
+
+    // 05 の 8.9: through the program's loader and not through the file
+    // system directly, so a host that handed none over reads nothing.
+    size_t length = 0;
+    char *text = lhat_program_read(program, path, &length);
+    if (text == NULL) {
+        return LHAT_LTON_CANNOT_READ;
+    }
+    LhatLtonStatus status =
+        lhatstdlib_lton_parse(machine, program, path, text, length, out);
+    lhat_free(text);
+    return status;
+}
+
+// ---------------------------------------------------------------------------
+// The same two, as L^ sees them
+// ---------------------------------------------------------------------------
+
+// 08 の 7: LtonError has two variants, so a text that would not compile and
+// one that ran and stopped both answer Rejected. What differs is the
+// message -- which is the distinction C keeps, since the two are read from
+// different places (lton.h).
+static LhatValue answer(LhatMachine *machine, const LtonModule *module,
+                        LhatLtonStatus status, LhatValue table)
+{
+    switch (status) {
+        case LHAT_LTON_OK:
+            return table;
+        case LHAT_LTON_CANNOT_READ:
+            return fail_with(machine, module->cannot_read, "no such file");
+        case LHAT_LTON_REJECTED:
+            // The checker's own diagnostics, which is where "an f^ may not
+            // call a p^" arrives when a text tried to have an effect.
+            return fail_with(machine, module->rejected,
+                             lhat_program_load_failure(module->program));
+        case LHAT_LTON_FAULTED:
+            return fail_with(machine, module->rejected,
+                             "this text did not finish");
+        case LHAT_LTON_OUT_OF_MEMORY:
+            return fail_with(machine, module->out_of_memory, "out of memory");
+    }
+    return lhat_nil();
 }
 
 static LhatValue lton_parse(LhatMachine *machine, void *context,
@@ -139,7 +199,10 @@ static LhatValue lton_parse(LhatMachine *machine, void *context,
     if (text == NULL) {
         return fail_with(machine, module->rejected, "not a text to read");
     }
-    return read_text(machine, module, "(lton)", text->text, text->length);
+    LhatValue table = lhat_nil();
+    LhatLtonStatus status = lhatstdlib_lton_parse(
+        machine, module->program, NULL, text->text, text->length, &table);
+    return answer(machine, module, status, table);
 }
 
 static LhatValue lton_load(LhatMachine *machine, void *context,
@@ -155,22 +218,11 @@ static LhatValue lton_load(LhatMachine *machine, void *context,
     if (named == NULL) {
         return fail_with(machine, module->out_of_memory, "out of memory");
     }
-
-    // 05 の 8.9: through the program's loader and not through the file
-    // system directly, so a host that handed none over reads nothing.
-    LhatProgram *program = module->program;
-    size_t length = 0;
-    char *text = lhat_program_read(program, named, &length);
-    if (text == NULL) {
-        LhatValue failed =
-            fail_with(machine, module->cannot_read, "no such file");
-        lhat_free(named);
-        return failed;
-    }
-    LhatValue answered = read_text(machine, module, named, text, length);
-    lhat_free(text);
+    LhatValue table = lhat_nil();
+    LhatLtonStatus status =
+        lhatstdlib_lton_load(machine, module->program, named, &table);
     lhat_free(named);
-    return answered;
+    return answer(machine, module, status, table);
 }
 
 bool lhatstdlib_lton_register(LhatProgram *program)

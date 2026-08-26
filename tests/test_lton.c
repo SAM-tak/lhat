@@ -346,10 +346,169 @@ static void test_load(void)
     }
 }
 
+// ---------------------------------------------------------------------------
+// The same two readings from C (lton.h)
+// ---------------------------------------------------------------------------
+
+// What a host reads a field with. The key has to be a string on the machine,
+// and making one allocates -- which is safe here and is the point: the
+// collector advances inside the interpreter's loop and in
+// lhat_machine_collectgarbage and nowhere else, so a table held in a C
+// variable keeps for as long as no L^ runs.
+static LhatValue field(LhatMachine *machine, LhatValue table, const char *name)
+{
+    if (!lhat_is_object_kind(table, LHAT_OBJECT_TABLE)) {
+        return lhat_nil();
+    }
+    LhatValue key = lhat_nil();
+    if (!lhat_machine_make_string(machine, name, strlen(name), &key)) {
+        return lhat_nil();
+    }
+    return lhat_table_get((const LhatTable *)lhat_as_object(table), key);
+}
+
+static void check_text(LhatValue value, const char *want, const char *what)
+{
+    const LhatString *said = lhat_is_object_kind(value, LHAT_OBJECT_STRING)
+                                 ? (const LhatString *)lhat_as_object(value)
+                                 : NULL;
+    LHAT_CHECK(said != NULL && said->length == strlen(want) &&
+                   memcmp(said->text, want, said->length) == 0,
+               "%s is \"%s\"", what, want);
+}
+
+static const File conf_files[] = {
+    {"conf.lton",
+     "# conf for the test suite: a small window, its own save directory.\n"
+     "identity = \"lhatove-suite\",\n"
+     "window = { title = \"lhatove test suite\", width = 480, vsync = 0 },\n"},
+    {"bad.lton", "a = 1,\n"
+                 "b = 1 +,\n"
+                 "c = 3,\n"},
+    {NULL, NULL},
+};
+
+static void test_from_c(void)
+{
+    // Neither registered nor checked. The C entries take the program, so a
+    // host that only means to read its own configuration never puts
+    // std.lton where a script could reach it, and never has a root unit at
+    // all -- which is the arrangement this asserts is enough.
+    LHAT_TEST("a host reads a configuration with no registration and no unit");
+    {
+        LhatProgram *program =
+            lhat_program_new(true, load_from, (void *)conf_files);
+        LhatMachine *machine = lhat_machine_new();
+
+        LhatValue conf = lhat_nil();
+        LHAT_CHECK_EQ_INT(
+            lhatstdlib_lton_load(machine, program, "conf.lton", &conf),
+            LHAT_LTON_OK);
+
+        // Read out into what a host would keep, the way its own readConf
+        // would: a straight run of lookups with no L^ in between.
+        check_text(field(machine, conf, "identity"), "lhatove-suite",
+                   "identity");
+        LhatValue window = field(machine, conf, "window");
+        check_text(field(machine, window, "title"), "lhatove test suite",
+                   "window.title");
+        LHAT_CHECK_EQ_INT(lhat_as_integer(field(machine, window, "width")),
+                          480);
+        LHAT_CHECK_EQ_INT(lhat_as_integer(field(machine, window, "vsync")), 0);
+        // A key that is not there answers nil^ rather than failing (11.3),
+        // which is what lets a host keep its own default.
+        LHAT_CHECK(lhat_is_nil(field(machine, window, "height")),
+                   "a field the file left out is nil^");
+
+        lhat_machine_dispose(machine);
+        lhat_program_free(program);
+    }
+
+    LHAT_TEST("parse names the text, and a refusal says where");
+    {
+        LhatProgram *program = lhat_program_new(true, NULL, NULL);
+        LhatMachine *machine = lhat_machine_new();
+
+        LhatValue table = lhat_nil();
+        static const char text[] = "a = 1,\nb = 1 +,\n";
+        LHAT_CHECK_EQ_INT(
+            lhatstdlib_lton_parse(machine, program, "settings.lton", text,
+                                  sizeof text - 1, &table),
+            LHAT_LTON_REJECTED);
+        LHAT_CHECK(lhat_is_nil(table), "nothing came back");
+        const char *said = lhat_program_load_failure(program);
+        LHAT_CHECK(said != NULL && strstr(said, "settings.lton:2:") != NULL,
+                   "the failure names the caller's name and line 2: %s",
+                   said != NULL ? said : "(none)");
+
+        // NULL for the name is what the L^ side passes.
+        LHAT_CHECK_EQ_INT(
+            lhatstdlib_lton_parse(machine, program, NULL, "x = 1", 5, &table),
+            LHAT_LTON_OK);
+        LHAT_CHECK_EQ_INT(lhat_as_integer(field(machine, table, "x")), 1);
+
+        // An empty text is an empty table here too, so 0 is a length and
+        // not a stand-in for "measure it yourself".
+        LHAT_CHECK_EQ_INT(
+            lhatstdlib_lton_parse(machine, program, NULL, "", 0, &table),
+            LHAT_LTON_OK);
+        LHAT_CHECK(lhat_is_object_kind(table, LHAT_OBJECT_TABLE) &&
+                       lhat_table_count((const LhatTable *)lhat_as_object(
+                           table)) == 0,
+                   "an empty text is an empty table");
+
+        lhat_machine_dispose(machine);
+        lhat_program_free(program);
+    }
+
+    // 15.1 is the language's rule and not this module's, so it does not care
+    // which side of the boundary asked.
+    LHAT_TEST("a p^ call is refused from C as it is from L^");
+    {
+        LhatProgram *program = lhat_program_new(true, NULL, NULL);
+        LhatMachine *machine = lhat_machine_new();
+
+        LhatValue table = lhat_nil();
+        static const char text[] = "x = (p^ { })()";
+        LHAT_CHECK_EQ_INT(
+            lhatstdlib_lton_parse(machine, program, NULL, text,
+                                  sizeof text - 1, &table),
+            LHAT_LTON_REJECTED);
+
+        lhat_machine_dispose(machine);
+        lhat_program_free(program);
+    }
+
+    // 8.9: through the loader and nothing else. A program given none reads
+    // nothing whatever the file system holds.
+    LHAT_TEST("a path the loader does not serve answers CANNOT_READ");
+    {
+        LhatProgram *program =
+            lhat_program_new(true, load_from, (void *)conf_files);
+        LhatMachine *machine = lhat_machine_new();
+
+        LhatValue table = lhat_nil();
+        LHAT_CHECK_EQ_INT(
+            lhatstdlib_lton_load(machine, program, "nowhere.lton", &table),
+            LHAT_LTON_CANNOT_READ);
+        LHAT_CHECK(lhat_is_nil(table), "nothing came back");
+
+        LhatProgram *loaderless = lhat_program_new(true, NULL, NULL);
+        LHAT_CHECK_EQ_INT(
+            lhatstdlib_lton_load(machine, loaderless, "conf.lton", &table),
+            LHAT_LTON_CANNOT_READ);
+        lhat_program_free(loaderless);
+
+        lhat_machine_dispose(machine);
+        lhat_program_free(program);
+    }
+}
+
 int main(void)
 {
     test_what_may_be_written();
     test_what_may_not();
     test_load();
+    test_from_c();
     return lhat_test_report("test_lton");
 }

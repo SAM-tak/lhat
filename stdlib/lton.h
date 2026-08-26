@@ -37,9 +37,75 @@
 #define LHATSTDLIB_LTON_H
 
 #include <stdbool.h>
+#include <stddef.h>
 
-#include "lhat/program.h"
+#include "lhat.h"
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 bool lhatstdlib_lton_register(LhatProgram *program);
+
+// ---------------------------------------------------------------------------
+// Reading one from the host
+// ---------------------------------------------------------------------------
+//
+// The same two readings, named so that C has them too. A configuration is
+// data, and a host wanting its own conf.lton should not have to write a unit
+// that answers one and run it:
+//
+//     LhatValue conf;
+//     if (lhatstdlib_lton_load(machine, program, "conf.lton", &conf) ==
+//         LHAT_LTON_OK) {
+//         readConf(machine, conf, settings);   // lhat_table_get, and done
+//     }
+//
+// Registration is not needed. These take the program rather than reaching it
+// through a registered module, so a host that only wants to read files never
+// puts std.lton where a script can see it.
+//
+// WHAT COMES BACK IS THE MACHINE'S. vm.h's rule holds here as everywhere: a
+// value a host is holding is not a root. Nothing between these calls and the
+// reading collects -- the collector advances inside the interpreter's loop
+// and in lhat_machine_collectgarbage, and nowhere else, so making a key with
+// lhat_machine_make_string and asking lhat_table_get for it is safe as it
+// stands. Read what is wanted out of the table before running L^ again;
+// a table kept across a run wants somewhere the machine reaches
+// (lhat_machine_set_global).
+typedef enum {
+    LHAT_LTON_OK,
+    // The program's loader had nothing for the path (or was never given).
+    LHAT_LTON_CANNOT_READ,
+    // The checker or the compiler refused it, which is where a text that
+    // tried to call a p^ arrives. lhat_program_load_failure(program) is what
+    // was said, one diagnostic per line.
+    LHAT_LTON_REJECTED,
+    // It was read and it ran, and it stopped -- a panic^, a division by
+    // zero. lhat_machine_traceback(machine, ...) is where it stopped.
+    LHAT_LTON_FAULTED,
+    LHAT_LTON_OUT_OF_MEMORY
+} LhatLtonStatus;
+
+// A text already in hand. `name` is what diagnostics call it -- NULL for
+// "(lton)", which is what the L^ side passes. `length` is the whole of the
+// text and is meant: an empty one is an empty table, so 0 cannot stand for
+// "measure it yourself".
+//
+// `out` is the table on OK and nil^ on anything else.
+LhatLtonStatus lhatstdlib_lton_parse(LhatMachine *machine,
+                                     LhatProgram *program, const char *name,
+                                     const char *text, size_t length,
+                                     LhatValue *out);
+
+// The text at `path`, read through the program's loader and through nothing
+// else (05 の 8.9) -- so a host that handed none over reads nothing here
+// either. Diagnostics call it by its path.
+LhatLtonStatus lhatstdlib_lton_load(LhatMachine *machine, LhatProgram *program,
+                                    const char *path, LhatValue *out);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif  // LHATSTDLIB_LTON_H
