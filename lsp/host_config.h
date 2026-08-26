@@ -45,4 +45,10 @@ bool lsp_host_config_strict(const LspHostConfig *config, bool fallback);
 // that entry and go on.
 void lsp_host_config_apply(const LspHostConfig *config, LhatProgram *program);
 
+// How many entries the file carries, for a server saying out loud what it
+// read. Counted rather than remembered: the arrays are the parsed JSON and
+// nothing else holds a tally. Any of the three may be NULL.
+void lsp_host_config_counts(const LspHostConfig *config, size_t *types,
+                            size_t *functions, size_t *annotations);
+
 #endif  // LSP_HOST_CONFIG_H

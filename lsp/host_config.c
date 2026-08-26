@@ -122,6 +122,28 @@ static bool field_kind_of(const char *name, LhatHostValueFieldKind *out)
     return false;
 }
 
+static size_t array_length(const cJSON *root, const char *key)
+{
+    const cJSON *array = cJSON_GetObjectItemCaseSensitive(root, key);
+    return cJSON_IsArray(array) ? (size_t)cJSON_GetArraySize(array) : 0;
+}
+
+void lsp_host_config_counts(const LspHostConfig *config, size_t *types,
+                            size_t *functions, size_t *annotations)
+{
+    if (types != NULL) {
+        *types = config != NULL ? array_length(config->root, "types") : 0;
+    }
+    if (functions != NULL) {
+        *functions =
+            config != NULL ? array_length(config->root, "functions") : 0;
+    }
+    if (annotations != NULL) {
+        *annotations =
+            config != NULL ? array_length(config->root, "annotations") : 0;
+    }
+}
+
 static void apply_type(const cJSON *entry, LhatProgram *program)
 {
     const char *kind = string_of(entry, "kind");

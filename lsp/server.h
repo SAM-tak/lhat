@@ -42,6 +42,28 @@ typedef struct LspServer {
 void lsp_server_init(LspServer *server, FILE *out_stream);
 void lsp_server_dispose(LspServer *server);
 
+// window/logMessage's levels, as the spec numbers them. What this server
+// says goes to the editor's own output view for the server, which is where
+// a reader looks to find out what it did rather than what it found -- a
+// diagnostic is about the code, and this is about the server.
+typedef enum {
+    LSP_LOG_ERROR = 1,
+    LSP_LOG_WARNING = 2,
+    LSP_LOG_INFO = 3,
+} LspLogLevel;
+
+// Sends one window/logMessage. Safe from either thread: it goes through the
+// same lock every other write to stdout does (rpc.h).
+void lsp_server_log(LspServer *server, LspLogLevel level, const char *text);
+
+// Reads the workspace's lhat-host.json and says on the log which file it
+// read, or that there was nothing at the path it tried -- 05 の 8.7's
+// registrations are the whole of what import^ can reach, so a workspace
+// missing them has every import^ fail, and the reason is not in the file
+// being edited. Both call sites (initialize.c at startup, worker.c when the
+// file itself changes) want the same sentence.
+void lsp_server_load_host_config(LspServer *server);
+
 // worker.c: starts the one recheck worker thread. Called once, from the
 // "initialized" notification.
 void lsp_server_start_worker(LspServer *server);

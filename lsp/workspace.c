@@ -360,11 +360,15 @@ bool lsp_workspace_is_unit_path(const char *path)
     return has_lh_extension(path);
 }
 
-void lsp_workspace_load_host_config(LspWorkspace *ws)
+LspHostConfigOutcome lsp_workspace_load_host_config(LspWorkspace *ws,
+                                                    char **looked_at)
 {
+    if (looked_at != NULL) {
+        *looked_at = NULL;
+    }
     char *path = host_config_path(ws);
     if (path == NULL) {
-        return;
+        return LSP_HOST_CONFIG_NO_ROOT;
     }
 
     // The same two steps checking reads a unit by (lsp_program_load): the
@@ -375,16 +379,28 @@ void lsp_workspace_load_host_config(LspWorkspace *ws)
     if (text == NULL) {
         text = lhat_load_file(NULL, path, &length);
     }
-    free(path);
 
     LspHostConfig *loaded =
         text != NULL ? lsp_host_config_parse(text, length) : NULL;
+    // Told apart before the text is freed: a file that is not there and one
+    // that is there and unreadable are different things to be told about,
+    // and both arrive here as a NULL config.
+    LspHostConfigOutcome outcome = loaded != NULL ? LSP_HOST_CONFIG_READ
+                                  : text != NULL ? LSP_HOST_CONFIG_UNREADABLE
+                                                 : LSP_HOST_CONFIG_ABSENT;
     lhat_free(text);
 
     lhat_mutex_lock(&ws->lock);
     lsp_host_config_free(ws->host_config);
     ws->host_config = loaded;
     lhat_mutex_unlock(&ws->lock);
+
+    if (looked_at != NULL) {
+        *looked_at = path;
+    } else {
+        free(path);
+    }
+    return outcome;
 }
 
 // ---------------------------------------------------------------------------

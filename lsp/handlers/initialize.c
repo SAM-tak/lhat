@@ -93,7 +93,7 @@ void lsp_handle_initialized(LspServer *server, const cJSON *params)
 {
     (void)params;
     lsp_workspace_discover_roots(&server->workspace);
-    lsp_workspace_load_host_config(&server->workspace);
+    lsp_server_load_host_config(server);
     lsp_server_start_worker(server);
 }
 

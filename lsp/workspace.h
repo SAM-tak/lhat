@@ -78,7 +78,21 @@ void lsp_workspace_discover_roots(LspWorkspace *ws);
 // reads a unit by. Replaces whatever config was held before; a file that is
 // gone or will not parse leaves none, and bind falls back to the minimum.
 // A no-op in single-file mode.
-void lsp_workspace_load_host_config(LspWorkspace *ws);
+// What a load found, for a caller with a connection to say it on -- the
+// workspace itself has none (server.h owns the one place stdout is written).
+typedef enum {
+    LSP_HOST_CONFIG_READ,        // parsed, and now in force
+    LSP_HOST_CONFIG_ABSENT,      // nothing at that path
+    LSP_HOST_CONFIG_UNREADABLE,  // there, but not JSON this reader takes
+    LSP_HOST_CONFIG_NO_ROOT,     // single-file mode: nowhere to look at all
+} LspHostConfigOutcome;
+
+// Reads the workspace root's lhat-host.json into `ws`, replacing whatever
+// was in force. `looked_at` is filled with the path that was tried (malloc'd,
+// the caller frees; NULL in single-file mode) so that what is said about the
+// outcome can name the file rather than describe it.
+LspHostConfigOutcome lsp_workspace_load_host_config(LspWorkspace *ws,
+                                                    char **looked_at);
 
 // Whether `path` (absolute, forward-slashed) is this workspace's
 // lhat-host.json -- the worker's cue to reload the config and re-check

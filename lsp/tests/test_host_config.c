@@ -319,11 +319,48 @@ static void test_strict_field(void)
     }
 }
 
+// What the server says at startup is read off the file itself -- so a
+// reader who is told "10 types, 69 functions" and finds otherwise knows the
+// server read a different file than the one they are looking at.
+static void test_counts(void)
+{
+    LHAT_TEST("the counts are the entries the file carries");
+    static const char *const text =
+        "{\"types\": ["
+        "{\"kind\": \"hostdata\", \"module\": \"m\", \"name\": \"A\"},"
+        "{\"kind\": \"hostdata\", \"module\": \"m\", \"name\": \"B\"}"
+        "], \"functions\": ["
+        "{\"kind\": \"global\", \"name\": \"print\","
+        " \"signature\": \"f^...->nil^;\"}"
+        "]}";
+    LspHostConfig *config = lsp_host_config_parse(text, strlen(text));
+    LHAT_CHECK(config != NULL, "the config parsed");
+    if (config != NULL) {
+        size_t types = 0;
+        size_t functions = 0;
+        size_t annotations = 0;
+        lsp_host_config_counts(config, &types, &functions, &annotations);
+        LHAT_CHECK_EQ_INT(types, 2);
+        LHAT_CHECK_EQ_INT(functions, 1);
+        // Absent rather than empty, and it counts as none either way.
+        LHAT_CHECK_EQ_INT(annotations, 0);
+        lsp_host_config_free(config);
+    }
+
+    // Nothing to read is nothing of everything, which is what the message
+    // for a workspace with no config says.
+    LHAT_TEST("and no config at all counts as none");
+    size_t types = 99;
+    lsp_host_config_counts(NULL, &types, NULL, NULL);
+    LHAT_CHECK_EQ_INT(types, 0);
+}
+
 int main(void)
 {
     test_round_trip();
     test_without_config();
     test_malformed();
     test_strict_field();
+    test_counts();
     return lhat_test_report("test_host_config");
 }

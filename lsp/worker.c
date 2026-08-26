@@ -124,7 +124,7 @@ static int worker_main(void *arg)
             }
         }
         if (config_changed) {
-            lsp_workspace_load_host_config(&server->workspace);
+            lsp_server_load_host_config(server);
             lsp_workspace_recheck_all(&server->workspace);
         } else {
             for (size_t i = 0; i < count; i++) {
