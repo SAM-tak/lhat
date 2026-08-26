@@ -899,7 +899,10 @@ bool chk_contains_tuple(const LhatType *type)
     return false;
 }
 
-LhatType *chk_resolve_type(Checker *c, const LhatNode *node)
+// The written type, resolved. chk_resolve_type below is what everything
+// calls; this is its body, kept apart so the wrapper can leave what it found
+// on the node.
+static LhatType *resolve_written_type(Checker *c, const LhatNode *node)
 {
     // 13.8改: the permission is for this one type, not for what it contains.
     // Taking it here means every nested resolve below starts out refusing a
@@ -1140,6 +1143,31 @@ LhatType *chk_resolve_type(Checker *c, const LhatNode *node)
             chk_report(c, node, LHAT_CHECK_ERR_UNKNOWN_TYPE);
             return chk_simple(c, LHAT_TYPE_UNKNOWN);
     }
+}
+
+LhatType *chk_resolve_type(Checker *c, const LhatNode *node)
+{
+    LhatType *resolved = resolve_written_type(c, node);
+
+    // 05 の 8.9 with 08: what the compiler does with a written type it has to
+    // settle itself -- isa^, as^, an overload^ed parameter -- is match the
+    // words against what the host registered (compile.c's lower_type). That
+    // cannot see through a name bound to a type or to a module:
+    //
+    //     let^ vector3 = import^ std.math.vector3
+    //     let^ Vector3 = vector3.Vector3
+    //     v isa^ Vector3          -- the words are not the registered ones
+    //
+    // The name was resolved properly right here, so what it came to is left
+    // on the node and lower_type reads it where the words run out. Only the
+    // two kinds it gives up on: an IDENT reaching here is the qualified name
+    // of a construction (04 の 2.5), written in expression position, and
+    // nothing of an expression's own stamp should be written over.
+    if (node != NULL && resolved != NULL &&
+        (node->kind == LHAT_NODE_TYPE_NAME || node->kind == LHAT_NODE_MEMBER)) {
+        ((LhatNode *)node)->checked_type = resolved;
+    }
+    return resolved;
 }
 
 // ---------------------------------------------------------------------------

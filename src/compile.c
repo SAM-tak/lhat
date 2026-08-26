@@ -1675,13 +1675,17 @@ static void compile_nil_else(Compiler *c, const LhatNode *node, uint8_t into)
 // that loads such a name as a value and has the machine read a shape off the
 // table at run time: constructing type
 // information out of runtime data is the wrong direction (the table may be
-// pure data, arbitrarily large), and the checker never accepted the form
-// anyway.
+// pure data, arbitrarily large).
+//
+// What lower_type settles it from is the words written, and where those run
+// out it reads what the checker resolved the name to instead -- a name bound
+// to a type or to a module is spelt nothing like what was registered, and the
+// compiler settling the type never meant settling it from the spelling alone.
 //
 // So NULL from lower_type is answered by what was written: any^ makes the
-// question empty (13.7; check.c reports the writing itself), a bare name
-// reaches no type (UNDEFINED), and anything else is a written form nothing
-// settles (UNSUPPORTED).
+// question empty (13.7; check.c reports the writing itself), a name that
+// reached no type at all is UNDEFINED, and anything else is a written form
+// nothing settles (UNSUPPORTED).
 // The test itself, against a left operand already in a register. 11.5 の (5)
 // shares an operand between two links of a chain and evaluates it once, so
 // there the left is compiled by the caller.
@@ -1861,6 +1865,25 @@ static LhatRuntimeType *lower_def_chain(Compiler *c, const DefChain *chain)
 //
 // Anything not covered answers `any^`, which asks nothing -- a conservative
 // direction, since the checker has already refused what is statically wrong.
+// 05 の 8.9 with 08: what the checker resolved this written type to, as a
+// descriptor. The words a type is written with are what lower_type below
+// matches against the registrations, and they run out at a name bound to a
+// type or to a module ('let^ Vector3 = vector3.Vector3'). The checker
+// resolved the name properly and left what it found here (check.c's
+// chk_resolve_type), so this is where the words running out stops being the
+// end of the question.
+//
+// NULL when nothing checked, which is a compile 03 の 4.2 allows and which
+// then answers exactly as it did before.
+static LhatRuntimeType *from_checked_type(Compiler *c, const LhatNode *node)
+{
+    const LhatType *checked =
+        node != NULL ? (const LhatType *)node->checked_type : NULL;
+    return checked != NULL
+               ? lhat_rt_from_checked(&root_of(c)->proto->chunk.heap, checked)
+               : NULL;
+}
+
 static LhatRuntimeType *lower_type(Compiler *c, const LhatNode *node)
 {
     Compiler *root = root_of(c);
@@ -1960,7 +1983,9 @@ static LhatRuntimeType *lower_type(Compiler *c, const LhatNode *node)
                     const LhatHostValueTag *held =
                         resolve_hostvalue_type_tag(c, node->v.access.target);
                     if (held == NULL) {
-                        return NULL;  // asks nothing, not the wrong thing
+                        // The words did not reach the type; the checker's
+                        // answer might. Still NULL where nothing checked.
+                        return from_checked_type(c, node);
                     }
                     LhatRuntimeType *type =
                         lhat_type_rt_new(owner, LHAT_TYPE_RT_HOSTVALUE_BOX);
@@ -2012,7 +2037,11 @@ static LhatRuntimeType *lower_type(Compiler *c, const LhatNode *node)
             const char *name = NULL;
             size_t length = 0;
             if (!node_name(c, node, &name, &length)) {
-                return NULL;
+                // A qualified path none of the lookups above reached -- which
+                // is what a module bound to a name comes to, since they all
+                // match the registrations by the words. The checker's answer
+                // is the one thing left that knows better.
+                return from_checked_type(c, node);
             }
             // 13.13: the back edge of a written structure. Asking nothing
             // there ends the walk, which is what the def^ chain below already
@@ -2044,7 +2073,11 @@ static LhatRuntimeType *lower_type(Compiler *c, const LhatNode *node)
                 DefChain chain;
                 chain.count = 0;
                 if (!def_chain_of(c, node, &chain)) {
-                    return NULL;  // nothing this compile can see
+                    // Nothing the words reach: not a kind, not a registered
+                    // type, not a builtin, not a definition. A name bound to
+                    // one of those is exactly this case, so the checker's
+                    // answer is read before giving up.
+                    return from_checked_type(c, node);
                 }
 
                 // A definition whose shape is already being built is one of

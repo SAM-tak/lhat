@@ -854,6 +854,81 @@ static void test_parameter_width(void)
     }
 }
 
+// ---------------------------------------------------------------------------
+// 13.11 with 11.6改: a written type is what it resolves to, not what it says
+// ---------------------------------------------------------------------------
+//
+// isa^ and as^ take a type the compiler settles, and it settled one by
+// matching the words against what the host registered. A name bound to the
+// type, or to the module it lives in, is spelt nothing like those words, so
+// the compiler reached no type and answered "no such name" -- while the
+// checker, which resolves names properly, had passed the very same line.
+//
+// What the checker resolved is left on the node now, and the compiler reads
+// it where the words run out. Every spelling of one type is that one type.
+static const char alias_preamble[] =
+    "import^ std.math.vector3\n"
+    "let^ vector3 = std.math.vector3\n"
+    "let^ Vector3 = vector3.Vector3\n"
+    "let^ v = vector3.new(3, 4, 0)\n"
+    "let^ n = 7\n";
+
+static const char *const alias_spellings[] = {
+    "Vector3",                    // a name bound to the type
+    "vector3.Vector3",            // through a name bound to the module
+    "std.math.vector3.Vector3",   // written out in full
+};
+
+#define ALIAS_SPELLING_COUNT \
+    (sizeof alias_spellings / sizeof alias_spellings[0])
+
+static void test_type_position_alias(void)
+{
+    LHAT_TEST("isa^ answers the same for every spelling of one type");
+    for (size_t i = 0; i < ALIAS_SPELLING_COUNT; i++) {
+        char source[512];
+        snprintf(source, sizeof source,
+                 "%sif^ v isa^ %s { return^ 1 }\nreturn^ 0\n",
+                 alias_preamble, alias_spellings[i]);
+        LhatTestRan ran = run_source(source);
+        LHAT_CHECK_RAN_INTEGER(ran, 1);
+        lhat_test_ran_dispose(&ran);
+    }
+
+    // And answers false where it should. Reading the checker's type wrongly
+    // -- as an any^, say -- would make every one of these true, which is the
+    // way this could be broken and still look mended.
+    LHAT_TEST("and answers false for every spelling, where it should");
+    for (size_t i = 0; i < ALIAS_SPELLING_COUNT; i++) {
+        char source[512];
+        snprintf(source, sizeof source,
+                 "%sif^ n isa^ %s { return^ 1 }\nreturn^ 0\n",
+                 alias_preamble, alias_spellings[i]);
+        LhatTestRan ran = run_source(source);
+        LHAT_CHECK_RAN_INTEGER(ran, 0);
+        lhat_test_ran_dispose(&ran);
+    }
+
+    // 11.6改2: as^? answers the value or nil^, and lower_type hands
+    // LHAT_BC_ASCAST the same descriptor isa^ tests against -- so it was
+    // refused in the same three ways and is mended in the same one.
+    // Only the arm that holds is asked here. A cast that could never succeed
+    // is a type error before anything runs ("nothing is both of these"), so
+    // the other direction is not this test's to make -- what says the
+    // descriptor is a real question rather than an empty one is the false
+    // case above.
+    LHAT_TEST("as^? takes every spelling too");
+    for (size_t i = 0; i < ALIAS_SPELLING_COUNT; i++) {
+        char source[512];
+        snprintf(source, sizeof source,
+                 "%sif^ ((v as^? %s) is^ nil^) { return^ 0 }\nreturn^ 1\n",
+                 alias_preamble, alias_spellings[i]);
+        LhatTestRan ran = run_source(source);
+        LHAT_CHECK_RAN_INTEGER(ran, 1);
+        lhat_test_ran_dispose(&ran);
+    }
+}
+
 int main(void)
 {
     test_fields();
@@ -862,6 +937,7 @@ int main(void)
     test_narrowing();
     test_subroutines();
     test_parameter_width();
+    test_type_position_alias();
     test_coroutine_locals();
     test_boxing();
     test_tostring();
