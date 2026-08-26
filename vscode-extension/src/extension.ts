@@ -72,7 +72,7 @@ function startClient(command: string): LanguageClient {
 
     const newClient = new LanguageClient(
         "lhatLanguageServer",
-        "L^ (lhat) Language Server",
+        "L^ Language Server",
         serverOptions,
         clientOptions
     );

@@ -1,6 +1,6 @@
 {
   "name": "lhat-lsp-client",
-  "displayName": "L^ (lhat) Language Support",
+  "displayName": "L^ Language Support",
   "description": "Real-time type-check diagnostics for the L^ (lhat) language, via lhatls",
   "version": "0.1.0",
   "publisher": "lhat",
@@ -98,7 +98,7 @@
       ]
     },
     "configuration": {
-      "title": "L^ (lhat)",
+      "title": "L^",
       "properties": {
         "lhat.serverPath": {
           "type": "string",
