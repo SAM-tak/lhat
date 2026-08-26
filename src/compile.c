@@ -9,6 +9,8 @@
 
 #include "lhat/config.h"
 #include "lhat/port.h"
+// 04 の 2.7: where localerror^.CastFailure's one object lives.
+#include "registry.h"
 #include "rttype.h"
 #include "type.h"
 
@@ -1996,6 +1998,33 @@ static LhatRuntimeType *lower_type(Compiler *c, const LhatNode *node)
                 }
             }
 
+            // 04 の 2.7: the kinds the language declares for itself live
+            // under localerror^. Read before resolve_kind for the reason
+            // the builtin spellings are read before def_chain_of: nothing
+            // may bind a name over one of these, since there is no name to
+            // bind -- 'localerror^' is a hat word and not a binding.
+            if (node->kind == LHAT_NODE_MEMBER) {
+                const char *outer = NULL;
+                size_t outer_length = 0;
+                const char *last = NULL;
+                size_t last_length = 0;
+                if (node_name(c, node->v.access.target, &outer, &outer_length) &&
+                    name_is(outer, outer_length, "localerror^") &&
+                    node_name(c, node->v.access.argument, &last, &last_length) &&
+                    name_is(last, last_length, "CastFailure")) {
+                    const LhatErrorKind *builtin = lhat_registry_cast_failure();
+                    if (builtin == NULL) {
+                        return NULL;
+                    }
+                    LhatRuntimeType *type =
+                        lhat_type_rt_new(owner, LHAT_TYPE_RT_ERROR_KIND);
+                    if (type != NULL) {
+                        type->error_kind = builtin;
+                    }
+                    return type;
+                }
+            }
+
             // 04 の 2.4: a kind is the object its declaration made, so a
             // qualified name resolves to that rather than to any structure.
             const LhatNode *unused = NULL;
@@ -2063,7 +2092,9 @@ static LhatRuntimeType *lower_type(Compiler *c, const LhatNode *node)
                 simple = LHAT_TYPE_RT_BOOL;
             } else if (name_is(name, length, "nil^")) {
                 simple = LHAT_TYPE_RT_NIL;
-            } else if (name_is(name, length, "error^")) {
+            } else if (name_is(name, length, "error^") ||
+                       name_is(name, length, "localerror^")) {
+                // 04 の 2.7: two tops, told apart below by error_local.
                 simple = LHAT_TYPE_RT_ERROR;
             } else if (name_is(name, length, "any^")) {
                 return NULL;  // asks nothing
@@ -2104,7 +2135,12 @@ static LhatRuntimeType *lower_type(Compiler *c, const LhatNode *node)
                 root->lowering_count = mark;
                 return shape;
             }
-            return lhat_type_rt_new(owner, simple);
+            LhatRuntimeType *made = lhat_type_rt_new(owner, simple);
+            // 04 の 2.7: which of the two tops was written.
+            if (made != NULL && simple == LHAT_TYPE_RT_ERROR) {
+                made->error_local = name_is(name, length, "localerror^");
+            }
+            return made;
         }
 
         case LHAT_NODE_TYPE_FUNC:

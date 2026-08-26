@@ -73,6 +73,12 @@ size_t lhat_registry_hostvalue_count(void);
 //
 // A second declaration with a different list of variant names is refused:
 // the kinds are the declaration, and two lists are two declarations.
+// 04 の 2.7 with 11.6改3: localerror^.CastFailure. Nobody declares it and
+// nobody registers it -- it is the language's own, and it is here for the
+// reason every other identity is: 2.4 compares kinds by the declaration, so
+// two programs have to reach the same object. NULL only out of memory.
+const LhatErrorKind *lhat_registry_cast_failure(void);
+
 // `local` is 04 の 2.7's family: a name declared under one top is not the
 // same declaration as the same name under the other, so it takes part in the
 // agreement check the way the variant list does.

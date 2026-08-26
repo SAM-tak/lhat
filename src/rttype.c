@@ -201,14 +201,21 @@ static LhatRuntimeType *rt_from_checked(LhatHeap *heap,
             return rt;
         }
 
+        // 04 の 2.3 makes ERROR the top of every kind in its family; nothing
+        // here reaches the runtime LhatErrorKind object a checker-side name
+        // would need to name a precise one, so the coarser answer is the
+        // sound one for a set and a kind alike. 2.7: the family is carried
+        // either way, since coarsening across the two tops would not be
+        // sound -- they are disjoint.
         case LHAT_TYPE_ERROR:
-            return lhat_type_rt_new(heap, LHAT_TYPE_RT_ERROR);
-        // 04 の 2.3 makes ERROR the supertype of every kind; nothing here
-        // reaches the runtime LhatErrorKind object a checker-side name would
-        // need to name a precise one, so this is the sound coarser answer.
         case LHAT_TYPE_ERROR_SET:
-        case LHAT_TYPE_ERROR_KIND:
-            return lhat_type_rt_new(heap, LHAT_TYPE_RT_ERROR);
+        case LHAT_TYPE_ERROR_KIND: {
+            LhatRuntimeType *rt = lhat_type_rt_new(heap, LHAT_TYPE_RT_ERROR);
+            if (rt != NULL) {
+                rt->error_local = type->v.error.local;
+            }
+            return rt;
+        }
 
         case LHAT_TYPE_UNION: {
             LhatRuntimeType *rt = lhat_type_rt_new(heap, LHAT_TYPE_RT_UNION);

@@ -41,6 +41,14 @@ typedef struct {
     // be reading one at once.
     LhatHeap heap;
     bool heap_ready;
+
+    // 04 の 2.7 with 11.6改3: localerror^.CastFailure, which no host
+    // registers and no unit declares -- the language's own. It lives here
+    // rather than on a program or a chunk for the reason every other
+    // identity does (05 の 8.7改): two programs asking for it have to come
+    // away with the same object, or 2.4's comparison by declaration would
+    // answer false between them.
+    const LhatErrorKind *cast_failure;
 } Registry;
 
 static Registry one;
@@ -52,6 +60,24 @@ static LhatHeap *registry_heap(void)
         one.heap_ready = true;
     }
     return &one.heap;
+}
+
+const LhatErrorKind *lhat_registry_cast_failure(void)
+{
+    if (one.cast_failure != NULL) {
+        return one.cast_failure;
+    }
+    LhatHeap *heap = registry_heap();
+    // 2.4 spells a kind qualified. There is no group above this one, so what
+    // typeof^ answers is the whole of the name a writer would put in a
+    // catch^ arm.
+    const LhatString *name =
+        lhat_string_new(heap, "localerror^.CastFailure", 23);
+    if (name == NULL) {
+        return NULL;
+    }
+    one.cast_failure = lhat_error_kind_new(heap, NULL, true, name);
+    return one.cast_failure;
 }
 
 static char *duplicate(const char *text)

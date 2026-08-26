@@ -438,6 +438,8 @@ typedef struct {
     // object -- kept here and handed forward by a session the way
     // `environment` is.
     LhatType *typeinfo_type;
+    // 04 の 2.7: localerror^.CastFailure, interned for the same reason.
+    LhatType *cast_failure_type;
 
     // 15.2: what the yield^/await^ sites seen so far in this body agree
     // on. infer_func saves and resets these around a nested body the same
@@ -633,6 +635,7 @@ bool chk_is_hostvalue(const LhatType *type);
 LhatType *chk_infer(Checker *c, const LhatNode *node);
 LhatType *chk_environment_type(Checker *c);
 LhatType *chk_typeinfo_type(Checker *c);
+LhatType *chk_cast_failure_type(Checker *c);
 void chk_check_define(Checker *c, const LhatNode *node);
 LhatType *chk_module_root_table(Checker *c);
 void chk_register_module_type(Checker *c, const char *module_name,

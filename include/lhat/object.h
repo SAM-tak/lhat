@@ -267,7 +267,10 @@ typedef enum
     LHAT_TYPE_RT_TABLE,
     LHAT_TYPE_RT_SUBROUTINE,
     LHAT_TYPE_RT_COROUTINE,
-    LHAT_TYPE_RT_ERROR,      // 04 の 2.3: any kind
+    // 04 の 2.3 and 2.7: a whole family -- error^, or localerror^, which
+    // `error_local` tells apart. The two are disjoint, so one of these
+    // answers false for a value of the other.
+    LHAT_TYPE_RT_ERROR,
     LHAT_TYPE_RT_ERROR_KIND, // one kind, or one declaration's union of them
     // 05 の 8.8: a host type, whose identity is its tag and nothing else
     // (7.3's exception for an opaque value). Written like any other name, so
@@ -315,6 +318,10 @@ typedef struct LhatRuntimeType {
     LhatRuntimeTypeKind kind;
 
     const LhatErrorKind *error_kind;  // ERROR_KIND
+
+    // ERROR only (04 の 2.7): which of the two families this stands for.
+    // A kind carries its own in error_kind->local.
+    bool error_local;
 
     // HOSTDATA. Lives on the program rather than the heap, exactly as
     // LhatHostData.tag does, so the collector never follows it either. The

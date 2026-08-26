@@ -223,9 +223,60 @@ static void test_the_chain_is_the_way_out(void)
     unit_dispose(&u);
 }
 
+// 2.7 with 11.6改3: under localerror^ is where the language keeps the kinds
+// it declares for itself. Nothing registers CastFailure and no unit declares
+// it, so it is writable with no import^ and in a program with no host at all.
+static void test_the_builtin_kind(void)
+{
+    Unit u;
+
+    LHAT_TEST("localerror^.CastFailure is writable with nothing declared");
+    check_text(&u,
+               "let^ g = p^ {\n"
+               "    var^ e : localerror^.CastFailure|nil^ = nil^\n"
+               "}\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("it is under localerror^, so it may not be returned");
+    check_text(&u,
+               "let^ g = p^ -> number^|localerror^.CastFailure { return^ 1 }\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_LOCAL_ERROR_WRITTEN);
+    unit_dispose(&u);
+
+    // Only under that top. error^ has no such namespace, and a name nothing
+    // declares is a name nothing declares.
+    LHAT_TEST("error^.CastFailure is not a thing");
+    check_text(&u,
+               "let^ g = p^ {\n"
+               "    var^ e : error^.CastFailure|nil^ = nil^\n"
+               "}\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_UNKNOWN_TYPE);
+    unit_dispose(&u);
+
+    LHAT_TEST("and neither is a made-up name under localerror^");
+    check_text(&u,
+               "let^ g = p^ {\n"
+               "    var^ e : localerror^.NoSuchThing|nil^ = nil^\n"
+               "}\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_UNKNOWN_TYPE);
+    unit_dispose(&u);
+
+    // 2.4: identity is the declaration, so two mentions of the name in one
+    // unit have to reach the same one. They do not if it is built afresh.
+    LHAT_TEST("two mentions of it are the same type");
+    check_text(&u,
+               "let^ g = p^ e:localerror^.CastFailure {\n"
+               "    var^ f : localerror^.CastFailure = e\n"
+               "}\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+}
+
 int main(void)
 {
     test_error_is_untouched();
+    test_the_builtin_kind();
     test_the_two_families_are_disjoint();
     test_it_cannot_leave_the_frame();
     test_resolving_it_here();

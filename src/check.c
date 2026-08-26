@@ -407,6 +407,30 @@ LhatType *chk_simple(Checker *c, LhatTypeKind kind)
     return lhat_type_simple(c->result->types, kind);
 }
 
+// 04 の 2.7 with 11.6改3: localerror^.CastFailure as a type. Cached for the
+// reason chk_typeinfo_type is: 2.4 makes identity the object, so a second
+// mention of the name in the same unit has to come to the same one or
+// conformance between them would answer false.
+//
+// The runtime object it stands for is the process's (registry.h); this is
+// the checker's own type for the same declaration, made per check the way
+// every other type in the arena is.
+LhatType *chk_cast_failure_type(Checker *c)
+{
+    if (c->cast_failure_type != NULL) {
+        return c->cast_failure_type;
+    }
+    // A kind with no set above it: 2.7 puts it under the top directly rather
+    // than inside a declaration, since there is no declaration.
+    LhatType *kind = lhat_type_error_kind(c->result->types, NULL,
+                                          "localerror^.CastFailure", 23);
+    if (kind != NULL) {
+        kind->v.error.local = true;
+    }
+    c->cast_failure_type = kind;
+    return kind;
+}
+
 // 04 の 2.7: what the operators mean by "an error". The two tops are
 // disjoint, so neither alone stands for both -- catch^ removing error^ from
 // 'T|CastFailure' would remove nothing and then say the left cannot fail.
@@ -830,6 +854,20 @@ static LhatType *resolve_qualified_type(Checker *c, const LhatNode *node)
     if (outer->kind == LHAT_TYPE_ERROR_SET) {
         LhatType *kind = chk_kind_of_set(outer, name, length);
         if (kind != NULL) {
+            record_type_name(c, node->v.access.argument, kind);
+            return kind;
+        }
+        chk_report(c, node, LHAT_CHECK_ERR_UNKNOWN_TYPE);
+        return chk_simple(c, LHAT_TYPE_UNKNOWN);
+    }
+
+    // 04 の 2.7: under localerror^ is where the language keeps the kinds it
+    // declares for itself. There is no errordef^ to look them up in, so the
+    // names are known here -- and only under that top, so error^.CastFailure
+    // is as unwritable as any other name nothing declares.
+    if (outer->kind == LHAT_TYPE_ERROR && outer->v.error.local) {
+        if (chk_name_is(name, length, "CastFailure")) {
+            LhatType *kind = chk_cast_failure_type(c);
             record_type_name(c, node->v.access.argument, kind);
             return kind;
         }

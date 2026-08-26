@@ -377,8 +377,16 @@ bool lhat_value_satisfies(LhatValue value, const LhatRuntimeType *type)
             return lhat_is_object_kind(value, LHAT_OBJECT_SUBROUTINE);
         case LHAT_TYPE_RT_COROUTINE:
             return lhat_is_object_kind(value, LHAT_OBJECT_COROUTINE);
-        case LHAT_TYPE_RT_ERROR:
-            return lhat_is_object_kind(value, LHAT_OBJECT_ERROR);
+        // 04 の 2.7: a family, not every error. The two tops are disjoint, so
+        // asking error^ of a localerror^ answers false.
+        case LHAT_TYPE_RT_ERROR: {
+            if (!lhat_is_object_kind(value, LHAT_OBJECT_ERROR)) {
+                return false;
+            }
+            const LhatErrorKind *kind =
+                ((const LhatError *)lhat_as_object(value))->kind;
+            return kind != NULL && kind->local == type->error_local;
+        }
         case LHAT_TYPE_RT_ERROR_KIND:
             return lhat_error_is_kind(value, type->error_kind);
         // 05 の 8.8: identity is the tag alone, so the value has to actually
@@ -584,8 +592,9 @@ static void write_runtime_type(TypeWriter *w, const LhatRuntimeType *type)
         case LHAT_TYPE_RT_STRING:
             type_put_text(w, "string^");
             return;
+        // 04 の 2.7: two tops, and 14.16 wants what it writes to read back.
         case LHAT_TYPE_RT_ERROR:
-            type_put_text(w, "error^");
+            type_put_text(w, type->error_local ? "localerror^" : "error^");
             return;
         // 04 の 2.4: identity is the declaration, and the declaration's own
         // name is already qualified (05 の 7.3) -- the same text that names
@@ -808,13 +817,15 @@ bool lhat_runtime_type_equal(const LhatRuntimeType *a, const LhatRuntimeType *b)
         case LHAT_TYPE_RT_BOOL:
         case LHAT_TYPE_RT_NUMBER:
         case LHAT_TYPE_RT_STRING:
-        case LHAT_TYPE_RT_ERROR:
         // 03 の 3.4: two undecided places are the same undecided place. Not
         // equal to any^ though -- the kinds differ above, and NULL normalises
         // to any^ rather than to this, which keeps "nobody wrote one" apart
         // from "inference could not say".
         case LHAT_TYPE_RT_UNKNOWN:
             return true;
+        // 04 の 2.7: error^ and localerror^ are two types, not one.
+        case LHAT_TYPE_RT_ERROR:
+            return a->error_local == b->error_local;
         // 13.9's three slots now carry real answers, so two coroutine
         // types are equal only when R, Y and T line up -- not just by kind.
         // 15.3改 adds the body's own kind to that: what may be done with an
