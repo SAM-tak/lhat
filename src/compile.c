@@ -4016,28 +4016,32 @@ static void compile_expression(Compiler *c, const LhatNode *node, uint8_t into)
             return;
         }
 
-        // 11.6: the operand lands in `into` and stays there -- as^
-        // narrows the type the checker tracks, not the value, so there is
-        // nothing to write back once the check passes. lower_type reads
-        // the written type the same way an overload^ed parameter's does
-        // (14.12), and lhat_value_satisfies (the same relation fits_call
-        // already trusts) is the check LHAT_BC_ASCAST makes at run time.
+        // 11.6改3: the operand lands in `into` and stays there where it
+        // fits -- as^ narrows the type the checker tracks, not the value,
+        // so there is nothing to write back once the check passes. Where it
+        // does not, ASCAST writes a localerror^.CastFailure over it, which
+        // is the other arm of what the checker said this answers.
+        //
+        // lower_type reads the written type the same way an overload^ed
+        // parameter's does (14.12), and lhat_value_satisfies (the same
+        // relation fits_call already trusts) is the check ASCAST makes.
         case LHAT_NODE_AS: {
             compile_expression(c, node->v.ascription.value, into);
             const LhatNode *asked = node->v.ascription.type;
             LhatRuntimeType *wanted = lower_type(c, asked);
             if (wanted == NULL) {
                 // 13.7: any^ asks nothing, so there is nothing for
-                // LHAT_BC_ASCAST to check. Anything else lower_type could
-                // not settle is refused (5.13) -- 02 の 11.6改 promises as^ panics
-                // on a mismatch, and a cast that silently checked nothing
-                // would be that promise quietly broken.
+                // LHAT_BC_ASCAST to check.
                 const char *name = NULL;
                 size_t length = 0;
                 if (node_name(c, asked, &name, &length) &&
                     name_is(name, length, "any^")) {
                     return;
                 }
+                // 11.6改3: everything else lower_type could not settle is
+                // refused (5.13). A cast that silently checked nothing would
+                // answer the value where the checker promised a union, and
+                // the failure arm would be one nothing could ever produce.
                 fail(c, asked->kind == LHAT_NODE_TYPE_NAME ||
                              asked->kind == LHAT_NODE_MEMBER
                          ? LHAT_COMPILE_UNDEFINED
@@ -4047,10 +4051,7 @@ static void compile_expression(Compiler *c, const LhatNode *node, uint8_t into)
             uint8_t mark = c->next_register;
             uint8_t type_slot = reserve(c);
             load_constant(c, type_slot, lhat_object((LhatObject *)wanted));
-            // 11.6改2: C says what happens when the value does not fit --
-            // set for 'as^?', which answers nil^ instead of stopping.
-            emit(c, lhat_encode_abc(LHAT_BC_ASCAST, into, type_slot,
-                                    node->v.ascription.nil_safe ? 1 : 0));
+            emit(c, lhat_encode_abc(LHAT_BC_ASCAST, into, type_slot, 0));
             c->next_register = mark;
             return;
         }

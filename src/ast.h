@@ -296,9 +296,6 @@ struct LhatNode {
         struct {
             LhatNode *value;
             LhatNode *type;
-            // 11.6改2: the '?' of 'as^? T' -- the cast answers nil^ where the
-            // value does not fit instead of stopping the run.
-            bool nil_safe;
         } ascription;
 
         // FUNC and TYPE_FUNC. `is_function` separates f^ from p^ (15 章).

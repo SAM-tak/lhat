@@ -517,30 +517,32 @@ static void test_narrowing(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_AS_IMPOSSIBLE);
     unit_dispose(&u);
 
-    // 11.6改2: the safe form answers T|nil^, so what it hands back has the
-    // nil^ arm to deal with -- '??' is the spelling, as for every other
-    // T|nil^ (11.7).
-    LHAT_TEST("as^? answers T|nil^");
+    // 11.6改3: as^ answers T|localerror^.CastFailure, so what it hands back
+    // has a failure arm to deal with -- catch^ is the spelling, as for every
+    // other union with an error in it (04 の 4.1).
+    LHAT_TEST("as^ answers T with a failure arm beside it");
     check_text(&u,
                "var^ f = f^ -> any^ { return^ 1 }\n"
-               "var^ n : number^ = f() as^? number^ ?? 0\n");
+               "var^ n : number^ = f() as^ number^ catch^ 0\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    LHAT_TEST("and the nil^ arm is not skipped");
+    LHAT_TEST("and the failure arm is not skipped");
     check_text(&u,
                "var^ f = f^ -> any^ { return^ 1 }\n"
-               "var^ n : number^ = f() as^? number^\n");
+               "var^ n : number^ = f() as^ number^\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
-    // Disjoint is disjoint either way: the safe form written there always
-    // answers nil^, which is as dead as the stopping form is impossible.
-    LHAT_TEST("as^? between disjoint types is refused too");
+    // 04 の 2.7改: and the arm cannot be handed upwards, which is what keeps
+    // the union from spreading into every signature above the cast. This is
+    // the whole reason 11.6改3 could reverse 11.6改2's refusal to make as^
+    // answer an error at all.
+    LHAT_TEST("the failure arm cannot be passed to the caller");
     check_text(&u,
-               "var^ n = 1\n"
-               "var^ s = n as^? string^\n");
-    CHECK_REPORTS(&u, LHAT_CHECK_ERR_AS_IMPOSSIBLE);
+               "var^ f = f^ -> any^ { return^ 1 }\n"
+               "var^ g = p^ -> number^ { return^ try^ f() as^ number^ }\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_LOCAL_ERROR_ESCAPES);
     unit_dispose(&u);
 }
 

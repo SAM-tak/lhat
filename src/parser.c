@@ -2220,18 +2220,11 @@ static LhatNode *parse_ascription(Parser *p)
     while (check_hat(p, "as")) {
         LhatToken at = p->current;
         advance(p);
-        // 11.6改2: 'as^? T' -- the safe form. A type never starts with '?',
-        // so the mark is unambiguous here and costs the lexer nothing.
-        bool nil_safe = check_op(p, LHAT_OP_PRESENT);
-        if (nil_safe) {
-            advance(p);
-        }
         LhatNode *node = make(p, LHAT_NODE_AS, &at);
         if (node == NULL) {
             return left;
         }
         node->v.ascription.value = left;
-        node->v.ascription.nil_safe = nil_safe;
         node->v.ascription.type = parse_type(p);
         left = finish(p, node);
     }
@@ -2243,9 +2236,10 @@ static LhatNode *parse_ascription(Parser *p)
 // the tree. Binding tighter than the binary operators is what makes
 // 'base + t[k] ?? 0' default around t[k] rather than around the sum.
 //
-// 11.6改2: and looser than as^, so 'x as^? T ?? 0' defaults around the cast
-// -- the pairing the safe form exists for. Kotlin's 'as? T ?: d' and Swift's
-// 'as? T ?? d' put the two in the same order.
+// 11.6改3: and looser than as^, so 'x as^ T catch^ 0' takes the alternative
+// around the cast rather than around whatever the cast is written inside --
+// the pairing that replaced a second cast operator. Kotlin's 'as? T ?: d'
+// and Swift's 'as? T ?? d' put their two in the same order.
 static LhatNode *parse_fallback(Parser *p)
 {
     LhatNode *left = parse_ascription(p);

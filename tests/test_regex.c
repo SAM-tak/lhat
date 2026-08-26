@@ -19,12 +19,14 @@ static LhatTestRan run_source(const char *text)
 }
 
 // One compiled pattern, narrowed, used, disposed. `body` names it `r`.
-#define WITH_REGEX(pattern, body)                   \
-    "import^ std.regex\n"                           \
-    "let^ made = std.regex.new(" pattern ")\n"      \
-    "if^ made isa^ std.regex.Regex {\n"             \
-    "    let^ r = made as^ std.regex.Regex\n" body  \
-    "}\n"                                           \
+// 13.11 is what narrows it: inside the branch `made` is the arm that fitted,
+// so binding it takes that type and no cast is wanted.
+#define WITH_REGEX(pattern, body)              \
+    "import^ std.regex\n"                      \
+    "let^ made = std.regex.new(" pattern ")\n" \
+    "if^ made isa^ std.regex.Regex {\n"        \
+    "    let^ r = made\n" body                 \
+    "}\n"                                      \
     "return^ \"never\"\n"
 
 static void test_compile(void)

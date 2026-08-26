@@ -909,19 +909,22 @@ static void test_type_position_alias(void)
         lhat_test_ran_dispose(&ran);
     }
 
-    // 11.6改2: as^? answers the value or nil^, and lower_type hands
-    // LHAT_BC_ASCAST the same descriptor isa^ tests against -- so it was
-    // refused in the same three ways and is mended in the same one.
+    // 11.6改3: as^ answers the value or a localerror^.CastFailure, and
+    // lower_type hands LHAT_BC_ASCAST the same descriptor isa^ tests
+    // against -- so it was refused in the same three ways and is mended in
+    // the same one.
+    //
     // Only the arm that holds is asked here. A cast that could never succeed
     // is a type error before anything runs ("nothing is both of these"), so
     // the other direction is not this test's to make -- what says the
     // descriptor is a real question rather than an empty one is the false
     // case above.
-    LHAT_TEST("as^? takes every spelling too");
+    LHAT_TEST("as^ takes every spelling too");
     for (size_t i = 0; i < ALIAS_SPELLING_COUNT; i++) {
         char source[512];
         snprintf(source, sizeof source,
-                 "%sif^ ((v as^? %s) is^ nil^) { return^ 0 }\nreturn^ 1\n",
+                 "%sif^ ((v as^ %s) isa^ localerror^.CastFailure) "
+                 "{ return^ 0 }\nreturn^ 1\n",
                  alias_preamble, alias_spellings[i]);
         LhatTestRan ran = run_source(source);
         LHAT_CHECK_RAN_INTEGER(ran, 1);

@@ -22,6 +22,8 @@
 // machine carries it without carrying a front end.
 #include "number.h"
 #include "lhat/port.h"
+// 04 の 2.7: where localerror^.CastFailure's one object lives.
+#include "registry.h"
 #include "type.h"
 
 // ---------------------------------------------------------------------------
@@ -33,6 +35,8 @@
 // finish() to name a panicking instruction (04 の 11.6) for a host, which is
 // where LHAT_BC_ASCAST answers too even though 11.6's as^ is not one of
 // 11.8's overloadable operators and never reaches call_operator itself.
+// 11.6改3 left it here: a mismatch is an answer now rather than a fault, but
+// the instruction can still fault for want of room to build that answer in.
 // NULL for every other instruction.
 static const char *operator_name(LhatOpcode op, size_t *length)
 {
@@ -5882,19 +5886,26 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth, bool draining)
             // of per candidate. Compile-time disjointness (check.c) already
             // ruled out what could never hold; this is what it could not
             // rule out, checked against the actual value.
+            // 02 の 11.6改3: where the value fits, it stays and only the
+            // type the checker tracks narrowed. Where it does not, the
+            // answer is the other arm of what as^ was said to be -- a
+            // localerror^.CastFailure, which 04 の 2.7改 will not let the
+            // frame return, so a writer meets it here or nowhere.
+            //
+            // 03 の 4.2: this runs whether or not anything was checked. A
+            // relaxed build makes the same value the strict one promised.
             case LHAT_BC_ASCAST: {
                 const LhatRuntimeType *wanted =
                     (const LhatRuntimeType *)lhat_as_object(R(b));
                 if (!lhat_value_satisfies(R(a), wanted)) {
-                    // 02 の 11.6改2: 'as^?' answers nil^ where the value
-                    // does not fit, so the run goes on and the writer's
-                    // own '??' or isa^ decides what to do about it. The
-                    // stopping form is the one that promised the type.
-                    if (cc != 0) {
-                        SET_R(a, lhat_nil());
-                        break;
+                    const LhatErrorKind *kind = lhat_registry_cast_failure();
+                    LhatError *failure =
+                        kind != NULL ? lhat_error_new(&m->objects, kind) : NULL;
+                    if (failure == NULL) {
+                        return finish(m, chunk, LHAT_RUN_OUT_OF_MEMORY,
+                                      lhat_nil(), at);
                     }
-                    return finish(m, chunk, LHAT_RUN_TYPE_ERROR, lhat_nil(), at);
+                    SET_R(a, lhat_object((LhatObject *)failure));
                 }
                 break;
             }

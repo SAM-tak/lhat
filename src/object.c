@@ -1036,8 +1036,13 @@ static bool lhat_error_is_kind(LhatValue value, const LhatErrorKind *kind)
         return false;
     }
     // 2.3: a declaration is the union of its kinds, so naming it asks whether
-    // the error is any of them.
-    return kind->group == NULL ? held->group == kind : held == kind;
+    // the error is any of them. 2.7's built-in kinds stand under a top with
+    // no declaration around them, so one of those is its own group and the
+    // question is about the object itself -- which is why both readings are
+    // taken. They cannot both hold: a group object is a type and 2.3 makes
+    // no value of it, so an error's own kind is never one.
+    return kind->group == NULL ? (held == kind || held->group == kind)
+                               : held == kind;
 }
 
 // ---------------------------------------------------------------------------

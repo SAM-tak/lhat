@@ -1172,13 +1172,17 @@ static void test_isa(void)
     CHECK_INTEGER(&r, 1);
     run_dispose(&r);
 
-    LHAT_TEST("and still panics for a value no arm admits");
+    // 11.6改3: and answers the failure for a value no arm admits. The
+    // lowering is what this still pins -- a union that kept only its first
+    // arm would fail here where it should hold, and hold above where it
+    // should fail.
+    LHAT_TEST("and answers a failure for a value no arm admits");
     run_text(&r,
              "var^ x = \"s\"\n"
              "var^ y = x as^ number^|nil^\n"
-             "return^ 1\n");
+             "return^ y isa^ localerror^.CastFailure\n");
     LHAT_CHECK_EQ_INT(r.compiled, LHAT_COMPILE_OK);
-    LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_TYPE_ERROR);
+    CHECK_BOOL(&r, true);
     run_dispose(&r);
 
     // 13.11's narrowing is the checker's half; this is the machine's -- the

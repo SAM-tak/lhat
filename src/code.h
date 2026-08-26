@@ -224,11 +224,11 @@ typedef enum {
     // require^ answers with -- what a table holds is written before this,
     // and nothing writes into it afterwards.
     LHAT_BC_SEAL,       // A     R[A] accepts no further writes
-    LHAT_BC_ASCAST,     // A B C panic unless R[A] satisfies the type in
-                        //       R[B]; R[A] is unchanged either way (11.6).
-                        //       11.6改2: with C set, a value that does not
-                        //       fit writes nil^ into R[A] and the run goes
-                        //       on -- 'as^? T', which answers T|nil^
+    // 11.6改3: R[A] is unchanged where it satisfies the type in R[B] -- as^
+    // narrows what the checker tracks, not the value. Where it does not,
+    // R[A] becomes a localerror^.CastFailure, which is the other arm of
+    // what as^ answers. C is unused.
+    LHAT_BC_ASCAST,     // A B   R[A] = R[A], or a CastFailure
 
     LHAT_BC_COUNT
 } LhatOpcode;

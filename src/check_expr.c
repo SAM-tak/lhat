@@ -5124,22 +5124,24 @@ static LhatType *infer_node(Checker *c, const LhatNode *node)
                 c, node->v.ascription.value, chk_infer(c, node->v.ascription.value));
             LhatType *wanted = chk_resolve_type(c, node->v.ascription.type);
             if (lhat_type_disjoint(actual, wanted)) {
-                // 11.6改2: the safe form is judged the same way. A pair no
-                // value inhabits both of is settled at the type level, not
-                // a narrowing 13.11 keeps out of the checker's reach -- so
-                // 'as^? T' written there always answers nil^, and saying so
-                // is the same service as refusing the stopping form.
+                // 11.6改3: a pair no value inhabits both of is settled at the
+                // type level, not a narrowing 13.11 keeps out of the
+                // checker's reach -- so the cast could only ever fail, and
+                // saying so beats handing back a union whose value arm is
+                // unreachable.
                 chk_report(c, node, LHAT_CHECK_ERR_AS_IMPOSSIBLE);
             }
-            // 11.6改2: the safe form adds the nil^ arm -- always, rather than
-            // only where the cast could fail. A rule that read the left's
+            // 11.6改3: the failure arm is added always, rather than only
+            // where the cast could fail. A rule that read the left's
             // inferred type would move the answer's type with how much
             // inference happened to settle.
-            if (node->v.ascription.nil_safe) {
-                return lhat_type_union(c->result->types, wanted,
-                                       chk_simple(c, LHAT_TYPE_NIL));
-            }
-            return wanted;
+            //
+            // 04 の 2.7改 is what makes this affordable: the arm cannot be
+            // let past with try^, so the union stops at whoever wrote the
+            // as^ instead of spreading into every signature above it --
+            // which is the contamination 11.2 withdrew a design over.
+            return lhat_type_union(c->result->types, wanted,
+                                   chk_cast_failure_type(c));
         }
 
         case LHAT_NODE_FUNC:

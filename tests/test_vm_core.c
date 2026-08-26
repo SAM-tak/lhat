@@ -193,8 +193,9 @@ static void test_arithmetic(void)
     run_dispose(&r);
 }
 
-// 02 の 11.6 with 11.6改2: the two casts, told apart by what they do with a
-// value that does not fit. Both ask lhat_value_satisfies the same question.
+// 02 の 11.6改3: one cast, which answers the value or a failure. What it
+// asks is lhat_value_satisfies, the same question 14.12's overload search
+// puts to a candidate.
 static void test_casts(void)
 {
     Run r;
@@ -202,51 +203,70 @@ static void test_casts(void)
     LHAT_TEST("as^ answers the value where it fits");
     run_checked_text(&r,
                      "let^ f = f^ -> any^ { return^ 7 }\n"
-                     "return^ f() as^ number^\n");
+                     "return^ f() as^ number^ catch^ 0\n");
     CHECK_INTEGER(&r, 7);
     run_dispose(&r);
 
-    // The whole of what makes as^ an assertion rather than a question: a
-    // value that does not fit stops the run rather than answering something.
-    LHAT_TEST("and stops the run where it does not");
+    // 11.6改3: and a localerror^.CastFailure where it does not, which the
+    // catch^ picks up. The run goes on -- what used to stop it is now an
+    // answer the writer has to have said something about.
+    LHAT_TEST("and a failure where it does not, which catch^ picks up");
     run_checked_text(&r,
                      "let^ f = f^ -> any^ { return^ \"t\" }\n"
-                     "return^ f() as^ number^\n");
-    LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_TYPE_ERROR);
-    run_dispose(&r);
-
-    // 11.6改2: written without parentheses -- as^ binds tighter than '??',
-    // so the default is around the cast. This is the pairing the safe form
-    // exists for, and the reason the two levels sit in this order.
-    LHAT_TEST("as^? answers the value where it fits");
-    run_checked_text(&r,
-                     "let^ f = f^ -> any^ { return^ 7 }\n"
-                     "return^ f() as^? number^ ?? 0\n");
-    CHECK_INTEGER(&r, 7);
-    run_dispose(&r);
-
-    // 11.6改2: and nil^ where it does not, so '??' picks the default up and
-    // the run goes on.
-    LHAT_TEST("and nil^ where it does not, which ?? picks up");
-    run_checked_text(&r,
-                     "let^ f = f^ -> any^ { return^ \"t\" }\n"
-                     "return^ f() as^? number^ ?? 0\n");
+                     "return^ f() as^ number^ catch^ 0\n");
     CHECK_INTEGER(&r, 0);
     run_dispose(&r);
 
-    // 11.6: as^ stays stronger than the binary operators too, so the sum is
-    // around the cast rather than the cast around the sum.
-    LHAT_TEST("and as^ still binds tighter than a binary operator");
+    // What 'as^ T' was before 11.6改3 -- the assertion -- is written with
+    // 13.11's narrowing now. 12.7 makes panic^ a statement, so there is no
+    // expression for catch^'s right side that stops the run; the arm the
+    // writer wants to treat as impossible is discriminated instead, and the
+    // value is narrowed to T on the way out of the if^.
+    LHAT_TEST("the assertion is written as a narrowing");
+    run_checked_text(&r,
+                     "let^ f = f^ -> any^ { return^ \"t\" }\n"
+                     "let^ v = f() as^ number^\n"
+                     "if^ v isa^ localerror^.CastFailure { panic^ v }\n"
+                     "return^ v + 1\n");
+    LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_PANIC);
+    run_dispose(&r);
+
+    LHAT_TEST("and the narrowed value is the one that fitted");
     run_checked_text(&r,
                      "let^ f = f^ -> any^ { return^ 7 }\n"
-                     "return^ 1 + f() as^ number^\n");
+                     "let^ v = f() as^ number^\n"
+                     "if^ v isa^ localerror^.CastFailure { panic^ v }\n"
+                     "return^ v + 1\n");
     CHECK_INTEGER(&r, 8);
     run_dispose(&r);
 
-    LHAT_TEST("the nil^ it answers is a nil^ like any other");
+    // 11.6: as^ stays stronger than the binary operators, so the sum is
+    // around the cast rather than the cast around the sum -- and stronger
+    // than catch^, so the alternative is the cast's and not the sum's.
+    LHAT_TEST("and as^ still binds tighter than a binary operator");
+    run_checked_text(&r,
+                     "let^ f = f^ -> any^ { return^ 7 }\n"
+                     "return^ 1 + f() as^ number^ catch^ 0\n");
+    CHECK_INTEGER(&r, 8);
+    run_dispose(&r);
+
+    // 04 の 2.6: what comes back is an error like any other, so isa^ tells
+    // it apart -- which is how a writer gets at it without a catch^.
+    LHAT_TEST("the failure it answers is an error of that kind");
     run_checked_text(&r,
                      "let^ f = f^ -> any^ { return^ \"t\" }\n"
-                     "return^ (f() as^? number^) is^ nil^\n");
+                     "let^ r = f() as^ number^ catch^ it^\n"
+                     "return^ r isa^ localerror^.CastFailure\n");
+    CHECK_BOOL(&r, true);
+    run_dispose(&r);
+
+    // 2.7: and it is not an error^, which is the disjointness holding at run
+    // time as well as in the checker (03 の 4.2).
+    LHAT_TEST("and it is not an error^");
+    run_checked_text(&r,
+                     "let^ f = f^ -> any^ { return^ \"t\" }\n"
+                     "let^ r = f() as^ number^ catch^ it^\n"
+                     "return^ (r isa^ localerror^) and^ !(r isa^ error^)\n");
     CHECK_BOOL(&r, true);
     run_dispose(&r);
 }

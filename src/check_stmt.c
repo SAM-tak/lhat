@@ -2393,6 +2393,25 @@ void chk_check_statement(Checker *c, const LhatNode *node)
             // A host value still may not: its width is its tag's, and the
             // result has one slot for the value itself.
 
+            // 04 の 2.7改: what a return^ carries is what a caller receives,
+            // so this is the other door chk_error_leaves guards. Asked before
+            // either branch below: a written result that admits one has
+            // already been refused where it was written, and an inferred one
+            // must not quietly take it.
+            //
+            // A 'return^ try^ …' never lands here carrying one -- the try^
+            // reported for itself and handed back the value without the
+            // error arm -- so what this finds is a value that failed and was
+            // returned as it stands, which is what 'return^ x as^ T' is.
+            //
+            // The unit's own top level (05 の 3.2) reaches here too, and only
+            // here: it is no func literal, so the signature check in
+            // chk_infer_func never sees it.
+            if (chk_type_touches_local(value, 0)) {
+                chk_report(c, node, LHAT_CHECK_ERR_LOCAL_ERROR_ESCAPES);
+                break;
+            }
+
             if (c->declared_result != NULL) {
                 // 03 の 7 章、P6: unlike chk_expect()'s other callers, this one
                 // runs while the subroutine being defined is still open --

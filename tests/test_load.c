@@ -25,7 +25,7 @@ static LhatTestRan run_source(const char *text)
     "import^ std.load\n"                                     \
     "let^ made = std.load.text(" source ", " name ")\n"      \
     "if^ made isa^ std.load.Error { return^ made.message }\n" \
-    "let^ f = made as^ p^... -> any^;\n" body
+    "let^ f = made\n" body
 
 static void test_text(void)
 {
@@ -199,7 +199,7 @@ static void test_files(void)
              "let^ made = std.load.text(\"require^ \\\"shared.lh\\\"\\n"
              "return^ ns.shared.count\", \"lib/gen.lh\")\n"
              "if^ made isa^ std.load.Error { return^ -1 }\n"
-             "let^ f = made as^ p^... -> any^;\n"
+             "let^ f = made\n"
              "let^ inner = f()\n"
              "require^ \"lib/shared.lh\"\n"
              "if^ inner isa^ number^ { return^ inner * 10 + ns.shared.count }\n"
@@ -221,7 +221,7 @@ static void test_files(void)
              "import^ std.load\n"
              "let^ made = std.load.file(\"stages/three.lh\")\n"
              "if^ made isa^ std.load.Error { return^ -1 }\n"
-             "let^ f = made as^ p^... -> any^;\n"
+             "let^ f = made\n"
              "let^ r = f(\"a\", \"b\")\n"
              "if^ r isa^ number^ { return^ r }\n"
              "return^ -2\n"},
@@ -285,7 +285,7 @@ static void test_files(void)
              "import^ std.thread\n"
              "let^ made = std.load.text(\"return^ 1\", \"gen\")\n"
              "if^ made isa^ std.load.Error { return^ \"unloaded\" }\n"
-             "let^ f = made as^ p^... -> any^;\n"
+             "let^ f = made\n"
              "let^ h = std.thread.spawn(p^ ... { return^ 2 }, f)\n"
              "if^ h isa^ std.thread.ThreadError.BadArgument {\n"
              "    return^ h.message\n"
