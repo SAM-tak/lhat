@@ -171,6 +171,36 @@ typedef enum {
     LHAT_LOAD_OUT_OF_MEMORY
 } LhatLoadStatus;
 
+// 05 の 8.9: the bytes at `path`, read through the loader the program was
+// given and through nothing else -- so a host that handed none over reads
+// nothing here either. NULL when there is no loader or it has nothing for
+// the path; otherwise a buffer the caller frees with lhat_free.
+//
+// For a module that has to see a file's text before the program does, which
+// is std.lton (08): it wraps what it reads before handing it back to be
+// checked. A module that wants the text checked as it stands wants
+// lhat_program_load_file instead.
+char *lhat_program_read(LhatProgram *program, const char *path,
+                        size_t *length);
+
+// 08: how a text that is data rather than a program is read. What differs is
+// only what its names may reach.
+typedef struct {
+    // 05 の 8.2: whether the initial bindings the host set are in scope.
+    //
+    // They are the host's convenience for a program it means to run, and a
+    // configuration file is not that: what the host bound for its own units
+    // is no part of what a text read as data may name. std.lton (08) is what
+    // this exists for, and it leaves them out.
+    bool initial_bindings;
+} LhatLoadOptions;
+
+LhatLoadStatus lhat_program_load_text_with(LhatProgram *program,
+                                           const char *name, const char *text,
+                                           size_t length,
+                                           const LhatLoadOptions *options,
+                                           LhatProto **out);
+
 LhatLoadStatus lhat_program_load_text(LhatProgram *program, const char *name,
                                       const char *text, size_t length,
                                       LhatProto **out);

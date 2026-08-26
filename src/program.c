@@ -311,9 +311,16 @@ static void check_parsed(LhatProgram *program, LhatUnit *unit,
     require.context = &resolution;
     require.hosted = program->hosted;  // 05 の 8.7
     require.globals = program->globals;  // 05 の 8.6
-    require.initial_names = (const char *const *)program->initial_names;
-    require.initial_members = (const char *const *)program->initial_members;
-    require.initial_count = program->initial_count;  // 05 の 8.2
+    // 05 の 8.2: the initial bindings are the host's convenience for a
+    // program it means to run. A text read as data is not that -- what a
+    // host bound for its own units is no part of what a configuration file
+    // may name -- so LhatLoadOptions can leave them out.
+    bool initial = !unit->as_data;
+    require.initial_names =
+        initial ? (const char *const *)program->initial_names : NULL;
+    require.initial_members =
+        initial ? (const char *const *)program->initial_members : NULL;
+    require.initial_count = initial ? program->initial_count : 0;
     require.annotations = program->annotations;  // 02 の 18.5
     require.annotation_count = program->annotation_count;
 
@@ -2434,9 +2441,22 @@ static LhatLoadStatus load_placed(LhatProgram *program, LhatUnit *unit,
     return status;
 }
 
-LhatLoadStatus lhat_program_load_text(LhatProgram *program, const char *name,
-                                      const char *text, size_t length,
-                                      LhatProto **out)
+char *lhat_program_read(LhatProgram *program, const char *path,
+                        size_t *length)
+{
+    if (program == NULL || path == NULL || length == NULL ||
+        program->load == NULL) {
+        return NULL;
+    }
+    *length = 0;
+    return program->load(program->loader_context, path, length);
+}
+
+LhatLoadStatus lhat_program_load_text_with(LhatProgram *program,
+                                           const char *name, const char *text,
+                                           size_t length,
+                                           const LhatLoadOptions *options,
+                                           LhatProto **out)
 {
     *out = NULL;
     lhat_free(program->load_failure);
@@ -2451,8 +2471,22 @@ LhatLoadStatus lhat_program_load_text(LhatProgram *program, const char *name,
         return LHAT_LOAD_OUT_OF_MEMORY;
     }
     unit->program = program;
+    // 05 の 8.2: what check_parsed reads to decide whether the host's initial
+    // bindings are in scope. Set before anything is checked, since that is
+    // the one moment it is asked.
+    unit->as_data = options != NULL && !options->initial_bindings;
     lhat_source_init_from_string(&unit->source, unit->path, text, length);
     return load_placed(program, unit, out);
+}
+
+LhatLoadStatus lhat_program_load_text(LhatProgram *program, const char *name,
+                                      const char *text, size_t length,
+                                      LhatProto **out)
+{
+    LhatLoadOptions options;
+    options.initial_bindings = true;  // 8.2, as it always was
+    return lhat_program_load_text_with(program, name, text, length, &options,
+                                       out);
 }
 
 LhatLoadStatus lhat_program_load_file(LhatProgram *program, const char *path,

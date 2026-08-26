@@ -55,6 +55,11 @@ struct LhatUnit {
     size_t referenced_count;
     size_t referenced_capacity;
 
+    // 05 の 8.2 with 08: read as data rather than as a program, so the
+    // initial bindings are not in scope. Set by lhat_program_load_text_with
+    // before anything is checked; false for every unit of the program.
+    bool as_data;
+
     // 05 の 5.7: the text this unit was last read from, hashed, so that
     // lhat_program_invalidate can tell a save that changed something from a
     // save that changed nothing. Zero before anything was read.
