@@ -9,6 +9,8 @@
 // than heads, and fields reading and writing the value in place. The
 // numbers are chosen so a wrong slot somewhere answers a wrong number here.
 
+#include <stdio.h>
+
 #include "stdlibutil.h"
 #include "testutil.h"
 
@@ -764,6 +766,94 @@ static void test_escapes(void)
                "the allowed shapes");
 }
 
+
+// ---------------------------------------------------------------------------
+// 05 の 8.9: a parameter's width comes from the type, not from the spelling
+// ---------------------------------------------------------------------------
+//
+// A host value parameter reserves its registered width of consecutive slots,
+// and the caller lays the argument down the same way -- so the two have to
+// agree about how wide it is. The compiler used to read that off the written
+// annotation, matching the registry by the words used. Two ways of writing
+// the same type were then not the same width:
+//
+//   let^ vector3 = import^ std.math.vector3
+//   let^ Vector3 = vector3.Vector3
+//   f^p:Vector3, q:Vector3 -> Vector3 { … }     -- one slot each, and wrong
+//
+// and a parameter with no annotation at all had no spelling to read, however
+// well the checker had inferred it. Both come from the signature now, which
+// is what the checker settled and what 3401's comment already said the
+// compiler should be reading.
+static void test_parameter_width(void)
+{
+    // The three spellings of one type, over the same body. What comes back
+    // is the same because the type is the same; the words are not.
+    static const char *const spellings[] = {
+        "Vector3",                    // a name bound to the type
+        "vector3.Vector3",            // through a name bound to the module
+        "std.math.vector3.Vector3",   // written out in full
+    };
+
+    LHAT_TEST("a parameter is as wide as its type, however the type is spelt");
+    for (size_t i = 0; i < sizeof spellings / sizeof spellings[0]; i++) {
+        char source[512];
+        snprintf(source, sizeof source,
+                 "import^ std.math.vector3\n"
+                 "let^ vector3 = std.math.vector3\n"
+                 "let^ Vector3 = vector3.Vector3\n"
+                 "let^ blend = f^p:%s, q:%s -> %s { (p + q) * 0.5 }\n"
+                 "let^ v = vector3.new(3, 4, 0)\n"
+                 "let^ mid = blend(v, v * 2)\n"
+                 "if^ mid.x = 4.5 and^ mid.y = 6.0 and^ mid.z = 0.0 "
+                 "{ return^ 1 }\n"
+                 "return^ 0\n",
+                 spellings[i], spellings[i], spellings[i]);
+        LhatTestRan ran = run_source(source);
+        LHAT_CHECK_RAN_INTEGER(ran, 1);
+        lhat_test_ran_dispose(&ran);
+    }
+
+    // 03 の 3.4: a parameter left to inference has no annotation to read at
+    // all. Getting this wrong answered a wrong number rather than faulting,
+    // which is the worse of the two ways to be wrong: `q` took one slot,
+    // contributed nothing, and `(p + q) * 0.5` came back as `p * 0.5`.
+    LHAT_TEST("and so is one whose type was inferred rather than written");
+    {
+        LhatTestRan ran = run_source(
+            "import^ std.math.vector3\n"
+            "let^ blend = f^p:std.math.vector3.Vector3, q { (p + q) * 0.5 }\n"
+            "let^ v = std.math.vector3.new(3, 4, 0)\n"
+            "let^ mid = blend(v, v * 2)\n"
+            "if^ mid.x = 4.5 and^ mid.y = 6.0 and^ mid.z = 0.0 { return^ 1 }\n"
+            "return^ 0\n");
+        LHAT_CHECK_RAN_INTEGER(ran, 1);
+        lhat_test_ran_dispose(&ran);
+    }
+
+    // 14.4: a receiver is written among the parameters but is not in the
+    // type's list of them, so the walk over the signature has to step over
+    // it or every parameter after one would take the wrong width.
+    LHAT_TEST("a receiver does not put the walk over the signature out of step");
+    {
+        LhatTestRan ran = run_source(
+            "import^ std.math.vector3\n"
+            "let^ Holder = def^{\n"
+            "  self^{ },\n"
+            "  mix := f^self^, a:std.math.vector3.Vector3,"
+            " b:std.math.vector3.Vector3 -> number^ {\n"
+            "    return^ (a + b).x\n"
+            "  },\n"
+            "}\n"
+            "let^ h = Holder.new()\n"
+            "let^ v = std.math.vector3.new(3, 4, 0)\n"
+            "if^ h.mix(v, v * 2) = 9.0 { return^ 1 }\n"
+            "return^ 0\n");
+        LHAT_CHECK_RAN_INTEGER(ran, 1);
+        lhat_test_ran_dispose(&ran);
+    }
+}
+
 int main(void)
 {
     test_fields();
@@ -771,6 +861,7 @@ int main(void)
     test_equality();
     test_narrowing();
     test_subroutines();
+    test_parameter_width();
     test_coroutine_locals();
     test_boxing();
     test_tostring();

@@ -329,12 +329,16 @@ static uint8_t reserve(Compiler *c)
 // serve both. The arms a union may carry beside a wide one are exactly the
 // ones the head slot's tag tells apart (13.8改's family), so at most one arm
 // is ever wide.
+static const struct LhatHostValueTag *hostvalue_tag_of(const LhatType *type)
+{
+    const LhatType *arm = lhat_type_hostvalue_arm(type);
+    return arm != NULL ? arm->v.table.hostvalue_tag : NULL;
+}
+
 static const struct LhatHostValueTag *hostvalue_of(const LhatNode *node)
 {
-    const LhatType *checked =
-        node != NULL ? (const LhatType *)node->checked_type : NULL;
-    const LhatType *arm = lhat_type_hostvalue_arm(checked);
-    return arm != NULL ? arm->v.table.hostvalue_tag : NULL;
+    return hostvalue_tag_of(node != NULL ? (const LhatType *)node->checked_type
+                                         : NULL);
 }
 
 static size_t width_of(const LhatNode *node)
@@ -3385,6 +3389,25 @@ static void compile_subroutine_as(Compiler *c, const LhatNode *node,
     // fields of an error kind (04 の 2.2), whose defaults do get compiled, at
     // the construction rather than here.
     bool wide_param = false;  // 05 の 8.9: any parameter wider than a slot
+
+    // 05 の 8.9: the signature the checker settled, walked beside the written
+    // parameters. It is where a parameter's width comes from -- a written
+    // annotation only says the width when it is spelt out in full, since
+    // resolve_hostvalue_type_tag matches the registry by the words used, and
+    // an alias ('let^ Vector3 = vector3.Vector3') is not those words. The
+    // checker resolved the name properly, so this asks it instead. It is
+    // also the only thing that can answer for a parameter with no annotation
+    // at all, whose type inference settled.
+    //
+    // 14.4: `self^` is written among the parameters but is not in the type's
+    // list (type.h), so the walk steps over it. 13.7's '...' is kept apart
+    // there too, in `variadic`.
+    const LhatType *signature = (const LhatType *)node->checked_type;
+    const LhatTypeList *settled =
+        signature != NULL && signature->kind == LHAT_TYPE_FUNC
+            ? signature->v.func.params
+            : NULL;
+
     for (const LhatNode *param = node->v.func.params; param != NULL;
          param = param->next) {
         const char *name = NULL;
@@ -3407,12 +3430,15 @@ static void compile_subroutine_as(Compiler *c, const LhatNode *node,
         // 11.3改: written last it marks one too, and says the receiver
         // is the RIGHT operand -- check.c refuses that on anything but an
         // op^, so reading it here is reading a shape already judged.
+        bool is_receiver = false;
         if (kind == LHAT_BODY_ORDINARY && name_is(name, length, "self^")) {
             if (param == node->v.func.params) {
                 proto->takes_self = true;
+                is_receiver = true;
             } else if (param->next == NULL) {
                 proto->takes_self = true;
                 proto->self_last = true;
+                is_receiver = true;
             }
         }
         if (inner.local_count >= LHAT_MAX_LOCALS) {
@@ -3422,8 +3448,24 @@ static void compile_subroutine_as(Compiler *c, const LhatNode *node,
         // 05 の 8.9: a host value parameter takes its registered width of
         // consecutive slots; the caller lays the argument out the same way,
         // so the windows agree without any copying.
-        const LhatHostValueTag *param_hostvalue =
-            resolve_hostvalue_type_tag(&inner, param->v.param.type);
+        const LhatType *settled_type = NULL;
+        if (param->v.param.variadic) {
+            settled_type = signature != NULL ? signature->v.func.variadic
+                                             : NULL;
+        } else if (is_receiver) {
+            settled_type = NULL;  // 14.4: a receiver is one slot, and is not
+                                  // in the list `settled` is walking
+        } else if (settled != NULL) {
+            settled_type = settled->type;
+            settled = settled->next;
+        }
+        const LhatHostValueTag *param_hostvalue = hostvalue_tag_of(settled_type);
+        if (param_hostvalue == NULL) {
+            // 03 の 4.2: a compile that never checked has no settled
+            // signature to read, so the written spelling is what is left.
+            param_hostvalue =
+                resolve_hostvalue_type_tag(&inner, param->v.param.type);
+        }
         size_t param_width = param_hostvalue != NULL ? param_hostvalue->width
                                                      : 1;
         // A variadic collection still counts arguments by value index, so a
