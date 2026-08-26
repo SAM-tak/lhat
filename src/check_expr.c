@@ -998,6 +998,13 @@ LhatType *chk_infer_binary(Checker *c, const LhatNode *node)
         // error half of the left, which is exactly what the machine puts in
         // that register (compile_catch). ?? has no it^: what it replaces is
         // nil^, and there is nothing in a nil^ to name.
+        // 04 の 4.1改: the panic^ arm answers nothing, because it does not
+        // come back. Told apart here rather than in chk_infer, which would
+        // be saying panic^ is an expression -- it is not, and 12.7 stands.
+        bool panicking = op == LHAT_OP_CATCH &&
+                         node->v.binary.right != NULL &&
+                         node->v.binary.right->kind == LHAT_NODE_PANIC;
+
         LhatType *right = NULL;
         if (op == LHAT_OP_CATCH) {
             Scope scope;
@@ -1013,7 +1020,12 @@ LhatType *chk_infer_binary(Checker *c, const LhatNode *node)
             if (caught != NULL) {
                 caught->reached = true;
             }
-            right = chk_infer(c, node->v.binary.right);
+            // Either way the right side is read under it^ -- 'panic^ it^'
+            // is the form this exists for, and the value panic^ carries is
+            // checked for its own sake the way the statement's is.
+            right = panicking ? (chk_infer(c, node->v.binary.right->v.jump.value),
+                                 (LhatType *)NULL)
+                              : chk_infer(c, node->v.binary.right);
             c->scope = outer;
             chk_scope_dispose(&scope);
         } else {
@@ -1025,6 +1037,14 @@ LhatType *chk_infer_binary(Checker *c, const LhatNode *node)
                                                 : LHAT_CHECK_ERR_CANNOT_BE_NIL);
         }
         LhatType *kept = chk_without(c, left, unwanted);
+        // 04 の 4.1改: nothing joins what the left is worth without its error
+        // arm, so the whole is exactly that. 'x as^ T catch^ panic^ it^' is
+        // T, which is what makes this the assertion. 13.8改's width question
+        // is skipped for the same reason -- there is no right-hand value to
+        // measure against the left's.
+        if (panicking) {
+            return kept;
+        }
         // 13.8改 with 04 の 4.1: catch^'s right side is one expression, and
         // there is no expression that is a tuple -- so a call answering
         // several values has no replacement that could stand for them. Said

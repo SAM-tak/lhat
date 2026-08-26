@@ -1588,7 +1588,14 @@ static void compile_catch_wide(Compiler *c, const LhatNode *node, uint8_t into,
         local->import_root = false;
         local->being_defined = false;
     }
-    if (reserved > 1 && is_run_source(node->v.binary.right)) {
+    // 04 の 4.1改: the arm that does not come back. Nothing is written into
+    // `into` and nothing needs to be -- what falls through to the join below
+    // is the left having succeeded, and this side never reaches it. The same
+    // holds for a run: the arm leaves the positions alone because it leaves.
+    if (node->v.binary.right != NULL &&
+        node->v.binary.right->kind == LHAT_NODE_PANIC) {
+        compile_statement(c, node->v.binary.right);
+    } else if (reserved > 1 && is_run_source(node->v.binary.right)) {
         compile_run_source(c, node->v.binary.right, into, reserved);
     } else {
         compile_expression(c, node->v.binary.right, into);

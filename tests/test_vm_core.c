@@ -217,12 +217,39 @@ static void test_casts(void)
     CHECK_INTEGER(&r, 0);
     run_dispose(&r);
 
-    // What 'as^ T' was before 11.6改3 -- the assertion -- is written with
-    // 13.11's narrowing now. 12.7 makes panic^ a statement, so there is no
-    // expression for catch^'s right side that stops the run; the arm the
-    // writer wants to treat as impossible is discriminated instead, and the
-    // value is narrowed to T on the way out of the if^.
-    LHAT_TEST("the assertion is written as a narrowing");
+    // 04 の 4.1改: what 'as^ T' was before 11.6改3 -- the assertion. panic^
+    // is the one statement catch^ takes on its right, and it answers
+    // nothing, so the whole is the left without its error arm: number^ here,
+    // which is what lets the sum be written.
+    LHAT_TEST("catch^ panic^ it^ is the assertion");
+    run_checked_text(&r,
+                     "let^ f = f^ -> any^ { return^ 7 }\n"
+                     "let^ v = f() as^ number^ catch^ panic^ it^\n"
+                     "return^ v + 1\n");
+    CHECK_INTEGER(&r, 8);
+    run_dispose(&r);
+
+    LHAT_TEST("and it stops the run where the cast fails");
+    run_checked_text(&r,
+                     "let^ f = f^ -> any^ { return^ \"t\" }\n"
+                     "let^ v = f() as^ number^ catch^ panic^ it^\n"
+                     "return^ v + 1\n");
+    LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_PANIC);
+    run_dispose(&r);
+
+    // 4.2: it^ is the error inside the arm, so what panic^ carries may be
+    // built out of it rather than only be it.
+    LHAT_TEST("it^ is the caught error inside the panic^ arm");
+    run_checked_text(&r,
+                     "let^ f = f^ -> any^ { return^ \"t\" }\n"
+                     "let^ v = f() as^ number^ catch^ panic^ it^.message\n"
+                     "return^ v + 1\n");
+    LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_PANIC);
+    run_dispose(&r);
+
+    // The longer form, which is what to write when the failure is worth
+    // more than stopping -- and which still narrows v to T on the way out.
+    LHAT_TEST("the assertion is also writable as a narrowing");
     run_checked_text(&r,
                      "let^ f = f^ -> any^ { return^ \"t\" }\n"
                      "let^ v = f() as^ number^\n"

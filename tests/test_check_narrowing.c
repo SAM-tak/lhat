@@ -544,6 +544,35 @@ static void test_narrowing(void)
                "var^ g = p^ -> number^ { return^ try^ f() as^ number^ }\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_LOCAL_ERROR_ESCAPES);
     unit_dispose(&u);
+
+    // 04 の 4.1改: panic^ answers nothing, so nothing joins what the left is
+    // worth without its error arm -- the whole is T, and that is what makes
+    // this the assertion rather than a way of writing T|something.
+    LHAT_TEST("catch^ panic^ leaves the type at T");
+    check_text(&u,
+               "var^ f = f^ -> any^ { return^ 1 }\n"
+               "var^ n : number^ = f() as^ number^ catch^ panic^ it^\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // 4.1's own rule is untouched: a left that cannot fail has nothing for
+    // any arm to take, panic^ included.
+    LHAT_TEST("and a left that cannot fail is still refused");
+    check_text(&u,
+               "var^ f = f^ -> number^ { return^ 1 }\n"
+               "var^ n = f() catch^ panic^ it^\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_CANNOT_FAIL);
+    unit_dispose(&u);
+
+    // 04 の 11.3 makes absence no failure, so panicking on one asserts
+    // something else in kind. '??' takes an expression and panic^ is not
+    // one, which is where that lands.
+    LHAT_TEST("'??' does not take a panic^ arm");
+    check_text(&u,
+               "var^ t = { a = 1 }\n"
+               "var^ v = t[\"b\"] ?? panic^ \"missing\"\n");
+    LHAT_CHECK(syntax_errors(&u) > 0, "'?? panic^' is not written");
+    unit_dispose(&u);
 }
 
 // 04 の 11.4 with 03 の 3.5: relaxed steps past nil^ in a union and lets
@@ -960,6 +989,17 @@ static void test_tuple_positions(void)
                "var^ f = f^ -> (number^, number^)|E { return^ error^E.X{} }\n"
                "var^ q, r = f() catch^ (0, 1, 2)\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_TUPLE_UNION);
+    unit_dispose(&u);
+
+    // 04 の 4.1改: the panic^ arm has no width to be wrong about. It offers
+    // the operation no replacement because it offers nothing -- the run
+    // ends -- so the width question is not asked of it.
+    LHAT_TEST("and the panic^ arm has no width to answer for");
+    check_text(&u,
+               "errordef^ E { X }\n"
+               "var^ f = f^ -> (number^, number^)|E { return^ error^E.X{} }\n"
+               "var^ q, r = f() catch^ panic^ it^\n");
+    CHECK_CLEAN(&u);
     unit_dispose(&u);
 
     LHAT_TEST("nor a single value");
