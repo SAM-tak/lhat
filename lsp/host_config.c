@@ -175,6 +175,18 @@ static void apply_type(const cJSON *entry, LhatProgram *program)
     }
 
     if (strcmp(kind, "hostdata") == 0) {
+        // 05 の 8.8改: under the type it was declared under, where the dump
+        // says there is one. What the derived type inherits is reached
+        // through that link and is registered nowhere else, so a replay that
+        // dropped it would hand the checker a type with only its own
+        // members -- which is a different type from the one the host has.
+        const char *base_module = string_of(entry, "base_module");
+        const char *base_name = string_of(entry, "base_name");
+        if (base_module != NULL && base_name != NULL) {
+            lhat_register_hostdata_subtype(program, module, name, base_module,
+                                           base_name);
+            return;
+        }
         lhat_register_hostdata_type(program, module, name);
         return;
     }

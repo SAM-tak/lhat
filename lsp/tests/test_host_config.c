@@ -49,6 +49,13 @@ static const char *const CONFIG =
     "    {\"kind\": \"errordef\", \"module\": \"std\", \"name\": \"error\","
     " \"variants\": [\"OutOfMemory\"]},\n"
     "    {\"kind\": \"hostdata\", \"module\": \"std.io\", \"name\": \"File\"},\n"
+    // 05 の 8.8改: a type under another. What the derived one inherits is
+    // reached through this link and is registered nowhere else, so a dump
+    // carrying the two types but not the relation between them describes a
+    // Socket with none of File's members -- which is a different type from
+    // the one the host has.
+    "    {\"kind\": \"hostdata\", \"module\": \"std.io\", \"name\": \"Socket\","
+    " \"base_module\": \"std.io\", \"base_name\": \"File\"},\n"
     "    {\"kind\": \"hostvalue\", \"module\": \"std.geo\", \"name\": \"Vec2\","
     " \"size\": 8, \"fields\": ["
     "{\"name\": \"x\", \"offset\": 0, \"type\": \"f32\"},"
@@ -62,6 +69,8 @@ static const char *const CONFIG =
     " \"signature\": \"f^string^ -> std.io.File;\"},\n"
     "    {\"kind\": \"member\", \"module\": \"std.io\", \"type\": \"File\","
     " \"name\": \"write\", \"signature\": \"p^self^, string^;\"},\n"
+    "    {\"kind\": \"func\", \"module\": \"std.io\", \"name\": \"connect\","
+    " \"signature\": \"f^string^ -> std.io.Socket;\"},\n"
     "    {\"kind\": \"hostvalue_member\", \"module\": \"std.geo\","
     " \"type\": \"Vec2\", \"name\": \"+\","
     " \"signature\": \"f^self^, std.geo.Vec2 -> std.geo.Vec2;\"},\n"
@@ -169,6 +178,14 @@ static void test_round_trip(void)
                 "import^ std.geo\n"
                 "let^ v = std.geo.vec2(1, 2) + std.geo.vec2(3, 4)\n"
                 "let^ n : number^ = v.x\n");
+
+    // 05 の 8.8改: the relation is the whole of how a derived type has the
+    // base's members -- nothing registers them a second time.
+    LHAT_TEST("a member of the base is reached through the derived type");
+    check_clean("hostdata subtype",
+                "import^ std.io\n"
+                "let^ s = std.io.connect(\"host\")\n"
+                "s.write(\"hi\")\n");
 
     LHAT_TEST("a configured binding is written unqualified");
     check_clean("binding", "print(\"hi\")\n");

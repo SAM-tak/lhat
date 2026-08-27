@@ -3571,6 +3571,17 @@ size_t lhat_program_dump_host_api(const LhatProgram *program, char *out,
             dump_string(&w, entry->module);
             dump_text(&w, ", \"name\": ");
             dump_string(&w, entry->name);
+            // 05 の 8.8改: a host whose model is a class tree writes the tree
+            // rather than flattening it, and what a derived type inherits is
+            // reached through this link -- so a dump without it describes a
+            // Sprite2D that has none of Object's members, and every reader
+            // of the dump (the language server among them) says so.
+            if (entry->tag->base != NULL) {
+                dump_text(&w, ", \"base_module\": ");
+                dump_string(&w, entry->tag->base->module);
+                dump_text(&w, ", \"base_name\": ");
+                dump_string(&w, entry->tag->base->name);
+            }
             dump_text(&w, "}");
             continue;
         }

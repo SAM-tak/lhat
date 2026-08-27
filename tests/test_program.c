@@ -3138,6 +3138,13 @@ static void test_dump_host_api(void)
                "the error kind registered");
     LHAT_CHECK(lhat_register_hostdata_type(&program, "sys.io", "File") != NULL,
                "the hostdata type registered");
+    // 05 の 8.8改: and one under it. A host whose model is a class tree
+    // writes the tree, and what the derived type inherits is reached through
+    // this relation alone -- so a dump that leaves it out hands a reader
+    // types that are not the ones registered here.
+    LHAT_CHECK(lhat_register_hostdata_subtype(&program, "sys.io", "Socket",
+                                              "sys.io", "File") != NULL,
+               "the derived hostdata type registered");
     LHAT_CHECK(lhat_register_hostvalue_type(&program, "sys.geo", "Vec2",
                                             8) != NULL,
                "the hostvalue type registered");
@@ -3187,6 +3194,9 @@ static void test_dump_host_api(void)
             "{\"kind\": \"errordef\", \"module\": \"sys.io\", \"name\": "
             "\"IOError\", \"variants\": [\"NotFound\", \"Eof\"]}",
             "{\"kind\": \"hostdata\", \"module\": \"sys.io\", \"name\": "
+            "\"File\"}",
+            "{\"kind\": \"hostdata\", \"module\": \"sys.io\", \"name\": "
+            "\"Socket\", \"base_module\": \"sys.io\", \"base_name\": "
             "\"File\"}",
             "{\"kind\": \"hostvalue\", \"module\": \"sys.geo\", \"name\": "
             "\"Vec2\", \"size\": 8, \"fields\": [{\"name\": \"x\", "
