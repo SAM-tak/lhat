@@ -1171,18 +1171,11 @@ static const LhatTypeMember *hosted_member(const LhatType *table,
     // 05 の 8.9: a host value type keeps its members in the same half of the
     // union a table does, and 8.7 registers into one exactly as into the
     // other -- so both are searched here.
-    if (table == NULL || (table->kind != LHAT_TYPE_TABLE &&
-                          table->kind != LHAT_TYPE_HOSTVALUE)) {
-        return NULL;
-    }
-    size_t length = strlen(name);
-    for (const LhatTypeMember *m = table->v.table.members; m != NULL;
-         m = m->next) {
-        if (m->name_length == length && memcmp(m->name, name, length) == 0) {
-            return m;
-        }
-    }
-    return NULL;
+    //
+    // The type's OWN members and no link: 8.8改 puts a derived type under
+    // its base, and registering a name the base already has is registering
+    // it here, not finding it there.
+    return lhat_type_own_member(table, name, strlen(name));
 }
 
 // 02 の 14.12 with 05 の 8.7: a registration's signature as the descriptors

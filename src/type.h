@@ -160,6 +160,19 @@ struct LhatType {
     union {
         struct {
             LhatTypeMember *members;
+            // The end of that list, so an append does not walk it.
+            // A host registering hundreds of types with hundreds of
+            // members each pays the walk once per member otherwise,
+            // which is a walk inside a walk.
+            LhatTypeMember *tail;
+            // Name to member, built once the list is long enough to
+            // be worth it and grown with it. Derived and nothing
+            // more: throwing it away and building it again from the
+            // list answers the same, which is what keeps the list
+            // the data. NULL until the list passes the threshold
+            // (LHAT_TYPE_INDEX_FROM in type.c), which is most of
+            // them -- a written t^{ … } has a handful of members.
+            struct LhatTypeIndex *index;
             // 05 の 8.8改: the type this one is declared under, when a
             // host said so. What the base carries is reached THROUGH
             // this rather than copied into the list above: an engine
@@ -431,6 +444,14 @@ bool lhat_type_is_local_error(const LhatType *type);
 
 // Appends and returns the member, or NULL when out of memory. Works on a
 // TABLE and on an ERROR_KIND's fields.
+// The type's OWN members, and no link followed. What a registration asks
+// (is this name already here?) and what the checker asks before it puts a
+// member down: finding a base's would make either of them refuse a name
+// that is free. Indexed where the list is long.
+const LhatTypeMember *lhat_type_own_member(const LhatType *table,
+                                           const char *name,
+                                           size_t length);
+
 // 14.7改2 with 05 の 8.8改: the one search over a table type's members. Two
 // of the three places a member can be are links -- the base a host
 // declared this type under, and what a definition delegates to -- so a

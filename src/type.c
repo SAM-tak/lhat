@@ -218,6 +218,147 @@ LhatType *lhat_type_error_kind(LhatTypeArena *arena, LhatType *set,
     return type;
 }
 
+// ---------------------------------------------------------------------------
+// The member index
+//
+// A table type keeps its members as a list, in the order they were written
+// or registered: that order is the data (14.16 writes it out, and 14.10
+// counts positions along it). Finding one by name in that list is a walk,
+// and a host registering a class per engine class asks for one on every
+// member it registers -- a walk inside a walk, which is what made loading a
+// binding cost seconds rather than milliseconds.
+//
+// So a name-keyed index sits beside the list. It is DERIVED: dropping it and
+// building it again from the list answers exactly the same, which is what
+// keeps the list the thing that is stored. Open addressing with linear
+// probing, powers of two, and no deletion -- a member is never taken off a
+// type.
+//
+// Built only once a list is long enough to be worth the allocation. Below
+// that a walk beats a hash, and below that is nearly every type the language
+// makes.
+#ifndef LHAT_TYPE_INDEX_FROM
+#define LHAT_TYPE_INDEX_FROM 16
+#endif
+
+typedef struct LhatTypeIndex {
+    const LhatTypeMember **slots;  // NULL where empty; arena-owned
+    size_t capacity;               // a power of two
+    size_t count;
+} LhatTypeIndex;
+
+// FNV-1a over the name. Short keys, and the table is small enough that the
+// spread matters more than the mixing.
+static size_t member_hash(const char *name, size_t length)
+{
+    size_t h = (size_t)1469598103934665603ULL;
+    for (size_t i = 0; i < length; i++) {
+        h ^= (unsigned char)name[i];
+        h *= (size_t)1099511628211ULL;
+    }
+    return h;
+}
+
+static void index_put(LhatTypeIndex *index, const LhatTypeMember *member)
+{
+    size_t mask = index->capacity - 1;
+    size_t at = member_hash(member->name, member->name_length) & mask;
+    while (index->slots[at] != NULL) {
+        at = (at + 1) & mask;
+    }
+    index->slots[at] = member;
+    index->count++;
+}
+
+// Answers false out of memory, which leaves the type without an index and
+// every search a walk -- slower and right, which is the only direction a
+// derived structure may fail in.
+static bool index_build(LhatTypeArena *arena, LhatType *owner, size_t wanted)
+{
+    size_t capacity = 16;
+    while (capacity < wanted * 2) {
+        capacity *= 2;
+    }
+    LhatTypeIndex *index = (LhatTypeIndex *)arena_alloc(arena, sizeof *index);
+    const LhatTypeMember **slots =
+        (const LhatTypeMember **)arena_alloc(arena, capacity * sizeof *slots);
+    if (index == NULL || slots == NULL) {
+        owner->v.table.index = NULL;
+        return false;
+    }
+    index->slots = slots;
+    index->capacity = capacity;
+    index->count = 0;
+    for (const LhatTypeMember *m = owner->v.table.members; m != NULL;
+         m = m->next) {
+        index_put(index, m);
+    }
+    owner->v.table.index = index;
+    return true;
+}
+
+// How many members are on the list. Asked once, when the index is first
+// wanted -- after that the index counts them itself.
+static size_t member_count(const LhatType *owner)
+{
+    size_t n = 0;
+    for (const LhatTypeMember *m = owner->v.table.members; m != NULL;
+         m = m->next) {
+        n++;
+    }
+    return n;
+}
+
+// Keeps the index in step with the list. One caller: the append below, which
+// is the only place a member is ever linked in.
+static void index_added(LhatTypeArena *arena, LhatType *owner,
+                        const LhatTypeMember *member)
+{
+    LhatTypeIndex *index = owner->v.table.index;
+    if (index == NULL) {
+        size_t length = member_count(owner);
+        if (length >= LHAT_TYPE_INDEX_FROM) {
+            index_build(arena, owner, length);  // this one among them
+        }
+        return;
+    }
+    if ((index->count + 1) * 2 > index->capacity) {
+        index_build(arena, owner, index->count + 1);  // rebuilt from the list
+        return;
+    }
+    index_put(index, member);
+}
+
+const LhatTypeMember *lhat_type_own_member(const LhatType *table,
+                                           const char *name, size_t length)
+{
+    if (table == NULL || (table->kind != LHAT_TYPE_TABLE &&
+                          table->kind != LHAT_TYPE_HOSTVALUE)) {
+        return NULL;
+    }
+    const LhatTypeIndex *index = table->v.table.index;
+    if (index == NULL) {
+        for (const LhatTypeMember *m = table->v.table.members; m != NULL;
+             m = m->next) {
+            if (m->name_length == length &&
+                memcmp(m->name, name, length) == 0) {
+                return m;
+            }
+        }
+        return NULL;
+    }
+    size_t mask = index->capacity - 1;
+    for (size_t at = member_hash(name, length) & mask; ; at = (at + 1) & mask) {
+        const LhatTypeMember *m = index->slots[at];
+        if (m == NULL) {
+            return NULL;
+        }
+        if (m->name_length == length && memcmp(m->name, name, length) == 0) {
+            return m;
+        }
+    }
+}
+
 LhatTypeMember *lhat_type_add_member(LhatTypeArena *arena, LhatType *owner,
                                      const char *name, size_t name_length,
                                      LhatType *type)
@@ -245,10 +386,22 @@ LhatTypeMember *lhat_type_add_member(LhatTypeArena *arena, LhatType *owner,
     member->name_length = name_length;
     member->type = type;
 
-    while (*slot != NULL) {
-        slot = &(*slot)->next;
+    // 04 の 2.2: an error kind's fields are a handful and have no table
+    // to hang a tail or an index off, so they keep the walk.
+    if (owner->kind == LHAT_TYPE_ERROR_KIND) {
+        while (*slot != NULL) {
+            slot = &(*slot)->next;
+        }
+        *slot = member;
+        return member;
     }
-    *slot = member;
+    if (owner->v.table.tail != NULL) {
+        owner->v.table.tail->next = member;
+    } else {
+        owner->v.table.members = member;
+    }
+    owner->v.table.tail = member;
+    index_added(arena, owner, member);
     return member;
 }
 
@@ -493,24 +646,17 @@ const LhatTypeMember *lhat_type_find_member(const LhatType *table,
                           table->kind != LHAT_TYPE_HOSTVALUE)) {
         return NULL;
     }
-    const LhatType *delegate = table->v.table.delegate;
     for (const LhatType *up = table; up != NULL; up = up->v.table.base) {
-        for (const LhatTypeMember *m = up->v.table.members; m != NULL;
-             m = m->next) {
-            if (m->name_length == length &&
-                memcmp(m->name, name, length) == 0) {
-                return m;
-            }
+        const LhatTypeMember *m = lhat_type_own_member(up, name, length);
+        if (m != NULL) {
+            return m;
         }
     }
-    for (const LhatType *up = delegate; up != NULL;
+    for (const LhatType *up = table->v.table.delegate; up != NULL;
          up = up->v.table.base) {
-        for (const LhatTypeMember *m = up->v.table.members; m != NULL;
-             m = m->next) {
-            if (m->name_length == length &&
-                memcmp(m->name, name, length) == 0) {
-                return lhat_type_takes_receiver(m->type) ? m : NULL;
-            }
+        const LhatTypeMember *m = lhat_type_own_member(up, name, length);
+        if (m != NULL) {
+            return lhat_type_takes_receiver(m->type) ? m : NULL;
         }
     }
     return NULL;

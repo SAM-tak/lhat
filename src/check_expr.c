@@ -3741,15 +3741,18 @@ static LhatTypeMember *set_member_marked(Checker *c, LhatType *table,
                                          LhatType *type, bool abstract,
                                          bool pending)
 {
-    for (LhatTypeMember *m = table->v.table.members; m != NULL; m = m->next) {
-        if (m->name_length == length && memcmp(m->name, name, length) == 0) {
-            m->type = type;
-            m->abstract = abstract;
-            m->pending = pending;
-            // 14.7改: whatever the first pass put here, this is the real one.
-            m->provisional = false;
-            return m;
-        }
+    // The table's own, and no link followed: 05 の 8.8改's base and 14.7改2's
+    // delegate lend a name without giving it, and writing through either
+    // would put a member on somebody else's type.
+    LhatTypeMember *m =
+        (LhatTypeMember *)lhat_type_own_member(table, name, length);
+    if (m != NULL) {
+        m->type = type;
+        m->abstract = abstract;
+        m->pending = pending;
+        // 14.7改: whatever the first pass put here, this is the real one.
+        m->provisional = false;
+        return m;
     }
     LhatTypeMember *added = lhat_type_add_member(c->result->types, table, name,
                                                  length, type);
@@ -3768,10 +3771,10 @@ static LhatTypeMember *set_member_provisional(Checker *c, LhatType *table,
                                               const char *name, size_t length,
                                               LhatType *type, bool abstract)
 {
-    for (LhatTypeMember *m = table->v.table.members; m != NULL; m = m->next) {
-        if (m->name_length == length && memcmp(m->name, name, length) == 0) {
-            return m;
-        }
+    LhatTypeMember *m =
+        (LhatTypeMember *)lhat_type_own_member(table, name, length);
+    if (m != NULL) {
+        return m;
     }
     LhatTypeMember *added = lhat_type_add_member(c->result->types, table, name,
                                                  length, type);
@@ -3789,11 +3792,10 @@ static LhatTypeMember *set_member_provisional(Checker *c, LhatType *table,
 // entries the way it would against a member that is really there.
 static void mark_provisional(LhatType *table, const char *name, size_t length)
 {
-    for (LhatTypeMember *m = table->v.table.members; m != NULL; m = m->next) {
-        if (m->name_length == length && memcmp(m->name, name, length) == 0) {
-            m->provisional = true;
-            return;
-        }
+    LhatTypeMember *m =
+        (LhatTypeMember *)lhat_type_own_member(table, name, length);
+    if (m != NULL) {
+        m->provisional = true;
     }
 }
 
@@ -3816,11 +3818,10 @@ static LhatTypeMember *set_member(Checker *c, LhatType *table,
 // what went wrong rather than that the name is not there.
 static void mark_ambiguous(LhatType *table, const char *name, size_t length)
 {
-    for (LhatTypeMember *m = table->v.table.members; m != NULL; m = m->next) {
-        if (m->name_length == length && memcmp(m->name, name, length) == 0) {
-            m->ambiguous = true;
-            return;
-        }
+    LhatTypeMember *m =
+        (LhatTypeMember *)lhat_type_own_member(table, name, length);
+    if (m != NULL) {
+        m->ambiguous = true;
     }
 }
 
