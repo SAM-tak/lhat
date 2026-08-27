@@ -3983,6 +3983,13 @@ static bool link_delegate(Checker *c, const LhatNode *node,
     // host type (05 の 8.8) has no instance section of its own -- its members
     // ARE what one reaches -- so the type itself is what is linked, and its
     // base link carries the rest of the chain.
+#if LHAT_WITH_RESOLUTIONS
+    // 07 の 4 章: what the spelling named is a member, found here and nowhere
+    // else -- 14.7改2's target is not walked as an expression, so nothing
+    // else records it and a reader standing on it was told nothing. What was
+    // found is the member itself, so where it was written comes with it.
+    chk_record_member_resolution(c, spelt, from, held, false);
+#endif
     instance->v.table.delegate =
         from->v.table.instance != NULL ? from->v.table.instance : from;
     return true;

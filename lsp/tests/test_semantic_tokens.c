@@ -960,6 +960,46 @@ static void test_a_builtin_member_says_it_is_one(void)
     check_dispose(&c);
 }
 
+// 14.7改2: a delegate^ entry carries no key, and what stands where a value
+// would is the name delegated to -- 'self^.field' for the template's, a bare
+// name for the definition's own. Both name a member, so both read as one:
+// the bare spelling used to come back a variable, which is what a name a
+// scope holds is, two lines under the same name written as a member.
+static void test_a_delegate_target_is_a_member(void)
+{
+    LHAT_TEST("14.7改2: what delegate^ names reads as a member");
+
+    static const char *source =
+        "let^ Inner = def^{\n"
+        "    self^{ value = 1 },\n"
+        "    read = f^self^ -> number^ { return^ self^.value },\n"
+        "}\n"
+        "let^ Wrapper = def^{\n"
+        "    self^{ abstract^ inner : Inner },\n"
+        "    override^new = f^ { self^{ inner = Inner.new() } },\n"
+        "    delegate^ self^.inner\n"
+        "}\n"
+        "let^ Holder = def^{\n"
+        "    self^{ },\n"
+        "    sink = Inner.new(),\n"
+        "    delegate^ sink\n"
+        "}\n";
+
+    Checked c;
+    check_text(&c, source);
+    cJSON *data = lsp_semantic_tokens_for_unit(&c.unit);
+    Tokens tokens = decode(data);
+
+    expect_token(&tokens, source, "inner\n}", "property", false);
+    expect_token(&tokens, source, "sink\n}", "property", false);
+    // And the receiver of the first is the value word it is everywhere.
+    expect_token(&tokens, source, "inner : Inner", "property", false);
+
+    free(tokens.items);
+    cJSON_Delete(data);
+    check_dispose(&c);
+}
+
 int main(void)
 {
     test_every_name_is_reached();
@@ -969,6 +1009,7 @@ int main(void)
     test_an_abstract_field_declares_a_type();
     test_a_host_type_reads_as_a_type();
     test_a_builtin_member_says_it_is_one();
+    test_a_delegate_target_is_a_member();
     test_a_member_is_not_called_readonly();
     test_isa_asks_about_a_type();
     test_isa_within_a_comparison_chain();

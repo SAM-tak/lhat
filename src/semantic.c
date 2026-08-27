@@ -352,6 +352,20 @@ static void walk_table_entries(SemCollector *out, const LhatNode *entries)
         // 14.6: a template field may write both, in which case each half is
         // walked as what it is.
         walk_type(out, e->v.entry.type);
+        // 14.7改2: a delegate^ entry has no key, and what stands where a
+        // value would is the name it delegates to -- 'self^.field' for one of
+        // the template's, a bare name for one of the definition's own. Either
+        // way it names a member rather than a value, so the bare one reads as
+        // the property it is instead of as a variable of some scope.
+        if (e->v.entry.modifier == LHAT_DEF_DELEGATE) {
+            const LhatNode *target = e->v.entry.value;
+            if (target != NULL && target->kind == LHAT_NODE_MEMBER) {
+                walk_value(out, target);  // self^.field, the member case
+            } else if (names_a_member(target)) {
+                emit_name(out, target, SEM_PROPERTY, 0);
+            }
+            continue;
+        }
         if (e->kind == LHAT_NODE_MEMBER_DECL || e->v.entry.declared) {
             walk_type(out, e->v.entry.value);  // t^{ name : type }
         } else {
