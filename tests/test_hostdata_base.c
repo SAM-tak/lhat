@@ -339,6 +339,77 @@ static void test_fits(void)
         lhat_program_dispose(&program);
     }
 
+    // 02 の 13.11: fits^ asks the question the checker asks of an annotation,
+    // so the two have to answer alike. A host value's members are its type's,
+    // not its own -- a reading that lives in one place and that the run time
+    // used to skip, answering no to every structure while the checker was
+    // taking the same value where the same type was written.
+    LHAT_TEST("a host value answers a structure naming what it registered");
+    {
+        static const File files[] = {
+            {"main.lh",
+             "import^ scene\n"
+             "let^ s = scene.makeSprite()\n"
+             "let^ asked : t^{ id : f^self^ -> number^; } = s\n"
+             "var^ n = 0\n"
+             "if^ s fits^ t^{ id : f^self^ -> number^; } { n := n + 1 }\n"
+             "if^ s fits^ t^{ x : f^self^ -> number^; } { n := n + 2 }\n"
+             "if^ s fits^ t^{ nothing : f^self^ -> number^; } { n := n + 4 }\n"
+             "return^ n + asked.id() * 0\n"},
+        };
+        program_with(&program, &disk, files, 1);
+        LHAT_CHECK(register_scene(&program, false), "registered");
+        LhatRunResult ran = run_program(&program);
+        LHAT_CHECK_EQ_INT(ran.status, LHAT_RUN_OK);
+        LHAT_CHECK_EQ_INT(lhat_as_integer(ran.value), 3);
+        lhat_program_dispose(&program);
+    }
+
+    // 05 の 8.7 with 02 の 14.12: a registered C function is a subroutine of
+    // the language, and so is a group -- both are written f^/p^ where the
+    // checker reads them, so both have to stand where one is asked for.
+    LHAT_TEST("a registered function is a subroutine to fits^");
+    {
+        static const File files[] = {
+            {"main.lh",
+             "import^ scene\n"
+             "let^ t = { make = scene.makeSprite }\n"
+             "if^ t fits^ t^{ make : f^ -> scene.Sprite2D; } { return^ 1 }\n"
+             "return^ 0\n"},
+        };
+        program_with(&program, &disk, files, 1);
+        LHAT_CHECK(register_scene(&program, false), "registered");
+        LhatRunResult ran = run_program(&program);
+        LHAT_CHECK_EQ_INT(ran.status, LHAT_RUN_OK);
+        LHAT_CHECK_EQ_INT(lhat_as_integer(ran.value), 1);
+        lhat_program_dispose(&program);
+    }
+
+    // 02 の 14.7改2: the delegate walk and the reading above are the same
+    // reading, so what shows through as a member shows through to fits^ too
+    // -- while the host type itself stays nominal (05 の 8.8), which is the
+    // whole point of the distinction.
+    LHAT_TEST("what a delegate shows answers a structure, not the host type");
+    {
+        static const File files[] = {
+            {"main.lh",
+             "import^ scene\n"
+             "let^ held = scene.makeSprite()\n"
+             "let^ A = def^{ self^{ }, kept = held, delegate^ kept }\n"
+             "let^ a = A.new()\n"
+             "var^ n = 0\n"
+             "if^ a fits^ t^{ id : f^self^ -> number^; } { n := n + 1 }\n"
+             "if^ a fits^ scene.Sprite2D { n := n + 2 }\n"
+             "return^ n\n"},
+        };
+        program_with(&program, &disk, files, 1);
+        LHAT_CHECK(register_scene(&program, false), "registered");
+        LhatRunResult ran = run_program(&program);
+        LHAT_CHECK_EQ_INT(ran.status, LHAT_RUN_OK);
+        LHAT_CHECK_EQ_INT(lhat_as_integer(ran.value), 1);
+        lhat_program_dispose(&program);
+    }
+
     LHAT_TEST("and answers false for a type off the chain");
     {
         static const File files[] = {

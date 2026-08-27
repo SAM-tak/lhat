@@ -329,6 +329,28 @@ bool lhat_type_rt_add_member(LhatRuntimeType *type, const LhatString *name,
     return true;
 }
 
+// The members a value shows -- a plain table's own, and 05 の 8.8's hostdata
+// read off the table its type registered. Two places ask this: 14.7改2's
+// delegate walk, which is the reason a delegate^ to a host value works at
+// all, and 13.11's fits^, which would otherwise answer no to a host value
+// for every structure while the checker was answering yes to the same
+// question (03 の 4.2 -- one question, one answer).
+//
+// A host VALUE (05 の 8.9) is not here on purpose: its members are the
+// machine's, found by tag->index, and the checker refuses one against a
+// structure too. Anything else has no members to lend and answers NULL,
+// which is 04 の 11.3's line rather than a failure.
+static const LhatTable *members_table_of(LhatValue value)
+{
+    if (lhat_is_object_kind(value, LHAT_OBJECT_HOSTDATA)) {
+        return ((const LhatHostData *)lhat_as_object(value))->members;
+    }
+    if (lhat_is_object_kind(value, LHAT_OBJECT_TABLE)) {
+        return (const LhatTable *)lhat_as_object(value);
+    }
+    return NULL;
+}
+
 bool lhat_value_satisfies(LhatValue value, const LhatRuntimeType *type)
 {
     if (type == NULL) {
@@ -353,13 +375,13 @@ bool lhat_value_satisfies(LhatValue value, const LhatRuntimeType *type)
         case LHAT_TYPE_RT_TABLE: {
             // 14.10: at least these members, which is what makes the judgement
             // structural rather than a question about where it came from.
-            const LhatTable *table = NULL;
-            if (lhat_is_object_kind(value, LHAT_OBJECT_TABLE)) {
-                table = (const LhatTable *)lhat_as_object(value);
-            }
-            else if (lhat_is_object_kind(value, LHAT_OBJECT_ERROR)) {
-                table = ((const LhatError *)lhat_as_object(value))->fields;
-            } else {
+            // 04 の 2.2: an error's fields are what it shows, and they are
+            // not members -- so this reading is the error's own.
+            const LhatTable *table =
+                lhat_is_object_kind(value, LHAT_OBJECT_ERROR)
+                    ? ((const LhatError *)lhat_as_object(value))->fields
+                    : members_table_of(value);
+            if (table == NULL) {
                 return false;
             }
             for (size_t i = 0; i < type->member_count; i++) {
@@ -373,8 +395,21 @@ bool lhat_value_satisfies(LhatValue value, const LhatRuntimeType *type)
                 }
             }
             return true;
+        // 05 の 8.7 with 14.12: three things are a subroutine here. A closure
+        // is one; a registered C function is one, which is what 8.7 makes it;
+        // and a group is one, since a name carrying arms is called like any
+        // other name. The checker knows all three as f^/p^, so a test that
+        // knew only the first would answer no exactly where the annotation
+        // answered yes.
+        //
+        // The kind is the whole of the question. The signature is the
+        // checker's -- 03 の 4.2 leaves the run time the part that cannot be
+        // decided ahead, and which arm of a group a call takes is decided at
+        // the call.
         case LHAT_TYPE_RT_SUBROUTINE:
-            return lhat_is_object_kind(value, LHAT_OBJECT_SUBROUTINE);
+            return lhat_is_object_kind(value, LHAT_OBJECT_SUBROUTINE) ||
+                   lhat_is_object_kind(value, LHAT_OBJECT_HOST) ||
+                   lhat_is_object_kind(value, LHAT_OBJECT_OVERLOAD);
         case LHAT_TYPE_RT_COROUTINE:
             return lhat_is_object_kind(value, LHAT_OBJECT_COROUTINE);
         // 04 の 2.7: a family, not every error. The two tops are disjoint, so
@@ -1473,24 +1508,6 @@ bool lhat_takes_receiver(LhatValue value)
 
 // 03 の 5.1改: the walk both readings share. `found_in` is NULL for the
 // plain one, which asks nothing about where the answer was.
-// 14.7改2: the table a delegate answers through. A def^ instance is one
-// already; 05 の 8.8's hostdata reads its members off the table its type
-// registered, which is what makes delegating to a host value work at all.
-//
-// Anything else has no members to lend, and a delegate^ naming one answers
-// nothing rather than failing -- 04 の 11.3's line, and what the checker has
-// already refused for anyone who ran it.
-static const LhatTable *delegate_table_of(LhatValue held)
-{
-    if (lhat_is_object_kind(held, LHAT_OBJECT_HOSTDATA)) {
-        return ((const LhatHostData *)lhat_as_object(held))->members;
-    }
-    if (lhat_is_object_kind(held, LHAT_OBJECT_TABLE)) {
-        return (const LhatTable *)lhat_as_object(held);
-    }
-    return NULL;
-}
-
 static LhatValue table_get_in(const LhatTable *table, LhatValue key,
                               const LhatTable **found_in, uint32_t *found_at,
                               bool *inherited_out, LhatValue *through)
@@ -1580,7 +1597,7 @@ static LhatValue table_get_in(const LhatTable *table, LhatValue key,
                 ? table_get_in(holder, owner->delegate_key, NULL, NULL, NULL,
                                NULL)
                 : lhat_nil();
-        const LhatTable *to = delegate_table_of(held);
+        const LhatTable *to = members_table_of(held);
         // And a delegate that reaches back to where the walk began is a ring
         // of one. 14.2 fixes the chain at the definition, which keeps a
         // writer from building a longer one, but this is the step that would

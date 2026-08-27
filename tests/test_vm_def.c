@@ -459,6 +459,21 @@ static void test_definitions(void)
 
     // 14.12: an override^ over an overloaded name replaces the one arm it
     // overlaps, so a plain write would take the whole group with it.
+    // 02 の 13.11 with 14.12: the arms of one name are one value, and it is
+    // a subroutine -- the checker writes the name's type as one of them, so
+    // fits^ has to take the group where that is asked for.
+    LHAT_TEST("a group of arms is a subroutine to fits^");
+    run_checked_text(&r,
+                     "let^ D = def^{ self^{ },\n"
+                     "  m = f^self^, n:number^ -> number^ { return^ n },\n"
+                     "  overload^m = f^self^, s:string^ -> number^ { return^ 1 },\n"
+                     "}\n"
+                     "let^ d = D.new()\n"
+                     "if^ d fits^ t^{ m : f^self^, number^ -> number^; } { return^ 1 }\n"
+                     "return^ 0\n");
+    CHECK_INTEGER(&r, 1);
+    run_dispose(&r);
+
     LHAT_TEST("override^ over an overload^ keeps the other arms");
     run_text(&r,
              "var^ A = def^{ self^{ }, m := f^self^ { return^ 1 } }\n"
