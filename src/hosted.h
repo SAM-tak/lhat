@@ -83,6 +83,15 @@ typedef struct LhatHostValueTypeEntry {
 // the tables bound here are those very ones, so the collector reaches them
 // through the environment already. program.c is the one caller.
 struct LhatMachine;
+
+// 05 の 8.8改: puts one registered type's members table under its base's, so
+// that what the base declared is reached by walking. See the body in vm.c;
+// program.c's install is the one caller, once per type that has a base.
+bool lhat_machine_link_hostdata_base(struct LhatMachine *machine,
+                                     const char *module, const char *name,
+                                     const char *base_module,
+                                     const char *base_name);
+
 bool lhat_machine_bind_hostvalues(struct LhatMachine *machine,
                                   const LhatHostValueTypeEntry *entries,
                                   size_t count, size_t slots);

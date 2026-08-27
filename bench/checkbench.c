@@ -237,7 +237,8 @@ static void write_script(char *out, size_t capacity, size_t wrappers,
 
 static bool time_one(size_t per_level, size_t leaves, size_t wrappers,
                      bool delegating, bool composing,
-                     double *registering, double *checking)
+                     double *registering, double *checking,
+                     double *installing)
 {
     static char library[MAX_WRAPPERS * 512 + 64];
     static char script[MAX_WRAPPERS * 256 + 64];
@@ -247,6 +248,7 @@ static bool time_one(size_t per_level, size_t leaves, size_t wrappers,
 
     double spent_registering = 0.0;
     double spent_checking = 0.0;
+    double spent_installing = 0.0;
     for (size_t round = 0; round < ROUNDS; round++) {
         LhatProgram *program = lhat_program_new(true, disk_load, &disk);
         if (program == NULL) {
@@ -271,10 +273,35 @@ static bool time_one(size_t per_level, size_t leaves, size_t wrappers,
             lhat_program_free(program);
             return false;
         }
+
+        // 05 の 8.7: what a host does after the check -- compile, make a
+        // machine, and put the registrations into it. A binding that rebuilds
+        // its world whenever a script is loaded pays this as often as it pays
+        // the check, so it is timed apart rather than left in the noise.
+        if (!lhat_program_compile(program)) {
+            fprintf(stderr, "checkbench: the program did not compile\n");
+            lhat_program_free(program);
+            return false;
+        }
+        LhatMachine *machine = lhat_machine_new();
+        if (machine == NULL) {
+            lhat_program_free(program);
+            return false;
+        }
+        started = lhat_now_ms();
+        bool put = lhat_program_install(program, machine);
+        spent_installing += lhat_now_ms() - started;
+        lhat_machine_dispose(machine);
+        if (!put) {
+            fprintf(stderr, "checkbench: the install failed\n");
+            lhat_program_free(program);
+            return false;
+        }
         lhat_program_free(program);
     }
     *registering = spent_registering / ROUNDS;
     *checking = spent_checking / ROUNDS;
+    *installing = spent_installing / ROUNDS;
     return true;
 }
 
@@ -292,15 +319,16 @@ static void run_row(size_t per_level, size_t leaves, size_t wrappers,
     size_t total = per_level * DEPTH;
     double reg = 0.0;
     double timed = 0.0;
-    if (!time_one(per_level, leaves, wrappers, delegating, composing,
-                  &reg, &timed)) {
+    double put = 0.0;
+    if (!time_one(per_level, leaves, wrappers, delegating, composing, &reg,
+                  &timed, &put)) {
         return;
     }
+    (void)total;
     printf("  %2zu wrapper(s)  %-8s %-7s  register %7.1f ms  "
-           "check %8.1f ms  (%.4f ms per member)\n",
+           "check %7.1f ms  install %9.1f ms\n",
            (size_t)wrappers, delegating ? "delegate" : "plain",
-           composing ? "compose" : "name", reg, timed,
-           total > 0 ? timed / (double)(total * wrappers) : 0.0);
+           composing ? "compose" : "name", reg, timed, put);
 }
 
 int main(int argc, char **argv)

@@ -137,6 +137,18 @@ static LhatValue node2d_x(LhatMachine *machine, void *context,
     return self != NULL ? lhat_integer(self->x) : lhat_nil();
 }
 
+// The same name the base declares, on the leaf. 8.8改 says the nearest
+// declaration answers, and this is what says which one ran.
+static LhatValue sprite_id(LhatMachine *machine, void *context,
+                           const LhatValue *arguments, size_t count)
+{
+    (void)machine;
+    (void)context;
+    (void)arguments;
+    (void)count;
+    return lhat_integer(7);
+}
+
 static LhatValue node_dispose(LhatMachine *machine, void *context,
                               const LhatValue *arguments, size_t count)
 {
@@ -318,6 +330,35 @@ static void test_fits(void)
 {
     LhatProgram program;
     Disk disk;
+
+    // 8.8改 with 14.7: the nearest declaration of a name answers. The
+    // members table a derived type carries is LINKED to its base's rather
+    // than holding a copy of it, so which one is met first is the walk's
+    // answer and not a comparison somebody had to write.
+    LHAT_TEST("a name declared twice answers with the nearest");
+    {
+        static const File files[] = {
+            {"main.lh",
+             "import^ scene\n"
+             "let^ s = scene.makeSprite()\n"
+             "let^ n : scene.Node = scene.makeSprite()\n"
+             "return^ s.id() * 10 + n.id()\n"},
+        };
+        program_with(&program, &disk, files, 1);
+        LHAT_CHECK(register_scene(&program, false), "registered");
+        // The same name the base registered, on the leaf of the chain.
+        LHAT_CHECK(lhat_register_member(&program, "scene", "Sprite2D", "id",
+                                        "f^self^ -> number^;", sprite_id,
+                                        NULL),
+                   "the derived one registered");
+        the_node.id = 3;
+        LhatRunResult ran = run_program(&program);
+        LHAT_CHECK_EQ_INT(ran.status, LHAT_RUN_OK);
+        // 7 from the derived member both times: the annotation says Node,
+        // but 8.8 makes the VALUE what decides, and the value is a Sprite2D.
+        LHAT_CHECK_EQ_INT(lhat_as_integer(ran.value), 77);
+        lhat_program_dispose(&program);
+    }
 
     LHAT_TEST("fits^ answers the chain at run time as the checker reads it");
     {

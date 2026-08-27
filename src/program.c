@@ -2359,26 +2359,6 @@ bool lhat_program_on_dispose(LhatProgram *program, LhatProgramDisposeFn call,
     return true;
 }
 
-// 05 の 8.8改: does any type from `from` up to but not including `stop`
-// carry a member of this name? Walked nearest-first, so this is what tells
-// an inherited member that something closer already answers for it.
-static bool nearer_has_member(const LhatProgram *program,
-                              const LhatHostDataTag *from,
-                              const LhatHostDataTag *stop, const char *name)
-{
-    for (const LhatHostDataTag *at = from; at != NULL && at != stop;
-         at = at->base) {
-        for (size_t i = 0; i < program->host_entry_count; i++) {
-            const LhatHostEntry *e = &program->host_entries[i];
-            if (e->type != NULL && strcmp(e->module, at->module) == 0 &&
-                strcmp(e->type, at->name) == 0 && strcmp(e->name, name) == 0) {
-                return true;
-            }
-        }
-    }
-    return false;
-}
-
 // One registration made into a value on `machine` and put where it belongs.
 // The place is passed separately from the entry so that an inherited member
 // can be installed under the type that inherited it -- which may sit in
@@ -2415,33 +2395,29 @@ bool lhat_program_install(const LhatProgram *program, LhatMachine *machine)
         }
     }
 
-    // 05 の 8.8改: and now what each type inherits. The machine reads a
-    // hostdata value's members off the type's own table under L^.modules
-    // (lhat_machine_make_hostdata), which is a different place from the
-    // checker's type -- so the flatten that made the checker agree has to
-    // be made here too, or a derived value would check as having a member
-    // and then not find it.
+    // 05 の 8.8改: and now what each type is declared under. The machine
+    // reads a hostdata value's members off the type's own table under
+    // L^.modules (lhat_machine_make_hostdata), which is a different place
+    // from the checker's type -- so what the checker does with the base
+    // link on the type has to be done here too, or a derived value would
+    // check as having a member and then not find it.
     //
-    // Walked nearest-first with nearer_has_member deciding, so the closest
-    // declaration of a name wins -- the same overriding the checker's side
-    // does by skipping names the derived type already registered.
+    // A LINK, one per type, and the walk climbs it (vm.c's
+    // lhat_machine_link_hostdata_base). Copying the base's members down
+    // instead meant a pass over every registration for every type and every
+    // one of its ancestors, with another such pass inside it to decide
+    // which declaration was nearest -- and a binding with a class per
+    // engine class waited seconds for that on every load. Nearest still
+    // wins, now because the walk meets it first.
     for (size_t i = 0; i < program->host_type_entry_count; i++) {
         const LhatHostTypeEntry *te = &program->host_type_entries[i];
-        for (const LhatHostDataTag *at = te->tag->base; at != NULL;
-             at = at->base) {
-            for (size_t j = 0; j < program->host_entry_count; j++) {
-                const LhatHostEntry *e = &program->host_entries[j];
-                if (e->type == NULL || strcmp(e->module, at->module) != 0 ||
-                    strcmp(e->type, at->name) != 0) {
-                    continue;
-                }
-                if (nearer_has_member(program, te->tag, at, e->name)) {
-                    continue;
-                }
-                if (!install_entry(machine, e, te->module, te->name, e->name)) {
-                    return false;
-                }
-            }
+        const LhatHostDataTag *base = te->tag->base;
+        if (base == NULL) {
+            continue;
+        }
+        if (!lhat_machine_link_hostdata_base(machine, te->module, te->name,
+                                             base->module, base->name)) {
+            return false;
         }
     }
     // 05 の 8.6: what goes in L^ itself rather than under its registry.
