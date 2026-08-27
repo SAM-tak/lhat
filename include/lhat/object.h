@@ -89,6 +89,19 @@ typedef struct LhatTable {
     size_t entry_count;       // live entries, tombstones not counted
     size_t entry_capacity;
 
+    // 03 の 5.1改: how many times the LAYOUT of `entries` has changed -- a
+    // key added, a key removed, a rehash, a run drained into the array half.
+    // Writing over a key that is already there does not move anything and
+    // does not count, which is what lets 'self^.x := 1' in a loop leave every
+    // cached read of 'self^.y' standing.
+    //
+    // A member cache remembers where it found something and asks this before
+    // trusting the place again. Zero is not "never written": a table starts
+    // there, and an instance clones into a fresh one -- which is exactly the
+    // fact that lets a cache trust an untouched instance to carry its
+    // prototype's keys and no others (5.10 seals the prototype).
+    uint32_t version;
+
     // 02 の 14.3: the members a definition holds are shared, and the fields
     // its template declares are copied. An instance holds its own fields here
     // and reads the shared ones from `definition`.
@@ -852,6 +865,18 @@ bool lhat_takes_receiver(LhatValue value);
 // 02 の 14.7: an instance sees its definition's members too, so what is not
 // among the instance's own fields is looked for there.
 LhatValue lhat_table_get(const LhatTable *table, LhatValue key);
+
+// 03 の 5.1改: the same lookup, saying where it found the answer -- which
+// table of the 14.7 chain, and which entry of its hash half. `found_in` is
+// NULL when nothing was found or when the answer came off the sequence half,
+// which a written member name never reaches. `inherited` is true when the
+// answer was the definition's rather than the receiver's own.
+//
+// What a member cache remembers, so that a site meeting the same shape again
+// reads the place instead of walking to it.
+LhatValue lhat_table_locate(const LhatTable *table, LhatValue key,
+                            const LhatTable **found_in, uint32_t *found_at,
+                            bool *inherited);
 
 // 05 の 8.9: a registered field decoded off a host value's data run -- the
 // bytes after the head. What 'v.x' answers, and what the value writer

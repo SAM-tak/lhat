@@ -106,6 +106,20 @@ typedef enum {
                         //       same structure otherwise, and 14.17改 asks
                         //       which one it is
     LHAT_BC_GETINDEX,   // A B C R[A] = R[B][R[C]]
+    // 03 の 5.1改: the same read where the key was written rather than
+    // computed -- 'x.m', never 'x[k]'. Bx names a cache (LhatMemberCache),
+    // which carries the key as well, so a hit is two comparisons instead of
+    // a walk of the definition chain and a probe with a full key equality
+    // in it. A miss does exactly what GETINDEX does and fills the cache.
+    //
+    // 5.1: this is a specialisation and nothing else -- the answer is the
+    // one GETINDEX would give, so strictness plays no part (4.2) and the
+    // instruction is emitted whether or not anything was checked.
+    //
+    // C is one byte, so a body reads at most 256 members this way and the
+    // rest fall back to GETINDEX -- the same answer, unremembered.
+    LHAT_BC_GETMEMBER,  // A B C R[A] = R[B].<cache[C]>
+
     LHAT_BC_SETINDEX,   // A B C R[A][R[B]] = R[C]
     // 02 の 13.8改: the checker settles the width where it ran, so this is
     // what relaxed and an unchecked compile fall to -- and it is what stands
@@ -290,6 +304,31 @@ static inline int32_t lhat_jump_offset(LhatInstruction i)
     return (int32_t)lhat_bx(i) - LHAT_BX_BIAS;
 }
 
+// 03 の 5.1改: what one written 'x.m' remembers about the last receiver it
+// met. The cache belongs to the CALL SITE -- one of these per member read in
+// the source -- and not to a value: the member itself is shared (14.3 puts it
+// on the definition), so what a site sees over and over is the same place.
+//
+// `answered` is the table the value was found in, which is the receiver's own
+// for a host type (05 の 8.8 shares one table per type) and the definition's
+// for an instance (14.7 walks there when the instance has no such key of its
+// own). `version` is that table's when it was found: a layout change moves
+// what is where, and the read is refused until it is looked up again.
+//
+// `from_definition` is what makes a site hit across instances of one def^.
+// The instance is a fresh table per value, so comparing it would never
+// match -- what is compared instead is that the receiver has never been
+// structurally written (version 0) and points at the cached definition.
+// 5.10 seals the prototype, so an untouched clone of it carries exactly the
+// prototype's keys and cannot be shadowing the member.
+typedef struct {
+    uint16_t key;  // which constant names the member
+    const struct LhatTable *answered;
+    uint32_t version;
+    uint32_t index;  // where in `answered`'s entries it was
+    bool from_definition;
+} LhatMemberCache;
+
 // One compiled body: its instructions, the constants they name, and how many
 // registers a frame needs. 5.2 fixes the frame size at compile time.
 typedef struct {
@@ -309,6 +348,19 @@ typedef struct {
     // The strings the constants name. A constant lives as long as the chunk,
     // so the chunk owns them rather than the machine that runs it.
     LhatHeap heap;
+
+    // 03 の 5.1改: one per LHAT_BC_GETMEMBER, indexed by its C. Written
+    // while running and read while running -- nothing here takes part in what
+    // the body means, so 4.2 is untouched: clearing every one of these
+    // changes only how long the same answers take.
+    //
+    // The tables it points at belong to a machine, and a chunk outlives none
+    // of them -- but it may be shared by several (std.thread), so a hit is
+    // only ever a hit for the machine that filled it. That is what comparing
+    // the pointer takes care of: another machine's table is another pointer.
+    LhatMemberCache *member_caches;
+    size_t member_cache_count;
+    size_t member_cache_capacity;
 
     uint8_t registers;
 } LhatChunk;
@@ -487,6 +539,12 @@ size_t lhat_chunk_constant(LhatChunk *chunk, LhatValue value);
 // The same for a string literal: the bytes are copied into a string the chunk
 // owns. Two literals spelling the same thing share one constant, which is
 // what makes t.foo and t["foo"] one key.
+// 03 の 5.1改: a fresh cache for one written member read, answering its Bx.
+// `key` is the constant that names the member. SIZE_MAX when there is no
+// memory or the chunk already holds 65536 of them -- the caller then emits
+// the unspecialised read, which answers the same thing.
+size_t lhat_chunk_member_cache(LhatChunk *chunk, uint16_t key);
+
 size_t lhat_chunk_string(LhatChunk *chunk, const char *text, size_t length);
 
 // Rewrites the Bx of the jump at `at` so that it lands on the instruction

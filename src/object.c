@@ -1357,6 +1357,9 @@ static bool grow_entries(LhatTable *table)
     table->entries = entries;
     table->entry_capacity = capacity;
     table->entry_count = moved;
+    // 03 の 5.1改: a rehash moves everything, so nothing remembered about
+    // where a key was is worth anything afterwards.
+    table->version++;
     return true;
 }
 
@@ -1436,6 +1439,7 @@ static void drain_into_array(LhatTable *table)
         entry->key = lhat_nil();
         entry->value = lhat_bool(true);  // a tombstone
         table->entry_count--;
+        table->version++;  // 03 の 5.1改: an entry left its place
     }
 }
 
@@ -1467,7 +1471,11 @@ bool lhat_takes_receiver(LhatValue value)
     return false;
 }
 
-LhatValue lhat_table_get(const LhatTable *table, LhatValue key)
+// 03 の 5.1改: the walk both readings share. `found_in` is NULL for the
+// plain one, which asks nothing about where the answer was.
+static LhatValue table_get_in(const LhatTable *table, LhatValue key,
+                              const LhatTable **found_in, uint32_t *found_at,
+                              bool *inherited_out)
 {
     if (!usable_key(key)) {
         return lhat_nil();
@@ -1508,10 +1516,31 @@ LhatValue lhat_table_get(const LhatTable *table, LhatValue key)
             if (restricted && inherited && !lhat_takes_receiver(entry->value)) {
                 return lhat_nil();
             }
+            // 03 の 5.1改: where it was, for a site that means to come back.
+            // Only the hash half is reported: the array half is the sequence
+            // (14 章), which a written member name never reaches.
+            if (found_in != NULL) {
+                *found_in = table;
+                *found_at = (uint32_t)(entry - table->entries);
+                *inherited_out = inherited;
+            }
             return entry->value;
         }
     }
     return lhat_nil();
+}
+
+LhatValue lhat_table_locate(const LhatTable *table, LhatValue key,
+                            const LhatTable **found_in, uint32_t *found_at,
+                            bool *inherited)
+{
+    *found_in = NULL;
+    return table_get_in(table, key, found_in, found_at, inherited);
+}
+
+LhatValue lhat_table_get(const LhatTable *table, LhatValue key)
+{
+    return table_get_in(table, key, NULL, NULL, NULL);
 }
 
 // 05 の 8.9改: a lookup asking with the bare value -- `t[vec]`. Everything
@@ -1599,6 +1628,7 @@ bool lhat_table_set(LhatTable *table, LhatValue key, LhatValue value,
             entry->key = lhat_nil();
             entry->value = lhat_bool(true);  // a tombstone
             table->entry_count--;
+            table->version++;  // 5.1改: what was at that place is gone
         }
         return true;
     }
@@ -1614,6 +1644,10 @@ bool lhat_table_set(LhatTable *table, LhatValue key, LhatValue value,
         probe(table->entries, table->entry_capacity, key, hash_key(key));
     if (lhat_is_nil(entry->key)) {
         table->entry_count++;
+        // 5.1改: a place that held nothing now holds something. Writing over
+        // a key already there moves nothing, so it does not count -- that is
+        // the whole reason a field written in a loop costs a cache nothing.
+        table->version++;
     }
     entry->key = key;
     entry->value = value;

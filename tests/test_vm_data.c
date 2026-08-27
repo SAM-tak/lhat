@@ -1900,9 +1900,130 @@ static void test_table_methods(void)
     run_dispose(&r);
 }
 
+// 03 の 5.1改: a written member read remembers where it found the answer, and
+// asks the table's version before trusting the place again. What is pinned
+// here is that the remembering never changes an answer -- the cases are the
+// ones where a cache that did not notice something would hand back the
+// value that used to be there.
+//
+// Each runs the same read twice or more: the first fills, the rest either
+// hit or must not.
+static void test_member_cache(void)
+{
+    Run r;
+
+    // The plain hit. Two reads of one name off one table, with nothing
+    // between them.
+    LHAT_TEST("a member read twice answers the same thing");
+    run_checked_text(&r,
+                     "let^ t = { a = 1, b = 2 }\n"
+                     "return^ t.a + t.a\n");
+    CHECK_INTEGER(&r, 2);
+    run_dispose(&r);
+
+    // A CACHE BELONGS TO THE SITE, so staling one takes a single site run
+    // more than once with the table changing under it. Two reads written
+    // apart are two caches, and neither would ever see the other go stale --
+    // which is what the first shape of these tests got wrong.
+    //
+    // Enough keys to take the entries past three quarters full and rehash
+    // them, which moves every one of them.
+    LHAT_TEST("a rehash between two runs of one site is seen");
+    run_checked_text(&r,
+                     "let^ names = { \"b\", \"c\", \"d\", \"e\", \"f\","
+                     " \"g\", \"h\", \"j\", \"k\" }\n"
+                     "var^ t = { a = 1 }\n"
+                     "var^ sum = 0\n"
+                     "var^ i = 0\n"
+                     "repeat^while^ i < 9 {\n"
+                     "    sum := sum + t.a\n"
+                     "    t[names[i + 1]] := i\n"
+                     "    i := i + 1\n"
+                     "}\n"
+                     "return^ sum\n");
+    CHECK_INTEGER(&r, 9);
+    run_dispose(&r);
+
+    // The sharpest one: a removal leaves a tombstone, so a site still
+    // trusting the place reads the tombstone's own value rather than nil^.
+    LHAT_TEST("removing the cached key is seen by the site that cached it");
+    run_checked_text(&r,
+                     "var^ t = { a = 1, b = 2 }\n"
+                     "var^ n = 0\n"
+                     "var^ i = 0\n"
+                     "repeat^while^ i < 2 {\n"
+                     "    if^ t.a = 1 { n := n + 1 }\n"
+                     "    if^ t.a is^ nil^ { n := n + 100 }\n"
+                     "    t[\"a\"] := nil^\n"
+                     "    i := i + 1\n"
+                     "}\n"
+                     "return^ n\n");
+    CHECK_INTEGER(&r, 101);
+    run_dispose(&r);
+
+    // Writing over a key already there moves nothing, so the site keeps its
+    // place -- and has to answer the NEW value, since what it remembered is
+    // where the entry is and not what was in it.
+    LHAT_TEST("writing over a cached key answers the new value");
+    run_checked_text(&r,
+                     "var^ t = { a = 1 }\n"
+                     "var^ sum = 0\n"
+                     "var^ i = 0\n"
+                     "repeat^while^ i < 3 {\n"
+                     "    sum := sum + t.a\n"
+                     "    t[\"a\"] := t.a * 2\n"
+                     "    i := i + 1\n"
+                     "}\n"
+                     "return^ sum\n");
+    CHECK_INTEGER(&r, 7);
+    run_dispose(&r);
+
+    // 14.7: the member is the definition's and shared, so one site reading
+    // it off many instances is the case the cache exists for.
+    LHAT_TEST("one site reads one member off many instances");
+    run_checked_text(&r,
+                     "let^ Box = def^{\n"
+                     "    self^{ n = 0 },\n"
+                     "    read = f^self^ -> number^ { self^.n }\n"
+                     "}\n"
+                     "var^ sum = 0\n"
+                     "var^ i = 0\n"
+                     "repeat^while^ i < 5 {\n"
+                     "    let^ one = Box.new()\n"
+                     "    one.n := i\n"
+                     "    sum := sum + one.read()\n"
+                     "    i := i + 1\n"
+                     "}\n"
+                     "return^ sum\n");
+    CHECK_INTEGER(&r, 10);
+    run_dispose(&r);
+
+    // And an instance that grew a key of its own must stop being trusted to
+    // carry the prototype's keys and no others -- here the new key shadows
+    // the definition's member.
+    // Compiled without checking (run_text), since 8.8's mark refuses writing
+    // a member onto an instance -- what is pinned is the machine's own
+    // answer, which 4.2 requires not to depend on the checker having run.
+    LHAT_TEST("an instance that shadows the member is seen");
+    run_text(&r,
+             "let^ Box = def^{ read = f^self^ -> number^ { 1 } }\n"
+             "var^ one = Box.new()\n"
+             "var^ sum = 0\n"
+             "var^ i = 0\n"
+             "repeat^while^ i < 2 {\n"
+             "    sum := sum + one.read()\n"
+             "    one[\"read\"] := f^ -> number^ { 2 }\n"
+             "    i := i + 1\n"
+             "}\n"
+             "return^ sum\n");
+    CHECK_INTEGER(&r, 3);
+    run_dispose(&r);
+}
+
 int main(void)
 {
     test_names();
+    test_member_cache();
     test_strings();
     test_tables();
     test_nil_safe_compound();

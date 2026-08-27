@@ -1340,6 +1340,28 @@ static void load_string(Compiler *c, uint8_t into, const LhatNode *node)
 // The key of a member access or an index. 01 の 10.1 makes digits after a '.'
 // an integer key, and a name after it a string key, so the two forms differ
 // only in how the key was written.
+// 03 の 5.1改: a cache for the member `node` reads, or SIZE_MAX where the
+// site cannot have one -- an INDEX (the key changes), a name the compiler
+// cannot spell, a chunk that has run out of the 256 a byte can name. The
+// caller then emits the unspecialised read, which answers the same thing.
+static size_t member_cache_for(Compiler *c, const LhatNode *node)
+{
+    if (node->kind != LHAT_NODE_MEMBER ||
+        c->proto->chunk.member_cache_count >= 256) {
+        return SIZE_MAX;
+    }
+    const char *name = NULL;
+    size_t length = 0;
+    if (!node_name(c, node->v.access.argument, &name, &length)) {
+        return SIZE_MAX;
+    }
+    size_t k = lhat_chunk_string(&c->proto->chunk, name, length);
+    if (k == SIZE_MAX) {
+        return SIZE_MAX;
+    }
+    return lhat_chunk_member_cache(&c->proto->chunk, (uint16_t)k);
+}
+
 static void compile_key(Compiler *c, const LhatNode *node, uint8_t into)
 {
     const LhatNode *key = node->v.access.argument;
@@ -3242,14 +3264,22 @@ static void compile_call_wide(Compiler *c, const LhatNode *node, uint8_t into,
             fail(c, LHAT_COMPILE_TOO_COMPLEX);
             return;
         }
-        uint8_t key = c->next_register;
-        if (key >= LHAT_MAX_REGISTERS) {
-            fail(c, LHAT_COMPILE_TOO_COMPLEX);
-            return;
+        // 03 の 5.1改: 'x.m()' is where a member read is hottest, and the
+        // name is written, so the site remembers where it found it.
+        size_t cache = member_cache_for(c, target);
+        if (cache != SIZE_MAX) {
+            emit(c, lhat_encode_abc(LHAT_BC_GETMEMBER, callee, receiver,
+                                    (uint8_t)cache));
+        } else {
+            uint8_t key = c->next_register;
+            if (key >= LHAT_MAX_REGISTERS) {
+                fail(c, LHAT_COMPILE_TOO_COMPLEX);
+                return;
+            }
+            (void)reserve(c);
+            compile_key(c, target, key);
+            emit(c, lhat_encode_abc(LHAT_BC_GETINDEX, callee, receiver, key));
         }
-        (void)reserve(c);
-        compile_key(c, target, key);
-        emit(c, lhat_encode_abc(LHAT_BC_GETINDEX, callee, receiver, key));
         c->next_register = (uint8_t)(receiver + receiver_width);
     } else if (super_call) {
         compile_expression(c, target, callee);
@@ -4262,11 +4292,20 @@ static void compile_expression(Compiler *c, const LhatNode *node, uint8_t into)
                 return;
             }
 
-            // 05 の 8.9: a host value key takes its width of slots, so the
-            // bytes it asks by sit whole beside the head.
-            uint8_t key = reserve_for(c, node->v.access.argument);
-            compile_key(c, node, key);
-            emit(c, lhat_encode_abc(LHAT_BC_GETINDEX, into, target, key));
+            // 03 の 5.1改: a written member name is the same key every time
+            // this instruction runs, so the site can remember where it found
+            // it.
+            size_t cache = member_cache_for(c, node);
+            if (cache != SIZE_MAX) {
+                emit(c, lhat_encode_abc(LHAT_BC_GETMEMBER, into, target,
+                                        (uint8_t)cache));
+            } else {
+                // 05 の 8.9: a host value key takes its width of slots, so the
+                // bytes it asks by sit whole beside the head.
+                uint8_t key = reserve_for(c, node->v.access.argument);
+                compile_key(c, node, key);
+                emit(c, lhat_encode_abc(LHAT_BC_GETINDEX, into, target, key));
+            }
             chain_close(c, &chain);
             c->next_register = mark;
             return;

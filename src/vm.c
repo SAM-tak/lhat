@@ -3326,6 +3326,15 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth, bool draining)
         // when one did. `op` becomes SPACESHIP there -- that is the member to
         // look for -- and this is what the answer gets read against zero with.
         LhatOpcode derive_from = LHAT_FRAME_NO_DERIVE;
+        // 03 の 5.1改: what GETINDEX and GETMEMBER share. Declared out here
+        // because the second jumps into the first's body having settled them
+        // -- the key it asks by, and the cache to fill on the way out (NULL
+        // for a GETINDEX, which remembers nothing).
+        //
+        // Left unwritten on purpose: both cases set both before jumping in,
+        // and every other instruction would pay for the stores.
+        LhatValue member_key;
+        LhatMemberCache *filling;
 
         switch (op) {
             case LHAT_BC_LOADK:
@@ -3695,13 +3704,54 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth, bool draining)
             // way this fails is being asked of something that is not a table.
             // An error answers from its fields: 2.3 gives every kind message
             // and cause, and they are reached the same way as a member.
-            case LHAT_BC_GETINDEX: {
+            // 03 の 5.1改: a written member name, which is the same key every
+            // time this site runs. What it remembers is where the answer was
+            // last found, and a hit is two comparisons -- against a walk of
+            // the 14.7 chain and a probe with a full key equality in it.
+            //
+            // A miss falls into the body below having settled `key` from the
+            // cache and `filling` to the cache, so the ordinary read answers
+            // and fills it on the way out. That way there is one place that
+            // decides what a member read means, and this is only about how
+            // long it takes (4.2).
+            case LHAT_BC_GETMEMBER: {
+                LhatMemberCache *cache = &chunk->member_caches[cc];
+                const LhatTable *start = readable_table(R(b));
+                if (cache->answered != NULL && start != NULL &&
+                    (cache->from_definition
+                         // An instance is a fresh table per value, so what is
+                         // compared is not the table but the fact that it has
+                         // never been structurally written since it was cloned
+                         // -- and 5.10 seals the prototype, so such a clone
+                         // carries the prototype's keys and no others and
+                         // cannot be shadowing this member.
+                         ? (start->version == 0 &&
+                            start->definition == cache->answered &&
+                            cache->answered->version == cache->version)
+                         // 05 の 8.8 shares one members table per host type,
+                         // so for those this is the same table every time.
+                         : (start == cache->answered &&
+                            start->version == cache->version))) {
+                    SET_R(a, cache->answered->entries[cache->index].value);
+                    break;
+                }
+                member_key = chunk->constants[cache->key];
+                filling = cache;
+                goto member_body;
+            }
+
+            case LHAT_BC_GETINDEX:
+                member_key = R(cc);
+                filling = NULL;
+                goto member_body;
+
+            member_body: {
                 // 02 の 12.6 and 15.6: a coroutine answers the operations the
                 // runtime provides, bound to what they came through.
                 if (lhat_is_object_kind(R(b), LHAT_OBJECT_COROUTINE)) {
                     LhatNativeKind which;
                     bool hatted = false;
-                    if (!native_named(R(cc), &which, &hatted)) {
+                    if (!native_named(member_key, &which, &hatted)) {
                         return finish(m, chunk, LHAT_RUN_TYPE_ERROR, lhat_nil(), at);
                     }
                     LhatNative *native =
@@ -3716,13 +3766,13 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth, bool draining)
                 // It is not a table, so the ordinary lookup below never sees
                 // it -- this is what makes '.signature' answer something.
                 if (lhat_is_object_kind(R(b), LHAT_OBJECT_TYPE)) {
-                    if (!lhat_is_object_kind(R(cc), LHAT_OBJECT_STRING)) {
+                    if (!lhat_is_object_kind(member_key, LHAT_OBJECT_STRING)) {
                         return finish(m, chunk, LHAT_RUN_TYPE_ERROR, lhat_nil(), at);
                     }
-                    const LhatString *key =
-                        (const LhatString *)lhat_as_object(R(cc));
-                    if (key->length != 9 ||
-                        memcmp(key->text, "signature", 9) != 0) {
+                    const LhatString *asked =
+                        (const LhatString *)lhat_as_object(member_key);
+                    if (asked->length != 9 ||
+                        memcmp(asked->text, "signature", 9) != 0) {
                         return finish(m, chunk, LHAT_RUN_TYPE_ERROR, lhat_nil(), at);
                     }
                     const LhatRuntimeType *type =
@@ -3750,7 +3800,7 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth, bool draining)
                 if (lhat_is_hostvalue(R(b))) {
                     const LhatHostValueTag *hv_tag = lhat_as_hostvalue_tag(R(b));
                     const LhatHostValueField *field =
-                        hostvalue_field_named(hv_tag, R(cc));
+                        hostvalue_field_named(hv_tag, member_key);
                     if (field != NULL) {
                         SET_R(a, lhat_hostvalue_field_value(
                                      m->slots.values + rbase + b + 1, field));
@@ -3762,14 +3812,14 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth, bool draining)
                         return finish(m, chunk, LHAT_RUN_TYPE_ERROR,
                                       lhat_nil(), at);
                     }
-                    SET_R(a, member_written(m, R(b), R(cc), hv_members));
+                    SET_R(a, member_written(m, R(b), member_key, hv_members));
                     // 02 の 14.17: and where the library registered none, the
                     // built-in writes the value down -- a host value has no
                     // spelling of its own, so what it answers is its type's
                     // name (value.c's write_value).
                     LhatNativeKind hv_which;
                     if (lhat_is_nil(R(a)) &&
-                        builtin_member(R(b), R(cc), &hv_which)) {
+                        builtin_member(R(b), member_key, &hv_which)) {
                         LhatNative *native =
                             lhat_native_new(&m->objects, hv_which, R(b));
                         if (native == NULL) {
@@ -3789,13 +3839,13 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth, bool draining)
                     const LhatHostValueBox *box =
                         (const LhatHostValueBox *)lhat_as_object(R(b));
                     const LhatHostValueField *field = hostvalue_field_named(
-                        lhat_hostvalue_box_tag(box), R(cc));
+                        lhat_hostvalue_box_tag(box), member_key);
                     if (field != NULL) {
                         SET_R(a, lhat_hostvalue_field_value(box->run + 1, field));
                         break;
                     }
                     LhatNativeKind which;
-                    if (box_member_named(R(cc), &which)) {
+                    if (box_member_named(member_key, &which)) {
                         LhatNative *native =
                             lhat_native_new(&m->objects, which, R(b));
                         if (native == NULL) {
@@ -3816,7 +3866,7 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth, bool draining)
                     // -- iterate stays the table path's, which is where a
                     // value carrying fields comes through.
                     LhatNativeKind bare;
-                    if (builtin_member(R(b), R(cc), &bare) &&
+                    if (builtin_member(R(b), member_key, &bare) &&
                         (bare == LHAT_NATIVE_TOSTRING ||
                          bare == LHAT_NATIVE_TONUMBER ||
                          bare == LHAT_NATIVE_SUBSTRING ||
@@ -3849,7 +3899,7 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth, bool draining)
                     // are. 14.18改: the bare word alone, since a string^ has
                     // no names of its own for a hat to be keeping this off.
                     bool counted_hatted = false;
-                    CountedKind counted = counted_named(R(cc), &counted_hatted);
+                    CountedKind counted = counted_named(member_key, &counted_hatted);
                     if (counted != COUNTED_NONE && !counted_hatted &&
                         lhat_is_object_kind(R(b), LHAT_OBJECT_STRING)) {
                         const LhatString *text =
@@ -3869,21 +3919,56 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth, bool draining)
                 }
                 // 05 の 8.9改: a bare host value asks by its bytes of the
                 // moment -- the stored keys are sealed boxes, and content
-                // is what a box key means.
-                if (lhat_is_hostvalue(R(cc))) {
+                // is what a box member_key means.
+                if (lhat_is_hostvalue(member_key)) {
                     SET_R(a, lhat_table_get_by_value(
-                                 table, lhat_as_hostvalue_tag(R(cc)),
+                                 table, lhat_as_hostvalue_tag(member_key),
                                  m->slots.values + rbase + cc + 1));
                     break;
                 }
-                SET_R(a, member_written(m, R(b), R(cc), table));
+                // 03 の 5.1改: the one path a cache is about -- what a table
+                // holds under a written name. Everything else this
+                // instruction answers (a coroutine's operations, a host
+                // value's fields, the built-ins every value carries) is made
+                // rather than found, so there is no place to remember.
+                if (filling != NULL) {
+                    const LhatTable *found_in = NULL;
+                    uint32_t found_at = 0;
+                    bool inherited = false;
+                    LhatValue got =
+                        lhat_table_locate(table, member_key, &found_in, &found_at,
+                                          &inherited);
+                    SET_R(a, got);
+                    // Only where the walk found it in a hash entry, and --
+                    // for the inherited case -- where the receiver itself has
+                    // not been structurally written, since that is what the
+                    // hit above will be trusting.
+                    if (found_in != NULL &&
+                        (!inherited || table->version == 0)) {
+                        filling->answered = found_in;
+                        filling->version = found_in->version;
+                        filling->index = found_at;
+                        filling->from_definition = inherited;
+                    } else {
+                        filling->answered = NULL;
+                    }
+                    if (!lhat_is_nil(got) || plain_table(R(b))) {
+                        goto member_answered;
+                    }
+                    // member_written's second reading (14.17改's other
+                    // spelling) is not a place to remember, so it goes
+                    // through the ordinary way and leaves the cache empty.
+                    filling->answered = NULL;
+                }
+                SET_R(a, member_written(m, R(b), member_key, table));
+            member_answered:;
 
                 // 16.3: a table has an iterate of its own, but only where
                 // nothing was written under that name. 14.17 gives tostring
                 // the same rule, which this order is already the whole of.
                 LhatNativeKind which;
                 if (lhat_is_nil(R(a)) &&
-                    builtin_member(R(b), R(cc), &which)) {
+                    builtin_member(R(b), member_key, &which)) {
                     LhatNative *native =
                         lhat_native_new(&m->objects, which, R(b));
                     if (native == NULL) {
@@ -3901,7 +3986,7 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth, bool draining)
                 bool counting_hatted = false;
                 CountedKind counting = COUNTED_NONE;
                 if (lhat_is_nil(R(a))) {
-                    counting = counted_named(R(cc), &counting_hatted);
+                    counting = counted_named(member_key, &counting_hatted);
                     if (!counting_hatted) {
                         counting = COUNTED_NONE;
                     }

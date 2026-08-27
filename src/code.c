@@ -172,6 +172,7 @@ void lhat_chunk_dispose(LhatChunk *chunk)
     lhat_free(chunk->code);
     lhat_free(chunk->lines);
     lhat_free(chunk->constants);
+    lhat_free(chunk->member_caches);
     lhat_object_free_all(&chunk->heap);
     memset(chunk, 0, sizeof *chunk);
 }
@@ -222,6 +223,23 @@ size_t lhat_chunk_constant(LhatChunk *chunk, LhatValue value)
     }
     chunk->constants[chunk->constant_count] = value;
     return chunk->constant_count++;
+}
+
+size_t lhat_chunk_member_cache(LhatChunk *chunk, uint16_t key)
+{
+    // NOT reused the way a constant is. Two sites reading the same name are
+    // two questions -- 'a.m' and 'b.m' meet different receivers -- and one
+    // cache between them would be the two knocking each other out. One per
+    // site is the point.
+    LHAT_GROW(chunk->member_caches, chunk->member_cache_count,
+              chunk->member_cache_capacity, 8, return SIZE_MAX);
+    if (chunk->member_cache_count > 0xFFFF) {
+        return SIZE_MAX;
+    }
+    LhatMemberCache *made = &chunk->member_caches[chunk->member_cache_count];
+    memset(made, 0, sizeof *made);
+    made->key = key;
+    return chunk->member_cache_count++;
 }
 
 size_t lhat_chunk_string(LhatChunk *chunk, const char *text, size_t length)
