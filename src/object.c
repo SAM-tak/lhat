@@ -395,7 +395,7 @@ bool lhat_value_satisfies(LhatValue value, const LhatRuntimeType *type)
         //
         // 8.8改: or a tag declared under the asked-for one. The same walk the
         // checker makes (type.c's nominal_derives), which is what keeps
-        // 'x isa^ godot.Node' answering the same thing on both sides of
+        // 'x fits^ godot.Node' answering the same thing on both sides of
         // 03 の 4.2.
         case LHAT_TYPE_RT_HOSTDATA: {
             if (!lhat_is_object_kind(value, LHAT_OBJECT_HOSTDATA)) {

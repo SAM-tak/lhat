@@ -116,15 +116,15 @@ let^ATest = f^x:A, y { x * y }
 print(ATest(aA, 3))
 # let^ATest2 = f^x, y { x * y } # 期待通りエラー
 # several types here carry this operator and nothing says which is meant;
-# write one of the types the signature names, or narrow to it with isa^
+# write one of the types the signature names, or narrow to it with fits^
 # let^ATest2 = f^x, y {
-#     if^x isa^A: x * y el^: x * y;
+#     if^x fits^A: x * y el^: x * y;
 # } # 残念これは通らない
 # let^ATest2 = f^x, y {
-#     if^x isa^A: x * y el^x isa^number^: x * y el^: A.new();
+#     if^x fits^A: x * y el^x fits^number^: x * y el^: A.new();
 # } # 残念これも通らない
 let^ATest2 = f^x:A|number^, y { # これは行ける。まぁ許容範囲かな。
-    if^x isa^A: x * y el^: x * y;
+    if^x fits^A: x * y el^: x * y;
 }
 print(ATest2(aA, 3))
 print(ATest2(4, 3))

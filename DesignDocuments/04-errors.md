@@ -161,7 +161,7 @@ read() catch^ it^.message        # 通る。宣言が2つにまたがってい�
 
 ```lhat
 read() catch^ it^.path                                   # 誤り。葉のもの
-read() catch^ if^ it^ isa^ IOError.Eof: it^.path el^: "";  # これでよい
+read() catch^ if^ it^ fits^ IOError.Eof: it^.path el^: "";  # これでよい
 ```
 
 #### 構造型とは比べない
@@ -529,7 +529,7 @@ g(f() catch^ 1, 2)            # 引数2つ? 引数1つ?
 
 ```lhat
 let^ n = parse(s) catch^ fallbackFor(it^)
-let^ n = parse(s) catch^ if^ it^ isa^ ParseError.Eof: 0 el^: -1 ;
+let^ n = parse(s) catch^ if^ it^ fits^ ParseError.Eof: 0 el^: -1 ;
 ```
 
 02 の 16.2 が `it^` を「焦点の既定の名前」と定めた。
@@ -624,7 +624,7 @@ let^ line = std.io.readLine() catch^ f^{
 
 #### 腕
 
-- `catch^ 型:` — 13.11 の `isa^` と同じ判定。宣言全体（`IOError`）も、
+- `catch^ 型:` — 13.11 の `fits^` と同じ判定。宣言全体（`IOError`）も、
   合併（`IOError.NotFound|IOError.Denied`）も書ける
 - `catch^:` — 残り全部。**最後に1つだけ**。後ろに腕は書けない
 - `it^` は捕まえた誤り（4.2 と同じ語）。腕の型に絞り込まれるので、
@@ -772,7 +772,7 @@ let^ read = f^ { return^ try^ open() }     # number^|IOError に推論される
 
 ---
 
-## 6. `isa^` による判別と絞り込み
+## 6. `fits^` による判別と絞り込み
 
 ### 6.1 形
 
@@ -783,14 +783,14 @@ let^ read = f^ { return^ try^ open() }     # number^|IOError に推論される
 
 ```lhat
 let^ r = parse(s)
-if^ r isa^ ParseError.Syntax {
+if^ r fits^ ParseError.Syntax {
     report(r.line, r.column)      # 絞り込まれているのでフィールドが見える
     return^ r
 }
 # ここでは r : number^|ParseError.Eof
 ```
 
-`isa^` の意味と絞り込みの規則は 02 の 13.11 で定めた。
+`fits^` の意味と絞り込みの規則は 02 の 13.11 で定めた。
 右辺には型を書き、`T` と書かれた位置に左辺を置けるかを問う。
 完全一致を問う演算子は設けない。
 
@@ -807,7 +807,7 @@ if^ r isa^ ParseError.Syntax {
 | 代替値で続ける | `expr catch^ v` |
 | 呼び出し元へ返す | `try^ expr` |
 | 文を並べて捕まえる | `try^{ … catch^ 型: … catch^: … }`（4.5） |
-| それ以外 | 合併のまま受けて `isa^` で絞り込む |
+| それ以外 | 合併のまま受けて `fits^` で絞り込む |
 
 上の2つは式であり、3つ目は文である。合併のまま受ける形は、
 **誤りでない値のほうを** 続けて使う場合に読みやすい。
@@ -826,9 +826,9 @@ f^ open(p:string^) -> file^|IOError;
 
 let^ r = open(p)                        # r : file^|IOError.NotFound|IOError.Denied
 
-if^ r isa^ IOError.NotFound {
+if^ r fits^ IOError.NotFound {
     create(p)
-    elseif^ r isa^ IOError.Denied:
+    elseif^ r fits^ IOError.Denied:
         fallback()
     else^:
         use(r)
@@ -916,7 +916,7 @@ finally^: flush() catch^ nil^
 
 ```lhat
 let^ r = parse(s)
-if^ r isa^ ParseError {
+if^ r fits^ ParseError {
     return^ error^ConfigError.Invalid{
         message := "config could not be read",
         cause := r,
@@ -934,7 +934,7 @@ let^ depth = e.cause?.cause?.message
 自動で付けると、どこまで遡れるかが呼び出しの深さに依存し、実行時にしか分からなくなる。
 
 `cause` の型が `error^` である以上、辿った先の種別は上位型までしか分からない。
-必要なら `isa^` で絞り込む。
+必要なら `fits^` で絞り込む。
 
 ---
 
@@ -1079,7 +1079,7 @@ L^ は構造的型付けを採るため **`t.foo` が静的に解決する**。
 ### 11.4 `nil^` の参照
 
 strict では **静的に防がれる**。`x : T|nil^` に対する `x.foo` は型の誤りであり、
-`isa^` で絞り込む（02 の 13.11）か `?.` を書く（02 の 11.7改）しかない。
+`fits^` で絞り込む（02 の 13.11）か `?.` を書く（02 の 11.7改）しかない。
 **検査されたコードには、実行時検査が残らない。**
 
 relaxed（03 の 3.1）では `T|nil^` への参照が **そのまま通る**
@@ -1090,7 +1090,7 @@ relaxed には検査挿入がない（03 の 3.5）。挿入検査がないな�
 `nil^` を踏むのは「静的な約束が破れた」側ではなく、
 単に **動的なコードが動的に失敗した** だけであり、それは他のあらゆる
 型不一致と同じく命令の panic が答える。専用の誤り種別も、そのための
-検査も、設けない。`nil^` を予期するコードは `??` か `isa^ nil^` か
+検査も、設けない。`nil^` を予期するコードは `??` か `fits^ nil^` か
 `?.` で **書き手が** 訊く——それが 11.3 との一貫でもある：
 予期される欠落は書き手が問い、予期しない欠落は panic する。
 
@@ -1344,7 +1344,7 @@ IOError.NotFound      # この種別
   エラー値への出自付与は見送り（10 章の線・M4 と別途）
 
 - E1〜E7 は決定済みとして本文に取り込み欠番
-  （種別は型・署名に合併で書く・`isa^` 絞り込み・停止は設けない・
+  （種別は型・署名に合併で書く・`fits^` 絞り込み・停止は設けない・
   フィールド既定値・階層なし・`??`）
 - 種別の表現は「テーブル」→「`kind : string^`」→「汎用列挙体の要素」を経て
   **宣言された型**（2 章）に決着。値では網羅性が型に載らないため。

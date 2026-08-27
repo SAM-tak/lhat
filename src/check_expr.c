@@ -1070,11 +1070,11 @@ LhatType *chk_infer_binary(Checker *c, const LhatNode *node)
         return chk_infer_def(c, node->v.binary.right, left);
     }
 
-    // 13.11: isa^ takes a type on the right, so the right side is not a
+    // 13.11: fits^ takes a type on the right, so the right side is not a
     // value. 11.6改 moved the type-fit question here from is^, which now
     // asks identity and reads an ordinary value on both sides (below, with
     // the rest of the comparisons).
-    if (op == LHAT_OP_ISA) {
+    if (op == LHAT_OP_FITS) {
         LhatType *asked = chk_resolve_type(c, node->v.binary.right);
         // 13.7: any^ is the top of every value, so this holds of whatever is
         // on the left and the question is empty. 13.11 refuses to read the
@@ -1089,7 +1089,7 @@ LhatType *chk_infer_binary(Checker *c, const LhatNode *node)
 
     // 13.11: and^'s right side runs only where the left held, and or^'s only
     // where it did not -- so what the left established about a path is known
-    // inside the right, which is what makes 'x isa^ number^ and^ x <= 0.5'
+    // inside the right, which is what makes 'x fits^ number^ and^ x <= 0.5'
     // read. Popped straight after: what the whole condition tells a branch is
     // the branch's own question, and chk_narrow_from answers it from the top.
     //
@@ -2072,7 +2072,7 @@ LhatType *chk_infer_member(Checker *c, const LhatNode *node)
     // 04 の 11.4: under relaxed, a T|nil^ value may be referenced as T.
     // The checker steps aside; a nil^ actually arriving meets the machine's
     // own instruction check and panics where it lands, with 11.6's line.
-    // strict keeps refusing -- narrowing (isa^, ??, ?.) is the spelling
+    // strict keeps refusing -- narrowing (fits^, ??, ?.) is the spelling
     // there. Only nil^ is stepped past: a union of two real types still has
     // no one member type to answer with.
     //
@@ -5116,7 +5116,7 @@ static LhatType *infer_node(Checker *c, const LhatNode *node)
 
         case LHAT_NODE_UNARY: {
             LhatType *operand = chk_infer(c, node->v.unary.operand);
-            // 11.7改2: 'x?' is '!(x isa^ nil^)' written short, so it
+            // 11.7改2: 'x?' is '!(x fits^ nil^)' written short, so it
             // asks nothing of its operand -- every value either is nil^ or
             // is not. A type with no nil^ arm answers true^ always, which is
             // let through rather than reported: 11.7改 takes the same posture
@@ -5159,10 +5159,10 @@ static LhatType *infer_node(Checker *c, const LhatNode *node)
         // is asked what a comparison written on its own is asked. The operand
         // two links share is inferred once, the way it is evaluated once.
         //
-        // 13.11: an isa^ link takes a type on the right, and what it tests is
+        // 13.11: an fits^ link takes a type on the right, and what it tests is
         // the operand standing to its left -- a type is not a value the next
         // link could compare against, so it does not take that place. 'a < b
-        // isa^ number^ < c' asks about b three times over.
+        // fits^ number^ < c' asks about b three times over.
         case LHAT_NODE_COMPARE_CHAIN: {
             const LhatNode *operand = node->v.chain.operands;
             LhatType *left = chk_infer(c, operand);
@@ -5173,7 +5173,7 @@ static LhatType *infer_node(Checker *c, const LhatNode *node)
                 if (operand == NULL) {
                     break;
                 }
-                if (op == LHAT_OP_ISA) {
+                if (op == LHAT_OP_FITS) {
                     LhatType *asked = chk_resolve_type(c, operand);
                     if (asked != NULL && asked->kind == LHAT_TYPE_ANY) {
                         chk_report(c, operand, LHAT_CHECK_ERR_ISA_ALWAYS_TRUE);

@@ -6,9 +6,9 @@
 // host that leaves port/ out never sees the default allocator.
 //
 // std.random.make answers std.random.Random|std.error.OutOfMemory -- read
-// it with try^/catch^, or narrow with isa^ against std.random.Random or
+// it with try^/catch^, or narrow with fits^ against std.random.Random or
 // std.error.OutOfMemory (05 の 8.8's hostdata path and 04 の 2.4's error
-// kind path, both supported). Naming std.error.OutOfMemory in an isa^
+// kind path, both supported). Naming std.error.OutOfMemory in an fits^
 // (rather than just letting try^/catch^ read it) needs its own
 // `import^ std.error` -- 8.1's "the language hands out no names" applies
 // to a name reached through another module's registration too.

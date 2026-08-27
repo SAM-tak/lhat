@@ -522,11 +522,11 @@ static void test_no_value(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_NOT_ORDERED);
     unit_dispose(&u);
 
-    // 13.11: an isa^ link takes a type, which is not an operand the next link
+    // 13.11: an fits^ link takes a type, which is not an operand the next link
     // could compare against -- so it tests the value to its left and leaves
     // that value in place.
-    LHAT_TEST("an isa^ link tests the operand to its left");
-    check_text(&u, "var^ a : bool^ = 1 < 2 isa^ number^ < 3\n");
+    LHAT_TEST("an fits^ link tests the operand to its left");
+    check_text(&u, "var^ a : bool^ = 1 < 2 fits^ number^ < 3\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 

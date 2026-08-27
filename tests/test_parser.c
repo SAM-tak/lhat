@@ -1486,13 +1486,13 @@ static void test_comparison_chain(void)
     LHAT_CHECK_EQ_INT(first_value(&p)->kind, LHAT_NODE_COMPARE_CHAIN);
     parse_dispose(&p);
 
-    LHAT_TEST("isa^ participates in a chain");
-    parse_text(&p, "x := a isa^ b");
-    LHAT_CHECK(is_binary(first_value(&p), LHAT_OP_ISA), "expected isa^");
+    LHAT_TEST("fits^ participates in a chain");
+    parse_text(&p, "x := a fits^ b");
+    LHAT_CHECK(is_binary(first_value(&p), LHAT_OP_FITS), "expected fits^");
     parse_dispose(&p);
 
     // 11.6改: is^ moved to identity, an ordinary value on both sides -- it
-    // reads like '=' rather than isa^'s type on the right.
+    // reads like '=' rather than fits^'s type on the right.
     LHAT_TEST("is^ takes a value on the right, and chains too");
     parse_text(&p, "x := a is^ b");
     LHAT_CHECK(is_binary(first_value(&p), LHAT_OP_IS), "expected is^");
@@ -2634,15 +2634,15 @@ static void test_patterns(void)
     }
     parse_dispose(&p);
 
-    // 17.4: a type pattern says so with isa^, since a bare name could be
+    // 17.4: a type pattern says so with fits^, since a bare name could be
     // either a value or a type.
-    LHAT_TEST("a type pattern keeps isa^");
-    parse_text(&p, "for^ x { when^ isa^ number^: a() }");
+    LHAT_TEST("a type pattern keeps fits^");
+    parse_text(&p, "for^ x { when^ fits^ number^: a() }");
     LHAT_CHECK_EQ_INT(error_count(&p), 0);
     {
         const LhatNode *condition =
             first_statement(&p)->v.loop.body->v.list.items->v.clause.condition;
-        LHAT_CHECK(is_binary(condition, LHAT_OP_ISA), "expected isa^");
+        LHAT_CHECK(is_binary(condition, LHAT_OP_FITS), "expected fits^");
         LHAT_CHECK_EQ_INT(condition->v.binary.right->kind, LHAT_NODE_TYPE_NAME);
     }
     parse_dispose(&p);
@@ -3549,31 +3549,39 @@ static void test_errors(void)
                       LHAT_PARSE_ERR_BARE_EXPRESSION);
     parse_dispose(&p);
 
-    // 13.11: isa^ asks about a type, so a type is what it reads on the right.
-    LHAT_TEST("isa^ takes a type on the right");
-    parse_text(&p, "b := x isa^ number^");
+    // 13.11: fits^ asks about a type, so a type is what it reads on the right.
+    LHAT_TEST("fits^ takes a type on the right");
+    parse_text(&p, "b := x fits^ number^");
     LHAT_CHECK_EQ_INT(error_count(&p), 0);
     {
         const LhatNode *value = first_value(&p);
-        LHAT_CHECK(is_binary(value, LHAT_OP_ISA), "expected isa^");
+        LHAT_CHECK(is_binary(value, LHAT_OP_FITS), "expected fits^");
         LHAT_CHECK_EQ_INT(value->v.binary.right->kind, LHAT_NODE_TYPE_NAME);
     }
     parse_dispose(&p);
 
-    LHAT_TEST("isa^ accepts a structure on the right");
-    parse_text(&p, "b := x isa^ t^{a : number^}");
+    LHAT_TEST("fits^ accepts a structure on the right");
+    parse_text(&p, "b := x fits^ t^{a : number^}");
     LHAT_CHECK_EQ_INT(error_count(&p), 0);
     LHAT_CHECK_EQ_INT(first_value(&p)->v.binary.right->kind,
                       LHAT_NODE_TYPE_TABLE);
+    parse_dispose(&p);
+
+    // 11.6改: the word is gone rather than aliased. 'isa^' is a hat
+    // identifier like any other now, so it stands between two expressions
+    // and joins neither.
+    LHAT_TEST("isa^ is not an operator any more");
+    parse_text(&p, "b := x isa^ number^");
+    LHAT_CHECK(p.result.diagnostic_count > 0, "expected a diagnostic");
     parse_dispose(&p);
 
     // 04 の 14.4: an error kind is reached through the declaration that
     // introduced it, so a type may be a qualified name.
     LHAT_TEST("a type may be a qualified name");
     parse_text(&p,
-               "if^ e isa^ ParseError.Syntax {\n"
+               "if^ e fits^ ParseError.Syntax {\n"
                "    report(e.line)\n"
-               "    elseif^ e isa^ IOError:\n"
+               "    elseif^ e fits^ IOError:\n"
                "        log(e)\n"
                "}");
     LHAT_CHECK_EQ_INT(error_count(&p), 0);

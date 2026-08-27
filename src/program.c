@@ -1308,7 +1308,7 @@ const LhatHostDataTag *lhat_register_hostdata_type(LhatProgram *program,
     // wider type that anything of the same members satisfies.
     made->v.table.hostdata_tag = entry->tag;
 
-    // 05 の 8.8 の isa^ 版: vm.c がコンパイル時に "module.Name" から
+    // 05 の 8.8 の fits^ 版: vm.c がコンパイル時に "module.Name" から
     // 引けるよう、host_entries(非公開)とは別に vm.h の形へ薄く複製する。
     // 文字列は entry->module/name(host_entries が所有)をそのまま指す
     // だけ -- ここでは複製しない。program_dispose も host_type_entries
@@ -2303,7 +2303,7 @@ static bool compile_one(LhatProgram *program, LhatUnit *u, bool registers)
         units.initial_count = program->initial_count;  // 05 の 8.2
         units.host_errors = program->host_error_entries;  // 05 の 8.7 の誤り版
         units.host_error_count = program->host_error_entry_count;
-        units.host_types = program->host_type_entries;  // 05 の 8.8 の isa^ 版
+        units.host_types = program->host_type_entries;  // 05 の 8.8 の fits^ 版
         units.host_type_count = program->host_type_entry_count;
         units.hostvalue_types = program->hostvalue_type_entries;  // 05 の 8.9
         units.hostvalue_type_count = program->hostvalue_type_entry_count;

@@ -4297,7 +4297,7 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth, bool draining)
             // fits_call already trust. (A fallback that read a shape off a
             // definition table at run time: a value that only arrives while
             // the program runs carries no type to ask about.)
-            case LHAT_BC_ISA: {
+            case LHAT_BC_FITS: {
                 LhatValue wanted = R(cc);
                 if (!lhat_is_object_kind(wanted, LHAT_OBJECT_TYPE)) {
                     return finish(m, chunk, LHAT_RUN_TYPE_ERROR, lhat_nil(), at);

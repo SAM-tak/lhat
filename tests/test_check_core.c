@@ -931,7 +931,7 @@ static void test_operator_candidates(void)
                "  overload^op^* := f^l:number^, self^ -> Self^ { return^ self^ },\n"
                "}\n"
                "var^ f = f^ x:A|number^ -> number^ {\n"
-               "  if^ x isa^ A { return^ 1 }\n"
+               "  if^ x fits^ A { return^ 1 }\n"
                "  return^ x * 2\n"
                "}\n");
     CHECK_CLEAN(&u);
@@ -1089,7 +1089,7 @@ static void test_parameter_inference(void)
     LHAT_TEST("a use under a narrowing is not a demand");
     check_text(&u,
                "var^ f = p^ x {\n"
-               "    if^ x isa^ number^ { var^ n : number^ = x + 1 }\n"
+               "    if^ x fits^ number^ { var^ n : number^ = x + 1 }\n"
                "}\n"
                "f(\"a\")\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_PARAM_UNDECIDED);
@@ -1551,7 +1551,7 @@ static void test_errors(void)
     check_text(&u,
                "errordef^ IOError { NotFound }\n"
                "var^ f = f^ -> number^|IOError { return^ 0 }\n"
-               "var^ n : number^ = f() catch^ if^ it^ isa^ IOError.NotFound:"
+               "var^ n : number^ = f() catch^ if^ it^ fits^ IOError.NotFound:"
                " 0 el^: 1 ;\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
@@ -2303,45 +2303,45 @@ static void test_annotations(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_INCOMPARABLE);
     unit_dispose(&u);
 
-    // 13.11: isa^ reads a type, so an unknown one is reported there too.
-    LHAT_TEST("isa^ resolves its right side as a type");
-    check_text(&u, "var^ x = 1\nvar^ b : bool^ = x isa^ number^\n");
+    // 13.11: fits^ reads a type, so an unknown one is reported there too.
+    LHAT_TEST("fits^ resolves its right side as a type");
+    check_text(&u, "var^ x = 1\nvar^ b : bool^ = x fits^ number^\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
     // 13.7: any^ holds of every value, so the question is empty whatever is
     // on the left. 13.11 decides this from the right side alone -- it never
     // reads the left's inferred type against the right.
-    LHAT_TEST("asking isa^ any^ asks nothing and is reported");
-    check_text(&u, "var^ x : number^ = 1\nvar^ b = x isa^ any^\n");
+    LHAT_TEST("asking fits^ any^ asks nothing and is reported");
+    check_text(&u, "var^ x : number^ = 1\nvar^ b = x fits^ any^\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_ISA_ALWAYS_TRUE);
     unit_dispose(&u);
 
     LHAT_TEST("whatever the left happens to be");
-    check_text(&u, "var^ x : any^ = 1\nvar^ b = x isa^ any^\n");
+    check_text(&u, "var^ x : any^ = 1\nvar^ b = x fits^ any^\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_ISA_ALWAYS_TRUE);
     unit_dispose(&u);
 
     // 13.5 collapses a union with any^ to any^, so the written form does not
     // let it through.
     LHAT_TEST("and however the any^ is spelled");
-    check_text(&u, "var^ x : number^ = 1\nvar^ b = x isa^ any^|nil^\n");
+    check_text(&u, "var^ x : number^ = 1\nvar^ b = x fits^ any^|nil^\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_ISA_ALWAYS_TRUE);
     unit_dispose(&u);
 
-    // 13.11: an answer the left's inferred type fixes is not refused. isa^ is
+    // 13.11: an answer the left's inferred type fixes is not refused. fits^ is
     // there to be asked at run time, and the checker narrowing that from what
     // it thinks it knows is what 13.7 introduced any^ to avoid.
     LHAT_TEST("but an answer fixed by the left is left alone");
     check_text(&u,
                "var^ x : number^ = 1\n"
-               "var^ a = x isa^ string^\n"
-               "var^ b = x isa^ number^\n");
+               "var^ a = x fits^ string^\n"
+               "var^ b = x fits^ number^\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
     LHAT_TEST("which is what makes any^ usable at all");
-    check_text(&u, "var^ f = p^ x:any^ { var^ b = x isa^ string^ }\n");
+    check_text(&u, "var^ f = p^ x:any^ { var^ b = x fits^ string^ }\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 }
@@ -2449,7 +2449,7 @@ static void test_a_narrowed_name_still_resolves(void)
     LHAT_TEST("13.11: a narrowed name resolves, to what the branch knows");
     check_text(&u,
                "let^ held : number^|string^ = 1\n"
-               "if^ held isa^ number^ {\n"
+               "if^ held fits^ number^ {\n"
                "    let^ doubled = held * 2\n"
                "}\n");
     CHECK_CLEAN(&u);

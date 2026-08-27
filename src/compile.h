@@ -75,7 +75,7 @@ typedef struct {
     size_t host_error_count;
 
     // What the program's lhat_register_hostdata_type calls registered, so
-    // that isa^ against a hostdata type (05 の 8.8) can be compiled. NULL/0
+    // that fits^ against a hostdata type (05 の 8.8) can be compiled. NULL/0
     // when the host registered none.
     const LhatHostTypeEntry *host_types;
     size_t host_type_count;
@@ -117,7 +117,7 @@ void lhat_compile_session_bind(LhatCompileSession *session,
                                const char *const *members, size_t count);
 
 // 04 の 12.4 and 05 の 8.8: the other half of what LhatUnits carries for a
-// file -- the error kinds and hostdata types a host registered, so that isa^
+// file -- the error kinds and hostdata types a host registered, so that fits^
 // against either compiles at a prompt too. Both arrays belong to whatever
 // registered them (an LhatProgram, normally) and have to outlive the session.
 // program.h's lhat_program_install_compiles is this call written out.

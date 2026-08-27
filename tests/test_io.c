@@ -75,13 +75,13 @@ static LhatTestRan run_reading(const char *text, const char *bytes)
 
 // The line a case read, handed back once it is known to be one. readLine
 // answers a string^ or an error, so the string is taken by name rather than
-// by ruling the errors out -- 13.11's isa^ reaches a builtin now, and
+// by ruling the errors out -- 13.11's fits^ reaches a builtin now, and
 // asking for what is wanted leaves nothing in the returned type that the
 // case did not mean. The failures answer words of their own, so a case that
 // goes wrong says which half did.
 #define TEXT_OF(name)                                                     \
-    "    if^ " name " isa^ string^ { return^ " name " }\n"                \
-    "    if^ " name " isa^ std.io.IOError.Eof { return^ \"eof\" }\n"      \
+    "    if^ " name " fits^ string^ { return^ " name " }\n"                \
+    "    if^ " name " fits^ std.io.IOError.Eof { return^ \"eof\" }\n"      \
     "    return^ \"error\"\n"
 
 static void test_print(void)
@@ -148,10 +148,10 @@ static void test_open(void)
         LhatTestRan ran =
             run_source("import^ std.io\n"
                        "let^ f = std.io.open(\"" MISSING "\", \"r\")\n"
-                       "if^ f isa^ std.io.IOError.NotFound {\n"
+                       "if^ f fits^ std.io.IOError.NotFound {\n"
                        "    return^ \"not found\"\n"
                        "}\n"
-                       "if^ f isa^ std.io.File {\n"
+                       "if^ f fits^ std.io.File {\n"
                        "    f.dispose()\n"
                        "    return^ \"opened\"\n"
                        "}\n"
@@ -166,13 +166,13 @@ static void test_open(void)
         LhatTestRan ran =
             run_source("import^ std.io\n"
                        "let^ out = std.io.open(\"" SCRATCH "\", \"w\")\n"
-                       "if^ out isa^ std.io.File {\n"
+                       "if^ out fits^ std.io.File {\n"
                        "    out.write(\"alpha\\n\")\n"
                        "    out.write(\"beta\\n\")\n"
                        "    out.dispose()\n"
                        "}\n"
                        "let^ back = std.io.open(\"" SCRATCH "\", \"r\")\n"
-                       "if^ back isa^ std.io.File {\n"
+                       "if^ back fits^ std.io.File {\n"
                        "    let^ line = back.readLine()\n"
                        "    back.dispose()\n" TEXT_OF("line")
                        "}\n"
@@ -196,7 +196,7 @@ static void test_read_line(void)
         LhatTestRan first =
             run_source("import^ std.io\n"
                        "let^ back = std.io.open(\"" SCRATCH "\", \"r\")\n"
-                       "if^ back isa^ std.io.File {\n"
+                       "if^ back fits^ std.io.File {\n"
                        "    let^ line = back.readLine()\n"
                        "    back.dispose()\n" TEXT_OF("line")
                        "}\n"
@@ -207,7 +207,7 @@ static void test_read_line(void)
         LhatTestRan second =
             run_source("import^ std.io\n"
                        "let^ back = std.io.open(\"" SCRATCH "\", \"r\")\n"
-                       "if^ back isa^ std.io.File {\n"
+                       "if^ back fits^ std.io.File {\n"
                        "    let^ skipped = back.readLine()\n"
                        "    let^ line = back.readLine()\n"
                        "    back.dispose()\n" TEXT_OF("line")
@@ -225,11 +225,11 @@ static void test_read_line(void)
         LhatTestRan ran =
             run_source("import^ std.io\n"
                        "let^ back = std.io.open(\"" SCRATCH "\", \"r\")\n"
-                       "if^ back isa^ std.io.File {\n"
+                       "if^ back fits^ std.io.File {\n"
                        "    let^ line = back.readLine()\n"
                        "    let^ past = back.readLine()\n"
                        "    back.dispose()\n"
-                       "    if^ past isa^ std.io.IOError.Eof {\n"
+                       "    if^ past fits^ std.io.IOError.Eof {\n"
                        "        return^ \"eof\"\n"
                        "    }\n"
                        "    return^ \"more\"\n"
@@ -258,7 +258,7 @@ static void test_read_line_from_stdin(void)
         LhatTestRan ran =
             run_reading("import^ std.io\n"
                         "let^ line = std.io.readLine()\n"
-                        "if^ line isa^ std.io.IOError.Eof { return^ \"eof\" }\n"
+                        "if^ line fits^ std.io.IOError.Eof { return^ \"eof\" }\n"
                         "return^ \"read\"\n",
                         "");
         LHAT_CHECK_RAN_TEXT(ran, "eof");

@@ -2171,7 +2171,7 @@ static void check_try_block(Checker *c, const LhatNode *node)
                              ? chk_resolve_type(c, arm->v.clause.condition)
                              : NULL;
         // The bare arm takes everything still standing; a written one takes
-        // the arms of that which fit it, the same reading 13.11's isa^ makes.
+        // the arms of that which fit it, the same reading 13.11's fits^ makes.
         LhatType *here = want != NULL ? chk_only(c, left, want) : left;
 
         Scope scope;

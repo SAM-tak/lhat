@@ -612,15 +612,15 @@ static void test_module_path_reads_the_same_everywhere(void)
 
 static void test_isa_asks_about_a_type(void)
 {
-    LHAT_TEST("13.11: the type isa^ asks about reads as one");
+    LHAT_TEST("13.11: the type fits^ asks about reads as one");
 
     // The complaint this pins: the same word, written as an annotation and
-    // written after isa^, came back classified differently -- the first
+    // written after fits^, came back classified differently -- the first
     // through walk_type, the second not at all, since the type node sat in
     // a binary whose sides were both walked as values.
     static const char *source =
         "let^ take = p^ n:number^ {\n"
-        "    if^ n isa^ number^ { }\n"
+        "    if^ n fits^ number^ { }\n"
         "}\n";
 
     Checked c;
@@ -633,7 +633,7 @@ static void test_isa_asks_about_a_type(void)
     // And the subject beside it reads as the parameter it is -- what the
     // resolution now carries, rather than the plain variable a use of one
     // came back as before.
-    expect_token(&tokens, source, "n isa^", "parameter", false);
+    expect_token(&tokens, source, "n fits^", "parameter", false);
 
     free(tokens.items);
     cJSON_Delete(data);
@@ -642,15 +642,15 @@ static void test_isa_asks_about_a_type(void)
 
 static void test_isa_within_a_comparison_chain(void)
 {
-    LHAT_TEST("11.5 の (5): an isa^ among the comparisons of one chain");
+    LHAT_TEST("11.5 の (5): an fits^ among the comparisons of one chain");
 
-    // 'a < b isa^ number^' is one chain: three operands, two operators, and
-    // only the one after isa^ is a type. Walking the operands alike would
+    // 'a < b fits^ number^' is one chain: three operands, two operators, and
+    // only the one after fits^ is a type. Walking the operands alike would
     // leave that one with nothing on it.
     static const char *source =
         "let^ a = 1\n"
         "let^ b = 2\n"
-        "let^ yes = a < b isa^ number^\n";
+        "let^ yes = a < b fits^ number^\n";
 
     Checked c;
     check_text(&c, source);
@@ -658,7 +658,7 @@ static void test_isa_within_a_comparison_chain(void)
     Tokens tokens = decode(data);
 
     expect_token(&tokens, source, "a < b", "variable", false);
-    expect_token(&tokens, source, "b isa^", "variable", false);
+    expect_token(&tokens, source, "b fits^", "variable", false);
     expect_token(&tokens, source, "number^\n", "type", false);
 
     free(tokens.items);
@@ -809,7 +809,7 @@ static void test_a_narrowed_use_reads_like_any_other(void)
 
     static const char *source =
         "let^ held : number^|string^ = 1\n"
-        "if^ held isa^ number^ {\n"
+        "if^ held fits^ number^ {\n"
         "    let^ doubled = held * 2\n"
         "}\n";
 
@@ -820,8 +820,8 @@ static void test_a_narrowed_use_reads_like_any_other(void)
 
     // The condition's use is outside the narrowing it establishes; the body's
     // is inside it. Both name the same let^.
-    expect_token(&tokens, source, "held isa^", "variable", false);
-    expect_readonly(&tokens, source, "held isa^", true);
+    expect_token(&tokens, source, "held fits^", "variable", false);
+    expect_readonly(&tokens, source, "held fits^", true);
     expect_token(&tokens, source, "held * 2", "variable", false);
     expect_readonly(&tokens, source, "held * 2", true);
 

@@ -157,7 +157,7 @@ typedef struct LhatErrorKind {
     // disagrees with `group`.
     //
     // The checker is what enforces 2.7改's "may not leave the frame"; this is
-    // here so that isa^ localerror^ can answer at run time, and so that a
+    // here so that fits^ localerror^ can answer at run time, and so that a
     // host asking what it registered gets the same answer the language does.
     bool local;
 } LhatErrorKind;
@@ -575,7 +575,7 @@ typedef struct LhatHostDataTag {
     // Declaring it is the HOST'S PROMISE that a pointer of this type may be
     // read as one of the base's. The language cannot check that, the way it
     // cannot check 02 の 15.13's closed^; what it does is take the promise
-    // at its word everywhere the relation shows -- conformance, isa^, and
+    // at its word everywhere the relation shows -- conformance, fits^, and
     // lhat_hostdata_pointer.
     const struct LhatHostDataTag *base;
     // 05 の 8.8: what the type registered as dispose^, or NULL when it

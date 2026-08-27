@@ -85,7 +85,7 @@ public^let^Scheduler: t^{
             return^false^
         }
         # 出てきたものが期限 id。次に起きるのはそれが来たとき
-        if^asked isa^number^{ self^.waits[i] := asked }
+        if^asked fits^number^{ self^.waits[i] := asked }
         return^true^
     },
 
@@ -117,7 +117,7 @@ public^let^Scheduler: t^{
         if^awake = 0 and^ waiting > 0 {
             # 誰も起きていない。済んでいるものだけ取る——ここでは眠らない
             let^done = std.async.wait(0)
-            if^done isa^number^{ self^.wake(done) }
+            if^done fits^number^{ self^.wake(done) }
         }
         return^awake > 0 or^waiting > 0
     },
@@ -144,7 +144,7 @@ public^let^Scheduler: t^{
             # 何も起こらないまま止まる
             if^awake = 0 and^ waiting > 0 {
                 let^done = std.async.wait(60)
-                if^done isa^number^{ self^.wake(done) }
+                if^done fits^number^{ self^.wake(done) }
             }
         }
     },

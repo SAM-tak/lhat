@@ -23,9 +23,9 @@ let^work = p^{
         std.thread.sleep(0.12)
         return^42
     })
-    if^h isa^std.thread.ThreadHandle {
+    if^h fits^std.thread.ThreadHandle {
         let^answer = await^async.joined(h)
-        if^answer isa^number^{
+        if^answer fits^number^{
             std.io.print($"worker said {answer}")
         else^:
             std.io.print("worker said nothing I can read")

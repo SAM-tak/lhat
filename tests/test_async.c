@@ -137,7 +137,7 @@ static void test_timers(void)
             "let^ far = std.async.timer(30)\n"
             "let^ near = std.async.timer(0.5)\n"
             "let^ left = std.async.next()\n"
-            "if^ left isa^ number^ {\n"
+            "if^ left fits^ number^ {\n"
             "    if^ left <= 0.5 and^ left > 0 { return^ 1 }\n"
             "}\n"
             "return^ 0\n");

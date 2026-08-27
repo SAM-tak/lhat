@@ -24,7 +24,7 @@ static LhatTestRan run_source(const char *text)
 #define LOADED(source, name, body)                           \
     "import^ std.load\n"                                     \
     "let^ made = std.load.text(" source ", " name ")\n"      \
-    "if^ made isa^ std.load.Error { return^ made.message }\n" \
+    "if^ made fits^ std.load.Error { return^ made.message }\n" \
     "let^ f = made\n" body
 
 static void test_text(void)
@@ -36,7 +36,7 @@ static void test_text(void)
         LhatTestRan ran = run_source(LOADED(
             "\"let^ a = ...\\nreturn^ a[1] * 2\"", "\"gen\"",
             "let^ r = f(21)\n"
-            "if^ r isa^ number^ { return^ r }\n"
+            "if^ r fits^ number^ { return^ r }\n"
             "return^ -1\n"));
         LHAT_CHECK_RAN_INTEGER(ran, 42);
         lhat_test_ran_dispose(&ran);
@@ -54,9 +54,9 @@ static void test_text(void)
             "\"stage.lh\"",
             "let^ api = f()\n"
             "let^ again = f()\n"
-            "if^ api isa^ t^{} {\n"
+            "if^ api fits^ t^{} {\n"
             "    let^ enter = api[\"enter\"]\n"
-            "    if^ enter isa^ f^ -> number^; {\n"
+            "    if^ enter fits^ f^ -> number^; {\n"
             "        return^ enter() * 100 + api.count^ * 10 + "
             "(if^ api is^ again: 1 el^: 0 ;)\n"
             "    }\n"
@@ -85,7 +85,7 @@ static void test_text(void)
             "import^ std.load\n"
             "let^ made = std.load.text(\"let^ x : number^ = \\\"s\\\"\\n"
             "let^ y = nothere\", \"bad.lh\")\n"
-            "if^ made isa^ std.load.Error.Rejected { return^ made.message }\n"
+            "if^ made fits^ std.load.Error.Rejected { return^ made.message }\n"
             "return^ \"accepted\"\n");
         LHAT_CHECK_RAN_TEXT(ran,
                             "bad.lh:1:20: error: this value does not fit where "
@@ -99,7 +99,7 @@ static void test_text(void)
         LhatTestRan ran = run_source(
             "import^ std.load\n"
             "let^ made = std.load.file(\"nowhere.lh\")\n"
-            "if^ made isa^ std.load.Error.CannotRead { return^ \"unread\" }\n"
+            "if^ made fits^ std.load.Error.CannotRead { return^ \"unread\" }\n"
             "return^ \"read\"\n");
         LHAT_CHECK_RAN_TEXT(ran, "unread");
         lhat_test_ran_dispose(&ran);
@@ -113,7 +113,7 @@ static void test_text(void)
             "\"var^ n = 0\\nreturn^ p^ -> number^ { n := n + 1 return^ n }\"",
             "\"counter\"",
             "let^ made_counter = f()\n"
-            "if^ made_counter isa^ p^ -> number^; {\n"
+            "if^ made_counter fits^ p^ -> number^; {\n"
             "    let^ one = made_counter()\n"
             "    return^ made_counter() * 10 + one\n"
             "}\n"
@@ -198,11 +198,11 @@ static void test_files(void)
              "import^ std.load\n"
              "let^ made = std.load.text(\"require^ \\\"shared.lh\\\"\\n"
              "return^ ns.shared.count\", \"lib/gen.lh\")\n"
-             "if^ made isa^ std.load.Error { return^ -1 }\n"
+             "if^ made fits^ std.load.Error { return^ -1 }\n"
              "let^ f = made\n"
              "let^ inner = f()\n"
              "require^ \"lib/shared.lh\"\n"
-             "if^ inner isa^ number^ { return^ inner * 10 + ns.shared.count }\n"
+             "if^ inner fits^ number^ { return^ inner * 10 + ns.shared.count }\n"
              "return^ -2\n"},
             {NULL, NULL},
         };
@@ -220,10 +220,10 @@ static void test_files(void)
             {"main.lh",
              "import^ std.load\n"
              "let^ made = std.load.file(\"stages/three.lh\")\n"
-             "if^ made isa^ std.load.Error { return^ -1 }\n"
+             "if^ made fits^ std.load.Error { return^ -1 }\n"
              "let^ f = made\n"
              "let^ r = f(\"a\", \"b\")\n"
-             "if^ r isa^ number^ { return^ r }\n"
+             "if^ r fits^ number^ { return^ r }\n"
              "return^ -2\n"},
             {NULL, NULL},
         };
@@ -284,13 +284,13 @@ static void test_files(void)
              "import^ std.load\n"
              "import^ std.thread\n"
              "let^ made = std.load.text(\"return^ 1\", \"gen\")\n"
-             "if^ made isa^ std.load.Error { return^ \"unloaded\" }\n"
+             "if^ made fits^ std.load.Error { return^ \"unloaded\" }\n"
              "let^ f = made\n"
              "let^ h = std.thread.spawn(p^ ... { return^ 2 }, f)\n"
-             "if^ h isa^ std.thread.ThreadError.BadArgument {\n"
+             "if^ h fits^ std.thread.ThreadError.BadArgument {\n"
              "    return^ h.message\n"
              "}\n"
-             "if^ h isa^ std.thread.ThreadHandle { h.dispose() }\n"
+             "if^ h fits^ std.thread.ThreadHandle { h.dispose() }\n"
              "return^ \"taken\"\n"},
             {NULL, NULL},
         };

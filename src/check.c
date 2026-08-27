@@ -1267,13 +1267,13 @@ LhatType *chk_resolve_type(Checker *c, const LhatNode *node)
     LhatType *resolved = resolve_written_type(c, node);
 
     // 05 の 8.9 with 08: what the compiler does with a written type it has to
-    // settle itself -- isa^, as^, an overload^ed parameter -- is match the
+    // settle itself -- fits^, as^, an overload^ed parameter -- is match the
     // words against what the host registered (compile.c's lower_type). That
     // cannot see through a name bound to a type or to a module:
     //
     //     let^ vector3 = import^ std.math.vector3
     //     let^ Vector3 = vector3.Vector3
-    //     v isa^ Vector3          -- the words are not the registered ones
+    //     v fits^ Vector3          -- the words are not the registered ones
     //
     // The name was resolved properly right here, so what it came to is left
     // on the node and lower_type reads it where the words run out. Only the
@@ -1774,7 +1774,7 @@ bool chk_narrowable(const LhatNode *node)
         case LHAT_NODE_HAT_IDENT:
         case LHAT_NODE_SCOPE:
         // 17.2: a match's subject with no name of its own is the focus, and
-        // the desugared arms test exactly that node -- 'when^ isa^ T:' has
+        // the desugared arms test exactly that node -- 'when^ fits^ T:' has
         // to narrow what it^ names or the arm knows nothing.
         case LHAT_NODE_FOCUS:
             return true;
@@ -1921,7 +1921,7 @@ LhatType *chk_narrowed_type(Checker *c, const LhatNode *path)
     // 13.11: a write ends what a branch established about the target, so it
     // does not answer for the target either -- what may be written is what
     // the name holds. Only the path being written to: the prefix of one
-    // keeps its own, which is what lets 'a.b := 1' inside 'if^ a isa^ T'
+    // keeps its own, which is what lets 'a.b := 1' inside 'if^ a fits^ T'
     // reach T's member at all.
     if (c->writing_to != NULL && same_path(c, c->writing_to, path)) {
         return NULL;
@@ -2200,7 +2200,7 @@ void chk_narrow_from(Checker *c, const LhatNode *condition, bool truth)
         return;
     }
 
-    // 13.11 with 04 の 11.3: three shapes narrow. 'x isa^ T' asks about a
+    // 13.11 with 04 の 11.3: three shapes narrow. 'x fits^ T' asks about a
     // type; '=' / '!=' / 'is^' against the nil^ literal asks about absence,
     // which 11.3 spells with nil^ and is the first thing anyone writes; and
     // 11.7改2's 'x?' is the second of those written short. Without the nil^
@@ -2217,7 +2217,7 @@ void chk_narrow_from(Checker *c, const LhatNode *condition, bool truth)
             chk_narrow_from(c, condition->v.unary.operand, !truth);
             return;
         }
-        // 11.7改2: 'x?' is '!(x isa^ nil^)', so it narrows to exactly
+        // 11.7改2: 'x?' is '!(x fits^ nil^)', so it narrows to exactly
         // what that would -- the true side without the nil^ arm.
         if (condition->v.unary.op != LHAT_OP_PRESENT) {
             return;
@@ -2278,7 +2278,7 @@ void chk_narrow_from(Checker *c, const LhatNode *condition, bool truth)
             }
             return;
         }
-        if (op == LHAT_OP_ISA) {
+        if (op == LHAT_OP_FITS) {
             path = condition->v.binary.left;
             tested = chk_resolve_type(c, condition->v.binary.right);
         } else if (op == LHAT_OP_EQ || op == LHAT_OP_NE || op == LHAT_OP_IS) {
@@ -3566,7 +3566,7 @@ const char *lhat_check_error_message(LhatCheckErrorCode code)
         case LHAT_CHECK_ERR_OPERATOR_UNSETTLED:
             return "several types here carry this operator and nothing says "
                    "which is meant; write one of the types the signature "
-                   "names, or narrow to it with isa^";
+                   "names, or narrow to it with fits^";
         case LHAT_CHECK_ERR_PARAM_UNDECIDED:
             return "nothing in this body says what this parameter is, so its "
                    "type has to be written; any^ is how to say it really does "

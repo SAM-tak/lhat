@@ -12,7 +12,7 @@
 //
 // std.io.open answers std.io.File|std.io.IOError.NotFound|std.io.IOError.
 // Denied|std.error.OutOfMemory -- read it with try^/catch^, or narrow with
-// isa^ against std.io.File (05 の 8.8's hostdata path). std.error.
+// fits^ against std.io.File (05 の 8.8's hostdata path). std.error.
 // OutOfMemory (rather than a std.io.IOError.OutOfMemory of its own) is
 // shared with every other stdlib module that can fail the same way --
 // see error.h.

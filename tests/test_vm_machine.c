@@ -63,7 +63,7 @@ static void test_machine(void)
         compile_text(&text,
                      "let^ args = ...\n"
                      "var^ sum = 0\n"
-                     "for^ a in^ args { if^ a isa^ number^ { sum := sum + a } }\n"
+                     "for^ a in^ args { if^ a fits^ number^ { sum := sum + a } }\n"
                      "return^ args.count^ * 100 + sum\n");
         LhatValue handed[3] = {lhat_integer(5), lhat_integer(7), lhat_nil()};
         handed[2] = lhat_integer(9);
@@ -253,7 +253,7 @@ static void test_machine(void)
         compile_next_text(&one, s, "errordef^ E { Bad, Worse }\n");
         compile_next_text(&two, s,
                           "var^ e = error^ E.Worse { }\n"
-                          "if^ e isa^ E.Worse { return^ 1 }\n"
+                          "if^ e fits^ E.Worse { return^ 1 }\n"
                           "return^ 0\n");
         LHAT_CHECK_EQ_INT(one.compiled, LHAT_COMPILE_OK);
         LHAT_CHECK_EQ_INT(two.compiled, LHAT_COMPILE_OK);

@@ -945,7 +945,7 @@ static void test_definitions(void)
     run_dispose(&r);
 }
 
-// 02 の 13.11: isa^ against anything that can be written as a type. 04 の 6.1's
+// 02 の 13.11: fits^ against anything that can be written as a type. 04 の 6.1's
 // error kinds are in test_errors above and 05 の 8.8's host types in test_io --
 // the same instruction answers all of them, so what is pinned here is the rest:
 // the builtin names, a structure, a union, and a def^.
@@ -954,96 +954,96 @@ static void test_isa(void)
     Run r;
 
     LHAT_TEST("a builtin name asks about the value's own tag");
-    run_text(&r, "return^ 1 isa^ number^\n");
+    run_text(&r, "return^ 1 fits^ number^\n");
     CHECK_BOOL(&r, true);
     run_dispose(&r);
 
     LHAT_TEST("and answers false for a value of another kind");
-    run_text(&r, "return^ \"x\" isa^ number^\n");
+    run_text(&r, "return^ \"x\" fits^ number^\n");
     CHECK_BOOL(&r, false);
     run_dispose(&r);
 
     LHAT_TEST("string^");
-    run_text(&r, "return^ \"x\" isa^ string^\n");
+    run_text(&r, "return^ \"x\" fits^ string^\n");
     CHECK_BOOL(&r, true);
     run_dispose(&r);
 
     LHAT_TEST("bool^");
-    run_text(&r, "return^ true^ isa^ bool^\n");
+    run_text(&r, "return^ true^ fits^ bool^\n");
     CHECK_BOOL(&r, true);
     run_dispose(&r);
 
     // 14.8: one type, two representations -- so both answer number^.
     LHAT_TEST("a real is a number^ the same way an integer is");
-    run_text(&r, "return^ 1.5 isa^ number^\n");
+    run_text(&r, "return^ 1.5 fits^ number^\n");
     CHECK_BOOL(&r, true);
     run_dispose(&r);
 
     LHAT_TEST("t^");
-    run_text(&r, "return^ { a := 1 } isa^ t^{}\n");
+    run_text(&r, "return^ { a := 1 } fits^ t^{}\n");
     CHECK_BOOL(&r, true);
     run_dispose(&r);
 
     LHAT_TEST("int^ and float^ are both number^");
-    run_text(&r, "return^ 1 isa^ int^ and^ 1.5 isa^ float^\n");
+    run_text(&r, "return^ 1 fits^ int^ and^ 1.5 fits^ float^\n");
     CHECK_BOOL(&r, true);
     run_dispose(&r);
 
     LHAT_TEST("p^; asks only that it is a subroutine");
-    run_text(&r, "return^ (p^ { }) isa^ p^;\n");
+    run_text(&r, "return^ (p^ { }) fits^ p^;\n");
     CHECK_BOOL(&r, true);
     run_dispose(&r);
 
     // 11.7 and 04 の 11.4: nil^ is a name like the others now, so the question
     // reaches the same instruction rather than one of its own.
     LHAT_TEST("nil^");
-    run_text(&r, "return^ nil^ isa^ nil^\n");
+    run_text(&r, "return^ nil^ fits^ nil^\n");
     CHECK_BOOL(&r, true);
     run_dispose(&r);
 
     LHAT_TEST("and something that is not nil^ is not");
-    run_text(&r, "return^ 1 isa^ nil^\n");
+    run_text(&r, "return^ 1 fits^ nil^\n");
     CHECK_BOOL(&r, false);
     run_dispose(&r);
 
     // 14.10: at least these members.
     LHAT_TEST("a structure asks for the members it names");
-    run_text(&r, "return^ { a := 1, b := 2 } isa^ t^{ a : number^ }\n");
+    run_text(&r, "return^ { a := 1, b := 2 } fits^ t^{ a : number^ }\n");
     CHECK_BOOL(&r, true);
     run_dispose(&r);
 
     LHAT_TEST("and refuses a value missing one of them");
-    run_text(&r, "return^ { b := 2 } isa^ t^{ a : number^ }\n");
+    run_text(&r, "return^ { b := 2 } fits^ t^{ a : number^ }\n");
     CHECK_BOOL(&r, false);
     run_dispose(&r);
 
     LHAT_TEST("a member of the wrong type does not answer for it either");
-    run_text(&r, "return^ { a := \"x\" } isa^ t^{ a : number^ }\n");
+    run_text(&r, "return^ { a := \"x\" } fits^ t^{ a : number^ }\n");
     CHECK_BOOL(&r, false);
     run_dispose(&r);
 
     // 13.5: an arm is enough. The parser leaves a union as a tree of two
     // sides, so a three-armed one is what pins that every arm is reached.
     LHAT_TEST("a union holds when any arm does");
-    run_text(&r, "return^ \"x\" isa^ number^|string^\n");
+    run_text(&r, "return^ \"x\" fits^ number^|string^\n");
     CHECK_BOOL(&r, true);
     run_dispose(&r);
 
     LHAT_TEST("a three-armed union reaches its last arm");
-    run_text(&r, "return^ true^ isa^ number^|string^|bool^\n");
+    run_text(&r, "return^ true^ fits^ number^|string^|bool^\n");
     CHECK_BOOL(&r, true);
     run_dispose(&r);
 
     LHAT_TEST("and fails when no arm does");
-    run_text(&r, "return^ true^ isa^ number^|string^\n");
+    run_text(&r, "return^ true^ fits^ number^|string^\n");
     CHECK_BOOL(&r, false);
     run_dispose(&r);
 
     // 13.7: any^ is the top of every value, so the answer is fixed. The
     // checker reports the writing (test_check); a compile that never checked
     // still has to answer, and this is the answer.
-    LHAT_TEST("isa^ any^ is true whatever is on the left");
-    run_text(&r, "return^ \"x\" isa^ any^\n");
+    LHAT_TEST("fits^ any^ is true whatever is on the left");
+    run_text(&r, "return^ \"x\" fits^ any^\n");
     CHECK_BOOL(&r, true);
     run_dispose(&r);
 
@@ -1051,7 +1051,7 @@ static void test_isa(void)
     run_text(&r,
              "var^ n = 0\n"
              "var^ bump = f^ { n := n + 1 return^ n }\n"
-             "var^ b = bump() isa^ any^\n"
+             "var^ b = bump() fits^ any^\n"
              "return^ n\n");
     CHECK_INTEGER(&r, 1);
     run_dispose(&r);
@@ -1061,21 +1061,21 @@ static void test_isa(void)
     LHAT_TEST("a def^ name asks for the shape the definition holds");
     run_text(&r,
              "var^ Point = def^{ self^{ x := 0, y := 0 } }\n"
-             "return^ Point.new() isa^ Point\n");
+             "return^ Point.new() fits^ Point\n");
     CHECK_BOOL(&r, true);
     run_dispose(&r);
 
     LHAT_TEST("a value that is not a table is not an instance of one");
     run_text(&r,
              "var^ Point = def^{ self^{ x := 0, y := 0 } }\n"
-             "return^ 1 isa^ Point\n");
+             "return^ 1 fits^ Point\n");
     CHECK_BOOL(&r, false);
     run_dispose(&r);
 
     LHAT_TEST("a table missing a member of the definition does not fit it");
     run_text(&r,
              "var^ Point = def^{ self^{ x := 0, y := 0 }, m := f^ { return^ 1 } }\n"
-             "return^ { m := 1 } isa^ Point\n");
+             "return^ { m := 1 } fits^ Point\n");
     CHECK_BOOL(&r, false);
     run_dispose(&r);
 
@@ -1086,7 +1086,7 @@ static void test_isa(void)
     run_text(&r,
              "var^ Point = def^{ self^{ x := 0 }, m := f^ { return^ 1 } }\n"
              "var^ Point3 = Point .. def^{ self^{ z := 0 } }\n"
-             "return^ Point3.new() isa^ Point\n");
+             "return^ Point3.new() fits^ Point\n");
     CHECK_BOOL(&r, true);
     run_dispose(&r);
 
@@ -1094,7 +1094,7 @@ static void test_isa(void)
     run_text(&r,
              "var^ Point = def^{ self^{ x := 0 } }\n"
              "var^ Point3 = Point .. def^{ self^{ z := 0 } }\n"
-             "return^ Point.new() isa^ Point3\n");
+             "return^ Point.new() fits^ Point3\n");
     CHECK_BOOL(&r, false);
     run_dispose(&r);
 
@@ -1103,14 +1103,14 @@ static void test_isa(void)
     LHAT_TEST("a declared field asks for its type as well as its name");
     run_text(&r,
              "var^ Named = def^{ self^{ abstract^ name : string^ } }\n"
-             "return^ { name := 1 } isa^ Named\n");
+             "return^ { name := 1 } fits^ Named\n");
     CHECK_BOOL(&r, false);
     run_dispose(&r);
 
     LHAT_TEST("and holds when the member is of that type");
     run_text(&r,
              "var^ Named = def^{ self^{ abstract^ name : string^ } }\n"
-             "return^ { name := \"x\" } isa^ Named\n");
+             "return^ { name := \"x\" } fits^ Named\n");
     CHECK_BOOL(&r, true);
     run_dispose(&r);
 
@@ -1121,7 +1121,7 @@ static void test_isa(void)
     LHAT_TEST("a definition naming itself lowers without running away");
     run_text(&r,
              "var^ Node = def^{ self^{ value := 0 }, abstract^ next : Node }\n"
-             "return^ { value := 1, next := 2 } isa^ Node\n");
+             "return^ { value := 1, next := 2 } fits^ Node\n");
     CHECK_BOOL(&r, true);
     run_dispose(&r);
 
@@ -1133,20 +1133,20 @@ static void test_isa(void)
     LHAT_TEST("a definition reached as a value is not a type");
     run_text(&r,
              "var^ Point = def^{ self^{ x := 0 }, m := f^ { return^ 1 } }\n"
-             "var^ fits = f^ D { return^ Point.new() isa^ D }\n"
+             "var^ fits = f^ D { return^ Point.new() fits^ D }\n"
              "return^ fits(Point)\n");
     LHAT_CHECK_EQ_INT(r.compiled, LHAT_COMPILE_UNDEFINED);
     run_dispose(&r);
 
     LHAT_TEST("and not inside a union either");
     run_text(&r,
-             "var^ f = f^ D { return^ 1 isa^ D|nil^ }\n"
+             "var^ f = f^ D { return^ 1 fits^ D|nil^ }\n"
              "return^ 0\n");
     LHAT_CHECK_EQ_INT(r.compiled, LHAT_COMPILE_UNSUPPORTED);
     run_dispose(&r);
 
     LHAT_TEST("a name that reaches nothing does not compile");
-    run_text(&r, "return^ 1 isa^ Nowhere\n");
+    run_text(&r, "return^ 1 fits^ Nowhere\n");
     LHAT_CHECK_EQ_INT(r.compiled, LHAT_COMPILE_UNDEFINED);
     run_dispose(&r);
 
@@ -1160,7 +1160,7 @@ static void test_isa(void)
     LHAT_CHECK_EQ_INT(r.compiled, LHAT_COMPILE_UNDEFINED);
     run_dispose(&r);
 
-    // 11.6: as^ lowers the written type the same way isa^ does, so a
+    // 11.6: as^ lowers the written type the same way fits^ does, so a
     // union reaching every one of its arms is one question for both. What
     // this pins is the lowering: a union that kept only its first arm would
     // make the second one panic where it should hold.
@@ -1180,18 +1180,18 @@ static void test_isa(void)
     run_text(&r,
              "var^ x = \"s\"\n"
              "var^ y = x as^ number^|nil^\n"
-             "return^ y isa^ localerror^.CastFailure\n");
+             "return^ y fits^ localerror^.CastFailure\n");
     LHAT_CHECK_EQ_INT(r.compiled, LHAT_COMPILE_OK);
     CHECK_BOOL(&r, true);
     run_dispose(&r);
 
     // 13.11's narrowing is the checker's half; this is the machine's -- the
     // branch taken has to be the one the value actually answers for.
-    LHAT_TEST("isa^ decides a branch at run time");
+    LHAT_TEST("fits^ decides a branch at run time");
     run_checked_text(&r,
                      "var^ describe = f^ x:any^ {\n"
-                     "    if^ x isa^ number^ { return^ 1 }\n"
-                     "    if^ x isa^ string^ { return^ 2 }\n"
+                     "    if^ x fits^ number^ { return^ 1 }\n"
+                     "    if^ x fits^ string^ { return^ 2 }\n"
                      "    return^ 0\n"
                      "}\n"
                      "return^ describe(\"x\")\n");

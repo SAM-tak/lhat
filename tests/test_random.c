@@ -32,7 +32,7 @@ static LhatTestRan run_source(const char *text)
 #define WITH_RANDOM(seed, body)                     \
     "import^ std.random\n"                          \
     "let^ r = std.random.new(" seed ")\n"           \
-    "if^ r isa^ std.random.Random {\n" body         \
+    "if^ r fits^ std.random.Random {\n" body         \
     "}\n"                                           \
     "return^ 0 - 1\n"
 
@@ -42,8 +42,8 @@ static LhatTestRan run_source(const char *text)
     "import^ std.random\n"                      \
     "let^ a = std.random.new(" first ")\n"      \
     "let^ b = std.random.new(" second ")\n"     \
-    "if^ a isa^ std.random.Random {\n"          \
-    "    if^ b isa^ std.random.Random {\n" body \
+    "if^ a fits^ std.random.Random {\n"          \
+    "    if^ b fits^ std.random.Random {\n" body \
     "    }\n"                                   \
     "}\n"                                       \
     "return^ 0 - 1\n"

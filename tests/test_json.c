@@ -109,7 +109,7 @@ static void test_writing(void)
         LhatTestRan ran = run_source(
             "import^ std.json\n"
             "let^ answered = std.json.encode({ f := p^ { } })\n"
-            "if^ answered isa^ std.json.JsonError.Unsupported { return^ 1 }\n"
+            "if^ answered fits^ std.json.JsonError.Unsupported { return^ 1 }\n"
             "return^ 0\n");
         LHAT_CHECK_RAN_INTEGER(ran, 1);
         lhat_test_ran_dispose(&ran);
@@ -117,7 +117,7 @@ static void test_writing(void)
         ran = run_source(
             "import^ std.json\n"
             "let^ answered = std.json.encode({ [true^] = 1 })\n"
-            "if^ answered isa^ std.json.JsonError.Unsupported { return^ 1 }\n"
+            "if^ answered fits^ std.json.JsonError.Unsupported { return^ 1 }\n"
             "return^ 0\n");
         LHAT_CHECK_RAN_INTEGER(ran, 1);
         lhat_test_ran_dispose(&ran);
@@ -133,7 +133,7 @@ static void test_writing(void)
             "var^ t = { }\n"
             "t[\"self\"] := t\n"
             "let^ answered = std.json.encode(t)\n"
-            "if^ answered isa^ std.json.JsonError.TooDeep { return^ 1 }\n"
+            "if^ answered fits^ std.json.JsonError.TooDeep { return^ 1 }\n"
             "return^ 0\n");
         LHAT_CHECK_RAN_INTEGER(ran, 1);
         lhat_test_ran_dispose(&ran);
@@ -224,7 +224,7 @@ static void test_reading(void)
             snprintf(source, sizeof source,
                      "import^ std.json\n"
                      "let^ answered = std.json.decode(\"%s\")\n"
-                     "if^ answered isa^ std.json.JsonError.BadText "
+                     "if^ answered fits^ std.json.JsonError.BadText "
                      "{ return^ 1 }\n"
                      "return^ 0\n",
                      refused[i]);

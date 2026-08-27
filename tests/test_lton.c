@@ -108,7 +108,7 @@ static void test_what_may_be_written(void)
         LhatTestRan ran = run_source(
             "import^ std.lton\n"
             "let^ t = try^ std.lton.parse(\"\")\n"
-            "if^ t isa^ t^{} { return^ 1 }\n"
+            "if^ t fits^ t^{} { return^ 1 }\n"
             "return^ 0\n");
         LHAT_CHECK_RAN_INTEGER(ran, 1);
         lhat_test_ran_dispose(&ran);
@@ -145,7 +145,7 @@ static void test_what_may_not(void)
         LhatTestRan ran = run_source(
             "import^ std.lton\n"
             "let^ t = std.lton.parse(\"x = (p^ { })()\")\n"
-            "if^ t isa^ std.lton.LtonError.Rejected { return^ 1 }\n"
+            "if^ t fits^ std.lton.LtonError.Rejected { return^ 1 }\n"
             "return^ 0\n");
         LHAT_CHECK_RAN_INTEGER(ran, 1);
         lhat_test_ran_dispose(&ran);
@@ -168,7 +168,7 @@ static void test_what_may_not(void)
         LhatTestRan ran = run_source(
             "import^ std.lton\n"
             "let^ t = std.lton.parse(\"x = print\")\n"
-            "if^ t isa^ std.lton.LtonError.Rejected { return^ 1 }\n"
+            "if^ t fits^ std.lton.LtonError.Rejected { return^ 1 }\n"
             "return^ 0\n");
         LHAT_CHECK_RAN_INTEGER(ran, 1);
         lhat_test_ran_dispose(&ran);
@@ -187,7 +187,7 @@ static void test_what_may_not(void)
             snprintf(source, sizeof source,
                      "import^ std.lton\n"
                      "let^ t = std.lton.parse(\"%s\")\n"
-                     "if^ t isa^ std.lton.LtonError.Rejected { return^ 1 }\n"
+                     "if^ t fits^ std.lton.LtonError.Rejected { return^ 1 }\n"
                      "return^ 0\n",
                      refused[i]);
             LhatTestRan ran = run_source(source);
@@ -300,7 +300,7 @@ static void test_load(void)
             {"main.lh",
              "import^ std.lton\n"
              "let^ c = std.lton.load(\"nowhere.lton\")\n"
-             "if^ c isa^ std.lton.LtonError.CannotRead { return^ 1 }\n"
+             "if^ c fits^ std.lton.LtonError.CannotRead { return^ 1 }\n"
              "return^ 0\n"},
             {NULL, NULL},
         };
@@ -324,7 +324,7 @@ static void test_load(void)
             {"main.lh",
              "import^ std.lton\n"
              "let^ c = std.lton.load(\"bad.lton\")\n"
-             "if^ c isa^ std.lton.LtonError.Rejected { return^ c.message }\n"
+             "if^ c fits^ std.lton.LtonError.Rejected { return^ c.message }\n"
              "return^ \"not refused\"\n"},
             {NULL, NULL},
         };

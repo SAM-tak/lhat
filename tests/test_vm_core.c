@@ -253,7 +253,7 @@ static void test_casts(void)
     run_checked_text(&r,
                      "let^ f = f^ -> any^ { return^ \"t\" }\n"
                      "let^ v = f() as^ number^\n"
-                     "if^ v isa^ localerror^.CastFailure { panic^ v }\n"
+                     "if^ v fits^ localerror^.CastFailure { panic^ v }\n"
                      "return^ v + 1\n");
     LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_PANIC);
     run_dispose(&r);
@@ -262,7 +262,7 @@ static void test_casts(void)
     run_checked_text(&r,
                      "let^ f = f^ -> any^ { return^ 7 }\n"
                      "let^ v = f() as^ number^\n"
-                     "if^ v isa^ localerror^.CastFailure { panic^ v }\n"
+                     "if^ v fits^ localerror^.CastFailure { panic^ v }\n"
                      "return^ v + 1\n");
     CHECK_INTEGER(&r, 8);
     run_dispose(&r);
@@ -277,13 +277,13 @@ static void test_casts(void)
     CHECK_INTEGER(&r, 8);
     run_dispose(&r);
 
-    // 04 の 2.6: what comes back is an error like any other, so isa^ tells
+    // 04 の 2.6: what comes back is an error like any other, so fits^ tells
     // it apart -- which is how a writer gets at it without a catch^.
     LHAT_TEST("the failure it answers is an error of that kind");
     run_checked_text(&r,
                      "let^ f = f^ -> any^ { return^ \"t\" }\n"
                      "let^ r = f() as^ number^ catch^ it^\n"
-                     "return^ r isa^ localerror^.CastFailure\n");
+                     "return^ r fits^ localerror^.CastFailure\n");
     CHECK_BOOL(&r, true);
     run_dispose(&r);
 
@@ -293,7 +293,7 @@ static void test_casts(void)
     run_checked_text(&r,
                      "let^ f = f^ -> any^ { return^ \"t\" }\n"
                      "let^ r = f() as^ number^ catch^ it^\n"
-                     "return^ (r isa^ localerror^) and^ !(r isa^ error^)\n");
+                     "return^ (r fits^ localerror^) and^ !(r fits^ error^)\n");
     CHECK_BOOL(&r, true);
     run_dispose(&r);
 }

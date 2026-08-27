@@ -78,7 +78,7 @@ static void test_errors(void)
              "errordef^ IOError { NotFound }\n"
              "errordef^ UserError { NotFound }\n"
              "var^ e = error^IOError.NotFound{ }\n"
-             "return^ e isa^ UserError.NotFound\n");
+             "return^ e fits^ UserError.NotFound\n");
     CHECK_BOOL(&r, false);
     run_dispose(&r);
 
@@ -87,7 +87,7 @@ static void test_errors(void)
              "errordef^ IOError { NotFound }\n"
              "errordef^ UserError { NotFound }\n"
              "var^ e = error^IOError.NotFound{ }\n"
-             "return^ e isa^ IOError.NotFound\n");
+             "return^ e fits^ IOError.NotFound\n");
     CHECK_BOOL(&r, true);
     run_dispose(&r);
 
@@ -96,7 +96,7 @@ static void test_errors(void)
     run_text(&r,
              "errordef^ IOError { NotFound, Denied }\n"
              "var^ e = error^IOError.Denied{ }\n"
-             "return^ e isa^ IOError\n");
+             "return^ e fits^ IOError\n");
     CHECK_BOOL(&r, true);
     run_dispose(&r);
 
@@ -104,14 +104,14 @@ static void test_errors(void)
     run_text(&r,
              "errordef^ IOError { NotFound, Denied }\n"
              "var^ e = error^IOError.Denied{ }\n"
-             "return^ e isa^ IOError.NotFound\n");
+             "return^ e fits^ IOError.NotFound\n");
     CHECK_BOOL(&r, false);
     run_dispose(&r);
 
     LHAT_TEST("something that is not an error is not a kind either");
     run_text(&r,
              "errordef^ IOError { NotFound }\n"
-             "return^ 1 isa^ IOError\n");
+             "return^ 1 fits^ IOError\n");
     CHECK_BOOL(&r, false);
     run_dispose(&r);
 
@@ -262,7 +262,7 @@ static void test_catch_and_try(void)
     run_text(&r,
              "errordef^ E { A, B }\n"
              "var^ fail = f^ { return^ error^E.B{ } }\n"
-             "return^ fail() catch^ if^ it^ isa^ E.A: 1 el^: 2 ;\n");
+             "return^ fail() catch^ if^ it^ fits^ E.A: 1 el^: 2 ;\n");
     CHECK_INTEGER(&r, 2);
     run_dispose(&r);
 

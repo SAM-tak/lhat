@@ -21,7 +21,7 @@ static void test_narrowing(void)
     check_text(&u,
                "var^ f = f^ -> number^|string^ { return^ 0 }\n"
                "var^ r = f()\n"
-               "if^ r isa^ number^ { var^ n : number^ = r }\n");
+               "if^ r fits^ number^ { var^ n : number^ = r }\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
@@ -29,7 +29,7 @@ static void test_narrowing(void)
     check_text(&u,
                "var^ f = f^ -> number^|string^ { return^ 0 }\n"
                "var^ r = f()\n"
-               "if^ r isa^ number^ {\n"
+               "if^ r fits^ number^ {\n"
                "    else^:\n"
                "        var^ s : string^ = r\n"
                "}\n");
@@ -40,12 +40,12 @@ static void test_narrowing(void)
     check_text(&u,
                "var^ f = f^ -> number^|string^ { return^ 0 }\n"
                "var^ r = f()\n"
-               "if^ r isa^ number^ { var^ s : string^ = r }\n");
+               "if^ r fits^ number^ { var^ s : string^ = r }\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
     // 13.11 with 04 の 11.3: a comparison against the nil^ literal narrows the
-    // way isa^ does. Without it 'if^ t != nil^ { … }' passed the condition and
+    // way fits^ does. Without it 'if^ t != nil^ { … }' passed the condition and
     // then reported against the *use* inside the branch -- a diagnostic
     // nowhere near its cause, on the first form anyone reaches for.
     LHAT_TEST("'!= nil^' narrows the true branch");
@@ -92,7 +92,7 @@ static void test_narrowing(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
-    // 11.7改2: 'x?' is '!(x isa^ nil^)' written short, so it narrows
+    // 11.7改2: 'x?' is '!(x fits^ nil^)' written short, so it narrows
     // to exactly what that would -- the same machinery, one more spelling.
     LHAT_TEST("'?' narrows the true branch");
     check_text(&u,
@@ -111,7 +111,7 @@ static void test_narrowing(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    LHAT_TEST("'!' over it swaps the sides as it does for isa^");
+    LHAT_TEST("'!' over it swaps the sides as it does for fits^");
     check_text(&u,
                "var^ t : number^|nil^ = nil^\n"
                "if^ !(t?) { var^ n : nil^ = t }\n");
@@ -140,7 +140,7 @@ static void test_narrowing(void)
                "errordef^ ParseError { Syntax { line : number^ }, Eof }\n"
                "var^ parse = f^ -> number^|ParseError { return^ 0 }\n"
                "var^ r = parse()\n"
-               "if^ r isa^ ParseError.Syntax { var^ n : number^ = r.line }\n");
+               "if^ r fits^ ParseError.Syntax { var^ n : number^ = r.line }\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
@@ -161,8 +161,8 @@ static void test_narrowing(void)
                "var^ parse = f^ -> number^|ParseError { return^ 0 }\n"
                "var^ use = f^ -> number^ {\n"
                "    var^ r = parse()\n"
-               "    if^ r isa^ ParseError.Syntax { return^ 0 }\n"
-               "    if^ r isa^ ParseError.Eof { return^ 0 }\n"
+               "    if^ r fits^ ParseError.Syntax { return^ 0 }\n"
+               "    if^ r fits^ ParseError.Eof { return^ 0 }\n"
                "    return^ r + 1\n"
                "}\n");
     CHECK_CLEAN(&u);
@@ -173,7 +173,7 @@ static void test_narrowing(void)
                "var^ f = f^ -> number^|string^ { return^ 0 }\n"
                "var^ g = f^ -> number^ {\n"
                "    var^ r = f()\n"
-               "    if^ r isa^ string^ { }\n"
+               "    if^ r fits^ string^ { }\n"
                "    return^ r + 1\n"
                "}\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_NO_OPERATOR);
@@ -187,9 +187,9 @@ static void test_narrowing(void)
                "var^ open = f^ -> number^|IOError { return^ 0 }\n"
                "var^ use = f^ -> number^ {\n"
                "    var^ r = open()\n"
-               "    if^ r isa^ IOError.NotFound {\n"
+               "    if^ r fits^ IOError.NotFound {\n"
                "        return^ 0\n"
-               "        elseif^ r isa^ IOError.Denied:\n"
+               "        elseif^ r fits^ IOError.Denied:\n"
                "            return^ 0\n"
                "        else^:\n"
                "            return^ r\n"
@@ -205,7 +205,7 @@ static void test_narrowing(void)
                "var^ open = f^ -> number^|IOError { return^ 0 }\n"
                "var^ use = f^ -> number^ {\n"
                "    var^ r = open()\n"
-               "    if^ r isa^ IOError.NotFound {\n"
+               "    if^ r fits^ IOError.NotFound {\n"
                "        return^ 0\n"
                "        else^:\n"
                "            return^ r\n"
@@ -219,7 +219,7 @@ static void test_narrowing(void)
     check_text(&u,
                "var^ f = f^ -> number^|string^ { return^ 0 }\n"
                "var^ r = f()\n"
-               "if^ !(r isa^ number^) { var^ s : string^ = r }\n");
+               "if^ !(r fits^ number^) { var^ s : string^ = r }\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
@@ -230,7 +230,7 @@ static void test_narrowing(void)
                "var^ g = f^ -> number^|string^ { return^ 0 }\n"
                "var^ a = f()\n"
                "var^ b = g()\n"
-               "if^ a isa^ number^ and^ b isa^ number^ {\n"
+               "if^ a fits^ number^ and^ b fits^ number^ {\n"
                "    var^ n : number^ = a + b\n"
                "}\n");
     CHECK_CLEAN(&u);
@@ -243,7 +243,7 @@ static void test_narrowing(void)
     check_text(&u,
                "var^ f = f^ -> number^|string^ { return^ 0 }\n"
                "var^ r = f()\n"
-               "if^ r isa^ number^ and^ r <= 0.5 { var^ n : number^ = r }\n");
+               "if^ r fits^ number^ and^ r <= 0.5 { var^ n : number^ = r }\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
@@ -262,7 +262,7 @@ static void test_narrowing(void)
     check_text(&u,
                "var^ f = f^ -> number^|string^ { return^ 0 }\n"
                "var^ r = f()\n"
-               "if^ r <= 0.5 and^ r isa^ number^ { var^ b = true^ }\n");
+               "if^ r <= 0.5 and^ r fits^ number^ { var^ b = true^ }\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_NOT_ORDERED);
     unit_dispose(&u);
 
@@ -272,7 +272,7 @@ static void test_narrowing(void)
     check_text(&u,
                "var^ f = f^ -> number^|string^ { return^ 0 }\n"
                "var^ r = f()\n"
-               "var^ ok = r isa^ number^ and^ r <= 0.5\n");
+               "var^ ok = r fits^ number^ and^ r <= 0.5\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
@@ -280,7 +280,7 @@ static void test_narrowing(void)
     check_text(&u,
                "var^ f = f^ -> number^|string^ { return^ 0 }\n"
                "var^ r = f()\n"
-               "var^ ok = r isa^ number^ and^ r <= 0.5\n"
+               "var^ ok = r fits^ number^ and^ r <= 0.5\n"
                "var^ n : number^ = r\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
@@ -291,7 +291,7 @@ static void test_narrowing(void)
     check_text(&u,
                "var^ f = f^ -> number^|string^ { return^ 0 }\n"
                "var^ r = f()\n"
-               "repeat^ while^ r isa^ number^ { var^ n : number^ = r }\n");
+               "repeat^ while^ r fits^ number^ { var^ n : number^ = r }\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
@@ -299,7 +299,7 @@ static void test_narrowing(void)
     check_text(&u,
                "var^ f = f^ -> number^|string^ { return^ 0 }\n"
                "var^ r = f()\n"
-               "repeat^ until^ r isa^ string^ { var^ n : number^ = r }\n");
+               "repeat^ until^ r fits^ string^ { var^ n : number^ = r }\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
@@ -307,7 +307,7 @@ static void test_narrowing(void)
     check_text(&u,
                "var^ f = f^ -> number^|string^ { return^ 0 }\n"
                "var^ r = f()\n"
-               "for^ var^ i = 1 while^ r isa^ number^ next^ i := i + 1 {\n"
+               "for^ var^ i = 1 while^ r fits^ number^ next^ i := i + 1 {\n"
                "    var^ n : number^ = r\n"
                "}\n");
     CHECK_CLEAN(&u);
@@ -320,7 +320,7 @@ static void test_narrowing(void)
     check_text(&u,
                "var^ f = f^ -> number^|string^ { return^ 0 }\n"
                "var^ r = f()\n"
-               "if^ r isa^ number^ { r := f() }\n");
+               "if^ r fits^ number^ { r := f() }\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
@@ -330,7 +330,7 @@ static void test_narrowing(void)
     check_text(&u,
                "var^ f = f^ -> number^|string^ { return^ 0 }\n"
                "var^ r = f()\n"
-               "if^ r isa^ number^ { r := r + 1 }\n");
+               "if^ r fits^ number^ { r := r + 1 }\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
@@ -338,7 +338,7 @@ static void test_narrowing(void)
     check_text(&u,
                "var^ f = f^ -> number^|string^ { return^ 0 }\n"
                "var^ t = { a := f() }\n"
-               "if^ t.a isa^ number^ { t.a := f() }\n");
+               "if^ t.a fits^ number^ { t.a := f() }\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
@@ -348,7 +348,7 @@ static void test_narrowing(void)
     check_text(&u,
                "var^ f = f^ -> number^|string^ { return^ 0 }\n"
                "var^ r = f()\n"
-               "repeat^ while^ r isa^ number^ {\n"
+               "repeat^ while^ r fits^ number^ {\n"
                "    var^ n : number^ = r + 1\n"
                "    r := f()\n"
                "}\n");
@@ -360,7 +360,7 @@ static void test_narrowing(void)
     check_text(&u,
                "var^ f = f^ -> number^|string^ { return^ 0 }\n"
                "var^ r = f()\n"
-               "repeat^ while^ r isa^ number^ { first^: var^ n : number^ = r }\n");
+               "repeat^ while^ r fits^ number^ { first^: var^ n : number^ = r }\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
@@ -370,7 +370,7 @@ static void test_narrowing(void)
     check_text(&u,
                "var^ f = f^ -> number^|string^ { return^ 0 }\n"
                "var^ r = f()\n"
-               "repeat^ while^ r isa^ number^ { pre^: var^ n : number^ = r }\n");
+               "repeat^ while^ r fits^ number^ { pre^: var^ n : number^ = r }\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
@@ -380,7 +380,7 @@ static void test_narrowing(void)
     check_text(&u,
                "var^ f = f^ -> number^|string^ { return^ 0 }\n"
                "var^ r = f()\n"
-               "repeat^ while^ r isa^ number^ { last^: var^ n : number^ = r }\n");
+               "repeat^ while^ r fits^ number^ { last^: var^ n : number^ = r }\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
@@ -455,7 +455,7 @@ static void test_narrowing(void)
     check_text(&u,
                "var^ f = f^ -> number^|string^ { return^ 0 }\n"
                "var^ r = f()\n"
-               "repeat^ while^ r isa^ number^ { var^ b = true^ }\n"
+               "repeat^ while^ r fits^ number^ { var^ b = true^ }\n"
                "var^ n : number^ = r\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
@@ -463,7 +463,7 @@ static void test_narrowing(void)
     // Narrowing reads the path a second time, after the condition was
     // inferred in full. What is wrong with it was said there.
     LHAT_TEST("a mistake in a narrowing condition is reported once");
-    check_text(&u, "if^ nowhere isa^ number^ { var^ b = true^ }\n");
+    check_text(&u, "if^ nowhere fits^ number^ { var^ b = true^ }\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_UNDEFINED);
     LHAT_CHECK_EQ_INT(u.checked.diagnostic_count, 1);
     unit_dispose(&u);
@@ -474,7 +474,7 @@ static void test_narrowing(void)
     check_text(&u,
                "var^ f = f^ -> number^|string^ { return^ 0 }\n"
                "var^ g = f^ -> number^ {\n"
-               "    if^ f() isa^ number^ { return^ f() + 1 }\n"
+               "    if^ f() fits^ number^ { return^ f() + 1 }\n"
                "    return^ 0\n"
                "}\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_NO_OPERATOR);
@@ -484,7 +484,7 @@ static void test_narrowing(void)
     check_text(&u,
                "var^ f = f^ -> number^|string^ { return^ 0 }\n"
                "var^ t = { a := f() }\n"
-               "if^ t.a isa^ number^ { var^ n : number^ = t.a }\n");
+               "if^ t.a fits^ number^ { var^ n : number^ = t.a }\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
@@ -493,7 +493,7 @@ static void test_narrowing(void)
     check_text(&u,
                "var^ f = f^ -> number^|string^ { return^ 0 }\n"
                "var^ r = f()\n"
-               "if^ r isa^ number^ {\n"
+               "if^ r fits^ number^ {\n"
                "    r := f()\n"
                "    var^ n : number^ = r\n"
                "}\n");
@@ -504,7 +504,7 @@ static void test_narrowing(void)
     check_text(&u,
                "var^ f = f^ -> number^|string^ { return^ 0 }\n"
                "var^ r = f()\n"
-               "var^ n : number^ = if^ r isa^ number^: r el^: 0 ;\n");
+               "var^ n : number^ = if^ r fits^ number^: r el^: 0 ;\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
@@ -782,7 +782,7 @@ static void test_operator_on_maybe_nil(void)
     check_text(&u, "var^ f = f^ -> t^{ ...:number^ } { return^ { 1 } }\n"
                    "var^ t = f()\n"
                    "var^ v = t[1]\n"
-                   "if^ v isa^ number^ { var^ n : number^ = v + 1 }\n");
+                   "if^ v fits^ number^ { var^ n : number^ = v + 1 }\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
@@ -792,7 +792,7 @@ static void test_operator_on_maybe_nil(void)
     LHAT_TEST("narrowing the index where it stands does not do it");
     check_text(&u, "var^ f = f^ -> t^{ ...:number^ } { return^ { 1 } }\n"
                    "var^ t = f()\n"
-                   "if^ t[1] isa^ number^ { var^ n : number^ = t[1] + 1 }\n");
+                   "if^ t[1] fits^ number^ { var^ n : number^ = t[1] + 1 }\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_OPERATOR_ON_MAYBE_NIL);
     unit_dispose(&u);
 
@@ -1267,7 +1267,7 @@ static void test_bounded_keys(void)
     LHAT_TEST("a type narrowing and a bound stand together");
     check_text(&u,
                "var^ f = p^ t:t^{ number^[9] }, d:number^|string^ {\n"
-               "    if^ d isa^ number^ and^ 1 <= d <= 9 {\n"
+               "    if^ d fits^ number^ and^ 1 <= d <= 9 {\n"
                "        var^ n : number^ = t[d]\n"
                "    }\n"
                "}\n");
@@ -1275,7 +1275,7 @@ static void test_bounded_keys(void)
     unit_dispose(&u);
 }
 
-// 17.2 with 13.11: a match arm is the if-chain it desugars to, so an isa^
+// 17.2 with 13.11: a match arm is the if-chain it desugars to, so an fits^
 // pattern narrows what the arm reads -- the bare-name subject by its own
 // name, a wider subject through it^. (Neither narrowed at all before this
 // was pinned: the desugar tested a FOCUS node the narrowing machinery did
@@ -1288,7 +1288,7 @@ static void test_match_arm_narrowing(void)
     check_text(&u,
                "let^ g = f^ x:number^|t^{ ...:number^ } -> number^ {\n"
                "    return^ for^x:\n"
-               "    when^ isa^ t^{}: x.count^\n"
+               "    when^ fits^ t^{}: x.count^\n"
                "    other^: 0\n"
                "    ;\n"
                "}\n");
@@ -1299,7 +1299,7 @@ static void test_match_arm_narrowing(void)
     check_text(&u,
                "let^ g = f^ x:number^|t^{ ...:number^ } -> number^ {\n"
                "    for^x {\n"
-               "    when^ isa^ t^{}:\n"
+               "    when^ fits^ t^{}:\n"
                "        return^ x.count^\n"
                "    }\n"
                "    return^ 0\n"
@@ -1312,7 +1312,7 @@ static void test_match_arm_narrowing(void)
                "let^ pick = f^ -> number^|t^{ ...:number^ } { return^ 4 }\n"
                "let^ g = f^ -> number^ {\n"
                "    return^ for^ pick():\n"
-               "    when^ isa^ t^{}: it^.count^\n"
+               "    when^ fits^ t^{}: it^.count^\n"
                "    other^: 0\n"
                "    ;\n"
                "}\n");

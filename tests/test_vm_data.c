@@ -325,7 +325,7 @@ static void test_strings(void)
     LHAT_TEST("and mixes kinds along its length");
     run_text(&r,
              "if^ 1 < 2 = 2 < 3 and^ \"a\" < \"b\" < \"c\" and^ "
-             "1 < 2 isa^ number^ { return^ 1 }\n"
+             "1 < 2 fits^ number^ { return^ 1 }\n"
              "return^ 0\n");
     CHECK_INTEGER(&r, 1);
     run_dispose(&r);
@@ -646,7 +646,7 @@ static void test_strings(void)
                      "var^ t = { 1, 2, bonus = 10 }\n"
                      "var^ dbl = t.clone^(f^ x {\n"
                      "    return^ for^x:\n"
-                     "    when^ isa^ number^: x * 2\n"
+                     "    when^ fits^ number^: x * 2\n"
                      "    other^: x\n"
                      "    ;\n"
                      "})\n"
@@ -661,7 +661,7 @@ static void test_strings(void)
                      "var^ t = { inner }\n"
                      "var^ dp = t.clone^(f^ x {\n"
                      "    return^ for^x:\n"
-                     "    when^ isa^ t^{}: x.clone^(this^)\n"
+                     "    when^ fits^ t^{}: x.clone^(this^)\n"
                      "    other^: x\n"
                      "    ;\n"
                      "})\n"
@@ -1348,7 +1348,7 @@ static void test_tostring(void)
     LHAT_TEST("and holds nothing under the bare one");
     run_text(&r,
              "var^ t = { 1 }\n"
-             "return^ t.tostring isa^ nil^\n");
+             "return^ t.tostring fits^ nil^\n");
     CHECK_BOOL(&r, true);
     run_dispose(&r);
 
@@ -1440,7 +1440,7 @@ static void test_counting(void)
     // 14.18: the hat is not optional. `length` is a word a writer reaches for
     // first, so on a table the bare one is theirs whatever kind of table it is.
     LHAT_TEST("and a bare length is the writer's name");
-    run_text(&r, "var^ t = { 1, 2, 3 }\nreturn^ t.length isa^ nil^\n");
+    run_text(&r, "var^ t = { 1, 2, 3 }\nreturn^ t.length fits^ nil^\n");
     CHECK_BOOL(&r, true);
     run_dispose(&r);
 
@@ -1840,7 +1840,7 @@ static void test_tonumber(void)
     run_dispose(&r);
 
     LHAT_TEST("and on a table it is a name like any other");
-    run_text(&r, "return^ { n := 1 }.tonumber^ isa^ nil^\n");
+    run_text(&r, "return^ { n := 1 }.tonumber^ fits^ nil^\n");
     CHECK_BOOL(&r, true);
     run_dispose(&r);
 }

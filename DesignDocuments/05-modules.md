@@ -128,7 +128,7 @@ module^ namespace1.module1
 
 コマンドラインなら `lhat --run main.lh a b` の `a` `b`（文字列）、
 `require^` なら空の表、8.8改 の `std.load` が答えた閉包なら呼び出しの引数。
-型は `t^{...:any^}` で、読む側が `isa^` で絞る。
+型は `t^{...:any^}` で、読む側が `fits^` で絞る。
 
 ```lhat
 let^ args = ...
@@ -398,11 +398,11 @@ require^ "src/geometry.lt"                      # 名乗ったパスに入る
 import^ std.load
 let^ stage = std.load.file("stages/3.lh")        # p^... -> any^; | std.load.Error
 let^ gen = std.load.text(source, "gen/stage")    # name は診断名と require^ の基点
-if^ stage isa^ std.load.Error {
+if^ stage fits^ std.load.Error {
     …
 else^:
     let^ api = stage()          # module^ 単位なら public^ の表、スクリプトなら return^ の値
-    if^ api isa^ t^{} { … }     # 答えは any^——読む側が isa^ で絞る（M3 の「型」の答え）
+    if^ api fits^ t^{} { … }     # 答えは any^——読む側が fits^ で絞る（M3 の「型」の答え）
 }
 ```
 
@@ -1177,7 +1177,7 @@ L^ で書いた多重定義は、コンパイラが本体から候補の型を�
 - `lhat_register_hostvalue_type` — 同じタグ（`width` も `index` も）
 - `lhat_register_error_kind` — 同じ群と同じ変種
 
-**これは飾りではない。** 実行時はタグをアドレスで比べる（`isa^`、値の等値、
+**これは飾りではない。** 実行時はタグをアドレスで比べる（`fits^`、値の等値、
 `t.width()` の行き先）。program ごとに別のタグを作れば、**同じ綴りの型が
 2つになり、一致するのは「決め手になるただ一つのこと」以外の全部**という
 状態になる。値が program の境を越えた瞬間にそれが表に出る。
@@ -1827,7 +1827,7 @@ GCの走査は幅を知らずに正しく動く -- CONT はオブジェクトで
 `Vector3|nil^` はスタックの外に出ない——出ないのだから一原則の症例では
 ない。詰まっていたのは幅で、席が1スロットしか予約されないことだった。
 判別のほうは最初から可能である: 頭スロットのタグは `HOSTVALUE` と `NIL`
-で別物であり、`??`・`?.`・`isa^`・ループの終了判定はそのタグを読む。
+で別物であり、`??`・`?.`・`fits^`・ループの終了判定はそのタグを読む。
 
 立てる条件は 13.8改 が**タプル**に与えたものと同じ family である
 （幅のある値の隣は、頭スロットのタグで判別でき、判別する構文があるもの
@@ -1838,7 +1838,7 @@ let^ pick = f^ n:number^ -> std.math.vector3.Vector3|nil^ { … }
 var^ m = pick(1)
 if^ m? { print(m.x) }                     # narrow して読む
 let^ y = (m ?? std.math.vector3.new(0, 0, 0)).x  # 既定を与える
-let^ known = m isa^ std.math.vector3.Vector3      # 訊く
+let^ known = m fits^ std.math.vector3.Vector3      # 訊く
 ```
 
 席の予約は幅のほうに合わせる。値の腕はその幅を書き、`nil^` の腕は頭
@@ -2289,7 +2289,7 @@ cli/            コマンドライン      → lhat.exe
   に出られない」の症例一覧に合併が並んでいたが、**誤りだった**——
   `Vector3|nil^` はスタックの外に出ない。詰まっていたのは幅（席が
   1スロットしか予約されない）だけで、判別は最初から可能だった（頭
-  スロットのタグが `HOSTVALUE` と `NIL` で別物、`isa^` は合併越しに
+  スロットのタグが `HOSTVALUE` と `NIL` で別物、`fits^` は合併越しに
   ホスト値の腕を見られる）。立てる条件は 13.8改 がタプルに与えたものと
   同じ family——`nil^` と誤り。`any^`・幅のある腕どうし・判別する構文の
   無い腕は `LHAT_CHECK_ERR_HOSTVALUE_UNION` で拒む。

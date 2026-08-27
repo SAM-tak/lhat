@@ -527,7 +527,7 @@ const LhatHostDataTag *lhat_register_hostdata_type(LhatProgram *program,
 // every boundary the checker could have held.
 //
 // Single inheritance, which is what such models have. A value of the derived
-// type stands where the base is asked for, isa^ answers for the chain, and
+// type stands where the base is asked for, fits^ answers for the chain, and
 // lhat_hostdata_pointer gives the pointer back for a base's tag.
 //
 // THIS IS A PROMISE ABOUT POINTERS. Declaring the relation says a pointer of
@@ -790,7 +790,7 @@ bool lhat_program_install(const LhatProgram *program, LhatMachine *machine);
 //
 // What each hands over is what LhatRequire and LhatUnits carry for a file:
 // the registry import^ resolves against and 8.6's L^ members for the checker,
-// the error kinds and hostdata types isa^ names for the compiler. Both borrow
+// the error kinds and hostdata types fits^ names for the compiler. Both borrow
 // from the program, so it has to outlive the sessions.
 typedef struct LhatCheckSession LhatCheckSession;
 typedef struct LhatCompileSession LhatCompileSession;

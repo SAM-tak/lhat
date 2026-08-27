@@ -19,7 +19,7 @@
 typedef struct LhatHostErrorKind {
     const char *module;                    // "." 区切り可; declared by
     const char *name;                      // hosted_table 参照
-    const LhatErrorKind *group;            // 宣言全体。isa^ module.Name 用
+    const LhatErrorKind *group;            // 宣言全体。fits^ module.Name 用
     const char *const *variant_names;
     const LhatErrorKind *const *variants;  // variant_names と対応
     size_t variant_count;
@@ -52,8 +52,8 @@ typedef struct LhatAnnotationDecl {
     size_t requisite_count;
 } LhatAnnotationDecl;
 
-// 05 の 8.8 の isa^ 版: one hostdata type lhat_register_hostdata_type
-// (program.h) registered. resolve_isa_type (compile.c) reads these to
+// 05 の 8.8 の fits^ 版: one hostdata type lhat_register_hostdata_type
+// (program.h) registered. resolve_fits_type (compile.c) reads these to
 // answer a qualified name an import^ed module wrote -- "module...Name" --
 // against the tag 8.8's identity rule compares by.
 typedef struct LhatHostTypeEntry {
@@ -70,7 +70,7 @@ typedef struct LhatHostTypeEntry {
 // 05 の 8.9: the same for one host value type lhat_register_hostvalue_type
 // (program.h) registered. The compiler reads these to put a tag -- and with
 // it a width -- behind a written "module...Name", both for a type position
-// and for isa^.
+// and for fits^.
 typedef struct LhatHostValueTypeEntry {
     const char *module;
     const char *name;

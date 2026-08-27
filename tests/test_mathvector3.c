@@ -156,12 +156,12 @@ static void test_equality(void)
 
 static void test_narrowing(void)
 {
-    LHAT_TEST("isa^ answers against the registered type");
+    LHAT_TEST("fits^ answers against the registered type");
     {
         LhatTestRan ran = run_source(
             "import^ std.math.vector3\n"
             "let^ v = std.math.vector3.new(1, 2, 3)\n"
-            "if^ v isa^ std.math.vector3.Vector3 { return^ 1 }\n"
+            "if^ v fits^ std.math.vector3.Vector3 { return^ 1 }\n"
             "return^ 0\n");
         LHAT_CHECK_RAN_INTEGER(ran, 1);
         lhat_test_ran_dispose(&ran);
@@ -476,7 +476,7 @@ static void test_boxing(void)
                        "}\n"),
                "and the annotated focus meets the variadic rule");
 
-    // typeof^ answers the box's own name; isa^ tells box and value apart.
+    // typeof^ answers the box's own name; fits^ tells box and value apart.
     LHAT_TEST("the box's type is its own");
     {
         LhatTestRan ran = run_source(
@@ -727,7 +727,7 @@ static void test_escapes(void)
                       "var^ m = f()\n"
                       "if^ m? { let^ x = m.x }\n"
                       "let^ y = (m ?? std.math.vector3.new(0, 0, 0)).x\n"
-                      "let^ known = m isa^ std.math.vector3.Vector3\n"),
+                      "let^ known = m fits^ std.math.vector3.Vector3\n"),
                "written, narrowed, defaulted and asked about");
 
     LHAT_TEST("and beside an error");
@@ -858,7 +858,7 @@ static void test_parameter_width(void)
 // 13.11 with 11.6改: a written type is what it resolves to, not what it says
 // ---------------------------------------------------------------------------
 //
-// isa^ and as^ take a type the compiler settles, and it settled one by
+// fits^ and as^ take a type the compiler settles, and it settled one by
 // matching the words against what the host registered. A name bound to the
 // type, or to the module it lives in, is spelt nothing like those words, so
 // the compiler reached no type and answered "no such name" -- while the
@@ -884,11 +884,11 @@ static const char *const alias_spellings[] = {
 
 static void test_type_position_alias(void)
 {
-    LHAT_TEST("isa^ answers the same for every spelling of one type");
+    LHAT_TEST("fits^ answers the same for every spelling of one type");
     for (size_t i = 0; i < ALIAS_SPELLING_COUNT; i++) {
         char source[512];
         snprintf(source, sizeof source,
-                 "%sif^ v isa^ %s { return^ 1 }\nreturn^ 0\n",
+                 "%sif^ v fits^ %s { return^ 1 }\nreturn^ 0\n",
                  alias_preamble, alias_spellings[i]);
         LhatTestRan ran = run_source(source);
         LHAT_CHECK_RAN_INTEGER(ran, 1);
@@ -902,7 +902,7 @@ static void test_type_position_alias(void)
     for (size_t i = 0; i < ALIAS_SPELLING_COUNT; i++) {
         char source[512];
         snprintf(source, sizeof source,
-                 "%sif^ n isa^ %s { return^ 1 }\nreturn^ 0\n",
+                 "%sif^ n fits^ %s { return^ 1 }\nreturn^ 0\n",
                  alias_preamble, alias_spellings[i]);
         LhatTestRan ran = run_source(source);
         LHAT_CHECK_RAN_INTEGER(ran, 0);
@@ -910,7 +910,7 @@ static void test_type_position_alias(void)
     }
 
     // 11.6改3: as^ answers the value or a localerror^.CastFailure, and
-    // lower_type hands LHAT_BC_ASCAST the same descriptor isa^ tests
+    // lower_type hands LHAT_BC_ASCAST the same descriptor fits^ tests
     // against -- so it was refused in the same three ways and is mended in
     // the same one.
     //
@@ -923,7 +923,7 @@ static void test_type_position_alias(void)
     for (size_t i = 0; i < ALIAS_SPELLING_COUNT; i++) {
         char source[512];
         snprintf(source, sizeof source,
-                 "%sif^ ((v as^ %s) isa^ localerror^.CastFailure) "
+                 "%sif^ ((v as^ %s) fits^ localerror^.CastFailure) "
                  "{ return^ 0 }\nreturn^ 1\n",
                  alias_preamble, alias_spellings[i]);
         LhatTestRan ran = run_source(source);

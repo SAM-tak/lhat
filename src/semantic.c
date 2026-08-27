@@ -618,18 +618,18 @@ static void walk_value(SemCollector *out, const LhatNode *node)
             break;
         case LHAT_NODE_BINARY:
             walk_value(out, node->v.binary.left);
-            // 13.11: isa^ asks whether the left may stand where the right is
+            // 13.11: fits^ asks whether the left may stand where the right is
             // written, so what stands there is a type -- parse_binary reads
-            // it with parse_type (parser.c). 17.4's 'when^ isa^ T:' lowers to
+            // it with parse_type (parser.c). 17.4's 'when^ fits^ T:' lowers to
             // this same node, so naming it once here covers both.
-            if (node->v.binary.op == LHAT_OP_ISA) {
+            if (node->v.binary.op == LHAT_OP_FITS) {
                 walk_type(out, node->v.binary.right);
             } else {
                 walk_value(out, node->v.binary.right);
             }
             break;
-        // 11.5 の (5) with 13.11: a chain may hold an isa^ among the
-        // comparisons ('a < b isa^ number^ < c'), and the type it asks about
+        // 11.5 の (5) with 13.11: a chain may hold an fits^ among the
+        // comparisons ('a < b fits^ number^ < c'), and the type it asks about
         // does not stand where a value would. So the operands are paired
         // with the operators rather than walked alike -- the same pairing
         // chk_infer does (check_expr.c), and for the same reason: a type is
@@ -644,7 +644,7 @@ static void walk_value(SemCollector *out, const LhatNode *node)
                 if (operand == NULL) {
                     break;
                 }
-                if (marker->v.unary.op == LHAT_OP_ISA) {
+                if (marker->v.unary.op == LHAT_OP_FITS) {
                     walk_type(out, operand);
                 } else {
                     walk_value(out, operand);

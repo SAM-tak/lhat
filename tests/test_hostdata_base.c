@@ -312,23 +312,23 @@ static void test_inherited_members(void)
 }
 
 // ---------------------------------------------------------------------------
-// isa^, which is where the two sides have to agree (03 の 4.2)
+// fits^, which is where the two sides have to agree (03 の 4.2)
 
-static void test_isa(void)
+static void test_fits(void)
 {
     LhatProgram program;
     Disk disk;
 
-    LHAT_TEST("isa^ answers the chain at run time as the checker reads it");
+    LHAT_TEST("fits^ answers the chain at run time as the checker reads it");
     {
         static const File files[] = {
             {"main.lh",
              "import^ scene\n"
              "let^ s = scene.makeSprite()\n"
              "var^ n = 0\n"
-             "if^ s isa^ scene.Node { n := n + 1 }\n"
-             "if^ s isa^ scene.Node2D { n := n + 2 }\n"
-             "if^ s isa^ scene.Sprite2D { n := n + 4 }\n"
+             "if^ s fits^ scene.Node { n := n + 1 }\n"
+             "if^ s fits^ scene.Node2D { n := n + 2 }\n"
+             "if^ s fits^ scene.Sprite2D { n := n + 4 }\n"
              "return^ n\n"},
         };
         program_with(&program, &disk, files, 1);
@@ -345,7 +345,7 @@ static void test_isa(void)
             {"main.lh",
              "import^ scene\n"
              "let^ r = scene.makeResource()\n"
-             "if^ r isa^ scene.Node { return^ 1 }\n"
+             "if^ r fits^ scene.Node { return^ 1 }\n"
              "return^ 0\n"},
         };
         program_with(&program, &disk, files, 1);
@@ -466,7 +466,7 @@ static void test_registration(void)
             &program, "loop", "Y", "loop", "X");
         LHAT_CHECK(x != NULL && y != NULL, "X, and Y under it");
         // X under Y would close the ring, and every walk over the chain --
-        // conformance, isa^, the release lookup -- would run for ever.
+        // conformance, fits^, the release lookup -- would run for ever.
         LHAT_CHECK(!lhat_registry_set_hostdata_base(x, y),
                    "X cannot go under Y");
         lhat_program_dispose(&program);
@@ -534,7 +534,7 @@ int main(void)
 {
     test_the_relation();
     test_inherited_members();
-    test_isa();
+    test_fits();
     test_inherited_dispose();
     test_registration();
     test_delegate_to_host();

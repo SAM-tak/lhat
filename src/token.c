@@ -80,7 +80,7 @@ const char *lhat_op_name(LhatOpKind op)
         case LHAT_OP_AND:        return "and^";
         case LHAT_OP_OR:         return "or^";
         case LHAT_OP_IS:         return "is^";
-        case LHAT_OP_ISA:        return "isa^";
+        case LHAT_OP_FITS:        return "fits^";
         case LHAT_OP_CATCH:      return "catch^";
         case LHAT_OP_UNION:      return "|";
         case LHAT_OP_INTERSECT:  return "&";

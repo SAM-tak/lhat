@@ -180,7 +180,7 @@ static bool compound_assign_op(LhatOpKind token_op, LhatOpKind *base_op,
 // one. '=' is not among them any more -- 11.9改 lets a type write that one
 // on its own, since knowing what equals what does not mean knowing what
 // comes first. '≠' stays derived, from whichever of the two answered.
-// is^ and isa^ are not among them either -- one asks identity and the other
+// is^ and fits^ are not among them either -- one asks identity and the other
 // a type, and neither is anything a value's own order decides.
 static bool is_derived_comparison(LhatOpKind op)
 {
@@ -2063,7 +2063,7 @@ static LhatNode *parse_postfix(Parser *p)
         }
 
         // 11.7改2: postfix '?' asks whether the value is not absent --
-        // '!(x isa^ nil^)' written short. Here with the other postfix forms
+        // '!(x fits^ nil^)' written short. Here with the other postfix forms
         // rather than in parse_unary, so it binds as tightly as they do
         // (11.6's level 11): 'a.b?' is '(a.b)?'.
         if (check_op(p, LHAT_OP_PRESENT)) {
@@ -2393,13 +2393,12 @@ static bool binary_info(const Parser *p, LhatOpKind *op, int *precedence,
 
 static bool is_comparison(const Parser *p, LhatOpKind *op)
 {
-    // 11.6改: 'is^' asks identity, 'isa^' asks the type fit.
-    // Checking 'isa' first would not matter
-    // either way -- the lexer already reads 'isa' as one identifier, never
-    // 'is' followed by a stray 'a' -- but it reads the same order the two
-    // words are introduced in (13.11 の後の 11.6改).
-    if (check_hat(p, "isa")) {
-        *op = LHAT_OP_ISA;
+    // 11.6改: 'is^' asks identity, 'fits^' asks the type fit. Two words with
+    // nothing in common to mistake, so the order they are tried in decides
+    // nothing; it reads the one the two are introduced in (13.11 の後の
+    // 11.6改).
+    if (check_hat(p, "fits")) {
+        *op = LHAT_OP_FITS;
         return true;
     }
     if (check_hat(p, "is")) {
@@ -2483,11 +2482,11 @@ static LhatNode *parse_comparison(Parser *p)
         marker->v.unary.op = op;
         lhat_node_append(&operators, &operator_tail, marker);
 
-        // 13.11: isa^ asks whether the left side may stand where the right
+        // 13.11: fits^ asks whether the left side may stand where the right
         // side is written, so what it takes on the right is a type. is^
         // asks identity, an ordinary value on both sides.
         lhat_node_append(&operands, &operand_tail,
-                         op == LHAT_OP_ISA ? parse_type(p)
+                         op == LHAT_OP_FITS ? parse_type(p)
                                            : parse_binary(p, PREC_SPACESHIP));
         links++;
     }
@@ -3634,9 +3633,9 @@ static LhatNode *parse_pattern(Parser *p, const LhatNode *focus)
     LhatToken at = p->current;
 
     // 17.4: a type has to say so, since a bare name cannot be told from a
-    // value. isa^ already means exactly this question (13.11).
-    if (match_hat(p, "isa")) {
-        return binary_node(p, &at, LHAT_OP_ISA, subject_reference(p, focus, &at),
+    // value. fits^ already means exactly this question (13.11).
+    if (match_hat(p, "fits")) {
+        return binary_node(p, &at, LHAT_OP_FITS, subject_reference(p, focus, &at),
                            parse_type(p));
     }
 

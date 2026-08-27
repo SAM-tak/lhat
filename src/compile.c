@@ -1187,7 +1187,7 @@ static const LhatErrorKind *resolve_host_kind(Compiler *c, const LhatNode *path,
         }
 
         // "module...Name" -- the declaration as a whole (04 の 2.3: what
-        // isa^ against the union, rather than one kind, asks for).
+        // fits^ against the union, rather than one kind, asks for).
         if (segments_match(segments, 0, count - 1, entry->module) &&
             segments_match(segments, count - 1, count, entry->name)) {
             return entry->group;
@@ -1260,7 +1260,7 @@ static const LhatErrorKind *resolve_kind(Compiler *c, const LhatNode *path,
     return resolve_host_kind(c, path, from_host);
 }
 
-// 05 の 8.8 の isa^ 版: what lhat_register_hostdata_type (program.h) put
+// 05 の 8.8 の fits^ 版: what lhat_register_hostdata_type (program.h) put
 // in LhatUnits.host_types. "module...Name" only -- a hostdata type has no
 // variant to walk into the way an errordef^'s declaration does; 8.8's
 // identity is the tag alone.
@@ -1690,10 +1690,10 @@ static void compile_nil_else(Compiler *c, const LhatNode *node, uint8_t into)
     compile_nil_else_wide(c, node, into, 0);
 }
 
-// 02 の 13.11: isa^ asks whether the left side may stand where the right side
+// 02 の 13.11: fits^ asks whether the left side may stand where the right side
 // is written. Every spelling of the right side is that one question at run
 // time, so there is one instruction for it: lower_type turns the written type
-// into the descriptor LHAT_BC_ISA tests a value against, which is the same
+// into the descriptor LHAT_BC_FITS tests a value against, which is the same
 // object 11.6's as^ hands LHAT_BC_ASCAST. An error kind (04 の 6.1) and a
 // host type (05 の 8.8) are both ordinary results of that lowering, which is
 // why neither needs a case here any more.
@@ -1720,7 +1720,7 @@ static void compile_nil_else(Compiler *c, const LhatNode *node, uint8_t into)
 // The test itself, against a left operand already in a register. 11.5 の (5)
 // shares an operand between two links of a chain and evaluates it once, so
 // there the left is compiled by the caller.
-static void compile_isa_test(Compiler *c, const LhatNode *asked, uint8_t value,
+static void compile_fits_test(Compiler *c, const LhatNode *asked, uint8_t value,
                              uint8_t into)
 {
     const char *name = NULL;
@@ -1742,11 +1742,11 @@ static void compile_isa_test(Compiler *c, const LhatNode *asked, uint8_t value,
     uint8_t mark = c->next_register;
     uint8_t holder = reserve(c);
     load_constant(c, holder, lhat_object((LhatObject *)wanted));
-    emit(c, lhat_encode_abc(LHAT_BC_ISA, into, value, holder));
+    emit(c, lhat_encode_abc(LHAT_BC_FITS, into, value, holder));
     c->next_register = mark;
 }
 
-static void compile_isa(Compiler *c, const LhatNode *node, uint8_t into)
+static void compile_fits(Compiler *c, const LhatNode *node, uint8_t into)
 {
     // The left side runs whatever the answer turns out to be -- for an any^
     // it is still the reason compile_expression keeps typeof^'s operand.
@@ -1754,7 +1754,7 @@ static void compile_isa(Compiler *c, const LhatNode *node, uint8_t into)
     // 05 の 8.9: a host value operand keeps its width here as anywhere.
     uint8_t value = reserve_for(c, node->v.binary.left);
     compile_expression(c, node->v.binary.left, value);
-    compile_isa_test(c, node->v.binary.right, value, into);
+    compile_fits_test(c, node->v.binary.right, value, into);
     c->next_register = mark;
 }
 
@@ -2069,7 +2069,7 @@ static LhatRuntimeType *lower_type(Compiler *c, const LhatNode *node)
 
             // 05 の 8.8: a host-registered type, which resolve_kind never
             // answers -- it only reaches an errordef^-shaped kind. Tried
-            // after it for the same reason compile_isa tries it last:
+            // after it for the same reason compile_fits tries it last:
             // a local declaration is what a name means first.
             const LhatHostDataTag *tag = resolve_host_type_tag(c, node);
             if (tag != NULL) {
@@ -3841,8 +3841,8 @@ static void compile_binary(Compiler *c, const LhatNode *node, uint8_t into)
         compile_nil_else(c, node, into);
         return;
     }
-    if (op == LHAT_OP_ISA) {
-        compile_isa(c, node, into);
+    if (op == LHAT_OP_FITS) {
+        compile_fits(c, node, into);
         return;
     }
 
@@ -3951,11 +3951,11 @@ static void compile_compare_chain(Compiler *c, const LhatNode *node,
         }
 
         LhatOpKind op = marker->v.unary.op;
-        // 13.11: an isa^ link takes a type, which is not an operand the next
+        // 13.11: an fits^ link takes a type, which is not an operand the next
         // link could compare against -- so what it tests is the value still
         // standing to its left, and that value stays where it is.
-        if (op == LHAT_OP_ISA) {
-            compile_isa_test(c, operand, left, into);
+        if (op == LHAT_OP_FITS) {
+            compile_fits_test(c, operand, left, into);
             continue;
         }
 
@@ -4479,7 +4479,7 @@ static void compile_expression(Compiler *c, const LhatNode *node, uint8_t into)
             // 05 の 8.9: a host value operand keeps its width, as everywhere.
             uint8_t operand = reserve_for(c, node->v.unary.operand);
             compile_expression(c, node->v.unary.operand, operand);
-            // 11.7改2: 'x?' is '!(x isa^ nil^)' written short, and the
+            // 11.7改2: 'x?' is '!(x fits^ nil^)' written short, and the
             // two instructions it needs already exist. NOT reads its operand
             // before it writes, so into == into is safe.
             if (node->v.unary.op == LHAT_OP_PRESENT) {
@@ -6455,7 +6455,7 @@ static void compile_statement(Compiler *c, const LhatNode *node)
                 if (arm->v.clause.condition != NULL) {
                     uint8_t inner = c->next_register;
                     uint8_t test = reserve(c);
-                    compile_isa_test(c, arm->v.clause.condition, caught, test);
+                    compile_fits_test(c, arm->v.clause.condition, caught, test);
                     next = emit_jump(c, LHAT_BC_JUMP_FALSE, test);
                     c->next_register = inner;
                 }
@@ -6732,7 +6732,7 @@ struct LhatCompileSession {
     size_t initial_count;
 
     // 04 の 12.4 and 05 の 8.8: what a host's lhat_register_error_kind and
-    // lhat_register_hostdata_type registered, so that isa^ against either
+    // lhat_register_hostdata_type registered, so that fits^ against either
     // compiles at a prompt as it does in a file. The other half of LhatUnits
     // a session carries; NULL/0 when the host registered none.
     const LhatHostErrorKind *host_errors;

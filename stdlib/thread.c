@@ -28,7 +28,7 @@
 // spawn/join answer a ThreadHandle or a ThreadError, or std.error.
 // OutOfMemory for the one failure this module shares with every other
 // stdlib module (see error.h) -- read the result with try^/catch^, or
-// narrow with isa^ against std.thread.ThreadHandle (05 の 8.8's hostdata
+// narrow with fits^ against std.thread.ThreadHandle (05 の 8.8's hostdata
 // path).
 
 #include "carry.h"

@@ -607,7 +607,7 @@ static void test_for(void)
     run_text(&r,
              "var^ t = { 1, 2, 3, iterate := f^ { return^ p^ { yield^ 9 }() } }\n"
              "var^ total = 0\n"
-             "for^ k, v in^ t { if^ v isa^ number^ { total := total + v } }\n"
+             "for^ k, v in^ t { if^ v fits^ number^ { total := total + v } }\n"
              "return^ total\n");
     CHECK_INTEGER(&r, 6);
     run_dispose(&r);
@@ -728,7 +728,7 @@ static void test_for(void)
     // 16.3改2 with 14.18: the hat is not optional on a table, so the bare
     // word is a member like any other and holds nothing until written.
     LHAT_TEST("a bare keys on a table is the writer's name");
-    run_text(&r, "var^ t = { 1 }\nreturn^ t.keys isa^ nil^\n");
+    run_text(&r, "var^ t = { 1 }\nreturn^ t.keys fits^ nil^\n");
     CHECK_BOOL(&r, true);
     run_dispose(&r);
 
@@ -1263,14 +1263,14 @@ static void test_patterns(void)
     CHECK_INTEGER(&r, 100);
     run_dispose(&r);
 
-    // 17.4: a type pattern writes isa^, since a bare name could be either.
-    LHAT_TEST("a type pattern uses isa^");
+    // 17.4: a type pattern writes fits^, since a bare name could be either.
+    LHAT_TEST("a type pattern uses fits^");
     run_text(&r,
              "errordef^ E { A, B }\n"
              "var^ x = 0\n"
              "for^ error^E.B{ } {\n"
-             "  when^ isa^ E.A: x := 1\n"
-             "  when^ isa^ E.B: x := 2\n"
+             "  when^ fits^ E.A: x := 1\n"
+             "  when^ fits^ E.B: x := 2\n"
              "  other^: x := 3\n"
              "}\n"
              "return^ x\n");

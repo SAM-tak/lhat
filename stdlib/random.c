@@ -11,7 +11,7 @@
 // games and tools this is a sample for. Not cryptographic.
 //
 // std.random.new answers std.random.Random|std.error.OutOfMemory -- read
-// it with try^/catch^, or narrow with isa^ against std.random.Random
+// it with try^/catch^, or narrow with fits^ against std.random.Random
 // (05 の 8.8's hostdata path). See error.h for why OutOfMemory lives in
 // std.error rather than a std.random.RandomError of its own.
 

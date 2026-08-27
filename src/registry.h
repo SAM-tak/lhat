@@ -6,7 +6,7 @@
 // members, and the declaration is the C call that registers it. Two programs
 // registering std.io.File are that one declaration made twice, so they have
 // to come away with the same identity: the run time compares tags by their
-// address (object.c's lhat_type_rt_equal, and isa^), and a second tag would
+// address (object.c's lhat_type_rt_equal, and fits^), and a second tag would
 // make one host type into two that agree about everything except the one
 // thing that decides.
 //

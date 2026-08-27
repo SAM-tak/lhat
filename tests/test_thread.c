@@ -40,13 +40,13 @@ static bool checks(const char *text)
 
 // The preamble every case shares: spawn, join, and hand the answer back. Both
 // results are unions (a ThreadHandle or an error either way), so both are
-// narrowed with isa^ rather than read outright.
+// narrowed with fits^ rather than read outright.
 #define WITH_SPAWN(call)                                                   \
     "import^ std.thread\n"                                                 \
     "let^ h = " call "\n"                                                  \
-    "if^ h isa^ std.thread.ThreadHandle {\n"                               \
+    "if^ h fits^ std.thread.ThreadHandle {\n"                               \
     "    let^ answer = h.join()\n"                                         \
-    "    if^ answer isa^ std.thread.ThreadError { return^ \"error\" }\n"   \
+    "    if^ answer fits^ std.thread.ThreadError { return^ \"error\" }\n"   \
     "    return^ answer\n"                                                 \
     "}\n"                                                                  \
     "return^ \"refused\"\n"
@@ -120,10 +120,10 @@ static void test_spawn_upvalue(void)
             "import^ std.thread\n"
             "var^ n = 7\n"
             "let^ h = std.thread.spawn(p^ ... { n := n + 1 return^ n })\n"
-            "if^ h isa^ std.thread.ThreadHandle {\n"
+            "if^ h fits^ std.thread.ThreadHandle {\n"
             "    let^ answered = h.join()\n"
             "    h.dispose()\n"
-            "    if^ answered isa^ number^ {\n"
+            "    if^ answered fits^ number^ {\n"
             "        return^ answered * 100 + n\n"
             "    }\n"
             "}\n"
@@ -145,20 +145,20 @@ static void test_spawn_upvalue(void)
             "    let^ got = ...[1]\n"
             "    let^ list = ...[2]\n"
             "    var^ cyclic = 0\n"
-            "    if^ got isa^ t^{} {\n"
+            "    if^ got fits^ t^{} {\n"
             "        if^ got[\"me\"] is^ got { cyclic := 1000 }\n"
             "    }\n"
-            "    if^ list isa^ t^{...:number^} { list.push^(4) }\n"
+            "    if^ list fits^ t^{...:number^} { list.push^(4) }\n"
             "    return^ { cyclic, list }\n"
             "}, ring, items)\n"
-            "if^ h isa^ std.thread.ThreadHandle {\n"
+            "if^ h fits^ std.thread.ThreadHandle {\n"
             "    let^ back = h.join()\n"
             "    h.dispose()\n"
-            "    if^ back isa^ t^{} {\n"
+            "    if^ back fits^ t^{} {\n"
             "        let^ c = back[1]\n"
             "        let^ l = back[2]\n"
-            "        if^ c isa^ number^ {\n"
-            "            if^ l isa^ t^{} {\n"
+            "        if^ c fits^ number^ {\n"
+            "            if^ l fits^ t^{} {\n"
             "                return^ c + l.count^ * 10 + items.count^\n"
             "            }\n"
             "        }\n"
@@ -182,10 +182,10 @@ static void test_spawn_upvalue(void)
             "    bump()\n"
             "    return^ read()\n"
             "})\n"
-            "if^ h isa^ std.thread.ThreadHandle {\n"
+            "if^ h fits^ std.thread.ThreadHandle {\n"
             "    let^ answered = h.join()\n"
             "    h.dispose()\n"
-            "    if^ answered isa^ number^ {\n"
+            "    if^ answered fits^ number^ {\n"
             "        return^ answered * 10 + shared\n"
             "    }\n"
             "}\n"
@@ -252,7 +252,7 @@ static void test_arguments(void)
     // A string is the one carried kind that allocates on both sides, so it is
     // what pins the copy rather than the value. A position of '...' is any^
     //, and the only thing to do with an any^ is narrow it -- 02 の
-    // 13.11's isa^ reaches a builtin name now, so the far side reads the
+    // 13.11's fits^ reaches a builtin name now, so the far side reads the
     // bytes it was given rather than counting that something arrived. Joining
     // them is what pins their order as well: the two go out separately and
     // come back as one string, which they could not do if either had been
@@ -263,7 +263,7 @@ static void test_arguments(void)
             WITH_SPAWN("std.thread.spawn(closed^p^ ... {\n"
                        "    var^ joined = \"\"\n"
                        "    for^ i, x in^ ... {\n"
-                       "        if^ x isa^ string^ { joined := joined .. x }\n"
+                       "        if^ x fits^ string^ { joined := joined .. x }\n"
                        "    }\n"
                        "    return^ joined\n"
                        "}, \"carried \", \"across\")"));
@@ -311,9 +311,9 @@ static void test_arguments(void)
             "    }, ...)\n"
             "}\n"
             "let^ h = forward(6, 7, 8)\n"
-            "if^ h isa^ std.thread.ThreadHandle {\n"
+            "if^ h fits^ std.thread.ThreadHandle {\n"
             "    let^ answer = h.join()\n"
-            "    if^ answer isa^ std.thread.ThreadError { return^ 0 - 1 }\n"
+            "    if^ answer fits^ std.thread.ThreadError { return^ 0 - 1 }\n"
             "    return^ answer\n"
             "}\n"
             "return^ 0 - 2\n");
@@ -330,10 +330,10 @@ static void test_arguments(void)
             "import^ std.thread\n"
             "let^ gen = p^ { yield^ 1 }\n"
             "let^ h = std.thread.spawn(closed^p^ ... { return^ 1 }, gen())\n"
-            "if^ h isa^ std.thread.ThreadError.BadArgument {\n"
+            "if^ h fits^ std.thread.ThreadError.BadArgument {\n"
             "    return^ \"refused\"\n"
             "}\n"
-            "if^ h isa^ std.thread.ThreadHandle {\n"
+            "if^ h fits^ std.thread.ThreadHandle {\n"
             "    h.dispose()\n"
             "    return^ \"taken\"\n"
             "}\n"
@@ -355,7 +355,7 @@ static void test_dispose(void)
                        "var^ started = 0\n"
                        "for^ i from^ 1 to^ 20 {\n"
                        "    let^ h = std.thread.spawn(closed^p^ ... { return^ 1 })\n"
-                       "    if^ h isa^ std.thread.ThreadHandle {\n"
+                       "    if^ h fits^ std.thread.ThreadHandle {\n"
                        "        started := started + 1\n"
                        "        h.dispose()\n"
                        "    }\n"
@@ -370,10 +370,10 @@ static void test_dispose(void)
         LhatTestRan ran =
             run_source("import^ std.thread\n"
                        "let^ h = std.thread.spawn(closed^p^ ... { return^ 1 })\n"
-                       "if^ h isa^ std.thread.ThreadHandle {\n"
+                       "if^ h fits^ std.thread.ThreadHandle {\n"
                        "    let^ first = h.join()\n"
                        "    let^ again = h.join()\n"
-                       "    if^ again isa^ std.thread.ThreadError.AlreadyJoined {\n"
+                       "    if^ again fits^ std.thread.ThreadError.AlreadyJoined {\n"
                        "        return^ 1\n"
                        "    }\n"
                        "    return^ 0\n"
@@ -457,7 +457,7 @@ static void test_modules_reach_the_thread(void)
             "    std.io.print(\"in the thread\")\n"
             "    return^ 1\n"
             "})\n"
-            "if^ h isa^ std.thread.ThreadHandle {\n"
+            "if^ h fits^ std.thread.ThreadHandle {\n"
             "    let^ answer = h.join()\n"
             "    return^ 1\n"
             "}\n"
@@ -480,7 +480,7 @@ static void test_done(void)
         LhatTestRan ran = run_source(
             "import^ std.thread\n"
             "let^ h = std.thread.spawn(closed^p^ ... { return^ 1 })\n"
-            "if^ h isa^ std.thread.ThreadHandle {\n"
+            "if^ h fits^ std.thread.ThreadHandle {\n"
             "    let^ answer = h.join()\n"
             "    if^ h.done() { return^ 1 }\n"
             "    return^ 0\n"
@@ -500,7 +500,7 @@ static void test_done(void)
             "    std.thread.sleep(0.25)\n"
             "    return^ 1\n"
             "})\n"
-            "if^ h isa^ std.thread.ThreadHandle {\n"
+            "if^ h fits^ std.thread.ThreadHandle {\n"
             "    let^ early = h.done()\n"
             "    let^ answer = h.join()\n"
             "    if^ !early and^ h.done() { return^ 1 }\n"

@@ -45,9 +45,9 @@
 //
 // spawn/join answer a ThreadHandle, a ThreadError, or std.error.
 // OutOfMemory for the one failure this module shares with every other
-// stdlib module -- read the result with try^/catch^, or narrow with isa^
+// stdlib module -- read the result with try^/catch^, or narrow with fits^
 // against std.thread.ThreadHandle or an error kind (both supported).
-// Naming std.error.OutOfMemory in an isa^ needs its own
+// Naming std.error.OutOfMemory in an fits^ needs its own
 // `import^ std.error` -- 8.1's "the language hands out no names" applies
 // to a name reached through another module's registration too.
 

@@ -6,8 +6,8 @@
 //
 // std.io.open answers std.io.File|std.io.IOError.NotFound|std.io.IOError.
 // Denied|std.error.OutOfMemory -- read it with try^/catch^, or narrow with
-// isa^ against std.io.File or an error kind (both supported). Naming
-// std.error.OutOfMemory in an isa^ needs its own `import^ std.error` --
+// fits^ against std.io.File or an error kind (both supported). Naming
+// std.error.OutOfMemory in an fits^ needs its own `import^ std.error` --
 // 8.1's "the language hands out no names" applies to a name reached
 // through another module's registration too.
 

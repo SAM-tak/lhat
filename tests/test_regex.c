@@ -24,7 +24,7 @@ static LhatTestRan run_source(const char *text)
 #define WITH_REGEX(pattern, body)              \
     "import^ std.regex\n"                      \
     "let^ made = std.regex.new(" pattern ")\n" \
-    "if^ made isa^ std.regex.Regex {\n"        \
+    "if^ made fits^ std.regex.Regex {\n"        \
     "    let^ r = made\n" body                 \
     "}\n"                                      \
     "return^ \"never\"\n"
@@ -45,7 +45,7 @@ static void test_compile(void)
         LhatTestRan ran = run_source(
             "import^ std.regex\n"
             "let^ made = std.regex.new(\"(abc\")\n"
-            "return^ if^ made isa^ std.regex.Error.BadPattern: made.message "
+            "return^ if^ made fits^ std.regex.Error.BadPattern: made.message "
             "el^: \"?\" ;\n");
         LHAT_CHECK_RAN_TEXT(ran, "the pattern ends inside (...)");
         lhat_test_ran_dispose(&ran);
@@ -143,7 +143,7 @@ static void test_gsub(void)
             "\"(\\\\d+)-(\\\\d+)\"",
             "    let^ swapped = r.gsub(\"12-34 and 56-78\", \"[$2/$1]\")\n"
             "    r.dispose()\n"
-            "    return^ if^ swapped isa^ string^: swapped el^: \"?\" ;\n"));
+            "    return^ if^ swapped fits^ string^: swapped el^: \"?\" ;\n"));
         LHAT_CHECK_RAN_TEXT(ran, "[34/12] and [78/56]");
         lhat_test_ran_dispose(&ran);
     }
@@ -159,7 +159,7 @@ static void test_gsub(void)
             "at.tostring() .. \">\"\n"
             "    })\n"
             "    r.dispose()\n"
-            "    return^ if^ swapped isa^ string^: swapped el^: \"?\" ;\n"));
+            "    return^ if^ swapped fits^ string^: swapped el^: \"?\" ;\n"));
         LHAT_CHECK_RAN_TEXT(ran, "a<1@2>b<22@4>");
         lhat_test_ran_dispose(&ran);
     }
@@ -172,7 +172,7 @@ static void test_gsub(void)
             "        return^ if^ m = \"1\": \"one\" el^: nil^ ;\n"
             "    })\n"
             "    r.dispose()\n"
-            "    return^ if^ swapped isa^ string^: swapped el^: \"?\" ;\n"));
+            "    return^ if^ swapped fits^ string^: swapped el^: \"?\" ;\n"));
         LHAT_CHECK_RAN_TEXT(ran, "one and 22");
         lhat_test_ran_dispose(&ran);
     }
@@ -186,7 +186,7 @@ static void test_split(void)
             "\"\\\\s*,\\\\s*\"",
             "    let^ parts = r.split(\"a , b,,c\")\n"
             "    r.dispose()\n"
-            "    if^ parts isa^ t^{} {\n"
+            "    if^ parts fits^ t^{} {\n"
             "        return^ \"[\" .. parts.join^(\"|\") .. \"]\"\n"
             "    }\n"
             "    return^ \"?\"\n"));
@@ -200,7 +200,7 @@ static void test_split(void)
             "\",\"",
             "    let^ parts = r.split(\"abc\")\n"
             "    r.dispose()\n"
-            "    if^ parts isa^ t^{} {\n"
+            "    if^ parts fits^ t^{} {\n"
             "        return^ parts.join^(\"|\") .. \"#\" .. "
             "parts.count^.tostring()\n"
             "    }\n"
@@ -217,7 +217,7 @@ static void test_module_forms(void)
         LhatTestRan ran = run_source(
             "import^ std.regex\n"
             "let^ hit = std.regex.match(\"l+\", \"hello\")\n"
-            "return^ if^ hit isa^ string^: hit el^: \"none\" ;\n");
+            "return^ if^ hit fits^ string^: hit el^: \"none\" ;\n");
         LHAT_CHECK_RAN_TEXT(ran, "ll");
         lhat_test_ran_dispose(&ran);
     }
@@ -227,7 +227,7 @@ static void test_module_forms(void)
         LhatTestRan ran = run_source(
             "import^ std.regex\n"
             "let^ hit = std.regex.match(\"(a\", \"aaa\")\n"
-            "return^ if^ hit isa^ std.regex.Error.BadPattern: \"bad\" "
+            "return^ if^ hit fits^ std.regex.Error.BadPattern: \"bad\" "
             "el^: \"?\" ;\n");
         LHAT_CHECK_RAN_TEXT(ran, "bad");
         lhat_test_ran_dispose(&ran);
@@ -241,7 +241,7 @@ static void test_module_forms(void)
             "import^ std.regex\n"
             "let^ hit = std.regex.match(\"(a+)+b\", "
             "\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\")\n"
-            "return^ if^ hit isa^ std.regex.Error.Exhausted: \"blown\" "
+            "return^ if^ hit fits^ std.regex.Error.Exhausted: \"blown\" "
             "el^: \"?\" ;\n");
         LHAT_CHECK_RAN_TEXT(ran, "blown");
         lhat_test_ran_dispose(&ran);

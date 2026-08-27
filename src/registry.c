@@ -140,7 +140,7 @@ bool lhat_registry_set_hostdata_base(const LhatHostDataTag *tag,
     if (tag == NULL || base == NULL || tag == base) {
         return false;
     }
-    // A cycle would make every walk over the chain -- conformance, isa^,
+    // A cycle would make every walk over the chain -- conformance, fits^,
     // the release lookup -- run for ever. Nothing but a mistake makes one,
     // and this is where the mistake stops.
     for (const LhatHostDataTag *up = base; up != NULL; up = up->base) {
