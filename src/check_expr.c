@@ -3857,17 +3857,29 @@ const LhatTypeMember *chk_unimplemented_member(const LhatType *definition)
     return chk_hole_of(definition, NULL);
 }
 
-static void copy_members(Checker *c, LhatType *into, const LhatType *from)
+// `drop_lent` is 14.7改2: the composed definition keeps one delegate, the
+// last part to declare one, so a part declaring its own undoes what an
+// earlier part's lent. What that part WROTE is not a loan and carries over
+// like anything else -- it is the base's own member and still shadows.
+static void copy_members(Checker *c, LhatType *into, const LhatType *from,
+                         bool drop_lent)
 {
     if (from == NULL || from->kind != LHAT_TYPE_TABLE) {
         return;
     }
     for (const LhatTypeMember *m = from->v.table.members; m != NULL;
          m = m->next) {
+        if (drop_lent && m->delegated) {
+            continue;
+        }
         // 14.15: a hole in the base is a hole in what is composed onto it
         // until something fills it, and 14.15改's wait carries over too.
-        set_member_marked(c, into, m->name, m->name_length, m->type,
-                          m->abstract, m->pending);
+        LhatTypeMember *put = set_member_marked(c, into, m->name,
+                                                m->name_length, m->type,
+                                                m->abstract, m->pending);
+        if (put != NULL) {
+            put->delegated = m->delegated;
+        }
     }
 }
 
@@ -3945,21 +3957,31 @@ static bool written_here(Checker *c, const LhatNode *node, const char *name,
 // once per round of the walk (03 の 3.4改2) and reports only on the last --
 // `report` is what tells the two apart, and a walk that did not settle says
 // so through read_provisional, which is what buys the next round.
+// What this def^ delegates to, as it was written. NULL when it declares
+// none. 14.3's two spellings: 'self^.x' reads the receiver's field, a bare
+// 'x' the definition's member, and `through_self` is which was written.
+static const LhatNode *delegate_of(const LhatNode *node, bool *through_self)
+{
+    for (const LhatNode *entry = node->v.list.items; entry != NULL;
+         entry = entry->next) {
+        if (entry->v.entry.modifier != LHAT_DEF_DELEGATE ||
+            entry->v.entry.value == NULL) {
+            continue;
+        }
+        if (through_self != NULL) {
+            *through_self = entry->v.entry.value->kind == LHAT_NODE_MEMBER;
+        }
+        return entry->v.entry.value;  // the parser allows one
+    }
+    return NULL;
+}
+
 static bool add_delegated_members(Checker *c, const LhatNode *node,
                                   LhatType *definition, LhatType *instance,
                                   bool report)
 {
-    const LhatNode *named = NULL;
     bool through_self = false;
-    for (const LhatNode *entry = node->v.list.items; entry != NULL;
-         entry = entry->next) {
-        if (entry->v.entry.modifier != LHAT_DEF_DELEGATE) {
-            continue;
-        }
-        named = entry->v.entry.value;
-        through_self = named != NULL && named->kind == LHAT_NODE_MEMBER;
-        break;  // the parser allows one
-    }
+    const LhatNode *named = delegate_of(node, &through_self);
     if (named == NULL || instance == NULL) {
         return true;  // nothing to settle
     }
@@ -4010,7 +4032,11 @@ static bool add_delegated_members(Checker *c, const LhatNode *node,
             written_here(c, node, m->name, m->name_length)) {
             continue;
         }
-        set_member(c, instance, m->name, m->name_length, m->type);
+        LhatTypeMember *lent =
+            set_member(c, instance, m->name, m->name_length, m->type);
+        if (lent != NULL) {
+            lent->delegated = true;
+        }
     }
     return true;
 }
@@ -4559,8 +4585,11 @@ LhatType *chk_infer_def(Checker *c, const LhatNode *node, LhatType *base)
 
     // 14.5: composition is ordered, and the derived side is written against
     // what the base already provides.
-    copy_members(c, definition, base);
-    copy_members(c, instance, chk_instance_of(base));
+    // 14.7改2: what an earlier part's delegate lent is undone when this one
+    // declares its own -- see copy_members.
+    bool own_delegate = delegate_of(node, NULL) != NULL;
+    copy_members(c, definition, base, own_delegate);
+    copy_members(c, instance, chk_instance_of(base), own_delegate);
 
     // 14.11改: the new every definition has is put here, before anything is
     // written -- so a written one is a second member of that name and 14.12

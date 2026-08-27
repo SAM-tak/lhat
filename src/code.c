@@ -329,6 +329,7 @@ const char *lhat_opcode_name(LhatOpcode op)
         case LHAT_BC_ISNIL:       return "isnil";
         case LHAT_BC_NEWINSTANCE: return "newinstance";
         case LHAT_BC_SETPROTO:    return "setproto";
+        case LHAT_BC_SETDELEGATE: return "setdelegate";
         case LHAT_BC_BOX:         return "box";
         case LHAT_BC_CALLMETHOD:  return "callmethod";
         case LHAT_BC_TAILCALL:    return "tailcall";

@@ -459,6 +459,40 @@ static void test_definitions(void)
 
     // 14.12: an override^ over an overloaded name replaces the one arm it
     // overlaps, so a plain write would take the whole group with it.
+    // 14.5 with 14.7改2: the machine holds one delegate key per definition,
+    // so a composition answers through the last part to declare one. The
+    // type side of this is in test_check_def.c; here is what runs.
+    LHAT_TEST("a composition delegates through the last part that said so");
+    run_checked_text(&r,
+                     "let^ P = def^{ which = f^self^ -> number^ { 1 } }\n"
+                     "let^ Q = def^{ which = f^self^ -> number^ { 2 } }\n"
+                     "let^ First = def^{\n"
+                     "    self^{ abstract^ a : P },\n"
+                     "    override^new = f^ { self^{ a = P.new() } },\n"
+                     "    delegate^ self^.a,\n"
+                     "}\n"
+                     "let^ Second = First .. def^{\n"
+                     "    self^{ abstract^ b : Q },\n"
+                     "    override^new = f^ { self^{ a = P.new(), b = Q.new() } },\n"
+                     "    delegate^ self^.b,\n"
+                     "}\n"
+                     "return^ Second.new().which()\n");
+    CHECK_INTEGER(&r, 2);
+    run_dispose(&r);
+
+    LHAT_TEST("and through the base's when the later part declares none");
+    run_checked_text(&r,
+                     "let^ P = def^{ which = f^self^ -> number^ { 1 } }\n"
+                     "let^ First = def^{\n"
+                     "    self^{ abstract^ a : P },\n"
+                     "    override^new = f^ { self^{ a = P.new() } },\n"
+                     "    delegate^ self^.a,\n"
+                     "}\n"
+                     "let^ Second = First .. def^{ self^{ } }\n"
+                     "return^ Second.new().which()\n");
+    CHECK_INTEGER(&r, 1);
+    run_dispose(&r);
+
     // 02 の 13.11 with 14.12: the arms of one name are one value, and it is
     // a subroutine -- the checker writes the name's type as one of them, so
     // fits^ has to take the group where that is asked for.

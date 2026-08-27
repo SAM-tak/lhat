@@ -131,6 +131,13 @@ typedef struct LhatTypeMember {
     // there, and one of these was not -- so that question skips them. The
     // relations do not read this, as with the three above.
     bool provisional;
+    // 02 の 14.7改2: lent by what this definition delegates to rather than
+    // written on it. A composition keeps ONE delegate -- the last part to
+    // declare one -- so a part that declares its own drops what an earlier
+    // one's lent, the way the machine does by holding a single delegate key.
+    // What the earlier part WROTE stays: only the loan is undone. As with
+    // the marks above, the relations do not read this.
+    bool delegated;
 #if LHAT_WITH_RESOLUTIONS
     // 07 の 4 章: where this member was written, and in which unit -- 14.10
     // looks a member up in a type rather than in a scope, so nothing else

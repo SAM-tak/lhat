@@ -3055,12 +3055,14 @@ static void compile_def(Compiler *c, const LhatNode *node, uint8_t into)
     // composition and may be a '..' rather than a def^ at all (14.5). The
     // last part to declare one wins, the way a member written later does.
     const LhatNode *delegate = NULL;
+    size_t delegate_part = 0;
     for (size_t i = 0; i < chain.count; i++) {
         for (const LhatNode *entry = chain.parts[i]->v.list.items;
              entry != NULL; entry = entry->next) {
             if (entry->v.entry.modifier == LHAT_DEF_DELEGATE &&
                 entry->v.entry.value != NULL) {
                 delegate = entry->v.entry.value;
+                delegate_part = i;
             }
         }
     }
@@ -3068,8 +3070,18 @@ static void compile_def(Compiler *c, const LhatNode *node, uint8_t into)
         bool through_self = delegate->kind == LHAT_NODE_MEMBER;
         const char *name = NULL;
         size_t length = 0;
-        if (!node_name(c, through_self ? delegate->v.access.argument : delegate,
-                       &name, &length)) {
+        // 03 の 4.3, as the two loops above: the part this was written in may
+        // be another unit's, and the offsets in it mean nothing against this
+        // one's text. Only the reading of the name moves -- the bytes it
+        // answers belong to that unit's lexer and outlive this, and
+        // load_string_bytes copies them.
+        const LhatLexer *enclosing_lexer = c->lexer;
+        c->lexer = chain.lexers[delegate_part];
+        bool named =
+            node_name(c, through_self ? delegate->v.access.argument : delegate,
+                      &name, &length);
+        c->lexer = enclosing_lexer;
+        if (!named) {
             fail(c, LHAT_COMPILE_UNSUPPORTED);
             return;
         }

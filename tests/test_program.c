@@ -3466,6 +3466,50 @@ static void test_composing_across_units(void)
     }
     lhat_program_dispose(&program);
 
+    // 02 の 14.7改2 with 03 の 4.3: the delegate the base declared, when the
+    // base was written in another unit. The chain crosses (def_chain_across),
+    // so the entry is found -- but its spelling is that unit's, and reading
+    // it against this one's text names whatever happens to sit at the
+    // offset. The checker had no such split and took the program, which is
+    // 4.2's disagreement: it checked and would not run.
+    LHAT_TEST("14.7改2: a delegate the base declared crosses units");
+    {
+        static const File delegating[] = {
+            {"lib.lh",
+         "module^ ns.lib\n"
+         "public^ let^ Held = def^{ self^{ }, read = f^self^ -> number^ { return^ 7 } }\n"
+         "public^ let^ Wrapper = def^{\n"
+         "  self^{ abstract^ held : Held },\n"
+         "  override^new = f^ { self^{ held = Held.new() } },\n"
+         "  delegate^ self^.held,\n"
+         "}\n"},
+            {"main.lh",
+         "let^ lib = require^ \"lib.lh\"\n"
+         "let^ Mine = lib.Wrapper .. def^{\n"
+         "  self^{ },\n"
+         "  twice = f^self^ -> number^ { return^ self^.read() * 2 },\n"
+         "}\n"
+         "let^ m = Mine.new()\n"
+         "return^ m.read() + m.twice()\n"},
+        };
+        program_with(&program, &disk, delegating, 2);
+        const LhatUnit *root = lhat_program_check(&program, "main.lh");
+        LHAT_CHECK(root != NULL && !lhat_program_has_errors(&program),
+                   "the program checked");
+        bool compiled = lhat_program_compile(&program);
+        LHAT_CHECK(compiled, "every unit compiled");
+        if (compiled && root != NULL) {
+            LhatMachine *machine = lhat_machine_new();
+            LhatRunResult ran = lhat_run(machine, lhat_unit_proto(root));
+            LHAT_CHECK_EQ_INT(ran.status, LHAT_RUN_OK);
+            // 7 from outside the wrapper and 14 from inside one of its own
+            // members -- both reach the delegate the other unit declared.
+            LHAT_CHECK_EQ_INT(lhat_as_integer(ran.value), 21);
+            lhat_machine_dispose(machine);
+        }
+    }
+    lhat_program_dispose(&program);
+
     // 05 の 4 章: what another unit may name is what this one published.
     LHAT_TEST("but only what that unit published");
     {

@@ -1829,6 +1829,60 @@ static void test_delegate(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
+    // 14.5 with 14.7改2: a composition keeps ONE delegate, the last part to
+    // declare one -- that is what the machine holds, a single key on the
+    // definition. So a part that declares its own undoes what the base's
+    // lent: the type here has to say the same, or a name reaches one answer
+    // when checked and another when run (03 の 4.2).
+    LHAT_TEST("the last part's delegate is the one, in the type too");
+    check_text(&u,
+               "var^ P = def^{ which = f^self^ -> number^ { 1 } }\n"
+               "var^ Q = def^{ which = f^self^ -> string^ { \"two\" } }\n"
+               "var^ First = def^{\n"
+               "    self^{ abstract^ a : P },\n"
+               "    override^new = f^ { self^{ a = P.new() } },\n"
+               "    delegate^ self^.a,\n"
+               "}\n"
+               "var^ Second = First .. def^{\n"
+               "    self^{ abstract^ b : Q },\n"
+               "    override^new = f^ { self^{ a = P.new(), b = Q.new() } },\n"
+               "    delegate^ self^.b,\n"
+               "}\n"
+               "var^ s : string^ = Second.new().which()\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // And a part declaring none keeps what the base lent -- the machine
+    // emits the base part's delegate for the composed definition, so there
+    // is one and it is that one.
+    LHAT_TEST("a part declaring none keeps the base's delegate");
+    check_text(&u,
+               "var^ P = def^{ which = f^self^ -> number^ { 1 } }\n"
+               "var^ First = def^{\n"
+               "    self^{ abstract^ a : P },\n"
+               "    override^new = f^ { self^{ a = P.new() } },\n"
+               "    delegate^ self^.a,\n"
+               "}\n"
+               "var^ Second = First .. def^{ self^{ } }\n"
+               "var^ n : number^ = Second.new().which()\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // What the base WROTE is not a loan. A later delegate does not undo it,
+    // and 14.7's order still puts it in front.
+    LHAT_TEST("what the base wrote outlives a later delegate");
+    check_text(&u,
+               "var^ Q = def^{ which = f^self^ -> string^ { \"two\" } }\n"
+               "var^ First = def^{ self^{ }, which = f^self^ -> number^ { 1 } }\n"
+               "var^ Second = First .. def^{\n"
+               "    self^{ abstract^ b : Q },\n"
+               "    override^new = f^ { self^{ b = Q.new() } },\n"
+               "    delegate^ self^.b,\n"
+               "}\n"
+               "var^ n : number^ = Second.new().which()\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
     // 11.3: between two def^ the identity is the shape, so a wrapper that
     // delegates everything the other declares stands where it is asked for.
     // That is not delegation being special -- it is what structural typing
