@@ -3897,6 +3897,41 @@ static bool member_takes_receiver(const LhatType *type)
     return false;
 }
 
+// 14.7改2: whether this def^ writes the name itself -- as a member or as a
+// field of its template. 14.7's order puts what is written here in front of
+// what a delegate lends, and asking the tree says that whatever a walk has
+// inferred so far: a member whose type is only known once its body is walked
+// still WINS, and a reading that waited for it to land on the type would
+// hand the seat to the delegate in the meantime.
+static bool written_here(Checker *c, const LhatNode *node, const char *name,
+                         size_t length)
+{
+    for (const LhatNode *entry = node->v.list.items; entry != NULL;
+         entry = entry->next) {
+        const char *wrote = NULL;
+        size_t wrote_length = 0;
+        if (entry->v.entry.key != NULL) {
+            if (chk_node_name(c, entry->v.entry.key, &wrote, &wrote_length) &&
+                wrote_length == length && memcmp(wrote, name, length) == 0) {
+                return true;
+            }
+            continue;
+        }
+        if (entry->v.entry.modifier == LHAT_DEF_DELEGATE ||
+            entry->v.entry.value == NULL) {
+            continue;
+        }
+        for (const LhatNode *field = entry->v.entry.value->v.list.items;
+             field != NULL; field = field->next) {
+            if (chk_node_name(c, field->v.entry.key, &wrote, &wrote_length) &&
+                wrote_length == length && memcmp(wrote, name, length) == 0) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
 // 14.7改2: the members of what this definition delegates to, laid into the
 // section its instances carry.
 //
@@ -3904,8 +3939,15 @@ static bool member_takes_receiver(const LhatType *type)
 // with an optional prefix: 14.3 declares fields and members apart, so a name
 // may be both, and 'self^.x' against 'x' is how a writer says which. The
 // same split decides where the answer is looked for at run time.
-static void add_delegated_members(Checker *c, const LhatNode *node,
-                                  LhatType *definition, LhatType *instance)
+//
+// Answers whether it settled. A delegate naming a member whose type only its
+// own body knows cannot settle before that body is walked, so this is asked
+// once per round of the walk (03 の 3.4改2) and reports only on the last --
+// `report` is what tells the two apart, and a walk that did not settle says
+// so through read_provisional, which is what buys the next round.
+static bool add_delegated_members(Checker *c, const LhatNode *node,
+                                  LhatType *definition, LhatType *instance,
+                                  bool report)
 {
     const LhatNode *named = NULL;
     bool through_self = false;
@@ -3919,29 +3961,38 @@ static void add_delegated_members(Checker *c, const LhatNode *node,
         break;  // the parser allows one
     }
     if (named == NULL || instance == NULL) {
-        return;
+        return true;  // nothing to settle
     }
 
     const LhatNode *spelt = through_self ? named->v.access.argument : named;
     const char *name = NULL;
     size_t length = 0;
     if (!chk_node_name(c, spelt, &name, &length)) {
-        return;
+        return true;  // not a name; the walk of it says what is wrong
     }
     // Looked for where the spelling said, and nowhere else. Finding it in the
     // other place would be answering a question that was not asked.
     const LhatTypeMember *held =
         chk_find_member(through_self ? instance : definition, name, length);
-    if (held == NULL) {
-        chk_report_named(c, spelt, LHAT_CHECK_ERR_NO_MEMBER, name, length);
-        return;
-    }
     // 05 の 8.8 with 14.10: a host type carries its members like any other
     // table, and 8.8改's flatten has already put the base's among them.
-    const LhatType *from = held->type;
+    const LhatType *from = held != NULL ? held->type : NULL;
     if (from == NULL || from->kind != LHAT_TYPE_TABLE) {
-        chk_report(c, spelt, LHAT_CHECK_ERR_NO_MEMBER);
-        return;
+        // 14.13 gives a member no way to carry a written type, so a static
+        // one holding what a call answered is known only once that entry has
+        // been walked. Saying it was read ahead is what asks for the round
+        // that walks it; on the last round `report` is set and this is the
+        // answer.
+        if (!report) {
+            c->read_provisional = true;
+            return false;
+        }
+        if (held == NULL) {
+            chk_report_named(c, spelt, LHAT_CHECK_ERR_NO_MEMBER, name, length);
+        } else {
+            chk_report(c, spelt, LHAT_CHECK_ERR_NO_MEMBER);
+        }
+        return true;
     }
     // 14.7: an instance sees what the delegate's own instances would see.
     const LhatType *reachable =
@@ -3952,12 +4003,16 @@ static void add_delegated_members(Checker *c, const LhatNode *node,
         if (!member_takes_receiver(m->type)) {
             continue;
         }
-        // 14.7's order, in the type: what this definition wrote wins.
-        if (chk_find_member(instance, m->name, m->name_length) != NULL) {
+        // 14.7's order, in the type: what this definition wrote wins -- and
+        // it wins whether or not the walk has put it down yet, which is what
+        // lets this run before the walk is over.
+        if (chk_find_member(instance, m->name, m->name_length) != NULL ||
+            written_here(c, node, m->name, m->name_length)) {
             continue;
         }
         set_member(c, instance, m->name, m->name_length, m->type);
     }
+    return true;
 }
 
 // 14.15改3: which fields a written new gives a value to.
@@ -4677,6 +4732,14 @@ LhatType *chk_infer_def(Checker *c, const LhatNode *node, LhatType *base)
     chk_rounds_begin(c, &rounds, seen != NULL ? entry_count : 0);
 
     do {
+        // 14.7改2: before the bodies, so a member reaches through self^ what
+        // this definition delegates to -- the whole point of writing one is
+        // that the name is the wrapper's own, and that has to hold inside it
+        // as much as outside. Silent here: the round it settles in is not
+        // known ahead, and what a round says is thrown away when another
+        // follows (chk_rounds_next), so the last one is the one that reports.
+        add_delegated_members(c, node, definition, instance, false);
+
         size_t round = rounds.round;
         size_t index = 0;
         for (const LhatNode *entry = node->v.list.items; entry != NULL;
@@ -4920,10 +4983,10 @@ LhatType *chk_infer_def(Checker *c, const LhatNode *node, LhatType *base)
         break;  // 14.12 allows one entry of the name, so there is one to read
     }
 
-    // 14.7改2: what this definition delegates to. Last, so that everything it
-    // could be shadowed by is already down -- a member written here wins, the
-    // way an instance's own field wins over the definition's (14.7).
-    add_delegated_members(c, node, definition, instance);
+    // 14.7改2: and again once every round is over, which is where a delegate
+    // that never settled is reported. What is already down is left alone, so
+    // this adds nothing the walk did not already see.
+    add_delegated_members(c, node, definition, instance, true);
 
     c->self_link = self_here.outer;
     return definition;

@@ -1776,6 +1776,59 @@ static void test_delegate(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_NO_MEMBER);
     unit_dispose(&u);
 
+    // THE OTHER HALF OF "the name is the wrapper's own". A delegated member
+    // has to be reachable from inside a member body as much as from outside
+    // -- the wrapper's own code is the first place that wants it.
+    LHAT_TEST("a member body reaches the delegate through self^");
+    check_text(&u,
+               "var^ Inner = def^{ read = f^self^ -> number^ { 1 } }\n"
+               "var^ Outer = def^{\n"
+               "    self^{ abstract^ held : Inner },\n"
+               "    override^new = f^ { self^{ held = Inner.new() } },\n"
+               "    delegate^ self^.held,\n"
+               "    ask = f^self^ -> number^ { return^ self^.read() }\n"
+               "}\n"
+               "var^ n : number^ = Outer.new().ask()\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // 14.13 gives a member no way to carry a written type, so a static one
+    // holding what a call answered is known only once its own entry has
+    // been walked -- a round later than the body that reads through it.
+    // 03 の 3.4改2's loop is what closes that, the way it closes a ring of
+    // members reading each other.
+    LHAT_TEST("and reaches one held by a static member, whose type waits");
+    check_text(&u,
+               "var^ Inner = def^{ read = f^self^ -> number^ { 1 } }\n"
+               "var^ shared = Inner.new()\n"
+               "var^ Outer = def^{\n"
+               "    self^{ },\n"
+               "    held = shared,\n"
+               "    delegate^ held,\n"
+               "    ask = f^self^ -> number^ { return^ self^.read() }\n"
+               "}\n"
+               "var^ n : number^ = Outer.new().ask()\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // 14.7's order does not move when the reading does. The member written
+    // here wins from inside as well -- and it wins even though its own type
+    // is not down yet when the delegate is first asked, which is why what
+    // this def^ WROTE is what the order reads, not what has landed so far.
+    LHAT_TEST("a member written here shadows the delegate from inside too");
+    check_text(&u,
+               "var^ Inner = def^{ read = f^self^ -> string^ { \"a\" } }\n"
+               "var^ Outer = def^{\n"
+               "    self^{ abstract^ held : Inner },\n"
+               "    override^new = f^ { self^{ held = Inner.new() } },\n"
+               "    delegate^ self^.held,\n"
+               "    read = f^self^ -> number^ { 1 },\n"
+               "    ask = f^self^ -> number^ { return^ self^.read() }\n"
+               "}\n"
+               "var^ n : number^ = Outer.new().ask()\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
     // 11.3: between two def^ the identity is the shape, so a wrapper that
     // delegates everything the other declares stands where it is asked for.
     // That is not delegation being special -- it is what structural typing

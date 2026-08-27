@@ -4448,6 +4448,68 @@ static void test_empty_body(void)
     lhat_program_dispose(&program);
 }
 
+// 02 の 14.7改2: what a def^ writes, when one of the entries is a delegate.
+// A host walks a definition's members by index, and both walks that answer
+// it read the template off the entry with no key -- which the delegate also
+// has. Reading its value as a list of fields is reading a union the wrong
+// way, so this is a crash and not a wrong answer.
+static void test_delegate_among_the_members(void)
+{
+    LhatProgram program;
+    Disk disk;
+
+    LHAT_TEST("14.7改2: a delegate entry is not the template");
+    {
+        static const File files[] = {
+            {"main.lh",
+             "module^ ns.main\n"
+             "let^ Inner = def^{ self^{ }, read = f^self^ -> number^ { return^ 1 } }\n"
+             "public^ let^ Outer = def^{\n"
+             "  self^{ ticks = 0 },\n"
+             "  shared = Inner.new(),\n"
+             "  delegate^ shared,\n"
+             "  tick = p^self^ { self^.ticks := self^.ticks + 1 },\n"
+             "}\n"}};
+        program_with(&program, &disk, files, 1);
+        const LhatUnit *unit = lhat_program_check(&program, "main.lh");
+        LHAT_CHECK(unit != NULL && !lhat_program_has_errors(&program),
+                   "checked clean");
+
+        // The entries the unit wrote: the two members and the one field.
+        // What the delegate lends is not written here, so it is not among
+        // them -- the same reading the checker has.
+        size_t count = lhat_unit_member_count(unit, "Outer");
+        LHAT_CHECK_EQ_INT(count, 3);
+        bool saw_shared = false;
+        bool saw_tick = false;
+        bool saw_ticks = false;
+        bool saw_read = false;
+        for (size_t i = 0; i < count; i++) {
+            LhatUnitMember member = lhat_unit_member(unit, "Outer", i);
+            if (member.name == NULL) {
+                continue;
+            }
+            if (member.name_length == 6 &&
+                memcmp(member.name, "shared", 6) == 0) {
+                saw_shared = true;
+            } else if (member.name_length == 4 &&
+                       memcmp(member.name, "tick", 4) == 0) {
+                saw_tick = true;
+            } else if (member.name_length == 5 &&
+                       memcmp(member.name, "ticks", 5) == 0) {
+                saw_ticks = true;
+            } else if (member.name_length == 4 &&
+                       memcmp(member.name, "read", 4) == 0) {
+                saw_read = true;
+            }
+        }
+        LHAT_CHECK(saw_shared && saw_tick && saw_ticks,
+                   "the written entries were walked");
+        LHAT_CHECK(!saw_read, "and what the delegate lends was not");
+    }
+    lhat_program_dispose(&program);
+}
+
 // 07 の 4 章 with 05 の 6.1: a unit publishes a type, and a member of it was
 // written in the unit that published it -- so a reader standing on the member
 // in another unit has somewhere to be sent, and it is not this file. The
@@ -4530,6 +4592,7 @@ int main(void)
     test_annotation_exclusion();
     test_annotation_requisite();
     test_empty_body();
+    test_delegate_among_the_members();
 #if LHAT_WITH_COMMENTS
     test_documentation();
 #endif

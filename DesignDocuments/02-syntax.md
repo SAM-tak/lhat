@@ -5762,6 +5762,26 @@ o.setPosition(v)          # self^ は o ではなく o.gdobj
 選択の余地は無い——ホスト関数は自分のタグでポインタを読む（05 の 8.8）。
 Go の embedding が同じ意味論を持つ。
 
+##### 自分のメンバの本体からも引ける
+
+委譲された名前は**ラッパ自身のもの**なので、外から引けるのと同じに
+内からも引ける。
+
+```lhat
+let^ Node2D = def^{
+    self^{ abstract^ gdobj : godot.Node2D },
+    override^new = f^ { self^{ gdobj = godot.makeNode2D() } },
+    delegate^ self^.gdobj,
+    spin = p^self^, radians:number^ { self^.setRotation(radians) },
+}
+```
+
+`self^.gdobj.setRotation(radians)` と書いても同じだが、書き分ける理由が無い
+——委譲を書いた時点で `setRotation` はこの定義のメンバである。
+
+自分が書いたメンバが勝つ順序（14.7）は内からも同じで、**書かれていること**
+で決まる。同名を書けば、その本体を読む前でも自分のほうが引かれる。
+
 ##### 引けるのは受け手を取るメンバだけ
 
 14.7 の規則がそのまま効く。委譲先の静的メンバと `new` は委譲されない。

@@ -467,8 +467,13 @@ static const LhatNode *definition_entry(const LhatUnit *unit,
             }
             continue;
         }
-        // 14.3: the one entry with no key is the template, whose own entries
-        // are the fields.
+        // 14.3 with 14.7改2: the template has no key -- and neither has the
+        // delegate entry, so what marks the template is the absence of both.
+        // What a delegate lends is not written here, and this answers what
+        // the unit's tree says.
+        if (entry->v.entry.modifier == LHAT_DEF_DELEGATE) {
+            continue;
+        }
         const LhatNode *template = entry->v.entry.value;
         if (template == NULL) {
             continue;
@@ -685,6 +690,11 @@ static const LhatNode *definition_entry_at(const LhatUnit *unit,
             if ((*seen)++ == index) {
                 return entry;
             }
+            continue;
+        }
+        // 14.7改2: the delegate entry has no key either -- see
+        // definition_entry above, which counts the same entries this does.
+        if (entry->v.entry.modifier == LHAT_DEF_DELEGATE) {
             continue;
         }
         const LhatNode *template = entry->v.entry.value;
