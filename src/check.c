@@ -292,7 +292,7 @@ Binding *chk_scope_find(Scope *scope, const char *name, size_t length, Scope **f
 }
 
 // 01 の 2.3: the stacked reach, passing over the innermost `skip`
-// bindings of the name -- it^^ is the it^ one binding out, self^^/class^^
+// bindings of the name -- it^^ is the it^ one binding out, self^^/def^^
 // the enclosing def^'s. The same search order as scope_find, so the two
 // agree on which binding is "innermost".
 Binding *chk_scope_find_skipping(Scope *scope, const char *name,
@@ -1077,19 +1077,19 @@ static LhatType *resolve_written_type(Checker *c, const LhatNode *node)
                 return link->type;
             }
 
-            // 13 章 has no such type as self^ or class^. They are the
+            // 13 章 has no such type as self^ or def^. They are the
             // receiver and the definition being built (14.4, 03 の 5.10),
             // and both are values -- 'p^self^;' writes a receiver into a
             // signature, which is resolve_func_type's business, not a name
             // standing for a type.
             //
-            // class^ needs saying separately: it is bound to the def^ under
+            // def^ needs saying separately: it is bound to the def^ under
             // construction, so names_a_type below would let it through. What
             // that answers with is a type holding itself, and the relations
             // walk one of those until the stack is gone -- a crash with no
             // diagnostic at all.
             if (chk_name_is(name, length, "self^") ||
-                chk_name_is(name, length, "class^")) {
+                chk_name_is(name, length, "def^")) {
                 chk_report(c, node, LHAT_CHECK_ERR_UNKNOWN_TYPE);
                 return chk_simple(c, LHAT_TYPE_UNKNOWN);
             }

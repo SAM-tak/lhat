@@ -1504,7 +1504,7 @@ static LhatValue table_get_in(const LhatTable *table, LhatValue key,
     // receiver. 14.11's new and a static member are the definition's own, and
     // calling one with an instance before the dot would hand it a receiver it
     // never asked for. A walk that starts at a definition is the other case
-    // -- 'A.new()', 'class^.somestatic()', and 14.5's walk up to a base --
+    // -- 'A.new()', 'def^.somestatic()', and 14.5's walk up to a base --
     // and passes everything.
     bool restricted = table != NULL && !table->is_definition;
 

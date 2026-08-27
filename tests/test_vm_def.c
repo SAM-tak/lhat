@@ -347,23 +347,23 @@ static void test_definitions(void)
     run_dispose(&r);
 
     // 14.11: an initialiser cannot see self^, which does not exist yet, but
-    // can see class^, which does.
-    LHAT_TEST("an initialiser sees class^");
+    // can see def^, which does.
+    LHAT_TEST("an initialiser sees def^");
     run_text(&r,
              "var^ Foo = def^{\n"
-             "  self^{ a := class^.base() },\n"
+             "  self^{ a := def^.base() },\n"
              "  base := f^ { return^ 6 },\n"
              "}\n"
              "return^ Foo.new().a\n");
     CHECK_INTEGER(&r, 6);
     run_dispose(&r);
 
-    LHAT_TEST("a method sees class^ too");
+    LHAT_TEST("a method sees def^ too");
     run_text(&r,
              "var^ Foo = def^{\n"
              "  self^{ },\n"
              "  base := f^ { return^ 4 },\n"
-             "  get := f^self^ { return^ class^.base() },\n"
+             "  get := f^self^ { return^ def^.base() },\n"
              "}\n"
              "return^ Foo.new().get()\n");
     CHECK_INTEGER(&r, 4);
@@ -488,7 +488,7 @@ static void test_definitions(void)
              "var^ Counting = def^{\n"
              "  self^{ count := 0 },\n"
              "  abstract^ step : f^ -> number^;,\n"
-             "  bump := p^self^ { self^.count := self^.count + class^.step() },\n"
+             "  bump := p^self^ { self^.count := self^.count + def^.step() },\n"
              "}\n"
              "var^ Fast = Counting .. def^{\n"
              "  self^{},\n"

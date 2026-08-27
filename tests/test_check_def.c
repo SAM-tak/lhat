@@ -64,17 +64,78 @@ static void test_definitions(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // 14.9: and class^ inside a member is the definition, so a static member
+    // 14.9: and def^ inside a member is the definition, so a static member
     // is reached from there the way it is from the name.
-    LHAT_TEST("and class^ reaches a static member from inside");
+    LHAT_TEST("and def^ reaches a static member from inside");
     check_text(&u,
                "var^ C = def^{\n"
                "    self^{ value := 0 },\n"
                "    tag := f^ -> number^ { return^ 1 },\n"
-               "    show := p^self^ -> number^ { return^ class^.tag() },\n"
+               "    show := p^self^ -> number^ { return^ def^.tag() },\n"
                "}\n"
                "var^ n : number^ = C.new().show()\n");
     CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // 14.4改: what tells the literal from the name is the brace after it --
+    // the same lookahead that divides self^{ from self^. Both are written in
+    // one body here, so what is being asked is the lookahead and not two
+    // readings that never meet.
+    LHAT_TEST("def^{ opens a literal, def^ anywhere else is the definition");
+    check_text(&u,
+               "var^ Outer = def^{\n"
+               "    self^{ },\n"
+               "    helper := f^ -> number^ { return^ 3 },\n"
+               "    build := f^self^ -> number^ {\n"
+               "        var^ Inner = def^{ self^{ },\n"
+               "            get := f^self^ -> number^ { return^ 1 } }\n"
+               "        return^ Inner.new().get() + def^.helper()\n"
+               "    },\n"
+               "}\n"
+               "var^ n : number^ = Outer.new().build()\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // A reading class^ had and nothing used. Kept on purpose, so this is
+    // where it first gets a test.
+    LHAT_TEST("def^ on its own is the definition, as a value");
+    check_text(&u,
+               "var^ C = def^{\n"
+               "    self^{ },\n"
+               "    tag := f^ -> number^ { return^ 7 },\n"
+               "    who := f^self^ -> number^ { var^ d = def^ return^ d.tag() },\n"
+               "}\n"
+               "var^ n : number^ = C.new().who()\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // 01 の 2.3: a second hat counts levels outward, which is how a body
+    // inside a nested def^ still reaches the one it was written in.
+    LHAT_TEST("def^^ walks out of a nested definition");
+    check_text(&u,
+               "var^ Outer = def^{\n"
+               "    self^{ },\n"
+               "    helper := f^ -> number^ { return^ 3 },\n"
+               "    build := f^self^ -> number^ {\n"
+               "        var^ Inner = def^{ self^{ },\n"
+               "            get := f^self^ -> number^ { return^ def^^.helper() } }\n"
+               "        return^ Inner.new().get()\n"
+               "    },\n"
+               "}\n"
+               "var^ n : number^ = Outer.new().build()\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // 14.4改: the word is gone rather than aliased. Nothing declares class^,
+    // so it is a name like any other that nobody bound.
+    LHAT_TEST("class^ is not a name any more");
+    check_text(&u,
+               "var^ C = def^{\n"
+               "    self^{ },\n"
+               "    tag := f^ -> number^ { return^ 1 },\n"
+               "    show := f^self^ -> number^ { return^ class^.tag() },\n"
+               "}\n");
+    LHAT_CHECK(u.checked.diagnostic_count > 0, "class^ reaches nothing");
     unit_dispose(&u);
 
     // 14.16 with 05 の 8.7: what 14.16 writes out reads back as a type. The
@@ -196,7 +257,7 @@ static void test_definitions(void)
     check_text(&u,
                "var^ A = def^{\n"
                "    self^{ n := 0 },\n"
-               "    first := p^self^ -> number^ { return^ class^.limit },\n"
+               "    first := p^self^ -> number^ { return^ def^.limit },\n"
                "    limit := 10,\n"
                "}\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_NO_MEMBER);
@@ -392,13 +453,13 @@ static void test_definitions(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    LHAT_TEST("class^ reaches the definition's members");
+    LHAT_TEST("def^ reaches the definition's members");
     check_text(&u,
                "var^ print = p^ x:any^ { }\n"
                "var^ C = def^{\n"
                "    self^{ v := 0 },\n"
                "    origin := 7,\n"
-               "    show := p^ { print(class^.origin) },\n"
+               "    show := p^ { print(def^.origin) },\n"
                "}\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
@@ -1063,7 +1124,7 @@ static void test_composition(void)
                "var^ Counting = def^{\n"
                "    self^{ count := 0 },\n"
                "    abstract^ step : f^ -> number^;,\n"
-               "    bump := p^self^ { self^.count := self^.count + class^.step() },\n"
+               "    bump := p^self^ { self^.count := self^.count + def^.step() },\n"
                "}\n"
                "var^ Fast = Counting .. def^{\n"
                "    self^{},\n"

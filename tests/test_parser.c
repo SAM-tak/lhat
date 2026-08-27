@@ -3164,8 +3164,8 @@ static void test_definitions(void)
     }
     parse_dispose(&p);
 
-    LHAT_TEST("class^ is an ordinary value");
-    parse_text(&p, "s := p^ { print(class^.staticProperty) }");
+    LHAT_TEST("def^ is an ordinary value");
+    parse_text(&p, "s := p^ { print(def^.staticProperty) }");
     LHAT_CHECK_EQ_INT(error_count(&p), 0);
     parse_dispose(&p);
 
@@ -3908,7 +3908,7 @@ static void test_typeof(void)
 }
 
 // 01 の 2.3: a second hat counts levels, and only it^/this^/self^/
-// class^ have levels to count -- everywhere else, and for every other word,
+// def^ have levels to count -- everywhere else, and for every other word,
 // the extra hats are refused where they are written.
 static void test_stacked_hats(void)
 {

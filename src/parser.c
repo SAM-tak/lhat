@@ -822,7 +822,7 @@ static LhatNode *parse_type(Parser *p)
 // ---------------------------------------------------------------------------
 
 // 01 ã® 2.3: only these words have levels for a second hat to count --
-// it^ this^ self^ class^ reach the enclosing focus, subroutine, receiver or
+// it^ this^ self^ def^ reach the enclosing focus, subroutine, receiver or
 // definition (compiled as stacked reaches -- vm.c). break^ and
 // the '$' specifier read their counts on paths of their own. super^^ is
 // refused on purpose (14.12æ¹): which implementation an override wraps is
@@ -833,7 +833,7 @@ static bool word_stacks(const Parser *p, const LhatToken *token)
     return token_is_hat_stacked(p, token, "it") ||
            token_is_hat_stacked(p, token, "this") ||
            token_is_hat_stacked(p, token, "self") ||
-           token_is_hat_stacked(p, token, "class");
+           token_is_hat_stacked(p, token, "def");
 }
 
 // The refusal for a name position that never stacks: a key, a type name, a
@@ -1781,7 +1781,11 @@ static LhatNode *parse_primary(Parser *p)
             if (check_hat(p, "for")) {
                 return parse_for(p);
             }
-            if (check_hat(p, "def")) {
+            // 14.4改: 'def^{' opens a literal; 'def^' anywhere else names
+            // the definition being written, the way 'self^{' and 'self^'
+            // divide between the template and the receiver. Read as an
+            // ordinary hat identifier here, so the scope answers it.
+            if (check_hat(p, "def") && is_op(&p->ahead, LHAT_OP_LBRACE)) {
                 return parse_def(p);
             }
             // 02 ã® 14.16: always parenthesized, and always exactly one

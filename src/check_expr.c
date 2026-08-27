@@ -724,7 +724,7 @@ LhatType *chk_infer_name(Checker *c, const LhatNode *node)
     }
 
     // 01 の 2.3: the stacked reach. this^^ walks the chain of
-    // enclosing bodies; it^^/self^^/class^^ walk past inner bindings of the
+    // enclosing bodies; it^^/self^^/def^^ walk past inner bindings of the
     // same name -- the same search vm.c makes, so the two agree on which
     // binding a count lands on. The parser admits no other word here.
     if (node->kind == LHAT_NODE_HAT_IDENT && node->v.name.hats > 1) {
@@ -4538,7 +4538,7 @@ LhatType *chk_infer_def(Checker *c, const LhatNode *node, LhatType *base)
         }
     }
 
-    // 14.4: class^ names the definition, and every member reaches it -- a
+    // 14.4: def^ names the definition, and every member reaches it -- a
     // static one included, since what it names is there before any instance
     // is. self^ is the other way round and is bound per member below: only
     // one that wrote it among its parameters is handed a receiver, so only
@@ -4548,7 +4548,7 @@ LhatType *chk_infer_def(Checker *c, const LhatNode *node, LhatType *base)
     members.tail = NULL;
     members.parent = c->scope;
     members.transparent = false;
-    Binding *owner = chk_scope_add(&members, "class^", 6, definition, node->offset);
+    Binding *owner = chk_scope_add(&members, "def^", 4, definition, node->offset);
     if (owner != NULL) {
         owner->reached = true;
     }
@@ -4601,7 +4601,7 @@ LhatType *chk_infer_def(Checker *c, const LhatNode *node, LhatType *base)
 
     // The fields next, so a member body sees them through self^. Inside the
     // members scope: 14.11 evaluates an initialiser once, as the definition
-    // is built, where class^ and every member are in place -- self^ is not,
+    // is built, where def^ and every member are in place -- self^ is not,
     // since no instance exists yet, and the scope holds no such name.
     if (template != NULL) {
         for (const LhatNode *field = template->v.list.items; field != NULL;

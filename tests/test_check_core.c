@@ -1987,7 +1987,7 @@ static void test_annotations(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_UNKNOWN_TYPE);
     unit_dispose(&u);
 
-    // 13 章 has no such type as self^ or class^, and outside a def^ that is
+    // 13 章 has no such type as self^ or def^, and outside a def^ that is
     // already the answer, there being no binding of either to find. Inside
     // one there is, and 05 の 2.2's one environment would otherwise hand it
     // over -- answering with a type that holds itself, which the relations walk
@@ -2002,11 +2002,11 @@ static void test_annotations(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_UNKNOWN_TYPE);
     unit_dispose(&u);
 
-    LHAT_TEST("nor is class^");
+    LHAT_TEST("nor is def^");
     check_text(&u,
                "var^ V = def^{\n"
                "  self^{ n := 0 },\n"
-               "  op^+ := f^self^, r:class^ -> number^ { return^ 0 },\n"
+               "  op^+ := f^self^, r:def^ -> number^ { return^ 0 },\n"
                "}\n"
                "var^ x = V.new() + V.new()\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_UNKNOWN_TYPE);

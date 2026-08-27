@@ -200,7 +200,7 @@ typedef struct Compiler {
     size_t def_capacity;
 
     // The definition being compiled, whose members the entries write and
-    // whose prototype the template builds; class^ names it.
+    // whose prototype the template builds; def^ names it.
     const DefChain *building;
 
     // 02 の 14.11: this body is a written new's, and the slot is the copy it
@@ -2845,7 +2845,7 @@ static void compile_def(Compiler *c, const LhatNode *node, uint8_t into)
     // structural) -- 14.17改 does, to tell whose the member names are.
     emit(c, lhat_encode_abc(LHAT_BC_NEWTABLE, into, 1, 0));
 
-    // class^ names the definition (14.4), and binding it as an ordinary local
+    // def^ names the definition (14.4), and binding it as an ordinary local
     // is what lets a method or an initialiser reach it -- through the capture
     // of 5.4, with nothing special added.
     size_t local_mark = c->local_count;
@@ -2853,13 +2853,13 @@ static void compile_def(Compiler *c, const LhatNode *node, uint8_t into)
         fail(c, LHAT_COMPILE_TOO_COMPLEX);
         return;
     }
-    // 01 の 8 章: the def^'s '{' opens a scope for '$^' to count, and class^
-    // is a name of it -- the checker binds self^ and class^ into the Scope
+    // 01 の 8 章: the def^'s '{' opens a scope for '$^' to count, and def^
+    // is a name of it -- the checker binds self^ and def^ into the Scope
     // it pushes here, so both sides count this one the same.
     c->scope_depth++;
     Local *local = &c->locals[c->local_count++];
-    local->name = "class^";
-    local->length = 6;
+    local->name = "def^";
+    local->length = 4;
     local->reg = into;
     local->depth = c->scope_depth;
     local->width = 1;
@@ -2925,7 +2925,7 @@ static void compile_def(Compiler *c, const LhatNode *node, uint8_t into)
             // right now -- reading it here is reading it before the write.
             //
             // It is an ordinary local, so a body reaches it through the
-            // capture of 5.4 the way it reaches class^. Bound before the
+            // capture of 5.4 the way it reaches def^. Bound before the
             // value is compiled, since that is when the capture is made.
             //
             // For new the name means the hook chain instead: what was under
@@ -3000,7 +3000,7 @@ static void compile_def(Compiler *c, const LhatNode *node, uint8_t into)
         c->foreign_module = enclosing_module;
     }
 
-    // 14.11: the prototype, built last so an initialiser reads class^ with
+    // 14.11: the prototype, built last so an initialiser reads def^ with
     // every member in place. Base first, in the order the fields were
     // written; a later part's initialiser for a field the base also defaults
     // simply overwrites (14.5). A declared field (14.15) has no initialiser
@@ -3122,7 +3122,7 @@ static void compile_default_new(Compiler *c, const LhatNode *node,
     uint8_t slot = reserve(&inner);
     uint8_t inner_mark = inner.next_register;
     uint8_t owner = reserve(&inner);
-    if (!resolve_name(&inner, "class^", 6, owner)) {
+    if (!resolve_name(&inner, "def^", 4, owner)) {
         fail(&inner, LHAT_COMPILE_UNDEFINED);
         return;
     }
@@ -3668,7 +3668,7 @@ static void compile_subroutine_as(Compiler *c, const LhatNode *node,
         self_slot = reserve(&inner);
         uint8_t owner_mark = inner.next_register;
         uint8_t owner = reserve(&inner);
-        if (!resolve_name(&inner, "class^", 6, owner)) {
+        if (!resolve_name(&inner, "def^", 4, owner)) {
             fail(&inner, LHAT_COMPILE_UNDEFINED);
             return;
         }
@@ -4359,7 +4359,7 @@ static void compile_expression(Compiler *c, const LhatNode *node, uint8_t into)
                 return;
             }
             // 01 の 2.3: a stacked reach -- it^^ the enclosing focus,
-            // self^^/class^^ the enclosing def^'s, this^^ the enclosing
+            // self^^/def^^ the enclosing def^'s, this^^ the enclosing
             // subroutine. The parser only lets those four through. The first
             // three are ordinary bindings resolved past their inner shadows;
             // this^ is an instruction rather than a binding, so its stacked

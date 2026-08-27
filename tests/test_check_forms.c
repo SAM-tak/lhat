@@ -110,14 +110,14 @@ static void test_scope_specifiers(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // 14.4 binds class^ into the scope a def^'s '{' opens, so that scope is
-    // one for a specifier to count. 01 の 2.3: class^ is its own name, so
+    // 14.4 binds def^ into the scope a def^'s '{' opens, so that scope is
+    // one for a specifier to count. 01 の 2.3: def^ is its own name, so
     // the outer `class` never collides and the specifier spells the hat.
     LHAT_TEST("a def^ body is one scope too");
     check_text(&u,
                "var^ class = 1\n"
                "var^ D = def^{ self^{},\n"
-               "  m := f^self^ -> t^{} { return^ $^class^ }\n"
+               "  m := f^self^ -> t^{} { return^ $^def^ }\n"
                "}\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);

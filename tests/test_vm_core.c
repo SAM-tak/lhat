@@ -1063,7 +1063,7 @@ static void test_closures(void)
 }
 
 // 01 の 2.3: the stacked reach. it^^ is the enclosing loop's focus,
-// self^^/class^^ the enclosing def^'s, resolved past the inner binding of
+// self^^/def^^ the enclosing def^'s, resolved past the inner binding of
 // the same name; this^^ is the enclosing subroutine, captured as its maker's
 // own closure since no register ever holds one.
 static void test_stacked_hats_compile(void)
@@ -1162,12 +1162,12 @@ static void test_stacked_hats_compile(void)
     CHECK_INTEGER(&r, 8);
     run_dispose(&r);
 
-    LHAT_TEST("class^^ is the enclosing definition");
+    LHAT_TEST("def^^ is the enclosing definition");
     run_text(&r,
              "var^ Outer = def^{ self^{ x := 1 }, tag := 42,\n"
              "  m := f^self^ -> number^ {\n"
              "    var^ Inner = def^{ self^{ y := 2 },\n"
-             "      n := f^self^ -> number^ { return^ class^^.tag }\n"
+             "      n := f^self^ -> number^ { return^ def^^.tag }\n"
              "    }\n"
              "    return^ Inner.new().n()\n"
              "  }\n"
@@ -1353,15 +1353,15 @@ static void test_scope_specifiers(void)
     CHECK_INTEGER(&r, 42);
     run_dispose(&r);
 
-    // 14.4 binds class^ into the scope a def^'s '{' opens, so a specifier
+    // 14.4 binds def^ into the scope a def^'s '{' opens, so a specifier
     // written in a method counts that scope -- the same one the checker
-    // pushes there. 01 の 2.3: class^ is its own name now, so the outer
+    // pushes there. 01 の 2.3: def^ is its own name now, so the outer
     // `class` never collides with it and the specifier spells the hat.
     LHAT_TEST("a def^ body is one scope on this side too");
     run_text(&r,
              "var^ class = 1\n"
              "var^ D = def^{ self^{ v := 7 },\n"
-             "  m := f^self^ -> string^ { return^ typeof^($^class^).signature }\n"
+             "  m := f^self^ -> string^ { return^ typeof^($^def^).signature }\n"
              "}\n"
              "return^ D.new().m()\n");
     // 14.16: compiled without checking, typeof^ answers the tag -- so the
