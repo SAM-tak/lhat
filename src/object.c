@@ -1473,9 +1473,27 @@ bool lhat_takes_receiver(LhatValue value)
 
 // 03 の 5.1改: the walk both readings share. `found_in` is NULL for the
 // plain one, which asks nothing about where the answer was.
+// 14.7改2: the table a delegate answers through. A def^ instance is one
+// already; 05 の 8.8's hostdata reads its members off the table its type
+// registered, which is what makes delegating to a host value work at all.
+//
+// Anything else has no members to lend, and a delegate^ naming one answers
+// nothing rather than failing -- 04 の 11.3's line, and what the checker has
+// already refused for anyone who ran it.
+static const LhatTable *delegate_table_of(LhatValue held)
+{
+    if (lhat_is_object_kind(held, LHAT_OBJECT_HOSTDATA)) {
+        return ((const LhatHostData *)lhat_as_object(held))->members;
+    }
+    if (lhat_is_object_kind(held, LHAT_OBJECT_TABLE)) {
+        return (const LhatTable *)lhat_as_object(held);
+    }
+    return NULL;
+}
+
 static LhatValue table_get_in(const LhatTable *table, LhatValue key,
                               const LhatTable **found_in, uint32_t *found_at,
-                              bool *inherited_out)
+                              bool *inherited_out, LhatValue *through)
 {
     if (!usable_key(key)) {
         return lhat_nil();
@@ -1489,6 +1507,10 @@ static LhatValue table_get_in(const LhatTable *table, LhatValue key,
     // -- 'A.new()', 'class^.somestatic()', and 14.5's walk up to a base --
     // and passes everything.
     bool restricted = table != NULL && !table->is_definition;
+
+    // 14.7改2: the walk loses the receiver as it climbs, and a delegate is
+    // read off it -- so it is kept here.
+    const LhatTable *receiver = table;
 
     // 14.7: an instance's own fields first, then the members its definition
     // holds. 14.2 fixes the chain when the instance is made, so this walk is
@@ -1527,20 +1549,87 @@ static LhatValue table_get_in(const LhatTable *table, LhatValue key,
             return entry->value;
         }
     }
+
+    // 14.7改2: and last, what the definition delegates to. A third leg of the
+    // same walk rather than forwarding procedures put on the definition: one
+    // of those per delegated member is what writing them out by hand already
+    // was, and 4.2 wants delegation to be there whether or not anything was
+    // checked -- so it is structure, not something a compiler decided.
+    //
+    // Where the name is read from is what the spelling said. 'self^.x' means
+    // the receiver's own table, 'x' means the definition's, and 14.3 makes
+    // both possible for one name -- so this is a reading of what was written
+    // and not a search.
+    //
+    // The read is UNRESTRICTED. 14.7's rule is about what an instance may
+    // call; finding the delegate is not a call, and a definition's member
+    // holding a plain value (a shared handle, a singleton) takes no receiver
+    // and would be invisible under it.
+    const LhatTable *owner = receiver != NULL ? receiver->definition : NULL;
+    if (owner == NULL && receiver != NULL && receiver->is_definition) {
+        owner = receiver;  // reached through the definition itself
+    }
+    if (owner != NULL && !lhat_is_nil(owner->delegate_key) &&
+        // The name being asked for IS the delegate's own. Reading it below
+        // would come back here and ask again, for ever.
+        !lhat_value_equal(key, owner->delegate_key)) {
+        const LhatTable *holder =
+            owner->delegate_from_self ? receiver : owner;
+        LhatValue held =
+            holder != NULL
+                ? table_get_in(holder, owner->delegate_key, NULL, NULL, NULL,
+                               NULL)
+                : lhat_nil();
+        const LhatTable *to = delegate_table_of(held);
+        // And a delegate that reaches back to where the walk began is a ring
+        // of one. 14.2 fixes the chain at the definition, which keeps a
+        // writer from building a longer one, but this is the step that would
+        // not come back.
+        if (to == receiver || to == owner) {
+            to = NULL;
+        }
+        // One step. A delegate that delegates again is not followed: 14.2
+        // fixes the chain at the definition, and a chain of chains is the
+        // thing every prototype language ends up unable to say anything
+        // about.
+        if (to != NULL) {
+            LhatValue got =
+                table_get_in(to, key, found_in, found_at, inherited_out, NULL);
+            // 14.7改2: and WHO the answer belongs to. A delegated member runs
+            // with the delegate as its receiver -- it is the delegate's own
+            // member, and a host one reads the pointer off its own tag
+            // (05 の 8.8), so there is no other receiver it could take.
+            //
+            // Reported rather than bound into a value: binding it would be
+            // the forwarding procedure this design is written to avoid.
+            if (through != NULL && !lhat_is_nil(got)) {
+                *through = held;
+            }
+            // 5.1改: the place is the delegate's, and what a cache would be
+            // trusting is a chain of two tables plus a field read. Not yet --
+            // the reading is right first, and bench/ says whether the rest is
+            // worth it.
+            if (found_in != NULL) {
+                *found_in = NULL;
+            }
+            return got;
+        }
+    }
     return lhat_nil();
 }
 
 LhatValue lhat_table_locate(const LhatTable *table, LhatValue key,
                             const LhatTable **found_in, uint32_t *found_at,
-                            bool *inherited)
+                            bool *inherited, LhatValue *through)
 {
     *found_in = NULL;
-    return table_get_in(table, key, found_in, found_at, inherited);
+    *through = lhat_nil();
+    return table_get_in(table, key, found_in, found_at, inherited, through);
 }
 
 LhatValue lhat_table_get(const LhatTable *table, LhatValue key)
 {
-    return table_get_in(table, key, NULL, NULL, NULL);
+    return table_get_in(table, key, NULL, NULL, NULL, NULL);
 }
 
 // 05 の 8.9改: a lookup asking with the bare value -- `t[vec]`. Everything

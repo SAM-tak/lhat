@@ -1608,6 +1608,135 @@ static void test_prototype(void)
     unit_dispose(&u);
 }
 
+// 14.7改2: the type side of delegate^. The delegated members join the
+// section an instance carries (14.7), so a wrapper satisfies a structure
+// written for what it delegates to -- which is the whole point of writing
+// one rather than a hundred forwarding members.
+static void test_delegate(void)
+{
+    Unit u;
+
+    LHAT_TEST("a delegated member is part of what an instance carries");
+    check_text(&u,
+               "var^ Inner = def^{ read = f^self^ -> number^ { 1 } }\n"
+               "var^ Outer = def^{\n"
+               "    self^{ abstract^ held : Inner },\n"
+               "    override^new = f^ { self^{ held = Inner.new() } },\n"
+               "    delegate^ self^.held\n"
+               "}\n"
+               "var^ n : number^ = Outer.new().read()\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // 14.10: and so a structure written for the delegate's shape takes the
+    // wrapper. This is what the feature is for.
+    LHAT_TEST("a wrapper satisfies a structure written for the delegate");
+    check_text(&u,
+               "var^ Inner = def^{ read = f^self^ -> number^ { 1 } }\n"
+               "var^ Outer = def^{\n"
+               "    self^{ abstract^ held : Inner },\n"
+               "    override^new = f^ { self^{ held = Inner.new() } },\n"
+               "    delegate^ self^.held\n"
+               "}\n"
+               "var^ takes = f^ x:t^{ read : f^self^ -> number^; } -> number^"
+               " { x.read() }\n"
+               "var^ n = takes(Outer.new())\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("a member written here shadows the delegate's, in the type too");
+    check_text(&u,
+               "var^ Inner = def^{ read = f^self^ -> string^ { \"a\" } }\n"
+               "var^ Outer = def^{\n"
+               "    self^{ abstract^ held : Inner },\n"
+               "    override^new = f^ { self^{ held = Inner.new() } },\n"
+               "    read = f^self^ -> number^ { 1 },\n"
+               "    delegate^ self^.held\n"
+               "}\n"
+               "var^ n : number^ = Outer.new().read()\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // THE REASON THERE ARE TWO SPELLINGS. 14.3 declares fields and members
+    // apart, so one name may be both -- and then 'self^.store' and 'store'
+    // reach different values with different members.
+    LHAT_TEST("self^.name and a bare name reach different things");
+    check_text(&u,
+               "var^ Field = def^{ fromField = f^self^ -> number^ { 1 } }\n"
+               "var^ Member = def^{ fromMember = f^self^ -> number^ { 2 } }\n"
+               "var^ A = def^{\n"
+               "    self^{ abstract^ store : Field },\n"
+               "    override^new = f^ { self^{ store = Field.new() } },\n"
+               "    delegate^ self^.store\n"
+               "}\n"
+               "var^ n = A.new().fromField()\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("and the bare spelling takes the definition's member");
+    check_text(&u,
+               "var^ Member = def^{ fromMember = f^self^ -> number^ { 2 } }\n"
+               "var^ B = def^{\n"
+               "    self^{ },\n"
+               "    store = Member.new(),\n"
+               "    delegate^ store\n"
+               "}\n"
+               "var^ n = B.new().fromMember()\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // Looked for where the spelling said and nowhere else -- finding it in
+    // the other place would be answering a question nobody asked.
+    LHAT_TEST("self^. does not reach a member of the definition");
+    check_text(&u,
+               "var^ Member = def^{ m = f^self^ -> number^ { 2 } }\n"
+               "var^ B = def^{\n"
+               "    self^{ },\n"
+               "    store = Member.new(),\n"
+               "    delegate^ self^.store\n"
+               "}\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_NO_MEMBER);
+    unit_dispose(&u);
+
+    LHAT_TEST("and a bare name does not reach a field of the template");
+    check_text(&u,
+               "var^ Inner = def^{ m = f^self^ -> number^ { 2 } }\n"
+               "var^ B = def^{\n"
+               "    self^{ abstract^ held : Inner },\n"
+               "    override^new = f^ { self^{ held = Inner.new() } },\n"
+               "    delegate^ held\n"
+               "}\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_NO_MEMBER);
+    unit_dispose(&u);
+
+    LHAT_TEST("a name nothing declares is refused");
+    check_text(&u,
+               "var^ B = def^{ self^{ }, delegate^ nothing }\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_NO_MEMBER);
+    unit_dispose(&u);
+
+    // 11.3: between two def^ the identity is the shape, so a wrapper that
+    // delegates everything the other declares stands where it is asked for.
+    // That is not delegation being special -- it is what structural typing
+    // says once the members are there.
+    //
+    // A host type is the one place that gives way (05 の 8.8), and a wrapper
+    // does NOT stand where one of those is asked. That case belongs where
+    // there is a host type to ask with: test_hostdata_base.c.
+    LHAT_TEST("between def^ the wrapper conforms, because the shape does");
+    check_text(&u,
+               "var^ Inner = def^{ read = f^self^ -> number^ { 1 } }\n"
+               "var^ Outer = def^{\n"
+               "    self^{ abstract^ held : Inner },\n"
+               "    override^new = f^ { self^{ held = Inner.new() } },\n"
+               "    delegate^ self^.held\n"
+               "}\n"
+               "var^ takes = f^ x:Inner -> number^ { x.read() }\n"
+               "var^ n = takes(Outer.new())\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+}
+
 int main(void)
 {
     test_definitions();
@@ -1616,5 +1745,6 @@ int main(void)
     test_field_types();
     test_new_fills_fields();
     test_prototype();
+    test_delegate();
     return lhat_test_report("test_check_def");
 }

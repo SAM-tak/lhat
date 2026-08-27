@@ -111,6 +111,21 @@ typedef struct LhatTable {
     // metatable, which 14.1 refuses.
     const struct LhatTable *definition;
 
+    // 14.7改2: what this definition delegates to -- the name, and where to
+    // look for it. nil^ where nothing is delegated, which is every table but
+    // a definition that wrote delegate^.
+    //
+    // `delegate_from_self` is the 'self^.x' spelling against the bare 'x':
+    // 14.3 declares fields and members apart, so one name may be both, and
+    // which was meant decides which table the walk reads it out of. The two
+    // are not one form with an optional prefix.
+    //
+    // The key is a chunk constant (born black, never swept), so nothing here
+    // needs a barrier -- gc.c marks it all the same, since what may be put
+    // here is not this file's to promise.
+    LhatValue delegate_key;
+    bool delegate_from_self;
+
     // 14.9: made by a def^ rather than written as a table literal. `definition`
     // above answers the same question for an instance, and this is the other
     // half -- the definition itself is a table nothing points at that way.
@@ -874,9 +889,15 @@ LhatValue lhat_table_get(const LhatTable *table, LhatValue key);
 //
 // What a member cache remembers, so that a site meeting the same shape again
 // reads the place instead of walking to it.
+// 14.7改2: `through` is the value a delegate^ went through when the answer
+// was found that way, and nil^ otherwise -- what a call has to pass as the
+// receiver, since a delegated member is the delegate's own and takes no
+// other. Answered rather than bound into the value: binding it would make
+// one forwarding procedure per delegated member, which is what writing them
+// out by hand already was.
 LhatValue lhat_table_locate(const LhatTable *table, LhatValue key,
                             const LhatTable **found_in, uint32_t *found_at,
-                            bool *inherited);
+                            bool *inherited, LhatValue *through);
 
 // 05 の 8.9: a registered field decoded off a host value's data run -- the
 // bytes after the head. What 'v.x' answers, and what the value writer

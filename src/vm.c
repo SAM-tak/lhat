@@ -3931,34 +3931,48 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth, bool draining)
                 // instruction answers (a coroutine's operations, a host
                 // value's fields, the built-ins every value carries) is made
                 // rather than found, so there is no place to remember.
-                if (filling != NULL) {
+                {
                     const LhatTable *found_in = NULL;
                     uint32_t found_at = 0;
                     bool inherited = false;
-                    LhatValue got =
-                        lhat_table_locate(table, member_key, &found_in, &found_at,
-                                          &inherited);
-                    SET_R(a, got);
-                    // Only where the walk found it in a hash entry, and --
-                    // for the inherited case -- where the receiver itself has
-                    // not been structurally written, since that is what the
-                    // hit above will be trusting.
-                    if (found_in != NULL &&
-                        (!inherited || table->version == 0)) {
-                        filling->answered = found_in;
-                        filling->version = found_in->version;
-                        filling->index = found_at;
-                        filling->from_definition = inherited;
-                    } else {
-                        filling->answered = NULL;
+                    LhatValue through = lhat_nil();
+                    LhatValue got = lhat_table_locate(
+                        table, member_key, &found_in, &found_at, &inherited,
+                        &through);
+                    // 14.7改2: found through a delegate^, so the receiver a
+                    // call has to pass is the delegate and not what stands
+                    // before the dot -- the member is the delegate's own.
+                    // Put where CALLMETHOD reads it.
+                    //
+                    // Written BEFORE the answer, since a site reading into
+                    // the register it read from ('into, into, key') means to
+                    // replace the receiver either way and wants the answer to
+                    // be what stands there.
+                    bool plain = plain_table(R(b));
+                    if (!lhat_is_nil(through)) {
+                        SET_R(b, through);
                     }
-                    if (!lhat_is_nil(got) || plain_table(R(b))) {
+                    SET_R(a, got);
+                    // 03 の 5.1改: only where the walk found it in a hash
+                    // entry, and -- for the inherited case -- where the
+                    // receiver itself has not been structurally written,
+                    // since that is what a hit will be trusting. A delegated
+                    // answer reports no place (object.c), so it lands here
+                    // as "nothing to remember".
+                    if (filling != NULL) {
+                        if (found_in != NULL &&
+                            (!inherited || table->version == 0)) {
+                            filling->answered = found_in;
+                            filling->version = found_in->version;
+                            filling->index = found_at;
+                            filling->from_definition = inherited;
+                        } else {
+                            filling->answered = NULL;
+                        }
+                    }
+                    if (!lhat_is_nil(got) || plain) {
                         goto member_answered;
                     }
-                    // member_written's second reading (14.17改's other
-                    // spelling) is not a place to remember, so it goes
-                    // through the ordinary way and leaves the cache empty.
-                    filling->answered = NULL;
                 }
                 SET_R(a, member_written(m, R(b), member_key, table));
             member_answered:;
@@ -4344,6 +4358,20 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth, bool draining)
             // becomes the prototype's own sealed tree, whatever expression
             // produced it, and what nothing may share is refused -- the same
             // answer the checker gives where it ran.
+            // 14.7改2: what the definition delegates to. The key is a chunk
+            // constant, so nothing is written into the machine's heap here
+            // and no barrier is owed.
+            case LHAT_BC_SETDELEGATE: {
+                LhatTable *table = table_of(R(a));
+                if (table == NULL ||
+                    !lhat_is_object_kind(R(b), LHAT_OBJECT_STRING)) {
+                    return finish(m, chunk, LHAT_RUN_TYPE_ERROR, lhat_nil(), at);
+                }
+                table->delegate_key = R(b);
+                table->delegate_from_self = cc != 0;
+                break;
+            }
+
             case LHAT_BC_SETPROTO: {
                 LhatTable *table = table_of(R(a));
                 LhatTable *proto = table_of(R(b));

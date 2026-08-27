@@ -1216,6 +1216,41 @@ static LhatNode *parse_error_new(Parser *p)
 
 // 14 ç« . def^ stays an expression (14.9), so the name of a definition comes
 // from whatever it is bound to and composition reads as an ordinary '..'.
+// 14.7改2: what delegate^ names. Two spellings and no others -- 'self^.name'
+// for a field of the template, a bare name for a member of the definition.
+//
+// The two are not one form with an optional prefix. 14.3 has fields and
+// members declared apart, so one name may be both, and which of the two is
+// meant is the whole of what the spelling says -- at run time as much as
+// here, since the answer is looked for in a different table for each.
+//
+// Answers a MEMBER node whose target is `self^` for the first, an IDENT for
+// the second, or NULL where neither was written.
+static LhatNode *parse_delegate_target(Parser *p)
+{
+    LhatToken at = p->current;
+    if (check_hat(p, "self") && is_op(&p->ahead, LHAT_OP_DOT)) {
+        LhatNode *receiver = simple_node(p);  // self^
+        advance(p);                           // '.'
+        if (p->current.kind != LHAT_TOKEN_IDENT) {
+            report(p, &p->current, LHAT_PARSE_ERR_DELEGATE_TARGET);
+            return NULL;
+        }
+        LhatNode *node = make(p, LHAT_NODE_MEMBER, &at);
+        if (node == NULL) {
+            return NULL;
+        }
+        node->v.access.target = receiver;
+        node->v.access.argument = simple_node(p);
+        return finish(p, node);
+    }
+    if (p->current.kind == LHAT_TOKEN_IDENT) {
+        return simple_node(p);
+    }
+    report(p, &p->current, LHAT_PARSE_ERR_DELEGATE_TARGET);
+    return NULL;
+}
+
 static LhatNode *parse_def(Parser *p)
 {
     LhatToken start = p->current;
@@ -1232,6 +1267,7 @@ static LhatNode *parse_def(Parser *p)
     LhatNode *head = NULL;
     LhatNode *tail = NULL;
     bool seen_template = false;
+    bool seen_delegate = false;  // 14.7改2: one per def^
 
     while (!at_eof(p) && !check_op(p, LHAT_OP_RBRACE)) {
         // 02 ã® 18.4: above the member, and so above 14.12's marker too --
@@ -1270,6 +1306,22 @@ static LhatNode *parse_def(Parser *p)
             }
             seen_template = true;
             entry->v.entry.value = parse_self_table(p);
+        } else if (check_hat(p, "delegate")) {
+            // 14.7改2: the other entry that is not a member. What follows
+            // names something this definition declares -- 'self^.field' for
+            // one of the template's, a bare name for one of the definition's
+            // own. Which of the two is where the answer is looked for, so
+            // the spelling is the whole of the difference.
+            advance(p);
+            if (modifier != LHAT_DEF_PLAIN) {
+                report(p, &at, LHAT_PARSE_ERR_MODIFIER_ON_TEMPLATE);
+            }
+            if (seen_delegate) {
+                report(p, &p->current, LHAT_PARSE_ERR_DUPLICATE_DELEGATE);
+            }
+            seen_delegate = true;
+            entry->v.entry.modifier = LHAT_DEF_DELEGATE;
+            entry->v.entry.value = parse_delegate_target(p);
         } else if (check_hat(p, "op")) {
             // 11.1: an operator is a function, and a definition carries it as
             // an ordinary member. The name is the operator itself, which
@@ -4918,6 +4970,11 @@ const char *lhat_parse_error_message(LhatParseErrorCode code)
             return "a def^ declares its fields once; write one self^{ ... }";
         case LHAT_PARSE_ERR_MODIFIER_ON_TEMPLATE:
             return "override^ and overload^ mark a member, not the fields";
+        case LHAT_PARSE_ERR_DUPLICATE_DELEGATE:
+            return "a def^ delegates to one thing; write one delegate^";
+        case LHAT_PARSE_ERR_DELEGATE_TARGET:
+            return "delegate^ names what this def^ declares: self^.field for "
+                   "one of the template's, or a bare name for one of its own";
         case LHAT_PARSE_ERR_CLOSED_NEEDS_BODY:
             return "closed^ marks a body: write closed^f^ ... or closed^p^ ...";
         case LHAT_PARSE_ERR_CATCH_AFTER_BARE:

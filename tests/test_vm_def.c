@@ -1728,11 +1728,139 @@ static void test_takes_receiver(void)
     run_dispose(&r);
 }
 
+// 02 の 14.7改2: delegate^ -- what a definition holds shows through as its
+// own. The machine's half: a third leg of 14.7's walk, and the receiver a
+// delegated member is called with.
+//
+// The receiver is the thing worth pinning. A delegated member belongs to the
+// delegate, so it runs with the delegate as self^ -- reading the answer off
+// the delegate while handing it the wrapper would compile, run, and write
+// into the wrong object.
+static void test_delegate(void)
+{
+    Run r;
+
+    // 'self^.name': a field of the template, so each instance delegates to
+    // its own.
+    LHAT_TEST("a delegated member is reached through the instance's field");
+    run_checked_text(&r,
+                     "let^ Inner = def^{\n"
+                     "    self^{ n = 0 },\n"
+                     "    read = f^self^ -> number^ { self^.n }\n"
+                     "}\n"
+                     "let^ Outer = def^{\n"
+                     "    self^{ abstract^ held : Inner },\n"
+                     "    override^new = f^ { self^{ held = Inner.new() } },\n"
+                     "    delegate^ self^.held\n"
+                     "}\n"
+                     "return^ Outer.new().read()\n");
+    CHECK_INTEGER(&r, 0);
+    run_dispose(&r);
+
+    // THE ONE THAT MATTERS. A mutating member run through the delegation has
+    // to write into the delegate; handing it the wrapper instead would put
+    // the field on the wrapper and read back what was never written.
+    LHAT_TEST("self^ inside a delegated member is the delegate");
+    run_checked_text(&r,
+                     "let^ Inner = def^{\n"
+                     "    self^{ n = 0 },\n"
+                     "    read = f^self^ -> number^ { self^.n },\n"
+                     "    bump = p^self^ { self^.n := self^.n + 5 }\n"
+                     "}\n"
+                     "let^ Outer = def^{\n"
+                     "    self^{ abstract^ held : Inner },\n"
+                     "    override^new = f^ { self^{ held = Inner.new() } },\n"
+                     "    delegate^ self^.held\n"
+                     "}\n"
+                     "let^ o = Outer.new()\n"
+                     "o.bump()\n"
+                     // Read off the delegate itself, so nothing about the
+                     // wrapper can make this look right by accident.
+                     "return^ o.held.read()\n");
+    CHECK_INTEGER(&r, 5);
+    run_dispose(&r);
+
+    // The bare name: a member of the definition, so every instance delegates
+    // to the one value.
+    LHAT_TEST("a bare name delegates to the definition's own member");
+    run_checked_text(&r,
+                     "let^ Inner = def^{\n"
+                     "    self^{ n = 0 },\n"
+                     "    read = f^self^ -> number^ { self^.n },\n"
+                     "    bump = p^self^ { self^.n := self^.n + 5 }\n"
+                     "}\n"
+                     "let^ Shared = def^{\n"
+                     "    self^{ },\n"
+                     "    sink = Inner.new(),\n"
+                     "    delegate^ sink\n"
+                     "}\n"
+                     "let^ a = Shared.new()\n"
+                     "let^ b = Shared.new()\n"
+                     "a.bump()\n"
+                     // One value behind both, which is what a definition's
+                     // member is (14.3).
+                     "return^ b.read()\n");
+    CHECK_INTEGER(&r, 5);
+    run_dispose(&r);
+
+    // 14.7's order, reaching through to the delegate last.
+    LHAT_TEST("a member written here wins over the delegate's");
+    run_checked_text(&r,
+                     "let^ Inner = def^{ read = f^self^ -> number^ { 1 } }\n"
+                     "let^ Outer = def^{\n"
+                     "    self^{ abstract^ held : Inner },\n"
+                     "    override^new = f^ { self^{ held = Inner.new() } },\n"
+                     "    read = f^self^ -> number^ { 99 },\n"
+                     "    delegate^ self^.held\n"
+                     "}\n"
+                     "return^ Outer.new().read()\n");
+    CHECK_INTEGER(&r, 99);
+    run_dispose(&r);
+
+    // 14.2 fixes the chain at the definition, not the value in the field --
+    // so writing another delegate in is an ordinary field write.
+    LHAT_TEST("the field may be written, and the delegation follows it");
+    run_checked_text(&r,
+                     "let^ Inner = def^{\n"
+                     "    self^{ n = 0 },\n"
+                     "    read = f^self^ -> number^ { self^.n },\n"
+                     "    bump = p^self^ { self^.n := self^.n + 5 }\n"
+                     "}\n"
+                     "let^ Outer = def^{\n"
+                     "    self^{ abstract^ held : Inner },\n"
+                     "    override^new = f^ { self^{ held = Inner.new() } },\n"
+                     "    delegate^ self^.held\n"
+                     "}\n"
+                     "var^ o = Outer.new()\n"
+                     "o.bump()\n"
+                     "var^ other = Inner.new()\n"
+                     "o.held := other\n"
+                     "return^ o.read()\n");
+    CHECK_INTEGER(&r, 0);
+    run_dispose(&r);
+
+    // 14.7: what an instance sees is what takes a receiver, and delegation
+    // does not widen that -- a static member of the delegate stays the
+    // delegate's.
+    LHAT_TEST("a static member of the delegate is not delegated");
+    run_text(&r,
+             "let^ Inner = def^{ somestatic = p^{ } }\n"
+             "let^ Outer = def^{\n"
+             "    self^{ abstract^ held : Inner },\n"
+             "    override^new = f^ { self^{ held = Inner.new() } },\n"
+             "    delegate^ self^.held\n"
+             "}\n"
+             "return^ Outer.new().somestatic is^ nil^\n");
+    CHECK_BOOL(&r, true);
+    run_dispose(&r);
+}
+
 int main(void)
 {
     test_definitions();
     test_isa();
     test_typeof();
     test_takes_receiver();
+    test_delegate();
     return lhat_test_report("test_vm_def");
 }

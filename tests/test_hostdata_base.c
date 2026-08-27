@@ -473,6 +473,63 @@ static void test_registration(void)
     }
 }
 
+// 02 の 14.7改2 over a host type, which is the arrangement delegate^ was
+// written for: an L^ wrapper holding what the host made, showing the host's
+// members as its own.
+//
+// 05 の 8.8改's flatten is what makes the base's members come along, so this
+// also says the two features meet.
+static void test_delegate_to_host(void)
+{
+    LhatProgram program;
+    Disk disk;
+
+    LHAT_TEST("a wrapper delegating to a host value carries its members");
+    {
+        static const File files[] = {
+            {"main.lh",
+             "import^ scene\n"
+             "let^ Sprite = def^{\n"
+             "    self^{ abstract^ gdobj : scene.Sprite2D },\n"
+             "    override^new = f^ { self^{ gdobj = scene.makeSprite() } },\n"
+             "    delegate^ self^.gdobj\n"
+             "}\n"
+             // id() is scene.Node's, reached through Sprite2D by 8.8改's
+             // flatten and then through the delegation by 14.7改2.
+             "return^ Sprite.new().id()\n"},
+        };
+        program_with(&program, &disk, files, 1);
+        LHAT_CHECK(register_scene(&program, false), "registered");
+        the_node.id = 6;
+        LhatRunResult ran = run_program(&program);
+        LHAT_CHECK_EQ_INT(ran.status, LHAT_RUN_OK);
+        LHAT_CHECK_EQ_INT(lhat_as_integer(ran.value), 6);
+        lhat_program_dispose(&program);
+    }
+
+    // 05 の 8.8: and the wrapper is still not one. A host type is where 11.3
+    // gives way, so delegating to one lends its members and not its identity
+    // -- the C behind scene.Node would otherwise be handed a table.
+    LHAT_TEST("but the wrapper does not stand where the host type is asked");
+    {
+        static const File files[] = {
+            {"main.lh",
+             "import^ scene\n"
+             "let^ Sprite = def^{\n"
+             "    self^{ abstract^ gdobj : scene.Sprite2D },\n"
+             "    override^new = f^ { self^{ gdobj = scene.makeSprite() } },\n"
+             "    delegate^ self^.gdobj\n"
+             "}\n"
+             "let^ takes = f^ n:scene.Node -> number^ { n.id() }\n"
+             "return^ takes(Sprite.new())\n"},
+        };
+        program_with(&program, &disk, files, 1);
+        LHAT_CHECK(register_scene(&program, false), "registered");
+        LHAT_CHECK(!checked_clean(&program), "a wrapper is not a scene.Node");
+        lhat_program_dispose(&program);
+    }
+}
+
 int main(void)
 {
     test_the_relation();
@@ -480,5 +537,6 @@ int main(void)
     test_isa();
     test_inherited_dispose();
     test_registration();
+    test_delegate_to_host();
     return lhat_test_report("test_hostdata_base");
 }

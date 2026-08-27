@@ -3190,6 +3190,33 @@ static void test_definitions(void)
                       LHAT_PARSE_ERR_MODIFIER_ON_TEMPLATE);
     parse_dispose(&p);
 
+    // 14.7改2: the other entry that is not a member. Two spellings and no
+    // others, and one of them per definition.
+    LHAT_TEST("delegate^ takes self^.name or a bare name");
+    parse_text(&p, "F := def^{ self^{ a := 1 }, delegate^ self^.a }");
+    LHAT_CHECK_EQ_INT(p.result.diagnostic_count, 0);
+    parse_dispose(&p);
+
+    parse_text(&p, "F := def^{ self^{ }, held := 1, delegate^ held }");
+    LHAT_CHECK_EQ_INT(p.result.diagnostic_count, 0);
+    parse_dispose(&p);
+
+    LHAT_TEST("one delegate^ per definition");
+    parse_text(&p,
+               "F := def^{ self^{ a := 1, b := 2 },"
+               " delegate^ self^.a, delegate^ self^.b }");
+    LHAT_CHECK(p.result.diagnostic_count > 0, "expected a diagnostic");
+    LHAT_CHECK_EQ_INT(p.result.diagnostics[0].code,
+                      LHAT_PARSE_ERR_DUPLICATE_DELEGATE);
+    parse_dispose(&p);
+
+    LHAT_TEST("delegate^ takes neither an expression nor a longer path");
+    parse_text(&p, "F := def^{ self^{ }, delegate^ 1 }");
+    LHAT_CHECK(p.result.diagnostic_count > 0, "expected a diagnostic");
+    LHAT_CHECK_EQ_INT(p.result.diagnostics[0].code,
+                      LHAT_PARSE_ERR_DELEGATE_TARGET);
+    parse_dispose(&p);
+
     LHAT_TEST("a member needs ':='");
     parse_text(&p, "F := def^{ foo }");
     LHAT_CHECK(p.result.diagnostic_count > 0, "expected a diagnostic");

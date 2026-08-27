@@ -64,6 +64,11 @@ void lhat_gc_children(LhatObject **gray, LhatObject *object)
             // 14.2 fixes this when the instance is made, so it is a plain
             // reference like any other.
             reach(gray, (LhatObject *)(void *)table->definition);
+            // 14.7改2: the name a delegate^ was written with. A chunk
+            // constant as things stand, so this reaches a black object and
+            // does nothing -- reached anyway, because what may be put there
+            // is not the collector's to assume.
+            lhat_gc_reach(gray, table->delegate_key);
             return;
         }
 

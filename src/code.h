@@ -173,6 +173,11 @@ typedef enum {
     // value nothing may share (LHAT_RUN_MUTABLE_DEFAULT) -- a coroutine, a
     // host object. Emitted once per def^, after the members.
     LHAT_BC_SETPROTO,     // A B   R[A].self^ = R[B], sealed
+    // 14.7改2: what the definition at R[A] delegates to. R[B] holds the name;
+    // C != 0 is the 'self^.x' spelling, which says to read it off the
+    // receiver's own table rather than off the definition. Emitted once per
+    // def^ that wrote delegate^, just before SETPROTO.
+    LHAT_BC_SETDELEGATE,  // A B C
     // 05 の 8.9: box^ -- the host value whose head sits at R[B], put in the
     // box the heap can hold. The width travels with the head slot's tag, so
     // one operand names the whole run.

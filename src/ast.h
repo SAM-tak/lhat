@@ -143,7 +143,12 @@ typedef enum {
     LHAT_DEF_PLAIN,
     LHAT_DEF_OVERRIDE,
     LHAT_DEF_OVERLOAD,
-    LHAT_DEF_ABSTRACT  // 14.15: declared, and left for a composition to give
+    LHAT_DEF_ABSTRACT,  // 14.15: declared, and left for a composition to give
+    // 14.7改2: not a member at all, the way the template is not. What follows
+    // is the name this definition delegates to -- 'self^.field' for one of
+    // the template's, a bare name for one of the definition's own. The entry
+    // carries that name in `value` and no key.
+    LHAT_DEF_DELEGATE
 } LhatDefModifier;
 
 // 9.2, in the order they must be written -- which is also the order they run

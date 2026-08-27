@@ -3871,6 +3871,95 @@ static void copy_members(Checker *c, LhatType *into, const LhatType *from)
     }
 }
 
+// 14.7改2: does this member take a receiver? That is 14.7's whole rule for
+// what an instance sees, and delegation does not widen it -- a static member
+// of the delegate is the delegate's, the way a static member of a definition
+// is the definition's.
+//
+// 14.12's groups answer yes when any arm does: the call picks an arm, and one
+// that takes a receiver is reachable through the dot.
+static bool member_takes_receiver(const LhatType *type)
+{
+    if (type == NULL) {
+        return false;
+    }
+    if (type->kind == LHAT_TYPE_FUNC) {
+        return type->v.func.takes_self;
+    }
+    if (type->kind == LHAT_TYPE_INTERSECT) {
+        for (const LhatTypeList *arm = type->v.composite.arms; arm != NULL;
+             arm = arm->next) {
+            if (member_takes_receiver(arm->type)) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+// 14.7改2: the members of what this definition delegates to, laid into the
+// section its instances carry.
+//
+// The delegate is named by one of two spellings and they are not one form
+// with an optional prefix: 14.3 declares fields and members apart, so a name
+// may be both, and 'self^.x' against 'x' is how a writer says which. The
+// same split decides where the answer is looked for at run time.
+static void add_delegated_members(Checker *c, const LhatNode *node,
+                                  LhatType *definition, LhatType *instance)
+{
+    const LhatNode *named = NULL;
+    bool through_self = false;
+    for (const LhatNode *entry = node->v.list.items; entry != NULL;
+         entry = entry->next) {
+        if (entry->v.entry.modifier != LHAT_DEF_DELEGATE) {
+            continue;
+        }
+        named = entry->v.entry.value;
+        through_self = named != NULL && named->kind == LHAT_NODE_MEMBER;
+        break;  // the parser allows one
+    }
+    if (named == NULL || instance == NULL) {
+        return;
+    }
+
+    const LhatNode *spelt = through_self ? named->v.access.argument : named;
+    const char *name = NULL;
+    size_t length = 0;
+    if (!chk_node_name(c, spelt, &name, &length)) {
+        return;
+    }
+    // Looked for where the spelling said, and nowhere else. Finding it in the
+    // other place would be answering a question that was not asked.
+    const LhatTypeMember *held =
+        chk_find_member(through_self ? instance : definition, name, length);
+    if (held == NULL) {
+        chk_report_named(c, spelt, LHAT_CHECK_ERR_NO_MEMBER, name, length);
+        return;
+    }
+    // 05 の 8.8 with 14.10: a host type carries its members like any other
+    // table, and 8.8改's flatten has already put the base's among them.
+    const LhatType *from = held->type;
+    if (from == NULL || from->kind != LHAT_TYPE_TABLE) {
+        chk_report(c, spelt, LHAT_CHECK_ERR_NO_MEMBER);
+        return;
+    }
+    // 14.7: an instance sees what the delegate's own instances would see.
+    const LhatType *reachable =
+        from->v.table.instance != NULL ? from->v.table.instance : from;
+
+    for (const LhatTypeMember *m = reachable->v.table.members; m != NULL;
+         m = m->next) {
+        if (!member_takes_receiver(m->type)) {
+            continue;
+        }
+        // 14.7's order, in the type: what this definition wrote wins.
+        if (chk_find_member(instance, m->name, m->name_length) != NULL) {
+            continue;
+        }
+        set_member(c, instance, m->name, m->name_length, m->type);
+    }
+}
+
 // 14.15改3: which fields a written new gives a value to.
 //
 // 14.11 builds an instance with `self^{ … }`, and 14.15's declaration on a
@@ -4441,7 +4530,10 @@ LhatType *chk_infer_def(Checker *c, const LhatNode *node, LhatType *base)
     const LhatNode *template = NULL;
     for (const LhatNode *entry = node->v.list.items; entry != NULL;
          entry = entry->next) {
-        if (entry->v.entry.key == NULL) {
+        // 14.7改2: the delegate entry carries no key either, so what marks
+        // the template is the absence of both.
+        if (entry->v.entry.key == NULL &&
+            entry->v.entry.modifier != LHAT_DEF_DELEGATE) {
             template = entry->v.entry.value;
         }
     }
@@ -4827,6 +4919,11 @@ LhatType *chk_infer_def(Checker *c, const LhatNode *node, LhatType *base)
         }
         break;  // 14.12 allows one entry of the name, so there is one to read
     }
+
+    // 14.7改2: what this definition delegates to. Last, so that everything it
+    // could be shadowed by is already down -- a member written here wins, the
+    // way an instance's own field wins over the definition's (14.7).
+    add_delegated_members(c, node, definition, instance);
 
     c->self_link = self_here.outer;
     return definition;

@@ -2630,7 +2630,10 @@ static const LhatNode *template_of(const LhatNode *def)
 {
     for (const LhatNode *entry = def->v.list.items; entry != NULL;
          entry = entry->next) {
-        if (entry->v.entry.key == NULL) {
+        // 14.7改2: a delegate^ carries no key either. The template is the
+        // entry with neither a key nor that marker.
+        if (entry->v.entry.key == NULL &&
+            entry->v.entry.modifier != LHAT_DEF_DELEGATE) {
             return entry->v.entry.value;
         }
     }
@@ -3043,6 +3046,41 @@ static void compile_def(Compiler *c, const LhatNode *node, uint8_t into)
         c->foreign_scope = enclosing_scope;
         c->foreign_module = enclosing_module;
     }
+    // 14.7改2: what this definition delegates to, put on it before the
+    // prototype is sealed. The spelling travels with the name -- 'self^.x'
+    // says to read it off the receiver, a bare 'x' off the definition -- so
+    // nothing at run time has to work out which was meant.
+    //
+    // Walked over the chain's parts and not over `node`, which is the whole
+    // composition and may be a '..' rather than a def^ at all (14.5). The
+    // last part to declare one wins, the way a member written later does.
+    const LhatNode *delegate = NULL;
+    for (size_t i = 0; i < chain.count; i++) {
+        for (const LhatNode *entry = chain.parts[i]->v.list.items;
+             entry != NULL; entry = entry->next) {
+            if (entry->v.entry.modifier == LHAT_DEF_DELEGATE &&
+                entry->v.entry.value != NULL) {
+                delegate = entry->v.entry.value;
+            }
+        }
+    }
+    if (delegate != NULL) {
+        bool through_self = delegate->kind == LHAT_NODE_MEMBER;
+        const char *name = NULL;
+        size_t length = 0;
+        if (!node_name(c, through_self ? delegate->v.access.argument : delegate,
+                       &name, &length)) {
+            fail(c, LHAT_COMPILE_UNSUPPORTED);
+            return;
+        }
+        uint8_t mark = c->next_register;
+        uint8_t key = reserve(c);
+        load_string_bytes(c, key, name, length);
+        emit(c, lhat_encode_abc(LHAT_BC_SETDELEGATE, into, key,
+                                through_self ? 1 : 0));
+        c->next_register = mark;
+    }
+
     emit(c, lhat_encode_abc(LHAT_BC_SETPROTO, into, prototype, 0));
     c->next_register = proto_mark;
 
