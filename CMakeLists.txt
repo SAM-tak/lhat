@@ -9,6 +9,10 @@ project(lhat
 option(LHAT_BUILD_TESTS "Build the L^ test suite" ON)
 option(LHAT_BUILD_CLI "Build the lhat command line driver" ON)
 option(LHAT_BUILD_LSP "Build the L^ language server" ON)
+# 03 の 5.1: what a specialised instruction would be worth, measured.
+# Off by default -- it takes minutes to run and asserts almost nothing, so
+# it has no business in an ordinary build or in CI.
+option(LHAT_BUILD_BENCH "Build the L^ member-read benchmark" OFF)
 
 # comments are kept and attached to the tree, for the language
 # server to show and the visual editor to edit. Nothing in the language reads
@@ -230,6 +234,20 @@ if(LHAT_BUILD_CLI)
         target_compile_definitions(lhat_cli PRIVATE LHAT_CLI_WITH_STDLIB)
     endif()
     install(TARGETS lhat_cli RUNTIME DESTINATION bin)
+endif()
+
+# ---- Benchmark --------------------------------------------------------------
+# 03 の 5.1: the member read is the next candidate for a specialised
+# instruction, and replacing it is a large change whichever shape it takes.
+# This is what puts a number in front of that decision. Not a test -- a claim
+# about time does not pass or fail -- so it is built only when asked for and
+# never registered with ctest.
+if(LHAT_BUILD_BENCH)
+    add_executable(lhat_bench bench/main.c)
+    # The public headers alone: what it measures is what a host sees, so it
+    # has no more of the insides than a host would.
+    target_link_libraries(lhat_bench PRIVATE lhat lhatthread)
+    target_include_directories(lhat_bench PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 endif()
 
 # ---- Language server --------------------------------------------------------
