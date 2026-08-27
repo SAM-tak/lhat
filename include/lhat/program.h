@@ -521,8 +521,37 @@ const LhatHostDataTag *lhat_register_hostdata_type(LhatProgram *program,
                                                    const char *module,
                                                    const char *name);
 
+// 05 の 8.8改: the same, under a type registered earlier. A host whose own
+// model is a class tree -- an engine's ClassDB, a widget toolkit -- writes
+// the tree here instead of flattening it into one opaque type and losing
+// every boundary the checker could have held.
+//
+// Single inheritance, which is what such models have. A value of the derived
+// type stands where the base is asked for, isa^ answers for the chain, and
+// lhat_hostdata_pointer gives the pointer back for a base's tag.
+//
+// THIS IS A PROMISE ABOUT POINTERS. Declaring the relation says a pointer of
+// this type may be read as one of the base's -- true for C++ single
+// inheritance with no virtual bases, and unverifiable from here. 02 の 15.13's
+// closed^ is the same kind of thing: written by whoever knows, taken at its
+// word by everything downstream.
+//
+// The base has to be registered already; NULL when it is not, when the name
+// is taken, or when there is no memory. Nothing else about the order
+// changes -- what a derived type inherits is settled when registration
+// closes (the first check), so members may be registered before or after
+// this call, in whichever order suits the host.
+const LhatHostDataTag *lhat_register_hostdata_subtype(LhatProgram *program,
+                                                      const char *module,
+                                                      const char *name,
+                                                      const char *base_module,
+                                                      const char *base_name);
+
 // A member of a type registered earlier. `signature` describes it; a p^ or f^
 // whose first parameter is written self^ is an instance method (14.4).
+//
+// 8.8改: a derived type inherits what its base registered. Registering the
+// same name on the derived one is what replaces it there.
 bool lhat_register_member(LhatProgram *program, const char *module,
                           const char *type, const char *name,
                           const char *signature, LhatHostFn call,

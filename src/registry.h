@@ -43,6 +43,12 @@
 const LhatHostDataTag *lhat_registry_hostdata(const char *module,
                                               const char *name);
 
+// 8.8改: the type this one is under. Answers false when a base is already
+// set and it is not this one (a name stands for one declaration, and what it
+// is under is part of that), and when the two would make a cycle.
+bool lhat_registry_set_hostdata_base(const LhatHostDataTag *tag,
+                                     const LhatHostDataTag *base);
+
 // 8.8: what the type registered as dispose^. Answers false when a release is
 // already set and it is not this one -- the same declaration cannot hand
 // back two different ways.

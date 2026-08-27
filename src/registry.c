@@ -134,6 +134,32 @@ const LhatHostDataTag *lhat_registry_hostdata(const char *module,
     return tag;
 }
 
+bool lhat_registry_set_hostdata_base(const LhatHostDataTag *tag,
+                                     const LhatHostDataTag *base)
+{
+    if (tag == NULL || base == NULL || tag == base) {
+        return false;
+    }
+    // A cycle would make every walk over the chain -- conformance, isa^,
+    // the release lookup -- run for ever. Nothing but a mistake makes one,
+    // and this is where the mistake stops.
+    for (const LhatHostDataTag *up = base; up != NULL; up = up->base) {
+        if (up == tag) {
+            return false;
+        }
+    }
+    LhatHostDataTag *mine = (LhatHostDataTag *)tag;
+    if (mine->base != NULL) {
+        // 8.8改: the same rule set_release keeps. A name stands for one
+        // declaration across the process, and what it is under is part of
+        // that declaration -- a second program saying something else is
+        // two types wearing one name.
+        return mine->base == base;
+    }
+    mine->base = base;
+    return true;
+}
+
 bool lhat_registry_set_release(const LhatHostDataTag *tag, LhatHostFn release,
                                void *context)
 {

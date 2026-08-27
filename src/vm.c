@@ -2975,7 +2975,16 @@ void *lhat_hostdata_pointer(LhatValue value, const LhatHostDataTag *tag)
         return NULL;
     }
     const LhatHostData *data = (const LhatHostData *)lhat_as_object(value);
-    return data->tag == tag ? data->pointer : NULL;
+    // 05 の 8.8改: a tag declared under `tag` answers too. That is the
+    // promise lhat_register_hostdata_subtype took -- a pointer of the
+    // derived type may be read as one of the base's -- and refusing it here
+    // would leave the host unable to use the relation it declared.
+    for (const LhatHostDataTag *at = data->tag; at != NULL; at = at->base) {
+        if (at == tag) {
+            return data->pointer;
+        }
+    }
+    return NULL;
 }
 
 void *lhat_hostvalue_data(LhatValue argument, const LhatHostValueTag *tag)
@@ -4509,8 +4518,11 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth, bool draining)
                                             LHAT_OBJECT_HOSTDATA)) {
                         LhatHostData *data =
                             (LhatHostData *)lhat_as_object(arguments[0]);
-                        if (data->tag != NULL &&
-                            data->tag->release == host->call) {
+                        // 8.8改: the nearest release on the chain, since an
+                        // inherited dispose^ is the type's own way back.
+                        const LhatHostDataTag *by =
+                            lhat_hostdata_releaser(data->tag);
+                        if (by != NULL && by->release == host->call) {
                             data->released = true;
                         }
                     }
@@ -6874,7 +6886,8 @@ static LhatRunResult host_call(Machine *m, LhatValue callee, LhatValue receiver,
         if (receiver_first &&
             lhat_is_object_kind(gathered[0], LHAT_OBJECT_HOSTDATA)) {
             LhatHostData *data = (LhatHostData *)lhat_as_object(gathered[0]);
-            if (data->tag != NULL && data->tag->release == host->call) {
+            const LhatHostDataTag *by = lhat_hostdata_releaser(data->tag);
+            if (by != NULL && by->release == host->call) {
                 data->released = true;
             }
         }

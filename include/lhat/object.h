@@ -540,13 +540,47 @@ typedef enum {
 typedef struct LhatHostDataTag {
     const char *module;
     const char *name;
+    // 05 の 8.8改: the one type this one is under, or NULL for a type that
+    // stands alone. Single inheritance, because what this exists for -- a
+    // host whose own model is a class tree -- has exactly that.
+    //
+    // Declaring it is the HOST'S PROMISE that a pointer of this type may be
+    // read as one of the base's. The language cannot check that, the way it
+    // cannot check 02 の 15.13's closed^; what it does is take the promise
+    // at its word everywhere the relation shows -- conformance, isa^, and
+    // lhat_hostdata_pointer.
+    const struct LhatHostDataTag *base;
     // 05 の 8.8: what the type registered as dispose^, or NULL when it
     // registered none and the host keeps the lifetime. Kept here rather than
     // on each value because it belongs to the type, and because the tag
     // outlives every machine that ever made one.
+    //
+    // 8.8改: read through `base` where a type registered none of its own --
+    // lhat_hostdata_release walks the chain rather than this being copied
+    // down, since the tag is the process's (registry.h) and a per-program
+    // pass has no business writing into it.
     LhatHostFn release;
     void *release_context;
 } LhatHostDataTag;
+
+// 05 の 8.8改: which declaration hands a value of `tag`'s type back -- its
+// own, or the nearest one above it. NULL where nothing on the chain
+// registered a dispose^, which is 8.8's borrowed type: nothing runs, at any
+// of the three occasions.
+//
+// One place knows the walk, because three read it and they have to agree.
+// 8.8's "二度は返さない" rests on a dispose^ called by hand being recognised
+// as the same giving-back the sweep would do, and recognising it means
+// comparing against this and not against tag->release: a derived type
+// registers none of its own, and the comparison would never hold.
+static inline const LhatHostDataTag *
+lhat_hostdata_releaser(const LhatHostDataTag *tag)
+{
+    while (tag != NULL && tag->release == NULL) {
+        tag = tag->base;
+    }
+    return tag;
+}
 
 // 05 の 8.9: the element kind of one registered host-value field, which is
 // what LHAT_BC_HVGET/HVSET convert to and from number^ with.

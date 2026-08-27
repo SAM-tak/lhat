@@ -161,6 +161,14 @@ struct LhatProgram {
     LhatHostTypeEntry *host_type_entries;
     size_t host_type_entry_count;
     size_t host_type_entry_capacity;
+    // 05 の 8.8改: whether a derived type has been given what its base
+    // registered. Done once, when registration closes -- which is the first
+    // check, since registering after one "is too late and answers false"
+    // (program.h). Doing it at each lhat_register_hostdata_subtype would be
+    // too early: program.h's own advice is to register the bare types first
+    // and give them their members after, and a tree registered that way has
+    // no members to inherit at the moment the relation is declared.
+    bool hostdata_flattened;
 
     // 05 の 8.9: the host value types, one entry per registration. Unlike
     // the two registries above this one owns its tags (and their field

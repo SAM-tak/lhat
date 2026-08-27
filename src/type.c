@@ -472,6 +472,29 @@ static bool is_error_type(const LhatType *type)
            type->kind == LHAT_TYPE_ERROR_KIND;
 }
 
+// 05 の 8.8改: is `value` a host type declared under `target`? Both sides
+// have to be registered ones -- 8.8's relation is between declarations, and
+// a written shape is not one. The chain is finite: the registry refuses a
+// base that would close a cycle.
+//
+// Read off the tags rather than off the types, because the tag is what the
+// host declared the relation on and what the machine compares at run time
+// (lhat_value_satisfies). Two readings of one fact would be two facts.
+static bool nominal_derives(const LhatType *value, const LhatType *target)
+{
+    const struct LhatHostDataTag *wanted = target->v.table.hostdata_tag;
+    const struct LhatHostDataTag *have = value->v.table.hostdata_tag;
+    if (wanted == NULL || have == NULL) {
+        return false;
+    }
+    for (have = have->base; have != NULL; have = have->base) {
+        if (have == wanted) {
+            return true;
+        }
+    }
+    return false;
+}
+
 // 13.13: a written Self^ makes a type hold itself, so a walk over two of them
 // has to be given a way to end. The pairs already being asked about are kept
 // on the C stack, and meeting one again answers yes.
@@ -784,11 +807,16 @@ static bool conforms_in(const LhatType *value, const LhatType *target,
 
         case LHAT_TYPE_TABLE:
             // 05 の 8.8: a host type is the one thing 11.3 does not judge by
-            // shape. Asked for one, only that one will do -- there is nothing
-            // to compare structurally, and being wrong means a pointer read
-            // as something it is not.
+            // shape. Asked for one, only that one -- or something declared
+            // under it -- will do; there is nothing to compare structurally,
+            // and being wrong means a pointer read as something it is not.
+            //
+            // 8.8改: what a host declared to be under another is the one
+            // exception, and it is not a loosening -- the host said the
+            // pointer may be read as the base's, which is the whole of what
+            // this refusal was protecting.
             if (target->v.table.nominal) {
-                return value == target;
+                return value == target || nominal_derives(value, target);
             }
             // 14.7改: what a definition's instances carry is part of what the
             // definition is, so a written self^{ … } is asked of them the way
@@ -1157,7 +1185,13 @@ static bool disjoint_in(const LhatType *a, const LhatType *b,
         // call them overlapping.
         if (a->v.table.nominal || b->v.table.nominal) {
             if (a->v.table.nominal && b->v.table.nominal) {
-                return a != b;
+                // 8.8改: unless one was declared under the other, in which
+                // case a value of the derived one inhabits both. 14.12 reads
+                // this, so two registrations taking a base and a derived
+                // type are overlapping and may not be overloaded -- there is
+                // no specificity rule here to pick between them.
+                return a != b && !nominal_derives(a, b) &&
+                       !nominal_derives(b, a);
             }
             // One nominal and one written shape: a value of the registered
             // type carries members like any other, so the shape below is

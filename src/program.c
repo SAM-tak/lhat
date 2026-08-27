@@ -150,6 +150,9 @@ static LhatUnit *find_unit(LhatProgram *program, const char *path)
 static LhatUnit *check_path(LhatProgram *program, char *path);
 static void check_parsed(LhatProgram *program, LhatUnit *unit,
                          LhatTypeArena *arena);
+// 05 の 8.8改: gives every derived host type what its base registered. Both
+// of the two ways checking starts call it; it does its work once.
+static void flatten_hostdata_bases(LhatProgram *program);
 
 // 05 の 5.3: `from` require^s `to`. Answers the position in `from`'s list,
 // which is the number the compiler writes into a UNIT instruction, or
@@ -255,6 +258,10 @@ static void load_into(LhatProgram *program, LhatUnit *unit)
 // Takes ownership of `path`.
 static LhatUnit *check_path(LhatProgram *program, char *path)
 {
+    // 05 の 8.8改: registration has closed by the time anything is checked,
+    // so this is where a host type comes to carry its base's members.
+    flatten_hostdata_bases(program);
+
     LhatUnit *existing = find_unit(program, path);
     if (existing != NULL) {
         // 6.3: meeting a unit that is still being checked means the graph
@@ -1323,6 +1330,9 @@ const LhatHostDataTag *lhat_register_hostdata_type(LhatProgram *program,
     type_entry->module = entry->module;
     type_entry->name = entry->name;
     type_entry->tag = entry->tag;
+    // The array grows with lhat_realloc, which does not zero, so every field
+    // is written here or it is whatever was in that memory.
+    type_entry->flattened = false;
 
     return entry->tag;
 }
@@ -1331,6 +1341,143 @@ bool lhat_register_type(LhatProgram *program, const char *module,
                         const char *name)
 {
     return lhat_register_hostdata_type(program, module, name) != NULL;
+}
+
+// 05 の 8.8改: the checker's type for a registered hostdata name, which is
+// what the flatten pass moves members between. hosted_table would make a
+// module that is not there, but every type asked about here registered
+// through it already, so it only ever finds one.
+static LhatType *hosted_type_of(LhatProgram *program, const char *module,
+                                const char *name)
+{
+    if (program->hosted == NULL) {
+        return NULL;
+    }
+    LhatType *table = hosted_table(program, program->hosted, module);
+    const LhatTypeMember *member =
+        table != NULL ? hosted_member(table, name) : NULL;
+    return member != NULL ? member->type : NULL;
+}
+
+static LhatHostTypeEntry *host_type_entry_of(LhatProgram *program,
+                                             const LhatHostDataTag *tag)
+{
+    for (size_t i = 0; i < program->host_type_entry_count; i++) {
+        if (program->host_type_entries[i].tag == tag) {
+            return &program->host_type_entries[i];
+        }
+    }
+    return NULL;  // registered by another program; nothing here to read
+}
+
+// 8.8改: gives one type what its base registered, the base having been given
+// its own first -- so a chain of any depth settles whatever order the
+// entries happen to be in.
+//
+// A name the derived type registered for itself is left alone. That is what
+// overriding is: 8.8's "what was registered cannot be written over" is about
+// L^ writing into a host type, and this is one registration standing in
+// front of another.
+static void flatten_host_type(LhatProgram *program, LhatHostTypeEntry *entry)
+{
+    if (entry == NULL || entry->flattened) {
+        return;
+    }
+    entry->flattened = true;
+
+    const LhatHostDataTag *base_tag = entry->tag->base;
+    if (base_tag == NULL) {
+        return;
+    }
+    LhatHostTypeEntry *base_entry = host_type_entry_of(program, base_tag);
+    flatten_host_type(program, base_entry);
+
+    LhatType *derived = hosted_type_of(program, entry->module, entry->name);
+    LhatType *base = hosted_type_of(program, base_tag->module, base_tag->name);
+    if (derived == NULL || base == NULL) {
+        return;
+    }
+    for (const LhatTypeMember *m = base->v.table.members; m != NULL;
+         m = m->next) {
+        bool already = false;
+        for (const LhatTypeMember *mine = derived->v.table.members;
+             mine != NULL; mine = mine->next) {
+            if (mine->name_length == m->name_length &&
+                memcmp(mine->name, m->name, m->name_length) == 0) {
+                already = true;
+                break;
+            }
+        }
+        if (already) {
+            continue;
+        }
+        lhat_type_add_member(&program->types, derived, m->name, m->name_length,
+                             m->type);
+    }
+}
+
+// 8.8改: run once, when registration has closed. The moment is the first
+// check: program.h already says registering after one "is too late and
+// answers false", so there is nothing left to arrive.
+//
+// Doing this at each lhat_register_hostdata_subtype instead would be too
+// early -- program.h's own advice for types that name each other is to
+// register the bare types first and give them their members after, and a
+// tree registered that way has nothing to inherit at the moment the relation
+// is declared.
+//
+// The types written into are the program's own (&program->types), so nothing
+// shared is touched. The tag's release is NOT copied down: the tag belongs to
+// the process (registry.h), and lhat_hostdata_release walks the chain for it.
+static void flatten_hostdata_bases(LhatProgram *program)
+{
+    if (program == NULL || program->hostdata_flattened) {
+        return;
+    }
+    program->hostdata_flattened = true;
+    for (size_t i = 0; i < program->host_type_entry_count; i++) {
+        flatten_host_type(program, &program->host_type_entries[i]);
+    }
+}
+
+// 05 の 8.8改: the same declaration, under a type declared earlier. The base
+// is looked up rather than made, so naming one that is not there is refused
+// -- a tree written out of order would otherwise settle silently on a base
+// that arrived later meaning something else.
+//
+// Nothing is inherited here. What the derived type carries is settled when
+// registration closes (flatten_hostdata_bases), so members may be registered
+// on either type before or after this call.
+const LhatHostDataTag *lhat_register_hostdata_subtype(LhatProgram *program,
+                                                      const char *module,
+                                                      const char *name,
+                                                      const char *base_module,
+                                                      const char *base_name)
+{
+    if (program == NULL || base_module == NULL || base_name == NULL) {
+        return NULL;
+    }
+    const LhatHostDataTag *base = NULL;
+    for (size_t i = 0; i < program->host_type_entry_count; i++) {
+        const LhatHostTypeEntry *at = &program->host_type_entries[i];
+        if (strcmp(at->module, base_module) == 0 &&
+            strcmp(at->name, base_name) == 0) {
+            base = at->tag;
+            break;
+        }
+    }
+    if (base == NULL) {
+        return NULL;
+    }
+
+    const LhatHostDataTag *tag =
+        lhat_register_hostdata_type(program, module, name);
+    if (tag == NULL) {
+        return NULL;
+    }
+    // The tag is the process's, so this is where two programs are made to
+    // agree about what a name is under (registry.h).
+    return lhat_registry_set_hostdata_base(tag, base) ? tag : NULL;
 }
 
 // lhat_register_error_kind の失敗経路が繰り返し要る後始末: variant_copies
@@ -2219,29 +2366,89 @@ bool lhat_program_on_dispose(LhatProgram *program, LhatProgramDisposeFn call,
     return true;
 }
 
+// 05 の 8.8改: does any type from `from` up to but not including `stop`
+// carry a member of this name? Walked nearest-first, so this is what tells
+// an inherited member that something closer already answers for it.
+static bool nearer_has_member(const LhatProgram *program,
+                              const LhatHostDataTag *from,
+                              const LhatHostDataTag *stop, const char *name)
+{
+    for (const LhatHostDataTag *at = from; at != NULL && at != stop;
+         at = at->base) {
+        for (size_t i = 0; i < program->host_entry_count; i++) {
+            const LhatHostEntry *e = &program->host_entries[i];
+            if (e->type != NULL && strcmp(e->module, at->module) == 0 &&
+                strcmp(e->type, at->name) == 0 && strcmp(e->name, name) == 0) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+// One registration made into a value on `machine` and put where it belongs.
+// The place is passed separately from the entry so that an inherited member
+// can be installed under the type that inherited it -- which may sit in
+// another module than the one that declared it.
+static bool install_entry(LhatMachine *machine, const LhatHostEntry *e,
+                          const char *module, const char *type,
+                          const char *name)
+{
+    // A type registers as an empty table under its module; its members
+    // are entries of their own and land in it as they come.
+    LhatValue value = lhat_nil();
+    if (e->call == NULL) {
+        if (!lhat_machine_make_table(machine, &value)) {
+            return false;
+        }
+    } else if (!lhat_machine_make_host(
+                   machine, e->call, e->context, e->parameters,
+                   e->has_variadic, e->takes_self, e->self_last,
+                   borrowed_params((const LhatRuntimeType *const *)
+                                       e->parameter_types,
+                                   e->parameters),
+                   &value)) {
+        return false;
+    }
+    return lhat_machine_register(machine, module, type, name, value);
+}
+
 bool lhat_program_install(const LhatProgram *program, LhatMachine *machine)
 {
     for (size_t i = 0; i < program->host_entry_count; i++) {
         const LhatHostEntry *e = &program->host_entries[i];
-        // A type registers as an empty table under its module; its members
-        // are entries of their own and land in it as they come.
-        LhatValue value = lhat_nil();
-        if (e->call == NULL) {
-            if (!lhat_machine_make_table(machine, &value)) {
-                return false;
-            }
-        } else if (!lhat_machine_make_host(
-                       machine, e->call, e->context, e->parameters,
-                       e->has_variadic, e->takes_self, e->self_last,
-                       borrowed_params((const LhatRuntimeType *const *)
-                                           e->parameter_types,
-                                       e->parameters),
-                       &value)) {
+        if (!install_entry(machine, e, e->module, e->type, e->name)) {
             return false;
         }
-        if (!lhat_machine_register(machine, e->module, e->type, e->name,
-                                   value)) {
-            return false;
+    }
+
+    // 05 の 8.8改: and now what each type inherits. The machine reads a
+    // hostdata value's members off the type's own table under L^.modules
+    // (lhat_machine_make_hostdata), which is a different place from the
+    // checker's type -- so the flatten that made the checker agree has to
+    // be made here too, or a derived value would check as having a member
+    // and then not find it.
+    //
+    // Walked nearest-first with nearer_has_member deciding, so the closest
+    // declaration of a name wins -- the same overriding the checker's side
+    // does by skipping names the derived type already registered.
+    for (size_t i = 0; i < program->host_type_entry_count; i++) {
+        const LhatHostTypeEntry *te = &program->host_type_entries[i];
+        for (const LhatHostDataTag *at = te->tag->base; at != NULL;
+             at = at->base) {
+            for (size_t j = 0; j < program->host_entry_count; j++) {
+                const LhatHostEntry *e = &program->host_entries[j];
+                if (e->type == NULL || strcmp(e->module, at->module) != 0 ||
+                    strcmp(e->type, at->name) != 0) {
+                    continue;
+                }
+                if (nearer_has_member(program, te->tag, at, e->name)) {
+                    continue;
+                }
+                if (!install_entry(machine, e, te->module, te->name, e->name)) {
+                    return false;
+                }
+            }
         }
     }
     // 05 の 8.6: what goes in L^ itself rather than under its registry.
@@ -2484,6 +2691,10 @@ LhatLoadStatus lhat_program_load_text_with(LhatProgram *program,
                                            LhatProto **out)
 {
     *out = NULL;
+    // 05 の 8.8改: the other way checking begins (5.6). check_path's own call
+    // does not cover this one -- a script that requires nothing never reaches
+    // it -- and the pass does its work once whichever arrives first.
+    flatten_hostdata_bases(program);
     lhat_free(program->load_failure);
     program->load_failure = NULL;
     LhatUnit *unit = (LhatUnit *)lhat_calloc(1, sizeof *unit);

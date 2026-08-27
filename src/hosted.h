@@ -60,6 +60,11 @@ typedef struct LhatHostTypeEntry {
     const char *module;
     const char *name;
     const LhatHostDataTag *tag;
+    // 05 の 8.8改: whether this one has been given what its base registered.
+    // program.c's flatten pass sets it; a base is done before what is under
+    // it, so a chain settles from the root down however the entries are
+    // ordered. Nothing outside that pass reads it.
+    bool flattened;
 } LhatHostTypeEntry;
 
 // 05 の 8.9: the same for one host value type lhat_register_hostvalue_type

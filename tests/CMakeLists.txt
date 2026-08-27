@@ -68,6 +68,7 @@ lhat_add_test(test_vm_coroutine vm)
 lhat_add_test(test_vm_machine vm)
 lhat_add_test(test_vm_tuple vm)
 lhat_add_test(test_host_coroutine vm)
+lhat_add_test(test_hostdata_base vm)
 
 # The sample stdlib's tests. They ask what an L^ program sees when it
 # imports a module, through the public headers rather than through src/

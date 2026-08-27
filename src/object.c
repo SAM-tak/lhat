@@ -392,10 +392,24 @@ bool lhat_value_satisfies(LhatValue value, const LhatRuntimeType *type)
         // 05 の 8.8: identity is the tag alone, so the value has to actually
         // be hostdata -- otherwise there is no tag to compare and the answer
         // is about two different kinds of value.
-        case LHAT_TYPE_RT_HOSTDATA:
-            return lhat_is_object_kind(value, LHAT_OBJECT_HOSTDATA) &&
-                   ((const LhatHostData *)lhat_as_object(value))->tag ==
-                       type->hostdata_tag;
+        //
+        // 8.8改: or a tag declared under the asked-for one. The same walk the
+        // checker makes (type.c's nominal_derives), which is what keeps
+        // 'x isa^ godot.Node' answering the same thing on both sides of
+        // 03 の 4.2.
+        case LHAT_TYPE_RT_HOSTDATA: {
+            if (!lhat_is_object_kind(value, LHAT_OBJECT_HOSTDATA)) {
+                return false;
+            }
+            for (const LhatHostDataTag *at =
+                     ((const LhatHostData *)lhat_as_object(value))->tag;
+                 at != NULL; at = at->base) {
+                if (at == type->hostdata_tag) {
+                    return true;
+                }
+            }
+            return false;
+        }
         // 05 の 8.9: the same rule over the head slot's own tag. A head
         // travels as the first slot of its width, so asking the head is
         // asking the value.
@@ -1055,7 +1069,21 @@ bool lhat_hostdata_release(LhatObject *object, struct LhatMachine *machine)
         return false;
     }
     LhatHostData *data = (LhatHostData *)object;
-    if (data->released || data->tag == NULL || data->tag->release == NULL) {
+    if (data->released) {
+        return false;
+    }
+    // 05 の 8.8改: a type that registered no dispose^ of its own is handed
+    // back the way whatever it is under is. Walked rather than copied down
+    // at registration: the tag is the process's (registry.h), and a
+    // per-program pass has no business writing into it.
+    //
+    // This is the half of inheriting that does NOT go through the member
+    // table. 12.5 reads a lifetime off whether a `dispose` member is there,
+    // so a derived type given the member and not this would check as
+    // disposable and then release nothing -- 03 の 4.2's shape of fault,
+    // silent rather than reported.
+    const LhatHostDataTag *at = lhat_hostdata_releaser(data->tag);
+    if (at == NULL) {
         return false;
     }
     // Marked before the call, so a release that somehow arrives here twice
@@ -1065,7 +1093,7 @@ bool lhat_hostdata_release(LhatObject *object, struct LhatMachine *machine)
     // The value is still whole, so the release reads its pointer out of it
     // the way any other member of the type would.
     LhatValue self = lhat_object(object);
-    data->tag->release(machine, data->tag->release_context, &self, 1);
+    at->release(machine, at->release_context, &self, 1);
     return true;
 }
 
