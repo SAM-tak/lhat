@@ -442,15 +442,84 @@ static bool member_names_equal(const LhatTypeMember *a, const LhatTypeMember *b)
            memcmp(a->name, b->name, a->name_length) == 0;
 }
 
-static const LhatTypeMember *find_member(const LhatTypeMember *members,
-                                         const LhatTypeMember *wanted)
+// 02 の 14.7改2: whether a member is one an instance may reach. 14.7 is the
+// whole rule -- a static member of the delegate stays the delegate's, the
+// way a static member of a definition stays the definition's.
+//
+// 14.12's groups answer yes when any arm does: the call picks an arm, and
+// one that takes a receiver is reachable through the dot.
+bool lhat_type_takes_receiver(const LhatType *type)
 {
-    for (const LhatTypeMember *m = members; m != NULL; m = m->next) {
-        if (member_names_equal(m, wanted)) {
-            return m;
+    if (type == NULL) {
+        return false;
+    }
+    if (type->kind == LHAT_TYPE_FUNC) {
+        return type->v.func.takes_self;
+    }
+    if (type->kind == LHAT_TYPE_INTERSECT) {
+        for (const LhatTypeList *arm = type->v.composite.arms; arm != NULL;
+             arm = arm->next) {
+            if (lhat_type_takes_receiver(arm->type)) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+// The one search every reader of a table's members goes through, because
+// two of the three places a member can be are links and not entries in the
+// list:
+//
+//   - the type's own members
+//   - 05 の 8.8改: what a host declared it under, all the way up
+//   - 02 の 14.7改2: what it delegates to, one step (14.2 fixes the chain
+//     at the definition), and that one's own bases
+//
+// The order is 14.7's: what is written here answers before what is lent.
+// Only a member taking a receiver is lent, which is 14.7 again -- and it
+// is asked HERE rather than when the link was made, so the answer cannot
+// drift from the machine's (03 の 4.2).
+//
+// Neither link is copied into anything. A binding declares a class per
+// engine class and a wrapper per class, and copying made every one of
+// them pay for its whole ancestry on each check -- which is what the
+// editor waits for when it saves (03 の 1.1).
+const LhatTypeMember *lhat_type_find_member(const LhatType *table,
+                                            const char *name,
+                                            size_t length)
+{
+    if (table == NULL || (table->kind != LHAT_TYPE_TABLE &&
+                          table->kind != LHAT_TYPE_HOSTVALUE)) {
+        return NULL;
+    }
+    const LhatType *delegate = table->v.table.delegate;
+    for (const LhatType *up = table; up != NULL; up = up->v.table.base) {
+        for (const LhatTypeMember *m = up->v.table.members; m != NULL;
+             m = m->next) {
+            if (m->name_length == length &&
+                memcmp(m->name, name, length) == 0) {
+                return m;
+            }
+        }
+    }
+    for (const LhatType *up = delegate; up != NULL;
+         up = up->v.table.base) {
+        for (const LhatTypeMember *m = up->v.table.members; m != NULL;
+             m = m->next) {
+            if (m->name_length == length &&
+                memcmp(m->name, name, length) == 0) {
+                return lhat_type_takes_receiver(m->type) ? m : NULL;
+            }
         }
     }
     return NULL;
+}
+
+static const LhatTypeMember *find_member(const LhatType *table,
+                                         const LhatTypeMember *wanted)
+{
+    return lhat_type_find_member(table, wanted->name, wanted->name_length);
 }
 
 // The root of an error kind's identity: the declaration it came from.
@@ -833,7 +902,7 @@ static bool conforms_in(const LhatType *value, const LhatType *target,
             for (const LhatTypeMember *want = target->v.table.members;
                  want != NULL; want = want->next) {
                 const LhatTypeMember *have =
-                    find_member(value->v.table.members, want);
+                    find_member(value, want);
                 if (have == NULL ||
                     !conforms_in(have->type, want->type, seen)) {
                     return false;
@@ -852,7 +921,7 @@ static bool conforms_in(const LhatType *value, const LhatType *target,
                     probe.name = digits;
                     probe.name_length = length;
                     const LhatTypeMember *have =
-                        find_member(value->v.table.members, &probe);
+                        find_member(value, &probe);
                     if (have == NULL) {
                         break;
                     }
@@ -1203,7 +1272,7 @@ static bool disjoint_in(const LhatType *a, const LhatType *b,
         // members -- which is why 14.12 forbids overloading on shape.
         for (const LhatTypeMember *m = a->v.table.members; m != NULL;
              m = m->next) {
-            const LhatTypeMember *other = find_member(b->v.table.members, m);
+            const LhatTypeMember *other = find_member(b, m);
             if (other != NULL && disjoint_in(m->type, other->type, seen)) {
                 return true;
             }
@@ -1509,6 +1578,13 @@ static size_t run_of_positions(const LhatTypeMember *m, size_t position)
     return run;
 }
 
+// 14.7改2 with 05 の 8.8改: what the links lend, written after what the
+// type holds itself -- 14.7's order, on the page as in a lookup. Only a
+// member taking a receiver is lent, and one the type declares itself is
+// already above, so neither is written twice.
+static void write_lent_members(TypeSink *sink, const LhatType *table,
+                               int depth);
+
 static void write_members(TypeSink *sink, const LhatTypeMember *members,
                           int depth)
 {
@@ -1549,6 +1625,28 @@ static void write_members(TypeSink *sink, const LhatTypeMember *members,
     }
 }
 
+static void write_lent_members(TypeSink *sink, const LhatType *table,
+                               int depth)
+{
+    if (table == NULL) {
+        return;
+    }
+    for (const LhatType *up = table->v.table.delegate; up != NULL;
+         up = up->v.table.base) {
+        for (const LhatTypeMember *m = up->v.table.members; m != NULL;
+             m = m->next) {
+            if (!lhat_type_takes_receiver(m->type) ||
+                lhat_type_find_member(table, m->name, m->name_length) != m) {
+                continue;  // the type's own answers, or nothing lends it
+            }
+            put_text(sink, ", ");
+            put(sink, m->name, m->name_length);
+            put_text(sink, " : ");
+            write_type(sink, m->type, depth + 1);
+        }
+    }
+}
+
 // A definition's own members: the ones the self^{ … } section did not already
 // show. An instance's member is reachable through the definition too (14.4's
 // `let^ f = A.m`), so writing it twice would only say the same thing again.
@@ -1560,7 +1658,7 @@ static void write_own_members(TypeSink *sink, const LhatType *definition,
     int count = 0;
     for (const LhatTypeMember *m = definition->v.table.members; m != NULL;
          m = m->next) {
-        if (find_member(held->v.table.members, m) != NULL) {
+        if (find_member(held, m) != NULL) {
             continue;
         }
         if (count == sink->max_items) {
@@ -1707,10 +1805,20 @@ static void write_type(TypeSink *sink, const LhatType *type, int depth)
                 const LhatType *held = type->v.table.instance;
                 put_text(sink, "self^{ ");
                 write_members(sink, held->v.table.members, depth + 1);
+                // 14.7改2: what a delegate lends is not in that list --
+                // it is a link, the way the machine holds it. Written
+                // out all the same, since what this section says is
+                // what an instance may be asked for, and that is what
+                // the link answers.
+                write_lent_members(sink, held, depth + 1);
                 put_text(sink, " }");
                 write_own_members(sink, type, depth);
             } else {
                 write_members(sink, type->v.table.members, depth);
+                // The instance section on its own -- what typeof^ of an
+                // instance answers -- carries the link as much as the
+                // definition that holds it.
+                write_lent_members(sink, type, depth);
             }
             if (type->v.table.variadic != NULL) {
                 // 14.10: the sequence half, unbounded.

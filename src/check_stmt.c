@@ -1667,12 +1667,14 @@ static void check_disposable(Checker *c, const LhatNode *at, LhatType *type)
         return;
     }
 
-    const LhatTypeMember *members =
-        type->kind == LHAT_TYPE_TABLE ? type->v.table.members : NULL;
-    for (const LhatTypeMember *m = members; m != NULL; m = m->next) {
-        if (m->name_length != 7 || memcmp(m->name, "dispose", 7) != 0) {
-            continue;
-        }
+    // 05 の 8.8改: through the base link too -- a derived host type is
+    // disposable when what it is declared under registered a dispose,
+    // which is exactly what the machine does with the tag chain.
+    const LhatTypeMember *m =
+        type->kind == LHAT_TYPE_TABLE
+            ? chk_find_member(type, "dispose", 7)
+            : NULL;
+    if (m != NULL) {
         if (m->type == NULL || m->type->kind == LHAT_TYPE_UNKNOWN ||
             m->type->kind == LHAT_TYPE_PENDING) {
             return;

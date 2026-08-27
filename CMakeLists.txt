@@ -248,6 +248,15 @@ if(LHAT_BUILD_BENCH)
     # has no more of the insides than a host would.
     target_link_libraries(lhat_bench PRIVATE lhat lhatthread)
     target_include_directories(lhat_bench PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+
+    # 03 の 1.1 puts the check on the editor's save, so what checking costs is
+    # what a writer waits for. A second entry point rather than a case of the
+    # one above: that one turns a loop TURNS times and measures the machine,
+    # this one builds a program and measures a stage.
+    add_executable(lhat_checkbench bench/checkbench.c)
+    target_link_libraries(lhat_checkbench PRIVATE lhat lhatthread)
+    target_include_directories(lhat_checkbench
+                               PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 endif()
 
 # ---- Language server --------------------------------------------------------

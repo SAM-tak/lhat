@@ -1255,6 +1255,31 @@ static void test_typeof(void)
 {
     Run r;
 
+    // 14.7改2: a delegate is a LINK on the type and not a copy of the
+    // delegate's members, which is what keeps a wrapper over a wide host
+    // type cheap to check. 14.16 is where that could have shown: the type
+    // written out has to say what an instance may be asked for, so the walk
+    // that renders it follows the link the way a lookup does.
+    //
+    // The static member is NOT lent -- 14.7 lends what takes a receiver, and
+    // that rule lives in the lookup now rather than in a copying pass.
+    LHAT_TEST("14.16: a written-out type carries what a delegate lends");
+    run_checked_text(&r,
+             "let^ Inner = def^{ self^{ },\n"
+             "    read = f^self^ -> number^ { return^ 1 },\n"
+             "    stat = f^ -> number^ { return^ 2 },\n"
+             "}\n"
+             "let^ Outer = def^{\n"
+             "    self^{ abstract^ held : Inner },\n"
+             "    override^new = f^ { self^{ held = Inner.new() } },\n"
+             "    delegate^ self^.held,\n"
+             "}\n"
+             "return^ typeof^(Outer.new()).signature\n");
+    CHECK_STRING(&r,
+                 "t^{ held : t^{ read : f^self^ -> number^; }, "
+                 "read : f^self^ -> number^; }");
+    run_dispose(&r);
+
     LHAT_TEST("a number's signature");
     run_text(&r, "return^ typeof^(5).signature\n");
     CHECK_STRING(&r, "number^");

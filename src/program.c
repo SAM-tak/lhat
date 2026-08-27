@@ -1407,23 +1407,13 @@ static void flatten_host_type(LhatProgram *program, LhatHostTypeEntry *entry)
     if (derived == NULL || base == NULL) {
         return;
     }
-    for (const LhatTypeMember *m = base->v.table.members; m != NULL;
-         m = m->next) {
-        bool already = false;
-        for (const LhatTypeMember *mine = derived->v.table.members;
-             mine != NULL; mine = mine->next) {
-            if (mine->name_length == m->name_length &&
-                memcmp(mine->name, m->name, m->name_length) == 0) {
-                already = true;
-                break;
-            }
-        }
-        if (already) {
-            continue;
-        }
-        lhat_type_add_member(&program->types, derived, m->name, m->name_length,
-                             m->type);
-    }
+    // Linked, not copied. A binding declares a class per engine class and
+    // each one carries its whole ancestry, so copying makes every class pay
+    // for every class above it -- a walk inside a walk, and the editor
+    // waits for all of it on each save (03 の 1.1). chk_find_member follows
+    // this the way the machine follows the tag chain, and a name the derived
+    // type declares itself still wins because its own list is asked first.
+    derived->v.table.base = base;
 }
 
 // 8.8改: run once, when registration has closed. The moment is the first

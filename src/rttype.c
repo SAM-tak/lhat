@@ -137,23 +137,41 @@ static LhatRuntimeType *rt_from_checked(LhatHeap *heap,
                 }
                 sequence++;
             }
-            for (const LhatTypeMember *m = type->v.table.members; m != NULL;
-                 m = m->next) {
-                bool positional = false;
-                for (size_t i = 0; i < sequence; i++) {
-                    if (lhat_type_member_at(type, i + 1) == m) {
-                        positional = true;
-                        break;
+            // 14.7改2 with 05 の 8.8改: the type's own members, then what its
+            // links lend. A descriptor is asked what a value may be asked
+            // for (13.11), so a name the wrapper answers has to be here --
+            // the link is how the type HOLDS it, not a reason to leave it
+            // out. lhat_type_find_member decides, so this and a lookup
+            // never disagree.
+            const LhatType *chains[2] = {type, type->v.table.delegate};
+            for (size_t which = 0; which < 2; which++) {
+            for (const LhatType *up = chains[which]; up != NULL;
+                 up = up->v.table.base) {
+                for (const LhatTypeMember *m = up->v.table.members;
+                     m != NULL; m = m->next) {
+                    if (lhat_type_find_member(type, m->name,
+                                              m->name_length) != m) {
+                        continue;  // shadowed, or not lent at all
+                    }
+                    bool positional = false;
+                    for (size_t i = 0; i < sequence; i++) {
+                        if (lhat_type_member_at(type, i + 1) == m) {
+                            positional = true;
+                            break;
+                        }
+                    }
+                    if (positional) {
+                        continue;
+                    }
+                    LhatString *name =
+                        lhat_string_new(heap, m->name, m->name_length);
+                    if (name == NULL ||
+                        !lhat_type_rt_add_member(
+                            rt, name, rt_from_checked(heap, m->type, seen))) {
+                        return NULL;
                     }
                 }
-                if (positional) {
-                    continue;
-                }
-                LhatString *name = lhat_string_new(heap, m->name, m->name_length);
-                if (name == NULL ||
-                    !lhat_type_rt_add_member(rt, name, rt_from_checked(heap, m->type, seen))) {
-                    return NULL;
-                }
+            }
             }
             if (type->v.table.variadic != NULL) {
                 rt->variadic = rt_from_checked(heap, type->v.table.variadic, seen);

@@ -131,13 +131,7 @@ typedef struct LhatTypeMember {
     // there, and one of these was not -- so that question skips them. The
     // relations do not read this, as with the three above.
     bool provisional;
-    // 02 の 14.7改2: lent by what this definition delegates to rather than
-    // written on it. A composition keeps ONE delegate -- the last part to
-    // declare one -- so a part that declares its own drops what an earlier
-    // one's lent, the way the machine does by holding a single delegate key.
-    // What the earlier part WROTE stays: only the loan is undone. As with
-    // the marks above, the relations do not read this.
-    bool delegated;
+
 #if LHAT_WITH_RESOLUTIONS
     // 07 の 4 章: where this member was written, and in which unit -- 14.10
     // looks a member up in a type rather than in a scope, so nothing else
@@ -166,6 +160,30 @@ struct LhatType {
     union {
         struct {
             LhatTypeMember *members;
+            // 05 の 8.8改: the type this one is declared under, when a
+            // host said so. What the base carries is reached THROUGH
+            // this rather than copied into the list above: an engine
+            // binding declares hundreds of classes and copying makes
+            // each one pay for its whole ancestry, which is what the
+            // editor waits for on every save (03 の 1.1).
+            //
+            // Followed all the way down, since a base has a base.
+            // Nothing in the relations reads it -- a nominal type is
+            // compared by identity (conforms_in), and what is under
+            // what is the tag chain's to answer (nominal_derives).
+            struct LhatType *base;
+            // 02 の 14.7改2: what this definition delegates to, as the
+            // type whose members it lends. Carried by the INSTANCE
+            // section (14.7), which is what an instance reaches, and
+            // followed one step only -- 14.2 fixes the chain at the
+            // definition, so a delegate that delegates again is not
+            // followed here any more than it is at run time.
+            //
+            // A link and not a copy, for the reason `base` is one: the
+            // machine holds a single delegate key and grows a leg on its
+            // walk (object.c), so the type that says the same thing says
+            // it the same way.
+            struct LhatType *delegate;
             // 14.1: def^ is the only way to make one, and 14.5 composes two
             // of them with '..' -- which 11.2's operator has to tell from a
             // call. Identity is still structural (11.3): this says what made
@@ -413,6 +431,19 @@ bool lhat_type_is_local_error(const LhatType *type);
 
 // Appends and returns the member, or NULL when out of memory. Works on a
 // TABLE and on an ERROR_KIND's fields.
+// 14.7改2 with 05 の 8.8改: the one search over a table type's members. Two
+// of the three places a member can be are links -- the base a host
+// declared this type under, and what a definition delegates to -- so a
+// reader that walked `members` alone would answer differently from the
+// machine. See the body in type.c for the order.
+const LhatTypeMember *lhat_type_find_member(const LhatType *table,
+                                            const char *name,
+                                            size_t length);
+
+// 14.7: whether an instance may reach this member, which is what decides
+// what a delegate lends.
+bool lhat_type_takes_receiver(const LhatType *type);
+
 LhatTypeMember *lhat_type_add_member(LhatTypeArena *arena, LhatType *owner,
                                      const char *name, size_t name_length,
                                      LhatType *type);
