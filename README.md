@@ -18,7 +18,7 @@ registers what it provides by writing the type out in C.
 - Gradual Typing
 - Bidirectional Type inference
 - Small Footprints & Less Depenencies
-- Visual Programming (WIP)
+- Bidirectional Visual/Text Programming (WIP)
 
 ## Samples
 
