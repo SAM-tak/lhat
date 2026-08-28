@@ -17,14 +17,16 @@ struct LspHostConfig {
 // Never called: this server never runs a program, and lhat_register_* only
 // requires the pointer to be there. The same shape workspace.c's stub has,
 // duplicated so this file does not reach into workspace.c's statics.
-static LhatValue stub_host_fn(LhatMachine *machine, void *context,
-                              const LhatValue *arguments, size_t count)
+static void stub_host_fn(LhatMachine *machine, void *context,
+                         const LhatValue *arguments, size_t count,
+                         LhatValue *answers, int *answer_count)
 {
     (void)machine;
     (void)context;
     (void)arguments;
     (void)count;
-    return lhat_nil();
+    (void)answers;
+    (void)answer_count;
 }
 
 LspHostConfig *lsp_host_config_parse(const char *text, size_t length)

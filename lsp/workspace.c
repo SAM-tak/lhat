@@ -63,14 +63,16 @@ static char *lsp_program_load(void *context, const char *path, size_t *length)
 // 05 の 8.2/8.7: the checker has to know a host's names before it checks
 // anything. This server never runs a program, so `call` is never invoked --
 // it exists only because lhat_register_global requires one.
-static LhatValue lsp_stub_host_fn(LhatMachine *machine, void *context,
-                                  const LhatValue *arguments, size_t count)
+static void lsp_stub_host_fn(LhatMachine *machine, void *context,
+                             const LhatValue *arguments, size_t count,
+                             LhatValue *answers, int *answer_count)
 {
     (void)machine;
     (void)context;
     (void)arguments;
     (void)count;
-    return lhat_nil();
+    (void)answers;
+    (void)answer_count;
 }
 
 // What checking is told the host registered. With a lhat-host.json loaded

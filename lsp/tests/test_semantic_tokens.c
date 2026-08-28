@@ -717,14 +717,16 @@ static char *one_unit_load(void *context, const char *path, size_t *length)
     return copy;
 }
 
-static LhatValue never_called(LhatMachine *machine, void *context,
-                              const LhatValue *arguments, size_t count)
+static void never_called(LhatMachine *machine, void *context,
+                         const LhatValue *arguments, size_t count,
+                         LhatValue *answers, int *answer_count)
 {
     (void)machine;
     (void)context;
     (void)arguments;
     (void)count;
-    return lhat_nil();  // checking never calls one
+    (void)answers;
+    (void)answer_count;
 }
 
 static void test_a_host_type_reads_as_a_type(void)
