@@ -1130,8 +1130,7 @@ bool lhat_hostdata_release(LhatObject *object, struct LhatMachine *machine)
     LhatValue self = lhat_object(object);
     // 05 の 8.7: a release answers nothing, which the boundary now says in
     // its own type -- there is no answer to take and no room to take it in.
-    int said = 0;
-    at->release(machine, at->release_context, &self, 1, NULL, &said);
+    at->release(machine, at->release_context, &self, 1, NULL, NULL);
     return true;
 }
 
@@ -1150,8 +1149,7 @@ bool lhat_coroutine_release(LhatObject *object, struct LhatMachine *machine)
     walk->host_released = true;
 
     LhatValue self = lhat_object(object);
-    int said = 0;
-    walk->host_release(machine, walk->host_state, &self, 1, NULL, &said);
+    walk->host_release(machine, walk->host_state, &self, 1, NULL, NULL);
     return true;
 }
 
@@ -1161,37 +1159,37 @@ void lhat_object_free(LhatObject *object)
         return;
     }
     switch (object->kind) {
-        case LHAT_OBJECT_TABLE: {
-            LhatTable *table = (LhatTable *)object;
-            lhat_free(table->array.values);
-            lhat_free(table->array.tags);
-            lhat_free(table->entries);
-            break;
-        }
-        case LHAT_OBJECT_SUBROUTINE:
-            lhat_free(((LhatClosure *)object)->upvalues);
-            break;
-        case LHAT_OBJECT_SCRIPT:
-            lhat_proto_free(((LhatLoadedScript *)object)->root);
-            break;
-        case LHAT_OBJECT_COROUTINE:
-            lhat_free(((LhatCoroutine *)object)->registers.values);
-            lhat_free(((LhatCoroutine *)object)->registers.tags);
-            break;
-        case LHAT_OBJECT_TYPE:
-            lhat_free(((LhatRuntimeType *)object)->parts);
-            lhat_free(((LhatRuntimeType *)object)->members);
-            break;
-        case LHAT_OBJECT_OVERLOAD:
-            lhat_free(((LhatOverload *)object)->candidates);
-            break;
-        // 02 の 14.12: the array belongs to the host; the types in it are the
-        // heap's and are freed with everything else.
-        case LHAT_OBJECT_HOST:
-            lhat_free(((LhatHost *)object)->parameter_types);
-            break;
-        default:
-            break;
+    case LHAT_OBJECT_TABLE: {
+        LhatTable *table = (LhatTable *)object;
+        lhat_free(table->array.values);
+        lhat_free(table->array.tags);
+        lhat_free(table->entries);
+        break;
+    }
+    case LHAT_OBJECT_SUBROUTINE:
+        lhat_free(((LhatClosure *)object)->upvalues);
+        break;
+    case LHAT_OBJECT_SCRIPT:
+        lhat_proto_free(((LhatLoadedScript *)object)->root);
+        break;
+    case LHAT_OBJECT_COROUTINE:
+        lhat_free(((LhatCoroutine *)object)->registers.values);
+        lhat_free(((LhatCoroutine *)object)->registers.tags);
+        break;
+    case LHAT_OBJECT_TYPE:
+        lhat_free(((LhatRuntimeType *)object)->parts);
+        lhat_free(((LhatRuntimeType *)object)->members);
+        break;
+    case LHAT_OBJECT_OVERLOAD:
+        lhat_free(((LhatOverload *)object)->candidates);
+        break;
+    // 02 の 14.12: the array belongs to the host; the types in it are the
+    // heap's and are freed with everything else.
+    case LHAT_OBJECT_HOST:
+        lhat_free(((LhatHost *)object)->parameter_types);
+        break;
+    default:
+        break;
     }
     lhat_free(object);
 }

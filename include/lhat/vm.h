@@ -435,7 +435,9 @@ LhatRunResult lhat_machine_call_member(LhatMachine *machine,
 // holds. No frame, no registers: the walk's state is `context`, which
 // `release` (may be NULL) is handed back when the walk ends or is collected,
 // under the dispose^ contract -- once, and never reaching back into the L^
-// API, since the sweep may be the caller. `held` is one value kept reachable
+// API, since the sweep may be the caller. It is a hook and not a call, so
+// it is handed no room to answer into: `answers` and `answer_count` reach
+// it NULL, the way a dispose^ does (object.h). `held` is one value kept reachable
 // for the walk's sake -- the hostdata being walked, usually -- and nil^ when
 // nothing needs holding. `step` writes its answers the way any registration
 // does -- a `for^ k, v` walk hands over two of them -- and answers true

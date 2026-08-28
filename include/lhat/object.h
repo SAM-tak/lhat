@@ -215,8 +215,20 @@ struct LhatMachine;
 // is always wide enough, because a signature wider than it can carry is
 // refused where it is declared.
 //
-// *answer_count arrives as 0, so a p^ registration -- and the dispose^ and
-// release hooks, which are LhatHostFn too -- answers by doing nothing.
+// *answer_count arrives as 0, so a p^ registration answers by doing nothing.
+//
+// A CALL THAT TAKES NO ANSWER HANDS OVER NO ROOM. `answers` and
+// `answer_count` are both NULL then, and writing through either is writing
+// through nothing. Two callers do that, and both are hooks rather than
+// calls: 05 の 8.8's dispose^ when the collector gives a value back, and
+// the `release` a host walk was made with. Nobody is waiting for what they
+// would say, so nothing is set aside for it.
+//
+// Which is also why they are LhatHostFn and not a type of their own. A
+// dispose^ IS an ordinary member -- one registration puts the same C
+// function under the type's name and on its tag -- and the machine tells a
+// hand-written x.dispose() from any other call by comparing the two
+// (vm.c). A separate type would make one function look like two.
 //
 // 04 の 12.8 makes an error a value, so an error is answered like any
 // other. There is no unwinding to arrange and nothing to catch.
