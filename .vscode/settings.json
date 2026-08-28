@@ -1,4 +1,28 @@
 {
-    "C_Cpp.default.configurationProvider": "ms-vscode.cmake-tools",
+    // The compile database the Ninja presets write (CMAKE_EXPORT_COMPILE_COMMANDS
+    // in CMakePresets.json). IntelliSense reads it directly rather than asking
+    // the CMake Tools extension, so it keeps working whether or not the
+    // extension has managed to configure -- and editing CMakeLists.txt no
+    // longer takes IntelliSense down with it.
+    //
+    // The Visual Studio generator writes no compile database (CMake supports
+    // one only for Makefile and Ninja), so this points at a Ninja preset's.
+    // Any of debug / release / asan will do; they describe the same sources.
+    "C_Cpp.default.compileCommands": "${workspaceFolder}/build/debug/compile_commands.json",
+
+    // Ninja + MSVC needs INCLUDE / LIB / PATH from vcvars64.bat, which the
+    // extension does not have unless a kit was picked or VS Code was started
+    // from a developer shell (scripts/devshell.ps1). Configuring without them
+    // fails at project() with "No CMAKE_C_COMPILER could be found", and it
+    // fires again on every edit to CMakeLists.txt. Building is done from a
+    // developer shell with the presets, so nothing here needs the extension
+    // to configure at all.
+    //
+    // Turn these back on to drive builds from the extension -- pick a kit
+    // (CMake: Scan for Kits) or the "vs" preset first, either of which finds
+    // the toolchain without a shell.
+    "cmake.configureOnOpen": false,
+    "cmake.configureOnEdit": false,
+
     "lhat.serverAutoRestart": false
 }
