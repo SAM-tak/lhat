@@ -1280,6 +1280,39 @@ static void test_typeof(void)
                  "read : f^self^ -> number^; }");
     run_dispose(&r);
 
+    // 03 の 3.4: a parameter nothing was written for is not nothing known --
+    // inference settles it from what the body asks of it, and 14.16 answers
+    // with what was settled rather than with any^.
+    //
+    // This pair is the two ways typeof^ is answered. Here the checker
+    // stamped the expression and compile.c folded the descriptor in at
+    // compile time; below, nothing checked, so the TYPEOF instruction runs
+    // and reads the proto. The third way -- a checked proto read from C --
+    // is what lhat_value_type does, and it is pinned in
+    // test_hostdata_base.c where there is a host type to name.
+    LHAT_TEST("14.16: an unwritten parameter answers what inference settled");
+    run_checked_text(&r,
+                     "let^ f = f^ x { return^ x + 1 }\n"
+                     "return^ typeof^(f).signature\n");
+    CHECK_STRING(&r, "f^number^ -> number^;");
+    run_dispose(&r);
+
+    // 03 の 4.2: and a compile that never checked is left exactly as it was.
+    // There is no settled type to reach for, so the written spelling is all
+    // there is -- here none, which is any^. run_text compiles without
+    // checking on purpose (fixture.h), which is what makes this the line
+    // 4.2 draws: reaching for what the checker settled may sharpen an
+    // answer, never change what runs.
+    LHAT_TEST("but compiling without checking still says any^");
+    run_text(&r,
+             "let^ f = f^ x { return^ x + 1 }\n"
+             "return^ typeof^(f).signature\n");
+    // The result falls back with it, and for the same reason -- the line
+    // below the parameter loop in compile_subroutine reaches for the checked
+    // one only when checking ran, exactly as this does.
+    CHECK_STRING(&r, "f^any^;");
+    run_dispose(&r);
+
     LHAT_TEST("a number's signature");
     run_text(&r, "return^ typeof^(5).signature\n");
     CHECK_STRING(&r, "number^");

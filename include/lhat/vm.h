@@ -167,6 +167,31 @@ size_t lhat_machine_collectgarbage(LhatMachine *machine);
 // run: a waiting one still holds the closure it was suspended in.
 size_t lhat_machine_pending_disposals(const LhatMachine *machine);
 
+// 02 の 14.16: what typeof^ answers, asked from C. The same reading, so a
+// host and a program never learn different things about one value.
+//
+// What this is FOR: a host that has to act on what a value's type says
+// rather than on a string beside it. A def^ wrapping something the host
+// made carries the truth in its constructor's signature -- ask this of the
+// `new` member, read parts[0], and a HOSTDATA answer hands back the very
+// tag the host registered (hostdata_tag->module and ->name in object.h).
+// Writing the class name out beside the wrapper is the other way, and
+// nothing keeps the two in step.
+//
+// A subroutine answers from the types its proto carries, which were made
+// at compile time -- including a parameter nothing was written for, whose
+// type inference settled (03 の 3.4). A table answers t^ and no more: what
+// a structure holds deeply is the checker's to say, at compile time.
+//
+// The answer is the machine's, so it is readable until the next lhat_run /
+// lhat_machine_call / lhat_machine_resume or the machine's disposal,
+// whichever comes first -- the same lifetime the fault frames below have.
+// What hangs off it is longer-lived: a signature's parameter types belong
+// to the chunk that compiled them, which outlives every machine, and are
+// answered here rather than copied. NULL only out of memory.
+const LhatRuntimeType *lhat_value_type(LhatMachine *machine,
+                                       LhatValue value);
+
 // 05 の 8.7: the three steps a host registration takes at run time. Kept here
 // rather than in program.c because only this file may touch the heap -- the
 // values belong to the machine and the collector has to see them.

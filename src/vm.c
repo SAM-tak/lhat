@@ -7348,6 +7348,19 @@ size_t lhat_machine_collectgarbage(LhatMachine *machine)
     return m->objects.count;
 }
 
+// 02 の 14.16: typeof^ from C. One reading for both sides, so a host and a
+// program never learn different things about one value -- which is why
+// this is tag_type itself and not a second walk beside it.
+const LhatRuntimeType *lhat_value_type(LhatMachine *machine,
+                                       LhatValue value)
+{
+    Machine *m = (Machine *)machine;
+    if (m == NULL) {
+        return NULL;
+    }
+    return tag_type(&m->objects, value);
+}
+
 size_t lhat_machine_pending_disposals(const LhatMachine *machine)
 {
     return machine != NULL ? waiting_disposals((const Machine *)machine) : 0;

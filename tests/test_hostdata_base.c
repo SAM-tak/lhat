@@ -525,6 +525,99 @@ static void test_inherited_dispose(void)
 }
 
 // ---------------------------------------------------------------------------
+// 02 の 14.16 from C: lhat_value_type
+//
+// A host wrapping its own objects in a def^ has to know which of its types a
+// wrapper takes. The truth is in the constructor's signature; writing the
+// name out beside the wrapper is a copy of it, and nothing holds the two
+// together. This is the reading that makes the copy needless.
+
+// Reads the class name a def^'s `new` takes, the way a host would. NULL
+// where the chain of readings gives out.
+static const char *class_new_takes(LhatMachine *machine, LhatValue definition)
+{
+    if (!lhat_is_object_kind(definition, LHAT_OBJECT_TABLE)) {
+        return NULL;
+    }
+    LhatValue key = lhat_nil();
+    if (!lhat_machine_make_string(machine, "new", 3, &key)) {
+        return NULL;
+    }
+    LhatValue ctor =
+        lhat_table_get((const LhatTable *)lhat_as_object(definition), key);
+    const LhatRuntimeType *signature = lhat_value_type(machine, ctor);
+    if (signature == NULL || signature->kind != LHAT_TYPE_RT_SUBROUTINE ||
+        signature->part_count != 1) {
+        return NULL;
+    }
+    const LhatRuntimeType *takes = signature->parts[0];
+    if (takes == NULL || takes->kind != LHAT_TYPE_RT_HOSTDATA ||
+        takes->hostdata_tag == NULL) {
+        return NULL;
+    }
+    return takes->hostdata_tag->name;
+}
+
+static void test_value_type(void)
+{
+    LhatProgram program;
+    Disk disk;
+
+    // Two wrappers over the same host type: one saying what its new takes,
+    // one leaving it to inference (03 の 3.4 settles it from the field the
+    // body writes). A host cannot be asked to care which way it was written,
+    // so both have to answer the same.
+    static const File files[] = {
+        {"main.lh",
+             "import^ scene\n"
+             "let^ Said = def^{\n"
+             "    self^{ abstract^ gd : scene.Sprite2D },\n"
+             "    override^new = f^ obj:scene.Sprite2D { self^{ gd = obj } },\n"
+             "}\n"
+             "let^ Bare = def^{\n"
+             "    self^{ abstract^ gd : scene.Sprite2D },\n"
+             "    override^new = f^ obj { self^{ gd = obj } },\n"
+             "}\n"
+             "return^ { said = Said, bare = Bare }\n"},
+    };
+
+    LHAT_TEST("14.16: a host reads what a def^'s new takes");
+    {
+        program_with(&program, &disk, files, 1);
+        LHAT_CHECK(register_scene(&program, false), "registered");
+        const LhatUnit *root = lhat_program_check(&program, "main.lh");
+        LHAT_CHECK(root != NULL && !lhat_program_has_errors(&program),
+                   "checked clean");
+        LHAT_CHECK(lhat_program_compile(&program), "compiled");
+        LhatMachine *machine = lhat_machine_new();
+        LHAT_CHECK(machine != NULL && lhat_program_install(&program, machine),
+                   "installed");
+        LhatRunResult ran = lhat_run(machine, lhat_unit_proto(root));
+        LHAT_CHECK_EQ_INT(ran.status, LHAT_RUN_OK);
+
+        // The machine is kept alive on purpose: what lhat_value_type answers
+        // is the machine's until it next runs, and this is a host reading it
+        // in exactly that window.
+        LhatValue key = lhat_nil();
+        for (int which = 0; which < 2; which++) {
+            const char *name = which == 0 ? "said" : "bare";
+            LHAT_CHECK(
+                lhat_machine_make_string(machine, name, strlen(name), &key),
+                "the key was made");
+            LhatValue held = lhat_table_get(
+                (const LhatTable *)lhat_as_object(ran.value), key);
+            const char *takes = class_new_takes(machine, held);
+            LHAT_CHECK(takes != NULL, "the signature was read");
+            if (takes != NULL) {
+                LHAT_CHECK_EQ_STR(takes, strlen(takes), "Sprite2D");
+            }
+        }
+        lhat_machine_dispose(machine);
+        lhat_program_dispose(&program);
+    }
+}
+
+// ---------------------------------------------------------------------------
 // What the registration itself refuses
 
 static void test_registration(void)
@@ -648,6 +741,7 @@ int main(void)
     test_inherited_members();
     test_fits();
     test_inherited_dispose();
+    test_value_type();
     test_registration();
     test_delegate_to_host();
     return lhat_test_report("test_hostdata_base");

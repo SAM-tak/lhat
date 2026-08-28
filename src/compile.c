@@ -3657,6 +3657,23 @@ static void compile_subroutine_as(Compiler *c, const LhatNode *node,
         }
         proto->parameter_types = types;
         types[proto->parameters] = lower_type(c, param->v.param.type);
+        if (param->v.param.type == NULL && settled_type != NULL) {
+            // Nothing was written, so lower_type had nothing to read --
+            // but the checker settled what the body actually asks of this
+            // parameter (03 の 3.4's ParamVar), and `settled_type` above is
+            // already that, stepped in time with the written list. The
+            // result type does the same a few lines below and for the same
+            // reasons: reaching for it only where nothing was written
+            // leaves a compile that never checked exactly as it was
+            // (03 の 4.2), and a written any^ still wins because this
+            // fires only when the annotation is absent.
+            //
+            // 3.1③ is why this is not a guess in a unit that checked:
+            // a parameter neither written nor settled is already an error
+            // there (LHAT_CHECK_ERR_PARAM_UNDECIDED).
+            types[proto->parameters] = lhat_rt_from_checked(
+                &root_of(c)->proto->chunk.heap, settled_type);
+        }
         proto->parameters++;
     }
     // 05 の 8.9: see the wide-parameter refusal inside the loop -- '...'
