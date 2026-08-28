@@ -409,8 +409,8 @@ static bool write_value(Writer *w, const JsonModule *m, LhatValue value,
 }
 
 static void json_encode(LhatMachine *machine, void *context,
-                          const LhatValue *arguments, size_t count,
-                          LhatValue *answers, int *answer_count)
+                        const LhatValue *arguments, size_t count,
+                        LhatValue *answers, int *answer_count)
 {
     (void)count;
     const JsonModule *m = (const JsonModule *)context;
@@ -430,7 +430,6 @@ static void json_encode(LhatMachine *machine, void *context,
     lhat_free(w.text);
     answers[0] = answer;
     *answer_count = 1;
-    return;
 }
 
 // ---------------------------------------------------------------------------
@@ -841,8 +840,8 @@ static bool read_value(Reader *r, LhatValue *out, size_t depth)
 }
 
 static void json_decode(LhatMachine *machine, void *context,
-                          const LhatValue *arguments, size_t count,
-                          LhatValue *answers, int *answer_count)
+                        const LhatValue *arguments, size_t count,
+                        LhatValue *answers, int *answer_count)
 {
     (void)count;
     const JsonModule *m = (const JsonModule *)context;
@@ -884,7 +883,6 @@ static void json_decode(LhatMachine *machine, void *context,
     }
     answers[0] = made;
     *answer_count = 1;
-    return;
 }
 
 // ---------------------------------------------------------------------------

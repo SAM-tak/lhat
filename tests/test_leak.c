@@ -154,8 +154,8 @@ typedef struct {
 static Held held = {7};
 
 static void held_read(LhatMachine *machine, void *context,
-                          const LhatValue *arguments, size_t count,
-                          LhatValue *answers, int *answer_count)
+                      const LhatValue *arguments, size_t count,
+                      LhatValue *answers, int *answer_count)
 {
     (void)machine;
     (void)context;
@@ -163,12 +163,11 @@ static void held_read(LhatMachine *machine, void *context,
     (void)count;
     answers[0] = lhat_integer(held.n);
     *answer_count = 1;
-    return;
 }
 
 static void held_make(LhatMachine *machine, void *context,
-                          const LhatValue *arguments, size_t count,
-                          LhatValue *answers, int *answer_count)
+                      const LhatValue *arguments, size_t count,
+                      LhatValue *answers, int *answer_count)
 {
     (void)arguments;
     (void)count;
@@ -177,7 +176,6 @@ static void held_make(LhatMachine *machine, void *context,
                                &held, &out);
     answers[0] = out;
     *answer_count = 1;
-    return;
 }
 
 // One whole turn of what a host does: build it, run it, let it go.

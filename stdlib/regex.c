@@ -399,8 +399,8 @@ static bool gmatch_step(LhatMachine *machine, void *context,
 }
 
 static void gmatch_release(LhatMachine *machine, void *context,
-                          const LhatValue *arguments, size_t count,
-                          LhatValue *answers, int *answer_count)
+                           const LhatValue *arguments, size_t count,
+                           LhatValue *answers, int *answer_count)
 {
     (void)machine;
     (void)arguments;
@@ -410,7 +410,6 @@ static void gmatch_release(LhatMachine *machine, void *context,
     GmatchWalk *walk = (GmatchWalk *)context;
     lhat_regex_free(walk->compiled);
     lhat_free(walk);
-    return;
 }
 
 // Compiles its own form from the pattern text and hands the walk over.
@@ -456,8 +455,8 @@ static const LhatString *arg_string(LhatValue value)
 }
 
 static void regex_new(LhatMachine *machine, void *context,
-                          const LhatValue *arguments, size_t count,
-                          LhatValue *answers, int *answer_count)
+                      const LhatValue *arguments, size_t count,
+                      LhatValue *answers, int *answer_count)
 {
     (void)count;
     const RegexModule *module = (const RegexModule *)context;
@@ -502,7 +501,6 @@ static void regex_new(LhatMachine *machine, void *context,
     }
     answers[0] = out;
     *answer_count = 1;
-    return;
 }
 
 static Regex *self_regex(const RegexModule *module, LhatValue receiver)
@@ -511,8 +509,8 @@ static Regex *self_regex(const RegexModule *module, LhatValue receiver)
 }
 
 static void regex_match(LhatMachine *machine, void *context,
-                          const LhatValue *arguments, size_t count,
-                          LhatValue *answers, int *answer_count)
+                        const LhatValue *arguments, size_t count,
+                        LhatValue *answers, int *answer_count)
 {
     (void)count;
     const RegexModule *module = (const RegexModule *)context;
@@ -523,12 +521,11 @@ static void regex_match(LhatMachine *machine, void *context,
     }
     answers[0] = do_match(machine, module, self->compiled, text);
     *answer_count = 1;
-    return;
 }
 
 static void regex_captures(LhatMachine *machine, void *context,
-                          const LhatValue *arguments, size_t count,
-                          LhatValue *answers, int *answer_count)
+                           const LhatValue *arguments, size_t count,
+                           LhatValue *answers, int *answer_count)
 {
     (void)count;
     const RegexModule *module = (const RegexModule *)context;
@@ -539,12 +536,11 @@ static void regex_captures(LhatMachine *machine, void *context,
     }
     answers[0] = do_captures(machine, module, self->compiled, text);
     *answer_count = 1;
-    return;
 }
 
 static void regex_gmatch(LhatMachine *machine, void *context,
-                          const LhatValue *arguments, size_t count,
-                          LhatValue *answers, int *answer_count)
+                         const LhatValue *arguments, size_t count,
+                         LhatValue *answers, int *answer_count)
 {
     (void)count;
     const RegexModule *module = (const RegexModule *)context;
@@ -555,12 +551,11 @@ static void regex_gmatch(LhatMachine *machine, void *context,
     answers[0] = make_gmatch(machine, module, self->pattern, self->pattern_length,
                        arguments[1]);
     *answer_count = 1;
-    return;
 }
 
 static void regex_gsub(LhatMachine *machine, void *context,
-                          const LhatValue *arguments, size_t count,
-                          LhatValue *answers, int *answer_count)
+                       const LhatValue *arguments, size_t count,
+                       LhatValue *answers, int *answer_count)
 {
     (void)count;
     const RegexModule *module = (const RegexModule *)context;
@@ -571,12 +566,11 @@ static void regex_gsub(LhatMachine *machine, void *context,
     }
     answers[0] = do_gsub(machine, module, self->compiled, text, arguments[2]);
     *answer_count = 1;
-    return;
 }
 
 static void regex_split(LhatMachine *machine, void *context,
-                          const LhatValue *arguments, size_t count,
-                          LhatValue *answers, int *answer_count)
+                        const LhatValue *arguments, size_t count,
+                        LhatValue *answers, int *answer_count)
 {
     (void)count;
     const RegexModule *module = (const RegexModule *)context;
@@ -587,7 +581,6 @@ static void regex_split(LhatMachine *machine, void *context,
     }
     answers[0] = do_split(machine, module, self->compiled, text);
     *answer_count = 1;
-    return;
 }
 
 static void regex_dispose(LhatMachine *machine, void *context,
@@ -605,14 +598,13 @@ static void regex_dispose(LhatMachine *machine, void *context,
         lhat_free(self->pattern);
         lhat_free(self);
     }
-    return;
 }
 
 // The convenience forms: compile, use, free -- every call. A hot path holds
 // a new() of its own, which is the whole reason the object exists.
 static void module_match(LhatMachine *machine, void *context,
-                          const LhatValue *arguments, size_t count,
-                          LhatValue *answers, int *answer_count)
+                         const LhatValue *arguments, size_t count,
+                         LhatValue *answers, int *answer_count)
 {
     (void)count;
     const RegexModule *module = (const RegexModule *)context;
@@ -637,7 +629,6 @@ static void module_match(LhatMachine *machine, void *context,
     lhat_regex_free(compiled);
     answers[0] = answered;
     *answer_count = 1;
-    return;
 }
 
 static void module_gmatch(LhatMachine *machine, void *context,
@@ -668,12 +659,11 @@ static void module_gmatch(LhatMachine *machine, void *context,
     answers[0] = make_gmatch(machine, module, pattern->text, pattern->length,
                        arguments[1]);
     *answer_count = 1;
-    return;
 }
 
 static void module_gsub(LhatMachine *machine, void *context,
-                          const LhatValue *arguments, size_t count,
-                          LhatValue *answers, int *answer_count)
+                        const LhatValue *arguments, size_t count,
+                        LhatValue *answers, int *answer_count)
 {
     (void)count;
     const RegexModule *module = (const RegexModule *)context;
@@ -699,7 +689,6 @@ static void module_gsub(LhatMachine *machine, void *context,
     lhat_regex_free(compiled);
     answers[0] = answered;
     *answer_count = 1;
-    return;
 }
 
 bool lhatstdlib_regex_register(LhatProgram *program)

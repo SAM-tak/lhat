@@ -185,8 +185,8 @@ static LhatValue answer(LhatMachine *machine, const LtonModule *module,
 }
 
 static void lton_parse(LhatMachine *machine, void *context,
-                          const LhatValue *arguments, size_t count,
-                          LhatValue *answers, int *answer_count)
+                       const LhatValue *arguments, size_t count,
+                       LhatValue *answers, int *answer_count)
 {
     (void)count;
     const LtonModule *module = (const LtonModule *)context;
@@ -201,12 +201,11 @@ static void lton_parse(LhatMachine *machine, void *context,
         machine, module->program, NULL, text->text, text->length, &table);
     answers[0] = answer(machine, module, status, table);
     *answer_count = 1;
-    return;
 }
 
 static void lton_load(LhatMachine *machine, void *context,
-                          const LhatValue *arguments, size_t count,
-                          LhatValue *answers, int *answer_count)
+                      const LhatValue *arguments, size_t count,
+                      LhatValue *answers, int *answer_count)
 {
     (void)count;
     const LtonModule *module = (const LtonModule *)context;
@@ -228,7 +227,6 @@ static void lton_load(LhatMachine *machine, void *context,
     lhat_free(named);
     answers[0] = answer(machine, module, status, table);
     *answer_count = 1;
-    return;
 }
 
 bool lhatstdlib_lton_register(LhatProgram *program)

@@ -142,8 +142,8 @@ static bool ending_step(LhatMachine *machine, void *context,
 }
 
 static void walk_release(LhatMachine *machine, void *context,
-                          const LhatValue *arguments, size_t count,
-                          LhatValue *answers, int *answer_count)
+                         const LhatValue *arguments, size_t count,
+                         LhatValue *answers, int *answer_count)
 {
     (void)machine;
     (void)arguments;
@@ -152,7 +152,6 @@ static void walk_release(LhatMachine *machine, void *context,
     (void)answer_count;
     walk_releases++;
     free(context);
-    return;
 }
 
 static LhatValue make_walk(LhatMachine *machine, LhatValue over,
@@ -189,7 +188,6 @@ static void range_iterate(LhatMachine *machine, void *context,
     (void)count;
     answers[0] = make_walk(machine, arguments[0], range_tag, false);
     *answer_count = 1;
-    return;
 }
 
 static void pairs_iterate(LhatMachine *machine, void *context,
@@ -200,12 +198,11 @@ static void pairs_iterate(LhatMachine *machine, void *context,
     (void)count;
     answers[0] = make_walk(machine, arguments[0], pairs_tag, true);
     *answer_count = 1;
-    return;
 }
 
 static void range_span(LhatMachine *machine, void *context,
-                          const LhatValue *arguments, size_t count,
-                          LhatValue *answers, int *answer_count)
+                       const LhatValue *arguments, size_t count,
+                       LhatValue *answers, int *answer_count)
 {
     (void)machine;
     (void)context;
@@ -216,7 +213,6 @@ static void range_span(LhatMachine *machine, void *context,
     }
     answers[0] = lhat_integer(self->to - self->from + 1);
     *answer_count = 1;
-    return;
 }
 
 static LhatValue range_make_with(LhatMachine *machine,
@@ -232,25 +228,23 @@ static LhatValue range_make_with(LhatMachine *machine,
 }
 
 static void range_make(LhatMachine *machine, void *context,
-                          const LhatValue *arguments, size_t count,
-                          LhatValue *answers, int *answer_count)
+                       const LhatValue *arguments, size_t count,
+                       LhatValue *answers, int *answer_count)
 {
     (void)context;
     (void)count;
     answers[0] = range_make_with(machine, range_tag, arguments);
     *answer_count = 1;
-    return;
 }
 
 static void pairs_make(LhatMachine *machine, void *context,
-                          const LhatValue *arguments, size_t count,
-                          LhatValue *answers, int *answer_count)
+                       const LhatValue *arguments, size_t count,
+                       LhatValue *answers, int *answer_count)
 {
     (void)context;
     (void)count;
     answers[0] = range_make_with(machine, pairs_tag, arguments);
     *answer_count = 1;
-    return;
 }
 
 // Runs `main.lh` of an already-registered program and answers the result.
@@ -867,30 +861,28 @@ static LhatValue vec_iterate_with(LhatMachine *machine, LhatValue over,
 }
 
 static void vec_iterate(LhatMachine *machine, void *context,
-                          const LhatValue *arguments, size_t count,
-                          LhatValue *answers, int *answer_count)
+                        const LhatValue *arguments, size_t count,
+                        LhatValue *answers, int *answer_count)
 {
     (void)context;
     (void)count;
     answers[0] = vec_iterate_with(machine, arguments[0], false);
     *answer_count = 1;
-    return;
 }
 
 static void vec_pair_iterate(LhatMachine *machine, void *context,
-                          const LhatValue *arguments, size_t count,
-                          LhatValue *answers, int *answer_count)
+                             const LhatValue *arguments, size_t count,
+                             LhatValue *answers, int *answer_count)
 {
     (void)context;
     (void)count;
     answers[0] = vec_iterate_with(machine, arguments[0], true);
     *answer_count = 1;
-    return;
 }
 
 static void vec_seq_make(LhatMachine *machine, void *context,
-                          const LhatValue *arguments, size_t count,
-                          LhatValue *answers, int *answer_count)
+                         const LhatValue *arguments, size_t count,
+                         LhatValue *answers, int *answer_count)
 {
     (void)context;
     (void)arguments;
@@ -902,7 +894,6 @@ static void vec_seq_make(LhatMachine *machine, void *context,
                ? out
                : lhat_nil();
     *answer_count = 1;
-    return;
 }
 
 static void test_walk_yields_host_values(void)
@@ -994,8 +985,8 @@ static float float_at(const void *data)
 }
 
 static void vec_mk(LhatMachine *machine, void *context,
-                          const LhatValue *arguments, size_t count,
-                          LhatValue *answers, int *answer_count)
+                   const LhatValue *arguments, size_t count,
+                   LhatValue *answers, int *answer_count)
 {
     (void)context;
     (void)count;
@@ -1006,7 +997,6 @@ static void vec_mk(LhatMachine *machine, void *context,
     LhatValue out = lhat_nil();
     answers[0] = lhat_make_hostvalue(machine, vec_tag, &v, &out) ? out : lhat_nil();
     *answer_count = 1;
-    return;
 }
 
 static void test_boundary_host_values(void)

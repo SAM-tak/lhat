@@ -880,8 +880,8 @@ static void test_running(void)
 // 05 の 8.6: one that goes into L^ itself rather than under its registry,
 // so that 8.2's initial binding has something to name.
 static void host_twice(LhatMachine *machine, void *context,
-                          const LhatValue *arguments, size_t count,
-                          LhatValue *answers, int *answer_count)
+                       const LhatValue *arguments, size_t count,
+                       LhatValue *answers, int *answer_count)
 {
     (void)machine;
     int *calls = (int *)context;
@@ -893,13 +893,12 @@ static void host_twice(LhatMachine *machine, void *context,
     }
     answers[0] = lhat_integer(lhat_as_integer(arguments[0]) * 2);
     *answer_count = 1;
-    return;
 }
 
 // Reads x and y off a table -- the signature above names them.
 static void host_sum_xy(LhatMachine *machine, void *context,
-                          const LhatValue *arguments, size_t count,
-                          LhatValue *answers, int *answer_count)
+                        const LhatValue *arguments, size_t count,
+                        LhatValue *answers, int *answer_count)
 {
     (void)context;
     LhatValue kx = lhat_nil();
@@ -917,19 +916,18 @@ static void host_sum_xy(LhatMachine *machine, void *context,
     }
     answers[0] = lhat_integer(lhat_as_integer(x) + lhat_as_integer(y));
     *answer_count = 1;
-    return;
 }
 
 // Defined with the variadic tests below; an arm above wants it too.
 static void host_sum(LhatMachine *machine, void *context,
-                          const LhatValue *arguments, size_t count,
-                          LhatValue *answers, int *answer_count);
+                     const LhatValue *arguments, size_t count,
+                     LhatValue *answers, int *answer_count);
 
 // Answers 1 whatever it was given -- an arm that only has to be the one
 // picked.
 static void host_one(LhatMachine *machine, void *context,
-                          const LhatValue *arguments, size_t count,
-                          LhatValue *answers, int *answer_count)
+                     const LhatValue *arguments, size_t count,
+                     LhatValue *answers, int *answer_count)
 {
     (void)machine;
     (void)context;
@@ -937,14 +935,13 @@ static void host_one(LhatMachine *machine, void *context,
     (void)count;
     answers[0] = lhat_integer(1);
     *answer_count = 1;
-    return;
 }
 
 // The same, answering something else -- so which arm ran can be read off
 // the answer.
 static void host_two(LhatMachine *machine, void *context,
-                          const LhatValue *arguments, size_t count,
-                          LhatValue *answers, int *answer_count)
+                     const LhatValue *arguments, size_t count,
+                     LhatValue *answers, int *answer_count)
 {
     (void)machine;
     (void)context;
@@ -952,12 +949,11 @@ static void host_two(LhatMachine *machine, void *context,
     (void)count;
     answers[0] = lhat_integer(2);
     *answer_count = 1;
-    return;
 }
 
 static void host_add(LhatMachine *machine, void *context,
-                          const LhatValue *arguments, size_t count,
-                          LhatValue *answers, int *answer_count)
+                     const LhatValue *arguments, size_t count,
+                     LhatValue *answers, int *answer_count)
 {
     (void)machine;
     int *calls = (int *)context;
@@ -971,7 +967,6 @@ static void host_add(LhatMachine *machine, void *context,
     answers[0] = lhat_integer(lhat_as_integer(arguments[0]) +
                         lhat_as_integer(arguments[1]));
     *answer_count = 1;
-    return;
 }
 
 // 02 の 11.8改 with 05 の 8.9: a host value carrying the unary '-'. The tag
@@ -985,8 +980,8 @@ typedef struct {
 // the value arm, anything else the nil^ one -- which lands in the head slot
 // of the room the width reserved, where ISNIL reads for it.
 static void host_counter_maybe(LhatMachine *machine, void *context,
-                          const LhatValue *arguments, size_t count,
-                          LhatValue *answers, int *answer_count)
+                               const LhatValue *arguments, size_t count,
+                               LhatValue *answers, int *answer_count)
 {
     if (count != 1 || !lhat_is_number(arguments[0]) ||
         lhat_as_real(arguments[0]) <= 0) {
@@ -999,12 +994,11 @@ static void host_counter_maybe(LhatMachine *machine, void *context,
                ? out
                : lhat_nil();
     *answer_count = 1;
-    return;
 }
 
 static void host_counter_make(LhatMachine *machine, void *context,
-                          const LhatValue *arguments, size_t count,
-                          LhatValue *answers, int *answer_count)
+                              const LhatValue *arguments, size_t count,
+                              LhatValue *answers, int *answer_count)
 {
     (void)arguments;
     if (count != 0) {
@@ -1017,15 +1011,14 @@ static void host_counter_make(LhatMachine *machine, void *context,
                ? out
                : lhat_nil();
     *answer_count = 1;
-    return;
 }
 
 // f^self^ -> number^; -- one operand and no argument, which is the whole of
 // what tells a unary operator from a binary one.
 // 05 の 8.7改2: a host function that panics rather than answering.
 static void host_refuse(LhatMachine *machine, void *context,
-                          const LhatValue *arguments, size_t count,
-                          LhatValue *answers, int *answer_count)
+                        const LhatValue *arguments, size_t count,
+                        LhatValue *answers, int *answer_count)
 {
     (void)context;
     (void)arguments;
@@ -1038,8 +1031,8 @@ static void host_refuse(LhatMachine *machine, void *context,
 
 // The same, as a host value's unary '-'.
 static void host_counter_refuse(LhatMachine *machine, void *context,
-                          const LhatValue *arguments, size_t count,
-                          LhatValue *answers, int *answer_count)
+                                const LhatValue *arguments, size_t count,
+                                LhatValue *answers, int *answer_count)
 {
     (void)context;
     (void)arguments;
@@ -1047,12 +1040,11 @@ static void host_counter_refuse(LhatMachine *machine, void *context,
     lhat_machine_panic_text(machine, "no negative of this");
     answers[0] = lhat_integer(99);
     *answer_count = 1;
-    return;
 }
 
 static void host_counter_negate(LhatMachine *machine, void *context,
-                          const LhatValue *arguments, size_t count,
-                          LhatValue *answers, int *answer_count)
+                                const LhatValue *arguments, size_t count,
+                                LhatValue *answers, int *answer_count)
 {
     (void)machine;
     if (count != 1) {
@@ -1067,14 +1059,13 @@ static void host_counter_negate(LhatMachine *machine, void *context,
     memcpy(&c, bytes, sizeof c);
     answers[0] = lhat_integer(-c.n);
     *answer_count = 1;
-    return;
 }
 
 // f^self^, o:number^ -> number^; -- the binary arm standing beside the unary
 // one above, told apart by what each takes.
 static void host_counter_minus(LhatMachine *machine, void *context,
-                          const LhatValue *arguments, size_t count,
-                          LhatValue *answers, int *answer_count)
+                               const LhatValue *arguments, size_t count,
+                               LhatValue *answers, int *answer_count)
 {
     (void)machine;
     if (count != 2 || !lhat_is_integer(arguments[1])) {
@@ -1089,7 +1080,6 @@ static void host_counter_minus(LhatMachine *machine, void *context,
     memcpy(&c, bytes, sizeof c);
     answers[0] = lhat_integer(c.n - lhat_as_integer(arguments[1]));
     *answer_count = 1;
-    return;
 }
 
 // f^self^, o:test.c.C -> bool^; -- 02 の 11.9改's op^= for a host value.
@@ -1097,22 +1087,21 @@ static void host_counter_minus(LhatMachine *machine, void *context,
 // is what tells it apart from 05 の 8.9's default: byte equality could never
 // answer that, so a false here is the registration being asked.
 static void host_counter_never_equal(LhatMachine *machine, void *context,
-                          const LhatValue *arguments, size_t count,
-                          LhatValue *answers, int *answer_count)
+                                     const LhatValue *arguments, size_t count,
+                                     LhatValue *answers, int *answer_count)
 {
     (void)machine;
     (void)context;
     (void)arguments;
     answers[0] = count == 2 ? lhat_bool(false) : lhat_nil();
     *answer_count = 1;
-    return;
 }
 
 // f^lhs:number^, self^ -> number^; -- 02 の 11.3改's trailing self^, so the
 // receiver is the operand written on the RIGHT and 'n + v' finds it.
 static void host_counter_radd(LhatMachine *machine, void *context,
-                          const LhatValue *arguments, size_t count,
-                          LhatValue *answers, int *answer_count)
+                              const LhatValue *arguments, size_t count,
+                              LhatValue *answers, int *answer_count)
 {
     (void)machine;
     if (count != 2 || !lhat_is_integer(arguments[0])) {
@@ -1127,21 +1116,19 @@ static void host_counter_radd(LhatMachine *machine, void *context,
     memcpy(&c, bytes, sizeof c);
     answers[0] = lhat_integer(lhat_as_integer(arguments[0]) + c.n);
     *answer_count = 1;
-    return;
 }
 
 // f^self^, o:string^ -> number^; -- the same count as the binary '-' arm,
 // told apart by the type alone. What the counts could not settle.
 static void host_counter_tagged(LhatMachine *machine, void *context,
-                          const LhatValue *arguments, size_t count,
-                          LhatValue *answers, int *answer_count)
+                                const LhatValue *arguments, size_t count,
+                                LhatValue *answers, int *answer_count)
 {
     (void)machine;
     (void)context;
     (void)arguments;
     answers[0] = count == 2 ? lhat_integer(99) : lhat_nil();
     *answer_count = 1;
-    return;
 }
 
 static bool has_check_error(const LhatUnit *unit, LhatCheckErrorCode code)
@@ -1580,8 +1567,8 @@ static const LhatHostDataTag *other_tag;
 static int wrong_type_reached;
 
 static void held_make(LhatMachine *machine, void *context,
-                          const LhatValue *arguments, size_t count,
-                          LhatValue *answers, int *answer_count)
+                      const LhatValue *arguments, size_t count,
+                      LhatValue *answers, int *answer_count)
 {
     (void)arguments;
     (void)count;
@@ -1591,12 +1578,11 @@ static void held_make(LhatMachine *machine, void *context,
     answers[0] = lhat_machine_make_hostdata(machine, held_tag, held, &out) ? out
                                                                  : lhat_nil();
     *answer_count = 1;
-    return;
 }
 
 static void held_read(LhatMachine *machine, void *context,
-                          const LhatValue *arguments, size_t count,
-                          LhatValue *answers, int *answer_count)
+                      const LhatValue *arguments, size_t count,
+                      LhatValue *answers, int *answer_count)
 {
     (void)machine;
     (void)context;
@@ -1608,12 +1594,11 @@ static void held_read(LhatMachine *machine, void *context,
     }
     answers[0] = lhat_integer(self->value);
     *answer_count = 1;
-    return;
 }
 
 static void held_dispose(LhatMachine *machine, void *context,
-                          const LhatValue *arguments, size_t count,
-                          LhatValue *answers, int *answer_count)
+                         const LhatValue *arguments, size_t count,
+                         LhatValue *answers, int *answer_count)
 {
     (void)machine;
     (void)context;
@@ -1624,12 +1609,11 @@ static void held_dispose(LhatMachine *machine, void *context,
     if (self != NULL) {
         self->live = 0;
     }
-    return;
 }
 
 static void other_make(LhatMachine *machine, void *context,
-                          const LhatValue *arguments, size_t count,
-                          LhatValue *answers, int *answer_count)
+                       const LhatValue *arguments, size_t count,
+                       LhatValue *answers, int *answer_count)
 {
     (void)context;
     (void)arguments;
@@ -1638,13 +1622,12 @@ static void other_make(LhatMachine *machine, void *context,
     answers[0] = lhat_machine_make_hostdata(machine, other_tag, NULL, &out) ? out
                                                                   : lhat_nil();
     *answer_count = 1;
-    return;
 }
 
 // The very pointer held_make wraps, under the other tag.
 static void other_make_same(LhatMachine *machine, void *context,
-                          const LhatValue *arguments, size_t count,
-                          LhatValue *answers, int *answer_count)
+                            const LhatValue *arguments, size_t count,
+                            LhatValue *answers, int *answer_count)
 {
     (void)arguments;
     (void)count;
@@ -1653,19 +1636,17 @@ static void other_make_same(LhatMachine *machine, void *context,
                ? out
                : lhat_nil();
     *answer_count = 1;
-    return;
 }
 
 // Answers its receiver -- a member whose type names its own.
 static void host_self(LhatMachine *machine, void *context,
-                          const LhatValue *arguments, size_t count,
-                          LhatValue *answers, int *answer_count)
+                      const LhatValue *arguments, size_t count,
+                      LhatValue *answers, int *answer_count)
 {
     (void)machine;
     (void)context;
     answers[0] = count >= 1 ? arguments[0] : lhat_nil();
     *answer_count = 1;
-    return;
 }
 
 static void test_host_data(void)
@@ -1888,8 +1869,8 @@ static int cells_freed;
 static const LhatHostDataTag *cell_tag;
 
 static void cell_make(LhatMachine *machine, void *context,
-                          const LhatValue *arguments, size_t count,
-                          LhatValue *answers, int *answer_count)
+                      const LhatValue *arguments, size_t count,
+                      LhatValue *answers, int *answer_count)
 {
     (void)context;
     (void)arguments;
@@ -1908,12 +1889,11 @@ static void cell_make(LhatMachine *machine, void *context,
     }
     answers[0] = out;
     *answer_count = 1;
-    return;
 }
 
 static void cell_release(LhatMachine *machine, void *context,
-                          const LhatValue *arguments, size_t count,
-                          LhatValue *answers, int *answer_count)
+                         const LhatValue *arguments, size_t count,
+                         LhatValue *answers, int *answer_count)
 {
     (void)machine;
     (void)context;
@@ -1926,7 +1906,6 @@ static void cell_release(LhatMachine *machine, void *context,
         cells_live--;
         cells_freed++;
     }
-    return;
 }
 
 // Runs one program against a store of cells and reports what was left.
@@ -2921,8 +2900,8 @@ static void test_hostvalue_escape(void)
 // 02 の 13.8改: a host answering several values. The positions go into the
 // machine's room and come back as the run every other producer makes.
 static void host_divmod(LhatMachine *machine, void *context,
-                          const LhatValue *arguments, size_t count,
-                          LhatValue *answers, int *answer_count)
+                        const LhatValue *arguments, size_t count,
+                        LhatValue *answers, int *answer_count)
 {
     (void)context;
     if (count != 2 || !lhat_is_integer(arguments[0]) ||
@@ -2942,8 +2921,8 @@ static void host_divmod(LhatMachine *machine, void *context,
 // 13.7 with 13.8改: the host arm gathers its own arguments, so a tuple spread
 // into a variadic tail reaches it as ordinary arguments and nothing else.
 static void host_sum(LhatMachine *machine, void *context,
-                          const LhatValue *arguments, size_t count,
-                          LhatValue *answers, int *answer_count)
+                     const LhatValue *arguments, size_t count,
+                     LhatValue *answers, int *answer_count)
 {
     (void)machine;
     (void)context;
@@ -2956,14 +2935,13 @@ static void host_sum(LhatMachine *machine, void *context,
     }
     answers[0] = lhat_integer(total);
     *answer_count = 1;
-    return;
 }
 
 // The same, but allocating after the room is filled -- what proves the
 // positions are roots. A table made here would be swept if they were not.
 static void host_divmod_then_allocate(LhatMachine *machine, void *context,
-                          const LhatValue *arguments, size_t count,
-                          LhatValue *answers, int *answer_count)
+                                      const LhatValue *arguments, size_t count,
+                                      LhatValue *answers, int *answer_count)
 {
     (void)answers;
     host_divmod(machine, context, arguments, count, answers,
@@ -2982,8 +2960,8 @@ static void host_divmod_then_allocate(LhatMachine *machine, void *context,
 // to answer one. The two sides can only disagree by being built apart, and
 // the machine is what catches it.
 static void host_answers_one(LhatMachine *machine, void *context,
-                          const LhatValue *arguments, size_t count,
-                          LhatValue *answers, int *answer_count)
+                             const LhatValue *arguments, size_t count,
+                             LhatValue *answers, int *answer_count)
 {
     (void)machine;
     (void)context;
@@ -2991,7 +2969,6 @@ static void host_answers_one(LhatMachine *machine, void *context,
     (void)count;
     answers[0] = lhat_integer(7);
     *answer_count = 1;
-    return;
 }
 
 static void test_host_tuple(void)

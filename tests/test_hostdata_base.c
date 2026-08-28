@@ -114,8 +114,8 @@ static int node_releases;       // how many times the base's dispose^ ran
 static int sprite_releases;     // and the derived one's
 
 static void node_id(LhatMachine *machine, void *context,
-                          const LhatValue *arguments, size_t count,
-                          LhatValue *answers, int *answer_count)
+                    const LhatValue *arguments, size_t count,
+                    LhatValue *answers, int *answer_count)
 {
     (void)machine;
     (void)context;
@@ -126,12 +126,11 @@ static void node_id(LhatMachine *machine, void *context,
     SceneNode *self = (SceneNode *)lhat_hostdata_pointer(arguments[0], node_tag);
     answers[0] = self != NULL ? lhat_integer(self->id) : lhat_nil();
     *answer_count = 1;
-    return;
 }
 
 static void node2d_x(LhatMachine *machine, void *context,
-                          const LhatValue *arguments, size_t count,
-                          LhatValue *answers, int *answer_count)
+                     const LhatValue *arguments, size_t count,
+                     LhatValue *answers, int *answer_count)
 {
     (void)machine;
     (void)context;
@@ -140,14 +139,13 @@ static void node2d_x(LhatMachine *machine, void *context,
         (SceneNode *)lhat_hostdata_pointer(arguments[0], node2d_tag);
     answers[0] = self != NULL ? lhat_integer(self->x) : lhat_nil();
     *answer_count = 1;
-    return;
 }
 
 // The same name the base declares, on the leaf. 8.8改 says the nearest
 // declaration answers, and this is what says which one ran.
 static void sprite_id(LhatMachine *machine, void *context,
-                          const LhatValue *arguments, size_t count,
-                          LhatValue *answers, int *answer_count)
+                      const LhatValue *arguments, size_t count,
+                      LhatValue *answers, int *answer_count)
 {
     (void)machine;
     (void)context;
@@ -155,12 +153,11 @@ static void sprite_id(LhatMachine *machine, void *context,
     (void)count;
     answers[0] = lhat_integer(7);
     *answer_count = 1;
-    return;
 }
 
 static void node_dispose(LhatMachine *machine, void *context,
-                          const LhatValue *arguments, size_t count,
-                          LhatValue *answers, int *answer_count)
+                         const LhatValue *arguments, size_t count,
+                         LhatValue *answers, int *answer_count)
 {
     (void)machine;
     (void)context;
@@ -169,12 +166,11 @@ static void node_dispose(LhatMachine *machine, void *context,
     (void)answers;
     (void)answer_count;
     node_releases++;
-    return;
 }
 
 static void sprite_dispose(LhatMachine *machine, void *context,
-                          const LhatValue *arguments, size_t count,
-                          LhatValue *answers, int *answer_count)
+                           const LhatValue *arguments, size_t count,
+                           LhatValue *answers, int *answer_count)
 {
     (void)machine;
     (void)context;
@@ -183,13 +179,12 @@ static void sprite_dispose(LhatMachine *machine, void *context,
     (void)answers;
     (void)answer_count;
     sprite_releases++;
-    return;
 }
 
 // Makes a value of whichever type the registration bound this to.
 static void make_of(LhatMachine *machine, void *context,
-                          const LhatValue *arguments, size_t count,
-                          LhatValue *answers, int *answer_count)
+                    const LhatValue *arguments, size_t count,
+                    LhatValue *answers, int *answer_count)
 {
     (void)arguments;
     (void)count;
@@ -198,7 +193,6 @@ static void make_of(LhatMachine *machine, void *context,
                                &the_node, &out);
     answers[0] = out;
     *answer_count = 1;
-    return;
 }
 
 // The tree, with members registered AFTER every type and every relation --

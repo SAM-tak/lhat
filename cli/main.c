@@ -579,8 +579,8 @@ static int dump_tokens(const LhatSource *source)
 // a writer). The same print stdlib/io.c registers as std.io.print, and the
 // reasoning for the separator is written there.
 static void host_print(LhatMachine *machine, void *context,
-                          const LhatValue *arguments, size_t count,
-                          LhatValue *answers, int *answer_count)
+                       const LhatValue *arguments, size_t count,
+                       LhatValue *answers, int *answer_count)
 {
     (void)machine;
     (void)context;
@@ -603,7 +603,6 @@ static void host_print(LhatMachine *machine, void *context,
     if (written > 0) {
         fputc('\n', stdout);
     }
-    return;
 }
 
 // 05 の 8.2: the host decides what a program sees without a require^. This

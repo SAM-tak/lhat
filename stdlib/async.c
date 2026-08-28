@@ -110,8 +110,8 @@ static int64_t until_next(const AsyncModule *module, int64_t now)
 }
 
 static void async_timer(LhatMachine *machine, void *context,
-                          const LhatValue *arguments, size_t count,
-                          LhatValue *answers, int *answer_count)
+                        const LhatValue *arguments, size_t count,
+                        LhatValue *answers, int *answer_count)
 {
     (void)machine;
     (void)count;
@@ -125,14 +125,13 @@ static void async_timer(LhatMachine *machine, void *context,
     // answers something the L^ side already reads as "not waiting".
     answers[0] = lhat_integer(id);
     *answer_count = 1;
-    return;
 }
 
 // A wait nothing but a push can end. What the host holds the id for is its
 // own business -- a signal, a loader's status, a queue of its own.
 static void async_external(LhatMachine *machine, void *context,
-                          const LhatValue *arguments, size_t count,
-                          LhatValue *answers, int *answer_count)
+                           const LhatValue *arguments, size_t count,
+                           LhatValue *answers, int *answer_count)
 {
     (void)machine;
     (void)arguments;
@@ -146,15 +145,14 @@ static void async_external(LhatMachine *machine, void *context,
     // answers something the L^ side already reads as "not waiting".
     answers[0] = lhat_integer(id);
     *answer_count = 1;
-    return;
 }
 
 // Whoever armed a wait may give up on it. An external one nobody will ever
 // push would otherwise sit in the table for ever, and `pending` would never
 // reach zero -- which is what a scheduler reads to know it is finished.
 static void async_drop(LhatMachine *machine, void *context,
-                          const LhatValue *arguments, size_t count,
-                          LhatValue *answers, int *answer_count)
+                       const LhatValue *arguments, size_t count,
+                       LhatValue *answers, int *answer_count)
 {
     (void)machine;
     (void)count;
@@ -171,15 +169,14 @@ static void async_drop(LhatMachine *machine, void *context,
         }
     }
     lhat_mutex_unlock(&module->lock);
-    return;
 }
 
 // The one call that may sleep, and only for as long as it is given. Zero is
 // the shape a host pumping its own loop uses: take what is ready and come
 // straight back.
 static void async_wait(LhatMachine *machine, void *context,
-                          const LhatValue *arguments, size_t count,
-                          LhatValue *answers, int *answer_count)
+                       const LhatValue *arguments, size_t count,
+                       LhatValue *answers, int *answer_count)
 {
     (void)machine;
     (void)count;
@@ -223,8 +220,8 @@ static void async_wait(LhatMachine *machine, void *context,
 // clock. What a host reads to decide its own sleep -- a game compares it with
 // the time left in the frame and mostly throws it away.
 static void async_next(LhatMachine *machine, void *context,
-                          const LhatValue *arguments, size_t count,
-                          LhatValue *answers, int *answer_count)
+                       const LhatValue *arguments, size_t count,
+                       LhatValue *answers, int *answer_count)
 {
     (void)machine;
     (void)arguments;
@@ -235,7 +232,6 @@ static void async_next(LhatMachine *machine, void *context,
     lhat_mutex_unlock(&module->lock);
     answers[0] = left < 0 ? lhat_nil() : lhat_real((double)left / 1000.0);
     *answer_count = 1;
-    return;
 }
 
 // How many waits are still in the table. A scheduler with no task awake and
@@ -253,7 +249,6 @@ static void async_pending(LhatMachine *machine, void *context,
     lhat_mutex_unlock(&module->lock);
     answers[0] = lhat_integer(pending);
     *answer_count = 1;
-    return;
 }
 
 // The host's half of an external wait. Any thread may call it; the id is what

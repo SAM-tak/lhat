@@ -25,8 +25,8 @@
 // LhatErrorKind や LhatHostDataTag を持ち回るために module 構造体を
 // 確保しているのに対し、この モジュールは登録しても何も割り当てない。
 static void debug_log(LhatMachine *machine, void *context,
-                          const LhatValue *arguments, size_t count,
-                          LhatValue *answers, int *answer_count)
+                      const LhatValue *arguments, size_t count,
+                      LhatValue *answers, int *answer_count)
 {
     (void)machine;
     (void)context;
@@ -39,7 +39,6 @@ static void debug_log(LhatMachine *machine, void *context,
         fwrite(text->text, 1, text->length, stdout);
         fputc('\n', stdout);
     }
-    return;
 }
 
 // 04 の 11.6改: where the caller stands, as the text a log line wants. A
@@ -48,8 +47,8 @@ static void debug_log(LhatMachine *machine, void *context,
 // changes nothing the program can observe, which is what lets it be an f^
 // like log above.
 static void debug_traceback(LhatMachine *machine, void *context,
-                          const LhatValue *arguments, size_t count,
-                          LhatValue *answers, int *answer_count)
+                            const LhatValue *arguments, size_t count,
+                            LhatValue *answers, int *answer_count)
 {
     (void)context;
     (void)arguments;
@@ -65,7 +64,6 @@ static void debug_traceback(LhatMachine *machine, void *context,
     free(text);
     answers[0] = made ? out : lhat_nil();
     *answer_count = 1;
-    return;
 }
 
 bool lhatstdlib_debug_register(LhatProgram *program)

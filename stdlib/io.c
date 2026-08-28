@@ -106,8 +106,8 @@ static LhatValue read_line_from(LhatMachine *machine, const IoModule *module,
 // answer to hand an error back through, and one line of output is not worth
 // stopping the machine over.
 static void std_print(LhatMachine *machine, void *context,
-                          const LhatValue *arguments, size_t count,
-                          LhatValue *answers, int *answer_count)
+                      const LhatValue *arguments, size_t count,
+                      LhatValue *answers, int *answer_count)
 {
     (void)machine;
     (void)context;
@@ -131,7 +131,6 @@ static void std_print(LhatMachine *machine, void *context,
     if (written > 0) {
         fputc('\n', stdout);
     }
-    return;
 }
 
 static void std_read_line(LhatMachine *machine, void *context,
@@ -143,12 +142,11 @@ static void std_read_line(LhatMachine *machine, void *context,
     const IoModule *module = (const IoModule *)context;
     answers[0] = read_line_from(machine, module, stdin);
     *answer_count = 1;
-    return;
 }
 
 static void file_open(LhatMachine *machine, void *context,
-                          const LhatValue *arguments, size_t count,
-                          LhatValue *answers, int *answer_count)
+                      const LhatValue *arguments, size_t count,
+                      LhatValue *answers, int *answer_count)
 {
     (void)count;
     const IoModule *module = (const IoModule *)context;
@@ -190,12 +188,11 @@ static void file_open(LhatMachine *machine, void *context,
     }
     answers[0] = out;
     *answer_count = 1;
-    return;
 }
 
 static void file_read_line(LhatMachine *machine, void *context,
-                          const LhatValue *arguments, size_t count,
-                          LhatValue *answers, int *answer_count)
+                           const LhatValue *arguments, size_t count,
+                           LhatValue *answers, int *answer_count)
 {
     (void)count;
     const IoModule *module = (const IoModule *)context;
@@ -204,12 +201,11 @@ static void file_read_line(LhatMachine *machine, void *context,
     answers[0] = read_line_from(machine, module, handle != NULL ? handle->stream
                                                           : NULL);
     *answer_count = 1;
-    return;
 }
 
 static void file_write(LhatMachine *machine, void *context,
-                          const LhatValue *arguments, size_t count,
-                          LhatValue *answers, int *answer_count)
+                       const LhatValue *arguments, size_t count,
+                       LhatValue *answers, int *answer_count)
 {
     (void)machine;
     (void)count;
@@ -224,15 +220,14 @@ static void file_write(LhatMachine *machine, void *context,
         arg_text(arguments[1], &text, &length)) {
         fwrite(text, 1, length, handle->stream);
     }
-    return;
 }
 
 // 05 の 8.8: what dispose^ gives back. The machine marks a hand-written call
 // to this the same as a collection's own (vm.c's CALLMETHOD case), so this
 // never runs twice on the same handle.
 static void file_dispose(LhatMachine *machine, void *context,
-                          const LhatValue *arguments, size_t count,
-                          LhatValue *answers, int *answer_count)
+                         const LhatValue *arguments, size_t count,
+                         LhatValue *answers, int *answer_count)
 {
     (void)machine;
     (void)count;
@@ -247,7 +242,6 @@ static void file_dispose(LhatMachine *machine, void *context,
         }
         lhat_free(handle);
     }
-    return;
 }
 
 bool lhatstdlib_io_register(LhatProgram *program)

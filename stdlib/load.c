@@ -70,8 +70,8 @@ static LhatValue adopt(LhatMachine *machine, const LoadModule *module,
 }
 
 static void load_text(LhatMachine *machine, void *context,
-                          const LhatValue *arguments, size_t count,
-                          LhatValue *answers, int *answer_count)
+                      const LhatValue *arguments, size_t count,
+                      LhatValue *answers, int *answer_count)
 {
     (void)count;
     const LoadModule *module = (const LoadModule *)context;
@@ -94,12 +94,11 @@ static void load_text(LhatMachine *machine, void *context,
     lhat_free(named);
     answers[0] = adopt(machine, module, status, proto);
     *answer_count = 1;
-    return;
 }
 
 static void load_file(LhatMachine *machine, void *context,
-                          const LhatValue *arguments, size_t count,
-                          LhatValue *answers, int *answer_count)
+                      const LhatValue *arguments, size_t count,
+                      LhatValue *answers, int *answer_count)
 {
     (void)count;
     const LoadModule *module = (const LoadModule *)context;
@@ -121,7 +120,6 @@ static void load_file(LhatMachine *machine, void *context,
     lhat_free(named);
     answers[0] = adopt(machine, module, status, proto);
     *answer_count = 1;
-    return;
 }
 
 bool lhatstdlib_load_register(LhatProgram *program)

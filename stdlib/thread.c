@@ -279,8 +279,8 @@ static bool carry_arguments(const LhatValue *arguments, size_t count,
 }
 
 static void thread_spawn(LhatMachine *machine, void *context,
-                          const LhatValue *arguments, size_t count,
-                          LhatValue *answers, int *answer_count)
+                         const LhatValue *arguments, size_t count,
+                         LhatValue *answers, int *answer_count)
 {
     const ThreadModule *module = (const ThreadModule *)context;
 
@@ -371,12 +371,11 @@ static void thread_spawn(LhatMachine *machine, void *context,
     }
     answers[0] = out;
     *answer_count = 1;
-    return;
 }
 
 static void thread_join(LhatMachine *machine, void *context,
-                          const LhatValue *arguments, size_t count,
-                          LhatValue *answers, int *answer_count)
+                        const LhatValue *arguments, size_t count,
+                        LhatValue *answers, int *answer_count)
 {
     (void)count;
     const ThreadModule *module = (const ThreadModule *)context;
@@ -426,7 +425,6 @@ static void thread_join(LhatMachine *machine, void *context,
     }
     answers[0] = out;
     *answer_count = 1;
-    return;
 }
 
 // The one registration here that starts no thread and holds no handle: it
@@ -434,8 +432,8 @@ static void thread_join(LhatMachine *machine, void *context,
 // caller has in mind ('sleep(0.2)'); port/thread.h counts in milliseconds, so
 // the conversion happens here and nowhere else.
 static void thread_sleep(LhatMachine *machine, void *context,
-                          const LhatValue *arguments, size_t count,
-                          LhatValue *answers, int *answer_count)
+                         const LhatValue *arguments, size_t count,
+                         LhatValue *answers, int *answer_count)
 {
     (void)machine;
     (void)context;
@@ -454,7 +452,6 @@ static void thread_sleep(LhatMachine *machine, void *context,
         wait = milliseconds >= (double)INT_MAX ? INT_MAX : (int)milliseconds;
     }
     lhat_thread_sleep(wait);
-    return;
 }
 
 // 02 の 15.14: the question a scheduler asks in place of waiting. join()
@@ -467,8 +464,8 @@ static void thread_sleep(LhatMachine *machine, void *context,
 // ever "not yet as of now": the thread may finish in the next instant, which
 // is why the shape above loops rather than deciding anything on one answer.
 static void thread_done(LhatMachine *machine, void *context,
-                          const LhatValue *arguments, size_t count,
-                          LhatValue *answers, int *answer_count)
+                        const LhatValue *arguments, size_t count,
+                        LhatValue *answers, int *answer_count)
 {
     (void)machine;
     (void)count;
@@ -479,7 +476,6 @@ static void thread_done(LhatMachine *machine, void *context,
     // handle of this program answers the same way an absent member would.
     answers[0] = lhat_bool(handle != NULL && (handle->joined || has_finished(handle)));
     *answer_count = 1;
-    return;
 }
 
 // 05 の 8.8: registering this is what makes a ThreadHandle the host's to
@@ -488,8 +484,8 @@ static void thread_done(LhatMachine *machine, void *context,
 // what join() would have (see join_and_free's comment for why detaching
 // and moving on is not safe here).
 static void thread_dispose(LhatMachine *machine, void *context,
-                          const LhatValue *arguments, size_t count,
-                          LhatValue *answers, int *answer_count)
+                           const LhatValue *arguments, size_t count,
+                           LhatValue *answers, int *answer_count)
 {
     (void)machine;
     (void)count;
@@ -516,7 +512,6 @@ static void thread_dispose(LhatMachine *machine, void *context,
     } else {
         join_and_free(handle);
     }
-    return;
 }
 
 bool lhatstdlib_thread_register(LhatProgram *program)

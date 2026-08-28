@@ -93,8 +93,8 @@ static const char *level_name(size_t level)
 }
 
 static void answer_one(LhatMachine *machine, void *context,
-                          const LhatValue *arguments, size_t count,
-                          LhatValue *answers, int *answer_count)
+                       const LhatValue *arguments, size_t count,
+                       LhatValue *answers, int *answer_count)
 {
     (void)machine;
     (void)context;
@@ -102,7 +102,6 @@ static void answer_one(LhatMachine *machine, void *context,
     (void)count;
     answers[0] = lhat_integer(1);
     *answer_count = 1;
-    return;
 }
 
 // Declares the tree and gives every level `per_level` members. Answers false

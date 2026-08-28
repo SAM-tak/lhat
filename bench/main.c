@@ -73,8 +73,8 @@ static const LhatHostDataTag *derived_tag;
 static Thing the_thing;
 
 static void thing_read(LhatMachine *machine, void *context,
-                          const LhatValue *arguments, size_t count,
-                          LhatValue *answers, int *answer_count)
+                       const LhatValue *arguments, size_t count,
+                       LhatValue *answers, int *answer_count)
 {
     (void)machine;
     (void)context;
@@ -83,12 +83,11 @@ static void thing_read(LhatMachine *machine, void *context,
                                                              thing_tag);
     answers[0] = self != NULL ? lhat_integer(self->value) : lhat_nil();
     *answer_count = 1;
-    return;
 }
 
 static void make_thing(LhatMachine *machine, void *context,
-                          const LhatValue *arguments, size_t count,
-                          LhatValue *answers, int *answer_count)
+                       const LhatValue *arguments, size_t count,
+                       LhatValue *answers, int *answer_count)
 {
     (void)arguments;
     (void)count;
@@ -97,7 +96,6 @@ static void make_thing(LhatMachine *machine, void *context,
                                &the_thing, &out);
     answers[0] = out;
     *answer_count = 1;
-    return;
 }
 
 // 05 の 8.7: the boundary itself, with nothing behind it. Registered under
@@ -108,8 +106,8 @@ static void make_thing(LhatMachine *machine, void *context,
 // reading the slots by index would not do, and this is what says how much
 // of a call it is.
 static void answer_nothing(LhatMachine *machine, void *context,
-                          const LhatValue *arguments, size_t count,
-                          LhatValue *answers, int *answer_count)
+                           const LhatValue *arguments, size_t count,
+                           LhatValue *answers, int *answer_count)
 {
     (void)machine;
     (void)context;
@@ -117,7 +115,6 @@ static void answer_nothing(LhatMachine *machine, void *context,
     (void)count;
     answers[0] = lhat_integer(1);
     *answer_count = 1;
-    return;
 }
 
 static bool register_bench(LhatProgram *program)

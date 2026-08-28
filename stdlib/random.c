@@ -68,8 +68,8 @@ static uint64_t next_raw(Random *r)
 // care still gets a different sequence each run without writing time(NULL)
 // itself -- std/ has no clock module of its own to reach for that.
 static void random_new(LhatMachine *machine, void *context,
-                          const LhatValue *arguments, size_t count,
-                          LhatValue *answers, int *answer_count)
+                       const LhatValue *arguments, size_t count,
+                       LhatValue *answers, int *answer_count)
 {
     (void)count;
     const RandomModule *module = (const RandomModule *)context;
@@ -92,7 +92,6 @@ static void random_new(LhatMachine *machine, void *context,
     }
     answers[0] = out;
     *answer_count = 1;
-    return;
 }
 
 static void random_reseed(LhatMachine *machine, void *context,
@@ -108,13 +107,12 @@ static void random_reseed(LhatMachine *machine, void *context,
     if (r != NULL) {
         r->state = seeded_state(arg_as_integer(arguments[1]));
     }
-    return;
 }
 
 // [0, 1). The top 53 bits are what a double's mantissa can hold exactly.
 static void random_next(LhatMachine *machine, void *context,
-                          const LhatValue *arguments, size_t count,
-                          LhatValue *answers, int *answer_count)
+                        const LhatValue *arguments, size_t count,
+                        LhatValue *answers, int *answer_count)
 {
     (void)machine;
     (void)count;
@@ -128,14 +126,13 @@ static void random_next(LhatMachine *machine, void *context,
     uint64_t bits = next_raw(r) >> 11;
     answers[0] = lhat_real((double)bits / (double)(1ULL << 53));
     *answer_count = 1;
-    return;
 }
 
 // An integer in [lo, hi], both ends inclusive -- 04 の 11.3's "no such thing
 // as out of range" does not apply here, this is an ordinary argument.
 static void random_range(LhatMachine *machine, void *context,
-                          const LhatValue *arguments, size_t count,
-                          LhatValue *answers, int *answer_count)
+                         const LhatValue *arguments, size_t count,
+                         LhatValue *answers, int *answer_count)
 {
     (void)machine;
     (void)count;
@@ -152,14 +149,13 @@ static void random_range(LhatMachine *machine, void *context,
     uint64_t offset = next_raw(r) % span;
     answers[0] = lhat_integer((int64_t)lo + (int64_t)offset);
     *answer_count = 1;
-    return;
 }
 
 // 05 の 8.8: registering this is what makes a Random the host's to hand
 // over and L^'s to give back.
 static void random_dispose(LhatMachine *machine, void *context,
-                          const LhatValue *arguments, size_t count,
-                          LhatValue *answers, int *answer_count)
+                           const LhatValue *arguments, size_t count,
+                           LhatValue *answers, int *answer_count)
 {
     (void)machine;
     (void)count;
@@ -167,7 +163,6 @@ static void random_dispose(LhatMachine *machine, void *context,
     (void)answer_count;
     const RandomModule *module = (const RandomModule *)context;
     lhat_free(lhat_hostdata_pointer(arguments[0], module->tag));
-    return;
 }
 
 bool lhatstdlib_random_register(LhatProgram *program)
