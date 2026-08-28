@@ -208,18 +208,39 @@ struct LhatMachine;
 // there are and what they are before anything runs, so the counting a
 // dynamic language does at the boundary has nothing to do here.
 //
-// 04 の 12.8 makes an error a value, so this answers one. There is no
-// unwinding to arrange and nothing to catch.
-typedef LhatValue (*LhatHostFn)(struct LhatMachine *machine, void *context,
-                                const LhatValue *arguments, size_t count);
+// 02 の 13.8改: the answers go the same way. `answers` is the machine's
+// own room, LHAT_MAX_TUPLE wide and walked by the collector, so a host may
+// allocate between filling it and returning. Write as many as the
+// registered signature says and set *answer_count to that many; the room
+// is always wide enough, because a signature wider than it can carry is
+// refused where it is declared.
+//
+// *answer_count arrives as 0, so a p^ registration -- and the dispose^ and
+// release hooks, which are LhatHostFn too -- answers by doing nothing.
+//
+// 04 の 12.8 makes an error a value, so an error is answered like any
+// other. There is no unwinding to arrange and nothing to catch.
+typedef void (*LhatHostFn)(struct LhatMachine *machine, void *context,
+                           const LhatValue *arguments, size_t count,
+                           LhatValue *answers, int *answer_count);
 
 // 05 の 8.8: the host's walk, one call per resume -- lhat_table_walk's shape
-// with the value already picked. Fills *out with the next value (which may be
-// lhat_make_tuple's answer, for a `for^ k, v` walk) and answers true, or
-// answers false when the walk is over. `sent` is what resume(v) handed in;
-// the built-in loops send nothing, so it is nil^ there.
+// with the value already picked. Answers the same way an LhatHostFn does,
+// into the same room: what a `for^ k, v` walk hands over is two answers
+// and not a packed one.
+//
+// The one thing that differs is the return, and it is 13.9's three slots
+// that make it differ: true says the walk goes on, so what was written is
+// Y; false says it is over, and what was written then is T -- the value a
+// body coroutine ends with by writing return^. Nothing written with false
+// is a walk that ends with nothing, which is what most of them do. A walk
+// that goes on has to write something: `for^` binds what came back.
+//
+// `sent` is what resume(a, b) handed in, however many; the built-in loops
+// send nothing, so the count is 0 there.
 typedef bool (*LhatHostStepFn)(struct LhatMachine *machine, void *context,
-                               LhatValue sent, LhatValue *out);
+                               const LhatValue *sent, size_t sent_count,
+                               LhatValue *answers, int *answer_count);
 
 typedef struct LhatCoroutine {
     LhatObject header;

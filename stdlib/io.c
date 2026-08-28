@@ -105,11 +105,14 @@ static LhatValue read_line_from(LhatMachine *machine, const IoModule *module,
 // A value whose room could not be found is skipped in silence: a p^ has no
 // answer to hand an error back through, and one line of output is not worth
 // stopping the machine over.
-static LhatValue std_print(LhatMachine *machine, void *context,
-                           const LhatValue *arguments, size_t count)
+static void std_print(LhatMachine *machine, void *context,
+                          const LhatValue *arguments, size_t count,
+                          LhatValue *answers, int *answer_count)
 {
     (void)machine;
     (void)context;
+    (void)answers;
+    (void)answer_count;
     size_t written = 0;
     for (size_t i = 0; i < count; i++) {
         size_t needed = lhat_value_text(arguments[i], NULL, 0);
@@ -128,20 +131,24 @@ static LhatValue std_print(LhatMachine *machine, void *context,
     if (written > 0) {
         fputc('\n', stdout);
     }
-    return lhat_nil();
+    return;
 }
 
-static LhatValue std_read_line(LhatMachine *machine, void *context,
-                               const LhatValue *arguments, size_t count)
+static void std_read_line(LhatMachine *machine, void *context,
+                          const LhatValue *arguments, size_t count,
+                          LhatValue *answers, int *answer_count)
 {
     (void)arguments;
     (void)count;
     const IoModule *module = (const IoModule *)context;
-    return read_line_from(machine, module, stdin);
+    answers[0] = read_line_from(machine, module, stdin);
+    *answer_count = 1;
+    return;
 }
 
-static LhatValue file_open(LhatMachine *machine, void *context,
-                           const LhatValue *arguments, size_t count)
+static void file_open(LhatMachine *machine, void *context,
+                          const LhatValue *arguments, size_t count,
+                          LhatValue *answers, int *answer_count)
 {
     (void)count;
     const IoModule *module = (const IoModule *)context;
@@ -151,7 +158,7 @@ static LhatValue file_open(LhatMachine *machine, void *context,
     size_t mode_length = 0;
     if (!arg_text(arguments[0], &path, &path_length) ||
         !arg_text(arguments[1], &mode, &mode_length)) {
-        return lhat_nil();
+        return;
     }
     // object.c の lhat_string_new が text[length] = '\0' を書くので、
     // どちらも fopen が読める NUL 終端済みのバイト列になっている。
@@ -160,12 +167,16 @@ static LhatValue file_open(LhatMachine *machine, void *context,
     if (stream == NULL) {
         const LhatErrorKind *kind =
             errno == EACCES ? module->denied : module->not_found;
-        return fail_with(machine, kind, strerror(errno));
+        answers[0] = fail_with(machine, kind, strerror(errno));
+        *answer_count = 1;
+        return;
     }
     File *handle = (File *)lhat_alloc(sizeof *handle);
     if (handle == NULL) {
         fclose(stream);
-        return fail_with(machine, module->out_of_memory, "out of memory");
+        answers[0] = fail_with(machine, module->out_of_memory, "out of memory");
+        *answer_count = 1;
+        return;
     }
     handle->stream = stream;
     LhatValue out = lhat_nil();
@@ -173,27 +184,37 @@ static LhatValue file_open(LhatMachine *machine, void *context,
                                     &out)) {
         fclose(stream);
         lhat_free(handle);
-        return fail_with(machine, module->out_of_memory, "out of memory");
+        answers[0] = fail_with(machine, module->out_of_memory, "out of memory");
+        *answer_count = 1;
+        return;
     }
-    return out;
+    answers[0] = out;
+    *answer_count = 1;
+    return;
 }
 
-static LhatValue file_read_line(LhatMachine *machine, void *context,
-                                const LhatValue *arguments, size_t count)
+static void file_read_line(LhatMachine *machine, void *context,
+                          const LhatValue *arguments, size_t count,
+                          LhatValue *answers, int *answer_count)
 {
     (void)count;
     const IoModule *module = (const IoModule *)context;
     File *handle =
         (File *)lhat_hostdata_pointer(arguments[0], module->file_tag);
-    return read_line_from(machine, module, handle != NULL ? handle->stream
+    answers[0] = read_line_from(machine, module, handle != NULL ? handle->stream
                                                           : NULL);
+    *answer_count = 1;
+    return;
 }
 
-static LhatValue file_write(LhatMachine *machine, void *context,
-                            const LhatValue *arguments, size_t count)
+static void file_write(LhatMachine *machine, void *context,
+                          const LhatValue *arguments, size_t count,
+                          LhatValue *answers, int *answer_count)
 {
     (void)machine;
     (void)count;
+    (void)answers;
+    (void)answer_count;
     const IoModule *module = (const IoModule *)context;
     File *handle =
         (File *)lhat_hostdata_pointer(arguments[0], module->file_tag);
@@ -203,17 +224,20 @@ static LhatValue file_write(LhatMachine *machine, void *context,
         arg_text(arguments[1], &text, &length)) {
         fwrite(text, 1, length, handle->stream);
     }
-    return lhat_nil();
+    return;
 }
 
 // 05 の 8.8: what dispose^ gives back. The machine marks a hand-written call
 // to this the same as a collection's own (vm.c's CALLMETHOD case), so this
 // never runs twice on the same handle.
-static LhatValue file_dispose(LhatMachine *machine, void *context,
-                              const LhatValue *arguments, size_t count)
+static void file_dispose(LhatMachine *machine, void *context,
+                          const LhatValue *arguments, size_t count,
+                          LhatValue *answers, int *answer_count)
 {
     (void)machine;
     (void)count;
+    (void)answers;
+    (void)answer_count;
     const IoModule *module = (const IoModule *)context;
     File *handle =
         (File *)lhat_hostdata_pointer(arguments[0], module->file_tag);
@@ -223,7 +247,7 @@ static LhatValue file_dispose(LhatMachine *machine, void *context,
         }
         lhat_free(handle);
     }
-    return lhat_nil();
+    return;
 }
 
 bool lhatstdlib_io_register(LhatProgram *program)

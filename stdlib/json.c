@@ -408,8 +408,9 @@ static bool write_value(Writer *w, const JsonModule *m, LhatValue value,
     return false;
 }
 
-static LhatValue json_encode(LhatMachine *machine, void *context,
-                             const LhatValue *arguments, size_t count)
+static void json_encode(LhatMachine *machine, void *context,
+                          const LhatValue *arguments, size_t count,
+                          LhatValue *answers, int *answer_count)
 {
     (void)count;
     const JsonModule *m = (const JsonModule *)context;
@@ -427,7 +428,9 @@ static LhatValue json_encode(LhatMachine *machine, void *context,
         answer = fail_with(machine, m->out_of_memory, "out of memory");
     }
     lhat_free(w.text);
-    return answer;
+    answers[0] = answer;
+    *answer_count = 1;
+    return;
 }
 
 // ---------------------------------------------------------------------------
@@ -837,13 +840,16 @@ static bool read_value(Reader *r, LhatValue *out, size_t depth)
     return read_number(r, out);
 }
 
-static LhatValue json_decode(LhatMachine *machine, void *context,
-                             const LhatValue *arguments, size_t count)
+static void json_decode(LhatMachine *machine, void *context,
+                          const LhatValue *arguments, size_t count,
+                          LhatValue *answers, int *answer_count)
 {
     (void)count;
     const JsonModule *m = (const JsonModule *)context;
     if (!lhat_is_object_kind(arguments[0], LHAT_OBJECT_STRING)) {
-        return fail_with(machine, m->bad_text, "not a text to read");
+        answers[0] = fail_with(machine, m->bad_text, "not a text to read");
+        *answer_count = 1;
+        return;
     }
     const LhatString *text = (const LhatString *)lhat_as_object(arguments[0]);
 
@@ -858,19 +864,27 @@ static LhatValue json_decode(LhatMachine *machine, void *context,
     // json.h: the top of a decode is a table, which is what the signature
     // promises. A scalar standing alone is JSON, but not this call's answer.
     if (r.at >= r.end || (*r.at != '{' && *r.at != '[')) {
-        return fail_with(machine, m->bad_text,
+        answers[0] = fail_with(machine, m->bad_text,
                          "the top of the text is not an object or an array");
+        *answer_count = 1;
+        return;
     }
     LhatValue made = lhat_nil();
     if (!read_value(&r, &made, 0)) {
-        return fail_with(machine, r.failed != NULL ? r.failed : m->bad_text,
+        answers[0] = fail_with(machine, r.failed != NULL ? r.failed : m->bad_text,
                          r.why != NULL ? r.why : "not JSON");
+        *answer_count = 1;
+        return;
     }
     skip_space(&r);
     if (r.at != r.end) {
-        return fail_with(machine, m->bad_text, "more text after the value");
+        answers[0] = fail_with(machine, m->bad_text, "more text after the value");
+        *answer_count = 1;
+        return;
     }
-    return made;
+    answers[0] = made;
+    *answer_count = 1;
+    return;
 }
 
 // ---------------------------------------------------------------------------

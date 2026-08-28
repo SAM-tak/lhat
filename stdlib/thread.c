@@ -278,13 +278,16 @@ static bool carry_arguments(const LhatValue *arguments, size_t count,
     return true;
 }
 
-static LhatValue thread_spawn(LhatMachine *machine, void *context,
-                              const LhatValue *arguments, size_t count)
+static void thread_spawn(LhatMachine *machine, void *context,
+                          const LhatValue *arguments, size_t count,
+                          LhatValue *answers, int *answer_count)
 {
     const ThreadModule *module = (const ThreadModule *)context;
 
     if (!lhat_is_object_kind(arguments[0], LHAT_OBJECT_SUBROUTINE)) {
-        return fail_with(machine, module->not_spawnable, "not a subroutine");
+        answers[0] = fail_with(machine, module->not_spawnable, "not a subroutine");
+        *answer_count = 1;
+        return;
     }
     const LhatProto *proto = lhat_closure_proto(arguments[0]);
     // 13.7: one variadic slot and nothing else. A parameter of its own would
@@ -295,16 +298,20 @@ static LhatValue thread_spawn(LhatMachine *machine, void *context,
     // what carry refuses below.
     if (proto == NULL || lhat_proto_yields(proto) ||
         !lhat_proto_has_variadic(proto) || lhat_proto_parameters(proto) != 1) {
-        return fail_with(machine, module->not_spawnable,
+        answers[0] = fail_with(machine, module->not_spawnable,
                          "fn is yieldable or does not take '...' alone; "
                          "spawn requires a 'p^...' closure");
+        *answer_count = 1;
+        return;
     }
     const char *fn_refused = NULL;
     LhatCarried *fn = NULL;
     if (!lhat_carry(arguments[0], &fn, &fn_refused)) {
-        return fn_refused != NULL && strcmp(fn_refused, "out of memory") != 0
+        answers[0] = fn_refused != NULL && strcmp(fn_refused, "out of memory") != 0
                    ? fail_with(machine, module->not_spawnable, fn_refused)
                    : fail_with(machine, module->out_of_memory, "out of memory");
+        *answer_count = 1;
+        return;
     }
 
     LhatCarried **carried = NULL;
@@ -313,9 +320,11 @@ static LhatValue thread_spawn(LhatMachine *machine, void *context,
     if (!carry_arguments(arguments, count, &carried, &carried_count,
                          &refused)) {
         lhat_carried_free(fn);
-        return refused != NULL
+        answers[0] = refused != NULL
                    ? fail_with(machine, module->bad_argument, refused)
                    : fail_with(machine, module->out_of_memory, "out of memory");
+        *answer_count = 1;
+        return;
     }
 
     ThreadHandle *handle = (ThreadHandle *)lhat_calloc(1, sizeof *handle);
@@ -325,7 +334,9 @@ static LhatValue thread_spawn(LhatMachine *machine, void *context,
         lhat_carried_free(fn);
         lhat_free(handle);
         lhat_free(start);
-        return fail_with(machine, module->out_of_memory, "out of memory");
+        answers[0] = fail_with(machine, module->out_of_memory, "out of memory");
+        *answer_count = 1;
+        return;
     }
     lhat_mutex_init(&handle->done_lock);
     start->fn = fn;
@@ -341,8 +352,10 @@ static LhatValue thread_spawn(LhatMachine *machine, void *context,
         lhat_mutex_destroy(&handle->done_lock);
         lhat_free(handle->traceback);
         lhat_free(handle);
-        return fail_with(machine, module->spawn_failed,
+        answers[0] = fail_with(machine, module->spawn_failed,
                          "the operating system refused to start a thread");
+        *answer_count = 1;
+        return;
     }
 
     LhatValue out = lhat_nil();
@@ -352,20 +365,27 @@ static LhatValue thread_spawn(LhatMachine *machine, void *context,
         // caller -- wait for it and free `handle` ourselves, the same as
         // an unjoined dispose() would.
         join_and_free(handle);
-        return fail_with(machine, module->out_of_memory, "out of memory");
+        answers[0] = fail_with(machine, module->out_of_memory, "out of memory");
+        *answer_count = 1;
+        return;
     }
-    return out;
+    answers[0] = out;
+    *answer_count = 1;
+    return;
 }
 
-static LhatValue thread_join(LhatMachine *machine, void *context,
-                             const LhatValue *arguments, size_t count)
+static void thread_join(LhatMachine *machine, void *context,
+                          const LhatValue *arguments, size_t count,
+                          LhatValue *answers, int *answer_count)
 {
     (void)count;
     const ThreadModule *module = (const ThreadModule *)context;
     ThreadHandle *handle =
         (ThreadHandle *)lhat_hostdata_pointer(arguments[0], module->handle_tag);
     if (handle == NULL || handle->joined) {
-        return fail_with(machine, module->already_joined, "already joined");
+        answers[0] = fail_with(machine, module->already_joined, "already joined");
+        *answer_count = 1;
+        return;
     }
 
     lhat_thread_join(&handle->os);
@@ -388,29 +408,40 @@ static LhatValue thread_join(LhatMachine *machine, void *context,
                 LhatValue answered =
                     fail_with(machine, module->bad_result, joined_text);
                 lhat_free(joined_text);
-                return answered;
+                answers[0] = answered;
+                *answer_count = 1;
+                return;
             }
         }
-        return fail_with(machine, module->bad_result, said);
+        answers[0] = fail_with(machine, module->bad_result, said);
+        *answer_count = 1;
+        return;
     }
     LhatValue out = lhat_nil();
     if (handle->result != NULL &&
         !lhat_uncarry(machine, handle->result, &out)) {
-        return fail_with(machine, module->out_of_memory, "out of memory");
+        answers[0] = fail_with(machine, module->out_of_memory, "out of memory");
+        *answer_count = 1;
+        return;
     }
-    return out;
+    answers[0] = out;
+    *answer_count = 1;
+    return;
 }
 
 // The one registration here that starts no thread and holds no handle: it
 // stops the thread that called it. Written in seconds because that is what a
 // caller has in mind ('sleep(0.2)'); port/thread.h counts in milliseconds, so
 // the conversion happens here and nowhere else.
-static LhatValue thread_sleep(LhatMachine *machine, void *context,
-                              const LhatValue *arguments, size_t count)
+static void thread_sleep(LhatMachine *machine, void *context,
+                          const LhatValue *arguments, size_t count,
+                          LhatValue *answers, int *answer_count)
 {
     (void)machine;
     (void)context;
     (void)count;
+    (void)answers;
+    (void)answer_count;
     double seconds = lhat_is_integer(arguments[0])
                          ? (double)lhat_as_integer(arguments[0])
                          : lhat_as_real(arguments[0]);
@@ -423,7 +454,7 @@ static LhatValue thread_sleep(LhatMachine *machine, void *context,
         wait = milliseconds >= (double)INT_MAX ? INT_MAX : (int)milliseconds;
     }
     lhat_thread_sleep(wait);
-    return lhat_nil();
+    return;
 }
 
 // 02 の 15.14: the question a scheduler asks in place of waiting. join()
@@ -435,8 +466,9 @@ static LhatValue thread_sleep(LhatMachine *machine, void *context,
 // was written before the flag was (thread_main sets it last). A false is only
 // ever "not yet as of now": the thread may finish in the next instant, which
 // is why the shape above loops rather than deciding anything on one answer.
-static LhatValue thread_done(LhatMachine *machine, void *context,
-                             const LhatValue *arguments, size_t count)
+static void thread_done(LhatMachine *machine, void *context,
+                          const LhatValue *arguments, size_t count,
+                          LhatValue *answers, int *answer_count)
 {
     (void)machine;
     (void)count;
@@ -445,7 +477,9 @@ static LhatValue thread_done(LhatMachine *machine, void *context,
         (ThreadHandle *)lhat_hostdata_pointer(arguments[0], module->handle_tag);
     // A handle already joined has nothing left to run, and one that is not a
     // handle of this program answers the same way an absent member would.
-    return lhat_bool(handle != NULL && (handle->joined || has_finished(handle)));
+    answers[0] = lhat_bool(handle != NULL && (handle->joined || has_finished(handle)));
+    *answer_count = 1;
+    return;
 }
 
 // 05 の 8.8: registering this is what makes a ThreadHandle the host's to
@@ -453,11 +487,14 @@ static LhatValue thread_done(LhatMachine *machine, void *context,
 // leaves nothing more to wait for; one that never did makes dispose() do
 // what join() would have (see join_and_free's comment for why detaching
 // and moving on is not safe here).
-static LhatValue thread_dispose(LhatMachine *machine, void *context,
-                                const LhatValue *arguments, size_t count)
+static void thread_dispose(LhatMachine *machine, void *context,
+                          const LhatValue *arguments, size_t count,
+                          LhatValue *answers, int *answer_count)
 {
     (void)machine;
     (void)count;
+    (void)answers;
+    (void)answer_count;
     // 05 の 8.8: registered with the tag itself as its context rather than
     // with the module. The tag belongs to the process while this module
     // belongs to a program, and a type has one way of handing a value back
@@ -467,7 +504,7 @@ static LhatValue thread_dispose(LhatMachine *machine, void *context,
     ThreadHandle *handle =
         (ThreadHandle *)lhat_hostdata_pointer(arguments[0], tag);
     if (handle == NULL) {
-        return lhat_nil();
+        return;
     }
     if (handle->joined) {
         if (handle->status == LHAT_RUN_OK) {
@@ -479,7 +516,7 @@ static LhatValue thread_dispose(LhatMachine *machine, void *context,
     } else {
         join_and_free(handle);
     }
-    return lhat_nil();
+    return;
 }
 
 bool lhatstdlib_thread_register(LhatProgram *program)

@@ -578,11 +578,14 @@ static int dump_tokens(const LhatSource *source)
 // that let 1 and "1" be read apart (those belong to 03 の 4 章's prompt, not to
 // a writer). The same print stdlib/io.c registers as std.io.print, and the
 // reasoning for the separator is written there.
-static LhatValue host_print(LhatMachine *machine, void *context,
-                            const LhatValue *arguments, size_t count)
+static void host_print(LhatMachine *machine, void *context,
+                          const LhatValue *arguments, size_t count,
+                          LhatValue *answers, int *answer_count)
 {
     (void)machine;
     (void)context;
+    (void)answers;
+    (void)answer_count;
     size_t written = 0;
     for (size_t i = 0; i < count; i++) {
         size_t needed = lhat_value_text(arguments[i], NULL, 0);
@@ -600,7 +603,7 @@ static LhatValue host_print(LhatMachine *machine, void *context,
     if (written > 0) {
         fputc('\n', stdout);
     }
-    return lhat_nil();
+    return;
 }
 
 // 05 の 8.2: the host decides what a program sees without a require^. This

@@ -1732,6 +1732,18 @@ static bool register_into(LhatProgram *program, LhatType *owner,
     if (written == NULL) {
         return false;
     }
+    // 02 の 13.8改: the room a boundary answers into is LHAT_MAX_TUPLE
+    // wide, and the reason it is that wide is that the machine's own is.
+    // A signature promising more than the machine can carry is refused
+    // HERE, where it is declared -- not found out later, when a host has
+    // already written past the room it was handed. What the compiler
+    // refuses at a written call site (compile.c), this refuses at a
+    // registered one.
+    if (written->kind == LHAT_TYPE_FUNC &&
+        lhat_type_tuple_arm_width(written->v.func.result) >
+            LHAT_MAX_TUPLE) {
+        return false;
+    }
 
     // 02 の 14.12: a name already registered gains an arm rather than being
     // refused. The type becomes the intersection of what was there and what

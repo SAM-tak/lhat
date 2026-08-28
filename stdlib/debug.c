@@ -24,19 +24,22 @@
 // 一切状態を持たないので context は NULL -- io/thread/random が
 // LhatErrorKind や LhatHostDataTag を持ち回るために module 構造体を
 // 確保しているのに対し、この モジュールは登録しても何も割り当てない。
-static LhatValue debug_log(LhatMachine *machine, void *context,
-                           const LhatValue *arguments, size_t count)
+static void debug_log(LhatMachine *machine, void *context,
+                          const LhatValue *arguments, size_t count,
+                          LhatValue *answers, int *answer_count)
 {
     (void)machine;
     (void)context;
     (void)count;
+    (void)answers;
+    (void)answer_count;
     if (lhat_is_object_kind(arguments[0], LHAT_OBJECT_STRING)) {
         const LhatString *text =
             (const LhatString *)lhat_as_object(arguments[0]);
         fwrite(text->text, 1, text->length, stdout);
         fputc('\n', stdout);
     }
-    return lhat_nil();
+    return;
 }
 
 // 04 の 11.6改: where the caller stands, as the text a log line wants. A
@@ -44,8 +47,9 @@ static LhatValue debug_log(LhatMachine *machine, void *context,
 // so this is lhat_machine_traceback over the live stack -- reading it
 // changes nothing the program can observe, which is what lets it be an f^
 // like log above.
-static LhatValue debug_traceback(LhatMachine *machine, void *context,
-                                 const LhatValue *arguments, size_t count)
+static void debug_traceback(LhatMachine *machine, void *context,
+                          const LhatValue *arguments, size_t count,
+                          LhatValue *answers, int *answer_count)
 {
     (void)context;
     (void)arguments;
@@ -53,13 +57,15 @@ static LhatValue debug_traceback(LhatMachine *machine, void *context,
     size_t needed = lhat_machine_traceback(machine, NULL, 0);
     char *text = (char *)malloc(needed + 1);
     if (text == NULL) {
-        return lhat_nil();
+        return;
     }
     lhat_machine_traceback(machine, text, needed + 1);
     LhatValue out = lhat_nil();
     bool made = lhat_machine_make_string(machine, text, needed, &out);
     free(text);
-    return made ? out : lhat_nil();
+    answers[0] = made ? out : lhat_nil();
+    *answer_count = 1;
+    return;
 }
 
 bool lhatstdlib_debug_register(LhatProgram *program)

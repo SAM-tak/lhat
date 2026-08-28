@@ -56,47 +56,56 @@ static LhatValue vec3_value(LhatMachine *machine, const MathModule *module,
 }
 
 // f^number^, number^, number^ -> std.math.vector3.Vector3;
-static LhatValue vec3_new(LhatMachine *machine, void *context,
-                          const LhatValue *arguments, size_t count)
+static void vec3_new(LhatMachine *machine, void *context,
+                          const LhatValue *arguments, size_t count,
+                          LhatValue *answers, int *answer_count)
 {
     const MathModule *module = (const MathModule *)context;
     if (count < 3) {
-        return lhat_nil();
+        return;
     }
     Vec3 v;
     v.x = (float)arg_as_real(arguments[0]);
     v.y = (float)arg_as_real(arguments[1]);
     v.z = (float)arg_as_real(arguments[2]);
-    return vec3_value(machine, module, v);
+    answers[0] = vec3_value(machine, module, v);
+    *answer_count = 1;
+    return;
 }
 
 // op "+": f^self^, std.math.vector3.Vector3 -> std.math.vector3.Vector3;
-static LhatValue vec3_add(LhatMachine *machine, void *context,
-                           const LhatValue *arguments, size_t count)
+static void vec3_add(LhatMachine *machine, void *context,
+                          const LhatValue *arguments, size_t count,
+                          LhatValue *answers, int *answer_count)
 {
     const MathModule *module = (const MathModule *)context;
     Vec3 left, right;
     if (count < 2 || !vec3_arg(module, arguments[0], &left) ||
         !vec3_arg(module, arguments[1], &right)) {
-        return lhat_nil();
+        return;
     }
     Vec3 sum = { left.x + right.x, left.y + right.y, left.z + right.z };
-    return vec3_value(machine, module, sum);
+    answers[0] = vec3_value(machine, module, sum);
+    *answer_count = 1;
+    return;
 }
 
 // op "-": f^self^, std.math.vector3.Vector3 -> std.math.vector3.Vector3;
-static LhatValue vec3_sub(LhatMachine *machine, void *context,
-                           const LhatValue *arguments, size_t count)
+static void vec3_sub(LhatMachine *machine, void *context,
+                          const LhatValue *arguments, size_t count,
+                          LhatValue *answers, int *answer_count)
 {
     const MathModule *module = (const MathModule *)context;
     Vec3 left, right;
     if (count < 2 || !vec3_arg(module, arguments[0], &left) ||
         !vec3_arg(module, arguments[1], &right)) {
-        return lhat_nil();
+        return;
     }
     Vec3 difference = { left.x - right.x, left.y - right.y,
                          left.z - right.z };
-    return vec3_value(machine, module, difference);
+    answers[0] = vec3_value(machine, module, difference);
+    *answer_count = 1;
+    return;
 }
 
 // op "-": f^self^ -> std.math.vector3.Vector3;
@@ -104,16 +113,19 @@ static LhatValue vec3_sub(LhatMachine *machine, void *context,
 // 02 の 11.8改: the unary spelling of the same name, told apart from the
 // binary one by taking no argument. Its own function -- what it computes has
 // nothing in common with subtraction beyond the sign.
-static LhatValue vec3_neg(LhatMachine *machine, void *context,
-                           const LhatValue *arguments, size_t count)
+static void vec3_neg(LhatMachine *machine, void *context,
+                          const LhatValue *arguments, size_t count,
+                          LhatValue *answers, int *answer_count)
 {
     const MathModule *module = (const MathModule *)context;
     Vec3 v;
     if (count < 1 || !vec3_arg(module, arguments[0], &v)) {
-        return lhat_nil();
+        return;
     }
     Vec3 negated = { -v.x, -v.y, -v.z };
-    return vec3_value(machine, module, negated);
+    answers[0] = vec3_value(machine, module, negated);
+    *answer_count = 1;
+    return;
 }
 
 // op "*": both orders --
@@ -124,86 +136,103 @@ static LhatValue vec3_neg(LhatMachine *machine, void *context,
 // '2 * v' hands the number over first and 'v * 2' hands the vector. Scaling
 // is the same either way; only which side to unwrap differs, and the values
 // themselves say that.
-static LhatValue vec3_scale(LhatMachine *machine, void *context,
-                             const LhatValue *arguments, size_t count)
+static void vec3_scale(LhatMachine *machine, void *context,
+                          const LhatValue *arguments, size_t count,
+                          LhatValue *answers, int *answer_count)
 {
     const MathModule *module = (const MathModule *)context;
     if (count < 2) {
-        return lhat_nil();
+        return;
     }
     size_t vector_at = lhat_is_number(arguments[0]) ? 1 : 0;
     size_t number_at = vector_at == 0 ? 1 : 0;
     Vec3 v;
     if (!vec3_arg(module, arguments[vector_at], &v) ||
         !lhat_is_number(arguments[number_at])) {
-        return lhat_nil();
+        return;
     }
     float by = (float)arg_as_real(arguments[number_at]);
     Vec3 scaled = { v.x * by, v.y * by, v.z * by };
-    return vec3_value(machine, module, scaled);
+    answers[0] = vec3_value(machine, module, scaled);
+    *answer_count = 1;
+    return;
 }
 
 // f^self^, std.math.vector3.Vector3 -> number^;
-static LhatValue vec3_dot(LhatMachine *machine, void *context,
-                           const LhatValue *arguments, size_t count)
+static void vec3_dot(LhatMachine *machine, void *context,
+                          const LhatValue *arguments, size_t count,
+                          LhatValue *answers, int *answer_count)
 {
     (void)machine;
     const MathModule *module = (const MathModule *)context;
     Vec3 left, right;
     if (count < 2 || !vec3_arg(module, arguments[0], &left) ||
         !vec3_arg(module, arguments[1], &right)) {
-        return lhat_nil();
+        return;
     }
-    return lhat_real((double)left.x * right.x + (double)left.y * right.y +
+    answers[0] = lhat_real((double)left.x * right.x + (double)left.y * right.y +
                      (double)left.z * right.z);
+    *answer_count = 1;
+    return;
 }
 
 // f^self^, std.math.vector3.Vector3 -> std.math.vector3.Vector3;
-static LhatValue vec3_cross(LhatMachine *machine, void *context,
-                             const LhatValue *arguments, size_t count)
+static void vec3_cross(LhatMachine *machine, void *context,
+                          const LhatValue *arguments, size_t count,
+                          LhatValue *answers, int *answer_count)
 {
     const MathModule *module = (const MathModule *)context;
     Vec3 a, b;
     if (count < 2 || !vec3_arg(module, arguments[0], &a) ||
         !vec3_arg(module, arguments[1], &b)) {
-        return lhat_nil();
+        return;
     }
     Vec3 crossed = { a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z,
                       a.x * b.y - a.y * b.x };
-    return vec3_value(machine, module, crossed);
+    answers[0] = vec3_value(machine, module, crossed);
+    *answer_count = 1;
+    return;
 }
 
 // f^self^ -> number^;
-static LhatValue vec3_length(LhatMachine *machine, void *context,
-                              const LhatValue *arguments, size_t count)
+static void vec3_length(LhatMachine *machine, void *context,
+                          const LhatValue *arguments, size_t count,
+                          LhatValue *answers, int *answer_count)
 {
     (void)machine;
     const MathModule *module = (const MathModule *)context;
     Vec3 v;
     if (count < 1 || !vec3_arg(module, arguments[0], &v)) {
-        return lhat_nil();
+        return;
     }
-    return lhat_real(sqrt((double)v.x * v.x + (double)v.y * v.y +
+    answers[0] = lhat_real(sqrt((double)v.x * v.x + (double)v.y * v.y +
                           (double)v.z * v.z));
+    *answer_count = 1;
+    return;
 }
 
 // f^self^ -> std.math.vector3.Vector3;
-static LhatValue vec3_normalized(LhatMachine *machine, void *context,
-                                  const LhatValue *arguments, size_t count)
+static void vec3_normalized(LhatMachine *machine, void *context,
+                          const LhatValue *arguments, size_t count,
+                          LhatValue *answers, int *answer_count)
 {
     const MathModule *module = (const MathModule *)context;
     Vec3 v;
     if (count < 1 || !vec3_arg(module, arguments[0], &v)) {
-        return lhat_nil();
+        return;
     }
     double length = sqrt((double)v.x * v.x + (double)v.y * v.y +
                          (double)v.z * v.z);
     if (length == 0.0) {
-        return vec3_value(machine, module, v);  // the zero vector stays
+        answers[0] = vec3_value(machine, module, v);
+        *answer_count = 1;
+        return;  // the zero vector stays
     }
     Vec3 unit = { (float)(v.x / length), (float)(v.y / length),
                    (float)(v.z / length) };
-    return vec3_value(machine, module, unit);
+    answers[0] = vec3_value(machine, module, unit);
+    *answer_count = 1;
+    return;
 }
 
 // tostring: f^self^ -> string^;
@@ -212,13 +241,14 @@ static LhatValue vec3_normalized(LhatMachine *machine, void *context,
 // spells a number^ -- 14.8's two representations, which lhat_value_text
 // already decides between -- rather than by a printf format of this
 // library's own, so a component reads here as it would anywhere else.
-static LhatValue vec3_tostring(LhatMachine *machine, void *context,
-                                const LhatValue *arguments, size_t count)
+static void vec3_tostring(LhatMachine *machine, void *context,
+                          const LhatValue *arguments, size_t count,
+                          LhatValue *answers, int *answer_count)
 {
     const MathModule *module = (const MathModule *)context;
     Vec3 v;
     if (count < 1 || !vec3_arg(module, arguments[0], &v)) {
-        return lhat_nil();
+        return;
     }
     const double held[3] = { (double)v.x, (double)v.y, (double)v.z };
     static const char *const names[3] = { "x", "y", "z" };
@@ -231,17 +261,17 @@ static LhatValue vec3_tostring(LhatMachine *machine, void *context,
         char spelt[64];
         size_t length = lhat_value_text(lhat_real(held[i]), spelt, sizeof spelt);
         if (length >= sizeof spelt) {
-            return lhat_nil();  // no number^ spells this long
+            return;  // no number^ spells this long
         }
         int written = snprintf(text + used, sizeof text - used, "%s%s:%s",
                                i == 0 ? "" : " ", names[i], spelt);
         if (written < 0 || (size_t)written >= sizeof text - used) {
-            return lhat_nil();
+            return;
         }
         used += (size_t)written;
     }
     if (used + 1 >= sizeof text) {
-        return lhat_nil();
+        return;
     }
     text[used++] = '}';
 
@@ -249,8 +279,10 @@ static LhatValue vec3_tostring(LhatMachine *machine, void *context,
     // cannot hold the answer says nothing -- the same nil^ vec3_value
     // answers with when the machine has no room for a value either.
     LhatValue out = lhat_nil();
-    return lhat_machine_make_string(machine, text, used, &out) ? out
+    answers[0] = lhat_machine_make_string(machine, text, used, &out) ? out
                                                               : lhat_nil();
+    *answer_count = 1;
+    return;
 }
 
 bool lhatstdlib_mathvector3_register(LhatProgram *program)

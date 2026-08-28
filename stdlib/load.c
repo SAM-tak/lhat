@@ -69,45 +69,59 @@ static LhatValue adopt(LhatMachine *machine, const LoadModule *module,
     return closure;
 }
 
-static LhatValue load_text(LhatMachine *machine, void *context,
-                           const LhatValue *arguments, size_t count)
+static void load_text(LhatMachine *machine, void *context,
+                          const LhatValue *arguments, size_t count,
+                          LhatValue *answers, int *answer_count)
 {
     (void)count;
     const LoadModule *module = (const LoadModule *)context;
     const LhatString *text = arg_string(arguments[0]);
     const LhatString *name = arg_string(arguments[1]);
     if (text == NULL || name == NULL) {
-        return fail_with(machine, module->rejected, "not a string");
+        answers[0] = fail_with(machine, module->rejected, "not a string");
+        *answer_count = 1;
+        return;
     }
     char *named = c_string(name);
     if (named == NULL) {
-        return fail_with(machine, module->rejected, "out of memory");
+        answers[0] = fail_with(machine, module->rejected, "out of memory");
+        *answer_count = 1;
+        return;
     }
     LhatProto *proto = NULL;
     LhatLoadStatus status = lhat_program_load_text(
         module->program, named, text->text, text->length, &proto);
     lhat_free(named);
-    return adopt(machine, module, status, proto);
+    answers[0] = adopt(machine, module, status, proto);
+    *answer_count = 1;
+    return;
 }
 
-static LhatValue load_file(LhatMachine *machine, void *context,
-                           const LhatValue *arguments, size_t count)
+static void load_file(LhatMachine *machine, void *context,
+                          const LhatValue *arguments, size_t count,
+                          LhatValue *answers, int *answer_count)
 {
     (void)count;
     const LoadModule *module = (const LoadModule *)context;
     const LhatString *path = arg_string(arguments[0]);
     if (path == NULL) {
-        return fail_with(machine, module->cannot_read, "not a path");
+        answers[0] = fail_with(machine, module->cannot_read, "not a path");
+        *answer_count = 1;
+        return;
     }
     char *named = c_string(path);
     if (named == NULL) {
-        return fail_with(machine, module->rejected, "out of memory");
+        answers[0] = fail_with(machine, module->rejected, "out of memory");
+        *answer_count = 1;
+        return;
     }
     LhatProto *proto = NULL;
     LhatLoadStatus status =
         lhat_program_load_file(module->program, named, &proto);
     lhat_free(named);
-    return adopt(machine, module, status, proto);
+    answers[0] = adopt(machine, module, status, proto);
+    *answer_count = 1;
+    return;
 }
 
 bool lhatstdlib_load_register(LhatProgram *program)

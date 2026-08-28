@@ -184,39 +184,51 @@ static LhatValue answer(LhatMachine *machine, const LtonModule *module,
     return lhat_nil();
 }
 
-static LhatValue lton_parse(LhatMachine *machine, void *context,
-                            const LhatValue *arguments, size_t count)
+static void lton_parse(LhatMachine *machine, void *context,
+                          const LhatValue *arguments, size_t count,
+                          LhatValue *answers, int *answer_count)
 {
     (void)count;
     const LtonModule *module = (const LtonModule *)context;
     const LhatString *text = arg_string(arguments[0]);
     if (text == NULL) {
-        return fail_with(machine, module->rejected, "not a text to read");
+        answers[0] = fail_with(machine, module->rejected, "not a text to read");
+        *answer_count = 1;
+        return;
     }
     LhatValue table = lhat_nil();
     LhatLtonStatus status = lhatstdlib_lton_parse(
         machine, module->program, NULL, text->text, text->length, &table);
-    return answer(machine, module, status, table);
+    answers[0] = answer(machine, module, status, table);
+    *answer_count = 1;
+    return;
 }
 
-static LhatValue lton_load(LhatMachine *machine, void *context,
-                           const LhatValue *arguments, size_t count)
+static void lton_load(LhatMachine *machine, void *context,
+                          const LhatValue *arguments, size_t count,
+                          LhatValue *answers, int *answer_count)
 {
     (void)count;
     const LtonModule *module = (const LtonModule *)context;
     const LhatString *path = arg_string(arguments[0]);
     if (path == NULL) {
-        return fail_with(machine, module->cannot_read, "not a path");
+        answers[0] = fail_with(machine, module->cannot_read, "not a path");
+        *answer_count = 1;
+        return;
     }
     char *named = c_string(path);
     if (named == NULL) {
-        return fail_with(machine, module->out_of_memory, "out of memory");
+        answers[0] = fail_with(machine, module->out_of_memory, "out of memory");
+        *answer_count = 1;
+        return;
     }
     LhatValue table = lhat_nil();
     LhatLtonStatus status =
         lhatstdlib_lton_load(machine, module->program, named, &table);
     lhat_free(named);
-    return answer(machine, module, status, table);
+    answers[0] = answer(machine, module, status, table);
+    *answer_count = 1;
+    return;
 }
 
 bool lhatstdlib_lton_register(LhatProgram *program)

@@ -8,15 +8,17 @@
 
 #include "lhat.h"
 
-static LhatValue host_twice(struct LhatMachine *machine, void *context,
-                            const LhatValue *arguments, size_t count)
+static void host_twice(struct LhatMachine *machine, void *context,
+                       const LhatValue *arguments, size_t count,
+                       LhatValue *answers, int *answer_count)
 {
     (void)machine;
     (void)context;
     if (count != 1 || !lhat_is_integer(arguments[0])) {
-        return lhat_nil();
+        return;
     }
-    return lhat_integer(lhat_as_integer(arguments[0]) * 2);
+    answers[0] = lhat_integer(lhat_as_integer(arguments[0]) * 2);
+    *answer_count = 1;
 }
 
 static char *load_main(void *context, const char *path, size_t *length)

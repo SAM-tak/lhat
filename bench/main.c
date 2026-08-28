@@ -72,26 +72,52 @@ static const LhatHostDataTag *thing_tag;
 static const LhatHostDataTag *derived_tag;
 static Thing the_thing;
 
-static LhatValue thing_read(LhatMachine *machine, void *context,
-                            const LhatValue *arguments, size_t count)
+static void thing_read(LhatMachine *machine, void *context,
+                          const LhatValue *arguments, size_t count,
+                          LhatValue *answers, int *answer_count)
 {
     (void)machine;
     (void)context;
     (void)count;
     const Thing *self = (const Thing *)lhat_hostdata_pointer(arguments[0],
                                                              thing_tag);
-    return self != NULL ? lhat_integer(self->value) : lhat_nil();
+    answers[0] = self != NULL ? lhat_integer(self->value) : lhat_nil();
+    *answer_count = 1;
+    return;
 }
 
-static LhatValue make_thing(LhatMachine *machine, void *context,
-                            const LhatValue *arguments, size_t count)
+static void make_thing(LhatMachine *machine, void *context,
+                          const LhatValue *arguments, size_t count,
+                          LhatValue *answers, int *answer_count)
 {
     (void)arguments;
     (void)count;
     LhatValue out = lhat_nil();
     lhat_machine_make_hostdata(machine, (const LhatHostDataTag *)context,
                                &the_thing, &out);
-    return out;
+    answers[0] = out;
+    *answer_count = 1;
+    return;
+}
+
+// 05 の 8.7: the boundary itself, with nothing behind it. Registered under
+// several arities so that what an argument COSTS can be read off the slope
+// -- the machine holds its stack split into payloads and tags (2.2), so a
+// host taking `const LhatValue *` has its arguments rebuilt into one array
+// on every call (vm.c's `gathered`). That rebuilding is what a boundary
+// reading the slots by index would not do, and this is what says how much
+// of a call it is.
+static void answer_nothing(LhatMachine *machine, void *context,
+                          const LhatValue *arguments, size_t count,
+                          LhatValue *answers, int *answer_count)
+{
+    (void)machine;
+    (void)context;
+    (void)arguments;
+    (void)count;
+    answers[0] = lhat_integer(1);
+    *answer_count = 1;
+    return;
 }
 
 static bool register_bench(LhatProgram *program)
@@ -114,7 +140,22 @@ static bool register_bench(LhatProgram *program)
                               (void *)thing_tag) &&
            lhat_register_func(program, "bench", "makeDerived",
                               "f^ -> bench.Derived;", make_thing,
-                              (void *)derived_tag);
+                              (void *)derived_tag) &&
+           lhat_register_func(program, "bench", "a0",
+                              "f^ -> number^;", answer_nothing, NULL) &&
+           lhat_register_func(program, "bench", "a1",
+                              "f^number^ -> number^;", answer_nothing,
+                              NULL) &&
+           lhat_register_func(program, "bench", "a2",
+                              "f^number^, number^ -> number^;",
+                              answer_nothing, NULL) &&
+           lhat_register_func(program, "bench", "a4",
+                              "f^number^, number^, number^, number^"
+                              " -> number^;", answer_nothing, NULL) &&
+           lhat_register_func(program, "bench", "a8",
+                              "f^number^, number^, number^, number^,"
+                              " number^, number^, number^, number^"
+                              " -> number^;", answer_nothing, NULL);
 }
 
 // ---------------------------------------------------------------------------
@@ -136,6 +177,16 @@ static bool register_bench(LhatProgram *program)
     "let^ t = { k = 1 }\n"                                            \
     "let^ Box = def^{ read = f^self^ -> number^ { 1 } }\n"            \
     "let^ inst = Box.new()\n"                                         \
+    "let^ a0 = bench.a0\n"    \
+    "let^ a1 = bench.a1\n"    \
+    "let^ a2 = bench.a2\n"    \
+    "let^ a4 = bench.a4\n"    \
+    "let^ a8 = bench.a8\n"    \
+    "let^ L0 = f^  -> number^ { 1 }\n" \
+    "let^ L1 = f^ p1:number^ -> number^ { 1 }\n" \
+    "let^ L2 = f^ p1:number^, p2:number^ -> number^ { 1 }\n" \
+    "let^ L4 = f^ p1:number^, p2:number^, p3:number^, p4:number^ -> number^ { 1 }\n" \
+    "let^ L8 = f^ p1:number^, p2:number^, p3:number^, p4:number^, p5:number^, p6:number^, p7:number^, p8:number^ -> number^ { 1 }\n" \
     "var^ sink = 0\n"                                                 \
     "var^ i = 0\n"                                                    \
     "repeat^while^ i < "
@@ -233,10 +284,43 @@ int main(void)
     double inherited = run_case("6 d.read()  (inherited)",
                                 "sink := sink + d.read()", empty);
 
+    // 05 の 8.7 with 2.2: the same boundary crossed with 0, 1, 2, 4 and 8
+    // arguments. What lies between them is what an argument costs to hand
+    // over -- the rebuilding vm.c does because the stack holds no LhatValue
+    // run any more. The 0-argument case is the crossing with none of that.
+    double a0 = run_case("7 a0()", "sink := sink + a0()", empty);
+    double a1 = run_case("8 a1(1)", "sink := sink + a1(1)", empty);
+    double a2 = run_case("9 a2(1,2)", "sink := sink + a2(1,2)",
+                         empty);
+    double a4 = run_case("10 a4(1..4)",
+                         "sink := sink + a4(1,2,3,4)", empty);
+    double a8 = run_case("11 a8(1..8)",
+                         "sink := sink + a8(1,2,3,4,5,6,7,8)", empty);
+
     // 1 and 2 call the same C function with one value; what 1 has and 2 has
     // not is the read of `read` off the receiver.
     double member_read = member - func;
     double whole = member - empty;
+
+    // The same arities on the other side of no boundary. An L^ body is
+    // handed its arguments in the registers the call site wrote them in --
+    // nothing is rebuilt -- so what the two slopes differ by is the
+    // rebuilding and not the writing, which both pay for alike.
+    double l0 = run_case("12 L0()", "sink := sink + L0()", empty);
+    double l8 = run_case("13 L8(1..8)",
+                         "sink := sink + L8(1,2,3,4,5,6,7,8)", empty);
+
+    printf("\n  crossing     = %6.2f ns   (7 - 0)  a host call taking nothing\n",
+           a0 - empty);
+    printf("  per argument = %6.2f ns   (11 - 7)/8  the rebuild, per value\n",
+           (a8 - a0) / 8.0);
+    printf("    1 arg %6.2f   2 args %6.2f   4 args %6.2f   8 args %6.2f\n",
+           a1 - a0, a2 - a0, a4 - a0, a8 - a0);
+    printf("  L^ per arg   = %6.2f ns   (13 - 12)/8  the same, no boundary\n",
+           (l8 - l0) / 8.0);
+    printf("  the rebuild  = %6.2f ns per argument   what a boundary reading\n",
+           ((a8 - a0) - (l8 - l0)) / 8.0);
+    printf("                                       the slots by index would not do\n");
 
     printf("\n  member read  = %6.2f ns   (1 - 2)  what a slot read replaces\n",
            member_read);

@@ -1128,7 +1128,10 @@ bool lhat_hostdata_release(LhatObject *object, struct LhatMachine *machine)
     // The value is still whole, so the release reads its pointer out of it
     // the way any other member of the type would.
     LhatValue self = lhat_object(object);
-    at->release(machine, at->release_context, &self, 1);
+    // 05 の 8.7: a release answers nothing, which the boundary now says in
+    // its own type -- there is no answer to take and no room to take it in.
+    int said = 0;
+    at->release(machine, at->release_context, &self, 1, NULL, &said);
     return true;
 }
 
@@ -1147,7 +1150,8 @@ bool lhat_coroutine_release(LhatObject *object, struct LhatMachine *machine)
     walk->host_released = true;
 
     LhatValue self = lhat_object(object);
-    walk->host_release(machine, walk->host_state, &self, 1);
+    int said = 0;
+    walk->host_release(machine, walk->host_state, &self, 1, NULL, &said);
     return true;
 }
 

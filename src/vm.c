@@ -2022,10 +2022,12 @@ typedef struct {
 } FindWalk;
 
 static bool findall_step(struct LhatMachine *machine, void *context,
-                         LhatValue sent, LhatValue *out)
+                         const LhatValue *sent, size_t sent_count,
+                         LhatValue *answers, int *answer_count)
 {
     (void)machine;
     (void)sent;
+    (void)sent_count;
     FindWalk *walk = (FindWalk *)context;
     if (walk->needle_length == 0) {
         return false;  // nowhere to stand; an empty needle walks nothing
@@ -2046,18 +2048,21 @@ static bool findall_step(struct LhatMachine *machine, void *context,
     walk->chars_before =
         ordinal - 1 + characters_before(walk->subject->text + at, past - at);
     walk->next_byte = past;
-    *out = lhat_integer((int64_t)ordinal);
+    answers[0] = lhat_integer((int64_t)ordinal);
+    *answer_count = 1;
     return true;
 }
 
-static LhatValue findall_release(struct LhatMachine *machine, void *context,
-                                 const LhatValue *arguments, size_t count)
+static void findall_release(struct LhatMachine *machine, void *context,
+                            const LhatValue *arguments, size_t count,
+                            LhatValue *answers, int *answer_count)
 {
     (void)machine;
     (void)arguments;
     (void)count;
+    (void)answers;
+    (void)answer_count;
     lhat_free(context);
-    return lhat_nil();
 }
 
 // 14.22: one value through the clone's written policy -- arbitrary L^ code,
@@ -2639,23 +2644,52 @@ static WalkStep step_table_walk(Machine *m, LhatCoroutine *co, WalkMode mode,
 // value (0 when it could only be one). A step that answers a shape
 // the call site did not reserve puts the mismatch in *fault, LHAT_RUN_OK
 // otherwise -- the same refusals a yield^'s placement makes.
+// 02 の 13.8改: the boundary's answer, in the shape the machine carries one
+// in. Defined below, where the room itself is.
+static bool boundary_answer(Machine *m, int written, LhatValue *answered);
+static bool call_host_fn(Machine *m, LhatHostFn call, void *context,
+                         const LhatValue *arguments, size_t count,
+                         LhatValue *answered);
+
 static WalkStep step_host_walk(Machine *m, LhatCoroutine *co, WalkMode mode,
                                size_t at, size_t expected, Frame *frame,
-                               LhatValue sent, LhatRunStatus *fault)
+                               const LhatValue *sent, size_t sent_count,
+                               LhatRunStatus *fault)
 {
     *fault = LHAT_RUN_OK;
     LhatValue out = lhat_nil();
+    int written = 0;
     co->state = LHAT_COROUTINE_RUNNING;
-    bool more = co->step(m, co->host_state, sent, &out);
+    m->tuple_scratch_count = 0;
+    bool more = co->step((LhatMachine *)m, co->host_state, sent, sent_count,
+                         m->tuple_scratch, &written);
+    if (!boundary_answer(m, written, &out)) {
+        *fault = LHAT_RUN_TUPLE_ARITY;
+        return WALK_ENDED;
+    }
     if (!more) {
         // 02 の 10.7: the walk is over, so its state goes back now rather
         // than waiting on a collection.
         co->state = LHAT_COROUTINE_DONE;
         lhat_coroutine_release((LhatObject *)co, m);
-        lhat_slots_set(m->slots, at, lhat_nil());
-        return WALK_ENDED;
+        // 13.9: what a walk wrote as it ended is T -- the slot a body
+        // coroutine fills by writing return^. It is placed like any
+        // other answer, so a hand-written resume() reads it; `for^`
+        // does not, because the loop asks ISDONE after the resume and
+        // leaves without binding what came back (compile.c).
+        if (written == 0) {
+            lhat_slots_set(m->slots, at, lhat_nil());
+            return WALK_ENDED;
+        }
+    } else {
+        co->state = LHAT_COROUTINE_SUSPENDED;
+        if (written == 0) {
+            // A walk that goes on has to hand something over: `for^`
+            // binds what came back, and there would be nothing to bind.
+            *fault = LHAT_RUN_TUPLE_ARITY;
+            return WALK_ENDED;
+        }
     }
-    co->state = LHAT_COROUTINE_SUSPENDED;
 
     if (!lhat_is_run(out)) {
         // 05 の 8.9: a host value is written out whole on the spot, exactly
@@ -2677,7 +2711,7 @@ static WalkStep step_host_walk(Machine *m, LhatCoroutine *co, WalkMode mode,
                 *fault = LHAT_RUN_TYPE_ERROR;
                 return WALK_ENDED;
             }
-            return WALK_TOOK;
+            return more ? WALK_TOOK : WALK_ENDED;
         }
         if (mode == WALK_AS_RUN) {
             // The loop reserved a run and one value came out.
@@ -2685,10 +2719,10 @@ static WalkStep step_host_walk(Machine *m, LhatCoroutine *co, WalkMode mode,
             return WALK_ENDED;
         }
         lhat_slots_set(m->slots, at, out);
-        return WALK_TOOK;
+        return more ? WALK_TOOK : WALK_ENDED;
     }
 
-    // lhat_make_tuple's answer: the positions sit in the machine's own room,
+    // Several answers: the positions sit in the machine's own room,
     // put there by the host before it returned.
     size_t positions = lhat_run_width(out);
     if (positions != m->tuple_scratch_count) {
@@ -2709,7 +2743,7 @@ static WalkStep step_host_walk(Machine *m, LhatCoroutine *co, WalkMode mode,
         for (size_t i = 0; i < positions; i++) {
             lhat_slots_set(m->slots, at + 1 + i, m->tuple_scratch[i]);
         }
-        return WALK_TOOK;
+        return more ? WALK_TOOK : WALK_ENDED;
     }
 
     // WALK_AS_ANSWER, as above: head in the slot, positions in the frame's
@@ -2721,7 +2755,7 @@ static WalkStep step_host_walk(Machine *m, LhatCoroutine *co, WalkMode mode,
         frame->answer_tags[i + 1] = (uint8_t)m->tuple_scratch[i].tag;
     }
     lhat_slots_set(m->slots, at, out);
-    return WALK_TOOK;
+    return more ? WALK_TOOK : WALK_ENDED;
 }
 
 // 5.11: one frame, put back where it left off -- shared by the natives'
@@ -3019,21 +3053,51 @@ bool lhat_make_hostvalue(LhatMachine *machine, const LhatHostValueTag *tag,
     return true;
 }
 
-bool lhat_make_tuple(LhatMachine *machine, const LhatValue *values,
-                     size_t count, LhatValue *out)
+// 02 の 13.8改 with 05 の 8.7: the boundary's answer, put into the shape the
+// machine already carries one in. A host writes its values into the room
+// and says how many; from here on a single value travels as itself and
+// several travel as a run head with the positions in tuple_scratch --
+// which is what every site downstream already reads.
+//
+// Answers false when the count is out of range, which is a host saying
+// something the machine has no room for. The room is LHAT_MAX_TUPLE wide
+// and a signature wider than that is refused at registration, so a host
+// writing what its own signature says never lands here.
+static bool boundary_answer(Machine *m, int written, LhatValue *answered)
 {
-    if (machine == NULL || values == NULL || out == NULL || count < 2 ||
-        count > LHAT_MAX_TUPLE) {
+    if (written < 0 || written > LHAT_MAX_TUPLE) {
         return false;
     }
-    for (size_t i = 0; i < count; i++) {
-        machine->tuple_scratch[i] = values[i];
+    if (written == 0) {
+        m->tuple_scratch_count = 0;
+        *answered = lhat_nil();
+        return true;
+    }
+    if (written == 1) {
+        m->tuple_scratch_count = 0;
+        *answered = m->tuple_scratch[0];
+        return true;
     }
     // Held until the call returns and the machine lays the run down. The
     // count is what tells the collector how much of the room to read.
-    machine->tuple_scratch_count = count;
-    *out = lhat_run_head(count);
+    m->tuple_scratch_count = (size_t)written;
+    *answered = lhat_run_head((size_t)written);
     return true;
+}
+
+// One crossing: the arguments over, the answers back. The room is the
+// machine's tuple_scratch, which the collector walks -- so a host may
+// build a table or call back into L^ between writing an answer and
+// returning, and what it wrote stays reachable.
+static bool call_host_fn(Machine *m, LhatHostFn call, void *context,
+                         const LhatValue *arguments, size_t count,
+                         LhatValue *answered)
+{
+    int written = 0;
+    m->tuple_scratch_count = 0;
+    call((LhatMachine *)m, context, arguments, count, m->tuple_scratch,
+         &written);
+    return boundary_answer(m, written, answered);
 }
 
 bool lhat_machine_bind_hostvalues(LhatMachine *machine,
@@ -4685,9 +4749,14 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth, bool draining)
                         }
                     }
                     size_t frames_before = m->frame_count;
-                    LhatValue answered =
-                        host->call(m, host->context, arguments, given);
+                    LhatValue answered = lhat_nil();
+                    bool said = call_host_fn(m, host->call, host->context,
+                                             arguments, given, &answered);
                     lhat_free(packed);
+                    if (!said) {
+                        return finish(m, chunk, LHAT_RUN_TUPLE_ARITY,
+                                      lhat_nil(), at);
+                    }
                     // 05 の 8.7改 and 8.7改2: a nested run that faulted, or
                     // a panic the host asked for, ends this run here --
                     // running on would stack this frame's own calls over
@@ -5663,12 +5732,22 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth, bool draining)
                                           lhat_nil(), at);
                         }
                         LhatRunStatus fault = LHAT_RUN_OK;
+                        // 13.8改: everything the resume sent, not the
+                        // first of it. The body path below gathers the
+                        // same way; a walk is no less entitled to it.
+                        LhatValue walk_sent[LHAT_MAX_TUPLE];
+                        size_t walk_sent_count = 0;
+                        for (size_t i = 0;
+                             i < (size_t)b && i < LHAT_MAX_TUPLE; i++) {
+                            walk_sent[walk_sent_count++] = R(first + i);
+                        }
                         step_host_walk(m, co,
                                        room > 1 ? WALK_AS_RUN : WALK_AS_VALUE,
                                        rbase + a,
                                        room > 1 ? (size_t)room - 1
                                                 : (size_t)room,
-                                       frame, sent, &fault);
+                                       frame, walk_sent, walk_sent_count,
+                                       &fault);
                         if (fault != LHAT_RUN_OK) {
                             return finish(m, chunk, fault, lhat_nil(), at);
                         }
@@ -6391,14 +6470,35 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth, bool draining)
                                       lhat_nil(), at);
                     }
                     LhatRunStatus fault = LHAT_RUN_OK;
+                    // 15.8 with 13.8改: what the outer resume sent may
+                    // itself be a run, laid at R(a) head-first by this
+                    // frame's own suspension -- the body path below reads
+                    // it the same way. A for^ loop sends nothing.
+                    LhatValue walk_sent[LHAT_MAX_TUPLE];
+                    size_t walk_sent_count = 0;
+                    if (mode == WALK_AS_ANSWER) {
+                        if (lhat_is_run(R(a))) {
+                            size_t width = lhat_run_width(R(a));
+                            if (width > LHAT_MAX_TUPLE ||
+                                rbase + a + width >= LHAT_STACK_SLOTS) {
+                                return finish(m, chunk,
+                                              LHAT_RUN_TUPLE_ARITY,
+                                              lhat_nil(), at);
+                            }
+                            for (size_t i = 0; i < width; i++) {
+                                walk_sent[walk_sent_count++] = R(a + 1 + i);
+                            }
+                        } else {
+                            walk_sent[walk_sent_count++] = R(a);
+                        }
+                    }
                     step_host_walk(m, co, mode, rbase + a,
                                    mode == WALK_AS_RUN
                                        ? (size_t)cc - 1
                                        : (cc & LHAT_RESUME_WIDE) != 0
                                              ? (size_t)(cc & ~LHAT_RESUME_WIDE)
                                              : 0,
-                                   frame,
-                                   mode == WALK_AS_ANSWER ? R(a) : lhat_nil(),
+                                   frame, walk_sent, walk_sent_count,
                                    &fault);
                     if (fault != LHAT_RUN_OK) {
                         return finish(m, chunk, fault, lhat_nil(), at);
@@ -6587,8 +6687,13 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth, bool draining)
                                   : R(cc);
             }
             size_t frames_before = m->frame_count;
-            LhatValue answered = carried_host->call(m, carried_host->context,
-                                                    operands, unary ? 1 : 2);
+            LhatValue answered = lhat_nil();
+            if (!call_host_fn(m, carried_host->call,
+                              carried_host->context, operands,
+                              unary ? 1 : 2, &answered)) {
+                return finish(m, chunk, LHAT_RUN_TUPLE_ARITY, lhat_nil(),
+                              at);
+            }
             LhatRunStatus left = LHAT_RUN_OK;
             LhatValue left_with = lhat_nil();
             if (host_faulted(m, frames_before, &left, &left_with)) {
@@ -7050,7 +7155,11 @@ static LhatRunResult host_call(Machine *m, LhatValue callee, LhatValue receiver,
             }
         }
         size_t frames_before = m->frame_count;
-        LhatValue answered = host->call(m, host->context, gathered, given);
+        LhatValue answered = lhat_nil();
+        if (!call_host_fn(m, host->call, host->context, gathered, given,
+                          &answered)) {
+            return call_fault(m, LHAT_RUN_TUPLE_ARITY);
+        }
         // 05 の 8.7改2: the host's own fault comes back to the host that
         // called it, as it would to an instruction. The span is empty
         // (call_fault) -- no frame of this machine's was involved.
@@ -7070,7 +7179,7 @@ static LhatRunResult host_call(Machine *m, LhatValue callee, LhatValue receiver,
         LhatRunResult made = call_fault(m, LHAT_RUN_OK);
         if (lhat_is_run(answered)) {
             // 02 の 13.8改: the positions already sit in the machine's room
-            // (lhat_make_tuple), which is where the result aims anyway.
+            // (the boundary's own room), which is where the result aims anyway.
             size_t positions = lhat_run_width(answered);
             if (positions != m->tuple_scratch_count) {
                 return call_fault(m, LHAT_RUN_TUPLE_ARITY);
@@ -7486,19 +7595,30 @@ LhatRunResult lhat_machine_resume(LhatMachine *machine, LhatValue coroutine,
     }
 
     // 05 の 8.8: and a host's walk is one step of its own C body. RUNNING
-    // above already refuses a step resuming its own coroutine. The step
-    // takes one value, so a several-send hands over its first.
+    // above already refuses a step resuming its own coroutine. 13.8改:
+    // everything the resume sent goes over, the way it does to a body.
     if (co->source == LHAT_COROUTINE_HOST) {
         LhatValue out = lhat_nil();
+        int written = 0;
         co->state = LHAT_COROUTINE_RUNNING;
-        bool more = co->step(machine, co->host_state,
-                             sent_count > 0 ? sent[0] : lhat_nil(), &out);
+        m->tuple_scratch_count = 0;
+        bool more = co->step(machine, co->host_state, sent, sent_count,
+                             m->tuple_scratch, &written);
+        if (!boundary_answer(m, written, &out)) {
+            return call_fault(m, LHAT_RUN_TUPLE_ARITY);
+        }
         if (!more) {
             co->state = LHAT_COROUTINE_DONE;
             lhat_coroutine_release((LhatObject *)co, machine);
-            return call_fault(m, LHAT_RUN_OK);
+            // 13.9: what it wrote as it ended is T, and a resume from C
+            // reads it the way a written one does. Nothing written is a
+            // walk that ended with nothing.
+        } else {
+            co->state = LHAT_COROUTINE_SUSPENDED;
+            if (written == 0) {
+                return call_fault(m, LHAT_RUN_TUPLE_ARITY);
+            }
         }
-        co->state = LHAT_COROUTINE_SUSPENDED;
         // 05 の 8.9改2: a host value passes through whole -- the step wrote
         // it into the machine's scratch itself (lhat_make_hostvalue), which
         // is exactly where the caller reads the pointer form.

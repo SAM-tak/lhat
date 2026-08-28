@@ -297,20 +297,6 @@ void *lhat_hostvalue_data(LhatValue argument, const LhatHostValueTag *tag);
 bool lhat_make_hostvalue(LhatMachine *machine, const LhatHostValueTag *tag,
                          const void *bytes, LhatValue *out);
 
-// 02 の 13.8改: the several values a host answers with, for a function whose
-// registered signature says '-> (A, B)'. The positions are copied into the
-// machine's own room and handed back as one value the machine writes out
-// whole the moment the call returns -- the same round trip
-// lhat_make_hostvalue makes, over values instead of bytes.
-//
-// `count` is two or more and at most LHAT_MAX_TUPLE. Never stored: the room
-// holds exactly one answer, which is all a call can make. Unlike a host
-// value's, these positions are ordinary values, so the collector reaches
-// them for as long as they sit here -- a host may allocate before it
-// returns. False when count is out of range or a pointer is NULL.
-bool lhat_make_tuple(LhatMachine *machine, const LhatValue *values,
-                     size_t count, LhatValue *out);
-
 // A string on `machine`'s own heap, made the way 05 の 8.7's registration
 // makes a table or a host -- the machine has to make it, since the value's
 // object header and its place in the collector's heap are the machine's to
@@ -451,9 +437,13 @@ LhatRunResult lhat_machine_call_member(LhatMachine *machine,
 // under the dispose^ contract -- once, and never reaching back into the L^
 // API, since the sweep may be the caller. `held` is one value kept reachable
 // for the walk's sake -- the hostdata being walked, usually -- and nil^ when
-// nothing needs holding. `step` fills *out (which may be lhat_make_tuple's
-// answer, for a `for^ k, v` walk) and answers true, or answers false when
-// the walk is over. False here only when a pointer is missing or memory is.
+// nothing needs holding. `step` writes its answers the way any registration
+// does -- a `for^ k, v` walk hands over two of them -- and answers true
+// while the walk goes on, false when it is over. 13.9: what it writes
+// with false is T, the value a body coroutine ends with by writing
+// return^; writing nothing there is a walk that ends with nothing.
+//
+// False from THIS call only when a pointer is missing or memory is.
 bool lhat_machine_make_coroutine(LhatMachine *machine, LhatHostStepFn step,
                                  void *context, LhatHostFn release,
                                  LhatValue held, LhatValue *out);

@@ -153,25 +153,31 @@ typedef struct {
 
 static Held held = {7};
 
-static LhatValue held_read(LhatMachine *machine, void *context,
-                           const LhatValue *arguments, size_t count)
+static void held_read(LhatMachine *machine, void *context,
+                          const LhatValue *arguments, size_t count,
+                          LhatValue *answers, int *answer_count)
 {
     (void)machine;
     (void)context;
     (void)arguments;
     (void)count;
-    return lhat_integer(held.n);
+    answers[0] = lhat_integer(held.n);
+    *answer_count = 1;
+    return;
 }
 
-static LhatValue held_make(LhatMachine *machine, void *context,
-                           const LhatValue *arguments, size_t count)
+static void held_make(LhatMachine *machine, void *context,
+                          const LhatValue *arguments, size_t count,
+                          LhatValue *answers, int *answer_count)
 {
     (void)arguments;
     (void)count;
     LhatValue out = lhat_nil();
     lhat_machine_make_hostdata(machine, (const LhatHostDataTag *)context,
                                &held, &out);
-    return out;
+    answers[0] = out;
+    *answer_count = 1;
+    return;
 }
 
 // One whole turn of what a host does: build it, run it, let it go.

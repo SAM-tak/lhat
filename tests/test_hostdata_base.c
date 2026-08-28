@@ -113,8 +113,9 @@ static SceneNode the_node;      // one per test
 static int node_releases;       // how many times the base's dispose^ ran
 static int sprite_releases;     // and the derived one's
 
-static LhatValue node_id(LhatMachine *machine, void *context,
-                         const LhatValue *arguments, size_t count)
+static void node_id(LhatMachine *machine, void *context,
+                          const LhatValue *arguments, size_t count,
+                          LhatValue *answers, int *answer_count)
 {
     (void)machine;
     (void)context;
@@ -123,64 +124,81 @@ static LhatValue node_id(LhatMachine *machine, void *context,
     // 8.8改 is what makes this answer rather than NULL, and it is the whole
     // of what the host gets out of declaring the relation.
     SceneNode *self = (SceneNode *)lhat_hostdata_pointer(arguments[0], node_tag);
-    return self != NULL ? lhat_integer(self->id) : lhat_nil();
+    answers[0] = self != NULL ? lhat_integer(self->id) : lhat_nil();
+    *answer_count = 1;
+    return;
 }
 
-static LhatValue node2d_x(LhatMachine *machine, void *context,
-                          const LhatValue *arguments, size_t count)
+static void node2d_x(LhatMachine *machine, void *context,
+                          const LhatValue *arguments, size_t count,
+                          LhatValue *answers, int *answer_count)
 {
     (void)machine;
     (void)context;
     (void)count;
     SceneNode *self =
         (SceneNode *)lhat_hostdata_pointer(arguments[0], node2d_tag);
-    return self != NULL ? lhat_integer(self->x) : lhat_nil();
+    answers[0] = self != NULL ? lhat_integer(self->x) : lhat_nil();
+    *answer_count = 1;
+    return;
 }
 
 // The same name the base declares, on the leaf. 8.8改 says the nearest
 // declaration answers, and this is what says which one ran.
-static LhatValue sprite_id(LhatMachine *machine, void *context,
-                           const LhatValue *arguments, size_t count)
+static void sprite_id(LhatMachine *machine, void *context,
+                          const LhatValue *arguments, size_t count,
+                          LhatValue *answers, int *answer_count)
 {
     (void)machine;
     (void)context;
     (void)arguments;
     (void)count;
-    return lhat_integer(7);
+    answers[0] = lhat_integer(7);
+    *answer_count = 1;
+    return;
 }
 
-static LhatValue node_dispose(LhatMachine *machine, void *context,
-                              const LhatValue *arguments, size_t count)
+static void node_dispose(LhatMachine *machine, void *context,
+                          const LhatValue *arguments, size_t count,
+                          LhatValue *answers, int *answer_count)
 {
     (void)machine;
     (void)context;
     (void)arguments;
     (void)count;
+    (void)answers;
+    (void)answer_count;
     node_releases++;
-    return lhat_nil();
+    return;
 }
 
-static LhatValue sprite_dispose(LhatMachine *machine, void *context,
-                                const LhatValue *arguments, size_t count)
+static void sprite_dispose(LhatMachine *machine, void *context,
+                          const LhatValue *arguments, size_t count,
+                          LhatValue *answers, int *answer_count)
 {
     (void)machine;
     (void)context;
     (void)arguments;
     (void)count;
+    (void)answers;
+    (void)answer_count;
     sprite_releases++;
-    return lhat_nil();
+    return;
 }
 
 // Makes a value of whichever type the registration bound this to.
-static LhatValue make_of(LhatMachine *machine, void *context,
-                         const LhatValue *arguments, size_t count)
+static void make_of(LhatMachine *machine, void *context,
+                          const LhatValue *arguments, size_t count,
+                          LhatValue *answers, int *answer_count)
 {
     (void)arguments;
     (void)count;
     LhatValue out = lhat_nil();
     lhat_machine_make_hostdata(machine, (const LhatHostDataTag *)context,
                                &the_node, &out);
-    return out;
+    answers[0] = out;
+    *answer_count = 1;
+    return;
 }
 
 // The tree, with members registered AFTER every type and every relation --

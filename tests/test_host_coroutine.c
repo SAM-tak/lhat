@@ -94,33 +94,65 @@ static const LhatHostDataTag *pairs_tag;
 static Range range_value;     // one per test; make() rewrites it
 static int walk_releases;     // how many times the release ran
 static LhatValue last_sent;   // what the most recent step was handed
+static size_t last_sent_count;  // and how many it was handed
 
-static bool range_step(LhatMachine *machine, void *context, LhatValue sent,
-                       LhatValue *out)
+static bool range_step(LhatMachine *machine, void *context,
+                       const LhatValue *sent, size_t sent_count,
+                       LhatValue *answers, int *answer_count)
 {
+    (void)machine;
     RangeWalk *walk = (RangeWalk *)context;
-    last_sent = sent;
+    // 13.8改: a resume may send several; what this remembers is the first,
+    // and last_sent_count says how many there were.
+    last_sent = sent_count > 0 ? sent[0] : lhat_nil();
+    last_sent_count = sent_count;
     if (walk->at > walk->to) {
         return false;
     }
     if (walk->pair) {
-        LhatValue pair[2] = {lhat_integer(walk->ordinal++),
-                             lhat_integer(walk->at++)};
-        return lhat_make_tuple(machine, pair, 2, out);
+        answers[0] = lhat_integer(walk->ordinal++);
+        answers[1] = lhat_integer(walk->at++);
+        *answer_count = 2;
+        return true;
     }
-    *out = lhat_integer(walk->at++);
+    answers[0] = lhat_integer(walk->at++);
+    *answer_count = 1;
     return true;
 }
 
-static LhatValue walk_release(LhatMachine *machine, void *context,
-                              const LhatValue *arguments, size_t count)
+// 13.9: walks while it can, then ends WITH a value -- the T a body
+// coroutine writes with return^. Before the boundary could say both,
+// a host had to answer the last value on one call and end on the next.
+static bool ending_step(LhatMachine *machine, void *context,
+                        const LhatValue *sent, size_t sent_count,
+                        LhatValue *answers, int *answer_count)
+{
+    (void)machine;
+    (void)sent;
+    (void)sent_count;
+    RangeWalk *walk = (RangeWalk *)context;
+    if (walk->at > walk->to) {
+        answers[0] = lhat_integer(99);
+        *answer_count = 1;
+        return false;   // over, and this is what it ended with
+    }
+    answers[0] = lhat_integer(walk->at++);
+    *answer_count = 1;
+    return true;
+}
+
+static void walk_release(LhatMachine *machine, void *context,
+                          const LhatValue *arguments, size_t count,
+                          LhatValue *answers, int *answer_count)
 {
     (void)machine;
     (void)arguments;
     (void)count;
+    (void)answers;
+    (void)answer_count;
     walk_releases++;
     free(context);
-    return lhat_nil();
+    return;
 }
 
 static LhatValue make_walk(LhatMachine *machine, LhatValue over,
@@ -149,33 +181,42 @@ static LhatValue make_walk(LhatMachine *machine, LhatValue over,
     return out;
 }
 
-static LhatValue range_iterate(LhatMachine *machine, void *context,
-                               const LhatValue *arguments, size_t count)
+static void range_iterate(LhatMachine *machine, void *context,
+                          const LhatValue *arguments, size_t count,
+                          LhatValue *answers, int *answer_count)
 {
     (void)context;
     (void)count;
-    return make_walk(machine, arguments[0], range_tag, false);
+    answers[0] = make_walk(machine, arguments[0], range_tag, false);
+    *answer_count = 1;
+    return;
 }
 
-static LhatValue pairs_iterate(LhatMachine *machine, void *context,
-                               const LhatValue *arguments, size_t count)
+static void pairs_iterate(LhatMachine *machine, void *context,
+                          const LhatValue *arguments, size_t count,
+                          LhatValue *answers, int *answer_count)
 {
     (void)context;
     (void)count;
-    return make_walk(machine, arguments[0], pairs_tag, true);
+    answers[0] = make_walk(machine, arguments[0], pairs_tag, true);
+    *answer_count = 1;
+    return;
 }
 
-static LhatValue range_span(LhatMachine *machine, void *context,
-                            const LhatValue *arguments, size_t count)
+static void range_span(LhatMachine *machine, void *context,
+                          const LhatValue *arguments, size_t count,
+                          LhatValue *answers, int *answer_count)
 {
     (void)machine;
     (void)context;
     (void)count;
     Range *self = (Range *)lhat_hostdata_pointer(arguments[0], range_tag);
     if (self == NULL) {
-        return lhat_nil();
+        return;
     }
-    return lhat_integer(self->to - self->from + 1);
+    answers[0] = lhat_integer(self->to - self->from + 1);
+    *answer_count = 1;
+    return;
 }
 
 static LhatValue range_make_with(LhatMachine *machine,
@@ -190,20 +231,26 @@ static LhatValue range_make_with(LhatMachine *machine,
                : lhat_nil();
 }
 
-static LhatValue range_make(LhatMachine *machine, void *context,
-                            const LhatValue *arguments, size_t count)
+static void range_make(LhatMachine *machine, void *context,
+                          const LhatValue *arguments, size_t count,
+                          LhatValue *answers, int *answer_count)
 {
     (void)context;
     (void)count;
-    return range_make_with(machine, range_tag, arguments);
+    answers[0] = range_make_with(machine, range_tag, arguments);
+    *answer_count = 1;
+    return;
 }
 
-static LhatValue pairs_make(LhatMachine *machine, void *context,
-                            const LhatValue *arguments, size_t count)
+static void pairs_make(LhatMachine *machine, void *context,
+                          const LhatValue *arguments, size_t count,
+                          LhatValue *answers, int *answer_count)
 {
     (void)context;
     (void)count;
-    return range_make_with(machine, pairs_tag, arguments);
+    answers[0] = range_make_with(machine, pairs_tag, arguments);
+    *answer_count = 1;
+    return;
 }
 
 // Runs `main.lh` of an already-registered program and answers the result.
@@ -500,6 +547,60 @@ static void test_driven_from_c(void)
         LHAT_CHECK_EQ_INT(walk_releases, 1);
     }
 
+    // 02 の 13.8改: a resume may send several, and until the boundary took
+    // an array it handed the step the first of them and dropped the rest.
+    LHAT_TEST("and it reaches the step however many were sent");
+    {
+        LhatMachine *m = lhat_machine_new();
+        RangeWalk *walk = (RangeWalk *)malloc(sizeof *walk);
+        walk->at = 1;
+        walk->to = 100;
+        walk->pair = false;
+        walk->ordinal = 1;
+        walk_releases = 0;
+        LhatValue co = lhat_nil();
+        lhat_machine_make_coroutine(m, range_step, walk, walk_release,
+                                    lhat_nil(), &co);
+        last_sent = lhat_nil();
+        last_sent_count = 0;
+        LhatValue told[3] = {lhat_integer(7), lhat_integer(8),
+                             lhat_integer(9)};
+        lhat_machine_resume(m, co, told, 3);
+        LHAT_CHECK_EQ_INT(last_sent_count, 3);
+        LHAT_CHECK_EQ_INT(lhat_as_integer(last_sent), 7);
+        lhat_machine_dispose(m);
+        LHAT_CHECK_EQ_INT(walk_releases, 1);
+    }
+
+    // 13.9: a walk may end WITH a value -- that is T, the slot a body
+    // coroutine fills by writing return^. Answering while saying the
+    // walk is over is how a step says it, and a resume from C reads it
+    // the way it reads a yield.
+    LHAT_TEST("13.9: a walk can end with a value, which is T");
+    {
+        LhatMachine *m = lhat_machine_new();
+        RangeWalk *walk = (RangeWalk *)malloc(sizeof *walk);
+        walk->at = 1;
+        walk->to = 1;   // one step, then the end
+        walk->pair = false;
+        walk->ordinal = 1;
+        walk_releases = 0;
+        LhatValue co = lhat_nil();
+        lhat_machine_make_coroutine(m, ending_step, walk, walk_release,
+                                    lhat_nil(), &co);
+        LhatRunResult first = lhat_machine_resume(m, co, NULL, 0);
+        LHAT_CHECK_EQ_INT(first.status, LHAT_RUN_OK);
+        LHAT_CHECK_EQ_INT(lhat_as_integer(first.value), 1);
+        LHAT_CHECK(!lhat_machine_coroutine_done(co),
+                   "still walking");
+        LhatRunResult last = lhat_machine_resume(m, co, NULL, 0);
+        LHAT_CHECK_EQ_INT(last.status, LHAT_RUN_OK);
+        // The ending value came back, and the walk is over.
+        LHAT_CHECK_EQ_INT(lhat_as_integer(last.value), 99);
+        LHAT_CHECK(lhat_machine_coroutine_done(co), "and done");
+        lhat_machine_dispose(m);
+    }
+
     // 02 の 13.8改: a tuple crosses the boundary as positions, `value`
     // standing as position 1 the way lhat_run already answers one.
     LHAT_TEST("and a tuple-yielding step crosses as positions");
@@ -718,10 +819,12 @@ typedef struct {
 
 static const LhatHostValueTag *vec_tag;
 
-static bool vec_step(LhatMachine *machine, void *context, LhatValue sent,
-                     LhatValue *out)
+static bool vec_step(LhatMachine *machine, void *context,
+                     const LhatValue *sent, size_t sent_count,
+                     LhatValue *answers, int *answer_count)
 {
     (void)sent;
+    (void)sent_count;
     VecWalk *walk = (VecWalk *)context;
     if (walk->at > walk->to) {
         return false;
@@ -734,10 +837,13 @@ static bool vec_step(LhatMachine *machine, void *context, LhatValue sent,
         return false;
     }
     if (walk->pair) {
-        LhatValue both[2] = {lhat_integer(walk->at - 1), value};
-        return lhat_make_tuple(machine, both, 2, out);
+        answers[0] = lhat_integer(walk->at - 1);
+        answers[1] = value;
+        *answer_count = 2;
+        return true;
     }
-    *out = value;
+    answers[0] = value;
+    *answer_count = 1;
     return true;
 }
 
@@ -760,24 +866,31 @@ static LhatValue vec_iterate_with(LhatMachine *machine, LhatValue over,
     return out;
 }
 
-static LhatValue vec_iterate(LhatMachine *machine, void *context,
-                             const LhatValue *arguments, size_t count)
+static void vec_iterate(LhatMachine *machine, void *context,
+                          const LhatValue *arguments, size_t count,
+                          LhatValue *answers, int *answer_count)
 {
     (void)context;
     (void)count;
-    return vec_iterate_with(machine, arguments[0], false);
+    answers[0] = vec_iterate_with(machine, arguments[0], false);
+    *answer_count = 1;
+    return;
 }
 
-static LhatValue vec_pair_iterate(LhatMachine *machine, void *context,
-                                  const LhatValue *arguments, size_t count)
+static void vec_pair_iterate(LhatMachine *machine, void *context,
+                          const LhatValue *arguments, size_t count,
+                          LhatValue *answers, int *answer_count)
 {
     (void)context;
     (void)count;
-    return vec_iterate_with(machine, arguments[0], true);
+    answers[0] = vec_iterate_with(machine, arguments[0], true);
+    *answer_count = 1;
+    return;
 }
 
-static LhatValue vec_seq_make(LhatMachine *machine, void *context,
-                              const LhatValue *arguments, size_t count)
+static void vec_seq_make(LhatMachine *machine, void *context,
+                          const LhatValue *arguments, size_t count,
+                          LhatValue *answers, int *answer_count)
 {
     (void)context;
     (void)arguments;
@@ -785,9 +898,11 @@ static LhatValue vec_seq_make(LhatMachine *machine, void *context,
     range_value.from = 1;
     range_value.to = 3;
     LhatValue out = lhat_nil();
-    return lhat_machine_make_hostdata(machine, range_tag, &range_value, &out)
+    answers[0] = lhat_machine_make_hostdata(machine, range_tag, &range_value, &out)
                ? out
                : lhat_nil();
+    *answer_count = 1;
+    return;
 }
 
 static void test_walk_yields_host_values(void)
@@ -878,8 +993,9 @@ static float float_at(const void *data)
     return f;
 }
 
-static LhatValue vec_mk(LhatMachine *machine, void *context,
-                        const LhatValue *arguments, size_t count)
+static void vec_mk(LhatMachine *machine, void *context,
+                          const LhatValue *arguments, size_t count,
+                          LhatValue *answers, int *answer_count)
 {
     (void)context;
     (void)count;
@@ -888,7 +1004,9 @@ static LhatValue vec_mk(LhatMachine *machine, void *context,
               ? (float)lhat_as_real(arguments[0])
               : (float)lhat_as_integer(arguments[0]);
     LhatValue out = lhat_nil();
-    return lhat_make_hostvalue(machine, vec_tag, &v, &out) ? out : lhat_nil();
+    answers[0] = lhat_make_hostvalue(machine, vec_tag, &v, &out) ? out : lhat_nil();
+    *answer_count = 1;
+    return;
 }
 
 static void test_boundary_host_values(void)

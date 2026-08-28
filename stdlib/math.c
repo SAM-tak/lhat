@@ -31,28 +31,34 @@ typedef struct {
     double (*two)(double, double);
 } Entry;
 
-static LhatValue unary(LhatMachine *machine, void *context,
-                       const LhatValue *arguments, size_t count)
+static void unary(LhatMachine *machine, void *context,
+                          const LhatValue *arguments, size_t count,
+                          LhatValue *answers, int *answer_count)
 {
     (void)machine;
     double x = 0.0;
     if (count != 1 || !number_arg(arguments[0], &x)) {
-        return lhat_nil();
+        return;
     }
-    return lhat_real(((const Entry *)context)->one(x));
+    answers[0] = lhat_real(((const Entry *)context)->one(x));
+    *answer_count = 1;
+    return;
 }
 
-static LhatValue binary(LhatMachine *machine, void *context,
-                        const LhatValue *arguments, size_t count)
+static void binary(LhatMachine *machine, void *context,
+                          const LhatValue *arguments, size_t count,
+                          LhatValue *answers, int *answer_count)
 {
     (void)machine;
     double x = 0.0;
     double y = 0.0;
     if (count != 2 || !number_arg(arguments[0], &x) ||
         !number_arg(arguments[1], &y)) {
-        return lhat_nil();
+        return;
     }
-    return lhat_real(((const Entry *)context)->two(x, y));
+    answers[0] = lhat_real(((const Entry *)context)->two(x, y));
+    *answer_count = 1;
+    return;
 }
 
 // ---- Degrees --------------------------------------------------------------
@@ -122,17 +128,20 @@ static double log_base(double x, double base) { return log(x) / log(base); }
 
 static double lerp(double a, double b, double t) { return a + (b - a) * t; }
 
-static LhatValue math_lerp(LhatMachine *machine, void *context,
-                           const LhatValue *arguments, size_t count)
+static void math_lerp(LhatMachine *machine, void *context,
+                          const LhatValue *arguments, size_t count,
+                          LhatValue *answers, int *answer_count)
 {
     (void)machine;
     (void)context;
     double a = 0.0, b = 0.0, t = 0.0;
     if (count != 3 || !number_arg(arguments[0], &a) ||
         !number_arg(arguments[1], &b) || !number_arg(arguments[2], &t)) {
-        return lhat_nil();
+        return;
     }
-    return lhat_real(lerp(a, b, t));
+    answers[0] = lhat_real(lerp(a, b, t));
+    *answer_count = 1;
+    return;
 }
 
 // 13.7: one required, the rest variadic -- the tail reaches a host
@@ -160,20 +169,26 @@ static LhatValue extreme(const LhatValue *arguments, size_t count, bool most)
     return best;
 }
 
-static LhatValue math_max(LhatMachine *machine, void *context,
-                          const LhatValue *arguments, size_t count)
+static void math_max(LhatMachine *machine, void *context,
+                          const LhatValue *arguments, size_t count,
+                          LhatValue *answers, int *answer_count)
 {
     (void)machine;
     (void)context;
-    return extreme(arguments, count, true);
+    answers[0] = extreme(arguments, count, true);
+    *answer_count = 1;
+    return;
 }
 
-static LhatValue math_min(LhatMachine *machine, void *context,
-                          const LhatValue *arguments, size_t count)
+static void math_min(LhatMachine *machine, void *context,
+                          const LhatValue *arguments, size_t count,
+                          LhatValue *answers, int *answer_count)
 {
     (void)machine;
     (void)context;
-    return extreme(arguments, count, false);
+    answers[0] = extreme(arguments, count, false);
+    *answer_count = 1;
+    return;
 }
 
 // ---- Registration ---------------------------------------------------------
