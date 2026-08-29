@@ -14,6 +14,7 @@
 | [06-visual-editor.md](06-visual-editor.md) | ビジュアルエディタ（`lhat/ast`、AST からグラフへの写像、ELK レイアウト、描画層、`*.lhl`） | V2・V7〜V13・V16・V18 が未決。描画層は React Flow に確定 |
 | [07-language-server.md](07-language-server.md) | 言語サーバとエディタ統合（`lhatls` の機能、ホバー、VSCode 拡張の構成） | L2・L5・L8 が未決 |
 | [08-lton.md](08-lton.md) | LTON（L^ のテーブルをテキストで書く綴り、`std.lton`、読み込み、ホストからの入口） | T1〜T3 が未決 |
+| [09-debugger.md](09-debugger.md) | デバッガ（機械の行フック、フレームと束縛の内観、コンパイラの名前の表、`lhat --dap` の DAP アダプタ、Godot 連携） | D1〜D8 が未決 |
 
 ## Memo.md との関係
 
@@ -42,6 +43,7 @@
 - `06-visual-editor.md` — `V1`, `V2`, …
 - `07-language-server.md` — `L1`, `L2`, …
 - `08-lton.md` — `T1`, `T2`, …
+- `09-debugger.md` — `D1`, `D2`, …
 
 決定済みの番号は本文から削除する。撤回・復活・大きな設計転換があったものは、
 各文書末尾の「改定履歴（要約）」に1〜2行で残す。理由まで含めた詳細な経緯は残さない。

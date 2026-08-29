@@ -21,11 +21,14 @@
    └ vscode-extension (拡張、TypeScript)
       ├ 言語クライアント (vscode-languageclient) ──► lhatls (子プロセス、stdio)
       ├ 構文強調の文法定義 (syntaxes/lhat.tmLanguage.json)
-      └ ビジュアルエディタ (webview)             ──► lhatls (同じ接続)
+      ├ ビジュアルエディタ (webview)             ──► lhatls (同じ接続)
+      └ デバッグクライアント (DAP)               ──► lhat --dap=PORT (別プロセス、TCP)
 ```
 
 言語サーバは `L^` の実装（`src/`）をそのまま組み込む。字句解析・構文解析・型検査を
 サーバ側で二重に実装しない。ビジュアルエディタも同じ接続を使う（06 の 2 章）。
+デバッグは別で、`lhat --dap` が担う（[09-debugger.md](09-debugger.md)）——`lhatls` とは別の
+プロセスで、枠（Content-Length）だけを共有する。
 
 ## 3. 実装済みの機能
 
