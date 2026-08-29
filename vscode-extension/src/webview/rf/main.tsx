@@ -40,11 +40,20 @@ const elk = new ELK();
 // ---------------------------------------------------------------------------
 // Laid-out ELK graph -> React Flow nodes
 
-// V17/V18: how far a container's contents have been slid, keyed by the
-// container's source position -- ELK ids are regenerated every layout, the
-// source position is what survives one. The same key is what *.lhl would
-// store (06 の 9 章).
-type Slides = Record<number, { dx: number; dy: number }>;
+// V17/V18: how far a container's contents have been slid, keyed by what the
+// container was made from -- ELK ids are regenerated every layout, the source
+// span survives one. The same key is what *.lhl would store (06 の 9 章).
+//
+// The start alone will not do: a parent and its first child begin at the same
+// place all the time (the root and the first statement of a file, for one), so
+// a key of position alone is shared down a chain of containers and every one
+// of them adds the same slide again -- the contents drift further the deeper
+// they sit. Span and kind together are unique, since two nodes of one kind
+// covering exactly one range would be the same node.
+type Slides = Record<string, { dx: number; dy: number }>;
+
+const slideKeyOf = (lhat: NonNullable<ElkNode["lhat"]>) =>
+    `${lhat.kind}:${lhat.start}:${lhat.end}`;
 
 interface BoxData extends Record<string, unknown> {
     label: string;
@@ -60,10 +69,10 @@ interface BoxData extends Record<string, unknown> {
      */
     clipPath?: string;
     /** Set when this container's contents may slide (it has a stable key). */
-    slideKey?: number;
+    slideKey?: string;
     /** V18: the axis that carries no order for this node -- see toFlow. */
     slideAxis: "x" | "y";
-    onSlide: (key: number, dx: number, dy: number) => void;
+    onSlide: (key: string, dx: number, dy: number) => void;
     /** Left click: go into a folded definition. Nothing otherwise. */
     onEnter: (data: BoxData) => void;
     /** Middle click: show what this was made from, in the text. */
@@ -97,7 +106,8 @@ function toFlow(
         depth: number,
     ): void => {
         const slide =
-            (parent.lhat !== undefined ? slides[parent.lhat.start] : undefined) ??
+            (parent.lhat !== undefined
+                ? slides[slideKeyOf(parent.lhat)] : undefined) ??
             { dx: 0, dy: 0 };
         for (const c of parent.children ?? []) {
             const x = (c.x ?? 0) + slide.dx;
@@ -159,7 +169,7 @@ function toFlow(
                     end: c.lhat?.end,
                     slideKey:
                         isContainer && c.lhat !== undefined
-                            ? c.lhat.start : undefined,
+                            ? slideKeyOf(c.lhat) : undefined,
                     // 8.3: the axis the parent stacks this node in carries the
                     // order, so it is dull; the cross axis slides. A child of
                     // a DOWN container slides horizontally, of a RIGHT one
@@ -189,6 +199,18 @@ function toFlow(
     walk(laid, undefined, { x: 0, y: 0 }, undefined, 1);
     return nodes;
 }
+
+/**
+ * For every button here. A press with the pointer leaves the button focused,
+ * and the browser then shows its focus ring at the next keystroke -- which,
+ * over a graph where Shift is React Flow's multi-select, means a ring appears
+ * around a button nobody is using and reads as some mode having been entered.
+ *
+ * Keeping mousedown's default off stops the focus from moving at all. The
+ * click still fires. A button reached by Tab is untouched: it takes the focus
+ * and keeps the ring, which is who the ring is for.
+ */
+const keepFocusOff = (event: React.MouseEvent) => event.preventDefault();
 
 // ---------------------------------------------------------------------------
 // One node
@@ -275,6 +297,7 @@ function BoxNode({ data }: NodeProps<BoxNodeType>) {
                         title={data.collapsed
                             ? "Unfold this definition"
                             : "Fold this definition shut"}
+                        onMouseDown={keepFocusOff}
                         onPointerDown={(event) => event.stopPropagation()}
                         onClick={(event) => {
                             event.stopPropagation();
@@ -325,6 +348,7 @@ function countFolded(n: ElkNode): number {
 }
 
 function App() {
+    const { fitView, getZoom } = useReactFlow();
     const [reply, setReply] = useState<AstReply>();
     const [note, setNote] = useState("waiting for the language server…");
     // V15: what a node with nothing said about it does. Not the state of the
@@ -334,8 +358,6 @@ function App() {
     const [foldByDefault, setFoldByDefault] = useState(true);
     // What the reader folded or unfolded one at a time, over that default.
     const [folds, setFolds] = useState<Record<number, boolean>>({});
-    // Bumped to refit the viewport -- see the ReactFlow key below.
-    const [refit, setRefit] = useState(0);
     const [trail, setTrail] = useState<number[]>([]);
     const [slides, setSlides] = useState<Slides>({});
     const [laid, setLaid] = useState<ElkNode>();
@@ -403,7 +425,25 @@ function App() {
     const folded = useMemo(
         () => (laid === undefined ? 0 : countFolded(laid)), [laid]);
 
-    const onSlide = useCallback((key: number, dx: number, dy: number) => {
+    // Fold/Unfold All puts the whole view in one state, so the whole view is
+    // what it is placed against afterwards: the picture is a different shape
+    // and its old middle means nothing. The zoom is left alone -- what the
+    // reader set it to is a decision about how much detail they want, which
+    // folding does not answer -- so this is a fitView pinned to the zoom that
+    // is already there, which moves the centre and nothing else.
+    //
+    // A single node's own fold does not do this. There the reader is staying
+    // with what they were reading, and moving the picture under them would be
+    // the opposite of what the press asked for.
+    const recentre = useRef(false);
+    useEffect(() => {
+        if (!recentre.current || laid === undefined) return;
+        recentre.current = false;
+        const zoom = getZoom();
+        void fitView({ minZoom: zoom, maxZoom: zoom });
+    }, [laid, fitView, getZoom]);
+
+    const onSlide = useCallback((key: string, dx: number, dy: number) => {
         setSlides((s) => ({
             ...s,
             [key]: { dx: (s[key]?.dx ?? 0) + dx, dy: (s[key]?.dy ?? 0) + dy },
@@ -442,6 +482,25 @@ function App() {
             ? toFlow(laid, slides, onSlide, onEnter, onReveal, onFold) : []),
         [laid, slides, onSlide, onEnter, onReveal, onFold]);
 
+    // The map is mounted one render after the pane it belongs to.
+    //
+    // React Flow's MiniMap builds its drag handling in an effect keyed on the
+    // pane's panZoom, but installs it in a *second* effect keyed on size and
+    // the pannable flags -- nothing that changes when the first one finally
+    // runs. Mounted in the same pass as the pane, the map sees panZoom still
+    // null, builds nothing, and its installer no-ops on an instance that is
+    // not there yet. The instance arrives a render later and is never
+    // installed, so the map does not answer the pointer until something
+    // resizes it -- which is why leaving the tab and coming back woke it up.
+    //
+    // A render behind the pane, panZoom is already there and both effects run
+    // on the map's own first pass. Keyed to flowKey so a remount of the pane
+    // (see the ReactFlow key below) puts the map a render behind again.
+    const flowKey = trail.join(",");
+    const [readyKey, setReadyKey] = useState<string>();
+    useEffect(() => { setReadyKey(flowKey); }, [flowKey]);
+    const paneReady = readyKey === flowKey;
+
     const onConnect = useCallback((connection: Connection) => {
         // Edges render in an svg layer below the nodes unless told otherwise,
         // and a data line that runs behind the boxes it connects says nothing.
@@ -461,6 +520,7 @@ function App() {
                         ? "Not inside a definition"
                         : "Leave this definition"}
                     disabled={trail.length === 0}
+                    onMouseDown={keepFocusOff}
                     onClick={() => setTrail((t) => t.slice(0, -1))}
                 >▲</button>
                 {/* Says what pressing it does, not what state the view is in
@@ -473,10 +533,11 @@ function App() {
                     title={folded > 0
                         ? "Open every definition"
                         : "Fold every definition shut"}
+                    onMouseDown={keepFocusOff}
                     onClick={() => {
                         setFoldByDefault(folded === 0);
                         setFolds({});
-                        setRefit((n) => n + 1);
+                        recentre.current = true;
                     }}
                 >{folded > 0 ? "Unfold All" : "Fold All"}</button>
                 <span id="status">{note}</span>
@@ -484,11 +545,13 @@ function App() {
             {view !== undefined && view.path.length > 0 && reply !== undefined && (
                 <div id="trail">
                     <button type="button" className="crumb"
+                        onMouseDown={keepFocusOff}
                         onClick={() => setTrail([])}>(file)</button>
                     {view.path.map((step, index) => (
                         <React.Fragment key={step.start}>
                             <span className="sep">›</span>
                             <button type="button" className="crumb"
+                                onMouseDown={keepFocusOff}
                                 onClick={() => setTrail(trail.slice(0, index + 1))}>
                                 {titleOf(step, reply.source)}
                             </button>
@@ -498,12 +561,13 @@ function App() {
             )}
             <div id="flow">
                 <ReactFlow
-                    // Remounting is what refits the viewport; at ≤25 nodes it
-                    // costs nothing visible. Done for the two things that
-                    // change the whole picture -- moving to another view, and
-                    // Fold/Unfold All -- and not for a single node's own fold,
-                    // where a re-zoom on every press would be seasick.
-                    key={`${trail.join(",")}|${refit}`}
+                    // Remounting is what refits the viewport, so it is done
+                    // only when the view is a different thing to look at --
+                    // moving into or out of a definition. Folding is not:
+                    // shutting a definition leaves the rest of the picture
+                    // where it was, and re-zooming to whatever is left throws
+                    // the reader off a diagram they had not finished reading.
+                    key={flowKey}
                     nodes={nodes}
                     edges={edges}
                     onEdgesChange={onEdgesChange}
@@ -528,7 +592,7 @@ function App() {
                     panOnScrollMode={PanOnScrollMode.Free}
                 >
                     <Background />
-                    <MiniMap pannable zoomable />
+                    {paneReady && <MiniMap pannable zoomable />}
                     <Controls />
                 </ReactFlow>
             </div>

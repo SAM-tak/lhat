@@ -53,6 +53,16 @@ body {
     background: var(--vscode-button-hoverBackground);
 }
 
+/* The ring the browser draws is its own orange, which belongs to no theme
+   and reads as a state rather than as "the keyboard is here". Painted from
+   the theme instead. Only :focus-visible -- a press with the pointer leaves
+   no focus at all (keepFocusOff in main.tsx). */
+#bar button:focus-visible,
+.crumb:focus-visible {
+    outline: 1px solid var(--vscode-focusBorder);
+    outline-offset: 1px;
+}
+
 #bar button:disabled,
 #bar button:disabled:hover {
     color: var(--vscode-disabledForeground);

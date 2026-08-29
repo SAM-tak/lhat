@@ -98,6 +98,12 @@ html, body, #root {
         var(--vscode-editor-foreground) 18%, transparent);
 }
 
+.foldbtn:focus-visible {
+    opacity: 1;
+    outline: 1px solid var(--vscode-focusBorder);
+    outline-offset: 1px;
+}
+
 .box:hover {
     border-color: var(--vscode-focusBorder);
 }
