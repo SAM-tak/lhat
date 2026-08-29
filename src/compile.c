@@ -3503,11 +3503,6 @@ static void compile_subroutine_as(Compiler *c, const LhatNode *node,
     inner.lexer = c->lexer;
     inner.proto = proto;
     inner.result = c->result;
-    // Where the body starts, until a statement of its own says otherwise --
-    // what a failure declaring its parameters is reported at.
-    inner.line = c->line;
-    inner.offset = c->offset;
-    inner.column = c->column;
 
     // 14.12改: a hook takes the instance under construction as its receiver,
     // the way any method does (14.4) -- the parameter is the machine's, not
@@ -4728,6 +4723,14 @@ static void compile_path_prefix(Compiler *c, const LhatNode *node, uint8_t into)
 // call each other, with nothing declared ahead of them.
 static void declare_names(Compiler *c, const LhatNode *statements)
 {
+    // 04 の 11 章: the whole preamble -- every name emptied to nil^ before
+    // any statement runs -- belongs to the body's first line, not to line 0
+    // and not to each name's own line. A debugger steps down these at the
+    // first line and then moves on (09 の 2.1); giving each its written line
+    // would walk the lines twice, once emptying and once assigning.
+    if (statements != NULL) {
+        c->line = statements->line;
+    }
     for (const LhatNode *s = statements; s != NULL; s = s->next) {
         // 05 の 5.5: the short form makes one name too -- the root of the
         // path the unit declared. The rest of the path is members of it.

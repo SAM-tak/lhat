@@ -13,8 +13,9 @@ typedef struct LhatNativeHold {
 //
 // vm.h keeps LhatMachine opaque, which is the right shape for a host: the
 // thing is a whole stack and a frame array, so a caller keeps the handle and
-// never the object. This is the inside of it, for the two files that are the
-// machine -- vm.c, which runs it, and gc.c, which has to see the roots.
+// never the object. This is the inside of it, for the three files that are
+// the machine -- vm.c, which runs it, gc.c, which has to see the roots, and
+// debug.c, which reads the frames for a debugger (09 章).
 //
 // Not on a host's include path and not installed. Nothing include/lhat.h
 // reaches names this file.
@@ -29,6 +30,7 @@ typedef struct LhatNativeHold {
 #include "code.h"
 #include "gc.h"
 #include "lhat/config.h"
+#include "lhat/debug.h"
 #include "lhat/object.h"
 #include "lhat/value.h"
 #include "lhat/vm.h"
@@ -125,6 +127,17 @@ _Static_assert(LHAT_MAX_TUPLE <= LHAT_HOSTVALUE_MAX_BYTES / 8,
 // comparison, so it stands for "nothing to read off this one".
 #define LHAT_FRAME_NO_DERIVE LHAT_BC_LOADK
 
+// 05 の 8.9: the host value whose head sits at `slot`, as a host receives
+// one -- a value aiming back into the stack. Stable for as long as the
+// machine does not move: the stack is a fixed array of the machine's.
+static inline LhatValue hostvalue_argument(LhatSlots slots, size_t slot)
+{
+    LhatValue v;
+    v.tag = LHAT_VALUE_HOSTVALUE;
+    v.as.hostvalue_run = slots.values + slot;
+    return v;
+}
+
 struct LhatMachine {
     // 2.2: the one shared stack, as two parallel runs -- payloads dense,
     // tags one byte each -- read and written through `slots` below. 16
@@ -220,6 +233,18 @@ struct LhatMachine {
     // that has not returned yet -- the value is in fault_value, and the
     // instruction that called the host ends the run with it (host_faulted).
     bool host_panicked;
+
+    // 09 の 2 章: the debugger's hook. `hook_live` is what the loop tests:
+    // the hook while it is set and not running, NULL while it runs -- so
+    // a call it makes back into L^ never sounds it again -- and NULL when
+    // there is none. `hook_depth` and `hook_pc` are the frame count and
+    // the instruction the hook last looked at, which is how the next
+    // instruction is known to begin a line (vm.c's hook_line).
+    LhatDebugHook hook;
+    LhatDebugHook hook_live;
+    void *hook_context;
+    size_t hook_depth;
+    size_t hook_pc;
 
     // 02 の 14.22: the tables built-ins are holding onto while written L^
     // code runs inside them -- a sort's aux while the comparator runs, a

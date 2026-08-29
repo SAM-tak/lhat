@@ -410,17 +410,6 @@ static bool place_run_answer(Machine *m, size_t at, size_t reserved,
     return true;
 }
 
-// The reverse: the argument whose head sits at `slot`, gathered for a host
-// as a value aiming back into the stack. Stable for the call's duration --
-// the stack is a fixed array of the machine's.
-static LhatValue hostvalue_argument(LhatSlots slots, size_t slot)
-{
-    LhatValue v;
-    v.tag = LHAT_VALUE_HOSTVALUE;
-    v.as.hostvalue_run = slots.values + slot;
-    return v;
-}
-
 // A resume's sent host value, moved into the machine's scratch before the
 // suspension's registers are restored over the very slots that hold it --
 // the pointer form has to aim somewhere the restore cannot reach.
@@ -2484,6 +2473,41 @@ static bool host_faulted(Machine *m, size_t frames_before,
     return false;
 }
 
+// 09 の 2.1: whether the instruction at `at` begins a line the hook should
+// be told about, and, when it is, the hook is called here. `frame->pc` is
+// already `at + 1`, so lhat_machine_fault_frame reads this instruction.
+//
+// The rule is lua's: a new line, a jump back onto the same line (a loop), or
+// the first instruction of a body just entered. A body is entered or
+// returned to whenever the frame count moves, and the line to measure
+// against is then the instruction that left -- the CALL, RESUME or YIELD one
+// before this frame's, which is `at - 1` in the caller and 0 at a body's
+// own top. Returns true when the hook, or a call it made, faulted -- the run
+// ends then, the way a host function's fault ends it.
+static bool hook_line(Machine *m, Frame *frame, size_t at,
+                      LhatRunStatus *status, LhatValue *value)
+{
+    const LhatChunk *chunk = &frame->closure->proto->chunk;
+    size_t old = m->hook_pc;
+    if (m->frame_count != m->hook_depth) {
+        old = at > 0 ? at - 1 : 0;
+        m->hook_depth = m->frame_count;
+    }
+    m->hook_pc = at;
+    // Moving forward within one line is the only case that does not sound:
+    // a jump back (at <= old) is a loop, and a changed line is a new line.
+    if (at > old && chunk->lines[at] == chunk->lines[old]) {
+        return false;
+    }
+    LhatFrameInfo where;
+    lhat_machine_fault_frame((LhatMachine *)m, 0, &where);
+    size_t frames_before = m->frame_count;
+    m->hook_live = NULL;  // a call the hook makes is not itself hooked
+    m->hook((LhatMachine *)m, m->hook_context, LHAT_DEBUG_LINE, &where);
+    m->hook_live = m->hook;  // which the hook may have cleared
+    return host_faulted(m, frames_before, status, value);
+}
+
 static LhatRunResult finish(Machine *m, const LhatChunk *chunk,
                             LhatRunStatus status, LhatValue value, size_t at)
 {
@@ -3441,6 +3465,19 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
 
         LhatInstruction instruction = chunk->code[pc];
         at = pc++;
+
+        // 09 の 2 章: the debugger's line hook, at the same boundary as the
+        // GC step above -- every live value is in a register, a frame or the
+        // open list. `frame->pc` is written first (to `at + 1`), so a
+        // traceback the hook reads names this instruction, not the last.
+        if (m->hook_live != NULL) {
+            frame->pc = pc;
+            LhatRunStatus left;
+            LhatValue left_with;
+            if (hook_line(m, frame, at, &left, &left_with)) {
+                return finish(m, chunk, left, left_with, at);
+            }
+        }
 
         uint8_t a = lhat_a(instruction);
         uint8_t b = lhat_b(instruction);
@@ -7948,129 +7985,6 @@ bool lhat_machine_make_error(LhatMachine *machine, const LhatErrorKind *kind,
     }
     *out = lhat_object((LhatObject *)error);
     return true;
-}
-
-// 04 の 11.6改: which span of frames the walkers read -- the recorded
-// fault's, or, when none is recorded, the frames standing right now.
-static void frame_span(const Machine *m, size_t *base, size_t *depth,
-                       bool *have_at)
-{
-    if (m->fault_depth > m->fault_base) {
-        *base = m->fault_base;
-        *depth = m->fault_depth;
-        *have_at = true;
-        return;
-    }
-    *base = 0;
-    *depth = m->frame_count;
-    *have_at = false;
-}
-
-size_t lhat_machine_fault_depth(const LhatMachine *machine)
-{
-    const Machine *m = (const Machine *)machine;
-    size_t base, depth;
-    bool have_at;
-    frame_span(m, &base, &depth, &have_at);
-    return depth - base;
-}
-
-bool lhat_machine_fault_frame(const LhatMachine *machine, size_t level,
-                              LhatFrameInfo *out)
-{
-    const Machine *m = (const Machine *)machine;
-    size_t base, depth;
-    bool have_at;
-    frame_span(m, &base, &depth, &have_at);
-    if (out == NULL || level >= depth - base) {
-        return false;
-    }
-    const Frame *frame = &m->frames[depth - 1 - level];
-    const LhatProto *proto =
-        frame->closure != NULL ? frame->closure->proto : NULL;
-    out->source = proto != NULL ? proto->source_name : NULL;
-    out->name = proto != NULL ? proto->debug_name : NULL;
-    // The top frame stopped at the recorded instruction; every caller's
-    // saved pc points one past its call, so its line is at pc - 1. A
-    // frame that never ran an instruction has no line to name.
-    size_t pc_at = 0;
-    bool placed = false;
-    if (level == 0 && have_at) {
-        pc_at = m->fault_at;
-        placed = true;
-    } else if (frame->pc > 0) {
-        pc_at = frame->pc - 1;
-        placed = true;
-    }
-    out->line = placed && proto != NULL && pc_at < proto->chunk.count
-                    ? proto->chunk.lines[pc_at]
-                    : 0;
-    out->top_level = proto != NULL && proto->is_unit;
-    out->coroutine = frame->coroutine != NULL;
-    out->disposing = frame->disposing;
-    return true;
-}
-
-// The bounded writer the renderer fills -- lhat_value_text's shape.
-typedef struct {
-    char *out;
-    size_t capacity;
-    size_t used;
-} TraceText;
-
-static void trace_put(TraceText *w, const char *text)
-{
-    size_t length = strlen(text);
-    if (w->out != NULL && w->used < w->capacity) {
-        size_t room = w->capacity - 1 - w->used;
-        size_t take = length < room ? length : room;
-        memcpy(w->out + w->used, text, take);
-    }
-    w->used += length;
-}
-
-size_t lhat_machine_traceback(const LhatMachine *machine, char *out,
-                              size_t capacity)
-{
-    TraceText w;
-    w.out = capacity > 0 ? out : NULL;
-    w.capacity = capacity;
-    w.used = 0;
-    size_t count = lhat_machine_fault_depth(machine);
-    if (count > 0) {
-        trace_put(&w, "traceback:");
-        for (size_t level = 0; level < count; level++) {
-            LhatFrameInfo info;
-            if (!lhat_machine_fault_frame(machine, level, &info)) {
-                break;
-            }
-            trace_put(&w, "\n  ");
-            trace_put(&w, info.source != NULL ? info.source : "?");
-            if (info.line > 0) {
-                char spelt[16];
-                snprintf(spelt, sizeof spelt, ":%u", info.line);
-                trace_put(&w, spelt);
-            }
-            trace_put(&w, info.name != NULL
-                              ? ": in "
-                              : (info.top_level ? ": at the top level"
-                                                : ": in f^"));
-            if (info.name != NULL) {
-                trace_put(&w, info.name);
-            }
-            if (info.coroutine) {
-                trace_put(&w, " (coroutine)");
-            }
-            if (info.disposing) {
-                trace_put(&w, " (finally^)");
-            }
-        }
-    }
-    if (w.out != NULL) {
-        size_t end = w.used < w.capacity - 1 ? w.used : w.capacity - 1;
-        w.out[end] = '\0';
-    }
-    return w.used;
 }
 
 const char *lhat_run_status_message(LhatRunStatus status)

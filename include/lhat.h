@@ -59,4 +59,7 @@
 #include "lhat/module.h"
 #include "lhat/vm.h"
 
+// What a debugger asks of the machine (09 章).
+#include "lhat/debug.h"
+
 #endif  // LHAT_H

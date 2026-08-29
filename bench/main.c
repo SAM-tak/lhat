@@ -192,7 +192,27 @@ static bool register_bench(LhatProgram *program)
 // something a compiler could decide is unwanted.
 //
 // Answers nanoseconds for one turn, or 0 where it could not be built.
+// 09 の 2.2: a hook that does nothing, to price what an instruction pays
+// while one is set -- the test, the frame lookup and the call -- against the
+// same loop with none (the one not-taken branch every other case already
+// pays). Set for the hooked case alone.
+static void bench_hook(LhatMachine *machine, void *context,
+                       LhatDebugEvent event, const LhatFrameInfo *where)
+{
+    (void)machine;
+    (void)context;
+    (void)event;
+    (void)where;
+}
+
+static double time_once_hooked(const char *name, const char *body, bool hooked);
+
 static double time_once(const char *name, const char *body)
+{
+    return time_once_hooked(name, body, false);
+}
+
+static double time_once_hooked(const char *name, const char *body, bool hooked)
 {
     char source[2048];
     snprintf(source, sizeof source,
@@ -223,6 +243,9 @@ static double time_once(const char *name, const char *body)
 
     LhatMachine *machine = lhat_machine_new();
     lhat_program_install(program, machine);
+    if (hooked) {
+        lhat_machine_set_debug_hook(machine, bench_hook, NULL);
+    }
 
     int64_t started = lhat_now_ms();
     LhatRunResult ran = lhat_run(machine, lhat_unit_proto(root));
@@ -306,6 +329,21 @@ int main(void)
     double l0 = run_case("12 L0()", "sink := sink + L0()", empty);
     double l8 = run_case("13 L8(1..8)",
                          "sink := sink + L8(1,2,3,4,5,6,7,8)", empty);
+
+    // 09 の 2.2: the empty loop again, with a hook that does nothing set --
+    // what an instruction pays while a debugger is attached, over what it
+    // pays with none (which the empty loop above already includes: the one
+    // branch not taken).
+    double hooked_best = 0.0;
+    for (int i = 0; i < ROUNDS; i++) {
+        double one = time_once_hooked("14 empty loop, hooked",
+                                      "sink := sink + 1", true);
+        if (one > 0.0 && (hooked_best == 0.0 || one < hooked_best)) {
+            hooked_best = one;
+        }
+    }
+    printf("  %-22s %7.2f ns   (net %6.2f)\n", "14 empty loop, hooked",
+           hooked_best, hooked_best - empty);
 
     printf("\n  crossing     = %6.2f ns   (7 - 0)  a host call taking nothing\n",
            a0 - empty);

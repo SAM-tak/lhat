@@ -83,6 +83,7 @@ add_library(lhat
     src/rttype.c
     src/vm.c
     src/gc.c
+    src/debug.c
     src/value.c
     src/object.c
 )
