@@ -70,6 +70,9 @@ typedef struct {
     // Binding.being_defined. Set and cleared around the one value by
     // compile_define/compile_tuple_define, never true between statements.
     bool being_defined;
+    // 09 の 4 章: its entry in the chunk's table of names, closed when the
+    // scope is (release_locals).
+    size_t table;
 } Local;
 
 typedef struct DefChain {
@@ -645,6 +648,44 @@ static const Local *find_local_skipping(const Compiler *c, const char *name,
     return NULL;
 }
 
+// 5.2: a name is a slot in the frame, declared here and nowhere else. The
+// same declaration writes the chunk's table of names (09 の 4 章), which is
+// where the debugger reads what a register was called. NULL, with the
+// failure recorded, when the body has too many names.
+static Local *declare_local(Compiler *c, const char *name, size_t length,
+                            uint8_t reg, uint8_t width)
+{
+    size_t table = c->local_count < LHAT_MAX_LOCALS
+                       ? lhat_chunk_add_local(&c->proto->chunk, name, length,
+                                              reg, width)
+                       : SIZE_MAX;
+    if (table == SIZE_MAX) {
+        fail(c, LHAT_COMPILE_TOO_COMPLEX);
+        return NULL;
+    }
+    Local *local = &c->locals[c->local_count++];
+    local->name = name;
+    local->length = length;
+    local->reg = reg;
+    local->depth = c->scope_depth;
+    local->width = width;
+    local->import_root = false;
+    local->being_defined = false;
+    local->table = table;
+    return local;
+}
+
+// The names declared since `mark` go out of scope here: the next
+// instruction is the first they are not live at.
+static void release_locals(Compiler *c, size_t mark)
+{
+    LhatChunk *chunk = &c->proto->chunk;
+    for (size_t i = mark; i < c->local_count; i++) {
+        chunk->locals[c->locals[i].table].to = (uint32_t)chunk->count;
+    }
+    c->local_count = mark;
+}
+
 static size_t find_upvalue_skipping(Compiler *c, const char *name,
                                     size_t length, size_t skip)
 {
@@ -686,7 +727,7 @@ static size_t find_upvalue_skipping(Compiler *c, const char *name,
         index = (uint8_t)outer;
     }
 
-    size_t added = lhat_proto_add_upvalue(c->proto, source, index);
+    size_t added = lhat_proto_add_upvalue(c->proto, source, index, name, length);
     if (added == SIZE_MAX) {
         fail(c, LHAT_COMPILE_TOO_COMPLEX);
         return SIZE_MAX;
@@ -720,14 +761,15 @@ static size_t resolve_this(Compiler *c, size_t levels)
 
     size_t added;
     if (levels == 1) {
-        added = lhat_proto_add_upvalue(c->proto, LHAT_UPVALUE_THIS, 0);
+        added = lhat_proto_add_upvalue(c->proto, LHAT_UPVALUE_THIS, 0, "this^",
+                                       5);
     } else {
         size_t outer = resolve_this(c->parent, levels - 1);
         if (outer == SIZE_MAX) {
             return SIZE_MAX;
         }
         added = lhat_proto_add_upvalue(c->proto, LHAT_UPVALUE_OUTER,
-                                       (uint8_t)outer);
+                                       (uint8_t)outer, "this^", 5);
     }
     if (added == SIZE_MAX) {
         fail(c, LHAT_COMPILE_TOO_COMPLEX);
@@ -843,7 +885,7 @@ static size_t capture_at(Compiler *c, const char *name, size_t length,
     // this entry.
     size_t added = lhat_proto_add_upvalue(
         c->proto, from_register ? LHAT_UPVALUE_REGISTER : LHAT_UPVALUE_OUTER,
-        index);
+        index, name, length);
     if (added == SIZE_MAX) {
         fail(c, LHAT_COMPILE_TOO_COMPLEX);
         return SIZE_MAX;
@@ -1600,16 +1642,7 @@ static void compile_catch_wide(Compiler *c, const LhatNode *node, uint8_t into,
     emit(c, lhat_encode_abc(LHAT_BC_ISERROR, test, caught, 0));
     size_t past = emit_jump(c, LHAT_BC_JUMP_FALSE, test);
 
-    if (c->local_count < LHAT_MAX_LOCALS) {
-        Local *local = &c->locals[c->local_count++];
-        local->name = "it^";
-        local->length = 3;
-        local->reg = caught;
-        local->depth = c->scope_depth;  // catch^ opens no brace of its own
-        local->width = 1;
-        local->import_root = false;
-        local->being_defined = false;
-    }
+    declare_local(c, "it^", 3, caught, 1);  // catch^ opens no brace of its own
     // 04 の 4.1改: the arm that does not come back. Nothing is written into
     // `into` and nothing needs to be -- what falls through to the join below
     // is the left having succeeded, and this side never reaches it. The same
@@ -1624,7 +1657,7 @@ static void compile_catch_wide(Compiler *c, const LhatNode *node, uint8_t into,
     }
 
     lhat_chunk_patch_here(&c->proto->chunk, past);
-    c->local_count = local_mark;
+    release_locals(c, local_mark);
     c->next_register = register_mark;
 }
 
@@ -2767,18 +2800,9 @@ static void bind_new_hooks(Compiler *c, const DefChain *chain,
     }
     uint8_t hook = reserve(c);
     emit(c, lhat_encode_abx(LHAT_BC_CLOSURE, hook, (uint16_t)index));
-    if (c->local_count >= LHAT_MAX_LOCALS) {
-        fail(c, LHAT_COMPILE_TOO_COMPLEX);
+    if (declare_local(c, "super^", 6, hook, 1) == NULL) {
         return;
     }
-    Local *bound = &c->locals[c->local_count++];
-    bound->name = "super^";
-    bound->length = 6;
-    bound->reg = hook;
-    bound->depth = c->scope_depth;
-    bound->width = 1;
-    bound->import_root = false;
-    bound->being_defined = false;
 
     for (size_t i = 0; i <= stop_part && i < chain->count; i++) {
         const LhatLexer *enclosing_lexer = c->lexer;
@@ -2804,18 +2828,9 @@ static void bind_new_hooks(Compiler *c, const DefChain *chain,
             hook = reserve(c);
             compile_subroutine_as(c, entry->v.entry.value, hook,
                                   LHAT_BODY_NEW_HOOK);
-            if (c->local_count >= LHAT_MAX_LOCALS) {
-                fail(c, LHAT_COMPILE_TOO_COMPLEX);
+            if (declare_local(c, "super^", 6, hook, 1) == NULL) {
                 break;
             }
-            bound = &c->locals[c->local_count++];
-            bound->name = "super^";
-            bound->length = 6;
-            bound->reg = hook;
-            bound->depth = c->scope_depth;
-            bound->width = 1;
-            bound->import_root = false;
-            bound->being_defined = false;
         }
         c->lexer = enclosing_lexer;
         c->foreign_scope = enclosing_scope;
@@ -2849,22 +2864,14 @@ static void compile_def(Compiler *c, const LhatNode *node, uint8_t into)
     // is what lets a method or an initialiser reach it -- through the capture
     // of 5.4, with nothing special added.
     size_t local_mark = c->local_count;
-    if (c->local_count >= LHAT_MAX_LOCALS) {
-        fail(c, LHAT_COMPILE_TOO_COMPLEX);
-        return;
-    }
     // 01 の 8 章: the def^'s '{' opens a scope for '$^' to count, and def^
     // is a name of it -- the checker binds self^ and def^ into the Scope
     // it pushes here, so both sides count this one the same.
     c->scope_depth++;
-    Local *local = &c->locals[c->local_count++];
-    local->name = "def^";
-    local->length = 4;
-    local->reg = into;
-    local->depth = c->scope_depth;
-    local->width = 1;
-    local->import_root = false;
-    local->being_defined = false;
+    if (declare_local(c, "def^", 4, into, 1) == NULL) {
+        c->scope_depth--;
+        return;
+    }
 
     const DefChain *enclosing = c->building;
     c->building = &chain;
@@ -2933,18 +2940,10 @@ static void compile_def(Compiler *c, const LhatNode *node, uint8_t into)
             // one would make a second instance.
             if (entry->v.entry.modifier == LHAT_DEF_OVERRIDE && constructor) {
                 bind_new_hooks(c, &chain, i, entry);
-            } else if (entry->v.entry.modifier == LHAT_DEF_OVERRIDE &&
-                       c->local_count < LHAT_MAX_LOCALS) {
+            } else if (entry->v.entry.modifier == LHAT_DEF_OVERRIDE) {
                 uint8_t hidden = reserve(c);
                 emit(c, lhat_encode_abc(LHAT_BC_GETINDEX, hidden, into, key));
-                Local *previous = &c->locals[c->local_count++];
-                previous->name = "super^";
-                previous->length = 6;
-                previous->reg = hidden;
-                previous->depth = c->scope_depth;
-                previous->width = 1;
-                previous->import_root = false;
-                previous->being_defined = false;
+                declare_local(c, "super^", 6, hidden, 1);
             }
 
             if (entry->v.entry.value->kind == LHAT_NODE_FUNC) {
@@ -2991,7 +2990,7 @@ static void compile_def(Compiler *c, const LhatNode *node, uint8_t into)
             // that captured it has to stop sharing it first.
             if (c->local_count > entry_mark) {
                 emit(c, lhat_encode_abc(LHAT_BC_CLOSE, at, 0, 0));
-                c->local_count = entry_mark;
+                release_locals(c, entry_mark);
             }
             c->next_register = at;
         }
@@ -3097,7 +3096,7 @@ static void compile_def(Compiler *c, const LhatNode *node, uint8_t into)
     c->next_register = proto_mark;
 
     c->building = enclosing;
-    c->local_count = local_mark;
+    release_locals(c, local_mark);
     c->scope_depth--;
 }
 
@@ -3504,6 +3503,11 @@ static void compile_subroutine_as(Compiler *c, const LhatNode *node,
     inner.lexer = c->lexer;
     inner.proto = proto;
     inner.result = c->result;
+    // Where the body starts, until a statement of its own says otherwise --
+    // what a failure declaring its parameters is reported at.
+    inner.line = c->line;
+    inner.offset = c->offset;
+    inner.column = c->column;
 
     // 14.12改: a hook takes the instance under construction as its receiver,
     // the way any method does (14.4) -- the parameter is the machine's, not
@@ -3522,18 +3526,9 @@ static void compile_subroutine_as(Compiler *c, const LhatNode *node,
         proto->parameter_types = receiver_types;
         proto->parameters = 1;
         self_slot = reserve(&inner);
-        if (inner.local_count >= LHAT_MAX_LOCALS) {
-            fail(c, LHAT_COMPILE_TOO_COMPLEX);
+        if (declare_local(&inner, "self^", 5, self_slot, 1) == NULL) {
             return;
         }
-        Local *receiver = &inner.locals[inner.local_count++];
-        receiver->name = "self^";
-        receiver->length = 5;
-        receiver->reg = self_slot;
-        receiver->depth = inner.scope_depth;
-        receiver->width = 1;
-        receiver->import_root = false;
-        receiver->being_defined = false;
     }
 
     // 5.3: the parameters are the frame's first registers, in order.
@@ -3597,10 +3592,6 @@ static void compile_subroutine_as(Compiler *c, const LhatNode *node,
                 is_receiver = true;
             }
         }
-        if (inner.local_count >= LHAT_MAX_LOCALS) {
-            fail(c, LHAT_COMPILE_TOO_COMPLEX);
-            return;
-        }
         // 05 の 8.9: a host value parameter takes its registered width of
         // consecutive slots; the caller lays the argument out the same way,
         // so the windows agree without any copying.
@@ -3636,12 +3627,11 @@ static void compile_subroutine_as(Compiler *c, const LhatNode *node,
         }
         wide_param = wide_param || param_width > 1;
         uint8_t slot = reserve_wide(&inner, param_width);
-        Local *local = &inner.locals[inner.local_count++];
-        local->name = name;
-        local->length = length;
-        local->reg = slot;
-        local->depth = inner.scope_depth;  // a parameter belongs to the body
-        local->width = (uint8_t)param_width;
+        // A parameter belongs to the body.
+        if (declare_local(&inner, name, length, slot, (uint8_t)param_width) ==
+            NULL) {
+            return;
+        }
 
         // 14.12: the search that resolves an overloaded call asks each
         // candidate what it takes, so each body carries that with it. For
@@ -3703,18 +3693,9 @@ static void compile_subroutine_as(Compiler *c, const LhatNode *node,
         }
         emit(&inner, lhat_encode_abc(LHAT_BC_NEWINSTANCE, self_slot, owner, 0));
         inner.next_register = owner_mark;
-        if (inner.local_count >= LHAT_MAX_LOCALS) {
-            fail(c, LHAT_COMPILE_TOO_COMPLEX);
+        if (declare_local(&inner, "self^", 5, self_slot, 1) == NULL) {
             return;
         }
-        Local *receiver = &inner.locals[inner.local_count++];
-        receiver->name = "self^";
-        receiver->length = 5;
-        receiver->reg = self_slot;
-        receiver->depth = inner.scope_depth;
-        receiver->width = 1;
-        receiver->import_root = false;
-        receiver->being_defined = false;
         inner.in_constructor = true;
         inner.constructor_self = self_slot;
     }
@@ -4768,22 +4749,15 @@ static void declare_names(Compiler *c, const LhatNode *statements)
                 if (find_local(c, module_name, length) != NULL) {
                     continue;
                 }
-                if (c->local_count >= LHAT_MAX_LOCALS) {
-                    fail(c, LHAT_COMPILE_TOO_COMPLEX);
-                    return;
-                }
                 uint8_t slot = reserve(c);
                 emit(c, lhat_encode_abc(LHAT_BC_LOADNIL, slot, 0, 0));
-                Local *local = &c->locals[c->local_count++];
-                local->name = module_name;
-                local->length = length;
-                local->reg = slot;
-                local->depth = c->scope_depth;
-                local->width = 1;
+                Local *local = declare_local(c, module_name, length, slot, 1);
+                if (local == NULL) {
+                    return;
+                }
                 // 05 の 8.7: what is under this root came out of L^.modules,
                 // so a nested body can read it back rather than capture it.
                 local->import_root = true;
-                local->being_defined = false;
                 continue;
             }
             module_name = required_module_name(c, s);
@@ -4799,20 +4773,11 @@ static void declare_names(Compiler *c, const LhatNode *statements)
                 ((Local *)taken)->import_root = false;
                 continue;
             }
-            if (c->local_count >= LHAT_MAX_LOCALS) {
-                fail(c, LHAT_COMPILE_TOO_COMPLEX);
-                return;
-            }
             uint8_t slot = reserve(c);
             emit(c, lhat_encode_abc(LHAT_BC_LOADNIL, slot, 0, 0));
-            Local *local = &c->locals[c->local_count++];
-            local->name = module_name;
-            local->length = root;
-            local->reg = slot;
-            local->depth = c->scope_depth;
-            local->width = 1;
-            local->import_root = false;
-            local->being_defined = false;
+            if (declare_local(c, module_name, root, slot, 1) == NULL) {
+                return;
+            }
             continue;
         }
         if (s->kind != LHAT_NODE_DEFINE) {
@@ -4875,11 +4840,6 @@ static void declare_names(Compiler *c, const LhatNode *statements)
                 continue;
             }
 
-            if (c->local_count >= LHAT_MAX_LOCALS) {
-                fail(c, LHAT_COMPILE_TOO_COMPLEX);
-                return;
-            }
-
             // 03 の 4.3 with 05 の 8.9: a session's slots are one wide and
             // stay; the checker refuses this first, this is the backstop.
             if (width > 1 && c->session_top) {
@@ -4895,14 +4855,9 @@ static void declare_names(Compiler *c, const LhatNode *statements)
                                         (uint8_t)(slot + i), 0, 0));
             }
 
-            Local *local = &c->locals[c->local_count++];
-            local->name = name;
-            local->length = length;
-            local->reg = slot;
-            local->depth = c->scope_depth;
-            local->width = (uint8_t)width;
-            local->import_root = false;
-            local->being_defined = false;
+            if (declare_local(c, name, length, slot, (uint8_t)width) == NULL) {
+                return;
+            }
         }
     }
 }
@@ -5616,7 +5571,7 @@ static void compile_statements(Compiler *c, const LhatNode *statements)
         emit(c, lhat_encode_abc(LHAT_BC_CLOSE, register_mark, 0, 0));
     }
 
-    c->local_count = local_mark;
+    release_locals(c, local_mark);
     c->next_register = register_mark;
 }
 
@@ -5888,7 +5843,7 @@ static void compile_with(Compiler *c, const LhatNode *node)
     if (c->local_count > local_mark) {
         emit(c, lhat_encode_abc(LHAT_BC_CLOSE, register_mark, 0, 0));
     }
-    c->local_count = local_mark;
+    release_locals(c, local_mark);
     c->next_register = register_mark;
 }
 
@@ -5918,10 +5873,6 @@ static void declare_targets(Compiler *c, const LhatNode *focus)
             fail(c, LHAT_COMPILE_UNSUPPORTED);
             return;
         }
-        if (c->local_count >= LHAT_MAX_LOCALS) {
-            fail(c, LHAT_COMPILE_TOO_COMPLEX);
-            return;
-        }
         // 05 の 8.9: a host value focus holds its width of slots, sized by
         // the checker's stamp the way any binding's is (declare_names). An
         // unchecked compile sees width 1 and the walk faults at run time
@@ -5932,14 +5883,9 @@ static void declare_targets(Compiler *c, const LhatNode *focus)
             emit(c, lhat_encode_abc(LHAT_BC_LOADNIL, (uint8_t)(slot + i), 0,
                                     0));
         }
-        Local *local = &c->locals[c->local_count++];
-        local->name = name;
-        local->length = length;
-        local->reg = slot;
-        local->depth = c->scope_depth;
-        local->width = (uint8_t)width;
-        local->import_root = false;
-        local->being_defined = false;
+        if (declare_local(c, name, length, slot, (uint8_t)width) == NULL) {
+            return;
+        }
     }
 }
 
@@ -5993,7 +5939,7 @@ static void compile_for_once(Compiler *c, const LhatNode *node, uint8_t into,
     if (c->local_count > local_mark) {
         emit(c, lhat_encode_abc(LHAT_BC_CLOSE, register_mark, 0, 0));
     }
-    c->local_count = local_mark;
+    release_locals(c, local_mark);
     c->next_register = register_mark;
 }
 
@@ -6303,7 +6249,7 @@ static void compile_loop(Compiler *c, const LhatNode *node)
     if (c->local_count > local_mark) {
         emit(c, lhat_encode_abc(LHAT_BC_CLOSE, register_mark, 0, 0));
     }
-    c->local_count = local_mark;
+    release_locals(c, local_mark);
     c->next_register = register_mark;
 }
 
@@ -6491,18 +6437,9 @@ static void compile_statement(Compiler *c, const LhatNode *node)
 
                 // 4.2: it^ is the error, and the register it is already in.
                 size_t local_mark = c->local_count;
-                if (c->local_count < LHAT_MAX_LOCALS) {
-                    Local *local = &c->locals[c->local_count++];
-                    local->name = "it^";
-                    local->length = 3;
-                    local->reg = caught;
-                    local->depth = c->scope_depth;
-                    local->width = 1;
-                    local->import_root = false;
-                    local->being_defined = false;
-                }
+                declare_local(c, "it^", 3, caught, 1);
                 compile_statement(c, arm->v.clause.body);
-                c->local_count = local_mark;
+                release_locals(c, local_mark);
 
                 if (next == SIZE_MAX) {
                     bare = true;  // it takes everything left; the end is next
@@ -7063,14 +7000,12 @@ static LhatCompileResult compile_unit(LhatCompileSession *session,
     // registers, so this one names it where it stands and numbers its own
     // from above.
     if (session != NULL) {
+        // 03 の 4.3: the session's top level is this input's top level,
+        // which 01 の 8 章 makes what '$' names -- scope_depth is 0 here. A
+        // session's slots are one wide (declare_names).
         for (size_t i = 0; i < session->count; i++) {
-            c.locals[c.local_count].name = session->names[i].name;
-            c.locals[c.local_count].length = session->names[i].length;
-            c.locals[c.local_count].reg = session->names[i].reg;
-            // 03 の 4.3: the session's top level is this input's top level,
-            // which 01 の 8 章 makes what '$' names.
-            c.locals[c.local_count].depth = 0;
-            c.local_count++;
+            declare_local(&c, session->names[i].name, session->names[i].length,
+                          session->names[i].reg, 1);
         }
         c.session_locals = c.local_count;
         c.next_register = session->next_register;
@@ -7128,12 +7063,7 @@ static LhatCompileResult compile_unit(LhatCompileSession *session,
         // 02 の 13.7 with 05 の 3.2: a script's '...' is its one parameter,
         // register 0 -- laid down by whatever runs it, the way a body's is
         // (lhat_run builds the collector; a require^'s CALL collects).
-        Local *local = &c.locals[c.local_count++];
-        local->name = "...";
-        local->length = 3;
-        local->reg = reserve(&c);
-        local->depth = c.scope_depth;
-        local->width = 1;
+        declare_local(&c, "...", 3, reserve(&c), 1);
         proto->parameters = 1;
         proto->parameter_slots = 1;
         proto->has_variadic = true;

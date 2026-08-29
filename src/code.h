@@ -334,6 +334,18 @@ typedef struct {
     bool from_definition;
 } LhatMemberCache;
 
+// 09 の 4 章: one name a body declared -- a written binding, a parameter, or
+// one the language binds (self^, it^, def^, super^, ...). `from` is the first
+// instruction it is live at and `to` one past the last; UINT32_MAX while
+// nothing closed its scope, which a parameter's never is.
+typedef struct {
+    char *name;  // owned, NUL-terminated
+    uint32_t from;
+    uint32_t to;
+    uint8_t reg;
+    uint8_t width;  // 05 の 8.9: a host value holds this many slots
+} LhatLocalDesc;
+
 // One compiled body: its instructions, the constants they name, and how many
 // registers a frame needs. 5.2 fixes the frame size at compile time.
 typedef struct {
@@ -345,6 +357,14 @@ typedef struct {
     uint32_t *lines;
     size_t count;
     size_t capacity;
+
+    // 09 の 4 章: what the registers were called, for a debugger to read
+    // them by. Debug only, like `lines` -- 02 の 14.9 stands, and nothing
+    // runs on it. Declaration order, so of two entries live at once under
+    // one name the later is the inner.
+    LhatLocalDesc *locals;
+    size_t local_count;
+    size_t local_capacity;
 
     LhatValue *constants;
     size_t constant_count;
@@ -384,6 +404,9 @@ typedef enum {
 typedef struct {
     LhatUpvalueSource source;
     uint8_t index;  // unused for LHAT_UPVALUE_THIS
+    // 09 の 4 章: the name it was captured under, owned. Debug only, as
+    // LhatLocalDesc's is.
+    char *name;
 } LhatUpvalueDesc;
 
 // One compiled subroutine: its own code, the bodies written inside it, and
@@ -505,8 +528,10 @@ LhatProto *lhat_proto_new(void);
 
 // Returns the index of the nested body, or SIZE_MAX when out of memory.
 size_t lhat_proto_add(LhatProto *parent, LhatProto *child);
+// `name` is what the body captured it as (09 の 4 章); an entry already
+// there for the same place keeps the name it was first added under.
 size_t lhat_proto_add_upvalue(LhatProto *proto, LhatUpvalueSource source,
-                              uint8_t index);
+                              uint8_t index, const char *name, size_t length);
 
 // Hands a unit its table (see LhatUnitTable): every body inside `unit`
 // comes to point at it, and `protos` -- the caller's array, taken over --
@@ -536,6 +561,12 @@ void lhat_chunk_dispose(LhatChunk *chunk);
 // instruction came from, 0 when there is none to give.
 size_t lhat_chunk_emit(LhatChunk *chunk, LhatInstruction instruction,
                        uint32_t line);
+
+// 09 の 4 章: records that `reg` is called `name` from the next instruction
+// on. Answers the entry's index, for the caller to close it later, or
+// SIZE_MAX when out of memory.
+size_t lhat_chunk_add_local(LhatChunk *chunk, const char *name, size_t length,
+                            uint8_t reg, uint8_t width);
 
 // Adds a constant, reusing an equal one rather than storing it twice.
 // Returns the index, or SIZE_MAX when the pool is full or out of memory.

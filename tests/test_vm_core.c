@@ -1507,6 +1507,72 @@ static void test_variadic(void)
     run_dispose(&r);
 }
 
+// The `nth` entry called `name`, or NULL.
+static const LhatLocalDesc *local_named(const LhatChunk *chunk,
+                                        const char *name, size_t nth)
+{
+    for (size_t i = 0; i < chunk->local_count; i++) {
+        if (strcmp(chunk->locals[i].name, name) == 0 && nth-- == 0) {
+            return &chunk->locals[i];
+        }
+    }
+    return NULL;
+}
+
+// 09 の 4 章: the compiler leaves a table of what each register was called
+// and for which instructions, beside the line table. Nothing runs on it;
+// what is pinned is that it is there and says where a name starts and stops.
+static void test_names_table(void)
+{
+    Run r;
+    LHAT_TEST("every declared name is in the table, with its extent");
+    run_text(&r,
+             "let^ a = 1\n"
+             "if^ true^ {\n"
+             "  let^ b = 2\n"
+             "  let^ a = 3\n"
+             "}\n"
+             "let^ f = f^ x:number^ -> number^ {\n"
+             "  let^ y = a + x\n"
+             "  return^ y\n"
+             "}\n"
+             "return^ f(1)\n");
+    CHECK_INTEGER(&r, 2);
+    {
+        const LhatChunk *top = &r.proto->chunk;
+        const LhatLocalDesc *dots = local_named(top, "...", 0);
+        const LhatLocalDesc *a = local_named(top, "a", 0);
+        const LhatLocalDesc *shadow = local_named(top, "a", 1);
+        const LhatLocalDesc *b = local_named(top, "b", 0);
+        LHAT_CHECK(dots != NULL && dots->reg == 0 && dots->to == UINT32_MAX,
+                   "a script's '...' is register 0 for the whole body");
+        LHAT_CHECK(a != NULL && a->from < a->to && a->to <= top->count,
+                   "a top-level name lives to the end of the body");
+        LHAT_CHECK(b != NULL && b->from < b->to && b->to <= top->count,
+                   "a block's name stops where the block does");
+        LHAT_CHECK(shadow != NULL && shadow->to == b->to && b->to < a->to &&
+                       shadow->reg != a->reg,
+                   "the shadowing a is its own entry, closed with the block");
+        LHAT_CHECK(local_named(top, "f", 0) != NULL, "and f is named");
+        LHAT_CHECK(local_named(top, "a", 2) == NULL, "two a's, not three");
+
+        LHAT_CHECK_EQ_INT(r.proto->proto_count, 1);
+        const LhatProto *body = r.proto->protos[0];
+        const LhatLocalDesc *x = local_named(&body->chunk, "x", 0);
+        const LhatLocalDesc *y = local_named(&body->chunk, "y", 0);
+        LHAT_CHECK(x != NULL && x->from == 0 && x->to == UINT32_MAX &&
+                       x->width == 1,
+                   "a parameter is live from the first instruction");
+        LHAT_CHECK(y != NULL && y->from > 0 && y->from < y->to &&
+                       y->to <= body->chunk.count,
+                   "a body's own name lives to the end of the body");
+        LHAT_CHECK(body->upvalue_count == 1 &&
+                       strcmp(body->upvalues[0].name, "a") == 0,
+                   "what the body captured is named too");
+    }
+    run_dispose(&r);
+}
+
 int main(void)
 {
     test_encoding();
@@ -1520,5 +1586,6 @@ int main(void)
     test_stacked_hats_compile();
     test_scope_specifiers();
     test_variadic();
+    test_names_table();
     return lhat_test_report("test_vm_core");
 }

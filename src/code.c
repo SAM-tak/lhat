@@ -88,6 +88,9 @@ void lhat_proto_free(LhatProto *proto)
     lhat_free(proto->debug_name);
     lhat_free(proto->source_name);
     lhat_free(proto->protos);
+    for (size_t i = 0; i < proto->upvalue_count; i++) {
+        lhat_free(proto->upvalues[i].name);
+    }
     lhat_free(proto->upvalues);
     lhat_free(proto->parameter_types);
     if (proto->is_unit && proto->units != NULL) {
@@ -130,8 +133,19 @@ size_t lhat_proto_add(LhatProto *parent, LhatProto *child)
     return parent->proto_count++;
 }
 
+// A NUL-terminated copy the caller owns, or NULL when out of memory.
+static char *copy_text(const char *text, size_t length)
+{
+    char *copy = (char *)lhat_alloc(length + 1);
+    if (copy != NULL) {
+        memcpy(copy, text, length);
+        copy[length] = '\0';
+    }
+    return copy;
+}
+
 size_t lhat_proto_add_upvalue(LhatProto *proto, LhatUpvalueSource source,
-                              uint8_t index)
+                              uint8_t index, const char *name, size_t length)
 {
     // Reused rather than appended: a name read twice is one shared place, not
     // two, which is what 5.4 means by sharing the location.
@@ -147,9 +161,32 @@ size_t lhat_proto_add_upvalue(LhatProto *proto, LhatUpvalueSource source,
     if (proto->upvalue_count > 0xFF) {
         return SIZE_MAX;
     }
+    char *copied = copy_text(name, length);
+    if (copied == NULL) {
+        return SIZE_MAX;
+    }
     proto->upvalues[proto->upvalue_count].source = source;
     proto->upvalues[proto->upvalue_count].index = index;
+    proto->upvalues[proto->upvalue_count].name = copied;
     return proto->upvalue_count++;
+}
+
+size_t lhat_chunk_add_local(LhatChunk *chunk, const char *name, size_t length,
+                            uint8_t reg, uint8_t width)
+{
+    LHAT_GROW(chunk->locals, chunk->local_count, chunk->local_capacity, 8,
+              return SIZE_MAX);
+    char *copied = copy_text(name, length);
+    if (copied == NULL) {
+        return SIZE_MAX;
+    }
+    LhatLocalDesc *local = &chunk->locals[chunk->local_count];
+    local->name = copied;
+    local->from = (uint32_t)chunk->count;
+    local->to = UINT32_MAX;
+    local->reg = reg;
+    local->width = width;
+    return chunk->local_count++;
 }
 
 void lhat_chunk_init(LhatChunk *chunk)
@@ -171,6 +208,10 @@ void lhat_chunk_dispose(LhatChunk *chunk)
 {
     lhat_free(chunk->code);
     lhat_free(chunk->lines);
+    for (size_t i = 0; i < chunk->local_count; i++) {
+        lhat_free(chunk->locals[i].name);
+    }
+    lhat_free(chunk->locals);
     lhat_free(chunk->constants);
     lhat_free(chunk->member_caches);
     lhat_object_free_all(&chunk->heap);
