@@ -3351,7 +3351,22 @@ void lhat_machine_dispose(LhatMachine *machine)
 // its own to run -- only cleanups to walk. It is what the loop's own
 // `goto drain` does for a disposal it entered itself, said from outside so
 // that a host can start one (lhat_machine_collectgarbage).
+static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
+                                     bool draining);
+
+// 04 の 11.6改: a nested run -- a host calling back in -- borrows run_base
+// for as long as it runs and hands it back, so a fault in the run it came
+// out of still bounds that run's own frames rather than the nested one's.
 static LhatRunResult run_frames(Machine *m, size_t base_depth, bool draining)
+{
+    size_t outer = m->run_base;
+    LhatRunResult result = run_frames_loop(m, base_depth, draining);
+    m->run_base = outer;
+    return result;
+}
+
+static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
+                                     bool draining)
 {
     m->run_base = base_depth;  // 04 の 11.6改: so finish can bound a fault
     Frame *frame = &m->frames[m->frame_count - 1];
@@ -4748,6 +4763,9 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth, bool draining)
                             data->released = true;
                         }
                     }
+                    // 04 の 11.6改: the host may read the frames while it
+                    // runs, and this frame's line is read off its saved pc.
+                    frame->pc = pc;
                     size_t frames_before = m->frame_count;
                     LhatValue answered = lhat_nil();
                     bool said = call_host_fn(m, host->call, host->context,
@@ -6686,6 +6704,7 @@ static LhatRunResult run_frames(Machine *m, size_t base_depth, bool draining)
                                   ? hostvalue_argument(m->slots, rbase + cc)
                                   : R(cc);
             }
+            frame->pc = pc;  // 11.6改, as at a CALL
             size_t frames_before = m->frame_count;
             LhatValue answered = lhat_nil();
             if (!call_host_fn(m, carried_host->call,
@@ -7026,6 +7045,10 @@ LhatRunResult lhat_run_arguments(LhatMachine *m, const LhatProto *proto,
     // -- that is what lets a closure an earlier input made go on naming the
     // very place a later one reads and writes.
     m->frame_count = 0;
+    // 04 の 11.6改: and what the last run's fault left readable goes with
+    // them -- a host asked "where am I" in this run must be answered with
+    // this run's frames, not the span the last one recorded.
+    m->fault_depth = m->fault_base = 0;
     close_upvalues(m, proto->reserved);
     for (size_t i = proto->reserved; i < LHAT_STACK_SLOTS; i++) {
         lhat_slots_set(m->slots, i, lhat_nil());

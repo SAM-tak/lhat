@@ -184,5 +184,32 @@ int main(void)
         lhat_test_ran_dispose(&ran);
     }
 
+    // The innermost L^ frame's line is read off its saved pc, and a host
+    // call is the one place the machine hands control out without saving
+    // it first -- so the line stayed wherever the last call left it. The
+    // helper() a line earlier is what would be named instead.
+    LHAT_TEST("the asking frame's line is the line of the asking");
+    {
+        char written[16];
+        LhatTestRan ran = run_capturing(
+            "import^ std.debug\n"
+            "let^ helper = f^ -> number^ { return^ 1 }\n"
+            "let^ outer = f^ -> string^ {\n"
+            "    let^ h = helper()\n"
+            "    let^ t = std.debug.traceback()\n"
+            "    return^ t\n"
+            "}\n"
+            "let^ said = outer()\n"
+            "return^ said\n",
+            written, sizeof written);
+        LHAT_CHECK_EQ_INT(ran.status, LHAT_RUN_OK);
+        LHAT_CHECK(ran.text != NULL && strstr(ran.text, ":5: in outer") != NULL,
+                   "line 5, where traceback was called, not line 4");
+        LHAT_CHECK(ran.text != NULL &&
+                       strstr(ran.text, ":8: at the top level") != NULL,
+                   "and the caller at its call");
+        lhat_test_ran_dispose(&ran);
+    }
+
     return lhat_test_report("test_debug");
 }

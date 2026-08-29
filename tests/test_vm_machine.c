@@ -985,11 +985,104 @@ static void test_host_table_write(void)
     }
     run_dispose(&r);
 }
+// A host that calls the closure it was handed and comes back -- the shape of
+// every callback a host makes -- and one that answers how deep the machine
+// stands, which is what a host asking "where am I" reads.
+static void host_call_back(LhatMachine *machine, void *context,
+                           const LhatValue *arguments, size_t count,
+                           LhatValue *answers, int *answer_count)
+{
+    (void)context;
+    (void)count;
+    LhatRunResult called = lhat_machine_call(machine, arguments[0], NULL, 0);
+    answers[0] = called.value;
+    *answer_count = 1;
+}
+
+static void host_depth(LhatMachine *machine, void *context,
+                       const LhatValue *arguments, size_t count,
+                       LhatValue *answers, int *answer_count)
+{
+    (void)context;
+    (void)arguments;
+    (void)count;
+    answers[0] = lhat_integer((int64_t)lhat_machine_fault_depth(machine));
+    *answer_count = 1;
+}
+
+static void set_host(LhatMachine *m, const char *name, LhatHostFn call,
+                     uint8_t parameters)
+{
+    LhatValue host = lhat_nil();
+    LHAT_CHECK(lhat_machine_make_host(m, call, NULL, parameters, false, false,
+                                      false, NULL, &host),
+               "a host function");
+    LHAT_CHECK(lhat_machine_set_global(m, name, host), "and its name");
+}
+
+// 04 の 11.6改: the span of frames a fault leaves readable is bounded by
+// where the run began -- and a run is what a host calling back in starts
+// too, so the bound has to be the outer run's again once the nested one is
+// over, and a run has to begin with no span left over from the last.
+static void test_fault_span(void)
+{
+    LHAT_TEST("a nested run over does not narrow the outer run's fault");
+    {
+        Run r;
+        // Neither call is in tail position, so every frame stands.
+        compile_text(&r,
+                     "let^ b = f^ -> number^ { panic^ 7 }\n"
+                     "let^ a = f^ -> number^ {\n"
+                     "    let^ x = b()\n"
+                     "    return^ x\n"
+                     "}\n"
+                     "let^ seen = L^.Back(f^ -> number^ { return^ 1 })\n"
+                     "let^ answer = a()\n"
+                     "return^ answer\n");
+        LHAT_CHECK_EQ_INT(r.compiled, LHAT_COMPILE_OK);
+        LhatMachine *m = lhat_machine_new();
+        set_host(m, "Back", host_call_back, 1);
+        LhatRunResult ran = lhat_run(m, r.proto);
+        LHAT_CHECK_EQ_INT(ran.status, LHAT_RUN_PANIC);
+        LHAT_CHECK_EQ_INT(lhat_machine_fault_depth(m), 3);
+        LhatFrameInfo top;
+        LHAT_CHECK(lhat_machine_fault_frame(m, 2, &top) && top.top_level,
+                   "the top level is the outermost frame of the span");
+        lhat_machine_dispose(m);
+        compiled_dispose(&r);
+    }
+
+    LHAT_TEST("a run begins with the last run's fault forgotten");
+    {
+        Run faulting, asking;
+        compile_text(&faulting, "panic^ 1\n");
+        compile_text(&asking,
+                     "let^ inner = f^ -> number^ {\n"
+                     "    let^ d = L^.Depth()\n"
+                     "    return^ d\n"
+                     "}\n"
+                     "let^ d = inner()\n"
+                     "return^ d\n");
+        LhatMachine *m = lhat_machine_new();
+        set_host(m, "Depth", host_depth, 0);
+        LHAT_CHECK_EQ_INT(lhat_run(m, faulting.proto).status, LHAT_RUN_PANIC);
+        LHAT_CHECK_EQ_INT(lhat_machine_fault_depth(m), 1);
+        LhatRunResult ran = lhat_run(m, asking.proto);
+        LHAT_CHECK_EQ_INT(ran.status, LHAT_RUN_OK);
+        // The frames standing when the host asked: the top level and inner.
+        LHAT_CHECK_EQ_INT(lhat_as_integer(ran.value), 2);
+        lhat_machine_dispose(m);
+        compiled_dispose(&faulting);
+        compiled_dispose(&asking);
+    }
+}
+
 int main(void)
 {
     test_machine();
     test_call_member();
     test_collection();
     test_host_table_write();
+    test_fault_span();
     return lhat_test_report("test_vm_machine");
 }
