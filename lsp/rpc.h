@@ -10,11 +10,12 @@
 #include <stdio.h>
 
 #include "port/thread.h"
+#include "transport.h"
 
 #include "cJSON.h"
 
 typedef struct {
-    FILE *out;
+    LhatStream out;
     LhatMutex lock;
 } LspRpcOut;
 

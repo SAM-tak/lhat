@@ -114,12 +114,13 @@ void lsp_server_mark_dirty(LspServer *server, const char *path)
 
 int lsp_server_run(LspServer *server, FILE *in_stream)
 {
-    lsp_transport_use_binary_stdio();
+    lhat_transport_use_binary_stdio();
+    LhatStream in = lhat_stream_of_file(in_stream);
 
     char *body = NULL;
     size_t length = 0;
     while (!server->should_exit &&
-           lsp_transport_read_message(in_stream, &body, &length)) {
+           lhat_transport_read_message(&in, &body, &length)) {
         lsp_dispatch_message(server, body, length);
         free(body);
         body = NULL;

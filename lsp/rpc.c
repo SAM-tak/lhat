@@ -8,7 +8,7 @@
 
 void lsp_rpc_out_init(LspRpcOut *out, FILE *stream)
 {
-    out->out = stream;
+    out->out = lhat_stream_of_file(stream);
     lhat_mutex_init(&out->lock);
 }
 
@@ -22,7 +22,7 @@ static void send_envelope(LspRpcOut *out, cJSON *envelope)
     char *text = cJSON_PrintUnformatted(envelope);
     if (text != NULL) {
         lhat_mutex_lock(&out->lock);
-        lsp_transport_write_message(out->out, text, strlen(text));
+        lhat_transport_write_message(&out->out, text, strlen(text));
         lhat_mutex_unlock(&out->lock);
         cJSON_free(text);
     }

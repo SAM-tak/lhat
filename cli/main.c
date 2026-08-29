@@ -34,6 +34,10 @@
 #include "stdlib/thread.h"
 #endif
 
+#ifdef LHAT_CLI_WITH_DAP
+#include "adapter.h"
+#endif
+
 static void print_token(const LhatLexer *lexer, const LhatToken *token)
 {
     printf("%4u:%-3u %-18s", token->line, token->column,
@@ -682,8 +686,10 @@ static size_t say_unit_diagnostics(const LhatProgram *program)
 // `arguments` is what follows the path on the command line: 02 の 13.7 with
 // 05 の 3.2 make a script's top level 'p^...', and these are its '...'.
 static int check_program(const char *path, bool run, bool strict,
-                         char **arguments, size_t argument_count)
+                         char **arguments, size_t argument_count,
+                         unsigned dap_port)
 {
+    (void)dap_port;  // unused without LHAT_CLI_WITH_DAP
     LhatProgram program;
     lhat_program_init(&program, strict, lhat_load_file, NULL);
     if (!bind_host_names(&program)) {  // 05 の 8.2, before checking (8.3)
@@ -726,6 +732,16 @@ static int check_program(const char *path, bool run, bool strict,
             // 05 の 8.7: what was registered reaches the machine here, which
             // is what makes the names bound above answer something.
             lhat_program_install(&program, machine);
+
+            // 09 章: with --dap, a debugger drives the run. Beginning the
+            // session installs the hook and waits for the debugger to say it
+            // is ready; ending it tells the debugger the run is over.
+#ifdef LHAT_CLI_WITH_DAP
+            DapSession *dap = NULL;
+            if (dap_port != 0) {
+                dap_session_begin(&dap, machine, (uint16_t)dap_port, path);
+            }
+#endif
             LhatValue *handed = argument_count > 0
                                     ? (LhatValue *)malloc(argument_count *
                                                           sizeof *handed)
@@ -743,11 +759,18 @@ static int check_program(const char *path, bool run, bool strict,
                                          handed, made)
                     : (LhatRunResult){.status = LHAT_RUN_OUT_OF_MEMORY};
             free(handed);
-            if (ran.status != LHAT_RUN_OK) {
+            bool debugger_stopped = false;
+#ifdef LHAT_CLI_WITH_DAP
+            if (dap != NULL) {
+                debugger_stopped = dap_session_ended_run(dap);
+                dap_session_end(dap, ran.status == LHAT_RUN_OK ? 0 : 1);
+            }
+#endif
+            if (ran.status != LHAT_RUN_OK && !debugger_stopped) {
                 say_run_error(path, ran);
                 say_traceback(machine);
                 failed = true;
-            } else if (!lhat_is_nil(ran.value)) {
+            } else if (ran.status == LHAT_RUN_OK && !lhat_is_nil(ran.value)) {
                 size_t needed = lhat_value_write(ran.value, NULL, 0);
                 char *text = (char *)malloc(needed + 1);
                 if (text != NULL) {
@@ -1077,6 +1100,7 @@ int main(int argc, char **argv)
     bool run_program = false;
     bool command_form = false;
     bool dump_host_api = false;
+    unsigned dap_port = 0;  // 09 章: --dap=PORT runs under a debugger
     // 03 の 3.1: a file defaults to strict, the prompt to relaxed. Writing
     // the other one out overrides whichever default the mode below picks.
     enum { STRICTNESS_DEFAULT, STRICTNESS_STRICT, STRICTNESS_RELAXED }
@@ -1099,6 +1123,11 @@ int main(int argc, char **argv)
             strictness = STRICTNESS_RELAXED;
         } else if (strcmp(argv[i], "--dump-host-api") == 0) {
             dump_host_api = true;
+        } else if (strncmp(argv[i], "--dap=", 6) == 0) {
+            // 09 章: run under a debugger on the named loopback port. Implies
+            // --run: there is nothing to debug about a tree or a token dump.
+            dap_port = (unsigned)strtoul(argv[i] + 6, NULL, 10);
+            run_program = true;
         } else if (path == NULL) {
             path = argv[i];
         } else {
@@ -1176,6 +1205,8 @@ int main(int argc, char **argv)
                                 " (03 の 3.1; default for the prompt)\n");
         printf("  --dump-host-api [file]  write what this driver registers"
                                 " as JSON, for lhatls (05 の 8.7)\n");
+        printf("  --dap=PORT     run under a debugger over DAP on that"
+                                " loopback port (09 章; implies --run)\n");
         return EXIT_SUCCESS;
     }
 
@@ -1185,7 +1216,7 @@ int main(int argc, char **argv)
     if (check_only || run_program) {
         return check_program(path, run_program,
                              strictness != STRICTNESS_RELAXED, arguments,
-                             argument_count);
+                             argument_count, dap_port);
     }
     if (bytecode_only) {
         return dump_bytecode(path);

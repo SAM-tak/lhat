@@ -9,6 +9,9 @@ project(lhat
 option(LHAT_BUILD_TESTS "Build the L^ test suite" ON)
 option(LHAT_BUILD_CLI "Build the lhat command line driver" ON)
 option(LHAT_BUILD_LSP "Build the L^ language server" ON)
+# 09 章: the debug adapter, folded into the cli (`lhat --dap=PORT`). Off
+# takes it out of the cli and builds nothing under dap/ or port/socket.
+option(LHAT_BUILD_DAP "Build the L^ debug adapter into the cli" ON)
 # 03 の 5.1: what a specialised instruction would be worth, measured.
 # Off by default -- it takes minutes to run and asserts almost nothing, so
 # it has no business in an ordinary build or in CI.
@@ -234,6 +237,12 @@ if(LHAT_BUILD_CLI)
         target_include_directories(lhat_cli PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
         target_compile_definitions(lhat_cli PRIVATE LHAT_CLI_WITH_STDLIB)
     endif()
+    # 09 章: `lhat --dap=PORT` drives a run under a debugger. The adapter is
+    # its own library, so cli/main.c names it only under the macro.
+    if(LHAT_BUILD_DAP)
+        target_link_libraries(lhat_cli PRIVATE lhatdap)
+        target_compile_definitions(lhat_cli PRIVATE LHAT_CLI_WITH_DAP)
+    endif()
     install(TARGETS lhat_cli RUNTIME DESTINATION bin)
 endif()
 
@@ -260,10 +269,56 @@ if(LHAT_BUILD_BENCH)
                                PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 endif()
 
+# ---- Shared tooling: JSON and the message framing -------------------------
+# The language server (JSON-RPC) and the debug adapter (DAP) both frame their
+# messages Content-Length and carry JSON inside. vendor/cjson is that JSON,
+# and transport/ is that framing over a byte stream -- stdio for the server,
+# a socket for the adapter. Nothing about lhat's own build needs either, so
+# both are scoped to whichever of the two is being built.
+if(LHAT_BUILD_LSP OR LHAT_BUILD_DAP)
+    add_library(cjson STATIC vendor/cjson/cJSON.c)
+    target_include_directories(cjson PUBLIC vendor/cjson)
+    # Statically linked into whoever uses it, so it must not dllexport its
+    # symbols: an executable that re-exported them would be handed an import
+    # library, and the cli's would be lhat.lib -- the name the static lhat
+    # library already has. CJSON_HIDE_SYMBOLS turns the __declspec off.
+    target_compile_definitions(cjson PUBLIC CJSON_HIDE_SYMBOLS)
+    if(MSVC)
+        target_compile_options(cjson PRIVATE /W0)
+    else()
+        target_compile_options(cjson PRIVATE -w)
+    endif()
+
+    add_library(lhattransport STATIC transport/transport.c)
+    target_include_directories(lhattransport PUBLIC
+        ${CMAKE_CURRENT_SOURCE_DIR}/transport)
+endif()
+
+# ---- Debug adapter --------------------------------------------------------
+# 09 章: what a debugger (a VS Code extension, an editor) talks DAP to. It
+# sits on the machine's line hook (include/lhat/debug.h) and reaches the
+# debugger over a loopback socket (port/socket). Linked into the cli, which
+# turns it on with --dap=PORT.
+if(LHAT_BUILD_DAP)
+    add_library(lhatsocket STATIC port/socket.c)
+    target_include_directories(lhatsocket PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+    if(WIN32)
+        target_link_libraries(lhatsocket PUBLIC ws2_32)
+    endif()
+
+    add_library(lhatdap STATIC
+        dap/adapter.c
+        dap/protocol.c
+    )
+    # Only the public headers, cjson and the two ports -- dap/ names nothing
+    # in src/, which is the proof the debugger runs against lhat.h alone.
+    target_link_libraries(lhatdap PUBLIC lhat cjson lhattransport lhatsocket)
+    target_include_directories(lhatdap PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/dap)
+endif()
+
 # ---- Language server --------------------------------------------------------
 # A second, independent consumer of lhat.lib alongside the CLI -- it speaks
-# LSP over stdio instead of a prompt. vendor/cjson is JSON-RPC's message
-# shape; nothing about lhat's own build needs it, so it is scoped to here.
+# LSP over stdio instead of a prompt.
 if(LHAT_BUILD_LSP)
     # 07 の 4 章: hover, semantic tokens and lhat/signature all answer from
     # what the checker recorded about each name, so the server is exactly the
@@ -277,19 +332,10 @@ if(LHAT_BUILD_LSP)
             "of the two off.")
     endif()
 
-    add_library(cjson STATIC vendor/cjson/cJSON.c)
-    target_include_directories(cjson PUBLIC vendor/cjson)
-    if(MSVC)
-        target_compile_options(cjson PRIVATE /W0)
-    else()
-        target_compile_options(cjson PRIVATE -w)
-    endif()
-
     add_executable(lhat_lsp
         lsp/main.c
         lsp/server.c
         lsp/worker.c
-        lsp/transport.c
         lsp/rpc.c
         lsp/dispatch.c
         lsp/dispatch_table.c
@@ -325,7 +371,7 @@ if(LHAT_BUILD_LSP)
         OUTPUT_NAME lhat-lsp
         RUNTIME_OUTPUT_NAME lhatls
     )
-    target_link_libraries(lhat_lsp PRIVATE lhat cjson lhatthread)
+    target_link_libraries(lhat_lsp PRIVATE lhat cjson lhattransport lhatthread)
     # The repository root as well: lsp/lton.c names stdlib/lton.h for the
     # wrapper an LTON file is read inside (08-lton.md). A header and no
     # more -- the server still does not link the sample library.
@@ -385,5 +431,8 @@ if(LHAT_BUILD_TESTS)
     add_subdirectory(tests)
     if(LHAT_BUILD_LSP)
         add_subdirectory(lsp/tests)
+    endif()
+    if(LHAT_BUILD_DAP)
+        add_subdirectory(dap/tests)
     endif()
 endif()
