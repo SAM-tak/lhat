@@ -18,6 +18,10 @@ const LEAF_H = 30;
 const HEAD_H = 24; // a container's label strip
 const PAD = 10;
 const MAX_LABEL = 48;
+// The fold button sits inside the box. A container has a label strip wide
+// enough to spare, but a folded one is only as wide as its own label, so it
+// is widened by this much to keep the two off each other.
+const FOLD_BTN = 18;
 
 // 5.3's table, by kind.
 const STATEMENT_LIST = new Set(["block"]);
@@ -76,7 +80,12 @@ export interface ElkNode {
     edges?: ElkEdge[];
     layoutOptions?: Record<string, string>;
     /** Not ELK's: what this node was made from, for clicks and folding. */
-    lhat?: { kind: string; start: number; end: number; collapsed?: boolean };
+    lhat?: {
+        kind: string; start: number; end: number;
+        collapsed?: boolean;
+        /** Whether this one can be folded shut at all, open or not. */
+        foldable?: boolean;
+    };
 }
 
 export interface ElkEdge {
@@ -187,6 +196,13 @@ export interface MapOptions {
     /** V15: fold definitions when the view opens. */
     collapse?: boolean;
     /**
+     * What the reader has folded or unfolded by hand, keyed by start
+     * position. An entry decides that one node; everything without one
+     * follows `collapse`. Positions rather than nodes, for the reason 8.2's
+     * trail uses them: the tree is replaced whole on every edit.
+     */
+    folds?: Record<number, boolean>;
+    /**
      * 8.2: the node this view is rooted at. Its own box is not drawn -- the
      * view *is* that definition -- so what shows is the body alone.
      */
@@ -198,7 +214,10 @@ export function toElk(reply: AstReply, options: MapOptions = {}): ElkNode {
     let counter = 0;
     const nextId = (kind: string) => `${kind}-${counter++}`;
 
-    const from = (node: AstNode, extra: { collapsed?: boolean } = {}) => ({
+    const from = (
+        node: AstNode,
+        extra: { collapsed?: boolean; foldable?: boolean } = {},
+    ) => ({
         kind: node.kind, start: node.start, end: node.end, ...extra,
     });
 
@@ -268,24 +287,44 @@ export function toElk(reply: AstReply, options: MapOptions = {}): ElkNode {
     // since that one is a way further in rather than part of what is shown.
     function build(node: AstNode, voice: "stmt" | "expr",
                    unfold: boolean): ElkNode {
+        // Nothing with an empty body is worth a fold, so the emptiness is
+        // asked about before anything else -- an f^() {} folded shut would
+        // read '… …'.
+        const foldable =
+            (COLLAPSIBLE.has(node.kind) ||
+                (FOLDS_WITH_VALUE.has(node.kind) && holdsCollapsible(node))) &&
+            drawnChildren(node).length > 0;
+
+        // A fold the reader made by hand outweighs the view-wide default,
+        // which is what makes one definition openable inside a folded file
+        // and one shuttable inside an open one.
+        if (foldable &&
+            (options.folds?.[node.start] ??
+                (options.collapse === true && !unfold))) {
+            const text = labelOf(node, source, drawnChildren(node)) + " …";
+            return {
+                id: nextId(node.kind),
+                labels: [{ text }],
+                // Room for the fold button, which sits inside the box.
+                width: widthFor(text) + FOLD_BTN,
+                height: LEAF_H + 8,
+                lhat: from(node, { collapsed: true, foldable: true }),
+            };
+        }
+
+        const built = expand(node, voice, unfold);
+        // Said of an open one too: the button is how it gets shut again.
+        if (foldable && built.lhat !== undefined) built.lhat.foldable = true;
+        return built;
+    }
+
+    function expand(node: AstNode, voice: "stmt" | "expr",
+                    unfold: boolean): ElkNode {
         const kind = node.kind;
         const kids = drawnChildren(node);
         const label = labelOf(node, source, kids);
 
         if (kids.length === 0) return leaf(node, label);
-
-        if (options.collapse && !unfold &&
-            (COLLAPSIBLE.has(kind) ||
-                (FOLDS_WITH_VALUE.has(kind) && holdsCollapsible(node)))) {
-            const text = label + " …";
-            return {
-                id: nextId(kind),
-                labels: [{ text }],
-                width: widthFor(text),
-                height: LEAF_H + 8,
-                lhat: from(node, { collapsed: true }),
-            };
-        }
 
         // 5.2, statements included. The label is taken again with nothing cut
         // out: a leaf draws none of its children, so there are no holes to

@@ -23,10 +23,17 @@ body {
     font-size: 12px;
 }
 
+/* Three states, told apart by weight. A button whose work is waiting to be
+   done -- a way out of a definition there is one to take, an unfold with
+   something folded to open -- is `active` and comes forward in the editor's
+   primary colours. One that is merely there to press sits back in the
+   secondary ones, and one that would do nothing recedes further still and
+   stops answering the pointer. All three were the same before, so the way out
+   looked live while standing at the file root. */
 #bar button {
     font: inherit;
-    color: var(--vscode-button-foreground);
-    background: var(--vscode-button-background);
+    color: var(--vscode-button-secondaryForeground);
+    background: var(--vscode-button-secondaryBackground);
     border: none;
     border-radius: 2px;
     padding: 2px 10px;
@@ -34,7 +41,24 @@ body {
 }
 
 #bar button:hover {
+    background: var(--vscode-button-secondaryHoverBackground);
+}
+
+#bar button.active {
+    color: var(--vscode-button-foreground);
+    background: var(--vscode-button-background);
+}
+
+#bar button.active:hover {
     background: var(--vscode-button-hoverBackground);
+}
+
+#bar button:disabled,
+#bar button:disabled:hover {
+    color: var(--vscode-disabledForeground);
+    background: color-mix(in srgb,
+        var(--vscode-button-secondaryBackground) 40%, transparent);
+    cursor: default;
 }
 
 #status {

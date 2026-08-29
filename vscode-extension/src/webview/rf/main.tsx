@@ -68,6 +68,10 @@ interface BoxData extends Record<string, unknown> {
     onEnter: (data: BoxData) => void;
     /** Middle click: show what this was made from, in the text. */
     onReveal: (data: BoxData) => void;
+    /** Whether this one can be folded shut, which is what shows the button. */
+    foldable: boolean;
+    /** The button: fold this one node, or open it, whatever the bar says. */
+    onFold: (data: BoxData) => void;
 }
 
 type BoxNodeType = Node<BoxData, "box">;
@@ -80,6 +84,7 @@ function toFlow(
     onSlide: BoxData["onSlide"],
     onEnter: BoxData["onEnter"],
     onReveal: BoxData["onReveal"],
+    onFold: BoxData["onFold"],
 ): BoxNodeType[] {
     const nodes: BoxNodeType[] = [];
     const dirOf = (n: ElkNode) => n.layoutOptions?.["elk.direction"] ?? "DOWN";
@@ -160,9 +165,11 @@ function toFlow(
                     // a DOWN container slides horizontally, of a RIGHT one
                     // vertically.
                     slideAxis: dirOf(parent) === "RIGHT" ? "y" : "x",
+                    foldable: c.lhat?.foldable === true,
                     onSlide,
                     onEnter,
                     onReveal,
+                    onFold,
                 },
             });
 
@@ -258,6 +265,23 @@ function BoxNode({ data }: NodeProps<BoxNodeType>) {
                 onPointerUp={onPointerUp}
                 onAuxClick={onAuxClick}
             >
+                {data.foldable && (
+                    // Its own gestures, kept off the box's: a press here must
+                    // not start a slide, and the click must not be read as
+                    // going into the definition.
+                    <button
+                        type="button"
+                        className="foldbtn"
+                        title={data.collapsed
+                            ? "Unfold this definition"
+                            : "Fold this definition shut"}
+                        onPointerDown={(event) => event.stopPropagation()}
+                        onClick={(event) => {
+                            event.stopPropagation();
+                            data.onFold(data);
+                        }}
+                    >{data.collapsed ? "▸" : "▾"}</button>
+                )}
                 <div className="boxlabel">{data.label}</div>
             </div>
             {!data.isContainer && (
@@ -286,10 +310,32 @@ function countNodes(n: ElkNode): number {
     return total;
 }
 
+/**
+ * How many of what this view shows are folded shut. Read off the laid-out
+ * graph rather than kept alongside it: the state is the picture, and a flag
+ * held next to it would have to be right about the default, every fold set by
+ * hand, and what drilling in leaves out of the view. A folded node has no
+ * children in the graph, so what is inside one is not counted -- which is
+ * what makes this "shown", not "in the file".
+ */
+function countFolded(n: ElkNode): number {
+    let total = n.lhat?.collapsed === true ? 1 : 0;
+    for (const c of n.children ?? []) total += countFolded(c);
+    return total;
+}
+
 function App() {
     const [reply, setReply] = useState<AstReply>();
     const [note, setNote] = useState("waiting for the language server…");
-    const [collapse, setCollapse] = useState(true);
+    // V15: what a node with nothing said about it does. Not the state of the
+    // bar's button -- that is read off the graph (countFolded) -- and not
+    // something to reason from: after one press of the button and a few of the
+    // node's own, this alone says nothing about what is on screen.
+    const [foldByDefault, setFoldByDefault] = useState(true);
+    // What the reader folded or unfolded one at a time, over that default.
+    const [folds, setFolds] = useState<Record<number, boolean>>({});
+    // Bumped to refit the viewport -- see the ReactFlow key below.
+    const [refit, setRefit] = useState(0);
     const [trail, setTrail] = useState<number[]>([]);
     const [slides, setSlides] = useState<Slides>({});
     const [laid, setLaid] = useState<ElkNode>();
@@ -334,7 +380,8 @@ function App() {
         if (reply === undefined || view === undefined) return;
         let stale = false;
         const graph = toElk(reply, {
-            collapse,
+            collapse: foldByDefault,
+            folds,
             root: view.path.length > 0 ? view.root : undefined,
         });
         const started = performance.now();
@@ -342,12 +389,19 @@ function App() {
             if (stale) return;
             const done = result as ElkNode;
             setLaid(done);
+            const folded = countFolded(done);
             setNote(`${countNodes(done)} nodes, ` +
                 `${Math.round(performance.now() - started)}ms` +
-                (collapse ? ", definitions folded" : ""));
+                (folded > 0 ? `, ${folded} folded` : ""));
         });
         return () => { stale = true; };
-    }, [reply, view, collapse]);
+    }, [reply, view, foldByDefault, folds]);
+
+    // What the bar's button says and does, both from the picture itself. One
+    // definition still folded is enough to make the press an unfold: the way
+    // out of a half-open view is a single press, whichever half it is in.
+    const folded = useMemo(
+        () => (laid === undefined ? 0 : countFolded(laid)), [laid]);
 
     const onSlide = useCallback((key: number, dx: number, dy: number) => {
         setSlides((s) => ({
@@ -374,10 +428,19 @@ function App() {
         });
     }, []);
 
+    // One node's own fold. Written down rather than toggled in place: what it
+    // is now comes from the bar's default as often as from an earlier press,
+    // so the entry records the state asked for, not a flip of one held here.
+    const onFold = useCallback((data: BoxData) => {
+        if (data.start === undefined) return;
+        const start = data.start;
+        setFolds((f) => ({ ...f, [start]: !data.collapsed }));
+    }, []);
+
     const nodes = useMemo(
         () => (laid !== undefined
-            ? toFlow(laid, slides, onSlide, onEnter, onReveal) : []),
-        [laid, slides, onSlide, onEnter, onReveal]);
+            ? toFlow(laid, slides, onSlide, onEnter, onReveal, onFold) : []),
+        [laid, slides, onSlide, onEnter, onReveal, onFold]);
 
     const onConnect = useCallback((connection: Connection) => {
         // Edges render in an svg layer below the nodes unless told otherwise,
@@ -393,13 +456,29 @@ function App() {
             <div id="bar">
                 <button
                     type="button"
-                    title="Leave this definition"
+                    className={trail.length > 0 ? "active" : undefined}
+                    title={trail.length === 0
+                        ? "Not inside a definition"
+                        : "Leave this definition"}
                     disabled={trail.length === 0}
                     onClick={() => setTrail((t) => t.slice(0, -1))}
                 >▲</button>
-                <button type="button" onClick={() => setCollapse((v) => !v)}>
-                    fold / unfold
-                </button>
+                {/* Says what pressing it does, not what state the view is in
+                    -- the boxes show that themselves. "All" is meant: it drops
+                    every fold set on a single node, so one press puts the whole
+                    view in one state again. */}
+                <button
+                    type="button"
+                    className={folded > 0 ? "active" : undefined}
+                    title={folded > 0
+                        ? "Open every definition"
+                        : "Fold every definition shut"}
+                    onClick={() => {
+                        setFoldByDefault(folded === 0);
+                        setFolds({});
+                        setRefit((n) => n + 1);
+                    }}
+                >{folded > 0 ? "Unfold All" : "Fold All"}</button>
                 <span id="status">{note}</span>
             </div>
             {view !== undefined && view.path.length > 0 && reply !== undefined && (
@@ -419,9 +498,12 @@ function App() {
             )}
             <div id="flow">
                 <ReactFlow
-                    // Remounting on a new view or fold state is what refits the
-                    // viewport; at ≤25 nodes a remount costs nothing visible.
-                    key={trail.join(",") + (collapse ? "|c" : "|o")}
+                    // Remounting is what refits the viewport; at ≤25 nodes it
+                    // costs nothing visible. Done for the two things that
+                    // change the whole picture -- moving to another view, and
+                    // Fold/Unfold All -- and not for a single node's own fold,
+                    // where a re-zoom on every press would be seasick.
+                    key={`${trail.join(",")}|${refit}`}
                     nodes={nodes}
                     edges={edges}
                     onEdgesChange={onEdgesChange}
