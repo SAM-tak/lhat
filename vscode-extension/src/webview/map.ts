@@ -63,11 +63,11 @@ const COLLAPSIBLE = new Set(["func", "def", "self-table", "errordef"]);
 // A definition of one of those is collapsed whole.
 const FOLDS_WITH_VALUE = new Set(["define", "reassign"]);
 
-// 5.3.1, V9 still open.
-const COLUMNS: Record<string, number> = {
-    table: 6, def: 1, "self-table": 1, errordef: 1, "type-table": 1,
-    "error-new": 1,
-};
+// 5.3.1 and 8.6: element lists that wrap. The rest of 5.3's element lists
+// (def, errordef, self-table, ...) stack their basic elements vertically, so
+// they never need a column count at all. How many columns a wrapping list
+// gets is not a number any more (V9): it is however many fit the width.
+const WRAPS = new Set(["table"]);
 
 export interface ElkNode {
     id: string;
@@ -85,6 +85,8 @@ export interface ElkNode {
         collapsed?: boolean;
         /** Whether this one can be folded shut at all, open or not. */
         foldable?: boolean;
+        /** A branch container: its clauses snap rather than slide (8.6). */
+        branch?: boolean;
     };
 }
 
@@ -92,8 +94,10 @@ export interface ElkEdge {
     id: string;
     sources: string[];
     targets: string[];
-    /** 6.3's device for ELK, never drawn. */
+    /** 6.3's device for ELK, kept out of the picture unless `drawn`. */
     pinned?: boolean;
+    /** 8.6: an execution line -- consecutive statements, shown as an arrow. */
+    drawn?: boolean;
     sections?: {
         startPoint: { x: number; y: number };
         endPoint: { x: number; y: number };
@@ -165,9 +169,6 @@ function labelOf(node: AstNode, source: string, drawn: Child[]): string {
     return text.length > MAX_LABEL ? text.slice(0, MAX_LABEL - 1) + "…" : text;
 }
 
-const widthFor = (label: string) =>
-    Math.max(56, Math.round(label.length * CH) + 18);
-
 // 06 の 8.2: a named subroutine is a unit of its own, so opening one means
 // going into it rather than unfolding it where it stands. Anonymous ones are
 // only meaningful where they were written, so they stay put.
@@ -207,12 +208,30 @@ export interface MapOptions {
      * view *is* that definition -- so what shows is the body alone.
      */
     root?: AstNode;
+    /**
+     * 8.6: the font factor, 1 at the default size. Zoom is not a transform
+     * of the picture but a re-layout at another type size, so every metric
+     * here scales by it and the text follows through a CSS variable.
+     */
+    scale?: number;
+    /**
+     * 8.6: the width the view has, in pixels at the current scale. It is a
+     * ceiling, not a stretch: only wrapping element lists consult it. Absent
+     * means unconstrained (the old behaviour).
+     */
+    width?: number;
 }
 
 export function toElk(reply: AstReply, options: MapOptions = {}): ElkNode {
     const source = reply.source;
     let counter = 0;
     const nextId = (kind: string) => `${kind}-${counter++}`;
+
+    // 8.6: zoom is a re-layout at another type size, so every metric scales.
+    const S = options.scale ?? 1;
+    const px = (v: number) => Math.round(v * S);
+    const widthFor = (label: string) =>
+        Math.max(px(56), Math.round(label.length * CH * S) + px(18));
 
     const from = (
         node: AstNode,
@@ -225,16 +244,17 @@ export function toElk(reply: AstReply, options: MapOptions = {}): ElkNode {
         id: nextId(node.kind),
         labels: [{ text: label }],
         width: widthFor(label),
-        height: LEAF_H,
+        height: px(LEAF_H),
         lhat: from(node),
     });
 
-    const chain = (id: string, kids: ElkNode[]): ElkEdge[] =>
+    const chain = (id: string, kids: ElkNode[], drawn = false): ElkEdge[] =>
         kids.slice(1).map((k, i) => ({
             id: `${id}__ord${i}`,
             sources: [kids[i].id],
             targets: [k.id],
             pinned: true,
+            ...(drawn ? { drawn: true } : {}),
         }));
 
     const container = (
@@ -248,10 +268,11 @@ export function toElk(reply: AstReply, options: MapOptions = {}): ElkNode {
             // 6.2: never inherited, so always written.
             "elk.direction": dir,
             "elk.padding": padded
-                ? `[top=${HEAD_H + PAD},left=${PAD},bottom=${PAD},right=${PAD}]`
+                ? `[top=${px(HEAD_H + PAD)},left=${px(PAD)},` +
+                  `bottom=${px(PAD)},right=${px(PAD)}]`
                 : "[top=0,left=0,bottom=0,right=0]",
-            "elk.spacing.nodeNode": "14",
-            "elk.layered.spacing.nodeNodeBetweenLayers": "20",
+            "elk.spacing.nodeNode": `${px(14)}`,
+            "elk.layered.spacing.nodeNodeBetweenLayers": `${px(20)}`,
         },
         children,
         edges,
@@ -260,25 +281,41 @@ export function toElk(reply: AstReply, options: MapOptions = {}): ElkNode {
 
     // 6.4: a list wraps into rows built here. rectpacking loses source order
     // once the elements differ in size, which an element list does.
-    function griddedRows(id: string, kids: ElkNode[], columns: number): ElkNode[] {
-        const rows: ElkNode[] = [];
-        for (let i = 0; i < kids.length; i += columns) {
-            const slice = kids.slice(i, i + columns);
-            const rid = `${id}__r${rows.length}`;
-            rows.push({
+    //
+    // 8.6 (V9 settled): a row takes as many elements as the width holds --
+    // the view's width is a ceiling for wrapping, nothing else. An element
+    // wider than the whole width gets a row of its own.
+    function fittedRows(id: string, kids: ElkNode[], avail: number): ElkNode[] {
+        const gap = px(12);
+        const slices: ElkNode[][] = [];
+        let row: ElkNode[] = [];
+        let used = 0;
+        for (const kid of kids) {
+            const w = kid.width ?? 0;
+            if (row.length > 0 && used + gap + w > avail) {
+                slices.push(row);
+                row = [];
+                used = 0;
+            }
+            row.push(kid);
+            used += (row.length > 1 ? gap : 0) + w;
+        }
+        if (row.length > 0) slices.push(row);
+        return slices.map((slice, i) => {
+            const rid = `${id}__r${i}`;
+            return {
                 id: rid,
                 layoutOptions: {
                     "elk.algorithm": "layered",
                     "elk.direction": "RIGHT",
                     "elk.padding": "[top=0,left=0,bottom=0,right=0]",
-                    "elk.spacing.nodeNode": "12",
-                    "elk.layered.spacing.nodeNodeBetweenLayers": "12",
+                    "elk.spacing.nodeNode": `${gap}`,
+                    "elk.layered.spacing.nodeNodeBetweenLayers": `${gap}`,
                 },
                 children: slice,
                 edges: chain(rid, slice),
-            });
-        }
-        return rows;
+            };
+        });
     }
 
     // `unfold` marks the way down to the body of the definition this view was
@@ -286,7 +323,7 @@ export function toElk(reply: AstReply, options: MapOptions = {}): ElkNode {
     // nor its body is folded again -- but a definition *inside* that body is,
     // since that one is a way further in rather than part of what is shown.
     function build(node: AstNode, voice: "stmt" | "expr",
-                   unfold: boolean): ElkNode {
+                   unfold: boolean, avail: number): ElkNode {
         // Nothing with an empty body is worth a fold, so the emptiness is
         // asked about before anything else -- an f^() {} folded shut would
         // read '… …'.
@@ -306,20 +343,22 @@ export function toElk(reply: AstReply, options: MapOptions = {}): ElkNode {
                 id: nextId(node.kind),
                 labels: [{ text }],
                 // Room for the fold button, which sits inside the box.
-                width: widthFor(text) + FOLD_BTN,
-                height: LEAF_H + 8,
+                width: widthFor(text) + px(FOLD_BTN),
+                height: px(LEAF_H + 8),
                 lhat: from(node, { collapsed: true, foldable: true }),
             };
         }
 
-        const built = expand(node, voice, unfold);
+        const built = expand(node, voice, unfold, avail);
         // Said of an open one too: the button is how it gets shut again.
         if (foldable && built.lhat !== undefined) built.lhat.foldable = true;
         return built;
     }
 
     function expand(node: AstNode, voice: "stmt" | "expr",
-                    unfold: boolean): ElkNode {
+                    unfold: boolean, avail: number): ElkNode {
+        // What is left for this node's own children, one padding in.
+        const inner_avail = avail - 2 * px(PAD);
         const kind = node.kind;
         const kids = drawnChildren(node);
         const label = labelOf(node, source, kids);
@@ -344,22 +383,33 @@ export function toElk(reply: AstReply, options: MapOptions = {}): ElkNode {
 
         // 5.3.1: an element list wraps, and does not follow the voice.
         if (ELEMENT_LIST.has(kind)) {
-            const items = kids.map((c) => build(c.node, "expr", childUnfold));
-            const columns = COLUMNS[kind] ?? 1;
-            if (columns > 1 && items.length > columns) {
-                const rows = griddedRows(id, items, columns);
-                return container(id, label, "DOWN", rows, chain(id, rows), node);
+            const items = kids.map(
+                (c) => build(c.node, "expr", childUnfold, inner_avail));
+            if (WRAPS.has(kind) && items.length > 1) {
+                const rows = fittedRows(id, items, inner_avail);
+                if (rows.length > 1) {
+                    return container(
+                        id, label, "DOWN", rows, chain(id, rows), node);
+                }
             }
             return container(id, label, "DOWN", items, chain(id, items), node);
         }
 
         // A branch transposes; each clause goes back to the enclosing voice.
         if (BRANCH.has(kind)) {
-            const clauses = kids.map((c) => build(c.node, voice, childUnfold));
+            const clauses = kids.map(
+                (c) => build(c.node, voice, childUnfold, inner_avail));
             const dir = voice === "stmt" ? "RIGHT" : "DOWN";
             // 6.3: clauses carry no edge of their own, so ELK would pack them
             // by area and lose both the axis and the source order.
-            return container(id, label, dir, clauses, chain(id, clauses), node);
+            const box = container(
+                id, label, dir, clauses, chain(id, clauses), node);
+            // 8.6: a statement branch's clauses snap sideways to the reader's
+            // attention rather than sliding freely.
+            if (box.lhat !== undefined && dir === "RIGHT") {
+                box.lhat.branch = true;
+            }
+            return box;
         }
 
         const inner: ElkNode[] = [];
@@ -372,17 +422,22 @@ export function toElk(reply: AstReply, options: MapOptions = {}): ElkNode {
             if (VOICE_TURN.has(kind) && field === "body") childVoice = "stmt";
             if (BODY_STATEMENT.has(kind) && field === "body") childVoice = "stmt";
             if (kind === "if-clause" && field === "body") childVoice = voice;
-            inner.push(build(c, childVoice, childUnfold));
+            inner.push(build(c, childVoice, childUnfold, inner_avail));
         }
 
         // V4: 9 章's clauses are `extra` on a BLOCK and run in a fixed order,
         // so they go down with the rest of the statements.
         const dir = voice === "stmt" ? "DOWN" : "RIGHT";
-        return container(id, label, dir, inner, chain(id, inner), node);
+        // 8.6: the statement sequence carries the execution lines. Only the
+        // true statement lists -- a body, the file root -- not the parts a
+        // for^ or a define stacks, which are one construct, not a sequence.
+        return container(id, label, dir, inner,
+                         chain(id, inner, STATEMENT_LIST.has(kind)), node);
     }
 
+    const width = options.width ?? Number.POSITIVE_INFINITY;
     const root = build(options.root ?? reply.root, "stmt",
-                       options.root !== undefined);
+                       options.root !== undefined, width - 2 * px(PAD));
     // The root of a view need not be a container -- one definition opened on
     // its own may map to a single box -- so give it something to sit in.
     if (!root.layoutOptions) {
@@ -391,8 +446,9 @@ export function toElk(reply: AstReply, options: MapOptions = {}): ElkNode {
             layoutOptions: {
                 "elk.algorithm": "layered",
                 "elk.direction": "DOWN",
-                "elk.padding": `[top=${PAD},left=${PAD},bottom=${PAD},right=${PAD}]`,
-                "elk.spacing.nodeNode": "14",
+                "elk.padding": `[top=${px(PAD)},left=${px(PAD)},` +
+                    `bottom=${px(PAD)},right=${px(PAD)}]`,
+                "elk.spacing.nodeNode": `${px(14)}`,
             },
             children: [root],
             edges: [],

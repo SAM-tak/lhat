@@ -21,6 +21,18 @@ html, body, #root {
 #flow {
     flex: 1;
     min-height: 0;
+    /* 8.6: the type factor the zoom buttons set; every size in the boxes
+       derives from it, the same way the layout's metrics do in map.ts. */
+    --lhat-scale: 1;
+    /* The execution lines' colour, shared by strokes and arrowheads. */
+    --lhat-exec: color-mix(in srgb,
+        var(--vscode-editor-foreground) 45%, var(--vscode-editor-background));
+}
+
+/* 8.6: a snap glides. Only while one is settling -- left on permanently it
+   would drag behind every slide of the finger. */
+.snap-anim .react-flow__node {
+    transition: transform 180ms ease-out;
 }
 
 /* React Flow's own chrome, matched to the theme. */
@@ -44,12 +56,6 @@ html, body, #root {
     fill: color-mix(in srgb, var(--vscode-editor-background) 55%, transparent);
 }
 
-.react-flow__controls button {
-    background: var(--vscode-editorWidget-background);
-    color: var(--vscode-editor-foreground);
-    border-bottom: 1px solid var(--vscode-editorWidget-border, transparent);
-}
-
 /* One box. The node wrapper carries width/height/clip-path from the layout;
    this fills it. */
 .box {
@@ -60,7 +66,7 @@ html, body, #root {
     border: 1px solid var(--vscode-panel-border, #8888);
     border-radius: 4px;
     background: var(--vscode-editor-background);
-    font-size: 11px;
+    font-size: calc(11px * var(--lhat-scale, 1));
     overflow: hidden;
 }
 
@@ -73,11 +79,11 @@ html, body, #root {
     top: 2px;
     right: 2px;
     z-index: 1;
-    width: 14px;
-    height: 14px;
+    width: calc(14px * var(--lhat-scale, 1));
+    height: calc(14px * var(--lhat-scale, 1));
     padding: 0;
-    line-height: 12px;
-    font-size: 9px;
+    line-height: calc(12px * var(--lhat-scale, 1));
+    font-size: calc(9px * var(--lhat-scale, 1));
     text-align: center;
     color: var(--vscode-editor-foreground);
     background: none;
@@ -115,7 +121,7 @@ html, body, #root {
 }
 
 .boxlabel {
-    padding: 3px 8px;
+    padding: calc(3px * var(--lhat-scale, 1)) calc(8px * var(--lhat-scale, 1));
     white-space: nowrap;
 }
 
@@ -123,7 +129,7 @@ html, body, #root {
     display: flex;
     align-items: center;
     height: 100%;
-    padding: 0 8px;
+    padding: 0 calc(8px * var(--lhat-scale, 1));
 }
 
 /* Depth by opacity over the theme's own foreground, as graph.css does. */
@@ -154,6 +160,57 @@ html, body, #root {
 .box:hover ~ .react-flow__handle,
 .react-flow__node:hover .react-flow__handle {
     opacity: 1;
+}
+
+/* 8.6: the execution lines' anchors. Never seen, never grabbed -- the
+   arrows belong to the picture, not to the reader's connecting hand. After
+   the hover rule above so it wins over it. */
+.react-flow__node .react-flow__handle.flowhandle {
+    opacity: 0;
+    pointer-events: none;
+}
+
+.react-flow__edge.exec path {
+    stroke: var(--lhat-exec);
+    stroke-width: calc(1.4px * var(--lhat-scale, 1));
+}
+
+/* 8.6: one dot per clause of a branch, in the container's bottom padding. */
+/* Centred under the execution line: `left` is the axis (flowHandleX, set
+   inline when the box is shifted or slid), and the translate makes that the
+   row's middle rather than its start.
+
+   Not named `.dots`: React Flow's background pattern puts a bare `dots`
+   class on its circles, and a rule by that name moved every one of them
+   half out of its tile -- the background looked switched off. */
+.clausedots {
+    position: absolute;
+    left: 50%;
+    transform: translateX(-50%);
+    bottom: calc(2px * var(--lhat-scale, 1));
+    display: flex;
+    gap: calc(5px * var(--lhat-scale, 1));
+    z-index: 1;
+}
+
+.clausedot {
+    width: calc(7px * var(--lhat-scale, 1));
+    height: calc(7px * var(--lhat-scale, 1));
+    padding: 0;
+    border: none;
+    border-radius: 50%;
+    background: color-mix(in srgb,
+        var(--vscode-editor-foreground) 30%, transparent);
+    cursor: pointer;
+}
+
+.clausedot:hover {
+    background: color-mix(in srgb,
+        var(--vscode-editor-foreground) 60%, transparent);
+}
+
+.clausedot.lit {
+    background: var(--vscode-focusBorder);
 }
 
 .react-flow__edge-path {
