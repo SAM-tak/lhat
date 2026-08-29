@@ -70,10 +70,17 @@
     ],
     "commands": [
       {
+        "comment": "\"Show\" rather than \"Open\": the two views take turns in one tab, so nothing new is opened. The exception is lhat.graph.openBeside, where a second tab is the point.",
         "command": "lhat.openGraph",
-        "title": "Open Graph View",
+        "title": "Show Graph View",
         "category": "L^",
         "icon": "$(type-hierarchy)"
+      },
+      {
+        "command": "lhat.openText",
+        "title": "Show Source",
+        "category": "L^",
+        "icon": "$(file-code)"
       },
       {
         "command": "lhat.copySignature",
@@ -89,9 +96,14 @@
     "menus": {
       "editor/title": [
         {
-          "comment": "Only on a .lh tab, and not on the graph's own tab -- the graph is the same resource, so resourceLangId alone would put the button on it too.",
+          "comment": "One button each way, shown by which view is up -- the graph is the same resource as the text, so resourceLangId alone would put both on both. VSCode's own editor-type dropdown does this too, but it rides on the breadcrumb bar and is off by default (1.132), so the buttons are the way that is always there.",
           "command": "lhat.openGraph",
           "when": "resourceLangId == lhat && activeCustomEditorId != lhat.graph",
+          "group": "navigation"
+        },
+        {
+          "command": "lhat.openText",
+          "when": "activeCustomEditorId == lhat.graph",
           "group": "navigation"
         }
       ],
@@ -106,7 +118,11 @@
       "commandPalette": [
         {
           "command": "lhat.openGraph",
-          "when": "resourceLangId == lhat"
+          "when": "resourceLangId == lhat && activeCustomEditorId != lhat.graph"
+        },
+        {
+          "command": "lhat.openText",
+          "when": "activeCustomEditorId == lhat.graph"
         },
         {
           "command": "lhat.copySignature",
@@ -130,7 +146,7 @@
         "lhat.graph.openBeside": {
           "type": "boolean",
           "default": false,
-          "description": "Open the graph view in a split beside the current editor. When off, it opens as another tab in the same editor group."
+          "description": "Open the graph view in a split beside the current editor, so the source and the graph can be read side by side. When off, the graph replaces the source in the same tab and the button switches back."
         }
       }
     },

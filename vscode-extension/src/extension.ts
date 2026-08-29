@@ -46,6 +46,33 @@ function autoRestartEnabled(): boolean {
         .get<boolean>("serverAutoRestart", true);
 }
 
+// The text editor and the graph are two views of one file, so moving between
+// them should replace what is in the tab rather than open a second tab of the
+// same thing -- the way VSCode's own Markdown editor switches between rendered
+// and source.
+//
+// VSCode has two commands that do exactly that, but neither is part of the
+// documented built-in command set, so this asks whether they are there instead
+// of assuming it. Called by name and gone, executeCommand would reject and the
+// button would look broken; found missing, the fallback below opens the other
+// editor and closes the tab this one was in, which is stable API and costs the
+// tab only its place in the strip.
+//
+// Asked once, on first press rather than at activation: activate() stays
+// synchronous, and nothing needs the answer until a button is used.
+let inPlace: { toggle: boolean; text: boolean } | undefined;
+
+async function inPlaceCommands(): Promise<{ toggle: boolean; text: boolean }> {
+    if (inPlace === undefined) {
+        const all = new Set(await vscode.commands.getCommands(true));
+        inPlace = {
+            toggle: all.has("workbench.action.toggleEditorType"),
+            text: all.has("workbench.action.reopenTextEditor"),
+        };
+    }
+    return inPlace;
+}
+
 function startClient(command: string): LanguageClient {
     const serverOptions: ServerOptions = {
         command,
@@ -194,25 +221,62 @@ export function activate(context: vscode.ExtensionContext): void {
     );
 
     // The custom editor is registered with priority "option", so opening a
-    // .lh file still gives the text editor. This is how the graph is asked
-    // for, beside the text.
+    // .lh file still gives the text editor. These two commands are how the
+    // graph is reached and left again -- one button each, shown by which of
+    // the two is up (package.json's editor/title menu).
     context.subscriptions.push(
-        vscode.commands.registerCommand("lhat.openGraph", () => {
+        vscode.commands.registerCommand("lhat.openGraph", async () => {
             const uri = vscode.window.activeTextEditor?.document.uri;
             if (uri === undefined) {
                 void vscode.window.showInformationMessage(
                     "Open a .lh file first.");
                 return;
             }
-            // Another tab in the same group by default; a split only when
-            // asked for. Splitting halves the width the graph has, and 06 の
-            // 8.1 measured that width to be what runs out first.
+            // A split only when asked for: it halves the width the graph has,
+            // and 06 の 8.1 measured that width to be what runs out first.
+            // Beside is the one case where a second tab is the point, so it
+            // leaves the text where it is.
             const beside = vscode.workspace
                 .getConfiguration("lhat")
                 .get<boolean>("graph.openBeside", false);
-            void vscode.commands.executeCommand(
+            if (beside) {
+                await vscode.commands.executeCommand(
+                    "vscode.openWith", uri, LhatGraphEditorProvider.viewType,
+                    vscode.ViewColumn.Beside);
+                return;
+            }
+            if ((await inPlaceCommands()).toggle) {
+                await vscode.commands.executeCommand(
+                    "workbench.action.toggleEditorType");
+                return;
+            }
+            // Taken before opening: afterwards the graph is the active tab.
+            const tab = vscode.window.tabGroups.activeTabGroup.activeTab;
+            await vscode.commands.executeCommand(
                 "vscode.openWith", uri, LhatGraphEditorProvider.viewType,
-                beside ? vscode.ViewColumn.Beside : vscode.ViewColumn.Active);
+                vscode.ViewColumn.Active);
+            if (tab !== undefined) {
+                await vscode.window.tabGroups.close(tab);
+            }
+        }),
+        vscode.commands.registerCommand("lhat.openText", async () => {
+            if ((await inPlaceCommands()).text) {
+                await vscode.commands.executeCommand(
+                    "workbench.action.reopenTextEditor");
+                return;
+            }
+            // activeTextEditor is empty while the graph is up, so the file
+            // this is a view of comes from the tab itself.
+            const tab = vscode.window.tabGroups.activeTabGroup.activeTab;
+            if (!(tab?.input instanceof vscode.TabInputCustom)) {
+                void vscode.window.showInformationMessage(
+                    "Open a .lh graph first.");
+                return;
+            }
+            const document = await vscode.workspace.openTextDocument(
+                tab.input.uri);
+            await vscode.window.showTextDocument(document, { preview: false });
+            await vscode.window.tabGroups.close(tab);
         }),
     );
 
