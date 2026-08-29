@@ -76,6 +76,8 @@ cJSON *lsp_handle_initialize(LspServer *server, const cJSON *params)
     // 07 の 4 章: the checker recorded where every name it resolved was
     // declared, which is the whole of what going to one needs.
     cJSON_AddBoolToObject(capabilities, "definitionProvider", true);
+    // The outline, from the tree alone (document_symbol.h).
+    cJSON_AddBoolToObject(capabilities, "documentSymbolProvider", true);
 
     cJSON_AddItemToObject(result, "capabilities", capabilities);
 

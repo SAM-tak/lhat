@@ -35,6 +35,8 @@
 | 意味的な構文強調 | `textDocument/semanticTokens/full` | `lsp/handlers/semantic_tokens.c` |
 | 文書の同期 | `textDocument/didOpen` / `didChange` / `didClose` | `lsp/handlers/text_document_sync.c` |
 | ホバー | `textDocument/hover` | 4 章。`lsp/hover.c` |
+| 定義へ移動 | `textDocument/definition` | 4 章の `LhatResolution` がそのまま答える。`lsp/definition.c` |
+| 文書シンボル | `textDocument/documentSymbol` | 構文木だけから作る。`lsp/document_symbol.c` |
 
 検査はワーカースレッドで動く。ワークスペース内の `*.lh` はそれぞれが独立した根であり、
 1つの編集は「その根」と「最後の検査でその文書を通過した根」だけを検査し直す
@@ -42,6 +44,16 @@
 
 新しい要求への対応は `lsp/dispatch_table.c` に1行と `lsp/handlers/*.c` を1つ足すだけでよく、
 `dispatch.c` と `server.c` には手を入れない。
+
+**文書シンボル（アウトライン）は検査を待たない。**列挙するのは `let^` / `var^` の束縛、
+`def^` のメンバー（`self^{ }` 欄の項目はフィールド、関数値はメソッド）、テーブルリテラルの
+名前付き項目、`errordef^` とその種類、`module^`、そして単位が `return^` で答えるテーブルの
+項目 — LTON はこの最後の形（08 章）。いずれも名前は構文木に書かれていて、検査器の答えを
+要しない。エディタはファイルを開いた瞬間にアウトラインを求めるので、受け口
+（`lsp/handlers/document_symbol.c`）はワークスペースの検査済み単位を引かず、
+文書ストアが持つその時点のテキストをその場で構文解析して答える。
+ループの焦点・引数に渡したコールバックの中身は載せない。アウトラインはファイルの形であって、
+名前の全列挙ではない。
 
 ## 4. ホバー
 
@@ -119,9 +131,7 @@ let^ other = require^ "lib/util.lh"
 
 | 機能 | 方法 | 備考 |
 | --- | --- | --- |
-| 定義へ移動 | `textDocument/definition` | 4 章の `LhatResolution` がそのまま答える |
 | 参照の検索 | `textDocument/references` | 同じ表を定義位置で引く。単位をまたぐ場合は根の逆引き（`lsp/workspace.h`） |
-| 文書シンボル | `textDocument/documentSymbol` | 構文木から直接作れる |
 | 補完 | `textDocument/completion` | 途中まで書かれた不完全な木を扱う必要がある |
 | 名前の変更 | `textDocument/rename` | 参照の検索の後 |
 

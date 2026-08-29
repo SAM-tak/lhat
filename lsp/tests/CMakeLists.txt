@@ -46,6 +46,12 @@ lhat_lsp_add_test(test_signature
     ${CMAKE_SOURCE_DIR}/lsp/signature.c
     ${CMAKE_SOURCE_DIR}/lsp/resolution.c
 )
+lhat_lsp_add_test(test_document_symbol
+    ${CMAKE_SOURCE_DIR}/lsp/document_symbol.c
+    ${CMAKE_SOURCE_DIR}/lsp/position.c
+    ${CMAKE_SOURCE_DIR}/lsp/lton.c
+    ${CMAKE_SOURCE_DIR}/lsp/util.c
+)
 lhat_lsp_add_test(test_semantic_tokens
     ${CMAKE_SOURCE_DIR}/lsp/semantic_tokens.c
     ${CMAKE_SOURCE_DIR}/lsp/position.c
