@@ -84,6 +84,23 @@ bool lhat_frame_set_local(LhatMachine *machine, size_t level, size_t index,
 bool lhat_frame_set_upvalue(LhatMachine *machine, size_t level, size_t index,
                             LhatValue value);
 
+// 3.5: compiles `text` as one input -- 02 の 8.2's interactive form, where a
+// bare expression is the answer -- with the frame's names in scope, and runs
+// it on the machine. The names are copies: what := writes inside the input
+// stays inside it (writing back is lhat_frame_set_local's job). Compiled
+// without checking (03 の 4.2 keeps that a supported way to run), so a type
+// the frame's values do not bear surfaces as the runtime error it then is,
+// reported here rather than anywhere.
+//
+// True fills `answer`, good until the machine next runs. False fills `error`
+// (NUL-terminated within `error_capacity`) with what went wrong -- a parse,
+// a compile, or the evaluation's own fault, which is tidied away: the frames
+// and the fault record are as they were before the call. The line hook does
+// not sound while the evaluation runs.
+bool lhat_machine_evaluate(LhatMachine *machine, size_t level,
+                           const char *text, size_t length, LhatValue *answer,
+                           char *error, size_t error_capacity);
+
 #ifdef __cplusplus
 }
 #endif

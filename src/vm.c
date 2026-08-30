@@ -7403,6 +7403,62 @@ LhatRunResult lhat_machine_call(LhatMachine *machine, LhatValue callee,
                      count);
 }
 
+LhatRunResult lhat_machine_run_seeded(Machine *m, const LhatClosure *closure,
+                                      const LhatValue *seed, size_t count)
+{
+    size_t base = m->frame_count;
+    m->tuple_scratch_count = 0;  // 13.8改, as in lhat_run
+    if (closure == NULL || closure->proto == NULL ||
+        count > closure->proto->chunk.registers) {
+        return call_fault(m, LHAT_RUN_NOT_CALLABLE);
+    }
+    if (base >= LHAT_MAX_FRAMES) {
+        return call_fault(m, LHAT_RUN_STACK_OVERFLOW);
+    }
+    size_t next_base =
+        base == 0 ? 0
+                  : m->frames[base - 1].base +
+                        m->frames[base - 1].closure->proto->chunk.registers;
+    if (next_base + LHAT_MAX_REGISTERS >= LHAT_STACK_SLOTS) {
+        return call_fault(m, LHAT_RUN_STACK_OVERFLOW);
+    }
+    for (size_t i = 0; i < count; i++) {
+        lhat_slots_set(m->slots, next_base + i, seed[i]);
+    }
+    // The rest of the window is emptied: the collector walks a frame's whole
+    // width, and whatever an earlier run left there is not this one's.
+    for (size_t i = count; i < closure->proto->chunk.registers; i++) {
+        lhat_slots_set(m->slots, next_base + i, lhat_nil());
+    }
+
+    Frame *called = &m->frames[m->frame_count++];
+    called->closure = closure;
+    called->pc = 0;
+    called->base = next_base;
+    called->result = 0;  // never read: base_depth's drain returns instead
+    called->prepared = 1;
+    called->cleanup_count = 0;
+    called->returning = false;
+    called->coroutine = NULL;
+    called->disposing = false;
+    called->derive = LHAT_FRAME_NO_DERIVE;
+    called->derive_equal = false;
+    called->drop_answer = false;
+    called->answer = lhat_nil();
+
+    LhatRunResult ran = run_frames(m, base, false);
+    if (ran.status != LHAT_RUN_OK) {
+        // As run_one_disposal abandons a failed cleanup: closed first, or a
+        // place captured inside the evaluation would be left pointing at
+        // slots the next call reuses.
+        close_upvalues(m, next_base);
+        m->frame_count = base;
+        m->fault_base = 0;
+        m->fault_depth = 0;
+    }
+    return ran;
+}
+
 static size_t waiting_disposals(const Machine *m)
 {
     size_t waiting = 0;

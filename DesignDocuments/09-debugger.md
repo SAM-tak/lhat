@@ -176,6 +176,31 @@ GC との折り合い: レジスタへの書きにバリアは要らない（収
 バリアを敷く。テーブルのメンバへの書きは既存の `lhat_machine_table_set`
 （バリア込み）で行う。
 
+### 3.5 式の評価
+
+```c
+bool lhat_machine_evaluate(LhatMachine *, size_t level,
+                           const char *text, size_t length, LhatValue *answer,
+                           char *error, size_t error_capacity);
+```
+
+一つの入力——8.2 の対話形、裸の式は答え——を、フレームの名前が見える状態で
+コンパイルし、機械の上の自分のフレームで走らせる。
+
+- **名前は写し**である。捕捉、次に生きているローカル（内側が影）を評価
+  フレームの先頭レジスタへ写し、その位置に種を蒔いたセッション
+  （03 §4.3 の REPL と同じ機構）で**無検査**コンパイルする——03 §4.2 の
+  とおり、検査せず走らせることは支えられた実行のかたちで、型の齟齬は
+  実行時の誤りとして現れ、それがそのまま error に返る
+- 入力の中の `:=` は**写しに書く**。フレームへ書き戻すのは §3.4 の仕事
+- 失敗（構文・コンパイル・実行のどれでも）は error に文で返り、機械は
+  評価の前の姿に戻る——評価のフレームは畳まれ、フォルトの記録も残らない
+- **行フックは評価の間鳴らない**。フックの中から呼ばれるのが普通の形で、
+  鳴れば再入で自分の停止ループに戻ってしまう
+- 答えの値は次に機械が走るまで生きている。ホスト値のローカルと、L^ に
+  結ばれていない裸のホスト名（`print` など）は見えない——`L^.modules` を
+  辿る綴りは通る
+
 ## 4. コンパイラが残す表
 
 `LhatProto` は行の表（命令ごとの行）に加えて、レジスタの名前の表を持つ。
@@ -228,13 +253,17 @@ response / event の三種で、`lsp/rpc.c` の固定した `jsonrpc` ではな�
 
 対応する要求（v1）: initialize, launch, attach, setBreakpoints（行はすべて
 `verified` 固定）, configurationDone, threads, stackTrace, scopes, variables,
-setVariable, continue, next, stepIn, stepOut, pause, disconnect, terminate。
-イベント: initialized, stopped, terminated, exited。
+setVariable, evaluate, continue, next, stepIn, stepOut, pause, disconnect,
+terminate。イベント: initialized, stopped, terminated, exited。
 
 - **setVariable**——パネルが打った文字列を L^ の綴りで読む（`nil^` /
-  `true^` / `false^` / 数 / 引用符の文字列。式は D1）。行き先は名前で引き、
-  影があれば内側——読みがパネルに並べたのと同じ規則。テーブルのメンバは
-  数だけの名前を列の鍵、それ以外を文字列の鍵として書き戻す。
+  `true^` / `false^` / 数 / 引用符の文字列。式は evaluate の側）。行き先は
+  名前で引き、影があれば内側——読みがパネルに並べたのと同じ規則。テーブルの
+  メンバは数だけの名前を列の鍵、それ以外を文字列の鍵として書き戻す。
+- **evaluate**——§3.5 をそのまま。ホバーにも答える
+  （`supportsEvaluateForHovers`）。答えは描画した文字列だけで、展開の
+  参照は配らない——評価の答えはフレームが畳まれた後は何にも根を張られて
+  おらず、後から読む参照は腐りうる。
 
 `dap/` は `src/` の何も名指ししない——デバッガは `lhat.h` の公開面だけで動く。
 
@@ -257,7 +286,6 @@ API で埋まる。詳細は別リポジトリの godot バインディングに
 
 | 番号 | 内容 |
 | --- | --- |
-| D1 | 式の評価（`evaluate`）。停止中フレームのローカルが見える状態で式をコンパイル・実行する。`setVariable` の値もそれまで綴りの直読み（§5） |
 | D2 | `output` イベント（スクリプトの出力をコンソールへ）。v1 は起動側が捕まえる |
 | D3 | `pause` の待ち時間。ホスト関数の中では効かない。受信スレッドを置く案 |
 | D4 | 列（column）の情報。行の表に列は無い |
@@ -270,3 +298,5 @@ API で埋まる。詳細は別リポジトリの godot バインディングに
 
 - 新設。行フック・束縛の内観・コンパイラの名前の表・DAP アダプタ・Godot 連携。
 - 束縛の書き換え（§3.4）と `setVariable` を追加。D1 は式の評価だけ残る。
+- 式の評価（§3.5）と `evaluate` を追加。D1 閉鎖——評価は写しの上で走り、
+  書き戻しは setVariable。

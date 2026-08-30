@@ -130,6 +130,14 @@ void lhat_compile_session_hosted(LhatCompileSession *session,
                                  const LhatHostTypeEntry *types,
                                  size_t type_count);
 
+// 09 の 3.5: tells the session a name that already holds a register, the way
+// an earlier input's top-level let^ would have. A debugger's evaluation is
+// the caller: it copies a stopped frame's values into a fresh frame's first
+// registers and seeds their names here, then compiles one input against
+// them. False when the session is full or out of memory.
+bool lhat_compile_session_seed(LhatCompileSession *session, const char *name,
+                               size_t length, uint8_t reg);
+
 // Compiles `unit` as the next input of `session`. The top-level names already
 // in it are in scope, and the ones this input declares stay for the next.
 //

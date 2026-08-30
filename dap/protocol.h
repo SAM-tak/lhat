@@ -26,10 +26,12 @@ typedef struct {
 // is not JSON. The caller owns it (cJSON_Delete).
 cJSON *dap_read(DapPeer *peer);
 
-// A response to `request`, carrying `body` (owned, may be NULL). `success`
-// false makes `body` a `{message}` the client shows.
+// A response to `request`, carrying `body` (owned, may be NULL).
 bool dap_respond(DapPeer *peer, const cJSON *request, bool success,
                  cJSON *body);
+
+// A failed response carrying why -- DAP's `message`, which the client shows.
+bool dap_fail(DapPeer *peer, const cJSON *request, const char *message);
 
 // An event with `body` (owned, may be NULL).
 bool dap_event(DapPeer *peer, const char *event, cJSON *body);

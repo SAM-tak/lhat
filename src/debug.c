@@ -12,7 +12,10 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "compile.h"
+#include "lhat/source.h"
 #include "machine.h"
+#include "parser.h"
 
 // 04 の 11.6改: which span of frames the walkers read -- the recorded
 // fault's, or, when none is recorded, the frames standing right now.
@@ -281,4 +284,134 @@ bool lhat_frame_set_upvalue(LhatMachine *machine, size_t level, size_t index,
     // already looked at, or one it has not seen.
     lhat_gc_barrier(machine, (LhatObject *)place, value);
     return true;
+}
+
+// ---------------------------------------------------------------------------
+// 09 の 3.5: evaluation
+// ---------------------------------------------------------------------------
+
+static void say(char *error, size_t capacity, const char *what, uint32_t line)
+{
+    if (error == NULL || capacity == 0) {
+        return;
+    }
+    if (line > 0) {
+        snprintf(error, capacity, "line %u: %s", line, what);
+    } else {
+        snprintf(error, capacity, "%s", what);
+    }
+}
+
+bool lhat_machine_evaluate(LhatMachine *machine, size_t level,
+                           const char *text, size_t length, LhatValue *answer,
+                           char *error, size_t error_capacity)
+{
+    if (answer != NULL) {
+        *answer = lhat_nil();
+    }
+    size_t at = 0;
+    const Frame *frame = frame_at(machine, level, &at);
+    if (frame == NULL || frame->closure == NULL) {
+        say(error, error_capacity, "no frame at that level", 0);
+        return false;
+    }
+
+    // The frame's names, as copies for the evaluation's own first registers:
+    // captures first, then the live locals -- so a local shadows the capture
+    // it may have been made from, and of two locals alike the later (inner)
+    // wins, the way the compiler's own search reads them.
+    LhatValue seeds[LHAT_MAX_LOCALS];
+    size_t seeded = 0;
+    LhatCompileSession *session = lhat_compile_session_new();
+    if (session == NULL) {
+        say(error, error_capacity, "out of memory", 0);
+        return false;
+    }
+    bool overfull = false;
+    size_t captures = lhat_frame_upvalue_count(machine, level);
+    size_t locals = lhat_frame_local_count(machine, level);
+    for (size_t i = 0; i < captures + locals; i++) {
+        LhatBindingInfo binding;
+        bool read = i < captures
+                        ? lhat_frame_upvalue(machine, level, i, &binding)
+                        : lhat_frame_local(machine, level, i - captures,
+                                           &binding);
+        if (!read || lhat_is_hostvalue(binding.value)) {
+            continue;  // a host value's slots cannot be copied one-for-one
+        }
+        if (seeded >= LHAT_MAX_LOCALS ||
+            !lhat_compile_session_seed(session, binding.name,
+                                       strlen(binding.name),
+                                       (uint8_t)seeded)) {
+            overfull = true;
+            break;
+        }
+        seeds[seeded++] = binding.value;
+    }
+    if (overfull) {
+        lhat_compile_session_dispose(session);
+        say(error, error_capacity, "too many names in scope", 0);
+        return false;
+    }
+
+    LhatSource source;
+    LhatLexer lexer;
+    LhatParseResult parsed;
+    if (!lhat_source_init_from_string(&source, "<debugger>", text, length)) {
+        lhat_compile_session_dispose(session);
+        say(error, error_capacity, "out of memory", 0);
+        return false;
+    }
+    lhat_lexer_init(&lexer, &source);
+    lhat_parse_interactive(&lexer, &parsed);
+
+    LhatProto *proto = NULL;
+    LhatCompileResult compiled;
+    compiled.status = LHAT_COMPILE_UNSUPPORTED;
+    compiled.line = parsed.diagnostic_count > 0 ? parsed.diagnostics[0].line
+                                                : 0;
+    bool ok = false;
+    if (parsed.root == NULL || parsed.diagnostic_count > 0) {
+        say(error, error_capacity, "the input did not parse", compiled.line);
+    } else {
+        compiled = lhat_compile_next(session, parsed.root, &lexer, &proto);
+        if (compiled.status != LHAT_COMPILE_OK) {
+            say(error, error_capacity,
+                lhat_compile_status_message(compiled.status), compiled.line);
+            lhat_proto_free(proto);
+        } else {
+            // The machine takes the tree: a closure the evaluation leaves
+            // behind (in a written global, say) keeps it alive (05 の 5.6).
+            LhatValue script = lhat_nil();
+            if (!lhat_machine_adopt_script(machine, proto, &script)) {
+                lhat_proto_free(proto);
+                say(error, error_capacity, "out of memory", 0);
+            } else {
+                // 2.4's silence, by hand: the evaluation's own lines are not
+                // the hook's to hear -- and the hook is usually what called.
+                LhatDebugHook live = machine->hook_live;
+                machine->hook_live = NULL;
+                LhatRunResult ran = lhat_machine_run_seeded(
+                    machine,
+                    (const LhatClosure *)lhat_as_object(script), seeds,
+                    seeded);
+                machine->hook_live = live;
+                if (ran.status != LHAT_RUN_OK) {
+                    say(error, error_capacity,
+                        lhat_run_status_message(ran.status), ran.line);
+                } else {
+                    if (answer != NULL) {
+                        *answer = ran.value;
+                    }
+                    ok = true;
+                }
+            }
+        }
+    }
+
+    lhat_compile_session_dispose(session);
+    lhat_parse_result_dispose(&parsed);
+    lhat_lexer_dispose(&lexer);
+    lhat_source_dispose(&source);
+    return ok;
 }

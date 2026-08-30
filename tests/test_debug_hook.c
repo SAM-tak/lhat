@@ -560,6 +560,185 @@ static void test_writing(void)
     }
 }
 
+// One expression to evaluate at one line, and what came of it.
+typedef struct {
+    uint32_t at_line;
+    size_t level;
+    const char *expr;
+    bool done;
+    bool ok;
+    char result[128];
+    char error[192];
+} Ask;
+
+static void ask_hook(LhatMachine *machine, void *context,
+                     LhatDebugEvent event, const LhatFrameInfo *where)
+{
+    Ask *a = (Ask *)context;
+    (void)event;
+    if (a->done || where->line != a->at_line) {
+        return;
+    }
+    a->done = true;
+    LhatValue value = lhat_nil();
+    a->ok = lhat_machine_evaluate(machine, a->level, a->expr, strlen(a->expr),
+                                  &value, a->error, sizeof a->error);
+    if (a->ok) {
+        lhat_value_text(value, a->result, sizeof a->result);
+    }
+}
+
+static void run_asked(Run *r, Ask *a, const char *text)
+{
+    compile_text(r, text);
+    LHAT_CHECK_EQ_INT(r->compiled, LHAT_COMPILE_OK);
+    r->machine = lhat_machine_new();
+    lhat_machine_set_debug_hook(r->machine, ask_hook, a);
+    r->ran = lhat_run(r->machine, r->proto);
+    LHAT_CHECK(a->done, "the stop line was reached");
+}
+
+static void test_evaluating(void)
+{
+    LHAT_TEST("an expression reads the frame's locals");
+    {
+        Run r;
+        Ask a = {0};
+        a.at_line = 4;
+        a.expr = "x + y";
+        run_asked(&r, &a,
+                  "var^ f = f^ x:number^ -> number^ {\n"
+                  "    var^ y = 3\n"
+                  "    var^ z = x + y\n"
+                  "    return^ z\n"
+                  "}\n"
+                  "return^ f(2)\n");
+        LHAT_CHECK(a.ok, "it evaluated");
+        LHAT_CHECK_EQ_STR(a.result, strlen(a.result), "5");
+        LHAT_CHECK_EQ_INT(lhat_as_integer(r.ran.value), 5);
+        run_dispose(&r);
+    }
+
+    LHAT_TEST("and the frame's captures, and a local that is a closure");
+    {
+        Run r;
+        Ask a = {0};
+        a.at_line = 6;
+        a.expr = "helper(n)";
+        run_asked(&r, &a,
+                  "var^ make = f^ n:number^ -> f^ -> number^; {\n"
+                  "    return^ f^ -> number^ {\n"
+                  "        var^ helper = f^ x:number^ -> number^ {\n"
+                  "            return^ x * 10\n"
+                  "        }\n"
+                  "        return^ helper(n) + 1\n"
+                  "    }\n"
+                  "}\n"
+                  "var^ get = make(4)\n"
+                  "return^ get()\n");
+        LHAT_CHECK(a.ok, "the capture and the local closure both reached");
+        LHAT_CHECK_EQ_STR(a.result, strlen(a.result), "40");
+        LHAT_CHECK_EQ_INT(lhat_as_integer(r.ran.value), 41);
+        run_dispose(&r);
+    }
+
+    LHAT_TEST("a caller's frame answers by its level");
+    {
+        Run r;
+        Ask a = {0};
+        a.at_line = 2;
+        a.level = 1;
+        a.expr = "kept";
+        run_asked(&r, &a,
+                  "var^ inner = f^ -> number^ {\n"
+                  "    return^ 1\n"
+                  "}\n"
+                  "var^ outer = f^ -> number^ {\n"
+                  "    var^ kept = 7\n"
+                  "    var^ got = inner()\n"
+                  "    return^ kept + got\n"
+                  "}\n"
+                  "return^ outer()\n");
+        LHAT_CHECK(a.ok, "the caller's local was in scope");
+        LHAT_CHECK_EQ_STR(a.result, strlen(a.result), "7");
+        run_dispose(&r);
+    }
+
+    LHAT_TEST("a name not in scope refuses with a message");
+    {
+        Run r;
+        Ask a = {0};
+        a.at_line = 2;
+        a.expr = "nosuch + 1";
+        run_asked(&r, &a,
+                  "var^ q = 1\n"
+                  "return^ q\n");
+        LHAT_CHECK(!a.ok, "it refused");
+        LHAT_CHECK(strstr(a.error, "no such name") != NULL, "and said why");
+        LHAT_CHECK_EQ_INT(lhat_as_integer(r.ran.value), 1);
+        run_dispose(&r);
+    }
+
+    LHAT_TEST("a fault inside the evaluation is tidied away");
+    {
+        Run r;
+        Ask a = {0};
+        a.at_line = 2;
+        a.expr = "q + \"x\"";  // unchecked compile; ADD faults at run time
+        run_asked(&r, &a,
+                  "var^ q = 1\n"
+                  "var^ w = q + 1\n"
+                  "return^ w\n");
+        LHAT_CHECK(!a.ok, "it refused");
+        LHAT_CHECK(a.error[0] != '\0', "with the fault's message");
+        // The paused run went on unharmed, and no fault stayed recorded.
+        LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_OK);
+        LHAT_CHECK_EQ_INT(lhat_as_integer(r.ran.value), 2);
+        LHAT_CHECK_EQ_INT(lhat_machine_fault_depth(r.machine), 0);
+        run_dispose(&r);
+    }
+
+    LHAT_TEST("an assignment inside writes the copy, not the frame");
+    {
+        Run r;
+        Ask a = {0};
+        a.at_line = 3;
+        a.expr = "y := 99";
+        run_asked(&r, &a,
+                  "var^ f = f^ -> number^ {\n"
+                  "    var^ y = 5\n"
+                  "    return^ y\n"
+                  "}\n"
+                  "return^ f()\n");
+        LHAT_CHECK(a.ok, "the statement ran");
+        LHAT_CHECK_EQ_INT(lhat_as_integer(r.ran.value), 5);
+        run_dispose(&r);
+    }
+
+    LHAT_TEST("what an evaluation made survives the collector");
+    {
+        Run r;
+        Ask a = {0};
+        a.at_line = 4;
+        a.expr = "\"aa\" .. \"bb\"";
+        run_asked(&r, &a,
+                  "var^ f = f^ -> number^ {\n"
+                  "    var^ i = 0\n"
+                  "    var^ q = 1\n"
+                  "    repeat^ 2000 {\n"
+                  "        var^ waste = { a := 1 }\n"
+                  "        i := i + 1\n"
+                  "    }\n"
+                  "    return^ i\n"
+                  "}\n"
+                  "return^ f()\n");
+        LHAT_CHECK(a.ok, "it evaluated");
+        LHAT_CHECK(strstr(a.result, "aabb") != NULL, "the string was made");
+        LHAT_CHECK_EQ_INT(lhat_as_integer(r.ran.value), 2000);
+        run_dispose(&r);
+    }
+}
+
 int main(void)
 {
     test_line_events();
@@ -567,5 +746,6 @@ int main(void)
     test_reentry();
     test_frame_reading();
     test_writing();
+    test_evaluating();
     return lhat_test_report("test_debug_hook");
 }

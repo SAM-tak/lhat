@@ -6742,6 +6742,30 @@ LhatCompileSession *lhat_compile_session_new(void)
     return (LhatCompileSession *)lhat_calloc(1, sizeof(LhatCompileSession));
 }
 
+bool lhat_compile_session_seed(LhatCompileSession *session, const char *name,
+                               size_t length, uint8_t reg)
+{
+    if (session == NULL || session->count >= LHAT_MAX_LOCALS) {
+        return false;
+    }
+    // Copied, as every session name is: the text it came from (a chunk's
+    // table, a lexer) need not outlive the session.
+    char *copy = (char *)lhat_alloc(length + 1);
+    if (copy == NULL) {
+        return false;
+    }
+    memcpy(copy, name, length);
+    copy[length] = '\0';
+    session->names[session->count].name = copy;
+    session->names[session->count].length = length;
+    session->names[session->count].reg = reg;
+    session->count++;
+    if (session->next_register <= reg) {
+        session->next_register = (uint8_t)(reg + 1);
+    }
+    return true;
+}
+
 void lhat_compile_session_dispose(LhatCompileSession *session)
 {
     if (session == NULL) {

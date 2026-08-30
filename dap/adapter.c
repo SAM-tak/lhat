@@ -479,6 +479,7 @@ static DapAction dispatch(DapSession *s, const cJSON *request)
         cJSON *body = cJSON_CreateObject();
         cJSON_AddBoolToObject(body, "supportsConfigurationDoneRequest", true);
         cJSON_AddBoolToObject(body, "supportsSetVariable", true);
+        cJSON_AddBoolToObject(body, "supportsEvaluateForHovers", true);
         dap_respond(&s->peer, request, true, body);
         dap_event(&s->peer, "initialized", NULL);
         return DAP_ACT_NONE;
@@ -532,6 +533,34 @@ static DapAction dispatch(DapSession *s, const cJSON *request)
     if (strcmp(command, "variables") == 0) {
         cJSON *body = cJSON_CreateObject();
         variables(s, arguments, body);
+        dap_respond(&s->peer, request, true, body);
+        return DAP_ACT_NONE;
+    }
+    if (strcmp(command, "evaluate") == 0) {
+        const cJSON *expression = cJSON_GetObjectItem(arguments, "expression");
+        const cJSON *frame_id = cJSON_GetObjectItem(arguments, "frameId");
+        size_t level =
+            cJSON_IsNumber(frame_id) ? (size_t)frame_id->valuedouble : 0;
+        if (!cJSON_IsString(expression)) {
+            dap_fail(&s->peer, request, "no expression");
+            return DAP_ACT_NONE;
+        }
+        char why[256];
+        LhatValue value = lhat_nil();
+        if (!lhat_machine_evaluate(s->machine, level, expression->valuestring,
+                                   strlen(expression->valuestring), &value,
+                                   why, sizeof why)) {
+            dap_fail(&s->peer, request, why);
+            return DAP_ACT_NONE;
+        }
+        cJSON *body = cJSON_CreateObject();
+        char rendered[256];
+        lhat_value_text(value, rendered, sizeof rendered);
+        cJSON_AddStringToObject(body, "result", rendered);
+        // Rendered, not handed out for expansion: nothing roots what an
+        // evaluation answered once its frame is gone, and a reference read
+        // later -- after another evaluation's collection -- would be stale.
+        cJSON_AddNumberToObject(body, "variablesReference", 0);
         dap_respond(&s->peer, request, true, body);
         return DAP_ACT_NONE;
     }

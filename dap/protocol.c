@@ -30,8 +30,8 @@ static bool send_message(DapPeer *peer, cJSON *message)
     return ok;
 }
 
-bool dap_respond(DapPeer *peer, const cJSON *request, bool success,
-                 cJSON *body)
+static bool send_response(DapPeer *peer, const cJSON *request, bool success,
+                          cJSON *body, const char *why)
 {
     cJSON *message = cJSON_CreateObject();
     cJSON_AddStringToObject(message, "type", "response");
@@ -40,10 +40,24 @@ bool dap_respond(DapPeer *peer, const cJSON *request, bool success,
                             request_seq != NULL ? request_seq->valuedouble : 0);
     cJSON_AddBoolToObject(message, "success", success);
     cJSON_AddStringToObject(message, "command", dap_command(request));
+    if (why != NULL) {
+        cJSON_AddStringToObject(message, "message", why);
+    }
     if (body != NULL) {
         cJSON_AddItemToObject(message, "body", body);
     }
     return send_message(peer, message);
+}
+
+bool dap_respond(DapPeer *peer, const cJSON *request, bool success,
+                 cJSON *body)
+{
+    return send_response(peer, request, success, body, NULL);
+}
+
+bool dap_fail(DapPeer *peer, const cJSON *request, const char *message)
+{
+    return send_response(peer, request, false, NULL, message);
 }
 
 bool dap_event(DapPeer *peer, const char *event, cJSON *body)

@@ -258,4 +258,17 @@ struct LhatMachine {
 
 typedef struct LhatMachine Machine;
 
+// 09 の 3.5: runs `closure` -- one that declares no parameters -- on a frame
+// of its own above everything standing, with `seed` values laid into its
+// first registers before it starts. What a debugger's evaluation runs on:
+// the seeded slots are a stopped frame's names, copied in (debug.c).
+//
+// Unlike everywhere else a fault does NOT leave its frames standing: an
+// evaluation is nobody's run to read a traceback off, and the machine has a
+// paused program to go back to -- so they are closed over and dropped, and
+// no fault stays recorded. Defined in vm.c, which owns the loop.
+LhatRunResult lhat_machine_run_seeded(Machine *machine,
+                                      const LhatClosure *closure,
+                                      const LhatValue *seed, size_t count);
+
 #endif  // LHAT_MACHINE_H
