@@ -242,3 +242,43 @@ bool lhat_frame_upvalue(const LhatMachine *machine, size_t level,
     out->value = place != NULL ? lhat_ref_get(place->location) : lhat_nil();
     return true;
 }
+
+bool lhat_frame_set_local(LhatMachine *machine, size_t level, size_t index,
+                          LhatValue value)
+{
+    size_t at = 0;
+    const Frame *frame = frame_at(machine, level, &at);
+    const LhatLocalDesc *local = NULL;
+    if (frame == NULL || frame->closure == NULL || lhat_is_hostvalue(value) ||
+        live_locals(frame->closure->proto, at, index, &local) <= index ||
+        local->width > 1) {
+        return false;
+    }
+    size_t slot = frame->base + local->reg;
+    if (lhat_is_hostvalue(lhat_slots_get(machine->slots, slot))) {
+        return false;  // a one-slot head of a wider layout, all the same
+    }
+    // No barrier: a register is a root the collector reads again from
+    // scratch before it sweeps (gc.c's atomic), exactly because the program
+    // writes registers without one.
+    lhat_slots_set(machine->slots, slot, value);
+    return true;
+}
+
+bool lhat_frame_set_upvalue(LhatMachine *machine, size_t level, size_t index,
+                            LhatValue value)
+{
+    size_t at = 0;
+    const Frame *frame = frame_at(machine, level, &at);
+    if (frame == NULL || frame->closure == NULL || lhat_is_hostvalue(value) ||
+        index >= frame->closure->upvalue_count ||
+        frame->closure->upvalues[index] == NULL) {
+        return false;
+    }
+    LhatUpvalue *place = frame->closure->upvalues[index];
+    lhat_ref_set(place->location, value);
+    // As at SETUPVAL: the place may be an object a closed cycle's marking
+    // already looked at, or one it has not seen.
+    lhat_gc_barrier(machine, (LhatObject *)place, value);
+    return true;
+}

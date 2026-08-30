@@ -68,6 +68,22 @@ size_t lhat_frame_upvalue_count(const LhatMachine *machine, size_t level);
 bool lhat_frame_upvalue(const LhatMachine *machine, size_t level,
                         size_t index, LhatBindingInfo *out);
 
+// 3.4: writes one binding of a frame -- the debugger's privilege, standing
+// outside anything the checker promised about the program. `index` counts
+// the same bindings the readers above answer. The machine stays memory safe
+// whatever ordinary value is written (a register holds any tagged value),
+// but a value the body's written types did not expect can surface later as
+// the runtime type error it then is.
+//
+// Refused -- false, nothing written -- when the level or index names
+// nothing, or when the binding or the value is a host value: those are raw
+// slots of a registered width (05 の 8.9), and writing across that layout
+// is the one thing that would not be safe.
+bool lhat_frame_set_local(LhatMachine *machine, size_t level, size_t index,
+                          LhatValue value);
+bool lhat_frame_set_upvalue(LhatMachine *machine, size_t level, size_t index,
+                            LhatValue value);
+
 #ifdef __cplusplus
 }
 #endif

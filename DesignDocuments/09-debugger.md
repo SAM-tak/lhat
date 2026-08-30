@@ -154,6 +154,28 @@ bool   lhat_frame_upvalue(const LhatMachine *, size_t level, size_t index, LhatB
 `lhat_value_text`、テーブルの展開は公開の `LhatTable`（配列部・エントリ部・
 `definition`）で足りる。新しい値の API は要らない。
 
+### 3.4 束縛の書き換え
+
+```c
+bool lhat_frame_set_local(LhatMachine *, size_t level, size_t index, LhatValue);
+bool lhat_frame_set_upvalue(LhatMachine *, size_t level, size_t index, LhatValue);
+```
+
+読みと同じ番号で、その束縛へ値を書く。**検査器が約束したことの外にある、
+デバッガの特権**である——機械はどの普通の値を書かれてもメモリ安全のまま
+（レジスタはタグ付きの値なら何でも持てる）だが、本体の書いた型が予期しない
+値は、後でそのとおりの実行時型エラーとして現れうる。これは 03 §4.2 の安全性の
+線——SEGV は不可、型エラーでの停止は許容——の内側にある。
+
+拒否される（false、何も書かれない）のは、level や index が何も指さないとき、
+そして**束縛か値がホスト値のとき**。ホスト値は登録された幅の生スロット
+（05 §8.9）で、そのレイアウトをまたいで書くことだけが安全でない。
+
+GC との折り合い: レジスタへの書きにバリアは要らない（収集器は掃引の前に
+ルートを読み直す——gc.c の atomic）。捕捉への書きは `SETUPVAL` 命令と同じ
+バリアを敷く。テーブルのメンバへの書きは既存の `lhat_machine_table_set`
+（バリア込み）で行う。
+
 ## 4. コンパイラが残す表
 
 `LhatProto` は行の表（命令ごとの行）に加えて、レジスタの名前の表を持つ。
@@ -206,8 +228,13 @@ response / event の三種で、`lsp/rpc.c` の固定した `jsonrpc` ではな�
 
 対応する要求（v1）: initialize, launch, attach, setBreakpoints（行はすべて
 `verified` 固定）, configurationDone, threads, stackTrace, scopes, variables,
-continue, next, stepIn, stepOut, pause, disconnect, terminate。イベント:
-initialized, stopped, terminated, exited。
+setVariable, continue, next, stepIn, stepOut, pause, disconnect, terminate。
+イベント: initialized, stopped, terminated, exited。
+
+- **setVariable**——パネルが打った文字列を L^ の綴りで読む（`nil^` /
+  `true^` / `false^` / 数 / 引用符の文字列。式は D1）。行き先は名前で引き、
+  影があれば内側——読みがパネルに並べたのと同じ規則。テーブルのメンバは
+  数だけの名前を列の鍵、それ以外を文字列の鍵として書き戻す。
 
 `dap/` は `src/` の何も名指ししない——デバッガは `lhat.h` の公開面だけで動く。
 
@@ -230,7 +257,7 @@ API で埋まる。詳細は別リポジトリの godot バインディングに
 
 | 番号 | 内容 |
 | --- | --- |
-| D1 | 変数の書き換え（`setVariable`）と式の評価（`evaluate`）。v1 は読み取りのみ |
+| D1 | 式の評価（`evaluate`）。停止中フレームのローカルが見える状態で式をコンパイル・実行する。`setVariable` の値もそれまで綴りの直読み（§5） |
 | D2 | `output` イベント（スクリプトの出力をコンソールへ）。v1 は起動側が捕まえる |
 | D3 | `pause` の待ち時間。ホスト関数の中では効かない。受信スレッドを置く案 |
 | D4 | 列（column）の情報。行の表に列は無い |
@@ -242,3 +269,4 @@ API で埋まる。詳細は別リポジトリの godot バインディングに
 ## 改定履歴（要約）
 
 - 新設。行フック・束縛の内観・コンパイラの名前の表・DAP アダプタ・Godot 連携。
+- 束縛の書き換え（§3.4）と `setVariable` を追加。D1 は式の評価だけ残る。

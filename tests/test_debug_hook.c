@@ -410,11 +410,162 @@ static void test_frame_reading(void)
     }
 }
 
+// A write to make at one line: the binding called `name` (a local, or a
+// capture) gets `value` -- or a string made on the spot when `make_text` is
+// set, since a string needs the machine the hook is handed.
+typedef struct {
+    uint32_t at_line;
+    const char *name;
+    LhatValue value;
+    const char *make_text;
+    bool capture;
+    bool done;
+    bool wrote;
+} Poke;
+
+static void poke_hook(LhatMachine *machine, void *context,
+                      LhatDebugEvent event, const LhatFrameInfo *where)
+{
+    Poke *p = (Poke *)context;
+    (void)event;
+    if (p->done || where->line != p->at_line) {
+        return;
+    }
+    p->done = true;
+    if (p->make_text != NULL) {
+        LHAT_CHECK(lhat_machine_make_string(machine, p->make_text,
+                                            strlen(p->make_text), &p->value),
+                   "a string to write");
+    }
+    size_t count = p->capture ? lhat_frame_upvalue_count(machine, 0)
+                              : lhat_frame_local_count(machine, 0);
+    size_t found = SIZE_MAX;
+    for (size_t i = 0; i < count; i++) {
+        LhatBindingInfo binding;
+        bool read = p->capture ? lhat_frame_upvalue(machine, 0, i, &binding)
+                               : lhat_frame_local(machine, 0, i, &binding);
+        if (read && strcmp(binding.name, p->name) == 0) {
+            found = i;  // the later of two under one name is the inner
+        }
+    }
+    LHAT_CHECK(found != SIZE_MAX, "the binding to write is live");
+    p->wrote = p->capture
+                   ? lhat_frame_set_upvalue(machine, 0, found, p->value)
+                   : lhat_frame_set_local(machine, 0, found, p->value);
+    // And what a write must refuse: a level or index that names nothing.
+    LHAT_CHECK(!lhat_frame_set_local(machine, 0, count + 50, p->value),
+               "an index past the live bindings is refused");
+    LHAT_CHECK(!lhat_frame_set_local(machine, 99, 0, p->value),
+               "a level past the frames is refused");
+}
+
+static void run_poked(Run *r, Poke *p, const char *text)
+{
+    compile_text(r, text);
+    LHAT_CHECK_EQ_INT(r->compiled, LHAT_COMPILE_OK);
+    r->machine = lhat_machine_new();
+    lhat_machine_set_debug_hook(r->machine, poke_hook, p);
+    r->ran = lhat_run(r->machine, r->proto);
+    LHAT_CHECK(p->done && p->wrote, "the write happened");
+}
+
+static void test_writing(void)
+{
+    LHAT_TEST("a local written at a stop is what the program reads next");
+    {
+        Run r;
+        Poke p = {0};
+        p.at_line = 3;  // before `return^ y` runs
+        p.name = "y";
+        p.value = lhat_integer(41);
+        run_poked(&r, &p,
+                  "var^ f = f^ x:number^ -> number^ {\n"
+                  "    var^ y = x + 1\n"
+                  "    return^ y\n"
+                  "}\n"
+                  "return^ f(1)\n");
+        // Without the write this answers 2.
+        LHAT_CHECK_EQ_INT(lhat_as_integer(r.ran.value), 41);
+        run_dispose(&r);
+    }
+
+    LHAT_TEST("of two names alike, the write lands on the inner");
+    {
+        Run r;
+        Poke p = {0};
+        p.at_line = 5;
+        p.name = "a";
+        p.value = lhat_integer(50);
+        run_poked(&r, &p,
+                  "var^ g = f^ -> number^ {\n"
+                  "    var^ a = 1\n"
+                  "    if^ true^ {\n"
+                  "        var^ a = 2\n"
+                  "        return^ a\n"
+                  "    }\n"
+                  "    return^ a\n"
+                  "}\n"
+                  "return^ g()\n");
+        // The inner a was 2; the outer stays 1 and is never returned.
+        LHAT_CHECK_EQ_INT(lhat_as_integer(r.ran.value), 50);
+        run_dispose(&r);
+    }
+
+    LHAT_TEST("a capture written at a stop reaches the shared place");
+    {
+        Run r;
+        Poke p = {0};
+        p.at_line = 3;
+        p.name = "n";
+        p.capture = true;
+        p.value = lhat_integer(70);
+        run_poked(&r, &p,
+                  "var^ make = f^ n:number^ -> f^ -> number^; {\n"
+                  "    return^ f^ -> number^ {\n"
+                  "        var^ h = 0\n"
+                  "        return^ n + h\n"
+                  "    }\n"
+                  "}\n"
+                  "var^ get = make(7)\n"
+                  "return^ get()\n");
+        LHAT_CHECK_EQ_INT(lhat_as_integer(r.ran.value), 70);
+        run_dispose(&r);
+    }
+
+    LHAT_TEST("a string written at a stop survives the collector");
+    {
+        Run r;
+        Poke p = {0};
+        p.at_line = 4;  // the loop head, first time round
+        p.name = "s";
+        p.make_text = "fresh";
+        run_poked(&r, &p,
+                  "var^ f = f^ -> string^ {\n"
+                  "    var^ s = \"old\"\n"
+                  "    var^ i = 0\n"
+                  "    repeat^ 2000 {\n"
+                  "        var^ waste = { a := 1 }\n"
+                  "        i := i + 1\n"
+                  "    }\n"
+                  "    return^ s\n"
+                  "}\n"
+                  "return^ f()\n");
+        // 2000 tables of garbage ran whole cycles over the written string.
+        LHAT_CHECK(lhat_is_object_kind(r.ran.value, LHAT_OBJECT_STRING),
+                   "a string came back");
+        const LhatString *answered =
+            (const LhatString *)lhat_as_object(r.ran.value);
+        LHAT_CHECK_EQ_STR(answered->text, answered->length, "fresh");
+        run_dispose(&r);
+    }
+}
+
 int main(void)
 {
     test_line_events();
     test_coroutine_events();
     test_reentry();
     test_frame_reading();
+    test_writing();
     return lhat_test_report("test_debug_hook");
 }

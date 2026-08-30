@@ -355,6 +355,106 @@ static void variables(DapSession *s, const cJSON *arguments, cJSON *body)
     cJSON_AddItemToObject(body, "variables", list);
 }
 
+// What a debugger typed as a new value, read the way L^ spells values:
+// nil^, true^, false^, a number, or a quoted string (no escapes -- what the
+// panel edits are short values, D1 keeps expressions for later).
+static bool parse_value(DapSession *s, const char *text, LhatValue *out)
+{
+    while (*text == ' ') {
+        text++;
+    }
+    size_t length = strlen(text);
+    while (length > 0 && text[length - 1] == ' ') {
+        length--;
+    }
+    if (length == 4 && strncmp(text, "nil^", 4) == 0) {
+        *out = lhat_nil();
+        return true;
+    }
+    if (length == 5 && strncmp(text, "true^", 5) == 0) {
+        *out = lhat_bool(true);
+        return true;
+    }
+    if (length == 6 && strncmp(text, "false^", 6) == 0) {
+        *out = lhat_bool(false);
+        return true;
+    }
+    if (length >= 2 && text[0] == '"' && text[length - 1] == '"') {
+        return lhat_machine_make_string(s->machine, text + 1, length - 2, out);
+    }
+    char *end = NULL;
+    long long integer = strtoll(text, &end, 10);
+    if (end == text + length) {
+        *out = lhat_integer(integer);
+        return true;
+    }
+    double real = strtod(text, &end);
+    if (end == text + length && end != text) {
+        *out = lhat_real(real);
+        return true;
+    }
+    return false;
+}
+
+// A table member's key, back from the name a variables request rendered it
+// as: a whole number is the sequence key it was, anything else the string.
+static bool parse_key(DapSession *s, const char *name, LhatValue *out)
+{
+    char *end = NULL;
+    long long index = strtoll(name, &end, 10);
+    if (end != name && *end == '\0') {
+        *out = lhat_integer(index);
+        return true;
+    }
+    return lhat_machine_make_string(s->machine, name, strlen(name), out);
+}
+
+// Writes `value` where `reference` and `name` point: a member of a handed-out
+// table, or a frame scope's binding -- by name, the innermost when shadowed,
+// the same rule the read gave the panel its list under.
+static bool write_variable(DapSession *s, int reference, const char *name,
+                           LhatValue value)
+{
+    if (reference >= 1000) {
+        int index = reference - 1000;
+        if (index < 0 || (size_t)index >= s->var_count) {
+            return false;
+        }
+        LhatValue key;
+        bool refused = false;
+        return parse_key(s, name, &key) &&
+               lhat_machine_table_set(s->machine,
+                                      (LhatTable *)lhat_as_object(
+                                          s->vars[index]),
+                                      key, value, &refused) &&
+               !refused;
+    }
+    int level = (reference - 2) / 2;
+    bool captures = ((reference - 2) % 2) != 0;
+    size_t count =
+        captures ? lhat_frame_upvalue_count(s->machine, (size_t)level)
+                 : lhat_frame_local_count(s->machine, (size_t)level);
+    size_t found = SIZE_MAX;
+    for (size_t i = 0; i < count; i++) {
+        LhatBindingInfo binding;
+        bool read = captures
+                        ? lhat_frame_upvalue(s->machine, (size_t)level, i,
+                                             &binding)
+                        : lhat_frame_local(s->machine, (size_t)level, i,
+                                           &binding);
+        if (read && strcmp(binding.name, name) == 0) {
+            found = i;  // the later of two under one name is the inner
+        }
+    }
+    if (found == SIZE_MAX) {
+        return false;
+    }
+    return captures ? lhat_frame_set_upvalue(s->machine, (size_t)level, found,
+                                             value)
+                    : lhat_frame_set_local(s->machine, (size_t)level, found,
+                                           value);
+}
+
 // ---------------------------------------------------------------------------
 // Events
 
@@ -378,6 +478,7 @@ static DapAction dispatch(DapSession *s, const cJSON *request)
     if (strcmp(command, "initialize") == 0) {
         cJSON *body = cJSON_CreateObject();
         cJSON_AddBoolToObject(body, "supportsConfigurationDoneRequest", true);
+        cJSON_AddBoolToObject(body, "supportsSetVariable", true);
         dap_respond(&s->peer, request, true, body);
         dap_event(&s->peer, "initialized", NULL);
         return DAP_ACT_NONE;
@@ -432,6 +533,27 @@ static DapAction dispatch(DapSession *s, const cJSON *request)
         cJSON *body = cJSON_CreateObject();
         variables(s, arguments, body);
         dap_respond(&s->peer, request, true, body);
+        return DAP_ACT_NONE;
+    }
+    if (strcmp(command, "setVariable") == 0) {
+        const cJSON *reference =
+            cJSON_GetObjectItem(arguments, "variablesReference");
+        const cJSON *name = cJSON_GetObjectItem(arguments, "name");
+        const cJSON *text = cJSON_GetObjectItem(arguments, "value");
+        LhatValue value = lhat_nil();
+        bool wrote = cJSON_IsNumber(reference) && cJSON_IsString(name) &&
+                     cJSON_IsString(text) &&
+                     parse_value(s, text->valuestring, &value) &&
+                     write_variable(s, (int)reference->valuedouble,
+                                    name->valuestring, value);
+        cJSON *body = NULL;
+        if (wrote) {
+            body = cJSON_CreateObject();
+            char rendered[256];
+            lhat_value_text(value, rendered, sizeof rendered);
+            cJSON_AddStringToObject(body, "value", rendered);
+        }
+        dap_respond(&s->peer, request, wrote, body);
         return DAP_ACT_NONE;
     }
     if (strcmp(command, "continue") == 0) {
