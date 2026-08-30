@@ -361,6 +361,7 @@ const char *lhat_opcode_name(LhatOpcode op)
         case LHAT_BC_NEWTABLE:    return "newtable";
         case LHAT_BC_SEAL:        return "seal";
         case LHAT_BC_GETINDEX:    return "getindex";
+        case LHAT_BC_GETMEMBER:   return "getmember";
         case LHAT_BC_SETINDEX:    return "setindex";
         case LHAT_BC_CHECKRUN:    return "checkrun";
         case LHAT_BC_PACK:        return "pack";
