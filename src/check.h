@@ -38,6 +38,10 @@ typedef enum {
                                         // binary arithmetic goes through
                                         // 11.3's question instead (11.8)
     LHAT_CHECK_ERR_NOT_BOOL,            // a condition, and^ / or^ / '!'
+    LHAT_CHECK_ERR_MATCH_NOT_EXHAUSTIVE, // 17.5: an expression match left
+                                         // other^ out, and its arms do not
+                                         // provably cover the subject (only
+                                         // bool^ met both ways can)
     LHAT_CHECK_ERR_NOT_CALLABLE,
     LHAT_CHECK_ERR_FUNCTION_CALLS_PROCEDURE, // 15.1: f^ may call only f^;
                                               // this callee is a p^

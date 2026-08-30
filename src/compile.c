@@ -4581,12 +4581,14 @@ static void compile_expression(Compiler *c, const LhatNode *node, uint8_t into)
             // the value of the whole expression is wherever control lands.
             size_t leaving[LHAT_MAX_LOCALS];
             size_t leaving_count = 0;
+            bool defaulted = false;
 
             for (const LhatNode *clause = node->v.list.items; clause != NULL;
                  clause = clause->next) {
                 const LhatNode *condition = clause->v.clause.condition;
                 if (condition == NULL) {
                     compile_expression(c, clause->v.clause.body, into);
+                    defaulted = true;
                     break;
                 }
 
@@ -4601,6 +4603,20 @@ static void compile_expression(Compiler *c, const LhatNode *node, uint8_t into)
                     leaving[leaving_count++] = emit_jump(c, LHAT_BC_JUMP, 0);
                 }
                 lhat_chunk_patch_here(&c->proto->chunk, next);
+            }
+
+            // 02 の 17.5: an expression match may leave other^ out when the
+            // checker can show its arms exhaust the subject. What runs must
+            // not depend on whether checking ran (03 の 4.2), so the tail
+            // every arm missed is a panic rather than a silent nothing --
+            // the checker's proof is what makes it unreachable.
+            if (!defaulted) {
+                uint8_t mark = c->next_register;
+                uint8_t slot = reserve(c);
+                static const char missed[] = "no arm fit the value";
+                load_string_bytes(c, slot, missed, sizeof missed - 1);
+                emit(c, lhat_encode_abc(LHAT_BC_PANIC, slot, 0, 0));
+                c->next_register = mark;
             }
 
             for (size_t i = 0; i < leaving_count; i++) {

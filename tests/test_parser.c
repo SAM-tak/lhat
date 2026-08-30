@@ -2682,15 +2682,12 @@ static void test_patterns(void)
     }
     parse_dispose(&p);
 
-    // 17.5: no set of value patterns can show that the cases were exhausted,
-    // so the form that has to answer takes other^ whatever they are.
-    LHAT_TEST("the expression form without a default is reported");
+    // 17.5: whether a set of arms exhausts the subject is a fact about its
+    // type, so the demand for other^ moved to the checker -- the parser
+    // accepts the form and the compiler gives the missing arm a panic.
+    LHAT_TEST("the expression form without a default still parses");
     parse_text(&p, "var^ r = for^ x: when^ 0: 1 ;");
-    LHAT_CHECK_EQ_INT(error_count(&p), 1);
-    LHAT_CHECK(p.result.diagnostic_count > 0 &&
-                   p.result.diagnostics[0].code ==
-                       LHAT_PARSE_ERR_MATCH_NEEDS_OTHER,
-               "expected the missing-other diagnostic");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
     parse_dispose(&p);
 
     LHAT_TEST("but the statement form may leave it out");

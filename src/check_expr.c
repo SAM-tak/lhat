@@ -5490,6 +5490,70 @@ static LhatType *infer_node(Checker *c, const LhatNode *node)
             c->scope = &scope;
             chk_check_statements(c, node->v.loop.focus);
             LhatType *result = chk_infer(c, node->v.loop.body);
+
+            // 17.5: without other^ the arms must provably exhaust the
+            // subject, and bool^ met both ways is the one provable case --
+            // no other type's values can all be spelled out. What is looked
+            // for is exactly what 17.9 lowered a literal pattern to:
+            // `subject = true^` / `= false^`, possibly or^-ed together.
+            // Anything else -- a range, a fits^, another literal -- proves
+            // nothing. relaxed leaves the doubt to the run, where the arm
+            // nothing fits is a panic (03 の 3.1; compile.c's tail).
+            const LhatNode *chain = node->v.loop.body;
+            const LhatNode *clause =
+                chain != NULL && chain->kind == LHAT_NODE_IF_EXPR
+                    ? chain->v.list.items
+                    : NULL;
+            if (c->strict && node->v.loop.kind == LHAT_FOR_WHEN &&
+                clause != NULL) {
+                bool defaulted = false;
+                bool provable = true;
+                bool saw_true = false;
+                bool saw_false = false;
+                for (; clause != NULL; clause = clause->next) {
+                    const LhatNode *condition = clause->v.clause.condition;
+                    if (condition == NULL) {
+                        defaulted = true;
+                        break;
+                    }
+                    const LhatNode *stack[16];
+                    size_t top = 0;
+                    stack[top++] = condition;
+                    while (top > 0 && provable) {
+                        const LhatNode *cond = stack[--top];
+                        if (cond->kind == LHAT_NODE_BINARY &&
+                            cond->v.binary.op == LHAT_OP_OR &&
+                            top + 2 <= 16) {
+                            stack[top++] = cond->v.binary.left;
+                            stack[top++] = cond->v.binary.right;
+                            continue;
+                        }
+                        const char *name = NULL;
+                        size_t length = 0;
+                        if (cond->kind == LHAT_NODE_BINARY &&
+                            cond->v.binary.op == LHAT_OP_EQ &&
+                            chk_node_name(c, cond->v.binary.right, &name,
+                                          &length) &&
+                            (lhat_name_is(name, length, "true^") ||
+                             lhat_name_is(name, length, "false^"))) {
+                            saw_true = saw_true ||
+                                       lhat_name_is(name, length, "true^");
+                            saw_false = saw_false ||
+                                        lhat_name_is(name, length, "false^");
+                        } else {
+                            provable = false;
+                        }
+                    }
+                }
+                const LhatType *subject =
+                    scope.bindings != NULL ? scope.bindings->type : NULL;
+                if (!defaulted &&
+                    !(provable && saw_true && saw_false && subject != NULL &&
+                      subject->kind == LHAT_TYPE_BOOL)) {
+                    chk_report(c, node, LHAT_CHECK_ERR_MATCH_NOT_EXHAUSTIVE);
+                }
+            }
+
             c->scope = outer;
             chk_scope_dispose(&scope);
             return result;

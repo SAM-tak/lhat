@@ -3377,6 +3377,10 @@ const char *lhat_check_error_message(LhatCheckErrorCode code)
             return "arithmetic needs number^";
         case LHAT_CHECK_ERR_NOT_BOOL:
             return "this has to be bool^";
+        case LHAT_CHECK_ERR_MATCH_NOT_EXHAUSTIVE:
+            return "a match written as an expression answers in every case, "
+                   "and these arms do not cover every value the subject may "
+                   "hold; write 'other^: ...' before the ';'";
         case LHAT_CHECK_ERR_NOT_CALLABLE:
             return "this is not a function or a procedure";
         case LHAT_CHECK_ERR_FUNCTION_CALLS_PROCEDURE:

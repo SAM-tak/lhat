@@ -832,6 +832,52 @@ static void test_patterns(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
+    // 17.5: an expression match may leave other^ out only when the checker
+    // can show the arms exhaust the subject -- bool^ met both ways is the
+    // one provable case, since no other type's values can be spelled out.
+    LHAT_TEST("bool^ covered both ways needs no other^");
+    check_text(&u,
+               "var^ name = f^ b:bool^ -> string^ {\n"
+               "    for^ b: when^ true^: \"yes\" when^ false^: \"no\" ;\n"
+               "}\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("the unnamed subject proves the same way");
+    check_text(&u,
+               "var^ flip = f^ -> bool^ { return^ true^ }\n"
+               "var^ name = f^ -> string^ {\n"
+               "    for^ flip(): when^ true^: \"yes\" when^ false^: \"no\" ;\n"
+               "}\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("one bool^ arm is not exhaustive");
+    check_text(&u,
+               "var^ name = f^ b:bool^ -> string^ {\n"
+               "    for^ b: when^ true^: \"yes\" ;\n"
+               "}\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MATCH_NOT_EXHAUSTIVE);
+    unit_dispose(&u);
+
+    LHAT_TEST("value patterns over a number^ still take other^");
+    check_text(&u,
+               "var^ even = f^ n:number^ -> bool^ {\n"
+               "    for^ n % 2: when^ 0: true^ when^ 1: false^ ;\n"
+               "}\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MATCH_NOT_EXHAUSTIVE);
+    unit_dispose(&u);
+
+    // 03 の 3.1: what cannot be decided statically is relaxed's to leave to
+    // the run, where the arm nothing fits is a panic (compile.c's tail).
+    LHAT_TEST("relaxed leaves the missing arm to the run");
+    check_relaxed_text(&u,
+                       "var^ even = f^ n:number^ -> bool^ {\n"
+                       "    for^ n % 2: when^ 0: true^ when^ 1: false^ ;\n"
+                       "}\n");
+    CHECK_NOT_REPORTED(&u, LHAT_CHECK_ERR_MATCH_NOT_EXHAUSTIVE);
+    unit_dispose(&u);
+
     // 16.2 applies to every form of for^, not only to a match.
     LHAT_TEST("it^ is bound in a loop too");
     check_text(&u, "for^ 1 to^ 3 { var^ n : number^ = it^ }\n");

@@ -1191,6 +1191,26 @@ static void test_patterns(void)
     CHECK_INTEGER(&r, 20);
     run_dispose(&r);
 
+    // 17.5: a bool^ subject met both ways needs no other^, and what runs is
+    // the same either way; unchecked, the arm nothing fits is a panic
+    // rather than a silent nothing.
+    LHAT_TEST("a bool^ match without other^ answers both ways");
+    run_checked_text(&r,
+                     "var^ name = f^ b:bool^ -> string^ {\n"
+                     "    for^ b: when^ true^: \"y\" when^ false^: \"n\" ;\n"
+                     "}\n"
+                     "return^ name(true^) .. name(false^)\n");
+    CHECK_STRING(&r, "yn");
+    run_dispose(&r);
+
+    LHAT_TEST("unchecked, an arm nothing fits panics");
+    run_text(&r,
+             "var^ n = 5\n"
+             "var^ x = for^ n: when^ 0: 1 when^ 1: 2 ;\n"
+             "return^ x\n");
+    LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_PANIC);
+    run_dispose(&r);
+
     LHAT_TEST("other^ takes what is left");
     run_text(&r,
              "var^ n = 9\n"

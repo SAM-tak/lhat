@@ -3737,16 +3737,11 @@ static LhatNode *parse_when_clauses(Parser *p, const LhatToken *start,
 
     // 17.5: the statement form does nothing when the subject matches no
     // clause, so it may leave the default out. The expression form has to
-    // answer, and there is no way to show that a set of value patterns
-    // exhausted the cases -- so it takes other^ whatever the patterns are.
-    //
-    // No clause at all is the caller's LHAT_PARSE_ERR_FOR_NEEDS_CLAUSE, and
-    // that is the one to leave standing.
-    if (as_expression && head != NULL &&
-        (tail == NULL || tail->v.clause.condition != NULL)) {
-        report(p, &p->current, LHAT_PARSE_ERR_MATCH_NEEDS_OTHER);
-    }
-
+    // answer -- but whether a set of arms exhausts the subject is a fact
+    // about its type, which the checker knows and this parser does not, so
+    // the demand for other^ is the checker's (bool^ covered both ways is
+    // the one provable case). Compiled unchecked, the missing arm is a
+    // panic at run time (compile.c's tail).
     node->v.list.items = head;
     return finish(p, node);
 }
@@ -5004,10 +4999,6 @@ const char *lhat_parse_error_message(LhatParseErrorCode code)
         case LHAT_PARSE_ERR_IF_EXPR_NEEDS_ELSE:
             return "an if^ written as an expression answers in every case; "
                    "write 'el^: ...' before the ';', or the statement form "
-                   "with braces";
-        case LHAT_PARSE_ERR_MATCH_NEEDS_OTHER:
-            return "a match written as an expression answers in every case; "
-                   "write 'other^: ...' before the ';', or the statement form "
                    "with braces";
         case LHAT_PARSE_ERR_MATCH_OPENS_AFTER_SUBJECT:
             return "a match is opened by the ':' after its subject; write "

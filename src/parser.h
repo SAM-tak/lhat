@@ -92,7 +92,6 @@ typedef enum {
                                               // expression answers in every
                                               // case, so the last clause takes
                                               // no condition
-    LHAT_PARSE_ERR_MATCH_NEEDS_OTHER,         // 17.5: so does a match
     LHAT_PARSE_ERR_MATCH_OPENS_AFTER_SUBJECT, // 17.6: a match is opened by the
                                               // ':' after its subject, so its
                                               // clauses do not follow a 'do^:'
