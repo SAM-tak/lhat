@@ -170,6 +170,15 @@ struct LhatMachine {
     // middle of a collection is no place to run any.
     LhatCoroutine *pending_dispose;
 
+    // 02 の 10.7: how many suspended coroutines are carrying pending
+    // cleanups right now. The end-of-run collection exists only to find
+    // such a coroutine dropped too late for any other cycle -- when this
+    // is zero its answer is provably empty, so the run's last frame leaves
+    // without one. Raised where a yield^ stores a non-empty cleanup list,
+    // lowered where a suspended carrier is taken up again (resume or
+    // disposal -- the collector's queue goes through disposal too).
+    size_t cleanup_carriers;
+
     // 5.12: what the collector has reached and not yet looked into, threaded
     // through LhatObject.gclist. Empty except while a collection is running.
     LhatObject *gray;

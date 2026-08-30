@@ -1488,6 +1488,9 @@ static void enter_disposal_frame(Machine *m, LhatCoroutine *co,
     for (size_t i = 0; i < co->cleanup_count; i++) {
         called->cleanups[i] = co->cleanups[i];
     }
+    if (co->state == LHAT_COROUTINE_SUSPENDED && co->cleanup_count > 0) {
+        m->cleanup_carriers--;  // 10.7: its cleanups are the frame's now
+    }
     co->state = LHAT_COROUTINE_RUNNING;
 
     *frame = called;
@@ -2846,6 +2849,9 @@ static Frame *enter_resume_frame(Machine *m, LhatCoroutine *co,
     called->cleanup_count = co->cleanup_count;
     for (size_t i = 0; i < co->cleanup_count; i++) {
         called->cleanups[i] = co->cleanups[i];
+    }
+    if (resuming && co->cleanup_count > 0) {
+        m->cleanup_carriers--;  // 10.7: its cleanups are the frame's now
     }
     co->state = LHAT_COROUTINE_RUNNING;
     if (resuming) {
@@ -6405,6 +6411,9 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                 for (size_t i = 0; i < frame->cleanup_count; i++) {
                     co->cleanups[i] = frame->cleanups[i];
                 }
+                if (co->cleanup_count > 0) {
+                    m->cleanup_carriers++;  // 10.7: a suspended carrier
+                }
 
                 uint8_t into = frame->result;
                 // 13.8改: read before `frame` becomes the resumer below. The
@@ -7010,7 +7019,12 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
             // Once only (`end_swept`): a cleanup that drops something has
             // already had its own chance, and the end of a run must not be
             // something a program can go on extending.
-            if (m->frame_count == base_depth + 1 && !end_swept) {
+            // ... and only when a carrier exists at all. When no suspended
+            // coroutine holds pending cleanups the sweep's answer is
+            // provably empty, so the run ends without it -- a host calling
+            // in a loop pays nothing for a promise nothing is owed under.
+            if (m->frame_count == base_depth + 1 && !end_swept &&
+                m->cleanup_carriers != 0) {
                 end_swept = true;
                 lhat_gc_collect(m);
                 if (m->pending_dispose != NULL) {

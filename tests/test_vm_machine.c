@@ -594,7 +594,9 @@ static void test_collection(void)
     run_dispose(&r);
 
     // A cycle is unreachable but points at itself, so reference counting
-    // would keep it. Marking from the roots does not.
+    // would keep it. Marking from the roots does not. Asked
+    // with an explicit collection: 5.12改 gated the run's own final
+    // sweep, so this pins the marking, not the run's timing.
     LHAT_TEST("a cycle the program dropped is reclaimed");
     run_text(&r,
              "var^ n = 0\n"
@@ -605,6 +607,7 @@ static void test_collection(void)
              "  b.other := a\n"
              "  n := n + 1\n"
              "}\n"
+             "L^.collectgarbage()\n"
              "return^ n\n");
     CHECK_INTEGER(&r, 2000);
     LHAT_CHECK(r.ran.live < 500, "the cycles went");
