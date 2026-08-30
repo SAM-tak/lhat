@@ -4908,7 +4908,11 @@ const char *lhat_parse_error_message(LhatParseErrorCode code)
         case LHAT_PARSE_ERR_EXPECTED_TOKEN:
             return "expected a different token here";
         case LHAT_PARSE_ERR_BARE_EXPRESSION:
-            return "an expression on its own is not a statement";
+            // return^ is legal in every position this fires at (a unit's top
+            // level, a p^, an f^ with more than one statement), so the hint
+            // never points at something the writer cannot do.
+            return "an expression on its own is not a statement; "
+                   "did you mean return^?";
         case LHAT_PARSE_ERR_JUXTAPOSITION:
             return "arguments without parentheses are only accepted in command "
                    "mode; did you mean foo(1, 2, 3)?";
