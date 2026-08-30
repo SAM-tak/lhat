@@ -6835,11 +6835,17 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
         if (next_base + LHAT_MAX_REGISTERS >= LHAT_STACK_SLOTS) {
             return finish(m, chunk, LHAT_RUN_STACK_OVERFLOW, lhat_nil(), at);
         }
-        lhat_slots_set(m->slots, next_base + (0), R(b));
+        // Both operands are read before either slot of the new window is
+        // written: 03 の 5.1's forwarding reads an operand where it lies,
+        // and a destination that is itself a local puts the window right on
+        // top of one -- 's := s .. t' has t sitting at next_base.
+        LhatValue left_operand = R(b);
+        LhatValue right_operand = unary ? lhat_nil() : R(cc);
+        lhat_slots_set(m->slots, next_base + (0), left_operand);
         // 11.8改: a unary one declares self^ and nothing else, so the one
         // slot is the whole frame.
         if (!unary) {
-            lhat_slots_set(m->slots, next_base + (1), R(cc));
+            lhat_slots_set(m->slots, next_base + (1), right_operand);
         }
         clear_scratch(m, next_base, carried->proto);
 

@@ -3831,6 +3831,53 @@ static bool binary_opcode(LhatOpKind op, LhatOpcode *out)
     }
 }
 
+// The local a bare name would be read out of, when reading it is one MOVE
+// and nothing else -- what lets a binary operand be read in place. The
+// conditions mirror compile_expression's own path to resolve_name exactly:
+// a plain ident (16.2's focus included), or a hat name with one hat that is
+// not one of the five the case above recognises before it looks anything
+// up. find_local_to_read is the same search resolve_name makes, so a hit
+// here is precisely "the compile would have been emit_move_wide from this
+// register" -- width and all, since the machine reads an operand's width
+// off its head wherever it sits.
+static const Local *forwardable_local(Compiler *c, const LhatNode *node)
+{
+    const char *name = NULL;
+    size_t length = 0;
+    if (node == NULL ||
+        (node->kind != LHAT_NODE_IDENT && node->kind != LHAT_NODE_FOCUS &&
+         node->kind != LHAT_NODE_HAT_IDENT) ||
+        !node_name(c, node, &name, &length)) {
+        return NULL;
+    }
+    if (node->kind == LHAT_NODE_HAT_IDENT &&
+        (node->v.name.hats > 1 || name_is(name, length, "true^") ||
+         name_is(name, length, "false^") || name_is(name, length, "nil^") ||
+         name_is(name, length, "this^") || name_is(name, length, "L^"))) {
+        return NULL;
+    }
+    return find_local_to_read(c, name, length);
+}
+
+// Whether evaluating this node writes no local: a name or a literal. What
+// makes it safe to read the left operand in place after it.
+static bool runs_nothing(Compiler *c, const LhatNode *node)
+{
+    if (node == NULL) {
+        return false;
+    }
+    if (node->kind == LHAT_NODE_INT || node->kind == LHAT_NODE_FLOAT ||
+        node->kind == LHAT_NODE_STRING) {
+        return true;
+    }
+    const char *name = NULL;
+    size_t length = 0;
+    return node->kind == LHAT_NODE_HAT_IDENT && node->v.name.hats == 1 &&
+           node_name(c, node, &name, &length) &&
+           (name_is(name, length, "true^") ||
+            name_is(name, length, "false^") || name_is(name, length, "nil^"));
+}
+
 static void compile_binary(Compiler *c, const LhatNode *node, uint8_t into)
 {
     LhatOpKind op = node->v.binary.op;
@@ -3905,11 +3952,31 @@ static void compile_binary(Compiler *c, const LhatNode *node, uint8_t into)
     // that width off the head, so the instruction still names one register
     // per operand. The answer may be wide too (a registered "+"), which the
     // machine writes whole at `into` -- reserved by this node's own caller.
+    //
+    // 03 の 5.1: an operand that is a bare name is read where it lies
+    // rather than MOVEd into scratch -- the staging copies were most of a
+    // loop body's instructions. The right side always may (nothing runs
+    // between its evaluation and the instruction); the left only when
+    // evaluating the right can write no local -- a call reaches any of
+    // them through a capture, so the left forwards only past a right that
+    // runs nothing (a name, a literal).
     uint8_t mark = c->next_register;
-    uint8_t left = reserve_for(c, node->v.binary.left);
-    uint8_t right = reserve_for(c, node->v.binary.right);
-    compile_expression(c, node->v.binary.left, left);
-    compile_expression(c, node->v.binary.right, right);
+    const Local *left_home = forwardable_local(c, node->v.binary.left);
+    const Local *right_home = forwardable_local(c, node->v.binary.right);
+    if (left_home != NULL && right_home == NULL &&
+        !runs_nothing(c, node->v.binary.right)) {
+        left_home = NULL;
+    }
+    uint8_t left = left_home != NULL ? left_home->reg
+                                     : reserve_for(c, node->v.binary.left);
+    uint8_t right = right_home != NULL ? right_home->reg
+                                       : reserve_for(c, node->v.binary.right);
+    if (left_home == NULL) {
+        compile_expression(c, node->v.binary.left, left);
+    }
+    if (right_home == NULL) {
+        compile_expression(c, node->v.binary.right, right);
+    }
     emit(c, lhat_encode_abc(opcode, into, left, right));
     c->next_register = mark;
 }
