@@ -334,6 +334,10 @@ const char *lhat_opcode_name(LhatOpcode op)
         case LHAT_BC_IDIV:        return "idiv";
         case LHAT_BC_MOD:         return "mod";
         case LHAT_BC_POW:         return "pow";
+        case LHAT_BC_ADDK:        return "addk";
+        case LHAT_BC_SUBK:        return "subk";
+        case LHAT_BC_MULK:        return "mulk";
+        case LHAT_BC_DIVK:        return "divk";
         case LHAT_BC_CONCAT:      return "concat";
         case LHAT_BC_NEG:         return "neg";
         case LHAT_BC_NOT:         return "not";
@@ -405,6 +409,13 @@ void lhat_chunk_print(const LhatChunk *chunk, size_t index, char *out,
     switch (op) {
         case LHAT_BC_LOADK:
             snprintf(out, size, "%-10s r%u k%u", name, lhat_a(i), lhat_bx(i));
+            break;
+        case LHAT_BC_ADDK:
+        case LHAT_BC_SUBK:
+        case LHAT_BC_MULK:
+        case LHAT_BC_DIVK:
+            snprintf(out, size, "%-10s r%u r%u k%u", name, lhat_a(i),
+                     lhat_b(i), lhat_c(i));
             break;
         case LHAT_BC_UNIT:
             snprintf(out, size, "%-10s r%u u%u", name, lhat_a(i), lhat_bx(i));

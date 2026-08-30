@@ -3498,6 +3498,9 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
         // when one did. `op` becomes SPACESHIP there -- that is the member to
         // look for -- and this is what the answer gets read against zero with.
         LhatOpcode derive_from = LHAT_FRAME_NO_DERIVE;
+        // Whether call_operator's right operand is K[cc] rather than R(cc)
+        // -- set only by the ADDK family's fallback below.
+        bool k_right = false;
         // 03 の 5.1改: what GETINDEX and GETMEMBER share. Declared out here
         // because the second jumps into the first's body having settled them
         // -- the key it asks by, and the cache to fill on the way out (NULL
@@ -3550,6 +3553,29 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                      !lhat_is_hostvalue(R(b)) && !lhat_is_hostvalue(R(cc)))) {
                     return finish(m, chunk, status, lhat_nil(), at);
                 }
+                goto call_operator;
+            }
+
+            // The same four with the right operand a constant. A constant is
+            // a number by construction (compile.c emits these for numeric
+            // literals alone), so only the left can carry an operator.
+            case LHAT_BC_ADDK:
+            case LHAT_BC_SUBK:
+            case LHAT_BC_MULK:
+            case LHAT_BC_DIVK: {
+                LhatValue out;
+                LhatRunStatus status = LHAT_RUN_OK;
+                op = (LhatOpcode)(op - LHAT_BC_ADDK + LHAT_BC_ADD);
+                if (arithmetic(op, R(b), chunk->constants[cc], &out,
+                               &status)) {
+                    SET_R(a, out);
+                    break;
+                }
+                if (status != LHAT_RUN_TYPE_ERROR ||
+                    (table_of(R(b)) == NULL && !lhat_is_hostvalue(R(b)))) {
+                    return finish(m, chunk, status, lhat_nil(), at);
+                }
+                k_right = true;
                 goto call_operator;
             }
 
@@ -6667,6 +6693,13 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
         // never wrote one.
         bool unary = op == LHAT_BC_NEG;
         uint8_t given = unary ? 0 : 1;
+        // The right operand as a value: K[cc] when the ADDK family fell
+        // through to here, R(cc) otherwise. A constant is never a host
+        // value, so every branch below that wants a pointer aimed into the
+        // stack (hostvalue_argument) already excludes it by asking the tag.
+        LhatValue rhs = unary            ? lhat_nil()
+                        : k_right        ? chunk->constants[cc]
+                                         : R(cc);
         LhatValue found = lhat_nil();
         OperatorLookup answer = OPERATOR_ABSENT;
         for (;;) {
@@ -6674,9 +6707,8 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
             const char *name = operator_name(op, &length);
             // 14.4 makes an operator a method: the left operand is the
             // receiver and the right one the single argument.
-            answer = operator_candidate(m, R(b), name, length, R(b),
-                                        unary ? lhat_nil() : R(cc), given,
-                                        false, &found);
+            answer = operator_candidate(m, R(b), name, length, R(b), rhs,
+                                        given, false, &found);
             // 11.3改: the left carries nothing that takes this right
             // operand, so the right one is asked whether it was written as
             // the receiver instead. This is what lets a value join an
@@ -6689,7 +6721,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                 (answer == OPERATOR_ABSENT || answer == OPERATOR_NO_CANDIDATE)) {
                 LhatValue other = lhat_nil();
                 OperatorLookup right = operator_candidate(
-                    m, R(cc), name, length, R(cc), R(b), given, true, &other);
+                    m, rhs, name, length, rhs, R(b), given, true, &other);
                 if (right == OPERATOR_PICKED || right == OPERATOR_NO_MEMORY) {
                     found = other;
                     answer = right;
@@ -6720,14 +6752,14 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
         if (answer != OPERATOR_PICKED &&
             (derive_from == LHAT_BC_EQ || derive_from == LHAT_BC_NE)) {
             bool equal;
-            if (lhat_is_hostvalue(R(b)) || lhat_is_hostvalue(R(cc))) {
+            if (lhat_is_hostvalue(R(b)) || lhat_is_hostvalue(rhs)) {
                 // 05 の 8.9: the bytes under the same tag. Reading the heads
                 // alone would call two same-typed values equal whatever they
                 // hold.
                 equal = lhat_is_hostvalue(R(b)) &&
                         hostvalue_equal(m->slots, rbase + b, rbase + cc);
             } else {
-                equal = lhat_value_equal(R(b), R(cc));
+                equal = lhat_value_equal(R(b), rhs);
             }
             SET_R(a, lhat_bool(equal == (derive_from == LHAT_BC_EQ)));
             continue;  // the label sits in the loop, not in the switch
@@ -6748,9 +6780,9 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                               ? hostvalue_argument(m->slots, rbase + b)
                               : R(b);
             if (!unary) {
-                operands[1] = lhat_is_hostvalue(R(cc))
+                operands[1] = lhat_is_hostvalue(rhs)
                                   ? hostvalue_argument(m->slots, rbase + cc)
-                                  : R(cc);
+                                  : rhs;
             }
             frame->pc = pc;  // 11.6改, as at a CALL
             size_t frames_before = m->frame_count;
@@ -6840,7 +6872,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
         // and a destination that is itself a local puts the window right on
         // top of one -- 's := s .. t' has t sitting at next_base.
         LhatValue left_operand = R(b);
-        LhatValue right_operand = unary ? lhat_nil() : R(cc);
+        LhatValue right_operand = rhs;
         lhat_slots_set(m->slots, next_base + (0), left_operand);
         // 11.8改: a unary one declares self^ and nothing else, so the one
         // slot is the whole frame.

@@ -3960,6 +3960,38 @@ static void compile_binary(Compiler *c, const LhatNode *node, uint8_t into)
     // evaluating the right can write no local -- a call reaches any of
     // them through a capture, so the left forwards only past a right that
     // runs nothing (a name, a literal).
+    // 03 の 5.1: the four common operations with a numeric literal on the
+    // right fold the constant into the instruction -- `i + 1` was a LOADK
+    // re-run every turn of a loop. The operator fallback still works: the
+    // machine's ADDK family carries the constant to call_operator itself.
+    const LhatNode *right_node = node->v.binary.right;
+    if ((opcode == LHAT_BC_ADD || opcode == LHAT_BC_SUB ||
+         opcode == LHAT_BC_MUL || opcode == LHAT_BC_DIV) &&
+        right_node != NULL &&
+        (right_node->kind == LHAT_NODE_INT ||
+         right_node->kind == LHAT_NODE_FLOAT)) {
+        LhatValue constant =
+            right_node->kind == LHAT_NODE_INT
+                ? lhat_integer((int64_t)right_node->v.integer.value)
+                : lhat_real(right_node->v.real);
+        size_t k = lhat_chunk_constant(&c->proto->chunk, constant);
+        if (k != SIZE_MAX && k <= 0xFF) {
+            uint8_t kmark = c->next_register;
+            const Local *home = forwardable_local(c, node->v.binary.left);
+            uint8_t left_at = home != NULL
+                                  ? home->reg
+                                  : reserve_for(c, node->v.binary.left);
+            if (home == NULL) {
+                compile_expression(c, node->v.binary.left, left_at);
+            }
+            emit(c, lhat_encode_abc(
+                        (LhatOpcode)(opcode - LHAT_BC_ADD + LHAT_BC_ADDK),
+                        into, left_at, (uint8_t)k));
+            c->next_register = kmark;
+            return;
+        }
+    }
+
     uint8_t mark = c->next_register;
     const Local *left_home = forwardable_local(c, node->v.binary.left);
     const Local *right_home = forwardable_local(c, node->v.binary.right);
@@ -6280,11 +6312,17 @@ static void compile_loop(Compiler *c, const LhatNode *node)
     } else if (numeric != NULL) {
         compile_numeric_advance(c, node, numeric, numeric_step);
     } else if (!is_for && node->v.repeat.kind == LHAT_REPEAT_COUNT) {
-        uint8_t mark = c->next_register;
-        uint8_t one = reserve(c);
-        load_constant(c, one, lhat_integer(1));
-        emit(c, lhat_encode_abc(LHAT_BC_ADD, counter, counter, one));
-        c->next_register = mark;
+        size_t k = lhat_chunk_constant(&c->proto->chunk, lhat_integer(1));
+        if (k != SIZE_MAX && k <= 0xFF) {
+            emit(c, lhat_encode_abc(LHAT_BC_ADDK, counter, counter,
+                                    (uint8_t)k));
+        } else {
+            uint8_t mark = c->next_register;
+            uint8_t one = reserve(c);
+            load_constant(c, one, lhat_integer(1));
+            emit(c, lhat_encode_abc(LHAT_BC_ADD, counter, counter, one));
+            c->next_register = mark;
+        }
     }
 
     // Backwards, so lhat_chunk_patch_here -- which only ever aims at the end

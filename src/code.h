@@ -42,6 +42,14 @@ typedef enum {
     LHAT_BC_IDIV,       // 04 の 11.2: fails on zero
     LHAT_BC_MOD,        // the same
     LHAT_BC_POW,
+    // 03 の 5.1, measured first: the four common ones again with the right
+    // operand a constant. A loop's `i + 1` was a LOADK re-run every turn,
+    // and these fold it into the instruction. The block stays contiguous
+    // and in ADD's order, so compile.c maps by offset.
+    LHAT_BC_ADDK,       // A B C R[A] = R[B] + K[C]
+    LHAT_BC_SUBK,
+    LHAT_BC_MULK,
+    LHAT_BC_DIVK,
     LHAT_BC_CONCAT,     // A B C R[A] = R[B] .. R[C]  (02 の 11.2)
     LHAT_BC_NEG,        // A B   R[A] = -R[B]
     LHAT_BC_NOT,        // A B   R[A] = !R[B]
