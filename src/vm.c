@@ -7602,6 +7602,38 @@ size_t lhat_machine_pending_disposals(const LhatMachine *machine)
     return machine != NULL ? waiting_disposals((const Machine *)machine) : 0;
 }
 
+bool lhat_machine_holds_body(const LhatMachine *machine,
+                             const LhatProto *const *bodies, size_t count)
+{
+    if (machine == NULL || bodies == NULL || count == 0) {
+        return false;
+    }
+    // The heap's chain holds every object the machine has, live or not yet
+    // swept -- which is why the collector goes first (vm.h). Closures name
+    // their body outright; a coroutine names it through the closure it was
+    // suspended in (a host walk has none). Everything else holds no body.
+    for (const LhatObject *object = machine->objects.objects; object != NULL;
+         object = object->next) {
+        const LhatProto *proto = NULL;
+        if (object->kind == LHAT_OBJECT_SUBROUTINE) {
+            proto = ((const LhatClosure *)object)->proto;
+        } else if (object->kind == LHAT_OBJECT_COROUTINE) {
+            const LhatCoroutine *coroutine = (const LhatCoroutine *)object;
+            proto =
+                coroutine->closure != NULL ? coroutine->closure->proto : NULL;
+        }
+        if (proto == NULL) {
+            continue;
+        }
+        for (size_t i = 0; i < count; i++) {
+            if (bodies[i] == proto) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
 LhatRunResult lhat_machine_call_member(LhatMachine *machine,
                                        LhatValue receiver, const char *name,
                                        size_t length,

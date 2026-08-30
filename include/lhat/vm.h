@@ -167,6 +167,16 @@ size_t lhat_machine_collectgarbage(LhatMachine *machine);
 // run: a waiting one still holds the closure it was suspended in.
 size_t lhat_machine_pending_disposals(const LhatMachine *machine);
 
+// 05 の 5.7: whether anything on the machine's heap still runs one of
+// `bodies` -- a closure of one, or a coroutine suspended in one. The nested
+// bodies of a unit are the caller's to include; lhat_reload flattens them.
+//
+// Ask after lhat_machine_collectgarbage, when the heap holds only what is
+// reachable. Asked before one, a dropped closure not yet swept still
+// answers true -- which errs the only safe way there is.
+bool lhat_machine_holds_body(const LhatMachine *machine,
+                             const LhatProto *const *bodies, size_t count);
+
 // 02 の 14.16: what typeof^ answers, asked from C. The same reading, so a
 // host and a program never learn different things about one value.
 //

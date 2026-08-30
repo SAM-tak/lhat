@@ -37,6 +37,16 @@
 //
 // The machine is made after compiling only because nothing needs it earlier;
 // lhat_machine_new() takes no arguments and may be called whenever.
+//
+// When a unit's text changes under machines already running -- an editor's
+// save -- the whole of 05 の 5.7 is one call:
+//
+//     lhat_reload(&program, "lib.lh", machines, machine_count);
+//
+// It invalidates, forgets the unit on each machine, rechecks, recompiles,
+// and frees the retired bodies only once it has seen that no machine still
+// holds a closure of one. The parts stay public for a host that wants the
+// timing in its own hands.
 
 #ifndef LHAT_H
 #define LHAT_H

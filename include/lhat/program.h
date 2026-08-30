@@ -145,6 +145,27 @@ void lhat_program_discard_retired(LhatProgram *program);
 // How many are waiting, so a host can tell whether a pass is worth taking.
 size_t lhat_program_retired_count(const LhatProgram *program);
 
+// 05 の 5.7, whole: the one call an editor's save becomes. Invalidates
+// `path`, forgets every retired unit's module on every machine handed in,
+// rechecks every retired unit (the requirers too -- a shell left staled
+// would be a NULL proto to whoever runs it) and recompiles -- and then,
+// instead of trusting anyone about
+// the old bodies, asks: after a collection on each machine, does any still
+// hold a closure or suspended coroutine of a retired body (nested ones
+// included), or a cleanup not yet run? Only when none does are the retired
+// bodies discarded. A held body is simply kept for the next reload -- the
+// same waiting a host that never discards pays, never worse.
+//
+// `machines` is every machine the program was installed on -- the program
+// keeps no list of its own (8.7 has registration done before anything
+// runs, and a list written to at machine birth would end that). Answers as
+// lhat_program_invalidate does: how many units retired, 0 for text that
+// reads as it did, SIZE_MAX for a path no unit sits at. When the reread no
+// longer checks or compiles, the old world keeps running, the diagnostics
+// say why, and the next save tries again.
+size_t lhat_reload(LhatProgram *program, const char *path,
+                   LhatMachine *const *machines, size_t machine_count);
+
 // 05 の 5.6: a script brought in while the program runs -- what std.load
 // is built on. The text is checked and compiled as a unit of its own and
 // then forgotten: what it requires joins the program as any unit does

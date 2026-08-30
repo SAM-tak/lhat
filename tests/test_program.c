@@ -4683,6 +4683,85 @@ static void test_where_a_published_member_was_written(void)
 }
 #endif
 
+// 05 の 5.7, bundled: lhat_reload is what an editor's save becomes --
+// invalidate, forget on every machine handed in, recheck, recompile, and
+// the retired bodies discarded only once no machine still holds one. What
+// is pinned: the discard happens by itself when nothing holds, waits when
+// something does, and what still runs keeps running either way.
+static void test_reload_call(void)
+{
+    LhatProgram program;
+    Disk disk;
+    static File live[] = {
+        {"lib.lh", NULL},
+        {"main.lh",
+         "require^ \"lib.lh\"\n"
+         "return^ ns.lib.answer\n"},
+    };
+
+    LHAT_TEST("one call replaces a unit, on every machine, and frees");
+    {
+        live[0].text = "module^ ns.lib\n"
+                       "public^ let^ answer = f^ -> number^ { return^ 1 }\n";
+        program_with(&program, &disk, live, 2);
+        const LhatUnit *root = lhat_program_check(&program, "main.lh");
+        LHAT_CHECK(root != NULL && lhat_program_compile(&program), "built");
+        LhatMachine *one = lhat_machine_new();
+        LhatMachine *two = lhat_machine_new();
+        LhatMachine *machines[2] = {one, two};
+        LhatValue first = lhat_run(one, lhat_unit_proto(root)).value;
+        LHAT_CHECK_EQ_INT(
+            lhat_as_integer(lhat_machine_call(one, first, NULL, 0).value), 1);
+        lhat_run(two, lhat_unit_proto(root));
+
+        // Nothing but L^.modules holds the old world, so the one call
+        // replaces it everywhere and the retired bodies go on the spot.
+        live[0].text = "module^ ns.lib\n"
+                       "public^ let^ answer = f^ -> number^ { return^ 2 }\n";
+        LHAT_CHECK_EQ_INT(lhat_reload(&program, "lib.lh", machines, 2), 2);
+        LHAT_CHECK_EQ_INT(lhat_program_retired_count(&program), 0);
+        LhatValue keep = lhat_run(two, lhat_unit_proto(root)).value;
+        LHAT_CHECK_EQ_INT(
+            lhat_as_integer(lhat_machine_call(two, keep, NULL, 0).value), 2);
+        LHAT_CHECK_EQ_INT(
+            lhat_as_integer(
+                lhat_machine_call(
+                    one, lhat_run(one, lhat_unit_proto(root)).value, NULL, 0)
+                    .value),
+            2);
+
+        // A host still holding an old closure -- on one machine of the two
+        // -- holds the discard back: the reload happens, the freeing waits.
+        LHAT_CHECK(lhat_machine_set_global(two, "Keep", keep), "held");
+        live[0].text = "module^ ns.lib\n"
+                       "public^ let^ answer = f^ -> number^ { return^ 3 }\n";
+        LHAT_CHECK_EQ_INT(lhat_reload(&program, "lib.lh", machines, 2), 2);
+        LHAT_CHECK(lhat_program_retired_count(&program) > 0,
+                   "the held bodies wait");
+        // And what was held still runs -- the whole point of waiting.
+        LHAT_CHECK_EQ_INT(
+            lhat_as_integer(lhat_machine_call(two, keep, NULL, 0).value), 2);
+
+        // Dropped, the next reload takes the whole backlog with it.
+        LHAT_CHECK(lhat_machine_set_global(two, "Keep", lhat_nil()),
+                   "dropped");
+        live[0].text = "module^ ns.lib\n"
+                       "public^ let^ answer = f^ -> number^ { return^ 4 }\n";
+        LHAT_CHECK_EQ_INT(lhat_reload(&program, "lib.lh", machines, 2), 2);
+        LHAT_CHECK_EQ_INT(lhat_program_retired_count(&program), 0);
+        LHAT_CHECK_EQ_INT(
+            lhat_as_integer(
+                lhat_machine_call(
+                    two, lhat_run(two, lhat_unit_proto(root)).value, NULL, 0)
+                    .value),
+            4);
+
+        lhat_machine_dispose(one);
+        lhat_machine_dispose(two);
+    }
+    lhat_program_dispose(&program);
+}
+
 int main(void)
 {
     // 8.9: before anything is taken, so the refusal above is about the order
@@ -4704,6 +4783,7 @@ int main(void)
     test_running();
     test_reloading();
     test_reloading_with_a_pending_cleanup();
+    test_reload_call();
     test_hosting();
     test_hostvalue_escape();
     test_host_tuple();

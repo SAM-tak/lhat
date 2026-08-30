@@ -3141,6 +3141,99 @@ size_t lhat_program_retired_count(const LhatProgram *program)
     return program != NULL ? program->retired_count : 0;
 }
 
+// The bodies of one retired unit, nested ones included -- what a closure
+// on some machine could still be running.
+static size_t count_bodies(const LhatProto *proto)
+{
+    size_t count = 1;
+    for (size_t i = 0; i < proto->proto_count; i++) {
+        count += count_bodies(proto->protos[i]);
+    }
+    return count;
+}
+
+static size_t fill_bodies(const LhatProto *proto, const LhatProto **out,
+                          size_t at)
+{
+    out[at++] = proto;
+    for (size_t i = 0; i < proto->proto_count; i++) {
+        at = fill_bodies(proto->protos[i], out, at);
+    }
+    return at;
+}
+
+size_t lhat_reload(LhatProgram *program, const char *path,
+                   LhatMachine *const *machines, size_t machine_count)
+{
+    size_t retired = lhat_program_invalidate(program, path);
+    if (retired == 0 || retired == SIZE_MAX) {
+        return retired;
+    }
+
+    // Forgetting reads the stale shells' module names, so it comes before
+    // the recheck reads the path back in over them. Per machine: the
+    // program does not know its machines (see the header).
+    for (const LhatUnit *unit = lhat_program_units(program); unit != NULL;
+         unit = lhat_unit_next(unit)) {
+        if (lhat_unit_state(unit) != LHAT_UNIT_STALE) {
+            continue;
+        }
+        const char *module = lhat_unit_module_name(unit);
+        if (module == NULL) {
+            continue;
+        }
+        for (size_t i = 0; i < machine_count; i++) {
+            lhat_machine_forget_unit(machines[i], module);
+        }
+    }
+
+    // Every stale unit is read back, not the edited path alone: the cascade
+    // retired the requirers too, and a shell left with no body would be a
+    // NULL proto to whoever runs it next. Checking a dependent pulls the
+    // edited unit in on the way, so later rounds mostly find DONE.
+    for (const LhatUnit *unit = lhat_program_units(program); unit != NULL;
+         unit = lhat_unit_next(unit)) {
+        if (lhat_unit_state(unit) == LHAT_UNIT_STALE) {
+            lhat_program_check(program, lhat_unit_path(unit));
+        }
+    }
+    if (lhat_program_has_errors(program) || !lhat_program_compile(program)) {
+        // The old world keeps running and the retired list keeps waiting;
+        // the diagnostics say why, and the next save tries again.
+        return retired;
+    }
+
+    // 5.7's question, asked outright: collect on every machine, then look
+    // for anything still holding a retired body. Held anywhere -- or a
+    // cleanup still waiting, whose run is code this walk cannot see into --
+    // means the bodies wait for the next reload, which is the safe side of
+    // every answer here.
+    size_t bodies = 0;
+    for (size_t i = 0; i < program->retired_count; i++) {
+        bodies += count_bodies(program->retired[i]);
+    }
+    const LhatProto **flat =
+        (const LhatProto **)lhat_alloc(bodies * sizeof *flat);
+    if (flat == NULL) {
+        return retired;  // no room to ask safely, so keep them
+    }
+    size_t at = 0;
+    for (size_t i = 0; i < program->retired_count; i++) {
+        at = fill_bodies(program->retired[i], flat, at);
+    }
+    bool held = false;
+    for (size_t i = 0; i < machine_count && !held; i++) {
+        lhat_machine_collectgarbage(machines[i]);
+        held = lhat_machine_pending_disposals(machines[i]) > 0 ||
+               lhat_machine_holds_body(machines[i], flat, bodies);
+    }
+    lhat_free(flat);
+    if (!held) {
+        lhat_program_discard_retired(program);
+    }
+    return retired;
+}
+
 // ---------------------------------------------------------------------------
 // What the stages reported
 // ---------------------------------------------------------------------------
