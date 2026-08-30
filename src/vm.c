@@ -2919,6 +2919,12 @@ LhatMachine *lhat_machine_new(void)
         lhat_machine_dispose(m);
         return NULL;
     }
+    // 09 の 5.1: a debugger following every machine hears of this one here,
+    // before it has run anything.
+    if (lhat_machine_watcher.born != NULL) {
+        lhat_machine_watcher.born(lhat_machine_watcher.context,
+                                  (LhatMachine *)m);
+    }
     return m;
 }
 
@@ -3342,6 +3348,11 @@ void lhat_machine_dispose(LhatMachine *machine)
 {
     if (machine == NULL) {
         return;
+    }
+    // 09 の 5.1: before anything else -- a watcher takes its hook off here,
+    // and whatever the disposal below still runs must not sound it.
+    if (lhat_machine_watcher.dying != NULL) {
+        lhat_machine_watcher.dying(lhat_machine_watcher.context, machine);
     }
     // 05 の 8.8: what the host made goes back before anything is freed, so a
     // release may still read the value it is given. Reachability is not asked

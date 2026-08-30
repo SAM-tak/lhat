@@ -101,6 +101,25 @@ bool lhat_machine_evaluate(LhatMachine *machine, size_t level,
                            const char *text, size_t length, LhatValue *answer,
                            char *error, size_t error_capacity);
 
+// 5.1: how a debugger follows every machine without the host wiring each
+// one: `born` is called at the end of lhat_machine_new, `dying` at the top
+// of lhat_machine_dispose (before its cleanups run), on whichever thread is
+// making or disposing -- which is the one point every machine passes,
+// whatever thread machinery (std.thread, a host's own, none) is above it.
+// A debugger's "thread" is a machine, and these are its started/exited.
+//
+// One watcher per process; NULL takes it away. Install it while no other
+// thread is making machines and remove it once theirs are gone -- for a
+// debug session that is its natural span: begun before the run, ended after
+// the joins. Costs one test per machine made while none is set.
+typedef struct {
+    void *context;
+    void (*born)(void *context, LhatMachine *machine);
+    void (*dying)(void *context, LhatMachine *machine);
+} LhatMachineWatcher;
+
+void lhat_debug_watch_machines(const LhatMachineWatcher *watcher);
+
 #ifdef __cplusplus
 }
 #endif

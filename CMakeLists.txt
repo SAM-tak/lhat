@@ -310,9 +310,11 @@ if(LHAT_BUILD_DAP)
         dap/adapter.c
         dap/protocol.c
     )
-    # Only the public headers, cjson and the two ports -- dap/ names nothing
-    # in src/, which is the proof the debugger runs against lhat.h alone.
-    target_link_libraries(lhatdap PUBLIC lhat cjson lhattransport lhatsocket)
+    # Only the public headers, cjson and the ports -- dap/ names nothing in
+    # src/, which is the proof the debugger runs against lhat.h alone.
+    # lhatthread is the reader thread and the parking of stopped machines.
+    target_link_libraries(lhatdap
+        PUBLIC lhat cjson lhattransport lhatsocket lhatthread)
     target_include_directories(lhatdap PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/dap)
 endif()
 

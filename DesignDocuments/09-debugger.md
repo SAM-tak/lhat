@@ -176,6 +176,23 @@ GC との折り合い: レジスタへの書きにバリアは要らない（収
 バリアを敷く。テーブルのメンバへの書きは既存の `lhat_machine_table_set`
 （バリア込み）で行う。
 
+### 3.4.1 machine の誕生を観る
+
+```c
+typedef struct {
+    void *context;
+    void (*born)(void *context, LhatMachine *machine);
+    void (*dying)(void *context, LhatMachine *machine);
+} LhatMachineWatcher;
+void lhat_debug_watch_machines(const LhatMachineWatcher *watcher);
+```
+
+`lhat_machine_new` の末尾と `lhat_machine_dispose` の冒頭（片付けが走る前）で
+呼ばれる、プロセスに1口の観測者。machine を作る道は誰であれこの二点を通るので、
+どのスレッド機構の上でも「追うべき machine」がここで全部見える。据えるのは
+どの machine も作られていない間、外すのは自分の machine が全部去った後——
+デバッグセッションの begin/end がそのまま自然な窓になる。
+
 ### 3.5 式の評価
 
 ```c
@@ -226,7 +243,7 @@ bool lhat_machine_evaluate(LhatMachine *, size_t level,
 ```text
   VSCode / editor
    └ DAP client ──(TCP, 127.0.0.1)──► lhat --dap=PORT
-                                        ├ dap/         セッション・停止ループ・フック
+                                        ├ dap/         セッション・受信スレッド・フック
                                         ├ transport/   Content-Length の枠（lhatls と共有）
                                         └ port/socket  ループバック
 ```
@@ -236,20 +253,42 @@ bool lhat_machine_evaluate(LhatMachine *, size_t level,
 アダプタはソケット、試験はメモリバッファ。中身の綴りは違う: DAP は request /
 response / event の三種で、`lsp/rpc.c` の固定した `jsonrpc` ではない。
 
+### 5.1 すべての machine を追う
+
+**DAP の「スレッド」は machine である。** OS スレッドではない——ホストが
+どのスレッド機構（std.thread・自前・無し）で machine を走らせるかに依らず、
+machine が一つならスレッドは一つ。
+
+セッションは machine の誕生を観る（§5.1 の `lhat_debug_watch_machines`）。
+生まれた machine にはその場でフックが立ち、デバッガへ `thread` イベント
+（started）が出る。死ぬときに外れて exited。**ホストの配線はゼロ**——
+`std.thread` のワーカーも、ホスト自作スレッドの machine も、作られただけで
+追われる。
+
+止まり方は**全台停止**（`allThreadsStopped`）。どれかの machine が止まると
+デバッガはその1台の `stopped` を聞き、残りは次の行イベントで黙って駐機する。
+ソケットを読むのは**受信スレッド1本**で、駐機した machine は凍った資料——
+その frames を歩くのも、その上で evaluate を走らせるのも、受信スレッドが
+錠越しに行う。動いている machine の stackTrace は空で答える。
+
 - **ライフサイクル**——`lhat_program_install` の後にセッションを始め、
   initialize / setBreakpoints / launch / configurationDone を同期に受けて
-  フックを据え、run を走らせ、run の後に終える（`terminated` と `exited`）。
-- **停止と歩き**（毎行、単一スレッド）——`pause` が要求された、`stepIn`、
-  `stepOver` で深さが戻った、`stepOut` で深さが減った、あるいは行がブレーク
-  ポイント——のいずれかで `stopped` を送り、`continue` / `next` / `stepIn` /
-  `stepOut` / `disconnect` が来るまで stackTrace / scopes / variables に答える。
-- **中断（pause）**——走行中はフックの中で数行に一度ソケットを覗いて、届いた
-  一通を処理する（受信スレッドは要らない）。ホスト関数の中で止まっている間は
-  効かない（Godot と同じ制約）。
-- **変数の参照**——scopes はフレームごとに Locals と Captures、テーブルは停止
-  ごとの handle 配列で展開する。停止の間はどのレジスタも根なので値は生きている。
-- **切断**——フックを外し、`lhat_machine_panic_text` で run を止める。cli は
-  デバッガが止めた run のフォルトを自分のエラーとして出さない。
+  観測とフックを据え、受信スレッドを起こしてから run を走らせる。run の後に
+  終える（`terminated` と `exited`）——終わりはワーカーの machine が全部
+  去るのを待つ。
+- **停止と歩き**（各 machine のフックで毎行）——全台停止中である、`pause` が
+  要求された、その machine の `stepIn`、`stepOver` で深さが戻った、`stepOut`
+  で深さが減った、あるいは行がブレークポイント——のいずれかで駐機する。
+  歩きは machine ごと（`next` の `threadId` の1台に効き、resume は全台）。
+- **中断（pause）**——受信スレッドが旗を立て、各 machine は次の行イベントで
+  止まる。ホスト呼び出しの中にいる machine はその境界まで止まらない（D3）。
+- **変数の参照**——frameId は `threadId * 1000 + level`。scopes はフレーム
+  ごとに Locals と Captures、テーブルは停止ごとの handle 配列（値と machine
+  の組）で展開する。停止の間は駐機した machine のレジスタが根なので値は
+  生きている。
+- **切断**——旗を立て、各フックが自分の machine を
+  `lhat_machine_panic_text` で止める。cli はデバッガが止めた run のフォルトを
+  自分のエラーとして出さない。
 
 対応する要求（v1）: initialize, launch, attach, setBreakpoints（行はすべて
 `verified` 固定）, configurationDone, threads, stackTrace, scopes, variables,
@@ -287,11 +326,10 @@ API で埋まる。詳細は別リポジトリの godot バインディングに
 | 番号 | 内容 |
 | --- | --- |
 | D2 | `output` イベント（スクリプトの出力をコンソールへ）。v1 は起動側が捕まえる |
-| D3 | `pause` の待ち時間。ホスト関数の中では効かない。受信スレッドを置く案 |
+| D3 | ホスト呼び出しの中にいる machine は `pause` も全台停止も次の行まで効かず、そこで止まったままだとセッションの終わりも待たされる |
 | D4 | 列（column）の情報。行の表に列は無い |
 | D5 | ［提案］`CALL` / `RETURN` / フォルトのイベント。フォルトで止まる |
 | D6 | 源のパス照合。シンボリックリンク等の同一視 |
-| D7 | `std.thread` の別の機械はデバッグの対象外 |
 | D8 | ブレークポイントの行の検証（実在する命令の行か）と条件付き |
 
 ## 改定履歴（要約）
@@ -300,3 +338,5 @@ API で埋まる。詳細は別リポジトリの godot バインディングに
 - 束縛の書き換え（§3.4）と `setVariable` を追加。D1 は式の評価だけ残る。
 - 式の評価（§3.5）と `evaluate` を追加。D1 閉鎖——評価は写しの上で走り、
   書き戻しは setVariable。
+- 全 machine 対応（§5.1）。machine の誕生の観測・全台停止・受信スレッド。
+  D7 閉鎖、pause の覗き見は受信スレッドに置き換え。

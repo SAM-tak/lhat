@@ -151,6 +151,20 @@ size_t lhat_machine_traceback(const LhatMachine *machine, char *out,
 // 09 の 2 章: the hook
 // ---------------------------------------------------------------------------
 
+// 09 の 5.1. Written here, read by vm.c at the two points every machine
+// passes. The install/remove windows debug.h asks for are what stand in for
+// a lock: no other thread is making machines at either moment.
+LhatMachineWatcher lhat_machine_watcher;
+
+void lhat_debug_watch_machines(const LhatMachineWatcher *watcher)
+{
+    if (watcher != NULL) {
+        lhat_machine_watcher = *watcher;
+    } else {
+        memset(&lhat_machine_watcher, 0, sizeof lhat_machine_watcher);
+    }
+}
+
 void lhat_machine_set_debug_hook(LhatMachine *machine, LhatDebugHook hook,
                                  void *context)
 {

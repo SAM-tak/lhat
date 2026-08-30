@@ -258,6 +258,10 @@ struct LhatMachine {
 
 typedef struct LhatMachine Machine;
 
+// 09 の 5.1: the one process-wide machine watcher, owned by debug.c and read
+// by vm.c at lhat_machine_new / lhat_machine_dispose. Zeroed = none.
+extern LhatMachineWatcher lhat_machine_watcher;
+
 // 09 の 3.5: runs `closure` -- one that declares no parameters -- on a frame
 // of its own above everything standing, with `seed` values laid into its
 // first registers before it starts. What a debugger's evaluation runs on:

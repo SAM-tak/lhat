@@ -739,6 +739,46 @@ static void test_evaluating(void)
     }
 }
 
+// 09 の 5.1: a watcher hears of every machine made and disposed while it
+// stands, and of none after it is taken away.
+static void count_born(void *context, LhatMachine *machine)
+{
+    (void)machine;
+    ((int *)context)[0]++;
+}
+
+static void count_dying(void *context, LhatMachine *machine)
+{
+    (void)machine;
+    ((int *)context)[1]++;
+}
+
+static void test_machine_watcher(void)
+{
+    LHAT_TEST("a watcher hears every machine born and dying");
+    {
+        int counts[2] = {0, 0};
+        LhatMachineWatcher watcher;
+        watcher.context = counts;
+        watcher.born = count_born;
+        watcher.dying = count_dying;
+        lhat_debug_watch_machines(&watcher);
+        LhatMachine *one = lhat_machine_new();
+        LhatMachine *two = lhat_machine_new();
+        LHAT_CHECK_EQ_INT(counts[0], 2);
+        LHAT_CHECK_EQ_INT(counts[1], 0);
+        lhat_machine_dispose(one);
+        LHAT_CHECK_EQ_INT(counts[1], 1);
+        lhat_machine_dispose(two);
+        LHAT_CHECK_EQ_INT(counts[1], 2);
+        lhat_debug_watch_machines(NULL);
+        LhatMachine *after = lhat_machine_new();
+        lhat_machine_dispose(after);
+        LHAT_CHECK_EQ_INT(counts[0], 2);
+        LHAT_CHECK_EQ_INT(counts[1], 2);
+    }
+}
+
 int main(void)
 {
     test_line_events();
@@ -747,5 +787,6 @@ int main(void)
     test_frame_reading();
     test_writing();
     test_evaluating();
+    test_machine_watcher();
     return lhat_test_report("test_debug_hook");
 }
