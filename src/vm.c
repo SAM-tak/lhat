@@ -4669,15 +4669,6 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                 bool tail = op == LHAT_BC_TAILCALL ||
                             op == LHAT_BC_TAILCALLMETHOD;
 
-                // 03 の 5.1: the callee is nearly always a written closure,
-                // and the ladder below asks four rarer kinds first. One test
-                // sends the common case straight down -- every kind still
-                // lands where it always did, and the not-callable fault
-                // stays where the ladder ends.
-                if (lhat_is_object_kind(R(a), LHAT_OBJECT_SUBROUTINE)) {
-                    goto closure_call;
-                }
-
                 // 14.12: at most one candidate fits, so this is a search and
                 // not a choice -- no ranking, no ambiguity to report. It ends
                 // at the first that takes what it was given.
@@ -5919,7 +5910,6 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                     break;
                 }
 
-            closure_call:
                 if (!lhat_is_object_kind(R(a), LHAT_OBJECT_SUBROUTINE)) {
                     return finish(m, chunk, LHAT_RUN_NOT_CALLABLE, lhat_nil(), at);
                 }
