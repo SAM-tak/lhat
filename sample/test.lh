@@ -180,7 +180,7 @@ print(App)
 print(typeof^(App).signature)
 
 let^isEven = f^x {
-    for^let^x:number^ = x
+    for^let^x:number^= x
     for^x % 2:
         when^0: true^
         other^: false^ # when^1を書いてもother^が必要。これ具合悪いね
@@ -188,6 +188,15 @@ let^isEven = f^x {
 }
 print(isEven(6))
 print(isEven(9))
+
+let^isEvenStr = f^x:number^{
+    for^isEven(x):
+        when^true^: "even"
+        when^false^: "odd"
+    ;
+}
+print(isEvenStr(6))
+print(isEvenStr(9))
 
 let^match = p^x:string^{
     for^x {

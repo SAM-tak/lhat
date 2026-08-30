@@ -51,15 +51,33 @@ let^p = p^mutable^t:^t{} { var^t.blah = 1 }
 
 ### サイレント実装漏れ
 
-enum^
-  いつの間にか廃案扱いになっている。
-  が、確かに初期構想のテーブルの一種とするより、error^ 同様公称型の特別な型、
-  としないと列挙型に期待する役割を果たせないかもしれない。
-  それとは別に外部データからの読み取りで作ったテーブルのキーを列挙値のように扱いたい
-  というケースは存在するだろうから、公称型としての「列挙型」と「列挙型テーブル」の
-  二種類が存在するのだ、という建付けにする必要があるかも。
+#### enum^
 
-多次元配列
+LhatStringと別に、LhatEnumIdという文字列格納オブジェクトが必要。string^ 型とは区別され、さらに自分が所属する
+enum^ と整数値を覚えている。LhatTableではなくLhatEnumと言う別の構造があったほうがいい、かな…
+
+```lhat
+enum^ { # 所属する名前一個一個が enum^{AAA, BBB, CCC} へのdefinationポインターを持つ
+  AAA,
+  BBB,
+  CCC,
+}
+print(typeof^(AAA)) # enumid^
+print(typeof^(AAA.enum)) # enum^{AAA, BBB, CCC}
+print(AAA) # AAA (tostring()が"AAA"を返すので)
+print(AAA.tostring()) # AAA
+print(AAA.value) # 1
+```
+
+``` lhat
+for^x:enum^{AAA, BBB, CCC} {
+    when^AAA: ...
+    when^BBB: ...
+} # other^を書くか CCC を書かないと網羅していない、とエラーになる。
+```
+
+#### 多次元配列
+
 let^t = {width^3:
     1, 2, 3,
     4, 5, 6,
@@ -256,6 +274,8 @@ let^vtos = {
 
 これのついでで、現在不定長の型アノテーションが `t^{...:number^}` 等であるのを `t^{number^[]}` にしたい。
 
+関数の使用形も型推論の材料にすること（３パス目？）
+
 ### もしかしたら今後やりたいこと
 
 public^のシグネチャ明示。
@@ -324,15 +344,7 @@ AOT
 
 ## Godot組み込み
 
-### L^ 側のラッパーライブラリ
-
-いま、なにかスクリプトの確保に関して非効率なことをやっているらしい。
-godot\demo\lhat\Godot.lh にズラズラブリッジクラスの定義を増やしていくと、Node2D..def^ で一個触っただけで
-全体の再読み込みになる…らしい？
-
-node.call は返り値が any^ なのでホスト値を詰めない。
-    型ごとの呼び口 — callVector2(name, ...) -> godot.Vector2。getVector2 と同じ形で、静的に型が決まる。17本増える
-これをやればいい。が、今のところ不要なのでやってない。
+(今のところ課題無し？実用上必要なバインディングはすべて揃った)
 
 ## L^ Visual Editor
 

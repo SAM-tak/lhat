@@ -206,7 +206,7 @@
           }
         },
         {
-          "match": "\\b(and|or|is|isa|as)(\\^+)",
+          "match": "\\b(and|or|is|fits|as)(\\^+)",
           "captures": {
             "1": { "name": "keyword.operator.word.lhat" },
             "2": { "name": "punctuation.definition.hat.lhat" }
@@ -214,7 +214,7 @@
         },
         {
           "comment": "05 の 8.6's L^ names the machine; these are the hat words that name a value rather than syntax.",
-          "match": "\\b(this|it|self|super|class|L)(\\^+)",
+          "match": "\\b(this|it|self|super|def|L)(\\^+)",
           "captures": {
             "1": { "name": "variable.language.lhat" },
             "2": { "name": "punctuation.definition.hat.lhat" }
