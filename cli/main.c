@@ -739,7 +739,9 @@ static int check_program(const char *path, bool run, bool strict,
 #ifdef LHAT_CLI_WITH_DAP
             DapSession *dap = NULL;
             if (dap_port != 0) {
-                dap_session_begin(&dap, machine, (uint16_t)dap_port, path);
+                // NULL: the cli's units are files, so the debugger's paths
+                // and the program's are the same thing (09 の 5.2).
+                dap_session_begin(&dap, machine, (uint16_t)dap_port, NULL);
             }
 #endif
             LhatValue *handed = argument_count > 0

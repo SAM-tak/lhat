@@ -83,7 +83,9 @@ struct DapSession {
     LhatMutex write_lock;
     LhatSocket listener;
     LhatSocket socket;
-    char *program_path;
+    // 09 の 5.2: the host's spelling map, zeroed when none was given --
+    // both sides are filesystem paths then, and are normalized to compare.
+    DapPathMap paths;
 
     // Everything below is under `lock`; `changed` is broadcast whenever
     // stopping/ended/thread_count moves.
@@ -220,6 +222,16 @@ static void machine_dying(void *context, LhatMachine *machine)
 // ---------------------------------------------------------------------------
 // Paths
 
+static char *own_text(const char *text)
+{
+    size_t length = strlen(text);
+    char *copy = (char *)malloc(length + 1);
+    if (copy != NULL) {
+        memcpy(copy, text, length + 1);
+    }
+    return copy;
+}
+
 static char *normalize(const char *path)
 {
     if (path == NULL) {
@@ -253,16 +265,22 @@ static const char *normal_of(DapSession *s, const char *source)
 
 static bool at_breakpoint(DapSession *s, const LhatFrameInfo *where)
 {
-    if (s->break_count == 0) {
+    if (s->break_count == 0 || where->source == NULL) {
         return false;
     }
-    const char *here = normal_of(s, where->source);
+    // 09 の 5.2: with a path map the breakpoint keys are unit spellings --
+    // the very thing the frame's source is -- and match exactly. With none
+    // they are normalized filesystem paths, so the source is normalized
+    // (cached) to meet them.
+    bool mapped = s->paths.to_unit != NULL;
+    const char *here = mapped ? where->source : normal_of(s, where->source);
     if (here == NULL) {
         return false;
     }
     for (size_t i = 0; i < s->break_count; i++) {
         if (s->breaks[i].line == (int)where->line &&
-            path_equal(s->breaks[i].source, here)) {
+            (mapped ? strcmp(s->breaks[i].source, here) == 0
+                    : path_equal(s->breaks[i].source, here))) {
             return true;
         }
     }
@@ -357,7 +375,7 @@ static const char *frame_name(const LhatFrameInfo *info)
     return info->top_level ? "(top level)" : "f^";
 }
 
-static void stack_trace(DapThread *t, cJSON *body)
+static void stack_trace(DapSession *s, DapThread *t, cJSON *body)
 {
     cJSON *frames = cJSON_CreateArray();
     int depth = 0;
@@ -374,8 +392,17 @@ static void stack_trace(DapThread *t, cJSON *body)
             cJSON_AddNumberToObject(frame, "id", frame_ref(t, level));
             cJSON_AddStringToObject(frame, "name", frame_name(&info));
             if (info.source != NULL) {
+                // 09 の 5.2: reported in the editor's spelling when the
+                // host's map has one, so the debugger can open the file.
+                const char *shown = info.source;
+                char mapped[512];
+                if (s->paths.to_editor != NULL &&
+                    s->paths.to_editor(s->paths.context, info.source, mapped,
+                                       sizeof mapped)) {
+                    shown = mapped;
+                }
                 cJSON *source = cJSON_CreateObject();
-                cJSON_AddStringToObject(source, "path", info.source);
+                cJSON_AddStringToObject(source, "path", shown);
                 cJSON_AddItemToObject(frame, "source", source);
             }
             cJSON_AddNumberToObject(frame, "line", info.line);
@@ -567,14 +594,28 @@ static void set_breakpoints(DapSession *s, const cJSON *arguments, cJSON *body)
 
     const cJSON *source = cJSON_GetObjectItem(arguments, "source");
     const cJSON *path = cJSON_GetObjectItem(source, "path");
-    char *normal = cJSON_IsString(path) ? normalize(path->valuestring) : NULL;
+    // The key a line event will be matched against: the unit spelling the
+    // host's map answers (09 の 5.2), or the normalized filesystem path
+    // with no map. A file the map does not know binds no breakpoints.
+    char *key = NULL;
+    if (cJSON_IsString(path)) {
+        if (s->paths.to_unit != NULL) {
+            char unit[512];
+            if (s->paths.to_unit(s->paths.context, path->valuestring, unit,
+                                 sizeof unit)) {
+                key = own_text(unit);
+            }
+        } else {
+            key = normalize(path->valuestring);
+        }
+    }
 
     cJSON *verified = cJSON_CreateArray();
     const cJSON *lines = cJSON_GetObjectItem(arguments, "breakpoints");
     const cJSON *one = NULL;
     cJSON_ArrayForEach(one, lines) {
         const cJSON *line = cJSON_GetObjectItem(one, "line");
-        if (!cJSON_IsNumber(line) || normal == NULL) {
+        if (!cJSON_IsNumber(line) || key == NULL) {
             continue;
         }
         if (s->break_count == s->break_capacity) {
@@ -587,7 +628,7 @@ static void set_breakpoints(DapSession *s, const cJSON *arguments, cJSON *body)
             s->breaks = bigger;
             s->break_capacity = grown;
         }
-        s->breaks[s->break_count].source = normalize(normal);
+        s->breaks[s->break_count].source = own_text(key);
         s->breaks[s->break_count].line = (int)line->valuedouble;
         s->break_count++;
 
@@ -598,7 +639,7 @@ static void set_breakpoints(DapSession *s, const cJSON *arguments, cJSON *body)
         cJSON_AddNumberToObject(mark, "line", (int)line->valuedouble);
         cJSON_AddItemToArray(verified, mark);
     }
-    free(normal);
+    free(key);
     cJSON_AddItemToObject(body, "breakpoints", verified);
 }
 
@@ -675,7 +716,7 @@ static void dispatch(DapSession *s, const cJSON *request)
         DapThread *t = thread_by_id(
             s, cJSON_IsNumber(thread_id) ? (int)thread_id->valuedouble : 1);
         cJSON *body = cJSON_CreateObject();
-        stack_trace(t, body);
+        stack_trace(s, t, body);
         respond(s, request, true, body);
         return;
     }
@@ -936,7 +977,7 @@ static void dap_hook(LhatMachine *machine, void *context, LhatDebugEvent event,
 // Lifecycle
 
 bool dap_session_begin(DapSession **out, LhatMachine *machine, uint16_t port,
-                       const char *program_path)
+                       const DapPathMap *paths)
 {
     *out = NULL;
     if (!lhat_socket_startup()) {
@@ -947,7 +988,9 @@ bool dap_session_begin(DapSession **out, LhatMachine *machine, uint16_t port,
         lhat_socket_cleanup();
         return false;
     }
-    s->program_path = normalize(program_path);
+    if (paths != NULL) {
+        s->paths = *paths;
+    }
     s->peer.seq = 1;
     s->next_id = 1;
     lhat_mutex_init(&s->lock);
@@ -959,7 +1002,6 @@ bool dap_session_begin(DapSession **out, LhatMachine *machine, uint16_t port,
         if (s->listener.handle != 0) {
             lhat_socket_close(s->listener);
         }
-        free(s->program_path);
         free(s);
         lhat_socket_cleanup();
         return false;
@@ -1046,7 +1088,6 @@ void dap_session_end(DapSession *session, int exit_code)
     free(s->breaks);
     free(s->vars);
     free(s->cached_normal);
-    free(s->program_path);
     lhat_condition_destroy(&s->changed);
     lhat_mutex_destroy(&s->write_lock);
     lhat_mutex_destroy(&s->lock);

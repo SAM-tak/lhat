@@ -15,6 +15,10 @@
 
 #include "cJSON.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 // A DAP peer: the stream both ways, and the sequence number every message
 // this side sends carries (DAP numbers each direction from 1).
 typedef struct {
@@ -41,5 +45,9 @@ bool dap_event(DapPeer *peer, const char *event, cJSON *body);
 const char *dap_command(const cJSON *message);
 // Its `arguments` object, or NULL.
 const cJSON *dap_arguments(const cJSON *message);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif  // LHAT_DAP_PROTOCOL_H

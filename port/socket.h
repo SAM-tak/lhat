@@ -16,6 +16,10 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 // The system's socket handle, wrapped so a caller passes it by value without
 // naming SOCKET or int. An invalid one is what a failed accept leaves.
 typedef struct {
@@ -48,5 +52,9 @@ long lhat_socket_recv(LhatSocket socket, char *buffer, size_t size);
 bool lhat_socket_send_all(LhatSocket socket, const char *bytes, size_t size);
 
 void lhat_socket_close(LhatSocket socket);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif  // LHAT_PORT_SOCKET_H

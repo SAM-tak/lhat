@@ -14,6 +14,10 @@
 #include <stddef.h>
 #include <stdio.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 // `read` fills up to `size` bytes and answers how many, or 0 at end of
 // input or on error -- it blocks for at least one byte otherwise, the way a
 // socket recv or fread does. `write` sends all `size` bytes and answers
@@ -44,5 +48,9 @@ bool lhat_transport_read_message(LhatStream *in, char **out_body,
 // the stream's write failed.
 bool lhat_transport_write_message(LhatStream *out, const char *body,
                                   size_t length);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif  // LHAT_TRANSPORT_H

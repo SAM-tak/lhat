@@ -290,6 +290,24 @@ machine が一つならスレッドは一つ。
   `lhat_machine_panic_text` で止める。cli はデバッガが止めた run のフォルトを
   自分のエラーとして出さない。
 
+### 5.2 パスの照合はホストの言葉で
+
+デバッガが送るのはエディタのファイルパス、machine が報告するのは単位の綴り
+（`LhatFrameInfo.source`）で、両者は同じものとは限らない——アーカイブや仮想
+ファイルシステム（PhysFS の `.love` など）から単位を読むホストの単位名は、
+ディスクのどこにも無い。対応を知っているのはホストだけなので、
+`dap_session_begin` は写像（`DapPathMap`）を受け取る:
+
+- `to_unit`——エディタのパス → 単位の綴り。setBreakpoints はこれ越しに
+  照合され、以後の行イベントは**単位の綴りどうしの完全一致**（正規化なし）
+- `to_editor`——単位の綴り → エディタのパス。stackTrace の source は
+  これ越しに報告され、デバッガがファイルを開ける
+
+写像が無ければ（cli）、両側ともファイルシステムのパスとして正規化
+（`_fullpath` / `realpath`、Windows は大小無視）して照合する。写像が知らない
+ファイルにはブレークポイントが結ばれない。呼び出しはセッションのスレッドから
+錠の下で来る——速く、スレッド安全に。
+
 対応する要求（v1）: initialize, launch, attach, setBreakpoints（行はすべて
 `verified` 固定）, configurationDone, threads, stackTrace, scopes, variables,
 setVariable, evaluate, continue, next, stepIn, stepOut, pause, disconnect,
@@ -329,7 +347,7 @@ API で埋まる。詳細は別リポジトリの godot バインディングに
 | D3 | ホスト呼び出しの中にいる machine は `pause` も全台停止も次の行まで効かず、そこで止まったままだとセッションの終わりも待たされる |
 | D4 | 列（column）の情報。行の表に列は無い |
 | D5 | ［提案］`CALL` / `RETURN` / フォルトのイベント。フォルトで止まる |
-| D6 | 源のパス照合。シンボリックリンク等の同一視 |
+| D6 | 写像なしの照合でのシンボリックリンク等の同一視（§5.2 の正規化は fullpath どまり） |
 | D8 | ブレークポイントの行の検証（実在する命令の行か）と条件付き |
 
 ## 改定履歴（要約）
@@ -340,3 +358,5 @@ API で埋まる。詳細は別リポジトリの godot バインディングに
   書き戻しは setVariable。
 - 全 machine 対応（§5.1）。machine の誕生の観測・全台停止・受信スレッド。
   D7 閉鎖、pause の覗き見は受信スレッドに置き換え。
+- パスの写像（§5.2、`DapPathMap`）。仮想ファイルシステムのホスト（lhatove）
+  のための editor↔unit の両方向解決。

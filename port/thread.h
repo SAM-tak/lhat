@@ -55,6 +55,10 @@
 #include <pthread.h>
 #endif
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 // A started thread, and what it was started on. The entry and its argument are
 // kept here rather than in an allocation of their own because both systems'
 // entry points have a shape of their own to trampoline through, and because
@@ -128,5 +132,9 @@ void lhat_condition_wait_for(LhatCondition *condition, LhatMutex *mutex,
 
 void lhat_condition_signal(LhatCondition *condition);
 void lhat_condition_broadcast(LhatCondition *condition);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif  // LHAT_PORT_THREAD_H
