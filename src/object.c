@@ -1554,6 +1554,11 @@ static LhatValue table_get_in(const LhatTable *table, LhatValue key,
         LhatTableEntry *entry =
             probe(table->entries, table->entry_capacity, key, hash_key(key));
         if (!lhat_is_nil(entry->key)) {
+            // 02 の 14.15: a reserved seat -- the key held with no value --
+            // reads as absent everywhere. Only the walkers show it.
+            if (lhat_is_nil(entry->value)) {
+                continue;
+            }
             if (restricted && inherited && !lhat_takes_receiver(entry->value)) {
                 return lhat_nil();
             }
@@ -1680,6 +1685,94 @@ LhatValue lhat_table_get_by_value(const LhatTable *table,
             }
         }
         index = (index + 1) & (table->entry_capacity - 1);
+    }
+}
+
+// 02 の 14.15: the reserved seat -- an entry holding its key and no value,
+// the fourth state a slot can be in (free, tombstone, live, seat). It reads
+// as absent (table_get_in skips it), the walkers show it as (key, nil^),
+// and filling it is an overwrite -- no layout change, so no version bump,
+// which is what keeps 03 の 5.1改's member cache standing across new.
+
+bool lhat_table_reserve(LhatTable *table, LhatValue key)
+{
+    if (table == NULL || !usable_key(key)) {
+        return true;  // nothing to reserve under; a declaration is not a write
+    }
+    key = normalise_key(key);
+    size_t index;
+    if (array_index(table, key, &index)) {
+        return true;  // the sequence half holds no seats
+    }
+    if (table->entry_capacity != 0) {
+        LhatTableEntry *entry =
+            probe(table->entries, table->entry_capacity, key, hash_key(key));
+        if (!lhat_is_nil(entry->key)) {
+            return true;  // already there -- a value, or the seat itself
+        }
+    }
+    if (table->entry_count + 1 >
+        table->entry_capacity - table->entry_capacity / 4) {
+        if (!grow_entries(table)) {
+            return false;
+        }
+    }
+    LhatTableEntry *entry =
+        probe(table->entries, table->entry_capacity, key, hash_key(key));
+    table->entry_count++;
+    table->version++;  // a new key like any other; seats are laid pre-seal
+    entry->key = key;
+    entry->value = lhat_nil();
+    return true;
+}
+
+void lhat_table_vacate(LhatTable *table, LhatValue key)
+{
+    if (table == NULL || !usable_key(key) || table->entry_capacity == 0) {
+        return;
+    }
+    key = normalise_key(key);
+    LhatTableEntry *entry =
+        probe(table->entries, table->entry_capacity, key, hash_key(key));
+    if (!lhat_is_nil(entry->key)) {
+        entry->value = lhat_nil();  // back to the seat; the key stays
+    }
+}
+
+bool lhat_table_reserved(const LhatTable *table, LhatValue key)
+{
+    if (table == NULL || !usable_key(key) || table->entry_capacity == 0) {
+        return false;
+    }
+    key = normalise_key(key);
+    const LhatTableEntry *entry =
+        probe(table->entries, table->entry_capacity, key, hash_key(key));
+    return !lhat_is_nil(entry->key) && lhat_is_nil(entry->value);
+}
+
+void lhat_table_prune_seats(LhatTable *proto, const LhatTable *definition)
+{
+    if (proto == NULL || definition == NULL ||
+        definition->entry_capacity == 0) {
+        return;
+    }
+    for (size_t i = 0; i < proto->entry_capacity; i++) {
+        LhatTableEntry *entry = &proto->entries[i];
+        if (lhat_is_nil(entry->key) || !lhat_is_nil(entry->value)) {
+            continue;  // free, a tombstone, or a filled field
+        }
+        const LhatTableEntry *member =
+            probe(definition->entries, definition->entry_capacity, entry->key,
+                  hash_key(entry->key));
+        if (!lhat_is_nil(member->key) && !lhat_is_nil(member->value)) {
+            // The definition itself answers this name: a seat here would,
+            // once filled, shadow that member with the clone's version
+            // still 0 -- the one hole in 5.1改's guard. The checker refuses
+            // the clash first (14.15); this is the unchecked run's backstop.
+            entry->key = lhat_nil();
+            entry->value = lhat_bool(true);  // a tombstone
+            proto->entry_count--;
+        }
     }
 }
 

@@ -1962,6 +1962,114 @@ static void test_delegate(void)
     run_dispose(&r);
 }
 
+// 02 の 14.15: a declaration reserves the seat -- the key with no value.
+// The prototype and every clone carry it from birth: the walkers show it as
+// (key, nil^), a read answers nil^ as ever, filling it changes no layout
+// (the member cache survives new), and nil^ over a declared field puts the
+// seat back rather than taking the key.
+static void test_reserved_seats(void)
+{
+    Run r;
+
+    LHAT_TEST("a declared field is listed before anything gives it");
+    run_text(&r,
+             "let^ B = def^{ self^{ abstract^v : number^ }, }\n"
+             "let^ b = B.new()\n"
+             "var^ n = 0\n"
+             "var^ empty = false^\n"
+             "for^ k, w in^ b { n := n + 1 if^ w = nil^ { empty := true^ } }\n"
+             "return^ n * 10 + (if^ empty: 1 el^: 0 ;)\n");
+    CHECK_INTEGER(&r, 11);
+    run_dispose(&r);
+
+    LHAT_TEST("nil^ over a declared field returns the seat, and it refills");
+    run_text(&r,
+             "let^ B = def^{\n"
+             "    self^{ abstract^v : number^ },\n"
+             "    override^new = f^x:number^ { self^{ v = x } },\n"
+             "}\n"
+             "let^ b = B.new(7)\n"
+             "b.v := nil^\n"
+             "var^ n = 0\n"
+             "for^ k in^ b.keys^() { n := n + 1 }\n"
+             "b.v := 9\n"
+             "return^ n * 100 + b.v\n");
+    CHECK_INTEGER(&r, 109);
+    run_dispose(&r);
+
+    LHAT_TEST("filling the seat is no layout change");
+    run_text(&r,
+             "let^ B = def^{\n"
+             "    self^{ abstract^v : number^ },\n"
+             "    override^new = f^x:number^ { self^{ v = x } },\n"
+             "}\n"
+             "let^ b = B.new(7)\n"
+             "b.v := nil^\n"
+             "b.v := 9\n"
+             "return^ b\n");
+    LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_OK);
+    {
+        const LhatTable *made = (const LhatTable *)lhat_as_object(r.ran.value);
+        // The whole of what keeps 03 の 5.1's member cache standing.
+        LHAT_CHECK_EQ_INT(made->version, 0);
+        LhatValue key = lhat_nil();
+        LHAT_CHECK(lhat_machine_make_string(r.machine, "v", 1, &key), "a key");
+        LHAT_CHECK_EQ_INT(lhat_as_integer(lhat_table_get(made, key)), 9);
+        LHAT_CHECK(!lhat_table_reserved(made, key), "filled, not a seat");
+        LhatValue self_key = lhat_nil();
+        LHAT_CHECK(lhat_machine_make_string(r.machine, "self^", 5, &self_key),
+                   "the prototype's key");
+        const LhatTable *proto = (const LhatTable *)lhat_as_object(
+            lhat_table_get(made->definition, self_key));
+        LHAT_CHECK(lhat_table_reserved(proto, key),
+                   "the prototype keeps its seat for ever");
+    }
+    run_dispose(&r);
+
+    LHAT_TEST("an undeclared key still leaves");
+    run_text(&r,
+             "let^ B = def^{ self^{ abstract^v : number^ }, }\n"
+             "let^ b = B.new()\n"
+             "b.w := 1\n"
+             "b.w := nil^\n"
+             "var^ n = 0\n"
+             "for^ k in^ b.keys^() { n := n + 1 }\n"
+             "return^ n\n");
+    CHECK_INTEGER(&r, 1);
+    run_dispose(&r);
+
+    LHAT_TEST("a later part fills the declared member");
+    run_text(&r,
+             "let^ Counting = def^{\n"
+             "    self^{ count = 0 },\n"
+             "    abstract^step : f^ -> number^;,\n"
+             "    bump = p^self^ { self^.count := self^.count + def^.step() },\n"
+             "}\n"
+             "let^ Fast = Counting .. def^{\n"
+             "    self^{},\n"
+             "    step = f^ -> number^ { return^ 10 },\n"
+             "}\n"
+             "let^ f = Fast.new()\n"
+             "f.bump()\n"
+             "return^ f.count\n");
+    CHECK_INTEGER(&r, 10);
+    run_dispose(&r);
+
+    // The checker refuses a declaration over a member the same chain
+    // provides (14.15); compiled unchecked, the seat is dropped at the seal
+    // and the member answers as it always did.
+    LHAT_TEST("a seat naming what the definition answers is dropped");
+    run_text(&r,
+             "let^ B = def^{\n"
+             "    self^{ abstract^m : f^ -> number^; },\n"
+             "    m = f^self^ -> number^ { return^ 5 },\n"
+             "}\n"
+             "let^ b = B.new()\n"
+             "return^ b.m()\n");
+    CHECK_INTEGER(&r, 5);
+    run_dispose(&r);
+}
+
 int main(void)
 {
     test_definitions();
@@ -1969,5 +2077,6 @@ int main(void)
     test_typeof();
     test_takes_receiver();
     test_delegate();
+    test_reserved_seats();
     return lhat_test_report("test_vm_def");
 }

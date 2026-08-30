@@ -360,6 +360,7 @@ const char *lhat_opcode_name(LhatOpcode op)
         case LHAT_BC_UNIT:        return "unit";
         case LHAT_BC_NEWTABLE:    return "newtable";
         case LHAT_BC_SEAL:        return "seal";
+        case LHAT_BC_RESERVE:     return "reserve";
         case LHAT_BC_GETINDEX:    return "getindex";
         case LHAT_BC_GETMEMBER:   return "getmember";
         case LHAT_BC_SETINDEX:    return "setindex";

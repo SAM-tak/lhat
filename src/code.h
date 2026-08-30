@@ -113,6 +113,8 @@ typedef enum {
                         //       a table written by hand -- the two are the
                         //       same structure otherwise, and 14.17改 asks
                         //       which one it is
+    LHAT_BC_RESERVE,    // A B   table A gains key B's seat -- the key with
+                        //       no value (02 の 14.15's declaration)
     LHAT_BC_GETINDEX,   // A B C R[A] = R[B][R[C]]
     // 03 の 5.1改: the same read where the key was written rather than
     // computed -- 'x.m', never 'x[k]'. Bx names a cache (LhatMemberCache),

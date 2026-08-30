@@ -1534,6 +1534,19 @@ static LhatUpvalue *capture(Machine *m, size_t slot)
 static bool set_key(Machine *m, LhatTable *table, LhatValue key,
                     LhatValue value, bool *refused)
 {
+    // 02 の 14.15: writing nil^ over a field its definition declared puts
+    // the seat back rather than taking the key. The prototype keeps its own
+    // seat for ever (sealed, never filled), which is what says the name was
+    // declared -- no other ledger exists.
+    if (lhat_is_nil(value) && table->definition != NULL) {
+        const LhatTable *proto = table_of(lhat_table_get(
+            table->definition, lhat_object((LhatObject *)m->self_key)));
+        if (proto != NULL && lhat_table_reserved(proto, key)) {
+            *refused = false;
+            lhat_table_vacate(table, key);
+            return true;
+        }
+    }
     if (!lhat_table_set(table, key, value, refused)) {
         return false;
     }
@@ -1713,12 +1726,27 @@ static LhatTable *clone_table(Machine *m, const LhatTable *source,
         if (lhat_is_nil(entry->key)) {
             continue;  // free, or a tombstone
         }
+        // 02 の 14.15: a seat travels as the seat it is -- set_key would
+        // read its nil as a removal, and the clone is born with the very
+        // keys the prototype holds.
+        if (lhat_is_nil(entry->value)) {
+            if (!lhat_table_reserve(clone, entry->key)) {
+                return NULL;
+            }
+            lhat_gc_barrier_back(m, (LhatObject *)clone, entry->key);
+            continue;
+        }
         LhatValue held = lhat_nil();
         if (!clone_default(m, entry->value, &held, depth, too_deep) ||
             !set_key(m, clone, entry->key, held, &refused)) {
             return NULL;
         }
     }
+    // 03 の 5.1改: the building above counted as layout changes, but the
+    // clone is only now born -- no cache can remember a table that did not
+    // exist. Version zero is what lets a from_definition answer stand for
+    // an instance that only ever filled its declared seats.
+    clone->version = 0;
     return clone;
 }
 
@@ -4310,6 +4338,21 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                 break;
             }
 
+            // 02 の 14.15: the declaration's seat -- the key, no value.
+            case LHAT_BC_RESERVE: {
+                LhatTable *table = table_of(R(a));
+                if (table == NULL) {
+                    return finish(m, chunk, LHAT_RUN_TYPE_ERROR, lhat_nil(),
+                                  at);
+                }
+                if (!lhat_table_reserve(table, R(b))) {
+                    return finish(m, chunk, LHAT_RUN_OUT_OF_MEMORY,
+                                  lhat_nil(), at);
+                }
+                lhat_gc_barrier_back(m, (LhatObject *)table, R(b));
+                break;
+            }
+
             case LHAT_BC_SETINDEX: {
             set_index:;
                 // 05 の 8.9: 'v.x := n' writes the field's bytes in place --
@@ -4576,6 +4619,12 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                 if (table == NULL || proto == NULL) {
                     return finish(m, chunk, LHAT_RUN_TYPE_ERROR, lhat_nil(), at);
                 }
+                // 02 の 14.15 with 03 の 4.2: a seat the definition itself
+                // answers as a member is dropped before the seal -- filled,
+                // it would shadow that member with the clone's version still
+                // 0, the one hole in 5.1改's guard. The checker refuses the
+                // clash first; this is the unchecked run's backstop.
+                lhat_table_prune_seats(proto, table);
                 for (size_t i = 0; i < proto->array_count; i++) {
                     LhatValue baked = lhat_nil();
                     bool bad = false;

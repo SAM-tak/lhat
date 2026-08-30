@@ -2897,16 +2897,23 @@ static void compile_def(Compiler *c, const LhatNode *node, uint8_t into)
             if (entry->v.entry.key == NULL) {
                 continue;  // the template; 14.11 handles it at construction
             }
-            // 14.15: a declaration carries a type and no value, so there is
-            // nothing to write. What fills it comes from a later part.
-            if (entry->v.entry.declared) {
-                continue;
-            }
             const char *name = NULL;
             size_t length = 0;
             if (!node_name(c, entry->v.entry.key, &name, &length)) {
                 fail(c, LHAT_COMPILE_UNSUPPORTED);
                 break;
+            }
+            // 14.15: a declaration carries a type and no value; what it
+            // leaves is the seat, so the definition shows the member before
+            // a later part gives it. RESERVE lays one only where nothing
+            // sits, so the parts may come in either order.
+            if (entry->v.entry.declared) {
+                uint8_t seat_mark = c->next_register;
+                uint8_t seat_key = reserve(c);
+                load_string_bytes(c, seat_key, name, length);
+                emit(c, lhat_encode_abc(LHAT_BC_RESERVE, into, seat_key, 0));
+                c->next_register = seat_mark;
+                continue;
             }
             // 14.5改: nothing goes under a name the checker will not read.
             if (entry->v.entry.modifier == LHAT_DEF_PLAIN &&
@@ -3025,9 +3032,6 @@ static void compile_def(Compiler *c, const LhatNode *node, uint8_t into)
              field = field->next) {
             const char *name = NULL;
             size_t length = 0;
-            if (field->v.entry.declared) {
-                continue;
-            }
             if (field->v.entry.key == NULL ||
                 !node_name(c, field->v.entry.key, &name, &length)) {
                 fail(c, LHAT_COMPILE_UNSUPPORTED);
@@ -3035,6 +3039,17 @@ static void compile_def(Compiler *c, const LhatNode *node, uint8_t into)
             }
             uint8_t at = c->next_register;
             uint8_t key = reserve(c);
+            // 14.15: a declaration carries no value; what it leaves is the
+            // seat -- the key held with nothing under it, so a prototype
+            // (and every clone) shows the field before anything gives it.
+            // A part that already wrote the value keeps it: RESERVE lays a
+            // seat only where nothing sits.
+            if (field->v.entry.declared) {
+                load_string_bytes(c, key, name, length);
+                emit(c, lhat_encode_abc(LHAT_BC_RESERVE, prototype, key, 0));
+                c->next_register = at;
+                continue;
+            }
             uint8_t value = reserve(c);
             load_string_bytes(c, key, name, length);
             compile_expression(c, field->v.entry.value, value);

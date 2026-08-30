@@ -945,14 +945,33 @@ LhatValue lhat_table_get_by_value(const LhatTable *table,
                                   const LhatValueUnion *data);
 
 // Storing nil^ removes the key, which is what keeps "absent" and "nil^" the
-// one answer 11.3 describes. Returns false only when out of memory; a key
-// that cannot be a key (nil^, or a NaN) is refused with `refused` set.
+// one answer 11.3 describes. (The one exception is the machine's: writing
+// nil^ over a field its definition declared puts the seat back instead --
+// vm.c's set_key asks the prototype first.) Returns false only when out of
+// memory; a key that cannot be a key (nil^, or a NaN) is refused with
+// `refused` set.
 //
 // No collector barrier: this file knows nothing of a machine. A host writing
 // into a table a machine holds goes through lhat_machine_table_set (vm.h)
 // instead, which is this with 5.12's barrier around it.
 bool lhat_table_set(LhatTable *table, LhatValue key, LhatValue value,
                     bool *refused);
+
+// 02 の 14.15: the reserved seat -- an entry holding its key and no value,
+// which is what an abstract^ declaration leaves in a prototype (and every
+// clone of it). It reads as absent; the walkers show it as (key, nil^);
+// writing a value fills it without changing the table's layout.
+//
+// `reserve` lays a seat where nothing sits (a key already present, value or
+// seat, is left alone; false only when out of memory). `vacate` puts a
+// present key back to its seat. `reserved` asks whether a seat sits under
+// the key. `prune_seats` drops from `proto` every seat whose name the
+// definition itself answers -- 14.15's clash, enforced here for compiles
+// that never checked.
+bool lhat_table_reserve(LhatTable *table, LhatValue key);
+void lhat_table_vacate(LhatTable *table, LhatValue key);
+bool lhat_table_reserved(const LhatTable *table, LhatValue key);
+void lhat_table_prune_seats(LhatTable *proto, const LhatTable *definition);
 
 // How many keys 1, 2, 3 ... the table holds without a gap.
 size_t lhat_table_length(const LhatTable *table);
