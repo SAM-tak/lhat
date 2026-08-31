@@ -29,6 +29,14 @@ struct LhatUnit {
     LhatParseResult parsed;
     LhatCheckResult checked;
 
+    // 05 の 4.5: the export descriptors lhat_unit_export_type answered,
+    // built lazily out of `checked` onto the proto's chunk heap (where
+    // 5.13's fits^ descriptors live, with the same lifetime). The array is
+    // parallel to the exports walk and cleared with the stages -- a
+    // reload's recheck starts it empty again.
+    struct LhatRuntimeType **export_rt;
+    size_t export_rt_count;
+
     LhatUnitState state;
 
     // 05 の 5.7: what module^ the last check of this unit read, copied here

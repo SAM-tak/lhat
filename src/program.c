@@ -1035,8 +1035,45 @@ LhatUnitText lhat_unit_export_name(const LhatUnit *unit, size_t index)
     return text;
 }
 
-size_t lhat_unit_export_type(const LhatUnit *unit, const char *name,
-                             char *out, size_t capacity)
+const struct LhatRuntimeType *lhat_unit_export_type(const LhatUnit *unit,
+                                                    const char *name)
+{
+    const LhatTypeMember *m = export_named(unit, name);
+    if (m == NULL || unit->proto == NULL) {
+        return NULL;
+    }
+    size_t count = 0;
+    size_t at = SIZE_MAX;
+    for (const LhatTypeMember *walk = unit->checked.exports->v.table.members;
+         walk != NULL; walk = walk->next) {
+        if (walk == m) {
+            at = count;
+        }
+        count++;
+    }
+    // The cache fill is the answering -- logically const, as a member
+    // cache's is.
+    LhatUnit *filling = (LhatUnit *)unit;
+    if (filling->export_rt == NULL) {
+        filling->export_rt = (struct LhatRuntimeType **)lhat_calloc(
+            count, sizeof *filling->export_rt);
+        if (filling->export_rt == NULL) {
+            return NULL;
+        }
+        filling->export_rt_count = count;
+    }
+    if (at >= filling->export_rt_count) {
+        return NULL;
+    }
+    if (filling->export_rt[at] == NULL) {
+        filling->export_rt[at] =
+            lhat_rt_from_checked(&unit->proto->chunk.heap, m->type);
+    }
+    return filling->export_rt[at];
+}
+
+size_t lhat_unit_export_type_text(const LhatUnit *unit, const char *name,
+                                  char *out, size_t capacity)
 {
     const LhatTypeMember *m = export_named(unit, name);
     if (m == NULL) {
@@ -2539,6 +2576,9 @@ static void unit_clear_stages(LhatUnit *unit)
         memset(&unit->source, 0, sizeof unit->source);
         unit->loaded = false;
     }
+    lhat_free(unit->export_rt);
+    unit->export_rt = NULL;
+    unit->export_rt_count = 0;
     lhat_free(unit->referenced);
     unit->referenced = NULL;
     unit->referenced_count = 0;

@@ -1236,12 +1236,24 @@ static void test_hosting(void)
         LHAT_CHECK(lhat_unit_export_name(root, 2).text == NULL,
                    "and there is no third");
         char spelt[64];
-        size_t needed = lhat_unit_export_type(root, "update", spelt,
-                                              sizeof spelt);
+        size_t needed = lhat_unit_export_type_text(root, "update", spelt,
+                                                   sizeof spelt);
         LHAT_CHECK(needed < sizeof spelt && strcmp(spelt, "p^number^;") == 0,
                    "update is spelt p^number^; -- got %s", spelt);
-        LHAT_CHECK(lhat_unit_export_type(root, "hidden", NULL, 0) == SIZE_MAX,
+        LHAT_CHECK(lhat_unit_export_type_text(root, "hidden", NULL, 0) ==
+                       SIZE_MAX,
                    "a private name is not an export");
+        // 4.5: the same answer as the walkable descriptor -- which lives
+        // on the compiled body, so compiling is part of the ask.
+        LHAT_CHECK(lhat_program_compile(&program), "the program compiles");
+        const LhatRuntimeType *rt = lhat_unit_export_type(root, "update");
+        LHAT_CHECK(rt != NULL, "update answers a descriptor");
+        LHAT_CHECK(rt != NULL && rt->kind == LHAT_TYPE_RT_SUBROUTINE,
+                   "and it is a subroutine's");
+        LHAT_CHECK(lhat_unit_export_type(root, "update") == rt,
+                   "asked twice, the descriptor is the same one");
+        LHAT_CHECK(lhat_unit_export_type(root, "hidden") == NULL,
+                   "a private name answers none");
         LHAT_CHECK(lhat_unit_export_conforms(root, "update", "p^number^;"),
                    "update keeps the contract");
         LHAT_CHECK(lhat_unit_export_conforms(root, "title", "string^"),

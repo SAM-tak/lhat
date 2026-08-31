@@ -260,13 +260,16 @@ public^ let^ current = f^ -> number^ { return^ count }
 const LhatUnit *unit = lhat_program_check(program, "game.lh");
 if (!lhat_unit_export_conforms(unit, "update", "p^number^;")) {
     char spelt[128];
-    lhat_unit_export_type(unit, "update", spelt, sizeof spelt);
+    lhat_unit_export_type_text(unit, "update", spelt, sizeof spelt);
     // "game.lh: update is p^string^;, and the game asks for p^number^;"
 }
 ```
 
 - `lhat_unit_export_count` / `lhat_unit_export_name` —— 公開した名前の一覧
-- `lhat_unit_export_type` —— 02 の 14.10 の綴り（`typeof^(x).signature` と
+- `lhat_unit_export_type` —— 歩ける記述子（`LhatRuntimeType`）。合併の腕・
+  メンバ・def^ のインスタンス形まで、綴りをパースせずに読める。単位の
+  コンパイル済み本体と同寿命
+- `lhat_unit_export_type_text` —— 02 の 14.10 の綴り（`typeof^(x).signature` と
   同じ文）。無い名前は `SIZE_MAX`
 - `lhat_unit_export_conforms` —— 02 の 13.5 の適合。書く型は 8.7 の登録の
   署名と同じに読まれるので、ホストが登録した型も名指せる

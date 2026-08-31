@@ -191,7 +191,10 @@ bool lhat_machine_holds_body(const LhatMachine *machine,
 // A subroutine answers from the types its proto carries, which were made
 // at compile time -- including a parameter nothing was written for, whose
 // type inference settled (03 の 3.4). A table answers t^ and no more: what
-// a structure holds deeply is the checker's to say, at compile time.
+// a structure holds deeply is the checker's to say, at compile time. For
+// the declared shape of a public^ name -- a def^'s self^{...} included --
+// ask the unit instead: lhat_unit_export_type (program.h) answers the
+// walkable descriptor, and lhat_unit_export_type_text the 14.16 spelling.
 //
 // The answer is the machine's, so it is readable until the next lhat_run /
 // lhat_machine_call / lhat_machine_resume or the machine's disposal,

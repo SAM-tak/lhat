@@ -470,12 +470,21 @@ LhatUnitText lhat_unit_member_written_name(const LhatUnit *unit,
 size_t lhat_unit_export_count(const LhatUnit *unit);
 LhatUnitText lhat_unit_export_name(const LhatUnit *unit, size_t index);
 
-// The export's type in 02 の 14.10's spelling -- what typeof^(x).signature
+// The export's type as the walkable descriptor -- kinds, union parts,
+// members, a def^'s instance shape (object.h's LhatRuntimeType; what a
+// host inspector reads without parsing a spelling). Built lazily from what
+// the checker settled, kept on the unit's compiled body's own heap, and
+// good until the unit is reloaded or disposed. NULL when nothing of that
+// name was published, or the unit has no compiled body to keep it on.
+const struct LhatRuntimeType *lhat_unit_export_type(const LhatUnit *unit,
+                                                    const char *name);
+
+// The same type in 02 の 14.10's spelling -- what typeof^(x).signature
 // answers. lhat_report_write's convention: measures with (NULL, 0), fills
 // up to `capacity` including the NUL. SIZE_MAX when nothing of that name
 // was published.
-size_t lhat_unit_export_type(const LhatUnit *unit, const char *name,
-                             char *out, size_t capacity);
+size_t lhat_unit_export_type_text(const LhatUnit *unit, const char *name,
+                                  char *out, size_t capacity);
 
 // Whether the export conforms to `signature` -- 02 の 13.5's conformance,
 // the question a call asks of its argument. The text may name what the
