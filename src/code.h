@@ -260,6 +260,15 @@ typedef enum {
     LHAT_BC_ASCAST,     // A B   R[A] = R[A], or a CastFailure
 
 
+    // 03 の 5.1改4: GETMEMBER fused with the call it feeds. Operands are
+    // GETMEMBER's own (A the callee slot, B the receiver, C the cache);
+    // the paired CALLMETHOD/TAILCALLMETHOD sits right after it, and a
+    // cache hit reads that instruction's counts and enters the call
+    // without another trip around the loop. A miss answers exactly as
+    // GETMEMBER and leaves the pair to run as itself -- so the two
+    // instructions stay in the chunk and only the dispatch is saved.
+    LHAT_BC_CALLMEMBER, // A B C as GETMEMBER; pairs with the next instruction
+
     // 03 の 5.1改3 with 02 の 16.4: the counted loop's turn as one
     // instruction. A, A+1, A+2 are the focus, the bound and the step^,
     // laid consecutively by the compiler -- which falls back to the

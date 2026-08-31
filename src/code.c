@@ -363,6 +363,7 @@ const char *lhat_opcode_name(LhatOpcode op)
         case LHAT_BC_RESERVE:     return "reserve";
         case LHAT_BC_GETINDEX:    return "getindex";
         case LHAT_BC_GETMEMBER:   return "getmember";
+        case LHAT_BC_CALLMEMBER:  return "callmember";
         case LHAT_BC_SETINDEX:    return "setindex";
         case LHAT_BC_CHECKRUN:    return "checkrun";
         case LHAT_BC_PACK:        return "pack";

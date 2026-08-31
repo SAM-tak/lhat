@@ -3997,6 +3997,34 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                 goto member_body;
             }
 
+            // 03 の 5.1改4: GETMEMBER fused with its call. A hit loads
+            // the member and walks straight into the paired call
+            // instruction; a miss is GETMEMBER to the letter, and the pair
+            // runs as itself on the next turn.
+            case LHAT_BC_CALLMEMBER: {
+                LhatMemberCache *cache = &chunk->member_caches[cc];
+                const LhatTable *start = readable_table(R(b));
+                if (cache->answered != NULL && start != NULL &&
+                    (cache->from_definition
+                         ? (start->version == 0 &&
+                            start->definition == cache->answered &&
+                            cache->answered->version == cache->version)
+                         : (start == cache->answered &&
+                            start->version == cache->version))) {
+                    SET_R(a, cache->answered->entries[cache->index].value);
+                    at = pc;
+                    instruction = chunk->code[pc++];
+                    a = lhat_a(instruction);
+                    b = lhat_b(instruction);
+                    cc = lhat_c(instruction);
+                    op = lhat_op(instruction);
+                    goto call_entry;
+                }
+                member_key = chunk->constants[cache->key];
+                filling = cache;
+                goto member_body;
+            }
+
             case LHAT_BC_GETINDEX:
                 LHAT_GC_POLL();  // string cuts, written-down members
                 member_key = R(cc);
@@ -4745,6 +4773,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
             case LHAT_BC_CALLMETHOD:
             case LHAT_BC_TAILCALL:
             case LHAT_BC_TAILCALLMETHOD: {
+            call_entry:;
                 // 14.4: whether the receiver was laid out below the arguments.
                 // 5.3: and whether the call may take this frame over rather
                 // than push one -- which only the closure path below can do,

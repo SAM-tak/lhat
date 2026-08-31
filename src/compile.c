@@ -415,6 +415,8 @@ static void emit(Compiler *c, LhatInstruction instruction);
 // 05 の 8.9: MOVE copies one slot blindly (payload and tag alike), so a wide
 // value moves as that many MOVEs. Ranges from the register allocator never
 // interleave, so an ascending copy is safe wherever this is emitted.
+static bool runs_nothing(Compiler *c, const LhatNode *node);
+
 static void emit_move_wide(Compiler *c, uint8_t into, uint8_t from,
                            size_t width)
 {
@@ -3302,6 +3304,8 @@ static void compile_call_wide(Compiler *c, const LhatNode *node, uint8_t into,
     ChainFrame chain;
     chain_open(c, node, into, &chain);
     uint8_t callee = reserve(c);
+    size_t fuse_cache = SIZE_MAX;  // 5.1改4, see below
+    uint8_t fuse_receiver = 0;
 
     // 14.4: 'x.m()' hands x to a method as its self^, and 'm(x)' on the same
     // member does the same by hand. So the receiver is put in place here and
@@ -3331,7 +3335,25 @@ static void compile_call_wide(Compiler *c, const LhatNode *node, uint8_t into,
         // 03 の 5.1改: 'x.m()' is where a member read is hottest, and the
         // name is written, so the site remembers where it found it.
         size_t cache = member_cache_for(c, target);
-        if (cache != SIZE_MAX) {
+        // 03 の 5.1改4: when every argument runs nothing, the read moves
+        // down to sit against the call and fuses with it (CALLMEMBER) --
+        // nothing between them could have changed which member is called.
+        // An argument that runs something keeps today's order: the member
+        // is read before the arguments. '?(' needs the callee before the
+        // arguments too, and PICKARM has to stand between the two, so both
+        // keep the spelled-out pair.
+        bool arms_pure = node->checked_arm == 0 && !node->v.access.nil_safe;
+        for (const LhatNode *fuse_arg = node->v.access.argument;
+             arms_pure && fuse_arg != NULL; fuse_arg = fuse_arg->next) {
+            if (fuse_arg->kind == LHAT_NODE_SPREAD ||
+                !runs_nothing(c, fuse_arg)) {
+                arms_pure = false;
+            }
+        }
+        if (cache != SIZE_MAX && arms_pure) {
+            fuse_cache = cache;
+            fuse_receiver = receiver;
+        } else if (cache != SIZE_MAX) {
             emit(c, lhat_encode_abc(LHAT_BC_GETMEMBER, callee, receiver,
                                     (uint8_t)cache));
         } else {
@@ -3451,6 +3473,10 @@ static void compile_call_wide(Compiler *c, const LhatNode *node, uint8_t into,
     uint8_t operand = lhat_call_operand(spread, (unsigned)prepared);
     if (tail && drop) {
         operand |= LHAT_CALL_DROP;
+    }
+    if (fuse_cache != SIZE_MAX) {
+        emit(c, lhat_encode_abc(LHAT_BC_CALLMEMBER, callee, fuse_receiver,
+                                (uint8_t)fuse_cache));
     }
     emit(c, lhat_encode_abc(call_op, callee, (uint8_t)count, operand));
     // The answer then moves to the destination the same way it was written.
