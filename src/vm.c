@@ -3690,9 +3690,23 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                 // number here. A key, a constant and 'is^' go on asking the
                 // exact question -- lhat_value_close is only what '=' and
                 // 11.9's orderings read.
-                SET_R(a, lhat_bool(
-                    lhat_value_close(R(b), R(cc), LHAT_NUMBER_TOLERANCE) ==
-                    (op == LHAT_BC_EQ)));
+                {
+                    bool held =
+                        lhat_value_close(R(b), R(cc),
+                                         LHAT_NUMBER_TOLERANCE) ==
+                        (op == LHAT_BC_EQ);
+                    SET_R(a, lhat_bool(held));
+                    // 5.1改5, as the orderings below
+                    LhatInstruction paired = chunk->code[pc];
+                    if (lhat_op(paired) == LHAT_BC_JUMP_FALSE &&
+                        lhat_a(paired) == a) {
+                        pc++;
+                        if (!held) {
+                            pc = (size_t)((int64_t)pc +
+                                          lhat_jump_offset(paired));
+                        }
+                    }
+                }
                 break;
             case LHAT_BC_SAME:
                 // 05 の 8.9: a value type has no identity apart from its
@@ -3715,6 +3729,19 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                 LhatRunStatus status = LHAT_RUN_OK;
                 if (ordering(op, R(b), R(cc), &out, &status)) {
                     SET_R(a, lhat_bool(out));
+                    // 03 の 5.1改5: the JUMP_FALSE that reads this answer,
+                    // consumed on the spot when it stands right here --
+                    // one turn for the pair. Any jump that lands on it
+                    // still runs it as itself.
+                    LhatInstruction paired = chunk->code[pc];
+                    if (lhat_op(paired) == LHAT_BC_JUMP_FALSE &&
+                        lhat_a(paired) == a) {
+                        pc++;
+                        if (!out) {
+                            pc = (size_t)((int64_t)pc +
+                                          lhat_jump_offset(paired));
+                        }
+                    }
                     break;
                 }
                 // 11.9: numbers order themselves; anything else says
