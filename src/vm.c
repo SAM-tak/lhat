@@ -3128,6 +3128,21 @@ bool lhat_make_hostvalue(LhatMachine *machine, const LhatHostValueTag *tag,
     return true;
 }
 
+bool lhat_place_hostvalue(const LhatHostValueTag *tag, const void *bytes,
+                          LhatHostValueRoom *room, LhatValue *out)
+{
+    if (tag == NULL || bytes == NULL || room == NULL || out == NULL ||
+        tag->size > LHAT_HOSTVALUE_MAX_BYTES) {
+        return false;
+    }
+    memset(room->run, 0, tag->width * sizeof room->run[0]);
+    room->run[0].hostvalue = tag;
+    memcpy(room->run + 1, bytes, tag->size);
+    out->tag = LHAT_VALUE_HOSTVALUE;
+    out->as.hostvalue_run = room->run;
+    return true;
+}
+
 // 02 の 13.8改 with 05 の 8.7: the boundary's answer, put into the shape the
 // machine already carries one in. A host writes its values into the room
 // and says how many; from here on a single value travels as itself and
@@ -7413,6 +7428,27 @@ static LhatRunResult call_fault(Machine *m, LhatRunStatus status)
 // The body of both host entry points below. `receiver` means something only
 // when `as_method`, and then the callee is a member reached through it
 // (14.4) -- which is the whole of the difference between them.
+// 05 の 8.9改: one boundary value into consecutive slots. A host value
+// widens to its head and continuation slots -- the in-frame shape every
+// instruction reads -- and anything else takes one slot. Answers how many
+// slots it took.
+static size_t place_boundary_value(LhatSlots slots, size_t at, LhatValue v)
+{
+    if (!lhat_is_hostvalue(v)) {
+        lhat_slots_set(slots, at, v);
+        return 1;
+    }
+    const LhatValueUnion *run = v.as.hostvalue_run;
+    size_t width = run[0].hostvalue->width;
+    slots.values[at] = run[0];
+    slots.tags[at] = (uint8_t)LHAT_VALUE_HOSTVALUE;
+    for (size_t k = 1; k < width; k++) {
+        slots.values[at + k] = run[k];
+        slots.tags[at + k] = (uint8_t)LHAT_VALUE_CONT;
+    }
+    return width;
+}
+
 static LhatRunResult host_call(Machine *m, LhatValue callee, LhatValue receiver,
                                bool as_method, const LhatValue *arguments,
                                size_t count)
@@ -7543,12 +7579,19 @@ static LhatRunResult host_call(Machine *m, LhatValue callee, LhatValue receiver,
             return call_fault(m, LHAT_RUN_OUT_OF_MEMORY);
         }
         size_t taken = 0;
+        size_t laid = 0;
         for (size_t i = 0; i < required; i++) {
-            if (pass_self && i == self_at) {
-                lhat_slots_set(co->registers, i, receiver);
-                continue;
-            }
-            lhat_slots_set(co->registers, i, arguments[taken++]);
+            LhatValue value = pass_self && i == self_at ? receiver
+                                                        : arguments[taken++];
+            laid += place_boundary_value(co->registers, laid, value);
+        }
+        // 05 の 8.9改: the widths handed over have to add up to the slots
+        // the parameters were laid out by. A checked program's do; this is
+        // the unchecked backstop, and what catches a narrow value where a
+        // wide parameter stands.
+        if (laid != (size_t)closure->proto->parameter_slots -
+                        (closure->proto->has_variadic ? 1 : 0)) {
+            return call_fault(m, LHAT_RUN_TYPE_ERROR);
         }
         if (closure->proto->has_variadic) {
             LhatTable *collected = lhat_table_new(&m->objects);
@@ -7567,7 +7610,7 @@ static LhatRunResult host_call(Machine *m, LhatValue callee, LhatValue receiver,
                     return call_fault(m, LHAT_RUN_OUT_OF_MEMORY);
                 }
             }
-            lhat_slots_set(co->registers, required,
+            lhat_slots_set(co->registers, laid,
                            lhat_object((LhatObject *)collected));
         }
         // call_fault fills the empty result; only the value differs.
@@ -7594,12 +7637,17 @@ static LhatRunResult host_call(Machine *m, LhatValue callee, LhatValue receiver,
     }
 
     size_t next = 0;
+    size_t laid = next_base;
     for (size_t i = 0; i < required; i++) {
-        if (pass_self && i == self_at) {
-            lhat_slots_set(m->slots, next_base + (i), receiver);
-            continue;
-        }
-        lhat_slots_set(m->slots, next_base + (i), arguments[next++]);
+        LhatValue value = pass_self && i == self_at ? receiver
+                                                    : arguments[next++];
+        laid += place_boundary_value(m->slots, laid, value);
+    }
+    // 05 の 8.9改: as in the coroutine branch above -- the widths have to
+    // add up to the parameters' slots.
+    if (laid != next_base + (size_t)closure->proto->parameter_slots -
+                    (closure->proto->has_variadic ? 1 : 0)) {
+        return call_fault(m, LHAT_RUN_TYPE_ERROR);
     }
     if (closure->proto->has_variadic) {
         LhatTable *collected = lhat_table_new(&m->objects);
@@ -7608,12 +7656,17 @@ static LhatRunResult host_call(Machine *m, LhatValue callee, LhatValue receiver,
         }
         for (size_t i = next; i < count; i++) {
             bool refused = false;
+            // As at the compiled call: the collection is a table, and a
+            // table member is never a host value.
+            if (lhat_is_hostvalue(arguments[i])) {
+                return call_fault(m, LHAT_RUN_TYPE_ERROR);
+            }
             if (!set_key(m, collected, lhat_integer((int64_t)(i - next + 1)),
                          arguments[i], &refused)) {
                 return call_fault(m, LHAT_RUN_OUT_OF_MEMORY);
             }
         }
-        lhat_slots_set(m->slots, next_base + (required), lhat_object((LhatObject *)collected));
+        lhat_slots_set(m->slots, laid, lhat_object((LhatObject *)collected));
     }
     clear_scratch(m, next_base, closure->proto);
 

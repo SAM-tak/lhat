@@ -1042,6 +1042,27 @@ static void host_counter_refuse(LhatMachine *machine, void *context,
     *answer_count = 1;
 }
 
+// f^wide.V -> number^; -- reads the double the value carries. What the
+// boundary laid into the frame is exactly what this sees.
+static void host_wide_probe(LhatMachine *machine, void *context,
+                            const LhatValue *arguments, size_t count,
+                            LhatValue *answers, int *answer_count)
+{
+    (void)machine;
+    if (count != 1) {
+        return;
+    }
+    const void *bytes =
+        lhat_hostvalue_data(arguments[0], (const LhatHostValueTag *)context);
+    if (bytes == NULL) {
+        return;
+    }
+    double d;
+    memcpy(&d, bytes, sizeof d);
+    answers[0] = lhat_integer((int64_t)d);
+    *answer_count = 1;
+}
+
 static void host_counter_negate(LhatMachine *machine, void *context,
                                 const LhatValue *arguments, size_t count,
                                 LhatValue *answers, int *answer_count)
@@ -1752,6 +1773,55 @@ static void test_host_data(void)
             LHAT_CHECK_EQ_INT(ran.status, LHAT_RUN_OK);
             LHAT_CHECK(ran.live < 1000, "live objects after install: %zu",
                        ran.live);
+            lhat_machine_dispose(machine);
+        }
+    }
+    lhat_program_dispose(&program);
+
+    // 05 の 8.9改: a host value crosses the host->L^ boundary as an
+    // argument. Two stand at once in the caller's own rooms, a narrow
+    // argument rides between them, and the widened frame is what the body
+    // reads.
+    LHAT_TEST("host value arguments cross the boundary whole");
+    {
+        static const File files[] = {
+            {"main.lh",
+             "import^ wide\n"
+             "public^let^ f = f^a:wide.V, b:wide.V, k:number^ -> number^{\n"
+             "    return^ wide.probe(a) * 100000 + wide.probe(b) * 100 + k\n"
+             "}\n"
+             "return^ f\n"},
+        };
+        program_with(&program, &disk, files, 1);
+        const LhatHostValueTag *tag = lhat_register_hostvalue_type(
+            &program, "wide", "V", sizeof(double));
+        LHAT_CHECK(tag != NULL, "the type registered");
+        lhat_register_func(&program, "wide", "probe", "f^wide.V -> number^;",
+                           host_wide_probe, (void *)tag);
+        const LhatUnit *root = lhat_program_check(&program, "main.lh");
+        LHAT_CHECK(root != NULL && root->checked.diagnostic_count == 0,
+                   "the program checked");
+        bool compiled = lhat_program_compile(&program);
+        LHAT_CHECK(compiled, "and compiled");
+        if (compiled && root != NULL) {
+            LhatMachine *machine = lhat_machine_new();
+            lhat_program_install(&program, machine);
+            LhatRunResult ran = lhat_run(machine, lhat_unit_proto(root));
+            LHAT_CHECK_EQ_INT(ran.status, LHAT_RUN_OK);
+            double first = 7.0;
+            double second = 9.0;
+            LhatHostValueRoom rooms[2];
+            LhatValue handed[3];
+            LHAT_CHECK(lhat_place_hostvalue(tag, &first, &rooms[0], &handed[0]),
+                       "the first placed");
+            LHAT_CHECK(lhat_place_hostvalue(tag, &second, &rooms[1],
+                                            &handed[1]),
+                       "and the second beside it");
+            handed[2] = lhat_integer(3);
+            LhatRunResult called =
+                lhat_machine_call(machine, ran.value, handed, 3);
+            LHAT_CHECK_EQ_INT(called.status, LHAT_RUN_OK);
+            LHAT_CHECK_EQ_INT(lhat_as_integer(called.value), 700903);
             lhat_machine_dispose(machine);
         }
     }

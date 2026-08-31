@@ -310,6 +310,22 @@ void *lhat_hostvalue_data(LhatValue argument, const LhatHostValueTag *tag);
 bool lhat_make_hostvalue(LhatMachine *machine, const LhatHostValueTag *tag,
                          const void *bytes, LhatValue *out);
 
+// 05 の 8.9改: the same value placed in the caller's own room instead of the
+// machine's scratch -- the scratch holds exactly one answer, and arguments
+// may stand several at once. The room is the caller's to keep until the call
+// that takes them returns; lhat_machine_call and lhat_machine_call_member
+// widen such an argument into the callee's frame, head and continuation
+// slots, so a parameter written against the registered type receives the
+// value whole. No machine is involved: the room is plain memory of the
+// caller's. False when the tag is NULL, the bytes are, or the registered
+// size outgrows the room.
+typedef struct {
+    LhatValueUnion run[1 + LHAT_HOSTVALUE_MAX_BYTES / 8];
+} LhatHostValueRoom;
+
+bool lhat_place_hostvalue(const LhatHostValueTag *tag, const void *bytes,
+                          LhatHostValueRoom *room, LhatValue *out);
+
 // A string on `machine`'s own heap, made the way 05 の 8.7's registration
 // makes a table or a host -- the machine has to make it, since the value's
 // object header and its place in the collector's heap are the machine's to
