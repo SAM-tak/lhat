@@ -259,6 +259,20 @@ typedef enum {
     // what as^ answers. C is unused.
     LHAT_BC_ASCAST,     // A B   R[A] = R[A], or a CastFailure
 
+
+    // 03 の 5.1改3 with 02 の 16.4: the counted loop's turn as one
+    // instruction. A, A+1, A+2 are the focus, the bound and the step^,
+    // laid consecutively by the compiler -- which falls back to the
+    // spelled-out compare/jump/add form when the shape does not allow it
+    // (a reused focus name, a pre^ clause). FORPREP asks once that the
+    // three are numbers and jumps past the loop when the first turn is
+    // already refused; FORLOOP advances, tests and jumps back. The D pair
+    // is downto^: the direction is syntax, so it stays static.
+    LHAT_BC_FORPREP,    // A Bx  jump when the loop never enters
+    LHAT_BC_FORLOOP,    // A Bx  advance, jump back while focus <= bound
+    LHAT_BC_FORPREPD,   // A Bx  downto^'s enter test
+    LHAT_BC_FORLOOPD,   // A Bx  advance down, jump back while focus >= bound
+
     LHAT_BC_COUNT
 } LhatOpcode;
 

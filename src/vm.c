@@ -6766,6 +6766,47 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                 break;
             }
 
+
+            // 03 の 5.1改3: the counted loop fused. The three registers are
+            // asked to be numbers here, once -- 16.4 refuses reassigning the
+            // focus and reads the bound and step^ before the loop, so nothing
+            // can change their kind while it runs (an addition may widen the
+            // focus to real, which both helpers speak).
+            case LHAT_BC_FORPREP:
+            case LHAT_BC_FORPREPD: {
+                if (!lhat_is_number(R(a)) || !lhat_is_number(R(a + 1)) ||
+                    !lhat_is_number(R(a + 2))) {
+                    return finish(m, chunk, LHAT_RUN_TYPE_ERROR, lhat_nil(), at);
+                }
+                bool enter = false;
+                LhatRunStatus status = LHAT_RUN_OK;
+                ordering(op == LHAT_BC_FORPREP ? LHAT_BC_LE : LHAT_BC_GE,
+                         R(a), R(a + 1), &enter, &status);
+                if (!enter) {
+                    pc = (size_t)((int64_t)pc + lhat_jump_offset(instruction));
+                }
+                break;
+            }
+
+            case LHAT_BC_FORLOOP:
+            case LHAT_BC_FORLOOPD: {
+                bool down = op == LHAT_BC_FORLOOPD;
+                LhatValue moved = lhat_nil();
+                LhatRunStatus status = LHAT_RUN_OK;
+                if (!arithmetic(down ? LHAT_BC_SUB : LHAT_BC_ADD, R(a),
+                                R(a + 2), &moved, &status)) {
+                    return finish(m, chunk, LHAT_RUN_TYPE_ERROR, lhat_nil(), at);
+                }
+                SET_R(a, moved);
+                bool more = false;
+                ordering(down ? LHAT_BC_GE : LHAT_BC_LE, moved, R(a + 1),
+                         &more, &status);
+                if (more) {
+                    pc = (size_t)((int64_t)pc + lhat_jump_offset(instruction));
+                }
+                break;
+            }
+
             case LHAT_BC_COUNT:
                 return finish(m, chunk, LHAT_RUN_TYPE_ERROR, lhat_nil(), at);
         }

@@ -6176,12 +6176,33 @@ static void compile_loop(Compiler *c, const LhatNode *node)
     // how many times, so it cannot change under the loop.
     uint8_t counter = 0;
     uint8_t limit = 0;
+    uint8_t count_step = 0;
     if (!is_for && node->v.repeat.kind == LHAT_REPEAT_COUNT) {
-        limit = reserve(c);
-        compile_expression(c, bound, limit);
+        // Laid as the fused triple (see LHAT_BC_FORPREP): the counter runs
+        // 1..limit inclusive, the same number of turns the old
+        // 0..limit-1 shape took.
         counter = reserve(c);
-        load_constant(c, counter, lhat_integer(0));
+        limit = reserve(c);
+        count_step = reserve(c);
+        compile_expression(c, bound, limit);
+        load_constant(c, counter, lhat_integer(1));
+        load_constant(c, count_step, lhat_integer(1));
     }
+
+    // 03 の 5.1改3: one instruction a turn, when the shape allows -- the
+    // triple laid consecutively (a fresh focus; 8.6改 reuse of an existing
+    // name lands elsewhere) and no pre^ (9.10 runs pre^ on the refusing turn
+    // too, which a bottom-of-loop test cannot). Anything else keeps the
+    // spelled-out form, which answers identically.
+    bool fused_down = kind == LHAT_FOR_DOWNTO;
+    bool fused_for = (kind == LHAT_FOR_TO || kind == LHAT_FOR_DOWNTO) &&
+                     pre == NULL && numeric != NULL &&
+                     (uint8_t)(numeric->reg + 1) == numeric_bound &&
+                     (uint8_t)(numeric_bound + 1) == numeric_step;
+    uint8_t fused_reg = fused_for ? numeric->reg : 0;
+    bool fused_count = !is_for && bound != NULL && pre == NULL &&
+                       node->v.repeat.kind == LHAT_REPEAT_COUNT;
+    (void)count_step;
 
     // 9.2 puts finally^ last of all, and 10.2 makes it run on every way out.
     // Remembering it here covers the ways out that 9.8 keeps apart from a
@@ -6232,7 +6253,11 @@ static void compile_loop(Compiler *c, const LhatNode *node)
     // entered: 9.1 keeps first^ and last^ for turns the condition accepted.
     compile_in_scope(c, pre);
 
-    if (kind == LHAT_FOR_TO || kind == LHAT_FOR_DOWNTO) {
+    if (fused_for) {
+        leaving = emit_jump(c, fused_down ? LHAT_BC_FORPREPD
+                                          : LHAT_BC_FORPREP,
+                            fused_reg);
+    } else if (kind == LHAT_FOR_TO || kind == LHAT_FOR_DOWNTO) {
         uint8_t mark = c->next_register;
         uint8_t test = reserve(c);
         compile_numeric_test(c, node, numeric, numeric_bound, test);
@@ -6273,11 +6298,17 @@ static void compile_loop(Compiler *c, const LhatNode *node)
         }
         bind_targets(c, focus, local_mark, focus_locals, taken);
     } else if (!is_for && node->v.repeat.kind == LHAT_REPEAT_COUNT) {
-        uint8_t mark = c->next_register;
-        uint8_t test = reserve(c);
-        emit(c, lhat_encode_abc(LHAT_BC_LT, test, counter, limit));
-        leaving = emit_jump(c, LHAT_BC_JUMP_FALSE, test);
-        c->next_register = mark;
+        if (fused_count) {
+            leaving = emit_jump(c, LHAT_BC_FORPREP, counter);
+        } else {
+            // One-based now (see the setup above), so the spelled-out test
+            // is <= where it was <.
+            uint8_t mark = c->next_register;
+            uint8_t test = reserve(c);
+            emit(c, lhat_encode_abc(LHAT_BC_LE, test, counter, limit));
+            leaving = emit_jump(c, LHAT_BC_JUMP_FALSE, test);
+            c->next_register = mark;
+        }
     } else if (bound != NULL) {
         // 16.5: until^ is while^ negated, and the negation is all there is
         // to it -- the test happens at the same place either way.
@@ -6322,7 +6353,17 @@ static void compile_loop(Compiler *c, const LhatNode *node)
         lhat_chunk_patch_here(&c->proto->chunk, context.nexts[i]);
     }
 
-    if (advance != NULL) {
+    if (fused_for || fused_count) {
+        // The turn's whole machinery: advance, test, jump back to the
+        // instruction after FORPREP. Emitted by hand because the jump aims
+        // backwards, which lhat_chunk_patch_here cannot write.
+        size_t looping = c->proto->chunk.count;
+        int32_t offset = (int32_t)(top + 1) - (int32_t)looping - 1;
+        LhatOpcode turn = fused_for && fused_down ? LHAT_BC_FORLOOPD
+                                                  : LHAT_BC_FORLOOP;
+        emit(c, lhat_encode_jump(turn, fused_for ? fused_reg : counter,
+                                 offset));
+    } else if (advance != NULL) {
         compile_in_scope(c, advance);
     } else if (numeric != NULL) {
         compile_numeric_advance(c, node, numeric, numeric_step);
@@ -6342,10 +6383,13 @@ static void compile_loop(Compiler *c, const LhatNode *node)
 
     // Backwards, so lhat_chunk_patch_here -- which only ever aims at the end
     // of what has been emitted -- cannot write it.
-    size_t back = emit_jump(c, LHAT_BC_JUMP, 0);
-    if (back != SIZE_MAX) {
-        int32_t offset = (int32_t)top - (int32_t)back - 1;
-        c->proto->chunk.code[back] = lhat_encode_jump(LHAT_BC_JUMP, 0, offset);
+    if (!fused_for && !fused_count) {
+        size_t back = emit_jump(c, LHAT_BC_JUMP, 0);
+        if (back != SIZE_MAX) {
+            int32_t offset = (int32_t)top - (int32_t)back - 1;
+            c->proto->chunk.code[back] =
+                lhat_encode_jump(LHAT_BC_JUMP, 0, offset);
+        }
     }
 
     if (leaving != SIZE_MAX) {
