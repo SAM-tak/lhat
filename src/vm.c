@@ -2522,6 +2522,7 @@ static bool host_faulted(Machine *m, size_t frames_before,
 // before this frame's, which is `at - 1` in the caller and 0 at a body's
 // own top. Returns true when the hook, or a call it made, faulted -- the run
 // ends then, the way a host function's fault ends it.
+#if LHAT_WITH_DEBUGGER
 static bool hook_line(Machine *m, Frame *frame, size_t at,
                       LhatRunStatus *status, LhatValue *value)
 {
@@ -2545,6 +2546,7 @@ static bool hook_line(Machine *m, Frame *frame, size_t at,
     m->hook_live = m->hook;  // which the hook may have cleared
     return host_faulted(m, frames_before, status, value);
 }
+#endif  // LHAT_WITH_DEBUGGER
 
 static LhatRunResult finish(Machine *m, const LhatChunk *chunk,
                             LhatRunStatus status, LhatValue value, size_t at)
@@ -2962,10 +2964,12 @@ LhatMachine *lhat_machine_new(void)
     }
     // 09 の 5.1: a debugger following every machine hears of this one here,
     // before it has run anything.
+#if LHAT_WITH_DEBUGGER
     if (lhat_machine_watcher.born != NULL) {
         lhat_machine_watcher.born(lhat_machine_watcher.context,
                                   (LhatMachine *)m);
     }
+#endif
     return m;
 }
 
@@ -3392,9 +3396,11 @@ void lhat_machine_dispose(LhatMachine *machine)
     }
     // 09 の 5.1: before anything else -- a watcher takes its hook off here,
     // and whatever the disposal below still runs must not sound it.
+#if LHAT_WITH_DEBUGGER
     if (lhat_machine_watcher.dying != NULL) {
         lhat_machine_watcher.dying(lhat_machine_watcher.context, machine);
     }
+#endif
     // 05 の 8.8: what the host made goes back before anything is freed, so a
     // release may still read the value it is given. Reachability is not asked
     // -- the machine is going, so everything on it is.
@@ -3528,6 +3534,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
         // GC step above -- every live value is in a register, a frame or the
         // open list. `frame->pc` is written first (to `at + 1`), so a
         // traceback the hook reads names this instruction, not the last.
+#if LHAT_WITH_DEBUGGER
         if (m->hook_live != NULL) {
             frame->pc = pc;
             LhatRunStatus left;
@@ -3536,6 +3543,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                 return finish(m, chunk, left, left_with, at);
             }
         }
+#endif
 
         uint8_t a = lhat_a(instruction);
         uint8_t b = lhat_b(instruction);

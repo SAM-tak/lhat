@@ -23,4 +23,10 @@
 // shape of LhatCheckResult, so it lives here for the reason above.
 #define LHAT_WITH_RESOLUTIONS @LHAT_WITH_RESOLUTIONS_VALUE@
 
+// 09 章: whether the VM carries a debugger -- the line hook, the frame
+// inspection API (lhat/debug.h) and the machine watcher. Off, a shipping
+// build compiles none of it, the way GDScript's release build does. It
+// changes the shape of LhatMachine, so it lives here for the reason above.
+#define LHAT_WITH_DEBUGGER @LHAT_WITH_DEBUGGER_VALUE@
+
 #endif  // LHAT_VERSION_H

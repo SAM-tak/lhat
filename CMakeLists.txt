@@ -12,6 +12,14 @@ option(LHAT_BUILD_LSP "Build the L^ language server" ON)
 # 09 章: the debug adapter, folded into the cli (`lhat --dap=PORT`). Off
 # takes it out of the cli and builds nothing under dap/ or port/socket.
 option(LHAT_BUILD_DAP "Build the L^ debug adapter into the cli" ON)
+# 09 章: the VM-side debugger -- hook, frame inspection, machine watcher.
+# Off for a shipping build: the per-instruction hook test and all of
+# src/debug.c compile away.
+option(LHAT_WITH_DEBUGGER "Compile the VM-side debugger into the core" ON)
+if(LHAT_BUILD_DAP AND NOT LHAT_WITH_DEBUGGER)
+    message(FATAL_ERROR "LHAT_BUILD_DAP needs LHAT_WITH_DEBUGGER: the "
+        "adapter sits on the machine's line hook.")
+endif()
 # 03 の 5.1: what a specialised instruction would be worth, measured.
 # Off by default -- it takes minutes to run and asserts almost nothing, so
 # it has no business in an ordinary build or in CI.
@@ -106,6 +114,11 @@ if(LHAT_WITH_RESOLUTIONS)
     set(LHAT_WITH_RESOLUTIONS_VALUE 1)
 else()
     set(LHAT_WITH_RESOLUTIONS_VALUE 0)
+endif()
+if(LHAT_WITH_DEBUGGER)
+    set(LHAT_WITH_DEBUGGER_VALUE 1)
+else()
+    set(LHAT_WITH_DEBUGGER_VALUE 0)
 endif()
 configure_file(include/lhat/version.h.in
     ${CMAKE_CURRENT_BINARY_DIR}/include/lhat/version.h)

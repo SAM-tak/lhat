@@ -23,6 +23,7 @@ typedef struct LhatNativeHold {
 #ifndef LHAT_MACHINE_H
 #define LHAT_MACHINE_H
 
+#include "lhat/version.h"
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -249,11 +250,13 @@ struct LhatMachine {
     // there is none. `hook_depth` and `hook_pc` are the frame count and
     // the instruction the hook last looked at, which is how the next
     // instruction is known to begin a line (vm.c's hook_line).
+#if LHAT_WITH_DEBUGGER
     LhatDebugHook hook;
     LhatDebugHook hook_live;
     void *hook_context;
     size_t hook_depth;
     size_t hook_pc;
+#endif
 
     // 02 の 14.22: the tables built-ins are holding onto while written L^
     // code runs inside them -- a sort's aux while the comparator runs, a
@@ -269,7 +272,9 @@ typedef struct LhatMachine Machine;
 
 // 09 の 5.1: the one process-wide machine watcher, owned by debug.c and read
 // by vm.c at lhat_machine_new / lhat_machine_dispose. Zeroed = none.
+#if LHAT_WITH_DEBUGGER
 extern LhatMachineWatcher lhat_machine_watcher;
+#endif
 
 // 09 の 3.5: runs `closure` -- one that declares no parameters -- on a frame
 // of its own above everything standing, with `seed` values laid into its

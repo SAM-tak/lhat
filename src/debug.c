@@ -148,8 +148,12 @@ size_t lhat_machine_traceback(const LhatMachine *machine, char *out,
 }
 
 // ---------------------------------------------------------------------------
-// 09 の 2 章: the hook
+// 09 の 2 章: the hook. Everything from here down is the debugger proper --
+// the watcher, the hook, frame inspection and evaluation -- and compiles
+// away in a shipping build (LHAT_WITH_DEBUGGER 0). The traceback readers
+// above stay: a fault report is not a debugger.
 // ---------------------------------------------------------------------------
+#if LHAT_WITH_DEBUGGER
 
 // 09 の 5.1. Written here, read by vm.c at the two points every machine
 // passes. The install/remove windows debug.h asks for are what stand in for
@@ -429,3 +433,5 @@ bool lhat_machine_evaluate(LhatMachine *machine, size_t level,
     lhat_source_dispose(&source);
     return ok;
 }
+
+#endif  // LHAT_WITH_DEBUGGER
