@@ -2020,6 +2020,30 @@ static void test_member_cache(void)
     run_dispose(&r);
 }
 
+// A removed key leaves a tombstone so probes run past it, and a tombstone
+// occupies its slot: a table that churns -- insert, remove, repeat -- once
+// filled every slot with tombstones and left the probe circling for ever,
+// because the grow test counted only the living. Forty-one turns of churn
+// on a fresh table crosses the first capacity several times over.
+static void test_tombstones(void)
+{
+    Run r;
+
+    LHAT_TEST("a churning table sheds its tombstones");
+    run_text(&r,
+             "var^ t = { }\n"
+             "var^ n = 0\n"
+             "for^ i from^ 100 to^ 140 {\n"
+             "    t[i] := i\n"
+             "    t[i] := nil^\n"
+             "    n := n + 1\n"
+             "}\n"
+             "t[999] := 7\n"
+             "return^ n * 10 + t[999]\n");
+    CHECK_INTEGER(&r, 417);
+    run_dispose(&r);
+}
+
 int main(void)
 {
     test_names();
@@ -2034,5 +2058,6 @@ int main(void)
     test_substring();
     test_tonumber();
     test_table_methods();
+    test_tombstones();
     return lhat_test_report("test_vm_data");
 }

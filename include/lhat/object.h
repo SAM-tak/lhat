@@ -87,6 +87,10 @@ typedef struct LhatTable {
     // without knowing how a removal is marked.
     LhatTableEntry *entries;  // capacity is a power of two, or zero
     size_t entry_count;       // live entries, tombstones not counted
+    size_t entry_tombs;       // tombstones standing among the entries: they
+                              // occupy slots the way live entries do, so the
+                              // three-quarters test counts both -- a probe
+                              // needs a truly free slot to stop at
     size_t entry_capacity;
 
     // 03 の 5.1改: how many times the LAYOUT of `entries` has changed -- a

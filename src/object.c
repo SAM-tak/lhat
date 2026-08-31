@@ -1366,7 +1366,15 @@ static LhatTableEntry *probe(LhatTableEntry *entries, size_t capacity,
 
 static bool grow_entries(LhatTable *table)
 {
-    size_t capacity = table->entry_capacity ? table->entry_capacity * 2 : 8;
+    // Sized from the live count rather than doubled blindly: a churning
+    // table -- insert, remove, repeat -- comes here to shed tombstones,
+    // and doubling under their pressure would grow for ever while holding
+    // one key. Genuine growth still doubles: it is the live count that
+    // pushed past three quarters.
+    size_t capacity = 8;
+    while (capacity - capacity / 4 < table->entry_count + 1) {
+        capacity *= 2;
+    }
     LhatTableEntry *entries =
         (LhatTableEntry *)lhat_calloc(capacity, sizeof *entries);
     if (entries == NULL) {
@@ -1394,6 +1402,7 @@ static bool grow_entries(LhatTable *table)
     table->entries = entries;
     table->entry_capacity = capacity;
     table->entry_count = moved;
+    table->entry_tombs = 0;  // none survived the move
     // 03 の 5.1改: a rehash moves everything, so nothing remembered about
     // where a key was is worth anything afterwards.
     table->version++;
@@ -1476,6 +1485,7 @@ static void drain_into_array(LhatTable *table)
         entry->key = lhat_nil();
         entry->value = lhat_bool(true);  // a tombstone
         table->entry_count--;
+        table->entry_tombs++;
         table->version++;  // 03 の 5.1改: an entry left its place
     }
 }
@@ -1711,7 +1721,7 @@ bool lhat_table_reserve(LhatTable *table, LhatValue key)
             return true;  // already there -- a value, or the seat itself
         }
     }
-    if (table->entry_count + 1 >
+    if (table->entry_count + table->entry_tombs + 1 >
         table->entry_capacity - table->entry_capacity / 4) {
         if (!grow_entries(table)) {
             return false;
@@ -1719,6 +1729,9 @@ bool lhat_table_reserve(LhatTable *table, LhatValue key)
     }
     LhatTableEntry *entry =
         probe(table->entries, table->entry_capacity, key, hash_key(key));
+    if (!lhat_is_nil(entry->value)) {
+        table->entry_tombs--;  // the slot was a tombstone, reused
+    }
     table->entry_count++;
     table->version++;  // a new key like any other; seats are laid pre-seal
     entry->key = key;
@@ -1772,6 +1785,7 @@ void lhat_table_prune_seats(LhatTable *proto, const LhatTable *definition)
             entry->key = lhat_nil();
             entry->value = lhat_bool(true);  // a tombstone
             proto->entry_count--;
+            proto->entry_tombs++;
         }
     }
 }
@@ -1829,14 +1843,18 @@ bool lhat_table_set(LhatTable *table, LhatValue key, LhatValue value,
             entry->key = lhat_nil();
             entry->value = lhat_bool(true);  // a tombstone
             table->entry_count--;
+            table->entry_tombs++;
             table->version++;  // 5.1改: what was at that place is gone
         }
         return true;
     }
 
-    // Kept under three quarters full: linear probing degrades badly past that,
-    // and tombstones make the real occupancy higher than the count says.
-    if (table->entry_count + 1 > table->entry_capacity - table->entry_capacity / 4) {
+    // Kept under three quarters full: linear probing degrades badly past
+    // that, and a tombstone occupies its slot exactly as a live entry does
+    // -- with every slot a tombstone, a probe for an absent key would never
+    // stop. So both are counted, and grow_entries sheds the tombstones.
+    if (table->entry_count + table->entry_tombs + 1 >
+        table->entry_capacity - table->entry_capacity / 4) {
         if (!grow_entries(table)) {
             return false;
         }
@@ -1844,6 +1862,9 @@ bool lhat_table_set(LhatTable *table, LhatValue key, LhatValue value,
     LhatTableEntry *entry =
         probe(table->entries, table->entry_capacity, key, hash_key(key));
     if (lhat_is_nil(entry->key)) {
+        if (!lhat_is_nil(entry->value)) {
+            table->entry_tombs--;  // the slot was a tombstone, reused
+        }
         table->entry_count++;
         // 5.1改: a place that held nothing now holds something. Writing over
         // a key already there moves nothing, so it does not count -- that is
