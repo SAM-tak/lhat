@@ -227,12 +227,41 @@ static void apply_function(const cJSON *entry, LhatProgram *program)
     const char *kind = string_of(entry, "kind");
     const char *name = string_of(entry, "name");
     const char *signature = string_of(entry, "signature");
-    if (kind == NULL || name == NULL || signature == NULL) {
+    // A const entry carries a value, not a signature.
+    if (kind == NULL || name == NULL ||
+        (signature == NULL && strcmp(kind, "const") != 0)) {
         return;
     }
 
     if (strcmp(kind, "global") == 0) {
         lhat_register_global(program, name, signature, stub_host_fn, NULL);
+        return;
+    }
+
+    if (strcmp(kind, "const") == 0) {
+        const char *cmodule = string_of(entry, "module");
+        const char *ctype = string_of(entry, "type");
+        const char *value_kind = string_of(entry, "value_kind");
+        const cJSON *value =
+            cJSON_GetObjectItemCaseSensitive(entry, "value");
+        if (cmodule == NULL || value_kind == NULL) {
+            return;
+        }
+        if (strcmp(value_kind, "integer") == 0 && cJSON_IsNumber(value)) {
+            lhat_register_const_integer(program, cmodule, ctype, name,
+                                        (int64_t)value->valuedouble);
+        } else if (strcmp(value_kind, "real") == 0 &&
+                   cJSON_IsNumber(value)) {
+            lhat_register_const_real(program, cmodule, ctype, name,
+                                     value->valuedouble);
+        } else if (strcmp(value_kind, "bool") == 0 && cJSON_IsBool(value)) {
+            lhat_register_const_bool(program, cmodule, ctype, name,
+                                     cJSON_IsTrue(value));
+        } else if (strcmp(value_kind, "string") == 0 &&
+                   cJSON_IsString(value)) {
+            lhat_register_const_string(program, cmodule, ctype, name,
+                                       value->valuestring);
+        }
         return;
     }
 

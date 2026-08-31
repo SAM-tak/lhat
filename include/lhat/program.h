@@ -679,6 +679,29 @@ bool lhat_register_func(LhatProgram *program, const char *module,
                         const char *name, const char *signature,
                         LhatHostFn call, void *context);
 
+// 05 の 8.7改: a value rather than a subroutine -- an enum's number, a
+// limit, a name a host wants readable as itself. `type` is NULL for a
+// member of the module itself, or a registered type's name (8.8's and
+// 8.9's both) for a static member read off the type -- and, the type
+// table being the members table, off a value of the type as well.
+// Installed once per machine as the plain value; writing over one is
+// refused the way 8.6 refuses every write under L^.modules. A name
+// already registered -- constant or subroutine -- is refused outright:
+// a constant is no overload arm. Called before lhat_program_check, as
+// every registration is. The string constant's text is copied.
+bool lhat_register_const_integer(LhatProgram *program, const char *module,
+                                 const char *type, const char *name,
+                                 int64_t value);
+bool lhat_register_const_real(LhatProgram *program, const char *module,
+                              const char *type, const char *name,
+                              double value);
+bool lhat_register_const_bool(LhatProgram *program, const char *module,
+                              const char *type, const char *name,
+                              bool value);
+bool lhat_register_const_string(LhatProgram *program, const char *module,
+                                const char *type, const char *name,
+                                const char *text);
+
 // 04 の 2.2/12.4 の host 版: an errordef^ the host declares in C rather than
 // in an L^ unit -- "L^ has its own errordef^-shaped things without writing
 // errordef^" (04 の 12.4 が撤回しなかった経路)。v1 は付随フィールドを持たな

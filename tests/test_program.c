@@ -1782,6 +1782,81 @@ static void test_host_data(void)
     // argument. Two stand at once in the caller's own rooms, a narrow
     // argument rides between them, and the widened frame is what the body
     // reads.
+    // 05 の 8.7改: a registered constant is the value itself -- typed by
+    // the checker, installed once, read off the module, a hostdata type
+    // and a hostvalue type alike (and off a value of the type: the type
+    // table is the members table).
+    LHAT_TEST("registered constants read as themselves");
+    {
+        static const File files[] = {
+            {"main.lh",
+             "import^ k\n"
+             "var^ a : number^ = k.LIMIT\n"
+             "var^ b : number^ = k.RATE\n"
+             "var^ c : bool^ = k.ON\n"
+             "var^ s : string^ = k.NAME\n"
+             "var^ d : number^ = k.T.KIND\n"
+             "var^ e : number^ = k.V.MODE\n"
+             "return^ a * 100 + d * 10 + e\n"},
+        };
+        program_with(&program, &disk, files, 1);
+        LHAT_CHECK(lhat_register_const_integer(&program, "k", NULL, "LIMIT",
+                                               42),
+                   "an integer registered");
+        LHAT_CHECK(lhat_register_const_real(&program, "k", NULL, "RATE",
+                                            1.5),
+                   "a real registered");
+        LHAT_CHECK(lhat_register_const_bool(&program, "k", NULL, "ON", true),
+                   "a bool registered");
+        LHAT_CHECK(lhat_register_const_string(&program, "k", NULL, "NAME",
+                                              "lhat"),
+                   "a string registered");
+        LHAT_CHECK(lhat_register_hostdata_type(&program, "k", "T") != NULL,
+                   "a hostdata type stood up");
+        LHAT_CHECK(lhat_register_const_integer(&program, "k", "T", "KIND", 7),
+                   "and took a static constant");
+        LHAT_CHECK(lhat_register_hostvalue_type(&program, "k", "V", 8) !=
+                       NULL,
+                   "a hostvalue type stood up");
+        LHAT_CHECK(lhat_register_const_integer(&program, "k", "V", "MODE", 3),
+                   "and took one too");
+        LHAT_CHECK(!lhat_register_const_integer(&program, "k", NULL, "LIMIT",
+                                                9),
+                   "a name is taken whole");
+        LHAT_CHECK(!lhat_register_func(&program, "k", "LIMIT", "f^ -> number^;",
+                                       host_wide_probe, NULL),
+                   "and no function shares it");
+        const LhatUnit *root = lhat_program_check(&program, "main.lh");
+        LHAT_CHECK(root != NULL && root->checked.diagnostic_count == 0,
+                   "the program checked");
+        bool compiled = lhat_program_compile(&program);
+        LHAT_CHECK(compiled, "and compiled");
+        if (compiled && root != NULL) {
+            LhatMachine *machine = lhat_machine_new();
+            lhat_program_install(&program, machine);
+            LhatRunResult ran = lhat_run(machine, lhat_unit_proto(root));
+            LHAT_CHECK_EQ_INT(ran.status, LHAT_RUN_OK);
+            LHAT_CHECK_EQ_INT(lhat_as_integer(ran.value), 4273);
+            lhat_machine_dispose(machine);
+        }
+    }
+    lhat_program_dispose(&program);
+
+    LHAT_TEST("and writing over one is refused where the checker stands");
+    {
+        static const File files[] = {
+            {"main.lh", "import^ k\nk.LIMIT := 1\n"},
+        };
+        program_with(&program, &disk, files, 1);
+        LHAT_CHECK(lhat_register_const_integer(&program, "k", NULL, "LIMIT",
+                                               42),
+                   "registered");
+        const LhatUnit *root = lhat_program_check(&program, "main.lh");
+        LHAT_CHECK(root != NULL && lhat_program_has_errors(&program),
+                   "the write is refused");
+    }
+    lhat_program_dispose(&program);
+
     LHAT_TEST("host value arguments cross the boundary whole");
     {
         static const File files[] = {

@@ -1108,6 +1108,16 @@ bool lhat_unit_export_conforms(const LhatUnit *unit, const char *name,
 // One thing the host registered, kept so that lhat_program_install can build
 // the values once a machine exists. The type side is in `program->hosted`
 // already, since the checker needs it before anything runs.
+// 05 の 8.7改: which scalar a constant entry carries. NONE for a function
+// or a type declaration -- the two shapes every entry had before.
+typedef enum {
+    LHAT_HOST_CONST_NONE = 0,
+    LHAT_HOST_CONST_INTEGER,
+    LHAT_HOST_CONST_REAL,
+    LHAT_HOST_CONST_BOOL,
+    LHAT_HOST_CONST_STRING
+} LhatHostConstKind;
+
 typedef struct LhatHostEntry {
     char *module;   // owned; the dotted path
     char *type;     // owned; NULL when the entry belongs to the module itself
@@ -1134,6 +1144,15 @@ typedef struct LhatHostEntry {
     // 05 の 8.8: the tag values of this type carry. Kept on the entry so that
     // it lives as long as the program and points at the entry's own strings.
     LhatHostDataTag *tag;
+
+    // 05 の 8.7改: the constant's shape and value, when the entry is one.
+    // `call` is NULL then, as for a type declaration -- const_kind is what
+    // tells the two apart. const_text is owned.
+    LhatHostConstKind const_kind;
+    int64_t const_integer;
+    double const_real;
+    bool const_bool;
+    char *const_text;
 } LhatHostEntry;
 
 // 05 の 8.6: one member of L^ itself. Separate from the above because it does
@@ -2023,6 +2042,93 @@ bool lhat_register_func(LhatProgram *program, const char *module,
                          module, NULL, name, signature, call, context);
 }
 
+// 05 の 8.7改: the shared road of the four constant registrations. No
+// signature text and no lhat_type_of_text: an enum dump registers
+// thousands of these, and lhat_type_simple answers the one shared node
+// per kind. A constant takes its name whole -- an existing member,
+// constant or subroutine, refuses it, since a value is no overload arm.
+static bool register_const(LhatProgram *program, const char *module,
+                           const char *type, const char *name,
+                           LhatHostConstKind kind, int64_t whole,
+                           double real, bool truth, const char *text)
+{
+    if (program == NULL || module == NULL || name == NULL ||
+        (kind == LHAT_HOST_CONST_STRING && text == NULL)) {
+        return false;
+    }
+    LhatType *owner =
+        hosted_table(program, hosted_root(program), module);
+    if (type != NULL) {
+        const LhatTypeMember *found = hosted_member(owner, type);
+        // 8.8's nominal table or 8.9's host value type -- both carry the
+        // member list a static lands in.
+        if (found == NULL || (found->type->kind != LHAT_TYPE_TABLE &&
+                              found->type->kind != LHAT_TYPE_HOSTVALUE)) {
+            return false;
+        }
+        owner = found->type;
+    }
+    if (owner == NULL || hosted_member(owner, name) != NULL) {
+        return false;
+    }
+    LhatType *written = lhat_type_simple(
+        &program->types, kind == LHAT_HOST_CONST_STRING ? LHAT_TYPE_STRING
+                         : kind == LHAT_HOST_CONST_BOOL ? LHAT_TYPE_BOOL
+                                                        : LHAT_TYPE_NUMBER);
+    if (written == NULL ||
+        lhat_type_add_member(&program->types, owner, name, strlen(name),
+                             written) == NULL) {
+        return false;
+    }
+    if (!keep_entry(program, module, type, name, NULL, NULL, NULL, NULL)) {
+        return false;
+    }
+    LhatHostEntry *entry =
+        &program->host_entries[program->host_entry_count - 1];
+    entry->const_kind = kind;
+    entry->const_integer = whole;
+    entry->const_real = real;
+    entry->const_bool = truth;
+    if (text != NULL) {
+        entry->const_text = duplicate(text);
+        if (entry->const_text == NULL) {
+            return false;
+        }
+    }
+    return true;
+}
+
+bool lhat_register_const_integer(LhatProgram *program, const char *module,
+                                 const char *type, const char *name,
+                                 int64_t value)
+{
+    return register_const(program, module, type, name,
+                          LHAT_HOST_CONST_INTEGER, value, 0.0, false, NULL);
+}
+
+bool lhat_register_const_real(LhatProgram *program, const char *module,
+                              const char *type, const char *name,
+                              double value)
+{
+    return register_const(program, module, type, name, LHAT_HOST_CONST_REAL,
+                          0, value, false, NULL);
+}
+
+bool lhat_register_const_bool(LhatProgram *program, const char *module,
+                              const char *type, const char *name, bool value)
+{
+    return register_const(program, module, type, name, LHAT_HOST_CONST_BOOL,
+                          0, 0.0, value, NULL);
+}
+
+bool lhat_register_const_string(LhatProgram *program, const char *module,
+                                const char *type, const char *name,
+                                const char *text)
+{
+    return register_const(program, module, type, name,
+                          LHAT_HOST_CONST_STRING, 0, 0.0, false, text);
+}
+
 // 05 の 8.9: how many payload bytes one field kind occupies, which is what
 // registration checks offsets against.
 static size_t hostvalue_field_bytes(LhatHostValueFieldKind kind)
@@ -2419,7 +2525,18 @@ static bool install_entry(LhatMachine *machine, const LhatHostEntry *e,
     // A type registers as an empty table under its module; its members
     // are entries of their own and land in it as they come.
     LhatValue value = lhat_nil();
-    if (e->call == NULL) {
+    if (e->const_kind == LHAT_HOST_CONST_INTEGER) {
+        value = lhat_integer(e->const_integer);
+    } else if (e->const_kind == LHAT_HOST_CONST_REAL) {
+        value = lhat_real(e->const_real);
+    } else if (e->const_kind == LHAT_HOST_CONST_BOOL) {
+        value = lhat_bool(e->const_bool);
+    } else if (e->const_kind == LHAT_HOST_CONST_STRING) {
+        if (!lhat_machine_make_string(machine, e->const_text,
+                                      strlen(e->const_text), &value)) {
+            return false;
+        }
+    } else if (e->call == NULL) {
         if (!lhat_machine_make_table(machine, &value)) {
             return false;
         }
@@ -2797,6 +2914,7 @@ void lhat_program_dispose(LhatProgram *program)
         lhat_free(program->host_entries[i].parameter_types);
         lhat_free(program->host_entries[i].name);
         lhat_free(program->host_entries[i].signature_text);
+        lhat_free(program->host_entries[i].const_text);
         // 8.8: the tag is not the program's -- one declaration, one tag,
         // for the process (registry.h).
     }
@@ -3683,7 +3801,8 @@ size_t lhat_program_dump_host_api(const LhatProgram *program, char *out,
     // type's tag lives in hostvalue_type_entries instead.
     for (size_t i = 0; i < program->host_entry_count; i++) {
         const LhatHostEntry *entry = &program->host_entries[i];
-        if (entry->call != NULL || entry->type != NULL) {
+        if (entry->call != NULL || entry->type != NULL ||
+            entry->const_kind != LHAT_HOST_CONST_NONE) {
             continue;
         }
         dump_comma(&w, &first);
@@ -3743,10 +3862,50 @@ size_t lhat_program_dump_host_api(const LhatProgram *program, char *out,
     first = true;
     for (size_t i = 0; i < program->host_entry_count; i++) {
         const LhatHostEntry *entry = &program->host_entries[i];
-        if (entry->call == NULL) {
+        if (entry->call == NULL &&
+            entry->const_kind == LHAT_HOST_CONST_NONE) {
             continue;
         }
         dump_comma(&w, &first);
+        if (entry->const_kind != LHAT_HOST_CONST_NONE) {
+            dump_text(&w, "    {\"kind\": \"const\", \"module\": ");
+            dump_string(&w, entry->module);
+            if (entry->type != NULL) {
+                dump_text(&w, ", \"type\": ");
+                dump_string(&w, entry->type);
+            }
+            dump_text(&w, ", \"name\": ");
+            dump_string(&w, entry->name);
+            char number[64];
+            switch (entry->const_kind) {
+                case LHAT_HOST_CONST_INTEGER:
+                    snprintf(number, sizeof number,
+                             ", \"value_kind\": \"integer\", \"value\": %lld",
+                             (long long)entry->const_integer);
+                    dump_text(&w, number);
+                    break;
+                case LHAT_HOST_CONST_REAL:
+                    snprintf(number, sizeof number,
+                             ", \"value_kind\": \"real\", \"value\": %.17g",
+                             entry->const_real);
+                    dump_text(&w, number);
+                    break;
+                case LHAT_HOST_CONST_BOOL:
+                    dump_text(&w, entry->const_bool
+                                      ? ", \"value_kind\": \"bool\", "
+                                        "\"value\": true"
+                                      : ", \"value_kind\": \"bool\", "
+                                        "\"value\": false");
+                    break;
+                default:
+                    dump_text(&w, ", \"value_kind\": \"string\", "
+                                  "\"value\": ");
+                    dump_string(&w, entry->const_text);
+                    break;
+            }
+            dump_text(&w, "}");
+            continue;
+        }
         if (entry->type == NULL) {
             dump_text(&w, "    {\"kind\": \"func\", \"module\": ");
             dump_string(&w, entry->module);
