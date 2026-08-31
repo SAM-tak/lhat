@@ -8,7 +8,7 @@ Modern & Better Lua with Visual Programming.
 
 ## 影響を受けた言語
 
-Lua / Zig / TypeScript / Python / Luau / Ruby
+Lua / Zig / TypeScript / Python / Luau / Ruby / OCaml / Elixir / Lisp
 
 ## 言語コア
 
@@ -57,16 +57,20 @@ LhatStringと別に、LhatEnumIdという文字列格納オブジェクトが必
 enum^ と整数値を覚えている。LhatTableではなくLhatEnumと言う別の構造があったほうがいい、かな…
 
 ```lhat
-enum^ { # 所属する名前一個一個が enum^{AAA, BBB, CCC} へのdefinationポインターを持つ
+let^E = enum^{ # 所属する名前一個一個が enum^{AAA, BBB, CCC} へのdefinationポインターを持つ
   AAA,
   BBB,
-  CCC,
+  CCC = "aaa",
+  DDD = HostData.new(0, 0), #何でも入る
 }
-print(typeof^(AAA)) # enumid^
-print(typeof^(AAA.enum)) # enum^{AAA, BBB, CCC}
-print(AAA) # AAA (tostring()が"AAA"を返すので)
-print(AAA.tostring()) # AAA
-print(AAA.value) # 1
+print(typeof^(E.AAA)) # enumid^
+print(typeof^(E.AAA.enum)) # enum^{AAA, BBB, CCC}
+print(E.AAA) # AAA (tostring()が"AAA"を返すので)
+print(E.AAA.tostring()) # AAA
+print(E.AAA.value) # 1
+print(E.BBB.value) # 2
+print(E.CCC) # CCC
+print(E.CCC.value) # aaa
 ```
 
 ``` lhat
