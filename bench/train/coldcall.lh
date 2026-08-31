@@ -1,0 +1,198 @@
+let^ D1 = def^{ m = f^self^ -> number^{ 1 } }
+let^ D2 = def^{ m = f^self^ -> number^{ 2 } }
+let^ D3 = def^{ m = f^self^ -> number^{ 3 } }
+let^ D4 = def^{ m = f^self^ -> number^{ 4 } }
+let^ D5 = def^{ m = f^self^ -> number^{ 5 } }
+let^ D6 = def^{ m = f^self^ -> number^{ 6 } }
+let^ D7 = def^{ m = f^self^ -> number^{ 7 } }
+let^ D8 = def^{ m = f^self^ -> number^{ 8 } }
+let^ D9 = def^{ m = f^self^ -> number^{ 9 } }
+let^ D10 = def^{ m = f^self^ -> number^{ 10 } }
+let^ D11 = def^{ m = f^self^ -> number^{ 11 } }
+let^ D12 = def^{ m = f^self^ -> number^{ 12 } }
+let^ D13 = def^{ m = f^self^ -> number^{ 13 } }
+let^ D14 = def^{ m = f^self^ -> number^{ 14 } }
+let^ D15 = def^{ m = f^self^ -> number^{ 15 } }
+let^ D16 = def^{ m = f^self^ -> number^{ 16 } }
+let^ D17 = def^{ m = f^self^ -> number^{ 17 } }
+let^ D18 = def^{ m = f^self^ -> number^{ 18 } }
+let^ D19 = def^{ m = f^self^ -> number^{ 19 } }
+let^ D20 = def^{ m = f^self^ -> number^{ 20 } }
+let^ D21 = def^{ m = f^self^ -> number^{ 21 } }
+let^ D22 = def^{ m = f^self^ -> number^{ 22 } }
+let^ D23 = def^{ m = f^self^ -> number^{ 23 } }
+let^ D24 = def^{ m = f^self^ -> number^{ 24 } }
+let^ D25 = def^{ m = f^self^ -> number^{ 25 } }
+let^ D26 = def^{ m = f^self^ -> number^{ 26 } }
+let^ D27 = def^{ m = f^self^ -> number^{ 27 } }
+let^ D28 = def^{ m = f^self^ -> number^{ 28 } }
+let^ D29 = def^{ m = f^self^ -> number^{ 29 } }
+let^ D30 = def^{ m = f^self^ -> number^{ 30 } }
+let^ D31 = def^{ m = f^self^ -> number^{ 31 } }
+let^ D32 = def^{ m = f^self^ -> number^{ 32 } }
+let^ D33 = def^{ m = f^self^ -> number^{ 33 } }
+let^ D34 = def^{ m = f^self^ -> number^{ 34 } }
+let^ D35 = def^{ m = f^self^ -> number^{ 35 } }
+let^ D36 = def^{ m = f^self^ -> number^{ 36 } }
+let^ D37 = def^{ m = f^self^ -> number^{ 37 } }
+let^ D38 = def^{ m = f^self^ -> number^{ 38 } }
+let^ D39 = def^{ m = f^self^ -> number^{ 39 } }
+let^ D40 = def^{ m = f^self^ -> number^{ 40 } }
+let^ D41 = def^{ m = f^self^ -> number^{ 41 } }
+let^ D42 = def^{ m = f^self^ -> number^{ 42 } }
+let^ D43 = def^{ m = f^self^ -> number^{ 43 } }
+let^ D44 = def^{ m = f^self^ -> number^{ 44 } }
+let^ D45 = def^{ m = f^self^ -> number^{ 45 } }
+let^ D46 = def^{ m = f^self^ -> number^{ 46 } }
+let^ D47 = def^{ m = f^self^ -> number^{ 47 } }
+let^ D48 = def^{ m = f^self^ -> number^{ 48 } }
+let^ D49 = def^{ m = f^self^ -> number^{ 49 } }
+let^ D50 = def^{ m = f^self^ -> number^{ 50 } }
+let^ D51 = def^{ m = f^self^ -> number^{ 51 } }
+let^ D52 = def^{ m = f^self^ -> number^{ 52 } }
+let^ D53 = def^{ m = f^self^ -> number^{ 53 } }
+let^ D54 = def^{ m = f^self^ -> number^{ 54 } }
+let^ D55 = def^{ m = f^self^ -> number^{ 55 } }
+let^ D56 = def^{ m = f^self^ -> number^{ 56 } }
+let^ D57 = def^{ m = f^self^ -> number^{ 57 } }
+let^ D58 = def^{ m = f^self^ -> number^{ 58 } }
+let^ D59 = def^{ m = f^self^ -> number^{ 59 } }
+let^ D60 = def^{ m = f^self^ -> number^{ 60 } }
+let^ D61 = def^{ m = f^self^ -> number^{ 61 } }
+let^ D62 = def^{ m = f^self^ -> number^{ 62 } }
+let^ D63 = def^{ m = f^self^ -> number^{ 63 } }
+let^ D64 = def^{ m = f^self^ -> number^{ 64 } }
+let^ t = {
+    D1.new(),
+    D2.new(),
+    D3.new(),
+    D4.new(),
+    D5.new(),
+    D6.new(),
+    D7.new(),
+    D8.new(),
+    D9.new(),
+    D10.new(),
+    D11.new(),
+    D12.new(),
+    D13.new(),
+    D14.new(),
+    D15.new(),
+    D16.new(),
+    D17.new(),
+    D18.new(),
+    D19.new(),
+    D20.new(),
+    D21.new(),
+    D22.new(),
+    D23.new(),
+    D24.new(),
+    D25.new(),
+    D26.new(),
+    D27.new(),
+    D28.new(),
+    D29.new(),
+    D30.new(),
+    D31.new(),
+    D32.new(),
+    D33.new(),
+    D34.new(),
+    D35.new(),
+    D36.new(),
+    D37.new(),
+    D38.new(),
+    D39.new(),
+    D40.new(),
+    D41.new(),
+    D42.new(),
+    D43.new(),
+    D44.new(),
+    D45.new(),
+    D46.new(),
+    D47.new(),
+    D48.new(),
+    D49.new(),
+    D50.new(),
+    D51.new(),
+    D52.new(),
+    D53.new(),
+    D54.new(),
+    D55.new(),
+    D56.new(),
+    D57.new(),
+    D58.new(),
+    D59.new(),
+    D60.new(),
+    D61.new(),
+    D62.new(),
+    D63.new(),
+    D64.new(),
+}
+var^ s = 0
+repeat^ 46875 {
+    s := s + t[1].m()
+    s := s + t[2].m()
+    s := s + t[3].m()
+    s := s + t[4].m()
+    s := s + t[5].m()
+    s := s + t[6].m()
+    s := s + t[7].m()
+    s := s + t[8].m()
+    s := s + t[9].m()
+    s := s + t[10].m()
+    s := s + t[11].m()
+    s := s + t[12].m()
+    s := s + t[13].m()
+    s := s + t[14].m()
+    s := s + t[15].m()
+    s := s + t[16].m()
+    s := s + t[17].m()
+    s := s + t[18].m()
+    s := s + t[19].m()
+    s := s + t[20].m()
+    s := s + t[21].m()
+    s := s + t[22].m()
+    s := s + t[23].m()
+    s := s + t[24].m()
+    s := s + t[25].m()
+    s := s + t[26].m()
+    s := s + t[27].m()
+    s := s + t[28].m()
+    s := s + t[29].m()
+    s := s + t[30].m()
+    s := s + t[31].m()
+    s := s + t[32].m()
+    s := s + t[33].m()
+    s := s + t[34].m()
+    s := s + t[35].m()
+    s := s + t[36].m()
+    s := s + t[37].m()
+    s := s + t[38].m()
+    s := s + t[39].m()
+    s := s + t[40].m()
+    s := s + t[41].m()
+    s := s + t[42].m()
+    s := s + t[43].m()
+    s := s + t[44].m()
+    s := s + t[45].m()
+    s := s + t[46].m()
+    s := s + t[47].m()
+    s := s + t[48].m()
+    s := s + t[49].m()
+    s := s + t[50].m()
+    s := s + t[51].m()
+    s := s + t[52].m()
+    s := s + t[53].m()
+    s := s + t[54].m()
+    s := s + t[55].m()
+    s := s + t[56].m()
+    s := s + t[57].m()
+    s := s + t[58].m()
+    s := s + t[59].m()
+    s := s + t[60].m()
+    s := s + t[61].m()
+    s := s + t[62].m()
+    s := s + t[63].m()
+    s := s + t[64].m()
+}
+return^ s

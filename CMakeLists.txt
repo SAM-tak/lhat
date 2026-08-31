@@ -71,6 +71,40 @@ if(LHAT_SANITIZE)
     endif()
 endif()
 
+# ---- PGO ------------------------------------------------------------------
+# 03 の 6.2: the cure for the code-layout lottery. Two phases share one build
+# tree (scripts/pgo.ps1 drives them): GENERATE instruments, a training run
+# writes the profile, USE relinks with it. Under MSVC the /GL objects are
+# common to both phases, so the second build is a relink; GCC/Clang carry
+# the instrumentation in the compile, so their USE phase rebuilds -- and
+# Clang wants the training output merged by llvm-profdata first, handed in
+# as LHAT_PGO_PROFILE (a .profdata path).
+set(LHAT_PGO "OFF" CACHE STRING "PGO phase: OFF, GENERATE, USE")
+if(NOT LHAT_PGO STREQUAL "OFF")
+    if(MSVC)
+        add_compile_options(/GL)
+        add_link_options(/LTCG)
+        if(LHAT_PGO STREQUAL "GENERATE")
+            add_link_options(/GENPROFILE)
+        elseif(LHAT_PGO STREQUAL "USE")
+            add_link_options(/USEPROFILE)
+        endif()
+    else()
+        if(LHAT_PGO STREQUAL "GENERATE")
+            add_compile_options(-fprofile-generate)
+            add_link_options(-fprofile-generate)
+        elseif(LHAT_PGO STREQUAL "USE")
+            if(LHAT_PGO_PROFILE)
+                add_compile_options(-fprofile-use=${LHAT_PGO_PROFILE})
+                add_link_options(-fprofile-use=${LHAT_PGO_PROFILE})
+            else()
+                add_compile_options(-fprofile-use -fprofile-correction)
+                add_link_options(-fprofile-use)
+            endif()
+        endif()
+    endif()
+endif()
+
 # ---- The language ---------------------------------------------------------
 # Everything but the driver, so a host embeds this and nothing else. It calls
 # out to lhatport for memory and for reading a unit -- see src/port.h.

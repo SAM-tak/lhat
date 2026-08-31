@@ -1,0 +1,5 @@
+let^ B = def^{ m = f^self^ -> number^{ 1 } }
+let^ b = B.new()
+var^ s = 0
+repeat^ 3000000 { s := s + b.m() }
+return^ s
