@@ -1447,6 +1447,13 @@ static void reattach_upvalues(Machine *m, LhatCoroutine *co, size_t base)
 // -- a host value parameter is one parameter and several slots. 13.7's
 // collector is a parameter of its own and is inside it too, so everything the
 // caller laid down is below this and only the scratch is emptied.
+// 03 の 5.12改2: the collector's poll, beside the instructions that can have
+// allocated -- Lua places its checkGC against the allocating opcodes the same
+// way. Instructions that never allocate never ask; the paranoid build (debug)
+// keeps the every-boundary poll in the run loop instead, since its purpose is
+// exercising the barriers, not pacing.
+#define LHAT_GC_POLL() do { if (m->objects.count >= m->threshold) { frame->pc = pc; lhat_gc_step(m); } } while (0)
+
 static void clear_scratch(Machine *m, size_t base, const LhatProto *proto)
 {
     if (proto == NULL) {
@@ -3463,10 +3470,16 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
         //
         // 5.12: a step, not a collection. What this costs is bounded by
         // LHAT_GC_STEP_WORK whatever the heap has grown to.
+#ifdef LHAT_GC_PARANOID
+        // The paranoid build polls at every boundary on purpose: its point
+        // is that a cycle is nearly always half done so every barrier gets
+        // walked over (gc.c). The ordinary build polls where allocations
+        // happen -- LHAT_GC_POLL below, placed the way Lua places checkGC.
         if (m->objects.count >= m->threshold) {
             frame->pc = pc;
             lhat_gc_step(m);
         }
+#endif
 
         // 02 の 10.7: and here is where what the collector held back gets to
         // run. The heap is whole again and this is an ordinary place to call
@@ -3728,6 +3741,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                 break;
 
             case LHAT_BC_CLOSURE: {
+                LHAT_GC_POLL();  // this case allocates
                 const LhatProto *nested =
                     frame->closure->proto->protos[lhat_bx(instruction)];
                 LhatClosure *closure = (LhatClosure *)lhat_object_alloc(
@@ -3819,6 +3833,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
             // the case that is settled. 11.3 leaves the rest to the
             // operator's own definition, which needs op^.
             case LHAT_BC_CONCAT: {
+                LHAT_GC_POLL();  // this case allocates
                 if (lhat_is_object_kind(R(b), LHAT_OBJECT_STRING) &&
                     lhat_is_object_kind(R(cc), LHAT_OBJECT_STRING)) {
                     const LhatString *left =
@@ -3887,6 +3902,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
             // making a closure of it and calling that. What makes it load
             // once is the guard the unit itself begins with, not this.
             case LHAT_BC_UNIT: {
+                LHAT_GC_POLL();  // this case allocates
                 // The number indexes the table of the unit this body was
                 // written in (LhatUnitTable), not anything of the machine's
                 // -- which is what lets a program grow under it.
@@ -3909,6 +3925,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
             }
 
             case LHAT_BC_NEWTABLE: {
+                LHAT_GC_POLL();  // this case allocates
                 LhatTable *table = lhat_table_new(&m->objects);
                 if (table == NULL) {
                     return finish(m, chunk, LHAT_RUN_OUT_OF_MEMORY, lhat_nil(), at);
@@ -3973,6 +3990,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
             }
 
             case LHAT_BC_GETINDEX:
+                LHAT_GC_POLL();  // string cuts, written-down members
                 member_key = R(cc);
                 filling = NULL;
                 goto member_body;
@@ -4321,6 +4339,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
             // 14.10 numbers positions from 1, which is what a destructuring
             // and 't[1]' both read.
             case LHAT_BC_PACK: {
+                LHAT_GC_POLL();  // this case allocates
                 if (!lhat_is_run(R(a)) || lhat_run_width(R(a)) != (size_t)b) {
                     return finish(m, chunk, LHAT_RUN_TUPLE_ARITY, lhat_nil(),
                                   at);
@@ -4568,6 +4587,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
             // reads the shared members through the link; 14.2 fixes it
             // here and gives no way to change it afterwards.
             case LHAT_BC_NEWINSTANCE: {
+                LHAT_GC_POLL();  // this case allocates
                 if (!lhat_is_object_kind(R(b), LHAT_OBJECT_TABLE)) {
                     return finish(m, chunk, LHAT_RUN_TYPE_ERROR, lhat_nil(), at);
                 }
@@ -4620,6 +4640,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
             }
 
             case LHAT_BC_SETPROTO: {
+                LHAT_GC_POLL();  // this case allocates
                 LhatTable *table = table_of(R(a));
                 LhatTable *proto = table_of(R(b));
                 if (table == NULL || proto == NULL) {
@@ -4676,6 +4697,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
             // carries the tag, and the tag the width, so the copy is the
             // whole run.
             case LHAT_BC_BOX: {
+                LHAT_GC_POLL();  // this case allocates
                 // 8.9改: C bit 0 seals the box (constbox^); bit 1 reads
                 // R[B] as a box to copy rather than a value laid out.
                 const LhatValueUnion *from;
@@ -4723,6 +4745,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                                  op == LHAT_BC_TAILCALLMETHOD;
                 bool tail = op == LHAT_BC_TAILCALL ||
                             op == LHAT_BC_TAILCALLMETHOD;
+                LHAT_GC_POLL();  // hosts, variadic tables, coroutines
 
                 // 14.12: at most one candidate fits, so this is a search and
                 // not a choice -- no ranking, no ambiguity to report. It ends
@@ -6751,6 +6774,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
         // never wrote one.
         bool unary = op == LHAT_BC_NEG;
         uint8_t given = unary ? 0 : 1;
+        LHAT_GC_POLL();  // candidate lookups intern the operator's name
         // The right operand as a value: K[cc] when the ADDK family fell
         // through to here, R(cc) otherwise. A constant is never a host
         // value, so every branch below that wants a pointer aimed into the
