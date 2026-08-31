@@ -53,3 +53,9 @@ Lua 5.5.1のソース
 Luau のソース
 
 @../luau/
+
+### LuaJIT
+
+LuaJIT のソース
+
+@../megasource/libs/LuaJIT
