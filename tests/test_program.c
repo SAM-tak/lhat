@@ -3840,6 +3840,26 @@ static void test_annotations(void)
     }
     lhat_program_dispose(&program);
 
+    // 03 の 3.4改2: a member calling one declared after it makes the checker
+    // walk the statements again, and the second walk visits the same
+    // annotation node. The same node is not a second writing.
+    LHAT_TEST("one annotation over a forward self^ call is still once");
+    {
+        static const File fwd[] = {
+            {"main.lh",
+             "module^ m\n@only\npublic^let^ T = def^{\n"
+             "    a = p^self^{ self^.b() },\n"
+             "    b = p^self^{ },\n"
+             "}\n"}};
+        program_with(&program, &disk, fwd, 1);
+        lhat_register_annotation(&program, "h", "only",
+                                 LHAT_ANNOTATION_PUBLIC |
+                                     LHAT_ANNOTATION_FILEUNIQUE);
+        lhat_program_check(&program, "main.lh");
+        LHAT_CHECK(!lhat_program_has_errors(&program), "once is once");
+    }
+    lhat_program_dispose(&program);
+
     // Counted per registration, not between them: a host wanting two names to
     // be one choice is the one that knows they are, and counts them itself.
     LHAT_TEST("two file-unique annotations do not exclude each other");

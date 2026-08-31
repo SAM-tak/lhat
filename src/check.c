@@ -2827,14 +2827,18 @@ void chk_check_annotations(Checker *c, const LhatNode *list, uint32_t target)
         // exclusion below, which the host is the one to say.
         size_t which = (size_t)(found - c->require.annotations);
         if (c->annotation_seen != NULL) {
+            // The claim is the node, not a flag: 3.4改2's rounds walk the
+            // same statements again, and the same annotation seen on the
+            // second walk is the one writing it always was.
             if ((found->targets & LHAT_ANNOTATION_FILEUNIQUE) != 0 &&
-                c->annotation_seen[which]) {
+                c->annotation_seen[which] != NULL &&
+                c->annotation_seen[which] != at) {
                 chk_report_named(c, at->v.named.name,
                                  LHAT_CHECK_ERR_ANNOTATION_REPEATED, name,
                                  length);
                 continue;
             }
-            c->annotation_seen[which] = true;
+            c->annotation_seen[which] = at;
         }
 
         // 18.5.1: and what it may not stand beside. Read both ways -- this
@@ -2912,7 +2916,7 @@ void lhat_check_unit(const LhatNode *unit, const LhatLexer *lexer, bool strict,
     // what is lost is a repeat going unreported, and refusing to check a unit
     // over that would cost more than it saves.
     if (checker.require.annotation_count > 0) {
-        checker.annotation_seen = (bool *)lhat_alloc(
+        checker.annotation_seen = (const LhatNode **)lhat_alloc(
             checker.require.annotation_count * sizeof *checker.annotation_seen);
         if (checker.annotation_seen != NULL) {
             memset(checker.annotation_seen, 0,
