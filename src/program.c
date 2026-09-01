@@ -1159,6 +1159,7 @@ typedef struct LhatHostEntry {
 // per-program identity on host_heap.
 typedef struct LhatProgramEnum {
     char *module;
+    char *type;  // NULL for an enum of the module itself
     char *name;
     char **members;   // owned, each owned
     int64_t *values;  // owned
@@ -2110,7 +2111,8 @@ static bool register_const(LhatProgram *program, const char *module,
 }
 
 bool lhat_register_enum_valued(LhatProgram *program, const char *module,
-                               const char *name, const char *const *members,
+                               const char *type, const char *name,
+                               const char *const *members,
                                const int64_t *values, size_t count)
 {
     if (program == NULL || module == NULL || name == NULL ||
@@ -2118,6 +2120,16 @@ bool lhat_register_enum_valued(LhatProgram *program, const char *module,
         return false;
     }
     LhatType *owner = hosted_table(program, hosted_root(program), module);
+    if (type != NULL) {
+        const LhatTypeMember *found = hosted_member(owner, type);
+        // 8.8's nominal table or 8.9's host value type -- the same member
+        // list a static constant lands in.
+        if (found == NULL || (found->type->kind != LHAT_TYPE_TABLE &&
+                              found->type->kind != LHAT_TYPE_HOSTVALUE)) {
+            return false;
+        }
+        owner = found->type;
+    }
     if (owner == NULL || hosted_member(owner, name) != NULL) {
         return false;
     }
@@ -2126,11 +2138,12 @@ bool lhat_register_enum_valued(LhatProgram *program, const char *module,
     LhatProgramEnum *e = &program->host_enums[program->host_enum_count];
     memset(e, 0, sizeof *e);
     e->module = duplicate(module);
+    e->type = type != NULL ? duplicate(type) : NULL;
     e->name = duplicate(name);
     e->members = (char **)lhat_calloc(count, sizeof *e->members);
     e->values = (int64_t *)lhat_alloc(count * sizeof *e->values);
-    if (e->module == NULL || e->name == NULL || e->members == NULL ||
-        e->values == NULL) {
+    if (e->module == NULL || (type != NULL && e->type == NULL) ||
+        e->name == NULL || e->members == NULL || e->values == NULL) {
         return false;
     }
     e->count = count;
@@ -2177,11 +2190,11 @@ bool lhat_register_enum_valued(LhatProgram *program, const char *module,
 }
 
 bool lhat_register_enum(LhatProgram *program, const char *module,
-                        const char *name, const char *const *members,
-                        size_t count)
+                        const char *type, const char *name,
+                        const char *const *members, size_t count)
 {
-    return lhat_register_enum_valued(program, module, name, members, NULL,
-                                     count);
+    return lhat_register_enum_valued(program, module, type, name, members,
+                                     NULL, count);
 }
 
 bool lhat_register_const_integer(LhatProgram *program, const char *module,
@@ -2680,7 +2693,7 @@ bool lhat_program_install(const LhatProgram *program, LhatMachine *machine)
         if (!lhat_machine_make_enum(machine, e->name, e->decl_rt,
                                     (const char *const *)e->members,
                                     e->values, e->count, &value) ||
-            !lhat_machine_register(machine, e->module, NULL, e->name,
+            !lhat_machine_register(machine, e->module, e->type, e->name,
                                    value)) {
             return false;
         }
@@ -3023,6 +3036,7 @@ void lhat_program_dispose(LhatProgram *program)
         lhat_free(e->members);
         lhat_free(e->values);
         lhat_free(e->module);
+        lhat_free(e->type);
         lhat_free(e->name);
         // 8.8: the tag is not the program's -- one declaration, one tag,
         // for the process (registry.h).
@@ -4040,6 +4054,10 @@ size_t lhat_program_dump_host_api(const LhatProgram *program, char *out,
         dump_comma(&w, &first);
         dump_text(&w, "    {\"kind\": \"enum\", \"module\": ");
         dump_string(&w, e->module);
+        if (e->type != NULL) {
+            dump_text(&w, ", \"type\": ");
+            dump_string(&w, e->type);
+        }
         dump_text(&w, ", \"name\": ");
         dump_string(&w, e->name);
         dump_text(&w, ", \"members\": [");

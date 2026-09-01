@@ -707,14 +707,23 @@ bool lhat_register_const_string(LhatProgram *program, const char *module,
 // module.Name, a when^ naming them all proves exhaustive, and fits^
 // compares the declaration. `values` gives each member its integer;
 // without it (lhat_register_enum) they count from 1. A name already
-// registered under the module is refused; strings are copied. Before
+// registered there is refused; strings are copied. Before
 // lhat_program_check, as every registration is. The identity is the
 // program's: enum values do not cross programs.
+//
+// `type` is NULL for an enum of the module itself, or a registered type's
+// name (8.8's and 8.9's alike) for one declared under it -- godot.Node's
+// own Mode, read as godot.Node.Mode.Idle. A host type is nominal, so a
+// name it carries never collides with the module's; the constants take
+// their `type` the same way. 02 の 19 章 has no nesting of its own -- an
+// L^ unit writes enum^ at the top of a scope -- and this is 8.8's
+// namespace lending one, not a second spelling of the declaration.
 bool lhat_register_enum(LhatProgram *program, const char *module,
-                        const char *name, const char *const *members,
-                        size_t count);
+                        const char *type, const char *name,
+                        const char *const *members, size_t count);
 bool lhat_register_enum_valued(LhatProgram *program, const char *module,
-                               const char *name, const char *const *members,
+                               const char *type, const char *name,
+                               const char *const *members,
                                const int64_t *values, size_t count);
 
 // 04 の 2.2/12.4 の host 版: an errordef^ the host declares in C rather than

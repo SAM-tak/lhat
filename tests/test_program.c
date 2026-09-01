@@ -1800,10 +1800,10 @@ static void test_host_data(void)
         program_with(&program, &disk, files, 1);
         static const char *const modes[] = { "Idle", "Walk" };
         static const int64_t mode_values[] = { 1, 5 };
-        LHAT_CHECK(lhat_register_enum_valued(&program, "k", "Mode", modes,
-                                             mode_values, 2),
+        LHAT_CHECK(lhat_register_enum_valued(&program, "k", NULL, "Mode",
+                                             modes, mode_values, 2),
                    "the enum registered");
-        LHAT_CHECK(!lhat_register_enum(&program, "k", "Mode", modes, 2),
+        LHAT_CHECK(!lhat_register_enum(&program, "k", NULL, "Mode", modes, 2),
                    "and its name is taken");
         const LhatUnit *root = lhat_program_check(&program, "main.lh");
         LHAT_CHECK(root != NULL && root->checked.diagnostic_count == 0,
@@ -1816,6 +1816,50 @@ static void test_host_data(void)
             LhatRunResult ran = lhat_run(machine, lhat_unit_proto(root));
             LHAT_CHECK_EQ_INT(ran.status, LHAT_RUN_OK);
             LHAT_CHECK_EQ_INT(lhat_as_integer(ran.value), 2111);
+            lhat_machine_dispose(machine);
+        }
+    }
+    lhat_program_dispose(&program);
+
+    // 05 の 8.7改2 with 8.8: a host type is a namespace as well as a type,
+    // so an enum may be declared under one -- godot.Node's own Mode. The
+    // module's Mode and the type's are different declarations, which is
+    // what a nominal type buys.
+    LHAT_TEST("an enum may stand under a host type");
+    {
+        static const File files[] = {
+            {"main.lh",
+             "import^ k\n"
+             "var^ n = 0\n"
+             "if^ k.T.Mode.Fast.value = 9 { n := n + 1 }\n"
+             "if^ k.Mode.Fast.value = 1 { n := n + 10 }\n"
+             "if^ k.T.Mode.Fast fits^ k.T.Mode { n := n + 100 }\n"
+             "if^ k.T.Mode.Fast fits^ k.Mode { n := n - 1 else^: n := n + 1000 }\n"
+             "return^ n\n"},
+        };
+        program_with(&program, &disk, files, 1);
+        static const char *const one[] = { "Fast" };
+        static const int64_t nine[] = { 9 };
+        LHAT_CHECK(lhat_register_hostdata_type(&program, "k", "T") != NULL,
+                   "the type registered");
+        LHAT_CHECK(lhat_register_enum_valued(&program, "k", "T", "Mode", one,
+                                             nine, 1),
+                   "an enum under the type");
+        LHAT_CHECK(lhat_register_enum(&program, "k", NULL, "Mode", one, 1),
+                   "and the module keeps its own of that name");
+        LHAT_CHECK(!lhat_register_enum(&program, "k", "T", "Mode", one, 1),
+                   "but the type's name is taken once");
+        const LhatUnit *root = lhat_program_check(&program, "main.lh");
+        LHAT_CHECK(root != NULL && root->checked.diagnostic_count == 0,
+                   "the program checked");
+        bool compiled = lhat_program_compile(&program);
+        LHAT_CHECK(compiled, "and compiled");
+        if (compiled && root != NULL) {
+            LhatMachine *machine = lhat_machine_new();
+            lhat_program_install(&program, machine);
+            LhatRunResult ran = lhat_run(machine, lhat_unit_proto(root));
+            LHAT_CHECK_EQ_INT(ran.status, LHAT_RUN_OK);
+            LHAT_CHECK_EQ_INT(lhat_as_integer(ran.value), 1111);
             lhat_machine_dispose(machine);
         }
     }

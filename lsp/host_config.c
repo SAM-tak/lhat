@@ -269,8 +269,8 @@ static void apply_function(const cJSON *entry, LhatProgram *program)
                              ? (int64_t)v->valuedouble
                              : (int64_t)i + 1;
         }
-        lhat_register_enum_valued(program, emodule, name, names, numbers,
-                                  (size_t)count);
+        lhat_register_enum_valued(program, emodule, string_of(entry, "type"),
+                                  name, names, numbers, (size_t)count);
         free(names);
         free(numbers);
         return;
