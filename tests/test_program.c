@@ -1864,6 +1864,21 @@ static void test_host_data(void)
         LHAT_CHECK(lhat_register_enum_valued(&program, "k", "T", "Mode", one,
                                              nine, 1),
                    "an enum under the type");
+        // 8.9: a host value type carries its members the same way, so a
+        // signature may name what it declares.
+        LHAT_CHECK(lhat_register_hostvalue_type(&program, "k", "V", 8) != NULL,
+                   "a host value type registered");
+        LHAT_CHECK(lhat_register_enum_valued(&program, "k", "V", "Axis", one,
+                                             nine, 1),
+                   "an enum under it");
+        LHAT_CHECK(lhat_register_func(&program, "k", "axis",
+                                      "f^k.V.Axis -> number^;",
+                                      host_wide_probe, NULL),
+                   "and a signature may write k.V.Axis");
+        LHAT_CHECK(lhat_register_func(&program, "k", "mode",
+                                      "f^k.T.Mode -> number^;",
+                                      host_wide_probe, NULL),
+                   "as it may write k.T.Mode");
         LHAT_CHECK(lhat_register_enum(&program, "k", NULL, "Mode", one, 1),
                    "and the module keeps its own of that name");
         LHAT_CHECK(!lhat_register_enum(&program, "k", "T", "Mode", one, 1),

@@ -892,7 +892,11 @@ static LhatType *resolve_qualified_type(Checker *c, const LhatNode *node)
     // 05 の 6.1: what require^ yields is a structure, so reaching a type out
     // of it is the same member access a value uses. 04 の 14.4 already made a
     // qualified name writable as a type; this is that form over a unit.
-    if (outer->kind == LHAT_TYPE_TABLE) {
+    //
+    // 05 の 8.9: a host value type carries its members on the same list a
+    // table does, so a name it declares -- 8.7改2's enum among them --
+    // resolves here exactly as one under 8.8's nominal table does.
+    if (outer->kind == LHAT_TYPE_TABLE || outer->kind == LHAT_TYPE_HOSTVALUE) {
         const LhatTypeMember *member = chk_find_member(outer, name, length);
         // 2.2 again: a unit publishes values as well as types, and only the
         // types among them may be written here.
