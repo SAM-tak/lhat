@@ -1778,6 +1778,49 @@ static void test_host_data(void)
     }
     lhat_program_dispose(&program);
 
+    // 05 の 8.7改2: a registered enum is 02 の 19 章's enum -- singleton
+    // members with their integers, fits^ against the declaration, and a
+    // when^ naming every member proving exhaustive.
+    LHAT_TEST("a registered enum reads as a declared one");
+    {
+        static const File files[] = {
+            {"main.lh",
+             "import^ k\n"
+             "var^ n = 0\n"
+             "let^ x = k.Mode.Walk\n"
+             "if^ x.value = 5 { n := n + 1 }\n"
+             "if^ x = k.Mode.Walk { n := n + 10 }\n"
+             "if^ x fits^ k.Mode { n := n + 100 }\n"
+             "n := n + for^x:\n"
+             "    when^ k.Mode.Idle: 1000\n"
+             "    when^ k.Mode.Walk: 2000\n"
+             ";\n"
+             "return^ n\n"},
+        };
+        program_with(&program, &disk, files, 1);
+        static const char *const modes[] = { "Idle", "Walk" };
+        static const int64_t mode_values[] = { 1, 5 };
+        LHAT_CHECK(lhat_register_enum_valued(&program, "k", "Mode", modes,
+                                             mode_values, 2),
+                   "the enum registered");
+        LHAT_CHECK(!lhat_register_enum(&program, "k", "Mode", modes, 2),
+                   "and its name is taken");
+        const LhatUnit *root = lhat_program_check(&program, "main.lh");
+        LHAT_CHECK(root != NULL && root->checked.diagnostic_count == 0,
+                   "the program checked");
+        bool compiled = lhat_program_compile(&program);
+        LHAT_CHECK(compiled, "and compiled");
+        if (compiled && root != NULL) {
+            LhatMachine *machine = lhat_machine_new();
+            lhat_program_install(&program, machine);
+            LhatRunResult ran = lhat_run(machine, lhat_unit_proto(root));
+            LHAT_CHECK_EQ_INT(ran.status, LHAT_RUN_OK);
+            LHAT_CHECK_EQ_INT(lhat_as_integer(ran.value), 2111);
+            lhat_machine_dispose(machine);
+        }
+    }
+    lhat_program_dispose(&program);
+
     // 05 の 8.9改: a host value crosses the host->L^ boundary as an
     // argument. Two stand at once in the caller's own rooms, a narrow
     // argument rides between them, and the widened frame is what the body

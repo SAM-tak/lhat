@@ -134,6 +134,13 @@ struct LhatProgram {
     LhatType *hosted;
     struct LhatHostEntry *host_entries;
     size_t host_entry_count;
+
+    // 05 の 8.7改2: the enums the host registered. Names owned; the RT_ENUM
+    // descriptor on host_heap is the per-program identity fits^ compares;
+    // install builds the value objects per machine.
+    struct LhatProgramEnum *host_enums;
+    size_t host_enum_count;
+    size_t host_enum_capacity;
     size_t host_entry_capacity;
 
     // 02 の 18.5: what lhat_register_annotation recorded. Only the checker

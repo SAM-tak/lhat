@@ -702,6 +702,21 @@ bool lhat_register_const_string(LhatProgram *program, const char *module,
                                 const char *type, const char *name,
                                 const char *text);
 
+// 05 の 8.7改2: an enum the host declares -- godot.Mode with its members,
+// read as 02 の 19 章's enum^: the members are singleton values under
+// module.Name, a when^ naming them all proves exhaustive, and fits^
+// compares the declaration. `values` gives each member its integer;
+// without it (lhat_register_enum) they count from 1. A name already
+// registered under the module is refused; strings are copied. Before
+// lhat_program_check, as every registration is. The identity is the
+// program's: enum values do not cross programs.
+bool lhat_register_enum(LhatProgram *program, const char *module,
+                        const char *name, const char *const *members,
+                        size_t count);
+bool lhat_register_enum_valued(LhatProgram *program, const char *module,
+                               const char *name, const char *const *members,
+                               const int64_t *values, size_t count);
+
 // 04 の 2.2/12.4 の host 版: an errordef^ the host declares in C rather than
 // in an L^ unit -- "L^ has its own errordef^-shaped things without writing
 // errordef^" (04 の 12.4 が撤回しなかった経路)。v1 は付随フィールドを持たな

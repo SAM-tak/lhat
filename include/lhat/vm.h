@@ -326,6 +326,18 @@ typedef struct {
 bool lhat_place_hostvalue(const LhatHostValueTag *tag, const void *bytes,
                           LhatHostValueRoom *room, LhatValue *out);
 
+// 05 の 8.7改2: the enum a registration described, built on this machine
+// the way 02 の 19 章's declaration builds one -- the enum object, its
+// sealed members table, one enumerator per name with its integer. `decl`
+// is the identity descriptor the registration made (fits^ compares it).
+// For lhat_program_install; a host wanting one machine's enum reads it
+// off L^.modules instead.
+bool lhat_machine_make_enum(LhatMachine *machine, const char *name,
+                            const struct LhatRuntimeType *decl,
+                            const char *const *members,
+                            const int64_t *values, size_t count,
+                            LhatValue *out);
+
 // A string on `machine`'s own heap, made the way 05 の 8.7's registration
 // makes a table or a host -- the machine has to make it, since the value's
 // object header and its place in the collector's heap are the machine's to

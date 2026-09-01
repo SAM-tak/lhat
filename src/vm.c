@@ -3157,6 +3157,47 @@ bool lhat_make_hostvalue(LhatMachine *machine, const LhatHostValueTag *tag,
     return true;
 }
 
+bool lhat_machine_make_enum(LhatMachine *machine, const char *name,
+                            const struct LhatRuntimeType *decl,
+                            const char *const *members,
+                            const int64_t *values, size_t count,
+                            LhatValue *out)
+{
+    Machine *m = (Machine *)machine;
+    if (m == NULL || name == NULL || members == NULL || out == NULL) {
+        return false;
+    }
+    LhatString *named = lhat_string_new(&m->objects, name, strlen(name));
+    if (named == NULL) {
+        return false;
+    }
+    LhatEnum *made = lhat_enum_new(&m->objects, named, decl);
+    if (made == NULL) {
+        return false;
+    }
+    for (size_t i = 0; i < count; i++) {
+        LhatString *member =
+            lhat_string_new(&m->objects, members[i], strlen(members[i]));
+        if (member == NULL) {
+            return false;
+        }
+        LhatEnumerator *e = lhat_enumerator_new(
+            &m->objects, made, member,
+            lhat_integer(values != NULL ? values[i] : (int64_t)i + 1),
+            i + 1);
+        if (e == NULL) {
+            return false;
+        }
+        bool refused = false;
+        if (!set_key(m, made->members, lhat_object((LhatObject *)member),
+                     lhat_object((LhatObject *)e), &refused)) {
+            return false;
+        }
+    }
+    *out = lhat_object((LhatObject *)made);
+    return true;
+}
+
 bool lhat_place_hostvalue(const LhatHostValueTag *tag, const void *bytes,
                           LhatHostValueRoom *room, LhatValue *out)
 {

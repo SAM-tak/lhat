@@ -2354,6 +2354,11 @@ cli/            コマンドライン      → lhat.exe
 
 ## 改定履歴（要約）
 
+- 8.7改2（2026-09-01）: 列挙体の登録（`lhat_register_enum` / `_valued`）。
+  02 の 19 章の enum^ そのもの——メンバはシングルトン値、when^ の全名指しは
+  網羅、fits^ は宣言を比べる。同一性はプログラム単位（列挙値はプログラムを
+  跨がない）。dump は "enum" 種（メンバ名+値）で書き、LSP の replay が読む
+
 - 8.7改（2026-09-01）: スカラー定数の登録
   （`lhat_register_const_integer/_real/_bool/_string`）。モジュール直下と
   ホスト型（8.8/8.9 両方）の静的メンバ。enum はこの integer 形を生成器が

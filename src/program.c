@@ -1155,6 +1155,17 @@ typedef struct LhatHostEntry {
     char *const_text;
 } LhatHostEntry;
 
+// 05 の 8.7改2: one registered enum. The strings are owned; decl_rt is the
+// per-program identity on host_heap.
+typedef struct LhatProgramEnum {
+    char *module;
+    char *name;
+    char **members;   // owned, each owned
+    int64_t *values;  // owned
+    size_t count;
+    LhatRuntimeType *decl_rt;
+} LhatProgramEnum;
+
 // 05 の 8.6: one member of L^ itself. Separate from the above because it does
 // not land under L^.modules, so install puts it somewhere else.
 typedef struct LhatGlobalEntry {
@@ -2098,6 +2109,81 @@ static bool register_const(LhatProgram *program, const char *module,
     return true;
 }
 
+bool lhat_register_enum_valued(LhatProgram *program, const char *module,
+                               const char *name, const char *const *members,
+                               const int64_t *values, size_t count)
+{
+    if (program == NULL || module == NULL || name == NULL ||
+        members == NULL || count == 0) {
+        return false;
+    }
+    LhatType *owner = hosted_table(program, hosted_root(program), module);
+    if (owner == NULL || hosted_member(owner, name) != NULL) {
+        return false;
+    }
+    LHAT_GROW(program->host_enums, program->host_enum_count,
+              program->host_enum_capacity, 4, return false);
+    LhatProgramEnum *e = &program->host_enums[program->host_enum_count];
+    memset(e, 0, sizeof *e);
+    e->module = duplicate(module);
+    e->name = duplicate(name);
+    e->members = (char **)lhat_calloc(count, sizeof *e->members);
+    e->values = (int64_t *)lhat_alloc(count * sizeof *e->values);
+    if (e->module == NULL || e->name == NULL || e->members == NULL ||
+        e->values == NULL) {
+        return false;
+    }
+    e->count = count;
+    for (size_t i = 0; i < count; i++) {
+        if (members[i] == NULL) {
+            return false;
+        }
+        e->members[i] = duplicate(members[i]);
+        if (e->members[i] == NULL) {
+            return false;
+        }
+        e->values[i] = values != NULL ? values[i] : (int64_t)i + 1;
+    }
+
+    // The checker's two tiers, 02 の 19 章's -- a unit's when^ over the
+    // members proves exhaustive the way a declared enum's does.
+    LhatType *decl =
+        lhat_type_enum_decl(&program->types, e->name, strlen(e->name));
+    LhatType *number = lhat_type_simple(&program->types, LHAT_TYPE_NUMBER);
+    if (decl == NULL || number == NULL) {
+        return false;
+    }
+    for (size_t i = 0; i < count; i++) {
+        if (lhat_type_enum_member(&program->types, decl, e->members[i],
+                                  strlen(e->members[i]), number) == NULL) {
+            return false;
+        }
+    }
+    if (lhat_type_add_member(&program->types, owner, e->name,
+                             strlen(e->name), decl) == NULL) {
+        return false;
+    }
+
+    // The identity fits^ compares, shared by every machine of this program.
+    e->decl_rt = lhat_type_rt_new(&program->host_heap, LHAT_TYPE_RT_ENUM);
+    if (e->decl_rt == NULL) {
+        return false;
+    }
+    e->decl_rt->enum_decl = decl;
+    e->decl_rt->enum_name =
+        lhat_string_new(&program->host_heap, e->name, strlen(e->name));
+    program->host_enum_count++;
+    return true;
+}
+
+bool lhat_register_enum(LhatProgram *program, const char *module,
+                        const char *name, const char *const *members,
+                        size_t count)
+{
+    return lhat_register_enum_valued(program, module, name, members, NULL,
+                                     count);
+}
+
 bool lhat_register_const_integer(LhatProgram *program, const char *module,
                                  const char *type, const char *name,
                                  int64_t value)
@@ -2586,6 +2672,19 @@ bool lhat_program_install(const LhatProgram *program, LhatMachine *machine)
             return false;
         }
     }
+
+    // 05 の 8.7改2: the enums, one value object per machine.
+    for (size_t i = 0; i < program->host_enum_count; i++) {
+        const LhatProgramEnum *e = &program->host_enums[i];
+        LhatValue value = lhat_nil();
+        if (!lhat_machine_make_enum(machine, e->name, e->decl_rt,
+                                    (const char *const *)e->members,
+                                    e->values, e->count, &value) ||
+            !lhat_machine_register(machine, e->module, NULL, e->name,
+                                   value)) {
+            return false;
+        }
+    }
     // 05 の 8.6: what goes in L^ itself rather than under its registry.
     for (size_t i = 0; i < program->global_count; i++) {
         const LhatGlobalEntry *e = &program->global_entries[i];
@@ -2915,6 +3014,16 @@ void lhat_program_dispose(LhatProgram *program)
         lhat_free(program->host_entries[i].name);
         lhat_free(program->host_entries[i].signature_text);
         lhat_free(program->host_entries[i].const_text);
+    }
+    for (size_t i = 0; i < program->host_enum_count; i++) {
+        LhatProgramEnum *e = &program->host_enums[i];
+        for (size_t k = 0; k < e->count; k++) {
+            lhat_free(e->members[k]);
+        }
+        lhat_free(e->members);
+        lhat_free(e->values);
+        lhat_free(e->module);
+        lhat_free(e->name);
         // 8.8: the tag is not the program's -- one declaration, one tag,
         // for the process (registry.h).
     }
@@ -3925,6 +4034,29 @@ size_t lhat_program_dump_host_api(const LhatProgram *program, char *out,
         dump_string(&w, entry->signature_text != NULL ? entry->signature_text
                                                       : "");
         dump_text(&w, "}");
+    }
+    for (size_t i = 0; i < program->host_enum_count; i++) {
+        const LhatProgramEnum *e = &program->host_enums[i];
+        dump_comma(&w, &first);
+        dump_text(&w, "    {\"kind\": \"enum\", \"module\": ");
+        dump_string(&w, e->module);
+        dump_text(&w, ", \"name\": ");
+        dump_string(&w, e->name);
+        dump_text(&w, ", \"members\": [");
+        for (size_t k = 0; k < e->count; k++) {
+            if (k > 0) {
+                dump_text(&w, ", ");
+            }
+            dump_string(&w, e->members[k]);
+        }
+        dump_text(&w, "], \"values\": [");
+        char number[32];
+        for (size_t k = 0; k < e->count; k++) {
+            snprintf(number, sizeof number, k > 0 ? ", %lld" : "%lld",
+                     (long long)e->values[k]);
+            dump_text(&w, number);
+        }
+        dump_text(&w, "]}");
     }
     for (size_t i = 0; i < program->global_count; i++) {
         const LhatGlobalEntry *entry = &program->global_entries[i];

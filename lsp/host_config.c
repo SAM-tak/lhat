@@ -227,14 +227,52 @@ static void apply_function(const cJSON *entry, LhatProgram *program)
     const char *kind = string_of(entry, "kind");
     const char *name = string_of(entry, "name");
     const char *signature = string_of(entry, "signature");
-    // A const entry carries a value, not a signature.
+    // A const or enum entry carries values, not a signature.
     if (kind == NULL || name == NULL ||
-        (signature == NULL && strcmp(kind, "const") != 0)) {
+        (signature == NULL && strcmp(kind, "const") != 0 &&
+         strcmp(kind, "enum") != 0)) {
         return;
     }
 
     if (strcmp(kind, "global") == 0) {
         lhat_register_global(program, name, signature, stub_host_fn, NULL);
+        return;
+    }
+
+    if (strcmp(kind, "enum") == 0) {
+        const char *emodule = string_of(entry, "module");
+        const cJSON *members =
+            cJSON_GetObjectItemCaseSensitive(entry, "members");
+        const cJSON *values =
+            cJSON_GetObjectItemCaseSensitive(entry, "values");
+        int count = cJSON_IsArray(members) ? cJSON_GetArraySize(members) : 0;
+        if (emodule == NULL || count <= 0 ||
+            (cJSON_IsArray(values) &&
+             cJSON_GetArraySize(values) != count)) {
+            return;
+        }
+        const char **names =
+            (const char **)malloc((size_t)count * sizeof *names);
+        int64_t *numbers =
+            (int64_t *)malloc((size_t)count * sizeof *numbers);
+        if (names == NULL || numbers == NULL) {
+            free(names);
+            free(numbers);
+            return;
+        }
+        bool valued = cJSON_IsArray(values);
+        for (int i = 0; i < count; i++) {
+            const cJSON *mn = cJSON_GetArrayItem(members, i);
+            names[i] = cJSON_IsString(mn) ? mn->valuestring : "";
+            const cJSON *v = valued ? cJSON_GetArrayItem(values, i) : NULL;
+            numbers[i] = v != NULL && cJSON_IsNumber(v)
+                             ? (int64_t)v->valuedouble
+                             : (int64_t)i + 1;
+        }
+        lhat_register_enum_valued(program, emodule, name, names, numbers,
+                                  (size_t)count);
+        free(names);
+        free(numbers);
         return;
     }
 
