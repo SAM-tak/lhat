@@ -51,43 +51,16 @@ let^p = p^mutable^t:^t{} { var^t.blah = 1 }
 
 ### サイレント実装漏れ
 
-#### enum^
-
-LhatStringと別に、LhatEnumIdという文字列格納オブジェクトが必要。string^ 型とは区別され、さらに自分が所属する
-enum^ と整数値を覚えている。LhatTableではなくLhatEnumと言う別の構造があったほうがいい、かな…
-
-```lhat
-let^E = enum^{ # 所属する名前一個一個が enum^{AAA, BBB, CCC} へのdefinationポインターを持つ
-  AAA,
-  BBB,
-  CCC = "aaa",
-  DDD = HostData.new(0, 0), #何でも入る
-}
-print(typeof^(E.AAA)) # enumid^
-print(typeof^(E.AAA.enum)) # enum^{AAA, BBB, CCC}
-print(E.AAA) # AAA (tostring()が"AAA"を返すので)
-print(E.AAA.tostring()) # AAA
-print(E.AAA.value) # 1
-print(E.BBB.value) # 2
-print(E.CCC) # CCC
-print(E.CCC.value) # aaa
-```
-
-``` lhat
-for^x:enum^{AAA, BBB, CCC} {
-    when^AAA: ...
-    when^BBB: ...
-} # other^を書くか CCC を書かないと網羅していない、とエラーになる。
-```
-
 #### 多次元配列
 
+``` lhat
 let^t = {width^3:
     1, 2, 3,
     4, 5, 6,
     7, 8, 9,
 }
 print(t[1, 2])
+```
 
 ### 検討項目
 
@@ -110,6 +83,10 @@ hash^ ユーザー定義のハッシュ。これがないと値比較でテー�
 
 静的無限ループを検知してエラーにする
   脱出条件のないrepeat、等
+
+#### パラメトリック多相（let多相）
+
+具体的に、L^ ではどうなるんだ？
 
 #### sync^構文
 
@@ -195,10 +172,6 @@ c^{}はそれ以上分解できない、でいい気はする
 ```
 
 typeof^() は？あれは何？
-
-あと、現状の as^ はまずい。キャスト失敗＝panicは乱暴すぎる。
-
-考えられる解決は、 as^ T は T|Error.CastFailure で T への解決はしない、というものでは。
 
 ---
 
