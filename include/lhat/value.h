@@ -70,6 +70,9 @@ typedef enum {
     LHAT_OBJECT_ERROR,       // 04 の 2.3
     LHAT_OBJECT_ERROR_KIND,  // 04 の 2.4: the declaration a kind belongs to,
                              // which is what its identity is
+    LHAT_OBJECT_ENUM,        // 02 の 19 章: what one enum^ declaration made
+    LHAT_OBJECT_ENUMERATOR,  // one member of it -- the singleton value a
+                             // program passes around
     LHAT_OBJECT_NATIVE,      // an operation the runtime provides, bound to
                              // whatever it was reached through
     LHAT_OBJECT_TYPE,        // 02 の 14.12: a written type, kept so that a

@@ -2184,6 +2184,50 @@ LhatType *chk_infer_member(Checker *c, const LhatNode *node)
         // -- 2.2's are the leaf's, and reaching one is what 11.4's narrowing
         // is for. The search below finds nothing and the shared tail still
         // answers tostring.
+    } else if (target->kind == LHAT_TYPE_ENUM ||
+               target->kind == LHAT_TYPE_ENUM_MEMBER) {
+        // 02 の 19 章: in value position E.AAA answers the ENUM type, wide
+        // -- a binding made of it takes any member, and two members
+        // compare without the checker calling the comparison settled. The
+        // member's own singleton type lives in type position
+        // (resolve_qualified_type) and in narrowing, where the precision
+        // is the point.
+        if (target->kind == LHAT_TYPE_ENUM) {
+            LhatType *member = chk_kind_of_set(target, name, length);
+            if (member != NULL) {
+                return target;
+            }
+            if (chk_name_is(name, length, "value")) {
+                // An enumerator read through the wide type: any member's.
+                LhatType *joined = NULL;
+                for (const LhatTypeList *k = target->v.error.kinds;
+                     k != NULL; k = k->next) {
+                    joined = lhat_type_union(c->result->types, joined,
+                                             k->type->v.error.value_type);
+                }
+                return joined != NULL ? joined
+                                      : chk_simple(c, LHAT_TYPE_UNKNOWN);
+            }
+            if (chk_name_is(name, length, "enum") ||
+                chk_name_is(name, length, "enum^")) {
+                return target;
+            }
+        } else {
+            // `value` alone: nothing user-written stands here to collide
+            // with, and enum^ pairs with the declaring word where value^
+            // pairs with nothing.
+            if (chk_name_is(name, length, "value")) {
+                return target->v.error.value_type != NULL
+                           ? target->v.error.value_type
+                           : chk_simple(c, LHAT_TYPE_NUMBER);
+            }
+            if (chk_name_is(name, length, "enum") ||
+                chk_name_is(name, length, "enum^")) {
+                return target->v.error.set != NULL
+                           ? target->v.error.set
+                           : chk_simple(c, LHAT_TYPE_UNKNOWN);
+            }
+        }
     } else if (target->kind == LHAT_TYPE_CORO) {
         // 05 の 8.5: a coroutine carries these without importing anything.
         // 02 の 12.6 spells dispose(), 15.6 puts resume beside it, and 16.3
@@ -2776,6 +2820,8 @@ static LhatType *infer_index(Checker *c, const LhatNode *node)
             case LHAT_TYPE_ERROR:
             case LHAT_TYPE_ERROR_SET:
             case LHAT_TYPE_ERROR_KIND:
+            case LHAT_TYPE_ENUM:
+            case LHAT_TYPE_ENUM_MEMBER:
             case LHAT_TYPE_HOSTVALUE:
             case LHAT_TYPE_HOSTVALUE_BOX:
                 chk_report(c, node, LHAT_CHECK_ERR_NOT_INDEXABLE);
@@ -5510,6 +5556,11 @@ static LhatType *infer_node(Checker *c, const LhatNode *node)
                 bool provable = true;
                 bool saw_true = false;
                 bool saw_false = false;
+                // 02 の 19 章: an enum is the other type whose values can
+                // all be spelled out. The arms seen as members are counted
+                // against the subject's declaration below.
+                const LhatType *seen_members[256];
+                size_t seen_count = 0;
                 for (; clause != NULL; clause = clause->next) {
                     const LhatNode *condition = clause->v.clause.condition;
                     if (condition == NULL) {
@@ -5540,6 +5591,46 @@ static LhatType *infer_node(Checker *c, const LhatNode *node)
                                        lhat_name_is(name, length, "true^");
                             saw_false = saw_false ||
                                         lhat_name_is(name, length, "false^");
+                        } else if (cond->kind == LHAT_NODE_BINARY &&
+                                   cond->v.binary.op == LHAT_OP_EQ &&
+                                   cond->v.binary.right != NULL &&
+                                   cond->v.binary.right->kind ==
+                                       LHAT_NODE_MEMBER) {
+                            // 19 章: a pattern naming a member is provable
+                            // the way a bool literal is. Resolved from the
+                            // written path -- value position reads wide on
+                            // purpose, so the singleton is asked for here.
+                            const LhatNode *pattern = cond->v.binary.right;
+                            LhatType *holder =
+                                chk_infer(c, pattern->v.access.target);
+                            const char *member_name = NULL;
+                            size_t member_length = 0;
+                            LhatType *arm = NULL;
+                            if (holder != NULL &&
+                                holder->kind == LHAT_TYPE_ENUM &&
+                                chk_node_name(c, pattern->v.access.argument,
+                                              &member_name, &member_length)) {
+                                arm = chk_kind_of_set(holder, member_name,
+                                                      member_length);
+                            }
+                            if (arm != NULL &&
+                                arm->kind == LHAT_TYPE_ENUM_MEMBER &&
+                                seen_count <
+                                    sizeof seen_members /
+                                        sizeof seen_members[0]) {
+                                bool known = false;
+                                for (size_t i = 0; i < seen_count; i++) {
+                                    if (seen_members[i] == arm) {
+                                        known = true;
+                                        break;
+                                    }
+                                }
+                                if (!known) {
+                                    seen_members[seen_count++] = arm;
+                                }
+                            } else {
+                                provable = false;
+                            }
                         } else {
                             provable = false;
                         }
@@ -5547,7 +5638,24 @@ static LhatType *infer_node(Checker *c, const LhatNode *node)
                 }
                 const LhatType *subject =
                     scope.bindings != NULL ? scope.bindings->type : NULL;
-                if (!defaulted &&
+                // 19 章: every member of the subject's declaration named,
+                // each exactly one of them, and none from anywhere else.
+                bool enum_covered = false;
+                if (provable && !saw_true && !saw_false && seen_count > 0 &&
+                    subject != NULL && subject->kind == LHAT_TYPE_ENUM) {
+                    size_t total = 0;
+                    for (const LhatTypeList *k = subject->v.error.kinds;
+                         k != NULL; k = k->next) {
+                        total++;
+                    }
+                    enum_covered = seen_count == total;
+                    for (size_t i = 0; enum_covered && i < seen_count; i++) {
+                        if (seen_members[i]->v.error.set != subject) {
+                            enum_covered = false;
+                        }
+                    }
+                }
+                if (!defaulted && !enum_covered &&
                     !(provable && saw_true && saw_false && subject != NULL &&
                       subject->kind == LHAT_TYPE_BOOL)) {
                     chk_report(c, node, LHAT_CHECK_ERR_MATCH_NOT_EXHAUSTIVE);

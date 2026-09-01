@@ -89,6 +89,10 @@ typedef enum {
     LHAT_NODE_LOOP_CLAUSE,   // prolog^: first^: last^: ... (9 章)
     LHAT_NODE_ERRORDEF,      // errordef^ Name { ... }      (04 の 2.2)
     LHAT_NODE_ERROR_KIND,    // one kind inside an errordef^
+    LHAT_NODE_ENUMDEF,       // enum^ Name { ... }          (02 の 19 章)
+    LHAT_NODE_ENUM_MEMBER,   // one member inside an enum^; `members` is its
+                             // written value expression, NULL for the
+                             // numbered kind
     LHAT_NODE_MODULE,        // module^ a.b.c               (05 の 3 章)
     // 02 の 18: '@name' or '@name(a, b)'. `v.named.name` is the name it was
     // written with, `v.named.members` the arguments -- literals only, so

@@ -178,9 +178,11 @@ static void refine_from_resolution(const SemCollector *c, uint32_t offset,
     } else if (settled->kind == LHAT_TYPE_FUNC) {
         *type = SEM_FUNCTION;
     } else if (settled->kind == LHAT_TYPE_ERROR_SET ||
-               settled->kind == LHAT_TYPE_ERROR_KIND) {
-        // 04 の 2.2: what an errordef^ declared, and one kind within it.
-        // Both are written where a type is.
+               settled->kind == LHAT_TYPE_ERROR_KIND ||
+               settled->kind == LHAT_TYPE_ENUM ||
+               settled->kind == LHAT_TYPE_ENUM_MEMBER) {
+        // 04 の 2.2: what an errordef^ declared, and one kind within it --
+        // and 02 の 19 章's enum, the same two tiers.
         *type = SEM_TYPE;
     }
 }

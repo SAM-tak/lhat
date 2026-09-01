@@ -313,6 +313,11 @@ static LhatTable *table_of(LhatValue value)
     if (lhat_is_object_kind(value, LHAT_OBJECT_ERROR)) {
         return ((LhatError *)lhat_as_object(value))->fields;
     }
+    // 02 の 19 章: E.AAA reads the members table; it is sealed, so the
+    // writes the instructions refuse stay refused.
+    if (lhat_is_object_kind(value, LHAT_OBJECT_ENUM)) {
+        return ((LhatEnum *)lhat_as_object(value))->members;
+    }
     return NULL;
 }
 
@@ -635,6 +640,28 @@ static LhatRuntimeType *tag_type(LhatHeap *heap, LhatValue value)
             // 15.3改: which kind of body this came from, which is what
             // decides who may advance it (15.6改).
             type->is_function = proto->is_function;
+        }
+        return type;
+    }
+    // 02 の 19 章: an enumerator's identity is its declaration and place.
+    if (lhat_is_object_kind(value, LHAT_OBJECT_ENUMERATOR)) {
+        const LhatEnumerator *e = (const LhatEnumerator *)lhat_as_object(value);
+        LhatRuntimeType *type =
+            lhat_type_rt_new(heap, LHAT_TYPE_RT_ENUM_MEMBER);
+        if (type != NULL && e->owner != NULL && e->owner->decl != NULL) {
+            type->enum_decl = e->owner->decl->enum_decl;
+            type->enum_member_index = e->index;
+            type->enum_name = e->name;
+            type->enum_owner_name = e->owner->name;
+        }
+        return type;
+    }
+    if (lhat_is_object_kind(value, LHAT_OBJECT_ENUM)) {
+        const LhatEnum *made = (const LhatEnum *)lhat_as_object(value);
+        LhatRuntimeType *type = lhat_type_rt_new(heap, LHAT_TYPE_RT_ENUM);
+        if (type != NULL && made->decl != NULL) {
+            type->enum_decl = made->decl->enum_decl;
+            type->enum_name = made->name;
         }
         return type;
     }
@@ -1587,6 +1614,8 @@ static bool immutable_default(LhatValue value)
         case LHAT_OBJECT_OVERLOAD:
         case LHAT_OBJECT_TYPE:
         case LHAT_OBJECT_ERROR_KIND:
+        case LHAT_OBJECT_ENUM:
+        case LHAT_OBJECT_ENUMERATOR:
             return true;
         default:
             return false;
@@ -4074,6 +4103,47 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                 goto member_body;
 
             member_body: {
+                // 02 の 19 章: a member answers what its declaration wrote
+                // -- value and enum -- and the runtime's own tostring^.
+                if (lhat_is_object_kind(R(b), LHAT_OBJECT_ENUMERATOR)) {
+                    const LhatEnumerator *e =
+                        (const LhatEnumerator *)lhat_as_object(R(b));
+                    if (lhat_is_object_kind(member_key, LHAT_OBJECT_STRING)) {
+                        const LhatString *asked =
+                            (const LhatString *)lhat_as_object(member_key);
+                        // `value` alone: nothing user-written can stand
+                        // here to collide with, and enum^ pairs with the
+                        // declaring word where value^ pairs with nothing.
+                        if (asked->length == 5 &&
+                            memcmp(asked->text, "value", 5) == 0) {
+                            SET_R(a, e->value);
+                            break;
+                        }
+                        if ((asked->length == 4 &&
+                             memcmp(asked->text, "enum", 4) == 0) ||
+                            (asked->length == 5 &&
+                             memcmp(asked->text, "enum^", 5) == 0)) {
+                            SET_R(a, lhat_object((LhatObject *)(void *)
+                                                     e->owner));
+                            break;
+                        }
+                    }
+                    LhatNativeKind which;
+                    bool hatted = false;
+                    if (!native_named(member_key, &which, &hatted) ||
+                        which != LHAT_NATIVE_TOSTRING) {
+                        return finish(m, chunk, LHAT_RUN_TYPE_ERROR,
+                                      lhat_nil(), at);
+                    }
+                    LhatNative *native =
+                        lhat_native_new(&m->objects, which, R(b));
+                    if (native == NULL) {
+                        return finish(m, chunk, LHAT_RUN_OUT_OF_MEMORY,
+                                      lhat_nil(), at);
+                    }
+                    SET_R(a, lhat_object((LhatObject *)native));
+                    break;
+                }
                 // 02 の 12.6 and 15.6: a coroutine answers the operations the
                 // runtime provides, bound to what they came through.
                 if (lhat_is_object_kind(R(b), LHAT_OBJECT_COROUTINE)) {
@@ -6837,6 +6907,54 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                 break;
             }
 
+
+            // 02 の 19 章: the declaration builds its objects where it
+            // stands. NEWENUM reads the descriptor constant the compiler
+            // made; NEWENUMERATOR evaluates nothing itself -- the value
+            // arrived in R[C], put there by the member's own expression.
+            case LHAT_BC_NEWENUM: {
+                LHAT_GC_POLL();  // this case allocates
+                LhatValue held = chunk->constants[lhat_bx(instruction)];
+                if (!lhat_is_object_kind(held, LHAT_OBJECT_TYPE)) {
+                    return finish(m, chunk, LHAT_RUN_TYPE_ERROR, lhat_nil(), at);
+                }
+                const LhatRuntimeType *decl =
+                    (const LhatRuntimeType *)lhat_as_object(held);
+                LhatEnum *made =
+                    lhat_enum_new(&m->objects, decl->enum_name, decl);
+                if (made == NULL) {
+                    return finish(m, chunk, LHAT_RUN_OUT_OF_MEMORY, lhat_nil(),
+                                  at);
+                }
+                SET_R(a, lhat_object((LhatObject *)made));
+                break;
+            }
+
+            case LHAT_BC_NEWENUMERATOR: {
+                LHAT_GC_POLL();  // this case allocates
+                if (!lhat_is_object_kind(R(a), LHAT_OBJECT_ENUM) ||
+                    !lhat_is_object_kind(R(b), LHAT_OBJECT_STRING) ||
+                    // 05 の 8.9: a host value cannot live in a heap object.
+                    lhat_is_hostvalue(R(cc))) {
+                    return finish(m, chunk, LHAT_RUN_TYPE_ERROR, lhat_nil(), at);
+                }
+                LhatEnum *owner = (LhatEnum *)lhat_as_object(R(a));
+                size_t index = lhat_table_count(owner->members) + 1;
+                LhatEnumerator *e = lhat_enumerator_new(
+                    &m->objects, owner,
+                    (const LhatString *)lhat_as_object(R(b)), R(cc), index);
+                if (e == NULL) {
+                    return finish(m, chunk, LHAT_RUN_OUT_OF_MEMORY, lhat_nil(),
+                                  at);
+                }
+                bool refused = false;
+                if (!set_key(m, owner->members, R(b),
+                             lhat_object((LhatObject *)e), &refused)) {
+                    return finish(m, chunk, LHAT_RUN_OUT_OF_MEMORY, lhat_nil(),
+                                  at);
+                }
+                break;
+            }
 
             // 03 の 5.1改3: the counted loop fused. The three registers are
             // asked to be numbers here, once -- 16.4 refuses reassigning the

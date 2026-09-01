@@ -79,6 +79,22 @@ void lhat_gc_children(LhatObject **gray, LhatObject *object)
             return;
         }
 
+        case LHAT_OBJECT_ENUM: {
+            const LhatEnum *made = (const LhatEnum *)object;
+            reach(gray, (LhatObject *)(void *)made->name);
+            reach(gray, (LhatObject *)made->members);
+            reach(gray, (LhatObject *)(void *)made->decl);
+            return;
+        }
+
+        case LHAT_OBJECT_ENUMERATOR: {
+            const LhatEnumerator *e = (const LhatEnumerator *)object;
+            reach(gray, (LhatObject *)(void *)e->owner);
+            reach(gray, (LhatObject *)(void *)e->name);
+            lhat_gc_reach(gray, e->value);
+            return;
+        }
+
         case LHAT_OBJECT_ERROR_KIND: {
             const LhatErrorKind *kind = (const LhatErrorKind *)object;
             reach(gray, (LhatObject *)(void *)kind->group);

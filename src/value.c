@@ -192,6 +192,8 @@ const char *lhat_object_kind_name(LhatObjectKind kind)
         case LHAT_OBJECT_COROUTINE:  return "coroutine";
         case LHAT_OBJECT_ERROR:      return "error";
         case LHAT_OBJECT_ERROR_KIND: return "error kind";
+        case LHAT_OBJECT_ENUM:       return "enum";
+        case LHAT_OBJECT_ENUMERATOR: return "enumerator";
         case LHAT_OBJECT_NATIVE:     return "a runtime operation";
         case LHAT_OBJECT_TYPE:       return "a type";
         case LHAT_OBJECT_OVERLOAD:   return "an overloaded member";
@@ -484,6 +486,23 @@ static void write_value(Writer *w, LhatValue value, size_t depth)
                 } else {
                     write_table(w, error->fields, depth);
                 }
+            }
+            return;
+        }
+        // 02 の 19 章: a member writes as its name -- what tostring^
+        // answers -- and the enum as its declaration's.
+        case LHAT_OBJECT_ENUMERATOR: {
+            const LhatEnumerator *e = (const LhatEnumerator *)object;
+            if (e->name != NULL) {
+                put(w, e->name->text, e->name->length);
+            }
+            return;
+        }
+        case LHAT_OBJECT_ENUM: {
+            const LhatEnum *made = (const LhatEnum *)object;
+            put_text(w, "enum^");
+            if (made->name != NULL) {
+                put(w, made->name->text, made->name->length);
             }
             return;
         }

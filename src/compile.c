@@ -1725,6 +1725,71 @@ static void compile_nil_else(Compiler *c, const LhatNode *node, uint8_t into)
     compile_nil_else_wide(c, node, into, 0);
 }
 
+// 02 の 19 章: enum^ E { AAA, BBB = expr } builds its objects where the
+// declaration stands. The identity rides an RT_ENUM descriptor made here
+// and loaded as a constant -- the same object a fits^ against E compares
+// (rt_from_checked stamps the same checker declaration). A member with no
+// written value takes the running number: 1 to start, an integer literal
+// resets the run to itself plus one, any other written value leaves the
+// count where it was.
+static void compile_enumdef(Compiler *c, const LhatNode *node)
+{
+    const char *name = NULL;
+    size_t length = 0;
+    if (!node_name(c, node->v.named.name, &name, &length)) {
+        return;
+    }
+
+    LhatHeap *owner_heap = &root_of(c)->proto->chunk.heap;
+    LhatRuntimeType *decl_rt = lhat_type_rt_new(owner_heap, LHAT_TYPE_RT_ENUM);
+    if (decl_rt == NULL) {
+        fail(c, LHAT_COMPILE_TOO_COMPLEX);
+        return;
+    }
+    decl_rt->enum_decl = node->checked_type;  // NULL unchecked: fits^ needs
+                                              // the checker anyway
+    decl_rt->enum_name = lhat_string_new(owner_heap, name, length);
+
+    uint8_t reg = reserve(c);
+    if (declare_local(c, name, length, reg, 1) == NULL) {
+        return;
+    }
+    size_t k = lhat_chunk_constant(&c->proto->chunk,
+                                   lhat_object((LhatObject *)decl_rt));
+    if (k == SIZE_MAX) {
+        fail(c, LHAT_COMPILE_TOO_COMPLEX);
+        return;
+    }
+    emit(c, lhat_encode_abx(LHAT_BC_NEWENUM, reg, (uint16_t)k));
+
+    int64_t running = 1;
+    uint8_t mark = c->next_register;
+    uint8_t member_name = reserve(c);
+    uint8_t member_value = reserve(c);
+    for (const LhatNode *member = node->v.named.members; member != NULL;
+         member = member->next) {
+        const char *this_name = NULL;
+        size_t this_length = 0;
+        if (!node_name(c, member->v.named.name, &this_name, &this_length)) {
+            continue;
+        }
+        load_string_bytes(c, member_name, this_name, this_length);
+        const LhatNode *written = member->v.named.members;
+        if (written == NULL) {
+            load_constant(c, member_value, lhat_integer(running));
+            running++;
+        } else {
+            compile_expression(c, written, member_value);
+            if (written->kind == LHAT_NODE_INT) {
+                running = written->v.integer.value + 1;
+            }
+        }
+        emit(c, lhat_encode_abc(LHAT_BC_NEWENUMERATOR, reg, member_name,
+                                member_value));
+    }
+    c->next_register = mark;
+}
+
 // 02 の 13.11: fits^ asks whether the left side may stand where the right side
 // is written. Every spelling of the right side is that one question at run
 // time, so there is one instruction for it: lower_type turns the written type
@@ -6863,6 +6928,12 @@ static void compile_statement(Compiler *c, const LhatNode *node)
             // anything was compiled, and there is nothing to run.
             return;
 
+        case LHAT_NODE_ENUMDEF:
+            // 02 の 19 章: unlike an errordef^, the members carry values, so
+            // the declaration runs where it stands.
+            compile_enumdef(c, node);
+            return;
+
         case LHAT_NODE_MODULE:
             return;  // 05 の 3 章: a name for the unit, nothing to run
 
@@ -7134,7 +7205,9 @@ static void compile_exports(Compiler *c, const LhatNode *statements,
         const LhatNode *named = NULL;
         if (s->kind == LHAT_NODE_DEFINE && s->v.binding.exported) {
             named = s->v.binding.targets;
-        } else if (s->kind == LHAT_NODE_ERRORDEF && s->v.named.exported) {
+        } else if ((s->kind == LHAT_NODE_ERRORDEF ||
+                    s->kind == LHAT_NODE_ENUMDEF) &&
+                   s->v.named.exported) {
             named = s->v.named.name;
         } else {
             continue;

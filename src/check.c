@@ -810,7 +810,8 @@ static bool names_a_type(const LhatType *bound)
 
 LhatType *chk_kind_of_set(const LhatType *set, const char *name, size_t length)
 {
-    if (set == NULL || set->kind != LHAT_TYPE_ERROR_SET) {
+    if (set == NULL || (set->kind != LHAT_TYPE_ERROR_SET &&
+                        set->kind != LHAT_TYPE_ENUM)) {
         return NULL;
     }
     for (const LhatTypeList *k = set->v.error.kinds; k != NULL; k = k->next) {
@@ -851,7 +852,7 @@ static LhatType *resolve_qualified_type(Checker *c, const LhatNode *node)
         return chk_simple(c, LHAT_TYPE_UNKNOWN);
     }
 
-    if (outer->kind == LHAT_TYPE_ERROR_SET) {
+    if (outer->kind == LHAT_TYPE_ERROR_SET || outer->kind == LHAT_TYPE_ENUM) {
         LhatType *kind = chk_kind_of_set(outer, name, length);
         if (kind != NULL) {
             record_type_name(c, node->v.access.argument, kind);
@@ -1296,7 +1297,9 @@ LhatType *chk_resolve_type(Checker *c, const LhatNode *node)
 // IOError by IOError.NotFound would find nothing to remove.
 static LhatType *expand_set(Checker *c, LhatType *type)
 {
-    if (type == NULL || type->kind != LHAT_TYPE_ERROR_SET) {
+    // 02 の 19 章: an enum stands for the union of its members the same way.
+    if (type == NULL || (type->kind != LHAT_TYPE_ERROR_SET &&
+                         type->kind != LHAT_TYPE_ENUM)) {
         return type;
     }
     LhatType *expanded = NULL;

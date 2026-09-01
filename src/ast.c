@@ -164,6 +164,8 @@ void lhat_node_visit_children(const LhatNode *node, LhatNodeVisitor visit,
         case LHAT_NODE_ERROR_NEW:
         case LHAT_NODE_ERRORDEF:
         case LHAT_NODE_ERROR_KIND:
+        case LHAT_NODE_ENUMDEF:
+        case LHAT_NODE_ENUM_MEMBER:
             visit_one("name", node->v.named.name, visit, context);
             visit_list("members", node->v.named.members, visit, context);
             break;
@@ -497,6 +499,8 @@ const char *lhat_node_kind_name(LhatNodeKind kind)
         case LHAT_NODE_SPREAD:         return "spread";
         case LHAT_NODE_ERRORDEF:       return "errordef";
         case LHAT_NODE_ERROR_KIND:     return "error-kind";
+        case LHAT_NODE_ENUMDEF:        return "enumdef";
+        case LHAT_NODE_ENUM_MEMBER:    return "enum-member";
         case LHAT_NODE_MODULE:         return "module";
         case LHAT_NODE_ANNOTATION:     return "annotation";
         case LHAT_NODE_REQUIRE:        return "require";

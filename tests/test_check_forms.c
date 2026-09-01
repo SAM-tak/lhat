@@ -860,6 +860,36 @@ static void test_patterns(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MATCH_NOT_EXHAUSTIVE);
     unit_dispose(&u);
 
+    // 02 の 19 章 (17.5改2): an enum is the other type whose values can
+    // all be spelled out.
+    LHAT_TEST("naming every member proves an enum match");
+    check_text(&u,
+               "enum^ E { AAA, BBB, CCC }\n"
+               "var^ say = f^ x:E -> number^ {\n"
+               "    for^ x: when^ E.AAA: 1 when^ E.BBB, E.CCC: 2 ;\n"
+               "}\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("a missing member is not exhaustive");
+    check_text(&u,
+               "enum^ E { AAA, BBB, CCC }\n"
+               "var^ say = f^ x:E -> number^ {\n"
+               "    for^ x: when^ E.AAA: 1 when^ E.BBB: 2 ;\n"
+               "}\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MATCH_NOT_EXHAUSTIVE);
+    unit_dispose(&u);
+
+    LHAT_TEST("a member of another enum proves nothing");
+    check_text(&u,
+               "enum^ E { AAA, BBB }\n"
+               "enum^ F { CCC, DDD }\n"
+               "var^ say = f^ x:E -> number^ {\n"
+               "    for^ x: when^ E.AAA: 1 when^ F.CCC: 2 ;\n"
+               "}\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MATCH_NOT_EXHAUSTIVE);
+    unit_dispose(&u);
+
     LHAT_TEST("value patterns over a number^ still take other^");
     check_text(&u,
                "var^ even = f^ n:number^ -> bool^ {\n"

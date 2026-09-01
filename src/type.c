@@ -190,6 +190,45 @@ LhatType *lhat_type_error_set(LhatTypeArena *arena, const char *name,
     return type;
 }
 
+// 02 の 19 章: the enum declaration and its members, in errordef^'s shape.
+LhatType *lhat_type_enum_decl(LhatTypeArena *arena, const char *name,
+                              size_t name_length)
+{
+    LhatType *type = new_type(arena, LHAT_TYPE_ENUM);
+    if (type != NULL) {
+        type->v.error.name = name;
+        type->v.error.name_length = name_length;
+    }
+    return type;
+}
+
+LhatType *lhat_type_enum_member(LhatTypeArena *arena, LhatType *decl,
+                                const char *name, size_t name_length,
+                                LhatType *value_type)
+{
+    LhatType *type = new_type(arena, LHAT_TYPE_ENUM_MEMBER);
+    if (type == NULL) {
+        return NULL;
+    }
+    type->v.error.set = decl;
+    type->v.error.name = name;
+    type->v.error.name_length = name_length;
+    type->v.error.value_type = value_type;
+    if (decl != NULL) {
+        LhatTypeList *link = (LhatTypeList *)arena_alloc(arena, sizeof *link);
+        if (link != NULL) {
+            link->type = type;
+            link->next = NULL;
+            LhatTypeList **slot = &decl->v.error.kinds;
+            while (*slot != NULL) {
+                slot = &(*slot)->next;
+            }
+            *slot = link;
+        }
+    }
+    return type;
+}
+
 LhatType *lhat_type_error_kind(LhatTypeArena *arena, LhatType *set,
                                const char *name, size_t name_length)
 {
@@ -687,6 +726,18 @@ static bool is_error_type(const LhatType *type)
            type->kind == LHAT_TYPE_ERROR_KIND;
 }
 
+static bool is_enum_type(const LhatType *type)
+{
+    return type->kind == LHAT_TYPE_ENUM ||
+           type->kind == LHAT_TYPE_ENUM_MEMBER;
+}
+
+// The declaration a member belongs to, or the declaration itself.
+static const LhatType *enum_decl_of(const LhatType *type)
+{
+    return type->kind == LHAT_TYPE_ENUM_MEMBER ? type->v.error.set : type;
+}
+
 // 05 の 8.8改: is `value` a host type declared under `target`? Both sides
 // have to be registered ones -- 8.8's relation is between declarations, and
 // a written shape is not one. The chain is finite: the registry refuses a
@@ -740,6 +791,8 @@ static bool tells_apart_by_head(const LhatType *type)
         case LHAT_TYPE_ERROR:
         case LHAT_TYPE_ERROR_SET:
         case LHAT_TYPE_ERROR_KIND:
+        case LHAT_TYPE_ENUM:
+        case LHAT_TYPE_ENUM_MEMBER:
             return true;
         case LHAT_TYPE_UNION:
             for (const LhatTypeList *arm = type->v.composite.arms;
@@ -1001,6 +1054,18 @@ static bool conforms_in(const LhatType *value, const LhatType *target,
             return error_set_of(value) == target;
         }
         return value == target;  // 2.4: identity is the declaration
+    }
+
+    // 02 の 19 章: a member is below its enum; members meet only as
+    // themselves. Identity is the declaration, as 2.4 has it for errors.
+    if (is_enum_type(value) && is_enum_type(target)) {
+        if (target->kind == LHAT_TYPE_ENUM) {
+            return enum_decl_of(value) == target;
+        }
+        if (value->kind == LHAT_TYPE_ENUM) {
+            return false;
+        }
+        return value == target;
     }
 
     if (value->kind != target->kind) {
@@ -1354,6 +1419,16 @@ static bool disjoint_in(const LhatType *a, const LhatType *b,
         }
         if (a->kind == LHAT_TYPE_ERROR_SET || b->kind == LHAT_TYPE_ERROR_SET) {
             return error_set_of(a) != error_set_of(b);
+        }
+        return a != b;
+    }
+
+    // 02 の 19 章: within one declaration an enum overlaps its members and
+    // two members overlap only as the same one. Against everything else the
+    // generic kind test below already keeps them apart.
+    if (is_enum_type(a) && is_enum_type(b)) {
+        if (a->kind == LHAT_TYPE_ENUM || b->kind == LHAT_TYPE_ENUM) {
+            return enum_decl_of(a) != enum_decl_of(b);
         }
         return a != b;
     }
@@ -2099,9 +2174,11 @@ static void write_type(TypeSink *sink, const LhatType *type, int depth)
         }
 
         case LHAT_TYPE_ERROR_SET:
+        case LHAT_TYPE_ENUM:
             put(sink, type->v.error.name, type->v.error.name_length);
             return;
 
+        case LHAT_TYPE_ENUM_MEMBER:
         case LHAT_TYPE_ERROR_KIND:
             // 04 の 2.4: a kind is named through the set that declared it.
             if (type->v.error.set != NULL) {

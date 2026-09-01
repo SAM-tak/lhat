@@ -47,6 +47,44 @@ static LhatRuntimeType *rt_from_checked(LhatHeap *heap,
         seen = &here;
     }
     switch (type->kind) {
+        // 02 の 19 章: identity is the declaration's address; the names ride
+        // along for 14.16's writing.
+        case LHAT_TYPE_ENUM: {
+            LhatRuntimeType *rt = lhat_type_rt_new(heap, LHAT_TYPE_RT_ENUM);
+            if (rt != NULL) {
+                rt->enum_decl = type;
+                rt->enum_name = lhat_string_new(heap, type->v.error.name,
+                                                type->v.error.name_length);
+            }
+            return rt;
+        }
+        case LHAT_TYPE_ENUM_MEMBER: {
+            LhatRuntimeType *rt =
+                lhat_type_rt_new(heap, LHAT_TYPE_RT_ENUM_MEMBER);
+            if (rt != NULL) {
+                rt->enum_decl = type->v.error.set;
+                rt->enum_name = lhat_string_new(heap, type->v.error.name,
+                                                type->v.error.name_length);
+                size_t index = 0;
+                if (type->v.error.set != NULL) {
+                    rt->enum_owner_name = lhat_string_new(
+                        heap, type->v.error.set->v.error.name,
+                        type->v.error.set->v.error.name_length);
+                    size_t at = 0;
+                    for (const LhatTypeList *k =
+                             type->v.error.set->v.error.kinds;
+                         k != NULL; k = k->next) {
+                        at++;
+                        if (k->type == type) {
+                            index = at;
+                            break;
+                        }
+                    }
+                }
+                rt->enum_member_index = index;
+            }
+            return rt;
+        }
         // 03 の 3.4: inference did not decide this one. Asks nothing of a
         // value, the same as nothing written -- but 14.16 writes it out as
         // UNKNOWN rather than any^, so a signature says which parameter or

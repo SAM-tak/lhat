@@ -1750,6 +1750,41 @@ static void check_errordef(Checker *c, const LhatNode *node)
     }
 }
 
+// 02 の 19 章: the declaration makes the enum and its members -- the
+// members as singleton types below it, and the name as a binding whose
+// type is the enum itself, so E.AAA reads as a member access and x : E
+// takes any member. The value expressions are inferred here for the
+// members' `.value` types; they run where the declaration stands.
+static void check_enumdef(Checker *c, const LhatNode *node)
+{
+    const char *name = NULL;
+    size_t length = 0;
+    if (!chk_node_name(c, node->v.named.name, &name, &length)) {
+        return;
+    }
+    LhatType *decl = lhat_type_enum_decl(c->result->types, name, length);
+    chk_scope_add(c->scope, name, length, decl, node->offset)->reached = true;
+    // The compiler stamps this declaration into the RT_ENUM descriptor --
+    // what fits^ compares.
+    ((LhatNode *)node)->checked_type = decl;
+
+    for (const LhatNode *member = node->v.named.members; member != NULL;
+         member = member->next) {
+        const char *member_name = NULL;
+        size_t member_length = 0;
+        if (!chk_node_name(c, member->v.named.name, &member_name,
+                           &member_length)) {
+            continue;
+        }
+        LhatType *value_type =
+            member->v.named.members != NULL
+                ? chk_infer(c, member->v.named.members)
+                : chk_simple(c, LHAT_TYPE_NUMBER);
+        lhat_type_enum_member(c->result->types, decl, member_name,
+                              member_length, value_type);
+    }
+}
+
 // 8.7: every name a scope defines is visible throughout it, so they are
 // collected before the statements are walked. That is what lets two
 // subroutines call each other without a forward declaration.
@@ -1758,6 +1793,10 @@ static void collect_bindings(Checker *c, const LhatNode *statements)
     for (const LhatNode *s = statements; s != NULL; s = s->next) {
         if (s->kind == LHAT_NODE_ERRORDEF) {
             check_errordef(c, s);
+            continue;
+        }
+        if (s->kind == LHAT_NODE_ENUMDEF) {
+            check_enumdef(c, s);
             continue;
         }
         if (s->kind != LHAT_NODE_DEFINE) {
@@ -1892,7 +1931,9 @@ LhatType *chk_collect_exports(Checker *c, const LhatNode *statements)
         const LhatNode *named = NULL;
         if (s->kind == LHAT_NODE_DEFINE && s->v.binding.exported) {
             named = s->v.binding.targets;
-        } else if (s->kind == LHAT_NODE_ERRORDEF && s->v.named.exported) {
+        } else if ((s->kind == LHAT_NODE_ERRORDEF ||
+                    s->kind == LHAT_NODE_ENUMDEF) &&
+                   s->v.named.exported) {
             named = s->v.named.name;
         } else {
             continue;
@@ -2491,6 +2532,7 @@ void chk_check_statement(Checker *c, const LhatNode *node)
             break;
 
         case LHAT_NODE_ERRORDEF:
+        case LHAT_NODE_ENUMDEF:
             break;  // handled while collecting, so kinds are visible early
 
         case LHAT_NODE_FOR:

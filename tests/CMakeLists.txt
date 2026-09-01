@@ -61,6 +61,7 @@ lhat_add_test(test_error_local check)
 # The machine suite, the same way.
 lhat_add_test(test_vm_core vm)
 lhat_add_test(test_vm_data vm)
+lhat_add_test(test_vm_enum vm)
 lhat_add_test(test_vm_loop vm)
 lhat_add_test(test_vm_error vm)
 lhat_add_test(test_vm_def vm)

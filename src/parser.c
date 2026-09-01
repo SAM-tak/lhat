@@ -1624,6 +1624,7 @@ static bool is_statement_keyword(const Parser *p)
         "next", "skip", "continue",
         "for", "repeat", "while", "until", "when", "other",
         "errordef", "localerrordef",  // 04 の 2.7: two tops, one form
+        "enum",  // 02 の 19 章
         "prolog", "prologue", "pre", "premain", "first", "main", "last",
         "epilog", "epilogue", "finally"
     };
@@ -3021,6 +3022,7 @@ static LhatNode *parse_public(Parser *p)
             declaration->v.binding.exported = true;
             break;
         case LHAT_NODE_ERRORDEF:
+        case LHAT_NODE_ENUMDEF:
             declaration->v.named.exported = true;
             break;
         default:
@@ -4076,6 +4078,64 @@ static LhatNode *parse_errordef(Parser *p, bool local)
     return finish(p, node);
 }
 
+// 02 の 19 章: enum^ Name { AAA, BBB = expr, ... }. The same declaration
+// shape errordef^ takes -- a required name, a brace of named members -- with
+// a written value where a kind would have fields. No anonymous form: the
+// name is the nominal identity, exactly 04 の 2.4's rule.
+static LhatNode *parse_enumdef(Parser *p)
+{
+    LhatToken start = p->current;
+    advance(p);  // enum^
+
+    LhatNode *node = make(p, LHAT_NODE_ENUMDEF, &start);
+    if (node == NULL) {
+        return NULL;
+    }
+
+    if (p->current.kind == LHAT_TOKEN_IDENT) {
+        node->v.named.name = simple_node(p);
+    } else {
+        report(p, &p->current, LHAT_PARSE_ERR_ENUMDEF_NEEDS_NAME);
+    }
+
+    if (!expect_op(p, LHAT_OP_LBRACE)) {
+        return node;
+    }
+
+    LhatNode *head = NULL;
+    LhatNode *tail = NULL;
+
+    while (!at_eof(p) && !check_op(p, LHAT_OP_RBRACE)) {
+        LhatNode *member = make(p, LHAT_NODE_ENUM_MEMBER, &p->current);
+        if (member == NULL) {
+            break;
+        }
+
+        if (p->current.kind != LHAT_TOKEN_IDENT) {
+            report(p, &p->current, LHAT_PARSE_ERR_EXPECTED_NAME);
+            break;
+        }
+        member->v.named.name = simple_node(p);
+
+        // 19 章: '=' hands the member its value -- any expression,
+        // evaluated once where the declaration runs. Without one the
+        // member takes the next number.
+        if (match_op(p, LHAT_OP_EQ)) {
+            member->v.named.members = parse_expression(p);
+        }
+
+        lhat_node_append(&head, &tail, finish(p, member));
+
+        if (!match_op(p, LHAT_OP_COMMA)) {
+            break;
+        }
+    }
+
+    node->v.named.members = head;
+    expect_op(p, LHAT_OP_RBRACE);
+    return finish(p, node);
+}
+
 static LhatNode *parse_with(Parser *p)
 {
     LhatToken start = p->current;
@@ -4417,6 +4477,9 @@ static LhatNode *parse_statement_after_annotations(Parser *p)
         // 04 の 2.7: the same declaration under the other top.
         if (check_hat(p, "localerrordef")) {
             return parse_errordef(p, true);
+        }
+        if (check_hat(p, "enum")) {
+            return parse_enumdef(p);
         }
         // 8.9: the two introducers of a name. var^ is 8.6's, unchanged; let^
         // is the same form binding a name nothing may reassign.
@@ -5026,6 +5089,8 @@ const char *lhat_parse_error_message(LhatParseErrorCode code)
             return "a field needs a type, a default, or both";
         case LHAT_PARSE_ERR_ERRORDEF_NEEDS_NAME:
             return "errordef^ needs a name; an error kind has no anonymous form";
+        case LHAT_PARSE_ERR_ENUMDEF_NEEDS_NAME:
+            return "enum^ needs a name; an enum has no anonymous form";
         case LHAT_PARSE_ERR_ERROR_NEEDS_KIND:
             return "write the kind, as in error^IOError.NotFound{ ... }";
         case LHAT_PARSE_ERR_LET_NEEDS_VALUE:

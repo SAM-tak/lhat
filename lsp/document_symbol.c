@@ -410,6 +410,31 @@ static void walk_statement(Outline *o, const LhatNode *node, cJSON *into,
             }
             break;
         }
+        case LHAT_NODE_ENUMDEF: {
+            const char *name;
+            size_t name_length;
+            if (!name_of(o, node->v.named.name, &name, &name_length)) {
+                break;
+            }
+            cJSON *out = symbol(o, into, name, name_length, SYMBOL_ENUM, node,
+                                node->v.named.name, NULL, 0);
+            if (out == NULL) {
+                break;
+            }
+            for (const LhatNode *k = node->v.named.members;
+                 k != NULL && !o->failed; k = k->next) {
+                const char *member_name;
+                size_t member_length;
+                if (k->kind != LHAT_NODE_ENUM_MEMBER ||
+                    !name_of(o, k->v.named.name, &member_name,
+                             &member_length)) {
+                    continue;
+                }
+                symbol(o, children_of(out), member_name, member_length,
+                       SYMBOL_ENUM_MEMBER, k, k->v.named.name, NULL, 0);
+            }
+            break;
+        }
         case LHAT_NODE_MODULE: {
             const char *name;
             size_t name_length;

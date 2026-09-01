@@ -277,6 +277,12 @@ typedef enum {
     // three are numbers and jumps past the loop when the first turn is
     // already refused; FORLOOP advances, tests and jumps back. The D pair
     // is downto^: the direction is syntax, so it stays static.
+    // 02 の 19 章: enum^'s two builders. NEWENUM reads the RT_ENUM
+    // descriptor constant K[Bx]; NEWENUMERATOR appends R[B] (the name) with
+    // R[C] (the value) to the enum in R[A], numbering it by position.
+    LHAT_BC_NEWENUM,        // A Bx  R[A] = a fresh enum of K[Bx]
+    LHAT_BC_NEWENUMERATOR,  // A B C R[A].members[R[B]] = enumerator of R[C]
+
     LHAT_BC_FORPREP,    // A Bx  jump when the loop never enters
     LHAT_BC_FORLOOP,    // A Bx  advance, jump back while focus <= bound
     LHAT_BC_FORPREPD,   // A Bx  downto^'s enter test

@@ -387,6 +387,8 @@ const char *lhat_opcode_name(LhatOpcode op)
         case LHAT_BC_ENDCLEANUP:  return "endcleanup";
         case LHAT_BC_JUMP:        return "jump";
         case LHAT_BC_JUMP_FALSE:  return "jumpfalse";
+        case LHAT_BC_NEWENUM:     return "newenum";
+        case LHAT_BC_NEWENUMERATOR: return "newenumerator";
         case LHAT_BC_FORPREP:     return "forprep";
         case LHAT_BC_FORLOOP:     return "forloop";
         case LHAT_BC_FORPREPD:    return "forprepd";
@@ -415,6 +417,7 @@ void lhat_chunk_print(const LhatChunk *chunk, size_t index, char *out,
 
     switch (op) {
         case LHAT_BC_LOADK:
+        case LHAT_BC_NEWENUM:
             snprintf(out, size, "%-10s r%u k%u", name, lhat_a(i), lhat_bx(i));
             break;
         case LHAT_BC_ADDK:

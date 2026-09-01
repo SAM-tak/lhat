@@ -121,6 +121,41 @@ LhatErrorKind *lhat_error_kind_new(LhatHeap *heap,
     return kind;
 }
 
+LhatEnum *lhat_enum_new(LhatHeap *heap, const LhatString *name,
+                        const struct LhatRuntimeType *decl)
+{
+    LhatEnum *made =
+        (LhatEnum *)lhat_object_alloc(heap, sizeof *made, LHAT_OBJECT_ENUM);
+    if (made == NULL) {
+        return NULL;
+    }
+    made->name = name;
+    made->decl = decl;
+    made->members = lhat_table_new(heap);
+    if (made->members == NULL) {
+        return NULL;
+    }
+    made->members->sealed = true;  // 02 の 19 章: the declaration is closed
+    return made;
+}
+
+LhatEnumerator *lhat_enumerator_new(LhatHeap *heap,
+                                    const struct LhatEnum *owner,
+                                    const LhatString *name, LhatValue value,
+                                    size_t index)
+{
+    LhatEnumerator *made = (LhatEnumerator *)lhat_object_alloc(
+        heap, sizeof *made, LHAT_OBJECT_ENUMERATOR);
+    if (made == NULL) {
+        return NULL;
+    }
+    made->owner = owner;
+    made->name = name;
+    made->value = value;
+    made->index = index;
+    return made;
+}
+
 LhatError *lhat_error_new(LhatHeap *heap, const LhatErrorKind *kind)
 {
     LhatTable *fields = lhat_table_new(heap);
@@ -406,6 +441,31 @@ bool lhat_value_satisfies(LhatValue value, const LhatRuntimeType *type)
         // checker's -- 03 の 4.2 leaves the run time the part that cannot be
         // decided ahead, and which arm of a group a call takes is decided at
         // the call.
+        // 02 の 19 章: identity is the declaration. The descriptor a fits^
+        // was compiled with and the one the declaration was built with are
+        // different objects; the enum_decl they share is what compares.
+        case LHAT_TYPE_RT_ENUM: {
+            const struct LhatEnum *owner = NULL;
+            if (lhat_is_object_kind(value, LHAT_OBJECT_ENUMERATOR)) {
+                owner = ((const LhatEnumerator *)lhat_as_object(value))->owner;
+            } else if (lhat_is_object_kind(value, LHAT_OBJECT_ENUM)) {
+                owner = (const LhatEnum *)lhat_as_object(value);
+            }
+            return owner != NULL && owner->decl != NULL &&
+                   type->enum_decl != NULL &&
+                   owner->decl->enum_decl == type->enum_decl;
+        }
+        case LHAT_TYPE_RT_ENUM_MEMBER: {
+            if (!lhat_is_object_kind(value, LHAT_OBJECT_ENUMERATOR)) {
+                return false;
+            }
+            const LhatEnumerator *e =
+                (const LhatEnumerator *)lhat_as_object(value);
+            return e->owner != NULL && e->owner->decl != NULL &&
+                   type->enum_decl != NULL &&
+                   e->owner->decl->enum_decl == type->enum_decl &&
+                   e->index == type->enum_member_index;
+        }
         case LHAT_TYPE_RT_SUBROUTINE:
             return lhat_is_object_kind(value, LHAT_OBJECT_SUBROUTINE) ||
                    lhat_is_object_kind(value, LHAT_OBJECT_HOST) ||

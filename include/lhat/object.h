@@ -169,6 +169,29 @@ typedef struct LhatErrorKind {
 // 04 の 2.3: a kind, plus the fields the construction gave it. message and
 // cause live in the same table as the declared fields; nothing separates
 // them, because 2.3 gives every kind both without declaring either.
+// 02 の 19 章: what one enum^ declaration makes, and one member of it. The
+// enum is the nominal anchor -- member reads delegate to `members` (vm.c's
+// table_of), the way an error's fields do -- and the enumerator is the
+// singleton value a program passes around: identity is the object, the name
+// is what tostring^ answers, `value` is what the declaration's '=' evaluated
+// to where the declaration ran, and `index` its 1-based place.
+typedef struct LhatEnum {
+    LhatObject header;
+    const LhatString *name;
+    LhatTable *members;  // name -> enumerator; sealed at birth
+    // The RT_ENUM descriptor the declaration was compiled with (a chunk
+    // constant): fits^ compares its enum_decl.
+    const struct LhatRuntimeType *decl;
+} LhatEnum;
+
+typedef struct LhatEnumerator {
+    LhatObject header;
+    const struct LhatEnum *owner;
+    const LhatString *name;
+    LhatValue value;
+    size_t index;
+} LhatEnumerator;
+
 typedef struct LhatError {
     LhatObject header;
     const LhatErrorKind *kind;
@@ -337,6 +360,11 @@ typedef enum
     // answers false for a value of the other.
     LHAT_TYPE_RT_ERROR,
     LHAT_TYPE_RT_ERROR_KIND, // one kind, or one declaration's union of them
+    // 02 の 19 章: an enum declaration, and one member of it. Identity is
+    // the declaration -- `enum_decl` below -- which both the descriptor a
+    // fits^ was compiled with and the objects the declaration builds carry.
+    LHAT_TYPE_RT_ENUM,
+    LHAT_TYPE_RT_ENUM_MEMBER,
     // 05 の 8.8: a host type, whose identity is its tag and nothing else
     // (7.3's exception for an opaque value). Written like any other name, so
     // it belongs here rather than beside a question of its own.
@@ -383,6 +411,14 @@ typedef struct LhatRuntimeType {
     LhatRuntimeTypeKind kind;
 
     const LhatErrorKind *error_kind;  // ERROR_KIND
+
+    // 02 の 19 章: ENUM and ENUM_MEMBER. The declaration's address is the
+    // identity and nothing reads through it; the names are what 14.16
+    // writes. `enum_member_index` is the member's 1-based position.
+    const void *enum_decl;
+    size_t enum_member_index;
+    const LhatString *enum_name;        // E, or the member's own name
+    const LhatString *enum_owner_name;  // ENUM_MEMBER: the E of E.AAA
 
     // ERROR only (04 の 2.7): which of the two families this stands for.
     // A kind carries its own in error_kind->local.
@@ -758,6 +794,12 @@ LhatErrorKind *lhat_error_kind_new(LhatHeap *heap,
                                    const LhatString *name);
 
 // Makes the error and the table its fields live in.
+LhatEnum *lhat_enum_new(LhatHeap *heap, const LhatString *name,
+                        const struct LhatRuntimeType *decl);
+LhatEnumerator *lhat_enumerator_new(LhatHeap *heap,
+                                    const struct LhatEnum *owner,
+                                    const LhatString *name, LhatValue value,
+                                    size_t index);
 LhatError *lhat_error_new(LhatHeap *heap, const LhatErrorKind *kind);
 
 // `registers` is how wide the body's frame is, which 5.2 fixes at compile

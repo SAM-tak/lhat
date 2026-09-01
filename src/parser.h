@@ -71,6 +71,7 @@ typedef enum {
                                               // 4.1's, and takes parentheses
     LHAT_PARSE_ERR_FIELD_NEEDS_TYPE,          // 04 の 2.2: a type or a default
     LHAT_PARSE_ERR_ERRORDEF_NEEDS_NAME,       // 04 の 2.4: the name is the identity
+    LHAT_PARSE_ERR_ENUMDEF_NEEDS_NAME,        // 02 の 19 章: no anonymous enum
     LHAT_PARSE_ERR_ERROR_NEEDS_KIND,          // 04 の 2.5
     LHAT_PARSE_ERR_LET_NEEDS_VALUE,           // 8.7: no declaration without one
     LHAT_PARSE_ERR_FOCUS_TAKES_ONE,           // 16.3: one binding per for^ --

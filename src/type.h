@@ -82,6 +82,14 @@ typedef enum {
     LHAT_TYPE_ERROR_SET,   // what one errordef^ declares (04 の 2.2)
     LHAT_TYPE_ERROR_KIND,  // one kind within a set
 
+    // 02 の 19 章: what one enum^ declares, and one member within it. The
+    // same two-tier nominal shape an errordef^ takes -- a member points back
+    // at its enum and that pointer is the identity -- without the error
+    // family's third top, its fields, or its try^ coupling. The payload is
+    // v.error, shared the way HOSTVALUE shares v.table.
+    LHAT_TYPE_ENUM,
+    LHAT_TYPE_ENUM_MEMBER,
+
     LHAT_TYPE_UNION,       // A | B  (13.5)
     LHAT_TYPE_INTERSECT,   // A & B  (14.5)
 
@@ -356,14 +364,18 @@ struct LhatType {
             bool is_function;
         } coroutine;
 
-        // ERROR, ERROR_SET and ERROR_KIND. A kind points back at the set
-        // that declared it, and that pointer is the identity (04 の 2.4).
+        // ERROR, ERROR_SET and ERROR_KIND -- and 02 の 19 章's ENUM and
+        // ENUM_MEMBER, which share the payload. A kind points back at the
+        // set that declared it, and that pointer is the identity (04 の 2.4).
         struct {
             const char *name;
             size_t name_length;
-            LhatType *set;           // ERROR_KIND only
+            LhatType *set;           // ERROR_KIND / ENUM_MEMBER only
             LhatTypeMember *fields;  // ERROR_KIND only; NULL when it declares none
-            LhatTypeList *kinds;     // ERROR_SET only
+            LhatTypeList *kinds;     // ERROR_SET / ENUM only
+            // 02 の 19 章: the checked type of the member's declared value
+            // -- what `.value` answers. ENUM_MEMBER only.
+            LhatType *value_type;
             // 04 の 2.7: which of the two tops this belongs under --
             // localerror^ rather than error^, declared with localerrordef^.
             // The two are disjoint, so this is part of what the type IS and
@@ -430,6 +442,11 @@ LhatType *lhat_type_error_set(LhatTypeArena *arena, const char *name,
                               size_t name_length, bool local);
 // The family comes from the set, so a kind never disagrees with what
 // declared it.
+LhatType *lhat_type_enum_decl(LhatTypeArena *arena, const char *name,
+                              size_t name_length);
+LhatType *lhat_type_enum_member(LhatTypeArena *arena, LhatType *decl,
+                                const char *name, size_t name_length,
+                                LhatType *value_type);
 LhatType *lhat_type_error_kind(LhatTypeArena *arena, LhatType *set,
                                const char *name, size_t name_length);
 
