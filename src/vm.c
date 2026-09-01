@@ -3363,6 +3363,56 @@ bool lhat_machine_forget_unit(LhatMachine *machine, const char *module)
     return set_key(machine, owner, key, lhat_nil(), &refused) && !refused;
 }
 
+// 05 の 8.7 の読み: the path walked without making anything. reach_table
+// above creates the tables a registration needs; a read that created one
+// would answer nil^ for a name and leave a table behind saying it had been
+// asked for.
+static const LhatTable *find_table(const LhatTable *owner, const char *path)
+{
+    for (const char *segment = path;;) {
+        size_t length = strcspn(segment, ".");
+        const LhatTable *next =
+            table_of(lhat_table_get_bytes(owner, segment, length));
+        if (next == NULL) {
+            return NULL;
+        }
+        owner = next;
+        if (segment[length] == '\0') {
+            return owner;
+        }
+        segment += length + 1;
+    }
+}
+
+bool lhat_machine_registered(LhatMachine *machine, const char *module,
+                             const char *type, const char *name,
+                             LhatValue *out)
+{
+    if (machine == NULL || machine->environment == NULL || module == NULL ||
+        name == NULL || out == NULL) {
+        return false;
+    }
+    *out = lhat_nil();
+    const LhatTable *owner = table_of(
+        lhat_table_get_bytes(machine->environment, "modules", 7));
+    if (owner == NULL) {
+        return false;
+    }
+    owner = find_table(owner, module);
+    if (owner != NULL && type != NULL) {
+        owner = find_table(owner, type);
+    }
+    if (owner == NULL) {
+        return false;
+    }
+    LhatValue held = lhat_table_get_bytes(owner, name, strlen(name));
+    if (lhat_is_nil(held)) {
+        return false;
+    }
+    *out = held;
+    return true;
+}
+
 bool lhat_machine_register(LhatMachine *machine, const char *module,
                            const char *type, const char *name, LhatValue value)
 {

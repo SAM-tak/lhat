@@ -960,6 +960,13 @@ bool lhat_takes_receiver(LhatValue value);
 // among the instance's own fields is looked for there.
 LhatValue lhat_table_get(const LhatTable *table, LhatValue key);
 
+// The same read with the key as bytes -- for a caller that has no machine
+// to make a string on, which is every reader outside the run (05 の 8.7's
+// lhat_machine_registered among them). Answers nil^ where the name is not
+// there, exactly as the read above does.
+LhatValue lhat_table_get_bytes(const LhatTable *table, const char *name,
+                               size_t length);
+
 // 03 の 5.1改: the same lookup, saying where it found the answer -- which
 // table of the 14.7 chain, and which entry of its hash half. `found_in` is
 // NULL when nothing was found or when the answer came off the sequence half,

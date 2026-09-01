@@ -1726,6 +1726,29 @@ LhatValue lhat_table_get(const LhatTable *table, LhatValue key)
     return table_get_in(table, key, NULL, NULL, NULL, NULL);
 }
 
+LhatValue lhat_table_get_bytes(const LhatTable *table, const char *name,
+                               size_t length)
+{
+    if (table == NULL || name == NULL) {
+        return lhat_nil();
+    }
+    // The walk lhat_table_get does, with the key compared as bytes -- a
+    // string key's equality is its bytes (value.c), so this asks the same
+    // question without a machine to intern the name on.
+    for (size_t i = 0; i < table->entry_capacity; i++) {
+        const LhatTableEntry *entry = &table->entries[i];
+        if (lhat_is_nil(entry->key) || lhat_is_nil(entry->value) ||
+            !lhat_is_object_kind(entry->key, LHAT_OBJECT_STRING)) {
+            continue;
+        }
+        const LhatString *held = (const LhatString *)lhat_as_object(entry->key);
+        if (held->length == length && memcmp(held->text, name, length) == 0) {
+            return entry->value;
+        }
+    }
+    return lhat_nil();
+}
+
 // 05 の 8.9改: a lookup asking with the bare value -- `t[vec]`. Everything
 // a table stores under a box key is sealed, so comparing the bytes of the
 // moment against them is exact; only the hash part can hold one, since a

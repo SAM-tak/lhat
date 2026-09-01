@@ -1816,6 +1816,25 @@ static void test_host_data(void)
             LhatRunResult ran = lhat_run(machine, lhat_unit_proto(root));
             LHAT_CHECK_EQ_INT(ran.status, LHAT_RUN_OK);
             LHAT_CHECK_EQ_INT(lhat_as_integer(ran.value), 2111);
+            // 8.7 の読み: the host reads its own registration back, and
+            // what it gets is the singleton the program compared against.
+            LhatValue found = lhat_nil();
+            LHAT_CHECK(lhat_machine_registered(machine, "k", NULL, "Mode",
+                                               &found),
+                       "the enum reads back");
+            LHAT_CHECK(lhat_is_object_kind(found, LHAT_OBJECT_ENUM),
+                       "as an enum");
+            const LhatEnum *made = (const LhatEnum *)lhat_as_object(found);
+            LhatValue walk = lhat_table_get_bytes(made->members, "Walk", 4);
+            LHAT_CHECK(lhat_is_object_kind(walk, LHAT_OBJECT_ENUMERATOR),
+                       "whose members are enumerators");
+            LHAT_CHECK_EQ_INT(
+                lhat_as_integer(
+                    ((const LhatEnumerator *)lhat_as_object(walk))->value),
+                5);
+            LHAT_CHECK(!lhat_machine_registered(machine, "k", NULL, "Nope",
+                                                &found),
+                       "and a name nobody registered is not there");
             lhat_machine_dispose(machine);
         }
     }

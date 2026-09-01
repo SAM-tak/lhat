@@ -332,6 +332,20 @@ bool lhat_place_hostvalue(const LhatHostValueTag *tag, const void *bytes,
 // is the identity descriptor the registration made (fits^ compares it).
 // For lhat_program_install; a host wanting one machine's enum reads it
 // off L^.modules instead.
+// 05 の 8.7 の読み: what stands at L^.modules.<module>[.<type>].<name> on
+// this machine -- the read twin of lhat_machine_register. A host that
+// registered an enum reads it back through this to hand its members out
+// again: an enumerator is a singleton, so the one the machine built is the
+// one a program compares against. False when nothing of that name is
+// there, with `out` left nil^.
+//
+// The value belongs to the machine and is reachable from L^, so a host may
+// keep it for as long as the machine lives -- what it must not do is keep
+// it after lhat_machine_dispose.
+bool lhat_machine_registered(LhatMachine *machine, const char *module,
+                             const char *type, const char *name,
+                             LhatValue *out);
+
 bool lhat_machine_make_enum(LhatMachine *machine, const char *name,
                             const struct LhatRuntimeType *decl,
                             const char *const *members,
